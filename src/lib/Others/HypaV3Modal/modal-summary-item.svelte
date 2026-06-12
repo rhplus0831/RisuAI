@@ -24,21 +24,8 @@
   import { translateHTML } from 'src/ts/translator/translator'
   import { alertConfirm } from 'src/ts/alert'
   import { DBState, selectedCharID } from 'src/ts/stores.svelte'
-  import type {
-    SummaryItemState,
-    ExpandedMessageState,
-    SearchState,
-    Category,
-    BulkEditState,
-    UIState,
-  } from './types'
-  import {
-    alertConfirmTwice,
-    handleDualAction,
-    getFirstMessage,
-    processRegexScript,
-    getCategoryName,
-  } from './utils'
+  import type { SummaryItemState, ExpandedMessageState, SearchState, Category, BulkEditState, UIState } from './types'
+  import { alertConfirmTwice, handleDualAction, getFirstMessage, processRegexScript, getCategoryName } from './utils'
 
   interface Props {
     summaryIndex: number
@@ -306,10 +293,7 @@
   function isMessageExpanded(chatMemo: string | null): boolean {
     if (!expandedMessageState) return false
 
-    return (
-      expandedMessageState.summaryIndex === summaryIndex &&
-      expandedMessageState.selectedChatMemo === chatMemo
-    )
+    return expandedMessageState.summaryIndex === summaryIndex && expandedMessageState.selectedChatMemo === chatMemo
   }
 
   function toggleExpandMessage(chatMemo: string | null): void {
@@ -342,8 +326,7 @@
 <div
   class="flex flex-col p-2 border rounded-lg sm:p-4 border-zinc-700 bg-zinc-800/50 {isSelected()
     ? 'ring-2 ring-blue-500'
-    : ''}"
->
+    : ''}">
   <!-- Original Summary Header -->
   <div class="flex items-center justify-between">
     <!-- Summary Number / Metrics Container -->
@@ -354,16 +337,11 @@
           type="checkbox"
           class="w-4 h-4 text-blue-600 bg-zinc-900 border-zinc-600 rounded-sm focus:ring-blue-500"
           checked={isSelected()}
-          onchange={() => onToggleSummarySelection?.(summaryIndex)}
-        />
+          onchange={() => onToggleSummarySelection?.(summaryIndex)} />
       {/if}
 
       <span class="text-sm text-zinc-400"
-        >{language.hypaV3Modal.summaryNumberLabel.replace(
-          '{0}',
-          (summaryIndex + 1).toString(),
-        )}</span
-      >
+        >{language.hypaV3Modal.summaryNumberLabel.replace('{0}', (summaryIndex + 1).toString())}</span>
 
       <!-- Category Tag -->
       <span class="px-2 py-1 text-xs rounded-full bg-zinc-700 text-zinc-300">
@@ -379,8 +357,7 @@
               ? 'cursor-default'
               : 'hover:bg-blue-500'}"
             disabled={readOnly}
-            onclick={() => onOpenTagManager?.(summaryIndex)}
-          >
+            onclick={() => onOpenTagManager?.(summaryIndex)}>
             #{tag}
           </button>
         {/each}
@@ -391,8 +368,7 @@
         <button
           class="px-2 py-1 text-xs rounded-full bg-zinc-600 hover:bg-zinc-500 text-zinc-300 transition-colors"
           onclick={() => onOpenTagManager?.(summaryIndex)}
-          title={language.hypaV3Modal.tagManager}
-        >
+          title={language.hypaV3Modal.tagManager}>
           + {language.hypaV3Modal.tag}
         </button>
       {/if}
@@ -400,30 +376,22 @@
       {#if filterSelected && hypaV3Data.metrics}
         <div class="flex flex-wrap gap-1">
           {#if hypaV3Data.metrics.lastImportantSummaries.includes(summaryIndex)}
-            <span
-              class="px-1.5 py-0.5 rounded-full text-xs whitespace-nowrap text-purple-200 bg-purple-900/70"
-            >
+            <span class="px-1.5 py-0.5 rounded-full text-xs whitespace-nowrap text-purple-200 bg-purple-900/70">
               Important
             </span>
           {/if}
           {#if hypaV3Data.metrics.lastRecentSummaries.includes(summaryIndex)}
-            <span
-              class="px-1.5 py-0.5 rounded-full text-xs whitespace-nowrap text-blue-200 bg-blue-900/70"
-            >
+            <span class="px-1.5 py-0.5 rounded-full text-xs whitespace-nowrap text-blue-200 bg-blue-900/70">
               Recent
             </span>
           {/if}
           {#if hypaV3Data.metrics.lastSimilarSummaries.includes(summaryIndex)}
-            <span
-              class="px-1.5 py-0.5 rounded-full text-xs whitespace-nowrap text-green-200 bg-green-900/70"
-            >
+            <span class="px-1.5 py-0.5 rounded-full text-xs whitespace-nowrap text-green-200 bg-green-900/70">
               Similar
             </span>
           {/if}
           {#if hypaV3Data.metrics.lastRandomSummaries.includes(summaryIndex)}
-            <span
-              class="px-1.5 py-0.5 rounded-full text-xs whitespace-nowrap text-yellow-200 bg-yellow-900/70"
-            >
+            <span class="px-1.5 py-0.5 rounded-full text-xs whitespace-nowrap text-yellow-200 bg-yellow-900/70">
               Random
             </span>
           {/if}
@@ -440,8 +408,7 @@
         use:handleDualAction={{
           onMainAction: () => toggleTranslate(false),
           onAlternativeAction: () => toggleTranslate(true),
-        }}
-      >
+        }}>
         <LanguagesIcon class="w-4 h-4" />
       </button>
 
@@ -452,8 +419,7 @@
             ? 'text-yellow-400 hover:text-yellow-300'
             : 'text-zinc-400 hover:text-zinc-200'}"
           tabindex="-1"
-          onclick={toggleImportant}
-        >
+          onclick={toggleImportant}>
           <StarIcon class="w-4 h-4" />
         </button>
 
@@ -462,8 +428,7 @@
           class="p-2 transition-colors text-zinc-400 hover:text-zinc-200"
           tabindex="-1"
           disabled={isOrphan()}
-          onclick={async () => await toggleReroll()}
-        >
+          onclick={async () => await toggleReroll()}>
           <RefreshCw class="w-4 h-4" />
         </button>
 
@@ -471,8 +436,7 @@
         <button
           class="p-2 transition-colors text-zinc-400 hover:text-rose-300"
           tabindex="-1"
-          onclick={async () => await deleteThis()}
-        >
+          onclick={async () => await deleteThis()}>
           <Trash2Icon class="w-4 h-4" />
         </button>
 
@@ -480,8 +444,7 @@
         <button
           class="p-2 transition-colors text-zinc-400 hover:text-rose-300"
           tabindex="-1"
-          onclick={async () => await deleteAfter()}
-        >
+          onclick={async () => await deleteAfter()}>
           <ScissorsLineDashed class="w-4 h-4" />
         </button>
       {/if}
@@ -499,8 +462,7 @@
         if (searchState && !searchState.isNavigating) {
           searchState.requestedSearchFromIndex = summaryIndex
         }
-      }}
-    >
+      }}>
     </textarea>
   </div>
 
@@ -516,8 +478,7 @@
         readonly
         tabindex="-1"
         bind:this={summaryItemState.translationRef}
-        value={translation}
-      ></textarea>
+        value={translation}></textarea>
     </div>
   {/if}
 
@@ -534,8 +495,7 @@
             use:handleDualAction={{
               onMainAction: () => toggleTranslateRerolled(false),
               onAlternativeAction: () => toggleTranslateRerolled(true),
-            }}
-          >
+            }}>
             <LanguagesIcon class="w-4 h-4" />
           </button>
 
@@ -543,17 +503,12 @@
           <button
             class="p-2 transition-colors text-zinc-400 hover:text-zinc-200"
             tabindex="-1"
-            onclick={cancelRerolled}
-          >
+            onclick={cancelRerolled}>
             <XIcon class="w-4 h-4" />
           </button>
 
           <!-- Apply Button -->
-          <button
-            class="p-2 transition-colors text-zinc-400 hover:text-rose-300"
-            tabindex="-1"
-            onclick={applyRerolled}
-          >
+          <button class="p-2 transition-colors text-zinc-400 hover:text-rose-300" tabindex="-1" onclick={applyRerolled}>
             <CheckIcon class="w-4 h-4" />
           </button>
         </div>
@@ -565,8 +520,7 @@
       <textarea
         class="w-full p-2 transition-colors border rounded-sm sm:p-4 min-h-40 sm:min-h-56 resize-vertical border-zinc-700 focus:outline-hidden focus:ring-2 focus:ring-zinc-500 text-zinc-200 bg-zinc-900"
         tabindex="-1"
-        bind:value={rerolled}
-      >
+        bind:value={rerolled}>
       </textarea>
     </div>
 
@@ -582,8 +536,7 @@
           readonly
           tabindex="-1"
           bind:this={summaryItemState.rerolledTranslationRef}
-          value={rerolledTranslation}
-        ></textarea>
+          value={rerolledTranslation}></textarea>
       </div>
     {/if}
   {/if}
@@ -594,19 +547,14 @@
       <button
         class="flex items-center gap-2 text-sm text-zinc-400 hover:text-zinc-200 transition-colors"
         tabindex="-1"
-        onclick={toggleSummaryCollapse}
-      >
+        onclick={toggleSummaryCollapse}>
         {#if isCollapsed()}
           <ChevronDownIcon class="w-4 h-4" />
         {:else}
           <ChevronUpIcon class="w-4 h-4" />
         {/if}
         <span
-          >{language.hypaV3Modal.connectedMessageCountLabel.replace(
-            '{0}',
-            summary.chatMemos.length.toString(),
-          )}</span
-        >
+          >{language.hypaV3Modal.connectedMessageCountLabel.replace('{0}', summary.chatMemos.length.toString())}</span>
       </button>
 
       <div class="flex items-center gap-2">
@@ -617,8 +565,7 @@
           use:handleDualAction={{
             onMainAction: () => toggleTranslateExpandedMessage(false),
             onAlternativeAction: () => toggleTranslateExpandedMessage(true),
-          }}
-        >
+          }}>
           <LanguagesIcon class="w-4 h-4" />
         </button>
       </div>
@@ -638,8 +585,7 @@
               : ''}"
             tabindex="-1"
             bind:this={summaryItemState.chatMemoRefs[memoIndex]}
-            onclick={() => toggleExpandMessage(chatMemo)}
-          >
+            onclick={() => toggleExpandMessage(chatMemo)}>
             {chatMemo == null ? language.hypaV3Modal.connectedFirstMessageLabel : chatMemo}
           </button>
         {/each}
@@ -661,17 +607,13 @@
               class="w-full p-2 transition-colors border rounded-sm sm:p-4 min-h-40 sm:min-h-56 resize-vertical border-zinc-700 focus:outline-hidden text-zinc-200 bg-zinc-900"
               readonly
               tabindex="-1"
-              value={expandedMessage.data}
-            ></textarea>
+              value={expandedMessage.data}></textarea>
           {:else}
-            <span class="text-sm text-red-400"
-              >{language.hypaV3Modal.connectedMessageNotFoundLabel}</span
-            >
+            <span class="text-sm text-red-400">{language.hypaV3Modal.connectedMessageNotFoundLabel}</span>
           {/if}
         {:catch error}
           <span class="text-sm text-red-400"
-            >{language.hypaV3Modal.connectedMessageLoadingError.replace('{0}', error.message)}</span
-          >
+            >{language.hypaV3Modal.connectedMessageLoadingError.replace('{0}', error.message)}</span>
         {/await}
       </div>
 
@@ -687,8 +629,7 @@
             readonly
             tabindex="-1"
             bind:this={expandedMessageState.translationRef}
-            value={expandedMessageState.translation}
-          ></textarea>
+            value={expandedMessageState.translation}></textarea>
         </div>
       {/if}
     {/if}

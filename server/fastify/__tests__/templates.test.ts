@@ -1,8 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import type {
-  Database,
-  character,
-} from '../../../src/ts/storage/database.svelte'
+import type { Database, character } from '../../../src/ts/storage/database.svelte'
 import type { PromptItem } from '../../../src/ts/process/prompt'
 import type { OpenAIChat } from '../../../src/ts/process/index.svelte'
 import {
@@ -197,11 +194,7 @@ describe('Phase 7-10a coalesceRows', () => {
     const out: OpenAIChat[] = []
     coalesceRows(
       out,
-      [
-        row({ content: 'a', memo: 'm' }),
-        row({ role: 'user', content: 'u' }),
-        row({ content: 'b', memo: 'm' }),
-      ],
+      [row({ content: 'a', memo: 'm' }), row({ role: 'user', content: 'u' }), row({ content: 'b', memo: 'm' })],
       'gpt4',
     )
     expect(out.map((r) => r.content)).toEqual(['a', 'u', 'b'])
@@ -209,11 +202,7 @@ describe('Phase 7-10a coalesceRows', () => {
 
   it('pushes every row verbatim on a non-coalescing model', () => {
     const out: OpenAIChat[] = []
-    coalesceRows(
-      out,
-      [row({ content: 'a', memo: 'm' }), row({ content: 'b', memo: 'm' })],
-      'ollama',
-    )
+    coalesceRows(out, [row({ content: 'a', memo: 'm' }), row({ content: 'b', memo: 'm' })], 'ollama')
     expect(out.map((r) => r.content)).toEqual(['a', 'b'])
   })
 })
@@ -317,9 +306,7 @@ describe('Phase 7-10b content cards (renderByTemplate)', () => {
       { type: 'jailbreak', type2: 'normal', text: 'jb', role: 'system' },
       { type: 'cot', type2: 'normal', text: 'cot', role: 'system' },
     ])
-    expect(renderByTemplate(ctxFor(off), makeCharacter(), makeSlots(), cards, true).formated).toEqual(
-      [],
-    )
+    expect(renderByTemplate(ctxFor(off), makeCharacter(), makeSlots(), cards, true).formated).toEqual([])
 
     const on = makeDatabase({ jailbreakToggle: true, chainOfThought: true } as Partial<Database>)
     const { formated: out } = renderByTemplate(ctxFor(on), makeCharacter(), makeSlots(), cards, true)
@@ -399,12 +386,8 @@ describe('Phase 7-10c chat cards', () => {
       ],
     })
 
-  const renderChat = (
-    db: Database,
-    card: PromptItem,
-    unformated = chatSlots(),
-    char = makeCharacter(),
-  ): OpenAIChat[] => renderByTemplate(ctxFor(db), char, unformated, [card], true).formated
+  const renderChat = (db: Database, card: PromptItem, unformated = chatSlots(), char = makeCharacter()): OpenAIChat[] =>
+    renderByTemplate(ctxFor(db), char, unformated, [card], true).formated
 
   it('emits the full chat for rangeEnd "end"', () => {
     const out = renderChat(makeDatabase(), { type: 'chat', rangeStart: 0, rangeEnd: 'end' })
@@ -514,10 +497,7 @@ describe('Phase 7-10c chat cards', () => {
 })
 
 describe('Phase 7-10d memory cards', () => {
-  const mem = (): OpenAIChat[] => [
-    row({ role: 'assistant', content: 'm0' }),
-    row({ role: 'assistant', content: 'm1' }),
-  ]
+  const mem = (): OpenAIChat[] => [row({ role: 'assistant', content: 'm0' }), row({ role: 'assistant', content: 'm1' })]
 
   it('clones the injected memories and passes them through unwrapped', () => {
     const { formated: out } = renderByTemplate(
@@ -599,8 +579,7 @@ describe('Phase 7-10d cache markers', () => {
 
   const chatCard: PromptItem = { type: 'chat', rangeStart: 0, rangeEnd: 'end' }
 
-  const cachePoints = (out: OpenAIChat[]): string[] =>
-    out.filter((r) => r.cachePoint).map((r) => r.content)
+  const cachePoints = (out: OpenAIChat[]): string[] => out.filter((r) => r.cachePoint).map((r) => r.content)
 
   it('marks up to `depth` rows whose role matches the cache card', () => {
     const { formated: out } = renderByTemplate(
@@ -799,11 +778,7 @@ describe('Phase 7-10e content trim', () => {
   })
 
   it('trims rendered row contents on the non-template path', () => {
-    const out = renderByFormatOrder(
-      makeSlots({ main: [row({ role: 'system', content: '  x  ' })] }),
-      ['main'],
-      'gpt4',
-    )
+    const out = renderByFormatOrder(makeSlots({ main: [row({ role: 'system', content: '  x  ' })] }), ['main'], 'gpt4')
     expect(out[0].content).toBe('x')
   })
 })
@@ -886,13 +861,11 @@ describe('Phase 3 M3 stable template card cache', () => {
 
     const runVarCalls = (input: string): number =>
       spy.mock.calls.filter(
-        ([value, expandCtx]) =>
-          value === input && (expandCtx as ExpandContext | undefined)?.runVar === true,
+        ([value, expandCtx]) => value === input && (expandCtx as ExpandContext | undefined)?.runVar === true,
       ).length
     const promptInfoCalls = (input: string): number =>
       spy.mock.calls.filter(
-        ([value, expandCtx]) =>
-          value === input && (expandCtx as ExpandContext | undefined)?.runVar !== true,
+        ([value, expandCtx]) => value === input && (expandCtx as ExpandContext | undefined)?.runVar !== true,
       ).length
 
     expect(runVarCalls('plain {{user}}')).toBe(1)
@@ -1043,10 +1016,7 @@ describe('Phase 3 M3 stable template card cache', () => {
         slots: () =>
           makeSlots({
             description: [row({ role: 'system', content: 'DESC' })],
-            chats: [
-              row({ role: 'user', content: 'u0' }),
-              row({ role: 'assistant', content: 'a1' }),
-            ],
+            chats: [row({ role: 'user', content: 'u0' }), row({ role: 'assistant', content: 'a1' })],
           }),
       },
       {
@@ -1198,8 +1168,7 @@ describe('Phase 7-10f renderFinalPrompt', () => {
   })
 
   it('applies the editRequest seam to both formated and promptText', async () => {
-    const bang = (rows: OpenAIChat[]): OpenAIChat[] =>
-      rows.map((r) => ({ ...r, content: r.content + '!' }))
+    const bang = (rows: OpenAIChat[]): OpenAIChat[] => rows.map((r) => ({ ...r, content: r.content + '!' }))
     const { formated, promptText } = await renderFinalPrompt({
       ctx: ctxFor(
         makeDatabase({

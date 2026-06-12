@@ -30,14 +30,8 @@
     overrides: Record<string, SeparateParameters>
   }
 
-  const seperateParametersEnabledDraft = createServerBackedSettingDraft<boolean>(
-    'seperateParametersEnabled',
-    false,
-  )
-  const doNotChangeSeperateModelsDraft = createServerBackedSettingDraft<boolean>(
-    'doNotChangeSeperateModels',
-    false,
-  )
+  const seperateParametersEnabledDraft = createServerBackedSettingDraft<boolean>('seperateParametersEnabled', false)
+  const doNotChangeSeperateModelsDraft = createServerBackedSettingDraft<boolean>('doNotChangeSeperateModels', false)
   const seperateModelsDraft = createServerBackedSettingDraft<AuxModelSettings>('seperateModels', {
     memory: '',
     translate: '',
@@ -51,14 +45,14 @@
   )
   const aiModelDraft = createServerBackedSettingDraft<string>('aiModel', '')
   const subModelDraft = createServerBackedSettingDraft<string>('subModel', '')
-  const seperateParametersDraft = createServerBackedSettingDraft<SeparateParameterSettings>(
-    'seperateParameters',
-    { memory: {}, emotion: {}, translate: {}, otherAx: {}, overrides: {} },
-  )
-  const seperateParametersByModelDraft = createServerBackedSettingDraft<boolean>(
-    'seperateParametersByModel',
-    false,
-  )
+  const seperateParametersDraft = createServerBackedSettingDraft<SeparateParameterSettings>('seperateParameters', {
+    memory: {},
+    emotion: {},
+    translate: {},
+    otherAx: {},
+    overrides: {},
+  })
+  const seperateParametersByModelDraft = createServerBackedSettingDraft<boolean>('seperateParametersByModel', false)
 
   let selectedOption = $state('models')
   let selectedParameterOption = $state('memory')
@@ -104,12 +98,9 @@
   }
 </script>
 
-<div
-  class="fixed z-50 w-dvw h-dvh top-0 left-0 pointer-events-none flex justify-stretch items-stretch"
->
+<div class="fixed z-50 w-dvw h-dvh top-0 left-0 pointer-events-none flex justify-stretch items-stretch">
   <div
-    class="m-4 p-4 bg-bgcolor/80 backdrop-blur-sm rounded-lg shadow-lg pointer-events-auto flex-1 flex flex-col overflow-y-auto"
-  >
+    class="m-4 p-4 bg-bgcolor/80 backdrop-blur-sm rounded-lg shadow-lg pointer-events-auto flex-1 flex flex-col overflow-y-auto">
     <h2 class="text-lg font-bold mb-2 flex items-center">
       {language.easyPanel}
       <div class="ml-2 bg-blue-800 p-1 rounded text-sm">Beta</div>
@@ -117,8 +108,7 @@
         class="ml-auto p-1 rounded hover:bg-selected"
         onclick={() => {
           onClose()
-        }}
-      >
+        }}>
         <XIcon size={28} class="ml-auto hover:bg-selected rounded"></XIcon>
       </button>
     </h2>
@@ -130,8 +120,7 @@
         { label: language.settings, value: 'settings' },
       ]}
       bind:value={selectedOption}
-      size="md"
-    />
+      size="md" />
 
     {#if !hasEPRequirements}
       <div class="mt-4 p-4 bg-yellow-100 text-yellow-800 rounded">
@@ -142,8 +131,7 @@
         className="mt-4"
         onclick={() => {
           enableEasyPanelRequirements()
-        }}
-      >
+        }}>
         {language.run}
       </Button>
     {:else if selectedOption === 'models'}
@@ -158,36 +146,20 @@
         </div>
         <div class="col-span-1">
           <span class="text-textcolor">{language.longTermMemory}</span>
-          <ModelList
-            bind:value={seperateModelsDraft.value.memory}
-            blankable
-            excludesPrefix="plugin"
-          />
+          <ModelList bind:value={seperateModelsDraft.value.memory} blankable excludesPrefix="plugin" />
         </div>
         <div class="col-span-1">
           <span class="text-textcolor">{language.translator}</span>
-          <ModelList
-            bind:value={seperateModelsDraft.value.translate}
-            blankable
-            excludesPrefix="plugin"
-          />
+          <ModelList bind:value={seperateModelsDraft.value.translate} blankable excludesPrefix="plugin" />
         </div>
         <div class="col-span-1">
           <span class="text-textcolor">{language.emotionImage}</span>
-          <ModelList
-            bind:value={seperateModelsDraft.value.emotion}
-            blankable
-            excludesPrefix="plugin"
-          />
+          <ModelList bind:value={seperateModelsDraft.value.emotion} blankable excludesPrefix="plugin" />
         </div>
 
         <div class="col-span-1">
           <span class="text-textcolor">{language.others}</span>
-          <ModelList
-            bind:value={seperateModelsDraft.value.otherAx}
-            blankable
-            excludesPrefix="plugin"
-          />
+          <ModelList bind:value={seperateModelsDraft.value.otherAx} blankable excludesPrefix="plugin" />
         </div>
       </div>
     {/if}
@@ -199,15 +171,13 @@
           excludesPrefix="plugin"
           onChange={(v) => {
             ensureParameterOverride(v)
-          }}
-        />
+          }} />
 
         {#if parameterModelSelection !== '' && seperateParametersDraft.value.overrides[parameterModelSelection]}
           <AllSeperateParameters
             bind:value={seperateParametersDraft.value.overrides[parameterModelSelection]}
             withImportExport
-            paramKey={parameterModelSelection}
-          />
+            paramKey={parameterModelSelection} />
         {/if}
       {:else}
         <SegmentedControl
@@ -218,43 +188,35 @@
             { label: language.others, value: 'otherAx' },
           ]}
           bind:value={selectedParameterOption}
-          size="md"
-        />
+          size="md" />
         <div class="w-full mt-4 flex flex-col">
           {#if selectedParameterOption === 'memory'}
             <AllSeperateParameters
               bind:value={seperateParametersDraft.value.memory}
               withImportExport
-              paramKey="memory"
-            />
+              paramKey="memory" />
           {:else if selectedParameterOption === 'translate'}
             <AllSeperateParameters
               bind:value={seperateParametersDraft.value.translate}
               withImportExport
-              paramKey="translate"
-            />
+              paramKey="translate" />
           {:else if selectedParameterOption === 'emotion'}
             <AllSeperateParameters
               bind:value={seperateParametersDraft.value.emotion}
               withImportExport
-              paramKey="emotion"
-            />
+              paramKey="emotion" />
           {:else if selectedParameterOption === 'otherAx'}
             <AllSeperateParameters
               bind:value={seperateParametersDraft.value.otherAx}
               withImportExport
-              paramKey="otherAx"
-            />
+              paramKey="otherAx" />
           {/if}
         </div>
       {/if}
     {:else if selectedOption === 'customModels'}
       <CustomModelsSettings noAccordion />
     {:else if selectedOption === 'settings'}
-      <CheckInput
-        name={language.seperateParametersByModel}
-        bind:check={seperateParametersByModelDraft.value}
-      />
+      <CheckInput name={language.seperateParametersByModel} bind:check={seperateParametersByModelDraft.value} />
     {/if}
   </div>
 </div>

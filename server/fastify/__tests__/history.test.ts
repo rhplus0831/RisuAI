@@ -1,20 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest'
-import type {
-  Chat,
-  Database,
-  Message,
-  character,
-} from '../../../src/ts/storage/database.svelte'
-import {
-  applyDepthPrompts,
-  buildHistoryWindow,
-  exampleMessage,
-  type AssetLookup,
-} from '../src/prompt/history.js'
-import type {
-  LoreEntryActive,
-  LorebookActivationReport,
-} from '../src/prompt/lorebook.js'
+import type { Chat, Database, Message, character } from '../../../src/ts/storage/database.svelte'
+import { applyDepthPrompts, buildHistoryWindow, exampleMessage, type AssetLookup } from '../src/prompt/history.js'
+import type { LoreEntryActive, LorebookActivationReport } from '../src/prompt/lorebook.js'
 import type { MultiModal, OpenAIChat } from '../../../src/ts/process/index.svelte'
 import { bootPromptVariables } from '../src/prompt/promptVariablesBoot.js'
 import type { ExpandContext } from '../src/prompt/variables.js'
@@ -187,26 +174,14 @@ describe('Phase 7-5a exampleMessage', () => {
 describe('Phase 7-5a buildHistoryWindow start-new-chat marker', () => {
   it('emits the marker when neither novelai nor trimStartNewChat applies', async () => {
     const db = makeDatabase()
-    const result = await buildHistoryWindow(
-      ctxFor(db),
-      db.characters[0],
-      db.characters[0].chats[0],
-    )
-    expect(
-      result.messages.some((m) => m.content === '[Start a new chat]'),
-    ).toBe(true)
+    const result = await buildHistoryWindow(ctxFor(db), db.characters[0], db.characters[0].chats[0])
+    expect(result.messages.some((m) => m.content === '[Start a new chat]')).toBe(true)
   })
 
   it('omits the marker when aiModel starts with "novelai"', async () => {
     const db = makeDatabase({ aiModel: 'novelai:kayra' })
-    const result = await buildHistoryWindow(
-      ctxFor(db),
-      db.characters[0],
-      db.characters[0].chats[0],
-    )
-    expect(
-      result.messages.some((m) => m.content === '[Start a new chat]'),
-    ).toBe(false)
+    const result = await buildHistoryWindow(ctxFor(db), db.characters[0], db.characters[0].chats[0])
+    expect(result.messages.some((m) => m.content === '[Start a new chat]')).toBe(false)
   })
 
   it('omits the marker when promptSettings.trimStartNewChat is true', async () => {
@@ -222,14 +197,8 @@ describe('Phase 7-5a buildHistoryWindow start-new-chat marker', () => {
         trimStartNewChat: true,
       } as Database['promptSettings'],
     })
-    const result = await buildHistoryWindow(
-      ctxFor(db),
-      db.characters[0],
-      db.characters[0].chats[0],
-    )
-    expect(
-      result.messages.some((m) => m.content === '[Start a new chat]'),
-    ).toBe(false)
+    const result = await buildHistoryWindow(ctxFor(db), db.characters[0], db.characters[0].chats[0])
+    expect(result.messages.some((m) => m.content === '[Start a new chat]')).toBe(false)
   })
 })
 
@@ -243,16 +212,8 @@ describe('Phase 7-5a buildHistoryWindow first message', () => {
         }),
       ],
     })
-    const result = await buildHistoryWindow(
-      ctxFor(db),
-      db.characters[0],
-      db.characters[0].chats[0],
-    )
-    expect(
-      result.messages.some(
-        (m) => m.role === 'assistant' && m.content === 'default greeting',
-      ),
-    ).toBe(true)
+    const result = await buildHistoryWindow(ctxFor(db), db.characters[0], db.characters[0].chats[0])
+    expect(result.messages.some((m) => m.role === 'assistant' && m.content === 'default greeting')).toBe(true)
   })
 
   it('uses alternateGreetings[fmIndex] when fmIndex !== -1', async () => {
@@ -265,38 +226,17 @@ describe('Phase 7-5a buildHistoryWindow first message', () => {
         }),
       ],
     })
-    const result = await buildHistoryWindow(
-      ctxFor(db),
-      db.characters[0],
-      db.characters[0].chats[0],
-    )
-    expect(
-      result.messages.some(
-        (m) => m.role === 'assistant' && m.content === 'alt-1',
-      ),
-    ).toBe(true)
-    expect(
-      result.messages.some((m) => m.content === 'default greeting'),
-    ).toBe(false)
+    const result = await buildHistoryWindow(ctxFor(db), db.characters[0], db.characters[0].chats[0])
+    expect(result.messages.some((m) => m.role === 'assistant' && m.content === 'alt-1')).toBe(true)
+    expect(result.messages.some((m) => m.content === 'default greeting')).toBe(false)
   })
 
   it('expands {{user}} / {{char}} in the first message', async () => {
     const db = makeDatabase({
-      characters: [
-        makeCharacter({ firstMessage: 'Hi {{user}}, I am {{char}}.' }),
-      ],
+      characters: [makeCharacter({ firstMessage: 'Hi {{user}}, I am {{char}}.' })],
     })
-    const result = await buildHistoryWindow(
-      ctxFor(db),
-      db.characters[0],
-      db.characters[0].chats[0],
-    )
-    expect(
-      result.messages.some(
-        (m) =>
-          m.role === 'assistant' && m.content === 'Hi Alex, I am Tess.',
-      ),
-    ).toBe(true)
+    const result = await buildHistoryWindow(ctxFor(db), db.characters[0], db.characters[0].chats[0])
+    expect(result.messages.some((m) => m.role === 'assistant' && m.content === 'Hi Alex, I am Tess.')).toBe(true)
   })
 })
 
@@ -322,11 +262,7 @@ describe('Phase 7-5a buildHistoryWindow makeMs filter', () => {
         }),
       ],
     })
-    const result = await buildHistoryWindow(
-      ctxFor(db),
-      db.characters[0],
-      db.characters[0].chats[0],
-    )
+    const result = await buildHistoryWindow(ctxFor(db), db.characters[0], db.characters[0].chats[0])
     expect(result.messages.some((m) => m.content === 'dropped')).toBe(false)
     expect(result.messages.some((m) => m.content === 'keep-1')).toBe(true)
     expect(result.messages.some((m) => m.content === 'keep-2')).toBe(true)
@@ -354,14 +290,8 @@ describe('Phase 7-5a buildHistoryWindow makeMs filter', () => {
         }),
       ],
     })
-    const result = await buildHistoryWindow(
-      ctxFor(db),
-      db.characters[0],
-      db.characters[0].chats[0],
-    )
-    expect(
-      result.messages.some((m) => m.content === 'default greeting'),
-    ).toBe(false)
+    const result = await buildHistoryWindow(ctxFor(db), db.characters[0], db.characters[0].chats[0])
+    expect(result.messages.some((m) => m.content === 'default greeting')).toBe(false)
     expect(result.messages.some((m) => m.content === 'before')).toBe(false)
     expect(result.messages.some((m) => m.content === 'cutoff')).toBe(false)
     expect(result.messages.some((m) => m.content === 'after')).toBe(true)
@@ -376,20 +306,13 @@ describe('Phase 7-5a buildHistoryWindow role mapping', () => {
           firstMessage: '',
           chats: [
             makeChat({
-              message: [
-                makeMessage({ role: 'user', data: 'hello' }),
-                makeMessage({ role: 'char', data: 'hi there' }),
-              ],
+              message: [makeMessage({ role: 'user', data: 'hello' }), makeMessage({ role: 'char', data: 'hi there' })],
             }),
           ],
         }),
       ],
     })
-    const result = await buildHistoryWindow(
-      ctxFor(db),
-      db.characters[0],
-      db.characters[0].chats[0],
-    )
+    const result = await buildHistoryWindow(ctxFor(db), db.characters[0], db.characters[0].chats[0])
     const userMsg = result.messages.find((m) => m.content === 'hello')
     const botMsg = result.messages.find((m) => m.content === 'hi there')
     expect(userMsg?.role).toBe('user')
@@ -403,19 +326,13 @@ describe('Phase 7-5a buildHistoryWindow role mapping', () => {
           firstMessage: '',
           chats: [
             makeChat({
-              message: [
-                makeMessage({ role: 'user', data: 'I am {{user}}' }),
-              ],
+              message: [makeMessage({ role: 'user', data: 'I am {{user}}' })],
             }),
           ],
         }),
       ],
     })
-    const result = await buildHistoryWindow(
-      ctxFor(db),
-      db.characters[0],
-      db.characters[0].chats[0],
-    )
+    const result = await buildHistoryWindow(ctxFor(db), db.characters[0], db.characters[0].chats[0])
     expect(result.messages.some((m) => m.content === 'I am Alex')).toBe(true)
   })
 })
@@ -444,11 +361,7 @@ describe('Phase 7-5b buildHistoryWindow per-message processScript', () => {
         }),
       ],
     })
-    const result = await buildHistoryWindow(
-      ctxFor(db),
-      db.characters[0],
-      db.characters[0].chats[0],
-    )
+    const result = await buildHistoryWindow(ctxFor(db), db.characters[0], db.characters[0].chats[0])
     expect(result.messages.some((m) => m.content === 'hi world')).toBe(true)
   })
 
@@ -462,19 +375,11 @@ describe('Phase 7-5b buildHistoryWindow per-message processScript', () => {
         }),
       ],
     })
-    const result = await buildHistoryWindow(
-      ctxFor(db),
-      db.characters[0],
-      db.characters[0].chats[0],
-    )
-    expect(
-      result.messages.some(
-        (m) => m.role === 'assistant' && m.content === 'default hail',
-      ),
-    ).toBe(true)
+    const result = await buildHistoryWindow(ctxFor(db), db.characters[0], db.characters[0].chats[0])
+    expect(result.messages.some((m) => m.role === 'assistant' && m.content === 'default hail')).toBe(true)
   })
 
-  it("does not run editoutput regex during the editprocess pass", async () => {
+  it('does not run editoutput regex during the editprocess pass', async () => {
     const db = makeDatabase({
       presetRegex: [regex('hello', 'hi', 'editoutput')],
       characters: [
@@ -488,11 +393,7 @@ describe('Phase 7-5b buildHistoryWindow per-message processScript', () => {
         }),
       ],
     })
-    const result = await buildHistoryWindow(
-      ctxFor(db),
-      db.characters[0],
-      db.characters[0].chats[0],
-    )
+    const result = await buildHistoryWindow(ctxFor(db), db.characters[0], db.characters[0].chats[0])
     expect(result.messages.some((m) => m.content === 'hello world')).toBe(true)
   })
 })
@@ -505,19 +406,13 @@ describe('Phase 7-5b buildHistoryWindow memo / chatId backfill', () => {
           firstMessage: '',
           chats: [
             makeChat({
-              message: [
-                makeMessage({ role: 'user', data: 'hi', chatId: 'msg-42' }),
-              ],
+              message: [makeMessage({ role: 'user', data: 'hi', chatId: 'msg-42' })],
             }),
           ],
         }),
       ],
     })
-    const result = await buildHistoryWindow(
-      ctxFor(db),
-      db.characters[0],
-      db.characters[0].chats[0],
-    )
+    const result = await buildHistoryWindow(ctxFor(db), db.characters[0], db.characters[0].chats[0])
     expect(result.messages.find((m) => m.content === 'hi')?.memo).toBe('msg-42')
   })
 
@@ -533,11 +428,7 @@ describe('Phase 7-5b buildHistoryWindow memo / chatId backfill', () => {
         }),
       ],
     })
-    const result = await buildHistoryWindow(
-      ctxFor(db),
-      db.characters[0],
-      db.characters[0].chats[0],
-    )
+    const result = await buildHistoryWindow(ctxFor(db), db.characters[0], db.characters[0].chats[0])
     const formatted = result.messages.find((m) => m.content === 'hi')
     expect(formatted?.memo).toMatch(/^[0-9a-f-]{36}$/i)
     expect((msg as { chatId?: string }).chatId).toBeUndefined()
@@ -547,19 +438,10 @@ describe('Phase 7-5b buildHistoryWindow memo / chatId backfill', () => {
 describe('Phase 7-5b buildHistoryWindow sendName wrapper', () => {
   it('does not prefix the first message when sendName is false', async () => {
     const db = makeDatabase({
-      characters: [
-        makeCharacter({ firstMessage: 'hello', chats: [makeChat()] }),
-      ],
+      characters: [makeCharacter({ firstMessage: 'hello', chats: [makeChat()] })],
     })
-    const result = await buildHistoryWindow(
-      ctxFor(db),
-      db.characters[0],
-      db.characters[0].chats[0],
-      true,
-    )
-    const first = result.messages.find(
-      (m) => m.role === 'assistant' && m.content === 'hello',
-    )
+    const result = await buildHistoryWindow(ctxFor(db), db.characters[0], db.characters[0].chats[0], true)
+    const first = result.messages.find((m) => m.role === 'assistant' && m.content === 'hello')
     expect(first?.attr).toBeUndefined()
   })
 
@@ -583,15 +465,8 @@ describe('Phase 7-5b buildHistoryWindow sendName wrapper', () => {
         }),
       ],
     })
-    const result = await buildHistoryWindow(
-      ctxFor(db),
-      db.characters[0],
-      db.characters[0].chats[0],
-      true,
-    )
-    const first = result.messages.find((m) =>
-      m.content?.startsWith('Lyra: '),
-    )
+    const result = await buildHistoryWindow(ctxFor(db), db.characters[0], db.characters[0].chats[0], true)
+    const first = result.messages.find((m) => m.content?.startsWith('Lyra: '))
     expect(first).toBeDefined()
     expect(first?.attr).toEqual(['nameAdded'])
   })
@@ -616,15 +491,8 @@ describe('Phase 7-5b buildHistoryWindow sendName wrapper', () => {
         }),
       ],
     })
-    const result = await buildHistoryWindow(
-      ctxFor(db),
-      db.characters[0],
-      db.characters[0].chats[0],
-      false,
-    )
-    const first = result.messages.find(
-      (m) => m.role === 'assistant' && m.content === 'hi there',
-    )
+    const result = await buildHistoryWindow(ctxFor(db), db.characters[0], db.characters[0].chats[0], false)
+    const first = result.messages.find((m) => m.role === 'assistant' && m.content === 'hi there')
     expect(first?.attr).toBeUndefined()
   })
 
@@ -652,16 +520,9 @@ describe('Phase 7-5b buildHistoryWindow sendName wrapper', () => {
         }),
       ],
     })
-    const result = await buildHistoryWindow(
-      ctxFor(db),
-      db.characters[0],
-      db.characters[0].chats[0],
-      true,
-    )
+    const result = await buildHistoryWindow(ctxFor(db), db.characters[0], db.characters[0].chats[0], true)
     const wrapped = result.messages.find((m) => m.role === 'user')
-    expect(wrapped?.content).toBe(
-      "<Lyra's Message>\nhello\n</Lyra's Message>",
-    )
+    expect(wrapped?.content).toBe("<Lyra's Message>\nhello\n</Lyra's Message>")
   })
 
   it('resolves the wrapper `{{char}}` against currentChar (matches SPA behavior with the dead `chara: saying` override)', async () => {
@@ -696,15 +557,8 @@ describe('Phase 7-5b buildHistoryWindow sendName wrapper', () => {
         makeCharacter({ name: 'Rex', chaId: 'char-rex' }),
       ],
     })
-    const result = await buildHistoryWindow(
-      ctxFor(db),
-      db.characters[0],
-      db.characters[0].chats[0],
-      true,
-    )
-    const wrapped = result.messages.find(
-      (m) => m.memo !== undefined && m.role === 'assistant',
-    )
+    const result = await buildHistoryWindow(ctxFor(db), db.characters[0], db.characters[0].chats[0], true)
+    const wrapped = result.messages.find((m) => m.memo !== undefined && m.role === 'assistant')
     expect(wrapped?.content).toBe("<Lyra's Message>\nhi\n</Lyra's Message>")
   })
 })
@@ -728,11 +582,7 @@ describe('Phase 7-5b buildHistoryWindow <Thoughts> extraction', () => {
         }),
       ],
     })
-    const result = await buildHistoryWindow(
-      ctxFor(db),
-      db.characters[0],
-      db.characters[0].chats[0],
-    )
+    const result = await buildHistoryWindow(ctxFor(db), db.characters[0], db.characters[0].chats[0])
     const msg = result.messages.find((m) => m.memo !== undefined && m.role === 'assistant')
     expect(msg?.content).toBe('Hello there.')
   })
@@ -755,11 +605,7 @@ describe('Phase 7-5b buildHistoryWindow <Thoughts> extraction', () => {
         }),
       ],
     })
-    const result = await buildHistoryWindow(
-      ctxFor(db),
-      db.characters[0],
-      db.characters[0].chats[0],
-    )
+    const result = await buildHistoryWindow(ctxFor(db), db.characters[0], db.characters[0].chats[0])
     const msg = result.messages.find((m) => m.memo !== undefined && m.role === 'assistant')
     expect(msg?.thoughts).toEqual(['secret'])
   })
@@ -794,11 +640,7 @@ describe('Phase 7-5b buildHistoryWindow <Thoughts> extraction', () => {
         }),
       ],
     })
-    const result = await buildHistoryWindow(
-      ctxFor(db),
-      db.characters[0],
-      db.characters[0].chats[0],
-    )
+    const result = await buildHistoryWindow(ctxFor(db), db.characters[0], db.characters[0].chats[0])
     const msg = result.messages.find((m) => m.memo !== undefined && m.role === 'assistant')
     expect(msg?.content).toBe('visible')
     expect(msg?.thoughts).toBeUndefined()
@@ -835,16 +677,8 @@ describe('Phase 7-5c char-role inlay tag handling', () => {
     const lookup: AssetLookup = {
       getInlay: () => imageMM('UNEXPECTED'),
     }
-    const result = await buildHistoryWindow(
-      ctxFor(db),
-      db.characters[0],
-      db.characters[0].chats[0],
-      false,
-      lookup,
-    )
-    const msg = result.messages.find(
-      (m) => m.role === 'assistant' && m.memo !== undefined,
-    )
+    const result = await buildHistoryWindow(ctxFor(db), db.characters[0], db.characters[0].chats[0], false, lookup)
+    const msg = result.messages.find((m) => m.role === 'assistant' && m.memo !== undefined)
     expect(msg?.content).toBe('pre  post')
     expect(msg?.multimodals).toBeUndefined()
   })
@@ -870,16 +704,8 @@ describe('Phase 7-5c char-role inlay tag handling', () => {
     const lookup: AssetLookup = {
       getInlay: () => imageMM('UNEXPECTED'),
     }
-    const result = await buildHistoryWindow(
-      ctxFor(db),
-      db.characters[0],
-      db.characters[0].chats[0],
-      false,
-      lookup,
-    )
-    const msg = result.messages.find(
-      (m) => m.role === 'assistant' && m.memo !== undefined,
-    )
+    const result = await buildHistoryWindow(ctxFor(db), db.characters[0], db.characters[0].chats[0], false, lookup)
+    const msg = result.messages.find((m) => m.role === 'assistant' && m.memo !== undefined)
     expect(msg?.content).toBe('A  B')
     expect(msg?.multimodals).toBeUndefined()
   })
@@ -903,19 +729,10 @@ describe('Phase 7-5c char-role inlay tag handling', () => {
       ],
     })
     const lookup: AssetLookup = {
-      getInlay: (id) =>
-        id === 'sig-7' ? { type: 'image', base64: 'SIG7' } : undefined,
+      getInlay: (id) => (id === 'sig-7' ? { type: 'image', base64: 'SIG7' } : undefined),
     }
-    const result = await buildHistoryWindow(
-      ctxFor(db),
-      db.characters[0],
-      db.characters[0].chats[0],
-      false,
-      lookup,
-    )
-    const msg = result.messages.find(
-      (m) => m.role === 'assistant' && m.memo !== undefined,
-    )
+    const result = await buildHistoryWindow(ctxFor(db), db.characters[0], db.characters[0].chats[0], false, lookup)
+    const msg = result.messages.find((m) => m.role === 'assistant' && m.memo !== undefined)
     expect(msg?.content).toBe('before  after')
     expect(msg?.multimodals).toEqual([{ type: 'image', base64: 'SIG7' }])
   })
@@ -938,14 +755,8 @@ describe('Phase 7-5c char-role inlay tag handling', () => {
         }),
       ],
     })
-    const result = await buildHistoryWindow(
-      ctxFor(db),
-      db.characters[0],
-      db.characters[0].chats[0],
-    )
-    const msg = result.messages.find(
-      (m) => m.role === 'assistant' && m.memo !== undefined,
-    )
+    const result = await buildHistoryWindow(ctxFor(db), db.characters[0], db.characters[0].chats[0])
+    const msg = result.messages.find((m) => m.role === 'assistant' && m.memo !== undefined)
     expect(msg?.content).toBe('x  y')
     expect(msg?.multimodals).toBeUndefined()
   })
@@ -971,18 +782,9 @@ describe('Phase 7-5c user-role inlay tag handling', () => {
       ],
     })
     const lookup: AssetLookup = {
-      getInlay: (id) =>
-        id === 'u-1' || id === 'u-2'
-          ? { type: 'image', base64: `data-${id}` }
-          : undefined,
+      getInlay: (id) => (id === 'u-1' || id === 'u-2' ? { type: 'image', base64: `data-${id}` } : undefined),
     }
-    const result = await buildHistoryWindow(
-      ctxFor(db),
-      db.characters[0],
-      db.characters[0].chats[0],
-      false,
-      lookup,
-    )
+    const result = await buildHistoryWindow(ctxFor(db), db.characters[0], db.characters[0].chats[0], false, lookup)
     const msg = findUser(result.messages)
     expect(msg?.content).toBe('see  and ')
     expect(msg?.multimodals).toEqual([
@@ -1015,13 +817,7 @@ describe('Phase 7-5c user-role inlay tag handling', () => {
         base64: `vid-${id}`,
       }),
     }
-    const result = await buildHistoryWindow(
-      ctxFor(db),
-      db.characters[0],
-      db.characters[0].chats[0],
-      false,
-      lookup,
-    )
+    const result = await buildHistoryWindow(ctxFor(db), db.characters[0], db.characters[0].chats[0], false, lookup)
     const msg = findUser(result.messages)
     expect(msg?.multimodals).toEqual([{ type: 'video', base64: 'vid-v1' }])
   })
@@ -1048,16 +844,9 @@ describe('Phase 7-5c {{asset_prompt::name}} handling', () => {
       ],
     })
     const lookup: AssetLookup = {
-      getAsset: (name) =>
-        name === 'logo' ? { type: 'image', base64: 'LOGO' } : undefined,
+      getAsset: (name) => (name === 'logo' ? { type: 'image', base64: 'LOGO' } : undefined),
     }
-    const result = await buildHistoryWindow(
-      ctxFor(db),
-      db.characters[0],
-      db.characters[0].chats[0],
-      false,
-      lookup,
-    )
+    const result = await buildHistoryWindow(ctxFor(db), db.characters[0], db.characters[0].chats[0], false, lookup)
     const msg = findUser(result.messages)
     expect(msg?.content).toBe('see  thanks')
     expect(msg?.multimodals).toEqual([{ type: 'image', base64: 'LOGO' }])
@@ -1070,9 +859,7 @@ describe('Phase 7-5c {{asset_prompt::name}} handling', () => {
           firstMessage: '',
           chats: [
             makeChat({
-              message: [
-                makeMessage({ role: 'user', data: '{{asset_prompt::icon}}' }),
-              ],
+              message: [makeMessage({ role: 'user', data: '{{asset_prompt::icon}}' })],
             }),
           ],
         }),
@@ -1081,13 +868,7 @@ describe('Phase 7-5c {{asset_prompt::name}} handling', () => {
     const lookup: AssetLookup = {
       getCharIcon: () => ({ type: 'image', base64: 'ICON' }),
     }
-    const result = await buildHistoryWindow(
-      ctxFor(db),
-      db.characters[0],
-      db.characters[0].chats[0],
-      false,
-      lookup,
-    )
+    const result = await buildHistoryWindow(ctxFor(db), db.characters[0], db.characters[0].chats[0], false, lookup)
     const msg = findUser(result.messages)
     expect(msg?.content).toBe('')
     expect(msg?.multimodals).toEqual([{ type: 'image', base64: 'ICON' }])
@@ -1100,19 +881,13 @@ describe('Phase 7-5c {{asset_prompt::name}} handling', () => {
           firstMessage: '',
           chats: [
             makeChat({
-              message: [
-                makeMessage({ role: 'user', data: 'pre {{asset_prompt::unknown}} post' }),
-              ],
+              message: [makeMessage({ role: 'user', data: 'pre {{asset_prompt::unknown}} post' })],
             }),
           ],
         }),
       ],
     })
-    const result = await buildHistoryWindow(
-      ctxFor(db),
-      db.characters[0],
-      db.characters[0].chats[0],
-    )
+    const result = await buildHistoryWindow(ctxFor(db), db.characters[0], db.characters[0].chats[0])
     const msg = findUser(result.messages)
     expect(msg?.content).toBe('pre  post')
     expect(msg?.multimodals).toBeUndefined()
@@ -1126,9 +901,7 @@ describe('Phase 7-5c {{asset_prompt::name}} handling', () => {
           additionalAssets: [['logo', 'asset-id-1', 'image']],
           chats: [
             makeChat({
-              message: [
-                makeMessage({ role: 'user', data: '{{assetprompt::logo}}' }),
-              ],
+              message: [makeMessage({ role: 'user', data: '{{assetprompt::logo}}' })],
             }),
           ],
         } as Partial<character>),
@@ -1137,13 +910,7 @@ describe('Phase 7-5c {{asset_prompt::name}} handling', () => {
     const lookup: AssetLookup = {
       getAsset: () => ({ type: 'image', base64: 'LOGO' }),
     }
-    const result = await buildHistoryWindow(
-      ctxFor(db),
-      db.characters[0],
-      db.characters[0].chats[0],
-      false,
-      lookup,
-    )
+    const result = await buildHistoryWindow(ctxFor(db), db.characters[0], db.characters[0].chats[0], false, lookup)
     const msg = findUser(result.messages)
     expect(msg?.content).toBe('')
     expect(msg?.multimodals).toEqual([{ type: 'image', base64: 'LOGO' }])
@@ -1165,25 +932,16 @@ describe('Phase 7-5c {{asset_prompt::name}} handling', () => {
           firstMessage: '',
           chats: [
             makeChat({
-              message: [
-                makeMessage({ role: 'user', data: '{{asset_prompt::shared}}' }),
-              ],
+              message: [makeMessage({ role: 'user', data: '{{asset_prompt::shared}}' })],
             }),
           ],
         }),
       ],
     } as Partial<Database>)
     const lookup: AssetLookup = {
-      getAsset: (name) =>
-        name === 'shared' ? { type: 'image', base64: 'SHARED' } : undefined,
+      getAsset: (name) => (name === 'shared' ? { type: 'image', base64: 'SHARED' } : undefined),
     }
-    const result = await buildHistoryWindow(
-      ctxFor(db),
-      db.characters[0],
-      db.characters[0].chats[0],
-      false,
-      lookup,
-    )
+    const result = await buildHistoryWindow(ctxFor(db), db.characters[0], db.characters[0].chats[0], false, lookup)
     const msg = findUser(result.messages)
     expect(msg?.content).toBe('')
     expect(msg?.multimodals).toEqual([{ type: 'image', base64: 'SHARED' }])
@@ -1196,19 +954,13 @@ describe('Phase 7-5c {{asset_prompt::name}} handling', () => {
           firstMessage: '',
           chats: [
             makeChat({
-              message: [
-                makeMessage({ role: 'user', data: 'plain content' }),
-              ],
+              message: [makeMessage({ role: 'user', data: 'plain content' })],
             }),
           ],
         }),
       ],
     })
-    const result = await buildHistoryWindow(
-      ctxFor(db),
-      db.characters[0],
-      db.characters[0].chats[0],
-    )
+    const result = await buildHistoryWindow(ctxFor(db), db.characters[0], db.characters[0].chats[0])
     const msg = findUser(result.messages)
     expect(msg).toBeDefined()
     expect(Object.prototype.hasOwnProperty.call(msg, 'multimodals')).toBe(false)
@@ -1226,8 +978,7 @@ describe('Phase 7-5c multimodals + thoughts coexist on the same chat', () => {
               message: [
                 makeMessage({
                   role: 'char',
-                  data:
-                    'visible<Thoughts>secret</Thoughts> {{inlayeddata::pic}}',
+                  data: 'visible<Thoughts>secret</Thoughts> {{inlayeddata::pic}}',
                 }),
               ],
             }),
@@ -1236,19 +987,10 @@ describe('Phase 7-5c multimodals + thoughts coexist on the same chat', () => {
       ],
     })
     const lookup: AssetLookup = {
-      getInlay: (id) =>
-        id === 'pic' ? { type: 'image', base64: 'PIC' } : undefined,
+      getInlay: (id) => (id === 'pic' ? { type: 'image', base64: 'PIC' } : undefined),
     }
-    const result = await buildHistoryWindow(
-      ctxFor(db),
-      db.characters[0],
-      db.characters[0].chats[0],
-      false,
-      lookup,
-    )
-    const msg = result.messages.find(
-      (m) => m.role === 'assistant' && m.memo !== undefined,
-    )
+    const result = await buildHistoryWindow(ctxFor(db), db.characters[0], db.characters[0].chats[0], false, lookup)
+    const msg = result.messages.find((m) => m.role === 'assistant' && m.memo !== undefined)
     expect(msg?.content).toBe('visible ')
     expect(msg?.thoughts).toEqual(['secret'])
     expect(msg?.multimodals).toEqual([{ type: 'image', base64: 'PIC' }])
@@ -1288,10 +1030,7 @@ describe('Phase 7-7e applyDepthPrompts', () => {
       messages,
       depthCtx(),
       makeCharacter(),
-      makeReport([
-        makeActive({ pos: '', prompt: 'plain' }),
-        makeActive({ pos: 'after_desc', prompt: 'desc' }),
-      ]),
+      makeReport([makeActive({ pos: '', prompt: 'plain' }), makeActive({ pos: 'after_desc', prompt: 'desc' })]),
     )
     expect(out).toBe(messages)
     expect(out.map((m) => m.content)).toEqual(['hello', 'hi'])
@@ -1307,16 +1046,9 @@ describe('Phase 7-7e applyDepthPrompts', () => {
       messages,
       depthCtx(),
       makeCharacter(),
-      makeReport([
-        makeActive({ pos: 'depth', depth: 1, prompt: 'INSERTED', source: 'd1' }),
-      ]),
+      makeReport([makeActive({ pos: 'depth', depth: 1, prompt: 'INSERTED', source: 'd1' })]),
     )
-    expect(messages.map((m) => m.content)).toEqual([
-      '[Start a new chat]',
-      'INSERTED',
-      'first',
-      'reply',
-    ])
+    expect(messages.map((m) => m.content)).toEqual(['[Start a new chat]', 'INSERTED', 'first', 'reply'])
   })
 
   it('@@reverse_depth 1 inserts at length-1 (just before the last message)', async () => {
@@ -1329,16 +1061,9 @@ describe('Phase 7-7e applyDepthPrompts', () => {
       messages,
       depthCtx(),
       makeCharacter(),
-      makeReport([
-        makeActive({ pos: 'reverse_depth', depth: 1, prompt: 'TAIL', source: 'r1' }),
-      ]),
+      makeReport([makeActive({ pos: 'reverse_depth', depth: 1, prompt: 'TAIL', source: 'r1' })]),
     )
-    expect(messages.map((m) => m.content)).toEqual([
-      '[Start a new chat]',
-      'first',
-      'TAIL',
-      'last',
-    ])
+    expect(messages.map((m) => m.content)).toEqual(['[Start a new chat]', 'first', 'TAIL', 'last'])
   })
 
   it('honors the entry role on the inserted chat', async () => {
@@ -1350,9 +1075,7 @@ describe('Phase 7-7e applyDepthPrompts', () => {
       messages,
       depthCtx(),
       makeCharacter(),
-      makeReport([
-        makeActive({ pos: 'depth', depth: 1, prompt: 'U', role: 'user', source: 'd' }),
-      ]),
+      makeReport([makeActive({ pos: 'depth', depth: 1, prompt: 'U', role: 'user', source: 'd' })]),
     )
     expect(messages[1]).toEqual({ role: 'user', content: 'U' })
   })
@@ -1379,14 +1102,7 @@ describe('Phase 7-7e applyDepthPrompts', () => {
     )
     // Step 1: splice REV at length-1 = 3 -> [NewChat, first, reply, REV, second]
     // Step 2: splice FWD at 1 -> [NewChat, FWD, first, reply, REV, second]
-    expect(messages.map((m) => m.content)).toEqual([
-      'NewChat',
-      'FWD',
-      'first',
-      'reply',
-      'REV',
-      'second',
-    ])
+    expect(messages.map((m) => m.content)).toEqual(['NewChat', 'FWD', 'first', 'reply', 'REV', 'second'])
   })
 
   it('expands {{user}} CBS in the depth-prompt body', async () => {
@@ -1506,11 +1222,7 @@ describe('Phase 7-5e buildHistoryWindow token accumulation', () => {
         trimStartNewChat: true,
       } as Database['promptSettings'],
     })
-    const result = await buildHistoryWindow(
-      ctxFor(db),
-      makeCharacter({ firstMessage: 'café résumé 漢字' }),
-      makeChat(),
-    )
+    const result = await buildHistoryWindow(ctxFor(db), makeCharacter({ firstMessage: 'café résumé 漢字' }), makeChat())
     // o200k tokenization of the first message: 6 + 5 (gpt overhead) = 11.
     expect(result.addedTokens).toBe(11)
   })
@@ -1529,9 +1241,7 @@ describe('Phase 7-5e buildHistoryWindow token accumulation', () => {
         trimStartNewChat: true,
       } as Database['promptSettings'],
     })
-    const report = makeReport([
-      makeActive({ pos: 'depth', depth: 1, prompt: 'depth body' }),
-    ])
+    const report = makeReport([makeActive({ pos: 'depth', depth: 1, prompt: 'depth body' })])
     const withReport = await buildHistoryWindow(
       ctxFor(db),
       makeCharacter({ firstMessage: '' }),
@@ -1563,11 +1273,7 @@ describe('Phase 7-5e buildHistoryWindow token accumulation', () => {
         trimStartNewChat: true,
       } as Database['promptSettings'],
     })
-    const result = await buildHistoryWindow(
-      ctxFor(db),
-      makeCharacter({ firstMessage: 'default greeting' }),
-      makeChat(),
-    )
+    const result = await buildHistoryWindow(ctxFor(db), makeCharacter({ firstMessage: 'default greeting' }), makeChat())
     // First message 'default greeting' on o200k = 2 + 5 = 7.
     expect(result.addedTokens).toBe(7)
   })
@@ -1636,16 +1342,11 @@ describe('Phase 7-5e buildHistoryWindow token accumulation', () => {
 describe('Phase 7-9f start trigger handoff', () => {
   // A `start` trigger with the given effects, cast past the strict
   // triggerscript/effect unions for the test (mirrors triggers.test.ts).
-  const startTrigger = (effect: unknown[]): never =>
-    ({ comment: '', type: 'start', conditions: [], effect }) as never
+  const startTrigger = (effect: unknown[]): never => ({ comment: '', type: 'start', conditions: [], effect }) as never
 
   it('is a no-op when the character declares no triggers', async () => {
     const db = makeDatabase()
-    const result = await buildHistoryWindow(
-      ctxFor(db),
-      makeCharacter({ triggerscript: [] }),
-      makeChat(),
-    )
+    const result = await buildHistoryWindow(ctxFor(db), makeCharacter({ triggerscript: [] }), makeChat())
     expect(result.triggerResult).toBeNull()
     expect(result.stopSending).toBe(false)
     expect(result.varChanged).toBe(false)
@@ -1654,15 +1355,9 @@ describe('Phase 7-9f start trigger handoff', () => {
 
   it('folds a systemprompt effect into additonalSysPrompt and addedTokens', async () => {
     const db = makeDatabase()
-    const baseline = await buildHistoryWindow(
-      ctxFor(db),
-      makeCharacter({ triggerscript: [] }),
-      makeChat(),
-    )
+    const baseline = await buildHistoryWindow(ctxFor(db), makeCharacter({ triggerscript: [] }), makeChat())
     const char = makeCharacter({
-      triggerscript: [
-        startTrigger([{ type: 'systemprompt', location: 'promptend', value: 'INJECTED' }]),
-      ],
+      triggerscript: [startTrigger([{ type: 'systemprompt', location: 'promptend', value: 'INJECTED' }])],
     })
     const result = await buildHistoryWindow(ctxFor(db), char, makeChat())
     expect(result.triggerResult?.additonalSysPrompt.promptend).toBe('INJECTED\n\n')
@@ -1672,9 +1367,7 @@ describe('Phase 7-9f start trigger handoff', () => {
   it('applies a chat mutation and re-runs makeMs against the mutated chat', async () => {
     const db = makeDatabase()
     const char = makeCharacter({
-      triggerscript: [
-        startTrigger([{ type: 'impersonate', role: 'char', value: 'added by trigger' }]),
-      ],
+      triggerscript: [startTrigger([{ type: 'impersonate', role: 'char', value: 'added by trigger' }])],
     })
     const chat = makeChat({ message: [makeMessage({ role: 'user', data: 'orig' })] })
     const result = await buildHistoryWindow(ctxFor(db), char, chat)
@@ -1730,9 +1423,7 @@ describe('Phase 7-9f start trigger handoff', () => {
 
   it('reports varChanged and persists a setvar write into the db chat', async () => {
     const char = makeCharacter({
-      triggerscript: [
-        startTrigger([{ type: 'setvar', operator: '=', var: 'x', value: '7' }]),
-      ],
+      triggerscript: [startTrigger([{ type: 'setvar', operator: '=', var: 'x', value: '7' }])],
     })
     const db = makeDatabase({ characters: [char], currentChar: 0 } as any)
     const result = await buildHistoryWindow(ctxFor(db), char, makeChat())

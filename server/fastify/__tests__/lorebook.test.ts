@@ -1,11 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest'
-import type {
-  Chat,
-  Database,
-  Message,
-  character,
-  loreBook,
-} from '../../../src/ts/storage/database.svelte'
+import type { Chat, Database, Message, character, loreBook } from '../../../src/ts/storage/database.svelte'
 import type { RisuModule } from '../../../src/ts/process/modules'
 import {
   activateLorebook,
@@ -1120,10 +1114,7 @@ describe('Phase 7-7e resolvePosition', () => {
   })
 
   it('joins multiple pt_<name> matches with newlines', () => {
-    const r = makeReport([
-      makeActive({ pos: 'pt_slot', prompt: 'A' }),
-      makeActive({ pos: 'pt_slot', prompt: 'B' }),
-    ])
+    const r = makeReport([makeActive({ pos: 'pt_slot', prompt: 'A' }), makeActive({ pos: 'pt_slot', prompt: 'B' })])
     expect(resolvePosition('{{position::slot}}', r)).toBe('A\nB')
   })
 
@@ -1412,10 +1403,7 @@ describe('Phase 7-11c buildLorebookContext', () => {
     buildLorebookContext(
       ctxFor(),
       makeChar(),
-      makeReport([
-        makeActive({ pos: '', prompt: 'hi {{position::y}}' }),
-        makeActive({ pos: 'pt_y', prompt: 'YY' }),
-      ]),
+      makeReport([makeActive({ pos: '', prompt: 'hi {{position::y}}' }), makeActive({ pos: 'pt_y', prompt: 'YY' })]),
       slots,
     )
     expect(slots.lorebook.map((r) => r.content)).toEqual(['hi YY'])
@@ -1437,8 +1425,7 @@ function countRegexCompiles<T>(fn: () => T): { result: T; compiles: Map<string, 
       compiles.set(key, (compiles.get(key) ?? 0) + 1)
     }
   }
-  ;(globalThis as { RegExp: RegExpConstructor }).RegExp =
-    CountingRegExp as unknown as RegExpConstructor
+  ;(globalThis as { RegExp: RegExpConstructor }).RegExp = CountingRegExp as unknown as RegExpConstructor
   try {
     return { result: fn(), compiles }
   } finally {

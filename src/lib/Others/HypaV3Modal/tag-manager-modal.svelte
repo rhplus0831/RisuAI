@@ -11,8 +11,7 @@
   let { tagManagerState = $bindable() }: Props = $props()
 
   const hypaV3Data = $derived(
-    DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage]
-      .hypaV3Data,
+    DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].hypaV3Data,
   )
 
   function closeTagManager() {
@@ -90,15 +89,9 @@
     <div class="bg-zinc-900 rounded-lg p-6 w-full max-w-md">
       <div class="flex justify-between items-center mb-6">
         <h2 class="text-lg font-semibold text-zinc-300">
-          {language.hypaV3Modal.tagManagerTitle.replace(
-            '{0}',
-            (tagManagerState.currentSummaryIndex + 1).toString(),
-          )}
+          {language.hypaV3Modal.tagManagerTitle.replace('{0}', (tagManagerState.currentSummaryIndex + 1).toString())}
         </h2>
-        <button
-          class="p-2 text-zinc-400 hover:text-zinc-200 transition-colors"
-          onclick={closeTagManager}
-        >
+        <button class="p-2 text-zinc-400 hover:text-zinc-200 transition-colors" onclick={closeTagManager}>
           <XIcon class="w-5 h-5" />
         </button>
       </div>
@@ -111,12 +104,10 @@
             class="flex-1 px-3 py-2 text-sm rounded-sm border border-zinc-600 bg-zinc-900 text-zinc-200 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
             placeholder={language.hypaV3Modal.newTagName}
             bind:value={tagManagerState.editingTag}
-            onkeydown={handleAddTagKeydown}
-          />
+            onkeydown={handleAddTagKeydown} />
           <button
             class="px-4 py-2 rounded-sm bg-blue-600 hover:bg-blue-700 text-white text-sm transition-colors"
-            onclick={handleAddTagEnter}
-          >
+            onclick={handleAddTagEnter}>
             {language.add}
           </button>
         </div>
@@ -132,32 +123,23 @@
                   type="text"
                   class="flex-1 px-2 py-1 text-sm rounded-sm border border-zinc-600 bg-zinc-900 text-zinc-200 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
                   bind:value={tagManagerState.editingTag}
-                  onkeydown={handleEditTagKeydown}
-                />
-                <button
-                  class="p-1.5 text-green-400 hover:text-green-300 transition-colors"
-                  onclick={saveEditingTag}
-                >
+                  onkeydown={handleEditTagKeydown} />
+                <button class="p-1.5 text-green-400 hover:text-green-300 transition-colors" onclick={saveEditingTag}>
                   <CheckIcon class="w-4 h-4" />
                 </button>
-                <button
-                  class="p-1.5 text-zinc-400 hover:text-zinc-200 transition-colors"
-                  onclick={cancelEditingTag}
-                >
+                <button class="p-1.5 text-zinc-400 hover:text-zinc-200 transition-colors" onclick={cancelEditingTag}>
                   <XIcon class="w-4 h-4" />
                 </button>
               {:else}
                 <span class="flex-1 text-sm text-zinc-200">#{tag}</span>
                 <button
                   class="p-1.5 text-zinc-400 hover:text-zinc-200 transition-colors"
-                  onclick={() => startEditTag(tagIndex, tag)}
-                >
+                  onclick={() => startEditTag(tagIndex, tag)}>
                   <SquarePenIcon class="w-4 h-4" />
                 </button>
                 <button
                   class="p-1.5 text-red-400 hover:text-red-300 transition-colors"
-                  onclick={() => removeTag(tagManagerState.currentSummaryIndex, tagIndex)}
-                >
+                  onclick={() => removeTag(tagManagerState.currentSummaryIndex, tagIndex)}>
                   <Trash2Icon class="w-4 h-4" />
                 </button>
               {/if}

@@ -2,10 +2,7 @@ import { getDatabase } from './database.svelte'
 import { downloadFile } from '../globalApi.svelte'
 import { alertNormal } from '../alert'
 import { language } from 'src/lang'
-import {
-  ensureAllCharacterLorebooksHydrated,
-  ensureAllChatsHydrated,
-} from '../server/chatMessageHydration.svelte'
+import { ensureAllCharacterLorebooksHydrated, ensureAllChatsHydrated } from '../server/chatMessageHydration.svelte'
 
 export async function exportAsDataset() {
   // Chats and stubbed character globalLore hydrate on open; this walks every

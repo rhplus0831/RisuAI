@@ -1,14 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import {
-  applyOobaSystemHoist,
-  resolveOpenAIRequest,
-  runOpenAI,
-  runOpenAIStream,
-} from '../src/generation/openai.js'
-import {
-  MAX_STREAM_BUFFER_CHARS,
-  STREAM_BUFFER_OVERFLOW_ERROR,
-} from '../src/generation/sse.js'
+import { applyOobaSystemHoist, resolveOpenAIRequest, runOpenAI, runOpenAIStream } from '../src/generation/openai.js'
+import { MAX_STREAM_BUFFER_CHARS, STREAM_BUFFER_OVERFLOW_ERROR } from '../src/generation/sse.js'
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -391,11 +383,7 @@ describe('runOpenAIStream', () => {
 
   it('accepts CRLF-delimited upstream SSE frames', async () => {
     vi.stubGlobal('fetch', async () => {
-      return sseUpstream([
-        crlf(tokenFrame('hello')),
-        crlf(tokenFrame(' world')),
-        `data: [DONE]\r\n\r\n`,
-      ])
+      return sseUpstream([crlf(tokenFrame('hello')), crlf(tokenFrame(' world')), `data: [DONE]\r\n\r\n`])
     })
     const frames: unknown[] = []
     for await (const f of runOpenAIStream({
@@ -492,13 +480,10 @@ describe('runOpenAIStream', () => {
 
   it('surfaces upstream non-OK responses as error frames', async () => {
     vi.stubGlobal('fetch', async () => {
-      return new Response(
-        JSON.stringify({ error: { message: 'rate limited', code: 'rate_limit' } }),
-        {
-          status: 500,
-          headers: { 'content-type': 'application/json' },
-        },
-      )
+      return new Response(JSON.stringify({ error: { message: 'rate limited', code: 'rate_limit' } }), {
+        status: 500,
+        headers: { 'content-type': 'application/json' },
+      })
     })
     const frames: unknown[] = []
     for await (const f of runOpenAIStream({
@@ -510,9 +495,7 @@ describe('runOpenAIStream', () => {
     })) {
       frames.push(f)
     }
-    expect(frames).toEqual([
-      { kind: 'error', error: 'rate limited', status: 500, code: 'rate_limit' },
-    ])
+    expect(frames).toEqual([{ kind: 'error', error: 'rate limited', status: 500, code: 'rate_limit' }])
   })
 
   it('surfaces a missing upstream stream body as an error frame', async () => {
@@ -527,9 +510,7 @@ describe('runOpenAIStream', () => {
     })) {
       frames.push(f)
     }
-    expect(frames).toEqual([
-      { kind: 'error', error: 'upstream returned no stream body', status: 200 },
-    ])
+    expect(frames).toEqual([{ kind: 'error', error: 'upstream returned no stream body', status: 200 }])
   })
 
   it('surfaces invalid upstream stream JSON as an error frame', async () => {

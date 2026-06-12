@@ -45,16 +45,11 @@
 </script>
 
 <div class="absolute w-full h-full z-40 bg-black/50 flex justify-center items-center">
-  <div
-    class="bg-darkbg p-4 break-any rounded-md flex flex-col max-w-3xl w-96 max-h-full overflow-y-auto"
-  >
+  <div class="bg-darkbg p-4 break-any rounded-md flex flex-col max-w-3xl w-96 max-h-full overflow-y-auto">
     <div class="flex items-center text-textcolor mb-4">
       <h2 class="mt-0 mb-0">{language.loreBook}</h2>
       <div class="grow flex justify-end">
-        <button
-          class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer items-center"
-          onclick={close}
-        >
+        <button class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer items-center" onclick={close}>
           <XIcon size={24} />
         </button>
       </div>
@@ -67,14 +62,12 @@
           }
         }}
         class="flex items-center text-textcolor border-t-1 border-solid border-0 border-darkborderc p-2 cursor-pointer"
-        class:bg-selected={ind === DBState.db.loreBookPage}
-      >
+        class:bg-selected={ind === DBState.db.loreBookPage}>
         {#if editMode}
           <TextInput
             bind:value={() => DBState.db.loreBook[ind].name, (value) => renameLorebook(ind, value)}
             placeholder="string"
-            padding={false}
-          />
+            padding={false} />
         {:else}
           <span>{lore.name}</span>
         {/if}
@@ -107,8 +100,7 @@
               if (e.key === 'Enter') {
                 e.currentTarget.click()
               }
-            }}
-          >
+            }}>
             <TrashIcon size={18} />
           </div>
         </div>
@@ -129,16 +121,14 @@
             DBState.db.loreBook = loreBooks
           })
           dispatchCreateGlobalLorebook(newLoreBook, previous)
-        }}
-      >
+        }}>
         <PlusIcon />
       </button>
       <button
         class="text-textcolor2 hover:text-green-500 cursor-pointer"
         onclick={() => {
           editMode = !editMode
-        }}
-      >
+        }}>
         <SquarePenIcon size={18} />
       </button>
     </div>

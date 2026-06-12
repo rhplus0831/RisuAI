@@ -70,11 +70,8 @@
   }
 
   function reportParsingError(error: unknown) {
-    const parsingError =
-      error instanceof Error ? error : new Error(typeof error === 'string' ? error : String(error))
-    alertError(
-      `Error while parsing chat message: ${translated}, ${parsingError.message}, ${parsingError.stack}`,
-    )
+    const parsingError = error instanceof Error ? error : new Error(typeof error === 'string' ? error : String(error))
+    alertError(`Error while parsing chat message: ${translated}, ${parsingError.message}, ${parsingError.stack}`)
   }
 
   async function parseWithRetry(
@@ -118,11 +115,7 @@
     }
   }
 
-  const markParsing = async (
-    data: string,
-    charArg: string | simpleCharacterArgument,
-    chatID: number,
-  ) => {
+  const markParsing = async (data: string, charArg: string | simpleCharacterArgument, chatID: number) => {
     const runId = ++markParsingRun
     const setTranslatingForRun = (value: boolean) => {
       if (runId === markParsingRun) {
@@ -204,14 +197,7 @@
 
         if (DBState.db.translatorType === 'llm' && DBState.db.translateBeforeHTMLFormatting) {
           await sleep(100)
-          const translatedHtml = await translateHTMLOnce(
-            data,
-            charArg,
-            chatID,
-            retranslate,
-            data,
-            setTranslatingForRun,
-          )
+          const translatedHtml = await translateHTMLOnce(data, charArg, chatID, retranslate, data, setTranslatingForRun)
           if (!translatedHtml.ok) {
             return translatedHtml.value
           }

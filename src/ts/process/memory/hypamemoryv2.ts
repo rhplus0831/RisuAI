@@ -52,16 +52,12 @@ export class HypaProcessorV2<TMetadata> {
     await this.getEmbeds(ebdTexts, true)
   }
 
-  public async similaritySearchScored(
-    query: string,
-  ): Promise<[EmbeddingResult<TMetadata>, number][]> {
+  public async similaritySearchScored(query: string): Promise<[EmbeddingResult<TMetadata>, number][]> {
     const results = await this.similaritySearchScoredBatch([query])
     return results[0]
   }
 
-  public async similaritySearchScoredBatch(
-    queries: string[],
-  ): Promise<[EmbeddingResult<TMetadata>, number][][]> {
+  public async similaritySearchScoredBatch(queries: string[]): Promise<[EmbeddingResult<TMetadata>, number][][]> {
     if (queries.length === 0) {
       return []
     }
@@ -108,9 +104,7 @@ export class HypaProcessorV2<TMetadata> {
     const resultMap: Map<string, EmbeddingResult<TMetadata>> = new Map()
     const toEmbed: EmbeddingText<TMetadata>[] = []
 
-    const ctxProvider = isContextModel(this.options.model)
-      ? getContextProvider(this.options.model)
-      : null
+    const ctxProvider = isContextModel(this.options.model) ? getContextProvider(this.options.model) : null
     const ctxGroups = new Map<string, string[]>()
     if (ctxProvider && saveToMemory) {
       const groups = new Map<TMetadata, EmbeddingText<TMetadata>[]>()
@@ -172,10 +166,7 @@ export class HypaProcessorV2<TMetadata> {
       const missMetadatas = new Set(toEmbed.map((item) => item.metadata).filter(Boolean))
 
       const additionalItems = ebdTexts.filter(
-        (item) =>
-          item.metadata &&
-          missMetadatas.has(item.metadata) &&
-          !toEmbed.some((e) => e.id === item.id),
+        (item) => item.metadata && missMetadatas.has(item.metadata) && !toEmbed.some((e) => e.id === item.id),
       )
 
       for (const item of additionalItems) {
@@ -196,10 +187,7 @@ export class HypaProcessorV2<TMetadata> {
     const chunkSize = await this.getOptimalChunkSize()
 
     // Debug log for optimal chunk size
-    console.debug(
-      HypaProcessorV2.LOG_PREFIX,
-      `Optimal chunk size for ${this.options.model}: ${chunkSize}`,
-    )
+    console.debug(HypaProcessorV2.LOG_PREFIX, `Optimal chunk size for ${this.options.model}: ${chunkSize}`)
 
     const chunks = this.chunkArray(toEmbed, chunkSize)
 
@@ -290,8 +278,7 @@ export class HypaProcessorV2<TMetadata> {
       // Progress callback
       this.options.rateLimiter.taskQueueChangeCallback = this.progressCallback
 
-      const batchResult =
-        await this.options.rateLimiter.executeBatch<EmbeddingVector[]>(embeddingTasks)
+      const batchResult = await this.options.rateLimiter.executeBatch<EmbeddingVector[]>(embeddingTasks)
       const errors: Error[] = []
 
       const chunksSavePromises = batchResult.results.map(async (result, i) => {
@@ -337,8 +324,7 @@ export class HypaProcessorV2<TMetadata> {
 
       // Throw major error if there are errors
       if (errors.length > 0) {
-        const majorError =
-          errors.find((error) => !(error instanceof TaskCanceledError)) || errors[0]
+        const majorError = errors.find((error) => !(error instanceof TaskCanceledError)) || errors[0]
 
         throw majorError
       }
@@ -368,9 +354,7 @@ export class HypaProcessorV2<TMetadata> {
         ? `-${db.hypaCustomSettings.model.trim()}`
         : ''
 
-    const ctxProvider = isContextModel(this.options.model)
-      ? getContextProvider(this.options.model)
-      : null
+    const ctxProvider = isContextModel(this.options.model) ? getContextProvider(this.options.model) : null
     const ctxSuffix = ctxProvider ? ctxProvider.getCacheKeySuffix(contextTexts) : ''
 
     return `${content}|${this.options.model}${suffix}${ctxSuffix}`
@@ -439,9 +423,7 @@ export class HypaProcessorV2<TMetadata> {
         },
         body: {
           input: contents,
-          ...(db.hypaCustomSettings?.model?.trim()
-            ? { model: db.hypaCustomSettings.model.trim() }
-            : {}),
+          ...(db.hypaCustomSettings?.model?.trim() ? { model: db.hypaCustomSettings.model.trim() } : {}),
         },
       }
 
@@ -475,15 +457,13 @@ export class HypaProcessorV2<TMetadata> {
       throw new Error(JSON.stringify(response.data))
     }
 
-    const embeddings: EmbeddingVector[] = response.data.data.map(
-      (item: { embedding: EmbeddingVector }) => {
-        if (!item.embedding) {
-          throw new Error('No embeddings found in the response.')
-        }
+    const embeddings: EmbeddingVector[] = response.data.data.map((item: { embedding: EmbeddingVector }) => {
+      if (!item.embedding) {
+        throw new Error('No embeddings found in the response.')
+      }
 
-        return item.embedding
-      },
-    )
+      return item.embedding
+    })
 
     return embeddings
   }

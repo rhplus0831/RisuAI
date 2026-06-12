@@ -56,10 +56,7 @@ describe('Phase 7 image/emotion scoped rollback', () => {
     ]
     selectedCharID.set(1)
     const charactersSize = JSON.stringify(DBState.db.characters).length
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => jsonResponse({ revision: 10 })) as unknown as typeof fetch,
-    )
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ revision: 10 })) as unknown as typeof fetch)
 
     const instrumented = withCloneInstrumentation(() => {
       rmCharEmotion(1, 0)

@@ -162,12 +162,9 @@ export async function assembleLocalSendChatPrompt(args: {
 
   const biases = DBState.db.bias.concat(args.currentChar.bias).map((v) => {
     return [
-      risuChatParser(
-        v[0].replaceAll('\\n', '\n').replaceAll('\\r', '\r').replaceAll('\\\\', '\\'),
-        {
-          chara: args.currentChar,
-        },
-      ),
+      risuChatParser(v[0].replaceAll('\\n', '\n').replaceAll('\\r', '\r').replaceAll('\\\\', '\\'), {
+        chara: args.currentChar,
+      }),
       v[1],
     ] as [string, number]
   })
@@ -177,8 +174,7 @@ export async function assembleLocalSendChatPrompt(args: {
       role: depthPrompt.role,
       content: risuChatParser(resolvePosition(depthPrompt.prompt), { chara: args.currentChar }),
     }
-    const depth =
-      depthPrompt.pos === 'depth' ? depthPrompt.depth : unformated.chats.length - depthPrompt.depth
+    const depth = depthPrompt.pos === 'depth' ? depthPrompt.depth : unformated.chats.length - depthPrompt.depth
     unformated.chats.splice(depth, 0, chat)
   }
 
@@ -231,11 +227,7 @@ export async function assembleLocalSendChatPrompt(args: {
     args.tokenizer,
   )
   if (!budget.ok) {
-    args.throwError(
-      language.errors.toomuchtoken +
-        '\n\nAt token rechecking. Required Tokens: ' +
-        budget.inputTokens,
-    )
+    args.throwError(language.errors.toomuchtoken + '\n\nAt token rechecking. Required Tokens: ' + budget.inputTokens)
     return { status: 'stopped' }
   }
 

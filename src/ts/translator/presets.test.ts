@@ -1,10 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('src/ts/util', () => ({
-  encryptBuffer: async (data: Uint8Array) =>
-    data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength),
-  decryptBuffer: async (data: Uint8Array) =>
-    data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength),
+  encryptBuffer: async (data: Uint8Array) => data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength),
+  decryptBuffer: async (data: Uint8Array) => data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength),
 }))
 
 vi.mock('src/ts/rpack/rpack_js.js', () => ({
@@ -150,9 +148,7 @@ describe('translator preset file codec', () => {
       }),
     )
 
-    await expect(decodeTranslatorPresetFile(plainJsonPayload)).rejects.toThrow(
-      'Invalid translator preset file.',
-    )
+    await expect(decodeTranslatorPresetFile(plainJsonPayload)).rejects.toThrow('Invalid translator preset file.')
   })
 
   it('rejects non-translator preset payloads', async () => {
@@ -169,8 +165,6 @@ describe('translator preset file codec', () => {
       }),
     )
 
-    await expect(decodeTranslatorPresetFile(hypaLikePayload)).rejects.toThrow(
-      'Invalid translator preset file.',
-    )
+    await expect(decodeTranslatorPresetFile(hypaLikePayload)).rejects.toThrow('Invalid translator preset file.')
   })
 })

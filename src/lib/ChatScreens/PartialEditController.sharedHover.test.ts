@@ -214,8 +214,7 @@ describe('PartialEditController shared hover handler', () => {
     await settleEffects()
 
     const mouseMoveAdds = () => addSpy.mock.calls.filter(([type]) => type === 'mousemove')
-    const mouseMoveRemoves = () =>
-      removeSpy.mock.calls.filter(([type]) => type === 'mousemove')
+    const mouseMoveRemoves = () => removeSpy.mock.calls.filter(([type]) => type === 'mousemove')
 
     expect(mouseMoveAdds()).toHaveLength(1)
     expect(new Set(mouseMoveAdds().map(([, listener]) => listener)).size).toBe(1)

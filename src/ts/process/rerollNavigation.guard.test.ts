@@ -42,18 +42,14 @@ import {
 type Msg = { role: string; data: string; chatId: string }
 
 function tailUid(): string {
-  return (
-    DBState.db.characters[0].chats[0].message.at(-1) as unknown as Msg
-  ).chatId
+  return (DBState.db.characters[0].chats[0].message.at(-1) as unknown as Msg).chatId
 }
 
 beforeEach(() => {
   resetRerollNavigation()
   vi.clearAllMocks()
   ;(DBState as { db: unknown }).db = {
-    characters: [
-      { chaId: 'c1', chatPage: 0, chats: [{ id: 'chat-1', message: [] as Msg[] }] },
-    ],
+    characters: [{ chaId: 'c1', chatPage: 0, chats: [{ id: 'chat-1', message: [] as Msg[] }] }],
   }
   selectedCharID.set(0)
 })
@@ -69,8 +65,7 @@ describe('reroll swipe under the read-only projection guard', () => {
       { role: 'user', data: 'hi', chatId: 'u1' },
       { role: 'char', data: 'c3', chatId: 'g3' },
     ]
-    ;(DBState as { db: { characters: { chats: { message: Msg[] }[] }[] } }).db.characters[0].chats[0].message =
-      active
+    ;(DBState as { db: { characters: { chats: { message: Msg[] }[] }[] } }).db.characters[0].chats[0].message = active
     seedRerollBufferFromAlternates(active, [
       { role: 'char', data: 'c3', chatId: 'g3' },
       { role: 'char', data: 'c2', chatId: 'g2' },

@@ -2,12 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
 import { EntityNotFoundError, ValidationError } from '../repository.js'
 import { validateAssetTriples } from './assets.js'
-import {
-  type CharacterRecord,
-  ensureCharacterCollection,
-  readCharacterId,
-  readJsonObject,
-} from './characters.js'
+import { type CharacterRecord, ensureCharacterCollection, readCharacterId, readJsonObject } from './characters.js'
 import { ensureCharacterChats } from './chats.js'
 
 type JsonRecord = Record<string, unknown>
@@ -101,10 +96,7 @@ export function readModuleId(value: unknown, label = 'moduleId'): string {
   return value
 }
 
-export function readModulePatch(
-  input: unknown,
-  options: { assetDb?: DatabaseSync } = {},
-): JsonRecord {
+export function readModulePatch(input: unknown, options: { assetDb?: DatabaseSync } = {}): JsonRecord {
   const patch = readJsonObject(input, 'patch')
   if (Object.keys(patch).length === 0) {
     throw new ValidationError('patch must include at least one module field')
@@ -135,10 +127,7 @@ export function requireModuleIndex(modules: readonly ModuleRecord[], moduleId: s
   return index
 }
 
-export function validateFullModuleOrder(
-  modules: readonly ModuleRecord[],
-  moduleIds: readonly string[],
-): void {
+export function validateFullModuleOrder(modules: readonly ModuleRecord[], moduleIds: readonly string[]): void {
   const existing = new Set(modules.map((module) => module.id))
   const seen = new Set<string>()
   for (const moduleId of moduleIds) {
@@ -161,10 +150,7 @@ export function validateFullModuleOrder(
  * every id must reference a known module and the list must be duplicate-free,
  * but it does not need to match the character's existing links.
  */
-export function validateCharacterModuleLinks(
-  modules: readonly ModuleRecord[],
-  moduleIds: readonly string[],
-): void {
+export function validateCharacterModuleLinks(modules: readonly ModuleRecord[], moduleIds: readonly string[]): void {
   validateNormalModuleLinks(modules, moduleIds, 'moduleIds')
 }
 
@@ -189,14 +175,11 @@ export function validateNormalModuleLinks(
 export function removeModuleReferences(database: JsonRecord, moduleId: string): void {
   database.enabledModules = ensureEnabledModules(database).filter((id) => id !== moduleId)
   for (const character of ensureCharacterCollection(database)) {
-    character.modules = readStringArray(
-      character.modules,
-      `character ${character.chaId}.modules`,
-    ).filter((id) => id !== moduleId)
+    character.modules = readStringArray(character.modules, `character ${character.chaId}.modules`).filter(
+      (id) => id !== moduleId,
+    )
     for (const chat of ensureCharacterChats(character)) {
-      chat.modules = readStringArray(chat.modules, `chat ${chat.id}.modules`).filter(
-        (id) => id !== moduleId,
-      )
+      chat.modules = readStringArray(chat.modules, `chat ${chat.id}.modules`).filter((id) => id !== moduleId)
     }
   }
 
@@ -216,10 +199,7 @@ export function ensureEnabledModules(database: JsonRecord): string[] {
   return database.enabledModules as string[]
 }
 
-export function findCharacterForModuleCommand(
-  database: JsonRecord,
-  characterId: string,
-): CharacterRecord {
+export function findCharacterForModuleCommand(database: JsonRecord, characterId: string): CharacterRecord {
   const characters = ensureCharacterCollection(database)
   const character = characters.find((candidate) => candidate.chaId === characterId)
   if (!character) {

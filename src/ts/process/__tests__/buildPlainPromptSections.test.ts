@@ -5,11 +5,7 @@ vi.mock('../modules', async (importActual) => {
   return { ...actual, moduleUpdate: () => {} }
 })
 
-import {
-  setDatabase,
-  type Database,
-  type character,
-} from '../../storage/database.svelte'
+import { setDatabase, type Database, type character } from '../../storage/database.svelte'
 import { buildPlainPromptSections } from '../promptAssembly/buildPlainPromptSections'
 
 function makeChar(overrides: Partial<character> = {}): character {
@@ -65,9 +61,7 @@ describe('buildPlainPromptSections', () => {
   it('interpolates {{original}} in currentChar.systemPrompt against db.mainPrompt', () => {
     const char = makeChar({ systemPrompt: 'PREFIX {{original}} SUFFIX' })
     const sections = buildPlainPromptSections(char)
-    expect(sections.main).toEqual([
-      { role: 'system', content: 'PREFIX MAIN SUFFIX' },
-    ])
+    expect(sections.main).toEqual([{ role: 'system', content: 'PREFIX MAIN SUFFIX' }])
   })
 
   it('uses currentChar.systemPrompt verbatim when no {{original}} is present', () => {
@@ -115,9 +109,7 @@ describe('buildPlainPromptSections', () => {
   it('interpolates {{original}} in replaceGlobalNote against db.globalNote', () => {
     const char = makeChar({ replaceGlobalNote: 'PRE {{original}} POST' })
     const sections = buildPlainPromptSections(char)
-    expect(sections.globalNote).toEqual([
-      { role: 'system', content: 'PRE GLOBAL POST' },
-    ])
+    expect(sections.globalNote).toEqual([{ role: 'system', content: 'PRE GLOBAL POST' }])
   })
 
   it('falls back to db.globalNote when replaceGlobalNote is empty', () => {

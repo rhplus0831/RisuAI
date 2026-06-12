@@ -63,16 +63,9 @@ interface BudgetCategoryState {
   skippedForBudget: Array<{ summaryId: string; tokens: number }>
 }
 
-const CATEGORY_ORDER: readonly MemoryBudgetAllocationCategory[] = [
-  'important',
-  'recent',
-  'similar',
-  'random',
-]
+const CATEGORY_ORDER: readonly MemoryBudgetAllocationCategory[] = ['important', 'recent', 'similar', 'random']
 
-export function allocateMemorySummaries(
-  input: MemoryBudgetAllocatorInput,
-): MemoryBudgetAllocationResult {
+export function allocateMemorySummaries(input: MemoryBudgetAllocatorInput): MemoryBudgetAllocationResult {
   const { summaries, duplicateSummaryIds } = uniqueSummaries(input.summaries)
   const summariesById = new Map(summaries.map((summary) => [summary.id, summary]))
   const selectedIds = new Set<string>()
@@ -168,10 +161,7 @@ export function allocateMemorySummaries(
   }
 
   const selected = summaries.filter((summary) => selectedIds.has(summary.id))
-  const consumedTokens = CATEGORY_ORDER.reduce(
-    (sum, category) => sum + categoryStates[category].consumedTokens,
-    0,
-  )
+  const consumedTokens = CATEGORY_ORDER.reduce((sum, category) => sum + categoryStates[category].consumedTokens, 0)
 
   return {
     selected,
@@ -200,11 +190,7 @@ export function allocateMemorySummaries(
     },
   }
 
-  function selectSummary(
-    summary: MemorySummary,
-    category: MemoryBudgetAllocationCategory,
-    tokens: number,
-  ): void {
+  function selectSummary(summary: MemorySummary, category: MemoryBudgetAllocationCategory, tokens: number): void {
     if (selectedIds.has(summary.id)) return
     selectedIds.add(summary.id)
     selectedByCategory[category].push(summary)
@@ -352,10 +338,7 @@ function toIdSet(summaries: readonly MemorySummary[]): Set<string> {
   return new Set(summaries.map((summary) => summary.id))
 }
 
-function deterministicShuffle(
-  summaries: readonly MemorySummary[],
-  seed: string,
-): MemorySummary[] {
+function deterministicShuffle(summaries: readonly MemorySummary[], seed: string): MemorySummary[] {
   return [...summaries].sort((a, b) => {
     const scoreA = stableHash(`${seed}:${a.id}`)
     const scoreB = stableHash(`${seed}:${b.id}`)

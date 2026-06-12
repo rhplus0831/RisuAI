@@ -3,27 +3,13 @@ import { LLMFlags, LLMFormat, type LLMModel } from 'src/ts/model/modellist'
 import { getDatabase } from 'src/ts/storage/database.svelte'
 import { base64url, simplifySchema } from 'src/ts/util'
 import { v4 } from 'uuid'
-import {
-  saveInlayedSignature,
-  setInlayAsset,
-  writeInlayImage,
-  type InlaySignature,
-} from '../files/inlays'
+import { saveInlayedSignature, setInlayAsset, writeInlayImage, type InlaySignature } from '../files/inlays'
 import { extractJSON, getGeneralJSONSchema } from '../templates/jsonSchema'
 import { callTool, decodeToolCall, encodeToolCall } from '../mcp/mcp'
 import { alertError } from 'src/ts/alert'
 import { addFetchLog } from 'src/ts/globalApi.svelte'
-import type {
-  RequestDataArgumentExtended,
-  requestDataResponse,
-  StreamResponseChunk,
-} from './request'
-import {
-  applyAdditionalParameters,
-  applyParameters,
-  getAdditionalParameters,
-  type LLMParameter,
-} from './shared'
+import type { RequestDataArgumentExtended, requestDataResponse, StreamResponseChunk } from './request'
+import { applyAdditionalParameters, applyParameters, getAdditionalParameters, type LLMParameter } from './shared'
 import { bodyIntercepterStore } from 'src/ts/stores.svelte'
 
 type GeminiFunctionCall = {
@@ -55,9 +41,7 @@ interface GeminiChat {
   parts: GeminiPart[]
 }
 
-export async function requestGoogleCloudVertex(
-  arg: RequestDataArgumentExtended,
-): Promise<requestDataResponse> {
+export async function requestGoogleCloudVertex(arg: RequestDataArgumentExtended): Promise<requestDataResponse> {
   const formated = arg.formated
   const db = getDatabase()
   const maxTokens = arg.maxTokens
@@ -102,9 +86,7 @@ export async function requestGoogleCloudVertex(
         }
 
         if (modal.type === 'signature' && db.saveSignatures) {
-          const sig: InlaySignature = JSON.parse(
-            Buffer.from(modal.base64, 'base64').toString('utf-8'),
-          )
+          const sig: InlaySignature = JSON.parse(Buffer.from(modal.base64, 'base64').toString('utf-8'))
           if (sig.source === arg.modelInfo.internalID || sig.source === arg.modelInfo.id) {
             geminiParts.push({
               thought: true,
@@ -336,13 +318,7 @@ export async function requestGoogleCloudVertex(
     }
   }
 
-  let para: LLMParameter[] = [
-    'temperature',
-    'top_p',
-    'top_k',
-    'presence_penalty',
-    'frequency_penalty',
-  ]
+  let para: LLMParameter[] = ['temperature', 'top_p', 'top_k', 'presence_penalty', 'frequency_penalty']
 
   if (arg.modelInfo.flags.includes(LLMFlags.geminiThinking)) {
     para.push('thinking_tokens')
@@ -461,25 +437,18 @@ export async function requestGoogleCloudVertex(
 
   async function generateToken(email: string, key: string) {
     if (!window.crypto || !window.crypto.subtle) {
-      throw new Error(
-        'Web Crypto API is not available in this environment. Please ensure you are using HTTPS.',
-      )
+      throw new Error('Web Crypto API is not available in this environment. Please ensure you are using HTTPS.')
     }
     // Input validation
     if (!email.includes('gserviceaccount.com')) {
       throw new Error('Invalid Vertex client email. Must include gserviceaccount.com')
     }
-    if (
-      !key.includes('-----BEGIN PRIVATE KEY-----') ||
-      !key.includes('-----END PRIVATE KEY-----')
-    ) {
+    if (!key.includes('-----BEGIN PRIVATE KEY-----') || !key.includes('-----END PRIVATE KEY-----')) {
       throw new Error('Invalid Vertex private key. Must include proper key markers.')
     }
 
     function str2ab(privateKey: string): ArrayBuffer {
-      const binaryString = atob(
-        privateKey.replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\\n/g, ''),
-      )
+      const binaryString = atob(privateKey.replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\\n/g, ''))
       const bytes = new Uint8Array(binaryString.length)
       for (let i = 0; i < binaryString.length; i++) {
         bytes[i] = binaryString.charCodeAt(i)
@@ -555,17 +524,13 @@ export async function requestGoogleCloudVertex(
   if (arg.modelInfo.format === LLMFormat.VertexAIGemini) {
     if (db.vertexAccessTokenExpires < Date.now()) {
       if (!db.vertexClientEmail || !db.vertexPrivateKey) {
-        alertError(
-          'Vertex AI authentication information is missing or incomplete. Please check your settings.',
-        )
+        alertError('Vertex AI authentication information is missing or incomplete. Please check your settings.')
         return {
           type: 'fail',
-          result:
-            'Vertex AI authentication information is missing or incomplete. Please check your settings.',
+          result: 'Vertex AI authentication information is missing or incomplete. Please check your settings.',
         }
       }
-      headers['Authorization'] =
-        'Bearer ' + (await generateToken(db.vertexClientEmail, db.vertexPrivateKey))
+      headers['Authorization'] = 'Bearer ' + (await generateToken(db.vertexClientEmail, db.vertexPrivateKey))
     } else {
       headers['Authorization'] = 'Bearer ' + db.vertexAccessToken
     }
@@ -573,10 +538,7 @@ export async function requestGoogleCloudVertex(
 
   if (db.jsonSchemaEnabled || arg.schema) {
     body.generation_config.response_mime_type = 'application/json'
-    body.generation_config.response_schema = getGeneralJSONSchema(arg.schema, [
-      '$schema',
-      'additionalProperties',
-    ])
+    body.generation_config.response_schema = getGeneralJSONSchema(arg.schema, ['$schema', 'additionalProperties'])
     console.log(body.generation_config.response_schema)
   }
 
@@ -691,8 +653,7 @@ async function requestGoogle(
   }
 
   if (
-    (arg.modelInfo.format === LLMFormat.GoogleCloud ||
-      arg.modelInfo.format === LLMFormat.VertexAIGemini) &&
+    (arg.modelInfo.format === LLMFormat.GoogleCloud || arg.modelInfo.format === LLMFormat.VertexAIGemini) &&
     arg.useStreaming
   ) {
     if (arg.previewBody) {
@@ -787,8 +748,7 @@ async function requestGoogle(
               },
             ],
           })
-          rDatas[rDatas.length - 1].text =
-            `{{inlayeddata::${sigId}}}\n\n` + rDatas[rDatas.length - 1].text
+          rDatas[rDatas.length - 1].text = `{{inlayeddata::${sigId}}}\n\n` + rDatas[rDatas.length - 1].text
         }
 
         if (part.inlineData) {
@@ -976,8 +936,7 @@ async function requestGoogle(
     } while (attempt <= db.requestRetrys) // Retry up to db.requestRetrys times
 
     // Does not include the text response if simplifiedToolUse is enabled
-    const result =
-      (db.simplifiedToolUse ? '' : processTextResponse(rDatas) + '\n\n') + callCodes.join('\n\n')
+    const result = (db.simplifiedToolUse ? '' : processTextResponse(rDatas) + '\n\n') + callCodes.join('\n\n')
 
     // If the next request fails, only the responses so far are returned
     if (resRec.type === 'fail') {
@@ -1208,9 +1167,7 @@ function wrapToolStream(
             }
             // If the last part is a model response, merge it with the previous model response
             if (chat[chat.length - 2]?.role === 'model') {
-              chat[chat.length - 2].parts = chat[chat.length - 2].parts.concat(
-                chat[chat.length - 1].parts,
-              )
+              chat[chat.length - 2].parts = chat[chat.length - 2].parts.concat(chat[chat.length - 1].parts)
               chat.pop()
             }
             const parts: GeminiPart[] = []
@@ -1330,9 +1287,7 @@ function wrapToolStream(
               prefix += callCodes.join('\n\n')
             } else {
               prefix +=
-                (thoughts + lastThought
-                  ? `<Thoughts>\n\n${thoughts + lastThought}\n\n</Thoughts>\n\n`
-                  : '') +
+                (thoughts + lastThought ? `<Thoughts>\n\n${thoughts + lastThought}\n\n</Thoughts>\n\n` : '') +
                 (content ? content + '\n\n' : '') +
                 callCodes.join('\n\n')
             }
@@ -1366,9 +1321,7 @@ function wrapToolStream(
           controller.enqueue({
             '0':
               (prefix ? prefix + '\n\n' : '') +
-              (thoughts + lastThought
-                ? `<Thoughts>\n\n${thoughts + lastThought}\n\n</Thoughts>\n\n`
-                : '') +
+              (thoughts + lastThought ? `<Thoughts>\n\n${thoughts + lastThought}\n\n</Thoughts>\n\n` : '') +
               content,
           })
         }

@@ -29,8 +29,7 @@
         nullable={color[2]}
         value={DBState.db.customTextTheme[color[0]]}
         oninput={updateTextThemeAndCSS}
-        onchange={(value) => setTextThemeValue(color[0], value)}
-      />
+        onchange={(value) => setTextThemeValue(color[0], value)} />
       <span class="ml-2">{color[1]}</span>
     </div>
   {/each}

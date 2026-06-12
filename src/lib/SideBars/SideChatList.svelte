@@ -23,14 +23,7 @@
   import TextInput from '../UI/GUI/TextInput.svelte'
 
   import { exportChat, importChat, exportAllChats } from 'src/ts/characters'
-  import {
-    alertChatOptions,
-    alertConfirm,
-    alertError,
-    alertNormal,
-    alertSelect,
-    alertStore,
-  } from 'src/ts/alert'
+  import { alertChatOptions, alertConfirm, alertError, alertNormal, alertSelect, alertStore } from 'src/ts/alert'
   import { sleep, sortableOptions } from 'src/ts/util'
   import { bookmarkListOpen } from 'src/ts/stores.svelte'
   import { language } from 'src/lang'
@@ -55,11 +48,7 @@
     restoreChatState,
     runOptimisticCommandSequence,
   } from 'src/ts/chatCommands'
-  import {
-    canUseServerCommands,
-    reorderChatFoldersCommand,
-    reorderChatsCommand,
-  } from 'src/ts/server/commands'
+  import { canUseServerCommands, reorderChatFoldersCommand, reorderChatsCommand } from 'src/ts/server/commands'
   import { watchServerBackedChatMetadata } from 'src/ts/server/chatBridge.svelte'
   import { groupChatsByFolderId } from './chatFolderGrouping'
   import { characterRoutePath, currentRoute, navigate } from 'src/ts/router'
@@ -255,13 +244,7 @@
 
             const selectedChatId = chara.chats[currentChatPage]?.id
             if (canUseServerCommands()) {
-              dispatchReorderChatsByIds(
-                chara.chaId,
-                chatIds,
-                folderByChatId,
-                previous,
-                selectedChatId,
-              )
+              dispatchReorderChatsByIds(chara.chaId, chatIds, folderByChatId, previous, selectedChatId)
             } else {
               changeChatTo(newChats.indexOf(chara.chats[currentChatPage]))
               chara.chats = newChats
@@ -385,15 +368,13 @@
 <div
   data-risu-chat-list="sidebar"
   class="flex flex-col w-full h-[calc(100%-2rem)] max-h-[calc(100%-2rem)]"
-  data-risu-chat-open={chatRouteOpen ? 'true' : 'false'}
->
+  data-risu-chat-open={chatRouteOpen ? 'true' : 'false'}>
   {#if chatRouteOpen}
     <div class="flex flex-col gap-3">
       <button
         data-risu-chat-action="back-to-chat-list"
         class="flex items-center gap-2 text-textcolor2 hover:text-green-500 cursor-pointer mb-1"
-        onclick={backToChatList}
-      >
+        onclick={backToChatList}>
         <ArrowLeftIcon size={18} />
         <span>{language.goback}</span>
       </button>
@@ -417,8 +398,7 @@
               data-risu-chat-folder-idx={i}
               data-risu-chat-folder-id={folder.id}
               data-risu-chat-folder-folded={folder.folded ? 'true' : 'false'}
-              class="flex flex-col mb-2 border-solid border-1 border-darkborderc cursor-pointer rounded-md"
-            >
+              class="flex flex-col mb-2 border-solid border-1 border-darkborderc cursor-pointer rounded-md">
               <!-- folder header -->
               <button
                 data-risu-chat-action="toggle-folder"
@@ -440,14 +420,12 @@
                 class:bg-blue-900={folder.color === 'blue'}
                 class:bg-indigo-900={folder.color === 'indigo'}
                 class:bg-purple-900={folder.color === 'purple'}
-                class:bg-pink-900={folder.color === 'pink'}
-              >
+                class:bg-pink-900={folder.color === 'pink'}>
                 {#if editMode}
                   <TextInput
                     bind:value={() => folder.name, (value) => updateFolderName(folder, value)}
                     className="grow min-w-0"
-                    padding={false}
-                  />
+                    padding={false} />
                 {:else}
                   <span>{folder.name}</span>
                 {/if}
@@ -464,21 +442,10 @@
                     class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
                     onclick={async (e) => {
                       e.stopPropagation()
-                      const sel = parseInt(
-                        await alertSelect([language.changeFolderColor, language.cancel]),
-                      )
+                      const sel = parseInt(await alertSelect([language.changeFolderColor, language.cancel]))
                       switch (sel) {
                         case 0:
-                          const colors = [
-                            'red',
-                            'green',
-                            'blue',
-                            'yellow',
-                            'indigo',
-                            'purple',
-                            'pink',
-                            'default',
-                          ]
+                          const colors = ['red', 'green', 'blue', 'yellow', 'indigo', 'purple', 'pink', 'default']
                           const sel = parseInt(await alertSelect(colors))
                           const previous = currentChatStateSnapshot()
                           const color = colors[sel]
@@ -488,8 +455,7 @@
                           dispatchUpdateChatFolder(folder.id, { color }, previous)
                           break
                       }
-                    }}
-                  >
+                    }}>
                     <MenuIcon size={18} />
                   </div>
                   <div
@@ -505,8 +471,7 @@
                     onclick={(e) => {
                       e.stopPropagation()
                       editMode = !editMode
-                    }}
-                  >
+                    }}>
                     <PencilIcon size={18} />
                   </div>
                   <div
@@ -537,8 +502,7 @@
                         }
                         dispatchDeleteChatFolder(folder.id, previous)
                       }
-                    }}
-                  >
+                    }}>
                     <TrashIcon size={18} />
                   </div>
                 </div>
@@ -549,8 +513,7 @@
                 hidden={folder.folded}
                 class="risu-chat flex flex-col w-full text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md {folder.folded
                   ? 'hidden'
-                  : ''}"
-              >
+                  : ''}">
                 {#if (chatsByFolderId.get(folder.id) ?? []).length == 0}
                   <span class="no-sort flex justify-center text-textcolor2">Empty</span>
                   <div></div>
@@ -568,14 +531,12 @@
                         }
                       }}
                       class="risu-chats flex items-center text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md"
-                      class:bg-selected={index === chara.chatPage}
-                    >
+                      class:bg-selected={index === chara.chatPage}>
                       {#if editMode}
                         <TextInput
                           bind:value={() => chat.name, (value) => updateChatName(chat, value)}
                           className="grow min-w-0"
-                          padding={false}
-                        />
+                          padding={false} />
                       {:else}
                         <span>{chat.name}</span>
                       {/if}
@@ -601,9 +562,7 @@
                               case 1: {
                                 const previous = currentChatStateSnapshot()
                                 if (chat.bindedPersona) {
-                                  const confirm = await alertConfirm(
-                                    language.doYouWantToUnbindCurrentPersona,
-                                  )
+                                  const confirm = await alertConfirm(language.doYouWantToUnbindCurrentPersona)
                                   if (confirm) {
                                     if (!canUseServerCommands()) {
                                       chat.bindedPersona = ''
@@ -612,9 +571,7 @@
                                     alertNormal(language.personaUnbindedSuccess)
                                   }
                                 } else {
-                                  const confirm = await alertConfirm(
-                                    language.doYouWantToBindCurrentPersona,
-                                  )
+                                  const confirm = await alertConfirm(language.doYouWantToBindCurrentPersona)
                                   if (confirm) {
                                     const persona = DBState.db.personas[DBState.db.selectedPersona]
                                     const bindedPersona = persona.id || v4()
@@ -632,8 +589,7 @@
                                 break
                               }
                             }
-                          }}
-                        >
+                          }}>
                           <MenuIcon size={18} />
                         </div>
                         <div
@@ -649,8 +605,7 @@
                           onclick={(e) => {
                             e.stopPropagation()
                             editMode = !editMode
-                          }}
-                        >
+                          }}>
                           <PencilIcon size={18} />
                         </div>
                         <div
@@ -666,8 +621,7 @@
                           onclick={async (e) => {
                             e.stopPropagation()
                             exportChat(chara.chats.indexOf(chat))
-                          }}
-                        >
+                          }}>
                           <DownloadIcon size={18} />
                         </div>
                         <div
@@ -683,8 +637,7 @@
                           onclick={async (e) => {
                             e.stopPropagation()
                             await deleteChat(chat, chara.chats.indexOf(chat))
-                          }}
-                        >
+                          }}>
                           <TrashIcon size={18} />
                         </div>
                       </div>
@@ -711,14 +664,12 @@
                   }
                 }}
                 class="flex items-center text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md"
-                class:bg-selected={i === chara.chatPage}
-              >
+                class:bg-selected={i === chara.chatPage}>
                 {#if editMode}
                   <TextInput
                     bind:value={() => chat.name, (value) => updateChatName(chat, value)}
                     className="grow min-w-0"
-                    padding={false}
-                  />
+                    padding={false} />
                 {:else}
                   <span>{chat.name}</span>
                 {/if}
@@ -745,9 +696,7 @@
                           const previous = currentChatStateSnapshot()
                           const chat = chara.chats[i]
                           if (chat.bindedPersona) {
-                            const confirm = await alertConfirm(
-                              language.doYouWantToUnbindCurrentPersona,
-                            )
+                            const confirm = await alertConfirm(language.doYouWantToUnbindCurrentPersona)
                             if (confirm) {
                               if (!canUseServerCommands()) {
                                 chat.bindedPersona = ''
@@ -756,9 +705,7 @@
                               alertNormal(language.personaUnbindedSuccess)
                             }
                           } else {
-                            const confirm = await alertConfirm(
-                              language.doYouWantToBindCurrentPersona,
-                            )
+                            const confirm = await alertConfirm(language.doYouWantToBindCurrentPersona)
                             if (confirm) {
                               const persona = DBState.db.personas[DBState.db.selectedPersona]
                               const bindedPersona = persona.id || v4()
@@ -776,8 +723,7 @@
                           break
                         }
                       }
-                    }}
-                  >
+                    }}>
                     <MenuIcon size={18} />
                   </div>
                   <div
@@ -793,8 +739,7 @@
                     onclick={(e) => {
                       e.stopPropagation()
                       editMode = !editMode
-                    }}
-                  >
+                    }}>
                     <PencilIcon size={18} />
                   </div>
                   <div
@@ -810,8 +755,7 @@
                     onclick={async (e) => {
                       e.stopPropagation()
                       exportChat(i)
-                    }}
-                  >
+                    }}>
                     <DownloadIcon size={18} />
                   </div>
                   <div
@@ -827,8 +771,7 @@
                     onclick={async (e) => {
                       e.stopPropagation()
                       await deleteChat(chat, i)
-                    }}
-                  >
+                    }}>
                     <TrashIcon size={18} />
                   </div>
                 </div>
@@ -846,8 +789,7 @@
           class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
           onclick={() => {
             exportAllChats()
-          }}
-        >
+          }}>
           <DownloadIcon size={18} />
         </button>
         <button
@@ -855,8 +797,7 @@
           class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
           onclick={() => {
             importChat()
-          }}
-        >
+          }}>
           <HardDriveUploadIcon size={18} />
         </button>
         <button
@@ -864,8 +805,7 @@
           class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
           onclick={() => {
             editMode = !editMode
-          }}
-        >
+          }}>
           <PencilIcon size={18} />
         </button>
         <button
@@ -883,8 +823,7 @@
               type: 'branches',
               msg: '',
             })
-          }}
-        >
+          }}>
           <SplitIcon size={18} />
         </button>
         <button
@@ -892,8 +831,7 @@
           class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
           onclick={() => {
             $bookmarkListOpen = true
-          }}
-        >
+          }}>
           <BookmarkCheckIcon size={18} />
         </button>
         <button
@@ -917,8 +855,7 @@
             }
             dispatchCreateChatFolder(chara.chaId, folder, previous)
             reloadGuiDisplay()
-          }}
-        >
+          }}>
           <FolderPlusIcon size={18} />
         </button>
       </div>

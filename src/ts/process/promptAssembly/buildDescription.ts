@@ -4,10 +4,7 @@ import { additionalInformations } from '../embedding/addinfo'
 import type { OpenAIChat } from '../index.svelte'
 import { risuChatParser } from '../scripts'
 
-export async function buildDescription(
-  currentChar: character,
-  currentChat: Chat,
-): Promise<OpenAIChat> {
+export async function buildDescription(currentChar: character, currentChat: Chat): Promise<OpenAIChat> {
   let description = risuChatParser(
     (DBState.db.promptPreprocess ? DBState.db.descriptionPrefix : '') + currentChar.desc,
     { chara: currentChar },
@@ -26,10 +23,9 @@ export async function buildDescription(
   }
 
   if (currentChar.scenario) {
-    description += risuChatParser(
-      '\n\nCircumstances and context of the dialogue: ' + currentChar.scenario,
-      { chara: currentChar },
-    )
+    description += risuChatParser('\n\nCircumstances and context of the dialogue: ' + currentChar.scenario, {
+      chara: currentChar,
+    })
   }
 
   return {

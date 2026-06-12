@@ -14,9 +14,7 @@ export interface StackTraceTranslationResult {
   didTranslate: boolean
 }
 
-export async function translateStackTrace(
-  stackTrace: string,
-): Promise<StackTraceTranslationResult> {
+export async function translateStackTrace(stackTrace: string): Promise<StackTraceTranslationResult> {
   if (!stackTrace) {
     return {
       stackTrace: '',

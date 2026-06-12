@@ -14,10 +14,11 @@
   let dataresult: [string, number][] = $state([])
   let running = $state(false)
   const hypaV3KeyDraft = createServerBackedSettingDraft<string>('hypaV3Key', '')
-  const hypaCustomSettingsDraft = createServerBackedSettingDraft<Record<string, any>>(
-    'hypaCustomSettings',
-    { url: '', key: '', model: '' },
-  )
+  const hypaCustomSettingsDraft = createServerBackedSettingDraft<Record<string, any>>('hypaCustomSettings', {
+    url: '',
+    key: '',
+    model: '',
+  })
 
   const run = async () => {
     if (running) return
@@ -82,8 +83,7 @@
   onclick={() => {
     data.push('')
     data = data
-  }}>+</Button
->
+  }}>+</Button>
 
 <span class="text-textcolor text-lg mt-6">Result</span>
 {#if dataresult.length === 0}
@@ -101,8 +101,7 @@
   size="lg"
   onclick={() => {
     run()
-  }}
->
+  }}>
   {#if running}
     <div class="loadmove"></div>
   {:else}

@@ -1,9 +1,4 @@
-import type {
-  Chat,
-  Database,
-  character,
-  customscript,
-} from '../../../../src/ts/storage/database.svelte'
+import type { Chat, Database, character, customscript } from '../../../../src/ts/storage/database.svelte'
 import type { RisuModule } from '../../../../src/ts/process/modules'
 import type { triggerscript } from '../../../../src/ts/process/triggers'
 
@@ -87,9 +82,7 @@ export function getActiveModules(
 
   const idSet = new Set(ids)
   const all = database.modules ?? []
-  const matched = all.filter(
-    (m) => m && (idSet.has(m.id) || (m.namespace ? idSet.has(m.namespace) : false)),
-  )
+  const matched = all.filter((m) => m && (idSet.has(m.id) || (m.namespace ? idSet.has(m.namespace) : false)))
   const result = dedupeById(matched)
   activeModulesMemo.set(database, { key, modulesRef: database.modules, result })
   return result

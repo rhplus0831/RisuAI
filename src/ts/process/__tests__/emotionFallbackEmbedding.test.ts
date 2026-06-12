@@ -21,10 +21,7 @@ import { get } from 'svelte/store'
 import { CharEmotion } from '../../stores.svelte'
 import type { character } from '../../storage/database.svelte'
 import { runEmotionEmbeddingFallback } from '../postGeneration/emotionFallbackEmbedding'
-import type {
-  CharEmotionEntry,
-  CharEmotionMap,
-} from '../postGeneration/charEmotionStore'
+import type { CharEmotionEntry, CharEmotionMap } from '../postGeneration/charEmotionStore'
 
 function makeChar(emotionImages: [string, string][]): character {
   return {

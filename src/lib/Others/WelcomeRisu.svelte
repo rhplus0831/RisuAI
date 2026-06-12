@@ -112,9 +112,7 @@
           claudeCachingExperimental: true,
         }
         // Capture preset changes that are outside the explicit patch below.
-        const beforeSetup = safeStructuredClone(
-          DBState.db as unknown as Record<string, unknown>,
-        )
+        const beforeSetup = safeStructuredClone(DBState.db as unknown as Record<string, unknown>)
         withTrustedServerProjectionWrite(() => {
           DBState.db = setPreset(DBState.db, prebuiltPresets.OAI2)
           Object.assign(DBState.db as unknown as Record<string, unknown>, patch)
@@ -218,21 +216,18 @@
 <div class="w-full h-full flex justify-center welcome-bg text-textcolor relative bg-gray-900">
   <div
     class="w-2xl overflow-x-hidden max-w-full min-h-full h-full flex flex-col overflow-y-hidden"
-    class:justify-center={!start}
-  >
+    class:justify-center={!start}>
     {#if !start}
       <div
         class="w-full justify-center flex mt-8 logo-animation"
         onanimationend={() => {
           start = true
-        }}
-      >
+        }}>
         <img src="/logo_typo_trans.png" alt="logo" class="w-full max-w-(--breakpoint-sm) mb-0" />
       </div>
     {:else}
       <div
-        class="relative w-full flex-col bg-darkbg grow mt-5 max-w-full p-5 rounded-t-lg overflow-x-hidden flex border-gray-800 border chat-animation overflow-y-auto"
-      >
+        class="relative w-full flex-col bg-darkbg grow mt-5 max-w-full p-5 rounded-t-lg overflow-x-hidden flex border-gray-800 border chat-animation overflow-y-auto">
         {#if step === 0}
           <h2 class="animate-bounce">Choose your language</h2>
           <div class="flex flex-col items-start ml-2">
@@ -240,54 +235,42 @@
               class="hover:text-green-500 transition-colors"
               onclick={() => {
                 selectLanguage('de')
-              }}>• Deutsch</button
-            >
+              }}>• Deutsch</button>
             <button
               class="hover:text-green-500 transition-colors"
               onclick={() => {
                 selectLanguage('en')
-              }}>• English</button
-            >
+              }}>• English</button>
             <button
               class="hover:text-green-500 transition-colors"
               onclick={() => {
                 selectLanguage('ko')
-              }}>• 한국어</button
-            >
+              }}>• 한국어</button>
             <button
               class="hover:text-green-500 transition-colors"
               onclick={() => {
                 selectLanguage('cn')
-              }}>• 中文</button
-            >
+              }}>• 中文</button>
             <button
               class="hover:text-green-500 transition-colors"
               onclick={() => {
                 selectLanguage('zh-Hant')
-              }}>• 中文(繁體)</button
-            >
+              }}>• 中文(繁體)</button>
             <button
               class="hover:text-green-500 transition-colors"
               onclick={() => {
                 selectLanguage('vi')
-              }}>• Tiếng Việt</button
-            >
+              }}>• Tiếng Việt</button>
           </div>
         {:else}
-          <Chat
-            name="Airisu"
-            img={airisuStyle}
-            message={language.setup.welcome}
-            isLastMemory={false}
-          />
+          <Chat name="Airisu" img={airisuStyle} message={language.setup.welcome} isLastMemory={false} />
           {#if step >= 2}
             <Chat name={DBState.db.username} message={DBState.db.username} isLastMemory={false} />
             <Chat
               name="Airisu"
               img={airisuStyle}
               message={language.setup.setupLaterMessage.replace('{username}', DBState.db.username)}
-              isLastMemory={false}
-            />
+              isLastMemory={false} />
           {/if}
           {#if step === 2}
             <div class="grid grid-cols-2 gap-4 md:grid-cols-3">
@@ -295,20 +278,16 @@
                 class="border-l-blue-500 border-l-4 p-6 flex flex-col transition-shadow hover:ring-1 col-span-2"
                 onclick={() => {
                   step = 3
-                }}
-              >
+                }}>
                 <h1 class="text-2xl font-bold text-start">{language.setup.setupMessageOption1}</h1>
-                <span class="mt-2 text-textcolor2 text-start"
-                  >{language.setup.setupMessageOption1Desc}</span
-                >
+                <span class="mt-2 text-textcolor2 text-start">{language.setup.setupMessageOption1Desc}</span>
               </button>
               <button
                 class="border-l-gray-500 border-l-4 p-6 flex flex-col transition-shadow hover:ring-1"
                 onclick={() => {
                   provider = 'later'
                   step = 10
-                }}
-              >
+                }}>
                 <h1 class="text-md font-bold text-start text-gray-500">
                   {language.setup.setupMessageOption2}
                 </h1>
@@ -316,17 +295,12 @@
             </div>
           {/if}
           {#if step >= 3}
-            <Chat
-              name={DBState.db.username}
-              message={language.setup.setupMessageOption1}
-              isLastMemory={false}
-            />
+            <Chat name={DBState.db.username} message={language.setup.setupMessageOption1} isLastMemory={false} />
             <Chat
               name="Airisu"
               img={airisuStyle}
               message={language.setup.welcome2.replace('{username}', DBState.db.username)}
-              isLastMemory={false}
-            />
+              isLastMemory={false} />
           {/if}
           {#if step === 3}
             <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -335,12 +309,9 @@
                 onclick={() => {
                   provider = 'claude'
                   step = 4
-                }}
-              >
+                }}>
                 <h1 class="text-2xl font-bold text-start">
-                  Claude <span class="text-sm p-1 rounded-sm bg-blue-500 text-white"
-                    >{language.recommended}</span
-                  >
+                  Claude <span class="text-sm p-1 rounded-sm bg-blue-500 text-white">{language.recommended}</span>
                 </h1>
                 <span class="mt-2 text-textcolor2 text-start">{language.setup.claudeDesc}</span>
               </button>
@@ -349,8 +320,7 @@
                 onclick={() => {
                   provider = 'openai'
                   step = 4
-                }}
-              >
+                }}>
                 <h1 class="text-2xl font-bold text-start">OpenAI</h1>
                 <span class="mt-2 text-textcolor2 text-start">{language.setup.openAIDesc}</span>
               </button>
@@ -359,8 +329,7 @@
                 onclick={() => {
                   provider = 'horde'
                   step = 10
-                }}
-              >
+                }}>
                 <h1 class="text-2xl font-bold text-start">Horde</h1>
                 <span class="mt-2 text-textcolor2 text-start">{language.setup.hordeProvider}</span>
               </button>
@@ -369,32 +338,19 @@
                 onclick={() => {
                   provider = 'openrouter'
                   step = 4
-                }}
-              >
+                }}>
                 <h1 class="text-2xl font-bold text-start">OpenRouter</h1>
-                <span class="mt-2 text-textcolor2 text-start"
-                  >{language.setup.openRouterProvider}</span
-                >
+                <span class="mt-2 text-textcolor2 text-start">{language.setup.openRouterProvider}</span>
               </button>
             </div>
           {/if}
           {#if step >= 4}
             <Chat name={DBState.db.username} message={provider} isLastMemory={false} />
             {#if provider === 'openai'}
-              <Chat
-                name="Airisu"
-                img={airisuStyle}
-                message={language.setup.setupOpenAI}
-                isLastMemory={false}
-              />
+              <Chat name="Airisu" img={airisuStyle} message={language.setup.setupOpenAI} isLastMemory={false} />
             {/if}
             {#if provider === 'openrouter'}
-              <Chat
-                name="Airisu"
-                img={airisuStyle}
-                message={language.setup.setupOpenRouter}
-                isLastMemory={false}
-              />
+              <Chat name="Airisu" img={airisuStyle} message={language.setup.setupOpenRouter} isLastMemory={false} />
             {/if}
             {#if provider === 'claude'}
               {#each language.setup.setupClaudeSteps as step, i}
@@ -403,19 +359,13 @@
                   img={airisuStyle}
                   message={`![alt text](/welcome/claude/ant_${i}.webp)\n\n${i === 0 ? 'https://console.anthropic.com/login?returnTo=%2F%3F\n\n' : ''}` +
                     step}
-                  isLastMemory={false}
-                />
+                  isLastMemory={false} />
               {/each}
             {/if}
           {/if}
           {#if step >= 5}
             <Chat name={DBState.db.username} message="<HIDDEN>" isLastMemory={false} />
-            <Chat
-              name="Airisu"
-              img={airisuStyle}
-              message={language.setup.chooseChatType}
-              isLastMemory={false}
-            />
+            <Chat name="Airisu" img={airisuStyle} message={language.setup.chooseChatType} isLastMemory={false} />
           {/if}
           {#if step === 5}
             <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -424,42 +374,33 @@
                 onclick={() => {
                   chatLang = 0
                   step = 6
-                }}
-              >
+                }}>
                 <h1 class="text-2xl font-bold text-start">
                   {language.setup.chooseChatTypeOption1}
                 </h1>
-                <span class="mt-2 text-textcolor2 text-start"
-                  >{language.setup.chooseChatTypeOption1Desc}</span
-                >
+                <span class="mt-2 text-textcolor2 text-start">{language.setup.chooseChatTypeOption1Desc}</span>
               </button>
               <button
                 class="border-l-green-500 border-l-4 p-6 flex flex-col transition-shadow hover:ring-1"
                 onclick={() => {
                   chatLang = 1
                   step = 6
-                }}
-              >
+                }}>
                 <h1 class="text-2xl font-bold text-start">
                   {language.setup.chooseChatTypeOption2}
                 </h1>
-                <span class="mt-2 text-textcolor2 text-start"
-                  >{language.setup.chooseChatTypeOption2Desc}</span
-                >
+                <span class="mt-2 text-textcolor2 text-start">{language.setup.chooseChatTypeOption2Desc}</span>
               </button>
               <button
                 class="border-l-red-500 border-l-4 p-6 flex flex-col transition-shadow hover:ring-1"
                 onclick={() => {
                   chatLang = 2
                   step = 6
-                }}
-              >
+                }}>
                 <h1 class="text-2xl font-bold text-start">
                   {language.setup.chooseChatTypeOption3}
                 </h1>
-                <span class="mt-2 text-textcolor2 text-start"
-                  >{language.setup.chooseChatTypeOption3Desc}</span
-                >
+                <span class="mt-2 text-textcolor2 text-start">{language.setup.chooseChatTypeOption3Desc}</span>
               </button>
             </div>
           {/if}
@@ -467,14 +408,8 @@
             <Chat
               name={DBState.db.username}
               message={language.setup[`chooseChatTypeOption${chatLang + 1}`]}
-              isLastMemory={false}
-            />
-            <Chat
-              name="Airisu"
-              img={airisuStyle}
-              message={language.setup.chooseCheapOrMemory}
-              isLastMemory={false}
-            />
+              isLastMemory={false} />
+            <Chat name="Airisu" img={airisuStyle} message={language.setup.chooseCheapOrMemory} isLastMemory={false} />
           {/if}
           {#if step === 6}
             <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -483,69 +418,50 @@
                 onclick={() => {
                   chatMemorySelection = 2
                   step = 10
-                }}
-              >
+                }}>
                 <h1 class="text-2xl font-bold text-start">
                   {language.setup.chooseCheapOrMemoryOption3}
-                  <span class="text-sm p-1 rounded-sm bg-blue-500 text-white"
-                    >{language.recommended}</span
-                  >
+                  <span class="text-sm p-1 rounded-sm bg-blue-500 text-white">{language.recommended}</span>
                 </h1>
-                <span class="mt-2 text-textcolor2 text-start"
-                  >{language.setup.chooseCheapOrMemoryOption3Desc}</span
-                >
+                <span class="mt-2 text-textcolor2 text-start">{language.setup.chooseCheapOrMemoryOption3Desc}</span>
               </button>
               <button
                 class="border-l-blue-500 border-l-4 p-6 flex flex-col transition-shadow hover:ring-1"
                 onclick={() => {
                   chatMemorySelection = 0
                   step = 10
-                }}
-              >
+                }}>
                 <h1 class="text-2xl font-bold text-start">
                   {language.setup.chooseCheapOrMemoryOption1}
                 </h1>
-                <span class="mt-2 text-textcolor2 text-start"
-                  >{language.setup.chooseCheapOrMemoryOption1Desc}</span
-                >
+                <span class="mt-2 text-textcolor2 text-start">{language.setup.chooseCheapOrMemoryOption1Desc}</span>
               </button>
               <button
                 class="border-l-green-500 border-l-4 p-6 flex flex-col transition-shadow hover:ring-1"
                 onclick={() => {
                   chatMemorySelection = 1
                   step = 10
-                }}
-              >
+                }}>
                 <h1 class="text-2xl font-bold text-start">
                   {language.setup.chooseCheapOrMemoryOption2}
                 </h1>
-                <span class="mt-2 text-textcolor2 text-start"
-                  >{language.setup.chooseCheapOrMemoryOption2Desc}</span
-                >
+                <span class="mt-2 text-textcolor2 text-start">{language.setup.chooseCheapOrMemoryOption2Desc}</span>
               </button>
               <button
                 class="border-l-yellow-500 border-l-4 p-6 flex flex-col transition-shadow hover:ring-1"
                 onclick={() => {
                   chatMemorySelection = 3
                   step = 10
-                }}
-              >
+                }}>
                 <h1 class="text-2xl font-bold text-start">
                   {language.setup.chooseCheapOrMemoryOption4}
                 </h1>
-                <span class="mt-2 text-textcolor2 text-start"
-                  >{language.setup.chooseCheapOrMemoryOption4Desc}</span
-                >
+                <span class="mt-2 text-textcolor2 text-start">{language.setup.chooseCheapOrMemoryOption4Desc}</span>
               </button>
             </div>
           {/if}
           {#if step === 10}
-            <Chat
-              name="Airisu"
-              img={airisuStyle}
-              message={language.setup.allDone}
-              isLastMemory={false}
-            />
+            <Chat name="Airisu" img={airisuStyle} message={language.setup.allDone} isLastMemory={false} />
           {/if}
           <div class="flex items-stretch mb-2 w-full mt-auto">
             <textarea
@@ -557,12 +473,10 @@
                   send()
                 }
               }}
-              style:height={'44px'}
-            ></textarea>
+              style:height={'44px'}></textarea>
             <button
               onclick={send}
-              class="flex justify-center border-y border-r rounded-r-md border-darkborderc items-center text-textcolor p-2 peer-focus:border-textcolor hover:bg-blue-500 hover:text-white transition-colors"
-            >
+              class="flex justify-center border-y border-r rounded-r-md border-darkborderc items-center text-textcolor p-2 peer-focus:border-textcolor hover:bg-blue-500 hover:text-white transition-colors">
               <Send />
             </button>
           </div>

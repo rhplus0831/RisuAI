@@ -161,8 +161,7 @@ export const TARGETED_MUTATION_PATHS = {
   pluginStorage: 'targeted-plugin-storage',
 } as const
 
-export type TargetedMutationPath =
-  (typeof TARGETED_MUTATION_PATHS)[keyof typeof TARGETED_MUTATION_PATHS]
+export type TargetedMutationPath = (typeof TARGETED_MUTATION_PATHS)[keyof typeof TARGETED_MUTATION_PATHS]
 
 export function applyTargetedCommandMutation<TExtra extends Record<string, unknown> = {}>(
   args: TargetedCommandMutationArgs<TExtra>,
@@ -181,10 +180,7 @@ export function applyTargetedCommandMutation<TExtra extends Record<string, unkno
   }
   if (
     args.skipDatabaseLoad &&
-    (args.settingsScopedRead ||
-      args.collectionScopedRead ||
-      args.chatScopedRead ||
-      args.characterScopedRead)
+    (args.settingsScopedRead || args.collectionScopedRead || args.chatScopedRead || args.characterScopedRead)
   ) {
     throw new Error('skipDatabaseLoad cannot be combined with scoped reads')
   }

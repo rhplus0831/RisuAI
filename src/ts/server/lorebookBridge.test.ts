@@ -243,9 +243,7 @@ describe('Phase 3 discrete-editor scoped snapshot (L32)', () => {
     restoreLorebookState(previous)
 
     expect((DBState.db.characters[0].globalLore as any[]).map((e) => e.key)).toEqual(['a'])
-    expect((DBState.db.characters[1].globalLore as any[]).map((e) => e.key)).toEqual([
-      'concurrent',
-    ])
+    expect((DBState.db.characters[1].globalLore as any[]).map((e) => e.key)).toEqual(['concurrent'])
   })
 
   it('L32: a chat-scoped editor snapshot restores only that chat localLore', () => {
@@ -258,9 +256,7 @@ describe('Phase 3 discrete-editor scoped snapshot (L32)', () => {
     restoreLorebookState(previous)
 
     expect((DBState.db.characters[0].chats[0].localLore as any[]).map((e) => e.key)).toEqual([])
-    expect((DBState.db.characters[1].chats[0].localLore as any[]).map((e) => e.key)).toEqual([
-      'sibchanged',
-    ])
+    expect((DBState.db.characters[1].chats[0].localLore as any[]).map((e) => e.key)).toEqual(['sibchanged'])
   })
 
   it('L32: ensureGlobalLorebookListIds assigns ids on the global list only', () => {
@@ -289,8 +285,6 @@ describe('Phase 3 discrete-editor scoped snapshot (L32)', () => {
     restoreLorebookState(previous)
 
     expect(((DBState.db.loreBook as any[])[0].data as any[]).map((e) => e.key)).toEqual(['g'])
-    expect((DBState.db.characters[0].globalLore as any[]).map((e) => e.key)).toEqual([
-      'concurrent',
-    ])
+    expect((DBState.db.characters[0].globalLore as any[]).map((e) => e.key)).toEqual(['concurrent'])
   })
 })

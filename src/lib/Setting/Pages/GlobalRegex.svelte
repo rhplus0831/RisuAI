@@ -29,18 +29,15 @@
           type: 'editinput',
         },
       ]
-    }}><PlusIcon /></button
-  >
+    }}><PlusIcon /></button>
   <button
     class="font-medium cursor-pointer hover:text-green-500"
     onclick={() => {
       exportRegex(globalScriptDraft.value)
-    }}><DownloadIcon /></button
-  >
+    }}><DownloadIcon /></button>
   <button
     class="font-medium cursor-pointer hover:text-green-500"
     onclick={async () => {
       globalScriptDraft.value = await importRegex(globalScriptDraft.value)
-    }}><HardDriveUploadIcon /></button
-  >
+    }}><HardDriveUploadIcon /></button>
 </div>

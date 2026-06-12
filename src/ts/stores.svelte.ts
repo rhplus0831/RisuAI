@@ -244,9 +244,7 @@ export interface ModuleUpdateSignalSource {
   backgroundEmbedding?: string
 }
 
-export function readModuleUpdateSignals(
-  modules: readonly ModuleUpdateSignalSource[] | undefined,
-): void {
+export function readModuleUpdateSignals(modules: readonly ModuleUpdateSignalSource[] | undefined): void {
   if (!modules) return
   void modules.length
   for (const module of modules) {
@@ -261,10 +259,7 @@ $effect.root(() => {
     selIdState.selId = v
 
     if (DBState?.db?.characters?.[selIdState.selId]) {
-      if (
-        DBState.db.hypaV3 &&
-        DBState.db.hypaV3Presets?.[DBState.db.hypaV3PresetId]?.settings?.alwaysToggleOn
-      ) {
+      if (DBState.db.hypaV3 && DBState.db.hypaV3Presets?.[DBState.db.hypaV3PresetId]?.settings?.alwaysToggleOn) {
         const char = DBState.db.characters[selIdState.selId]
         if (!char.supaMemory && char.chaId) {
           const characterId = char.chaId
@@ -279,9 +274,8 @@ $effect.root(() => {
     readModuleUpdateSignals(DBState?.db?.modules)
     DBState?.db?.enabledModules
     DBState?.db?.enabledModules?.length
-    DBState?.db?.characters?.[selIdState.selId]?.chats?.[
-      DBState?.db?.characters?.[selIdState.selId]?.chatPage
-    ]?.modules?.length
+    DBState?.db?.characters?.[selIdState.selId]?.chats?.[DBState?.db?.characters?.[selIdState.selId]?.chatPage]?.modules
+      ?.length
     DBState?.db?.characters?.[selIdState.selId]?.hideChatIcon
     DBState?.db?.characters?.[selIdState.selId]?.backgroundHTML
     DBState?.db?.moduleIntergration

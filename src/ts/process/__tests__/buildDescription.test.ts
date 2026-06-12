@@ -5,12 +5,7 @@ vi.mock('../modules', async (importActual) => {
   return { ...actual, moduleUpdate: () => {} }
 })
 
-import {
-  setDatabase,
-  type Chat,
-  type Database,
-  type character,
-} from '../../storage/database.svelte'
+import { setDatabase, type Chat, type Database, type character } from '../../storage/database.svelte'
 import { DBState } from '../../stores.svelte'
 import { buildDescription } from '../promptAssembly/buildDescription'
 
@@ -63,20 +58,12 @@ describe('buildDescription', () => {
   })
 
   it('appends a personality block with the Description of {{char}} header', async () => {
-    const result = await buildDescription(
-      makeChar({ personality: 'kind and curious' }),
-      makeChat(),
-    )
-    expect(result.content).toBe(
-      'a quiet librarian\n\nDescription of Test: kind and curious',
-    )
+    const result = await buildDescription(makeChar({ personality: 'kind and curious' }), makeChat())
+    expect(result.content).toBe('a quiet librarian\n\nDescription of Test: kind and curious')
   })
 
   it('appends a scenario block with the Circumstances header', async () => {
-    const result = await buildDescription(
-      makeChar({ scenario: 'evening at the library' }),
-      makeChat(),
-    )
+    const result = await buildDescription(makeChar({ scenario: 'evening at the library' }), makeChat())
     expect(result.content).toBe(
       'a quiet librarian\n\nCircumstances and context of the dialogue: evening at the library',
     )
@@ -108,10 +95,7 @@ describe('buildDescription', () => {
 
   it('returns role=system regardless of which sections are present', async () => {
     const r1 = await buildDescription(makeChar(), makeChat())
-    const r2 = await buildDescription(
-      makeChar({ personality: 'kind', scenario: 'library' }),
-      makeChat(),
-    )
+    const r2 = await buildDescription(makeChar({ personality: 'kind', scenario: 'library' }), makeChat())
     expect(r1.role).toBe('system')
     expect(r2.role).toBe('system')
   })

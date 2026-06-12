@@ -85,14 +85,8 @@ vi.mock('@mlc-ai/web-tokenizers', () => ({
   },
 }))
 
-import {
-  loadFixture,
-  markFixtureActiveChatGenerationSettingsReady,
-} from '../__fixtures__/loadFixture'
-import {
-  getServerCompletionCalls,
-  resetServerCompletionCalls,
-} from '../__fixtures__/mocks/serverCompletionFetch'
+import { loadFixture, markFixtureActiveChatGenerationSettingsReady } from '../__fixtures__/loadFixture'
+import { getServerCompletionCalls, resetServerCompletionCalls } from '../__fixtures__/mocks/serverCompletionFetch'
 import {
   getServerChatCalls,
   resetServerChatState,
@@ -112,14 +106,7 @@ import { DBState, hypaV3ProgressStore } from '../../stores.svelte'
 import type { Chat } from '../../storage/database.svelte'
 import { setServerProjectionWriteGuardEnabled } from '../../server/projectionWriteGuard.svelte'
 import { defaultMainPrompt } from '../../storage/defaultPrompts'
-import {
-  abortChat,
-  chatProcessStage,
-  doingChat,
-  previewBody,
-  previewFormated,
-  sendChat,
-} from '../index.svelte'
+import { abortChat, chatProcessStage, doingChat, previewBody, previewFormated, sendChat } from '../index.svelte'
 import { buildApp } from '../../../../server/fastify/src/app'
 import { setupAuthedClient } from '../../../../server/fastify/__tests__/helpers/auth'
 import type {
@@ -134,13 +121,7 @@ import {
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 
-const ROUTE_BACKED_CHAT_FIXTURES = [
-  'simple-send',
-  'continue',
-  'regenerate',
-  'preview',
-  'preview-prompt',
-] as const
+const ROUTE_BACKED_CHAT_FIXTURES = ['simple-send', 'continue', 'regenerate', 'preview', 'preview-prompt'] as const
 
 async function loadExpected(name: string): Promise<FixtureSnapshot> {
   const path = resolve(HERE, '..', '__fixtures__', 'expected', `${name}.json`)
@@ -241,8 +222,7 @@ async function createRouteBackedHarness(): Promise<RouteBackedHarness> {
   const { assertion: authAssertion } = await setupAuthedClient(app)
 
   const fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-    const rawUrl =
-      typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+    const rawUrl = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
     if (isTokenizerUrl(rawUrl)) return serveTokenizerFetch(rawUrl)
     const url = rawUrl.startsWith('http') ? new URL(rawUrl).pathname : rawUrl
     const method = toInjectMethod(init?.method)
@@ -399,9 +379,7 @@ async function drainRouteBackedCommands(): Promise<void> {
   await new Promise<void>((resolve) => setImmediate(resolve))
 }
 
-function messageTexts(
-  snapshot: FixtureSnapshot,
-): Array<{ role: string; data: string; saying?: string }> {
+function messageTexts(snapshot: FixtureSnapshot): Array<{ role: string; data: string; saying?: string }> {
   return snapshot.messages.map((message) => ({
     role: message.role,
     data: message.data,
@@ -431,9 +409,7 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
   })
 
   beforeEach(() => {
-    vi.stubGlobal('safeStructuredClone', (v: unknown) =>
-      v === undefined ? undefined : JSON.parse(JSON.stringify(v)),
-    )
+    vi.stubGlobal('safeStructuredClone', (v: unknown) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v))))
     resetProviderState()
     resetSideEffectCalls()
     resetServerCompletionCalls()
@@ -483,9 +459,7 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
 
       expect(ok).toBe(true)
       expect(messageTexts(captured)).toEqual(messageTexts(expected))
-      expect(captured.stages).toEqual(
-        name === 'preview' || name === 'preview-prompt' ? [1] : expected.stages,
-      )
+      expect(captured.stages).toEqual(name === 'preview' || name === 'preview-prompt' ? [1] : expected.stages)
       expect(captured.doingChat).toBe(false)
       expect(harness.chatCalls).toHaveLength(1)
       expect(harness.chatCalls[0]).toMatchObject({
@@ -503,8 +477,7 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
         expect(typeof previewBody).toBe('string')
         expect(harness.dispatchCalls).toEqual([])
       } else {
-        const expectedMode =
-          name === 'continue' ? 'continue' : name === 'regenerate' ? 'regenerate' : 'send'
+        const expectedMode = name === 'continue' ? 'continue' : name === 'regenerate' ? 'regenerate' : 'send'
         expect(harness.chatCalls[0].body).toMatchObject({ mode: expectedMode })
         expect(harness.dispatchCalls).toHaveLength(1)
         expect(harness.dispatchCalls[0].inputMode).toBe(expectedMode)
@@ -554,9 +527,7 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
       expect(ok).toBe(true)
 
       // C-A1 core: the browser issues zero outbound scriptstate commands.
-      const scriptstatePosts = harness.commandCalls.filter((call) =>
-        call.url.includes('/scriptstate'),
-      )
+      const scriptstatePosts = harness.commandCalls.filter((call) => call.url.includes('/scriptstate'))
       expect(scriptstatePosts).toEqual([])
 
       // The route persisted the assembly-time delta itself: bootstrap shows the
@@ -579,9 +550,7 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
 
       // EC-D4 (durable): the server owns the result persist, so the browser issues
       // zero generation-result POSTs and reconciles the terminal-frame revision (3).
-      const generationResultPosts = harness.commandCalls.filter((call) =>
-        call.url.includes('/generation-result'),
-      )
+      const generationResultPosts = harness.commandCalls.filter((call) => call.url.includes('/generation-result'))
       expect(generationResultPosts).toEqual([])
       expect(await getServerCommandBaseRevision()).toBe(4)
     } finally {
@@ -626,9 +595,7 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
       expect(ok).toBe(true)
 
       // Zero browser-side durable derivation: no scriptstate command POSTs.
-      const scriptstatePosts = harness.commandCalls.filter((call) =>
-        call.url.includes('/scriptstate'),
-      )
+      const scriptstatePosts = harness.commandCalls.filter((call) => call.url.includes('/scriptstate'))
       expect(scriptstatePosts).toEqual([])
 
       // The projection reflects the server-derived scriptstate, applied from the
@@ -653,9 +620,7 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
 
       // EC-D4 (durable): zero generation-result POSTs — the server persisted the
       // result; the browser reconciled the post-gen revision the `done` frame carried.
-      const generationResultPosts = harness.commandCalls.filter((call) =>
-        call.url.includes('/generation-result'),
-      )
+      const generationResultPosts = harness.commandCalls.filter((call) => call.url.includes('/generation-result'))
       expect(generationResultPosts).toEqual([])
       expect(getServerCompletionCalls()).toEqual([])
     } finally {
@@ -693,9 +658,7 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
 
       // EC-D4 (durable): the server persisted the editoutput'd text; the browser
       // issues zero generation-result POSTs.
-      const generationResultPosts = harness.commandCalls.filter((call) =>
-        call.url.includes('/generation-result'),
-      )
+      const generationResultPosts = harness.commandCalls.filter((call) => call.url.includes('/generation-result'))
       expect(generationResultPosts).toEqual([])
       const bootstrap = await harness.app.inject({
         method: 'GET',
@@ -795,14 +758,12 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
       const formated = harness.dispatchCalls[0].formated as Array<Record<string, unknown>>
       const userRow = formated.find(
         (row) =>
-          row.role === 'user' &&
-          typeof row.content === 'string' &&
-          (row.content as string).includes('Look at this'),
+          row.role === 'user' && typeof row.content === 'string' && (row.content as string).includes('Look at this'),
       )
       const golden = await loadExpected('multimodal-image')
-      const goldenUserRow = (
-        golden.providerCalls[0].formated as Array<Record<string, unknown>>
-      ).find((row) => row.role === 'user')
+      const goldenUserRow = (golden.providerCalls[0].formated as Array<Record<string, unknown>>).find(
+        (row) => row.role === 'user',
+      )
       expect(userRow?.multimodals).toEqual(goldenUserRow?.multimodals)
       // The browser never fell back to a local provider/completion dispatch.
       expect(getServerCompletionCalls()).toEqual([])
@@ -944,9 +905,9 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
       const userRow = liveChat.message.find((m) => m.role === 'user')
       expect(userRow?.data).toBe('Hi THERE')
 
-      const persistedUser = (
-        (await persistedChatMessages(harness)) as Array<{ role: string; data: string }>
-      ).find((m) => m.role === 'user')
+      const persistedUser = ((await persistedChatMessages(harness)) as Array<{ role: string; data: string }>).find(
+        (m) => m.role === 'user',
+      )
       expect(persistedUser?.data).toBe('Hi THERE')
       expect(getServerCompletionCalls()).toEqual([])
     } finally {
@@ -985,9 +946,7 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
   })
 
   beforeEach(() => {
-    vi.stubGlobal('safeStructuredClone', (v: unknown) =>
-      v === undefined ? undefined : JSON.parse(JSON.stringify(v)),
-    )
+    vi.stubGlobal('safeStructuredClone', (v: unknown) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v))))
     resetProviderState()
     resetSideEffectCalls()
     resetServerChatState()
@@ -1089,9 +1048,7 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
     const loaded = await loadFixture('simple-send')
     cleanups.push(loaded.cleanup)
     markFixtureActiveChatGenerationSettingsReady()
-    const originalMessages = JSON.parse(
-      JSON.stringify(DBState.db.characters[0].chats[0].message),
-    ) as Chat['message']
+    const originalMessages = JSON.parse(JSON.stringify(DBState.db.characters[0].chats[0].message)) as Chat['message']
     setServerChatPrompt(
       [{ role: 'user', content: 'Hi there' }],
       {},

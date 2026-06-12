@@ -55,12 +55,7 @@ afterEach(() => {
   }
 })
 
-function msg(
-  uid: string,
-  role: 'user' | 'char',
-  data: string,
-  extra: Record<string, unknown> = {},
-) {
+function msg(uid: string, role: 'user' | 'char', data: string, extra: Record<string, unknown> = {}) {
   return { chatId: uid, role, data, ...extra }
 }
 
@@ -83,15 +78,9 @@ describe('messageStore CRUD', () => {
 
   it('reads ranges by logical row offset even when stored seq values are sparse', () => {
     const db = makeDb(makeDataDir())
-    const messages = [
-      msg('m10', 'user', 'logical 0'),
-      msg('m20', 'char', 'logical 1'),
-      msg('m30', 'user', 'logical 2'),
-    ]
+    const messages = [msg('m10', 'user', 'logical 0'), msg('m20', 'char', 'logical 1'), msg('m30', 'user', 'logical 2')]
     replaceChatMessages(db, 'chat-1', messages)
-    db.prepare('UPDATE messages SET seq = seq + 10 WHERE chat_id = ? AND alternate = 0').run(
-      'chat-1',
-    )
+    db.prepare('UPDATE messages SET seq = seq + 10 WHERE chat_id = ? AND alternate = 0').run('chat-1')
 
     expect(getChatMessages(db, 'chat-1')).toEqual(messages)
     expect(countChatMessages(db, 'chat-1')).toBe(3)
@@ -139,10 +128,7 @@ describe('reroll-alternate rows', () => {
     addAlternateMessage(db, 'chat-1', msg('alt1', 'char', 'old candidate'))
 
     // The active transcript is unchanged by the alternate.
-    expect(getChatMessages(db, 'chat-1')).toEqual([
-      msg('m1', 'user', 'hi'),
-      msg('m2', 'char', 'active'),
-    ])
+    expect(getChatMessages(db, 'chat-1')).toEqual([msg('m1', 'user', 'hi'), msg('m2', 'char', 'active')])
     expect(countChatMessages(db, 'chat-1')).toBe(2)
     expect(getAllChatIdsWithMessages(db)).toEqual(['chat-1'])
     // The alternate is retrievable via the dedicated buffer queries.
@@ -157,11 +143,7 @@ describe('reroll-alternate rows', () => {
     addAlternateMessage(db, 'chat-1', msg('c', 'char', 'third'))
 
     expect(countAlternateMessages(db, 'chat-1')).toBe(3)
-    expect(getAlternateMessages(db, 'chat-1').map((m) => m.data)).toEqual([
-      'third',
-      'second',
-      'first',
-    ])
+    expect(getAlternateMessages(db, 'chat-1').map((m) => m.data)).toEqual(['third', 'second', 'first'])
     const seqs = (
       db.prepare('SELECT seq FROM messages WHERE chat_id = ? AND alternate = 1').all('chat-1') as {
         seq: number
@@ -220,9 +202,10 @@ describe('reroll-alternate rows', () => {
 
 describe('applyChatMessageDiff surgical writes', () => {
   function rowids(db: DatabaseSync, chatId: string): { seq: number; rowid: number }[] {
-    return db
-      .prepare('SELECT rowid, seq FROM messages WHERE chat_id = ? ORDER BY seq')
-      .all(chatId) as { seq: number; rowid: number }[]
+    return db.prepare('SELECT rowid, seq FROM messages WHERE chat_id = ? ORDER BY seq').all(chatId) as {
+      seq: number
+      rowid: number
+    }[]
   }
 
   function persistedActiveRows(db: DatabaseSync, chatId: string) {
@@ -503,9 +486,7 @@ describe('repository message-aware load/write', () => {
       characters: Array<{ chats: Array<{ id: string; message: unknown[] }> }>
     }
     expect(hydrated.characters[0].chats[0].id).toBe('chat-1')
-    expect(hydrated.characters[0].chats[0].message).toEqual([
-      msg('m1', 'user', 'already in sqlite'),
-    ])
+    expect(hydrated.characters[0].chats[0].message).toEqual([msg('m1', 'user', 'already in sqlite')])
   })
 
   it('ensureDbJsonImported imports a legacy db.json into SQLite', () => {
@@ -527,10 +508,7 @@ describe('repository message-aware load/write', () => {
         },
       ],
     }
-    writeFileSync(
-      path.join(dataDir, 'db.json'),
-      JSON.stringify({ _version: 1, database, assets: [legacyAsset] }),
-    )
+    writeFileSync(path.join(dataDir, 'db.json'), JSON.stringify({ _version: 1, database, assets: [legacyAsset] }))
 
     ensureDbJsonImported(db, dataDir)
 

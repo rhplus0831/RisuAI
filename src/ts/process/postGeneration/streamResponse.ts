@@ -1,8 +1,4 @@
-import type {
-  MessageGenerationInfo,
-  MessagePresetInfo,
-  character,
-} from '../../storage/database.svelte'
+import type { MessageGenerationInfo, MessagePresetInfo, character } from '../../storage/database.svelte'
 import { DBState } from '../../stores.svelte'
 import { trimUntilPunctuation } from '../../util'
 import { withTrustedServerProjectionWrite } from '../../server/projectionWriteGuard.svelte'
@@ -45,9 +41,7 @@ export interface ConsumeStreamResponseResult {
   streamAborted: boolean
 }
 
-export async function consumeStreamResponse(
-  opts: ConsumeStreamResponseOptions,
-): Promise<ConsumeStreamResponseResult> {
+export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions): Promise<ConsumeStreamResponseResult> {
   const {
     req,
     arg,
@@ -102,12 +96,7 @@ export async function consumeStreamResponse(
       // and defer final text to the terminal `done` frame.
       nextData = reformatContent(prefix + result)
     } else {
-      const result2 = await processScriptFull(
-        nowChatroom,
-        reformatContent(prefix + result),
-        'editoutput',
-        msgIndex,
-      )
+      const result2 = await processScriptFull(nowChatroom, reformatContent(prefix + result), 'editoutput', msgIndex)
       nextData = result2.data
       emoChanged = result2.emoChanged
     }

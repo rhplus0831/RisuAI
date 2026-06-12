@@ -57,12 +57,7 @@ function parseImportMaxBytes(raw: string | undefined, fallback: number): number 
   // Explicit opt-out: the import streams to disk with bounded memory, so a
   // self-host owner can lift the ceiling entirely for very large backups.
   const normalized = raw.trim().toLowerCase()
-  if (
-    normalized === '0' ||
-    normalized === 'unlimited' ||
-    normalized === 'none' ||
-    normalized === 'infinity'
-  ) {
+  if (normalized === '0' || normalized === 'unlimited' || normalized === 'none' || normalized === 'infinity') {
     return Number.POSITIVE_INFINITY
   }
   const n = Number(raw)
@@ -109,9 +104,7 @@ function parseBoolean(raw: string | undefined): boolean {
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
-  const dataDir = env.RISU_API_DATA_DIR
-    ? path.resolve(env.RISU_API_DATA_DIR)
-    : path.join(repoRoot(), 'data')
+  const dataDir = env.RISU_API_DATA_DIR ? path.resolve(env.RISU_API_DATA_DIR) : path.join(repoRoot(), 'data')
 
   return {
     host: env.RISU_API_HOST ?? '0.0.0.0',

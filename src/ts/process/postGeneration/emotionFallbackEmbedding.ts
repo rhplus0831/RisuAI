@@ -1,10 +1,6 @@
 import type { character } from '../../storage/database.svelte'
 import { HypaProcesser } from '../memory/hypamemory'
-import {
-  pushCharEmotionEntry,
-  type CharEmotionEntry,
-  type CharEmotionMap,
-} from './charEmotionStore'
+import { pushCharEmotionEntry, type CharEmotionEntry, type CharEmotionMap } from './charEmotionStore'
 
 export interface RunEmotionEmbeddingFallbackOptions {
   result: string
@@ -13,9 +9,7 @@ export interface RunEmotionEmbeddingFallbackOptions {
   charemotions: CharEmotionMap
 }
 
-export async function runEmotionEmbeddingFallback(
-  opts: RunEmotionEmbeddingFallbackOptions,
-): Promise<void> {
+export async function runEmotionEmbeddingFallback(opts: RunEmotionEmbeddingFallbackOptions): Promise<void> {
   const currentEmotion = opts.currentChar.emotionImages
   const emotionList = currentEmotion.map((a) => a[0])
 
@@ -37,9 +31,7 @@ export async function runEmotionEmbeddingFallback(
     }
   }
 
-  const emoresult = searched
-    .sort((a, b) => b[1] - a[1])
-    .map((v) => v[0])
+  const emoresult = searched.sort((a, b) => b[1] - a[1]).map((v) => v[0])
 
   for (const emo of currentEmotion) {
     if (emo[0] === emoresult[0]) {

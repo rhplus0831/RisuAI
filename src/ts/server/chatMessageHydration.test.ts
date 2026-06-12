@@ -133,9 +133,7 @@ beforeEach(() => {
   projectionState.fetchBulkChat.mockReset()
   projectionState.fetchCharLore.mockReset()
   projectionState.fetchBulkCharLore.mockReset()
-  projectionState.fetchBulkChat.mockImplementation(async (chatIds: string[]) =>
-    okBulkResult(chatIds),
-  )
+  projectionState.fetchBulkChat.mockImplementation(async (chatIds: string[]) => okBulkResult(chatIds))
   projectionState.fetchBulkCharLore.mockImplementation(async (characterIds: string[]) =>
     okBulkLorebookResult(characterIds),
   )
@@ -149,15 +147,11 @@ afterEach(() => {
   selectedCharID.set(-1)
 })
 
-const db = () =>
-  (DBState as { db: { characters: Array<{ chats: Array<{ id: string; message: unknown[] }> }> } })
-    .db
+const db = () => (DBState as { db: { characters: Array<{ chats: Array<{ id: string; message: unknown[] }> }> } }).db
 
 describe('chat message hydration bridge', () => {
   it('hydrates only the active chat, and dedupes a second call', async () => {
-    projectionState.fetchChat.mockResolvedValue(
-      okResult('chat-1', [{ role: 'user', data: 'hi', chatId: 'm1' }]),
-    )
+    projectionState.fetchChat.mockResolvedValue(okResult('chat-1', [{ role: 'user', data: 'hi', chatId: 'm1' }]))
 
     await hydrateActiveChat()
 
@@ -165,9 +159,7 @@ describe('chat message hydration bridge', () => {
     expect(projectionState.fetchChat).toHaveBeenCalledWith('chat-1', {
       tail: ACTIVE_CHAT_INITIAL_MESSAGE_WINDOW,
     })
-    expect(db().characters[0].chats[0].message).toEqual([
-      { role: 'user', data: 'hi', chatId: 'm1' },
-    ])
+    expect(db().characters[0].chats[0].message).toEqual([{ role: 'user', data: 'hi', chatId: 'm1' }])
     // The unrelated chat stays a stub.
     expect(db().characters[0].chats[1].message).toEqual([])
 
@@ -178,9 +170,7 @@ describe('chat message hydration bridge', () => {
 
   it('uses the configured active chat tail window size', async () => {
     ;(DBState.db as { chatDisplayTailCount?: number }).chatDisplayTailCount = 12
-    projectionState.fetchChat.mockResolvedValue(
-      okResult('chat-1', [{ role: 'user', data: 'hi', chatId: 'm1' }]),
-    )
+    projectionState.fetchChat.mockResolvedValue(okResult('chat-1', [{ role: 'user', data: 'hi', chatId: 'm1' }]))
 
     await hydrateActiveChat()
 
@@ -188,13 +178,9 @@ describe('chat message hydration bridge', () => {
   })
 
   it('force re-hydrates even when already cached', async () => {
-    projectionState.fetchChat.mockResolvedValue(
-      okResult('chat-1', [{ role: 'user', data: 'a', chatId: 'm1' }]),
-    )
+    projectionState.fetchChat.mockResolvedValue(okResult('chat-1', [{ role: 'user', data: 'a', chatId: 'm1' }]))
     await hydrateActiveChat()
-    projectionState.fetchChat.mockResolvedValue(
-      okResult('chat-1', [{ role: 'user', data: 'b', chatId: 'm1' }]),
-    )
+    projectionState.fetchChat.mockResolvedValue(okResult('chat-1', [{ role: 'user', data: 'b', chatId: 'm1' }]))
     await hydrateActiveChat({ force: true })
     expect(projectionState.fetchChat).toHaveBeenCalledTimes(2)
     expect(db().characters[0].chats[0].message).toEqual([{ role: 'user', data: 'b', chatId: 'm1' }])
@@ -250,12 +236,7 @@ describe('chat message hydration bridge', () => {
       limit: 3,
     })
     const messages = db().characters[0].chats[0].message as Array<{ data: string }>
-    expect(messages.map((message) => message.data)).toEqual([
-      'older-1',
-      'older-2',
-      'older-3',
-      'tail',
-    ])
+    expect(messages.map((message) => message.data)).toEqual(['older-1', 'older-2', 'older-3', 'tail'])
   })
 
   it('ensureAllChatsHydrated fills every chat', async () => {
@@ -264,12 +245,8 @@ describe('chat message hydration bridge', () => {
     expect(projectionState.fetchBulkChat).toHaveBeenCalledTimes(1)
     expect(projectionState.fetchBulkChat).toHaveBeenCalledWith(['chat-1', 'chat-2'])
     expect(projectionState.fetchChat).not.toHaveBeenCalled()
-    expect(db().characters[0].chats[0].message).toEqual([
-      { role: 'user', data: 'chat-1', chatId: 'm-chat-1' },
-    ])
-    expect(db().characters[0].chats[1].message).toEqual([
-      { role: 'user', data: 'chat-2', chatId: 'm-chat-2' },
-    ])
+    expect(db().characters[0].chats[0].message).toEqual([{ role: 'user', data: 'chat-1', chatId: 'm-chat-1' }])
+    expect(db().characters[0].chats[1].message).toEqual([{ role: 'user', data: 'chat-2', chatId: 'm-chat-2' }])
   })
 
   it('ensureAllChatsHydrated includes chats that only have a partial active window', async () => {
@@ -282,9 +259,7 @@ describe('chat message hydration bridge', () => {
     await ensureAllChatsHydrated()
 
     expect(projectionState.fetchBulkChat).toHaveBeenCalledWith(['chat-1', 'chat-2'])
-    expect(db().characters[0].chats[0].message).toEqual([
-      { role: 'user', data: 'chat-1', chatId: 'm-chat-1' },
-    ])
+    expect(db().characters[0].chats[0].message).toEqual([{ role: 'user', data: 'chat-1', chatId: 'm-chat-1' }])
   })
 
   it('hydrates many chats with one bulk chat request', async () => {
@@ -293,9 +268,7 @@ describe('chat message hydration bridge', () => {
     await ensureAllChatsHydrated()
 
     expect(projectionState.fetchBulkChat).toHaveBeenCalledTimes(1)
-    expect(projectionState.fetchBulkChat.mock.calls[0][0]).toHaveLength(
-      BULK_HYDRATION_CONCURRENCY * 3,
-    )
+    expect(projectionState.fetchBulkChat.mock.calls[0][0]).toHaveLength(BULK_HYDRATION_CONCURRENCY * 3)
     expect(projectionState.fetchChat).not.toHaveBeenCalled()
   })
 
@@ -333,20 +306,14 @@ describe('chat message hydration bridge', () => {
     // Without the reset this would skip the cached ids and export empty stubs.
     await ensureAllChatsHydrated()
     expect(projectionState.fetchBulkChat).toHaveBeenCalledTimes(1)
-    expect(db().characters[0].chats[0].message).toEqual([
-      { role: 'user', data: 'chat-1', chatId: 'm-chat-1' },
-    ])
+    expect(db().characters[0].chats[0].message).toEqual([{ role: 'user', data: 'chat-1', chatId: 'm-chat-1' }])
   })
 
   it('hydrateChatMessages targets a specific (non-active) chat', async () => {
-    projectionState.fetchChat.mockResolvedValue(
-      okResult('chat-2', [{ role: 'char', data: 'yo', chatId: 'm2' }]),
-    )
+    projectionState.fetchChat.mockResolvedValue(okResult('chat-2', [{ role: 'char', data: 'yo', chatId: 'm2' }]))
     await hydrateChatMessages('chat-2')
     expect(projectionState.fetchChat).toHaveBeenCalledWith('chat-2', {})
-    expect(db().characters[0].chats[1].message).toEqual([
-      { role: 'char', data: 'yo', chatId: 'm2' },
-    ])
+    expect(db().characters[0].chats[1].message).toEqual([{ role: 'char', data: 'yo', chatId: 'm2' }])
   })
 
   it('full active hydration replaces a partial window and marks the chat cached', async () => {
@@ -415,9 +382,7 @@ describe('chat message hydration bridge', () => {
 
     await ensureAllChatsHydrated()
 
-    expect(db().characters[0].chats[0].message).toEqual([
-      { role: 'user', data: 'chat-1', chatId: 'm-chat-1' },
-    ])
+    expect(db().characters[0].chats[0].message).toEqual([{ role: 'user', data: 'chat-1', chatId: 'm-chat-1' }])
     expect(db().characters[0].chats[1].message).toEqual([])
 
     projectionState.fetchBulkChat.mockClear()
@@ -439,9 +404,7 @@ describe('chat message hydration bridge', () => {
       missing: ['chat-2'],
     })
 
-    await expect(ensureAllChatsHydrated({ strict: true })).rejects.toThrow(
-      /did not return messages for: chat-2/,
-    )
+    await expect(ensureAllChatsHydrated({ strict: true })).rejects.toThrow(/did not return messages for: chat-2/)
   })
 
   it('drops a stale bulk chat hydration response', async () => {
@@ -490,9 +453,7 @@ describe('chat message hydration bridge', () => {
 
     await hydrateActiveChat()
 
-    expect(db().characters[0].chats[0].message).toEqual([
-      { role: 'user', data: 'hi', chatId: 'm1' },
-    ])
+    expect(db().characters[0].chats[0].message).toEqual([{ role: 'user', data: 'hi', chatId: 'm1' }])
   })
 
   it('still drops a response older than the revision already applied at request start', async () => {
@@ -516,9 +477,7 @@ describe('isChatMessageHydrationPending', () => {
     // A fresh open chat: empty stub, never fetched -> loading.
     expect(isChatMessageHydrationPending('chat-1', 0)).toBe(true)
 
-    projectionState.fetchChat.mockResolvedValue(
-      okResult('chat-1', [{ role: 'user', data: 'hi', chatId: 'm1' }]),
-    )
+    projectionState.fetchChat.mockResolvedValue(okResult('chat-1', [{ role: 'user', data: 'hi', chatId: 'm1' }]))
     await hydrateActiveChat()
 
     // Messages present -> not loading.
@@ -561,9 +520,7 @@ describe('isChatMessageHydrationPending', () => {
   })
 
   it('becomes pending again after a resync re-stubs the chat', async () => {
-    projectionState.fetchChat.mockResolvedValue(
-      okResult('chat-1', [{ role: 'user', data: 'hi', chatId: 'm1' }]),
-    )
+    projectionState.fetchChat.mockResolvedValue(okResult('chat-1', [{ role: 'user', data: 'hi', chatId: 'm1' }]))
     await hydrateActiveChat()
     expect(isChatMessageHydrationPending('chat-1', 1)).toBe(false)
 
@@ -587,9 +544,7 @@ describe('character globalLore hydration (Phase 5)', () => {
     await hydrateActiveCharacterLorebook()
 
     expect(projectionState.fetchCharLore).toHaveBeenCalledWith('char-1')
-    expect((db().characters[0] as { globalLore?: unknown[] }).globalLore).toEqual([
-      { key: 'k', content: 'lore' },
-    ])
+    expect((db().characters[0] as { globalLore?: unknown[] }).globalLore).toEqual([{ key: 'k', content: 'lore' }])
     // Marked hydrated → the lorebook watcher will now track (and persist) edits.
     expect(isCharacterLorebookHydrated('char-1')).toBe(true)
 
@@ -604,9 +559,7 @@ describe('character globalLore hydration (Phase 5)', () => {
     await ensureAllCharacterLorebooksHydrated()
 
     expect(projectionState.fetchBulkCharLore).toHaveBeenCalledTimes(1)
-    expect(projectionState.fetchBulkCharLore.mock.calls[0][0]).toHaveLength(
-      BULK_HYDRATION_CONCURRENCY * 3,
-    )
+    expect(projectionState.fetchBulkCharLore.mock.calls[0][0]).toHaveLength(BULK_HYDRATION_CONCURRENCY * 3)
     expect(projectionState.fetchCharLore).not.toHaveBeenCalled()
     expect((DBState.db.characters[0] as { globalLore?: unknown[] }).globalLore).toEqual([
       { key: 'char-1', content: 'lore' },

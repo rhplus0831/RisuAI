@@ -9,14 +9,7 @@ import { authCryptoRateLimit } from '../routeRateLimits.js'
 
 const HEX_RE = /^[0-9a-fA-F]+$/
 const LEGACY_STORAGE_TEMP_PREFIX = '.legacy-storage-'
-const DIRECTORY_FSYNC_UNSUPPORTED_CODES = new Set([
-  'EISDIR',
-  'EINVAL',
-  'ENOSYS',
-  'ENOTSUP',
-  'EOPNOTSUPP',
-  'EPERM',
-])
+const DIRECTORY_FSYNC_UNSUPPORTED_CODES = new Set(['EISDIR', 'EINVAL', 'ENOSYS', 'ENOTSUP', 'EOPNOTSUPP', 'EPERM'])
 
 function isHexFilename(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0 && HEX_RE.test(value)
@@ -73,11 +66,7 @@ async function syncDirectoryIfAvailable(dirPath: string): Promise<void> {
   }
 }
 
-async function writeLegacyStorageFileAtomic(
-  savePath: string,
-  filePath: string,
-  body: Buffer,
-): Promise<void> {
+async function writeLegacyStorageFileAtomic(savePath: string, filePath: string, body: Buffer): Promise<void> {
   const finalPath = path.join(savePath, filePath)
   const tempPath = legacyStorageTempPath(savePath)
   let renamed = false
@@ -98,11 +87,7 @@ interface CryptoBody {
   data?: unknown
 }
 
-export function registerLegacyStorageRoutes(
-  app: FastifyInstance,
-  authState: AuthState,
-  dataDir: string,
-): void {
+export function registerLegacyStorageRoutes(app: FastifyInstance, authState: AuthState, dataDir: string): void {
   app.register(async (instance) => {
     instance.removeAllContentTypeParsers()
     instance.addContentTypeParser('*', { parseAs: 'buffer' }, (_req, body, done) => {
@@ -190,18 +175,14 @@ export function registerLegacyStorageRoutes(
     })
   })
 
-  app.post(
-    '/api/v1/auth/crypto',
-    { config: { rateLimit: authCryptoRateLimit } },
-    async (req, reply) => {
-      const body = (req.body ?? {}) as CryptoBody
-      if (typeof body.data !== 'string') {
-        reply.code(400)
-        return { error: 'data: string required' }
-      }
-      const hash = createHash('sha256')
-      hash.update(Buffer.from(body.data, 'utf-8'))
-      return hash.digest('hex')
-    },
-  )
+  app.post('/api/v1/auth/crypto', { config: { rateLimit: authCryptoRateLimit } }, async (req, reply) => {
+    const body = (req.body ?? {}) as CryptoBody
+    if (typeof body.data !== 'string') {
+      reply.code(400)
+      return { error: 'data: string required' }
+    }
+    const hash = createHash('sha256')
+    hash.update(Buffer.from(body.data, 'utf-8'))
+    return hash.digest('hex')
+  })
 }

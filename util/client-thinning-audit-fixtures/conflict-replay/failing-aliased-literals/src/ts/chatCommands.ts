@@ -9,10 +9,7 @@ interface CommandResult {
   revision: number
 }
 
-async function runServerCommand(
-  _name: string,
-  payload: Record<string, number>,
-): Promise<CommandResult> {
+async function runServerCommand(_name: string, payload: Record<string, number>): Promise<CommandResult> {
   return { status: 'ok', revision: (payload[REVISION_KEY] ?? 0) + 1 }
 }
 

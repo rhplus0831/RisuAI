@@ -6,9 +6,7 @@
 
   // Use a fresh array because Fastify mode exposes hotkeys as a read-only projection.
   function patchHotkey(index: number, patch: Partial<Hotkey>): void {
-    const next = DBState.db.hotkeys.map((hotkey, i) =>
-      i === index ? { ...hotkey, ...patch } : { ...hotkey },
-    )
+    const next = DBState.db.hotkeys.map((hotkey, i) => (i === index ? { ...hotkey, ...patch } : { ...hotkey }))
     applyServerBackedSetting('hotkeys', next)
   }
 </script>
@@ -34,8 +32,7 @@
               class:text-textcolor2={!hotkey.ctrl}
               onclick={() => {
                 patchHotkey(index, { ctrl: !hotkey.ctrl })
-              }}
-            >
+              }}>
               Ctrl
             </button>
           </td>
@@ -45,8 +42,7 @@
               class:text-textcolor2={!hotkey.shift}
               onclick={() => {
                 patchHotkey(index, { shift: !hotkey.shift })
-              }}
-            >
+              }}>
               Shift
             </button>
           </td>
@@ -56,8 +52,7 @@
               class:text-textcolor2={!hotkey.alt}
               onclick={() => {
                 patchHotkey(index, { alt: !hotkey.alt })
-              }}
-            >
+              }}>
               Alt
             </button>
           </td>
@@ -68,8 +63,7 @@
               onkeydown={(e) => {
                 e.preventDefault()
                 patchHotkey(index, { key: e.key })
-              }}
-            />
+              }} />
           </td>
         </tr>
       {/each}

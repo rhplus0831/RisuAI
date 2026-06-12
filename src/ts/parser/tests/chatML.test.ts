@@ -146,9 +146,7 @@ test.skip('extracts multiple thoughts', () => {
 test('defaults to user role if unknown prefix', () => {
   fc.assert(
     fc.property(
-      fc
-        .string()
-        .filter((s) => s.trim().length > 0 && s !== 'assistant' && s !== 'system' && s !== 'user'),
+      fc.string().filter((s) => s.trim().length > 0 && s !== 'assistant' && s !== 'system' && s !== 'user'),
       fc.string(),
       // No simple whitespace (ambiguous)
       fc.constantFrom('<|im_sep|>', '\n'),

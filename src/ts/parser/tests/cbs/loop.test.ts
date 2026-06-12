@@ -69,10 +69,7 @@ describe('#each', () => {
 
   test('can loop over a 2D array literal', () => {
     expect(
-      quickParse(
-        '#each::keep [[1, 2], [3, 4]] as x',
-        template('#each::keep {{slot::x}} as y', '{{slot::y}}\n'),
-      ),
+      quickParse('#each::keep [[1, 2], [3, 4]] as x', template('#each::keep {{slot::x}} as y', '{{slot::y}}\n')),
     ).toBe('1\n2\n3\n4\n')
   })
 
@@ -85,10 +82,7 @@ describe('#each', () => {
       ]),
     )
     expect(
-      quickParse(
-        '#each::keep {{getvar::arr}} as x',
-        template('#each::keep {{slot::x}} as y', '{{slot::y}}\n'),
-      ),
+      quickParse('#each::keep {{getvar::arr}} as x', template('#each::keep {{slot::x}} as y', '{{slot::y}}\n')),
     ).toBe('1\n2\n3\n4\n')
   })
 
@@ -107,12 +101,9 @@ describe('#each', () => {
   })
 
   test('can be nested', () => {
-    expect(
-      quickParse(
-        '#each::keep [1, 2] as x',
-        template('#each::keep [3, 4] as y', '{{slot::x}}{{slot::y}}\n'),
-      ),
-    ).toBe('13\n14\n23\n24\n')
+    expect(quickParse('#each::keep [1, 2] as x', template('#each::keep [3, 4] as y', '{{slot::x}}{{slot::y}}\n'))).toBe(
+      '13\n14\n23\n24\n',
+    )
   })
 
   test('works in #when ... :else', () => {
@@ -138,9 +129,7 @@ describe('#each', () => {
 
   describe('Operators: whitespaces', () => {
     test('::keep preserves all whitespaces', () => {
-      expect(quickParse('#each::keep [1, 2, 3] as n', '  - {{slot::n}}\n')).toBe(
-        `  - 1\n  - 2\n  - 3\n`,
-      )
+      expect(quickParse('#each::keep [1, 2, 3] as n', '  - {{slot::n}}\n')).toBe(`  - 1\n  - 2\n  - 3\n`)
     })
   })
 })

@@ -45,9 +45,7 @@ export async function getOpenRouterProviders(): Promise<{ name: string; slug: st
       },
     ).then((res) => res.json())
 
-    return providers.data
-      .map(({ name, slug }) => ({ name, slug }))
-      .sort((a, b) => a.name.localeCompare(b.name))
+    return providers.data.map(({ name, slug }) => ({ name, slug })).sort((a, b) => a.name.localeCompare(b.name))
   } catch (error) {
     return []
   }
@@ -69,19 +67,15 @@ export async function getOpenRouterModels(): Promise<OpenRouterModelInfo[]> {
       .map((model: any) => {
         const price = (Number(model.pricing.prompt) * 3 + Number(model.pricing.completion)) / 4
         const priceDisplay = price > 0 ? `$${(price * 1000).toFixed(5)}/1k` : 'Free'
-        const legacyName =
-          price > 0 ? `${model.name} - $${(price * 1000).toFixed(5)}/1k` : `${model.name} - Free`
+        const legacyName = price > 0 ? `${model.name} - $${(price * 1000).toFixed(5)}/1k` : `${model.name} - Free`
 
         const colonIdx = model.name.indexOf(':')
-        const provider =
-          colonIdx !== -1 ? model.name.slice(0, colonIdx).trim() : model.id.split('/')[0]
+        const provider = colonIdx !== -1 ? model.name.slice(0, colonIdx).trim() : model.id.split('/')[0]
         const cleanName = colonIdx !== -1 ? model.name.slice(colonIdx + 1).trim() : model.name
 
         const toPrice1M = (raw: any): PriceEntry => {
           const n = Number(raw)
-          return raw !== undefined && raw !== null && raw !== '' && !isNaN(n)
-            ? n * 1_000_000
-            : undefined
+          return raw !== undefined && raw !== null && raw !== '' && !isNaN(n) ? n * 1_000_000 : undefined
         }
 
         return {

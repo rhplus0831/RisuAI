@@ -64,10 +64,7 @@ describe('normalizeTemplate', () => {
 
   it('appends an implicit postEverything when the template lacks one', () => {
     seedDb({
-      promptTemplate: [
-        { type: 'description' },
-        { type: 'chat', rangeStart: 0, rangeEnd: 'end' },
-      ] as PromptItem[],
+      promptTemplate: [{ type: 'description' }, { type: 'chat', rangeStart: 0, rangeEnd: 'end' }] as PromptItem[],
     })
     const result = normalizeTemplate(makeChar())
     expect(result.usingPromptTemplate).toBe(true)
@@ -80,16 +77,10 @@ describe('normalizeTemplate', () => {
 
   it('does not duplicate postEverything when the template already has one', () => {
     seedDb({
-      promptTemplate: [
-        { type: 'description' },
-        { type: 'postEverything' },
-      ] as PromptItem[],
+      promptTemplate: [{ type: 'description' }, { type: 'postEverything' }] as PromptItem[],
     })
     const result = normalizeTemplate(makeChar())
-    expect(result.promptTemplate).toEqual([
-      { type: 'description' },
-      { type: 'postEverything' },
-    ])
+    expect(result.promptTemplate).toEqual([{ type: 'description' }, { type: 'postEverything' }])
   })
 
   it('clones the db template so the result can be mutated without touching state', () => {
@@ -124,10 +115,7 @@ describe('normalizeTemplate', () => {
     })
     const result = normalizeTemplate(makeChar({ utilityBot: true }))
     expect(result.usingPromptTemplate).toBe(true)
-    expect(result.promptTemplate).toEqual([
-      { type: 'description' },
-      { type: 'postEverything' },
-    ])
+    expect(result.promptTemplate).toEqual([{ type: 'description' }, { type: 'postEverything' }])
   })
 
   it('forces the utility-bot template when utilOverride=true but the user has no template', () => {
@@ -148,16 +136,10 @@ describe('normalizeTemplate', () => {
 
   it('passes through the user template untouched for non-utility characters', () => {
     seedDb({
-      promptTemplate: [
-        { type: 'description' },
-        { type: 'postEverything' },
-      ] as PromptItem[],
+      promptTemplate: [{ type: 'description' }, { type: 'postEverything' }] as PromptItem[],
     })
     const result = normalizeTemplate(makeChar({ utilityBot: false }))
     expect(result.usingPromptTemplate).toBe(true)
-    expect(result.promptTemplate).toEqual([
-      { type: 'description' },
-      { type: 'postEverything' },
-    ])
+    expect(result.promptTemplate).toEqual([{ type: 'description' }, { type: 'postEverything' }])
   })
 })

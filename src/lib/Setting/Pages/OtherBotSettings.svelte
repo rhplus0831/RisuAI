@@ -17,20 +17,11 @@
   import { untrack } from 'svelte'
   import { tokenizePreset } from 'src/ts/process/prompt'
   import { getCharToken } from 'src/ts/tokenizer'
-  import {
-    PlusIcon,
-    PencilIcon,
-    TrashIcon,
-    DownloadIcon,
-    HardDriveUploadIcon,
-  } from '@lucide/svelte'
+  import { PlusIcon, PencilIcon, TrashIcon, DownloadIcon, HardDriveUploadIcon } from '@lucide/svelte'
   import { alertError, alertInput, alertConfirm, alertNormal } from 'src/ts/alert'
   import { createHypaV3Preset } from 'src/ts/process/memory/hypav3'
   import { onDestroy } from 'svelte'
-  import {
-    createServerBackedSettingDraft,
-    watchServerBackedSettings,
-  } from 'src/ts/server/settingsBridge.svelte'
+  import { createServerBackedSettingDraft, watchServerBackedSettings } from 'src/ts/server/settingsBridge.svelte'
 
   const stopServerSettingsWatch = watchServerBackedSettings(['hideApiKey', 'useLegacyGUI'])
   onDestroy(stopServerSettingsWatch)
@@ -60,36 +51,25 @@
   const ImagenModelDraft = createServerBackedSettingDraft<string>('ImagenModel', '')
   const ImagenImageSizeDraft = createServerBackedSettingDraft<string>('ImagenImageSize', '1K')
   const ImagenAspectRatioDraft = createServerBackedSettingDraft<string>('ImagenAspectRatio', '1:1')
-  const ImagenPersonGenerationDraft = createServerBackedSettingDraft<string>(
-    'ImagenPersonGeneration',
-    'allow_all',
-  )
-  const openaiCompatImageDraft = createServerBackedSettingDraft<Record<string, any>>(
-    'openaiCompatImage',
-    {},
-  )
-  const wavespeedImageDraft = createServerBackedSettingDraft<Record<string, any>>(
-    'wavespeedImage',
-    {},
-  )
+  const ImagenPersonGenerationDraft = createServerBackedSettingDraft<string>('ImagenPersonGeneration', 'allow_all')
+  const openaiCompatImageDraft = createServerBackedSettingDraft<Record<string, any>>('openaiCompatImage', {})
+  const wavespeedImageDraft = createServerBackedSettingDraft<Record<string, any>>('wavespeedImage', {})
   const ttsAutoSpeechDraft = createServerBackedSettingDraft<boolean>('ttsAutoSpeech', false)
   const elevenLabKeyDraft = createServerBackedSettingDraft<string>('elevenLabKey', '')
   const voicevoxUrlDraft = createServerBackedSettingDraft<string>('voicevoxUrl', '')
   const huggingfaceKeyDraft = createServerBackedSettingDraft<string>('huggingfaceKey', '')
   const fishSpeechKeyDraft = createServerBackedSettingDraft<string>('fishSpeechKey', '')
-  const emotionProcesserDraft = createServerBackedSettingDraft<string>(
-    'emotionProcesser',
-    'submodel',
-  )
+  const emotionProcesserDraft = createServerBackedSettingDraft<string>('emotionProcesser', 'submodel')
   const hypaV3Draft = createServerBackedSettingDraft<boolean>('hypaV3', false)
   const hypaV3PresetsDraft = createServerBackedSettingDraft<any[]>('hypaV3Presets', [])
   const hypaV3PresetIdDraft = createServerBackedSettingDraft<number>('hypaV3PresetId', 0)
   const hypaModelDraft = createServerBackedSettingDraft<string>('hypaModel', 'MiniLM')
   const hypaV3KeyDraft = createServerBackedSettingDraft<string>('hypaV3Key', '')
-  const hypaCustomSettingsDraft = createServerBackedSettingDraft<Record<string, any>>(
-    'hypaCustomSettings',
-    { url: '', key: '', model: '' },
-  )
+  const hypaCustomSettingsDraft = createServerBackedSettingDraft<Record<string, any>>('hypaCustomSettings', {
+    url: '',
+    key: '',
+    model: '',
+  })
   const voyageApiKeyDraft = createServerBackedSettingDraft<string>('voyageApiKey', '')
 
   let submenu = $state(DBState.db.useLegacyGUI ? -1 : 0)
@@ -136,10 +116,7 @@
     const maxLoreToken = char.loreSettings?.tokenBudget ?? DBState.db.loreBookToken
     const maxResponse = DBState.db.maxResponse
     const requiredToken =
-      promptTemplateToken +
-      charToken.persistant +
-      Math.min(charToken.dynamic, maxLoreToken) +
-      maxResponse * 3
+      promptTemplateToken + charToken.persistant + Math.min(charToken.dynamic, maxLoreToken) + maxResponse * 3
     const maxContext = DBState.db.maxContext
 
     if (maxContext === 0) {
@@ -244,9 +221,7 @@
    * Handle model selection change
    */
   function handleModelChange() {
-    const selectedModel = wavespeedModels.find(
-      (m) => m.model_id === wavespeedImageDraft.value.model,
-    )
+    const selectedModel = wavespeedModels.find((m) => m.model_id === wavespeedImageDraft.value.model)
 
     // Reset reference_mode for text-to-image models
     if (!selectedModel?.supportsImageInput) {
@@ -284,15 +259,11 @@
     })
   }
 
-  function getVibeEncodingEntries(): Array<
-    [string, { params: { information_extracted: number } }]
-  > {
+  function getVibeEncodingEntries(): Array<[string, { params: { information_extracted: number } }]> {
     const config = NAIImgConfigDraft.value
     const selection = config.vibe_model_selection
     const encodings = selection ? config.vibe_data?.encodings?.[selection] : undefined
-    return Object.entries(encodings ?? {}) as Array<
-      [string, { params: { information_extracted: number } }]
-    >
+    return Object.entries(encodings ?? {}) as Array<[string, { params: { information_extracted: number } }]>
   }
 
   $effect(() => {
@@ -318,8 +289,7 @@
         submenu = 0
       }}
       class="p-2 flex-1 border-r border-darkborderc"
-      class:bg-darkbutton={submenu === 0}
-    >
+      class:bg-darkbutton={submenu === 0}>
       <span>{language.longTermMemory}</span>
     </button>
     <button
@@ -327,8 +297,7 @@
         submenu = 1
       }}
       class="p2 flex-1 border-r border-darkborderc"
-      class:bg-darkbutton={submenu === 1}
-    >
+      class:bg-darkbutton={submenu === 1}>
       <span>TTS</span>
     </button>
     <button
@@ -336,8 +305,7 @@
         submenu = 2
       }}
       class="p-2 flex-1 border-r border-darkborderc"
-      class:bg-darkbutton={submenu === 2}
-    >
+      class:bg-darkbutton={submenu === 2}>
       <span>{language.emotionImage}</span>
     </button>
     <button
@@ -345,8 +313,7 @@
         submenu = 3
       }}
       class="p-2 flex-1"
-      class:bg-darkbutton={submenu === 3}
-    >
+      class:bg-darkbutton={submenu === 3}>
       <span>{language.imageGeneration}</span>
     </button>
   </div>
@@ -354,9 +321,7 @@
 
 {#if submenu === 3 || submenu === -1}
   <Accordion name={language.imageGeneration} styled disabled={submenu !== -1}>
-    <span class="text-textcolor mt-2"
-      >{language.imageGeneration} {language.provider} <Help key="sdProvider" /></span
-    >
+    <span class="text-textcolor mt-2">{language.imageGeneration} {language.provider} <Help key="sdProvider" /></span>
     <SelectInput className="mt-2 mb-4" bind:value={sdProviderDraft.value}>
       <OptionInput value="">None</OptionInput>
       <OptionInput value="webui">Stable Diffusion WebUI</OptionInput>
@@ -378,19 +343,12 @@
     {#if sdProviderDraft.value === 'webui'}
       <span class="text-draculared text-xs mb-2">You must use WebUI with --api flag</span>
       <span class="text-draculared text-xs mb-2"
-        >You must use WebUI without agpl license or use unmodified version with agpl license to
-        observe the contents of the agpl license.</span
-      >
+        >You must use WebUI without agpl license or use unmodified version with agpl license to observe the contents of
+        the agpl license.</span>
       <span class="text-draculared text-xs mb-2"
-        >To reach a local WebUI from the browser, use ngrok or other tunnels.</span
-      >
+        >To reach a local WebUI from the browser, use ngrok or other tunnels.</span>
       <span class="text-textcolor mt-2">WebUI {language.providerURL}</span>
-      <TextInput
-        size="sm"
-        marginBottom
-        placeholder="https://..."
-        bind:value={webUiUrlDraft.value}
-      />
+      <TextInput size="sm" marginBottom placeholder="https://..." bind:value={webUiUrlDraft.value} />
       <span class="text-textcolor">Steps</span>
       <NumberInput size="sm" marginBottom min={0} max={100} bind:value={sdStepsDraft.value} />
 
@@ -398,21 +356,9 @@
       <NumberInput size="sm" marginBottom min={0} max={20} bind:value={sdCFGDraft.value} />
 
       <span class="text-textcolor">Width</span>
-      <NumberInput
-        size="sm"
-        marginBottom
-        min={0}
-        max={2048}
-        bind:value={sdConfigDraft.value.width}
-      />
+      <NumberInput size="sm" marginBottom min={0} max={2048} bind:value={sdConfigDraft.value.width} />
       <span class="text-textcolor">Height</span>
-      <NumberInput
-        size="sm"
-        marginBottom
-        min={0}
-        max={2048}
-        bind:value={sdConfigDraft.value.height}
-      />
+      <NumberInput size="sm" marginBottom min={0} max={2048} bind:value={sdConfigDraft.value.height} />
       <span class="text-textcolor">Sampler</span>
       <TextInput size="sm" marginBottom bind:value={sdConfigDraft.value.sampler_name} />
 
@@ -421,21 +367,9 @@
       </div>
       {#if sdConfigDraft.value.enable_hr === true}
         <span class="text-textcolor">denoising_strength</span>
-        <NumberInput
-          size="sm"
-          marginBottom
-          min={0}
-          max={10}
-          bind:value={sdConfigDraft.value.denoising_strength}
-        />
+        <NumberInput size="sm" marginBottom min={0} max={10} bind:value={sdConfigDraft.value.denoising_strength} />
         <span class="text-textcolor">hr_scale</span>
-        <NumberInput
-          size="sm"
-          marginBottom
-          min={0}
-          max={10}
-          bind:value={sdConfigDraft.value.hr_scale}
-        />
+        <NumberInput size="sm" marginBottom min={0} max={10} bind:value={sdConfigDraft.value.hr_scale} />
         <span class="text-textcolor">Upscaler</span>
         <TextInput size="sm" marginBottom bind:value={sdConfigDraft.value.hr_upscaler} />
       {/if}
@@ -443,12 +377,7 @@
 
     {#if sdProviderDraft.value === 'novelai'}
       <span class="text-textcolor mt-2">Novel AI {language.providerURL}</span>
-      <TextInput
-        size="sm"
-        marginBottom
-        placeholder="https://image.novelai.net"
-        bind:value={NAIImgUrlDraft.value}
-      />
+      <TextInput size="sm" marginBottom placeholder="https://image.novelai.net" bind:value={NAIImgUrlDraft.value} />
       <span class="text-textcolor">API Key</span>
       <TextInput size="sm" marginBottom placeholder="pst-..." bind:value={NAIApiKeyDraft.value} />
 
@@ -457,30 +386,16 @@
         <OptionInput value="nai-diffusion-4-5-full">nai-diffusion-4-5-full</OptionInput>
         <OptionInput value="nai-diffusion-4-5-curated">nai-diffusion-4-5-curated</OptionInput>
         <OptionInput value="nai-diffusion-4-full">nai-diffusion-4-full</OptionInput>
-        <OptionInput value="nai-diffusion-4-curated-preview"
-          >nai-diffusion-4-curated-preview</OptionInput
-        >
+        <OptionInput value="nai-diffusion-4-curated-preview">nai-diffusion-4-curated-preview</OptionInput>
         <OptionInput value="nai-diffusion-3">nai-diffusion-3</OptionInput>
         <OptionInput value="nai-diffusion-furry-3">nai-diffusion-furry-3</OptionInput>
         <OptionInput value="nai-diffusion-2">nai-diffusion-2</OptionInput>
       </SelectInput>
 
       <span class="text-textcolor">Width</span>
-      <NumberInput
-        size="sm"
-        marginBottom
-        min={0}
-        max={2048}
-        bind:value={NAIImgConfigDraft.value.width}
-      />
+      <NumberInput size="sm" marginBottom min={0} max={2048} bind:value={NAIImgConfigDraft.value.width} />
       <span class="text-textcolor">Height</span>
-      <NumberInput
-        size="sm"
-        marginBottom
-        min={0}
-        max={2048}
-        bind:value={NAIImgConfigDraft.value.height}
-      />
+      <NumberInput size="sm" marginBottom min={0} max={2048} bind:value={NAIImgConfigDraft.value.height} />
       <span class="text-textcolor">Sampler</span>
 
       {#if NAIImgModelDraft.value === 'nai-diffusion-4-full' || NAIImgModelDraft.value === 'nai-diffusion-4-curated-preview' || NAIImgModelDraft.value === 'nai-diffusion-4-5-full' || NAIImgModelDraft.value === 'nai-diffusion-4-5-curated'}
@@ -513,29 +428,11 @@
       </SelectInput>
 
       <span class="text-textcolor">steps</span>
-      <NumberInput
-        size="sm"
-        marginBottom
-        min={0}
-        max={2048}
-        bind:value={NAIImgConfigDraft.value.steps}
-      />
+      <NumberInput size="sm" marginBottom min={0} max={2048} bind:value={NAIImgConfigDraft.value.steps} />
       <span class="text-textcolor">CFG scale</span>
-      <NumberInput
-        size="sm"
-        marginBottom
-        min={0}
-        max={2048}
-        bind:value={NAIImgConfigDraft.value.scale}
-      />
+      <NumberInput size="sm" marginBottom min={0} max={2048} bind:value={NAIImgConfigDraft.value.scale} />
       <span class="text-textcolor">CFG rescale</span>
-      <NumberInput
-        size="sm"
-        marginBottom
-        min={0}
-        max={1}
-        bind:value={NAIImgConfigDraft.value.cfg_rescale}
-      />
+      <NumberInput size="sm" marginBottom min={0} max={1} bind:value={NAIImgConfigDraft.value.cfg_rescale} />
 
       <span class="text-textcolor">Image Reference</span>
       <SelectInput className="mb-4" bind:value={NAIImgConfigDraft.value.reference_mode}>
@@ -587,9 +484,7 @@
                     const encodings = vibeData.encodings[selectedModel]
                     const firstKey = Object.keys(encodings)[0]
                     if (firstKey) {
-                      NAIImgConfigDraft.value.InfoExtracted = Number(
-                        encodings[firstKey].params.information_extracted,
-                      )
+                      NAIImgConfigDraft.value.InfoExtracted = Number(encodings[firstKey].params.information_extracted)
                     }
                   }
                 }
@@ -604,20 +499,17 @@
               } catch (error) {
                 alertError('Error parsing vibe file: ' + error)
               }
-            }}
-          >
+            }}>
             {#if !NAIImgConfigDraft.value.vibe_data || !NAIImgConfigDraft.value.vibe_data.thumbnail}
               <div
-                class="rounded-md h-20 w-20 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500 flex items-center justify-center"
-              >
+                class="rounded-md h-20 w-20 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500 flex items-center justify-center">
                 <span class="text-sm">Upload<br />Vibe</span>
               </div>
             {:else}
               <img
                 src={NAIImgConfigDraft.value.vibe_data.thumbnail}
                 alt="Vibe Preview"
-                class="rounded-md h-40 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500"
-              />
+                class="rounded-md h-40 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500" />
             {/if}
           </button>
 
@@ -627,8 +519,7 @@
                 NAIImgConfigDraft.value.vibe_data = undefined
                 NAIImgConfigDraft.value.vibe_model_selection = undefined
               }}
-              class="absolute top-2 right-2 bg-red-500 hover:bg-red-700 text-white font-bold py-1 px-2 rounded-sm"
-            >
+              class="absolute top-2 right-2 bg-red-500 hover:bg-red-700 text-white font-bold py-1 px-2 rounded-sm">
               Delete
             </button>
           {/if}
@@ -644,23 +535,16 @@
               if (
                 NAIImgConfigDraft.value.vibe_data?.encodings &&
                 NAIImgConfigDraft.value.vibe_model_selection &&
-                NAIImgConfigDraft.value.vibe_data.encodings[
-                  NAIImgConfigDraft.value.vibe_model_selection
-                ]
+                NAIImgConfigDraft.value.vibe_data.encodings[NAIImgConfigDraft.value.vibe_model_selection]
               ) {
                 const encodings =
-                  NAIImgConfigDraft.value.vibe_data.encodings[
-                    NAIImgConfigDraft.value.vibe_model_selection
-                  ]
+                  NAIImgConfigDraft.value.vibe_data.encodings[NAIImgConfigDraft.value.vibe_model_selection]
                 const firstKey = Object.keys(encodings)[0]
                 if (firstKey) {
-                  NAIImgConfigDraft.value.InfoExtracted = Number(
-                    encodings[firstKey].params.information_extracted,
-                  )
+                  NAIImgConfigDraft.value.InfoExtracted = Number(encodings[firstKey].params.information_extracted)
                 }
               }
-            }}
-          >
+            }}>
             {#if NAIImgConfigDraft.value.vibe_data.encodings?.v4full}
               <OptionInput value="v4full">nai-diffusion-4-full</OptionInput>
             {/if}
@@ -680,8 +564,7 @@
             {#if getVibeEncodingEntries().length > 0}
               {#each getVibeEncodingEntries() as [key, value]}
                 <OptionInput value={value.params.information_extracted}
-                  >{value.params.information_extracted}</OptionInput
-                >
+                  >{value.params.information_extracted}</OptionInput>
               {/each}
             {/if}
           </SelectInput>
@@ -693,8 +576,7 @@
             max={1}
             step={0.1}
             fixed={2}
-            bind:value={NAIImgConfigDraft.value.reference_strength_multiple[0]}
-          />
+            bind:value={NAIImgConfigDraft.value.reference_strength_multiple[0]} />
         {/if}
       {/if}
 
@@ -710,32 +592,27 @@
 
               const imageData = img.data
 
-              NAIImgConfigDraft.value.character_base64image =
-                Buffer.from(imageData).toString('base64')
+              NAIImgConfigDraft.value.character_base64image = Buffer.from(imageData).toString('base64')
               const saveId = await saveAsset(imageData)
               NAIImgConfigDraft.value.character_image = saveId
               console.log('Character image set:', NAIImgConfigDraft.value.character_image)
-            }}
-          >
+            }}>
             {#if !NAIImgConfigDraft.value.character_image || NAIImgConfigDraft.value.character_image === ''}
               <div
-                class="rounded-md h-20 w-20 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500 flex items-center justify-center"
-              >
+                class="rounded-md h-20 w-20 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500 flex items-center justify-center">
                 <span class="text-sm">Upload<br />Image</span>
               </div>
             {:else}
               {#await getCharImage(NAIImgConfigDraft.value.character_image, 'plain')}
                 <div
-                  class="rounded-md h-20 w-20 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500 flex items-center justify-center"
-                >
+                  class="rounded-md h-20 w-20 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500 flex items-center justify-center">
                   <span class="text-sm">Uploading<br />Image..</span>
                 </div>
               {:then im}
                 <img
                   src={im}
                   class="rounded-md h-40 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500"
-                  alt="Base Preview"
-                />
+                  alt="Base Preview" />
               {/await}
             {/if}
           </button>
@@ -746,22 +623,15 @@
                 NAIImgConfigDraft.value.character_image = undefined
                 NAIImgConfigDraft.value.character_base64image = undefined
               }}
-              class="absolute top-2 right-2 bg-red-500 hover:bg-red-700 text-white font-bold py-1 px-2 rounded-sm"
-            >
+              class="absolute top-2 right-2 bg-red-500 hover:bg-red-700 text-white font-bold py-1 px-2 rounded-sm">
               Delete
             </button>
           {/if}
         </div>
 
-        <span class="text-textcolor2 text-xs mb-2 block"
-          >Leave blank to use the character's default image.</span
-        >
+        <span class="text-textcolor2 text-xs mb-2 block">Leave blank to use the character's default image.</span>
 
-        <Check
-          className="mb-4"
-          bind:check={NAIImgConfigDraft.value.style_aware}
-          name="Style Aware"
-        />
+        <Check className="mb-4" bind:check={NAIImgConfigDraft.value.style_aware} name="Style Aware" />
       {/if}
 
       {#if (NAIImgModelDraft.value === 'nai-diffusion-3' || NAIImgModelDraft.value === 'nai-diffusion-furry-3' || NAIImgModelDraft.value === 'nai-diffusion-2') && NAIImgConfigDraft.value.sampler !== 'ddim_v3'}
@@ -798,27 +668,23 @@
               NAIImgConfigDraft.value.base64image = Buffer.from(img.data).toString('base64')
               const saveId = await saveAsset(img.data)
               NAIImgConfigDraft.value.image = saveId
-            }}
-          >
+            }}>
             {#if !NAIImgConfigDraft.value.image || NAIImgConfigDraft.value.image === ''}
               <div
-                class="rounded-md h-20 w-20 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500 flex items-center justify-center"
-              >
+                class="rounded-md h-20 w-20 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500 flex items-center justify-center">
                 <span class="text-sm">Upload<br />Image</span>
               </div>
             {:else}
               {#await getCharImage(NAIImgConfigDraft.value.image, 'plain')}
                 <div
-                  class="rounded-md h-20 w-20 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500 flex items-center justify-center"
-                >
+                  class="rounded-md h-20 w-20 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500 flex items-center justify-center">
                   <span class="text-sm">Uploading<br />Image..</span>
                 </div>
               {:then im}
                 <img
                   src={im}
                   class="rounded-md h-40 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500"
-                  alt="Base Preview"
-                />
+                  alt="Base Preview" />
               {/await}
             {/if}
           </button>
@@ -829,32 +695,17 @@
                 NAIImgConfigDraft.value.image = undefined
                 NAIImgConfigDraft.value.base64image = undefined
               }}
-              class="absolute top-2 right-2 bg-red-500 hover:bg-red-700 text-white font-bold py-1 px-2 rounded-sm"
-            >
+              class="absolute top-2 right-2 bg-red-500 hover:bg-red-700 text-white font-bold py-1 px-2 rounded-sm">
               Delete
             </button>
           {/if}
         </div>
-        <span class="text-textcolor2 text-xs block"
-          >Leave blank to use the character's default image.</span
-        >
+        <span class="text-textcolor2 text-xs block">Leave blank to use the character's default image.</span>
 
         <span class="text-textcolor mt-2">Strength</span>
-        <SliderInput
-          min={0}
-          max={0.99}
-          step={0.01}
-          fixed={2}
-          bind:value={NAIImgConfigDraft.value.strength}
-        />
+        <SliderInput min={0} max={0.99} step={0.01} fixed={2} bind:value={NAIImgConfigDraft.value.strength} />
         <span class="text-textcolor mt-2">Noise</span>
-        <SliderInput
-          min={0}
-          max={0.99}
-          step={0.01}
-          fixed={2}
-          bind:value={NAIImgConfigDraft.value.noise}
-        />
+        <SliderInput min={0} max={0.99} step={0.01} fixed={2} bind:value={NAIImgConfigDraft.value.noise} />
       {/if}
     {/if}
 
@@ -908,84 +759,37 @@
 
     {#if sdProviderDraft.value === 'comfyui'}
       <span class="text-textcolor mt-2">ComfyUI {language.providerURL}</span>
-      <TextInput
-        size="sm"
-        marginBottom
-        placeholder="http://127.0.0.1:8188"
-        bind:value={comfyUiUrlDraft.value}
-      />
+      <TextInput size="sm" marginBottom placeholder="http://127.0.0.1:8188" bind:value={comfyUiUrlDraft.value} />
 
       <span class="text-textcolor">Workflow <Help key="comfyWorkflow" /></span>
       <TextInput size="sm" marginBottom bind:value={comfyConfigDraft.value.workflow} />
 
       <span class="text-textcolor">Timeout (sec)</span>
-      <NumberInput
-        size="sm"
-        marginBottom
-        bind:value={comfyConfigDraft.value.timeout}
-        min={1}
-        max={120}
-      />
+      <NumberInput size="sm" marginBottom bind:value={comfyConfigDraft.value.timeout} min={1} max={120} />
     {/if}
 
     {#if sdProviderDraft.value === 'comfy'}
-      <span class="text-draculared text-xs mb-2"
-        >The first image generated by the prompt will be selected.
-      </span>
-      <span class="text-draculared text-xs mb-2"
-        >"Please run comfyUI with --enable-cors-header."</span
-      >
+      <span class="text-draculared text-xs mb-2">The first image generated by the prompt will be selected. </span>
+      <span class="text-draculared text-xs mb-2">"Please run comfyUI with --enable-cors-header."</span>
       <span class="text-textcolor mt-2">ComfyUI {language.providerURL}</span>
-      <TextInput
-        size="sm"
-        marginBottom
-        placeholder="http://127.0.0.1:8188"
-        bind:value={comfyUiUrlDraft.value}
-      />
+      <TextInput size="sm" marginBottom placeholder="http://127.0.0.1:8188" bind:value={comfyUiUrlDraft.value} />
       <span class="text-textcolor">Workflow</span>
       <TextInput
         size="sm"
         marginBottom
         placeholder="valid ComfyUI API json (Enable Dev mode Options in ComfyUI)"
-        bind:value={comfyConfigDraft.value.workflow}
-      />
+        bind:value={comfyConfigDraft.value.workflow} />
 
       <span class="text-textcolor">Positive Text Node: ID</span>
-      <TextInput
-        size="sm"
-        marginBottom
-        placeholder="eg. 1, 3, etc"
-        bind:value={comfyConfigDraft.value.posNodeID}
-      />
+      <TextInput size="sm" marginBottom placeholder="eg. 1, 3, etc" bind:value={comfyConfigDraft.value.posNodeID} />
       <span class="text-textcolor">Positive Text Node: Input Field Name</span>
-      <TextInput
-        size="sm"
-        marginBottom
-        placeholder="eg. text"
-        bind:value={comfyConfigDraft.value.posInputName}
-      />
+      <TextInput size="sm" marginBottom placeholder="eg. text" bind:value={comfyConfigDraft.value.posInputName} />
       <span class="text-textcolor">Negative Text Node: ID</span>
-      <TextInput
-        size="sm"
-        marginBottom
-        placeholder="eg. 1, 3, etc"
-        bind:value={comfyConfigDraft.value.negNodeID}
-      />
+      <TextInput size="sm" marginBottom placeholder="eg. 1, 3, etc" bind:value={comfyConfigDraft.value.negNodeID} />
       <span class="text-textcolor">Positive Text Node: Input Field Name</span>
-      <TextInput
-        size="sm"
-        marginBottom
-        placeholder="eg. text"
-        bind:value={comfyConfigDraft.value.negInputName}
-      />
+      <TextInput size="sm" marginBottom placeholder="eg. text" bind:value={comfyConfigDraft.value.negInputName} />
       <span class="text-textcolor">Timeout (sec)</span>
-      <NumberInput
-        size="sm"
-        marginBottom
-        bind:value={comfyConfigDraft.value.timeout}
-        min={1}
-        max={120}
-      />
+      <NumberInput size="sm" marginBottom bind:value={comfyConfigDraft.value.timeout} min={1} max={120} />
     {/if}
 
     {#if sdProviderDraft.value === 'fal'}
@@ -993,21 +797,9 @@
       <TextInput size="sm" marginBottom placeholder="..." bind:value={falTokenDraft.value} />
 
       <span class="text-textcolor mt-4">Width</span>
-      <NumberInput
-        size="sm"
-        marginBottom
-        min={0}
-        max={2048}
-        bind:value={sdConfigDraft.value.width}
-      />
+      <NumberInput size="sm" marginBottom min={0} max={2048} bind:value={sdConfigDraft.value.width} />
       <span class="text-textcolor mt-4">Height</span>
-      <NumberInput
-        size="sm"
-        marginBottom
-        min={0}
-        max={2048}
-        bind:value={sdConfigDraft.value.height}
-      />
+      <NumberInput size="sm" marginBottom min={0} max={2048} bind:value={sdConfigDraft.value.height} />
 
       <span class="text-textcolor mt-4">Model</span>
       <SelectInput className="mt-2" bind:value={falModelDraft.value}>
@@ -1033,8 +825,7 @@
         size={'sm'}
         placeholder="..."
         hideText={DBState.db.hideApiKey}
-        bind:value={googleDraft.value.accessToken}
-      />
+        bind:value={googleDraft.value.accessToken} />
 
       <span class="text-textcolor">Model</span>
       <SelectInput className="mb-4" bind:value={ImagenModelDraft.value}>
@@ -1075,8 +866,7 @@
         size="sm"
         marginBottom
         placeholder="https://api.example.com/v1/images/generations"
-        bind:value={openaiCompatImageDraft.value.url}
-      />
+        bind:value={openaiCompatImageDraft.value.url} />
 
       <span class="text-textcolor">API Key</span>
       <TextInput
@@ -1084,16 +874,10 @@
         marginBottom
         placeholder="sk-..."
         hideText={DBState.db.hideApiKey}
-        bind:value={openaiCompatImageDraft.value.key}
-      />
+        bind:value={openaiCompatImageDraft.value.key} />
 
       <span class="text-textcolor">Model</span>
-      <TextInput
-        size="sm"
-        marginBottom
-        placeholder="dall-e-3"
-        bind:value={openaiCompatImageDraft.value.model}
-      />
+      <TextInput size="sm" marginBottom placeholder="dall-e-3" bind:value={openaiCompatImageDraft.value.model} />
 
       <span class="text-textcolor">Image Size</span>
       <SelectInput className="mb-4" bind:value={openaiCompatImageDraft.value.size}>
@@ -1120,28 +904,17 @@
         marginBottom
         placeholder="sk-..."
         hideText={DBState.db.hideApiKey}
-        bind:value={wavespeedImageDraft.value.key}
-      />
+        bind:value={wavespeedImageDraft.value.key} />
 
       <span class="text-textcolor">Model</span>
       <button
         class="px-3 py-2 bg-darkbutton rounded-md hover:bg-textcolor2 transition-colors disabled:opacity-50"
         disabled={isWavespeedLoading}
-        onclick={fetchWavespeedModels}
-      >
+        onclick={fetchWavespeedModels}>
         {isWavespeedLoading ? 'Loading...' : 'Refresh Models'}
       </button>
-      <TextInput
-        bind:value={wavespeedSearchQuery}
-        placeholder="Search models..."
-        size="sm"
-        marginBottom
-      />
-      <SelectInput
-        className="mb-4"
-        bind:value={wavespeedImageDraft.value.model}
-        onchange={handleModelChange}
-      >
+      <TextInput bind:value={wavespeedSearchQuery} placeholder="Search models..." size="sm" marginBottom />
+      <SelectInput className="mb-4" bind:value={wavespeedImageDraft.value.model} onchange={handleModelChange}>
         <OptionInput value="">Select a model...</OptionInput>
         {#if wavespeedModels.length > 0}
           {#each getFilteredModels() as model}
@@ -1164,13 +937,11 @@
             marginBottom
             marginTop
             placeholder={`LoRA ${index + 1} URL (optional)`}
-            bind:value={lora.path}
-          />
+            bind:value={lora.path} />
           <SliderInput marginBottom min={0} max={4} step={0.1} fixed={1} bind:value={lora.scale} />
         {/each}
         <span class="text-textcolor2 text-xs mb-2 block">
-          Only .safetensors files are supported. Use owner/model-name (Hugging Face) or direct URL
-          (Civitai).
+          Only .safetensors files are supported. Use owner/model-name (Hugging Face) or direct URL (Civitai).
         </span>
       {:else}
         <span class="text-textcolor2 text-xs mb-2 block">
@@ -1198,32 +969,27 @@
 
                 const imageData = img.data
 
-                wavespeedImageDraft.value.reference_base64image =
-                  Buffer.from(imageData).toString('base64')
+                wavespeedImageDraft.value.reference_base64image = Buffer.from(imageData).toString('base64')
                 const saveId = await saveAsset(imageData)
                 wavespeedImageDraft.value.reference_image = saveId
                 console.log('Character image set:', wavespeedImageDraft.value.reference_image)
-              }}
-            >
+              }}>
               {#if !wavespeedImageDraft.value.reference_image || wavespeedImageDraft.value.reference_image === ''}
                 <div
-                  class="rounded-md h-20 w-20 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500 flex items-center justify-center"
-                >
+                  class="rounded-md h-20 w-20 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500 flex items-center justify-center">
                   <span class="text-sm">Upload<br />Image</span>
                 </div>
               {:else}
                 {#await getCharImage(wavespeedImageDraft.value.reference_image, 'plain')}
                   <div
-                    class="rounded-md h-20 w-20 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500 flex items-center justify-center"
-                  >
+                    class="rounded-md h-20 w-20 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500 flex items-center justify-center">
                     <span class="text-sm">Uploading<br />Image..</span>
                   </div>
                 {:then im}
                   <img
                     src={im}
                     class="rounded-md h-40 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500"
-                    alt="Base Preview"
-                  />
+                    alt="Base Preview" />
                 {/await}
               {/if}
             </button>
@@ -1234,8 +1000,7 @@
                   wavespeedImageDraft.value.reference_image = undefined
                   wavespeedImageDraft.value.reference_base64image = undefined
                 }}
-                class="absolute top-2 right-2 bg-red-500 hover:bg-red-700 text-white font-bold py-1 px-2 rounded-sm"
-              >
+                class="absolute top-2 right-2 bg-red-500 hover:bg-red-700 text-white font-bold py-1 px-2 rounded-sm">
                 Delete
               </button>
             {/if}
@@ -1297,13 +1062,11 @@
 
     {#if hypaV3Draft.value}
       <span class="max-w-full mb-6 text-sm text-wrap wrap-break-word text-textcolor2"
-        >{language.hypaV3Settings.descriptionLabel}</span
-      >
+        >{language.hypaV3Settings.descriptionLabel}</span>
       <span class="text-textcolor">Preset</span>
       <select
         class={'border border-darkborderc focus:border-borderc rounded-md shadow-xs text-textcolor bg-transparent focus:ring-borderc focus:ring-2 focus:outline-hidden transition-colors duration-200 text-md px-4 py-2 mb-1'}
-        bind:value={hypaV3PresetIdDraft.value}
-      >
+        bind:value={hypaV3PresetIdDraft.value}>
         {#each hypaV3PresetsDraft.value as preset, i}
           <option class="bg-darkbg appearance-none" value={i}>{preset.name}</option>
         {/each}
@@ -1319,8 +1082,7 @@
             presets.push(newPreset)
             hypaV3PresetsDraft.value = presets
             hypaV3PresetIdDraft.value = presets.length - 1
-          }}
-        >
+          }}>
           <PlusIcon size={24} />
         </button>
 
@@ -1342,8 +1104,7 @@
 
             presets[id] = { ...preset, name: newName }
             hypaV3PresetsDraft.value = presets
-          }}
-        >
+          }}>
           <PencilIcon size={24} />
         </button>
 
@@ -1366,8 +1127,7 @@
             presets.splice(id, 1)
             hypaV3PresetIdDraft.value = 0
             hypaV3PresetsDraft.value = presets
-          }}
-        >
+          }}>
           <TrashIcon size={24} />
         </button>
 
@@ -1400,8 +1160,7 @@
             } catch (error) {
               alertError(`${error}`)
             }
-          }}
-        >
+          }}>
           <DownloadIcon size={24} />
         </button>
 
@@ -1431,8 +1190,7 @@
             } catch (error) {
               alertError(`${error}`)
             }
-          }}
-        >
+          }}>
           <HardDriveUploadIcon size={24} />
         </button>
       </div>
@@ -1449,25 +1207,19 @@
             <OptionInput value="Qwen3-8B-q4f32_1-MLC">Qwen3 8B (GPU)</OptionInput>
           {/if}
         </SelectInput>
-        <span class="text-textcolor"
-          >{language.summarizationPrompt} <Help key="summarizationPrompt" /></span
-        >
+        <span class="text-textcolor">{language.summarizationPrompt} <Help key="summarizationPrompt" /></span>
         <div class="mb-4">
           <TextAreaInput
             size="sm"
             placeholder={language.hypaV3Settings.supaMemoryPromptPlaceHolder}
-            bind:value={settings.summarizationPrompt}
-          />
+            bind:value={settings.summarizationPrompt} />
         </div>
-        <span class="text-textcolor"
-          >{language.reSummarizationPrompt} <Help key="reSummarizationPrompt" /></span
-        >
+        <span class="text-textcolor">{language.reSummarizationPrompt} <Help key="reSummarizationPrompt" /></span>
         <div class="mb-4">
           <TextAreaInput
             size="sm"
             placeholder={language.hypaV3Settings.supaMemoryPromptPlaceHolder}
-            bind:value={settings.reSummarizationPrompt}
-          />
+            bind:value={settings.reSummarizationPrompt} />
         </div>
         {#await getMaxMemoryRatio() then maxMemoryRatio}
           <span class="text-textcolor">{language.hypaV3Settings.maxMemoryTokensRatioLabel}</span>
@@ -1477,105 +1229,66 @@
         {/await}
         <span class="text-textcolor"
           >{language.hypaV3Settings.memoryTokensRatioLabel}
-          <Help key="hypaV3MemoryTokensRatio" /></span
-        >
-        <SliderInput
-          marginBottom
-          min={0}
-          max={1}
-          step={0.01}
-          fixed={2}
-          bind:value={settings.memoryTokensRatio}
-        />
+          <Help key="hypaV3MemoryTokensRatio" /></span>
+        <SliderInput marginBottom min={0} max={1} step={0.01} fixed={2} bind:value={settings.memoryTokensRatio} />
         <span class="text-textcolor"
           >{language.hypaV3Settings.extraSummarizationRatioLabel}
-          <Help key="hypaV3ExtraSummarizationRatio" /></span
-        >
+          <Help key="hypaV3ExtraSummarizationRatio" /></span>
         <SliderInput
           marginBottom
           min={0}
           max={1 - settings.memoryTokensRatio}
           step={0.01}
           fixed={2}
-          bind:value={settings.extraSummarizationRatio}
-        />
+          bind:value={settings.extraSummarizationRatio} />
         <span class="text-textcolor"
           >{language.hypaV3Settings.maxChatsPerSummaryLabel}
-          <Help key="hypaV3MaxChatsPerSummary" /></span
-        >
+          <Help key="hypaV3MaxChatsPerSummary" /></span>
         <NumberInput marginBottom size="sm" min={1} bind:value={settings.maxChatsPerSummary} />
         <span class="text-textcolor"
-          >{language.hypaV3Settings.queryChatCountLabel} <Help key="hypaV3QueryChatCount" /></span
-        >
+          >{language.hypaV3Settings.queryChatCountLabel} <Help key="hypaV3QueryChatCount" /></span>
         <NumberInput marginBottom size="sm" min={1} max={20} bind:value={settings.queryChatCount} />
         <span class="text-textcolor"
           >{language.hypaV3Settings.summaryChunkSeparatorLabel}
-          <Help key="hypaV3SummaryChunkSeparator" /></span
-        >
+          <Help key="hypaV3SummaryChunkSeparator" /></span>
         <TextInput marginBottom size="sm" bind:value={settings.summaryChunkSeparator} />
         <span class="text-textcolor"
           >{language.hypaV3Settings.recentMemoryRatioLabel}
-          <Help key="hypaV3RecentMemoryRatio" /></span
-        >
-        <SliderInput
-          marginBottom
-          min={0}
-          max={1}
-          step={0.01}
-          fixed={2}
-          bind:value={settings.recentMemoryRatio}
-        />
+          <Help key="hypaV3RecentMemoryRatio" /></span>
+        <SliderInput marginBottom min={0} max={1} step={0.01} fixed={2} bind:value={settings.recentMemoryRatio} />
         <span class="text-textcolor"
           >{language.hypaV3Settings.similarMemoryRatioLabel}
-          <Help key="hypaV3SimilarMemoryRatio" /></span
-        >
-        <SliderInput
-          marginBottom
-          min={0}
-          max={1}
-          step={0.01}
-          fixed={2}
-          bind:value={settings.similarMemoryRatio}
-        />
+          <Help key="hypaV3SimilarMemoryRatio" /></span>
+        <SliderInput marginBottom min={0} max={1} step={0.01} fixed={2} bind:value={settings.similarMemoryRatio} />
         <span class="text-textcolor"
           >{language.hypaV3Settings.randomMemoryRatioLabel}
-          <Help key="hypaV3RandomMemoryRatio" /></span
-        >
+          <Help key="hypaV3RandomMemoryRatio" /></span>
         <NumberInput
           marginBottom
           disabled
           size="sm"
-          value={parseFloat(
-            (1 - settings.recentMemoryRatio - settings.similarMemoryRatio).toFixed(2),
-          )}
-        />
+          value={parseFloat((1 - settings.recentMemoryRatio - settings.similarMemoryRatio).toFixed(2))} />
         <div class="mb-2 flex items-center">
           <Check
             name={language.hypaV3Settings.preserveOrphanedMemoryLabel}
-            bind:check={settings.preserveOrphanedMemory}
-          />
+            bind:check={settings.preserveOrphanedMemory} />
           <Help key="hypaV3PreserveOrphanedMemory" />
         </div>
         <div class="mb-2 flex items-center">
           <Check
             name={language.hypaV3Settings.applyRegexScriptWhenRerollingLabel}
-            bind:check={settings.processRegexScript}
-          />
+            bind:check={settings.processRegexScript} />
           <Help key="hypaV3ProcessRegexScript" />
         </div>
         <div class="mb-2 flex items-center">
           <Check
             name={language.hypaV3Settings.doNotSummarizeUserMessageLabel}
-            bind:check={settings.doNotSummarizeUserMessage}
-          />
+            bind:check={settings.doNotSummarizeUserMessage} />
           <Help key="hypaV3DoNotSummarizeUserMessage" />
         </div>
         <Accordion name="Advanced Settings" styled>
           <div class="mb-2 flex items-center">
-            <Check
-              name="Use Experimental Implementation"
-              bind:check={settings.useExperimentalImpl}
-            />
+            <Check name="Use Experimental Implementation" bind:check={settings.useExperimentalImpl} />
             <Help key="hypaV3UseExperimentalImpl" />
           </div>
           <div class="mb-2 flex items-center">
@@ -1584,51 +1297,21 @@
           </div>
           {#if settings.useExperimentalImpl}
             <span class="text-textcolor"
-              >Summarization Requests Per Minute <Help
-                key="hypaV3SummarizationRequestsPerMinute"
-              /></span
-            >
-            <NumberInput
-              marginBottom
-              size="sm"
-              min={1}
-              bind:value={settings.summarizationRequestsPerMinute}
-            />
+              >Summarization Requests Per Minute <Help key="hypaV3SummarizationRequestsPerMinute" /></span>
+            <NumberInput marginBottom size="sm" min={1} bind:value={settings.summarizationRequestsPerMinute} />
             <span class="text-textcolor"
-              >Summarization Max Concurrent <Help key="hypaV3SummarizationMaxConcurrent" /></span
-            >
-            <NumberInput
-              marginBottom
-              size="sm"
-              min={1}
-              max={10}
-              bind:value={settings.summarizationMaxConcurrent}
-            />
+              >Summarization Max Concurrent <Help key="hypaV3SummarizationMaxConcurrent" /></span>
+            <NumberInput marginBottom size="sm" min={1} max={10} bind:value={settings.summarizationMaxConcurrent} />
             <span class="text-textcolor"
-              >Embedding Requests Per Minute <Help key="hypaV3EmbeddingRequestsPerMinute" /></span
-            >
-            <NumberInput
-              marginBottom
-              size="sm"
-              min={1}
-              bind:value={settings.embeddingRequestsPerMinute}
-            />
-            <span class="text-textcolor"
-              >Embedding Max Concurrent <Help key="hypaV3EmbeddingMaxConcurrent" /></span
-            >
-            <NumberInput
-              marginBottom
-              size="sm"
-              min={1}
-              max={10}
-              bind:value={settings.embeddingMaxConcurrent}
-            />
+              >Embedding Requests Per Minute <Help key="hypaV3EmbeddingRequestsPerMinute" /></span>
+            <NumberInput marginBottom size="sm" min={1} bind:value={settings.embeddingRequestsPerMinute} />
+            <span class="text-textcolor">Embedding Max Concurrent <Help key="hypaV3EmbeddingMaxConcurrent" /></span>
+            <NumberInput marginBottom size="sm" min={1} max={10} bind:value={settings.embeddingMaxConcurrent} />
           {:else}
             <div class="mb-2 flex items-center">
               <Check
                 name={language.hypaV3Settings.enableSimilarityCorrectionLabel}
-                bind:check={settings.enableSimilarityCorrection}
-              />
+                bind:check={settings.enableSimilarityCorrection} />
               <Help key="hypaV3EnableSimilarityCorrection" />
             </div>
           {/if}
@@ -1677,12 +1360,7 @@
 
     {#if hypaModelDraft.value === 'voyageContext3'}
       <span class="text-textcolor">Voyage API Key</span>
-      <TextInput
-        size="sm"
-        marginBottom
-        hideText={DBState.db.hideApiKey}
-        bind:value={voyageApiKeyDraft.value}
-      />
+      <TextInput size="sm" marginBottom hideText={DBState.db.hideApiKey} bind:value={voyageApiKeyDraft.value} />
     {/if}
   </Accordion>
 {/if}

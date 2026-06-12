@@ -68,8 +68,7 @@
 {#key sorted}
   <div
     class="contain w-full max-w-full mt-2 flex flex-col p-3 border-selected border-1 bg-darkbg rounded-md"
-    bind:this={ele}
-  >
+    bind:this={ele}>
     {#if value.length === 0}
       <div class="text-textcolor2">No Scripts</div>
     {/if}
@@ -83,8 +82,7 @@
           let customscript = value
           customscript.splice(i, 1)
           value = customscript
-        }}
-      />
+        }} />
     {/each}
   </div>
 {/key}
@@ -99,21 +97,18 @@
           out: '',
           type: 'editinput',
         })
-      }}
-    >
+      }}>
       <PlusIcon />
     </button>
     <button
       class="rounded-md text-textcolor2 hover:text-textcolor focus-within:text-textcolor"
       onclick={() => {
         exportRegex(value)
-      }}><DownloadIcon /></button
-    >
+      }}><DownloadIcon /></button>
     <button
       class="rounded-md text-textcolor2 hover:text-textcolor focus-within:text-textcolor"
       onclick={async () => {
         value = await importRegex(value)
-      }}><HardDriveUploadIcon /></button
-    >
+      }}><HardDriveUploadIcon /></button>
   </div>
 {/if}

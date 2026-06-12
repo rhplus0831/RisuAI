@@ -340,10 +340,7 @@ describe('server Lua runtime — request() binding + low-level gate', () => {
 
     // Low-level granted → request runs through the injected fetch.
     const granted = makeRuntime({ egress, rateState: { count: 0, resetAt: 0 } })
-    const ok = await runServerLua(
-      { code, mode: 'editRequest', data: rows('orig'), lowLevelAccess: true },
-      granted.ctx,
-    )
+    const ok = await runServerLua({ code, mode: 'editRequest', data: rows('orig'), lowLevelAccess: true }, granted.ctx)
     expect((ok.res as OpenAIChat[])[0].content).toBe('204')
 
     // Low-level denied (edit-hook default) → request returns nil.
@@ -383,10 +380,7 @@ describe('server Lua runtime — execution limit', () => {
       end)
     `
     const started = Date.now()
-    const result = await runServerLua(
-      { code, mode: 'editRequest', data: rows('x'), execTimeoutMs: SHORT_LIMIT },
-      ctx,
-    )
+    const result = await runServerLua({ code, mode: 'editRequest', data: rows('x'), execTimeoutMs: SHORT_LIMIT }, ctx)
     const elapsed = Date.now() - started
     expect(result.timedOut).toBe(true)
     expect(elapsed).toBeLessThan(5000)
@@ -429,10 +423,7 @@ describe('server Lua runtime — request-signal abort (L20)', () => {
     `
     setTimeout(() => controller.abort(), 100)
     const started = Date.now()
-    const result = await runServerLua(
-      { code, mode: 'editRequest', data: rows('x'), execTimeoutMs: 60_000 },
-      ctx,
-    )
+    const result = await runServerLua({ code, mode: 'editRequest', data: rows('x'), execTimeoutMs: 60_000 }, ctx)
     const elapsed = Date.now() - started
 
     expect(result.aborted).toBe(true)
@@ -508,18 +499,13 @@ describe('server Lua runtime — aggregate exec budget (L19)', () => {
     ctx.execBudget = { totalMs: 100, usedMs: 100 }
     const before = readLuaEngineAcquireStats()
 
-    const result = await runServerLua(
-      { code: 'while true do end', mode: 'editRequest', data: rows('x') },
-      ctx,
-    )
+    const result = await runServerLua({ code: 'while true do end', mode: 'editRequest', data: rows('x') }, ctx)
 
     expect(result.timedOut).toBe(true)
     expect(result.error).toBe('aggregate Lua execution budget exhausted')
     expect(result.res).toBeUndefined()
     const after = readLuaEngineAcquireStats()
-    expect(after.pooledAcquires + after.freshAcquires).toBe(
-      before.pooledAcquires + before.freshAcquires,
-    )
+    expect(after.pooledAcquires + after.freshAcquires).toBe(before.pooledAcquires + before.freshAcquires)
   })
 
   it('L19: runaway hooks across a trigger loop are bounded by the aggregate budget, not per-run limits', async () => {
@@ -613,10 +599,7 @@ describe('server Lua runtime — pre-warmed engines (L21)', () => {
     // …and run B (a pooled engine under the same default limit) must not see it.
     await settleLuaEnginePool()
     const reader = makeRuntime()
-    const read = await runServerLua(
-      { code: readMarker, mode: 'editRequest', data: rows('x') },
-      reader.ctx,
-    )
+    const read = await runServerLua({ code: readMarker, mode: 'editRequest', data: rows('x') }, reader.ctx)
     expect((read.res as OpenAIChat[])[0].content).toBe('nil')
   })
 
@@ -675,13 +658,12 @@ describe('server Lua runtime — pre-warmed engines (L21)', () => {
         return data
       end)
     `
-    const runB = runServerLua(
-      { code: codeB, mode: 'editRequest', data: rows('b'), execTimeoutMs: 10_000 },
-      b.ctx,
-    ).then((result) => {
-      settleOrder.push('B')
-      return result
-    })
+    const runB = runServerLua({ code: codeB, mode: 'editRequest', data: rows('b'), execTimeoutMs: 10_000 }, b.ctx).then(
+      (result) => {
+        settleOrder.push('B')
+        return result
+      },
+    )
     await new Promise((resolve) => setTimeout(resolve, 150))
 
     // While A holds a pending continuation, B's fresh boot is parked: no new

@@ -51,8 +51,7 @@
     class="image-container"
     class:img-waifu={classType === 'waifu'}
     class:img-risu={classType === 'risu'}
-    class:img-mobile={classType === 'mobile'}
-  >
+    class:img-mobile={classType === 'mobile'}>
     {#if !showOldImage}
       {#each currentSrc as img, i}
         {#if styleType === 'normal'}
@@ -60,8 +59,7 @@
             src={img}
             alt="img"
             style:width={`${100 / currentSrc.length}%`}
-            style:left={`${(100 / currentSrc.length) * i}%`}
-          />
+            style:left={`${(100 / currentSrc.length) * i}%`} />
         {:else if styleType === 'emp'}
           {#if i <= 1}
             <img
@@ -69,8 +67,7 @@
               alt="img"
               style:width={`${80 - i * 10}%`}
               style:left={`${30 - i * 30}%`}
-              style:z-index={9 - i}
-            />
+              style:z-index={9 - i} />
           {/if}
         {/if}
       {/each}
@@ -83,8 +80,7 @@
             class="old-image"
             onanimationend={handleTransitionEnd}
             style:width={`${100 / oldSrc.length}%`}
-            style:left={`${(100 / oldSrc.length) * i}%`}
-          />
+            style:left={`${(100 / oldSrc.length) * i}%`} />
         {/each}
       {:else if oldStyleType === 'emp'}
         {#each oldSrc as img2, i}
@@ -96,8 +92,7 @@
               onanimationend={handleTransitionEnd}
               style:width={`${80 - i * 10}%`}
               style:left={`${30 - i * 30}%`}
-              style:z-index={9 - i}
-            />
+              style:z-index={9 - i} />
           {/if}
         {/each}
       {/if}
@@ -108,8 +103,7 @@
             alt="img"
             class="new-image"
             style:width={`${100 / currentSrc.length}%`}
-            style:left={`${(100 / currentSrc.length) * i}%`}
-          />
+            style:left={`${(100 / currentSrc.length) * i}%`} />
         {/each}
       {:else if styleType === 'emp'}
         {#each currentSrc as img3, i}
@@ -120,8 +114,7 @@
               class="new-image"
               style:width={`${80 - i * 10}%`}
               style:left={`${30 - i * 30}%`}
-              style:z-index={9 - i}
-            />
+              style:z-index={9 - i} />
           {/if}
         {/each}
       {/if}

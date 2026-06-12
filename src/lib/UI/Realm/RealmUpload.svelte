@@ -35,8 +35,7 @@
   class="fixed top-0 left-0 h-full w-full bg-black/50 flex flex-col z-50 items-center justify-center"
   role="button"
   tabindex="0"
-  onclick={close}
->
+  onclick={close}>
   <div
     class="bg-darkbg rounded-md p-4 max-w-full flex flex-col w-2xl max-h-full overflow-y-auto"
     role="button"
@@ -44,20 +43,16 @@
     onclick={(e) => {
       e.stopPropagation()
       onclick?.(e)
-    }}
-  >
+    }}>
     {#if !DBState.db.account}
-      <span class="font-bold text-2xl w-full"
-        >You must login to Risu Account upload to RisuRealm</span
-      >
+      <span class="font-bold text-2xl w-full">You must login to Risu Account upload to RisuRealm</span>
       <span class="text-textcolor2">You can login in app settings 🡲 account</span>
       <button
         onclick={async () => {
           close()
         }}
         class="text-textcolor mt-2 text-lg bg-transparent border-solid border-1 border-borderc p-4 hover:bg-blue-800 transition-colors cursor-pointer"
-        >OK</button
-      >
+        >OK</button>
     {:else}
       <h1 class="font-bold text-2xl w-full">
         <span>
@@ -73,14 +68,12 @@
       <div class="mb-2 mt-2 w-full border-t-2 border-t-bgcolor"></div>
       <span class="text-textcolor">{language.creatorNotes}</span>
       <span class="text-textcolor2 text-sm"
-        >A description that displays when you search and when you first open a bot.</span
-      >
+        >A description that displays when you search and when you first open a bot.</span>
       <span class="text-textcolor2 text-sm">More than 20 characters.</span>
       <MultiLangInput bind:value={char.creatorNotes} />
       <span class="text-textcolor">{language.tags}</span>
       <span class="text-textcolor2 text-sm"
-        >Tags to search your character easily. latin alphabets only. seperate by comma.</span
-      >
+        >Tags to search your character easily. latin alphabets only. seperate by comma.</span>
       <TextInput
         placeholder=""
         bind:value={tags}
@@ -89,8 +82,7 @@
             .replace(/[^a-zA-Z,\-]/g, '')
             .toLocaleLowerCase()
             .replace(/ /g, '')
-        }}
-      />
+        }} />
 
       <div class="peer-focus:block hidden hover:block flex-wrap">
         {#each searchTagList(tags) as tag}
@@ -100,16 +92,14 @@
               const splited = tags.split(',').map((e) => e.trim())
               splited[splited.length - 1] = tag
               tags = splited.join(',') + ','
-            }}>{tag}</button
-          >
+            }}>{tag}</button>
         {/each}
       </div>
 
       {#if char.license !== 'CC BY-NC-SA 4.0' && char.license !== 'CC BY-SA 4.0'}
         <span class="text-textcolor mt-4">License</span>
         <span class="text-textcolor2 text-sm"
-          >You can choose license for the downloaders to limit the usages of your card's prompt.</span
-        >
+          >You can choose license for the downloaders to limit the usages of your card's prompt.</span>
         <SelectInput bind:value={license}>
           <OptionInput value="">None</OptionInput>
           {#each Object.keys(CCLicenseData) as ccl}
@@ -124,15 +114,13 @@
             class:ring-1={!privateMode}
             onclick={() => {
               privateMode = false
-            }}>🌏 Show Author ID</button
-          >
+            }}>🌏 Show Author ID</button>
           <button
             class="bg-bgcolor p-2 rounded-lg ml-2"
             class:ring-1={privateMode}
             onclick={() => {
               privateMode = true
-            }}>🔒 Anonymized</button
-          >
+            }}>🔒 Anonymized</button>
         </div>
         <div class="flex items-center flex-wrap mt-2">
           <button
@@ -140,15 +128,13 @@
             class:ring-1={!nsfwMode}
             onclick={() => {
               nsfwMode = false
-            }}>🎖️ Safe</button
-          >
+            }}>🎖️ Safe</button>
           <button
             class="bg-bgcolor p-2 rounded-lg ml-2"
             class:ring-1={nsfwMode}
             onclick={() => {
               nsfwMode = true
-            }}>🔞 NSFW</button
-          >
+            }}>🔞 NSFW</button>
         </div>
       {:else}
         <div class="flex items-center flex-wrap mt-2">
@@ -157,21 +143,18 @@
             class:ring-1={update}
             onclick={() => {
               update = true
-            }}>🚀 Update</button
-          >
+            }}>🚀 Update</button>
           <button
             class="bg-bgcolor p-2 rounded-lg ml-2"
             class:ring-1={!update}
             onclick={() => {
               update = false
-            }}>⭐ Upload Newly</button
-          >
+            }}>⭐ Upload Newly</button>
         </div>
       {/if}
       {#if nsfwMode}
         <span class="text-textcolor2 text-sm"
-          >Grotesque Contents and non-adult characters with NSFW would be banned.</span
-        >
+          >Grotesque Contents and non-adult characters with NSFW would be banned.</span>
       {/if}
       <Button
         onclick={async () => {
@@ -197,8 +180,7 @@
           close()
         }}
         className="mt-2"
-        size="lg"
-      >
+        size="lg">
         {#if char.realmId}
           {language.updateRealm}
         {:else}

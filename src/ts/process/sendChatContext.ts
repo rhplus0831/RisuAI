@@ -1,12 +1,7 @@
 import { get } from 'svelte/store'
 import { v4 } from 'uuid'
 import { alertToast } from '../alert'
-import {
-  changeToPreset,
-  type MessagePresetInfo,
-  type Message,
-  type character,
-} from '../storage/database.svelte'
+import { changeToPreset, type MessagePresetInfo, type Message, type character } from '../storage/database.svelte'
 import { DBState } from '../stores.svelte'
 import { selectedCharID } from '../stores.svelte'
 import { ChatTokenizer } from '../tokenizer'
@@ -150,8 +145,7 @@ export function setupSendChatContext(args: {
       const selectedChat = nowChatroom.chatPage
       const selectedChatRecord = nowChatroom.chats[selectedChat]
       const hasUnloadedMessages = selectedChatRecord.message.some(isServerChatMessagePlaceholder)
-      const needsMessageIdBackfill =
-        !hasUnloadedMessages && selectedChatRecord.message.some((v) => v.chatId == null)
+      const needsMessageIdBackfill = !hasUnloadedMessages && selectedChatRecord.message.some((v) => v.chatId == null)
 
       if (characterId || needsMessageIdBackfill) {
         rollbackSnapshot = currentSendRollbackSnapshot({
@@ -220,10 +214,7 @@ export function setupSendChatContext(args: {
   }
 
   const chatAdditonalTokens = argChatAdditonalTokens ?? caculatedChatTokens
-  const tokenizer = new ChatTokenizer(
-    chatAdditonalTokens,
-    DBState.db.aiModel.startsWith('gpt') ? 'noName' : 'name',
-  )
+  const tokenizer = new ChatTokenizer(chatAdditonalTokens, DBState.db.aiModel.startsWith('gpt') ? 'noName' : 'name')
   const maxContextTokens = DBState.db.maxContext
 
   return {
@@ -272,18 +263,18 @@ function formatChatScopedPromptToggle(
 
 function createLegacyPromptInfo(): MessagePresetInfo {
   const initialPresetName = DBState.db.botPresets[DBState.db.botPresetsId]?.name ?? ''
-  const initialPromptToggles = parseToggleSyntax(
-    DBState.db.customPromptTemplateToggle + getModuleToggles(),
-  ).flatMap((toggle) => {
-    const raw = DBState.db.globalChatVariables[`toggle_${toggle.key}`]
-    if (toggle.type === 'select' || toggle.type === 'text') {
-      return [{ key: toggle.value, value: toggle.options[raw] }]
-    }
-    if (raw === '1') {
-      return [{ key: toggle.value, value: 'ON' }]
-    }
-    return []
-  })
+  const initialPromptToggles = parseToggleSyntax(DBState.db.customPromptTemplateToggle + getModuleToggles()).flatMap(
+    (toggle) => {
+      const raw = DBState.db.globalChatVariables[`toggle_${toggle.key}`]
+      if (toggle.type === 'select' || toggle.type === 'text') {
+        return [{ key: toggle.value, value: toggle.options[raw] }]
+      }
+      if (raw === '1') {
+        return [{ key: toggle.value, value: 'ON' }]
+      }
+      return []
+    },
+  )
 
   return {
     promptName: initialPresetName,

@@ -33,9 +33,7 @@ export function finalizeStage4(opts: FinalizeStage4Options): void {
   const lastMessageIndex = messages.length - 1
   if (lastMessageIndex >= 0 && messages[lastMessageIndex].generationInfo) {
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters[selectedChar].chats[selectedChat].message[
-        lastMessageIndex
-      ].generationInfo = generationInfo
+      DBState.db.characters[selectedChar].chats[selectedChat].message[lastMessageIndex].generationInfo = generationInfo
     })
   }
 }

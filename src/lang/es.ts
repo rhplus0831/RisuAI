@@ -14,8 +14,7 @@ export const languageSpanish = {
     postEverything: 'Prompts Inyectados al Final',
   },
   errors: {
-    toomuchtoken:
-      'Error: El mínimo requerido de tokens es mayor que el Tamaño Máximo del Contexto.',
+    toomuchtoken: 'Error: El mínimo requerido de tokens es mayor que el Tamaño Máximo del Contexto.',
     unknownModel: 'Error: Modelo seleccionado desconocido',
     httpError: 'Error: error en la solicitud:',
     noData: 'Ese archivo no parece válido o sus datos están dañados.',
@@ -29,31 +28,23 @@ export const languageSpanish = {
     networkFetchPlain:
       'Esto puede ser un error de fetch simple. Intenta desactivar la opción de forzar fetch simple en la configuración.',
     requestLogRemoved: 'Este registro de solicitud ha sido eliminado.',
-    requestLogRemovedDesc:
-      'Este registro de solicitud se elimina cuando el cliente se actualiza o recarga.',
+    requestLogRemovedDesc: 'Este registro de solicitud se elimina cuando el cliente se actualiza o recarga.',
     vertexAuthError: 'Faltan los detalles de autenticación de Vertex AI.',
-    coldStorageWriteFailed:
-      'Error al escribir en almacenamiento frío. Sus datos de chat se han conservado.',
-    coldStorageVerifyFailed:
-      'Error en la verificación del almacenamiento frío. Sus datos de chat se han conservado.',
+    coldStorageWriteFailed: 'Error al escribir en almacenamiento frío. Sus datos de chat se han conservado.',
+    coldStorageVerifyFailed: 'Error en la verificación del almacenamiento frío. Sus datos de chat se han conservado.',
   },
   showHelp: 'Mostrar Ayuda',
   help: {
     model: 'La opción de modelo es el modelo principal usado en el chat.',
     submodel:
       'El Modelo Auxiliar es un modelo que se utiliza para analizar imágenes de emociones, auto sugerencias, etc. Se recomienda GPT-3.5.',
-    oaiapikey:
-      'Clave API para OpenAI. Puedes obtenerla en https://platform.openai.com/account/api-keys',
-    mainprompt:
-      'La opción de prompt principal establece el comportamiento predeterminado del modelo.',
-    jailbreak:
-      'La opción de prompt jailbreak se activa cuando el interruptor jailbreak está activado en el personaje.',
+    oaiapikey: 'Clave API para OpenAI. Puedes obtenerla en https://platform.openai.com/account/api-keys',
+    mainprompt: 'La opción de prompt principal establece el comportamiento predeterminado del modelo.',
+    jailbreak: 'La opción de prompt jailbreak se activa cuando el interruptor jailbreak está activado en el personaje.',
     globalNote:
       'Una nota que afecta fuertemente el comportamiento del modelo, también conocida como UJB. Funciona en todos los personajes.',
-    autoSuggest:
-      'Prompts usados para generar opciones cuando se sugieren automáticamente respuestas al usuario.',
-    formatOrder:
-      'Orden de formateo del prompt. Los bloques inferiores tienen más efecto en el modelo.',
+    autoSuggest: 'Prompts usados para generar opciones cuando se sugieren automáticamente respuestas al usuario.',
+    formatOrder: 'Orden de formateo del prompt. Los bloques inferiores tienen más efecto en el modelo.',
     forceUrl: 'Si no está en blanco, la solicitud se enviará a la URL que hayas ingresado.',
     tempature:
       'Valores más bajos hacen que el personaje siga los prompts de cerca, pero es más probable que responda como una máquina.\nValores más altos resultarán en un comportamiento creativo, pero la respuesta del personaje puede descomponerse más fácilmente.',
@@ -64,8 +55,7 @@ export const languageSpanish = {
     sdProvider: 'Proveedor para generación de imágenes.',
     msgSound: 'Reproduce un sonido *ding* cuando el personaje responde.',
     charDesc: 'Breve descripción del personaje. Esto afecta las respuestas del personaje.',
-    charFirstMessage:
-      'Primer mensaje del personaje. Esto afecta altamente las respuestas del personaje.',
+    charFirstMessage: 'Primer mensaje del personaje. Esto afecta altamente las respuestas del personaje.',
     charNote:
       'Una nota que afecta fuertemente el comportamiento del modelo. Embebida en el personaje actual. También conocida como UJB.',
     toggleNsfw: 'Activa o desactiva el prompt jailbreak.',
@@ -89,8 +79,7 @@ export const languageSpanish = {
       'Conversaciones de ejemplo que afectan la respuesta del personaje. No usa tokens permanentemente.\n\nFormato de ejemplo de conversaciones:\n\n```\n<START>\n{{usuario}}: hola\n{{char}}: hola\n<START>\n{{usuario}}: hola\nHaruhi: hola\n```\n\n```<START>``` Marca el comienzo de una nueva conversación.',
     creatorQuotes:
       'Nota que aparece en la parte superior del primer mensaje. Se utiliza para informar a los usuarios sobre este personaje. No va en el prompt.',
-    systemPrompt:
-      'Un prompt que reemplaza el prompt principal en la configuración si no está en blanco.',
+    systemPrompt: 'Un prompt que reemplaza el prompt principal en la configuración si no está en blanco.',
     chatNote:
       'Una nota que afecta fuertemente el comportamiento del modelo. Embebida en el chat actual. También conocida como memoria o ujb.',
     personality:
@@ -124,15 +113,13 @@ export const languageSpanish = {
       'LoreBook+ es una característica experimental que utiliza vectordb en lugar de solo coincidencia de cadenas para una mejor experiencia de creación de bots y un mejor rendimiento de coincidencia.',
     topP: 'Top P es un umbral de probabilidad para el muestreo de núcleo. El modelo considera los resultados de los tokens con la masa de probabilidad top_p.',
     openAIFixer: 'OpenAI Fixer es un complemento que soluciona algunos de los problemas de OpenAI.',
-    sayNothing:
-      "Si está habilitado, ingresará 'no decir nada' cuando no se haya ingresado ninguna cadena.",
+    sayNothing: "Si está habilitado, ingresará 'no decir nada' cuando no se haya ingresado ninguna cadena.",
     showUnrecommended:
       'Si está habilitado, mostrará configuraciones no recomendadas y obsoletas. NO SE RECOMIENDA usar estas configuraciones.',
     imageCompression:
       'Si está habilitado, comprimirá las imágenes al exportar el personaje. Si las imágenes animadas no funcionan, intenta desactivar esta opción.',
     useExperimental: 'Si está habilitado, mostrará algunas características experimentales.',
-    forceProxyAsOpenAI:
-      'Si está habilitado, forzará el uso del formato OpenAI al usar un proxy inverso.',
+    forceProxyAsOpenAI: 'Si está habilitado, forzará el uso del formato OpenAI al usar un proxy inverso.',
     forcePlainFetch:
       'Si está habilitado, usará la API de fetch del navegador en lugar de la solicitud HTTP nativa. Esto puede causar errores de CORS.',
     autoFillRequestURL:
@@ -146,8 +133,7 @@ export const languageSpanish = {
       'Esta opción se utiliza para establecer el número de reintentos de solicitud cuando la solicitud falla.',
     emotionPrompt:
       'Esta opción se utiliza para establecer el prompt que se usa para detectar la emoción. Si está en blanco, usará el prompt predeterminado.',
-    removePunctuationHypa:
-      'Si está habilitado, eliminará la puntuación antes de ejecutar HypaMemory.',
+    removePunctuationHypa: 'Si está habilitado, eliminará la puntuación antes de ejecutar HypaMemory.',
     additionalParams:
       'Parámetros adicionales que se agregarán al cuerpo de la solicitud. Si deseas excluir algunos parámetros, puedes poner `{{none}}` en el valor. Si deseas agregar un encabezado en lugar de un cuerpo, puedes poner `header::` delante de la clave, como `header::Authorization`. Si deseas el valor como JSON, puedes poner `json::` delante del valor, como `json::{"key":"value"}`. De lo contrario, el tipo del valor se determinará automáticamente.',
     antiClaudeOverload:
@@ -194,8 +180,7 @@ export const languageSpanish = {
       'CSS personalizado para estilos. También puedes desactivarlo/activarlo presionando (Ctrl + .) si algo sale mal.',
     betaMobileGUI:
       'Si está habilitado, usará la GUI móvil beta en pantallas pequeñas (menos de 800px). Requiere recargar.',
-    unrecommended:
-      'Esta es una configuración no recomendada. No se recomienda usar esta configuración.',
+    unrecommended: 'Esta es una configuración no recomendada. No se recomienda usar esta configuración.',
     jsonSchema:
       'Este es un esquema JSON que se enviará al modelo de IA si el modelo admite JSON Schema.\n\nSin embargo, dado que JSON Schema es difícil de aprender, en Risuai puedes usar un subconjunto de la interfaz TypeScript en lugar de JSON Schema. Risuai lo convertirá en tiempo de ejecución. Por ejemplo, si quieres enviar un JSON como este:\n\n```js\n{\n  "name": "Risuai", //name must be Risuai,\n  "age": 1, //age must be number,\n  "icon": "slim", //icon must be \'slim\' or \'rounded\'\n  "thoughts": ["Good View!", "Lorem"] //thoughts must be array of strings\n}\n```\n\nPuedes poner esta interfaz TypeScript:\n\n```typescript\ninterface Schema {\n  name: string;\n  age: number;\n  icon: \'slim\'|\'rounded\'\n  thoughts: string[]\n}\n```\n\nEl nombre de la interfaz no importa. Para más información, consulta la documentación de TypeScript (https://www.typescriptlang.org/docs/handbook/interfaces.html), y para verificar qué subconjunto de TypeScript es compatible, consulta a continuación.<details><summary>Subconjunto de TypeScript Compatible</summary>\n\nLos tipos compatibles son `boolean`, `number`, `string`, `Array`. Tipos avanzados como tipos unitarios, tipos de intersección, tipos de unión, opcionales, tipos literales, etc., no son compatibles excepto en estos casos:\n\n        - Array de tipos primitivos: (ej. `string[]`, `Array<boolean>)`\n        - Tipos unitarios entre cadenas: (ej. `\'slim\'|\'rounded\'`).\n\n        Las propiedades deben estar una por línea. Si hay múltiples propiedades en una línea, arrojará un error. Las propiedades y el nombre de la interfaz deben estar solo en caracteres latinos, en el rango ASCII. El nombre de las propiedades no debe estar entre comillas o comillas dobles. No se admite anidamiento dentro de la interfaz. No se permite poner `{` o `}` en la línea donde se definen las propiedades. Si deseas usar tipos más avanzados, usa JSON Schema en su lugar.\n        </details>',
     strictJsonSchema:
@@ -208,8 +193,7 @@ export const languageSpanish = {
       'Un HTML que se insertará como cada chat.\n\nPuedes usar CBS y etiquetas especiales.\n- `<risutextbox>`: un cuadro de texto que se usaría para renderizar texto\n- `<risuicon>`: un icono para usuario o asistente\n- `<risubuttons>`: botones de icono para editar chat, traducciones, etc.\n- `<risugeninfo>`: botón de información de generación.',
     systemContentReplacement:
       'El formato de prompt que reemplaza el prompt del sistema si el modelo no admite prompt del sistema.',
-    systemRoleReplacement:
-      'El rol que reemplaza el rol del sistema si el modelo no admite rol del sistema.',
+    systemRoleReplacement: 'El rol que reemplaza el rol del sistema si el modelo no admite rol del sistema.',
     summarizationPrompt:
       'El prompt que se utiliza para resumir. Si está en blanco, utilizará el prompt predeterminado. También puedes usar el formato ChatML con {{slot}} para los datos del chat.',
     translatorPrompt:
@@ -230,8 +214,7 @@ export const languageSpanish = {
       'Comprime los datos de chat no utilizados y los guarda en un archivo separado. Esto reduce en gran medida el tamaño de los datos del chat y mejora en gran medida el rendimiento, sin embargo, es experimental y puede ser inestable, causando problemas en la función de respaldo y más.',
     promptInfoInsideChatDesc:
       'Cuando está habilitado, almacena información del preset de prompt en los metadatos del chat. Los datos almacenados incluyen el nombre del preset, los interruptores activos y el texto del prompt. Esto puede aumentar ligeramente el tiempo de procesamiento y el uso de almacenamiento.',
-    autoAdjustSchema:
-      'Cuando está habilitado, ajustará automáticamente el esquema JSON para la Salida Dinámica.',
+    autoAdjustSchema: 'Cuando está habilitado, ajustará automáticamente el esquema JSON para la Salida Dinámica.',
     dynamicMessages:
       'Cuando está habilitado, permitirá al asistente enviar múltiples mensajes seguidos, en lugar de uno a la vez.',
     dynamicMemory:
@@ -243,8 +226,7 @@ export const languageSpanish = {
       'Ajusta el tamaño del botón de cerrar (X) en la esquina superior derecha de la ventana de configuración. El valor predeterminado es 24.',
     showTypingEffect:
       'Cuando está habilitado, mostrará un indicador de escritura mientras el asistente está generando una respuesta.',
-    dynamicOutputPrompt:
-      'Cuando está habilitado, la información del esquema se incluirá en la solicitud.',
+    dynamicOutputPrompt: 'Cuando está habilitado, la información del esquema se incluirá en la solicitud.',
     realmDirectOpen:
       'Si está habilitado, al hacer clic en un personaje en la vista previa de RisuRealm se abrirá directamente la descripción del personaje.',
     openRouterProviderOrder:
@@ -255,8 +237,7 @@ export const languageSpanish = {
       'Ignorar los proveedores en esta lista, si todos los proveedores son ignorados, la solicitud fallará. Ver detalles en https://openrouter.ai/docs/guides/routing/provider-selection#ignoring-providers',
     additionalPrompt:
       "Texto que se agrega al final del Prompt Principal cuando el Preprocesamiento de Prompt está habilitado. El valor predeterminado es 'The assistant must act as {{char}}. user is {{user}}.' Esto ayuda a establecer el contexto básico del juego de roles.",
-    hideAllImagesDesc:
-      'Oculta los iconos de bots, recursos de imágenes de bots y portadas de RisuRealm.',
+    hideAllImagesDesc: 'Oculta los iconos de bots, recursos de imágenes de bots y portadas de RisuRealm.',
     embedding:
       "El modelo de incrustación (embedding) se utiliza para la búsqueda de similitud en múltiples características:\n\n- **Memoria a Largo Plazo**: HypaV2, HypaV3, Memoria Hanurai y SupaMemory (con HypaMemory habilitado)\n- **Texto Adicional**: Coincidencia de información adicional del personaje basada en el contexto\n- **Activos Dinámicos**: Encontrar nombres de activos similares cuando no se encuentra una coincidencia exacta\n- **Imágenes de Emoción**: Cuando el método de Emoción está configurado en 'embedding'\n- **Scripts de Activación**: Condiciones de similitud en scripts de activación\n- **Archivos Adjuntos**: Búsqueda dentro de archivos adjuntos PDF/TXT/XML\n- **Playground**: Pruebas de incrustación en Playground",
     enableScrollToActiveChar:
@@ -269,22 +250,19 @@ export const languageSpanish = {
     setupmodelself: 'Otros / Lo configuraré yo mismo',
     inputApiKey: 'Ingresa la Clave API Aquí',
     apiKeyhelp: 'Puedes obtener la clave API en: ',
-    setupSelfHelp:
-      'Configúralo tú mismo en la configuración, después de que termine la pantalla de bienvenida.',
+    setupSelfHelp: 'Configúralo tú mismo en la configuración, después de que termine la pantalla de bienvenida.',
     theme: 'Selecciona tu tema',
     themeDescWifulike: 'No apto para móviles',
     themeDescWifuCut: 'Apto para móviles',
     themeDescClassic: 'Apto para todos los dispositivos',
     texttheme: 'Selecciona el color del texto',
     inputName: 'Por último, ingresa tu apodo.',
-    welcome:
-      '¡Bienvenido a Risuai! Aquí te guiaré para configurarlo. Primero, ¿cómo puedo llamarte?',
+    welcome: '¡Bienvenido a Risuai! Aquí te guiaré para configurarlo. Primero, ¿cómo puedo llamarte?',
     welcome2:
       'Hola {username}! Antes de empezar, te haré algunas preguntas. Puedes cambiar estas configuraciones más tarde en la configuración.\n\nPrimero selecciona el proveedor de IA.',
     openRouterProvider:
       'OpenRouter tiene muchos modelos, algunos de ellos sin filtro y algunos gratuitos, pero no es tan bueno como OpenAI.',
-    hordeProvider:
-      'Horde es un proveedor gratuito, pero el tiempo de respuesta es largo y la calidad es baja.',
+    hordeProvider: 'Horde es un proveedor gratuito, pero el tiempo de respuesta es largo y la calidad es baja.',
     setProviderLater:
       'Hay otros proveedores, pero puedes configurarlo más tarde en la configuración. selecciona esto si deseas configurarlo más tarde.',
     setupOpenAI:
@@ -307,8 +285,7 @@ export const languageSpanish = {
     setupOpenRouter:
       "Para usar OpenRouter, necesitas obtener una clave API. \n1. ve a https://openrouter.ai/keys\n2. haz clic en 'Crear Clave'\n3. establece el nombre de la clave como quieras.\n4. copia la clave en el sitio web\n5. regresa a Risuai\n6. pégala y haz clic en el botón enviar.",
     allDone: '¡Todo listo! por favor, espera un momento.',
-    setupLaterMessage:
-      '¡Bienvenido {username}! ¿Quieres que te guíe para configurar o lo harás tú mismo?',
+    setupLaterMessage: '¡Bienvenido {username}! ¿Quieres que te guíe para configurar o lo harás tú mismo?',
     setupMessageOption1: 'Guíame para configurar',
     setupMessageOption1Desc: 'Recomendado para nuevos usuarios',
     setupMessageOption2: 'Lo configuraré yo mismo',
@@ -324,19 +301,16 @@ export const languageSpanish = {
     chooseChatTypeOption2Desc:
       'Esto hará que la IA use inglés internamente, pero la entrada/salida estará en tu idioma. Recomendado para hablantes no ingleses.',
     chooseChatTypeOption3: 'Sin Idioma Enfocado',
-    chooseChatTypeOption3Desc:
-      'Esto hará que la IA use tu idioma internamente, pero esto podría reducir la calidad.',
+    chooseChatTypeOption3Desc: 'Esto hará que la IA use tu idioma internamente, pero esto podría reducir la calidad.',
     chooseCheapOrMemory: 'Por cierto, ¿prefieres memoria o economía?',
     chooseCheapOrMemoryOption1: 'Memoria',
     chooseCheapOrMemoryOption1Desc: 'Esto hará que la IA recuerde más, pero será bastante costoso.',
     chooseCheapOrMemoryOption2: 'Económico',
     chooseCheapOrMemoryOption2Desc: 'Esto hará que la IA recuerde menos, pero será más barato.',
     chooseCheapOrMemoryOption3: 'Equilibrado',
-    chooseCheapOrMemoryOption3Desc:
-      'Esto hará que la IA recuerde más que en económico, pero menos que en memoria.',
+    chooseCheapOrMemoryOption3Desc: 'Esto hará que la IA recuerde más que en económico, pero menos que en memoria.',
     chooseCheapOrMemoryOption4: 'Ilimitado',
-    chooseCheapOrMemoryOption4Desc:
-      'Esto hará que la IA recuerde casi todo, pero será muy costoso.',
+    chooseCheapOrMemoryOption4Desc: 'Esto hará que la IA recuerde casi todo, pero será muy costoso.',
     finally: 'Finalmente, ¿quieres habilitar herramientas avanzadas?',
     finallyOption1: 'Sí',
     finallyOption1Desc:
@@ -419,11 +393,9 @@ export const languageSpanish = {
     v2GetLorebookEntry: 'Obtener Entrada de Libro de Lore',
     v2GetLorebookEntryDesc: 'Obtener Libro de Lore con índice {{index}} => {{outputVar}}',
     v2SetLorebookActivation: 'Establecer Activación de Libro de Lore',
-    v2SetLorebookActivationDesc:
-      'Establecer estado de activación del Libro de Lore con índice {{index}} a {{value}}',
+    v2SetLorebookActivationDesc: 'Establecer estado de activación del Libro de Lore con índice {{index}} a {{value}}',
     v2GetLorebookIndexViaName: 'Obtener Índice de Libro de Lore por Nombre',
-    v2GetLorebookIndexViaNameDesc:
-      'Obtener Índice de Libro de Lore por Nombre {{name}} => {{outputVar}}',
+    v2GetLorebookIndexViaNameDesc: 'Obtener Índice de Libro de Lore por Nombre {{name}} => {{outputVar}}',
     v2ModifyLorebook: 'Modificar Libro de Lore',
     v2ModifyLorebookDesc: 'Modificar Libro de Lore llamado {{target}} con {{value}}',
     v2LoopNTimes: 'Bucle N Veces',
@@ -439,8 +411,7 @@ export const languageSpanish = {
     v2ToUpperCase: 'Convertir a Mayúsculas',
     v2ToUpperCaseDesc: 'Convertir {{source}} a Mayúsculas => {{outputVar}}',
     v2SetCharAt: 'Establecer Carácter en Índice',
-    v2SetCharAtDesc:
-      'Establecer Carácter en Índice {{index}} en {{source}} a {{value}} => {{outputVar}}',
+    v2SetCharAtDesc: 'Establecer Carácter en Índice {{index}} en {{source}} a {{value}} => {{outputVar}}',
     v2SplitString: 'Dividir Cadena',
     v2SplitStringDesc: 'Dividir {{source}} por {{delimiter}} => {{outputVar}}',
     v2GetCharacterDesc: 'Obtener Descripción del Personaje',
@@ -468,11 +439,9 @@ export const languageSpanish = {
     v2GetArrayVarLength: 'Obtener Longitud de Variable de Matriz',
     v2GetArrayVarLengthDesc: 'Obtener Longitud de Variable de Matriz {{var}} => {{outputVar}}',
     v2GetArrayVar: 'Obtener Variable de Matriz',
-    v2GetArrayVarDesc:
-      'Obtener Valor en Índice {{index}} de Variable de Matriz {{var}} => {{outputVar}}',
+    v2GetArrayVarDesc: 'Obtener Valor en Índice {{index}} de Variable de Matriz {{var}} => {{outputVar}}',
     v2SetArrayVar: 'Establecer Variable de Matriz',
-    v2SetArrayVarDesc:
-      'Establecer Valor en Índice {{index}} en Variable de Matriz {{var}} a {{value}}',
+    v2SetArrayVarDesc: 'Establecer Valor en Índice {{index}} en Variable de Matriz {{var}} a {{value}}',
     v2PushArrayVar: 'Agregar a Variable de Matriz',
     v2PushArrayVarDesc: 'Agregar {{value}} a Variable de Matriz {{var}}',
     v2PopArrayVar: 'Eliminar y obtener último valor de Variable de Matriz',
@@ -484,14 +453,11 @@ export const languageSpanish = {
     v2SpliceArrayVar: 'Agregar a Variable de Matriz en Índice',
     v2SpliceArrayVarDesc: 'Agregar {{value}} como valor {{start}} de Variable de Matriz {{var}}',
     v2SliceArrayVar: 'Rebanar Variable de Matriz',
-    v2SliceArrayVarDesc:
-      'Rebanar Variable de Matriz {{var}} desde {{start}} hasta {{end}} => {{outputVar}}',
+    v2SliceArrayVarDesc: 'Rebanar Variable de Matriz {{var}} desde {{start}} hasta {{end}} => {{outputVar}}',
     v2GetIndexOfValueInArrayVar: 'Obtener Índice de Valor en Variable de Matriz',
-    v2GetIndexOfValueInArrayVarDesc:
-      'Obtener Índice de {{value}} en Variable de Matriz {{var}} => {{outputVar}}',
+    v2GetIndexOfValueInArrayVarDesc: 'Obtener Índice de {{value}} en Variable de Matriz {{var}} => {{outputVar}}',
     v2RemoveIndexFromArrayVar: 'Eliminar Índice de Variable de Matriz',
-    v2RemoveIndexFromArrayVarDesc:
-      'Eliminar Valor en Índice {{index}} de Variable de Matriz {{var}}',
+    v2RemoveIndexFromArrayVarDesc: 'Eliminar Valor en Índice {{index}} de Variable de Matriz {{var}}',
     v2JoinArrayVar: 'Unir Matriz',
     v2JoinArrayVarDesc: 'Unir Matriz {{var}} con {{delimiter}} => {{outputVar}}',
     v2MakeDictVar: 'Crear Variable de Diccionario',
@@ -523,8 +489,7 @@ export const languageSpanish = {
     v2GetAlertInput: 'Obtener Entrada de Alerta',
     v2GetAlertInputDesc: 'Obtener Entrada de Alerta => {{outputVar}}',
     v2GetAlertSelect: 'Obtener Selección de Alerta',
-    v2GetAlertSelectDesc:
-      'Obtener Selección de Alerta {{display}} opciones {{value}} => {{outputVar}}',
+    v2GetAlertSelectDesc: 'Obtener Selección de Alerta {{display}} opciones {{value}} => {{outputVar}}',
     v2UnsupportedTrigger: 'Trigger No Soportado',
     v2UnsupportedTriggerDesc: 'Trigger No Soportado',
     v2GetDisplayState: 'Obtener Estado de Visualización',
@@ -557,17 +522,13 @@ export const languageSpanish = {
     v2Tokenize: 'Tokenizar',
     v2TokenizeDesc: 'Tokenizar {{value}} => {{outputVar}}',
     v2GetAllLorebooks: 'Obtener Todos los Libros de Lore',
-    v2GetAllLorebooksDesc:
-      'Obtener todos los prompts de libros de lore como matriz => {{outputVar}}',
+    v2GetAllLorebooksDesc: 'Obtener todos los prompts de libros de lore como matriz => {{outputVar}}',
     v2GetLorebookByName: 'Obtener Índices de Libro de Lore por Nombre',
-    v2GetLorebookByNameDesc:
-      'Obtener matriz de índices de libros de lore por nombre {{name}} => {{outputVar}}',
+    v2GetLorebookByNameDesc: 'Obtener matriz de índices de libros de lore por nombre {{name}} => {{outputVar}}',
     v2GetLorebookByIndex: 'Obtener Libro de Lore',
-    v2GetLorebookByIndexDesc:
-      'Obtener prompt de libro de lore en índice {{index}} => {{outputVar}}',
+    v2GetLorebookByIndexDesc: 'Obtener prompt de libro de lore en índice {{index}} => {{outputVar}}',
     v2CreateLorebook: 'Crear Libro de Lore',
-    v2CreateLorebookDesc:
-      'Crear libro de lore con nombre {{name}}, clave {{key}}, contenido {{content}}',
+    v2CreateLorebookDesc: 'Crear libro de lore con nombre {{name}}, clave {{key}}, contenido {{content}}',
     v2ModifyLorebookByIndex: 'Modificar Libro de Lore',
     v2ModifyLorebookByIndexDesc:
       'Modificar libro de lore en índice {{index}} con nombre {{name}}, clave {{key}}, contenido {{content}}',
@@ -576,13 +537,11 @@ export const languageSpanish = {
     v2GetLorebookCountNew: 'Obtener Recuento de Libro de Lore',
     v2GetLorebookCountNewDesc: 'Obtener recuento total de libros de lore => {{outputVar}}',
     v2SetLorebookAlwaysActive: 'Establecer Libro de Lore Siempre Activo',
-    v2SetLorebookAlwaysActiveDesc:
-      'Establecer libro de lore en índice {{index}} siempre activo a {{value}}',
+    v2SetLorebookAlwaysActiveDesc: 'Establecer libro de lore en índice {{index}} siempre activo a {{value}}',
     v2Calculate: 'Calcular',
     v2CalculateDesc: 'Calcular {{expression}} => {{outputVar}}',
     v2ReplaceString: 'Reemplazar Cadena',
-    v2ReplaceStringDesc:
-      'Reemplazar {{source}} con regex {{regex}} a {{replacement}} => {{outputVar}}',
+    v2ReplaceStringDesc: 'Reemplazar {{source}} con regex {{regex}} a {{replacement}} => {{outputVar}}',
   },
   triggerInputLabels: {
     value: 'Valor',
@@ -671,8 +630,7 @@ export const languageSpanish = {
   playground: {
     playground: 'Playground',
     inlayDeleteConfirm: '¿Estás seguro de que deseas eliminar "{name}"?',
-    inlayDeleteMultipleConfirm:
-      '¿Estás seguro de que deseas eliminar los {count} recursos seleccionados?',
+    inlayDeleteMultipleConfirm: '¿Estás seguro de que deseas eliminar los {count} recursos seleccionados?',
     inlayDeleteSelected: 'Eliminar seleccionados',
     inlayDeselectAll: 'Deseleccionar todo',
     inlayEmpty: 'Sin recursos inlay guardados',
@@ -788,8 +746,7 @@ export const languageSpanish = {
   SpacedView: 'Vista de Múltiples Personajes',
   emphasizedView: 'Vista de Personajes Doble',
   pluginWarn: 'Instalar plugins maliciosos puede causar problemas.',
-  pluginConfirm:
-    '¿Realmente quieres importar este plugin? Solo importa plugins de fuentes confiables.',
+  pluginConfirm: '¿Realmente quieres importar este plugin? Solo importa plugins de fuentes confiables.',
   pluginContainsExternalMedia: 'Este plugin contiene medios externos.',
   pluginContainsExternalJS: 'Este complemento contiene Javascript externo.',
   waifuWidth: 'Ancho del Chat Waifu',
@@ -798,10 +755,8 @@ export const languageSpanish = {
   files: 'Archivos',
   backupConfirm: '¿Realmente deseas guardar el respaldo?',
   backupLoadConfirm: '¿Realmente deseas cargar el respaldo? ¡Todos los datos se perderán!',
-  backupLoadConfirm2:
-    '¿Realmente, realmente deseas cargar el respaldo? ¡Todos los datos se perderán!',
-  pasteAuthCode:
-    'Por favor, copia el código de autenticación de la ventana emergente y pégalo aquí:',
+  backupLoadConfirm2: '¿Realmente, realmente deseas cargar el respaldo? ¡Todos los datos se perderán!',
+  pasteAuthCode: 'Por favor, copia el código de autenticación de la ventana emergente y pégalo aquí:',
   others: 'Otros',
   presets: 'Presets',
   imageGeneration: 'Generación de Imágenes',
@@ -1027,8 +982,7 @@ export const languageSpanish = {
   imgGenPrompt: 'Prompt de Generación de Imágenes',
   imgGenNegatives: 'Prompt Negativo de Generación de Imágenes',
   imgGenInstructions: 'Instrucciones para Generación de Imágenes',
-  usePlainFetchWarn:
-    'Desactiva esta opción cuando uses NovelAI, ya que puede causar errores de CORS al usar NovelAI.',
+  usePlainFetchWarn: 'Desactiva esta opción cuando uses NovelAI, ya que puede causar errores de CORS al usar NovelAI.',
   translationPrompt: 'Prompt de Traducción',
   translationResponseSize: 'Tamaño de Respuesta de Traducción',
   webdeeplwarn: 'Esta opción puede causar errores de CORS.',
@@ -1071,18 +1025,15 @@ export const languageSpanish = {
   memoryLimitThickness: 'Grosor del Límite de Memoria',
   inputCardPassword: 'Ingresa la Contraseña de la Tarjeta',
   ccv2Desc: 'Character Card V2 es un formato ampliamente utilizado en programas de chatbot.',
-  ccv3Desc:
-    'Character Card V3 es un formato de próxima generación que se usa en programas de chatbot.',
+  ccv3Desc: 'Character Card V3 es un formato de próxima generación que se usa en programas de chatbot.',
   realmDesc:
     'RisuRealm es una plataforma de compartición de contenido para Risuai. Puedes compartir tu personaje con otros usuarios.',
   rccDesc:
     'Risu Refined Character Card es un formato con características adicionales como contraseña, verificación de integridad, etc.',
   password: 'Contraseña',
   license: 'Licencia',
-  licenseDesc:
-    'Puedes elegir la licencia para los descargadores para limitar los usos del prompt de tu tarjeta.',
-  passwordDesc:
-    'Puedes establecer una contraseña para proteger tu tarjeta de accesos no autorizados.',
+  licenseDesc: 'Puedes elegir la licencia para los descargadores para limitar los usos del prompt de tu tarjeta.',
+  passwordDesc: 'Puedes establecer una contraseña para proteger tu tarjeta de accesos no autorizados.',
   largePersonaPortrait: 'Retrato de Persona',
   module: 'Módulo',
   modules: 'Módulos',
@@ -1090,8 +1041,7 @@ export const languageSpanish = {
   createModule: 'Crear Módulo',
   basicInfo: 'Información Básica',
   moduleContent: 'Contenido del Módulo',
-  confirmRemoveModuleFeature:
-    '¿Realmente deseas eliminar esta característica? Esta acción no se puede deshacer.',
+  confirmRemoveModuleFeature: '¿Realmente deseas eliminar esta característica? Esta acción no se puede deshacer.',
   editModule: 'Editar Módulo',
   importModule: 'Importar Módulo',
   download: 'Descargar',
@@ -1151,11 +1101,9 @@ export const languageSpanish = {
   trashDesc:
     'Los personajes eliminados se mueven a la papelera. Puedes restaurarlos o eliminarlos permanentemente. Los personajes eliminados se purgan automáticamente después de 3 días.',
   shareExport: 'Compartir/Exportar',
-  risupresetDesc:
-    'El formato Risupreset es un formato específicamente diseñado para presets de Risuai.',
+  risupresetDesc: 'El formato Risupreset es un formato específicamente diseñado para presets de Risuai.',
   risuMDesc: 'El formato RisuM es un formato diseñado específicamente para módulos de Risuai.',
-  jsonDesc:
-    'El formato JSON es un formato fácil de leer y escribir tanto para humanos como para máquinas.',
+  jsonDesc: 'El formato JSON es un formato fácil de leer y escribir tanto para humanos como para máquinas.',
   nickname: 'Apodo',
   useRegexLorebook: 'Usar Regex',
   customPromptTemplateToggle: 'Alternar Plantillas Personalizadas',
@@ -1191,8 +1139,7 @@ export const languageSpanish = {
   search: 'Buscar',
   goCharacterOnImport: 'Ir al Personaje al Importar desde Realm',
   format: 'Formato',
-  v2Warning:
-    'Advertencia: La tarjeta V2 ya no es compatible. puede que no contenga todos los datos.',
+  v2Warning: 'Advertencia: La tarjeta V2 ya no es compatible. puede que no contenga todos los datos.',
   applyModule: 'Aplicar Módulo',
   successApplyModule: 'El módulo se aplicó exitosamente',
   font: 'Fuente',
@@ -1206,8 +1153,7 @@ export const languageSpanish = {
   doNotTranslate: 'No Traducir',
   includePersonaName: 'Incluir Nombre de la Persona',
   hidePersonaName: 'Ocultar Nombre de la Persona',
-  triggerSwitchWarn:
-    'Si cambias el tipo de activador, los activadores actuales se perderán. ¿deseas continuar?',
+  triggerSwitchWarn: 'Si cambias el tipo de activador, los activadores actuales se perderán. ¿deseas continuar?',
   codeMode: 'Modo Código',
   blockMode: 'Modo Bloque',
   helpBlock: 'Ayuda',
@@ -1243,8 +1189,7 @@ export const languageSpanish = {
   enableJsonSchema: 'Habilitar Esquema',
   strictJsonSchema: 'Esquema Estricto',
   extractJson: 'Extraer JSON',
-  reloadSession:
-    'Se encontró una versión más nueva de los datos guardados. Recargando la sesión...',
+  reloadSession: 'Se encontró una versión más nueva de los datos guardados. Recargando la sesión...',
   fixMarkdownNewline: 'Arreglar Nueva Línea en Markdown',
   customQuotes: 'Citas Personalizadas',
   leadingSingleQuote: 'Cita Simple Inicial',
@@ -1302,8 +1247,7 @@ export const languageSpanish = {
   assetMaxDifference: 'Diferencia Máxima de Activos',
   sourceLanguage: 'Idioma de Origen',
   destinationLanguage: 'Idioma de Destino',
-  noWebGPU:
-    'Tu navegador o SO no soporta WebGPU. Esto ralentizará el rendimiento significativamente.',
+  noWebGPU: 'Tu navegador o SO no soporta WebGPU. Esto ralentizará el rendimiento significativamente.',
   menuSideBar: 'Barra Lateral del Menú',
   home: 'Inicio',
   showSavingIcon: 'Mostrar Icono de Guardado',
@@ -1352,8 +1296,7 @@ export const languageSpanish = {
   },
   hypaV3Modal: {
     titleLabel: 'HypaV3',
-    resetConfirmMessage:
-      'Esta acción no se puede deshacer. ¿Desea restablecer los datos de HypaV3?',
+    resetConfirmMessage: 'Esta acción no se puede deshacer. ¿Desea restablecer los datos de HypaV3?',
     resetConfirmSecondMessage:
       'Esta acción es irreversible. ¿Está realmente seguro de querer restablecer los datos de HypaV3?',
     convertLabel: 'Aún no hay resúmenes, pero puede convertir datos de HypaV2 a V3.',
@@ -1495,10 +1438,8 @@ export const languageSpanish = {
   settingsExported: 'Configuración para informe de errores exportada y copiada al portapapeles.',
   bookmarks: 'Marcadores',
   noBookmarks: 'Sin Marcadores',
-  bookmarkAskNameOrDefault:
-    'Ingresa el nombre del marcador. Si no se ingresa, se asignará automáticamente.',
-  bookmarkAskNameOrCancel:
-    'Ingresa el nombre del marcador. Si no se ingresa, se cancelará el cambio de nombre.',
+  bookmarkAskNameOrDefault: 'Ingresa el nombre del marcador. Si no se ingresa, se asignará automáticamente.',
+  bookmarkAskNameOrCancel: 'Ingresa el nombre del marcador. Si no se ingresa, se cancelará el cambio de nombre.',
   collapseAll: 'Contraer Todo',
   expandAll: 'Expandir Todo',
   hideErrorDetails: 'Ocultar Detalles del Error',
@@ -1544,18 +1485,15 @@ export const languageSpanish = {
     storageAccess:
       'El plugin intenta acceder al almacenamiento, lo que podría llevar a fugas de datos o manipulación de datos no autorizada.',
   },
-  generatedByAIDisclaimer:
-    'Este contenido fue generado por IA y puede contener inexactitudes o sesgos.',
+  generatedByAIDisclaimer: 'Este contenido fue generado por IA y puede contener inexactitudes o sesgos.',
   aiGenerationWarning: 'El contenido será generado por IA y puede contener inexactitudes o sesgos.',
   loadMore: 'Cargar más',
   goToChat: 'Ir al chat',
   noRequestLogs: 'No hay registros de solicitudes disponibles.',
   bookmark: 'Marcador',
-  duplicatePluginFoundUpdateIt:
-    'Se encontró un plugin duplicado. ¿Desea actualizar el plugin existente?',
+  duplicatePluginFoundUpdateIt: 'Se encontró un plugin duplicado. ¿Desea actualizar el plugin existente?',
   branchedText: 'Este chat se ha ramificado desde {}.',
-  pluginUpdateFoundInstallIt:
-    'Se ha encontrado una actualización del plugin. ¿Desea instalar la actualización?',
+  pluginUpdateFoundInstallIt: 'Se ha encontrado una actualización del plugin. ¿Desea instalar la actualización?',
   branch: 'Rama',
   newMessageButtonBottomLeft: 'Abajo a la izquierda',
   newMessage: 'Nuevo mensaje',
@@ -1565,8 +1503,7 @@ export const languageSpanish = {
   autoScrollToNewMessage: 'Desplazamiento automático al nuevo mensaje',
   disableMessage: 'Desactivar mensaje',
   newMessageButtonStyle: 'Estilo del botón de nuevo mensaje',
-  alwaysScrollToNewMessage:
-    'Desplazarse siempre al nuevo mensaje (ignorar la posición de desplazamiento)',
+  alwaysScrollToNewMessage: 'Desplazarse siempre al nuevo mensaje (ignorar la posición de desplazamiento)',
   newMessageButtonTopBar: 'Barra superior',
   enableScrollToActiveChar: 'Activar desplazamiento al personaje activo',
   pluginDevelopMode: 'Modo de desarrollo de plugins',

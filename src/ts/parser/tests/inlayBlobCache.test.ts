@@ -3,11 +3,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { LLMModel } from '../../model/modellist'
 import type { InlayAsset } from '../../process/files/inlays'
 import { DBState } from '../../stores.svelte'
-import {
-  clearInlayBlobUrlCacheForTests,
-  INLAY_BLOB_URL_CACHE_LIMIT,
-  ParseMarkdown,
-} from '../parser.svelte'
+import { clearInlayBlobUrlCacheForTests, INLAY_BLOB_URL_CACHE_LIMIT, ParseMarkdown } from '../parser.svelte'
 
 const mocks = vi.hoisted(() => ({
   db: {

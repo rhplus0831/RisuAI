@@ -75,11 +75,7 @@ export function dispatchCreatePlugin(plugin: RisuPlugin, previous: PluginStateSn
   )
 }
 
-export function dispatchUpdatePlugin(
-  pluginId: string,
-  patch: PluginSnapshot,
-  previous: PluginStateSnapshot,
-): void {
+export function dispatchUpdatePlugin(pluginId: string, patch: PluginSnapshot, previous: PluginStateSnapshot): void {
   const commandPatch = sanitizePluginPatch(patch)
   if (Object.keys(commandPatch).length === 0) return
   runPluginCommand(
@@ -104,11 +100,7 @@ export function dispatchDeletePlugin(pluginId: string, previous: PluginStateSnap
   )
 }
 
-export function dispatchEnablePlugin(
-  pluginId: string,
-  enabled: boolean,
-  previous: PluginStateSnapshot,
-): void {
+export function dispatchEnablePlugin(pluginId: string, enabled: boolean, previous: PluginStateSnapshot): void {
   runPluginCommand(
     (baseRevision) =>
       enablePluginCommand({
@@ -120,10 +112,7 @@ export function dispatchEnablePlugin(
   )
 }
 
-export function dispatchSelectPluginProvider(
-  provider: string,
-  previous: PluginStateSnapshot,
-): void {
+export function dispatchSelectPluginProvider(provider: string, previous: PluginStateSnapshot): void {
   runPluginCommand(
     (baseRevision) =>
       selectPluginProviderCommand({
@@ -156,11 +145,7 @@ export function restorePluginStorage(snapshot: PluginStorageSnapshot): void {
   })
 }
 
-export function dispatchPutPluginStorage(
-  key: string,
-  value: unknown,
-  previous: PluginStorageSnapshot,
-): void {
+export function dispatchPutPluginStorage(key: string, value: unknown, previous: PluginStorageSnapshot): void {
   runPluginCommand(
     (baseRevision) =>
       putPluginStorageCommand({
@@ -172,10 +157,7 @@ export function dispatchPutPluginStorage(
   )
 }
 
-export function dispatchDeletePluginStorage(
-  key: string,
-  previous: PluginStorageSnapshot,
-): void {
+export function dispatchDeletePluginStorage(key: string, previous: PluginStorageSnapshot): void {
   runPluginCommand(
     (baseRevision) =>
       deletePluginStorageCommand({
@@ -209,10 +191,7 @@ export function dispatchBulkPluginStorage(
   )
 }
 
-export function dispatchPluginSettingsPatch(
-  patch: Record<string, unknown>,
-  previous: PluginStateSnapshot,
-): void {
+export function dispatchPluginSettingsPatch(patch: Record<string, unknown>, previous: PluginStateSnapshot): void {
   if (!canUseServerCommands()) return
   const settingsPatch: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(patch)) {

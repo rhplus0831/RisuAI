@@ -182,12 +182,7 @@ export function withCloneInstrumentation<T>(
     const stack = options.countJsonStringify ? (new Error().stack ?? '') : ''
     const shouldCount = options.countJsonStringify?.({ value, stack }) ?? true
     if (shouldCount) jsonCloneCount += 1
-    const out = (originalStringify as (...args: unknown[]) => string).call(
-      this,
-      value,
-      replacer,
-      space,
-    )
+    const out = (originalStringify as (...args: unknown[]) => string).call(this, value, replacer, space)
     if (shouldCount && typeof out === 'string' && out.length > maxClonedSize) {
       maxClonedSize = out.length
     }
@@ -249,12 +244,7 @@ export async function withAsyncCloneInstrumentation<T>(
     const stack = options.countJsonStringify ? (new Error().stack ?? '') : ''
     const shouldCount = options.countJsonStringify?.({ value, stack }) ?? true
     if (shouldCount) jsonCloneCount += 1
-    const out = (originalStringify as (...args: unknown[]) => string).call(
-      this,
-      value,
-      replacer,
-      space,
-    )
+    const out = (originalStringify as (...args: unknown[]) => string).call(this, value, replacer, space)
     if (shouldCount && typeof out === 'string' && out.length > maxClonedSize) {
       maxClonedSize = out.length
     }

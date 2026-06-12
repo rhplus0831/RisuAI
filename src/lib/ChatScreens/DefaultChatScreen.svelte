@@ -33,11 +33,7 @@
   } from '../../ts/stores.svelte'
   import { tick } from 'svelte'
   import Chat from './Chat.svelte'
-  import {
-    getCharacterByIndex,
-    setCharacterByIndex,
-    type Message,
-  } from '../../ts/storage/database.svelte'
+  import { getCharacterByIndex, setCharacterByIndex, type Message } from '../../ts/storage/database.svelte'
   import { DBState } from 'src/ts/stores.svelte'
   import { getCharImage } from '../../ts/characters'
   import {
@@ -58,12 +54,7 @@
   import { resetBgmObserverForChatSwitch } from 'src/ts/observer.svelte'
   import MainMenu from '../UI/MainMenu.svelte'
   import AssetInput from './AssetInput.svelte'
-  import {
-    aiLawApplies,
-    chatFoldedState,
-    chatFoldedStateMessageIndex,
-    downloadFile,
-  } from 'src/ts/globalApi.svelte'
+  import { aiLawApplies, chatFoldedState, chatFoldedStateMessageIndex, downloadFile } from 'src/ts/globalApi.svelte'
   import { v4 } from 'uuid'
   import {
     reroll as rerollNav,
@@ -96,16 +87,12 @@
     hydrateActiveChatWindow,
     isChatMessageHydrationPending,
   } from 'src/ts/server/chatMessageHydration.svelte'
-  import {
-    buildTranscriptWindowIdentity,
-    getLoadPagesForMessageJump,
-  } from './DefaultChatScreen.loadPages'
+  import { buildTranscriptWindowIdentity, getLoadPagesForMessageJump } from './DefaultChatScreen.loadPages'
   import { normalizeChatDisplayTailCount } from 'src/ts/chatDisplayTailCount'
   import { guardActiveChatGenerationSettingsForSend } from 'src/ts/activeChatGenerationSettings'
   import { characterRoutePath, currentRoute, navigate } from 'src/ts/router'
 
-  const loadPlaygroundMenu = () =>
-    import('../Playground/PlaygroundMenu.svelte').then((m) => m.default)
+  const loadPlaygroundMenu = () => import('../Playground/PlaygroundMenu.svelte').then((m) => m.default)
 
   interface Props {
     openModuleList?: boolean
@@ -127,11 +114,7 @@
   let scrollToMessageRunId = 0
   let activeTranscriptWindowIdentity: string | null = $state(null)
   let activeBgmObserverIdentity: string | null = $state(null)
-  let {
-    openModuleList = $bindable(false),
-    openChatList = $bindable(false),
-    customStyle = '',
-  }: Props = $props()
+  let { openModuleList = $bindable(false), openChatList = $bindable(false), customStyle = '' }: Props = $props()
   let currentCharacter = $derived(DBState.db.characters[$selectedCharID])
   let activeChatOpen = $derived.by(() => {
     if ($selectedCharID < 0) return false
@@ -144,18 +127,13 @@
     )
   })
   let currentChat = $derived(currentCharacter?.chats[currentCharacter.chatPage]?.message ?? [])
-  let configuredChatLoadPages = $derived(
-    normalizeChatDisplayTailCount(DBState.db.chatDisplayTailCount),
-  )
+  let configuredChatLoadPages = $derived(normalizeChatDisplayTailCount(DBState.db.chatDisplayTailCount))
   // The open chat ships as a message-less stub until `/projection/chatMessages`
   // resolves; show a loading state over the message area until then so the
   // history does not flash in over the greeting-only stub.
   let activeChatMessagesLoading = $derived(
     activeChatOpen &&
-      isChatMessageHydrationPending(
-        currentCharacter?.chats[currentCharacter.chatPage]?.id,
-        currentChat.length,
-      ),
+      isChatMessageHydrationPending(currentCharacter?.chats[currentCharacter.chatPage]?.id, currentChat.length),
   )
 
   function scrollToBottom() {
@@ -248,8 +226,7 @@
     }
 
     const runId = ++scrollToMessageRunId
-    const isCurrentJump = () =>
-      scrollToMessageRunId === runId && getActiveTranscriptWindowIdentity() === targetIdentity
+    const isCurrentJump = () => scrollToMessageRunId === runId && getActiveTranscriptWindowIdentity() === targetIdentity
 
     // Forces the loading of past messages not rendered on the screen
     isScrollingToMessage = true
@@ -366,8 +343,7 @@
         return
       }
 
-      const currentChatRecord =
-        DBState.db.characters[selectedChar].chats[DBState.db.characters[selectedChar].chatPage]
+      const currentChatRecord = DBState.db.characters[selectedChar].chats[DBState.db.characters[selectedChar].chatPage]
       let userMessage: Message | null = null
 
       if (messageInput.startsWith('/')) {
@@ -456,8 +432,7 @@
     confirmBoundary: boolean = false,
   ) {
     let previousLength =
-      DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage]
-        .message.length
+      DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message.length
     messageInput = ''
     const abortController = createActiveGenerationAbortController()
     try {
@@ -493,9 +468,8 @@
 
   let { userIconPortrait, currentUsername, userIcon } = $derived.by(() => {
     const bindedPersona =
-      DBState?.db?.characters?.[$selectedCharID]?.chats?.[
-        DBState?.db?.characters?.[$selectedCharID]?.chatPage
-      ]?.bindedPersona
+      DBState?.db?.characters?.[$selectedCharID]?.chats?.[DBState?.db?.characters?.[$selectedCharID]?.chatPage]
+        ?.bindedPersona
 
     if (bindedPersona) {
       const persona = DBState.db.personas.find((p) => p.id === bindedPersona)
@@ -561,14 +535,12 @@
       const lastMessageInputTranslate = messageInputTranslate
       await sleep(1500)
       if (lastMessageInputTranslate === messageInputTranslate) {
-        translate(reverse ? messageInputTranslate : messageInput, reverse).then(
-          (translatedMessage) => {
-            if (translatedMessage) {
-              if (reverse) messageInput = translatedMessage
-              else messageInputTranslate = translatedMessage
-            }
-          },
-        )
+        translate(reverse ? messageInputTranslate : messageInput, reverse).then((translatedMessage) => {
+          if (translatedMessage) {
+            if (reverse) messageInput = translatedMessage
+            else messageInputTranslate = translatedMessage
+          }
+        })
       }
       return
     }
@@ -641,10 +613,7 @@
       }
 
       if (mergedCanvas) {
-        await downloadFile(
-          `chat-${v4()}.png`,
-          Buffer.from(mergedCanvas.toDataURL('png').split(',').at(-1), 'base64'),
-        )
+        await downloadFile(`chat-${v4()}.png`, Buffer.from(mergedCanvas.toDataURL('png').split(',').at(-1), 'base64'))
         mergedCanvas.remove()
         mergedCanvas = null
       }
@@ -658,9 +627,7 @@
       }
       mergedCanvas?.remove()
       loadPages =
-        getActiveTranscriptWindowIdentity() === screenshotIdentity
-          ? previousLoadPages
-          : configuredChatLoadPages
+        getActiveTranscriptWindowIdentity() === screenshotIdentity ? previousLoadPages : configuredChatLoadPages
     }
   }
 
@@ -690,14 +657,12 @@
   style={customStyle}
   onclick={() => {
     openMenu = false
-  }}
->
+  }}>
   {#if showNewMessageButton}
     {#if DBState.db.newMessageButtonStyle === 'bottom-center' || !DBState.db.newMessageButtonStyle}
       <button
         class="absolute bottom-16 left-1/2 -translate-x-1/2 bg-blue-500 text-white px-4 py-2 rounded-full shadow-lg z-50 flex items-center gap-2 hover:bg-blue-600 transition-colors"
-        onclick={scrollToBottom}
-      >
+        onclick={scrollToBottom}>
         <ArrowDown size={16} />
         <span>{language.newMessage}</span>
       </button>
@@ -706,8 +671,7 @@
     {#if DBState.db.newMessageButtonStyle === 'bottom-right'}
       <button
         class="absolute bottom-20 right-4 bg-blue-500 text-white px-4 py-2 rounded-full shadow-lg z-50 flex items-center gap-2 hover:bg-blue-600 transition-colors"
-        onclick={scrollToBottom}
-      >
+        onclick={scrollToBottom}>
         <ArrowDown size={16} />
         <span>{language.newMessage}</span>
       </button>
@@ -716,8 +680,7 @@
     {#if DBState.db.newMessageButtonStyle === 'bottom-left'}
       <button
         class="absolute bottom-20 left-4 bg-blue-500 text-white px-4 py-2 rounded-full shadow-lg z-50 flex items-center gap-2 hover:bg-blue-600 transition-colors"
-        onclick={scrollToBottom}
-      >
+        onclick={scrollToBottom}>
         <ArrowDown size={16} />
         <span>{language.newMessage}</span>
       </button>
@@ -727,8 +690,7 @@
       <button
         class="absolute bottom-36 right-4 bg-blue-500 text-white w-12 h-12 rounded-full shadow-lg z-50 flex items-center justify-center hover:bg-blue-600 transition-colors"
         onclick={scrollToBottom}
-        title="4. 원형 (우하단)"
-      >
+        title="4. 원형 (우하단)">
         <ArrowDown size={20} />
       </button>
     {/if}
@@ -736,8 +698,7 @@
     {#if DBState.db.newMessageButtonStyle === 'right-center'}
       <button
         class="absolute top-1/2 right-2 -translate-y-1/2 bg-blue-500 text-white px-2 py-3 rounded-l-lg shadow-lg z-50 flex flex-col items-center gap-1 hover:bg-blue-600 transition-colors"
-        onclick={scrollToBottom}
-      >
+        onclick={scrollToBottom}>
         <ArrowDown size={14} />
         <span class="text-xs writing-mode-vertical">{language.newMessage}</span>
       </button>
@@ -746,8 +707,7 @@
     {#if DBState.db.newMessageButtonStyle === 'top-bar'}
       <button
         class="absolute top-2 left-1/2 -translate-x-1/2 bg-blue-500 text-white px-6 py-1.5 rounded-full shadow-lg z-50 flex items-center gap-2 hover:bg-blue-600 transition-colors text-sm"
-        onclick={scrollToBottom}
-      >
+        onclick={scrollToBottom}>
         <ArrowDown size={14} />
         <span>{language.newMessage}</span>
       </button>
@@ -755,27 +715,16 @@
   {/if}
   {#if isScrollingToMessage}
     <div
-      class="absolute inset-0 z-50 flex items-center justify-center bg-black/50 text-white text-xl font-bold backdrop-blur-sm"
-    >
+      class="absolute inset-0 z-50 flex items-center justify-center bg-black/50 text-white text-xl font-bold backdrop-blur-sm">
       Loading...
     </div>
   {/if}
   {#if $selectedCharID >= 0 && activeChatMessagesLoading}
     <div class="absolute inset-0 z-40 flex items-center justify-center bg-bgcolor">
       <div class="flex flex-col items-center text-textcolor2">
-        <svg
-          class="animate-spin h-6 w-6 mb-3"
-          xmlns="http://www.w3.org/2000/svg"
-          fill="none"
-          viewBox="0 0 24 24"
-        >
-          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"
-          ></circle>
-          <path
-            class="opacity-75"
-            fill="currentColor"
-            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-          ></path>
+        <svg class="animate-spin h-6 w-6 mb-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
         </svg>
         <span class="text-sm">{language.loadingChatData}</span>
       </div>
@@ -790,10 +739,7 @@
       {/await}
     {/if}
   {:else if !activeChatOpen}
-    <div
-      class="h-full w-full flex flex-col items-center justify-center text-center px-6"
-      data-risu-chat-empty-state
-    >
+    <div class="h-full w-full flex flex-col items-center justify-center text-center px-6" data-risu-chat-empty-state>
       <h2 class="text-2xl font-bold mb-2">{DBState.db.characters[$selectedCharID]?.name}</h2>
       <p class="text-textcolor2">{language.selectChatToOpen}</p>
       {#if mostRecentChat}
@@ -815,17 +761,14 @@
         const scrolled = e.target.scrollHeight - e.target.clientHeight + e.target.scrollTop
         if (
           scrolled < 100 &&
-          DBState.db.characters[$selectedCharID].chats[
-            DBState.db.characters[$selectedCharID].chatPage
-          ].message.length > loadPages
+          DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message.length >
+            loadPages
         ) {
           void expandTranscriptWindow(loadPages + 15)
         }
         const chatTarget = e.target as HTMLElement
         const chatsContainer =
-          DBState.db.fixedChatTextarea && chatTarget.children[1]
-            ? chatTarget.children[1]
-            : chatTarget.children[0]
+          DBState.db.fixedChatTextarea && chatTarget.children[1] ? chatTarget.children[1] : chatTarget.children[0]
         const lastEl = chatsContainer?.firstElementChild
         const isAtBottom = lastEl
           ? lastEl.getBoundingClientRect().top <= chatTarget.getBoundingClientRect().bottom + 100
@@ -833,22 +776,19 @@
         if (isAtBottom) {
           showNewMessageButton = false
         }
-      }}
-    >
+      }}>
       <div
         class="{DBState.db.fixedChatTextarea
           ? 'sticky pt-2 pb-2 right-0 bottom-0 bg-bgcolor'
           : 'mt-2 mb-2'} flex items-stretch w-full"
-        style={DBState.db.fixedChatTextarea ? 'z-index:29;' : ''}
-      >
+        style={DBState.db.fixedChatTextarea ? 'z-index:29;' : ''}>
         {#if DBState.db.useChatSticker}
           <div
             onclick={() => {
               toggleStickers = !toggleStickers
             }}
             class={'ml-4 bg-textcolor2 flex justify-center items-center  w-12 h-12 rounded-md hover:bg-blue-500 transition-colors ' +
-              (toggleStickers ? 'text-green-500' : 'text-textcolor')}
-          >
+              (toggleStickers ? 'text-green-500' : 'text-textcolor')}>
             <Laugh />
           </div>
         {/if}
@@ -916,16 +856,14 @@
             updateInputSizeAll()
             updateInputTransateMessage(false)
           }}
-          style:height={inputHeight}
-        ></textarea>
+          style:height={inputHeight}></textarea>
 
         {#if $doingChat || doingChatInputTranslate}
           <button
             aria-labelledby="cancel"
             class="peer-focus:border-textcolor flex justify-center border-y border-darkborderc items-center text-textcolor p-3 hover:bg-blue-500 hover:text-white transition-colors"
             onclick={abortChat}
-            style:height={inputHeight}
-          >
+            style:height={inputHeight}>
             <div class="loadmove chat-process-stage-{$chatProcessStage}"></div>
           </button>
         {:else}
@@ -933,8 +871,7 @@
             data-testid="default-chat-send-button"
             onclick={send}
             class="flex justify-center border-y border-darkborderc items-center text-textcolor p-3 peer-focus:border-textcolor hover:bg-blue-500 hover:text-white transition-colors button-icon-send"
-            style:height={inputHeight}
-          >
+            style:height={inputHeight}>
             <Send />
           </button>
         {/if}
@@ -946,8 +883,7 @@
               e.stopPropagation()
             }}
             class="peer-focus:border-textcolor mr-2 flex border-y border-r border-darkborderc justify-center items-center text-textcolor p-3 rounded-r-md hover:bg-blue-500 hover:text-white transition-colors"
-            style:height={inputHeight}
-          >
+            style:height={inputHeight}>
             <MenuIcon />
           </button>
         {:else}
@@ -956,9 +892,7 @@
               const previous = currentChatScopedSnapshot()
               const selectedChar = $selectedCharID
               const currentChatRecord =
-                DBState.db.characters[selectedChar].chats[
-                  DBState.db.characters[selectedChar].chatPage
-                ]
+                DBState.db.characters[selectedChar].chats[DBState.db.characters[selectedChar].chatPage]
               const nextMessages = cloneJsonValue(currentChatRecord.message ?? [])
               nextMessages.push({
                 role: 'char',
@@ -976,8 +910,7 @@
               }
             }}
             class="peer-focus:border-textcolor mr-2 flex border-y border-r border-darkborderc justify-center items-center text-textcolor p-3 rounded-r-md hover:bg-blue-500 hover:text-white transition-colors"
-            style:height={inputHeight}
-          >
+            style:height={inputHeight}>
             <Plus />
           </div>
         {/if}
@@ -1009,8 +942,7 @@
               updateInputTransateMessage(true)
             }}
             placeholder={language.enterMessageForTranslateToEnglish}
-            style:height={inputTranslateHeight}
-          ></textarea>
+            style:height={inputTranslateHeight}></textarea>
         </div>
       {/if}
 
@@ -1021,16 +953,11 @@
               <div class="relative">
                 {#if !inlayAsset}
                   <div
-                    class="w-48 h-24 border border-darkborderc rounded-md flex items-center justify-center text-textcolor2"
-                  >
+                    class="w-48 h-24 border border-darkborderc rounded-md flex items-center justify-center text-textcolor2">
                     Missing file
                   </div>
                 {:else if inlayAsset.type === 'image'}
-                  <img
-                    src={inlayAsset.data}
-                    alt="Inlay"
-                    class="max-w-48 max-h-48 border border-darkborderc"
-                  />
+                  <img src={inlayAsset.data} alt="Inlay" class="max-w-48 max-h-48 border border-darkborderc" />
                 {:else if inlayAsset.type === 'video'}
                   <video controls class="max-w-48 max-h-48 border border-darkborderc">
                     <source src={inlayAsset.data} type="video/mp4" />
@@ -1050,8 +977,7 @@
                   onclick={() => {
                     fileInput.splice(i, 1)
                     updateInputSizeAll()
-                  }}
-                >
+                  }}>
                   <XIcon size={18} />
                 </button>
               </div>
@@ -1073,8 +999,7 @@
               }
               messageInput += `<span class='notranslate' translate='no'>{{${fileType}::${additionalAsset[0]}}}</span> *${additionalAsset[0]} added*`
               updateInputSizeAll()
-            }}
-          />
+            }} />
         </div>
       {/if}
 
@@ -1088,8 +1013,7 @@
               DBState.db.autoSuggestClean
                 ? msg.replace(/ +\(.+?\) *$| - [^"'*]*?$/, '')
                 : msg)}
-          {send}
-        />
+          {send} />
       {/if}
 
       {#if DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message?.[0]?.data?.startsWith(coldStorageHeader)}
@@ -1108,8 +1032,7 @@
               onclick={async () => {
                 await expandTranscriptWindow(loadPages + chatFoldedStateMessageIndex.index + 1)
                 chatFoldedState.data = null
-              }}
-            >
+              }}>
               {language.loadMore}
             </Button>
           </button>
@@ -1125,21 +1048,17 @@
           {currentUsername}
           {userIcon}
           {userIconPortrait}
-          bind:hasNewUnreadMessage={showNewMessageButton}
-        />
+          bind:hasNewUnreadMessage={showNewMessageButton} />
 
         {#if DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message.length <= loadPages}
           <Chat
             character={createSimpleCharacter(DBState.db.characters[$selectedCharID])}
             name={DBState.db.characters[$selectedCharID].name}
-            message={DBState.db.characters[$selectedCharID].chats[
-              DBState.db.characters[$selectedCharID].chatPage
-            ].fmIndex === -1
+            message={DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage]
+              .fmIndex === -1
               ? DBState.db.characters[$selectedCharID].firstMessage
               : DBState.db.characters[$selectedCharID].alternateGreetings[
-                  DBState.db.characters[$selectedCharID].chats[
-                    DBState.db.characters[$selectedCharID].chatPage
-                  ].fmIndex
+                  DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].fmIndex
                 ]}
             role="char"
             img={getCharImage(DBState.db.characters[$selectedCharID].image, 'css')}
@@ -1149,10 +1068,7 @@
             firstMessage={true}
             onReroll={() => {
               const cha = DBState.db.characters[$selectedCharID]
-              const chat =
-                DBState.db.characters[$selectedCharID].chats[
-                  DBState.db.characters[$selectedCharID].chatPage
-                ]
+              const chat = DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage]
               if (chat.fmIndex >= cha.alternateGreetings.length - 1) {
                 updateGreetingIndex(-1)
               } else {
@@ -1161,10 +1077,7 @@
             }}
             unReroll={() => {
               const cha = DBState.db.characters[$selectedCharID]
-              const chat =
-                DBState.db.characters[$selectedCharID].chats[
-                  DBState.db.characters[$selectedCharID].chatPage
-                ]
+              const chat = DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage]
               if (chat.fmIndex === -1) {
                 updateGreetingIndex(cha.alternateGreetings.length - 1)
               } else {
@@ -1172,15 +1085,11 @@
               }
             }}
             isLastMemory={false}
-            currentPage={(DBState.db.characters[$selectedCharID].chats[
-              DBState.db.characters[$selectedCharID].chatPage
-            ].fmIndex ?? -1) + 2}
-            totalPages={DBState.db.characters[$selectedCharID].alternateGreetings.length + 1}
-          />
+            currentPage={(DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage]
+              .fmIndex ?? -1) + 2}
+            totalPages={DBState.db.characters[$selectedCharID].alternateGreetings.length + 1} />
           {#if aiLawApplies() && DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message.length === 0}
-            <div
-              class="ml-auto mr-auto mt-4 text-textcolor2 italic max-w-2/3 wrap-break-word text-center"
-            >
+            <div class="ml-auto mr-auto mt-4 text-textcolor2 italic max-w-2/3 wrap-break-word text-center">
               {language.aiGenerationWarning}
             </div>
           {/if}
@@ -1191,8 +1100,7 @@
                 const cha = getCharacterByIndex($selectedCharID, { snapshot: true })
                 cha.removedQuotes = true
                 setCharacterByIndex($selectedCharID, cha)
-              }}
-            />
+              }} />
           {/if}
         {/if}
       {/if}
@@ -1204,16 +1112,14 @@
             : 'absolute'} right-2 bottom-16 p-5 bg-darkbg flex flex-col gap-3 text-textcolor rounded-md"
           onclick={(e) => {
             e.stopPropagation()
-          }}
-        >
+          }}>
           <!-- svelte-ignore block_empty -->
           {#if DBState.db.characters[$selectedCharID].ttsMode === 'webspeech' || DBState.db.characters[$selectedCharID].ttsMode === 'elevenlab'}
             <div
               class="flex items-center cursor-pointer hover:text-green-500 transition-colors"
               onclick={() => {
                 stopTTS()
-              }}
-            >
+              }}>
               <MicOffIcon />
               <span class="ml-2">{language.ttsStop}</span>
             </div>
@@ -1224,31 +1130,23 @@
             class:text-textcolor2={DBState.db.characters[$selectedCharID].chats[
               DBState.db.characters[$selectedCharID].chatPage
             ].message.length < 2 ||
-              DBState.db.characters[$selectedCharID].chats[
-                DBState.db.characters[$selectedCharID].chatPage
-              ].message[
-                DBState.db.characters[$selectedCharID].chats[
-                  DBState.db.characters[$selectedCharID].chatPage
-                ].message.length - 1
+              DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message[
+                DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message
+                  .length - 1
               ].role !== 'char'}
             onclick={() => {
               if (
-                DBState.db.characters[$selectedCharID].chats[
-                  DBState.db.characters[$selectedCharID].chatPage
-                ].message.length < 2 ||
-                DBState.db.characters[$selectedCharID].chats[
-                  DBState.db.characters[$selectedCharID].chatPage
-                ].message[
-                  DBState.db.characters[$selectedCharID].chats[
-                    DBState.db.characters[$selectedCharID].chatPage
-                  ].message.length - 1
+                DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message
+                  .length < 2 ||
+                DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message[
+                  DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message
+                    .length - 1
                 ].role !== 'char'
               ) {
                 return
               }
               sendContinue()
-            }}
-          >
+            }}>
             <StepForwardIcon />
             <span class="ml-2">{language.continueResponse}</span>
           </div>
@@ -1259,8 +1157,7 @@
               onclick={() => {
                 openChatList = true
                 openMenu = false
-              }}
-            >
+              }}>
               <DatabaseIcon />
               <span class="ml-2">{language.chatList}</span>
             </div>
@@ -1271,8 +1168,7 @@
               class="flex items-center cursor-pointer hover:text-green-500 transition-colors"
               onclick={() => {
                 easyPanelStore.open = !easyPanelStore.open
-              }}
-            >
+              }}>
               <SparkleIcon />
               <span class="ml-2">{language.easyPanel}</span>
             </div>
@@ -1284,8 +1180,7 @@
               onclick={() => {
                 menu.callback()
                 openMenu = false
-              }}
-            >
+              }}>
               <PluginDefinedIcon ico={menu} />
               <span class="ml-2">{menu.name}</span>
             </div>
@@ -1297,8 +1192,7 @@
               onclick={() => {
                 $hypaV3ModalOpen = true
                 openMenu = false
-              }}
-            >
+              }}>
               <BrainIcon />
               <span class="ml-2">{language.hypaMemoryV3Modal}</span>
             </div>
@@ -1310,8 +1204,7 @@
                 (DBState.db.useAutoTranslateInput ? 'text-green-500' : 'lg:hover:text-green-500')}
               onclick={() => {
                 applyServerBackedSetting('useAutoTranslateInput', !DBState.db.useAutoTranslateInput)
-              }}
-            >
+              }}>
               <GlobeIcon />
               <span class="ml-2">{language.autoTranslateInput}</span>
             </div>
@@ -1322,8 +1215,7 @@
             class="flex items-center cursor-pointer hover:text-green-500 transition-colors"
             onclick={() => {
               screenShot()
-            }}
-          >
+            }}>
             <CameraIcon />
             <span class="ml-2">{language.screenshot}</span>
           </div>
@@ -1342,8 +1234,7 @@
                 }
               }
               updateInputSizeAll()
-            }}
-          >
+            }}>
             <ImagePlusIcon />
             <span class="ml-2">{language.postFile}</span>
           </div>
@@ -1353,8 +1244,7 @@
               (DBState.db.useAutoSuggestions ? 'text-green-500' : 'lg:hover:text-green-500')}
             onclick={async () => {
               applyServerBackedSetting('useAutoSuggestions', !DBState.db.useAutoSuggestions)
-            }}
-          >
+            }}>
             <ReplyIcon />
             <span class="ml-2">{language.autoSuggest}</span>
           </div>
@@ -1364,17 +1254,13 @@
             onclick={() => {
               openModuleList = true
               openMenu = false
-            }}
-          >
+            }}>
             <PackageIcon />
             <span class="ml-2">{language.modules}</span>
           </div>
 
           {#if DBState.db.sideMenuRerollButton}
-            <div
-              class="flex items-center cursor-pointer hover:text-green-500 transition-colors"
-              onclick={reroll}
-            >
+            <div class="flex items-center cursor-pointer hover:text-green-500 transition-colors" onclick={reroll}>
               <RefreshCcwIcon />
               <span class="ml-2">{language.reroll}</span>
             </div>
@@ -1392,8 +1278,7 @@
         class="bg-blue-500 text-white px-4 py-2 rounded-full shadow-lg flex items-center gap-2 hover:bg-blue-600 transition-colors"
         onclick={() => {
           button.callback()
-        }}
-      >
+        }}>
         <PluginDefinedIcon ico={button} />
       </button>
     {/each}

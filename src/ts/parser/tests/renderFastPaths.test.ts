@@ -44,8 +44,7 @@ vi.mock(import('../../stores.svelte'), () => {
   } as typeof import('../../stores.svelte')
 })
 
-const thoughtsDetails = (content: string) =>
-  `<details><summary>${language.cot}</summary>${content}</details>`
+const thoughtsDetails = (content: string) => `<details><summary>${language.cot}</summary>${content}</details>`
 
 const toolCallHtml = (payload: string) =>
   `<div class="x-risu-tool-call">\ud83d\udee0\ufe0f ${language.toolCalled.replace(
@@ -79,9 +78,7 @@ describe('parseThoughtsAndTools render fast paths (L39)', () => {
   it('preserves nested thoughts while matching the outer block', () => {
     const input = 'A <Thoughts>outer <Thoughts>inner</Thoughts> tail</Thoughts> Z'
 
-    expect(parseThoughtsAndTools(input)).toBe(
-      `A ${thoughtsDetails('outer <Thoughts>inner</Thoughts> tail')} Z`,
-    )
+    expect(parseThoughtsAndTools(input)).toBe(`A ${thoughtsDetails('outer <Thoughts>inner</Thoughts> tail')} Z`)
   })
 
   it('preserves malformed unclosed thoughts and still converts later nested thoughts', () => {
@@ -94,9 +91,7 @@ describe('parseThoughtsAndTools render fast paths (L39)', () => {
   it('replaces tool calls and preserves the unknown-tool fallback', () => {
     const knownPayload = 'request\uf100weather'
 
-    expect(parseThoughtsAndTools(`<tool_call>${knownPayload}</tool_call>`)).toBe(
-      toolCallHtml(knownPayload),
-    )
+    expect(parseThoughtsAndTools(`<tool_call>${knownPayload}</tool_call>`)).toBe(toolCallHtml(knownPayload))
     expect(parseThoughtsAndTools('<tool_call>opaque</tool_call>')).toBe(toolCallHtml('opaque'))
   })
 
@@ -108,9 +103,7 @@ describe('parseThoughtsAndTools render fast paths (L39)', () => {
       parseThoughtsAndTools(
         `A <Thoughts>plan <tool_call>${innerPayload}</tool_call></Thoughts> B <tool_call>${outerPayload}</tool_call>`,
       ),
-    ).toBe(
-      `A ${thoughtsDetails(`plan ${toolCallHtml(innerPayload)}`)} B ${toolCallHtml(outerPayload)}`,
-    )
+    ).toBe(`A ${thoughtsDetails(`plan ${toolCallHtml(innerPayload)}`)} B ${toolCallHtml(outerPayload)}`)
   })
 })
 
@@ -118,9 +111,7 @@ describe('risuChatParser function render path logging (L38)', () => {
   it('L38: function definition and call parsing writes nothing to console.log', () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
 
-    const output = risuChatParser(
-      'before {{#function greet}}Hello {{arg::1}}{{/}}{{call::greet::Ada}} after',
-    )
+    const output = risuChatParser('before {{#function greet}}Hello {{arg::1}}{{/}}{{call::greet::Ada}} after')
     const logCalls = logSpy.mock.calls.length
     logSpy.mockRestore()
 

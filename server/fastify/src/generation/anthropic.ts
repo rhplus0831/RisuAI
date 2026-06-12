@@ -49,20 +49,15 @@ export function resolveAnthropicRequest(input: AnthropicResolveInput): Anthropic
   if (!Array.isArray(input.messages)) return null
   if (typeof input.apiKey !== 'string' || input.apiKey.length === 0) return null
 
-  const baseUrl =
-    typeof input.baseUrl === 'string' && input.baseUrl.length > 0 ? input.baseUrl : DEFAULT_BASE_URL
-  const version =
-    typeof input.version === 'string' && input.version.length > 0 ? input.version : DEFAULT_VERSION
+  const baseUrl = typeof input.baseUrl === 'string' && input.baseUrl.length > 0 ? input.baseUrl : DEFAULT_BASE_URL
+  const version = typeof input.version === 'string' && input.version.length > 0 ? input.version : DEFAULT_VERSION
   const maxTokens =
     typeof input.maxTokens === 'number' && Number.isFinite(input.maxTokens) && input.maxTokens > 0
       ? input.maxTokens
       : DEFAULT_MAX_TOKENS
   const temperature =
-    typeof input.temperature === 'number' && Number.isFinite(input.temperature)
-      ? input.temperature
-      : undefined
-  const system =
-    typeof input.system === 'string' && input.system.length > 0 ? input.system : undefined
+    typeof input.temperature === 'number' && Number.isFinite(input.temperature) ? input.temperature : undefined
+  const system = typeof input.system === 'string' && input.system.length > 0 ? input.system : undefined
 
   return {
     model: input.model,
@@ -103,10 +98,7 @@ function buildHeaders(req: AnthropicRequest): Record<string, string> {
   }
 }
 
-function buildRequestInit(
-  req: AnthropicRequest,
-  stream: boolean,
-): { body: string; headers: Record<string, string> } {
+function buildRequestInit(req: AnthropicRequest, stream: boolean): { body: string; headers: Record<string, string> } {
   const body = buildPayload(req, stream)
   const headers = buildHeaders(req)
   if (req.additionalParams !== undefined && req.additionalParams.length > 0) {
@@ -158,8 +150,7 @@ export async function runAnthropic(req: AnthropicRequest): Promise<CompletionRes
   }
 
   if (!response.ok) {
-    const upstreamMsg =
-      typeof body.error?.message === 'string' ? body.error.message : `HTTP ${response.status}`
+    const upstreamMsg = typeof body.error?.message === 'string' ? body.error.message : `HTTP ${response.status}`
     return { type: 'fail', result: upstreamMsg }
   }
 
@@ -243,9 +234,7 @@ async function readAnthropicStreamError(response: Response): Promise<CompletionS
   return { kind: 'error', error, status: response.status, code }
 }
 
-export async function* runAnthropicStream(
-  req: AnthropicRequest,
-): AsyncGenerator<CompletionStreamFrame, void, void> {
+export async function* runAnthropicStream(req: AnthropicRequest): AsyncGenerator<CompletionStreamFrame, void, void> {
   if (req.signal.aborted) return
 
   const init = buildRequestInit(req, true)

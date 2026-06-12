@@ -51,9 +51,7 @@ describe('large-corpus fixture', () => {
 
     // The hot chat is the only one carrying hypaV3Data, so after a server
     // import exactly one chat_hypa_v3 row exists.
-    const withHypa = fixture.characters
-      .flatMap((c) => c.chats)
-      .filter((chat) => chat.hypaV3Data !== undefined)
+    const withHypa = fixture.characters.flatMap((c) => c.chats).filter((chat) => chat.hypaV3Data !== undefined)
     expect(withHypa.map((chat) => chat.id)).toEqual([fixture.hot.chatId])
   })
 

@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { LLMFormat } from '../../../model/types'
-import {
-  formatToServerProvider,
-  resolveProviderCapability,
-  type ProviderCapabilityInput,
-} from '../providerCapability'
+import { formatToServerProvider, resolveProviderCapability, type ProviderCapabilityInput } from '../providerCapability'
 
 // The shared capability table is the single source of truth for the server
 // provider-routing decision (closeout decision #5). Both the browser completion
@@ -52,22 +48,17 @@ describe('formatToServerProvider', () => {
     expect(formatToServerProvider(format as LLMFormat)).toBe(provider)
   })
 
-  it.each([
-    LLMFormat.NovelAI,
-    LLMFormat.NovelList,
-    LLMFormat.Ooba,
-    LLMFormat.Plugin,
-    LLMFormat.WebLLM,
-  ])('returns null for browser-only format %i', (format) => {
-    expect(formatToServerProvider(format as LLMFormat)).toBeNull()
-  })
+  it.each([LLMFormat.NovelAI, LLMFormat.NovelList, LLMFormat.Ooba, LLMFormat.Plugin, LLMFormat.WebLLM])(
+    'returns null for browser-only format %i',
+    (format) => {
+      expect(formatToServerProvider(format as LLMFormat)).toBeNull()
+    },
+  )
 })
 
 describe('resolveProviderCapability — routable providers', () => {
   it('routes echo', () => {
-    expect(
-      resolveProviderCapability(input({ format: LLMFormat.Echo, aiModel: 'echo_model' })),
-    ).toEqual({
+    expect(resolveProviderCapability(input({ format: LLMFormat.Echo, aiModel: 'echo_model' }))).toEqual({
       routable: true,
       provider: 'echo',
     })
@@ -85,40 +76,40 @@ describe('resolveProviderCapability — routable providers', () => {
   })
 
   it('routes nanogpt / kobold / ooba-legacy without a config gate', () => {
-    expect(
-      resolveProviderCapability(input({ format: LLMFormat.NanoGPT, aiModel: 'nanogpt' })),
-    ).toEqual({ routable: true, provider: 'nanogpt' })
-    expect(
-      resolveProviderCapability(input({ format: LLMFormat.Kobold, aiModel: 'kobold' })),
-    ).toEqual({
+    expect(resolveProviderCapability(input({ format: LLMFormat.NanoGPT, aiModel: 'nanogpt' }))).toEqual({
+      routable: true,
+      provider: 'nanogpt',
+    })
+    expect(resolveProviderCapability(input({ format: LLMFormat.Kobold, aiModel: 'kobold' }))).toEqual({
       routable: true,
       provider: 'kobold',
     })
-    expect(
-      resolveProviderCapability(input({ format: LLMFormat.OobaLegacy, aiModel: 'mancer' })),
-    ).toEqual({ routable: true, provider: 'ooba-legacy' })
+    expect(resolveProviderCapability(input({ format: LLMFormat.OobaLegacy, aiModel: 'mancer' }))).toEqual({
+      routable: true,
+      provider: 'ooba-legacy',
+    })
   })
 
   it('routes vanilla anthropic / mistral / cohere', () => {
-    expect(
-      resolveProviderCapability(
-        input({ format: LLMFormat.Anthropic, aiModel: 'claude-3-5-sonnet' }),
-      ),
-    ).toEqual({ routable: true, provider: 'anthropic' })
-    expect(
-      resolveProviderCapability(input({ format: LLMFormat.Mistral, aiModel: 'mistral-large' })),
-    ).toEqual({ routable: true, provider: 'mistral' })
-    expect(
-      resolveProviderCapability(input({ format: LLMFormat.Cohere, aiModel: 'cohere-command-r' })),
-    ).toEqual({ routable: true, provider: 'cohere' })
+    expect(resolveProviderCapability(input({ format: LLMFormat.Anthropic, aiModel: 'claude-3-5-sonnet' }))).toEqual({
+      routable: true,
+      provider: 'anthropic',
+    })
+    expect(resolveProviderCapability(input({ format: LLMFormat.Mistral, aiModel: 'mistral-large' }))).toEqual({
+      routable: true,
+      provider: 'mistral',
+    })
+    expect(resolveProviderCapability(input({ format: LLMFormat.Cohere, aiModel: 'cohere-command-r' }))).toEqual({
+      routable: true,
+      provider: 'cohere',
+    })
   })
 
   it('routes Google AI Studio gemini and Vertex gemini (with creds)', () => {
-    expect(
-      resolveProviderCapability(
-        input({ format: LLMFormat.GoogleCloud, aiModel: 'gemini-2.5-flash' }),
-      ),
-    ).toEqual({ routable: true, provider: 'gemini' })
+    expect(resolveProviderCapability(input({ format: LLMFormat.GoogleCloud, aiModel: 'gemini-2.5-flash' }))).toEqual({
+      routable: true,
+      provider: 'gemini',
+    })
     expect(
       resolveProviderCapability(
         input({
@@ -162,14 +153,10 @@ describe('resolveProviderCapability — routable providers', () => {
 
   it('routes openai-legacy-instruct and openai-responses', () => {
     expect(
-      resolveProviderCapability(
-        input({ format: LLMFormat.OpenAILegacyInstruct, aiModel: 'gpt-3.5-turbo-instruct' }),
-      ),
+      resolveProviderCapability(input({ format: LLMFormat.OpenAILegacyInstruct, aiModel: 'gpt-3.5-turbo-instruct' })),
     ).toEqual({ routable: true, provider: 'openai-legacy-instruct' })
     expect(
-      resolveProviderCapability(
-        input({ format: LLMFormat.OpenAIResponseAPI, aiModel: 'gpt-5-response-api' }),
-      ),
+      resolveProviderCapability(input({ format: LLMFormat.OpenAIResponseAPI, aiModel: 'gpt-5-response-api' })),
     ).toEqual({ routable: true, provider: 'openai-responses' })
   })
 
@@ -177,9 +164,10 @@ describe('resolveProviderCapability — routable providers', () => {
     // The ooba flag never reaches the table; a reverse_proxy with a URL + key is
     // routable, and the openai adapter applies oobaSystemHoist itself. This is
     // the decision-#5 ooba flip at the table level.
-    expect(
-      resolveProviderCapability(input({ aiModel: 'reverse_proxy', config: REVERSE_PROXY_CONFIG })),
-    ).toEqual({ routable: true, provider: 'openai' })
+    expect(resolveProviderCapability(input({ aiModel: 'reverse_proxy', config: REVERSE_PROXY_CONFIG }))).toEqual({
+      routable: true,
+      provider: 'openai',
+    })
   })
 
   it('routes reverse_proxy under non-OpenAI formats by their dispatcher', () => {
@@ -282,21 +270,18 @@ describe('resolveProviderCapability — unsupported categories', () => {
   })
 
   it('classifies an incomplete reverse_proxy as config-incomplete', () => {
+    expect(resolveProviderCapability(input({ aiModel: 'reverse_proxy', config: { proxyKey: 'sk' } }))).toEqual({
+      routable: false,
+      reason: 'config-incomplete',
+    })
     expect(
-      resolveProviderCapability(input({ aiModel: 'reverse_proxy', config: { proxyKey: 'sk' } })),
-    ).toEqual({ routable: false, reason: 'config-incomplete' })
-    expect(
-      resolveProviderCapability(
-        input({ aiModel: 'reverse_proxy', config: { forceReplaceUrl: 'https://p/v1' } }),
-      ),
+      resolveProviderCapability(input({ aiModel: 'reverse_proxy', config: { forceReplaceUrl: 'https://p/v1' } })),
     ).toEqual({ routable: false, reason: 'config-incomplete' })
   })
 
   it('classifies a reverse_proxy whose non-OpenAI format lacks creds as config-incomplete', () => {
     expect(
-      resolveProviderCapability(
-        input({ format: LLMFormat.Anthropic, aiModel: 'reverse_proxy', config: {} }),
-      ),
+      resolveProviderCapability(input({ format: LLMFormat.Anthropic, aiModel: 'reverse_proxy', config: {} })),
     ).toEqual({ routable: false, reason: 'config-incomplete' })
   })
 
@@ -306,9 +291,7 @@ describe('resolveProviderCapability — unsupported categories', () => {
         input({
           aiModel: 'xcustom:::a',
           config: {
-            customModels: [
-              { id: 'xcustom:::a', url: 'https://x', key: 'k', format: LLMFormat.Anthropic },
-            ],
+            customModels: [{ id: 'xcustom:::a', url: 'https://x', key: 'k', format: LLMFormat.Anthropic }],
           },
         }),
       ),
@@ -318,9 +301,7 @@ describe('resolveProviderCapability — unsupported categories', () => {
         input({
           aiModel: 'xcustom:::a',
           config: {
-            customModels: [
-              { id: 'xcustom:::a', url: 'https://x', format: LLMFormat.OpenAICompatible },
-            ],
+            customModels: [{ id: 'xcustom:::a', url: 'https://x', format: LLMFormat.OpenAICompatible }],
           },
         }),
       ),
@@ -338,9 +319,10 @@ describe('resolveProviderCapability — unsupported categories', () => {
         }),
       ),
     ).toEqual({ routable: false, reason: 'config-incomplete' })
-    expect(
-      resolveProviderCapability(input({ aiModel: 'self-hosted', endpoint: 'https://host/v1' })),
-    ).toEqual({ routable: false, reason: 'config-incomplete' })
+    expect(resolveProviderCapability(input({ aiModel: 'self-hosted', endpoint: 'https://host/v1' }))).toEqual({
+      routable: false,
+      reason: 'config-incomplete',
+    })
   })
 
   it('classifies vertex gemini without full creds, bedrock without creds, horde without a template', () => {
@@ -354,15 +336,12 @@ describe('resolveProviderCapability — unsupported categories', () => {
       ),
     ).toEqual({ routable: false, reason: 'config-incomplete' })
     expect(
-      resolveProviderCapability(
-        input({ format: LLMFormat.AWSBedrockClaude, aiModel: 'anthropic.claude', config: {} }),
-      ),
+      resolveProviderCapability(input({ format: LLMFormat.AWSBedrockClaude, aiModel: 'anthropic.claude', config: {} })),
     ).toEqual({ routable: false, reason: 'config-incomplete' })
-    expect(
-      resolveProviderCapability(
-        input({ format: LLMFormat.Horde, aiModel: 'horde:::x', config: {} }),
-      ),
-    ).toEqual({ routable: false, reason: 'config-incomplete' })
+    expect(resolveProviderCapability(input({ format: LLMFormat.Horde, aiModel: 'horde:::x', config: {} }))).toEqual({
+      routable: false,
+      reason: 'config-incomplete',
+    })
     expect(
       resolveProviderCapability(
         input({
@@ -376,9 +355,7 @@ describe('resolveProviderCapability — unsupported categories', () => {
 
   it('classifies ollama without a URL and ollama-cloud without an API key', () => {
     expect(
-      resolveProviderCapability(
-        input({ format: LLMFormat.Ollama, aiModel: 'ollama-hosted', config: {} }),
-      ),
+      resolveProviderCapability(input({ format: LLMFormat.Ollama, aiModel: 'ollama-hosted', config: {} })),
     ).toEqual({ routable: false, reason: 'config-incomplete' })
     expect(
       resolveProviderCapability(

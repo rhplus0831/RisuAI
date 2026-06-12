@@ -34,11 +34,7 @@
   let sliderValue = $derived(isDisabledValue ? min : value)
   let sliderPercent = $derived(((sliderValue - min) / (max - min)) * 100)
   let displayText = $derived(
-    customText === undefined
-      ? isDisabledValue
-        ? language.disabled
-        : (value * multiple).toFixed(fixed)
-      : customText,
+    customText === undefined ? (isDisabledValue ? language.disabled : (value * multiple).toFixed(fixed)) : customText,
   )
 
   function changeValue(event: PointerEvent) {
@@ -80,8 +76,7 @@
 <div class="w-full flex" class:mb-4={marginBottom}>
   {#if disableable}
     <div
-      class="relative h-8 border-darkborderc border rounded-full cursor-pointer rounded-r-none border-r-0 flex justify-center items-center pl-2"
-    >
+      class="relative h-8 border-darkborderc border rounded-full cursor-pointer rounded-r-none border-r-0 flex justify-center items-center pl-2">
       <CheckInput
         check={value !== -1000 && value !== undefined}
         margin={false}
@@ -92,8 +87,7 @@
           } else {
             value = -1000
           }
-        }}
-      ></CheckInput>
+        }}></CheckInput>
     </div>
   {/if}
   <div
@@ -122,11 +116,8 @@
       mouseDown = false
     }}
     onkeydown={handleKeydown}
-    bind:this={slider}
-  >
-    <span
-      class="absolute top-0 left-4 h-8 rounded-full items-center justify-center flex text-textcolor text-sm"
-    >
+    bind:this={slider}>
+    <span class="absolute top-0 left-4 h-8 rounded-full items-center justify-center flex text-textcolor text-sm">
       {displayText}
     </span>
   </div>

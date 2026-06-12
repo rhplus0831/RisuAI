@@ -96,9 +96,7 @@ describe('startObserveDom', () => {
 
     const createObjectURL = vi.fn(() => 'blob:code-download')
     vi.stubGlobal('URL', { createObjectURL })
-    const anchorClick = vi
-      .spyOn(HTMLAnchorElement.prototype, 'click')
-      .mockImplementation(() => undefined)
+    const anchorClick = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined)
 
     const staleMenu = document.createElement('div')
     staleMenu.id = 'code-contextmenu'

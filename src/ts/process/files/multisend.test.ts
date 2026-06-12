@@ -137,10 +137,7 @@ function stubCommandFetch(): CapturedFetch[] {
   return calls
 }
 
-async function waitForMessageCommands(
-  calls: CapturedFetch[],
-  expected: number,
-): Promise<CapturedFetch[]> {
+async function waitForMessageCommands(calls: CapturedFetch[], expected: number): Promise<CapturedFetch[]> {
   for (let attempt = 0; attempt < 60; attempt += 1) {
     const matches = calls.filter(
       (call) => call.url === '/api/v1/commands/chats/chat-1/messages' && call.method === 'PUT',
@@ -319,10 +316,7 @@ describe('postChatFile file-send handling', () => {
     releaseAddText()
     const results = await resultPromise
 
-    expect(testState.addTextSpy).toHaveBeenCalledWith([
-      'alpha file content',
-      'beta file content',
-    ])
+    expect(testState.addTextSpy).toHaveBeenCalledWith(['alpha file content', 'beta file content'])
     expect(testState.similaritySearchSpy).toHaveBeenCalledTimes(1)
     expect(results).toHaveLength(1)
     const result = results?.[0]

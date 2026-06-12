@@ -3,13 +3,7 @@ import { ValidationError } from './repository.js'
 
 export const MEMORY_CHUNK_STATUSES = ['pending', 'summarized', 'failed'] as const
 export const MEMORY_JOB_KINDS = ['chunk', 'embed', 'summarize'] as const
-export const MEMORY_JOB_STATUSES = [
-  'pending',
-  'running',
-  'completed',
-  'failed',
-  'cancelled',
-] as const
+export const MEMORY_JOB_STATUSES = ['pending', 'running', 'completed', 'failed', 'cancelled'] as const
 export const MEMORY_JOB_DEFAULT_MAX_ATTEMPTS = 3
 export const MEMORY_JOB_DEFAULT_RETRY_BACKOFF_MS = 1_000
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -347,9 +341,7 @@ export function decodeEmbeddingVector(blob: Uint8Array, dim: number): Float32Arr
   }
   const buffer = Buffer.from(blob)
   if (buffer.byteLength !== dim * Float32Array.BYTES_PER_ELEMENT) {
-    throw new ValidationError(
-      `embedding vector blob length ${buffer.byteLength} does not match dim ${dim}`,
-    )
+    throw new ValidationError(`embedding vector blob length ${buffer.byteLength} does not match dim ${dim}`)
   }
   const copy = new ArrayBuffer(buffer.byteLength)
   new Uint8Array(copy).set(buffer)
@@ -456,10 +448,7 @@ function readSummaryChatMemos(summary: MemorySummary): string[] | null {
   return chatMemos
 }
 
-function isMemoSubset(
-  chatMemos: readonly string[],
-  currentChatMemos: ReadonlySet<string>,
-): boolean {
+function isMemoSubset(chatMemos: readonly string[], currentChatMemos: ReadonlySet<string>): boolean {
   return chatMemos.every((memo) => currentChatMemos.has(memo))
 }
 
@@ -541,11 +530,7 @@ export function listMemoryChunks(
   return rows.map(mapMemoryChunkRow)
 }
 
-export function updateMemoryChunkStatus(
-  db: DatabaseSync,
-  id: string,
-  status: MemoryChunkStatus,
-): MemoryChunk | null {
+export function updateMemoryChunkStatus(db: DatabaseSync, id: string, status: MemoryChunkStatus): MemoryChunk | null {
   requireString(id, 'chunk id')
   runStatement(
     db.prepare(`
@@ -559,10 +544,7 @@ export function updateMemoryChunkStatus(
   return getMemoryChunk(db, id)
 }
 
-export function createMemorySummary(
-  db: DatabaseSync,
-  input: CreateMemorySummaryInput,
-): MemorySummary {
+export function createMemorySummary(db: DatabaseSync, input: CreateMemorySummaryInput): MemorySummary {
   requireString(input.id, 'summary id')
   requireString(input.chatId, 'chat id')
   requireString(input.chunkId, 'chunk id')
@@ -594,10 +576,7 @@ export function createMemorySummary(
 
 export function getMemorySummary(db: DatabaseSync, id: string): MemorySummary | null {
   requireString(id, 'summary id')
-  const row = getRow<MemorySummaryRow>(
-    db.prepare('SELECT * FROM memory_summaries WHERE id = ?'),
-    id,
-  )
+  const row = getRow<MemorySummaryRow>(db.prepare('SELECT * FROM memory_summaries WHERE id = ?'), id)
   return row ? mapMemorySummaryRow(row) : null
 }
 
@@ -635,10 +614,7 @@ export function listMemorySummaries(
   return rows.map(mapMemorySummaryRow)
 }
 
-export function loadMemorySummarySnapshot(
-  db: DatabaseSync,
-  input: { chatId: string },
-): MemorySummarySnapshot {
+export function loadMemorySummarySnapshot(db: DatabaseSync, input: { chatId: string }): MemorySummarySnapshot {
   requireString(input.chatId, 'chat id')
   return {
     chatId: input.chatId,
@@ -749,10 +725,7 @@ function validateMemorySummarySnapshot(snapshot: MemorySummarySnapshot, chatId: 
   }
 }
 
-export function createMemoryEmbedding(
-  db: DatabaseSync,
-  input: CreateMemoryEmbeddingInput,
-): MemoryEmbedding {
+export function createMemoryEmbedding(db: DatabaseSync, input: CreateMemoryEmbeddingInput): MemoryEmbedding {
   requireString(input.id, 'embedding id')
   requireString(input.chatId, 'chat id')
   requireString(input.chunkId, 'chunk id')
@@ -790,10 +763,7 @@ export function createMemoryEmbedding(
 
 export function getMemoryEmbedding(db: DatabaseSync, id: string): MemoryEmbedding | null {
   requireString(id, 'embedding id')
-  const row = getRow<MemoryEmbeddingRow>(
-    db.prepare('SELECT * FROM memory_embeddings WHERE id = ?'),
-    id,
-  )
+  const row = getRow<MemoryEmbeddingRow>(db.prepare('SELECT * FROM memory_embeddings WHERE id = ?'), id)
   return row ? mapMemoryEmbeddingRow(row) : null
 }
 
@@ -946,10 +916,7 @@ export function listMemoryJobs(
  * columns — so the worker's fairness scan (audit L17) stays off the corpus
  * read path.
  */
-export function listPendingMemoryJobChatIds(
-  db: DatabaseSync,
-  filter: { now?: string | Date } = {},
-): string[] {
+export function listPendingMemoryJobChatIds(db: DatabaseSync, filter: { now?: string | Date } = {}): string[] {
   const now = normalizeTimestamp(filter.now)
   const rows = allRows<{ chat_id: string }>(
     db.prepare(`
@@ -1056,10 +1023,7 @@ export function retryOrFailMemoryJob(
     return transitionMemoryJobStatus(db, id, ['running'], 'failed', { error })
   }
 
-  const nextRunAt = addMilliseconds(
-    now,
-    calculateMemoryJobRetryDelayMs(job.attemptCount, options.backoffBaseMs),
-  )
+  const nextRunAt = addMilliseconds(now, calculateMemoryJobRetryDelayMs(job.attemptCount, options.backoffBaseMs))
   return updateMemoryJob(db, id, {
     status: 'pending',
     error,
@@ -1071,10 +1035,7 @@ export function cancelMemoryJob(db: DatabaseSync, id: string): MemoryJob | null 
   return transitionMemoryJobStatus(db, id, ['pending', 'running'], 'cancelled', { error: null })
 }
 
-export function pruneTerminalMemoryJobs(
-  db: DatabaseSync,
-  options: PruneTerminalMemoryJobsOptions = {},
-): number {
+export function pruneTerminalMemoryJobs(db: DatabaseSync, options: PruneTerminalMemoryJobsOptions = {}): number {
   const retentionMs = requireRetentionMs(options.retentionMs)
   const maxPerSweep = requireSweepLimit(options.maxPerSweep)
   const cutoff = new Date(Date.parse(normalizeTimestamp(options.now)) - retentionMs).toISOString()
@@ -1097,19 +1058,11 @@ export function pruneTerminalMemoryJobs(
   return Number(result.changes)
 }
 
-export function recoverRunningMemoryJobs(
-  db: DatabaseSync,
-  options: MemoryJobRetryOptions = {},
-): MemoryJob[] {
+export function recoverRunningMemoryJobs(db: DatabaseSync, options: MemoryJobRetryOptions = {}): MemoryJob[] {
   const runningJobs = listMemoryJobs(db, { status: 'running' })
   const recovered: MemoryJob[] = []
   for (const job of runningJobs) {
-    const result = retryOrFailMemoryJob(
-      db,
-      job.id,
-      'memory job was abandoned while running',
-      options,
-    )
+    const result = retryOrFailMemoryJob(db, job.id, 'memory job was abandoned while running', options)
     if (result) recovered.push(result)
   }
   return recovered

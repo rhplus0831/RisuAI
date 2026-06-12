@@ -55,25 +55,16 @@ export const highlighter = (highlightDom: HTMLElement, id: number) => {
 
         if (startNode === endNode) {
           const range = new Range()
-          range.setStart(
-            startNode,
-            start - (startNodeIndex > 0 ? nodePointers[startNodeIndex - 1] : 0),
-          )
+          range.setStart(startNode, start - (startNodeIndex > 0 ? nodePointers[startNodeIndex - 1] : 0))
           range.setEnd(endNode, end - (endNodeIndex > 0 ? nodePointers[endNodeIndex - 1] : 0))
           return [range]
         } else {
           const startNodeRange = new Range()
           const endNodeRange = new Range()
-          startNodeRange.setStart(
-            startNode,
-            start - (startNodeIndex > 0 ? nodePointers[startNodeIndex - 1] : 0),
-          )
+          startNodeRange.setStart(startNode, start - (startNodeIndex > 0 ? nodePointers[startNodeIndex - 1] : 0))
           startNodeRange.setEnd(startNode, startNode.textContent.length)
           endNodeRange.setStart(endNode, 0)
-          endNodeRange.setEnd(
-            endNode,
-            end - (endNodeIndex > 0 ? nodePointers[endNodeIndex - 1] : 0),
-          )
+          endNodeRange.setEnd(endNode, end - (endNodeIndex > 0 ? nodePointers[endNodeIndex - 1] : 0))
           return [startNodeRange, endNodeRange]
         }
       }
@@ -267,41 +258,13 @@ const normalCBSwithParams = [
   'arg',
 ]
 
-const displayRelatedCBS = [
-  'raw',
-  'img',
-  'video',
-  'audio',
-  'bg',
-  'emotion',
-  'asset',
-  'video-img',
-  'comment',
-  'image',
-]
+const displayRelatedCBS = ['raw', 'img', 'video', 'audio', 'bg', 'emotion', 'asset', 'video-img', 'comment', 'image']
 
 const nestedCBS = ['#if', '#if_pure ', '#pure ', '#each ', '#func', '#pure_display']
 
-const specialCBS = [
-  'random:',
-  'pick:',
-  'roll:',
-  'datetimeformat:',
-  '? ',
-  'hidden_key: ',
-  'reverse: ',
-  ...nestedCBS,
-]
+const specialCBS = ['random:', 'pick:', 'roll:', 'datetimeformat:', '? ', 'hidden_key: ', 'reverse: ', ...nestedCBS]
 
-const deprecatedCBS = [
-  'personality',
-  'scenario',
-  'main_prompt',
-  'system_prompt',
-  'ujb',
-  'global_note',
-  'system_note',
-]
+const deprecatedCBS = ['personality', 'scenario', 'main_prompt', 'system_prompt', 'ujb', 'global_note', 'system_note']
 
 const deprecatedCBSwithParams = ['remaind', 'pow']
 

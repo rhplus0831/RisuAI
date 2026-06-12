@@ -8,16 +8,9 @@ import {
   sanitizeCharacterPatch,
   type CharacterStateSnapshot,
 } from '../characterCommands'
-import {
-  canUseServerCommands,
-  type CharacterSnapshot,
-  type ServerCommandTransportOptions,
-} from './commands'
+import { canUseServerCommands, type CharacterSnapshot, type ServerCommandTransportOptions } from './commands'
 import { DBState, selectedCharID } from '../stores.svelte'
-import {
-  getServerProjectionApplyEpoch,
-  withTrustedServerProjectionWrite,
-} from './projectionWriteGuard.svelte'
+import { getServerProjectionApplyEpoch, withTrustedServerProjectionWrite } from './projectionWriteGuard.svelte'
 
 interface PendingCharacterPatch {
   characterId: string
@@ -40,9 +33,7 @@ export interface ServerBackedCharacterDraft {
   value: CharacterDraftValue
 }
 
-export function createServerBackedCharacterDraft(
-  keys: readonly string[],
-): ServerBackedCharacterDraft {
+export function createServerBackedCharacterDraft(keys: readonly string[]): ServerBackedCharacterDraft {
   const draft = $state<ServerBackedCharacterDraft>({
     characterId: null,
     value: {},
@@ -66,8 +57,7 @@ export function createServerBackedCharacterDraft(
     const selected = selectedCharMirror.value
     const projectionApplyEpoch = getServerProjectionApplyEpoch()
     const characterId = DBState.db.characters?.[selected]?.chaId ?? null
-    const identityChanged =
-      !initialized || selected !== previousSeedSelected || characterId !== previousSeedCharacterId
+    const identityChanged = !initialized || selected !== previousSeedSelected || characterId !== previousSeedCharacterId
     const projectionApplyChanged = projectionApplyEpoch !== previousSeedProjectionApplyEpoch
 
     if (!identityChanged && !projectionApplyChanged) return
@@ -76,9 +66,7 @@ export function createServerBackedCharacterDraft(
     previousSeedCharacterId = characterId
     previousSeedProjectionApplyEpoch = projectionApplyEpoch
 
-    const { serverSnapshot, serverValue } = untrack(() =>
-      currentCharacterDraftSeed(selected, characterId, keys),
-    )
+    const { serverSnapshot, serverValue } = untrack(() => currentCharacterDraftSeed(selected, characterId, keys))
     const shouldSeedDraft =
       identityChanged ||
       untrack(() => {
@@ -122,9 +110,7 @@ export function createServerBackedCharacterDraft(
     untrack(() => {
       const patch = sanitizeCharacterPatch(cloneJsonValue(draft.value))
       withTrustedServerProjectionWrite(() => {
-        const character = DBState.db.characters?.find(
-          (candidate) => candidate.chaId === characterId,
-        )
+        const character = DBState.db.characters?.find((candidate) => candidate.chaId === characterId)
         if (!character) return
         Object.assign(character, patch)
       })
@@ -142,9 +128,7 @@ function currentCharacterDraftSeed(
 ): { serverSnapshot: string; serverValue: CharacterDraftValue } {
   const character = DBState.db.characters?.[selected]
   const serverValue = character
-    ? normalizeCharacterDraft(
-        pickCharacterFields(character as unknown as CharacterSnapshot, keys),
-      )
+    ? normalizeCharacterDraft(pickCharacterFields(character as unknown as CharacterSnapshot, keys))
     : {}
   return {
     serverSnapshot: snapshotJson({ characterId, value: serverValue }),
@@ -152,9 +136,7 @@ function currentCharacterDraftSeed(
   }
 }
 
-export function watchServerBackedCharacterProfile(
-  options: WatchServerBackedCharacterProfileOptions = {},
-): () => void {
+export function watchServerBackedCharacterProfile(options: WatchServerBackedCharacterProfileOptions = {}): () => void {
   if (!canUseServerCommands()) return () => {}
 
   const delayMs = options.delayMs ?? 300
@@ -168,9 +150,7 @@ export function watchServerBackedCharacterProfile(
       const projectionApplyEpoch = getServerProjectionApplyEpoch()
       const index = get(selectedCharID)
       const character = DBState.db.characters?.[index]
-      const currentProfile = character
-        ? scalarCharacterProfile(character as unknown as Record<string, unknown>)
-        : {}
+      const currentProfile = character ? scalarCharacterProfile(character as unknown as Record<string, unknown>) : {}
       const currentProfileSnapshot = snapshotJson(currentProfile)
 
       if (
@@ -186,11 +166,7 @@ export function watchServerBackedCharacterProfile(
         return
       }
 
-      if (
-        suppressRollbackDispatch ||
-        currentProfileSnapshot === previousProfileSnapshot ||
-        !character.chaId
-      ) {
+      if (suppressRollbackDispatch || currentProfileSnapshot === previousProfileSnapshot || !character.chaId) {
         if (suppressRollbackDispatch) {
           previousProfileSnapshot = currentProfileSnapshot
         }
@@ -200,11 +176,7 @@ export function watchServerBackedCharacterProfile(
       const previousProfile = JSON.parse(previousProfileSnapshot) as CharacterSnapshot
       const patch = changedProfileFields(previousProfile, currentProfile)
       if (Object.keys(patch).length > 0) {
-        const previousState = selectedCharacterProfileSnapshot(
-          character.chaId,
-          previousProfile,
-          get(selectedCharID),
-        )
+        const previousState = selectedCharacterProfileSnapshot(character.chaId, previousProfile, get(selectedCharID))
         untrack(() => queueCharacterPatch(character.chaId, patch, previousState, delayMs))
       }
 
@@ -244,18 +216,13 @@ function queueCharacterPatch(
   pendingPatches.set(characterId, nextPatch)
 }
 
-export function flushPendingServerBackedCharacterPatches(
-  options: ServerCommandTransportOptions = {},
-): void {
+export function flushPendingServerBackedCharacterPatches(options: ServerCommandTransportOptions = {}): void {
   for (const characterId of Array.from(pendingPatches.keys())) {
     runPendingCharacterPatch(characterId, options)
   }
 }
 
-function runPendingCharacterPatch(
-  characterId: string,
-  options: ServerCommandTransportOptions = {},
-): void {
+function runPendingCharacterPatch(characterId: string, options: ServerCommandTransportOptions = {}): void {
   const commandPatch = pendingPatches.get(characterId)
   if (!commandPatch) return
   if (commandPatch.timer) clearTimeout(commandPatch.timer)
@@ -297,10 +264,7 @@ function selectedCharacterProfileSnapshot(
   } as CharacterStateSnapshot
 }
 
-function changedProfileFields(
-  previous: CharacterSnapshot,
-  current: CharacterSnapshot,
-): CharacterSnapshot {
+function changedProfileFields(previous: CharacterSnapshot, current: CharacterSnapshot): CharacterSnapshot {
   const patch: CharacterSnapshot = {}
   const keys = new Set([...Object.keys(previous), ...Object.keys(current)])
   for (const key of keys) {
@@ -312,10 +276,7 @@ function changedProfileFields(
   return patch
 }
 
-function pickCharacterFields(
-  character: CharacterSnapshot,
-  keys: readonly string[],
-): CharacterDraftValue {
+function pickCharacterFields(character: CharacterSnapshot, keys: readonly string[]): CharacterDraftValue {
   const picked: CharacterDraftValue = {}
   for (const key of keys) {
     picked[key] = cloneJsonValue(character[key])

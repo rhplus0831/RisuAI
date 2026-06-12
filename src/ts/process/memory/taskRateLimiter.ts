@@ -60,9 +60,7 @@ export class TaskRateLimiter {
     })
   }
 
-  public async executeBatch<TData>(
-    tasks: Array<() => Promise<TData>>,
-  ): Promise<BatchResult<TData>> {
+  public async executeBatch<TData>(tasks: Array<() => Promise<TData>>): Promise<BatchResult<TData>> {
     const taskResults = await Promise.all(tasks.map((task) => this.executeTask(task)))
     const successCount = taskResults.filter((r) => r.success).length
     const failureCount = taskResults.length - successCount

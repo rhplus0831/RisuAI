@@ -48,13 +48,7 @@ import {
 } from './globalApi.svelte'
 import { getNodeServerProxyAuth } from './storage/fastifyStorage'
 import { compressImage, getImageType } from './media'
-import {
-  DBState,
-  SettingsMenuIndex,
-  ShowRealmFrameStore,
-  selectedCharID,
-  settingsOpen,
-} from './stores.svelte'
+import { DBState, SettingsMenuIndex, ShowRealmFrameStore, selectedCharID, settingsOpen } from './stores.svelte'
 import { hasher } from './parser/parser.svelte'
 import { type CharacterCardV3, type LorebookEntry } from '@risuai/ccardlib'
 import { reencodeImage } from './process/files/inlays'
@@ -62,23 +56,13 @@ import { PngChunk } from './pngChunk'
 import type { OnnxModelFiles } from './process/transformers'
 import { CharXImporter, CharXWriter } from './process/processzip'
 import { exportModule, readModule, type RisuModule } from './process/modules'
-import {
-  currentCharacterStateSnapshot,
-  dispatchCreateCharacter,
-  dispatchUpdateCharacter,
-} from './characterCommands'
+import { currentCharacterStateSnapshot, dispatchCreateCharacter, dispatchUpdateCharacter } from './characterCommands'
 import { createGlobalModule } from './moduleCommands'
-import {
-  importRealmCharacterFromServer,
-  type ServerRealmImportProgress,
-} from './server/realmImport'
+import { importRealmCharacterFromServer, type ServerRealmImportProgress } from './server/realmImport'
 import { fetchServerBootstrapProjectionReadOnly } from './server/bootstrap'
 import { setCachedServerCommandRevision } from './server/commands'
 import { resetChatHydration } from './server/chatMessageHydration.svelte'
-import {
-  recordHydratedCharacterLorebooks,
-  resetLorebookHydration,
-} from './server/lorebookBridge.svelte'
+import { recordHydratedCharacterLorebooks, resetLorebookHydration } from './server/lorebookBridge.svelte'
 
 export const hubURL = '/api/v1/hub'
 
@@ -88,10 +72,7 @@ export async function authenticatedHubFetch(input: RequestInfo | URL, init: Requ
   return fetch(input, { ...init, headers })
 }
 
-function appendImportedCharacter(
-  character: character,
-  previous: ReturnType<typeof currentCharacterStateSnapshot>,
-) {
+function appendImportedCharacter(character: character, previous: ReturnType<typeof currentCharacterStateSnapshot>) {
   dispatchCreateCharacter(character, previous)
 }
 
@@ -129,11 +110,7 @@ export async function importCharacterProcess(f: {
       let db = getDatabase()
       return db.characters.length - 1
     }
-    if (
-      (da.char_name || da.name) &&
-      (da.char_persona || da.description) &&
-      (da.char_greeting || da.first_mes)
-    ) {
+    if ((da.char_name || da.name) && (da.char_persona || da.description) && (da.char_greeting || da.first_mes)) {
       const previous = currentCharacterStateSnapshot()
       const character = convertOffSpecCards(da)
       appendImportedCharacter(character, previous)
@@ -256,9 +233,7 @@ export async function importCharacterProcess(f: {
     })
     // audit:image-default — CCv3 PNG-embedded asset payloads are images;
     // server metadata may default to PNG content-type.
-    const savedAssetIds = await saveAssets(
-      embeddedAssetPayloads.map((asset) => ({ data: asset.data })),
-    )
+    const savedAssetIds = await saveAssets(embeddedAssetPayloads.map((asset) => ({ data: asset.data })))
     for (let i = 0; i < embeddedAssetPayloads.length; i++) {
       assets[embeddedAssetPayloads[i].index] = savedAssetIds[i]
       embeddedAssetPayloads[i].data = new Uint8Array(0)
@@ -294,9 +269,7 @@ export async function importCharacterProcess(f: {
         alertError(language.errors.noData)
         return
       }
-      const metaData: RccCardMetaData = JSON.parse(
-        Buffer.from(parts[4], 'base64').toString('utf-8'),
-      )
+      const metaData: RccCardMetaData = JSON.parse(Buffer.from(parts[4], 'base64').toString('utf-8'))
       if (metaData.usePassword) {
         const password = await alertInput(language.inputCardPassword)
         if (!password) {
@@ -304,9 +277,7 @@ export async function importCharacterProcess(f: {
         } else {
           try {
             const decrypted = await decryptBuffer(encrypted, password)
-            const charaData: CharacterCardV2Risu = JSON.parse(
-              Buffer.from(decrypted).toString('utf-8'),
-            )
+            const charaData: CharacterCardV2Risu = JSON.parse(Buffer.from(decrypted).toString('utf-8'))
             if (await importCharacterCardSpec(charaData, img, 'normal', assets)) {
               let db = getDatabase()
               return db.characters.length - 1
@@ -321,9 +292,7 @@ export async function importCharacterProcess(f: {
       } else {
         const decrypted = await decryptBuffer(encrypted, 'RISU_NONE')
         try {
-          const charaData: CharacterCardV2Risu = JSON.parse(
-            Buffer.from(decrypted).toString('utf-8'),
-          )
+          const charaData: CharacterCardV2Risu = JSON.parse(Buffer.from(decrypted).toString('utf-8'))
           if (await importCharacterCardSpec(charaData, img, 'normal', assets)) {
             let db = getDatabase()
             return db.characters.length - 1
@@ -344,9 +313,7 @@ export async function importCharacterProcess(f: {
   }
 
   if (parsed.spec !== 'chara_card_v2' && parsed.spec !== 'chara_card_v3') {
-    const charaData: OldTavernChar = JSON.parse(
-      Buffer.from(readedChara, 'base64').toString('utf-8'),
-    )
+    const charaData: OldTavernChar = JSON.parse(Buffer.from(readedChara, 'base64').toString('utf-8'))
     // audit:image-default — TavernAI v1 card image bytes (PNG).
     const imgp = await saveAsset(img)
     const previous = currentCharacterStateSnapshot()
@@ -457,12 +424,7 @@ export async function characterURLImport() {
     return
   }
   async function importFile(name: string, data: Uint8Array) {
-    if (
-      name.endsWith('.charx') ||
-      name.endsWith('.jpg') ||
-      name.endsWith('.jpeg') ||
-      name.endsWith('.png')
-    ) {
+    if (name.endsWith('.charx') || name.endsWith('.jpg') || name.endsWith('.jpeg') || name.endsWith('.png')) {
       await importCharacterProcess({
         name: name,
         data: data,
@@ -561,8 +523,7 @@ function convertOffSpecCards(
     exampleMessage: data.mes_example,
     creatorNotes: '',
     systemPrompt: (charaData.spec_version === '2.0' ? charaData.data.system_prompt : '') ?? '',
-    postHistoryInstructions:
-      (charaData.spec_version === '2.0' ? charaData.data.post_history_instructions : '') ?? '',
+    postHistoryInstructions: (charaData.spec_version === '2.0' ? charaData.data.post_history_instructions : '') ?? '',
     alternateGreetings: [],
     tags: [],
     creator: '',
@@ -676,9 +637,7 @@ async function importCharacterCardSpec(
               : Buffer.from(risuext.emotions[i][1], 'base64'),
         })
       }
-      const savedEmotionAssets = await saveAssets(
-        emotionUploads.map((asset) => ({ data: asset.data })),
-      )
+      const savedEmotionAssets = await saveAssets(emotionUploads.map((asset) => ({ data: asset.data })))
       for (let i = 0; i < emotionUploads.length; i++) {
         const targetIndex = emotionUploads[i].targetIndex
         importedEmotions[targetIndex] = [risuext.emotions[targetIndex][0], savedEmotionAssets[i]]
@@ -736,9 +695,7 @@ async function importCharacterCardSpec(
           additionalAssetUploads[i].fileName,
         ]
       }
-      extAssets.push(
-        ...importedAdditionalAssets.filter((entry): entry is [string, string, string] => !!entry),
-      )
+      extAssets.push(...importedAdditionalAssets.filter((entry): entry is [string, string, string] => !!entry))
     }
     if (risuext.vits) {
       const keys = Object.keys(risuext.vits)
@@ -764,15 +721,10 @@ async function importCharacterCardSpec(
         // extension (e.g. `.wav`, `.ogg`) so server metadata is honest.
         vitsUploads.push({
           key,
-          data:
-            mode === 'hub'
-              ? await getHubResources(risuext.vits[key])
-              : Buffer.from(risuext.vits[key], 'base64'),
+          data: mode === 'hub' ? await getHubResources(risuext.vits[key]) : Buffer.from(risuext.vits[key], 'base64'),
         })
       }
-      const savedVitsAssets = await saveAssets(
-        vitsUploads.map((asset) => ({ data: asset.data, fileName: asset.key })),
-      )
+      const savedVitsAssets = await saveAssets(vitsUploads.map((asset) => ({ data: asset.data, fileName: asset.key })))
       for (let i = 0; i < vitsUploads.length; i++) {
         risuext.vits[vitsUploads[i].key] = savedVitsAssets[i]
       }
@@ -840,9 +792,7 @@ async function importCharacterCardSpec(
         }
       }
 
-      const savedDataUriAssets = await saveAssets(
-        dataUriUploads.map((asset) => ({ data: asset.data })),
-      )
+      const savedDataUriAssets = await saveAssets(dataUriUploads.map((asset) => ({ data: asset.data })))
       for (let i = 0; i < dataUriUploads.length; i++) {
         resolvedAssetUris[dataUriUploads[i].targetIndex] = savedDataUriAssets[i]
       }
@@ -1031,32 +981,18 @@ function convertCharbook(arg: {
     //extention migration
     const extensions = book.extensions ?? {}
 
-    if (
-      extensions.useProbability &&
-      extensions.probability !== undefined &&
-      extensions.probability !== 100
-    ) {
+    if (extensions.useProbability && extensions.probability !== undefined && extensions.probability !== 100) {
       content = `@@probability ${extensions.probability}\n` + content
       delete extensions.useProbability
       delete extensions.probability
     }
-    if (
-      extensions.position === 4 &&
-      typeof extensions.depth === 'number' &&
-      typeof extensions.role === 'number'
-    ) {
-      content =
-        `@@depth ${extensions.depth}\n@@role ${['system', 'user', 'assistant'][extensions.role]}\n` +
-        content
+    if (extensions.position === 4 && typeof extensions.depth === 'number' && typeof extensions.role === 'number') {
+      content = `@@depth ${extensions.depth}\n@@role ${['system', 'user', 'assistant'][extensions.role]}\n` + content
       delete extensions.position
       delete extensions.depth
       delete extensions.role
     }
-    if (
-      typeof extensions.selectiveLogic === 'number' &&
-      book.secondary_keys &&
-      book.secondary_keys.length > 0
-    ) {
+    if (typeof extensions.selectiveLogic === 'number' && book.secondary_keys && book.secondary_keys.length > 0) {
       switch (extensions.selectiveLogic) {
         case 0: {
           if (!book.secondary_keys || book.secondary_keys.length === 0) {
@@ -1273,10 +1209,7 @@ export async function exportCharacterCard(
         }
       }
 
-      if (
-        risuai.additionalAssets &&
-        risuai.additionalAssets.length > 0
-      ) {
+      if (risuai.additionalAssets && risuai.additionalAssets.length > 0) {
         for (let i = 0; i < risuai.additionalAssets.length; i++) {
           alertStore.set({
             type: 'progress',
@@ -1418,10 +1351,7 @@ export async function exportCharacterCard(
               name = name.substring(0, 100)
             }
             const ext = card.data.assets[i].ext === 'unknown' ? 'png' : card.data.assets[i].ext
-            const baseDir =
-              card.data.assets[i].ext === 'unknown'
-                ? `assets/${type}/image`
-                : `assets/${type}/${itype}`
+            const baseDir = card.data.assets[i].ext === 'unknown' ? `assets/${type}/image` : `assets/${type}/${itype}`
 
             // Generate unique path to avoid duplicate filenames
             let uniqueName = name
@@ -1841,14 +1771,11 @@ export async function downloadRisuHub(
       await finishServerRealmImport(imported.characterId, arg, onProgress)
       return
     }
-    const res = await fetch(
-      'https://realm.risuai.net/api/v1/download/dynamic/' + id + '?cors=true',
-      {
-        headers: {
-          'x-risu-api-version': '4',
-        },
+    const res = await fetch('https://realm.risuai.net/api/v1/download/dynamic/' + id + '?cors=true', {
+      headers: {
+        'x-risu-api-version': '4',
       },
-    )
+    })
     if (res.status !== 200) {
       alertError(await res.text())
       return
@@ -1876,10 +1803,7 @@ export async function downloadRisuHub(
       }
       checkCharOrder()
       db = getDatabase()
-      if (
-        db.characters[db.characters.length - 1] &&
-        (db.goCharacterOnImport || arg.forceRedirect)
-      ) {
+      if (db.characters[db.characters.length - 1] && (db.goCharacterOnImport || arg.forceRedirect)) {
         const index = db.characters.length - 1
         changeChar(index)
       }
@@ -1949,9 +1873,7 @@ function showRealmImportProgress(progress: ServerRealmImportProgress) {
 async function refreshServerProjectionAfterRealmImport() {
   const bootstrap = await fetchServerBootstrapProjectionReadOnly()
   if (bootstrap.status !== 'ok') {
-    throw new Error(
-      bootstrap.status === 'unavailable' ? 'Server bootstrap is unavailable' : bootstrap.error,
-    )
+    throw new Error(bootstrap.status === 'unavailable' ? 'Server bootstrap is unavailable' : bootstrap.error)
   }
   if (bootstrap.projection.database == null) {
     throw new Error('Server bootstrap returned an empty database after Realm import')

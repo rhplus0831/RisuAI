@@ -87,11 +87,7 @@ export function reformatForMistral(messages: RawChatMessage[]): MistralChatMessa
       continue
     }
     const prev = out[out.length - 1]
-    if (
-      prev !== undefined &&
-      prev.role === role &&
-      (role === 'user' || role === 'assistant' || role === 'system')
-    ) {
+    if (prev !== undefined && prev.role === role && (role === 'user' || role === 'assistant' || role === 'system')) {
       prev.content += `\n${content}`
       continue
     }
@@ -122,17 +118,14 @@ export function resolveMistralRequest(input: MistralResolveInput): MistralReques
   if (!Array.isArray(input.messages)) return null
   if (typeof input.apiKey !== 'string' || input.apiKey.length === 0) return null
 
-  const baseUrl =
-    typeof input.baseUrl === 'string' && input.baseUrl.length > 0 ? input.baseUrl : DEFAULT_BASE_URL
+  const baseUrl = typeof input.baseUrl === 'string' && input.baseUrl.length > 0 ? input.baseUrl : DEFAULT_BASE_URL
   const safePrompt = input.safePrompt === true
   const maxTokens =
     typeof input.maxTokens === 'number' && Number.isFinite(input.maxTokens) && input.maxTokens > 0
       ? input.maxTokens
       : undefined
   const temperature =
-    typeof input.temperature === 'number' && Number.isFinite(input.temperature)
-      ? input.temperature
-      : undefined
+    typeof input.temperature === 'number' && Number.isFinite(input.temperature) ? input.temperature : undefined
   const presencePenalty =
     typeof input.presencePenalty === 'number' && Number.isFinite(input.presencePenalty)
       ? input.presencePenalty
@@ -141,8 +134,7 @@ export function resolveMistralRequest(input: MistralResolveInput): MistralReques
     typeof input.frequencyPenalty === 'number' && Number.isFinite(input.frequencyPenalty)
       ? input.frequencyPenalty
       : undefined
-  const topP =
-    typeof input.topP === 'number' && Number.isFinite(input.topP) ? input.topP : undefined
+  const topP = typeof input.topP === 'number' && Number.isFinite(input.topP) ? input.topP : undefined
 
   return {
     model: input.model,
@@ -192,10 +184,7 @@ function buildHeaders(req: MistralRequest): Record<string, string> {
   return headers
 }
 
-function buildRequestInit(
-  req: MistralRequest,
-  stream: boolean,
-): { body: string; headers: Record<string, string> } {
+function buildRequestInit(req: MistralRequest, stream: boolean): { body: string; headers: Record<string, string> } {
   const body = buildPayload(req, stream)
   const headers = buildHeaders(req)
   if (req.additionalParams !== undefined && req.additionalParams.length > 0) {
@@ -246,8 +235,7 @@ export async function runMistral(req: MistralRequest): Promise<CompletionResult>
   }
 
   if (!response.ok) {
-    const upstreamMsg =
-      typeof body.error?.message === 'string' ? body.error.message : `HTTP ${response.status}`
+    const upstreamMsg = typeof body.error?.message === 'string' ? body.error.message : `HTTP ${response.status}`
     return { type: 'fail', result: upstreamMsg }
   }
 
@@ -308,9 +296,7 @@ async function readMistralStreamError(response: Response): Promise<CompletionStr
   return { kind: 'error', error, status: response.status, code }
 }
 
-export async function* runMistralStream(
-  req: MistralRequest,
-): AsyncGenerator<CompletionStreamFrame, void, void> {
+export async function* runMistralStream(req: MistralRequest): AsyncGenerator<CompletionStreamFrame, void, void> {
   if (req.signal.aborted) return
 
   const init = buildRequestInit(req, true)

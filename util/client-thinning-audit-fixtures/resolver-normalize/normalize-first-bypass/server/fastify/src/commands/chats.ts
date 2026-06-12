@@ -11,10 +11,7 @@ interface ChatLocation {
 }
 
 // Skipped by the audit: this IS the resolver.
-export function requireChatLocation(
-  characters: readonly CharacterRecord[],
-  chatId: string,
-): ChatLocation {
+export function requireChatLocation(characters: readonly CharacterRecord[], chatId: string): ChatLocation {
   for (const character of characters) {
     for (const chat of character.chats ?? []) {
       if (chat.id === chatId) return { character, chat }

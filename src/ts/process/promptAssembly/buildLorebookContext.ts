@@ -70,11 +70,7 @@ export async function buildLorebookContext(
   }
 
   for (const lore of lorepmt.actives.filter(
-    (v) =>
-      v.pos === 'after_desc' ||
-      v.pos === 'before_desc' ||
-      v.pos === 'personality' ||
-      v.pos === 'scenario',
+    (v) => v.pos === 'after_desc' || v.pos === 'before_desc' || v.pos === 'personality' || v.pos === 'scenario',
   )) {
     const chat: OpenAIChat = {
       role: lore.role,
@@ -87,9 +83,7 @@ export async function buildLorebookContext(
     }
   }
 
-  for (const lore of lorepmt.actives.filter(
-    (v) => v.pos === 'depth' && v.depth === 0 && v.role !== 'assistant',
-  )) {
+  for (const lore of lorepmt.actives.filter((v) => v.pos === 'depth' && v.depth === 0 && v.role !== 'assistant')) {
     unformated.postEverything.push({
       role: lore.role,
       content: risuChatParser(resolvePosition(lore.prompt), { chara: currentChar }),
@@ -104,9 +98,7 @@ export async function buildLorebookContext(
 
   // Assistant prefill lore lands at postEverything AFTER user/system lore so
   // the assistant prefill stays at the very end of the array.
-  for (const lore of lorepmt.actives.filter(
-    (v) => v.pos === 'depth' && v.depth === 0 && v.role === 'assistant',
-  )) {
+  for (const lore of lorepmt.actives.filter((v) => v.pos === 'depth' && v.depth === 0 && v.role === 'assistant')) {
     unformated.postEverything.push({
       role: lore.role,
       content: risuChatParser(resolvePosition(lore.prompt), { chara: currentChar }),
@@ -137,9 +129,7 @@ export async function buildLorebookContext(
     return resolvePosition(text)
   }
 
-  const depthPrompts = lorepmt.actives.filter(
-    (v) => (v.pos === 'depth' && v.depth > 0) || v.pos === 'reverse_depth',
-  )
+  const depthPrompts = lorepmt.actives.filter((v) => (v.pos === 'depth' && v.depth > 0) || v.pos === 'reverse_depth')
 
   return { resolvePosition, positionParser, depthPrompts }
 }

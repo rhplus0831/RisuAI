@@ -47,12 +47,7 @@
   import LoreBook from './LoreBook/LoreBookSetting.svelte'
   import { alertTOS } from '../../ts/alert'
   import BarIcon from './BarIcon.svelte'
-  import {
-    findCharacterbyId,
-    getAuthorNoteDefaultText,
-    selectMultipleFile,
-    selectSingleFile,
-  } from '../../ts/util'
+  import { findCharacterbyId, getAuthorNoteDefaultText, selectMultipleFile, selectSingleFile } from '../../ts/util'
   import Help from '../Others/Help.svelte'
   import { exportChar } from 'src/ts/characterCards'
   import {
@@ -197,9 +192,7 @@
 
     untrack(() => {
       withTrustedServerProjectionWrite(() => {
-        const character = DBState.db.characters?.find(
-          (candidate) => candidate.chaId === characterId,
-        )
+        const character = DBState.db.characters?.find((candidate) => candidate.chaId === characterId)
         if (!character) return
         character.customscript = cloneJsonValue(characterScriptsDraft)
         character.triggerscript = cloneJsonValue(characterTriggersDraft)
@@ -216,12 +209,7 @@
   }
   let tokenizeRun = 0
 
-  async function loadTokenize(
-    desc: string | null,
-    firstMsg: string | null,
-    localNote: string,
-    run: number,
-  ) {
+  async function loadTokenize(desc: string | null, firstMsg: string | null, localNote: string, run: number) {
     if (desc !== null && lasttokens.desc !== desc) {
       const count = await tokenizeAccurate(desc)
       if (run !== tokenizeRun) return
@@ -277,8 +265,7 @@
   })
 
   const selectedCharacterAssetSourceKey = $derived(
-    DBState.db.characters[$selectedCharID]?.type === 'character' &&
-      DBState.db.useAdditionalAssetsPreview
+    DBState.db.characters[$selectedCharID]?.type === 'character' && DBState.db.useAdditionalAssetsPreview
       ? ((characterDraft.value as unknown as character).additionalAssets ?? [])
           .map((asset) => `${asset[1]}:${asset[2] ?? ''}`)
           .join('\n')
@@ -290,14 +277,10 @@
     const run = ++assetPreviewRun
     const nextExtensions: Record<string, string | undefined> = {}
     assetFilePath = {}
-    if (
-      DBState.db.characters[$selectedCharID].type === 'character' &&
-      DBState.db.useAdditionalAssetsPreview
-    ) {
+    if (DBState.db.characters[$selectedCharID].type === 'character' && DBState.db.useAdditionalAssetsPreview) {
       for (const asset of (characterDraft.value as unknown as character).additionalAssets ?? []) {
         const assetPath = asset[1]
-        nextExtensions[assetPath] =
-          asset.length > 2 && asset[2] ? asset[2] : assetPath.split('.').pop()
+        nextExtensions[assetPath] = asset.length > 2 && asset[2] ? asset[2] : assetPath.split('.').pop()
         getFileSrc(assetPath).then((filePath) => {
           if (run !== assetPreviewRun) return
           assetFilePath[assetPath] = filePath
@@ -348,10 +331,7 @@
         : ''
   })
   $effect.pre(() => {
-    if (
-      characterDraft.value.ttsMode === 'novelai' &&
-      characterDraft.value.naittsConfig === undefined
-    ) {
+    if (characterDraft.value.ttsMode === 'novelai' && characterDraft.value.naittsConfig === undefined) {
       updateCharacterDraft((character) => {
         character.naittsConfig = {
           customvoice: false,
@@ -362,10 +342,7 @@
     }
   })
   $effect.pre(() => {
-    if (
-      characterDraft.value.ttsMode === 'gptsovits' &&
-      characterDraft.value.gptSoVitsConfig === undefined
-    ) {
+    if (characterDraft.value.ttsMode === 'gptsovits' && characterDraft.value.gptSoVitsConfig === undefined) {
       updateCharacterDraft((character) => {
         character.gptSoVitsConfig = {
           url: '',
@@ -398,10 +375,7 @@
   }[] = $state([])
 
   $effect.pre(() => {
-    if (
-      characterDraft.value.ttsMode === 'fishspeech' &&
-      characterDraft.value.fishSpeechConfig === undefined
-    ) {
+    if (characterDraft.value.ttsMode === 'fishspeech' && characterDraft.value.fishSpeechConfig === undefined) {
       updateCharacterDraft((character) => {
         character.fishSpeechConfig = {
           model: {
@@ -417,10 +391,7 @@
   })
 
   $effect.pre(() => {
-    if (
-      characterDraft.value.ttsMode === 'openai' &&
-      characterDraft.value.oaiTTSConfig === undefined
-    ) {
+    if (characterDraft.value.ttsMode === 'openai' && characterDraft.value.oaiTTSConfig === undefined) {
       updateCharacterDraft((character) => {
         character.oaiTTSConfig = {
           enabled: false,
@@ -528,9 +499,7 @@
     updateCharacterDraft((character) => {
       character.prebuiltAssetExclude ??= []
       if (character.prebuiltAssetExclude.includes(assetId)) {
-        character.prebuiltAssetExclude = character.prebuiltAssetExclude.filter(
-          (entry) => entry !== assetId,
-        )
+        character.prebuiltAssetExclude = character.prebuiltAssetExclude.filter((entry) => entry !== assetId)
       } else {
         character.prebuiltAssetExclude.push(assetId)
       }
@@ -544,24 +513,21 @@
       class={$CharConfigSubMenu === 0 ? 'text-textcolor ' : 'text-textcolor2'}
       onclick={() => {
         $CharConfigSubMenu = 0
-      }}
-    >
+      }}>
       <UserIcon size={iconButtonSize} />
     </button>
     <button
       class={$CharConfigSubMenu === 1 ? 'text-textcolor' : 'text-textcolor2'}
       onclick={() => {
         $CharConfigSubMenu = 1
-      }}
-    >
+      }}>
       <SmileIcon size={iconButtonSize} />
     </button>
     <button
       class={$CharConfigSubMenu === 3 ? 'text-textcolor' : 'text-textcolor2'}
       onclick={() => {
         $CharConfigSubMenu = 3
-      }}
-    >
+      }}>
       <BookIcon size={iconButtonSize} />
     </button>
     {#if DBState.db.characters[$selectedCharID].type === 'character'}
@@ -569,16 +535,14 @@
         class={$CharConfigSubMenu === 5 ? 'text-textcolor' : 'text-textcolor2'}
         onclick={() => {
           $CharConfigSubMenu = 5
-        }}
-      >
+        }}>
         <Volume2Icon size={iconButtonSize} />
       </button>
       <button
         class={$CharConfigSubMenu === 4 ? 'text-textcolor' : 'text-textcolor2'}
         onclick={() => {
           $CharConfigSubMenu = 4
-        }}
-      >
+        }}>
         <Braces size={iconButtonSize} />
       </button>
     {/if}
@@ -586,8 +550,7 @@
       class={$CharConfigSubMenu === 2 ? 'text-textcolor' : 'text-textcolor2'}
       onclick={() => {
         $CharConfigSubMenu = 2
-      }}
-    >
+      }}>
       <ActivityIcon size={iconButtonSize} />
     </button>
     {#if DBState.db.characters[$selectedCharID].type === 'character'}
@@ -595,8 +558,7 @@
         class={$CharConfigSubMenu === 6 ? 'text-textcolor' : 'text-textcolor2'}
         onclick={() => {
           $CharConfigSubMenu = 6
-        }}
-      >
+        }}>
         <Share2Icon size={iconButtonSize} />
       </button>
     {/if}
@@ -605,22 +567,12 @@
 
 {#if $CharConfigSubMenu === 0}
   {#if licensed !== 'private'}
-    <TextInput
-      size="xl"
-      marginBottom
-      placeholder="Character Name"
-      bind:value={characterDraft.value.name}
-    />
+    <TextInput size="xl" marginBottom placeholder="Character Name" bind:value={characterDraft.value.name} />
     <span class="text-textcolor">{language.description} <Help key="charDesc" /></span>
-    <TextAreaInput highlight margin="both" autocomplete="off" bind:value={characterDraft.value.desc}
-    ></TextAreaInput>
+    <TextAreaInput highlight margin="both" autocomplete="off" bind:value={characterDraft.value.desc}></TextAreaInput>
     <span class="text-textcolor2 mb-6 text-sm">{tokens.desc} {language.tokens}</span>
     <span class="text-textcolor">{language.firstMessage} <Help key="charFirstMessage" /></span>
-    <TextAreaInput
-      highlight
-      margin="both"
-      autocomplete="off"
-      bind:value={characterDraft.value.firstMessage}
+    <TextAreaInput highlight margin="both" autocomplete="off" bind:value={characterDraft.value.firstMessage}
     ></TextAreaInput>
     <span class="text-textcolor2 mb-6 text-sm">{tokens.firstMsg} {language.tokens}</span>
   {/if}
@@ -630,8 +582,7 @@
     autocomplete="off"
     bind:value={authorNoteDraft}
     highlight
-    placeholder={getAuthorNoteDefaultText()}
-  />
+    placeholder={getAuthorNoteDefaultText()} />
   <span class="text-textcolor2 mb-6 text-sm">{tokens.localNote} {language.tokens}</span>
 
   {#if !$MobileGUI}
@@ -653,8 +604,7 @@
         viewSubMenu = 0
       }}
       class="p-2 flex-1"
-      class:bg-selected={viewSubMenu === 0}
-    >
+      class:bg-selected={viewSubMenu === 0}>
       <span>{language.charIcon}</span>
     </button>
     <button
@@ -662,8 +612,7 @@
         viewSubMenu = 1
       }}
       class="p2 flex-1 border-r border-l border-selected"
-      class:bg-selected={viewSubMenu === 1}
-    >
+      class:bg-selected={viewSubMenu === 1}>
       <span>{language.viewScreen}</span>
     </button>
     <button
@@ -671,8 +620,7 @@
         viewSubMenu = 2
       }}
       class="p-2 flex-1"
-      class:bg-selected={viewSubMenu === 2}
-    >
+      class:bg-selected={viewSubMenu === 2}>
       <span>{language.additionalAssets}</span>
     </button>
   </div>
@@ -691,19 +639,18 @@
               clearOrRotateCharacterImage()
               iconRemoveMode = false
             }
-          }}
-        >
+          }}>
           {#await getCharImage(characterDraft.value.image, characterDraft.value.largePortrait ? 'lgcss' : 'css')}
             <div
               class="rounded-md h-24 w-24 shadow-lg bg-textcolor2 cursor-pointer ring-3 transition-shadow"
-              class:ring-red-500={iconRemoveMode}
-            ></div>
+              class:ring-red-500={iconRemoveMode}>
+            </div>
           {:then im}
             <div
               class="rounded-md h-24 w-24 shadow-lg bg-textcolor2 cursor-pointer ring-3 transition-shadow"
               class:ring-red-500={iconRemoveMode}
-              style={im}
-            ></div>
+              style={im}>
+            </div>
           {/await}
         </button>
       {/if}
@@ -717,21 +664,20 @@
                 removeCharacterCcAsset(i)
                 iconRemoveMode = false
               }
-            }}
-          >
+            }}>
             {#await getCharImage(assets.uri, characterDraft.value.largePortrait ? 'lgcss' : 'css')}
               <div
                 class="rounded-md h-24 w-24 shadow-lg bg-textcolor2 cursor-pointer hover:ring-3 transition-shadow"
                 class:ring-red-500={iconRemoveMode}
-                class:ring-3={iconRemoveMode}
-              ></div>
+                class:ring-3={iconRemoveMode}>
+              </div>
             {:then im}
               <div
                 class="rounded-md h-24 w-24 shadow-lg bg-textcolor2 cursor-pointer hover:ring-3 transition-shadow"
                 style={im}
                 class:ring-red-500={iconRemoveMode}
-                class:ring-3={iconRemoveMode}
-              ></div>
+                class:ring-3={iconRemoveMode}>
+              </div>
             {/await}
           </button>
         {/each}
@@ -739,12 +685,10 @@
       <button
         onclick={async () => {
           await selectCharImg($selectedCharID)
-        }}
-      >
+        }}>
         <div
           class="rounded-md h-24 w-24 cursor-pointer border-darkborderc border border-dashed flex justify-center items-center hover:border-blue-500"
-          style={characterDraft.value.largePortrait ? 'height: 10.66rem;' : ''}
-        >
+          style={characterDraft.value.largePortrait ? 'height: 10.66rem;' : ''}>
           <PlusIcon />
         </div>
       </button>
@@ -754,8 +698,7 @@
         class={iconRemoveMode ? 'text-red-500' : 'text-textcolor2 hover:text-textcolor'}
         onclick={() => {
           iconRemoveMode = !iconRemoveMode
-        }}
-      >
+        }}>
         <TrashIcon size="18" />
       </button>
     </div>
@@ -771,8 +714,7 @@
       bind:value={characterDraft.value.viewScreen}
       onchange={() => {
         updateCharacterInlayScreen()
-      }}
-    >
+      }}>
       <OptionInput value="none">{language.none}</OptionInput>
       <OptionInput value="emotion">{language.emotionImage}</OptionInput>
       <OptionInput value="imggen">{language.imageGeneration}</OptionInput>
@@ -800,24 +742,17 @@
                   {#await getCharImage(emo[1], 'plain')}
                     <td class="font-medium truncate w-1/3"></td>
                   {:then im}
-                    <td class="font-medium truncate w-1/3"
-                      ><img src={im} alt="img" class="w-full" /></td
-                    >
+                    <td class="font-medium truncate w-1/3"><img src={im} alt="img" class="w-full" /></td>
                   {/await}
                   <td class="font-medium truncate w-1/2">
-                    <TextInput
-                      marginBottom
-                      size="lg"
-                      bind:value={characterDraft.value.emotionImages[i][0]}
-                    />
+                    <TextInput marginBottom size="lg" bind:value={characterDraft.value.emotionImages[i][0]} />
                   </td>
                   <td>
                     <button
                       class="font-medium cursor-pointer hover:text-green-500"
                       onclick={() => {
                         rmCharEmotion($selectedCharID, i)
-                      }}><TrashIcon /></button
-                    >
+                      }}><TrashIcon /></button>
                   </td>
                 </tr>
               {/each}
@@ -832,8 +767,7 @@
             class="cursor-pointer hover:text-green-500"
             onclick={() => {
               addCharEmotion($selectedCharID)
-            }}
-          >
+            }}>
             <PlusIcon />
           </button>
         {:else}
@@ -851,22 +785,15 @@
         name={language.inlayViewScreen}
         onChange={() => {
           if (DBState.db.characters[$selectedCharID].type === 'character') {
-            if (
-              characterDraft.value.inlayViewScreen &&
-              characterDraft.value.additionalAssets === undefined
-            ) {
+            if (characterDraft.value.inlayViewScreen && characterDraft.value.additionalAssets === undefined) {
               characterDraft.value.additionalAssets = []
-            } else if (
-              !characterDraft.value.inlayViewScreen &&
-              characterDraft.value.additionalAssets.length === 0
-            ) {
+            } else if (!characterDraft.value.inlayViewScreen && characterDraft.value.additionalAssets.length === 0) {
               characterDraft.value.additionalAssets = undefined
             }
 
             updateCharacterInlayScreen()
           }
-        }}
-      />
+        }} />
     {/if}
     {#if characterDraft.value.viewScreen === 'imggen'}
       <span class="text-textcolor mt-6">{language.imageGeneration} <Help key="imggen" /></span>
@@ -886,15 +813,11 @@
           if ((DBState.db.characters[$selectedCharID] as character).type === 'character') {
             updateCharacterInlayScreen()
           }
-        }}
-      />
+        }} />
     {/if}
   {:else if viewSubMenu === 2}
     {#if DBState.db.newImageHandlingBeta}
-      <CheckInput
-        bind:check={characterDraft.value.prebuiltAssetCommand}
-        name={language.insertAssetPrompt}
-      />
+      <CheckInput bind:check={characterDraft.value.prebuiltAssetCommand} name={language.insertAssetPrompt} />
 
       {#if characterDraft.value.prebuiltAssetCommand}
         <span class="text-textcolor mt-2">{language.assetStyle}</span>
@@ -931,8 +854,7 @@
                       'svg',
                       'avif',
                     ])
-                    characterDraft.value.additionalAssets =
-                      characterDraft.value.additionalAssets ?? []
+                    characterDraft.value.additionalAssets = characterDraft.value.additionalAssets ?? []
                     if (!da) {
                       return
                     }
@@ -945,8 +867,7 @@
                       characterDraft.value = { ...characterDraft.value }
                     }
                   }
-                }}
-              >
+                }}>
                 <PlusIcon />
               </button>
             </th>
@@ -963,26 +884,19 @@
                     {#if assetFileExtensions[assets[1]] === 'mp4'}
                       <!-- svelte-ignore a11y_media_has_caption -->
                       <video controls class="mt-2 px-2 w-full m-1 rounded-md"
-                        ><source src={assetFilePath[assets[1]]} type="video/mp4" /></video
-                      >
+                        ><source src={assetFilePath[assets[1]]} type="video/mp4" /></video>
                     {:else if assetFileExtensions[assets[1]] === 'mp3'}
                       <audio controls class="mt-2 px-2 w-full h-16 m-1 rounded-md" loop
-                        ><source src={assetFilePath[assets[1]]} type="audio/mpeg" /></audio
-                      >
+                        ><source src={assetFilePath[assets[1]]} type="audio/mpeg" /></audio>
                     {:else if ['png', 'webp', 'jpeg', 'jpg', 'gif'].includes(assetFileExtensions[assets[1]] ?? '')}
-                      <img
-                        src={assetFilePath[assets[1]]}
-                        class="w-16 h-16 m-1 rounded-md"
-                        alt={assets[0]}
-                      />
+                      <img src={assetFilePath[assets[1]]} class="w-16 h-16 m-1 rounded-md" alt={assets[0]} />
                     {/if}
                   {/if}
                   <TextInput
                     size="sm"
                     marginBottom
                     bind:value={characterDraft.value.additionalAssets[i][0]}
-                    placeholder="..."
-                  />
+                    placeholder="..." />
                 </td>
 
                 <th class="font-medium cursor-pointer w-10">
@@ -1000,20 +914,16 @@
                         characterDraft.value.additionalAssets = additionalAssets
                         characterDraft.value = { ...characterDraft.value }
                       }
-                    }}
-                  >
+                    }}>
                     <TrashIcon />
                   </button>
                   {#if DBState.db.useAdditionalAssetsPreview}
                     <button
                       class="hover:text-blue-500"
-                      class:text-textcolor2={characterDraft.value.prebuiltAssetExclude?.includes?.(
-                        assets[1],
-                      )}
+                      class:text-textcolor2={characterDraft.value.prebuiltAssetExclude?.includes?.(assets[1])}
                       onclick={() => {
                         togglePrebuiltAssetExclude(assets[1])
-                      }}
-                    >
+                      }}>
                       {#if characterDraft.value.prebuiltAssetExclude?.includes?.(assets[1])}
                         <ImageOffIcon />
                       {:else}
@@ -1041,11 +951,7 @@
     {/if}
 
     <span class="text-textcolor mt-2">{language.backgroundHTML} <Help key="backgroundHTML" /></span>
-    <TextAreaInput
-      highlight
-      margin="both"
-      autocomplete="off"
-      bind:value={characterDraft.value.backgroundHTML}
+    <TextAreaInput highlight margin="both" autocomplete="off" bind:value={characterDraft.value.backgroundHTML}
     ></TextAreaInput>
 
     <span class="text-textcolor mt-4">{language.regexScript} <Help key="regexScript" /></span>
@@ -1065,35 +971,27 @@
               },
             ]
           }
-        }}><PlusIcon /></button
-      >
+        }}><PlusIcon /></button>
       <button
         class="font-medium cursor-pointer hover:text-green-500"
         onclick={() => {
           exportRegex(characterScriptsDraft)
-        }}><DownloadIcon /></button
-      >
+        }}><DownloadIcon /></button>
       <button
         class="font-medium cursor-pointer hover:text-green-500"
         onclick={async () => {
           characterScriptsDraft = await importRegex(characterScriptsDraft)
-        }}><HardDriveUploadIcon /></button
-      >
+        }}><HardDriveUploadIcon /></button>
     </div>
 
     <span class="text-textcolor mt-4">{language.triggerScript} <Help key="triggerScript" /></span>
     <TriggerList
       bind:value={characterTriggersDraft}
-      lowLevelAble={DBState.db.characters[$selectedCharID].lowLevelAccess}
-    />
+      lowLevelAble={DBState.db.characters[$selectedCharID].lowLevelAccess} />
 
     {#if characterDraft.value.virtualscript || DBState.db.showUnrecommended}
       <span class="text-textcolor mt-4">{language.charjs} <Help key="charjs" unrecommended /></span>
-      <TextAreaInput
-        margin="both"
-        autocomplete="off"
-        bind:value={characterDraft.value.virtualscript}
-      ></TextAreaInput>
+      <TextAreaInput margin="both" autocomplete="off" bind:value={characterDraft.value.virtualscript}></TextAreaInput>
     {/if}
   {/if}
 {:else if $CharConfigSubMenu === 6}
@@ -1105,8 +1003,7 @@
           $ShowRealmFrameStore = 'character'
         }
       }}
-      className="mt-2"
-    >
+      className="mt-2">
       {#if DBState.db.characters[$selectedCharID].realmId}
         {language.updateRealm}
       {:else}
@@ -1121,8 +1018,7 @@
       onclick={async () => {
         const res = await exportChar($selectedCharID)
       }}
-      className="mt-2">{language.exportCharacter}</Button
-    >
+      className="mt-2">{language.exportCharacter}</Button>
   {/if}
 
   <Button
@@ -1130,8 +1026,7 @@
       removeChar($selectedCharID, DBState.db.characters[$selectedCharID].name)
     }}
     className="mt-2"
-    size="sm">{language.removeCharacter}</Button
-  >
+    size="sm">{language.removeCharacter}</Button>
 {:else if $CharConfigSubMenu === 5}
   {#if DBState.db.characters[$selectedCharID].type === 'character'}
     {#if !$MobileGUI}
@@ -1147,8 +1042,7 @@
             character.ttsSpeech = ''
           })
         }
-      }}
-    >
+      }}>
       <OptionInput value="">{language.disabled}</OptionInput>
       <OptionInput value="elevenlab">ElevenLabs</OptionInput>
       <OptionInput value="webspeech">Web Speech</OptionInput>
@@ -1174,16 +1068,12 @@
         </SelectInput>
         {#if characterDraft.value.ttsSpeech !== ''}
           <span class="text-red-400 text-sm"
-            >If you do not set it to Auto, it may not work properly when importing from another OS
-            or browser.</span
-          >
+            >If you do not set it to Auto, it may not work properly when importing from another OS or browser.</span>
         {/if}
       {/if}
     {:else if characterDraft.value.ttsMode === 'elevenlab'}
       <span class="text-sm mb-2 text-textcolor2"
-        >Please set the ElevenLabs API key in "global Settings → Bot Settings → Others → ElevenLabs
-        API key"</span
-      >
+        >Please set the ElevenLabs API key in "global Settings → Bot Settings → Others → ElevenLabs API key"</span>
       {#await getElevenTTSVoices() then voices}
         <span class="text-textcolor">{language.Speech}</span>
         <SelectInput className="mb-4 mt-2" bind:value={characterDraft.value.ttsSpeech}>
@@ -1198,11 +1088,8 @@
       <SelectInput className="mb-4 mt-2" bind:value={characterDraft.value.voicevoxConfig.speaker}>
         {#await getVOICEVOXVoices() then voices}
           {#each voices as voice}
-            <OptionInput
-              value={voice.list}
-              selected={characterDraft.value.voicevoxConfig.speaker === voice.list}
-              >{voice.name}</OptionInput
-            >
+            <OptionInput value={voice.list} selected={characterDraft.value.voicevoxConfig.speaker === voice.list}
+              >{voice.name}</OptionInput>
           {/each}
         {/await}
       </SelectInput>
@@ -1211,42 +1098,24 @@
         <SelectInput className="mb-4 mt-2" bind:value={characterDraft.value.ttsSpeech}>
           {#each JSON.parse(characterDraft.value.voicevoxConfig.speaker) as styles}
             <OptionInput value={styles.id} selected={characterDraft.value.ttsSpeech === styles.id}
-              >{styles.name}</OptionInput
-            >
+              >{styles.name}</OptionInput>
           {/each}
         </SelectInput>
       {/if}
       <span class="text-textcolor">Speed scale</span>
-      <NumberInput
-        size={'sm'}
-        marginBottom
-        bind:value={characterDraft.value.voicevoxConfig.SPEED_SCALE}
-      />
+      <NumberInput size={'sm'} marginBottom bind:value={characterDraft.value.voicevoxConfig.SPEED_SCALE} />
 
       <span class="text-textcolor">Pitch scale</span>
-      <NumberInput
-        size={'sm'}
-        marginBottom
-        bind:value={characterDraft.value.voicevoxConfig.PITCH_SCALE}
-      />
+      <NumberInput size={'sm'} marginBottom bind:value={characterDraft.value.voicevoxConfig.PITCH_SCALE} />
 
       <span class="text-textcolor">Volume scale</span>
-      <NumberInput
-        size={'sm'}
-        marginBottom
-        bind:value={characterDraft.value.voicevoxConfig.VOLUME_SCALE}
-      />
+      <NumberInput size={'sm'} marginBottom bind:value={characterDraft.value.voicevoxConfig.VOLUME_SCALE} />
 
       <span class="text-textcolor">Intonation scale</span>
-      <NumberInput
-        size={'sm'}
-        marginBottom
-        bind:value={characterDraft.value.voicevoxConfig.INTONATION_SCALE}
-      />
+      <NumberInput size={'sm'} marginBottom bind:value={characterDraft.value.voicevoxConfig.INTONATION_SCALE} />
       <span class="text-sm mb-2 text-textcolor2"
-        >To use VOICEVOX, you need to run a colab and put the localtunnel URL in "Settings → Other
-        Bots". https://colab.research.google.com/drive/1tyeXJSklNfjW-aZJAib1JfgOMFarAwze</span
-      >
+        >To use VOICEVOX, you need to run a colab and put the localtunnel URL in "Settings → Other Bots".
+        https://colab.research.google.com/drive/1tyeXJSklNfjW-aZJAib1JfgOMFarAwze</span>
     {:else if characterDraft.value.ttsMode === 'novelai'}
       <span class="text-textcolor">Custom Voice Seed</span>
       <Check bind:check={characterDraft.value.naittsConfig.customvoice} />
@@ -1257,11 +1126,8 @@
             {#each voices as voiceGroup}
               <optgroup label={voiceGroup.gender} class="bg-darkbg appearance-none">
                 {#each voiceGroup.voices as voice}
-                  <OptionInput
-                    value={voice}
-                    selected={characterDraft.value.naittsConfig.voice === voice}
-                    >{voice}</OptionInput
-                  >
+                  <OptionInput value={voice} selected={characterDraft.value.naittsConfig.voice === voice}
+                    >{voice}</OptionInput>
                 {/each}
               </optgroup>
             {/each}
@@ -1289,8 +1155,7 @@
         <TextInput
           className="mb-4 mt-2"
           bind:value={characterDraft.value.oaiTTSConfig.voice}
-          placeholder={characterDraft.value.oaiVoice || 'alloy'}
-        />
+          placeholder={characterDraft.value.oaiVoice || 'alloy'} />
       {/if}
 
       <span class="text-textcolor">Advanced (OpenAI-compatible endpoint)</span>
@@ -1301,23 +1166,17 @@
         <TextInput
           className="mb-4 mt-2"
           bind:value={characterDraft.value.oaiTTSConfig.baseURL}
-          placeholder="https://api.openai.com/v1"
-        />
+          placeholder="https://api.openai.com/v1" />
 
         <span class="text-textcolor">API Key (overrides global)</span>
         <TextInput
           className="mb-4 mt-2"
           hideText={DBState.db.hideApiKey}
           bind:value={characterDraft.value.oaiTTSConfig.apiKey}
-          placeholder="Leave empty to use global OpenAI API key"
-        />
+          placeholder="Leave empty to use global OpenAI API key" />
 
         <span class="text-textcolor">Model</span>
-        <TextInput
-          className="mb-4 mt-2"
-          bind:value={characterDraft.value.oaiTTSConfig.model}
-          placeholder="tts-1"
-        />
+        <TextInput className="mb-4 mt-2" bind:value={characterDraft.value.oaiTTSConfig.model} placeholder="tts-1" />
 
         <span class="text-textcolor">Response Format</span>
         <SelectInput className="mb-4 mt-2" bind:value={characterDraft.value.oaiTTSConfig.format}>
@@ -1334,11 +1193,7 @@
       <TextInput className="mb-4 mt-2" bind:value={characterDraft.value.hfTTS.model} />
 
       <span class="text-textcolor">Language</span>
-      <TextInput
-        className="mb-4 mt-2"
-        bind:value={characterDraft.value.hfTTS.language}
-        placeholder="en"
-      />
+      <TextInput className="mb-4 mt-2" bind:value={characterDraft.value.hfTTS.language} placeholder="en" />
     {:else if characterDraft.value.ttsMode === 'vits'}
       {#if characterDraft.value.vits}
         <span class="text-textcolor">{characterDraft.value.vits.name ?? 'Unnamed VitsModel'}</span>
@@ -1353,17 +1208,10 @@
               character.vits = model
             })
           }
-        }}>{language.selectModel}</Button
-      >
+        }}>{language.selectModel}</Button>
     {:else if characterDraft.value.ttsMode === 'gptsovits'}
       <span class="text-textcolor">Volume</span>
-      <SliderInput
-        min={0.0}
-        max={1.0}
-        step={0.01}
-        fixed={2}
-        bind:value={characterDraft.value.gptSoVitsConfig.volume}
-      />
+      <SliderInput min={0.0} max={1.0} step={0.01} fixed={2} bind:value={characterDraft.value.gptSoVitsConfig.volume} />
       <span class="text-textcolor">URL</span>
       <TextInput className="mb-4 mt-2" bind:value={characterDraft.value.gptSoVitsConfig.url} />
 
@@ -1371,13 +1219,8 @@
       <Check bind:check={characterDraft.value.gptSoVitsConfig.use_auto_path} />
 
       {#if !characterDraft.value.gptSoVitsConfig.use_auto_path}
-        <span class="text-textcolor"
-          >Reference Audio Path (e.g. C:/Users/user/Downloads/GPT-SoVITS-v2-240821)</span
-        >
-        <TextInput
-          className="mb-4 mt-2"
-          bind:value={characterDraft.value.gptSoVitsConfig.ref_audio_path}
-        />
+        <span class="text-textcolor">Reference Audio Path (e.g. C:/Users/user/Downloads/GPT-SoVITS-v2-240821)</span>
+        <TextInput className="mb-4 mt-2" bind:value={characterDraft.value.gptSoVitsConfig.ref_audio_path} />
       {/if}
 
       <span class="text-textcolor">Use Long Audio</span>
@@ -1398,8 +1241,7 @@
             }
           })
         }}
-        className="h-10"
-      >
+        className="h-10">
         {#if characterDraft.value.gptSoVitsConfig.ref_audio_data.assetId === '' || characterDraft.value.gptSoVitsConfig.ref_audio_data.assetId === undefined}
           {language.selectFile}
         {:else}
@@ -1407,10 +1249,7 @@
         {/if}
       </Button>
       <span class="text-textcolor">Text Language</span>
-      <SelectInput
-        className="mb-4 mt-2"
-        bind:value={characterDraft.value.gptSoVitsConfig.text_lang}
-      >
+      <SelectInput className="mb-4 mt-2" bind:value={characterDraft.value.gptSoVitsConfig.text_lang}>
         <OptionInput value="auto">Multi-language Mixed</OptionInput>
         <OptionInput value="auto_yue">Multi-language Mixed (Cantonese)</OptionInput>
         <OptionInput value="en">English</OptionInput>
@@ -1431,17 +1270,11 @@
 
       {#if characterDraft.value.gptSoVitsConfig.use_prompt && !characterDraft.value.gptSoVitsConfig.use_long_audio}
         <span class="text-textcolor">Reference Audio Script</span>
-        <TextAreaInput
-          className="mb-4 mt-2"
-          bind:value={characterDraft.value.gptSoVitsConfig.prompt}
-        />
+        <TextAreaInput className="mb-4 mt-2" bind:value={characterDraft.value.gptSoVitsConfig.prompt} />
       {/if}
 
       <span class="text-textcolor">Reference Audio Language</span>
-      <SelectInput
-        className="mb-4 mt-2"
-        bind:value={characterDraft.value.gptSoVitsConfig.prompt_lang}
-      >
+      <SelectInput className="mb-4 mt-2" bind:value={characterDraft.value.gptSoVitsConfig.prompt_lang}>
         <OptionInput value="auto">Multi-language Mixed</OptionInput>
         <OptionInput value="auto_yue">Multi-language Mixed (Cantonese)</OptionInput>
         <OptionInput value="en">English</OptionInput>
@@ -1455,13 +1288,7 @@
         <OptionInput value="all_ko">Korean</OptionInput>
       </SelectInput>
       <span class="text-textcolor">Top P</span>
-      <SliderInput
-        min={0.0}
-        max={1.0}
-        step={0.05}
-        fixed={2}
-        bind:value={characterDraft.value.gptSoVitsConfig.top_p}
-      />
+      <SliderInput min={0.0} max={1.0} step={0.05} fixed={2} bind:value={characterDraft.value.gptSoVitsConfig.top_p} />
 
       <span class="text-textcolor">Temperature</span>
       <SliderInput
@@ -1469,31 +1296,16 @@
         max={1.0}
         step={0.05}
         fixed={2}
-        bind:value={characterDraft.value.gptSoVitsConfig.temperature}
-      />
+        bind:value={characterDraft.value.gptSoVitsConfig.temperature} />
 
       <span class="text-textcolor">Speed</span>
-      <SliderInput
-        min={0.6}
-        max={1.65}
-        step={0.05}
-        fixed={2}
-        bind:value={characterDraft.value.gptSoVitsConfig.speed}
-      />
+      <SliderInput min={0.6} max={1.65} step={0.05} fixed={2} bind:value={characterDraft.value.gptSoVitsConfig.speed} />
 
       <span class="text-textcolor">Top K</span>
-      <SliderInput
-        min={1}
-        max={100}
-        step={1}
-        bind:value={characterDraft.value.gptSoVitsConfig.top_k}
-      />
+      <SliderInput min={1} max={100} step={1} bind:value={characterDraft.value.gptSoVitsConfig.top_k} />
 
       <span class="text-textcolor">Text Split Method</span>
-      <SelectInput
-        className="mb-4 mt-2"
-        bind:value={characterDraft.value.gptSoVitsConfig.text_split_method}
-      >
+      <SelectInput className="mb-4 mt-2" bind:value={characterDraft.value.gptSoVitsConfig.text_split_method}>
         <OptionInput value="cut0">Cut 0 (No splitting)</OptionInput>
         <OptionInput value="cut1">Cut 1 (Split every 4 sentences)</OptionInput>
         <OptionInput value="cut2">Cut 2 (Split every 50 characters)</OptionInput>
@@ -1506,10 +1318,7 @@
         <span class="text-textcolor">Loading...</span>
       {:then}
         <span class="text-textcolor">Model</span>
-        <SelectInput
-          className="mb-4 mt-2"
-          bind:value={characterDraft.value.fishSpeechConfig.model._id}
-        >
+        <SelectInput className="mb-4 mt-2" bind:value={characterDraft.value.fishSpeechConfig.model._id}>
           <OptionInput value="">Not selected</OptionInput>
           {#each fishSpeechModels as model}
             <OptionInput value={model._id}>
@@ -1525,20 +1334,14 @@
       {/await}
 
       <span class="text-textcolor">Chunk Length</span>
-      <NumberInput
-        className="mb-4 mt-2"
-        bind:value={characterDraft.value.fishSpeechConfig.chunk_length}
-      />
+      <NumberInput className="mb-4 mt-2" bind:value={characterDraft.value.fishSpeechConfig.chunk_length} />
 
       <span class="mt-2 text-textcolor">Normalize</span>
       <Check className="mb-4 mt-2" bind:check={characterDraft.value.fishSpeechConfig.normalize} />
     {/if}
     {#if characterDraft.value.ttsMode}
       <div class="flex items-center mt-2">
-        <Check
-          bind:check={characterDraft.value.ttsReadOnlyQuoted}
-          name={language.ttsReadOnlyQuoted}
-        />
+        <Check bind:check={characterDraft.value.ttsReadOnlyQuoted} name={language.ttsReadOnlyQuoted} />
       </div>
     {/if}
   {/if}
@@ -1561,8 +1364,7 @@
                   characterDraft.value.bias.push(['', 0])
                   characterDraft.value = { ...characterDraft.value }
                 }
-              }}><PlusIcon /></button
-            >
+              }}><PlusIcon /></button>
           </th>
         </tr>
         {#if characterDraft.value.bias.length === 0}
@@ -1573,21 +1375,10 @@
         {#each characterDraft.value.bias as bias, i}
           <tr class="align-middle text-center">
             <td class="font-medium truncate w-1/2">
-              <TextInput
-                fullh
-                fullwidth
-                bind:value={characterDraft.value.bias[i][0]}
-                placeholder="string"
-              />
+              <TextInput fullh fullwidth bind:value={characterDraft.value.bias[i][0]} placeholder="string" />
             </td>
             <td class="font-medium truncate w-1/3">
-              <NumberInput
-                fullh
-                fullwidth
-                bind:value={characterDraft.value.bias[i][1]}
-                max={100}
-                min={-100}
-              />
+              <NumberInput fullh fullwidth bind:value={characterDraft.value.bias[i][1]} max={100} min={-100} />
             </td>
             <td>
               <button
@@ -1597,8 +1388,7 @@
                     characterDraft.value.bias.splice(i, 1)
                     characterDraft.value = { ...characterDraft.value }
                   }
-                }}><TrashIcon /></button
-              >
+                }}><TrashIcon /></button>
             </td>
           </tr>
         {/each}
@@ -1607,11 +1397,7 @@
   </div>
 
   <span class="text-textcolor">{language.exampleMessage} <Help key="exampleMessage" /></span>
-  <TextAreaInput
-    highlight
-    margin="both"
-    autocomplete="off"
-    bind:value={characterDraft.value.exampleMessage}
+  <TextAreaInput highlight margin="both" autocomplete="off" bind:value={characterDraft.value.exampleMessage}
   ></TextAreaInput>
 
   <span class="text-textcolor">{language.creatorNotes} <Help key="creatorQuotes" /></span>
@@ -1622,70 +1408,39 @@
       updateCharacterDraft((character) => {
         character.removedQuotes = false
       })
-    }}
-  ></MultiLangInput>
+    }}></MultiLangInput>
 
   <span class="text-textcolor">{language.systemPrompt} <Help key="systemPrompt" /></span>
-  <TextAreaInput
-    highlight
-    margin="both"
-    autocomplete="off"
-    bind:value={characterDraft.value.systemPrompt}
+  <TextAreaInput highlight margin="both" autocomplete="off" bind:value={characterDraft.value.systemPrompt}
   ></TextAreaInput>
 
   <span class="text-textcolor">{language.replaceGlobalNote} <Help key="replaceGlobalNote" /></span>
-  <TextAreaInput
-    highlight
-    margin="both"
-    autocomplete="off"
-    bind:value={characterDraft.value.replaceGlobalNote}
+  <TextAreaInput highlight margin="both" autocomplete="off" bind:value={characterDraft.value.replaceGlobalNote}
   ></TextAreaInput>
 
   <span class="text-textcolor mt-2">{language.additionalText} <Help key="additionalText" /></span>
-  <TextAreaInput
-    highlight
-    margin="both"
-    autocomplete="off"
-    bind:value={characterDraft.value.additionalText}
+  <TextAreaInput highlight margin="both" autocomplete="off" bind:value={characterDraft.value.additionalText}
   ></TextAreaInput>
 
   {#if DBState.db.showUnrecommended || characterDraft.value.personality.length > 3}
-    <span class="text-textcolor"
-      >{language.personality} <Help key="personality" unrecommended /></span
-    >
-    <TextAreaInput
-      highlight
-      margin="both"
-      autocomplete="off"
-      bind:value={characterDraft.value.personality}
+    <span class="text-textcolor">{language.personality} <Help key="personality" unrecommended /></span>
+    <TextAreaInput highlight margin="both" autocomplete="off" bind:value={characterDraft.value.personality}
     ></TextAreaInput>
   {/if}
   {#if DBState.db.showUnrecommended || characterDraft.value.scenario.length > 3}
     <span class="text-textcolor">{language.scenario} <Help key="scenario" unrecommended /></span>
-    <TextAreaInput
-      highlight
-      margin="both"
-      autocomplete="off"
-      bind:value={characterDraft.value.scenario}
+    <TextAreaInput highlight margin="both" autocomplete="off" bind:value={characterDraft.value.scenario}
     ></TextAreaInput>
   {/if}
 
-  <span class="text-textcolor mt-2"
-    >{language.defaultVariables} <Help key="defaultVariables" /></span
-  >
-  <TextAreaInput margin="both" autocomplete="off" bind:value={characterDraft.value.defaultVariables}
-  ></TextAreaInput>
+  <span class="text-textcolor mt-2">{language.defaultVariables} <Help key="defaultVariables" /></span>
+  <TextAreaInput margin="both" autocomplete="off" bind:value={characterDraft.value.defaultVariables}></TextAreaInput>
 
   <span class="text-textcolor mt-2">{language.translatorNote} <Help key="translatorNote" /></span>
-  <TextAreaInput margin="both" autocomplete="off" bind:value={characterDraft.value.translatorNote}
-  ></TextAreaInput>
+  <TextAreaInput margin="both" autocomplete="off" bind:value={characterDraft.value.translatorNote}></TextAreaInput>
 
   <span class="text-textcolor">{language.creator}</span>
-  <TextInput
-    size="sm"
-    autocomplete="off"
-    bind:value={characterDraft.value.additionalData.creator}
-  />
+  <TextInput size="sm" autocomplete="off" bind:value={characterDraft.value.additionalData.creator} />
 
   <span class="text-textcolor">{language.CharVersion}</span>
   <TextInput size="sm" bind:value={characterDraft.value.additionalData.character_version} />
@@ -1715,8 +1470,7 @@
                   characterDraft.value.alternateGreetings = alternateGreetings
                   characterDraft.value = { ...characterDraft.value }
                 }
-              }}
-            >
+              }}>
               <PlusIcon />
             </button>
           </th>
@@ -1733,23 +1487,17 @@
                 highlight
                 bind:value={characterDraft.value.alternateGreetings[i]}
                 placeholder="..."
-                fullwidth
-              />
+                fullwidth />
             </td>
             <th class="font-medium cursor-pointer w-8">
               <div class="flex flex-col items-center">
-                <button
-                  class="hover:text-blue-500 p-1"
-                  onclick={() => moveAlternateGreetingUp(i)}
-                  disabled={i === 0}
-                >
+                <button class="hover:text-blue-500 p-1" onclick={() => moveAlternateGreetingUp(i)} disabled={i === 0}>
                   <ArrowUp size={16} />
                 </button>
                 <button
                   class="hover:text-blue-500 p-1"
                   onclick={() => moveAlternateGreetingDown(i)}
-                  disabled={i === characterDraft.value.alternateGreetings.length - 1}
-                >
+                  disabled={i === characterDraft.value.alternateGreetings.length - 1}>
                   <ArrowDown size={16} />
                 </button>
                 <button
@@ -1766,8 +1514,7 @@
                       characterDraft.value.alternateGreetings = alternateGreetings
                       characterDraft.value = { ...characterDraft.value }
                     }
-                  }}
-                >
+                  }}>
                   <TrashIcon size={16} />
                 </button>
               </div>
@@ -1801,8 +1548,7 @@
       onclick={() => {
         $hypaV3ModalOpen = true
       }}
-      className="mt-4"
-    >
+      className="mt-4">
       {language.hypaMemoryV3Modal}
     </Button>
   {/if}

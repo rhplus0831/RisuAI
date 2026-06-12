@@ -50,9 +50,7 @@ describe('AutoStorage Fastify app persistence', () => {
 
     const storage = new AutoStorage()
 
-    await expect(storage.getItem('database/database.bin')).resolves.toEqual(
-      Buffer.from('server-data'),
-    )
+    await expect(storage.getItem('database/database.bin')).resolves.toEqual(Buffer.from('server-data'))
 
     expect(fastifyStorageState.instances).toHaveLength(1)
     expect(fastifyStorageState.instances[0].getItem).toHaveBeenCalledWith('database/database.bin')
@@ -69,10 +67,7 @@ describe('AutoStorage Fastify app persistence', () => {
 
     expect(fastifyStorageState.instances).toHaveLength(1)
     const instance = fastifyStorageState.instances[0]
-    expect(instance.setItem).toHaveBeenCalledWith(
-      'database/database.bin',
-      new Uint8Array([1, 2, 3]),
-    )
+    expect(instance.setItem).toHaveBeenCalledWith('database/database.bin', new Uint8Array([1, 2, 3]))
     expect(instance.keys).toHaveBeenCalledTimes(1)
     expect(instance.removeItem).toHaveBeenCalledWith(['assets/a.png', 'assets/b.png'])
   })

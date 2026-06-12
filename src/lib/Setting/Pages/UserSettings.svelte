@@ -17,12 +17,7 @@
   import { cleanColdStorage } from 'src/ts/process/coldstorage.svelte'
   import type { ServerBackupProgress } from 'src/ts/server/backups'
 
-  type BackupProgressKind =
-    | 'serverSave'
-    | 'serverRestore'
-    | 'localSave'
-    | 'localZipSave'
-    | 'localRestore'
+  type BackupProgressKind = 'serverSave' | 'serverRestore' | 'localSave' | 'localZipSave' | 'localRestore'
   type OperationStatus = 'ok' | 'error' | 'unavailable' | 'cancelled'
 
   let activeBackupOperation = $state<BackupProgressKind | null>(null)
@@ -55,10 +50,7 @@
   }
 
   function finishBackupProgress(status: OperationStatus) {
-    if (
-      (status === 'cancelled' || status === 'unavailable') &&
-      get(alertStore).type === 'progress'
-    ) {
+    if ((status === 'cancelled' || status === 'unavailable') && get(alertStore).type === 'progress') {
       alertClear()
     }
   }
@@ -90,45 +82,35 @@
 <Button
   onclick={async () => {
     if (await alertConfirm(language.backupConfirm)) {
-      await runBackupOperation('serverSave', 'Creating server backup', (onProgress) =>
-        SaveServerBackup({ onProgress }),
-      )
+      await runBackupOperation('serverSave', 'Creating server backup', (onProgress) => SaveServerBackup({ onProgress }))
     }
   }}
   className="mt-2"
-  disabled={activeBackupOperation !== null}
->
+  disabled={activeBackupOperation !== null}>
   {language.saveServerBackup}
 </Button>
 
 <Button
   onclick={async () => {
-    if (
-      (await alertConfirm(language.backupLoadConfirm)) &&
-      (await alertConfirm(language.backupLoadConfirm2))
-    ) {
+    if ((await alertConfirm(language.backupLoadConfirm)) && (await alertConfirm(language.backupLoadConfirm2))) {
       await runBackupOperation('serverRestore', 'Loading server backups', (onProgress) =>
         loadInternalBackup({ onProgress }),
       )
     }
   }}
   className="mt-2"
-  disabled={activeBackupOperation !== null}
->
+  disabled={activeBackupOperation !== null}>
   {language.loadServerBackup}
 </Button>
 
 <Button
   onclick={async () => {
     if (await alertConfirm(language.backupConfirm)) {
-      await runBackupOperation('localSave', 'Saving local backup', (onProgress) =>
-        saveBackupToDevice({ onProgress }),
-      )
+      await runBackupOperation('localSave', 'Saving local backup', (onProgress) => saveBackupToDevice({ onProgress }))
     }
   }}
   className="mt-2"
-  disabled={activeBackupOperation !== null}
->
+  disabled={activeBackupOperation !== null}>
   {language.saveBackupLocal}
 </Button>
 
@@ -141,25 +123,20 @@
     }
   }}
   className="mt-2"
-  disabled={activeBackupOperation !== null}
->
+  disabled={activeBackupOperation !== null}>
   {language.saveBackupLocalZipStyle}
 </Button>
 
 <Button
   onclick={async () => {
-    if (
-      (await alertConfirm(language.backupLoadConfirm)) &&
-      (await alertConfirm(language.backupLoadConfirm2))
-    ) {
+    if ((await alertConfirm(language.backupLoadConfirm)) && (await alertConfirm(language.backupLoadConfirm2))) {
       await runBackupOperation('localRestore', 'Waiting for local backup file', (onProgress) =>
         loadBackupFromDevice({ onProgress }),
       )
     }
   }}
   className="mt-2"
-  disabled={activeBackupOperation !== null}
->
+  disabled={activeBackupOperation !== null}>
   {language.loadBackupLocal}
 </Button>
 
@@ -169,8 +146,7 @@
       cleanColdStorage()
     }
   }}
-  className="mt-2"
->
+  className="mt-2">
   {language.cleanColdStorage}
 </Button>
 

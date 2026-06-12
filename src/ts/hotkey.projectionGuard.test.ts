@@ -148,9 +148,7 @@ describe('hotkey handling under the projection guard', () => {
     setServerProjectionWriteGuardEnabled(true)
 
     // Mirror HotkeySettings.svelte: build a fresh array and apply it.
-    const next = DBState.db.hotkeys.map((hotkey, i) =>
-      i === 0 ? { ...hotkey, ctrl: true } : { ...hotkey },
-    )
+    const next = DBState.db.hotkeys.map((hotkey, i) => (i === 0 ? { ...hotkey, ctrl: true } : { ...hotkey }))
 
     expect(() => applyServerBackedSetting('hotkeys', next)).not.toThrow()
 

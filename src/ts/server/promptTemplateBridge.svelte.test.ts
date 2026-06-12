@@ -131,9 +131,7 @@ describe('applyPromptItemProjectionWrite', () => {
     const draft = draftCopy()
     draft[0] = item('p-0', 'edited')
 
-    const instrumented = withCloneInstrumentation(() =>
-      applyPromptItemProjectionWrite(draft, 'p-0'),
-    )
+    const instrumented = withCloneInstrumentation(() => applyPromptItemProjectionWrite(draft, 'p-0'))
 
     // The clone is one tiny item, never the multi-item array of large bodies.
     expect(instrumented.maxClonedSize).toBeLessThan(BIG.length)
@@ -157,13 +155,7 @@ describe('applyPromptItemProjectionWrite', () => {
     draft.push(item('p-new', 'fresh'))
     const result = applyPromptItemProjectionWrite(draft, 'p-new')
     expect(result).toEqual(item('p-new', 'fresh'))
-    expect((DBState.db.promptTemplate as PromptItem[]).map((p) => p.id)).toEqual([
-      'p-0',
-      'p-1',
-      'p-2',
-      'p-3',
-      'p-new',
-    ])
+    expect((DBState.db.promptTemplate as PromptItem[]).map((p) => p.id)).toEqual(['p-0', 'p-1', 'p-2', 'p-3', 'p-new'])
   })
 })
 
@@ -289,11 +281,7 @@ describe('flushPendingPromptTemplatePatches', () => {
   it('M8: flushes pending prompt settings patches with keepalive and clears debounce', async () => {
     ;(DBState as { db: unknown }).db = { jsonSchemaEnabled: true }
 
-    queuePromptSettingsProjectionPatch(
-      { jsonSchemaEnabled: false },
-      { jsonSchemaEnabled: true },
-      500,
-    )
+    queuePromptSettingsProjectionPatch({ jsonSchemaEnabled: false }, { jsonSchemaEnabled: true }, 500)
     flushPendingPromptTemplatePatches({ keepalive: true })
     await Promise.resolve()
 

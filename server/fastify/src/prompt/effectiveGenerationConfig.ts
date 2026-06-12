@@ -15,10 +15,7 @@ export class ChatGenerationSettingsIncompleteAssemblyError extends Error {
   readonly statusCode = 409
   readonly body: ChatGenerationSettingsIncompleteErrorBody
 
-  constructor(
-    readiness: Pick<ChatGenerationSettingsReadiness, 'missing' | 'staleSidebarToggleKeys'>,
-    chatId?: string,
-  ) {
+  constructor(readiness: Pick<ChatGenerationSettingsReadiness, 'missing' | 'staleSidebarToggleKeys'>, chatId?: string) {
     const body = createChatGenerationSettingsIncompleteError(readiness, chatId)
     super(body.message)
     this.name = 'ChatGenerationSettingsIncompleteAssemblyError'
@@ -46,9 +43,7 @@ export interface EffectiveGenerationConfigResult {
   currentChat: Chat
 }
 
-export function buildEffectiveGenerationConfig(
-  input: EffectiveGenerationConfigInput,
-): EffectiveGenerationConfigResult {
+export function buildEffectiveGenerationConfig(input: EffectiveGenerationConfigInput): EffectiveGenerationConfigResult {
   const settings = input.currentChat.generationSettings
   const presets = (input.database.botPresets ?? []) as unknown as EffectivePresetRecord[]
   const personas = (input.database.personas ?? []) as PersonaRecord[]
@@ -62,9 +57,7 @@ export function buildEffectiveGenerationConfig(
     characterModuleIds: stringArray(input.currentChar.modules),
     chatModuleIds: stringArray(input.currentChat.modules),
     moduleIntegration:
-      typeof selectedPreset?.moduleIntergration === 'string'
-        ? selectedPreset.moduleIntergration
-        : null,
+      typeof selectedPreset?.moduleIntergration === 'string' ? selectedPreset.moduleIntergration : null,
   })
 
   if (!readiness.ready) {
@@ -83,9 +76,7 @@ export function buildEffectiveGenerationConfig(
   const effectivePresetIndex = effectivePresets.findIndex(
     (candidate: EffectivePresetRecord) => candidate.id === preset.id,
   )
-  const effectivePersonaIndex = effectivePersonas.findIndex(
-    (candidate: PersonaRecord) => candidate.id === persona.id,
-  )
+  const effectivePersonaIndex = effectivePersonas.findIndex((candidate: PersonaRecord) => candidate.id === persona.id)
   const effectivePreset = effectivePresets[effectivePresetIndex] as PresetRecord | undefined
   const effectivePersona = effectivePersonas[effectivePersonaIndex] as PersonaRecord | undefined
 
@@ -122,10 +113,7 @@ export function buildEffectiveGenerationConfig(
   }
 }
 
-function findById<T extends { id?: string | null }>(
-  collection: readonly T[],
-  id: string | undefined,
-): T | undefined {
+function findById<T extends { id?: string | null }>(collection: readonly T[], id: string | undefined): T | undefined {
   if (!id) return undefined
   return collection.find((candidate) => candidate.id === id)
 }

@@ -41,9 +41,7 @@ type AlertGenerationInfoStoreData = {
   genInfo: MessageGenerationInfo
   idx: number
 }
-export const alertGenerationInfoStore = writable<AlertGenerationInfoStoreData | undefined>(
-  undefined,
-)
+export const alertGenerationInfoStore = writable<AlertGenerationInfoStoreData | undefined>(undefined)
 export const alertStore = {
   set: (d: alertData) => {
     alertStoreImported.set(d)
@@ -79,10 +77,7 @@ export function alertError(msg: unknown) {
   let submsg = ''
 
   //check if it's a known error
-  if (
-    message.includes('Failed to fetch') ||
-    message.includes('NetworkError when attempting to fetch resource.')
-  ) {
+  if (message.includes('Failed to fetch') || message.includes('NetworkError when attempting to fetch resource.')) {
     submsg = db.usePlainFetch ? language.errors.networkFetchPlain : language.errors.networkFetch
   }
 
@@ -149,8 +144,7 @@ export async function alertLogin() {
 }
 
 export async function alertSelect(msg: string[], display?: string) {
-  const message =
-    display !== undefined ? `__DISPLAY__${display}||${msg.join('||')}` : msg.join('||')
+  const message = display !== undefined ? `__DISPLAY__${display}||${msg.join('||')}` : msg.join('||')
   alertStoreImported.set({
     type: 'select',
     msg: message,
@@ -304,11 +298,7 @@ export async function alertTOS() {
   return false
 }
 
-export async function alertInput(
-  msg: string,
-  datalist?: [string, string][],
-  defaultValue?: string,
-) {
+export async function alertInput(msg: string, datalist?: [string, string][], defaultValue?: string) {
   alertStoreImported.set({
     type: 'input',
     msg: msg,

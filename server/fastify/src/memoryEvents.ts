@@ -84,10 +84,7 @@ export function buildMemoryJobEvent(
   return event
 }
 
-export function buildHypaV3ProgressSideEffect(
-  job: MemoryJob,
-  queuedCount?: number,
-): MemoryHypaV3ProgressSideEffect {
+export function buildHypaV3ProgressSideEffect(job: MemoryJob, queuedCount?: number): MemoryHypaV3ProgressSideEffect {
   const queueText = queuedCount === undefined ? '' : `${queuedCount}`
   const active = job.status === 'pending' || job.status === 'running'
   const payload: HypaV3ProgressPayload = {

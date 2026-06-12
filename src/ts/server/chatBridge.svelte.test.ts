@@ -30,8 +30,7 @@ vi.mock('./projectionWriteGuard.svelte', () => ({
 }))
 
 vi.mock('../chatCommands', () => {
-  const cloneJsonValue = <T>(value: T): T =>
-    value === undefined ? value : (JSON.parse(JSON.stringify(value)) as T)
+  const cloneJsonValue = <T>(value: T): T => (value === undefined ? value : (JSON.parse(JSON.stringify(value)) as T))
   return {
     cloneJsonValue,
     CHAT_PATCH_ALLOWED_KEYS: new Set([
@@ -282,12 +281,8 @@ describe('watchServerBackedChatMetadata baselines', () => {
     flushSync()
     flushPendingServerBackedChatPatches({ keepalive: true })
 
-    expect(recorded.chatUpdates).toEqual([
-      { chatId: 'chat-1', patch: { name: 'Unload Chat' }, keepalive: true },
-    ])
-    expect(recorded.folderUpdates).toEqual([
-      { folderId: 'folder-1', patch: { folded: true }, keepalive: true },
-    ])
+    expect(recorded.chatUpdates).toEqual([{ chatId: 'chat-1', patch: { name: 'Unload Chat' }, keepalive: true }])
+    expect(recorded.folderUpdates).toEqual([{ folderId: 'folder-1', patch: { folded: true }, keepalive: true }])
 
     await vi.advanceTimersByTimeAsync(DELAY * 10)
     expect(recorded.chatUpdates).toHaveLength(1)

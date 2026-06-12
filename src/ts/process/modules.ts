@@ -1,13 +1,5 @@
 import { language } from 'src/lang'
-import {
-  alertClear,
-  alertConfirm,
-  alertError,
-  alertModuleSelect,
-  alertNormal,
-  alertStore,
-  alertWait,
-} from '../alert'
+import { alertClear, alertConfirm, alertError, alertModuleSelect, alertNormal, alertStore, alertWait } from '../alert'
 import {
   getCurrentCharacter,
   getCurrentChat,
@@ -17,24 +9,13 @@ import {
   type loreBook,
   type triggerscript,
 } from '../storage/database.svelte'
-import {
-  AppendableBuffer,
-  downloadFile,
-  forageStorage,
-  readImage,
-  saveAssets,
-} from '../globalApi.svelte'
+import { AppendableBuffer, downloadFile, forageStorage, readImage, saveAssets } from '../globalApi.svelte'
 import { selectSingleFile, sleep } from '../util'
 import { v4 } from 'uuid'
 import { convertExternalLorebook } from './lorebook.svelte'
 import { compressImage } from '../media'
 import { decodeRPack, encodeRPack } from '../rpack/rpack_js'
-import {
-  DBState,
-  HideIconStore,
-  moduleBackgroundEmbedding,
-  reloadGuiAfterDefinitionChange,
-} from '../stores.svelte'
+import { DBState, HideIconStore, moduleBackgroundEmbedding, reloadGuiAfterDefinitionChange } from '../stores.svelte'
 import { createGlobalModule } from '../moduleCommands'
 import {
   currentLorebookStateSnapshot,
@@ -382,9 +363,7 @@ function getModuleById(id: string) {
 
 function getModuleByIds(ids: string[]) {
   const idSet = new Set(ids)
-  const modules = getDatabaseModules().filter(
-    (m) => idSet.has(m.id) || (m.namespace && idSet.has(m.namespace)),
-  )
+  const modules = getDatabaseModules().filter((m) => idSet.has(m.id) || (m.namespace && idSet.has(m.namespace)))
   return deduplicateModuleById(modules)
 }
 
@@ -597,13 +576,10 @@ export async function applyModule() {
       )
     }
     if (factories.length > 0) {
-      runOptimisticCommandSequence(
-        factories as Parameters<typeof runOptimisticCommandSequence>[0],
-        () => {
-          if (lorePrevious) restoreLorebookState(lorePrevious)
-          if (scriptPrevious) restoreScriptDefinitionState(scriptPrevious)
-        },
-      )
+      runOptimisticCommandSequence(factories as Parameters<typeof runOptimisticCommandSequence>[0], () => {
+        if (lorePrevious) restoreLorebookState(lorePrevious)
+        if (scriptPrevious) restoreScriptDefinitionState(scriptPrevious)
+      })
     }
   }
   // Keep the bridge dispatchers imported so a future change that needs the

@@ -72,9 +72,7 @@ export type BuildMemoryWindowResult =
  * marked `removable: true`. The trailing chat is promoted to
  * `unformated.lastChat` when no prompt template is in use.
  */
-export async function buildMemoryWindow(
-  args: BuildMemoryWindowArgs,
-): Promise<BuildMemoryWindowResult> {
+export async function buildMemoryWindow(args: BuildMemoryWindowArgs): Promise<BuildMemoryWindowResult> {
   const {
     nowChatroom,
     tokenizer,
@@ -96,14 +94,7 @@ export async function buildMemoryWindow(
     stageTimings.stage1Duration = Date.now() - stageTimings.stage1Start
     setProcessStage(2)
     stageTimings.stage2Start = Date.now()
-    const sp = await hypaMemoryV3(
-      chats,
-      currentTokens,
-      maxContextTokens,
-      currentChat,
-      nowChatroom,
-      tokenizer,
-    )
+    const sp = await hypaMemoryV3(chats, currentTokens, maxContextTokens, currentChat, nowChatroom, tokenizer)
     if (sp.error) {
       if (sp.memory) {
         writeLegacyHypaV3Memory(currentChat, selectedChar, selectedChat, sp.memory)
@@ -125,9 +116,7 @@ export async function buildMemoryWindow(
     stageTimings.stage1Duration = Date.now() - stageTimings.stage1Start
     while (currentTokens > maxContextTokens) {
       if (chats.length <= 1) {
-        throwError(
-          language.errors.toomuchtoken + '\n\nRequired Tokens: ' + currentTokens,
-        )
+        throwError(language.errors.toomuchtoken + '\n\nRequired Tokens: ' + currentTokens)
         return { stopSending: true }
       }
 

@@ -5,17 +5,10 @@ vi.mock('../modules', async (importActual) => {
   return { ...actual, moduleUpdate: () => {} }
 })
 
-import {
-  setDatabase,
-  type Database,
-  type character,
-} from '../../storage/database.svelte'
+import { setDatabase, type Database, type character } from '../../storage/database.svelte'
 import type { OpenAIChat } from '../index.svelte'
 import type { PromptItem } from '../prompt'
-import {
-  preflightTemplateTokens,
-  type PromptUnformatedSlots,
-} from '../promptBudget/preflightTemplateTokens'
+import { preflightTemplateTokens, type PromptUnformatedSlots } from '../promptBudget/preflightTemplateTokens'
 
 class FakeTokenizer {
   /** Returns the content-length of the message so token math is predictable. */
@@ -133,9 +126,7 @@ describe('preflightTemplateTokens - flag setters', () => {
   })
 
   it('sets hasCachePoint when a cache card is in the template', async () => {
-    const template: PromptItem[] = [
-      { type: 'cache', name: 'c', depth: 1, role: 'user' },
-    ]
+    const template: PromptItem[] = [{ type: 'cache', name: 'c', depth: 1, role: 'user' }]
     const result = await preflightTemplateTokens(
       template,
       true,
@@ -156,9 +147,7 @@ describe('preflightTemplateTokens - per-card branches', () => {
 
   it('skips a jailbreak card when db.jailbreakToggle is false', async () => {
     seedDb({ jailbreakToggle: false })
-    const template: PromptItem[] = [
-      { type: 'jailbreak', type2: 'normal', text: 'jb-content', role: 'system' },
-    ]
+    const template: PromptItem[] = [{ type: 'jailbreak', type2: 'normal', text: 'jb-content', role: 'system' }]
     const result = await preflightTemplateTokens(
       template,
       true,
@@ -172,9 +161,7 @@ describe('preflightTemplateTokens - per-card branches', () => {
 
   it('tokenizes a jailbreak card when db.jailbreakToggle is true', async () => {
     seedDb({ jailbreakToggle: true })
-    const template: PromptItem[] = [
-      { type: 'jailbreak', type2: 'normal', text: 'jb-content', role: 'system' },
-    ]
+    const template: PromptItem[] = [{ type: 'jailbreak', type2: 'normal', text: 'jb-content', role: 'system' }]
     const result = await preflightTemplateTokens(
       template,
       true,
@@ -188,9 +175,7 @@ describe('preflightTemplateTokens - per-card branches', () => {
 
   it('skips a cot card when db.chainOfThought is false', async () => {
     seedDb({ chainOfThought: false })
-    const template: PromptItem[] = [
-      { type: 'cot', type2: 'normal', text: 'cot-content', role: 'system' },
-    ]
+    const template: PromptItem[] = [{ type: 'cot', type2: 'normal', text: 'cot-content', role: 'system' }]
     const result = await preflightTemplateTokens(
       template,
       true,
@@ -373,9 +358,7 @@ describe('preflightTemplateTokens - chat card range math', () => {
     })
     const unformated = emptyUnformated()
     unformated.chats.push({ role: 'user', content: 'hi' })
-    const template: PromptItem[] = [
-      { type: 'chat', rangeStart: 0, rangeEnd: 'end', chatAsOriginalOnSystem: true },
-    ]
+    const template: PromptItem[] = [{ type: 'chat', rangeStart: 0, rangeEnd: 'end', chatAsOriginalOnSystem: true }]
     const result = await preflightTemplateTokens(
       template,
       true,

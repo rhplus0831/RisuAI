@@ -1,8 +1,4 @@
-import {
-  ReadableStream,
-  WritableStream,
-  TransformStream,
-} from 'web-streams-polyfill/ponyfill/es2018'
+import { ReadableStream, WritableStream, TransformStream } from 'web-streams-polyfill/ponyfill/es2018'
 import { Buffer as BufferPolyfill } from 'buffer'
 import { polyfill as dragPolyfill } from 'mobile-drag-drop'
 import { scrollBehaviourDragImageTranslateOverride } from 'mobile-drag-drop/scroll-behaviour'

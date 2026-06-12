@@ -56,9 +56,7 @@ const ASSET_PREFIX = 'assets'
 const ZIP_MTIME = new Date('1980-01-01T00:00:00.000Z')
 const EMPTY_CHUNK = new Uint8Array()
 
-export function buildRepositoryRisuSaveBundleExport(
-  input: RisuSaveBundleExportInput,
-): RisuSaveBundleExport {
+export function buildRepositoryRisuSaveBundleExport(input: RisuSaveBundleExportInput): RisuSaveBundleExport {
   const report = buildRisuSaveAssetReport(input.persisted.database, input.persisted.assets)
   const assetsById = new Map(input.persisted.assets.map((asset) => [asset.id, asset]))
   const includedAssets: RisuSaveBundleAssetEntry[] = []
@@ -150,24 +148,14 @@ async function writeBundleZipStream(
   try {
     await addBufferEntry(zip, readOutputReady, RISU_PATH, risuBytes)
     for (const candidate of assetCandidates) {
-      const included = await addFileEntry(
-        zip,
-        readOutputReady,
-        candidate.bundlePath,
-        candidate.diskPath,
-      )
+      const included = await addFileEntry(zip, readOutputReady, candidate.bundlePath, candidate.diskPath)
       if (included) {
         manifest.includedAssets.push({ ...candidate.asset, path: candidate.bundlePath })
       } else {
         manifest.missingFiles.push({ ...candidate.asset, path: candidate.bundlePath })
       }
     }
-    await addBufferEntry(
-      zip,
-      readOutputReady,
-      MANIFEST_PATH,
-      Buffer.from(JSON.stringify(manifest, null, 2), 'utf8'),
-    )
+    await addBufferEntry(zip, readOutputReady, MANIFEST_PATH, Buffer.from(JSON.stringify(manifest, null, 2), 'utf8'))
     zip.end()
   } catch (err) {
     zip.terminate()

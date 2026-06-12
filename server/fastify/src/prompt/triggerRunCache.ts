@@ -61,21 +61,13 @@ export function getRecentTranscriptRaw(cache: TriggerRunCache, chat: Chat, depth
   return getTranscriptEntry(cache, chat, depth).raw
 }
 
-export function getRecentTranscriptLower(
-  cache: TriggerRunCache,
-  chat: Chat,
-  depth: number,
-): string {
+export function getRecentTranscriptLower(cache: TriggerRunCache, chat: Chat, depth: number): string {
   const entry = getTranscriptEntry(cache, chat, depth)
   entry.lower ??= entry.raw.toLowerCase()
   return entry.lower
 }
 
-export function getRecentTranscriptStrictWords(
-  cache: TriggerRunCache,
-  chat: Chat,
-  depth: number,
-): Set<string> {
+export function getRecentTranscriptStrictWords(cache: TriggerRunCache, chat: Chat, depth: number): Set<string> {
   const entry = getTranscriptEntry(cache, chat, depth)
   entry.strictWords ??= new Set(entry.raw.split(' '))
   return entry.strictWords

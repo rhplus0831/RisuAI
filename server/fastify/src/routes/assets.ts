@@ -74,10 +74,7 @@ function assetUploadResponse(result: AddAssetResult): {
   }
 }
 
-function emitCreatedAssetEvents(
-  eventSink: CommandEventSink,
-  results: readonly AddAssetResult[],
-): void {
+function emitCreatedAssetEvents(eventSink: CommandEventSink, results: readonly AddAssetResult[]): void {
   const event = results.find((result) => result.event)?.event
   if (event) {
     eventSink.emit(event)
@@ -97,10 +94,7 @@ function assetExistsValidationErrorMessage(error: unknown): string {
   return hasInvalidItem ? 'ids must be sha256 hex strings' : 'ids: string[] required'
 }
 
-async function validateAssetExistsEnvelope(
-  req: { body?: unknown },
-  reply: FastifyReply,
-): Promise<void> {
+async function validateAssetExistsEnvelope(req: { body?: unknown }, reply: FastifyReply): Promise<void> {
   const body = (req.body ?? {}) as ExistsBody
   if (!Array.isArray(body.ids)) {
     reply.code(400).send({ error: 'ids: string[] required' })
@@ -156,10 +150,7 @@ export function registerAssetsRoutes(
   eventSink: CommandEventSink,
   activeWriterState: ActiveWriterState,
 ): void {
-  const requireUploadAccess = async (
-    req: Parameters<typeof requireAuth>[1],
-    reply: FastifyReply,
-  ) => {
+  const requireUploadAccess = async (req: Parameters<typeof requireAuth>[1], reply: FastifyReply) => {
     if (!(await requireAuth(authState, req, reply))) return
     requireActiveWriter(activeWriterState, req, reply)
   }
@@ -226,30 +217,26 @@ export function registerAssetsRoutes(
     },
   )
 
-  app.get<{ Params: { id: string } }>(
-    '/api/v1/assets/:id',
-    { exposeHeadRoute: false },
-    async (req, reply) => {
-      const entry = assetById(db, req.params.id)
-      if (!entry) {
-        emitAssetByteReadMetric(req.log, req.params.id, false)
-        reply.code(404).send({ error: 'not found' })
-        return
-      }
-      const file = assetPath(dataDir, entry)
-      if (!fs.existsSync(file)) {
-        emitAssetByteReadMetric(req.log, req.params.id, false)
-        reply.code(404).send({ error: 'not found' })
-        return
-      }
-      // Measurement-only: every single-asset byte read (JS-driven or a browser
-      // `<img src>` fetch) lands here, so the opt-in metric counts per-id byte
-      // read fanout at the actual byte boundary. Route behavior is unchanged.
-      emitAssetByteReadMetric(req.log, req.params.id, true, entry.contentType, entry.size)
-      applyAssetHeaders(reply, entry.contentType, entry.size)
-      return reply.send(fs.createReadStream(file))
-    },
-  )
+  app.get<{ Params: { id: string } }>('/api/v1/assets/:id', { exposeHeadRoute: false }, async (req, reply) => {
+    const entry = assetById(db, req.params.id)
+    if (!entry) {
+      emitAssetByteReadMetric(req.log, req.params.id, false)
+      reply.code(404).send({ error: 'not found' })
+      return
+    }
+    const file = assetPath(dataDir, entry)
+    if (!fs.existsSync(file)) {
+      emitAssetByteReadMetric(req.log, req.params.id, false)
+      reply.code(404).send({ error: 'not found' })
+      return
+    }
+    // Measurement-only: every single-asset byte read (JS-driven or a browser
+    // `<img src>` fetch) lands here, so the opt-in metric counts per-id byte
+    // read fanout at the actual byte boundary. Route behavior is unchanged.
+    emitAssetByteReadMetric(req.log, req.params.id, true, entry.contentType, entry.size)
+    applyAssetHeaders(reply, entry.contentType, entry.size)
+    return reply.send(fs.createReadStream(file))
+  })
 
   app.head<{ Params: { id: string } }>('/api/v1/assets/:id', async (req, reply) => {
     const entry = assetById(db, req.params.id)

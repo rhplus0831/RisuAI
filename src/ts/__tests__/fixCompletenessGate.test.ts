@@ -141,13 +141,11 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     fix: 'Cap embed batches; split contextual requests by token size',
     status: 'DONE',
     testPath: 'server/fastify/__tests__/memoryEmbedJobHandler.test.ts',
-    testName:
-      'M7: slices a contextual batch into token-aware sub-batches with per-sub-batch group ids',
+    testName: 'M7: slices a contextual batch into token-aware sub-batches with per-sub-batch group ids',
     extraTests: [
       {
         testPath: 'server/fastify/__tests__/memoryEmbedJobHandler.test.ts',
-        testName:
-          'M7: a failing contextual sub-batch is committed independently and does not fail unrelated chunks',
+        testName: 'M7: a failing contextual sub-batch is committed independently and does not fail unrelated chunks',
       },
       {
         testPath: 'server/fastify/__tests__/memoryEmbedJobHandler.test.ts',
@@ -179,8 +177,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     extraTests: [
       {
         testPath: 'server/fastify/__tests__/risuSaveBundleImportRoute.test.ts',
-        testName:
-          'caps the expanded size of the embedded database.risu even when the bundle import is unlimited (M9)',
+        testName: 'caps the expanded size of the embedded database.risu even when the bundle import is unlimited (M9)',
       },
     ],
   },
@@ -204,8 +201,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     fix: 'Settle bundle-export drain wait on close/error',
     status: 'DONE',
     testPath: 'server/fastify/__tests__/risuSaveBundleExportRoute.test.ts',
-    testName:
-      'terminates the entry loop and destroys the in-flight asset read stream on premature close',
+    testName: 'terminates the entry loop and destroys the in-flight asset read stream on premature close',
   },
   {
     id: 'M12',
@@ -360,8 +356,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     extraTests: [
       {
         testPath: 'server/fastify/__tests__/memoryWorker.test.ts',
-        testName:
-          "L17: one chat's batch is bounded to a single tick and the other chat is served next",
+        testName: "L17: one chat's batch is bounded to a single tick and the other chat is served next",
       },
     ],
   },
@@ -379,8 +374,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
       {
         testPath: 'server/fastify/__tests__/memorySummarizeJobHandler.test.ts',
-        testName:
-          'L18: an unknown chat fails with the same chat-not-found error through the scoped loader',
+        testName: 'L18: an unknown chat fails with the same chat-not-found error through the scoped loader',
       },
     ],
   },
@@ -390,8 +384,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     fix: 'Aggregate Lua exec budget across hook phases',
     status: 'DONE',
     testPath: 'server/fastify/__tests__/luaRuntime.test.ts',
-    testName:
-      'L19: runaway hooks across a trigger loop are bounded by the aggregate budget, not per-run limits',
+    testName: 'L19: runaway hooks across a trigger loop are bounded by the aggregate budget, not per-run limits',
     extraTests: [
       {
         testPath: 'server/fastify/__tests__/luaRuntime.test.ts',
@@ -409,8 +402,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     extraTests: [
       {
         testPath: 'server/fastify/__tests__/luaRuntime.test.ts',
-        testName:
-          'L20: aborting while a Lua request() egress fetch is in flight cancels the run promptly',
+        testName: 'L20: aborting while a Lua request() egress fetch is in flight cancels the run promptly',
       },
     ],
   },
@@ -420,18 +412,15 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     fix: 'Reuse engine safely or cache compiled prelude',
     status: 'DONE',
     testPath: 'server/fastify/__tests__/luaRuntime.test.ts',
-    testName:
-      'L21: a default-limit run serves from the warm pool without a hot-path boot, output identical',
+    testName: 'L21: a default-limit run serves from the warm pool without a hot-path boot, output identical',
     extraTests: [
       {
         testPath: 'server/fastify/__tests__/luaRuntime.test.ts',
-        testName:
-          'L21: pooled engines never leak Lua globals between runs (per-call isolation preserved)',
+        testName: 'L21: pooled engines never leak Lua globals between runs (per-call isolation preserved)',
       },
       {
         testPath: 'server/fastify/__tests__/luaRuntime.test.ts',
-        testName:
-          'L21: a fresh boot never overlaps an active run with a pending Lua continuation',
+        testName: 'L21: a fresh boot never overlaps an active run with a pending Lua continuation',
       },
     ],
   },
@@ -445,18 +434,15 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     extraTests: [
       {
         testPath: 'server/fastify/__tests__/anthropic.test.ts',
-        testName:
-          'L22: bounds the accumulation buffer when upstream never sends an event delimiter',
+        testName: 'L22: bounds the accumulation buffer when upstream never sends an event delimiter',
       },
       {
         testPath: 'server/fastify/__tests__/mistral.test.ts',
-        testName:
-          'L22: bounds the accumulation buffer when upstream never sends an event delimiter',
+        testName: 'L22: bounds the accumulation buffer when upstream never sends an event delimiter',
       },
       {
         testPath: 'server/fastify/__tests__/gemini.test.ts',
-        testName:
-          'L22: bounds the accumulation buffer when upstream never sends an event delimiter',
+        testName: 'L22: bounds the accumulation buffer when upstream never sends an event delimiter',
       },
       {
         testPath: 'server/fastify/__tests__/ollama.test.ts',
@@ -470,8 +456,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     fix: 'Block embedded-private IPv6 forms',
     status: 'DONE',
     testPath: 'server/fastify/__tests__/luaRuntime.test.ts',
-    testName:
-      'L23: blocks embedded-private IPv6 transition forms (mapped-hex / compatible / 6to4 / NAT64)',
+    testName: 'L23: blocks embedded-private IPv6 transition forms (mapped-hex / compatible / 6to4 / NAT64)',
   },
   {
     id: 'L24',
@@ -527,8 +512,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     fix: 'Scope/throttle script-definition watcher scans',
     status: 'DONE',
     testPath: 'src/ts/server/scriptDefinitionBridge.svelte.test.ts',
-    testName:
-      'L31: a character-scoped fire never stringifies the sibling scripts (clone cost stays scoped)',
+    testName: 'L31: a character-scoped fire never stringifies the sibling scripts (clone cost stays scoped)',
   },
   {
     id: 'L32',
@@ -536,8 +520,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     fix: 'Scope lorebook-editor clone/id-assign',
     status: 'DONE',
     testPath: 'src/ts/server/lorebookBridge.svelte.test.ts',
-    testName:
-      'L32: a character-scoped watcher first-run id ensure touches only the selected character collections',
+    testName: 'L32: a character-scoped watcher first-run id ensure touches only the selected character collections',
   },
   {
     id: 'L33',
@@ -585,8 +568,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
       {
         testPath: 'src/ts/storage/database.importPreset.test.ts',
-        testName:
-          'L37: an ST/json preset import logs nothing to console.log, unknown and missing prompts included',
+        testName: 'L37: an ST/json preset import logs nothing to console.log, unknown and missing prompts included',
       },
     ],
   },
@@ -627,8 +609,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     fix: 'Bulk hydration known-id check (fold into Phase 2 if cheap)',
     status: 'DONE',
     testPath: 'server/fastify/__tests__/serverLoadCostHarness.test.ts',
-    testName:
-      'U1: bulk chat hydration performs zero whole-corpus payload reads, missing ids included',
+    testName: 'U1: bulk chat hydration performs zero whole-corpus payload reads, missing ids included',
   },
   {
     id: 'U4',
@@ -715,10 +696,7 @@ export function collectGateProblems(entries: readonly ScheduledFix[]): string[] 
       problems.push(`${entry.id}: DONE without a registered testPath`)
       continue
     }
-    const proofs = [
-      { testPath: entry.testPath, testName: entry.testName },
-      ...(entry.extraTests ?? []),
-    ]
+    const proofs = [{ testPath: entry.testPath, testName: entry.testName }, ...(entry.extraTests ?? [])]
     for (const proof of proofs) {
       const full = path.join(ROOT, proof.testPath)
       if (!existsSync(full)) {
@@ -801,9 +779,9 @@ function riskMapRows(): RiskRow[] {
 
 /** The ids bulleted in active-risk-analysis.md's gated section. */
 function riskGatedIds(): string[] {
-  return [
-    ...sectionOf(readDoc(RISK_DOC), 'Gated / Owner-Decision').matchAll(/^- ([LU]\d+) /gm),
-  ].map((match) => match[1])
+  return [...sectionOf(readDoc(RISK_DOC), 'Gated / Owner-Decision').matchAll(/^- ([LU]\d+) /gm)].map(
+    (match) => match[1],
+  )
 }
 
 // --- The gate ---------------------------------------------------------------
@@ -826,9 +804,7 @@ describe('fix-completeness gate (stability/performance plan)', () => {
     const auditIds = auditFindingIds()
     const registeredAuditIds = ALL_REGISTERED_IDS.filter((id) => !id.startsWith('R')).sort()
 
-    const duplicates = ALL_REGISTERED_IDS.filter(
-      (id, index) => ALL_REGISTERED_IDS.indexOf(id) !== index,
-    )
+    const duplicates = ALL_REGISTERED_IDS.filter((id, index) => ALL_REGISTERED_IDS.indexOf(id) !== index)
     expect(duplicates, 'ids classified in more than one list').toEqual([])
 
     const unregistered = auditIds.filter((id) => !registeredAuditIds.includes(id))
@@ -915,9 +891,7 @@ describe('fix-completeness gate (stability/performance plan)', () => {
       ...missing,
       status: 'PLANNED',
     }
-    expect(collectGateProblems([premature])).toEqual([
-      'H1: PLANNED entries must not claim a test yet',
-    ])
+    expect(collectGateProblems([premature])).toEqual(['H1: PLANNED entries must not claim a test yet'])
 
     // Positive control: a real cross-suite path + contained string passes —
     // the negative cases above fail for the right reason, not because the
@@ -932,9 +906,7 @@ describe('fix-completeness gate (stability/performance plan)', () => {
 
   it('records a reason for every gated and no-action id', () => {
     for (const entry of [...INTENTIONALLY_GATED, ...NO_ACTION]) {
-      expect(entry.reason.trim().length, `${entry.id} needs a substantive reason`).toBeGreaterThan(
-        20,
-      )
+      expect(entry.reason.trim().length, `${entry.id} needs a substantive reason`).toBeGreaterThan(20)
     }
   })
 })

@@ -9,8 +9,7 @@
   let animationFrameId
 
   onMount(async () => {
-    const { Scene, PerspectiveCamera, WebGLRenderer, AmbientLight, DirectionalLight } =
-      await import('three')
+    const { Scene, PerspectiveCamera, WebGLRenderer, AmbientLight, DirectionalLight } = await import('three')
     const { MMDLoader } = await import('three/examples/jsm/loaders/MMDLoader')
     const { MMDAnimationHelper } = await import('three/examples/jsm/animation/MMDAnimationHelper')
 

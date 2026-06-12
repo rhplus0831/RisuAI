@@ -105,10 +105,7 @@
     }
   }
 
-  function updateSelectedPersonaField(
-    field: 'username' | 'userNote' | 'personaPrompt',
-    value: string,
-  ): void {
+  function updateSelectedPersonaField(field: 'username' | 'userNote' | 'personaPrompt', value: string): void {
     withTrustedServerProjectionWrite(() => {
       DBState.db[field] = value
     })
@@ -187,10 +184,7 @@
     })
   }
 
-  function queueSelectedPersonaUpdate(
-    previous: PersonaStateSnapshot,
-    attempted: PersonaStateSnapshot,
-  ): void {
+  function queueSelectedPersonaUpdate(previous: PersonaStateSnapshot, attempted: PersonaStateSnapshot): void {
     if (!canUseServerCommands() || suppressPersonaRollback) return
     const personaId = selectedPersonaId()
     if (!personaId) return
@@ -313,8 +307,7 @@
 {#key sorted}
   <div
     class="p-4 rounded-md border-darkborderc border mb-2 flex-wrap flex gap-2 w-full max-w-full min-w-0"
-    bind:this={ele}
-  >
+    bind:this={ele}>
     {#each DBState.db.personas as persona, i}
       <button
         data-risu-idx={i}
@@ -322,25 +315,24 @@
           runWithoutPersonaWatcher(() => {
             changeUserPersona(i)
           })
-        }}
-      >
+        }}>
         {#if persona.icon === ''}
           <div
             class="rounded-md h-20 w-20 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500"
-            class:ring-3={i === DBState.db.selectedPersona}
-          ></div>
+            class:ring-3={i === DBState.db.selectedPersona}>
+          </div>
         {:else}
           {#await getCharImage(persona.icon, 'css')}
             <div
               class="rounded-md h-20 w-20 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500"
-              class:ring-3={i === DBState.db.selectedPersona}
-            ></div>
+              class:ring-3={i === DBState.db.selectedPersona}>
+            </div>
           {:then im}
             <div
               class="rounded-md h-20 w-20 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500"
               style={im}
-              class:ring-3={i === DBState.db.selectedPersona}
-            ></div>
+              class:ring-3={i === DBState.db.selectedPersona}>
+            </div>
           {/await}
         {/if}
       </button>
@@ -348,9 +340,7 @@
     <div class="flex justify-center items-center ml-2 mr-2">
       <BaseRoundedButton
         onClick={async () => {
-          const sel = parseInt(
-            await alertSelect([language.createfromScratch, language.importCharacter]),
-          )
+          const sel = parseInt(await alertSelect([language.createfromScratch, language.importCharacter]))
           if (sel === 0) {
             const previous = currentPersonaStateSnapshot()
             const persona = {
@@ -380,9 +370,7 @@
             stroke-linecap="round"
             stroke-linejoin="round"
             stroke-width="2"
-            d="M12 6v6m0 0v6m0-6h6m-6 0H6"
-          /></svg
-        >
+            d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
       </BaseRoundedButton>
     </div>
   </div>
@@ -393,22 +381,15 @@
     <button
       onclick={() => {
         selectUserImg()
-      }}
-    >
+      }}>
       {#if DBState.db.userIcon === ''}
-        <div
-          class="rounded-md h-28 w-28 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500"
-        ></div>
+        <div class="rounded-md h-28 w-28 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500"></div>
       {:else}
         {#await getCharImage(DBState.db.userIcon, DBState.db.personas[DBState.db.selectedPersona].largePortrait ? 'lgcss' : 'css')}
-          <div
-            class="rounded-md h-28 w-28 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500"
-          ></div>
+          <div class="rounded-md h-28 w-28 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500"></div>
         {:then im}
-          <div
-            class="rounded-md h-28 w-28 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500"
-            style={im}
-          ></div>
+          <div class="rounded-md h-28 w-28 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500" style={im}>
+          </div>
         {/await}
       {/if}
     </button>
@@ -419,30 +400,20 @@
       marginBottom
       size="lg"
       placeholder="User"
-      bind:value={
-        () => DBState.db.username, (value) => updateSelectedPersonaField('username', value)
-      }
-    />
+      bind:value={() => DBState.db.username, (value) => updateSelectedPersonaField('username', value)} />
     <span class="text-sm text-textcolor2">{language.note}</span>
     {#if DBState.db.personaNote}
       <TextInput
         marginBottom
         size="lg"
-        bind:value={
-          () => DBState.db.userNote, (value) => updateSelectedPersonaField('userNote', value)
-        }
-        placeholder={`Put a unique identifier for this persona here.\nExample: [Alternate Hunters persona]`}
-      />
+        bind:value={() => DBState.db.userNote, (value) => updateSelectedPersonaField('userNote', value)}
+        placeholder={`Put a unique identifier for this persona here.\nExample: [Alternate Hunters persona]`} />
     {/if}
     <span class="text-sm text-textcolor2">{language.description}</span>
     <TextAreaInput
       autocomplete="off"
-      bind:value={
-        () => DBState.db.personaPrompt,
-        (value) => updateSelectedPersonaField('personaPrompt', value)
-      }
-      placeholder={`Put the description of this persona here.\nExample: [<user> is a 20 year old girl.]`}
-    />
+      bind:value={() => DBState.db.personaPrompt, (value) => updateSelectedPersonaField('personaPrompt', value)}
+      placeholder={`Put the description of this persona here.\nExample: [<user> is a 20 year old girl.]`} />
     <div class="flex gap-2 mt-4 max-w-full flex-wrap">
       <Button onclick={exportUserPersona}>{language.export}</Button>
       <Button onclick={importUserPersona}>{language.import}</Button>
@@ -476,14 +447,12 @@
             })
             dispatchDeletePersona(personaId, selectedId, previous)
           }
-        }}>{language.remove}</Button
-      >
+        }}>{language.remove}</Button>
       <Check
         bind:check={
           () => DBState.db.personas[DBState.db.selectedPersona].largePortrait,
           (value) => updateSelectedPersonaLargePortrait(value)
-        }>{language.largePortrait}</Check
-      >
+        }>{language.largePortrait}</Check>
     </div>
   </div>
 </div>

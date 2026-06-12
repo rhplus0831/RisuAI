@@ -71,9 +71,7 @@ export const dateTimeFormat = (main: string, time = 0) => {
     .replace(/MM/g, (date.getMonth() + 1).toString().padStart(2, '0'))
     .replace(
       /DDDD/g,
-      Math.floor(
-        (date.getTime() - new Date(date.getFullYear(), 0, 0).getTime()) / (1000 * 60 * 60 * 24),
-      ).toString(),
+      Math.floor((date.getTime() - new Date(date.getFullYear(), 0, 0).getTime()) / (1000 * 60 * 60 * 24)).toString(),
     )
     .replace(/DD/g, date.getDate().toString().padStart(2, '0'))
     .replace(/dddd/g, Intl.DateTimeFormat('en', { weekday: 'long' }).format(date))

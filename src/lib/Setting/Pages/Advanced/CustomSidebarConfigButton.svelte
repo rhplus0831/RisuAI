@@ -7,7 +7,6 @@
 <Button
   onclick={() => {
     customSideBarConfigDialogStore.open = true
-  }}
->
+  }}>
   {language.customSidebarConfig}
 </Button>

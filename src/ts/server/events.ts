@@ -176,12 +176,8 @@ async function parseReplayUnavailableResponse(
     status: 'replay-unavailable',
     error: 'event_replay_unavailable',
     currentRevision: record.currentRevision as number,
-    ...(Number.isInteger(record.oldestRevision)
-      ? { oldestRevision: record.oldestRevision as number }
-      : {}),
-    ...(Number.isInteger(record.latestRevision)
-      ? { latestRevision: record.latestRevision as number }
-      : {}),
+    ...(Number.isInteger(record.oldestRevision) ? { oldestRevision: record.oldestRevision as number } : {}),
+    ...(Number.isInteger(record.latestRevision) ? { latestRevision: record.latestRevision as number } : {}),
   }
 }
 
@@ -260,11 +256,7 @@ function isMemoryJobKind(value: unknown): value is ServerMemoryJobKind {
 
 function isMemoryJobStatus(value: unknown): value is ServerMemoryJobStatus {
   return (
-    value === 'pending' ||
-    value === 'running' ||
-    value === 'completed' ||
-    value === 'failed' ||
-    value === 'cancelled'
+    value === 'pending' || value === 'running' || value === 'completed' || value === 'failed' || value === 'cancelled'
   )
 }
 

@@ -12,10 +12,7 @@ interface ReadServerAssetOptions {
   fetchImpl?: typeof fetch
 }
 
-export async function readServerAssetBytes(
-  loc: string,
-  options: ReadServerAssetOptions = {},
-): Promise<Uint8Array> {
+export async function readServerAssetBytes(loc: string, options: ReadServerAssetOptions = {}): Promise<Uint8Array> {
   const assetUrl = serverAssetUrl(loc)
   if (!assetUrl) {
     throw new Error(`Unsupported server asset reference: ${loc}`)

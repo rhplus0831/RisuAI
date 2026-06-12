@@ -9,11 +9,7 @@ import { buildApp } from '../src/app.js'
 import { createCommandEventSink, type CommandEventSink } from '../src/commands/events.js'
 import { ACTIVE_WRITER_SESSION_HEADER } from '../src/activeWriter.js'
 import { DatabaseSync } from 'node:sqlite'
-import {
-  writePersistedWithMessages,
-  assetsDir,
-  insertAssetMetadataBatch,
-} from '../src/repository.js'
+import { writePersistedWithMessages, assetsDir, insertAssetMetadataBatch } from '../src/repository.js'
 import { openDatabase } from '../src/db.js'
 import { setupAuthedClient } from './helpers/auth.js'
 
@@ -97,9 +93,7 @@ function persistDatabaseWithAsset(dataDir: string): void {
       },
       assets: [],
     })
-    insertAssetMetadataBatch(db, [
-      { id: ASSET_ID, ext: 'png', size: ASSET_BYTES.length, contentType: 'image/png' },
-    ])
+    insertAssetMetadataBatch(db, [{ id: ASSET_ID, ext: 'png', size: ASSET_BYTES.length, contentType: 'image/png' }])
   } finally {
     db.close()
   }
@@ -311,9 +305,7 @@ describe('repository .risu bundle import route', () => {
         },
         assets: [],
       })
-      insertAssetMetadataBatch(bigDb, [
-        { id: bigId, ext: 'png', size: bigBytes.length, contentType: 'image/png' },
-      ])
+      insertAssetMetadataBatch(bigDb, [{ id: bigId, ext: 'png', size: bigBytes.length, contentType: 'image/png' }])
     } finally {
       bigDb.close()
     }
@@ -420,13 +412,8 @@ describe('repository .risu bundle import route', () => {
     // importMaxBytes is Infinity in this harness, so the inner `.risu` falls
     // back to the expanded-import cap (bodyLimit = 4 MiB). A tiny gzip that
     // expands past that must be rejected during inflate, not materialized.
-    const { encodeLegacyRisuSaveEnvelope } = await import(
-      '../src/risuSave/legacyEnvelopeCodec.js'
-    )
-    const bomb = encodeLegacyRisuSaveEnvelope(
-      { version: 1, blob: 'x'.repeat(6 * 1024 * 1024) },
-      'legacy-stream',
-    )
+    const { encodeLegacyRisuSaveEnvelope } = await import('../src/risuSave/legacyEnvelopeCodec.js')
+    const bomb = encodeLegacyRisuSaveEnvelope({ version: 1, blob: 'x'.repeat(6 * 1024 * 1024) }, 'legacy-stream')
     const zip = fflate.zipSync({
       'database.risu': bomb,
       'manifest.json': new TextEncoder().encode(JSON.stringify({ version: 1 })),

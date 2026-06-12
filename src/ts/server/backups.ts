@@ -94,9 +94,7 @@ export async function listServerBackups(
       const backups = (body as { backups?: unknown }).backups
       if (!Array.isArray(backups)) return null
       const parsed = backups.map(readBackupManifest)
-      return parsed.every((backup): backup is ServerBackupManifest => backup !== null)
-        ? parsed
-        : null
+      return parsed.every((backup): backup is ServerBackupManifest => backup !== null) ? parsed : null
     },
     map: (backups) => ({ backups }),
   })
@@ -189,11 +187,7 @@ export async function exportServerBundle(
 export async function exportServerLocalBackup(
   options?: AbortSignal | ServerBackupProgressOptions | null,
 ): Promise<ServerBackupResult<{ blob: Blob; filename: string }>> {
-  return exportServerBackupBlob(
-    LOCAL_BACKUP_EXPORT_ENDPOINT,
-    DEFAULT_LOCAL_BACKUP_FILENAME,
-    options,
-  )
+  return exportServerBackupBlob(LOCAL_BACKUP_EXPORT_ENDPOINT, DEFAULT_LOCAL_BACKUP_FILENAME, options)
 }
 
 async function exportServerBackupBlob(
@@ -232,11 +226,7 @@ async function exportServerBackupBlob(
     return { status: 'error', error: errorMessageFromBody(body, `HTTP ${response.status}`) }
   }
 
-  const blob = await readResponseBlobWithProgress(
-    response,
-    scaleProgress(onProgress, 10, 95),
-    'Downloading backup',
-  )
+  const blob = await readResponseBlobWithProgress(response, scaleProgress(onProgress, 10, 95), 'Downloading backup')
   reportProgress(onProgress, {
     phase: 'complete',
     message: 'Backup download complete',
@@ -247,9 +237,7 @@ async function exportServerBackupBlob(
   return {
     status: 'ok',
     blob,
-    filename:
-      filenameFromContentDisposition(response.headers.get('content-disposition')) ??
-      defaultFilename,
+    filename: filenameFromContentDisposition(response.headers.get('content-disposition')) ?? defaultFilename,
   }
 }
 
@@ -347,13 +335,9 @@ export async function importServerBundle(input: {
   return { status: 'ok', ...imported }
 }
 
-function reportProgress(
-  onProgress: ServerBackupProgressCallback | undefined,
-  progress: ServerBackupProgress,
-): void {
+function reportProgress(onProgress: ServerBackupProgressCallback | undefined, progress: ServerBackupProgress): void {
   if (!onProgress) return
-  const percent =
-    progress.percent === null ? null : Math.max(0, Math.min(100, Number(progress.percent)))
+  const percent = progress.percent === null ? null : Math.max(0, Math.min(100, Number(progress.percent)))
   onProgress({ ...progress, percent })
 }
 
@@ -367,9 +351,7 @@ function scaleProgress(
     reportProgress(onProgress, {
       ...progress,
       percent:
-        progress.percent === null
-          ? null
-          : start + ((end - start) * Math.max(0, Math.min(100, progress.percent))) / 100,
+        progress.percent === null ? null : start + ((end - start) * Math.max(0, Math.min(100, progress.percent))) / 100,
     })
   }
 }
@@ -404,9 +386,7 @@ async function readResponseBlobWithProgress(
 
   const contentLengthBytes = parseContentLength(response.headers.get('content-length'))
   const estimatedContentLengthBytes =
-    contentLengthBytes === null
-      ? parseContentLength(response.headers.get(ESTIMATED_BACKUP_BYTES_HEADER))
-      : null
+    contentLengthBytes === null ? parseContentLength(response.headers.get(ESTIMATED_BACKUP_BYTES_HEADER)) : null
   const totalBytes = contentLengthBytes ?? estimatedContentLengthBytes
   const estimatedTotalBytes = contentLengthBytes === null && estimatedContentLengthBytes !== null
   let loadedBytes = 0
@@ -431,8 +411,7 @@ async function readResponseBlobWithProgress(
       reportProgress(onProgress, {
         phase: 'download',
         message,
-        percent:
-          totalBytes === null ? null : downloadPercent(loadedBytes, totalBytes, estimatedTotalBytes),
+        percent: totalBytes === null ? null : downloadPercent(loadedBytes, totalBytes, estimatedTotalBytes),
         loadedBytes,
         totalBytes,
         estimatedTotalBytes,

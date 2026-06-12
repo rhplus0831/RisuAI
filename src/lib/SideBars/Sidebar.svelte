@@ -40,10 +40,7 @@
   import DevTool from './DevTool.svelte'
   import QuickSettingsGui from '../Others/QuickSettingsGUI.svelte'
   import PluginDefinedIcon from '../Others/PluginDefinedIcon.svelte'
-  import {
-    currentCharacterStateSnapshot,
-    dispatchReorderCharacters,
-  } from 'src/ts/characterCommands'
+  import { currentCharacterStateSnapshot, dispatchReorderCharacters } from 'src/ts/characterCommands'
   import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
   import { createSidebarCharacterListMemo, type SidebarCharacterListItem } from './sidebarCharList'
   import { characterRoutePath, navigate } from 'src/ts/router'
@@ -151,9 +148,7 @@
         if (mainFolderIndex !== -1) {
           const folder: folder = db.characterOrder[mainFolderIndex] as folder
           const ind =
-            mainIndex.index > targetIndex.index
-              ? folder.data.lastIndexOf(mainId)
-              : folder.data.indexOf(mainId)
+            mainIndex.index > targetIndex.index ? folder.data.lastIndexOf(mainId) : folder.data.indexOf(mainId)
           if (ind !== -1) {
             folder.data.splice(ind, 1)
           }
@@ -166,8 +161,7 @@
         for (const ord of db.characterOrder) {
           idList.push(typeof ord === 'string' ? ord : ord.id)
         }
-        const ind =
-          mainIndex.index > targetIndex.index ? idList.lastIndexOf(mainId) : idList.indexOf(mainId)
+        const ind = mainIndex.index > targetIndex.index ? idList.lastIndexOf(mainId) : idList.indexOf(mainId)
         if (ind !== -1) {
           db.characterOrder.splice(ind, 1)
         }
@@ -210,9 +204,7 @@
 
     for (const item of charImages) {
       if (item.type === 'folder') {
-        const foundChar = item.folder.find(
-          (c) => DBState.db.characters[c.index]?.chaId === characterId,
-        )
+        const foundChar = item.folder.find((c) => DBState.db.characters[c.index]?.chaId === characterId)
         if (foundChar) {
           targetFolderId = item.id
           break
@@ -263,9 +255,7 @@
       if (targetIndex.folder) {
         return
       }
-      const main = mainIndex.folder
-        ? mainFolder.data[mainIndex.index]
-        : db.characterOrder[mainIndex.index]
+      const main = mainIndex.folder ? mainFolder.data[mainIndex.index] : db.characterOrder[mainIndex.index]
       const target = db.characterOrder[targetIndex.index]
       if (typeof main !== 'string') {
         return
@@ -346,21 +336,18 @@
     class:risu-sub-sidebar={$sideBarClosing}
     class:risu-sub-sidebar-close={$sideBarClosing}
     class:hidden
-    class:flex={!hidden}
-  >
+    class:flex={!hidden}>
     <button
       class="flex items-center justify-center py-2 flex-col gap-1 w-full mt-4"
       class:text-textcolor2={!($selectedCharID < 0 && $PlaygroundStore === 0 && !$settingsOpen)}
-      onclick={openHomeRoute}
-    >
+      onclick={openHomeRoute}>
       <HomeIcon />
       <span class="text-xs">{language.home}</span>
     </button>
     <button
       class="flex items-center justify-center py-2 flex-col gap-1 w-full"
       class:text-textcolor2={!$settingsOpen}
-      onclick={openSettingsRoute}
-    >
+      onclick={openSettingsRoute}>
       <Settings />
       <span class="text-xs">{language.settings}</span>
     </button>
@@ -370,16 +357,14 @@
       onclick={() => {
         reseter()
         openGrid()
-      }}
-    >
+      }}>
       <User2Icon />
       <span class="text-xs">{language.character}</span>
     </button>
     <button
       class="flex items-center justify-center py-2 flex-col gap-1 w-full"
       class:text-textcolor2={!($selectedCharID < 0 && $PlaygroundStore !== 0)}
-      onclick={openPlaygroundRoute}
-    >
+      onclick={openPlaygroundRoute}>
       <ShellIcon />
       <span class="text-xs">{language.playground.playground}</span>
     </button>
@@ -391,8 +376,7 @@
     class:risu-sub-sidebar={$sideBarClosing}
     class:risu-sub-sidebar-close={$sideBarClosing}
     class:hidden
-    class:flex={!hidden}
-  >
+    class:flex={!hidden}>
     {#if !DBState.db.hamburgerButtonBottom}
       <button
         class="flex h-8 min-h-8 w-14 min-w-14 cursor-pointer text-white mt-2 items-center justify-center rounded-md bg-textcolor2 transition-colors hover:bg-blue-500"
@@ -404,27 +388,19 @@
       <div class="mt-2 border-b border-b-selected w-full relative text-white">
         {#if menuMode === 1}
           <div
-            class="absolute w-20 min-w-20 flex border-b-selected border-b bg-bgcolor flex-col items-center pt-2 rounded-b-md z-20 pb-2"
-          >
-            <BarIcon
-              onClick={openSettingsRoute}><Settings /></BarIcon
-            >
+            class="absolute w-20 min-w-20 flex border-b-selected border-b bg-bgcolor flex-col items-center pt-2 rounded-b-md z-20 pb-2">
+            <BarIcon onClick={openSettingsRoute}><Settings /></BarIcon>
             <div class="mt-2"></div>
-            <BarIcon
-              onClick={openHomeRoute}><HomeIcon /></BarIcon
-            >
+            <BarIcon onClick={openHomeRoute}><HomeIcon /></BarIcon>
             <div class="mt-2"></div>
-            <BarIcon
-              onClick={openPlaygroundRoute}><ShellIcon /></BarIcon
-            >
+            <BarIcon onClick={openPlaygroundRoute}><ShellIcon /></BarIcon>
             {#each additionalHamburgerMenu as menu}
               <div class="mt-2"></div>
               <BarIcon
                 onClick={() => {
                   reseter()
                   menu.callback()
-                }}
-              >
+                }}>
                 <PluginDefinedIcon ico={menu} />
               </BarIcon>
             {/each}
@@ -433,8 +409,7 @@
               onClick={() => {
                 reseter()
                 openGrid()
-              }}><LayoutGridIcon /></BarIcon
-            >
+              }}><LayoutGridIcon /></BarIcon>
           </div>
         {/if}
       </div>
@@ -459,8 +434,8 @@
             inserter(da, { index: 0 })
           }
         }}
-        ondragenter={preventAll}
-      ></div>
+        ondragenter={preventAll}>
+      </div>
       {#each charImages as char, ind}
         <div
           class="group relative flex items-center px-2"
@@ -473,11 +448,8 @@
           ondrop={(e) => {
             avatarDrop({ index: ind }, e)
           }}
-          ondragenter={preventAll}
-        >
-          <SidebarIndicator
-            isActive={char.type === 'normal' && $selectedCharID === char.index && sideBarMode !== 1}
-          />
+          ondragenter={preventAll}>
+          <SidebarIndicator isActive={char.type === 'normal' && $selectedCharID === char.index && sideBarMode !== 1} />
           <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
           <div
             role="button"
@@ -493,16 +465,14 @@
                   openCharacterRoute(char.index)
                 }
               }
-            }}
-          >
+            }}>
             {#if char.type === 'normal'}
               <SidebarAvatar
                 src={char.img ? getCharImage(char.img, 'plain') : '/none.webp'}
                 size="56"
                 rounded={IconRounded}
                 name={char.name}
-                chaId={DBState.db.characters[char.index]?.chaId}
-              />
+                chaId={DBState.db.characters[char.index]?.chaId} />
             {:else if char.type === 'folder'}
               {#key char.color}
                 {#key char.name}
@@ -539,16 +509,7 @@
                           dispatchReorderCharacters(previous)
                         }
                       } else if (sel === 1) {
-                        const colors = [
-                          'red',
-                          'green',
-                          'blue',
-                          'yellow',
-                          'indigo',
-                          'purple',
-                          'pink',
-                          'default',
-                        ]
+                        const colors = ['red', 'green', 'blue', 'yellow', 'indigo', 'purple', 'pink', 'default']
                         const sel = parseInt(await alertSelect(colors))
                         const previous = currentCharacterStateSnapshot()
                         withTrustedServerProjectionWrite(() => {
@@ -561,9 +522,7 @@
                         })
                         dispatchReorderCharacters(previous)
                       } else if (sel === 2) {
-                        const sel = parseInt(
-                          await alertSelect(['Reset to Default Image', 'Select Image File']),
-                        )
+                        const sel = parseInt(await alertSelect(['Reset to Default Image', 'Select Image File']))
                         const db = DBState.db
                         const previous = currentCharacterStateSnapshot()
                         const oder = db.characterOrder[ind]
@@ -614,8 +573,7 @@
                         openFolders.push(char.id)
                       }
                       openFolders = openFolders
-                    }}
-                  >
+                    }}>
                     {#if DBState.db.showFolderName}
                       <div class="h-full w-full flex justify-center items-center">
                         <span class="hyphens-auto truncate font-bold">{char.name}</span>
@@ -635,8 +593,7 @@
           {#key char.color}
             <div class="p-1 flex flex-col items-center py-1 mt-1 rounded-lg relative">
               <div
-                class="absolute top-0 left-1 border border-selected w-full h-full rounded-lg z-0 {char.color ===
-                'red'
+                class="absolute top-0 left-1 border border-selected w-full h-full rounded-lg z-0 {char.color === 'red'
                   ? 'bg-red-700/20'
                   : char.color === 'yellow'
                     ? 'bg-yellow-700/20'
@@ -650,8 +607,8 @@
                             ? 'bg-purple-700/20'
                             : char.color === 'pink'
                               ? 'bg-pink-700/20'
-                              : 'bg-darkbg/20'}"
-              ></div>
+                              : 'bg-darkbg/20'}">
+              </div>
               <div
                 class="h-4 min-h-4 w-14 relative z-10"
                 role="listitem"
@@ -671,8 +628,8 @@
                     inserter(da, { index: 0, folder: char.id })
                   }
                 }}
-                ondragenter={preventAll}
-              ></div>
+                ondragenter={preventAll}>
+              </div>
               {#each char.folder as char2, ind}
                 <div
                   class="group relative flex items-center px-2 z-10"
@@ -689,11 +646,8 @@
                       avatarDrop({ index: ind, folder: char.id }, e)
                     }
                   }}
-                  ondragenter={preventAll}
-                >
-                  <SidebarIndicator
-                    isActive={$selectedCharID === char2.index && sideBarMode !== 1}
-                  />
+                  ondragenter={preventAll}>
+                  <SidebarIndicator isActive={$selectedCharID === char2.index && sideBarMode !== 1} />
                   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
                   <div
                     role="button"
@@ -709,15 +663,13 @@
                           openCharacterRoute(char2.index)
                         }
                       }
-                    }}
-                  >
+                    }}>
                     <SidebarAvatar
                       src={char2.img ? getCharImage(char2.img, 'plain') : '/none.webp'}
                       size="56"
                       rounded={IconRounded}
                       name={char2.name}
-                      chaId={DBState.db.characters[char2.index]?.chaId}
-                    />
+                      chaId={DBState.db.characters[char2.index]?.chaId} />
                   </div>
                 </div>
                 <div
@@ -739,8 +691,8 @@
                       inserter(da, { index: ind + 1, folder: char.id })
                     }
                   }}
-                  ondragenter={preventAll}
-                ></div>
+                  ondragenter={preventAll}>
+                </div>
               {/each}
             </div>
           {/key}
@@ -764,8 +716,8 @@
               inserter(da, { index: ind + 1 })
             }
           }}
-          ondragenter={preventAll}
-        ></div>
+          ondragenter={preventAll}>
+        </div>
       {/each}
       <div class="flex flex-col items-center gap-2 px-2">
         <BaseRoundedButton
@@ -779,37 +731,27 @@
               stroke-linecap="round"
               stroke-linejoin="round"
               stroke-width="2"
-              d="M12 6v6m0 0v6m0-6h6m-6 0H6"
-            /></svg
-          ></BaseRoundedButton
-        >
+              d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg
+          ></BaseRoundedButton>
       </div>
     </div>
     {#if DBState.db.hamburgerButtonBottom}
       <div class="border-t border-t-selected w-full relative text-white">
         {#if menuMode === 1}
           <div
-            class="absolute bottom-full w-20 min-w-20 flex border-t-selected border-t bg-bgcolor flex-col items-center pt-2 rounded-t-md z-20 pb-2"
-          >
-            <BarIcon
-              onClick={openSettingsRoute}><Settings /></BarIcon
-            >
+            class="absolute bottom-full w-20 min-w-20 flex border-t-selected border-t bg-bgcolor flex-col items-center pt-2 rounded-t-md z-20 pb-2">
+            <BarIcon onClick={openSettingsRoute}><Settings /></BarIcon>
             <div class="mt-2"></div>
-            <BarIcon
-              onClick={openHomeRoute}><HomeIcon /></BarIcon
-            >
+            <BarIcon onClick={openHomeRoute}><HomeIcon /></BarIcon>
             <div class="mt-2"></div>
-            <BarIcon
-              onClick={openPlaygroundRoute}><ShellIcon /></BarIcon
-            >
+            <BarIcon onClick={openPlaygroundRoute}><ShellIcon /></BarIcon>
             {#each additionalHamburgerMenu as menu}
               <div class="mt-2"></div>
               <BarIcon
                 onClick={() => {
                   reseter()
                   menu.callback()
-                }}
-              >
+                }}>
                 <PluginDefinedIcon ico={menu} />
               </BarIcon>
             {/each}
@@ -818,8 +760,7 @@
               onClick={() => {
                 reseter()
                 openGrid()
-              }}><LayoutGridIcon /></BarIcon
-            >
+              }}><LayoutGridIcon /></BarIcon>
           </div>
         {/if}
       </div>
@@ -855,8 +796,7 @@
       $sideBarClosing = false
       sideBarStore.set(false)
     }
-  }}
->
+  }}>
   <button
     class="flex w-full justify-end text-textcolor"
     onclick={async () => {
@@ -864,8 +804,7 @@
         return
       }
       $sideBarClosing = true
-    }}
-  >
+    }}>
     <!-- Close icon intentionally omitted. -->
   </button>
   {#if sideBarMode === 0}
@@ -877,9 +816,7 @@
     {:else if DBState.db.characters[$selectedCharID]?.chaId === '§playground'}
       <SideChatList bind:chara={DBState.db.characters[$selectedCharID]} />
     {:else}
-      <div
-        class="w-full h-8 min-h-8 border-l border-b border-r border-selected relative bottom-6 rounded-b-md flex"
-      >
+      <div class="w-full h-8 min-h-8 border-l border-b border-r border-selected relative bottom-6 rounded-b-md flex">
         <button
           onclick={() => {
             devTool = false
@@ -889,8 +826,7 @@
           data-risu-sidebar-tab-active={!$botMakerMode && !devTool ? 'true' : 'false'}
           aria-current={!$botMakerMode && !devTool ? 'true' : undefined}
           class="grow border-r border-r-selected rounded-bl-md"
-          class:text-textcolor2={$botMakerMode || devTool}>{language.Chat}</button
-        >
+          class:text-textcolor2={$botMakerMode || devTool}>{language.Chat}</button>
         <button
           onclick={() => {
             devTool = false
@@ -900,16 +836,14 @@
           data-risu-sidebar-tab-active={$botMakerMode && !devTool ? 'true' : 'false'}
           aria-current={$botMakerMode && !devTool ? 'true' : undefined}
           class="grow rounded-br-md"
-          class:text-textcolor2={!$botMakerMode || devTool}>{language.character}</button
-        >
+          class:text-textcolor2={!$botMakerMode || devTool}>{language.character}</button>
         {#if DBState.db.enableDevTools}
           <button
             onclick={() => {
               devTool = true
             }}
             class="border-l border-l-selected rounded-br-md px-1"
-            class:text-textcolor2={!devTool}
-          >
+            class:text-textcolor2={!devTool}>
             <WrenchIcon size={18} />
           </button>
         {/if}
@@ -949,8 +883,8 @@
       }
     }}
     class:sidebar-dark-animation={!$sideBarClosing}
-    class:sidebar-dark-close-animation={$sideBarClosing}
-  ></div>
+    class:sidebar-dark-close-animation={$sideBarClosing}>
+  </div>
 {/if}
 
 <style>

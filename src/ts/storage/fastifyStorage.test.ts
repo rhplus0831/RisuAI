@@ -95,8 +95,7 @@ describe('FastifyStorage client', () => {
   it('uses only Fastify storage endpoints for persisted app data', async () => {
     const calls = captureFetch((url) => {
       if (url === '/api/v1/storage/read') return textResponse('hello')
-      if (url === '/api/v1/storage/list')
-        return jsonResponse({ content: ['database/database.bin'] })
+      if (url === '/api/v1/storage/list') return jsonResponse({ content: ['database/database.bin'] })
       return jsonResponse({ success: true })
     })
     const storage = new FastifyStorage()
@@ -117,14 +116,10 @@ describe('FastifyStorage client', () => {
     expect(calls.every((call) => call.headers['risu-auth'] === 'auth-token')).toBe(true)
     expect(calls[0].headers['file-path']).toBe(Buffer.from('database/database.bin').toString('hex'))
     expect(calls[3].headers['file-path']).toBe(
-      `${Buffer.from('coldstorage/a').toString('hex')}$$${Buffer.from('coldstorage/b').toString(
-        'hex',
-      )}`,
+      `${Buffer.from('coldstorage/a').toString('hex')}$$${Buffer.from('coldstorage/b').toString('hex')}`,
     )
     expect(calls.map((call) => call.url).some((url) => url.startsWith('/api/v1/'))).toBe(true)
-    expect(
-      calls.map((call) => call.url).some((url) => /^\/api\/(write|read|list|remove)$/.test(url)),
-    ).toBe(false)
+    expect(calls.map((call) => call.url).some((url) => /^\/api\/(write|read|list|remove)$/.test(url))).toBe(false)
   })
 
   it('sets up auth through Fastify auth and crypto endpoints', async () => {

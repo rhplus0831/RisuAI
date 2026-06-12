@@ -106,13 +106,9 @@ export function resolveBedrockRequest(input: BedrockResolveInput): BedrockReques
       ? input.maxTokens
       : DEFAULT_MAX_TOKENS
   const temperature =
-    typeof input.temperature === 'number' && Number.isFinite(input.temperature)
-      ? input.temperature
-      : undefined
-  const topP =
-    typeof input.topP === 'number' && Number.isFinite(input.topP) ? input.topP : undefined
-  const topK =
-    typeof input.topK === 'number' && Number.isFinite(input.topK) ? input.topK : undefined
+    typeof input.temperature === 'number' && Number.isFinite(input.temperature) ? input.temperature : undefined
+  const topP = typeof input.topP === 'number' && Number.isFinite(input.topP) ? input.topP : undefined
+  const topK = typeof input.topK === 'number' && Number.isFinite(input.topK) ? input.topK : undefined
   const system = typeof input.system === 'string' && input.system.length > 0 ? input.system : undefined
 
   return {

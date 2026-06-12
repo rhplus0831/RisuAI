@@ -1,11 +1,5 @@
 import { CCardLib } from '@risuai/ccardlib'
-import type {
-  Chat,
-  Database,
-  Message,
-  character,
-  loreBook,
-} from '../../../../src/ts/storage/database.svelte'
+import type { Chat, Database, Message, character, loreBook } from '../../../../src/ts/storage/database.svelte'
 import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
 import { pickHashRand } from '../../../../src/ts/util/loreHash'
 import { getActiveModules } from './modules.js'
@@ -140,9 +134,7 @@ function collectEntries(input: ActivateLorebookInput): loreBook[] {
   const { database, currentChar, currentChat } = input
   const characterLore = currentChar.globalLore ?? []
   const chatLore = currentChat.localLore ?? []
-  const moduleLore = getActiveModules(database, currentChar, currentChat).flatMap(
-    (m) => m.lorebook ?? [],
-  )
+  const moduleLore = getActiveModules(database, currentChar, currentChat).flatMap((m) => m.lorebook ?? [])
   return [...characterLore, ...chatLore, ...moduleLore]
 }
 
@@ -253,10 +245,7 @@ const SEARCH_COMMENT_RE = /\{\{\/\/(.+?)\}\}/g
 const SEARCH_COMMENT_BLOCK_RE = /\{\{comment:(.+?)\}\}/g
 
 function stripSearchText(text: string): string {
-  return text
-    .toLocaleLowerCase()
-    .replace(SEARCH_COMMENT_RE, '')
-    .replace(SEARCH_COMMENT_BLOCK_RE, '')
+  return text.toLocaleLowerCase().replace(SEARCH_COMMENT_RE, '').replace(SEARCH_COMMENT_BLOCK_RE, '')
 }
 
 function normalizeSearchableBase(input: {
@@ -315,10 +304,7 @@ function buildSearchableCorpus(
   }
 }
 
-function baseSearchEntriesForDepth(
-  corpus: SearchableMessageCorpus,
-  searchDepth: number,
-): SearchableMessageEntry[] {
+function baseSearchEntriesForDepth(corpus: SearchableMessageCorpus, searchDepth: number): SearchableMessageEntry[] {
   const cached = corpus.depthSlices.get(searchDepth)
   if (cached) return cached
 
@@ -332,10 +318,7 @@ function baseSearchEntriesForDepth(
   return sliced
 }
 
-function appendRecursiveSearchEntry(
-  corpus: SearchableMessageCorpus,
-  entry: RecursivePromptEntry,
-): void {
+function appendRecursiveSearchEntry(corpus: SearchableMessageCorpus, entry: RecursivePromptEntry): void {
   corpus.recursiveEntries.push(
     normalizeSearchableBase({
       prompt: entry.prompt,
@@ -419,11 +402,7 @@ function getCompiledLoreKeyRegex(regexString: string): RegExp | null {
  * returns false (SPA `:155`). Matched entries push into `matchLog`
  * so the caller can surface them on the `prompt` SSE event later.
  */
-function searchMatch(
-  corpus: SearchableMessageCorpus,
-  arg: SearchArg,
-  matchLog: LoreMatchLogEntry[],
-): boolean {
+function searchMatch(corpus: SearchableMessageCorpus, arg: SearchArg, matchLog: LoreMatchLogEntry[]): boolean {
   lorebookSearchEntryListInstrumentation.searchMatchCalls++
   const trimmedKeys: string[] = []
   for (const k of arg.keys) {
@@ -866,9 +845,7 @@ export function activateLorebook(input: ActivateLorebookInput): LorebookActivati
  */
 
 export function getDepthPrompts(report: LorebookActivationReport): LoreEntryActive[] {
-  return report.actives.filter(
-    (a) => (a.pos === 'depth' && a.depth > 0) || a.pos === 'reverse_depth',
-  )
+  return report.actives.filter((a) => (a.pos === 'depth' && a.depth > 0) || a.pos === 'reverse_depth')
 }
 
 const POSITION_REGEX = /\{\{position::(.+?)\}\}/g
@@ -882,11 +859,7 @@ const POSITION_REGEX = /\{\{position::(.+?)\}\}/g
  * any markers still present after the cap are stripped. Default
  * cap of 5 matches the SPA.
  */
-export function resolvePosition(
-  text: string,
-  report: LorebookActivationReport,
-  maxDepth = 5,
-): string {
+export function resolvePosition(text: string, report: LorebookActivationReport, maxDepth = 5): string {
   let result = text
   for (let i = 0; i < maxDepth; i++) {
     let replaced = false

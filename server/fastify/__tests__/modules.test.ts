@@ -1,15 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import type {
-  Chat,
-  Database,
-  character,
-  customscript,
-} from '../../../src/ts/storage/database.svelte'
+import type { Chat, Database, character, customscript } from '../../../src/ts/storage/database.svelte'
 import type { RisuModule } from '../../../src/ts/process/modules'
-import {
-  getActiveModules,
-  getModuleRegexScripts,
-} from '../src/prompt/modules.js'
+import { getActiveModules, getModuleRegexScripts } from '../src/prompt/modules.js'
 
 function makeModule(overrides: Partial<RisuModule> = {}): RisuModule {
   return {
@@ -20,11 +12,7 @@ function makeModule(overrides: Partial<RisuModule> = {}): RisuModule {
   } as RisuModule
 }
 
-function regex(
-  inPat: string,
-  out: string,
-  type: string,
-): customscript {
+function regex(inPat: string, out: string, type: string): customscript {
   return { comment: '', in: inPat, out, type, ableFlag: false }
 }
 
@@ -99,10 +87,7 @@ describe('Phase 7-6d getActiveModules', () => {
       enabledModules: [],
       moduleIntergration: 'a, c ,',
     })
-    expect(getActiveModules(db, undefined, undefined).map((m) => m.id)).toEqual([
-      'a',
-      'c',
-    ])
+    expect(getActiveModules(db, undefined, undefined).map((m) => m.id)).toEqual(['a', 'c'])
   })
 
   it('matches against module.namespace as well as module.id', () => {

@@ -18,11 +18,7 @@ const projectionGuardState = vi.hoisted(() => ({ epoch: 0 }))
 vi.mock('./commands', () => ({
   canUseServerCommands: () => true,
   runServerCommand: vi.fn(
-    async (args: {
-      command: (rev: number) => Promise<unknown>
-      rollback?: () => void
-      keepalive?: boolean
-    }) => {
+    async (args: { command: (rev: number) => Promise<unknown>; rollback?: () => void; keepalive?: boolean }) => {
       const { command } = args
       const built = await command(1)
       recorded.commands.push({
@@ -233,9 +229,7 @@ describe('watchServerBackedLorebooks — no-data-loss invariant', () => {
     flushSync()
 
     recorded.commands.length = 0
-    const applied = applyServerCharacterLorebookProjection('c1', [
-      { key: 'server', content: 'Server' },
-    ])
+    const applied = applyServerCharacterLorebookProjection('c1', [{ key: 'server', content: 'Server' }])
     expect(applied).toBe(true)
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
@@ -293,10 +287,7 @@ describe('watchServerBackedLorebooks — no-data-loss invariant', () => {
   })
 
   it('L24: global lorebook direct rollback parity routes every dispatcher through suppressed helpers', () => {
-    const source = readFileSync(
-      path.join(process.cwd(), 'src/ts/server/lorebookBridge.svelte.ts'),
-      'utf8',
-    )
+    const source = readFileSync(path.join(process.cwd(), 'src/ts/server/lorebookBridge.svelte.ts'), 'utf8')
 
     expect(exportedFunctionSource(source, 'dispatchCreateGlobalLorebook')).toContain(
       'rollback: () => rollbackServerBackedGlobalLorebooks(previous)',
@@ -505,14 +496,10 @@ function stripIdsForScopedEnsureRegression(): void {
 }
 
 function chatReplaceChatIds(): string[] {
-  return recorded.commands
-    .filter((c) => c.kind === 'replaceChat')
-    .map((c) => (c.a as { chatId?: string }).chatId ?? '')
+  return recorded.commands.filter((c) => c.kind === 'replaceChat').map((c) => (c.a as { chatId?: string }).chatId ?? '')
 }
 
-function chatReplaceCommands(): Array<
-  Record<string, unknown> & { a?: unknown; rollback?: () => void }
-> {
+function chatReplaceCommands(): Array<Record<string, unknown> & { a?: unknown; rollback?: () => void }> {
   return recorded.commands.filter((c) => c.kind === 'replaceChat')
 }
 
@@ -624,12 +611,7 @@ describe('K4 lorebook editor entry draft scope', () => {
     } as Entry
 
     const first = withCloneInstrumentation(() =>
-      applyLorebookEntryDraftEdit(
-        { kind: 'character', characterId: 'c-k4' },
-        7,
-        firstDraft as any,
-        DELAY,
-      ),
+      applyLorebookEntryDraftEdit({ kind: 'character', characterId: 'c-k4' }, 7, firstDraft as any, DELAY),
     )
 
     expect(first.result).toBe(true)
@@ -798,18 +780,13 @@ describe('K4 lorebook editor entry draft scope', () => {
   })
 
   it('K4: ModuleMenu wires external LoreBookList typing through module draft handlers', () => {
-    const source = readFileSync(
-      path.join(process.cwd(), 'src/lib/Setting/Pages/Module/ModuleMenu.svelte'),
-      'utf8',
-    )
+    const source = readFileSync(path.join(process.cwd(), 'src/lib/Setting/Pages/Module/ModuleMenu.svelte'), 'utf8')
     const lorebookList = source.slice(
       source.indexOf('<LoreBookList'),
       source.indexOf('<div class="text-textcolor2 mt-2 flex">'),
     )
 
-    expect(source).toContain(
-      "applyLorebookEntryDraftEdit({ kind: 'module', moduleId }, index, value)",
-    )
+    expect(source).toContain("applyLorebookEntryDraftEdit({ kind: 'module', moduleId }, index, value)")
     expect(source).toContain("flushPendingLorebookEntryDraftEdit({ kind: 'module', moduleId })")
     expect(lorebookList).toContain('onEntryChange={updateModuleLorebookValue}')
     expect(lorebookList).toContain('onEntrySettled={flushModuleLorebookValue}')
@@ -818,10 +795,7 @@ describe('K4 lorebook editor entry draft scope', () => {
 
   it('K4: failed entry-draft rollback restores only the edited entry', () => {
     setupK4EditorDb()
-    const previous = currentLorebookEntryScopedSnapshot(
-      { kind: 'character', characterId: 'c-k4' },
-      2,
-    )
+    const previous = currentLorebookEntryScopedSnapshot({ kind: 'character', characterId: 'c-k4' }, 2)
 
     ;(DBState.db.characters[0].globalLore as Entry[])[2].content = 'failed optimistic edit'
     ;(DBState.db.characters[0].globalLore as Entry[])[4].content = 'same collection sibling edit'
@@ -830,18 +804,14 @@ describe('K4 lorebook editor entry draft scope', () => {
     restoreLorebookEntryState(previous)
 
     expect((DBState.db.characters[0].globalLore as Entry[])[2].content).toContain('-2')
-    expect((DBState.db.characters[0].globalLore as Entry[])[4].content).toBe(
-      'same collection sibling edit',
-    )
+    expect((DBState.db.characters[0].globalLore as Entry[])[4].content).toBe('same collection sibling edit')
     expect((DBState.db.characters[1].globalLore as Entry[])[0].content).toBe('other character edit')
   })
 
   it('L27: coalesced entry-draft rollback restores the first pre-edit collection', async () => {
     setupK4EditorDb()
     const scope = { kind: 'character', characterId: 'c-k4' } as const
-    const originalContents = (DBState.db.characters[0].globalLore as Entry[]).map(
-      (entry) => entry.content,
-    )
+    const originalContents = (DBState.db.characters[0].globalLore as Entry[]).map((entry) => entry.content)
 
     applyLorebookEntryDraftEdit(
       scope,
@@ -874,9 +844,7 @@ describe('K4 lorebook editor entry draft scope', () => {
 
     cmds[0].rollback?.()
 
-    expect((DBState.db.characters[0].globalLore as Entry[]).map((entry) => entry.content)).toEqual(
-      originalContents,
-    )
+    expect((DBState.db.characters[0].globalLore as Entry[]).map((entry) => entry.content)).toEqual(originalContents)
   })
 
   it('K4: collection operations still use collection-level replacement rollback', async () => {
@@ -899,15 +867,10 @@ describe('K4 lorebook editor entry draft scope', () => {
 
     const cmds = characterReplaceCommands()
     expect(cmds).toHaveLength(1)
-    expect((cmds[0].entries as Entry[]).map((entry) => entry.id)).toEqual([
-      ...originalIds.slice(1),
-      originalIds[0],
-    ])
+    expect((cmds[0].entries as Entry[]).map((entry) => entry.id)).toEqual([...originalIds.slice(1), originalIds[0]])
     ;(DBState.db.characters[0].globalLore as Entry[])[1].content = 'collection failed edit'
     restoreLorebookState(previous)
-    expect((DBState.db.characters[0].globalLore as Entry[]).map((entry) => entry.id)).toEqual(
-      originalIds,
-    )
+    expect((DBState.db.characters[0].globalLore as Entry[]).map((entry) => entry.id)).toEqual(originalIds)
   })
 })
 
@@ -979,12 +942,8 @@ describe('watchServerBackedLorebooks — scoped change detection (Phase 6)', () 
     const stop = watchServerBackedLorebooks({ scope: { kind: 'character' }, delayMs: DELAY })
     flushSync()
 
-    const scoped = withCloneInstrumentation(() =>
-      collectLorebookCollectionSnapshots({ kind: 'character' }),
-    )
-    const whole = withCloneInstrumentation(() =>
-      collectLorebookCollectionSnapshots({ kind: 'all' }),
-    )
+    const scoped = withCloneInstrumentation(() => collectLorebookCollectionSnapshots({ kind: 'character' }))
+    const whole = withCloneInstrumentation(() => collectLorebookCollectionSnapshots({ kind: 'all' }))
 
     // The whole-DB scan stringifies every character + chat + module + global; the
     // character scope stringifies the hydrated character globalLore and reuses
@@ -1000,9 +959,7 @@ describe('watchServerBackedLorebooks — scoped change detection (Phase 6)', () 
     const stop = watchServerBackedLorebooks({ scope: { kind: 'character' }, delayMs: DELAY })
     flushSync()
 
-    const reused = withCloneInstrumentation(() =>
-      collectLorebookCollectionSnapshots({ kind: 'character' }),
-    )
+    const reused = withCloneInstrumentation(() => collectLorebookCollectionSnapshots({ kind: 'character' }))
 
     expect([...reused.result.keys()].sort()).toEqual(['chat:closed-chat', 'chat:open-chat'])
     expect(reused.jsonCloneCount).toBe(0)
@@ -1021,9 +978,7 @@ describe('watchServerBackedLorebooks — scoped change detection (Phase 6)', () 
       { key: 'closed-new', content: 'Closed replacement', id: 'closed-lore-2' },
     ] as never
 
-    const changed = withCloneInstrumentation(() =>
-      collectLorebookCollectionSnapshots({ kind: 'character' }),
-    )
+    const changed = withCloneInstrumentation(() => collectLorebookCollectionSnapshots({ kind: 'character' }))
 
     expect(changed.jsonCloneCount).toBe(1)
     expect(changed.result.get('chat:open-chat')).toBe(before.get('chat:open-chat'))
@@ -1041,9 +996,7 @@ describe('watchServerBackedLorebooks — scoped change detection (Phase 6)', () 
     collectLorebookCollectionSnapshots({ kind: 'character' })
     DBState.db.characters[0].chats = [DBState.db.characters[0].chats[0], removedChat] as never
 
-    const reappeared = withCloneInstrumentation(() =>
-      collectLorebookCollectionSnapshots({ kind: 'character' }),
-    )
+    const reappeared = withCloneInstrumentation(() => collectLorebookCollectionSnapshots({ kind: 'character' }))
 
     expect(reappeared.jsonCloneCount).toBe(1)
     expect([...reappeared.result.keys()].sort()).toEqual(['chat:closed-chat', 'chat:open-chat'])
@@ -1061,9 +1014,7 @@ describe('watchServerBackedLorebooks — scoped change detection (Phase 6)', () 
     flushSync()
 
     expect((DBState.db.characters[0].globalLore as Entry[])[0].id).toEqual(expect.any(String))
-    expect((DBState.db.characters[0].chats[0].localLore as Entry[])[0].id).toEqual(
-      expect.any(String),
-    )
+    expect((DBState.db.characters[0].chats[0].localLore as Entry[])[0].id).toEqual(expect.any(String))
     expect((DBState.db.characters[1].globalLore as Entry[])[0].id).toBeUndefined()
     expect((DBState.db.characters[1].chats[0].localLore as Entry[])[0].id).toBeUndefined()
     expect(((DBState.db.modules as any[])[0].lorebook as Entry[])[0].id).toBeUndefined()
@@ -1075,9 +1026,7 @@ describe('watchServerBackedLorebooks — scoped change detection (Phase 6)', () 
     flushSync()
 
     expect((DBState.db.characters[1].globalLore as Entry[])[0].id).toEqual(expect.any(String))
-    expect((DBState.db.characters[1].chats[0].localLore as Entry[])[0].id).toEqual(
-      expect.any(String),
-    )
+    expect((DBState.db.characters[1].chats[0].localLore as Entry[])[0].id).toEqual(expect.any(String))
     expect(((DBState.db.modules as any[])[0].lorebook as Entry[])[0].id).toBeUndefined()
     expect(((DBState.db.loreBook as any[])[0] as { id?: string }).id).toBeUndefined()
     stop()
@@ -1101,14 +1050,8 @@ describe('watchServerBackedLorebooks — scoped change detection (Phase 6)', () 
   })
 
   it('L32: the global lorebook modal mount does not call the broad id ensure', () => {
-    const source = readFileSync(
-      path.join(process.cwd(), 'src/lib/Setting/lorepreset.svelte'),
-      'utf8',
-    )
-    const mountEffect = source.slice(
-      source.indexOf('$effect'),
-      source.indexOf('function selectLorebook'),
-    )
+    const source = readFileSync(path.join(process.cwd(), 'src/lib/Setting/lorepreset.svelte'), 'utf8')
+    const mountEffect = source.slice(source.indexOf('$effect'), source.indexOf('function selectLorebook'))
 
     expect(mountEffect).toContain('ensureGlobalLorebookListIds()')
     expect(mountEffect).not.toContain('ensureAllClientLorebookIds')
@@ -1161,9 +1104,10 @@ describe('watchServerBackedLorebooks — scoped change detection (Phase 6)', () 
     const cmds = chatReplaceCommands()
     expect(cmds).toHaveLength(1)
     expect((cmds[0].a as { chatId?: string }).chatId).toBe('closed-chat')
-    expect(
-      ((cmds[0].a as { entries?: Entry[] }).entries ?? []).map((entry) => entry.content),
-    ).toEqual(['Closed lore', 'Non-open replacement'])
+    expect(((cmds[0].a as { entries?: Entry[] }).entries ?? []).map((entry) => entry.content)).toEqual([
+      'Closed lore',
+      'Non-open replacement',
+    ])
     stop()
   })
 
@@ -1185,9 +1129,9 @@ describe('watchServerBackedLorebooks — scoped change detection (Phase 6)', () 
 
     const directCmds = chatReplaceCommands()
     expect(directCmds).toHaveLength(1)
-    expect(
-      ((directCmds[0].a as { entries?: Entry[] }).entries ?? []).map((entry) => entry.content),
-    ).toEqual(['Draft B'])
+    expect(((directCmds[0].a as { entries?: Entry[] }).entries ?? []).map((entry) => entry.content)).toEqual([
+      'Draft B',
+    ])
 
     recorded.commands.length = 0
     closedChat.localLore = [
@@ -1199,9 +1143,10 @@ describe('watchServerBackedLorebooks — scoped change detection (Phase 6)', () 
 
     const cmds = chatReplaceCommands()
     expect(cmds).toHaveLength(1)
-    expect(
-      ((cmds[0].a as { entries?: Entry[] }).entries ?? []).map((entry) => entry.content),
-    ).toEqual(['Draft B', 'Queued C'])
+    expect(((cmds[0].a as { entries?: Entry[] }).entries ?? []).map((entry) => entry.content)).toEqual([
+      'Draft B',
+      'Queued C',
+    ])
 
     cmds[0].rollback?.()
     expect((closedChat.localLore as Entry[]).map((entry) => entry.content)).toEqual(['Draft B'])

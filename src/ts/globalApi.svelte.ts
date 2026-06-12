@@ -1,12 +1,6 @@
 import { checkNullish } from './util'
 import { get } from 'svelte/store'
-import {
-  type Database,
-  defaultSdDataFunc,
-  getDatabase,
-  appVer,
-  getCurrentCharacter,
-} from './storage/database.svelte'
+import { type Database, defaultSdDataFunc, getDatabase, appVer, getCurrentCharacter } from './storage/database.svelte'
 import { checkRisuUpdate } from './update'
 import {
   MobileGUI,
@@ -21,12 +15,7 @@ import {
 import { loadPlugins } from './plugins/plugins.svelte'
 import { alertError, alertMd, alertNormal, alertSelect, alertTOS, waitAlert } from './alert'
 import { characterURLImport } from './characterCards'
-import {
-  defaultJailbreak,
-  defaultMainPrompt,
-  oldJailbreak,
-  oldMainPrompt,
-} from './storage/defaultPrompts'
+import { defaultJailbreak, defaultMainPrompt, oldJailbreak, oldMainPrompt } from './storage/defaultPrompts'
 import { AutoStorage } from './storage/autoStorage'
 import { updateAnimationSpeed } from './gui/animation'
 import { updateColorScheme, updateTextThemeAndCSS } from './gui/colorscheme'
@@ -37,16 +26,9 @@ import { initMobileGesture } from './hotkey'
 import { moduleUpdate } from './process/modules'
 import { makeColdData } from './process/coldstorage.svelte'
 import { isLocalNetworkUrl } from './network/localNetwork'
-import {
-  decodeProxyJobWsChunk,
-  formatProxyStreamErrorMessage,
-  parseProxyJobWsEvent,
-} from './network/proxyJobWs'
+import { decodeProxyJobWsChunk, formatProxyStreamErrorMessage, parseProxyJobWsEvent } from './network/proxyJobWs'
 import { getNodeServerProxyAuth } from './storage/fastifyStorage'
-import {
-  activeWriterSessionHeader,
-  handleActiveWriterStaleResponse,
-} from './server/activeWriterSession'
+import { activeWriterSessionHeader, handleActiveWriterStaleResponse } from './server/activeWriterSession'
 import { setCachedServerCommandRevision } from './server/commands'
 import { currentChatSelectionSnapshot, dispatchSelectChat } from './chatCommands'
 import {
@@ -190,9 +172,7 @@ function assetExtensionFromFileName(fileName: string): string {
   return fileExtension
 }
 
-function chunkServerAssetUploads(
-  assets: readonly PreparedServerAssetUpload[],
-): PreparedServerAssetUpload[][] {
+function chunkServerAssetUploads(assets: readonly PreparedServerAssetUpload[]): PreparedServerAssetUpload[][] {
   const chunks: PreparedServerAssetUpload[][] = []
   let chunk: PreparedServerAssetUpload[] = []
   let chunkBytes = 0
@@ -218,9 +198,7 @@ function chunkServerAssetUploads(
   return chunks
 }
 
-async function uploadServerAssetsBatch(
-  assets: readonly PreparedServerAssetUpload[],
-): Promise<string[]> {
+async function uploadServerAssetsBatch(assets: readonly PreparedServerAssetUpload[]): Promise<string[]> {
   if (assets.length === 0) return []
   if (assets.length === 1) {
     const [asset] = assets
@@ -463,8 +441,7 @@ export function addFetchLog(arg: {
   fetchLog.unshift({
     body: typeof arg.body === 'string' ? arg.body : JSON.stringify(arg.body, null, 2),
     header: JSON.stringify(arg.headers ?? {}, null, 2),
-    response:
-      typeof arg.response === 'string' ? arg.response : JSON.stringify(arg.response, null, 2),
+    response: typeof arg.response === 'string' ? arg.response : JSON.stringify(arg.response, null, 2),
     responseType: arg.resType ?? 'json',
     success: arg.success,
     date: new Date().toLocaleTimeString(),
@@ -482,10 +459,7 @@ export function addFetchLog(arg: {
  * @param {GlobalFetchArgs} [arg={}] - The arguments for the fetch request.
  * @returns {Promise<GlobalFetchResult>} - The result of the fetch request.
  */
-export async function globalFetch(
-  url: string,
-  arg: GlobalFetchArgs = {},
-): Promise<GlobalFetchResult> {
+export async function globalFetch(url: string, arg: GlobalFetchArgs = {}): Promise<GlobalFetchResult> {
   try {
     const db = getDatabase()
     if (arg.abortSignal?.aborted) {
@@ -510,8 +484,7 @@ export async function globalFetch(
     }
 
     const timeoutSignal = buildTimeoutSignal(arg.abortSignal, arg.requestTimeoutMs)
-    const requestArg =
-      timeoutSignal.signal === arg.abortSignal ? arg : { ...arg, abortSignal: timeoutSignal.signal }
+    const requestArg = timeoutSignal.signal === arg.abortSignal ? arg : { ...arg, abortSignal: timeoutSignal.signal }
 
     try {
       if (useLocalNetworkRoute) {
@@ -542,13 +515,7 @@ export async function globalFetch(
  * @param {string} url - The URL of the fetch request.
  * @param {GlobalFetchArgs} arg - The arguments for the fetch request.
  */
-function addFetchLogInGlobalFetch(
-  response: any,
-  success: boolean,
-  url: string,
-  arg: GlobalFetchArgs,
-  status?: number,
-) {
+function addFetchLogInGlobalFetch(response: any, success: boolean, url: string, arg: GlobalFetchArgs, status?: number) {
   try {
     fetchLog.unshift({
       body: JSON.stringify(arg.body, null, 2),
@@ -594,9 +561,7 @@ async function fetchWithPlainFetch(url: string, arg: GlobalFetchArgs): Promise<G
       method: arg.method ?? 'POST',
       signal: arg.abortSignal,
     })
-    const data = arg.rawResponse
-      ? new Uint8Array(await response.arrayBuffer())
-      : await response.json()
+    const data = arg.rawResponse ? new Uint8Array(await response.arrayBuffer()) : await response.json()
     const ok = response.ok && response.status >= 200 && response.status < 300
     addFetchLogInGlobalFetch(data, ok, url, arg, response.status)
     return { ok, data, headers: Object.fromEntries(response.headers), status: response.status }
@@ -621,9 +586,7 @@ async function fetchWithUSFetch(url: string, arg: GlobalFetchArgs): Promise<Glob
       method: arg.method ?? 'POST',
       signal: arg.abortSignal,
     })
-    const data = arg.rawResponse
-      ? new Uint8Array(await response.arrayBuffer())
-      : await response.json()
+    const data = arg.rawResponse ? new Uint8Array(await response.arrayBuffer()) : await response.json()
     const ok = response.ok && response.status >= 200 && response.status < 300
     addFetchLogInGlobalFetch(data, ok, url, arg, response.status)
     return { ok, data, headers: Object.fromEntries(response.headers), status: response.status }
@@ -649,10 +612,7 @@ async function fetchWithProxy(url: string, arg: GlobalFetchArgs): Promise<Global
     const headers = {
       'risu-header': encodeURIComponent(JSON.stringify(arg.headers)),
       'risu-url': encodeURIComponent(url),
-      'Content-Type':
-        arg.body instanceof URLSearchParams
-          ? 'application/x-www-form-urlencoded'
-          : 'application/json',
+      'Content-Type': arg.body instanceof URLSearchParams ? 'application/x-www-form-urlencoded' : 'application/json',
       ...(arg.useRisuToken && { 'x-risu-tk': 'use' }),
       ...(arg.requestTimeoutMs && {
         'risu-timeout-ms': Math.max(1, Math.floor(arg.requestTimeoutMs)).toString(),
@@ -661,8 +621,7 @@ async function fetchWithProxy(url: string, arg: GlobalFetchArgs): Promise<Global
       ...(DBState?.db?.requestLocation && { 'risu-location': DBState.db.requestLocation }),
     }
 
-    const body =
-      arg.body instanceof URLSearchParams ? arg.body.toString() : JSON.stringify(arg.body)
+    const body = arg.body instanceof URLSearchParams ? arg.body.toString() : JSON.stringify(arg.body)
 
     const response = await fetch(furl, {
       body,
@@ -1350,8 +1309,7 @@ export async function fetchNative(
         signal: requestSignal,
       })
     } else if (throughProxy) {
-      const useProxyJobWs =
-        arg.interceptor === 'openai_streaming' && arg.method === 'POST' && useLocalNetworkRoute
+      const useProxyJobWs = arg.interceptor === 'openai_streaming' && arg.method === 'POST' && useLocalNetworkRoute
       const nodeProxyAuth = await getNodeServerProxyAuth()
 
       if (useProxyJobWs) {
@@ -1498,9 +1456,7 @@ export interface LoadInternalBackupOptions {
 
 export type LoadInternalBackupStatus = 'ok' | 'error' | 'unavailable' | 'cancelled'
 
-export async function loadInternalBackup(
-  options: LoadInternalBackupOptions = {},
-): Promise<LoadInternalBackupStatus> {
+export async function loadInternalBackup(options: LoadInternalBackupOptions = {}): Promise<LoadInternalBackupStatus> {
   reportInternalBackupProgress(options.onProgress, {
     phase: 'request',
     message: 'Loading server backups',
@@ -1555,8 +1511,7 @@ function reportInternalBackupProgress(
   if (!onProgress) return
   onProgress({
     ...progress,
-    percent:
-      progress.percent === null ? null : Math.max(0, Math.min(100, Number(progress.percent))),
+    percent: progress.percent === null ? null : Math.max(0, Math.min(100, Number(progress.percent))),
   })
 }
 
@@ -1570,9 +1525,7 @@ function scaleInternalBackupProgress(
     reportInternalBackupProgress(onProgress, {
       ...progress,
       percent:
-        progress.percent === null
-          ? null
-          : start + ((end - start) * Math.max(0, Math.min(100, progress.percent))) / 100,
+        progress.percent === null ? null : start + ((end - start) * Math.max(0, Math.min(100, progress.percent))) / 100,
     })
   }
 }
@@ -1858,9 +1811,7 @@ $effect.root(() => {
       return chatFoldedState.data?.targetMessageId === v.chatId
     })
     if (messageIndex === -1) {
-      console.warn(
-        'Target message for folding id' + chatFoldedState.data?.targetMessageId + ' not found',
-      )
+      console.warn('Target message for folding id' + chatFoldedState.data?.targetMessageId + ' not found')
       chatFoldedStateMessageIndex.index = -1
       return
     }

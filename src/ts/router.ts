@@ -307,9 +307,7 @@ export function parseRoute(pathname: string): AppRoute {
 
 export function characterRoutePath(characterId: string, chatId?: string): string {
   const encodedCharacterId = encodeURIComponent(characterId)
-  return chatId
-    ? `/character/${encodedCharacterId}/${encodeURIComponent(chatId)}`
-    : `/character/${encodedCharacterId}`
+  return chatId ? `/character/${encodedCharacterId}/${encodeURIComponent(chatId)}` : `/character/${encodedCharacterId}`
 }
 
 function routePathFromState(input: StateRouteInput): string {

@@ -1,9 +1,6 @@
 import type { Database } from '../../../src/ts/storage/database.svelte'
 import { LLMFormat, type LLMFormat as LLMFormatValue } from '../../../src/ts/model/types'
-import {
-  type OpenAICompatibleOptions,
-  type OpenAICompatibleProvider,
-} from './generation/openaiCompatible.js'
+import { type OpenAICompatibleOptions, type OpenAICompatibleProvider } from './generation/openaiCompatible.js'
 
 interface CustomModelEntry {
   id?: unknown
@@ -32,10 +29,7 @@ export type ResolveMemorySummaryModelResult =
   | { ok: true; request: MemorySummaryModelRequest }
   | { ok: false; error: string }
 
-export function resolveMemorySummaryModel(
-  db: Database,
-  requestedModel: string,
-): ResolveMemorySummaryModelResult {
+export function resolveMemorySummaryModel(db: Database, requestedModel: string): ResolveMemorySummaryModelResult {
   if (requestedModel !== 'subModel') {
     return {
       ok: false,
@@ -136,10 +130,7 @@ function resolveModelInfo(db: Database, aiModel: string): ModelInfoLite {
   return { id: aiModel, format: LLMFormat.OpenAICompatible }
 }
 
-function resolveProvider(
-  aiModel: string,
-  info: ModelInfoLite,
-): OpenAICompatibleProvider | string | null {
+function resolveProvider(aiModel: string, info: ModelInfoLite): OpenAICompatibleProvider | string | null {
   if (info.format === LLMFormat.NanoGPT) return 'nanogpt'
   if (info.format !== LLMFormat.OpenAICompatible) return null
   if (aiModel === 'openrouter') return 'openrouter'
@@ -188,10 +179,7 @@ function resolveProviderOptions(
   }
   if (aiModel === 'reverse_proxy') {
     const rawUrl = asString(db.forceReplaceUrl) ?? ''
-    const { baseUrl, risuIdentify } = resolveReverseProxyUrl(
-      rawUrl,
-      db.autofillRequestUrl !== false,
-    )
+    const { baseUrl, risuIdentify } = resolveReverseProxyUrl(rawUrl, db.autofillRequestUrl !== false)
     return {
       openai: {
         apiKey: db.proxyKey,

@@ -12,14 +12,8 @@
     otherAx: string
   }
 
-  const seperateModelsForAxModelsDraft = createServerBackedSettingDraft<boolean>(
-    'seperateModelsForAxModels',
-    false,
-  )
-  const doNotChangeSeperateModelsDraft = createServerBackedSettingDraft<boolean>(
-    'doNotChangeSeperateModels',
-    false,
-  )
+  const seperateModelsForAxModelsDraft = createServerBackedSettingDraft<boolean>('seperateModelsForAxModels', false)
+  const doNotChangeSeperateModelsDraft = createServerBackedSettingDraft<boolean>('doNotChangeSeperateModels', false)
   const seperateModelsDraft = createServerBackedSettingDraft<AuxModelSettings>('seperateModels', {
     memory: '',
     translate: '',
@@ -29,12 +23,10 @@
 </script>
 
 <div class="flex items-center mt-4">
-  <Check bind:check={seperateModelsForAxModelsDraft.value} name={language.seperateModelsForAxModels}
-  ></Check>
+  <Check bind:check={seperateModelsForAxModelsDraft.value} name={language.seperateModelsForAxModels}></Check>
 </div>
 {#if seperateModelsForAxModelsDraft.value}
-  <Check bind:check={doNotChangeSeperateModelsDraft.value} name={language.doNotChangeSeperateModels}
-  ></Check>
+  <Check bind:check={doNotChangeSeperateModelsDraft.value} name={language.doNotChangeSeperateModels}></Check>
   <Accordion name={language.axModelsDef} styled>
     <span class="text-textcolor mt-4"> Memory </span>
     <ModelList bind:value={seperateModelsDraft.value.memory} blankable />

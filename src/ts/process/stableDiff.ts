@@ -87,11 +87,7 @@ export async function loadStableDiffReferenceImageForTests(
   })
 }
 
-export async function stableDiff(
-  currentChar: character,
-  prompt: string,
-  options: ImageGenerationOptions = {},
-) {
+export async function stableDiff(currentChar: character, prompt: string, options: ImageGenerationOptions = {}) {
   let db = getDatabase()
 
   if (db.sdProvider === '') {
@@ -252,8 +248,7 @@ export async function generateAIImage(
               ? db.NAIImgConfig.sm
               : undefined,
           sm_dyn:
-            db.NAIImgModel.includes('nai-diffusion-3') ||
-            db.NAIImgModel.includes('nai-diffusion-furry-3')
+            db.NAIImgModel.includes('nai-diffusion-3') || db.NAIImgModel.includes('nai-diffusion-furry-3')
               ? db.NAIImgConfig.sm_dyn
               : undefined,
           noise_schedule: db.NAIImgConfig.noise_schedule,
@@ -318,10 +313,7 @@ export async function generateAIImage(
         commonReq.body.parameters.skip_cfg_above_sigma =
           Math.sqrt(db.NAIImgConfig.width * db.NAIImgConfig.height) * 0.01889
       }
-      if (
-        db.NAIImgModel.includes('nai-diffusion-4-5-full') ||
-        db.NAIImgModel.includes('nai-diffusion-4-5-curated')
-      ) {
+      if (db.NAIImgModel.includes('nai-diffusion-4-5-full') || db.NAIImgModel.includes('nai-diffusion-4-5-curated')) {
         commonReq.body.parameters.skip_cfg_above_sigma =
           Math.sqrt(db.NAIImgConfig.width * db.NAIImgConfig.height) * 0.05766
       }
@@ -356,8 +348,7 @@ export async function generateAIImage(
         let encodingKey = db.NAIImgConfig.vibe_model_selection
           ? Object.keys(vibeData.encodings[modelKey]).find(
               (key) =>
-                vibeData.encodings[modelKey][key].params.information_extracted ===
-                (db.NAIImgConfig.InfoExtracted || 1),
+                vibeData.encodings[modelKey][key].params.information_extracted === (db.NAIImgConfig.InfoExtracted || 1),
             )
           : Object.keys(vibeData.encodings[modelKey])[0]
 
@@ -368,8 +359,7 @@ export async function generateAIImage(
 
           // Add reference_strength_multiple if it exists
           const strength =
-            db.NAIImgConfig.reference_strength_multiple &&
-            db.NAIImgConfig.reference_strength_multiple.length > 0
+            db.NAIImgConfig.reference_strength_multiple && db.NAIImgConfig.reference_strength_multiple.length > 0
               ? db.NAIImgConfig.reference_strength_multiple[0]
               : 0.5
           commonReq.body.parameters.reference_strength_multiple.push(strength)
@@ -379,8 +369,7 @@ export async function generateAIImage(
 
     if (
       db.NAIImgConfig.reference_mode === 'character' &&
-      (db.NAIImgModel.includes('nai-diffusion-4-5-full') ||
-        db.NAIImgModel.includes('nai-diffusion-4-5-curated'))
+      (db.NAIImgModel.includes('nai-diffusion-4-5-full') || db.NAIImgModel.includes('nai-diffusion-4-5-curated'))
     ) {
       let base64img = ''
       if (!db.NAIImgConfig.character_image || db.NAIImgConfig.character_image === '') {
@@ -611,9 +600,7 @@ export async function generateAIImage(
     const baseUrl = new URL(db.comfyUiUrl)
 
     const createUrl = (pathname: string, params: Record<string, string> = {}) => {
-      const url = db.comfyUiUrl.endsWith('/api')
-        ? new URL(`${db.comfyUiUrl}${pathname}`)
-        : new URL(pathname, baseUrl)
+      const url = db.comfyUiUrl.endsWith('/api') ? new URL(`${db.comfyUiUrl}${pathname}`) : new URL(pathname, baseUrl)
       url.search = new URLSearchParams(params).toString()
       return url.toString()
     }

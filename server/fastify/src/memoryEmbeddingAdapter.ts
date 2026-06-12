@@ -60,11 +60,7 @@ export async function embedTexts(
   if (input.some((value) => typeof value !== 'string')) {
     return { error: 'embedding input must contain only strings', code: 'configuration' }
   }
-  const sizeViolation = findMemoryEmbeddingLimitViolation(
-    opts.request,
-    input,
-    (index) => `embedding input ${index}`,
-  )
+  const sizeViolation = findMemoryEmbeddingLimitViolation(opts.request, input, (index) => `embedding input ${index}`)
   if (sizeViolation) {
     return {
       error: formatMemoryEmbeddingLimitViolation(sizeViolation),
@@ -102,8 +98,7 @@ export async function embedTexts(
   }
 
   if (!response.ok) {
-    const upstreamMsg =
-      typeof json.error?.message === 'string' ? json.error.message : `HTTP ${response.status}`
+    const upstreamMsg = typeof json.error?.message === 'string' ? json.error.message : `HTTP ${response.status}`
     return { error: upstreamMsg, code: 'upstream' }
   }
 
@@ -128,9 +123,7 @@ export async function embedTexts(
 
 export async function embedTextGroups(
   opts: EmbedTextGroupsOptions,
-): Promise<
-  { model: string; groups: Float32Array[][]; dim: number } | MemoryEmbeddingProviderError
-> {
+): Promise<{ model: string; groups: Float32Array[][]; dim: number } | MemoryEmbeddingProviderError> {
   const groups = opts.groups.map((group) => [...group])
   if (groups.length === 0) {
     return { error: 'contextual embedding groups must not be empty', code: 'configuration' }
@@ -214,8 +207,7 @@ export async function embedTextGroups(
   }
 
   if (!response.ok) {
-    const upstreamMsg =
-      typeof json.error?.message === 'string' ? json.error.message : `HTTP ${response.status}`
+    const upstreamMsg = typeof json.error?.message === 'string' ? json.error.message : `HTTP ${response.status}`
     return { error: upstreamMsg, code: 'upstream' }
   }
 
@@ -258,19 +250,12 @@ function normalizeEmbeddingData(
   }
 
   const vectors = new Array<Float32Array>(expectedCount)
-  const hasIndexes = rawData.some(
-    (item) => typeof (item as EmbeddingResponseItem)?.index === 'number',
-  )
+  const hasIndexes = rawData.some((item) => typeof (item as EmbeddingResponseItem)?.index === 'number')
 
   for (let i = 0; i < rawData.length; i += 1) {
     const item = rawData[i] as EmbeddingResponseItem
     const rawIndex = hasIndexes ? item.index : i
-    if (
-      typeof rawIndex !== 'number' ||
-      !Number.isInteger(rawIndex) ||
-      rawIndex < 0 ||
-      rawIndex >= expectedCount
-    ) {
+    if (typeof rawIndex !== 'number' || !Number.isInteger(rawIndex) || rawIndex < 0 || rawIndex >= expectedCount) {
       return { error: 'embedding response contains an invalid index', code: 'invalid-response' }
     }
     const index = rawIndex

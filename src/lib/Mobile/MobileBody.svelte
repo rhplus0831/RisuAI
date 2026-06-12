@@ -16,15 +16,13 @@
 
 {#if $MobileSideBar > 0 && !$isLite}
   <div
-    class="w-full px-2 py-1 text-textcolor2 border-b border-b-darkborderc bg-darkbg flex justify-start items-center gap-2"
-  >
+    class="w-full px-2 py-1 text-textcolor2 border-b border-b-darkborderc bg-darkbg flex justify-start items-center gap-2">
     <button
       class="flex-1 border-r border-r-darkborderc"
       class:text-textcolor={$MobileSideBar === 1}
       onclick={() => {
         $MobileSideBar = 1
-      }}
-    >
+      }}>
       {language.Chat}
     </button>
     <button
@@ -32,16 +30,14 @@
       class:text-textcolor={$MobileSideBar === 2}
       onclick={() => {
         $MobileSideBar = 2
-      }}
-    >
+      }}>
       {language.character}
     </button>
     <button
       class:text-textcolor={$MobileSideBar === 3}
       onclick={() => {
         $MobileSideBar = 3
-      }}
-    >
+      }}>
       <WrenchIcon size={18} />
     </button>
   </div>

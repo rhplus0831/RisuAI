@@ -25,8 +25,7 @@ export const languageKorean = {
     networkFetch: '네트워크가 불안정하거나 서버가 응답하지 않을 때 자주 발생합니다.',
     networkFetchWeb:
       '브라우저 제한으로 인한 CORS 오류일 수 있습니다. 요청이 서버 측 프록시를 통해 전달되도록 Fastify 서버에서 RisuAI를 실행하세요.',
-    networkFetchPlain:
-      '이것은 요청 오류일 수 있습니다. 설정에서 직접 요청 보내기 옵션을 비활성화해 보세요.',
+    networkFetchPlain: '이것은 요청 오류일 수 있습니다. 설정에서 직접 요청 보내기 옵션을 비활성화해 보세요.',
     requestLogRemoved: '요청 로그가 삭제되었습니다.',
     requestLogRemovedDesc: '요청 로그는 앱이 재시작되거나 새로고침되면 삭제됩니다.',
     vertexAuthError: 'Vertex AI 인증 정보가 누락되었습니다.',
@@ -36,10 +35,8 @@ export const languageKorean = {
   showHelp: '도움말 보기',
   help: {
     model: '채팅에서 사용되는 모델입니다.',
-    submodel:
-      '보조 모델은 감정 이미지, 자동 제안등을 분석하는 데 사용되는 모델입니다. gpt3.5가 권장됩니다.',
-    oaiapikey:
-      'OpenAI용 API 키입니다. https://platform.openai.com/account/api-keys에서 구하실 수 있습니다.',
+    submodel: '보조 모델은 감정 이미지, 자동 제안등을 분석하는 데 사용되는 모델입니다. gpt3.5가 권장됩니다.',
+    oaiapikey: 'OpenAI용 API 키입니다. https://platform.openai.com/account/api-keys에서 구하실 수 있습니다.',
     mainprompt: '모델의 기본적인 방향성을 정하는 프롬프트입니다.',
     jailbreak: 'jailbreak 프롬프트는 jailbreak 토글이 켜져있을 때 작동되는 프롬프트입니다.',
     globalNote: '모델에 강력한 영향을 주는 프롬프트입니다. UJB라고도 합니다.',
@@ -56,16 +53,13 @@ export const languageKorean = {
     msgSound: '메세지를 받았을때 *띵* 소리가 납니다.',
     charDesc: '캐릭터의 설명입니다.',
     charFirstMessage: '캐릭터의 첫 대사입니다.',
-    charNote:
-      '모델에 강력한 영향을 주는 프롬프트입니다. 이 채팅에서만 적용되며, 메모리라고도 알려져 있습니다.',
+    charNote: '모델에 강력한 영향을 주는 프롬프트입니다. 이 채팅에서만 적용되며, 메모리라고도 알려져 있습니다.',
     toggleNsfw: 'jailbreak 프롬프트를 끄거나 켭니다.',
-    lorebook:
-      ' AI를 위해 사용자가 만든 사전입니다. AI는 컨텍스트에서 활성화 키가 어디에 있을 때만 이를 인식합니다.',
+    lorebook: ' AI를 위해 사용자가 만든 사전입니다. AI는 컨텍스트에서 활성화 키가 어디에 있을 때만 이를 인식합니다.',
     loreName: '로어의 이름입니다. AI에 영향을 주지 않습니다.',
     loreActivationKey:
       '활성화 키 중 하나가 컨텍스트에 존재하면 해당 로어가 활성화됩니다. 쉼표로 구분된 활성화를 구분하세요.',
-    loreorder:
-      '순서가 높을수록 모델에 더 많은 영향을 미치며, 활성화된 로어가 많을 때 잘리지 않습니다.',
+    loreorder: '순서가 높을수록 모델에 더 많은 영향을 미치며, 활성화된 로어가 많을 때 잘리지 않습니다.',
     bias: "바이어스는 문자열이 나타날 가능성을 수정하는 키-값 데이터로, -100에서 100까지 가능하며 값이 클수록 나타날 가능성이 높고, 값이 작을수록 나타날 가능성이 낮습니다 \n경고: 토크나이저가 잘못되면 제대로 작동하지 않습니다. 추가적으로, -101로 설정하면 일부 모델에서는 '강력한 단어 밴'으로 작동합니다",
     emotion:
       '감정 이미지 옵션은 캐릭터의 반응으로 분석된 캐릭터의 감정에 따라 이미지를 표시합니다. 감정 이름은 단어 *(예시: joy, happy, fear 등)* 로 입력해야 하며, **neutral** 이라는 이름의 감정이 존재하면 기본 감정이 됩니다. 제대로 작동하려면 이미지가 3개 이상이어야 합니다.',
@@ -79,8 +73,7 @@ export const languageKorean = {
       '캐릭터의 출력에 영향을 주는 예시 대화입니다. 토큰을 영구적으로 사용하지 않습니다.\n\n대화의 예시 형식:\n\n```\n<START>\n{{user}}: 안녕\n{{char}}: 안녕하세요\n<START>\n{{user}}: 안녕\n하루이: 안녕하세요\n```\n\n```<START>```는 새로운 대화의 시작을 나타냅니다.',
     creatorQuotes:
       '캐릭터에 대한 정보를 사용자에게 알리기 위해 첫 번째 메시지 위에 나타납니다. 프롬프트에 포함되지 않습니다.',
-    systemPrompt:
-      '메인 프롬프트가 비어있지 않은 경우 설정에서 메인 프롬프트를 대체하는 프롬프트입니다.',
+    systemPrompt: '메인 프롬프트가 비어있지 않은 경우 설정에서 메인 프롬프트를 대체하는 프롬프트입니다.',
     chatNote: '현재 채팅에 포함되는 메모리 또는 UJB라고도 알려진 프롬프트입니다.',
     personality:
       '캐릭터의 성격에 대한 간단한 설명입니다. **이 옵션을 사용하는 것은 권장되지 않습니다. 대신 캐릭터 설명에 설명하십시오.**',
@@ -98,8 +91,7 @@ export const languageKorean = {
     replaceGlobalNote: '비어 있지 않으면 현재 글로벌 노트를 이로 대체합니다.',
     backgroundHTML:
       '채팅 화면의 배경에 삽입 될 마크다운/HTML 데이터입니다.\n\n추가 에셋을 사용할 수도 있습니다. 예를 들어, 배경 음악에 `{{audio::<에셋 이름>}}`을 사용할 수 있습니다.\n\n또한 다음과 같은 추가 에셋을 사용할 수 있습니다:\n - `{{bg::<에셋 이름>}}`: 에셋으로 배경을 삽입합니다.',
-    additionalText:
-      'AI가 필요한 경우에만 캐릭터 설명에 추가 될 텍스트입니다. 두 개의 새 줄로 구분합니다.',
+    additionalText: 'AI가 필요한 경우에만 캐릭터 설명에 추가 될 텍스트입니다. 두 개의 새 줄로 구분합니다.',
     charjs:
       '캐릭터와 함께 실행될 자바스크립트 코드입니다. 예를 들어, `https://github.com/kwaroran/Risuai/blob/main/src/etc/example-char.js`를 확인할 수 있습니다. 현재 보안 문제로 인해 사용을 권장하지 않습니다. 엑스포트에는 포함되지 않습니다.',
     romanizer:
@@ -142,8 +134,7 @@ export const languageKorean = {
     dynamicAssetsEditDisplay:
       '활성화되면 동적 에셋이 디스플레이 수정 단계에도 적용됩니다. 단, 성능 문제가 발생할 수 있습니다.',
     nickname: '닉네임이 설정되면 채팅에서 캐릭터 이름 대신 {{char}} 또는 <char>에 사용됩니다.',
-    useRegexLorebook:
-      '활성화되면 로어북 검색에 문자열 일치 대신 정규식을 사용합니다. /regex/flags 형식을 사용합니다.',
+    useRegexLorebook: '활성화되면 로어북 검색에 문자열 일치 대신 정규식을 사용합니다. /regex/flags 형식을 사용합니다.',
     customChainOfThought:
       '경고: 생각의 사슬 토글 사용은 더 이상 권장되지 않습니다. 대신 다른 프롬프트 항목에 생각의 사슬 프롬프트를 입력하세요.',
     customPromptTemplateToggle:
@@ -170,10 +161,8 @@ export const languageKorean = {
       '네임스페이스는 모듈의 고유 식별자입니다. 모듈 간의 충돌을 방지하고 프리셋, 다른 모듈 등과의 상호 작용에 사용됩니다. 무엇을 입력해야 할지 모르면 비워두세요.',
     moduleIntergration:
       '모듈 통합 섹션에 모듈 네임스페이스를 입력하여 모듈을 활성화할 수 있습니다. 여러 모듈을 활성화하려면 쉼표로 구분하세요. 예: `module1,module2,module3`. 프리셋에 따라 모듈 사용을 다르게 하고 싶은 고급 사용자를 위한 기능입니다.',
-    customCSS:
-      '스타일링을 위한 커스텀 CSS입니다. 문제가 발생하면 (Ctrl + .)을 눌러 비활성화/활성화할 수 있습니다.',
-    betaMobileGUI:
-      '활성화되면 작은 화면(800px 미만)에서 베타 모바일 GUI를 사용합니다. 새로고침이 필요합니다.',
+    customCSS: '스타일링을 위한 커스텀 CSS입니다. 문제가 발생하면 (Ctrl + .)을 눌러 비활성화/활성화할 수 있습니다.',
+    betaMobileGUI: '활성화되면 작은 화면(800px 미만)에서 베타 모바일 GUI를 사용합니다. 새로고침이 필요합니다.',
     enableScrollToActiveChar:
       '활성화되면 단축키를 누르거나 캐릭터를 드래그하는 동안 Ctrl을 누르면 현재 활성 캐릭터로 스크롤합니다. 폴더가 닫혀있으면 자동으로 열립니다.',
     unrecommended: '비권장 설정입니다. 이 설정을 사용하는 것은 권장되지 않습니다.',
@@ -189,8 +178,7 @@ export const languageKorean = {
       '각 채팅으로 삽입될 HTML입니다.\n\nCBS와 특수 태그를 사용할 수 있습니다.\n- `<risutextbox>`: 텍스트를 렌더링하는 데 사용될 텍스트 상자\n- `<risuicon>`: 사용자 또는 어시스턴트용 아이콘\n- `<risubuttons>`: 채팅 편집, 번역 등을 위한 아이콘 버튼\n- `<risugeninfo>`: 생성 정보 버튼.',
     systemContentReplacement:
       '모델이 시스템 프롬프트를 지원하지 않는 경우 시스템 프롬프트를 대체하는 프롬프트 포맷입니다.',
-    systemRoleReplacement:
-      '모델이 시스템 역할을 지원하지 않는 경우 시스템 역할을 대체하는 역할입니다.',
+    systemRoleReplacement: '모델이 시스템 역할을 지원하지 않는 경우 시스템 역할을 대체하는 역할입니다.',
     summarizationPrompt:
       '요약에 사용되는 프롬프트입니다. 비어있으면 기본 프롬프트를 사용합니다. 채팅 데이터에 대해 {{slot}}을 사용하여 ChatML 형식을 사용할 수도 있습니다.',
     translatorPrompt:
@@ -201,8 +189,7 @@ export const languageKorean = {
       '자동 번역 옵션이 켜진 상태에서 활성화하면, 사용자가 이전에 번역한 메시지만 자동으로 번역됩니다.',
     presetChain:
       '비어있지 않으면 사용자가 메시지를 보낼 때마다 이 입력의 프리셋 목록에서 무작위로 프리셋이 변경 및 적용됩니다. 프리셋 목록은 쉼표로 구분해야 합니다. 예: `preset1,preset2`.',
-    legacyMediaFindings:
-      '활성화하면 추가 검색 알고리즘을 사용하지 않고 기존 방식으로 미디어 에셋을 찾습니다.',
+    legacyMediaFindings: '활성화하면 추가 검색 알고리즘을 사용하지 않고 기존 방식으로 미디어 에셋을 찾습니다.',
     comfyWorkflow:
       "Comfy UI의 API 워크플로우를 입력하세요. Comfy UI에서 'Workflow > Export (API)' 버튼을 눌러 API 워크플로우를 가져올 수 있습니다. 워크플로우 텍스트에 {{risu_prompt}}를 넣어야 하며, {{risu_prompt}}는 Risu에서 제공하는 프롬프트로 대체됩니다.",
     automaticCachePoint: '채팅이 끝난 후 캐싱 포인트가 존재하지 않으면 자동으로 생성합니다.',
@@ -211,18 +198,15 @@ export const languageKorean = {
     promptInfoInsideChatDesc:
       '활성화되면 채팅 메타데이터에 프롬프트 프리셋 정보를 저장합니다. 저장되는 정보는 프롬프트 프리셋 이름과 활성화된 토글, 그리고 프롬프트 텍스트입니다. 약간의 처리 시간과 용량을 차지할 수 있습니다.',
     autoAdjustSchema: '활성화하면 Dynamic Output을 위한 JSON 스키마가 자동으로 조정됩니다.',
-    dynamicMessages:
-      '활성화하면 어시스턴트가 한 번에 하나씩이 아닌 여러 메시지를 연속으로 보낼 수 있습니다.',
+    dynamicMessages: '활성화하면 어시스턴트가 한 번에 하나씩이 아닌 여러 메시지를 연속으로 보낼 수 있습니다.',
     dynamicMemory:
       '활성화하면 어시스턴트가 응답 시 메모리 노트를 작성합니다. 이 기능을 활용하려면 추가 프롬프팅이 필요합니다.',
     dynamicResponseTiming: '활성화하면 응답 타이밍이 동적으로 조정됩니다.',
     dynamicRequest: '활성화하면 사용자 입력을 기다리지 않고 무작위 타이밍에 모델에 요청합니다.',
-    settingsCloseButtonSize:
-      '설정 창 우측 상단의 닫기(X) 버튼 크기를 조절합니다. 기본값은 24입니다.',
+    settingsCloseButtonSize: '설정 창 우측 상단의 닫기(X) 버튼 크기를 조절합니다. 기본값은 24입니다.',
     showTypingEffect: '활성화하면 어시스턴트가 응답을 생성하는 동안 타이핑 표시기가 표시됩니다.',
     dynamicOutputPrompt: '활성화하면 스키마 정보가 요청에 포함됩니다.',
-    realmDirectOpen:
-      '활성화되면 RisuRealm 미리보기에서 캐릭터를 클릭할 때 캐릭터 설명이 바로 열립니다.',
+    realmDirectOpen: '활성화되면 RisuRealm 미리보기에서 캐릭터를 클릭할 때 캐릭터 설명이 바로 열립니다.',
     openRouterProviderOrder:
       '사용할 제공자 순서입니다. 첫 번째 제공자가 먼저 사용되며, 제공자를 사용할 수 없는 경우 다음 제공자를 사용합니다. 자세한 내용은 https://openrouter.ai/docs/guides/routing/provider-selection#ordering-specific-providers 를 참조하세요',
     openRouterProviderOnly:
@@ -236,8 +220,7 @@ export const languageKorean = {
       '임베딩 모델은 여러 기능에서 유사도 검색에 사용됩니다:\n\n- **장기 기억**: HypaV2, HypaV3, Hanurai Memory, SupaMemory (HypaMemory 활성화 시)\n- **추가 텍스트**: 컨텍스트 기반 캐릭터 추가 정보 매칭\n- **동적 에셋**: 정확한 에셋 이름을 찾지 못했을 때 유사한 이름 검색\n- **트리거 스크립트**: 트리거 스크립트의 유사도 조건\n- **파일 첨부**: PDF/TXT/XML 첨부 파일 내 검색',
     reSummarizationPrompt:
       '벌크 수정에서 선택한 여러 요약을 하나로 합칠 때 사용되는 프롬프트입니다. 비어있으면 기본 프롬프트를 사용합니다.',
-    hypaV3MemoryTokensRatio:
-      '프롬프트의 최대 컨텍스트 크기에서 장기기억 블록 {{slot}}에 할당되는 비율입니다.',
+    hypaV3MemoryTokensRatio: '프롬프트의 최대 컨텍스트 크기에서 장기기억 블록 {{slot}}에 할당되는 비율입니다.',
     hypaV3ExtraSummarizationRatio:
       '요약이 멈추는 기준을 낮추는 비율입니다. 0이면 최대 컨텍스트 이하가 되었을 때 요약을 멈추고, 높을수록 더 많이 요약을 진행한 뒤 멈춥니다.',
     hypaV3MaxChatsPerSummary: '하나의 요약본을 만들 때 포함할 최대 채팅 메시지 수입니다.',
@@ -281,12 +264,9 @@ export const languageKorean = {
     themeDescClassic: '모든 기기에 적합합니다',
     texttheme: '텍스트 색상을 선택해주세요',
     inputName: '마지막으로, 닉네임을 입력해 주세요',
-    welcome:
-      'Risuai에 오신 것을 환영해요! 저는 Risuai 셋업을 도와줄 아이리스라고 해요. 먼저 닉네임을 입력해 주세요!',
-    welcome2:
-      '{username}님 안녕하세요! Risuai를 시작하려면 몇 가지 설정만 하시면 되요. Ai 제공자를 선택해 주세요!',
-    openRouterProvider:
-      'OpenRouter는 여러 무료/유료 모델이 있습니다. 기본적으로 무료로 설정됩니다.',
+    welcome: 'Risuai에 오신 것을 환영해요! 저는 Risuai 셋업을 도와줄 아이리스라고 해요. 먼저 닉네임을 입력해 주세요!',
+    welcome2: '{username}님 안녕하세요! Risuai를 시작하려면 몇 가지 설정만 하시면 되요. Ai 제공자를 선택해 주세요!',
+    openRouterProvider: 'OpenRouter는 여러 무료/유료 모델이 있습니다. 기본적으로 무료로 설정됩니다.',
     hordeProvider: 'Horde는 특별한 설정이 필요없는 무료 모델입니다. 하지만, 성능이 좋지 않습니다.',
     setProviderLater: '다른 설정을 먼저 하고, 나중에 설정해도 됩니다.',
     setupOpenAI:
@@ -309,42 +289,34 @@ export const languageKorean = {
     setupOpenRouter:
       "OpenRouter를 사용하려면 API키가 필요합니다. \n1. https://openrouter.ai/keys 에 접속하고 로그인 또는 회원가입 해주세요.\n2. 'Create Key'를 눌러주세요. \n3. 키 이름은 아무거나 하셔도 괜찮습니다.\n4. 생성된 키를 복사해주세요.\n5. 리스AI로 돌아와주세요.\n6. 입력칸에 붙여넣고, 전송 버튼을 눌러주세요.",
     allDone: '모든 설정이 끝났어요! 잠시만 기다려주세요. 나머지 작업은 제가 처리할게요.',
-    setupLaterMessage:
-      '{username}님 환영해요! 셋업을 직접 하겠어요? 아니면 제 가이드를 받아보실래요?',
+    setupLaterMessage: '{username}님 환영해요! 셋업을 직접 하겠어요? 아니면 제 가이드를 받아보실래요?',
     setupMessageOption1: '셋업을 가이드해주세요',
     setupMessageOption1Desc: '신규 사용자에게 추천합니다',
     setupMessageOption2: '직접 설정하겠습니다',
-    claudeDesc:
-      'Claude는 Antropic에서 만든 AI 모델로, 영어 이외의 언어를 사용한다면 OpenAI보다 더 나은 선택입니다.',
-    openAIDesc:
-      'OpenAI GPT는 높은 품질의 AI 모델이지만, 유료이며 검열이 있으며, 영어 이외의 언어에서는 약합니다.',
+    claudeDesc: 'Claude는 Antropic에서 만든 AI 모델로, 영어 이외의 언어를 사용한다면 OpenAI보다 더 나은 선택입니다.',
+    openAIDesc: 'OpenAI GPT는 높은 품질의 AI 모델이지만, 유료이며 검열이 있으며, 영어 이외의 언어에서는 약합니다.',
     chooseChatType: "채팅 언어를 선택해 주세요! 개인적으론, '언어에 집중하지 않음'을 추천해요!",
     chooseChatTypeOption1: '전체 영어',
-    chooseChatTypeOption1Desc:
-      'AI가 영어를 사용하고, 입력/출력이 영어로 됩니다. 영어 사용자에게 추천합니다.',
+    chooseChatTypeOption1Desc: 'AI가 영어를 사용하고, 입력/출력이 영어로 됩니다. 영어 사용자에게 추천합니다.',
     chooseChatTypeOption2: '영어 처리',
     chooseChatTypeOption2Desc:
       'AI가 내부적으로 영어를 사용하지만, 입력/출력은 사용자의 언어로 됩니다. 영어 이외의 언어 사용자에게 추천합니다.',
     chooseChatTypeOption3: '언어에 집중하지 않음',
-    chooseChatTypeOption3Desc:
-      'AI가 내부적으로 사용자의 언어를 사용하지만, 품질이 낮아질 수 있습니다.',
+    chooseChatTypeOption3Desc: 'AI가 내부적으로 사용자의 언어를 사용하지만, 품질이 낮아질 수 있습니다.',
     chooseCheapOrMemory: '기억력과 가격 중 어느 것을 선호하세요? 잘 모르겠으면 균형으로 해주세요!',
     chooseCheapOrMemoryOption1: '기억력',
     chooseCheapOrMemoryOption1Desc: 'AI가 더 많이 기억하지만, 비용이 많이 들 수 있습니다.',
     chooseCheapOrMemoryOption2: '가격',
     chooseCheapOrMemoryOption2Desc: 'AI가 덜 기억하지만, 비용이 적게 들 수 있습니다.',
     chooseCheapOrMemoryOption3: '균형',
-    chooseCheapOrMemoryOption3Desc:
-      'AI가 가격보다는 더 많이 기억하지만, 기억보다는 적게 기억합니다.',
+    chooseCheapOrMemoryOption3Desc: 'AI가 가격보다는 더 많이 기억하지만, 기억보다는 적게 기억합니다.',
     chooseCheapOrMemoryOption4: '무제한',
     chooseCheapOrMemoryOption4Desc: 'AI가 거의 모든 것을 기억하지만, 매우 비싸게 들 수 있습니다.',
     finally: '아, 그리고 고급 도구를 활성화할까요? 처음이시라면 켜지 않는 것이 좋아요.',
     finallyOption1: '예',
-    finallyOption1Desc:
-      '이것은 고급 도구를 활성화하며, UI를 더 복잡하게 만듭니다. 고급 사용자에게 추천합니다.',
+    finallyOption1Desc: '이것은 고급 도구를 활성화하며, UI를 더 복잡하게 만듭니다. 고급 사용자에게 추천합니다.',
     finallyOption2: '아니요',
-    finallyOption2Desc:
-      '이것은 고급 도구를 비활성화하며, UI를 더 간단하게 만듭니다. 신규 사용자에게 추천합니다.',
+    finallyOption2Desc: '이것은 고급 도구를 비활성화하며, UI를 더 간단하게 만듭니다. 신규 사용자에게 추천합니다.',
     igpPrompt:
       'IGP 프롬프트가 비어있지 않으면, 메인 모델 요청 후, 메인 모델 실행 후에 감정 모델로 실행되어 결과를 메인 모델 응답 뒤에 추가합니다.',
   },
@@ -406,8 +378,7 @@ export const languageKorean = {
     v2ExtractRegexDesc:
       '{{value}} 에서 정규식  {{regex}} 및 플래그 {{flags}} 를 사용하여 텍스트 추출, 결과를 {{result}} 로 저장 => {{outputVar}}',
     v2RegexTest: '정규식 테스트',
-    v2RegexTestDesc:
-      '{{value}} 에서 정규식 {{regex}} 및 플래그 {{flags}} 로 매칭 테스트 => {{outputVar}}',
+    v2RegexTestDesc: '{{value}} 에서 정규식 {{regex}} 및 플래그 {{flags}} 로 매칭 테스트 => {{outputVar}}',
     v2GetLastMessage: '마지막 메시지 가져오기',
     v2GetLastMessageDesc: '마지막 메시지 가져오기 => {{outputVar}}',
     v2GetMessageAtIndex: '인덱스에서 메시지 가져오기',
@@ -421,8 +392,7 @@ export const languageKorean = {
     v2GetLorebookEntry: '인덱스에서 로어북 가져오기',
     v2GetLorebookEntryDesc: '인덱스 {{index}} 에 있는 로어북 가져오기 => {{outputVar}}',
     v2SetLorebookActivation: '로어북 활성화 설정',
-    v2SetLorebookActivationDesc:
-      '인덱스 {{index}} 에 있는 로어북의 활성화 상태를 {{value}} 로 설정',
+    v2SetLorebookActivationDesc: '인덱스 {{index}} 에 있는 로어북의 활성화 상태를 {{value}} 로 설정',
     v2GetLorebookIndexViaName: '이름으로 로어북 인덱스 가져오기',
     v2GetLorebookIndexViaNameDesc: '이름 {{name}} 인 로어북의 인덱스 가져오기 => {{outputVar}}',
     v2ModifyLorebook: '로어북 수정',
@@ -482,11 +452,9 @@ export const languageKorean = {
     v2SpliceArrayVar: '배열 변수 가운데에 값 추가',
     v2SpliceArrayVarDesc: '배열 변수 {{var}} 의 {{start}}에 {{item}} 추가',
     v2SliceArrayVar: '배열 변수 슬라이스',
-    v2SliceArrayVarDesc:
-      '배열 변수 {{var}} 의 {{start}} 부터 {{end}} 까지 슬라이스 => {{outputVar}}',
+    v2SliceArrayVarDesc: '배열 변수 {{var}} 의 {{start}} 부터 {{end}} 까지 슬라이스 => {{outputVar}}',
     v2GetIndexOfValueInArrayVar: '배열 변수에서 값의 인덱스 가져오기',
-    v2GetIndexOfValueInArrayVarDesc:
-      '배열 변수 {{var}} 에서 값 {{value}} 의 인덱스 가져오기 => {{outputVar}}',
+    v2GetIndexOfValueInArrayVarDesc: '배열 변수 {{var}} 에서 값 {{value}} 의 인덱스 가져오기 => {{outputVar}}',
     v2RemoveIndexFromArrayVar: '배열 변수에서 인덱스에 있는 값 제거',
     v2RemoveIndexFromArrayVarDesc: '배열 변수 {{var}} 에서 인덱스 {{index}} 에 있는 값 제거',
     v2JoinArrayVar: '배열 결합',
@@ -546,8 +514,7 @@ export const languageKorean = {
     v2IfAdvanced: '만약 ~이라면',
     v2IfAdvancedDesc: '만약 {{source}} {{condition}} {{target}} 이라면',
     v2QuickSearchChat: '빠른 채팅 검색',
-    v2QuickSearchChatDesc:
-      '{{value}} 를 {{depth}} 깊이에서 {{condition}} 방식으로 검색 => {{outputVar}}',
+    v2QuickSearchChatDesc: '{{value}} 를 {{depth}} 깊이에서 {{condition}} 방식으로 검색 => {{outputVar}}',
     v2StopPromptSending: '프롬프트 전송 중단',
     v2StopPromptSendingDesc: '프롬프트 전송 중단',
     v2Tokenize: '토큰화',
@@ -561,8 +528,7 @@ export const languageKorean = {
     v2CreateLorebook: '로어북 생성',
     v2CreateLorebookDesc: '이름 {{name}}, 키 {{key}}, 내용 {{content}} 으로 로어북 생성',
     v2ModifyLorebookByIndex: '로어북 수정',
-    v2ModifyLorebookByIndexDesc:
-      '인덱스 {{index}} 의 로어북을 이름 {{name}}, 키 {{key}}, 내용 {{content}} 으로 수정',
+    v2ModifyLorebookByIndexDesc: '인덱스 {{index}} 의 로어북을 이름 {{name}}, 키 {{key}}, 내용 {{content}} 으로 수정',
     v2DeleteLorebookByIndex: '로어북 삭제',
     v2DeleteLorebookByIndexDesc: '인덱스 {{index}} 의 로어북 삭제',
     v2GetLorebookCountNew: '로어북 개수 가져오기',
@@ -572,8 +538,7 @@ export const languageKorean = {
     v2Calculate: '연산',
     v2CalculateDesc: '{{expression}} 연산 => {{outputVar}}',
     v2ReplaceString: '문자열 치환',
-    v2ReplaceStringDesc:
-      '{{source}} 에서 정규식 {{regex}} 를 {{replacement}} 로 치환 => {{outputVar}}',
+    v2ReplaceStringDesc: '{{source}} 에서 정규식 {{regex}} 를 {{replacement}} 로 치환 => {{outputVar}}',
   },
   triggerInputLabels: {
     value: '값',
@@ -706,8 +671,7 @@ export const languageKorean = {
   image: '이미지',
   name: '이름',
   folderName: '폴더 이름',
-  folderRemoveConfirm:
-    '이 폴더에는 로어북이 포함되어 있습니다. 폴더와 그 안의 모든 항목을 삭제하시겠습니까?',
+  folderRemoveConfirm: '이 폴더에는 로어북이 포함되어 있습니다. 폴더와 그 안의 모든 항목을 삭제하시겠습니까?',
   emotion: '감정 이름',
   value: '값',
   reroll: '재생성',
@@ -778,8 +742,7 @@ export const languageKorean = {
   SpacedView: '멀티플',
   emphasizedView: '더블',
   pluginWarn: '악성 플러그인 설치 시 문제가 생길 수 있습니다.',
-  pluginConfirm:
-    '이 플러그인을 정말로 가져오시겠습니까? 신뢰할 수 있는 출처의 플러그인만 가져오세요.',
+  pluginConfirm: '이 플러그인을 정말로 가져오시겠습니까? 신뢰할 수 있는 출처의 플러그인만 가져오세요.',
   pluginContainsExternalMedia: '이 플러그인에는 외부 미디어가 포함되어 있습니다.',
   pluginContainsExternalJS: '이 플러그인에는 외부 자바스크립트가 포함되어 있습니다.',
   waifuWidth: 'Waifu 채팅창 넓이',
@@ -801,8 +764,7 @@ export const languageKorean = {
   promptPreprocess: '프롬프트 선보정 사용',
   SwipeRegenerate: '스와이프 리롤 사용',
   instantRemove: '삭제 시 그 이후 채팅 삭제',
-  instantRemoveConfirm:
-    '메시지 한개만 삭제하시겠습니까? No를 선택할 시, 그 이후 메시지또한 삭제됩니다.',
+  instantRemoveConfirm: '메시지 한개만 삭제하시겠습니까? No를 선택할 시, 그 이후 메시지또한 삭제됩니다.',
   textColor: '텍스트 색상',
   classicRisu: '클래식 Risu',
   highcontrast: '고대비',
@@ -870,8 +832,7 @@ export const languageKorean = {
   enableBlockPartialEdit: '블록 부분 수정 활성화 (블록에 마우스를 올려 개별 수정)',
   enableDragPartialEdit: '드래그 부분 수정 활성화 (텍스트 선택 후 수정)',
   setNodePassword: '보안을 위해 비밀번호를 정해주세요',
-  inputNodePassword:
-    '비밀번호를 입력해주세요. 기억이 안나신다면, save/__password를 지우고 서버를 재시작해주세요.',
+  inputNodePassword: '비밀번호를 입력해주세요. 기억이 안나신다면, save/__password를 지우고 서버를 재시작해주세요.',
   simple: '간단',
   advanced: '고급',
   askReRollAutoSuggestions: '자동 제안 다시 뽑기',
@@ -963,8 +924,7 @@ export const languageKorean = {
   ifRandom: '만약 랜덤',
   ifValue: '값이 다음과 같다면',
   hideRealm: 'RisuRealm 숨기기',
-  sendExternalServerWarning:
-    '계속하면 외부 서버로 요청이 전송되며 IP 주소가 전달될 수 있습니다. 계속하시겠습니까?',
+  sendExternalServerWarning: '계속하면 외부 서버로 요청이 전송되며 IP 주소가 전달될 수 있습니다. 계속하시겠습니까?',
   hideAllImages: '모든 이미지 숨기기',
   popularityLevel: '{} 인기도',
   colorScheme: '색상 팔레트',
@@ -1065,8 +1025,7 @@ export const languageKorean = {
   inputCardPassword: '카드 비밀번호 입력',
   ccv2Desc: 'Character Card V2은 챗봇 프로그램에서 자주 사용되는 포맷입니다.',
   ccv3Desc: 'Character Card V3은 발전된 기능을 제공하는 포맷입니다.',
-  realmDesc:
-    'RisuRealm은 다양한 캐릭터를 공유하고, 다른 사용자의 캐릭터를 사용할 수 있는 플랫폼입니다.',
+  realmDesc: 'RisuRealm은 다양한 캐릭터를 공유하고, 다른 사용자의 캐릭터를 사용할 수 있는 플랫폼입니다.',
   rccDesc: '미사용',
   password: '비밀번호',
   license: '라이센스',
@@ -1101,15 +1060,13 @@ export const languageKorean = {
   outputTokens: '출력 토큰',
   tokenWarning: '토큰 계산은 정확하지 않을 수 있습니다. 참고용으로만 사용해주세요.',
   log: '로그',
-  popularityLevelDesc:
-    '인기도는 이 캐릭터가 얼마나 인기 있는지를 나타냅니다. 여러가지 요소가 영향을 미칩니다.',
+  popularityLevelDesc: '인기도는 이 캐릭터가 얼마나 인기 있는지를 나타냅니다. 여러가지 요소가 영향을 미칩니다.',
   additionalParams: '추가 파라미터',
   heightMode: '높이 모드',
   useAdvancedEditor: '고급 에디터 사용',
   noWaitForTranslate: '번역 기다리지 않기',
   updateRealm: 'RisuRealm에 업데이트하기',
-  updateRealmDesc:
-    '당신은 이 캐릭터를 RisuRealm에 업데이트 하려고 합니다. 이 작업은 취소할 수 없습니다.',
+  updateRealmDesc: '당신은 이 캐릭터를 RisuRealm에 업데이트 하려고 합니다. 이 작업은 취소할 수 없습니다.',
   antiClaudeOverload: 'Claude 오버로드 방지',
   activeTabChange: '현재 탭이 비활성화되었습니다. OK를 누르면 탭이 다시 활성화됩니다.',
   addCharacter: '캐릭터 추가',
@@ -1217,8 +1174,7 @@ export const languageKorean = {
   previewInfo: '미리보기는 모델 특화 처리 전에 프롬프트를 보여줍니다.',
   miscTools: '기타 도구',
   promptConvertion: '프롬프트 변환',
-  convertionStep1:
-    '프롬프트와 관련된 모든 파일을 선택하세요 (컨텍스트, 인스트럭트, 샘플러 JSON을 지원합니다)',
+  convertionStep1: '프롬프트와 관련된 모든 파일을 선택하세요 (컨텍스트, 인스트럭트, 샘플러 JSON을 지원합니다)',
   customCSS: '커스텀 CSS',
   betaMobileGUI: '베타 모바일 GUI',
   enableScrollToActiveChar: '활성 캐릭터로 스크롤 활성화',
@@ -1257,16 +1213,14 @@ export const languageKorean = {
   exportTranslationCache: '번역 캐시 내보내기',
   exportTranslationCacheSuccess: '번역 캐시를 내보냈습니다.',
   importTranslationCache: '번역 캐시 가져오기',
-  importTranslationCacheConfirm:
-    '번역 캐시에 항목을 병합합니다. 기존 키는 덮어씌워집니다. 계속하시겠습니까?',
+  importTranslationCacheConfirm: '번역 캐시에 항목을 병합합니다. 기존 키는 덮어씌워집니다. 계속하시겠습니까?',
   importTranslationCacheSuccess: '번역 캐시 {0}개 항목을 가져왔습니다.',
   importTranslationCacheFailed:
     '{0}개의 항목을 가져왔지만, {1}개의 항목 저장에 실패했습니다. 저장 공간이 부족할 수 있습니다.',
   exportTranslationCacheEmpty: '번역 캐시가 비어 있습니다.',
   clearTranslationCache: '번역 캐시 지우기',
   clearTranslationCacheSuccess: '번역 캐시를 지웠습니다.',
-  clearTranslationCacheConfirm:
-    '모든 번역 캐시 항목이 삭제됩니다. 되돌릴 수 없습니다. 계속하시겠습니까?',
+  clearTranslationCacheConfirm: '모든 번역 캐시 항목이 삭제됩니다. 되돌릴 수 없습니다. 계속하시겠습니까?',
   loading: '로딩중',
   autoTranslateCachedOnly: '캐시된 메시지만 자동 번역',
   notification: '알림',
@@ -1284,8 +1238,7 @@ export const languageKorean = {
   assetMaxDifference: '에셋 최대 차이',
   sourceLanguage: '원본 언어',
   destinationLanguage: '목표 언어',
-  noWebGPU:
-    '브라우저 또는 OS가 WebGPU를 지원하지 않습니다. 이로 인해 성능이 크게 저하될 수 있습니다.',
+  noWebGPU: '브라우저 또는 OS가 WebGPU를 지원하지 않습니다. 이로 인해 성능이 크게 저하될 수 있습니다.',
   menuSideBar: '메뉴 사이드바',
   home: '홈',
   showSavingIcon: '저장 아이콘 표시',
@@ -1336,8 +1289,7 @@ export const languageKorean = {
   hypaV3Modal: {
     titleLabel: 'HypaV3',
     resetConfirmMessage: '이 작업은 되돌릴 수 없습니다. HypaV3 데이터를 초기화하시겠습니까?',
-    resetConfirmSecondMessage:
-      '이 작업은 복구할 수 없습니다. 정말로, 정말로 HypaV3 데이터를 초기화하시겠습니까?',
+    resetConfirmSecondMessage: '이 작업은 복구할 수 없습니다. 정말로, 정말로 HypaV3 데이터를 초기화하시겠습니까?',
     convertLabel: '아직 요약이 없지만, HypaV2 데이터를 V3로 변환할 수 있습니다.',
     convertButton: 'V3로 변환',
     convertSuccessMessage: 'HypaV2 데이터를 V3로 성공적으로 변환했습니다',
@@ -1362,8 +1314,7 @@ export const languageKorean = {
     nextSummarizationLabel: 'HypaV3가 [{0}]를 요약할 예정입니다',
     nextSummarizationNoMessagesFoundLabel: '경고: 메시지를 찾을 수 없습니다',
     nextSummarizationLoadingError: '다음 요약 대상을 불러오는 동안 오류 발생: {0}',
-    summarizationConditionLabel:
-      '팁: HypaV3는 입력 토큰이 최대 컨텍스트 크기를 넘으면 요약을 시작합니다.',
+    summarizationConditionLabel: '팁: HypaV3는 입력 토큰이 최대 컨텍스트 크기를 넘으면 요약을 시작합니다.',
     emptySelectedFirstMessageLabel: '경고: 선택된 첫 메시지가 비어있습니다',
     unclassified: '미분류',
     reSummarize: '재요약',
@@ -1495,8 +1446,7 @@ export const languageKorean = {
   dynamicOutputPrompt: '동적 출력 프롬프트',
   settingsCloseButtonSize: '설정 닫기 버튼 크기',
   translating: '번역 중...',
-  stackTraceTranslationFailed:
-    '스택 트레이스 번역에 실패했습니다. 아래에 원래 난독화된 스택 트레이스를 표시합니다.',
+  stackTraceTranslationFailed: '스택 트레이스 번역에 실패했습니다. 아래에 원래 난독화된 스택 트레이스를 표시합니다.',
   translate: '코드 주소 번역하기',
   apply: '적용',
   add: '추가',
@@ -1521,13 +1471,11 @@ export const languageKorean = {
       '플러그인이 글로벌 변수에 접근하려고 합니다. 이는 의도치 않은 부작용이나 보안 취약점으로 이어질 수 있습니다.',
     thisOutsideClass:
       "플러그인이 클래스 컨텍스트 외부에서 'this' 키워드를 사용하고 있습니다. 이는 의도치 않은 동작이나 보안 문제로 이어질 수 있습니다.",
-    errorInVerification:
-      '플러그인의 검증 과정 중 오류가 발생했습니다. 이는 기능상의 잠재적인 문제를 나타냅니다.',
+    errorInVerification: '플러그인의 검증 과정 중 오류가 발생했습니다. 이는 기능상의 잠재적인 문제를 나타냅니다.',
     storageAccess:
       '플러그인이 스토리지에 접근하려고 합니다. 이는 데이터 유출이나 무단 데이터 조작으로 이어질 수 있습니다.',
   },
-  generatedByAIDisclaimer:
-    '이 콘텐츠는 AI에 의해 생성되었으며 부정확하거나 편향된 정보가 포함될 수 있습니다.',
+  generatedByAIDisclaimer: '이 콘텐츠는 AI에 의해 생성되었으며 부정확하거나 편향된 정보가 포함될 수 있습니다.',
   aiGenerationWarning: '콘텐츠는 AI로 생성되며 부정확하거나 편향된 정보가 포함될 수 있습니다.',
   autoScrollToNewMessage: '새 메시지로 자동 스크롤',
   alwaysScrollToNewMessage: '항상 새 메시지로 스크롤 (스크롤 위치 무시)',
@@ -1540,8 +1488,7 @@ export const languageKorean = {
   newMessageButtonRightCenter: '우측 중앙',
   newMessageButtonTopBar: '상단 바',
   goToChat: '채팅으로 이동',
-  duplicatePluginFoundUpdateIt:
-    '중복된 플러그인이 발견되었습니다. 기존 플러그인을 업데이트하시겠습니까?',
+  duplicatePluginFoundUpdateIt: '중복된 플러그인이 발견되었습니다. 기존 플러그인을 업데이트하시겠습니까?',
   loadMore: '더 보기',
   pluginUpdateFoundInstallIt: '플러그인 업데이트가 발견되었습니다. 업데이트를 설치하시겠습니까?',
   noRequestLogs: '요청 로그가 없습니다.',

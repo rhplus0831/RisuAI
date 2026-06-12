@@ -186,9 +186,7 @@ describe('server command event subscription helper', () => {
       409,
     )
 
-    await expect(
-      subscribeServerCommandEvents({ sinceRevision: 3, onCommandEvent: vi.fn() }),
-    ).resolves.toEqual({
+    await expect(subscribeServerCommandEvents({ sinceRevision: 3, onCommandEvent: vi.fn() })).resolves.toEqual({
       status: 'replay-unavailable',
       error: 'event_replay_unavailable',
       currentRevision: 12,

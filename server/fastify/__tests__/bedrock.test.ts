@@ -132,9 +132,7 @@ describe('buildBedrockRequest', () => {
       date: fixedDate,
       signal: new AbortController().signal,
     })
-    expect(built.headers['Authorization']).toContain(
-      'Credential=AKIA/20240101/us-east-1/bedrock/aws4_request',
-    )
+    expect(built.headers['Authorization']).toContain('Credential=AKIA/20240101/us-east-1/bedrock/aws4_request')
     expect(built.headers['x-amz-date']).toBe('20240101T000000Z')
     expect(built.headers['x-amz-content-sha256']).toMatch(/^[0-9a-f]{64}$/)
   })
@@ -171,9 +169,7 @@ describe('buildBedrockRequest', () => {
       signal: new AbortController().signal,
     })
     expect(built.headers['x-amz-security-token']).toBe('sts-token')
-    expect(built.headers['Authorization']).toMatch(
-      /SignedHeaders=[^,]*x-amz-security-token/,
-    )
+    expect(built.headers['Authorization']).toMatch(/SignedHeaders=[^,]*x-amz-security-token/)
   })
 })
 

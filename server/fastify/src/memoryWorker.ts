@@ -37,10 +37,7 @@ export interface MemoryJobBatchHandlerContext {
   retryOrFail: (jobId: string, error: string) => MemoryJob | null
 }
 
-export type MemoryJobBatchHandler = (
-  firstJob: MemoryJob,
-  context: MemoryJobBatchHandlerContext,
-) => void | Promise<void>
+export type MemoryJobBatchHandler = (firstJob: MemoryJob, context: MemoryJobBatchHandlerContext) => void | Promise<void>
 
 export type MemoryJobBatchHandlers = Partial<Record<MemoryJobKind, MemoryJobBatchHandler>>
 
@@ -63,9 +60,7 @@ export class MemoryWorker {
   private readonly onEvent: MemoryEventSink | null
   private readonly onError: (error: unknown) => void
   private readonly retry: MemoryJobRetryOptions
-  private readonly terminalRetention:
-    | (PruneTerminalMemoryJobsOptions & { intervalMs: number })
-    | null
+  private readonly terminalRetention: (PruneTerminalMemoryJobsOptions & { intervalMs: number }) | null
   private timer: NodeJS.Timeout | null = null
   private inFlight: Promise<boolean> | null = null
   private active = false
@@ -87,8 +82,7 @@ export class MemoryWorker {
     this.onEvent = opts.onEvent ?? null
     this.onError = opts.onError ?? defaultMemoryWorkerErrorHandler
     this.retry = opts.retry ?? {}
-    const terminalRetentionOptions =
-      opts.terminalRetention === false ? null : (opts.terminalRetention ?? {})
+    const terminalRetentionOptions = opts.terminalRetention === false ? null : (opts.terminalRetention ?? {})
     this.terminalRetention =
       terminalRetentionOptions === null
         ? null
@@ -234,12 +228,7 @@ export class MemoryWorker {
       }
     } catch (error) {
       const message = error instanceof Error && error.message ? error.message : String(error)
-      const failedOrRetried = retryOrFailMemoryJob(
-        this.db,
-        job.id,
-        message || 'memory job handler failed',
-        this.retry,
-      )
+      const failedOrRetried = retryOrFailMemoryJob(this.db, job.id, message || 'memory job handler failed', this.retry)
       if (failedOrRetried) {
         this.emitJob(failedOrRetried)
       }

@@ -152,9 +152,7 @@ async function runCommand(
   const res = await inject(request)
   expect(res.statusCode, JSON.stringify(res.json())).toBe(200)
   const body = res.json() as Record<string, unknown>
-  const metric = metrics
-    .slice(before)
-    .find((entry) => entry.metric === 'command_mutation' && entry.status === 'ok')
+  const metric = metrics.slice(before).find((entry) => entry.metric === 'command_mutation' && entry.status === 'ok')
   expect(metric, `missing command_mutation metric for ${request.url}`).toBeTruthy()
   return { revision: body.revision as number, metric: metric as CommandMutationMetric, body }
 }
@@ -174,9 +172,7 @@ function readSettings(): Record<string, unknown> {
 function readCharacter(id: string): Record<string, unknown> {
   const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
   try {
-    const row = db.prepare('SELECT data_json FROM characters WHERE id = ?').get(id) as
-      | { data_json: string }
-      | undefined
+    const row = db.prepare('SELECT data_json FROM characters WHERE id = ?').get(id) as { data_json: string } | undefined
     return row ? (JSON.parse(row.data_json) as Record<string, unknown>) : {}
   } finally {
     db.close()
@@ -224,9 +220,9 @@ function readCharacterIds(): string[] {
 function readChatIds(characterId: string): string[] {
   const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
   try {
-    const rows = db
-      .prepare('SELECT id FROM chats WHERE character_id = ? ORDER BY position')
-      .all(characterId) as Array<{ id: string }>
+    const rows = db.prepare('SELECT id FROM chats WHERE character_id = ? ORDER BY position').all(characterId) as Array<{
+      id: string
+    }>
     return rows.map((r) => r.id)
   } finally {
     db.close()
@@ -237,9 +233,7 @@ function readChatIds(characterId: string): string[] {
 function messageRowCount(chatId: string): number {
   const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
   try {
-    const row = db
-      .prepare('SELECT COUNT(*) AS count FROM messages WHERE chat_id = ?')
-      .get(chatId) as { count: number }
+    const row = db.prepare('SELECT COUNT(*) AS count FROM messages WHERE chat_id = ?').get(chatId) as { count: number }
     return row.count
   } finally {
     db.close()
@@ -269,7 +263,7 @@ afterEach(async () => {
 })
 
 describe('Phase 6 message-dependent delete floors', () => {
-  it('DELETE characters/:id narrows to targeted-character-row (Phase 8 follow-up) and cleans up its chats\' message rows', async () => {
+  it("DELETE characters/:id narrows to targeted-character-row (Phase 8 follow-up) and cleans up its chats' message rows", async () => {
     const revision = await importDatabase(seedDatabase())
     // The deleted character owns a chat with a persisted message row.
     expect(messageRowCount('chat-a-1')).toBe(1)
@@ -290,7 +284,7 @@ describe('Phase 6 message-dependent delete floors', () => {
     expect(messageRowCount('chat-a-1')).toBe(0)
   })
 
-  it('DELETE chats/:id narrows to targeted-character-row (Phase 8b) and still cleans the deleted chat\'s message rows', async () => {
+  it("DELETE chats/:id narrows to targeted-character-row (Phase 8b) and still cleans the deleted chat's message rows", async () => {
     const revision = await importDatabase(seedDatabase())
     expect(messageRowCount('chat-a-1')).toBe(1)
 
@@ -424,11 +418,7 @@ describe('Phase 6 message-free create + normalization floors', () => {
     expect(metric.mutationPath).toBe('message-free')
     expect(metric.writtenTables).toEqual([...BROAD_WRITE_TABLES])
     assertCommandMetricGate(metric)
-    expect((readCollection('modules') as Array<{ id: string }>).map((m) => m.id)).toEqual([
-      'mod-x',
-      'mod-y',
-      'mod-z',
-    ])
+    expect((readCollection('modules') as Array<{ id: string }>).map((m) => m.id)).toEqual(['mod-x', 'mod-y', 'mod-z'])
   })
 
   it('PUT characters/:id/scripts replaces customscript at the targeted-character-row range (Phase 8a)', async () => {

@@ -1,13 +1,7 @@
 import { EventEmitter } from 'node:events'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import {
-  NON_DURABLE_REQUEST_DEADLINE_MS,
-  attachAbort,
-} from '../src/requestAbort.js'
-import {
-  PROXY_STREAM_DEFAULT_TIMEOUT_MS,
-  PROXY_STREAM_MAX_TIMEOUT_MS,
-} from '../src/streamJobs.js'
+import { NON_DURABLE_REQUEST_DEADLINE_MS, attachAbort } from '../src/requestAbort.js'
+import { PROXY_STREAM_DEFAULT_TIMEOUT_MS, PROXY_STREAM_MAX_TIMEOUT_MS } from '../src/streamJobs.js'
 
 /**
  * Non-durable request abort plumbing (audit M8). The signal handed to every

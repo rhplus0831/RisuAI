@@ -9,11 +9,7 @@ export function extractRisuAuth(req: FastifyRequest): string {
   return typeof raw === 'string' ? raw : ''
 }
 
-export async function requireAuth(
-  state: AuthState,
-  req: FastifyRequest,
-  reply: FastifyReply,
-): Promise<boolean> {
+export async function requireAuth(state: AuthState, req: FastifyRequest, reply: FastifyReply): Promise<boolean> {
   if (isAgentDevAuthBypassed(state)) {
     return true
   }

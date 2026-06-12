@@ -74,9 +74,7 @@ describe('chat generation settings contract', () => {
       moduleIntegration: ' shared-space ',
     })
 
-    expect(
-      toggles.map((toggle) => [toggle.key, toggle.kind, toggle.source, toggle.moduleId]),
-    ).toEqual([
+    expect(toggles.map((toggle) => [toggle.key, toggle.kind, toggle.source, toggle.moduleId])).toEqual([
       ['enabled', 'boolean', 'module', 'enabled-module'],
       ['chat', 'select', 'module', 'chat-module'],
       ['character', 'text', 'module', 'character-module'],

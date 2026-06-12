@@ -94,10 +94,7 @@ function createChatCalls(calls: CapturedFetch[]): CapturedFetch[] {
   return calls.filter((call) => call.url === '/api/v1/commands/characters/char-a/chats')
 }
 
-async function waitForCreateChatCalls(
-  calls: CapturedFetch[],
-  expectedCount = 1,
-): Promise<CapturedFetch[]> {
+async function waitForCreateChatCalls(calls: CapturedFetch[], expectedCount = 1): Promise<CapturedFetch[]> {
   await vi.waitFor(() => {
     expect(createChatCalls(calls)).toHaveLength(expectedCount)
   })

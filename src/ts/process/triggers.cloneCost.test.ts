@@ -142,9 +142,7 @@ describe('runTrigger clone cost (Phase 3)', () => {
         comment: 'set',
         type: 'manual',
         conditions: [],
-        effect: [
-          { type: 'v2SetVar', var: 'score', operator: '=', valueType: 'value', value: '1' },
-        ],
+        effect: [{ type: 'v2SetVar', var: 'score', operator: '=', valueType: 'value', value: '1' }],
       },
     ])
 

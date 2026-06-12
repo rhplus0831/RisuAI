@@ -59,8 +59,7 @@
     onclick={(e) => {
       toggleCustomModelFlag(index, flag)
     }}
-    styled={(customModelsDraft.value[index]?.flags ?? []).includes(flag) ? 'primary' : 'outlined'}
-  >
+    styled={(customModelsDraft.value[index]?.flags ?? []).includes(flag) ? 'primary' : 'outlined'}>
     {name}
   </Button>
 {/snippet}
@@ -79,8 +78,7 @@
             openedModels.add(model.id)
           }
           openedModels = new Set(openedModels)
-        }}
-      >
+        }}>
         <span class="text-left">{model.name ?? 'Unnamed'}</span>
         <div class="flex items-center gap-1">
           <Button
@@ -94,8 +92,7 @@
                 models[index] = models[index - 1]
                 models[index - 1] = temp
               })
-            }}
-          >
+            }}>
             <ArrowUp />
           </Button>
           <Button
@@ -109,8 +106,7 @@
                 models[index] = models[index + 1]
                 models[index + 1] = temp
               })
-            }}
-          >
+            }}>
             <ArrowDown />
           </Button>
           <Button
@@ -123,8 +119,7 @@
               })
               openedModels.delete(model.id)
               openedModels = new Set(openedModels)
-            }}
-          >
+            }}>
             <TrashIcon />
           </Button>
         </div>
@@ -135,26 +130,21 @@
           <TextInput
             size={'sm'}
             bind:value={
-              () => customModelsDraft.value[index]?.name ?? '',
-              (value) => updateCustomModel(index, { name: value })
-            }
-          />
+              () => customModelsDraft.value[index]?.name ?? '', (value) => updateCustomModel(index, { name: value })
+            } />
           <span class="text-textcolor mt-4">{language.proxyRequestModel}</span>
           <TextInput
             size={'sm'}
             bind:value={
               () => customModelsDraft.value[index]?.internalId ?? '',
               (value) => updateCustomModel(index, { internalId: value })
-            }
-          />
+            } />
           <span class="text-textcolor mt-4">URL</span>
           <TextInput
             size={'sm'}
             bind:value={
-              () => customModelsDraft.value[index]?.url ?? '',
-              (value) => updateCustomModel(index, { url: value })
-            }
-          />
+              () => customModelsDraft.value[index]?.url ?? '', (value) => updateCustomModel(index, { url: value })
+            } />
           <span class="text-textcolor mt-4">{language.tokenizer}</span>
           <SelectInput
             size={'sm'}
@@ -163,8 +153,7 @@
               updateCustomModel(index, {
                 tokenizer: parseInt(e.currentTarget.value) as LLMTokenizer,
               })
-            }}
-          >
+            }}>
             <OptionInput value="0">Unknown</OptionInput>
             <OptionInput value="1">tiktokenCl100kBase</OptionInput>
             <OptionInput value="2">tiktokenO200Base</OptionInput>
@@ -188,8 +177,7 @@
             value={(customModelsDraft.value[index]?.format ?? 0).toString()}
             onchange={(e) => {
               updateCustomModel(index, { format: parseInt(e.currentTarget.value) as LLMFormat })
-            }}
-          >
+            }}>
             <OptionInput value="0">OpenAICompatible</OptionInput>
             <OptionInput value="1">OpenAILegacyInstruct</OptionInput>
             <OptionInput value="2">Anthropic</OptionInput>
@@ -210,23 +198,19 @@
           <TextInput
             size={'sm'}
             bind:value={
-              () => customModelsDraft.value[index]?.key ?? '',
-              (value) => updateCustomModel(index, { key: value })
-            }
-          />
+              () => customModelsDraft.value[index]?.key ?? '', (value) => updateCustomModel(index, { key: value })
+            } />
           <span class="text-textcolor">{language.additionalParams}</span>
           <TextAreaInput
             bind:value={
-              () => customModelsDraft.value[index]?.params ?? '',
-              (value) => updateCustomModel(index, { params: value })
+              () => customModelsDraft.value[index]?.params ?? '', (value) => updateCustomModel(index, { params: value })
             }
             placeholder={`temperature=0.7
     max_tokens=2000
     reasoning_effort="high"
     header::anthropic-dangerous-direct-browser-access=true
     stop=json::["</s>", "\\n\\n"]
-    frequency_penalty={{none}}`}
-          />
+    frequency_penalty={{none}}`} />
           <Accordion styled name={language.flags}>
             {@render CustomFlagButton(index, 'hasImageInput', 0)}
             {@render CustomFlagButton(index, 'hasImageOutput', 1)}
@@ -273,8 +257,7 @@
             flags: [],
           })
         })
-      }}
-    >
+      }}>
       <PlusIcon />
     </button>
   </div>

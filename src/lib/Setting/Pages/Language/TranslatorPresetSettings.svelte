@@ -1,11 +1,5 @@
 <script lang="ts">
-  import {
-    DownloadIcon,
-    HardDriveUploadIcon,
-    PencilIcon,
-    PlusIcon,
-    TrashIcon,
-  } from '@lucide/svelte'
+  import { DownloadIcon, HardDriveUploadIcon, PencilIcon, PlusIcon, TrashIcon } from '@lucide/svelte'
   import Help from 'src/lib/Others/Help.svelte'
   import NumberInput from 'src/lib/UI/GUI/NumberInput.svelte'
   import TextAreaInput from 'src/lib/UI/GUI/TextAreaInput.svelte'
@@ -108,10 +102,7 @@
     void runServerCommand({ command, rollback })
   }
 
-  function dispatchCreateTranslatorPreset(
-    preset: TranslatorPreset,
-    previous: TranslatorPresetStateSnapshot,
-  ): void {
+  function dispatchCreateTranslatorPreset(preset: TranslatorPreset, previous: TranslatorPresetStateSnapshot): void {
     runTranslatorPresetCommand(
       (baseRevision) =>
         createTranslatorPresetCommand({
@@ -123,10 +114,7 @@
     )
   }
 
-  function dispatchSelectTranslatorPreset(
-    presetId: string,
-    previous: TranslatorPresetStateSnapshot,
-  ): void {
+  function dispatchSelectTranslatorPreset(presetId: string, previous: TranslatorPresetStateSnapshot): void {
     runTranslatorPresetCommand(
       (baseRevision) =>
         selectTranslatorPresetCommand({
@@ -159,10 +147,7 @@
     previous: TranslatorPresetStateSnapshot,
   ): void {
     if (!canUseServerCommands()) return
-    if (
-      pendingTranslatorPresetUpdate.presetId !== presetId &&
-      pendingTranslatorPresetUpdate.timer
-    ) {
+    if (pendingTranslatorPresetUpdate.presetId !== presetId && pendingTranslatorPresetUpdate.timer) {
       clearTimeout(pendingTranslatorPresetUpdate.timer)
       pendingTranslatorPresetUpdate.timer = null
       pendingTranslatorPresetUpdate.patch = {}
@@ -227,8 +212,7 @@
       }
       if (presetId) dispatchSelectTranslatorPreset(presetId, previous)
     }
-  }
->
+  }>
   {#each DBState.db.translatorPresets as preset, i}
     <option class="bg-darkbg appearance-none" value={i}>{preset.name}</option>
   {/each}
@@ -247,15 +231,11 @@
         DBState.db.translatorPresets = presets
         DBState.db.translatorPresetId = DBState.db.translatorPresets.length - 1
         normalizeTranslatorPresets()
-        dispatchCreateTranslatorPreset(
-          DBState.db.translatorPresets[DBState.db.translatorPresetId],
-          previous,
-        )
+        dispatchCreateTranslatorPreset(DBState.db.translatorPresets[DBState.db.translatorPresetId], previous)
       } else {
         dispatchCreateTranslatorPreset(newPreset, previous)
       }
-    }}
-  >
+    }}>
     <PlusIcon size={24} />
   </button>
 
@@ -283,8 +263,7 @@
         syncCurrentTranslatorPreset()
       }
       if (presetId) queueTranslatorPresetUpdate(presetId, { name: newName }, previous)
-    }}
-  >
+    }}>
     <PencilIcon size={24} />
   </button>
 
@@ -324,8 +303,7 @@
       if (presetId) {
         dispatchDeleteTranslatorPreset(presetId, selectPresetId, previous)
       }
-    }}
-  >
+    }}>
     <TrashIcon size={24} />
   </button>
 
@@ -343,16 +321,12 @@
         }
 
         const preset = presets[DBState.db.translatorPresetId]
-        await downloadFile(
-          getTranslatorPresetDownloadName(preset.name),
-          await encodeTranslatorPresetFile(preset),
-        )
+        await downloadFile(getTranslatorPresetDownloadName(preset.name), await encodeTranslatorPresetFile(preset))
         alertNormal(language.successExport)
       } catch (error) {
         alertError(`${error}`)
       }
-    }}
-  >
+    }}>
     <DownloadIcon size={24} />
   </button>
 
@@ -374,10 +348,7 @@
           DBState.db.translatorPresets = presets
           DBState.db.translatorPresetId = DBState.db.translatorPresets.length - 1
           normalizeTranslatorPresets()
-          dispatchCreateTranslatorPreset(
-            DBState.db.translatorPresets[DBState.db.translatorPresetId],
-            previous,
-          )
+          dispatchCreateTranslatorPreset(DBState.db.translatorPresets[DBState.db.translatorPresetId], previous)
         } else {
           dispatchCreateTranslatorPreset(newPreset, previous)
         }
@@ -386,8 +357,7 @@
       } catch (error) {
         alertError(`${error}`)
       }
-    }}
-  >
+    }}>
     <HardDriveUploadIcon size={24} />
   </button>
 </div>
@@ -410,11 +380,8 @@
         }
         if (presetId) queueTranslatorPresetUpdate(presetId, { maxResponse: value }, previous)
       }
-    }
-  />
-  <span class="text-textcolor mt-4"
-    >{language.translatorPrompt} <Help key="translatorPrompt" /></span
-  >
+    } />
+  <span class="text-textcolor mt-4">{language.translatorPrompt} <Help key="translatorPrompt" /></span>
   <TextAreaInput
     bind:value={
       () => preset.prompt,
@@ -428,6 +395,5 @@
         if (presetId) queueTranslatorPresetUpdate(presetId, { prompt: value }, previous)
       }
     }
-    placeholder={defaultTranslatorPrompt}
-  />
+    placeholder={defaultTranslatorPrompt} />
 {/if}

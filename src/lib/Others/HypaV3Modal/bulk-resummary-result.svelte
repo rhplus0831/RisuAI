@@ -33,8 +33,7 @@
             use:handleDualAction={{
               onMainAction: () => onToggleTranslation(false),
               onAlternativeAction: () => onToggleTranslation(true),
-            }}
-          >
+            }}>
             <LanguagesIcon class="w-4 h-4" />
           </button>
 
@@ -45,21 +44,18 @@
               : 'text-orange-400 hover:text-orange-300'}"
             onclick={onReroll}
             disabled={bulkResummaryState.isProcessing}
-            title={language.hypaV3Modal.retry}
-          >
+            title={language.hypaV3Modal.retry}>
             <RefreshCw class="w-4 h-4" />
           </button>
 
           <!-- Apply Button -->
           <button
-            class="p-2 rounded transition-colors {bulkResummaryState.isProcessing ||
-            !bulkResummaryState.result
+            class="p-2 rounded transition-colors {bulkResummaryState.isProcessing || !bulkResummaryState.result
               ? 'text-zinc-600 cursor-not-allowed'
               : 'text-green-400 hover:text-green-300'}"
             onclick={onApply}
             disabled={bulkResummaryState.isProcessing || !bulkResummaryState.result}
-            title={language.apply}
-          >
+            title={language.apply}>
             <CheckIcon class="w-4 h-4" />
           </button>
 
@@ -67,8 +63,7 @@
           <button
             class="p-2 rounded-sm transition-colors text-zinc-400 hover:text-zinc-200"
             onclick={onCancel}
-            title={language.cancel}
-          >
+            title={language.cancel}>
             <XIcon class="w-4 h-4" />
           </button>
         </div>
@@ -84,8 +79,7 @@
         <textarea
           class="p-3 w-full min-h-32 resize-vertical rounded-sm border border-zinc-700 focus:outline-hidden focus:ring-2 focus:ring-zinc-500 transition-colors text-zinc-200 bg-zinc-800"
           readonly
-          value={bulkResummaryState.result}
-        ></textarea>
+          value={bulkResummaryState.result}></textarea>
 
         <!-- Translation Result -->
         {#if bulkResummaryState.translation}
@@ -96,8 +90,7 @@
             <textarea
               class="p-3 w-full min-h-32 resize-vertical rounded-sm border border-zinc-700 focus:outline-hidden transition-colors text-zinc-200 bg-zinc-800"
               readonly
-              value={bulkResummaryState.translation}
-            ></textarea>
+              value={bulkResummaryState.translation}></textarea>
           </div>
         {/if}
       {/if}

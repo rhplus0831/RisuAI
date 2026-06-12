@@ -14,12 +14,7 @@ import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard
 import { tokenize } from '../tokenizer'
 import { getModuleTriggers } from './modules'
 import { get } from 'svelte/store'
-import {
-  CurrentTriggerIdStore,
-  DBState,
-  refreshVariableOnlyGui,
-  reloadChatAt,
-} from '../stores.svelte'
+import { CurrentTriggerIdStore, DBState, refreshVariableOnlyGui, reloadChatAt } from '../stores.svelte'
 import { processMultiCommand } from './command'
 // L40: trigger effects re-ran `new RegExp(...)` on every execution; reuse the
 // compiled-regex memo (lastIndex resets on retrieval).
@@ -39,10 +34,7 @@ import {
   dispatchUpdateChatNoteScoped,
   type ChatScriptstateSnapshot,
 } from '../chatCommands'
-import {
-  dispatchReplaceCharacterLorebooks,
-  scopedLorebookStateSnapshot,
-} from '../server/lorebookBridge.svelte'
+import { dispatchReplaceCharacterLorebooks, scopedLorebookStateSnapshot } from '../server/lorebookBridge.svelte'
 
 export interface triggerscript {
   id?: string
@@ -53,10 +45,7 @@ export interface triggerscript {
   lowLevelAccess?: boolean
 }
 
-export type triggerCondition =
-  | triggerConditionsVar
-  | triggerConditionsExists
-  | triggerConditionsChatIndex
+export type triggerCondition = triggerConditionsVar | triggerConditionsExists | triggerConditionsChatIndex
 
 export type triggerEffect = triggerEffectV1 | triggerCode | triggerEffectV2
 export type triggerEffectV1 =
@@ -1160,9 +1149,7 @@ export const requestAllowList = [
   ...safeSubset,
 ]
 
-async function collectStreamingText(
-  stream: ReadableStream<{ [key: string]: string }>,
-): Promise<string> {
+async function collectStreamingText(stream: ReadableStream<{ [key: string]: string }>): Promise<string> {
   const reader = stream.getReader()
   let lastChunk = ''
 
@@ -1227,9 +1214,7 @@ export interface TriggerExecutionBudgetOptions {
   now?: () => number
 }
 
-export function createTriggerExecutionBudget(
-  opts: TriggerExecutionBudgetOptions = {},
-): TriggerExecutionBudget {
+export function createTriggerExecutionBudget(opts: TriggerExecutionBudgetOptions = {}): TriggerExecutionBudget {
   const now = opts.now ?? Date.now
   return {
     startedAtMs: now(),
@@ -1243,11 +1228,7 @@ export function createTriggerExecutionBudget(
   }
 }
 
-function markTriggerStopped(
-  budget: TriggerExecutionBudget,
-  reason: TriggerBudgetStopReason,
-  detail: string,
-): void {
+function markTriggerStopped(budget: TriggerExecutionBudget, reason: TriggerBudgetStopReason, detail: string): void {
   if (budget.stoppedReason) {
     return
   }
@@ -1267,10 +1248,7 @@ function shouldStopTriggerExecution(
   if (budget.stoppedReason) {
     return true
   }
-  if (
-    Number.isFinite(budget.wallClockMs) &&
-    budget.now() - budget.startedAtMs >= budget.wallClockMs
-  ) {
+  if (Number.isFinite(budget.wallClockMs) && budget.now() - budget.startedAtMs >= budget.wallClockMs) {
     markTriggerStopped(budget, 'wallClock', detail)
     return true
   }
@@ -1316,11 +1294,7 @@ function triggerBudgetRemainingMs(budget: TriggerExecutionBudget): number {
   return Math.max(0, budget.wallClockMs - (budget.now() - budget.startedAtMs))
 }
 
-function sleepWithAbort(
-  ms: number,
-  signal: AbortSignal | undefined,
-  budget?: TriggerExecutionBudget,
-): Promise<void> {
+function sleepWithAbort(ms: number, signal: AbortSignal | undefined, budget?: TriggerExecutionBudget): Promise<void> {
   const budgetRemainingMs = budget ? triggerBudgetRemainingMs(budget) : Number.POSITIVE_INFINITY
   const sleepMs = Math.max(0, Math.min(ms, budgetRemainingMs))
   if (!signal) {
@@ -1392,15 +1366,15 @@ export async function runTrigger(
   // carries the character-level `lowLevelAccess`, but the source trigger rows
   // may be read-only Fastify projection objects, so attach that metadata on
   // shallow copies.
-  const charTriggers: triggerscript[] = char.triggerscript.map((v): triggerscript => ({
-    ...v,
-    lowLevelAccess: CharacterlowLevelAccess,
-  }))
+  const charTriggers: triggerscript[] = char.triggerscript.map(
+    (v): triggerscript => ({
+      ...v,
+      lowLevelAccess: CharacterlowLevelAccess,
+    }),
+  )
   const triggers: triggerscript[] = charTriggers.concat(getModuleTriggers())
   const db = getDatabase()
-  const defaultVariables = parseKeyValue(char.defaultVariables).concat(
-    parseKeyValue(db.templateDefaultVariables),
-  )
+  const defaultVariables = parseKeyValue(char.defaultVariables).concat(parseKeyValue(db.templateDefaultVariables))
 
   const previousTriggerId = get(CurrentTriggerIdStore)
   const shouldSetTriggerId = !arg.displayMode && mode !== 'display'
@@ -1631,11 +1605,7 @@ export async function runTrigger(
 
     let pass = true
     for (const condition of trigger.conditions) {
-      if (
-        condition.type === 'var' ||
-        condition.type === 'chatindex' ||
-        condition.type === 'value'
-      ) {
+      if (condition.type === 'var' || condition.type === 'chatindex' || condition.type === 'value') {
         let varValue =
           condition.type === 'var'
             ? (getVar(condition.var) ?? 'null')
@@ -1892,11 +1862,7 @@ export async function runTrigger(
             'model',
           )
 
-          if (
-            result.type === 'fail' ||
-            result.type === 'streaming' ||
-            result.type === 'multiline'
-          ) {
+          if (result.type === 'fail' || result.type === 'streaming' || result.type === 'multiline') {
             setVar(varName, 'Error: ' + result.result)
           } else {
             setVar(varName, result.result)
@@ -2027,8 +1993,7 @@ export async function runTrigger(
               ? risuChatParser(effect.value, { chara: char })
               : getVar(risuChatParser(effect.value, { chara: char }))
           const varKey = risuChatParser(effect.var, { chara: char })
-          const finalValue =
-            effectValue === null || effectValue === undefined ? 'null' : effectValue
+          const finalValue = effectValue === null || effectValue === undefined ? 'null' : effectValue
           declareLocalVar(varKey, finalValue, effect.indent)
           break
         }
@@ -2459,10 +2424,7 @@ export async function runTrigger(
             effect.indexType === 'value'
               ? Number(risuChatParser(effect.index, { chara: char }))
               : Number(getVar(risuChatParser(effect.index, { chara: char })))
-          setVar(
-            risuChatParser(effect.outputVar, { chara: char }),
-            chat.message[index]?.data ?? 'null',
-          )
+          setVar(risuChatParser(effect.outputVar, { chara: char }), chat.message[index]?.data ?? 'null')
           break
         }
         case 'v2GetMessageCount': {
@@ -2497,18 +2459,12 @@ export async function runTrigger(
               ? risuChatParser(effect.target, { chara: char })
               : getVar(risuChatParser(effect.target, { chara: char }))
           const index = char.globalLore.findIndex((v) => v[0] === target)
-          setVar(
-            risuChatParser(effect.outputVar, { chara: char }),
-            index === -1 ? 'null' : char.globalLore[index][1],
-          )
+          setVar(risuChatParser(effect.outputVar, { chara: char }), index === -1 ? 'null' : char.globalLore[index][1])
           break
         }
         case 'v2GetLorebookCount': {
           char.globalLore = char.globalLore ?? []
-          setVar(
-            risuChatParser(effect.outputVar, { chara: char }),
-            char.globalLore.length.toString(),
-          )
+          setVar(risuChatParser(effect.outputVar, { chara: char }), char.globalLore.length.toString())
           break
         }
         case 'v2GetLorebookEntry': {
@@ -2520,10 +2476,7 @@ export async function runTrigger(
           if (Number.isNaN(index)) {
             index = 0
           }
-          setVar(
-            risuChatParser(effect.outputVar, { chara: char }),
-            char.globalLore[index]?.[1] ?? 'null',
-          )
+          setVar(risuChatParser(effect.outputVar, { chara: char }), char.globalLore[index]?.[1] ?? 'null')
           break
         }
         case 'v2SetLorebookActivation': {
@@ -2691,10 +2644,7 @@ export async function runTrigger(
           const db = getDatabase()
           const currentPersonaPrompt = db.personaPrompt ?? ''
           const savedPersonaPrompt = db.personas[db.selectedPersona]?.personaPrompt ?? ''
-          setVar(
-            risuChatParser(effect.outputVar, { chara: char }),
-            currentPersonaPrompt || savedPersonaPrompt,
-          )
+          setVar(risuChatParser(effect.outputVar, { chara: char }), currentPersonaPrompt || savedPersonaPrompt)
           break
         }
         case 'v2SetPersonaDesc': {
@@ -2856,10 +2806,7 @@ export async function runTrigger(
                 ? Number(risuChatParser(effect.end, { chara: char }))
                 : Number(getVar(risuChatParser(effect.end, { chara: char })))
 
-            setVar(
-              risuChatParser(effect.outputVar, { chara: char }),
-              JSON.stringify(arr.slice(start, end)),
-            )
+            setVar(risuChatParser(effect.outputVar, { chara: char }), JSON.stringify(arr.slice(start, end)))
           } catch (error) {
             setVar(risuChatParser(effect.outputVar, { chara: char }), '[]')
           }
@@ -3122,10 +3069,7 @@ export async function runTrigger(
             effect.valueType === 'value'
               ? risuChatParser(effect.value, { chara: char })
               : getVar(risuChatParser(effect.value, { chara: char }))
-          setVar(
-            risuChatParser(effect.outputVar, { chara: char }),
-            (await tokenize(value)).toString(),
-          )
+          setVar(risuChatParser(effect.outputVar, { chara: char }), (await tokenize(value)).toString())
           break
         }
         case 'v2GetAllLorebooks': {
@@ -3217,12 +3161,7 @@ export async function runTrigger(
               ? Number(risuChatParser(effect.index, { chara: char }))
               : Number(getVar(risuChatParser(effect.index, { chara: char })))
 
-          if (
-            Number.isNaN(index) ||
-            index < 0 ||
-            index >= char.globalLore.length ||
-            !char.globalLore[index]
-          ) {
+          if (Number.isNaN(index) || index < 0 || index >= char.globalLore.length || !char.globalLore[index]) {
             break
           }
 
@@ -3254,10 +3193,7 @@ export async function runTrigger(
             effect.insertOrderType === 'value'
               ? risuChatParser(effect.insertOrder, { chara: char })
               : getVar(risuChatParser(effect.insertOrder, { chara: char }))
-          insertOrder = insertOrder.replace(
-            /{{slot}}/g,
-            (currentLore.insertorder || 100).toString(),
-          )
+          insertOrder = insertOrder.replace(/{{slot}}/g, (currentLore.insertorder || 100).toString())
           const insertOrderNum = Number(insertOrder)
           if (!Number.isNaN(insertOrderNum)) {
             char.globalLore[index].insertorder = insertOrderNum
@@ -3274,12 +3210,7 @@ export async function runTrigger(
               ? Number(risuChatParser(effect.index, { chara: char }))
               : Number(getVar(risuChatParser(effect.index, { chara: char })))
 
-          if (
-            Number.isNaN(index) ||
-            index < 0 ||
-            index >= char.globalLore.length ||
-            !char.globalLore[index]
-          ) {
+          if (Number.isNaN(index) || index < 0 || index >= char.globalLore.length || !char.globalLore[index]) {
             break
           }
 
@@ -3291,10 +3222,7 @@ export async function runTrigger(
         }
         case 'v2GetLorebookCountNew': {
           char.globalLore = char.globalLore ?? []
-          setVar(
-            risuChatParser(effect.outputVar, { chara: char }),
-            char.globalLore.length.toString(),
-          )
+          setVar(risuChatParser(effect.outputVar, { chara: char }), char.globalLore.length.toString())
           break
         }
         case 'v2SetLorebookAlwaysActive': {
@@ -3305,12 +3233,7 @@ export async function runTrigger(
               ? Number(risuChatParser(effect.index, { chara: char }))
               : Number(getVar(risuChatParser(effect.index, { chara: char })))
 
-          if (
-            Number.isNaN(index) ||
-            index < 0 ||
-            index >= char.globalLore.length ||
-            !char.globalLore[index]
-          ) {
+          if (Number.isNaN(index) || index < 0 || index >= char.globalLore.length || !char.globalLore[index]) {
             break
           }
 
@@ -3466,10 +3389,7 @@ export async function runTrigger(
               effect.keyType === 'value'
                 ? risuChatParser(effect.key, { chara: char })
                 : getVar(risuChatParser(effect.key, { chara: char }))
-            setVar(
-              risuChatParser(effect.outputVar, { chara: char }),
-              Object.hasOwn(dict, key) ? '1' : '0',
-            )
+            setVar(risuChatParser(effect.outputVar, { chara: char }), Object.hasOwn(dict, key) ? '1' : '0')
           } catch (error) {
             setVar(risuChatParser(effect.outputVar, { chara: char }), '0')
           }
@@ -3489,10 +3409,7 @@ export async function runTrigger(
                 ? risuChatParser(effect.var, { chara: char })
                 : getVar(risuChatParser(effect.var, { chara: char }))
             let dict = JSON.parse(varValue)
-            setVar(
-              risuChatParser(effect.outputVar, { chara: char }),
-              Object.keys(dict).length.toString(),
-            )
+            setVar(risuChatParser(effect.outputVar, { chara: char }), Object.keys(dict).length.toString())
           } catch (error) {
             setVar(risuChatParser(effect.outputVar, { chara: char }), '0')
           }

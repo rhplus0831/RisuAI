@@ -14,9 +14,7 @@ declare global {
       activeWriterHeaders: () => Promise<Record<string, string>>
       getDatabaseSnapshot: () => Database
       isLoaded: () => boolean
-      patchRuntimeSettings: (
-        patch: Record<string, unknown>,
-      ) => Promise<ServerCommandResult<Record<string, unknown>>>
+      patchRuntimeSettings: (patch: Record<string, unknown>) => Promise<ServerCommandResult<Record<string, unknown>>>
       waitForLoaded: (timeoutMs?: number) => Promise<void>
       // Swipe-persistence E2E: open a character (drives chat hydration), read the
       // reconstructed reroll candidates, and drive the swipe controls.
@@ -37,8 +35,7 @@ export function installFastifyBrowserSmokeHook() {
     }),
     assertDirectProjectionWriteRejected: () => {
       try {
-        ;(getDatabase() as unknown as Record<string, unknown>).language =
-          'fastify-smoke-direct-write'
+        ;(getDatabase() as unknown as Record<string, unknown>).language = 'fastify-smoke-direct-write'
       } catch {
         return true
       }

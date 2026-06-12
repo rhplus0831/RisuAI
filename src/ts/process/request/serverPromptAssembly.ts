@@ -16,10 +16,7 @@ import {
  * does not pick a provider; dispatch does. `server` is likewise bare. `unsupported`
  * carries the user-facing failure message surfaced by the gate.
  */
-export type ServerPromptAssemblyRoute =
-  | { type: 'local' }
-  | { type: 'server' }
-  | { type: 'unsupported'; reason: string }
+export type ServerPromptAssemblyRoute = { type: 'local' } | { type: 'server' } | { type: 'unsupported'; reason: string }
 
 export interface ServerPromptAssemblyInput {
   currentChar: character
@@ -122,10 +119,7 @@ function hasPluginV2EditSet(): boolean {
  * undisturbed.
  */
 function luaUsesInteractiveApi(currentChar: character): boolean {
-  return (
-    triggersUseInteractiveLua(currentChar.triggerscript) ||
-    triggersUseInteractiveLua(getModuleTriggers())
-  )
+  return triggersUseInteractiveLua(currentChar.triggerscript) || triggersUseInteractiveLua(getModuleTriggers())
 }
 
 /**
@@ -188,8 +182,7 @@ function buildCapabilityInput(targ: RequestDataArgumentExtended): ProviderCapabi
     format: modelInfo.format,
     aiModel: targ.aiModel ?? modelInfo.id ?? '',
     endpoint: typeof modelInfo.endpoint === 'string' ? modelInfo.endpoint : undefined,
-    keyIdentifier:
-      typeof modelInfo.keyIdentifier === 'string' ? modelInfo.keyIdentifier : undefined,
+    keyIdentifier: typeof modelInfo.keyIdentifier === 'string' ? modelInfo.keyIdentifier : undefined,
     internalID: typeof modelInfo.internalID === 'string' ? modelInfo.internalID : undefined,
     config: {
       forceReplaceUrl: db.forceReplaceUrl,
@@ -247,17 +240,14 @@ function resolveServerProviderPreflight(): ServerPromptAssemblyRoute | null {
  * The verdict is always `server` or `unsupported` — never a silent local
  * fall-through.
  */
-export function resolveServerPromptAssembly(
-  input: ServerPromptAssemblyInput,
-): ServerPromptAssemblyRoute {
+export function resolveServerPromptAssembly(input: ServerPromptAssemblyInput): ServerPromptAssemblyRoute {
   const mode = deriveMode(input)
   if (mode === 'send') {
     const lastMessage = input.currentChat.message.at(-1)
     if (lastMessage?.role !== 'user' || typeof lastMessage.data !== 'string') {
       return {
         type: 'unsupported',
-        reason:
-          'Server prompt assembly for a send requires the last message to be a text user message.',
+        reason: 'Server prompt assembly for a send requires the last message to be a text user message.',
       }
     }
   }

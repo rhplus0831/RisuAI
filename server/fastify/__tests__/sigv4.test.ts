@@ -62,9 +62,7 @@ describe('signSigV4 — published test vector', () => {
     expect(result.headers['Authorization']).toContain(
       'AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20110909/us-east-1/host/aws4_request',
     )
-    expect(result.headers['Authorization']).toContain(
-      `Signature=${result.signature}`,
-    )
+    expect(result.headers['Authorization']).toContain(`Signature=${result.signature}`)
   })
 
   it('includes x-amz-security-token in signed headers when a session token is provided', () => {

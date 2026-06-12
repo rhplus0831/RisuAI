@@ -12,11 +12,7 @@ import { setServerProjectionWriteGuardEnabled } from '../server/projectionWriteG
 import { setDatabase, type Database, type character } from '../storage/database.svelte'
 import { DBState, selectedCharID } from '../stores.svelte'
 import { appendCurrentChatUserMessageForSend } from '../chatCommands'
-import {
-  seedCloneCostDb,
-  withAsyncCloneInstrumentation,
-  type CloneInstrumentation,
-} from './cloneCostHarness'
+import { seedCloneCostDb, withAsyncCloneInstrumentation, type CloneInstrumentation } from './cloneCostHarness'
 
 export interface SendCloneCountProbeOptions {
   characterCount?: number
@@ -257,10 +253,7 @@ async function submitPlainUserMessage(userMessage: string): Promise<void> {
   }
 }
 
-function summarizeCommands(
-  calls: ProbeCommandCall[],
-  submittedMessageCount: number,
-): SendCloneCountProbeCommands {
+function summarizeCommands(calls: ProbeCommandCall[], submittedMessageCount: number): SendCloneCountProbeCommands {
   const messageReplaceCalls = calls.filter(
     (call) => call.method === 'PUT' && /\/chats\/[^/]+\/messages$/.test(call.url),
   )
@@ -280,11 +273,9 @@ function summarizeCommands(
     totalCommandCount: calls.length,
     messageReplaceCommandCount: messageReplaceCalls.length,
     messageAppendCommandCount: messageAppendCalls.length,
-    characterPatchCommandCount: calls.filter(
-      (call) => call.method === 'PATCH' && /\/characters\/[^/]+$/.test(call.url),
-    ).length,
-    generationResultCommandCount: calls.filter((call) => /\/generation-result$/.test(call.url))
+    characterPatchCommandCount: calls.filter((call) => call.method === 'PATCH' && /\/characters\/[^/]+$/.test(call.url))
       .length,
+    generationResultCommandCount: calls.filter((call) => /\/generation-result$/.test(call.url)).length,
     persistedMessageCount,
     persistedWholeTranscript: replacedMessageCount === submittedMessageCount,
   }

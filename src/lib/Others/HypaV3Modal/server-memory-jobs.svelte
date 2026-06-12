@@ -7,10 +7,7 @@
     type ServerMemoryJob,
   } from 'src/ts/process/request/serverMemory'
   import { subscribeServerMemoryJobEvents } from 'src/ts/server/memoryJobEvents'
-  import {
-    createMemoryJobRefreshController,
-    type MemoryJobRefreshController,
-  } from 'src/ts/server/memoryJobRefresh'
+  import { createMemoryJobRefreshController, type MemoryJobRefreshController } from 'src/ts/server/memoryJobRefresh'
 
   interface Props {
     chatId: string
@@ -26,9 +23,7 @@
   let refreshController: MemoryJobRefreshController | null = null
   let unsubscribeMemoryEvents: (() => void) | null = null
 
-  const activeJobs = $derived(
-    jobs.filter((job) => job.status === 'pending' || job.status === 'running'),
-  )
+  const activeJobs = $derived(jobs.filter((job) => job.status === 'pending' || job.status === 'running'))
 
   function kindLabel(kind: ServerMemoryJob['kind']): string {
     switch (kind) {
@@ -79,8 +74,7 @@
       return
     }
 
-    error =
-      result.status === 'unavailable' ? 'Server memory jobs are unavailable.' : result.error
+    error = result.status === 'unavailable' ? 'Server memory jobs are unavailable.' : result.error
     await refreshJobs()
   }
 
@@ -91,8 +85,7 @@
   onMount(() => {
     refreshController = createMemoryJobRefreshController({
       chatId,
-      listJobs: (currentChatId, signal) =>
-        listServerMemoryJobs({ chatId: currentChatId }, signal),
+      listJobs: (currentChatId, signal) => listServerMemoryJobs({ chatId: currentChatId }, signal),
       onJobs: (nextJobs, loadedAt) => {
         jobs = nextJobs
         error = null
@@ -147,8 +140,7 @@
       tabindex="-1"
       disabled={loading}
       onclick={() => void refreshJobs()}
-      title="Refresh jobs"
-    >
+      title="Refresh jobs">
       <RefreshCwIcon class="h-4 w-4 {loading ? 'animate-spin' : ''}" />
     </button>
   </div>
@@ -165,8 +157,7 @@
     <div class="mt-3 flex flex-col gap-2">
       {#each activeJobs as job (job.id)}
         <div
-          class="flex flex-col gap-3 rounded-sm border border-zinc-700 bg-zinc-900/70 p-3 sm:flex-row sm:items-center sm:justify-between"
-        >
+          class="flex flex-col gap-3 rounded-sm border border-zinc-700 bg-zinc-900/70 p-3 sm:flex-row sm:items-center sm:justify-between">
           <div class="min-w-0">
             <div class="flex flex-wrap items-center gap-2">
               <span class="text-sm font-medium text-zinc-100">{kindLabel(job.kind)}</span>
@@ -187,8 +178,7 @@
             tabindex="-1"
             disabled={cancellingJobIds.has(job.id)}
             onclick={() => void cancelJob(job.id)}
-            title="Cancel job"
-          >
+            title="Cancel job">
             <XIcon class="h-4 w-4" />
             {cancellingJobIds.has(job.id) ? 'Cancelling' : 'Cancel'}
           </button>

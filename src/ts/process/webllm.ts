@@ -1,8 +1,4 @@
-import type {
-  ChatCompletionMessageParam,
-  ChatCompletionRequestNonStreaming,
-  MLCEngine,
-} from '@mlc-ai/web-llm'
+import type { ChatCompletionMessageParam, ChatCompletionRequestNonStreaming, MLCEngine } from '@mlc-ai/web-llm'
 
 let engine: MLCEngine = null
 let lastModel: string = null

@@ -5,13 +5,7 @@
   import LoreBookList from 'src/lib/SideBars/LoreBook/LoreBookList.svelte'
   import { type CCLorebook, convertExternalLorebook } from 'src/ts/process/lorebook.svelte'
   import type { RisuModule } from 'src/ts/process/modules'
-  import {
-    DownloadIcon,
-    FolderPlusIcon,
-    HardDriveUploadIcon,
-    PlusIcon,
-    TrashIcon,
-  } from '@lucide/svelte'
+  import { DownloadIcon, FolderPlusIcon, HardDriveUploadIcon, PlusIcon, TrashIcon } from '@lucide/svelte'
   import RegexList from 'src/lib/SideBars/Scripts/RegexList.svelte'
   import TriggerList from 'src/lib/SideBars/Scripts/TriggerList.svelte'
   import Check from 'src/lib/UI/GUI/CheckInput.svelte'
@@ -77,8 +71,7 @@
     if (DBState.db.useAdditionalAssetsPreview) {
       for (const asset of currentModule?.assets ?? []) {
         const assetPath = asset[1]
-        nextExtensions[assetPath] =
-          asset.length > 2 && asset[2] ? asset[2] : assetPath.split('.').pop()
+        nextExtensions[assetPath] = asset.length > 2 && asset[2] ? asset[2] : assetPath.split('.').pop()
         getFileSrc(assetPath).then((filePath) => {
           if (run !== assetPreviewRun) return
           assetFilePath[assetPath] = filePath
@@ -229,16 +222,13 @@
   }
 </script>
 
-<div
-  class="flex w-full rounded-md border border-darkborderc mb-4 overflow-x-auto h-16 min-h-16 overflow-y-clip"
->
+<div class="flex w-full rounded-md border border-darkborderc mb-4 overflow-x-auto h-16 min-h-16 overflow-y-clip">
   <button
     onclick={() => {
       submenu = 0
     }}
     class="p-2 flex-1 border-r border-darkborderc"
-    class:bg-darkbutton={submenu === 0}
-  >
+    class:bg-darkbutton={submenu === 0}>
     <span>{language.basicInfo}</span>
   </button>
   <button
@@ -247,8 +237,7 @@
       submenu = 1
     }}
     class="p2 flex-1 border-r border-darkborderc"
-    class:bg-darkbutton={submenu === 1}
-  >
+    class:bg-darkbutton={submenu === 1}>
     <span>{language.loreBook}</span>
   </button>
   <button
@@ -257,8 +246,7 @@
       submenu = 2
     }}
     class="p-2 flex-1 border-r border-darkborderc"
-    class:bg-darkbutton={submenu === 2}
-  >
+    class:bg-darkbutton={submenu === 2}>
     <span>{language.regexScript}</span>
   </button>
   <button
@@ -286,8 +274,7 @@
       submenu = 3
     }}
     class="p-2 flex-1 border-r border-darkborderc"
-    class:bg-darkbutton={submenu === 3}
-  >
+    class:bg-darkbutton={submenu === 3}>
     <span>{language.triggerScript}</span>
   </button>
   <button
@@ -296,8 +283,7 @@
       submenu = 5
     }}
     class="p-2 flex-1"
-    class:bg-darkbutton={submenu === 5}
-  >
+    class:bg-darkbutton={submenu === 5}>
     <span>{language.additionalAssets}</span>
   </button>
 </div>
@@ -312,9 +298,7 @@
   <div class="flex items-center mt-4">
     <Check bind:check={currentModule.hideIcon} name={language.hideChatIcon} />
   </div>
-  <span class="mt-4"
-    >{language.customPromptTemplateToggle} <Help key="customPromptTemplateToggle" /></span
-  >
+  <span class="mt-4">{language.customPromptTemplateToggle} <Help key="customPromptTemplateToggle" /></span>
   <TextAreaInput bind:value={currentModule.customModuleToggle} />
 {/if}
 {#if submenu === 1 && Array.isArray(currentModule.lorebook)}
@@ -322,39 +306,34 @@
     externalLoreBooks={currentModule.lorebook}
     onCollectionChange={updateModuleLorebookCollection}
     onEntryChange={updateModuleLorebookValue}
-    onEntrySettled={flushModuleLorebookValue}
-  />
+    onEntrySettled={flushModuleLorebookValue} />
   <div class="text-textcolor2 mt-2 flex">
     <button
       onclick={() => {
         addLorebook()
       }}
-      class="hover:text-textcolor cursor-pointer ml-1"
-    >
+      class="hover:text-textcolor cursor-pointer ml-1">
       <PlusIcon />
     </button>
     <button
       onclick={() => {
         exportLoreBook()
       }}
-      class="hover:text-textcolor cursor-pointer ml-2"
-    >
+      class="hover:text-textcolor cursor-pointer ml-2">
       <DownloadIcon />
     </button>
     <button
       onclick={() => {
         addLorebookFolder()
       }}
-      class="hover:text-textcolor ml-2 cursor-pointer"
-    >
+      class="hover:text-textcolor ml-2 cursor-pointer">
       <FolderPlusIcon />
     </button>
     <button
       onclick={() => {
         importLoreBook()
       }}
-      class="hover:text-textcolor cursor-pointer ml-2"
-    >
+      class="hover:text-textcolor cursor-pointer ml-2">
       <HardDriveUploadIcon />
     </button>
   </div>
@@ -365,28 +344,24 @@
     bind:value={currentModule.backgroundEmbedding}
     className="mt-2"
     placeholder={language.backgroundHTML}
-    size="sm"
-  />
+    size="sm" />
   <RegexList bind:value={currentModule.regex} />
   <div class="text-textcolor2 mt-2 flex gap-2">
     <button
       class="font-medium cursor-pointer hover:text-green-500"
       onclick={() => {
         addRegex()
-      }}><PlusIcon /></button
-    >
+      }}><PlusIcon /></button>
     <button
       class="font-medium cursor-pointer hover:text-green-500"
       onclick={() => {
         exportRegex(currentModule.regex)
-      }}><DownloadIcon /></button
-    >
+      }}><DownloadIcon /></button>
     <button
       class="font-medium cursor-pointer hover:text-green-500"
       onclick={async () => {
         currentModule.regex = await importRegex(currentModule.regex)
-      }}><HardDriveUploadIcon /></button
-    >
+      }}><HardDriveUploadIcon /></button>
   </div>
 {/if}
 
@@ -429,8 +404,7 @@
                   currentModule.assets.push([name, imgp, extension])
                   currentModule.assets = currentModule.assets
                 }
-              }}
-            >
+              }}>
               <PlusIcon />
             </button>
           </th>
@@ -447,27 +421,15 @@
                   {#if assetFileExtensions[assets[1]] === 'mp4'}
                     <!-- svelte-ignore a11y_media_has_caption -->
                     <video controls class="mt-2 px-2 w-full m-1 rounded-md"
-                      ><source src={assetFilePath[assets[1]]} type="video/mp4" /></video
-                    >
+                      ><source src={assetFilePath[assets[1]]} type="video/mp4" /></video>
                   {:else if assetFileExtensions[assets[1]] === 'mp3'}
                     <audio controls class="mt-2 px-2 w-full h-16 m-1 rounded-md" loop
-                      ><source src={assetFilePath[assets[1]]} type="audio/mpeg" /></audio
-                    >
+                      ><source src={assetFilePath[assets[1]]} type="audio/mpeg" /></audio>
                   {:else}
-                    <img
-                      src={assetFilePath[assets[1]]}
-                      class="w-16 h-16 m-1 rounded-md"
-                      alt={assets[0]}
-                    />
+                    <img src={assetFilePath[assets[1]]} class="w-16 h-16 m-1 rounded-md" alt={assets[0]} />
                   {/if}
                 {/if}
-                <TextInput
-                  fullwidth
-                  size="sm"
-                  marginBottom
-                  bind:value={currentModule.assets[i][0]}
-                  placeholder="..."
-                />
+                <TextInput fullwidth size="sm" marginBottom bind:value={currentModule.assets[i][0]} placeholder="..." />
               </td>
 
               <th class="font-medium cursor-pointer w-10">
@@ -477,8 +439,7 @@
                     let additionalAssets = currentModule.assets
                     additionalAssets.splice(i, 1)
                     currentModule.assets = additionalAssets
-                  }}
-                >
+                  }}>
                   <TrashIcon />
                 </button>
               </th>

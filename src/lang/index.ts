@@ -14,14 +14,7 @@ type ResolvedLanguageCode = 'cn' | 'de' | 'en' | 'es' | 'ko' | 'vi' | 'zh-Hant'
 let lastAppliedLanguageCode: ResolvedLanguageCode | undefined
 
 function resolveLanguageCode(lang: string): ResolvedLanguageCode {
-  if (
-    lang === 'cn' ||
-    lang === 'de' ||
-    lang === 'es' ||
-    lang === 'ko' ||
-    lang === 'vi' ||
-    lang === 'zh-Hant'
-  ) {
+  if (lang === 'cn' || lang === 'de' || lang === 'es' || lang === 'ko' || lang === 'vi' || lang === 'zh-Hant') {
     return lang
   }
 

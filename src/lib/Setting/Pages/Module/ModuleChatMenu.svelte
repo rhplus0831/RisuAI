@@ -33,9 +33,7 @@
 </script>
 
 <div class="absolute w-full h-full z-40 bg-black/50 flex justify-center items-center">
-  <div
-    class="bg-darkbg p-4 break-any rounded-md flex flex-col max-w-3xl w-full max-h-full overflow-y-auto"
-  >
+  <div class="bg-darkbg p-4 break-any rounded-md flex flex-col max-w-3xl w-full max-h-full overflow-y-auto">
     <div class="flex items-center text-textcolor">
       <h2 class="mt-0 mb-0 text-lg">{language.modules}</h2>
       <div class="grow flex justify-end">
@@ -43,8 +41,7 @@
           class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer items-center"
           onclick={() => {
             close('')
-          }}
-        >
+          }}>
           <XIcon size={24} />
         </button>
       </div>
@@ -79,13 +76,11 @@
                     e.stopPropagation()
 
                     close(rmodule.id)
-                  }}
-                >
+                  }}>
                   <CircleCheckIcon size={18} />
                 </button>
               {:else if DBState.db.enabledModules.includes(rmodule.id)}
-                <button class="mr-2 text-textcolor2 cursor-not-allowed" aria-labelledby="disabled">
-                </button>
+                <button class="mr-2 text-textcolor2 cursor-not-allowed" aria-labelledby="disabled"> </button>
               {:else}
                 <button
                   class={DBState.db.characters[$selectedCharID].chats[
@@ -103,8 +98,7 @@
                     e.preventDefault()
                     e.stopPropagation()
                     toggleSelectedCharacterModule(rmodule.id)
-                  }}
-                >
+                  }}>
                   <CircleCheckIcon size={18} />
                 </button>
               {/if}
@@ -121,8 +115,7 @@
           $SettingsMenuIndex = 14
           $settingsOpen = true
           close('')
-        }}>{language.edit}</Button
-      >
+        }}>{language.edit}</Button>
     </div>
   </div>
 </div>

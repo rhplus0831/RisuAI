@@ -166,10 +166,7 @@ export function applyAdditionalParameters(
       continue
     }
 
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
       setObjectValue(body, key, value.slice(1, -1))
       continue
     }

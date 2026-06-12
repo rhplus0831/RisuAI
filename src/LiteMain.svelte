@@ -31,8 +31,7 @@
                 await downloadRisuHub(card.id, {
                   forceRedirect: true,
                 })
-              }}
-            />
+              }} />
           {/each}
         {/await}
       </div>

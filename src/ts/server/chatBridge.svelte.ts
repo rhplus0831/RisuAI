@@ -53,9 +53,7 @@ export interface ChatMetadataBaselines {
   folders: Map<string, ChatFolderSnapshot>
 }
 
-export function watchServerBackedChatMetadata(
-  options: WatchServerBackedChatMetadataOptions = {},
-): () => void {
+export function watchServerBackedChatMetadata(options: WatchServerBackedChatMetadataOptions = {}): () => void {
   if (!canUseServerCommands()) return () => {}
   if (activeStop) {
     watcherRefs += 1
@@ -98,11 +96,7 @@ export function watchServerBackedChatMetadata(
         folders: previousFolders,
       })
 
-      if (
-        suppressRollbackDispatch ||
-        !initialized ||
-        projectionApplyEpoch !== previousProjectionApplyEpoch
-      ) {
+      if (suppressRollbackDispatch || !initialized || projectionApplyEpoch !== previousProjectionApplyEpoch) {
         initialized = true
         previousProjectionApplyEpoch = projectionApplyEpoch
         previousChats = current.chats
@@ -171,12 +165,7 @@ export function watchServerBackedChatMetadata(
   }
 }
 
-function queueChatPatch(
-  chatId: string,
-  patch: ChatSnapshot,
-  rollback: ChatRowMetadataSnapshot,
-  delay: number,
-): void {
+function queueChatPatch(chatId: string, patch: ChatSnapshot, rollback: ChatRowMetadataSnapshot, delay: number): void {
   const pendingChatPatch = pendingChatPatches.get(chatId)
   if (pendingChatPatch?.timer) clearTimeout(pendingChatPatch.timer)
 
@@ -225,9 +214,7 @@ function queueFolderPatch(
   pendingFolderPatches.set(folderId, nextPatch)
 }
 
-export function flushPendingServerBackedChatPatches(
-  options: ServerCommandTransportOptions = {},
-): void {
+export function flushPendingServerBackedChatPatches(options: ServerCommandTransportOptions = {}): void {
   for (const chatId of Array.from(pendingChatPatches.keys())) {
     runPendingChatPatch(chatId, options)
   }
@@ -250,20 +237,12 @@ function runPendingChatPatch(chatId: string, options: ServerCommandTransportOpti
   )
 }
 
-function runPendingFolderPatch(
-  folderId: string,
-  options: ServerCommandTransportOptions = {},
-): void {
+function runPendingFolderPatch(folderId: string, options: ServerCommandTransportOptions = {}): void {
   const commandPatch = pendingFolderPatches.get(folderId)
   if (!commandPatch) return
   if (commandPatch.timer) clearTimeout(commandPatch.timer)
   pendingFolderPatches.delete(folderId)
-  dispatchUpdateChatFolderRow(
-    commandPatch.folderId,
-    commandPatch.patch,
-    commandPatch.rollback,
-    options,
-  )
+  dispatchUpdateChatFolderRow(commandPatch.folderId, commandPatch.patch, commandPatch.rollback, options)
 }
 
 // Build the scalar metadata snapshot for one chat without ever serializing its
@@ -290,9 +269,7 @@ function scalarChatFolderMetadata(folder: ChatFolder): ChatFolderSnapshot {
   }
 }
 
-export function currentChatMetadataBaselines(
-  previous?: ChatMetadataBaselines,
-): ChatMetadataBaselines {
+export function currentChatMetadataBaselines(previous?: ChatMetadataBaselines): ChatMetadataBaselines {
   const selectedChar = get(selectedCharID)
   const character = DBState.db.characters?.[selectedChar]
   const characterId = character?.chaId
@@ -303,10 +280,7 @@ export function currentChatMetadataBaselines(
       selectedChar,
       characterId,
       chats: new Map<string, ChatSnapshot>(
-        chats.map((chat): [string, ChatSnapshot] => [
-          chat.id,
-          scalarChatMetadata(chat as unknown as ChatSnapshot),
-        ]),
+        chats.map((chat): [string, ChatSnapshot] => [chat.id, scalarChatMetadata(chat as unknown as ChatSnapshot)]),
       ),
       folders: new Map<string, ChatFolderSnapshot>(
         folders.map((folder): [string, ChatFolderSnapshot] => [

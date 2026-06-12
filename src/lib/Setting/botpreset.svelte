@@ -12,11 +12,7 @@
     updatePreset,
     type botPreset,
   } from '../../ts/storage/database.svelte'
-  import {
-    DBState,
-    selectedCharID,
-    type GenerationSettingsPickerMode,
-  } from 'src/ts/stores.svelte'
+  import { DBState, selectedCharID, type GenerationSettingsPickerMode } from 'src/ts/stores.svelte'
   import {
     CopyIcon,
     Share2Icon,
@@ -141,15 +137,11 @@
     class="bg-darkbg p-4 break-any rounded-md flex flex-col max-w-3xl w-124 max-h-full overflow-y-auto"
     data-risu-generation-picker
     data-risu-picker-kind="preset"
-    data-risu-picker-mode={mode}
-  >
+    data-risu-picker-mode={mode}>
     <div class="flex items-center text-textcolor mb-4">
       <h2 class="mt-0 mb-0">{language.presets}</h2>
       <div class="grow flex justify-end">
-        <button
-          class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer items-center"
-          onclick={close}
-        >
+        <button class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer items-center" onclick={close}>
           <XIcon size={24} />
         </button>
       </div>
@@ -173,8 +165,8 @@
         ondrop={(e) => {
           handlePresetDrop(i, e)
           dragOverIndex = -1
-        }}
-      ></div>
+        }}>
+      </div>
 
       <button
         onclick={() => {
@@ -230,25 +222,18 @@
         ondrop={(e) => {
           handlePresetDrop(dragOverIndex, e)
           dragOverIndex = -1
-        }}
-      >
+        }}>
         {#if editMode}
           <TextInput
             bind:value={() => DBState.db.botPresets[i].name, (value) => renamePreset(i, value)}
             placeholder="string"
-            padding={false}
-          />
+            padding={false} />
         {:else}
           {#if i < 9}
             <span class="w-2 text-center mr-2 text-textcolor2">{i + 1}</span>
           {/if}
           {#if preset.image}
-            <img
-              src={preset.image}
-              alt="icon"
-              class="mr-2 min-w-6 min-h-6 w-6 h-6 rounded-md"
-              decoding="async"
-            />
+            <img src={preset.image} alt="icon" class="mr-2 min-w-6 min-h-6 w-6 h-6 rounded-md" decoding="async" />
           {/if}
           <span>{preset.name}</span>
         {/if}
@@ -268,8 +253,7 @@
                 if (e.key === 'Enter' && e.currentTarget instanceof HTMLElement) {
                   e.currentTarget.click()
                 }
-              }}
-            >
+              }}>
               <GitCompare size={18} />
             </div>
           {/if}
@@ -285,8 +269,7 @@
               if (e.key === 'Enter' && e.currentTarget instanceof HTMLElement) {
                 e.currentTarget.click()
               }
-            }}
-          >
+            }}>
             <CopyIcon size={18} />
           </div>
           <div
@@ -308,8 +291,7 @@
               if (e.key === 'Enter' && e.currentTarget instanceof HTMLElement) {
                 e.currentTarget.click()
               }
-            }}
-          >
+            }}>
             <Share2Icon size={18} />
           </div>
           <div
@@ -331,8 +313,7 @@
               if (e.key === 'Enter' && e.currentTarget instanceof HTMLElement) {
                 e.currentTarget.click()
               }
-            }}
-          >
+            }}>
             <TrashIcon size={18} />
           </div>
         </div>
@@ -357,8 +338,8 @@
       ondrop={(e) => {
         handlePresetDrop(DBState.db.botPresets.length, e)
         dragOverIndex = -1
-      }}
-    ></div>
+      }}>
+    </div>
 
     <div class="flex mt-2 items-center">
       <button
@@ -367,24 +348,21 @@
           let newPreset = safeStructuredClone(prebuiltPresets.OAI2)
           newPreset.name = `New Preset`
           createPreset(newPreset)
-        }}
-      >
+        }}>
         <PlusIcon />
       </button>
       <button
         class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
         onclick={() => {
           importPreset()
-        }}
-      >
+        }}>
         <HardDriveUploadIcon size={18} />
       </button>
       <button
         class="text-textcolor2 hover:text-green-500 cursor-pointer"
         onclick={() => {
           editMode = !editMode
-        }}
-      >
+        }}>
         <PencilIcon size={18} />
       </button>
     </div>

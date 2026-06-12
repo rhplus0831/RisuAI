@@ -213,8 +213,7 @@ export const displaySizeSettingsItems: SettingItem[] = [
       min: -1,
       max: 40,
       step: 1,
-      customText: (value) =>
-        value === -1 ? 'Unlimited' : value === 0 ? 'Hidden' : `${value.toFixed(1)} rem`,
+      customText: (value) => (value === -1 ? 'Unlimited' : value === 0 ? 'Hidden' : `${value.toFixed(1)} rem`),
     },
     keywords: ['asset', 'width'],
   },

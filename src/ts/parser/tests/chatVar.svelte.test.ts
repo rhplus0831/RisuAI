@@ -50,9 +50,7 @@ vi.mock(import('../../stores.svelte'), () => {
 
 //#endregion
 
-const anyValidDefaultVarKey = fc
-  .string({ minLength: 1, unit: 'grapheme' })
-  .filter((s) => !/[=\n]/.test(s))
+const anyValidDefaultVarKey = fc.string({ minLength: 1, unit: 'grapheme' }).filter((s) => !/[=\n]/.test(s))
 const anyValidDefaultVarValue = fc
   .anything()
   .map(JSON.stringify)

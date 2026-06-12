@@ -61,12 +61,8 @@ export async function maybeReattachOpenChatGeneration(): Promise<void> {
 
   reattaching = true
   try {
-    const {
-      sendChat,
-      doingChat,
-      createActiveGenerationAbortController,
-      clearActiveGenerationAbortController,
-    } = await import('./index.svelte')
+    const { sendChat, doingChat, createActiveGenerationAbortController, clearActiveGenerationAbortController } =
+      await import('./index.svelte')
     if (get(doingChat)) return
     // Consume the job up front so a re-render / re-selection does not double
     // reattach while this one streams.

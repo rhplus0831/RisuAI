@@ -88,13 +88,8 @@ describe('memory repository chunks', () => {
         text: 'other',
       })
 
-      expect(listMemoryChunks(db, { chatId: 'chat-1' }).map((row) => row.id)).toEqual([
-        'chunk-1',
-        'chunk-2',
-      ])
-      expect(
-        listMemoryChunks(db, { chatId: 'chat-1', status: 'pending' }).map((row) => row.id),
-      ).toEqual(['chunk-1'])
+      expect(listMemoryChunks(db, { chatId: 'chat-1' }).map((row) => row.id)).toEqual(['chunk-1', 'chunk-2'])
+      expect(listMemoryChunks(db, { chatId: 'chat-1', status: 'pending' }).map((row) => row.id)).toEqual(['chunk-1'])
 
       expect(updateMemoryChunkStatus(db, 'chunk-1', 'summarized')).toMatchObject({
         id: 'chunk-1',
@@ -185,9 +180,9 @@ describe('memory repository summaries', () => {
         text: 'summary text',
         tokens: 12,
       })
-      expect(
-        listMemorySummaries(db, { chatId: 'chat-1', model: 'model-a' }).map((row) => row.id),
-      ).toEqual(['summary-1'])
+      expect(listMemorySummaries(db, { chatId: 'chat-1', model: 'model-a' }).map((row) => row.id)).toEqual([
+        'summary-1',
+      ])
 
       expect(() =>
         createMemorySummary(db, {
@@ -265,12 +260,10 @@ describe('memory repository embeddings', () => {
         id: 'embedding-1',
         dim: 3,
       })
-      expect(
-        listMemoryEmbeddings(db, { chatId: 'chat-1', groupId: 'group-1' }).map((row) => row.id),
-      ).toEqual(['embedding-1'])
-      expect(listMemoryEmbeddings(db, { groupId: null }).map((row) => row.id)).toEqual([
-        'embedding-2',
+      expect(listMemoryEmbeddings(db, { chatId: 'chat-1', groupId: 'group-1' }).map((row) => row.id)).toEqual([
+        'embedding-1',
       ])
+      expect(listMemoryEmbeddings(db, { groupId: null }).map((row) => row.id)).toEqual(['embedding-2'])
     } finally {
       db.close()
     }
@@ -430,16 +423,10 @@ describe('memory repository orphan cleanup', () => {
         }),
       ).toEqual({ summariesDeleted: 1, chunksDeleted: 1 })
 
-      expect(listMemorySummaries(db, { chatId: 'chat-1' }).map((row) => row.id)).toEqual([
-        'summary-keep',
-      ])
-      expect(listMemoryChunks(db, { chatId: 'chat-1' }).map((row) => row.id)).toEqual([
-        'chunk-keep',
-      ])
+      expect(listMemorySummaries(db, { chatId: 'chat-1' }).map((row) => row.id)).toEqual(['summary-keep'])
+      expect(listMemoryChunks(db, { chatId: 'chat-1' }).map((row) => row.id)).toEqual(['chunk-keep'])
       expect(getMemoryEmbedding(db, 'embedding-delete')).toBeNull()
-      expect(listMemorySummaries(db, { chatId: 'chat-2' }).map((row) => row.id)).toEqual([
-        'summary-other-chat',
-      ])
+      expect(listMemorySummaries(db, { chatId: 'chat-2' }).map((row) => row.id)).toEqual(['summary-other-chat'])
     } finally {
       db.close()
     }
@@ -474,12 +461,8 @@ describe('memory repository orphan cleanup', () => {
         }),
       ).toEqual({ summariesDeleted: 0, chunksDeleted: 0 })
 
-      expect(listMemorySummaries(db, { chatId: 'chat-1' }).map((row) => row.id)).toEqual([
-        'summary-1',
-      ])
-      expect(listMemoryChunks(db, { chatId: 'chat-1' }).map((row) => row.id)).toEqual([
-        'chunk-1',
-      ])
+      expect(listMemorySummaries(db, { chatId: 'chat-1' }).map((row) => row.id)).toEqual(['summary-1'])
+      expect(listMemoryChunks(db, { chatId: 'chat-1' }).map((row) => row.id)).toEqual(['chunk-1'])
     } finally {
       db.close()
     }
@@ -553,9 +536,7 @@ describe('memory repository orphan cleanup', () => {
       ).toEqual({ summariesDeleted: 0, chunksDeleted: 0 })
 
       expect(execCalls.filter((sql) => sql.includes('BEGIN'))).toEqual([])
-      expect(listMemorySummaries(db, { chatId: 'chat-1' }).map((row) => row.id)).toEqual([
-        'summary-kept',
-      ])
+      expect(listMemorySummaries(db, { chatId: 'chat-1' }).map((row) => row.id)).toEqual(['summary-kept'])
     } finally {
       db.close()
     }
@@ -612,12 +593,8 @@ describe('memory repository orphan cleanup', () => {
         }),
       ).toEqual({ summariesDeleted: 0, chunksDeleted: 0 })
 
-      expect(listMemorySummaries(db, { chatId: 'chat-1' }).map((row) => row.id)).toEqual([
-        'summary-unknown-metadata',
-      ])
-      expect(listMemoryChunks(db, { chatId: 'chat-1' }).map((row) => row.id)).toEqual([
-        'chunk-unknown-metadata',
-      ])
+      expect(listMemorySummaries(db, { chatId: 'chat-1' }).map((row) => row.id)).toEqual(['summary-unknown-metadata'])
+      expect(listMemoryChunks(db, { chatId: 'chat-1' }).map((row) => row.id)).toEqual(['chunk-unknown-metadata'])
     } finally {
       db.close()
     }
@@ -669,15 +646,9 @@ describe('memory repository orphan cleanup', () => {
       })
 
       expect(result.cleanup).toEqual({ summariesDeleted: 1, chunksDeleted: 1 })
-      expect(result.summarySnapshot.summaries.map((summary) => summary.id)).toEqual([
-        'summary-keep',
-      ])
-      expect(listMemorySummaries(db, { chatId: 'chat-1' }).map((summary) => summary.id)).toEqual([
-        'summary-keep',
-      ])
-      expect(listMemoryChunks(db, { chatId: 'chat-1' }).map((chunk) => chunk.id)).toEqual([
-        'chunk-keep',
-      ])
+      expect(result.summarySnapshot.summaries.map((summary) => summary.id)).toEqual(['summary-keep'])
+      expect(listMemorySummaries(db, { chatId: 'chat-1' }).map((summary) => summary.id)).toEqual(['summary-keep'])
+      expect(listMemoryChunks(db, { chatId: 'chat-1' }).map((chunk) => chunk.id)).toEqual(['chunk-keep'])
     } finally {
       db.close()
     }
@@ -719,17 +690,13 @@ describe('memory repository jobs', () => {
         maxAttempts: 3,
       })
       expect(getMemoryJob(db, 'job-1')).toEqual(job)
-      expect(listMemoryJobs(db, { chatId: 'chat-1' }).map((row) => row.id)).toEqual([
+      expect(listMemoryJobs(db, { chatId: 'chat-1' }).map((row) => row.id)).toEqual(['job-1', 'job-2'])
+      expect(listMemoryJobs(db, { status: 'pending' }).map((row) => row.id)).toEqual(['job-1', 'job-3'])
+      expect(listMemoryJobs(db, { statuses: ['pending', 'running'] }).map((row) => row.id)).toEqual([
         'job-1',
         'job-2',
-      ])
-      expect(listMemoryJobs(db, { status: 'pending' }).map((row) => row.id)).toEqual([
-        'job-1',
         'job-3',
       ])
-      expect(listMemoryJobs(db, { statuses: ['pending', 'running'] }).map((row) => row.id)).toEqual(
-        ['job-1', 'job-2', 'job-3'],
-      )
 
       expect(
         updateMemoryJob(db, 'job-1', {
@@ -1101,9 +1068,7 @@ describe('memory repository jobs', () => {
       expect(() => updateMemoryJob(db, 'job-1', { payload: undefined })).toThrow(ValidationError)
       expect(() => updateMemoryJob(db, 'job-1', { attemptCount: -1 })).toThrow(ValidationError)
       expect(() => updateMemoryJob(db, 'job-1', { maxAttempts: 0 })).toThrow(ValidationError)
-      expect(() => updateMemoryJob(db, 'job-1', { nextRunAt: 'not a date' })).toThrow(
-        ValidationError,
-      )
+      expect(() => updateMemoryJob(db, 'job-1', { nextRunAt: 'not a date' })).toThrow(ValidationError)
       expect(() =>
         enqueueMemoryJob(db, {
           id: '',

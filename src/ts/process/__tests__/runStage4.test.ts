@@ -82,11 +82,7 @@ vi.mock('../modules', async (importActual) => {
   return { ...actual, moduleUpdate: () => {} }
 })
 
-import {
-  setDatabase,
-  type Database,
-  type character,
-} from '../../storage/database.svelte'
+import { setDatabase, type Database, type character } from '../../storage/database.svelte'
 import { runStage4 } from '../postGeneration/runStage4'
 import type { DispatchSuccessReq } from '../dispatch/dispatchRequest'
 

@@ -240,11 +240,7 @@ export function normalizeDatabaseDefaults(
   setDefault(database, 'showMemoryLimit', false)
   setDefault(database, 'showFirstMessagePages', false)
   setDefault(database, 'supaMemoryKey', '')
-  setDefault(
-    database,
-    'hypaV3Key',
-    typeof database.supaMemoryKey === 'string' ? database.supaMemoryKey : '',
-  )
+  setDefault(database, 'hypaV3Key', typeof database.supaMemoryKey === 'string' ? database.supaMemoryKey : '')
   setDefault(database, 'hypaMemoryKey', '')
   setDefault(database, 'voyageApiKey', '')
   setDefault(database, 'askRemoval', true)
@@ -444,11 +440,7 @@ export function normalizeDatabaseDefaults(
   setDefault(database, 'hamburgerButtonBottom', false)
   setDefault(database, 'dynamicModelRegistry', true)
   setDefault(database, 'saveSignatures', false)
-  setDefault(
-    database,
-    'enableRisuaiProTools',
-    Array.isArray(database.plugins) && database.plugins.length > 0,
-  )
+  setDefault(database, 'enableRisuaiProTools', Array.isArray(database.plugins) && database.plugins.length > 0)
   setDefault(database, 'keepSessionAlive', 'off')
   setDefault(database, 'loadouts', [])
   setDefault(database, 'longPressToPopupEditor', false)
@@ -460,9 +452,7 @@ export function normalizeDatabaseDefaults(
 
 function normalizeCharacters(database: JsonRecord): void {
   const characters = Array.isArray(database.characters) ? database.characters : []
-  database.characters = characters.filter(
-    (character) => isRecord(character) && character.type !== 'group',
-  )
+  database.characters = characters.filter((character) => isRecord(character) && character.type !== 'group')
 }
 
 function normalizeBotPresets(database: JsonRecord): void {
@@ -683,8 +673,7 @@ function normalizeHypaV3Presets(database: JsonRecord): void {
         settings: {
           ...cloneJson(DEFAULT_HYPA_V3_SETTINGS),
           ...cloneJson(existingSettings),
-          summarizationPrompt:
-            typeof database.supaMemoryPrompt === 'string' ? database.supaMemoryPrompt : '',
+          summarizationPrompt: typeof database.supaMemoryPrompt === 'string' ? database.supaMemoryPrompt : '',
         },
       },
     ]
@@ -711,9 +700,7 @@ function normalizeTranslatorPresets(database: JsonRecord): void {
         id: 'default-translator-preset',
         name: 'Default',
         prompt: typeof database.translatorPrompt === 'string' ? database.translatorPrompt : '',
-        maxResponse: isFiniteNumber(database.translatorMaxResponse)
-          ? database.translatorMaxResponse
-          : 1000,
+        maxResponse: isFiniteNumber(database.translatorMaxResponse) ? database.translatorMaxResponse : 1000,
       },
     ]
   }
@@ -722,8 +709,7 @@ function normalizeTranslatorPresets(database: JsonRecord): void {
   database.translatorPresets = (database.translatorPresets as unknown[]).map((preset, index) => {
     const source = isRecord(preset) ? preset : {}
     const requestedId = typeof source.id === 'string' && source.id.trim() ? source.id : ''
-    const id =
-      requestedId && !seen.has(requestedId) ? requestedId : `translator-preset-${index + 1}`
+    const id = requestedId && !seen.has(requestedId) ? requestedId : `translator-preset-${index + 1}`
     seen.add(id)
     return {
       id,
@@ -767,9 +753,7 @@ function normalizeHotkeys(database: JsonRecord): void {
   const missing = defaultHotkeys.filter((hotkey) => !existingActions.has(hotkey.action))
   if (missing.length > 0) database.hotkeys.push(...cloneJson(missing))
   if (database.enableScrollToActiveChar === false) {
-    database.hotkeys = database.hotkeys.filter(
-      (hotkey) => !isRecord(hotkey) || hotkey.action !== 'scrollToActiveChar',
-    )
+    database.hotkeys = database.hotkeys.filter((hotkey) => !isRecord(hotkey) || hotkey.action !== 'scrollToActiveChar')
   }
 }
 
@@ -817,9 +801,7 @@ function isFiniteNumber(value: unknown): value is number {
 }
 
 function stringArray(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === 'string')
-    : []
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
 }
 
 function cloneJson<T>(value: T): T {

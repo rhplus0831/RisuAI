@@ -40,10 +40,7 @@ vi.mock('../src/protocolMetrics.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/protocolMetrics.js')>()
   return {
     ...actual,
-    emitProtocolMetric: (
-      name: string,
-      fields: Record<string, unknown> | (() => Record<string, unknown>),
-    ) => {
+    emitProtocolMetric: (name: string, fields: Record<string, unknown> | (() => Record<string, unknown>)) => {
       if (!actual.protocolMetricsEnabled()) return
       capturedMetrics.push({
         metric: name,
@@ -102,10 +99,7 @@ async function getProjection(resource: string, query = '') {
   })
 }
 
-function selectFields(
-  database: Record<string, unknown>,
-  fieldKeys: readonly string[],
-): Record<string, unknown> {
+function selectFields(database: Record<string, unknown>, fieldKeys: readonly string[]): Record<string, unknown> {
   const fields: Record<string, unknown> = {}
   for (const key of fieldKeys) {
     if (Object.prototype.hasOwnProperty.call(database, key)) {
@@ -350,19 +344,10 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
   it('maps every command-event resource to either fields or full', () => {
     // The structural resources the decision tree narrows; everything else
     // (settings/state/pluginStorage/unknown) intentionally falls back to full.
-    expect(resourceProjectionFields('character')).toEqual([
-      'characters',
-      'characterOrder',
-      'currentChar',
-    ])
+    expect(resourceProjectionFields('character')).toEqual(['characters', 'characterOrder', 'currentChar'])
     expect(resourceProjectionFields('characterSelection')).toEqual([])
     expect(resourceProjectionFields('generation')).toEqual(['characters'])
-    expect(resourceProjectionFields('module')).toEqual([
-      'modules',
-      'enabledModules',
-      'loadouts',
-      'characters',
-    ])
+    expect(resourceProjectionFields('module')).toEqual(['modules', 'enabledModules', 'loadouts', 'characters'])
     // Narrowed module-family resources (Phase 5 collection-projection slice).
     expect(resourceProjectionFields('moduleUpdated')).toEqual(['modules'])
     expect(resourceProjectionFields('moduleReordered')).toEqual(['modules'])
@@ -371,12 +356,7 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     expect(resourceProjectionFields('triggerDefinition')).toEqual(['characters'])
     expect(resourceProjectionFields('moduleScriptDefinition')).toEqual(['modules'])
     expect(resourceProjectionFields('moduleTriggerDefinition')).toEqual(['modules'])
-    expect(resourceProjectionFields('lorebook')).toEqual([
-      'characters',
-      'modules',
-      'loreBook',
-      'loreBookPage',
-    ])
+    expect(resourceProjectionFields('lorebook')).toEqual(['characters', 'modules', 'loreBook', 'loreBookPage'])
     expect(resourceProjectionFields('asset')).toEqual([])
     expect(resourceProjectionFields('promptItem')).toEqual(['promptTemplate'])
     expect(resourceProjectionFields('persona')).toEqual([
@@ -443,12 +423,7 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     const body = res.json()
     expect(body.revision).toBe(revision + 1)
     expect(body.mode).toBe('fields')
-    expect(Object.keys(body.fields).sort()).toEqual([
-      'characters',
-      'enabledModules',
-      'loadouts',
-      'modules',
-    ])
+    expect(Object.keys(body.fields).sort()).toEqual(['characters', 'enabledModules', 'loadouts', 'modules'])
     expect(body.fields.modules.map((module: { id: string }) => module.id)).toEqual(['mod-a'])
     expect(body.fields.enabledModules).toEqual(['mod-a'])
     expect(body.fields.loadouts[0].modules).toEqual(['mod-a'])
@@ -503,9 +478,7 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     const updatedBody = (await getProjection('moduleUpdated')).json()
     expect(updatedBody.mode).toBe('fields')
     expect(Object.keys(updatedBody.fields)).toEqual(['modules'])
-    expect(updatedBody.fields.modules.find((m: { id: string }) => m.id === 'mod-b').name).toBe(
-      'Renamed B',
-    )
+    expect(updatedBody.fields.modules.find((m: { id: string }) => m.id === 'mod-b').name).toBe('Renamed B')
 
     const reorderRevision = await seed()
     const reordered = await harness.app.inject({
@@ -519,10 +492,7 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     const reorderedBody = (await getProjection('moduleReordered')).json()
     expect(reorderedBody.mode).toBe('fields')
     expect(Object.keys(reorderedBody.fields)).toEqual(['modules'])
-    expect(reorderedBody.fields.modules.map((m: { id: string }) => m.id)).toEqual([
-      'mod-b',
-      'mod-a',
-    ])
+    expect(reorderedBody.fields.modules.map((m: { id: string }) => m.id)).toEqual(['mod-b', 'mod-a'])
   })
 
   it('M6: foreign field projections are byte-identical to the broad composition', async () => {
@@ -644,17 +614,9 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
 
     const body = (await getProjection('lorebook')).json()
     expect(body.mode).toBe('fields')
-    expect(Object.keys(body.fields).sort()).toEqual([
-      'characters',
-      'loreBook',
-      'loreBookPage',
-      'modules',
-    ])
+    expect(Object.keys(body.fields).sort()).toEqual(['characters', 'loreBook', 'loreBookPage', 'modules'])
     expect(body.fields.loreBookPage).toBe(1)
-    expect(body.fields.loreBook.map((lorebook: { id: string }) => lorebook.id)).toEqual([
-      'lore-a',
-      'lore-b',
-    ])
+    expect(body.fields.loreBook.map((lorebook: { id: string }) => lorebook.id)).toEqual(['lore-a', 'lore-b'])
     expect(body.fields.characters[0]).not.toHaveProperty('globalLore')
     expect(body.fields.characters[0].chats[0].message).toEqual([])
   })
@@ -1094,9 +1056,7 @@ describe('targeted projection field loader', () => {
         },
         assets: [],
       })
-      expect(
-        loadPersistedDatabaseFields(db, harness.dataDir, ['botPresets', 'botPresetsId']),
-      ).toEqual({
+      expect(loadPersistedDatabaseFields(db, harness.dataDir, ['botPresets', 'botPresetsId'])).toEqual({
         botPresets: [{ id: 'p1', openAIKey: 'sk-secret' }],
         botPresetsId: 2,
       })
@@ -1139,22 +1099,18 @@ describe('targeted projection field loader', () => {
         },
         assets: [],
       })
-      expect(
-        loadStubbedProjectionFields(db, harness.dataDir, [
-          'characters',
-          'characterOrder',
-          'currentChar',
-        ]),
-      ).toEqual({
-        characters: [
-          {
-            chaId: 'char-a',
-            chats: [{ id: 'chat-a', message: [], generationSettings }],
-          },
-        ],
-        characterOrder: ['char-a'],
-        currentChar: 'char-a',
-      })
+      expect(loadStubbedProjectionFields(db, harness.dataDir, ['characters', 'characterOrder', 'currentChar'])).toEqual(
+        {
+          characters: [
+            {
+              chaId: 'char-a',
+              chats: [{ id: 'chat-a', message: [], generationSettings }],
+            },
+          ],
+          characterOrder: ['char-a'],
+          currentChar: 'char-a',
+        },
+      )
     } finally {
       db.close()
     }

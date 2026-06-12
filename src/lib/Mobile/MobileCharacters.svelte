@@ -91,13 +91,8 @@
     return rows
   }
 
-  export function filterMobileCharacterRows(
-    rows: readonly MobileCharacterRow[],
-    normalizedSearch: string,
-  ) {
-    return rows.filter((char) =>
-      normalizeMobileCharacterSearch(char.name).includes(normalizedSearch),
-    )
+  export function filterMobileCharacterRows(rows: readonly MobileCharacterRow[], normalizedSearch: string) {
+    return rows.filter((char) => normalizeMobileCharacterSearch(char.name).includes(normalizedSearch))
   }
 
   export function mobileCharacterRowKey(char: MobileCharacterRow) {
@@ -123,12 +118,8 @@
 
   let { endGrid = () => {}, search, hideTrash = false }: Props = $props()
   let normalizedSearch = $derived(normalizeMobileCharacterSearch(search ?? $MobileSearch))
-  let mobileCharacterRows = $derived(
-    formatMobileCharacterRows(DBState.db.characters, { hideTrash, agoFormatter }),
-  )
-  let visibleMobileCharacterRows = $derived(
-    filterMobileCharacterRows(mobileCharacterRows, normalizedSearch),
-  )
+  let mobileCharacterRows = $derived(formatMobileCharacterRows(DBState.db.characters, { hideTrash, agoFormatter }))
+  let visibleMobileCharacterRows = $derived(filterMobileCharacterRows(mobileCharacterRows, normalizedSearch))
 
   function openCharacterRoute(index: number) {
     const character = DBState.db.characters?.[index]
@@ -156,8 +147,7 @@
       aria-current={char.index === $selectedCharID ? 'true' : undefined}
       onclick={() => {
         openCharacterRoute(char.index)
-      }}
-    >
+      }}>
       <BarIcon additionalStyle={getCharImage(char.image, 'css')}></BarIcon>
       <div class="flex flex-1 w-full flex-col justify-start items-start text-start">
         <span data-risu-mobile-character-name>{char.name}</span>
@@ -177,7 +167,6 @@
   data-risu-mobile-character-action="create"
   onclick={() => {
     addCharacter()
-  }}
->
+  }}>
   <PlusIcon size={24} />
 </button>

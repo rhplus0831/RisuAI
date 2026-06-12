@@ -18,8 +18,7 @@
       <Button
         onclick={() => {
           loadoutModalStore.open = !loadoutModalStore.open
-        }}>{DBState.db.lastLoadedLoadoutName || language.loadouts}</Button
-      >
+        }}>{DBState.db.lastLoadedLoadoutName || language.loadouts}</Button>
     {:else if item.type === 'setting'}
       <SettingRenderer items={[getFullSettingsData().find((s) => s.id === item.subType)]} />
     {/if}

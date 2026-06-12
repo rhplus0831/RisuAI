@@ -157,10 +157,7 @@ function validateLoadoutRecord(record: JsonRecord, label: string): void {
       throw new ValidationError(`${label}.${key} must be a string`)
     }
   }
-  if (
-    'lastUsed' in record &&
-    (typeof record.lastUsed !== 'number' || !Number.isFinite(record.lastUsed))
-  ) {
+  if ('lastUsed' in record && (typeof record.lastUsed !== 'number' || !Number.isFinite(record.lastUsed))) {
     throw new ValidationError(`${label}.lastUsed must be a finite number`)
   }
   if ('favorite' in record && typeof record.favorite !== 'boolean') {
@@ -183,10 +180,7 @@ function assertStringArray(value: unknown, label: string): asserts value is stri
   }
 }
 
-function assertStringRecord(
-  value: unknown,
-  label: string,
-): asserts value is Record<string, string> {
+function assertStringRecord(value: unknown, label: string): asserts value is Record<string, string> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new ValidationError(`${label} must be an object with string values`)
   }

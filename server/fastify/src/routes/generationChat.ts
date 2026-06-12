@@ -58,12 +58,7 @@ import { attachAbort } from '../requestAbort.js'
 import type { GenerationJobRegistry } from '../generationJobs.js'
 import { isStreamDeadlineActivityFrame, type JobClient, type StreamJob } from '../streamJobs.js'
 import { getWritableBufferedBytes, writeBoundedRaw } from '../streamBackpressure.js'
-import {
-  emitProtocolMetric,
-  protocolDurationMs,
-  protocolMetricsEnabled,
-  protocolNowMs,
-} from '../protocolMetrics.js'
+import { emitProtocolMetric, protocolDurationMs, protocolMetricsEnabled, protocolNowMs } from '../protocolMetrics.js'
 import {
   deleteGenerationFinalizationRetry,
   enqueueGenerationFinalizationRetry,
@@ -240,8 +235,7 @@ function toAssembleInput(body: ChatRequestBody): AssembleInput {
     mode: body.mode as AssembleInput['mode'],
     presetId: typeof body.presetId === 'string' ? body.presetId : undefined,
     loadoutId: typeof body.loadoutId === 'string' ? body.loadoutId : undefined,
-    regenerateMessageId:
-      typeof body.regenerateMessageId === 'string' ? body.regenerateMessageId : undefined,
+    regenerateMessageId: typeof body.regenerateMessageId === 'string' ? body.regenerateMessageId : undefined,
     userMessage: typeof body.userMessage === 'string' ? body.userMessage : undefined,
     resetMessages: typeof body.resetMessages === 'boolean' ? body.resetMessages : undefined,
     expectedRevision: typeof body.expectedRevision === 'number' ? body.expectedRevision : undefined,
@@ -268,13 +262,8 @@ interface PromptAssemblyMeasurement {
   stageTimingsMs: Partial<Record<PromptAssemblyStage, number>>
 }
 
-function addMeasurementMs(
-  measurement: PromptAssemblyMeasurement,
-  key: PromptAssemblyStage,
-  durationMs: number,
-): void {
-  measurement.stageTimingsMs[key] =
-    Math.round(((measurement.stageTimingsMs[key] ?? 0) + durationMs) * 100) / 100
+function addMeasurementMs(measurement: PromptAssemblyMeasurement, key: PromptAssemblyStage, durationMs: number): void {
+  measurement.stageTimingsMs[key] = Math.round(((measurement.stageTimingsMs[key] ?? 0) + durationMs) * 100) / 100
 }
 
 const LOCAL_ASSET_PATH_RE = /^assets\/([a-f0-9]{64})\.[a-z0-9]+$/i
@@ -321,8 +310,7 @@ async function readAssetBytes(file: string): Promise<Buffer | undefined> {
   try {
     return await fs.promises.readFile(file)
   } catch (err) {
-    const code =
-      err && typeof err === 'object' && 'code' in err ? (err as { code?: unknown }).code : undefined
+    const code = err && typeof err === 'object' && 'code' in err ? (err as { code?: unknown }).code : undefined
     if (code === 'ENOENT' || code === 'ENOTDIR') return undefined
     throw err
   }
@@ -526,10 +514,7 @@ function retargetAssemblySignal(assembly: PromptAssemblyRun, signal?: AbortSigna
   state.ctx.signal = signal
 }
 
-function shouldDispatchProvider(
-  input: AssembleInput,
-  database: Database | null,
-): database is Database {
+function shouldDispatchProvider(input: AssembleInput, database: Database | null): database is Database {
   if (!(input.mode === 'send' || input.mode === 'continue' || input.mode === 'regenerate')) {
     return false
   }
@@ -654,9 +639,7 @@ function persistAssemblyMutations(args: {
   let eventType = ''
   try {
     const replacement = persistMessages
-      ? args.submitMessages!.map((message, index) =>
-          createAssemblyTranscriptMessage(message, index),
-        )
+      ? args.submitMessages!.map((message, index) => createAssemblyTranscriptMessage(message, index))
       : undefined
     if (replacement) {
       validateUniqueMessageIds(replacement)
@@ -906,10 +889,7 @@ function buildPostGenerationFrameBody(
   const frame: PostGenerationFrame = { revision }
   if (postGen) {
     if (postGen.textChanged) frame.finalText = postGen.finalText
-    if (
-      postGen.mutations.chatVarMutations.length > 0 ||
-      postGen.mutations.messageMutations.length > 0
-    ) {
+    if (postGen.mutations.chatVarMutations.length > 0 || postGen.mutations.messageMutations.length > 0) {
       frame.messagePatch = postGen.mutations
     }
     if (postGen.resendChat) frame.resendChat = true
@@ -938,15 +918,14 @@ async function buildPostGenerationFrame(args: {
   promptInfo?: Record<string, unknown>
   emit?: (event: PromptChatEvent) => void
 }): Promise<PostGenerationFrame | undefined> {
-  const { postGen, postGenError, message, targetMessageId, chatVarMutations } =
-    await resolvePostGenerationResult({
-      state: args.state,
-      input: args.input,
-      completionText: args.completionText,
-      generationId: args.generationId,
-      generationInfo: args.generationInfo,
-      promptInfo: args.promptInfo,
-    })
+  const { postGen, postGenError, message, targetMessageId, chatVarMutations } = await resolvePostGenerationResult({
+    state: args.state,
+    input: args.input,
+    completionText: args.completionText,
+    generationId: args.generationId,
+    generationInfo: args.generationInfo,
+    promptInfo: args.promptInfo,
+  })
 
   let revision: number
   const persistStartedAt = protocolNowMs()
@@ -1112,9 +1091,7 @@ async function streamAssembly(
           if (frames) {
             const transportResult = await emitProviderChunks(frames, emit, signal, {
               doneMetadata: () => {
-                const stageTiming = generationInfo.stageTiming as
-                  | Record<string, unknown>
-                  | undefined
+                const stageTiming = generationInfo.stageTiming as Record<string, unknown> | undefined
                 if (stageTiming) {
                   stageTiming.stage3 = Date.now() - providerStartedAt
                 }
@@ -1379,9 +1356,7 @@ function persistServerGenerationResult(args: {
       if (write.ok === false) {
         switch (write.reason) {
           case 'missing-target':
-            throw new EntityNotFoundError(
-              `Message not found for chat ${args.chatId}: ${write.targetMessageId}`,
-            )
+            throw new EntityNotFoundError(`Message not found for chat ${args.chatId}: ${write.targetMessageId}`)
           case 'duplicate':
             throw new ValidationError(`Duplicate message id: ${write.messageId}`)
         }
@@ -1580,15 +1555,14 @@ async function buildDurablePostGeneration(args: {
   generationInfo: Record<string, unknown>
   promptInfo?: Record<string, unknown>
 }): Promise<PostGenerationFrame | undefined> {
-  const { postGen, postGenError, message, targetMessageId, chatVarMutations } =
-    await resolvePostGenerationResult({
-      state: args.state,
-      input: args.input,
-      completionText: args.completionText,
-      generationId: args.generationId,
-      generationInfo: args.generationInfo,
-      promptInfo: args.promptInfo,
-    })
+  const { postGen, postGenError, message, targetMessageId, chatVarMutations } = await resolvePostGenerationResult({
+    state: args.state,
+    input: args.input,
+    completionText: args.completionText,
+    generationId: args.generationId,
+    generationInfo: args.generationInfo,
+    promptInfo: args.promptInfo,
+  })
 
   let revision: number
   const persistStartedAt = protocolNowMs()
@@ -1716,19 +1690,8 @@ async function runGenerationJob(args: {
   preparedAssembly?: PromptAssemblyRun
   deferredFailure?: AssemblyDeferredFailure
 }): Promise<void> {
-  const {
-    registry,
-    job,
-    db,
-    input,
-    dataDir,
-    eventSink,
-    options,
-    preparedAssembly,
-    deferredFailure,
-  } = args
-  const emit = (event: PromptChatEvent): void =>
-    registry.registry.pushRaw(job, formatPromptChatFrame(event))
+  const { registry, job, db, input, dataDir, eventSink, options, preparedAssembly, deferredFailure } = args
+  const emit = (event: PromptChatEvent): void => registry.registry.pushRaw(job, formatPromptChatFrame(event))
   const signal = job.abortController.signal
   const generationId = job.id
   let terminalDoneEmitted = false
@@ -1813,9 +1776,7 @@ async function runGenerationJob(args: {
           if (frames) {
             const transportResult = await emitProviderChunks(frames, emit, signal, {
               doneMetadata: () => {
-                const stageTiming = generationInfo.stageTiming as
-                  | Record<string, unknown>
-                  | undefined
+                const stageTiming = generationInfo.stageTiming as Record<string, unknown> | undefined
                 if (stageTiming) {
                   stageTiming.stage3 = Date.now() - providerStartedAt
                 }
@@ -1837,9 +1798,7 @@ async function runGenerationJob(args: {
                 // Stamp stage3 BEFORE the persist so the server-written message's
                 // generationInfo carries it (the persist runs ahead of doneMetadata,
                 // which would otherwise set it only on the wire `done` frame).
-                const stageTiming = generationInfo.stageTiming as
-                  | Record<string, unknown>
-                  | undefined
+                const stageTiming = generationInfo.stageTiming as Record<string, unknown> | undefined
                 if (stageTiming) stageTiming.stage3 = Date.now() - providerStartedAt
                 return buildDurablePostGeneration({
                   emit,
@@ -1989,46 +1948,28 @@ export function registerGenerationChatRoutes(
   generationJobs: GenerationJobRegistry,
   options: GenerationChatRouteOptions = {},
 ): void {
-  app.post(
-    '/api/v1/generate/chat',
-    { config: { rateLimit: generationSubmitRateLimit } },
-    async (req, reply) => {
-      if (!(await requireAuth(authState, req, reply))) return
+  app.post('/api/v1/generate/chat', { config: { rateLimit: generationSubmitRateLimit } }, async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
 
-      const body = (req.body ?? {}) as ChatRequestBody
-      const validation = validate(body)
-      if (validation.ok === false) {
-        return badRequest(reply, validation.error)
-      }
+    const body = (req.body ?? {}) as ChatRequestBody
+    const validation = validate(body)
+    if (validation.ok === false) {
+      return badRequest(reply, validation.error)
+    }
 
-      const input = toAssembleInput(body)
-      const requestAbort = attachAbort(req)
-      const preflight = preflightChatGenerationSettings(reply, input, dataDir, db)
-      if (preflight.status === 'handled') {
-        requestAbort.cleanup()
-        return
-      }
+    const input = toAssembleInput(body)
+    const requestAbort = attachAbort(req)
+    const preflight = preflightChatGenerationSettings(reply, input, dataDir, db)
+    if (preflight.status === 'handled') {
+      requestAbort.cleanup()
+      return
+    }
 
-      // Durable path for persisting generation modes. The active-writer submission
-      // gate ran in the global preHandler; here we add the one-job-per-chat rule
-      // and hand off to the detached runner.
-      if (body.durable === true && isPersistingMode(input.mode)) {
-        startDurableGeneration({
-          req,
-          reply,
-          db,
-          input,
-          dataDir,
-          eventSink,
-          options,
-          generationJobs,
-          deferredFailure: preflight.status === 'defer' ? preflight.failure : undefined,
-        })
-        requestAbort.cleanup()
-        return
-      }
-
-      await streamAssembly(
+    // Durable path for persisting generation modes. The active-writer submission
+    // gate ran in the global preHandler; here we add the one-job-per-chat rule
+    // and hand off to the detached runner.
+    if (body.durable === true && isPersistingMode(input.mode)) {
+      startDurableGeneration({
         req,
         reply,
         db,
@@ -2036,12 +1977,26 @@ export function registerGenerationChatRoutes(
         dataDir,
         eventSink,
         options,
-        undefined,
-        preflight.status === 'defer' ? preflight.failure : undefined,
-        requestAbort,
-      )
-    },
-  )
+        generationJobs,
+        deferredFailure: preflight.status === 'defer' ? preflight.failure : undefined,
+      })
+      requestAbort.cleanup()
+      return
+    }
+
+    await streamAssembly(
+      req,
+      reply,
+      db,
+      input,
+      dataDir,
+      eventSink,
+      options,
+      undefined,
+      preflight.status === 'defer' ? preflight.failure : undefined,
+      requestAbort,
+    )
+  })
 
   // Reattach to a running, or done-within-grace, durable generation over SSE.
   // Observe is open to any authenticated client; completed jobs are read back via

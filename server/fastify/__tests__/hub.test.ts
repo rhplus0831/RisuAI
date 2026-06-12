@@ -7,10 +7,7 @@ import path from 'node:path'
 import { webcrypto } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
-import {
-  HUB_FORWARD_DEFAULT_TIMEOUT_MS,
-  normalizeHubForwardTimeoutMs,
-} from '../src/routes/hub.js'
+import { HUB_FORWARD_DEFAULT_TIMEOUT_MS, normalizeHubForwardTimeoutMs } from '../src/routes/hub.js'
 
 const subtle = webcrypto.subtle
 
@@ -24,20 +21,17 @@ interface CapturedRequest {
 interface EchoServer {
   url: string
   requests: CapturedRequest[]
-  setResponder(
-    fn: (req: http.IncomingMessage, res: http.ServerResponse, body: Buffer) => void | Promise<void>,
-  ): void
+  setResponder(fn: (req: http.IncomingMessage, res: http.ServerResponse, body: Buffer) => void | Promise<void>): void
   close(): Promise<void>
 }
 
 function startEcho(): Promise<EchoServer> {
   return new Promise((resolve) => {
     const requests: CapturedRequest[] = []
-    let responder: (
-      req: http.IncomingMessage,
-      res: http.ServerResponse,
-      body: Buffer,
-    ) => void | Promise<void> = (_req, res) => {
+    let responder: (req: http.IncomingMessage, res: http.ServerResponse, body: Buffer) => void | Promise<void> = (
+      _req,
+      res,
+    ) => {
       res.writeHead(200, { 'content-type': 'text/plain' })
       res.end('ok')
     }
@@ -120,11 +114,7 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: s
   }
 }
 
-async function signAssertion(
-  privateKey: CryptoKey,
-  publicJwk: JsonWebKey,
-  ttlSec = 60,
-): Promise<string> {
+async function signAssertion(privateKey: CryptoKey, publicJwk: JsonWebKey, ttlSec = 60): Promise<string> {
   const now = Math.floor(Date.now() / 1000)
   const header = { alg: 'ES256', typ: 'JWT' }
   const payload = { iat: now, exp: now + ttlSec, pub: publicJwk }
@@ -474,11 +464,7 @@ describe('Phase 3C hub passthrough', () => {
       1_000,
       'client did not receive the streamed hub chunk',
     )
-    await withTimeout(
-      upstreamClosed,
-      1_000,
-      'hub did not abort the upstream stream after client disconnect',
-    )
+    await withTimeout(upstreamClosed, 1_000, 'hub did not abort the upstream stream after client disconnect')
   })
 
   it('returns 502 when the upstream connection fails', async () => {

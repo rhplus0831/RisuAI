@@ -45,21 +45,17 @@ export const languageChineseTraditional = {
     forceUrl: '此欄位不為空時，請求將被發送到您所輸入的網址。',
     tempature:
       '較低的數值會使角色更緊密地遵循提示詞，但會使回應顯得生硬且機械化。\n較高的數值則會增強角色的創意表現，但回應可能會變得不穩定。',
-    frequencyPenalty:
-      '較高的數值可以避免角色在單次回應中重複使用相同的詞彙，但回應也更容易出現語義不通的情況。',
-    presensePenalty:
-      '較高的數值可以避免角色在全文對話中重複使用相同的詞彙，但也可能導致回應失去一致性和穩定性。',
+    frequencyPenalty: '較高的數值可以避免角色在單次回應中重複使用相同的詞彙，但回應也更容易出現語義不通的情況。',
+    presensePenalty: '較高的數值可以避免角色在全文對話中重複使用相同的詞彙，但也可能導致回應失去一致性和穩定性。',
     sdProvider: '圖片生成提供商。',
     msgSound: '當角色回應時，播放 *叮* 的提示音',
     charDesc: '角色的簡要描述。這會影響角色的回應方式。',
     charFirstMessage: '角色的初始訊息，這會極大地影響角色的回應方式。',
     charNote: '對模型行為有強烈影響的備註，嵌入到當前角色中，也稱為 UJB。',
     toggleNsfw: '啟用或停用越獄提示詞。',
-    lorebook:
-      'Lorebook 是由使用者建立的 AI 辭典，只有當上下文中包含關鍵字時 AI 才能讀取其中的內容。',
+    lorebook: 'Lorebook 是由使用者建立的 AI 辭典，只有當上下文中包含關鍵字時 AI 才能讀取其中的內容。',
     loreName: 'Lorebook 的名稱，不影響 AI。',
-    loreActivationKey:
-      '當上下文中包含任一關鍵字時，該條目將被啟用，並觸發對應的提示詞內容。使用逗號分隔。',
+    loreActivationKey: '當上下文中包含任一關鍵字時，該條目將被啟用，並觸發對應的提示詞內容。使用逗號分隔。',
     loreorder: '插入順序越高，對模型的影響力越大。在啟動大量條目時，也更不容易被截斷。',
     bias: 'Bias 是一組字串與出現機率權重的對應設定，用於修改特定字串出現的機率。\n其數值範圍可以是 -100 到 100。較高的數值會使該字串更可能出現，較低的數值則降低出現機率。\n另外，在某些模型中，若將數值設為 -101，該字串將被標記為「強制禁止詞」。\n警告：若 Tokenizer 設定有誤，可能無法正常運作。',
     emotion:
@@ -77,11 +73,9 @@ export const languageChineseTraditional = {
     chatNote: '這是一個強烈影響模型行為的備註，嵌入於當前對話中，也稱為記憶或 UJB。',
     personality: '對角色性格的簡要描述。\n\n**不建議使用此欄位，請填寫在角色描述中。**',
     scenario: '對角色情境的簡要描述。\n\n**不建議使用此欄位，請填寫在角色描述中。**',
-    utilityBot:
-      '啟用後，將忽略主要提示詞、越獄提示詞和其他提示詞。適用於工具機器人，而非用於角色扮演。',
+    utilityBot: '啟用後，將忽略主要提示詞、越獄提示詞和其他提示詞。適用於工具機器人，而非用於角色扮演。',
     loreSelective: '啟用選擇性模式後，需同時匹配關鍵字與次要關鍵字，方可啟用該條目。',
-    loreRandomActivation:
-      '啟用後，若同時符合其他啟用條件，該條目將在每次發送對話時依設定的機率機率性觸發。',
+    loreRandomActivation: '啟用後，若同時符合其他啟用條件，該條目將在每次發送對話時依設定的機率機率性觸發。',
     additionalAssets:
       '在對話中顯示的額外資源。\n\n - 使用 `{{raw::<資源名稱>}}` 作為路徑。\n - 使用 `{{image::<資源名稱>}}` 作為圖片。\n - 使用 `{{video::<資源名稱>}}` 作為影片。\n - 使用 `{{audio::<資源名稱>}}` 作為音訊。\n    - 建議放置在背景 HTML 中。',
     superMemory:
@@ -107,12 +101,10 @@ export const languageChineseTraditional = {
     imageCompression: '啟用後，在匯出角色時會壓縮圖片。如果動畫圖片無法顯示，請嘗試關閉此選項。',
     useExperimental: '啟用後，將顯示部分實驗性功能。',
     forceProxyAsOpenAI: '啟用後，使用反向代理（Reverse proxy）時將強制使用 OpenAI 格式。',
-    forcePlainFetch:
-      '啟用後，將使用瀏覽器的 Fetch API 來替代原生 HTTP 請求。這可能會導致 CORS 錯誤。',
+    forcePlainFetch: '啟用後，將使用瀏覽器的 Fetch API 來替代原生 HTTP 請求。這可能會導致 CORS 錯誤。',
     autoFillRequestURL: '啟用後，將自動填入請求 URL 以匹配當前模型。',
     chainOfThought: '啟用後，將在提示詞中加入思維鏈（CoT, Chain-of-Thought）提示。',
-    gptVisionQuality:
-      '此選項用於設定圖片檢測模型的品質。品質越高，檢測越準確，但會使用更多的 Token。',
+    gptVisionQuality: '此選項用於設定圖片檢測模型的品質。品質越高，檢測越準確，但會使用更多的 Token。',
     genTimes:
       '設定單次請求的重新生成回應數量。除第一則外，其餘回應將作為快取以降低成本。但若未實際使用重新生成功能，反而可能增加成本。',
     requestretrys: '設定請求失敗時的重試次數。',
@@ -130,20 +122,17 @@ export const languageChineseTraditional = {
       '啟用後，若在處理資料時找不到資源名稱，系統將使用向量搜尋（Vector Search）嘗試尋找最接近的資源名稱並進行替換。',
     dynamicAssetsEditDisplay: '啟用後，動態資源將同樣套用於「修改顯示」階段，但這可能會影響效能。',
     nickname: '設定後，將在對話中以此暱稱取代角色名稱，並顯示於 {{char}} 和 <char>。',
-    useRegexLorebook:
-      '啟用後，Lorebook 將改用正規表達式（Regex）搜尋，而不再使用字串匹配。格式為 /regex/flags。',
+    useRegexLorebook: '啟用後，Lorebook 將改用正規表達式（Regex）搜尋，而不再使用字串匹配。格式為 /regex/flags。',
     customChainOfThought:
       '警告：不再建議使用思維鏈（CoT, Chain-of-Thought）切換功能。請將相關提示詞移至其他提示詞欄位。',
     customPromptTemplateToggle:
       '可在此處設定自訂提示詞切換功能。使用 `<toggle variable>=<toggle name>` 格式，每行一個，例如：`cot=Toggle COT`。您可以在提示詞中透過 `{{getglobalvar::toggle_<toggle variable>}}` 語法來使用這些切換功能，如：`{{getglobalvar::toggle_cot}}`。',
     defaultVariables:
       '可在此處設定自訂預設變數。使用 `<variable name>=<variable value>` 格式，每行一個。例如：`name=Risuai`，可在觸發式和 CBS 變數中使用，如：`{{getvar::A}}`、`{{setvar::A::B}}` 或 `{{? $A + 1}}`。若提示詞模板的預設變數與角色的預設變數名稱相同，系統將使用角色的預設變數。',
-    lowLevelAccess:
-      '啟用後，將開放高計算需求的功能，並允許透過角色觸發式執行 AI 模型。除非確有需求，否則不要啟用。',
+    lowLevelAccess: '啟用後，將開放高計算需求的功能，並允許透過角色觸發式執行 AI 模型。除非確有需求，否則不要啟用。',
     triggerLLMPrompt:
       '這是將發送到模型的提示詞。您可以使用 `@@role user`、`@@role system`、`@@role assistant` 來設定多輪對話及角色。例如：\n```\n@@role system\nrespond as hello\n@@role assistant\nhello\n@@role user\nhi\n```',
-    legacyTranslation:
-      '啟用後，將使用舊版翻譯方法，在翻譯前對 Markdown 和引號進行預處理，而非在翻譯後處理。',
+    legacyTranslation: '啟用後，將使用舊版翻譯方法，在翻譯前對 Markdown 和引號進行預處理，而非在翻譯後處理。',
     luaHelp:
       '可使用 Lua 作為觸發式，並可定義 onInput、onOutput 和 onStart 函數。當使用者發送訊息時，調用 onInput；當角色發送訊息時，調用 onOutput；當對話開始時，調用 onStart。詳情請參閱說明文檔。',
     claudeCachingExperimental:
@@ -165,8 +154,7 @@ export const languageChineseTraditional = {
     unrecommended: '這是不建議使用的設定，建議保持關閉。',
     jsonSchema:
       'JSON Schema 將在 AI 模型支援時發送給模型。\n\n然而，由於 JSON Schema 的學習成本較高，在 Risuai 中，您可以使用 TypeScript 介面的子集來代替 JSON Schema。Risuai 將在運行時進行轉換。例如，如果您想發送如下的 JSON：\n\n```js\n{\n  "name": "Risuai", // name 必須是 Risuai，\n  "age": 1, // age 必須是數字，\n  "icon": "slim", // icon 必須是 ’slim‘ 或 ’rounded‘\n  "thoughts": ["Good View!", "Lorem"] // thoughts 必須是字串陣列\n}\n```\n\n您可以使用以下 TypeScript 介面：\n\n```typescript\ninterface Schema {\n  name;\n  age;\n  icon: ’slim‘|’rounded‘\n  thoughts[]\n}\n```\n\n介面名稱不重要。欲了解更多資訊，請參閱 TypeScript 說明文件：https://www.typescriptlang.org/docs/handbook/interfaces.html 。要檢查支援的 TypeScript 子集，請查看以下內容。<details><summary>支援的 TypeScript 子集</summary>\n\n支援的類型包括 `boolean`、`number`、`string` 和 `Array`。進階類型不被支援（如：單元類型、交集類型、聯合類型、可選類型、字面量類型等），除了以下幾種情況：\n\n        - 原始資料型別（Primitive Type）的陣列（Array）：（如 `string[]`、`Array<boolean>`）\n        - 字串之間的單值類型（Unit Types）：（例如 `’slim‘|’rounded‘`）\n\n        屬性必須在同一行內定義。若一行中有多個屬性，將會產生錯誤。屬性和介面名稱僅可使用拉丁字符，並在 ASCII 範圍內。屬性名稱不得以單引號或雙引號包裹。介面內部不支援巢狀。在定義屬性的行中，不能包含 `{` 或 `}`。如果想使用更進階的類型，請使用 JSON Schema。\n        </details>',
-    strictJsonSchema:
-      '啟用後，某些模型將嚴格遵循提供的 JSON Schema。若禁用，可能會忽略 JSON Schema。',
+    strictJsonSchema: '啟用後，某些模型將嚴格遵循提供的 JSON Schema。若禁用，可能會忽略 JSON Schema。',
     extractJson:
       '此欄位不為空時，將從回應中提取特定 JSON 資料。例如：要從回應 `{"response": {"text": ["hello"]}}` 提取 `response.text[0]`，請填寫 `response.text.0`。',
     translatorNote:
@@ -218,26 +206,19 @@ export const languageChineseTraditional = {
     hypaV3ExtraSummarizationRatio:
       '降低總結停止的閾值。設為 0 時，在達到上下文限制前都不會進行總結。較高的值，會在達到上下文限制前便開始進行總結。',
     hypaV3MaxChatsPerSummary: '建立單個總結時，讀取的最大對話訊息數。',
-    hypaV3QueryChatCount:
-      '用於相似性搜尋的最近對話訊息數。較高的值，會讀取更多對話上下文來判斷相似性。',
+    hypaV3QueryChatCount: '用於相似性搜尋的最近對話訊息數。較高的值，會讀取更多對話上下文來判斷相似性。',
     hypaV3RecentMemoryRatio: '分配給最近記憶 Token 比例。這部分將會以最新建立的總結自動填滿。',
-    hypaV3SimilarMemoryRatio:
-      '分配給相似記憶的 Token 比例。這部分將會以最近對話相似性評分最高的總結自動填滿。',
+    hypaV3SimilarMemoryRatio: '分配給相似記憶的 Token 比例。這部分將會以最近對話相似性評分最高的總結自動填滿。',
     hypaV3RandomMemoryRatio: '從尚未被其他類別選中的總結中隨機填補。',
-    hypaV3PreserveOrphanedMemory:
-      '如果啟用，將保留已刪除對話訊息的總結；如果停用，將自動移除來源訊息已不存在的總結。',
+    hypaV3PreserveOrphanedMemory: '如果啟用，將保留已刪除對話訊息的總結；如果停用，將自動移除來源訊息已不存在的總結。',
     hypaV3ProcessRegexScript:
       '如果啟用，在 HypaV3 視窗中重新生成總結時，將對輸入的對話訊息套用正規表達式 (Regex) 腳本。',
     hypaV3DoNotSummarizeUserMessage: '如果啟用，總結的最大訊息數將不計入使用者訊息。',
-    hypaV3EnableSimilarityCorrection:
-      '如果啟用，最近對話的總結將額外作為查詢使用。不適用於實驗性的 HypaMemory V3。',
-    hypaV3UseExperimentalImpl:
-      '切換至實驗性的 HypaMemory V3 實作。這將啟用速率限制 (Rate limit) 設定並變更查詢方式。',
+    hypaV3EnableSimilarityCorrection: '如果啟用，最近對話的總結將額外作為查詢使用。不適用於實驗性的 HypaMemory V3。',
+    hypaV3UseExperimentalImpl: '切換至實驗性的 HypaMemory V3 實作。這將啟用速率限制 (Rate limit) 設定並變更查詢方式。',
     hypaV3AlwaysToggleOn: '如果啟用，選擇角色時將自動開啟 HypaMemory 開關。',
-    hypaV3SummarizationRequestsPerMinute:
-      '每分鐘最大總結模型請求數。僅在總結模型設為「輔助模型」時適用。',
-    hypaV3SummarizationMaxConcurrent:
-      '最大同時發送的總結模型請求數。僅在總結模型設為「輔助模型」時適用。',
+    hypaV3SummarizationRequestsPerMinute: '每分鐘最大總結模型請求數。僅在總結模型設為「輔助模型」時適用。',
+    hypaV3SummarizationMaxConcurrent: '最大同時發送的總結模型請求數。僅在總結模型設為「輔助模型」時適用。',
     hypaV3EmbeddingRequestsPerMinute: '用於相似性搜尋的每分鐘最大嵌入模型請求數。',
     hypaV3EmbeddingMaxConcurrent: '用於相似性搜尋的最大同時嵌入模型請求數。',
     keepSessionAlive:
@@ -260,8 +241,7 @@ export const languageChineseTraditional = {
     texttheme: '設定文字顏色',
     inputName: '最後，請輸入您的暱稱。',
     welcome: '歡迎使用 Risuai！我將引導您進行設定。請問我該如何稱呼您？',
-    welcome2:
-      '您好，{username}！在開始之前，我會問您一些問題，稍後可在設定中進行修改。\n\n首先，請選擇 AI 提供商。',
+    welcome2: '您好，{username}！在開始之前，我會問您一些問題，稍後可在設定中進行修改。\n\n首先，請選擇 AI 提供商。',
     openRouterProvider: 'OpenRouter 提供許多模型，部分免費且未經內容過濾。',
     hordeProvider: 'Horde 提供免費服務，但回應時間較長且品質較低。',
     setProviderLater: '還有其他提供商，您可以稍後在設定中設定。如想稍後設定，請選擇此選項。',
@@ -313,8 +293,7 @@ export const languageChineseTraditional = {
     finallyOption1Desc: '使用進階工具會使介面變得更複雜。推薦進階使用者使用。',
     finallyOption2: '否',
     finallyOption2Desc: '不使用進階工具，保持介面簡潔。推薦新手使用者選用。',
-    igpPrompt:
-      '若 IGP 提示詞不為空，將在主要模型請求完成後作為情緒模型執行，並將結果附加至主要模型的回應後。',
+    igpPrompt: '若 IGP 提示詞不為空，將在主要模型請求完成後作為情緒模型執行，並將結果附加至主要模型的回應後。',
   },
   triggerCategories: {
     Special: '特殊',
@@ -510,8 +489,7 @@ export const languageChineseTraditional = {
     v2IfAdvanced: '如果（進階）',
     v2IfAdvancedDesc: '如果 {{source}} {{condition}} {{target}}',
     v2QuickSearchChat: '快速搜尋對話',
-    v2QuickSearchChatDesc:
-      '在深度 {{depth}} 內的對話中以條件 {{condition}} 快速搜尋 {{value}} => {{outputVar}}',
+    v2QuickSearchChatDesc: '在深度 {{depth}} 內的對話中以條件 {{condition}} 快速搜尋 {{value}} => {{outputVar}}',
     v2StopPromptSending: '停止發送提示詞',
     v2StopPromptSendingDesc: '停止發送提示詞',
     v2Tokenize: '計算 Token 數',
@@ -536,8 +514,7 @@ export const languageChineseTraditional = {
     v2Calculate: '計算',
     v2CalculateDesc: '計算 {{expression}} => {{outputVar}}',
     v2ReplaceString: '替換字串',
-    v2ReplaceStringDesc:
-      '使用正規表達式 {{regex}} 將 {{source}} 替換為 {{replacement}} => {{outputVar}}',
+    v2ReplaceStringDesc: '使用正規表達式 {{regex}} 將 {{source}} 替換為 {{replacement}} => {{outputVar}}',
   },
   triggerInputLabels: {
     value: '值',
@@ -825,8 +802,7 @@ export const languageChineseTraditional = {
   enableBlockPartialEdit: '啟用區塊局部編輯（懸停以編輯特定區塊）',
   enableDragPartialEdit: '啟用拖曳局部編輯（選取文字以編輯）',
   setNodePassword: '設定密碼以提升安全性',
-  inputNodePassword:
-    '輸入密碼。如果忘記密碼，請刪除伺服器文件中的 save/__password.txt 並重啟伺服器。',
+  inputNodePassword: '輸入密碼。如果忘記密碼，請刪除伺服器文件中的 save/__password.txt 並重啟伺服器。',
   simple: '基本',
   advanced: '進階',
   askReRollAutoSuggestions: '重新生成自動建議',
@@ -1072,8 +1048,7 @@ export const languageChineseTraditional = {
   grid: '網格',
   list: '列表',
   trash: '垃圾桶',
-  trashDesc:
-    '刪除的角色將移至垃圾桶，您可選擇還原或永久刪除。垃圾桶內的資料將於 3 天後自動永久刪除。',
+  trashDesc: '刪除的角色將移至垃圾桶，您可選擇還原或永久刪除。垃圾桶內的資料將於 3 天後自動永久刪除。',
   shareExport: '分享/匯出',
   risupresetDesc: 'Risupreset 是專為 Risuai 預設設計的格式。',
   risuMDesc: 'RisuM 是專為 Risuai 模組設計的格式。',
@@ -1094,10 +1069,8 @@ export const languageChineseTraditional = {
   select: '選擇',
   options: '選項',
   alertContent: '提示內容',
-  lowLevelAccessConfirm:
-    '此內容包含低層級存取設定，可直接存取 AI 模型與您的本機資料。確定要匯入嗎？',
-  triggerLowLevelOnly:
-    '此觸發式需要低層級存取權限。請先至角色或模組的進階設定中啟用「低層級存取」。',
+  lowLevelAccessConfirm: '此內容包含低層級存取設定，可直接存取 AI 模型與您的本機資料。確定要匯入嗎？',
+  triggerLowLevelOnly: '此觸發式需要低層級存取權限。請先至角色或模組的進階設定中啟用「低層級存取」。',
   truthy: '真值',
   extractRegex: '使用正規表達式提取文字',
   runImgGen: '執行圖片生成',
@@ -1191,8 +1164,7 @@ export const languageChineseTraditional = {
   editTranslationSave: '儲存翻譯',
   exportTranslationCache: '匯出翻譯快取',
   importTranslationCache: '匯入翻譯快取',
-  importTranslationCacheConfirm:
-    '這將把快取條目合併到當前翻譯快取中，且現有的相同鍵值將被覆蓋。是否繼續？',
+  importTranslationCacheConfirm: '這將把快取條目合併到當前翻譯快取中，且現有的相同鍵值將被覆蓋。是否繼續？',
   importTranslationCacheSuccess: '已匯入 {0} 筆翻譯快取。',
   exportTranslationCacheEmpty: '翻譯快取為空。',
   clearTranslationCache: '清除翻譯快取',
@@ -1319,8 +1291,7 @@ export const languageChineseTraditional = {
   depth: '深度',
   returnCSSError: '返回 CSS 錯誤',
   alwaysActiveInChat: '始終啟用（當前對話）',
-  childLoreDesc:
-    '這是角色 Lorebook 的副本，將保持「始終啟用」狀態，直到將其移除或於原始設定中手動停用。',
+  childLoreDesc: '這是角色 Lorebook 的副本，將保持「始終啟用」狀態，直到將其移除或於原始設定中手動停用。',
   thinkingTokens: '思考 Token',
   thinkingType: '思考模式',
   adaptiveThinkingEffort: '適應性思考強度',
@@ -1433,8 +1404,7 @@ export const languageChineseTraditional = {
     'Risuai 偵測到可能有害的程式碼，該外掛可能**竊取您的 API 金鑰或個人資料**。強烈建議**不要安裝此外掛**。',
   doNotInstall: '不要安裝',
   continueAnyway: '無論如何都要繼續',
-  pluginNoRiskButAlert:
-    'Risuai 未偵測到有害的程式碼，但請注意，從不受信任的來源安裝外掛可能存在安全風險。',
+  pluginNoRiskButAlert: 'Risuai 未偵測到有害的程式碼，但請注意，從不受信任的來源安裝外掛可能存在安全風險。',
   pluginRisksInuserFriendly: {
     eval: '從字串執行程式碼',
     globalAccess: '存取全域變數',
@@ -1476,10 +1446,8 @@ export const languageChineseTraditional = {
   fetchLogConsent: '外掛 {} 正在請求存取記錄，此操作可能暴露敏感資訊。是否允許？',
   getFullDatabaseConsent: '外掛 {} 正在請求存取完整資料庫，此操作可能暴露敏感資訊。是否允許？',
   mainDomAccessConsent: '外掛 {} 正在請求存取主文件，此操作可能暴露敏感資訊。是否允許？',
-  replacerPermissionConsent:
-    '外掛 {} 正在請求替換對話內容的權限，此操作可能被用於操縱對話。是否允許？',
-  providerPermissionConsent:
-    '外掛 {} 正在請求存取提供商的權限，此操作可能允許未授權的 API 呼叫。是否允許？',
+  replacerPermissionConsent: '外掛 {} 正在請求替換對話內容的權限，此操作可能被用於操縱對話。是否允許？',
+  providerPermissionConsent: '外掛 {} 正在請求存取提供商的權限，此操作可能允許未授權的 API 呼叫。是否允許？',
   sendChatConsent: '外掛 {} 正在請求以您的名義發送對話訊息的權限，這將觸發 AI 回應。是否允許？',
   pluginV2Warning:
     '外掛 V2 與 V2.1 版本被視為不安全，並將於未來版本中停用。**請勿使用此版本的外掛。**若您是外掛開發者，請盡快更新至 V3。',
@@ -1511,8 +1479,7 @@ export const languageChineseTraditional = {
     editModalTitle: '部分編輯',
     matchFound: (method: string) => `匹配：${method}`,
     matchFailedTitle: '無法進行部分編輯',
-    matchFailedMessage:
-      '無法在原始訊息中精確定位。訊息過長或含有重複內容時可能發生此問題。請改用完整訊息編輯功能。',
+    matchFailedMessage: '無法在原始訊息中精確定位。訊息過長或含有重複內容時可能發生此問題。請改用完整訊息編輯功能。',
     selectMatch: '選擇要修改的區塊',
     selectDeleteMatch: '選擇要刪除的區塊',
     matchesFound: '個匹配結果',
@@ -1525,8 +1492,7 @@ export const languageChineseTraditional = {
   enableRemoteSaving: '啟用遠端儲存',
   blockquoteStyling: '引言樣式',
   dynamicModelRegistry: '動態模型登錄',
-  confirmInstallPluginViaPlugin:
-    '您正透過另一個外掛安裝新外掛。若來源外掛不可信，這將帶來安全風險。確定要繼續嗎？',
+  confirmInstallPluginViaPlugin: '您正透過另一個外掛安裝新外掛。若來源外掛不可信，這將帶來安全風險。確定要繼續嗎？',
   risuaiProTools: 'Risuai Pro Tools',
   enableRisuaiProTools: '啟用 Risuai Pro Tools',
   easyPanel: 'Easy Panel',

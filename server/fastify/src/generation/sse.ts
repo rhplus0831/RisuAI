@@ -13,8 +13,7 @@ export interface SseEventBlock {
 export const MAX_STREAM_BUFFER_CHARS = 8 * 1024 * 1024
 
 /** Stream-adapter error message emitted when the cap above trips. */
-export const STREAM_BUFFER_OVERFLOW_ERROR =
-  'upstream stream exceeded the event buffer cap without a delimiter'
+export const STREAM_BUFFER_OVERFLOW_ERROR = 'upstream stream exceeded the event buffer cap without a delimiter'
 
 export function streamBufferExceedsCap(buffer: string): boolean {
   return buffer.length > MAX_STREAM_BUFFER_CHARS

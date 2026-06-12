@@ -12,10 +12,7 @@ import { SandboxHost } from './factory'
 import { getDatabase } from 'src/ts/storage/database.svelte'
 import { currentPluginStateSnapshot, dispatchUpdatePlugin } from 'src/ts/pluginCommands'
 import { canUseServerCommands, patchServerBackedSettings } from 'src/ts/server/commands'
-import {
-  currentCharacterStateSnapshot,
-  prepareCompatibleCharacterUpdate,
-} from 'src/ts/characterCommands'
+import { currentCharacterStateSnapshot, prepareCompatibleCharacterUpdate } from 'src/ts/characterCommands'
 import {
   currentChatStateSnapshot,
   prepareCompatibleChatUpdate,
@@ -43,12 +40,7 @@ import { sleep } from 'src/ts/util'
 import { alertConfirm, alertError, alertNormal } from 'src/ts/alert'
 import { language } from 'src/lang'
 import { checkCharOrder, getFetchLogs } from 'src/ts/globalApi.svelte'
-import {
-  changeColorScheme,
-  updateColorScheme,
-  updateTextThemeAndCSS,
-  type ColorScheme,
-} from 'src/ts/gui/colorscheme'
+import { changeColorScheme, updateColorScheme, updateTextThemeAndCSS, type ColorScheme } from 'src/ts/gui/colorscheme'
 import { get } from 'svelte/store'
 import { registerMCPModule, unregisterMCPModule } from 'src/ts/process/mcp/pluginmcp'
 import { getLLMCache, searchLLMCache } from 'src/ts/translator/translator'
@@ -77,10 +69,7 @@ function cloneJsonValue<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
 }
 
-function dispatchPluginApiSettingsPatch(
-  patch: Record<string, unknown>,
-  previous: Record<string, unknown>,
-): void {
+function dispatchPluginApiSettingsPatch(patch: Record<string, unknown>, previous: Record<string, unknown>): void {
   if (!canUseServerCommands()) return
   void patchServerBackedSettings({
     patch,
@@ -447,11 +436,7 @@ class SafeElement {
     const record = this.#eventIdMap.get(id)
     if (record) {
       const realOptions = typeof options === 'boolean' ? { capture: options } : options || {}
-      document.removeEventListener(
-        type,
-        record.listener,
-        realOptions,
-      )
+      document.removeEventListener(type, record.listener, realOptions)
       this.#eventIdMap.delete(id)
       record.cleanup()
     }
@@ -751,9 +736,7 @@ function registerV3Provider(registration: V3ProviderRegistration) {
   v3ProviderRegistrations.push(registration)
   if (!registeredV3ProviderUnloadCallbacks.has(registration.pluginName)) {
     registeredV3ProviderUnloadCallbacks.add(registration.pluginName)
-    addPluginUnloadCallback(registration.pluginName, () =>
-      unregisterV3ProvidersForPlugin(registration.pluginName),
-    )
+    addPluginUnloadCallback(registration.pluginName, () => unregisterV3ProvidersForPlugin(registration.pluginName))
   }
   syncV3ProviderRegistrations()
 }
@@ -775,9 +758,7 @@ const getPluginPermission = async (
   let requiresReconfirm = false
 
   if (reconfirm === 'periodically') {
-    const lastGrantTime: number = await permissionForage.getItem(
-      pluginName + '_' + permissionDesc + '_lastGrantTime',
-    )
+    const lastGrantTime: number = await permissionForage.getItem(pluginName + '_' + permissionDesc + '_lastGrantTime')
     const now = Date.now()
     if (!lastGrantTime || now - lastGrantTime > 3 * 24 * 60 * 60 * 1000) {
       //3 days
@@ -788,9 +769,8 @@ const getPluginPermission = async (
   }
 
   pluginHash =
-    (await hasher(
-      new TextEncoder().encode(DBState.db.plugins.find((p) => p.name === pluginName)?.script),
-    )) + `_${permissionDesc}`
+    (await hasher(new TextEncoder().encode(DBState.db.plugins.find((p) => p.name === pluginName)?.script))) +
+    `_${permissionDesc}`
 
   if (!requiresReconfirm && (await permissionForage.getItem(pluginHash))) {
     permissionGivenPlugins.add(pluginName)
@@ -819,10 +799,7 @@ const getPluginPermission = async (
     permissionGivenPlugins.add(pluginName)
     await permissionForage.setItem(pluginHash, true)
     if (reconfirm === 'periodically') {
-      await permissionForage.setItem(
-        pluginName + '_' + permissionDesc + '_lastGrantTime',
-        Date.now(),
-      )
+      await permissionForage.setItem(pluginName + '_' + permissionDesc + '_lastGrantTime', Date.now())
     }
     return true
   }
@@ -834,11 +811,7 @@ const urlBlacklist = ['risuai.xyz', 'risuai.net', 'sionyw.com']
 
 const authorizationHeaders = ['x-api-key', 'authorization', 'proxy-authorization']
 
-const makeRisuaiAPIV3 = (
-  iframe: HTMLIFrameElement,
-  plugin: RisuPlugin,
-  lifecycle: PluginLifecycleCleanup,
-) => {
+const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin, lifecycle: PluginLifecycleCleanup) => {
   const oldApis = getV2PluginAPIs()
   return {
     //Old APIs from v2.1
@@ -1150,11 +1123,7 @@ const makeRisuaiAPIV3 = (
         })
         // Route through the sequencer so this call shares one advancing revision
         // baseline with other makeRisuaiAPIV3 command factories.
-        const { factories, rollback } = prepareCompatibleCharacterUpdate(
-          previousCharacter,
-          char,
-          previous,
-        )
+        const { factories, rollback } = prepareCompatibleCharacterUpdate(previousCharacter, char, previous)
         runOptimisticCommandSequence(factories, rollback)
       }
     },
@@ -1184,11 +1153,7 @@ const makeRisuaiAPIV3 = (
           })
           // Route through the sequencer so this call shares one advancing revision
           // baseline with other makeRisuaiAPIV3 command factories.
-          const { factories, rollback } = prepareCompatibleChatUpdate(
-            previousChat,
-            chat,
-            previous,
-          )
+          const { factories, rollback } = prepareCompatibleChatUpdate(previousChat, chat, previous)
           runOptimisticCommandSequence(factories, rollback)
         }
       }
@@ -1330,11 +1295,7 @@ const makeRisuaiAPIV3 = (
         id,
       }
 
-      const buttonStores = [
-        additionalFloatingActionButtons,
-        additionalHamburgerMenu,
-        additionalChatMenu,
-      ]
+      const buttonStores = [additionalFloatingActionButtons, additionalHamburgerMenu, additionalChatMenu]
       for (const store of buttonStores) {
         const existingIndex = store.findIndex((item) => item.id === id)
         if (existingIndex !== -1) {
@@ -1347,26 +1308,17 @@ const makeRisuaiAPIV3 = (
       switch (location) {
         case 'action': {
           additionalFloatingActionButtons.push(menuDef)
-          addPluginUnloadCallback(
-            plugin.name,
-            makeMenuUnloadCallback(menuDef.id, additionalFloatingActionButtons),
-          )
+          addPluginUnloadCallback(plugin.name, makeMenuUnloadCallback(menuDef.id, additionalFloatingActionButtons))
           break
         }
         case 'hamburger': {
           additionalHamburgerMenu.push(menuDef)
-          addPluginUnloadCallback(
-            plugin.name,
-            makeMenuUnloadCallback(menuDef.id, additionalHamburgerMenu),
-          )
+          addPluginUnloadCallback(plugin.name, makeMenuUnloadCallback(menuDef.id, additionalHamburgerMenu))
           break
         }
         case 'chat': {
           additionalChatMenu.push(menuDef)
-          addPluginUnloadCallback(
-            plugin.name,
-            makeMenuUnloadCallback(menuDef.id, additionalChatMenu),
-          )
+          addPluginUnloadCallback(plugin.name, makeMenuUnloadCallback(menuDef.id, additionalChatMenu))
           break
         }
         default: {

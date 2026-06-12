@@ -307,9 +307,7 @@ describe('server command API adapter', () => {
   })
 
   it('maps revision conflicts to a typed conflict result', async () => {
-    const commandFetch = makeCommandFetch(() =>
-      jsonResponse({ error: 'revision_conflict', currentRevision: 7 }, 409),
-    )
+    const commandFetch = makeCommandFetch(() => jsonResponse({ error: 'revision_conflict', currentRevision: 7 }, 409))
     vi.stubGlobal('fetch', commandFetch.fetch)
 
     const result = await patchRuntimeSettings({
@@ -321,9 +319,7 @@ describe('server command API adapter', () => {
   })
 
   it('maps command errors to status:error', async () => {
-    const commandFetch = makeCommandFetch(() =>
-      jsonResponse({ error: 'streamGeminiThoughts must be a boolean' }, 400),
-    )
+    const commandFetch = makeCommandFetch(() => jsonResponse({ error: 'streamGeminiThoughts must be a boolean' }, 400))
     vi.stubGlobal('fetch', commandFetch.fetch)
 
     const result = await patchRuntimeSettings({
@@ -678,10 +674,7 @@ describe('server command API adapter', () => {
       }),
     ).resolves.toEqual({ status: 'conflict', currentRevision: 8 })
 
-    expect(commandFetch.calls.map((call) => call.body)).toEqual([
-      null,
-      { baseRevision: 5, presetId: 'preset-b' },
-    ])
+    expect(commandFetch.calls.map((call) => call.body)).toEqual([null, { baseRevision: 5, presetId: 'preset-b' }])
   })
 
   it('dispatches prompt settings and prompt item commands through typed helpers', async () => {
@@ -778,9 +771,7 @@ describe('server command API adapter', () => {
       }),
     ).resolves.toMatchObject({ status: 'ok', revision: 7, enabled: true })
 
-    expect(
-      commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body })),
-    ).toEqual([
+    expect(commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body }))).toEqual([
       {
         url: '/api/v1/commands/prompt-settings',
         method: 'PATCH',
@@ -848,10 +839,7 @@ describe('server command API adapter', () => {
       }),
     ).resolves.toEqual({ status: 'conflict', currentRevision: 14 })
 
-    expect(commandFetch.calls.map((call) => call.body)).toEqual([
-      null,
-      { baseRevision: 11, patch: { type: 'memory' } },
-    ])
+    expect(commandFetch.calls.map((call) => call.body)).toEqual([null, { baseRevision: 11, patch: { type: 'memory' } }])
   })
 
   it('dispatches persona commands through typed helpers', async () => {
@@ -941,9 +929,7 @@ describe('server command API adapter', () => {
       }),
     ).resolves.toMatchObject({ status: 'ok', revision: 6, selectedPersonaId: 'persona-b' })
 
-    expect(
-      commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body })),
-    ).toEqual([
+    expect(commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body }))).toEqual([
       {
         url: '/api/v1/commands/personas',
         method: 'POST',
@@ -1012,10 +998,7 @@ describe('server command API adapter', () => {
       }),
     ).resolves.toEqual({ status: 'conflict', currentRevision: 23 })
 
-    expect(commandFetch.calls.map((call) => call.body)).toEqual([
-      null,
-      { baseRevision: 20, personaId: 'persona-b' },
-    ])
+    expect(commandFetch.calls.map((call) => call.body)).toEqual([null, { baseRevision: 20, personaId: 'persona-b' }])
   })
 
   it('dispatches translator preset commands through typed helpers', async () => {
@@ -1111,9 +1094,7 @@ describe('server command API adapter', () => {
       }),
     ).resolves.toMatchObject({ status: 'ok', revision: 5, presetId: 'translator-b' })
 
-    expect(
-      commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body })),
-    ).toEqual([
+    expect(commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body }))).toEqual([
       {
         url: '/api/v1/commands/translator-presets',
         method: 'POST',
@@ -1177,10 +1158,7 @@ describe('server command API adapter', () => {
       }),
     ).resolves.toEqual({ status: 'conflict', currentRevision: 33 })
 
-    expect(commandFetch.calls.map((call) => call.body)).toEqual([
-      null,
-      { baseRevision: 30, presetId: 'translator-b' },
-    ])
+    expect(commandFetch.calls.map((call) => call.body)).toEqual([null, { baseRevision: 30, presetId: 'translator-b' }])
   })
 
   it('dispatches loadout commands through typed helpers', async () => {
@@ -1270,9 +1248,7 @@ describe('server command API adapter', () => {
       }),
     ).resolves.toMatchObject({ status: 'ok', revision: 6, loadoutId: 'loadout-a' })
 
-    expect(
-      commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body })),
-    ).toEqual([
+    expect(commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body }))).toEqual([
       {
         url: '/api/v1/commands/loadouts',
         method: 'POST',
@@ -1349,10 +1325,7 @@ describe('server command API adapter', () => {
       }),
     ).resolves.toEqual({ status: 'conflict', currentRevision: 43 })
 
-    expect(commandFetch.calls.map((call) => call.body)).toEqual([
-      null,
-      { baseRevision: 40, favorite: false },
-    ])
+    expect(commandFetch.calls.map((call) => call.body)).toEqual([null, { baseRevision: 40, favorite: false }])
   })
 
   it('dispatches character commands through typed helpers', async () => {
@@ -1482,9 +1455,7 @@ describe('server command API adapter', () => {
       }),
     ).resolves.toMatchObject({ status: 'ok', revision: 7, characterId: 'char-c' })
 
-    expect(
-      commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body })),
-    ).toEqual([
+    expect(commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body }))).toEqual([
       {
         url: '/api/v1/commands/characters',
         method: 'POST',
@@ -1566,10 +1537,7 @@ describe('server command API adapter', () => {
       }),
     ).resolves.toEqual({ status: 'conflict', currentRevision: 52 })
 
-    expect(commandFetch.calls.map((call) => call.body)).toEqual([
-      null,
-      { baseRevision: 50, characterId: 'char-a' },
-    ])
+    expect(commandFetch.calls.map((call) => call.body)).toEqual([null, { baseRevision: 50, characterId: 'char-a' }])
   })
 
   it('dispatches chat and chat-folder commands through typed helpers', async () => {
@@ -1732,9 +1700,7 @@ describe('server command API adapter', () => {
       }),
     ).resolves.toMatchObject({ status: 'ok', revision: 9, selectedChatId: 'chat-a' })
 
-    expect(
-      commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body })),
-    ).toEqual([
+    expect(commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body }))).toEqual([
       {
         url: '/api/v1/commands/characters/char-a/chats',
         method: 'POST',
@@ -1942,9 +1908,7 @@ describe('server command API adapter', () => {
       }),
     ).resolves.toMatchObject({ status: 'ok', revision: 6, messageId: 'gen-a' })
 
-    expect(
-      commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body })),
-    ).toEqual([
+    expect(commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body }))).toEqual([
       {
         url: '/api/v1/commands/chats/chat-a/messages',
         method: 'POST',
@@ -2031,9 +1995,7 @@ describe('server command API adapter', () => {
       }),
     ).resolves.toMatchObject({ status: 'ok', revision: 7, chatId: 'chat-a' })
 
-    expect(
-      commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body })),
-    ).toEqual([
+    expect(commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body }))).toEqual([
       {
         url: '/api/v1/commands/chats/chat-a/scriptstate',
         method: 'PATCH',
@@ -2081,9 +2043,7 @@ describe('server command API adapter', () => {
       }),
     ).resolves.toMatchObject({ status: 'ok', revision: 8, chatId: 'chat-a' })
 
-    expect(
-      commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body })),
-    ).toEqual([
+    expect(commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body }))).toEqual([
       {
         url: '/api/v1/commands/chats/chat-a/generation-settings',
         method: 'PUT',
@@ -2166,9 +2126,7 @@ describe('server command API adapter', () => {
     await replaceChatLorebooksCommand({ baseRevision: 8, chatId: 'chat-a', entries: [entry] })
     await replaceModuleLorebooksCommand({ baseRevision: 9, moduleId: 'mod-a', entries: [entry] })
 
-    expect(
-      commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body })),
-    ).toEqual([
+    expect(commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body }))).toEqual([
       {
         url: '/api/v1/commands/lorebooks',
         method: 'POST',
@@ -2283,9 +2241,7 @@ describe('server command API adapter', () => {
       triggers: [trigger],
     })
 
-    expect(
-      commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body })),
-    ).toEqual([
+    expect(commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body }))).toEqual([
       {
         url: '/api/v1/commands/characters/char-a/scripts',
         method: 'PUT',
@@ -2346,9 +2302,7 @@ describe('server command API adapter', () => {
       moduleIds: ['mod-a'],
     })
 
-    expect(
-      commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body })),
-    ).toEqual([
+    expect(commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body }))).toEqual([
       {
         url: '/api/v1/commands/modules',
         method: 'POST',
@@ -2430,9 +2384,7 @@ describe('server command API adapter', () => {
     await selectPluginProviderCommand({ baseRevision: 5, provider: 'provider-a' })
     await reorderPluginsCommand({ baseRevision: 6, pluginIds: ['plugin-b', 'plugin-a'] })
 
-    expect(
-      commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body })),
-    ).toEqual([
+    expect(commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body }))).toEqual([
       {
         url: '/api/v1/commands/plugins',
         method: 'POST',
@@ -2504,9 +2456,7 @@ describe('server command API adapter', () => {
       clear: false,
     })
 
-    expect(
-      commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body })),
-    ).toEqual([
+    expect(commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body }))).toEqual([
       {
         url: '/api/v1/commands/plugin-storage/theme',
         method: 'PUT',

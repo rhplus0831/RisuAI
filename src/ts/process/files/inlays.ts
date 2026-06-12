@@ -83,10 +83,7 @@ async function uploadInlayAssetToServer(img: InlayAsset): Promise<string> {
   }
 
   if (img.type === 'signature') {
-    return uploadServerAssetBytes(
-      new TextEncoder().encode(img.data),
-      SERVER_INLAY_SIGNATURE_CONTENT_TYPE,
-    )
+    return uploadServerAssetBytes(new TextEncoder().encode(img.data), SERVER_INLAY_SIGNATURE_CONTENT_TYPE)
   }
 
   const { bytes, contentType } = dataUriToBytes(img.data)
@@ -178,9 +175,7 @@ export async function postInlayAsset(img: { name: string; data: Uint8Array }) {
   const imgObj = new Image()
 
   if (extention && inlayImageExts.includes(extention)) {
-    const imgURL = URL.createObjectURL(
-      new Blob([asBuffer(img.data)], { type: `image/${extention}` }),
-    )
+    const imgURL = URL.createObjectURL(new Blob([asBuffer(img.data)], { type: `image/${extention}` }))
     try {
       imgObj.src = imgURL
       return await writeInlayImage(imgObj, {
@@ -279,10 +274,7 @@ export type InlaySignature = {
 
 export async function saveInlayedSignature(sigid: string, signature: InlaySignature) {
   const data = JSON.stringify(signature)
-  const assetId = await uploadServerAssetBytes(
-    new TextEncoder().encode(data),
-    SERVER_INLAY_SIGNATURE_CONTENT_TYPE,
-  )
+  const assetId = await uploadServerAssetBytes(new TextEncoder().encode(data), SERVER_INLAY_SIGNATURE_CONTENT_TYPE)
   await rememberServerInlayAsset(assetId, {
     name: sigid,
     ext: 'json',

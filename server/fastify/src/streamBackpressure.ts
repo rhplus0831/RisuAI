@@ -36,11 +36,7 @@ export function closeWritable(raw: WritableLike): void {
   }
 }
 
-export function writeBoundedRaw(
-  raw: WritableLike,
-  text: string,
-  options: BoundedWriteOptions = {},
-): boolean {
+export function writeBoundedRaw(raw: WritableLike, text: string, options: BoundedWriteOptions = {}): boolean {
   if (isWritableEnded(raw)) return false
   const maxBufferedBytes = options.maxBufferedBytes ?? STREAM_CLIENT_MAX_BUFFERED_BYTES
   if (wouldExceedStreamBuffer(raw, text, maxBufferedBytes)) {

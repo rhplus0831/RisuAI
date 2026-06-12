@@ -38,9 +38,7 @@ function parseEventBlock(block: string, index: number): PromptChatFrame {
     data = JSON.parse(rawData)
   } catch (err) {
     throw new Error(
-      `SSE frame ${index} has invalid JSON data for event ${type}: ${
-        err instanceof Error ? err.message : String(err)
-      }`,
+      `SSE frame ${index} has invalid JSON data for event ${type}: ${err instanceof Error ? err.message : String(err)}`,
     )
   }
   if (!isRecord(data)) {
@@ -87,8 +85,7 @@ function describeFrame(frame: PromptChatFrame, index: number): string {
     details.push(`error=${JSON.stringify(frame.data.error)}`)
   }
   if (frame.type === 'done') {
-    if (Object.hasOwn(frame.data, 'result'))
-      details.push(`result=${JSON.stringify(frame.data.result)}`)
+    if (Object.hasOwn(frame.data, 'result')) details.push(`result=${JSON.stringify(frame.data.result)}`)
     if (Object.hasOwn(frame.data, 'postGeneration')) details.push('postGeneration')
   }
   return `${index}:${frame.type}${details.length > 0 ? `(${details.join(', ')})` : ''}`
@@ -112,18 +109,15 @@ export function expectFrameOrder(
 
 export function expectSingleTerminal(input: PromptChatFrameInput): PromptChatFrame {
   const frames = normalizePromptChatFrames(input)
-  const terminals = frames
-    .map((frame, index) => ({ frame, index }))
-    .filter(({ frame }) => isTerminalFrame(frame))
+  const terminals = frames.map((frame, index) => ({ frame, index })).filter(({ frame }) => isTerminalFrame(frame))
 
   expect(
     terminals.map(({ frame }) => frame.type),
     `expected exactly one terminal frame: ${frameSequence(frames)}`,
   ).toHaveLength(1)
-  expect(
-    terminals[0]?.index,
-    `terminal frame must be the final frame: ${frameSequence(frames)}`,
-  ).toBe(frames.length - 1)
+  expect(terminals[0]?.index, `terminal frame must be the final frame: ${frameSequence(frames)}`).toBe(
+    frames.length - 1,
+  )
 
   return terminals[0]!.frame
 }
@@ -136,9 +130,7 @@ export function expectTerminalDone(input: PromptChatFrameInput): PromptChatFrame
 
 export function expectTerminalErrorThenDone(input: PromptChatFrameInput): PromptChatFrame[] {
   const frames = normalizePromptChatFrames(input)
-  const terminals = frames
-    .map((frame, index) => ({ frame, index }))
-    .filter(({ frame }) => isTerminalFrame(frame))
+  const terminals = frames.map((frame, index) => ({ frame, index })).filter(({ frame }) => isTerminalFrame(frame))
 
   expect(
     terminals.map(({ frame }) => frame.type),
@@ -153,10 +145,7 @@ export function expectTerminalErrorThenDone(input: PromptChatFrameInput): Prompt
 }
 
 function isSuccessDone(frame: PromptChatFrame): boolean {
-  return (
-    frame.type === 'done' &&
-    (Object.hasOwn(frame.data, 'result') || Object.hasOwn(frame.data, 'postGeneration'))
-  )
+  return frame.type === 'done' && (Object.hasOwn(frame.data, 'result') || Object.hasOwn(frame.data, 'postGeneration'))
 }
 
 export function expectNoSuccessDoneAfterAbort(input: PromptChatFrameInput): PromptChatFrame[] {

@@ -62,11 +62,7 @@ async function stopHarness(h: Harness): Promise<void> {
   rmSync(h.dataDir, { recursive: true, force: true })
 }
 
-async function signAssertion(
-  privateKey: CryptoKey,
-  publicJwk: JsonWebKey,
-  ttlSec = 60,
-): Promise<string> {
+async function signAssertion(privateKey: CryptoKey, publicJwk: JsonWebKey, ttlSec = 60): Promise<string> {
   const now = Math.floor(Date.now() / 1000)
   const header = { alg: 'ES256', typ: 'JWT' }
   const payload = { iat: now, exp: now + ttlSec, pub: publicJwk }
@@ -107,11 +103,7 @@ async function setupAuthedClient(app: FastifyInstance): Promise<{ assertion: str
   return { assertion }
 }
 
-async function importDb(
-  app: FastifyInstance,
-  assertion: string,
-  database: unknown,
-): Promise<number> {
+async function importDb(app: FastifyInstance, assertion: string, database: unknown): Promise<number> {
   const res = await app.inject({
     method: 'POST',
     url: '/api/v1/import/risusave',
@@ -167,9 +159,7 @@ describe('Phase 2D backups', () => {
       assetCount: 0,
     })
     expect(manifest.id).toMatch(/^\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}-[a-f0-9]{6}$/)
-    expect(existsSync(path.join(harness.dataDir, 'backups', manifest.id, 'manifest.json'))).toBe(
-      true,
-    )
+    expect(existsSync(path.join(harness.dataDir, 'backups', manifest.id, 'manifest.json'))).toBe(true)
   })
 
   it('persists an explicit label', async () => {
@@ -443,9 +433,7 @@ describe('Phase 2D backups', () => {
     })
     expect(backup.statusCode).toBe(201)
     const backupId = backup.json().id
-    expect(
-      readFileSync(path.join(harness.dataDir, 'backups', backupId, 'assets', `${PNG_SHA}.png`)),
-    ).toEqual(PNG_BYTES)
+    expect(readFileSync(path.join(harness.dataDir, 'backups', backupId, 'assets', `${PNG_SHA}.png`))).toEqual(PNG_BYTES)
 
     rmSync(assetsDir(harness.dataDir), { recursive: true, force: true })
 
@@ -531,9 +519,7 @@ describe('Phase 2D backups', () => {
       headers: { 'risu-auth': assertion },
     })
     expect(hydration.statusCode).toBe(200)
-    expect(hydration.json().message).toEqual([
-      { role: 'user', data: 'from legacy', chatId: 'legacy-msg' },
-    ])
+    expect(hydration.json().message).toEqual([{ role: 'user', data: 'from legacy', chatId: 'legacy-msg' }])
 
     const asset = await harness.app.inject({
       method: 'GET',
@@ -564,10 +550,7 @@ describe('Phase 2D backups', () => {
     // One corrupt (unparsable) and one misshapen (no createdAt) manifest.
     const corruptId = '2026-06-05-01-02-03-c0ffee'
     mkdirSync(path.join(harness.dataDir, 'backups', corruptId), { recursive: true })
-    writeFileSync(
-      path.join(harness.dataDir, 'backups', corruptId, 'manifest.json'),
-      '{not valid json',
-    )
+    writeFileSync(path.join(harness.dataDir, 'backups', corruptId, 'manifest.json'), '{not valid json')
     const misshapenId = '2026-06-05-01-02-04-c0ffee'
     mkdirSync(path.join(harness.dataDir, 'backups', misshapenId), { recursive: true })
     writeFileSync(

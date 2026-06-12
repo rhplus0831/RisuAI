@@ -1,21 +1,12 @@
 import { get } from 'svelte/store'
-import {
-  getCurrentCharacter,
-  getCurrentChat,
-  getDatabase,
-  setCurrentChat,
-} from '../storage/database.svelte'
+import { getCurrentCharacter, getCurrentChat, getDatabase, setCurrentChat } from '../storage/database.svelte'
 import { selectedCharID } from '../stores.svelte'
 import { alertInput, alertMd, alertNormal, alertSelect } from '../alert'
 import { sayTTS } from './tts'
 import { risuChatParser } from '../parser/parser.svelte'
 import { sendChat } from './index.svelte'
 import { loadLoreBookV3Prompt } from './lorebook.svelte'
-import {
-  clearManualTriggerAbortController,
-  createManualTriggerAbortController,
-  runTrigger,
-} from './triggers'
+import { clearManualTriggerAbortController, createManualTriggerAbortController, runTrigger } from './triggers'
 import {
   mutateChatWithScopedCommand,
   currentChatScriptstateSnapshot,
@@ -33,12 +24,7 @@ export async function processMultiCommand(command: string) {
     const char = command[i]
     if (char === '"') {
       quoteDepth = !quoteDepth
-    } else if (
-      char === '|' &&
-      quoteDepth === false &&
-      command[i - 1] !== '|' &&
-      command[i + 1] !== '|'
-    ) {
+    } else if (char === '|' && quoteDepth === false && command[i - 1] !== '|' && command[i + 1] !== '|') {
       splited.push(command.slice(lastIndex, i))
       lastIndex = i + 1
     }

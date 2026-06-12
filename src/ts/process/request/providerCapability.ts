@@ -147,10 +147,7 @@ function unroutableFormatReason(format: LLMFormat): ProviderUnsupportedReason {
 }
 
 /** `db.customModels` lookup that also enforces the URL + key presence gate. */
-function findXcustomEntry(
-  config: ProviderCapabilityConfig,
-  aiModel: string,
-): CustomModelEntryLike | null {
+function findXcustomEntry(config: ProviderCapabilityConfig, aiModel: string): CustomModelEntryLike | null {
   const entry = (config.customModels ?? []).find((m) => m.id === aiModel)
   if (!entry) return null
   if (!nonEmpty(entry.url) || !nonEmpty(entry.key)) return null
@@ -304,9 +301,7 @@ function refineOllama(input: ProviderCapabilityInput): string | null {
  * this table through the Fastify dispatcher; the browser no longer builds
  * provider wire payloads for server completion.
  */
-export function resolveProviderCapability(
-  input: ProviderCapabilityInput,
-): ProviderCapabilityVerdict {
+export function resolveProviderCapability(input: ProviderCapabilityInput): ProviderCapabilityVerdict {
   const provider = formatToServerProvider(input.format)
   if (provider === null) {
     return { routable: false, reason: unroutableFormatReason(input.format) }

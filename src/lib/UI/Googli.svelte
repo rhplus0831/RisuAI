@@ -25,8 +25,7 @@
         class="bg-slate-500"
         style={window.innerWidth > 728
           ? 'display:block !important;width:728px;height:90px'
-          : 'display:block !important;width:300px;height:100px'}
-      >
+          : 'display:block !important;width:300px;height:100px'}>
         TEST
       </div>
     </div>
@@ -40,9 +39,7 @@
         data-ad-client={window.innerWidth > 728
           ? import.meta.env.VITE_AD_CLIENT
           : import.meta.env.VITE_AD_CLIENT_MOBILE}
-        data-ad-slot={window.innerWidth > 728
-          ? import.meta.env.VITE_AD_SLOT
-          : import.meta.env.VITE_AD_SLOT_MOBILE}
+        data-ad-slot={window.innerWidth > 728 ? import.meta.env.VITE_AD_SLOT : import.meta.env.VITE_AD_SLOT_MOBILE}
       ></ins>
     </div>
   {/if}

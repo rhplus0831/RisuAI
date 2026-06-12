@@ -148,14 +148,8 @@ function sseResponse(message: string): Response {
   const enc = new TextEncoder()
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
-      controller.enqueue(
-        enc.encode(
-          `event: chunk\ndata: ${JSON.stringify({ type: 'token', content: message })}\n\n`,
-        ),
-      )
-      controller.enqueue(
-        enc.encode(`event: done\ndata: ${JSON.stringify({ finishReason: 'stop' })}\n\n`),
-      )
+      controller.enqueue(enc.encode(`event: chunk\ndata: ${JSON.stringify({ type: 'token', content: message })}\n\n`))
+      controller.enqueue(enc.encode(`event: done\ndata: ${JSON.stringify({ finishReason: 'stop' })}\n\n`))
       controller.close()
     },
   })
@@ -239,12 +233,7 @@ function serverIntentResult(body: CompletionPayload): { result: string; model?: 
   return { result: state.openaiResult, model: aiModel }
 }
 
-function respondToProviderPayload(
-  provider: string,
-  model: string,
-  stream: boolean,
-  options: unknown,
-): Response {
+function respondToProviderPayload(provider: string, model: string, stream: boolean, options: unknown): Response {
   if (provider === 'echo') {
     const echoOpts = (options as { echo?: { message?: string } } | undefined)?.echo
     const message = typeof echoOpts?.message === 'string' ? echoOpts.message : 'Echo Message'
@@ -293,12 +282,8 @@ function respondToProviderPayload(
   return jsonResponse({ reason: `provider not handled by fixture stub: ${provider}` }, 501)
 }
 
-export async function serverCompletionFetch(
-  input: RequestInfo | URL,
-  init?: RequestInit,
-): Promise<Response> {
-  const url =
-    typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+export async function serverCompletionFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
   if (isTokenizerUrl(url)) return serveTokenizerFetch(url)
   if (!url.endsWith('/api/v1/generate/completion')) {
     throw new Error(`unexpected fetch in dual-mode fixture: ${url}`)
@@ -330,10 +315,7 @@ export async function serverCompletionFetch(
     })
 
     if (body.provider !== undefined || body.model !== undefined || body.options !== undefined) {
-      return jsonResponse(
-        { error: 'server-intent completion must not include provider, model, or options' },
-        400,
-      )
+      return jsonResponse({ error: 'server-intent completion must not include provider, model, or options' }, 400)
     }
 
     const resolved = serverIntentResult(body)

@@ -8,13 +8,7 @@ import { expect } from 'vitest'
 // allowed to touch. Import this from any command/metric test instead of
 // re-deriving the gates inline.
 
-export const COMMAND_METRIC_SECTIONS = [
-  'loadMs',
-  'cloneMutateMs',
-  'sqliteSyncMs',
-  'dbJsonWriteMs',
-  'totalMs',
-] as const
+export const COMMAND_METRIC_SECTIONS = ['loadMs', 'cloneMutateMs', 'sqliteSyncMs', 'dbJsonWriteMs', 'totalMs'] as const
 
 export type CommandMetricSection = (typeof COMMAND_METRIC_SECTIONS)[number]
 
@@ -108,7 +102,7 @@ export const COMMAND_METRIC_REVIEW_GATES = {
   },
   'targeted-character-row': {
     reviewGate:
-      'character-scoped edits write that character row (+ its own chat rows on folder-cascade / chats-reorder / fork, + the forked chat\'s messages, + settings only when a pointer moved) and never another collection table',
+      "character-scoped edits write that character row (+ its own chat rows on folder-cascade / chats-reorder / fork, + the forked chat's messages, + settings only when a pointer moved) and never another collection table",
     sections: COMMAND_METRIC_SECTIONS,
     dbJsonWriteMs: 0,
     maxTables: ['chat_hypa_v3', 'characters', 'chats', 'messages', 'settings'],
@@ -166,8 +160,7 @@ export interface CommandMutationMetric {
 export function commandMetricReviewGate(metric: CommandMutationMetric): CommandMetricGate {
   const mutationPath = metric.mutationPath
   expect(mutationPath, `missing mutationPath for ${metric.type}`).toBeTruthy()
-  const gate =
-    COMMAND_METRIC_REVIEW_GATES[mutationPath as keyof typeof COMMAND_METRIC_REVIEW_GATES]
+  const gate = COMMAND_METRIC_REVIEW_GATES[mutationPath as keyof typeof COMMAND_METRIC_REVIEW_GATES]
   expect(gate, `missing command metric review gate for ${mutationPath}`).toBeTruthy()
   return gate
 }

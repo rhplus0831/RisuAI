@@ -103,13 +103,7 @@ test('Fastify-served browser loads bootstrap, subscribes to events, and refreshe
         detail: typeof detail === 'string' ? detail : undefined,
       })
     }
-    const patchMethod = (
-      target: unknown,
-      method: string,
-      surface: string,
-      operation = method,
-      detailIndex = 0,
-    ) => {
+    const patchMethod = (target: unknown, method: string, surface: string, operation = method, detailIndex = 0) => {
       const holder = target as Record<string, unknown> | undefined
       const original = holder?.[method]
       if (typeof original !== 'function') return
@@ -145,9 +139,7 @@ test('Fastify-served browser loads bootstrap, subscribes to events, and refreshe
   await page.goto(harness.baseUrl)
 
   await expect.poll(() => page.evaluate(() => Boolean(globalThis.__NODE__))).toBe(false)
-  await expect
-    .poll(() => page.evaluate(() => Boolean(window.__RISU_FASTIFY_BROWSER_SMOKE__)))
-    .toBe(true)
+  await expect.poll(() => page.evaluate(() => Boolean(window.__RISU_FASTIFY_BROWSER_SMOKE__))).toBe(true)
 
   try {
     await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.waitForLoaded())
@@ -173,15 +165,11 @@ test('Fastify-served browser loads bootstrap, subscribes to events, and refreshe
     .poll(() => apiRequests.filter((entry) => entry === 'GET /api/v1/events').length)
     .toBeGreaterThanOrEqual(1)
 
-  const initialProjection = await page.evaluate(() =>
-    window.__RISU_FASTIFY_BROWSER_SMOKE__!.getDatabaseSnapshot(),
-  )
+  const initialProjection = await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.getDatabaseSnapshot())
   expect(initialProjection?.streamGeminiThoughts).toBe(false)
-  expect(
-    await page.evaluate(() =>
-      window.__RISU_FASTIFY_BROWSER_SMOKE__!.assertDirectProjectionWriteRejected(),
-    ),
-  ).toBe(true)
+  expect(await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.assertDirectProjectionWriteRejected())).toBe(
+    true,
+  )
 
   const commandResult = await page.evaluate(() =>
     window.__RISU_FASTIFY_BROWSER_SMOKE__!.patchRuntimeSettings({
@@ -265,11 +253,7 @@ test('Fastify-served browser loads bootstrap, subscribes to events, and refreshe
   })
 
   await expect
-    .poll(() =>
-      page.evaluate(
-        () => window.__RISU_FASTIFY_BROWSER_SMOKE__!.getDatabaseSnapshot().streamGeminiThoughts,
-      ),
-    )
+    .poll(() => page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.getDatabaseSnapshot().streamGeminiThoughts))
     .toBe(true)
 
   expect(apiRequests).toContain('PATCH /api/v1/commands/settings/runtime')
@@ -281,15 +265,11 @@ test('Fastify-served browser loads bootstrap, subscribes to events, and refreshe
   expect(apiRequests).toContain('GET /api/v1/memory/chunks/chat-smoke')
   expect(apiRequests).toContain('GET /api/v1/memory/summaries/chat-smoke')
   expect(apiRequests.filter((entry) => entry === 'GET /api/v1/bootstrap').length).toBeGreaterThan(1)
-  expect(apiRequests.filter((entry) => /^((GET)|(POST)) \/api\/v1\/storage\//.test(entry))).toEqual(
-    [],
-  )
+  expect(apiRequests.filter((entry) => /^((GET)|(POST)) \/api\/v1\/storage\//.test(entry))).toEqual([])
   await expect
     .poll(() =>
       page.evaluate(() =>
-        (window.__RISU_FASTIFY_STORAGE_WRITE_AUDIT__?.records ?? []).filter(
-          (record) => record.surface !== 'indexedDB',
-        ),
+        (window.__RISU_FASTIFY_STORAGE_WRITE_AUDIT__?.records ?? []).filter((record) => record.surface !== 'indexedDB'),
       ),
     )
     .toEqual([])
@@ -322,11 +302,7 @@ async function startHarness(): Promise<Harness> {
   }
 }
 
-async function importDatabase(
-  app: FastifyInstance,
-  auth: string,
-  database: Record<string, unknown>,
-) {
+async function importDatabase(app: FastifyInstance, auth: string, database: Record<string, unknown>) {
   const imported = await app.inject({
     method: 'POST',
     url: '/api/v1/import/risusave',

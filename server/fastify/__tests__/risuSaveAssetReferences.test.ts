@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import {
-  buildRisuSaveAssetReport,
-  summarizeRisuSaveAssetReport,
-} from '../src/risuSave/assetReferences.js'
+import { buildRisuSaveAssetReport, summarizeRisuSaveAssetReport } from '../src/risuSave/assetReferences.js'
 import type { PersistedAsset } from '../src/repository.js'
 
 const CHAR_IMAGE = 'a'.repeat(64)
@@ -169,9 +166,7 @@ describe('Phase 9-8c RISUSAVE asset reference walker', () => {
             image: '',
             emotionImages: [['happy', 'http://example.test/happy.png']],
             additionalAssets: [['manual', '-', 'png']],
-            ccAssets: [
-              { type: 'icon', uri: 'data:image/png;base64,abc', name: 'main', ext: 'png' },
-            ],
+            ccAssets: [{ type: 'icon', uri: 'data:image/png;base64,abc', name: 'main', ext: 'png' }],
           },
         ],
       },

@@ -14,19 +14,14 @@
     ignore: string[]
   }
 
-  const openrouterFallbackDraft = createServerBackedSettingDraft<boolean>(
-    'openrouterFallback',
-    false,
-  )
-  const openrouterMiddleOutDraft = createServerBackedSettingDraft<boolean>(
-    'openrouterMiddleOut',
-    false,
-  )
+  const openrouterFallbackDraft = createServerBackedSettingDraft<boolean>('openrouterFallback', false)
+  const openrouterMiddleOutDraft = createServerBackedSettingDraft<boolean>('openrouterMiddleOut', false)
   const useInstructPromptDraft = createServerBackedSettingDraft<boolean>('useInstructPrompt', false)
-  const openrouterProviderDraft = createServerBackedSettingDraft<OpenrouterProviderSettings>(
-    'openrouterProvider',
-    { order: [], only: [], ignore: [] },
-  )
+  const openrouterProviderDraft = createServerBackedSettingDraft<OpenrouterProviderSettings>('openrouterProvider', {
+    order: [],
+    only: [],
+    ignore: [],
+  })
 
   function addProviderEntry(key: keyof OpenrouterProviderSettings): void {
     openrouterProviderDraft.value = {
@@ -70,24 +65,19 @@
           {language.provider}
           {i + 1}
         </span>
-        <OpenrouterProviderList
-          bind:value={openrouterProviderDraft.value.order[i]}
-          options={openRouterProviders}
-        />
+        <OpenrouterProviderList bind:value={openrouterProviderDraft.value.order[i]} options={openRouterProviders} />
       {/each}
       <div class="flex gap-2">
         <button
           class="bg-selected text-textcolor p-2 rounded-md"
           onclick={() => {
             addProviderEntry('order')
-          }}><PlusIcon /></button
-        >
+          }}><PlusIcon /></button>
         <button
           class="bg-red-500 text-white p-2 rounded-md"
           onclick={() => {
             removeProviderEntry('order')
-          }}><TrashIcon /></button
-        >
+          }}><TrashIcon /></button>
       </div>
     </Accordion>
 
@@ -97,24 +87,19 @@
           {language.provider}
           {i + 1}
         </span>
-        <OpenrouterProviderList
-          bind:value={openrouterProviderDraft.value.only[i]}
-          options={openRouterProviders}
-        />
+        <OpenrouterProviderList bind:value={openrouterProviderDraft.value.only[i]} options={openRouterProviders} />
       {/each}
       <div class="flex gap-2">
         <button
           class="bg-selected text-textcolor p-2 rounded-md"
           onclick={() => {
             addProviderEntry('only')
-          }}><PlusIcon /></button
-        >
+          }}><PlusIcon /></button>
         <button
           class="bg-red-500 text-white p-2 rounded-md"
           onclick={() => {
             removeProviderEntry('only')
-          }}><TrashIcon /></button
-        >
+          }}><TrashIcon /></button>
       </div>
     </Accordion>
 
@@ -124,24 +109,19 @@
           {language.provider}
           {i + 1}
         </span>
-        <OpenrouterProviderList
-          bind:value={openrouterProviderDraft.value.ignore[i]}
-          options={openRouterProviders}
-        />
+        <OpenrouterProviderList bind:value={openrouterProviderDraft.value.ignore[i]} options={openRouterProviders} />
       {/each}
       <div class="flex gap-2">
         <button
           class="bg-selected text-textcolor p-2 rounded-md"
           onclick={() => {
             addProviderEntry('ignore')
-          }}><PlusIcon /></button
-        >
+          }}><PlusIcon /></button>
         <button
           class="bg-red-500 text-white p-2 rounded-md"
           onclick={() => {
             removeProviderEntry('ignore')
-          }}><TrashIcon /></button
-        >
+          }}><TrashIcon /></button>
       </div>
     </Accordion>
   {/await}

@@ -20,11 +20,7 @@ type OllamaTagModel = {
   }
 }
 
-export async function getOllamaModels(
-  host: string,
-  source: OllamaModelSource,
-  apiKey = '',
-): Promise<ModelGridItem[]> {
+export async function getOllamaModels(host: string, source: OllamaModelSource, apiKey = ''): Promise<ModelGridItem[]> {
   try {
     const baseUrl = source === 'cloud' ? 'https://ollama.com' : host.replace(/\/$/, '')
     const headers: Record<string, string> = {}

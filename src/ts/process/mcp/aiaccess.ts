@@ -11,8 +11,7 @@ const AI_ACCESS_TOOLS: MCPTool[] = [
       properties: {
         model: {
           type: 'string',
-          description:
-            'The type of the LLM to use. "normal" for full model, "lite" for a smaller, faster model.',
+          description: 'The type of the LLM to use. "normal" for full model, "lite" for a smaller, faster model.',
           enum: ['normal', 'lite'],
         },
         messages: {

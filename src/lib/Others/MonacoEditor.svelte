@@ -43,13 +43,7 @@
     onchange?: (value: string) => void
   }
 
-  let {
-    value = $bindable(''),
-    language = 'markdown',
-    theme = 'vs-dark',
-    readonly = false,
-    onchange,
-  }: Props = $props()
+  let { value = $bindable(''), language = 'markdown', theme = 'vs-dark', readonly = false, onchange }: Props = $props()
 
   let container: HTMLDivElement
   let editor: monaco.editor.IStandaloneCodeEditor
@@ -96,11 +90,7 @@
     if (editor && editor.getValue() !== value) {
       const model = editor.getModel()
       if (model) {
-        model.pushEditOperations(
-          [],
-          [{ range: model.getFullModelRange(), text: value }],
-          () => null,
-        )
+        model.pushEditOperations([], [{ range: model.getFullModelRange(), text: value }], () => null)
       }
     }
   })

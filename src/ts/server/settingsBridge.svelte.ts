@@ -7,10 +7,7 @@ import {
   type SettingsPatch,
   type ServerCommandTransportOptions,
 } from './commands'
-import {
-  getServerProjectionApplyEpoch,
-  withTrustedServerProjectionWrite,
-} from './projectionWriteGuard.svelte'
+import { getServerProjectionApplyEpoch, withTrustedServerProjectionWrite } from './projectionWriteGuard.svelte'
 
 interface PendingSettingsPatch {
   patch: SettingsPatch
@@ -204,9 +201,7 @@ function queueSettingsPatch(patch: SettingsPatch, previous: SettingsPatch, delay
   }, delay)
 }
 
-export function flushPendingServerBackedSettingsPatch(
-  options: ServerCommandTransportOptions = {},
-): void {
+export function flushPendingServerBackedSettingsPatch(options: ServerCommandTransportOptions = {}): void {
   dispatchPendingSettingsPatch(options)
 }
 

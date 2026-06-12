@@ -59,11 +59,8 @@
         } else {
           banCharactersetDraft.value = [...banCharactersetDraft.value, set]
         }
-      }}
-    >
-      {new Intl.DisplayNames([navigator.language, 'en'], { type: 'script' }).of(set)} ({characterSetsPreview[
-        set
-      ]})
+      }}>
+      {new Intl.DisplayNames([navigator.language, 'en'], { type: 'script' }).of(set)} ({characterSetsPreview[set]})
     </Button>
   {/each}
 </Accordion>

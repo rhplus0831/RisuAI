@@ -56,10 +56,7 @@ export function serverAssetContentType(fileExtension: string): string {
 }
 
 function extensionFromContentType(contentType: string): string {
-  return (
-    Object.entries(SERVER_ASSET_CONTENT_TYPES).find(([, type]) => type === contentType)?.[0] ??
-    'png'
-  )
+  return Object.entries(SERVER_ASSET_CONTENT_TYPES).find(([, type]) => type === contentType)?.[0] ?? 'png'
 }
 
 async function advanceServerAssetRevision(revision: unknown): Promise<void> {
@@ -71,15 +68,9 @@ async function advanceServerAssetRevision(revision: unknown): Promise<void> {
   }
 }
 
-export async function uploadServerAssetBytes(
-  data: Uint8Array,
-  contentType: string,
-): Promise<string> {
+export async function uploadServerAssetBytes(data: Uint8Array, contentType: string): Promise<string> {
   const auth = await resolveServerAssetAuth(undefined)
-  const uploadBody = data.buffer.slice(
-    data.byteOffset,
-    data.byteOffset + data.byteLength,
-  ) as ArrayBuffer
+  const uploadBody = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer
   const response = await fetch('/api/v1/assets', {
     method: 'POST',
     headers: {
@@ -134,8 +125,7 @@ export async function readServerAsset(
   if (!response.ok) {
     throw new Error(`Failed to read server asset: ${response.status}`)
   }
-  const contentType =
-    response.headers.get('content-type')?.split(';')[0] ?? 'application/octet-stream'
+  const contentType = response.headers.get('content-type')?.split(';')[0] ?? 'application/octet-stream'
   return {
     bytes: new Uint8Array(await response.arrayBuffer()),
     contentType,
@@ -143,10 +133,7 @@ export async function readServerAsset(
   }
 }
 
-export async function readServerAssetBytes(
-  loc: string,
-  options: ReadServerAssetOptions = {},
-): Promise<Uint8Array> {
+export async function readServerAssetBytes(loc: string, options: ReadServerAssetOptions = {}): Promise<Uint8Array> {
   if (!serverAssetUrl(loc)) {
     throw new Error(`Unsupported server asset reference: ${loc}`)
   }

@@ -1,9 +1,4 @@
-import type {
-  Chat,
-  Database,
-  character,
-  customscript,
-} from '../../../../src/ts/storage/database.svelte'
+import type { Chat, Database, character, customscript } from '../../../../src/ts/storage/database.svelte'
 import type { CbsConditions } from '../../../../src/ts/parser/risuChatParserHelpers'
 import type { RisuModule } from '../../../../src/ts/process/modules'
 import {
@@ -180,23 +175,14 @@ function substituteMatch(template: string, matched: RegExpMatchArray): string {
     .replace(/\$\&/g, matched[0])
     .replace(/(?<!\$)\$<([^>]+)>/g, (v) => {
       const groupName = parseInt(v.substring(2, v.length - 1))
-      if (
-        matched.groups &&
-        (matched.groups as Record<string, string>)[groupName as unknown as string]
-      ) {
+      if (matched.groups && (matched.groups as Record<string, string>)[groupName as unknown as string]) {
         return (matched.groups as Record<string, string>)[groupName as unknown as string]
       }
       return v
     })
 }
 
-function applyMove(
-  data: string,
-  reg: RegExp,
-  flag: string,
-  outScript: string,
-  toTop: boolean,
-): string {
+function applyMove(data: string, reg: RegExp, flag: string, outScript: string, toTop: boolean): string {
   assertBoundedRegexHaystack(data, 'customscript move source')
   assertBoundedRegexReplacement(outScript, 'customscript move replacement')
   reg.lastIndex = 0
@@ -212,12 +198,7 @@ function applyMove(
   return next
 }
 
-function applyInject(
-  currentChat: Chat | undefined,
-  chatID: number,
-  data: string,
-  reg: RegExp,
-): string {
+function applyInject(currentChat: Chat | undefined, chatID: number, data: string, reg: RegExp): string {
   assertBoundedRegexHaystack(data, 'customscript inject source')
   if (!currentChat || chatID < 0) return data
   const target = currentChat.message?.[chatID]
@@ -243,10 +224,7 @@ function applyRepeatBack(
 
   const v = outScript.split(' ', 2)[1]
   const fmIndex = currentChat.fmIndex ?? -1
-  let lastChat =
-    fmIndex === -1
-      ? (currentChar.firstMessage ?? '')
-      : (currentChar.alternateGreetings?.[fmIndex] ?? '')
+  let lastChat = fmIndex === -1 ? (currentChar.firstMessage ?? '') : (currentChar.alternateGreetings?.[fmIndex] ?? '')
 
   let pointer = chatID - 1
   while (pointer >= 0) {
@@ -421,11 +399,7 @@ const preparedScriptsMemo = new WeakMap<Database, PreparedScriptsMemoEntry>()
  *  set, memoized per loaded `Database` (audit M2). The first-message call
  *  (no `currentChat`) and the per-message calls key to different active-module
  *  sets, but each runs the prep at most once per assembly. */
-function getPreparedScripts(
-  db: Database,
-  char: character,
-  currentChat: Chat | undefined,
-): PreparedScript[] {
+function getPreparedScripts(db: Database, char: character, currentChat: Chat | undefined): PreparedScript[] {
   const activeModules = getActiveModules(db, char, currentChat)
   const memo = preparedScriptsMemo.get(db)
   if (
@@ -438,9 +412,7 @@ function getPreparedScripts(
     return memo.prepared
   }
 
-  const rawScripts = (db.presetRegex ?? [])
-    .concat(char.customscript ?? [])
-    .concat(getModuleRegexScripts(activeModules))
+  const rawScripts = (db.presetRegex ?? []).concat(char.customscript ?? []).concat(getModuleRegexScripts(activeModules))
   const { parsed, orderChanged } = parseScripts(rawScripts)
   if (orderChanged) {
     parsed.sort((a, b) => b.order - a.order)

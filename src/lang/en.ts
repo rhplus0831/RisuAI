@@ -26,8 +26,7 @@ export const languageEnglish = {
     networkFetch: 'This happens when the network is unstable or the server is down.',
     networkFetchWeb:
       'This can be a CORS error caused by browser limitations. Run RisuAI under the Fastify server so requests are routed through the server-side proxy.',
-    networkFetchPlain:
-      'This can be a plain fetch error. try disabling force plain fetch option in settings.',
+    networkFetchPlain: 'This can be a plain fetch error. try disabling force plain fetch option in settings.',
     requestLogRemoved: 'This request log is removed.',
     requestLogRemovedDesc: 'This request log removes when client is refreshed or reloaded.',
     coldStorageWriteFailed: 'Cold storage write failed. Your chat data has been preserved.',
@@ -44,8 +43,7 @@ export const languageEnglish = {
     oaiapikey: 'API key for OpenAI. you can get it in https://platform.openai.com/account/api-keys',
     mainprompt: 'The main prompt option sets the default model behavior.',
     jailbreak: 'The jailbreak prompt option activates when jailbreak toggle is on in character.',
-    globalNote:
-      'A note that strongly affects model behavior, also known as UJB. Works in all characters.',
+    globalNote: 'A note that strongly affects model behavior, also known as UJB. Works in all characters.',
     autoSuggest: 'Prompts used to generate options when automatically suggesting user responses.',
     formatOrder: 'Formating order of prompt. Lower blocks does more effect to the model.',
     forceUrl: 'If it is not blank, the request will go to the url that you had inputed.',
@@ -59,8 +57,7 @@ export const languageEnglish = {
     msgSound: 'Plays *ding* sound when character responses',
     charDesc: 'Brief description of the character. This affects characters response.',
     charFirstMessage: 'First message of the character. This highly affects characters response.',
-    charNote:
-      'A note that strongly affects model behavior. Embbedded to current character, also known as UJB.',
+    charNote: 'A note that strongly affects model behavior. Embbedded to current character, also known as UJB.',
     toggleNsfw: 'Toggles jailbreak prompt on and off.',
     lorebook:
       'Lorebook is a user-made dictionary for AI. AI only sees it when where is an activation keys in the context.',
@@ -105,8 +102,7 @@ export const languageEnglish = {
     creatorQuotes:
       "Note that appearances on top of first message. Used to inform users about this character. It doesn't go into prompt.",
     systemPrompt: 'A prompt that replaces main prompt in settings if its not blank.',
-    chatNote:
-      'A note that strongly affects model behavior. Embbedded to current chat, also known as memory or UJB.',
+    chatNote: 'A note that strongly affects model behavior. Embbedded to current chat, also known as memory or UJB.',
     personality:
       "A brief description about character's personality. \n\n**It is not recommended to use this option. Describe it in character description instead.**",
     scenario:
@@ -135,8 +131,7 @@ export const languageEnglish = {
       'A javascript code that would run with character. for example, you can check `https://github.com/kwaroran/Risuai/blob/main/src/etc/example-char.js` CURRENTLY NOT RECOMMENDED FOR USE DUE TO SECURITY REASONS. EXPORTING WOULD NOT INCLUDE THIS.',
     romanizer:
       'Romanizer is a plugin that converts non-roman characters to roman characters to reduce tokens when using non-roman characters while requesting data. This can result different output from the original model. It is not recommended to use this plugin when using roman characters on chat.',
-    inlayImages:
-      'If enabled, images could be inlayed to the chat and AIs can see it if they support it.',
+    inlayImages: 'If enabled, images could be inlayed to the chat and AIs can see it if they support it.',
     metrica:
       'Metric Systemizer is a plugin that converts metrics to imperial units when request, and vice versa on output to show user metric system while using imperial for performace. It is not recommended to use this plugin when using imperial units on chat.',
     lorePlus:
@@ -189,8 +184,7 @@ export const languageEnglish = {
       'If enabled, if the asset name is not found when processing data, it will try to find the closest asset name by using vector search and replace it with the closest asset name.',
     dynamicAssetsEditDisplay:
       'If enabled, the dynamic assets will be applied to the Modify Display stage too. However, this can cause performance issues.',
-    nickname:
-      "Nickname would used be in {{char}} or <char> in chat instead of character's name if it is set.",
+    nickname: "Nickname would used be in {{char}} or <char> in chat instead of character's name if it is set.",
     useRegexLorebook:
       'If enabled, it will use regex for lorebook search, instead of string matching. It uses /regex/flags format.',
     customChainOfThought:
@@ -219,10 +213,8 @@ export const languageEnglish = {
       'Namespace is a unique identifier for the module. It is used to prevent conflicts between modules, and for interaction of presets, other modules and etc. If you are not sure what to put, leave it blank.',
     moduleIntergration:
       'You can enable modules by putting the module namespace in the module intergartion sections. if you want to enable multiple modules, you can seperate them by comma. for example, `module1,module2,module3`. This is for advanced users, who wants to vary the use of modules by presets.',
-    customCSS:
-      'Custom CSS for styling. you can also disable/enable it by pressing (Ctrl + .) if something goes wrong.',
-    betaMobileGUI:
-      'If enabled, it will use beta mobile GUI on small (less than 800px) screens. Requires refresh.',
+    customCSS: 'Custom CSS for styling. you can also disable/enable it by pressing (Ctrl + .) if something goes wrong.',
+    betaMobileGUI: 'If enabled, it will use beta mobile GUI on small (less than 800px) screens. Requires refresh.',
     enableScrollToActiveChar:
       'If enabled, pressing the hotkey or holding Ctrl while dragging a character will scroll to the currently active character. Folders will be opened automatically if closed.',
     unrecommended: 'This is a unrecommended setting. It is not recommended to use this setting.',
@@ -249,8 +241,7 @@ export const languageEnglish = {
       'A HTML that would be inserted as each chat.\n\nYou can use CBS and special tags.\n- `<risutextbox>`: a textbox that would be used to render text\n- `<risuicon>`: an icon for user or assistant\n- `<risubuttons>`: icon buttons for chat edit, translations and etc.\n- `<risugeninfo>`: generation information button.',
     systemContentReplacement:
       "The prompt format that replaces system prompt if the model doesn't support system prompt.",
-    systemRoleReplacement:
-      "The role that replaces system role if the model doesn't support system role.",
+    systemRoleReplacement: "The role that replaces system role if the model doesn't support system role.",
     summarizationPrompt:
       'The prompt that is used for summarization. If it is blank, it will use the default prompt. You can also use ChatML formating with {{slot}} for the chat data.',
     translatorPrompt:
@@ -265,27 +256,23 @@ export const languageEnglish = {
       'If enabled, it will use the old method to find media assets, without using the additional search algorithm.',
     comfyWorkflow:
       "Put the API workflow of comfy UI. you can get your API workflow in comfy UI by pressing the 'Workflow > Export (API)' button. you must also put {{risu_prompt}} in you workflow text. The {{risu_prompt}} will be replaced with the prompt provided by the Risu.",
-    automaticCachePoint:
-      "Automatically creates cache point after the chat ends, if the caching point doesn't exist.",
+    automaticCachePoint: "Automatically creates cache point after the chat ends, if the caching point doesn't exist.",
     experimentalChatCompressionDesc:
       'Compresses the unused chat data and saves in seperate file. This greatly reduces the size of the chat data, and greatly improves the performance, however its experimental and can be unstable, causing issues in backup feature and more.',
     promptInfoInsideChatDesc:
       'When enabled, this stores prompt preset information in the chat metadata. The stored data includes the preset name, active toggles, and the prompt text. This may slightly increase processing time and storage usage.',
-    autoAdjustSchema:
-      'When enabled, it will automatically adjust the JSON schema for Dynamic Output.',
+    autoAdjustSchema: 'When enabled, it will automatically adjust the JSON schema for Dynamic Output.',
     dynamicMessages:
       'When enabled, it will allow the assistant to send multiple messages in a row, instead of one at a time.',
     dynamicMemory:
       'When enabled, assistant will make memory notes on response time. Additional prompting is required to utilize this feature.',
     dynamicResponseTiming: 'When enabled, it will adjust the response timing dynamically.',
-    dynamicRequest:
-      'When enabled, it will request to model at random timing without waiting for user input.',
+    dynamicRequest: 'When enabled, it will request to model at random timing without waiting for user input.',
     settingsCloseButtonSize:
       'Adjusts the size of the close (X) button in the top right corner of the settings window. Default is 24.',
     chatDisplayTailCount:
       'Controls how many latest chat messages are rendered and hydrated when opening a chat. Lower values can make large chats open faster. Default is 30.',
-    showTypingEffect:
-      'When enabled, it will show a typing indicator while the assistant is generating a response.',
+    showTypingEffect: 'When enabled, it will show a typing indicator while the assistant is generating a response.',
     dynamicOutputPrompt: 'When enabled, the schema information will be included in the request.',
     realmDirectOpen:
       'If enabled, clicking a character in RisuRealm preview will directly open the character description.',
@@ -315,39 +302,32 @@ export const languageEnglish = {
       'The fraction of the max context size allocated to the long-term memory block {{slot}} in the prompt.',
     hypaV3ExtraSummarizationRatio:
       'Lowers the threshold at which summarization stops. At 0, summarization stops as soon as tokens fall below the max context. Higher values cause more summarization before stopping.',
-    hypaV3MaxChatsPerSummary:
-      'Maximum number of chat messages to include when creating a single summary.',
+    hypaV3MaxChatsPerSummary: 'Maximum number of chat messages to include when creating a single summary.',
     hypaV3RecentMemoryRatio:
       'The fraction of memory tokens allocated to recent memory. Automatically filled with the most recently created summaries until the allocated tokens are full.',
     hypaV3SimilarMemoryRatio:
       'The fraction of memory tokens allocated to similar memory. Automatically filled with summaries that have the highest similarity scores to recent chats until the allocated tokens are full.',
-    hypaV3RandomMemoryRatio:
-      'Randomly filled from summaries not already selected by other categories.',
+    hypaV3RandomMemoryRatio: 'Randomly filled from summaries not already selected by other categories.',
     hypaV3PreserveOrphanedMemory:
       'If enabled, summaries that reference deleted chat messages will be preserved. If disabled, summaries whose source messages no longer exist are automatically removed.',
     hypaV3ProcessRegexScript:
       'If enabled, regex scripts will be applied to the input chat messages when regenerating summaries in the HypaV3 modal.',
-    hypaV3DoNotSummarizeUserMessage:
-      'If enabled, user messages are excluded from the max messages per summary count.',
+    hypaV3DoNotSummarizeUserMessage: 'If enabled, user messages are excluded from the max messages per summary count.',
     hypaV3EnableSimilarityCorrection:
       'If enabled, a summary of recent chats is additionally used as a query. Does not work with the experimental HypaMemory V3.',
     hypaV3UseExperimentalImpl:
       'Switches to the experimental HypaMemory V3 implementation. Enables rate limit settings and changes the query method.',
-    hypaV3AlwaysToggleOn:
-      'If enabled, the HypaMemory toggle is automatically activated when selecting a character.',
+    hypaV3AlwaysToggleOn: 'If enabled, the HypaMemory toggle is automatically activated when selecting a character.',
     hypaV3SummarizationRequestsPerMinute:
       'Maximum SuperMemory model requests per minute for summarization. Only applies when the SuperMemory model is set to Auxiliary Model.',
     hypaV3SummarizationMaxConcurrent:
       'Maximum concurrent SuperMemory model requests for summarization. Only applies when the SuperMemory model is set to Auxiliary Model.',
-    hypaV3EmbeddingRequestsPerMinute:
-      'Maximum embedding model requests per minute for similarity search.',
-    hypaV3EmbeddingMaxConcurrent:
-      'Maximum concurrent embedding model requests for similarity search.',
+    hypaV3EmbeddingRequestsPerMinute: 'Maximum embedding model requests per minute for similarity search.',
+    hypaV3EmbeddingMaxConcurrent: 'Maximum concurrent embedding model requests for similarity search.',
     hypaV3QueryChatCount:
       'The number of recent chat messages used as the query for similarity search. ' +
       'Higher values use more chat context to determine similarity.',
-    hypaV3SummaryChunkSeparator:
-      'Separator used to split summaries into chunks for similarity search.',
+    hypaV3SummaryChunkSeparator: 'Separator used to split summaries into chunks for similarity search.',
     coldstorage:
       'Coldstorage is a feature that automatically moves old chats and character data to a seperate storage to reduce the size of the main storage and improve performance. This will reduce the transfer time, transfer traffic and improve the performance when loading chats.',
   },
@@ -371,8 +351,7 @@ export const languageEnglish = {
       'Hello {username}! Before we start, I will ask you some questions. You can change these settings later in settings.\n\nFirst select the AI provider.',
     openRouterProvider:
       'OpenRouter has a lot of models, some of them unfiltered and some of them free, but it is not as good as OpenAI.',
-    hordeProvider:
-      'Horde is a free provider, but the response time is long and the quality is low.',
+    hordeProvider: 'Horde is a free provider, but the response time is long and the quality is low.',
     setProviderLater:
       'There are other providers, but you can set it later in settings. Select this if you want to set it later.',
     setupOpenAI:
@@ -395,15 +374,13 @@ export const languageEnglish = {
     setupOpenRouter:
       "To use OpenRouter, you need to get an API key. \n1. Go to https://openrouter.ai/keys\n2. Click 'Create Key'\n3. Set key name whatever you want.\n4. Copy the key in the website\n5. Go back to Risuai\n6. Paste it, and click send button.",
     allDone: 'All Done! Please wait a moment.',
-    setupLaterMessage:
-      'Welcome {username}! Do you want me to guide you to setup or do it yourself?',
+    setupLaterMessage: 'Welcome {username}! Do you want me to guide you to setup or do it yourself?',
     setupMessageOption1: 'Guide me to setup',
     setupMessageOption1Desc: 'Recommended for new users',
     setupMessageOption2: 'I will setup myself',
     claudeDesc:
       "Claude is a AI model made by Antropic, competitor to OpenAI. It's better than GPT if you want to use it in other languages than English.",
-    openAIDesc:
-      'OpenAI GPT is a high quality AI model, but it is paid and filtered, and weak in other than English.',
+    openAIDesc: 'OpenAI GPT is a high quality AI model, but it is paid and filtered, and weak in other than English.',
     chooseChatType: 'Great! Now select the chat language.',
     chooseChatTypeOption1: 'Full English',
     chooseChatTypeOption1Desc:
@@ -412,27 +389,22 @@ export const languageEnglish = {
     chooseChatTypeOption2Desc:
       'This will make AI to use English internaly, but input/output will be in your language. Recommended for non-English speakers.',
     chooseChatTypeOption3: 'No Language Focused',
-    chooseChatTypeOption3Desc:
-      'This will make AI to use your language internaly, but this could make quality lower.',
+    chooseChatTypeOption3Desc: 'This will make AI to use your language internaly, but this could make quality lower.',
     chooseCheapOrMemory: 'By the way, do you prefer memory or cheapness?',
     chooseCheapOrMemoryOption1: 'Memory',
-    chooseCheapOrMemoryOption1Desc:
-      'This will make AI to remember more, but it will quite expensive.',
+    chooseCheapOrMemoryOption1Desc: 'This will make AI to remember more, but it will quite expensive.',
     chooseCheapOrMemoryOption2: 'Cheap',
     chooseCheapOrMemoryOption2Desc: 'This will make AI to remember less, but it will be cheaper.',
     chooseCheapOrMemoryOption3: 'Balanced',
-    chooseCheapOrMemoryOption3Desc:
-      'This will make AI to remember more than cheap, but less than memory.',
+    chooseCheapOrMemoryOption3Desc: 'This will make AI to remember more than cheap, but less than memory.',
     chooseCheapOrMemoryOption4: 'Unlimited',
-    chooseCheapOrMemoryOption4Desc:
-      'This will make AI to remember almost everything, but it will be very expensive.',
+    chooseCheapOrMemoryOption4Desc: 'This will make AI to remember almost everything, but it will be very expensive.',
     finally: 'Finally, do you want to enable advanced tools?',
     finallyOption1: 'Yes',
     finallyOption1Desc:
       'This will enable advanced tools, but it will make the UI more complex. Recommended for advanced users.',
     finallyOption2: 'No',
-    finallyOption2Desc:
-      'This will disable advanced tools, and make the UI more simple. Recommended for new users.',
+    finallyOption2Desc: 'This will disable advanced tools, and make the UI more simple. Recommended for new users.',
     igpPrompt:
       'if IGP Prompt is not a blank, it will be executed after the main model request, after main model execution, as a emotion model, adding the result after the main model response.',
   },
@@ -508,8 +480,7 @@ export const languageEnglish = {
     v2GetLorebookEntry: 'Get Lorebook with index',
     v2GetLorebookEntryDesc: 'Get Lorebook with index {{index}} => {{outputVar}}',
     v2SetLorebookActivation: 'Set Lorebook Activation',
-    v2SetLorebookActivationDesc:
-      "Set Lorebook with index {{index}}'s activation state to {{value}}",
+    v2SetLorebookActivationDesc: "Set Lorebook with index {{index}}'s activation state to {{value}}",
     v2GetLorebookIndexViaName: 'Get Lorebook Index via Name',
     v2GetLorebookIndexViaNameDesc: 'Get Lorebook Index via Name {{name}} => {{outputVar}}',
     v2ModifyLorebook: 'Modify Lorebook',
@@ -571,8 +542,7 @@ export const languageEnglish = {
     v2SliceArrayVar: 'Slice Array Variable',
     v2SliceArrayVarDesc: 'Slice Array Variable {{var}} from {{start}} to {{end}} => {{outputVar}}',
     v2GetIndexOfValueInArrayVar: 'Get Index of Value in Array Variable',
-    v2GetIndexOfValueInArrayVarDesc:
-      'Get Index of {{value}} in Array Variable {{var}} => {{outputVar}}',
+    v2GetIndexOfValueInArrayVarDesc: 'Get Index of {{value}} in Array Variable {{var}} => {{outputVar}}',
     v2RemoveIndexFromArrayVar: 'Remove Index from Array Variable',
     v2RemoveIndexFromArrayVarDesc: 'Remove Value at Index {{index}} from Array Variable {{var}}',
     v2JoinArrayVar: 'Join Array',
@@ -658,8 +628,7 @@ export const languageEnglish = {
     v2Calculate: 'Calculate',
     v2CalculateDesc: 'Calculate {{expression}} => {{outputVar}}',
     v2ReplaceString: 'Replace String',
-    v2ReplaceStringDesc:
-      'Replace {{source}} with regex {{regex}} to {{replacement}} => {{outputVar}}',
+    v2ReplaceStringDesc: 'Replace {{source}} with regex {{regex}} to {{replacement}} => {{outputVar}}',
   },
   triggerInputLabels: {
     value: 'Value',
@@ -795,8 +764,7 @@ export const languageEnglish = {
   image: 'Image',
   name: 'Name',
   folderName: 'Folder Name',
-  folderRemoveConfirm:
-    'This folder contains lorebooks. Are you sure you want to delete it and all its contents?',
+  folderRemoveConfirm: 'This folder contains lorebooks. Are you sure you want to delete it and all its contents?',
   emotion: 'Emotion Name',
   value: 'Value',
   reroll: 'Regenerate',
@@ -869,8 +837,7 @@ export const languageEnglish = {
   SpacedView: 'Multiple Character View',
   emphasizedView: 'Double Character View',
   pluginWarn: 'Installing malicious plugins can cause problems.',
-  pluginConfirm:
-    'Do you really want to import this plugin? Only import plugins from trusted sources.',
+  pluginConfirm: 'Do you really want to import this plugin? Only import plugins from trusted sources.',
   pluginContainsExternalMedia: 'This plugin contains external media.',
   pluginContainsExternalJS: 'This plugin contains external Javascript.',
   waifuWidth: 'Waifu Chat Width',
@@ -956,8 +923,7 @@ export const languageEnglish = {
   globalRegexScript: 'Global Regex',
   accessibility: 'Accessibility',
   sendWithEnter: 'Send with Enter Key',
-  fixedChatTextarea:
-    'Fixed at the bottom of the chat window(When unchecked, Shift + Enter changes to send a message.)',
+  fixedChatTextarea: 'Fixed at the bottom of the chat window(When unchecked, Shift + Enter changes to send a message.)',
   clickToEdit: 'Click Text to Edit',
   enableBlockPartialEdit: 'Enable Block Partial Edit (Hover to edit individual blocks)',
   enableDragPartialEdit: 'Enable Drag Partial Edit (Select text to edit)',
@@ -1109,8 +1075,7 @@ export const languageEnglish = {
   imgGenPrompt: 'Image Generation Prompt',
   imgGenNegatives: 'Image Generation Negative Prompt',
   imgGenInstructions: 'Image Generation Instructions',
-  usePlainFetchWarn:
-    'Please disable this option when using NovelAI, as it can cause CORS errors when using NovelAI.',
+  usePlainFetchWarn: 'Please disable this option when using NovelAI, as it can cause CORS errors when using NovelAI.',
   translationPrompt: 'Translation Prompt',
   translationResponseSize: 'Translation Response Size',
   webdeeplwarn: 'This option can cause CORS errors.',
@@ -1157,14 +1122,11 @@ export const languageEnglish = {
   inputCardPassword: 'Input Card Password',
   ccv2Desc: 'Character Card V2 is a format widely used in chatbot programs.',
   ccv3Desc: 'Character Card V3 is a next generation format that is used in chatbot programs.',
-  realmDesc:
-    'RisuRealm is a content sharing platform for Risuai. You can share your character to other users.',
-  rccDesc:
-    'Risu Refined Character Card is a format with additional features like password, integrity check and etc.',
+  realmDesc: 'RisuRealm is a content sharing platform for Risuai. You can share your character to other users.',
+  rccDesc: 'Risu Refined Character Card is a format with additional features like password, integrity check and etc.',
   password: 'Password',
   license: 'License',
-  licenseDesc:
-    "You can choose license for the downloaders to limit the usages of your card's prompt.",
+  licenseDesc: "You can choose license for the downloaders to limit the usages of your card's prompt.",
   passwordDesc: 'You can set a password to protect your card from unauthorized access.',
   largePersonaPortrait: 'Persona Portrait',
   module: 'Module',
@@ -1173,8 +1135,7 @@ export const languageEnglish = {
   createModule: 'Create Module',
   basicInfo: 'Basic Info',
   moduleContent: 'Module Content',
-  confirmRemoveModuleFeature:
-    'Do you really want to remove this feature? This action cannot be undone.',
+  confirmRemoveModuleFeature: 'Do you really want to remove this feature? This action cannot be undone.',
   editModule: 'Edit Module',
   importModule: 'Import Module',
   download: 'Download',
@@ -1185,8 +1146,7 @@ export const languageEnglish = {
   sideMenuRerollButton: 'Side Menu Reroll Button',
   persistentStorage: 'Persistent Storage',
   persistentStorageSuccess: 'Storage is successfully persisted',
-  persistentStorageFail:
-    'Storage is not persisted. Did you deny the request?, or is the browser not supported?',
+  persistentStorageFail: 'Storage is not persisted. Did you deny the request?, or is the browser not supported?',
   persistentStorageRecommended: 'Persistent Storage Recommended',
   persistentStorageDesc:
     'Your browser supports persistent storage. This is recommended for better performance and user experience.',
@@ -1197,8 +1157,7 @@ export const languageEnglish = {
   outputTokens: 'Output Tokens',
   tokenWarning: 'Token caculation can be inaccurate. It is recommended to use it as a reference.',
   log: 'Log',
-  popularityLevelDesc:
-    'Popularity increases with downloads, etc. To estimate, 3.7 popularity is about 1 downloads.',
+  popularityLevelDesc: 'Popularity increases with downloads, etc. To estimate, 3.7 popularity is about 1 downloads.',
   additionalParams: 'Additional Parameters',
   heightMode: 'Height Mode',
   useAdvancedEditor: 'Use Advanced Editor',
@@ -1207,8 +1166,7 @@ export const languageEnglish = {
   updateRealmDesc:
     "You are trying to update your character to RisuRealm. this will update your character to RisuRealm, and you can't revert it back.",
   antiClaudeOverload: 'Anti-Claude Overload',
-  activeTabChange:
-    'Current tab is inactivated since other tab is active. To activate this tab, click OK',
+  activeTabChange: 'Current tab is inactivated since other tab is active. To activate this tab, click OK',
   addCharacter: 'Add Character',
   importFromRealm: 'Choose from RisuRealm',
   importFromRealmDesc: 'Choose over 1000 characters in RisuRealm',
@@ -1287,8 +1245,7 @@ export const languageEnglish = {
   doNotTranslate: 'Do Not Translate',
   includePersonaName: 'Include Persona Name',
   hidePersonaName: 'Hide Persona Name',
-  triggerSwitchWarn:
-    'If you change the trigger type, current triggers will be lost. Do you want to continue?',
+  triggerSwitchWarn: 'If you change the trigger type, current triggers will be lost. Do you want to continue?',
   codeMode: 'Code',
   blockMode: 'Block',
   helpBlock: 'Help',
@@ -1315,8 +1272,7 @@ export const languageEnglish = {
   previewInfo: 'This preview shows prompt before model-specific processing.',
   miscTools: 'Misc Tools',
   promptConvertion: 'Prompt Convertion',
-  convertionStep1:
-    'Select all file related to the prompt (Context, Instruct and Sampler JSON is supported)',
+  convertionStep1: 'Select all file related to the prompt (Context, Instruct and Sampler JSON is supported)',
   customCSS: 'Custom CSS',
   betaMobileGUI: 'Beta Mobile GUI',
   enableScrollToActiveChar: 'Enable Scroll to Active Character',
@@ -1358,13 +1314,11 @@ export const languageEnglish = {
   importTranslationCacheConfirm:
     'This will merge entries into your translation cache. Existing keys will be overwritten. Continue?',
   importTranslationCacheSuccess: 'Imported {0} translation cache entries.',
-  importTranslationCacheFailed:
-    'Imported {0} entries, but {1} entries failed to save. Storage may be full.',
+  importTranslationCacheFailed: 'Imported {0} entries, but {1} entries failed to save. Storage may be full.',
   exportTranslationCacheEmpty: 'Translation cache is empty.',
   clearTranslationCache: 'Clear Translation Cache',
   clearTranslationCacheSuccess: 'Translation cache cleared successfully.',
-  clearTranslationCacheConfirm:
-    'This will delete all translation cache entries. This cannot be undone. Continue?',
+  clearTranslationCacheConfirm: 'This will delete all translation cache entries. This cannot be undone. Continue?',
   loading: 'Loading',
   autoTranslateCachedOnly: 'Auto-translate Cached Messages Only',
   notification: 'Notification',
@@ -1374,8 +1328,7 @@ export const languageEnglish = {
   googleCloudTokenization: 'Google Cloud Tokenization',
   presetChain: 'Preset Chain',
   legacyMediaFindings: 'Legacy Media Findings',
-  staticsDisclaimer:
-    'The statistics are based on the data from after July 2024. The data may not be accurate.',
+  staticsDisclaimer: 'The statistics are based on the data from after July 2024. The data may not be accurate.',
   subtitles: 'Subtitles',
   subtitlesWarning1: 'You must use model with audio/video input to use this feature.',
   subtitlesWarning2: 'You must use model with streaming feature to use this feature.',
@@ -1383,8 +1336,7 @@ export const languageEnglish = {
   assetMaxDifference: 'Asset Max Difference',
   sourceLanguage: 'Source Language',
   destinationLanguage: 'Destination Language',
-  noWebGPU:
-    "Your Browser or OS doesn't support WebGPU. This will slow down the performance significantly.",
+  noWebGPU: "Your Browser or OS doesn't support WebGPU. This will slow down the performance significantly.",
   menuSideBar: 'Menu Side Bar',
   home: 'Home',
   showSavingIcon: 'Show Saving Icon',
@@ -1415,8 +1367,7 @@ export const languageEnglish = {
   deleteCount: 'Delete Count',
   triggerEffRunAxLLM: 'Run Auxiliary Model',
   hypaV3Settings: {
-    descriptionLabel:
-      'HypaMemory V3 is a long-term memory system that uses both summarization and vector search.',
+    descriptionLabel: 'HypaMemory V3 is a long-term memory system that uses both summarization and vector search.',
     supaMemoryPromptPlaceHolder: 'Leave it blank to use default',
     maxMemoryTokensRatioLabel: 'Max Memory Tokens Ratio (Estimated)',
     maxMemoryTokensRatioError: 'Unable to calculate Max Memory Tokens Ratio',
@@ -1436,8 +1387,7 @@ export const languageEnglish = {
   hypaV3Modal: {
     titleLabel: 'HypaV3',
     resetConfirmMessage: 'This action cannot be undone. Do you want to reset HypaV3 data?',
-    resetConfirmSecondMessage:
-      'This action is irreversible. Do you really, really want to reset HypaV3 data?',
+    resetConfirmSecondMessage: 'This action is irreversible. Do you really, really want to reset HypaV3 data?',
     convertLabel: 'No summaries yet, but you may convert HypaV2 data to V3.',
     convertButton: 'Convert to V3',
     convertSuccessMessage: 'Successfully converted HypaV2 data to V3',
@@ -1462,8 +1412,7 @@ export const languageEnglish = {
     nextSummarizationLabel: 'HypaV3 will summarize [{0}]',
     nextSummarizationNoMessagesFoundLabel: 'WARN: No messages found',
     nextSummarizationLoadingError: 'Error loading next summarization target: {0}',
-    summarizationConditionLabel:
-      'Tip: HypaV3 begins summarization when input tokens exceed the maximum context size.',
+    summarizationConditionLabel: 'Tip: HypaV3 begins summarization when input tokens exceed the maximum context size.',
     emptySelectedFirstMessageLabel: 'WARN: Selected first message is empty',
     unclassified: 'Unclassified',
     reSummarize: 'Re-summarize',
@@ -1581,8 +1530,7 @@ export const languageEnglish = {
   settingsExported: 'Settings for bug report exported and copied to clipboard.',
   bookmarks: 'Bookmarks',
   noBookmarks: 'No Bookmarks',
-  bookmarkAskNameOrDefault:
-    'Enter bookmark name. If not entered, it will be automatically assigned.',
+  bookmarkAskNameOrDefault: 'Enter bookmark name. If not entered, it will be automatically assigned.',
   bookmarkAskNameOrCancel: 'Enter bookmark name. If not entered, rename will be canceled.',
   collapseAll: 'Collapse All',
   expandAll: 'Expand All',
@@ -1600,8 +1548,7 @@ export const languageEnglish = {
   settingsCloseButtonSize: 'Settings Close Button Size',
   chatDisplayTailCount: 'Initial Chat Messages to Display',
   translating: 'Translating...',
-  stackTraceTranslationFailed:
-    'Stack trace translation failed. Showing original obfuscated stack trace below.',
+  stackTraceTranslationFailed: 'Stack trace translation failed. Showing original obfuscated stack trace below.',
   apply: 'Apply',
   add: 'Add',
   nightlyWarning:
@@ -1631,11 +1578,9 @@ export const languageEnglish = {
     storageAccess:
       'The plugin attempts to access storage, which could lead to data leaks or unauthorized data manipulation.',
   },
-  generatedByAIDisclaimer:
-    'This content was generated by AI and may contain inaccuracies or biases.',
+  generatedByAIDisclaimer: 'This content was generated by AI and may contain inaccuracies or biases.',
   aiGenerationWarning: 'Contents will be AI generated and may contain inaccuracies or biases.',
-  duplicatePluginFoundUpdateIt:
-    'Duplicate plugin found. do you want to update the existing plugin?',
+  duplicatePluginFoundUpdateIt: 'Duplicate plugin found. do you want to update the existing plugin?',
   pluginUpdateFoundInstallIt: 'Plugin update found. Do you want to install the update?',
   goToChat: 'Go to Chat',
   bookmark: 'Bookmark',
@@ -1679,8 +1624,7 @@ export const languageEnglish = {
   partialBackupSecondConfirm:
     "⚠️⚠️ FINAL WARNING ⚠️⚠️\n\nThis backup saves only character profile images and does NOT save most other assets!\n\nWhat will be saved:\n- Database (chat history, characters, modules, plugins, prompts, settings, etc.)\n- Character profile icons (main images)\n- User icons and custom backgrounds\n- Persona icons\n- Folder images\n- Bot preset images\n\nWhat will NOT be saved:\n- Emotion images\n- Additional character assets\n- VITS voice files\n- All other media files\n\n⚠️ Proceed ONLY if you don't need character assets in your backup file! ⚠️\n\nAre you really sure you want to proceed with partial backup?",
   savePartialLocalBackup: 'Save Partial Backup Locally (Excluding Character Assets)',
-  pluginProviderNotFound:
-    'Unknown Plugin detected. Please change the model or enable the corresponding plugin.',
+  pluginProviderNotFound: 'Unknown Plugin detected. Please change the model or enable the corresponding plugin.',
   bootstrap: {
     dataCorruptionDetected: (name: string, type: string) =>
       `Data Corruption Detected\n\nModule "${name}" has corrupted lorebook format.\n\nCorrupted data type: ${type}`,
@@ -1725,8 +1669,7 @@ export const languageEnglish = {
   epRequirementsNotMet:
     'Easy Panel requirements not met. Click the button below to automatically adjust your settings for optimal Easy Panel settings.',
   seperateParametersByModel: 'Separate Parameters by Model',
-  disableSeperateParameterChangeOnPresetChange:
-    'Disable Separate Parameter Change on Preset Change',
+  disableSeperateParameterChangeOnPresetChange: 'Disable Separate Parameter Change on Preset Change',
   keepSessionAlive: 'Keep Session Alive',
   keepSessionAlivePip: 'Via PIP',
   keepSessionAliveSound: 'Via Sound',

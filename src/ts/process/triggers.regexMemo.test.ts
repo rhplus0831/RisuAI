@@ -28,12 +28,7 @@ import { runTrigger } from './triggers'
 import { safeStructuredClone } from '../polyfill'
 import { clearCachedServerCommandRevision } from '../server/commands'
 import { setServerProjectionWriteGuardEnabled } from '../server/projectionWriteGuard.svelte'
-import {
-  DBState,
-  ReloadGUIPointer,
-  VariableReloadGUIPointer,
-  selectedCharID,
-} from '../stores.svelte'
+import { DBState, ReloadGUIPointer, VariableReloadGUIPointer, selectedCharID } from '../stores.svelte'
 import type { character } from '../storage/database.svelte'
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -69,9 +64,7 @@ function seedDb(): void {
         name: 'Character',
         desc: '',
         chatPage: 0,
-        chats: [
-          { id: 'chat-1', message: [], note: '', name: 'main', localLore: [], scriptstate: {} },
-        ],
+        chats: [{ id: 'chat-1', message: [], note: '', name: 'main', localLore: [], scriptstate: {} }],
         triggerscript: [],
         defaultVariables: '',
         globalLore: [],
@@ -83,10 +76,7 @@ function seedDb(): void {
   } as any
 }
 
-function characterWithTriggers(
-  triggerscript: unknown[],
-  overrides: Record<string, unknown> = {},
-): character {
+function characterWithTriggers(triggerscript: unknown[], overrides: Record<string, unknown> = {}): character {
   return { ...DBState.db.characters[0], triggerscript, ...overrides } as unknown as character
 }
 
@@ -105,8 +95,7 @@ async function countRegexCompiles<T>(
       compiles.set(key, (compiles.get(key) ?? 0) + 1)
     }
   }
-  ;(globalThis as { RegExp: RegExpConstructor }).RegExp =
-    CountingRegExp as unknown as RegExpConstructor
+  ;(globalThis as { RegExp: RegExpConstructor }).RegExp = CountingRegExp as unknown as RegExpConstructor
   try {
     return { result: await fn(compiles), compiles }
   } finally {

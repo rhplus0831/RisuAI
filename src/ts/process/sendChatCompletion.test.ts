@@ -1,8 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import {
-  applySuccessfulSendChatEffects,
-  type SuccessfulSendChatEffects,
-} from './sendChatCompletion'
+import { applySuccessfulSendChatEffects, type SuccessfulSendChatEffects } from './sendChatCompletion'
 
 function effects(calls: string[] = []): SuccessfulSendChatEffects {
   return {

@@ -155,13 +155,7 @@
   })
 
   async function loadTranslatedTrace() {
-    if (
-      isTranslating ||
-      translatedStackTrace ||
-      stackTraceTranslationFailed ||
-      !$alertStore.stackTrace
-    )
-      return
+    if (isTranslating || translatedStackTrace || stackTraceTranslationFailed || !$alertStore.stackTrace) return
     isTranslating = true
     try {
       const result = await translateStackTrace($alertStore.stackTrace)
@@ -236,17 +230,13 @@
         }
       }
     }
-  }}
-/>
+  }} />
 
 {#if $alertStore.type !== 'none' && $alertStore.type !== 'toast' && $alertStore.type !== 'cardexport' && $alertStore.type !== 'branches' && $alertStore.type !== 'selectModule' && $alertStore.type !== 'pukmakkurit' && $alertStore.type !== 'requestlogs'}
   <div
     class="absolute w-full h-full z-50 bg-black/50 flex justify-center items-center"
-    class:vis={$alertStore.type === 'wait2'}
-  >
-    <div
-      class="bg-darkbg p-4 break-any rounded-md flex flex-col max-w-3xl max-h-full overflow-y-auto"
-    >
+    class:vis={$alertStore.type === 'wait2'}>
+    <div class="bg-darkbg p-4 break-any rounded-md flex flex-col max-w-3xl max-h-full overflow-y-auto">
       {#if $alertStore.type === 'error'}
         <h2 class="text-red-700 mt-0 mb-2 w-40 max-w-full">Error</h2>
       {:else if $alertStore.type === 'ask'}
@@ -260,10 +250,7 @@
       {/if}
       {#if $alertStore.type === 'markdown'}
         <div class="overflow-y-auto">
-          <span
-            class="text-gray-300 chattext prose chattext2"
-            class:prose-invert={$ColorSchemeTypeStore}
-          >
+          <span class="text-gray-300 chattext prose chattext2" class:prose-invert={$ColorSchemeTypeStore}>
             {#await ParseMarkdown($alertStore.msg) then msg}
               {@html msg}
             {/await}
@@ -281,8 +268,7 @@
             class="text-green-600 hover:text-green-500 transition-colors duration-200 cursor-pointer"
             onclick={() => {
               openURL('https://account.sionyw.com/terms')
-            }}>Terms of Service</a
-          >
+            }}>Terms of Service</a>
 
           and
 
@@ -292,8 +278,7 @@
             class="text-green-600 hover:text-green-500 transition-colors duration-200 cursor-pointer"
             onclick={() => {
               openURL('https://account.sionyw.com/privacy')
-            }}>Privacy Policy</a
-          >
+            }}>Privacy Policy</a>
 
           to continue
         </div>
@@ -345,8 +330,7 @@
                   class="stack-trace-copy"
                   onclick={() => copyToClipboard(stackTraceCodeBlock, 'stack-trace')}
                   title={language.copy}
-                  aria-label={language.copy}
-                >
+                  aria-label={language.copy}>
                   {#if copiedKey === 'stack-trace'}
                     <CheckIcon size={14} />
                   {:else}
@@ -369,12 +353,11 @@
           aria-valuemin="0"
           aria-valuemax="100"
           aria-valuenow={$alertStore.progress === null ? undefined : Math.round(progressPercent)}
-          aria-label={$alertStore.msg}
-        >
+          aria-label={$alertStore.msg}>
           <div
             class="h-full w-full origin-left bg-linear-to-r from-blue-500 to-purple-800 saving-animation transition-transform"
-            style:transform={`scaleX(${progressPercent / 100})`}
-          ></div>
+            style:transform={`scaleX(${progressPercent / 100})`}>
+          </div>
         </div>
         <div class="w-full flex justify-center mt-6">
           <span class="text-gray-500 text-sm">{progressLabel}</span>
@@ -395,8 +378,7 @@
                 type: 'none',
                 msg: 'yes',
               })
-            }}>YES</Button
-          >
+            }}>YES</Button>
           <Button
             className="mt-4 grow"
             onclick={() => {
@@ -404,8 +386,7 @@
                 type: 'none',
                 msg: 'no',
               })
-            }}>NO</Button
-          >
+            }}>NO</Button>
         </div>
       {:else if $alertStore.type === 'tos' && import.meta.env.VITE_RISU_LEGAL_CONFIGURED}
         <div class="flex gap-2 w-full">
@@ -416,8 +397,7 @@
                 type: 'none',
                 msg: 'yes',
               })
-            }}>Accept</Button
-          >
+            }}>Accept</Button>
           <Button
             styled={'outlined'}
             className="mt-4 grow"
@@ -426,8 +406,7 @@
                 type: 'none',
                 msg: 'no',
               })
-            }}>Do not Accept</Button
-          >
+            }}>Do not Accept</Button>
         </div>
       {:else if $alertStore.type === 'select'}
         {@const hasDisplay = $alertStore.msg.startsWith('__DISPLAY__')}
@@ -442,8 +421,7 @@
                   type: 'none',
                   msg: i.toString(),
                 })
-              }}>{n}</Button
-            >
+              }}>{n}</Button>
           {/each}
         {:else}
           {@const parts = $alertStore.msg.split('||')}
@@ -455,8 +433,7 @@
                   type: 'none',
                   msg: i.toString(),
                 })
-              }}>{n}</Button
-            >
+              }}>{n}</Button>
           {/each}
         {/if}
       {:else if $alertStore.type === 'error' || $alertStore.type === 'normal' || $alertStore.type === 'markdown'}
@@ -467,16 +444,14 @@
               type: 'none',
               msg: '',
             })
-          }}>OK</Button
-        >
+          }}>OK</Button>
       {:else if $alertStore.type === 'input'}
         <TextInput
           value={$alertStore.defaultValue}
           id="alert-input"
           autocomplete="off"
           marginTop
-          list="alert-input-list"
-        />
+          list="alert-input-list" />
         <Button
           className="mt-4"
           onclick={() => {
@@ -485,14 +460,11 @@
               //@ts-expect-error 'value' doesn't exist on Element, but target is HTMLInputElement here
               msg: document.querySelector('#alert-input')?.value,
             })
-          }}>OK</Button
-        >
+          }}>OK</Button>
         {#if $alertStore.datalist}
           <datalist id="alert-input-list">
             {#each $alertStore.datalist as item}
-              <option value={item[0]} label={item[1] ? item[1] : item[0]}
-                >{item[1] ? item[1] : item[0]}</option
-              >
+              <option value={item[0]} label={item[1] ? item[1] : item[0]}>{item[1] ? item[1] : item[0]}</option>
             {/each}
           </datalist>
         {/if}
@@ -508,8 +480,7 @@
                 <BarIcon
                   onClick={() => {
                     alertStore.set({ type: 'none', msg: char.chaId })
-                  }}
-                >
+                  }}>
                   <User />
                 </BarIcon>
               {:then im}
@@ -517,15 +488,13 @@
                   onClick={() => {
                     alertStore.set({ type: 'none', msg: char.chaId })
                   }}
-                  additionalStyle={im}
-                />
+                  additionalStyle={im} />
               {/await}
             {:else}
               <BarIcon
                 onClick={() => {
                   alertStore.set({ type: 'none', msg: char.chaId })
-                }}
-              >
+                }}>
                 <User />
               </BarIcon>
             {/if}
@@ -543,8 +512,7 @@
             size="sm"
             onclick={() => {
               generationInfoMenuIndex = 0
-            }}
-          >
+            }}>
             {language.tokens}
           </Button>
           <Button
@@ -552,8 +520,7 @@
             size="sm"
             onclick={() => {
               generationInfoMenuIndex = 1
-            }}
-          >
+            }}>
             {language.metaData}
           </Button>
           <Button
@@ -561,8 +528,7 @@
             size="sm"
             onclick={() => {
               generationInfoMenuIndex = 2
-            }}
-          >
+            }}>
             {language.log}
           </Button>
           <Button
@@ -570,8 +536,7 @@
             size="sm"
             onclick={() => {
               generationInfoMenuIndex = 3
-            }}
-          >
+            }}>
             {language.prompt}
           </Button>
           <button
@@ -581,8 +546,7 @@
                 type: 'none',
                 msg: '',
               })
-            }}>✖</button
-          >
+            }}>✖</button>
         </div>
         {#if generationInfoMenuIndex === 0}
           <div class="mt-4 flex justify-center w-full">
@@ -594,22 +558,19 @@
                             rgb(34 197 94) ${($alertGenerationInfoStore.genInfo.inputTokens / $alertGenerationInfoStore.genInfo.maxContext) * 100}%,
                             rgb(34 197 94) ${(($alertGenerationInfoStore.genInfo.outputTokens + $alertGenerationInfoStore.genInfo.inputTokens) / $alertGenerationInfoStore.genInfo.maxContext) * 100}%,
                             rgb(156 163 175) ${(($alertGenerationInfoStore.genInfo.outputTokens + $alertGenerationInfoStore.genInfo.inputTokens) / $alertGenerationInfoStore.genInfo.maxContext) * 100}%,
-                            rgb(156 163 175) 100%)`}
-            ></div>
+                            rgb(156 163 175) 100%)`}>
+            </div>
           </div>
           <div class="grid grid-cols-2 gap-y-2 gap-x-4 mt-4">
             <span class="text-blue-500">{language.inputTokens}</span>
             <span class="text-blue-500 justify-self-end"
-              >{$alertGenerationInfoStore.genInfo.inputTokens ?? '?'} {language.tokens}</span
-            >
+              >{$alertGenerationInfoStore.genInfo.inputTokens ?? '?'} {language.tokens}</span>
             <span class="text-green-500">{language.outputTokens}</span>
             <span class="text-green-500 justify-self-end"
-              >{$alertGenerationInfoStore.genInfo.outputTokens ?? '?'} {language.tokens}</span
-            >
+              >{$alertGenerationInfoStore.genInfo.outputTokens ?? '?'} {language.tokens}</span>
             <span class="text-gray-400">{language.maxContextSize}</span>
             <span class="text-gray-400 justify-self-end"
-              >{$alertGenerationInfoStore.genInfo.maxContext ?? '?'} {language.tokens}</span
-            >
+              >{$alertGenerationInfoStore.genInfo.maxContext ?? '?'} {language.tokens}</span>
           </div>
           <span class="text-textcolor2 text-sm">{language.tokenWarning}</span>
         {/if}
@@ -618,41 +579,33 @@
             <span class="text-blue-500">Index</span>
             <span class="text-blue-500 justify-self-end">{$alertGenerationInfoStore.idx}</span>
             <span class="text-amber-500">Model</span>
-            <span class="text-amber-500 justify-self-end"
-              >{$alertGenerationInfoStore.genInfo.model}</span
-            >
+            <span class="text-amber-500 justify-self-end">{$alertGenerationInfoStore.genInfo.model}</span>
             <span class="text-green-500">ID</span>
             <span class="text-green-500 justify-self-end"
-              >{DBState.db.characters[$selectedCharID].chats[
-                DBState.db.characters[$selectedCharID].chatPage
-              ].message[$alertGenerationInfoStore.idx].chatId ?? 'None'}</span
-            >
+              >{DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message[
+                $alertGenerationInfoStore.idx
+              ].chatId ?? 'None'}</span>
             <span class="text-red-500">GenID</span>
-            <span class="text-red-500 justify-self-end"
-              >{$alertGenerationInfoStore.genInfo.generationId}</span
-            >
+            <span class="text-red-500 justify-self-end">{$alertGenerationInfoStore.genInfo.generationId}</span>
             <span class="text-cyan-500">Saying</span>
             <span class="text-cyan-500 justify-self-end"
-              >{DBState.db.characters[$selectedCharID].chats[
-                DBState.db.characters[$selectedCharID].chatPage
-              ].message[$alertGenerationInfoStore.idx].saying}</span
-            >
+              >{DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message[
+                $alertGenerationInfoStore.idx
+              ].saying}</span>
             <span class="text-purple-500">Size</span>
             <span class="text-purple-500 justify-self-end"
               >{JSON.stringify(
-                DBState.db.characters[$selectedCharID].chats[
-                  DBState.db.characters[$selectedCharID].chatPage
-                ].message[$alertGenerationInfoStore.idx],
-              ).length} Bytes</span
-            >
+                DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message[
+                  $alertGenerationInfoStore.idx
+                ],
+              ).length} Bytes</span>
             <span class="text-yellow-500">Time</span>
             <span class="text-yellow-500 justify-self-end"
               >{new Date(
-                DBState.db.characters[$selectedCharID].chats[
-                  DBState.db.characters[$selectedCharID].chatPage
-                ].message[$alertGenerationInfoStore.idx].time ?? 0,
-              ).toLocaleString()}</span
-            >
+                DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message[
+                  $alertGenerationInfoStore.idx
+                ].time ?? 0,
+              ).toLocaleString()}</span>
             {#if $alertGenerationInfoStore.genInfo.stageTiming}
               {@const stage1 = parseFloat(
                 (($alertGenerationInfoStore.genInfo.stageTiming.stage1 ?? 0) / 1000).toFixed(1),
@@ -692,20 +645,13 @@
               <span class="text-gray-500">{language.errors.requestLogRemovedDesc}</span>
             {:else}
               <h1 class="text-2xl font-bold my-4">URL</h1>
-              <code
-                class="text-gray-300 border border-darkborderc p-2 rounded-md whitespace-pre-wrap"
-                >{data.url}</code
-              >
+              <code class="text-gray-300 border border-darkborderc p-2 rounded-md whitespace-pre-wrap">{data.url}</code>
               <h1 class="text-2xl font-bold my-4">Request Body</h1>
-              <code
-                class="text-gray-300 border border-darkborderc p-2 rounded-md whitespace-pre-wrap"
-                >{beautifyJSON(data.body)}</code
-              >
+              <code class="text-gray-300 border border-darkborderc p-2 rounded-md whitespace-pre-wrap"
+                >{beautifyJSON(data.body)}</code>
               <h1 class="text-2xl font-bold my-4">Response</h1>
-              <code
-                class="text-gray-300 border border-darkborderc p-2 rounded-md whitespace-pre-wrap"
-                >{beautifyJSON(data.response)}</code
-              >
+              <code class="text-gray-300 border border-darkborderc p-2 rounded-md whitespace-pre-wrap"
+                >{beautifyJSON(data.response)}</code>
             {/if}
           {/await}
         {/if}
@@ -716,14 +662,11 @@
             <div class="grid grid-cols-2 gap-y-2 gap-x-4 mt-4">
               <span class="text-blue-500">Preset Name</span>
               <span class="text-blue-500 justify-self-end"
-                >{DBState.db.characters[$selectedCharID].chats[
-                  DBState.db.characters[$selectedCharID].chatPage
-                ].message[$alertGenerationInfoStore.idx].promptInfo.promptName}</span
-              >
+                >{DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message[
+                  $alertGenerationInfoStore.idx
+                ].promptInfo.promptName}</span>
               <span class="text-purple-500">Toggles</span>
-              <div
-                class="col-span-2 max-h-32 overflow-y-auto border border-stone-500 rounded-sm p-2 bg-gray-900"
-              >
+              <div class="col-span-2 max-h-32 overflow-y-auto border border-stone-500 rounded-sm p-2 bg-gray-900">
                 {#if DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message[$alertGenerationInfoStore.idx].promptInfo.promptToggles.length === 0}
                   <div class="text-gray-500 italic text-center py-4">
                     {language.promptInfoEmptyToggle}
@@ -738,9 +681,7 @@
                 {/if}
               </div>
               <span class="text-red-500">Prompt Text</span>
-              <div
-                class="col-span-2 max-h-80 overflow-y-auto border border-stone-500 rounded-sm p-4 bg-gray-900"
-              >
+              <div class="col-span-2 max-h-80 overflow-y-auto border border-stone-500 rounded-sm p-4 bg-gray-900">
                 {#if !DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message[$alertGenerationInfoStore.idx].promptInfo.promptText}
                   <div class="text-gray-500 italic text-center py-4">
                     {language.promptInfoEmptyText}
@@ -769,8 +710,7 @@
                 type: 'none',
                 msg: 'importFromRealm',
               })
-            }}
-          >
+            }}>
             <div class="flex flex-col justify-start items-start">
               <span class="text-2xl font-bold">{language.importFromRealm}</span>
               <span class="text-textcolor2">{language.importFromRealmDesc}</span>
@@ -788,8 +728,7 @@
                 type: 'none',
                 msg: 'importCharacter',
               })
-            }}
-          >
+            }}>
             <div class="flex flex-col justify-start items-start">
               <span>{language.importCharacter}</span>
             </div>
@@ -806,8 +745,7 @@
                 type: 'none',
                 msg: 'createfromScratch',
               })
-            }}
-          >
+            }}>
             <div class="flex flex-col justify-start items-start">
               <span>{language.createfromScratch}</span>
             </div>
@@ -824,8 +762,7 @@
                 type: 'none',
                 msg: 'cancel',
               })
-            }}
-          >
+            }}>
             <div class="flex flex-col justify-start items-start">
               <span>{language.cancel}</span>
             </div>
@@ -843,8 +780,7 @@
                 type: 'none',
                 msg: '0',
               })
-            }}
-          >
+            }}>
             <div class="flex flex-col justify-start items-start">
               <span>{language.createCopy}</span>
             </div>
@@ -859,8 +795,7 @@
                 type: 'none',
                 msg: '1',
               })
-            }}
-          >
+            }}>
             <div class="flex flex-col justify-start items-start">
               <span>{language.bindPersona}</span>
             </div>
@@ -875,8 +810,7 @@
                 type: 'none',
                 msg: 'cancel',
               })
-            }}
-          >
+            }}>
             <div class="flex flex-col justify-start items-start">
               <span>{language.cancel}</span>
             </div>
@@ -891,16 +825,14 @@
     class="fixed top-0 left-0 h-full w-full bg-black/50 flex flex-col z-50 items-center justify-center"
     role="button"
     tabindex="0"
-    onclick={close}
-  >
+    onclick={close}>
     <div
       class="bg-darkbg rounded-md p-4 max-w-full flex flex-col w-2xl"
       role="button"
       tabindex="0"
       onclick={(e) => {
         e.stopPropagation()
-      }}
-    >
+      }}>
       <h1 class="font-bold text-2xl w-full">
         <span>
           {language.shareExport}
@@ -915,8 +847,7 @@
                 type2: cardExportType2,
               }),
             })
-          }}
-        >
+          }}>
           <XIcon />
         </button>
       </h1>
@@ -928,9 +859,7 @@
           <span class="text-textcolor2 text-sm">{language.risupresetDesc}</span>
           {#if cardExportType2 === 'preset' && (DBState.db.botPresets[DBState.db.botPresetsId].image || DBState.db.botPresets[DBState.db.botPresetsId].regex?.length > 0)}
             <span class="text-red-500 text-sm"
-              >Use RisuRealm to share the preset. Preset with image or regexes cannot be exported
-              for now.</span
-            >
+              >Use RisuRealm to share the preset. Preset with image or regexes cannot be exported for now.</span>
           {/if}
         {:else}
           <span class="text-textcolor2 text-sm">{language.ccv3Desc}</span>
@@ -953,53 +882,46 @@
             class:ring-1={cardExportType === 'realm'}
             onclick={() => {
               cardExportType = 'realm'
-            }}>RisuRealm</button
-          >
+            }}>RisuRealm</button>
           <button
             class="bg-bgcolor px-2 py-4 rounded-lg ml-2 flex-1"
             class:ring-1={cardExportType === ''}
             onclick={() => {
               cardExportType = ''
-            }}>Risupreset</button
-          >
+            }}>Risupreset</button>
         {:else if $alertStore.submsg === 'module'}
           <button
             class="bg-bgcolor px-2 py-4 rounded-lg ml-2 flex-1"
             class:ring-1={cardExportType === 'realm'}
             onclick={() => {
               cardExportType = 'realm'
-            }}>RisuRealm</button
-          >
+            }}>RisuRealm</button>
           <button
             class="bg-bgcolor px-2 py-4 rounded-lg flex-1"
             class:ring-1={cardExportType === ''}
             onclick={() => {
               cardExportType = ''
-            }}>RisuM</button
-          >
+            }}>RisuM</button>
         {:else}
           <button
             class="bg-bgcolor px-2 py-4 rounded-lg flex-1"
             class:ring-1={cardExportType === 'realm'}
             onclick={() => {
               cardExportType = 'realm'
-            }}>RisuRealm</button
-          >
+            }}>RisuRealm</button>
           <button
             class="bg-bgcolor px-2 py-4 rounded-lg ml-2 flex-1"
             class:ring-1={cardExportType === ''}
             onclick={() => {
               cardExportType = ''
               cardExportType2 = 'charxJpeg'
-            }}>Character Card V3</button
-          >
+            }}>Character Card V3</button>
           <button
             class="bg-bgcolor px-2 py-4 rounded-lg ml-2 flex-1"
             class:ring-1={cardExportType === 'ccv2'}
             onclick={() => {
               cardExportType = 'ccv2'
-            }}>Character Card V2</button
-          >
+            }}>Character Card V2</button>
         {/if}
       </div>
       {#if $alertStore.submsg === '' && cardExportType === ''}
@@ -1021,8 +943,7 @@
               type2: cardExportType2,
             }),
           })
-        }}>{cardExportType === 'realm' ? language.shareCloud : language.export}</Button
-      >
+        }}>{cardExportType === 'realm' ? language.shareCloud : language.export}</Button>
     </div>
   </div>
 {:else if $alertStore.type === 'toast'}
@@ -1033,8 +954,7 @@
         type: 'none',
         msg: '',
       })
-    }}
-  >
+    }}>
     {$alertStore.msg}
   </div>
 {:else if $alertStore.type === 'selectModule'}
@@ -1045,28 +965,22 @@
         type: 'none',
         msg: d,
       })
-    }}
-  />
+    }} />
 {:else if $alertStore.type === 'pukmakkurit'}
   <!-- Log Generator by dootaang, GPL3 -->
   <!-- Svelte, Typescript version by Kwaroran -->
 
   <div class="absolute w-full h-full z-50 bg-black/50 flex justify-center items-center">
-    <div
-      class="bg-darkbg p-4 break-any rounded-md flex flex-col max-w-3xl max-h-full overflow-y-auto"
-    >
+    <div class="bg-darkbg p-4 break-any rounded-md flex flex-col max-w-3xl max-h-full overflow-y-auto">
       <h2 class="text-green-700 mt-0 mb-2 w-40 max-w-full">{language.preview}</h2>
     </div>
   </div>
 {:else if $alertStore.type === 'branches'}
-  <div
-    class="absolute w-full h-full z-50 bg-black/80 flex justify-center items-center overflow-x-auto overflow-y-auto"
-  >
+  <div class="absolute w-full h-full z-50 bg-black/80 flex justify-center items-center overflow-x-auto overflow-y-auto">
     {#if branchHover !== null}
       <div
         class="z-30 whitespace-pre-wrap p-4 text-textcolor bg-darkbg border-darkborderc border rounded-md absolute"
-        style="top: {branchHover.y * 80 + 24}px; left: {(branchHover.x + 1) * 80 + 24}px"
-      >
+        style="top: {branchHover.y * 80 + 24}px; left: {(branchHover.x + 1) * 80 + 24}px">
         {branchHover.content}
       </div>
     {/if}
@@ -1079,8 +993,7 @@
             type: 'none',
             msg: '',
           })
-        }}
-      >
+        }}>
         <XIcon />
       </button>
     </div>
@@ -1114,30 +1027,28 @@
         }}
         onmouseleave={() => {
           branchHover = null
-        }}
-      ></div>
+        }}>
+      </div>
       {#if obj.connectX === obj.x}
         {#if obj.multiChild}
           <div
             class="w-0 h-20 border-x border-x-red-500 absolute"
-            style="top: {(obj.y - 1) * 80 + 24}px; left: {obj.x * 80 + 45}px"
-          ></div>
+            style="top: {(obj.y - 1) * 80 + 24}px; left: {obj.x * 80 + 45}px">
+          </div>
         {:else}
           <div
             class="w-0 h-20 border-x border-x-blue-500 absolute"
-            style="top: {(obj.y - 1) * 80 + 24}px; left: {obj.x * 80 + 45}px"
-          ></div>
+            style="top: {(obj.y - 1) * 80 + 24}px; left: {obj.x * 80 + 45}px">
+          </div>
         {/if}
       {:else if obj.connectX !== -1}
-        <div
-          class="w-0 h-10 border-x border-x-red-500 absolute"
-          style="top: {obj.y * 80}px; left: {obj.x * 80 + 45}px"
-        ></div>
+        <div class="w-0 h-10 border-x border-x-red-500 absolute" style="top: {obj.y * 80}px; left: {obj.x * 80 + 45}px">
+        </div>
         <div
           class="h-0 border-y border-y-red-500 absolute"
           style="top: {obj.y * 80}px; left: {obj.connectX * 80 + 46}px"
-          style:width={Math.abs((obj.x - obj.connectX) * 80) + 'px'}
-        ></div>
+          style:width={Math.abs((obj.x - obj.connectX) * 80) + 'px'}>
+        </div>
       {/if}
     {/each}
   </div>
@@ -1145,9 +1056,7 @@
   {@const logs = getFetchLogs()}
   <div class="fixed inset-0 z-50 bg-black/80 flex justify-center items-start overflow-y-auto p-4">
     <div class="bg-darkbg rounded-lg w-full max-w-4xl my-4 flex flex-col max-h-[90vh]">
-      <div
-        class="flex items-center justify-between p-4 border-b border-darkborderc sticky top-0 bg-darkbg z-10"
-      >
+      <div class="flex items-center justify-between p-4 border-b border-darkborderc sticky top-0 bg-darkbg z-10">
         <h1 class="text-xl font-bold text-textcolor">{language.ShowLog}</h1>
         <div class="flex items-center gap-2">
           <Button
@@ -1159,16 +1068,14 @@
                 expandedLogs = new Set(logs.map((_, i) => i))
               }
               allExpanded = !allExpanded
-            }}
-          >
+            }}>
             {allExpanded ? language.collapseAll : language.expandAll}
           </Button>
           <button
             class="text-textcolor2 hover:text-textcolor p-1"
             onclick={() => {
               alertStore.set({ type: 'none', msg: '' })
-            }}
-          >
+            }}>
             <XIcon />
           </button>
         </div>
@@ -1191,25 +1098,18 @@
                       newSet.add(i)
                     }
                     expandedLogs = newSet
-                  }}
-                >
+                  }}>
                   <div class="flex items-center gap-3 min-w-0 flex-1">
                     <span
                       class="px-2 py-1 rounded text-xs font-bold font-mono {log.success
                         ? 'bg-green-600 text-white'
-                        : 'bg-red-600 text-white'}"
-                    >
+                        : 'bg-red-600 text-white'}">
                       {log.status ?? (log.success ? 'OK' : 'ERR')}
                     </span>
-                    <span
-                      class="text-textcolor text-sm truncate flex-1 text-left font-mono"
-                      title={log.url}
-                    >
+                    <span class="text-textcolor text-sm truncate flex-1 text-left font-mono" title={log.url}>
                       {log.url}
                     </span>
-                    <span class="text-textcolor text-xs whitespace-nowrap opacity-70"
-                      >{log.date}</span
-                    >
+                    <span class="text-textcolor text-xs whitespace-nowrap opacity-70">{log.date}</span>
                   </div>
                   <div class="ml-2 text-textcolor">
                     {#if isExpanded}
@@ -1226,16 +1126,14 @@
                         <div class="flex items-center justify-between mb-2">
                           <span class="text-textcolor text-sm font-semibold">URL</span>
                           <button
-                            class="p-1 rounded hover:bg-bgcolor transition-colors {copiedKey ===
-                            `${i}-url`
+                            class="p-1 rounded hover:bg-bgcolor transition-colors {copiedKey === `${i}-url`
                               ? 'text-green-500'
                               : 'text-textcolor2 hover:text-textcolor'}"
                             onclick={(e) => {
                               e.stopPropagation()
                               copyToClipboard(log.url, `${i}-url`)
                             }}
-                            title="Copy"
-                          >
+                            title="Copy">
                             {#if copiedKey === `${i}-url`}
                               <CheckIcon size={14} />
                             {:else}
@@ -1249,16 +1147,14 @@
                         <div class="flex items-center justify-between mb-2">
                           <span class="text-textcolor text-sm font-semibold">Request Body</span>
                           <button
-                            class="p-1 rounded hover:bg-bgcolor transition-colors {copiedKey ===
-                            `${i}-body`
+                            class="p-1 rounded hover:bg-bgcolor transition-colors {copiedKey === `${i}-body`
                               ? 'text-green-500'
                               : 'text-textcolor2 hover:text-textcolor'}"
                             onclick={(e) => {
                               e.stopPropagation()
                               copyToClipboard(log.body, `${i}-body`)
                             }}
-                            title="Copy"
-                          >
+                            title="Copy">
                             {#if copiedKey === `${i}-body`}
                               <CheckIcon size={14} />
                             {:else}
@@ -1272,16 +1168,14 @@
                         <div class="flex items-center justify-between mb-2">
                           <span class="text-textcolor text-sm font-semibold">Request Header</span>
                           <button
-                            class="p-1 rounded hover:bg-bgcolor transition-colors {copiedKey ===
-                            `${i}-header`
+                            class="p-1 rounded hover:bg-bgcolor transition-colors {copiedKey === `${i}-header`
                               ? 'text-green-500'
                               : 'text-textcolor2 hover:text-textcolor'}"
                             onclick={(e) => {
                               e.stopPropagation()
                               copyToClipboard(log.header, `${i}-header`)
                             }}
-                            title="Copy"
-                          >
+                            title="Copy">
                             {#if copiedKey === `${i}-header`}
                               <CheckIcon size={14} />
                             {:else}
@@ -1289,24 +1183,20 @@
                             {/if}
                           </button>
                         </div>
-                        <pre class="request-log-code hljs max-h-32">{@html highlightJson(
-                            log.header,
-                          )}</pre>
+                        <pre class="request-log-code hljs max-h-32">{@html highlightJson(log.header)}</pre>
                       </div>
                       <div>
                         <div class="flex items-center justify-between mb-2">
                           <span class="text-textcolor text-sm font-semibold">Response</span>
                           <button
-                            class="p-1 rounded hover:bg-bgcolor transition-colors {copiedKey ===
-                            `${i}-response`
+                            class="p-1 rounded hover:bg-bgcolor transition-colors {copiedKey === `${i}-response`
                               ? 'text-green-500'
                               : 'text-textcolor2 hover:text-textcolor'}"
                             onclick={(e) => {
                               e.stopPropagation()
                               copyToClipboard(log.response, `${i}-response`)
                             }}
-                            title="Copy"
-                          >
+                            title="Copy">
                             {#if copiedKey === `${i}-response`}
                               <CheckIcon size={14} />
                             {:else}
@@ -1314,9 +1204,7 @@
                             {/if}
                           </button>
                         </div>
-                        <pre class="request-log-code hljs max-h-64">{@html highlightJson(
-                            log.response,
-                          )}</pre>
+                        <pre class="request-log-code hljs max-h-64">{@html highlightJson(log.response)}</pre>
                       </div>
                     </div>
                   </div>

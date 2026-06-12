@@ -1,10 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { DBState } from '../stores.svelte'
-import {
-  setServerProjectionWriteGuardEnabled,
-  withTrustedServerProjectionWrite,
-} from './projectionWriteGuard.svelte'
+import { setServerProjectionWriteGuardEnabled, withTrustedServerProjectionWrite } from './projectionWriteGuard.svelte'
 import { seedCloneCostDb, withCloneInstrumentation } from '../__tests__/cloneCostHarness'
 
 beforeEach(() => {

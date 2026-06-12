@@ -26,10 +26,7 @@
     lowLevelAble?: boolean
   }
 
-  const showDeprecatedTriggerV2Draft = createServerBackedSettingDraft<boolean>(
-    'showDeprecatedTriggerV2',
-    false,
-  )
+  const showDeprecatedTriggerV2Draft = createServerBackedSettingDraft<boolean>('showDeprecatedTriggerV2', false)
 
   const effectCategories = {
     Special: [
@@ -206,11 +203,7 @@
           if (menu0Container) {
             menu0Container.scrollTop = this.mode0ScrollPosition.menu0
           }
-          if (
-            triggerScrollRef &&
-            triggerScrollRef.scrollTop !== null &&
-            triggerScrollRef.scrollTop !== undefined
-          ) {
+          if (triggerScrollRef && triggerScrollRef.scrollTop !== null && triggerScrollRef.scrollTop !== undefined) {
             triggerScrollRef.scrollTop = this.mode0ScrollPosition.trigger
           }
         }, 10)
@@ -245,11 +238,7 @@
           if (menu0Container) {
             menu0Container.scrollTop = positions.menu0
           }
-          if (
-            triggerScrollRef &&
-            triggerScrollRef.scrollTop !== null &&
-            triggerScrollRef.scrollTop !== undefined
-          ) {
+          if (triggerScrollRef && triggerScrollRef.scrollTop !== null && triggerScrollRef.scrollTop !== undefined) {
             triggerScrollRef.scrollTop = positions.trigger
           }
         }, 10)
@@ -326,8 +315,7 @@
 
         if (
           (direction === 'up' && container.scrollTop <= 0) ||
-          (direction === 'down' &&
-            container.scrollTop >= container.scrollHeight - container.clientHeight)
+          (direction === 'down' && container.scrollTop >= container.scrollHeight - container.clientHeight)
         ) {
           this.stopAutoScroll()
         }
@@ -599,13 +587,7 @@
   }
 
   const checkSupported = (e: string) => {
-    if (
-      !value ||
-      value.length === 0 ||
-      selectedIndex < 0 ||
-      selectedIndex >= value.length ||
-      !value[selectedIndex]
-    ) {
+    if (!value || value.length === 0 || selectedIndex < 0 || selectedIndex >= value.length || !value[selectedIndex]) {
       return false
     }
     if (value[selectedIndex].type === 'display') {
@@ -1643,9 +1625,7 @@
       if (value[selectedIndex].effect.length === 0) {
         return 0
       }
-      const lastEffect = value[selectedIndex].effect[
-        value[selectedIndex].effect.length - 1
-      ] as triggerEffectV2
+      const lastEffect = value[selectedIndex].effect[value[selectedIndex].effect.length - 1] as triggerEffectV2
       if (lastEffect.type === 'v2EndIndent') {
         return lastEffect.indent - 1
       }
@@ -1653,8 +1633,7 @@
     }
 
     const targetEffect = value[selectedIndex].effect[insertIndex] as triggerEffectV2
-    const prevEffect =
-      insertIndex > 0 ? (value[selectedIndex].effect[insertIndex - 1] as triggerEffectV2) : null
+    const prevEffect = insertIndex > 0 ? (value[selectedIndex].effect[insertIndex - 1] as triggerEffectV2) : null
 
     if (targetEffect.type === 'v2EndIndent') {
       return targetEffect.indent
@@ -1694,8 +1673,7 @@
       return
     }
 
-    let insertIndex =
-      selectedEffectIndex === -1 ? value[selectedIndex].effect.length : selectedEffectIndex
+    let insertIndex = selectedEffectIndex === -1 ? value[selectedIndex].effect.length : selectedEffectIndex
     const targetIndent = getInsertIndent(insertIndex)
 
     const firstEffect = clipboard.value[0] as triggerEffectV2
@@ -1911,11 +1889,7 @@
     if (!value || !value[selectedIndex] || !value[selectedIndex].effect) return false
     if (fromIndex === toIndex) return false
     if (fromIndex < 0 || toIndex < 0) return false
-    if (
-      fromIndex >= value[selectedIndex].effect.length ||
-      toIndex > value[selectedIndex].effect.length
-    )
-      return false
+    if (fromIndex >= value[selectedIndex].effect.length || toIndex > value[selectedIndex].effect.length) return false
 
     const fromEffect = value[selectedIndex].effect[fromIndex] as triggerEffectV2
     if (!fromEffect) return false
@@ -1960,12 +1934,7 @@
       const prevEffect = value[selectedIndex].effect[toIndex - 1] as triggerEffectV2
       const targetEffect = value[selectedIndex].effect[toIndex] as triggerEffectV2
 
-      if (
-        prevEffect &&
-        prevEffect.type === 'v2EndIndent' &&
-        targetEffect &&
-        targetEffect.type === 'v2Else'
-      ) {
+      if (prevEffect && prevEffect.type === 'v2EndIndent' && targetEffect && targetEffect.type === 'v2Else') {
         return false
       }
     }
@@ -2188,14 +2157,10 @@
     const clickPos = { x: e.clientX, y: e.clientY }
 
     const yPosition =
-      clickPos.y > window.innerHeight * 0.75
-        ? `bottom: ${window.innerHeight - clickPos.y}px;`
-        : `top: ${clickPos.y}px;`
+      clickPos.y > window.innerHeight * 0.75 ? `bottom: ${window.innerHeight - clickPos.y}px;` : `top: ${clickPos.y}px;`
 
     const xPosition =
-      clickPos.x > window.innerWidth * 0.75
-        ? `right: ${window.innerWidth - clickPos.x}px;`
-        : `left: ${clickPos.x}px;`
+      clickPos.x > window.innerWidth * 0.75 ? `right: ${window.innerWidth - clickPos.x}px;` : `left: ${clickPos.x}px;`
 
     contextMenuLoc = {
       x: clickPos.x,
@@ -2228,43 +2193,40 @@
       return `<span class="text-red-500">${language.triggerDesc.v2UnsupportedTriggerDesc}</span>`
     }
 
-    const txt = ((language.triggerDesc[type + 'Desc'] as string) || type).replace(
-      /{{(.+?)}}/g,
-      (match, p1) => {
-        const d = effect[p1]
+    const txt = ((language.triggerDesc[type + 'Desc'] as string) || type).replace(/{{(.+?)}}/g, (match, p1) => {
+      const d = effect[p1]
 
-        if (type === 'v2Comment' && p1 === 'value') {
-          return `<span class="text-gray-400">${d || ''}</span>`
-        }
+      if (type === 'v2Comment' && p1 === 'value') {
+        return `<span class="text-gray-400">${d || ''}</span>`
+      }
 
-        if (typeof d === 'boolean') {
-          return `<span class="text-blue-500">${d ? 'true' : 'false'}</span>`
-        }
+      if (typeof d === 'boolean') {
+        return `<span class="text-blue-500">${d ? 'true' : 'false'}</span>`
+      }
 
-        if (p1.endsWith('Type')) {
-          return `<span class="text-blue-500">${d || 'null'}</span>`
-        }
-        if (p1 === 'condition' || p1 === 'operator') {
-          return `<span class="text-green-500">${d || 'null'}</span>`
-        }
-        if (effect[p1 + 'Type'] === 'var') {
-          return `<span class="text-yellow-500">${d || 'null'}</span>`
-        }
-        if (effect[p1 + 'Type'] === 'value') {
-          return `<span class="text-green-500">"${d}"</span>`
-        }
-        if (effect.type === 'v2If' && p1 === 'source') {
-          return `<span class="text-yellow-500">${d || 'null'}</span>`
-        }
-        if (effect.type === 'v2SetVar' && p1 === 'var') {
-          return `<span class="text-yellow-500">${d || 'null'}</span>`
-        }
-        if (effect.type === 'v2DeclareLocalVar' && p1 === 'var') {
-          return `<span class="text-cyan-500">${d || 'null'}</span>`
-        }
+      if (p1.endsWith('Type')) {
         return `<span class="text-blue-500">${d || 'null'}</span>`
-      },
-    )
+      }
+      if (p1 === 'condition' || p1 === 'operator') {
+        return `<span class="text-green-500">${d || 'null'}</span>`
+      }
+      if (effect[p1 + 'Type'] === 'var') {
+        return `<span class="text-yellow-500">${d || 'null'}</span>`
+      }
+      if (effect[p1 + 'Type'] === 'value') {
+        return `<span class="text-green-500">"${d}"</span>`
+      }
+      if (effect.type === 'v2If' && p1 === 'source') {
+        return `<span class="text-yellow-500">${d || 'null'}</span>`
+      }
+      if (effect.type === 'v2SetVar' && p1 === 'var') {
+        return `<span class="text-yellow-500">${d || 'null'}</span>`
+      }
+      if (effect.type === 'v2DeclareLocalVar' && p1 === 'var') {
+        return `<span class="text-cyan-500">${d || 'null'}</span>`
+      }
+      return `<span class="text-blue-500">${d || 'null'}</span>`
+    })
 
     if (type === 'v2Comment') {
       return `<div class="text-gray-500 italic line-clamp-4" style="margin-left:${(effect as triggerEffectV2).indent}rem; word-break: break-all; overflow-wrap: break-word;">// ${txt}</div>`
@@ -2317,9 +2279,7 @@
   })
 </script>
 
-<div
-  class="contain w-full max-w-full mt-2 flex flex-col border-selected border-1 bg-darkbg rounded-md"
->
+<div class="contain w-full max-w-full mt-2 flex flex-col border-selected border-1 bg-darkbg rounded-md">
   <Button
     onclick={(e) => {
       e.stopPropagation()
@@ -2328,8 +2288,7 @@
       selectedTriggerIndices = [1]
       lastSelectedTriggerIndex = 1
       selectedTriggerIndex = 1
-    }}
-  >
+    }}>
     {language.edit}
   </Button>
 </div>
@@ -2353,8 +2312,7 @@
           e.preventDefault()
           contextMenu = false
         }
-      }}
-    >
+      }}>
       {#if contextMenu}
         <div
           class="absolute flex-col gap-2 w-28 p-2 flex bg-darkbg border border-darkborderc rounded-md z-50"
@@ -2365,8 +2323,7 @@
           oncontextmenu={(e) => {
             e.preventDefault()
             e.stopPropagation()
-          }}
-        >
+          }}>
           {#if selectedTriggerIndices.length > 1 && selectMode === 0}
             <div class="text-textcolor2 text-xs border-b border-darkborderc pb-2 mb-2">
               {selectedTriggerIndices.length} selected
@@ -2379,9 +2336,7 @@
                 class="text-textcolor2 hover:text-textcolor"
                 onclick={(e) => {
                   e.stopPropagation()
-                  const currentEffect = value[selectedIndex].effect[
-                    selectedEffectIndex
-                  ] as triggerEffectV2
+                  const currentEffect = value[selectedIndex].effect[selectedEffectIndex] as triggerEffectV2
                   if (currentEffect.type === 'v2If' || currentEffect.type === 'v2IfAdvanced') {
                     let hasExistingElse = false
                     let pointer = selectedEffectIndex + 1
@@ -2391,9 +2346,7 @@
                       const effect = value[selectedIndex].effect[pointer] as triggerEffectV2
                       if (effect.type === 'v2EndIndent' && effect.indent === indent + 1) {
                         if (pointer + 1 < value[selectedIndex].effect.length) {
-                          const nextEffect = value[selectedIndex].effect[
-                            pointer + 1
-                          ] as triggerEffectV2
+                          const nextEffect = value[selectedIndex].effect[pointer + 1] as triggerEffectV2
                           if (nextEffect.type === 'v2Else' && nextEffect.indent === indent) {
                             hasExistingElse = true
                           }
@@ -2412,8 +2365,7 @@
                   }
                   menuMode = 3
                   contextMenu = false
-                }}
-              >
+                }}>
                 {language.edit}
               </button>
 
@@ -2423,8 +2375,7 @@
                   e.stopPropagation()
                   copyEffect()
                   contextMenu = false
-                }}
-              >
+                }}>
                 {language.copy}
               </button>
 
@@ -2434,8 +2385,7 @@
                   e.stopPropagation()
                   deleteEffect()
                   contextMenu = false
-                }}
-              >
+                }}>
                 {language.remove}
               </button>
             {/if}
@@ -2446,8 +2396,7 @@
                 e.stopPropagation()
                 pasteEffect()
                 contextMenu = false
-              }}
-            >
+              }}>
               {language.paste}
             </button>
           {:else if selectMode === 0}
@@ -2457,8 +2406,7 @@
                 e.stopPropagation()
                 copyTrigger()
                 contextMenu = false
-              }}
-            >
+              }}>
               {language.copy}
             </button>
 
@@ -2468,8 +2416,7 @@
                 e.stopPropagation()
                 pasteTrigger()
                 contextMenu = false
-              }}
-            >
+              }}>
               {language.paste}
             </button>
 
@@ -2479,8 +2426,7 @@
                 e.stopPropagation()
                 deleteTrigger()
                 contextMenu = false
-              }}
-            >
+              }}>
               {language.remove}
             </button>
           {/if}
@@ -2500,8 +2446,7 @@
           if (contextMenu) {
             e.preventDefault()
           }
-        }}
-      >
+        }}>
         {#if menuMode === 0}
           <div class="pr-2 md:w-96 flex flex-col md:h-full mt-2 md:mt-0">
             <div
@@ -2526,18 +2471,12 @@
                   const mouseX = e.clientX
                   const mouseY = e.clientY
 
-                  if (
-                    mouseX < rect.left ||
-                    mouseX > rect.right ||
-                    mouseY < rect.top ||
-                    mouseY > rect.bottom
-                  ) {
+                  if (mouseX < rect.left || mouseX > rect.right || mouseY < rect.top || mouseY > rect.bottom) {
                     dragOverIndex = -1
                     scrollManager.stopAutoScroll()
                   }
                 }
-              }}
-            >
+              }}>
               {#each value as trigger, i}
                 {#if i === 0}
                   <!-- Header, skip the first trigger -->
@@ -2560,8 +2499,8 @@
                         handleTriggerDrop(i, e)
                         dragOverIndex = -1
                       }
-                    }}
-                  ></div>
+                    }}>
+                  </div>
 
                   <button
                     class="p-2 text-start trigger-item select-none"
@@ -2623,12 +2562,7 @@
                         const mouseX = e.clientX
                         const mouseY = e.clientY
 
-                        if (
-                          mouseX < rect.left ||
-                          mouseX > rect.right ||
-                          mouseY < rect.top ||
-                          mouseY > rect.bottom
-                        ) {
+                        if (mouseX < rect.left || mouseX > rect.right || mouseY < rect.top || mouseY > rect.bottom) {
                           dragOverIndex = -1
                         }
                       }
@@ -2645,8 +2579,7 @@
                     oncontextmenu={(e) => {
                       e.preventDefault()
                       handleContextMenu(e, 0, i)
-                    }}
-                  >
+                    }}>
                     {trigger?.comment || 'Unnamed Trigger'}
                   </button>
                 {/if}
@@ -2671,8 +2604,8 @@
                     handleTriggerDrop(value.length, e)
                     dragOverIndex = -1
                   }
-                }}
-              ></div>
+                }}>
+              </div>
             </div>
             <div class="flex gap-2">
               <button
@@ -2685,8 +2618,7 @@
                     effect: [],
                   })
                   selectedIndex = value.length - 1
-                }}
-              >
+                }}>
                 <PlusIcon />
               </button>
               <button
@@ -2706,16 +2638,14 @@
                   document.body.removeChild(a)
 
                   URL.revokeObjectURL(url)
-                }}
-              >
+                }}>
                 <DownloadIcon />
               </button>
               <button
                 class="p-2 border-t-darkborderc text-start text-textcolor2 hover:text-textcolor focus:bg-bgcolor"
                 onclick={() => {
                   importTriggers()
-                }}
-              >
+                }}>
                 <UploadIcon />
               </button>
             </div>
@@ -2724,8 +2654,7 @@
               onclick={(e) => {
                 e?.stopPropagation()
                 close()
-              }}>Close</Button
-            >
+              }}>Close</Button>
           </div>
 
           <div class="md:flex-1 bg-darkbg flex-col flex h-svh min-h-svh md:h-auto md:min-h-0">
@@ -2734,8 +2663,7 @@
               onclick={() => {
                 selectMode = 1
                 selectedEffectIndex = -1
-              }}
-            >
+              }}>
               <div class="p-2 flex flex-col h-full min-h-18">
                 <span class="block text-textcolor2">{language.name}</span>
                 <div class="flex-1 min-h-10 flex">
@@ -2743,13 +2671,7 @@
                     className="flex-1"
                     value={value && value[selectedIndex] ? value[selectedIndex].comment || '' : ''}
                     onchange={(e) => {
-                      if (
-                        !value ||
-                        !value[selectedIndex] ||
-                        selectedIndex < 0 ||
-                        selectedIndex >= value.length
-                      )
-                        return
+                      if (!value || !value[selectedIndex] || selectedIndex < 0 || selectedIndex >= value.length) return
                       const comment = e.currentTarget.value
                       const prev = value[selectedIndex].comment
                       for (let i = 1; i < value.length; i++) {
@@ -2762,8 +2684,7 @@
                         }
                       }
                       value[selectedIndex].comment = comment
-                    }}
-                  />
+                    }} />
                 </div>
               </div>
               <div class="p-2 flex flex-col h-full min-h-18">
@@ -2805,18 +2726,12 @@
                   const mouseX = e.clientX
                   const mouseY = e.clientY
 
-                  if (
-                    mouseX < rect.left ||
-                    mouseX > rect.right ||
-                    mouseY < rect.top ||
-                    mouseY > rect.bottom
-                  ) {
+                  if (mouseX < rect.left || mouseX > rect.right || mouseY < rect.top || mouseY > rect.bottom) {
                     effectDragOverIndex = -1
                     scrollManager.stopAutoScroll()
                   }
                 }
-              }}
-            >
+              }}>
               {#key guideLineKey}
                 {#each value && value[selectedIndex] && value[selectedIndex].effect ? value[selectedIndex].effect : [] as effect, i}
                   {#if effect.type === 'v2If' || effect.type === 'v2IfAdvanced' || effect.type === 'v2Loop' || effect.type === 'v2LoopNTimes' || effect.type === 'v2Else'}
@@ -2825,9 +2740,7 @@
                       value && value[selectedIndex] && value[selectedIndex].effect
                         ? value[selectedIndex].effect.findIndex(
                             (e, idx) =>
-                              idx > i &&
-                              e.type === 'v2EndIndent' &&
-                              (e as triggerEffectV2).indent === blockIndent + 1,
+                              idx > i && e.type === 'v2EndIndent' && (e as triggerEffectV2).indent === blockIndent + 1,
                           )
                         : -1}
                     {#if endIndex !== -1 && effectElements[i] && effectElements[endIndex] && menu0Container}
@@ -2837,25 +2750,18 @@
                       {@const endRect = endElement.getBoundingClientRect()}
                       {@const containerRect = menu0Container.getBoundingClientRect()}
                       {#if startRect.width > 0 && endRect.width > 0 && startRect.height > 0 && endRect.height > 0}
-                        {@const startTop =
-                          startRect.bottom - containerRect.top + menu0Container.scrollTop}
+                        {@const startTop = startRect.bottom - containerRect.top + menu0Container.scrollTop}
                         {@const endTop =
-                          endRect.top -
-                          containerRect.top +
-                          menu0Container.scrollTop +
-                          endRect.height * 0.5}
+                          endRect.top - containerRect.top + menu0Container.scrollTop + endRect.height * 0.5}
                         {#if endTop > startTop}
                           <div
                             class="absolute w-px bg-gray-600 opacity-40"
-                            style="left: {0.5 +
-                              blockIndent * 1}rem; top: {startTop}px; height: {endTop -
-                              startTop}px;"
-                          ></div>
+                            style="left: {0.5 + blockIndent * 1}rem; top: {startTop}px; height: {endTop - startTop}px;">
+                          </div>
                           <div
                             class="absolute h-px bg-gray-600 opacity-40"
-                            style="left: {0.5 +
-                              blockIndent * 1}rem; top: {endTop}px; width: 0.5rem;"
-                          ></div>
+                            style="left: {0.5 + blockIndent * 1}rem; top: {endTop}px; width: 0.5rem;">
+                          </div>
                         {/if}
                       {/if}
                     {/if}
@@ -2882,8 +2788,8 @@
                       handleEffectDrop(i, e)
                       effectDragOverIndex = -1
                     }
-                  }}
-                ></div>
+                  }}>
+                </div>
 
                 <div
                   class="flex items-center w-full relative"
@@ -2909,12 +2815,7 @@
                       const mouseX = e.clientX
                       const mouseY = e.clientY
 
-                      if (
-                        mouseX < rect.left ||
-                        mouseX > rect.right ||
-                        mouseY < rect.top ||
-                        mouseY > rect.bottom
-                      ) {
+                      if (mouseX < rect.left || mouseX > rect.right || mouseY < rect.top || mouseY > rect.bottom) {
                         effectDragOverIndex = -1
                       }
                     }
@@ -2924,8 +2825,7 @@
                       handleEffectDrop(effectDragOverIndex, e)
                       effectDragOverIndex = -1
                     }
-                  }}
-                >
+                  }}>
                   <button
                     class="flex-1 p-2 text-start text-purple-500 relative break-all whitespace-normal overflow-hidden"
                     bind:this={effectElements[i]}
@@ -2942,12 +2842,9 @@
                       lastClickTime = Date.now()
                       selectedEffectIndex = i
                     }}
-                    oncontextmenu={(e) => handleContextMenu(e, 1, i, effect)}
-                  >
+                    oncontextmenu={(e) => handleContextMenu(e, 1, i, effect)}>
                     {#if effect.type === 'v2EndIndent'}
-                      <div class="text-textcolor" style:margin-left={effect.indent + 'rem'}>
-                        ...
-                      </div>
+                      <div class="text-textcolor" style:margin-left={effect.indent + 'rem'}>...</div>
                     {:else}
                       {@html formatEffectDisplay(effect)}
                     {/if}
@@ -2974,8 +2871,7 @@
                         e.dataTransfer?.setData('effectIndex', i.toString())
 
                         const dragElement = document.createElement('div')
-                        dragElement.textContent =
-                          formatEffectDisplay(effect).replace(/<[^>]*>/g, '') || 'Effect'
+                        dragElement.textContent = formatEffectDisplay(effect).replace(/<[^>]*>/g, '') || 'Effect'
                         dragElement.className =
                           'absolute -top-96 -left-96 px-4 py-2 bg-darkbg text-textcolor2 rounded-sm text-sm whitespace-nowrap shadow-lg pointer-events-none z-50'
                         document.body.appendChild(dragElement)
@@ -2989,8 +2885,7 @@
                         isEffectDragging = false
                         effectDragOverIndex = -1
                         scrollManager.stopAutoScroll()
-                      }}
-                    >
+                      }}>
                       <div class="text-textcolor2 text-xs select-none">⋮⋮</div>
                     </div>
                   {:else}
@@ -3040,8 +2935,8 @@
                     )
                     effectDragOverIndex = -1
                   }
-                }}
-              ></div>
+                }}>
+              </div>
 
               <button
                 class="p-2 w-full text-start hover:bg-selected"
@@ -3057,19 +2952,14 @@
                   }
                   lastClickTime = Date.now()
                 }}
-                oncontextmenu={(e) => handleContextMenu(e, 1)}
-              >
+                oncontextmenu={(e) => handleContextMenu(e, 1)}>
                 ...
               </button>
             </div>
           </div>
         {:else if menuMode === 1}
-          <div
-            class="flex-1 bg-darkbg flex flex-col md:flex-row overflow-y-auto md:overflow-y-visible"
-          >
-            <div
-              class="w-full md:w-48 border-b md:border-b-0 md:border-r border-darkborderc flex flex-col"
-            >
+          <div class="flex-1 bg-darkbg flex flex-col md:flex-row overflow-y-auto md:overflow-y-visible">
+            <div class="w-full md:w-48 border-b md:border-b-0 md:border-r border-darkborderc flex flex-col">
               <div class="p-4 border-b border-darkborderc flex items-center min-h-16">
                 <button
                   class="border-t-darkborderc text-start text-textcolor2 hover:text-textcolor"
@@ -3079,8 +2969,7 @@
                       selectedEffectIndexSaved = selectedEffectIndex
                     }
                     menuMode = 0
-                  }}
-                >
+                  }}>
                   <ArrowLeftIcon />
                 </button>
                 <h3 class="ml-4 text-lg font-medium text-textcolor md:hidden">
@@ -3096,8 +2985,7 @@
                     class:text-textcolor2={selectedCategory !== category}
                     onclick={() => {
                       selectedCategory = category
-                    }}
-                  >
+                    }}>
                     {language.triggerCategories[category] || category}
                     {#if category === 'Deprecated'}
                       <span class="text-xs opacity-60 ml-1">(Deprecated)</span>
@@ -3108,9 +2996,7 @@
               <div class="p-4 border-b border-darkborderc md:hidden">
                 <SelectInput bind:value={selectedCategory}>
                   {#each getAvailableCategories() as category}
-                    <OptionInput value={category}
-                      >{language.triggerCategories[category] || category}</OptionInput
-                    >
+                    <OptionInput value={category}>{language.triggerCategories[category] || category}</OptionInput>
                   {/each}
                 </SelectInput>
               </div>
@@ -3119,8 +3005,7 @@
                   <CheckInput
                     bind:check={showDeprecatedTriggerV2Draft.value}
                     name={language.showDeprecatedTriggerV2}
-                    grayText
-                  />
+                    grayText />
                 </div>
               </div>
             </div>
@@ -3144,8 +3029,7 @@
                         selectedEffectIndexSaved = selectedEffectIndex
                       }
                       menuMode = 2
-                    }}
-                  >
+                    }}>
                     <div>
                       {language.triggerDesc[type]}
                       {#if effectCategories.Deprecated.includes(type)}
@@ -3160,8 +3044,7 @@
                   <CheckInput
                     bind:check={showDeprecatedTriggerV2Draft.value}
                     name={language.showDeprecatedTriggerV2}
-                    grayText
-                  />
+                    grayText />
                 </div>
               </div>
             </div>
@@ -3177,8 +3060,7 @@
                     selectedEffectIndexSaved = selectedEffectIndex
                   }
                   menuMode = menuMode === 2 ? 1 : 0
-                }}
-              >
+                }}>
                 <ArrowLeftIcon />
               </button>
               <h2 class="text-xl">
@@ -3205,8 +3087,7 @@
               <TextAreaInput highlight bind:value={editTrigger.value} />
             {:else if editTrigger.type === 'v2If' || editTrigger.type === 'v2IfAdvanced'}
               <span class="block text-textcolor"
-                >{editTrigger.type === 'v2If' ? language.triggerInputLabels.varName : 'A'}</span
-              >
+                >{editTrigger.type === 'v2If' ? language.triggerInputLabels.varName : 'A'}</span>
               {#if editTrigger.type === 'v2IfAdvanced'}
                 <SelectInput bind:value={editTrigger.sourceType}>
                   <OptionInput value="value">{language.triggerInputLabels.value}</OptionInput>
@@ -3225,37 +3106,25 @@
                     trg.target = 'true'
                     trg.targetType = 'value'
                   }
-                }}
-              >
+                }}>
                 <OptionInput value="=">{language.triggerInputLabels.conditionEqual}</OptionInput>
-                <OptionInput value="!=">{language.triggerInputLabels.conditionNotEqual}</OptionInput
-                >
+                <OptionInput value="!=">{language.triggerInputLabels.conditionNotEqual}</OptionInput>
                 <OptionInput value=">">{language.triggerInputLabels.conditionGreater}</OptionInput>
                 <OptionInput value="<">{language.triggerInputLabels.conditionLess}</OptionInput>
-                <OptionInput value=">="
-                  >{language.triggerInputLabels.conditionGreaterEqual}</OptionInput
-                >
-                <OptionInput value="<="
-                  >{language.triggerInputLabels.conditionLessEqual}</OptionInput
-                >
+                <OptionInput value=">=">{language.triggerInputLabels.conditionGreaterEqual}</OptionInput>
+                <OptionInput value="<=">{language.triggerInputLabels.conditionLessEqual}</OptionInput>
                 {#if editTrigger.type === 'v2IfAdvanced'}
-                  <OptionInput value="≒">{language.triggerInputLabels.conditionSimilar}</OptionInput
-                  >
-                  <OptionInput value="∋"
-                    >{language.triggerInputLabels.conditionContains}</OptionInput
-                  >
+                  <OptionInput value="≒">{language.triggerInputLabels.conditionSimilar}</OptionInput>
+                  <OptionInput value="∋">{language.triggerInputLabels.conditionContains}</OptionInput>
                   <OptionInput value="∈">{language.triggerInputLabels.conditionIn}</OptionInput>
-                  <OptionInput value="∌"
-                    >{language.triggerInputLabels.conditionNotContains}</OptionInput
-                  >
+                  <OptionInput value="∌">{language.triggerInputLabels.conditionNotContains}</OptionInput>
                   <OptionInput value="∉">{language.triggerInputLabels.conditionNotIn}</OptionInput>
                   <OptionInput value="≡">{language.triggerInputLabels.conditionTruthy}</OptionInput>
                 {/if}
               </SelectInput>
 
               <span class="block text-textcolor"
-                >{editTrigger.type === 'v2If' ? language.triggerInputLabels.value : 'B'}</span
-              >
+                >{editTrigger.type === 'v2If' ? language.triggerInputLabels.value : 'B'}</span>
               {#if editTrigger.condition === '≡'}
                 <SelectInput bind:value={editTrigger.target}>
                   <OptionInput value="true">{language.triggerInputLabels.boolTrue}</OptionInput>
@@ -3270,11 +3139,7 @@
                 <TextInput bind:value={editTrigger.target} />
               {/if}
 
-              <CheckInput
-                bind:check={addElse}
-                name={language.triggerInputLabels.addElse}
-                className="mt-4"
-              />
+              <CheckInput bind:check={addElse} name={language.triggerInputLabels.addElse} className="mt-4" />
             {:else if editTrigger.type === 'v2RunTrigger'}
               <span class="block text-textcolor">{language.triggerInputLabels.trigger}</span>
               <SelectInput bind:value={editTrigger.target}>
@@ -3282,9 +3147,7 @@
                   {#if i === 0}
                     <!-- Header, skip the first trigger -->
                   {:else}
-                    <OptionInput value={trigger.comment}
-                      >{trigger.comment || 'Unnamed Trigger'}</OptionInput
-                    >
+                    <OptionInput value={trigger.comment}>{trigger.comment || 'Unnamed Trigger'}</OptionInput>
                   {/if}
                 {/each}
               </SelectInput>
@@ -3359,12 +3222,8 @@
               <span>{language.triggerInputLabels.location}</span>
               <SelectInput bind:value={editTrigger.location}>
                 <OptionInput value="start">{language.triggerInputLabels.sysStart}</OptionInput>
-                <OptionInput value="historyend"
-                  >{language.triggerInputLabels.sysHistoryEnd}</OptionInput
-                >
-                <OptionInput value="promptend"
-                  >{language.triggerInputLabels.sysPromptEnd}</OptionInput
-                >
+                <OptionInput value="historyend">{language.triggerInputLabels.sysHistoryEnd}</OptionInput>
+                <OptionInput value="promptend">{language.triggerInputLabels.sysPromptEnd}</OptionInput>
               </SelectInput>
               <span>{language.triggerInputLabels.value}</span>
               <SelectInput bind:value={editTrigger.valueType}>
@@ -3463,8 +3322,7 @@
               <CheckInput
                 bind:check={editTrigger.value}
                 name={language.triggerInputLabels.alwaysActive}
-                className="mt-4"
-              />
+                className="mt-4" />
             {:else if editTrigger.type === 'v2GetLorebookIndexViaName'}
               <span class="block text-textcolor">{language.triggerInputLabels.name}</span>
               <SelectInput bind:value={editTrigger.nameType}>
@@ -3814,8 +3672,7 @@
               <TextInput bind:value={editTrigger.display} />
 
               <span class="block text-textcolor"
-                >{language.triggerInputLabels.options} <Help key="v2GetAlertSelect" /></span
-              >
+                >{language.triggerInputLabels.options} <Help key="v2GetAlertSelect" /></span>
               <SelectInput bind:value={editTrigger.valueType}>
                 <OptionInput value="value">{language.triggerInputLabels.value}</OptionInput>
                 <OptionInput value="var">{language.triggerInputLabels.var}</OptionInput>
@@ -4020,8 +3877,7 @@
               <CheckInput
                 bind:check={editTrigger.value}
                 name={language.triggerInputLabels.alwaysActive}
-                className="mt-4"
-              />
+                className="mt-4" />
             {:else if editTrigger.type === 'v2UpdateChatAt'}
               <span class="block text-textcolor">{language.triggerInputLabels.index}</span>
               <TextInput bind:value={editTrigger.index} />
@@ -4047,8 +3903,7 @@
               <TextInput bind:value={editTrigger.flags} />
 
               <span class="block text-textcolor"
-                >{language.triggerInputLabels.outputVar} <Help key="v2RegexTest" /></span
-              >
+                >{language.triggerInputLabels.outputVar} <Help key="v2RegexTest" /></span>
               <TextInput bind:value={editTrigger.outputVar} />
             {:else if editTrigger.type === 'v2GetReplaceGlobalNote'}
               <span class="block text-textcolor">{language.triggerInputLabels.outputVar}</span>
@@ -4167,8 +4022,7 @@
               <TextInput bind:value={editTrigger.outputVar} />
             {:else if editTrigger.type === 'v2Calculate'}
               <span class="block text-textcolor"
-                >{language.triggerInputLabels.expression} <Help key="v2Calculate" /></span
-              >
+                >{language.triggerInputLabels.expression} <Help key="v2Calculate" /></span>
               <SelectInput bind:value={editTrigger.expressionType}>
                 <OptionInput value="value">{language.triggerInputLabels.value}</OptionInput>
                 <OptionInput value="var">{language.triggerInputLabels.var}</OptionInput>
@@ -4228,13 +4082,7 @@
             <Button
               className="mt-4"
               onclick={() => {
-                if (
-                  !value ||
-                  !value[selectedIndex] ||
-                  selectedIndex < 0 ||
-                  selectedIndex >= value.length
-                )
-                  return
+                if (!value || !value[selectedIndex] || selectedIndex < 0 || selectedIndex >= value.length) return
                 if (selectedEffectIndex === -1) {
                   value[selectedIndex].effect.push(editTrigger)
 
@@ -4248,8 +4096,7 @@
                     value[selectedIndex].effect.push({
                       type: 'v2EndIndent',
                       indent: editTrigger.indent + 1,
-                      endOfLoop:
-                        editTrigger.type === 'v2Loop' || editTrigger.type === 'v2LoopNTimes',
+                      endOfLoop: editTrigger.type === 'v2Loop' || editTrigger.type === 'v2LoopNTimes',
                     })
 
                     if (addElse) {
@@ -4264,9 +4111,7 @@
                     }
                   }
                 } else if (menuMode === 2) {
-                  editTrigger.indent = (
-                    value[selectedIndex].effect[selectedEffectIndex] as triggerEffectV2
-                  ).indent
+                  editTrigger.indent = (value[selectedIndex].effect[selectedEffectIndex] as triggerEffectV2).indent
                   if (
                     editTrigger.type === 'v2If' ||
                     editTrigger.type === 'v2IfAdvanced' ||
@@ -4277,8 +4122,7 @@
                     value[selectedIndex].effect.splice(selectedEffectIndex, 0, {
                       type: 'v2EndIndent',
                       indent: editTrigger.indent + 1,
-                      endOfLoop:
-                        editTrigger.type === 'v2Loop' || editTrigger.type === 'v2LoopNTimes',
+                      endOfLoop: editTrigger.type === 'v2Loop' || editTrigger.type === 'v2LoopNTimes',
                     })
 
                     if (addElse) {
@@ -4294,11 +4138,8 @@
                   }
                   value[selectedIndex].effect.splice(selectedEffectIndex, 0, editTrigger)
                 } else if (menuMode === 3) {
-                  const originalEffect = value[selectedIndex].effect[
-                    selectedEffectIndex
-                  ] as triggerEffectV2
-                  const isIfType =
-                    editTrigger.type === 'v2If' || editTrigger.type === 'v2IfAdvanced'
+                  const originalEffect = value[selectedIndex].effect[selectedEffectIndex] as triggerEffectV2
+                  const isIfType = editTrigger.type === 'v2If' || editTrigger.type === 'v2IfAdvanced'
 
                   if (isIfType) {
                     let hasExistingElse = false
@@ -4316,13 +4157,8 @@
                       pointer++
                     }
 
-                    if (
-                      endIndentIndex !== -1 &&
-                      endIndentIndex + 1 < value[selectedIndex].effect.length
-                    ) {
-                      const nextEffect = value[selectedIndex].effect[
-                        endIndentIndex + 1
-                      ] as triggerEffectV2
+                    if (endIndentIndex !== -1 && endIndentIndex + 1 < value[selectedIndex].effect.length) {
+                      const nextEffect = value[selectedIndex].effect[endIndentIndex + 1] as triggerEffectV2
                       if (nextEffect.type === 'v2Else' && nextEffect.indent === indent) {
                         hasExistingElse = true
                         elseIndex = endIndentIndex + 1
@@ -4366,8 +4202,7 @@
                 }
                 menuMode = 0
                 updateGuideLines()
-              }}>Save</Button
-            >
+              }}>Save</Button>
 
             {#if menuMode === 3}
               <Button
@@ -4380,8 +4215,7 @@
                     selectedEffectIndexSaved = selectedEffectIndex
                   }
                   menuMode = 0
-                }}>Delete</Button
-              >
+                }}>Delete</Button>
             {/if}
           </div>
         {/if}

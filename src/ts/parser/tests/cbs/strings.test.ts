@@ -65,8 +65,7 @@ vi.mock(import('../../../stores.svelte'), () => {
 
 const validCBSArgPropLong = validCBSArgProp.filter((s) => s.length > 1)
 
-const quickParse = (op: string, ...args: (string | number)[]) =>
-  risuChatParser(cbs(op, ...args.map(String)))
+const quickParse = (op: string, ...args: (string | number)[]) => risuChatParser(cbs(op, ...args.map(String)))
 
 test('L11: normalizes matcher aliases with case and separators while preserving args', () => {
   expect(risuChatParser('{{NOT_EQUAL::a::b}}')).toBe('1')
@@ -130,9 +129,7 @@ test('replace', () => {
 })
 
 test('split', () => {
-  expect(quickParse('split', 'apple,banana,cherry', ',')).toBe(
-    JSON.stringify(['apple', 'banana', 'cherry']),
-  )
+  expect(quickParse('split', 'apple,banana,cherry', ',')).toBe(JSON.stringify(['apple', 'banana', 'cherry']))
 
   fc.assert(
     fc.property(fc.array(validCBSArgPropLong), validCBSArgProp, (arr, b) => {

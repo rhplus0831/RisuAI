@@ -78,12 +78,7 @@ async function sendPofile(arg: sendTextFileArg) {
     }
     if (line.startsWith('msgid')) {
       parseMode = 0
-      msgId = line
-        .replace('msgid ', '')
-        .trim()
-        .replaceAll('\\"', '♠#')
-        .replaceAll('"', '')
-        .replaceAll('♠#', '\\"')
+      msgId = line.replace('msgid ', '').trim().replaceAll('\\"', '♠#').replaceAll('"', '').replaceAll('♠#', '\\"')
       if (msgId === '') {
         parseMode = 1
       }

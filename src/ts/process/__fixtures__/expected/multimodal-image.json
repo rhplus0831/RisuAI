@@ -39,20 +39,11 @@
       "stage4": 0
     }
   },
-  "stages": [
-    1,
-    3,
-    4
-  ],
+  "stages": [1, 3, 4],
   "sideEffects": [
     {
       "fn": "addRerolls",
-      "args": [
-        "uuid-0",
-        [
-          "I see a small image."
-        ]
-      ]
+      "args": ["uuid-0", ["I see a small image."]]
     },
     {
       "fn": "runInlayScreen",

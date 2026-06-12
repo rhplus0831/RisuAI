@@ -413,9 +413,7 @@ describe('postInlayAsset', () => {
   test('returns null for any unsupported extension', async () => {
     await fc.assert(
       fc.asyncProperty(
-        fc
-          .string({ minLength: 1, maxLength: 10 })
-          .filter((ext) => !allSupportedExts.includes(ext as any)),
+        fc.string({ minLength: 1, maxLength: 10 }).filter((ext) => !allSupportedExts.includes(ext as any)),
         async (ext) => {
           store.clear()
           serverAssetStore.clear()
@@ -591,62 +589,50 @@ describe('writeInlayImage', () => {
 
   test('output pixels never exceed 1024 * 1024', async () => {
     await fc.assert(
-      fc.asyncProperty(
-        fc.integer({ min: 1, max: 4096 }),
-        fc.integer({ min: 1, max: 4096 }),
-        async (w, h) => {
-          store.clear()
-          serverAssetStore.clear()
-          const img = makeImage(w, h)
-          const assetId = await writeInlayImage(img, { id: 'prop-img' })
-          const stored = store.get(assetId) as InlayAsset
+      fc.asyncProperty(fc.integer({ min: 1, max: 4096 }), fc.integer({ min: 1, max: 4096 }), async (w, h) => {
+        store.clear()
+        serverAssetStore.clear()
+        const img = makeImage(w, h)
+        const assetId = await writeInlayImage(img, { id: 'prop-img' })
+        const stored = store.get(assetId) as InlayAsset
 
-          expect(stored.width * stored.height).toBeLessThanOrEqual(1024 * 1024)
-          expect(stored.width).toBeGreaterThan(0)
-          expect(stored.height).toBeGreaterThan(0)
-        },
-      ),
+        expect(stored.width * stored.height).toBeLessThanOrEqual(1024 * 1024)
+        expect(stored.width).toBeGreaterThan(0)
+        expect(stored.height).toBeGreaterThan(0)
+      }),
     )
   })
 
   test('preserves aspect ratio when downscaling', async () => {
     await fc.assert(
-      fc.asyncProperty(
-        fc.integer({ min: 1025, max: 4096 }),
-        fc.integer({ min: 1025, max: 4096 }),
-        async (w, h) => {
-          store.clear()
-          serverAssetStore.clear()
-          const img = makeImage(w, h)
-          const assetId = await writeInlayImage(img, { id: 'ratio-img' })
-          const stored = store.get(assetId) as InlayAsset
+      fc.asyncProperty(fc.integer({ min: 1025, max: 4096 }), fc.integer({ min: 1025, max: 4096 }), async (w, h) => {
+        store.clear()
+        serverAssetStore.clear()
+        const img = makeImage(w, h)
+        const assetId = await writeInlayImage(img, { id: 'ratio-img' })
+        const stored = store.get(assetId) as InlayAsset
 
-          const originalRatio = w / h
-          const storedRatio = stored.width / stored.height
-          expect(Math.abs(originalRatio - storedRatio) / originalRatio).toBeLessThan(0.01)
-        },
-      ),
+        const originalRatio = w / h
+        const storedRatio = stored.width / stored.height
+        expect(Math.abs(originalRatio - storedRatio) / originalRatio).toBeLessThan(0.01)
+      }),
     )
   })
 
   test('does not resize images within pixel budget', async () => {
     await fc.assert(
-      fc.asyncProperty(
-        fc.integer({ min: 1, max: 1024 }),
-        fc.integer({ min: 1, max: 1024 }),
-        async (w, h) => {
-          store.clear()
-          serverAssetStore.clear()
-          const img = makeImage(w, h)
-          const assetId = await writeInlayImage(img, { id: 'small-img' })
+      fc.asyncProperty(fc.integer({ min: 1, max: 1024 }), fc.integer({ min: 1, max: 1024 }), async (w, h) => {
+        store.clear()
+        serverAssetStore.clear()
+        const img = makeImage(w, h)
+        const assetId = await writeInlayImage(img, { id: 'small-img' })
 
-          const stored = store.get(assetId) as InlayAsset
-          expect(stored).toMatchObject({
-            height: h,
-            width: w,
-          })
-        },
-      ),
+        const stored = store.get(assetId) as InlayAsset
+        expect(stored).toMatchObject({
+          height: h,
+          width: w,
+        })
+      }),
     )
   })
 
@@ -654,9 +640,7 @@ describe('writeInlayImage', () => {
     const edge = Math.ceil(Math.sqrt(MAX_INLAY_SOURCE_PIXELS)) + 1
     const imgObj = makeImage(edge, edge)
 
-    await expect(writeInlayImage(imgObj)).rejects.toThrow(
-      'Inlay image is too large to process safely',
-    )
+    await expect(writeInlayImage(imgObj)).rejects.toThrow('Inlay image is too large to process safely')
     expect(fakeCtx.drawImage).not.toHaveBeenCalled()
     expect(serverAssetStore.size).toBe(0)
   })

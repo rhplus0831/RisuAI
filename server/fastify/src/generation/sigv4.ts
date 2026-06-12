@@ -87,12 +87,7 @@ function formatAmzDate(d: Date): string {
   )
 }
 
-function deriveSigningKey(
-  secret: string,
-  date: string,
-  region: string,
-  service: string,
-): Buffer {
+function deriveSigningKey(secret: string, date: string, region: string, service: string): Buffer {
   const kSecret = `AWS4${secret}`
   const kDate = hmac(kSecret, date)
   const kRegion = hmac(kDate, region)
@@ -106,10 +101,7 @@ function deriveSigningKey(
  * `x-amz-content-sha256`, optional `x-amz-security-token`, and
  * `Authorization` added on top of the caller-provided base headers.
  */
-export function signSigV4(
-  credentials: SigV4Credentials,
-  input: SigV4SignInput,
-): SigV4SignResult {
+export function signSigV4(credentials: SigV4Credentials, input: SigV4SignInput): SigV4SignResult {
   const date = input.date ?? new Date()
   const amzDate = formatAmzDate(date)
   const dateStamp = amzDate.slice(0, 8) // YYYYMMDD
@@ -131,34 +123,22 @@ export function signSigV4(
 
   // Canonical headers: sorted by lowercase key, each line `key:trimmed-value\n`.
   const sortedKeys = Object.keys(sourceHeaders).sort()
-  const canonicalHeaders =
-    sortedKeys.map((k) => `${k}:${sourceHeaders[k].trim()}`).join('\n') + '\n'
+  const canonicalHeaders = sortedKeys.map((k) => `${k}:${sourceHeaders[k].trim()}`).join('\n') + '\n'
   const signedHeaders = sortedKeys.join(';')
 
-  const canonicalRequest =
-    [
-      input.method.toUpperCase(),
-      input.path,
-      '', // no query string
-      canonicalHeaders,
-      signedHeaders,
-      payloadHash,
-    ].join('\n')
-
-  const credentialScope = `${dateStamp}/${input.region}/${input.service}/aws4_request`
-  const stringToSign = [
-    'AWS4-HMAC-SHA256',
-    amzDate,
-    credentialScope,
-    sha256Hex(canonicalRequest),
+  const canonicalRequest = [
+    input.method.toUpperCase(),
+    input.path,
+    '', // no query string
+    canonicalHeaders,
+    signedHeaders,
+    payloadHash,
   ].join('\n')
 
-  const signingKey = deriveSigningKey(
-    credentials.secretAccessKey,
-    dateStamp,
-    input.region,
-    input.service,
-  )
+  const credentialScope = `${dateStamp}/${input.region}/${input.service}/aws4_request`
+  const stringToSign = ['AWS4-HMAC-SHA256', amzDate, credentialScope, sha256Hex(canonicalRequest)].join('\n')
+
+  const signingKey = deriveSigningKey(credentials.secretAccessKey, dateStamp, input.region, input.service)
   const signature = hmac(signingKey, stringToSign).toString('hex')
 
   const authorization =

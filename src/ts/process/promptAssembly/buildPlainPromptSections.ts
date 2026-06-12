@@ -24,16 +24,12 @@ export function buildPlainPromptSections(currentChar: character): {
   jailbreak: OpenAIChat[]
   globalNote: OpenAIChat[]
 } {
-  const mainp =
-    currentChar.systemPrompt?.replaceAll('{{original}}', DBState.db.mainPrompt) ||
-    DBState.db.mainPrompt
+  const mainp = currentChar.systemPrompt?.replaceAll('{{original}}', DBState.db.mainPrompt) || DBState.db.mainPrompt
 
   const main = formatPrompt(
     risuChatParser(
       mainp +
-        (DBState.db.additionalPrompt === '' || !DBState.db.promptPreprocess
-          ? ''
-          : `\n${DBState.db.additionalPrompt}`),
+        (DBState.db.additionalPrompt === '' || !DBState.db.promptPreprocess ? '' : `\n${DBState.db.additionalPrompt}`),
       { chara: currentChar },
     ),
   )
@@ -44,8 +40,7 @@ export function buildPlainPromptSections(currentChar: character): {
 
   const globalNote = formatPrompt(
     risuChatParser(
-      currentChar.replaceGlobalNote?.replaceAll('{{original}}', DBState.db.globalNote) ||
-        DBState.db.globalNote,
+      currentChar.replaceGlobalNote?.replaceAll('{{original}}', DBState.db.globalNote) || DBState.db.globalNote,
       { chara: currentChar },
     ),
   )

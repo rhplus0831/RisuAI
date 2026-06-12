@@ -34,9 +34,6 @@
 <div class="flex items-center {item.classes ?? 'mt-2'}">
   <Check bind:check={localValue} name={getLabel(item)}>
     {#if item.showExperimental}<Help key="experimental" />{/if}
-    {#if item.helpKey}<Help
-        key={item.helpKey as any}
-        unrecommended={item.helpUnrecommended ?? false}
-      />{/if}
+    {#if item.helpKey}<Help key={item.helpKey as any} unrecommended={item.helpUnrecommended ?? false} />{/if}
   </Check>
 </div>

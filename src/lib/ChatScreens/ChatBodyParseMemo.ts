@@ -1,9 +1,5 @@
 import { get } from 'svelte/store'
-import {
-  ParseMarkdown,
-  type CbsConditions,
-  type simpleCharacterArgument,
-} from '../../ts/parser/parser.svelte'
+import { ParseMarkdown, type CbsConditions, type simpleCharacterArgument } from '../../ts/parser/parser.svelte'
 import { getModules } from '../../ts/process/modules'
 import type { customscript, triggerscript, character, Database } from '../../ts/storage/database.svelte'
 import { getCurrentChat } from '../../ts/storage/database.svelte'
@@ -142,9 +138,7 @@ function triggerListSignature(triggers?: readonly triggerscript[] | null) {
 
 function tupleListSignature(tuples?: readonly unknown[] | null) {
   return (tuples ?? []).map((tuple) =>
-    Array.isArray(tuple)
-      ? tuple.map((value) => normalizeForSignature(value))
-      : normalizeForSignature(tuple),
+    Array.isArray(tuple) ? tuple.map((value) => normalizeForSignature(value)) : normalizeForSignature(tuple),
   )
 }
 
@@ -384,9 +378,7 @@ export function getChatBodyParseMemoKey(input: ChatBodyParseMemoInput): string {
     input.chatID,
   )},"data":${stableFragment(input.data ?? '')},"kind":"chat-body-parse","mode":${stableFragment(
     input.mode,
-  )},"modules":${serializedModuleSignature(modules)},"settings":${serializedSettingsSignature(
-    modules,
-  )}}`
+  )},"modules":${serializedModuleSignature(modules)},"settings":${serializedSettingsSignature(modules)}}`
 }
 
 function getTranslateSettingsSignature() {
@@ -407,11 +399,7 @@ export function getChatBodyCachedOnlyLlmDetectionMode(
   input: Pick<ChatBodyCachedOnlyInput, 'fallbackMode'>,
 ): ChatBodyParseMode | 'raw' {
   const db = DBState.db as Partial<Database>
-  return db.translateBeforeHTMLFormatting
-    ? 'raw'
-    : db.legacyTranslation
-      ? input.fallbackMode
-      : 'pretranslate'
+  return db.translateBeforeHTMLFormatting ? 'raw' : db.legacyTranslation ? input.fallbackMode : 'pretranslate'
 }
 
 export function getChatBodyCachedOnlyLlmDetectionKey(input: ChatBodyCachedOnlyInput): string {
@@ -429,11 +417,8 @@ export function getChatBodyCachedOnlyLlmDetectionKey(input: ChatBodyCachedOnlyIn
           cbsConditions: input.cbsConditions,
         }))
 
-  const parseKeyFragment =
-    detectionMode === 'raw' ? '' : `,"parseKey":${stableFragment(parseKey ?? '')}`
-  const rawDataFragment = db.translateBeforeHTMLFormatting
-    ? `,"rawData":${stableFragment(input.data ?? '')}`
-    : ''
+  const parseKeyFragment = detectionMode === 'raw' ? '' : `,"parseKey":${stableFragment(parseKey ?? '')}`
+  const rawDataFragment = db.translateBeforeHTMLFormatting ? `,"rawData":${stableFragment(input.data ?? '')}` : ''
 
   return `{"detectionMode":${stableFragment(
     detectionMode,
@@ -449,23 +434,17 @@ export function memoizedChatBodyParse(input: ChatBodyParseMemoInput): Promise<st
     return refresh(parseMemo, key, cached)
   }
 
-  const promise = ParseMarkdown(
-    input.data,
-    input.charArg,
-    input.mode,
-    input.chatID,
-    input.cbsConditions,
-  ).catch((error) => {
-    parseMemo.delete(key)
-    throw error
-  })
+  const promise = ParseMarkdown(input.data, input.charArg, input.mode, input.chatID, input.cbsConditions).catch(
+    (error) => {
+      parseMemo.delete(key)
+      throw error
+    },
+  )
   remember(parseMemo, key, promise, PARSE_MEMO_LIMIT)
   return promise
 }
 
-export async function getChatBodyCachedOnlyLlmDecision(
-  input: ChatBodyCachedOnlyInput,
-): Promise<boolean> {
+export async function getChatBodyCachedOnlyLlmDecision(input: ChatBodyCachedOnlyInput): Promise<boolean> {
   const key = input.detectionKey ?? getChatBodyCachedOnlyLlmDetectionKey(input)
   const cached = llmDetectionMemo.get(key)
   if (cached) {

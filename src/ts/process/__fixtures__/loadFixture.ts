@@ -249,10 +249,7 @@ export function markFixtureActiveChatGenerationSettingsReady(): void {
   })
   const globalChatVariables = recordOfStrings(db.globalChatVariables)
   const sidebarToggles = Object.fromEntries(
-    requirements.sidebarToggles.map((toggle) => [
-      toggle.key,
-      globalChatVariables[`toggle_${toggle.key}`] ?? '0',
-    ]),
+    requirements.sidebarToggles.map((toggle) => [toggle.key, globalChatVariables[`toggle_${toggle.key}`] ?? '0']),
   )
 
   chat.generationSettings = {
@@ -264,10 +261,7 @@ export function markFixtureActiveChatGenerationSettingsReady(): void {
   }
 }
 
-function mirrorFixtureDatabaseIntoPreset(
-  db: Database,
-  preset: ChatGenerationPresetReference,
-): void {
+function mirrorFixtureDatabaseIntoPreset(db: Database, preset: ChatGenerationPresetReference): void {
   const dbRecord = db as unknown as Record<string, unknown>
   const presetRecord = preset as unknown as Record<string, unknown>
   for (const [presetKey, databaseKey] of FIXTURE_PRESET_MIRROR_KEYS) {
@@ -293,9 +287,7 @@ function isNonEmptyString(value: unknown): value is string {
 }
 
 function stringArray(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === 'string')
-    : []
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
 }
 
 function recordOfStrings(value: unknown): Record<string, string> {

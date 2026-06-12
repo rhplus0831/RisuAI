@@ -83,9 +83,7 @@ describe('PluginSettings', () => {
     pluginRow?.click()
     await tick()
 
-    const labels = Array.from(target.querySelectorAll('option')).map((option) =>
-      option.textContent?.trim(),
-    )
+    const labels = Array.from(target.querySelectorAll('option')).map((option) => option.textContent?.trim())
     expect(labels).toEqual(['fast', 'slow'])
   })
 })

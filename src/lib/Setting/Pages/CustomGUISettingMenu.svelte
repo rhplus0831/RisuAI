@@ -79,24 +79,10 @@
       const textElement = document.createElement('p')
       textElement.innerText = currentTree.type
       if (treeChain === selectedContatiner) {
-        element.classList.add(
-          'bg-blue-200/50',
-          'border-2',
-          'border-blue-400',
-          'relative',
-          'p-4',
-          'z-20',
-        )
+        element.classList.add('bg-blue-200/50', 'border-2', 'border-blue-400', 'relative', 'p-4', 'z-20')
         textElement.classList.add('absolute', 'top-0', 'left-0', 'bg-blue-200', 'p-1', 'text-black')
       } else {
-        element.classList.add(
-          'bg-gray-200/50',
-          'border-2',
-          'border-gray-400',
-          'relative',
-          'p-4',
-          'z-20',
-        )
+        element.classList.add('bg-gray-200/50', 'border-2', 'border-gray-400', 'relative', 'p-4', 'z-20')
         textElement.classList.add('absolute', 'top-0', 'left-0', 'bg-white', 'p-1', 'text-black')
       }
       element.appendChild(textElement)
@@ -236,34 +222,29 @@
     e.preventDefault()
     oncontextmenu?.(e)
   }}
-  bind:this={mainTree}
-></div>
+  bind:this={mainTree}>
+</div>
 {#if menuOpen}
-  <div
-    class="w-138 max-w-full h-full bg-white text-black border-l border-l-black p-4 flex flex-col gap-2 z-20"
-  >
+  <div class="w-138 max-w-full h-full bg-white text-black border-l border-l-black p-4 flex flex-col gap-2 z-20">
     <div class="flex">
       <button
         class="mr-2 p-2 border border-black rounded-sm"
         class:text-gray-500={subMenu !== 0}
         onclick={() => {
           subMenu = 0
-        }}>Component</button
-      >
+        }}>Component</button>
       <button
         class="mr-2 p-2 border border-black rounded-sm"
         class:text-gray-500={subMenu !== 1}
         onclick={() => {
           subMenu = 1
-        }}>Container</button
-      >
+        }}>Container</button>
       <button
         class="mr-2 p-2 border border-black rounded-sm"
         class:text-gray-500={subMenu !== 2}
         onclick={() => {
           subMenu = 2
-        }}>Help</button
-      >
+        }}>Help</button>
     </div>
     <div class="border-b border-b-gray-200"></div>
     {#if subMenu === 0}
@@ -273,8 +254,7 @@
           onclick={() => {
             addContainerToTree(safeStructuredClone(component), selectedContatiner)
             renderMainTree(tree)
-          }}>{component.type}</button
-        >
+          }}>{component.type}</button>
       {/each}
     {:else if subMenu === 1}
       {#each builtContainerTrees as container, i}
@@ -283,8 +263,7 @@
           onclick={() => {
             addContainerToTree(safeStructuredClone(container), selectedContatiner)
             renderMainTree(tree)
-          }}>{container.type}</button
-        >
+          }}>{container.type}</button>
       {/each}
     {:else if subMenu === 2}
       <p>Left click to select, Right click to delete</p>
@@ -296,6 +275,5 @@
     class="absolute top-0 right-0 z-20 p-2 border bg-white rounded-sm"
     onclick={() => {
       menuOpen = !menuOpen
-    }}>Menu</button
-  >
+    }}>Menu</button>
 {/if}

@@ -286,10 +286,7 @@ function prefixSuffixScore(a: string, b: string): number {
   while (prefix < minLen && a.charCodeAt(prefix) === b.charCodeAt(prefix)) prefix++
 
   let suffix = 0
-  while (
-    suffix + prefix < minLen &&
-    a.charCodeAt(la - 1 - suffix) === b.charCodeAt(lb - 1 - suffix)
-  ) {
+  while (suffix + prefix < minLen && a.charCodeAt(la - 1 - suffix) === b.charCodeAt(lb - 1 - suffix)) {
     suffix++
   }
 
@@ -347,12 +344,7 @@ export function findAllOriginalRangesFromText(
   const { norm: mdN, map: mdMap } = normalizeWithMap(originalMd)
   const { norm: plN } = normalizeWithMap(plainText)
 
-  function mapBack(
-    nStart: number,
-    nEnd: number,
-    method: RangeResult['method'],
-    confidence: number,
-  ): RangeResult {
+  function mapBack(nStart: number, nEnd: number, method: RangeResult['method'], confidence: number): RangeResult {
     const start = mdMap[nStart]
     const end = nEnd - 1 < mdMap.length ? mdMap[nEnd - 1] + 1 : originalMd.length
     return { start, end, method, confidence }
@@ -360,14 +352,7 @@ export function findAllOriginalRangesFromText(
 
   function addContext(range: RangeResult): RangeResultWithContext {
     const lineNumber = calculateLineNumber(originalMd, range.start)
-    const context = extractContext(
-      originalMd,
-      range.start,
-      range.end,
-      CONTEXT_LINES,
-      CONTEXT_LINES,
-      CONTEXT_MAX_CHARS,
-    )
+    const context = extractContext(originalMd, range.start, range.end, CONTEXT_LINES, CONTEXT_LINES, CONTEXT_MAX_CHARS)
     return {
       ...range,
       lineNumber,
@@ -522,9 +507,7 @@ export function findAllOriginalRangesFromText(
       const method = EXTEND_EOL ? (SNAP_BOL ? 'fuzzy+eol+snap' : 'fuzzy+eol') : 'fuzzy'
       const range = mapBack(nStart, nEnd, method, confidence)
 
-      const hasOverlap = results.some(
-        (existing) => Math.abs(existing.start - range.start) < plN.length * 0.3,
-      )
+      const hasOverlap = results.some((existing) => Math.abs(existing.start - range.start) < plN.length * 0.3)
       if (!hasOverlap) {
         results.push(addContext(range))
       }
@@ -610,9 +593,7 @@ export function findAllOriginalRangesFromText(
 
       const range = mapBack(nStart, nEnd, 'bigram', score)
 
-      const hasOverlap = results.some(
-        (existing) => Math.abs(existing.start - range.start) < plN.length * 0.3,
-      )
+      const hasOverlap = results.some((existing) => Math.abs(existing.start - range.start) < plN.length * 0.3)
       if (!hasOverlap) {
         results.push(addContext(range))
       }

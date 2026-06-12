@@ -35,10 +35,7 @@ function refreshCustomHtmlTemplate(key: string, body: HTMLElement) {
   return body
 }
 
-export function renderCustomHtmlTemplate(
-  html: string | null | undefined,
-  cbsConditions: CbsConditions,
-) {
+export function renderCustomHtmlTemplate(html: string | null | undefined, cbsConditions: CbsConditions) {
   const templateHtml = html ?? ''
   const key = customHtmlTemplateKey(templateHtml, cbsConditions)
   const cached = customHtmlTemplateMemo.get(key)

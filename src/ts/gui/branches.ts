@@ -46,13 +46,7 @@ type RenderedBranch = {
   chatId: number
 }
 
-function renderBranch(
-  branch: ChatBranch,
-  x: number,
-  y: number,
-  connectX = -1,
-  connectY = -1,
-): RenderedBranch[] {
+function renderBranch(branch: ChatBranch, x: number, y: number, connectX = -1, connectY = -1): RenderedBranch[] {
   const rendered: RenderedBranch[] = []
   for (const [key, child] of branch.children) {
     rendered.push({
@@ -82,10 +76,7 @@ export function getChatBranches() {
 
   let i = 0
   for (const chat of character.chats) {
-    const fm =
-      chat.fmIndex === -1
-        ? character.firstMessage
-        : character.alternateGreetings?.[chat.fmIndex ?? 0]
+    const fm = chat.fmIndex === -1 ? character.firstMessage : character.alternateGreetings?.[chat.fmIndex ?? 0]
     // const chatList = [fm].concat(chat.message.map((v) => v.data))
     const chatList: string[] = [simpleHasher(fm)]
     for (const message of chat.message) {

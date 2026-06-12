@@ -19,9 +19,7 @@
     // Summaries exist
     if (hypaV3Data.summaries.length > 0) {
       const lastSummary = hypaV3Data.summaries.at(-1)
-      const lastMessageIndex = chat.message.findIndex(
-        (m) => m.chatId === lastSummary.chatMemos.at(-1),
-      )
+      const lastMessageIndex = chat.message.findIndex((m) => m.chatId === lastSummary.chatMemos.at(-1))
 
       if (lastMessageIndex !== -1) {
         const next = chat.message[lastMessageIndex + 1] ?? null
@@ -64,17 +62,13 @@
       <textarea
         class="w-full p-2 overflow-y-auto transition-colors border rounded-sm resize-none sm:p-4 min-h-40 sm:min-h-56 border-zinc-700 focus:outline-hidden text-zinc-200 bg-zinc-900"
         readonly
-        value={nextMessage.data}
-      ></textarea>
+        value={nextMessage.data}></textarea>
     {:else}
-      <span class="text-sm text-red-400"
-        >{language.hypaV3Modal.nextSummarizationNoMessagesFoundLabel}</span
-      >
+      <span class="text-sm text-red-400">{language.hypaV3Modal.nextSummarizationNoMessagesFoundLabel}</span>
     {/if}
   {:catch error}
     <span class="text-sm text-red-400"
-      >{language.hypaV3Modal.nextSummarizationLoadingError.replace('{0}', error.message)}</span
-    >
+      >{language.hypaV3Modal.nextSummarizationLoadingError.replace('{0}', error.message)}</span>
   {/await}
 </div>
 

@@ -40,11 +40,7 @@ async function stopHarness(h: Harness): Promise<void> {
   rmSync(h.dataDir, { recursive: true, force: true })
 }
 
-async function signAssertion(
-  privateKey: CryptoKey,
-  publicJwk: JsonWebKey,
-  ttlSec = 60,
-): Promise<string> {
+async function signAssertion(privateKey: CryptoKey, publicJwk: JsonWebKey, ttlSec = 60): Promise<string> {
   const now = Math.floor(Date.now() / 1000)
   const header = { alg: 'ES256', typ: 'JWT' }
   const payload = { iat: now, exp: now + ttlSec, pub: publicJwk }
@@ -95,10 +91,7 @@ afterEach(async () => {
   await stopHarness(harness)
 })
 
-function expectNormalizedAdaDatabase(
-  database: unknown,
-  expected: Record<string, unknown> = {},
-): void {
+function expectNormalizedAdaDatabase(database: unknown, expected: Record<string, unknown> = {}): void {
   expect(database).toMatchObject({
     ...expected,
     characters: [
@@ -293,16 +286,19 @@ describe('Phase 2A bootstrap + import', () => {
     // The messages + hypaV3Data live as rows in their SQLite tables.
     const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
     try {
-      const rows = db
-        .prepare('SELECT chat_id, seq, uid, data FROM messages ORDER BY seq')
-        .all() as { chat_id: string; seq: number; uid: string; data: string }[]
+      const rows = db.prepare('SELECT chat_id, seq, uid, data FROM messages ORDER BY seq').all() as {
+        chat_id: string
+        seq: number
+        uid: string
+        data: string
+      }[]
       expect(rows).toEqual([
         { chat_id: 'chat-1', seq: 0, uid: 'm1', data: 'hello' },
         { chat_id: 'chat-1', seq: 1, uid: 'm2', data: 'hi there' },
       ])
-      const hypaRow = db
-        .prepare('SELECT json FROM chat_hypa_v3 WHERE chat_id = ?')
-        .get('chat-1') as { json: string } | undefined
+      const hypaRow = db.prepare('SELECT json FROM chat_hypa_v3 WHERE chat_id = ?').get('chat-1') as
+        | { json: string }
+        | undefined
       expect(JSON.parse(hypaRow!.json)).toEqual({
         mainChunks: [{ text: 'summary' }],
         lastImportantSummary: 1,

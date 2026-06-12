@@ -219,10 +219,7 @@ function characterNames(database: unknown): string[] {
 }
 
 /** Distinct referenced asset ids grouped by `database.characters[N]`. */
-function characterAssetFanout(
-  referenced: Array<{ id: string; paths: string[] }>,
-  names: string[],
-): CharacterFanout[] {
+function characterAssetFanout(referenced: Array<{ id: string; paths: string[] }>, names: string[]): CharacterFanout[] {
   const perCharacter = new Map<number, Set<string>>()
   for (const reference of referenced) {
     for (const refPath of reference.paths) {
@@ -359,13 +356,10 @@ function printReport(analysis: DatabaseAnalysis): void {
   lines.push(`snapshot hydration: ${analysis.export.snapshotLoadMs} ms`)
   lines.push('  envelope               output            encode')
   for (const row of analysis.export.envelopes) {
-    lines.push(
-      `  ${row.envelope.padEnd(22)} ${humanBytes(row.outputBytes).padEnd(26)} ${row.encodeMs} ms`,
-    )
+    lines.push(`  ${row.envelope.padEnd(22)} ${humanBytes(row.outputBytes).padEnd(26)} ${row.encodeMs} ms`)
   }
   lines.push(
-    `peak materialized buffer: ${humanBytes(analysis.export.peakOutputBytes)} ` +
-      `(${analysis.export.peakEnvelope})`,
+    `peak materialized buffer: ${humanBytes(analysis.export.peakOutputBytes)} ` + `(${analysis.export.peakEnvelope})`,
   )
   lines.push(
     '  interpretation: a streaming `.risu` writer only pays off when this peak is large ' +
@@ -387,9 +381,7 @@ function printReport(analysis: DatabaseAnalysis): void {
 
   lines.push('')
   lines.push('== Asset inventory + fanout (Phase 3 asset-byte gate) ==')
-  lines.push(
-    `stored: ${analysis.assets.storedCount} assets, ${humanBytes(analysis.assets.storedBytes)}`,
-  )
+  lines.push(`stored: ${analysis.assets.storedCount} assets, ${humanBytes(analysis.assets.storedBytes)}`)
   lines.push(
     `references: ${analysis.assets.referencedCount} referenced, ` +
       `${analysis.assets.missingCount} missing, ${analysis.assets.orphanedCount} orphaned`,
@@ -414,16 +406,10 @@ function printReport(analysis: DatabaseAnalysis): void {
 
   lines.push('')
   lines.push('== Not covered here (runtime-only) ==')
-  lines.push(
-    '  - fallback FREQUENCY, browser cache hit rate, and prompt-assembly stage timings under',
-  )
+  lines.push('  - fallback FREQUENCY, browser cache hit rate, and prompt-assembly stage timings under')
   lines.push('    real sends are session signals a static database cannot reconstruct.')
-  lines.push(
-    '  - capture them by running the real server with RISU_PROTOCOL_METRICS=1 during normal use;',
-  )
-  lines.push(
-    '    the projection_response / asset_byte_read / risusave_export lines land in the log.',
-  )
+  lines.push('  - capture them by running the real server with RISU_PROTOCOL_METRICS=1 during normal use;')
+  lines.push('    the projection_response / asset_byte_read / risusave_export lines land in the log.')
   lines.push(
     '  - see docs/leftover.md and .archived-docs/server-client-protocol-stability-performance/active-risk-analysis.md.',
   )
@@ -436,9 +422,7 @@ function main(): void {
   const asJson = args.includes('--json')
   const inputPath = args.find((arg) => !arg.startsWith('--'))
   if (!inputPath) {
-    console.error(
-      'Usage: pnpm analyze:db <path-to-.risu | db.json | database.json | data-dir> [--json]',
-    )
+    console.error('Usage: pnpm analyze:db <path-to-.risu | db.json | database.json | data-dir> [--json]')
     process.exit(2)
   }
   if (!fs.existsSync(inputPath)) {

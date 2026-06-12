@@ -13,10 +13,7 @@
     commit: (messages: string[]) => void
   }
 
-  function isSameSuggestionSource(
-    currentMessages: readonly string[] | undefined,
-    snapshot: readonly string[],
-  ) {
+  function isSameSuggestionSource(currentMessages: readonly string[] | undefined, snapshot: readonly string[]) {
     return (
       currentMessages !== undefined &&
       currentMessages.length === snapshot.length &&
@@ -40,10 +37,7 @@
     const snapshot = messages ? [...messages] : []
 
     const isCurrentRun = () =>
-      runId === getCurrentRunId() &&
-      requestId === getCurrentRequestId() &&
-      toggle &&
-      translationEnabled()
+      runId === getCurrentRunId() && requestId === getCurrentRequestId() && toggle && translationEnabled()
 
     if (!toggle || !translationEnabled() || snapshot.length === 0) {
       if (runId === getCurrentRunId()) {
@@ -92,8 +86,7 @@
 
   let { send, messageInput }: Props = $props()
   let suggestMessages: string[] = $state(
-    DBState.db.characters[$selectedCharID]?.chats[DBState.db.characters[$selectedCharID].chatPage]
-      ?.suggestMessages,
+    DBState.db.characters[$selectedCharID]?.chats[DBState.db.characters[$selectedCharID].chatPage]?.suggestMessages,
   )
   let suggestMessagesTranslated: string[] = $state()
   let toggleTranslate: boolean = $state(DBState.db.autoTranslate)
@@ -127,12 +120,7 @@
       abortController?.abort()
       suggestMessages = []
     }
-    if (
-      !v &&
-      $selectedCharID > -1 &&
-      (!suggestMessages || suggestMessages.length === 0) &&
-      !progress
-    ) {
+    if (!v && $selectedCharID > -1 && (!suggestMessages || suggestMessages.length === 0) && !progress) {
       const requestSelectedCharId = $selectedCharID
       let currentChar: character = DBState.db.characters[$selectedCharID]
       const requestCharacterId = currentChar?.chaId
@@ -199,13 +187,7 @@
           requestSelectedCharId !== $selectedCharID ||
           requestCharacterId !== liveChar?.chaId ||
           requestChatId !== liveChat?.id
-        if (
-          rq2.type !== 'fail' &&
-          rq2.type !== 'streaming' &&
-          rq2.type !== 'multiline' &&
-          progress &&
-          !staleResponse
-        ) {
+        if (rq2.type !== 'fail' && rq2.type !== 'streaming' && rq2.type !== 'multiline' && progress && !staleResponse) {
           var suggestMessagesNew = rq2.result
             .split('\n')
             .filter((msg) => msg.startsWith('-'))
@@ -271,8 +253,7 @@
             (toggleTranslate ? 'text-green-500' : 'text-textcolor')}
           onclick={() => {
             toggleTranslate = !toggleTranslate
-          }}
-        >
+          }}>
           <LanguagesIcon />
         </button>
       </div>
@@ -292,8 +273,7 @@
               doingChat.set(false)
             }
           })
-        }}
-      >
+        }}>
         <RefreshCcwIcon />
       </button>
     </div>
@@ -305,8 +285,7 @@
             suggestMessages = []
             messageInput(suggest)
             send()
-          }}
-        >
+          }}>
           {#await ParseMarkdown(DBState.db.translator !== '' && toggleTranslate && suggestMessagesTranslated && suggestMessagesTranslated.length > 0 ? (suggestMessagesTranslated[i] ?? suggest) : suggest) then md}
             {@html md}
           {/await}
@@ -315,8 +294,7 @@
           class="bg-textcolor2 hover:bg-darkbutton text-textcolor font-bold py-2 px-4 rounded-sm ml-1"
           onclick={() => {
             messageInput(suggest)
-          }}
-        >
+          }}>
           <CopyIcon />
         </button>
       </div>

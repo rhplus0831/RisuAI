@@ -1,11 +1,6 @@
 import { createHash } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
-import {
-  createMemoryChunk,
-  createMemorySummary,
-  getMemoryChunk,
-  getMemorySummary,
-} from './memoryRepository.js'
+import { createMemoryChunk, createMemorySummary, getMemoryChunk, getMemorySummary } from './memoryRepository.js'
 
 export const LEGACY_HYPA_V3_SUMMARY_MODEL = 'legacy-hypav3'
 
@@ -68,10 +63,7 @@ interface LegacySummaryMetadata {
   tags?: string[]
 }
 
-export function replaceLegacyHypaV3MemoryRows(
-  db: DatabaseSync,
-  database: unknown,
-): LegacyHypaV3BackfillResult {
+export function replaceLegacyHypaV3MemoryRows(db: DatabaseSync, database: unknown): LegacyHypaV3BackfillResult {
   return withTransaction(db, () => replaceLegacyHypaV3MemoryRowsInTransaction(db, database))
 }
 
@@ -88,10 +80,7 @@ export function replaceLegacyHypaV3MemoryRowsInTransaction(
   return backfillLegacyHypaV3MemoryRows(db, database)
 }
 
-export function backfillLegacyHypaV3MemoryRows(
-  db: DatabaseSync,
-  database: unknown,
-): LegacyHypaV3BackfillResult {
+export function backfillLegacyHypaV3MemoryRows(db: DatabaseSync, database: unknown): LegacyHypaV3BackfillResult {
   const plans = collectLegacySummaryPlans(database)
   let chunksCreated = 0
   let summariesCreated = 0
@@ -156,10 +145,8 @@ function collectLegacySummaryPlans(database: unknown): LegacySummaryPlan[] {
         const resolvedSeqs = chatMemos
           .map((memo) => messageSeqById.get(memo))
           .filter((seq): seq is number => seq !== undefined)
-        const rangeStartSeq =
-          resolvedSeqs.length > 0 ? Math.min(...resolvedSeqs) : fallbackSummarySeq(summaryIndex)
-        const rangeEndSeq =
-          resolvedSeqs.length > 0 ? Math.max(...resolvedSeqs) : fallbackSummarySeq(summaryIndex)
+        const rangeStartSeq = resolvedSeqs.length > 0 ? Math.min(...resolvedSeqs) : fallbackSummarySeq(summaryIndex)
+        const rangeEndSeq = resolvedSeqs.length > 0 ? Math.max(...resolvedSeqs) : fallbackSummarySeq(summaryIndex)
         const messageId = chatMemos.at(-1) ?? null
         const chunkText = buildChunkText(messages, chatMemos, summary.text)
         const stableKey = `${characterId}\0${chatId}\0${summaryIndex}`
@@ -184,17 +171,12 @@ function collectLegacySummaryPlans(database: unknown): LegacySummaryPlan[] {
   return plans
 }
 
-function buildChunkText(
-  messages: LegacyMessage[],
-  chatMemos: string[],
-  summaryText: string,
-): string {
+function buildChunkText(messages: LegacyMessage[], chatMemos: string[], summaryText: string): string {
   const memoSet = new Set(chatMemos)
   const rows = messages
     .filter((message) => typeof message.chatId === 'string' && memoSet.has(message.chatId))
     .map((message) => {
-      const role =
-        typeof message.role === 'string' && message.role.length > 0 ? message.role : 'unknown'
+      const role = typeof message.role === 'string' && message.role.length > 0 ? message.role : 'unknown'
       const data = typeof message.data === 'string' ? message.data : ''
       return `${role}: ${data}`
     })
@@ -202,11 +184,7 @@ function buildChunkText(
   return rows.length > 0 ? rows.join('\n') : summaryText
 }
 
-function buildMetadata(
-  summary: LegacySummary,
-  summaryIndex: number,
-  chatMemos: string[],
-): LegacySummaryMetadata {
+function buildMetadata(summary: LegacySummary, summaryIndex: number, chatMemos: string[]): LegacySummaryMetadata {
   const metadata: LegacySummaryMetadata = {
     source: 'legacy-hypav3',
     summaryIndex,

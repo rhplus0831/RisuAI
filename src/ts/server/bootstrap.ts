@@ -40,9 +40,7 @@ export function canUseServerBootstrap(): boolean {
   return true
 }
 
-export async function fetchServerBootstrapProjection(
-  signal?: AbortSignal | null,
-): Promise<ServerBootstrapResult> {
+export async function fetchServerBootstrapProjection(signal?: AbortSignal | null): Promise<ServerBootstrapResult> {
   return fetchServerBootstrapProjectionWithMode({
     signal,
     registerActiveWriter: true,
@@ -121,9 +119,7 @@ async function fetchServerBootstrapProjectionWithMode(input: {
     status: 'ok',
     projection: {
       revision: revision as number,
-      schemaVersion: Number.isInteger(record.schemaVersion)
-        ? (record.schemaVersion as number)
-        : undefined,
+      schemaVersion: Number.isInteger(record.schemaVersion) ? (record.schemaVersion as number) : undefined,
       database: database as Database | null,
       assetBaseUrl: typeof record.assetBaseUrl === 'string' ? record.assetBaseUrl : undefined,
       activeGenerationJobs: parseActiveGenerationJobs(record.activeGenerationJobs),

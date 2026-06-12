@@ -24,15 +24,9 @@ const restoreLorebookState = vi.hoisted(() => vi.fn())
 const ensureClientScriptDefinitionIds = vi.hoisted(() => vi.fn((scripts: unknown) => scripts))
 const ensureClientTriggerDefinitionIds = vi.hoisted(() => vi.fn((triggers: unknown) => triggers))
 const restoreScriptDefinitionState = vi.hoisted(() => vi.fn())
-const replaceCharacterLorebooksCommand = vi.hoisted(() =>
-  vi.fn(async () => ({ status: 'ok', revision: 1, data: {} })),
-)
-const replaceCharacterScriptsCommand = vi.hoisted(() =>
-  vi.fn(async () => ({ status: 'ok', revision: 2, data: {} })),
-)
-const replaceCharacterTriggersCommand = vi.hoisted(() =>
-  vi.fn(async () => ({ status: 'ok', revision: 3, data: {} })),
-)
+const replaceCharacterLorebooksCommand = vi.hoisted(() => vi.fn(async () => ({ status: 'ok', revision: 1, data: {} })))
+const replaceCharacterScriptsCommand = vi.hoisted(() => vi.fn(async () => ({ status: 'ok', revision: 2, data: {} })))
+const replaceCharacterTriggersCommand = vi.hoisted(() => vi.fn(async () => ({ status: 'ok', revision: 3, data: {} })))
 const runOptimisticCommandSequence = vi.hoisted(() =>
   vi.fn((commands: Array<(rev: number) => Promise<unknown>>, _rollback: () => void) => {
     void (async () => {
@@ -167,9 +161,7 @@ describe('module imports', () => {
 
     await importModule()
 
-    expect(alertError).toHaveBeenCalledWith(
-      'Module file import is not supported in server-backed web mode yet',
-    )
+    expect(alertError).toHaveBeenCalledWith('Module file import is not supported in server-backed web mode yet')
     expect(saveAsset).not.toHaveBeenCalled()
     expect(createGlobalModule).not.toHaveBeenCalled()
   })

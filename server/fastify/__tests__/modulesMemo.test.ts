@@ -46,9 +46,7 @@ describe('L1 getActiveModules per-assembly memo', () => {
     expect(getActiveModules(db, char, chat)).toBe(first)
     // Identity differences in the char/chat wrappers do not matter — only the
     // requested-id inputs key the memo (triggers pass a cloned chat).
-    expect(getActiveModules(db, makeCharacter({ modules: ['mod-b'] } as Partial<character>), makeChat())).toBe(
-      first,
-    )
+    expect(getActiveModules(db, makeCharacter({ modules: ['mod-b'] } as Partial<character>), makeChat())).toBe(first)
   })
 
   it('recomputes when the requested module ids change', () => {

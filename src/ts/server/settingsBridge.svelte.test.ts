@@ -13,11 +13,7 @@ const projectionGuardState = vi.hoisted(() => ({ epoch: 0 }))
 vi.mock('./commands', () => ({
   canUseServerCommands: () => true,
   patchServerBackedSettings: vi.fn(
-    async (args: {
-      patch: Record<string, unknown>
-      rollback?: () => void
-      keepalive?: boolean
-    }) => {
+    async (args: { patch: Record<string, unknown>; rollback?: () => void; keepalive?: boolean }) => {
       recorded.patches.push(args)
       return { status: 'ok', revision: 1 }
     },
@@ -137,10 +133,7 @@ describe('settingsBridge coalescing', () => {
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
 
-    expect(recorded.patches.map((entry) => entry.patch)).toEqual([
-      { notification: true },
-      { notification: true },
-    ])
+    expect(recorded.patches.map((entry) => entry.patch)).toEqual([{ notification: true }, { notification: true }])
     stop()
   })
 
@@ -160,9 +153,7 @@ describe('settingsBridge coalescing', () => {
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
 
-    expect(recorded.patches.map((entry) => entry.patch)).toEqual([
-      { notification: true, useAutoSuggestions: true },
-    ])
+    expect(recorded.patches.map((entry) => entry.patch)).toEqual([{ notification: true, useAutoSuggestions: true }])
     stop()
   })
 

@@ -34,27 +34,23 @@ export class SummaryPromptError extends Error {
   }
 }
 
-export function buildHypaV3SummaryPrompt(
-  input: BuildHypaV3SummaryPromptInput,
-): BuildHypaV3SummaryPromptResult {
+export function buildHypaV3SummaryPrompt(input: BuildHypaV3SummaryPromptInput): BuildHypaV3SummaryPromptResult {
   const chunkText = resolveChunkText(input)
   const prompt = resolveSummaryPrompt(input.settings, input.isResummarize ?? false)
   const promptWithSlot = prompt.replaceAll('{{slot}}', chunkText)
   const parsed = parseSummaryChatML(promptWithSlot)
 
   return {
-    messages:
-      parsed ??
-      [
-        {
-          role: 'user',
-          content: chunkText,
-        },
-        {
-          role: 'system',
-          content: prompt,
-        },
-      ],
+    messages: parsed ?? [
+      {
+        role: 'user',
+        content: chunkText,
+      },
+      {
+        role: 'system',
+        content: prompt,
+      },
+    ],
     chunkText,
     prompt,
     parsedChatML: parsed !== null,
@@ -67,9 +63,7 @@ export function buildHypaV3SummaryPrompt(
 }
 
 export function buildSummaryChunkText(messages: readonly OpenAIChat[]): string {
-  return messages
-    .map((message) => `${message.role}: ${sanitizeSummaryMessageContent(message.content)}`)
-    .join('\n')
+  return messages.map((message) => `${message.role}: ${sanitizeSummaryMessageContent(message.content)}`).join('\n')
 }
 
 export function sanitizeSummaryMessageContent(content: string): string {
@@ -152,10 +146,7 @@ function resolveChunkText(input: BuildHypaV3SummaryPromptInput): string {
   throw new SummaryPromptError('summary chunk text must be non-empty')
 }
 
-function resolveSummaryPrompt(
-  settings: BuildHypaV3SummaryPromptInput['settings'],
-  isResummarize: boolean,
-): string {
+function resolveSummaryPrompt(settings: BuildHypaV3SummaryPromptInput['settings'], isResummarize: boolean): string {
   if (isResummarize) {
     const prompt = settings?.reSummarizationPrompt
     return prompt && prompt.trim() !== '' ? prompt : DEFAULT_RESUMMARIZATION_PROMPT

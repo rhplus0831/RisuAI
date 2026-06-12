@@ -85,19 +85,15 @@ export function recordFullBootstrapResync(reason: string, resource?: string): vo
   diagnostics.fullBootstrapResync[reason] = (diagnostics.fullBootstrapResync[reason] ?? 0) + 1
   const expected = isExpectedFullBootstrapResyncReason(reason)
   if (!expected) {
-    diagnostics.unexpectedFullBootstrapResync[reason] =
-      (diagnostics.unexpectedFullBootstrapResync[reason] ?? 0) + 1
+    diagnostics.unexpectedFullBootstrapResync[reason] = (diagnostics.unexpectedFullBootstrapResync[reason] ?? 0) + 1
   }
   if (resource) {
-    diagnostics.fullBootstrapResyncResources[resource] =
-      (diagnostics.fullBootstrapResyncResources[resource] ?? 0) + 1
+    diagnostics.fullBootstrapResyncResources[resource] = (diagnostics.fullBootstrapResyncResources[resource] ?? 0) + 1
   }
   debugProtocol('full-bootstrap-resync', { reason, expected, resource })
 }
 
-export function isExpectedFullBootstrapResyncReason(
-  reason: string,
-): reason is FullBootstrapResyncReason {
+export function isExpectedFullBootstrapResyncReason(reason: string): reason is FullBootstrapResyncReason {
   return expectedFullBootstrapResyncReasons.has(reason)
 }
 
@@ -168,8 +164,7 @@ function protocolDebugEnabled(): boolean {
   try {
     return (
       typeof localStorage !== 'undefined' &&
-      (localStorage.getItem('risu:protocol-debug') === '1' ||
-        localStorage.getItem('risu:protocol-debug') === 'true')
+      (localStorage.getItem('risu:protocol-debug') === '1' || localStorage.getItem('risu:protocol-debug') === 'true')
     )
   } catch {
     return false

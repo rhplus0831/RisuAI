@@ -33,8 +33,7 @@
   }: Props = $props()
 
   const hypaV3Data = $derived(
-    DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage]
-      .hypaV3Data,
+    DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].hypaV3Data,
   )
 
   function applyCategoryToSelected() {
@@ -78,13 +77,11 @@
       <div class="flex items-center gap-2">
         <!-- Resummarize Button -->
         <button
-          class="px-4 py-2 rounded text-sm font-medium transition-colors {bulkEditState
-            .selectedSummaries.size > 1
+          class="px-4 py-2 rounded text-sm font-medium transition-colors {bulkEditState.selectedSummaries.size > 1
             ? 'bg-green-600 hover:bg-blue-700 text-white'
             : 'bg-zinc-600 text-zinc-400 cursor-not-allowed'}"
           onclick={onResummarize}
-          disabled={bulkEditState.selectedSummaries.size < 2}
-        >
+          disabled={bulkEditState.selectedSummaries.size < 2}>
           {language.hypaV3Modal.reSummarize}
         </button>
       </div>
@@ -95,8 +92,7 @@
         <select
           class="px-3 py-2 rounded-sm border border-zinc-600 bg-zinc-900 text-zinc-200 text-sm focus:outline-hidden focus:ring-2 focus:ring-blue-500"
           value={bulkEditState.selectedCategory}
-          onchange={handleCategoryChange}
-        >
+          onchange={handleCategoryChange}>
           {#each categories as category}
             <option value={category.id}>{category.name}</option>
           {/each}
@@ -104,13 +100,11 @@
 
         <!-- Apply Category Button -->
         <button
-          class="px-4 py-2 rounded text-sm font-medium transition-colors {bulkEditState
-            .selectedSummaries.size > 0
+          class="px-4 py-2 rounded text-sm font-medium transition-colors {bulkEditState.selectedSummaries.size > 0
             ? 'bg-blue-600 hover:bg-blue-700 text-white'
             : 'bg-zinc-600 text-zinc-400 cursor-not-allowed'}"
           onclick={applyCategoryToSelected}
-          disabled={bulkEditState.selectedSummaries.size === 0}
-        >
+          disabled={bulkEditState.selectedSummaries.size === 0}>
           {language.apply}
         </button>
 
@@ -121,8 +115,7 @@
             ? 'opacity-50 cursor-not-allowed'
             : ''}"
           onclick={bulkToggleImportant}
-          disabled={bulkEditState.selectedSummaries.size === 0}
-        >
+          disabled={bulkEditState.selectedSummaries.size === 0}>
           <StarIcon class="w-4 h-4" />
         </button>
 
@@ -134,12 +127,10 @@
             oninput={handleBulkSelectInputChange}
             placeholder="1,3,5-8"
             class="w-32 px-3 py-2 text-sm bg-zinc-800 border border-zinc-600 rounded-sm text-zinc-300 placeholder-zinc-500 focus:border-blue-500 outline-hidden"
-            onkeydown={handleBulkSelectKeydown}
-          />
+            onkeydown={handleBulkSelectKeydown} />
           <button
             class="px-3 py-2 rounded-sm border border-blue-600 hover:bg-blue-700 text-blue-300 text-sm transition-colors"
-            onclick={parseAndSelectSummaries}
-          >
+            onclick={parseAndSelectSummaries}>
             {language.select}
           </button>
         </div>
@@ -147,8 +138,7 @@
         <!-- Clear Selection Button -->
         <button
           class="px-3 py-2 rounded-sm border border-red-600 hover:bg-red-700 text-red-300 text-sm transition-colors"
-          onclick={clearSelection}
-        >
+          onclick={clearSelection}>
           {language.cancel}
         </button>
       </div>

@@ -132,10 +132,7 @@ function commandMessages(call: CapturedFetch): Array<Record<string, unknown>> {
   return body?.messages ?? []
 }
 
-async function runMessageCommand(
-  command: string,
-  messages: unknown[],
-): Promise<Array<Record<string, unknown>>> {
+async function runMessageCommand(command: string, messages: unknown[]): Promise<Array<Record<string, unknown>>> {
   seedDatabase(messages)
   const calls = stubCommandFetch()
   setServerProjectionWriteGuardEnabled(true)
@@ -171,12 +168,7 @@ async function withAsyncCloneInstrumentation<T>(fn: () => Promise<T>) {
     space?: unknown,
   ) {
     jsonCloneCount += 1
-    const out = (originalStringify as (...args: unknown[]) => string).call(
-      this,
-      value,
-      replacer,
-      space,
-    )
+    const out = (originalStringify as (...args: unknown[]) => string).call(this, value, replacer, space)
     if (typeof out === 'string' && out.length > maxClonedSize) maxClonedSize = out.length
     return out
   } as unknown as typeof JSON.stringify
@@ -205,10 +197,7 @@ async function withAsyncCloneInstrumentation<T>(fn: () => Promise<T>) {
   }
 }
 
-function seedDatabase(
-  messages: unknown[] = [],
-  options: { language?: string; includeSiblings?: boolean } = {},
-): void {
+function seedDatabase(messages: unknown[] = [], options: { language?: string; includeSiblings?: boolean } = {}): void {
   selectedCharID.set(0)
   const activeChats = [
     {
@@ -315,9 +304,7 @@ describe('slash-command durable writes under the projection guard', () => {
     const calls = stubCommandFetch()
     setServerProjectionWriteGuardEnabled(true)
 
-    const instrumented = await withAsyncCloneInstrumentation(() =>
-      processMultiCommand('/send hello world'),
-    )
+    const instrumented = await withAsyncCloneInstrumentation(() => processMultiCommand('/send hello world'))
 
     expect(instrumented.result).toBe('')
     expect(DBState.db.characters[0].chats[0].message.at(-1)).toMatchObject({
@@ -340,9 +327,7 @@ describe('slash-command durable writes under the projection guard', () => {
     const calls = stubCommandFetch()
     setServerProjectionWriteGuardEnabled(true)
 
-    await expect(processMultiCommand('/pass piped text|/send {{pipe}}')).resolves.toBe(
-      'piped text',
-    )
+    await expect(processMultiCommand('/pass piped text|/send {{pipe}}')).resolves.toBe('piped text')
 
     const cmd = await waitForCommand(
       calls,
@@ -367,9 +352,7 @@ describe('slash-command durable writes under the projection guard', () => {
   })
 
   it('L32: /comment appends the legacy comment block to the last message', async () => {
-    const messages = await runMessageCommand('/comment side note', [
-      { role: 'char', data: 'base', chatId: 'm-base' },
-    ])
+    const messages = await runMessageCommand('/comment side note', [{ role: 'char', data: 'base', chatId: 'm-base' }])
 
     expect(messages).toEqual([
       {
@@ -470,9 +453,7 @@ describe('slash-command durable writes under the projection guard', () => {
       ['first'],
       ['second'],
     ])
-    expect(DBState.db.characters[0].chats[0].message.map((message: any) => message.data)).toEqual([
-      'second',
-    ])
+    expect(DBState.db.characters[0].chats[0].message.map((message: any) => message.data)).toEqual(['second'])
     expect(sendChatMock).toHaveBeenCalledTimes(2)
     expect(sendChatMock).toHaveBeenNthCalledWith(1, -1)
     expect(sendChatMock).toHaveBeenNthCalledWith(2, -1)
@@ -551,8 +532,7 @@ describe('slash-command durable writes under the projection guard', () => {
 
     const cmd = await waitForCommand(
       calls,
-      (call) =>
-        call.url === '/api/v1/commands/chats/chat-1/scriptstate' && call.method === 'PATCH',
+      (call) => call.url === '/api/v1/commands/chats/chat-1/scriptstate' && call.method === 'PATCH',
     )
     expect(cmd.body.patch['$hp']).toBe('100')
   })
@@ -567,8 +547,7 @@ describe('slash-command durable writes under the projection guard', () => {
     expect(DBState.db.characters[0].chats[0].scriptstate?.['$hp']).toBe('100')
     const cmd = await waitForCommand(
       calls,
-      (call) =>
-        call.url === '/api/v1/commands/chats/chat-1/scriptstate' && call.method === 'PATCH',
+      (call) => call.url === '/api/v1/commands/chats/chat-1/scriptstate' && call.method === 'PATCH',
     )
     expect(cmd.body.patch['$hp']).toBe('100')
     // ...without the ~680-line normalizer (and its non-English language-pack
@@ -587,8 +566,7 @@ describe('slash-command durable writes under the projection guard', () => {
     expect(DBState.db.characters[0].chats[0].scriptstate?.['$damage']).toBe('15')
     const cmd = await waitForCommand(
       calls,
-      (call) =>
-        call.url === '/api/v1/commands/chats/chat-1/scriptstate' && call.method === 'PATCH',
+      (call) => call.url === '/api/v1/commands/chats/chat-1/scriptstate' && call.method === 'PATCH',
     )
     expect(cmd.body.patch['$damage']).toBe('15')
     expect(setDatabaseSpy.count).toBe(0)
@@ -623,8 +601,7 @@ describe('slash-command durable writes under the projection guard', () => {
       await expect(processMultiCommand('/setvar key=hp 100|/getvar key=hp')).resolves.toBe('100')
       await waitForCommand(
         calls,
-        (call) =>
-          call.url === '/api/v1/commands/chats/chat-1/scriptstate' && call.method === 'PATCH',
+        (call) => call.url === '/api/v1/commands/chats/chat-1/scriptstate' && call.method === 'PATCH',
       )
       expect(logSpy).not.toHaveBeenCalled()
     } finally {

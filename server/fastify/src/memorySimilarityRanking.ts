@@ -55,9 +55,7 @@ interface ParentScore {
 
 const RRF_K = 60
 
-export function rankMemorySummariesBySimilarity(
-  input: MemorySimilarityRankingInput,
-): MemorySimilarityRankingResult {
+export function rankMemorySummariesBySimilarity(input: MemorySimilarityRankingInput): MemorySimilarityRankingResult {
   const validQueries = toValidVectors(input.queryVectors)
   if (validQueries.length === 0) {
     return {
@@ -105,12 +103,7 @@ export function rankMemorySummariesBySimilarity(
         continue
       }
 
-      const score = cosineSimilarityWithMagnitudes(
-        query.vector,
-        query.magnitude,
-        embedding.vector,
-        embeddingMagnitude,
-      )
+      const score = cosineSimilarityWithMagnitudes(query.vector, query.magnitude, embedding.vector, embeddingMagnitude)
       if (score === null) {
         skippedEmbeddings.push({ id: embedding.id, reason: 'dimension-mismatch' })
         continue
@@ -224,15 +217,13 @@ function rankParents(scoredLists: readonly ScoredChild[][]): RankedMemorySummary
     }
   }
 
-  return [...parents.values()]
-    .sort(compareParentScores)
-    .map((parent) => ({
-      summary: parent.summary,
-      chunk: parent.chunk,
-      score: parent.score,
-      bestSimilarity: parent.bestSimilarity,
-      matchedEmbeddingIds: [...parent.matchedEmbeddingIds].sort(),
-    }))
+  return [...parents.values()].sort(compareParentScores).map((parent) => ({
+    summary: parent.summary,
+    chunk: parent.chunk,
+    score: parent.score,
+    bestSimilarity: parent.bestSimilarity,
+    matchedEmbeddingIds: [...parent.matchedEmbeddingIds].sort(),
+  }))
 }
 
 function compareParentScores(a: ParentScore, b: ParentScore): number {
@@ -274,7 +265,5 @@ function uniqueSkippedEmbeddings(
     unique.push(skipped)
   }
 
-  return unique.sort(
-    (a, b) => a.id.localeCompare(b.id) || a.reason.localeCompare(b.reason),
-  )
+  return unique.sort((a, b) => a.id.localeCompare(b.id) || a.reason.localeCompare(b.reason))
 }

@@ -29,11 +29,7 @@ export function exampleMessage(char: character, userName: string): OpenAIChat[] 
         memo: 'NewChatExample',
       })
       currentMessage = null
-    } else if (
-      lowered.startsWith('{{char}}:') ||
-      lowered.startsWith('<bot>:') ||
-      lowered.startsWith(`${char.name}:`)
-    ) {
+    } else if (lowered.startsWith('{{char}}:') || lowered.startsWith('<bot>:') || lowered.startsWith(`${char.name}:`)) {
       add()
       currentMessage = {
         role: 'assistant',

@@ -17,9 +17,7 @@
 
   const assetSourceKey = $derived(
     currentCharacter.type === 'character'
-      ? (currentCharacter.additionalAssets ?? [])
-          .map((asset) => `${asset[1]}:${asset[2] ?? ''}`)
-          .join('\n')
+      ? (currentCharacter.additionalAssets ?? []).map((asset) => `${asset[1]}:${asset[2] ?? ''}`).join('\n')
       : '',
   )
 
@@ -79,8 +77,7 @@
           setCharacterByIndex(characterIndex, nextCharacter)
         }
       }
-    }}
-  >
+    }}>
     <PlusIcon />
   </button>
   {#if currentCharacter.additionalAssets}
@@ -88,29 +85,21 @@
       <button
         onclick={() => {
           onSelect(additionalAsset)
-        }}
-      >
+        }}>
         {#if assetFilePath[additionalAsset[1]]}
           {#if assetFileExtensions[additionalAsset[1]] === 'mp4'}
             <!-- svelte-ignore a11y_media_has_caption -->
             <video class="w-16 h-16 m-1 rounded-md"
-              ><source src={assetFilePath[additionalAsset[1]]} type="video/mp4" /></video
-            >
+              ><source src={assetFilePath[additionalAsset[1]]} type="video/mp4" /></video>
           {:else if assetFileExtensions[additionalAsset[1]] === 'mp3'}
-            <div
-              class="w-16 h-16 m-1 rounded-md bg-slate-500 flex flex-col justify-center items-center"
-            >
+            <div class="w-16 h-16 m-1 rounded-md bg-slate-500 flex flex-col justify-center items-center">
               <FileMusicIcon />
               <div class="w-16 px-1 text-ellipsis whitespace-nowrap overflow-hidden">
                 {additionalAsset[0]}
               </div>
             </div>
           {:else}
-            <img
-              src={assetFilePath[additionalAsset[1]]}
-              class="w-16 h-16 m-1 rounded-md"
-              alt={additionalAsset[0]}
-            />
+            <img src={assetFilePath[additionalAsset[1]]} class="w-16 h-16 m-1 rounded-md" alt={additionalAsset[0]} />
           {/if}
         {/if}
       </button>

@@ -94,10 +94,7 @@ export function resolveActiveChatGenerationSettings(
     readiness,
     requiredSidebarToggles: readiness.requirements.sidebarToggles,
     staleSidebarToggleKeys: readiness.staleSidebarToggleKeys,
-    missingLabels: createChatGenerationSettingsMissingLabels(
-      readiness.missing,
-      readiness.requirements.sidebarToggles,
-    ),
+    missingLabels: createChatGenerationSettingsMissingLabels(readiness.missing, readiness.requirements.sidebarToggles),
   }
 }
 
@@ -156,8 +153,7 @@ export function createChatGenerationSettingsMissingLabels(
 ): string[] {
   const labels: string[] = []
   const hasSpecificSidebarToggleReason = missing.some(
-    (reason) =>
-      reason.code === 'sidebar_toggle_missing' || reason.code === 'sidebar_toggle_invalid',
+    (reason) => reason.code === 'sidebar_toggle_missing' || reason.code === 'sidebar_toggle_invalid',
   )
 
   for (const reason of missing) {
@@ -185,9 +181,7 @@ export function createActiveChatGenerationSettingsPatch(
   const shouldWriteSidebarToggles =
     hasOwn(patch, 'sidebarToggles') || isPresetSelection || isRecord(state.settings?.sidebarToggles)
   if (shouldWriteSidebarToggles) {
-    const mergedSidebarToggles = isRecord(state.settings?.sidebarToggles)
-      ? { ...state.settings.sidebarToggles }
-      : {}
+    const mergedSidebarToggles = isRecord(state.settings?.sidebarToggles) ? { ...state.settings.sidebarToggles } : {}
     if (sidebarToggles) {
       for (const [key, value] of Object.entries(sidebarToggles)) {
         if (value === undefined) {
@@ -251,11 +245,7 @@ export function saveActiveChatGenerationSettingsPatch(
   const state = resolveActiveChatGenerationSettings()
   const chatId = state.identity.chatId
   if (!chatId) return false
-  return dispatchSaveChatGenerationSettings(
-    chatId,
-    createActiveChatGenerationSettingsPatch(patch, state),
-    options,
-  )
+  return dispatchSaveChatGenerationSettings(chatId, createActiveChatGenerationSettingsPatch(patch, state), options)
 }
 
 export function saveActiveChatGenerationSettings(
@@ -279,9 +269,7 @@ export function saveActiveChatGenerationSettingsSelection(
   return saveActiveChatGenerationSettingsPatch(selection, options)
 }
 
-export function saveActiveChatGenerationSettingsDefaultValues(
-  options: ServerCommandTransportOptions = {},
-): boolean {
+export function saveActiveChatGenerationSettingsDefaultValues(options: ServerCommandTransportOptions = {}): boolean {
   const state = resolveActiveChatGenerationSettings()
   const chatId = state.identity.chatId
   if (!chatId) return false
@@ -331,9 +319,7 @@ function resolveReadiness(
     chatModuleIds: stringArray(chat?.modules),
     characterModuleIds: stringArray(character?.modules),
     moduleIntegration:
-      typeof selectedPreset?.moduleIntergration === 'string'
-        ? selectedPreset.moduleIntergration
-        : null,
+      typeof selectedPreset?.moduleIntergration === 'string' ? selectedPreset.moduleIntergration : null,
   })
 }
 
@@ -379,15 +365,10 @@ function fillMissingDefaultSidebarToggles(
   }
 }
 
-function createDefaultSidebarToggleValues(
-  state: ActiveChatGenerationSettingsState,
-): Record<string, string> {
+function createDefaultSidebarToggleValues(state: ActiveChatGenerationSettingsState): Record<string, string> {
   const readiness = resolveReadiness(state.db, state.character, state.chat, state.settings)
   return Object.fromEntries(
-    readiness.requirements.sidebarToggles.map((toggle) => [
-      toggle.key,
-      defaultSidebarToggleValue(toggle),
-    ]),
+    readiness.requirements.sidebarToggles.map((toggle) => [toggle.key, defaultSidebarToggleValue(toggle)]),
   )
 }
 
@@ -410,9 +391,7 @@ function normalizeActiveChatGenerationSettingsForSave(
   return pruneStaleSidebarToggleKeys(state, next)
 }
 
-function cloneGenerationSettings(
-  settings: ChatGenerationSettings | undefined,
-): ChatGenerationSettings {
+function cloneGenerationSettings(settings: ChatGenerationSettings | undefined): ChatGenerationSettings {
   if (!settings) return {}
   const clone: ChatGenerationSettings = {}
   if (hasOwn(settings, 'configured')) clone.configured = settings.configured
@@ -446,17 +425,11 @@ function missingReasonLabel(
       return hasSpecificSidebarToggleReason ? null : 'Sidebar toggles'
     case 'sidebar_toggle_missing':
     case 'sidebar_toggle_invalid':
-      return (
-        requiredSidebarToggles.find((toggle) => toggle.key === reason.toggleKey)?.label ??
-        reason.toggleKey
-      )
+      return requiredSidebarToggles.find((toggle) => toggle.key === reason.toggleKey)?.label ?? reason.toggleKey
   }
 }
 
-function findById<T extends { id?: string | null }>(
-  values: readonly T[],
-  id: string | undefined,
-): T | undefined {
+function findById<T extends { id?: string | null }>(values: readonly T[], id: string | undefined): T | undefined {
   if (!nonEmptyString(id)) return undefined
   return values.find((value) => value.id === id)
 }

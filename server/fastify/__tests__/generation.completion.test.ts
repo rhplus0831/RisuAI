@@ -41,11 +41,7 @@ async function stopHarness(h: Harness): Promise<void> {
   rmSync(h.dataDir, { recursive: true, force: true })
 }
 
-async function signAssertion(
-  privateKey: CryptoKey,
-  publicJwk: JsonWebKey,
-  ttlSec = 60,
-): Promise<string> {
+async function signAssertion(privateKey: CryptoKey, publicJwk: JsonWebKey, ttlSec = 60): Promise<string> {
   const now = Math.floor(Date.now() / 1000)
   const header = { alg: 'ES256', typ: 'JWT' }
   const payload = { iat: now, exp: now + ttlSec, pub: publicJwk }
@@ -349,10 +345,10 @@ describe('Phase 6-1 POST /api/v1/generate/completion', () => {
     const sentBodies: Array<Record<string, unknown>> = []
     globalThis.fetch = (async (_url: string, init: RequestInit) => {
       sentBodies.push(JSON.parse(init.body as string))
-      return new Response(
-        JSON.stringify({ choices: [{ message: { content: 'server mode ok' } }] }),
-        { status: 200, headers: { 'content-type': 'application/json' } },
-      )
+      return new Response(JSON.stringify({ choices: [{ message: { content: 'server mode ok' } }] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
     }) as unknown as typeof globalThis.fetch
 
     const { assertion } = await setupAuthedClient(harness.app)
@@ -403,9 +399,7 @@ describe('Phase 6-1 POST /api/v1/generate/completion', () => {
       const body = new ReadableStream<Uint8Array>({
         start(controller) {
           controller.enqueue(
-            enc.encode(
-              `data: ${JSON.stringify({ choices: [{ delta: { content: 'streamed' } }] })}\n\n`,
-            ),
+            enc.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: 'streamed' } }] })}\n\n`),
           )
           controller.enqueue(enc.encode('data: [DONE]\n\n'))
           controller.close()
@@ -720,9 +714,7 @@ describe('Phase 6-4 POST /api/v1/generate/completion (openai)', () => {
 
     expect(signal.aborted).toBe(true)
     expect(raw.ended).toBe(true)
-    expect(raw.chunks.join('')).toBe(
-      `event: chunk\ndata: ${JSON.stringify({ type: 'token', content: '' })}\n\n`,
-    )
+    expect(raw.chunks.join('')).toBe(`event: chunk\ndata: ${JSON.stringify({ type: 'token', content: '' })}\n\n`)
     cleanup()
   })
 
@@ -789,8 +781,7 @@ describe('Phase 6-4 POST /api/v1/generate/completion (openai)', () => {
   })
 
   it('streaming emits an error event when upstream has no body', async () => {
-    globalThis.fetch = (async () =>
-      new Response(null, { status: 200 })) as unknown as typeof globalThis.fetch
+    globalThis.fetch = (async () => new Response(null, { status: 200 })) as unknown as typeof globalThis.fetch
 
     const { assertion } = await setupAuthedClient(harness.app)
     const res = await harness.app.inject({
@@ -870,10 +861,10 @@ describe('Phase 6-4 POST /api/v1/generate/completion (openai)', () => {
 
 describe('Phase 6-4c POST /api/v1/generate/completion (nanogpt + openrouter)', () => {
   const okOpenAIResponse = (text: string) =>
-    new Response(
-      JSON.stringify({ choices: [{ message: { content: text }, finish_reason: 'stop' }] }),
-      { status: 200, headers: { 'content-type': 'application/json' } },
-    )
+    new Response(JSON.stringify({ choices: [{ message: { content: text }, finish_reason: 'stop' }] }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    })
 
   it('nanogpt 400s when options.nanogpt.apiKey is missing', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
@@ -1871,10 +1862,10 @@ describe('Phase 6-10 POST /api/v1/generate/completion (openai-legacy-instruct)',
     let captured: { url: string; init: RequestInit } | null = null
     globalThis.fetch = (async (url: string, init: RequestInit) => {
       captured = { url, init }
-      return new Response(
-        JSON.stringify({ choices: [{ text: 'pong' }], model: 'gpt-3.5-turbo-instruct' }),
-        { status: 200, headers: { 'content-type': 'application/json' } },
-      )
+      return new Response(JSON.stringify({ choices: [{ text: 'pong' }], model: 'gpt-3.5-turbo-instruct' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
     }) as unknown as typeof globalThis.fetch
 
     const { assertion } = await setupAuthedClient(harness.app)
@@ -1946,10 +1937,10 @@ describe('Phase 6-22 POST /api/v1/generate/completion (horde)', () => {
       if (pollCount < 2) {
         return new Response(JSON.stringify({ done: false }), { status: 200 })
       }
-      return new Response(
-        JSON.stringify({ done: true, generations: [{ text: 'horde route ok' }] }),
-        { status: 200, headers: { 'content-type': 'application/json' } },
-      )
+      return new Response(JSON.stringify({ done: true, generations: [{ text: 'horde route ok' }] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
     }) as unknown as typeof globalThis.fetch
 
     const { assertion } = await setupAuthedClient(harness.app)
@@ -2130,10 +2121,10 @@ describe('Phase 6-20 POST /api/v1/generate/completion (gemini vertex)', () => {
     globalThis.fetch = (async (url: string, init: RequestInit) => {
       calls.push({ url, init })
       if (url === 'https://oauth2.googleapis.com/token') {
-        return new Response(
-          JSON.stringify({ access_token: 'ya29.route-token', expires_in: 3599 }),
-          { status: 200, headers: { 'content-type': 'application/json' } },
-        )
+        return new Response(JSON.stringify({ access_token: 'ya29.route-token', expires_in: 3599 }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
       }
       return new Response(
         JSON.stringify({
@@ -2344,16 +2335,10 @@ describe('Phase 6-16 POST /api/v1/generate/completion (ollama)', () => {
     globalThis.fetch = (async () => {
       const body = new ReadableStream<Uint8Array>({
         start(controller) {
+          controller.enqueue(enc.encode(`${JSON.stringify({ message: { content: 'hi' }, done: false })}\n`))
+          controller.enqueue(enc.encode(`${JSON.stringify({ message: { content: ' there' }, done: false })}\n`))
           controller.enqueue(
-            enc.encode(`${JSON.stringify({ message: { content: 'hi' }, done: false })}\n`),
-          )
-          controller.enqueue(
-            enc.encode(`${JSON.stringify({ message: { content: ' there' }, done: false })}\n`),
-          )
-          controller.enqueue(
-            enc.encode(
-              `${JSON.stringify({ message: { content: '' }, done: true, done_reason: 'stop' })}\n`,
-            ),
+            enc.encode(`${JSON.stringify({ message: { content: '' }, done: true, done_reason: 'stop' })}\n`),
           )
           controller.close()
         },
@@ -2406,8 +2391,7 @@ describe('Phase 6-16 POST /api/v1/generate/completion (ollama)', () => {
   })
 
   it('streaming emits an error event when upstream has no body', async () => {
-    globalThis.fetch = (async () =>
-      new Response(null, { status: 200 })) as unknown as typeof globalThis.fetch
+    globalThis.fetch = (async () => new Response(null, { status: 200 })) as unknown as typeof globalThis.fetch
 
     const { assertion } = await setupAuthedClient(harness.app)
     const res = await harness.app.inject({

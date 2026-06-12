@@ -4,12 +4,7 @@ import { fetchNative, globalFetch } from '../../globalApi.svelte'
 import { getModelInfo, LLMFlags, LLMFormat, type LLMModel } from '../../model/modellist'
 import { risuChatParser, risuEscape, risuUnescape } from '../../parser/parser.svelte'
 import { pluginProcess, pluginV2 } from '../../plugins/plugins.svelte'
-import {
-  getCurrentCharacter,
-  getCurrentChat,
-  getDatabase,
-  type character,
-} from '../../storage/database.svelte'
+import { getCurrentCharacter, getCurrentChat, getDatabase, type character } from '../../storage/database.svelte'
 import { tokenizeNum } from '../../tokenizer'
 import { sleep } from '../../util'
 import type { OpenAIChat } from '../index.svelte'
@@ -23,11 +18,7 @@ import { runTransformers } from '../transformers'
 import { runTrigger } from '../triggers'
 import { requestClaude } from './anthropic'
 import { requestGoogleCloudVertex } from './google'
-import {
-  requestOpenAI,
-  requestOpenAILegacyInstruct,
-  requestOpenAIResponseAPI,
-} from './openAI/requests'
+import { requestOpenAI, requestOpenAILegacyInstruct, requestOpenAIResponseAPI } from './openAI/requests'
 import { resolveServerCompletionRoute, requestServerCompletion } from './serverCompletion'
 import { applyParameters, type ModelModeExtended } from './shared'
 
@@ -141,19 +132,10 @@ function normalizeFetchHeaders(headers?: HeadersInit): { [key: string]: string }
   return headers as { [key: string]: string }
 }
 
-async function ollamaCloudFetch(
-  input: RequestInfo | URL,
-  init: RequestInit = {},
-): Promise<Response> {
+async function ollamaCloudFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
   const url = input instanceof Request ? input.url : input.toString()
-  const method = (init.method ?? (input instanceof Request ? input.method : 'GET')) as
-    | 'POST'
-    | 'GET'
-    | 'PUT'
-    | 'DELETE'
-  const headers = normalizeFetchHeaders(
-    init.headers ?? (input instanceof Request ? input.headers : undefined),
-  )
+  const method = (init.method ?? (input instanceof Request ? input.method : 'GET')) as 'POST' | 'GET' | 'PUT' | 'DELETE'
+  const headers = normalizeFetchHeaders(init.headers ?? (input instanceof Request ? input.headers : undefined))
   const body = init.body ?? (input instanceof Request ? await input.arrayBuffer() : undefined)
 
   const response = await fetchNative(url, {
@@ -335,11 +317,7 @@ export async function requestChatData(
         }
       }
 
-      if (
-        da.type === 'success' &&
-        fallbackIndex !== fallBackModels.length - 1 &&
-        db.fallbackWhenBlankResponse
-      ) {
+      if (da.type === 'success' && fallbackIndex !== fallBackModels.length - 1 && db.fallbackWhenBlankResponse) {
         if (da.result.trim() === '') {
           break
         }
@@ -496,8 +474,7 @@ export async function requestChatDataMain(
   targ.useStreaming = arg.forceStreaming ? true : db.useStreaming && arg.useStreaming
   targ.continue = arg.continue ?? false
   targ.biasString = arg.biasString ?? []
-  targ.multiGen =
-    db.genTime > 1 && targ.aiModel.startsWith('gpt') && !arg.continue && !arg.noMultiGen
+  targ.multiGen = db.genTime > 1 && targ.aiModel.startsWith('gpt') && !arg.continue && !arg.noMultiGen
   targ.abortSignal = abortSignal
   targ.mode = model
   targ.extractJson = arg.extractJson ?? db.extractJson
@@ -654,11 +631,10 @@ async function requestNovelAI(arg: RequestDataArgumentExtended): Promise<request
     order: [6, 2, 3, 0, 4, 1, 5, 8],
     typical_p: gen.typicalp,
     repetition_penalty_whitelist: [
-      49256, 49264, 49231, 49230, 49287, 85, 49255, 49399, 49262, 336, 333, 432, 363, 468, 492, 745,
-      401, 426, 623, 794, 1096, 2919, 2072, 7379, 1259, 2110, 620, 526, 487, 16562, 603, 805, 761,
-      2681, 942, 8917, 653, 3513, 506, 5301, 562, 5010, 614, 10942, 539, 2976, 462, 5189, 567, 2032,
-      123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 588, 803, 1040, 49209, 4, 5, 6, 7, 8, 9, 10,
-      11, 12,
+      49256, 49264, 49231, 49230, 49287, 85, 49255, 49399, 49262, 336, 333, 432, 363, 468, 492, 745, 401, 426, 623, 794,
+      1096, 2919, 2072, 7379, 1259, 2110, 620, 526, 487, 16562, 603, 805, 761, 2681, 942, 8917, 653, 3513, 506, 5301,
+      562, 5010, 614, 10942, 539, 2976, 462, 5189, 567, 2032, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 588,
+      803, 1040, 49209, 4, 5, 6, 7, 8, 9, 10, 11, 12,
     ],
     stop_sequences: [[49287], [49405]],
     bad_words_ids: NovelAIBadWordIds,
@@ -676,9 +652,7 @@ async function requestNovelAI(arg: RequestDataArgumentExtended): Promise<request
   }
 
   const da = await globalFetch(
-    aiModel === 'novelai_kayra'
-      ? 'https://text.novelai.net/ai/generate'
-      : 'https://api.novelai.net/ai/generate',
+    aiModel === 'novelai_kayra' ? 'https://text.novelai.net/ai/generate' : 'https://api.novelai.net/ai/generate',
     {
       body: body,
       headers: {
@@ -871,11 +845,7 @@ async function requestOoba(arg: RequestDataArgumentExtended): Promise<requestDat
   const OobaBodyTemplate = db.reverseProxyOobaArgs
   const keys = Object.keys(OobaBodyTemplate)
   for (const key of keys) {
-    if (
-      OobaBodyTemplate[key] !== undefined &&
-      OobaBodyTemplate[key] !== null &&
-      OobaParams.includes(key)
-    ) {
+    if (OobaBodyTemplate[key] !== undefined && OobaBodyTemplate[key] !== null && OobaParams.includes(key)) {
       bodyTemplate[key] = OobaBodyTemplate[key]
     } else if (bodyTemplate[key]) {
       delete bodyTemplate[key]
@@ -941,15 +911,7 @@ async function requestPlugin(arg: RequestDataArgumentExtended): Promise<requestD
               bias: [],
               max_tokens: maxTokens,
             },
-            [
-              'frequency_penalty',
-              'min_p',
-              'presence_penalty',
-              'repetition_penalty',
-              'top_k',
-              'top_p',
-              'temperature',
-            ],
+            ['frequency_penalty', 'min_p', 'presence_penalty', 'repetition_penalty', 'top_k', 'top_p', 'temperature'],
             {},
             arg.mode,
             {
@@ -976,8 +938,7 @@ async function requestPlugin(arg: RequestDataArgumentExtended): Promise<requestD
     } else if (!d.success) {
       return {
         type: 'fail',
-        result:
-          d.content instanceof ReadableStream ? await new Response(d.content).text() : d.content,
+        result: d.content instanceof ReadableStream ? await new Response(d.content).text() : d.content,
         model: 'custom',
       }
     } else if (d.content instanceof ReadableStream) {
@@ -1222,8 +1183,7 @@ async function requestOllama(arg: RequestDataArgumentExtended): Promise<requestD
 
   const ollama = new Ollama({
     host: isCloud ? 'https://ollama.com' : db.ollamaURL,
-    headers:
-      isCloud && db.ollamaApiKey ? { Authorization: 'Bearer ' + db.ollamaApiKey } : undefined,
+    headers: isCloud && db.ollamaApiKey ? { Authorization: 'Bearer ' + db.ollamaApiKey } : undefined,
     fetch: isCloud ? ollamaCloudFetch : undefined,
   })
 
@@ -1303,11 +1263,7 @@ async function requestCohere(arg: RequestDataArgumentExtended): Promise<requestD
           result: 'Cohere requires a user message to generate a response',
         }
       }
-      lastChatPrompt =
-        (lastChat.role === 'user' ? '' : `${lastChat.role}: `) +
-        '\n' +
-        lastChat.content +
-        lastChatPrompt
+      lastChatPrompt = (lastChat.role === 'user' ? '' : `${lastChat.role}: `) + '\n' + lastChat.content + lastChatPrompt
     }
   }
 
@@ -1496,9 +1452,7 @@ async function requestHorde(arg: RequestDataArgumentExtended): Promise<requestDa
 
   while (true) {
     await sleep(2000)
-    const data = await (
-      await fetch('https://stablehorde.net/api/v2/generate/text/status/' + json.id)
-    ).json()
+    const data = await (await fetch('https://stablehorde.net/api/v2/generate/text/status/' + json.id)).json()
     if (!data.is_possible) {
       fetch('https://stablehorde.net/api/v2/generate/text/status/' + json.id, {
         method: 'DELETE',

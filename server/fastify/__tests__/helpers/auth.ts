@@ -5,11 +5,7 @@ import { expect } from 'vitest'
 
 const subtle = webcrypto.subtle
 
-async function signAssertion(
-  privateKey: CryptoKey,
-  publicJwk: JsonWebKey,
-  ttlSec = 60,
-): Promise<string> {
+async function signAssertion(privateKey: CryptoKey, publicJwk: JsonWebKey, ttlSec = 60): Promise<string> {
   const now = Math.floor(Date.now() / 1000)
   const header = { alg: 'ES256', typ: 'JWT' }
   const payload = { iat: now, exp: now + ttlSec, pub: publicJwk }

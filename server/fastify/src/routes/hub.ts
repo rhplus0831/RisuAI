@@ -4,10 +4,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { AuthState } from '../auth.js'
 import { requireAuth } from '../http.js'
 import { filterResponseHeaders, normalizeForwardHeaders } from '../proxy.js'
-import {
-  PROXY_STREAM_DEFAULT_TIMEOUT_MS,
-  normalizeStreamTimeoutMs,
-} from '../streamJobs.js'
+import { PROXY_STREAM_DEFAULT_TIMEOUT_MS, normalizeStreamTimeoutMs } from '../streamJobs.js'
 
 const HUB_METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD'] as const
 const PUBLIC_HUB_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
@@ -38,10 +35,7 @@ function requiresLocalAuth(req: FastifyRequest): boolean {
   return !PUBLIC_HUB_METHODS.has(req.method) || hasUpstreamOverride(req)
 }
 
-function buildForwardHeaders(
-  source: Record<string, unknown>,
-  hubOrigin: string,
-): Record<string, string> {
+function buildForwardHeaders(source: Record<string, unknown>, hubOrigin: string): Record<string, string> {
   const out = normalizeForwardHeaders(source)
   for (const key of Object.keys(out)) {
     if (STRIP_REQUEST_HEADERS.has(key.toLowerCase())) {
@@ -178,11 +172,7 @@ function isAbortError(err: unknown, signal: AbortSignal): boolean {
   return signal.aborted || (err as { name?: string } | null)?.name === 'AbortError'
 }
 
-export function registerHubRoutes(
-  app: FastifyInstance,
-  authState: AuthState,
-  hubUrl: string,
-): void {
+export function registerHubRoutes(app: FastifyInstance, authState: AuthState, hubUrl: string): void {
   const hubOrigin = new URL(hubUrl).origin
 
   app.register(async (instance) => {
@@ -204,9 +194,7 @@ export function registerHubRoutes(
         const headers = buildForwardHeaders(req.headers as Record<string, unknown>, hubOrigin)
 
         const body =
-          Buffer.isBuffer(req.body) &&
-          !METHODS_WITHOUT_BODY.has(req.method) &&
-          req.body.length > 0
+          Buffer.isBuffer(req.body) && !METHODS_WITHOUT_BODY.has(req.method) && req.body.length > 0
             ? req.body
             : undefined
 
@@ -214,15 +202,7 @@ export function registerHubRoutes(
         const abort = createHubAbort(req, reply, timeoutMs)
 
         try {
-          const first = await forwardOnce(
-            reply,
-            upstreamUrl,
-            req.method,
-            headers,
-            body,
-            abort.signal,
-            true,
-          )
+          const first = await forwardOnce(reply, upstreamUrl, req.method, headers, body, abort.signal, true)
           if (first.location) {
             if (body !== undefined) {
               reply.code(502)
@@ -230,15 +210,7 @@ export function registerHubRoutes(
                 error: 'Hub request redirects with bodies are not replayed',
               }
             }
-            await forwardOnce(
-              reply,
-              first.location,
-              req.method,
-              headers,
-              undefined,
-              abort.signal,
-              false,
-            )
+            await forwardOnce(reply, first.location, req.method, headers, undefined, abort.signal, false)
           }
         } catch (err) {
           if (isAbortError(err, abort.signal)) {

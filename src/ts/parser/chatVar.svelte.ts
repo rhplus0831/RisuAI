@@ -30,8 +30,7 @@ export function getChatVar(key: string): string {
 
 export function setChatVar(key: string, value: string): void {
   const selectedChar = get(selectedCharID)
-  const chat =
-    DBState.db.characters[selectedChar]?.chats?.[DBState.db.characters[selectedChar].chatPage]
+  const chat = DBState.db.characters[selectedChar]?.chats?.[DBState.db.characters[selectedChar].chatPage]
   if (!chat) return
   const previous = currentChatScriptstateSnapshot()
   chat.scriptstate ??= {}

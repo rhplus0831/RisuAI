@@ -39,89 +39,25 @@
 
 {#if hasTemperature}
   <span class="text-textcolor">{language.temperature} <Help key="tempature" /></span>
-  <SliderInput
-    min={0}
-    max={200}
-    marginBottom
-    bind:value={value.temperature}
-    multiple={0.01}
-    fixed={2}
-    disableable
-  />
+  <SliderInput min={0} max={200} marginBottom bind:value={value.temperature} multiple={0.01} fixed={2} disableable />
 {/if}
 <span class="text-textcolor">Top K</span>
 <SliderInput min={0} max={100} marginBottom step={1} bind:value={value.top_k} disableable />
 <span class="text-textcolor">{'Repetition Penalty'}</span>
-<SliderInput
-  min={0}
-  max={2}
-  marginBottom
-  step={0.01}
-  fixed={2}
-  bind:value={value.repetition_penalty}
-  disableable
-/>
+<SliderInput min={0} max={2} marginBottom step={0.01} fixed={2} bind:value={value.repetition_penalty} disableable />
 <span class="text-textcolor">Min P</span>
-<SliderInput
-  min={0}
-  max={1}
-  marginBottom
-  step={0.01}
-  fixed={2}
-  bind:value={value.min_p}
-  disableable
-/>
+<SliderInput min={0} max={1} marginBottom step={0.01} fixed={2} bind:value={value.min_p} disableable />
 <span class="text-textcolor">Top A</span>
-<SliderInput
-  min={0}
-  max={1}
-  marginBottom
-  step={0.01}
-  fixed={2}
-  bind:value={value.top_a}
-  disableable
-/>
+<SliderInput min={0} max={1} marginBottom step={0.01} fixed={2} bind:value={value.top_a} disableable />
 <span class="text-textcolor">Top P</span>
-<SliderInput
-  min={0}
-  max={1}
-  marginBottom
-  step={0.01}
-  fixed={2}
-  bind:value={value.top_p}
-  disableable
-/>
+<SliderInput min={0} max={1} marginBottom step={0.01} fixed={2} bind:value={value.top_p} disableable />
 <span class="text-textcolor">{language.frequencyPenalty}</span>
-<SliderInput
-  min={0}
-  max={200}
-  marginBottom
-  step={0.01}
-  fixed={2}
-  bind:value={value.frequency_penalty}
-  disableable
-/>
+<SliderInput min={0} max={200} marginBottom step={0.01} fixed={2} bind:value={value.frequency_penalty} disableable />
 <span class="text-textcolor">{language.presensePenalty}</span>
-<SliderInput
-  min={0}
-  max={200}
-  marginBottom
-  step={0.01}
-  fixed={2}
-  bind:value={value.presence_penalty}
-  disableable
-/>
+<SliderInput min={0} max={200} marginBottom step={0.01} fixed={2} bind:value={value.presence_penalty} disableable />
 <ClaudeThinkingSeparateParams bind:value {paramKey} />
 <span class="text-textcolor">{'Verbosity'}</span>
-<SliderInput
-  min={0}
-  max={2}
-  marginBottom
-  step={1}
-  fixed={0}
-  bind:value={value.verbosity}
-  disableable
-/>
+<SliderInput min={0} max={2} marginBottom step={1} fixed={0} bind:value={value.verbosity} disableable />
 
 {#if withImportExport}
   <div class="flex">
@@ -130,8 +66,7 @@
       onclick={() => {
         const json = JSON.stringify(value, null, 2)
         downloadFile(`parameters-${Date.now()}.json`, json)
-      }}
-    >
+      }}>
       <FileDownIcon />
     </button>
     <button
@@ -146,8 +81,7 @@
         } catch (e) {
           alert(language.noData)
         }
-      }}
-    >
+      }}>
       <FileUpIcon />
     </button>
   </div>

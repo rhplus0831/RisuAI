@@ -1,7 +1,5 @@
 // Shared provider capability table.
-export type ProviderCapabilityVerdict =
-  | { routable: true; provider: string }
-  | { routable: false; reason: string }
+export type ProviderCapabilityVerdict = { routable: true; provider: string } | { routable: false; reason: string }
 
 export function resolveProviderCapability(input: { format: number }): ProviderCapabilityVerdict {
   return input.format === 0

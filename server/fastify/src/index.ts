@@ -52,8 +52,7 @@ export function createAppShutdown(
 ): (signal: ShutdownSignal) => Promise<void> {
   const exitOnShutdown = opts.exitOnShutdown ?? false
   const forceExitMs = opts.forceExitMs ?? API_SHUTDOWN_FORCE_EXIT_MS
-  const setTimeoutFn: ShutdownSetTimeout =
-    opts.setTimeout ?? ((callback, ms) => setTimeout(callback, ms))
+  const setTimeoutFn: ShutdownSetTimeout = opts.setTimeout ?? ((callback, ms) => setTimeout(callback, ms))
   const clearTimeoutFn: ShutdownClearTimeout =
     opts.clearTimeout ?? ((timer) => clearTimeout(timer as ReturnType<typeof setTimeout>))
   const exit = opts.exit ?? process.exit
@@ -70,10 +69,7 @@ export function createAppShutdown(
       app.log.info({ signal }, 'received shutdown signal; closing Fastify app')
       const exitCode = signalExitCode(signal)
       const forceExitTimer = setTimeoutFn(() => {
-        app.log.error(
-          { signal, timeoutMs: forceExitMs },
-          'Fastify shutdown timed out; forcing process exit',
-        )
+        app.log.error({ signal, timeoutMs: forceExitMs }, 'Fastify shutdown timed out; forcing process exit')
         if (exitOnShutdown) {
           exit(exitCode)
         }

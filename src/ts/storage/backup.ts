@@ -16,9 +16,7 @@ export interface BackupOperationOptions {
   onProgress?: BackupProgressCallback
 }
 
-export async function SaveServerBackup(
-  options: BackupOperationOptions = {},
-): Promise<BackupOperationStatus> {
+export async function SaveServerBackup(options: BackupOperationOptions = {}): Promise<BackupOperationStatus> {
   if (!options.onProgress) alertWait('Saving server backup...')
   const result = await createServerBackup({
     label: 'Manual backup',
@@ -39,9 +37,7 @@ export async function SaveServerBackup(
  * Save a complete backup to the user's device in the original Risu local
  * backup format. The bytes come from the server, not browser-local storage.
  */
-export async function saveBackupToDevice(
-  options: BackupOperationOptions = {},
-): Promise<BackupOperationStatus> {
+export async function saveBackupToDevice(options: BackupOperationOptions = {}): Promise<BackupOperationStatus> {
   if (!options.onProgress) alertWait('Saving local backup...')
   const result = await exportServerLocalBackup(options)
   if (result.status === 'ok') {
@@ -59,9 +55,7 @@ export async function saveBackupToDevice(
  * Save a complete backup (database + all referenced assets) to the user's
  * device using the newer `.risu.zip` bundle export.
  */
-export async function saveZipBackupToDevice(
-  options: BackupOperationOptions = {},
-): Promise<BackupOperationStatus> {
+export async function saveZipBackupToDevice(options: BackupOperationOptions = {}): Promise<BackupOperationStatus> {
   if (!options.onProgress) alertWait('Saving ZIP-style local backup...')
   const result = await exportServerBundle(options)
   if (result.status === 'ok') {
@@ -81,9 +75,7 @@ export async function saveZipBackupToDevice(
  * the file is uploaded to the server, which registers the bundled assets and
  * replaces the database, after which the local projection refreshes.
  */
-export async function loadBackupFromDevice(
-  options: BackupOperationOptions = {},
-): Promise<BackupOperationStatus> {
+export async function loadBackupFromDevice(options: BackupOperationOptions = {}): Promise<BackupOperationStatus> {
   const file = await selectBackupFile()
   if (!file) return 'cancelled'
 

@@ -96,12 +96,7 @@ describe('analyzeDataDir', () => {
   it('measures export materialization for every envelope', () => {
     const analysis = analyzeDataDir(dataDir, 'test')
     const labels = analysis.export.envelopes.map((row) => row.envelope)
-    expect(labels).toEqual([
-      'risusave-blocks',
-      'risusave-blocks+gzip',
-      'legacy-raw',
-      'legacy-compressed',
-    ])
+    expect(labels).toEqual(['risusave-blocks', 'risusave-blocks+gzip', 'legacy-raw', 'legacy-compressed'])
     for (const row of analysis.export.envelopes) {
       expect(row.outputBytes).toBeGreaterThan(0)
       expect(row.encodeMs).toBeGreaterThanOrEqual(0)
@@ -112,9 +107,7 @@ describe('analyzeDataDir', () => {
     const gzip = analysis.export.envelopes.find((r) => r.envelope === 'risusave-blocks+gzip')!
     expect(gzip.outputBytes).toBeLessThan(blocks.outputBytes)
     // Peak is the largest materialized buffer.
-    expect(analysis.export.peakOutputBytes).toBe(
-      Math.max(...analysis.export.envelopes.map((r) => r.outputBytes)),
-    )
+    expect(analysis.export.peakOutputBytes).toBe(Math.max(...analysis.export.envelopes.map((r) => r.outputBytes)))
   })
 
   it('measures the full-bootstrap projection payload', () => {

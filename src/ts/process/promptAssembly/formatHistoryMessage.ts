@@ -34,11 +34,8 @@ export interface FormatHistoryMessageArgs {
  * messages within one sendChat invocation; the helper does not own that
  * cache.
  */
-export async function formatHistoryMessage(
-  args: FormatHistoryMessageArgs,
-): Promise<OpenAIChat> {
-  const { msg, index, totalCount, currentChar, usingPromptTemplate, findCharacterbyIdwithCache } =
-    args
+export async function formatHistoryMessage(args: FormatHistoryMessageArgs): Promise<OpenAIChat> {
+  const { msg, index, totalCount, currentChar, usingPromptTemplate, findCharacterbyIdwithCache } = args
   const nowChatroom = currentChar
 
   let formatedChat = (
@@ -193,4 +190,3 @@ export async function formatHistoryMessage(
   }
   return chat
 }
-

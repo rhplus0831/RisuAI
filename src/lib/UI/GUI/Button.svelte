@@ -28,8 +28,7 @@
   {onclick}
   {disabled}
   class="{styled === 'primary'
-    ? (selected ? 'bg-bg-selected' : 'bg-darkbutton') +
-      ' hover:bg-selected focus:ring-selected border-darkborderc'
+    ? (selected ? 'bg-bg-selected' : 'bg-darkbutton') + ' hover:bg-selected focus:ring-selected border-darkborderc'
     : styled === 'outlined'
       ? 'bg-transparent hover:bg-darkbg focus:ring-selected border-darkborderc text-textcolor2'
       : (selected ? 'bg-red-800' : 'bg-red-700') +
@@ -46,7 +45,6 @@
   class:py-3={size == 'lg'}
   class:text-md={size == 'md'}
   class:text-sm={size == 'sm'}
-  class:text-lg={size == 'lg'}
->
+  class:text-lg={size == 'lg'}>
   {@render children?.()}
 </button>

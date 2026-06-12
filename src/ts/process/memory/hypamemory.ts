@@ -82,10 +82,7 @@ export class HypaProcesser {
     return embeddings
   }
 
-  async getEmbeds(
-    input: string[] | string,
-    inputType: 'query' | 'document' = 'query',
-  ): Promise<VectorArray[]> {
+  async getEmbeds(input: string[] | string, inputType: 'query' | 'document' = 'query'): Promise<VectorArray[]> {
     if (isContextModel(this.model)) {
       const provider = getContextProvider(this.model)
       const inputs: string[] = Array.isArray(input) ? input : [input]
@@ -124,9 +121,7 @@ export class HypaProcesser {
         },
         body: {
           input: input,
-          ...(db.hypaCustomSettings?.model?.trim()
-            ? { model: db.hypaCustomSettings.model.trim() }
-            : {}),
+          ...(db.hypaCustomSettings?.model?.trim() ? { model: db.hypaCustomSettings.model.trim() } : {}),
         },
       }
 
@@ -177,9 +172,7 @@ export class HypaProcesser {
   async addText(texts: string[]) {
     const db = getDatabase()
     const suffix =
-      this.model === 'custom' && db.hypaCustomSettings?.model?.trim()
-        ? `-${db.hypaCustomSettings.model.trim()}`
-        : ''
+      this.model === 'custom' && db.hypaCustomSettings?.model?.trim() ? `-${db.hypaCustomSettings.model.trim()}` : ''
 
     for (let i = 0; i < texts.length; i++) {
       const itm: memoryVector = await this.forage.getItem(texts[i] + '|' + this.model + suffix)

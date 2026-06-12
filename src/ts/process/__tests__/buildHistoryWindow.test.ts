@@ -18,25 +18,14 @@ vi.mock('../triggers', () => ({
   runTrigger: async () => triggerState.next,
 }))
 
-import {
-  setDatabase,
-  type Chat,
-  type Database,
-  type Message,
-  type character,
-} from '../../storage/database.svelte'
+import { setDatabase, type Chat, type Database, type Message, type character } from '../../storage/database.svelte'
 import { selectedCharID } from '../../stores.svelte'
 import { ChatTokenizer } from '../../tokenizer'
-import {
-  buildHistoryWindow,
-  type BuildHistoryWindowResult,
-} from '../promptAssembly/buildHistoryWindow'
+import { buildHistoryWindow, type BuildHistoryWindowResult } from '../promptAssembly/buildHistoryWindow'
 
 type NonStop = Exclude<BuildHistoryWindowResult, { stopSending: true }>
 
-function assertNotStopped(
-  result: BuildHistoryWindowResult,
-): asserts result is NonStop {
+function assertNotStopped(result: BuildHistoryWindowResult): asserts result is NonStop {
   if (result.stopSending) throw new Error('expected non-stop result')
 }
 
@@ -107,9 +96,7 @@ describe('buildHistoryWindow - happy path', () => {
   })
 
   it('emits examples + start-new-chat marker + first message + history when no trigger fires', async () => {
-    const chat = makeChat([
-      { role: 'user', data: 'hi', chatId: 'm-1', time: 0 } as Message,
-    ])
+    const chat = makeChat([{ role: 'user', data: 'hi', chatId: 'm-1', time: 0 } as Message])
     const result = await buildHistoryWindow({
       currentChar: makeChar(),
       currentChat: chat,
@@ -320,9 +307,7 @@ describe('buildHistoryWindow - start trigger', () => {
   })
 
   it('forwards a non-stop trigger result and adds its tokens to addedTokens', async () => {
-    const triggerChat = makeChat([
-      { role: 'user', data: 'inserted', chatId: 't-1', time: 0 } as Message,
-    ])
+    const triggerChat = makeChat([{ role: 'user', data: 'inserted', chatId: 't-1', time: 0 } as Message])
     triggerState.next = {
       additonalSysPrompt: { start: '', historyend: '', promptend: '' },
       chat: triggerChat,

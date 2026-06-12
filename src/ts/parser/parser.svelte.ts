@@ -18,14 +18,7 @@ import css, { type CssAtRuleAST } from '@adobe/css-tools'
 import { selectedCharID } from '../stores.svelte'
 import { calcString } from '../process/infunctions'
 import { safeStructuredClone } from '../polyfill'
-import {
-  findCharacterbyId,
-  getPersonaPrompt,
-  getUserIcon,
-  getUserName,
-  pickHashRand,
-  replaceAsync,
-} from '../util'
+import { findCharacterbyId, getPersonaPrompt, getUserIcon, getUserName, pickHashRand, replaceAsync } from '../util'
 import { getInlayAssetBlob, type InlayAsset } from '../process/files/inlays'
 import { getModuleAssets, getModuleLorebooks, getModules } from '../process/modules'
 import hljs from 'highlight.js/lib/core'
@@ -178,10 +171,7 @@ DOMPurify.addHook('uponSanitizeAttribute', (node, data) => {
 })
 
 DOMPurify.addHook('uponSanitizeAttribute', (node, data) => {
-  if (
-    ['IMG', 'SOURCE', 'VIDEO', 'AUDIO', 'STYLE'].includes(node.nodeName) &&
-    data.attrName === 'src'
-  ) {
+  if (['IMG', 'SOURCE', 'VIDEO', 'AUDIO', 'STYLE'].includes(node.nodeName) && data.attrName === 'src') {
     if (data.attrValue.startsWith('blob:')) {
       data.forceKeepAttr = true
     }
@@ -232,12 +222,8 @@ function renderMarkdown(md: markdownit, data: string) {
     text = text.replace(/\uE9b0/gu, quotes[0]).replace(/\uE9b1/gu, quotes[1])
     text = text.replace(/\uE9b2/gu, quotes[2]).replace(/\uE9b3/gu, quotes[3])
   } else {
-    text = text
-      .replace(/\uE9b0/gu, '<mark risu-mark="quote2">' + quotes[0])
-      .replace(/\uE9b1/gu, quotes[1] + '</mark>')
-    text = text
-      .replace(/\uE9b2/gu, '<mark risu-mark="quote1">' + quotes[2])
-      .replace(/\uE9b3/gu, quotes[3] + '</mark>')
+    text = text.replace(/\uE9b0/gu, '<mark risu-mark="quote2">' + quotes[0]).replace(/\uE9b1/gu, quotes[1] + '</mark>')
+    text = text.replace(/\uE9b2/gu, '<mark risu-mark="quote1">' + quotes[2]).replace(/\uE9b3/gu, quotes[3] + '</mark>')
   }
 
   return text
@@ -245,9 +231,7 @@ function renderMarkdown(md: markdownit, data: string) {
 
 async function renderHighlightableMarkdown(data: string) {
   let rendered = renderMarkdown(mdHighlight, data)
-  const highlightPlaceholders = rendered.match(
-    /<pre-hljs-placeholder lang="(.+?)">(.+?)<\/pre-hljs-placeholder>/gms,
-  )
+  const highlightPlaceholders = rendered.match(/<pre-hljs-placeholder lang="(.+?)">(.+?)<\/pre-hljs-placeholder>/gms)
   if (!highlightPlaceholders) {
     return rendered
   }
@@ -255,9 +239,7 @@ async function renderHighlightableMarkdown(data: string) {
   for (const placeholder of highlightPlaceholders) {
     try {
       let lang = placeholder.match(/lang="(.+?)"/)?.[1]
-      const code = placeholder.match(
-        /<pre-hljs-placeholder lang=".+?">(.+?)<\/pre-hljs-placeholder>/ms,
-      )?.[1]
+      const code = placeholder.match(/<pre-hljs-placeholder lang=".+?">(.+?)<\/pre-hljs-placeholder>/ms)?.[1]
       if (!lang || !code) {
         continue
       }
@@ -428,10 +410,7 @@ async function renderHighlightableMarkdown(data: string) {
         hljs.registerLanguage(lang, languageModule.default)
       }
       if (lang === 'none') {
-        rendered = rendered.replace(
-          placeholder,
-          `<pre><code>${md.utils.escapeHtml(code)}</code></pre>`,
-        )
+        rendered = rendered.replace(placeholder, `<pre><code>${md.utils.escapeHtml(code)}</code></pre>`)
       } else if (lang === 'error') {
         rendered = rendered.replace(
           placeholder,
@@ -450,21 +429,15 @@ async function renderHighlightableMarkdown(data: string) {
     } catch (error) {
       console.warn('Failed to render highlighted code block:', error)
       const fallbackCode =
-        placeholder.match(
-          /<pre-hljs-placeholder lang=".+?">(.+?)<\/pre-hljs-placeholder>/ms,
-        )?.[1] ?? ''
-      rendered = rendered.replace(
-        placeholder,
-        `<pre><code>${md.utils.escapeHtml(fallbackCode)}</code></pre>`,
-      )
+        placeholder.match(/<pre-hljs-placeholder lang=".+?">(.+?)<\/pre-hljs-placeholder>/ms)?.[1] ?? ''
+      rendered = rendered.replace(placeholder, `<pre><code>${md.utils.escapeHtml(fallbackCode)}</code></pre>`)
     }
   }
 
   return rendered
 }
 
-export const assetRegex =
-  /{{(raw|path|img|image|video|audio|bgm|bg|emotion|asset|video-img|source)::(.+?)}}/gms
+export const assetRegex = /{{(raw|path|img|image|video|audio|bgm|bg|emotion|asset|video-img|source)::(.+?)}}/gms
 
 function getAssetSrc(assetArr: string[][], assetPaths: AssetPaths) {
   for (const asset of assetArr) {
@@ -509,11 +482,7 @@ type AssetPaths = {
 let assetsCache: AssetPaths | null = null
 let emoAssetsCache: AssetPaths | null = null
 
-export function resetAssetsCache(
-  charAssets: string[][],
-  emoAssets: string[][],
-  moduleAssets: string[][],
-) {
+export function resetAssetsCache(charAssets: string[][], emoAssets: string[][], moduleAssets: string[][]) {
   const assetPaths: AssetPaths = {}
   const charEmoPaths: AssetPaths = {}
 
@@ -666,11 +635,7 @@ async function parseAdditionalAssets(
   return data
 }
 
-function getClosestMatch(
-  char: simpleCharacterArgument | character,
-  name: string,
-  assetPaths: AssetPaths,
-) {
+function getClosestMatch(char: simpleCharacterArgument | character, name: string, assetPaths: AssetPaths) {
   if (!char.additionalAssets) return null
 
   let closest = ''
@@ -726,21 +691,7 @@ export function getDistance(a: string, b: string) {
 }
 
 function trimmer(str: string) {
-  const ext = [
-    'webp',
-    'png',
-    'jpg',
-    'jpeg',
-    'gif',
-    'mp4',
-    'webm',
-    'avi',
-    'm4p',
-    'm4v',
-    'mp3',
-    'wav',
-    'ogg',
-  ]
+  const ext = ['webp', 'png', 'jpg', 'jpeg', 'gif', 'mp4', 'webm', 'avi', 'm4p', 'm4v', 'mp3', 'wav', 'ogg']
   for (const e of ext) {
     if (str.endsWith('.' + e)) {
       str = str.substring(0, str.length - e.length - 1)
@@ -766,9 +717,7 @@ function revokeBlobUrl(url: string) {
   }
 }
 
-function getRenderableInlayAssetType(
-  type: InlayAsset['type'] | undefined,
-): RenderableInlayAssetType | null {
+function getRenderableInlayAssetType(type: InlayAsset['type'] | undefined): RenderableInlayAssetType | null {
   if (type === 'audio' || type === 'image' || type === 'video') return type
   return null
 }
@@ -1034,8 +983,7 @@ const metaCodes = [
 const encodedMetadataCache = new Map<string, string>()
 
 function encodeMetadata(modelShortName: string) {
-  const metadata =
-    '{' + ['risuai', modelShortName.toLocaleLowerCase().replace(/[^a-z]/g, '')].join('|') + '}'
+  const metadata = '{' + ['risuai', modelShortName.toLocaleLowerCase().replace(/[^a-z]/g, '')].join('|') + '}'
 
   const cached = encodedMetadataCache.get(metadata)
   if (cached !== undefined) {

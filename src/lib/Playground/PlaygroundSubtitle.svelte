@@ -33,17 +33,7 @@
   async function runLLMMode() {
     outputText = 'Loading...\n\n'
 
-    const file = await selectSingleFile([
-      'mp3',
-      'ogg',
-      'wav',
-      'flac',
-      'mp4',
-      'webm',
-      'mkv',
-      'avi',
-      'mov',
-    ])
+    const file = await selectSingleFile(['mp3', 'ogg', 'wav', 'flac', 'mp4', 'webm', 'mkv', 'avi', 'mov'])
 
     if (!file) {
       outputText = ''
@@ -143,17 +133,7 @@
   async function runWhisperMode() {
     outputText = 'Loading...\n\n'
 
-    const files = await selectFileByDom([
-      'mp3',
-      'ogg',
-      'wav',
-      'flac',
-      'mp4',
-      'webm',
-      'mkv',
-      'avi',
-      'mov',
-    ])
+    const files = await selectFileByDom(['mp3', 'ogg', 'wav', 'flac', 'mp4', 'webm', 'mkv', 'avi', 'mov'])
 
     const file = files?.[0]
 
@@ -240,10 +220,7 @@
               if ('name' in progress && 'file' in progress) {
                 stats[progress.name + progress.file] = progress
                 outputText = Object.values(stats)
-                  .map(
-                    (v) =>
-                      `${v.name}-${v.file}: ${v.status} ${v.progress ? `[${v.progress.toFixed(2)}%]` : ''}`,
-                  )
+                  .map((v) => `${v.name}-${v.file}: ${v.status} ${v.progress ? `[${v.progress.toFixed(2)}%]` : ''}`)
                   .join('\n')
               }
             },
@@ -283,7 +260,6 @@
         for (const chunk of chunks) {
           outputText += `${chunk.timestamp[0]} --> ${chunk.timestamp[1]}\n${chunk.text}\n\n`
         }
-
       } catch (error) {
         alertError(JSON.stringify(error))
         outputText = ''
@@ -473,8 +449,7 @@
     if (mode === 'whisper' || mode === 'whisperLocal') {
       prompt = WhisperModePrompt
     }
-  }}
->
+  }}>
   <OptionInput value="llm">LLM</OptionInput>
   <OptionInput value="whisper">Whisper</OptionInput>
   <OptionInput value="whisperLocal">Whisper Local</OptionInput>
@@ -500,8 +475,7 @@
       if (mode === 'whisper' || mode === 'whisperLocal') {
         runWhisperMode()
       }
-    }}
-  >
+    }}>
     {language.run}
   </Button>
 {:else if vttB64 && fileB64}
@@ -529,8 +503,7 @@
       outputText = ''
       fileB64 = ''
       vttB64 = ''
-    }}
-  >
+    }}>
     {language.reset}
   </Button>
 
@@ -551,8 +524,7 @@
         downloadFile('subtitle.srt', webVttToSrt().join('\n\n'))
         return
       }
-    }}
-  >
+    }}>
     {language.download}
   </Button>
 {/if}

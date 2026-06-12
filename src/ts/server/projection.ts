@@ -132,9 +132,7 @@ export async function fetchServerProjectionResource(
       mode: 'character-selection',
       characterId: record.characterId,
       currentChar: record.currentChar as number,
-      ...(typeof record.lastInteraction === 'number'
-        ? { lastInteraction: record.lastInteraction }
-        : {}),
+      ...(typeof record.lastInteraction === 'number' ? { lastInteraction: record.lastInteraction } : {}),
     }
   }
 
@@ -158,11 +156,7 @@ export async function fetchServerProjectionResource(
     if (typeof record.characterId !== 'string' || record.characterId.trim() === '') {
       return { status: 'error', error: 'Invalid character-row response' }
     }
-    if (
-      !record.character ||
-      typeof record.character !== 'object' ||
-      Array.isArray(record.character)
-    ) {
+    if (!record.character || typeof record.character !== 'object' || Array.isArray(record.character)) {
       return { status: 'error', error: 'Invalid character-row response' }
     }
     return {

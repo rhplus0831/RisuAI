@@ -28,6 +28,5 @@
           applyServerBackedSetting('notification', false)
         }
       }
-    }}
-  />
+    }} />
 </div>

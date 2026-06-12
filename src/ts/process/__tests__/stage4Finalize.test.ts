@@ -5,17 +5,9 @@ vi.mock('../modules', async (importActual) => {
   return { ...actual, moduleUpdate: () => {} }
 })
 
-import {
-  setDatabase,
-  type Database,
-  type character,
-  type MessageGenerationInfo,
-} from '../../storage/database.svelte'
+import { setDatabase, type Database, type character, type MessageGenerationInfo } from '../../storage/database.svelte'
 import { selectedCharID, DBState } from '../../stores.svelte'
-import {
-  finalizeStage4,
-  type StageTimings,
-} from '../postGeneration/stage4Finalize'
+import { finalizeStage4, type StageTimings } from '../postGeneration/stage4Finalize'
 
 function makeTimings(): StageTimings {
   return {

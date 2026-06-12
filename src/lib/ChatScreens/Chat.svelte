@@ -38,29 +38,12 @@
     runTrigger,
   } from 'src/ts/process/triggers'
   import { sayTTS } from 'src/ts/process/tts'
-  import {
-    DBState,
-    ReloadChatPointer,
-    CurrentTriggerIdStore,
-    popupStore,
-    SizeStore,
-  } from 'src/ts/stores.svelte'
+  import { DBState, ReloadChatPointer, CurrentTriggerIdStore, popupStore, SizeStore } from 'src/ts/stores.svelte'
   import { capitalize, getUserIcon, getUserName, sleep } from 'src/ts/util'
   import { v4 as uuidv4, v4 } from 'uuid'
   import { language } from '../../lang'
-  import {
-    alertClear,
-    alertConfirm,
-    alertInput,
-    alertNormal,
-    alertRequestData,
-    alertWait,
-  } from '../../ts/alert'
-  import {
-    ParseMarkdown,
-    type CbsConditions,
-    type simpleCharacterArgument,
-  } from '../../ts/parser/parser.svelte'
+  import { alertClear, alertConfirm, alertInput, alertNormal, alertRequestData, alertWait } from '../../ts/alert'
+  import { ParseMarkdown, type CbsConditions, type simpleCharacterArgument } from '../../ts/parser/parser.svelte'
   import {
     getCurrentCharacter,
     getCurrentChat,
@@ -172,10 +155,7 @@
 
   async function rm(e: MouseEvent, rec?: boolean) {
     const previous = currentChatScopedSnapshot()
-    const chat =
-      DBState.db.characters[selIdState.selId].chats[
-        DBState.db.characters[selIdState.selId].chatPage
-      ]
+    const chat = DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage]
     if (e.shiftKey) {
       if (canUseServerCommands()) {
         const afterMessageId = idx > 0 ? chat.message[idx - 1]?.chatId : null
@@ -207,11 +187,7 @@
             if (chat.id && (idx === 0 || afterMessageId)) {
               dispatchTruncateMessagesScoped(chat.id, afterMessageId, previous)
             } else {
-              dispatchReplaceMessagesForChat(
-                chat,
-                cloneMessagesWithIds(chat).slice(0, idx),
-                previous,
-              )
+              dispatchReplaceMessagesForChat(chat, cloneMessagesWithIds(chat).slice(0, idx), previous)
             }
           } else {
             const afterMessageId = idx > 0 ? ensureMessageId(msg[idx - 1]) : null
@@ -261,10 +237,7 @@
 
   async function edit() {
     const previous = currentChatScopedSnapshot()
-    const chat =
-      DBState.db.characters[selIdState.selId].chats[
-        DBState.db.characters[selIdState.selId].chatPage
-      ]
+    const chat = DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage]
     const messageId = chat.message[idx]?.chatId
     if (canUseServerCommands()) {
       if (messageId) {
@@ -287,10 +260,7 @@
   function handlePartialEditSave(e: CustomEvent<{ newData: string }>) {
     if (idx >= 0) {
       const previous = currentChatScopedSnapshot()
-      const chat =
-        DBState.db.characters[selIdState.selId].chats[
-          DBState.db.characters[selIdState.selId].chatPage
-        ]
+      const chat = DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage]
       message = e.detail.newData
       const messageId = chat.message[idx]?.chatId
       if (canUseServerCommands()) {
@@ -374,8 +344,7 @@
   }
 
   let blankMessage = $derived(
-    ((message === '{{none}}' || message === '{{blank}}' || message === '') && idx === -1) ||
-      isComment,
+    ((message === '{{none}}' || message === '{{blank}}' || message === '') && idx === -1) || isComment,
   )
   let messageRowId = $derived.by(() => {
     const character = DBState.db.characters?.[selIdState.selId]
@@ -464,18 +433,14 @@
     DBState.db.characters[selIdState.selId]?.chats[
       DBState.db.characters[selIdState.selId].chatPage
     ]?.bookmarks?.includes(
-      DBState.db.characters[selIdState.selId].chats[
-        DBState.db.characters[selIdState.selId].chatPage
-      ].message[idx]?.chatId,
+      DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message[idx]
+        ?.chatId,
     ) ?? false,
   )
 
   async function toggleBookmark() {
     const previous = currentChatScopedSnapshot()
-    const chat =
-      DBState.db.characters[selIdState.selId].chats[
-        DBState.db.characters[selIdState.selId].chatPage
-      ]
+    const chat = DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage]
 
     if (!chat.message[idx]) return
 
@@ -503,11 +468,7 @@
       bookmarks.push(messageId)
 
       const msgSender = chat.message[idx]?.role === 'user' ? getUserName() : name
-      const newName = await alertInput(
-        language.bookmarkAskNameOrDefault,
-        [],
-        bookmarkNames[messageId] || '',
-      )
+      const newName = await alertInput(language.bookmarkAskNameOrDefault, [], bookmarkNames[messageId] || '')
 
       if (newName && newName.trim() !== '') {
         bookmarkNames[messageId] = newName
@@ -596,17 +557,16 @@
         onclick={() => {
           const currentGenerationInfo =
             idx >= 0
-              ? DBState.db.characters[$selectedCharID].chats[
-                  DBState.db.characters[$selectedCharID].chatPage
-                ].message[idx].generationInfo
+              ? DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message[
+                  idx
+                ].generationInfo
               : messageGenerationInfo
 
           alertRequestData({
             genInfo: currentGenerationInfo,
             idx: idx,
           })
-        }}
-      >
+        }}>
         <BotIcon size={20} />
         <span class="ml-1">
           {capitalize(getModelInfo(messageGenerationInfo.model).shortName)}
@@ -619,8 +579,7 @@
                             hover:ring-darkbutton hover:ring-3 rounded-md hover:text-textcolor transition-all flex justify-center items-center"
         onclick={() => {
           retranslate = true
-        }}
-      >
+        }}>
         <RefreshCcwIcon size={20} />
         <span class="ml-1">
           {language.retranslate}
@@ -635,8 +594,7 @@
           } else {
             loadTranslationForEdit()
           }
-        }}
-      >
+        }}>
         <PencilIcon size={20} />
         <span class="ml-1">
           {editTranslationMode ? language.editTranslationSave : language.editTranslation}
@@ -652,15 +610,13 @@
       bind:value={editTranslationText}
       handleLongPress={() => {
         saveTranslationEdit()
-      }}
-    />
+      }} />
   {:else if editMode}
     <AutoresizeArea
       bind:value={message}
       handleLongPress={() => {
         editMode = false
-      }}
-    />
+      }} />
   {:else if isComment}
     <div class="w-full flex justify-center text-textcolor2 italic mb-12">
       {#if msgDisplay.startsWith('{{specialcomment')}
@@ -674,8 +630,7 @@
               console.log(parts)
               changeChatTo(parts[2] ?? '')
               foldChatToMessage(parts[4])
-            }}
-          >
+            }}>
             <GitBranch size={20} class="inline-block mr-1" />
             {language.branchedText.replace('{}', parts[3] ?? '')}
           </button>
@@ -703,8 +658,7 @@
         }
       }}
       style:font-size="{0.875 * (DBState.db.zoomsize / 100)}rem"
-      style:line-height="{(DBState.db.lineHeight ?? 1.25) * (DBState.db.zoomsize / 100)}rem"
-    >
+      style:line-height="{(DBState.db.lineHeight ?? 1.25) * (DBState.db.zoomsize / 100)}rem">
       {#key `${totalLengthPointer}|${chatReloadPointer}`}
         <ChatBody
           {character}
@@ -713,14 +667,11 @@
           {msgDisplay}
           {name}
           {bodyRoot}
-          modelShortName={messageGenerationInfo
-            ? getModelInfo(messageGenerationInfo?.model).shortName
-            : ''}
+          modelShortName={messageGenerationInfo ? getModelInfo(messageGenerationInfo?.model).shortName : ''}
           role={role ?? null}
           bind:translated
           bind:translating
-          bind:retranslate
-        />
+          bind:retranslate />
       {/key}
       {#if idx >= 0 && !editMode && partialEditEnabled && (DBState.db.enableBlockPartialEdit || DBState.db.enableDragPartialEdit)}
         <PartialEditController
@@ -729,25 +680,20 @@
           {bodyRoot}
           blockEditEnabled={DBState.db.enableBlockPartialEdit}
           dragEditEnabled={DBState.db.enableDragPartialEdit}
-          on:save={handlePartialEditSave}
-        />
+          on:save={handlePartialEditSave} />
       {/if}
     </span>
   {/if}
 {/snippet}
 
 {#snippet iconButtons(options: { applyTextColors?: boolean } = {})}
-  <div
-    class="grow flex items-center justify-end"
-    class:text-textcolor2={options?.applyTextColors !== false}
-  >
+  <div class="grow flex items-center justify-end" class:text-textcolor2={options?.applyTextColors !== false}>
     {#if isComment}
       <button
         class="flex items-center hover:text-blue-500 transition-colors button-icon-remove"
         onclick={async (e) => {
           await rm(e, true)
-        }}
-      >
+        }}>
         <TrashIcon size={20} />
       </button>
     {:else}
@@ -787,13 +733,7 @@
 
             const parser = new DOMParser()
             const doc = parser.parseFromString(
-              await ParseMarkdown(
-                msgDisplay,
-                getCurrentCharacter(),
-                'normal',
-                idx,
-                getCbsCondition(),
-              ),
+              await ParseMarkdown(msgDisplay, getCurrentCharacter(), 'normal', idx, getCbsCondition()),
               'text/html',
             )
 
@@ -804,19 +744,14 @@
                 newEle.textContent = el.textContent
                 newEle.setAttribute(
                   'style',
-                  `background: transparent; color: ${root.style.getPropertyValue(
-                    '--FontColorQuote' + d.slice(-1),
-                  )};`,
+                  `background: transparent; color: ${root.style.getPropertyValue('--FontColorQuote' + d.slice(-1))};`,
                 )
                 el.replaceWith(newEle)
                 return
               }
             })
             doc.querySelectorAll('p').forEach((el) => {
-              el.setAttribute(
-                'style',
-                `color: ${root.style.getPropertyValue('--FontColorStandard')};`,
-              )
+              el.setAttribute('style', `color: ${root.style.getPropertyValue('--FontColorStandard')};`)
             })
             doc.querySelectorAll('em').forEach((el) => {
               el.setAttribute(
@@ -825,10 +760,7 @@
               )
             })
             doc.querySelectorAll('strong').forEach((el) => {
-              el.setAttribute(
-                'style',
-                `font-weight: bold; color: ${root.style.getPropertyValue('--FontColorBold')};`,
-              )
+              el.setAttribute('style', `font-weight: bold; color: ${root.style.getPropertyValue('--FontColorBold')};`)
             })
             doc.querySelectorAll('em strong').forEach((el) => {
               el.setAttribute(
@@ -910,8 +842,7 @@
             let hasValidImage = false
 
             try {
-              const iconImage =
-                (await getFileSrc(DBState.db.characters[selIdState.selId].image ?? '')) ?? ''
+              const iconImage = (await getFileSrc(DBState.db.characters[selIdState.selId].image ?? '')) ?? ''
 
               if (
                 iconImage &&
@@ -1066,8 +997,7 @@
         window.navigator.clipboard.writeText(msgDisplay).then(() => {
           setStatusMessage(language.copied)
         })
-      }}
-    >
+      }}>
       <CopyIcon size={20} />
       {#if showNames}
         <span class="ml-1">{language.copy}</span>
@@ -1080,8 +1010,7 @@
         class="flex items-center hover:text-blue-500 transition-colors button-icon-tts"
         onclick={() => {
           return sayTTS(null, message)
-        }}
-      >
+        }}>
         <Volume2Icon size={20} />
         {#if showNames}
           <span class="ml-1">TTS</span>
@@ -1091,8 +1020,7 @@
     <button
       class="flex items-center hover:text-blue-500 transition-colors button-icon-remove"
       onclick={(e) => rm(e, false)}
-      use:longpress={(e) => rm(e, true)}
-    >
+      use:longpress={(e) => rm(e, true)}>
       <TrashIcon size={20} />
 
       {#if showNames}
@@ -1110,8 +1038,7 @@
       class:translating
       onclick={async () => {
         translated = !translated
-      }}
-    >
+      }}>
       <LanguagesIcon />
       {#if showNames}
         <span class="ml-1">{language.translate}</span>
@@ -1129,8 +1056,7 @@
           editMode = false
           edit()
         }
-      }}
-    >
+      }}>
       <PencilIcon size={20} />
 
       {#if showNames}
@@ -1146,8 +1072,7 @@
       <button
         class="flex items-center hover:text-blue-500 transition-colors button-icon-unreroll"
         class:dyna-icon={rerollIcon === 'dynamic'}
-        onclick={unReroll}
-      >
+        onclick={unReroll}>
         <ArrowLeft size={22} />
       </button>
       {#if firstMessage && DBState.db.swipe && DBState.db.showFirstMessagePages}
@@ -1156,16 +1081,14 @@
       <button
         class="flex items-center hover:text-blue-500 transition-colors button-icon-reroll"
         class:dyna-icon={rerollIcon === 'dynamic'}
-        onclick={onReroll}
-      >
+        onclick={onReroll}>
         <ArrowRight size={22} />
       </button>
     {:else}
       <button
         class="flex items-center hover:text-blue-500 transition-colors button-icon-reroll"
         class:dyna-icon={rerollIcon === 'dynamic'}
-        onclick={onReroll}
-      >
+        onclick={onReroll}>
         <RefreshCcwIcon size={20} />
       </button>
     {/if}
@@ -1181,8 +1104,7 @@
       onclick={async () => {
         await sleep(1)
         toggleBookmark()
-      }}
-    >
+      }}>
       <BookmarkIcon size={20} />
       {#if showNames}
         <span class="ml-1">{language.bookmark}</span>
@@ -1196,9 +1118,7 @@
       await sleep(1)
       const previous = currentChatStateSnapshot()
       const currentChat =
-        DBState.db.characters[selIdState.selId].chats[
-          DBState.db.characters[selIdState.selId].chatPage
-        ]
+        DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage]
 
       let folder
       let sourcePatch: { folderId?: string | null } = {}
@@ -1251,20 +1171,15 @@
         const existingFolder =
           folder ??
           DBState.db.characters[selIdState.selId].chatFolders?.find(
-            (item) =>
-              item.id === currentChat.folderId && item.name === `Branches of ${currentChat.name}`,
+            (item) => item.id === currentChat.folderId && item.name === `Branches of ${currentChat.name}`,
           )
         dispatchForkChat(currentChat.id, previous, {
           chat: newChat,
-          sourcePatch:
-            Object.keys(sourcePatch).length > 0
-              ? sourcePatch
-              : { folderId: currentChat.folderId ?? null },
+          sourcePatch: Object.keys(sourcePatch).length > 0 ? sourcePatch : { folderId: currentChat.folderId ?? null },
           folder: existingFolder,
         })
       }
-    }}
-  >
+    }}>
     <SplitIcon size={20} />
     {#if showNames}
       <span class="ml-1">{language.branch}</span>
@@ -1276,9 +1191,7 @@
     onclick={async () => {
       await sleep(1)
       const currentMessage =
-        DBState.db.characters[selIdState.selId].chats[
-          DBState.db.characters[selIdState.selId].chatPage
-        ].message[idx]
+        DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message[idx]
       const previous = currentChatScopedSnapshot()
       const disabled = !currentMessage.disabled
       const messageId = currentMessage.chatId
@@ -1286,10 +1199,7 @@
         if (messageId) {
           dispatchUpdateMessageScoped(messageId, { disabled }, previous)
         } else {
-          const chat =
-            DBState.db.characters[selIdState.selId].chats[
-              DBState.db.characters[selIdState.selId].chatPage
-            ]
+          const chat = DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage]
           const nextMessages = cloneMessagesWithIds(chat)
           if (nextMessages[idx]) {
             nextMessages[idx].disabled = disabled
@@ -1298,13 +1208,12 @@
         }
       } else {
         const localMessageId = ensureMessageId(currentMessage)
-        DBState.db.characters[selIdState.selId].chats[
-          DBState.db.characters[selIdState.selId].chatPage
-        ].message[idx].disabled = disabled
+        DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message[
+          idx
+        ].disabled = disabled
         dispatchUpdateMessageScoped(localMessageId, { disabled }, previous)
       }
-    }}
-  >
+    }}>
     <PowerOff size={20} />
     {#if showNames}
       <span class="ml-1">{language.disableMessage}</span>
@@ -1316,9 +1225,7 @@
     onclick={async () => {
       await sleep(1)
       const currentMessage =
-        DBState.db.characters[selIdState.selId].chats[
-          DBState.db.characters[selIdState.selId].chatPage
-        ].message[idx]
+        DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message[idx]
       const previous = currentChatScopedSnapshot()
       const disabled = currentMessage.disabled === 'allBefore' ? false : 'allBefore'
       const messageId = currentMessage.chatId
@@ -1326,10 +1233,7 @@
         if (messageId) {
           dispatchUpdateMessageScoped(messageId, { disabled }, previous)
         } else {
-          const chat =
-            DBState.db.characters[selIdState.selId].chats[
-              DBState.db.characters[selIdState.selId].chatPage
-            ]
+          const chat = DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage]
           const nextMessages = cloneMessagesWithIds(chat)
           if (nextMessages[idx]) {
             nextMessages[idx].disabled = disabled
@@ -1338,13 +1242,12 @@
         }
       } else {
         const localMessageId = ensureMessageId(currentMessage)
-        DBState.db.characters[selIdState.selId].chats[
-          DBState.db.characters[selIdState.selId].chatPage
-        ].message[idx].disabled = disabled
+        DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message[
+          idx
+        ].disabled = disabled
         dispatchUpdateMessageScoped(localMessageId, { disabled }, previous)
       }
-    }}
-  >
+    }}>
     <Scissors size={20} />
     {#if showNames}
       <span class="ml-1">{language.disableAbove}</span>
@@ -1360,8 +1263,7 @@
         style={options?.styleFix ??
           `height:${(DBState.db.iconsize * 3.5) / 100}rem;width:${(DBState.db.iconsize * 3.5) / 100}rem;min-width:${(DBState.db.iconsize * 3.5) / 100}rem`}
         class:rounded-md={options?.rounded}
-        class:rounded-full={options?.rounded}
-      >
+        class:rounded-full={options?.rounded}>
         {#if name === 'assistant'}
           <BotIcon />
         {:else}
@@ -1375,8 +1277,8 @@
           style={options?.styleFix ??
             `height:${(DBState.db.iconsize * 3.5) / 100}rem;width:${(DBState.db.iconsize * 3.5) / 100}rem;min-width:${(DBState.db.iconsize * 3.5) / 100}rem`}
           class:rounded-md={!options?.rounded}
-          class:rounded-full={options?.rounded}
-        ></div>
+          class:rounded-full={options?.rounded}>
+        </div>
       {:then m}
         {#if largePortrait && !options?.rounded}
           <div
@@ -1385,8 +1287,8 @@
               (options?.styleFix ??
                 `height:${(DBState.db.iconsize * 3.5) / 100 / 0.75}rem;width:${(DBState.db.iconsize * 3.5) / 100}rem;min-width:${(DBState.db.iconsize * 3.5) / 100}rem`)}
             class:rounded-md={!options?.rounded}
-            class:rounded-full={options?.rounded}
-          ></div>
+            class:rounded-full={options?.rounded}>
+          </div>
         {:else}
           <div
             class="shadow-lg bg-textcolor2"
@@ -1394,8 +1296,8 @@
               (options?.styleFix ??
                 `height:${(DBState.db.iconsize * 3.5) / 100}rem;width:${(DBState.db.iconsize * 3.5) / 100}rem;min-width:${(DBState.db.iconsize * 3.5) / 100}rem`)}
             class:rounded-md={!options?.rounded}
-            class:rounded-full={options?.rounded}
-          ></div>
+            class:rounded-full={options?.rounded}>
+          </div>
         {/if}
       {/await}
     {/if}
@@ -1408,18 +1310,14 @@
       class={dom.getAttribute('class') ?? ''}
       src={dom.getAttribute('src') ?? ''}
       alt={dom.getAttribute('alt') ?? ''}
-      style={dom.getAttribute('style') ?? ''}
-    />
+      style={dom.getAttribute('style') ?? ''} />
   {:else if dom.tagName === 'A'}
     <a
       target="_blank"
       rel="noreferrer"
-      href={dom.getAttribute('href') && dom.getAttribute('href').startsWith('https')
-        ? dom.getAttribute('href')
-        : ''}
+      href={dom.getAttribute('href') && dom.getAttribute('href').startsWith('https') ? dom.getAttribute('href') : ''}
       class={dom.getAttribute('class') ?? ''}
-      style={dom.getAttribute('style') ?? ''}
-    >
+      style={dom.getAttribute('style') ?? ''}>
       {@render renderChilds(dom)}
     </a>
   {:else if dom.tagName === 'SPAN'}
@@ -1522,8 +1420,7 @@
     <button
       {...getRisuButtonAttributes(dom)}
       class={dom.getAttribute('class') ?? ''}
-      style={dom.getAttribute('style') ?? ''}
-    >
+      style={dom.getAttribute('style') ?? ''}>
       {@render renderChilds(dom)}
     </button>
   {:else if dom.tagName === 'RISUTEXTBOX'}
@@ -1564,14 +1461,10 @@
   data-chat-id={messageRowId}
   data-risu-message-index={idx}
   data-risu-message-id={messageRowId}
-  style={isLastMemory
-    ? `border-top:${DBState.db.memoryLimitThickness}px solid rgba(98, 114, 164, 0.7);`
-    : ''}
-  onclickcapture={handleButtonTriggerWithin}
->
+  style={isLastMemory ? `border-top:${DBState.db.memoryLimitThickness}px solid rgba(98, 114, 164, 0.7);` : ''}
+  onclickcapture={handleButtonTriggerWithin}>
   <div
-    class="text-textcolor mt-1 ml-4 mr-4 mb-1 p-2 bg-transparent grow border-t-gray-900 border-opacity/30 border-transparent flexium items-start max-w-full"
-  >
+    class="text-textcolor mt-1 ml-4 mr-4 mb-1 p-2 bg-transparent grow border-t-gray-900 border-opacity/30 border-transparent flexium items-start max-w-full">
     {#if DBState.db.theme === 'mobilechat' && !blankMessage}
       <div class={role === 'user' ? 'flex items-start w-full justify-end' : 'flex items-start'}>
         {#if role !== 'user'}
@@ -1580,8 +1473,7 @@
         <div
           class="bg-gray-100 rounded-lg p-3 max-w-[70%] mx-2"
           class:rounded-tl-none={role !== 'user'}
-          class:rounded-tr-none={role === 'user'}
-        >
+          class:rounded-tr-none={role === 'user'}>
           <p class="text-gray-800">{@render textBox()}</p>
           {#if DBState.db.characters?.[selIdState.selId]?.chats?.[DBState.db.characters?.[selIdState.selId]?.chatPage]?.message?.[idx]?.time}
             <span class="text-xs text-textcolor2 mt-1 block">
@@ -1593,9 +1485,9 @@
                 day: '2-digit',
                 hour12: false,
               }).format(
-                DBState.db.characters[selIdState.selId].chats[
-                  DBState.db.characters[selIdState.selId].chatPage
-                ].message[idx].time,
+                DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message[
+                  idx
+                ].time,
               )}
             </span>
           {/if}
@@ -1607,24 +1499,20 @@
     {:else if DBState.db.theme === 'cardboard' && !blankMessage}
       <div class="w-full flex flex-col px-0 sm:px-4 py-4 relative">
         <div
-          class="bg-linear-to-b from-gray-100 to-gray-200 rounded-lg shadow-lg border-gray-400 border p-4 flex flex-col"
-        >
+          class="bg-linear-to-b from-gray-100 to-gray-200 rounded-lg shadow-lg border-gray-400 border p-4 flex flex-col">
           <div class="flex gap-4 mt-2 flex-col sm:flex-row">
             <div class="flex flex-col items-center">
               <div class="sm:h-96 sm:w-72 sm:min-w-72 w-48 h-64">
                 {@render senderIcon({ rounded: false, styleFix: 'height:100%;width:100%;' })}
               </div>
-              <h2
-                class="text-base font-bold text-gray-500 text-center mt-2 max-w-full text-ellipsis"
-              >
+              <h2 class="text-base font-bold text-gray-500 text-center mt-2 max-w-full text-ellipsis">
                 {name}
               </h2>
             </div>
             {#if editMode}
               <textarea
                 class="grow h-138 sm:h-96 overflow-y-auto bg-transparent text-black p-2 mb-2 resize-none message-edit-area"
-                bind:value={message}
-              ></textarea>
+                bind:value={message}></textarea>
             {:else}
               <div class="grow h-138 sm:h-96 overflow-y-auto p-2 mb-2 sm:mb-0">
                 {@render textBox()}
@@ -1633,8 +1521,7 @@
           </div>
         </div>
         <div
-          class="absolute bottom-0 right-0 bg-linear-to-b from-gray-200 to-gray-300 p-2 rounded-md border border-gray-400 text-gray-400"
-        >
+          class="absolute bottom-0 right-0 bg-linear-to-b from-gray-200 to-gray-300 p-2 rounded-md border border-gray-400 text-gray-400">
           {@render iconButtons({ applyTextColors: false })}
         </div>
       </div>
@@ -1647,20 +1534,16 @@
           {#if DBState.db.characters[selIdState.selId]?.chaId === '§playground' && !blankMessage && DBState.db.characters[selIdState.selId]?.chats?.[DBState.db.characters[selIdState.selId]?.chatPage]?.message?.[idx]}
             <span class="chat-width text-xl border-darkborderc flex items-center text-textcolor">
               <span
-                >{DBState.db.characters[selIdState.selId].chats[
-                  DBState.db.characters[selIdState.selId].chatPage
-                ].message[idx].role === 'char'
+                >{DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage]
+                  .message[idx].role === 'char'
                   ? 'Assistant'
-                  : 'User'}</span
-              >
+                  : 'User'}</span>
               <button
                 class="ml-2 text-textcolor2 hover:text-textcolor"
                 onclick={() => {
                   const previous = currentChatScopedSnapshot()
                   const chat =
-                    DBState.db.characters[selIdState.selId].chats[
-                      DBState.db.characters[selIdState.selId].chatPage
-                    ]
+                    DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage]
                   const role = chat.message[idx].role === 'char' ? 'user' : 'char'
                   const messageId = chat.message[idx].chatId
                   if (canUseServerCommands()) {
@@ -1682,8 +1565,7 @@
                     v[idx] = (v[idx] ?? 0) + 1
                     return v
                   })
-                }}><ArrowLeftRightIcon size="18" /></button
-              >
+                }}><ArrowLeftRightIcon size="18" /></button>
             </span>
           {:else if !blankMessage && !$HideIconStore}
             <div class="chat-width text-xl unmargin text-textcolor flex items-center">
@@ -1705,6 +1587,6 @@
       'w-full border-t-2 border-dashed': true,
       'border-blue-500': disabled === true,
       'border-amber-500': disabled === 'allBefore',
-    }}
-  ></div>
+    }}>
+  </div>
 {/if}

@@ -165,12 +165,7 @@ function resetTranslator(failedTranslator: BergamotTranslator | null = translato
 }
 
 // Translate
-export async function bergamotTranslate(
-  text: string,
-  from: string,
-  to: string,
-  html: boolean | null,
-) {
+export async function bergamotTranslate(text: string, from: string, to: string, html: boolean | null) {
   const previousTask = translateTask
   const currentTask = (async () => {
     await previousTask

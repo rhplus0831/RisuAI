@@ -43,21 +43,14 @@ export function resolveKoboldRequest(input: ResolveInput): KoboldRequest | null 
       ? input.maxTokens
       : undefined
   const maxContextLength =
-    typeof input.maxContextLength === 'number' &&
-    Number.isFinite(input.maxContextLength) &&
-    input.maxContextLength > 0
+    typeof input.maxContextLength === 'number' && Number.isFinite(input.maxContextLength) && input.maxContextLength > 0
       ? input.maxContextLength
       : undefined
   const temperature =
-    typeof input.temperature === 'number' && Number.isFinite(input.temperature)
-      ? input.temperature
-      : undefined
-  const topP =
-    typeof input.topP === 'number' && Number.isFinite(input.topP) ? input.topP : undefined
-  const topK =
-    typeof input.topK === 'number' && Number.isFinite(input.topK) ? input.topK : undefined
-  const topA =
-    typeof input.topA === 'number' && Number.isFinite(input.topA) ? input.topA : undefined
+    typeof input.temperature === 'number' && Number.isFinite(input.temperature) ? input.temperature : undefined
+  const topP = typeof input.topP === 'number' && Number.isFinite(input.topP) ? input.topP : undefined
+  const topK = typeof input.topK === 'number' && Number.isFinite(input.topK) ? input.topK : undefined
+  const topA = typeof input.topA === 'number' && Number.isFinite(input.topA) ? input.topA : undefined
   const repetitionPenalty =
     typeof input.repetitionPenalty === 'number' && Number.isFinite(input.repetitionPenalty)
       ? input.repetitionPenalty

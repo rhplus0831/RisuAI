@@ -3,11 +3,7 @@ import type { OpenAIChat } from '../index.svelte'
 import { tokenizeNum } from '../../tokenizer'
 import { requestChatData } from '../request/request'
 import { language } from '../../../lang'
-import {
-  pushCharEmotionEntry,
-  type CharEmotionEntry,
-  type CharEmotionMap,
-} from './charEmotionStore'
+import { pushCharEmotionEntry, type CharEmotionEntry, type CharEmotionMap } from './charEmotionStore'
 
 export interface RunEmotionLlmFallbackOptions {
   result: string
@@ -30,9 +26,7 @@ function shuffleArray(array: string[]): string[] {
   return array
 }
 
-export async function runEmotionLlmFallback(
-  opts: RunEmotionLlmFallbackOptions,
-): Promise<void> {
+export async function runEmotionLlmFallback(opts: RunEmotionLlmFallbackOptions): Promise<void> {
   const currentEmotion = opts.currentChar.emotionImages
   let emotionList = currentEmotion.map((a) => a[0])
 
@@ -102,10 +96,7 @@ export async function runEmotionLlmFallback(
 
   emotionList = currentEmotion.map((a) => a[0])
   try {
-    const emotion: string = rq.result
-      .replace(/ |\n/g, '')
-      .trim()
-      .toLocaleLowerCase()
+    const emotion: string = rq.result.replace(/ |\n/g, '').trim().toLocaleLowerCase()
     let emotionSelected = false
     for (const emo of currentEmotion) {
       if (emo[0] === emotion) {

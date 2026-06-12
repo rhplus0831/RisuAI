@@ -172,12 +172,10 @@ function frame(event: string, data: unknown): string {
 
 function sseChatResponse(): Response {
   const enc = new TextEncoder()
-  const postGeneration =
-    state.postGenerationQueue.length > 0 ? state.postGenerationQueue.shift() : state.postGeneration
+  const postGeneration = state.postGenerationQueue.length > 0 ? state.postGenerationQueue.shift() : state.postGeneration
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
-      const push = (event: string, data: unknown): void =>
-        controller.enqueue(enc.encode(frame(event, data)))
+      const push = (event: string, data: unknown): void => controller.enqueue(enc.encode(frame(event, data)))
 
       push('stage', { stage: 'validate', status: 'start' })
       push('stage', { stage: 'validate', status: 'end' })
@@ -206,14 +204,9 @@ function sseChatResponse(): Response {
         timings: { prompt: 1 },
         tokens: { prompt: state.inputTokens, total: state.inputTokens },
         responseBudget: state.responseBudget,
-        generationId:
-          state.dispatchResult !== null || state.dispatchError !== null
-            ? state.generationId
-            : undefined,
+        generationId: state.dispatchResult !== null || state.dispatchError !== null ? state.generationId : undefined,
         generationInfo:
-          state.dispatchResult !== null || state.dispatchError !== null
-            ? state.generationInfo
-            : undefined,
+          state.dispatchResult !== null || state.dispatchError !== null ? state.generationInfo : undefined,
       })
       if (state.dispatchResult !== null) {
         push('token', { content: state.dispatchResult })
@@ -251,12 +244,8 @@ function sseChatResponse(): Response {
   })
 }
 
-export async function serverChatFetch(
-  input: RequestInfo | URL,
-  init?: RequestInit,
-): Promise<Response> {
-  const url =
-    typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+export async function serverChatFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
   if (isTokenizerUrl(url)) return serveTokenizerFetch(url)
   if (url.endsWith('/api/v1/bootstrap')) {
     return new Response(JSON.stringify({ revision: 1, database: {} }), {
@@ -302,8 +291,7 @@ export async function serverChatFetch(
     characterId: typeof body.characterId === 'string' ? body.characterId : '',
     mode: typeof body.mode === 'string' ? body.mode : '',
     userMessage: typeof body.userMessage === 'string' ? body.userMessage : '',
-    regenerateMessageId:
-      typeof body.regenerateMessageId === 'string' ? body.regenerateMessageId : '',
+    regenerateMessageId: typeof body.regenerateMessageId === 'string' ? body.regenerateMessageId : '',
   })
 
   return sseChatResponse()

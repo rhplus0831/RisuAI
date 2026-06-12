@@ -22,10 +22,7 @@ const customHtmlMocks = vi.hoisted(() => {
     getLLMCache: vi.fn(async () => null),
     ParseMarkdown: vi.fn(async (html: string) => html),
     risuChatParser: vi.fn(
-      (
-        message: string,
-        arg?: { cbsConditions?: { firstmsg?: boolean; chatRole?: string | null } },
-      ) => {
+      (message: string, arg?: { cbsConditions?: { firstmsg?: boolean; chatRole?: string | null } }) => {
         if (message === templates.throwing) {
           throw new Error('template parse failed')
         }

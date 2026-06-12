@@ -5,9 +5,7 @@ interface CommandResult {
   revision: number
 }
 
-export async function applyMessageEdit(
-  run: () => Promise<CommandResult>,
-): Promise<CommandResult> {
+export async function applyMessageEdit(run: () => Promise<CommandResult>): Promise<CommandResult> {
   const result = await run()
   if (result.status === 'conflict') {
     return result

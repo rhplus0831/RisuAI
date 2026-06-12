@@ -1,9 +1,5 @@
 import * as fflate from 'fflate'
-import {
-  RISUSAVE_BLOCK_HEADER,
-  classifyRisuSaveEnvelope,
-  concatBytes,
-} from './legacyEnvelopeCodec.js'
+import { RISUSAVE_BLOCK_HEADER, classifyRisuSaveEnvelope, concatBytes } from './legacyEnvelopeCodec.js'
 import { gunzipBounded } from './boundedInflate.js'
 import { assertExpandedSizeWithinLimit, type ExpandedSizeLimitOptions } from './importLimits.js'
 
@@ -64,11 +60,7 @@ export function encodeRisuSaveBlock(block: EncodableRisuSaveBlock): Uint8Array {
   result[1] = block.compression ? 1 : 0
   result[2] = name.length
   result.set(name, 3)
-  new DataView(result.buffer, result.byteOffset + 3 + name.length, 4).setUint32(
-    0,
-    blockData.length,
-    true,
-  )
+  new DataView(result.buffer, result.byteOffset + 3 + name.length, 4).setUint32(0, blockData.length, true)
   result.set(blockData, 7 + name.length)
   return result
 }
@@ -119,9 +111,7 @@ export function decodeRisuSaveBlockEnvelope(
     // against the budget the previous blocks left over, so the cumulative cap
     // is enforced *while* a block inflates rather than after it materialized.
     const remainingBudget: ExpandedSizeLimitOptions =
-      options.maxExpandedBytes !== undefined
-        ? { maxExpandedBytes: options.maxExpandedBytes - expandedBytes }
-        : {}
+      options.maxExpandedBytes !== undefined ? { maxExpandedBytes: options.maxExpandedBytes - expandedBytes } : {}
     const contentBytes = compression ? gunzipBounded(rawBlockData, remainingBudget) : rawBlockData
     expandedBytes += contentBytes.byteLength
     assertExpandedSizeWithinLimit(expandedBytes, options)
@@ -158,10 +148,7 @@ export function decodeRisuSaveBlockEnvelope(
   }
 }
 
-function appendCacheOnlyDirectoryReferences(
-  blocks: DecodedRisuSaveBlock[],
-  loadedNames: Set<string>,
-): void {
+function appendCacheOnlyDirectoryReferences(blocks: DecodedRisuSaveBlock[], loadedNames: Set<string>): void {
   const root = blocks.find((block) => block.type === RisuSaveBlockType.ROOT && block.content)
   if (!root?.content) return
 

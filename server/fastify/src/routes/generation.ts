@@ -2,18 +2,10 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { Database } from '../../../../src/ts/storage/database.svelte'
 import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
 import type { AuthState } from '../auth.js'
-import {
-  resolveAnthropicRequest,
-  runAnthropic,
-  runAnthropicStream,
-} from '../generation/anthropic.js'
+import { resolveAnthropicRequest, runAnthropic, runAnthropicStream } from '../generation/anthropic.js'
 import { resolveEchoRequest, runEcho, runEchoStream } from '../generation/echo.js'
 import type { CompletionStreamFrame } from '../generation/frames.js'
-import {
-  coerceBedrockCredentials,
-  resolveBedrockRequest,
-  runBedrock,
-} from '../generation/bedrock.js'
+import { coerceBedrockCredentials, resolveBedrockRequest, runBedrock } from '../generation/bedrock.js'
 import { resolveCohereRequest, runCohere } from '../generation/cohere.js'
 import { resolveHordeRequest, runHorde } from '../generation/horde.js'
 import { resolveGeminiRequest, runGemini, runGeminiStream } from '../generation/gemini.js'
@@ -28,10 +20,7 @@ import type {
 } from '../generation/openaiCompatible.js'
 import { resolveOpenAICompatibleVariant } from '../generation/openaiCompatible.js'
 import { resolveOpenAIRequest, runOpenAI, runOpenAIStream } from '../generation/openai.js'
-import {
-  resolveOpenAILegacyInstructRequest,
-  runOpenAILegacyInstruct,
-} from '../generation/openaiLegacyInstruct.js'
+import { resolveOpenAILegacyInstructRequest, runOpenAILegacyInstruct } from '../generation/openaiLegacyInstruct.js'
 import { resolveOpenAIResponsesRequest, runOpenAIResponses } from '../generation/openaiResponses.js'
 import { resolveKoboldRequest, runKobold } from '../generation/kobold.js'
 import { resolveOllamaRequest, runOllama, runOllamaStream } from '../generation/ollama.js'
@@ -258,9 +247,7 @@ interface VertexAuthCoerced {
  * all four required fields are non-empty strings, or `{ok:false, error}`
  * when partially populated (configuration mistake worth reporting back).
  */
-function coerceVertexAuth(
-  raw: unknown,
-): null | { ok: true; value: VertexAuthCoerced } | { ok: false; error: string } {
+function coerceVertexAuth(raw: unknown): null | { ok: true; value: VertexAuthCoerced } | { ok: false; error: string } {
   if (raw === undefined || raw === null) return null
   if (typeof raw !== 'object') {
     return { ok: false, error: 'options.gemini.vertex must be an object' }
@@ -317,11 +304,7 @@ function selectedCompletionModel(db: Database, body: CompletionRequestBody): str
   }
   const mode = isCompletionModelMode(body.mode) ? body.mode : 'model'
   let aiModel = mode === 'model' ? db.aiModel : db.subModel
-  if (
-    db.seperateModelsForAxModels === true &&
-    db.seperateModels &&
-    typeof db.seperateModels === 'object'
-  ) {
+  if (db.seperateModelsForAxModels === true && db.seperateModels && typeof db.seperateModels === 'object') {
     const selected = (db.seperateModels as Record<string, unknown>)[mode]
     if (typeof selected === 'string' && selected.length > 0) {
       aiModel = selected
@@ -342,9 +325,7 @@ function buildCompletionDatabase(db: Database, body: CompletionRequestBody): Dat
   if (temperature !== undefined) next.temperature = temperature * 100
   if (typeof body.currentCharName === 'string' && body.currentCharName.length > 0) {
     const first = Array.isArray(db.characters) ? db.characters[0] : undefined
-    next.characters = [
-      { ...(first as object), name: body.currentCharName },
-    ] as Database['characters']
+    next.characters = [{ ...(first as object), name: body.currentCharName }] as Database['characters']
   }
   return next
 }
@@ -422,11 +403,7 @@ async function collectCompletionFrames(
   return { type: 'success', result }
 }
 
-async function handleEchoStreaming(
-  req: FastifyRequest,
-  reply: FastifyReply,
-  options: EchoOptions,
-): Promise<void> {
+async function handleEchoStreaming(req: FastifyRequest, reply: FastifyReply, options: EchoOptions): Promise<void> {
   const { signal, refresh, cleanup } = attachAbort(req)
   try {
     const echo = resolveEchoRequest({
@@ -440,11 +417,7 @@ async function handleEchoStreaming(
   }
 }
 
-async function handleEchoBuffered(
-  req: FastifyRequest,
-  reply: FastifyReply,
-  options: EchoOptions,
-): Promise<void> {
+async function handleEchoBuffered(req: FastifyRequest, reply: FastifyReply, options: EchoOptions): Promise<void> {
   const { signal, cleanup } = attachAbort(req)
   try {
     const echo = resolveEchoRequest({
@@ -510,8 +483,7 @@ function coerceResponsesAdditionalParams(
   if (coerced === null) {
     return {
       ok: false,
-      error:
-        'options["openai-responses"].additionalParams must be an array of [string, string] pairs',
+      error: 'options["openai-responses"].additionalParams must be an array of [string, string] pairs',
     }
   }
   return { ok: true, value: coerced.length > 0 ? coerced : undefined }
@@ -525,8 +497,7 @@ function coerceLegacyInstructAdditionalParams(
   if (coerced === null) {
     return {
       ok: false,
-      error:
-        'options["openai-legacy-instruct"].additionalParams must be an array of [string, string] pairs',
+      error: 'options["openai-legacy-instruct"].additionalParams must be an array of [string, string] pairs',
     }
   }
   return { ok: true, value: coerced.length > 0 ? coerced : undefined }
@@ -801,10 +772,7 @@ async function handleBedrockBuffered(
     if (options.additionalParams !== undefined) {
       const coerced = coerceAdditionalParams(options.additionalParams)
       if (coerced === null) {
-        badRequest(
-          reply,
-          'options.bedrock.additionalParams must be an array of [string, string] pairs',
-        )
+        badRequest(reply, 'options.bedrock.additionalParams must be an array of [string, string] pairs')
         return
       }
       additionalParams = coerced.length > 0 ? coerced : undefined
@@ -959,10 +927,7 @@ async function handleGeminiStreaming(
       signal,
     })
     if (!resolved) {
-      badRequest(
-        reply,
-        'options.gemini.apiKey or options.gemini.vertex is required (and contents must be non-empty)',
-      )
+      badRequest(reply, 'options.gemini.apiKey or options.gemini.vertex is required (and contents must be non-empty)')
       return
     }
     await pipeStream(reply, runGeminiStream(resolved), refresh)
@@ -1002,10 +967,7 @@ async function handleGeminiBuffered(
       signal,
     })
     if (!resolved) {
-      badRequest(
-        reply,
-        'options.gemini.apiKey or options.gemini.vertex is required (and contents must be non-empty)',
-      )
+      badRequest(reply, 'options.gemini.apiKey or options.gemini.vertex is required (and contents must be non-empty)')
       return
     }
     const result = await runGemini(resolved)
@@ -1232,10 +1194,7 @@ async function handleServerIntentCompletion(
   db: DatabaseSync,
 ): Promise<void> {
   if (body.provider !== undefined || body.model !== undefined || body.options !== undefined) {
-    return badRequest(
-      reply,
-      'server-intent completion must not include provider, model, or options',
-    )
+    return badRequest(reply, 'server-intent completion must not include provider, model, or options')
   }
   const messages = validateMessages(body.messages)
   if (!messages) {
@@ -1245,10 +1204,7 @@ async function handleServerIntentCompletion(
     return badRequest(reply, 'stream must be a boolean')
   }
   if (body.mode !== undefined && !isCompletionModelMode(body.mode)) {
-    return badRequest(
-      reply,
-      'mode must be one of: model, submodel, memory, emotion, otherAx, translate',
-    )
+    return badRequest(reply, 'mode must be one of: model, submodel, memory, emotion, otherAx, translate')
   }
   if (body.staticModel !== undefined && typeof body.staticModel !== 'string') {
     return badRequest(reply, 'staticModel must be a string when provided')
@@ -1299,215 +1255,202 @@ export function registerGenerationRoutes(
   authState: AuthState,
   dataDir: string,
 ): void {
-  app.post(
-    '/api/v1/generate/completion',
-    { config: { rateLimit: generationSubmitRateLimit } },
-    async (req, reply) => {
-      if (!(await requireAuth(authState, req, reply))) return
+  app.post('/api/v1/generate/completion', { config: { rateLimit: generationSubmitRateLimit } }, async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
 
-      const body = (req.body ?? {}) as CompletionRequestBody
-      if (body.kind === SERVER_INTENT_KIND) {
-        await handleServerIntentCompletion(req, reply, body, db)
+    const body = (req.body ?? {}) as CompletionRequestBody
+    if (body.kind === SERVER_INTENT_KIND) {
+      await handleServerIntentCompletion(req, reply, body, db)
+      return
+    }
+
+    const provider = body.provider
+    if (typeof provider !== 'string' || provider.length === 0) {
+      return badRequest(reply, 'provider is required')
+    }
+    if (typeof body.model !== 'string' || body.model.length === 0) {
+      return badRequest(reply, 'model is required')
+    }
+    const messages = validateMessages(body.messages)
+    if (!messages) {
+      return badRequest(reply, 'messages must be an array of {role, content}')
+    }
+    if (typeof body.stream !== 'boolean') {
+      return badRequest(reply, 'stream must be a boolean')
+    }
+
+    if (!SUPPORTED_PROVIDERS.has(provider)) {
+      reply.code(501).send({
+        reason: `provider not implemented yet: ${provider}`,
+      })
+      return
+    }
+
+    const options = (body.options ?? {}) as {
+      echo?: EchoOptions
+      openai?: OpenAIOptions
+      nanogpt?: NanoGPTOptions
+      openrouter?: OpenRouterOptions
+      anthropic?: AnthropicOptions
+      mistral?: MistralOptions
+      cohere?: CohereOptions
+      gemini?: GeminiOptions
+      'openai-legacy-instruct'?: LegacyInstructOptions
+      'openai-responses'?: ResponsesOptions
+      kobold?: KoboldOptions
+      'ooba-legacy'?: OobaLegacyOptions
+      ollama?: OllamaOptions
+      bedrock?: BedrockOptions
+      horde?: HordeOptions
+    }
+
+    if (provider === 'echo') {
+      const echoOpts = options.echo ?? {}
+      if (body.stream === true) {
+        await handleEchoStreaming(req, reply, echoOpts)
         return
       }
+      await handleEchoBuffered(req, reply, echoOpts)
+      return
+    }
 
-      const provider = body.provider
-      if (typeof provider !== 'string' || provider.length === 0) {
-        return badRequest(reply, 'provider is required')
+    if (provider === 'anthropic') {
+      const anthropicOpts = options.anthropic ?? {}
+      if (body.stream === true) {
+        await handleAnthropicStreaming(req, reply, body.model, messages, anthropicOpts)
+        return
       }
-      if (typeof body.model !== 'string' || body.model.length === 0) {
-        return badRequest(reply, 'model is required')
-      }
-      const messages = validateMessages(body.messages)
-      if (!messages) {
-        return badRequest(reply, 'messages must be an array of {role, content}')
-      }
-      if (typeof body.stream !== 'boolean') {
-        return badRequest(reply, 'stream must be a boolean')
-      }
+      await handleAnthropicBuffered(req, reply, body.model, messages, anthropicOpts)
+      return
+    }
 
-      if (!SUPPORTED_PROVIDERS.has(provider)) {
-        reply.code(501).send({
-          reason: `provider not implemented yet: ${provider}`,
+    if (provider === 'mistral') {
+      const mistralOpts = options.mistral ?? {}
+      if (body.stream === true) {
+        await handleMistralStreaming(req, reply, body.model, messages, mistralOpts)
+        return
+      }
+      await handleMistralBuffered(req, reply, body.model, messages, mistralOpts)
+      return
+    }
+
+    if (provider === 'cohere') {
+      if (body.stream === true) {
+        // Cohere's local browser path is non-streaming-only. The server
+        // mirrors that until streaming is justified by a fixture.
+        reply.code(400).send({
+          error: 'cohere streaming is not yet supported; set stream: false',
         })
         return
       }
+      const cohereOpts = options.cohere ?? {}
+      await handleCohereBuffered(req, reply, body.model, messages, cohereOpts)
+      return
+    }
 
-      const options = (body.options ?? {}) as {
-        echo?: EchoOptions
-        openai?: OpenAIOptions
-        nanogpt?: NanoGPTOptions
-        openrouter?: OpenRouterOptions
-        anthropic?: AnthropicOptions
-        mistral?: MistralOptions
-        cohere?: CohereOptions
-        gemini?: GeminiOptions
-        'openai-legacy-instruct'?: LegacyInstructOptions
-        'openai-responses'?: ResponsesOptions
-        kobold?: KoboldOptions
-        'ooba-legacy'?: OobaLegacyOptions
-        ollama?: OllamaOptions
-        bedrock?: BedrockOptions
-        horde?: HordeOptions
-      }
-
-      if (provider === 'echo') {
-        const echoOpts = options.echo ?? {}
-        if (body.stream === true) {
-          await handleEchoStreaming(req, reply, echoOpts)
-          return
-        }
-        await handleEchoBuffered(req, reply, echoOpts)
-        return
-      }
-
-      if (provider === 'anthropic') {
-        const anthropicOpts = options.anthropic ?? {}
-        if (body.stream === true) {
-          await handleAnthropicStreaming(req, reply, body.model, messages, anthropicOpts)
-          return
-        }
-        await handleAnthropicBuffered(req, reply, body.model, messages, anthropicOpts)
-        return
-      }
-
-      if (provider === 'mistral') {
-        const mistralOpts = options.mistral ?? {}
-        if (body.stream === true) {
-          await handleMistralStreaming(req, reply, body.model, messages, mistralOpts)
-          return
-        }
-        await handleMistralBuffered(req, reply, body.model, messages, mistralOpts)
-        return
-      }
-
-      if (provider === 'cohere') {
-        if (body.stream === true) {
-          // Cohere's local browser path is non-streaming-only. The server
-          // mirrors that until streaming is justified by a fixture.
-          reply.code(400).send({
-            error: 'cohere streaming is not yet supported; set stream: false',
-          })
-          return
-        }
-        const cohereOpts = options.cohere ?? {}
-        await handleCohereBuffered(req, reply, body.model, messages, cohereOpts)
-        return
-      }
-
-      if (provider === 'gemini') {
-        const geminiOpts = options.gemini ?? {}
-        if (body.stream === true) {
-          await handleGeminiStreaming(req, reply, body.model, messages, geminiOpts)
-          return
-        }
-        await handleGeminiBuffered(req, reply, body.model, messages, geminiOpts)
-        return
-      }
-
-      if (provider === 'openai-legacy-instruct') {
-        if (body.stream === true) {
-          // The local browser path doesn't stream the legacy /v1/completions
-          // endpoint either. Defer until justified by a fixture.
-          reply.code(400).send({
-            error: 'openai-legacy-instruct streaming is not yet supported; set stream: false',
-          })
-          return
-        }
-        const opts = options['openai-legacy-instruct'] ?? {}
-        await handleLegacyInstructBuffered(req, reply, body.model, messages, opts)
-        return
-      }
-
-      if (provider === 'openai-responses') {
-        if (body.stream === true) {
-          reply.code(400).send({
-            error: 'openai-responses streaming is not yet supported; set stream: false',
-          })
-          return
-        }
-        const opts = options['openai-responses'] ?? {}
-        await handleResponsesBuffered(req, reply, body.model, messages, opts)
-        return
-      }
-
-      if (provider === 'kobold') {
-        if (body.stream === true) {
-          reply.code(400).send({
-            error: 'kobold streaming is not yet supported; set stream: false',
-          })
-          return
-        }
-        await handleKoboldBuffered(req, reply, messages, options.kobold ?? {})
-        return
-      }
-
-      if (provider === 'ooba-legacy') {
-        if (body.stream === true) {
-          // The local code uses a WebSocket stream for ooba legacy. The fetch
-          // SSE envelope doesn't apply; deferred.
-          reply.code(400).send({
-            error: 'ooba-legacy streaming is not yet supported; set stream: false',
-          })
-          return
-        }
-        await handleOobaLegacyBuffered(req, reply, messages, options['ooba-legacy'] ?? {})
-        return
-      }
-
-      if (provider === 'ollama') {
-        const ollamaOpts = options.ollama ?? {}
-        if (body.stream === true) {
-          await handleOllamaStreaming(req, reply, body.model, messages, ollamaOpts)
-          return
-        }
-        await handleOllamaBuffered(req, reply, body.model, messages, ollamaOpts)
-        return
-      }
-
-      if (provider === 'bedrock') {
-        if (body.stream === true) {
-          reply.code(400).send({
-            error: 'bedrock streaming is not yet supported; set stream: false',
-          })
-          return
-        }
-        await handleBedrockBuffered(req, reply, body.model, messages, options.bedrock ?? {})
-        return
-      }
-
-      if (provider === 'horde') {
-        if (body.stream === true) {
-          // Horde's poll-loop wire isn't incremental; one final payload
-          // either lands or doesn't. Streaming envelope deferred.
-          reply.code(400).send({
-            error: 'horde streaming is not yet supported; set stream: false',
-          })
-          return
-        }
-        await handleHordeBuffered(req, reply, body.model, options.horde ?? {})
-        return
-      }
-
-      const variantResult = resolveOpenAICompatibleVariant(
-        provider as OpenAICompatibleProvider,
-        options,
-      )
-      if (variantResult.ok === false) {
-        return badRequest(reply, variantResult.error)
-      }
-
+    if (provider === 'gemini') {
+      const geminiOpts = options.gemini ?? {}
       if (body.stream === true) {
-        await handleOpenAICompatibleStreaming(
-          req,
-          reply,
-          body.model,
-          messages,
-          variantResult.variant,
-        )
+        await handleGeminiStreaming(req, reply, body.model, messages, geminiOpts)
         return
       }
-      await handleOpenAICompatibleBuffered(req, reply, body.model, messages, variantResult.variant)
-    },
-  )
+      await handleGeminiBuffered(req, reply, body.model, messages, geminiOpts)
+      return
+    }
+
+    if (provider === 'openai-legacy-instruct') {
+      if (body.stream === true) {
+        // The local browser path doesn't stream the legacy /v1/completions
+        // endpoint either. Defer until justified by a fixture.
+        reply.code(400).send({
+          error: 'openai-legacy-instruct streaming is not yet supported; set stream: false',
+        })
+        return
+      }
+      const opts = options['openai-legacy-instruct'] ?? {}
+      await handleLegacyInstructBuffered(req, reply, body.model, messages, opts)
+      return
+    }
+
+    if (provider === 'openai-responses') {
+      if (body.stream === true) {
+        reply.code(400).send({
+          error: 'openai-responses streaming is not yet supported; set stream: false',
+        })
+        return
+      }
+      const opts = options['openai-responses'] ?? {}
+      await handleResponsesBuffered(req, reply, body.model, messages, opts)
+      return
+    }
+
+    if (provider === 'kobold') {
+      if (body.stream === true) {
+        reply.code(400).send({
+          error: 'kobold streaming is not yet supported; set stream: false',
+        })
+        return
+      }
+      await handleKoboldBuffered(req, reply, messages, options.kobold ?? {})
+      return
+    }
+
+    if (provider === 'ooba-legacy') {
+      if (body.stream === true) {
+        // The local code uses a WebSocket stream for ooba legacy. The fetch
+        // SSE envelope doesn't apply; deferred.
+        reply.code(400).send({
+          error: 'ooba-legacy streaming is not yet supported; set stream: false',
+        })
+        return
+      }
+      await handleOobaLegacyBuffered(req, reply, messages, options['ooba-legacy'] ?? {})
+      return
+    }
+
+    if (provider === 'ollama') {
+      const ollamaOpts = options.ollama ?? {}
+      if (body.stream === true) {
+        await handleOllamaStreaming(req, reply, body.model, messages, ollamaOpts)
+        return
+      }
+      await handleOllamaBuffered(req, reply, body.model, messages, ollamaOpts)
+      return
+    }
+
+    if (provider === 'bedrock') {
+      if (body.stream === true) {
+        reply.code(400).send({
+          error: 'bedrock streaming is not yet supported; set stream: false',
+        })
+        return
+      }
+      await handleBedrockBuffered(req, reply, body.model, messages, options.bedrock ?? {})
+      return
+    }
+
+    if (provider === 'horde') {
+      if (body.stream === true) {
+        // Horde's poll-loop wire isn't incremental; one final payload
+        // either lands or doesn't. Streaming envelope deferred.
+        reply.code(400).send({
+          error: 'horde streaming is not yet supported; set stream: false',
+        })
+        return
+      }
+      await handleHordeBuffered(req, reply, body.model, options.horde ?? {})
+      return
+    }
+
+    const variantResult = resolveOpenAICompatibleVariant(provider as OpenAICompatibleProvider, options)
+    if (variantResult.ok === false) {
+      return badRequest(reply, variantResult.error)
+    }
+
+    if (body.stream === true) {
+      await handleOpenAICompatibleStreaming(req, reply, body.model, messages, variantResult.variant)
+      return
+    }
+    await handleOpenAICompatibleBuffered(req, reply, body.model, messages, variantResult.variant)
+  })
 }

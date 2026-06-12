@@ -212,10 +212,7 @@ function parserArgMemoIdentity(arg: matcherArg): string {
   })
 }
 
-function chatMemoIdentity(
-  chat: { id?: string; name?: string } | undefined,
-  chatPage: number,
-): string {
+function chatMemoIdentity(chat: { id?: string; name?: string } | undefined, chatPage: number): string {
   return stableMemoStringify({
     chatPage,
     id: chat?.id ?? null,
@@ -253,8 +250,7 @@ function lorebookCallbackMemoKey(input: {
   chatLore: readonly loreBook[]
   moduleLore: readonly loreBook[]
 }): string {
-  const moduleIdentity =
-    input.moduleLore.length > 0 ? loreCollectionMemoIdentity(input.moduleLore) : null
+  const moduleIdentity = input.moduleLore.length > 0 ? loreCollectionMemoIdentity(input.moduleLore) : null
   return `lorebook:${stableMemoStringify({
     selectedCharID: input.selectedCharID,
     selectedCharacter: characterMemoIdentity(input.selectedChar),
@@ -329,11 +325,7 @@ export function registerCBS(arg: CBSRegisterArg) {
           return matcherArg.chara.name
         }
       }
-      return (
-        (currentChar as character | undefined)?.nickname ||
-        (currentChar as character | undefined)?.name ||
-        ''
-      )
+      return (currentChar as character | undefined)?.nickname || (currentChar as character | undefined)?.name || ''
     },
     alias: ['bot'],
     description:
@@ -417,8 +409,7 @@ export function registerCBS(arg: CBSRegisterArg) {
     callback: (str, matcherArg, args, vars) => {
       const db = getDatabase()
       const argChara = matcherArg.chara
-      const achara =
-        argChara && typeof argChara !== 'string' ? argChara : db.characters[getSelectedCharID()]
+      const achara = argChara && typeof argChara !== 'string' ? argChara : db.characters[getSelectedCharID()]
       return risuChatParser(achara.personality, matcherArg)
     },
     alias: ['charpersona'],
@@ -431,8 +422,7 @@ export function registerCBS(arg: CBSRegisterArg) {
     callback: (str, matcherArg, args, vars) => {
       const db = getDatabase()
       const argChara = matcherArg.chara
-      const achara =
-        argChara && typeof argChara !== 'string' ? argChara : db.characters[getSelectedCharID()]
+      const achara = argChara && typeof argChara !== 'string' ? argChara : db.characters[getSelectedCharID()]
       return risuChatParser(achara.desc, matcherArg)
     },
     alias: ['chardesc'],
@@ -445,8 +435,7 @@ export function registerCBS(arg: CBSRegisterArg) {
     callback: (str, matcherArg, args, vars) => {
       const db = getDatabase()
       const argChara = matcherArg.chara
-      const achara =
-        argChara && typeof argChara !== 'string' ? argChara : db.characters[getSelectedCharID()]
+      const achara = argChara && typeof argChara !== 'string' ? argChara : db.characters[getSelectedCharID()]
       return risuChatParser(achara.scenario, matcherArg)
     },
     alias: [],
@@ -459,8 +448,7 @@ export function registerCBS(arg: CBSRegisterArg) {
     callback: (str, matcherArg, args, vars) => {
       const db = getDatabase()
       const argChara = matcherArg.chara
-      const achara =
-        argChara && typeof argChara !== 'string' ? argChara : db.characters[getSelectedCharID()]
+      const achara = argChara && typeof argChara !== 'string' ? argChara : db.characters[getSelectedCharID()]
       return risuChatParser(achara.exampleMessage, matcherArg)
     },
     alias: ['examplemessage', 'example_dialogue'],
@@ -495,8 +483,7 @@ export function registerCBS(arg: CBSRegisterArg) {
     callback: (str, matcherArg, args, vars) => {
       const db = getDatabase()
       const argChara = matcherArg.chara
-      const achara =
-        argChara && typeof argChara !== 'string' ? argChara : db.characters[getSelectedCharID()]
+      const achara = argChara && typeof argChara !== 'string' ? argChara : db.characters[getSelectedCharID()]
       const selchar = db.characters[getSelectedCharID()]
       const chat = selchar.chats[selchar.chatPage]
       const characterLore = achara.globalLore ?? []
@@ -856,13 +843,7 @@ export function registerCBS(arg: CBSRegisterArg) {
       let hours = Math.floor(minutes / 60)
       seconds = seconds % 60
       minutes = minutes % 60
-      return (
-        hours.toString() +
-        ':' +
-        minutes.toString().padStart(2, '0') +
-        ':' +
-        seconds.toString().padStart(2, '0')
-      )
+      return hours.toString() + ':' + minutes.toString().padStart(2, '0') + ':' + seconds.toString().padStart(2, '0')
     },
     alias: ['message_idle_duration'],
     description:
@@ -900,13 +881,7 @@ export function registerCBS(arg: CBSRegisterArg) {
       seconds = seconds % 60
       minutes = minutes % 60
 
-      return (
-        hours.toString() +
-        ':' +
-        minutes.toString().padStart(2, '0') +
-        ':' +
-        seconds.toString().padStart(2, '0')
-      )
+      return hours.toString() + ':' + minutes.toString().padStart(2, '0') + ':' + seconds.toString().padStart(2, '0')
     },
     alias: ['idle_duration'],
     description:
@@ -2414,12 +2389,7 @@ export function registerCBS(arg: CBSRegisterArg) {
   /**
    * @param rand 0-1 random value from PRNG
    */
-  const randomPickImpl = (
-    str: string,
-    matcherArg: matcherArg,
-    args: string[],
-    rand: number,
-  ): string => {
+  const randomPickImpl = (str: string, matcherArg: matcherArg, args: string[], rand: number): string => {
     if (args.length === 0) {
       return rand.toString()
     }
@@ -2437,9 +2407,7 @@ export function registerCBS(arg: CBSRegisterArg) {
 
     const index = matcherArg.tokenizeAccurate ? 0 : Math.floor(rand * arr.length)
     const element = arr[index]
-    return typeof element === 'string'
-      ? element.replace(/§X/g, ',')
-      : (JSON.stringify(element) ?? '')
+    return typeof element === 'string' ? element.replace(/§X/g, ',') : (JSON.stringify(element) ?? '')
   }
 
   registerFunction({
@@ -2681,8 +2649,7 @@ export function registerCBS(arg: CBSRegisterArg) {
       return ''
     },
     alias: [],
-    description:
-      "Declares a data which can be used to change parser's behavior. Usage:: {{declare::declaration_name}}",
+    description: "Declares a data which can be used to change parser's behavior. Usage:: {{declare::declaration_name}}",
   })
 
   registerFunction({
@@ -2715,8 +2682,7 @@ export function registerCBS(arg: CBSRegisterArg) {
     name: 'asset',
     callback: 'doc_only',
     alias: [],
-    description:
-      'Displays additional asset A as appropriate element type.\n\nUsage:: {{asset::assetName}}',
+    description: 'Displays additional asset A as appropriate element type.\n\nUsage:: {{asset::assetName}}',
   })
 
   registerFunction({
@@ -2737,8 +2703,7 @@ export function registerCBS(arg: CBSRegisterArg) {
     name: 'bg',
     callback: 'doc_only',
     alias: [],
-    description:
-      'Displays background image A as background image element.\n\nUsage:: {{bg::backgroundName}}',
+    description: 'Displays background image A as background image element.\n\nUsage:: {{bg::backgroundName}}',
   })
 
   registerFunction({
@@ -2759,8 +2724,7 @@ export function registerCBS(arg: CBSRegisterArg) {
     name: 'video-img',
     callback: 'doc_only',
     alias: [],
-    description:
-      'Displays video asset A as image-like element.\n\nUsage:: {{video-img::videoName}}',
+    description: 'Displays video asset A as image-like element.\n\nUsage:: {{video-img::videoName}}',
   })
 
   registerFunction({
@@ -2804,8 +2768,7 @@ export function registerCBS(arg: CBSRegisterArg) {
     name: 'inlayeddata',
     callback: 'doc_only',
     alias: [],
-    description:
-      'Displays styled inlay asset A, which inserts at model request.\n\nUsage:: {{inlayeddata::inlayName}}',
+    description: 'Displays styled inlay asset A, which inserts at model request.\n\nUsage:: {{inlayeddata::inlayName}}',
   })
 
   registerFunction({
@@ -2823,8 +2786,7 @@ export function registerCBS(arg: CBSRegisterArg) {
     description:
       'Conditional statement for CBS. 1 and "true" are truty, and otherwise false.\n\nUsage:: {{#if condition}}...{{/if}}.',
     deprecated: {
-      message:
-        'Due to limitations of adding operators, #if is deprecated and replaced with #when. Use #when instead.',
+      message: 'Due to limitations of adding operators, #if is deprecated and replaced with #when. Use #when instead.',
       replacement: '#when',
     },
   })
@@ -2897,8 +2859,7 @@ Usage:: {{#when condition}}...{{/when}} or {{#when::not::condition}}...{{/when}}
     description:
       'displays content without any CBS processing. Useful for displaying raw HTML or other content without parsing.\n\nUsage:: {{#puredisplay}}...{{/puredisplay}}',
     deprecated: {
-      message:
-        'Due to reparsing issue, #pure is deprecated and replaced with #puredisplay. Use #puredisplay instead.',
+      message: 'Due to reparsing issue, #pure is deprecated and replaced with #puredisplay. Use #puredisplay instead.',
       replacement: '#puredisplay',
     },
   })

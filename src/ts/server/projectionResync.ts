@@ -3,11 +3,7 @@ import { applyServerProjectionDatabase } from '../storage/database.svelte'
 import { setActiveGenerationJobs, triggerOpenChatGenerationReattach } from '../process/reattach'
 import { fetchServerBootstrapProjectionReadOnly } from './bootstrap'
 import { setCachedServerCommandRevision } from './commands'
-import {
-  hydrateActiveCharacterLorebook,
-  hydrateActiveChat,
-  resetChatHydration,
-} from './chatMessageHydration.svelte'
+import { hydrateActiveCharacterLorebook, hydrateActiveChat, resetChatHydration } from './chatMessageHydration.svelte'
 import { recordHydratedCharacterLorebooks, resetLorebookHydration } from './lorebookBridge.svelte'
 import { recordFullBootstrapResync } from './protocolDiagnostics'
 

@@ -1,8 +1,5 @@
 import { DBState } from '../../stores.svelte'
-import type {
-  character,
-  MessageGenerationInfo,
-} from '../../storage/database.svelte'
+import type { character, MessageGenerationInfo } from '../../storage/database.svelte'
 import { loadAndTrimCharEmotion } from './charEmotionStore'
 import { applyEmotionFromResponse } from './emotionFromResponse'
 import { runEmotionEmbeddingFallback } from './emotionFallbackEmbedding'
@@ -78,10 +75,7 @@ export async function runStage4(args: RunStage4Args): Promise<RunStage4Result> {
     await fireDesktopNotification(result)
   }
 
-  if (
-    req.special &&
-    applyEmotionFromResponse({ emotion: req.special.emotion, currentChar })
-  ) {
+  if (req.special && applyEmotionFromResponse({ emotion: req.special.emotion, currentChar })) {
     emoChanged = true
   }
 

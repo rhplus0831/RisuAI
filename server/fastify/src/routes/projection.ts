@@ -83,12 +83,7 @@ const RESOURCE_PROJECTION_FIELDS: Record<string, string[]> = {
   // loadout touch/delete also write the `lastLoadedLoadoutName` settings scalar,
   // so a foreign refresh must reship it alongside the loadouts collection.
   loadout: ['loadouts', 'lastLoadedLoadoutName'],
-  translatorPreset: [
-    'translatorPresets',
-    'translatorPresetId',
-    'translatorPrompt',
-    'translatorMaxResponse',
-  ],
+  translatorPreset: ['translatorPresets', 'translatorPresetId', 'translatorPrompt', 'translatorMaxResponse'],
   // `asset.created` bumps the global revision but does not change the projected
   // `database` (asset metadata lives outside it), so its targeted refresh is a
   // no-op that only advances the client's revision cursor.
@@ -177,10 +172,7 @@ export function registerProjectionRoutes(
   authState: AuthState,
   dataDir: string,
 ): void {
-  const requireProjectionAuth = async (
-    req: Parameters<typeof requireAuth>[1],
-    reply: FastifyReply,
-  ) => {
+  const requireProjectionAuth = async (req: Parameters<typeof requireAuth>[1], reply: FastifyReply) => {
     await requireAuth(authState, req, reply)
   }
 
@@ -388,9 +380,7 @@ export function registerProjectionRoutes(
     // events (which key by chatId/folderId) and `id` for character events.
     if (resource === 'characterRow') {
       const characterId =
-        typeof req.query.parentId === 'string' && req.query.parentId.trim() !== ''
-          ? req.query.parentId
-          : req.query.id
+        typeof req.query.parentId === 'string' && req.query.parentId.trim() !== '' ? req.query.parentId : req.query.id
       if (typeof characterId !== 'string' || characterId.trim() === '') {
         const response = { revision, resource, mode: 'full' as const }
         emitProjectionMetric(req.log, resource, revision, response)
@@ -483,10 +473,7 @@ function invalidBulkChatIdsReply(reply: FastifyReply): void {
   })
 }
 
-async function validateBulkChatIdsEnvelope(
-  req: { body?: unknown },
-  reply: FastifyReply,
-): Promise<void> {
+async function validateBulkChatIdsEnvelope(req: { body?: unknown }, reply: FastifyReply): Promise<void> {
   if (!readBulkIds(req.body as { ids?: unknown } | undefined)) {
     invalidBulkChatIdsReply(reply)
   }
@@ -499,10 +486,7 @@ function invalidBulkCharacterLorebookIdsReply(reply: FastifyReply): void {
   })
 }
 
-async function validateBulkCharacterLorebookIdsEnvelope(
-  req: { body?: unknown },
-  reply: FastifyReply,
-): Promise<void> {
+async function validateBulkCharacterLorebookIdsEnvelope(req: { body?: unknown }, reply: FastifyReply): Promise<void> {
   if (!readBulkIds(req.body as { ids?: unknown } | undefined)) {
     invalidBulkCharacterLorebookIdsReply(reply)
   }
@@ -570,9 +554,7 @@ function loadStubProjectionFields(
   const persisted = loadStubProjection(db, dataDir)
   const masked = maskProviderSecrets(persisted.database)
   const source =
-    masked && typeof masked === 'object' && !Array.isArray(masked)
-      ? (masked as Record<string, unknown>)
-      : {}
+    masked && typeof masked === 'object' && !Array.isArray(masked) ? (masked as Record<string, unknown>) : {}
   const fields: Record<string, unknown> = {}
   for (const key of fieldKeys) {
     if (Object.prototype.hasOwnProperty.call(source, key)) {

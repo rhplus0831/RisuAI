@@ -39,9 +39,7 @@ export const seedSetting: SettingItem = {
   labelKey: 'seed',
   bindKey: 'generationSeed',
   condition: (ctx) =>
-    ctx.db.aiModel.startsWith('gpt') ||
-    ctx.db.aiModel === 'reverse_proxy' ||
-    ctx.db.aiModel === 'openrouter',
+    ctx.db.aiModel.startsWith('gpt') || ctx.db.aiModel === 'reverse_proxy' || ctx.db.aiModel === 'openrouter',
   keywords: ['seed', 'random', 'deterministic'],
 }
 
@@ -167,8 +165,7 @@ export const modelSpecificParameterItems: SettingItem[] = [
     type: 'slider',
     labelKey: 'thinkingTokens',
     bindKey: 'thinkingTokens',
-    condition: (ctx) =>
-      ctx.modelInfo.parameters.includes('thinking_tokens') && ctx.db.thinkingType === 'budget',
+    condition: (ctx) => ctx.modelInfo.parameters.includes('thinking_tokens') && ctx.db.thinkingType === 'budget',
     options: {
       min: -1,
       max: 64000,
@@ -183,8 +180,7 @@ export const modelSpecificParameterItems: SettingItem[] = [
     labelKey: 'adaptiveThinkingEffort',
     bindKey: 'adaptiveThinkingEffort',
     condition: (ctx) =>
-      ctx.modelInfo.flags.includes(LLMFlags.claudeAdaptiveThinking) &&
-      ctx.db.thinkingType === 'adaptive',
+      ctx.modelInfo.flags.includes(LLMFlags.claudeAdaptiveThinking) && ctx.db.thinkingType === 'adaptive',
     options: {
       segmentOptions: [
         { value: 'low', label: 'Low' },
@@ -206,8 +202,7 @@ export const modelSpecificParameterItems: SettingItem[] = [
     fallbackLabel: 'Reasoning Effort',
     bindKey: 'deepseekReasoningEffort',
     condition: (ctx) =>
-      ctx.modelInfo.flags.includes(LLMFlags.deepSeekThinkingToggle) &&
-      ctx.db.deepseekThinkingType === 'enabled',
+      ctx.modelInfo.flags.includes(LLMFlags.deepSeekThinkingToggle) && ctx.db.deepseekThinkingType === 'enabled',
     options: {
       segmentOptions: [
         { value: 'high', label: 'High' },

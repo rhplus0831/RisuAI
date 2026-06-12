@@ -85,9 +85,7 @@ export function currentCharacterSelectionSnapshot(characterId: string): Characte
 
 export function restoreCharacterSelection(snapshot: CharacterSelectionSnapshot): void {
   withTrustedServerProjectionWrite(() => {
-    const character = DBState.db.characters?.find(
-      (candidate) => candidate.chaId === snapshot.characterId,
-    )
+    const character = DBState.db.characters?.find((candidate) => candidate.chaId === snapshot.characterId)
     if (character) {
       character.lastInteraction = snapshot.lastInteraction
     }
@@ -124,9 +122,7 @@ export interface CharacterSupaMemorySnapshot {
   supaMemory: boolean | undefined
 }
 
-export function currentCharacterRowSnapshot(
-  index: number = get(selectedCharID),
-): CharacterRowSnapshot {
+export function currentCharacterRowSnapshot(index: number = get(selectedCharID)): CharacterRowSnapshot {
   const character = DBState.db.characters?.[index]
   return {
     characterId: character?.chaId,
@@ -137,12 +133,8 @@ export function currentCharacterRowSnapshot(
   }
 }
 
-export function currentCharacterTrashTimeSnapshot(
-  index: number = get(selectedCharID),
-): CharacterTrashTimeSnapshot {
-  const character = DBState.db.characters?.[index] as
-    | (character & { trashTime?: number | null })
-    | undefined
+export function currentCharacterTrashTimeSnapshot(index: number = get(selectedCharID)): CharacterTrashTimeSnapshot {
+  const character = DBState.db.characters?.[index] as (character & { trashTime?: number | null }) | undefined
   return {
     characterId: character?.chaId,
     index,
@@ -153,9 +145,7 @@ export function currentCharacterTrashTimeSnapshot(
   }
 }
 
-export function currentCharacterSupaMemorySnapshot(
-  characterId: string,
-): CharacterSupaMemorySnapshot | null {
+export function currentCharacterSupaMemorySnapshot(characterId: string): CharacterSupaMemorySnapshot | null {
   const character = DBState.db.characters?.find((candidate) => candidate.chaId === characterId)
   if (!character) return null
   return {
@@ -200,9 +190,7 @@ export function restoreCharacterTrashTime(snapshot: CharacterTrashTimeSnapshot):
 
 export function restoreCharacterSupaMemory(snapshot: CharacterSupaMemorySnapshot): void {
   withTrustedServerProjectionWrite(() => {
-    const character = DBState.db.characters?.find(
-      (candidate) => candidate.chaId === snapshot.characterId,
-    )
+    const character = DBState.db.characters?.find((candidate) => candidate.chaId === snapshot.characterId)
     if (!character) return
     if (snapshot.hadSupaMemory) {
       character.supaMemory = snapshot.supaMemory
@@ -212,11 +200,7 @@ export function restoreCharacterSupaMemory(snapshot: CharacterSupaMemorySnapshot
   })
 }
 
-function locateCharacterIndex(
-  characters: character[],
-  characterId: string | undefined,
-  fallbackIndex: number,
-): number {
+function locateCharacterIndex(characters: character[], characterId: string | undefined, fallbackIndex: number): number {
   // Prefer the stable id so a stale index can never overwrite the wrong row;
   // fall back to the captured index only when the row carried no id.
   if (characterId) {
@@ -235,10 +219,7 @@ export function runCharacterCommand<T extends Record<string, unknown>>(
   void runServerCommand({ command, rollback, ...options })
 }
 
-export function dispatchCreateCharacter(
-  character: character,
-  previous: CharacterStateSnapshot,
-): void {
+export function dispatchCreateCharacter(character: character, previous: CharacterStateSnapshot): void {
   runCharacterCommand(
     (baseRevision) =>
       createCharacterCommand({
@@ -327,9 +308,7 @@ export function dispatchUpdateCharacterSupaMemory(
   enabled: boolean,
   previous: CharacterSupaMemorySnapshot,
 ): void {
-  dispatchUpdateCharacterWith(characterId, { supaMemory: enabled }, () =>
-    restoreCharacterSupaMemory(previous),
-  )
+  dispatchUpdateCharacterWith(characterId, { supaMemory: enabled }, () => restoreCharacterSupaMemory(previous))
 }
 
 function dispatchCompatibleCharacterUpdateWith(
@@ -350,9 +329,7 @@ export function dispatchCompatibleCharacterUpdate(
   nextCharacter: character | undefined,
   previous: CharacterStateSnapshot,
 ): void {
-  dispatchCompatibleCharacterUpdateWith(previousCharacter, nextCharacter, () =>
-    restoreCharacterState(previous),
-  )
+  dispatchCompatibleCharacterUpdateWith(previousCharacter, nextCharacter, () => restoreCharacterState(previous))
 }
 
 // Single-row rollback variant of `dispatchCompatibleCharacterUpdate` for the
@@ -363,9 +340,7 @@ export function dispatchCompatibleCharacterUpdateScoped(
   nextCharacter: character | undefined,
   previous: CharacterRowSnapshot,
 ): void {
-  dispatchCompatibleCharacterUpdateWith(previousCharacter, nextCharacter, () =>
-    restoreCharacterRow(previous),
-  )
+  dispatchCompatibleCharacterUpdateWith(previousCharacter, nextCharacter, () => restoreCharacterRow(previous))
 }
 
 // Factory-list form of dispatchCompatibleCharacterUpdate so the V3 plugin API
@@ -397,10 +372,7 @@ export function prepareCompatibleCharacterUpdate(
   return { factories, rollback: () => restoreCharacterState(previous) }
 }
 
-export function dispatchDeleteCharacter(
-  characterId: string,
-  previous: CharacterStateSnapshot,
-): void {
+export function dispatchDeleteCharacter(characterId: string, previous: CharacterStateSnapshot): void {
   runCharacterCommand(
     (baseRevision) =>
       deleteCharacterCommand({

@@ -21,9 +21,7 @@ export function setServerProjectionWriteGuardEnabled(enabled: boolean) {
 }
 
 export function isServerProjectionWriteGuardEnabled() {
-  return (
-    serverProjectionWriteGuardEnabled && trustedServerProjectionWriteDepth === 0
-  )
+  return serverProjectionWriteGuardEnabled && trustedServerProjectionWriteDepth === 0
 }
 
 export function withTrustedServerProjectionWrite<T>(callback: () => T): T {
@@ -50,9 +48,7 @@ export function withTrustedServerProjectionWrite<T>(callback: () => T): T {
   if (trustedServerProjectionWriteDepth === 1) {
     // Copy-on-write entry: hand the callback a writable pass-through working copy
     // of the projection source — no clone.
-    DBState.db = createTrustedServerProjectionWorkingCopy(
-      resolveServerProjectionSource(DBState.db),
-    )
+    DBState.db = createTrustedServerProjectionWorkingCopy(resolveServerProjectionSource(DBState.db))
   }
 
   try {
@@ -96,10 +92,7 @@ export function createReadOnlyServerProjection<T extends object>(target: T): T {
   return proxy as T
 }
 
-function createReadOnlyServerProjectionProxy(
-  target: object,
-  memo: WeakMap<object, object>,
-): object {
+function createReadOnlyServerProjectionProxy(target: object, memo: WeakMap<object, object>): object {
   const existing = memo.get(target)
   if (existing) return existing
 

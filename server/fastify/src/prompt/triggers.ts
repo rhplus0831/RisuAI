@@ -1,10 +1,6 @@
 import type { Chat, Database, character } from '../../../../src/ts/storage/database.svelte'
 import type { RisuModule } from '../../../../src/ts/process/modules'
-import type {
-  additonalSysPrompt,
-  triggerCondition,
-  triggerscript,
-} from '../../../../src/ts/process/triggers'
+import type { additonalSysPrompt, triggerCondition, triggerscript } from '../../../../src/ts/process/triggers'
 import { parseKeyValue } from '../../../../src/ts/util/parseKeyValue'
 import { getActiveModules, getModuleTriggers } from './modules.js'
 import { compileBoundedRegex, testBoundedRegex } from './boundedRegex.js'
@@ -393,10 +389,7 @@ function effectRunsInMode(effectType: string, mode: TriggerMode): boolean {
   return true
 }
 
-function effectMayMutateMessages(
-  effect: triggerscript['effect'][number],
-  mode: TriggerMode,
-): boolean {
+function effectMayMutateMessages(effect: triggerscript['effect'][number], mode: TriggerMode): boolean {
   if (!effectRunsInMode(effect.type, mode)) {
     return false
   }
@@ -408,13 +401,8 @@ function effectMayMutateMessages(
   return !knownNonMessageMutatingEffectTypes.has(effect.type)
 }
 
-function selectedTriggersMayMutateMessages(
-  triggers: readonly triggerscript[],
-  mode: TriggerMode,
-): boolean {
-  return triggers.some((trigger) =>
-    (trigger.effect ?? []).some((effect) => effectMayMutateMessages(effect, mode)),
-  )
+function selectedTriggersMayMutateMessages(triggers: readonly triggerscript[], mode: TriggerMode): boolean {
+  return triggers.some((trigger) => (trigger.effect ?? []).some((effect) => effectMayMutateMessages(effect, mode)))
 }
 
 function cloneTriggerCharacterEnvelope(source: character): character {
@@ -480,9 +468,7 @@ export interface TriggerExecutionBudgetOptions {
   now?: () => number
 }
 
-export function createTriggerExecutionBudget(
-  opts: TriggerExecutionBudgetOptions = {},
-): TriggerExecutionBudget {
+export function createTriggerExecutionBudget(opts: TriggerExecutionBudgetOptions = {}): TriggerExecutionBudget {
   const now = opts.now ?? Date.now
   return {
     startedAtMs: now(),
@@ -523,22 +509,14 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   })
 }
 
-function markTriggerStopped(
-  budget: TriggerExecutionBudget,
-  reason: TriggerBudgetStopReason,
-  detail: string,
-): void {
+function markTriggerStopped(budget: TriggerExecutionBudget, reason: TriggerBudgetStopReason, detail: string): void {
   budget.stoppedReason ??= reason
   if (budget.logged) return
   budget.logged = true
   console.debug(`[prompt.triggers] stopped trigger execution early: ${reason} (${detail})`)
 }
 
-function shouldStopTriggerExecution(
-  ctx: TriggerRunContext,
-  budget: TriggerExecutionBudget,
-  detail: string,
-): boolean {
+function shouldStopTriggerExecution(ctx: TriggerRunContext, budget: TriggerExecutionBudget, detail: string): boolean {
   if (ctx.signal?.aborted) {
     markTriggerStopped(budget, 'aborted', detail)
     return true
@@ -546,21 +524,14 @@ function shouldStopTriggerExecution(
   if (budget.stoppedReason) {
     return true
   }
-  if (
-    Number.isFinite(budget.wallClockMs) &&
-    budget.now() - budget.startedAtMs >= budget.wallClockMs
-  ) {
+  if (Number.isFinite(budget.wallClockMs) && budget.now() - budget.startedAtMs >= budget.wallClockMs) {
     markTriggerStopped(budget, 'wallClock', detail)
     return true
   }
   return false
 }
 
-function chargeTriggerEffectStep(
-  ctx: TriggerRunContext,
-  budget: TriggerExecutionBudget,
-  effectType: string,
-): boolean {
+function chargeTriggerEffectStep(ctx: TriggerRunContext, budget: TriggerExecutionBudget, effectType: string): boolean {
   if (shouldStopTriggerExecution(ctx, budget, `before effect ${effectType}`)) {
     return true
   }
@@ -572,11 +543,7 @@ function chargeTriggerEffectStep(
   return false
 }
 
-function chargeTriggerLoopBack(
-  ctx: TriggerRunContext,
-  budget: TriggerExecutionBudget,
-  effectType: string,
-): boolean {
+function chargeTriggerLoopBack(ctx: TriggerRunContext, budget: TriggerExecutionBudget, effectType: string): boolean {
   if (shouldStopTriggerExecution(ctx, budget, `before ${effectType} loop-back`)) {
     return true
   }
@@ -616,11 +583,7 @@ export function collectTriggers(char: character, modules: RisuModule[]): trigger
  *   - with a `manualName`, only triggers whose `comment` matches run.
  *   - otherwise the trigger's `type` must equal the run `mode`.
  */
-export function matchesTrigger(
-  trigger: triggerscript,
-  mode: TriggerMode,
-  manualName?: string,
-): boolean {
+export function matchesTrigger(trigger: triggerscript, mode: TriggerMode, manualName?: string): boolean {
   const firstEffect = trigger.effect?.[0]?.type
   if (firstEffect === 'triggercode' || firstEffect === 'triggerlua') {
     return true
@@ -705,9 +668,7 @@ export function evaluateConditions(
               .includes(val)
       } else if (condition.type2 === 'loose') {
         pass = triggerCache
-          ? getRecentTranscriptLower(triggerCache, chat, condition.depth).includes(
-              val.toLowerCase(),
-            )
+          ? getRecentTranscriptLower(triggerCache, chat, condition.depth).includes(val.toLowerCase())
           : chat.message
               .slice(0 - condition.depth)
               .map((v) => v.data)
@@ -768,8 +729,7 @@ export async function runTrigger(
   }
   const triggerCache = arg.triggerCache ?? createTriggerRunCache()
   const selected = triggers.filter((trigger) => matchesTrigger(trigger, mode, arg.manualName))
-  const needsPrivateTranscript =
-    !arg.displayMode && selectedTriggersMayMutateMessages(selected, mode)
+  const needsPrivateTranscript = !arg.displayMode && selectedTriggersMayMutateMessages(selected, mode)
   const workingChar = arg.displayMode ? char : cloneTriggerCharacterEnvelope(char)
   const sourceChat = arg.chat ?? workingChar.chats[workingChar.chatPage]
   let stopSending = arg.stopSending ?? false
@@ -838,8 +798,7 @@ export async function runTrigger(
 
     // Var-or-value resolution shared by the V2 arms (`triggers.ts`):
     // `value` expands the literal; `var` expands then reads the var.
-    const resolve = (raw: string, isValue: boolean): string =>
-      isValue ? expand(raw) : engine.getVar(expand(raw))
+    const resolve = (raw: string, isValue: boolean): string => (isValue ? expand(raw) : engine.getVar(expand(raw)))
 
     // Per-trigger loop counters for `v2LoopNTimes` + the lag guard
     // (the SPA's inner numeric `tempVars`, `triggers.ts:1341`).
@@ -1005,8 +964,7 @@ export async function runTrigger(
         case 'v2DeclareLocalVar': {
           const effectValue = resolve(effect.value, effect.valueType === 'value')
           const varKey = expand(effect.var)
-          const finalValue =
-            effectValue === null || effectValue === undefined ? 'null' : effectValue
+          const finalValue = effectValue === null || effectValue === undefined ? 'null' : effectValue
           engine.declareLocalVar(varKey, finalValue, effect.indent)
           break
         }
@@ -1017,9 +975,7 @@ export async function runTrigger(
               ? engine.getVar(expand(effect.source))
               : expand(effect.source)
           const targetValue =
-            effect.targetType === 'value'
-              ? expand(effect.target)
-              : engine.getVar(expand(effect.target))
+            effect.targetType === 'value' ? expand(effect.target) : engine.getVar(expand(effect.target))
           let pass = false
           switch (effect.condition) {
             case '=':
@@ -1221,8 +1177,7 @@ export async function runTrigger(
           break
         }
         case 'v2SystemPrompt': {
-          additonalSysPrompt[effect.location] +=
-            resolve(effect.value, effect.valueType === 'value') + '\n\n'
+          additonalSysPrompt[effect.location] += resolve(effect.value, effect.valueType === 'value') + '\n\n'
           break
         }
         case 'v2Impersonate': {
@@ -1311,8 +1266,7 @@ export async function runStartTrigger(
 ): Promise<TriggerRunResult | null> {
   const db = ctx.database
   const currentCharIndex = (db as { currentChar?: unknown }).currentChar
-  const selectedCharID =
-    ctx.selectedCharID ?? (typeof currentCharIndex === 'number' ? currentCharIndex : 0)
+  const selectedCharID = ctx.selectedCharID ?? (typeof currentCharIndex === 'number' ? currentCharIndex : 0)
   const chatPage = ctx.chatPage ?? char.chatPage ?? 0
   const modules = getActiveModules(db, char, chat)
   const runCtx: TriggerRunContext = {

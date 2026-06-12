@@ -13,11 +13,7 @@ import {
   type MemoryJobKind,
   type MemoryJobStatus,
 } from '../memoryRepository.js'
-import {
-  buildMemoryJobEvent,
-  emitMemoryEventSafely,
-  type MemoryEventSink,
-} from '../memoryEvents.js'
+import { buildMemoryJobEvent, emitMemoryEventSafely, type MemoryEventSink } from '../memoryEvents.js'
 import { ValidationError } from '../repository.js'
 
 interface CreateMemoryJobBody {
@@ -54,11 +50,7 @@ function activeJobCount(db: DatabaseSync, chatId: string): number {
   return listMemoryJobs(db, { chatId, statuses: ['pending', 'running'] }).length
 }
 
-function emitRouteJobEvent(
-  db: DatabaseSync,
-  onEvent: MemoryEventSink | undefined,
-  jobId: string,
-): void {
+function emitRouteJobEvent(db: DatabaseSync, onEvent: MemoryEventSink | undefined, jobId: string): void {
   if (!onEvent) return
   const job = getMemoryJob(db, jobId)
   if (!job) return

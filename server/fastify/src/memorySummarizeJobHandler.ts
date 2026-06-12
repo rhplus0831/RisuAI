@@ -78,9 +78,7 @@ export function createSummarizeMemoryJobHandler(
   }
 }
 
-export function createSummarizeMemoryJobBatchHandler(
-  opts: SummarizeMemoryJobHandlerOptions,
-): MemoryJobBatchHandler {
+export function createSummarizeMemoryJobBatchHandler(opts: SummarizeMemoryJobHandlerOptions): MemoryJobBatchHandler {
   const summarize = opts.summarize ?? summarizeOnce
   const acquireRateLimit = createSummaryRateLimiter(opts)
 
@@ -142,8 +140,7 @@ export function createSummarizeMemoryJobBatchHandler(
         }
         context.complete(item.job.id)
       } catch (error) {
-        blockedByCommitFailure =
-          error instanceof Error && error.message ? error.message : String(error)
+        blockedByCommitFailure = error instanceof Error && error.message ? error.message : String(error)
         context.retryOrFail(item.job.id, blockedByCommitFailure)
       }
     }
@@ -168,9 +165,7 @@ type SummarizeExecutionResult =
       tokens: number
     }
 
-type BatchJobResult =
-  | { job: MemoryJob; result: SummarizeExecutionResult }
-  | { job: MemoryJob; error: string }
+type BatchJobResult = { job: MemoryJob; result: SummarizeExecutionResult } | { job: MemoryJob; error: string }
 
 async function executeSummarizeJob(input: {
   opts: SummarizeMemoryJobHandlerOptions
@@ -217,10 +212,7 @@ async function executeSummarizeJob(input: {
   const controller = new AbortController()
   await input.acquireRateLimit(input.settings)
   let summary: SummaryAdapterResult
-  const clearDeadline = armMemoryProviderFetchDeadline(
-    controller,
-    input.opts.providerFetchDeadlineMs,
-  )
+  const clearDeadline = armMemoryProviderFetchDeadline(controller, input.opts.providerFetchDeadlineMs)
   try {
     summary = await input.summarize(prompt.messages, {
       ...modelRequest.request,
@@ -322,11 +314,7 @@ function parseSummarizePayload(payload: unknown): HypaV3SummarizeJobPayload {
     throw new Error('summarize payload rangeStartSeq must be a non-negative integer')
   }
   const rangeEndSeq = payload.rangeEndSeq
-  if (
-    typeof rangeEndSeq !== 'number' ||
-    !Number.isInteger(rangeEndSeq) ||
-    rangeEndSeq < rangeStartSeq
-  ) {
+  if (typeof rangeEndSeq !== 'number' || !Number.isInteger(rangeEndSeq) || rangeEndSeq < rangeStartSeq) {
     throw new Error('summarize payload rangeEndSeq must be >= rangeStartSeq')
   }
   if (!isIntegerArray(payload.messageIndexes)) {

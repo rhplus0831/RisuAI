@@ -1,13 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest'
-import type {
-  Chat,
-  Database,
-  character,
-} from '../../../src/ts/storage/database.svelte'
-import {
-  expandVariables,
-  type ExpandContext,
-} from '../src/prompt/variables.js'
+import type { Chat, Database, character } from '../../../src/ts/storage/database.svelte'
+import { expandVariables, type ExpandContext } from '../src/prompt/variables.js'
 import { bootPromptVariables } from '../src/prompt/promptVariablesBoot.js'
 
 /**
@@ -93,10 +86,7 @@ describe('Phase 7-2c expandVariables — basic substitution', () => {
   })
 
   it('substitutes character fields {{description}}, {{personality}}, {{scenario}}', () => {
-    const out = expandVariables(
-      '[{{description}}|{{personality}}|{{scenario}}]',
-      ctx(),
-    ).text
+    const out = expandVariables('[{{description}}|{{personality}}|{{scenario}}]', ctx()).text
     expect(out).toBe('[A friendly assistant.|cheerful|In a cosy library.]')
   })
 
@@ -111,9 +101,7 @@ describe('Phase 7-2c expandVariables — basic substitution', () => {
 
 describe('Phase 7-2c expandVariables — unknowns and trigger_id', () => {
   it('preserves unknown directives verbatim', () => {
-    expect(expandVariables('{{totally_bogus_macro}} kept', ctx()).text).toBe(
-      '{{totally_bogus_macro}} kept',
-    )
+    expect(expandVariables('{{totally_bogus_macro}} kept', ctx()).text).toBe('{{totally_bogus_macro}} kept')
   })
 
   it('returns "null" for {{trigger_id}} on the server', () => {
@@ -123,33 +111,22 @@ describe('Phase 7-2c expandVariables — unknowns and trigger_id', () => {
 
 describe('Phase 7-2c expandVariables — conditionals', () => {
   it('{{#when 1}}...{{:else}}...{{/when}} takes the truthy branch', () => {
-    expect(
-      expandVariables('{{#when 1}}yes{{:else}}no{{/when}}', ctx()).text,
-    ).toBe('yes')
+    expect(expandVariables('{{#when 1}}yes{{:else}}no{{/when}}', ctx()).text).toBe('yes')
   })
 
   it('{{#when 0}}...{{:else}}...{{/when}} takes the falsy branch', () => {
-    expect(
-      expandVariables('{{#when 0}}yes{{:else}}no{{/when}}', ctx()).text,
-    ).toBe('no')
+    expect(expandVariables('{{#when 0}}yes{{:else}}no{{/when}}', ctx()).text).toBe('no')
   })
 
   it('{{#when::1::and::1}} truthy, {{#when::1::and::0}} falsy', () => {
-    expect(
-      expandVariables('{{#when::1::and::1}}A{{:else}}B{{/when}}', ctx()).text,
-    ).toBe('A')
-    expect(
-      expandVariables('{{#when::1::and::0}}A{{:else}}B{{/when}}', ctx()).text,
-    ).toBe('B')
+    expect(expandVariables('{{#when::1::and::1}}A{{:else}}B{{/when}}', ctx()).text).toBe('A')
+    expect(expandVariables('{{#when::1::and::0}}A{{:else}}B{{/when}}', ctx()).text).toBe('B')
   })
 })
 
 describe('Phase 7-2c expandVariables — loops and expressions', () => {
   it('iterates {{#each ... as i}} with {{slot::i}} substitution', () => {
-    const out = expandVariables(
-      '{{#each [1,2,3] as i}}{{slot::i}}{{/each}}',
-      ctx(),
-    ).text
+    const out = expandVariables('{{#each [1,2,3] as i}}{{slot::i}}{{/each}}', ctx()).text
     expect(out).toBe('123')
   })
 
@@ -165,10 +142,7 @@ describe('Phase 7-2c expandVariables — chat variable write-back', () => {
 
   it('writes via {{setvar}} when runVar=true and mutates scriptstate', () => {
     const db = makeDatabase()
-    const result = expandVariables(
-      '{{setvar::greeting::hello}}done',
-      { database: db, runVar: true },
-    )
+    const result = expandVariables('{{setvar::greeting::hello}}done', { database: db, runVar: true })
     expect(result.text).toBe('done')
     expect(result.dirty).toBe(true)
     expect(db.characters[0].chats[0].scriptstate?.['$greeting']).toBe('hello')
@@ -176,20 +150,14 @@ describe('Phase 7-2c expandVariables — chat variable write-back', () => {
 
   it('skips writes when runVar is false (read-only mode)', () => {
     const db = makeDatabase()
-    const result = expandVariables(
-      '{{setvar::greeting::hello}}done',
-      { database: db, runVar: false },
-    )
+    const result = expandVariables('{{setvar::greeting::hello}}done', { database: db, runVar: false })
     expect(result.dirty).toBe(false)
     expect(db.characters[0].chats[0].scriptstate?.['$greeting']).toBeUndefined()
   })
 
   it('round-trips setvar -> getvar within a single expansion', () => {
     const db = makeDatabase()
-    const result = expandVariables(
-      '{{setvar::n::42}}{{getvar::n}}',
-      { database: db, runVar: true },
-    )
+    const result = expandVariables('{{setvar::n::42}}{{getvar::n}}', { database: db, runVar: true })
     // The setvar callback returns its written value (the cbs ack
     // shape); the getvar callback reads from the same scope.
     expect(result.text.endsWith('42')).toBe(true)

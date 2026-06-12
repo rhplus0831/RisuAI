@@ -1,7 +1,4 @@
-import {
-  CHAT_GENERATION_SETTINGS_FIELD,
-  type ChatGenerationSettings,
-} from '../../../src/ts/chatGenerationSettings.js'
+import { CHAT_GENERATION_SETTINGS_FIELD, type ChatGenerationSettings } from '../../../src/ts/chatGenerationSettings.js'
 
 type JsonRecord = Record<string, unknown>
 
@@ -15,9 +12,7 @@ export function repairStoredChatGenerationSettings(record: JsonRecord): void {
   }
 }
 
-export function normalizeStoredChatGenerationSettings(
-  value: unknown,
-): ChatGenerationSettings | undefined {
+export function normalizeStoredChatGenerationSettings(value: unknown): ChatGenerationSettings | undefined {
   if (!isJsonRecord(value)) return undefined
 
   const normalized: ChatGenerationSettings = {}

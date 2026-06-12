@@ -109,9 +109,7 @@ describe('Realm import server adapter', () => {
     })
 
     expect(result).toMatchObject({ status: 'ok', revision: 9, characterId: 'char-1' })
-    expect(progress).toEqual([
-      { phase: 'download', message: 'Downloading Realm character', percent: 12 },
-    ])
+    expect(progress).toEqual([{ phase: 'download', message: 'Downloading Realm character', percent: 12 }])
     expect(calls[0]).toMatchObject({
       url: '/api/v1/import/realm-character',
       headers: {
@@ -142,32 +140,26 @@ describe('Realm import server adapter', () => {
   it('maps progress stream low-level-access and conflicts', async () => {
     stubRealmFetch(
       new Response(
-        streamOf(
-          [
-            'event: conflict',
-            'data: {"error":"Revision mismatch","currentRevision":15}',
-            '',
-            '',
-          ].join('\n'),
-        ),
+        streamOf(['event: conflict', 'data: {"error":"Revision mismatch","currentRevision":15}', '', ''].join('\n')),
         { status: 200, headers: { 'content-type': 'text/event-stream' } },
       ),
     )
 
-    await expect(
-      importRealmCharacterFromServer('realm-id', { onProgress: vi.fn() }),
-    ).resolves.toEqual({ status: 'conflict', currentRevision: 15 })
+    await expect(importRealmCharacterFromServer('realm-id', { onProgress: vi.fn() })).resolves.toEqual({
+      status: 'conflict',
+      currentRevision: 15,
+    })
     expect(commandState.cachedRevision).toBe(15)
 
     stubRealmFetch(
-      new Response(
-        streamOf(['event: low_level_access', 'data: {"error":"confirm"}', '', ''].join('\n')),
-        { status: 200, headers: { 'content-type': 'text/event-stream' } },
-      ),
+      new Response(streamOf(['event: low_level_access', 'data: {"error":"confirm"}', '', ''].join('\n')), {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' },
+      }),
     )
 
-    await expect(
-      importRealmCharacterFromServer('realm-id', { onProgress: vi.fn() }),
-    ).resolves.toEqual({ status: 'low-level-access' })
+    await expect(importRealmCharacterFromServer('realm-id', { onProgress: vi.fn() })).resolves.toEqual({
+      status: 'low-level-access',
+    })
   })
 })

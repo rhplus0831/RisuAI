@@ -120,12 +120,8 @@ describe('Google Cloud tokenizer cache', () => {
   it('L42: GoogleCloud token counts hit the bounded cache for repeated text', async () => {
     const { tokenize } = await loadTokenizer()
 
-    await expect(tokenize('repeatable prompt')).resolves.toBe(
-      tokenCountFor('repeatable prompt', 'gemini-default'),
-    )
-    await expect(tokenize('repeatable prompt')).resolves.toBe(
-      tokenCountFor('repeatable prompt', 'gemini-default'),
-    )
+    await expect(tokenize('repeatable prompt')).resolves.toBe(tokenCountFor('repeatable prompt', 'gemini-default'))
+    await expect(tokenize('repeatable prompt')).resolves.toBe(tokenCountFor('repeatable prompt', 'gemini-default'))
 
     expect(moduleState.fetchMock).toHaveBeenCalledTimes(1)
   })

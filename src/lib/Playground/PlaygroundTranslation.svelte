@@ -105,14 +105,10 @@
           }
 
           const translatedChunk = await runTranslator(preChunks[i], false, sourceLang, outputLang, {
-            translatorNote: prContext
-              ? `<Previous Content>${prContext.trim()}</Previous Content>\n${pvc}`
-              : '',
+            translatorNote: prContext ? `<Previous Content>${prContext.trim()}</Previous Content>\n${pvc}` : '',
           })
           if (keepContext) {
-            prContexts.push(
-              `<Original>${preChunks[i]}</Original><Translated>${translatedChunk}</Translated>`,
-            )
+            prContexts.push(`<Original>${preChunks[i]}</Original><Translated>${translatedChunk}</Translated>`)
           }
           translatedChunks.push(translatedChunk)
         } catch (error) {
@@ -140,8 +136,7 @@
       console.error(error)
       loading = false
     }
-  }}
->
+  }}>
   {#if loading}
     Loading... {bulkProgressText}
   {:else}
@@ -152,7 +147,6 @@
   className="mt-4"
   onclick={async () => {
     await clearLLMCache()
-  }}
->
+  }}>
   Clear Cache
 </Button>

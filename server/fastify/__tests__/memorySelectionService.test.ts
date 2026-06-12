@@ -85,10 +85,7 @@ describe('memory selection service', () => {
         settings: { recentMemoryRatio: 0, similarMemoryRatio: 1 },
       })
 
-      expect(result.rankedSimilarSummaries.map((row) => row.summary.id)).toEqual([
-        'summary-a',
-        'summary-b',
-      ])
+      expect(result.rankedSimilarSummaries.map((row) => row.summary.id)).toEqual(['summary-a', 'summary-b'])
       expect(result.similarSummaries.map((row) => row.id)).toEqual(['summary-a', 'summary-b'])
       expect(result.selectedSummaries.map((row) => row.id)).toEqual(['summary-a', 'summary-b'])
       expect(result.diagnostics.repository).toMatchObject({
@@ -290,10 +287,7 @@ describe('memory selection service', () => {
         summarySnapshot,
       })
 
-      expect(result.selectedSummaries.map((summary) => summary.id)).toEqual([
-        'summary-a',
-        'summary-b',
-      ])
+      expect(result.selectedSummaries.map((summary) => summary.id)).toEqual(['summary-a', 'summary-b'])
       expect(result.diagnostics.repository).toMatchObject({
         summaries: 2,
         chunks: 3,
@@ -364,10 +358,7 @@ describe('memory selection service', () => {
       expect(result.diagnostics.repository).toMatchObject({
         summaryIdsMissingEmbeddings: ['summary-without-embedding'],
         chunkIdsMissingEmbeddings: ['chunk-with-summary'],
-        chunkIdsMissingSummaries: [
-          'chunk-with-embedding',
-          'chunk-without-summary-or-embedding',
-        ],
+        chunkIdsMissingSummaries: ['chunk-with-embedding', 'chunk-without-summary-or-embedding'],
       })
       expect(result.diagnostics.ranking.missingSummaries).toEqual(['chunk-with-embedding'])
       expect(result.diagnostics.allocation.missingCategories).toContainEqual({
@@ -449,13 +440,9 @@ describe('memory selection service', () => {
       const second = selectMemorySummaries(input)
       const explicit = selectMemorySummaries({ ...input, randomSeed: 'explicit-seed' })
 
-      expect(second.randomSummaries.map((row) => row.id)).toEqual(
-        first.randomSummaries.map((row) => row.id),
-      )
+      expect(second.randomSummaries.map((row) => row.id)).toEqual(first.randomSummaries.map((row) => row.id))
       expect(first.randomSummaries).toHaveLength(2)
-      expect(explicit.randomSummaries.map((row) => row.id)).not.toEqual(
-        first.randomSummaries.map((row) => row.id),
-      )
+      expect(explicit.randomSummaries.map((row) => row.id)).not.toEqual(first.randomSummaries.map((row) => row.id))
     } finally {
       db.close()
     }

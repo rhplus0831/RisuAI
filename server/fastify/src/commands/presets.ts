@@ -178,10 +178,7 @@ export function createPresetRecord(
   return preset
 }
 
-export function readPresetPatch(
-  input: JsonRecord,
-  options: AssetValidationOptions = {},
-): JsonRecord {
+export function readPresetPatch(input: JsonRecord, options: AssetValidationOptions = {}): JsonRecord {
   const patch = cloneJson(input) as JsonRecord
   validatePresetAssetRefs(patch, 'patch', options)
   return patch
@@ -200,16 +197,12 @@ export function requirePresetIndex(presets: readonly PresetRecord[], presetId: s
 }
 
 export function selectedPresetId(database: JsonRecord, presets: readonly PresetRecord[]): string | null {
-  const index = Number.isInteger(database.botPresetsId as number)
-    ? (database.botPresetsId as number)
-    : -1
+  const index = Number.isInteger(database.botPresetsId as number) ? (database.botPresetsId as number) : -1
   return presets[index]?.id ?? null
 }
 
 export function saveCurrentPresetSnapshot(database: JsonRecord, presets: PresetRecord[]): void {
-  const index = Number.isInteger(database.botPresetsId as number)
-    ? (database.botPresetsId as number)
-    : -1
+  const index = Number.isInteger(database.botPresetsId as number) ? (database.botPresetsId as number) : -1
   if (index < 0 || index >= presets.length) return
 
   const current = presets[index]
@@ -262,11 +255,7 @@ export function validateFullPresetIdList(presets: readonly PresetRecord[], prese
   }
 }
 
-function validatePresetAssetRefs(
-  record: JsonRecord,
-  label: string,
-  options: AssetValidationOptions,
-): void {
+function validatePresetAssetRefs(record: JsonRecord, label: string, options: AssetValidationOptions): void {
   if (options.assetDb && 'image' in record) {
     validateOptionalServerAssetRef(options.assetDb, record.image, `${label}.image`)
   }

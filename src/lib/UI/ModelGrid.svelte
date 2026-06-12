@@ -97,8 +97,7 @@
             class="rounded px-3 py-1 text-sm transition-colors {sortField === sf.key
               ? 'bg-selected text-textcolor font-bold ring-2 ring-textcolor/30 ring-offset-1 ring-offset-bgcolor shadow-md'
               : 'bg-darkbutton text-textcolor2 font-medium hover:bg-darkbutton hover:text-textcolor'}"
-            >{sf.label}</button
-          >
+            >{sf.label}</button>
         {/each}
       </div>
 
@@ -113,8 +112,7 @@
             class="rounded px-3 py-1 text-sm transition-colors {sortDir === sd.key
               ? 'bg-selected text-textcolor font-bold ring-2 ring-textcolor/30 ring-offset-1 ring-offset-bgcolor shadow-md'
               : 'bg-darkbutton text-textcolor2 font-medium hover:bg-darkbutton hover:text-textcolor'}"
-            >{sd.label}</button
-          >
+            >{sd.label}</button>
         {/each}
       </div>
     </div>
@@ -125,9 +123,7 @@
   <div class="h-80 overflow-y-auto rounded-lg border border-darkborderc bg-bgcolor">
     {#if loading}
       <div class="flex h-full items-center justify-center">
-        <div
-          class="h-8 w-8 rounded-full border-2 border-blue-500 border-t-transparent animate-spin"
-        ></div>
+        <div class="h-8 w-8 rounded-full border-2 border-blue-500 border-t-transparent animate-spin"></div>
       </div>
     {:else}
       <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 p-2">
@@ -137,15 +133,11 @@
             onclick={() => {
               value = pinned.id
             }}
-            class="flex cursor-pointer flex-col rounded-md border p-2.5 text-left transition-colors {value ===
-            pinned.id
+            class="flex cursor-pointer flex-col rounded-md border p-2.5 text-left transition-colors {value === pinned.id
               ? 'border-selected bg-selected'
-              : 'border-darkborderc hover:bg-selected'}"
-          >
+              : 'border-darkborderc hover:bg-selected'}">
             <span class="text-xs text-textcolor2">{pinned.providerName}</span>
-            <span class="text-sm font-semibold leading-tight text-textcolor"
-              >{pinned.displayName}</span
-            >
+            <span class="text-sm font-semibold leading-tight text-textcolor">{pinned.displayName}</span>
           </button>
         {/each}
 
@@ -164,28 +156,19 @@
                 value = item.id
                 onselect?.(item.id, item.displayName)
               }}
-              class="flex cursor-pointer flex-col rounded-md border p-2.5 text-left transition-colors {value ===
-              item.id
+              class="flex cursor-pointer flex-col rounded-md border p-2.5 text-left transition-colors {value === item.id
                 ? 'border-selected bg-selected'
-                : 'border-darkborderc hover:bg-selected'}"
-            >
+                : 'border-darkborderc hover:bg-selected'}">
               <div class="flex items-center gap-1">
                 <span class="text-xs text-textcolor2">{item.providerName}</span>
                 {#if showSubBadge}
-                  <span
-                    class="rounded px-1 text-[0.6rem] font-bold leading-tight bg-selected text-textcolor"
-                    >SUB</span
-                  >
+                  <span class="rounded px-1 text-[0.6rem] font-bold leading-tight bg-selected text-textcolor">SUB</span>
                 {/if}
               </div>
-              <span class="line-clamp-2 text-sm font-medium leading-snug text-textcolor"
-                >{item.displayName}</span
-              >
+              <span class="line-clamp-2 text-sm font-medium leading-snug text-textcolor">{item.displayName}</span>
 
               {#if item.description}
-                <span class="mt-1 line-clamp-2 text-xs leading-snug text-textcolor2"
-                  >{item.description}</span
-                >
+                <span class="mt-1 line-clamp-2 text-xs leading-snug text-textcolor2">{item.description}</span>
               {/if}
 
               {#if item.prices.length > 0}
@@ -198,8 +181,7 @@
 
               {#if item.context_length > 0}
                 <span class="mt-1 text-xs text-textcolor2"
-                  >{language.modelGridContext(formatContext(item.context_length))}</span
-                >
+                  >{language.modelGridContext(formatContext(item.context_length))}</span>
               {/if}
             </button>
           {/each}

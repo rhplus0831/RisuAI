@@ -9,9 +9,7 @@ export interface ProviderChunkTransportResult {
   finishReason?: CompletionStreamFrame['finishReason']
 }
 
-export type ProviderDoneMetadata = (
-  result: string,
-) => Omit<DoneEvent, 'type' | 'result'> | undefined
+export type ProviderDoneMetadata = (result: string) => Omit<DoneEvent, 'type' | 'result'> | undefined
 
 export interface ProviderChunkTransportOptions {
   doneMetadata?: ProviderDoneMetadata
@@ -56,9 +54,7 @@ export async function emitProviderChunks(
   // paths emit a bare `done`; post-gen failures degrade to a plain `done`.
   const emitSuccessDone = async (): Promise<void> => {
     emitSideEffects()
-    const postGeneration = normalizedOptions.postGeneration
-      ? await normalizedOptions.postGeneration(result)
-      : undefined
+    const postGeneration = normalizedOptions.postGeneration ? await normalizedOptions.postGeneration(result) : undefined
     emit({
       type: 'done',
       result,

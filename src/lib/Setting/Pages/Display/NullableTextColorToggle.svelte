@@ -22,16 +22,14 @@
         applyServerBackedSetting(field, null)
       }}
       name={language[labelKey]}
-      hiddenName
-    />
+      hiddenName />
     <input
       type="color"
       class="style2 text-sm mr-2"
       value={currentValue}
       oninput={(e) => {
         applyServerBackedSetting(field, e.currentTarget.value)
-      }}
-    />
+      }} />
     <span>{language[labelKey]}</span>
   </div>
 {:else}
@@ -41,7 +39,6 @@
       onChange={() => {
         applyServerBackedSetting(field, defaultColor)
       }}
-      name={language[labelKey]}
-    />
+      name={language[labelKey]} />
   </div>
 {/if}

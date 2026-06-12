@@ -197,10 +197,7 @@ describe('targeted writer kit', () => {
 
     writeSingleCollectionRow(db, 'botPresets', 1, { name: 'preset-1 renamed' })
 
-    expect(readCollection('bot_presets')).toEqual([
-      { name: 'preset-0' },
-      { name: 'preset-1 renamed' },
-    ])
+    expect(readCollection('bot_presets')).toEqual([{ name: 'preset-0' }, { name: 'preset-1 renamed' }])
     // A pure UPDATE keeps every rowid, including the edited row's.
     expect(allCollectionRowids()).toEqual(collectionsBefore)
     expect(rowids('characters', 'id')).toEqual(charsBefore)

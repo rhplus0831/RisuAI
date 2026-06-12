@@ -33,10 +33,7 @@ export {
 export type RisuSaveBlockFixture = EncodableRisuSaveBlock
 export type InspectedRisuSaveBlock = DecodedRisuSaveBlock
 
-export function encodeLegacyFixtureEnvelope(
-  payload: unknown,
-  kind: LegacyRisuSaveEnvelopeKind,
-): Uint8Array {
+export function encodeLegacyFixtureEnvelope(payload: unknown, kind: LegacyRisuSaveEnvelopeKind): Uint8Array {
   return encodeLegacyRisuSaveEnvelope(payload, kind)
 }
 

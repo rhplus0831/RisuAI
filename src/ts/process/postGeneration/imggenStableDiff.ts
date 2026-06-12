@@ -9,9 +9,7 @@ export interface RunImggenStableDiffOptions {
   selectedChat: number
 }
 
-export async function runImggenStableDiff(
-  opts: RunImggenStableDiffOptions,
-): Promise<void> {
+export async function runImggenStableDiff(opts: RunImggenStableDiffOptions): Promise<void> {
   const msgs = DBState.db.characters[opts.selectedChar].chats[opts.selectedChat].message
   let msgStr = ''
   for (let i = msgs.length - 1; i >= 0; i--) {

@@ -155,9 +155,7 @@ export function initHotkey() {
           let md = ''
           md += '### Prompt\n'
           md +=
-            '```json\n' +
-            JSON.stringify(JSON.parse(previewBody), null, 2).replaceAll('```', '\\`\\`\\`') +
-            '\n```\n'
+            '```json\n' + JSON.stringify(JSON.parse(previewBody), null, 2).replaceAll('```', '\\`\\`\\`') + '\n```\n'
           alertMd(md)
           return
         }
@@ -325,12 +323,7 @@ export function initHotkey() {
 }
 
 async function quickMenu() {
-  const selStr = await alertSelect([
-    language.presets,
-    language.persona,
-    language.hotkeyDesc.loadout,
-    language.cancel,
-  ])
+  const selStr = await alertSelect([language.presets, language.persona, language.hotkeyDesc.loadout, language.cancel])
   const sel = parseInt(selStr)
   if (sel === 0) {
     openPresetList.set(!get(openPresetList))
@@ -343,10 +336,7 @@ async function quickMenu() {
   }
 }
 
-export function hotkeyMatches(
-  hotkey: (typeof DBState.db.hotkeys)[number],
-  ev: KeyboardEvent,
-): boolean {
+export function hotkeyMatches(hotkey: (typeof DBState.db.hotkeys)[number], ev: KeyboardEvent): boolean {
   if (!hotkey) {
     return false
   }

@@ -420,11 +420,7 @@ describe('preset command rollback (L21)', () => {
 
   it('L21: failed reorder restores collection order and selected index', async () => {
     seedPresetDatabase({
-      botPresets: [
-        makePreset('preset-a', 'Alpha'),
-        makePreset('preset-b', 'Beta'),
-        makePreset('preset-c', 'Gamma'),
-      ],
+      botPresets: [makePreset('preset-a', 'Alpha'), makePreset('preset-b', 'Beta'), makePreset('preset-c', 'Gamma')],
       botPresetsId: 1,
     })
     const beforePresets = clonePlain(DBState.db.botPresets)
@@ -433,11 +429,7 @@ describe('preset command rollback (L21)', () => {
 
     reorderPresets(0, 3)
 
-    expect(DBState.db.botPresets.map((preset) => preset.id)).toEqual([
-      'preset-b',
-      'preset-c',
-      'preset-a',
-    ])
+    expect(DBState.db.botPresets.map((preset) => preset.id)).toEqual(['preset-b', 'preset-c', 'preset-a'])
     expect(DBState.db.botPresetsId).toBe(0)
     await waitForPresetCommand(calls, '/presets/reorder')
     await waitForState(() => {

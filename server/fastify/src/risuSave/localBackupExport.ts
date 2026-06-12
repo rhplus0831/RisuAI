@@ -52,9 +52,7 @@ const UINT32_MAX = 0xffffffff
 const EMPTY_CHUNK = new Uint8Array()
 const textEncoder = new TextEncoder()
 
-export function buildRepositoryRisuLocalBackupExport(
-  input: RisuLocalBackupExportInput,
-): RisuLocalBackupExport {
+export function buildRepositoryRisuLocalBackupExport(input: RisuLocalBackupExportInput): RisuLocalBackupExport {
   const report = buildRisuSaveAssetReport(input.persisted.database, input.persisted.assets)
   const assetsById = new Map(input.persisted.assets.map((asset) => [asset.id, asset]))
   const includedAssets: RisuLocalBackupAssetEntry[] = []
@@ -97,9 +95,7 @@ async function writeLocalBackupStream(
   let terminal: Error | null = null
   const closeOrError = new Promise<Error>((resolve) => {
     stream.once('error', (err) => resolve(err))
-    stream.once('close', () =>
-      resolve(new Error('local backup export output closed before completion')),
-    )
+    stream.once('close', () => resolve(new Error('local backup export output closed before completion')))
   }).then((err) => {
     terminal = err
     return err

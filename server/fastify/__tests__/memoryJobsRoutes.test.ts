@@ -49,11 +49,7 @@ async function stopHarness(h: Harness): Promise<void> {
   rmSync(h.dataDir, { recursive: true, force: true })
 }
 
-async function signAssertion(
-  privateKey: CryptoKey,
-  publicJwk: JsonWebKey,
-  ttlSec = 60,
-): Promise<string> {
+async function signAssertion(privateKey: CryptoKey, publicJwk: JsonWebKey, ttlSec = 60): Promise<string> {
   const now = Math.floor(Date.now() / 1000)
   const header = { alg: 'ES256', typ: 'JWT' }
   const payload = { iat: now, exp: now + ttlSec, pub: publicJwk }
@@ -154,9 +150,7 @@ describe('Phase 8-2e memory job routes', () => {
       maxAttempts: 5,
       nextRunAt: '2026-05-24T00:00:00.000Z',
     })
-    expect(body.job.id).toMatch(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
-    )
+    expect(body.job.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
 
     expect(harness.events).toEqual([
       {
@@ -249,9 +243,7 @@ describe('Phase 8-2e memory job routes', () => {
     const activeJobs = (active.json() as { jobs: MemoryJob[] }).jobs
     expect(activeJobs).toHaveLength(2)
     expect(activeJobs).toContainEqual(expect.objectContaining({ id: embedJob.id }))
-    expect(activeJobs).toContainEqual(
-      expect.objectContaining({ chatId: 'chat-1', kind: 'summarize' }),
-    )
+    expect(activeJobs).toContainEqual(expect.objectContaining({ chatId: 'chat-1', kind: 'summarize' }))
 
     const chatFiltered = await harness.app.inject({
       method: 'GET',
@@ -279,9 +271,7 @@ describe('Phase 8-2e memory job routes', () => {
       headers: { 'risu-auth': assertion },
     })
     expect(cancelled.statusCode).toBe(200)
-    expect((cancelled.json() as { jobs: MemoryJob[] }).jobs).toMatchObject([
-      { id: chunkJob.id, status: 'cancelled' },
-    ])
+    expect((cancelled.json() as { jobs: MemoryJob[] }).jobs).toMatchObject([{ id: chunkJob.id, status: 'cancelled' }])
   })
 
   it('L17: lists retained memory jobs after startup retention prunes old terminal rows', async () => {

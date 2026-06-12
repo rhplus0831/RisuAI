@@ -4,19 +4,13 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import { risuSaveFixtureCases } from '../__fixtures__/risuSave/fixtures.js'
-import {
-  classifyRisuSaveEnvelope,
-  inspectRisuSaveBlockFixtureEnvelope,
-} from '../src/risuSave/fixtureHarness.js'
+import { classifyRisuSaveEnvelope, inspectRisuSaveBlockFixtureEnvelope } from '../src/risuSave/fixtureHarness.js'
 import {
   decodeRisuSaveBlockEnvelope,
   encodeRisuSaveBlockEnvelope,
   RisuSaveBlockType,
 } from '../src/risuSave/blockCodec.js'
-import {
-  decodeLegacyRisuSaveEnvelope,
-  encodeLegacyRisuSaveEnvelope,
-} from '../src/risuSave/legacyEnvelopeCodec.js'
+import { decodeLegacyRisuSaveEnvelope, encodeLegacyRisuSaveEnvelope } from '../src/risuSave/legacyEnvelopeCodec.js'
 import { decodeRisuSaveImportSnapshot } from '../src/risuSave/importSnapshot.js'
 import {
   buildRisuSaveExportBlocks,
@@ -28,19 +22,10 @@ import { openDatabase } from '../src/db.js'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const harnessSource = readFileSync(path.join(here, '../src/risuSave/fixtureHarness.ts'), 'utf8')
-const legacyCodecSource = readFileSync(
-  path.join(here, '../src/risuSave/legacyEnvelopeCodec.ts'),
-  'utf8',
-)
+const legacyCodecSource = readFileSync(path.join(here, '../src/risuSave/legacyEnvelopeCodec.ts'), 'utf8')
 const blockCodecSource = readFileSync(path.join(here, '../src/risuSave/blockCodec.ts'), 'utf8')
-const importSnapshotSource = readFileSync(
-  path.join(here, '../src/risuSave/importSnapshot.ts'),
-  'utf8',
-)
-const exportSnapshotSource = readFileSync(
-  path.join(here, '../src/risuSave/exportSnapshot.ts'),
-  'utf8',
-)
+const importSnapshotSource = readFileSync(path.join(here, '../src/risuSave/importSnapshot.ts'), 'utf8')
+const exportSnapshotSource = readFileSync(path.join(here, '../src/risuSave/exportSnapshot.ts'), 'utf8')
 
 const dataDirs: string[] = []
 
@@ -88,15 +73,11 @@ describe('server .risu fixture harness', () => {
   })
 
   it('pins expected decoded shapes for legacy envelope fixtures', () => {
-    const legacyFixtures = risuSaveFixtureCases.filter((fixture) =>
-      fixture.expectedEnvelope.startsWith('legacy-'),
-    )
+    const legacyFixtures = risuSaveFixtureCases.filter((fixture) => fixture.expectedEnvelope.startsWith('legacy-'))
     expect(legacyFixtures).toHaveLength(3)
 
     for (const fixture of legacyFixtures) {
-      expect(decodeLegacyRisuSaveEnvelope(fixture.bytes), fixture.name).toEqual(
-        fixture.expectedDecodedShape,
-      )
+      expect(decodeLegacyRisuSaveEnvelope(fixture.bytes), fixture.name).toEqual(fixture.expectedDecodedShape)
     }
   })
 
@@ -112,17 +93,11 @@ describe('server .risu fixture harness', () => {
   })
 
   it('rejects non-legacy envelopes in the production legacy codec', () => {
-    const unknown = risuSaveFixtureCases.find(
-      (fixture) => fixture.name === 'malformed-unknown-envelope',
-    )
+    const unknown = risuSaveFixtureCases.find((fixture) => fixture.name === 'malformed-unknown-envelope')
     expect(unknown).toBeDefined()
-    expect(() => decodeLegacyRisuSaveEnvelope(unknown!.bytes)).toThrow(
-      /Unsupported legacy \.risu envelope: unknown/,
-    )
+    expect(() => decodeLegacyRisuSaveEnvelope(unknown!.bytes)).toThrow(/Unsupported legacy \.risu envelope: unknown/)
 
-    const blockEnvelope = risuSaveFixtureCases.find(
-      (fixture) => fixture.name === 'risusave-blocks-basic',
-    )
+    const blockEnvelope = risuSaveFixtureCases.find((fixture) => fixture.name === 'risusave-blocks-basic')
     expect(blockEnvelope).toBeDefined()
     expect(() => decodeLegacyRisuSaveEnvelope(blockEnvelope!.bytes)).toThrow(
       /Unsupported legacy \.risu envelope: risusave-blocks/,
@@ -251,15 +226,11 @@ describe('server .risu fixture harness', () => {
   })
 
   it('keeps malformed fixture cases available for later decoder rejection tests', () => {
-    const unknown = risuSaveFixtureCases.find(
-      (fixture) => fixture.name === 'malformed-unknown-envelope',
-    )
+    const unknown = risuSaveFixtureCases.find((fixture) => fixture.name === 'malformed-unknown-envelope')
     expect(unknown).toBeDefined()
     expect(classifyRisuSaveEnvelope(unknown!.bytes)).toBe('unknown')
 
-    const truncated = risuSaveFixtureCases.find(
-      (fixture) => fixture.name === 'malformed-truncated-block',
-    )
+    const truncated = risuSaveFixtureCases.find((fixture) => fixture.name === 'malformed-truncated-block')
     expect(truncated).toBeDefined()
     expect(() => decodeRisuSaveBlockEnvelope(truncated!.bytes)).toThrow(/Malformed RISUSAVE block/)
   })
@@ -312,9 +283,7 @@ describe('server .risu fixture harness', () => {
         localNetworkTimeoutSec: 600,
       },
     ])
-    expect(decoded.database.modules).toEqual([
-      { id: 'module-a', name: 'Module A', description: '' },
-    ])
+    expect(decoded.database.modules).toEqual([{ id: 'module-a', name: 'Module A', description: '' }])
     expect(decoded.database.loadouts).toEqual([
       {
         id: 'loadout-a',
@@ -355,9 +324,7 @@ describe('server .risu fixture harness', () => {
 
   it('reports unsupported remote and cache-only references without local storage fallback', () => {
     const remote = risuSaveFixtureCases.find((item) => item.name === 'risusave-remote-reference')
-    const cacheOnly = risuSaveFixtureCases.find(
-      (item) => item.name === 'risusave-cache-only-reference',
-    )
+    const cacheOnly = risuSaveFixtureCases.find((item) => item.name === 'risusave-cache-only-reference')
     expect(remote).toBeDefined()
     expect(cacheOnly).toBeDefined()
 
@@ -387,9 +354,7 @@ describe('server .risu fixture harness', () => {
         },
       ],
     })
-    expect(() => decodeRisuSaveImportSnapshot(invalidMessage)).toThrow(
-      /message\[0\]\.role must be user or char/,
-    )
+    expect(() => decodeRisuSaveImportSnapshot(invalidMessage)).toThrow(/message\[0\]\.role must be user or char/)
 
     const invalidRootComponent = encodeRisuSaveBlockEnvelope([
       {
@@ -484,44 +449,44 @@ describe('server .risu fixture harness', () => {
         assets: [{ id: assetId, ext: 'webp', size: 44, contentType: 'image/webp' }],
       })
 
-    const encoded = encodeRepositoryRisuSaveBlockExport(db, dataDir, {
-      compression: true,
-    })
-    const blocks = decodeRisuSaveBlockEnvelope(encoded)
-    const decoded = decodeRisuSaveImportSnapshot(encoded)
-
-    expect(blocks.unsupportedReferences).toEqual([])
-    expect(
-      blocks.blocks.map((block) => ({
-        name: block.name,
-        type: block.type,
-        compression: block.compression,
-      })),
-    ).toEqual([
-      { name: 'root', type: RisuSaveBlockType.ROOT, compression: true },
-      { name: 'preset', type: RisuSaveBlockType.BOTPRESET, compression: true },
-      { name: 'modules', type: RisuSaveBlockType.MODULES, compression: true },
-      { name: 'loadouts', type: RisuSaveBlockType.LOADOUTS, compression: true },
-      { name: 'plugins', type: RisuSaveBlockType.PLUGINS, compression: true },
-      { name: 'pluginStorage', type: RisuSaveBlockType.PLUGIN_STORAGE, compression: true },
-      {
-        name: 'block-export-char',
-        type: RisuSaveBlockType.CHARACTER_WITH_CHAT,
+      const encoded = encodeRepositoryRisuSaveBlockExport(db, dataDir, {
         compression: true,
-      },
-      { name: 'config', type: RisuSaveBlockType.CONFIG, compression: true },
-    ])
-    expect(JSON.parse(blocks.blocks[0].content!).__directory).toEqual([
-      'preset',
-      'modules',
-      'loadouts',
-      'plugins',
-      'pluginStorage',
-      'block-export-char',
-      'config',
-    ])
-    expect((decoded.database.characters as Array<Record<string, unknown>>)[0].image).toBe(assetId)
-    expect(decoded.database.pluginCustomStorage).toEqual({ 'plugin-a:key': { assetId } })
+      })
+      const blocks = decodeRisuSaveBlockEnvelope(encoded)
+      const decoded = decodeRisuSaveImportSnapshot(encoded)
+
+      expect(blocks.unsupportedReferences).toEqual([])
+      expect(
+        blocks.blocks.map((block) => ({
+          name: block.name,
+          type: block.type,
+          compression: block.compression,
+        })),
+      ).toEqual([
+        { name: 'root', type: RisuSaveBlockType.ROOT, compression: true },
+        { name: 'preset', type: RisuSaveBlockType.BOTPRESET, compression: true },
+        { name: 'modules', type: RisuSaveBlockType.MODULES, compression: true },
+        { name: 'loadouts', type: RisuSaveBlockType.LOADOUTS, compression: true },
+        { name: 'plugins', type: RisuSaveBlockType.PLUGINS, compression: true },
+        { name: 'pluginStorage', type: RisuSaveBlockType.PLUGIN_STORAGE, compression: true },
+        {
+          name: 'block-export-char',
+          type: RisuSaveBlockType.CHARACTER_WITH_CHAT,
+          compression: true,
+        },
+        { name: 'config', type: RisuSaveBlockType.CONFIG, compression: true },
+      ])
+      expect(JSON.parse(blocks.blocks[0].content!).__directory).toEqual([
+        'preset',
+        'modules',
+        'loadouts',
+        'plugins',
+        'pluginStorage',
+        'block-export-char',
+        'config',
+      ])
+      expect((decoded.database.characters as Array<Record<string, unknown>>)[0].image).toBe(assetId)
+      expect(decoded.database.pluginCustomStorage).toEqual({ 'plugin-a:key': { assetId } })
     } finally {
       db.close()
     }

@@ -65,9 +65,7 @@ describe('Playground subtitle media cleanup', () => {
     expect(StubAudioContext.instances[0].close).toHaveBeenCalledTimes(1)
 
     StubAudioContext.rejectDecode = true
-    await expect(decodeAudioFileWithTemporaryContext(new Blob(['bad-audio']))).rejects.toThrow(
-      'decode failed',
-    )
+    await expect(decodeAudioFileWithTemporaryContext(new Blob(['bad-audio']))).rejects.toThrow('decode failed')
     expect(StubAudioContext.instances).toHaveLength(2)
     expect(StubAudioContext.instances[1].close).toHaveBeenCalledTimes(1)
   })

@@ -46,8 +46,7 @@
           onclick={(e) => {
             e.stopPropagation()
             selectedLang = sortedLangs.priority
-          }}>{toLangName(sortedLangs.priority)}</button
-        >
+          }}>{toLangName(sortedLangs.priority)}</button>
       {/if}
       {#if sortedLangs.rest.length > 0}
         <div class="border-l border-l-selected h-6"></div>
@@ -61,25 +60,18 @@
           onclick={(e) => {
             e.stopPropagation()
             selectedLang = lang
-          }}>{toLangName(lang)}</button
-        >
+          }}>{toLangName(lang)}</button>
       {/if}
     {/each}
   </div>
   {#if markdown}
-    <div
-      class="ml-2 max-w-full wrap-break-word text chat chattext prose"
-      class:prose-invert={$ColorSchemeTypeStore}
-    >
+    <div class="ml-2 max-w-full wrap-break-word text chat chattext prose" class:prose-invert={$ColorSchemeTypeStore}>
       {#await ParseMarkdown(valueObject[selectedLang]) then md}
         {@html md}
       {/await}
     </div>
   {:else}
-    <div
-      class="ml-2 max-w-full wrap-break-word text chat chattext prose"
-      class:prose-invert={$ColorSchemeTypeStore}
-    >
+    <div class="ml-2 max-w-full wrap-break-word text chat chattext prose" class:prose-invert={$ColorSchemeTypeStore}>
       {valueObject[selectedLang]}
     </div>
   {/if}

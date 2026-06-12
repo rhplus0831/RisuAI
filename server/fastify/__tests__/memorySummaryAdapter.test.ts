@@ -164,9 +164,7 @@ describe('memory summary provider adapter', () => {
   })
 
   it('reports empty summaries after output scrubbing as errors', async () => {
-    vi.stubGlobal('fetch', async () =>
-      ok({ choices: [{ message: { content: '<Thoughts>hidden</Thoughts>' } }] }),
-    )
+    vi.stubGlobal('fetch', async () => ok({ choices: [{ message: { content: '<Thoughts>hidden</Thoughts>' } }] }))
 
     const result = await summarizeOnce([chat('user', 'hello')], {
       provider: 'openai',

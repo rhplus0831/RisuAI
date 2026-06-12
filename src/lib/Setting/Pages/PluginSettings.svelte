@@ -1,12 +1,5 @@
 <script lang="ts">
-  import {
-    PlusIcon,
-    TrashIcon,
-    LinkIcon,
-    CodeXmlIcon,
-    PowerIcon,
-    PowerOffIcon,
-  } from '@lucide/svelte'
+  import { PlusIcon, TrashIcon, LinkIcon, CodeXmlIcon, PowerIcon, PowerOffIcon } from '@lucide/svelte'
   import { language } from 'src/lang'
   import { alertConfirm, alertMd, alertSelect } from 'src/ts/alert'
   import { TriangleAlert } from '@lucide/svelte'
@@ -100,8 +93,7 @@
         aria-controls={pluginParamsId(plugin.name)}
         onclick={() => {
           togglePluginParams(plugin.name)
-        }}
-      >
+        }}>
         <span>
           {plugin.displayName ?? plugin.name}
         </span>
@@ -115,8 +107,7 @@
           onclick={(e) => {
             e.stopPropagation()
             alertMd(language.pluginV2Warning)
-          }}
-        >
+          }}>
           <TriangleAlert />
         </button>
       {/if}
@@ -132,8 +123,7 @@
               title={link.hoverText}
               onclick={(e) => {
                 e.stopPropagation()
-              }}
-            >
+              }}>
               <LinkIcon></LinkIcon>
             </a>
           {/if}
@@ -152,8 +142,7 @@
                   const current = findPluginByName(plugin.name)
                   if (current) updatePlugin(current.plugin)
                 }
-              }}
-            >
+              }}>
               <PlusIcon />
             </button>
           {/if}
@@ -178,8 +167,7 @@
           dispatchEnablePlugin(currentPlugin.name, enabled, previous)
           loadPlugins()
           e.preventDefault()
-        }}
-      >
+        }}>
         {#if plugin.enabled}
           <PowerIcon />
         {:else}
@@ -209,16 +197,13 @@
             dispatchDeletePlugin(currentPlugin.name, previous)
             loadPlugins()
           }
-        }}
-      >
+        }}>
         <TrashIcon />
       </button>
     </div>
     {#if plugin.version === 1}
       <span class="text-draculared text-xs">
-        {language.pluginVersionWarn
-          .replace('{{plugin_version}}', 'API V1')
-          .replace('{{required_version}}', 'API V3')}
+        {language.pluginVersionWarn.replace('{{plugin_version}}', 'API V1').replace('{{required_version}}', 'API V3')}
       </span>
     {:else if Object.keys(plugin.arguments).filter((i) => !i.startsWith('hidden_')).length > 0 && isPluginExpanded(plugin.name)}
       <div id={pluginParamsId(plugin.name)} class="flex flex-col mt-2 bg-dark-900/50 p-3">
@@ -229,9 +214,7 @@
                 <div class="flex items-center mt-6">
                   <div aria-hidden="true" class="w-full border-t border-darkborderc"></div>
                   <div class="relative flex justify-center">
-                    <span class="px-2 text-sm text-textarea text-nowrap"
-                      >{plugin?.argMeta?.[arg]?.divider}</span
-                    >
+                    <span class="px-2 text-sm text-textarea text-nowrap">{plugin?.argMeta?.[arg]?.divider}</span>
                   </div>
                   <div aria-hidden="true" class="w-full border-t border-darkborderc"></div>
                 </div>
@@ -241,17 +224,14 @@
             {/if}
             <span class="mb-2 mt-6">{plugin?.argMeta?.[arg]?.name || arg}</span>
             {#if plugin?.argMeta?.[arg]?.description}
-              <span class="mb-2 text-sm text-textcolor2">{plugin?.argMeta?.[arg]?.description}</span
-              >
+              <span class="mb-2 text-sm text-textcolor2">{plugin?.argMeta?.[arg]?.description}</span>
             {/if}
             {#if Array.isArray(plugin.arguments[arg])}
               <SelectInput
                 className="mt-2 mb-4"
                 bind:value={
-                  () => getPluginArg(plugin.name, arg) as string,
-                  (value) => setPluginArg(plugin.name, arg, value)
-                }
-              >
+                  () => getPluginArg(plugin.name, arg) as string, (value) => setPluginArg(plugin.name, arg, value)
+                }>
                 {#each plugin.arguments[arg] as a}
                   <OptionInput value={a}>{a}</OptionInput>
                 {/each}
@@ -260,11 +240,9 @@
               {#if plugin?.argMeta?.[arg]?.textarea}
                 <TextAreaInput
                   bind:value={
-                    () => getPluginArg(plugin.name, arg) as string,
-                    (value) => setPluginArg(plugin.name, arg, value)
+                    () => getPluginArg(plugin.name, arg) as string, (value) => setPluginArg(plugin.name, arg, value)
                   }
-                  placeholder={plugin?.argMeta?.[arg]?.placeholder}
-                />
+                  placeholder={plugin?.argMeta?.[arg]?.placeholder} />
               {:else if plugin?.argMeta?.[arg]?.radio}
                 {#each plugin?.argMeta?.[arg]?.radio?.split(',') as radioOption}
                   <CheckInput
@@ -275,17 +253,14 @@
                       }
                     }}
                     margin={false}
-                    name={radioOption.split('|').at(0)}
-                  />
+                    name={radioOption.split('|').at(0)} />
                 {/each}
               {:else}
                 <TextInput
                   bind:value={
-                    () => getPluginArg(plugin.name, arg) as string,
-                    (value) => setPluginArg(plugin.name, arg, value)
+                    () => getPluginArg(plugin.name, arg) as string, (value) => setPluginArg(plugin.name, arg, value)
                   }
-                  placeholder={plugin?.argMeta?.[arg]?.placeholder}
-                />
+                  placeholder={plugin?.argMeta?.[arg]?.placeholder} />
               {/if}
             {:else if plugin.arguments[arg] === 'int'}
               {#if plugin?.argMeta?.[arg]?.checkbox}
@@ -297,30 +272,25 @@
                   margin={false}
                   name={plugin?.argMeta?.[arg]?.checkbox === '1'
                     ? language.enable
-                    : plugin?.argMeta?.[arg]?.checkbox}
-                />
+                    : plugin?.argMeta?.[arg]?.checkbox} />
               {:else if plugin?.argMeta?.[arg]?.radio}
                 {#each plugin?.argMeta?.[arg]?.radio?.split(',') as radioOption}
                   <CheckInput
-                    check={getPluginArg(plugin.name, arg) ===
-                      parseInt(radioOption.split('|').at(-1))}
+                    check={getPluginArg(plugin.name, arg) === parseInt(radioOption.split('|').at(-1))}
                     onChange={(e) => {
                       if (e) {
                         setPluginArg(plugin.name, arg, parseInt(radioOption.split('|').at(-1)))
                       }
                     }}
                     margin={false}
-                    name={radioOption.split('|').at(0)}
-                  />
+                    name={radioOption.split('|').at(0)} />
                 {/each}
               {:else}
                 <NumberInput
                   bind:value={
-                    () => getPluginArg(plugin.name, arg) as number,
-                    (value) => setPluginArg(plugin.name, arg, value)
+                    () => getPluginArg(plugin.name, arg) as number, (value) => setPluginArg(plugin.name, arg, value)
                   }
-                  placeholder={plugin?.argMeta?.[arg]?.placeholder}
-                />
+                  placeholder={plugin?.argMeta?.[arg]?.placeholder} />
               {/if}
             {/if}
           {/if}
@@ -334,19 +304,14 @@
     onclick={() => {
       importPlugin()
     }}
-    class="hover:text-textcolor cursor-pointer"
-  >
+    class="hover:text-textcolor cursor-pointer">
     <PlusIcon />
   </button>
 
   <button
     onclick={async () => {
       const v = parseInt(
-        await alertSelect([
-          'Import plugin with hot reload',
-          'Download plugin template',
-          language.cancel,
-        ]),
+        await alertSelect(['Import plugin with hot reload', 'Download plugin template', language.cancel]),
       )
       switch (v) {
         case 0:
@@ -360,8 +325,7 @@
         }
       }
     }}
-    class="hover:text-textcolor cursor-pointer"
-  >
+    class="hover:text-textcolor cursor-pointer">
     <CodeXmlIcon />
   </button>
 </div>

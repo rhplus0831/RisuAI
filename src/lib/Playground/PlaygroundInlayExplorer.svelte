@@ -4,12 +4,7 @@
 
   import { language } from 'src/lang'
   import { alertConfirm } from 'src/ts/alert'
-  import {
-    getInlayAssetBlob,
-    listInlayAssets,
-    removeInlayAsset,
-    type InlayAsset,
-  } from 'src/ts/process/files/inlays'
+  import { getInlayAssetBlob, listInlayAssets, removeInlayAsset, type InlayAsset } from 'src/ts/process/files/inlays'
   import Button from '../UI/GUI/Button.svelte'
   import CheckInput from '../UI/GUI/CheckInput.svelte'
 
@@ -71,10 +66,7 @@
     if (selection.size === 0) return
     if (
       !(await alertConfirm(
-        language.playground.inlayDeleteMultipleConfirm.replace(
-          '{count}',
-          selection.size.toString(),
-        ),
+        language.playground.inlayDeleteMultipleConfirm.replace('{count}', selection.size.toString()),
       ))
     ) {
       return
@@ -162,21 +154,15 @@
 
 <header class="flex flex-wrap gap-4 py-6 items-center sticky top-0 bg-bgcolor">
   <span class="text-textcolor2"
-    >{language.playground.inlayTotalAssets.replace('{count}', allAssets.length.toString())}</span
-  >
+    >{language.playground.inlayTotalAssets.replace('{count}', allAssets.length.toString())}</span>
   {#if allAssets.length > 0}
     <div class="flex gap-2 ml-auto">
       {#if hasSelection}
-        <Button onclick={deleteSelected} styled="danger" size="sm"
-          >{language.playground.inlayDeleteSelected}</Button
-        >
+        <Button onclick={deleteSelected} styled="danger" size="sm">{language.playground.inlayDeleteSelected}</Button>
         <Button onclick={deselectAll} styled="primary" size="sm"
-          >{language.playground.inlayDeselectAll} ({selection.size})</Button
-        >
+          >{language.playground.inlayDeselectAll} ({selection.size})</Button>
       {:else}
-        <Button onclick={selectAll} styled="primary" size="sm"
-          >{language.playground.inlaySelectAll}</Button
-        >
+        <Button onclick={selectAll} styled="primary" size="sm">{language.playground.inlaySelectAll}</Button>
       {/if}
     </div>
   {/if}
@@ -193,12 +179,7 @@
       {#key selection.has(id)}
         <div class="border border-darkborderc rounded-lg p-4 bg-darkbg">
           <div class="flex items-center gap-2 mb-3">
-            <CheckInput
-              check={selection.has(id)}
-              hiddenName
-              margin={false}
-              onChange={() => toggleSelect(id)}
-            />
+            <CheckInput check={selection.has(id)} hiddenName margin={false} onChange={() => toggleSelect(id)} />
             <span class="px-2 py-1 text-xs rounded bg-darkbutton text-textcolor2">
               {asset.type}
             </span>
@@ -207,11 +188,7 @@
             {#if asset.type === 'image'}
               {#await getPreviewURL(id) then url}
                 {#if url}
-                  <img
-                    alt={asset.name}
-                    class="w-full h-40 object-contain rounded bg-black/20"
-                    src={url}
-                  />
+                  <img alt={asset.name} class="w-full h-40 object-contain rounded bg-black/20" src={url} />
                 {/if}
               {/await}
             {:else if asset.type === 'video'}
@@ -249,19 +226,14 @@
             <span>{getAssetSize(asset)}</span>
           </div>
 
-          <Button onclick={() => deleteAsset(id, asset.name)} styled="danger" size="sm"
-            >Delete</Button
-          >
+          <Button onclick={() => deleteAsset(id, asset.name)} styled="danger" size="sm">Delete</Button>
         </div>
       {/key}
     {/each}
   </div>
 
   {#if hasMore}
-    <div
-      bind:this={loadMoreSentinel}
-      class="h-12 flex items-center justify-center text-textcolor2 text-sm"
-    >
+    <div bind:this={loadMoreSentinel} class="h-12 flex items-center justify-center text-textcolor2 text-sm">
       Loading...
     </div>
   {/if}

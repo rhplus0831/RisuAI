@@ -11,8 +11,7 @@
   className="mt-4"
   onclick={async () => {
     alertMd(getRequestLog())
-  }}
->
+  }}>
   {language.ShowLog}
 </Button>
 
@@ -26,8 +25,7 @@
     }
     mdTable += `\n\n<small>${language.staticsDisclaimer}</small>`
     alertMd(mdTable)
-  }}
->
+  }}>
   Show Statistics
 </Button>
 
@@ -96,7 +94,6 @@
     await downloadFile('risuai-settings-report.json', new TextEncoder().encode(json))
     await navigator.clipboard.writeText(json)
     alertNormal(language.settingsExported)
-  }}
->
+  }}>
   Export Settings for Bug Report
 </Button>

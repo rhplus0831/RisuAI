@@ -126,9 +126,7 @@ export function captureSnapshot(stages: number[]): FixtureSnapshot {
 
   return {
     messages: chat.message.map(normalizeMessage),
-    generationInfo: lastAssistant
-      ? normalizeGenerationInfo(lastAssistant.generationInfo)
-      : undefined,
+    generationInfo: lastAssistant ? normalizeGenerationInfo(lastAssistant.generationInfo) : undefined,
     stages,
     sideEffects: getSideEffectCalls(),
     providerCalls: getProviderCalls().map(normalizeProviderCall),
@@ -157,9 +155,7 @@ export async function assertOrRecord(name: string, captured: FixtureSnapshot): P
     if (existing === null) {
       // Fail loudly the first time so a developer notices a new fixture got
       // auto-recorded rather than silently passing.
-      throw new Error(
-        `Recorded new fixture snapshot at ${path}. Re-run tests to assert against it.`,
-      )
+      throw new Error(`Recorded new fixture snapshot at ${path}. Re-run tests to assert against it.`)
     }
     return
   }

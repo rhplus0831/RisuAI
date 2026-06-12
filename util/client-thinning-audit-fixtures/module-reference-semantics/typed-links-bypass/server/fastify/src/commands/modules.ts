@@ -5,11 +5,7 @@ interface ModuleRecord {
   mcp?: boolean
 }
 
-export function validateNormalModuleLinks(
-  modules: ModuleRecord[],
-  moduleIds: string[],
-  label: string,
-): void {
+export function validateNormalModuleLinks(modules: ModuleRecord[], moduleIds: string[], label: string): void {
   const linkable = new Set(modules.filter((module) => !module.mcp).map((module) => module.id))
   for (const id of moduleIds) {
     if (!linkable.has(id)) {

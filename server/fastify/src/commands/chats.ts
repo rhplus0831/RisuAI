@@ -9,12 +9,7 @@ import {
   type ChatGenerationSettings,
 } from '../../../../src/ts/chatGenerationSettings.js'
 import { repairStoredChatGenerationSettings } from '../chatGenerationSettingsStorage.js'
-import {
-  type CharacterRecord,
-  ensureCharacterCollection,
-  readCharacterId,
-  readJsonObject,
-} from './characters.js'
+import { type CharacterRecord, ensureCharacterCollection, readCharacterId, readJsonObject } from './characters.js'
 
 type JsonRecord = Record<string, unknown>
 
@@ -137,19 +132,13 @@ export function ensureCharacterChatFolders(character: CharacterRecord): ChatFold
   return folders
 }
 
-export function chatFolderIdExists(
-  characters: readonly CharacterRecord[],
-  folderId: string,
-): boolean {
+export function chatFolderIdExists(characters: readonly CharacterRecord[], folderId: string): boolean {
   return characters.some(
     (character) =>
       Array.isArray(character.chatFolders) &&
       (character.chatFolders as unknown[]).some(
         (folder) =>
-          !!folder &&
-          typeof folder === 'object' &&
-          !Array.isArray(folder) &&
-          (folder as JsonRecord).id === folderId,
+          !!folder && typeof folder === 'object' && !Array.isArray(folder) && (folder as JsonRecord).id === folderId,
       ),
   )
 }
@@ -159,11 +148,7 @@ export function chatIdExists(characters: readonly CharacterRecord[], chatId: str
     (character) =>
       Array.isArray(character.chats) &&
       (character.chats as unknown[]).some(
-        (chat) =>
-          !!chat &&
-          typeof chat === 'object' &&
-          !Array.isArray(chat) &&
-          (chat as JsonRecord).id === chatId,
+        (chat) => !!chat && typeof chat === 'object' && !Array.isArray(chat) && (chat as JsonRecord).id === chatId,
       ),
   )
 }
@@ -285,9 +270,7 @@ export function readOptionalFolderByChatId(value: unknown): Record<string, strin
   return normalized
 }
 
-export function readChatScriptstatePatch(
-  input: unknown,
-): Record<string, string | number | boolean> {
+export function readChatScriptstatePatch(input: unknown): Record<string, string | number | boolean> {
   const patch = readJsonObject(input ?? {}, 'patch')
   for (const [key, value] of Object.entries(patch)) {
     validateScriptstateKey(key, `patch key`)
@@ -358,10 +341,7 @@ export function readChatGenerationSettingsSave(
       throw new ValidationError(`${label}.personaId must be a string`)
     }
     normalized.personaId = raw.personaId
-    if (
-      raw.personaId.trim() !== '' &&
-      !context.personas.some((persona) => persona.id === raw.personaId)
-    ) {
+    if (raw.personaId.trim() !== '' && !context.personas.some((persona) => persona.id === raw.personaId)) {
       throw new ValidationError(`Unknown persona id in ${label}.personaId: ${raw.personaId}`)
     }
   }
@@ -371,10 +351,7 @@ export function readChatGenerationSettingsSave(
       throw new ValidationError(`${label}.presetId must be a string`)
     }
     normalized.presetId = raw.presetId
-    if (
-      raw.presetId.trim() !== '' &&
-      !context.presets.some((preset) => preset.id === raw.presetId)
-    ) {
+    if (raw.presetId.trim() !== '' && !context.presets.some((preset) => preset.id === raw.presetId)) {
       throw new ValidationError(`Unknown preset id in ${label}.presetId: ${raw.presetId}`)
     }
   }
@@ -388,10 +365,7 @@ export function readChatGenerationSettingsSave(
   normalized.jailbreakToggle = raw.jailbreakToggle
 
   if (hasOwn(raw, 'sidebarToggles')) {
-    normalized.sidebarToggles = readSidebarToggleValueMap(
-      raw.sidebarToggles,
-      `${label}.sidebarToggles`,
-    )
+    normalized.sidebarToggles = readSidebarToggleValueMap(raw.sidebarToggles, `${label}.sidebarToggles`)
   }
 
   const selectedPreset = isNonEmptyString(normalized.presetId)
@@ -413,10 +387,7 @@ export function readChatGenerationSettingsSave(
   return normalized
 }
 
-export function requireChatLocation(
-  characters: readonly CharacterRecord[],
-  chatId: string,
-): ChatLocation {
+export function requireChatLocation(characters: readonly CharacterRecord[], chatId: string): ChatLocation {
   for (let characterIndex = 0; characterIndex < characters.length; characterIndex++) {
     const character = characters[characterIndex]
     const chats = ensureCharacterChats(character)
@@ -493,10 +464,7 @@ export function validateFullChatOrder(
   }
 }
 
-export function validateFullChatFolderOrder(
-  character: CharacterRecord,
-  folderIds: readonly string[],
-): void {
+export function validateFullChatFolderOrder(character: CharacterRecord, folderIds: readonly string[]): void {
   const folders = ensureCharacterChatFolders(character)
   const existing = new Set(folders.map((folder) => folder.id))
   const seen = new Set<string>()
@@ -593,11 +561,7 @@ function readOptionalJsonObject(value: unknown): JsonRecord {
   return value as JsonRecord
 }
 
-function validateChatRecord(
-  record: JsonRecord,
-  label: string,
-  options: { partial?: boolean } = {},
-): void {
+function validateChatRecord(record: JsonRecord, label: string, options: { partial?: boolean } = {}): void {
   if ('id' in record && (typeof record.id !== 'string' || record.id.trim() === '')) {
     throw new ValidationError(`${label}.id must be a non-empty string`)
   }
@@ -634,8 +598,7 @@ function validateChatRecord(
   }
   if (
     'bookmarks' in record &&
-    (!Array.isArray(record.bookmarks) ||
-      record.bookmarks.some((id) => typeof id !== 'string' || id.trim() === ''))
+    (!Array.isArray(record.bookmarks) || record.bookmarks.some((id) => typeof id !== 'string' || id.trim() === ''))
   ) {
     throw new ValidationError(`${label}.bookmarks must be an array of message ids`)
   }
@@ -644,8 +607,7 @@ function validateChatRecord(
   }
   if (
     'modules' in record &&
-    (!Array.isArray(record.modules) ||
-      record.modules.some((id) => typeof id !== 'string' || id.trim() === ''))
+    (!Array.isArray(record.modules) || record.modules.some((id) => typeof id !== 'string' || id.trim() === ''))
   ) {
     throw new ValidationError(`${label}.modules must be an array of module ids`)
   }
@@ -667,11 +629,7 @@ function validateChatRecord(
   }
 }
 
-function validateChatFolderRecord(
-  record: JsonRecord,
-  label: string,
-  options: { partial?: boolean } = {},
-): void {
+function validateChatFolderRecord(record: JsonRecord, label: string, options: { partial?: boolean } = {}): void {
   if ('id' in record && (typeof record.id !== 'string' || record.id.trim() === '')) {
     throw new ValidationError(`${label}.id must be a non-empty string`)
   }

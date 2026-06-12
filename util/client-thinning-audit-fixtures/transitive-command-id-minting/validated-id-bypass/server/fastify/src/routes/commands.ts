@@ -3,10 +3,7 @@
 import { ensureCharacterChats, requireCharacter } from '../commands/chats.js'
 
 interface RouteApp {
-  patch: (
-    route: string,
-    handler: (req: { params: Record<string, unknown> }) => unknown,
-  ) => void
+  patch: (route: string, handler: (req: { params: Record<string, unknown> }) => unknown) => void
 }
 
 export function registerCommandRoutes(app: RouteApp): void {

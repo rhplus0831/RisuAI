@@ -2,10 +2,7 @@ import type { character } from '../../../../src/ts/storage/database.svelte'
 import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
 import type { PromptItem } from '../../../../src/ts/process/prompt'
 import type { ExpandContext } from './variables.js'
-import {
-  resolvePosition,
-  type LorebookActivationReport,
-} from './lorebook.js'
+import { resolvePosition, type LorebookActivationReport } from './lorebook.js'
 import { tokenizeChat } from './tokens.js'
 import { tokenizerOptionsFromDb } from './tokenizerConfig.js'
 import {
@@ -64,23 +61,13 @@ export interface PreflightInput {
   stableCardCache?: StableCardRenderCache
 }
 
-function positionParserFor(
-  report: LorebookActivationReport | undefined,
-): (text: string, loc: string) => string {
+function positionParserFor(report: LorebookActivationReport | undefined): (text: string, loc: string) => string {
   if (!report) return (text) => text
   return (text) => resolvePosition(text, report)
 }
 
 export function preflightTemplateTokens(input: PreflightInput): PreflightResult {
-  const {
-    ctx,
-    currentChar,
-    unformated,
-    promptTemplate,
-    usingPromptTemplate,
-    report,
-    stableCardCache,
-  } = input
+  const { ctx, currentChar, unformated, promptTemplate, usingPromptTemplate, report, stableCardCache } = input
   const db = ctx.database
   const { encoding, options } = tokenizerOptionsFromDb(db)
   const positionParser = positionParserFor(report)

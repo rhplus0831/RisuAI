@@ -13,11 +13,7 @@ import { alertNormal, alertSelect, alertConfirm, alertError, alertWait } from '.
 import { downloadFile } from '../globalApi.svelte'
 import { selectFileByDom } from '../util'
 import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
-import {
-  exportLLMCacheAsJSON,
-  importLLMCacheFromJSON,
-  clearLLMCache,
-} from '../translator/translator'
+import { exportLLMCacheAsJSON, importLLMCacheFromJSON, clearLLMCache } from '../translator/translator'
 
 export const langState = $state({ changed: false })
 
@@ -49,10 +45,7 @@ export const languageSettingsItems: SettingItem[] = [
     },
     onChange: async (val, ctx) => {
       if (val === 'translang') {
-        const j = await alertSelect([
-          'Continue Translating Existing Language',
-          'Make a new language',
-        ])
+        const j = await alertSelect(['Continue Translating Existing Language', 'Make a new language'])
 
         if (parseInt(j) === 0) {
           const langs = ['de', 'ko', 'cn', 'vi', 'zh-Hant']
@@ -63,10 +56,7 @@ export const languageSettingsItems: SettingItem[] = [
             'Downloaded JSON, translate it, and send it to the dev by discord DM and email. I will add it to the next version.',
           )
         } else {
-          downloadFile(
-            'lang.json',
-            new TextEncoder().encode(JSON.stringify(languageEnglish, null, 4)),
-          )
+          downloadFile('lang.json', new TextEncoder().encode(JSON.stringify(languageEnglish, null, 4)))
           alertNormal(
             'Downloaded JSON, translate it, and send it to the dev by discord DM and email. I will add it to the next version.',
           )
@@ -341,9 +331,7 @@ export const languageSettingsItems: SettingItem[] = [
           const { count, failed } = await importLLMCacheFromJSON(data as Record<string, string>)
           if (failed > 0) {
             alertError(
-              language.importTranslationCacheFailed
-                .replace('{0}', String(count))
-                .replace('{1}', String(failed)),
+              language.importTranslationCacheFailed.replace('{0}', String(count)).replace('{1}', String(failed)),
             )
           } else {
             alertNormal(language.importTranslationCacheSuccess.replace('{0}', String(count)))

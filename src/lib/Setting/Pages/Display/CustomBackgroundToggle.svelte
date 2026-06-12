@@ -24,6 +24,5 @@
         applyServerBackedSetting('customBackground', '')
       }
     }}
-    name={language.useCustomBackground}
-  />
+    name={language.useCustomBackground} />
 </div>

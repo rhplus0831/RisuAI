@@ -4,8 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 // Spy passthrough so the tests can observe the cumulative byte counts the
 // bounded inflate checks while it streams. The real limit logic still runs.
 vi.mock('../src/risuSave/importLimits.js', async (importOriginal) => {
-  const original =
-    await importOriginal<typeof import('../src/risuSave/importLimits.js')>()
+  const original = await importOriginal<typeof import('../src/risuSave/importLimits.js')>()
   return {
     ...original,
     assertExpandedSizeWithinLimit: vi.fn(original.assertExpandedSizeWithinLimit),
@@ -14,10 +13,7 @@ vi.mock('../src/risuSave/importLimits.js', async (importOriginal) => {
 
 import { decompressBounded, gunzipBounded } from '../src/risuSave/boundedInflate.js'
 import { assertExpandedSizeWithinLimit } from '../src/risuSave/importLimits.js'
-import {
-  decodeLegacyRisuSaveEnvelope,
-  encodeLegacyRisuSaveEnvelope,
-} from '../src/risuSave/legacyEnvelopeCodec.js'
+import { decodeLegacyRisuSaveEnvelope, encodeLegacyRisuSaveEnvelope } from '../src/risuSave/legacyEnvelopeCodec.js'
 import {
   decodeRisuSaveBlockEnvelope,
   encodeRisuSaveBlockEnvelope,
@@ -37,8 +33,7 @@ function patterned(length: number): Uint8Array {
 describe('M9 streaming bounded inflate', () => {
   it('produces byte-identical output to the sync decoders within the cap', () => {
     const payload = patterned(3 * MIB)
-    const equalsPayload = (decoded: Uint8Array): boolean =>
-      Buffer.from(decoded).equals(Buffer.from(payload))
+    const equalsPayload = (decoded: Uint8Array): boolean => Buffer.from(decoded).equals(Buffer.from(payload))
 
     const gz = fflate.gzipSync(payload)
     expect(equalsPayload(gunzipBounded(gz, { maxExpandedBytes: 4 * MIB }))).toBe(true)
@@ -71,13 +66,9 @@ describe('M9 streaming bounded inflate', () => {
     const payload = { blob: 'x'.repeat(4 * MIB) }
     for (const kind of ['legacy-compressed', 'legacy-stream'] as const) {
       const encoded = encodeLegacyRisuSaveEnvelope(payload, kind)
-      expect(() => decodeLegacyRisuSaveEnvelope(encoded, { maxExpandedBytes: MIB }), kind).toThrow(
-        /exceeds size limit/,
-      )
+      expect(() => decodeLegacyRisuSaveEnvelope(encoded, { maxExpandedBytes: MIB }), kind).toThrow(/exceeds size limit/)
       // Identical decode result with a generous cap — only the failure mode changed.
-      expect(decodeLegacyRisuSaveEnvelope(encoded, { maxExpandedBytes: 64 * MIB }), kind).toEqual(
-        payload,
-      )
+      expect(decodeLegacyRisuSaveEnvelope(encoded, { maxExpandedBytes: 64 * MIB }), kind).toEqual(payload)
       expect(decodeLegacyRisuSaveEnvelope(encoded), kind).toEqual(payload)
     }
   })
@@ -92,9 +83,7 @@ describe('M9 streaming bounded inflate', () => {
 
     // Each block alone fits under 1 MiB; together they cross it, so the second
     // block must abort while inflating against the remaining budget.
-    expect(() => decodeRisuSaveBlockEnvelope(envelope, { maxExpandedBytes: MIB })).toThrow(
-      /exceeds size limit/,
-    )
+    expect(() => decodeRisuSaveBlockEnvelope(envelope, { maxExpandedBytes: MIB })).toThrow(/exceeds size limit/)
 
     const decoded = decodeRisuSaveBlockEnvelope(envelope, { maxExpandedBytes: 4 * MIB })
     expect(decoded.blocks.map((block) => block.content)).toEqual([rootContent, presetContent])

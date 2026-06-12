@@ -89,10 +89,7 @@ import { tokenize, tokenizeChat } from './tokens.js'
 import { tokenizeHypaV3PrefixChat } from './prefixTokenMemo.js'
 import { tokenizerOptionsFromDb } from './tokenizerConfig.js'
 import { isRisuChatParserFixedPoint } from './parserFixedPoint.js'
-import {
-  bumpAssemblyCbsHistoryGeneration,
-  createAssemblyCbsCallbackMemo,
-} from './cbsCallbackMemo.js'
+import { bumpAssemblyCbsHistoryGeneration, createAssemblyCbsCallbackMemo } from './cbsCallbackMemo.js'
 import { buildEffectiveGenerationConfig } from './effectiveGenerationConfig.js'
 
 /**
@@ -220,9 +217,7 @@ export interface AssemblyMessageCaptureInstrumentation {
   fullTranscriptStringifies: number
   rowStringifies: number
   messageReplacementComparisons: number
-  messageReplacementCaptures: Partial<
-    Record<Exclude<AssembleMutationSource, 'user_message'>, number>
-  >
+  messageReplacementCaptures: Partial<Record<Exclude<AssembleMutationSource, 'user_message'>, number>>
 }
 
 const assemblyMessageCaptureInstrumentation: AssemblyMessageCaptureInstrumentation = {
@@ -256,8 +251,7 @@ export function getAssemblyMessageCaptureInstrumentation(): AssemblyMessageCaptu
     fullTranscriptClones: { ...assemblyMessageCaptureInstrumentation.fullTranscriptClones },
     fullTranscriptStringifies: assemblyMessageCaptureInstrumentation.fullTranscriptStringifies,
     rowStringifies: assemblyMessageCaptureInstrumentation.rowStringifies,
-    messageReplacementComparisons:
-      assemblyMessageCaptureInstrumentation.messageReplacementComparisons,
+    messageReplacementComparisons: assemblyMessageCaptureInstrumentation.messageReplacementComparisons,
     messageReplacementCaptures: {
       ...assemblyMessageCaptureInstrumentation.messageReplacementCaptures,
     },
@@ -268,16 +262,12 @@ function recordFullTranscriptClone(reason: keyof AssemblyMessageFullTranscriptCl
   assemblyMessageCaptureInstrumentation.fullTranscriptClones[reason]++
 }
 
-function recordMessageReplacementCapture(
-  source: Exclude<AssembleMutationSource, 'user_message'>,
-): void {
+function recordMessageReplacementCapture(source: Exclude<AssembleMutationSource, 'user_message'>): void {
   assemblyMessageCaptureInstrumentation.messageReplacementCaptures[source] =
     (assemblyMessageCaptureInstrumentation.messageReplacementCaptures[source] ?? 0) + 1
 }
 
-export function getMessageMutationFirstChangedIndex(
-  mutation: AssembleMessageMutation,
-): number | undefined {
+export function getMessageMutationFirstChangedIndex(mutation: AssembleMessageMutation): number | undefined {
   return (mutation as MessageMutationWithFirstChangedIndex)[MESSAGE_MUTATION_FIRST_CHANGED_INDEX]
 }
 
@@ -614,9 +604,7 @@ function cloneMessages(
   return structuredClone(messages ?? []) as Message[]
 }
 
-function cloneScriptstate(
-  scriptstate: Chat['scriptstate'] | undefined,
-): Record<string, string | number | boolean> {
+function cloneScriptstate(scriptstate: Chat['scriptstate'] | undefined): Record<string, string | number | boolean> {
   return structuredClone(scriptstate ?? {}) as Record<string, string | number | boolean>
 }
 
@@ -634,9 +622,7 @@ function scriptstateEqual(
   return true
 }
 
-function currentPersistedScriptstateSnapshot(
-  state: AssemblyState,
-): Record<string, string | number | boolean> {
+function currentPersistedScriptstateSnapshot(state: AssemblyState): Record<string, string | number | boolean> {
   return cloneScriptstate(currentPersistedChat(state)?.scriptstate)
 }
 
@@ -653,10 +639,7 @@ function equalMessageRows(a: Message, b: Message): boolean {
   return JSON.stringify(a) === JSON.stringify(b)
 }
 
-function firstChangedMessageIndex(
-  before: readonly Message[],
-  after: readonly Message[],
-): number | undefined {
+function firstChangedMessageIndex(before: readonly Message[], after: readonly Message[]): number | undefined {
   const shared = Math.min(before.length, after.length)
   let index = 0
   while (index < shared && equalMessageRows(before[index], after[index])) index++
@@ -664,10 +647,7 @@ function firstChangedMessageIndex(
   return index
 }
 
-function markFirstChangedIndex(
-  mutation: AssembleMessageMutation,
-  firstChangedIndex: number,
-): AssembleMessageMutation {
+function markFirstChangedIndex(mutation: AssembleMessageMutation, firstChangedIndex: number): AssembleMessageMutation {
   Object.defineProperty(mutation, MESSAGE_MUTATION_FIRST_CHANGED_INDEX, {
     value: firstChangedIndex,
     enumerable: false,
@@ -729,11 +709,7 @@ function captureMessageReplacement(
   bumpHistoryCallbackMemo(state)
 }
 
-function setMessageMutationCheckpointRow(
-  state: AssemblyState,
-  index: number,
-  message: Message,
-): void {
+function setMessageMutationCheckpointRow(state: AssemblyState, index: number, message: Message): void {
   const checkpoint = state.messageMutationCheckpoint ?? []
   const next = checkpoint.slice()
   next[index] = message
@@ -747,11 +723,7 @@ function appendUserMessageRow(state: AssemblyState): void {
   const messages = (state.currentChat.message ??= [])
   const lastIndex = messages.length - 1
   const lastMessage = messages[lastIndex]
-  if (
-    lastMessage?.role === 'user' &&
-    lastMessage.data === userMessage &&
-    (lastMessage.name ?? null) === null
-  ) {
+  if (lastMessage?.role === 'user' && lastMessage.data === userMessage && (lastMessage.name ?? null) === null) {
     const message = {
       ...structuredClone(lastMessage),
       chatId: lastMessage.chatId ?? randomUUID(),
@@ -898,22 +870,12 @@ async function applyEditInput(state: AssemblyState): Promise<void> {
   const messages = state.currentChat.message ?? []
   const lastMessage = messages[messages.length - 1]
   // Only the freshly-submitted user row (still carrying the raw text) is edited.
-  if (
-    lastMessage?.role !== 'user' ||
-    (lastMessage.name ?? null) !== null ||
-    lastMessage.data !== rawUserMessage
-  ) {
+  if (lastMessage?.role !== 'user' || (lastMessage.name ?? null) !== null || lastMessage.data !== rawUserMessage) {
     return
   }
 
   const { editCtx, varEngine } = buildLuaEditTriggerContext(state)
-  let text = await runLuaEditTrigger(
-    state.currentChar,
-    'editinput',
-    rawUserMessage,
-    { index: -1 },
-    editCtx,
-  )
+  let text = await runLuaEditTrigger(state.currentChar, 'editinput', rawUserMessage, { index: -1 }, editCtx)
   text = expandVariables(text, { ...state.ctx, chara: state.currentChar }).text
   text = processScript(state.ctx, state.currentChar, text, 'editinput', {}, -1, state.currentChat)
 
@@ -948,14 +910,10 @@ function prepareRegenerateTranscript(state: AssemblyState): void {
 
   const target = messages[targetIndex]
   if (target.role === 'user') {
-    throw new EntityNotFoundError(
-      `regenerate target must be an assistant message: ${regenerateMessageId}`,
-    )
+    throw new EntityNotFoundError(`regenerate target must be an assistant message: ${regenerateMessageId}`)
   }
   if (targetIndex !== messages.length - 1) {
-    throw new EntityNotFoundError(
-      `regenerate target must be the latest assistant message: ${regenerateMessageId}`,
-    )
+    throw new EntityNotFoundError(`regenerate target must be the latest assistant message: ${regenerateMessageId}`)
   }
 
   const saying = target.saying
@@ -1009,11 +967,7 @@ export function applyCurrentChatRunVars(
   if (chatVarDirty) {
     state.varChanged = true
     syncWorkingScriptstate(state)
-    if (
-      !messageDirty &&
-      beforeScriptstate &&
-      persistedScriptstateChangedSince(state, beforeScriptstate)
-    ) {
+    if (!messageDirty && beforeScriptstate && persistedScriptstateChangedSince(state, beforeScriptstate)) {
       bumpHistoryCallbackMemo(state)
     }
   }
@@ -1147,12 +1101,7 @@ export function fillLorebookSlots(state: AssemblyState): void {
     bumpHistoryCallbackMemo(state)
   }
 
-  const { positionParser, depthPrompts } = buildLorebookContext(
-    ctx,
-    currentChar,
-    report,
-    unformated,
-  )
+  const { positionParser, depthPrompts } = buildLorebookContext(ctx, currentChar, report, unformated)
 
   // SPA `:210-213`: seed with the max response budget plus a small
   // headroom for unexpected error overhead.
@@ -1456,9 +1405,7 @@ function planPromptMemoryChunksForAssembly(input: {
       summarySnapshot = cleaned.summarySnapshot
     }
 
-    const summaries = summarySnapshot.summaries.filter(
-      (summary) => summary.model === input.settings.summarizationModel,
-    )
+    const summaries = summarySnapshot.summaries.filter((summary) => summary.model === input.settings.summarizationModel)
     const { encoding, options } = tokenizerOptionsFromDb(input.state.database)
     const plan = planStandardHypaV3Memory({
       chats,
@@ -1529,11 +1476,7 @@ function errorMessage(error: unknown, fallback: string): string {
 }
 
 function shouldSelectPromptMemory(state: AssemblyState): boolean {
-  return (
-    state.memoryDatabase !== null &&
-    state.database.hypaV3 === true &&
-    state.currentChar.supaMemory === true
-  )
+  return state.memoryDatabase !== null && state.database.hypaV3 === true && state.currentChar.supaMemory === true
 }
 
 function resolveHypaV3PresetSettings(database: Database): unknown {
@@ -1611,13 +1554,7 @@ function buildLuaEditRequest(state: AssemblyState): {
   return {
     editRequest: async (rows) => {
       const beforeScriptstate = currentPersistedScriptstateSnapshot(state)
-      const result = await runLuaEditTrigger(
-        state.currentChar,
-        'editRequest',
-        rows,
-        undefined,
-        editCtx,
-      )
+      const result = await runLuaEditTrigger(state.currentChar, 'editRequest', rows, undefined, editCtx)
       persistedScriptstateChanged ||= persistedScriptstateChangedSince(state, beforeScriptstate)
       return result
     },
@@ -1748,10 +1685,7 @@ async function measureAssemblyStageAsync<T>(
  * a start trigger or budget overflow returns `{ stopSending: true }` rather
  * than throwing.
  */
-export async function assemblePrompt(
-  input: AssembleInput,
-  deps: AssembleDeps,
-): Promise<AssembleResult> {
+export async function assemblePrompt(input: AssembleInput, deps: AssembleDeps): Promise<AssembleResult> {
   const state = measureAssemblyStage(
     { recordAssemblyStageTiming: deps.recordAssemblyStageTiming },
     'scope_resolution',
@@ -1864,29 +1798,11 @@ function reformatCompletion(text: string): string {
  * shape to `applyEditInput`. pluginV2 stays permanent-unsupported, so its arm is
  * intentionally absent. Lua var writes fold into the chat-var delta.
  */
-async function applyEditOutput(
-  state: AssemblyState,
-  text: string,
-  msgIndex: number,
-): Promise<string> {
+async function applyEditOutput(state: AssemblyState, text: string, msgIndex: number): Promise<string> {
   const { editCtx, varEngine } = buildLuaEditTriggerContext(state)
-  let out = await runLuaEditTrigger(
-    state.currentChar,
-    'editoutput',
-    text,
-    { index: msgIndex },
-    editCtx,
-  )
+  let out = await runLuaEditTrigger(state.currentChar, 'editoutput', text, { index: msgIndex }, editCtx)
   out = expandVariables(out, { ...state.ctx, chara: state.currentChar }).text
-  out = processScript(
-    state.ctx,
-    state.currentChar,
-    out,
-    'editoutput',
-    {},
-    msgIndex,
-    state.currentChat,
-  )
+  out = processScript(state.ctx, state.currentChar, out, 'editoutput', {}, msgIndex, state.currentChat)
   if (varEngine.varChanged) {
     state.varChanged = true
     syncWorkingScriptstate(state)
@@ -2004,9 +1920,7 @@ export async function runServerPostGeneration(
   const messages = (state.currentChat.message ??= [])
   const continueIndex = messages.length - 1
   const continueBase =
-    isContinue && messages[continueIndex]?.role === 'char'
-      ? (messages[continueIndex].data ?? '')
-      : ''
+    isContinue && messages[continueIndex]?.role === 'char' ? (messages[continueIndex].data ?? '') : ''
   const editIndex = isContinue ? continueIndex : messages.length
 
   // Baseline the post-gen delta against the post-assembly scriptstate (the route
@@ -2027,10 +1941,7 @@ export async function runServerPostGeneration(
   // Re-baseline once after the pass so any later output-trigger edit is isolated.
   applyCurrentChatRunVars(state, { captureMessageMutation: false })
   state.messageMutations = []
-  state.messageMutationCheckpoint = cloneMessages(
-    state.currentChat.message ?? [],
-    'postGenerationCheckpoint',
-  )
+  state.messageMutationCheckpoint = cloneMessages(state.currentChat.message ?? [], 'postGenerationCheckpoint')
 
   const resendChat = await runOutputTrigger(state)
 

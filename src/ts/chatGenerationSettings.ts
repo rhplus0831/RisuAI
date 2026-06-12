@@ -1,10 +1,8 @@
 export const CHAT_GENERATION_SETTINGS_FIELD = 'generationSettings' as const
 
 export const CHAT_GENERATION_SETTINGS_INCOMPLETE_STATUS = 409 as const
-export const CHAT_GENERATION_SETTINGS_INCOMPLETE_ERROR =
-  'chat_generation_settings_incomplete' as const
-export const CHAT_GENERATION_SETTINGS_INCOMPLETE_MESSAGE =
-  'Chat generation settings are incomplete' as const
+export const CHAT_GENERATION_SETTINGS_INCOMPLETE_ERROR = 'chat_generation_settings_incomplete' as const
+export const CHAT_GENERATION_SETTINGS_INCOMPLETE_MESSAGE = 'Chat generation settings are incomplete' as const
 
 const JAILBREAK_TOGGLE_TOKEN = '{{jbtoggled}}'
 
@@ -95,8 +93,7 @@ export const CHAT_GENERATION_SETTINGS_MISSING_REASON_CODES = [
   'sidebar_toggle_invalid',
 ] as const
 
-export type ChatGenerationSettingsMissingReasonCode =
-  (typeof CHAT_GENERATION_SETTINGS_MISSING_REASON_CODES)[number]
+export type ChatGenerationSettingsMissingReasonCode = (typeof CHAT_GENERATION_SETTINGS_MISSING_REASON_CODES)[number]
 
 export type ChatGenerationSettingsFieldPath =
   | typeof CHAT_GENERATION_SETTINGS_FIELD
@@ -367,9 +364,7 @@ function appendUniqueToggles(
 
 function parseSidebarToggleSyntax(
   syntax: string,
-  source:
-    | { source: 'preset'; presetId: string }
-    | { source: 'module'; moduleId: string; moduleNamespace?: string },
+  source: { source: 'preset'; presetId: string } | { source: 'module'; moduleId: string; moduleNamespace?: string },
 ): ChatGenerationRequiredSidebarToggle[] {
   if (!syntax) return []
 
@@ -386,8 +381,7 @@ function parseSidebarToggleSyntax(
       continue
     }
 
-    const kind =
-      rawType === 'select' || rawType === 'text' || rawType === 'textarea' ? rawType : 'boolean'
+    const kind = rawType === 'select' || rawType === 'text' || rawType === 'textarea' ? rawType : 'boolean'
     toggles.push({
       key,
       label,
@@ -407,9 +401,7 @@ function resolvePreset(
   return presets.find((preset) => preset.id === presetId)
 }
 
-function resolveActiveModules(
-  input: ResolveChatGenerationRequirementsInput,
-): ChatGenerationModuleReference[] {
+function resolveActiveModules(input: ResolveChatGenerationRequirementsInput): ChatGenerationModuleReference[] {
   const requestedIds = [
     ...(input.enabledModuleIds ?? []),
     ...(input.chatModuleIds ?? []),
@@ -449,9 +441,7 @@ function presetDisplaysJailbreakToggle(preset: ChatGenerationPresetReference | u
   return preset.promptTemplate.some((item) => {
     if (item.type === 'jailbreak') return true
     return (
-      usesJailbreakToggle(item.text) ||
-      usesJailbreakToggle(item.innerFormat) ||
-      usesJailbreakToggle(item.defaultText)
+      usesJailbreakToggle(item.text) || usesJailbreakToggle(item.innerFormat) || usesJailbreakToggle(item.defaultText)
     )
   })
 }
@@ -460,9 +450,7 @@ function usesJailbreakToggle(value: string | undefined): boolean {
   return typeof value === 'string' && value.includes(JAILBREAK_TOGGLE_TOKEN)
 }
 
-function sidebarToggleField(
-  key: string,
-): `${typeof CHAT_GENERATION_SETTINGS_FIELD}.sidebarToggles.${string}` {
+function sidebarToggleField(key: string): `${typeof CHAT_GENERATION_SETTINGS_FIELD}.sidebarToggles.${string}` {
   return `${CHAT_GENERATION_SETTINGS_FIELD}.sidebarToggles.${key}`
 }
 

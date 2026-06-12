@@ -13,12 +13,7 @@ vi.mock('../modules', async (importActual) => {
   return { ...actual, moduleUpdate: () => {} }
 })
 
-import {
-  setDatabase,
-  type Chat,
-  type Database,
-  type character,
-} from '../../storage/database.svelte'
+import { setDatabase, type Chat, type Database, type character } from '../../storage/database.svelte'
 import { selectedCharID, DBState } from '../../stores.svelte'
 import { applyOutputTrigger } from '../postGeneration/outputTrigger'
 

@@ -3,10 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { openDatabase } from '../src/db.js'
-import {
-  createEmbedMemoryJobBatchHandler,
-  createEmbedMemoryJobHandler,
-} from '../src/memoryEmbedJobHandler.js'
+import { createEmbedMemoryJobBatchHandler, createEmbedMemoryJobHandler } from '../src/memoryEmbedJobHandler.js'
 import {
   MEMORY_EMBEDDING_APPROX_CHARS_PER_TOKEN,
   MEMORY_EMBEDDING_FALLBACK_MAX_INPUT_BYTES,
@@ -54,12 +51,7 @@ function resolveOnAbort<T>(signal: AbortSignal, value: T): Promise<T> {
   })
 }
 
-function resolveAfterUnlessAborted<T>(
-  signal: AbortSignal,
-  delayMs: number,
-  value: T,
-  aborted: T,
-): Promise<T> {
+function resolveAfterUnlessAborted<T>(signal: AbortSignal, delayMs: number, value: T, aborted: T): Promise<T> {
   return new Promise((resolve) => {
     const onAbort = (): void => {
       clearTimeout(timer)
@@ -350,9 +342,7 @@ describe('embed memory job handler', () => {
         embed,
       })
 
-      await expect(handler(job)).rejects.toThrow(
-        'memory embedding chunk chunk-1 exceeds maxInputBytes',
-      )
+      await expect(handler(job)).rejects.toThrow('memory embedding chunk chunk-1 exceeds maxInputBytes')
       expect(embed).not.toHaveBeenCalled()
       expect(listMemoryEmbeddings(db, { chatId: 'chat-1' })).toHaveLength(0)
     } finally {
@@ -394,9 +384,7 @@ describe('embed memory job handler', () => {
         error: expect.stringContaining('memory embedding chunk chunk-1 exceeds maxInputBytes'),
       })
       expect(getMemoryJob(db, 'job-2')).toMatchObject({ status: 'completed', error: null })
-      expect(listMemoryEmbeddings(db, { chatId: 'chat-1' }).map((row) => row.chunkId)).toEqual([
-        'chunk-2',
-      ])
+      expect(listMemoryEmbeddings(db, { chatId: 'chat-1' }).map((row) => row.chunkId)).toEqual(['chunk-2'])
     } finally {
       db.close()
     }
@@ -487,8 +475,7 @@ describe('embed memory job handler', () => {
         batchHandlers: {
           embed: createEmbedMemoryJobBatchHandler({
             db,
-            loadDatabase: () =>
-              database({ embeddingMaxConcurrent: 2, embeddingRequestsPerMinute: 60 }),
+            loadDatabase: () => database({ embeddingMaxConcurrent: 2, embeddingRequestsPerMinute: 60 }),
             now: () => now,
             sleep: async (ms) => {
               sleeps.push(ms)
@@ -552,9 +539,7 @@ describe('embed memory job handler', () => {
         error: 'aborted',
       })
       expect(getMemoryJob(db, 'job-2')).toMatchObject({ status: 'completed', error: null })
-      expect(listMemoryEmbeddings(db, { chatId: 'chat-1' }).map((row) => row.chunkId)).toEqual([
-        'chunk-2',
-      ])
+      expect(listMemoryEmbeddings(db, { chatId: 'chat-1' }).map((row) => row.chunkId)).toEqual(['chunk-2'])
     } finally {
       db.close()
     }
@@ -796,10 +781,7 @@ describe('embed memory job handler', () => {
       seedBatchJob(db, {
         id: 'job-2',
         chunkId: 'chunk-2',
-        text: 'x'.repeat(
-          (VOYAGE_CONTEXT3_MAX_CONTEXT_CHUNK_TOKENS + 1) *
-            MEMORY_EMBEDDING_APPROX_CHARS_PER_TOKEN,
-        ),
+        text: 'x'.repeat((VOYAGE_CONTEXT3_MAX_CONTEXT_CHUNK_TOKENS + 1) * MEMORY_EMBEDDING_APPROX_CHARS_PER_TOKEN),
         model: 'voyageContext3',
       })
       const embedGroups = vi.fn(async (opts: { groups: readonly (readonly string[])[] }) => ({
@@ -828,9 +810,7 @@ describe('embed memory job handler', () => {
         status: 'pending',
         error: expect.stringContaining('memory embedding chunk chunk-2 exceeds maxInputTokens'),
       })
-      expect(listMemoryEmbeddings(db, { chatId: 'chat-1' }).map((row) => row.chunkId)).toEqual([
-        'chunk-1',
-      ])
+      expect(listMemoryEmbeddings(db, { chatId: 'chat-1' }).map((row) => row.chunkId)).toEqual(['chunk-1'])
     } finally {
       db.close()
     }
@@ -871,12 +851,8 @@ describe('embed memory job handler', () => {
         expect(await worker.tick()).toBe(true)
 
         expect(embedGroups).toHaveBeenCalledOnce()
-        expect((embedGroups.mock.calls as any[][])[0][0].groups).toEqual([
-          ['a'.repeat(100_000), 'b'.repeat(100_000)],
-        ])
-        expect(metrics.some((entry) => entry.metric === 'memory_contextual_embed_split')).toBe(
-          false,
-        )
+        expect((embedGroups.mock.calls as any[][])[0][0].groups).toEqual([['a'.repeat(100_000), 'b'.repeat(100_000)]])
+        expect(metrics.some((entry) => entry.metric === 'memory_contextual_embed_split')).toBe(false)
       })
       const embeddings = listMemoryEmbeddings(db, { chatId: 'chat-1', model: 'voyageContext3' })
       expect(embeddings.map((row) => row.chunkId)).toEqual(['chunk-1', 'chunk-2'])
@@ -937,9 +913,7 @@ describe('embed memory job handler', () => {
         expect((embedGroups.mock.calls as any[][])[0][0].groups).toEqual([
           ['a'.repeat(124_000), 'b'.repeat(124_000), 'c'.repeat(124_000)],
         ])
-        expect((embedGroups.mock.calls as any[][])[1][0].groups).toEqual([
-          ['d'.repeat(124_000)],
-        ])
+        expect((embedGroups.mock.calls as any[][])[1][0].groups).toEqual([['d'.repeat(124_000)]])
         expect(metrics.find((entry) => entry.metric === 'memory_contextual_embed_split')).toEqual(
           expect.objectContaining({
             chatId: 'chat-1',
@@ -954,11 +928,9 @@ describe('embed memory job handler', () => {
           }),
         )
       })
-      expect(
-        listMemoryEmbeddings(db, { chatId: 'chat-1', model: 'voyageContext3' }).map(
-          (row) => row.chunkId,
-        ),
-      ).toEqual(['chunk-1', 'chunk-2', 'chunk-3', 'chunk-4'])
+      expect(listMemoryEmbeddings(db, { chatId: 'chat-1', model: 'voyageContext3' }).map((row) => row.chunkId)).toEqual(
+        ['chunk-1', 'chunk-2', 'chunk-3', 'chunk-4'],
+      )
     } finally {
       db.close()
     }
@@ -1127,17 +1099,11 @@ describe('embed memory job handler', () => {
       expect(await worker.tick()).toBe(true)
 
       expect(embedGroups).toHaveBeenCalledTimes(2)
-      expect((embedGroups.mock.calls as any[][])[0][0].groups).toEqual([
-        ['a'.repeat(40), 'b'.repeat(40)],
-      ])
+      expect((embedGroups.mock.calls as any[][])[0][0].groups).toEqual([['a'.repeat(40), 'b'.repeat(40)]])
       expect((embedGroups.mock.calls as any[][])[1][0].groups).toEqual([['c'.repeat(40)]])
 
       const embeddings = listMemoryEmbeddings(db, { chatId: 'chat-1', model: 'voyageContext3' })
-      expect(embeddings.map((embedding) => embedding.chunkId).sort()).toEqual([
-        'chunk-1',
-        'chunk-2',
-        'chunk-3',
-      ])
+      expect(embeddings.map((embedding) => embedding.chunkId).sort()).toEqual(['chunk-1', 'chunk-2', 'chunk-3'])
       const byChunk = new Map(embeddings.map((embedding) => [embedding.chunkId, embedding]))
       // groupId is consistent within a sub-batch and distinct across sub-batches.
       expect(byChunk.get('chunk-2')?.groupId).toBe(byChunk.get('chunk-1')?.groupId)
@@ -1208,9 +1174,7 @@ describe('embed memory job handler', () => {
       })
       // …while sub-batch 2 (chunk-3) committed its embedding and completed.
       expect(getMemoryJob(db, 'job-3')).toMatchObject({ status: 'completed', error: null })
-      expect(
-        listMemoryEmbeddings(db, { chatId: 'chat-1' }).map((embedding) => embedding.chunkId),
-      ).toEqual(['chunk-3'])
+      expect(listMemoryEmbeddings(db, { chatId: 'chat-1' }).map((embedding) => embedding.chunkId)).toEqual(['chunk-3'])
     } finally {
       db.close()
     }

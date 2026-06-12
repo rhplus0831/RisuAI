@@ -17,15 +17,8 @@ import {
   fetchServerCharacterLorebook,
   fetchServerChatMessages,
 } from './projection'
-import {
-  beginHydrationRequest,
-  recordBulkHydration,
-  recordHydrationStaleDrop,
-} from './protocolDiagnostics'
-import {
-  DEFAULT_CHAT_DISPLAY_TAIL_COUNT,
-  normalizeChatDisplayTailCount,
-} from '../chatDisplayTailCount'
+import { beginHydrationRequest, recordBulkHydration, recordHydrationStaleDrop } from './protocolDiagnostics'
+import { DEFAULT_CHAT_DISPLAY_TAIL_COUNT, normalizeChatDisplayTailCount } from '../chatDisplayTailCount'
 
 export const BULK_HYDRATION_CONCURRENCY = 4
 export const ACTIVE_CHAT_INITIAL_MESSAGE_WINDOW = DEFAULT_CHAT_DISPLAY_TAIL_COUNT
@@ -169,11 +162,7 @@ async function hydrateChat(chatId: string, request: ChatHydrationRequest = {}): 
           : undefined
       const applied = hydrateServerChatMessages(chatId, result.message, result.hypaV3Data, range)
       if (!applied) return
-      if (
-        wantsFullHydration ||
-        !range ||
-        isFullRange(range.start, range.total, result.message.length)
-      ) {
+      if (wantsFullHydration || !range || isFullRange(range.start, range.total, result.message.length)) {
         hydratedChatIds.add(chatId)
       }
       // Only the open chat's tail drives the swipe buffer; seed it from this
@@ -194,10 +183,7 @@ async function hydrateChat(chatId: string, request: ChatHydrationRequest = {}): 
   return requestPromise
 }
 
-async function hydrateChatsBulk(
-  chatIds: readonly string[],
-  options: BulkHydrationOptions = {},
-): Promise<void> {
+async function hydrateChatsBulk(chatIds: readonly string[], options: BulkHydrationOptions = {}): Promise<void> {
   if (!canUseServerProjection() || chatIds.length === 0) return
 
   const generation = chatHydrationGeneration
@@ -257,15 +243,10 @@ function hydrationWarning(scope: string, message: string): void {
 }
 
 /** Hydrate the currently-open chat's messages (no-op if already hydrated). */
-export async function hydrateActiveChat(
-  options: { force?: boolean; loadPages?: number } = {},
-): Promise<void> {
-  await hydrateActiveChatWindow(
-    options.loadPages ?? normalizeChatDisplayTailCount(DBState.db?.chatDisplayTailCount),
-    {
-      force: options.force,
-    },
-  )
+export async function hydrateActiveChat(options: { force?: boolean; loadPages?: number } = {}): Promise<void> {
+  await hydrateActiveChatWindow(options.loadPages ?? normalizeChatDisplayTailCount(DBState.db?.chatDisplayTailCount), {
+    force: options.force,
+  })
 }
 
 /**
@@ -273,10 +254,7 @@ export async function hydrateActiveChat(
  * chat path: first open fetches only the tail; later scroll/jump expansion fills
  * just the newly visible unloaded ranges.
  */
-export async function hydrateActiveChatWindow(
-  loadPages: number,
-  options: { force?: boolean } = {},
-): Promise<void> {
+export async function hydrateActiveChatWindow(loadPages: number, options: { force?: boolean } = {}): Promise<void> {
   const chatId = activeChatId()
   if (!chatId) return
   if (!Number.isFinite(loadPages)) {
@@ -349,10 +327,7 @@ export function applyServerChatMessagesProjection(
  * fetch settles even on failure (so a chat the server can't supply does not spin
  * forever). Also false when server projection is off — nothing hydrates then.
  */
-export function isChatMessageHydrationPending(
-  chatId: string | undefined,
-  messageCount: number,
-): boolean {
+export function isChatMessageHydrationPending(chatId: string | undefined, messageCount: number): boolean {
   if (!canUseServerProjection()) return false
   if (!chatId) return false
   if (messageCount > 0) return false
@@ -386,17 +361,11 @@ async function hydrateCharacterLorebook(characterId: string, force: boolean): Pr
       const endRequest = beginHydrationRequest('characterLorebook')
       const result = await fetchServerCharacterLorebook(characterId).finally(endRequest)
       if (result.status !== 'ok') {
-        hydrationWarning(
-          `character lorebook ${characterId}`,
-          resultError(result, 'server projection unavailable'),
-        )
+        hydrationWarning(`character lorebook ${characterId}`, resultError(result, 'server projection unavailable'))
         return
       }
       if (result.characterId !== characterId) {
-        hydrationWarning(
-          `character lorebook ${characterId}`,
-          `response was for character ${result.characterId}`,
-        )
+        hydrationWarning(`character lorebook ${characterId}`, `response was for character ${result.characterId}`)
         return
       }
       if (generation !== charLorebookHydrationGeneration) {
@@ -477,16 +446,12 @@ async function hydrateCharacterLorebooksBulk(
     hydratedCharLorebookIds.add(characterId)
   }
   if (options.strict && missingIds.length > 0) {
-    throw new Error(
-      `Bulk character lorebook hydration did not return data for: ${missingIds.join(', ')}`,
-    )
+    throw new Error(`Bulk character lorebook hydration did not return data for: ${missingIds.join(', ')}`)
   }
 }
 
 /** Hydrate the open character's `globalLore` (no-op if already hydrated / stubs off). */
-export async function hydrateActiveCharacterLorebook(
-  options: { force?: boolean } = {},
-): Promise<void> {
+export async function hydrateActiveCharacterLorebook(options: { force?: boolean } = {}): Promise<void> {
   const characterId = activeCharacterId()
   if (characterId) await hydrateCharacterLorebook(characterId, options.force ?? false)
 }
@@ -495,18 +460,12 @@ export async function hydrateActiveCharacterLorebook(
  * Hydrate EVERY character's `globalLore`. Bulk readers (export, tokenizer) that
  * walk all characters' lorebooks must await this first when stubs are on.
  */
-export async function ensureAllCharacterLorebooksHydrated(
-  options: BulkHydrationOptions = {},
-): Promise<void> {
+export async function ensureAllCharacterLorebooksHydrated(options: BulkHydrationOptions = {}): Promise<void> {
   if (!canUseServerProjection() || !DBState.db?.enableLorebookStubs) return
   const ids: string[] = []
   const pendingRequests: Promise<void>[] = []
   for (const character of DBState.db?.characters ?? []) {
-    if (
-      typeof character.chaId !== 'string' ||
-      !character.chaId ||
-      hydratedCharLorebookIds.has(character.chaId)
-    ) {
+    if (typeof character.chaId !== 'string' || !character.chaId || hydratedCharLorebookIds.has(character.chaId)) {
       continue
     }
     const pending = charLorebookInFlight.get(character.chaId)
@@ -521,11 +480,7 @@ export async function ensureAllCharacterLorebooksHydrated(
   if (options.strict) {
     const missing: string[] = []
     for (const character of DBState.db?.characters ?? []) {
-      if (
-        typeof character.chaId === 'string' &&
-        character.chaId &&
-        !hydratedCharLorebookIds.has(character.chaId)
-      ) {
+      if (typeof character.chaId === 'string' && character.chaId && !hydratedCharLorebookIds.has(character.chaId)) {
         missing.push(character.chaId)
       }
     }

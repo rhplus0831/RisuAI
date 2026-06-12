@@ -12,9 +12,7 @@
   let { apiKey, modelId, value = $bindable('') }: Props = $props()
 
   let providersPromise = $derived(
-    apiKey && modelId
-      ? getNanoGPTModelProviders(apiKey, modelId)
-      : Promise.resolve<NanoGPTModelProviders | null>(null),
+    apiKey && modelId ? getNanoGPTModelProviders(apiKey, modelId) : Promise.resolve<NanoGPTModelProviders | null>(null),
   )
 
   function fmtPrice(per1k: number): string {
@@ -43,59 +41,43 @@
     <div class="mt-2 flex flex-col gap-1.5">
       <span class="text-textcolor mt-4"
         >{language.nanoGPTProvider}
-        <span class="text-sm opacity-60">{language.nanoGPTProviderPayAsYouGoOnly}</span></span
-      >
+        <span class="text-sm opacity-60">{language.nanoGPTProviderPayAsYouGoOnly}</span></span>
       <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
         <!-- Auto button -->
         {#if true}
           {@const autoCmp = data.autoComparison}
           {@const autoInBadge = autoCmp
-            ? discountBadge(
-                autoCmp.platformVsOfficial.inputDiscountPct,
-                autoCmp.platformVsOfficial.inputDirection,
-              )
+            ? discountBadge(autoCmp.platformVsOfficial.inputDiscountPct, autoCmp.platformVsOfficial.inputDirection)
             : null}
           {@const autoOutBadge = autoCmp
-            ? discountBadge(
-                autoCmp.platformVsOfficial.outputDiscountPct,
-                autoCmp.platformVsOfficial.outputDirection,
-              )
+            ? discountBadge(autoCmp.platformVsOfficial.outputDiscountPct, autoCmp.platformVsOfficial.outputDirection)
             : null}
           <button
             onclick={() => {
               value = ''
             }}
-            class="flex cursor-pointer flex-col rounded-md border p-2.5 text-left transition-colors {value ===
-            ''
+            class="flex cursor-pointer flex-col rounded-md border p-2.5 text-left transition-colors {value === ''
               ? 'border-selected bg-selected'
-              : 'border-darkborderc hover:bg-selected'}"
-          >
-            <span class="text-sm font-medium leading-snug text-textcolor"
-              >{language.nanoGPTProviderAuto}</span
-            >
+              : 'border-darkborderc hover:bg-selected'}">
+            <span class="text-sm font-medium leading-snug text-textcolor">{language.nanoGPTProviderAuto}</span>
             <div class="mt-1.5 flex flex-col gap-0.5 text-xs text-textcolor2">
               {#if data.autoTps}
                 <span>{fmtTps(data.autoTps)} t/s · {fmtTtft(data.autoTtftMs ?? 0)} TTFT</span>
               {/if}
               <span
                 >{language.nanoGPTProviderInput}:
-                <span class="text-textcolor">{fmtPrice(data.defaultPrice.inputPer1kTokens)}</span
-                >/1M · {language.nanoGPTProviderOutput}:
-                <span class="text-textcolor">{fmtPrice(data.defaultPrice.outputPer1kTokens)}</span
-                >/1M</span
-              >
+                <span class="text-textcolor">{fmtPrice(data.defaultPrice.inputPer1kTokens)}</span>/1M · {language.nanoGPTProviderOutput}:
+                <span class="text-textcolor">{fmtPrice(data.defaultPrice.outputPer1kTokens)}</span>/1M</span>
             </div>
             {#if autoInBadge || autoOutBadge}
               <div class="flex gap-1 mt-1.5">
                 {#if autoInBadge}
                   <span class="rounded px-1 text-xs font-bold leading-tight {autoInBadge.cls}"
-                    >{autoInBadge.label} {language.nanoGPTProviderInput}</span
-                  >
+                    >{autoInBadge.label} {language.nanoGPTProviderInput}</span>
                 {/if}
                 {#if autoOutBadge}
                   <span class="rounded px-1 text-xs font-bold leading-tight {autoOutBadge.cls}"
-                    >{autoOutBadge.label} {language.nanoGPTProviderOutput}</span
-                  >
+                    >{autoOutBadge.label} {language.nanoGPTProviderOutput}</span>
                 {/if}
               </div>
             {/if}
@@ -122,8 +104,7 @@
             class="flex cursor-pointer flex-col rounded-md border p-2.5 text-left transition-colors {value ===
             p.provider
               ? 'border-selected bg-selected'
-              : 'border-darkborderc hover:bg-selected'}"
-          >
+              : 'border-darkborderc hover:bg-selected'}">
             <span class="text-sm font-medium leading-snug text-textcolor">{p.provider}</span>
             <div class="mt-1.5 flex flex-col gap-0.5 text-xs text-textcolor2">
               <span
@@ -132,40 +113,33 @@
                   >{p.quantization && p.quantization !== 'unknown'
                     ? p.quantization
                     : language.nanoGPTProviderUndisclosed}</span
-                ></span
-              >
+                ></span>
               <span
                 >{language.nanoGPTProviderCache}:
                 <span class="text-textcolor"
                   >{p.supportsPromptCaching
                     ? language.nanoGPTProviderCacheSupported
                     : language.nanoGPTProviderCacheNotSupported}</span
-                ></span
-              >
+                ></span>
               <span
                 >{language.nanoGPTProviderInput}:
                 <span class="text-textcolor">{fmtPrice(p.pricing.inputPer1kTokens)}</span>/1M · {language.nanoGPTProviderOutput}:
-                <span class="text-textcolor">{fmtPrice(p.pricing.outputPer1kTokens)}</span>/1M</span
-              >
+                <span class="text-textcolor">{fmtPrice(p.pricing.outputPer1kTokens)}</span>/1M</span>
               {#if p.pricing.cacheReadInputPer1kTokens}
                 <span
                   >{language.nanoGPTProviderCacheRead}:
-                  <span class="text-textcolor">{fmtPrice(p.pricing.cacheReadInputPer1kTokens)}</span
-                  >/1M</span
-                >
+                  <span class="text-textcolor">{fmtPrice(p.pricing.cacheReadInputPer1kTokens)}</span>/1M</span>
               {/if}
             </div>
             {#if inBadge || outBadge}
               <div class="flex gap-1 mt-1.5">
                 {#if inBadge}
                   <span class="rounded px-1 text-xs font-bold leading-tight {inBadge.cls}"
-                    >{inBadge.label} {language.nanoGPTProviderInput}</span
-                  >
+                    >{inBadge.label} {language.nanoGPTProviderInput}</span>
                 {/if}
                 {#if outBadge}
                   <span class="rounded px-1 text-xs font-bold leading-tight {outBadge.cls}"
-                    >{outBadge.label} {language.nanoGPTProviderOutput}</span
-                  >
+                    >{outBadge.label} {language.nanoGPTProviderOutput}</span>
                 {/if}
               </div>
             {/if}

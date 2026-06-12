@@ -261,9 +261,7 @@ describe('ChatBody content-keyed parse memo', () => {
     const dbChar = DBState.db.characters[0]
     const characterScripts = [script('character-regex-a', 'character one')]
     const characterTriggers = [trigger('character-trigger-a', 'character trigger one')]
-    const characterAssets: [string, string, string][] = [
-      ['character-portrait', 'asset-character-a', 'character.png'],
-    ]
+    const characterAssets: [string, string, string][] = [['character-portrait', 'asset-character-a', 'character.png']]
     const moduleAssets: [string, string, string][] = [['portrait', 'asset-a', 'portrait.png']]
     const moduleRegex = [script('module-regex-a', 'module one')]
     const moduleTriggers = [trigger('module-trigger-a', 'module trigger one')]
@@ -432,9 +430,7 @@ describe('ChatBody content-keyed parse memo', () => {
     const translatorModule = await import('../../ts/translator/translator')
     const getLLMCacheSpy = vi
       .spyOn(translatorModule, 'getLLMCache')
-      .mockImplementation(async (text) =>
-        text === 'parsed:pretranslate:prebuilt cached body' ? 'hit' : null,
-      )
+      .mockImplementation(async (text) => (text === 'parsed:pretranslate:prebuilt cached body' ? 'hit' : null))
     const memoModule = await import('./ChatBodyParseMemo')
     memoModule.clearChatBodyParseMemo()
 
@@ -594,16 +590,12 @@ describe('ChatBody content-keyed parse memo', () => {
       translator: 'ja',
     } as Partial<Database>)
     const parserModule = await import('../../ts/parser/parser.svelte')
-    vi.spyOn(parserModule, 'ParseMarkdown').mockImplementation(
-      async (data, _charArg, mode) => `parsed:${mode}:${data}`,
-    )
+    vi.spyOn(parserModule, 'ParseMarkdown').mockImplementation(async (data, _charArg, mode) => `parsed:${mode}:${data}`)
     const translatorModule = await import('../../ts/translator/translator')
     const setItemSpy = vi
       .spyOn(translatorModule.LLMCacheStorage, 'setItem')
       .mockImplementation(async <T>(_key: string, value: T) => value)
-    const clearSpy = vi
-      .spyOn(translatorModule.LLMCacheStorage, 'clear')
-      .mockResolvedValue(undefined)
+    const clearSpy = vi.spyOn(translatorModule.LLMCacheStorage, 'clear').mockResolvedValue(undefined)
     const getLLMCacheSpy = vi
       .spyOn(translatorModule, 'getLLMCache')
       .mockResolvedValueOnce(null)
@@ -633,10 +625,7 @@ describe('ChatBody content-keyed parse memo', () => {
 
     await expect(memoModule.getChatBodyCachedOnlyLlmDecision(input)).resolves.toBe(true)
     expect(getLLMCacheSpy).toHaveBeenCalledTimes(2)
-    expect(setItemSpy).toHaveBeenCalledWith(
-      'parsed:pretranslate:epoch cached body',
-      'translated epoch body',
-    )
+    expect(setItemSpy).toHaveBeenCalledWith('parsed:pretranslate:epoch cached body', 'translated epoch body')
 
     const clearEpochBefore = translatorModule.getLLMCacheMutationEpoch()
     await translatorModule.clearLLMCache()
@@ -675,13 +664,7 @@ describe('ChatBody content-keyed parse memo', () => {
     })
     await waitForText(target, 'explicit translated body')
 
-    expect(translateHTMLMock.calls).toContainEqual([
-      '<p>explicit source body</p>',
-      false,
-      char.chaId,
-      0,
-      true,
-    ])
+    expect(translateHTMLMock.calls).toContainEqual(['<p>explicit source body</p>', false, char.chaId, 0, true])
     unmount(component)
   })
 })

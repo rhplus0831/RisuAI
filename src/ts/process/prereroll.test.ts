@@ -35,9 +35,7 @@ describe('prereroll bounded candidate buffer', () => {
     expect(getPrererollBufferSize()).toBeLessThanOrEqual(PREREROLL_BUFFER_LIMIT)
     expect(Prereroll('gen-1')).toBeNull()
     expect(Prereroll('evict-0')).toBeNull()
-    expect(Prereroll(`evict-${PREREROLL_BUFFER_LIMIT}`)).toBe(
-      `alt-${PREREROLL_BUFFER_LIMIT}`,
-    )
+    expect(Prereroll(`evict-${PREREROLL_BUFFER_LIMIT}`)).toBe(`alt-${PREREROLL_BUFFER_LIMIT}`)
   })
 
   it('evicts least-recently-used entries deterministically', () => {

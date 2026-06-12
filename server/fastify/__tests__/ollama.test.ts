@@ -1,14 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import {
-  reformatForOllama,
-  resolveOllamaRequest,
-  runOllama,
-  runOllamaStream,
-} from '../src/generation/ollama.js'
-import {
-  MAX_STREAM_BUFFER_CHARS,
-  STREAM_BUFFER_OVERFLOW_ERROR,
-} from '../src/generation/sse.js'
+import { reformatForOllama, resolveOllamaRequest, runOllama, runOllamaStream } from '../src/generation/ollama.js'
+import { MAX_STREAM_BUFFER_CHARS, STREAM_BUFFER_OVERFLOW_ERROR } from '../src/generation/sse.js'
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -65,11 +57,9 @@ describe('reformatForOllama', () => {
   })
 
   it('coerces non-string content to empty string instead of crashing', () => {
-    expect(
-      reformatForOllama([
-        { role: 'user', content: [{ type: 'text', text: 'hi' }] },
-      ]),
-    ).toEqual([{ role: 'user', content: '' }])
+    expect(reformatForOllama([{ role: 'user', content: [{ type: 'text', text: 'hi' }] }])).toEqual([
+      { role: 'user', content: '' },
+    ])
   })
 })
 
@@ -363,9 +353,7 @@ describe('runOllamaStream', () => {
     const c = new AbortController()
     c.abort()
     vi.stubGlobal('fetch', async () =>
-      ndjsonResponse([
-        `${JSON.stringify({ message: { content: 'x' }, done: true })}\n`,
-      ]),
+      ndjsonResponse([`${JSON.stringify({ message: { content: 'x' }, done: true })}\n`]),
     )
     const resolved = resolveOllamaRequest({
       model: 'llama3',
@@ -379,11 +367,13 @@ describe('runOllamaStream', () => {
   })
 
   it('emits an error frame with parsed message when upstream is non-2xx', async () => {
-    vi.stubGlobal('fetch', async () =>
-      new Response(JSON.stringify({ error: 'model unavailable' }), {
-        status: 500,
-        headers: { 'content-type': 'application/json' },
-      }),
+    vi.stubGlobal(
+      'fetch',
+      async () =>
+        new Response(JSON.stringify({ error: 'model unavailable' }), {
+          status: 500,
+          headers: { 'content-type': 'application/json' },
+        }),
     )
     const resolved = resolveOllamaRequest({
       model: 'llama3',
@@ -419,9 +409,7 @@ describe('runOllamaStream', () => {
     })!
     const frames: unknown[] = []
     for await (const f of runOllamaStream(resolved)) frames.push(f)
-    expect(frames).toEqual([
-      { kind: 'error', error: 'upstream returned no stream body', status: 200 },
-    ])
+    expect(frames).toEqual([{ kind: 'error', error: 'upstream returned no stream body', status: 200 }])
   })
 
   it('emits an error frame when fetch fails', async () => {
@@ -465,17 +453,12 @@ describe('runOllamaStream', () => {
     })!
     const frames: unknown[] = []
     for await (const f of runOllamaStream(resolved)) frames.push(f)
-    expect(frames).toEqual([
-      { kind: 'error', error: 'upstream stream read failed: socket closed' },
-    ])
+    expect(frames).toEqual([{ kind: 'error', error: 'upstream stream read failed: socket closed' }])
   })
 
   it('emits an error frame when the final NDJSON object is malformed', async () => {
     vi.stubGlobal('fetch', async () =>
-      ndjsonResponse([
-        `${JSON.stringify({ message: { content: 'one' }, done: false })}\n`,
-        '{bad-tail',
-      ]),
+      ndjsonResponse([`${JSON.stringify({ message: { content: 'one' }, done: false })}\n`, '{bad-tail']),
     )
     const resolved = resolveOllamaRequest({
       model: 'llama3',
@@ -516,9 +499,7 @@ describe('runOllamaStream', () => {
   it('L22: bounds the line buffer when upstream never sends a newline', async () => {
     const chunk = 'x'.repeat(1024 * 1024)
     vi.stubGlobal('fetch', async () =>
-      ndjsonResponse(
-        Array.from({ length: MAX_STREAM_BUFFER_CHARS / chunk.length + 2 }, () => chunk),
-      ),
+      ndjsonResponse(Array.from({ length: MAX_STREAM_BUFFER_CHARS / chunk.length + 2 }, () => chunk)),
     )
     const resolved = resolveOllamaRequest({
       model: 'llama3',

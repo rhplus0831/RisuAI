@@ -101,29 +101,19 @@ export function buildResponseInput(messages: RawChatMessage[]): ResponseItem[] {
   return items
 }
 
-export function resolveOpenAIResponsesRequest(
-  input: ResolveInput,
-): OpenAIResponsesRequest | null {
+export function resolveOpenAIResponsesRequest(input: ResolveInput): OpenAIResponsesRequest | null {
   if (typeof input.model !== 'string' || input.model.length === 0) return null
   if (!Array.isArray(input.messages)) return null
   if (typeof input.apiKey !== 'string' || input.apiKey.length === 0) return null
 
-  const baseUrl =
-    typeof input.baseUrl === 'string' && input.baseUrl.length > 0
-      ? input.baseUrl
-      : DEFAULT_BASE_URL
+  const baseUrl = typeof input.baseUrl === 'string' && input.baseUrl.length > 0 ? input.baseUrl : DEFAULT_BASE_URL
   const maxOutputTokens =
-    typeof input.maxOutputTokens === 'number' &&
-    Number.isFinite(input.maxOutputTokens) &&
-    input.maxOutputTokens > 0
+    typeof input.maxOutputTokens === 'number' && Number.isFinite(input.maxOutputTokens) && input.maxOutputTokens > 0
       ? input.maxOutputTokens
       : undefined
   const temperature =
-    typeof input.temperature === 'number' && Number.isFinite(input.temperature)
-      ? input.temperature
-      : undefined
-  const topP =
-    typeof input.topP === 'number' && Number.isFinite(input.topP) ? input.topP : undefined
+    typeof input.temperature === 'number' && Number.isFinite(input.temperature) ? input.temperature : undefined
+  const topP = typeof input.topP === 'number' && Number.isFinite(input.topP) ? input.topP : undefined
   const store = typeof input.store === 'boolean' ? input.store : undefined
 
   return {
@@ -154,9 +144,7 @@ function buildHeaders(req: OpenAIResponsesRequest): Record<string, string> {
   }
 }
 
-function buildRequestInit(
-  req: OpenAIResponsesRequest,
-): { body: string; headers: Record<string, string> } {
+function buildRequestInit(req: OpenAIResponsesRequest): { body: string; headers: Record<string, string> } {
   const body = buildPayload(req)
   const headers = buildHeaders(req)
   if (req.additionalParams !== undefined && req.additionalParams.length > 0) {
@@ -238,9 +226,7 @@ export async function runOpenAIResponses(req: OpenAIResponsesRequest): Promise<C
   }
 
   const msg = Array.isArray(body.output) ? body.output.find((m) => m.type === 'message') : undefined
-  const text = Array.isArray(msg?.content)
-    ? msg.content.find((c) => c.type === 'output_text')?.text
-    : undefined
+  const text = Array.isArray(msg?.content) ? msg.content.find((c) => c.type === 'output_text')?.text : undefined
   if (typeof text !== 'string' || text.length === 0) {
     return { type: 'fail', result: 'upstream returned no output text' }
   }

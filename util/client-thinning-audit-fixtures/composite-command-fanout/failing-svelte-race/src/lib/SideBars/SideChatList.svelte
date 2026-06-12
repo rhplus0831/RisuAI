@@ -7,7 +7,9 @@
   // race was invisible. The hardened rule parses the <script> block as TS and
   // sees two co-reachable dispatches against one optimistic snapshot.
   export async function applyEdits(): Promise<void> {
-    const base = await Promise.resolve(0); void dispatchAppendMessage('first'); void dispatchUpdateMessage('id', String(base))
+    const base = await Promise.resolve(0)
+    void dispatchAppendMessage('first')
+    void dispatchUpdateMessage('id', String(base))
   }
 </script>
 

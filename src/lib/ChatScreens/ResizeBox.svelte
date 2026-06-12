@@ -58,11 +58,7 @@
   })
 </script>
 
-<div
-  class="box bg-darkbg/70"
-  bind:this={box}
-  style="width: {$ViewBoxsize.width}px; height: {$ViewBoxsize.height}px;"
->
+<div class="box bg-darkbg/70" bind:this={box} style="width: {$ViewBoxsize.width}px; height: {$ViewBoxsize.height}px;">
   <TransitionImage classType="risu" src={getEmotion(DBState.db, $CharEmotion, 'plain')} />
   <div
     role="button"
@@ -71,8 +67,8 @@
     onmousedown={handleStart}
     onmouseup={handleEnd}
     ontouchstart={handleStart}
-    ontouchend={handleEnd}
-  ></div>
+    ontouchend={handleEnd}>
+  </div>
 </div>
 
 <style>

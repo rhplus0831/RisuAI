@@ -1079,9 +1079,7 @@ export async function initializeServerDatabase(
   })
 }
 
-export async function patchServerBackedSettings(
-  input: PatchServerBackedSettingsInput,
-): Promise<ServerCommandResult> {
+export async function patchServerBackedSettings(input: PatchServerBackedSettingsInput): Promise<ServerCommandResult> {
   if (!canUseServerCommands()) return { status: 'unavailable' }
 
   const grouped = groupSettingsPatch(input.patch)
@@ -1095,11 +1093,7 @@ export async function patchServerBackedSettings(
       return { status: 'error', error: 'Unable to read server command revision' }
     }
 
-    const result = await patchSettingsGroup(
-      { group, baseRevision, patch },
-      input.signal,
-      input.keepalive,
-    )
+    const result = await patchSettingsGroup({ group, baseRevision, patch }, input.signal, input.keepalive)
 
     if (result.status !== 'ok') {
       input.rollback?.()
@@ -1656,9 +1650,7 @@ export async function deleteChatCommand(
 export async function forkChatCommand(
   input: ForkChatCommandInput,
   signal?: AbortSignal | null,
-): Promise<
-  ServerCommandResult<{ chatId: string; sourceChatId: string; selectedChatId: string | null }>
-> {
+): Promise<ServerCommandResult<{ chatId: string; sourceChatId: string; selectedChatId: string | null }>> {
   return requestCommandJson(`/chats/${encodeURIComponent(input.chatId)}/fork`, {
     method: 'POST',
     body: {
@@ -1735,18 +1727,15 @@ export async function reorderChatFoldersCommand(
   input: ReorderChatFoldersCommandInput,
   signal?: AbortSignal | null,
 ): Promise<ServerCommandResult<{ selectedChatId: string | null }>> {
-  return requestCommandJson(
-    `/characters/${encodeURIComponent(input.characterId)}/chat-folders/reorder`,
-    {
-      method: 'POST',
-      body: {
-        baseRevision: input.baseRevision,
-        folderIds: input.folderIds,
-        selectedChatId: input.selectedChatId,
-      },
-      signal,
+  return requestCommandJson(`/characters/${encodeURIComponent(input.characterId)}/chat-folders/reorder`, {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      folderIds: input.folderIds,
+      selectedChatId: input.selectedChatId,
     },
-  )
+    signal,
+  })
 }
 
 export async function patchChatScriptstateCommand(
@@ -2034,17 +2023,14 @@ export async function reorderCharacterModulesCommand(
   input: ReorderCharacterModulesCommandInput,
   signal?: AbortSignal | null,
 ): Promise<ServerCommandResult<{ characterId: string }>> {
-  return requestCommandJson(
-    `/characters/${encodeURIComponent(input.characterId)}/modules/reorder`,
-    {
-      method: 'POST',
-      body: {
-        baseRevision: input.baseRevision,
-        moduleIds: input.moduleIds,
-      },
-      signal,
+  return requestCommandJson(`/characters/${encodeURIComponent(input.characterId)}/modules/reorder`, {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      moduleIds: input.moduleIds,
     },
-  )
+    signal,
+  })
 }
 
 export async function createPluginCommand(
@@ -2217,9 +2203,7 @@ export async function deleteMessageCommand(
 export async function truncateMessagesCommand(
   input: TruncateMessagesCommandInput,
   signal?: AbortSignal | null,
-): Promise<
-  ServerCommandResult<{ chatId: string; afterMessageId: string | null; removedCount: number }>
-> {
+): Promise<ServerCommandResult<{ chatId: string; afterMessageId: string | null; removedCount: number }>> {
   return requestCommandJson(`/chats/${encodeURIComponent(input.chatId)}/messages/truncate`, {
     method: 'POST',
     body: {

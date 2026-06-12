@@ -37,8 +37,7 @@ export function readPluginStorageValue(value: unknown, label = 'value'): unknown
 export function readPluginStorageBulkPatch(body: unknown): PluginStorageBulkPatch {
   const input = readJsonObject(body, 'request body')
   const values = input.values === undefined ? {} : readJsonObject(input.values, 'values')
-  const deleteKeys =
-    input.deleteKeys === undefined ? [] : readPluginStorageKeyList(input.deleteKeys, 'deleteKeys')
+  const deleteKeys = input.deleteKeys === undefined ? [] : readPluginStorageKeyList(input.deleteKeys, 'deleteKeys')
   const clear = input.clear === undefined ? false : readPluginStorageClear(input.clear)
 
   for (const [key, value] of Object.entries(values)) {

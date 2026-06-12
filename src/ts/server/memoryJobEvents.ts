@@ -10,9 +10,7 @@ export function publishServerMemoryJobEvent(event: ServerMemoryEvent): void {
   }
 }
 
-export function subscribeServerMemoryJobEvents(
-  listener: ServerMemoryJobEventListener,
-): () => void {
+export function subscribeServerMemoryJobEvents(listener: ServerMemoryJobEventListener): () => void {
   listeners.add(listener)
   return () => {
     listeners.delete(listener)

@@ -1,10 +1,7 @@
 import type { Chat, Database, character } from '../../../../src/ts/storage/database.svelte'
 import type { MultiModal } from '../../../../src/ts/process/index.svelte'
 import type { AssetLookup } from './history.js'
-import {
-  buildPromptAssetTable,
-  type PromptAssetTable,
-} from './promptAssets.js'
+import { buildPromptAssetTable, type PromptAssetTable } from './promptAssets.js'
 
 /**
  * Build the non-empty {@link AssetLookup} that feeds image/asset bytes into the
@@ -39,10 +36,7 @@ export interface RequestInlayAsset {
  * this to the on-disk assets store; tests can supply a fake.
  */
 export type StoredAssetPurpose = 'asset_prompt' | 'inlay'
-export type ResolveStoredAsset = (
-  reference: string,
-  purpose: StoredAssetPurpose,
-) => Promise<MultiModal | undefined>
+export type ResolveStoredAsset = (reference: string, purpose: StoredAssetPurpose) => Promise<MultiModal | undefined>
 
 function isMultiModalType(value: unknown): value is MultiModal['type'] {
   return value === 'image' || value === 'video' || value === 'audio' || value === 'signature'
@@ -129,7 +123,6 @@ export function buildAssetLookup(args: {
       const asset = assetTable.find((entry) => entry[0] === name)
       return asset && resolve ? await resolve(asset[1], 'asset_prompt') : undefined
     },
-    getCharIcon: async () =>
-      resolve ? await resolve(args.currentChar.image ?? '', 'asset_prompt') : undefined,
+    getCharIcon: async () => (resolve ? await resolve(args.currentChar.image ?? '', 'asset_prompt') : undefined),
   }
 }

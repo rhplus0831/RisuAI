@@ -86,8 +86,7 @@ export interface V2DataEffectDeps {
 
 export function applyV2DataEffect(effect: triggerEffect, deps: V2DataEffectDeps): boolean {
   const { engine, expand, chat, char } = deps
-  const resolve = (raw: string, isValue: boolean): string =>
-    isValue ? expand(raw) : engine.getVar(expand(raw))
+  const resolve = (raw: string, isValue: boolean): string => (isValue ? expand(raw) : engine.getVar(expand(raw)))
 
   switch (effect.type) {
     // ---- Message readers ----
@@ -123,9 +122,7 @@ export function applyV2DataEffect(effect: triggerEffect, deps: V2DataEffectDeps)
     case 'v2GetFirstMessage': {
       engine.setVar(
         expand(effect.outputVar),
-        chat.fmIndex == null || chat.fmIndex === -1
-          ? char.firstMessage
-          : char.alternateGreetings[chat.fmIndex],
+        chat.fmIndex == null || chat.fmIndex === -1 ? char.firstMessage : char.alternateGreetings[chat.fmIndex],
       )
       return true
     }
@@ -173,11 +170,7 @@ export function applyV2DataEffect(effect: triggerEffect, deps: V2DataEffectDeps)
       if (effect.delimiterType === 'regex') {
         try {
           const regex = deps.triggerCache
-            ? getCachedRegexDelimiter(
-                deps.triggerCache,
-                delimiter,
-                'trigger v2SplitString delimiter',
-              )
+            ? getCachedRegexDelimiter(deps.triggerCache, delimiter, 'trigger v2SplitString delimiter')
             : (() => {
                 const regexMatch = delimiter.match(/^\/(.+)\/([gimuy]*)$/)
                 if (regexMatch) {
@@ -213,12 +206,7 @@ export function applyV2DataEffect(effect: triggerEffect, deps: V2DataEffectDeps)
         const replacement = resolve(effect.replacement, effect.replacementType === 'value')
         const flags = resolve(effect.flags, effect.flagsType === 'value')
         const regex = deps.triggerCache
-          ? getCachedTriggerRegex(
-              deps.triggerCache,
-              regexPattern,
-              flags,
-              'trigger v2ReplaceString pattern',
-            )
+          ? getCachedTriggerRegex(deps.triggerCache, regexPattern, flags, 'trigger v2ReplaceString pattern')
           : compileBoundedRegex(regexPattern, flags, 'trigger v2ReplaceString pattern')
         regex.lastIndex = 0
         assertBoundedRegexHaystack(source, 'trigger v2ReplaceString source')
@@ -249,10 +237,7 @@ export function applyV2DataEffect(effect: triggerEffect, deps: V2DataEffectDeps)
         engine.setVar(expand(effect.outputVar), result)
       } catch (err) {
         if (isBoundedRegexError(err)) throw err
-        engine.setVar(
-          expand(effect.outputVar),
-          resolve(effect.source, effect.sourceType === 'value'),
-        )
+        engine.setVar(expand(effect.outputVar), resolve(effect.source, effect.sourceType === 'value'))
       }
       return true
     }
@@ -533,10 +518,7 @@ export function applyV2DataEffect(effect: triggerEffect, deps: V2DataEffectDeps)
     }
     case 'v2Tokenize': {
       const value = resolve(effect.value, effect.valueType === 'value')
-      engine.setVar(
-        expand(effect.outputVar),
-        tokenize(value, encodingForModel(deps.model)).toString(),
-      )
+      engine.setVar(expand(effect.outputVar), tokenize(value, encodingForModel(deps.model)).toString())
       return true
     }
     case 'v2RegexTest': {
@@ -546,17 +528,9 @@ export function applyV2DataEffect(effect: triggerEffect, deps: V2DataEffectDeps)
         const regexPattern = resolve(effect.regex, effect.regexType === 'value')
         const flags = resolve(effect.flags, effect.flagsType === 'value')
         const regex = deps.triggerCache
-          ? getCachedTriggerRegex(
-              deps.triggerCache,
-              regexPattern,
-              flags,
-              'trigger v2RegexTest pattern',
-            )
+          ? getCachedTriggerRegex(deps.triggerCache, regexPattern, flags, 'trigger v2RegexTest pattern')
           : compileBoundedRegex(regexPattern, flags, 'trigger v2RegexTest pattern')
-        engine.setVar(
-          outVar,
-          testBoundedRegex(regex, value, 'trigger v2RegexTest value') ? '1' : '0',
-        )
+        engine.setVar(outVar, testBoundedRegex(regex, value, 'trigger v2RegexTest value') ? '1' : '0')
       } catch (err) {
         if (isBoundedRegexError(err)) throw err
         engine.setVar(outVar, '0')

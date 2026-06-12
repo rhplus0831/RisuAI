@@ -20,11 +20,7 @@ function badRequest(error: string): { error: string } {
   return { error }
 }
 
-export function registerMemoryReadRoutes(
-  app: FastifyInstance,
-  db: DatabaseSync,
-  authState: AuthState,
-): void {
+export function registerMemoryReadRoutes(app: FastifyInstance, db: DatabaseSync, authState: AuthState): void {
   app.get<{ Params: MemoryReadParams }>('/api/v1/memory/chunks/:chatId', async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
     if (!isNonEmptyString(req.params.chatId)) {

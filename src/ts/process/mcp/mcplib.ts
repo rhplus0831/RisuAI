@@ -109,9 +109,7 @@ class MCPSseBufferLimitError extends Error {
     public readonly limitBytes: number,
     public readonly bufferedBytes: number,
   ) {
-    super(
-      `MCP SSE stream exceeded ${limitBytes} bytes without an event delimiter (${bufferedBytes} bytes buffered)`,
-    )
+    super(`MCP SSE stream exceeded ${limitBytes} bytes without an event delimiter (${bufferedBytes} bytes buffered)`)
     this.name = 'MCPSseBufferLimitError'
   }
 }
@@ -151,10 +149,7 @@ export type RPCToolCallContentResource = {
   }
 }
 
-export type RPCToolCallContent =
-  | RPCToolCallTextContent
-  | RPCToolCallImageAudioContent
-  | RPCToolCallContentResource
+export type RPCToolCallContent = RPCToolCallTextContent | RPCToolCallImageAudioContent | RPCToolCallContentResource
 
 export abstract class MCPToolHandler {
   abstract getTools(): MCPTool[]
@@ -203,12 +198,7 @@ export class MCPClient {
     tools: [],
   }
   registerRefreshToken:
-    | ((arg: {
-        clientId: string
-        clientSecret: string
-        refreshToken: string
-        tokenUrl: string
-      }) => void)
+    | ((arg: { clientId: string; clientSecret: string; refreshToken: string; tokenUrl: string }) => void)
     | null = null
 
   getRefreshToken:
@@ -576,11 +566,7 @@ export class MCPClient {
     }
   }
 
-  async request(
-    method: string,
-    params?: any,
-    options: MCPRequestOptions = {},
-  ): Promise<RPCRequestResult> {
+  async request(method: string, params?: any, options: MCPRequestOptions = {}): Promise<RPCRequestResult> {
     options ??= {}
     const initMethod = options.initMethod || 'none'
     const timeoutMs = this.resolveTimeoutMs(options)
@@ -742,10 +728,7 @@ export class MCPClient {
         return responsePromise
       }
 
-      if (
-        (this.sessionId && response.status === 404) ||
-        (this.accessToken && response.status === 401)
-      ) {
+      if ((this.sessionId && response.status === 404) || (this.accessToken && response.status === 401)) {
         this.destroy()
         return this.request(method, params, options)
       }
@@ -901,9 +884,7 @@ export class MCPClient {
       }
 
       if (connection.status !== 200) {
-        throw new Error(
-          `Failed to connect to MCP server: ${connection.status} ${connection.statusText}`,
-        )
+        throw new Error(`Failed to connect to MCP server: ${connection.status} ${connection.statusText}`)
       }
 
       if (!connection.body) {
@@ -976,14 +957,8 @@ export class MCPClient {
         notifications: true,
       })
 
-      if (
-        d?.result?.protocolVersion !== '2025-03-26' &&
-        d?.result?.protocolVersion !== '2024-11-05'
-      ) {
-        console.warn(
-          'MCP Server is using an unsupported protocol version',
-          d.result.protocolVersion,
-        )
+      if (d?.result?.protocolVersion !== '2025-03-26' && d?.result?.protocolVersion !== '2024-11-05') {
+        console.warn('MCP Server is using an unsupported protocol version', d.result.protocolVersion)
       } else {
         this.protocolVersion = d.result.protocolVersion
       }

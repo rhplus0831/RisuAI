@@ -1,21 +1,8 @@
 <script lang="ts">
-  import {
-    BookIcon,
-    FlagIcon,
-    ImageIcon,
-    PaperclipIcon,
-    SmileIcon,
-    TrashIcon,
-  } from '@lucide/svelte'
+  import { BookIcon, FlagIcon, ImageIcon, PaperclipIcon, SmileIcon, TrashIcon } from '@lucide/svelte'
   import { language } from 'src/lang'
   import { alertConfirm, alertInput, alertNormal } from 'src/ts/alert'
-  import {
-    authenticatedHubFetch,
-    hubURL,
-    type hubType,
-    downloadRisuHub,
-    getRealmInfo,
-  } from 'src/ts/characterCards'
+  import { authenticatedHubFetch, hubURL, type hubType, downloadRisuHub, getRealmInfo } from 'src/ts/characterCards'
 
   import { DBState } from 'src/ts/stores.svelte'
   import RealmLicense from './RealmLicense.svelte'
@@ -36,8 +23,7 @@
   tabindex="0"
   onclick={() => {
     openedData = null
-  }}
->
+  }}>
   <div
     class="p-6 max-w-full bg-darkbg rounded-md flex flex-col gap-4 w-2xl overflow-y-auto max-h-full"
     role="dialog"
@@ -45,8 +31,7 @@
     tabindex="-1"
     onclick={(event) => {
       event.stopPropagation()
-    }}
-  >
+    }}>
     <div class="w-full flex flex-col">
       <h1 class="text-2xl font-bold max-w-full overflow-hidden whitespace-nowrap text-ellipsis">
         {openedData.name}
@@ -61,22 +46,18 @@
             const original = openedData.original
             openedData = null
             getRealmInfo(original)
-          }}>Forked</button
-        >
+          }}>Forked</button>
       {/if}
       <div class="flex justify-start gap-4 mt-4">
         {#if DBState.db.hideAllImages}
-          <div
-            class="h-36 w-36 rounded-md bg-darkbutton flex items-center justify-center text-textcolor2"
-          >
+          <div class="h-36 w-36 rounded-md bg-darkbutton flex items-center justify-center text-textcolor2">
             <span class="text-4xl">?</span>
           </div>
         {:else}
           <img
             class="h-36 w-36 rounded-md object-top object-cover"
             alt={openedData.name}
-            src={`${hubURL}/resource/` + openedData.img}
-          />
+            src={`${hubURL}/resource/` + openedData.img} />
         {/if}
         <MultiLangDisplay value={openedData.desc} markdown={true} />
       </div>
@@ -98,24 +79,21 @@
             class="text-textcolor2 hover:text-green-500 transition-colors"
             onclick={(e) => {
               alertNormal('This character includes emotion images')
-            }}><SmileIcon /></button
-          >
+            }}><SmileIcon /></button>
         {/if}
         {#if openedData.hasAsset}
           <button
             class="text-textcolor2 hover:text-green-500 transition-colors"
             onclick={(e) => {
               alertNormal('This character includes additional Assets')
-            }}><ImageIcon /></button
-          >
+            }}><ImageIcon /></button>
         {/if}
         {#if openedData.hasLore}
           <button
             class="text-textcolor2 hover:text-green-500 transition-colors"
             onclick={(e) => {
               alertNormal('This character includes lorebook')
-            }}><BookIcon /></button
-          >
+            }}><BookIcon /></button>
         {/if}
       </div>
     </div>
@@ -139,8 +117,7 @@
             })
             alertNormal(await da.text())
           }
-        }}
-      >
+        }}>
         <FlagIcon />
       </button>
       {#if (DBState.db.account?.token?.split('-') ?? [])[1] === openedData.creator}
@@ -159,8 +136,7 @@
               })
               alertNormal(await da.text())
             }
-          }}
-        >
+          }}>
           <TrashIcon />
         </button>
       {/if}
@@ -170,8 +146,7 @@
           e.stopPropagation()
           await navigator.clipboard.writeText(`https://realm.risuai.net/character/${openedData.id}`)
           alertNormal(language.clipboardSuccess)
-        }}
-      >
+        }}>
         <PaperclipIcon />
       </button>
       <button
@@ -179,8 +154,7 @@
         onclick={() => {
           downloadRisuHub(openedData.id)
           openedData = null
-        }}
-      >
+        }}>
         Chat
       </button>
     </div>

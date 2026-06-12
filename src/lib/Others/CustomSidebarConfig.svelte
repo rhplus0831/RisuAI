@@ -9,10 +9,7 @@
 
   let configPage: 'list' | 'add' | 'addSettingsSubmenu' = $state('list')
   let search = $state('')
-  const customSidebarItemsDraft = createServerBackedSettingDraft<CustomSideBarItem[]>(
-    'customSidebarItems',
-    [],
-  )
+  const customSidebarItemsDraft = createServerBackedSettingDraft<CustomSideBarItem[]>('customSidebarItems', [])
 
   function removeCustomSidebarItem(itemId: string): void {
     customSidebarItemsDraft.value = customSidebarItemsDraft.value.filter((item) => item.id !== itemId)
@@ -34,12 +31,8 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center"
-  onclick={() => (customSideBarConfigDialogStore.open = false)}
->
-  <div
-    class="bg-darkbg p-4 rounded max-h-full overflow-auto flex flex-col gap-2"
-    onclick={(e) => e.stopPropagation()}
-  >
+  onclick={() => (customSideBarConfigDialogStore.open = false)}>
+  <div class="bg-darkbg p-4 rounded max-h-full overflow-auto flex flex-col gap-2" onclick={(e) => e.stopPropagation()}>
     {#if configPage === 'list'}
       <div class="m-4 border-darkborderc p-2 border rounded-sm flex flex-col w-xl max-w-full">
         {#if customSidebarItemsDraft.value.length === 0}
@@ -54,8 +47,7 @@
               class="ml-2"
               onclick={() => {
                 removeCustomSidebarItem(item.id)
-              }}
-            >
+              }}>
               Delete
             </button>
           </div>
@@ -65,16 +57,14 @@
       <Button
         onclick={() => {
           configPage = 'add'
-        }}
-      >
+        }}>
         Add Item
       </Button>
 
       <Button
         onclick={() => {
           customSideBarConfigDialogStore.open = false
-        }}
-      >
+        }}>
         Close
       </Button>
     {/if}
@@ -87,8 +77,7 @@
             subType: 'none',
             label: language.model,
           })
-        }}
-      >
+        }}>
         {language.model}
       </Button>
 
@@ -99,8 +88,7 @@
             subType: 'none',
             label: language.loadouts,
           })
-        }}
-      >
+        }}>
         {language.loadouts}
       </Button>
 
@@ -108,16 +96,14 @@
         onclick={() => {
           search = ''
           configPage = 'addSettingsSubmenu'
-        }}
-      >
+        }}>
         {language.settings}
       </Button>
 
       <Button
         onclick={() => {
           configPage = 'list'
-        }}
-      >
+        }}>
         Back to List
       </Button>
     {/if}
@@ -128,8 +114,7 @@
         <Button
           onclick={() => {
             configPage = 'add'
-          }}
-        >
+          }}>
           Back
         </Button>
 
@@ -141,8 +126,7 @@
                 subType: type.id,
                 label: language[type.labelKey] || type.id,
               })
-            }}
-          >
+            }}>
             {language[type.labelKey] || type.id}
           </Button>
         {/each}

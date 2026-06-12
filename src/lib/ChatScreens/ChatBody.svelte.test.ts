@@ -165,12 +165,7 @@ describe('ChatBody translation parse bounds', () => {
 
     expect(chatBodyMocks.translateHTML).toHaveBeenCalledTimes(1)
     expect(chatBodyMocks.ParseMarkdown).toHaveBeenCalledTimes(4)
-    expect(parseInputs).toEqual([
-      'translated html',
-      'translated html',
-      'translated html',
-      'translated html',
-    ])
+    expect(parseInputs).toEqual(['translated html', 'translated html', 'translated html', 'translated html'])
     expect(chatBodyMocks.alertError).not.toHaveBeenCalled()
     expect(target.textContent).toContain('parsed:translated html')
   })

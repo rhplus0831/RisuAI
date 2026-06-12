@@ -297,10 +297,7 @@ export async function processScriptFull(
                 }
               }
             }
-          } else if (
-            (outScript.startsWith('@@inject') || pscript.actions.includes('inject')) &&
-            chatID !== -1
-          ) {
+          } else if ((outScript.startsWith('@@inject') || pscript.actions.includes('inject')) && chatID !== -1) {
             withTrustedServerProjectionWrite(() => {
               const writableDb = getDatabase()
               const selchar = writableDb.characters[get(selectedCharID)]
@@ -348,15 +345,11 @@ export async function processScriptFull(
             data = risuChatParser(data.replace(reg, outScript), { chatID: chatID, cbsConditions })
           }
         } else {
-          if (
-            (outScript.startsWith('@@repeat_back') || pscript.actions.includes('repeat_back')) &&
-            chatID !== -1
-          ) {
+          if ((outScript.startsWith('@@repeat_back') || pscript.actions.includes('repeat_back')) && chatID !== -1) {
             const v = outScript.split(' ', 2)[1]
             const selchar = db.characters[get(selectedCharID)]
             const chat = selchar.chats[selchar.chatPage]
-            let lastChat =
-              chat.fmIndex === -1 ? selchar.firstMessage : selchar.alternateGreetings[chat.fmIndex]
+            let lastChat = chat.fmIndex === -1 ? selchar.firstMessage : selchar.alternateGreetings[chat.fmIndex]
             let pointer = chatID - 1
             while (pointer >= 0) {
               if (chat.message[pointer].role === chat.message[chatID].role) {
@@ -445,11 +438,7 @@ export async function processScriptFull(
     char.additionalAssets &&
     char.additionalAssets.length > 0
   ) {
-    if (
-      (!db.dynamicAssetsEditDisplay && mode === 'editdisplay') ||
-      mode === 'editinput' ||
-      mode === 'editprocess'
-    ) {
+    if ((!db.dynamicAssetsEditDisplay && mode === 'editdisplay') || mode === 'editinput' || mode === 'editprocess') {
       cacheScript(hash, data)
       return { data, emoChanged }
     }

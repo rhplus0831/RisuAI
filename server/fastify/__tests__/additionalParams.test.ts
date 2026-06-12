@@ -111,9 +111,7 @@ describe('applyAdditionalParameters DSL', () => {
 
   it('JSON-parses json:: values (strict)', () => {
     const { body, headers } = setup()
-    applyAdditionalParameters(body, headers, [
-      ['extra.nested', 'json::{"arr": [1, 2, 3]}'],
-    ])
+    applyAdditionalParameters(body, headers, [['extra.nested', 'json::{"arr": [1, 2, 3]}']])
     expect(body.extra).toEqual({ nested: { arr: [1, 2, 3] } })
   })
 

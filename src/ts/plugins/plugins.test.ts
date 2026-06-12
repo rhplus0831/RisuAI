@@ -108,12 +108,7 @@ function withPluginStorageCloneStats<T>(fn: () => T): PluginStorageCloneStats<T>
     space?: unknown,
   ) {
     jsonStringifyCount += 1
-    const out = (originalStringify as (...args: unknown[]) => string).call(
-      this,
-      value,
-      replacer,
-      space,
-    )
+    const out = (originalStringify as (...args: unknown[]) => string).call(this, value, replacer, space)
     if (typeof out === 'string' && out.length > maxClonedSize) maxClonedSize = out.length
     return out
   } as unknown as typeof JSON.stringify
@@ -269,10 +264,7 @@ describe('plugin database command bridge', () => {
     const apis = getV2PluginAPIs()
 
     apis.setDatabaseLite({
-      modules: [
-        seedModule('mod-a', { description: 'updated' }),
-        seedModule('mod-b', { description: 'new module' }),
-      ],
+      modules: [seedModule('mod-a', { description: 'updated' }), seedModule('mod-b', { description: 'new module' })],
       enabledModules: ['mod-b'],
     })
 
@@ -342,10 +334,7 @@ describe('plugin database command bridge', () => {
     // Only patch `modules` (not enabledModules) so the assertion sees a
     // single sequencer drain in deterministic order.
     apis.setDatabaseLite({
-      modules: [
-        seedModule('mod-a', { description: 'updated' }),
-        seedModule('mod-b', { description: 'new module' }),
-      ],
+      modules: [seedModule('mod-a', { description: 'updated' }), seedModule('mod-b', { description: 'new module' })],
     })
 
     await vi.waitFor(() => {
@@ -412,15 +401,13 @@ describe('plugin database command bridge', () => {
     await vi.waitFor(() => {
       expect(calls.some((call) => call.url === '/api/v1/commands/plugin-storage/bulk')).toBe(true)
     })
-    expect(calls.find((call) => call.url === '/api/v1/commands/plugin-storage/bulk')).toMatchObject(
-      {
-        method: 'POST',
-        body: {
-          baseRevision: 10,
-          values: { customPluginKey: { value: 1 } },
-        },
+    expect(calls.find((call) => call.url === '/api/v1/commands/plugin-storage/bulk')).toMatchObject({
+      method: 'POST',
+      body: {
+        baseRevision: 10,
+        values: { customPluginKey: { value: 1 } },
       },
-    )
+    })
     expect(DBState.db.pluginCustomStorage.customPluginKey).toEqual({ value: 1 })
   })
 
@@ -520,10 +507,11 @@ describe('plugin database command bridge', () => {
     const charactersSize = JSON.stringify(DBState.db.characters).length
 
     const stats = withPluginStorageCloneStats(
-      () => apis.pluginStorage.getItem('selected') as {
-        nested: { count: number }
-        list: string[]
-      },
+      () =>
+        apis.pluginStorage.getItem('selected') as {
+          nested: { count: number }
+          list: string[]
+        },
     )
 
     expect(stats.structuredCloneCount).toBe(1)
@@ -589,15 +577,9 @@ describe('plugin database command bridge', () => {
     const apis = getV2PluginAPIs()
     const localPluginStorage = new SafeLocalPluginStorage()
 
-    expect(() => apis.safeLocalStorage.getItem('device')).toThrow(
-      /Device-local plugin storage is disabled/,
-    )
-    expect(() => apis.safeIdbFactory.open('device')).toThrow(
-      /Device-local plugin storage is disabled/,
-    )
-    await expect(localPluginStorage.getItem('device')).rejects.toThrow(
-      /Device-local plugin storage is disabled/,
-    )
+    expect(() => apis.safeLocalStorage.getItem('device')).toThrow(/Device-local plugin storage is disabled/)
+    expect(() => apis.safeIdbFactory.open('device')).toThrow(/Device-local plugin storage is disabled/)
+    await expect(localPluginStorage.getItem('device')).rejects.toThrow(/Device-local plugin storage is disabled/)
   })
 
   it('restores device-local plugin storage APIs when compatibility mode is enabled', () => {
@@ -625,5 +607,4 @@ describe('plugin database command bridge', () => {
     expect(() => apis.safeIdbFactory.open('device')).not.toThrow()
     expect(open).toHaveBeenCalledWith('safe_plugin_device', undefined)
   })
-
 })

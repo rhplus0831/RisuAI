@@ -70,8 +70,7 @@ function directoryHandle(entries: Record<string, TestEntry>): TestDirectoryHandl
 
 function clientWithDirectory(entries: Record<string, TestEntry>) {
   const client = new FileSystemClient()
-  ;(client as unknown as { directoryHandle: FileSystemDirectoryHandle }).directoryHandle =
-    directoryHandle(entries)
+  ;(client as unknown as { directoryHandle: FileSystemDirectoryHandle }).directoryHandle = directoryHandle(entries)
   return client
 }
 

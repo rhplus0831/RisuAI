@@ -42,9 +42,6 @@ function scheduleStaleSessionReload(): void {
 }
 
 async function notifyStaleSession(): Promise<void> {
-  const [{ language }, { alertError }] = await Promise.all([
-    import('../../lang'),
-    import('../alert'),
-  ])
+  const [{ language }, { alertError }] = await Promise.all([import('../../lang'), import('../alert')])
   alertError(language.reloadSession)
 }

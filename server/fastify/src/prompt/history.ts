@@ -3,20 +3,12 @@ import type { Chat, Message, character } from '../../../../src/ts/storage/databa
 import type { MultiModal, OpenAIChat } from '../../../../src/ts/process/index.svelte'
 import { expandVariables, type ExpandContext } from './variables.js'
 import { processScript } from './scripts.js'
-import {
-  getDepthPrompts,
-  resolvePosition,
-  type LoreEntryActive,
-  type LorebookActivationReport,
-} from './lorebook.js'
+import { getDepthPrompts, resolvePosition, type LoreEntryActive, type LorebookActivationReport } from './lorebook.js'
 import { tokenizeChat } from './tokens.js'
 import { tokenizerOptionsFromDb } from './tokenizerConfig.js'
 import { runStartTrigger, type TriggerRunResult } from './triggers.js'
 import { isRisuChatParserFixedPoint } from './parserFixedPoint.js'
-import {
-  buildPromptAssetTable,
-  type PromptAssetTable,
-} from './promptAssets.js'
+import { buildPromptAssetTable, type PromptAssetTable } from './promptAssets.js'
 
 type MaybePromise<T> = T | Promise<T>
 
@@ -179,11 +171,7 @@ export function exampleMessage(ctx: ExpandContext, char: character): OpenAIChat[
         memo: 'NewChatExample',
       })
       current = null
-    } else if (
-      lowered.startsWith('{{char}}:') ||
-      lowered.startsWith('<bot>:') ||
-      lowered.startsWith(`${char.name}:`)
-    ) {
+    } else if (lowered.startsWith('{{char}}:') || lowered.startsWith('<bot>:') || lowered.startsWith(`${char.name}:`)) {
       flush()
       current = {
         role: 'assistant',
@@ -334,19 +322,10 @@ async function formatHistoryMessage(
     formatted = preparedSendNameWrapper.replace('{{slot}}', formatted)
   }
 
-  const { content: postThoughts, thoughts } = extractThoughts(
-    formatted,
-    index,
-    totalCount,
-    maxThoughtDepth,
-  )
+  const { content: postThoughts, thoughts } = extractThoughts(formatted, index, totalCount, maxThoughtDepth)
   formatted = postThoughts
 
-  const assetResult = await processAssetPrompts(
-    formatted,
-    assetTable,
-    assetLookup,
-  )
+  const assetResult = await processAssetPrompts(formatted, assetTable, assetLookup)
   formatted = assetResult.text
   for (const m of assetResult.multimodals) pushMultimodal(multimodals, m)
 
@@ -437,9 +416,7 @@ export async function buildHistoryWindow(
   const db = ctx.database
   const messages: OpenAIChat[] = []
   const assetTable =
-    promptAssetTable ??
-    assetLookup.assetTable ??
-    buildPromptAssetTable({ database: db, currentChar, currentChat })
+    promptAssetTable ?? assetLookup.assetTable ?? buildPromptAssetTable({ database: db, currentChar, currentChat })
   const { encoding, options } = tokenizerOptionsFromDb(db)
   let addedTokens = 0
   const preparedSendNameWrapper =
@@ -493,9 +470,7 @@ export async function buildHistoryWindow(
   if (!msReseted) {
     const fmIndex = currentChat.fmIndex ?? -1
     const firstMsgSource =
-      fmIndex === -1
-        ? (currentChar.firstMessage ?? '')
-        : (currentChar.alternateGreetings?.[fmIndex] ?? '')
+      fmIndex === -1 ? (currentChar.firstMessage ?? '') : (currentChar.alternateGreetings?.[fmIndex] ?? '')
     const preExpanded = expandVariables(firstMsgSource, {
       ...ctx,
       chara: currentChar,

@@ -26,10 +26,7 @@ vi.mock('../src/protocolMetrics.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/protocolMetrics.js')>()
   return {
     ...actual,
-    emitProtocolMetric: (
-      name: string,
-      fields: Record<string, unknown> | (() => Record<string, unknown>),
-    ) => {
+    emitProtocolMetric: (name: string, fields: Record<string, unknown> | (() => Record<string, unknown>)) => {
       if (!actual.protocolMetricsEnabled()) return
       capturedMetrics.push({
         metric: name,
@@ -71,11 +68,7 @@ async function stopHarness(h: Harness): Promise<void> {
   rmSync(h.dataDir, { recursive: true, force: true })
 }
 
-async function signAssertion(
-  privateKey: CryptoKey,
-  publicJwk: JsonWebKey,
-  ttlSec = 60,
-): Promise<string> {
+async function signAssertion(privateKey: CryptoKey, publicJwk: JsonWebKey, ttlSec = 60): Promise<string> {
   const now = Math.floor(Date.now() / 1000)
   const header = { alg: 'ES256', typ: 'JWT' }
   const payload = { iat: now, exp: now + ttlSec, pub: publicJwk }
@@ -374,9 +367,7 @@ describe('Phase 2C assets', () => {
 
   it('removes previously staged bulk asset bytes when a later file write fails', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
-    failWriteFileSyncWhen(
-      (file) => file === path.join(harness.dataDir, 'assets', `${OTHER_PNG_SHA}.png`),
-    )
+    failWriteFileSyncWhen((file) => file === path.join(harness.dataDir, 'assets', `${OTHER_PNG_SHA}.png`))
 
     const res = await harness.app.inject({
       method: 'POST',
@@ -443,9 +434,7 @@ describe('Phase 2C assets', () => {
       ],
       revision: 1,
     })
-    expect(harness.commandEvents.list()).toEqual([
-      { type: 'asset.created', resource: 'asset', revision: 1 },
-    ])
+    expect(harness.commandEvents.list()).toEqual([{ type: 'asset.created', resource: 'asset', revision: 1 }])
     expect(existsSync(path.join(harness.dataDir, 'assets', `${PNG_SHA}.png`))).toBe(true)
     expect(existsSync(path.join(harness.dataDir, 'assets', `${OTHER_PNG_SHA}.png`))).toBe(true)
   })

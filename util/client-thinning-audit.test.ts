@@ -73,19 +73,12 @@ describe('client-thinning audit fixtures', () => {
 
     expect(result.exitCode).not.toBe(0)
     expect(result.stderr).toContain(`[${backupInventoryCheck}]`)
-    expect(result.stderr).toContain(
-      'createBackup must reference "secrets" (declared in KNOWN_DATA_DIR_CHILDREN).',
-    )
-    expect(result.stderr).toContain(
-      'restoreBackup must reference "secrets" (declared in KNOWN_DATA_DIR_CHILDREN).',
-    )
+    expect(result.stderr).toContain('createBackup must reference "secrets" (declared in KNOWN_DATA_DIR_CHILDREN).')
+    expect(result.stderr).toContain('restoreBackup must reference "secrets" (declared in KNOWN_DATA_DIR_CHILDREN).')
   })
 
   it('fails a fixture with an unclassified exported process-lifetime accumulator', async () => {
-    const result = await runAuditFixture(
-      'bounded-process-lifetime-accumulators/failing',
-      boundedAccumulatorCheck,
-    )
+    const result = await runAuditFixture('bounded-process-lifetime-accumulators/failing', boundedAccumulatorCheck)
 
     expect(result.exitCode).not.toBe(0)
     expect(result.stderr).toContain(`[${boundedAccumulatorCheck}]`)
@@ -106,10 +99,7 @@ describe('client-thinning audit fixtures', () => {
   })
 
   it('fails a fixture that fetches arbitrary asset loc values with server auth', async () => {
-    const result = await runAuditFixture(
-      'asset-url-gate/failing-authenticated-loc-fetch',
-      assetUrlGateCheck,
-    )
+    const result = await runAuditFixture('asset-url-gate/failing-authenticated-loc-fetch', assetUrlGateCheck)
 
     expect(result.exitCode).not.toBe(0)
     expect(result.stderr).toContain(`[${assetUrlGateCheck}]`)
@@ -119,10 +109,7 @@ describe('client-thinning audit fixtures', () => {
   })
 
   it('fails a fixture that returns unknown asset URL shapes in Fastify mode', async () => {
-    const result = await runAuditFixture(
-      'asset-url-gate/failing-fastify-url-fallback',
-      assetUrlGateCheck,
-    )
+    const result = await runAuditFixture('asset-url-gate/failing-fastify-url-fallback', assetUrlGateCheck)
 
     expect(result.exitCode).not.toBe(0)
     expect(result.stderr).toContain(`[${assetUrlGateCheck}]`)
@@ -140,10 +127,7 @@ describe('client-thinning audit fixtures', () => {
   })
 
   it('fails a fixture that hides the Fastify branch behind an inverted isFastifyServer guard', async () => {
-    const result = await runAuditFixture(
-      'asset-url-gate/failing-inverted-fastify-guard',
-      assetUrlGateCheck,
-    )
+    const result = await runAuditFixture('asset-url-gate/failing-inverted-fastify-guard', assetUrlGateCheck)
 
     expect(result.exitCode).not.toBe(0)
     expect(result.stderr).toContain(`[${assetUrlGateCheck}]`)
@@ -153,10 +137,7 @@ describe('client-thinning audit fixtures', () => {
   })
 
   it('fails a fixture whose serverAssetUrl gate widens to pass arbitrary loc through', async () => {
-    const result = await runAuditFixture(
-      'asset-url-gate/failing-widened-asset-url',
-      assetUrlGateCheck,
-    )
+    const result = await runAuditFixture('asset-url-gate/failing-widened-asset-url', assetUrlGateCheck)
 
     expect(result.exitCode).not.toBe(0)
     expect(result.stderr).toContain(`[${assetUrlGateCheck}]`)
@@ -164,10 +145,7 @@ describe('client-thinning audit fixtures', () => {
   })
 
   it('fails a fixture with an unclassified saveAsset call', async () => {
-    const result = await runAuditFixture(
-      'saveasset-filename-classification/failing',
-      saveAssetCheck,
-    )
+    const result = await runAuditFixture('saveasset-filename-classification/failing', saveAssetCheck)
 
     expect(result.exitCode).not.toBe(0)
     expect(result.stderr).toContain(`[${saveAssetCheck}]`)
@@ -175,10 +153,7 @@ describe('client-thinning audit fixtures', () => {
   })
 
   it('allows a documented image-default saveAsset call', async () => {
-    const result = await runAuditFixture(
-      'saveasset-filename-classification/image-default-bypass',
-      saveAssetCheck,
-    )
+    const result = await runAuditFixture('saveasset-filename-classification/image-default-bypass', saveAssetCheck)
 
     expect(result.exitCode).toBe(0)
     expect(result.stdout).toContain('Client-thinning audit passed.')
@@ -196,10 +171,7 @@ describe('client-thinning audit fixtures', () => {
   })
 
   it('allows fan-out routed through a sequencer or an awaited dispatch chain', async () => {
-    const result = await runAuditFixture(
-      'composite-command-fanout/serialized-bypass',
-      compositeFanoutCheck,
-    )
+    const result = await runAuditFixture('composite-command-fanout/serialized-bypass', compositeFanoutCheck)
 
     expect(result.exitCode).toBe(0)
     expect(result.stdout).toContain('Client-thinning audit passed.')
@@ -207,10 +179,7 @@ describe('client-thinning audit fixtures', () => {
   })
 
   it('fails a svelte <script> fixture that races two dispatches on an await line', async () => {
-    const result = await runAuditFixture(
-      'composite-command-fanout/failing-svelte-race',
-      compositeFanoutCheck,
-    )
+    const result = await runAuditFixture('composite-command-fanout/failing-svelte-race', compositeFanoutCheck)
 
     expect(result.exitCode).not.toBe(0)
     expect(result.stderr).toContain(`[${compositeFanoutCheck}]`)
@@ -220,24 +189,16 @@ describe('client-thinning audit fixtures', () => {
   })
 
   it('fails a svelte fixture that races two dispatches inside a markup event handler', async () => {
-    const result = await runAuditFixture(
-      'composite-command-fanout/failing-svelte-markup-race',
-      compositeFanoutCheck,
-    )
+    const result = await runAuditFixture('composite-command-fanout/failing-svelte-markup-race', compositeFanoutCheck)
 
     expect(result.exitCode).not.toBe(0)
     expect(result.stderr).toContain(`[${compositeFanoutCheck}]`)
     expect(result.stderr).toContain('src/lib/SideBars/SideChatList.svelte')
-    expect(result.stderr).toContain(
-      'dispatches 2 mutating commands (dispatchAppendMessage, dispatchUpdateMessage)',
-    )
+    expect(result.stderr).toContain('dispatches 2 mutating commands (dispatchAppendMessage, dispatchUpdateMessage)')
   })
 
   it('allows svelte dispatches that sit in mutually-exclusive branches', async () => {
-    const result = await runAuditFixture(
-      'composite-command-fanout/svelte-branch-bypass',
-      compositeFanoutCheck,
-    )
+    const result = await runAuditFixture('composite-command-fanout/svelte-branch-bypass', compositeFanoutCheck)
 
     expect(result.exitCode).toBe(0)
     expect(result.stdout).toContain('Client-thinning audit passed.')
@@ -258,10 +219,7 @@ describe('client-thinning audit fixtures', () => {
   })
 
   it('allows normalize-then-resolve order in the same scope', async () => {
-    const result = await runAuditFixture(
-      'resolver-normalize/normalize-first-bypass',
-      resolverNormalizeCheck,
-    )
+    const result = await runAuditFixture('resolver-normalize/normalize-first-bypass', resolverNormalizeCheck)
 
     expect(result.exitCode).toBe(0)
     expect(result.stdout).toContain('Client-thinning audit passed.')
@@ -279,10 +237,7 @@ describe('client-thinning audit fixtures', () => {
   })
 
   it('allows a walker regex literal identical to the client parser', async () => {
-    const result = await runAuditFixture(
-      'asset-reference-parser-parity/parity-bypass',
-      parserParityCheck,
-    )
+    const result = await runAuditFixture('asset-reference-parser-parity/parity-bypass', parserParityCheck)
 
     expect(result.exitCode).toBe(0)
     expect(result.stdout).toContain('Client-thinning audit passed.')
@@ -290,10 +245,7 @@ describe('client-thinning audit fixtures', () => {
   })
 
   it('fails a fixture with a wildcard object-array secret missing a row identity key', async () => {
-    const result = await runAuditFixture(
-      'wildcard-secret-row-identity/failing',
-      wildcardSecretCheck,
-    )
+    const result = await runAuditFixture('wildcard-secret-row-identity/failing', wildcardSecretCheck)
 
     expect(result.exitCode).not.toBe(0)
     expect(result.stderr).toContain(`[${wildcardSecretCheck}]`)
@@ -303,10 +255,7 @@ describe('client-thinning audit fixtures', () => {
   })
 
   it('allows wildcard array secrets that all declare a stable row identity', async () => {
-    const result = await runAuditFixture(
-      'wildcard-secret-row-identity/classified-bypass',
-      wildcardSecretCheck,
-    )
+    const result = await runAuditFixture('wildcard-secret-row-identity/classified-bypass', wildcardSecretCheck)
 
     expect(result.exitCode).toBe(0)
     expect(result.stdout).toContain('Client-thinning audit passed.')
@@ -318,19 +267,14 @@ describe('client-thinning audit fixtures', () => {
 
     expect(result.exitCode).not.toBe(0)
     expect(result.stderr).toContain(`[${idMintingCheck}]`)
-    expect(result.stderr).toContain(
-      'POST /api/v1/commands/messages mints durable ids directly in the route handler.',
-    )
+    expect(result.stderr).toContain('POST /api/v1/commands/messages mints durable ids directly in the route handler.')
     expect(result.stderr).toContain(
       'POST /api/v1/commands/chats calls createChatRecord() which transitively reaches a propagating mint',
     )
   })
 
   it('allows command routes that take ids from validated params with normalize-on-read', async () => {
-    const result = await runAuditFixture(
-      'transitive-command-id-minting/validated-id-bypass',
-      idMintingCheck,
-    )
+    const result = await runAuditFixture('transitive-command-id-minting/validated-id-bypass', idMintingCheck)
 
     expect(result.exitCode).toBe(0)
     expect(result.stdout).toContain('Client-thinning audit passed.')
@@ -348,10 +292,7 @@ describe('client-thinning audit fixtures', () => {
   })
 
   it('fails a fixture that replays a conflict with aliased status/baseRevision literals', async () => {
-    const result = await runAuditFixture(
-      'conflict-replay/failing-aliased-literals',
-      conflictReplayCheck,
-    )
+    const result = await runAuditFixture('conflict-replay/failing-aliased-literals', conflictReplayCheck)
 
     expect(result.exitCode).not.toBe(0)
     expect(result.stderr).toContain(`[${conflictReplayCheck}]`)
@@ -361,10 +302,7 @@ describe('client-thinning audit fixtures', () => {
   })
 
   it('allows surfacing a conflict and exempts the central command wrapper', async () => {
-    const result = await runAuditFixture(
-      'conflict-replay/surface-conflict-bypass',
-      conflictReplayCheck,
-    )
+    const result = await runAuditFixture('conflict-replay/surface-conflict-bypass', conflictReplayCheck)
 
     expect(result.exitCode).toBe(0)
     expect(result.stdout).toContain('Client-thinning audit passed.')
@@ -372,10 +310,7 @@ describe('client-thinning audit fixtures', () => {
   })
 
   it('fails a fixture where a passive refresh path calls the writer bootstrap helper', async () => {
-    const result = await runAuditFixture(
-      'passive-refresh-writer-ownership/failing-passive-caller',
-      passiveRefreshCheck,
-    )
+    const result = await runAuditFixture('passive-refresh-writer-ownership/failing-passive-caller', passiveRefreshCheck)
 
     expect(result.exitCode).not.toBe(0)
     expect(result.stderr).toContain(`[${passiveRefreshCheck}]`)
@@ -398,10 +333,7 @@ describe('client-thinning audit fixtures', () => {
   })
 
   it('allows the writer helper when only the page-load entrypoint calls it', async () => {
-    const result = await runAuditFixture(
-      'passive-refresh-writer-ownership/writer-intent-bypass',
-      passiveRefreshCheck,
-    )
+    const result = await runAuditFixture('passive-refresh-writer-ownership/writer-intent-bypass', passiveRefreshCheck)
 
     expect(result.exitCode).toBe(0)
     expect(result.stdout).toContain('Client-thinning audit passed.')
@@ -409,10 +341,7 @@ describe('client-thinning audit fixtures', () => {
   })
 
   it('fails a fixture with an asset walker field that lacks validator ownership', async () => {
-    const result = await runAuditFixture(
-      'asset-walker-validator-drift/failing-missing-owner',
-      assetWalkerCheck,
-    )
+    const result = await runAuditFixture('asset-walker-validator-drift/failing-missing-owner', assetWalkerCheck)
 
     expect(result.exitCode).not.toBe(0)
     expect(result.stderr).toContain(`[${assetWalkerCheck}]`)
@@ -422,10 +351,7 @@ describe('client-thinning audit fixtures', () => {
   })
 
   it('allows a walker whose fields all map to an owned validator with its needles', async () => {
-    const result = await runAuditFixture(
-      'asset-walker-validator-drift/owned-bypass',
-      assetWalkerCheck,
-    )
+    const result = await runAuditFixture('asset-walker-validator-drift/owned-bypass', assetWalkerCheck)
 
     expect(result.exitCode).toBe(0)
     expect(result.stdout).toContain('Client-thinning audit passed.')
@@ -433,10 +359,7 @@ describe('client-thinning audit fixtures', () => {
   })
 
   it('fails a fixture with an unclassified mutating Fastify route', async () => {
-    const result = await runAuditFixture(
-      'active-writer-guard/failing-unclassified-route',
-      activeWriterGuardCheck,
-    )
+    const result = await runAuditFixture('active-writer-guard/failing-unclassified-route', activeWriterGuardCheck)
 
     expect(result.exitCode).not.toBe(0)
     expect(result.stderr).toContain(`[${activeWriterGuardCheck}]`)
@@ -444,10 +367,7 @@ describe('client-thinning audit fixtures', () => {
   })
 
   it('allows a fully classified mutating route surface with the guard wired in order', async () => {
-    const result = await runAuditFixture(
-      'active-writer-guard/classified-bypass',
-      activeWriterGuardCheck,
-    )
+    const result = await runAuditFixture('active-writer-guard/classified-bypass', activeWriterGuardCheck)
 
     expect(result.exitCode).toBe(0)
     expect(result.stdout).toContain('Client-thinning audit passed.')
@@ -455,10 +375,7 @@ describe('client-thinning audit fixtures', () => {
   })
 
   it('fails a fixture whose command-path constructor mints a durable id', async () => {
-    const result = await runAuditFixture(
-      'stable-command-ids/failing-minting-constructor',
-      stableCommandIdsCheck,
-    )
+    const result = await runAuditFixture('stable-command-ids/failing-minting-constructor', stableCommandIdsCheck)
 
     expect(result.exitCode).not.toBe(0)
     expect(result.stderr).toContain(`[${stableCommandIdsCheck}]`)
@@ -476,10 +393,7 @@ describe('client-thinning audit fixtures', () => {
   })
 
   it('fails a fixture whose device-local storage method skips the compatibility gate', async () => {
-    const result = await runAuditFixture(
-      'plugin-storage-gates/failing-ungated-getitem',
-      pluginStorageCheck,
-    )
+    const result = await runAuditFixture('plugin-storage-gates/failing-ungated-getitem', pluginStorageCheck)
 
     expect(result.exitCode).not.toBe(0)
     expect(result.stderr).toContain(`[${pluginStorageCheck}]`)
@@ -497,10 +411,7 @@ describe('client-thinning audit fixtures', () => {
   })
 
   it('fails a fixture whose new device-local method outside the old list skips the gate', async () => {
-    const result = await runAuditFixture(
-      'plugin-storage-gates/failing-ungated-new-method',
-      pluginStorageCheck,
-    )
+    const result = await runAuditFixture('plugin-storage-gates/failing-ungated-new-method', pluginStorageCheck)
 
     expect(result.exitCode).not.toBe(0)
     expect(result.stderr).toContain(`[${pluginStorageCheck}]`)
@@ -517,22 +428,15 @@ describe('client-thinning audit fixtures', () => {
 
     expect(result.exitCode).not.toBe(0)
     expect(result.stderr).toContain(`[${providerOwnershipCheck}]`)
-    expect(result.stderr).toContain(
-      'useServerGeneration must not be exposed as a Fastify server settings command.',
-    )
+    expect(result.stderr).toContain('useServerGeneration must not be exposed as a Fastify server settings command.')
     expect(result.stderr).toContain(
       'useServerPromptAssembly must not route Fastify prompt assembly to the browser-local assembler.',
     )
-    expect(result.stderr).toContain(
-      'useServerPromptAssembly must not be exposed as a Fastify server settings command.',
-    )
+    expect(result.stderr).toContain('useServerPromptAssembly must not be exposed as a Fastify server settings command.')
   })
 
   it('allows server-routed provider dispatch with browser fallbacks gated off', async () => {
-    const result = await runAuditFixture(
-      'provider-ownership/server-routed-bypass',
-      providerOwnershipCheck,
-    )
+    const result = await runAuditFixture('provider-ownership/server-routed-bypass', providerOwnershipCheck)
 
     expect(result.exitCode).toBe(0)
     expect(result.stdout).toContain('Client-thinning audit passed.')
@@ -552,10 +456,7 @@ describe('client-thinning audit fixtures', () => {
   })
 
   it('fails a fixture whose classifier dropped the permanent pluginV2 gate', async () => {
-    const result = await runAuditFixture(
-      'pluginv2-server-execution/gate-removed-bypass',
-      pluginV2ServerExecutionCheck,
-    )
+    const result = await runAuditFixture('pluginv2-server-execution/gate-removed-bypass', pluginV2ServerExecutionCheck)
 
     expect(result.exitCode).not.toBe(0)
     expect(result.stderr).toContain(`[${pluginV2ServerExecutionCheck}]`)
@@ -564,10 +465,7 @@ describe('client-thinning audit fixtures', () => {
   })
 
   it('allows a regex-only assembler whose deferral comment merely names pluginV2', async () => {
-    const result = await runAuditFixture(
-      'pluginv2-server-execution/passing',
-      pluginV2ServerExecutionCheck,
-    )
+    const result = await runAuditFixture('pluginv2-server-execution/passing', pluginV2ServerExecutionCheck)
 
     expect(result.exitCode).toBe(0)
     expect(result.stdout).toContain('Client-thinning audit passed.')
@@ -575,10 +473,7 @@ describe('client-thinning audit fixtures', () => {
   })
 
   it('fails a fixture that normalizes chat folder ids only per character', async () => {
-    const result = await runAuditFixture(
-      'chat-folder-identity-scope/failing-per-character',
-      chatFolderScopeCheck,
-    )
+    const result = await runAuditFixture('chat-folder-identity-scope/failing-per-character', chatFolderScopeCheck)
 
     expect(result.exitCode).not.toBe(0)
     expect(result.stderr).toContain(`[${chatFolderScopeCheck}]`)
@@ -588,10 +483,7 @@ describe('client-thinning audit fixtures', () => {
   })
 
   it('allows global chat folder id normalization with global create guards', async () => {
-    const result = await runAuditFixture(
-      'chat-folder-identity-scope/global-scope-bypass',
-      chatFolderScopeCheck,
-    )
+    const result = await runAuditFixture('chat-folder-identity-scope/global-scope-bypass', chatFolderScopeCheck)
 
     expect(result.exitCode).toBe(0)
     expect(result.stdout).toContain('Client-thinning audit passed.')
@@ -599,10 +491,7 @@ describe('client-thinning audit fixtures', () => {
   })
 
   it('fails a fixture that treats MCP modules as normal link targets', async () => {
-    const result = await runAuditFixture(
-      'module-reference-semantics/failing-mcp-as-normal',
-      moduleReferenceCheck,
-    )
+    const result = await runAuditFixture('module-reference-semantics/failing-mcp-as-normal', moduleReferenceCheck)
 
     expect(result.exitCode).not.toBe(0)
     expect(result.stderr).toContain(`[${moduleReferenceCheck}]`)
@@ -612,10 +501,7 @@ describe('client-thinning audit fixtures', () => {
   })
 
   it('allows MCP-excluded module link validation across chat write paths', async () => {
-    const result = await runAuditFixture(
-      'module-reference-semantics/typed-links-bypass',
-      moduleReferenceCheck,
-    )
+    const result = await runAuditFixture('module-reference-semantics/typed-links-bypass', moduleReferenceCheck)
 
     expect(result.exitCode).toBe(0)
     expect(result.stdout).toContain('Client-thinning audit passed.')
@@ -623,10 +509,7 @@ describe('client-thinning audit fixtures', () => {
   })
 
   it('fails a fixture where addAsset stops healing missing blobs', async () => {
-    const result = await runAuditFixture(
-      'asset-persistence-semantics/failing-no-heal',
-      assetPersistenceCheck,
-    )
+    const result = await runAuditFixture('asset-persistence-semantics/failing-no-heal', assetPersistenceCheck)
 
     expect(result.exitCode).not.toBe(0)
     expect(result.stderr).toContain(`[${assetPersistenceCheck}]`)
@@ -636,10 +519,7 @@ describe('client-thinning audit fixtures', () => {
   })
 
   it('allows blob healing with documented clear values and audio asset refs', async () => {
-    const result = await runAuditFixture(
-      'asset-persistence-semantics/heal-and-clear-bypass',
-      assetPersistenceCheck,
-    )
+    const result = await runAuditFixture('asset-persistence-semantics/heal-and-clear-bypass', assetPersistenceCheck)
 
     expect(result.exitCode).toBe(0)
     expect(result.stdout).toContain('Client-thinning audit passed.')
@@ -654,16 +534,11 @@ describe('client-thinning audit fixtures', () => {
 
     expect(result.exitCode).not.toBe(0)
     expect(result.stderr).toContain(`[${importExportShapeCheck}]`)
-    expect(result.stderr).toContain(
-      'ROOT_COMPONENT reserved keys must match block export resource keys.',
-    )
+    expect(result.stderr).toContain('ROOT_COMPONENT reserved keys must match block export resource keys.')
   })
 
   it('allows the current import/export shape with reserved keys in sync', async () => {
-    const result = await runAuditFixture(
-      'import-export-current-shape/current-shape-bypass',
-      importExportShapeCheck,
-    )
+    const result = await runAuditFixture('import-export-current-shape/current-shape-bypass', importExportShapeCheck)
 
     expect(result.exitCode).toBe(0)
     expect(result.stdout).toContain('Client-thinning audit passed.')
@@ -671,10 +546,7 @@ describe('client-thinning audit fixtures', () => {
   })
 
   it('fails a fixture that reintroduces a group-chat branch in the catalog and chat-list UI', async () => {
-    const result = await runAuditFixture(
-      'group-chat-removed/failing-ui-branch',
-      groupChatRemovedCheck,
-    )
+    const result = await runAuditFixture('group-chat-removed/failing-ui-branch', groupChatRemovedCheck)
 
     expect(result.exitCode).not.toBe(0)
     expect(result.stderr).toContain(`[${groupChatRemovedCheck}]`)
@@ -685,10 +557,7 @@ describe('client-thinning audit fixtures', () => {
   })
 
   it('fails a fixture that drops the load-time filter, server hard-fail, and isGroupChat hardcode', async () => {
-    const result = await runAuditFixture(
-      'group-chat-removed/keep-layers-removed-bypass',
-      groupChatRemovedCheck,
-    )
+    const result = await runAuditFixture('group-chat-removed/keep-layers-removed-bypass', groupChatRemovedCheck)
 
     expect(result.exitCode).not.toBe(0)
     expect(result.stderr).toContain(`[${groupChatRemovedCheck}]`)
@@ -706,10 +575,7 @@ describe('client-thinning audit fixtures', () => {
   })
 
   it('fails a fixture where the /chat dispatcher re-forks the provider-routing decision', async () => {
-    const result = await runAuditFixture(
-      'provider-capability-shared/failing-server-fork',
-      providerCapabilityCheck,
-    )
+    const result = await runAuditFixture('provider-capability-shared/failing-server-fork', providerCapabilityCheck)
 
     expect(result.exitCode).not.toBe(0)
     expect(result.stderr).toContain(`[${providerCapabilityCheck}]`)
@@ -718,10 +584,7 @@ describe('client-thinning audit fixtures', () => {
   })
 
   it('allows a /chat dispatcher that consumes the shared table and keeps unrelated helpers', async () => {
-    const result = await runAuditFixture(
-      'provider-capability-shared/keeps-helpers-bypass',
-      providerCapabilityCheck,
-    )
+    const result = await runAuditFixture('provider-capability-shared/keeps-helpers-bypass', providerCapabilityCheck)
 
     expect(result.exitCode).toBe(0)
     expect(result.stdout).toContain('Client-thinning audit passed.')
@@ -729,10 +592,7 @@ describe('client-thinning audit fixtures', () => {
   })
 
   it('allows both resolvers consuming the shared provider-capability table', async () => {
-    const result = await runAuditFixture(
-      'provider-capability-shared/passing',
-      providerCapabilityCheck,
-    )
+    const result = await runAuditFixture('provider-capability-shared/passing', providerCapabilityCheck)
 
     expect(result.exitCode).toBe(0)
     expect(result.stdout).toContain('Client-thinning audit passed.')

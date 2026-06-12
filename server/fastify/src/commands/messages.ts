@@ -80,8 +80,7 @@ export function createMessageRecord(input: unknown, label = 'message'): MessageR
 
 function repairMessageRecord(input: unknown, label = 'message'): MessageRecord {
   const message = readJsonObject(input, label) as MessageRecord
-  message.chatId =
-    typeof message.chatId === 'string' && message.chatId.trim() ? message.chatId : randomUUID()
+  message.chatId = typeof message.chatId === 'string' && message.chatId.trim() ? message.chatId : randomUUID()
   validateMessageRecord(message, label)
   return message
 }
@@ -139,10 +138,7 @@ export function readTruncateAfterMessageId(value: unknown): string | null {
   return readMessageId(value, 'afterMessageId')
 }
 
-export function requireMessageLocation(
-  characters: readonly CharacterRecord[],
-  messageId: string,
-): MessageLocation {
+export function requireMessageLocation(characters: readonly CharacterRecord[], messageId: string): MessageLocation {
   for (const character of characters) {
     for (const chat of ensureCharacterChats(character)) {
       const messages = ensureChatMessages(chat)
@@ -223,15 +219,9 @@ function normalizeGlobalMessageIds(characters: readonly CharacterRecord[]): void
 
 function updateChatMessageReferences(chat: ChatRecord, renamed: ReadonlyMap<string, string>): void {
   if (Array.isArray(chat.bookmarks)) {
-    chat.bookmarks = chat.bookmarks.map((id) =>
-      typeof id === 'string' && renamed.has(id) ? renamed.get(id)! : id,
-    )
+    chat.bookmarks = chat.bookmarks.map((id) => (typeof id === 'string' && renamed.has(id) ? renamed.get(id)! : id))
   }
-  if (
-    !chat.bookmarkNames ||
-    typeof chat.bookmarkNames !== 'object' ||
-    Array.isArray(chat.bookmarkNames)
-  ) {
+  if (!chat.bookmarkNames || typeof chat.bookmarkNames !== 'object' || Array.isArray(chat.bookmarkNames)) {
     return
   }
   const next: Record<string, string> = {}
@@ -241,15 +231,8 @@ function updateChatMessageReferences(chat: ChatRecord, renamed: ReadonlyMap<stri
   chat.bookmarkNames = next
 }
 
-function validateMessageRecord(
-  record: JsonRecord,
-  label: string,
-  options: { partial?: boolean } = {},
-): void {
-  if (
-    (!options.partial || 'chatId' in record) &&
-    (typeof record.chatId !== 'string' || record.chatId.trim() === '')
-  ) {
+function validateMessageRecord(record: JsonRecord, label: string, options: { partial?: boolean } = {}): void {
+  if ((!options.partial || 'chatId' in record) && (typeof record.chatId !== 'string' || record.chatId.trim() === '')) {
     throw new ValidationError(`${label}.chatId must be a non-empty string`)
   }
   if (!options.partial || 'role' in record) {

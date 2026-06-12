@@ -78,10 +78,7 @@ const pendingPromptSettingsPatch: PendingPromptSettingsPatch = {
  * id yet (rare: the projection has drifted from the draft); that path is still
  * correct, just not narrowed.
  */
-export function applyPromptItemProjectionWrite(
-  draftItems: PromptItem[],
-  itemId: string,
-): PromptItem | null {
+export function applyPromptItemProjectionWrite(draftItems: PromptItem[], itemId: string): PromptItem | null {
   const draftItem = (draftItems ?? []).find((item) => item.id === itemId)
   if (!draftItem) return null
   const snapshot = cloneJsonValue(draftItem)
@@ -138,11 +135,7 @@ export function queuePromptItemProjectionUpdate(
   pendingPromptItemUpdates.set(itemId, pending)
 }
 
-export function queuePromptSettingsProjectionPatch(
-  patch: SettingsPatch,
-  previous: SettingsPatch,
-  delayMs = 250,
-): void {
+export function queuePromptSettingsProjectionPatch(patch: SettingsPatch, previous: SettingsPatch, delayMs = 250): void {
   if (!canUseServerCommands()) return
   for (const [key, value] of Object.entries(patch)) {
     if (!(key in pendingPromptSettingsPatch.previous)) {
@@ -158,19 +151,14 @@ export function queuePromptSettingsProjectionPatch(
   }, delayMs)
 }
 
-export function flushPendingPromptTemplatePatches(
-  options: ServerCommandTransportOptions = {},
-): void {
+export function flushPendingPromptTemplatePatches(options: ServerCommandTransportOptions = {}): void {
   for (const itemId of Array.from(pendingPromptItemUpdates.keys())) {
     runPendingPromptItemUpdate(itemId, options)
   }
   runPendingPromptSettingsPatch(options)
 }
 
-function runPendingPromptItemUpdate(
-  itemId: string,
-  options: ServerCommandTransportOptions = {},
-): void {
+function runPendingPromptItemUpdate(itemId: string, options: ServerCommandTransportOptions = {}): void {
   const pending = pendingPromptItemUpdates.get(itemId)
   if (!pending) return
   if (pending.timer) clearTimeout(pending.timer)
@@ -188,12 +176,7 @@ function runPendingPromptItemUpdate(
         options.keepalive,
       ),
     rollback: () =>
-      rollbackPendingPromptItemUpdate(
-        pending.binding,
-        pending.itemId,
-        pending.previousItem,
-        pending.attemptedItem,
-      ),
+      rollbackPendingPromptItemUpdate(pending.binding, pending.itemId, pending.previousItem, pending.attemptedItem),
     signal: options.signal,
     keepalive: options.keepalive,
   })

@@ -14,10 +14,7 @@ import {
 } from '../src/repository.js'
 import { openDatabase } from '../src/db.js'
 import { replaceAllChatMessages } from '../src/messageStore.js'
-import {
-  buildRepositoryRisuSaveAssetReport,
-  buildRisuSaveAssetReport,
-} from '../src/risuSave/assetReferences.js'
+import { buildRepositoryRisuSaveAssetReport, buildRisuSaveAssetReport } from '../src/risuSave/assetReferences.js'
 import { CORPUS_TABLES, assertScopedLoadOnHotPath } from './helpers/loadCostHarness.js'
 
 const REFERENCED = 'a'.repeat(64)
@@ -60,9 +57,7 @@ function seedDatabase(database: unknown, assets: PersistedAsset[]): void {
 }
 
 function embedChatRowMessage(chatId: string, messageData: string): void {
-  const row = db.prepare('SELECT data_json FROM chats WHERE id = ?').get(chatId) as
-    | { data_json: string }
-    | undefined
+  const row = db.prepare('SELECT data_json FROM chats WHERE id = ?').get(chatId) as { data_json: string } | undefined
   if (!row) throw new Error(`missing chat row ${chatId}`)
   const chat = JSON.parse(row.data_json) as Record<string, unknown>
   chat.message = [{ chatId: `${chatId}-embedded-message`, role: 'user', data: messageData }]
@@ -87,12 +82,7 @@ describe('runAssetGc', () => {
         { chaId: 'char-b', image: SHARED },
       ],
     }
-    seedDatabase(database, [
-      asset(REFERENCED),
-      asset(SHARED),
-      asset(ORPHAN_OLD),
-      asset(ORPHAN_FRESH),
-    ])
+    seedDatabase(database, [asset(REFERENCED), asset(SHARED), asset(ORPHAN_OLD), asset(ORPHAN_FRESH)])
     const refFile = writeAssetFile(REFERENCED, OLD_MTIME)
     const sharedFile = writeAssetFile(SHARED, OLD_MTIME)
     const orphanOldFile = writeAssetFile(ORPHAN_OLD, OLD_MTIME)
@@ -195,10 +185,7 @@ describe('runAssetGc', () => {
         {
           chaId: 'char-a',
           image: SHARED,
-          chats: [
-            { id: 'chat-a' },
-            { id: 'chat-b', message: [{ chatId: 'embedded-1', role: 'user', data: 'plain' }] },
-          ],
+          chats: [{ id: 'chat-a' }, { id: 'chat-b', message: [{ chatId: 'embedded-1', role: 'user', data: 'plain' }] }],
         },
         { chaId: 'char-b', chats: [{ id: 'chat-c' }] },
       ],
@@ -219,10 +206,7 @@ describe('runAssetGc', () => {
     ])
 
     const scoped = buildRepositoryRisuSaveAssetReport(dataDir, db)
-    const hydrated = buildRisuSaveAssetReport(
-      loadPersistedWithMessages(db, dataDir).database,
-      getAllAssetMetadata(db),
-    )
+    const hydrated = buildRisuSaveAssetReport(loadPersistedWithMessages(db, dataDir).database, getAllAssetMetadata(db))
     // Byte-identical report: same ids, same path labels, same counts.
     expect(scoped).toEqual(hydrated)
     expect(scoped.referenced.map((reference) => reference.id)).toContain(SHARED)

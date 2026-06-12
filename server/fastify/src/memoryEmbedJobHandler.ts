@@ -2,11 +2,7 @@ import { createHash } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
 import type { Database } from '../../../src/ts/storage/database.svelte'
 import type { HypaModel } from '../../../src/ts/process/memory/hypamemory'
-import {
-  embedTextGroups,
-  embedTexts,
-  type MemoryEmbeddingAdapterResult,
-} from './memoryEmbeddingAdapter.js'
+import { embedTextGroups, embedTexts, type MemoryEmbeddingAdapterResult } from './memoryEmbeddingAdapter.js'
 import {
   effectiveMemoryEmbeddingLimits,
   estimateMemoryEmbeddingTokens,
@@ -33,12 +29,8 @@ export interface EmbedMemoryJobHandlerOptions {
   db: DatabaseSync
   dataDir?: string
   loadDatabase?: () => unknown
-  embed?: (
-    opts: Parameters<typeof embedTexts>[0],
-  ) => Promise<MemoryEmbeddingAdapterResult | { error: string }>
-  embedGroups?: (
-    opts: Parameters<typeof embedTextGroups>[0],
-  ) => Promise<Awaited<ReturnType<typeof embedTextGroups>>>
+  embed?: (opts: Parameters<typeof embedTexts>[0]) => Promise<MemoryEmbeddingAdapterResult | { error: string }>
+  embedGroups?: (opts: Parameters<typeof embedTextGroups>[0]) => Promise<Awaited<ReturnType<typeof embedTextGroups>>>
   sleep?: (ms: number) => Promise<void>
   now?: () => number
   /** Provider-call deadline override for tests; production uses a generous shared default. */
@@ -60,9 +52,7 @@ interface DatabaseLike {
   hypaV3Settings?: unknown
 }
 
-export function createEmbedMemoryJobHandler(
-  opts: EmbedMemoryJobHandlerOptions,
-): (job: MemoryJob) => Promise<void> {
+export function createEmbedMemoryJobHandler(opts: EmbedMemoryJobHandlerOptions): (job: MemoryJob) => Promise<void> {
   const embed = opts.embed ?? embedTexts
   const embedGroups = opts.embedGroups ?? embedTextGroups
   const acquireRateLimit = createEmbeddingRateLimiter(opts)
@@ -88,9 +78,7 @@ export function createEmbedMemoryJobHandler(
   }
 }
 
-export function createEmbedMemoryJobBatchHandler(
-  opts: EmbedMemoryJobHandlerOptions,
-): MemoryJobBatchHandler {
+export function createEmbedMemoryJobBatchHandler(opts: EmbedMemoryJobHandlerOptions): MemoryJobBatchHandler {
   const embed = opts.embed ?? embedTexts
   const embedGroups = opts.embedGroups ?? embedTextGroups
   const acquireRateLimit = createEmbeddingRateLimiter(opts)
@@ -198,9 +186,7 @@ type EmbedExecutionResult =
       groupIndex: number | null
     }
 
-type BatchJobResult =
-  | { job: MemoryJob; result: EmbedExecutionResult }
-  | { job: MemoryJob; error: string }
+type BatchJobResult = { job: MemoryJob; result: EmbedExecutionResult } | { job: MemoryJob; error: string }
 
 interface ContextualSubBatchBudget {
   tokenBudget: number
@@ -251,10 +237,7 @@ async function executeEmbedJob(input: {
   await input.acquireRateLimit(input.settings)
   if (modelRequest.request.provider === 'voyage-contextual') {
     let embedding: Awaited<ReturnType<NonNullable<EmbedMemoryJobHandlerOptions['embedGroups']>>>
-    const clearDeadline = armMemoryProviderFetchDeadline(
-      controller,
-      input.opts.providerFetchDeadlineMs,
-    )
+    const clearDeadline = armMemoryProviderFetchDeadline(controller, input.opts.providerFetchDeadlineMs)
     try {
       embedding = await input.embedGroups({
         request: modelRequest.request,
@@ -284,10 +267,7 @@ async function executeEmbedJob(input: {
   }
 
   let embedding: Awaited<ReturnType<NonNullable<EmbedMemoryJobHandlerOptions['embed']>>>
-  const clearDeadline = armMemoryProviderFetchDeadline(
-    controller,
-    input.opts.providerFetchDeadlineMs,
-  )
+  const clearDeadline = armMemoryProviderFetchDeadline(controller, input.opts.providerFetchDeadlineMs)
   try {
     embedding = await input.embed({
       request: modelRequest.request,
@@ -403,11 +383,7 @@ function resolveContextualSubBatchBudget(
   )
 }
 
-function assertChunkWithinEmbeddingLimits(
-  request: MemoryEmbeddingModelRequest,
-  chunkId: string,
-  text: string,
-): void {
+function assertChunkWithinEmbeddingLimits(request: MemoryEmbeddingModelRequest, chunkId: string, text: string): void {
   assertChunksWithinEmbeddingLimits(request, [{ id: chunkId, text }])
 }
 
@@ -509,10 +485,7 @@ async function executeContextualEmbedJobs(input: {
     const controller = new AbortController()
     await input.acquireRateLimit(input.settings)
     let embedding: Awaited<ReturnType<NonNullable<EmbedMemoryJobHandlerOptions['embedGroups']>>>
-    const clearDeadline = armMemoryProviderFetchDeadline(
-      controller,
-      input.opts.providerFetchDeadlineMs,
-    )
+    const clearDeadline = armMemoryProviderFetchDeadline(controller, input.opts.providerFetchDeadlineMs)
     try {
       embedding = await input.embedGroups({
         request: input.modelRequest,
@@ -527,9 +500,7 @@ async function executeContextualEmbedJobs(input: {
     }
     const vectors = embedding.groups[0]
     if (!vectors || vectors.length !== parsed.length) {
-      throw new Error(
-        `embedding response count mismatch: expected ${parsed.length}, got ${vectors?.length ?? 0}`,
-      )
+      throw new Error(`embedding response count mismatch: expected ${parsed.length}, got ${vectors?.length ?? 0}`)
     }
 
     return parsed.map(({ job, payload, chunk }, index) => {
@@ -587,8 +558,7 @@ function commitIndependentBatchResults(
       }
       context.complete(item.job.id)
     } catch (error) {
-      blockedByCommitFailure =
-        error instanceof Error && error.message ? error.message : String(error)
+      blockedByCommitFailure = error instanceof Error && error.message ? error.message : String(error)
       context.retryOrFail(item.job.id, blockedByCommitFailure)
     }
   }
@@ -626,11 +596,7 @@ function commitContextualBatchResults(
       context.complete(item.job.id)
     }
   } catch (error) {
-    retryContextualBatch(
-      context,
-      successful,
-      error instanceof Error && error.message ? error.message : String(error),
-    )
+    retryContextualBatch(context, successful, error instanceof Error && error.message ? error.message : String(error))
   }
 }
 
@@ -699,10 +665,7 @@ function compareEmbedJobs(left: MemoryJob, right: MemoryJob): number {
 }
 
 function isContextualVoyageBatch(jobs: readonly MemoryJob[]): boolean {
-  return (
-    jobs.length > 0 &&
-    jobs.every((job) => tryParseEmbedPayload(job.payload)?.model === 'voyageContext3')
-  )
+  return jobs.length > 0 && jobs.every((job) => tryParseEmbedPayload(job.payload)?.model === 'voyageContext3')
 }
 
 function tryParseEmbedPayload(payload: unknown): HypaV3EmbedJobPayload | null {
@@ -767,9 +730,7 @@ function persistEmbedding(
   },
 ): void {
   if (input.vector.length !== input.dim) {
-    throw new Error(
-      `embedding dimension mismatch: expected ${input.dim}, got ${input.vector.length}`,
-    )
+    throw new Error(`embedding dimension mismatch: expected ${input.dim}, got ${input.vector.length}`)
   }
 
   db.exec('BEGIN IMMEDIATE')
@@ -781,12 +742,7 @@ function persistEmbedding(
     })[0]
     if (!existing) {
       createMemoryEmbedding(db, {
-        id: buildEmbeddingId(
-          input.job.chatId,
-          input.payload.chunkId,
-          input.payload.model,
-          input.groupId,
-        ),
+        id: buildEmbeddingId(input.job.chatId, input.payload.chunkId, input.payload.model, input.groupId),
         chatId: input.job.chatId,
         chunkId: input.payload.chunkId,
         model: input.payload.model,
@@ -819,9 +775,7 @@ function persistEmbeddingGroup(
   try {
     for (const input of inputs) {
       if (input.vector.length !== input.dim) {
-        throw new Error(
-          `embedding dimension mismatch: expected ${input.dim}, got ${input.vector.length}`,
-        )
+        throw new Error(`embedding dimension mismatch: expected ${input.dim}, got ${input.vector.length}`)
       }
       const existing = listMemoryEmbeddings(db, {
         chatId: input.job.chatId,
@@ -831,12 +785,7 @@ function persistEmbeddingGroup(
       if (existing) continue
 
       createMemoryEmbedding(db, {
-        id: buildEmbeddingId(
-          input.job.chatId,
-          input.payload.chunkId,
-          input.payload.model,
-          input.groupId,
-        ),
+        id: buildEmbeddingId(input.job.chatId, input.payload.chunkId, input.payload.model, input.groupId),
         chatId: input.job.chatId,
         chunkId: input.payload.chunkId,
         model: input.payload.model,
@@ -852,12 +801,7 @@ function persistEmbeddingGroup(
   }
 }
 
-function buildEmbeddingId(
-  chatId: string,
-  chunkId: string,
-  model: string,
-  groupId: string | null = null,
-): string {
+function buildEmbeddingId(chatId: string, chunkId: string, model: string, groupId: string | null = null): string {
   if (groupId === null) {
     return `hypav3-embedding-${shortHash(JSON.stringify({ chatId, chunkId, model }))}`
   }

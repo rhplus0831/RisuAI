@@ -25,12 +25,7 @@ vi.mock('../../modules', async (importActual) => {
   }
 })
 
-import {
-  setDatabase,
-  type character,
-  type Chat,
-  type Database,
-} from '../../../storage/database.svelte'
+import { setDatabase, type character, type Chat, type Database } from '../../../storage/database.svelte'
 import { LLMFlags } from '../../../model/modellist'
 import { pluginV2 } from '../../../plugins/plugins.svelte'
 import {
@@ -65,9 +60,7 @@ function makeChar(overrides: Partial<character> = {}): character {
 }
 
 function makeChat(
-  message: Array<{ role: string; data: string; [k: string]: unknown }> = [
-    { role: 'user', data: 'hi' },
-  ],
+  message: Array<{ role: string; data: string; [k: string]: unknown }> = [{ role: 'user', data: 'hi' }],
 ): Chat {
   return { message } as unknown as Chat
 }
@@ -158,9 +151,7 @@ describe('resolveServerPromptAssembly', () => {
     it('routes a runtime-multimodals send to server on an image-input model (slice 3a)', () => {
       seedVisionDb()
       const input = makeInput({
-        currentChat: makeChat([
-          { role: 'user', data: 'hi', multimodals: [{ type: 'image', base64: 'x' }] },
-        ]),
+        currentChat: makeChat([{ role: 'user', data: 'hi', multimodals: [{ type: 'image', base64: 'x' }] }]),
       })
       expect(resolveServerPromptAssembly(input)).toEqual({ type: 'server' })
     })
@@ -280,9 +271,7 @@ describe('resolveServerPromptAssembly', () => {
 
     it('rejects a runtime multimodals array on a model without image input (slice 3a class 2)', () => {
       const input = makeInput({
-        currentChat: makeChat([
-          { role: 'user', data: 'hi', multimodals: [{ type: 'image', base64: 'x' }] },
-        ]),
+        currentChat: makeChat([{ role: 'user', data: 'hi', multimodals: [{ type: 'image', base64: 'x' }] }]),
       })
       expectUnsupported(resolveServerPromptAssembly(input))
     })

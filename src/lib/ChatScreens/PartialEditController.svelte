@@ -57,10 +57,7 @@
     return null
   }
 
-  function findCurrentButtonZoneRoute(
-    mouseX: number,
-    mouseY: number,
-  ): SharedBlockHoverRoute | null {
+  function findCurrentButtonZoneRoute(mouseX: number, mouseY: number): SharedBlockHoverRoute | null {
     for (const controller of sharedBlockHoverControllers) {
       if (!isControllerEligible(controller)) continue
 
@@ -80,21 +77,14 @@
     if (!block) return null
 
     for (const controller of sharedBlockHoverControllers) {
-      if (
-        isControllerEligible(controller) &&
-        controller.bodyRoot.contains(block) &&
-        controller.hasTextContent(block)
-      ) {
+      if (isControllerEligible(controller) && controller.bodyRoot.contains(block) && controller.hasTextContent(block)) {
         return { controller, block }
       }
     }
     return null
   }
 
-  function findFallbackButtonZoneRoute(
-    mouseX: number,
-    mouseY: number,
-  ): SharedBlockHoverRoute | null {
+  function findFallbackButtonZoneRoute(mouseX: number, mouseY: number): SharedBlockHoverRoute | null {
     for (const controller of sharedBlockHoverControllers) {
       if (!isControllerEligible(controller)) continue
 
@@ -400,19 +390,11 @@
     if (typeof elementOrText === 'string') {
       matchingState.targetElement = null
       matchingState.originalHTML = ''
-      matchingState.foundMatches = findAllOriginalRangesFromText(
-        messageData,
-        elementOrText,
-        options,
-      )
+      matchingState.foundMatches = findAllOriginalRangesFromText(messageData, elementOrText, options)
     } else {
       matchingState.targetElement = elementOrText
       matchingState.originalHTML = elementOrText.innerHTML
-      matchingState.foundMatches = findAllOriginalRangesFromHtml(
-        messageData,
-        elementOrText,
-        options,
-      )
+      matchingState.foundMatches = findAllOriginalRangesFromHtml(messageData, elementOrText, options)
     }
 
     if (matchingState.foundMatches.length === 0) {
@@ -463,9 +445,7 @@
         textareaRef.focus()
         adjustHeight()
         setTimeout(() => {
-          const buttonsEl = textareaRef
-            .closest('.partial-edit-modal')
-            ?.querySelector('.partial-edit-buttons')
+          const buttonsEl = textareaRef.closest('.partial-edit-modal')?.querySelector('.partial-edit-buttons')
           if (buttonsEl) {
             ;(buttonsEl as HTMLElement).scrollIntoView({ behavior: 'instant', block: 'nearest' })
           }
@@ -487,11 +467,7 @@
 
   // Restore block HTML if match selection is canceled during edit.
   function cancelMatchSelection() {
-    if (
-      matchingState.mode === 'edit' &&
-      matchingState.targetElement &&
-      matchingState.originalHTML
-    ) {
+    if (matchingState.mode === 'edit' && matchingState.targetElement && matchingState.originalHTML) {
       matchingState.targetElement.innerHTML = matchingState.originalHTML
     }
 
@@ -582,9 +558,7 @@
   function isMouseOnBlockButton(mouseX: number, mouseY: number): boolean {
     if (!blockButtonWrapper || blockButtonWrapper.style.display === 'none') return false
     const rect = blockButtonWrapper.getBoundingClientRect()
-    return (
-      mouseX >= rect.left && mouseX <= rect.right && mouseY >= rect.top && mouseY <= rect.bottom
-    )
+    return mouseX >= rect.left && mouseX <= rect.right && mouseY >= rect.top && mouseY <= rect.bottom
   }
 
   function isMouseInButtonZone(mouseX: number, mouseY: number, block: HTMLElement): boolean {
@@ -676,10 +650,7 @@
 
         const range = sel.getRangeAt(0)
         const ancestor = range.commonAncestorContainer
-        const ancestorEl =
-          ancestor.nodeType === Node.ELEMENT_NODE
-            ? (ancestor as HTMLElement)
-            : ancestor.parentElement
+        const ancestorEl = ancestor.nodeType === Node.ELEMENT_NODE ? (ancestor as HTMLElement) : ancestor.parentElement
 
         if (!ancestorEl || !bodyRoot.contains(ancestorEl)) {
           hideDragButton()
@@ -745,8 +716,7 @@
     class="partial-edit-overlay"
     onclick={(e) => {
       if (e.target === e.currentTarget) cancelMatchSelection()
-    }}
-  >
+    }}>
     <div class="partial-match-selection-modal">
       <div class="match-selection-header">
         <span class="match-selection-title">{title}</span>
@@ -763,8 +733,7 @@
                 class="match-confidence"
                 class:high-confidence={match.confidence >= 0.95}
                 class:medium-confidence={match.confidence >= 0.7 && match.confidence < 0.95}
-                class:low-confidence={match.confidence < 0.7}
-              >
+                class:low-confidence={match.confidence < 0.7}>
                 {(match.confidence * 100).toFixed(0)}%
               </span>
               <span class="match-method">{match.method}</span>
@@ -773,10 +742,8 @@
               <div class="match-context-before">{match.contextBefore}</div>
             {/if}
             <div class="match-text">
-              {messageData.slice(match.start, match.end).slice(0, 150)}{messageData.slice(
-                match.start,
-                match.end,
-              ).length > 150
+              {messageData.slice(match.start, match.end).slice(0, 150)}{messageData.slice(match.start, match.end)
+                .length > 150
                 ? '...'
                 : ''}
             </div>
@@ -803,19 +770,14 @@
     class="partial-edit-overlay"
     onclick={(e) => {
       if (e.target === e.currentTarget) showMatchFailedModal = false
-    }}
-  >
+    }}>
     <div class="partial-match-failed-modal">
       <div class="partial-match-failed-header">
         <span class="partial-match-failed-title">{language.partialEdit.matchFailedTitle}</span>
       </div>
       <p class="partial-match-failed-message">{language.partialEdit.matchFailedMessage}</p>
       <div class="partial-edit-buttons">
-        <button
-          type="button"
-          class="partial-edit-save-btn"
-          onclick={() => (showMatchFailedModal = false)}
-        >
+        <button type="button" class="partial-edit-save-btn" onclick={() => (showMatchFailedModal = false)}>
           <CheckIcon size={14} />
           <span>{language.confirm}</span>
         </button>
@@ -831,8 +793,7 @@
     class="partial-edit-overlay"
     onclick={(e) => {
       if (e.target === e.currentTarget) handleCancelDelete()
-    }}
-  >
+    }}>
     <div class="partial-delete-modal">
       <div class="partial-delete-header">
         <span class="partial-delete-title">{language.partialEdit.deleteModalTitle}</span>
@@ -840,10 +801,7 @@
           <span class="partial-match-hint">
             {language.partialEdit.matchFound(matchingState.selectedRange.method)}
           </span>
-          <span
-            class="partial-match-confidence"
-            class:low-confidence={matchingState.selectedRange.confidence < 0.7}
-          >
+          <span class="partial-match-confidence" class:low-confidence={matchingState.selectedRange.confidence < 0.7}>
             {(matchingState.selectedRange.confidence * 100).toFixed(0)}%
           </span>
         </div>
@@ -851,12 +809,9 @@
       <p class="partial-delete-message">{language.partialEdit.deleteConfirmMessage}</p>
       <div class="partial-delete-preview">
         {matchingState.selectedRange
-          ? messageData
-              .slice(matchingState.selectedRange.start, matchingState.selectedRange.end)
-              .slice(0, 200)
+          ? messageData.slice(matchingState.selectedRange.start, matchingState.selectedRange.end).slice(0, 200)
           : ''}{matchingState.selectedRange &&
-        messageData.slice(matchingState.selectedRange.start, matchingState.selectedRange.end)
-          .length > 200
+        messageData.slice(matchingState.selectedRange.start, matchingState.selectedRange.end).length > 200
           ? '...'
           : ''}
       </div>
@@ -875,17 +830,9 @@
 {/if}
 
 {#if matchingState.mode === 'edit'}
-  {@render MatchSelectionModal(
-    'edit',
-    matchingState.foundMatches,
-    language.partialEdit.selectMatch,
-  )}
+  {@render MatchSelectionModal('edit', matchingState.foundMatches, language.partialEdit.selectMatch)}
 {:else if matchingState.mode === 'delete'}
-  {@render MatchSelectionModal(
-    'delete',
-    matchingState.foundMatches,
-    language.partialEdit.selectDeleteMatch,
-  )}
+  {@render MatchSelectionModal('delete', matchingState.foundMatches, language.partialEdit.selectDeleteMatch)}
 {/if}
 
 {#if isEditing}
@@ -895,8 +842,7 @@
     class="partial-edit-overlay"
     onclick={(e) => {
       if (e.target === e.currentTarget) handleCancel()
-    }}
-  >
+    }}>
     <div class="partial-edit-modal">
       <div class="partial-edit-header">
         <span class="partial-edit-title">{language.partialEdit.editModalTitle}</span>
@@ -904,10 +850,7 @@
           <span class="partial-match-hint">
             {language.partialEdit.matchFound(matchingState.selectedRange.method)}
           </span>
-          <span
-            class="partial-match-confidence"
-            class:low-confidence={matchingState.selectedRange.confidence < 0.7}
-          >
+          <span class="partial-match-confidence" class:low-confidence={matchingState.selectedRange.confidence < 0.7}>
             {(matchingState.selectedRange.confidence * 100).toFixed(0)}%
           </span>
         </div>
@@ -919,15 +862,13 @@
         onkeydown={handleKeydown}
         oninput={adjustHeight}
         style:font-size="{0.875 * (DBState.db.zoomsize / 100)}rem"
-        style:line-height="{(DBState.db.lineHeight ?? 1.25) * (DBState.db.zoomsize / 100)}rem"
-      ></textarea>
+        style:line-height="{(DBState.db.lineHeight ?? 1.25) * (DBState.db.zoomsize / 100)}rem"></textarea>
       <div class="partial-edit-buttons">
         <button
           type="button"
           class="partial-edit-save-btn"
           onclick={handleSave}
-          title={language.partialEdit.saveShortcut}
-        >
+          title={language.partialEdit.saveShortcut}>
           <CheckIcon size={14} />
           <span>{language.partialEdit.save}</span>
         </button>
@@ -935,8 +876,7 @@
           type="button"
           class="partial-edit-cancel-btn"
           onclick={handleCancel}
-          title={language.partialEdit.cancelShortcut}
-        >
+          title={language.partialEdit.cancelShortcut}>
           <XIcon size={14} />
           <span>{language.partialEdit.cancel}</span>
         </button>

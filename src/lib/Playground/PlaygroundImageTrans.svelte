@@ -274,8 +274,8 @@
       const maxWidth = x_max - x_min
       const maxHeight = y_max - y_min
       const textSizes = [
-        288, 216, 192, 144, 120, 108, 96, 84, 76, 72, 68, 64, 60, 56, 52, 48, 44, 40, 36, 32, 28,
-        24, 20, 18, 16, 14, 12, 10,
+        288, 216, 192, 144, 120, 108, 96, 84, 76, 72, 68, 64, 60, 56, 52, 48, 44, 40, 36, 32, 28, 24, 20, 18, 16, 14,
+        12, 10,
       ]
       let lineHeight = 0
       let fillText: [string, number, number][] = []
@@ -411,25 +411,19 @@
         selection.style.height = `${Math.abs(height)}px`
         selection.style.left = `${Math.min(currentX, parseFloat(selection.style.left))}px`
         selection.style.top = `${Math.min(currentY, parseFloat(selection.style.top))}px`
-        console.log(
-          selection.style.left,
-          selection.style.top,
-          selection.style.width,
-          selection.style.height,
-        )
+        console.log(selection.style.left, selection.style.top, selection.style.width, selection.style.height)
       }
     }}
     onpointerup={() => {
       if (mode === 'manual') {
         mouseDown = false
       }
-    }}
-  ></canvas>
+    }}></canvas>
   <div
     bind:this={selection}
     class="absolute top-0 left-0 w-0 h-0 pointer-events-none z-10 opacity-50 bg-blue-500"
-    class:backdrop-blur={loading && mode === 'manual'}
-  ></div>
+    class:backdrop-blur={loading && mode === 'manual'}>
+  </div>
 </div>
 
 <style>

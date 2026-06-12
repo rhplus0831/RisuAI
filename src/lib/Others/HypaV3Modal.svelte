@@ -1,11 +1,7 @@
 <script lang="ts">
   import { tick, untrack } from 'svelte'
   import { ChevronUpIcon, ChevronDownIcon } from '@lucide/svelte'
-  import {
-    type SerializableHypaV3Data,
-    type SerializableSummary,
-    summarize,
-  } from 'src/ts/process/memory/hypav3'
+  import { type SerializableHypaV3Data, type SerializableSummary, summarize } from 'src/ts/process/memory/hypav3'
   import { alertNormalWait } from 'src/ts/alert'
   import { DBState, selectedCharID, hypaV3ModalOpen } from 'src/ts/stores.svelte'
   import { language } from 'src/lang'
@@ -123,9 +119,7 @@
 
   $effect(() => {
     if ($hypaV3ModalOpen) {
-      const currentImportantCount = untrack(
-        () => hypaV3Data.summaries.filter((s) => s.isImportant).length,
-      )
+      const currentImportantCount = untrack(() => hypaV3Data.summaries.filter((s) => s.isImportant).length)
 
       if (currentImportantCount > 0) {
         categoryManagerState.selectedCategoryFilter = 'all'
@@ -358,14 +352,9 @@
   async function handleResetData() {
     if (serverBackedMemoryMode) return
     if (
-      await alertConfirmTwice(
-        language.hypaV3Modal.resetConfirmMessage,
-        language.hypaV3Modal.resetConfirmSecondMessage,
-      )
+      await alertConfirmTwice(language.hypaV3Modal.resetConfirmMessage, language.hypaV3Modal.resetConfirmSecondMessage)
     ) {
-      DBState.db.characters[$selectedCharID].chats[
-        DBState.db.characters[$selectedCharID].chatPage
-      ].hypaV3Data = {
+      DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].hypaV3Data = {
         summaries: [],
       }
     }
@@ -405,9 +394,7 @@
     if (serverBackedMemoryMode) return
     if (bulkEditState.selectedSummaries.size === 0) return
     const selectedIndices = Array.from(bulkEditState.selectedSummaries)
-    const hasNonImportant = selectedIndices.some(
-      (index) => !hypaV3Data.summaries[index].isImportant,
-    )
+    const hasNonImportant = selectedIndices.some((index) => !hypaV3Data.summaries[index].isImportant)
 
     selectedIndices.forEach((index) => {
       const summary = hypaV3Data.summaries[index]
@@ -419,10 +406,7 @@
   function handleBulkEditParseAndSelectSummaries() {
     if (!bulkEditState.bulkSelectInput.trim()) return
 
-    const newSelection = parseSelectionInput(
-      bulkEditState.bulkSelectInput,
-      hypaV3Data.summaries.length,
-    )
+    const newSelection = parseSelectionInput(bulkEditState.bulkSelectInput, hypaV3Data.summaries.length)
     const filteredSelection = new Set<number>()
 
     for (const index of newSelection) {
@@ -480,9 +464,7 @@
     } else {
       const delta = backward ? -1 : 1
 
-      nextIndex =
-        (searchState.currentResultIndex + delta + searchState.results.length) %
-        searchState.results.length
+      nextIndex = (searchState.currentResultIndex + delta + searchState.results.length) % searchState.results.length
     }
 
     searchState.currentResultIndex = nextIndex
@@ -594,12 +576,7 @@
 
     // Use the new shouldShowSummary utility function
     return (
-      shouldShowSummary(
-        summary,
-        index,
-        filterState.showImportantOnly,
-        filterState.selectedCategoryFilter,
-      ) &&
+      shouldShowSummary(summary, index, filterState.showImportantOnly, filterState.selectedCategoryFilter) &&
       (!filterSelected ||
         !hypaV3Data.metrics ||
         hypaV3Data.metrics.lastImportantSummaries.includes(index) ||
@@ -623,15 +600,13 @@
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
-      class="flex flex-col w-full max-w-3xl p-3 rounded-lg sm:p-6 bg-zinc-900 {hypaV3Data.summaries
-        .length === 0
+      class="flex flex-col w-full max-w-3xl p-3 rounded-lg sm:p-6 bg-zinc-900 {hypaV3Data.summaries.length === 0
         ? 'h-fit'
         : 'h-full'}"
       onclick={(e) => {
         e.stopPropagation()
         uiState.dropdownOpen = false
-      }}
-    >
+      }}>
       <!-- Header -->
       <ModalHeader
         bind:searchState
@@ -646,8 +621,7 @@
         readOnly={serverBackedMemoryMode}
         onResetData={handleResetData}
         onToggleBulkEditMode={handleToggleBulkEditMode}
-        onOpenCategoryManager={handleOpenCategoryManager}
-      />
+        onOpenCategoryManager={handleOpenCategoryManager} />
 
       <!-- Scrollable Container -->
       <div class="flex flex-col gap-2 overflow-y-auto sm:gap-4" tabindex="-1">
@@ -670,8 +644,7 @@
                   onsubmit={(e) => {
                     e.preventDefault()
                     onSearch({ key: 'Enter' } as KeyboardEvent)
-                  }}
-                >
+                  }}>
                   <input
                     class="w-full px-2 py-2 border rounded-sm sm:px-4 sm:py-3 border-zinc-700 focus:outline-hidden focus:ring-2 focus:ring-zinc-500 text-zinc-200 bg-zinc-900"
                     placeholder={language.hypaV3Modal.searchPlaceholder}
@@ -683,14 +656,12 @@
                         searchState.currentResultIndex = -1
                       }
                     }}
-                    onkeydown={(e) => onSearch(e)}
-                  />
+                    onkeydown={(e) => onSearch(e)} />
                 </form>
 
                 {#if searchState.results.length > 0}
                   <span
-                    class="absolute right-3 top-1/2 -translate-y-1/2 px-1.5 sm:px-3 py-1 sm:py-2 rounded-sm text-sm font-semibold text-zinc-100 bg-zinc-700/65"
-                  >
+                    class="absolute right-3 top-1/2 -translate-y-1/2 px-1.5 sm:px-3 py-1 sm:py-2 rounded-sm text-sm font-semibold text-zinc-100 bg-zinc-700/65">
                     {searchState.currentResultIndex + 1}/{searchState.results.length}
                   </span>
                 {/if}
@@ -702,8 +673,7 @@
                 tabindex="-1"
                 onclick={() => {
                   onSearch({ shiftKey: true, key: 'Enter' } as KeyboardEvent)
-                }}
-              >
+                }}>
                 <ChevronUpIcon class="w-6 h-6" />
               </button>
 
@@ -713,8 +683,7 @@
                 tabindex="-1"
                 onclick={() => {
                   onSearch({ key: 'Enter' } as KeyboardEvent)
-                }}
-              >
+                }}>
                 <ChevronDownIcon class="w-6 h-6" />
               </button>
             </div>
@@ -738,8 +707,7 @@
               readOnly={serverBackedMemoryMode}
               onToggleSummarySelection={handleToggleSummarySelection}
               onOpenTagManager={handleOpenTagManager}
-              onToggleCollapse={handleToggleCollapse}
-            />
+              onToggleCollapse={handleToggleCollapse} />
           {/if}
         {/each}
 
@@ -754,8 +722,7 @@
           onToggleTranslation={toggleBulkResummaryTranslation}
           onReroll={rerollBulkResummary}
           onApply={applyBulkResummary}
-          onCancel={cancelBulkResummary}
-        />
+          onCancel={cancelBulkResummary} />
       {/if}
 
       <!-- Bulk Edit Actions -->
@@ -771,8 +738,7 @@
           onUpdateBulkSelectInput={handleBulkEditUpdateBulkSelectInput}
           onApplyCategory={handleBulkEditApplyCategory}
           onToggleImportant={handleBulkEditToggleImportant}
-          onParseAndSelectSummaries={handleBulkEditParseAndSelectSummaries}
-        />
+          onParseAndSelectSummaries={handleBulkEditParseAndSelectSummaries} />
       {/if}
     </div>
   </div>
@@ -784,8 +750,7 @@
     bind:categoryManagerState
     bind:searchState
     {filterState}
-    onCategoryFilter={handleCategoryFilter}
-  />
+    onCategoryFilter={handleCategoryFilter} />
 
   <TagManagerModal bind:tagManagerState />
 {/if}

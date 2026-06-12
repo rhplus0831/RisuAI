@@ -1,14 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import {
-  reformatForMistral,
-  resolveMistralRequest,
-  runMistral,
-  runMistralStream,
-} from '../src/generation/mistral.js'
-import {
-  MAX_STREAM_BUFFER_CHARS,
-  STREAM_BUFFER_OVERFLOW_ERROR,
-} from '../src/generation/sse.js'
+import { reformatForMistral, resolveMistralRequest, runMistral, runMistralStream } from '../src/generation/mistral.js'
+import { MAX_STREAM_BUFFER_CHARS, STREAM_BUFFER_OVERFLOW_ERROR } from '../src/generation/sse.js'
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -16,9 +8,7 @@ afterEach(() => {
 
 describe('reformatForMistral', () => {
   it('passes a single user message through unchanged', () => {
-    expect(reformatForMistral([{ role: 'user', content: 'hi' }])).toEqual([
-      { role: 'user', content: 'hi' },
-    ])
+    expect(reformatForMistral([{ role: 'user', content: 'hi' }])).toEqual([{ role: 'user', content: 'hi' }])
   })
 
   it('demotes an assistant-first message to a system row with a role prefix', () => {
@@ -397,9 +387,7 @@ function crlf(s: string): string {
 
 describe('runMistralStream', () => {
   it('relays token deltas and emits done with stop on [DONE] sentinel', async () => {
-    vi.stubGlobal('fetch', async () =>
-      sseUpstream([deltaFrame('hello'), deltaFrame(' world'), 'data: [DONE]\n\n']),
-    )
+    vi.stubGlobal('fetch', async () => sseUpstream([deltaFrame('hello'), deltaFrame(' world'), 'data: [DONE]\n\n']))
     const resolved = resolveMistralRequest({
       model: 'm',
       messages: [{ role: 'user', content: 'hi' }],
@@ -435,9 +423,7 @@ describe('runMistralStream', () => {
   })
 
   it('propagates a non-stop finish_reason into the trailing done frame', async () => {
-    vi.stubGlobal('fetch', async () =>
-      sseUpstream([deltaFrame('cut', 'length'), 'data: [DONE]\n\n']),
-    )
+    vi.stubGlobal('fetch', async () => sseUpstream([deltaFrame('cut', 'length'), 'data: [DONE]\n\n']))
     const resolved = resolveMistralRequest({
       model: 'm',
       messages: [{ role: 'user', content: 'hi' }],
@@ -508,9 +494,7 @@ describe('runMistralStream', () => {
     })!
     const frames: unknown[] = []
     for await (const f of runMistralStream(resolved)) frames.push(f)
-    expect(frames).toEqual([
-      { kind: 'error', error: 'upstream returned no stream body', status: 200 },
-    ])
+    expect(frames).toEqual([{ kind: 'error', error: 'upstream returned no stream body', status: 200 }])
   })
 
   it('surfaces invalid upstream stream JSON as an error frame', async () => {

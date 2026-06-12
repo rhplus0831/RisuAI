@@ -49,29 +49,21 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class="fixed top-0 left-0 w-full h-full bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
-  onclick={() => (popUpEditorStore.open = false)}
->
-  <div
-    class="bg-darkbg rounded-lg p-4 w-11/12 h-11/12 flex flex-col gap-2"
-    onclick={(e) => e.stopPropagation()}
-  >
+  onclick={() => (popUpEditorStore.open = false)}>
+  <div class="bg-darkbg rounded-lg p-4 w-11/12 h-11/12 flex flex-col gap-2" onclick={(e) => e.stopPropagation()}>
     <div class="flex items-center justify-between">
       <h2 class="text-xl font-bold">Popup Editor</h2>
       <div class="flex items-center gap-2">
         {#if ['markdown', 'cbs'].includes(languageMode)}
           {#if !previewing}
-            <select
-              bind:value={languageMode}
-              class="bg-bgcolor border-none rounded px-2 py-1 text-sm"
-            >
+            <select bind:value={languageMode} class="bg-bgcolor border-none rounded px-2 py-1 text-sm">
               <option value="markdown">Markdown</option>
               <option value="cbs" disabled>CBS</option>
             </select>
           {/if}
           <button
             class="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600 transition"
-            onclick={() => (previewing = !previewing)}
-          >
+            onclick={() => (previewing = !previewing)}>
             {previewing ? language.edit : language.preview}
           </button>
         {:else}
@@ -79,8 +71,7 @@
         {/if}
         <button
           class="bg-red-500 text-white px-3 py-1 rounded hover:bg-red-600 transition"
-          onclick={() => (popUpEditorStore.open = false)}
-        >
+          onclick={() => (popUpEditorStore.open = false)}>
           X
         </button>
       </div>
@@ -89,9 +80,7 @@
       {#if previewing}
         <div class="h-full w-full flex">
           <div class="flex-1 flex flex-col gap-4 overflow-hidden">
-            <div
-              class="flex-1 overflow-y-auto overflow-x-auto max-w-full border border-darkborderc bg-bgcolor p-4"
-            >
+            <div class="flex-1 overflow-y-auto overflow-x-auto max-w-full border border-darkborderc bg-bgcolor p-4">
               <pre class="m-0">{chatParserValue}</pre>
             </div>
 
@@ -104,8 +93,7 @@
                 }}
                 onclick={() => {
                   showToggles = !showToggles
-                }}>{language.customPromptTemplateToggle}</button
-              >
+                }}>{language.customPromptTemplateToggle}</button>
 
               <span class="ml-4">{language.tokens}: {tokens}</span>
             </div>
@@ -118,11 +106,7 @@
           {/if}
         </div>
       {:else if MonacoComponent}
-        <MonacoComponent
-          bind:value={popUpEditorStore.value}
-          language={languageMode}
-          theme="vs-dark"
-        />
+        <MonacoComponent bind:value={popUpEditorStore.value} language={languageMode} theme="vs-dark" />
       {:else}
         <div class="flex items-center justify-center h-full text-gray-500">{language.loading}</div>
       {/if}

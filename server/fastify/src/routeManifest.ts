@@ -14,13 +14,7 @@ export type ProtocolRouteActiveWriterDecision =
   | 'stateless-helper'
   | 'writer-registration'
 
-export type ProtocolRouteStreamingShape =
-  | 'none'
-  | 'binary'
-  | 'sse'
-  | 'sse-optional'
-  | 'websocket'
-  | 'proxy'
+export type ProtocolRouteStreamingShape = 'none' | 'binary' | 'sse' | 'sse-optional' | 'websocket' | 'proxy'
 
 export interface ProtocolRouteManifestEntry {
   id: string
@@ -170,8 +164,7 @@ export const PROTOCOL_ROUTE_MANIFEST = [
     path: '/api/v1/projection/characterLorebooks/bulk',
     auth: {
       decision: 'required',
-      reason:
-        'Bulk lorebook hydration returns user character lorebooks for requested character ids.',
+      reason: 'Bulk lorebook hydration returns user character lorebooks for requested character ids.',
     },
     activeWriter: {
       decision: 'read-only-post',
@@ -446,8 +439,7 @@ export const PROTOCOL_ROUTE_MANIFEST = [
     match: 'pattern',
     auth: {
       decision: 'conditional',
-      reason:
-        'Public GET/HEAD/OPTIONS without override mirror legacy hub reads; all other hub requests require auth.',
+      reason: 'Public GET/HEAD/OPTIONS without override mirror legacy hub reads; all other hub requests require auth.',
     },
     activeWriter: {
       decision: 'runtime-proxy',
@@ -666,11 +658,7 @@ export function isProtocolMutatingMethod(method: string): boolean {
   return (PROTOCOL_MUTATING_METHODS as readonly string[]).includes(method.toUpperCase())
 }
 
-export function protocolRouteMatches(
-  entry: ProtocolRouteManifestEntry,
-  method: string,
-  path: string,
-): boolean {
+export function protocolRouteMatches(entry: ProtocolRouteManifestEntry, method: string, path: string): boolean {
   if (!(entry.methods as readonly string[]).includes(method.toUpperCase())) return false
 
   const match = entry.match ?? 'exact'
@@ -679,10 +667,7 @@ export function protocolRouteMatches(
   return routePatternRegExp(entry.path).test(path)
 }
 
-export function findProtocolRouteDecision(
-  method: string,
-  path: string,
-): ProtocolRouteManifestEntry | undefined {
+export function findProtocolRouteDecision(method: string, path: string): ProtocolRouteManifestEntry | undefined {
   return PROTOCOL_ROUTE_MANIFEST.find((entry) => protocolRouteMatches(entry, method, path))
 }
 

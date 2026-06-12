@@ -13,31 +13,19 @@ const providerState = vi.hoisted(() => ({
   calls: [] as { arg: unknown; mode: string; signal: AbortSignal | null }[],
 }))
 vi.mock('../request/request', () => ({
-  requestChatData: async (
-    arg: unknown,
-    mode: string,
-    signal: AbortSignal | null,
-  ): Promise<unknown> => {
+  requestChatData: async (arg: unknown, mode: string, signal: AbortSignal | null): Promise<unknown> => {
     providerState.calls.push({ arg, mode, signal })
     return providerState.next
   },
 }))
 
 vi.mock('../models/modelString', () => ({
-  getGenerationModelString: (override?: string) =>
-    override ? `model:${override}` : 'model:default',
+  getGenerationModelString: (override?: string) => (override ? `model:${override}` : 'model:default'),
 }))
 
-import {
-  setDatabase,
-  type Database,
-  type character,
-} from '../../storage/database.svelte'
+import { setDatabase, type Database, type character } from '../../storage/database.svelte'
 import type { OpenAIChat } from '../index.svelte'
-import {
-  dispatchRequest,
-  type DispatchRequestResult,
-} from '../dispatch/dispatchRequest'
+import { dispatchRequest, type DispatchRequestResult } from '../dispatch/dispatchRequest'
 
 function makeChar(overrides: Partial<character> = {}): character {
   return {
@@ -114,9 +102,7 @@ describe('dispatchRequest - preview branch', () => {
     const result = await dispatchRequest(args)
 
     expect(result.status).toBe('preview')
-    expect((result as Extract<DispatchRequestResult, { status: 'preview' }>).formated).toBe(
-      args.formated,
-    )
+    expect((result as Extract<DispatchRequestResult, { status: 'preview' }>).formated).toBe(args.formated)
     expect(providerState.calls).toEqual([])
     expect(rec.stages).toEqual([3])
     expect(stageTimings.stage3Start).toBeGreaterThan(0)
@@ -132,14 +118,10 @@ describe('dispatchRequest - previewPrompt branch', () => {
     const result = await dispatchRequest(args)
 
     expect(result.status).toBe('previewPrompt')
-    expect(
-      (result as Extract<DispatchRequestResult, { status: 'previewPrompt' }>).body,
-    ).toBe('preview-text')
+    expect((result as Extract<DispatchRequestResult, { status: 'previewPrompt' }>).body).toBe('preview-text')
     // requestChatData was called with previewBody: true.
     expect(providerState.calls).toHaveLength(1)
-    expect(
-      (providerState.calls[0].arg as { previewBody: boolean }).previewBody,
-    ).toBe(true)
+    expect((providerState.calls[0].arg as { previewBody: boolean }).previewBody).toBe(true)
   })
 
   it('falls through to failed when previewPrompt+provider fail', async () => {
@@ -150,9 +132,7 @@ describe('dispatchRequest - previewPrompt branch', () => {
     const result = await dispatchRequest(args)
 
     expect(result.status).toBe('failed')
-    expect(
-      (result as Extract<DispatchRequestResult, { status: 'failed' }>).reason,
-    ).toBe('upstream broke')
+    expect((result as Extract<DispatchRequestResult, { status: 'failed' }>).reason).toBe('upstream broke')
   })
 })
 

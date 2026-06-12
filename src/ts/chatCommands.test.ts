@@ -306,18 +306,11 @@ describe('chat command projection helpers', () => {
 
     expect(applyOptimisticCreatedChat('char-a', chat, previous)).toBe(true)
 
-    expect(DBState.db.characters[0].chats.map((candidate) => candidate.id)).toEqual([
-      'chat-c',
-      'chat-a',
-      'chat-b',
-    ])
+    expect(DBState.db.characters[0].chats.map((candidate) => candidate.id)).toEqual(['chat-c', 'chat-a', 'chat-b'])
     expect(DBState.db.characters[0].chatPage).toBe(0)
 
     restoreChatState(previous)
-    expect(DBState.db.characters[0].chats.map((candidate) => candidate.id)).toEqual([
-      'chat-a',
-      'chat-b',
-    ])
+    expect(DBState.db.characters[0].chats.map((candidate) => candidate.id)).toEqual(['chat-a', 'chat-b'])
   })
 
   it('optimistically removes a command-deleted chat under the projection guard', () => {
@@ -333,10 +326,7 @@ describe('chat command projection helpers', () => {
     expect(DBState.db.characters[0].chatPage).toBe(0)
 
     restoreChatState(previous)
-    expect(DBState.db.characters[0].chats.map((candidate) => candidate.id)).toEqual([
-      'chat-a',
-      'chat-b',
-    ])
+    expect(DBState.db.characters[0].chats.map((candidate) => candidate.id)).toEqual(['chat-a', 'chat-b'])
   })
 
   it('routes SideChatList chat and folder flows through commands under the projection guard', async () => {
@@ -1170,12 +1160,8 @@ describe('Phase 2 chat-metadata-row rollback', () => {
 
   it('restores only the one folder row by stable id', () => {
     DBState.db = seedCloneCostDb() as any
-    DBState.db.characters[0].chatFolders = [
-      { id: 'folder-0', name: 'Folder Zero', color: '#111', folded: false },
-    ]
-    DBState.db.characters[1].chatFolders = [
-      { id: 'folder-1', name: 'Folder One', color: '#222', folded: false },
-    ]
+    DBState.db.characters[0].chatFolders = [{ id: 'folder-0', name: 'Folder Zero', color: '#111', folded: false }]
+    DBState.db.characters[1].chatFolders = [{ id: 'folder-1', name: 'Folder One', color: '#222', folded: false }]
     selectedCharID.set(0)
 
     assertRollbackRestoresOnly({
@@ -1231,9 +1217,7 @@ describe('Phase 4 chat metadata allowed-key diff (M9)', () => {
     }
 
     expect(CHAT_PATCH_ALLOWED_KEYS.has('generationSettings')).toBe(false)
-    expect(sanitizeChatPatch(current as unknown as ChatSnapshot)).not.toHaveProperty(
-      'generationSettings',
-    )
+    expect(sanitizeChatPatch(current as unknown as ChatSnapshot)).not.toHaveProperty('generationSettings')
     expect(changedChatMetadata(previous, current)).toEqual({})
   })
 
@@ -1263,9 +1247,7 @@ describe('Phase 4 chat metadata allowed-key diff (M9)', () => {
       modules: ['module-a', 'module-b'],
     })
     current.message = [{ role: 'char', data: 'ignored transcript change', chatId: 'msg-new' }]
-    current.localLore = [
-      { id: 'ignored-lore-new', key: 'y', content: 'ignored changed lore' },
-    ] as any
+    current.localLore = [{ id: 'ignored-lore-new', key: 'y', content: 'ignored changed lore' }] as any
     ;(current as any).hypaV3Data = { ignored: 'changed memory payload' }
 
     const patch = changedChatMetadata(previous, current)
@@ -1273,9 +1255,7 @@ describe('Phase 4 chat metadata allowed-key diff (M9)', () => {
 
     expect(Object.keys(patch)).toEqual(Object.keys(legacyPatch))
     expect(JSON.stringify(patch)).toBe(JSON.stringify(legacyPatch))
-    expect(JSON.stringify(sanitizeChatPatch(patch))).toBe(
-      JSON.stringify(sanitizeChatPatch(legacyPatch)),
-    )
+    expect(JSON.stringify(sanitizeChatPatch(patch))).toBe(JSON.stringify(sanitizeChatPatch(legacyPatch)))
     expect(patch).toHaveProperty('bindedPersona', undefined)
     expect(sanitizeChatPatch(patch)).not.toHaveProperty('bindedPersona')
     expect(patch).not.toHaveProperty('message')
@@ -1380,9 +1360,7 @@ describe('Phase 2 chat-scoped message dispatch', () => {
       chaId: 'char-b',
       name: 'Other',
       chatPage: 0,
-      chats: [
-        { id: 'chat-c', name: 'C', message: [{ role: 'user', data: 'sib', chatId: 'm-sib' }] },
-      ],
+      chats: [{ id: 'chat-c', name: 'C', message: [{ role: 'user', data: 'sib', chatId: 'm-sib' }] }],
       chatFolders: [],
     } as any)
 
@@ -1526,10 +1504,7 @@ describe('Phase 3 setCurrentChat scoped snapshot (U4)', () => {
     DBState.db = seedCloneCostDb() as any // char-0 large (40 messages), siblings small
     selectedCharID.set(1)
     const charactersSize = JSON.stringify(DBState.db.characters).length
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => jsonResponse({ revision: 10 })) as unknown as typeof fetch,
-    )
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ revision: 10 })) as unknown as typeof fetch)
 
     const nextChat = JSON.parse(JSON.stringify(DBState.db.characters[1].chats[0]))
     nextChat.name = 'Renamed chat'

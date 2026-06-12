@@ -6,11 +6,7 @@ import type { OpenAIChat } from '../../../src/ts/process/index.svelte'
 import { openDatabase } from '../src/db.js'
 import { planHypaV3ChunkJobs } from '../src/memoryChunkPlanner.js'
 import { planStandardHypaV3Memory } from '../src/memoryPlanner.js'
-import {
-  listMemoryChunks,
-  listMemoryJobs,
-  updateMemoryChunkStatus,
-} from '../src/memoryRepository.js'
+import { listMemoryChunks, listMemoryJobs, updateMemoryChunkStatus } from '../src/memoryRepository.js'
 
 const dataDirs: string[] = []
 

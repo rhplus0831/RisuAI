@@ -52,9 +52,7 @@ export interface PlanHypaV3ChunkJobsResult {
   jobsCreated: number
 }
 
-export function planHypaV3ChunkJobs(
-  input: PlanHypaV3ChunkJobsInput,
-): PlanHypaV3ChunkJobsResult {
+export function planHypaV3ChunkJobs(input: PlanHypaV3ChunkJobsInput): PlanHypaV3ChunkJobsResult {
   validateInput(input)
 
   if (input.plan.errors.length > 0 || input.plan.plannedWindows.length === 0) {
@@ -135,10 +133,7 @@ export function buildSummarizeJobPayload(input: {
   }
 }
 
-export function buildChunkText(
-  chats: readonly OpenAIChat[],
-  window: HypaV3PlannedWindow,
-): string {
+export function buildChunkText(chats: readonly OpenAIChat[], window: HypaV3PlannedWindow): string {
   return window.messageIndexes
     .map((index) => {
       const chat = chats[index]
@@ -156,11 +151,7 @@ function validateInput(input: PlanHypaV3ChunkJobsInput): void {
   }
 }
 
-function buildPlannedChunkId(
-  chatId: string,
-  window: HypaV3PlannedWindow,
-  chunkText: string,
-): string {
+function buildPlannedChunkId(chatId: string, window: HypaV3PlannedWindow, chunkText: string): string {
   return `${CHUNK_ID_PREFIX}-${shortHash(
     JSON.stringify({
       chatId,

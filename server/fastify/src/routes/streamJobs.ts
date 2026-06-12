@@ -55,11 +55,7 @@ function sendBoundedWs(socket: WebSocket, text: string): void {
   })
 }
 
-async function checkProxyAuth(
-  authState: AuthState,
-  req: FastifyRequest,
-  reply: FastifyReply,
-): Promise<boolean> {
+async function checkProxyAuth(authState: AuthState, req: FastifyRequest, reply: FastifyReply): Promise<boolean> {
   if (!hasPassword(authState)) {
     reply.code(401).send({ error: 'Auth required' })
     return false
@@ -118,66 +114,58 @@ function wsToJobClient(socket: WebSocket): JobClient {
   }
 }
 
-export function registerStreamJobRoutes(
-  app: FastifyInstance,
-  authState: AuthState,
-  registry: JobRegistry,
-): void {
-  app.post(
-    '/api/v1/proxy/stream-jobs',
-    { config: { rateLimit: proxyStreamCreateRateLimit } },
-    async (req, reply) => {
-      if (!(await checkProxyAuth(authState, req, reply))) return
+export function registerStreamJobRoutes(app: FastifyInstance, authState: AuthState, registry: JobRegistry): void {
+  app.post('/api/v1/proxy/stream-jobs', { config: { rateLimit: proxyStreamCreateRateLimit } }, async (req, reply) => {
+    if (!(await checkProxyAuth(authState, req, reply))) return
 
-      const body = (req.body ?? {}) as CreateJobBody
-      const targetUrl = sanitizeLocalTargetUrl(body.url)
-      if (!targetUrl) {
-        reply.code(400)
-        return {
-          error: 'Invalid target URL. Only local/private network http(s) endpoints are allowed.',
-        }
+    const body = (req.body ?? {}) as CreateJobBody
+    const targetUrl = sanitizeLocalTargetUrl(body.url)
+    if (!targetUrl) {
+      reply.code(400)
+      return {
+        error: 'Invalid target URL. Only local/private network http(s) endpoints are allowed.',
       }
+    }
 
-      const method = typeof body.method === 'string' ? body.method.toUpperCase() : 'POST'
-      if (!ALLOWED_METHODS.has(method)) {
-        reply.code(400)
-        return { error: 'Invalid method' }
-      }
+    const method = typeof body.method === 'string' ? body.method.toUpperCase() : 'POST'
+    if (!ALLOWED_METHODS.has(method)) {
+      reply.code(400)
+      return { error: 'Invalid method' }
+    }
 
-      const bodyBase64 = typeof body.bodyBase64 === 'string' ? body.bodyBase64 : ''
-      if (bodyBase64.length > PROXY_STREAM_MAX_BODY_BASE64_BYTES) {
-        reply.code(413)
-        return { error: 'Request body too large' }
-      }
+    const bodyBase64 = typeof body.bodyBase64 === 'string' ? body.bodyBase64 : ''
+    if (bodyBase64.length > PROXY_STREAM_MAX_BODY_BASE64_BYTES) {
+      reply.code(413)
+      return { error: 'Request body too large' }
+    }
 
-      if (registry.size() >= PROXY_STREAM_MAX_ACTIVE_JOBS) {
-        reply.code(429)
-        return { error: 'Too many active stream jobs. Retry shortly.' }
-      }
+    if (registry.size() >= PROXY_STREAM_MAX_ACTIVE_JOBS) {
+      reply.code(429)
+      return { error: 'Too many active stream jobs. Retry shortly.' }
+    }
 
-      const headers =
-        body.headers && typeof body.headers === 'object' && !Array.isArray(body.headers)
-          ? (body.headers as Record<string, unknown>)
-          : {}
-      const bodyBuffer = bodyBase64.length > 0 ? Buffer.from(bodyBase64, 'base64') : undefined
+    const headers =
+      body.headers && typeof body.headers === 'object' && !Array.isArray(body.headers)
+        ? (body.headers as Record<string, unknown>)
+        : {}
+    const bodyBuffer = bodyBase64.length > 0 ? Buffer.from(bodyBase64, 'base64') : undefined
 
-      const job = registry.create({
-        timeoutMs: body.timeoutMs,
-        heartbeatSec: body.heartbeatSec,
-        slidingDeadline: true,
-      })
+    const job = registry.create({
+      timeoutMs: body.timeoutMs,
+      heartbeatSec: body.heartbeatSec,
+      slidingDeadline: true,
+    })
 
-      void runStreamJob(registry, job, {
-        targetUrl,
-        method,
-        headers: headers as Record<string, string>,
-        bodyBuffer,
-        clientIp: req.ip,
-      })
+    void runStreamJob(registry, job, {
+      targetUrl,
+      method,
+      headers: headers as Record<string, string>,
+      bodyBuffer,
+      clientIp: req.ip,
+    })
 
-      return { jobId: job.id, heartbeatSec: job.heartbeatSec }
-    },
-  )
+    return { jobId: job.id, heartbeatSec: job.heartbeatSec }
+  })
 
   app.delete<{ Params: JobIdParams }>('/api/v1/proxy/stream-jobs/:id', async (req, reply) => {
     if (!(await checkProxyAuth(authState, req, reply))) return

@@ -26,10 +26,7 @@ interface CloseEmitter {
   off(event: 'close', listener: () => void): unknown
 }
 
-export function attachAbort(
-  req: { raw: CloseEmitter },
-  opts: { deadlineMs?: number } = {},
-): RequestAbort {
+export function attachAbort(req: { raw: CloseEmitter }, opts: { deadlineMs?: number } = {}): RequestAbort {
   const deadlineMs = normalizeStreamTimeoutMs(opts.deadlineMs ?? NON_DURABLE_REQUEST_DEADLINE_MS)
   const controller = new AbortController()
   const onClose = (): void => controller.abort()

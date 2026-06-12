@@ -1,17 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { EntityNotFoundError, ValidationError } from '../repository.js'
-import {
-  type CharacterRecord,
-  ensureCharacterCollection,
-  readCharacterId,
-  readJsonObject,
-} from './characters.js'
-import {
-  ensureCharacterChats,
-  normalizeAllCharacterChats,
-  readChatId,
-  requireChatLocation,
-} from './chats.js'
+import { type CharacterRecord, ensureCharacterCollection, readCharacterId, readJsonObject } from './characters.js'
+import { ensureCharacterChats, normalizeAllCharacterChats, readChatId, requireChatLocation } from './chats.js'
 
 type JsonRecord = Record<string, unknown>
 
@@ -93,8 +83,7 @@ export function ensureAllChildLorebooks(database: JsonRecord): void {
       }
       const module = rawModule as ModuleRecord
       if (Array.isArray(module.lorebook)) {
-        const label =
-          typeof module.id === 'string' && module.id.trim() ? `module ${module.id}` : 'module'
+        const label = typeof module.id === 'string' && module.id.trim() ? `module ${module.id}` : 'module'
         module.lorebook = repairLorebookEntries(module.lorebook, `${label}.lorebook`)
       }
     }
@@ -138,14 +127,10 @@ export function ensureModuleCollection(database: JsonRecord): ModuleRecord[] {
 
 // Command-path constructor. Rejects request payloads that omit entry ids;
 // the public route caller is responsible for supplying stable ids.
-export function validateGlobalLorebookCreate(
-  input: unknown,
-  label = 'lorebook',
-): GlobalLorebookRecord {
+export function validateGlobalLorebookCreate(input: unknown, label = 'lorebook'): GlobalLorebookRecord {
   const lorebook = readJsonObject(input, label) as GlobalLorebookRecord
   lorebook.id = readLorebookId(lorebook.id, `${label}.id`)
-  lorebook.name =
-    typeof lorebook.name === 'string' && lorebook.name.trim() ? lorebook.name : 'New LoreBook'
+  lorebook.name = typeof lorebook.name === 'string' && lorebook.name.trim() ? lorebook.name : 'New LoreBook'
   lorebook.data = validateLorebookEntries(lorebook.data ?? [], `${label}.data`)
   validateGlobalLorebookRecord(lorebook, label)
   return lorebook
@@ -154,27 +139,19 @@ export function validateGlobalLorebookCreate(
 // Import/bootstrap-only repair-permissive constructor. Allowed to mint
 // missing entry ids on degraded persisted state but never reachable from a
 // command-path route handler.
-export function createGlobalLorebookRecord(
-  input: unknown,
-  label = 'lorebook',
-): GlobalLorebookRecord {
+export function createGlobalLorebookRecord(input: unknown, label = 'lorebook'): GlobalLorebookRecord {
   const lorebook = readJsonObject(input, label) as GlobalLorebookRecord
   lorebook.id = readLorebookId(lorebook.id, `${label}.id`)
-  lorebook.name =
-    typeof lorebook.name === 'string' && lorebook.name.trim() ? lorebook.name : 'New LoreBook'
+  lorebook.name = typeof lorebook.name === 'string' && lorebook.name.trim() ? lorebook.name : 'New LoreBook'
   lorebook.data = repairLorebookEntries(lorebook.data ?? [], `${label}.data`)
   validateGlobalLorebookRecord(lorebook, label)
   return lorebook
 }
 
-export function repairGlobalLorebookRecord(
-  input: unknown,
-  label = 'lorebook',
-): GlobalLorebookRecord {
+export function repairGlobalLorebookRecord(input: unknown, label = 'lorebook'): GlobalLorebookRecord {
   const lorebook = readJsonObject(input, label) as GlobalLorebookRecord
   lorebook.id = typeof lorebook.id === 'string' && lorebook.id.trim() ? lorebook.id : randomUUID()
-  lorebook.name =
-    typeof lorebook.name === 'string' && lorebook.name.trim() ? lorebook.name : 'New LoreBook'
+  lorebook.name = typeof lorebook.name === 'string' && lorebook.name.trim() ? lorebook.name : 'New LoreBook'
   lorebook.data = repairLorebookEntries(lorebook.data ?? [], `${label}.data`)
   validateGlobalLorebookRecord(lorebook, label)
   return lorebook
@@ -226,10 +203,7 @@ export function validateLorebookEntries(input: unknown, label = 'entries'): Lore
   })
 }
 
-export function requireGlobalLorebookIndex(
-  lorebooks: readonly GlobalLorebookRecord[],
-  lorebookId: string,
-): number {
+export function requireGlobalLorebookIndex(lorebooks: readonly GlobalLorebookRecord[], lorebookId: string): number {
   const index = lorebooks.findIndex((lorebook) => lorebook.id === lorebookId)
   if (index === -1) {
     throw new EntityNotFoundError(`Lorebook not found: ${lorebookId}`)
@@ -313,10 +287,7 @@ export function normalizeSelectedChatLorebooks(
   normalizeAllCharacterChats(database)
   const characters = ensureCharacterCollection(database)
   const location = requireChatLocation(characters, chatId)
-  location.chat.localLore = repairLorebookEntries(
-    location.chat.localLore,
-    `chat ${chatId}.localLore`,
-  )
+  location.chat.localLore = repairLorebookEntries(location.chat.localLore, `chat ${chatId}.localLore`)
   return {
     character: location.character,
     chat: location.chat as { localLore: LorebookEntryRecord[] },
@@ -382,8 +353,7 @@ function repairLorebookEntryFields(raw: JsonRecord): JsonRecord {
   repaired.comment = readStringLike(raw.comment ?? raw.name ?? raw.displayName) ?? ''
   repaired.content = readStringLike(raw.content ?? raw.entry ?? raw.text) ?? ''
   repaired.mode = readStringLike(raw.mode) ?? 'normal'
-  repaired.alwaysActive =
-    readBoolean(raw.alwaysActive ?? raw.constant ?? raw.forceActivation) ?? false
+  repaired.alwaysActive = readBoolean(raw.alwaysActive ?? raw.constant ?? raw.forceActivation) ?? false
   repaired.selective = readBoolean(raw.selective) ?? false
   if (repaired.folder !== undefined && typeof repaired.folder !== 'string') {
     delete repaired.folder
@@ -452,10 +422,7 @@ function validateLorebookEntryRecord(record: JsonRecord, label: string): void {
   validateJsonValue(label, record)
 }
 
-function normalizeLorebookPage(
-  database: JsonRecord,
-  lorebooks: readonly GlobalLorebookRecord[],
-): void {
+function normalizeLorebookPage(database: JsonRecord, lorebooks: readonly GlobalLorebookRecord[]): void {
   if (!Number.isInteger(database.loreBookPage as number)) {
     database.loreBookPage = 0
   }

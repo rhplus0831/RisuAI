@@ -46,11 +46,7 @@ async function stopHarness(h: Harness): Promise<void> {
   rmSync(h.dataDir, { recursive: true, force: true })
 }
 
-async function signAssertion(
-  privateKey: CryptoKey,
-  publicJwk: JsonWebKey,
-  ttlSec = 60,
-): Promise<string> {
+async function signAssertion(privateKey: CryptoKey, publicJwk: JsonWebKey, ttlSec = 60): Promise<string> {
   const now = Math.floor(Date.now() / 1000)
   const header = { alg: 'ES256', typ: 'JWT' }
   const payload = { iat: now, exp: now + ttlSec, pub: publicJwk }
@@ -101,24 +97,17 @@ interface CapturedRequest {
 interface EchoServer {
   url: string
   requests: CapturedRequest[]
-  setResponder(
-    fn: (
-      req: http.IncomingMessage,
-      res: http.ServerResponse,
-      body: Buffer,
-    ) => void | Promise<void>,
-  ): void
+  setResponder(fn: (req: http.IncomingMessage, res: http.ServerResponse, body: Buffer) => void | Promise<void>): void
   close(): Promise<void>
 }
 
 function startEcho(): Promise<EchoServer> {
   return new Promise((resolve) => {
     const requests: CapturedRequest[] = []
-    let responder: (
-      req: http.IncomingMessage,
-      res: http.ServerResponse,
-      body: Buffer,
-    ) => void | Promise<void> = (_req, res) => {
+    let responder: (req: http.IncomingMessage, res: http.ServerResponse, body: Buffer) => void | Promise<void> = (
+      _req,
+      res,
+    ) => {
       res.writeHead(200, { 'content-type': 'text/plain' })
       res.end('ok')
     }
@@ -169,10 +158,7 @@ afterEach(async () => {
   await stopHarness(harness)
 })
 
-async function withShortenedProxyDeadline(
-  timeoutMs: number,
-  run: () => Promise<void>,
-): Promise<void> {
+async function withShortenedProxyDeadline(timeoutMs: number, run: () => Promise<void>): Promise<void> {
   const realSetTimeout = globalThis.setTimeout
   const spy = vi.spyOn(globalThis, 'setTimeout')
   spy.mockImplementation(((
@@ -239,9 +225,7 @@ describe('Phase 3 POST /api/v1/proxy/fetch', () => {
     expect(getRequestTimeoutMs('')).toBe(PROXY_FETCH_DEFAULT_TIMEOUT_MS)
     expect(getRequestTimeoutMs('not-a-timeout')).toBe(PROXY_FETCH_DEFAULT_TIMEOUT_MS)
     expect(getRequestTimeoutMs('250')).toBe(250)
-    expect(getRequestTimeoutMs(`${PROXY_FETCH_MAX_TIMEOUT_MS + 1}`)).toBe(
-      PROXY_FETCH_MAX_TIMEOUT_MS,
-    )
+    expect(getRequestTimeoutMs(`${PROXY_FETCH_MAX_TIMEOUT_MS + 1}`)).toBe(PROXY_FETCH_MAX_TIMEOUT_MS)
   })
 
   it('L31: cleanup clears proxy fetch timeout timers before they abort', () => {

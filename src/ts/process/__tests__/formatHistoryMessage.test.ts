@@ -45,12 +45,7 @@ vi.mock('../transformers', () => ({
   runImageEmbedding: async () => [{ generated_text: 'caption-text' }],
 }))
 
-import {
-  setDatabase,
-  type Database,
-  type Message,
-  type character,
-} from '../../storage/database.svelte'
+import { setDatabase, type Database, type Message, type character } from '../../storage/database.svelte'
 import { formatHistoryMessage } from '../promptAssembly/formatHistoryMessage'
 
 function makeChar(overrides: Partial<character> = {}): character {
@@ -333,7 +328,7 @@ describe('formatHistoryMessage - sendName wrapper', () => {
     })
   })
 
-  it('wraps the content in <Char\'s Message> tags when usingPromptTemplate + sendName both hold', async () => {
+  it("wraps the content in <Char's Message> tags when usingPromptTemplate + sendName both hold", async () => {
     const cache = (_id: string) => makeChar({ name: 'NamedChar' })
     const result = await formatHistoryMessage({
       msg: makeMsg({ role: 'char', data: 'hello', saying: 'cha-1' }),

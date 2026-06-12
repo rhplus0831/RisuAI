@@ -1,11 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { get } from 'svelte/store'
 import { CharEmotion } from '../../stores.svelte'
-import {
-  loadAndTrimCharEmotion,
-  pushCharEmotionEntry,
-  type CharEmotionEntry,
-} from '../postGeneration/charEmotionStore'
+import { loadAndTrimCharEmotion, pushCharEmotionEntry, type CharEmotionEntry } from '../postGeneration/charEmotionStore'
 
 describe('loadAndTrimCharEmotion', () => {
   beforeEach(() => {

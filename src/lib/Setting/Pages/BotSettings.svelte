@@ -9,13 +9,7 @@
   import { tokenizeAccurate, tokenizerList } from 'src/ts/tokenizer'
   import ModelList from 'src/lib/UI/ModelList.svelte'
   import DropList from 'src/lib/SideBars/DropList.svelte'
-  import {
-    PlusIcon,
-    TrashIcon,
-    HardDriveUploadIcon,
-    DownloadIcon,
-    UploadIcon,
-  } from '@lucide/svelte'
+  import { PlusIcon, TrashIcon, HardDriveUploadIcon, DownloadIcon, UploadIcon } from '@lucide/svelte'
   import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
   import NumberInput from 'src/lib/UI/GUI/NumberInput.svelte'
   import SliderInput from 'src/lib/UI/GUI/SliderInput.svelte'
@@ -26,11 +20,7 @@
   import CheckInput from 'src/lib/UI/GUI/CheckInput.svelte'
   import SegmentedControl from 'src/lib/UI/GUI/SegmentedControl.svelte'
   import { getOpenRouterModels, toModelGridItem as orToGridItem } from 'src/ts/model/openrouter'
-  import {
-    getNanoGPTModels,
-    getNanoGPTSubscriptionModels,
-    toModelGridItem as ngToGridItem,
-  } from 'src/ts/model/nanogpt'
+  import { getNanoGPTModels, getNanoGPTSubscriptionModels, toModelGridItem as ngToGridItem } from 'src/ts/model/nanogpt'
   import { getOllamaModels } from 'src/ts/model/ollama'
   import ModelGrid from 'src/lib/UI/ModelGrid.svelte'
   import NanoGPTDashboard from 'src/lib/UI/NanoGPTDashboard.svelte'
@@ -51,10 +41,7 @@
   import SeparateParametersSection from './SeparateParametersSection.svelte'
   import AuxModelSelectors from './Model/AuxModelSelectors.svelte'
   import { onDestroy, untrack } from 'svelte'
-  import {
-    createServerBackedSettingDraft,
-    watchServerBackedSettings,
-  } from 'src/ts/server/settingsBridge.svelte'
+  import { createServerBackedSettingDraft, watchServerBackedSettings } from 'src/ts/server/settingsBridge.svelte'
   import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
   import {
     canUseServerCommands,
@@ -69,11 +56,7 @@
     dispatchSelectPluginProvider,
   } from 'src/ts/pluginCommands'
 
-  const stopServerSettingsWatch = watchServerBackedSettings([
-    'proxyRequestModel',
-    'hideApiKey',
-    'useLegacyGUI',
-  ])
+  const stopServerSettingsWatch = watchServerBackedSettings(['proxyRequestModel', 'hideApiKey', 'useLegacyGUI'])
   onDestroy(stopServerSettingsWatch)
   const pendingPromptFieldPatch = {
     patch: {} as SettingsPatch,
@@ -82,17 +65,11 @@
     timer: null as ReturnType<typeof setTimeout> | null,
   }
   const oobaDraft = createServerBackedSettingDraft<Record<string, any>>('ooba', { formating: {} })
-  const localStopStringsDraft = createServerBackedSettingDraft<string[] | null>(
-    'localStopStrings',
-    null,
-  )
+  const localStopStringsDraft = createServerBackedSettingDraft<string[] | null>('localStopStrings', null)
   const NAIsettingsDraft = createServerBackedSettingDraft<Record<string, any>>('NAIsettings', {})
   const ainconfigDraft = createServerBackedSettingDraft<Record<string, any>>('ainconfig', {})
   const biasDraft = createServerBackedSettingDraft<Array<[string, number]>>('bias', [])
-  const additionalParamsDraft = createServerBackedSettingDraft<Array<[string, string]>>(
-    'additionalParams',
-    [],
-  )
+  const additionalParamsDraft = createServerBackedSettingDraft<Array<[string, string]>>('additionalParams', [])
   const aiModelDraft = createServerBackedSettingDraft<string>('aiModel', '')
   const subModelDraft = createServerBackedSettingDraft<string>('subModel', '')
   const googleDraft = createServerBackedSettingDraft<Record<string, string>>('google', {
@@ -102,10 +79,7 @@
   const vertexClientEmailDraft = createServerBackedSettingDraft<string>('vertexClientEmail', '')
   const vertexPrivateKeyDraft = createServerBackedSettingDraft<string>('vertexPrivateKey', '')
   const vertexAccessTokenDraft = createServerBackedSettingDraft<string>('vertexAccessToken', '')
-  const vertexAccessTokenExpiresDraft = createServerBackedSettingDraft<number>(
-    'vertexAccessTokenExpires',
-    0,
-  )
+  const vertexAccessTokenExpiresDraft = createServerBackedSettingDraft<number>('vertexAccessTokenExpires', 0)
   const vertexRegionDraft = createServerBackedSettingDraft<string>('vertexRegion', 'global')
   const novellistAPIDraft = createServerBackedSettingDraft<string>('novellistAPI', '')
   const mancerHeaderDraft = createServerBackedSettingDraft<string>('mancerHeader', '')
@@ -117,74 +91,39 @@
   })
   const forceReplaceUrlDraft = createServerBackedSettingDraft<string>('forceReplaceUrl', '')
   const proxyKeyDraft = createServerBackedSettingDraft<string>('proxyKey', '')
-  const customProxyRequestModelDraft = createServerBackedSettingDraft<string>(
-    'customProxyRequestModel',
-    '',
-  )
-  const customAPIFormatDraft = createServerBackedSettingDraft<LLMFormat>(
-    'customAPIFormat',
-    LLMFormat.OpenAICompatible,
-  )
+  const customProxyRequestModelDraft = createServerBackedSettingDraft<string>('customProxyRequestModel', '')
+  const customAPIFormatDraft = createServerBackedSettingDraft<LLMFormat>('customAPIFormat', LLMFormat.OpenAICompatible)
   const cohereAPIKeyDraft = createServerBackedSettingDraft<string>('cohereAPIKey', '')
   const ollamaURLDraft = createServerBackedSettingDraft<string>('ollamaURL', '')
-  const ollamaInputModeDraft = createServerBackedSettingDraft<'list' | 'manual'>(
-    'ollamaInputMode',
-    'list',
-  )
+  const ollamaInputModeDraft = createServerBackedSettingDraft<'list' | 'manual'>('ollamaInputMode', 'list')
   const ollamaCloudModelDraft = createServerBackedSettingDraft<string>('ollamaCloudModel', '')
-  const ollamaModelSourceDraft = createServerBackedSettingDraft<'local' | 'cloud'>(
-    'ollamaModelSource',
-    'local',
-  )
-  const ollamaCloudModelNameDraft = createServerBackedSettingDraft<string>(
-    'ollamaCloudModelName',
-    '',
-  )
+  const ollamaModelSourceDraft = createServerBackedSettingDraft<'local' | 'cloud'>('ollamaModelSource', 'local')
+  const ollamaCloudModelNameDraft = createServerBackedSettingDraft<string>('ollamaCloudModelName', '')
   const ollamaApiKeyDraft = createServerBackedSettingDraft<string>('ollamaApiKey', '')
-  const ollamaRequestFormatDraft = createServerBackedSettingDraft<LLMFormat>(
-    'ollamaRequestFormat',
-    LLMFormat.Ollama,
-  )
+  const ollamaRequestFormatDraft = createServerBackedSettingDraft<LLMFormat>('ollamaRequestFormat', LLMFormat.Ollama)
   const ollamaModelDraft = createServerBackedSettingDraft<string>('ollamaModel', '')
   const ollamaModelNameDraft = createServerBackedSettingDraft<string>('ollamaModelName', '')
-  const ollamaThinkingModeDraft = createServerBackedSettingDraft<
-    'auto' | 'off' | 'on' | 'low' | 'medium' | 'high'
-  >('ollamaThinkingMode', 'auto')
-  const useStreamingDraft = createServerBackedSettingDraft<boolean>('useStreaming', false)
-  const streamGeminiThoughtsDraft = createServerBackedSettingDraft<boolean>(
-    'streamGeminiThoughts',
-    false,
+  const ollamaThinkingModeDraft = createServerBackedSettingDraft<'auto' | 'off' | 'on' | 'low' | 'medium' | 'high'>(
+    'ollamaThinkingMode',
+    'auto',
   )
+  const useStreamingDraft = createServerBackedSettingDraft<boolean>('useStreaming', false)
+  const streamGeminiThoughtsDraft = createServerBackedSettingDraft<boolean>('streamGeminiThoughts', false)
   const nanogptKeyDraft = createServerBackedSettingDraft<string>('nanogptKey', '')
   const nanogptUseSubscriptionEndpointDraft = createServerBackedSettingDraft<boolean>(
     'nanogptUseSubscriptionEndpoint',
     false,
   )
-  const nanogptSubscriptionStateDraft = createServerBackedSettingDraft<string>(
-    'nanogptSubscriptionState',
-    '',
-  )
+  const nanogptSubscriptionStateDraft = createServerBackedSettingDraft<string>('nanogptSubscriptionState', '')
   const nanogptRequestModelDraft = createServerBackedSettingDraft<string>('nanogptRequestModel', '')
-  const nanogptRequestModelNameDraft = createServerBackedSettingDraft<string>(
-    'nanogptRequestModelName',
-    '',
-  )
+  const nanogptRequestModelNameDraft = createServerBackedSettingDraft<string>('nanogptRequestModelName', '')
   const nanogptProviderDraft = createServerBackedSettingDraft<string>('nanogptProvider', '')
   const openrouterKeyDraft = createServerBackedSettingDraft<string>('openrouterKey', '')
-  const openrouterRequestModelDraft = createServerBackedSettingDraft<string>(
-    'openrouterRequestModel',
-    '',
-  )
+  const openrouterRequestModelDraft = createServerBackedSettingDraft<string>('openrouterRequestModel', '')
   const customTokenizerDraft = createServerBackedSettingDraft<string>('customTokenizer', '')
   const openAIKeyDraft = createServerBackedSettingDraft<string>('openAIKey', '')
-  const OaiCompAPIKeysDraft = createServerBackedSettingDraft<Record<string, string>>(
-    'OaiCompAPIKeys',
-    {},
-  )
-  const reverseProxyOobaModeDraft = createServerBackedSettingDraft<boolean>(
-    'reverseProxyOobaMode',
-    false,
-  )
+  const OaiCompAPIKeysDraft = createServerBackedSettingDraft<Record<string, string>>('OaiCompAPIKeys', {})
+  const reverseProxyOobaModeDraft = createServerBackedSettingDraft<boolean>('reverseProxyOobaMode', false)
   const NAIadventureDraft = createServerBackedSettingDraft<boolean>('NAIadventure', false)
   const NAIappendNameDraft = createServerBackedSettingDraft<boolean>('NAIappendName', false)
   const koboldURLDraft = createServerBackedSettingDraft<string>('koboldURL', '')
@@ -195,14 +134,8 @@
     model: '',
     softPrompt: '',
   })
-  const textgenWebUIStreamURLDraft = createServerBackedSettingDraft<string>(
-    'textgenWebUIStreamURL',
-    '',
-  )
-  const textgenWebUIBlockingURLDraft = createServerBackedSettingDraft<string>(
-    'textgenWebUIBlockingURL',
-    '',
-  )
+  const textgenWebUIStreamURLDraft = createServerBackedSettingDraft<string>('textgenWebUIStreamURL', '')
+  const textgenWebUIBlockingURLDraft = createServerBackedSettingDraft<string>('textgenWebUIBlockingURL', '')
   const enableCustomFlagsDraft = createServerBackedSettingDraft<boolean>('enableCustomFlags', false)
   const customFlagsDraft = createServerBackedSettingDraft<LLMFlags[]>('customFlags', [])
   const moduleIntergrationDraft = createServerBackedSettingDraft<string>('moduleIntergration', '')
@@ -230,10 +163,7 @@
         suppressPluginProviderDraftDispatch = false
       })
     }
-    if (
-      !initializedPluginProviderWatch ||
-      suppressionVersion !== lastPluginWatchSuppressionVersion
-    ) {
+    if (!initializedPluginProviderWatch || suppressionVersion !== lastPluginWatchSuppressionVersion) {
       initializedPluginProviderWatch = true
       lastPluginWatchSuppressionVersion = suppressionVersion
       previousPluginProvider = provider
@@ -336,9 +266,7 @@
 
   function toggleModelTool(tool: string): void {
     const tools = modelToolsDraft.value ?? []
-    modelToolsDraft.value = tools.includes(tool)
-      ? tools.filter((candidate) => candidate !== tool)
-      : [...tools, tool]
+    modelToolsDraft.value = tools.includes(tool) ? tools.filter((candidate) => candidate !== tool) : [...tools, tool]
   }
 
   function createPromptFieldDraft<T>(key: string, fallback: T): { value: T } {
@@ -458,10 +386,7 @@
   })
 
   $effect.pre(() => {
-    if (
-      usesTextgenStreamUrl(DBState.db.aiModel) ||
-      usesTextgenStreamUrl(DBState.db.subModel)
-    ) {
+    if (usesTextgenStreamUrl(DBState.db.aiModel) || usesTextgenStreamUrl(DBState.db.subModel)) {
       useStreamingDraft.value = textgenWebUIStreamURLDraft.value.startsWith('wss://')
     }
   })
@@ -494,12 +419,8 @@
     }
   })
 
-  let usesOllamaLocal = $derived(
-    DBState.db.aiModel === 'ollama-hosted' || DBState.db.subModel === 'ollama-hosted',
-  )
-  let usesOllamaCloud = $derived(
-    DBState.db.aiModel === 'ollama-cloud' || DBState.db.subModel === 'ollama-cloud',
-  )
+  let usesOllamaLocal = $derived(DBState.db.aiModel === 'ollama-hosted' || DBState.db.subModel === 'ollama-hosted')
+  let usesOllamaCloud = $derived(DBState.db.aiModel === 'ollama-cloud' || DBState.db.subModel === 'ollama-cloud')
 </script>
 
 <h2 class="mb-2 text-2xl font-bold mt-2">{language.chatBot}</h2>
@@ -511,8 +432,7 @@
         submenu = 0
       }}
       class="p-2 flex-1 border-r border-darkborderc"
-      class:bg-darkbutton={submenu === 0}
-    >
+      class:bg-darkbutton={submenu === 0}>
       <span>{language.model}</span>
     </button>
     <button
@@ -520,8 +440,7 @@
         submenu = 1
       }}
       class="p2 flex-1 border-r border-darkborderc"
-      class:bg-darkbutton={submenu === 1}
-    >
+      class:bg-darkbutton={submenu === 1}>
       <span>{language.parameters}</span>
     </button>
     <button
@@ -529,8 +448,7 @@
         submenu = 2
       }}
       class="p-2 flex-1 border-r border-darkborderc"
-      class:bg-darkbutton={submenu === 2}
-    >
+      class:bg-darkbutton={submenu === 2}>
       <span>{language.prompt}</span>
     </button>
     <button
@@ -538,8 +456,7 @@
         submenu = 3
       }}
       class="p-2 flex-1"
-      class:bg-darkbutton={submenu === 3}
-    >
+      class:bg-darkbutton={submenu === 3}>
       <span>{language.others}</span>
     </button>
   </div>
@@ -559,8 +476,7 @@
       size={'sm'}
       placeholder="..."
       hideText={DBState.db.hideApiKey}
-      bind:value={googleDraft.value.accessToken}
-    />
+      bind:value={googleDraft.value.accessToken} />
   {/if}
   {#if modelInfo.provider === LLMProvider.VertexAI || subModelInfo.provider === LLMProvider.VertexAI}
     <span class="text-textcolor">Project ID</span>
@@ -569,16 +485,14 @@
       size={'sm'}
       placeholder="..."
       bind:value={googleDraft.value.projectId}
-      oninput={clearVertexToken}
-    />
+      oninput={clearVertexToken} />
     <span class="text-textcolor">Vertex Client Email</span>
     <TextInput
       marginBottom={true}
       size={'sm'}
       placeholder="..."
       bind:value={vertexClientEmailDraft.value}
-      oninput={clearVertexToken}
-    />
+      oninput={clearVertexToken} />
     <span class="text-textcolor">Vertex Private Key</span>
     <TextInput
       marginBottom={true}
@@ -586,16 +500,14 @@
       placeholder="..."
       hideText={DBState.db.hideApiKey}
       bind:value={vertexPrivateKeyDraft.value}
-      oninput={clearVertexToken}
-    />
+      oninput={clearVertexToken} />
     <span class="text-textcolor">Region</span>
     <SelectInput
       value={vertexRegionDraft.value}
       onchange={(e) => {
         vertexRegionDraft.value = e.currentTarget.value
         clearVertexToken()
-      }}
-    >
+      }}>
       <OptionInput value={'global'}>global</OptionInput>
       <OptionInput value={'us-central1'}>us-central1</OptionInput>
       <OptionInput value={'us-west1'}>us-west1</OptionInput>
@@ -608,8 +520,7 @@
       marginBottom={true}
       size={'sm'}
       placeholder="..."
-      bind:value={novellistAPIDraft.value}
-    />
+      bind:value={novellistAPIDraft.value} />
   {/if}
   {#if DBState.db.aiModel.startsWith('mancer') || DBState.db.subModel.startsWith('mancer')}
     <span class="text-textcolor">Mancer {language.apiKey}</span>
@@ -618,8 +529,7 @@
       marginBottom={true}
       size={'sm'}
       placeholder="..."
-      bind:value={mancerHeaderDraft.value}
-    />
+      bind:value={mancerHeaderDraft.value} />
   {/if}
   {#if modelInfo.provider === LLMProvider.Anthropic || subModelInfo.provider === LLMProvider.Anthropic || modelInfo.provider === LLMProvider.AWS || subModelInfo.provider === LLMProvider.AWS}
     <span class="text-textcolor">Claude {language.apiKey}</span>
@@ -628,8 +538,7 @@
       marginBottom={true}
       size={'sm'}
       placeholder="..."
-      bind:value={claudeAPIKeyDraft.value}
-    />
+      bind:value={claudeAPIKeyDraft.value} />
   {/if}
   {#if modelInfo.provider === LLMProvider.Mistral || subModelInfo.provider === LLMProvider.Mistral}
     <span class="text-textcolor">Mistral {language.apiKey}</span>
@@ -638,8 +547,7 @@
       marginBottom={true}
       size={'sm'}
       placeholder="..."
-      bind:value={mistralKeyDraft.value}
-    />
+      bind:value={mistralKeyDraft.value} />
   {/if}
   {#if modelInfo.provider === LLMProvider.NovelAI || subModelInfo.provider === LLMProvider.NovelAI}
     <span class="text-textcolor">NovelAI Bearer Token</span>
@@ -647,34 +555,22 @@
   {/if}
   {#if DBState.db.aiModel === 'reverse_proxy' || DBState.db.subModel === 'reverse_proxy'}
     <span class="text-textcolor mt-2">URL <Help key="forceUrl" /></span>
-    <TextInput
-      marginBottom={false}
-      size={'sm'}
-      bind:value={forceReplaceUrlDraft.value}
-      placeholder="https//..."
-    />
+    <TextInput marginBottom={false} size={'sm'} bind:value={forceReplaceUrlDraft.value} placeholder="https//..." />
     <span class="text-textcolor mt-4"> {language.proxyAPIKey}</span>
     <TextInput
       hideText={DBState.db.hideApiKey}
       marginBottom={false}
       size={'sm'}
       placeholder="leave it blank if it hasn't password"
-      bind:value={proxyKeyDraft.value}
-    />
+      bind:value={proxyKeyDraft.value} />
     <span class="text-textcolor mt-4"> {language.proxyRequestModel}</span>
-    <TextInput
-      marginBottom={false}
-      size={'sm'}
-      bind:value={customProxyRequestModelDraft.value}
-      placeholder="Name"
-    />
+    <TextInput marginBottom={false} size={'sm'} bind:value={customProxyRequestModelDraft.value} placeholder="Name" />
     <span class="text-textcolor mt-4"> {language.format}</span>
     <SelectInput
       value={customAPIFormatDraft.value.toString()}
       onchange={(e) => {
         customAPIFormatDraft.value = parseInt(e.currentTarget.value) as LLMFormat
-      }}
-    >
+      }}>
       <OptionInput value={LLMFormat.OpenAICompatible.toString()}>OpenAI Compatible</OptionInput>
       <OptionInput value={LLMFormat.OpenAIResponseAPI.toString()}>OpenAI Response API</OptionInput>
       <OptionInput value={LLMFormat.Anthropic.toString()}>Anthropic Claude</OptionInput>
@@ -685,12 +581,7 @@
   {/if}
   {#if modelInfo.provider === LLMProvider.Cohere || subModelInfo.provider === LLMProvider.Cohere}
     <span class="text-textcolor mt-4">Cohere {language.apiKey}</span>
-    <TextInput
-      hideText={DBState.db.hideApiKey}
-      marginBottom={false}
-      size={'sm'}
-      bind:value={cohereAPIKeyDraft.value}
-    />
+    <TextInput hideText={DBState.db.hideApiKey} marginBottom={false} size={'sm'} bind:value={cohereAPIKeyDraft.value} />
   {/if}
   {#if usesOllamaLocal || usesOllamaCloud}
     {#if usesOllamaLocal}
@@ -706,8 +597,7 @@
           { value: 'list', label: (language as any).nanoGPTSelectFromList || 'Select from List' },
           { value: 'manual', label: (language as any).nanoGPTManualInput || 'Manual Input' },
         ]}
-        size="md"
-      />
+        size="md" />
 
       {#if ollamaInputModeDraft.value === 'manual'}
         <TextInput
@@ -715,8 +605,7 @@
           size={'sm'}
           bind:value={ollamaCloudModelDraft.value}
           placeholder="Model"
-          oninput={() => (ollamaCloudModelNameDraft.value = '')}
-        />
+          oninput={() => (ollamaCloudModelNameDraft.value = '')} />
       {:else}
         {#await getOllamaModels(ollamaURLDraft.value, 'cloud', ollamaApiKeyDraft.value)}
           <ModelGrid bind:value={ollamaCloudModelDraft.value} loading={true} />
@@ -730,8 +619,7 @@
             onselect={(_id, name) => {
               ollamaModelSourceDraft.value = 'cloud'
               ollamaCloudModelNameDraft.value = name
-            }}
-          />
+            }} />
         {/await}
       {/if}
 
@@ -740,21 +628,17 @@
         hideText={DBState.db.hideApiKey}
         marginBottom={false}
         size={'sm'}
-        bind:value={ollamaApiKeyDraft.value}
-      />
+        bind:value={ollamaApiKeyDraft.value} />
 
       <span class="text-textcolor mt-4">Ollama {language.format}</span>
       <SelectInput
         value={ollamaRequestFormatDraft.value.toString()}
         onchange={(e) => {
           ollamaRequestFormatDraft.value = parseInt(e.currentTarget.value) as LLMFormat
-        }}
-      >
+        }}>
         <OptionInput value={LLMFormat.Ollama.toString()}>Ollama SDK</OptionInput>
         <OptionInput value={LLMFormat.OpenAICompatible.toString()}>OpenAI Compatible</OptionInput>
-        <OptionInput value={LLMFormat.OpenAIResponseAPI.toString()}>
-          OpenAI Response API
-        </OptionInput>
+        <OptionInput value={LLMFormat.OpenAIResponseAPI.toString()}>OpenAI Response API</OptionInput>
         <OptionInput value={LLMFormat.Anthropic.toString()}>Anthropic Claude</OptionInput>
       </SelectInput>
 
@@ -773,8 +657,7 @@
         oninput={() => {
           ollamaModelSourceDraft.value = 'local'
           ollamaModelNameDraft.value = ''
-        }}
-      />
+        }} />
     {/if}
 
     {#if usesOllamaLocal || (usesOllamaCloud && ollamaRequestFormatDraft.value === LLMFormat.Ollama)}
@@ -791,12 +674,7 @@
   {/if}
   {#if DBState.db.aiModel === 'nanogpt' || DBState.db.subModel === 'nanogpt'}
     <span class="text-textcolor mt-4">NanoGPT {language.apiKey}</span>
-    <TextInput
-      hideText={DBState.db.hideApiKey}
-      marginBottom={false}
-      size={'sm'}
-      bind:value={nanogptKeyDraft.value}
-    />
+    <TextInput hideText={DBState.db.hideApiKey} marginBottom={false} size={'sm'} bind:value={nanogptKeyDraft.value} />
 
     <NanoGPTDashboard apiKey={nanogptKeyDraft.value} />
 
@@ -804,8 +682,7 @@
       <div class="flex items-center mt-3">
         <CheckInput
           bind:check={nanogptUseSubscriptionEndpointDraft.value}
-          name={language.nanoGPTUseSubscriptionEndpoint}
-        />
+          name={language.nanoGPTUseSubscriptionEndpoint} />
       </div>
     {/if}
 
@@ -816,8 +693,7 @@
         { value: 'list', label: (language as any).nanoGPTSelectFromList || 'Select from List' },
         { value: 'manual', label: (language as any).nanoGPTManualInput || 'Manual Input' },
       ]}
-      size="md"
-    />
+      size="md" />
 
     {#if nanogptInputMode === 'manual'}
       <TextInput
@@ -825,10 +701,9 @@
         size={'sm'}
         bind:value={nanogptRequestModelDraft.value}
         placeholder={(language as any).nanoGPTManualModelSelect || 'Manual Model Select'}
-        oninput={() => (nanogptRequestModelNameDraft.value = '')}
-      />
+        oninput={() => (nanogptRequestModelNameDraft.value = '')} />
     {:else}
-      {#await Promise.all( [getNanoGPTModels(), getNanoGPTSubscriptionModels(nanogptKeyDraft.value)], )}
+      {#await Promise.all([getNanoGPTModels(), getNanoGPTSubscriptionModels(nanogptKeyDraft.value)])}
         <ModelGrid bind:value={nanogptRequestModelDraft.value} loading={true} />
       {:then [regular, sub]}
         <ModelGrid
@@ -837,20 +712,17 @@
             ? (sub ?? []).map(ngToGridItem)
             : (regular ?? []).map(ngToGridItem)}
           showSubBadge={nanogptUseSubscriptionEndpointDraft.value}
-          selectedLabelOverride={nanogptRequestModelDraft.value &&
-          !nanogptRequestModelNameDraft.value
+          selectedLabelOverride={nanogptRequestModelDraft.value && !nanogptRequestModelNameDraft.value
             ? nanogptRequestModelDraft.value
             : undefined}
           onselect={(_id, name) => {
             nanogptRequestModelNameDraft.value = name
-          }}
-        />
+          }} />
         {#if !nanogptUseSubscriptionEndpointDraft.value}
           <NanoGPTProviderPicker
             apiKey={nanogptKeyDraft.value}
             modelId={nanogptRequestModelDraft.value}
-            bind:value={nanogptProviderDraft.value}
-          />
+            bind:value={nanogptProviderDraft.value} />
         {/if}
       {/await}
     {/if}
@@ -861,22 +733,16 @@
       hideText={DBState.db.hideApiKey}
       marginBottom={false}
       size={'sm'}
-      bind:value={openrouterKeyDraft.value}
-    />
+      bind:value={openrouterKeyDraft.value} />
 
     <span class="text-textcolor mt-4">OpenRouter {language.model}</span>
     {#await getOpenRouterModels()}
-      <ModelGrid
-        bind:value={openrouterRequestModelDraft.value}
-        pinnedItems={openrouterPinnedItems}
-        loading={true}
-      />
+      <ModelGrid bind:value={openrouterRequestModelDraft.value} pinnedItems={openrouterPinnedItems} loading={true} />
     {:then m}
       <ModelGrid
         bind:value={openrouterRequestModelDraft.value}
         items={(m ?? []).map(orToGridItem)}
-        pinnedItems={openrouterPinnedItems}
-      />
+        pinnedItems={openrouterPinnedItems} />
     {/await}
   {/if}
   {#if DBState.db.aiModel === 'openrouter' || DBState.db.aiModel === 'reverse_proxy'}
@@ -894,8 +760,7 @@
       marginBottom={false}
       size={'sm'}
       bind:value={openAIKeyDraft.value}
-      placeholder="sk-XXXXXXXXXXXXXXXXXXXX"
-    />
+      placeholder="sk-XXXXXXXXXXXXXXXXXXXX" />
   {/if}
 
   {#if modelInfo.keyIdentifier}
@@ -905,8 +770,7 @@
       marginBottom={false}
       size={'sm'}
       bind:value={OaiCompAPIKeysDraft.value[modelInfo.keyIdentifier]}
-      placeholder="..."
-    />
+      placeholder="..." />
   {/if}
 
   {#if subModelInfo.keyIdentifier && subModelInfo.keyIdentifier !== modelInfo.keyIdentifier}
@@ -916,8 +780,7 @@
       marginBottom={false}
       size={'sm'}
       bind:value={OaiCompAPIKeysDraft.value[subModelInfo.keyIdentifier]}
-      placeholder="..."
-    />
+      placeholder="..." />
   {/if}
 
   <div class="py-2 flex flex-col gap-2 mb-4">
@@ -930,10 +793,7 @@
     {/if}
 
     {#if DBState.db.aiModel === 'reverse_proxy' || DBState.db.subModel === 'reverse_proxy'}
-      <Check
-        bind:check={reverseProxyOobaModeDraft.value}
-        name={`${language.reverseProxyOobaMode}`}
-      />
+      <Check bind:check={reverseProxyOobaModeDraft.value} name={`${language.reverseProxyOobaMode}`} />
     {/if}
     {#if modelInfo.provider === LLMProvider.NovelAI || subModelInfo.provider === LLMProvider.NovelAI}
       <Check bind:check={NAIadventureDraft.value} name={language.textAdventureNAI} />
@@ -962,49 +822,30 @@
     <TextAreaInput
       margin="bottom"
       bind:value={echoMessageDraft.value}
-      placeholder={"The message you want to receive as the bot's response\n(e.g., Lumi tilts her head, her white hair sliding down as her pretty green and aqua eyes sparkle…)"}
-    />
+      placeholder={"The message you want to receive as the bot's response\n(e.g., Lumi tilts her head, her white hair sliding down as her pretty green and aqua eyes sparkle…)"} />
     <span class="text-textcolor mt-2">Echo Delay (Seconds)</span>
     <NumberInput marginBottom={true} bind:value={echoDelayDraft.value} min={0} />
   {/if}
 
   {#if DBState.db.aiModel.startsWith('horde') || DBState.db.subModel.startsWith('horde')}
     <span class="text-textcolor">Horde {language.apiKey}</span>
-    <TextInput
-      hideText={DBState.db.hideApiKey}
-      marginBottom={true}
-      bind:value={hordeConfigDraft.value.apiKey}
-    />
+    <TextInput hideText={DBState.db.hideApiKey} marginBottom={true} bind:value={hordeConfigDraft.value.apiKey} />
   {/if}
   {#if DBState.db.aiModel === 'textgen_webui' || DBState.db.subModel === 'textgen_webui' || DBState.db.aiModel === 'mancer' || DBState.db.subModel === 'mancer'}
     <span class="text-textcolor mt-2">Blocking {language.providerURL}</span>
-    <TextInput
-      marginBottom={true}
-      bind:value={textgenWebUIBlockingURLDraft.value}
-      placeholder="https://..."
-    />
+    <TextInput marginBottom={true} bind:value={textgenWebUIBlockingURLDraft.value} placeholder="https://..." />
     <span class="text-draculared text-xs mb-2">You must use textgen webui with --public-api</span>
     <span class="text-textcolor mt-2">Stream {language.providerURL}</span>
-    <TextInput
-      marginBottom={true}
-      bind:value={textgenWebUIStreamURLDraft.value}
-      placeholder="wss://..."
-    />
+    <TextInput marginBottom={true} bind:value={textgenWebUIStreamURLDraft.value} placeholder="wss://..." />
     <span class="text-draculared text-xs mb-2"
-      >To reach a local WebUI from the browser, use ngrok or other tunnels.</span
-    >
+      >To reach a local WebUI from the browser, use ngrok or other tunnels.</span>
     <span class="text-draculared text-xs mb-2"
       >Warning: For Ooba version over 1.7, use "Ooba" as model, and use url like
-      http://127.0.0.1:5000/v1/chat/completions</span
-    >
+      http://127.0.0.1:5000/v1/chat/completions</span>
   {/if}
   {#if DBState.db.aiModel === 'ooba' || DBState.db.subModel === 'ooba'}
     <span class="text-textcolor mt-2">Ooba {language.providerURL}</span>
-    <TextInput
-      marginBottom={true}
-      bind:value={textgenWebUIBlockingURLDraft.value}
-      placeholder="https://..."
-    />
+    <TextInput marginBottom={true} bind:value={textgenWebUIBlockingURLDraft.value} placeholder="https://..." />
   {/if}
   {#if DBState.db.aiModel.startsWith('horde') || DBState.db.aiModel === 'kobold'}
     <ChatFormatSettings />
@@ -1019,60 +860,19 @@
   <SettingRenderer items={allBasicParameterItems} {modelInfo} {subModelInfo} />
   {#if DBState.db.aiModel === 'textgen_webui' || DBState.db.aiModel === 'mancer' || DBState.db.aiModel.startsWith('local_') || DBState.db.aiModel.startsWith('hf:::')}
     <span class="text-textcolor">Repetition Penalty</span>
-    <SliderInput
-      min={1}
-      max={1.5}
-      step={0.01}
-      fixed={2}
-      marginBottom
-      bind:value={oobaDraft.value.repetition_penalty}
-    />
+    <SliderInput min={1} max={1.5} step={0.01} fixed={2} marginBottom bind:value={oobaDraft.value.repetition_penalty} />
     <span class="text-textcolor">Length Penalty</span>
-    <SliderInput
-      min={-5}
-      max={5}
-      step={0.05}
-      marginBottom
-      fixed={2}
-      bind:value={oobaDraft.value.length_penalty}
-    />
+    <SliderInput min={-5} max={5} step={0.05} marginBottom fixed={2} bind:value={oobaDraft.value.length_penalty} />
     <span class="text-textcolor">Top K</span>
     <SliderInput min={0} max={100} step={1} marginBottom bind:value={oobaDraft.value.top_k} />
     <span class="text-textcolor">Top P</span>
-    <SliderInput
-      min={0}
-      max={1}
-      step={0.01}
-      marginBottom
-      fixed={2}
-      bind:value={oobaDraft.value.top_p}
-    />
+    <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={oobaDraft.value.top_p} />
     <span class="text-textcolor">Typical P</span>
-    <SliderInput
-      min={0}
-      max={1}
-      step={0.01}
-      marginBottom
-      fixed={2}
-      bind:value={oobaDraft.value.typical_p}
-    />
+    <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={oobaDraft.value.typical_p} />
     <span class="text-textcolor">Top A</span>
-    <SliderInput
-      min={0}
-      max={1}
-      step={0.01}
-      marginBottom
-      fixed={2}
-      bind:value={oobaDraft.value.top_a}
-    />
+    <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={oobaDraft.value.top_a} />
     <span class="text-textcolor">No Repeat n-gram Size</span>
-    <SliderInput
-      min={0}
-      max={20}
-      step={1}
-      marginBottom
-      bind:value={oobaDraft.value.no_repeat_ngram_size}
-    />
+    <SliderInput min={0} max={20} step={1} marginBottom bind:value={oobaDraft.value.no_repeat_ngram_size} />
     <div class="flex items-center mt-4">
       <Check bind:check={oobaDraft.value.do_sample} name={'Do Sample'} />
     </div>
@@ -1095,8 +895,7 @@
           } else {
             localStopStringsDraft.value = null
           }
-        }}
-      />
+        }} />
     </div>
     {#if localStopStringsDraft.value}
       <div class="flex flex-col p-2 rounded-sm border border-selected mt-2 gap-1">
@@ -1107,8 +906,7 @@
               const localStopStrings = localStopStringsDraft.value ?? []
               localStopStrings.push('')
               localStopStringsDraft.value = localStopStrings
-            }}><PlusIcon /></button
-          >
+            }}><PlusIcon /></button>
         </div>
         {#each localStopStringsDraft.value as stopString, i}
           <div class="flex w-full">
@@ -1122,8 +920,7 @@
                   const localStopStrings = localStopStringsDraft.value ?? []
                   localStopStrings.splice(i, 1)
                   localStopStringsDraft.value = localStopStrings
-                }}><TrashIcon /></button
-              >
+                }}><TrashIcon /></button>
             </div>
           </div>
         {/each}
@@ -1141,25 +938,11 @@
       <TextInput bind:value={NAIsettingsDraft.value.seperator} placeholder={'\\n'} />
     </div>
     <span class="text-textcolor">Top P</span>
-    <SliderInput
-      min={0}
-      max={1}
-      step={0.01}
-      marginBottom
-      fixed={2}
-      bind:value={NAIsettingsDraft.value.topP}
-    />
+    <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={NAIsettingsDraft.value.topP} />
     <span class="text-textcolor">Top K</span>
     <SliderInput min={0} max={100} step={1} marginBottom bind:value={NAIsettingsDraft.value.topK} />
     <span class="text-textcolor">Top A</span>
-    <SliderInput
-      min={0}
-      max={1}
-      step={0.01}
-      marginBottom
-      fixed={2}
-      bind:value={NAIsettingsDraft.value.topA}
-    />
+    <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={NAIsettingsDraft.value.topA} />
     <span class="text-textcolor">Tailfree Sampling</span>
     <SliderInput
       min={0}
@@ -1167,17 +950,9 @@
       step={0.001}
       marginBottom
       fixed={3}
-      bind:value={NAIsettingsDraft.value.tailFreeSampling}
-    />
+      bind:value={NAIsettingsDraft.value.tailFreeSampling} />
     <span class="text-textcolor">Typical P</span>
-    <SliderInput
-      min={0}
-      max={1}
-      step={0.01}
-      marginBottom
-      fixed={2}
-      bind:value={NAIsettingsDraft.value.typicalp}
-    />
+    <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={NAIsettingsDraft.value.typicalp} />
     <span class="text-textcolor">Repetition Penalty</span>
     <SliderInput
       min={0}
@@ -1185,8 +960,7 @@
       step={0.01}
       marginBottom
       fixed={2}
-      bind:value={NAIsettingsDraft.value.repetitionPenalty}
-    />
+      bind:value={NAIsettingsDraft.value.repetitionPenalty} />
     <span class="text-textcolor">Repetition Penalty Range</span>
     <SliderInput
       min={0}
@@ -1194,8 +968,7 @@
       step={1}
       marginBottom
       fixed={0}
-      bind:value={NAIsettingsDraft.value.repetitionPenaltyRange}
-    />
+      bind:value={NAIsettingsDraft.value.repetitionPenaltyRange} />
     <span class="text-textcolor">Repetition Penalty Slope</span>
     <SliderInput
       min={0}
@@ -1203,8 +976,7 @@
       step={0.01}
       marginBottom
       fixed={2}
-      bind:value={NAIsettingsDraft.value.repetitionPenaltySlope}
-    />
+      bind:value={NAIsettingsDraft.value.repetitionPenaltySlope} />
     <span class="text-textcolor">Frequency Penalty</span>
     <SliderInput
       min={-2}
@@ -1212,8 +984,7 @@
       step={0.01}
       marginBottom
       fixed={2}
-      bind:value={NAIsettingsDraft.value.frequencyPenalty}
-    />
+      bind:value={NAIsettingsDraft.value.frequencyPenalty} />
     <span class="text-textcolor">Presence Penalty</span>
     <SliderInput
       min={-2}
@@ -1221,99 +992,28 @@
       step={0.01}
       marginBottom
       fixed={2}
-      bind:value={NAIsettingsDraft.value.presencePenalty}
-    />
+      bind:value={NAIsettingsDraft.value.presencePenalty} />
     <span class="text-textcolor">Mirostat LR</span>
-    <SliderInput
-      min={0}
-      max={1}
-      step={0.01}
-      marginBottom
-      fixed={2}
-      bind:value={NAIsettingsDraft.value.mirostat_lr}
-    />
+    <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={NAIsettingsDraft.value.mirostat_lr} />
     <span class="text-textcolor">Mirostat Tau</span>
-    <SliderInput
-      min={0}
-      max={6}
-      step={0.01}
-      marginBottom
-      fixed={2}
-      bind:value={NAIsettingsDraft.value.mirostat_tau}
-    />
+    <SliderInput min={0} max={6} step={0.01} marginBottom fixed={2} bind:value={NAIsettingsDraft.value.mirostat_tau} />
     <span class="text-textcolor">Cfg Scale</span>
-    <SliderInput
-      min={1}
-      max={3}
-      step={0.01}
-      marginBottom
-      fixed={2}
-      bind:value={NAIsettingsDraft.value.cfg_scale}
-    />
+    <SliderInput min={1} max={3} step={0.01} marginBottom fixed={2} bind:value={NAIsettingsDraft.value.cfg_scale} />
   {:else if modelInfo.format === LLMFormat.NovelList}
     <span class="text-textcolor">Top P</span>
-    <SliderInput
-      min={0}
-      max={2}
-      step={0.01}
-      marginBottom
-      fixed={2}
-      bind:value={ainconfigDraft.value.top_p}
-    />
+    <SliderInput min={0} max={2} step={0.01} marginBottom fixed={2} bind:value={ainconfigDraft.value.top_p} />
     <span class="text-textcolor">Reputation Penalty</span>
-    <SliderInput
-      min={0}
-      max={2}
-      step={0.01}
-      marginBottom
-      fixed={2}
-      bind:value={ainconfigDraft.value.rep_pen}
-    />
+    <SliderInput min={0} max={2} step={0.01} marginBottom fixed={2} bind:value={ainconfigDraft.value.rep_pen} />
     <span class="text-textcolor">Reputation Penalty Range</span>
-    <SliderInput
-      min={0}
-      max={2048}
-      step={1}
-      marginBottom
-      fixed={2}
-      bind:value={ainconfigDraft.value.rep_pen_range}
-    />
+    <SliderInput min={0} max={2048} step={1} marginBottom fixed={2} bind:value={ainconfigDraft.value.rep_pen_range} />
     <span class="text-textcolor">Reputation Penalty Slope</span>
-    <SliderInput
-      min={0}
-      max={10}
-      step={0.1}
-      marginBottom
-      fixed={2}
-      bind:value={ainconfigDraft.value.rep_pen_slope}
-    />
+    <SliderInput min={0} max={10} step={0.1} marginBottom fixed={2} bind:value={ainconfigDraft.value.rep_pen_slope} />
     <span class="text-textcolor">Top K</span>
-    <SliderInput
-      min={1}
-      max={500}
-      step={1}
-      marginBottom
-      fixed={2}
-      bind:value={ainconfigDraft.value.top_k}
-    />
+    <SliderInput min={1} max={500} step={1} marginBottom fixed={2} bind:value={ainconfigDraft.value.top_k} />
     <span class="text-textcolor">Top A</span>
-    <SliderInput
-      min={0}
-      max={1}
-      step={0.01}
-      marginBottom
-      fixed={2}
-      bind:value={ainconfigDraft.value.top_a}
-    />
+    <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={ainconfigDraft.value.top_a} />
     <span class="text-textcolor">Typical P</span>
-    <SliderInput
-      min={0}
-      max={1}
-      step={0.01}
-      marginBottom
-      fixed={2}
-      bind:value={ainconfigDraft.value.typical_p}
-    />
+    <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={ainconfigDraft.value.typical_p} />
   {:else}
     <!-- Standard parameters come from SettingRenderer. -->
   {/if}
@@ -1341,8 +1041,7 @@
               class="font-medium cursor-pointer hover:text-green-500 w-full flex justify-center items-center"
               onclick={() => {
                 biasDraft.value = [...biasDraft.value, ['', 0]]
-              }}><PlusIcon /></button
-            >
+              }}><PlusIcon /></button>
           </th>
         </tr>
         {#if biasDraft.value.length === 0}
@@ -1356,21 +1055,14 @@
               <TextInput bind:value={biasDraft.value[i][0]} size="lg" fullwidth />
             </td>
             <td class="font-medium truncate">
-              <NumberInput
-                bind:value={biasDraft.value[i][1]}
-                max={100}
-                min={-101}
-                size="lg"
-                fullwidth
-              />
+              <NumberInput bind:value={biasDraft.value[i][1]} max={100} min={-101} size="lg" fullwidth />
             </td>
             <td>
               <button
                 class="font-medium flex justify-center items-center h-full cursor-pointer hover:text-green-500 w-full"
                 onclick={() => {
                   biasDraft.value = biasDraft.value.filter((_, index) => index !== i)
-                }}><TrashIcon /></button
-              >
+                }}><TrashIcon /></button>
             </td>
           </tr>
         {/each}
@@ -1382,8 +1074,7 @@
         onclick={() => {
           const data = JSON.stringify(biasDraft.value, null, 2)
           downloadFile('bias.json', data)
-        }}><DownloadIcon /></button
-      >
+        }}><DownloadIcon /></button>
       <button
         class="font-medium cursor-pointer hover:text-textcolor"
         onclick={async () => {
@@ -1392,8 +1083,7 @@
           if (Array.isArray(JSON.parse(utf8))) {
             biasDraft.value = JSON.parse(utf8)
           }
-        }}><HardDriveUploadIcon /></button
-      >
+        }}><HardDriveUploadIcon /></button>
     </div>
   </Accordion>
 
@@ -1409,8 +1099,7 @@
                 class="font-medium cursor-pointer hover:text-green-500 w-full flex justify-center items-center"
                 onclick={() => {
                   additionalParamsDraft.value = [...additionalParamsDraft.value, ['', '']]
-                }}><PlusIcon /></button
-              >
+                }}><PlusIcon /></button>
             </th>
           </tr>
           {#if additionalParamsDraft.value.length === 0}
@@ -1430,11 +1119,8 @@
                 <button
                   class="font-medium flex justify-center items-center h-full cursor-pointer hover:text-green-500 w-full"
                   onclick={() => {
-                    additionalParamsDraft.value = additionalParamsDraft.value.filter(
-                      (_, index) => index !== i,
-                    )
-                  }}><TrashIcon /></button
-                >
+                    additionalParamsDraft.value = additionalParamsDraft.value.filter((_, index) => index !== i)
+                  }}><TrashIcon /></button>
               </td>
             </tr>
           {/each}
@@ -1465,18 +1151,14 @@
                 }),
               rollback: () => {
                 withTrustedServerProjectionWrite(() => {
-                  if (
-                    Array.isArray(DBState.db.promptTemplate) &&
-                    DBState.db.promptTemplate.length === 0
-                  ) {
+                  if (Array.isArray(DBState.db.promptTemplate) && DBState.db.promptTemplate.length === 0) {
                     DBState.db.promptTemplate = undefined
                   }
                 })
               },
             })
           }
-        }}
-      />
+        }} />
     {/if}
   </Accordion>
 
@@ -1486,8 +1168,7 @@
       onclick={(e) => {
         toggleCustomFlag(flag)
       }}
-      styled={customFlagEnabled(flag) ? 'primary' : 'outlined'}
-    >
+      styled={customFlagEnabled(flag) ? 'primary' : 'outlined'}>
       {name}
     </Button>
   {/snippet}
@@ -1523,12 +1204,7 @@
   </Accordion>
 
   <Accordion styled name={language.moduleIntergration} help="moduleIntergration">
-    <TextAreaInput
-      bind:value={moduleIntergrationDraft.value}
-      fullwidth
-      height={'32'}
-      autocomplete="off"
-    />
+    <TextAreaInput bind:value={moduleIntergrationDraft.value} fullwidth height={'32'} autocomplete="off" />
   </Accordion>
 
   <Accordion styled name={language.tools}>
@@ -1537,8 +1213,7 @@
       check={(modelToolsDraft.value ?? []).includes('search')}
       onChange={() => {
         toggleModelTool('search')
-      }}
-    />
+      }} />
   </Accordion>
 
   <Accordion styled name={language.regexScript}>
@@ -1556,10 +1231,8 @@
             src={DBState.db.botPresets[DBState.db.botPresetsId]?.image}
             alt="icon"
             class="w-6 h-6 rounded-md"
-            decoding="async"
-          />
-          <span class="text-textcolor2">{DBState.db.botPresets[DBState.db.botPresetsId]?.name}</span
-          >
+            decoding="async" />
+          <span class="text-textcolor2">{DBState.db.botPresets[DBState.db.botPresetsId]?.name}</span>
         {:else}
           <span class="text-textcolor2">{language.noImages}</span>
         {/if}
@@ -1581,8 +1254,7 @@
         ctx.drawImage(img, 0, 0, 48, 48)
         const data = canvas.toDataURL('image/jpeg', 0.7)
         updatePreset(DBState.db.botPresetsId, { image: data }) //Since its small (max 2304 pixels), its okay to store it directly
-      }}
-    >
+      }}>
       <UploadIcon />
     </button>
   </Accordion>
@@ -1591,28 +1263,22 @@
       onclick={() => {
         $openPresetList = true
       }}
-      className="mt-4">{language.presets}</Button
-    >
+      className="mt-4">{language.presets}</Button>
   {/if}
 {/if}
 
 {#if submenu === 2 || submenu === -1}
   {#if !DBState.db.promptTemplate}
     <span class="text-textcolor">{language.mainPrompt} <Help key="mainprompt" /></span>
-    <TextAreaInput fullwidth autocomplete="off" height={'32'} bind:value={mainPromptDraft.value}
-    ></TextAreaInput>
+    <TextAreaInput fullwidth autocomplete="off" height={'32'} bind:value={mainPromptDraft.value}></TextAreaInput>
     <span class="text-textcolor2 mb-6 text-sm mt-2">{tokens.mainPrompt} {language.tokens}</span>
     <span class="text-textcolor">{language.jailbreakPrompt} <Help key="jailbreak" /></span>
-    <TextAreaInput fullwidth autocomplete="off" height={'32'} bind:value={jailbreakDraft.value}
-    ></TextAreaInput>
+    <TextAreaInput fullwidth autocomplete="off" height={'32'} bind:value={jailbreakDraft.value}></TextAreaInput>
     <span class="text-textcolor2 mb-6 text-sm mt-2">{tokens.jailbreak} {language.tokens}</span>
     <span class="text-textcolor">{language.globalNote} <Help key="globalNote" /></span>
-    <TextAreaInput fullwidth autocomplete="off" height={'32'} bind:value={globalNoteDraft.value}
-    ></TextAreaInput>
+    <TextAreaInput fullwidth autocomplete="off" height={'32'} bind:value={globalNoteDraft.value}></TextAreaInput>
     <span class="text-textcolor2 mb-6 text-sm mt-2">{tokens.globalNote} {language.tokens}</span>
-    <span class="text-textcolor mb-2 mt-4"
-      >{language.formatingOrder} <Help key="formatOrder" /></span
-    >
+    <span class="text-textcolor mb-2 mt-4">{language.formatingOrder} <Help key="formatOrder" /></span>
     <DropList bind:list={formatingOrderDraft.value} />
     <div class="flex items-center mt-4">
       <Check bind:check={promptPreprocessDraft.value} name={language.promptPreprocess} />
@@ -1632,6 +1298,5 @@
     onclick={() => {
       $openPresetList = true
     }}
-    className="mt-4">{language.presets}</Button
-  >
+    className="mt-4">{language.presets}</Button>
 {/if}

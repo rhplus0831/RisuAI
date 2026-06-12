@@ -147,10 +147,7 @@ interface MCPToolCallResourceContent {
 /**
  * Content types that can be returned from an MCP tool call
  */
-type MCPToolCallContent =
-  | MCPToolCallTextContent
-  | MCPToolCallImageAudioContent
-  | MCPToolCallResourceContent
+type MCPToolCallContent = MCPToolCallTextContent | MCPToolCallImageAudioContent | MCPToolCallResourceContent
 
 // ============================================================================
 // TTS Hook Types
@@ -799,11 +796,7 @@ interface SafeElement {
    * @param id - Listener ID returned by addEventListener
    * @param options - Event listener options
    */
-  removeEventListener(
-    type: string,
-    id: string,
-    options?: boolean | EventListenerOptions,
-  ): Promise<void>
+  removeEventListener(type: string, id: string, options?: boolean | EventListenerOptions): Promise<void>
 
   /**
    * Scrolls the element into view
@@ -1148,10 +1141,7 @@ interface ProviderResponse {
 /**
  * Provider function type
  */
-type ProviderFunction = (
-  args: ProviderArguments,
-  abortSignal?: AbortSignal,
-) => Promise<ProviderResponse>
+type ProviderFunction = (args: ProviderArguments, abortSignal?: AbortSignal) => Promise<ProviderResponse>
 
 /**
  * Provider options
@@ -1805,9 +1795,7 @@ interface RisuaiPluginAPI {
    * }
    * ```
    */
-  registerBodyIntercepter(
-    callback: (body: any, type: string) => any,
-  ): Promise<{ id: string } | null>
+  registerBodyIntercepter(callback: (body: any, type: string) => any): Promise<{ id: string } | null>
 
   /**
    * Unregisters a previously registered body interceptor
@@ -1942,12 +1930,7 @@ interface RisuaiPluginAPI {
    *   Loop avoidance becomes the opting-in plugin's responsibility.
    * @returns The model's response, which may be a string or a stream depending on the mode
    */
-  runLLMModel(options: {
-    messages: any[]
-    staticModel?: string
-    mode: string
-    allowPlugins?: boolean
-  }): Promise<any>
+  runLLMModel(options: { messages: any[]; staticModel?: string; mode: string; allowPlugins?: boolean }): Promise<any>
 
   /**
    * Sends a chat message as if it were sent by the user, triggering the normal chat processing flow.

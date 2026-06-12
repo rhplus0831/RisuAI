@@ -10,11 +10,7 @@ import { v4 } from 'uuid'
 import type { MultiModal } from '../index.svelte'
 import { extractJSON } from '../templates/jsonSchema'
 import { callTool, decodeToolCall, encodeToolCall } from '../mcp/mcp'
-import type {
-  RequestDataArgumentExtended,
-  requestDataResponse,
-  StreamResponseChunk,
-} from './request'
+import type { RequestDataArgumentExtended, requestDataResponse, StreamResponseChunk } from './request'
 import { applyAdditionalParameters, applyParameters, getAdditionalParameters } from './shared'
 
 interface Claude3TextBlock {
@@ -60,11 +56,7 @@ interface Claude3ToolResponseBlock {
   }
 }
 
-type Claude3ContentBlock =
-  | Claude3TextBlock
-  | Claude3ImageBlock
-  | Claude3ToolUseBlock
-  | Claude3ToolResponseBlock
+type Claude3ContentBlock = Claude3TextBlock | Claude3ImageBlock | Claude3ToolUseBlock | Claude3ToolResponseBlock
 
 interface Claude3Chat {
   role: 'user' | 'assistant'
@@ -76,9 +68,7 @@ interface Claude3ExtendedChat {
   content: Claude3ContentBlock[] | string
 }
 
-export async function requestClaude(
-  arg: RequestDataArgumentExtended,
-): Promise<requestDataResponse> {
+export async function requestClaude(arg: RequestDataArgumentExtended): Promise<requestDataResponse> {
   const formated = arg.formated
   const db = getDatabase()
   const aiModel = arg.aiModel
@@ -390,10 +380,7 @@ export async function requestClaude(
   // Handle thinking mode: off, adaptive, or budget
   if (db.thinkingType === 'off') {
     delete body.thinking
-  } else if (
-    db.thinkingType === 'adaptive' &&
-    arg.modelInfo.flags.includes(LLMFlags.claudeAdaptiveThinking)
-  ) {
+  } else if (db.thinkingType === 'adaptive' && arg.modelInfo.flags.includes(LLMFlags.claudeAdaptiveThinking)) {
     // Adaptive thinking mode
     delete body.thinking
     body.thinking = { type: 'adaptive', display: 'summarized' }
@@ -418,10 +405,7 @@ export async function requestClaude(
   const bedrock = arg.modelInfo.format === LLMFormat.AWSBedrockClaude
   const additionalParams = getAdditionalParameters(aiModel)
   const hasCustomAnthropicBeta = additionalParams.some(([key]) => {
-    return (
-      key.startsWith('header::') &&
-      key.slice('header::'.length).toLocaleLowerCase() === 'anthropic-beta'
-    )
+    return key.startsWith('header::') && key.slice('header::'.length).toLocaleLowerCase() === 'anthropic-beta'
   })
 
   if (bedrock && aiModel !== 'reverse_proxy') {
@@ -444,9 +428,7 @@ export async function requestClaude(
     let useGlobal = false
 
     const datePart = Number(arg.modelInfo.internalID.match(/(\d{8})/)?.[0])
-    const versionMatch = arg.modelInfo.internalID.match(
-      /claude-(?:opus-|sonnet-|haiku-)?(\d+)-(\d+)/,
-    )
+    const versionMatch = arg.modelInfo.internalID.match(/claude-(?:opus-|sonnet-|haiku-)?(\d+)-(\d+)/)
 
     if (datePart && !isNaN(datePart)) {
       useGlobal = datePart >= 20250929
@@ -456,9 +438,7 @@ export async function requestClaude(
       useGlobal = majorVersion > 4 || (majorVersion === 4 && minorVersion >= 5)
     }
 
-    const awsModel = useGlobal
-      ? 'global.' + arg.modelInfo.internalID
-      : 'us.' + arg.modelInfo.internalID
+    const awsModel = useGlobal ? 'global.' + arg.modelInfo.internalID : 'us.' + arg.modelInfo.internalID
 
     const url = `https://${host}/model/${awsModel}/invoke${stream ? '-with-response-stream' : ''}`
 
@@ -878,10 +858,7 @@ async function requestClaudeHTTP(
                 text += parsedData.delta?.text ?? ''
               }
 
-              if (
-                parsedData?.delta?.type === 'thinking' ||
-                parsedData.delta?.type === 'thinking_delta'
-              ) {
+              if (parsedData?.delta?.type === 'thinking' || parsedData.delta?.type === 'thinking_delta') {
                 if (!thinking) {
                   text += '<Thoughts>\n'
                   thinking = true
@@ -900,11 +877,7 @@ async function requestClaudeHTTP(
 
             if (parsedData?.type === 'error') {
               const errormsg: string = parsedData?.error?.message
-              if (
-                errormsg &&
-                errormsg.toLocaleLowerCase().includes('overload') &&
-                db.antiServerOverloads
-              ) {
+              if (errormsg && errormsg.toLocaleLowerCase().includes('overload') && db.antiServerOverloads) {
                 // console.log('Overload detected, retrying...')
                 controller.enqueue({
                   '0': 'Overload detected, retrying...',

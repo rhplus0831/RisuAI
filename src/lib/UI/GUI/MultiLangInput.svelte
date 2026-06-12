@@ -1,10 +1,5 @@
 <script lang="ts">
-  import {
-    encodeMultilangString,
-    languageCodes,
-    parseMultilangString,
-    toLangName,
-  } from 'src/ts/util'
+  import { encodeMultilangString, languageCodes, parseMultilangString, toLangName } from 'src/ts/util'
   import TextAreaInput from './TextAreaInput.svelte'
   let addingLang = $state(false)
   let selectedLang = $state('en')
@@ -51,8 +46,7 @@
         onclick={() => {
           selectedLang = lang
           updateValue()
-        }}>{toLangName(lang)}</button
-      >
+        }}>{toLangName(lang)}</button>
     {/if}
   {/each}
   <button
@@ -60,8 +54,7 @@
     class:ring-1={addingLang}
     onclick={() => {
       addingLang = !addingLang
-    }}>+</button
-  >
+    }}>+</button>
 </div>
 {#if addingLang}
   <div class="m-1 p-1 g-2 flex max-w-fit rounded-md border-t-bgcolor flex-wrap gap-1">
@@ -73,8 +66,7 @@
             valueObject[lang] = ''
             selectedLang = lang
             addingLang = false
-          }}>{toLangName(lang)}</button
-        >
+          }}>{toLangName(lang)}</button>
       {/if}
     {/each}
   </div>
@@ -86,5 +78,4 @@
     updateValue()
     onInput()
   }}
-  {className}
-/>
+  {className} />

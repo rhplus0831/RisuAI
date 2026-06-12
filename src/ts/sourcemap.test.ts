@@ -64,10 +64,7 @@ describe('translateStackTrace', () => {
     at loadTranslatedTrace (src/lib/Others/AlertComp.svelte:214:15)`,
       didTranslate: true,
     })
-    expect(fetchMock).toHaveBeenCalledWith(
-      'http://localhost:4173/assets/index-abc123.js.map',
-      expect.any(Object),
-    )
+    expect(fetchMock).toHaveBeenCalledWith('http://localhost:4173/assets/index-abc123.js.map', expect.any(Object))
     expect(destroy).toHaveBeenCalledTimes(1)
   })
 

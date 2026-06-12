@@ -65,30 +65,21 @@ interface HordeResolveInput {
 export function resolveHordeRequest(input: HordeResolveInput): HordeRequest | null {
   if (typeof input.prompt !== 'string' || input.prompt.length === 0) return null
   if (typeof input.model !== 'string' || input.model.length === 0) return null
-  const apiKey =
-    typeof input.apiKey === 'string' && input.apiKey.length > 0 ? input.apiKey : DEFAULT_ANON_KEY
+  const apiKey = typeof input.apiKey === 'string' && input.apiKey.length > 0 ? input.apiKey : DEFAULT_ANON_KEY
   const maxTokens =
     typeof input.maxTokens === 'number' && Number.isFinite(input.maxTokens) && input.maxTokens > 0
       ? input.maxTokens
       : undefined
   const maxContextLength =
-    typeof input.maxContextLength === 'number' &&
-    Number.isFinite(input.maxContextLength) &&
-    input.maxContextLength > 0
+    typeof input.maxContextLength === 'number' && Number.isFinite(input.maxContextLength) && input.maxContextLength > 0
       ? input.maxContextLength
       : undefined
   const temperature =
-    typeof input.temperature === 'number' && Number.isFinite(input.temperature)
-      ? input.temperature
-      : undefined
-  const topK =
-    typeof input.topK === 'number' && Number.isFinite(input.topK) ? input.topK : undefined
-  const topP =
-    typeof input.topP === 'number' && Number.isFinite(input.topP) ? input.topP : undefined
+    typeof input.temperature === 'number' && Number.isFinite(input.temperature) ? input.temperature : undefined
+  const topK = typeof input.topK === 'number' && Number.isFinite(input.topK) ? input.topK : undefined
+  const topP = typeof input.topP === 'number' && Number.isFinite(input.topP) ? input.topP : undefined
   const pollIntervalMs =
-    typeof input.pollIntervalMs === 'number' &&
-    Number.isFinite(input.pollIntervalMs) &&
-    input.pollIntervalMs > 0
+    typeof input.pollIntervalMs === 'number' && Number.isFinite(input.pollIntervalMs) && input.pollIntervalMs > 0
       ? input.pollIntervalMs
       : undefined
   const timeoutMs =
@@ -284,10 +275,11 @@ export async function runHorde(req: HordeRequest): Promise<CompletionResult> {
 
       let statusResp: Response
       try {
-        statusResp = await fetch(
-          `${HORDE_BASE_URL}/generate/text/status/${encodeURIComponent(jobId)}`,
-          { method: 'GET', headers: { apikey: req.apiKey }, signal: req.signal },
-        )
+        statusResp = await fetch(`${HORDE_BASE_URL}/generate/text/status/${encodeURIComponent(jobId)}`, {
+          method: 'GET',
+          headers: { apikey: req.apiKey },
+          signal: req.signal,
+        })
       } catch (err) {
         if (req.signal.aborted) {
           return { type: 'fail', result: 'aborted', aborted: true }

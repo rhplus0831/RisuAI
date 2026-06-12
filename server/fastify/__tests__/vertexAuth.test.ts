@@ -49,11 +49,7 @@ afterEach(() => {
 describe('signServiceAccountJWT', () => {
   it('produces a header.claim.signature triple with RS256 + valid claim set', () => {
     const { privateKeyPem } = makeKeyPair()
-    const jwt = signServiceAccountJWT(
-      'svc@example.iam.gserviceaccount.com',
-      privateKeyPem,
-      1700000000,
-    )
+    const jwt = signServiceAccountJWT('svc@example.iam.gserviceaccount.com', privateKeyPem, 1700000000)
     const [encHeader, encClaim, encSig] = jwt.split('.')
     expect(encHeader && encClaim && encSig).toBeTruthy()
 
@@ -131,9 +127,7 @@ describe('resolveVertexBearer', () => {
     )
     expect(r).toEqual({ ok: true, token: 'ya29.fixture-token' })
     expect(captured!.url).toBe('https://oauth2.googleapis.com/token')
-    expect((captured!.init.headers as Record<string, string>)['content-type']).toBe(
-      'application/x-www-form-urlencoded',
-    )
+    expect((captured!.init.headers as Record<string, string>)['content-type']).toBe('application/x-www-form-urlencoded')
     const body = captured!.init.body as string
     expect(body).toContain('grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer')
     expect(body).toContain('&assertion=')
@@ -247,16 +241,8 @@ describe('resolveVertexBearer', () => {
     })
 
     const [first, second] = await Promise.all([
-      resolveVertexBearer(
-        'svc@example.iam.gserviceaccount.com',
-        firstKey.privateKeyPem,
-        new AbortController().signal,
-      ),
-      resolveVertexBearer(
-        'svc@example.iam.gserviceaccount.com',
-        secondKey.privateKeyPem,
-        new AbortController().signal,
-      ),
+      resolveVertexBearer('svc@example.iam.gserviceaccount.com', firstKey.privateKeyPem, new AbortController().signal),
+      resolveVertexBearer('svc@example.iam.gserviceaccount.com', secondKey.privateKeyPem, new AbortController().signal),
     ])
 
     expect(first).toEqual({ ok: true, token: 'ya29.distinct-1' })

@@ -264,9 +264,7 @@ describe('summarize memory job handler', () => {
         summarize,
       })
 
-      await expect(handler(job)).rejects.toThrow(
-        'summarize payload chunkId must be a non-empty string',
-      )
+      await expect(handler(job)).rejects.toThrow('summarize payload chunkId must be a non-empty string')
       expect(summarize).not.toHaveBeenCalled()
     } finally {
       db.close()
@@ -357,9 +355,7 @@ describe('summarize memory job handler', () => {
 
       expect(await worker.tick()).toBe(true)
 
-      expect(
-        listMemorySummaries(db, { chatId: 'chat-1' }).map((summary) => summary.chunkId),
-      ).toEqual(['chunk-1'])
+      expect(listMemorySummaries(db, { chatId: 'chat-1' }).map((summary) => summary.chunkId)).toEqual(['chunk-1'])
       expect(getMemoryChunk(db, 'chunk-1')).toMatchObject({ status: 'summarized' })
       expect(getMemoryChunk(db, 'chunk-2')).toMatchObject({ status: 'failed' })
       expect(getMemoryChunk(db, 'chunk-3')).toMatchObject({ status: 'pending' })
@@ -521,8 +517,7 @@ describe('summarize memory job handler', () => {
         batchHandlers: {
           summarize: createSummarizeMemoryJobBatchHandler({
             db,
-            loadDatabase: () =>
-              database({ summarizationMaxConcurrent: 2, summarizationRequestsPerMinute: 60 }),
+            loadDatabase: () => database({ summarizationMaxConcurrent: 2, summarizationRequestsPerMinute: 60 }),
             now: () => now,
             sleep: async (ms) => {
               sleeps.push(ms)

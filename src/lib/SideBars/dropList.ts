@@ -1,8 +1,4 @@
-export function moveDropListItem<T>(
-  list: readonly T[],
-  index: number,
-  direction: -1 | 1,
-): readonly T[] {
+export function moveDropListItem<T>(list: readonly T[], index: number, direction: -1 | 1): readonly T[] {
   if (list.length < 2 || index < 0 || index >= list.length) return list
 
   const next = [...list]

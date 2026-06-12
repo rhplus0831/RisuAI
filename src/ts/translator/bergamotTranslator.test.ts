@@ -92,9 +92,7 @@ vi.mock('@browsermt/bergamot-translator', () => {
 
 vi.mock('../util', () => ({
   asBuffer: (value: Uint8Array | ArrayBuffer) =>
-    value instanceof Uint8Array
-      ? value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength)
-      : value,
+    value instanceof Uint8Array ? value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength) : value,
 }))
 
 import { __bergamotTranslatorTestHooks, bergamotTranslate } from './bergamotTranslator'
@@ -185,9 +183,7 @@ describe('bergamotTranslate queue recovery', () => {
       .mockRejectedValueOnce(new Error('first translation failed'))
       .mockResolvedValueOnce({ target: { text: 'translated:ok' } })
 
-    await expect(bergamotTranslate('bad', 'en', 'ko', false)).rejects.toThrow(
-      'first translation failed',
-    )
+    await expect(bergamotTranslate('bad', 'en', 'ko', false)).rejects.toThrow('first translation failed')
     await expect(bergamotTranslate('ok', 'en', 'ko', false)).resolves.toBe('translated:ok')
 
     expect(bergamotMock.translateImpl).toHaveBeenCalledTimes(2)
@@ -204,9 +200,7 @@ describe('bergamotTranslate queue recovery', () => {
       .mockRejectedValueOnce(new Error('WASM Translation Worker error'))
       .mockResolvedValueOnce({ target: { text: 'translated:fresh' } })
 
-    await expect(bergamotTranslate('crash', 'en', 'ko', false)).rejects.toThrow(
-      'WASM Translation Worker error',
-    )
+    await expect(bergamotTranslate('crash', 'en', 'ko', false)).rejects.toThrow('WASM Translation Worker error')
     await expect(bergamotTranslate('fresh', 'en', 'ko', false)).resolves.toBe('translated:fresh')
 
     expect(bergamotMock.instances).toHaveLength(2)

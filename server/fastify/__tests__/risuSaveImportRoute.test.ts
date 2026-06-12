@@ -20,13 +20,7 @@ interface Harness {
   commandEvents: CommandEventSink
 }
 
-const EXPORT_REQUIRED_ARRAY_FAMILIES = [
-  'characters',
-  'botPresets',
-  'modules',
-  'loadouts',
-  'plugins',
-] as const
+const EXPORT_REQUIRED_ARRAY_FAMILIES = ['characters', 'botPresets', 'modules', 'loadouts', 'plugins'] as const
 
 async function startHarness(): Promise<Harness> {
   process.env.LOG_LEVEL = 'silent'
@@ -81,14 +75,9 @@ function multipartTextOnly() {
   const boundary = `risu-boundary-${Date.now()}`
   return {
     payload: Buffer.from(
-      [
-        `--${boundary}`,
-        'Content-Disposition: form-data; name="note"',
-        '',
-        'no file here',
-        `--${boundary}--`,
-        '',
-      ].join('\r\n'),
+      [`--${boundary}`, 'Content-Disposition: form-data; name="note"', '', 'no file here', `--${boundary}--`, ''].join(
+        '\r\n',
+      ),
     ),
     contentType: `multipart/form-data; boundary=${boundary}`,
   }
@@ -267,16 +256,10 @@ describe('Phase 9-8a multipart .risu import route', () => {
       chatId?: unknown
       data?: unknown
     }>
-    expect(messages.map((message) => message.data)).toEqual([
-      'missing id',
-      'kept id',
-      'duplicate id',
-    ])
+    expect(messages.map((message) => message.data)).toEqual(['missing id', 'kept id', 'duplicate id'])
     expect(messages.map((message) => message.chatId)).toContain('message-a')
     expect(new Set(messages.map((message) => message.chatId)).size).toBe(3)
-    expect(messages.every((message) => typeof message.chatId === 'string' && message.chatId)).toBe(
-      true,
-    )
+    expect(messages.every((message) => typeof message.chatId === 'string' && message.chatId)).toBe(true)
     const bootstrap = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
     expect(bootstrap.json().database).toMatchObject({
       characters: [
@@ -762,10 +745,7 @@ describe('Phase 9-8a multipart .risu import route', () => {
 
   it('rejects legacy uploads whose expanded payload exceeds the import limit', async () => {
     const upload = multipartRisuSave(
-      encodeLegacyRisuSaveEnvelope(
-        { version: 1, oversized: 'x'.repeat(1024 * 1024 + 1) },
-        'legacy-compressed',
-      ),
+      encodeLegacyRisuSaveEnvelope({ version: 1, oversized: 'x'.repeat(1024 * 1024 + 1) }, 'legacy-compressed'),
     )
 
     const imported = await authedInject({
@@ -806,9 +786,7 @@ describe('Phase 9-8a multipart .risu import route', () => {
       importReport: {
         incompleteChatCount: 0,
         unsupportedReferenceCount: 1,
-        unsupportedReferences: [
-          { name: 'remote-char', type: RisuSaveBlockType.REMOTE, kind: 'remote' },
-        ],
+        unsupportedReferences: [{ name: 'remote-char', type: RisuSaveBlockType.REMOTE, kind: 'remote' }],
       },
       assetReport: { referencedCount: 0, missingCount: 0, orphanedCount: 0 },
     })

@@ -424,9 +424,7 @@ describe('App route/refreeze mounted DOM behavior', () => {
     expect(appRouteDomMocks.state.applyRouteCalls).toBe(1)
     expect(target.querySelector('[data-testid="side-chat-list"]')).not.toBeNull()
 
-    const characterTab = target.querySelector<HTMLButtonElement>(
-      '[data-risu-sidebar-tab="character"]',
-    )
+    const characterTab = target.querySelector<HTMLButtonElement>('[data-risu-sidebar-tab="character"]')
     expect(characterTab).not.toBeNull()
     characterTab?.click()
     await tick()

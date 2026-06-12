@@ -49,11 +49,7 @@ export interface HypaV3SummaryRef {
   chatMemos: readonly string[]
 }
 
-export type HypaV3SkippedMessageReason =
-  | 'example'
-  | 'new_chat_marker'
-  | 'empty'
-  | 'user_message_disabled'
+export type HypaV3SkippedMessageReason = 'example' | 'new_chat_marker' | 'empty' | 'user_message_disabled'
 
 export interface HypaV3SkippedMessage {
   index: number
@@ -145,11 +141,7 @@ export function normalizeHypaV3Settings(
   const settings: HypaV3Settings = { ...DEFAULT_HYPA_V3_SETTINGS }
   const warnings: HypaV3SettingsWarning[] = []
 
-  if (
-    existingSettings &&
-    typeof existingSettings === 'object' &&
-    !Array.isArray(existingSettings)
-  ) {
+  if (existingSettings && typeof existingSettings === 'object' && !Array.isArray(existingSettings)) {
     for (const [key, value] of Object.entries(existingSettings)) {
       if (isHypaV3SettingsKey(key) && typeof value === typeof settings[key]) {
         assignSetting(settings, key, value)
@@ -184,11 +176,7 @@ export function validateHypaV3Settings(settings: HypaV3Settings): HypaV3Settings
   }
 
   requirePositiveInteger(settings.maxChatsPerSummary, 'maxChatsPerSummary', errors)
-  requirePositiveInteger(
-    settings.summarizationRequestsPerMinute,
-    'summarizationRequestsPerMinute',
-    errors,
-  )
+  requirePositiveInteger(settings.summarizationRequestsPerMinute, 'summarizationRequestsPerMinute', errors)
   requirePositiveInteger(settings.summarizationMaxConcurrent, 'summarizationMaxConcurrent', errors)
   requirePositiveInteger(settings.embeddingRequestsPerMinute, 'embeddingRequestsPerMinute', errors)
   requirePositiveInteger(settings.embeddingMaxConcurrent, 'embeddingMaxConcurrent', errors)
@@ -246,8 +234,7 @@ export function planStandardHypaV3Memory(input: PlanHypaV3MemoryInput): HypaV3Me
   }
 
   const hasSummaries = (input.summaries?.length ?? 0) > 0
-  const reservedEmptyMemoryPrompt =
-    !hasSummaries && currentTokens + emptyMemoryTokens <= input.maxContextTokens
+  const reservedEmptyMemoryPrompt = !hasSummaries && currentTokens + emptyMemoryTokens <= input.maxContextTokens
   const memoryReservation = reservedEmptyMemoryPrompt ? emptyMemoryTokens : memoryTokens
   currentTokens += memoryReservation
   tokenDeltas.push({
@@ -284,20 +271,11 @@ export function planStandardHypaV3Memory(input: PlanHypaV3MemoryInput): HypaV3Me
         startIndex + settings.maxChatsPerSummary,
         input.chats.length - settings.queryChatCount,
       )
-      const window = planWindow(
-        input.chats,
-        startIndex,
-        endIndexExclusive,
-        settings,
-        input.tokenizeChat,
-      )
+      const window = planWindow(input.chats, startIndex, endIndexExclusive, settings, input.tokenizeChat)
 
       skippedMessages.push(...window.skipped)
 
-      if (
-        currentTokens <= input.maxContextTokens &&
-        currentTokens + window.tokenDelta < targetTokens
-      ) {
+      if (currentTokens <= input.maxContextTokens && currentTokens + window.tokenDelta < targetTokens) {
         break
       }
 
@@ -372,10 +350,7 @@ function planWindow(
   }
 }
 
-function determineStartIndex(
-  chats: readonly OpenAIChat[],
-  summaries: readonly HypaV3SummaryRef[],
-): number {
+function determineStartIndex(chats: readonly OpenAIChat[], summaries: readonly HypaV3SummaryRef[]): number {
   const lastSummary = summaries.at(-1)
   const lastMemo = lastSummary?.chatMemos.at(-1)
   if (!lastMemo) return 0
@@ -383,15 +358,8 @@ function determineStartIndex(
   return lastChatIndex === -1 ? 0 : lastChatIndex + 1
 }
 
-function skipReasonForChat(
-  chat: OpenAIChat,
-  settings: HypaV3Settings,
-): HypaV3SkippedMessageReason | null {
-  if (
-    chat.name === 'example_user' ||
-    chat.name === 'example_assistant' ||
-    chat.memo === 'NewChatExample'
-  ) {
+function skipReasonForChat(chat: OpenAIChat, settings: HypaV3Settings): HypaV3SkippedMessageReason | null {
+  if (chat.name === 'example_user' || chat.name === 'example_assistant' || chat.memo === 'NewChatExample') {
     return 'example'
   }
   if (chat.memo === 'NewChat') return 'new_chat_marker'
@@ -402,10 +370,7 @@ function skipReasonForChat(
   return null
 }
 
-function sumChatTokens(
-  chats: readonly OpenAIChat[],
-  tokenizeChat: (chat: OpenAIChat) => number,
-): number {
+function sumChatTokens(chats: readonly OpenAIChat[], tokenizeChat: (chat: OpenAIChat) => number): number {
   let total = 0
   for (const chat of chats) {
     total += tokenizeChat(chat)
@@ -417,11 +382,7 @@ function wrapWithXml(tag: string, content: string): string {
   return `<${tag}>\n${content}\n</${tag}>`
 }
 
-function requireRatio(
-  value: number,
-  field: keyof HypaV3Settings,
-  errors: HypaV3SettingsValidationError[],
-): void {
+function requireRatio(value: number, field: keyof HypaV3Settings, errors: HypaV3SettingsValidationError[]): void {
   if (!Number.isFinite(value) || value < 0 || value > 1) {
     errors.push({ field, message: `${field} must be a number from 0 to 1.` })
   }
@@ -451,10 +412,6 @@ function isHypaV3SettingsKey(key: string): key is HypaV3SettingsKey {
   return key in DEFAULT_HYPA_V3_SETTINGS
 }
 
-function assignSetting<T extends HypaV3SettingsKey>(
-  settings: HypaV3Settings,
-  key: T,
-  value: unknown,
-): void {
+function assignSetting<T extends HypaV3SettingsKey>(settings: HypaV3Settings, key: T, value: unknown): void {
   settings[key] = value as HypaV3Settings[T]
 }

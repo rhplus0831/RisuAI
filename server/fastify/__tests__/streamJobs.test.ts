@@ -52,20 +52,17 @@ function fakeClient(opts: { bufferedBytes?: number } = {}): FakeClient {
 interface EchoServer {
   url: string
   requests: { method: string; url: string; headers: http.IncomingHttpHeaders; body: Buffer }[]
-  setResponder(
-    fn: (req: http.IncomingMessage, res: http.ServerResponse, body: Buffer) => void | Promise<void>,
-  ): void
+  setResponder(fn: (req: http.IncomingMessage, res: http.ServerResponse, body: Buffer) => void | Promise<void>): void
   close(): Promise<void>
 }
 
 function startEcho(): Promise<EchoServer> {
   return new Promise((resolve) => {
     const requests: EchoServer['requests'] = []
-    let responder: (
-      req: http.IncomingMessage,
-      res: http.ServerResponse,
-      body: Buffer,
-    ) => void | Promise<void> = (_req, res) => {
+    let responder: (req: http.IncomingMessage, res: http.ServerResponse, body: Buffer) => void | Promise<void> = (
+      _req,
+      res,
+    ) => {
       res.writeHead(200, { 'content-type': 'text/plain' })
       res.end('ok')
     }
@@ -174,12 +171,8 @@ describe('normalizeStreamTimeoutMs / normalizeHeartbeatSec', () => {
   })
 
   it('clamps the timeout to MAX_TIMEOUT_MS', () => {
-    expect(normalizeStreamTimeoutMs(PROXY_STREAM_MAX_TIMEOUT_MS + 1)).toBe(
-      PROXY_STREAM_MAX_TIMEOUT_MS,
-    )
-    expect(normalizeStreamTimeoutMs(`${PROXY_STREAM_MAX_TIMEOUT_MS + 123_456}`)).toBe(
-      PROXY_STREAM_MAX_TIMEOUT_MS,
-    )
+    expect(normalizeStreamTimeoutMs(PROXY_STREAM_MAX_TIMEOUT_MS + 1)).toBe(PROXY_STREAM_MAX_TIMEOUT_MS)
+    expect(normalizeStreamTimeoutMs(`${PROXY_STREAM_MAX_TIMEOUT_MS + 123_456}`)).toBe(PROXY_STREAM_MAX_TIMEOUT_MS)
   })
 
   it('floors positive fractional timeouts to at least 1 ms', () => {
@@ -197,30 +190,18 @@ describe('normalizeStreamTimeoutMs / normalizeHeartbeatSec', () => {
 
 describe('JobRegistry buffering and lifecycle', () => {
   it('L1: identifies non-terminal chat SSE activity for sliding generation deadlines', () => {
-    expect(
-      isStreamDeadlineActivityFrame('event: token\ndata: {"content":"hello"}\n\n'),
-    ).toBe(true)
+    expect(isStreamDeadlineActivityFrame('event: token\ndata: {"content":"hello"}\n\n')).toBe(true)
     expect(isStreamDeadlineActivityFrame('event: token\ndata: {"content":""}\n\n')).toBe(false)
     expect(isStreamDeadlineActivityFrame('event: done\ndata: {}\n\n')).toBe(false)
     expect(isStreamDeadlineActivityFrame(': heartbeat\n\n')).toBe(false)
-    expect(
-      isStreamDeadlineActivityFrame(
-        JSON.stringify({ type: 'upstream_headers', status: 200, headers: {} }),
-      ),
-    ).toBe(true)
-    expect(
-      isStreamDeadlineActivityFrame(JSON.stringify({ type: 'chunk', dataBase64: 'AAAA' })),
-    ).toBe(true)
-    expect(
-      isStreamDeadlineActivityFrame(JSON.stringify({ type: 'chunk', dataBase64: '' })),
-    ).toBe(false)
+    expect(isStreamDeadlineActivityFrame(JSON.stringify({ type: 'upstream_headers', status: 200, headers: {} }))).toBe(
+      true,
+    )
+    expect(isStreamDeadlineActivityFrame(JSON.stringify({ type: 'chunk', dataBase64: 'AAAA' }))).toBe(true)
+    expect(isStreamDeadlineActivityFrame(JSON.stringify({ type: 'chunk', dataBase64: '' }))).toBe(false)
     expect(isStreamDeadlineActivityFrame(JSON.stringify({ type: 'ping', ts: 1 }))).toBe(false)
     expect(isStreamDeadlineActivityFrame(JSON.stringify({ type: 'done' }))).toBe(false)
-    expect(
-      isStreamDeadlineActivityFrame(
-        JSON.stringify({ type: 'error', status: 504, message: 'nope' }),
-      ),
-    ).toBe(false)
+    expect(isStreamDeadlineActivityFrame(JSON.stringify({ type: 'error', status: 504, message: 'nope' }))).toBe(false)
   })
 
   it('buffers events when no client is attached, then flushes on attach', () => {

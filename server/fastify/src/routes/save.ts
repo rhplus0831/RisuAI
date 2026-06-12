@@ -19,10 +19,7 @@ import {
   type Persisted,
 } from '../repository.js'
 import { replaceLegacyHypaV3MemoryRowsInTransaction } from '../memoryLegacyImport.js'
-import {
-  decodeRisuSaveImportSnapshot,
-  normalizeRisuSaveImportDatabase,
-} from '../risuSave/importSnapshot.js'
+import { decodeRisuSaveImportSnapshot, normalizeRisuSaveImportDatabase } from '../risuSave/importSnapshot.js'
 import { decodeLocalBackup } from '../risuSave/localBackupImport.js'
 import {
   buildRepositoryRisuSaveExportSnapshot,
@@ -40,12 +37,7 @@ import {
 } from '../risuSave/assetReferences.js'
 import type { LegacyRisuSaveEnvelopeKind } from '../risuSave/legacyEnvelopeCodec.js'
 import { importRateLimit } from '../routeRateLimits.js'
-import {
-  emitProtocolMetric,
-  protocolDurationMs,
-  protocolMetricsEnabled,
-  protocolNowMs,
-} from '../protocolMetrics.js'
+import { emitProtocolMetric, protocolDurationMs, protocolMetricsEnabled, protocolNowMs } from '../protocolMetrics.js'
 
 interface ImportBody {
   database?: unknown
@@ -90,102 +82,18 @@ export function registerSaveRoutes(
   const bundleInnerRisuMaxExpandedBytes = Number.isFinite(importMaxBytes)
     ? importMaxBytes
     : (options.maxExpandedImportBytes ?? DEFAULT_BUNDLE_INNER_RISU_MAX_EXPANDED_BYTES)
-  app.post(
-    '/api/v1/import/risusave',
-    { config: { rateLimit: importRateLimit } },
-    async (req, reply) => {
-      if (!(await requireAuth(authState, req, reply))) return
-      try {
-        if (req.isMultipart()) {
-          const snapshot = decodeRisuSaveImportSnapshot(await readUploadedRisuSave(req), {
-            maxExpandedBytes: options.maxExpandedImportBytes,
-          })
-          const { revision, event, assetReport } = applyImportedDatabase(
-            db,
-            dataDir,
-            snapshot.database,
-          )
-          eventSink.emit(event)
-          return {
-            revision,
-            event,
-            envelope: snapshot.envelope,
-            importReport: {
-              incompleteChatCount: snapshot.incompleteChatCount,
-              unsupportedReferenceCount: snapshot.unsupportedReferences.length,
-              unsupportedReferences: snapshot.unsupportedReferences,
-            },
-            assetReport,
-          }
-        }
-
-        const body = (req.body ?? {}) as ImportBody
-        const database = normalizeRisuSaveImportDatabase(body.database)
-        // `normalizeRisuSaveImportDatabase` returns a request-body-isolated
-        // throwaway object for JSON bodies, so the repository can split
-        // message rows in place without a second full-corpus clone.
-        const { revision, event, assetReport } = applyImportedDatabase(db, dataDir, database, {
-          cloneBeforeMessageSplit: false,
+  app.post('/api/v1/import/risusave', { config: { rateLimit: importRateLimit } }, async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+    try {
+      if (req.isMultipart()) {
+        const snapshot = decodeRisuSaveImportSnapshot(await readUploadedRisuSave(req), {
+          maxExpandedBytes: options.maxExpandedImportBytes,
         })
-        eventSink.emit(event)
-        return { revision, event, assetReport }
-      } catch (err) {
-        if (err instanceof ValidationError) {
-          reply.code(400)
-          return { error: err.message }
-        }
-        throw err
-      }
-    },
-  )
-
-  app.post(
-    '/api/v1/import/bundle',
-    { config: { rateLimit: importRateLimit } },
-    async (req, reply) => {
-      if (!(await requireAuth(authState, req, reply))) return
-      if (!req.isMultipart()) {
-        reply.code(400)
-        return { error: 'backup import requires a multipart .risu.zip or .bin upload' }
-      }
-
-      let uploadPath: string | null = null
-      try {
-        // Stream the (potentially very large) upload to a temp file instead of
-        // buffering it in memory, then stream-decode it; assets register in
-        // bounded batches as they are read.
-        uploadPath = await streamUploadToTempFile(req, importMaxBytes)
-
-        let assetCreated = false
-        const decoded = await decodeLocalBackup(uploadPath, {
-          maxExpandedBytes: importMaxBytes,
-          registerAssets: (assets) => {
-            // Asset ids are content-addressed; `applyImport` (below) preserves
-            // the asset metadata it sees, so registering before the database
-            // makes the imported references resolve immediately. Re-registering
-            // bytes that already exist is idempotent.
-            const results = addAssets(db, dataDir, assets)
-            const event = results.find((result) => result.event)?.event
-            if (event) {
-              eventSink.emit(event)
-              assetCreated = true
-            }
-          },
-        })
-
-        const snapshot = decodeRisuSaveImportSnapshot(decoded.databaseBytes, {
-          maxExpandedBytes: bundleInnerRisuMaxExpandedBytes,
-        })
-        const { revision, event, assetReport } = applyImportedDatabase(
-          db,
-          dataDir,
-          snapshot.database,
-        )
+        const { revision, event, assetReport } = applyImportedDatabase(db, dataDir, snapshot.database)
         eventSink.emit(event)
         return {
           revision,
           event,
-          format: decoded.format,
           envelope: snapshot.envelope,
           importReport: {
             incompleteChatCount: snapshot.incompleteChatCount,
@@ -193,122 +101,180 @@ export function registerSaveRoutes(
             unsupportedReferences: snapshot.unsupportedReferences,
           },
           assetReport,
-          bundleReport: {
-            includedAssetCount: decoded.registeredAssetCount,
-            assetsCreated: assetCreated,
-          },
-        }
-      } catch (err) {
-        if (err instanceof ValidationError) {
-          reply.code(400)
-          return { error: err.message }
-        }
-        throw err
-      } finally {
-        if (uploadPath) {
-          await fs.promises
-            .rm(path.dirname(uploadPath), { recursive: true, force: true })
-            .catch(() => {})
         }
       }
-    },
-  )
 
-  app.get<{ Querystring: ExportQuery }>(
-    '/api/v1/export/risusave',
-    { exposeHeadRoute: false },
-    async (req, reply) => {
-      if (!(await requireAuth(authState, req, reply))) return
-      try {
-        const exportOptions = parseExportQuery(req.query)
-        // Split the snapshot hydration from the encode/output-buffer step so the
-        // opt-in metric can attribute ordinary `.risu` materialization cost. The
-        // snapshot→encode path is byte-identical to the prior combined call.
-        const measure = protocolMetricsEnabled()
-        const snapshotStart = measure ? protocolNowMs() : 0
-        const snapshot = buildRepositoryRisuSaveExportSnapshot(db, dataDir)
-        const snapshotLoadMs = measure ? protocolDurationMs(snapshotStart) : undefined
-        const encodeStart = measure ? protocolNowMs() : 0
-        const bytes = encodeRisuSaveExportSnapshot(snapshot, exportOptions)
-        const encodeMs = measure ? protocolDurationMs(encodeStart) : undefined
-        emitRisuSaveExportMetric(req.log, {
-          bundle: false,
-          envelope: exportOptions.envelope,
-          compression: exportOptions.compression,
-          snapshotLoadMs,
-          encodeMs,
-          outputBytes: bytes.byteLength,
-        })
-        eventSink.emit({
-          ...COMMAND_EVENT_CATALOG.stateExported,
-          revision: getSchemaState(db).revision,
-        })
-        reply.header('content-type', 'application/octet-stream')
-        reply.header('content-disposition', `attachment; filename="${EXPORT_FILENAME}"`)
-        return reply.send(Buffer.from(bytes))
-      } catch (err) {
-        if (err instanceof ValidationError) {
-          reply.code(400)
-          return { error: err.message }
-        }
-        throw err
+      const body = (req.body ?? {}) as ImportBody
+      const database = normalizeRisuSaveImportDatabase(body.database)
+      // `normalizeRisuSaveImportDatabase` returns a request-body-isolated
+      // throwaway object for JSON bodies, so the repository can split
+      // message rows in place without a second full-corpus clone.
+      const { revision, event, assetReport } = applyImportedDatabase(db, dataDir, database, {
+        cloneBeforeMessageSplit: false,
+      })
+      eventSink.emit(event)
+      return { revision, event, assetReport }
+    } catch (err) {
+      if (err instanceof ValidationError) {
+        reply.code(400)
+        return { error: err.message }
       }
-    },
-  )
+      throw err
+    }
+  })
 
-  app.get<{ Querystring: ExportQuery }>(
-    '/api/v1/export/bundle',
-    { exposeHeadRoute: false },
-    async (req, reply) => {
-      if (!(await requireAuth(authState, req, reply))) return
-      try {
-        const exportOptions = parseExportQuery(req.query)
-        // Bundle export still materializes the embedded `.risu` bytes before
-        // streaming the asset entries; measure that materialization the same way
-        // as ordinary export. Asset streaming and the shared snapshot are
-        // unchanged.
-        const measure = protocolMetricsEnabled()
-        const snapshotStart = measure ? protocolNowMs() : 0
-        const persisted = loadPersistedWithMessages(db, dataDir)
-        persisted.assets = getAllAssetMetadata(db)
-        const estimatedBackupBytes = estimateDeviceBackupBytes(dataDir, persisted)
-        const snapshot = buildRisuSaveExportSnapshotFromPersisted(persisted)
-        const snapshotLoadMs = measure ? protocolDurationMs(snapshotStart) : undefined
-        const encodeStart = measure ? protocolNowMs() : 0
-        const risuBytes = encodeRisuSaveExportSnapshot(snapshot, exportOptions)
-        const encodeMs = measure ? protocolDurationMs(encodeStart) : undefined
-        emitRisuSaveExportMetric(req.log, {
-          bundle: true,
-          envelope: exportOptions.envelope,
-          compression: exportOptions.compression,
-          snapshotLoadMs,
-          encodeMs,
-          outputBytes: risuBytes.byteLength,
-        })
-        const bundle = buildRepositoryRisuSaveBundleExport({
-          dataDir,
-          persisted,
-          risuBytes,
-          envelope: exportOptions.envelope,
-          compression: exportOptions.compression,
-        })
-        eventSink.emit({
-          ...COMMAND_EVENT_CATALOG.stateExported,
-          revision: getSchemaState(db).revision,
-        })
-        reply.header('content-type', 'application/zip')
-        reply.header('content-disposition', `attachment; filename="${BUNDLE_EXPORT_FILENAME}"`)
-        reply.header(ESTIMATED_BACKUP_BYTES_HEADER, String(estimatedBackupBytes))
-        return reply.send(bundle.stream)
-      } catch (err) {
-        if (err instanceof ValidationError) {
-          reply.code(400)
-          return { error: err.message }
-        }
-        throw err
+  app.post('/api/v1/import/bundle', { config: { rateLimit: importRateLimit } }, async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+    if (!req.isMultipart()) {
+      reply.code(400)
+      return { error: 'backup import requires a multipart .risu.zip or .bin upload' }
+    }
+
+    let uploadPath: string | null = null
+    try {
+      // Stream the (potentially very large) upload to a temp file instead of
+      // buffering it in memory, then stream-decode it; assets register in
+      // bounded batches as they are read.
+      uploadPath = await streamUploadToTempFile(req, importMaxBytes)
+
+      let assetCreated = false
+      const decoded = await decodeLocalBackup(uploadPath, {
+        maxExpandedBytes: importMaxBytes,
+        registerAssets: (assets) => {
+          // Asset ids are content-addressed; `applyImport` (below) preserves
+          // the asset metadata it sees, so registering before the database
+          // makes the imported references resolve immediately. Re-registering
+          // bytes that already exist is idempotent.
+          const results = addAssets(db, dataDir, assets)
+          const event = results.find((result) => result.event)?.event
+          if (event) {
+            eventSink.emit(event)
+            assetCreated = true
+          }
+        },
+      })
+
+      const snapshot = decodeRisuSaveImportSnapshot(decoded.databaseBytes, {
+        maxExpandedBytes: bundleInnerRisuMaxExpandedBytes,
+      })
+      const { revision, event, assetReport } = applyImportedDatabase(db, dataDir, snapshot.database)
+      eventSink.emit(event)
+      return {
+        revision,
+        event,
+        format: decoded.format,
+        envelope: snapshot.envelope,
+        importReport: {
+          incompleteChatCount: snapshot.incompleteChatCount,
+          unsupportedReferenceCount: snapshot.unsupportedReferences.length,
+          unsupportedReferences: snapshot.unsupportedReferences,
+        },
+        assetReport,
+        bundleReport: {
+          includedAssetCount: decoded.registeredAssetCount,
+          assetsCreated: assetCreated,
+        },
       }
-    },
-  )
+    } catch (err) {
+      if (err instanceof ValidationError) {
+        reply.code(400)
+        return { error: err.message }
+      }
+      throw err
+    } finally {
+      if (uploadPath) {
+        await fs.promises.rm(path.dirname(uploadPath), { recursive: true, force: true }).catch(() => {})
+      }
+    }
+  })
+
+  app.get<{ Querystring: ExportQuery }>('/api/v1/export/risusave', { exposeHeadRoute: false }, async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+    try {
+      const exportOptions = parseExportQuery(req.query)
+      // Split the snapshot hydration from the encode/output-buffer step so the
+      // opt-in metric can attribute ordinary `.risu` materialization cost. The
+      // snapshot→encode path is byte-identical to the prior combined call.
+      const measure = protocolMetricsEnabled()
+      const snapshotStart = measure ? protocolNowMs() : 0
+      const snapshot = buildRepositoryRisuSaveExportSnapshot(db, dataDir)
+      const snapshotLoadMs = measure ? protocolDurationMs(snapshotStart) : undefined
+      const encodeStart = measure ? protocolNowMs() : 0
+      const bytes = encodeRisuSaveExportSnapshot(snapshot, exportOptions)
+      const encodeMs = measure ? protocolDurationMs(encodeStart) : undefined
+      emitRisuSaveExportMetric(req.log, {
+        bundle: false,
+        envelope: exportOptions.envelope,
+        compression: exportOptions.compression,
+        snapshotLoadMs,
+        encodeMs,
+        outputBytes: bytes.byteLength,
+      })
+      eventSink.emit({
+        ...COMMAND_EVENT_CATALOG.stateExported,
+        revision: getSchemaState(db).revision,
+      })
+      reply.header('content-type', 'application/octet-stream')
+      reply.header('content-disposition', `attachment; filename="${EXPORT_FILENAME}"`)
+      return reply.send(Buffer.from(bytes))
+    } catch (err) {
+      if (err instanceof ValidationError) {
+        reply.code(400)
+        return { error: err.message }
+      }
+      throw err
+    }
+  })
+
+  app.get<{ Querystring: ExportQuery }>('/api/v1/export/bundle', { exposeHeadRoute: false }, async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+    try {
+      const exportOptions = parseExportQuery(req.query)
+      // Bundle export still materializes the embedded `.risu` bytes before
+      // streaming the asset entries; measure that materialization the same way
+      // as ordinary export. Asset streaming and the shared snapshot are
+      // unchanged.
+      const measure = protocolMetricsEnabled()
+      const snapshotStart = measure ? protocolNowMs() : 0
+      const persisted = loadPersistedWithMessages(db, dataDir)
+      persisted.assets = getAllAssetMetadata(db)
+      const estimatedBackupBytes = estimateDeviceBackupBytes(dataDir, persisted)
+      const snapshot = buildRisuSaveExportSnapshotFromPersisted(persisted)
+      const snapshotLoadMs = measure ? protocolDurationMs(snapshotStart) : undefined
+      const encodeStart = measure ? protocolNowMs() : 0
+      const risuBytes = encodeRisuSaveExportSnapshot(snapshot, exportOptions)
+      const encodeMs = measure ? protocolDurationMs(encodeStart) : undefined
+      emitRisuSaveExportMetric(req.log, {
+        bundle: true,
+        envelope: exportOptions.envelope,
+        compression: exportOptions.compression,
+        snapshotLoadMs,
+        encodeMs,
+        outputBytes: risuBytes.byteLength,
+      })
+      const bundle = buildRepositoryRisuSaveBundleExport({
+        dataDir,
+        persisted,
+        risuBytes,
+        envelope: exportOptions.envelope,
+        compression: exportOptions.compression,
+      })
+      eventSink.emit({
+        ...COMMAND_EVENT_CATALOG.stateExported,
+        revision: getSchemaState(db).revision,
+      })
+      reply.header('content-type', 'application/zip')
+      reply.header('content-disposition', `attachment; filename="${BUNDLE_EXPORT_FILENAME}"`)
+      reply.header(ESTIMATED_BACKUP_BYTES_HEADER, String(estimatedBackupBytes))
+      return reply.send(bundle.stream)
+    } catch (err) {
+      if (err instanceof ValidationError) {
+        reply.code(400)
+        return { error: err.message }
+      }
+      throw err
+    }
+  })
 
   app.get('/api/v1/export/local-backup', { exposeHeadRoute: false }, async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return

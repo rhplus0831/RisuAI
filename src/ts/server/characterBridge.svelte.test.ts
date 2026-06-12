@@ -37,8 +37,7 @@ vi.mock('../characterCommands', () => {
     'coldstorage',
     'coldStoragedChats',
   ])
-  const cloneJsonValue = <T>(value: T): T =>
-    value === undefined ? value : (JSON.parse(JSON.stringify(value)) as T)
+  const cloneJsonValue = <T>(value: T): T => (value === undefined ? value : (JSON.parse(JSON.stringify(value)) as T))
   const sanitizeCharacterPatch = (patch: Record<string, unknown>) => {
     const sanitized: Record<string, unknown> = {}
     for (const [key, value] of Object.entries(patch)) {
@@ -79,11 +78,7 @@ import {
 
 const DELAY = 50
 
-function characterRow(
-  chaId: string,
-  name: string,
-  fields: Record<string, unknown> = {},
-): Record<string, unknown> {
+function characterRow(chaId: string, name: string, fields: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     chaId,
     name,
@@ -116,9 +111,7 @@ function setupCharacters(characters: Array<Record<string, unknown>>, selected = 
   selectedCharID.set(selected)
 }
 
-async function createDraft(
-  keys: readonly string[],
-): Promise<{ draft: ServerBackedCharacterDraft; stop: () => void }> {
+async function createDraft(keys: readonly string[]): Promise<{ draft: ServerBackedCharacterDraft; stop: () => void }> {
   let draft: ServerBackedCharacterDraft | undefined
   const stop = $effect.root(() => {
     draft = createServerBackedCharacterDraft(keys)
@@ -321,9 +314,7 @@ describe('watchServerBackedCharacterProfile baselines', () => {
     flushSync()
     stop()
 
-    expect(recorded.characterUpdates).toEqual([
-      { characterId: 'char-1', patch: { name: 'Teardown Local' } },
-    ])
+    expect(recorded.characterUpdates).toEqual([{ characterId: 'char-1', patch: { name: 'Teardown Local' } }])
 
     await vi.advanceTimersByTimeAsync(DELAY * 10)
     expect(recorded.characterUpdates).toHaveLength(1)

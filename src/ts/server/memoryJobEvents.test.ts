@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ServerMemoryEvent } from './events'
-import {
-  publishServerMemoryJobEvent,
-  subscribeServerMemoryJobEvents,
-} from './memoryJobEvents'
+import { publishServerMemoryJobEvent, subscribeServerMemoryJobEvents } from './memoryJobEvents'
 
 function memoryEvent(jobId: string): ServerMemoryEvent {
   return {

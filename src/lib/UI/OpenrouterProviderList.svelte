@@ -34,8 +34,7 @@
     tabindex="0"
     onclick={() => {
       openOptions = false
-    }}
-  >
+    }}>
     <div
       class="w-96 max-w-full max-h-full overflow-y-auto overflow-x-hidden bg-bgcolor p-4 flex flex-col"
       role="button"
@@ -43,16 +42,14 @@
       onclick={(e) => {
         e.stopPropagation()
         onclick?.(e)
-      }}
-    >
+      }}>
       <div class="flex items-center gap-3 mb-4">
         <button
           class="flex items-center justify-center p-2 rounded-lg hover:bg-selected transition-colors shrink-0"
           onclick={() => {
             openOptions = false
           }}
-          title="Back"
-        >
+          title="Back">
           <ArrowLeft size={20} />
         </button>
         <h1 class="font-bold text-xl flex-1">{language.provider}</h1>
@@ -63,16 +60,14 @@
         bind:value={custom}
         onchange={() => {
           changeModel(custom)
-        }}
-      />
+        }} />
 
       {#each providers as provider}
         <button
           class="hover:bg-selected px-6 py-2 text-lg"
           onclick={() => {
             changeModel(provider.slug)
-          }}>{provider.name} ({provider.slug})</button
-        >
+          }}>{provider.name} ({provider.slug})</button>
       {/each}
     </div>
   </div>
@@ -82,7 +77,6 @@
   onclick={() => {
     openOptions = true
   }}
-  class="mt-4 drop-shadow-lg p-3 flex justify-center items-center ml-2 mr-2 rounded-lg bg-darkbutton mb-4 border-darkborderc border"
->
+  class="mt-4 drop-shadow-lg p-3 flex justify-center items-center ml-2 mr-2 rounded-lg bg-darkbutton mb-4 border-darkborderc border">
   {value}
 </button>

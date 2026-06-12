@@ -13,9 +13,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-function request(
-  overrides: Partial<MemoryEmbeddingModelRequest> = {},
-): MemoryEmbeddingModelRequest {
+function request(overrides: Partial<MemoryEmbeddingModelRequest> = {}): MemoryEmbeddingModelRequest {
   return {
     provider: 'openai-compatible',
     model: 'text-embedding-3-small',
@@ -26,9 +24,7 @@ function request(
   }
 }
 
-function voyageRequest(
-  overrides: Partial<MemoryEmbeddingModelRequest> = {},
-): MemoryEmbeddingModelRequest {
+function voyageRequest(overrides: Partial<MemoryEmbeddingModelRequest> = {}): MemoryEmbeddingModelRequest {
   return request({
     provider: 'voyage-contextual',
     model: 'voyage-context-3',
@@ -37,9 +33,7 @@ function voyageRequest(
     limits: {
       source: 'provider',
       maxInputTokens: VOYAGE_CONTEXT3_MAX_CONTEXT_CHUNK_TOKENS,
-      maxInputBytes:
-        VOYAGE_CONTEXT3_MAX_CONTEXT_CHUNK_TOKENS *
-        MEMORY_EMBEDDING_APPROX_CHARS_PER_TOKEN,
+      maxInputBytes: VOYAGE_CONTEXT3_MAX_CONTEXT_CHUNK_TOKENS * MEMORY_EMBEDDING_APPROX_CHARS_PER_TOKEN,
       maxRequestTokens: VOYAGE_CONTEXTUAL_MAX_REQUEST_TOKENS,
       maxRequestChunks: VOYAGE_CONTEXTUAL_MAX_CHUNKS,
       contextualWindowTokens: VOYAGE_CONTEXTUAL_MAX_CONTEXT_TOKENS,

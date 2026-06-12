@@ -120,9 +120,7 @@ function audioResponse(bytes = new Uint8Array([1, 2, 3]), contentType = 'audio/w
     headers: {
       get: vi.fn((name: string) => (name.toLowerCase() === 'content-type' ? contentType : null)),
     },
-    arrayBuffer: vi.fn(async () =>
-      bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
-    ),
+    arrayBuffer: vi.fn(async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)),
     json: vi.fn(),
     text: vi.fn(async () => ''),
   } as unknown as Response
@@ -132,9 +130,7 @@ function hf503Response(estimatedTime = 0.001) {
   return {
     status: 503,
     headers: {
-      get: vi.fn((name: string) =>
-        name.toLowerCase() === 'content-type' ? 'application/json' : null,
-      ),
+      get: vi.fn((name: string) => (name.toLowerCase() === 'content-type' ? 'application/json' : null)),
     },
     arrayBuffer: vi.fn(),
     json: vi.fn(async () => ({ estimated_time: estimatedTime })),

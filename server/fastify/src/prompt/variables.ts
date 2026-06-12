@@ -3,11 +3,7 @@ import type { CbsCallbackMemo } from '../../../../src/ts/cbs'
 import type { CbsConditions } from '../../../../src/ts/parser/risuChatParserHelpers'
 import type { LuaExecBudget } from './luaRuntime.js'
 import { risuChatParser } from '../../../../src/ts/parser/risuChatParser'
-import {
-  clearActivePromptScope,
-  isActivePromptScopeDirty,
-  setActivePromptScope,
-} from './promptScope.js'
+import { clearActivePromptScope, isActivePromptScopeDirty, setActivePromptScope } from './promptScope.js'
 
 /**
  * Server-side `risuChatParser` entry point.
@@ -72,8 +68,7 @@ export interface ExpandResult {
 
 export function expandVariables(input: string, ctx: ExpandContext): ExpandResult {
   const currentCharIndex = (ctx.database as { currentChar?: unknown }).currentChar
-  const selectedCharID =
-    ctx.selectedCharID ?? (typeof currentCharIndex === 'number' ? currentCharIndex : 0)
+  const selectedCharID = ctx.selectedCharID ?? (typeof currentCharIndex === 'number' ? currentCharIndex : 0)
   const char = ctx.database.characters[selectedCharID]
   const chatPage = ctx.chatPage ?? char?.chatPage ?? 0
   const chat = char?.chats?.[chatPage]

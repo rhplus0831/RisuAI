@@ -363,11 +363,7 @@ export class SandboxHost {
   }
 
   private serialize(val: any): any {
-    if (
-      val &&
-      (typeof val === 'object' || typeof val === 'function') &&
-      val.__classType === 'REMOTE_REQUIRED'
-    ) {
+    if (val && (typeof val === 'object' || typeof val === 'function') && val.__classType === 'REMOTE_REQUIRED') {
       if (val === null) return null
       if (Array.isArray(val)) return val
 
@@ -389,11 +385,7 @@ export class SandboxHost {
       }
     }
 
-    if (
-      val instanceof ReadableStream ||
-      val instanceof WritableStream ||
-      val instanceof TransformStream
-    ) {
+    if (val instanceof ReadableStream || val instanceof WritableStream || val instanceof TransformStream) {
       return {
         __type: 'CALLBACK_STREAMS',
         __specialType: 'none',

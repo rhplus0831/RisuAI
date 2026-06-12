@@ -6,10 +6,7 @@ interface CommandResult {
   revision: number
 }
 
-async function runServerCommand(
-  _name: string,
-  payload: { baseRevision: number },
-): Promise<CommandResult> {
+async function runServerCommand(_name: string, payload: { baseRevision: number }): Promise<CommandResult> {
   return { status: 'ok', revision: payload.baseRevision + 1 }
 }
 

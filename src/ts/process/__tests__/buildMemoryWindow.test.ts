@@ -32,26 +32,16 @@ vi.mock('../memory/hypav3', async (importActual) => {
   }
 })
 
-import {
-  setDatabase,
-  type Chat,
-  type Database,
-  type character,
-} from '../../storage/database.svelte'
+import { setDatabase, type Chat, type Database, type character } from '../../storage/database.svelte'
 import { DBState } from '../../stores.svelte'
 import type { ChatTokenizer } from '../../tokenizer'
 import type { OpenAIChat } from '../index.svelte'
-import {
-  buildMemoryWindow,
-  type BuildMemoryWindowResult,
-} from '../promptAssembly/buildMemoryWindow'
+import { buildMemoryWindow, type BuildMemoryWindowResult } from '../promptAssembly/buildMemoryWindow'
 import type { PromptItem } from '../prompt'
 
 type NonStop = Exclude<BuildMemoryWindowResult, { stopSending: true }>
 
-function assertNotStopped(
-  result: BuildMemoryWindowResult,
-): asserts result is NonStop {
+function assertNotStopped(result: BuildMemoryWindowResult): asserts result is NonStop {
   if (result.stopSending) throw new Error('expected non-stop result')
 }
 
@@ -446,9 +436,7 @@ describe('buildMemoryWindow - memory-card split', () => {
     })
 
     assertNotStopped(result)
-    expect(result.memories).toEqual([
-      { role: 'system', content: 'past-summary', memo: 'hypaMemory' },
-    ])
+    expect(result.memories).toEqual([{ role: 'system', content: 'past-summary', memo: 'hypaMemory' }])
     // Memory placeholder filtered out (empty content), real chats kept.
     expect(unformated.chats.map((c) => c.content)).toEqual(['hi', 'hello'])
     // Non-memory rows are marked removable.
@@ -484,9 +472,7 @@ describe('buildMemoryWindow - memory-card split', () => {
 
     assertNotStopped(result)
     expect(result.memories).toEqual([])
-    expect(unformated.chats[0].content).toBe(
-      '<Previous Conversation>past-summary</Previous Conversation>',
-    )
+    expect(unformated.chats[0].content).toBe('<Previous Conversation>past-summary</Previous Conversation>')
     // The supa/hypa row does not get removable=true (only non-memory rows do).
     expect(unformated.chats[0].removable).toBeUndefined()
     expect(unformated.chats[1].removable).toBe(true)

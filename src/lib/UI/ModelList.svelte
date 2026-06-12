@@ -20,14 +20,7 @@
     noMargin?: boolean
   }
 
-  let {
-    value = $bindable(''),
-    onChange = (v) => {},
-    onclick,
-    blankable,
-    excludesPrefix,
-    noMargin,
-  }: Props = $props()
+  let { value = $bindable(''), onChange = (v) => {}, onclick, blankable, excludesPrefix, noMargin }: Props = $props()
   let openOptions = $state(false)
 
   function changeModel(name: string) {
@@ -52,8 +45,7 @@
     tabindex="0"
     onclick={() => {
       openOptions = false
-    }}
-  >
+    }}>
     <div
       class="w-96 max-w-full max-h-full overflow-y-auto overflow-x-hidden bg-bgcolor p-4 flex flex-col"
       role="button"
@@ -61,16 +53,14 @@
       onclick={(e) => {
         e.stopPropagation()
         onclick?.(e)
-      }}
-    >
+      }}>
       <div class="flex items-center gap-3 mb-4">
         <button
           class="flex items-center justify-center p-2 rounded-lg hover:bg-selected transition-colors shrink-0"
           onclick={() => {
             openOptions = false
           }}
-          title="Back"
-        >
+          title="Back">
           <ArrowLeft size={20} />
         </button>
         <h1 class="font-bold text-xl flex-1">{language.model}</h1>
@@ -84,8 +74,7 @@
               class="hover:bg-selected px-6 py-2 text-lg"
               onclick={() => {
                 changeModel(model.id)
-              }}>{model.name}</button
-            >
+              }}>{model.name}</button>
           {/each}
         {:else}
           <Accordion name={provider.providerName}>
@@ -94,8 +83,7 @@
                 class="hover:bg-selected px-6 py-2 text-lg"
                 onclick={() => {
                   changeModel(model.id)
-                }}>{model.name}</button
-              >
+                }}>{model.name}</button>
             {/each}
           </Accordion>
         {/if}
@@ -108,8 +96,7 @@
             onclick={() => {
               changeModel('horde:::' + 'auto')
             }}
-            class="p-2 hover:text-green-500"
-          >
+            class="p-2 hover:text-green-500">
             Auto Model
             <br /><span class="text-textcolor2 text-sm">Performace: Auto</span>
           </button>
@@ -118,12 +105,9 @@
               onclick={() => {
                 changeModel('horde:::' + model.name)
               }}
-              class="p-2 hover:text-green-500"
-            >
+              class="p-2 hover:text-green-500">
               {model.name.trim()}
-              <br /><span class="text-textcolor2 text-sm"
-                >Performace: {model.performance.toFixed(1)}</span
-              >
+              <br /><span class="text-textcolor2 text-sm">Performace: {model.performance.toFixed(1)}</span>
             </button>
           {/each}
         {/await}
@@ -136,8 +120,7 @@
               class="hover:bg-selected px-6 py-2 text-lg"
               onclick={() => {
                 changeModel(model.id)
-              }}>{model.name ?? 'Unnamed'}</button
-            >
+              }}>{model.name ?? 'Unnamed'}</button>
           {/each}
         </Accordion>
       {/if}
@@ -147,8 +130,7 @@
           class="hover:bg-selected px-6 py-2 text-lg"
           onclick={() => {
             changeModel('')
-          }}>{language.none}</button
-        >
+          }}>{language.none}</button>
       {/if}
       <div class="text-textcolor2 text-xs">
         <CheckInput name={language.showUnrecommended} grayText bind:check={showUnrec} />
@@ -164,7 +146,6 @@
   class={{
     'drop-shadow-lg p-3 flex justify-center items-center ml-2 mr-2 rounded-lg bg-darkbutton border-darkborderc border': true,
     'my-4': !noMargin,
-  }}
->
+  }}>
   {getModelInfo(value)?.fullName || language.none}
 </button>

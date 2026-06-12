@@ -1,10 +1,6 @@
 import { createHash } from 'node:crypto'
 import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
-import {
-  tokenizeChat,
-  type TokenEncoding,
-  type TokenizeChatOptions,
-} from './tokens.js'
+import { tokenizeChat, type TokenEncoding, type TokenizeChatOptions } from './tokens.js'
 
 const DEFAULT_HYPA_V3_PREFIX_TOKEN_MEMO_ENTRIES = 4096
 
@@ -21,11 +17,7 @@ export interface HypaV3PrefixTokenMemoStats {
   evictions: number
 }
 
-export type HypaV3RawTokenizeChat = (
-  chat: OpenAIChat,
-  encoding: TokenEncoding,
-  options: TokenizeChatOptions,
-) => number
+export type HypaV3RawTokenizeChat = (chat: OpenAIChat, encoding: TokenEncoding, options: TokenizeChatOptions) => number
 
 export interface HypaV3PrefixTokenMemo {
   tokenize(
@@ -50,12 +42,7 @@ export function createHypaV3PrefixTokenMemo(
   }
 
   return {
-    tokenize(
-      chat,
-      encoding = 'cl100k_base',
-      options = {},
-      rawTokenizeChat = tokenizeChat,
-    ): number {
+    tokenize(chat, encoding = 'cl100k_base', options = {}, rawTokenizeChat = tokenizeChat): number {
       const key = createHypaV3PrefixTokenMemoKey(chat, encoding, options)
       if (cache.has(key)) {
         const tokens = cache.get(key) as number

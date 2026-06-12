@@ -1,11 +1,6 @@
 import type { Tiktoken } from '@dqbd/tiktoken'
 import type { Tokenizer } from '@mlc-ai/web-tokenizers'
-import {
-  type character,
-  type Chat,
-  getCurrentCharacter,
-  getDatabase,
-} from './storage/database.svelte'
+import { type character, type Chat, getCurrentCharacter, getDatabase } from './storage/database.svelte'
 import type { MultiModal, OpenAIChat } from './process/index.svelte'
 import { supportsInlayImage } from './process/files/inlays'
 import { risuChatParser } from './parser/parser.svelte'
@@ -89,8 +84,7 @@ export async function encodeWithTokenizer(
 export async function encode(data: string): Promise<number[] | Uint32Array | Int32Array> {
   const db = getDatabase()
   const modelInfo = getModelInfo(db.aiModel)
-  const pluginTokenizer =
-    pluginV2.providerOptions.get(db.currentPluginProvider)?.tokenizer ?? 'none'
+  const pluginTokenizer = pluginV2.providerOptions.get(db.currentPluginProvider)?.tokenizer ?? 'none'
 
   let cacheKey = ''
   if (db.useTokenizerCaching) {
@@ -198,9 +192,7 @@ export async function encode(data: string): Promise<number[] | Uint32Array | Int
         result = await tikJS(data, 'cl100k_base')
         break
       case 'custom':
-        result = (await pluginV2.providerOptions
-          .get(db.currentPluginProvider)
-          ?.tokenizerFunc?.(data)) ?? [0]
+        result = (await pluginV2.providerOptions.get(db.currentPluginProvider)?.tokenizerFunc?.(data)) ?? [0]
         break
       default:
         result = await tikJS(data, 'o200k_base')
@@ -226,10 +218,7 @@ export async function encode(data: string): Promise<number[] | Uint32Array | Int
       result = await tikJS(data, 'o200k_base')
     } else if (modelInfo.tokenizer === LLMTokenizer.GoogleCloud && db.googleClaudeTokenizing) {
       result = await tokenizeGoogleCloud(data)
-    } else if (
-      modelInfo.tokenizer === LLMTokenizer.Gemma ||
-      modelInfo.tokenizer === LLMTokenizer.GoogleCloud
-    ) {
+    } else if (modelInfo.tokenizer === LLMTokenizer.Gemma || modelInfo.tokenizer === LLMTokenizer.GoogleCloud) {
       result = await gemmaTokenize(data)
     } else if (modelInfo.tokenizer === LLMTokenizer.DeepSeek) {
       result = await tokenizeWebTokenizers(data, 'DeepSeek')
@@ -338,11 +327,7 @@ async function tikJS(text: string, model = 'cl100k_base') {
       const cl100k_base = await import('@dqbd/tiktoken/encoders/cl100k_base.json')
       lastTikModel = model
 
-      tikParser = new Tiktoken(
-        cl100k_base.bpe_ranks,
-        cl100k_base.special_tokens,
-        cl100k_base.pat_str,
-      )
+      tikParser = new Tiktoken(cl100k_base.bpe_ranks, cl100k_base.special_tokens, cl100k_base.pat_str)
     }
     if (model === 'o200k_base') {
       const { Tiktoken } = await import('@dqbd/tiktoken')

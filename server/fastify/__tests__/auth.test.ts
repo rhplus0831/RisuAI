@@ -48,9 +48,7 @@ describe('auth.knownKeyHashes (A4EC5 / B6 bounded accumulator)', () => {
     registerPublicKey(state, { id: 'k1' })
     registerPublicKey(state, { id: 'k2' })
 
-    const persisted = JSON.parse(
-      fs.readFileSync(path.join(tmpDir, '__known_public_key_hashes.json'), 'utf-8'),
-    )
+    const persisted = JSON.parse(fs.readFileSync(path.join(tmpDir, '__known_public_key_hashes.json'), 'utf-8'))
     expect(Array.isArray(persisted)).toBe(true)
     expect(persisted).toHaveLength(2)
   })
@@ -61,11 +59,7 @@ describe('auth.knownKeyHashes (A4EC5 / B6 bounded accumulator)', () => {
     for (let i = 0; i < 4097; i++) {
       oversize.push(`hash-${i.toString().padStart(4, '0')}`)
     }
-    fs.writeFileSync(
-      path.join(tmpDir, '__known_public_key_hashes.json'),
-      JSON.stringify(oversize),
-      'utf-8',
-    )
+    fs.writeFileSync(path.join(tmpDir, '__known_public_key_hashes.json'), JSON.stringify(oversize), 'utf-8')
 
     const state = createAuthState(tmpDir)
     expect(state.knownKeyHashes.size).toBe(4096)
@@ -154,10 +148,7 @@ describe('projection bulk route auth (L16)', () => {
 
       try {
         const { assertion } = await setupAuthedClient(app)
-        const routes = [
-          '/api/v1/projection/chatMessages/bulk',
-          '/api/v1/projection/characterLorebooks/bulk',
-        ]
+        const routes = ['/api/v1/projection/chatMessages/bulk', '/api/v1/projection/characterLorebooks/bulk']
 
         for (const url of routes) {
           verifyCount = 0

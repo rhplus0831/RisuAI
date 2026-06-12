@@ -119,9 +119,7 @@ export function deleteChatHypaV3(db: DatabaseSync, chatId: string): void {
 
 /** A chat's hypaV3Data blob, or undefined if none. */
 export function getChatHypaV3(db: DatabaseSync, chatId: string): unknown {
-  const row = db.prepare('SELECT json FROM chat_hypa_v3 WHERE chat_id = ?').get(chatId) as
-    | { json: string }
-    | undefined
+  const row = db.prepare('SELECT json FROM chat_hypa_v3 WHERE chat_id = ?').get(chatId) as { json: string } | undefined
   return row ? (JSON.parse(row.json) as unknown) : undefined
 }
 
@@ -136,16 +134,11 @@ export function getAllChatHypaV3Grouped(db: DatabaseSync): Map<string, unknown> 
   return grouped
 }
 
-export function getChatHypaV3GroupedByIds(
-  db: DatabaseSync,
-  chatIds: readonly string[],
-): Map<string, unknown> {
+export function getChatHypaV3GroupedByIds(db: DatabaseSync, chatIds: readonly string[]): Map<string, unknown> {
   const grouped = new Map<string, unknown>()
   for (const ids of idChunks(chatIds)) {
     const rows = db
-      .prepare(
-        `SELECT chat_id, json FROM chat_hypa_v3 WHERE chat_id IN (${placeholders(ids.length)})`,
-      )
+      .prepare(`SELECT chat_id, json FROM chat_hypa_v3 WHERE chat_id IN (${placeholders(ids.length)})`)
       .all(...ids) as { chat_id: string; json: string }[]
     for (const row of rows) grouped.set(row.chat_id, JSON.parse(row.json) as unknown)
   }
@@ -210,32 +203,22 @@ function toRow(message: JsonRecord): MessageRow {
 
 /** Replace a single chat's ACTIVE messages (DELETE + ordered INSERT); the reroll
  *  buffer (alternate rows) is left intact. */
-export function replaceChatMessages(
-  db: DatabaseSync,
-  chatId: string,
-  messages: readonly unknown[],
-): void {
+export function replaceChatMessages(db: DatabaseSync, chatId: string, messages: readonly unknown[]): void {
   recordTableWrite('messages')
   db.prepare('DELETE FROM messages WHERE chat_id = ? AND alternate = 0').run(chatId)
   insertChatMessages(db, chatId, messages)
 }
 
 export function activeMessageIdExists(db: DatabaseSync, messageId: string): boolean {
-  const row = db
-    .prepare('SELECT 1 AS found FROM messages WHERE uid = ? AND alternate = 0 LIMIT 1')
-    .get(messageId) as { found: number } | undefined
+  const row = db.prepare('SELECT 1 AS found FROM messages WHERE uid = ? AND alternate = 0 LIMIT 1').get(messageId) as
+    | { found: number }
+    | undefined
   return !!row
 }
 
-export function activeMessageIdExistsOutsideChat(
-  db: DatabaseSync,
-  messageId: string,
-  chatId: string,
-): boolean {
+export function activeMessageIdExistsOutsideChat(db: DatabaseSync, messageId: string, chatId: string): boolean {
   const row = db
-    .prepare(
-      'SELECT 1 AS found FROM messages WHERE uid = ? AND chat_id != ? AND alternate = 0 LIMIT 1',
-    )
+    .prepare('SELECT 1 AS found FROM messages WHERE uid = ? AND chat_id != ? AND alternate = 0 LIMIT 1')
     .get(messageId, chatId) as { found: number } | undefined
   return !!row
 }
@@ -246,10 +229,7 @@ export interface ActiveMessageLocation {
   message: JsonRecord
 }
 
-export function getActiveMessageLocationById(
-  db: DatabaseSync,
-  messageId: string,
-): ActiveMessageLocation | undefined {
+export function getActiveMessageLocationById(db: DatabaseSync, messageId: string): ActiveMessageLocation | undefined {
   const row = db
     .prepare('SELECT chat_id, seq, json FROM messages WHERE uid = ? AND alternate = 0 LIMIT 1')
     .get(messageId) as { chat_id: string; seq: number; json: string } | undefined
@@ -264,9 +244,9 @@ export function getActiveMessageLocationById(
 export function appendChatMessage(db: DatabaseSync, chatId: string, raw: unknown): void {
   const message = readMessageObject(raw)
   const row = toRow(message)
-  const tail = db
-    .prepare('SELECT MAX(seq) AS maxSeq FROM messages WHERE chat_id = ? AND alternate = 0')
-    .get(chatId) as { maxSeq: number | null } | undefined
+  const tail = db.prepare('SELECT MAX(seq) AS maxSeq FROM messages WHERE chat_id = ? AND alternate = 0').get(chatId) as
+    | { maxSeq: number | null }
+    | undefined
   const seq = (tail?.maxSeq ?? -1) + 1
   recordTableWrite('messages')
   db.prepare(
@@ -309,12 +289,9 @@ export function truncateActiveChatMessages(
   db: DatabaseSync,
   chatId: string,
   afterMessageId: string | null,
-):
-  | { ok: true; removedCount: number }
-  | { ok: false; reason: 'missing-after'; afterMessageId: string } {
+): { ok: true; removedCount: number } | { ok: false; reason: 'missing-after'; afterMessageId: string } {
   const base = getChatMessages(db, chatId)
-  const keepCount =
-    afterMessageId === null ? 0 : base.findIndex((message) => message.chatId === afterMessageId) + 1
+  const keepCount = afterMessageId === null ? 0 : base.findIndex((message) => message.chatId === afterMessageId) + 1
   if (afterMessageId !== null && keepCount === 0) {
     return { ok: false, reason: 'missing-after', afterMessageId }
   }
@@ -324,11 +301,7 @@ export function truncateActiveChatMessages(
   return { ok: true, removedCount: base.length - keepCount }
 }
 
-export function replaceActiveChatMessages(
-  db: DatabaseSync,
-  chatId: string,
-  messages: readonly unknown[],
-): void {
+export function replaceActiveChatMessages(db: DatabaseSync, chatId: string, messages: readonly unknown[]): void {
   applyChatMessageDiff(db, chatId, getChatMessages(db, chatId), messages)
 }
 
@@ -347,9 +320,7 @@ export function writeGenerationChatMessage(
   const row = toRow(message)
   const lookupMessageId = targetMessageId ?? row.uid
   const existing = db
-    .prepare(
-      'SELECT seq, json FROM messages WHERE chat_id = ? AND uid = ? AND alternate = 0 LIMIT 1',
-    )
+    .prepare('SELECT seq, json FROM messages WHERE chat_id = ? AND uid = ? AND alternate = 0 LIMIT 1')
     .get(chatId, lookupMessageId) as { seq: number; json: string } | undefined
 
   if (!existing && targetMessageId) {
@@ -362,9 +333,9 @@ export function writeGenerationChatMessage(
           'SELECT 1 AS found FROM messages WHERE uid = ? AND alternate = 0 AND NOT (chat_id = ? AND seq = ?) LIMIT 1',
         )
         .get(row.uid, chatId, existing.seq) as { found: number } | undefined)
-    : (db
-        .prepare('SELECT 1 AS found FROM messages WHERE uid = ? AND alternate = 0 LIMIT 1')
-        .get(row.uid) as { found: number } | undefined)
+    : (db.prepare('SELECT 1 AS found FROM messages WHERE uid = ? AND alternate = 0 LIMIT 1').get(row.uid) as
+        | { found: number }
+        | undefined)
   if (duplicate) {
     return { ok: false, reason: 'duplicate', messageId: row.uid }
   }
@@ -381,12 +352,7 @@ export function writeGenerationChatMessage(
   return { ok: true, messageId: row.uid, displaced: JSON.parse(existing.json) as JsonRecord }
 }
 
-function insertChatMessages(
-  db: DatabaseSync,
-  chatId: string,
-  messages: readonly unknown[],
-  startSeq = 0,
-): void {
+function insertChatMessages(db: DatabaseSync, chatId: string, messages: readonly unknown[], startSeq = 0): void {
   if (messages.length === 0) return
   recordTableWrite('messages')
   const insert = db.prepare(
@@ -483,10 +449,7 @@ export function applyChatMessageDiff(
   if (prefix < base.length) {
     // Active rows only: alternate rows carry a negative `seq` (`seq >= prefix`
     // already excludes them); `alternate = 0` makes that explicit and robust.
-    db.prepare('DELETE FROM messages WHERE chat_id = ? AND seq >= ? AND alternate = 0').run(
-      chatId,
-      prefix,
-    )
+    db.prepare('DELETE FROM messages WHERE chat_id = ? AND seq >= ? AND alternate = 0').run(chatId, prefix)
   }
   if (prefix < next.length) {
     const insert = db.prepare(
@@ -502,9 +465,9 @@ export function applyChatMessageDiff(
 
 /** All ACTIVE messages for a chat, in `seq` order, reconstructed from the json column. */
 export function getChatMessages(db: DatabaseSync, chatId: string): JsonRecord[] {
-  const rows = db
-    .prepare('SELECT json FROM messages WHERE chat_id = ? AND alternate = 0 ORDER BY seq')
-    .all(chatId) as { json: string }[]
+  const rows = db.prepare('SELECT json FROM messages WHERE chat_id = ? AND alternate = 0 ORDER BY seq').all(chatId) as {
+    json: string
+  }[]
   return rows.map((row) => JSON.parse(row.json) as JsonRecord)
 }
 
@@ -514,28 +477,22 @@ export function getChatMessages(db: DatabaseSync, chatId: string): JsonRecord[] 
  * Used by active-chat window hydration so opening a large chat does not pay to
  * parse every historical row before the first visible messages can render.
  */
-export function getChatMessagesRange(
-  db: DatabaseSync,
-  chatId: string,
-  start: number,
-  limit: number,
-): JsonRecord[] {
+export function getChatMessagesRange(db: DatabaseSync, chatId: string, start: number, limit: number): JsonRecord[] {
   if (!Number.isInteger(start) || start < 0 || !Number.isInteger(limit) || limit <= 0) {
     return []
   }
   const rows = db
-    .prepare(
-      'SELECT json FROM messages WHERE chat_id = ? AND alternate = 0 ORDER BY seq LIMIT ? OFFSET ?',
-    )
+    .prepare('SELECT json FROM messages WHERE chat_id = ? AND alternate = 0 ORDER BY seq LIMIT ? OFFSET ?')
     .all(chatId, limit, start) as { json: string }[]
   return rows.map((row) => JSON.parse(row.json) as JsonRecord)
 }
 
 /** Every chat's ACTIVE messages, grouped by chat id, in `seq` order (one query). */
 export function getAllChatMessagesGrouped(db: DatabaseSync): Map<string, JsonRecord[]> {
-  const rows = db
-    .prepare('SELECT chat_id, json FROM messages WHERE alternate = 0 ORDER BY chat_id, seq')
-    .all() as { chat_id: string; json: string }[]
+  const rows = db.prepare('SELECT chat_id, json FROM messages WHERE alternate = 0 ORDER BY chat_id, seq').all() as {
+    chat_id: string
+    json: string
+  }[]
   const grouped = new Map<string, JsonRecord[]>()
   for (const row of rows) {
     let list = grouped.get(row.chat_id)
@@ -548,10 +505,7 @@ export function getAllChatMessagesGrouped(db: DatabaseSync): Map<string, JsonRec
   return grouped
 }
 
-export function getChatMessagesGroupedByIds(
-  db: DatabaseSync,
-  chatIds: readonly string[],
-): Map<string, JsonRecord[]> {
+export function getChatMessagesGroupedByIds(db: DatabaseSync, chatIds: readonly string[]): Map<string, JsonRecord[]> {
   const grouped = new Map<string, JsonRecord[]>()
   for (const ids of idChunks(chatIds)) {
     const rows = db
@@ -581,9 +535,9 @@ export function getAllChatIdsWithMessages(db: DatabaseSync): string[] {
 
 /** Number of ACTIVE message rows for a chat (cheap header for stub projection). */
 export function countChatMessages(db: DatabaseSync, chatId: string): number {
-  const row = db
-    .prepare('SELECT COUNT(*) AS count FROM messages WHERE chat_id = ? AND alternate = 0')
-    .get(chatId) as { count: number } | undefined
+  const row = db.prepare('SELECT COUNT(*) AS count FROM messages WHERE chat_id = ? AND alternate = 0').get(chatId) as
+    | { count: number }
+    | undefined
   return row?.count ?? 0
 }
 
@@ -605,9 +559,9 @@ export function addAlternateMessage(db: DatabaseSync, chatId: string, message: u
     .prepare('SELECT 1 FROM messages WHERE chat_id = ? AND alternate = 1 AND uid = ? LIMIT 1')
     .get(chatId, row.uid) as { 1: number } | undefined
   if (existing) return
-  const min = db
-    .prepare('SELECT MIN(seq) AS minSeq FROM messages WHERE chat_id = ? AND alternate = 1')
-    .get(chatId) as { minSeq: number | null } | undefined
+  const min = db.prepare('SELECT MIN(seq) AS minSeq FROM messages WHERE chat_id = ? AND alternate = 1').get(chatId) as
+    | { minSeq: number | null }
+    | undefined
   const seq = (min?.minSeq ?? 0) - 1 // -1, -2, -3, … (first alternate is -1)
   recordTableWrite('messages')
   db.prepare(
@@ -655,9 +609,9 @@ export function clearAlternateMessages(db: DatabaseSync, chatId: string): void {
 
 /** Number of preserved reroll candidates for a chat. */
 export function countAlternateMessages(db: DatabaseSync, chatId: string): number {
-  const row = db
-    .prepare('SELECT COUNT(*) AS count FROM messages WHERE chat_id = ? AND alternate = 1')
-    .get(chatId) as { count: number } | undefined
+  const row = db.prepare('SELECT COUNT(*) AS count FROM messages WHERE chat_id = ? AND alternate = 1').get(chatId) as
+    | { count: number }
+    | undefined
   return row?.count ?? 0
 }
 

@@ -10,10 +10,7 @@ import path from 'node:path'
 // reference fix this template generalizes.
 
 /** Snapshot of every row's stable rowid in `characters` / `chats`, keyed by id. */
-export function tableRowidsById(
-  dataDir: string,
-  table: 'characters' | 'chats',
-): Record<string, number> {
+export function tableRowidsById(dataDir: string, table: 'characters' | 'chats'): Record<string, number> {
   const db = new DatabaseSync(path.join(dataDir, 'risu.db'))
   try {
     const rows = db.prepare(`SELECT id, rowid FROM ${table} ORDER BY id`).all() as Array<{
@@ -28,10 +25,7 @@ export function tableRowidsById(
 
 /** Snapshot of a chat's active message rows (seq → rowid), for message-store
  *  stability checks alongside the table snapshots. */
-export function activeMessageRowids(
-  dataDir: string,
-  chatId: string,
-): { seq: number; rowid: number }[] {
+export function activeMessageRowids(dataDir: string, chatId: string): { seq: number; rowid: number }[] {
   const db = new DatabaseSync(path.join(dataDir, 'risu.db'))
   try {
     return db

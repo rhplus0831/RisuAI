@@ -15,10 +15,7 @@ import {
   type ServerCommandTransportOptions,
   type TriggerDefinitionSnapshot,
 } from './commands'
-import {
-  getServerProjectionApplyEpoch,
-  withTrustedServerProjectionWrite,
-} from './projectionWriteGuard.svelte'
+import { getServerProjectionApplyEpoch, withTrustedServerProjectionWrite } from './projectionWriteGuard.svelte'
 
 export interface ScriptDefinitionStateSnapshot {
   characters: character[]
@@ -43,9 +40,7 @@ export type ScopedScriptDefinitionRollback =
  * single-row rollback; the rarer discrete callers (module apply, MCP edits) keep
  * passing the full `ScriptDefinitionStateSnapshot`.
  */
-export type ScriptDefinitionRollback =
-  | ScriptDefinitionStateSnapshot
-  | ScopedScriptDefinitionRollback
+export type ScriptDefinitionRollback = ScriptDefinitionStateSnapshot | ScopedScriptDefinitionRollback
 
 interface PendingCollectionReplacement {
   key: string
@@ -80,10 +75,7 @@ let selectedCharMirror = $state(-1)
  *   CharConfig sidebar).
  * - `module`: only the open module's regex/trigger (the module `ModuleMenu`).
  */
-export type ScriptDefinitionWatchScope =
-  | { kind: 'all' }
-  | { kind: 'character' }
-  | { kind: 'module'; moduleId: string }
+export type ScriptDefinitionWatchScope = { kind: 'all' } | { kind: 'character' } | { kind: 'module'; moduleId: string }
 
 export interface WatchServerBackedScriptDefinitionsOptions {
   delayMs?: number
@@ -318,11 +310,7 @@ export function watchServerBackedScriptDefinitions(
       // the whole characters+modules graph (which carries hydrated histories).
       const currentSnapshots = collectScriptDefinitionCollectionSnapshots(scope)
 
-      if (
-        suppressRollbackDispatch ||
-        !initialized ||
-        projectionApplyEpoch !== previousProjectionApplyEpoch
-      ) {
+      if (suppressRollbackDispatch || !initialized || projectionApplyEpoch !== previousProjectionApplyEpoch) {
         initialized = true
         previousProjectionApplyEpoch = projectionApplyEpoch
         previousSnapshots = currentSnapshots
@@ -386,9 +374,7 @@ function dispatchWatchedReplacement(key: string, previousSnapshot: string, delay
   }
   if (key.startsWith('moduleScripts:')) {
     const moduleId = key.slice('moduleScripts:'.length)
-    const module = ((DBState.db.modules ?? []) as RisuModule[]).find(
-      (candidate) => candidate.id === moduleId,
-    )
+    const module = ((DBState.db.modules ?? []) as RisuModule[]).find((candidate) => candidate.id === moduleId)
     if (module?.regex) {
       dispatchReplaceModuleScripts(
         moduleId,
@@ -405,9 +391,7 @@ function dispatchWatchedReplacement(key: string, previousSnapshot: string, delay
   }
   if (key.startsWith('moduleTriggers:')) {
     const moduleId = key.slice('moduleTriggers:'.length)
-    const module = ((DBState.db.modules ?? []) as RisuModule[]).find(
-      (candidate) => candidate.id === moduleId,
-    )
+    const module = ((DBState.db.modules ?? []) as RisuModule[]).find((candidate) => candidate.id === moduleId)
     if (module?.trigger) {
       dispatchReplaceModuleTriggers(
         moduleId,
@@ -447,9 +431,7 @@ export function collectScriptDefinitionCollectionSnapshots(
   }
 
   if (scope.kind === 'module') {
-    const module = ((DBState.db.modules ?? []) as RisuModule[]).find(
-      (candidate) => candidate.id === scope.moduleId,
-    )
+    const module = ((DBState.db.modules ?? []) as RisuModule[]).find((candidate) => candidate.id === scope.moduleId)
     if (module) collectModuleScriptDefinitionSnapshots(snapshots, module)
     return snapshots
   }
@@ -465,18 +447,12 @@ export function collectScriptDefinitionCollectionSnapshots(
   return snapshots
 }
 
-function collectCharacterScriptDefinitionSnapshots(
-  snapshots: Map<string, string>,
-  character: character,
-): void {
+function collectCharacterScriptDefinitionSnapshots(snapshots: Map<string, string>, character: character): void {
   snapshots.set(`characterScripts:${character.chaId}`, snapshotJson(character.customscript ?? []))
   snapshots.set(`characterTriggers:${character.chaId}`, snapshotJson(character.triggerscript ?? []))
 }
 
-function collectModuleScriptDefinitionSnapshots(
-  snapshots: Map<string, string>,
-  module: RisuModule,
-): void {
+function collectModuleScriptDefinitionSnapshots(snapshots: Map<string, string>, module: RisuModule): void {
   if (module.id && Array.isArray(module.regex)) {
     snapshots.set(`moduleScripts:${module.id}`, snapshotJson(module.regex))
   }
@@ -514,18 +490,14 @@ function ensureScopedClientScriptDefinitionIds(scope: ScriptDefinitionWatchScope
     return
   }
 
-  const module = ((DBState.db.modules ?? []) as RisuModule[]).find(
-    (candidate) => candidate.id === scope.moduleId,
-  )
+  const module = ((DBState.db.modules ?? []) as RisuModule[]).find((candidate) => candidate.id === scope.moduleId)
   if (!module) return
   const needsUpdate =
     (Array.isArray(module.regex) && needsScriptDefinitionIds(module.regex)) ||
     (Array.isArray(module.trigger) && needsTriggerDefinitionIds(module.trigger))
   if (!needsUpdate) return
   withTrustedServerProjectionWrite(() => {
-    const target = ((DBState.db.modules ?? []) as RisuModule[]).find(
-      (candidate) => candidate.id === scope.moduleId,
-    )
+    const target = ((DBState.db.modules ?? []) as RisuModule[]).find((candidate) => candidate.id === scope.moduleId)
     if (!target) return
     if (Array.isArray(target.regex)) {
       target.regex = ensureClientScriptDefinitionIds(target.regex)
@@ -561,18 +533,13 @@ function queueReplacement(
   pendingReplacements.set(key, pending)
 }
 
-export function flushPendingServerBackedScriptDefinitionPatches(
-  options: ServerCommandTransportOptions = {},
-): void {
+export function flushPendingServerBackedScriptDefinitionPatches(options: ServerCommandTransportOptions = {}): void {
   for (const key of Array.from(pendingReplacements.keys())) {
     runPendingScriptDefinitionReplacement(key, options)
   }
 }
 
-function runPendingScriptDefinitionReplacement(
-  key: string,
-  options: ServerCommandTransportOptions = {},
-): void {
+function runPendingScriptDefinitionReplacement(key: string, options: ServerCommandTransportOptions = {}): void {
   const pending = pendingReplacements.get(key)
   if (!pending) return
   if (pending.timer) clearTimeout(pending.timer)
@@ -602,16 +569,12 @@ function restoreScopedScriptDefinition(rollback: ScopedScriptDefinitionRollback)
   withTrustedServerProjectionWrite(() => {
     switch (rollback.kind) {
       case 'characterScripts': {
-        const character = DBState.db.characters?.find(
-          (candidate) => candidate.chaId === rollback.characterId,
-        )
+        const character = DBState.db.characters?.find((candidate) => candidate.chaId === rollback.characterId)
         if (character) character.customscript = cloneJsonValue(rollback.scripts)
         return
       }
       case 'characterTriggers': {
-        const character = DBState.db.characters?.find(
-          (candidate) => candidate.chaId === rollback.characterId,
-        )
+        const character = DBState.db.characters?.find((candidate) => candidate.chaId === rollback.characterId)
         if (character) character.triggerscript = cloneJsonValue(rollback.triggers)
         return
       }

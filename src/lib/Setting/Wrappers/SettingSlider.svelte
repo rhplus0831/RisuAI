@@ -31,9 +31,7 @@
   })
 
   let customText = $derived(
-    typeof item.options?.customText === 'function'
-      ? item.options.customText(localValue)
-      : item.options?.customText,
+    typeof item.options?.customText === 'function' ? item.options.customText(localValue) : item.options?.customText,
   )
 </script>
 
@@ -50,5 +48,4 @@
   multiple={item.options?.multiple}
   disableable={item.options?.disableable}
   {customText}
-  bind:value={localValue}
-/>
+  bind:value={localValue} />

@@ -18,8 +18,7 @@
   style="vertical-align: -2px;"
   onclick={() => {
     alertMd(language.help[key])
-  }}
->
+  }}>
   {#if key === 'experimental'}
     <div class="text-red-500 hover:text-green-500">
       <FlaskConicalIcon size={16} />

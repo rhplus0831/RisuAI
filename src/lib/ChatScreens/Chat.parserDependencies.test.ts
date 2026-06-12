@@ -13,11 +13,9 @@ const chatParserMocks = vi.hoisted(() => ({
   canUseServerCommands: vi.fn(() => false),
   getLLMCache: vi.fn(async () => null),
   ParseMarkdown: vi.fn(async (html: string) => html),
-  risuChatParser: vi.fn(
-    (message: string, arg?: { cbsConditions?: unknown; chara?: unknown; chatID?: unknown }) => {
-      return `parsed:${message}:${JSON.stringify(arg?.cbsConditions ?? {})}`
-    },
-  ),
+  risuChatParser: vi.fn((message: string, arg?: { cbsConditions?: unknown; chara?: unknown; chatID?: unknown }) => {
+    return `parsed:${message}:${JSON.stringify(arg?.cbsConditions ?? {})}`
+  }),
   runLuaButtonTrigger: vi.fn(async () => undefined),
   runTrigger: vi.fn(async () => undefined),
   sayTTS: vi.fn(),
@@ -145,9 +143,7 @@ vi.mock('src/ts/util', () => ({
   sleep: vi.fn(async () => undefined),
 }))
 
-import ChatParserDependenciesHarness, {
-  type ParserDependencyRow,
-} from './Chat.parserDependenciesHarness.svelte'
+import ChatParserDependenciesHarness, { type ParserDependencyRow } from './Chat.parserDependenciesHarness.svelte'
 import {
   DBState,
   HideIconStore,
@@ -288,9 +284,7 @@ describe('Chat parser dependencies', () => {
     mountHarness(rows)
     await settle()
 
-    expect(chatParserMocks.risuChatParser.mock.calls.map((call) => call[0])).toEqual(
-      rows.map((row) => row.data),
-    )
+    expect(chatParserMocks.risuChatParser.mock.calls.map((call) => call[0])).toEqual(rows.map((row) => row.data))
     const callsAfterMount = chatParserMocks.risuChatParser.mock.calls.length
 
     withTrustedServerProjectionWrite(() => {
@@ -311,9 +305,7 @@ describe('Chat parser dependencies', () => {
     component?.updateMessage(2, 'visible message 2 changed')
     await settle()
 
-    expect(chatParserMocks.risuChatParser.mock.calls.map((call) => call[0])).toEqual([
-      'visible message 2 changed',
-    ])
+    expect(chatParserMocks.risuChatParser.mock.calls.map((call) => call[0])).toEqual(['visible message 2 changed'])
 
     chatParserMocks.risuChatParser.mockClear()
     component?.updateRole(1, 'char')

@@ -22,9 +22,7 @@ import {
   resolveServerCompletionRoute,
 } from '../serverCompletion'
 
-function makeTarg(
-  overrides: Partial<RequestDataArgumentExtended> = {},
-): RequestDataArgumentExtended {
+function makeTarg(overrides: Partial<RequestDataArgumentExtended> = {}): RequestDataArgumentExtended {
   return {
     bias: {},
     formated: [{ role: 'user', content: 'hi' }],
@@ -49,8 +47,7 @@ function makeTarg(
   } as RequestDataArgumentExtended
 }
 
-beforeEach(() => {
-})
+beforeEach(() => {})
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -102,9 +99,7 @@ describe('requestServerCompletion', () => {
       temperature: 0.4,
       currentCharName: 'Mira',
     })
-    expect(JSON.stringify(payload)).not.toMatch(
-      /"provider"|"model"|"options"|"apiKey"|"baseUrl"|"credentials"/,
-    )
+    expect(JSON.stringify(payload)).not.toMatch(/"provider"|"model"|"options"|"apiKey"|"baseUrl"|"credentials"/)
   })
 
   it('passes static model intent when the caller provides one', async () => {

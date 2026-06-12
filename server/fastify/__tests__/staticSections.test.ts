@@ -1,9 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest'
-import type {
-  Chat,
-  Database,
-  character,
-} from '../../../src/ts/storage/database.svelte'
+import type { Chat, Database, character } from '../../../src/ts/storage/database.svelte'
 import {
   buildAuthorNote,
   buildCotInstruction,
@@ -92,9 +88,7 @@ describe('Phase 7-3 buildDescription', () => {
   it('emits only the desc when personality and scenario are empty', () => {
     const db = makeDatabase()
     const out = buildDescription(ctxFor(db), db.characters[0])
-    expect(out).toEqual([
-      { role: 'system', content: 'A friendly assistant.' },
-    ])
+    expect(out).toEqual([{ role: 'system', content: 'A friendly assistant.' }])
   })
 
   it('appends personality and scenario when set, with the SPA header text', () => {
@@ -184,9 +178,7 @@ describe('Phase 7-3 buildPersona', () => {
 
   it('returns the expanded personaPrompt when set', () => {
     const db = makeDatabase({ personaPrompt: 'Alex helps {{char}}.' })
-    expect(buildPersona(ctxFor(db))).toEqual([
-      { role: 'system', content: 'Alex helps Tess.' },
-    ])
+    expect(buildPersona(ctxFor(db))).toEqual([{ role: 'system', content: 'Alex helps Tess.' }])
   })
 })
 
@@ -198,9 +190,7 @@ describe('Phase 7-3 buildCotInstruction', () => {
 
   it('returns the COT instruction when chainOfThought is true', () => {
     const db = makeDatabase({ chainOfThought: true })
-    expect(buildCotInstruction(ctxFor(db), false)).toEqual([
-      { role: 'system', content: COT_TEXT },
-    ])
+    expect(buildCotInstruction(ctxFor(db), false)).toEqual([{ role: 'system', content: COT_TEXT }])
   })
 
   it('returns [] when usingPromptTemplate and customChainOfThought are both true', () => {
@@ -216,9 +206,7 @@ describe('Phase 7-3 buildCotInstruction', () => {
       chainOfThought: true,
       promptSettings: { customChainOfThought: false } as unknown as Database['promptSettings'],
     })
-    expect(buildCotInstruction(ctxFor(db), true)).toEqual([
-      { role: 'system', content: COT_TEXT },
-    ])
+    expect(buildCotInstruction(ctxFor(db), true)).toEqual([{ role: 'system', content: COT_TEXT }])
   })
 })
 
@@ -256,9 +244,7 @@ describe('Slice 3c buildInlayViewInstruction', () => {
         ['sad', 's.png'],
       ],
     } as unknown as Partial<character>)
-    expect(buildInlayViewInstruction(char)).toEqual([
-      { role: 'system', content: 'Pick from: happy, sad' },
-    ])
+    expect(buildInlayViewInstruction(char)).toEqual([{ role: 'system', content: 'Pick from: happy, sad' }])
   })
 
   it('emits the emotion instruction with an empty {{slot}} when emotionImages is empty', () => {
@@ -273,9 +259,7 @@ describe('Slice 3c buildInlayViewInstruction', () => {
       },
       emotionImages: [],
     } as unknown as Partial<character>)
-    expect(buildInlayViewInstruction(char)).toEqual([
-      { role: 'system', content: 'Pick from: ' },
-    ])
+    expect(buildInlayViewInstruction(char)).toEqual([{ role: 'system', content: 'Pick from: ' }])
   })
 
   it('emits the imggen instruction verbatim', () => {
@@ -289,9 +273,7 @@ describe('Slice 3c buildInlayViewInstruction', () => {
         emotionInstructions: '',
       },
     } as unknown as Partial<character>)
-    expect(buildInlayViewInstruction(char)).toEqual([
-      { role: 'system', content: 'Draw the scene.' },
-    ])
+    expect(buildInlayViewInstruction(char)).toEqual([{ role: 'system', content: 'Draw the scene.' }])
   })
 
   it('returns [] when inlayViewScreen is on but viewScreen is none', () => {

@@ -2,11 +2,7 @@
   import { XIcon } from '@lucide/svelte'
   import { language } from '../../lang'
 
-  import {
-    DBState,
-    selectedCharID,
-    type GenerationSettingsPickerMode,
-  } from 'src/ts/stores.svelte'
+  import { DBState, selectedCharID, type GenerationSettingsPickerMode } from 'src/ts/stores.svelte'
   import { changeUserPersona, normalizePersonaIds } from 'src/ts/persona'
   import {
     resolveActiveChatGenerationSettings,
@@ -62,15 +58,11 @@
     class="bg-darkbg p-4 break-any rounded-md flex flex-col max-w-3xl w-96 max-h-full overflow-y-auto"
     data-risu-generation-picker
     data-risu-picker-kind="persona"
-    data-risu-picker-mode={mode}
-  >
+    data-risu-picker-mode={mode}>
     <div class="flex items-center text-textcolor mb-4">
       <h2 class="mt-0 mb-0 font-bold">{language.persona}</h2>
       <div class="grow flex justify-end">
-        <button
-          class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer items-center"
-          onclick={close}
-        >
+        <button class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer items-center" onclick={close}>
           <XIcon size={24} />
         </button>
       </div>
@@ -88,8 +80,7 @@
         data-risu-row-id={nonEmptyId(persona.id) ?? ''}
         data-risu-row-index={i}
         data-risu-selected={isPersonaSelected(i) ? 'true' : 'false'}
-        aria-current={isPersonaSelected(i) ? 'true' : undefined}
-      >
+        aria-current={isPersonaSelected(i) ? 'true' : undefined}>
         <span class="overflow-x-auto whitespace-nowrap w-full text-left">
           <span class="font-medium">{persona.name}</span>
           {#if persona.note}

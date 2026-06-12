@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import {
-  decodeProxyJobWsChunk,
-  formatProxyStreamErrorMessage,
-  parseProxyJobWsEvent,
-} from './proxyJobWs'
+import { decodeProxyJobWsChunk, formatProxyStreamErrorMessage, parseProxyJobWsEvent } from './proxyJobWs'
 
 describe('parseProxyJobWsEvent', () => {
   it('parses valid proxy job events', () => {

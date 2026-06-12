@@ -127,9 +127,7 @@ describe('server bootstrap projection helper', () => {
       database: { characters: [], language: 'en' },
     }))
 
-    await expect(
-      fetchServerBootstrapProjectionReadOnly(null, { cacheRevision: false }),
-    ).resolves.toMatchObject({
+    await expect(fetchServerBootstrapProjectionReadOnly(null, { cacheRevision: false })).resolves.toMatchObject({
       status: 'ok',
       projection: { revision: 14 },
     })

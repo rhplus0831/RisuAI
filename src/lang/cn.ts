@@ -36,8 +36,7 @@ export const languageChinese = {
   help: {
     model: '此模型是指聊天中使用的主控模型。',
     submodel: '辅助模型是一个用于分析情感图像、产生自动建议等的模型，推荐使用 GPT-3.5。',
-    oaiapikey:
-      'OpenAI 的 API 密钥（Key），可在 https://platform.openai.com/account/api-keys 获取。',
+    oaiapikey: 'OpenAI 的 API 密钥（Key），可在 https://platform.openai.com/account/api-keys 获取。',
     mainprompt: '主提示词设置用于决定模型的默认行为。',
     jailbreak: '当角色中的越狱开关被激活后，越狱提示词将被使用。',
     globalNote: '一个对模型行为有强烈影响的备注（也称为 UJB），适用于所有角色。',
@@ -46,21 +45,17 @@ export const languageChinese = {
     forceUrl: '此字段不为空时，请求将被发送到你所输入的网址。',
     tempature:
       '较低的数值会使角色更紧密地遵循提示词，但会使回应更制式与机械化。\n较高的数值则会增强角色的创意表现，但回应可能会变得不稳定。',
-    frequencyPenalty:
-      '较高的数值可以避免角色在个别回应中重复使用相同的词汇，但回应也更容易出现语义混乱。',
-    presensePenalty:
-      '较高的数值可以避免角色在整体对话中重复使用相同的词汇，但这也可能导致回答失去一致性和稳定性。',
+    frequencyPenalty: '较高的数值可以避免角色在个别回应中重复使用相同的词汇，但回应也更容易出现语义混乱。',
+    presensePenalty: '较高的数值可以避免角色在整体对话中重复使用相同的词汇，但这也可能导致回答失去一致性和稳定性。',
     sdProvider: '图像生成提供者。',
     msgSound: '当角色回应时，播放 *叮* 的提示音',
     charDesc: '角色的简要描述。这会影响角色的回应方式。',
     charFirstMessage: '角色的初始消息，这会极大地影响角色的回应方式。',
     charNote: '对模型行为有强烈影响的备注，嵌入到当前角色中，也称为 UJB。',
     toggleNsfw: '切换越狱提示词的开关。',
-    lorebook:
-      '世界书（Lorebook）是由用户创建的 AI 辞典，只有当上下文中包含关键词时 AI 才能看到它。',
+    lorebook: '世界书（Lorebook）是由用户创建的 AI 辞典，只有当上下文中包含关键词时 AI 才能看到它。',
     loreName: '世界书的名称，不影响 AI。',
-    loreActivationKey:
-      '当上下文中包含任一关键词时，该条目将被激活，并激活相应的提示词。使用逗号分隔。',
+    loreActivationKey: '当上下文中包含任一关键词时，该条目将被激活，并激活相应的提示词。使用逗号分隔。',
     loreorder: '插入顺序越高，对模型的影响力越大。在激活大量条目时，也更不容易被截断。',
     bias: 'Bias 是一组键值数据，用于修改某些字符串出现的概率。\n其数值范围可以是 -100 到 100。较高的数值会使该字符串更可能出现，较低的数值则降低出现概率。\n另外，在某些模型中，若将数值设为 -101，该字符串将被标记为“强制禁止词”。\n警告：若 Tokenizer 设置有误，可能无法正常运作。',
     emotion:
@@ -78,8 +73,7 @@ export const languageChinese = {
     chatNote: '这是一个强烈影响模型行为的备注，嵌入于当前聊天中，也称为记忆或 UJB。',
     personality: '对角色性格的简要描述。\n\n**不建议使用此字段，请填写在角色描述中。**',
     scenario: '对角色情境的简要描述。\n\n**不建议使用此字段，请填写在角色描述中。**',
-    utilityBot:
-      '激活后，将忽略主提示词、越狱提示词和其他提示词。适用于工具型机器人，而非用于角色扮演。',
+    utilityBot: '激活后，将忽略主提示词、越狱提示词和其他提示词。适用于工具型机器人，而非用于角色扮演。',
     loreSelective: '激活选择性模式后，需同时匹配关键词与次要关键詞，方可激活该条目。',
     loreRandomActivation:
       '激活“使用概率条件”后，若同时符合激活条目的其他条件，则在每次发送聊天时，该条目将依照设置的概率被使用。',
@@ -108,12 +102,10 @@ export const languageChinese = {
     imageCompression: '激活后，在导出角色时会压缩略图片。如果动画图片无法显示，请尝试关闭此选项。',
     useExperimental: '激活后，将显示部分实验性功能。',
     forceProxyAsOpenAI: '激活后，使用反向代理（Reverse proxy）时将强制使用 OpenAI 格式。',
-    forcePlainFetch:
-      '激活后，将使用浏览器的 Fetch API 来替代原生 HTTP 请求。这可能会导致 CORS 错误。',
+    forcePlainFetch: '激活后，将使用浏览器的 Fetch API 来替代原生 HTTP 请求。这可能会导致 CORS 错误。',
     autoFillRequestURL: '激活后，将自动填入请求 URL 以匹配当前模型。',
     chainOfThought: '激活后，将在提示词中添加思维链（CoT）提示。',
-    gptVisionQuality:
-      '此选项用于设置图像检测模型的质量。质量越高，检测越准确，但会使用更多的 Token。',
+    gptVisionQuality: '此选项用于设置图像检测模型的质量。质量越高，检测越准确，但会使用更多的 Token。',
     genTimes:
       '此设置支持模型上的重滚（reroll）回应数量。除第一则回应外，其他回应将作为缓存使用，以降低成本。但若未多次重滚回应，可能增加成本。',
     requestretrys: '此选项用于设置请求失败时的重试次数。',
@@ -131,10 +123,8 @@ export const languageChinese = {
       '激活后，若在处理数据时找不到资源名称，系统将使用向量搜索（Vector Search）尝试查找最接近的资源名称并进行替换。',
     dynamicAssetsEditDisplay: '激活后，动态资源将同样应用于“修改显示”阶段，但这可能会影响性能。',
     nickname: '设置后，将在聊天中以此昵称取代角色名称，并显示于 {{char}} 和 <char>。',
-    useRegexLorebook:
-      '激活后，世界书将改用正则表达式（Regex）搜索，而不再使用字符串匹配。格式为 /regex/flags。',
-    customChainOfThought:
-      '警告：不再建议使用思维链（CoT）切换功能。请将相关提示词移至其他提示词字段。',
+    useRegexLorebook: '激活后，世界书将改用正则表达式（Regex）搜索，而不再使用字符串匹配。格式为 /regex/flags。',
+    customChainOfThought: '警告：不再建议使用思维链（CoT）切换功能。请将相关提示词移至其他提示词字段。',
     customPromptTemplateToggle:
       '可在此处设置自定义提示词切换功能。使用 `<toggle variable>=<toggle name>` 格式，每行一个，例如：`cot=Toggle COT`。你可以在提示词中透过 `{{getglobalvar::toggle_<toggle variable>}}` 语法来使用这些切换功能，如：`{{getglobalvar::toggle_cot}}`。',
     defaultVariables:
@@ -143,8 +133,7 @@ export const languageChinese = {
       '激活后，将开放需要高计算能力的功能，并允许通过角色中的触发式执行 AI 模型。除非确实需要这些功能，否则不要激活此选项。',
     triggerLLMPrompt:
       '这是将发送到模型的提示词。你可以使用 `@@role user`、`@@role system`、`@@role assistant` 来设置多轮对话及角色。例如：\n```\n@@role system\nrespond as hello\n@@role assistant\nhello\n@@role user\nhi\n```',
-    legacyTranslation:
-      '激活后，将使用旧版翻译方法，在翻译前对 Markdown 和引号进行预处理，而非在翻译后处理。',
+    legacyTranslation: '激活后，将使用旧版翻译方法，在翻译前对 Markdown 和引号进行预处理，而非在翻译后处理。',
     luaHelp:
       '可使用 Lua 作为触发式，并可定义 onInput、onOutput 和 onStart 函数。当用户发送消息时，调用 onInput；当角色发送消息时，调用 onOutput；当对话开始时，调用 onStart。详情请参阅说明文档。',
     claudeCachingExperimental:
@@ -164,8 +153,7 @@ export const languageChinese = {
     unrecommended: '这是一个不建议使用的设置。建议关闭。',
     jsonSchema:
       'JSON Schema 将在 AI 模型支持时发送给模型。\n\n然而，由于 JSON Schema 学习难度较高，在叡苏中，你可以使用 TypeScript 接口的子集来代替 JSON Schema。叡苏将在运行时进行转换。例如，如果你想发送如下的JSON：\n\n```js\n{\n  "name": "叡苏", // name 必须是叡苏，\n  "age": 1, // age 必须是数字，\n  "icon": "slim", // icon 必须是 ’slim‘ 或 ’rounded‘\n  "thoughts": ["Good View!", "Lorem"] // thoughts 必须是字符串数组\n}\n```\n\n你可以使用以下 TypeScript 接口：\n\n```typescript\ninterface Schema {\n  name: string;\n  age: number;\n  icon: ’slim‘|’rounded‘\n  thoughts: string[]\n}\n```\n\n接口名称不重要。欲了解更多信息，请参阅 TypeScript 说明文档：https://www.typescriptlang.org/docs/handbook/interfaces.html 。要检查支持的 TypeScript 子集，请查看以下内容。<details><summary>支持的 TypeScript 子集</summary>\n\n支持的类型包括 `boolean`、`number`、`string` 和 `Array`。高级类型不被支持（如：单元类型、交集类型、联合类型、可选类型、字面量类型等），除了以下几种情况：\n\n        - 原始数据型别（Primitive Type）的数组（Array）：（如 `string[]`、`Array<boolean>`）\n        - 字符串之间的单值类型（Unit Types）：（例如 `’slim‘|’rounded‘`）\n\n        属性必须在同一内联定义。若一行中有多个属性，将会产生错误。属性和接口名称仅可使用拉丁字符，并在 ASCII 范围内。属性名称不得以单引号或双引号包裹。接口内部不支持嵌套。在定义属性的行中，不能包含 `{` 或 `}`。如果想使用更高级的类型，请使用 JSON Schema。\n        </details>',
-    strictJsonSchema:
-      '激活后，某些模型将严格遵循提供的 JSON Schema。若禁用，可能会忽略 JSON Schema。',
+    strictJsonSchema: '激活后，某些模型将严格遵循提供的 JSON Schema。若禁用，可能会忽略 JSON Schema。',
     extractJson:
       '此字段不为空时，将从回应中提取特定的 JSON 数据。例如：想从回应 `{"response": {"text": ["hello"]}}` 中提取 `response.text[0]`，可以填写 `response.text.0`。',
     translatorNote:
@@ -180,8 +168,7 @@ export const languageChinese = {
       '用于翻译的提示词。留空将使用默认提示。你还可以使用带有 {{slot}} 的 ChatML 格式表示目标语言：用 {{slot::content}} 表示内容，用 {{slot::tnote}} 表示翻译注释。',
     translateBeforeHTMLFormatting:
       '激活后，将在正则脚本和 HTML 格式化之前翻译文本。这可能减少 Token 数，但可能破坏格式。',
-    autoTranslateCachedOnly:
-      '如果在启用自动翻译的情况下启用，则仅会自动翻译用户之前已翻译过的消息。',
+    autoTranslateCachedOnly: '如果在启用自动翻译的情况下启用，则仅会自动翻译用户之前已翻译过的消息。',
     presetChain:
       '如果不为空，每次用户在此输入框预设列表中的消息时，预设将会更改并随机应用。预设列表应以逗号分隔，例如 `preset1,preset2`。',
     legacyMediaFindings: '启用后，将使用旧方法查找媒体资源，而不使用额外的搜索算法。',
@@ -230,8 +217,7 @@ export const languageChinese = {
     texttheme: '设置文字颜色',
     inputName: '最后，请输入你的昵称。',
     welcome: '欢迎使用 Risu（叡苏）！我将引导你进行设置。请问我该如何称呼你？',
-    welcome2:
-      '你好，{username}！在开始之前，我会问你一些问题，稍后可在设置中进行修改。\n\n首先，请选择 AI 提供者。',
+    welcome2: '你好，{username}！在开始之前，我会问你一些问题，稍后可在设置中进行修改。\n\n首先，请选择 AI 提供者。',
     openRouterProvider: 'OpenRouter 提供许多模型，部分免费且未经内容过滤，但质量不如 OpenAI。',
     hordeProvider: 'Horde 提供免费服务，但回应时间较长且质量较低。',
     setProviderLater: '还有其他提供者，你可以稍后在设置中配置。如想稍后设置，请选择此选项。',
@@ -259,8 +245,7 @@ export const languageChinese = {
     setupMessageOption1: '引导我完成设置',
     setupMessageOption1Desc: '推荐新用户使用',
     setupMessageOption2: '由我自己完成设置',
-    claudeDesc:
-      'Claude 是由 Antropic 开发的 AI 模型，是 OpenAI 的竞争对手。如果你希望使用非英语语言，它优于 GPT。',
+    claudeDesc: 'Claude 是由 Antropic 开发的 AI 模型，是 OpenAI 的竞争对手。如果你希望使用非英语语言，它优于 GPT。',
     openAIDesc: 'OpenAI GPT 是高质量的 AI 模型，但它付费且存在内容过滤，在非英语环境下表现较弱。',
     chooseChatType: '很好！现在请选择聊天语言。',
     chooseChatTypeOption1: '全英语',
@@ -283,8 +268,7 @@ export const languageChinese = {
     finallyOption1Desc: '使用进阶工具会使界面变得更複杂。推荐高级用户使用。',
     finallyOption2: '否',
     finallyOption2Desc: '不使用高级工具将使界面更简洁。推荐新使用者使用。',
-    igpPrompt:
-      '若 IGP 提示词不为空，它将在主模型请求之后，作为情感模型执行，并将结果添加到主模型回应之后。',
+    igpPrompt: '若 IGP 提示词不为空，它将在主模型请求之后，作为情感模型执行，并将结果添加到主模型回应之后。',
   },
   triggerCategories: {
     Special: '特殊',
@@ -480,8 +464,7 @@ export const languageChinese = {
     v2IfAdvanced: '如果',
     v2IfAdvancedDesc: '如果 {{source}} {{condition}} {{target}}',
     v2QuickSearchChat: '快速搜索聊天',
-    v2QuickSearchChatDesc:
-      '在 {{depth}} 深度内，以 {{condition}} 条件在聊天中快速搜索 {{value}} => {{outputVar}}',
+    v2QuickSearchChatDesc: '在 {{depth}} 深度内，以 {{condition}} 条件在聊天中快速搜索 {{value}} => {{outputVar}}',
     v2StopPromptSending: '停止发送提示词',
     v2StopPromptSendingDesc: '停止发送提示词',
     v2Tokenize: 'Tokenize',
@@ -495,8 +478,7 @@ export const languageChinese = {
     v2CreateLorebook: '创建世界书',
     v2CreateLorebookDesc: '创建名称为 {{name}}，键为 {{key}}，内容为 {{content}} 的世界书',
     v2ModifyLorebookByIndex: '修改世界书',
-    v2ModifyLorebookByIndexDesc:
-      '修改索引为 {{index}} 的世界书，名称为 {{name}}，键为 {{key}}，内容为 {{content}}',
+    v2ModifyLorebookByIndexDesc: '修改索引为 {{index}} 的世界书，名称为 {{name}}，键为 {{key}}，内容为 {{content}}',
     v2DeleteLorebookByIndex: '删除世界书',
     v2DeleteLorebookByIndexDesc: '删除索引为 {{index}} 的世界书',
     v2GetLorebookCountNew: '获取世界书数量',
@@ -797,8 +779,7 @@ export const languageChinese = {
   fixedChatTextarea: '固定聊天窗口底部',
   clickToEdit: '点击文字进行编辑',
   setNodePassword: '设置密码以提升安全性',
-  inputNodePassword:
-    '输入密码。如果忘记密码，请删除服务器文档中的 save/__password.txt 并重启服务器。',
+  inputNodePassword: '输入密码。如果忘记密码，请删除服务器文档中的 save/__password.txt 并重启服务器。',
   simple: '基本',
   advanced: '高级',
   askReRollAutoSuggestions: '自动滚动建议',
@@ -923,8 +904,7 @@ export const languageChinese = {
   import: '导入',
   supporterThanks: '支持者感谢',
   supporterThanksDesc: '感谢您的支持！',
-  donatorPatreonDesc:
-    '为保护隐私，默认不会显示在名单中。若想显示您的昵称，请前往叡苏的 Patreon 页面并点击链接按钮。',
+  donatorPatreonDesc: '为保护隐私，默认不会显示在名单中。若想显示您的昵称，请前往叡苏的 Patreon 页面并点击链接按钮。',
   useNamePrefix: '使用名称前缀',
   textAdventureNAI: '以文字冒险形式运行',
   appendNameNAI: '附加名称至 NAI',
@@ -1266,8 +1246,7 @@ export const languageChinese = {
     nextSummarizationLabel: 'HypaV3 将总结 [{0}]',
     nextSummarizationNoMessagesFoundLabel: '警告：未找到消息',
     nextSummarizationLoadingError: '加载下一个总结目标时出错：{0}',
-    summarizationConditionLabel:
-      '提示：当输入标记超过最大上下文大小时，HypaV3 将开始进行摘要处理。',
+    summarizationConditionLabel: '提示：当输入标记超过最大上下文大小时，HypaV3 将开始进行摘要处理。',
     emptySelectedFirstMessageLabel: '警告：所选的第一条消息为空',
     unclassified: '未分类',
     reSummarize: '重新总结',
@@ -1406,8 +1385,7 @@ export const languageChinese = {
     'Risuai 检测到可能有害的代码，这可能会窃取您的 API 密钥或个人数据。我们建议您不要安装此插件。',
   doNotInstall: '不要安装',
   continueAnyway: '仍然继续',
-  pluginNoRiskButAlert:
-    'Risuai 没有检测到有害代码，但请注意，从不受信任的来源安装插件可能会带来安全风险。',
+  pluginNoRiskButAlert: 'Risuai 没有检测到有害代码，但请注意，从不受信任的来源安装插件可能会带来安全风险。',
   pluginRisksInuserFriendly: {
     eval: '从字符串评估代码',
     globalAccess: '访问全局变量',

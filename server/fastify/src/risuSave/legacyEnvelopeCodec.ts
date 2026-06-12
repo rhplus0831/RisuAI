@@ -3,11 +3,7 @@ import { Unpackr } from 'msgpackr/index-no-eval'
 import { decompressBounded, gunzipBounded } from './boundedInflate.js'
 import { assertExpandedSizeWithinLimit, type ExpandedSizeLimitOptions } from './importLimits.js'
 
-export type RisuSaveEnvelopeKind =
-  | 'legacy-raw'
-  | 'legacy-compressed'
-  | 'legacy-stream'
-  | 'risusave-blocks'
+export type RisuSaveEnvelopeKind = 'legacy-raw' | 'legacy-compressed' | 'legacy-stream' | 'risusave-blocks'
 
 export type LegacyRisuSaveEnvelopeKind = Exclude<RisuSaveEnvelopeKind, 'risusave-blocks'>
 
@@ -62,10 +58,7 @@ export function encodeLegacyRisuSaveEnvelope(
   return concatBytes([LEGACY_STREAM_HEADER, fflate.gzipSync(encoded)])
 }
 
-export function decodeLegacyRisuSaveEnvelope(
-  data: Uint8Array,
-  options: ExpandedSizeLimitOptions = {},
-): unknown {
+export function decodeLegacyRisuSaveEnvelope(data: Uint8Array, options: ExpandedSizeLimitOptions = {}): unknown {
   const kind = classifyRisuSaveEnvelope(data)
   if (kind === 'legacy-raw') {
     const payload = data.subarray(LEGACY_RAW_HEADER.length)

@@ -2,11 +2,7 @@ import { get } from 'svelte/store'
 import { DBState, selectedCharID } from '../stores.svelte'
 import { alertError } from '../alert'
 import { mutateChatWithScopedCommand } from '../chatCommands'
-import type {
-  character,
-  Message,
-  MessageGenerationInfo,
-} from '../storage/database.svelte'
+import type { character, Message, MessageGenerationInfo } from '../storage/database.svelte'
 
 export interface SendChatErrorContext {
   selectedChar: number

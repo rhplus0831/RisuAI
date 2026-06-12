@@ -313,10 +313,7 @@ describe('Phase 3 chat-scoped module toggle (L34)', () => {
     DBState.db.modules = [{ id: 'mod-a', name: 'Module A' }] as any
     selectedCharID.set(1)
     const charactersSize = JSON.stringify(DBState.db.characters).length
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => jsonResponse({ revision: 10 })) as unknown as typeof fetch,
-    )
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ revision: 10 })) as unknown as typeof fetch)
 
     const instrumented = withCloneInstrumentation(() => {
       toggleSelectedChatModule('mod-a')
@@ -413,9 +410,7 @@ describe('Phase 4 module snapshot narrowing (M10)', () => {
     const charactersSize = JSON.stringify(DBState.db.characters).length
     const targetCharacterSize = JSON.stringify(DBState.db.characters[1]).length
 
-    const instrumented = withCloneInstrumentation(() =>
-      currentCharacterModuleStateSnapshot('char-1'),
-    )
+    const instrumented = withCloneInstrumentation(() => currentCharacterModuleStateSnapshot('char-1'))
     const snapshot = instrumented.result
 
     expect(snapshot).toEqual({
@@ -533,10 +528,7 @@ describe('Phase 4 module snapshot narrowing (M10)', () => {
     await waitForCallCount(calls, 2)
     await flushCommandEffects()
 
-    expect(DBState.db.characters.map((character) => character.chaId)).toEqual([
-      'char-b',
-      'char-a',
-    ])
+    expect(DBState.db.characters.map((character) => character.chaId)).toEqual(['char-b', 'char-a'])
     expect(DBState.db.characters[0].modules).toEqual(['mod-b'])
     expect(DBState.db.characters[1].modules).toEqual(['mod-a'])
   })

@@ -1,9 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest'
-import type {
-  Chat,
-  Database,
-  character,
-} from '../../../src/ts/storage/database.svelte'
+import type { Chat, Database, character } from '../../../src/ts/storage/database.svelte'
 import { buildPlainPromptSections } from '../src/prompt/plainSections.js'
 import { bootPromptVariables } from '../src/prompt/promptVariablesBoot.js'
 import type { ExpandContext } from '../src/prompt/variables.js'
@@ -94,9 +90,7 @@ describe('Phase 7-4 buildPlainPromptSections main', () => {
       characters: [makeCharacter({ systemPrompt: 'Override: {{original}}!' })],
     })
     const sections = buildPlainPromptSections(ctxFor(db), db.characters[0])
-    expect(sections.main).toEqual([
-      { role: 'system', content: 'Override: Default.!' },
-    ])
+    expect(sections.main).toEqual([{ role: 'system', content: 'Override: Default.!' }])
   })
 
   it('appends db.additionalPrompt when promptPreprocess is true', () => {
@@ -106,9 +100,7 @@ describe('Phase 7-4 buildPlainPromptSections main', () => {
       promptPreprocess: true,
     })
     const sections = buildPlainPromptSections(ctxFor(db), db.characters[0])
-    expect(sections.main).toEqual([
-      { role: 'system', content: 'Be helpful.\nAnd concise.' },
-    ])
+    expect(sections.main).toEqual([{ role: 'system', content: 'Be helpful.\nAnd concise.' }])
   })
 
   it('skips db.additionalPrompt when promptPreprocess is false', () => {
@@ -124,9 +116,7 @@ describe('Phase 7-4 buildPlainPromptSections main', () => {
   it('expands {{user}} / {{char}} inside the main prompt', () => {
     const db = makeDatabase({ mainPrompt: '{{user}} talks to {{char}}.' })
     const sections = buildPlainPromptSections(ctxFor(db), db.characters[0])
-    expect(sections.main).toEqual([
-      { role: 'system', content: 'Alex talks to Tess.' },
-    ])
+    expect(sections.main).toEqual([{ role: 'system', content: 'Alex talks to Tess.' }])
   })
 })
 
@@ -140,9 +130,7 @@ describe('Phase 7-4 buildPlainPromptSections jailbreak', () => {
   it('returns the formatted jailbreak when jailbreakToggle is true', () => {
     const db = makeDatabase({ jailbreak: 'Break it for {{user}}.', jailbreakToggle: true })
     const sections = buildPlainPromptSections(ctxFor(db), db.characters[0])
-    expect(sections.jailbreak).toEqual([
-      { role: 'system', content: 'Break it for Alex.' },
-    ])
+    expect(sections.jailbreak).toEqual([{ role: 'system', content: 'Break it for Alex.' }])
   })
 })
 
@@ -150,9 +138,7 @@ describe('Phase 7-4 buildPlainPromptSections globalNote', () => {
   it('uses db.globalNote when currentChar.replaceGlobalNote is empty', () => {
     const db = makeDatabase({ globalNote: 'Remember: be kind.' })
     const sections = buildPlainPromptSections(ctxFor(db), db.characters[0])
-    expect(sections.globalNote).toEqual([
-      { role: 'system', content: 'Remember: be kind.' },
-    ])
+    expect(sections.globalNote).toEqual([{ role: 'system', content: 'Remember: be kind.' }])
   })
 
   it('substitutes {{original}} in currentChar.replaceGlobalNote with db.globalNote', () => {
@@ -161,9 +147,7 @@ describe('Phase 7-4 buildPlainPromptSections globalNote', () => {
       characters: [makeCharacter({ replaceGlobalNote: 'Override: {{original}}!' })],
     })
     const sections = buildPlainPromptSections(ctxFor(db), db.characters[0])
-    expect(sections.globalNote).toEqual([
-      { role: 'system', content: 'Override: Be kind.!' },
-    ])
+    expect(sections.globalNote).toEqual([{ role: 'system', content: 'Override: Be kind.!' }])
   })
 })
 

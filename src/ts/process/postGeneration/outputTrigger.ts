@@ -16,9 +16,7 @@ export interface ApplyOutputTriggerResult {
   resendChat: boolean
 }
 
-export async function applyOutputTrigger(
-  opts: ApplyOutputTriggerOptions,
-): Promise<ApplyOutputTriggerResult> {
+export async function applyOutputTrigger(opts: ApplyOutputTriggerOptions): Promise<ApplyOutputTriggerResult> {
   const { currentChar, selectedChar, selectedChat, runCurrentChatFunction } = opts
   withTrustedServerProjectionWrite(() => {
     DBState.db.characters[selectedChar].chats[selectedChat] = runCurrentChatFunction(

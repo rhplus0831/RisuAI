@@ -152,12 +152,7 @@ function promptItemTokenizeParts(prompt: PromptItem): [string | undefined, strin
     case 'postEverything':
     case 'authornote':
     case 'memory':
-      return [
-        prompt.id,
-        prompt.type,
-        '',
-        typeof prompt.innerFormat === 'string' ? prompt.innerFormat : '',
-      ]
+      return [prompt.id, prompt.type, '', typeof prompt.innerFormat === 'string' ? prompt.innerFormat : '']
   }
   return [prompt.id, prompt.type, '', '']
 }
@@ -173,9 +168,7 @@ export function promptTemplateTokenizeSignature(prompts: PromptItem[]): string {
   return JSON.stringify(prompts.map(promptItemTokenizeParts))
 }
 
-export function createPromptTokenizeMemo(
-  options: PromptTokenizeMemoOptions = {},
-): PromptTokenizeMemo {
+export function createPromptTokenizeMemo(options: PromptTokenizeMemoOptions = {}): PromptTokenizeMemo {
   const tokenizeText = options.tokenizeText ?? tokenizeAccurate
   const cache = new Map<string, PromptTokenizeMemoEntry>()
 
@@ -259,11 +252,7 @@ export function detectPromptJSONType(text: string) {
 
   try {
     const parsed = JSON.parse(text)
-    if (
-      notNull(parsed.chat_completion_source) &&
-      Array.isArray(parsed.prompts) &&
-      Array.isArray(parsed.prompt_order)
-    ) {
+    if (notNull(parsed.chat_completion_source) && Array.isArray(parsed.prompts) && Array.isArray(parsed.prompt_order)) {
       return 'STCHAT'
     } else if (notNull(parsed.temp) && notNull(parsed.rep_pen) && notNull(parsed.min_length)) {
       return 'PARAMETERS'

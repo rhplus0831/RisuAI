@@ -56,9 +56,7 @@ function collectEmittedMutationPaths(): Set<string> {
 }
 
 const GATE_KEYS = Object.keys(COMMAND_METRIC_REVIEW_GATES)
-const GATE_ENTRIES = Object.entries(COMMAND_METRIC_REVIEW_GATES) as Array<
-  [string, CommandMetricGate]
->
+const GATE_ENTRIES = Object.entries(COMMAND_METRIC_REVIEW_GATES) as Array<[string, CommandMetricGate]>
 
 // The broad before-state baselines. They are intentionally not narrow: they
 // carry a documented table budget but not the `dbJsonWriteMs: 0` floor a

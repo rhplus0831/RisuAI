@@ -1,10 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import {
-  readServerAsset,
-  readServerAssetBytes,
-  serverAssetIdFromReference,
-  serverAssetUrl,
-} from './assets'
+import { readServerAsset, readServerAssetBytes, serverAssetIdFromReference, serverAssetUrl } from './assets'
 import { getProtocolDiagnosticsSnapshot } from './protocolDiagnostics'
 
 describe('Fastify server asset helpers', () => {

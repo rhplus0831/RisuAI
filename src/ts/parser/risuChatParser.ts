@@ -1,11 +1,5 @@
 import type { Database, character } from '../storage/database.svelte'
-import {
-  registerCBS,
-  type CBSRegisterArg,
-  type CbsCallbackMemo,
-  type RegisterCallback,
-  type matcherArg,
-} from '../cbs'
+import { registerCBS, type CBSRegisterArg, type CbsCallbackMemo, type RegisterCallback, type matcherArg } from '../cbs'
 import { calcString } from '../process/infunctions'
 import { getChatVar, getGlobalChatVar } from './chatVarBackend'
 import { getDefaultDatabase, getDefaultSelectedCharID } from './parserStateBackend'

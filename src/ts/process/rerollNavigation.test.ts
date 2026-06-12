@@ -51,8 +51,7 @@ function setupChat(message: Msg[], charIndex = 0): void {
 }
 
 function tailUids(): string[] {
-  const character = (DBState as { db: { characters: { chats: { message: Msg[] }[] }[] } }).db
-    .characters[0]
+  const character = (DBState as { db: { characters: { chats: { message: Msg[] }[] }[] } }).db.characters[0]
   return character.chats[0].message.map((m) => m.chatId)
 }
 
@@ -290,25 +289,24 @@ describe('reroll clone cost (Phase 3 cheap wins)', () => {
 
     const instrumented = withCloneInstrumentation(() => recordGeneratedReroll(previousLength))
 
-    expect(getRerollBuffer().at(-1)?.map((m) => (m as unknown as Msg).chatId)).toEqual(['g-fresh'])
+    expect(
+      getRerollBuffer()
+        .at(-1)
+        ?.map((m) => (m as unknown as Msg).chatId),
+    ).toEqual(['g-fresh'])
     // The only deep clone is of the single appended row, far below the transcript.
     expect(instrumented.maxClonedSize).toBeLessThan(fullSize)
     expect(instrumented.maxClonedSize).toBeLessThan(5_000)
   })
 
   it('reroll regenerate truncates in place without deep-cloning the whole transcript', async () => {
-    const transcript = [
-      ...bigTranscript(40),
-      { role: 'char', data: 'assistant tail', chatId: 'g-tail' } as Msg,
-    ]
+    const transcript = [...bigTranscript(40), { role: 'char', data: 'assistant tail', chatId: 'g-tail' } as Msg]
     setupChat(transcript)
     const fullSize = JSON.stringify(transcript).length
     expect(fullSize).toBeGreaterThan(50_000)
     // One buffered candidate positioned at the end → reroll() takes the regenerate
     // (truncate + send) branch.
-    seedRerollBufferFromAlternates(transcript, [
-      { role: 'char', data: 'assistant tail', chatId: 'g-tail' },
-    ])
+    seedRerollBufferFromAlternates(transcript, [{ role: 'char', data: 'assistant tail', chatId: 'g-tail' }])
     expect(getRerollId()).toBe(0)
     const sendChatMain = vi.fn(async () => {})
 

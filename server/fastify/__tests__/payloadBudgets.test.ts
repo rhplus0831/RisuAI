@@ -25,10 +25,7 @@ vi.mock('../src/protocolMetrics.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/protocolMetrics.js')>()
   return {
     ...actual,
-    emitProtocolMetric: (
-      name: string,
-      fields: Record<string, unknown> | (() => Record<string, unknown>),
-    ) => {
+    emitProtocolMetric: (name: string, fields: Record<string, unknown> | (() => Record<string, unknown>)) => {
       if (!actual.protocolMetricsEnabled()) return
       capturedMetrics.push({
         metric: name,
@@ -120,9 +117,7 @@ function messageHeavyDatabase(): Record<string, unknown> {
 function latestMetric(name: string, resource?: string): PayloadMetric {
   const metric = [...capturedMetrics]
     .reverse()
-    .find(
-      (entry) => entry.metric === name && (resource === undefined || entry.resource === resource),
-    )
+    .find((entry) => entry.metric === name && (resource === undefined || entry.resource === resource))
   expect(metric, `missing ${name}${resource ? `/${resource}` : ''} payload metric`).toBeTruthy()
   return metric as PayloadMetric
 }

@@ -1,11 +1,7 @@
 import { get } from 'svelte/store'
 import { parseChatML } from '../parser/chatML'
 import { getDatabase, type character, type customscript } from '../storage/database.svelte'
-import {
-  defaultTranslatorPrompt,
-  getCurrentTranslatorPresetFromState,
-  type TranslatorPreset,
-} from './presets'
+import { defaultTranslatorPrompt, getCurrentTranslatorPresetFromState, type TranslatorPreset } from './presets'
 import { globalFetch } from '../globalApi.svelte'
 import { alertError } from '../alert'
 import { requestChatData } from '../process/request/request'
@@ -142,12 +138,7 @@ export const __translatorTestHooks = {
   },
 }
 
-let bergamotTranslate: (
-  text: string,
-  from: string,
-  to: string,
-  html?: boolean,
-) => Promise<string> | null = null
+let bergamotTranslate: (text: string, from: string, to: string, html?: boolean) => Promise<string> | null = null
 
 export const LLMCacheStorage = localforage.createInstance({
   name: 'LLMTranslateCache',
@@ -205,8 +196,7 @@ function getRelevantScriptSignature(
   db: ReturnType<typeof getDatabase>,
   alwaysExistChar: character | simpleCharacterArgument,
 ) {
-  const isRelevant = (script: customscript) =>
-    script.type === 'edittrans' || script.type === 'editdisplay'
+  const isRelevant = (script: customscript) => script.type === 'edittrans' || script.type === 'editdisplay'
   return {
     presetRegex: getScriptSignature((db.presetRegex ?? []).filter(isRelevant)),
     characterScripts: getScriptSignature((alwaysExistChar?.customscript ?? []).filter(isRelevant)),
@@ -226,10 +216,8 @@ function getTranslatorNoteSignature(
   return {
     selectedCharID: get(selectedCharID),
     selectedChaId: selectedCharacter?.chaId,
-    selectedTranslatorNote:
-      selectedCharacter?.type === 'character' ? (selectedCharacter.translatorNote ?? '') : '',
-    activeTranslatorNote:
-      alwaysExistChar?.type === 'character' ? (alwaysExistChar.translatorNote ?? '') : '',
+    selectedTranslatorNote: selectedCharacter?.type === 'character' ? (selectedCharacter.translatorNote ?? '') : '',
+    activeTranslatorNote: alwaysExistChar?.type === 'character' ? (alwaysExistChar.translatorNote ?? '') : '',
   }
 }
 
@@ -465,11 +453,7 @@ async function writePersistentLLMCacheEntry(key: string, value: string) {
   }
 }
 
-async function writeLLMCacheEntry(
-  key: string,
-  value: string,
-  options: { bumpEpoch?: boolean } = {},
-) {
+async function writeLLMCacheEntry(key: string, value: string, options: { bumpEpoch?: boolean } = {}) {
   if (key === LLM_CACHE_INDEX_KEY) {
     return false
   }
@@ -577,12 +561,7 @@ export async function translate(text: string, reverse: boolean) {
     return pending
   }
 
-  const promise = runTranslator(
-    text,
-    reverse,
-    db.translator,
-    db.aiModel.startsWith('novellist') ? 'ja' : 'en',
-  )
+  const promise = runTranslator(text, reverse, db.translator, db.aiModel.startsWith('novellist') ? 'ja' : 'en')
   pendingTranslateCache.set(key, promise)
 
   try {
@@ -626,8 +605,7 @@ export async function runTranslator(
       chunks.push([texts[i], false])
       chunks.push(['', true])
     } else {
-      chunks[chunks.length - 1][0] +=
-        chunks[chunks.length - 1][0].length === 0 ? texts[i] : `\n${texts[i]}`
+      chunks[chunks.length - 1][0] += chunks[chunks.length - 1][0].length === 0 ? texts[i] : `\n${texts[i]}`
     }
   }
 
@@ -660,10 +638,7 @@ export async function runTranslator(
   return result
 }
 
-async function translateMain(
-  text: string,
-  arg: { from: string; to: string; host: string; translatorNote?: string },
-) {
+async function translateMain(text: string, arg: { from: string; to: string; host: string; translatorNote?: string }) {
   let db = getDatabase()
   if (db.translatorType === 'llm') {
     const tr = arg.to || 'en'
@@ -674,9 +649,7 @@ async function translateMain(
       text: [text],
       target_lang: arg.to.toLocaleUpperCase(),
     }
-    let url = db.deeplOptions.freeApi
-      ? 'https://api-free.deepl.com/v2/translate'
-      : 'https://api.deepl.com/v2/translate'
+    let url = db.deeplOptions.freeApi ? 'https://api-free.deepl.com/v2/translate' : 'https://api.deepl.com/v2/translate'
     const f = await globalFetch(url, {
       headers: {
         Authorization: 'DeepL-Auth-Key ' + db.deeplOptions.key,
@@ -808,9 +781,7 @@ async function jaTrans(text: string) {
 
 export function isExpTranslator() {
   const db = getDatabase()
-  return (
-    db.translatorType === 'llm' || db.translatorType === 'deepl' || db.translatorType === 'deeplX'
-  )
+  return db.translatorType === 'llm' || db.translatorType === 'deepl' || db.translatorType === 'deeplX'
 }
 
 export async function translateHTML(
@@ -853,10 +824,7 @@ export async function translateHTML(
     }
   }
   const cacheTranslateHTMLResult = (translated: string) => {
-    writeTranslateHTMLMemo(
-      getTranslateHTMLMemoKey(html, reverse, charArg, chatID, alwaysExistChar),
-      translated,
-    )
+    writeTranslateHTMLMemo(getTranslateHTMLMemoKey(html, reverse, charArg, chatID, alwaysExistChar), translated)
     return translated
   }
   if (db.translatorType === 'llm') {
@@ -924,10 +892,7 @@ export async function translateHTML(
 
     if (split.length !== currentChunk.chunks.length) {
       //try translating one by one
-      const fallbackRemaining = Math.max(
-        DEEPLX_DELIMITER_FALLBACK_MAX_SEGMENTS - deeplXFallbackSegmentsUsed,
-        0,
-      )
+      const fallbackRemaining = Math.max(DEEPLX_DELIMITER_FALLBACK_MAX_SEGMENTS - deeplXFallbackSegmentsUsed, 0)
       const fallbackCount = Math.min(currentChunk.chunks.length, fallbackRemaining)
       deeplXFallbackSegmentsUsed += fallbackCount
       for (let i = 0; i < fallbackCount; i++) {
@@ -961,9 +926,7 @@ export async function translateHTML(
         return
       }
 
-      const translateChunks = combineAsSingleChunk
-        ? [node.textContent || '']
-        : (node.textContent || '').split(/\n\n+/g)
+      const translateChunks = combineAsSingleChunk ? [node.textContent || ''] : (node.textContent || '').split(/\n\n+/g)
       let translatedChunksPromises: Promise<string>[] = []
       for (const chunk of translateChunks) {
         const translatedPromise = translate(chunk, reverse)
@@ -977,12 +940,7 @@ export async function translateHTML(
         return
       }
 
-      const { data: processedTranslated } = await processScriptFull(
-        alwaysExistChar,
-        translated,
-        'editdisplay',
-        chatID,
-      )
+      const { data: processedTranslated } = await processScriptFull(alwaysExistChar, translated, 'editdisplay', chatID)
       // If the translation is the same, don't replace the node
       if (translated == processedTranslated) {
         node.textContent = processedTranslated
@@ -991,9 +949,7 @@ export async function translateHTML(
       }
 
       // Replace the old node with the new one
-      const newNode = document.createElement(
-        node.nodeType === Node.TEXT_NODE ? 'span' : node.nodeName,
-      )
+      const newNode = document.createElement(node.nodeType === Node.TEXT_NODE ? 'span' : node.nodeName)
       newNode.innerHTML = processedTranslated
       node.parentNode.replaceChild(newNode, node)
       applyMarkdownToNode(newNode)
@@ -1022,16 +978,10 @@ export async function translateHTML(
         return
       }
       // combineTranslation feature
-      if (
-        db.combineTranslation &&
-        node.nodeName.toLowerCase() === 'p' &&
-        node instanceof HTMLElement
-      ) {
+      if (db.combineTranslation && node.nodeName.toLowerCase() === 'p' && node instanceof HTMLElement) {
         const children = Array.from(node.childNodes)
         const blacklist = ['img', 'iframe', 'script', 'style', 'div', 'button', 'audio', 'video']
-        const hasBlacklistChild = children.some((child) =>
-          blacklist.includes(child.nodeName.toLowerCase()),
-        )
+        const hasBlacklistChild = children.some((child) => blacklist.includes(child.nodeName.toLowerCase()))
         if (!hasBlacklistChild && (node as Element)?.getAttribute('translate') !== 'no') {
           const text = getNodetextToSentence(node)
           if (text.trim().length !== 0) {
@@ -1043,10 +993,7 @@ export async function translateHTML(
       }
 
       for (const child of Array.from(node.childNodes)) {
-        if (
-          node.nodeType === Node.ELEMENT_NODE &&
-          (node as Element)?.getAttribute('translate') === 'no'
-        ) {
+        if (node.nodeType === Node.ELEMENT_NODE && (node as Element)?.getAttribute('translate') === 'no') {
           continue
         }
         await translateNode(child, node)
@@ -1164,9 +1111,7 @@ export async function getLLMCache(text: string): Promise<string | null> {
   return await readLLMCacheEntry(text)
 }
 
-export async function searchLLMCache(
-  partialKey: string,
-): Promise<{ key: string; value: string }[]> {
+export async function searchLLMCache(partialKey: string): Promise<{ key: string; value: string }[]> {
   const results: { key: string; value: string }[] = []
   await LLMCacheStorage.iterate<unknown, void>((value, key) => {
     if (key !== LLM_CACHE_INDEX_KEY && typeof value === 'string' && key.includes(partialKey)) {
@@ -1191,9 +1136,7 @@ export async function exportLLMCacheAsJSON(): Promise<Record<string, string>> {
   return result
 }
 
-export async function importLLMCacheFromJSON(
-  data: Record<string, string>,
-): Promise<{ count: number; failed: number }> {
+export async function importLLMCacheFromJSON(data: Record<string, string>): Promise<{ count: number; failed: number }> {
   let count = 0
   let failed = 0
   let accepted = 0

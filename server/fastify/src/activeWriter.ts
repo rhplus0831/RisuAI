@@ -25,11 +25,7 @@ export function registerActiveWriterGuard(app: FastifyInstance, state: ActiveWri
   })
 }
 
-export function requireActiveWriter(
-  state: ActiveWriterState,
-  req: FastifyRequest,
-  reply: FastifyReply,
-): boolean {
+export function requireActiveWriter(state: ActiveWriterState, req: FastifyRequest, reply: FastifyReply): boolean {
   if (isActiveWriter(state, req)) return true
   sendStaleWriterReply(reply)
   return false

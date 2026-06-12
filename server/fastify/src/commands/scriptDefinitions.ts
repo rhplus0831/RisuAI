@@ -1,17 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { EntityNotFoundError, ValidationError } from '../repository.js'
-import {
-  type CharacterRecord,
-  ensureCharacterCollection,
-  readCharacterId,
-  readJsonObject,
-} from './characters.js'
-import {
-  ensureModuleCollection,
-  readModuleId,
-  requireModule,
-  type ModuleRecord,
-} from './lorebooks.js'
+import { type CharacterRecord, ensureCharacterCollection, readCharacterId, readJsonObject } from './characters.js'
+import { ensureModuleCollection, readModuleId, requireModule, type ModuleRecord } from './lorebooks.js'
 
 type JsonRecord = Record<string, unknown>
 
@@ -42,20 +32,12 @@ export function ensureAllScriptDefinitionCollections(database: JsonRecord): void
       }
       const character = rawCharacter as CharacterRecord
       const label =
-        typeof character.chaId === 'string' && character.chaId.trim()
-          ? `character ${character.chaId}`
-          : 'character'
+        typeof character.chaId === 'string' && character.chaId.trim() ? `character ${character.chaId}` : 'character'
       if (Array.isArray(character.customscript)) {
-        character.customscript = repairScriptDefinitions(
-          character.customscript,
-          `${label}.customscript`,
-        )
+        character.customscript = repairScriptDefinitions(character.customscript, `${label}.customscript`)
       }
       if (Array.isArray(character.triggerscript)) {
-        character.triggerscript = repairTriggerDefinitions(
-          character.triggerscript,
-          `${label}.triggerscript`,
-        )
+        character.triggerscript = repairTriggerDefinitions(character.triggerscript, `${label}.triggerscript`)
       }
     }
   }
@@ -66,8 +48,7 @@ export function ensureAllScriptDefinitionCollections(database: JsonRecord): void
         continue
       }
       const module = rawModule as ModuleRecord
-      const label =
-        typeof module.id === 'string' && module.id.trim() ? `module ${module.id}` : 'module'
+      const label = typeof module.id === 'string' && module.id.trim() ? `module ${module.id}` : 'module'
       if (Array.isArray(module.regex)) {
         module.regex = repairScriptDefinitions(module.regex, `${label}.regex`)
       }
@@ -78,10 +59,7 @@ export function ensureAllScriptDefinitionCollections(database: JsonRecord): void
   }
 }
 
-export function readCharacterScriptParent(
-  database: JsonRecord,
-  characterId: unknown,
-): CharacterRecord {
+export function readCharacterScriptParent(database: JsonRecord, characterId: unknown): CharacterRecord {
   const id = readCharacterId(characterId)
   const character = ensureCharacterCollection(database).find((candidate) => candidate.chaId === id)
   if (!character) {
@@ -101,10 +79,7 @@ export function readScriptDefinitions(input: unknown, label = 'scripts'): Script
   return validateScriptDefinitions(input, label)
 }
 
-export function readTriggerDefinitions(
-  input: unknown,
-  label = 'triggers',
-): TriggerDefinitionRecord[] {
+export function readTriggerDefinitions(input: unknown, label = 'triggers'): TriggerDefinitionRecord[] {
   if (!Array.isArray(input)) {
     throw new ValidationError(`${label} must be an array`)
   }
@@ -127,11 +102,7 @@ function validateTriggerDefinitions(input: unknown[], label: string): TriggerDef
   return validateDefinitionRecords(input, label, 'trigger') as TriggerDefinitionRecord[]
 }
 
-function repairDefinitionRecords(
-  input: unknown[],
-  label: string,
-  kind: 'script' | 'trigger',
-): JsonRecord[] {
+function repairDefinitionRecords(input: unknown[], label: string, kind: 'script' | 'trigger'): JsonRecord[] {
   const seen = new Set<string>()
   return input.map((raw, index) => {
     const record = readJsonObject(raw, `${label}[${index}]`)
@@ -144,11 +115,7 @@ function repairDefinitionRecords(
   })
 }
 
-function validateDefinitionRecords(
-  input: unknown[],
-  label: string,
-  kind: 'script' | 'trigger',
-): JsonRecord[] {
+function validateDefinitionRecords(input: unknown[], label: string, kind: 'script' | 'trigger'): JsonRecord[] {
   const seen = new Set<string>()
   return input.map((raw, index) => {
     const record = readJsonObject(raw, `${label}[${index}]`)
@@ -164,11 +131,7 @@ function validateDefinitionRecords(
   })
 }
 
-function validateDefinitionRecord(
-  record: JsonRecord,
-  label: string,
-  kind: 'script' | 'trigger',
-): void {
+function validateDefinitionRecord(record: JsonRecord, label: string, kind: 'script' | 'trigger'): void {
   if (kind === 'script') {
     for (const key of ['comment', 'in', 'out', 'type']) {
       if (key in record && typeof record[key] !== 'string') {
@@ -178,11 +141,7 @@ function validateDefinitionRecord(
     if ('flag' in record && record.flag !== undefined && typeof record.flag !== 'string') {
       throw new ValidationError(`${label}.flag must be a string`)
     }
-    if (
-      'ableFlag' in record &&
-      record.ableFlag !== undefined &&
-      typeof record.ableFlag !== 'boolean'
-    ) {
+    if ('ableFlag' in record && record.ableFlag !== undefined && typeof record.ableFlag !== 'boolean') {
       throw new ValidationError(`${label}.ableFlag must be a boolean`)
     }
     return

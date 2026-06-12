@@ -4,10 +4,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { buildApp } from '../src/app.js'
 import { openDatabase } from '../src/db.js'
-import {
-  backfillLegacyHypaV3MemoryRows,
-  LEGACY_HYPA_V3_SUMMARY_MODEL,
-} from '../src/memoryLegacyImport.js'
+import { backfillLegacyHypaV3MemoryRows, LEGACY_HYPA_V3_SUMMARY_MODEL } from '../src/memoryLegacyImport.js'
 import {
   createMemoryJob,
   listMemoryChunks,

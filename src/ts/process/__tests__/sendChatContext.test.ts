@@ -25,15 +25,8 @@ vi.mock('../../alert', () => ({
   alertError: () => {},
 }))
 
-import {
-  clearCachedServerCommandRevision,
-  type CommandEvent,
-} from '../../server/commands'
-import {
-  setDatabase,
-  type Database,
-  type character,
-} from '../../storage/database.svelte'
+import { clearCachedServerCommandRevision, type CommandEvent } from '../../server/commands'
+import { setDatabase, type Database, type character } from '../../storage/database.svelte'
 import { DBState, selectedCharID } from '../../stores.svelte'
 import { setupSendChatContext } from '../sendChatContext'
 import { seedCloneCostDb, withCloneInstrumentation } from '../../__tests__/cloneCostHarness'
@@ -62,9 +55,7 @@ function makeChar(overrides: Partial<character> = {}): character {
   } as unknown as character
 }
 
-function makeChat(
-  overrides: Partial<character['chats'][number]> = {},
-): character['chats'][number] {
+function makeChat(overrides: Partial<character['chats'][number]> = {}): character['chats'][number] {
   return {
     name: 'main',
     note: '',
@@ -283,12 +274,8 @@ describe('setupSendChatContext - DB side effects', () => {
     expect(messages[0].chatId).toBe('kept-1')
     expect(messages[1].chatId).toBeTruthy()
     await vi.waitFor(() => {
-      expect(calls.some((call) => call.url === '/api/v1/commands/characters/cha-1')).toBe(
-        true,
-      )
-      expect(calls.some((call) => call.url === '/api/v1/commands/chats/chat-1/messages')).toBe(
-        true,
-      )
+      expect(calls.some((call) => call.url === '/api/v1/commands/characters/cha-1')).toBe(true)
+      expect(calls.some((call) => call.url === '/api/v1/commands/chats/chat-1/messages')).toBe(true)
     })
     expect(calls.find((call) => call.url === '/api/v1/commands/characters/cha-1')).toMatchObject({
       method: 'PATCH',
@@ -345,9 +332,7 @@ describe('setupSendChatContext - DB side effects', () => {
               localLore: [],
               scriptstate: {},
               fmIndex: -1,
-              message: [
-                { role: 'char', data: 'b', chatId: undefined as unknown as string, time: 0 },
-              ],
+              message: [{ role: 'char', data: 'b', chatId: undefined as unknown as string, time: 0 }],
             } as character['chats'][number],
           ],
         }),
@@ -525,10 +510,7 @@ describe('setupSendChatContext - tokenizer + maxContextTokens', () => {
 describe('setupSendChatContext - selectedChar / selectedChat', () => {
   it('returns selectedChar from the store and selectedChat from chatPage', () => {
     seedDb({
-      characters: [
-        makeChar({ name: 'A' }),
-        makeChar({ name: 'B', chatPage: 0 }),
-      ],
+      characters: [makeChar({ name: 'A' }), makeChar({ name: 'B', chatPage: 0 })],
     })
     selectedCharID.set(1)
     const ctx = setupSendChatContext({ chatProcessIndex: -1 })
@@ -549,17 +531,13 @@ describe('setupSendChatContext - M5 field-scoped send rollback', () => {
     // lastInteraction stamp. M5 narrows that rollback to scalar locator data
     // plus the previous timestamp, so the synchronous send setup performs no
     // JSON/structured clone at all.
-    const instrumented = withCloneInstrumentation(() =>
-      setupSendChatContext({ chatProcessIndex: -1 }),
-    )
+    const instrumented = withCloneInstrumentation(() => setupSendChatContext({ chatProcessIndex: -1 }))
 
     expect(instrumented.totalCloneCount).toBe(0)
     expect(instrumented.maxClonedSize).toBe(0)
     expect(instrumented.result.selectedChar).toBe(1)
     await vi.waitFor(() => {
-      expect(calls.some((call) => call.url === '/api/v1/commands/characters/char-1')).toBe(
-        true,
-      )
+      expect(calls.some((call) => call.url === '/api/v1/commands/characters/char-1')).toBe(true)
     })
   })
 
@@ -589,9 +567,7 @@ describe('setupSendChatContext - M5 field-scoped send rollback', () => {
     setupSendChatContext({ chatProcessIndex: -1 })
     expect(DBState.db.characters[2].lastInteraction).not.toBe(originalLastInteraction)
     await vi.waitFor(() => {
-      expect(calls.some((call) => call.url === '/api/v1/commands/characters/char-2')).toBe(
-        true,
-      )
+      expect(calls.some((call) => call.url === '/api/v1/commands/characters/char-2')).toBe(true)
     })
 
     DBState.db.characters[2].name = 'Concurrent same-row edit'
@@ -675,16 +651,12 @@ describe('setupSendChatContext - M5 field-scoped send rollback', () => {
       ],
     })
     const originalLastInteraction = DBState.db.characters[0].lastInteraction
-    const originalMessages = JSON.parse(
-      JSON.stringify(DBState.db.characters[0].chats[0].message),
-    )
+    const originalMessages = JSON.parse(JSON.stringify(DBState.db.characters[0].chats[0].message))
 
     setupSendChatContext({ chatProcessIndex: -1 })
     expect(DBState.db.characters[0].chats[0].message[0].chatId).toBeTruthy()
     await vi.waitFor(() => {
-      expect(calls.some((call) => call.url === '/api/v1/commands/chats/chat-active/messages')).toBe(
-        true,
-      )
+      expect(calls.some((call) => call.url === '/api/v1/commands/chats/chat-active/messages')).toBe(true)
     })
 
     DBState.db.characters[0].name = 'Concurrent character edit'
@@ -703,15 +675,14 @@ describe('setupSendChatContext - M5 field-scoped send rollback', () => {
     expect(DBState.db.characters[0].name).toBe('Concurrent character edit')
     expect(DBState.db.characters[0].chats[0].note).toBe('Concurrent active note')
     expect(DBState.db.characters[0].chats[1].message.at(-1)?.chatId).toBe('sibling-concurrent')
-    expect(calls.find((call) => call.url === '/api/v1/commands/chats/chat-active/messages'))
-      .toMatchObject({
-        method: 'PUT',
-        body: {
-          messages: [
-            { role: 'char', data: 'missing id', chatId: expect.any(String), time: 1 },
-            { role: 'user', data: 'kept id', chatId: 'kept-message', time: 2 },
-          ],
-        },
-      })
+    expect(calls.find((call) => call.url === '/api/v1/commands/chats/chat-active/messages')).toMatchObject({
+      method: 'PUT',
+      body: {
+        messages: [
+          { role: 'char', data: 'missing id', chatId: expect.any(String), time: 1 },
+          { role: 'user', data: 'kept id', chatId: 'kept-message', time: 2 },
+        ],
+      },
+    })
   })
 })

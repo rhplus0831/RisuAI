@@ -303,9 +303,7 @@ const restrictElement = <T extends Node>(element: T): T => {
   return element
 }
 
-const restrictNodeList = <T extends Element, Q extends NodeListOf<T> | HTMLCollectionOf<T>>(
-  nodeList: Q,
-): Q => {
+const restrictNodeList = <T extends Element, Q extends NodeListOf<T> | HTMLCollectionOf<T>>(nodeList: Q): Q => {
   return nodeList
 }
 
@@ -358,9 +356,7 @@ export const SafeDocument = {
     try {
       const hrefURL = new URL(href, document.baseURI)
       if (hrefURL.protocol !== 'http:' && hrefURL.protocol !== 'https:') {
-        throw new Error(
-          `Only http and https links are allowed for anchor elements in plugin context.`,
-        )
+        throw new Error(`Only http and https links are allowed for anchor elements in plugin context.`)
       }
       new URL(href)
     } catch {

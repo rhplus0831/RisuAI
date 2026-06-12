@@ -122,9 +122,7 @@ export async function convertRealmCharacterCard(
       } else if (uri.startsWith('data:')) {
         assetId = await storeDataUri(uri, options.storeAsset, fileName)
       } else if (uri.startsWith('__asset:') || uri.startsWith('embeded://')) {
-        const key = uri.startsWith('__asset:')
-          ? uri.replace('__asset:', '')
-          : uri.replace('embeded://', '')
+        const key = uri.startsWith('__asset:') ? uri.replace('__asset:', '') : uri.replace('embeded://', '')
         assetId = options.assetDict?.[key] ?? ''
         if (!assetId) {
           throw new ValidationError(`Embedded card asset not found: ${key}`)
@@ -210,10 +208,7 @@ export async function convertRealmCharacterCard(
     vits,
     ttsMode: vits ? 'vits' : 'normal',
     imported: true,
-    source:
-      readStringArray(data.source).length > 0
-        ? readStringArray(data.source)
-        : readStringArray(risuExt?.source),
+    source: readStringArray(data.source).length > 0 ? readStringArray(data.source) : readStringArray(risuExt?.source),
     ccAssets,
     lowLevelAccess: risuExt?.lowLevelAccess === true,
     defaultVariables: readString(risuExt?.defaultVariables),
@@ -227,8 +222,7 @@ export async function convertRealmCharacterCard(
     character.group_only_greetings = readStringArray(data.group_only_greetings)
     character.nickname = readString(data.nickname)
     character.creation_date = typeof data.creation_date === 'number' ? data.creation_date : 0
-    character.modification_date =
-      typeof data.modification_date === 'number' ? data.modification_date : 0
+    character.modification_date = typeof data.modification_date === 'number' ? data.modification_date : 0
   }
 
   return character
@@ -305,11 +299,7 @@ function convertCharbook(charbook: JsonRecord | null): {
       delete extensions.useProbability
       delete extensions.probability
     }
-    if (
-      extensions.position === 4 &&
-      typeof extensions.depth === 'number' &&
-      typeof extensions.role === 'number'
-    ) {
+    if (extensions.position === 4 && typeof extensions.depth === 'number' && typeof extensions.role === 'number') {
       const role = ['system', 'user', 'assistant'][extensions.role] ?? 'system'
       content = `@@depth ${extensions.depth}\n@@role ${role}\n${content}`
       delete extensions.position

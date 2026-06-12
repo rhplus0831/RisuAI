@@ -1,9 +1,6 @@
 import { v4 } from 'uuid'
 import { DBState } from '../../stores.svelte'
-import type {
-  character,
-  MessageGenerationInfo,
-} from '../../storage/database.svelte'
+import type { character, MessageGenerationInfo } from '../../storage/database.svelte'
 import type { OpenAIChat } from '../index.svelte'
 import { getGenerationModelString } from '../models/modelString'
 import { requestChatData } from '../request/request'

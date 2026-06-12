@@ -1,9 +1,5 @@
 import type { Chat, Message } from '../../storage/database.svelte'
-import type {
-  ServerChatMessageMutation,
-  ServerChatMessagePatch,
-  ServerChatRestoration,
-} from './serverChatEvents'
+import type { ServerChatMessageMutation, ServerChatMessagePatch, ServerChatRestoration } from './serverChatEvents'
 
 function cloneMessage(message: Message): Message {
   return structuredClone(message)

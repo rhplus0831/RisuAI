@@ -37,10 +37,7 @@ vi.mock('../src/protocolMetrics.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/protocolMetrics.js')>()
   return {
     ...actual,
-    emitProtocolMetric: (
-      name: string,
-      fields: Record<string, unknown> | (() => Record<string, unknown>),
-    ) => {
+    emitProtocolMetric: (name: string, fields: Record<string, unknown> | (() => Record<string, unknown>)) => {
       if (!actual.protocolMetricsEnabled()) return
       capturedMetrics.push({
         metric: name,
@@ -51,13 +48,7 @@ vi.mock('../src/protocolMetrics.js', async (importOriginal) => {
 })
 
 const ASSET_ID = 'c'.repeat(64)
-const EXPORT_REQUIRED_ARRAY_FAMILIES = [
-  'characters',
-  'botPresets',
-  'modules',
-  'loadouts',
-  'plugins',
-] as const
+const EXPORT_REQUIRED_ARRAY_FAMILIES = ['characters', 'botPresets', 'modules', 'loadouts', 'plugins'] as const
 
 async function startHarness(): Promise<Harness> {
   process.env.LOG_LEVEL = 'silent'
@@ -191,16 +182,7 @@ describe('Phase 9-8b repository .risu export route', () => {
 
     expect(exported.statusCode).toBe(200)
     const blocks = decodeRisuSaveBlockEnvelope(new Uint8Array(exported.rawPayload))
-    expect(blocks.blocks.map((block) => block.compression)).toEqual([
-      true,
-      true,
-      true,
-      true,
-      true,
-      true,
-      true,
-      true,
-    ])
+    expect(blocks.blocks.map((block) => block.compression)).toEqual([true, true, true, true, true, true, true, true])
   })
 
   it('supports route-ready legacy envelope exports', async () => {
@@ -350,9 +332,7 @@ describe('ordinary .risu export materialization measurement', () => {
   })
 
   function exportMetric(): ExportMetric {
-    const metric = [...capturedMetrics]
-      .reverse()
-      .find((entry) => entry.metric === 'risusave_export')
+    const metric = [...capturedMetrics].reverse().find((entry) => entry.metric === 'risusave_export')
     expect(metric, 'missing risusave_export metric').toBeTruthy()
     return metric as ExportMetric
   }

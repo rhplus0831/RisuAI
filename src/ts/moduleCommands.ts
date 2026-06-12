@@ -54,9 +54,7 @@ function findCharacterById(characterId: string): character | undefined {
   return DBState.db.characters?.find((candidate) => candidate.chaId === characterId)
 }
 
-export function currentCharacterModuleStateSnapshot(
-  characterId: string,
-): CharacterModuleStateSnapshot | null {
+export function currentCharacterModuleStateSnapshot(characterId: string): CharacterModuleStateSnapshot | null {
   const character = findCharacterById(characterId)
   if (!character) return null
   return {
@@ -87,10 +85,7 @@ export function runModuleCommand<T extends Record<string, unknown>>(
   void runServerCommand({ command, rollback })
 }
 
-export function dispatchCreateModule(
-  module: RisuModule,
-  previous: GlobalModuleStateSnapshot,
-): void {
+export function dispatchCreateModule(module: RisuModule, previous: GlobalModuleStateSnapshot): void {
   runModuleCommand(
     (baseRevision) =>
       createModuleCommand({
@@ -119,10 +114,7 @@ export function dispatchUpdateModule(
   )
 }
 
-export function dispatchDeleteModule(
-  moduleId: string,
-  previous: GlobalModuleStateSnapshot,
-): void {
+export function dispatchDeleteModule(moduleId: string, previous: GlobalModuleStateSnapshot): void {
   runModuleCommand(
     (baseRevision) =>
       deleteModuleCommand({
@@ -133,11 +125,7 @@ export function dispatchDeleteModule(
   )
 }
 
-export function dispatchEnableModule(
-  moduleId: string,
-  enabled: boolean,
-  previous: GlobalModuleStateSnapshot,
-): void {
+export function dispatchEnableModule(moduleId: string, enabled: boolean, previous: GlobalModuleStateSnapshot): void {
   runModuleCommand(
     (baseRevision) =>
       enableModuleCommand({
@@ -214,10 +202,7 @@ export function dispatchReorderModules(previous: GlobalModuleStateSnapshot): voi
   )
 }
 
-export function dispatchReorderCharacterModules(
-  characterId: string,
-  previous: CharacterModuleStateSnapshot,
-): void {
+export function dispatchReorderCharacterModules(characterId: string, previous: CharacterModuleStateSnapshot): void {
   const character = findCharacterById(characterId)
   if (!character) return
   runModuleCommand(
@@ -274,10 +259,7 @@ export function toggleSelectedCharacterModule(moduleId: string): void {
   reloadGuiAfterDefinitionChange()
 }
 
-export function toggledModuleIds(
-  current: readonly string[] | undefined,
-  moduleId: string,
-): string[] {
+export function toggledModuleIds(current: readonly string[] | undefined, moduleId: string): string[] {
   const existing = current ?? []
   if (existing.includes(moduleId)) {
     return existing.filter((candidate) => candidate !== moduleId)

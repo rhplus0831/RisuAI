@@ -20,9 +20,7 @@ function db(overrides: Partial<Database>): Database {
 
 describe('memory embedding model resolver', () => {
   it('resolves OpenAI-backed Hypa V3 embedding aliases', () => {
-    const result = resolveMemoryEmbeddingModel(
-      db({ hypaModel: 'openai3small', hypaV3Key: ' sk-test ' }),
-    )
+    const result = resolveMemoryEmbeddingModel(db({ hypaModel: 'openai3small', hypaV3Key: ' sk-test ' }))
 
     expect(result).toEqual({
       ok: true,
@@ -35,8 +33,7 @@ describe('memory embedding model resolver', () => {
         limits: {
           source: 'provider',
           maxInputTokens: OPENAI_EMBEDDING_MAX_INPUT_TOKENS,
-          maxInputBytes:
-            OPENAI_EMBEDDING_MAX_INPUT_TOKENS * MEMORY_EMBEDDING_APPROX_CHARS_PER_TOKEN,
+          maxInputBytes: OPENAI_EMBEDDING_MAX_INPUT_TOKENS * MEMORY_EMBEDDING_APPROX_CHARS_PER_TOKEN,
           maxRequestTokens: OPENAI_EMBEDDING_MAX_REQUEST_TOKENS,
         },
       },
@@ -44,10 +41,7 @@ describe('memory embedding model resolver', () => {
   })
 
   it('uses the requested model instead of auto database selection', () => {
-    const result = resolveMemoryEmbeddingModel(
-      db({ hypaModel: 'MiniLM', hypaV3Key: 'sk-test' }),
-      'openai3large',
-    )
+    const result = resolveMemoryEmbeddingModel(db({ hypaModel: 'MiniLM', hypaV3Key: 'sk-test' }), 'openai3large')
 
     expect(result).toMatchObject({
       ok: true,
@@ -121,18 +115,12 @@ describe('memory embedding model resolver', () => {
 
   it('requires a custom embedding URL', () => {
     expect(
-      resolveMemoryEmbeddingModel(
-        db({ hypaModel: 'custom', hypaCustomSettings: { url: '', key: '', model: '' } }),
-      ),
+      resolveMemoryEmbeddingModel(db({ hypaModel: 'custom', hypaCustomSettings: { url: '', key: '', model: '' } })),
     ).toEqual({ ok: false, error: 'custom embedding model requires a server URL' })
   })
 
   it('resolves Voyage contextual embeddings with explicit credentials', () => {
-    expect(
-      resolveMemoryEmbeddingModel(
-        db({ hypaModel: 'voyageContext3', voyageApiKey: ' voyage-key ' }),
-      ),
-    ).toEqual({
+    expect(resolveMemoryEmbeddingModel(db({ hypaModel: 'voyageContext3', voyageApiKey: ' voyage-key ' }))).toEqual({
       ok: true,
       request: {
         provider: 'voyage-contextual',
@@ -143,9 +131,7 @@ describe('memory embedding model resolver', () => {
         limits: {
           source: 'provider',
           maxInputTokens: VOYAGE_CONTEXT3_MAX_CONTEXT_CHUNK_TOKENS,
-          maxInputBytes:
-            VOYAGE_CONTEXT3_MAX_CONTEXT_CHUNK_TOKENS *
-            MEMORY_EMBEDDING_APPROX_CHARS_PER_TOKEN,
+          maxInputBytes: VOYAGE_CONTEXT3_MAX_CONTEXT_CHUNK_TOKENS * MEMORY_EMBEDDING_APPROX_CHARS_PER_TOKEN,
           maxRequestTokens: VOYAGE_CONTEXTUAL_MAX_REQUEST_TOKENS,
           maxRequestChunks: VOYAGE_CONTEXTUAL_MAX_CHUNKS,
           contextualWindowTokens: VOYAGE_CONTEXTUAL_MAX_CONTEXT_TOKENS,

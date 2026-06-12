@@ -130,9 +130,7 @@ async function fetchAndCacheVertexBearer(
     response = await fetch(TOKEN_URL, {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
-      body:
-        'grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=' +
-        encodeURIComponent(jwt),
+      body: 'grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=' + encodeURIComponent(jwt),
       signal,
     })
   } catch (err) {
@@ -179,11 +177,7 @@ async function fetchAndCacheVertexBearer(
   return { ok: true, token: data.access_token }
 }
 
-function startInflightTokenRequest(
-  cacheKey: string,
-  email: string,
-  privateKey: string,
-): InflightTokenRequest {
+function startInflightTokenRequest(cacheKey: string, email: string, privateKey: string): InflightTokenRequest {
   const controller = new AbortController()
   let entry!: InflightTokenRequest
   const promise = Promise.resolve()
@@ -204,10 +198,7 @@ function startInflightTokenRequest(
   return entry
 }
 
-async function waitForInflightToken(
-  entry: InflightTokenRequest,
-  signal: AbortSignal,
-): Promise<VertexBearerResult> {
+async function waitForInflightToken(entry: InflightTokenRequest, signal: AbortSignal): Promise<VertexBearerResult> {
   if (signal.aborted) return VERTEX_ABORTED_RESULT
 
   entry.waiterCount += 1
@@ -261,7 +252,6 @@ export async function resolveVertexBearer(
   if (cached !== null) return { ok: true, token: cached }
   if (signal.aborted) return VERTEX_ABORTED_RESULT
 
-  const inflight =
-    inflightTokenRequests.get(cacheKey) ?? startInflightTokenRequest(cacheKey, email, privateKey)
+  const inflight = inflightTokenRequests.get(cacheKey) ?? startInflightTokenRequest(cacheKey, email, privateKey)
   return waitForInflightToken(inflight, signal)
 }

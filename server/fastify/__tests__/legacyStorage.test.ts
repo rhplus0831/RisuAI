@@ -1,12 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import fs, {
-  existsSync,
-  mkdtempSync,
-  readFileSync,
-  readdirSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs'
+import fs, { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { webcrypto } from 'node:crypto'
@@ -45,9 +38,7 @@ async function stopHarness(h: Harness): Promise<void> {
 function legacyStorageTempFiles(dataDir: string): string[] {
   const savePath = path.join(dataDir, 'save')
   if (!existsSync(savePath)) return []
-  return readdirSync(savePath).filter(
-    (name) => name.startsWith('.legacy-storage-') && name.endsWith('.tmp'),
-  )
+  return readdirSync(savePath).filter((name) => name.startsWith('.legacy-storage-') && name.endsWith('.tmp'))
 }
 
 function isLegacyStorageTempPath(value: unknown): boolean {
@@ -56,11 +47,7 @@ function isLegacyStorageTempPath(value: unknown): boolean {
   return basename.startsWith('.legacy-storage-') && basename.endsWith('.tmp')
 }
 
-async function signAssertion(
-  privateKey: CryptoKey,
-  publicJwk: JsonWebKey,
-  ttlSec = 60,
-): Promise<string> {
+async function signAssertion(privateKey: CryptoKey, publicJwk: JsonWebKey, ttlSec = 60): Promise<string> {
   const now = Math.floor(Date.now() / 1000)
   const header = { alg: 'ES256', typ: 'JWT' }
   const payload = { iat: now, exp: now + ttlSec, pub: publicJwk }

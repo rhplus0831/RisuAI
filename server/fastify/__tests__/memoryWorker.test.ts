@@ -12,11 +12,7 @@ import {
   listMemoryJobs,
 } from '../src/memoryRepository.js'
 import type { MemoryEvent } from '../src/memoryEvents.js'
-import {
-  MEMORY_JOB_BATCH_MAX_JOBS,
-  MemoryWorker,
-  type MemoryJobHandler,
-} from '../src/memoryWorker.js'
+import { MEMORY_JOB_BATCH_MAX_JOBS, MemoryWorker, type MemoryJobHandler } from '../src/memoryWorker.js'
 
 const dataDirs: string[] = []
 

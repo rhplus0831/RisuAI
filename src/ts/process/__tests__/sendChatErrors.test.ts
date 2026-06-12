@@ -73,9 +73,7 @@ function stubCommandFetch(): CapturedFetch[] {
 
 async function waitForMessageCommand(calls: CapturedFetch[]): Promise<CapturedFetch> {
   for (let attempt = 0; attempt < 40; attempt += 1) {
-    const match = calls.find(
-      (call) => call.url === '/api/v1/commands/chats/chat-1/messages' && call.method === 'PUT',
-    )
+    const match = calls.find((call) => call.url === '/api/v1/commands/chats/chat-1/messages' && call.method === 'PUT')
     if (match) return match
     await new Promise((resolve) => setTimeout(resolve, 0))
   }
@@ -290,9 +288,7 @@ describe('reportSendChatError', () => {
       ],
       inlayErrorResponse: true,
     } as Database)
-    expect(DBState.db.characters[0].chats[0].message.at(-1).data).toBe(
-      '```risuerror\nboom\n```',
-    )
+    expect(DBState.db.characters[0].chats[0].message.at(-1).data).toBe('```risuerror\nboom\n```')
   })
 
   it('L35: keeps modal fallback for invalid targets while the guard is enabled', () => {

@@ -1,10 +1,4 @@
-import {
-  AppendableBuffer,
-  saveAsset,
-  saveAssets,
-  type LocalWriter,
-  type VirtualWriter,
-} from '../globalApi.svelte'
+import { AppendableBuffer, saveAsset, saveAssets, type LocalWriter, type VirtualWriter } from '../globalApi.svelte'
 import * as fflate from 'fflate'
 import { asBuffer } from '../util'
 import { alertStore } from '../alert'
@@ -60,9 +54,7 @@ export class CharXWriter {
   writeEnd: boolean = false
   apb = new AppendableBuffer()
   #takenFilenames: Set<string> = new Set()
-  constructor(
-    private writer: LocalWriter | WritableStreamDefaultWriter<Uint8Array> | VirtualWriter,
-  ) {
+  constructor(private writer: LocalWriter | WritableStreamDefaultWriter<Uint8Array> | VirtualWriter) {
     const handlerAsync = (err: Error, dat: Uint8Array, final: boolean) => {
       if (dat) {
         this.apb.append(dat)
@@ -104,11 +96,7 @@ export class CharXWriter {
     }
   }
 
-  async write(
-    key: string,
-    data: Uint8Array | string,
-    level?: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9,
-  ) {
+  async write(key: string, data: Uint8Array | string, level?: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9) {
     key = this.#sanitizeZipFilename(key)
     let dat: Uint8Array
     if (typeof data === 'string') {
@@ -476,9 +464,7 @@ export class CharXImporter {
         // convention; PNG default matches the existing `assets/<sha>.png`
         // path scheme used by `skipSaving`.
         const savedAssetIds = this.skipSaving
-          ? await Promise.all(
-              batch.map((asset) => hasher(asset.data).then((id) => `assets/${id}.png`)),
-            )
+          ? await Promise.all(batch.map((asset) => hasher(asset.data).then((id) => `assets/${id}.png`)))
           : await saveAssets(batch.map((asset) => ({ data: asset.data })))
         if (savedAssetIds.length !== batch.length) {
           throw new Error('Bulk asset save returned an unexpected result count')

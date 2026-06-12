@@ -169,9 +169,7 @@ export function openDatabase(dataDir: string): DatabaseSync {
         revision INTEGER NOT NULL DEFAULT 0
       )
     `)
-    db.exec(
-      `INSERT OR IGNORE INTO schema_version (id, version, revision) VALUES (1, ${CURRENT_SCHEMA_VERSION}, 0)`,
-    )
+    db.exec(`INSERT OR IGNORE INTO schema_version (id, version, revision) VALUES (1, ${CURRENT_SCHEMA_VERSION}, 0)`)
     const schemaState = getSchemaState(db)
     if (schemaState.version > CURRENT_SCHEMA_VERSION) {
       throw new Error(
@@ -202,9 +200,7 @@ export function applyMigrations(db: DatabaseSync, fromVersion: number): void {
     throw new Error(`Invalid schema version: ${fromVersion}`)
   }
   if (fromVersion > CURRENT_SCHEMA_VERSION) {
-    throw new Error(
-      `Database schema version ${fromVersion} is newer than supported version ${CURRENT_SCHEMA_VERSION}`,
-    )
+    throw new Error(`Database schema version ${fromVersion} is newer than supported version ${CURRENT_SCHEMA_VERSION}`)
   }
   if (fromVersion === CURRENT_SCHEMA_VERSION) {
     return
@@ -217,9 +213,7 @@ export function applyMigrations(db: DatabaseSync, fromVersion: number): void {
     db.exec('BEGIN IMMEDIATE')
     try {
       migration.up(db)
-      const result = db
-        .prepare('UPDATE schema_version SET version = ? WHERE id = 1')
-        .run(migration.version)
+      const result = db.prepare('UPDATE schema_version SET version = ? WHERE id = 1').run(migration.version)
       if (result.changes !== 1) {
         throw new Error('schema_version row missing; database not initialized')
       }
@@ -236,23 +230,16 @@ export function applyMigrations(db: DatabaseSync, fromVersion: number): void {
   }
 }
 
-function assertContiguousMigrations(
-  fromVersion: number,
-  migrations: readonly MigrationStep[],
-): void {
+function assertContiguousMigrations(fromVersion: number, migrations: readonly MigrationStep[]): void {
   let expectedVersion = fromVersion + 1
   for (const migration of migrations) {
     if (migration.version !== expectedVersion) {
-      throw new Error(
-        `Missing schema migration ${expectedVersion}; next registered migration is ${migration.version}`,
-      )
+      throw new Error(`Missing schema migration ${expectedVersion}; next registered migration is ${migration.version}`)
     }
     expectedVersion += 1
   }
   if (expectedVersion - 1 !== CURRENT_SCHEMA_VERSION) {
-    throw new Error(
-      `Missing schema migration ${expectedVersion}; current schema version is ${CURRENT_SCHEMA_VERSION}`,
-    )
+    throw new Error(`Missing schema migration ${expectedVersion}; current schema version is ${CURRENT_SCHEMA_VERSION}`)
   }
 }
 
@@ -267,9 +254,9 @@ export function getSchemaState(db: DatabaseSync): { version: number; revision: n
 }
 
 export function bumpRevision(db: DatabaseSync): number {
-  const row = db
-    .prepare('UPDATE schema_version SET revision = revision + 1 WHERE id = 1 RETURNING revision')
-    .get() as { revision: number } | undefined
+  const row = db.prepare('UPDATE schema_version SET revision = revision + 1 WHERE id = 1 RETURNING revision').get() as
+    | { revision: number }
+    | undefined
   if (!row) {
     throw new Error('schema_version row missing; database not initialized')
   }
@@ -443,12 +430,7 @@ function reconcileLegacyCommandEventTable(db: DatabaseSync): void {
   `)
 }
 
-function ensureColumn(
-  db: DatabaseSync,
-  tableName: string,
-  columnName: string,
-  alterSql: string,
-): void {
+function ensureColumn(db: DatabaseSync, tableName: string, columnName: string, alterSql: string): void {
   const rows = db.prepare(`PRAGMA table_info(${tableName})`).all() as { name: string }[]
   if (!rows.some((row) => row.name === columnName)) {
     db.exec(alterSql)

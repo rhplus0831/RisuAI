@@ -57,9 +57,7 @@ describe('convertPdfToImages cleanup', () => {
     })
 
     try {
-      await expect(convertPdfToImages(new ArrayBuffer(4))).resolves.toEqual([
-        'data:image/png;base64,cGRm',
-      ])
+      await expect(convertPdfToImages(new ArrayBuffer(4))).resolves.toEqual(['data:image/png;base64,cGRm'])
       expect(page.cleanup).toHaveBeenCalledTimes(1)
       expect(pdf.destroy).toHaveBeenCalledTimes(1)
       expect(pdfState.destroyAwaited).toBe(true)

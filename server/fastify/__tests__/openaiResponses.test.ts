@@ -116,9 +116,7 @@ describe('runOpenAIResponses', () => {
     expect(sent.tools).toEqual([])
     expect(sent.max_output_tokens).toBe(128)
     expect(sent.temperature).toBe(0.3)
-    expect(sent.input).toEqual([
-      { role: 'user', content: [{ type: 'input_text', text: 'hi' }] },
-    ])
+    expect(sent.input).toEqual([{ role: 'user', content: [{ type: 'input_text', text: 'hi' }] }])
   })
 
   it('applies additionalParams to the body + headers after the default payload is built', async () => {

@@ -25,7 +25,6 @@
     popupStore.children = children
     popupStore.openId = buttonId
   }}
-  class="hover:text-blue-500 transition-colors button-icon-menu"
->
+  class="hover:text-blue-500 transition-colors button-icon-menu">
   <MenuIcon size={20} />
 </button>

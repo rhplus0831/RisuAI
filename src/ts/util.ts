@@ -120,16 +120,12 @@ export function getUserIconProtrait() {
   }
 }
 
-export function selectFileByDom(
-  allowedExtensions: string[],
-  multiple: 'multiple' | 'single' = 'single',
-) {
+export function selectFileByDom(allowedExtensions: string[], multiple: 'multiple' | 'single' = 'single') {
   return new Promise<null | File[]>((resolve) => {
     const fileInput = document.createElement('input')
     fileInput.type = 'file'
     fileInput.multiple = multiple === 'multiple'
-    const acceptAll =
-      getDatabase().allowAllExtentionFiles || isIOS() || allowedExtensions[0] === '*'
+    const acceptAll = getDatabase().allowAllExtentionFiles || isIOS() || allowedExtensions[0] === '*'
     if (!acceptAll) {
       if (allowedExtensions && allowedExtensions.length) {
         fileInput.accept = allowedExtensions.map((ext) => `.${ext}`).join(',')
@@ -292,10 +288,7 @@ export async function encryptBuffer(data: Uint8Array, keys: string) {
   // hash the key to get a fixed length key value
   const keyArray = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(keys))
 
-  const key = await window.crypto.subtle.importKey('raw', keyArray, 'AES-GCM', false, [
-    'encrypt',
-    'decrypt',
-  ])
+  const key = await window.crypto.subtle.importKey('raw', keyArray, 'AES-GCM', false, ['encrypt', 'decrypt'])
 
   // use web crypto api to encrypt the data
   const result = await window.crypto.subtle.encrypt(
@@ -314,10 +307,7 @@ export async function decryptBuffer(data: Uint8Array, keys: string) {
   // hash the key to get a fixed length key value
   const keyArray = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(keys))
 
-  const key = await window.crypto.subtle.importKey('raw', keyArray, 'AES-GCM', false, [
-    'encrypt',
-    'decrypt',
-  ])
+  const key = await window.crypto.subtle.importKey('raw', keyArray, 'AES-GCM', false, ['encrypt', 'decrypt'])
 
   // use web crypto api to encrypt the data
   const result = await window.crypto.subtle.decrypt(
@@ -1158,9 +1148,7 @@ export const jsonOutputTrimmer = (data: string) => {
 export function asBuffer(arr: Uint8Array<ArrayBufferLike>): Uint8Array<ArrayBuffer>
 export function asBuffer(arr: ArrayBufferLike): ArrayBuffer
 
-export function asBuffer(
-  arr: Uint8Array<ArrayBufferLike> | ArrayBufferLike,
-): Uint8Array<ArrayBuffer> | ArrayBuffer {
+export function asBuffer(arr: Uint8Array<ArrayBufferLike> | ArrayBufferLike): Uint8Array<ArrayBuffer> | ArrayBuffer {
   if (arr instanceof Uint8Array) {
     return arr as unknown as Uint8Array<ArrayBuffer>
   } else {

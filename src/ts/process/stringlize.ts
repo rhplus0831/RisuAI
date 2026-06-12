@@ -78,19 +78,13 @@ export function stringlizeChatOba(
   if (!continued) {
     if (db.ooba.formating.useName) {
       if (suggesting) {
-        resultString.push(
-          appendWhitespace(assistantPrefix, seperator) +
-            `${getUserName()}:\n` +
-            db.autoSuggestPrefix,
-        )
+        resultString.push(appendWhitespace(assistantPrefix, seperator) + `${getUserName()}:\n` + db.autoSuggestPrefix)
       } else {
         resultString.push(assistantPrefix + `${characterName}:`)
       }
     } else {
       if (suggesting) {
-        resultString.push(
-          appendWhitespace(assistantPrefix, seperator) + `\n` + db.autoSuggestPrefix,
-        )
+        resultString.push(appendWhitespace(assistantPrefix, seperator) + `\n` + db.autoSuggestPrefix)
       } else {
         resultString.push(assistantPrefix)
       }
@@ -147,11 +141,7 @@ export function unstringlizeChat(text: string, formated: OpenAIChat[], char: str
   return text
 }
 
-export function getUnstringlizerChunks(
-  formated: OpenAIChat[],
-  char: string,
-  mode: 'ain' | 'normal' = 'normal',
-) {
+export function getUnstringlizerChunks(formated: OpenAIChat[], char: string, mode: 'ain' | 'normal' = 'normal') {
   let chunks: string[] = ['system note:', 'system:', 'system note：', 'system：']
   let charNames: string[] = []
   const db = getDatabase()
@@ -270,9 +260,7 @@ function extractAINOutputStrings(inputString: string, characters: string[]) {
       } else {
         results.push({
           character,
-          content: remainingString
-            .substring(characterIndex + character.length + 1, endQuoteIndex)
-            .trim(), // plus 1 to exclude 「
+          content: remainingString.substring(characterIndex + character.length + 1, endQuoteIndex).trim(), // plus 1 to exclude 「
         })
         remainingString = remainingString.substring(endQuoteIndex + 1)
       }

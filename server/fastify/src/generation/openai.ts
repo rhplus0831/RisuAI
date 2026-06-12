@@ -55,16 +55,13 @@ export function resolveOpenAIRequest(input: OpenAIResolveInput): OpenAIRequest |
   if (!Array.isArray(input.messages)) return null
   if (typeof input.apiKey !== 'string' || input.apiKey.length === 0) return null
 
-  const baseUrl =
-    typeof input.baseUrl === 'string' && input.baseUrl.length > 0 ? input.baseUrl : DEFAULT_BASE_URL
+  const baseUrl = typeof input.baseUrl === 'string' && input.baseUrl.length > 0 ? input.baseUrl : DEFAULT_BASE_URL
   const maxTokens =
     typeof input.maxTokens === 'number' && Number.isFinite(input.maxTokens) && input.maxTokens > 0
       ? input.maxTokens
       : undefined
   const temperature =
-    typeof input.temperature === 'number' && Number.isFinite(input.temperature)
-      ? input.temperature
-      : undefined
+    typeof input.temperature === 'number' && Number.isFinite(input.temperature) ? input.temperature : undefined
 
   return {
     model: input.model,
@@ -193,8 +190,7 @@ export async function runOpenAI(req: OpenAIRequest): Promise<CompletionResult> {
   }
 
   if (!response.ok) {
-    const upstreamMsg =
-      typeof body.error?.message === 'string' ? body.error.message : `HTTP ${response.status}`
+    const upstreamMsg = typeof body.error?.message === 'string' ? body.error.message : `HTTP ${response.status}`
     return { type: 'fail', result: upstreamMsg }
   }
 
@@ -269,9 +265,7 @@ async function readOpenAIStreamError(response: Response): Promise<CompletionStre
   return { kind: 'error', error, status: response.status, code }
 }
 
-export async function* runOpenAIStream(
-  req: OpenAIRequest,
-): AsyncGenerator<CompletionStreamFrame, void, void> {
+export async function* runOpenAIStream(req: OpenAIRequest): AsyncGenerator<CompletionStreamFrame, void, void> {
   if (req.signal.aborted) return
 
   const init = buildRequestInit(req, true)

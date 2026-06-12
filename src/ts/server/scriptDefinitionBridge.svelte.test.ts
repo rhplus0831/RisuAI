@@ -413,9 +413,7 @@ describe('watchServerBackedScriptDefinitions scoped rollback (Phase 4)', () => {
 
     recorded.commands[0].rollback?.()
 
-    expect(DBState.db.modules[0].trigger).toEqual([
-      trigger('module-trigger-1', 'initial module trigger'),
-    ])
+    expect(DBState.db.modules[0].trigger).toEqual([trigger('module-trigger-1', 'initial module trigger')])
     expect(DBState.db.modules[0].regex).toEqual([script('module-script-1', 'regex-concurrent')])
     stop()
   })
@@ -482,9 +480,7 @@ describe('watchServerBackedScriptDefinitions debounced rollback baseline (Phase 
     ])
 
     recorded.commands[0].rollback?.()
-    expect(DBState.db.modules[0].trigger).toEqual([
-      trigger('module-trigger-1', 'initial module trigger'),
-    ])
+    expect(DBState.db.modules[0].trigger).toEqual([trigger('module-trigger-1', 'initial module trigger')])
     stop()
   })
 })
@@ -535,9 +531,7 @@ describe('watchServerBackedScriptDefinitions — scoped change detection (L31)',
     })
     flushSync()
 
-    const keys = [
-      ...collectScriptDefinitionCollectionSnapshots({ kind: 'character' }).keys(),
-    ].sort()
+    const keys = [...collectScriptDefinitionCollectionSnapshots({ kind: 'character' }).keys()].sort()
     expect(keys).toEqual(['characterScripts:char-1', 'characterTriggers:char-1'])
     stop()
   })

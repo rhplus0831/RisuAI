@@ -88,8 +88,7 @@ export function reformatForGemini(messages: RawChatMessage[]): GeminiReformatRes
       if (content.length > 0) systemTexts.push(content)
       continue
     }
-    const role: 'user' | 'model' =
-      m.role === 'assistant' ? 'model' : m.role === 'user' ? 'user' : 'user'
+    const role: 'user' | 'model' = m.role === 'assistant' ? 'model' : m.role === 'user' ? 'user' : 'user'
     if (m.role !== 'user' && m.role !== 'assistant') continue
     const prev = contents[contents.length - 1]
     if (prev && prev.role === role) {
@@ -123,22 +122,15 @@ export function resolveGeminiRequest(input: GeminiResolveInput): GeminiRequest |
 
   // Vertex requests don't take a baseUrl override — the URL is derived from
   // projectId + region. Only Studio respects baseUrl.
-  const baseUrl =
-    typeof input.baseUrl === 'string' && input.baseUrl.length > 0 ? input.baseUrl : DEFAULT_BASE_URL
+  const baseUrl = typeof input.baseUrl === 'string' && input.baseUrl.length > 0 ? input.baseUrl : DEFAULT_BASE_URL
   const maxOutputTokens =
-    typeof input.maxOutputTokens === 'number' &&
-    Number.isFinite(input.maxOutputTokens) &&
-    input.maxOutputTokens > 0
+    typeof input.maxOutputTokens === 'number' && Number.isFinite(input.maxOutputTokens) && input.maxOutputTokens > 0
       ? input.maxOutputTokens
       : undefined
   const temperature =
-    typeof input.temperature === 'number' && Number.isFinite(input.temperature)
-      ? input.temperature
-      : undefined
-  const topP =
-    typeof input.topP === 'number' && Number.isFinite(input.topP) ? input.topP : undefined
-  const topK =
-    typeof input.topK === 'number' && Number.isFinite(input.topK) ? input.topK : undefined
+    typeof input.temperature === 'number' && Number.isFinite(input.temperature) ? input.temperature : undefined
+  const topP = typeof input.topP === 'number' && Number.isFinite(input.topP) ? input.topP : undefined
+  const topK = typeof input.topK === 'number' && Number.isFinite(input.topK) ? input.topK : undefined
 
   return {
     model: input.model,
@@ -194,10 +186,7 @@ function endpointVertex(req: GeminiRequest, stream: boolean): string {
   const region = VERTEX_GLOBAL_ONLY.test(req.model) ? 'global' : vertex.region
   const method = stream ? 'streamGenerateContent' : 'generateContent'
   const query = stream ? '?alt=sse' : ''
-  const host =
-    region === 'global'
-      ? 'https://aiplatform.googleapis.com'
-      : `https://${region}-aiplatform.googleapis.com`
+  const host = region === 'global' ? 'https://aiplatform.googleapis.com' : `https://${region}-aiplatform.googleapis.com`
   return `${host}/v1/projects/${vertex.projectId}/locations/${region}/publishers/google/models/${req.model}:${method}${query}`
 }
 
@@ -219,11 +208,7 @@ async function vertexHeaders(
 ): Promise<{ ok: true; headers: Record<string, string> } | { ok: false; error: string }> {
   const base = headers()
   if (req.vertex === undefined) return { ok: true, headers: base }
-  const bearer = await resolveVertexBearer(
-    req.vertex.clientEmail,
-    req.vertex.privateKey,
-    req.signal,
-  )
+  const bearer = await resolveVertexBearer(req.vertex.clientEmail, req.vertex.privateKey, req.signal)
   if (bearer.ok === false) return { ok: false, error: bearer.error }
   return { ok: true, headers: { ...base, authorization: `Bearer ${bearer.token}` } }
 }
@@ -362,9 +347,7 @@ export async function runGemini(req: GeminiRequest): Promise<CompletionResult> {
   return result
 }
 
-export async function* runGeminiStream(
-  req: GeminiRequest,
-): AsyncGenerator<CompletionStreamFrame, void, void> {
+export async function* runGeminiStream(req: GeminiRequest): AsyncGenerator<CompletionStreamFrame, void, void> {
   if (req.signal.aborted) return
 
   const h = await vertexHeaders(req)

@@ -76,24 +76,12 @@
   const jsonSchemaEnabledDraft = createPromptSettingsDraft<boolean>('jsonSchemaEnabled', false)
   const outputImageModalDraft = createPromptSettingsDraft<boolean>('outputImageModal', false)
   const strictJsonSchemaDraft = createPromptSettingsDraft<boolean>('strictJsonSchema', false)
-  const customPromptTemplateToggleDraft = createPromptSettingsDraft<string>(
-    'customPromptTemplateToggle',
-    '',
-  )
-  const templateDefaultVariablesDraft = createPromptSettingsDraft<string>(
-    'templateDefaultVariables',
-    '',
-  )
+  const customPromptTemplateToggleDraft = createPromptSettingsDraft<string>('customPromptTemplateToggle', '')
+  const templateDefaultVariablesDraft = createPromptSettingsDraft<string>('templateDefaultVariables', '')
   const OAIPredictionDraft = createPromptSettingsDraft<string>('OAIPrediction', '')
   const autoSuggestPromptDraft = createPromptSettingsDraft<string>('autoSuggestPrompt', '')
-  const systemContentReplacementDraft = createPromptSettingsDraft<string>(
-    'systemContentReplacement',
-    '',
-  )
-  const systemRoleReplacementDraft = createPromptSettingsDraft<string>(
-    'systemRoleReplacement',
-    'user',
-  )
+  const systemContentReplacementDraft = createPromptSettingsDraft<string>('systemContentReplacement', '')
+  const systemRoleReplacementDraft = createPromptSettingsDraft<string>('systemRoleReplacement', 'user')
   const jsonSchemaDraft = createPromptSettingsDraft<string>('jsonSchema', '')
   const extractJsonDraft = createPromptSettingsDraft<string>('extractJson', '')
   const fallbackModelsDraft = createPromptSettingsDraft<FallbackModelsDraft>('fallbackModels', {
@@ -103,14 +91,8 @@
     emotion: [],
     otherAx: [],
   })
-  const fallbackWhenBlankResponseDraft = createPromptSettingsDraft<boolean>(
-    'fallbackWhenBlankResponse',
-    false,
-  )
-  const doNotChangeFallbackModelsDraft = createPromptSettingsDraft<boolean>(
-    'doNotChangeFallbackModels',
-    false,
-  )
+  const fallbackWhenBlankResponseDraft = createPromptSettingsDraft<boolean>('fallbackWhenBlankResponse', false)
+  const doNotChangeFallbackModelsDraft = createPromptSettingsDraft<boolean>('doNotChangeFallbackModels', false)
   interface Props {
     onGoBack?: () => void
     mode?: 'independent' | 'inline'
@@ -414,8 +396,7 @@
         subMenu = 0
       }}
       class="p-2 flex-1"
-      class:bg-selected={subMenu === 0}
-    >
+      class:bg-selected={subMenu === 0}>
       <span>{language.template}</span>
     </button>
     <button
@@ -423,8 +404,7 @@
         subMenu = 1
       }}
       class="p-2 flex-1"
-      class:bg-selected={subMenu === 1}
-    >
+      class:bg-selected={subMenu === 1}>
       <span>{language.settings}</span>
     </button>
   </div>
@@ -515,8 +495,7 @@
               }
             })
             openedItemIndices = newOpenedIndices
-          }}
-        />
+          }} />
       {/each}
     {/key}
   </div>
@@ -528,8 +507,7 @@
       const promptItem = createPromptItem()
       applyPromptTemplateDraft([...(promptTemplateDraft.value ?? []), promptItem])
       dispatchCreatePromptItem(promptItem, previous)
-    }}><PlusIcon /></button
-  >
+    }}><PlusIcon /></button>
 
   <span class="text-textcolor2 text-sm mt-2">{tokens} {language.fixedTokens}</span>
   <span class="text-textcolor2 mb-6 text-sm mt-2">{extokens} {language.exactTokens}</span>
@@ -537,73 +515,37 @@
   <span class="text-textcolor mt-4">{language.postEndInnerFormat}</span>
   <TextInput bind:value={promptSettingsDraft.value.postEndInnerFormat} />
 
-  <Check
-    bind:check={promptSettingsDraft.value.sendChatAsSystem}
-    name={language.sendChatAsSystem}
-    className="mt-4"
-  />
-  <Check
-    bind:check={promptSettingsDraft.value.sendName}
-    name={language.formatGroupInSingle}
-    className="mt-4"
-  />
-  <Check
-    bind:check={promptSettingsDraft.value.trimStartNewChat}
-    name={language.trimStartNewChat}
-    className="mt-4"
-  />
-  <Check
-    bind:check={promptSettingsDraft.value.utilOverride}
-    name={language.utilOverride}
-    className="mt-4"
-  />
-  <Check
-    bind:check={jsonSchemaEnabledDraft.value}
-    name={language.enableJsonSchema}
-    className="mt-4"
-  />
-  <Check
-    bind:check={outputImageModalDraft.value}
-    name={language.outputImageModal}
-    className="mt-4"
-  />
+  <Check bind:check={promptSettingsDraft.value.sendChatAsSystem} name={language.sendChatAsSystem} className="mt-4" />
+  <Check bind:check={promptSettingsDraft.value.sendName} name={language.formatGroupInSingle} className="mt-4" />
+  <Check bind:check={promptSettingsDraft.value.trimStartNewChat} name={language.trimStartNewChat} className="mt-4" />
+  <Check bind:check={promptSettingsDraft.value.utilOverride} name={language.utilOverride} className="mt-4" />
+  <Check bind:check={jsonSchemaEnabledDraft.value} name={language.enableJsonSchema} className="mt-4" />
+  <Check bind:check={outputImageModalDraft.value} name={language.outputImageModal} className="mt-4" />
 
-  <Check
-    bind:check={strictJsonSchemaDraft.value}
-    name={language.strictJsonSchema}
-    className="mt-4"
-  />
+  <Check bind:check={strictJsonSchemaDraft.value} name={language.strictJsonSchema} className="mt-4" />
 
   {#if DBState.db.showUnrecommended}
     <Check
       bind:check={promptSettingsDraft.value.customChainOfThought}
       name={language.customChainOfThought}
-      className="mt-4"
-    >
+      className="mt-4">
       <Help unrecommended key="customChainOfThought" />
     </Check>
   {/if}
   <span class="text-textcolor mt-4">{language.maxThoughtTagDepth}</span>
   <NumberInput bind:value={promptSettingsDraft.value.maxThoughtTagDepth} />
   <span class="text-textcolor mt-4"
-    >{language.customPromptTemplateToggle} <Help key="customPromptTemplateToggle" /></span
-  >
+    >{language.customPromptTemplateToggle} <Help key="customPromptTemplateToggle" /></span>
   <TextAreaInput bind:value={customPromptTemplateToggleDraft.value} />
-  <span class="text-textcolor mt-4"
-    >{language.defaultVariables} <Help key="defaultVariables" /></span
-  >
+  <span class="text-textcolor mt-4">{language.defaultVariables} <Help key="defaultVariables" /></span>
   <TextAreaInput bind:value={templateDefaultVariablesDraft.value} />
   <span class="text-textcolor mt-4">{language.predictedOutput}</span>
   <TextAreaInput bind:value={OAIPredictionDraft.value} />
   <span class="text-textcolor mt-4">{language.autoSuggest} <Help key="autoSuggest" /></span>
   <TextAreaInput bind:value={autoSuggestPromptDraft.value} placeholder={defaultAutoSuggestPrompt} />
-  <span class="text-textcolor mt-4"
-    >{language.systemContentReplacement} <Help key="systemContentReplacement" /></span
-  >
+  <span class="text-textcolor mt-4">{language.systemContentReplacement} <Help key="systemContentReplacement" /></span>
   <TextAreaInput bind:value={systemContentReplacementDraft.value} />
-  <span class="text-textcolor mt-4"
-    >{language.systemRoleReplacement} <Help key="systemRoleReplacement" /></span
-  >
+  <span class="text-textcolor mt-4">{language.systemRoleReplacement} <Help key="systemRoleReplacement" /></span>
   <SelectInput bind:value={systemRoleReplacementDraft.value}>
     <OptionInput value="user">User</OptionInput>
     <OptionInput value="assistant">assistant</OptionInput>
@@ -633,15 +575,13 @@
         onclick={() => {
           const value = fallbackModelsDraft.value[arg] ?? []
           fallbackModelsDraft.value[arg] = [...value, '']
-        }}><PlusIcon /></button
-      >
+        }}><PlusIcon /></button>
       <button
         class="bg-red-500 text-white p-2 rounded-md"
         onclick={() => {
           const value = fallbackModelsDraft.value[arg] ?? []
           fallbackModelsDraft.value[arg] = value.slice(0, -1)
-        }}><TrashIcon /></button
-      >
+        }}><TrashIcon /></button>
     </div>
   {/snippet}
 
@@ -649,13 +589,11 @@
     <Check
       bind:check={fallbackWhenBlankResponseDraft.value}
       name={language.fallbackWhenBlankResponse}
-      className="mt-4"
-    />
+      className="mt-4" />
     <Check
       bind:check={doNotChangeFallbackModelsDraft.value}
       name={language.doNotChangeFallbackModels}
-      className="mt-4"
-    />
+      className="mt-4" />
 
     <Accordion name={language.model} styled>
       {@render fallbackModelList('model')}

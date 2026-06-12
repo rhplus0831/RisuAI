@@ -97,8 +97,7 @@ vi.mock('../parser/parser.svelte', () => ({
 }))
 
 vi.mock('../util', () => ({
-  asBuffer: (data: Uint8Array) =>
-    data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength),
+  asBuffer: (data: Uint8Array) => data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength),
 }))
 
 import { CharXImporter, CharXWriter } from './processzip'
@@ -279,9 +278,7 @@ describe('CharXImporter stream caps', () => {
     await importer.done()
 
     const appendedTotals = appendedTotalsByBuffer()
-    const oversizedBufferId = [...appendedTotals.entries()].find(
-      ([, total]) => total > afterAsset.byteLength,
-    )?.[0]
+    const oversizedBufferId = [...appendedTotals.entries()].find(([, total]) => total > afterAsset.byteLength)?.[0]
     expect(oversizedBufferId).toBeDefined()
     expect(importer.excludedFiles).toEqual(['assets/huge.bin'])
     expect(importer.assets).toEqual({
@@ -289,9 +286,7 @@ describe('CharXImporter stream caps', () => {
     })
     expect(globalApiState.saveAssets).toHaveBeenCalledTimes(1)
     expect(globalApiState.saveAssets.mock.calls[0][0]).toEqual([{ data: afterAsset }])
-    expect(globalApiState.appendable.bufferReads.map((read) => read.id)).not.toContain(
-      oversizedBufferId,
-    )
+    expect(globalApiState.appendable.bufferReads.map((read) => read.id)).not.toContain(oversizedBufferId)
   })
 
   it('M21: preserves representative valid CharX import output', async () => {
@@ -324,10 +319,7 @@ describe('CharXImporter stream caps', () => {
     expect(importer.cardData).toBe(cardJson)
     expect(importer.moduleData).toEqual(moduleData)
     expect(globalApiState.saveAssets).toHaveBeenCalledTimes(1)
-    expect(globalApiState.saveAssets.mock.calls[0][0]).toEqual([
-      { data: mainAsset },
-      { data: extraAsset },
-    ])
+    expect(globalApiState.saveAssets.mock.calls[0][0]).toEqual([{ data: mainAsset }, { data: extraAsset }])
     expect(importer.assets).toEqual({
       'assets/main.png': 'saved-0-4-1',
       'assets/voice.bin': 'saved-1-3-9',

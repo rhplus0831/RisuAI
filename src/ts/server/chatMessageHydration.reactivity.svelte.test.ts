@@ -44,9 +44,7 @@ describe('active-chat loading flag reactivity (real projection guard)', () => {
       // Mirror DefaultChatScreen.svelte's `activeChatMessagesLoading` derived.
       const character = $derived(DBState.db.characters?.[0])
       const chat = $derived(character?.chats?.[character?.chatPage ?? 0])
-      const loading = $derived(
-        isChatMessageHydrationPending(chat?.id, chat?.message?.length ?? 0),
-      )
+      const loading = $derived(isChatMessageHydrationPending(chat?.id, chat?.message?.length ?? 0))
       $effect(() => {
         seen.push(loading)
       })

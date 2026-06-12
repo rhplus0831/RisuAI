@@ -1,20 +1,8 @@
 <script lang="ts">
-  import {
-    XIcon,
-    LinkIcon,
-    SunIcon,
-    BookCopyIcon,
-    FolderIcon,
-    FolderOpen,
-    PlusIcon,
-  } from '@lucide/svelte'
+  import { XIcon, LinkIcon, SunIcon, BookCopyIcon, FolderIcon, FolderOpen, PlusIcon } from '@lucide/svelte'
   import { v4 } from 'uuid'
   import { language } from '../../../lang'
-  import {
-    getCurrentCharacter,
-    getCurrentChat,
-    type loreBook,
-  } from '../../../ts/storage/database.svelte'
+  import { getCurrentCharacter, getCurrentChat, type loreBook } from '../../../ts/storage/database.svelte'
   import { alertConfirm, alertMd } from '../../../ts/alert'
   import Check from '../../UI/GUI/CheckInput.svelte'
   import Help from '../../Others/Help.svelte'
@@ -224,9 +212,7 @@
     // The toggle edits only the active chat's localLore, so capture the scoped
     // rollback for that one collection (L32) — not the whole-DB clone.
     const chatId = getCurrentChat()?.id
-    const previous = chatId
-      ? currentLorebookCollectionScopedSnapshot({ kind: 'chat', chatId })
-      : null
+    const previous = chatId ? currentLorebookCollectionScopedSnapshot({ kind: 'chat', chatId }) : null
     if (check) {
       activateLocally(book)
     } else {
@@ -241,11 +227,7 @@
     if (book.mode === 'child') {
       const value = getCurrentCharacter()?.globalLore.find((e) => e.id === book.id)
       if (value) {
-        return value.comment.length === 0
-          ? value.key.length === 0
-            ? 'Unnamed Lore'
-            : value.key
-          : value.comment
+        return value.comment.length === 0 ? (value.key.length === 0 ? 'Unnamed Lore' : value.key) : value.comment
       }
     }
   }
@@ -258,8 +240,7 @@
       : 'pb-2 mb-2 border-b border-b-selected last:pb-0 last:mb-0 last:border-0')}
   class:no-sort={draft.mode === 'folder' && openFolders > 0}
   data-risu-idx={idx}
-  data-risu-idgroup={idgroup}
->
+  data-risu-idgroup={idgroup}>
   <div class="flex items-center transition-colors w-full p-1">
     {#if draft.mode !== 'child'}
       <button
@@ -273,8 +254,7 @@
             open = false
             onClose(draft.mode !== 'folder') // If not a folder, pass true
           }
-        }}
-      >
+        }}>
         {#if draft.mode === 'folder'}
           {#if open}
             <FolderOpen size={20} class="mr-1" />
@@ -286,12 +266,7 @@
           <span>{draft.comment.length === 0 ? 'Unnamed Folder' : draft.comment}</span>
         {:else}
           <span
-            >{draft.comment.length === 0
-              ? draft.key.length === 0
-                ? 'Unnamed Lore'
-                : draft.key
-              : draft.comment}</span
-          >
+            >{draft.comment.length === 0 ? (draft.key.length === 0 ? 'Unnamed Lore' : draft.key) : draft.comment}</span>
         {/if}
       </button>
       <button
@@ -302,15 +277,12 @@
           if (draft.mode === 'folder') {
             updateCollection(
               (externalLoreBooks ?? []).map((entry) =>
-                entry.folder === draft.key
-                  ? { ...entry, alwaysActive: !draft.alwaysActive }
-                  : entry,
+                entry.folder === draft.key ? { ...entry, alwaysActive: !draft.alwaysActive } : entry,
               ),
             )
           }
           draft.alwaysActive = !draft.alwaysActive
-        }}
-      >
+        }}>
         {#if draft.alwaysActive}
           <SunIcon size={20} />
         {:else}
@@ -321,10 +293,7 @@
         class="valuer"
         onclick={async () => {
           let shouldRemove = true
-          if (
-            draft.mode === 'folder' &&
-            (externalLoreBooks ?? []).some((e) => e.folder === draft.key)
-          ) {
+          if (draft.mode === 'folder' && (externalLoreBooks ?? []).some((e) => e.folder === draft.key)) {
             const firstConfirm = await alertConfirm(language.folderRemoveConfirm)
             if (!firstConfirm) {
               shouldRemove = false
@@ -332,9 +301,7 @@
           }
 
           if (shouldRemove) {
-            const secondConfirm = await alertConfirm(
-              language.removeConfirm + (draft.comment || 'Unnamed Folder'),
-            )
+            const secondConfirm = await alertConfirm(language.removeConfirm + (draft.comment || 'Unnamed Folder'))
             if (secondConfirm) {
               if (!open) {
                 onClose()
@@ -343,15 +310,11 @@
               onRemove()
             }
           }
-        }}
-      >
+        }}>
         <XIcon size={20} />
       </button>
     {:else}
-      <button
-        class="endflex valuer border-darkborderc"
-        onclick={() => alertMd(language.childLoreDesc)}
-      >
+      <button class="endflex valuer border-darkborderc" onclick={() => alertMd(language.childLoreDesc)}>
         <BookCopyIcon size={20} class="mr-1" />
         <span>{getParentLoreName(draft)}</span>
       </button>
@@ -365,18 +328,14 @@
             }
             onRemove()
           }
-        }}
-      >
+        }}>
         <XIcon size={20} />
       </button>
     {/if}
   </div>
   {#if open}
     {#if draft.mode === 'folder'}
-      <div
-        class="border-0 outline-hidden w-full mt-2 flex flex-col mb-2"
-        onfocusout={settleWhenFocusLeaves}
-      >
+      <div class="border-0 outline-hidden w-full mt-2 flex flex-col mb-2" onfocusout={settleWhenFocusLeaves}>
         <span class="text-textcolor mt-6 mb-2">{language.folderName}</span>
         <TextInput size="sm" bind:value={draft.comment} />
 
@@ -386,8 +345,7 @@
             showFolder={draft.key}
             {onCollectionChange}
             {onEntryChange}
-            {onEntrySettled}
-          />
+            {onEntrySettled} />
         </div>
 
         <div class="mt-2 flex gap-1">
@@ -408,24 +366,18 @@
                   folder: draft.key,
                 },
               ])
-            }}
-          >
+            }}>
             <PlusIcon size={20} />
           </button>
         </div>
       </div>
     {:else}
-      <div
-        class="border-0 outline-hidden w-full mt-2 flex flex-col mb-2"
-        onfocusout={settleWhenFocusLeaves}
-      >
+      <div class="border-0 outline-hidden w-full mt-2 flex flex-col mb-2" onfocusout={settleWhenFocusLeaves}>
         <span class="text-textcolor mt-6">{language.name} <Help key="loreName" /></span>
         <TextInput size="sm" bind:value={draft.comment} />
         {#if !lorePlus}
           {#if !draft.alwaysActive}
-            <span class="text-textcolor mt-6"
-              >{language.activationKeys} <Help key="loreActivationKey" /></span
-            >
+            <span class="text-textcolor mt-6">{language.activationKeys} <Help key="loreActivationKey" /></span>
             <span class="text-xs text-textcolor2">{language.activationKeysInfo}</span>
             <TextInput size="sm" bind:value={draft.key} />
 
@@ -443,18 +395,13 @@
               size="sm"
               bind:value={draft.activationPercent}
               onChange={() => {
-                if (
-                  isNaN(draft.activationPercent) ||
-                  !draft.activationPercent ||
-                  draft.activationPercent < 0
-                ) {
+                if (isNaN(draft.activationPercent) || !draft.activationPercent || draft.activationPercent < 0) {
                   draft.activationPercent = 0
                 }
                 if (draft.activationPercent > 100) {
                   draft.activationPercent = 100
                 }
-              }}
-            />
+              }} />
           {/if}
         {/if}
         {#if !lorePlus}
@@ -478,8 +425,7 @@
             <Check
               check={isLocallyActivated(draft)}
               onChange={(check: boolean) => toggleLocalActive(check, draft)}
-              name={language.alwaysActiveInChat}
-            />
+              name={language.alwaysActiveInChat} />
           </div>
         {/if}
         {#if !lorePlus && !draft.useRegex}

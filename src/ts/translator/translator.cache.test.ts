@@ -292,9 +292,7 @@ describe('auto-translate cache', () => {
     expect(generated).toBe('<p>generated translation</p>')
     expect(edited).toBe('<p>manual edited translation</p>')
     expect(testState.requestChatData).toHaveBeenCalledTimes(1)
-    await expect(getLLMCache('<p>manual edit body</p>')).resolves.toBe(
-      '<p>manual edited translation</p>',
-    )
+    await expect(getLLMCache('<p>manual edit body</p>')).resolves.toBe('<p>manual edited translation</p>')
   })
 
   it('v4-L26: manual LLM cache edits do not shadow another translator signature', async () => {
@@ -315,20 +313,16 @@ describe('auto-translate cache', () => {
     expect(testState.requestChatData).toHaveBeenCalledTimes(1)
     __translatorTestHooks.clearTranslateHTMLMemo()
     testState.db.translator = 'ko'
-    await expect(translateHTML('<p>manual scoped body</p>', false, '', 0)).resolves.toBe(
-      '<p>manual:ko</p>',
-    )
+    await expect(translateHTML('<p>manual scoped body</p>', false, '', 0)).resolves.toBe('<p>manual:ko</p>')
     expect(testState.requestChatData).toHaveBeenCalledTimes(1)
   })
 
   it('v4-L26: enforces deterministic LLM cache pruning', async () => {
     testState.db.translatorType = 'llm'
-    testState.requestChatData.mockImplementation(
-      async ({ formated }: { formated: { content: string }[] }) => ({
-        type: 'success',
-        result: `llm:${formated.at(-1)?.content ?? ''}`,
-      }),
-    )
+    testState.requestChatData.mockImplementation(async ({ formated }: { formated: { content: string }[] }) => ({
+      type: 'success',
+      result: `llm:${formated.at(-1)?.content ?? ''}`,
+    }))
 
     for (let i = 0; i <= LLM_TRANSLATE_CACHE_MAX_ENTRIES; i++) {
       await translateHTML(`<p>llm-${i}</p>`, false, '', 0)
@@ -339,9 +333,7 @@ describe('auto-translate cache', () => {
     )
     expect(cacheKeys).toHaveLength(LLM_TRANSLATE_CACHE_MAX_ENTRIES)
     expect(cacheKeys.some((key) => key.includes('<p>llm-0</p>'))).toBe(false)
-    expect(
-      cacheKeys.some((key) => key.includes(`<p>llm-${LLM_TRANSLATE_CACHE_MAX_ENTRIES}</p>`)),
-    ).toBe(true)
+    expect(cacheKeys.some((key) => key.includes(`<p>llm-${LLM_TRANSLATE_CACHE_MAX_ENTRIES}</p>`))).toBe(true)
     await expect(getLLMCache('<p>llm-0</p>')).resolves.toBeNull()
   })
 

@@ -82,14 +82,8 @@ describe('resolveChatProviderRoute — unsupported (specific messages preserved)
     ['novelai', 'unsupported /chat provider: NovelAI text generation must use local dispatch'],
     ['novellist', 'unsupported /chat provider: NovelList must use local dispatch'],
     ['custom', 'unsupported /chat provider: plugin providers must use local dispatch'],
-    [
-      'pluginmodel:::provider-a',
-      'unsupported /chat provider: plugin providers must use local dispatch',
-    ],
-    [
-      'hf:::Xenova/opt-350m',
-      'unsupported /chat provider: local WebLLM models must use local dispatch',
-    ],
+    ['pluginmodel:::provider-a', 'unsupported /chat provider: plugin providers must use local dispatch'],
+    ['hf:::Xenova/opt-350m', 'unsupported /chat provider: local WebLLM models must use local dispatch'],
   ])('classifies %s as unsupported with its specific reason', (aiModel, reason) => {
     expect(resolveChatProviderRoute(db({ aiModel }))).toEqual({ routable: false, reason })
   })

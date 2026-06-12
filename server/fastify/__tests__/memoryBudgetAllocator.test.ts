@@ -76,9 +76,7 @@ describe('memory budget allocator', () => {
     })
 
     expect(result.selected.map((row) => row.id)).toEqual(['summary-2'])
-    expect(result.diagnostics.categories.important.skippedForBudget).toEqual([
-      { summaryId: 'summary-1', tokens: 20 },
-    ])
+    expect(result.diagnostics.categories.important.skippedForBudget).toEqual([{ summaryId: 'summary-1', tokens: 20 }])
     expect(result.diagnostics.missingCategories).toContainEqual({
       category: 'important',
       reason: 'budget-exhausted',

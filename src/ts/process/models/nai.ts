@@ -10,11 +10,7 @@ export function stringlizeNAIChat(formated: OpenAIChat[], char: string, continue
 
   for (const form of formated) {
     if (form.role === 'system') {
-      if (
-        form.memo === 'NewChatExample' ||
-        form.memo === 'NewChat' ||
-        form.content === '[Start a new chat]'
-      ) {
+      if (form.memo === 'NewChatExample' || form.memo === 'NewChat' || form.content === '[Start a new chat]') {
         resultString.push(starter)
       } else {
         resultString.push(form.content)

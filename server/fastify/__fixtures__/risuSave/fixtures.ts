@@ -40,15 +40,7 @@ const blockRoot = {
   version: 1,
   selectedCharID: 0,
   botPresetsId: 0,
-  __directory: [
-    'preset',
-    'modules',
-    'loadouts',
-    'plugins',
-    'pluginStorage',
-    'fixture-char',
-    'config',
-  ],
+  __directory: ['preset', 'modules', 'loadouts', 'plugins', 'pluginStorage', 'fixture-char', 'config'],
 }
 
 const blockFixtures: RisuSaveBlockFixture[] = [
@@ -155,8 +147,7 @@ export const risuSaveFixtureCases: RisuSaveFixtureCase[] = [
   },
   {
     name: 'risusave-remote-reference',
-    description:
-      'RISUSAVE block envelope with a remote block reference that server decode must reject.',
+    description: 'RISUSAVE block envelope with a remote block reference that server decode must reject.',
     bytes: encodeRisuSaveBlockFixtureEnvelope(unsupportedRemoteBlocks),
     expectedEnvelope: 'risusave-blocks',
     expectedBlocks: [

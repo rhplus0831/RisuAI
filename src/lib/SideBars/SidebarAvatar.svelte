@@ -45,14 +45,12 @@
   use:tooltipRight={name}
   role="button"
   tabindex="0"
-  data-char-id={chaId}
->
+  data-char-id={chaId}>
   {#if src}
     {#if src === 'slot'}
       {#await backgroundimg}
         <div
-          class="bg-skin-border sidebar-avatar rounded-md bg-top flex items-center justify-center {color ===
-          'red'
+          class="bg-skin-border sidebar-avatar rounded-md bg-top flex items-center justify-center {color === 'red'
             ? 'bg-red-700/50'
             : color === 'yellow'
               ? 'bg-yellow-700/50'
@@ -71,12 +69,11 @@
           style:height={size + 'px'}
           style:minWidth={size + 'px'}
           class:rounded-md={!rounded}
-          class:rounded-full={rounded}
-        ></div>
+          class:rounded-full={rounded}>
+        </div>
       {:then resolvedBgImg}
         <div
-          class="bg-skin-border sidebar-avatar rounded-md bg-top flex items-center justify-center {color ===
-          'red'
+          class="bg-skin-border sidebar-avatar rounded-md bg-top flex items-center justify-center {color === 'red'
             ? 'bg-red-700/50'
             : color === 'yellow'
               ? 'bg-yellow-700/50'
@@ -98,8 +95,7 @@
           style:background-size={resolvedBgImg ? 'cover' : undefined}
           style:background-position={resolvedBgImg ? 'center' : undefined}
           class:rounded-md={!rounded}
-          class:rounded-full={rounded}
-        >
+          class:rounded-full={rounded}>
           {#if !resolvedBgImg}
             {@render children?.()}
           {/if}
@@ -113,8 +109,8 @@
           style:height={size + 'px'}
           style:minWidth={size + 'px'}
           class:rounded-md={!rounded}
-          class:rounded-full={rounded}
-        ></div>
+          class:rounded-full={rounded}>
+        </div>
       {:then img}
         <img
           src={img}
@@ -124,8 +120,7 @@
           style:minWidth={size + 'px'}
           class:rounded-md={!rounded}
           class:rounded-full={rounded}
-          alt="avatar"
-        />
+          alt="avatar" />
       {/await}
     {/if}
   {:else}
@@ -135,7 +130,7 @@
       style:height={size + 'px'}
       style:minWidth={size + 'px'}
       class:rounded-md={!rounded}
-      class:rounded-full={rounded}
-    ></div>
+      class:rounded-full={rounded}>
+    </div>
   {/if}
 </span>

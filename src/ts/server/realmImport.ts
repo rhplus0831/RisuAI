@@ -1,10 +1,6 @@
 import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
 import { activeWriterSessionHeader, handleActiveWriterStaleResponse } from './activeWriterSession'
-import {
-  getServerCommandBaseRevision,
-  setCachedServerCommandRevision,
-  type CommandEvent,
-} from './commands'
+import { getServerCommandBaseRevision, setCachedServerCommandRevision, type CommandEvent } from './commands'
 import { iterateSseEvents } from '../process/request/sseParse'
 
 const REALM_IMPORT_ENDPOINT = '/api/v1/import/realm-character'
@@ -68,11 +64,7 @@ export async function importRealmCharacterFromServer(
     return { status: 'error', error: `Network error: ${message}` }
   }
 
-  if (
-    options.onProgress &&
-    response.ok &&
-    response.headers.get('content-type')?.includes('text/event-stream')
-  ) {
+  if (options.onProgress && response.ok && response.headers.get('content-type')?.includes('text/event-stream')) {
     return readRealmImportProgressStream(response, options)
   }
 

@@ -1,9 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import {
-  HORDE_DELETE_CLEANUP_TIMEOUT_MS,
-  resolveHordeRequest,
-  runHorde,
-} from '../src/generation/horde.js'
+import { HORDE_DELETE_CLEANUP_TIMEOUT_MS, resolveHordeRequest, runHorde } from '../src/generation/horde.js'
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -185,9 +181,7 @@ describe('runHorde', () => {
   })
 
   it('returns fail when async submit returns non-202', async () => {
-    vi.stubGlobal('fetch', async () =>
-      new Response('rate limited', { status: 429 }),
-    )
+    vi.stubGlobal('fetch', async () => new Response('rate limited', { status: 429 }))
     const resolved = resolveHordeRequest({
       prompt: 'hi',
       model: 'auto',

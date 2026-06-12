@@ -151,15 +151,11 @@ function moduleRows() {
 }
 
 function moduleRowNames() {
-  return moduleRows().map((row) =>
-    row.querySelector('[data-risu-module-name]')?.textContent?.trim(),
-  )
+  return moduleRows().map((row) => row.querySelector('[data-risu-module-name]')?.textContent?.trim())
 }
 
 function rowForModuleId(moduleId: string) {
-  const row = moduleRows().find(
-    (candidate) => candidate.getAttribute('data-risu-row-id') === moduleId,
-  )
+  const row = moduleRows().find((candidate) => candidate.getAttribute('data-risu-row-id') === moduleId)
   expect(row, `module row ${moduleId}`).toBeTruthy()
   return row!
 }
@@ -183,9 +179,7 @@ function moduleSurfaceAction(actionKind: string) {
 }
 
 async function updateSearch(value: string) {
-  const input = target.querySelector(
-    `input[placeholder="${language.search}"]`,
-  ) as HTMLInputElement | null
+  const input = target.querySelector(`input[placeholder="${language.search}"]`) as HTMLInputElement | null
   expect(input).toBeTruthy()
   input!.value = value
   input!.dispatchEvent(new Event('input', { bubbles: true }))

@@ -149,15 +149,8 @@ vi.mock('@mlc-ai/web-tokenizers', () => ({
   },
 }))
 
-import {
-  loadFixture,
-  markFixtureActiveChatGenerationSettingsReady,
-} from '../__fixtures__/loadFixture'
-import {
-  installProviderScript,
-  loadProviderScript,
-  resetProviderState,
-} from '../__fixtures__/providerFake'
+import { loadFixture, markFixtureActiveChatGenerationSettingsReady } from '../__fixtures__/loadFixture'
+import { installProviderScript, loadProviderScript, resetProviderState } from '../__fixtures__/providerFake'
 import { resetSideEffectCalls } from '../__fixtures__/sideEffects'
 import { assertOrRecord, captureSnapshot, recordStages } from '../__fixtures__/snapshot'
 import { isTokenizerUrl, serveTokenizerFetch } from '../__fixtures__/mocks/tokenizerFetch'
@@ -217,8 +210,7 @@ describe('sendChat fixtures', () => {
     // fetch — currently nothing else fetches in this sweep, but we keep
     // the pass-through to avoid masking accidental escapes.
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url =
-        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
       if (isTokenizerUrl(url)) return serveTokenizerFetch(url)
       return originalFetch(input as Parameters<typeof originalFetch>[0], init)
     }) as typeof globalThis.fetch

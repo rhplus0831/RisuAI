@@ -23,10 +23,7 @@ function seedSchemaVersion(dataDir: string, version: number, revision = 0): void
         revision INTEGER NOT NULL DEFAULT 0
       )
     `)
-    db.prepare('INSERT INTO schema_version (id, version, revision) VALUES (1, ?, ?)').run(
-      version,
-      revision,
-    )
+    db.prepare('INSERT INTO schema_version (id, version, revision) VALUES (1, ?, ?)').run(version, revision)
   } finally {
     db.close()
   }
@@ -180,14 +177,12 @@ describe('schema migrations', () => {
     const db = openDatabase(dataDir)
     try {
       expect(getSchemaState(db)).toEqual({ version: CURRENT_SCHEMA_VERSION, revision: 9 })
-      const columns = (
-        db.prepare('PRAGMA table_info(messages)').all() as Array<{ name: string }>
-      ).map((row) => row.name)
+      const columns = (db.prepare('PRAGMA table_info(messages)').all() as Array<{ name: string }>).map(
+        (row) => row.name,
+      )
       expect(columns).toContain('alternate')
       // The pre-existing row defaults to an active (alternate = 0) row, intact.
-      const row = db
-        .prepare('SELECT data, alternate FROM messages WHERE chat_id = ? AND seq = 0')
-        .get('chat-1')
+      const row = db.prepare('SELECT data, alternate FROM messages WHERE chat_id = ? AND seq = 0').get('chat-1')
       expect(row).toEqual({ data: 'hi', alternate: 0 })
     } finally {
       db.close()
@@ -219,9 +214,7 @@ describe('schema migrations', () => {
           VALUES (11, 'settings.updated', 'settings')
         `,
       ).run()
-      expect(
-        db.prepare('SELECT revision, type, resource FROM command_events WHERE revision = 11').get(),
-      ).toEqual({
+      expect(db.prepare('SELECT revision, type, resource FROM command_events WHERE revision = 11').get()).toEqual({
         revision: 11,
         type: 'settings.updated',
         resource: 'settings',
@@ -270,17 +263,17 @@ describe('schema migrations', () => {
       expect(getSchemaState(db)).toEqual({ version: CURRENT_SCHEMA_VERSION, revision: 15 })
 
       // The vestigial column is gone from the rebuilt table.
-      const columns = (
-        db.prepare('PRAGMA table_info(command_events)').all() as Array<{ name: string }>
-      ).map((row) => row.name)
+      const columns = (db.prepare('PRAGMA table_info(command_events)').all() as Array<{ name: string }>).map(
+        (row) => row.name,
+      )
       expect(columns).not.toContain('payload_json')
 
       // The durable replay row survived the rebuild (minus the dropped column).
-      expect(
-        db
-          .prepare('SELECT revision, type, resource FROM command_events WHERE revision = 15')
-          .get(),
-      ).toEqual({ revision: 15, type: 'settings.updated', resource: 'settings' })
+      expect(db.prepare('SELECT revision, type, resource FROM command_events WHERE revision = 15').get()).toEqual({
+        revision: 15,
+        type: 'settings.updated',
+        resource: 'settings',
+      })
 
       // The canonical INSERT — the write that used to 500 on import — now works.
       expect(() =>
@@ -305,9 +298,7 @@ describe('schema migrations', () => {
       applyMigrations(second, getSchemaState(second).version)
       expect(getSchemaState(second)).toEqual({ version: CURRENT_SCHEMA_VERSION, revision: 3 })
       insertMemoryChunk(second)
-      const chunk = second
-        .prepare('SELECT id, status FROM memory_chunks WHERE id = ?')
-        .get('chunk-1')
+      const chunk = second.prepare('SELECT id, status FROM memory_chunks WHERE id = ?').get('chunk-1')
       expect(chunk).toEqual({ id: 'chunk-1', status: 'pending' })
     } finally {
       second.close()

@@ -66,8 +66,7 @@ export function resolveOpenAIVariant(
   if (typeof o.apiKey !== 'string' || o.apiKey.length === 0) {
     return { ok: false, error: 'options.openai.apiKey is required' }
   }
-  const baseUrl =
-    typeof o.baseUrl === 'string' && o.baseUrl.length > 0 ? o.baseUrl : 'https://api.openai.com/v1'
+  const baseUrl = typeof o.baseUrl === 'string' && o.baseUrl.length > 0 ? o.baseUrl : 'https://api.openai.com/v1'
   const variant: OpenAICompatibleVariant = {
     apiKey: o.apiKey,
     baseUrl,
@@ -129,13 +128,9 @@ export function resolveOpenAICompatibleVariant(
 
   if (provider === 'nanogpt') {
     const variant = resolveNanoGPTVariant(options.nanogpt ?? {})
-    return variant
-      ? { ok: true, variant }
-      : { ok: false, error: 'options.nanogpt.apiKey is required' }
+    return variant ? { ok: true, variant } : { ok: false, error: 'options.nanogpt.apiKey is required' }
   }
 
   const variant = resolveOpenRouterVariant(options.openrouter ?? {})
-  return variant
-    ? { ok: true, variant }
-    : { ok: false, error: 'options.openrouter.apiKey is required' }
+  return variant ? { ok: true, variant } : { ok: false, error: 'options.openrouter.apiKey is required' }
 }

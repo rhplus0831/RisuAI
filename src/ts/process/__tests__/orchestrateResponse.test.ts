@@ -73,16 +73,8 @@ vi.mock('../modules', async (importActual) => {
   return { ...actual, moduleUpdate: () => {} }
 })
 
-import {
-  setDatabase,
-  type Chat,
-  type Database,
-  type character,
-} from '../../storage/database.svelte'
-import {
-  orchestrateResponse,
-  type OrchestrateResponseResult,
-} from '../postGeneration/orchestrateResponse'
+import { setDatabase, type Chat, type Database, type character } from '../../storage/database.svelte'
+import { orchestrateResponse, type OrchestrateResponseResult } from '../postGeneration/orchestrateResponse'
 import type { DispatchSuccessReq } from '../dispatch/dispatchRequest'
 
 function makeChar(overrides: Partial<character> = {}): character {
@@ -262,9 +254,7 @@ describe('orchestrateResponse - non-streaming branch', () => {
     fakes.nonStream.next = { result: 'done', emoChanged: false, mrerolls: ['only'] }
     fakes.output.next = { chat: makeChat(), triggerChat: null, resendChat: false }
 
-    await orchestrateResponse(
-      baseArgs({ req: { type: 'success', result: 'done' } as unknown as DispatchSuccessReq }),
-    )
+    await orchestrateResponse(baseArgs({ req: { type: 'success', result: 'done' } as unknown as DispatchSuccessReq }))
 
     expect(fakes.rerolls.calls).toHaveLength(0)
   })
@@ -272,9 +262,9 @@ describe('orchestrateResponse - non-streaming branch', () => {
 
 describe('orchestrateResponse - server-owned post-generation (A2)', () => {
   it('skips applyOutputTrigger, inlay, and TTS on the server-owned path', async () => {
-      // The server runs the run-var pass, `'output'` trigger, and `editoutput`;
-      // the browser relays the stream for display only. Final text, inlay, and
-      // resend are consumed from the terminal patch instead of derived here.
+    // The server runs the run-var pass, `'output'` trigger, and `editoutput`;
+    // the browser relays the stream for display only. Final text, inlay, and
+    // resend are consumed from the terminal patch instead of derived here.
     seedDb({ ttsAutoSpeech: true })
     fakes.stream.next = {
       result: 'streamed',

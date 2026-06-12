@@ -64,10 +64,7 @@ export const CORPUS_TABLES: Readonly<Record<string, CorpusTableSpec>> = {
   // The prune walk's revision-only threshold SELECT stays unflagged.
   command_events: { payloadColumns: ['type', 'resource', 'parent_id'], scopeColumns: ['revision'] },
   ...Object.fromEntries(
-    COLLECTION_TABLES.map((table) => [
-      table,
-      { payloadColumns: ['data_json'], scopeColumns: ['position'] },
-    ]),
+    COLLECTION_TABLES.map((table) => [table, { payloadColumns: ['data_json'], scopeColumns: ['position'] }]),
   ),
 }
 
@@ -174,10 +171,7 @@ export async function withServerLoadInstrumentation<T>(
   fn: () => T | Promise<T>,
 ): Promise<ServerLoadInstrumentationResult<T>> {
   const corpusLoads: CorpusLoadObservation[] = []
-  const proto = StatementSync.prototype as unknown as Record<
-    ExecMethod,
-    (...args: unknown[]) => unknown
-  >
+  const proto = StatementSync.prototype as unknown as Record<ExecMethod, (...args: unknown[]) => unknown>
   const originals = {
     all: proto.all,
     get: proto.get,
@@ -226,12 +220,8 @@ export async function assertScopedLoadOnHotPath<T>(
   const { result, corpusLoads } = await withServerLoadInstrumentation(fn)
   const offending = corpusLoads.filter((load) => !allowed.has(load.table))
   if (offending.length > 0) {
-    const detail = offending
-      .map((load) => `  - [${load.table}] ${load.method}: ${normalizeSql(load.sql)}`)
-      .join('\n')
-    throw new Error(
-      `expected a scoped load but observed ${offending.length} whole-corpus payload read(s):\n${detail}`,
-    )
+    const detail = offending.map((load) => `  - [${load.table}] ${load.method}: ${normalizeSql(load.sql)}`).join('\n')
+    throw new Error(`expected a scoped load but observed ${offending.length} whole-corpus payload read(s):\n${detail}`)
   }
   return result
 }

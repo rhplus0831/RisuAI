@@ -31,10 +31,7 @@ vi.mock('./internalmcp', async (importActual) => {
   }
 })
 
-import {
-  clearFileSystemDirectoryHandleForTests,
-  FileSystemClient,
-} from './filesystemclient'
+import { clearFileSystemDirectoryHandleForTests, FileSystemClient } from './filesystemclient'
 import { GoogleSearchClient } from './googlesearchclient'
 
 type TestDirectoryHandle = FileSystemDirectoryHandle & {
@@ -96,17 +93,11 @@ describe('internal MCP tool schemas', () => {
     expect(firstGoogleTools).not.toBe(secondGoogleTools)
     expect(firstGoogleTools[0]).not.toBe(secondGoogleTools[0])
     firstGoogleTools[0].inputSchema.properties.query.description = 'mutated by caller'
-    expect(secondGoogleTools[0].inputSchema.properties.query.description).toBe(
-      'The search query to execute',
-    )
+    expect(secondGoogleTools[0].inputSchema.properties.query.description).toBe('The search query to execute')
 
     const cloneInputs = schemaCloneMocks.toolInputs as Array<readonly MCPTool[]>
-    const fsSchemaSources = cloneInputs.filter((tools) =>
-      tools.some((tool) => tool.name === 'fs_read_file'),
-    )
-    const googleSchemaSources = cloneInputs.filter((tools) =>
-      tools.some((tool) => tool.name === 'google_search'),
-    )
+    const fsSchemaSources = cloneInputs.filter((tools) => tools.some((tool) => tool.name === 'fs_read_file'))
+    const googleSchemaSources = cloneInputs.filter((tools) => tools.some((tool) => tool.name === 'google_search'))
     expect(schemaCloneMocks.cloneMCPTools).toHaveBeenCalledTimes(6)
     expect(fsSchemaSources).toHaveLength(3)
     expect(new Set(fsSchemaSources).size).toBe(1)
@@ -131,10 +122,7 @@ describe('FileSystem MCP directory handle reuse', () => {
   it('L56: prompts again only after the stored directory handle becomes invalid', async () => {
     const firstHandle = createDirectoryHandle('old-workspace')
     const secondHandle = createDirectoryHandle('new-workspace')
-    const picker = vi
-      .fn()
-      .mockResolvedValueOnce(firstHandle)
-      .mockResolvedValueOnce(secondHandle)
+    const picker = vi.fn().mockResolvedValueOnce(firstHandle).mockResolvedValueOnce(secondHandle)
     vi.stubGlobal('showDirectoryPicker', picker)
 
     await new FileSystemClient().checkHandshake()

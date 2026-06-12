@@ -45,11 +45,7 @@ function normalizeTimestamp(value: string | Date | undefined): string {
   return iso
 }
 
-function normalizeNonNegativeInteger(
-  value: number | undefined,
-  defaultValue: number,
-  name: string,
-): number {
+function normalizeNonNegativeInteger(value: number | undefined, defaultValue: number, name: string): number {
   if (value === undefined) return defaultValue
   if (!Number.isFinite(value) || !Number.isInteger(value) || value < 0) {
     throw new Error(`${name} must be a non-negative integer`)
@@ -57,11 +53,7 @@ function normalizeNonNegativeInteger(
   return value
 }
 
-function normalizePositiveInteger(
-  value: number | undefined,
-  defaultValue: number,
-  name: string,
-): number {
+function normalizePositiveInteger(value: number | undefined, defaultValue: number, name: string): number {
   if (value === undefined) return defaultValue
   if (!Number.isFinite(value) || !Number.isInteger(value) || value <= 0) {
     throw new Error(`${name} must be a positive integer`)
@@ -91,10 +83,7 @@ export function createGenerationFinalizationRetryTable(db: DatabaseSync): void {
   `)
 }
 
-export function enqueueGenerationFinalizationRetry(
-  db: DatabaseSync,
-  attempt: GenerationFinalizationAttempt,
-): void {
+export function enqueueGenerationFinalizationRetry(db: DatabaseSync, attempt: GenerationFinalizationAttempt): void {
   db.prepare(
     `
       INSERT INTO generation_finalization_retries (
@@ -132,9 +121,7 @@ export function enqueueGenerationFinalizationRetry(
 }
 
 export function deleteGenerationFinalizationRetry(db: DatabaseSync, generationId: string): void {
-  db.prepare('DELETE FROM generation_finalization_retries WHERE generation_id = ?').run(
-    generationId,
-  )
+  db.prepare('DELETE FROM generation_finalization_retries WHERE generation_id = ?').run(generationId)
 }
 
 export function pruneTerminalGenerationFinalizationRetries(
@@ -223,8 +210,6 @@ export function listPendingGenerationFinalizationRetries(
     mode: row.mode,
     ...(row.target_message_id !== null ? { targetMessageId: row.target_message_id } : {}),
     message: JSON.parse(row.message_json) as Message,
-    chatVarMutations: JSON.parse(
-      row.chat_var_mutations_json,
-    ) as AssembleMutationPayload['chatVarMutations'],
+    chatVarMutations: JSON.parse(row.chat_var_mutations_json) as AssembleMutationPayload['chatVarMutations'],
   }))
 }

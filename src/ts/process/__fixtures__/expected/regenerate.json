@@ -39,11 +39,7 @@
       "stage4": 0
     }
   },
-  "stages": [
-    1,
-    3,
-    4
-  ],
+  "stages": [1, 3, 4],
   "sideEffects": [
     {
       "fn": "runInlayScreen",
@@ -77,14 +73,7 @@
     },
     {
       "fn": "addRerolls",
-      "args": [
-        "uuid-0",
-        [
-          "Hello!",
-          "Hi there.",
-          "Hey, good to see you."
-        ]
-      ]
+      "args": ["uuid-0", ["Hello!", "Hi there.", "Hey, good to see you."]]
     }
   ],
   "providerCalls": [

@@ -164,9 +164,7 @@ async function makeColdDataForChat(i: number, j: number, coldTime: number) {
     })
 
     if (!writeSuccess) {
-      console.error(
-        `Cold storage write failed for chat ${chat.id ?? j} in character ${i}, keeping original data`,
-      )
+      console.error(`Cold storage write failed for chat ${chat.id ?? j} in character ${i}, keeping original data`)
       alertError(language.errors.coldStorageWriteFailed)
       return
     }
@@ -174,9 +172,7 @@ async function makeColdDataForChat(i: number, j: number, coldTime: number) {
     // Verify the data can be read back before replacing
     const verifyData = await getColdStorageItem(id)
     if (!verifyData || (!Array.isArray(verifyData) && !verifyData.message)) {
-      console.error(
-        `Cold storage verification failed for chat ${chat.id ?? j}, keeping original data`,
-      )
+      console.error(`Cold storage verification failed for chat ${chat.id ?? j}, keeping original data`)
       alertError(language.errors.coldStorageVerifyFailed)
       return
     }

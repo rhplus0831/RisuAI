@@ -414,11 +414,7 @@ export class FileSystemClient extends MCPClientLike {
         case 'fs_find_duplicates':
           return await this.findDuplicates(args.path || '', args.byContent || false)
         case 'fs_tree_view':
-          return await this.getTreeView(
-            args.path || '',
-            args.maxDepth || 5,
-            args.showHidden || false,
-          )
+          return await this.getTreeView(args.path || '', args.maxDepth || 5, args.showHidden || false)
         default:
           return [
             {
@@ -500,11 +496,7 @@ export class FileSystemClient extends MCPClientLike {
     }
   }
 
-  private async readFileAsPDF(
-    file: File,
-    limit: number,
-    signal?: AbortSignal,
-  ): Promise<RPCToolCallContent[]> {
+  private async readFileAsPDF(file: File, limit: number, signal?: AbortSignal): Promise<RPCToolCallContent[]> {
     if (file.size > FILESYSTEM_PDF_MAX_INPUT_BYTES) {
       return [
         {
@@ -582,10 +574,7 @@ export class FileSystemClient extends MCPClientLike {
     const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.svg', '.ico']
 
     // Check if it's an image
-    if (
-      imageTypes.some((type) => mimeType.startsWith(type)) ||
-      imageExtensions.some((ext) => fileName.endsWith(ext))
-    ) {
+    if (imageTypes.some((type) => mimeType.startsWith(type)) || imageExtensions.some((ext) => fileName.endsWith(ext))) {
       return 'base64'
     }
 
@@ -593,11 +582,7 @@ export class FileSystemClient extends MCPClientLike {
     return 'text'
   }
 
-  private async readFileAsText(
-    file: File,
-    offset: number,
-    limit: number,
-  ): Promise<RPCToolCallContent[]> {
+  private async readFileAsText(file: File, offset: number, limit: number): Promise<RPCToolCallContent[]> {
     let content: string
 
     if (offset === 0 && file.size <= limit) {
@@ -619,9 +604,7 @@ export class FileSystemClient extends MCPClientLike {
     }
 
     if (wasTruncated) {
-      info.push(
-        `Content truncated (showing ${content.length} of ${file.size - offset} remaining bytes)`,
-      )
+      info.push(`Content truncated (showing ${content.length} of ${file.size - offset} remaining bytes)`)
     }
 
     const result = info.length > 0 ? `${info.join(', ')}\n\n${content}` : content
@@ -634,11 +617,7 @@ export class FileSystemClient extends MCPClientLike {
     ]
   }
 
-  private async readFileAsBase64(
-    file: File,
-    offset: number,
-    limit: number,
-  ): Promise<RPCToolCallContent[]> {
+  private async readFileAsBase64(file: File, offset: number, limit: number): Promise<RPCToolCallContent[]> {
     let arrayBuffer: ArrayBuffer
 
     if (offset === 0 && file.size <= limit) {
@@ -655,19 +634,14 @@ export class FileSystemClient extends MCPClientLike {
 
     // Check if content was truncated
     const wasTruncated = offset + arrayBuffer.byteLength < file.size
-    const info: string[] = [
-      `File type: ${file.type || 'unknown'}`,
-      `Size: ${this.formatBytes(file.size)}`,
-    ]
+    const info: string[] = [`File type: ${file.type || 'unknown'}`, `Size: ${this.formatBytes(file.size)}`]
 
     if (offset > 0) {
       info.push(`Reading from byte ${offset}`)
     }
 
     if (wasTruncated) {
-      info.push(
-        `Content truncated (showing ${arrayBuffer.byteLength} of ${file.size - offset} remaining bytes)`,
-      )
+      info.push(`Content truncated (showing ${arrayBuffer.byteLength} of ${file.size - offset} remaining bytes)`)
     }
 
     const result: RPCToolCallContent[] = []
@@ -796,10 +770,7 @@ export class FileSystemClient extends MCPClientLike {
     return await currentDir.getFileHandle(fileName, { create })
   }
 
-  private async getDirectoryHandle(
-    path: string,
-    create = false,
-  ): Promise<FileSystemDirectoryHandle> {
+  private async getDirectoryHandle(path: string, create = false): Promise<FileSystemDirectoryHandle> {
     const pathParts = path.split('/').filter((part) => part.length > 0)
 
     let currentDir = this.directoryHandle!
@@ -1099,8 +1070,7 @@ export class FileSystemClient extends MCPClientLike {
       return [
         {
           type: 'text',
-          text:
-            duplicates.length > 0 ? duplicates.join('\n') : 'No duplicate files found by content',
+          text: duplicates.length > 0 ? duplicates.join('\n') : 'No duplicate files found by content',
         },
       ]
     } else {
@@ -1154,11 +1124,7 @@ export class FileSystemClient extends MCPClientLike {
     return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('')
   }
 
-  private async getTreeView(
-    path: string,
-    maxDepth: number,
-    showHidden: boolean,
-  ): Promise<RPCToolCallContent[]> {
+  private async getTreeView(path: string, maxDepth: number, showHidden: boolean): Promise<RPCToolCallContent[]> {
     if (!this.directoryHandle) {
       return [
         {
@@ -1216,13 +1182,7 @@ export class FileSystemClient extends MCPClientLike {
 
       if (handle.kind === 'directory') {
         const newPrefix = prefix + (isLast ? '    ' : '│   ')
-        await this.buildTree(
-          handle as FileSystemDirectoryHandle,
-          newPrefix,
-          maxDepth - 1,
-          showHidden,
-          tree,
-        )
+        await this.buildTree(handle as FileSystemDirectoryHandle, newPrefix, maxDepth - 1, showHidden, tree)
       }
     }
   }

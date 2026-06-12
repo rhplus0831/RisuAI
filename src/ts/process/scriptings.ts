@@ -108,8 +108,7 @@ export async function runScripted(
     ScriptingEngineState.getVar = getVar
     const shouldRecreateLuaEngine =
       ScriptingEngineState.type === 'lua' &&
-      (code !== ScriptingEngineState.code ||
-        ScriptingEngineState.execTimeoutMs !== luaExecTimeoutMs)
+      (code !== ScriptingEngineState.code || ScriptingEngineState.execTimeoutMs !== luaExecTimeoutMs)
     if (
       code !== ScriptingEngineState.code ||
       shouldRecreateLuaEngine ||
@@ -422,9 +421,7 @@ export async function runScripted(
           const img = await readImage(character.image)
           const imgObj = new Image()
           const extention = character.image.split('.').at(-1)
-          const imgURL = URL.createObjectURL(
-            new Blob([asBuffer(img)], { type: `image/${extention}` }),
-          )
+          const imgURL = URL.createObjectURL(new Blob([asBuffer(img)], { type: `image/${extention}` }))
 
           let imgid: string | null = null
           try {
@@ -460,9 +457,7 @@ export async function runScripted(
           const img = await readImage(icon)
           const imgObj = new Image()
           const extention = icon.split('.').at(-1)
-          const imgURL = URL.createObjectURL(
-            new Blob([asBuffer(img)], { type: `image/${extention}` }),
-          )
+          const imgURL = URL.createObjectURL(new Blob([asBuffer(img)], { type: `image/${extention}` }))
 
           let imgid: string | null = null
           try {
@@ -524,12 +519,7 @@ export async function runScripted(
 
       declareAPI(
         'LLMMain',
-        async (
-          id: string,
-          promptStr: string,
-          useMultimodal: boolean = false,
-          optionsStr: string = '',
-        ) => {
+        async (id: string, promptStr: string, useMultimodal: boolean = false, optionsStr: string = '') => {
           let prompt: {
             role: string
             content: string
@@ -817,42 +807,33 @@ export async function runScripted(
         regex?: boolean
       }
 
-      declareAPI(
-        'upsertLocalLoreBook',
-        (id: string, name: string, content: string, options: upsertLoreBookOptions) => {
-          if (!ScriptingSafeIds.has(id)) {
-            return
-          }
+      declareAPI('upsertLocalLoreBook', (id: string, name: string, content: string, options: upsertLoreBookOptions) => {
+        if (!ScriptingSafeIds.has(id)) {
+          return
+        }
 
-          if (char.type !== 'character') {
-            return
-          }
+        if (char.type !== 'character') {
+          return
+        }
 
-          const {
-            alwaysActive = false,
-            insertOrder = 100,
-            key = '',
-            regex = false,
-            secondKey = '',
-          } = options
+        const { alwaysActive = false, insertOrder = 100, key = '', regex = false, secondKey = '' } = options
 
-          const currentChat = char.chats[char.chatPage]
+        const currentChat = char.chats[char.chatPage]
 
-          const newLocalLoreBooks = currentChat.localLore.filter((book) => book.comment !== name)
-          newLocalLoreBooks.push({
-            alwaysActive,
-            comment: name,
-            content: content,
-            insertorder: insertOrder,
-            mode: 'normal',
-            key,
-            secondkey: secondKey,
-            selective: !!secondKey,
-            useRegex: regex,
-          })
-          currentChat.localLore = newLocalLoreBooks
-        },
-      )
+        const newLocalLoreBooks = currentChat.localLore.filter((book) => book.comment !== name)
+        newLocalLoreBooks.push({
+          alwaysActive,
+          comment: name,
+          content: content,
+          insertorder: insertOrder,
+          mode: 'normal',
+          key,
+          secondkey: secondKey,
+          selective: !!secondKey,
+          useRegex: regex,
+        })
+        currentChat.localLore = newLocalLoreBooks
+      })
 
       declareAPI('loadLoreBooksMain', async (id: string, reserve: number) => {
         if (!ScriptingLowLevelIds.has(id)) {
@@ -899,12 +880,7 @@ export async function runScripted(
 
       declareAPI(
         'axLLMMain',
-        async (
-          id: string,
-          promptStr: string,
-          useMultimodal: boolean = false,
-          optionsStr: string = '',
-        ) => {
+        async (id: string, promptStr: string, useMultimodal: boolean = false, optionsStr: string = '') => {
           let prompt: {
             role: string
             content: string
@@ -1096,11 +1072,7 @@ export async function runScripted(
 
       console.log('Running Lua code:', code)
       if (ScriptingEngineState.type === 'lua') {
-        await runLuaStringWithTimeout(
-          ScriptingEngineState.engine,
-          luaCodeWrapper(code),
-          luaExecTimeoutMs,
-        )
+        await runLuaStringWithTimeout(ScriptingEngineState.engine, luaCodeWrapper(code), luaExecTimeoutMs)
       }
       if (ScriptingEngineState.type === 'py') {
         await ScriptingEngineState.pyodide?.init(code)
@@ -1192,9 +1164,7 @@ export async function runScripted(
             break
           }
           case 'onButtonClick': {
-            res = await ScriptingEngineState.pyodide?.python(
-              `onButtonClick('${accessKey}', '${data as string}')`,
-            )
+            res = await ScriptingEngineState.pyodide?.python(`onButtonClick('${accessKey}', '${data as string}')`)
             break
           }
           case 'editRequest':
@@ -1391,11 +1361,7 @@ async function getOrCreateEngineState(
   return creationPromise
 }
 
-async function runLuaStringWithTimeout(
-  engine: LuaEngine | undefined,
-  code: string,
-  timeoutMs: number,
-): Promise<void> {
+async function runLuaStringWithTimeout(engine: LuaEngine | undefined, code: string, timeoutMs: number): Promise<void> {
   if (!engine) {
     return
   }
@@ -1644,10 +1610,7 @@ export async function runLuaEditTrigger<T extends string | OpenAIChat[]>(
   }
 }
 
-export async function runLuaButtonTrigger(
-  char: character | simpleCharacterArgument,
-  data: string,
-): Promise<any> {
+export async function runLuaButtonTrigger(char: character | simpleCharacterArgument, data: string): Promise<any> {
   let runResult
   try {
     const triggers =

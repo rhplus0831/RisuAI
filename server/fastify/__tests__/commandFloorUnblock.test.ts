@@ -6,10 +6,7 @@ import type { FastifyInstance } from 'fastify'
 import { DatabaseSync } from 'node:sqlite'
 import { buildApp } from '../src/app.js'
 import { setupAuthedClient } from './helpers/auth.js'
-import {
-  assertCommandMetricGate,
-  type CommandMutationMetric,
-} from './helpers/commandMetricGates.js'
+import { assertCommandMetricGate, type CommandMutationMetric } from './helpers/commandMetricGates.js'
 import { assertOnlyRowsWritten, tableRowidsById } from './helpers/rowStability.js'
 
 // Phase 8 (scoped Tier-5 floor unblocks) regression. The high-value Tier-5 routes
@@ -147,18 +144,14 @@ async function runCommand(
   request: CommandRequest,
 ): Promise<{ revision: number; metric: CommandMutationMetric; body: Record<string, unknown> }> {
   const before = metrics.length
-  const inject = harness.app.inject as unknown as (
-    request: CommandRequest,
-  ) => Promise<CommandResponse>
+  const inject = harness.app.inject as unknown as (request: CommandRequest) => Promise<CommandResponse>
   const res = await inject({
     ...request,
     headers: { 'risu-auth': assertion, ...(request.headers ?? {}) },
   })
   expect(res.statusCode, JSON.stringify(res.json())).toBe(200)
   const body = res.json() as Record<string, unknown>
-  const metric = metrics
-    .slice(before)
-    .find((entry) => entry.metric === 'command_mutation' && entry.status === 'ok')
+  const metric = metrics.slice(before).find((entry) => entry.metric === 'command_mutation' && entry.status === 'ok')
   expect(metric, `missing command_mutation metric for ${request.url}`).toBeTruthy()
   return { revision: body.revision as number, metric: metric as CommandMutationMetric, body }
 }
@@ -179,9 +172,9 @@ function readCharacter(id: string): Record<string, unknown> {
 function readChatOrder(characterId: string): string[] {
   const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
   try {
-    const rows = db
-      .prepare('SELECT id FROM chats WHERE character_id = ? ORDER BY position')
-      .all(characterId) as Array<{ id: string }>
+    const rows = db.prepare('SELECT id FROM chats WHERE character_id = ? ORDER BY position').all(characterId) as Array<{
+      id: string
+    }>
     return rows.map((r) => r.id)
   } finally {
     db.close()
@@ -192,9 +185,10 @@ function readChatOrder(characterId: string): string[] {
 function readCharacterRows(): Array<{ id: string; position: number }> {
   const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
   try {
-    return db
-      .prepare('SELECT id, position FROM characters ORDER BY position')
-      .all() as Array<{ id: string; position: number }>
+    return db.prepare('SELECT id, position FROM characters ORDER BY position').all() as Array<{
+      id: string
+      position: number
+    }>
   } finally {
     db.close()
   }
@@ -216,9 +210,7 @@ function readSettings(): Record<string, unknown> {
 function countChatMessages(chatId: string): number {
   const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
   try {
-    const row = db
-      .prepare('SELECT COUNT(*) AS n FROM messages WHERE chat_id = ?')
-      .get(chatId) as { n: number }
+    const row = db.prepare('SELECT COUNT(*) AS n FROM messages WHERE chat_id = ?').get(chatId) as { n: number }
     return row.n
   } finally {
     db.close()
@@ -228,9 +220,7 @@ function countChatMessages(chatId: string): number {
 function countChatHypa(chatId: string): number {
   const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
   try {
-    const row = db
-      .prepare('SELECT COUNT(*) AS n FROM chat_hypa_v3 WHERE chat_id = ?')
-      .get(chatId) as { n: number }
+    const row = db.prepare('SELECT COUNT(*) AS n FROM chat_hypa_v3 WHERE chat_id = ?').get(chatId) as { n: number }
     return row.n
   } finally {
     db.close()
@@ -248,11 +238,7 @@ function expectNoChurn(
   before: { characters: Record<string, number>; chats: Record<string, number> },
   options: { characters?: string[]; chats?: string[] } = {},
 ): void {
-  assertOnlyRowsWritten(
-    before.characters,
-    tableRowidsById(harness.dataDir, 'characters'),
-    options.characters ?? [],
-  )
+  assertOnlyRowsWritten(before.characters, tableRowidsById(harness.dataDir, 'characters'), options.characters ?? [])
   assertOnlyRowsWritten(before.chats, tableRowidsById(harness.dataDir, 'chats'), options.chats ?? [])
 }
 
@@ -430,13 +416,7 @@ describe('Phase 8 follow-up: DELETE characters/:id → targeted-character-row', 
     expect(metric.dbJsonWriteMs).toBe(0)
     // The character row, its chat rows, those chats' message/hypa rows, and the
     // settings pointers — but no collection table.
-    expect(metric.writtenTables).toEqual([
-      'characters',
-      'chat_hypa_v3',
-      'chats',
-      'messages',
-      'settings',
-    ])
+    expect(metric.writtenTables).toEqual(['characters', 'chat_hypa_v3', 'chats', 'messages', 'settings'])
     assertCommandMetricGate(metric)
 
     // char-a (and its chats) are removed; char-b's rows keep their rowids.

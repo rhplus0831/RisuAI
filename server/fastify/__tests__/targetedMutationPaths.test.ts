@@ -19,10 +19,7 @@ import {
   writeSingleChatRow,
   writeSingleCollectionRow,
 } from '../src/repository.js'
-import {
-  assertCommandMetricGate,
-  type CommandMutationMetric,
-} from './helpers/commandMetricGates.js'
+import { assertCommandMetricGate, type CommandMutationMetric } from './helpers/commandMetricGates.js'
 
 // Phase 0 targeted-mutation-paths slice. Each new `mutationPath` label is
 // reachable through `applyTargetedCommandMutation` + the writer kit, reports its
@@ -177,9 +174,7 @@ describe('targeted mutation paths', () => {
 
       // Metric reports the label, the narrow written-table set, dbJsonWriteMs 0,
       // and satisfies its review gate.
-      const metric = metrics.find(
-        (entry) => entry.metric === 'command_mutation' && entry.status === 'ok',
-      )
+      const metric = metrics.find((entry) => entry.metric === 'command_mutation' && entry.status === 'ok')
       expect(metric, `missing metric for ${testCase.label}`).toBeTruthy()
       expect(metric?.mutationPath).toBe(testCase.label)
       expect(metric?.writtenTables).toEqual(testCase.expectedTables)

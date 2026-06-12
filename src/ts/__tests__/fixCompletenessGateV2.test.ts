@@ -140,8 +140,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     [
       {
         testPath: 'server/fastify/__tests__/serverLoadCostHarness.test.ts',
-        testName:
-          'H2: chat-create performs zero hydrated message loads and no full-database clone-sized stringify',
+        testName: 'H2: chat-create performs zero hydrated message loads and no full-database clone-sized stringify',
       },
       {
         testPath: 'server/fastify/__tests__/commands.test.ts',
@@ -149,8 +148,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
       {
         testPath: 'server/fastify/__tests__/commands.test.ts',
-        testName:
-          'rejects command-created chat ids and message ids already used by another character',
+        testName: 'rejects command-created chat ids and message ids already used by another character',
       },
     ],
   ),
@@ -163,18 +161,15 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     [
       {
         testPath: 'src/ts/__tests__/renderCostHarness.test.ts',
-        testName:
-          'drives a definition-level GUI reload that reparses mounted chat messages and resets caches',
+        testName: 'drives a definition-level GUI reload that reparses mounted chat messages and resets caches',
       },
       {
         testPath: 'src/ts/process/triggers.regexMemo.test.ts',
-        testName:
-          'H3: v2UpdateGUI bumps only the variable-only GUI pointer and preserves script caches',
+        testName: 'H3: v2UpdateGUI bumps only the variable-only GUI pointer and preserves script caches',
       },
       {
         testPath: 'src/ts/process/triggers.regexMemo.test.ts',
-        testName:
-          'H3/L40: v2RegexTest memo survives variable-only trigger refreshes, output unchanged',
+        testName: 'H3/L40: v2RegexTest memo survives variable-only trigger refreshes, output unchanged',
       },
     ],
   ),
@@ -187,13 +182,11 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     [
       {
         testPath: 'server/fastify/__tests__/assemble.test.ts',
-        testName:
-          'keeps run-var fixed-point rows out of message capture but captures a real rewrite once',
+        testName: 'keeps run-var fixed-point rows out of message capture but captures a real rewrite once',
       },
       {
         testPath: 'server/fastify/__tests__/assemble.test.ts',
-        testName:
-          'captures input-trigger transcript rewrites once and keeps restoration at the original transcript',
+        testName: 'captures input-trigger transcript rewrites once and keeps restoration at the original transcript',
       },
       {
         testPath: 'server/fastify/__tests__/assemble.test.ts',
@@ -201,18 +194,15 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
       {
         testPath: 'server/fastify/__tests__/assemble.test.ts',
-        testName:
-          'captures start-trigger chat edits once and preserves stop/error restoration baseline',
+        testName: 'captures start-trigger chat edits once and preserves stop/error restoration baseline',
       },
       {
         testPath: 'server/fastify/__tests__/assemble.test.ts',
-        testName:
-          'captures regenerate truncation once and leaves the restoration transcript intact',
+        testName: 'captures regenerate truncation once and leaves the restoration transcript intact',
       },
       {
         testPath: 'server/fastify/__tests__/generation.chat.test.ts',
-        testName:
-          'leaves a plain send transcript to the browser (no route message write) (slice 3b-4)',
+        testName: 'leaves a plain send transcript to the browser (no route message write) (slice 3b-4)',
       },
     ],
   ),
@@ -232,8 +222,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     [
       {
         testPath: 'server/fastify/__tests__/templates.test.ts',
-        testName:
-          'keeps live chat, postEverything, memory, and cache cards outside the stable-card cache',
+        testName: 'keeps live chat, postEverything, memory, and cache cards outside the stable-card cache',
       },
       {
         testPath: 'server/fastify/__tests__/templates.test.ts',
@@ -254,8 +243,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     [
       {
         testPath: 'server/fastify/__tests__/assemble.test.ts',
-        testName:
-          'does not return stale history output after the assembly history generation changes',
+        testName: 'does not return stale history output after the assembly history generation changes',
       },
       {
         testPath: 'server/fastify/__tests__/assemble.test.ts',
@@ -272,8 +260,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     [
       {
         testPath: 'server/fastify/__tests__/commandMutationReadNarrowing.test.ts',
-        testName:
-          'M5: chat PATCH without modules uses chatScopedRead and preserves selected chat state',
+        testName: 'M5: chat PATCH without modules uses chatScopedRead and preserves selected chat state',
       },
       {
         testPath: 'server/fastify/__tests__/commandMutationReadNarrowing.test.ts',
@@ -311,8 +298,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     [
       {
         testPath: 'src/ts/process/request/tests/serverMessagePatch.test.ts',
-        testName:
-          'preserves append single-message detach while normalizing an already-local user append',
+        testName: 'preserves append single-message detach while normalizing an already-local user append',
       },
     ],
   ),
@@ -342,8 +328,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     [
       {
         testPath: 'src/ts/chatCommands.test.ts',
-        testName:
-          'M9: message-only changes produce an empty patch without serializing message arrays',
+        testName: 'M9: message-only changes produce an empty patch without serializing message arrays',
       },
       {
         testPath: 'src/ts/chatCommands.test.ts',
@@ -364,8 +349,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     [
       {
         testPath: 'src/ts/moduleCommands.test.ts',
-        testName:
-          'M10: character-module snapshots clone and restore only the target modules field',
+        testName: 'M10: character-module snapshots clone and restore only the target modules field',
       },
       {
         testPath: 'src/ts/moduleCommands.test.ts',
@@ -373,8 +357,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
       {
         testPath: 'src/ts/moduleCommands.test.ts',
-        testName:
-          'M10: forced-failure character-module rollback preserves sibling and same-row edits',
+        testName: 'M10: forced-failure character-module rollback preserves sibling and same-row edits',
       },
       {
         testPath: 'src/ts/moduleCommands.test.ts',
@@ -577,13 +560,11 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     [
       {
         testPath: 'server/fastify/__tests__/streamJobs.test.ts',
-        testName:
-          'L1: silent sliding durable generation jobs still die within the bounded deadline',
+        testName: 'L1: silent sliding durable generation jobs still die within the bounded deadline',
       },
       {
         testPath: 'server/fastify/__tests__/requestAbort.test.ts',
-        testName:
-          'L1: refresh keeps an active non-durable generation alive past its original deadline',
+        testName: 'L1: refresh keeps an active non-durable generation alive past its original deadline',
       },
       {
         testPath: 'server/fastify/__tests__/requestAbort.test.ts',
@@ -630,8 +611,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     [
       {
         testPath: 'server/fastify/__tests__/assemble.test.ts',
-        testName:
-          'persists @@dont_activate_after_match through assembly mutations and suppresses the next send',
+        testName: 'persists @@dont_activate_after_match through assembly mutations and suppresses the next send',
       },
       {
         testPath: 'server/fastify/__tests__/generation.chat.test.ts',
@@ -659,8 +639,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
       {
         testPath: 'server/fastify/__tests__/triggers.test.ts',
-        testName:
-          'L6: reuses compiled regexes across trigger conditions and V2 effects',
+        testName: 'L6: reuses compiled regexes across trigger conditions and V2 effects',
       },
       {
         testPath: 'server/fastify/__tests__/triggers.test.ts',
@@ -728,8 +707,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     [
       {
         testPath: 'server/fastify/__tests__/realmImport.test.ts',
-        testName:
-          'rejects duplicate Realm character ids without bumping revision or emitting events',
+        testName: 'rejects duplicate Realm character ids without bumping revision or emitting events',
       },
     ],
   ),
@@ -781,8 +759,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
       {
         testPath: 'server/fastify/__tests__/memoryJobsRoutes.test.ts',
-        testName:
-          'L17: lists retained memory jobs after startup retention prunes old terminal rows',
+        testName: 'L17: lists retained memory jobs after startup retention prunes old terminal rows',
       },
     ],
   ),
@@ -837,8 +814,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     [
       {
         testPath: 'server/fastify/__tests__/memoryRepository.test.ts',
-        testName:
-          'L20: cleans orphaned rows from a shared summary snapshot and returns retained summaries',
+        testName: 'L20: cleans orphaned rows from a shared summary snapshot and returns retained summaries',
       },
       {
         testPath: 'server/fastify/__tests__/assemble.test.ts',
@@ -942,8 +918,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     [
       {
         testPath: 'server/fastify/__tests__/legacyStorage.test.ts',
-        testName:
-          'L26: preserves the old legacy storage file and removes temp bytes after a rename failure',
+        testName: 'L26: preserves the old legacy storage file and removes temp bytes after a rename failure',
       },
     ],
   ),
@@ -984,8 +959,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     [
       {
         testPath: 'server/fastify/__tests__/realmImport.test.ts',
-        testName:
-          'L29: aborts unknown-length Realm charx downloads as soon as the staging cap is crossed',
+        testName: 'L29: aborts unknown-length Realm charx downloads as soon as the staging cap is crossed',
       },
       {
         testPath: 'server/fastify/__tests__/realmImport.test.ts',
@@ -1126,8 +1100,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
       {
         testPath: 'src/ts/characterCommands.test.ts',
-        testName:
-          'L34: setCharacterSupaMemory captures no full character row or characters array clone',
+        testName: 'L34: setCharacterSupaMemory captures no full character row or characters array clone',
       },
       {
         testPath: 'src/ts/characterCommands.test.ts',
@@ -1169,8 +1142,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
       {
         testPath: 'src/ts/process/rerollNavigation.test.ts',
-        testName:
-          'resetRerollOnCharChange wipes the buffer and preroll candidates when the chat changed',
+        testName: 'resetRerollOnCharChange wipes the buffer and preroll candidates when the chat changed',
       },
     ],
   ),
@@ -1187,8 +1159,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
       {
         testPath: 'src/lang/index.test.ts',
-        testName:
-          'L37: switching back to English changes identity once and then reuses the English object',
+        testName: 'L37: switching back to English changes identity once and then reuses the English object',
       },
       {
         testPath: 'src/lang/index.test.ts',
@@ -1237,8 +1208,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
       {
         testPath: 'src/lib/ChatScreens/ChatBody.parseMemo.test.ts',
-        testName:
-          'M17/L40: cached-only LLM detection shares in-flight parse work and hits the resolved memo',
+        testName: 'M17/L40: cached-only LLM detection shares in-flight parse work and hits the resolved memo',
       },
     ],
   ),
@@ -1268,8 +1238,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     [
       {
         testPath: 'src/lib/Others/GridCatalog.svelte.test.ts',
-        testName:
-          'L42: GridCatalog filters active and trash lists with shared count and stable order',
+        testName: 'L42: GridCatalog filters active and trash lists with shared count and stable order',
       },
       {
         testPath: 'src/lib/Others/GridCatalog.svelte.test.ts',
@@ -1472,8 +1441,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
       {
         testPath: 'src/ts/process/mcp/internalClients.test.ts',
-        testName:
-          'L55: FileSystem and Google Search return mutation-safe copies of static tool schemas',
+        testName: 'L55: FileSystem and Google Search return mutation-safe copies of static tool schemas',
       },
     ],
   ),
@@ -1546,8 +1514,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
       {
         testPath: 'server/fastify/__tests__/generation.chat.test.ts',
-        testName:
-          'K1: chat-variable generation finalization keeps broad writes and reports truthful metrics',
+        testName: 'K1: chat-variable generation finalization keeps broad writes and reports truthful metrics',
       },
     ],
   ),
@@ -1598,8 +1565,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
       {
         testPath: 'src/ts/server/lorebookBridge.svelte.test.ts',
-        testName:
-          'K4: module external entry drafts avoid collection clones and flush final module replacement',
+        testName: 'K4: module external entry drafts avoid collection clones and flush final module replacement',
       },
       {
         testPath: 'src/ts/server/lorebookBridge.svelte.test.ts',
@@ -1637,14 +1603,8 @@ const GATED_CONTEXT_REASONS: GateContextReason[] = [
 ]
 
 const NO_ACTION: RegistryReason[] = [
-  noAction(
-    'I1',
-    'Inventory only: done-in-grace reattach has single-viewer semantics and no Phase 0 fix is scheduled.',
-  ),
-  noAction(
-    'I2',
-    'Inventory only: edit-hook trigger-context rebuilds are not scheduled in the v2 remediation plan.',
-  ),
+  noAction('I1', 'Inventory only: done-in-grace reattach has single-viewer semantics and no Phase 0 fix is scheduled.'),
+  noAction('I2', 'Inventory only: edit-hook trigger-context rebuilds are not scheduled in the v2 remediation plan.'),
   noAction(
     'I3',
     'Inventory only: the unused command-events created_at index is write amplification and may ride Phase 8 if free.',
@@ -1657,58 +1617,31 @@ const NO_ACTION: RegistryReason[] = [
     'I5',
     'Inventory only: bounded inflate has roughly 2x within-cap peak memory, but the cap already bounds risk.',
   ),
-  noAction(
-    'I6',
-    'Inventory only: Bedrock SigV4 hashes request bodies synchronously, but no v2 fix is scheduled.',
-  ),
-  noAction(
-    'I7',
-    'Inventory only: delimiter scanning is bounded by the 8 MB SSE cap, so this stays no-action.',
-  ),
-  noAction(
-    'I8',
-    'Inventory only: the Horde poll loop is fixed-interval on a route no bundled SPA path uses.',
-  ),
+  noAction('I6', 'Inventory only: Bedrock SigV4 hashes request bodies synchronously, but no v2 fix is scheduled.'),
+  noAction('I7', 'Inventory only: delimiter scanning is bounded by the 8 MB SSE cap, so this stays no-action.'),
+  noAction('I8', 'Inventory only: the Horde poll loop is fixed-interval on a route no bundled SPA path uses.'),
   noAction(
     'I9',
     'Inventory only: Vertex token-exchange errors can echo upstream bodies in same-user self-host scenarios.',
   ),
-  noAction(
-    'I10',
-    'Inventory only: inlay-marker transcript scans are linear server-send work and not scheduled.',
-  ),
-  noAction(
-    'I11',
-    "Inventory only: `evaluateIgp` preserves the original port's `[object Object]` append behavior.",
-  ),
+  noAction('I10', 'Inventory only: inlay-marker transcript scans are linear server-send work and not scheduled.'),
+  noAction('I11', "Inventory only: `evaluateIgp` preserves the original port's `[object Object]` append behavior."),
   noAction(
     'I12',
     'Inventory only: editdisplay-triggered additional-asset parsing is single-message scale with cached file resolution.',
   ),
-  noAction(
-    'I13',
-    'Inventory only: RegexList unkeyed-each churn has no data-corruption finding to schedule.',
-  ),
-  noAction(
-    'I14',
-    'Inventory only: BookmarkList map rebuilds are modal-local and remain outside the scheduled plan.',
-  ),
+  noAction('I13', 'Inventory only: RegexList unkeyed-each churn has no data-corruption finding to schedule.'),
+  noAction('I14', 'Inventory only: BookmarkList map rebuilds are modal-local and remain outside the scheduled plan.'),
   noAction(
     'I15',
     'Inventory only: claudeObserver keeps a permanent timer but self-limits fetches after its one-shot run.',
   ),
-  noAction(
-    'I16',
-    'Inventory only: the parser nesting-stack cap may ride Phase 3 if free, but no fix is required.',
-  ),
+  noAction('I16', 'Inventory only: the parser nesting-stack cap may ride Phase 3 if free, but no fix is required.'),
   noAction(
     'I17',
     'Inventory only: voiceDetector would leak resources but is dead code and should be deleted or fixed before reuse.',
   ),
-  noAction(
-    'I18',
-    'Inventory only: duplicate MCP tool names dispatch first-match, which is documented as no-action.',
-  ),
+  noAction('I18', 'Inventory only: duplicate MCP tool names dispatch first-match, which is documented as no-action.'),
   noAction(
     'R1',
     'Dismissed: durable submission-lock leak on attach throw has no synchronous throw site between register and trackRunner.',
@@ -1717,10 +1650,7 @@ const NO_ACTION: RegistryReason[] = [
     'R2',
     'Dismissed: promptScope is set, used, and cleared synchronously inside expandVariables, so no async race exists.',
   ),
-  noAction(
-    'R3',
-    'Dismissed: LuaExecBudget usedMs accumulates only actual Lua runtime, not provider-call time.',
-  ),
+  noAction('R3', 'Dismissed: LuaExecBudget usedMs accumulates only actual Lua runtime, not provider-call time.'),
   noAction(
     'R4',
     'Dismissed: fresh-engine boot failure is caught because both assembly entry points wrap the path in try/catch.',
@@ -1729,18 +1659,9 @@ const NO_ACTION: RegistryReason[] = [
     'R5',
     'Dismissed: memory selection does not eagerly decode embeddings on the live route because query vectors are empty.',
   ),
-  noAction(
-    'R6',
-    'Dismissed: embedding batch handlers dispatch exclusively through one worker and one shared limiter.',
-  ),
-  noAction(
-    'R7',
-    'Dismissed: oversized SSE complete events trip the 8 MB cap while the event is accumulating.',
-  ),
-  noAction(
-    'R8',
-    'Dismissed: SSE reader drain after non-abort cancel is unreachable in the live runtime.',
-  ),
+  noAction('R6', 'Dismissed: embedding batch handlers dispatch exclusively through one worker and one shared limiter.'),
+  noAction('R7', 'Dismissed: oversized SSE complete events trip the 8 MB cap while the event is accumulating.'),
+  noAction('R8', 'Dismissed: SSE reader drain after non-abort cancel is unreachable in the live runtime.'),
   noAction(
     'R9',
     'Dismissed: regex memo wipe as a standalone finding was folded into H3, and the bestMatchCache claim was wrong.',
@@ -1749,18 +1670,9 @@ const NO_ACTION: RegistryReason[] = [
     'R10',
     'Dismissed: memory-worker fairness now-skew is mechanically true but has no consequential unfairness.',
   ),
-  noAction(
-    'R11',
-    'Dismissed: MCP customTransport leak is dead code because the transport is never assigned.',
-  ),
-  noAction(
-    'R12',
-    'Dismissed: PNG import uploads are chunked at 32 items or 32 MB, not sent as one giant JSON body.',
-  ),
-  noAction(
-    'R13',
-    'Dismissed: getInlayAsset re-fetch per assembly is in the dead local-assembly arm.',
-  ),
+  noAction('R11', 'Dismissed: MCP customTransport leak is dead code because the transport is never assigned.'),
+  noAction('R12', 'Dismissed: PNG import uploads are chunked at 32 items or 32 MB, not sent as one giant JSON body.'),
+  noAction('R13', 'Dismissed: getInlayAsset re-fetch per assembly is in the dead local-assembly arm.'),
 ]
 
 function readDoc(file: string): string {
@@ -2270,14 +2182,10 @@ describe('v2 fix-completeness gate doc universe', () => {
     const withHeading = `${auditText}\n### M23 - fake drift\n`
 
     expect(auditFindingIdsByKind(withTableRow).M).toContain('M23')
-    expect(collectAuditUniverseDriftProblems(auditFindingIdsByKind(withTableRow))).toEqual([
-      'M: unexpected ids M23',
-    ])
+    expect(collectAuditUniverseDriftProblems(auditFindingIdsByKind(withTableRow))).toEqual(['M: unexpected ids M23'])
 
     expect(auditFindingIdsByKind(withHeading).M).toContain('M23')
-    expect(collectAuditUniverseDriftProblems(auditFindingIdsByKind(withHeading))).toEqual([
-      'M: unexpected ids M23',
-    ])
+    expect(collectAuditUniverseDriftProblems(auditFindingIdsByKind(withHeading))).toEqual(['M: unexpected ids M23'])
   })
 })
 
@@ -2458,10 +2366,7 @@ describe('v2 fix-completeness gate routing registry', () => {
     })
 
     expect(collectGateProblems({ scheduled: syntheticDone })).toEqual(
-      expect.arrayContaining([
-        'H1: DONE without a registered testPath',
-        'H1: DONE without a registered testName',
-      ]),
+      expect.arrayContaining(['H1: DONE without a registered testPath', 'H1: DONE without a registered testName']),
     )
   })
 
@@ -2491,9 +2396,7 @@ describe('v2 fix-completeness gate routing registry', () => {
     )
 
     expect(collectGateProblems({ scheduled: syntheticMissingPath })).toEqual(
-      expect.arrayContaining([
-        `H1: registered test "${missingPrimaryTestPath}" is missing`,
-      ]),
+      expect.arrayContaining([`H1: registered test "${missingPrimaryTestPath}" is missing`]),
     )
     expect(collectGateProblems({ scheduled: syntheticDone })).toEqual(
       expect.arrayContaining([
@@ -2522,9 +2425,7 @@ describe('v2 fix-completeness gate routing registry', () => {
       '| H1 | [2](phases/phase-2-server-corpus-ring-2.md) | Signal + wall-clock budget + iteration/recursion caps in `runTrigger`. | PENDING |',
     )
 
-    expect(collectGateProblems({ riskText: withWrongPhase })).toContain(
-      'H1: phase mismatch (registry 1, docs 2)',
-    )
+    expect(collectGateProblems({ riskText: withWrongPhase })).toContain('H1: phase mismatch (registry 1, docs 2)')
   })
 
   it('self-proves registry PLANNED drift detection against an in-memory scheduled registry', () => {
@@ -2538,18 +2439,11 @@ describe('v2 fix-completeness gate routing registry', () => {
   })
 
   it('self-proves duplicate and missing classification detection', () => {
-    const duplicateH1 = [
-      ...NO_ACTION,
-      noAction('H1', 'Duplicate self-proof classification reason for H1.'),
-    ]
+    const duplicateH1 = [...NO_ACTION, noAction('H1', 'Duplicate self-proof classification reason for H1.')]
     const missingH2 = SCHEDULED_FIXES.filter((entry) => entry.id !== 'H2')
 
-    expect(collectGateProblems({ noAction: duplicateH1 })).toContain(
-      'H1: classified 2 times (scheduled, no-action)',
-    )
-    expect(collectGateProblems({ scheduled: missingH2 })).toContain(
-      'H2: missing classification bucket',
-    )
+    expect(collectGateProblems({ noAction: duplicateH1 })).toContain('H1: classified 2 times (scheduled, no-action)')
+    expect(collectGateProblems({ scheduled: missingH2 })).toContain('H2: missing classification bucket')
   })
 
   it('self-proves scheduled/gated conflict detection against an in-memory active-risk doc', () => {

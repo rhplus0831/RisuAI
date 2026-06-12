@@ -138,8 +138,6 @@ describe('Phase 7-11e buildMemoryWindow (non-Hypa)', () => {
       unformated,
       db,
     })
-    expect(unformated.chats.map((r) => r.content)).toEqual([
-      '<Previous Conversation>summary</Previous Conversation>',
-    ])
+    expect(unformated.chats.map((r) => r.content)).toEqual(['<Previous Conversation>summary</Previous Conversation>'])
   })
 })

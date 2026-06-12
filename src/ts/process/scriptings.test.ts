@@ -75,9 +75,7 @@ const luaMock = vi.hoisted(() => {
 
   class LuaEngine {}
 
-  state.createEngine.mockImplementation(async (options: Record<string, unknown>) =>
-    makeEngine(options),
-  )
+  state.createEngine.mockImplementation(async (options: Record<string, unknown>) => makeEngine(options))
 
   return {
     ...state,
@@ -92,9 +90,7 @@ const luaMock = vi.hoisted(() => {
       state.lastAccessKey = ''
       state.rejectDispatch = false
       state.createEngine.mockClear()
-      state.createEngine.mockImplementation(async (options: Record<string, unknown>) =>
-        makeEngine(options),
-      )
+      state.createEngine.mockImplementation(async (options: Record<string, unknown>) => makeEngine(options))
     },
     setRejectDispatch(value: boolean) {
       state.rejectDispatch = value
@@ -154,8 +150,7 @@ vi.mock('src/ts/util', async (importActual) => {
   const actual = await importActual<typeof import('src/ts/util')>()
   return {
     ...actual,
-    asBuffer: (data: Uint8Array) =>
-      data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength),
+    asBuffer: (data: Uint8Array) => data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength),
     getPersonaPrompt: mediaMock.getPersonaPrompt,
     getUserIcon: mediaMock.getUserIcon,
     getUserName: mediaMock.getUserName,
@@ -215,10 +210,7 @@ beforeEach(() => {
   mediaMock.getUserName.mockReturnValue('User')
   mediaMock.readImage.mockResolvedValue(new Uint8Array([1, 2, 3]))
   mediaMock.writeInlayImage.mockResolvedValue('inlay-id')
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(async () => new Response('', { status: 200 })) as unknown as typeof fetch,
-  )
+  vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 200 })) as unknown as typeof fetch)
   vi.spyOn(console, 'log').mockImplementation(() => {})
   vi.spyOn(console, 'error').mockImplementation(() => {})
 })
@@ -289,14 +281,9 @@ describe('client scripting Lua budgets and cache (L39-L41)', () => {
     ] as character['triggerscript']
     luaMock.setRejectDispatch(true)
 
-    await expect(runLuaEditTrigger(char, 'editdisplay', 'visible body')).resolves.toBe(
-      'visible body',
-    )
+    await expect(runLuaEditTrigger(char, 'editdisplay', 'visible body')).resolves.toBe('visible body')
 
-    expect(console.error).toHaveBeenCalledWith(
-      'Lua edit trigger failed in editDisplay:',
-      expect.any(Error),
-    )
+    expect(console.error).toHaveBeenCalledWith('Lua edit trigger failed in editDisplay:', expect.any(Error))
     expect(getScriptingEngineCacheSnapshotForTests().accessSetSizes.editDisplay).toBe(0)
   })
 

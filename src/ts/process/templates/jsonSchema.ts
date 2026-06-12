@@ -98,9 +98,7 @@ export function convertInterfaceToSchema(int: string) {
           }
           const textIndex = t.replace('\uE9b4d', '')
           const text = placeHolders[parseInt(textIndex)]
-          const textParsed = JSON.parse(
-            text.replace(/\uE9b4a/gu, '\\"').replace(/\uE9b4b/gu, "\\'"),
-          )
+          const textParsed = JSON.parse(text.replace(/\uE9b4a/gu, '\\"').replace(/\uE9b4b/gu, "\\'"))
           strings.push(textParsed)
         }
         if (strings.length === 1) {

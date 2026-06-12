@@ -135,10 +135,7 @@ export function buildFormatOrder(db: Database): FormatOrderKey[] {
 /** Models whose system rows are coalesced (`renderFinalPrompt.ts:96-101`). */
 function coalescesSystemRows(aiModel: string): boolean {
   return (
-    aiModel.startsWith('gpt') ||
-    aiModel.startsWith('claude') ||
-    aiModel === 'openrouter' ||
-    aiModel === 'reverse_proxy'
+    aiModel.startsWith('gpt') || aiModel.startsWith('claude') || aiModel === 'openrouter' || aiModel === 'reverse_proxy'
   )
 }
 
@@ -226,11 +223,7 @@ Example: <img src="{{ele::{{chardisplayasset}}::0}}">
  * row through the server `expandVariables` (matches the prior copy in
  * `preflight.ts`). Returns `null` when the text is not a ChatML block.
  */
-export function parseChatML(
-  text: string,
-  ctx: ExpandContext,
-  onVarDirty?: () => void,
-): OpenAIChat[] | null {
+export function parseChatML(text: string, ctx: ExpandContext, onVarDirty?: () => void): OpenAIChat[] | null {
   const starter = '<|im_start|>'
   const seperator = '<|im_sep|>'
   const ender = '<|im_end|>'
@@ -314,12 +307,7 @@ export function systemizeChat(chats: OpenAIChat[]): OpenAIChat[] {
  * an empty `fmt`. `fmt` is expanded with the bare `ctx` (no `chara`),
  * matching the SPA's `risuChatParser(fmt)`.
  */
-function pushPromptInfoBody(
-  store: OpenAIChat[],
-  role: OpenAIChat['role'],
-  fmt: string,
-  ctx: ExpandContext,
-): void {
+function pushPromptInfoBody(store: OpenAIChat[], role: OpenAIChat['role'], fmt: string, ctx: ExpandContext): void {
   if (!fmt.trim()) return
   store.push({ role, content: expandVariables(fmt, ctx).text })
 }
@@ -403,11 +391,7 @@ function stableCardCacheKey(card: PromptItem, templateIndex: number): string {
   return `${templateIndex}:${card.type}:${card.id ?? ''}`
 }
 
-function captureStableCardPromptInfo(
-  card: PromptItem,
-  rows: OpenAIChat[],
-  deps: ContentCardDeps,
-): void {
+function captureStableCardPromptInfo(card: PromptItem, rows: OpenAIChat[], deps: ContentCardDeps): void {
   if (!deps.promptInfo) return
 
   switch (card.type) {
@@ -544,15 +528,9 @@ export function renderContentCard(card: PromptItem, deps: ContentCardDeps): Open
 
       if (card.type === 'plain' && card.type2 === 'globalNote') {
         if (currentChar.replaceGlobalNote) {
-          content = positionParser(currentChar.replaceGlobalNote, posType).replaceAll(
-            '{{original}}',
-            content,
-          )
+          content = positionParser(currentChar.replaceGlobalNote, posType).replaceAll('{{original}}', content)
         }
-        if (
-          currentChar.prebuiltAssetCommand &&
-          !card.text.includes('{{//@customimageinstruction}}')
-        ) {
+        if (currentChar.prebuiltAssetCommand && !card.text.includes('{{//@customimageinstruction}}')) {
           content += PREBUILT_ASSET_COMMAND
         }
       }
@@ -597,11 +575,7 @@ export function renderContentCard(card: PromptItem, deps: ContentCardDeps): Open
       if (start >= end) return []
 
       const slice = chats.slice(start, end)
-      if (
-        usingPromptTemplate &&
-        db.promptSettings?.sendChatAsSystem &&
-        !card.chatAsOriginalOnSystem
-      ) {
+      if (usingPromptTemplate && db.promptSettings?.sendChatAsSystem && !card.chatAsOriginalOnSystem) {
         // Clone before systemizing so the shared `unformated.chats` is
         // not mutated between the preflight pass and the render pass.
         // The SPA mutates in place (`renderFinalPrompt.ts:297`); the
@@ -790,9 +764,7 @@ function takesContinueMarker(aiModel: string): boolean {
  * (editRequest'd) prompt-info array, defined only when the template
  * path captured it.
  */
-export async function renderFinalPrompt(
-  args: RenderFinalPromptArgs,
-): Promise<RenderFinalPromptResult> {
+export async function renderFinalPrompt(args: RenderFinalPromptArgs): Promise<RenderFinalPromptResult> {
   const {
     ctx,
     currentChar,

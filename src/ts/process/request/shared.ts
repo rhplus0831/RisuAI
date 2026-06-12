@@ -14,13 +14,7 @@ export type LLMParameter =
   | 'thinking_tokens'
   | 'verbosity'
 
-export type ModelModeExtended =
-  | 'model'
-  | 'submodel'
-  | 'memory'
-  | 'emotion'
-  | 'otherAx'
-  | 'translate'
+export type ModelModeExtended = 'model' | 'submodel' | 'memory' | 'emotion' | 'otherAx' | 'translate'
 
 export function setObjectValue<T>(obj: T, key: string, value: any): T {
   const splitKey = key.split('.')
@@ -104,10 +98,7 @@ export function applyAdditionalParameters<T extends Record<string, any>>(
       continue
     }
 
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
       body = setObjectValue(body, key, value.slice(1, -1))
       continue
     }
@@ -246,12 +237,7 @@ export function applyParameters(
         }
       }
 
-      if (
-        value === -1000 ||
-        value === undefined ||
-        value === null ||
-        (typeof value === 'number' && isNaN(value))
-      ) {
+      if (value === -1000 || value === undefined || value === null || (typeof value === 'number' && isNaN(value))) {
         continue
       }
 

@@ -9,11 +9,7 @@ import {
   createMemorySummary,
   type MemorySummary,
 } from '../src/memoryRepository.js'
-import {
-  assemblePromptMemoryRows,
-  selectPromptMemory,
-  type PromptMemorySelector,
-} from '../src/prompt/memoryAdapter.js'
+import { assemblePromptMemoryRows, selectPromptMemory, type PromptMemorySelector } from '../src/prompt/memoryAdapter.js'
 
 const dataDirs: string[] = []
 
@@ -148,18 +144,9 @@ describe('prompt memory adapter', () => {
         settings: { recentMemoryRatio: 0, similarMemoryRatio: 1 },
       })
 
-      expect(result.selectedSummaries.map((summary) => summary.id)).toEqual([
-        'summary-a',
-        'summary-b',
-      ])
-      expect(result.similarSummaries.map((summary) => summary.id)).toEqual([
-        'summary-a',
-        'summary-b',
-      ])
-      expect(result.rankedSimilarSummaries.map((row) => row.summary.id)).toEqual([
-        'summary-a',
-        'summary-b',
-      ])
+      expect(result.selectedSummaries.map((summary) => summary.id)).toEqual(['summary-a', 'summary-b'])
+      expect(result.similarSummaries.map((summary) => summary.id)).toEqual(['summary-a', 'summary-b'])
+      expect(result.rankedSimilarSummaries.map((row) => row.summary.id)).toEqual(['summary-a', 'summary-b'])
       expect(result.importantSummaries).toEqual([])
       expect(result.recentSummaries).toEqual([])
       expect(result.randomSummaries).toEqual([])
@@ -230,14 +217,9 @@ describe('prompt memory adapter', () => {
       expect(result.diagnostics.selection?.repository).toMatchObject({
         summaryIdsMissingEmbeddings: ['summary-without-embedding'],
         chunkIdsMissingEmbeddings: ['chunk-with-summary'],
-        chunkIdsMissingSummaries: [
-          'chunk-with-embedding',
-          'chunk-without-summary-or-embedding',
-        ],
+        chunkIdsMissingSummaries: ['chunk-with-embedding', 'chunk-without-summary-or-embedding'],
       })
-      expect(result.diagnostics.selection?.ranking.missingSummaries).toEqual([
-        'chunk-with-embedding',
-      ])
+      expect(result.diagnostics.selection?.ranking.missingSummaries).toEqual(['chunk-with-embedding'])
       expect(result.diagnostics.selection?.allocation.missingCategories).toContainEqual({
         category: 'similar',
         reason: 'no-candidates',
@@ -248,10 +230,7 @@ describe('prompt memory adapter', () => {
         summaryIdsMissingChunks: [],
         summaryIdsMissingEmbeddings: ['summary-without-embedding'],
         chunkIdsMissingEmbeddings: ['chunk-with-summary'],
-        chunkIdsMissingSummaries: [
-          'chunk-with-embedding',
-          'chunk-without-summary-or-embedding',
-        ],
+        chunkIdsMissingSummaries: ['chunk-with-embedding', 'chunk-without-summary-or-embedding'],
         followUpEligible: true,
       })
     } finally {
@@ -350,9 +329,7 @@ describe('prompt memory adapter', () => {
     const db = openDatabase(makeDataDir())
     const selected = makeSummary('summary-a')
     const summarySnapshot = { chatId: 'chat-1', summaries: [selected] }
-    const selectMemory = vi.fn<PromptMemorySelector>(() =>
-      selectionResult({ selectedSummaries: [selected] }),
-    )
+    const selectMemory = vi.fn<PromptMemorySelector>(() => selectionResult({ selectedSummaries: [selected] }))
     try {
       const result = selectPromptMemory({
         db,
@@ -517,13 +494,8 @@ describe('prompt memory adapter', () => {
 
       const assembled = assemblePromptMemoryRows(selection)
 
-      expect(selection.selectedSummaries.map((summary) => summary.id)).toEqual([
-        'summary-empty',
-        'summary-selected',
-      ])
-      expect(assembled.rows).toEqual([
-        { role: 'system', content: 'usable summary', memo: 'hypaMemory' },
-      ])
+      expect(selection.selectedSummaries.map((summary) => summary.id)).toEqual(['summary-empty', 'summary-selected'])
+      expect(assembled.rows).toEqual([{ role: 'system', content: 'usable summary', memo: 'hypaMemory' }])
       expect(assembled.diagnostics).toMatchObject({
         inputSummaries: 2,
         rows: 1,
@@ -584,9 +556,7 @@ function makeSummary(id: string, text = id): MemorySummary {
   }
 }
 
-function selectionResult(
-  overrides: Partial<ReturnType<PromptMemorySelector>> = {},
-): ReturnType<PromptMemorySelector> {
+function selectionResult(overrides: Partial<ReturnType<PromptMemorySelector>> = {}): ReturnType<PromptMemorySelector> {
   const selectedCount = overrides.selectedSummaries?.length ?? 0
   return {
     selectedSummaries: [],

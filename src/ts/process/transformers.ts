@@ -145,11 +145,7 @@ async function replaceVitsSynthesizer(nextSynthKey: string, createSynthesizer: (
 
 function decodeVitsAudio(audioContext: AudioContext, audio: ArrayBuffer): Promise<AudioBuffer> {
   return new Promise<AudioBuffer>((resolve, reject) => {
-    audioContext.decodeAudioData(
-      audio,
-      resolve,
-      (error) => reject(error ?? new Error('VITS audio decode failed')),
-    )
+    audioContext.decodeAudioData(audio, resolve, (error) => reject(error ?? new Error('VITS audio decode failed')))
   })
 }
 
@@ -159,10 +155,7 @@ export interface OnnxModelFiles {
   name?: string
 }
 
-export const runVITS = async (
-  text: string,
-  modelData: string | OnnxModelFiles = 'Xenova/mms-tts-eng',
-) => {
+export const runVITS = async (text: string, modelData: string | OnnxModelFiles = 'Xenova/mms-tts-eng') => {
   await initTransformers()
   const { WaveFile } = await import('wavefile')
   const { pipeline, env } = await import('@huggingface/transformers')
@@ -170,9 +163,7 @@ export const runVITS = async (
     return
   }
   if (typeof modelData === 'string') {
-    await replaceVitsSynthesizer(modelData, () =>
-      pipeline<'text-to-speech'>('text-to-speech', modelData),
-    )
+    await replaceVitsSynthesizer(modelData, () => pipeline<'text-to-speech'>('text-to-speech', modelData))
   } else {
     if (!synthesizer || lastSynth !== modelData.id) {
       const files = modelData.files
@@ -183,9 +174,7 @@ export const runVITS = async (
         tfMap[location.origin + fileURL] = files[key]
       }
     }
-    await replaceVitsSynthesizer(modelData.id, () =>
-      pipeline<'text-to-speech'>('text-to-speech', modelData.id),
-    )
+    await replaceVitsSynthesizer(modelData.id, () => pipeline<'text-to-speech'>('text-to-speech', modelData.id))
   }
   let out = await synthesizer(text, {})
   const wav = new WaveFile()

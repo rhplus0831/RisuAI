@@ -54,10 +54,7 @@ vi.mock('lodash/random', () => ({
   default: () => 42,
 }))
 
-import {
-  generateAIImage,
-  loadStableDiffReferenceImageForTests,
-} from './stableDiff'
+import { generateAIImage, loadStableDiffReferenceImageForTests } from './stableDiff'
 import type { character } from '../storage/database.svelte'
 
 function makeCharacter(): character {
@@ -119,9 +116,7 @@ describe('stableDiff image-generation hygiene', () => {
         ok: true,
         data: new Uint8Array([1, 2, 3]),
       })
-      await expect(generateAIImage('prompt', char, 'neg', 'inlay')).resolves.toMatch(
-        /^data:image\/png;base64,/,
-      )
+      await expect(generateAIImage('prompt', char, 'neg', 'inlay')).resolves.toMatch(/^data:image\/png;base64,/)
 
       state.db = {
         sdProvider: 'dalle',
@@ -132,9 +127,7 @@ describe('stableDiff image-generation hygiene', () => {
         ok: true,
         data: { data: [{ b64_json: 'dalle-image' }] },
       })
-      await expect(generateAIImage('prompt', char, 'neg', 'inlay')).resolves.toBe(
-        'data:image/png;base64,dalle-image',
-      )
+      await expect(generateAIImage('prompt', char, 'neg', 'inlay')).resolves.toBe('data:image/png;base64,dalle-image')
 
       state.db = {
         sdProvider: 'comfyui',
@@ -170,9 +163,7 @@ describe('stableDiff image-generation hygiene', () => {
           arrayBuffer: vi.fn(async () => new Uint8Array([9, 8, 7]).buffer),
         })
 
-      await expect(generateAIImage('prompt', char, 'neg', 'inlay')).resolves.toMatch(
-        /^data:image\/png;base64,/,
-      )
+      await expect(generateAIImage('prompt', char, 'neg', 'inlay')).resolves.toMatch(/^data:image\/png;base64,/)
 
       expect(logSpy).not.toHaveBeenCalled()
     } finally {

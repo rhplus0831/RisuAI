@@ -1,20 +1,8 @@
 <script lang="ts">
   import { DBState } from 'src/ts/stores.svelte'
   import { language } from '../../../lang'
-  import {
-    DownloadIcon,
-    HardDriveUploadIcon,
-    PlusIcon,
-    SunIcon,
-    LinkIcon,
-    FolderPlusIcon,
-  } from '@lucide/svelte'
-  import {
-    addLorebook,
-    addLorebookFolder,
-    exportLoreBook,
-    importLoreBook,
-  } from '../../../ts/process/lorebook.svelte'
+  import { DownloadIcon, HardDriveUploadIcon, PlusIcon, SunIcon, LinkIcon, FolderPlusIcon } from '@lucide/svelte'
+  import { addLorebook, addLorebookFolder, exportLoreBook, importLoreBook } from '../../../ts/process/lorebook.svelte'
   import Check from '../../UI/GUI/CheckInput.svelte'
   import NumberInput from '../../UI/GUI/NumberInput.svelte'
   import LoreBookList from './LoreBookList.svelte'
@@ -109,8 +97,7 @@
         submenu = 0
       }}
       class="p-2 flex-1"
-      class:bg-selected={submenu === 0}
-    >
+      class:bg-selected={submenu === 0}>
       <span>{language.character}</span>
     </button>
     <button
@@ -118,8 +105,7 @@
         submenu = 1
       }}
       class="p2 flex-1 border-r border-l border-selected"
-      class:bg-selected={submenu === 1}
-    >
+      class:bg-selected={submenu === 1}>
       <span>{language.Chat}</span>
     </button>
     <button
@@ -127,8 +113,7 @@
         submenu = 2
       }}
       class="p-2 flex-1"
-      class:bg-selected={submenu === 2}
-    >
+      class:bg-selected={submenu === 2}>
       <span>{language.settings}</span>
     </button>
   </div>
@@ -136,27 +121,14 @@
 {#if submenu !== 2}
   {#if !globalMode}
     <span class="text-textcolor2 mt-2 mb-6 text-sm"
-      >{submenu === 0 ? language.globalLoreInfo : language.localLoreInfo}</span
-    >
+      >{submenu === 0 ? language.globalLoreInfo : language.localLoreInfo}</span>
   {/if}
   {#if !globalMode && submenu === 0}
-    <LoreBookList
-      {globalMode}
-      {submenu}
-      lorePlus={DBState.db.characters[$selectedCharID]?.lorePlus}
-    />
+    <LoreBookList {globalMode} {submenu} lorePlus={DBState.db.characters[$selectedCharID]?.lorePlus} />
   {:else if !globalMode && submenu === 1}
-    <LoreBookList
-      {globalMode}
-      {submenu}
-      lorePlus={DBState.db.characters[$selectedCharID]?.lorePlus}
-    />
+    <LoreBookList {globalMode} {submenu} lorePlus={DBState.db.characters[$selectedCharID]?.lorePlus} />
   {:else}
-    <LoreBookList
-      {globalMode}
-      {submenu}
-      lorePlus={!globalMode && DBState.db.characters[$selectedCharID]?.lorePlus}
-    />
+    <LoreBookList {globalMode} {submenu} lorePlus={!globalMode && DBState.db.characters[$selectedCharID]?.lorePlus} />
   {/if}
 {:else}
   {#if characterLoreSettingsDraft.value.loreSettings}
@@ -167,35 +139,22 @@
           characterLoreSettingsDraft.value.loreSettings = undefined
           characterLoreSettingsDraft.value = { ...characterLoreSettingsDraft.value }
         }}
-        name={language.useGlobalSettings}
-      />
+        name={language.useGlobalSettings} />
     </div>
     <div class="flex items-center mt-4">
       <Check
         bind:check={characterLoreSettingsDraft.value.loreSettings.recursiveScanning}
-        name={language.recursiveScanning}
-      />
+        name={language.recursiveScanning} />
     </div>
     <div class="flex items-center mt-4">
       <Check
         bind:check={characterLoreSettingsDraft.value.loreSettings.fullWordMatching}
-        name={language.fullWordMatching}
-      />
+        name={language.fullWordMatching} />
     </div>
     <span class="text-textcolor mt-4 mb-2">{language.loreBookDepth}</span>
-    <NumberInput
-      size="sm"
-      min={0}
-      max={20}
-      bind:value={characterLoreSettingsDraft.value.loreSettings.scanDepth}
-    />
+    <NumberInput size="sm" min={0} max={20} bind:value={characterLoreSettingsDraft.value.loreSettings.scanDepth} />
     <span class="text-textcolor">{language.loreBookToken}</span>
-    <NumberInput
-      size="sm"
-      min={0}
-      max={4096}
-      bind:value={characterLoreSettingsDraft.value.loreSettings.tokenBudget}
-    />
+    <NumberInput size="sm" min={0} max={4096} bind:value={characterLoreSettingsDraft.value.loreSettings.tokenBudget} />
   {:else}
     <div class="flex items-center mt-4">
       <Check
@@ -208,15 +167,13 @@
           }
           characterLoreSettingsDraft.value = { ...characterLoreSettingsDraft.value }
         }}
-        name={language.useGlobalSettings}
-      />
+        name={language.useGlobalSettings} />
     </div>
   {/if}
   <div class="flex items-center mt-4">
     {#if DBState.db.useExperimental}
       <Check bind:check={characterLoreSettingsDraft.value.lorePlus} name={language.lorePlus}
-        ><Help key="lorePlus"></Help><Help key="experimental"></Help></Check
-      >
+        ><Help key="lorePlus"></Help><Help key="experimental"></Help></Check>
     {/if}
   </div>
 {/if}
@@ -226,32 +183,28 @@
       onclick={() => {
         addLorebook(globalMode ? -1 : submenu)
       }}
-      class="hover:text-textcolor cursor-pointer"
-    >
+      class="hover:text-textcolor cursor-pointer">
       <PlusIcon />
     </button>
     <button
       onclick={() => {
         exportLoreBook(globalMode ? 'sglobal' : submenu === 0 ? 'global' : 'local')
       }}
-      class="hover:text-textcolor ml-1 cursor-pointer"
-    >
+      class="hover:text-textcolor ml-1 cursor-pointer">
       <DownloadIcon />
     </button>
     <button
       onclick={() => {
         addLorebookFolder(globalMode ? -1 : submenu)
       }}
-      class="hover:text-textcolor ml-2 cursor-pointer"
-    >
+      class="hover:text-textcolor ml-2 cursor-pointer">
       <FolderPlusIcon />
     </button>
     <button
       onclick={() => {
         importLoreBook(globalMode ? 'sglobal' : submenu === 0 ? 'global' : 'local')
       }}
-      class="hover:text-textcolor ml-2 cursor-pointer"
-    >
+      class="hover:text-textcolor ml-2 cursor-pointer">
       <HardDriveUploadIcon />
     </button>
     {#if DBState.db.bulkEnabling}
@@ -259,8 +212,7 @@
         onclick={() => {
           toggleCharacterLoreAlwaysActive()
         }}
-        class="hover:text-textcolor ml-2 cursor-pointer flex items-center gap-1"
-      >
+        class="hover:text-textcolor ml-2 cursor-pointer flex items-center gap-1">
         {#if isAllCharacterLoreAlwaysActive()}
           <SunIcon />
         {:else}
@@ -272,8 +224,7 @@
         onclick={() => {
           toggleChatLoreAlwaysActive()
         }}
-        class="hover:text-textcolor ml-2 cursor-pointer flex items-center gap-1"
-      >
+        class="hover:text-textcolor ml-2 cursor-pointer flex items-center gap-1">
         {#if isAllChatLoreAlwaysActive()}
           <SunIcon />
         {:else}

@@ -20,9 +20,7 @@ export function normalizeImportDatabase(target: Record<string, unknown>): Record
   return target
 }
 
-export function assembleBlockDatabase(
-  components: { key: string; value: unknown }[],
-): Record<string, unknown> {
+export function assembleBlockDatabase(components: { key: string; value: unknown }[]): Record<string, unknown> {
   const database: Record<string, unknown> = {}
   for (const component of components) {
     if (ROOT_COMPONENT_RESERVED_KEYS.has(component.key)) {

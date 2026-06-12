@@ -19,15 +19,7 @@ import { get } from 'svelte/store'
 import { customV3ProviderMetaStore } from '../plugins/apiV3/v3.svelte'
 
 // Re-export types for backwards compatibility
-export {
-  LLMFlags,
-  LLMProvider,
-  LLMFormat,
-  LLMTokenizer,
-  ProviderNames,
-  OpenAIParameters,
-  ClaudeParameters,
-}
+export { LLMFlags, LLMProvider, LLMFormat, LLMTokenizer, ProviderNames, OpenAIParameters, ClaudeParameters }
 export type { LLMModel }
 
 function makeDeepInfraModels(id: string[]): LLMModel[] {
@@ -78,12 +70,7 @@ export const LLMModels: LLMModel[] = [
     id: 'anthropic.claude-opus-4-5-20251101-v1:0',
     provider: LLMProvider.AWS,
     format: LLMFormat.AWSBedrockClaude,
-    flags: [
-      LLMFlags.hasPrefill,
-      LLMFlags.hasImageInput,
-      LLMFlags.hasFirstSystemPrompt,
-      LLMFlags.claudeThinking,
-    ],
+    flags: [LLMFlags.hasPrefill, LLMFlags.hasImageInput, LLMFlags.hasFirstSystemPrompt, LLMFlags.claudeThinking],
     parameters: [...ClaudeParameters, 'thinking_tokens'],
     tokenizer: LLMTokenizer.Claude,
   },
@@ -92,12 +79,7 @@ export const LLMModels: LLMModel[] = [
     id: 'anthropic.claude-sonnet-4-5-20250929-v1:0',
     provider: LLMProvider.AWS,
     format: LLMFormat.AWSBedrockClaude,
-    flags: [
-      LLMFlags.hasPrefill,
-      LLMFlags.hasImageInput,
-      LLMFlags.hasFirstSystemPrompt,
-      LLMFlags.claudeThinking,
-    ],
+    flags: [LLMFlags.hasPrefill, LLMFlags.hasImageInput, LLMFlags.hasFirstSystemPrompt, LLMFlags.claudeThinking],
     parameters: [...ClaudeParameters, 'thinking_tokens'],
     tokenizer: LLMTokenizer.Claude,
   },
@@ -106,12 +88,7 @@ export const LLMModels: LLMModel[] = [
     id: 'anthropic.claude-opus-4-1-20250805-v1:0',
     provider: LLMProvider.AWS,
     format: LLMFormat.AWSBedrockClaude,
-    flags: [
-      LLMFlags.hasPrefill,
-      LLMFlags.hasImageInput,
-      LLMFlags.hasFirstSystemPrompt,
-      LLMFlags.claudeThinking,
-    ],
+    flags: [LLMFlags.hasPrefill, LLMFlags.hasImageInput, LLMFlags.hasFirstSystemPrompt, LLMFlags.claudeThinking],
     parameters: [...ClaudeParameters, 'thinking_tokens'],
     tokenizer: LLMTokenizer.Claude,
   },
@@ -120,12 +97,7 @@ export const LLMModels: LLMModel[] = [
     id: 'anthropic.claude-opus-4-20250514-v1:0',
     provider: LLMProvider.AWS,
     format: LLMFormat.AWSBedrockClaude,
-    flags: [
-      LLMFlags.hasPrefill,
-      LLMFlags.hasImageInput,
-      LLMFlags.hasFirstSystemPrompt,
-      LLMFlags.claudeThinking,
-    ],
+    flags: [LLMFlags.hasPrefill, LLMFlags.hasImageInput, LLMFlags.hasFirstSystemPrompt, LLMFlags.claudeThinking],
     parameters: [...ClaudeParameters, 'thinking_tokens'],
     tokenizer: LLMTokenizer.Claude,
   },
@@ -134,12 +106,7 @@ export const LLMModels: LLMModel[] = [
     id: 'anthropic.claude-sonnet-4-20250514-v1:0',
     provider: LLMProvider.AWS,
     format: LLMFormat.AWSBedrockClaude,
-    flags: [
-      LLMFlags.hasPrefill,
-      LLMFlags.hasImageInput,
-      LLMFlags.hasFirstSystemPrompt,
-      LLMFlags.claudeThinking,
-    ],
+    flags: [LLMFlags.hasPrefill, LLMFlags.hasImageInput, LLMFlags.hasFirstSystemPrompt, LLMFlags.claudeThinking],
     parameters: [...ClaudeParameters, 'thinking_tokens'],
     tokenizer: LLMTokenizer.Claude,
   },
@@ -148,12 +115,7 @@ export const LLMModels: LLMModel[] = [
     id: 'anthropic.claude-3-7-sonnet-20250219-v1:0',
     provider: LLMProvider.AWS,
     format: LLMFormat.AWSBedrockClaude,
-    flags: [
-      LLMFlags.hasPrefill,
-      LLMFlags.hasImageInput,
-      LLMFlags.hasFirstSystemPrompt,
-      LLMFlags.claudeThinking,
-    ],
+    flags: [LLMFlags.hasPrefill, LLMFlags.hasImageInput, LLMFlags.hasFirstSystemPrompt, LLMFlags.claudeThinking],
     parameters: [...ClaudeParameters, 'thinking_tokens'],
     tokenizer: LLMTokenizer.Claude,
   },
@@ -239,11 +201,7 @@ export const LLMModels: LLMModel[] = [
     shortName: 'Mistral S',
     provider: LLMProvider.Mistral,
     format: LLMFormat.Mistral,
-    flags: [
-      LLMFlags.hasFirstSystemPrompt,
-      LLMFlags.mustStartWithUserInput,
-      LLMFlags.requiresAlternateRole,
-    ],
+    flags: [LLMFlags.hasFirstSystemPrompt, LLMFlags.mustStartWithUserInput, LLMFlags.requiresAlternateRole],
     recommended: true,
     parameters: ['temperature', 'presence_penalty', 'frequency_penalty', 'top_p'],
     tokenizer: LLMTokenizer.Mistral,
@@ -254,11 +212,7 @@ export const LLMModels: LLMModel[] = [
     shortName: 'Mistral M',
     provider: LLMProvider.Mistral,
     format: LLMFormat.Mistral,
-    flags: [
-      LLMFlags.hasFirstSystemPrompt,
-      LLMFlags.mustStartWithUserInput,
-      LLMFlags.requiresAlternateRole,
-    ],
+    flags: [LLMFlags.hasFirstSystemPrompt, LLMFlags.mustStartWithUserInput, LLMFlags.requiresAlternateRole],
     recommended: true,
     parameters: ['temperature', 'presence_penalty', 'frequency_penalty', 'top_p'],
     tokenizer: LLMTokenizer.Mistral,
@@ -269,11 +223,7 @@ export const LLMModels: LLMModel[] = [
     shortName: 'Mistral L 2411',
     provider: LLMProvider.Mistral,
     format: LLMFormat.Mistral,
-    flags: [
-      LLMFlags.hasFirstSystemPrompt,
-      LLMFlags.mustStartWithUserInput,
-      LLMFlags.requiresAlternateRole,
-    ],
+    flags: [LLMFlags.hasFirstSystemPrompt, LLMFlags.mustStartWithUserInput, LLMFlags.requiresAlternateRole],
     parameters: ['temperature', 'presence_penalty', 'frequency_penalty', 'top_p'],
     tokenizer: LLMTokenizer.Mistral,
   },
@@ -283,11 +233,7 @@ export const LLMModels: LLMModel[] = [
     shortName: 'Mistral Nemo',
     provider: LLMProvider.Mistral,
     format: LLMFormat.Mistral,
-    flags: [
-      LLMFlags.hasFirstSystemPrompt,
-      LLMFlags.mustStartWithUserInput,
-      LLMFlags.requiresAlternateRole,
-    ],
+    flags: [LLMFlags.hasFirstSystemPrompt, LLMFlags.mustStartWithUserInput, LLMFlags.requiresAlternateRole],
     parameters: ['temperature', 'presence_penalty', 'frequency_penalty', 'top_p'],
     tokenizer: LLMTokenizer.Mistral,
   },
@@ -297,11 +243,7 @@ export const LLMModels: LLMModel[] = [
     shortName: 'Mistral L',
     provider: LLMProvider.Mistral,
     format: LLMFormat.Mistral,
-    flags: [
-      LLMFlags.hasFirstSystemPrompt,
-      LLMFlags.mustStartWithUserInput,
-      LLMFlags.requiresAlternateRole,
-    ],
+    flags: [LLMFlags.hasFirstSystemPrompt, LLMFlags.mustStartWithUserInput, LLMFlags.requiresAlternateRole],
     parameters: ['temperature', 'presence_penalty', 'frequency_penalty', 'top_p'],
     recommended: true,
     tokenizer: LLMTokenizer.Mistral,
@@ -345,11 +287,7 @@ export const LLMModels: LLMModel[] = [
     internalID: 'command-r',
     provider: LLMProvider.Cohere,
     format: LLMFormat.Cohere,
-    flags: [
-      LLMFlags.hasFirstSystemPrompt,
-      LLMFlags.requiresAlternateRole,
-      LLMFlags.mustStartWithUserInput,
-    ],
+    flags: [LLMFlags.hasFirstSystemPrompt, LLMFlags.requiresAlternateRole, LLMFlags.mustStartWithUserInput],
     recommended: true,
     parameters: ['temperature', 'top_k', 'top_p', 'presence_penalty', 'frequency_penalty'],
     tokenizer: LLMTokenizer.Cohere,
@@ -360,11 +298,7 @@ export const LLMModels: LLMModel[] = [
     internalID: 'command-r-plus',
     provider: LLMProvider.Cohere,
     format: LLMFormat.Cohere,
-    flags: [
-      LLMFlags.hasFirstSystemPrompt,
-      LLMFlags.requiresAlternateRole,
-      LLMFlags.mustStartWithUserInput,
-    ],
+    flags: [LLMFlags.hasFirstSystemPrompt, LLMFlags.requiresAlternateRole, LLMFlags.mustStartWithUserInput],
     recommended: true,
     parameters: ['temperature', 'top_k', 'top_p', 'presence_penalty', 'frequency_penalty'],
     tokenizer: LLMTokenizer.Cohere,
@@ -375,11 +309,7 @@ export const LLMModels: LLMModel[] = [
     internalID: 'command-r-08-2024',
     provider: LLMProvider.Cohere,
     format: LLMFormat.Cohere,
-    flags: [
-      LLMFlags.hasFirstSystemPrompt,
-      LLMFlags.requiresAlternateRole,
-      LLMFlags.mustStartWithUserInput,
-    ],
+    flags: [LLMFlags.hasFirstSystemPrompt, LLMFlags.requiresAlternateRole, LLMFlags.mustStartWithUserInput],
     parameters: ['temperature', 'top_k', 'top_p', 'presence_penalty', 'frequency_penalty'],
     tokenizer: LLMTokenizer.Cohere,
   },
@@ -389,11 +319,7 @@ export const LLMModels: LLMModel[] = [
     internalID: 'command-r-03-2024',
     provider: LLMProvider.Cohere,
     format: LLMFormat.Cohere,
-    flags: [
-      LLMFlags.hasFirstSystemPrompt,
-      LLMFlags.requiresAlternateRole,
-      LLMFlags.mustStartWithUserInput,
-    ],
+    flags: [LLMFlags.hasFirstSystemPrompt, LLMFlags.requiresAlternateRole, LLMFlags.mustStartWithUserInput],
     parameters: ['temperature', 'top_k', 'top_p', 'presence_penalty', 'frequency_penalty'],
     tokenizer: LLMTokenizer.Cohere,
   },
@@ -403,11 +329,7 @@ export const LLMModels: LLMModel[] = [
     internalID: 'command-r-plus-08-2024',
     provider: LLMProvider.Cohere,
     format: LLMFormat.Cohere,
-    flags: [
-      LLMFlags.hasFirstSystemPrompt,
-      LLMFlags.requiresAlternateRole,
-      LLMFlags.mustStartWithUserInput,
-    ],
+    flags: [LLMFlags.hasFirstSystemPrompt, LLMFlags.requiresAlternateRole, LLMFlags.mustStartWithUserInput],
     parameters: ['temperature', 'top_k', 'top_p', 'presence_penalty', 'frequency_penalty'],
     tokenizer: LLMTokenizer.Cohere,
   },
@@ -417,11 +339,7 @@ export const LLMModels: LLMModel[] = [
     internalID: 'command-r-plus-04-2024',
     provider: LLMProvider.Cohere,
     format: LLMFormat.Cohere,
-    flags: [
-      LLMFlags.hasFirstSystemPrompt,
-      LLMFlags.requiresAlternateRole,
-      LLMFlags.mustStartWithUserInput,
-    ],
+    flags: [LLMFlags.hasFirstSystemPrompt, LLMFlags.requiresAlternateRole, LLMFlags.mustStartWithUserInput],
     parameters: ['temperature', 'top_k', 'top_p', 'presence_penalty', 'frequency_penalty'],
     tokenizer: LLMTokenizer.Cohere,
   },
@@ -617,12 +535,7 @@ export const LLMModels: LLMModel[] = [
     fullName: 'NanoGPT',
     provider: LLMProvider.NanoGPT,
     format: LLMFormat.NanoGPT,
-    flags: [
-      LLMFlags.hasFullSystemPrompt,
-      LLMFlags.hasImageInput,
-      LLMFlags.hasStreaming,
-      LLMFlags.OAICompletionTokens,
-    ],
+    flags: [LLMFlags.hasFullSystemPrompt, LLMFlags.hasImageInput, LLMFlags.hasStreaming, LLMFlags.OAICompletionTokens],
     parameters: OpenAIParameters,
     tokenizer: LLMTokenizer.Unknown,
     recommended: true,
@@ -683,16 +596,11 @@ for (let model of LLMModels) {
   model.shortName ??= model.name
   model.internalID ??= model.id
   model.fullName ??=
-    model.provider !== LLMProvider.AsIs
-      ? `${ProviderNames.get(model.provider) ?? ''} ${model.name}`.trim()
-      : model.name
+    model.provider !== LLMProvider.AsIs ? `${ProviderNames.get(model.provider) ?? ''} ${model.name}`.trim() : model.name
 }
 
 for (let i = 0; i < LLMModels.length; i++) {
-  if (
-    LLMModels[i].provider === LLMProvider.OpenAI &&
-    LLMModels[i].format === LLMFormat.OpenAICompatible
-  ) {
+  if (LLMModels[i].provider === LLMProvider.OpenAI && LLMModels[i].format === LLMFormat.OpenAICompatible) {
     LLMModels.push({
       ...LLMModels[i],
       format: LLMFormat.OpenAIResponseAPI,
@@ -734,10 +642,7 @@ export async function registerModelDynamic() {
       console.log('Google models response', json)
       const models = json?.models || []
       for (let model of models) {
-        if (
-          !model.supportedGenerationMethods ||
-          !model.supportedGenerationMethods.includes('generateContent')
-        ) {
+        if (!model.supportedGenerationMethods || !model.supportedGenerationMethods.includes('generateContent')) {
           continue
         }
 
@@ -762,14 +667,7 @@ export async function registerModelDynamic() {
               LLMFlags.requiresAlternateRole,
               LLMFlags.geminiThinking,
             ],
-            parameters: [
-              'thinking_tokens',
-              'temperature',
-              'top_k',
-              'top_p',
-              'presence_penalty',
-              'frequency_penalty',
-            ],
+            parameters: ['thinking_tokens', 'temperature', 'top_k', 'top_p', 'presence_penalty', 'frequency_penalty'],
             tokenizer: LLMTokenizer.GoogleCloud,
           })
         }

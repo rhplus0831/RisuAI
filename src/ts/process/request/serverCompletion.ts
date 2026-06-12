@@ -7,10 +7,7 @@ export { formatToServerProvider } from './providerCapability'
 const COMPLETION_ENDPOINT = '/api/v1/generate/completion'
 const SERVER_INTENT_KIND = 'server-intent'
 
-export type ServerCompletionRoute =
-  | { type: 'local' }
-  | { type: 'server' }
-  | { type: 'unsupported'; reason: string }
+export type ServerCompletionRoute = { type: 'local' } | { type: 'server' } | { type: 'unsupported'; reason: string }
 
 /**
  * Decide whether an already-assembled completion should go through Fastify.
@@ -19,9 +16,7 @@ export type ServerCompletionRoute =
  * local-vs-server transport decision; Fastify resolves the selected provider,
  * model, endpoint, keys, and provider options from the unmasked server database.
  */
-export function resolveServerCompletionRoute(
-  targ: RequestDataArgumentExtended,
-): ServerCompletionRoute {
+export function resolveServerCompletionRoute(targ: RequestDataArgumentExtended): ServerCompletionRoute {
   if (targ.previewBody === true) {
     return {
       type: 'unsupported',

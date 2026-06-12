@@ -229,8 +229,7 @@ const INTENTIONALLY_BROAD: { area: string; reason: string }[] = [
   },
   {
     area: 'PersonaSettings whole-personas snapshot',
-    reason:
-      'Personas are small bounded config (sub-ms); kept whole, deduped to one clone per keystroke in Phase 7.',
+    reason: 'Personas are small bounded config (sub-ms); kept whole, deduped to one clone per keystroke in Phase 7.',
   },
   {
     area: 'Local-assembler clones (buildMemoryWindow, request.ts, lorebook.svelte.ts, chatTemplate.ts)',
@@ -269,9 +268,7 @@ function readGate(rel: string): string {
   return readFileSync(path.join(SRC_DIR, rel), 'utf8')
 }
 
-const ALL_REGISTERED = [
-  ...new Set(NARROWED_HOT_PATHS.flatMap((e) => [...e.cloneCostGates, ...e.rollbackGates])),
-].sort()
+const ALL_REGISTERED = [...new Set(NARROWED_HOT_PATHS.flatMap((e) => [...e.cloneCostGates, ...e.rollbackGates]))].sort()
 
 const ROLLBACK_TOKENS = /assertRollbackRestoresOnly|rollback|restore|refreeze|read-only|reactiv/i
 
@@ -292,19 +289,13 @@ describe('clone-cost gate completeness', () => {
     const harnessFiles = collectHarnessGateFiles()
     for (const entry of NARROWED_HOT_PATHS) {
       for (const rel of entry.cloneCostGates) {
-        expect(
-          harnessFiles,
-          `${entry.area}: clone-cost gate "${rel}" does not import the harness`,
-        ).toContain(rel)
+        expect(harnessFiles, `${entry.area}: clone-cost gate "${rel}" does not import the harness`).toContain(rel)
         const text = readGate(rel)
         const exercisesClone =
           text.includes('withCloneInstrumentation') ||
           text.includes('assertSnapshotIsScalar') ||
           text.includes('assertSnapshotOmitsCollections')
-        expect(
-          exercisesClone,
-          `${entry.area}: clone-cost gate "${rel}" never measures clone cost`,
-        ).toBe(true)
+        expect(exercisesClone, `${entry.area}: clone-cost gate "${rel}" never measures clone cost`).toBe(true)
       }
     }
   })
@@ -325,24 +316,15 @@ describe('clone-cost gate completeness', () => {
       const referenced = [...entry.cloneCostGates, ...entry.rollbackGates].some((rel) =>
         readGate(rel).includes(entry.helper),
       )
-      expect(
-        referenced,
-        `${entry.area}: no gate references the narrowed helper "${entry.helper}"`,
-      ).toBe(true)
+      expect(referenced, `${entry.area}: no gate references the narrowed helper "${entry.helper}"`).toBe(true)
     }
   })
 
   it('every Critical/High narrowed path has both a clone-cost and a rollback gate', () => {
     for (const entry of NARROWED_HOT_PATHS) {
       if (entry.severity !== 'critical' && entry.severity !== 'high') continue
-      expect(
-        entry.cloneCostGates.length,
-        `${entry.area} lacks a clone-cost gate`,
-      ).toBeGreaterThanOrEqual(1)
-      expect(
-        entry.rollbackGates.length,
-        `${entry.area} lacks a rollback gate`,
-      ).toBeGreaterThanOrEqual(1)
+      expect(entry.cloneCostGates.length, `${entry.area} lacks a clone-cost gate`).toBeGreaterThanOrEqual(1)
+      expect(entry.rollbackGates.length, `${entry.area} lacks a rollback gate`).toBeGreaterThanOrEqual(1)
     }
   })
 
@@ -367,10 +349,7 @@ describe('clone-cost gate completeness', () => {
   it('records every intentionally-broad path with a reason', () => {
     expect(INTENTIONALLY_BROAD.length).toBeGreaterThan(0)
     for (const broad of INTENTIONALLY_BROAD) {
-      expect(
-        broad.reason.trim().length,
-        `intentionally-broad "${broad.area}" needs a reason`,
-      ).toBeGreaterThan(20)
+      expect(broad.reason.trim().length, `intentionally-broad "${broad.area}" needs a reason`).toBeGreaterThan(20)
     }
   })
 })

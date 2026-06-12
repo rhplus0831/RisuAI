@@ -163,8 +163,7 @@ vi.mock('src/ts/activeChatGenerationSettings', async (importActual) => {
   const actual = await importActual<typeof import('src/ts/activeChatGenerationSettings')>()
   return {
     ...actual,
-    guardActiveChatGenerationSettingsForSend:
-      loadPageMocks.guardActiveChatGenerationSettingsForSend,
+    guardActiveChatGenerationSettingsForSend: loadPageMocks.guardActiveChatGenerationSettingsForSend,
   }
 })
 
@@ -350,9 +349,7 @@ async function clickScreenshotMenuItem() {
   menuButton!.click()
   await tick()
 
-  const screenshotButton = target.querySelector<HTMLElement>(
-    '[data-testid="default-chat-screenshot-button"]',
-  )
+  const screenshotButton = target.querySelector<HTMLElement>('[data-testid="default-chat-screenshot-button"]')
   expect(screenshotButton).toBeTruthy()
   screenshotButton!.click()
 }
@@ -555,16 +552,12 @@ describe('DefaultChatScreen transcript window state', () => {
     })
     mountScreen()
 
-    expect(resolveActiveChatGenerationSettings().missingLabels).toEqual([
-      'Configuration confirmation',
-    ])
+    expect(resolveActiveChatGenerationSettings().missingLabels).toEqual(['Configuration confirmation'])
 
     await waitFor(() => {
       expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy()
     })
-    const textarea = target.querySelector<HTMLTextAreaElement>(
-      '[data-testid="default-chat-composer"]',
-    )!
+    const textarea = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
     textarea.value = 'Keep this draft'
     textarea.dispatchEvent(new Event('input', { bubbles: true }))
     await tick()
@@ -572,9 +565,7 @@ describe('DefaultChatScreen transcript window state', () => {
     loadPageMocks.appendCurrentChatUserMessageForSend.mockClear()
     loadPageMocks.sendChat.mockClear()
 
-    const sendButton = target.querySelector<HTMLButtonElement>(
-      '[data-testid="default-chat-send-button"]',
-    )
+    const sendButton = target.querySelector<HTMLButtonElement>('[data-testid="default-chat-send-button"]')
     expect(sendButton).toBeTruthy()
     sendButton!.click()
 

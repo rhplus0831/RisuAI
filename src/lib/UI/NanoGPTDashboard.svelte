@@ -17,16 +17,11 @@
   }
 
   let dashboardPromise = $derived(
-    apiKey
-      ? fetchDashboard(apiKey)
-      : Promise.resolve<DashboardData>({ balance: null, subscription: null }),
+    apiKey ? fetchDashboard(apiKey) : Promise.resolve<DashboardData>({ balance: null, subscription: null }),
   )
 
   async function fetchDashboard(key: string): Promise<DashboardData> {
-    const [balance, subscription] = await Promise.all([
-      getNanoGPTBalance(key),
-      getNanoGPTSubscription(key),
-    ])
+    const [balance, subscription] = await Promise.all([getNanoGPTBalance(key), getNanoGPTSubscription(key)])
     // Persist subscription state so chat requests can pick the right endpoint
     const subscriptionState = subscription?.state ?? ''
     if (canUseServerCommands()) {
@@ -99,9 +94,7 @@
     </div>
   {:then { balance, subscription }}
     {#if balance || subscription}
-      <div
-        class="mt-3 mb-2 flex flex-col gap-3 rounded-lg border border-darkborderc bg-bgcolor p-3 text-sm"
-      >
+      <div class="mt-3 mb-2 flex flex-col gap-3 rounded-lg border border-darkborderc bg-bgcolor p-3 text-sm">
         {#if balance}
           <div class="flex items-center gap-1.5">
             <span class="text-textcolor">{language.nanoGPTCreditBalance}</span>
@@ -119,14 +112,11 @@
             <span
               class="inline-flex items-center justify-center rounded-full px-2.5 pb-[2px] pt-[4px] text-sm font-bold leading-none text-white {stateColor(
                 subscription.state,
-              )}"
-            >
+              )}">
               {subscription.state.toUpperCase()}
             </span>
             {#if subscription.state === 'grace' && subscription.graceUntil}
-              <span class="text-xs text-textcolor"
-                >{language.nanoGPTGraceUntil(fmtDate(subscription.graceUntil))}</span
-              >
+              <span class="text-xs text-textcolor">{language.nanoGPTGraceUntil(fmtDate(subscription.graceUntil))}</span>
             {/if}
           </div>
 
@@ -146,28 +136,24 @@
                   <span class="text-textcolor2"
                     >{language.nanoGPTWeeklyTokensLabel} —
                     <span class="text-textcolor">{pct(w.percentUsed)}</span>
-                    {language.nanoGPTUsedLabel}</span
-                  >
+                    {language.nanoGPTUsedLabel}</span>
                   <span class="text-textcolor2"
                     >{language.nanoGPTResetsLabel}
-                    <span class="text-textcolor">{fmtReset(w.resetAt)}</span></span
-                  >
+                    <span class="text-textcolor">{fmtReset(w.resetAt)}</span></span>
                 </div>
                 <div class="h-2 w-full overflow-hidden rounded-full bg-darkbutton">
                   <div
                     class="h-full rounded-full transition-all {barColor(w.percentUsed)}"
-                    style="width: {pct(w.percentUsed)}"
-                  ></div>
+                    style="width: {pct(w.percentUsed)}">
+                  </div>
                 </div>
                 <div class="flex justify-between text-xs">
                   <span class="text-textcolor2"
                     ><span class="text-textcolor">{fmtTokens(w.used)}</span>
-                    {language.nanoGPTUsedLabel}</span
-                  >
+                    {language.nanoGPTUsedLabel}</span>
                   <span class="text-textcolor2"
                     ><span class="text-textcolor">{fmtTokens(w.remaining)}</span>
-                    {language.nanoGPTRemainingLabel}</span
-                  >
+                    {language.nanoGPTRemainingLabel}</span>
                 </div>
               </div>
             {/if}
@@ -179,28 +165,24 @@
                   <span class="text-textcolor2"
                     >{language.nanoGPTDailyTokensLabel} —
                     <span class="text-textcolor">{pct(d.percentUsed)}</span>
-                    {language.nanoGPTUsedLabel}</span
-                  >
+                    {language.nanoGPTUsedLabel}</span>
                   <span class="text-textcolor2"
                     >{language.nanoGPTResetsLabel}
-                    <span class="text-textcolor">{fmtReset(d.resetAt)}</span></span
-                  >
+                    <span class="text-textcolor">{fmtReset(d.resetAt)}</span></span>
                 </div>
                 <div class="h-2 w-full overflow-hidden rounded-full bg-darkbutton">
                   <div
                     class="h-full rounded-full transition-all {barColor(d.percentUsed)}"
-                    style="width: {pct(d.percentUsed)}"
-                  ></div>
+                    style="width: {pct(d.percentUsed)}">
+                  </div>
                 </div>
                 <div class="flex justify-between text-xs">
                   <span class="text-textcolor2"
                     ><span class="text-textcolor">{fmtTokens(d.used)}</span>
-                    {language.nanoGPTUsedLabel}</span
-                  >
+                    {language.nanoGPTUsedLabel}</span>
                   <span class="text-textcolor2"
                     ><span class="text-textcolor">{fmtTokens(d.remaining)}</span>
-                    {language.nanoGPTRemainingLabel}</span
-                  >
+                    {language.nanoGPTRemainingLabel}</span>
                 </div>
               </div>
             {/if}
@@ -212,28 +194,24 @@
                   <span class="text-textcolor2"
                     >{language.nanoGPTDailyImagesLabel} —
                     <span class="text-textcolor">{pct(img.percentUsed)}</span>
-                    {language.nanoGPTUsedLabel}</span
-                  >
+                    {language.nanoGPTUsedLabel}</span>
                   <span class="text-textcolor2"
                     >{language.nanoGPTResetsLabel}
-                    <span class="text-textcolor">{fmtReset(img.resetAt)}</span></span
-                  >
+                    <span class="text-textcolor">{fmtReset(img.resetAt)}</span></span>
                 </div>
                 <div class="h-2 w-full overflow-hidden rounded-full bg-darkbutton">
                   <div
                     class="h-full rounded-full transition-all {barColor(img.percentUsed)}"
-                    style="width: {pct(img.percentUsed)}"
-                  ></div>
+                    style="width: {pct(img.percentUsed)}">
+                  </div>
                 </div>
                 <div class="flex justify-between text-xs">
                   <span class="text-textcolor2"
                     ><span class="text-textcolor">{String(img.used)}</span>
-                    {language.nanoGPTUsedLabel}</span
-                  >
+                    {language.nanoGPTUsedLabel}</span>
                   <span class="text-textcolor2"
                     ><span class="text-textcolor">{String(img.remaining)}</span>
-                    {language.nanoGPTRemainingLabel}</span
-                  >
+                    {language.nanoGPTRemainingLabel}</span>
                 </div>
               </div>
             {/if}

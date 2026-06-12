@@ -149,20 +149,17 @@ interface CapturedRequest {
 interface EchoServer {
   url: string
   requests: CapturedRequest[]
-  setResponder(
-    fn: (req: http.IncomingMessage, res: http.ServerResponse, body: Buffer) => void | Promise<void>,
-  ): void
+  setResponder(fn: (req: http.IncomingMessage, res: http.ServerResponse, body: Buffer) => void | Promise<void>): void
   close(): Promise<void>
 }
 
 function startEcho(): Promise<EchoServer> {
   return new Promise((resolve) => {
     const requests: CapturedRequest[] = []
-    let responder: (
-      req: http.IncomingMessage,
-      res: http.ServerResponse,
-      body: Buffer,
-    ) => void | Promise<void> = (_req, res) => {
+    let responder: (req: http.IncomingMessage, res: http.ServerResponse, body: Buffer) => void | Promise<void> = (
+      _req,
+      res,
+    ) => {
       res.writeHead(404)
       res.end()
     }
@@ -204,10 +201,7 @@ interface Harness {
   dataDir: string
 }
 
-async function startHarness(
-  upstreamUrl: string,
-  realmImport?: BuildAppOptions['realmImport'],
-): Promise<Harness> {
+async function startHarness(upstreamUrl: string, realmImport?: BuildAppOptions['realmImport']): Promise<Harness> {
   process.env.LOG_LEVEL = 'silent'
   const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-fastify-realm-import-'))
   const { app } = await buildApp({
@@ -232,11 +226,7 @@ async function stopHarness(h: Harness): Promise<void> {
   rmSync(h.dataDir, { recursive: true, force: true })
 }
 
-async function signAssertion(
-  privateKey: CryptoKey,
-  publicJwk: JsonWebKey,
-  ttlSec = 60,
-): Promise<string> {
+async function signAssertion(privateKey: CryptoKey, publicJwk: JsonWebKey, ttlSec = 60): Promise<string> {
   const now = Math.floor(Date.now() / 1000)
   const header = { alg: 'ES256', typ: 'JWT' }
   const payload = { iat: now, exp: now + ttlSec, pub: publicJwk }
@@ -328,11 +318,7 @@ function realmJsonAssetPayloads(suffix = '') {
   }
 }
 
-function respondRealmJsonCard(
-  req: http.IncomingMessage,
-  res: http.ServerResponse,
-  suffix = '',
-): boolean {
+function respondRealmJsonCard(req: http.IncomingMessage, res: http.ServerResponse, suffix = ''): boolean {
   const payloads = realmJsonAssetPayloads(suffix)
   if (req.url?.startsWith('/api/v1/download/dynamic/realm-id')) {
     res.writeHead(200, { 'content-type': 'application/json' })
@@ -465,10 +451,7 @@ function manyDisplayAssetRealmCharx(assetCount: number): Uint8Array {
       creator: '',
       character_version: '1',
       extensions: { risuai: {} },
-      assets: [
-        { type: 'icon', uri: 'embeded://assets/main.png', name: 'main', ext: 'png' },
-        ...assets,
-      ],
+      assets: [{ type: 'icon', uri: 'embeded://assets/main.png', name: 'main', ext: 'png' }, ...assets],
     },
   }
   const files: Record<string, Uint8Array> = {
@@ -717,21 +700,13 @@ describe('Realm character import route', () => {
 
     const assets = queryAssets(harness.dataDir)
     expect(assets).toHaveLength(4)
-    expect(assets.map((asset) => asset.contentType).sort()).toEqual([
-      'audio/wav',
-      'image/png',
-      'image/png',
-      'text/css',
-    ])
+    expect(assets.map((asset) => asset.contentType).sort()).toEqual(['audio/wav', 'image/png', 'image/png', 'text/css'])
     const persisted = loadPersistedFromDir(harness.dataDir)
-    const character = (persisted.database as { characters: Array<Record<string, unknown>> })
-      .characters[0]
+    const character = (persisted.database as { characters: Array<Record<string, unknown>> }).characters[0]
     expect(character.name).toBe('Realm Utility')
     expect(character.image).toMatch(/^[a-f0-9]{64}$/)
     expect(character.emotionImages).toEqual([['happy', expect.stringMatching(/^[a-f0-9]{64}$/)]])
-    expect(character.additionalAssets).toEqual([
-      ['theme', expect.stringMatching(/^[a-f0-9]{64}$/), 'theme.css'],
-    ])
+    expect(character.additionalAssets).toEqual([['theme', expect.stringMatching(/^[a-f0-9]{64}$/), 'theme.css']])
     expect(character.vits).toMatchObject({
       files: { 'voice.wav': expect.stringMatching(/^[a-f0-9]{64}$/) },
     })
@@ -756,8 +731,7 @@ describe('Realm character import route', () => {
 
     expect(res.statusCode).toBe(200)
     const persisted = loadPersistedFromDir(harness.dataDir)
-    const character = (persisted.database as { characters: Array<Record<string, unknown>> })
-      .characters[0]
+    const character = (persisted.database as { characters: Array<Record<string, unknown>> }).characters[0]
     expectStarterChatWithoutGenerationSettings(character)
   })
 
@@ -1174,18 +1148,15 @@ describe('Realm character import route', () => {
       },
     ].sort((a, b) => a.id.localeCompare(b.id))
 
-    expect(queryAssets(harness.dataDir)).toEqual(
-      expectedAssets.map(({ bytes: _bytes, ...asset }) => asset),
-    )
+    expect(queryAssets(harness.dataDir)).toEqual(expectedAssets.map(({ bytes: _bytes, ...asset }) => asset))
     for (const asset of expectedAssets) {
-      expect(
-        Buffer.from(readFileSync(path.join(harness.dataDir, 'assets', `${asset.id}.${asset.ext}`))),
-      ).toEqual(Buffer.from(asset.bytes))
+      expect(Buffer.from(readFileSync(path.join(harness.dataDir, 'assets', `${asset.id}.${asset.ext}`)))).toEqual(
+        Buffer.from(asset.bytes),
+      )
     }
 
     const persisted = loadPersistedFromDir(harness.dataDir)
-    const character = (persisted.database as { characters: Array<Record<string, unknown>> })
-      .characters[0]
+    const character = (persisted.database as { characters: Array<Record<string, unknown>> }).characters[0]
     expect(character).toMatchObject({
       name: 'Realm Utility',
       firstMessage: 'hello',
@@ -1294,9 +1265,7 @@ describe('Realm character import route', () => {
     expect(res.statusCode).toBe(409)
     expect(res.json()).toMatchObject({ code: 'low_level_access_confirmation_required' })
     expect(queryAssets(harness.dataDir)).toHaveLength(0)
-    expect(echo.requests.map((req) => req.url)).toEqual([
-      '/api/v1/download/dynamic/realm-id?cors=true',
-    ])
+    expect(echo.requests.map((req) => req.url)).toEqual(['/api/v1/download/dynamic/realm-id?cors=true'])
   })
 
   it('imports Realm charx packages server-side without falling back to client asset uploads', async () => {
@@ -1321,26 +1290,17 @@ describe('Realm character import route', () => {
     })
 
     expect(res.statusCode).toBe(200)
-    expect(echo.requests.map((req) => req.url)).toEqual([
-      '/api/v1/download/dynamic/realm-id?cors=true',
-    ])
+    expect(echo.requests.map((req) => req.url)).toEqual(['/api/v1/download/dynamic/realm-id?cors=true'])
 
     const assets = queryAssets(harness.dataDir)
     expect(assets).toHaveLength(3)
-    expect(assets.map((asset) => asset.contentType).sort()).toEqual([
-      'image/png',
-      'image/png',
-      'text/css',
-    ])
+    expect(assets.map((asset) => asset.contentType).sort()).toEqual(['image/png', 'image/png', 'text/css'])
     const persisted = loadPersistedFromDir(harness.dataDir)
-    const character = (persisted.database as { characters: Array<Record<string, unknown>> })
-      .characters[0]
+    const character = (persisted.database as { characters: Array<Record<string, unknown>> }).characters[0]
     expect(character.name).toBe('Realm CharX')
     expect(character.image).toMatch(/^[a-f0-9]{64}$/)
     expect(character.emotionImages).toEqual([['happy', expect.stringMatching(/^[a-f0-9]{64}$/)]])
-    expect(character.additionalAssets).toEqual([
-      ['theme', expect.stringMatching(/^[a-f0-9]{64}$/), 'css'],
-    ])
+    expect(character.additionalAssets).toEqual([['theme', expect.stringMatching(/^[a-f0-9]{64}$/), 'css']])
   })
 
   it('L29: rejects known-length Realm charx downloads above the staging cap before reading the body', async () => {
@@ -1464,14 +1424,13 @@ describe('Realm character import route', () => {
 
     expect(res.statusCode).toBe(200)
     expect(newRealmCharxTempDirs(tempDirsBefore)).toEqual([])
-    expect(queryAssets(harness.dataDir).map((asset) => asset.contentType).sort()).toEqual([
-      'image/png',
-      'image/png',
-      'text/css',
-    ])
+    expect(
+      queryAssets(harness.dataDir)
+        .map((asset) => asset.contentType)
+        .sort(),
+    ).toEqual(['image/png', 'image/png', 'text/css'])
     const persisted = loadPersistedFromDir(harness.dataDir)
-    const character = (persisted.database as { characters: Array<Record<string, unknown>> })
-      .characters[0]
+    const character = (persisted.database as { characters: Array<Record<string, unknown>> }).characters[0]
     expect(character.name).toBe('Realm CharX')
     expect(character.image).toMatch(/^[a-f0-9]{64}$/)
   })
@@ -1528,8 +1487,7 @@ describe('Realm character import route', () => {
     expect(res.statusCode).toBe(200)
 
     const persisted = loadPersistedFromDir(harness.dataDir)
-    const character = (persisted.database as { characters: Array<Record<string, unknown>> })
-      .characters[0]
+    const character = (persisted.database as { characters: Array<Record<string, unknown>> }).characters[0]
     expect(character.name).toBe('Realm CharX')
     expect(queryAssets(harness.dataDir)).toHaveLength(3)
   })
@@ -1560,8 +1518,7 @@ describe('Realm character import route', () => {
       expect(res.statusCode).toBe(200)
       expect(queryAssets(harness.dataDir)).toHaveLength(7001)
       const persisted = loadPersistedFromDir(harness.dataDir)
-      const character = (persisted.database as { characters: Array<Record<string, unknown>> })
-        .characters[0]
+      const character = (persisted.database as { characters: Array<Record<string, unknown>> }).characters[0]
       expect(character.name).toBe('Realm Many Assets')
       expect(character.additionalAssets).toHaveLength(7000)
     },

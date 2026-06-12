@@ -1,10 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import {
-  encodingForModel,
-  tokenize,
-  tokenizeChat,
-  tokenizeChats,
-} from '../src/prompt/tokens.js'
+import { encodingForModel, tokenize, tokenizeChat, tokenizeChats } from '../src/prompt/tokens.js'
 import type { OpenAIChat } from '../../../src/ts/process/index.svelte'
 
 describe('encodingForModel', () => {

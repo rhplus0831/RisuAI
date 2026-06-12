@@ -10,10 +10,7 @@ function readWorkspaceFile(file: string) {
 
 describe('Fastify-only browser local surface policy', () => {
   it('does not ship service-worker share or file-handler entry points', () => {
-    const manifest = JSON.parse(readWorkspaceFile('public/manifest.json')) as Record<
-      string,
-      unknown
-    >
+    const manifest = JSON.parse(readWorkspaceFile('public/manifest.json')) as Record<string, unknown>
 
     expect(existsSync(path.join(root, 'public/sw.js'))).toBe(false)
     expect(manifest).not.toHaveProperty('share_target')

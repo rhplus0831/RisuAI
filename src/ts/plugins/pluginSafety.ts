@@ -7,18 +7,8 @@ export interface CheckResult {
   modifiedCode: string
 }
 
-type DangerousNodeType =
-  | 'CallExpression'
-  | 'NewExpression'
-  | 'Identifier'
-  | 'ThisExpression'
-  | 'DefaultWarning'
-type UserFriendlyRuleAlertKey =
-  | 'eval'
-  | 'globalAccess'
-  | 'thisOutsideClass'
-  | 'errorInVerification'
-  | 'storageAccess'
+type DangerousNodeType = 'CallExpression' | 'NewExpression' | 'Identifier' | 'ThisExpression' | 'DefaultWarning'
+type UserFriendlyRuleAlertKey = 'eval' | 'globalAccess' | 'thisOutsideClass' | 'errorInVerification' | 'storageAccess'
 
 interface BlacklistRule {
   nodeType: DangerousNodeType
@@ -126,9 +116,7 @@ export async function checkCodeSafety(code: string): Promise<CheckResult> {
             node.name = 'safeConstructor'
             return
         }
-        const isTarget = SAFETY_BLACKLIST.some(
-          (r) => r.nodeType === 'Identifier' && r.identifierName === name,
-        )
+        const isTarget = SAFETY_BLACKLIST.some((r) => r.nodeType === 'Identifier' && r.identifierName === name)
         if (!isTarget) return
 
         validateNode(node, 'Identifier', name, errors)
@@ -154,8 +142,7 @@ export async function checkCodeSafety(code: string): Promise<CheckResult> {
   }
 
   errors.push({
-    message:
-      'Code passed safety checks but may still be unsafe due to limitations in static analysis.',
+    message: 'Code passed safety checks but may still be unsafe due to limitations in static analysis.',
     userAlertKey: 'errorInVerification',
   })
 
@@ -166,12 +153,7 @@ export async function checkCodeSafety(code: string): Promise<CheckResult> {
   return { isSafe: errors.length === 0, errors, checkerVersion, modifiedCode: code }
 }
 
-function validateNode(
-  node: any,
-  type: DangerousNodeType,
-  name: string | undefined,
-  errors: PluginSafetyErrors[],
-) {
+function validateNode(node: any, type: DangerousNodeType, name: string | undefined, errors: PluginSafetyErrors[]) {
   const rule = SAFETY_BLACKLIST.find((r) => r.nodeType === type && r.identifierName === name)
   if (rule) {
     errors.push({

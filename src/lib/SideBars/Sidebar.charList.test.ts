@@ -197,10 +197,7 @@ describe('sidebar character list signature memo', () => {
         name: 'folder data',
         folder: { ...baseFolder(), data: ['beta', 'alpha'] },
         assert: (items) => {
-          expect(folderItem(items)?.folder.map((character) => character.name)).toEqual([
-            'Beta',
-            'Alpha',
-          ])
+          expect(folderItem(items)?.folder.map((character) => character.name)).toEqual(['Beta', 'Alpha'])
         },
       },
     ]
@@ -220,9 +217,7 @@ describe('sidebar character list signature memo', () => {
   it('L44: signature ignores unreferenced character names and images', () => {
     const first = buildSidebarCharacterListSignature(baseOrder(), baseCharacters())
     const changedCharacters = baseCharacters().map((character) =>
-      character.chaId === 'unused'
-        ? { ...character, name: 'Unused Renamed', image: 'unused-new.webp' }
-        : character,
+      character.chaId === 'unused' ? { ...character, name: 'Unused Renamed', image: 'unused-new.webp' } : character,
     )
     const second = buildSidebarCharacterListSignature(baseOrder(), changedCharacters)
 

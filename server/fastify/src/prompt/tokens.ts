@@ -14,15 +14,7 @@ export type TokenEncoding = 'cl100k_base' | 'o200k_base'
 // Prefixes the SPA tags with `LLMTokenizer.tiktokenO200Base`. The omitted
 // `chatgpt-4o-latest` and `gpt-4.5-preview*` rows intentionally use the
 // conservative `cl100k_base` fallback until a fixture needs exact parity.
-const O200K_PREFIXES: readonly string[] = [
-  'gpt-4o',
-  'gpt-4.1',
-  'gpt-5',
-  'gpt-oss',
-  'o1',
-  'o3',
-  'o4',
-]
+const O200K_PREFIXES: readonly string[] = ['gpt-4o', 'gpt-4.1', 'gpt-5', 'gpt-oss', 'o1', 'o3', 'o4']
 
 const encoders: Partial<Record<TokenEncoding, Tiktoken>> = {}
 

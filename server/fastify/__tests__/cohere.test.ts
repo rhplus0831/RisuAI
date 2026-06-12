@@ -1,9 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import {
-  reformatForCohere,
-  resolveCohereRequest,
-  runCohere,
-} from '../src/generation/cohere.js'
+import { reformatForCohere, resolveCohereRequest, runCohere } from '../src/generation/cohere.js'
 
 afterEach(() => {
   vi.unstubAllGlobals()

@@ -63,8 +63,7 @@
 <h2
   class="text-4xl text-textcolor mb-0 mt-6 font-black relative"
   class:text-bordered={specialDay === 'newYear'}
-  onclick={onClick}
->
+  onclick={onClick}>
   {#if specialDay === 'midAutumn'}
     <span class="text-amber-400">🐉Risuai🐉</span>
   {:else if specialDay === 'chuseok'}
@@ -94,8 +93,7 @@
           if (clicks === 5) {
             iconAnimation = 0
           }
-        }}
-      />
+        }} />
     {/if}
   {/if}
   {#if specialDay === 'anniversary'}
@@ -106,20 +104,12 @@
         alt="birthday"
         class="absolute logo-top"
         style:top={(-28 + iconAnimation).toFixed(0) + 'px'}
-        style:right={'-30px'}
-      />
+        style:right={'-30px'} />
     {/if}
   {/if}
   {#if specialDay === 'newYear'}
     <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-    <img
-      src="./sun.webp"
-      alt="sun"
-      class="absolute -z-10"
-      style:top={'-50px'}
-      style:right={'0px'}
-      onclick={onClick}
-    />
+    <img src="./sun.webp" alt="sun" class="absolute -z-10" style:top={'-50px'} style:right={'0px'} onclick={onClick} />
   {/if}
 </h2>
 
@@ -132,9 +122,7 @@
       tabindex="-1"
       onclick={() => {
         openURL('https://risuai.net')
-      }}
-      >Happy {new Date().getFullYear() - 2023}{getNumberPostfix(new Date().getFullYear() - 2023)} Anniversary!</span
-    >
+      }}>Happy {new Date().getFullYear() - 2023}{getNumberPostfix(new Date().getFullYear() - 2023)} Anniversary!</span>
   </h1>
 {/if}
 {#if clicks >= 5}
@@ -171,7 +159,6 @@
         } else {
           score++
         }
-      }}
-    />
+      }} />
   </div>
 {/if}

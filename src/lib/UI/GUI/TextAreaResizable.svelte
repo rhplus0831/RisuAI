@@ -51,5 +51,4 @@
   bind:value
   class="rounded-md p-2 text-textcolor bg-transparent resize-none overflow-y-hidden border border-darkborderc w-full message-edit-area"
   style:font-size="{0.875 * (DBState.db.zoomsize / 100)}rem"
-  style:line-height="{(DBState.db.lineHeight ?? 1.25) * (DBState.db.zoomsize / 100)}rem"
-></textarea>
+  style:line-height="{(DBState.db.lineHeight ?? 1.25) * (DBState.db.zoomsize / 100)}rem"></textarea>

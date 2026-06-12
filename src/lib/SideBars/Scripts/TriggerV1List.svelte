@@ -72,8 +72,7 @@
 {#key sorted}
   <div
     class="contain w-full max-w-full mt-2 flex flex-col border-selected border-1 bg-darkbg rounded-md p-3"
-    bind:this={ele}
-  >
+    bind:this={ele}>
     {#if value.length === 0}
       <div class="text-textcolor2">No Scripts</div>
     {/if}
@@ -88,8 +87,7 @@
           let triggerscript = value
           triggerscript.splice(i, 1)
           value = triggerscript
-        }}
-      />
+        }} />
     {/each}
   </div>
   <button
@@ -102,8 +100,7 @@
         effect: [],
       })
       value = value
-    }}
-  >
+    }}>
     <PlusIcon />
   </button>
 {/key}

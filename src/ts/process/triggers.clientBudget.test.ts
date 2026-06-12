@@ -56,9 +56,7 @@ function seedDb(): void {
         name: 'Character',
         desc: '',
         chatPage: 0,
-        chats: [
-          { id: 'chat-1', message: [], note: '', name: 'main', localLore: [], scriptstate: {} },
-        ],
+        chats: [{ id: 'chat-1', message: [], note: '', name: 'main', localLore: [], scriptstate: {} }],
         triggerscript: [],
         defaultVariables: '',
         globalLore: [],

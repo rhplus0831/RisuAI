@@ -152,9 +152,7 @@ describe('route protection (table-wide auth enforcement)', () => {
     const routes = parseRouteTree(harness.app.printRoutes({ commonPrefix: false }))
     const apiRoutes = routes.filter((route) => route.path.startsWith('/api/v1/'))
     // Sanity: the parser actually found the command surface.
-    expect(
-      apiRoutes.filter((route) => isProtocolMutatingMethod(route.method)).length,
-    ).toBeGreaterThan(50)
+    expect(apiRoutes.filter((route) => isProtocolMutatingMethod(route.method)).length).toBeGreaterThan(50)
 
     const unprotected: string[] = []
     for (const route of apiRoutes) {
@@ -256,9 +254,7 @@ describe('route protection (table-wide auth enforcement)', () => {
         url,
         headers: {
           'content-type': 'application/octet-stream',
-          ...(url.includes('/proxy/')
-            ? { 'risu-url': encodeURIComponent('https://example.com/') }
-            : {}),
+          ...(url.includes('/proxy/') ? { 'risu-url': encodeURIComponent('https://example.com/') } : {}),
         },
         payload,
       })
@@ -337,12 +333,8 @@ describe('explicit route rate limits', () => {
 
     const publicKey = await subtle.exportKey(
       'jwk',
-      (
-        (await subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, [
-          'sign',
-          'verify',
-        ])) as CryptoKeyPair
-      ).publicKey,
+      ((await subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify'])) as CryptoKeyPair)
+        .publicKey,
     )
     const allowedAttempts = Number(authLoginRateLimit.max)
     for (let i = 0; i < allowedAttempts; i += 1) {

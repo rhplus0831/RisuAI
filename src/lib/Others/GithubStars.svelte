@@ -9,43 +9,38 @@
 
 <div class="flex gap-2 items-center mt-2">
   <a
-      class="github-button mt-4"
-      href="https://github.com/kwaroran/risuAI"
-      data-color-scheme="no-preference: dark; light: dark; dark: dark;"
-      data-size="large"
-      data-show-count="true"
-      aria-label="Star kwaroran/risuAI on GitHub">Star</a
-    >
+    class="github-button mt-4"
+    href="https://github.com/kwaroran/risuAI"
+    data-color-scheme="no-preference: dark; light: dark; dark: dark;"
+    data-size="large"
+    data-show-count="true"
+    aria-label="Star kwaroran/risuAI on GitHub">Star</a>
   <button
     class="text-textcolor"
     onclick={() => {
       openURL('https://risuai.net/')
-    }}
-  >
+    }}>
     <HouseIcon size={24} />
   </button>
   <button
     class="text-textcolor"
     onclick={() => {
       openURL('https://www.patreon.com/RisuAI')
-    }}
-  >
+    }}>
     <WalletIcon size={24} />
   </button>
   <button
     class="text-textcolor"
     onclick={() => {
       openURL('mailto:risuai@proton.me')
-    }}
-  >
+    }}>
     <MailIcon size={24} />
   </button>
   <button
-      class="text-textcolor"
-      onclick={() => {
-        toggleFullscreen()
-      }}
-    >
-      <MaximizeIcon size={24} />
-    </button>
+    class="text-textcolor"
+    onclick={() => {
+      toggleFullscreen()
+    }}>
+    <MaximizeIcon size={24} />
+  </button>
 </div>

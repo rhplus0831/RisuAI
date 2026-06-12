@@ -38,35 +38,23 @@ function expandWith(ctx: ExpandContext, input: string): string {
   return expandVariables(input, ctx).text
 }
 
-export function buildDescription(
-  ctx: ExpandContext,
-  currentChar: character,
-): OpenAIChat[] {
+export function buildDescription(ctx: ExpandContext, currentChar: character): OpenAIChat[] {
   const db = ctx.database
-  const prefix = db.promptPreprocess ? db.descriptionPrefix ?? '' : ''
+  const prefix = db.promptPreprocess ? (db.descriptionPrefix ?? '') : ''
   let description = expandWith(ctx, prefix + (currentChar.desc ?? ''))
 
   if (currentChar.personality) {
-    description += expandWith(
-      ctx,
-      '\n\nDescription of {{char}}: ' + currentChar.personality,
-    )
+    description += expandWith(ctx, '\n\nDescription of {{char}}: ' + currentChar.personality)
   }
 
   if (currentChar.scenario) {
-    description += expandWith(
-      ctx,
-      '\n\nCircumstances and context of the dialogue: ' + currentChar.scenario,
-    )
+    description += expandWith(ctx, '\n\nCircumstances and context of the dialogue: ' + currentChar.scenario)
   }
 
   return [{ role: 'system', content: description }]
 }
 
-export function buildAuthorNote(
-  ctx: ExpandContext,
-  currentChat: Chat,
-): OpenAIChat[] {
+export function buildAuthorNote(ctx: ExpandContext, currentChat: Chat): OpenAIChat[] {
   if (currentChat.note) {
     return [{ role: 'system', content: expandWith(ctx, currentChat.note) }]
   }
@@ -83,10 +71,7 @@ export function buildPersona(ctx: ExpandContext): OpenAIChat[] {
   return [{ role: 'system', content: expandWith(ctx, personaPrompt) }]
 }
 
-export function buildCotInstruction(
-  ctx: ExpandContext,
-  usingPromptTemplate: boolean,
-): OpenAIChat[] {
+export function buildCotInstruction(ctx: ExpandContext, usingPromptTemplate: boolean): OpenAIChat[] {
   const db = ctx.database
   if (!db.chainOfThought) return []
   if (usingPromptTemplate && db.promptSettings?.customChainOfThought) return []

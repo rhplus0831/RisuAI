@@ -4,11 +4,7 @@ import { TaskRateLimiter } from './taskRateLimiter'
 import { type EmbeddingText, type EmbeddingResult, HypaProcessorV2 } from './hypamemoryv2'
 import { type DisplayMode as ModalDisplayMode } from 'src/lib/Others/HypaV3Modal/types'
 import { parseChatML } from 'src/ts/parser/chatML'
-import {
-  type Chat,
-  type character,
-  getDatabase,
-} from 'src/ts/storage/database.svelte'
+import { type Chat, type character, getDatabase } from 'src/ts/storage/database.svelte'
 import { type OpenAIChat } from '../index.svelte'
 import { requestChatData } from '../request/request'
 import { chatCompletion, unloadEngine } from '../webllm'
@@ -124,14 +120,7 @@ export async function hypaMemoryV3(
     if (settings.useExperimentalImpl) {
       console.log(logPrefix, 'Using experimental implementation.')
 
-      return await hypaMemoryV3MainExp(
-        chats,
-        currentTokens,
-        maxContextTokens,
-        room,
-        char,
-        tokenizer,
-      )
+      return await hypaMemoryV3MainExp(chats, currentTokens, maxContextTokens, room, char, tokenizer)
     }
 
     return await hypaMemoryV3Main(chats, currentTokens, maxContextTokens, room, char, tokenizer)
@@ -270,10 +259,7 @@ async function hypaMemoryV3MainExp(
       settings.maxChatsPerSummary,
     )
 
-    while (
-      toSummarize.length < settings.maxChatsPerSummary &&
-      currentIndex < chats.length - settings.queryChatCount
-    ) {
+    while (toSummarize.length < settings.maxChatsPerSummary && currentIndex < chats.length - settings.queryChatCount) {
       const chat = chats[currentIndex]
       const chatTokens = await tokenizer.tokenizeChat(chat)
 
@@ -294,11 +280,7 @@ async function hypaMemoryV3MainExp(
 
       let shouldSummarize = true
 
-      if (
-        chat.name === 'example_user' ||
-        chat.name === 'example_assistant' ||
-        chat.memo === 'NewChatExample'
-      ) {
+      if (chat.name === 'example_user' || chat.name === 'example_assistant' || chat.memo === 'NewChatExample') {
         console.log(logPrefix, `Skipping example chat at index ${currentIndex}`)
         shouldSummarize = false
       }
@@ -351,10 +333,8 @@ async function hypaMemoryV3MainExp(
     // Initialize rate limiter
     // Local model must be processed sequentially
     const rateLimiter = new TaskRateLimiter({
-      tasksPerMinute:
-        settings.summarizationModel === 'subModel' ? settings.summarizationRequestsPerMinute : 1000,
-      maxConcurrentTasks:
-        settings.summarizationModel === 'subModel' ? settings.summarizationMaxConcurrent : 1,
+      tasksPerMinute: settings.summarizationModel === 'subModel' ? settings.summarizationRequestsPerMinute : 1000,
+      maxConcurrentTasks: settings.summarizationModel === 'subModel' ? settings.summarizationMaxConcurrent : 1,
     })
 
     rateLimiter.taskQueueChangeCallback = (queuedCount) => {
@@ -375,9 +355,7 @@ async function hypaMemoryV3MainExp(
     const batchResult = await rateLimiter.executeBatch<string>(summarizationTasks)
 
     const summarizeEndTime = performance.now()
-    console.debug(
-      `${logPrefix} summarization completed in ${summarizeEndTime - summarizeStartTime}ms`,
-    )
+    console.debug(`${logPrefix} summarization completed in ${summarizeEndTime - summarizeStartTime}ms`)
     // End of performance measurement: summarize
 
     hypaV3ProgressStore.set({
@@ -555,9 +533,7 @@ async function hypaMemoryV3MainExp(
 
     // Dynamically generate embedding texts
     const ebdTexts: EmbeddingText<Summary>[] = unusedSummaries.flatMap((summary, summaryIndex) => {
-      const splitted = splitBySeparator(summary.text, settings.summaryChunkSeparator).filter(
-        (e) => e.trim().length > 0,
-      )
+      const splitted = splitBySeparator(summary.text, settings.summaryChunkSeparator).filter((e) => e.trim().length > 0)
 
       return splitted.map((chunk, chunkIndex) => ({
         id: `${summaryIndex}-${chunkIndex}`,
@@ -610,15 +586,12 @@ async function hypaMemoryV3MainExp(
       })
     }
 
-    const recentChats = chats
-      .slice(-settings.queryChatCount)
-      .filter((chat) => chat.content.trim().length > 0)
+    const recentChats = chats.slice(-settings.queryChatCount).filter((chat) => chat.content.trim().length > 0)
 
     const queries = recentChats
       .map((chat, index) => {
         const subQueries = chat.content.split('\n\n').filter((e) => e.trim().length > 0)
-        const weight =
-          (index + 1) / ((recentChats.length * (recentChats.length + 1)) / 2) / subQueries.length
+        const weight = (index + 1) / ((recentChats.length * (recentChats.length + 1)) / 2) / subQueries.length
 
         return subQueries.map((content) => ({
           content,
@@ -633,9 +606,7 @@ async function hypaMemoryV3MainExp(
         console.log(`${logPrefix} Starting similarity search with ${recentChats.length} queries`)
         const searchStartTime = performance.now()
 
-        const batchScoredResults = await processor.similaritySearchScoredBatch(
-          queries.map((query) => query.content),
-        )
+        const batchScoredResults = await processor.similaritySearchScoredBatch(queries.map((query) => query.content))
 
         /*
                 // Hybrid search may be implemented in the future
@@ -663,9 +634,7 @@ async function hypaMemoryV3MainExp(
                 */
 
         const searchEndTime = performance.now()
-        console.debug(
-          `${logPrefix} Similarity search completed in ${searchEndTime - searchStartTime}ms`,
-        )
+        console.debug(`${logPrefix} Similarity search completed in ${searchEndTime - searchStartTime}ms`)
         // End of performance measurement: similarity search
 
         const rankedChunks = simpleCC<EmbeddingResult<Summary>>(
@@ -753,9 +722,7 @@ async function hypaMemoryV3MainExp(
     )
 
     // Target only summaries that haven't been selected yet
-    const unusedSummaries = data.summaries
-      .filter((e) => !selectedSummaries.includes(e))
-      .sort(() => Math.random() - 0.5) // Random shuffle
+    const unusedSummaries = data.summaries.filter((e) => !selectedSummaries.includes(e)).sort(() => Math.random() - 0.5) // Random shuffle
 
     for (const summary of unusedSummaries) {
       const summaryTokens = await tokenizer.tokenizeChat({
@@ -792,10 +759,7 @@ async function hypaMemoryV3MainExp(
   selectedSummaries.sort((a, b) => data.summaries.indexOf(a) - data.summaries.indexOf(b))
 
   // Generate final memory prompt
-  const memory = wrapWithXml(
-    memoryPromptTag,
-    selectedSummaries.map((e) => e.text).join(summarySeparator),
-  )
+  const memory = wrapWithXml(memoryPromptTag, selectedSummaries.map((e) => e.text).join(summarySeparator))
   const realMemoryTokens = await tokenizer.tokenizeChat({
     role: 'system',
     content: memory,
@@ -832,15 +796,11 @@ async function hypaMemoryV3MainExp(
     lastImportantSummaries: selectedImportantSummaries.map((selected) =>
       data.summaries.findIndex((sum) => sum === selected),
     ),
-    lastRecentSummaries: selectedRecentSummaries.map((selected) =>
-      data.summaries.findIndex((sum) => sum === selected),
-    ),
+    lastRecentSummaries: selectedRecentSummaries.map((selected) => data.summaries.findIndex((sum) => sum === selected)),
     lastSimilarSummaries: selectedSimilarSummaries.map((selected) =>
       data.summaries.findIndex((sum) => sum === selected),
     ),
-    lastRandomSummaries: selectedRandomSummaries.map((selected) =>
-      data.summaries.findIndex((sum) => sum === selected),
-    ),
+    lastRandomSummaries: selectedRandomSummaries.map((selected) => data.summaries.findIndex((sum) => sum === selected)),
   }
 
   const newChats: OpenAIChat[] = [
@@ -966,10 +926,7 @@ async function hypaMemoryV3Main(
     }
 
     const toSummarize: OpenAIChat[] = []
-    const endIdx = Math.min(
-      startIdx + settings.maxChatsPerSummary,
-      chats.length - settings.queryChatCount,
-    )
+    const endIdx = Math.min(startIdx + settings.maxChatsPerSummary, chats.length - settings.queryChatCount)
     let toSummarizeTokens = 0
 
     console.log(
@@ -1008,11 +965,7 @@ async function hypaMemoryV3Main(
 
       toSummarizeTokens += chatTokens
 
-      if (
-        chat.name === 'example_user' ||
-        chat.name === 'example_assistant' ||
-        chat.memo === 'NewChatExample'
-      ) {
+      if (chat.name === 'example_user' || chat.name === 'example_assistant' || chat.memo === 'NewChatExample') {
         console.log(logPrefix, `Skipping example chat at index ${i}`)
         continue
       }
@@ -1222,9 +1175,7 @@ async function hypaMemoryV3Main(
     const summaryChunks: SummaryChunk[] = []
 
     unusedSummaries.forEach((summary) => {
-      const splitted = splitBySeparator(summary.text, settings.summaryChunkSeparator).filter(
-        (e) => e.trim().length > 0,
-      )
+      const splitted = splitBySeparator(summary.text, settings.summaryChunkSeparator).filter((e) => e.trim().length > 0)
 
       summaryChunks.push(
         ...splitted.map((e) => ({
@@ -1250,9 +1201,7 @@ async function hypaMemoryV3Main(
       }
     }
 
-    const recentChats = chats
-      .slice(-settings.queryChatCount)
-      .filter((chat) => chat.content.trim().length > 0)
+    const recentChats = chats.slice(-settings.queryChatCount).filter((chat) => chat.content.trim().length > 0)
 
     if (recentChats.length > 0) {
       // Raw recent chat search
@@ -1263,12 +1212,7 @@ async function hypaMemoryV3Main(
         // Summarizing is meaningful when there are more than 2 recent chats
 
         // Attempt summarization
-        console.log(
-          logPrefix,
-          'Attempting summarization for similarity search:',
-          '\nTarget:',
-          recentChats,
-        )
+        console.log(logPrefix, 'Attempting summarization for similarity search:', '\nTarget:', recentChats)
 
         try {
           const summarizeResult = await summarize(recentChats)
@@ -1300,10 +1244,7 @@ async function hypaMemoryV3Main(
           return (listIndex + 1) / ((totalLists * (totalLists + 1)) / 2)
         })
 
-        const rankedSummaries = childToParentRRF<SummaryChunk, Summary>(
-          rankedChunks,
-          (chunk) => chunk.summary,
-        )
+        const rankedSummaries = childToParentRRF<SummaryChunk, Summary>(rankedChunks, (chunk) => chunk.summary)
 
         while (rankedSummaries.length > 0) {
           const summary = rankedSummaries.shift()
@@ -1373,9 +1314,7 @@ async function hypaMemoryV3Main(
     )
 
     // Target only summaries that haven't been selected yet
-    const unusedSummaries = data.summaries
-      .filter((e) => !selectedSummaries.includes(e))
-      .sort(() => Math.random() - 0.5) // Random shuffle
+    const unusedSummaries = data.summaries.filter((e) => !selectedSummaries.includes(e)).sort(() => Math.random() - 0.5) // Random shuffle
 
     for (const summary of unusedSummaries) {
       const summaryTokens = await tokenizer.tokenizeChat({
@@ -1412,10 +1351,7 @@ async function hypaMemoryV3Main(
   selectedSummaries.sort((a, b) => data.summaries.indexOf(a) - data.summaries.indexOf(b))
 
   // Generate final memory prompt
-  const memory = wrapWithXml(
-    memoryPromptTag,
-    selectedSummaries.map((e) => e.text).join(summarySeparator),
-  )
+  const memory = wrapWithXml(memoryPromptTag, selectedSummaries.map((e) => e.text).join(summarySeparator))
   const realMemoryTokens = await tokenizer.tokenizeChat({
     role: 'system',
     content: memory,
@@ -1454,15 +1390,11 @@ async function hypaMemoryV3Main(
     lastImportantSummaries: selectedImportantSummaries.map((selected) =>
       data.summaries.findIndex((sum) => sum === selected),
     ),
-    lastRecentSummaries: selectedRecentSummaries.map((selected) =>
-      data.summaries.findIndex((sum) => sum === selected),
-    ),
+    lastRecentSummaries: selectedRecentSummaries.map((selected) => data.summaries.findIndex((sum) => sum === selected)),
     lastSimilarSummaries: selectedSimilarSummaries.map((selected) =>
       data.summaries.findIndex((sum) => sum === selected),
     ),
-    lastRandomSummaries: selectedRandomSummaries.map((selected) =>
-      data.summaries.findIndex((sum) => sum === selected),
-    ),
+    lastRandomSummaries: selectedRandomSummaries.map((selected) => data.summaries.findIndex((sum) => sum === selected)),
   }
 
   const newChats: OpenAIChat[] = [
@@ -1551,16 +1483,11 @@ function sanitizeSummaryContent(content: string): string {
   return content.replace(inlayTokenRegex, '[Image]')
 }
 
-export async function summarize(
-  oaiMessages: OpenAIChat[],
-  isResummarize: boolean = false,
-): Promise<string> {
+export async function summarize(oaiMessages: OpenAIChat[], isResummarize: boolean = false): Promise<string> {
   const db = getDatabase()
   const settings = getCurrentHypaV3Preset().settings
 
-  const strMessages = oaiMessages
-    .map((chat) => `${chat.role}: ${sanitizeSummaryContent(chat.content)}`)
-    .join('\n')
+  const strMessages = oaiMessages.map((chat) => `${chat.role}: ${sanitizeSummaryContent(chat.content)}`).join('\n')
 
   const summarizationPrompt = isResummarize
     ? settings.reSummarizationPrompt.trim() === ''
@@ -1570,9 +1497,7 @@ export async function summarize(
       ? '[Summarize the ongoing role story, It must also remove redundancy and unnecessary text and content from the output.]'
       : settings.summarizationPrompt
 
-  const formated: OpenAIChat[] = parseChatML(
-    summarizationPrompt.replaceAll('{{slot}}', strMessages),
-  ) ?? [
+  const formated: OpenAIChat[] = parseChatML(summarizationPrompt.replaceAll('{{slot}}', strMessages)) ?? [
     {
       role: 'user',
       content: strMessages,
@@ -1686,11 +1611,7 @@ export function createHypaV3Preset(name = 'New Preset', existingSettings = {}): 
     queryChatCount: 3,
   }
 
-  if (
-    existingSettings &&
-    typeof existingSettings === 'object' &&
-    !Array.isArray(existingSettings)
-  ) {
+  if (existingSettings && typeof existingSettings === 'object' && !Array.isArray(existingSettings)) {
     for (const [key, value] of Object.entries(existingSettings)) {
       if (key in settings && typeof value === typeof settings[key]) {
         settings[key] = value
@@ -1744,11 +1665,7 @@ function simpleRRF<T>(rankedLists: T[][], k: number = 60): T[] {
     .map(([item]) => item)
 }
 
-function childToParentRRF<C, P>(
-  rankedChildren: C[],
-  parentFunc: (child: C) => P,
-  k: number = 60,
-): P[] {
+function childToParentRRF<C, P>(rankedChildren: C[], parentFunc: (child: C) => P, k: number = 60): P[] {
   const scores = new Map<P, number>()
 
   for (let childIndex = 0; childIndex < rankedChildren.length; childIndex++) {

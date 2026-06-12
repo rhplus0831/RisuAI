@@ -36,10 +36,7 @@ async function getNetworkAudioContext(): Promise<AudioContext> {
   return audioContext
 }
 
-function bindSourceLifecycle(
-  source: AudioBufferSourceNode,
-  nodes: DisconnectableAudioNode[],
-): () => void {
+function bindSourceLifecycle(source: AudioBufferSourceNode, nodes: DisconnectableAudioNode[]): () => void {
   let released = false
   const cleanup = () => {
     if (released) return
@@ -175,10 +172,11 @@ export async function sayTTS(character: character, text: string) {
       }
     }
 
-    const beforeResult = await runHookPipeline<BeforeTTSContext, BeforeTTSResult>(
-      getTTSPreprocessors(),
-      { text, ttsMode: character.ttsMode ?? '', characterId: character.chaId },
-    )
+    const beforeResult = await runHookPipeline<BeforeTTSContext, BeforeTTSResult>(getTTSPreprocessors(), {
+      text,
+      ttsMode: character.ttsMode ?? '',
+      characterId: character.chaId,
+    })
     if (beforeResult.skip) {
       return
     }
@@ -201,20 +199,17 @@ export async function sayTTS(character: character, text: string) {
         break
       }
       case 'elevenlab': {
-        const da = await fetch(
-          `https://api.elevenlabs.io/v1/text-to-speech/${character.ttsSpeech}`,
-          {
-            body: JSON.stringify({
-              text: text,
-              model_id: 'eleven_multilingual_v2',
-            }),
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'xi-api-key': db.elevenLabKey || undefined,
-            },
+        const da = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${character.ttsSpeech}`, {
+          body: JSON.stringify({
+            text: text,
+            model_id: 'eleven_multilingual_v2',
+          }),
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'xi-api-key': db.elevenLabKey || undefined,
           },
-        )
+        })
         if (da.status >= 200 && da.status < 300) {
           const buffer = await da.arrayBuffer()
           const mimeType = da.headers.get('content-type') || 'audio/mpeg'
@@ -229,13 +224,10 @@ export async function sayTTS(character: character, text: string) {
       }
       case 'VOICEVOX': {
         const jpText = await translateVox(text)
-        const query = await fetch(
-          `${db.voicevoxUrl}/audio_query?text=${jpText}&speaker=${character.ttsSpeech}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-          },
-        )
+        const query = await fetch(`${db.voicevoxUrl}/audio_query?text=${jpText}&speaker=${character.ttsSpeech}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        })
         if (query.status == 200) {
           const queryJson = await query.json()
           const bodyData = {
@@ -250,14 +242,11 @@ export async function sayTTS(character: character, text: string) {
             outputStereo: queryJson.outputStereo,
             kana: queryJson.kana,
           }
-          const getVoice = await fetch(
-            `${db.voicevoxUrl}/synthesis?speaker=${character.ttsSpeech}`,
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(bodyData),
-            },
-          )
+          const getVoice = await fetch(`${db.voicevoxUrl}/synthesis?speaker=${character.ttsSpeech}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(bodyData),
+          })
           if (getVoice.status == 200 && getVoice.headers.get('content-type') === 'audio/wav') {
             await playAudio(await getVoice.arrayBuffer(), 'audio/wav', {
               ttsMode: character.ttsMode ?? '',
@@ -339,25 +328,20 @@ export async function sayTTS(character: character, text: string) {
       }
       case 'huggingface': {
         const inputText =
-          character.hfTTS.language === 'en'
-            ? text
-            : await runTranslator(text, false, 'en', character.hfTTS.language)
+          character.hfTTS.language === 'en' ? text : await runTranslator(text, false, 'en', character.hfTTS.language)
 
         let totalRetryWaitMs = 0
         for (let attempt = 1; attempt <= HF_TTS_MAX_ATTEMPTS; attempt++) {
-          const response = await fetch(
-            `https://api-inference.huggingface.co/models/${character.hfTTS.model}`,
-            {
-              method: 'POST',
-              headers: {
-                Authorization: 'Bearer ' + db.huggingfaceKey,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                inputs: inputText,
-              }),
+          const response = await fetch(`https://api-inference.huggingface.co/models/${character.hfTTS.model}`, {
+            method: 'POST',
+            headers: {
+              Authorization: 'Bearer ' + db.huggingfaceKey,
+              'Content-Type': 'application/json',
             },
-          )
+            body: JSON.stringify({
+              inputs: inputText,
+            }),
+          })
 
           if (response.status === 503 && isJsonResponse(response)) {
             const json = await response.json()
@@ -372,8 +356,7 @@ export async function sayTTS(character: character, text: string) {
               continue
             }
             alertError(
-              language.errors.httpError +
-                `HuggingFace TTS model did not become ready after ${attempt} attempts`,
+              language.errors.httpError + `HuggingFace TTS model did not become ready after ${attempt} attempts`,
             )
             return
           } else if (response.status >= 400) {
@@ -403,9 +386,7 @@ export async function sayTTS(character: character, text: string) {
       }
       case 'gptsovits': {
         const audio: Uint8Array = await loadAsset(character.gptSoVitsConfig.ref_audio_data.assetId)
-        const base64Audio = btoa(
-          new Uint8Array(audio).reduce((data, byte) => data + String.fromCharCode(byte), ''),
-        )
+        const base64Audio = btoa(new Uint8Array(audio).reduce((data, byte) => data + String.fromCharCode(byte), ''))
 
         const body = {
           text: text,
@@ -422,8 +403,7 @@ export async function sayTTS(character: character, text: string) {
           text_split_method: character.gptSoVitsConfig.text_split_method,
           parallel_infer: true,
           // media_type: character.gptSoVitsConfig.ref_audio_data.fileName.split('.')[1],
-          ref_free:
-            character.gptSoVitsConfig.use_long_audio || !character.gptSoVitsConfig.use_prompt,
+          ref_free: character.gptSoVitsConfig.use_long_audio || !character.gptSoVitsConfig.use_prompt,
         }
 
         if (character.gptSoVitsConfig.use_prompt) {
@@ -441,9 +421,7 @@ export async function sayTTS(character: character, text: string) {
           })
           if (path.ok) {
             body.ref_audio_path =
-              path.data.message +
-              '/public/audio/' +
-              character.gptSoVitsConfig.ref_audio_data.fileName
+              path.data.message + '/public/audio/' + character.gptSoVitsConfig.ref_audio_data.fileName
           } else {
             throw new Error('Failed to Auto get path')
           }
@@ -472,11 +450,7 @@ export async function sayTTS(character: character, text: string) {
             // route through playAudio directly. Run the postprocessor
             // pipeline first to honor plugin hooks consistently, then
             // build the gain-enabled graph with the final bytes.
-            const processed = await runPostprocessorPipeline(
-              response.data.buffer,
-              mimeType,
-              hookCtx,
-            )
+            const processed = await runPostprocessorPipeline(response.data.buffer, mimeType, hookCtx)
             if (!processed.skip) {
               const audioContext = await getNetworkAudioContext()
               const decoded = await audioContext.decodeAudioData(processed.audio)

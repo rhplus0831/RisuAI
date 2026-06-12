@@ -1,9 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import {
-  MAX_BUFFERED_BODY_BYTES,
-  readBoundedBodyJson,
-  readBoundedBodyText,
-} from '../src/generation/body.js'
+import { MAX_BUFFERED_BODY_BYTES, readBoundedBodyJson, readBoundedBodyText } from '../src/generation/body.js'
 import { runOpenAI } from '../src/generation/openai.js'
 
 /**

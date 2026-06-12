@@ -13,11 +13,7 @@ const triggerState = vi.hoisted(() => ({
   calls: [] as { mode: string; length: number }[],
 }))
 vi.mock('../scriptings', () => ({
-  runLuaEditTrigger: async (
-    _char: unknown,
-    mode: string,
-    content: unknown,
-  ): Promise<unknown> => {
+  runLuaEditTrigger: async (_char: unknown, mode: string, content: unknown): Promise<unknown> => {
     triggerState.calls.push({
       mode,
       length: Array.isArray(content) ? content.length : -1,
@@ -30,19 +26,11 @@ vi.mock('../scriptings', () => ({
   },
 }))
 
-import {
-  setDatabase,
-  type Database,
-  type character,
-} from '../../storage/database.svelte'
+import { setDatabase, type Database, type character } from '../../storage/database.svelte'
 import { DBState } from '../../stores.svelte'
 import type { OpenAIChat } from '../index.svelte'
 import type { PromptItem } from '../prompt'
-import {
-  renderFinalPrompt,
-  type UnformatedPromptSlots,
-  type FormatOrderKey,
-} from '../promptAssembly/renderFinalPrompt'
+import { renderFinalPrompt, type UnformatedPromptSlots, type FormatOrderKey } from '../promptAssembly/renderFinalPrompt'
 
 function makeChar(overrides: Partial<character> = {}): character {
   return {
@@ -138,10 +126,7 @@ describe('renderFinalPrompt - non-template formatOrder path', () => {
     })
 
     // System rows from main + description merge; user row stays separate.
-    expect(result.formated.map((c) => `${c.role}:${c.content}`)).toEqual([
-      'system:MAIN\n\nDESC',
-      'user:hi',
-    ])
+    expect(result.formated.map((c) => `${c.role}:${c.content}`)).toEqual(['system:MAIN\n\nDESC', 'user:hi'])
   })
 
   it('does not coalesce systems on non-gpt/claude models', async () => {
@@ -234,9 +219,7 @@ describe('renderFinalPrompt - template walker basics', () => {
       isContinue: false,
     })
 
-    expect(result.formated.map((c) => c.content)).toEqual([
-      'Persona: I am curious.\n\nDesc: A bot.\n\nNote: none',
-    ])
+    expect(result.formated.map((c) => c.content)).toEqual(['Persona: I am curious.\n\nDesc: A bot.\n\nNote: none'])
   })
 
   it('plain card converts role: bot -> assistant and renders chatML', async () => {
@@ -246,8 +229,7 @@ describe('renderFinalPrompt - template walker basics', () => {
       { type: 'plain', text: 'plain-text', role: 'bot', type2: 'normal' },
       {
         type: 'chatML',
-        text:
-          '<|im_start|>system\nA<|im_end|><|im_start|>user\nB<|im_end|><|im_start|>assistant\nC<|im_end|>',
+        text: '<|im_start|>system\nA<|im_end|><|im_start|>user\nB<|im_end|><|im_start|>assistant\nC<|im_end|>',
       },
     ]
 
@@ -320,12 +302,8 @@ describe('renderFinalPrompt - template walker basics', () => {
   it('memory card uses innerFormat to wrap returned memories[]', async () => {
     seedDb()
     const unformated = emptyUnformated()
-    const memories: OpenAIChat[] = [
-      { role: 'system', content: 'summary-a', memo: 'hypaMemory' },
-    ]
-    const template: PromptItem[] = [
-      { type: 'memory', innerFormat: 'Memory: {{slot}}' },
-    ]
+    const memories: OpenAIChat[] = [{ role: 'system', content: 'summary-a', memo: 'hypaMemory' }]
+    const template: PromptItem[] = [{ type: 'memory', innerFormat: 'Memory: {{slot}}' }]
 
     const result = await renderFinalPrompt({
       currentChar: makeChar(),
@@ -452,7 +430,10 @@ describe('renderFinalPrompt - cache points', () => {
   it('automatic walk-back is suppressed when hasCachePoint=true', async () => {
     seedDb({ automaticCachePoint: true })
     const unformated = emptyUnformated()
-    unformated.chats = [{ role: 'user', content: 'u1' }, { role: 'user', content: 'u2' }]
+    unformated.chats = [
+      { role: 'user', content: 'u1' },
+      { role: 'user', content: 'u2' },
+    ]
     const template: PromptItem[] = [{ type: 'chat', rangeStart: 0, rangeEnd: 'end' }]
 
     const result = await renderFinalPrompt({

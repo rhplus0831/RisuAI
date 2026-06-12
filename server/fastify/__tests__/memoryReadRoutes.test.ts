@@ -43,11 +43,7 @@ async function stopHarness(h: Harness): Promise<void> {
   rmSync(h.dataDir, { recursive: true, force: true })
 }
 
-async function signAssertion(
-  privateKey: CryptoKey,
-  publicJwk: JsonWebKey,
-  ttlSec = 60,
-): Promise<string> {
+async function signAssertion(privateKey: CryptoKey, publicJwk: JsonWebKey, ttlSec = 60): Promise<string> {
   const now = Math.floor(Date.now() / 1000)
   const header = { alg: 'ES256', typ: 'JWT' }
   const payload = { iat: now, exp: now + ttlSec, pub: publicJwk }
@@ -185,11 +181,7 @@ describe('Phase 8-7a memory read routes', () => {
 
     expect(res.statusCode).toBe(200)
     const body = res.json() as { chunks: MemoryChunk[] }
-    expect(body.chunks.map((chunk) => chunk.id)).toEqual([
-      'chunk-first',
-      'chunk-middle',
-      'chunk-later',
-    ])
+    expect(body.chunks.map((chunk) => chunk.id)).toEqual(['chunk-first', 'chunk-middle', 'chunk-later'])
     expect(body.chunks).toMatchObject([
       {
         id: 'chunk-first',

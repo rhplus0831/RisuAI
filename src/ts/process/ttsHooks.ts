@@ -71,10 +71,7 @@ export async function runHookPipeline<Ctx extends object, Res extends { skip?: b
     try {
       const hookPromise = Promise.resolve().then(() => hook(current))
       if (timeoutMs !== undefined && timeoutMs > 0) {
-        result = await Promise.race<Res | void | typeof TIMEOUT>([
-          hookPromise,
-          sleep(timeoutMs).then(() => TIMEOUT),
-        ])
+        result = await Promise.race<Res | void | typeof TIMEOUT>([hookPromise, sleep(timeoutMs).then(() => TIMEOUT)])
       } else {
         result = await hookPromise
       }

@@ -39,10 +39,7 @@ const serverEventsState = vi.hoisted(() => ({
       parentId?: string
       origin?: { writerSessionId: string }
     }) => void
-    onMemoryEvent?: (event: {
-      type: 'memory.job'
-      sideEffect?: { kind: string; payload: unknown }
-    }) => void
+    onMemoryEvent?: (event: { type: 'memory.job'; sideEffect?: { kind: string; payload: unknown } }) => void
     onError?: (error: string) => void
     onClose?: () => void
   }>,
@@ -58,10 +55,7 @@ const serverEventsState = vi.hoisted(() => ({
         parentId?: string
         origin?: { writerSessionId: string }
       }) => void
-      onMemoryEvent?: (event: {
-        type: 'memory.job'
-        sideEffect?: { kind: string; payload: unknown }
-      }) => void
+      onMemoryEvent?: (event: { type: 'memory.job'; sideEffect?: { kind: string; payload: unknown } }) => void
       onError?: (error: string) => void
       onClose?: () => void
     }) => {
@@ -213,17 +207,8 @@ import {
   setCachedServerCommandRevision,
 } from './server/commands'
 import { getActiveWriterSessionId } from './server/activeWriterSession'
-import {
-  getProtocolDiagnosticsSnapshot,
-  type FullBootstrapResyncReason,
-} from './server/protocolDiagnostics'
-import {
-  DBState,
-  LoadingStatusState,
-  hypaV3ProgressStore,
-  loadedStore,
-  selectedCharID,
-} from './stores.svelte'
+import { getProtocolDiagnosticsSnapshot, type FullBootstrapResyncReason } from './server/protocolDiagnostics'
+import { DBState, LoadingStatusState, hypaV3ProgressStore, loadedStore, selectedCharID } from './stores.svelte'
 
 function serverDefaultDatabase() {
   return {
@@ -329,16 +314,10 @@ function fullBootstrapReasonCount(snapshot: ProtocolDiagnosticsSnapshot, reason:
 }
 
 function unexpectedFullBootstrapCount(snapshot: ProtocolDiagnosticsSnapshot): number {
-  return Object.values(snapshot.unexpectedFullBootstrapResync).reduce(
-    (total, count) => total + count,
-    0,
-  )
+  return Object.values(snapshot.unexpectedFullBootstrapResync).reduce((total, count) => total + count, 0)
 }
 
-function fullBootstrapResourceCount(
-  snapshot: ProtocolDiagnosticsSnapshot,
-  resource: string,
-): number {
+function fullBootstrapResourceCount(snapshot: ProtocolDiagnosticsSnapshot, resource: string): number {
   return snapshot.fullBootstrapResyncResources[resource] ?? 0
 }
 
@@ -351,9 +330,7 @@ function expectFullBootstrapResyncDelta(
   expect(fullBootstrapReasonCount(after, reason) - fullBootstrapReasonCount(before, reason)).toBe(1)
   expect(unexpectedFullBootstrapCount(after) - unexpectedFullBootstrapCount(before)).toBe(0)
   if (resource !== undefined) {
-    expect(
-      fullBootstrapResourceCount(after, resource) - fullBootstrapResourceCount(before, resource),
-    ).toBe(1)
+    expect(fullBootstrapResourceCount(after, resource) - fullBootstrapResourceCount(before, resource)).toBe(1)
   }
 }
 
@@ -372,9 +349,9 @@ async function installErrorHandlersForTest(): Promise<{
   try {
     await loadData()
 
-    const errorHandler = addEventListenerSpy.mock.calls
-      .filter(([type]) => type === 'error')
-      .at(-1)?.[1] as EventListener | undefined
+    const errorHandler = addEventListenerSpy.mock.calls.filter(([type]) => type === 'error').at(-1)?.[1] as
+      | EventListener
+      | undefined
     const rejectionHandler = addEventListenerSpy.mock.calls
       .filter(([type]) => type === 'unhandledrejection')
       .at(-1)?.[1] as EventListener | undefined
@@ -681,9 +658,7 @@ describe('web bootstrap startup source', () => {
     // char-a's metadata updated; its already-hydrated chat messages are kept.
     expect(DBState.db.characters?.[0].name).toBe('Ada Lovelace')
     expect(DBState.db.characters?.[0].chats?.[0].message).toEqual([{ role: 'user', data: 'hi' }])
-    expect(DBState.db.characters?.[0].chats?.[0].generationSettings).toEqual(
-      projectedGenerationSettings,
-    )
+    expect(DBState.db.characters?.[0].chats?.[0].generationSettings).toEqual(projectedGenerationSettings)
     // char-b is untouched.
     expect(DBState.db.characters?.[1].name).toBe('Babbage')
     // No broad characters merge → no chat re-stub / re-hydration / full bootstrap.

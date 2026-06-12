@@ -14,14 +14,14 @@
     overrides: Record<string, SeparateParameters>
   }
 
-  const seperateParametersEnabledDraft = createServerBackedSettingDraft<boolean>(
-    'seperateParametersEnabled',
-    false,
-  )
-  const seperateParametersDraft = createServerBackedSettingDraft<SeparateParameterSettings>(
-    'seperateParameters',
-    { memory: {}, emotion: {}, translate: {}, otherAx: {}, overrides: {} },
-  )
+  const seperateParametersEnabledDraft = createServerBackedSettingDraft<boolean>('seperateParametersEnabled', false)
+  const seperateParametersDraft = createServerBackedSettingDraft<SeparateParameterSettings>('seperateParameters', {
+    memory: {},
+    emotion: {},
+    translate: {},
+    otherAx: {},
+    overrides: {},
+  })
 
   const paramLabels: Record<string, string> = {
     memory: 'longTermMemory',
@@ -32,10 +32,7 @@
 </script>
 
 <Accordion name={language.seperateParameters} styled>
-  <CheckInput
-    bind:check={seperateParametersEnabledDraft.value}
-    name={language.seperateParametersEnabled}
-  />
+  <CheckInput bind:check={seperateParametersEnabledDraft.value} name={language.seperateParametersEnabled} />
   {#if seperateParametersEnabledDraft.value}
     {#each Object.keys(seperateParametersDraft.value) as param}
       <Accordion name={language[paramLabels[param]] ?? param} styled>

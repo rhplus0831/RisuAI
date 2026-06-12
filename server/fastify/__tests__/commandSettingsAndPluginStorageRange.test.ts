@@ -6,10 +6,7 @@ import type { FastifyInstance } from 'fastify'
 import { DatabaseSync } from 'node:sqlite'
 import { buildApp } from '../src/app.js'
 import { setupAuthedClient } from './helpers/auth.js'
-import {
-  assertCommandMetricGate,
-  type CommandMutationMetric,
-} from './helpers/commandMetricGates.js'
+import { assertCommandMetricGate, type CommandMutationMetric } from './helpers/commandMetricGates.js'
 import { assertOnlyRowsWritten, tableRowidsById } from './helpers/rowStability.js'
 
 // Phase 2 (settings + plugin-storage paths) regression. Each of the six Tier-1
@@ -121,18 +118,14 @@ async function runCommand(
   request: CommandRequest,
 ): Promise<{ revision: number; metric: CommandMutationMetric; body: Record<string, unknown> }> {
   const before = metrics.length
-  const inject = harness.app.inject as unknown as (
-    request: CommandRequest,
-  ) => Promise<CommandResponse>
+  const inject = harness.app.inject as unknown as (request: CommandRequest) => Promise<CommandResponse>
   const res = await inject({
     ...request,
     headers: { 'risu-auth': assertion, ...(request.headers ?? {}) },
   })
   expect(res.statusCode, JSON.stringify(res.json())).toBe(200)
   const body = res.json() as Record<string, unknown>
-  const metric = metrics
-    .slice(before)
-    .find((entry) => entry.metric === 'command_mutation' && entry.status === 'ok')
+  const metric = metrics.slice(before).find((entry) => entry.metric === 'command_mutation' && entry.status === 'ok')
   expect(metric, `missing command_mutation metric for ${request.url}`).toBeTruthy()
   return { revision: body.revision as number, metric: metric as CommandMutationMetric, body }
 }
@@ -175,9 +168,10 @@ function readPluginStorage(): Record<string, unknown> {
 }
 
 /** Assert no character or chat row was rewritten (every rowid stayed put). */
-function expectNoCharacterOrChatChurn(
-  before: { characters: Record<string, number>; chats: Record<string, number> },
-): void {
+function expectNoCharacterOrChatChurn(before: {
+  characters: Record<string, number>
+  chats: Record<string, number>
+}): void {
   assertOnlyRowsWritten(before.characters, tableRowidsById(harness.dataDir, 'characters'))
   assertOnlyRowsWritten(before.chats, tableRowidsById(harness.dataDir, 'chats'))
 }

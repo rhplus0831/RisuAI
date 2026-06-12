@@ -7,12 +7,7 @@ import { applyOutputTrigger } from './outputTrigger'
 import { applyNonStreamResponse } from './nonStreamResponse'
 import { consumeStreamResponse } from './streamResponse'
 import { withTrustedServerProjectionWrite } from '../../server/projectionWriteGuard.svelte'
-import type {
-  Chat,
-  MessageGenerationInfo,
-  MessagePresetInfo,
-  character,
-} from '../../storage/database.svelte'
+import type { Chat, MessageGenerationInfo, MessagePresetInfo, character } from '../../storage/database.svelte'
 import type { DispatchSuccessReq } from '../dispatch/dispatchRequest'
 
 export type OrchestrateResponseResult =
@@ -70,9 +65,7 @@ export interface OrchestrateResponseArgs {
  *   - `status: 'done'`     → continue into stage 4 with `currentChat`,
  *     `result`, `emoChanged`, `resendChat`.
  */
-export async function orchestrateResponse(
-  args: OrchestrateResponseArgs,
-): Promise<OrchestrateResponseResult> {
+export async function orchestrateResponse(args: OrchestrateResponseArgs): Promise<OrchestrateResponseResult> {
   const {
     req,
     arg,
@@ -136,8 +129,7 @@ export async function orchestrateResponse(
       }
       const inlayr = runInlayScreen(currentChar, currentChat.message[stream.msgIndex].data)
       withTrustedServerProjectionWrite(() => {
-        currentChat =
-          streamTrigger.triggerChat ?? DBState.db.characters[selectedChar].chats[selectedChat]
+        currentChat = streamTrigger.triggerChat ?? DBState.db.characters[selectedChar].chats[selectedChat]
         currentChat.message[stream.msgIndex].data = inlayr.text
         DBState.db.characters[selectedChar].chats[selectedChat] = currentChat
       })

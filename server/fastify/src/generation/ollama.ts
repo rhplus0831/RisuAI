@@ -62,20 +62,15 @@ export function resolveOllamaRequest(input: OllamaResolveInput): OllamaRequest |
   const messages = reformatForOllama(input.messages as RawChatMessage[])
   if (messages.length === 0) return null
 
-  const apiKey =
-    typeof input.apiKey === 'string' && input.apiKey.length > 0 ? input.apiKey : undefined
+  const apiKey = typeof input.apiKey === 'string' && input.apiKey.length > 0 ? input.apiKey : undefined
   const maxTokens =
     typeof input.maxTokens === 'number' && Number.isFinite(input.maxTokens) && input.maxTokens > 0
       ? input.maxTokens
       : undefined
   const temperature =
-    typeof input.temperature === 'number' && Number.isFinite(input.temperature)
-      ? input.temperature
-      : undefined
-  const topP =
-    typeof input.topP === 'number' && Number.isFinite(input.topP) ? input.topP : undefined
-  const topK =
-    typeof input.topK === 'number' && Number.isFinite(input.topK) ? input.topK : undefined
+    typeof input.temperature === 'number' && Number.isFinite(input.temperature) ? input.temperature : undefined
+  const topP = typeof input.topP === 'number' && Number.isFinite(input.topP) ? input.topP : undefined
+  const topK = typeof input.topK === 'number' && Number.isFinite(input.topK) ? input.topK : undefined
 
   return {
     model: input.model,
@@ -216,9 +211,7 @@ export async function runOllama(req: OllamaRequest): Promise<CompletionResult> {
   return result
 }
 
-export async function* runOllamaStream(
-  req: OllamaRequest,
-): AsyncGenerator<CompletionStreamFrame, void, void> {
+export async function* runOllamaStream(req: OllamaRequest): AsyncGenerator<CompletionStreamFrame, void, void> {
   if (req.signal.aborted) return
 
   let response: Response

@@ -32,20 +32,14 @@ import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard
 function scopedLorebookEditorSnapshot(type: number, selectedID: number): LorebookStateSnapshot | null {
   if (type === 0) {
     const characterId = DBState.db.characters[selectedID]?.chaId
-    return characterId
-      ? currentLorebookCollectionScopedSnapshot({ kind: 'character', characterId })
-      : null
+    return characterId ? currentLorebookCollectionScopedSnapshot({ kind: 'character', characterId }) : null
   }
   if (type === -1) {
     // The open global book may predate id-assign; ensure the global list's ids
     // (only that list — not the whole DB) so the edit can be dispatched.
     ensureGlobalLorebookListIds()
-    const lorebookId = (
-      DBState.db.loreBook?.[DBState.db.loreBookPage] as { id?: string } | undefined
-    )?.id
-    return lorebookId
-      ? currentLorebookCollectionScopedSnapshot({ kind: 'global', lorebookId })
-      : null
+    const lorebookId = (DBState.db.loreBook?.[DBState.db.loreBookPage] as { id?: string } | undefined)?.id
+    return lorebookId ? currentLorebookCollectionScopedSnapshot({ kind: 'global', lorebookId }) : null
   }
   const character = DBState.db.characters[selectedID]
   const chatId = character?.chats?.[character.chatPage]?.id
@@ -458,8 +452,7 @@ export async function loadLoreBookV3Prompt() {
           }
           case 'keep_activate_after_match': {
             const vara = getChatVar(
-              '__internal_ka_' +
-                (fullLore[i].id ?? pickHashRand(5555, fullLore[i].content).toString()),
+              '__internal_ka_' + (fullLore[i].id ?? pickHashRand(5555, fullLore[i].content).toString()),
             )
             if (vara === 'true') {
               forceState = 'activate'
@@ -470,8 +463,7 @@ export async function loadLoreBookV3Prompt() {
           }
           case 'dont_activate_after_match': {
             const vara = getChatVar(
-              '__internal_da_' +
-                (fullLore[i].id ?? pickHashRand(5555, fullLore[i].content).toString()),
+              '__internal_da_' + (fullLore[i].id ?? pickHashRand(5555, fullLore[i].content).toString()),
             )
             if (vara === 'true') {
               forceState = 'deactivate'
@@ -518,10 +510,7 @@ export async function loadLoreBookV3Prompt() {
             return
           }
           case 'position': {
-            if (
-              arg[0].startsWith('pt_') ||
-              ['after_desc', 'before_desc', 'personality', 'scenario'].includes(arg[0])
-            ) {
+            if (arg[0].startsWith('pt_') || ['after_desc', 'before_desc', 'personality', 'scenario'].includes(arg[0])) {
               pos = arg[0]
               return
             }
@@ -712,18 +701,10 @@ export async function loadLoreBookV3Prompt() {
         activatedIndexes.push(i)
 
         if (keepActivateAfterMatch) {
-          setChatVar(
-            '__internal_ka_' +
-              (fullLore[i].id ?? pickHashRand(5555, fullLore[i].content).toString()),
-            'true',
-          )
+          setChatVar('__internal_ka_' + (fullLore[i].id ?? pickHashRand(5555, fullLore[i].content).toString()), 'true')
         }
         if (dontActivateAfterMatch) {
-          setChatVar(
-            '__internal_da_' +
-              (fullLore[i].id ?? pickHashRand(5555, fullLore[i].content).toString()),
-            'true',
-          )
+          setChatVar('__internal_da_' + (fullLore[i].id ?? pickHashRand(5555, fullLore[i].content).toString()), 'true')
         }
 
         let recursive = recursiveScanning
@@ -806,10 +787,7 @@ export async function importLoreBook(mode: 'global' | 'local' | 'sglobal') {
   // Same editor-target convention as addLorebook: 'global' edits the selected
   // character's globalLore (0), 'sglobal' the open global lorebook (-1), and
   // 'local' the active chat's localLore.
-  const previous = scopedLorebookEditorSnapshot(
-    mode === 'global' ? 0 : mode === 'sglobal' ? -1 : 1,
-    selectedID,
-  )
+  const previous = scopedLorebookEditorSnapshot(mode === 'global' ? 0 : mode === 'sglobal' ? -1 : 1, selectedID)
   const page = mode === 'sglobal' ? -1 : DBState.db.characters[selectedID].chatPage
   const lorebook = (await selectSingleFile(['json', 'lorebook'])).data
   if (!lorebook) {
@@ -853,9 +831,7 @@ export async function importLoreBook(mode: 'global' | 'local' | 'sglobal') {
         dispatchReplaceCharacterLorebooks(DBState.db.characters[selectedID].chaId, lore, previous)
       }
     } else if (mode === 'sglobal') {
-      const lorebook = DBState.db.loreBook[DBState.db.loreBookPage] as
-        | { id?: string; data: loreBook[] }
-        | undefined
+      const lorebook = DBState.db.loreBook[DBState.db.loreBookPage] as { id?: string; data: loreBook[] } | undefined
       if (lorebook?.id && previous) dispatchReplaceGlobalLorebookEntries(lorebook.id, lore, previous)
     } else {
       const chat = DBState.db.characters[selectedID].chats[page]
@@ -901,11 +877,7 @@ export function convertExternalLorebook(entries: { [key: string]: CCLorebook }) 
           : currentLore.keywords
             ? currentLore.keywords.join(', ')
             : '',
-      insertorder:
-        currentLore.order ??
-        currentLore.priority ??
-        currentLore?.contextConfig?.budgetPriority ??
-        0,
+      insertorder: currentLore.order ?? currentLore.priority ?? currentLore?.contextConfig?.budgetPriority ?? 0,
       comment: currentLore.comment || currentLore.name || currentLore.displayName || '',
       content: currentLore.content || currentLore.entry || currentLore.text || '',
       mode: 'normal',

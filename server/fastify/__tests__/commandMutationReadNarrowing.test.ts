@@ -10,10 +10,7 @@ import { loadPersisted, loadPersistedForChatMutation } from '../src/repository.j
 import { applyTargetedCommandMutation } from '../src/commands/mutations.js'
 import { normalizeAllCharacterChats } from '../src/commands/chats.js'
 import { setupAuthedClient } from './helpers/auth.js'
-import {
-  assertScopedLoadOnHotPath,
-  withServerLoadInstrumentation,
-} from './helpers/loadCostHarness.js'
+import { assertScopedLoadOnHotPath, withServerLoadInstrumentation } from './helpers/loadCostHarness.js'
 import { buildLargeCorpusFixture } from '../../../src/ts/__tests__/largeCorpusFixture.js'
 
 // Phase 2 command-mutation read narrowing (audit M3, L5, L6): the targeted
@@ -75,11 +72,7 @@ async function importDatabase(database: unknown): Promise<number> {
   return res.json().revision as number
 }
 
-function command(
-  method: 'POST' | 'PATCH' | 'PUT' | 'DELETE',
-  url: string,
-  payload: Record<string, unknown>,
-) {
+function command(method: 'POST' | 'PATCH' | 'PUT' | 'DELETE', url: string, payload: Record<string, unknown>) {
   return harness.app.inject({ method, url, headers: { 'risu-auth': assertion }, payload })
 }
 
@@ -97,10 +90,7 @@ async function withSqliteSelectReadInstrumentation<T>(
   fn: () => T | Promise<T>,
 ): Promise<{ result: T; readCountByTable: Record<string, number> }> {
   const readCountByTable: Record<string, number> = {}
-  const proto = StatementSync.prototype as unknown as Record<
-    SqliteReadMethod,
-    (...args: unknown[]) => unknown
-  >
+  const proto = StatementSync.prototype as unknown as Record<SqliteReadMethod, (...args: unknown[]) => unknown>
   const originals = {
     all: proto.all,
     get: proto.get,
@@ -111,9 +101,7 @@ async function withSqliteSelectReadInstrumentation<T>(
     const original = originals[method]
     proto[method] = function tracked(this: StatementSync, ...args: unknown[]) {
       const normalized = this.sourceSQL.toLowerCase().replace(/\s+/g, ' ').trim()
-      const match = normalized.startsWith('select')
-        ? /\bfrom\s+([a-z0-9_]+)/.exec(normalized)
-        : null
+      const match = normalized.startsWith('select') ? /\bfrom\s+([a-z0-9_]+)/.exec(normalized) : null
       if (match) {
         readCountByTable[match[1]] = (readCountByTable[match[1]] ?? 0) + 1
       }
@@ -128,9 +116,7 @@ async function withSqliteSelectReadInstrumentation<T>(
   }
 }
 
-function expectSettingsCommandReadOnlySettings(
-  readCountByTable: Record<string, number>,
-): void {
+function expectSettingsCommandReadOnlySettings(readCountByTable: Record<string, number>): void {
   expect(readCountByTable).toEqual({ schema_version: 1, settings: 1 })
 }
 
@@ -182,9 +168,9 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
     // The patched scriptstate persisted into the one chat row.
     const db = openDatabase(harness.dataDir)
     try {
-      const row = db
-        .prepare('SELECT data_json FROM chats WHERE id = ?')
-        .get(fixture.hot.chatId) as { data_json: string }
+      const row = db.prepare('SELECT data_json FROM chats WHERE id = ?').get(fixture.hot.chatId) as {
+        data_json: string
+      }
       expect((JSON.parse(row.data_json) as { scriptstate?: unknown }).scriptstate).toEqual({
         $flag: 'on',
       })
@@ -248,9 +234,9 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
         `corpus-chat-0-1`,
         `corpus-chat-0-2`,
       ])
-      const charRow = db
-        .prepare('SELECT data_json FROM characters WHERE id = ?')
-        .get(targetCharacterId) as { data_json: string }
+      const charRow = db.prepare('SELECT data_json FROM characters WHERE id = ?').get(targetCharacterId) as {
+        data_json: string
+      }
       expect((JSON.parse(charRow.data_json) as { chatPage?: number }).chatPage).toBe(1)
     } finally {
       db.close()
@@ -259,16 +245,11 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
     const createdMessages = (await hydrationGet('h2-created-chat')).json().message as Array<{
       chatId: string
     }>
-    expect(createdMessages.map((message) => message.chatId)).toEqual([
-      'h2-created-msg-1',
-      'h2-created-msg-2',
-    ])
+    expect(createdMessages.map((message) => message.chatId)).toEqual(['h2-created-msg-1', 'h2-created-msg-2'])
     const hotAfter = (await hydrationGet(fixture.hot.chatId)).json().message as Array<{
       chatId: string
     }>
-    expect(hotAfter.map((message) => message.chatId)).toEqual(
-      existingHotMessages.map((message) => message.chatId),
-    )
+    expect(hotAfter.map((message) => message.chatId)).toEqual(existingHotMessages.map((message) => message.chatId))
   })
 
   it('M5: character PATCH repairs and writes the target row without whole-corpus reads', async () => {
@@ -295,17 +276,17 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
 
     const db = openDatabase(harness.dataDir)
     try {
-      const target = db
-        .prepare('SELECT data_json FROM characters WHERE id = ?')
-        .get(fixture.hot.characterId) as { data_json: string }
+      const target = db.prepare('SELECT data_json FROM characters WHERE id = ?').get(fixture.hot.characterId) as {
+        data_json: string
+      }
       expect(JSON.parse(target.data_json)).toMatchObject({
         chaId: fixture.hot.characterId,
         name: 'M5 renamed character',
         desc: 'target row only',
       })
-      const sibling = db
-        .prepare('SELECT data_json FROM characters WHERE id = ?')
-        .get('corpus-char-1') as { data_json: string }
+      const sibling = db.prepare('SELECT data_json FROM characters WHERE id = ?').get('corpus-char-1') as {
+        data_json: string
+      }
       expect(JSON.parse(sibling.data_json).name).toBe('Corpus Character 1')
     } finally {
       db.close()
@@ -340,21 +321,21 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
 
     const db = openDatabase(harness.dataDir)
     try {
-      const chat = db
-        .prepare('SELECT data_json FROM chats WHERE id = ?')
-        .get(fixture.noHypa.chatId) as { data_json: string }
+      const chat = db.prepare('SELECT data_json FROM chats WHERE id = ?').get(fixture.noHypa.chatId) as {
+        data_json: string
+      }
       expect(JSON.parse(chat.data_json)).toMatchObject({
         id: fixture.noHypa.chatId,
         name: 'M5 renamed chat',
         note: 'scoped metadata',
       })
-      const sibling = db
-        .prepare('SELECT data_json FROM chats WHERE id = ?')
-        .get(fixture.hot.chatId) as { data_json: string }
+      const sibling = db.prepare('SELECT data_json FROM chats WHERE id = ?').get(fixture.hot.chatId) as {
+        data_json: string
+      }
       expect(JSON.parse(sibling.data_json).name).toBe('Chat 0-0')
-      const character = db
-        .prepare('SELECT data_json FROM characters WHERE id = ?')
-        .get(fixture.noHypa.characterId) as { data_json: string }
+      const character = db.prepare('SELECT data_json FROM characters WHERE id = ?').get(fixture.noHypa.characterId) as {
+        data_json: string
+      }
       expect(JSON.parse(character.data_json).chatPage).toBe(1)
     } finally {
       db.close()
@@ -412,9 +393,9 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
 
     const db = openDatabase(harness.dataDir)
     try {
-      const row = db
-        .prepare('SELECT data_json FROM chats WHERE id = ?')
-        .get(fixture.hot.chatId) as { data_json: string }
+      const row = db.prepare('SELECT data_json FROM chats WHERE id = ?').get(fixture.hot.chatId) as {
+        data_json: string
+      }
       expect(JSON.parse(row.data_json).generationSettings).toEqual({
         configured: true,
         personaId: 'corpus-persona-0',
@@ -463,9 +444,10 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
 
     const db = openDatabase(harness.dataDir)
     try {
-      const rows = db
-        .prepare('SELECT key, value_json FROM plugin_custom_storage ORDER BY key')
-        .all() as Array<{ key: string; value_json: string }>
+      const rows = db.prepare('SELECT key, value_json FROM plugin_custom_storage ORDER BY key').all() as Array<{
+        key: string
+        value_json: string
+      }>
       expect(Object.fromEntries(rows.map((row) => [row.key, JSON.parse(row.value_json)]))).toEqual({
         'corpus-plugin': { counter: 1 },
         'l13-bulk-added': { merged: true },
@@ -511,9 +493,9 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
 
     const db = openDatabase(harness.dataDir)
     try {
-      const rows = db
-        .prepare('SELECT data_json FROM hypa_v3_presets ORDER BY position')
-        .all() as Array<{ data_json: string }>
+      const rows = db.prepare('SELECT data_json FROM hypa_v3_presets ORDER BY position').all() as Array<{
+        data_json: string
+      }>
       expect(rows.map((row) => JSON.parse(row.data_json))).toEqual([{ name: 'request-preset' }])
     } finally {
       db.close()
@@ -557,12 +539,15 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
       db.close()
     }
 
-    const { result: res, corpusLoadCount, loadCountByTable } = await withServerLoadInstrumentation(
-      () =>
-        command('PATCH', '/api/v1/commands/settings/display', {
-          baseRevision: revision,
-          patch: { theme: 'legacy-fallback' },
-        }),
+    const {
+      result: res,
+      corpusLoadCount,
+      loadCountByTable,
+    } = await withServerLoadInstrumentation(() =>
+      command('PATCH', '/api/v1/commands/settings/display', {
+        baseRevision: revision,
+        patch: { theme: 'legacy-fallback' },
+      }),
     )
 
     expect(res.statusCode).toBe(200)
@@ -677,12 +662,15 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
       db.close()
     }
 
-    const { result: res, corpusLoadCount, loadCountByTable } = await withServerLoadInstrumentation(
-      () =>
-        command('POST', '/api/v1/commands/presets', {
-          baseRevision: revision,
-          preset: { id: 'l11-fallback-preset', name: 'L11 Fallback' },
-        }),
+    const {
+      result: res,
+      corpusLoadCount,
+      loadCountByTable,
+    } = await withServerLoadInstrumentation(() =>
+      command('POST', '/api/v1/commands/presets', {
+        baseRevision: revision,
+        preset: { id: 'l11-fallback-preset', name: 'L11 Fallback' },
+      }),
     )
 
     expect(res.statusCode).toBe(200)
@@ -786,9 +774,7 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
       const broad = loadPersisted(db, harness.dataDir).database as {
         characters: Array<{ chaId?: string; chats: Array<{ id?: string }> }>
       }
-      const broadChar = broad.characters.find((c) =>
-        c.chats.some((chat) => chat.id === fixture.hot.chatId),
-      )!
+      const broadChar = broad.characters.find((c) => c.chats.some((chat) => chat.id === fixture.hot.chatId))!
       const broadChat = broadChar.chats.find((chat) => chat.id === fixture.hot.chatId)!
 
       const scopedRun = await withServerLoadInstrumentation(() =>
@@ -806,9 +792,7 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
       // and the same target chat record; sibling chats are id-only stubs so
       // chatPage/selectedChatId math stays correct without parsing them.
       expect(scoped.characters[0].chats[0]).toEqual(broadChat)
-      expect(scoped.characters[0].chats.slice(1)).toEqual(
-        broadChar.chats.slice(1).map((chat) => ({ id: chat.id })),
-      )
+      expect(scoped.characters[0].chats.slice(1)).toEqual(broadChar.chats.slice(1).map((chat) => ({ id: chat.id })))
       expect({ ...scoped.characters[0], chats: broadChar.chats }).toEqual(broadChar)
 
       // Message-id targeting resolves the same chat through the uid index.

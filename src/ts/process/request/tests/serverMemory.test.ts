@@ -181,9 +181,7 @@ describe('server memory API adapter', () => {
 
   it('cancels jobs with DELETE and encoded job id', async () => {
     const memoryFetch = makeMemoryFetch((_url, init) => {
-      expect((init.headers as Record<string, string>)['risu-writer-session']).toBe(
-        'writer-session-1',
-      )
+      expect((init.headers as Record<string, string>)['risu-writer-session']).toBe('writer-session-1')
       return { job: { ...baseJob, status: 'cancelled' } }
     })
     vi.stubGlobal('fetch', memoryFetch.fetch)
@@ -261,9 +259,7 @@ describe('server memory API adapter', () => {
 
   it('handles stale writer responses from memory mutations', async () => {
     const memoryFetch = makeMemoryFetch((_url, init) => {
-      expect((init.headers as Record<string, string>)['risu-writer-session']).toBe(
-        'writer-session-1',
-      )
+      expect((init.headers as Record<string, string>)['risu-writer-session']).toBe('writer-session-1')
       return jsonResponse({ error: 'active_writer_stale' }, 423)
     })
     vi.stubGlobal('fetch', memoryFetch.fetch)

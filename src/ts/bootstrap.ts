@@ -13,21 +13,10 @@ import {
   setServerProjectionWriteGuardEnabled,
   type Database,
 } from './storage/database.svelte'
-import {
-  botMakerMode,
-  selectedCharID,
-  loadedStore,
-  DBState,
-  LoadingStatusState,
-} from './stores.svelte'
+import { botMakerMode, selectedCharID, loadedStore, DBState, LoadingStatusState } from './stores.svelte'
 import { loadPlugins } from './plugins/plugins.svelte'
 import { alertError, alertMd, alertTOS, waitAlert, alertConfirm, alertInput } from './alert'
-import {
-  defaultJailbreak,
-  defaultMainPrompt,
-  oldJailbreak,
-  oldMainPrompt,
-} from './storage/defaultPrompts'
+import { defaultJailbreak, defaultMainPrompt, oldJailbreak, oldMainPrompt } from './storage/defaultPrompts'
 import { updateAnimationSpeed } from './gui/animation'
 import { updateColorScheme, updateTextThemeAndCSS } from './gui/colorscheme'
 import { language } from 'src/lang'
@@ -37,10 +26,7 @@ import { updateLorebooks } from './characters'
 import { moduleUpdate } from './process/modules'
 import { checkCharOrder } from './globalApi.svelte'
 import { registerModelDynamic } from './model/modellist'
-import {
-  fetchServerBootstrapProjection,
-  fetchServerBootstrapProjectionReadOnly,
-} from './server/bootstrap'
+import { fetchServerBootstrapProjection, fetchServerBootstrapProjectionReadOnly } from './server/bootstrap'
 import { subscribeServerCommandEvents, type ServerMemoryEvent } from './server/events'
 import { publishServerMemoryJobEvent } from './server/memoryJobEvents'
 import {
@@ -61,10 +47,7 @@ import {
   resetChatHydration,
   startChatMessageHydration,
 } from './server/chatMessageHydration.svelte'
-import {
-  recordHydratedCharacterLorebooks,
-  resetLorebookHydration,
-} from './server/lorebookBridge.svelte'
+import { recordHydratedCharacterLorebooks, resetLorebookHydration } from './server/lorebookBridge.svelte'
 import {
   setActiveGenerationJobs,
   startActiveGenerationReattach,
@@ -88,11 +71,7 @@ let serverProjectionReconnectAttempt = 0
 function initialSelectedCharFromDatabase(db: Database): number {
   const currentChar = (db as { currentChar?: unknown }).currentChar
   const characterCount = Array.isArray(db.characters) ? db.characters.length : 0
-  if (
-    Number.isInteger(currentChar) &&
-    (currentChar as number) >= 0 &&
-    (currentChar as number) < characterCount
-  ) {
+  if (Number.isInteger(currentChar) && (currentChar as number) >= 0 && (currentChar as number) < characterCount) {
     return currentChar as number
   }
   return -1
@@ -120,10 +99,7 @@ export async function loadData() {
       updateHeightMode()
       updateErrorHandling()
       updateGuisize()
-      if (
-        !localStorage.getItem('nightlyWarned') &&
-        window.location.hostname === 'nightly.risuai.xyz'
-      ) {
+      if (!localStorage.getItem('nightlyWarned') && window.location.hostname === 'nightly.risuai.xyz') {
         alertMd(language.nightlyWarning)
         await waitAlert()
         //for testing, leave empty
@@ -152,14 +128,10 @@ export async function loadWebInitialDatabase() {
   LoadingStatusState.text = 'Loading Server Projection...'
   const bootstrap = await fetchServerBootstrapProjection()
   if (bootstrap.status !== 'ok') {
-    throw new Error(
-      bootstrap.status === 'unavailable' ? 'Server bootstrap is unavailable' : bootstrap.error,
-    )
+    throw new Error(bootstrap.status === 'unavailable' ? 'Server bootstrap is unavailable' : bootstrap.error)
   }
   const projection =
-    bootstrap.projection.database == null
-      ? await initializeFreshServerDatabase()
-      : bootstrap.projection
+    bootstrap.projection.database == null ? await initializeFreshServerDatabase() : bootstrap.projection
   applyServerProjectionDatabase(projection.database)
   selectedCharID.set(initialSelectedCharFromDatabase(projection.database))
   // Record which characters arrive with a REAL (resident) globalLore. The
@@ -203,9 +175,7 @@ async function initializeFreshServerDatabase(): Promise<{
     setCachedServerCommandRevision(result.revision)
     const bootstrap = await fetchServerBootstrapProjectionReadOnly()
     if (bootstrap.status !== 'ok') {
-      throw new Error(
-        bootstrap.status === 'unavailable' ? 'Server bootstrap is unavailable' : bootstrap.error,
-      )
+      throw new Error(bootstrap.status === 'unavailable' ? 'Server bootstrap is unavailable' : bootstrap.error)
     }
     if (bootstrap.projection.database == null) {
       throw new Error('Initial server database seed failed: server returned an empty projection')
@@ -275,9 +245,7 @@ async function startServerProjectionEvents() {
     console.warn(`Server event subscription failed: ${subscription.error}`)
     scheduleServerProjectionReconnect()
   } else if (subscription.status === 'replay-unavailable') {
-    console.warn(
-      `Server event replay unavailable at revision ${subscription.currentRevision}; refreshing projection`,
-    )
+    console.warn(`Server event replay unavailable at revision ${subscription.currentRevision}; refreshing projection`)
     enqueueServerProjectionSync(async () => {
       await forceServerProjectionResync('event-replay-unavailable')
       scheduleServerProjectionReconnect()
@@ -303,22 +271,16 @@ function scheduleServerProjectionReconnect() {
   }, delayMs)
 }
 
-export function calculateServerProjectionReconnectDelayMs(
-  attempt: number,
-  random: () => number = Math.random,
-): number {
+export function calculateServerProjectionReconnectDelayMs(attempt: number, random: () => number = Math.random): number {
   const normalizedAttempt = Number.isFinite(attempt) && attempt > 0 ? Math.floor(attempt) : 0
   const exponentialDelay = Math.min(
     SERVER_PROJECTION_RECONNECT_MAX_DELAY_MS,
     SERVER_PROJECTION_RECONNECT_BASE_DELAY_MS * 2 ** normalizedAttempt,
   )
   const randomValue = random()
-  const normalizedRandom =
-    Number.isFinite(randomValue) && randomValue >= 0 && randomValue <= 1 ? randomValue : 0.5
+  const normalizedRandom = Number.isFinite(randomValue) && randomValue >= 0 && randomValue <= 1 ? randomValue : 0.5
   const jitterMultiplier =
-    1 -
-    SERVER_PROJECTION_RECONNECT_JITTER_RATIO +
-    normalizedRandom * SERVER_PROJECTION_RECONNECT_JITTER_RATIO * 2
+    1 - SERVER_PROJECTION_RECONNECT_JITTER_RATIO + normalizedRandom * SERVER_PROJECTION_RECONNECT_JITTER_RATIO * 2
   const jitteredDelay = Math.round(exponentialDelay * jitterMultiplier)
 
   return Math.min(SERVER_PROJECTION_RECONNECT_MAX_DELAY_MS, Math.max(1, jitteredDelay))
@@ -406,12 +368,7 @@ async function processServerCommandEvent(event: CommandEvent): Promise<void> {
       // Foreign server-owned generation: apply just the changed chat's message
       // tail and re-arm the open-chat reattach, instead of re-stubbing every
       // character and re-hydrating the open chat.
-      applyServerChatMessagesProjection(
-        result.chatId,
-        result.message,
-        result.hypaV3Data,
-        result.alternates,
-      )
+      applyServerChatMessagesProjection(result.chatId, result.message, result.hypaV3Data, result.alternates)
       triggerOpenChatGenerationReattach()
       setCachedServerCommandRevision(event.revision)
       return
@@ -441,9 +398,7 @@ async function processServerCommandEvent(event: CommandEvent): Promise<void> {
     }
     // 'full' mode, error, or unavailable → fall back to a full reconcile.
     await forceServerProjectionResync(
-      result.status === 'ok' && result.mode === 'full'
-        ? 'projection-full-mode'
-        : 'projection-error',
+      result.status === 'ok' && result.mode === 'full' ? 'projection-full-mode' : 'projection-error',
       { resource: event.resource },
     )
     return
@@ -605,9 +560,7 @@ async function checkNewFormat(): Promise<void> {
           console.error('Module data:', JSON.stringify(v, null, 2))
 
           // Alert user about corrupted data
-          alertError(
-            language.bootstrap.dataCorruptionDetected(v.name || 'Unknown', typeof v.lorebook),
-          )
+          alertError(language.bootstrap.dataCorruptionDetected(v.name || 'Unknown', typeof v.lorebook))
           await waitAlert()
 
           // Ask if user wants to report the issue
@@ -689,13 +642,8 @@ async function checkNewFormat(): Promise<void> {
       }
       if (db.characters[i].emotionImages) {
         for (let i2 = 0; i2 < db.characters[i].emotionImages.length; i2++) {
-          if (
-            db.characters[i].emotionImages[i2] &&
-            db.characters[i].emotionImages[i2].length >= 2
-          ) {
-            db.characters[i].emotionImages[i2][1] = checkClean(
-              db.characters[i].emotionImages[i2][1],
-            )
+          if (db.characters[i].emotionImages[i2] && db.characters[i].emotionImages[i2].length >= 2) {
+            db.characters[i].emotionImages[i2][1] = checkClean(db.characters[i].emotionImages[i2][1])
           }
         }
       }

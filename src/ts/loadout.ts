@@ -104,11 +104,7 @@ export function dispatchDeleteLoadout(loadoutId: string, previous: LoadoutStateS
   )
 }
 
-export function dispatchFavoriteLoadout(
-  loadoutId: string,
-  favorite: boolean,
-  previous: LoadoutStateSnapshot,
-): void {
+export function dispatchFavoriteLoadout(loadoutId: string, favorite: boolean, previous: LoadoutStateSnapshot): void {
   runLoadoutCommand(
     (baseRevision) =>
       favoriteLoadoutCommand({

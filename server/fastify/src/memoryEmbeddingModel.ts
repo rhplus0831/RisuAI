@@ -38,12 +38,7 @@ export type ResolveMemoryEmbeddingModelResult =
 
 export interface MemoryEmbeddingLimitViolation {
   label: string
-  bound:
-    | 'maxInputTokens'
-    | 'maxInputBytes'
-    | 'maxRequestTokens'
-    | 'maxRequestChunks'
-    | 'contextualWindowTokens'
+  bound: 'maxInputTokens' | 'maxInputBytes' | 'maxRequestTokens' | 'maxRequestChunks' | 'contextualWindowTokens'
   actual: number
   limit: number
   unit: 'estimated tokens' | 'bytes' | 'chunks'
@@ -149,9 +144,7 @@ export function memoryEmbeddingInputBytes(text: string): number {
   return Buffer.byteLength(text, 'utf8')
 }
 
-export function effectiveMemoryEmbeddingLimits(
-  request: MemoryEmbeddingModelRequest,
-): MemoryEmbeddingModelLimits {
+export function effectiveMemoryEmbeddingLimits(request: MemoryEmbeddingModelRequest): MemoryEmbeddingModelLimits {
   return request.limits ?? fallbackEmbeddingLimits()
 }
 
@@ -223,10 +216,7 @@ export function findMemoryEmbeddingContextualGroupLimitViolation(
   if (typeof contextualWindowTokens !== 'number') return null
 
   for (let index = 0; index < groups.length; index += 1) {
-    const groupTokens = groups[index].reduce(
-      (total, text) => total + estimateMemoryEmbeddingTokens(text),
-      0,
-    )
+    const groupTokens = groups[index].reduce((total, text) => total + estimateMemoryEmbeddingTokens(text), 0)
     if (groupTokens > contextualWindowTokens) {
       return {
         label: labelForIndex(index),
@@ -241,9 +231,7 @@ export function findMemoryEmbeddingContextualGroupLimitViolation(
   return null
 }
 
-export function formatMemoryEmbeddingLimitViolation(
-  violation: MemoryEmbeddingLimitViolation,
-): string {
+export function formatMemoryEmbeddingLimitViolation(violation: MemoryEmbeddingLimitViolation): string {
   return `${violation.label} exceeds ${violation.bound}: ${violation.actual} ${violation.unit} > ${violation.limit} ${violation.unit}`
 }
 
@@ -271,8 +259,7 @@ function voyageContextualEmbeddingLimits(): MemoryEmbeddingModelLimits {
   return {
     source: 'provider',
     maxInputTokens: VOYAGE_CONTEXT3_MAX_CONTEXT_CHUNK_TOKENS,
-    maxInputBytes:
-      VOYAGE_CONTEXT3_MAX_CONTEXT_CHUNK_TOKENS * MEMORY_EMBEDDING_APPROX_CHARS_PER_TOKEN,
+    maxInputBytes: VOYAGE_CONTEXT3_MAX_CONTEXT_CHUNK_TOKENS * MEMORY_EMBEDDING_APPROX_CHARS_PER_TOKEN,
     maxRequestTokens: VOYAGE_CONTEXTUAL_MAX_REQUEST_TOKENS,
     maxRequestChunks: VOYAGE_CONTEXTUAL_MAX_CHUNKS,
     contextualWindowTokens: VOYAGE_CONTEXTUAL_MAX_CONTEXT_TOKENS,

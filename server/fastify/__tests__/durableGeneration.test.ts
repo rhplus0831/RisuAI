@@ -57,9 +57,7 @@ function newController(): AbortController {
   return controller
 }
 
-async function startHarness(
-  generationChatOverrides: Record<string, unknown> = {},
-): Promise<Harness> {
+async function startHarness(generationChatOverrides: Record<string, unknown> = {}): Promise<Harness> {
   process.env.LOG_LEVEL = 'silent'
   const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-durable-'))
   const commandEvents = createRetryTestCommandSink()
@@ -195,11 +193,7 @@ async function seedDatabase(database: unknown): Promise<void> {
   await seedDatabaseForHarness(harness, assertion, database)
 }
 
-async function seedDatabaseForHarness(
-  target: Harness,
-  targetAssertion: string,
-  database: unknown,
-): Promise<number> {
+async function seedDatabaseForHarness(target: Harness, targetAssertion: string, database: unknown): Promise<number> {
   const res = await fetch(`${target.baseUrl}/api/v1/import/risusave`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'risu-auth': targetAssertion },
@@ -207,12 +201,7 @@ async function seedDatabaseForHarness(
   })
   expect(res.status).toBe(200)
   const imported = (await res.json()) as { revision: number }
-  return configureImportedCurrentChatGenerationSettings(
-    target,
-    targetAssertion,
-    database,
-    imported.revision,
-  )
+  return configureImportedCurrentChatGenerationSettings(target, targetAssertion, database, imported.revision)
 }
 
 async function configureImportedCurrentChatGenerationSettings(
@@ -225,9 +214,7 @@ async function configureImportedCurrentChatGenerationSettings(
   if (!chatSettings) return baseRevision
 
   const res = await fetch(
-    `${target.baseUrl}/api/v1/commands/chats/${encodeURIComponent(
-      chatSettings.chatId,
-    )}/generation-settings`,
+    `${target.baseUrl}/api/v1/commands/chats/${encodeURIComponent(chatSettings.chatId)}/generation-settings`,
     {
       method: 'PUT',
       headers: { 'content-type': 'application/json', 'risu-auth': targetAssertion },
@@ -244,21 +231,15 @@ async function configureImportedCurrentChatGenerationSettings(
   return ((await res.json()) as { revision: number }).revision
 }
 
-function activeChatGenerationSettings(
-  database: unknown,
-): { chatId: string; generationSettings: JsonRecord } | null {
+function activeChatGenerationSettings(database: unknown): { chatId: string; generationSettings: JsonRecord } | null {
   if (!isJsonRecord(database)) return null
   const characters = Array.isArray(database.characters) ? database.characters : []
-  const currentCharIndex = Number.isInteger(database.currentChar as number)
-    ? (database.currentChar as number)
-    : 0
+  const currentCharIndex = Number.isInteger(database.currentChar as number) ? (database.currentChar as number) : 0
   const character = findRecordAt(characters, currentCharIndex) ?? findRecordAt(characters, 0)
   if (!character) return null
 
   const chats = Array.isArray(character.chats) ? character.chats : []
-  const chatPage = Number.isInteger(character.chatPage as number)
-    ? (character.chatPage as number)
-    : 0
+  const chatPage = Number.isInteger(character.chatPage as number) ? (character.chatPage as number) : 0
   const chat = findRecordAt(chats, chatPage) ?? findRecordAt(chats, 0)
   if (!chat || typeof chat.id !== 'string') return null
   const generationSettings = chat.generationSettings
@@ -430,16 +411,13 @@ async function bootstrap(): Promise<{
   return (await res.json()) as never
 }
 
-async function chatMessages(
-  boot: Awaited<ReturnType<typeof bootstrap>>,
-): Promise<Array<Record<string, unknown>>> {
+async function chatMessages(boot: Awaited<ReturnType<typeof bootstrap>>): Promise<Array<Record<string, unknown>>> {
   // The bootstrap ships chat stubs; read persisted messages via per-chat hydration.
   const chat = boot.database.characters[0]?.chats[0] as { id?: string } | undefined
   if (!chat?.id) return []
-  const res = await fetch(
-    `${harness.baseUrl}/api/v1/projection/chatMessages?id=${encodeURIComponent(chat.id)}`,
-    { headers: authHeaders() },
-  )
+  const res = await fetch(`${harness.baseUrl}/api/v1/projection/chatMessages?id=${encodeURIComponent(chat.id)}`, {
+    headers: authHeaders(),
+  })
   expect(res.status).toBe(200)
   return ((await res.json()) as { message: Array<Record<string, unknown>> }).message
 }
@@ -534,9 +512,10 @@ function seedGenerationFinalizationRetryRow(
   if (status === 'terminal') {
     markGenerationFinalizationRetryFailure(db, generationId, 'terminal fixture failure', true)
   }
-  db.prepare(
-    'UPDATE generation_finalization_retries SET updated_at = ? WHERE generation_id = ?',
-  ).run(updatedAt, generationId)
+  db.prepare('UPDATE generation_finalization_retries SET updated_at = ? WHERE generation_id = ?').run(
+    updatedAt,
+    generationId,
+  )
 }
 
 describe('Durable generation (Milestone 1)', () => {
@@ -598,12 +577,7 @@ describe('Durable generation (Milestone 1)', () => {
     const db = openDatabase(dataDir)
     try {
       seedGenerationFinalizationRetryRow(db, 'terminal-old', 'terminal', '2026-06-01T00:00:00.000Z')
-      seedGenerationFinalizationRetryRow(
-        db,
-        'terminal-recent',
-        'terminal',
-        '2026-06-05T12:00:00.000Z',
-      )
+      seedGenerationFinalizationRetryRow(db, 'terminal-recent', 'terminal', '2026-06-05T12:00:00.000Z')
       seedGenerationFinalizationRetryRow(db, 'pending-old', 'pending', '2026-06-01T00:00:00.000Z')
 
       expect(
@@ -635,18 +609,8 @@ describe('Durable generation (Milestone 1)', () => {
   it('L2: app finalization retry sweep also removes retained terminal history', async () => {
     const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
     try {
-      seedGenerationFinalizationRetryRow(
-        db,
-        'terminal-app-old',
-        'terminal',
-        '2020-01-01T00:00:00.000Z',
-      )
-      seedGenerationFinalizationRetryRow(
-        db,
-        'terminal-app-recent',
-        'terminal',
-        new Date().toISOString(),
-      )
+      seedGenerationFinalizationRetryRow(db, 'terminal-app-old', 'terminal', '2020-01-01T00:00:00.000Z')
+      seedGenerationFinalizationRetryRow(db, 'terminal-app-recent', 'terminal', new Date().toISOString())
     } finally {
       db.close()
     }
@@ -656,9 +620,7 @@ describe('Durable generation (Milestone 1)', () => {
       return rows.some((row) => row.generation_id === 'terminal-app-old') ? undefined : rows
     })
 
-    expect(generationFinalizationRetryRows().map((row) => row.generation_id)).toEqual([
-      'terminal-app-recent',
-    ])
+    expect(generationFinalizationRetryRows().map((row) => row.generation_id)).toEqual(['terminal-app-recent'])
   })
 
   // Drop the initial connection after it received prompt/info, reattach to the
@@ -683,10 +645,10 @@ describe('Durable generation (Milestone 1)', () => {
     // Reattach to the in-flight job, THEN release the remaining tokens — they stream
     // live to the reattached viewer.
     const reController = newController()
-    const re = await fetch(
-      `${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}/stream`,
-      { headers: authHeaders(), signal: reController.signal },
-    )
+    const re = await fetch(`${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}/stream`, {
+      headers: authHeaders(),
+      signal: reController.signal,
+    })
     expect(re.status).toBe(200)
     gated.release()
     const reEvents = await readSse(re, (ev) => ev.type === 'done')
@@ -723,10 +685,10 @@ describe('Durable generation (Milestone 1)', () => {
 
     // A fresh client reattaches via the discovered id.
     const reController = newController()
-    const re = await fetch(
-      `${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}/stream`,
-      { headers: authHeaders(), signal: reController.signal },
-    )
+    const re = await fetch(`${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}/stream`, {
+      headers: authHeaders(),
+      signal: reController.signal,
+    })
     gated.release()
     const reEvents = await readSse(re, (ev) => ev.type === 'done')
     expect(reEvents.at(-1)?.type).toBe('done')
@@ -764,10 +726,10 @@ describe('Durable generation (Milestone 1)', () => {
     // Reattach to the done (in-grace) job and read until the STREAM ENDS. The server
     // must close it on its own; if it leaks, readSse hangs to the test timeout.
     const reController = newController()
-    const re = await fetch(
-      `${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}/stream`,
-      { headers: authHeaders(), signal: reController.signal },
-    )
+    const re = await fetch(`${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}/stream`, {
+      headers: authHeaders(),
+      signal: reController.signal,
+    })
     const reEvents = await readSse(re, () => false)
     expect(reEvents.some((e) => e.type === 'job_accepted')).toBe(true)
     reController.abort()
@@ -788,19 +750,16 @@ describe('Durable generation (Milestone 1)', () => {
     })
 
     const obsController = newController()
-    const obs = await fetch(
-      `${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}/stream`,
-      { headers: authHeaders(), signal: obsController.signal },
-    )
+    const obs = await fetch(`${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}/stream`, {
+      headers: authHeaders(),
+      signal: obsController.signal,
+    })
     const obsEventsPromise = readSse(obs, (ev) => ev.type === 'done')
 
-    const del = await fetch(
-      `${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}`,
-      {
-        method: 'DELETE',
-        headers: authHeaders(),
-      },
-    )
+    const del = await fetch(`${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}`, {
+      method: 'DELETE',
+      headers: authHeaders(),
+    })
     expect(del.status).toBe(200)
 
     const obsEvents = await obsEventsPromise
@@ -856,13 +815,10 @@ describe('Durable generation (Milestone 1)', () => {
       return ev.type === 'token'
     })
 
-    const del = await fetch(
-      `${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}`,
-      {
-        method: 'DELETE',
-        headers: authHeaders(),
-      },
-    )
+    const del = await fetch(`${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}`, {
+      method: 'DELETE',
+      headers: authHeaders(),
+    })
     expect(del.status).toBe(200)
     expect((await del.json()).success).toBe(true)
 
@@ -891,13 +847,10 @@ describe('Durable generation (Milestone 1)', () => {
     await fetch(`${harness.baseUrl}/api/v1/bootstrap`, {
       headers: authHeaders({ 'risu-writer-session': 'writer-b' }),
     })
-    const del = await fetch(
-      `${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}`,
-      {
-        method: 'DELETE',
-        headers: authHeaders({ 'risu-writer-session': 'writer-b' }),
-      },
-    )
+    const del = await fetch(`${harness.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}`, {
+      method: 'DELETE',
+      headers: authHeaders({ 'risu-writer-session': 'writer-b' }),
+    })
     expect(del.status).toBe(200)
 
     // After cancel the chat accepts a new generation (the slot is free).
@@ -943,9 +896,7 @@ describe('Durable generation (Milestone 1)', () => {
       revision?: number
       messagePatch?: { chatVarMutations?: Array<{ key: string; after: unknown }> }
     }
-    expect(postGeneration?.messagePatch?.chatVarMutations).toEqual([
-      { key: '$mood', before: null, after: 'happy' },
-    ])
+    expect(postGeneration?.messagePatch?.chatVarMutations).toEqual([{ key: '$mood', before: null, after: 'happy' }])
     expect(typeof postGeneration?.revision).toBe('number')
 
     const boot = await bootstrap()
@@ -971,10 +922,7 @@ describe('Durable generation (Milestone 1)', () => {
     providerImpl = gated.dispatchProvider
 
     const controller = newController()
-    const res = await postDurable(
-      { mode: 'continue', userMessage: undefined },
-      { signal: controller.signal },
-    )
+    const res = await postDurable({ mode: 'continue', userMessage: undefined }, { signal: controller.signal })
     await readSse(res, (ev) => ev.type === 'token')
     controller.abort() // disconnect mid-stream — the job must keep running
 
@@ -1030,10 +978,7 @@ describe('Durable generation (Milestone 1)', () => {
     providerImpl = gated.dispatchProvider
 
     const controller = newController()
-    const res = await postDurable(
-      { mode: 'continue', userMessage: undefined },
-      { signal: controller.signal },
-    )
+    const res = await postDurable({ mode: 'continue', userMessage: undefined }, { signal: controller.signal })
     let jobId = ''
     await readSse(res, (ev) => {
       if (ev.type === 'job_accepted') jobId = ev.data.jobId as string
@@ -1121,10 +1066,7 @@ describe('Durable generation (Milestone 1)', () => {
     providerImpl = gated.dispatchProvider
 
     const controller = newController()
-    const res1 = await postDurable(
-      { mode: 'continue', userMessage: undefined },
-      { signal: controller.signal },
-    )
+    const res1 = await postDurable({ mode: 'continue', userMessage: undefined }, { signal: controller.signal })
     await readSse(res1, (ev) => ev.type === 'token')
 
     const res2 = await postDurable({ mode: 'continue', userMessage: undefined })
@@ -1272,9 +1214,7 @@ describe('Durable generation (Milestone 1)', () => {
       const db = new DatabaseSync(path.join(local.dataDir, 'risu.db'), { readOnly: true })
       try {
         const rows = db
-          .prepare(
-            "SELECT data FROM messages WHERE chat_id = 'chat-1' AND alternate = 0 ORDER BY seq",
-          )
+          .prepare("SELECT data FROM messages WHERE chat_id = 'chat-1' AND alternate = 0 ORDER BY seq")
           .all() as Array<{ data: string }>
         expect(rows.map((row) => row.data)).toContain('partial shutdown text')
       } finally {
@@ -1333,10 +1273,9 @@ describe('Durable generation (Milestone 1)', () => {
       // Heartbeats are per-viewer keep-alives: the reattach replay buffer must
       // not contain them.
       gated.release()
-      const re = await fetch(
-        `${local.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}/stream`,
-        { headers: { 'risu-auth': localAssertion } },
-      )
+      const re = await fetch(`${local.baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}/stream`, {
+        headers: { 'risu-auth': localAssertion },
+      })
       const replayEvents = await readSse(re, (ev) => ev.type === 'done')
       expect(replayEvents.at(-1)?.type).toBe('done')
     } finally {

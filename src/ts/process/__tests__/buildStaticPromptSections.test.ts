@@ -5,12 +5,7 @@ vi.mock('../modules', async (importActual) => {
   return { ...actual, moduleUpdate: () => {} }
 })
 
-import {
-  setDatabase,
-  type Chat,
-  type Database,
-  type character,
-} from '../../storage/database.svelte'
+import { setDatabase, type Chat, type Database, type character } from '../../storage/database.svelte'
 import {
   buildAuthorNote,
   buildCotInstruction,
@@ -77,9 +72,7 @@ describe('buildAuthorNote', () => {
 
   it('falls back to the template default author note when chat note is empty', () => {
     seedDb({
-      promptTemplate: [
-        { type: 'authornote', defaultText: 'Default note.' },
-      ] as Database['promptTemplate'],
+      promptTemplate: [{ type: 'authornote', defaultText: 'Default note.' }] as Database['promptTemplate'],
     })
     const result = buildAuthorNote(makeChar(), makeChat({ note: '' }))
     expect(result).toEqual([{ role: 'system', content: 'Default note.' }])
@@ -92,9 +85,7 @@ describe('buildAuthorNote', () => {
 
   it('prefers chat note over template default when both are set', () => {
     seedDb({
-      promptTemplate: [
-        { type: 'authornote', defaultText: 'Default note.' },
-      ] as Database['promptTemplate'],
+      promptTemplate: [{ type: 'authornote', defaultText: 'Default note.' }] as Database['promptTemplate'],
     })
     const result = buildAuthorNote(makeChar(), makeChat({ note: 'Chat note.' }))
     expect(result).toEqual([{ role: 'system', content: 'Chat note.' }])
@@ -161,9 +152,7 @@ describe('buildPersona', () => {
 
   it('returns the persona prompt when db.personaPrompt is set', () => {
     seedDb({ personaPrompt: 'Curious user persona.' })
-    expect(buildPersona(makeChar())).toEqual([
-      { role: 'system', content: 'Curious user persona.' },
-    ])
+    expect(buildPersona(makeChar())).toEqual([{ role: 'system', content: 'Curious user persona.' }])
   })
 
   it('returns empty when db.personaPrompt is empty', () => {
@@ -207,9 +196,7 @@ describe('buildInlayViewInstruction', () => {
         ['sad', 's.png'],
       ],
     } as Partial<character>)
-    expect(buildInlayViewInstruction(char)).toEqual([
-      { role: 'system', content: 'Pick from: happy, sad' },
-    ])
+    expect(buildInlayViewInstruction(char)).toEqual([{ role: 'system', content: 'Pick from: happy, sad' }])
   })
 
   it('emits the emotion instruction with an empty {{slot}} when emotionImages is empty', () => {
@@ -224,9 +211,7 @@ describe('buildInlayViewInstruction', () => {
       },
       emotionImages: [],
     } as Partial<character>)
-    expect(buildInlayViewInstruction(char)).toEqual([
-      { role: 'system', content: 'Pick from: ' },
-    ])
+    expect(buildInlayViewInstruction(char)).toEqual([{ role: 'system', content: 'Pick from: ' }])
   })
 
   it('emits the imggen instruction verbatim', () => {
@@ -240,9 +225,7 @@ describe('buildInlayViewInstruction', () => {
         emotionInstructions: '',
       },
     } as Partial<character>)
-    expect(buildInlayViewInstruction(char)).toEqual([
-      { role: 'system', content: 'Draw the scene.' },
-    ])
+    expect(buildInlayViewInstruction(char)).toEqual([{ role: 'system', content: 'Draw the scene.' }])
   })
 
   it('returns empty when inlayViewScreen is on but viewScreen is none', () => {

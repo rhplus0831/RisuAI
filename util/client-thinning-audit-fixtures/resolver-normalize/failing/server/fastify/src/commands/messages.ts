@@ -11,10 +11,7 @@ interface MessageLocation {
 }
 
 // Skipped by the audit: this IS the resolver.
-export function requireMessageLocation(
-  characters: readonly CharacterRecord[],
-  messageId: string,
-): MessageLocation {
+export function requireMessageLocation(characters: readonly CharacterRecord[], messageId: string): MessageLocation {
   for (const character of characters) {
     for (const chat of character.chats ?? []) {
       const messages = (chat.message ?? []) as Record<string, unknown>[]

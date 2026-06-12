@@ -35,29 +35,15 @@ import { registerProxyRoutes } from './routes/proxy.js'
 import { registerRealmImportRoutes } from './routes/realmImport.js'
 import { registerSaveRoutes } from './routes/save.js'
 import { registerStreamJobRoutes } from './routes/streamJobs.js'
-import {
-  SUPPORTED_ASSET_CONTENT_TYPES,
-  ensureDbJsonImported,
-  loadPersistedWithMessages,
-} from './repository.js'
+import { SUPPORTED_ASSET_CONTENT_TYPES, ensureDbJsonImported, loadPersistedWithMessages } from './repository.js'
 import { ASSET_GC_INTERVAL_MS, type AssetGcOptions, runAssetGc } from './assetGc.js'
 import { JobRegistry, PROXY_STREAM_GC_INTERVAL_MS } from './streamJobs.js'
 import { GenerationJobRegistry } from './generationJobs.js'
-import {
-  createMemoryEventBus,
-  emitMemoryEventSafely,
-  type MemoryEventSink,
-} from './memoryEvents.js'
+import { createMemoryEventBus, emitMemoryEventSafely, type MemoryEventSink } from './memoryEvents.js'
 import { backfillLegacyHypaV3MemoryRows } from './memoryLegacyImport.js'
 import { MemoryWorker, type MemoryWorkerOptions } from './memoryWorker.js'
-import {
-  createEmbedMemoryJobBatchHandler,
-  createEmbedMemoryJobHandler,
-} from './memoryEmbedJobHandler.js'
-import {
-  createSummarizeMemoryJobBatchHandler,
-  createSummarizeMemoryJobHandler,
-} from './memorySummarizeJobHandler.js'
+import { createEmbedMemoryJobBatchHandler, createEmbedMemoryJobHandler } from './memoryEmbedJobHandler.js'
+import { createSummarizeMemoryJobBatchHandler, createSummarizeMemoryJobHandler } from './memorySummarizeJobHandler.js'
 
 /**
  * Node `server.requestTimeout` backstop (audit M6): the wall-clock bound for
@@ -130,13 +116,9 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
     },
   })
 
-  app.addContentTypeParser(
-    SUPPORTED_ASSET_CONTENT_TYPES,
-    { parseAs: 'buffer' },
-    (_req, body, done) => {
-      done(null, body)
-    },
-  )
+  app.addContentTypeParser(SUPPORTED_ASSET_CONTENT_TYPES, { parseAs: 'buffer' }, (_req, body, done) => {
+    done(null, body)
+  })
 
   await app.register(fastifyWebsocket)
 
@@ -239,14 +221,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
 
   registerHealthRoutes(app, db)
   registerAuthRoutes(app, authState)
-  registerBootstrapRoutes(
-    app,
-    db,
-    authState,
-    config.dataDir,
-    activeWriterState,
-    generationJobRegistry,
-  )
+  registerBootstrapRoutes(app, db, authState, config.dataDir, activeWriterState, generationJobRegistry)
   registerActiveWriterGuard(app, activeWriterState)
   registerProjectionRoutes(app, db, authState, config.dataDir)
   registerSaveRoutes(app, db, authState, config.dataDir, commandEventSink, {
@@ -278,8 +253,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
     opts.generationChat,
   )
   const finalizationRetryRaw = opts.generationChat?.finalizationRetry
-  const finalizationRetryOptions =
-    finalizationRetryRaw === false ? false : (finalizationRetryRaw ?? {})
+  const finalizationRetryOptions = finalizationRetryRaw === false ? false : (finalizationRetryRaw ?? {})
   const runGenerationFinalizationRetrySweep = (): void => {
     try {
       retryQueuedGenerationFinalizations({
@@ -287,22 +261,16 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
         dataDir: config.dataDir,
         eventSink: commandEventSink,
         logger: app.log,
-        maxPerSweep:
-          finalizationRetryOptions !== false ? finalizationRetryOptions.maxPerSweep : undefined,
+        maxPerSweep: finalizationRetryOptions !== false ? finalizationRetryOptions.maxPerSweep : undefined,
       })
     } catch (err) {
       app.log.error({ err }, 'generation finalization retry sweep failed')
     }
     try {
       pruneTerminalGenerationFinalizationRetries(db, {
-        retentionMs:
-          finalizationRetryOptions !== false
-            ? finalizationRetryOptions.terminalRetentionMs
-            : undefined,
+        retentionMs: finalizationRetryOptions !== false ? finalizationRetryOptions.terminalRetentionMs : undefined,
         maxPerSweep:
-          finalizationRetryOptions !== false
-            ? finalizationRetryOptions.terminalRetentionMaxPerSweep
-            : undefined,
+          finalizationRetryOptions !== false ? finalizationRetryOptions.terminalRetentionMaxPerSweep : undefined,
       })
     } catch (err) {
       app.log.error({ err }, 'generation finalization retry retention sweep failed')
@@ -314,10 +282,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   generationFinalizationRetryTimer =
     finalizationRetryOptions === false
       ? null
-      : setInterval(
-          runGenerationFinalizationRetrySweep,
-          finalizationRetryOptions.intervalMs ?? 5000,
-        )
+      : setInterval(runGenerationFinalizationRetrySweep, finalizationRetryOptions.intervalMs ?? 5000)
   generationFinalizationRetryTimer?.unref()
   registerMemoryJobRoutes(app, db, authState, { onEvent: emitMemoryEvent })
   registerMemoryReadRoutes(app, db, authState)
@@ -335,9 +300,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
       setHeaders: (res, filePath) => {
         res.setHeader(
           'Cache-Control',
-          isPathWithin(staticAssetsRoot, filePath)
-            ? STATIC_ASSET_CACHE_CONTROL
-            : STATIC_REVALIDATE_CACHE_CONTROL,
+          isPathWithin(staticAssetsRoot, filePath) ? STATIC_ASSET_CACHE_CONTROL : STATIC_REVALIDATE_CACHE_CONTROL,
         )
       },
     })

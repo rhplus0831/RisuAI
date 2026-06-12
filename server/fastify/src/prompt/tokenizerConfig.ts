@@ -1,9 +1,5 @@
 import type { Database } from '../../../../src/ts/storage/database.svelte'
-import {
-  encodingForModel,
-  type TokenEncoding,
-  type TokenizeChatOptions,
-} from './tokens.js'
+import { encodingForModel, type TokenEncoding, type TokenizeChatOptions } from './tokens.js'
 
 /**
  * Shared tokenizer config derived from `db.aiModel`, used by

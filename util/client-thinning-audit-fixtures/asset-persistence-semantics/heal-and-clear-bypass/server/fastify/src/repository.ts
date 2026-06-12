@@ -17,11 +17,7 @@ export function addAsset(db: unknown, dataDir: string, args: AddAssetArgs): AddA
   return addAssets(db, dataDir, [args])[0]
 }
 
-export function addAssets(
-  _db: unknown,
-  dataDir: string,
-  assets: readonly AddAssetArgs[],
-): AddAssetResult[] {
+export function addAssets(_db: unknown, dataDir: string, assets: readonly AddAssetArgs[]): AddAssetResult[] {
   const results: AddAssetResult[] = []
   for (const asset of assets) {
     const existing = asset.id

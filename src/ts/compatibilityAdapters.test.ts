@@ -205,9 +205,7 @@ describe('Phase 9-3f compatibility adapters', () => {
     dispatchCompatibleChatUpdate(previousChat, nextChat, previous)
 
     await vi.waitFor(() => {
-      expect(calls.some((call) => call.url === '/api/v1/commands/chats/chat-a/scriptstate')).toBe(
-        true,
-      )
+      expect(calls.some((call) => call.url === '/api/v1/commands/chats/chat-a/scriptstate')).toBe(true)
     })
     expect(calls.filter((call) => call.url === '/api/v1/bootstrap')).toHaveLength(1)
     expect(calls.find((call) => call.url === '/api/v1/commands/chats/chat-a')).toMatchObject({
@@ -217,18 +215,14 @@ describe('Phase 9-3f compatibility adapters', () => {
         patch: { note: 'new note' },
       },
     })
-    expect(
-      calls.find((call) => call.url === '/api/v1/commands/chats/chat-a/messages'),
-    ).toMatchObject({
+    expect(calls.find((call) => call.url === '/api/v1/commands/chats/chat-a/messages')).toMatchObject({
       method: 'PUT',
       body: {
         baseRevision: 11,
         messages: nextChat.message,
       },
     })
-    expect(
-      calls.find((call) => call.url === '/api/v1/commands/chats/chat-a/scriptstate'),
-    ).toMatchObject({
+    expect(calls.find((call) => call.url === '/api/v1/commands/chats/chat-a/scriptstate')).toMatchObject({
       method: 'PATCH',
       body: {
         baseRevision: 11,
@@ -256,14 +250,10 @@ describe('Phase 9-3f compatibility adapters', () => {
     dispatchCompatibleChatUpdate(previousChat, nextChat, previous)
 
     await vi.waitFor(() => {
-      expect(calls.some((call) => call.url === '/api/v1/commands/chats/chat-a/scriptstate')).toBe(
-        true,
-      )
+      expect(calls.some((call) => call.url === '/api/v1/commands/chats/chat-a/scriptstate')).toBe(true)
     })
 
-    const commandBodies = calls
-      .filter((call) => call.url !== '/api/v1/bootstrap')
-      .map((call) => call.body)
+    const commandBodies = calls.filter((call) => call.url !== '/api/v1/bootstrap').map((call) => call.body)
     expect(commandBodies).toEqual([
       { baseRevision: 10, patch: { note: 'serialized note' }, select: false },
       { baseRevision: 11, messages: nextChat.message },
@@ -282,11 +272,7 @@ describe('Phase 9-3f compatibility adapters', () => {
     const next = { ...previousCharacter, name: 'Prepared name' } as character
     DBState.db.characters[0] = next
 
-    const { factories, rollback } = prepareCompatibleCharacterUpdate(
-      previousCharacter,
-      next,
-      previous,
-    )
+    const { factories, rollback } = prepareCompatibleCharacterUpdate(previousCharacter, next, previous)
     expect(factories).toHaveLength(1)
     runOptimisticCommandSequence(factories, rollback)
 
@@ -319,13 +305,9 @@ describe('Phase 9-3f compatibility adapters', () => {
     runOptimisticCommandSequence(factories, rollback)
 
     await vi.waitFor(() => {
-      expect(calls.some((call) => call.url === '/api/v1/commands/chats/chat-a/scriptstate')).toBe(
-        true,
-      )
+      expect(calls.some((call) => call.url === '/api/v1/commands/chats/chat-a/scriptstate')).toBe(true)
     })
-    const commandBodies = calls
-      .filter((call) => call.url !== '/api/v1/bootstrap')
-      .map((call) => call.body)
+    const commandBodies = calls.filter((call) => call.url !== '/api/v1/bootstrap').map((call) => call.body)
     // Sequenced through runOptimisticCommandSequence — each command reads
     // the revision advanced by the previous result.
     expect(commandBodies).toEqual([
@@ -351,14 +333,10 @@ describe('Phase 9-3f compatibility adapters', () => {
     rmCharEmotion(0, 0)
 
     await vi.waitFor(() => {
-      expect(
-        calls.filter((call) => call.url === '/api/v1/commands/characters/char-a'),
-      ).toHaveLength(2)
+      expect(calls.filter((call) => call.url === '/api/v1/commands/characters/char-a')).toHaveLength(2)
     })
     expect(calls.filter((call) => call.url === '/api/v1/bootstrap')).toHaveLength(2)
-    const characterUpdates = calls.filter(
-      (call) => call.url === '/api/v1/commands/characters/char-a',
-    )
+    const characterUpdates = calls.filter((call) => call.url === '/api/v1/commands/characters/char-a')
     expect(characterUpdates[0]).toMatchObject({
       method: 'PATCH',
       body: {
@@ -398,9 +376,7 @@ describe('Phase 9-3f compatibility adapters', () => {
     }).toThrow()
 
     await vi.waitFor(() => {
-      expect(
-        calls.filter((call) => call.url === '/api/v1/commands/characters/char-a'),
-      ).toHaveLength(2)
+      expect(calls.filter((call) => call.url === '/api/v1/commands/characters/char-a')).toHaveLength(2)
     })
   })
 
@@ -448,13 +424,9 @@ describe('Phase 9-3f compatibility adapters', () => {
     }).toThrow()
 
     await vi.waitFor(() => {
-      expect(
-        calls.some((call) => call.url === '/api/v1/commands/characters/create-and-select'),
-      ).toBe(true)
+      expect(calls.some((call) => call.url === '/api/v1/commands/characters/create-and-select')).toBe(true)
     })
-    const command = calls.find(
-      (call) => call.url === '/api/v1/commands/characters/create-and-select',
-    )
+    const command = calls.find((call) => call.url === '/api/v1/commands/characters/create-and-select')
     expect(command).toMatchObject({
       method: 'POST',
       body: {
@@ -583,13 +555,9 @@ describe('Phase 9-3f compatibility adapters', () => {
       text: expect.stringContaining('Successfully added lorebook entry'),
     })
     await vi.waitFor(() => {
-      expect(
-        calls.some((call) => call.url === '/api/v1/commands/characters/char-a/lorebooks'),
-      ).toBe(true)
+      expect(calls.some((call) => call.url === '/api/v1/commands/characters/char-a/lorebooks')).toBe(true)
     })
-    expect(
-      calls.find((call) => call.url === '/api/v1/commands/characters/char-a/lorebooks'),
-    ).toMatchObject({
+    expect(calls.find((call) => call.url === '/api/v1/commands/characters/char-a/lorebooks')).toMatchObject({
       method: 'PUT',
       body: {
         baseRevision: 10,
@@ -621,26 +589,15 @@ describe('Phase 9-3f compatibility adapters', () => {
       DBState.db.characters[0].customscript = []
     }).toThrow()
 
-    const regexResult = await handler.setCharacterRegexScripts(
-      'char-a',
-      'Regex',
-      undefined,
-      'in',
-      'out',
-      'editdisplay',
-    )
+    const regexResult = await handler.setCharacterRegexScripts('char-a', 'Regex', undefined, 'in', 'out', 'editdisplay')
     expect(regexResult[0]).toMatchObject({
       type: 'text',
       text: expect.stringContaining('Successfully added regex script'),
     })
     await vi.waitFor(() => {
-      expect(calls.some((call) => call.url === '/api/v1/commands/characters/char-a/scripts')).toBe(
-        true,
-      )
+      expect(calls.some((call) => call.url === '/api/v1/commands/characters/char-a/scripts')).toBe(true)
     })
-    expect(
-      calls.find((call) => call.url === '/api/v1/commands/characters/char-a/scripts'),
-    ).toMatchObject({
+    expect(calls.find((call) => call.url === '/api/v1/commands/characters/char-a/scripts')).toMatchObject({
       method: 'PUT',
       body: {
         baseRevision: 10,
@@ -661,13 +618,9 @@ describe('Phase 9-3f compatibility adapters', () => {
       text: expect.stringContaining('Successfully updated Lua script'),
     })
     await vi.waitFor(() => {
-      expect(calls.some((call) => call.url === '/api/v1/commands/characters/char-a/triggers')).toBe(
-        true,
-      )
+      expect(calls.some((call) => call.url === '/api/v1/commands/characters/char-a/triggers')).toBe(true)
     })
-    expect(
-      calls.find((call) => call.url === '/api/v1/commands/characters/char-a/triggers'),
-    ).toMatchObject({
+    expect(calls.find((call) => call.url === '/api/v1/commands/characters/char-a/triggers')).toMatchObject({
       method: 'PUT',
       body: {
         baseRevision: 11,
@@ -705,14 +658,7 @@ describe('Phase 9-3f compatibility adapters', () => {
       DBState.db.modules[0].regex = []
     }).toThrow()
 
-    const regexResult = await handler.setModuleRegexScript(
-      'mod-a',
-      'Regex',
-      undefined,
-      'in',
-      'out',
-      'editdisplay',
-    )
+    const regexResult = await handler.setModuleRegexScript('mod-a', 'Regex', undefined, 'in', 'out', 'editdisplay')
     expect(regexResult[0]).toMatchObject({
       type: 'text',
       text: expect.stringContaining('Successfully added regex script'),
@@ -720,9 +666,7 @@ describe('Phase 9-3f compatibility adapters', () => {
     await vi.waitFor(() => {
       expect(calls.some((call) => call.url === '/api/v1/commands/modules/mod-a/scripts')).toBe(true)
     })
-    expect(
-      calls.find((call) => call.url === '/api/v1/commands/modules/mod-a/scripts'),
-    ).toMatchObject({
+    expect(calls.find((call) => call.url === '/api/v1/commands/modules/mod-a/scripts')).toMatchObject({
       method: 'PUT',
       body: {
         baseRevision: 10,
@@ -743,13 +687,9 @@ describe('Phase 9-3f compatibility adapters', () => {
       text: expect.stringContaining('Successfully updated Lua script'),
     })
     await vi.waitFor(() => {
-      expect(calls.some((call) => call.url === '/api/v1/commands/modules/mod-a/triggers')).toBe(
-        true,
-      )
+      expect(calls.some((call) => call.url === '/api/v1/commands/modules/mod-a/triggers')).toBe(true)
     })
-    expect(
-      calls.find((call) => call.url === '/api/v1/commands/modules/mod-a/triggers'),
-    ).toMatchObject({
+    expect(calls.find((call) => call.url === '/api/v1/commands/modules/mod-a/triggers')).toMatchObject({
       method: 'PUT',
       body: {
         baseRevision: 11,

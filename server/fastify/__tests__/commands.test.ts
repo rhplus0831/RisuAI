@@ -7,18 +7,11 @@ import { DatabaseSync } from 'node:sqlite'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { createCommandEventSink, type CommandEventSink } from '../src/commands/events.js'
-import {
-  applyJsonCommandMutation,
-  applyMessageFreeJsonCommandMutation,
-} from '../src/commands/mutations.js'
+import { applyJsonCommandMutation, applyMessageFreeJsonCommandMutation } from '../src/commands/mutations.js'
 import { getSchemaState, openDatabase } from '../src/db.js'
 import { MASKED_PROVIDER_SECRET } from '../src/providerSecrets.js'
 import { loadPersisted, writePersistedWithMessages, insertAssetMetadataBatch } from '../src/repository.js'
-import {
-  activeMessageRowids,
-  assertOnlyRowsWritten,
-  tableRowidsById,
-} from './helpers/rowStability.js'
+import { activeMessageRowids, assertOnlyRowsWritten, tableRowidsById } from './helpers/rowStability.js'
 
 const subtle = webcrypto.subtle
 
@@ -77,11 +70,7 @@ function loadPersistedFromDir(dataDir: string) {
   }
 }
 
-async function signAssertion(
-  privateKey: CryptoKey,
-  publicJwk: JsonWebKey,
-  ttlSec = 60,
-): Promise<string> {
+async function signAssertion(privateKey: CryptoKey, publicJwk: JsonWebKey, ttlSec = 60): Promise<string> {
   const now = Math.floor(Date.now() / 1000)
   const header = { alg: 'ES256', typ: 'JWT' }
   const payload = { iat: now, exp: now + ttlSec, pub: publicJwk }
@@ -152,9 +141,7 @@ function readJsonRow(table: JsonRowTable, id: string): Record<string, unknown> {
       expect(row, `modules row ${id} should exist`).toBeTruthy()
       return row!
     }
-    const row = db.prepare(`SELECT data_json FROM ${table} WHERE id = ?`).get(id) as
-      | { data_json: string }
-      | undefined
+    const row = db.prepare(`SELECT data_json FROM ${table} WHERE id = ?`).get(id) as { data_json: string } | undefined
     expect(row, `${table} row ${id} should exist`).toBeTruthy()
     return JSON.parse(row!.data_json) as Record<string, unknown>
   } finally {
@@ -166,16 +153,13 @@ function writeJsonRow(table: JsonRowTable, id: string, value: Record<string, unk
   const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
   try {
     if (table === 'modules') {
-      const rows = db.prepare('SELECT position, data_json FROM modules ORDER BY position').all() as
-        Array<{ position: number; data_json: string }>
-      const row = rows.find(
-        (candidate) => (JSON.parse(candidate.data_json) as Record<string, unknown>).id === id,
-      )
+      const rows = db.prepare('SELECT position, data_json FROM modules ORDER BY position').all() as Array<{
+        position: number
+        data_json: string
+      }>
+      const row = rows.find((candidate) => (JSON.parse(candidate.data_json) as Record<string, unknown>).id === id)
       expect(row, `modules row ${id} should exist`).toBeTruthy()
-      db.prepare('UPDATE modules SET data_json = ? WHERE position = ?').run(
-        JSON.stringify(value),
-        row!.position,
-      )
+      db.prepare('UPDATE modules SET data_json = ? WHERE position = ?').run(JSON.stringify(value), row!.position)
       return
     }
     db.prepare(`UPDATE ${table} SET data_json = ? WHERE id = ?`).run(JSON.stringify(value), id)
@@ -235,9 +219,7 @@ async function uploadAsset(
 function seedAssetMetadata(dataDir: string, assetId = 'a'.repeat(64)): string {
   const seedDb = new DatabaseSync(path.join(dataDir, 'risu.db'))
   try {
-    insertAssetMetadataBatch(seedDb, [
-      { id: assetId, ext: 'png', size: 1, contentType: 'image/png' },
-    ])
+    insertAssetMetadataBatch(seedDb, [{ id: assetId, ext: 'png', size: 1, contentType: 'image/png' }])
   } finally {
     seedDb.close()
   }
@@ -837,9 +819,7 @@ describe('Phase 9-2a scalar settings groups', () => {
       openAIKey: 'old-openai',
       claudeAPIKey: 'old-claude',
       OaiCompAPIKeys: { deepseek: 'old-deepseek', deepinfra: 'old-deepinfra' },
-      customModels: [
-        { id: 'xcustom:::a', name: 'Custom A', key: 'old-custom', url: 'https://old.example.com' },
-      ],
+      customModels: [{ id: 'xcustom:::a', name: 'Custom A', key: 'old-custom', url: 'https://old.example.com' }],
       authRefreshes: [
         {
           url: 'https://mcp.example.com',
@@ -1086,9 +1066,7 @@ describe('Phase 9-2a scalar settings groups', () => {
 
     expect(res.statusCode).toBe(200)
     expect(loadPersistedFromDir(harness.dataDir).database).toMatchObject({
-      customModels: [
-        { id: 'xcustom:::b', name: 'Custom B kept', key: 'custom-b', url: 'https://b.example.com' },
-      ],
+      customModels: [{ id: 'xcustom:::b', name: 'Custom B kept', key: 'custom-b', url: 'https://b.example.com' }],
       authRefreshes: [
         {
           url: 'https://mcp-b.example.com',
@@ -1104,9 +1082,7 @@ describe('Phase 9-2a scalar settings groups', () => {
   it('rejects masked provider array placeholders without matching row identity', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
-      customModels: [
-        { id: 'xcustom:::a', name: 'Custom A', key: 'custom-a', url: 'https://a.example.com' },
-      ],
+      customModels: [{ id: 'xcustom:::a', name: 'Custom A', key: 'custom-a', url: 'https://a.example.com' }],
     })
 
     const missingIdentity = await harness.app.inject({
@@ -1116,9 +1092,7 @@ describe('Phase 9-2a scalar settings groups', () => {
       payload: {
         baseRevision: revision,
         patch: {
-          customModels: [
-            { name: 'Missing Id', key: MASKED_PROVIDER_SECRET, url: 'https://missing.example.com' },
-          ],
+          customModels: [{ name: 'Missing Id', key: MASKED_PROVIDER_SECRET, url: 'https://missing.example.com' }],
         },
       },
     })
@@ -2025,9 +1999,10 @@ describe('Phase 9-2b bot preset commands', () => {
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(bootstrap.json().database.botPresets.map((preset: { id: string }) => preset.id)).toEqual(
-      ['preset-b', 'preset-a'],
-    )
+    expect(bootstrap.json().database.botPresets.map((preset: { id: string }) => preset.id)).toEqual([
+      'preset-b',
+      'preset-a',
+    ])
     expect(bootstrap.json().database.botPresetsId).toBe(0)
   })
 
@@ -2081,9 +2056,10 @@ describe('Phase 9-2b bot preset commands', () => {
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(revision)
-    expect(bootstrap.json().database.botPresets.map((preset: { id: string }) => preset.id)).toEqual(
-      ['preset-a', 'preset-b'],
-    )
+    expect(bootstrap.json().database.botPresets.map((preset: { id: string }) => preset.id)).toEqual([
+      'preset-a',
+      'preset-b',
+    ])
   })
 
   it('rejects malformed preset reorder without bumping revision', async () => {
@@ -2115,9 +2091,10 @@ describe('Phase 9-2b bot preset commands', () => {
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(1)
-    expect(bootstrap.json().database.botPresets.map((preset: { id: string }) => preset.id)).toEqual(
-      ['preset-a', 'preset-b'],
-    )
+    expect(bootstrap.json().database.botPresets.map((preset: { id: string }) => preset.id)).toEqual([
+      'preset-a',
+      'preset-b',
+    ])
   })
 
   it('returns 404 and 409 for missing presets and stale revisions', async () => {
@@ -2384,9 +2361,10 @@ describe('Phase 9-2c prompt template and item commands', () => {
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(1)
-    expect(bootstrap.json().database.promptTemplate.map((item: { id: string }) => item.id)).toEqual(
-      ['item-a', 'item-b'],
-    )
+    expect(bootstrap.json().database.promptTemplate.map((item: { id: string }) => item.id)).toEqual([
+      'item-a',
+      'item-b',
+    ])
   })
 
   it('enables and disables prompt items through prompt-item commands', async () => {
@@ -2697,9 +2675,10 @@ describe('Phase 9-2d persona commands', () => {
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(1)
-    expect(bootstrap.json().database.personas.map((persona: { id: string }) => persona.id)).toEqual(
-      ['persona-a', 'persona-b'],
-    )
+    expect(bootstrap.json().database.personas.map((persona: { id: string }) => persona.id)).toEqual([
+      'persona-a',
+      'persona-b',
+    ])
   })
 
   it('returns 404 and 409 for missing personas and stale revisions', async () => {
@@ -2864,9 +2843,7 @@ describe('Phase 9-2e translator preset commands', () => {
   it('syncs legacy translator fields when updating the selected preset', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
-      translatorPresets: [
-        { id: 'translator-a', name: 'A', prompt: 'old prompt', maxResponse: 100 },
-      ],
+      translatorPresets: [{ id: 'translator-a', name: 'A', prompt: 'old prompt', maxResponse: 100 }],
       translatorPresetId: 0,
       translatorPrompt: 'old prompt',
       translatorMaxResponse: 100,
@@ -2942,9 +2919,10 @@ describe('Phase 9-2e translator preset commands', () => {
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(1)
-    expect(
-      bootstrap.json().database.translatorPresets.map((preset: { id: string }) => preset.id),
-    ).toEqual(['translator-a', 'translator-b'])
+    expect(bootstrap.json().database.translatorPresets.map((preset: { id: string }) => preset.id)).toEqual([
+      'translator-a',
+      'translator-b',
+    ])
   })
 
   it('returns 404 and 409 for missing translator presets and stale revisions', async () => {
@@ -3780,11 +3758,7 @@ describe('Phase 9-3b chat record and folder commands', () => {
     })
     const createdCharacter = createdBootstrap.json().database.characters[0]
     expect(createdCharacter.chatPage).toBe(0)
-    expect(createdCharacter.chats.map((chat: { id: string }) => chat.id)).toEqual([
-      'chat-c',
-      'chat-a',
-      'chat-b',
-    ])
+    expect(createdCharacter.chats.map((chat: { id: string }) => chat.id)).toEqual(['chat-c', 'chat-a', 'chat-b'])
 
     const updated = await harness.app.inject({
       method: 'PATCH',
@@ -3947,17 +3921,13 @@ describe('Phase 9-3b chat record and folder commands', () => {
     })
     const character = bootstrap.json().database.characters[0]
     expect(character.chatPage).toBe(2)
-    expect(character.chats.map((chat: { id: string }) => chat.id)).toEqual([
-      'chat-a',
-      'chat-fork',
-      'chat-c',
+    expect(character.chats.map((chat: { id: string }) => chat.id)).toEqual(['chat-a', 'chat-fork', 'chat-c'])
+    expect(character.chats.map((chat: { folderId?: string | null }) => chat.folderId ?? null)).toEqual([
+      null,
+      null,
+      null,
     ])
-    expect(
-      character.chats.map((chat: { folderId?: string | null }) => chat.folderId ?? null),
-    ).toEqual([null, null, null])
-    expect(character.chatFolders).toEqual([
-      { id: 'folder-b', name: 'Folder B renamed', color: 'blue', folded: true },
-    ])
+    expect(character.chatFolders).toEqual([{ id: 'folder-b', name: 'Folder B renamed', color: 'blue', folded: true }])
     expect(character.chats[2]).toMatchObject({
       id: 'chat-c',
       name: 'C renamed',
@@ -4026,11 +3996,7 @@ describe('Phase 9-3b chat record and folder commands', () => {
     })
     const character = bootstrap.json().database.characters[0]
     expect(character.chatPage).toBe(2)
-    expect(character.chats.map((chat: { id: string }) => chat.id)).toEqual([
-      'chat-c',
-      'chat-a',
-      'chat-b',
-    ])
+    expect(character.chats.map((chat: { id: string }) => chat.id)).toEqual(['chat-c', 'chat-a', 'chat-b'])
     await expect(persistedChatMessages(harness.app, assertion, 'chat-c')).resolves.toEqual([
       { role: 'user', data: 'first', chatId: 'msg-c-1' },
       { role: 'char', data: 'second', chatId: 'msg-c-2' },
@@ -4114,9 +4080,7 @@ describe('Phase 9-3b chat record and folder commands', () => {
       generationSettings?: Record<string, unknown>
     }>
     expect(chats.find((chat) => chat.id === 'chat-omitted')?.generationSettings).toBeUndefined()
-    expect(chats.find((chat) => chat.id === 'chat-explicit')?.generationSettings).toEqual(
-      explicitSettings,
-    )
+    expect(chats.find((chat) => chat.id === 'chat-explicit')?.generationSettings).toEqual(explicitSettings)
   })
 
   it('updates chat metadata without rewriting message rows', async () => {
@@ -4484,11 +4448,7 @@ describe('Phase 9-3b chat record and folder commands', () => {
       presetId: 'preset-a',
       sidebarToggles: { valid: 'on' },
     })
-    expect(Object.keys(chats[0].generationSettings ?? {}).sort()).toEqual([
-      'configured',
-      'presetId',
-      'sidebarToggles',
-    ])
+    expect(Object.keys(chats[0].generationSettings ?? {}).sort()).toEqual(['configured', 'presetId', 'sidebarToggles'])
     expect(chats[1].generationSettings).toBeUndefined()
   })
 
@@ -4564,9 +4524,7 @@ describe('Phase 9-3b chat record and folder commands', () => {
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(bootstrap.json().database.characters[0].chats[0].generationSettings).toEqual(
-      chatGenerationSettings,
-    )
+    expect(bootstrap.json().database.characters[0].chats[0].generationSettings).toEqual(chatGenerationSettings)
   })
 
   it('inherits complete and incomplete source generation settings on fork unless the fork supplies an explicit override', async () => {
@@ -4724,9 +4682,7 @@ describe('Phase 9-3b chat record and folder commands', () => {
     expect(overriddenChat?.generationSettings).toEqual(overrideSettings)
     expect(incompleteSourceChat?.generationSettings).toEqual(incompleteSettings)
     expect(incompleteForkChat?.generationSettings).toEqual(incompleteSettings)
-    expect(incompleteForkChat?.generationSettings).not.toBe(
-      incompleteSourceChat?.generationSettings,
-    )
+    expect(incompleteForkChat?.generationSettings).not.toBe(incompleteSourceChat?.generationSettings)
   })
 
   it('rejects chat fork commands without client-supplied fork ids without bumping revision', async () => {
@@ -4799,9 +4755,10 @@ describe('Phase 9-3b chat record and folder commands', () => {
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(revision)
-    expect(
-      bootstrap.json().database.characters[0].chats.map((chat: { id: string }) => chat.id),
-    ).toEqual(['chat-a', 'chat-b'])
+    expect(bootstrap.json().database.characters[0].chats.map((chat: { id: string }) => chat.id)).toEqual([
+      'chat-a',
+      'chat-b',
+    ])
   })
 
   it('repairs imported duplicate chat ids across characters', async () => {
@@ -4937,9 +4894,7 @@ describe('Phase 9-3b chat record and folder commands', () => {
     expect(
       bootstrap
         .json()
-        .database.characters.map((character: { chats: { id: string }[] }) =>
-          character.chats.map((chat) => chat.id),
-        ),
+        .database.characters.map((character: { chats: { id: string }[] }) => character.chats.map((chat) => chat.id)),
     ).toEqual([['chat-a'], ['chat-b']])
   })
 
@@ -5041,9 +4996,7 @@ describe('Phase 9-3b chat record and folder commands', () => {
     const characters = bootstrap.json().database.characters
     expect(characters[0].chatFolders).toEqual([])
     expect(characters[0].chats[0].folderId).toBeNull()
-    expect(characters[1].chatFolders).toEqual([
-      { id: 'folder-b', name: 'Folder B renamed', folded: false },
-    ])
+    expect(characters[1].chatFolders).toEqual([{ id: 'folder-b', name: 'Folder B renamed', folded: false }])
     expect(characters[1].chats[0].folderId).toBe('folder-b')
   })
 
@@ -5278,9 +5231,10 @@ describe('Phase 9-3b chat record and folder commands', () => {
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(1)
-    expect(
-      bootstrap.json().database.characters[0].chats.map((chat: { id: string }) => chat.id),
-    ).toEqual(['chat-a', 'chat-b'])
+    expect(bootstrap.json().database.characters[0].chats.map((chat: { id: string }) => chat.id)).toEqual([
+      'chat-a',
+      'chat-b',
+    ])
   })
 
   it('returns 404 and 409 for missing chats and stale chat revisions', async () => {
@@ -5328,9 +5282,10 @@ describe('Phase 4 slice 4.2 surgical message writes', () => {
   function messageRowids(dataDir: string, chatId: string): { seq: number; rowid: number }[] {
     const db = new DatabaseSync(path.join(dataDir, 'risu.db'))
     try {
-      return db
-        .prepare('SELECT rowid, seq FROM messages WHERE chat_id = ? ORDER BY seq')
-        .all(chatId) as { seq: number; rowid: number }[]
+      return db.prepare('SELECT rowid, seq FROM messages WHERE chat_id = ? ORDER BY seq').all(chatId) as {
+        seq: number
+        rowid: number
+      }[]
     } finally {
       db.close()
     }
@@ -5451,9 +5406,10 @@ describe('Phase 4 slice 4.2 surgical message writes', () => {
     expect(afterDelete).toHaveLength(2)
     expect(afterDelete[0]).toEqual(chatABefore[0])
     expect(afterDelete.map((row) => row.seq)).toEqual([0, 1])
-    expect(
-      (await persistedChatMessages(harness.app, assertion, 'chat-a')).map((m) => m.chatId),
-    ).toEqual(['msg-a1', 'msg-a3'])
+    expect((await persistedChatMessages(harness.app, assertion, 'chat-a')).map((m) => m.chatId)).toEqual([
+      'msg-a1',
+      'msg-a3',
+    ])
 
     const appended = await harness.app.inject({
       method: 'POST',
@@ -5499,18 +5455,17 @@ describe('Phase 4 slice 4.2 surgical message writes', () => {
     expect(afterReplace).toHaveLength(3)
     expect(afterReplace[0]).toEqual(afterTruncate[0])
     expect(afterReplace.map((row) => row.seq)).toEqual([0, 1, 2])
-    expect(
-      (await persistedChatMessages(harness.app, assertion, 'chat-a')).map((m) => m.chatId),
-    ).toEqual(['msg-a1', 'msg-a5', 'msg-a6'])
+    expect((await persistedChatMessages(harness.app, assertion, 'chat-a')).map((m) => m.chatId)).toEqual([
+      'msg-a1',
+      'msg-a5',
+      'msg-a6',
+    ])
   })
 
   it('a non-message command writes nothing to the messages table', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await seedTwoChats(assertion)
-    const before = [
-      ...messageRowids(harness.dataDir, 'chat-a'),
-      ...messageRowids(harness.dataDir, 'chat-b'),
-    ]
+    const before = [...messageRowids(harness.dataDir, 'chat-a'), ...messageRowids(harness.dataDir, 'chat-b')]
 
     const persona = await harness.app.inject({
       method: 'POST',
@@ -5523,10 +5478,7 @@ describe('Phase 4 slice 4.2 surgical message writes', () => {
     })
     expect(persona.statusCode).toBe(200)
 
-    const after = [
-      ...messageRowids(harness.dataDir, 'chat-a'),
-      ...messageRowids(harness.dataDir, 'chat-b'),
-    ]
+    const after = [...messageRowids(harness.dataDir, 'chat-a'), ...messageRowids(harness.dataDir, 'chat-b')]
     expect(after).toEqual(before)
   })
 
@@ -5787,11 +5739,7 @@ describe('Phase 9-3c message history commands', () => {
     })
     expect(bootstrap.json().revision).toBe(1)
     const messages = await persistedChatMessages(harness.app, assertion, 'chat-a')
-    expect(messages.map((message) => (message as any).data)).toEqual([
-      'missing id',
-      'duplicate a',
-      'duplicate b',
-    ])
+    expect(messages.map((message) => (message as any).data)).toEqual(['missing id', 'duplicate a', 'duplicate b'])
     expect(messages.map((message) => (message as any).chatId)).toHaveLength(3)
     expect(new Set(messages.map((message) => (message as any).chatId)).size).toBe(3)
   })
@@ -5946,10 +5894,7 @@ describe('Phase 9-3c message history commands', () => {
     expect(bootstrap.json().revision).toBe(revision)
     const chatAMessages = await persistedChatMessages(harness.app, assertion, 'chat-a')
     const chatBMessages = await persistedChatMessages(harness.app, assertion, 'chat-b')
-    expect([...chatAMessages, ...chatBMessages].map((message) => message.chatId)).toEqual([
-      'msg-a',
-      'msg-b',
-    ])
+    expect([...chatAMessages, ...chatBMessages].map((message) => message.chatId)).toEqual(['msg-a', 'msg-b'])
   })
 
   it('returns 404 and 409 for missing messages and stale message revisions', async () => {
@@ -6077,9 +6022,11 @@ describe('Phase 9-3d generation persistence command', () => {
       },
     })
     expect(repeated.statusCode).toBe(200)
-    expect(
-      (await persistedChatMessages(harness.app, assertion, 'chat-a')).map((m) => m.chatId),
-    ).toEqual(['msg-a', 'msg-old', 'gen-1'])
+    expect((await persistedChatMessages(harness.app, assertion, 'chat-a')).map((m) => m.chatId)).toEqual([
+      'msg-a',
+      'msg-old',
+      'gen-1',
+    ])
 
     const replaced = await harness.app.inject({
       method: 'POST',
@@ -6210,9 +6157,7 @@ describe('Phase 9-3d generation persistence command', () => {
       },
     })
     expect(missingMessageId.statusCode).toBe(400)
-    expect(missingMessageId.json().error).toBe(
-      'generationResult.message.chatId must be a non-empty string',
-    )
+    expect(missingMessageId.json().error).toBe('generationResult.message.chatId must be a non-empty string')
 
     const bootstrap = await harness.app.inject({
       method: 'GET',
@@ -6576,13 +6521,7 @@ describe('Phase 9-4a lorebook commands', () => {
         .list()
         .slice(-5)
         .map((event) => event.type),
-    ).toEqual([
-      'lorebook.created',
-      'lorebook.updated',
-      'lorebook.reordered',
-      'lorebook.selected',
-      'lorebook.deleted',
-    ])
+    ).toEqual(['lorebook.created', 'lorebook.updated', 'lorebook.reordered', 'lorebook.selected', 'lorebook.deleted'])
   })
 
   it('rejects deleting the last global lorebook without minting a replacement id', async () => {
@@ -7545,11 +7484,7 @@ describe('Phase 9-4c module record and enablement commands', () => {
     })
     const database = bootstrap.json().database
     expect(bootstrap.json().revision).toBe(7)
-    expect(database.modules.map((module: { id: string }) => module.id)).toEqual([
-      'mod-c',
-      'mod-a',
-      'mcp-a',
-    ])
+    expect(database.modules.map((module: { id: string }) => module.id)).toEqual(['mod-c', 'mod-a', 'mcp-a'])
     expect(database.modules[0]).toMatchObject({
       id: 'mod-c',
       name: 'Renamed C',
@@ -7848,10 +7783,7 @@ describe('Phase 9-4e plugin record and configuration commands', () => {
     })
     const database = bootstrap.json().database
     expect(bootstrap.json().revision).toBe(7)
-    expect(database.plugins.map((plugin: { name: string }) => plugin.name)).toEqual([
-      'plugin-c',
-      'plugin-b',
-    ])
+    expect(database.plugins.map((plugin: { name: string }) => plugin.name)).toEqual(['plugin-c', 'plugin-b'])
     expect(database.plugins[0]).toMatchObject({
       name: 'plugin-c',
       displayName: 'Plugin C',
@@ -8296,9 +8228,7 @@ describe('Phase 9-4d asset reference commands', () => {
       },
     })
     expect(missingOrderImage.statusCode).toBe(400)
-    expect(missingOrderImage.json().error).toBe(
-      'characterOrder[0].img references a missing server asset',
-    )
+    expect(missingOrderImage.json().error).toBe('characterOrder[0].img references a missing server asset')
 
     const valid = await harness.app.inject({
       method: 'PATCH',
@@ -8341,9 +8271,7 @@ describe('Phase 9-4d asset reference commands', () => {
       },
     })
     expect(malformedCreate.statusCode).toBe(400)
-    expect(malformedCreate.json().error).toBe(
-      'character.vits.files.greeting must be a server asset id',
-    )
+    expect(malformedCreate.json().error).toBe('character.vits.files.greeting must be a server asset id')
 
     const missingCreate = await harness.app.inject({
       method: 'POST',
@@ -8379,9 +8307,7 @@ describe('Phase 9-4d asset reference commands', () => {
       },
     })
     expect(malformedPatch.statusCode).toBe(400)
-    expect(malformedPatch.json().error).toBe(
-      'patch.gptSoVitsConfig.ref_audio_data.assetId must be a server asset id',
-    )
+    expect(malformedPatch.json().error).toBe('patch.gptSoVitsConfig.ref_audio_data.assetId must be a server asset id')
 
     const missingPatch = await harness.app.inject({
       method: 'PATCH',
@@ -8393,9 +8319,7 @@ describe('Phase 9-4d asset reference commands', () => {
       },
     })
     expect(missingPatch.statusCode).toBe(400)
-    expect(missingPatch.json().error).toBe(
-      'patch.vits.files.greeting references a missing server asset',
-    )
+    expect(missingPatch.json().error).toBe('patch.vits.files.greeting references a missing server asset')
 
     const bootstrap = await harness.app.inject({
       method: 'GET',
@@ -8468,9 +8392,7 @@ describe('Phase 9-4d asset reference commands', () => {
     const characters = bootstrap.json().database.characters
     for (const [index, clearValue] of clearValues.entries()) {
       expect(
-        characters.find(
-          (character: { chaId: string }) => character.chaId === `char-clear-${index}`,
-        ),
+        characters.find((character: { chaId: string }) => character.chaId === `char-clear-${index}`),
       ).toMatchObject({
         vits: { files: { greeting: clearValue } },
         gptSoVitsConfig: {
@@ -8478,9 +8400,7 @@ describe('Phase 9-4d asset reference commands', () => {
         },
       })
     }
-    expect(
-      characters.find((character: { chaId: string }) => character.chaId === 'char-a'),
-    ).toMatchObject({
+    expect(characters.find((character: { chaId: string }) => character.chaId === 'char-a')).toMatchObject({
       vits: { files: { greeting: '-' } },
       gptSoVitsConfig: {
         ref_audio_data: { fileName: 'ref.wav', assetId: '-' },

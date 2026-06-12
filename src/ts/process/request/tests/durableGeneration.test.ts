@@ -25,17 +25,9 @@ vi.mock('../../modules', async (importActual) => {
   }
 })
 
-import {
-  setDatabase,
-  type character,
-  type Chat,
-  type Database,
-} from '../../../storage/database.svelte'
+import { setDatabase, type character, type Chat, type Database } from '../../../storage/database.svelte'
 import { pluginV2 } from '../../../plugins/plugins.svelte'
-import {
-  resolveDurableGeneration,
-  type DurableGenerationRoute,
-} from '../durableGeneration'
+import { resolveDurableGeneration, type DurableGenerationRoute } from '../durableGeneration'
 import type { ServerPromptAssemblyInput } from '../serverPromptAssembly'
 
 function seedDb(overrides: Partial<Database> = {}): void {
@@ -64,9 +56,7 @@ function makeChar(overrides: Partial<character> = {}): character {
 }
 
 function makeChat(
-  message: Array<{ role: string; data: string; [k: string]: unknown }> = [
-    { role: 'user', data: 'hi' },
-  ],
+  message: Array<{ role: string; data: string; [k: string]: unknown }> = [{ role: 'user', data: 'hi' }],
 ): Chat {
   return { message } as unknown as Chat
 }
@@ -133,9 +123,7 @@ describe('resolveDurableGeneration', () => {
     it('routes a char with an editoutput customscript to durable (decision #2)', () => {
       const input = makeInput({
         currentChar: makeChar({
-          customscript: [
-            { in: 'foo', out: 'bar', type: 'editoutput', flag: '', ableFlag: false },
-          ] as never,
+          customscript: [{ in: 'foo', out: 'bar', type: 'editoutput', flag: '', ableFlag: false }] as never,
         }),
       })
       expect(resolveDurableGeneration(input)).toEqual({ type: 'durable' })
@@ -143,9 +131,7 @@ describe('resolveDurableGeneration', () => {
 
     it('routes a send to durable when a preset regex carries an editoutput script (decision #2)', () => {
       seedDb({
-        presetRegex: [
-          { in: 'foo', out: 'bar', type: 'editoutput', flag: '', ableFlag: false },
-        ] as never,
+        presetRegex: [{ in: 'foo', out: 'bar', type: 'editoutput', flag: '', ableFlag: false }] as never,
       })
       expect(resolveDurableGeneration(makeInput())).toEqual({ type: 'durable' })
     })
@@ -199,9 +185,9 @@ describe('resolveDurableGeneration', () => {
     })
 
     it('rejects preview_prompt mode (never generates)', () => {
-      expect(
-        expectNonDurable(resolveDurableGeneration(makeInput({ previewPrompt: true }))),
-      ).toMatch(/send, continue, and regenerate/)
+      expect(expectNonDurable(resolveDurableGeneration(makeInput({ previewPrompt: true })))).toMatch(
+        /send, continue, and regenerate/,
+      )
     })
   })
 

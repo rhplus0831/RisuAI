@@ -33,9 +33,8 @@ describe('emitProviderChunks', () => {
   it('emits a terminal done when a provider source ends without an explicit done frame', async () => {
     const events: PromptChatEvent[] = []
 
-    const result = await emitProviderChunks(
-      frames([{ kind: 'token', content: 'partial' }]),
-      (event) => events.push(event),
+    const result = await emitProviderChunks(frames([{ kind: 'token', content: 'partial' }]), (event) =>
+      events.push(event),
     )
 
     expect(events).toEqual([

@@ -1,7 +1,4 @@
-import {
-  SHARED_DEFAULT_REQUEST_TIMEOUT_MS,
-  SHARED_MAX_REQUEST_TIMEOUT_MS,
-} from './requestTimeouts.js'
+import { SHARED_DEFAULT_REQUEST_TIMEOUT_MS, SHARED_MAX_REQUEST_TIMEOUT_MS } from './requestTimeouts.js'
 
 const STRIP_REQUEST_HEADERS = new Set([
   'host',
@@ -84,9 +81,7 @@ export function parseRisuHeader(raw: unknown): Record<string, string> | null {
   }
 }
 
-export function normalizeForwardHeaders(
-  input: Record<string, unknown> | undefined | null,
-): Record<string, string> {
+export function normalizeForwardHeaders(input: Record<string, unknown> | undefined | null): Record<string, string> {
   const out: Record<string, string> = {}
   if (!input || typeof input !== 'object') return out
   for (const [k, v] of Object.entries(input)) {

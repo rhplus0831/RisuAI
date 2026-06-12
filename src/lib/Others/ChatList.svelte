@@ -4,14 +4,7 @@
 
   import { DBState } from 'src/ts/stores.svelte'
   import { selectedCharID } from '../../ts/stores.svelte'
-  import {
-    DownloadIcon,
-    SquarePenIcon,
-    HardDriveUploadIcon,
-    PlusIcon,
-    TrashIcon,
-    XIcon,
-  } from '@lucide/svelte'
+  import { DownloadIcon, SquarePenIcon, HardDriveUploadIcon, PlusIcon, TrashIcon, XIcon } from '@lucide/svelte'
   import { v4 } from 'uuid'
   import { exportChat, importChat } from '../../ts/characters'
   import TextInput from '../UI/GUI/TextInput.svelte'
@@ -76,21 +69,15 @@
   }
 </script>
 
-<div
-  data-risu-chat-list="modal"
-  class="absolute w-full h-full z-40 bg-black/50 flex justify-center items-center"
->
-  <div
-    class="bg-darkbg p-4 break-any rounded-md flex flex-col max-w-3xl w-72 max-h-full overflow-y-auto"
-  >
+<div data-risu-chat-list="modal" class="absolute w-full h-full z-40 bg-black/50 flex justify-center items-center">
+  <div class="bg-darkbg p-4 break-any rounded-md flex flex-col max-w-3xl w-72 max-h-full overflow-y-auto">
     <div class="flex items-center text-textcolor mb-4">
       <h2 class="mt-0 mb-0">{language.chatList}</h2>
       <div class="grow flex justify-end">
         <button
           data-risu-chat-action="close"
           class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer items-center"
-          onclick={close}
-        >
+          onclick={close}>
           <XIcon size={24} />
         </button>
       </div>
@@ -99,25 +86,21 @@
       <button
         data-risu-chat-id={chat.id ?? ''}
         data-risu-chat-idx={i}
-        data-risu-chat-selected={i === DBState.db.characters[$selectedCharID].chatPage
-          ? 'true'
-          : 'false'}
+        data-risu-chat-selected={i === DBState.db.characters[$selectedCharID].chatPage ? 'true' : 'false'}
         onclick={() => {
           if (!editMode) {
             openChatRoute(i)
           }
         }}
         class="flex items-center text-textcolor border-t-1 border-solid border-0 border-darkborderc p-2 cursor-pointer"
-        class:bg-selected={i === DBState.db.characters[$selectedCharID].chatPage}
-      >
+        class:bg-selected={i === DBState.db.characters[$selectedCharID].chatPage}>
         {#if editMode}
           <TextInput
             bind:value={chatNameDrafts[chat.id]}
             padding={false}
             onchange={() => {
               updateChatName(chat, chatNameDrafts[chat.id])
-            }}
-          />
+            }} />
         {:else}
           <span>{chat.name}</span>
         {/if}
@@ -131,8 +114,7 @@
               e.stopPropagation()
               exportChat(i)
             }}
-            onkeydown={() => {}}
-          >
+            onkeydown={() => {}}>
             <DownloadIcon size={18} />
           </div>
           <div
@@ -167,8 +149,7 @@
                 dispatchDeleteChat(chat.id, previous)
               }
             }}
-            onkeydown={() => {}}
-          >
+            onkeydown={() => {}}>
             <TrashIcon size={18} />
           </div>
         </div>
@@ -203,8 +184,7 @@
           }
           dispatchCreateChat(cha.chaId, chat, previous)
           close()
-        }}
-      >
+        }}>
         <PlusIcon />
       </button>
       <button
@@ -212,8 +192,7 @@
         class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
         onclick={() => {
           importChat()
-        }}
-      >
+        }}>
         <HardDriveUploadIcon size={18} />
       </button>
       <button
@@ -221,8 +200,7 @@
         class="text-textcolor2 hover:text-green-500 cursor-pointer"
         onclick={() => {
           editMode = !editMode
-        }}
-      >
+        }}>
         <SquarePenIcon size={18} />
       </button>
     </div>

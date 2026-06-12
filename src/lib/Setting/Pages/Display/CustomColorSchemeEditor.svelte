@@ -40,8 +40,7 @@
       value={DBState.db.colorScheme.type}
       onchange={(e) => {
         changeColorSchemeType((e.target as HTMLInputElement).value as 'light' | 'dark')
-      }}
-    >
+      }}>
       <OptionInput value="light">Light</OptionInput>
       <OptionInput value="dark">Dark</OptionInput>
     </SelectInput>
@@ -51,23 +50,16 @@
         <ColorInput
           value={DBState.db.colorScheme[color[0]]}
           oninput={() => updateColorScheme()}
-          onchange={(value) => setColorSchemeValue(color[0], value)}
-        />
+          onchange={(value) => setColorSchemeValue(color[0], value)} />
         <span class="ml-2">{color[1]}</span>
       </div>
     {/each}
 
     <div class="grow flex justify-end">
-      <button
-        class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
-        onclick={() => exportColorScheme()}
-      >
+      <button class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer" onclick={() => exportColorScheme()}>
         <DownloadIcon size={18} />
       </button>
-      <button
-        class="text-textcolor2 hover:text-green-500 cursor-pointer"
-        onclick={() => importColorScheme()}
-      >
+      <button class="text-textcolor2 hover:text-green-500 cursor-pointer" onclick={() => importColorScheme()}>
         <HardDriveUploadIcon size={18} />
       </button>
     </div>

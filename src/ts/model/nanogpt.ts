@@ -70,9 +70,7 @@ export async function getNanoGPTBalance(key: string): Promise<NanoGPTBalance | n
   }
 }
 
-export async function getNanoGPTSubscription(
-  key: string,
-): Promise<NanoGPTSubscriptionUsage | null> {
+export async function getNanoGPTSubscription(key: string): Promise<NanoGPTSubscriptionUsage | null> {
   try {
     const res = await fetch(NANOGPT_SUBSCRIPTION_ENDPOINT, {
       headers: { Authorization: 'Bearer ' + key },
@@ -124,17 +122,11 @@ export type NanoGPTModelProviders = {
   }
 }
 
-export async function getNanoGPTModelProviders(
-  key: string,
-  modelId: string,
-): Promise<NanoGPTModelProviders | null> {
+export async function getNanoGPTModelProviders(key: string, modelId: string): Promise<NanoGPTModelProviders | null> {
   try {
-    const res = await fetch(
-      `${NANOGPT_MODEL_PROVIDERS_ENDPOINT}/${encodeURIComponent(modelId)}/providers`,
-      {
-        headers: { Authorization: 'Bearer ' + key },
-      },
-    )
+    const res = await fetch(`${NANOGPT_MODEL_PROVIDERS_ENDPOINT}/${encodeURIComponent(modelId)}/providers`, {
+      headers: { Authorization: 'Bearer ' + key },
+    })
     if (!res.ok) return null
     return await res.json()
   } catch {
@@ -172,8 +164,7 @@ export async function getNanoGPTModels(): Promise<NanoGPTModelInfo[]> {
     const db = getDatabase()
     const key = db.nanogptKey
 
-    const endpoint =
-      (key ? NANOGPT_PERSONALIZED_MODELS_ENDPOINT : NANOGPT_MODELS_ENDPOINT) + '?detailed=true'
+    const endpoint = (key ? NANOGPT_PERSONALIZED_MODELS_ENDPOINT : NANOGPT_MODELS_ENDPOINT) + '?detailed=true'
     const headers: Record<string, string> = { 'Content-Type': 'application/json' }
     if (key) {
       headers['Authorization'] = 'Bearer ' + key

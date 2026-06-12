@@ -53,8 +53,7 @@ const GOOGLE_SEARCH_TOOLS: MCPTool[] = [
         },
         dateRestrict: {
           type: 'string',
-          description:
-            "Restrict results to a specific time period (e.g., 'd1' for past day, 'w1' for past week)",
+          description: "Restrict results to a specific time period (e.g., 'd1' for past day, 'w1' for past week)",
         },
         siteSearch: {
           type: 'string',
@@ -152,9 +151,7 @@ export class GoogleSearchClient extends MCPClientLike {
   }
 
   private async initializeCredentials(): Promise<void> {
-    throw new Error(
-      'Google Search MCP credentials are not supported in server-backed web mode',
-    )
+    throw new Error('Google Search MCP credentials are not supported in server-backed web mode')
   }
 
   async getToolList(): Promise<MCPTool[]> {
@@ -189,16 +186,7 @@ export class GoogleSearchClient extends MCPClientLike {
   }
 
   private async performWebSearch(args: WebSearchArgs): Promise<RPCToolCallContent[]> {
-    const {
-      query,
-      num = 10,
-      start = 1,
-      dateRestrict,
-      siteSearch,
-      fileType,
-      language,
-      safe = 'active',
-    } = args
+    const { query, num = 10, start = 1, dateRestrict, siteSearch, fileType, language, safe = 'active' } = args
 
     if (!query || !query.trim()) {
       return [{ type: 'text', text: 'Search query cannot be empty.' }]
@@ -265,15 +253,7 @@ export class GoogleSearchClient extends MCPClientLike {
   }
 
   private async performImageSearch(args: ImageSearchArgs): Promise<RPCToolCallContent[]> {
-    const {
-      query,
-      num = 10,
-      start = 1,
-      imageSize,
-      imageType,
-      imageColorType,
-      safe = 'active',
-    } = args
+    const { query, num = 10, start = 1, imageSize, imageType, imageColorType, safe = 'active' } = args
 
     if (!query || !query.trim()) {
       return [{ type: 'text', text: 'Search query cannot be empty.' }]

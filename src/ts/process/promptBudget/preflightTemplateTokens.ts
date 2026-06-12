@@ -130,16 +130,10 @@ export async function preflightTemplateTokens(
 
         if (card.type2 === 'globalNote') {
           if (currentChar.replaceGlobalNote) {
-            content = positionParser(currentChar.replaceGlobalNote, posType).replaceAll(
-              '{{original}}',
-              content,
-            )
+            content = positionParser(currentChar.replaceGlobalNote, posType).replaceAll('{{original}}', content)
           }
 
-          if (
-            currentChar.prebuiltAssetCommand &&
-            !card.text.includes('{{//@customimageinstruction}}')
-          ) {
+          if (currentChar.prebuiltAssetCommand && !card.text.includes('{{//@customimageinstruction}}')) {
             content += prebuiltAssetCommand
           }
           content = risuChatParser(content, { chara: currentChar, role: card.role })
@@ -187,11 +181,7 @@ export async function preflightTemplateTokens(
         }
 
         let chats = unformated.chats.slice(start, end)
-        if (
-          usingPromptTemplate &&
-          DBState.db.promptSettings.sendChatAsSystem &&
-          !card.chatAsOriginalOnSystem
-        ) {
+        if (usingPromptTemplate && DBState.db.promptSettings.sendChatAsSystem && !card.chatAsOriginalOnSystem) {
           chats = systemizeChat(chats)
         }
         await tokenizeChatArray(chats)

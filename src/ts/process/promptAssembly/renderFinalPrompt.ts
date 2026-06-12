@@ -57,9 +57,7 @@ export interface RenderFinalPromptResult {
  * Mutates `args.unformated.postEverything` with the `[Continue the last response]`
  * marker when `isContinue && aiModel ∈ {gpt, claude, openrouter, reverse_proxy}`.
  */
-export async function renderFinalPrompt(
-  args: RenderFinalPromptArgs,
-): Promise<RenderFinalPromptResult> {
+export async function renderFinalPrompt(args: RenderFinalPromptArgs): Promise<RenderFinalPromptResult> {
   const {
     currentChar,
     unformated,
@@ -225,15 +223,9 @@ export async function renderFinalPrompt(
 
           if (card.type2 === 'globalNote') {
             if (currentChar.replaceGlobalNote) {
-              content = positionParser(currentChar.replaceGlobalNote, posType).replaceAll(
-                '{{original}}',
-                content,
-              )
+              content = positionParser(currentChar.replaceGlobalNote, posType).replaceAll('{{original}}', content)
             }
-            if (
-              currentChar.prebuiltAssetCommand &&
-              !card.text.includes('{{//@customimageinstruction}}')
-            ) {
+            if (currentChar.prebuiltAssetCommand && !card.text.includes('{{//@customimageinstruction}}')) {
               content += prebuiltAssetCommand
             }
             content = risuChatParser(content, { chara: currentChar, role: card.role })
@@ -248,11 +240,7 @@ export async function renderFinalPrompt(
             content: content,
           }
 
-          if (
-            DBState.db.promptInfoInsideChat &&
-            DBState.db.promptTextInfoInsideChat &&
-            card.type2 !== 'globalNote'
-          ) {
+          if (DBState.db.promptInfoInsideChat && DBState.db.promptTextInfoInsideChat && card.type2 !== 'globalNote') {
             pushPromptInfoBody(prompt.role, prompt.content, promptBodyformatedForChatStore)
           }
 
@@ -289,11 +277,7 @@ export async function renderFinalPrompt(
           }
 
           let chats = unformated.chats.slice(start, end)
-          if (
-            usingPromptTemplate &&
-            DBState.db.promptSettings.sendChatAsSystem &&
-            !card.chatAsOriginalOnSystem
-          ) {
+          if (usingPromptTemplate && DBState.db.promptSettings.sendChatAsSystem && !card.chatAsOriginalOnSystem) {
             chats = systemizeChat(chats)
           }
           pushPrompts(chats)
@@ -369,11 +353,7 @@ export async function renderFinalPrompt(
     })
   }
 
-  if (
-    currentChar.depth_prompt &&
-    currentChar.depth_prompt.prompt &&
-    currentChar.depth_prompt.prompt.length > 0
-  ) {
+  if (currentChar.depth_prompt && currentChar.depth_prompt.prompt && currentChar.depth_prompt.prompt.length > 0) {
     const depthPrompt = currentChar.depth_prompt
     formated.splice(formated.length - depthPrompt.depth, 0, {
       role: 'system',
@@ -385,11 +365,7 @@ export async function renderFinalPrompt(
 
   let promptText: OpenAIChat[] | undefined
   if (captureInfo) {
-    promptBodyformatedForChatStore = await runLuaEditTrigger(
-      currentChar,
-      'editRequest',
-      promptBodyformatedForChatStore,
-    )
+    promptBodyformatedForChatStore = await runLuaEditTrigger(currentChar, 'editRequest', promptBodyformatedForChatStore)
     promptText = promptBodyformatedForChatStore
   }
 

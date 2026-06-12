@@ -140,8 +140,8 @@
   ondragstart={(e) => {
     e.dataTransfer.setData('text', 'prompt')
     e.dataTransfer.setData('prompt', JSON.stringify(promptItem))
-  }}
-></div>
+  }}>
+</div>
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class="flex flex-col border border-selected p-4 rounded-md bg-darkbg transition-all duration-200"
@@ -169,8 +169,7 @@
     if (data === 'prompt') {
       onDrop()
     }
-  }}
->
+  }}>
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <div
     class="flex items-center w-full"
@@ -204,28 +203,24 @@
         newIndices.add(currentIndex)
       }
       openedItemIndices = newIndices
-    }}
-  >
+    }}>
     <span>{getName(promptItem)}</span>
     <div class="flex flex-1 justify-end">
       <button
         onclick={(e) => {
           e.stopPropagation()
           onRemove()
-        }}><XIcon /></button
-      >
+        }}><XIcon /></button>
       <button
         onclick={(e) => {
           e.stopPropagation()
           moveDown()
-        }}><ArrowDown /></button
-      >
+        }}><ArrowDown /></button>
       <button
         onclick={(e) => {
           e.stopPropagation()
           moveUp()
-        }}><ArrowUp /></button
-      >
+        }}><ArrowUp /></button>
     </div>
   </div>
   {#if isOpened}
@@ -235,11 +230,7 @@
     <SelectInput
       bind:value={promptItem.type}
       onchange={() => {
-        if (
-          promptItem.type === 'plain' ||
-          promptItem.type === 'jailbreak' ||
-          promptItem.type === 'cot'
-        ) {
+        if (promptItem.type === 'plain' || promptItem.type === 'jailbreak' || promptItem.type === 'cot') {
           promptItem.text = ''
           promptItem.role = 'system'
         }
@@ -251,8 +242,7 @@
           promptItem.rangeStart = -1000
           promptItem.rangeEnd = 'end'
         }
-      }}
-    >
+      }}>
       <OptionInput value="plain">{language.formating.plain}</OptionInput>
       <OptionInput value="jailbreak">{language.formating.jailbreak}</OptionInput>
       <OptionInput value="chat">{language.Chat}</OptionInput>
@@ -315,8 +305,7 @@
               if (promptItem.type === 'chat') {
                 promptItem.rangeEnd = 0
               }
-            }}
-          />
+            }} />
         {:else}
           <NumberInput bind:value={promptItem.rangeEnd} marginBottom />
           <CheckInput
@@ -326,22 +315,17 @@
               if (promptItem.type === 'chat') {
                 promptItem.rangeEnd = 'end'
               }
-            }}
-          />
+            }} />
         {/if}
         {#if DBState.db.promptSettings.sendChatAsSystem}
-          <CheckInput
-            name={language.chatAsOriginalOnSystem}
-            bind:check={promptItem.chatAsOriginalOnSystem}
-          />
+          <CheckInput name={language.chatAsOriginalOnSystem} bind:check={promptItem.chatAsOriginalOnSystem} />
         {/if}
       {/if}
       <CheckInput
         name={language.advanced}
         check={promptItem.rangeStart !== -1000}
         onChange={chatPromptChange}
-        className="my-2"
-      />
+        className="my-2" />
     {/if}
     {#if promptItem.type === 'authornote'}
       <span>{language.defaultPrompt}</span>
@@ -362,8 +346,7 @@
             ) {
               promptItem.innerFormat = '{{slot}}'
             }
-          }}
-        />
+          }} />
       {:else}
         <span>{language.innerFormat}</span>
         <TextAreaInput highlight bind:value={promptItem.innerFormat} />
@@ -380,8 +363,7 @@
             ) {
               promptItem.innerFormat = null
             }
-          }}
-        />
+          }} />
       {/if}
     {/if}
   {/if}

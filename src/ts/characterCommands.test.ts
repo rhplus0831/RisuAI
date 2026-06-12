@@ -119,9 +119,7 @@ function deferredResponse(): {
 
 async function waitForCharacterPatch(calls: CapturedFetch[], characterId: string): Promise<void> {
   await vi.waitFor(() => {
-    expect(
-      calls.some((call) => call.url === `/api/v1/commands/characters/${characterId}`),
-    ).toBe(true)
+    expect(calls.some((call) => call.url === `/api/v1/commands/characters/${characterId}`)).toBe(true)
   })
 }
 
@@ -206,9 +204,7 @@ describe('Phase 4 select supa memory flag patch (L34)', () => {
     assertSnapshotIsScalar(snapshot)
 
     const charactersSize = JSON.stringify(DBState.db.characters).length
-    const instrumented = withCloneInstrumentation(() =>
-      currentCharacterSupaMemorySnapshot('char-1'),
-    )
+    const instrumented = withCloneInstrumentation(() => currentCharacterSupaMemorySnapshot('char-1'))
     expect(instrumented.totalCloneCount).toBe(0)
     expect(instrumented.maxClonedSize).toBeLessThan(charactersSize)
 
@@ -219,9 +215,7 @@ describe('Phase 4 select supa memory flag patch (L34)', () => {
 
     restoreCharacterSupaMemory(snapshot!)
 
-    expect(Object.prototype.hasOwnProperty.call(DBState.db.characters[1], 'supaMemory')).toBe(
-      false,
-    )
+    expect(Object.prototype.hasOwnProperty.call(DBState.db.characters[1], 'supaMemory')).toBe(false)
     expect(DBState.db.characters[1].name).toBe('Same row concurrent edit')
     expect(DBState.db.characters[0].name).toBe('Sibling concurrent edit')
     expect(get(selectedCharID)).toBe(2)
@@ -387,9 +381,7 @@ describe('Phase 4 select supa memory flag patch (L34)', () => {
     selectedCharID.set(-1)
     selectedCharID.set(1)
     await flushAsyncWork()
-    expect(calls.filter((call) => call.url === '/api/v1/commands/characters/char-1')).toHaveLength(
-      1,
-    )
+    expect(calls.filter((call) => call.url === '/api/v1/commands/characters/char-1')).toHaveLength(1)
   })
 
   it('L34: selectedCharID auto-enable preserves all no-op gates', async () => {
@@ -609,10 +601,7 @@ describe('Phase 2 character-row scoped dispatch', () => {
     DBState.db = seedCloneCostDb() as any // char-0 large (40 messages), siblings small
     selectedCharID.set(1)
     const charactersSize = JSON.stringify(DBState.db.characters).length
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => jsonResponse({ revision: 10 })) as unknown as typeof fetch,
-    )
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ revision: 10 })) as unknown as typeof fetch)
 
     const target = JSON.parse(JSON.stringify(DBState.db.characters[1]))
     target.name = 'Renamed'
@@ -830,9 +819,7 @@ describe('Phase 4 removeChar trashTime field rollback (L33)', () => {
     patchResponse.resolve(jsonResponse({ error: 'nope' }, 500))
 
     await vi.waitFor(() => {
-      expect(Object.prototype.hasOwnProperty.call(DBState.db.characters[0], 'trashTime')).toBe(
-        false,
-      )
+      expect(Object.prototype.hasOwnProperty.call(DBState.db.characters[0], 'trashTime')).toBe(false)
     })
     expect(DBState.db.characters[0].name).toBe('Same row concurrent edit')
     expect(DBState.db.characters[1].name).toBe('Sibling concurrent edit')

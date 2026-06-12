@@ -90,30 +90,26 @@ function trackMcpSseListeners() {
   const listeners = new Set<EventListenerOrEventListenerObject>()
   const originalAdd = document.addEventListener.bind(document)
   const originalRemove = document.removeEventListener.bind(document)
-  const addSpy = vi.spyOn(document, 'addEventListener').mockImplementation(
-    (
-      type: string,
-      listener: EventListenerOrEventListenerObject,
-      options?: boolean | AddEventListenerOptions,
-    ) => {
-      if (type === 'mcp-sse') {
-        listeners.add(listener)
-      }
-      return originalAdd(type, listener, options)
-    },
-  )
-  const removeSpy = vi.spyOn(document, 'removeEventListener').mockImplementation(
-    (
-      type: string,
-      listener: EventListenerOrEventListenerObject,
-      options?: boolean | EventListenerOptions,
-    ) => {
-      if (type === 'mcp-sse') {
-        listeners.delete(listener)
-      }
-      return originalRemove(type, listener, options)
-    },
-  )
+  const addSpy = vi
+    .spyOn(document, 'addEventListener')
+    .mockImplementation(
+      (type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) => {
+        if (type === 'mcp-sse') {
+          listeners.add(listener)
+        }
+        return originalAdd(type, listener, options)
+      },
+    )
+  const removeSpy = vi
+    .spyOn(document, 'removeEventListener')
+    .mockImplementation(
+      (type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) => {
+        if (type === 'mcp-sse') {
+          listeners.delete(listener)
+        }
+        return originalRemove(type, listener, options)
+      },
+    )
 
   return { listeners, addSpy, removeSpy }
 }
@@ -470,9 +466,7 @@ describe('MCPClient debug logging', () => {
       },
     }
 
-    await client.connectSSE(
-      frameStream(['data: {"jsonrpc":"2.0","id":"frame","result":{}}\n\n']),
-    )
+    await client.connectSSE(frameStream(['data: {"jsonrpc":"2.0","id":"frame","result":{}}\n\n']))
     await client.getToolList()
 
     expect(logSpy).not.toHaveBeenCalledWith('MCP SSE Data', expect.anything())
@@ -508,9 +502,7 @@ describe('MCPClient debug logging', () => {
       },
     }
 
-    await client.connectSSE(
-      frameStream(['data: {"jsonrpc":"2.0","id":"frame","result":{}}\n\n']),
-    )
+    await client.connectSSE(frameStream(['data: {"jsonrpc":"2.0","id":"frame","result":{}}\n\n']))
     await client.getToolList()
 
     expect(logSpy).toHaveBeenCalledWith('MCP SSE Data', {
@@ -547,9 +539,7 @@ describe('MCP SSE duplicate id window', () => {
       expect(client.sseIdDone.has('response-3')).toBe(true)
 
       await client.connectSSE(
-        createSseStream([
-          dataFrame({ jsonrpc: '2.0', id: 'response-0', result: { value: 'evicted' } }),
-        ]),
+        createSseStream([dataFrame({ jsonrpc: '2.0', id: 'response-0', result: { value: 'evicted' } })]),
       )
 
       expect(client.sseIdDone.size).toBe(3)
@@ -579,10 +569,7 @@ describe('MCP SSE duplicate id window', () => {
         ]),
       )
 
-      expect(collector.events.map((event) => event.data.id)).toEqual([
-        'response-1',
-        'response-2',
-      ])
+      expect(collector.events.map((event) => event.data.id)).toEqual(['response-1', 'response-2'])
       expect(client.sseIdDone.size).toBe(2)
     } finally {
       collector.stop()
@@ -612,11 +599,15 @@ describe('MCP SSE duplicate id window', () => {
     )
 
     expect(requestSpy).toHaveBeenCalledTimes(1)
-    expect(requestSpy).toHaveBeenCalledWith('response', {}, {
-      notifications: true,
-      initMethod: 'none',
-      id: 'ping-1',
-    })
+    expect(requestSpy).toHaveBeenCalledWith(
+      'response',
+      {},
+      {
+        notifications: true,
+        initMethod: 'none',
+        id: 'ping-1',
+      },
+    )
     expect(client.sseIdDone.size).toBe(1)
     client.destroy()
   })

@@ -42,9 +42,7 @@ vi.mock('../sendChatPromptAssembly', async (importActual) => {
   const actual = await importActual<typeof import('../sendChatPromptAssembly')>()
   return {
     ...actual,
-    assembleLocalSendChatPrompt: (
-      ...args: Parameters<typeof actual.assembleLocalSendChatPrompt>
-    ) => {
+    assembleLocalSendChatPrompt: (...args: Parameters<typeof actual.assembleLocalSendChatPrompt>) => {
       if (localAssemblerState.throwIfEntered) {
         throw new Error('local assembler entered for a server-mandatory subset')
       }
@@ -275,8 +273,7 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
       stageTiming: { stage1: 1, stage2: 0, stage3: 0, stage4: 0 },
     })
     vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url =
-        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
       if (url.endsWith('/api/v1/generate/chat')) return serverChatFetch(input, init)
       return serverCompletionFetch(input, init)
     })
@@ -381,10 +378,7 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
 
     const chat = DBState.db.characters[0].chats[0]
     expect(chat.scriptstate?.$mood).toBe('bright')
-    expect(chat.message.map((m) => m.data)).toEqual([
-      'patched ping',
-      expect.stringContaining('mutated before stop'),
-    ])
+    expect(chat.message.map((m) => m.data)).toEqual(['patched ping', expect.stringContaining('mutated before stop')])
     expect(getServerCompletionCalls()).toEqual([])
   })
 

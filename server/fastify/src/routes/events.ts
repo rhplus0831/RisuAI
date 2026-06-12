@@ -59,8 +59,7 @@ export function registerEventsRoutes(
       unsubscribeCommand?.()
       unsubscribeMemory?.()
     }
-    const sendFrame = (text: string): boolean =>
-      writeBoundedRaw(reply.raw, text, { onOverflow: cleanup })
+    const sendFrame = (text: string): boolean => writeBoundedRaw(reply.raw, text, { onOverflow: cleanup })
     unsubscribeCommand = commandEvents.subscribe((event) => {
       if (liveCommandDelivery) {
         if (!reply.raw.writableEnded) {
@@ -135,10 +134,7 @@ export function registerEventsRoutes(
       }
     }
     for (const event of queuedCommandEvents) {
-      if (
-        !reply.raw.writableEnded &&
-        (cursor.sinceRevision === null || event.revision > currentRevision)
-      ) {
+      if (!reply.raw.writableEnded && (cursor.sinceRevision === null || event.revision > currentRevision)) {
         sendFrame(formatCommandEvent(event))
       }
     }
@@ -186,9 +182,7 @@ export function armSseLiveDelivery(args: {
   return { heartbeat, unsubscribeMemory: args.subscribeMemory() }
 }
 
-type ReplayCursorResult =
-  | { status: 'ok'; sinceRevision: number | null }
-  | { status: 'error'; reason: string }
+type ReplayCursorResult = { status: 'ok'; sinceRevision: number | null } | { status: 'error'; reason: string }
 
 function readReplayCursor(query: unknown, lastEventIdHeader: unknown): ReplayCursorResult {
   const queryValue = readQuerySinceRevision(query)

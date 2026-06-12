@@ -138,10 +138,7 @@ function getStringArray(sourceFile: SourceFile, name: string): string[] {
   }
   const array =
     initializer?.asKind(SyntaxKind.ArrayLiteralExpression) ??
-    initializer
-      ?.asKind(SyntaxKind.NewExpression)
-      ?.getArguments()[0]
-      ?.asKind(SyntaxKind.ArrayLiteralExpression)
+    initializer?.asKind(SyntaxKind.NewExpression)?.getArguments()[0]?.asKind(SyntaxKind.ArrayLiteralExpression)
   if (!array) return []
   return array
     .getElements()
@@ -154,9 +151,7 @@ function propertyInitializer(node: Node, name: string): Node | undefined {
   for (const property of node.getProperties()) {
     if (!Node.isPropertyAssignment(property)) continue
     const nameNode = property.getNameNode()
-    const propertyName = Node.isStringLiteral(nameNode)
-      ? nameNode.getLiteralText()
-      : nameNode.getText()
+    const propertyName = Node.isStringLiteral(nameNode) ? nameNode.getLiteralText() : nameNode.getText()
     if (propertyName === name) return property.getInitializer()
   }
   return undefined
@@ -166,10 +161,7 @@ function routeStringFromInitializer(initializer: Node | undefined): string | und
   return initializer?.asKind(SyntaxKind.StringLiteral)?.getLiteralText()
 }
 
-function methodStringsFromInitializer(
-  initializer: Node | undefined,
-  sourceFile: SourceFile,
-): string[] {
+function methodStringsFromInitializer(initializer: Node | undefined, sourceFile: SourceFile): string[] {
   if (!initializer) return []
   const literal = initializer.asKind(SyntaxKind.StringLiteral)
   if (literal) return [literal.getLiteralText().toUpperCase()]
@@ -250,8 +242,7 @@ function routeRegistrations(files: SourceFile[]): RouteRegistration[] {
         if (!route) return
         const methods = methodStringsFromInitializer(propertyInitializer(config, 'method'), file)
         for (const configuredMethod of methods) {
-          if (!['GET', 'HEAD', 'POST', 'PATCH', 'PUT', 'DELETE'].includes(configuredMethod))
-            continue
+          if (!['GET', 'HEAD', 'POST', 'PATCH', 'PUT', 'DELETE'].includes(configuredMethod)) continue
           routes.push({ method: configuredMethod, route, file: rel(file), line: pos.line })
         }
         return
@@ -388,9 +379,7 @@ function assertProtocolManifestMutatingEntriesAreLive(
     if (mutatingMethods.length === 0) continue
     if (!entry.path.startsWith('/api/v1/')) continue
 
-    const matchingRoutes = mutatingRoutes.filter((route) =>
-      protocolRouteMatches(entry, route.method, route.route),
-    )
+    const matchingRoutes = mutatingRoutes.filter((route) => protocolRouteMatches(entry, route.method, route.route))
     if (matchingRoutes.length === 0) {
       const methods = mutatingMethods.join('/')
       fail(
@@ -420,15 +409,9 @@ function checkActiveWriterGuard(): void {
   ]
     .map((needle) => appText.indexOf(needle))
     .filter((index) => index >= 0)
-  const firstMutationIndex =
-    mutationRegistrarIndexes.length > 0 ? Math.min(...mutationRegistrarIndexes) : -1
+  const firstMutationIndex = mutationRegistrarIndexes.length > 0 ? Math.min(...mutationRegistrarIndexes) : -1
   if (guardIndex === -1) {
-    fail(
-      check,
-      'registerActiveWriterGuard is not wired in buildApp.',
-      undefined,
-      'server/fastify/src/app.ts',
-    )
+    fail(check, 'registerActiveWriterGuard is not wired in buildApp.', undefined, 'server/fastify/src/app.ts')
   } else {
     if (bootstrapIndex === -1 || guardIndex < bootstrapIndex) {
       fail(
@@ -458,12 +441,8 @@ function checkActiveWriterGuard(): void {
     )
   }
 
-  const routeFiles = project
-    .getSourceFiles()
-    .filter((file) => rel(file).startsWith('server/fastify/src/routes/'))
-  const mutatingRoutes = routeRegistrations(routeFiles).filter((route) =>
-    isMutatingMethod(route.method),
-  )
+  const routeFiles = project.getSourceFiles().filter((file) => rel(file).startsWith('server/fastify/src/routes/'))
+  const mutatingRoutes = routeRegistrations(routeFiles).filter((route) => isMutatingMethod(route.method))
   if (mutatingRoutes.length === 0) {
     fail(check, 'No mutating Fastify routes were discovered; audit route extraction is stale.')
   }
@@ -495,11 +474,7 @@ function checkActiveWriterGuard(): void {
   }
 
   const serverMemoryText = text('src/ts/process/request/serverMemory.ts')
-  for (const needle of [
-    'activeWriterSessionHeader',
-    'handleActiveWriterStaleResponse',
-    '{ activeWriter: true }',
-  ]) {
+  for (const needle of ['activeWriterSessionHeader', 'handleActiveWriterStaleResponse', '{ activeWriter: true }']) {
     if (!serverMemoryText.includes(needle)) {
       fail(
         check,
@@ -654,11 +629,7 @@ function checkPluginStorageGates(): void {
   const requireGate = (label: string, scope: Node, sinkKind: string): void => {
     if (!referencesDeviceLocalSink(scope, deviceLocalSinks)) return
     if (scope.getText().includes('assertDeviceLocalPluginStorageEnabled()')) return
-    fail(
-      check,
-      `${label} must assert Plugin Compatibility Mode before touching ${sinkKind}.`,
-      scope,
-    )
+    fail(check, `${label} must assert Plugin Compatibility Mode before touching ${sinkKind}.`, scope)
   }
 
   for (const className of ['SafeLocalStorage', 'SafeLocalPluginStorage']) {
@@ -669,12 +640,8 @@ function checkPluginStorageGates(): void {
     }
     const members: { name: string; node: Node }[] = [
       ...klass.getMethods().map((member) => ({ name: member.getName(), node: member as Node })),
-      ...klass
-        .getGetAccessors()
-        .map((member) => ({ name: member.getName(), node: member as Node })),
-      ...klass
-        .getSetAccessors()
-        .map((member) => ({ name: member.getName(), node: member as Node })),
+      ...klass.getGetAccessors().map((member) => ({ name: member.getName(), node: member as Node })),
+      ...klass.getSetAccessors().map((member) => ({ name: member.getName(), node: member as Node })),
     ]
     for (const member of members) {
       requireGate(`${className}.${member.name}`, member.node, 'device-local storage')
@@ -691,10 +658,7 @@ function checkPluginStorageGates(): void {
     for (const property of safeIdb.getProperties()) {
       if (Node.isPropertyAssignment(property)) {
         const initializer = property.getInitializer()
-        if (
-          initializer &&
-          (Node.isArrowFunction(initializer) || Node.isFunctionExpression(initializer))
-        ) {
+        if (initializer && (Node.isArrowFunction(initializer) || Node.isFunctionExpression(initializer))) {
           requireGate(`SafeIdbFactory.${property.getName()}`, property, 'IndexedDB')
         }
       } else if (Node.isMethodDeclaration(property)) {
@@ -767,10 +731,7 @@ const ASSET_WALKER_OWNERS: AssetWalkerOwner[] = [
     path: 'database.personas[*].icon',
     owner: 'persona create/patch validators',
     validatorFile: 'server/fastify/src/commands/personas.ts',
-    validatorNeedles: [
-      "'icon' in record",
-      'validateOptionalServerAssetRef(options.assetDb, record.icon',
-    ],
+    validatorNeedles: ["'icon' in record", 'validateOptionalServerAssetRef(options.assetDb, record.icon'],
   },
   {
     collector: 'addReference',
@@ -789,10 +750,7 @@ const ASSET_WALKER_OWNERS: AssetWalkerOwner[] = [
     path: 'database.characterOrder[*].imgFile',
     owner: 'character order reorder validator',
     validatorFile: 'server/fastify/src/commands/characters.ts',
-    validatorNeedles: [
-      'validateOptionalServerAssetRef(db, entry.imgFile',
-      'validateCharacterOrderAssetRefs',
-    ],
+    validatorNeedles: ['validateOptionalServerAssetRef(db, entry.imgFile', 'validateCharacterOrderAssetRefs'],
   },
   {
     collector: 'addReference',
@@ -800,10 +758,7 @@ const ASSET_WALKER_OWNERS: AssetWalkerOwner[] = [
     path: 'database.botPresets[*].image',
     owner: 'preset create/patch validators',
     validatorFile: 'server/fastify/src/commands/presets.ts',
-    validatorNeedles: [
-      "'image' in record",
-      'validateOptionalServerAssetRef(options.assetDb, record.image',
-    ],
+    validatorNeedles: ["'image' in record", 'validateOptionalServerAssetRef(options.assetDb, record.image'],
   },
   {
     collector: 'addTupleReferences',
@@ -925,11 +880,7 @@ function checkAssetWalkerValidators(): void {
   const walker = source('server/fastify/src/risuSave/assetReferences.ts')
   const collected = collectAssetWalkerFields(walker)
   if (collected.length === 0) {
-    fail(
-      check,
-      'No asset walker fields were discovered; audit collector extraction is stale.',
-      walker,
-    )
+    fail(check, 'No asset walker fields were discovered; audit collector extraction is stale.', walker)
     return
   }
 
@@ -941,20 +892,10 @@ function checkAssetWalkerValidators(): void {
   const staleOwners = ownerKeys.filter((key) => !collectedSet.has(key))
 
   if (missingOwners.length > 0) {
-    fail(
-      check,
-      `Asset walker fields lack validator ownership: ${missingOwners.join('; ')}.`,
-      undefined,
-      walker,
-    )
+    fail(check, `Asset walker fields lack validator ownership: ${missingOwners.join('; ')}.`, undefined, walker)
   }
   if (staleOwners.length > 0) {
-    fail(
-      check,
-      `Asset walker validator ownership table is stale: ${staleOwners.join('; ')}.`,
-      undefined,
-      walker,
-    )
+    fail(check, `Asset walker validator ownership table is stale: ${staleOwners.join('; ')}.`, undefined, walker)
   }
 
   for (const owner of ASSET_WALKER_OWNERS) {
@@ -1018,9 +959,7 @@ function checkRisuSaveImportExportShape(): void {
   }
 
   const exportResourceKeys = sortedValues(getStringArray(exporter, 'BLOCK_RESOURCE_KEYS'))
-  const rootComponentReservedKeys = sortedValues(
-    getStringArray(importer, 'ROOT_COMPONENT_RESERVED_KEYS'),
-  )
+  const rootComponentReservedKeys = sortedValues(getStringArray(importer, 'ROOT_COMPONENT_RESERVED_KEYS'))
   if (exportResourceKeys.join('\0') !== rootComponentReservedKeys.join('\0')) {
     fail(
       check,
@@ -1180,11 +1119,7 @@ function checkAssetPersistenceSemantics(): void {
     'validateGptSoVitsAssetRefs(db, record.gptSoVitsConfig',
   ]) {
     if (!characterText.includes(needle)) {
-      fail(
-        check,
-        `Character command validation must cover optional audio asset refs; missing ${needle}.`,
-        characters,
-      )
+      fail(check, `Character command validation must cover optional audio asset refs; missing ${needle}.`, characters)
     }
   }
 }
@@ -1193,9 +1128,7 @@ function checkProviderOwnership(): void {
   const check = 'EC1 provider ownership'
   const serverCompletion = source('src/ts/process/request/serverCompletion.ts')
   const serverCompletionText = serverCompletion.getFullText()
-  for (const needle of [
-    'Provider preview bodies are not supported in Fastify server mode',
-  ]) {
+  for (const needle of ['Provider preview bodies are not supported in Fastify server mode']) {
     if (!serverCompletionText.includes(needle)) {
       fail(
         check,
@@ -1211,10 +1144,7 @@ function checkProviderOwnership(): void {
   // (no silent local fall-through). See docs/client-thinning/reference/prompt-assembly-classifier.md.
   const serverPromptAssembly = source('src/ts/process/request/serverPromptAssembly.ts')
   const serverPromptAssemblyText = serverPromptAssembly.getFullText()
-  for (const needle of [
-    'export function resolveServerPromptAssembly',
-    'is not supported in Fastify server mode',
-  ]) {
+  for (const needle of ['export function resolveServerPromptAssembly', 'is not supported in Fastify server mode']) {
     if (!serverPromptAssemblyText.includes(needle)) {
       fail(
         check,
@@ -1291,10 +1221,7 @@ function findWriterModeBootstrapHelpers(): Set<string> {
     const body = fn.getBody()
     if (!body) continue
     const bodyText = body.getText()
-    if (
-      bodyText.includes('activeWriterSessionHeader()') ||
-      bodyText.includes('registerActiveWriter: true')
-    ) {
+    if (bodyText.includes('activeWriterSessionHeader()') || bodyText.includes('registerActiveWriter: true')) {
       const name = fn.getName()
       if (name) helpers.add(name)
     }
@@ -1503,8 +1430,7 @@ function isAllowedConflictFunction(file: string, name: string | undefined): bool
 function isDirectStringLiteral(node: Node, target: string): boolean {
   const inner = unwrapExpression(node)
   return (
-    (Node.isStringLiteral(inner) || Node.isNoSubstitutionTemplateLiteral(inner)) &&
-    inner.getLiteralText() === target
+    (Node.isStringLiteral(inner) || Node.isNoSubstitutionTemplateLiteral(inner)) && inner.getLiteralText() === target
   )
 }
 
@@ -1546,10 +1472,7 @@ function guardedBranchRegions(conditionNode: Node, takeWhenTrue: boolean): Node[
       current = parent
       continue
     }
-    if (
-      Node.isPrefixUnaryExpression(parent) &&
-      parent.getOperatorToken() === SyntaxKind.ExclamationToken
-    ) {
+    if (Node.isPrefixUnaryExpression(parent) && parent.getOperatorToken() === SyntaxKind.ExclamationToken) {
       negations++
       current = parent
       continue
@@ -1606,10 +1529,7 @@ function checkAlpha4ConflictRetry(): void {
     for (const binary of file.getDescendantsOfKind(SyntaxKind.BinaryExpression)) {
       const operator = binary.getOperatorToken().getKind()
       if (!EQUALITY_OPERATOR_KINDS.has(operator)) continue
-      if (
-        !valueIsConflictStatus(binary.getLeft(), aliases) &&
-        !valueIsConflictStatus(binary.getRight(), aliases)
-      ) {
+      if (!valueIsConflictStatus(binary.getLeft(), aliases) && !valueIsConflictStatus(binary.getRight(), aliases)) {
         continue
       }
       const enclosing = enclosingFunctionLike(binary)
@@ -1950,10 +1870,7 @@ function getRegexInitializer(sourceFile: SourceFile, name: string): string | und
   return undefined
 }
 
-function findRegexLiteralByText(
-  scope: Node,
-  predicate: (literal: string) => boolean,
-): string | undefined {
+function findRegexLiteralByText(scope: Node, predicate: (literal: string) => boolean): string | undefined {
   let match: string | undefined
   scope.forEachDescendant((descendant) => {
     if (match) return
@@ -2209,10 +2126,7 @@ function callsRegexMatcher(scope: Node): boolean {
   scope.forEachDescendant((descendant, traversal) => {
     if (!Node.isCallExpression(descendant)) return
     const expression = descendant.getExpression()
-    if (
-      Node.isPropertyAccessExpression(expression) &&
-      ['test', 'exec', 'match'].includes(expression.getName())
-    ) {
+    if (Node.isPropertyAccessExpression(expression) && ['test', 'exec', 'match'].includes(expression.getName())) {
       found = true
       traversal.stop()
     }
@@ -2263,12 +2177,7 @@ function validateServerAssetUrlShapes(check: string): void {
   const file = source('src/ts/server/assets.ts')
   const fn = file.getFunction('serverAssetUrl')
   if (!fn) {
-    fail(
-      check,
-      'Expected serverAssetUrl gate helper in src/ts/server/assets.ts.',
-      undefined,
-      'src/ts/server/assets.ts',
-    )
+    fail(check, 'Expected serverAssetUrl gate helper in src/ts/server/assets.ts.', undefined, 'src/ts/server/assets.ts')
     return
   }
   const param = fn.getParameters()[0]?.getName() ?? 'loc'
@@ -2315,23 +2224,11 @@ function validateServerAssetUrlShapes(check: string): void {
       // look across the whole file for the literal but require the gate to
       // actually apply a regex matcher and reject non-matches with null.
       if (!hasAnchoredAssetIdRegex(file) || !callsRegexMatcher(idFn)) {
-        fail(
-          check,
-          'serverAssetIdFromReference must match loc against an anchored asset-id regex.',
-          idFn,
-        )
+        fail(check, 'serverAssetIdFromReference must match loc against an anchored asset-id regex.', idFn)
       }
       const idText = idFn.getBody()?.getText() ?? ''
-      if (
-        !/\?\?\s*null\b/.test(idText) &&
-        !/return\s+null\b/.test(idText) &&
-        !/:\s*null\b/.test(idText)
-      ) {
-        fail(
-          check,
-          'serverAssetIdFromReference must return null for non-matching asset references.',
-          idFn,
-        )
+      if (!/\?\?\s*null\b/.test(idText) && !/return\s+null\b/.test(idText) && !/:\s*null\b/.test(idText)) {
+        fail(check, 'serverAssetIdFromReference must return null for non-matching asset references.', idFn)
       }
     }
   }
@@ -2358,10 +2255,7 @@ function checkAlpha4AssetUrlGate(): void {
         )
       }
       // It must not fall back to fetching the raw `loc` while attaching auth.
-      if (
-        bodyText.includes("'risu-auth':") &&
-        /serverAssetUrl\([^)]*\)\s*\?\?\s*loc/.test(bodyText)
-      ) {
+      if (bodyText.includes("'risu-auth':") && /serverAssetUrl\([^)]*\)\s*\?\?\s*loc/.test(bodyText)) {
         fail(
           check,
           `${rule.fn} in ${rule.file} falls back to fetching arbitrary loc values while attaching risu-auth.`,
@@ -2450,10 +2344,7 @@ function findMutatingDispatcherNames(): Set<string> {
 }
 
 // Functions/helpers that intentionally serialize multiple dispatches.
-const ALLOWED_FANOUT_SEQUENCERS = new Set<string>([
-  'runChatCommandSequence',
-  'runOptimisticCommandSequence',
-])
+const ALLOWED_FANOUT_SEQUENCERS = new Set<string>(['runChatCommandSequence', 'runOptimisticCommandSequence'])
 
 // Exemptions for specific declaration names where fan-out is provably safe
 // because the function only dispatches one command and the apparent multiple
@@ -2675,16 +2566,9 @@ function checkAlpha4CompositeFanout(): void {
 
   // A scope races when at least two unserialized dispatches can fire in one
   // invocation. Mutually exclusive branches are ignored.
-  const visitScope = (
-    rl: string,
-    scopeNode: Node,
-    scopeName: string,
-    useNodeLocation: boolean,
-  ): void => {
+  const visitScope = (rl: string, scopeNode: Node, scopeName: string, useNodeLocation: boolean): void => {
     const calls = countDispatchesInScope(scopeNode, dispatcherNames)
-    const unserialized = calls.filter(
-      (call) => !callIsAwaited(call) && !callIsInsideSequencer(call),
-    )
+    const unserialized = calls.filter((call) => !callIsAwaited(call) && !callIsInsideSequencer(call))
     const racing = unserialized.filter((call) =>
       unserialized.some((other) => other !== call && !areMutuallyExclusive(call, other)),
     )
@@ -3109,10 +2993,7 @@ function checkPluginV2NoServerExecution(): void {
 //     return), and the request hardcode (`isGroupChat: false`). Deleting any one would
 //     re-open a durable group-chat path the server cannot own.
 
-const GROUP_CHAT_UI_PATHS = [
-  'src/lib/Others/GridCatalog.svelte',
-  'src/lib/Others/ChatList.svelte',
-] as const
+const GROUP_CHAT_UI_PATHS = ['src/lib/Others/GridCatalog.svelte', 'src/lib/Others/ChatList.svelte'] as const
 
 function isGroupStringLiteral(node: Node): boolean {
   return Node.isStringLiteral(node) && node.getLiteralValue() === 'group'
@@ -3240,16 +3121,13 @@ function loadOptionalSource(rl: string): SourceFile | undefined {
 function comparisonGuardsUnsupportedReturn(comparison: Node): boolean {
   const ifStatement = comparison.getFirstAncestorByKind(SyntaxKind.IfStatement)
   if (!ifStatement) return false
-  for (const ret of ifStatement
-    .getThenStatement()
-    .getDescendantsOfKind(SyntaxKind.ReturnStatement)) {
+  for (const ret of ifStatement.getThenStatement().getDescendantsOfKind(SyntaxKind.ReturnStatement)) {
     const expr = ret.getExpression()
     if (!expr || !Node.isObjectLiteralExpression(expr)) continue
     const typeProp = expr.getProperty('type')
     if (typeProp && Node.isPropertyAssignment(typeProp)) {
       const init = typeProp.getInitializer()
-      if (init && Node.isStringLiteral(init) && init.getLiteralValue() === 'unsupported')
-        return true
+      if (init && Node.isStringLiteral(init) && init.getLiteralValue() === 'unsupported') return true
     }
   }
   return false
@@ -3283,10 +3161,7 @@ function checkGroupChatRemoved(): void {
   // Positive half P1: the load-time filter that strips group characters on load.
   const dbFile = loadOptionalSource('src/ts/storage/database.svelte.ts')
   if (!dbFile) {
-    fail(
-      check,
-      'expected src/ts/storage/database.svelte.ts to exist for the load-time group filter.',
-    )
+    fail(check, 'expected src/ts/storage/database.svelte.ts to exist for the load-time group filter.')
   } else {
     const setDatabase = dbFile.getFunction('setDatabase')
     if (!setDatabase) {
@@ -3309,10 +3184,7 @@ function checkGroupChatRemoved(): void {
   // Positive half P2: server prompt assembly still hard-fails a group character.
   const assembly = loadOptionalSource('src/ts/process/request/serverPromptAssembly.ts')
   if (!assembly) {
-    fail(
-      check,
-      'expected src/ts/process/request/serverPromptAssembly.ts to exist for the group hard-fail.',
-    )
+    fail(check, 'expected src/ts/process/request/serverPromptAssembly.ts to exist for the group hard-fail.')
   } else {
     const comparison = findCharTypeGroupComparison(assembly)
     if (!comparison) {
@@ -3323,21 +3195,14 @@ function checkGroupChatRemoved(): void {
         assembly,
       )
     } else if (!comparisonGuardsUnsupportedReturn(comparison)) {
-      fail(
-        check,
-        "the group comparison in serverPromptAssembly no longer guards an 'unsupported' return.",
-        comparison,
-      )
+      fail(check, "the group comparison in serverPromptAssembly no longer guards an 'unsupported' return.", comparison)
     }
   }
 
   // Positive half P3: the request boundary keeps isGroupChat hardcoded false.
   const dispatch = loadOptionalSource('src/ts/process/dispatch/dispatchRequest.ts')
   if (!dispatch) {
-    fail(
-      check,
-      'expected src/ts/process/dispatch/dispatchRequest.ts to exist for the isGroupChat hardcode.',
-    )
+    fail(check, 'expected src/ts/process/dispatch/dispatchRequest.ts to exist for the isGroupChat hardcode.')
   } else if (!hasIsGroupChatFalse(dispatch)) {
     fail(
       check,
@@ -3366,12 +3231,7 @@ function checkDevToolScriptstateCommandBacked(): void {
     )
   }
   if (!body.includes('dispatchPatchChatScriptstate')) {
-    fail(
-      check,
-      'DevTool scriptstate editing must dispatch through dispatchPatchChatScriptstate.',
-      undefined,
-      rl,
-    )
+    fail(check, 'DevTool scriptstate editing must dispatch through dispatchPatchChatScriptstate.', undefined, rl)
   }
 }
 
@@ -3386,12 +3246,7 @@ function checkDevToolAutopilotCommandBacked(): void {
   const body = text(rl)
   const start = body.indexOf("<Accordion styled name={'Autopilot'}>")
   if (start === -1) {
-    fail(
-      check,
-      'DevTool Autopilot accordion is missing; command-backed path cannot be verified.',
-      undefined,
-      rl,
-    )
+    fail(check, 'DevTool Autopilot accordion is missing; command-backed path cannot be verified.', undefined, rl)
     return
   }
   const end = body.indexOf('</Accordion>', start)
@@ -3473,9 +3328,7 @@ function runChecks(checks: AuditCheck[]): void {
 function checkProviderCapabilityShared(): void {
   const check = 'A4R-provider-capability shared routing table'
   const providerCapabilitySpecifier = /(?:^|\/)providerCapability$/
-  const consumers = [
-    { relPath: 'server/fastify/src/prompt/chatDispatch.ts', label: 'server /chat dispatcher' },
-  ]
+  const consumers = [{ relPath: 'server/fastify/src/prompt/chatDispatch.ts', label: 'server /chat dispatcher' }]
 
   for (const { relPath, label } of consumers) {
     const abs = path.join(root, relPath)

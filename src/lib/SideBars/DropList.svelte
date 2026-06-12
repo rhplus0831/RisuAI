@@ -15,12 +15,8 @@
   {#each list as n, i}
     <div class="w-full h-10 flex items-center">
       <span class="ml-2 grow">{language.formating[n]}</span>
-      <button class="mr-1" disabled={list.length < 2} onclick={() => moveItem(i, -1)}
-        ><ChevronUp /></button
-      >
-      <button class="mr-1" disabled={list.length < 2} onclick={() => moveItem(i, 1)}
-        ><ChevronDown /></button
-      >
+      <button class="mr-1" disabled={list.length < 2} onclick={() => moveItem(i, -1)}><ChevronUp /></button>
+      <button class="mr-1" disabled={list.length < 2} onclick={() => moveItem(i, 1)}><ChevronDown /></button>
     </div>
     {#if i !== list.length - 1}
       <div class="border-t w-full border-selected"></div>

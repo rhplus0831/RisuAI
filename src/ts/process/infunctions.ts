@@ -29,10 +29,7 @@ function toRPN(expression: string) {
 
   for (let i = 0; i < expression.length; i++) {
     const char = expression[i]
-    if (
-      char === '-' &&
-      (i === 0 || operatorsKeys.includes(expression[i - 1]) || expression[i - 1] === '(')
-    ) {
+    if (char === '-' && (i === 0 || operatorsKeys.includes(expression[i - 1]) || expression[i - 1] === '(')) {
       lastToken += char
     } else if (operatorsKeys.includes(char)) {
       if (lastToken !== '') {
@@ -60,11 +57,9 @@ function toRPN(expression: string) {
       while (
         operatorStack.length > 0 &&
         ((operators[token].associativity === 'Left' &&
-          operators[token].precedence <=
-            operators[operatorStack[operatorStack.length - 1]].precedence) ||
+          operators[token].precedence <= operators[operatorStack[operatorStack.length - 1]].precedence) ||
           (operators[token].associativity === 'Right' &&
-            operators[token].precedence <
-              operators[operatorStack[operatorStack.length - 1]].precedence))
+            operators[token].precedence < operators[operatorStack[operatorStack.length - 1]].precedence))
       ) {
         outputQueue += operatorStack.pop() + ' '
       }

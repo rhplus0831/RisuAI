@@ -19,9 +19,7 @@
     'background: ' +
     (DBState.db.textScreenColor ? DBState.db.textScreenColor + '80' : 'rgba(0,0,0,0.8)') +
     ';\n' +
-    (DBState.db.textBorder
-      ? 'text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;'
-      : '') +
+    (DBState.db.textBorder ? 'text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;' : '') +
     (DBState.db.textScreenRounded ? 'border-radius: 2rem; padding: 1rem;' : '') +
     (DBState.db.textScreenBorder ? `border: 0.3rem solid ${DBState.db.textScreenBorder};` : '')
   let bgImg = $state('')
@@ -37,18 +35,12 @@
 </script>
 
 {#if DBState.db.theme === 'waifu'}
-  <div
-    class="grow h-full flex justify-center relative"
-    style={bgImg.length < 4 ? wallPaper : bgImg}
-  >
+  <div class="grow h-full flex justify-center relative" style={bgImg.length < 4 ? wallPaper : bgImg}>
     <SideBarArrow />
     <BackgroundDom />
     {#if $selectedCharID >= 0}
       {#if DBState.db.characters[$selectedCharID].viewScreen !== 'none'}
-        <div
-          class="h-full mr-10 flex justify-end halfw"
-          style:width="{42 * (DBState.db.waifuWidth2 / 100)}rem"
-        >
+        <div class="h-full mr-10 flex justify-end halfw" style:width="{42 * (DBState.db.waifuWidth2 / 100)}rem">
           <TransitionImage classType="waifu" src={getEmotion(DBState.db, $CharEmotion, 'plain')} />
         </div>
       {/if}
@@ -56,14 +48,11 @@
     <div
       class="h-full w-2xl"
       style:width="{42 * (DBState.db.waifuWidth / 100)}rem"
-      class:halfwp={$selectedCharID >= 0 &&
-        DBState.db.characters[$selectedCharID].viewScreen !== 'none'}
-    >
+      class:halfwp={$selectedCharID >= 0 && DBState.db.characters[$selectedCharID].viewScreen !== 'none'}>
       <DefaultChatScreen
         customStyle={`${externalStyles}backdrop-filter: blur(4px);`}
         bind:openChatList
-        bind:openModuleList
-      />
+        bind:openModuleList />
     </div>
   </div>
 {:else if DBState.db.theme === 'waifuMobile'}
@@ -72,17 +61,12 @@
     <BackgroundDom />
     <div
       class="w-full absolute z-10 bottom-0 left-0"
-      class:per33={$selectedCharID >= 0 &&
-        DBState.db.characters[$selectedCharID].viewScreen !== 'none'}
-      class:h-full={!(
-        $selectedCharID >= 0 && DBState.db.characters[$selectedCharID].viewScreen !== 'none'
-      )}
-    >
+      class:per33={$selectedCharID >= 0 && DBState.db.characters[$selectedCharID].viewScreen !== 'none'}
+      class:h-full={!($selectedCharID >= 0 && DBState.db.characters[$selectedCharID].viewScreen !== 'none')}>
       <DefaultChatScreen
         customStyle={`${externalStyles}backdrop-filter: blur(4px);`}
         bind:openChatList
-        bind:openModuleList
-      />
+        bind:openModuleList />
     </div>
     {#if $selectedCharID >= 0}
       {#if DBState.db.characters[$selectedCharID].viewScreen !== 'none'}
@@ -105,8 +89,7 @@
       <DefaultChatScreen
         customStyle={bgImg.length > 2 ? `${externalStyles}` : ''}
         bind:openChatList
-        bind:openModuleList
-      />
+        bind:openModuleList />
     </div>
   </div>
 {/if}
@@ -114,14 +97,12 @@
   <ChatList
     close={() => {
       openChatList = false
-    }}
-  />
+    }} />
 {:else if openModuleList}
   <ModuleChatMenu
     close={() => {
       openModuleList = false
-    }}
-  />
+    }} />
 {/if}
 
 <style>

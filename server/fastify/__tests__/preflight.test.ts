@@ -1,8 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest'
-import type {
-  Database,
-  character,
-} from '../../../src/ts/storage/database.svelte'
+import type { Database, character } from '../../../src/ts/storage/database.svelte'
 import type {
   PromptItem,
   PromptItemAuthorNote,
@@ -13,10 +10,7 @@ import type {
   PromptItemTyped,
 } from '../../../src/ts/process/prompt'
 import type { OpenAIChat } from '../../../src/ts/process/index.svelte'
-import {
-  preflightTemplateTokens,
-  type PromptUnformatedSlots,
-} from '../src/prompt/preflight.js'
+import { preflightTemplateTokens, type PromptUnformatedSlots } from '../src/prompt/preflight.js'
 import { bootPromptVariables } from '../src/prompt/promptVariablesBoot.js'
 import type { ExpandContext } from '../src/prompt/variables.js'
 

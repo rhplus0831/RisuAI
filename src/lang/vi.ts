@@ -25,31 +25,25 @@ export const languageVietnamese = {
     networkFetch: 'This happens when the network is unstable or the server is down.',
     networkFetchWeb:
       'Đây có thể là lỗi CORS do giới hạn của trình duyệt. Hãy chạy RisuAI dưới máy chủ Fastify để các yêu cầu được chuyển tiếp qua proxy phía máy chủ.',
-    networkFetchPlain:
-      'This can be a plain fetch error. try disabling force plain fetch option in settings.',
+    networkFetchPlain: 'This can be a plain fetch error. try disabling force plain fetch option in settings.',
     requestLogRemoved: 'This request log is removed.',
     requestLogRemovedDesc: 'This request log removes when client is refreshed or reloaded.',
     vertexAuthError: 'Thiếu thông tin xác thực Vertex AI.',
-    coldStorageWriteFailed:
-      'Ghi vào bộ nhớ lạnh thất bại. Dữ liệu trò chuyện của bạn đã được bảo toàn.',
-    coldStorageVerifyFailed:
-      'Xác minh bộ nhớ lạnh thất bại. Dữ liệu trò chuyện của bạn đã được bảo toàn.',
+    coldStorageWriteFailed: 'Ghi vào bộ nhớ lạnh thất bại. Dữ liệu trò chuyện của bạn đã được bảo toàn.',
+    coldStorageVerifyFailed: 'Xác minh bộ nhớ lạnh thất bại. Dữ liệu trò chuyện của bạn đã được bảo toàn.',
   },
   showHelp: 'Hiển thị trợ giúp',
   help: {
     model: 'Tùy chọn mô hình là mô hình chính được sử dụng trong trò chuyện.',
     submodel:
       'Mô hình phụ trợ là mô hình được sử dụng để phân tích hình ảnh cảm xúc và đề xuất tự động, v.v. Nên sử dụng gpt3.5.',
-    oaiapikey:
-      'Khóa Api cho OpenAI. bạn có thể lấy nó ở https://platform.openai.com/account/api-keys',
+    oaiapikey: 'Khóa Api cho OpenAI. bạn có thể lấy nó ở https://platform.openai.com/account/api-keys',
     mainprompt: 'Tùy chọn lời nhắc chính đặt hành vi mô hình mặc định.',
     jailbreak: 'Tùy chọn lời nhắc jailbreak kích hoạt khi nút chuyển đổi jailbreak được bật.',
     globalNote:
       'một lưu ý có tác động mạnh mẽ đến hành vi của mô hình, còn được gọi là UJB. hoạt động ở tất cả các ký tự.',
-    autoSuggest:
-      'Lời nhắc được sử dụng để tạo các tùy chọn khi tự động đề xuất phản hồi của người dùng.',
-    formatOrder:
-      'thứ tự hình thành của lời nhắc. các khối thấp hơn sẽ có hiệu quả hơn đối với mô hình.',
+    autoSuggest: 'Lời nhắc được sử dụng để tạo các tùy chọn khi tự động đề xuất phản hồi của người dùng.',
+    formatOrder: 'thứ tự hình thành của lời nhắc. các khối thấp hơn sẽ có hiệu quả hơn đối với mô hình.',
     forceUrl: 'nếu nó không trống, yêu cầu sẽ chuyển đến url mà bạn đã nhập.',
     tempature:
       'giá trị thấp hơn làm cho nhân vật tuân theo lời nhắc một cách chặt chẽ, nhưng nó sẽ có nhiều khả năng phản hồi giống như một cái máy hơn.\nGiá trị cao hơn sẽ dẫn đến hành vi sáng tạo, nhưng phản ứng của nhân vật có thể dễ dàng bị phá vỡ hơn.',
@@ -60,8 +54,7 @@ export const languageVietnamese = {
     sdProvider: 'nhà cung cấp để tạo hình ảnh.',
     msgSound: 'Phát âm thanh *ding* khi nhân vật phản hồi',
     charDesc: 'Mô tả ngắn gọn về nhân vật. điều này ảnh hưởng đến phản ứng của nhân vật.',
-    charFirstMessage:
-      'Tin nhắn đầu tiên của nhân vật. điều này ảnh hưởng lớn đến phản ứng của nhân vật.',
+    charFirstMessage: 'Tin nhắn đầu tiên của nhân vật. điều này ảnh hưởng lớn đến phản ứng của nhân vật.',
     charNote:
       'một lưu ý có ảnh hưởng mạnh mẽ đến hành vi của mô hình. được nhúng vào ký tự hiện tại. còn được gọi là UJB.',
     toggleNsfw: 'bật và tắt lời nhắc jailbreak.',
@@ -103,8 +96,7 @@ export const languageVietnamese = {
       'Nội dung bổ sung để hiển thị trong cuộc trò chuyện của bạn.\n\n - sử dụng `{{raw::<asset name>}}` để dùng làm đường dẫn.\n - sử dụng `{{img::<asset name>}}` để sử dụng làm hình ảnh\n - sử dụng `{{video::<asset name>}}` để sử dụng làm video\n - sử dụng `{{audio::<asset name>}}` để sử dụng làm âm thanh\n    - nên đặt HTML nền',
     superMemory:
       'SuperMemory giúp nhân vật của bạn ghi nhớ nhiều hơn bằng cách cung cấp dữ liệu tóm tắt cho AI.\n\nMô hình SuperMemory là mô hình tóm tắt văn bản đó. davinci được khuyến nghị và các mô hình phụ trợ không được khuyến nghị trừ khi đó là mô hình chưa được lọc với hơn 2000 mã thông báo có kỹ năng tóm tắt tuyệt vời.\n\nLời nhắc SuperMemory quyết định lời nhắc nào sẽ được gửi để tóm tắt. nếu bạn để trống, nó sẽ sử dụng lời nhắc mặc định. nên để trống.\n\nSau khi thiết lập xong, bạn có thể sử dụng nó trong cài đặt của một nhân vật.',
-    replaceGlobalNote:
-      'Nếu nó không trống, nó sẽ thay thế ghi chú chung hiện tại bằng ghi chú này.',
+    replaceGlobalNote: 'Nếu nó không trống, nó sẽ thay thế ghi chú chung hiện tại bằng ghi chú này.',
     backgroundHTML:
       'Dữ liệu Markdown/HTML sẽ được đưa vào nền màn hình trò chuyện.\n\n bạn cũng có thể sử dụng tài sản bổ sung. ví dụ: bạn có thể sử dụng `{{audio::<asset name}}` cho nhạc nền.\n\n Ngoài ra, bạn có thể sử dụng những thứ này với các nội dung bổ sung:\n - `{{bg::<asset name>}}`: thêm nền làm nội dung',
     additionalText:
@@ -127,12 +119,10 @@ export const languageVietnamese = {
     imageCompression:
       'Nếu được bật, nó sẽ nén hình ảnh khi xuất nhân vật. Nếu hình ảnh động không hoạt động, hãy thử tắt tùy chọn này.',
     useExperimental: 'Nếu được bật, nó sẽ hiển thị một số tính năng thử nghiệm.',
-    forceProxyAsOpenAI:
-      'Nếu được bật, nó sẽ buộc sử dụng định dạng OpenAI khi sử dụng proxy ngược.',
+    forceProxyAsOpenAI: 'Nếu được bật, nó sẽ buộc sử dụng định dạng OpenAI khi sử dụng proxy ngược.',
     forcePlainFetch:
       'Nếu được bật, nó sẽ sử dụng api fetch của trình duyệt thay vì yêu cầu http gốc. Điều này có thể gây ra lỗi CORS.',
-    autoFillRequestURL:
-      'Nếu được bật, nó sẽ tự động điền url yêu cầu để khớp với mô hình hiện tại.',
+    autoFillRequestURL: 'Nếu được bật, nó sẽ tự động điền url yêu cầu để khớp với mô hình hiện tại.',
     chainOfThought: 'Nếu được bật, nó sẽ thêm lời nhắc chuỗi suy nghĩ vào lời nhắc.',
     gptVisionQuality:
       'Tùy chọn này được sử dụng để đặt chất lượng của mô hình phát hiện hình ảnh. Chất lượng càng cao thì khả năng phát hiện càng chính xác nhưng sẽ sử dụng nhiều token hơn.',
@@ -184,10 +174,8 @@ export const languageVietnamese = {
       'Namespace là một định danh duy nhất cho mô-đun. Nó được sử dụng để ngăn xung đột giữa các mô-đun, và cho sự tương tác của các cài đặt trước, các mô-đun khác, v.v. Nếu bạn không chắc chắn nên đặt gì, hãy để trống.',
     moduleIntergration:
       'Bạn có thể kích hoạt các mô-đun bằng cách đặt namespace mô-đun vào phần tích hợp mô-đun. Nếu bạn muốn kích hoạt nhiều mô-đun, bạn có thể phân tách chúng bằng dấu phẩy. Ví dụ, `module1,module2,module3`. Điều này dành cho người dùng nâng cao, những người muốn thay đổi việc sử dụng các mô-đun theo cài đặt trước.',
-    customCSS:
-      'CSS tùy chỉnh để tạo kiểu. Bạn cũng có thể tắt/bật nó bằng cách nhấn (Ctrl + .) nếu có sự cố.',
-    betaMobileGUI:
-      'Nếu được bật, nó sẽ sử dụng GUI di động beta trên màn hình nhỏ (nhỏ hơn 800px). Cần làm mới.',
+    customCSS: 'CSS tùy chỉnh để tạo kiểu. Bạn cũng có thể tắt/bật nó bằng cách nhấn (Ctrl + .) nếu có sự cố.',
+    betaMobileGUI: 'Nếu được bật, nó sẽ sử dụng GUI di động beta trên màn hình nhỏ (nhỏ hơn 800px). Cần làm mới.',
     unrecommended: 'Đây là cài đặt không được khuyến nghị. Không nên sử dụng cài đặt này.',
     jsonSchema:
       'Đây là JSON Schema sẽ được gửi đến mô hình AI nếu mô hình AI hỗ trợ JSON Schema.\n\nTuy nhiên, vì JSON Schema khó học, trong Risuai, bạn có thể sử dụng tập hợp con của giao diện TypeScript thay vì JSON Schema. Risuai sẽ chuyển đổi nó trong thời gian chạy. Ví dụ, nếu bạn muốn gửi một JSON như thế này:\n\n```js\n{\n  "name": "Risuai", //tên phải là Risuai,\n  "age": 1, //tuổi phải là số,\n  "icon": "slim", //biểu tượng phải là \'slim\' hoặc \'rounded\'\n  "thoughts": ["Good View!", "Lorem"] //suy nghĩ phải là mảng chuỗi\n}\n```\n\nBạn có thể đặt giao diện TypeScript này:\n\n```typescript\ninterface Schema {\n  name: string;\n  age: number;\n  icon: \'slim\'|\'rounded\'\n  thoughts: string[]\n}\n```\n\nTên của giao diện không quan trọng. Để biết thêm thông tin, xem tài liệu typescript. (https://www.typescriptlang.org/docs/handbook/interfaces.html), và để kiểm tra tập hợp con nào của TypeScript được hỗ trợ, hãy xem bên dưới.<details><summary>Tập hợp con TypeScript được hỗ trợ</summary>\n\nCác loại được hỗ trợ là `boolean`, `number`, `string`, `Array`. Các kiểu nâng cao như kiểu đơn vị, kiểu giao nhau, kiểu hợp, tùy chọn, kiểu chữ, v.v. không được hỗ trợ ngoại trừ các trường hợp sau:\n\n        - Mảng các kiểu nguyên thủy: (ví dụ: `string[]`, `Array<boolean>)`\n        - Kiểu đơn vị giữa các chuỗi: (ví dụ: `\'slim\'|\'rounded\'`).\n\n        Các thuộc tính phải nằm trên một dòng. Nếu có nhiều thuộc tính trên một dòng, nó sẽ báo lỗi. Thuộc tính và tên của giao diện chỉ được dùng các ký tự latin, trong phạm vi ASCII. Tên của các thuộc tính không được bao quanh bởi dấu ngoặc đơn hoặc dấu ngoặc kép. Lồng nhau bên trong giao diện không được hỗ trợ. Không được phép đặt `{` hoặc `}` trong dòng mà các thuộc tính được xác định. Nếu bạn muốn sử dụng các kiểu nâng cao hơn, hãy sử dụng JSON Schema thay thế.\n        </details>',
@@ -201,8 +189,7 @@ export const languageVietnamese = {
       'HTML sẽ được chèn vào mỗi cuộc trò chuyện.\n\nBạn có thể sử dụng CBS và các thẻ đặc biệt.\n- `<risutextbox>`: hộp văn bản sẽ được sử dụng để hiển thị văn bản\n- `<risuicon>`: biểu tượng cho người dùng hoặc trợ lý\n- `<risubuttons>`: các nút biểu tượng để chỉnh sửa trò chuyện, dịch thuật, v.v.\n- `<risugeninfo>`: nút thông tin tạo.',
     systemContentReplacement:
       'Định dạng lời nhắc thay thế lời nhắc hệ thống nếu mô hình không hỗ trợ lời nhắc hệ thống.',
-    systemRoleReplacement:
-      'Vai trò thay thế vai trò hệ thống nếu mô hình không hỗ trợ vai trò hệ thống.',
+    systemRoleReplacement: 'Vai trò thay thế vai trò hệ thống nếu mô hình không hỗ trợ vai trò hệ thống.',
     summarizationPrompt:
       'Lời nhắc được sử dụng để tóm tắt. Nếu để trống, nó sẽ sử dụng lời nhắc mặc định. Bạn cũng có thể sử dụng định dạng ChatML với {{slot}} cho dữ liệu trò chuyện.',
     translatorPrompt:
@@ -217,24 +204,20 @@ export const languageVietnamese = {
       'Nếu được bật, nó sẽ sử dụng phương pháp cũ để tìm tài sản phương tiện, mà không sử dụng thuật toán tìm kiếm bổ sung.',
     comfyWorkflow:
       "Đặt luồng công việc API của Comfy UI. Bạn có thể lấy luồng công việc API trong Comfy UI bằng cách nhấn nút 'Workflow > Export (API)'. Bạn cũng phải đặt {{risu_prompt}} trong văn bản luồng công việc của mình. {{risu_prompt}} sẽ được thay thế bằng lời nhắc do Risu cung cấp.",
-    automaticCachePoint:
-      'Tự động tạo điểm lưu trữ sau khi cuộc trò chuyện kết thúc, nếu điểm lưu trữ chưa tồn tại.',
+    automaticCachePoint: 'Tự động tạo điểm lưu trữ sau khi cuộc trò chuyện kết thúc, nếu điểm lưu trữ chưa tồn tại.',
     experimentalChatCompressionDesc:
       'Nén dữ liệu trò chuyện không sử dụng và lưu vào tệp riêng biệt. Điều này làm giảm đáng kể kích thước dữ liệu trò chuyện và cải thiện đáng kể hiệu suất, tuy nhiên đây là tính năng thử nghiệm và có thể không ổn định, gây ra sự cố trong tính năng sao lưu và hơn thế nữa.',
     promptInfoInsideChatDesc:
       'Khi được bật, tính năng này lưu trữ thông tin cài đặt trước lời nhắc trong siêu dữ liệu trò chuyện. Dữ liệu được lưu trữ bao gồm tên cài đặt trước, các chuyển đổi đang hoạt động và văn bản lời nhắc. Điều này có thể làm tăng nhẹ thời gian xử lý và dung lượng lưu trữ.',
     autoAdjustSchema: 'Khi được bật, nó sẽ tự động điều chỉnh JSON schema cho Đầu ra Động.',
-    dynamicMessages:
-      'Khi được bật, nó sẽ cho phép trợ lý gửi nhiều tin nhắn liên tiếp, thay vì từng tin nhắn một.',
+    dynamicMessages: 'Khi được bật, nó sẽ cho phép trợ lý gửi nhiều tin nhắn liên tiếp, thay vì từng tin nhắn một.',
     dynamicMemory:
       'Khi được bật, trợ lý sẽ ghi chú bộ nhớ vào thời gian phản hồi. Cần có thêm lời nhắc để sử dụng tính năng này.',
     dynamicResponseTiming: 'Khi được bật, nó sẽ điều chỉnh thời gian phản hồi một cách linh hoạt.',
     dynamicRequest:
       'Khi được bật, nó sẽ yêu cầu mô hình vào thời điểm ngẫu nhiên mà không cần chờ người dùng nhập liệu.',
-    settingsCloseButtonSize:
-      'Điều chỉnh kích thước nút đóng (X) ở góc trên bên phải cửa sổ cài đặt. Mặc định là 24.',
-    showTypingEffect:
-      'Khi được bật, nó sẽ hiển thị chỉ báo đang nhập trong khi trợ lý đang tạo phản hồi.',
+    settingsCloseButtonSize: 'Điều chỉnh kích thước nút đóng (X) ở góc trên bên phải cửa sổ cài đặt. Mặc định là 24.',
+    showTypingEffect: 'Khi được bật, nó sẽ hiển thị chỉ báo đang nhập trong khi trợ lý đang tạo phản hồi.',
     dynamicOutputPrompt: 'Khi được bật, thông tin lược đồ sẽ được bao gồm trong yêu cầu.',
     realmDirectOpen:
       'Nếu được bật, nhấp vào một nhân vật trong bản xem trước RisuRealm sẽ mở trực tiếp mô tả nhân vật.',
@@ -272,8 +255,7 @@ export const languageVietnamese = {
       'Xin chào {username}! Trước khi bắt đầu, tôi sẽ hỏi bạn một số câu hỏi. Bạn có thể thay đổi các cài đặt này sau trong phần cài đặt.\n\nĐầu tiên hãy chọn nhà cung cấp AI.',
     openRouterProvider:
       'OpenRouter có rất nhiều mô hình, một số không được lọc và một số miễn phí, nhưng nó không tốt bằng OpenAI.',
-    hordeProvider:
-      'Horde là nhà cung cấp miễn phí, nhưng thời gian phản hồi lâu và chất lượng thấp.',
+    hordeProvider: 'Horde là nhà cung cấp miễn phí, nhưng thời gian phản hồi lâu và chất lượng thấp.',
     setProviderLater:
       'Có các nhà cung cấp khác, nhưng bạn có thể cài đặt sau trong phần cài đặt. Chọn mục này nếu bạn muốn cài đặt sau.',
     setupOpenAI:
@@ -320,11 +302,9 @@ export const languageVietnamese = {
     chooseCheapOrMemoryOption2: 'Giá rẻ',
     chooseCheapOrMemoryOption2Desc: 'Điều này sẽ khiến AI ghi nhớ ít hơn, nhưng sẽ rẻ hơn.',
     chooseCheapOrMemoryOption3: 'Cân bằng',
-    chooseCheapOrMemoryOption3Desc:
-      'Điều này sẽ khiến AI ghi nhớ nhiều hơn giá rẻ, nhưng ít hơn bộ nhớ.',
+    chooseCheapOrMemoryOption3Desc: 'Điều này sẽ khiến AI ghi nhớ nhiều hơn giá rẻ, nhưng ít hơn bộ nhớ.',
     chooseCheapOrMemoryOption4: 'Không giới hạn',
-    chooseCheapOrMemoryOption4Desc:
-      'Điều này sẽ khiến AI ghi nhớ hầu hết mọi thứ, nhưng sẽ rất đắt.',
+    chooseCheapOrMemoryOption4Desc: 'Điều này sẽ khiến AI ghi nhớ hầu hết mọi thứ, nhưng sẽ rất đắt.',
     finally: 'Cuối cùng, bạn có muốn bật các công cụ nâng cao không?',
     finallyOption1: 'Có',
     finallyOption1Desc:
@@ -407,11 +387,9 @@ export const languageVietnamese = {
     v2GetLorebookEntry: 'Lấy Sách truyền thuyết với chỉ số',
     v2GetLorebookEntryDesc: 'Lấy Sách truyền thuyết với chỉ số {{index}} => {{outputVar}}',
     v2SetLorebookActivation: 'Đặt kích hoạt Sách truyền thuyết',
-    v2SetLorebookActivationDesc:
-      'Đặt trạng thái kích hoạt của Sách truyền thuyết có chỉ số {{index}} thành {{value}}',
+    v2SetLorebookActivationDesc: 'Đặt trạng thái kích hoạt của Sách truyền thuyết có chỉ số {{index}} thành {{value}}',
     v2GetLorebookIndexViaName: 'Lấy chỉ số Sách truyền thuyết qua Tên',
-    v2GetLorebookIndexViaNameDesc:
-      'Lấy chỉ số Sách truyền thuyết qua Tên {{name}} => {{outputVar}}',
+    v2GetLorebookIndexViaNameDesc: 'Lấy chỉ số Sách truyền thuyết qua Tên {{name}} => {{outputVar}}',
     v2ModifyLorebook: 'Sửa đổi Sách truyền thuyết',
     v2ModifyLorebookDesc: 'Sửa đổi Sách truyền thuyết tên {{target}} với {{value}}',
     v2LoopNTimes: 'Lặp lại N lần',
@@ -427,8 +405,7 @@ export const languageVietnamese = {
     v2ToUpperCase: 'Chuyển thành chữ hoa',
     v2ToUpperCaseDesc: 'Chuyển {{source}} thành chữ hoa => {{outputVar}}',
     v2SetCharAt: 'Đặt ký tự tại chỉ số',
-    v2SetCharAtDesc:
-      'Đặt ký tự tại chỉ số {{index}} trong {{source}} thành {{value}} => {{outputVar}}',
+    v2SetCharAtDesc: 'Đặt ký tự tại chỉ số {{index}} trong {{source}} thành {{value}} => {{outputVar}}',
     v2SplitString: 'Tách chuỗi',
     v2SplitStringDesc: 'Tách {{source}} bằng {{delimiter}} => {{outputVar}}',
     v2GetCharacterDesc: 'Lấy mô tả nhân vật',
@@ -472,8 +449,7 @@ export const languageVietnamese = {
     v2SliceArrayVar: 'Cắt biến mảng',
     v2SliceArrayVarDesc: 'Cắt biến mảng {{var}} từ {{start}} đến {{end}} => {{outputVar}}',
     v2GetIndexOfValueInArrayVar: 'Lấy chỉ số của giá trị trong biến mảng',
-    v2GetIndexOfValueInArrayVarDesc:
-      'Lấy chỉ số của {{value}} trong biến mảng {{var}} => {{outputVar}}',
+    v2GetIndexOfValueInArrayVarDesc: 'Lấy chỉ số của {{value}} trong biến mảng {{var}} => {{outputVar}}',
     v2RemoveIndexFromArrayVar: 'Xóa chỉ số khỏi biến mảng',
     v2RemoveIndexFromArrayVarDesc: 'Xóa giá trị tại chỉ số {{index}} khỏi biến mảng {{var}}',
     v2JoinArrayVar: 'Nối mảng',
@@ -542,14 +518,11 @@ export const languageVietnamese = {
     v2GetAllLorebooks: 'Lấy tất cả Sách truyền thuyết',
     v2GetAllLorebooksDesc: 'Lấy tất cả lời nhắc Sách truyền thuyết dưới dạng mảng => {{outputVar}}',
     v2GetLorebookByName: 'Lấy chỉ số Sách truyền thuyết theo tên',
-    v2GetLorebookByNameDesc:
-      'Lấy mảng chỉ số Sách truyền thuyết theo tên {{name}} => {{outputVar}}',
+    v2GetLorebookByNameDesc: 'Lấy mảng chỉ số Sách truyền thuyết theo tên {{name}} => {{outputVar}}',
     v2GetLorebookByIndex: 'Lấy Sách truyền thuyết',
-    v2GetLorebookByIndexDesc:
-      'Lấy lời nhắc Sách truyền thuyết tại chỉ số {{index}} => {{outputVar}}',
+    v2GetLorebookByIndexDesc: 'Lấy lời nhắc Sách truyền thuyết tại chỉ số {{index}} => {{outputVar}}',
     v2CreateLorebook: 'Tạo Sách truyền thuyết',
-    v2CreateLorebookDesc:
-      'Tạo Sách truyền thuyết với tên {{name}}, khóa {{key}}, nội dung {{content}}',
+    v2CreateLorebookDesc: 'Tạo Sách truyền thuyết với tên {{name}}, khóa {{key}}, nội dung {{content}}',
     v2ModifyLorebookByIndex: 'Sửa đổi Sách truyền thuyết',
     v2ModifyLorebookByIndexDesc:
       'Sửa đổi Sách truyền thuyết tại chỉ số {{index}} với tên {{name}}, khóa {{key}}, nội dung {{content}}',
@@ -558,13 +531,11 @@ export const languageVietnamese = {
     v2GetLorebookCountNew: 'Lấy số lượng Sách truyền thuyết',
     v2GetLorebookCountNewDesc: 'Lấy tổng số Sách truyền thuyết => {{outputVar}}',
     v2SetLorebookAlwaysActive: 'Đặt Sách truyền thuyết luôn hoạt động',
-    v2SetLorebookAlwaysActiveDesc:
-      'Đặt Sách truyền thuyết tại chỉ số {{index}} luôn hoạt động thành {{value}}',
+    v2SetLorebookAlwaysActiveDesc: 'Đặt Sách truyền thuyết tại chỉ số {{index}} luôn hoạt động thành {{value}}',
     v2Calculate: 'Tính toán',
     v2CalculateDesc: 'Tính toán {{expression}} => {{outputVar}}',
     v2ReplaceString: 'Thay thế chuỗi',
-    v2ReplaceStringDesc:
-      'Thay thế {{source}} bằng regex {{regex}} thành {{replacement}} => {{outputVar}}',
+    v2ReplaceStringDesc: 'Thay thế {{source}} bằng regex {{regex}} thành {{replacement}} => {{outputVar}}',
   },
   triggerInputLabels: {
     value: 'Giá trị',
@@ -657,8 +628,7 @@ export const languageVietnamese = {
     inlayDeleteSelected: 'Xóa mục đã chọn',
     inlayDeselectAll: 'Bỏ chọn tất cả',
     inlayEmpty: 'Không có tài sản nội tuyến đã lưu',
-    inlayEmptyDesc:
-      'Hình ảnh, âm thanh và video được đính kèm hoặc tạo trong trò chuyện sẽ xuất hiện ở đây',
+    inlayEmptyDesc: 'Hình ảnh, âm thanh và video được đính kèm hoặc tạo trong trò chuyện sẽ xuất hiện ở đây',
     inlayExplorer: 'Trình khám phá Tài sản Inlay',
     inlaySelectAll: 'Chọn tất cả',
     inlayTotalAssets: 'Tổng cộng ${count} tài sản',
@@ -770,8 +740,7 @@ export const languageVietnamese = {
   SpacedView: 'Xem nhiều ký tự',
   emphasizedView: 'Chế độ xem nhân vật đôi',
   pluginWarn: 'Các plugin có thể gây ra sự cố khi cài đặt các plugin độc hại.',
-  pluginConfirm:
-    'Bạn có thực sự muốn nhập plugin này không? Chỉ nhập plugin từ các nguồn đáng tin cậy.',
+  pluginConfirm: 'Bạn có thực sự muốn nhập plugin này không? Chỉ nhập plugin từ các nguồn đáng tin cậy.',
   pluginContainsExternalMedia: 'Plugin này chứa phương tiện bên ngoài.',
   pluginContainsExternalJS: 'Plugin này chứa Javascript bên ngoài.',
   waifuWidth: 'Chiều rộng trò chuyện Waifu',
@@ -1006,8 +975,7 @@ export const languageVietnamese = {
   imgGenPrompt: 'Lời nhắc tạo hình ảnh',
   imgGenNegatives: 'Lời nhắc phủ định tạo hình ảnh',
   imgGenInstructions: 'Hướng dẫn tạo hình ảnh',
-  usePlainFetchWarn:
-    'Vui lòng tắt tùy chọn này khi sử dụng NovelAI, vì nó có thể gây ra lỗi CORS khi sử dụng NovelAI.',
+  usePlainFetchWarn: 'Vui lòng tắt tùy chọn này khi sử dụng NovelAI, vì nó có thể gây ra lỗi CORS khi sử dụng NovelAI.',
   translationPrompt: 'Lời nhắc dịch',
   translationResponseSize: 'Kích thước phản hồi dịch',
   webdeeplwarn: 'Tùy chọn này có thể gây ra lỗi CORS.',
@@ -1050,16 +1018,14 @@ export const languageVietnamese = {
   memoryLimitThickness: 'Độ dày giới hạn bộ nhớ',
   inputCardPassword: 'Nhập mật khẩu thẻ',
   ccv2Desc: 'Character Card V2 là định dạng được sử dụng rộng rãi trong các chương trình chatbot.',
-  ccv3Desc:
-    'Character Card V3 là định dạng thế hệ tiếp theo được sử dụng trong các chương trình chatbot.',
+  ccv3Desc: 'Character Card V3 là định dạng thế hệ tiếp theo được sử dụng trong các chương trình chatbot.',
   realmDesc:
     'RisuRealm là nền tảng chia sẻ nội dung cho Risuai. Bạn có thể chia sẻ nhân vật của mình cho người dùng khác.',
   rccDesc:
     'Risu Refined Character Card là định dạng có các tính năng bổ sung như mật khẩu, kiểm tra tính toàn vẹn, v.v.',
   password: 'Mật khẩu',
   license: 'Giấy phép',
-  licenseDesc:
-    'Bạn có thể chọn giấy phép cho người tải xuống để giới hạn việc sử dụng lời nhắc của thẻ.',
+  licenseDesc: 'Bạn có thể chọn giấy phép cho người tải xuống để giới hạn việc sử dụng lời nhắc của thẻ.',
   passwordDesc: 'Bạn có thể đặt mật khẩu để bảo vệ thẻ của mình khỏi truy cập trái phép.',
   largePersonaPortrait: 'Chân dung Persona',
   module: 'Mô-đun',
@@ -1068,8 +1034,7 @@ export const languageVietnamese = {
   createModule: 'Tạo mô-đun',
   basicInfo: 'Thông tin cơ bản',
   moduleContent: 'Nội dung mô-đun',
-  confirmRemoveModuleFeature:
-    'Bạn có thực sự muốn xóa tính năng này không? Hành động này không thể hoàn tác.',
+  confirmRemoveModuleFeature: 'Bạn có thực sự muốn xóa tính năng này không? Hành động này không thể hoàn tác.',
   editModule: 'Chỉnh sửa mô-đun',
   importModule: 'Nhập mô-đun',
   download: 'Tải xuống',
@@ -1080,8 +1045,7 @@ export const languageVietnamese = {
   sideMenuRerollButton: 'Nút Reroll menu bên',
   persistentStorage: 'Lưu trữ liên tục',
   persistentStorageSuccess: 'Lưu trữ đã được duy trì thành công',
-  persistentStorageFail:
-    'Lưu trữ không được duy trì. Bạn đã từ chối yêu cầu?, hoặc trình duyệt không được hỗ trợ?',
+  persistentStorageFail: 'Lưu trữ không được duy trì. Bạn đã từ chối yêu cầu?, hoặc trình duyệt không được hỗ trợ?',
   persistentStorageRecommended: 'Khuyên dùng Lưu trữ liên tục',
   persistentStorageDesc:
     'Trình duyệt của bạn hỗ trợ lưu trữ liên tục. Điều này được khuyến nghị để có hiệu suất và trải nghiệm người dùng tốt hơn.',
@@ -1102,8 +1066,7 @@ export const languageVietnamese = {
   updateRealmDesc:
     'Bạn đang cố gắng cập nhật nhân vật của mình lên RisuRealm. Điều này sẽ cập nhật nhân vật của bạn lên RisuRealm và bạn không thể hoàn tác.',
   antiClaudeOverload: 'Chống quá tải Claude',
-  activeTabChange:
-    'Tab hiện tại bị vô hiệu hóa vì tab khác đang hoạt động. Để kích hoạt tab này, nhấp OK',
+  activeTabChange: 'Tab hiện tại bị vô hiệu hóa vì tab khác đang hoạt động. Để kích hoạt tab này, nhấp OK',
   addCharacter: 'Thêm nhân vật',
   importFromRealm: 'Chọn từ RisuRealm',
   importFromRealmDesc: 'Chọn hơn 1000 nhân vật trong RisuRealm',
@@ -1130,8 +1093,7 @@ export const languageVietnamese = {
   trashDesc:
     'Các nhân vật đã xóa sẽ được chuyển vào thùng rác. Bạn có thể khôi phục hoặc xóa vĩnh viễn chúng. Các nhân vật đã xóa sẽ tự động bị xóa sau 3 ngày.',
   shareExport: 'Chia sẻ/Xuất',
-  risupresetDesc:
-    'Định dạng Risupreset là định dạng được thiết kế dành riêng cho các cài đặt trước Risuai.',
+  risupresetDesc: 'Định dạng Risupreset là định dạng được thiết kế dành riêng cho các cài đặt trước Risuai.',
   risuMDesc: 'Định dạng RisuM là định dạng được thiết kế dành riêng cho các mô-đun Risuai.',
   jsonDesc: 'Định dạng JSON là định dạng dễ đọc và viết cho cả con người và máy móc.',
   nickname: 'Biệt danh',
@@ -1183,8 +1145,7 @@ export const languageVietnamese = {
   doNotTranslate: 'Không dịch',
   includePersonaName: 'Bao gồm tên Persona',
   hidePersonaName: 'Ẩn tên Persona',
-  triggerSwitchWarn:
-    'Nếu bạn thay đổi loại trigger, các trigger hiện tại sẽ bị mất. Bạn có muốn tiếp tục không?',
+  triggerSwitchWarn: 'Nếu bạn thay đổi loại trigger, các trigger hiện tại sẽ bị mất. Bạn có muốn tiếp tục không?',
   codeMode: 'Mã',
   blockMode: 'Khối',
   helpBlock: 'Trợ giúp',
@@ -1193,10 +1154,8 @@ export const languageVietnamese = {
   createCopy: 'Tạo bản sao',
   bindPersona: 'Liên kết Persona',
   chatOptions: 'Tùy chọn trò chuyện',
-  doYouWantToBindCurrentPersona:
-    'Bạn có muốn liên kết persona hiện tại vào cuộc trò chuyện này không?',
-  doYouWantToUnbindCurrentPersona:
-    'Bạn có muốn hủy liên kết persona khỏi cuộc trò chuyện này không?',
+  doYouWantToBindCurrentPersona: 'Bạn có muốn liên kết persona hiện tại vào cuộc trò chuyện này không?',
+  doYouWantToUnbindCurrentPersona: 'Bạn có muốn hủy liên kết persona khỏi cuộc trò chuyện này không?',
   personaBindedSuccess: 'Persona đã được liên kết thành công',
   personaUnbindedSuccess: 'Persona đã được hủy liên kết thành công',
   parameters: 'Tham số',
@@ -1213,8 +1172,7 @@ export const languageVietnamese = {
   previewInfo: 'Bản xem trước này hiển thị lời nhắc trước khi xử lý theo mô hình cụ thể.',
   miscTools: 'Công cụ khác',
   promptConvertion: 'Chuyển đổi lời nhắc',
-  convertionStep1:
-    'Chọn tất cả tập tin liên quan đến lời nhắc (Context, Instruct và Sampler JSON được hỗ trợ)',
+  convertionStep1: 'Chọn tất cả tập tin liên quan đến lời nhắc (Context, Instruct và Sampler JSON được hỗ trợ)',
   customCSS: 'CSS tùy chỉnh',
   betaMobileGUI: 'GUI di động Beta',
   menu: 'Menu',
@@ -1255,8 +1213,7 @@ export const languageVietnamese = {
   importTranslationCacheConfirm:
     'Thao tác này sẽ hợp nhất các mục vào bộ nhớ đệm dịch thuật. Các khóa hiện có sẽ bị ghi đè. Tiếp tục?',
   importTranslationCacheSuccess: 'Đã nhập {0} mục bộ nhớ đệm dịch.',
-  importTranslationCacheFailed:
-    'Đã nhập {0} mục, nhưng {1} mục không lưu được. Bộ nhớ có thể đã đầy.',
+  importTranslationCacheFailed: 'Đã nhập {0} mục, nhưng {1} mục không lưu được. Bộ nhớ có thể đã đầy.',
   exportTranslationCacheEmpty: 'Bộ nhớ đệm dịch trống.',
   clearTranslationCache: 'Xóa bộ nhớ đệm dịch thuật',
   clearTranslationCacheSuccess: 'Đã xóa bộ nhớ đệm dịch thuật.',
@@ -1271,18 +1228,15 @@ export const languageVietnamese = {
   googleCloudTokenization: 'Tokenization Google Cloud',
   presetChain: 'Chuỗi cài đặt trước',
   legacyMediaFindings: 'Tìm kiếm phương tiện cũ',
-  staticsDisclaimer:
-    'Thống kê dựa trên dữ liệu sau tháng 7 năm 2024. Dữ liệu có thể không chính xác.',
+  staticsDisclaimer: 'Thống kê dựa trên dữ liệu sau tháng 7 năm 2024. Dữ liệu có thể không chính xác.',
   subtitles: 'Phụ đề',
   subtitlesWarning1: 'Bạn phải sử dụng mô hình có đầu vào âm thanh/video để sử dụng tính năng này.',
-  subtitlesWarning2:
-    'Bạn phải sử dụng mô hình có tính năng phát trực tuyến để sử dụng tính năng này.',
+  subtitlesWarning2: 'Bạn phải sử dụng mô hình có tính năng phát trực tuyến để sử dụng tính năng này.',
   reset: 'Đặt lại',
   assetMaxDifference: 'Sự khác biệt tối đa của tài sản',
   sourceLanguage: 'Ngôn ngữ nguồn',
   destinationLanguage: 'Ngôn ngữ đích',
-  noWebGPU:
-    'Trình duyệt hoặc hệ điều hành của bạn không hỗ trợ WebGPU. Điều này sẽ làm chậm hiệu suất đáng kể.',
+  noWebGPU: 'Trình duyệt hoặc hệ điều hành của bạn không hỗ trợ WebGPU. Điều này sẽ làm chậm hiệu suất đáng kể.',
   menuSideBar: 'Thanh bên menu',
   home: 'Trang chủ',
   showSavingIcon: 'Hiển thị biểu tượng đang lưu',
@@ -1313,8 +1267,7 @@ export const languageVietnamese = {
   deleteCount: 'Số lượng xóa',
   triggerEffRunAxLLM: 'Chạy mô hình phụ trợ',
   hypaV3Settings: {
-    descriptionLabel:
-      'HypaMemory V3 là hệ thống bộ nhớ dài hạn sử dụng cả tóm tắt và tìm kiếm vector.',
+    descriptionLabel: 'HypaMemory V3 là hệ thống bộ nhớ dài hạn sử dụng cả tóm tắt và tìm kiếm vector.',
     supaMemoryPromptPlaceHolder: 'Để trống để sử dụng giá trị mặc định',
     maxMemoryTokensRatioLabel: 'Tỷ lệ Token Bộ nhớ Tối đa (Ước tính)',
     maxMemoryTokensRatioError: 'Không thể tính toán Tỷ lệ Token Bộ nhớ Tối đa',
@@ -1331,8 +1284,7 @@ export const languageVietnamese = {
   },
   hypaV3Modal: {
     titleLabel: 'HypaV3',
-    resetConfirmMessage:
-      'Hành động này không thể hoàn tác. Bạn có muốn đặt lại dữ liệu HypaV3 không?',
+    resetConfirmMessage: 'Hành động này không thể hoàn tác. Bạn có muốn đặt lại dữ liệu HypaV3 không?',
     resetConfirmSecondMessage:
       'Hành động này không thể khôi phục. Bạn có thực sự chắc chắn muốn đặt lại dữ liệu HypaV3 không?',
     convertLabel: 'Chưa có tóm tắt nào, nhưng bạn có thể chuyển đổi dữ liệu HypaV2 sang V3.',
@@ -1490,8 +1442,7 @@ export const languageVietnamese = {
   dynamicOutputPrompt: 'Lời nhắc đầu ra động',
   settingsCloseButtonSize: 'Kích thước nút đóng cài đặt',
   translating: 'Đang dịch...',
-  stackTraceTranslationFailed:
-    'Dịch dấu vết ngăn xếp thất bại. Hiển thị dấu vết ngăn xếp bị làm rối ban đầu bên dưới.',
+  stackTraceTranslationFailed: 'Dịch dấu vết ngăn xếp thất bại. Hiển thị dấu vết ngăn xếp bị làm rối ban đầu bên dưới.',
   translate: 'Dịch địa chỉ mã',
   apply: 'Áp dụng',
   add: 'Thêm',
@@ -1516,21 +1467,16 @@ export const languageVietnamese = {
       'Plugin cố gắng truy cập các biến toàn cục, điều này có thể dẫn đến các tác dụng phụ không mong muốn hoặc lỗ hổng bảo mật.',
     thisOutsideClass:
       "Plugin sử dụng từ khóa 'this' bên ngoài ngữ cảnh lớp, điều này có thể dẫn đến hành vi không mong muốn hoặc các vấn đề bảo mật.",
-    errorInVerification:
-      'Có lỗi trong quá trình xác minh plugin, cho thấy các vấn đề tiềm ẩn với chức năng của nó.',
+    errorInVerification: 'Có lỗi trong quá trình xác minh plugin, cho thấy các vấn đề tiềm ẩn với chức năng của nó.',
     storageAccess:
       'Plugin cố gắng truy cập bộ nhớ, điều này có thể dẫn đến rò rỉ dữ liệu hoặc thao tác dữ liệu trái phép.',
   },
-  generatedByAIDisclaimer:
-    'Nội dung này được tạo bởi AI và có thể chứa thông tin không chính xác hoặc thiên kiến.',
-  aiGenerationWarning:
-    'Nội dung sẽ được tạo bởi AI và có thể chứa thông tin không chính xác hoặc thiên kiến.',
+  generatedByAIDisclaimer: 'Nội dung này được tạo bởi AI và có thể chứa thông tin không chính xác hoặc thiên kiến.',
+  aiGenerationWarning: 'Nội dung sẽ được tạo bởi AI và có thể chứa thông tin không chính xác hoặc thiên kiến.',
   noRequestLogs: 'Không có nhật ký yêu cầu nào.',
   bookmark: 'Dấu trang',
-  duplicatePluginFoundUpdateIt:
-    'Phát hiện plugin trùng lặp. Bạn có muốn cập nhật plugin hiện có không?',
-  pluginUpdateFoundInstallIt:
-    'Đã tìm thấy bản cập nhật plugin. Bạn có muốn cài đặt bản cập nhật này không?',
+  duplicatePluginFoundUpdateIt: 'Phát hiện plugin trùng lặp. Bạn có muốn cập nhật plugin hiện có không?',
+  pluginUpdateFoundInstallIt: 'Đã tìm thấy bản cập nhật plugin. Bạn có muốn cài đặt bản cập nhật này không?',
   branchedText: 'Cuộc trò chuyện này đã được rẽ nhánh từ {}.',
   loadMore: 'Tải thêm',
   goToChat: 'Đi đến Chat',

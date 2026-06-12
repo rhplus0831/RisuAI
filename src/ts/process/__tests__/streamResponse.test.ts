@@ -185,12 +185,7 @@ describe('consumeStreamResponse', () => {
     close()
     const out = await promise
     expect(out.msgIndex).toBe(1)
-    expect(processScriptFullSpy).toHaveBeenCalledWith(
-      currentChar,
-      'partialextra',
-      'editoutput',
-      1,
-    )
+    expect(processScriptFullSpy).toHaveBeenCalledWith(currentChar, 'partialextra', 'editoutput', 1)
     expect(DBState.db.characters[0].chats[0].message).toHaveLength(2)
   })
 
@@ -225,9 +220,7 @@ describe('consumeStreamResponse', () => {
     const { stream, close } = makeControlledStream()
     const ctrl = new AbortController()
     ctrl.abort()
-    const out = await consumeStreamResponse(
-      callArgs(streamingReq(stream), currentChar, ctrl.signal),
-    )
+    const out = await consumeStreamResponse(callArgs(streamingReq(stream), currentChar, ctrl.signal))
     expect(out.streamAborted).toBe(true)
     expect(processScriptFullSpy).not.toHaveBeenCalled()
     close()
@@ -358,9 +351,7 @@ describe('H3 streaming render coalescing', () => {
     push({ msgKey: 'Hello' })
     await vi.waitFor(() => expect(frames.length).toBe(1))
     frames.shift()!()
-    await vi.waitFor(() =>
-      expect(DBState.db.characters[0].chats[0].message[1].data).toBe('Hello'),
-    )
+    await vi.waitFor(() => expect(DBState.db.characters[0].chats[0].message[1].data).toBe('Hello'))
 
     // Later chunks re-arm at most one further frame; without running it, the
     // terminal settle still applies the newest payload at full fidelity.

@@ -63,8 +63,7 @@
   {disabled}
   bind:value
   onchange={onChange}
-  {placeholder}
-/>
+  {placeholder} />
 
 <style>
   .numinput::-webkit-outer-spin-button,

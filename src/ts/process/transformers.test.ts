@@ -27,9 +27,7 @@ vi.mock('src/ts/globalApi.svelte', () => ({
 
 vi.mock('src/ts/util', () => ({
   asBuffer: (data: ArrayBuffer | Uint8Array) =>
-    data instanceof Uint8Array
-      ? data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
-      : data,
+    data instanceof Uint8Array ? data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) : data,
   selectSingleFile: vi.fn(),
 }))
 
@@ -159,8 +157,6 @@ describe('runVITS lifecycle', () => {
 
     expect(synthA.dispose).toHaveBeenCalledTimes(1)
     expect(testState.pipeline).toHaveBeenCalledTimes(2)
-    expect(synthA.dispose.mock.invocationCallOrder[0]).toBeLessThan(
-      testState.pipeline.mock.invocationCallOrder[1],
-    )
+    expect(synthA.dispose.mock.invocationCallOrder[0]).toBeLessThan(testState.pipeline.mock.invocationCallOrder[1])
   })
 })

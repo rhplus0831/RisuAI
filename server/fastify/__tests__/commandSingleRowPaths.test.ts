@@ -6,10 +6,7 @@ import type { FastifyInstance } from 'fastify'
 import { DatabaseSync } from 'node:sqlite'
 import { buildApp } from '../src/app.js'
 import { setupAuthedClient } from './helpers/auth.js'
-import {
-  assertCommandMetricGate,
-  type CommandMutationMetric,
-} from './helpers/commandMetricGates.js'
+import { assertCommandMetricGate, type CommandMutationMetric } from './helpers/commandMetricGates.js'
 import { assertOnlyRowsWritten, tableRowidsById } from './helpers/rowStability.js'
 
 // Phase 3 (single character-row / single chat-row paths) regression. The Tier-3
@@ -114,18 +111,14 @@ async function runCommand(
   request: CommandRequest,
 ): Promise<{ revision: number; metric: CommandMutationMetric; body: Record<string, unknown> }> {
   const before = metrics.length
-  const inject = harness.app.inject as unknown as (
-    request: CommandRequest,
-  ) => Promise<CommandResponse>
+  const inject = harness.app.inject as unknown as (request: CommandRequest) => Promise<CommandResponse>
   const res = await inject({
     ...request,
     headers: { 'risu-auth': assertion, ...(request.headers ?? {}) },
   })
   expect(res.statusCode, JSON.stringify(res.json())).toBe(200)
   const body = res.json() as Record<string, unknown>
-  const metric = metrics
-    .slice(before)
-    .find((entry) => entry.metric === 'command_mutation' && entry.status === 'ok')
+  const metric = metrics.slice(before).find((entry) => entry.metric === 'command_mutation' && entry.status === 'ok')
   expect(metric, `missing command_mutation metric for ${request.url}`).toBeTruthy()
   return { revision: body.revision as number, metric: metric as CommandMutationMetric, body }
 }
@@ -170,9 +163,9 @@ function readSettings(): Record<string, unknown> {
 function readChatOrder(characterId: string): string[] {
   const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
   try {
-    const rows = db
-      .prepare('SELECT id FROM chats WHERE character_id = ? ORDER BY position')
-      .all(characterId) as Array<{ id: string }>
+    const rows = db.prepare('SELECT id FROM chats WHERE character_id = ? ORDER BY position').all(characterId) as Array<{
+      id: string
+    }>
     return rows.map((r) => r.id)
   } finally {
     db.close()
@@ -203,11 +196,7 @@ function expectNoChurn(
   before: { characters: Record<string, number>; chats: Record<string, number> },
   options: { characters?: string[]; chats?: string[] } = {},
 ): void {
-  assertOnlyRowsWritten(
-    before.characters,
-    tableRowidsById(harness.dataDir, 'characters'),
-    options.characters ?? [],
-  )
+  assertOnlyRowsWritten(before.characters, tableRowidsById(harness.dataDir, 'characters'), options.characters ?? [])
   assertOnlyRowsWritten(before.chats, tableRowidsById(harness.dataDir, 'chats'), options.chats ?? [])
 }
 
@@ -519,7 +508,7 @@ describe('Phase 3 character + chat-row cascade paths', () => {
     expect(readChat('chat-a-1').folderId).toBeNull()
   })
 
-  it('POST chats/reorder shifts only that character\'s chat-row positions', async () => {
+  it("POST chats/reorder shifts only that character's chat-row positions", async () => {
     const revision = await importDatabase(seedDatabase())
     expect(readChatOrder('char-a')).toEqual(['chat-a-1', 'chat-a-2'])
     const before = rowidSnapshot()
@@ -599,9 +588,7 @@ describe('Phase 3 fork (character row + chat rows + surgical messages)', () => {
       },
     })
 
-    const inject = harness.app.inject as unknown as (
-      request: CommandRequest,
-    ) => Promise<CommandResponse>
+    const inject = harness.app.inject as unknown as (request: CommandRequest) => Promise<CommandResponse>
     const res = await inject({
       method: 'POST',
       url: '/api/v1/commands/chats/chat-a-1/fork',

@@ -1,12 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type {
-  ServerMemoryJob,
-  ServerMemoryResult,
-} from '../process/request/serverMemory'
-import {
-  createMemoryJobRefreshController,
-  hasActiveMemoryJobs,
-} from './memoryJobRefresh'
+import type { ServerMemoryJob, ServerMemoryResult } from '../process/request/serverMemory'
+import { createMemoryJobRefreshController, hasActiveMemoryJobs } from './memoryJobRefresh'
 
 const NOW = new Date('2026-06-01T00:00:00.000Z')
 
@@ -52,18 +46,13 @@ describe('memory job refresh controller', () => {
   it('detects pending and running jobs as active', () => {
     expect(hasActiveMemoryJobs([job('pending')])).toBe(true)
     expect(hasActiveMemoryJobs([job('running')])).toBe(true)
-    expect(hasActiveMemoryJobs([job('completed'), job('failed'), job('cancelled')])).toBe(
-      false,
-    )
+    expect(hasActiveMemoryJobs([job('completed'), job('failed'), job('cancelled')])).toBe(false)
   })
 
   it('does not overlap refresh requests and runs one queued refresh afterward', async () => {
     const first = deferred<ServerMemoryResult<{ jobs: ServerMemoryJob[] }>>()
     const second = deferred<ServerMemoryResult<{ jobs: ServerMemoryJob[] }>>()
-    const listJobs = vi
-      .fn()
-      .mockReturnValueOnce(first.promise)
-      .mockReturnValueOnce(second.promise)
+    const listJobs = vi.fn().mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
     const seenJobs: ServerMemoryJob[][] = []
     const loading: boolean[] = []
     const controller = createMemoryJobRefreshController({
@@ -88,10 +77,7 @@ describe('memory job refresh controller', () => {
     await queuedRefresh
     await vi.runOnlyPendingTimersAsync()
 
-    expect(seenJobs.map((jobs) => jobs.map((entry) => entry.id))).toEqual([
-      ['job-1'],
-      [],
-    ])
+    expect(seenJobs.map((jobs) => jobs.map((entry) => entry.id))).toEqual([['job-1'], []])
     expect(loading).toEqual([true, false, true, false])
     controller.dispose()
   })
@@ -118,10 +104,7 @@ describe('memory job refresh controller', () => {
 
     await vi.advanceTimersByTimeAsync(1000)
     expect(listJobs).toHaveBeenCalledTimes(2)
-    expect(seenJobs.map((jobs) => jobs.map((entry) => entry.id))).toEqual([
-      ['job-1'],
-      [],
-    ])
+    expect(seenJobs.map((jobs) => jobs.map((entry) => entry.id))).toEqual([['job-1'], []])
 
     await vi.advanceTimersByTimeAsync(3000)
     expect(listJobs).toHaveBeenCalledTimes(2)
@@ -129,9 +112,7 @@ describe('memory job refresh controller', () => {
   })
 
   it('clears state and stops polling when the chat id becomes empty', async () => {
-    const listJobs = vi
-      .fn()
-      .mockResolvedValue({ status: 'ok', jobs: [job('running', 'job-1')] })
+    const listJobs = vi.fn().mockResolvedValue({ status: 'ok', jobs: [job('running', 'job-1')] })
     const onClear = vi.fn()
     const controller = createMemoryJobRefreshController({
       chatId: 'chat-1',

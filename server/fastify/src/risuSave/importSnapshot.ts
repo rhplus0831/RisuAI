@@ -1,8 +1,4 @@
-import {
-  type RisuSaveUnsupportedReferenceKind,
-  RisuSaveBlockType,
-  decodeRisuSaveBlockEnvelope,
-} from './blockCodec.js'
+import { type RisuSaveUnsupportedReferenceKind, RisuSaveBlockType, decodeRisuSaveBlockEnvelope } from './blockCodec.js'
 import {
   type RisuSaveEnvelopeKind,
   classifyRisuSaveEnvelope,
@@ -61,16 +57,10 @@ export function decodeRisuSaveImportSnapshot(
   options: ExpandedSizeLimitOptions = {},
 ): RisuSaveImportSnapshot {
   const envelope = classifyRisuSaveEnvelope(data)
-  if (
-    envelope === 'legacy-raw' ||
-    envelope === 'legacy-compressed' ||
-    envelope === 'legacy-stream'
-  ) {
+  if (envelope === 'legacy-raw' || envelope === 'legacy-compressed' || envelope === 'legacy-stream') {
     return {
       envelope,
-      ...normalizeImportDatabase(
-        decodeEnvelopeAsValidation(() => decodeLegacyRisuSaveEnvelope(data, options)),
-      ),
+      ...normalizeImportDatabase(decodeEnvelopeAsValidation(() => decodeLegacyRisuSaveEnvelope(data, options))),
       unsupportedReferences: [],
     }
   }
@@ -110,9 +100,7 @@ export function normalizeRisuSaveSnapshotDatabase(database: unknown): JsonRecord
   return normalizeImportDatabaseShape(database)
 }
 
-function assembleBlockDatabase(
-  blocks: ReturnType<typeof decodeRisuSaveBlockEnvelope>['blocks'],
-): JsonRecord {
+function assembleBlockDatabase(blocks: ReturnType<typeof decodeRisuSaveBlockEnvelope>['blocks']): JsonRecord {
   const database: JsonRecord = {}
   let sawRoot = false
 
@@ -162,9 +150,7 @@ function assembleBlockDatabase(
           throw new ValidationError(`${block.name} block key must be a non-empty string`)
         }
         if (ROOT_COMPONENT_RESERVED_KEYS.has(component.key)) {
-          throw new ValidationError(
-            `${block.name} block key ${component.key} is reserved for resource blocks`,
-          )
+          throw new ValidationError(`${block.name} block key ${component.key} is reserved for resource blocks`)
         }
         database[component.key] = cloneJson(component.data)
         break
@@ -201,14 +187,7 @@ function normalizeImportDatabaseShape(database: unknown): JsonRecord {
   if (hasAnyKey(target, ['personas', 'selectedPersona', 'username', 'userIcon', 'personaPrompt'])) {
     normalizePersonaCollection(target)
   }
-  if (
-    hasAnyKey(target, [
-      'translatorPresets',
-      'translatorPresetId',
-      'translatorPrompt',
-      'translatorMaxResponse',
-    ])
-  ) {
+  if (hasAnyKey(target, ['translatorPresets', 'translatorPresetId', 'translatorPrompt', 'translatorMaxResponse'])) {
     normalizeTranslatorPresetCollection(target)
   }
   normalizeLoadoutCollection(target)
@@ -237,9 +216,7 @@ function normalizeImportedChatGenerationSettings(database: JsonRecord): number {
       chatCount += 1
       if (!hasOwn(chat, CHAT_GENERATION_SETTINGS_FIELD)) continue
 
-      const normalized = normalizeStoredChatGenerationSettings(
-        chat[CHAT_GENERATION_SETTINGS_FIELD],
-      )
+      const normalized = normalizeStoredChatGenerationSettings(chat[CHAT_GENERATION_SETTINGS_FIELD])
       if (normalized) {
         chat[CHAT_GENERATION_SETTINGS_FIELD] = {
           ...normalized,

@@ -235,12 +235,12 @@ describe('MCP client initialization lifecycle', () => {
     const mcpUrl = 'https://mcp.example/messages'
     const handshake = createDeferred<MCPClient['serverInfo']>()
     const constructedUrls: string[] = []
-    const checkHandshakeSpy = vi
-      .spyOn(MCPClient.prototype, 'checkHandshake')
-      .mockImplementation(function (this: MCPClient) {
-        constructedUrls.push(this.url)
-        return handshake.promise as unknown as ReturnType<MCPClient['checkHandshake']>
-      })
+    const checkHandshakeSpy = vi.spyOn(MCPClient.prototype, 'checkHandshake').mockImplementation(function (
+      this: MCPClient,
+    ) {
+      constructedUrls.push(this.url)
+      return handshake.promise as unknown as ReturnType<MCPClient['checkHandshake']>
+    })
     moduleMocks.mcps = [mcpUrl]
 
     try {
@@ -266,15 +266,13 @@ describe('MCP client initialization lifecycle', () => {
       /* expected first failure */
     })
     let initializeCalls = 0
-    const checkHandshakeSpy = vi
-      .spyOn(MCPClient.prototype, 'checkHandshake')
-      .mockImplementation(() => {
-        initializeCalls += 1
-        if (initializeCalls === 1) {
-          return Promise.reject(new Error('temporary failure'))
-        }
-        return Promise.resolve(mcpServerInfoFixture())
-      })
+    const checkHandshakeSpy = vi.spyOn(MCPClient.prototype, 'checkHandshake').mockImplementation(() => {
+      initializeCalls += 1
+      if (initializeCalls === 1) {
+        return Promise.reject(new Error('temporary failure'))
+      }
+      return Promise.resolve(mcpServerInfoFixture())
+    })
     moduleMocks.mcps = [mcpUrl]
 
     try {
@@ -313,9 +311,7 @@ describe('MCP runtime persistence', () => {
       },
     ])
     await vi.waitFor(() => {
-      expect(calls.some((call) => call.url === '/api/v1/commands/settings/providers')).toBe(
-        true,
-      )
+      expect(calls.some((call) => call.url === '/api/v1/commands/settings/providers')).toBe(true)
     })
     expect(calls.find((call) => call.url === '/api/v1/commands/settings/providers')).toEqual({
       url: '/api/v1/commands/settings/providers',
@@ -433,20 +429,10 @@ describe('MCP indexed tool dispatch', () => {
   it('L55: dispatch builds the tool-name index once and reuses it for later calls', async () => {
     const firstIdentifier = 'plugin:l55-index-first'
     const secondIdentifier = 'plugin:l55-index-second'
-    const firstGetToolList = vi.fn(async () => [
-      toolFixture('shared_tool'),
-      toolFixture('first_only'),
-    ])
-    const secondGetToolList = vi.fn(async () => [
-      toolFixture('shared_tool'),
-      toolFixture('second_only'),
-    ])
-    const firstCallTool = vi.fn(async (toolName: string) => [
-      { type: 'text' as const, text: `first:${toolName}` },
-    ])
-    const secondCallTool = vi.fn(async (toolName: string) => [
-      { type: 'text' as const, text: `second:${toolName}` },
-    ])
+    const firstGetToolList = vi.fn(async () => [toolFixture('shared_tool'), toolFixture('first_only')])
+    const secondGetToolList = vi.fn(async () => [toolFixture('shared_tool'), toolFixture('second_only')])
+    const firstCallTool = vi.fn(async (toolName: string) => [{ type: 'text' as const, text: `first:${toolName}` }])
+    const secondCallTool = vi.fn(async (toolName: string) => [{ type: 'text' as const, text: `second:${toolName}` }])
 
     await registerMCPModule(
       {
@@ -470,12 +456,8 @@ describe('MCP indexed tool dispatch', () => {
     )
     moduleMocks.mcps = [firstIdentifier, secondIdentifier]
 
-    await expect(callMCPTool('shared_tool', {})).resolves.toEqual([
-      { type: 'text', text: 'first:shared_tool' },
-    ])
-    await expect(callMCPTool('second_only', {})).resolves.toEqual([
-      { type: 'text', text: 'second:second_only' },
-    ])
+    await expect(callMCPTool('shared_tool', {})).resolves.toEqual([{ type: 'text', text: 'first:shared_tool' }])
+    await expect(callMCPTool('second_only', {})).resolves.toEqual([{ type: 'text', text: 'second:second_only' }])
 
     expect(firstGetToolList).toHaveBeenCalledTimes(1)
     expect(secondGetToolList).toHaveBeenCalledTimes(1)
@@ -488,12 +470,8 @@ describe('MCP indexed tool dispatch', () => {
     const secondIdentifier = 'plugin:l55-rebuild-second'
     const firstGetToolList = vi.fn(async () => [toolFixture('first_tool')])
     const secondGetToolList = vi.fn(async () => [toolFixture('second_tool')])
-    const firstCallTool = vi.fn(async (toolName: string) => [
-      { type: 'text' as const, text: `first:${toolName}` },
-    ])
-    const secondCallTool = vi.fn(async (toolName: string) => [
-      { type: 'text' as const, text: `second:${toolName}` },
-    ])
+    const firstCallTool = vi.fn(async (toolName: string) => [{ type: 'text' as const, text: `first:${toolName}` }])
+    const secondCallTool = vi.fn(async (toolName: string) => [{ type: 'text' as const, text: `second:${toolName}` }])
 
     await registerMCPModule(
       {
@@ -517,18 +495,12 @@ describe('MCP indexed tool dispatch', () => {
     )
 
     moduleMocks.mcps = [firstIdentifier]
-    await expect(callMCPTool('first_tool', {})).resolves.toEqual([
-      { type: 'text', text: 'first:first_tool' },
-    ])
+    await expect(callMCPTool('first_tool', {})).resolves.toEqual([{ type: 'text', text: 'first:first_tool' }])
     expect(firstGetToolList).toHaveBeenCalledTimes(1)
 
     moduleMocks.mcps = [firstIdentifier, secondIdentifier]
-    await expect(callMCPTool('second_tool', {})).resolves.toEqual([
-      { type: 'text', text: 'second:second_tool' },
-    ])
-    await expect(callMCPTool('second_tool', {})).resolves.toEqual([
-      { type: 'text', text: 'second:second_tool' },
-    ])
+    await expect(callMCPTool('second_tool', {})).resolves.toEqual([{ type: 'text', text: 'second:second_tool' }])
+    await expect(callMCPTool('second_tool', {})).resolves.toEqual([{ type: 'text', text: 'second:second_tool' }])
 
     expect(firstGetToolList).toHaveBeenCalledTimes(2)
     expect(secondGetToolList).toHaveBeenCalledTimes(1)
@@ -541,12 +513,8 @@ describe('MCP indexed tool dispatch', () => {
     const oldToolList = createDeferred<MCPTool[]>()
     const oldGetToolList = vi.fn(() => oldToolList.promise)
     const newGetToolList = vi.fn(async () => [toolFixture('new_tool')])
-    const oldCallTool = vi.fn(async (toolName: string) => [
-      { type: 'text' as const, text: `old:${toolName}` },
-    ])
-    const newCallTool = vi.fn(async (toolName: string) => [
-      { type: 'text' as const, text: `new:${toolName}` },
-    ])
+    const oldCallTool = vi.fn(async (toolName: string) => [{ type: 'text' as const, text: `old:${toolName}` }])
+    const newCallTool = vi.fn(async (toolName: string) => [{ type: 'text' as const, text: `new:${toolName}` }])
 
     await registerMCPModule(
       {
@@ -593,18 +561,12 @@ describe('MCP indexed tool dispatch', () => {
 
     newHandshake.resolve(newClient.serverInfo)
 
-    await expect(newDispatch).resolves.toEqual([
-      { type: 'text', text: 'new:new_tool' },
-    ])
-    await expect(staleDispatch).resolves.toEqual([
-      { type: 'text', text: 'Tool old_tool not found on any MCP' },
-    ])
+    await expect(newDispatch).resolves.toEqual([{ type: 'text', text: 'new:new_tool' }])
+    await expect(staleDispatch).resolves.toEqual([{ type: 'text', text: 'Tool old_tool not found on any MCP' }])
     await expect(callMCPTool('old_tool', {})).resolves.toEqual([
       { type: 'text', text: 'Tool old_tool not found on any MCP' },
     ])
-    await expect(callMCPTool('new_tool', {})).resolves.toEqual([
-      { type: 'text', text: 'new:new_tool' },
-    ])
+    await expect(callMCPTool('new_tool', {})).resolves.toEqual([{ type: 'text', text: 'new:new_tool' }])
 
     expect(oldCallTool).not.toHaveBeenCalled()
     expect(newGetToolList).toHaveBeenCalledTimes(1)
@@ -614,9 +576,7 @@ describe('MCP indexed tool dispatch', () => {
   it('v4-L33: isolates a failing internal handshake while keeping other MCP tools usable', async () => {
     const pluginIdentifier = 'plugin:v4-l33-survivor'
     const pluginToolList = vi.fn(async () => [toolFixture('survivor_tool')])
-    const pluginCallTool = vi.fn(async (toolName: string) => [
-      { type: 'text' as const, text: `survivor:${toolName}` },
-    ])
+    const pluginCallTool = vi.fn(async (toolName: string) => [{ type: 'text' as const, text: `survivor:${toolName}` }])
     await registerMCPModule(
       {
         identifier: pluginIdentifier,

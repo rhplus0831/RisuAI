@@ -134,12 +134,7 @@ vi.mock('../../etc/send.mp3', () => ({
   default: 'send.mp3',
 }))
 
-import {
-  DEEPLX_DELIMITER_FALLBACK_MAX_SEGMENTS,
-  __translatorTestHooks,
-  setLLMCache,
-  translateHTML,
-} from './translator'
+import { DEEPLX_DELIMITER_FALLBACK_MAX_SEGMENTS, __translatorTestHooks, setLLMCache, translateHTML } from './translator'
 
 function resetDatabase() {
   Object.assign(testState.db, {
@@ -278,21 +273,14 @@ describe('translateHTML streaming guards', () => {
       data: `display:${text}`,
     }))
 
-    const translated = await translateHTML(
-      '<p>Line one<br>Line two<br>Line three</p>',
-      false,
-      '',
-      0,
-    )
+    const translated = await translateHTML('<p>Line one<br>Line two<br>Line three</p>', false, '', 0)
 
     expect(translated).toContain('display:translated:ko:Line one')
     expect(translated).toContain('Line two')
     expect(translated).toContain('Line three')
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(testState.processScriptFull).toHaveBeenCalledTimes(1)
-    expect(testState.processScriptFull.mock.calls[0][1]).toBe(
-      'translated:ko:Line one\nLine two\nLine three',
-    )
+    expect(testState.processScriptFull.mock.calls[0][1]).toBe('translated:ko:Line one\nLine two\nLine three')
   })
 
   it('v4-L25: reuses edit-translation regexes and reports invalid patterns once per script version', async () => {
@@ -337,19 +325,14 @@ describe('translateHTML streaming guards', () => {
 
   it('v4-L27: caps deeplX delimiter-mismatch one-by-one fallback fanout', async () => {
     testState.db.translatorType = 'deeplX'
-    testState.globalFetch.mockImplementation(
-      async (_url: string, options: { body: { text: string } }) => ({
-        ok: true,
-        data: {
-          data: options.body.text.includes('■') ? 'bulk mismatch' : `deeplx:${options.body.text}`,
-        },
-      }),
-    )
+    testState.globalFetch.mockImplementation(async (_url: string, options: { body: { text: string } }) => ({
+      ok: true,
+      data: {
+        data: options.body.text.includes('■') ? 'bulk mismatch' : `deeplx:${options.body.text}`,
+      },
+    }))
     const count = DEEPLX_DELIMITER_FALLBACK_MAX_SEGMENTS + 2
-    const html = Array.from(
-      { length: count },
-      (_value, index) => `<p>deepl-${index}-${'x'.repeat(700)}</p>`,
-    ).join('')
+    const html = Array.from({ length: count }, (_value, index) => `<p>deepl-${index}-${'x'.repeat(700)}</p>`).join('')
 
     const translated = await translateHTML(html, false, '', 0)
 

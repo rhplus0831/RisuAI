@@ -1,7 +1,4 @@
-import {
-  activeWriterSessionHeader,
-  handleActiveWriterStaleResponse,
-} from '../../server/activeWriterSession'
+import { activeWriterSessionHeader, handleActiveWriterStaleResponse } from '../../server/activeWriterSession'
 import { getNodeServerProxyAuth } from '../../storage/fastifyStorage'
 import { hypaV3ProgressStore } from '../../stores.svelte'
 
@@ -154,10 +151,9 @@ export async function listServerMemoryChunks(
   chatId: string,
   signal?: AbortSignal | null,
 ): Promise<ServerMemoryResult<{ chunks: ServerMemoryChunk[] }>> {
-  return requestMemoryJson<{ chunks: ServerMemoryChunk[] }>(
-    `${MEMORY_ENDPOINT}/chunks/${encodeURIComponent(chatId)}`,
-    { signal: signal ?? undefined },
-  )
+  return requestMemoryJson<{ chunks: ServerMemoryChunk[] }>(`${MEMORY_ENDPOINT}/chunks/${encodeURIComponent(chatId)}`, {
+    signal: signal ?? undefined,
+  })
 }
 
 export async function listServerMemorySummaries(

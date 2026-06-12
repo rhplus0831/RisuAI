@@ -9,32 +9,12 @@ import {
   getCharacterByIndex,
   setCharacterByIndex,
 } from './storage/database.svelte'
-import {
-  alertAddCharacter,
-  alertConfirm,
-  alertError,
-  alertNormal,
-  alertSelect,
-  alertStore,
-  alertWait,
-} from './alert'
+import { alertAddCharacter, alertConfirm, alertError, alertNormal, alertSelect, alertStore, alertWait } from './alert'
 import { language } from '../lang'
-import {
-  checkNullish,
-  findCharacterbyId,
-  getUserName,
-  selectMultipleFile,
-  selectSingleFile,
-} from './util'
+import { checkNullish, findCharacterbyId, getUserName, selectMultipleFile, selectSingleFile } from './util'
 import { v4 as uuidv4, v4 } from 'uuid'
 import { getImageType } from './media'
-import {
-  DBState,
-  MobileGUIStack,
-  OpenRealmStore,
-  botMakerMode,
-  selectedCharID,
-} from './stores.svelte'
+import { DBState, MobileGUIStack, OpenRealmStore, botMakerMode, selectedCharID } from './stores.svelte'
 import {
   AppendableBuffer,
   changeChatTo,
@@ -49,15 +29,8 @@ import { translateHTML } from './translator/translator'
 import { doingChat } from './process/index.svelte'
 import { importCharacter } from './characterCards'
 import { PngChunk } from './pngChunk'
-import {
-  currentChatStateSnapshot,
-  dispatchCreateChat,
-  dispatchCreateChatFolder,
-} from './chatCommands'
-import {
-  CHAT_GENERATION_SETTINGS_FIELD,
-  type ChatGenerationSettings,
-} from './chatGenerationSettings'
+import { currentChatStateSnapshot, dispatchCreateChat, dispatchCreateChatFolder } from './chatCommands'
+import { CHAT_GENERATION_SETTINGS_FIELD, type ChatGenerationSettings } from './chatGenerationSettings'
 import { getColdStorageItem } from './process/coldstorage.svelte'
 import {
   currentCharacterRowSnapshot,
@@ -188,11 +161,7 @@ export async function selectCharImg(charIndex: number) {
     dumpCharImage(charIndex, { dispatch: false })
     DBState.db.characters[charIndex].image = imgp
   })
-  dispatchCompatibleCharacterUpdateScoped(
-    previousCharacter,
-    DBState.db.characters[charIndex],
-    previous,
-  )
+  dispatchCompatibleCharacterUpdateScoped(previousCharacter, DBState.db.characters[charIndex], previous)
 }
 
 export function dumpCharImage(charIndex: number, options: { dispatch?: boolean } = {}) {
@@ -215,11 +184,7 @@ export function dumpCharImage(charIndex: number, options: { dispatch?: boolean }
     DBState.db.characters[charIndex] = char
   })
   if (previous && previousCharacter) {
-    dispatchCompatibleCharacterUpdateScoped(
-      previousCharacter,
-      DBState.db.characters[charIndex],
-      previous,
-    )
+    dispatchCompatibleCharacterUpdateScoped(previousCharacter, DBState.db.characters[charIndex], previous)
   }
 }
 
@@ -234,11 +199,7 @@ export function changeCharImage(charIndex: number, changeIndex: number) {
     char.image = image
     DBState.db.characters[charIndex] = char
   })
-  dispatchCompatibleCharacterUpdateScoped(
-    previousCharacter,
-    DBState.db.characters[charIndex],
-    previous,
-  )
+  dispatchCompatibleCharacterUpdateScoped(previousCharacter, DBState.db.characters[charIndex], previous)
 }
 
 export const addingEmotion = writable(false)
@@ -263,11 +224,7 @@ export async function addCharEmotion(charId: number) {
     })
   }
   addingEmotion.set(false)
-  dispatchCompatibleCharacterUpdateScoped(
-    previousCharacter,
-    DBState.db.characters[charId],
-    previous,
-  )
+  dispatchCompatibleCharacterUpdateScoped(previousCharacter, DBState.db.characters[charId], previous)
 }
 
 export function rmCharEmotion(charId: number, emotionId: number) {
@@ -278,21 +235,12 @@ export function rmCharEmotion(charId: number, emotionId: number) {
     dbChar.emotionImages.splice(emotionId, 1)
     DBState.db.characters[charId] = dbChar
   })
-  dispatchCompatibleCharacterUpdateScoped(
-    previousCharacter,
-    DBState.db.characters[charId],
-    previous,
-  )
+  dispatchCompatibleCharacterUpdateScoped(previousCharacter, DBState.db.characters[charId], previous)
 }
 
 export async function exportChat(page: number) {
   try {
-    const mode = await alertSelect([
-      'Export as JSON',
-      'Export as TXT',
-      'Export as HTML File',
-      'Export as HTML Embed',
-    ])
+    const mode = await alertSelect(['Export as JSON', 'Export as TXT', 'Export as HTML File', 'Export as HTML Embed'])
     const doTranslate =
       mode === '2' || mode === '3'
         ? (await alertSelect([language.translateContent, language.doNotTranslate])) === '0'
@@ -344,10 +292,7 @@ export async function exportChat(page: number) {
         'utf-8',
       )
 
-      await downloadFile(
-        `${char.name}_${date}_chat`.replace(/[<>:"/\\|?*\.\,]/g, '') + '.json',
-        stringl,
-      )
+      await downloadFile(`${char.name}_${date}_chat`.replace(/[<>:"/\\|?*\.\,]/g, '') + '.json', stringl)
     } else if (mode === '2') {
       let chatContentHTML = ''
 
@@ -417,9 +362,7 @@ export async function exportChat(page: number) {
                             </div>
                             ${chatContentHTML}
                         </div>
-                        <div class="idat">${JSON.stringify(chat)
-                          .replace(/</g, '&lt;')
-                          .replace(/>/g, '&gt;')}</div>
+                        <div class="idat">${JSON.stringify(chat).replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
                     </body>
             `
 
@@ -538,9 +481,7 @@ export async function importChat() {
       }
 
       if (
-        DBState.db.characters[selectedID].chatFolders.filter(
-          (folder) => folder.id === newChat.folderId,
-        ).length === 0
+        DBState.db.characters[selectedID].chatFolders.filter((folder) => folder.id === newChat.folderId).length === 0
       ) {
         newChat.folderId = null
       }
@@ -658,10 +599,7 @@ export async function importChat() {
         return
       }
     } else if (dat.name.endsWith('html')) {
-      const doc = new DOMParser().parseFromString(
-        Buffer.from(dat.data).toString('utf-8'),
-        'text/html',
-      )
+      const doc = new DOMParser().parseFromString(Buffer.from(dat.data).toString('utf-8'), 'text/html')
       const chat = doc.querySelector('.idat').textContent
       const json = JSON.parse(chat)
       if (json.message && json.note && json.name && json.localLore) {
@@ -693,9 +631,7 @@ function normalizeImportedChatGenerationSettings(chat: unknown): void {
   }
 }
 
-function normalizeImportedGenerationSettingsValue(
-  value: unknown,
-): ChatGenerationSettings | undefined {
+function normalizeImportedGenerationSettingsValue(value: unknown): ChatGenerationSettings | undefined {
   if (!isRecord(value)) return undefined
 
   const normalized: ChatGenerationSettings = {
@@ -784,10 +720,7 @@ export async function exportAllChats() {
       }),
       'utf-8',
     )
-    await downloadFile(
-      `${char.name}_all_chats_${date}`.replace(/[<>:"/\\|?*.,]/g, '') + '.json',
-      stringl,
-    )
+    await downloadFile(`${char.name}_all_chats_${date}`.replace(/[<>:"/\\|?*.,]/g, '') + '.json', stringl)
     alertNormal(language.successExport)
   } catch (error) {
     alertError(error)
@@ -807,8 +740,7 @@ export function characterFormatUpdate(
     updateInteraction?: boolean
   } = {},
 ) {
-  let cha =
-    typeof indexOrCharacter === 'number' ? getCharacterByIndex(indexOrCharacter) : indexOrCharacter
+  let cha = typeof indexOrCharacter === 'number' ? getCharacterByIndex(indexOrCharacter) : indexOrCharacter
   if (cha.chats.length === 0) {
     cha.chats = [
       {

@@ -12,14 +12,7 @@
     className?: string
   }
 
-  let {
-    name = '',
-    styled = false,
-    help = '',
-    disabled = false,
-    children,
-    className = '',
-  }: Props = $props()
+  let { name = '', styled = false, help = '', disabled = false, children, className = '' }: Props = $props()
 </script>
 
 {#if disabled}
@@ -32,13 +25,11 @@
       class:rounded-b-md={!open}
       onclick={() => {
         open = !open
-      }}
-    >
+      }}>
       <span class="mr-2">{name}</span>
       {#if help}
         <Help key={help} />
-      {/if}</button
-    >
+      {/if}</button>
     {#if open}
       <div class={'flex flex-col border border-selected p-2 rounded-b-md ' + className}>
         {@render children?.()}
@@ -52,8 +43,7 @@
       class:bg-selected={open}
       onclick={() => {
         open = !open
-      }}>{name}</button
-    >
+      }}>{name}</button>
     {#if open}
       <div class="flex flex-col bg-darkbg">
         {@render children?.()}

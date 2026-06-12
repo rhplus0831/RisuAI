@@ -495,20 +495,10 @@ describe('Phase 7-9b evaluateConditions', () => {
     const engine = makeEngine({ scriptstate: { $hp: '10' } })
     const chat = makeChat()
     expect(
-      evaluateConditions(
-        [cond({ type: 'var', var: 'hp', value: '10', operator: '=' })],
-        engine,
-        chat,
-        identityExpand,
-      ),
+      evaluateConditions([cond({ type: 'var', var: 'hp', value: '10', operator: '=' })], engine, chat, identityExpand),
     ).toBe(true)
     expect(
-      evaluateConditions(
-        [cond({ type: 'var', var: 'hp', value: '5', operator: '=' })],
-        engine,
-        chat,
-        identityExpand,
-      ),
+      evaluateConditions([cond({ type: 'var', var: 'hp', value: '5', operator: '=' })], engine, chat, identityExpand),
     ).toBe(false)
   })
 
@@ -516,12 +506,7 @@ describe('Phase 7-9b evaluateConditions', () => {
     const engine = makeEngine()
     const chat = makeChat()
     const check = (operator: string, left: string, right: string) =>
-      evaluateConditions(
-        [cond({ type: 'value', var: left, value: right, operator })],
-        engine,
-        chat,
-        identityExpand,
-      )
+      evaluateConditions([cond({ type: 'value', var: left, value: right, operator })], engine, chat, identityExpand)
     expect(check('!=', '3', '4')).toBe(true)
     expect(check('>', '5', '4')).toBe(true)
     expect(check('<', '5', '4')).toBe(false)
@@ -553,12 +538,7 @@ describe('Phase 7-9b evaluateConditions', () => {
       ] as never,
     })
     expect(
-      evaluateConditions(
-        [cond({ type: 'chatindex', value: '2', operator: '=' })],
-        engine,
-        chat,
-        identityExpand,
-      ),
+      evaluateConditions([cond({ type: 'chatindex', value: '2', operator: '=' })], engine, chat, identityExpand),
     ).toBe(true)
   })
 
@@ -568,12 +548,7 @@ describe('Phase 7-9b evaluateConditions', () => {
       message: [{ role: 'char', data: 'hello world' }] as never,
     })
     const exists = (value: string, type2: string) =>
-      evaluateConditions(
-        [cond({ type: 'exists', value, type2, depth: 1 })],
-        engine,
-        chat,
-        identityExpand,
-      )
+      evaluateConditions([cond({ type: 'exists', value, type2, depth: 1 })], engine, chat, identityExpand)
     expect(exists('world', 'strict')).toBe(true)
     expect(exists('planet', 'strict')).toBe(false)
     expect(exists('WORLD', 'loose')).toBe(true)
@@ -609,16 +584,11 @@ function eff(e: Record<string, unknown>): triggerscript['effect'][number] {
   return e as unknown as triggerscript['effect'][number]
 }
 
-function triggerWithEffects(
-  effect: triggerscript['effect'],
-  overrides: Partial<triggerscript> = {},
-): triggerscript {
+function triggerWithEffects(effect: triggerscript['effect'], overrides: Partial<triggerscript> = {}): triggerscript {
   return makeTrigger({ type: 'output', effect, ...overrides })
 }
 
-async function countRegexCompiles<T>(
-  fn: () => Promise<T>,
-): Promise<{ result: T; compiles: Map<string, number> }> {
+async function countRegexCompiles<T>(fn: () => Promise<T>): Promise<{ result: T; compiles: Map<string, number> }> {
   const RealRegExp = globalThis.RegExp
   const compiles = new Map<string, number>()
   class CountingRegExp extends RealRegExp {
@@ -630,8 +600,7 @@ async function countRegexCompiles<T>(
       compiles.set(key, (compiles.get(key) ?? 0) + 1)
     }
   }
-  ;(globalThis as { RegExp: RegExpConstructor }).RegExp =
-    CountingRegExp as unknown as RegExpConstructor
+  ;(globalThis as { RegExp: RegExpConstructor }).RegExp = CountingRegExp as unknown as RegExpConstructor
   try {
     return { result: await fn(), compiles }
   } finally {
@@ -642,9 +611,7 @@ async function countRegexCompiles<T>(
 describe('Phase 7-9c deterministic V1 effects', () => {
   it('setvar assigns and flips varChanged', async () => {
     const char = makeChar({
-      triggerscript: [
-        triggerWithEffects([eff({ type: 'setvar', operator: '=', var: 'hp', value: '5' })]),
-      ],
+      triggerscript: [triggerWithEffects([eff({ type: 'setvar', operator: '=', var: 'hp', value: '5' })])],
     })
     const result = await runTrigger(ctx, char, 'output', { chat: makeChat() })
     expect(result?.chat.scriptstate?.['$hp']).toBe('5')
@@ -653,9 +620,7 @@ describe('Phase 7-9c deterministic V1 effects', () => {
 
   it('setvar applies numeric operators against the current value', async () => {
     const char = makeChar({
-      triggerscript: [
-        triggerWithEffects([eff({ type: 'setvar', operator: '+=', var: 'n', value: '2' })]),
-      ],
+      triggerscript: [triggerWithEffects([eff({ type: 'setvar', operator: '+=', var: 'n', value: '2' })])],
     })
     const result = await runTrigger(ctx, char, 'output', {
       chat: makeChat({ scriptstate: { $n: '3' } }),
@@ -665,11 +630,7 @@ describe('Phase 7-9c deterministic V1 effects', () => {
 
   it('systemprompt accumulates into a slot and counts tokens', async () => {
     const char = makeChar({
-      triggerscript: [
-        triggerWithEffects([
-          eff({ type: 'systemprompt', location: 'start', value: 'You are a cat.' }),
-        ]),
-      ],
+      triggerscript: [triggerWithEffects([eff({ type: 'systemprompt', location: 'start', value: 'You are a cat.' })])],
     })
     const result = await runTrigger(ctx, char, 'output', { chat: makeChat() })
     expect(result?.additonalSysPrompt.start).toBe('You are a cat.\n\n')
@@ -678,9 +639,7 @@ describe('Phase 7-9c deterministic V1 effects', () => {
 
   it('impersonate appends a message', async () => {
     const char = makeChar({
-      triggerscript: [
-        triggerWithEffects([eff({ type: 'impersonate', role: 'user', value: 'hello' })]),
-      ],
+      triggerscript: [triggerWithEffects([eff({ type: 'impersonate', role: 'user', value: 'hello' })])],
     })
     const result = await runTrigger(ctx, char, 'output', { chat: makeChat() })
     expect(result?.chat.message.at(-1)).toEqual({ role: 'user', data: 'hello' })
@@ -704,9 +663,7 @@ describe('Phase 7-9c deterministic V1 effects', () => {
 
   it('modifychat edits an existing row', async () => {
     const char = makeChar({
-      triggerscript: [
-        triggerWithEffects([eff({ type: 'modifychat', index: '0', value: 'edited' })]),
-      ],
+      triggerscript: [triggerWithEffects([eff({ type: 'modifychat', index: '0', value: 'edited' })])],
     })
     const chat = makeChat({ message: [{ role: 'char', data: 'orig' }] as never })
     const result = await runTrigger(ctx, char, 'output', { chat })
@@ -1302,9 +1259,7 @@ describe('Phase 3 L6 trigger transcript and regex cache', () => {
     })
     const chat = makeChat({ message: [{ role: 'char', data: 'needle7' }] as never })
 
-    const { result, compiles } = await countRegexCompiles(() =>
-      runTrigger(ctx, char, 'output', { chat }),
-    )
+    const { result, compiles } = await countRegexCompiles(() => runTrigger(ctx, char, 'output', { chat }))
 
     expect(result?.chat.scriptstate?.['$hit1']).toBe('1')
     expect(result?.chat.scriptstate?.['$hit2']).toBe('1')

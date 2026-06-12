@@ -2,13 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import type {
-  Chat,
-  Database,
-  Message,
-  character,
-  loreBook,
-} from '../../../src/ts/storage/database.svelte'
+import type { Chat, Database, Message, character, loreBook } from '../../../src/ts/storage/database.svelte'
 import type { OpenAIChat } from '../../../src/ts/process/index.svelte'
 import { openDatabase } from '../src/db.js'
 import {
@@ -59,14 +53,8 @@ import {
   getHypaV3PrefixTokenMemoStatsForTests,
   resetHypaV3PrefixTokenMemoForTests,
 } from '../src/prompt/prefixTokenMemo.js'
-import {
-  getPromptAssetTableInstrumentation,
-  resetPromptAssetTableInstrumentation,
-} from '../src/prompt/promptAssets.js'
-import {
-  getTriggerCloneInstrumentation,
-  resetTriggerCloneInstrumentation,
-} from '../src/prompt/triggers.js'
+import { getPromptAssetTableInstrumentation, resetPromptAssetTableInstrumentation } from '../src/prompt/promptAssets.js'
+import { getTriggerCloneInstrumentation, resetTriggerCloneInstrumentation } from '../src/prompt/triggers.js'
 import { LLMFlags } from '../../../src/ts/model/types'
 
 beforeAll(() => {
@@ -177,10 +165,7 @@ function makeDatabase(overrides: Partial<Database> = {}): Database {
   return database
 }
 
-function depsFor(
-  db: Database | null,
-  overrides: Partial<Omit<AssembleDeps, 'loadDatabase'>> = {},
-): AssembleDeps {
+function depsFor(db: Database | null, overrides: Partial<Omit<AssembleDeps, 'loadDatabase'>> = {}): AssembleDeps {
   return { loadDatabase: () => db, ...overrides }
 }
 
@@ -344,13 +329,7 @@ describe('Phase 7 L6 per-assembly asset table', () => {
       resolveStoredAsset,
     })
 
-    const history = await buildHistoryWindow(
-      { database: db },
-      currentChar,
-      currentChat,
-      false,
-      lookup,
-    )
+    const history = await buildHistoryWindow({ database: db }, currentChar, currentChat, false, lookup)
 
     const row = history.messages.find((entry) => entry.memo === 'asset-table-row')
     expect(row?.content).toBe('A    ')
@@ -377,10 +356,7 @@ describe('Phase 7 L3/K3 dispatch and restoration clone narrowing', () => {
     ] satisfies OpenAIChat[]) as OpenAIChat[]
     const before = JSON.stringify(rows)
 
-    const result = reformatMessages(makeDatabase(), rows, [
-      LLMFlags.hasFullSystemPrompt,
-      LLMFlags.hasStreaming,
-    ])
+    const result = reformatMessages(makeDatabase(), rows, [LLMFlags.hasFullSystemPrompt, LLMFlags.hasStreaming])
 
     expect(result).toBe(rows)
     expect(JSON.stringify(rows)).toBe(before)
@@ -460,22 +436,19 @@ describe('Phase 7 L3/K3 dispatch and restoration clone narrowing', () => {
         { role: 'assistant', content: 'prefill' },
       ],
     },
-  ])(
-    'L3: preserves byte-identical output and isolation for $name',
-    ({ db, flags, rows, expected }) => {
-      resetChatDispatchReformatInstrumentation()
-      const sourceRows = rows as OpenAIChat[]
-      const originalRows = structuredClone(sourceRows)
+  ])('L3: preserves byte-identical output and isolation for $name', ({ db, flags, rows, expected }) => {
+    resetChatDispatchReformatInstrumentation()
+    const sourceRows = rows as OpenAIChat[]
+    const originalRows = structuredClone(sourceRows)
 
-      const result = reformatMessages(db, sourceRows, flags)
+    const result = reformatMessages(db, sourceRows, flags)
 
-      expect(result).not.toBe(sourceRows)
-      expect(JSON.stringify(result)).toBe(JSON.stringify(expected))
-      expect(sourceRows).toEqual(originalRows)
-      expect(result.some((row) => sourceRows.includes(row))).toBe(false)
-      expect(getChatDispatchReformatInstrumentation().fullPromptClones).toBe(1)
-    },
-  )
+    expect(result).not.toBe(sourceRows)
+    expect(JSON.stringify(result)).toBe(JSON.stringify(expected))
+    expect(sourceRows).toEqual(originalRows)
+    expect(result.some((row) => sourceRows.includes(row))).toBe(false)
+    expect(getChatDispatchReformatInstrumentation().fullPromptClones).toBe(1)
+  })
 
   it('K3: returns immutable initial restoration messages by reference and clones scriptstate', () => {
     const initialMessages = freezeDeep([
@@ -500,8 +473,7 @@ describe('Phase 7 L3/K3 dispatch and restoration clone narrowing', () => {
   })
 })
 
-const startTrigger = (effect: unknown[]): never =>
-  ({ comment: '', type: 'start', conditions: [], effect }) as never
+const startTrigger = (effect: unknown[]): never => ({ comment: '', type: 'start', conditions: [], effect }) as never
 
 function memoryEnabledDatabase(overrides: Partial<Database> = {}): Database {
   const message = [
@@ -543,16 +515,12 @@ describe('Phase 7-11a resolveScope (via beginAssembly)', () => {
 
   it('throws EntityNotFoundError for an unknown characterId', () => {
     const db = makeDatabase()
-    expect(() => beginAssembly(baseInput({ characterId: 'nope' }), depsFor(db))).toThrow(
-      EntityNotFoundError,
-    )
+    expect(() => beginAssembly(baseInput({ characterId: 'nope' }), depsFor(db))).toThrow(EntityNotFoundError)
   })
 
   it('throws EntityNotFoundError for an unknown chatId', () => {
     const db = makeDatabase()
-    expect(() => beginAssembly(baseInput({ chatId: 'nope' }), depsFor(db))).toThrow(
-      EntityNotFoundError,
-    )
+    expect(() => beginAssembly(baseInput({ chatId: 'nope' }), depsFor(db))).toThrow(EntityNotFoundError)
   })
 
   it('resolves explicit character / chat IDs to their indices', () => {
@@ -589,9 +557,7 @@ describe('Phase 7-11a resolveScope (via beginAssembly)', () => {
       ],
     } as unknown as Partial<Database>)
 
-    expect(() => beginAssembly(baseInput(), depsFor(db))).toThrow(
-      ChatGenerationSettingsIncompleteAssemblyError,
-    )
+    expect(() => beginAssembly(baseInput(), depsFor(db))).toThrow(ChatGenerationSettingsIncompleteAssemblyError)
     expectIncompleteAssembly(db, ['settings_missing'])
   })
 
@@ -840,9 +806,7 @@ describe('Phase 7-11a resolveScope (via beginAssembly)', () => {
       ],
     } as unknown as Partial<Database>)
 
-    expect(() => beginAssembly(baseInput(), depsFor(db))).toThrow(
-      ChatGenerationSettingsIncompleteAssemblyError,
-    )
+    expect(() => beginAssembly(baseInput(), depsFor(db))).toThrow(ChatGenerationSettingsIncompleteAssemblyError)
   })
 
   it('lets two chats produce different persona, preset, and toggle prompt output without global changes', () => {
@@ -1053,10 +1017,7 @@ describe('Phase 7-11a beginAssembly context + template normalization', () => {
 
   it('records the chat preset / loadout identity', () => {
     const db = makeDatabase()
-    const state = beginAssembly(
-      baseInput({ presetId: 'preset-x', loadoutId: 'loadout-y' }),
-      depsFor(db),
-    )
+    const state = beginAssembly(baseInput({ presetId: 'preset-x', loadoutId: 'loadout-y' }), depsFor(db))
     expect(state.presetId).toBe('preset-default')
     expect(state.loadoutId).toBe('loadout-y')
   })
@@ -1085,18 +1046,13 @@ describe('Phase 7-11a beginAssembly context + template normalization', () => {
 describe('Phase 7-11a assemblePrompt', () => {
   it('surfaces bad-ID errors early', async () => {
     const db = makeDatabase()
-    await expect(assemblePrompt(baseInput({ characterId: 'nope' }), depsFor(db))).rejects.toThrow(
-      EntityNotFoundError,
-    )
+    await expect(assemblePrompt(baseInput({ characterId: 'nope' }), depsFor(db))).rejects.toThrow(EntityNotFoundError)
   })
 })
 
 describe('Phase 7-11b fillStaticSlots', () => {
   // A database whose static/plain leaves all produce content.
-  const staticDb = (
-    overrides: Partial<Database> = {},
-    charOverrides: Partial<character> = {},
-  ): Database =>
+  const staticDb = (overrides: Partial<Database> = {}, charOverrides: Partial<character> = {}): Database =>
     makeDatabase({
       mainPrompt: 'MAIN',
       jailbreak: 'JB',
@@ -1220,9 +1176,7 @@ describe('Phase 7-11c fillLorebookSlots', () => {
   })
 
   it('surfaces memoryCardUsed / hasCachePoint from the preflight', () => {
-    const memState = run(
-      makeDatabase({ promptTemplate: [{ type: 'memory' }] } as Partial<Database>),
-    )
+    const memState = run(makeDatabase({ promptTemplate: [{ type: 'memory' }] } as Partial<Database>))
     expect(memState.memoryCardUsed).toBe(true)
     expect(memState.hasCachePoint).toBe(false)
 
@@ -1237,9 +1191,7 @@ describe('Phase 7-11c fillLorebookSlots', () => {
 
 describe('Phase 7-11d fillHistoryAndBias', () => {
   // A `start` trigger whose first effect aborts the send.
-  const stopTrigger = [
-    { comment: '', type: 'start', conditions: [], effect: [{ type: 'stop' }] },
-  ] as never
+  const stopTrigger = [{ comment: '', type: 'start', conditions: [], effect: [{ type: 'stop' }] }] as never
 
   const run = async (db: Database) => {
     const state = beginAssembly(baseInput(), depsFor(db))
@@ -1384,9 +1336,7 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
       fillMemoryAndPostHistory(state)
 
       expect(state.stopSending).toBe(false)
-      expect(state.promptMemoryRows).toEqual([
-        { role: 'system', content: 'selected summary', memo: 'hypaMemory' },
-      ])
+      expect(state.promptMemoryRows).toEqual([{ role: 'system', content: 'selected summary', memo: 'hypaMemory' }])
       expect(state.memories?.map((row) => row.content)).toEqual(['selected summary'])
       expect(state.unformated.chats.some((row) => row.memo === 'hypaMemory')).toBe(false)
       expect(state.unformated.main).toEqual([])
@@ -1480,15 +1430,9 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
         summariesDeleted: 1,
         chunksDeleted: 1,
       })
-      expect(state.promptMemoryRows).toEqual([
-        { role: 'system', content: 'selected summary', memo: 'hypaMemory' },
-      ])
-      expect(
-        listMemorySummaries(memoryDb, { chatId: 'chat-1' }).map((summary) => summary.id),
-      ).toEqual(['summary-keep'])
-      expect(listMemoryChunks(memoryDb, { chatId: 'chat-1' }).map((chunk) => chunk.id)).toEqual([
-        'chunk-keep',
-      ])
+      expect(state.promptMemoryRows).toEqual([{ role: 'system', content: 'selected summary', memo: 'hypaMemory' }])
+      expect(listMemorySummaries(memoryDb, { chatId: 'chat-1' }).map((summary) => summary.id)).toEqual(['summary-keep'])
+      expect(listMemoryChunks(memoryDb, { chatId: 'chat-1' }).map((chunk) => chunk.id)).toEqual(['chunk-keep'])
     } finally {
       memoryDb.close()
     }
@@ -1738,9 +1682,7 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
         plannerErrors: [],
         errors: [],
       })
-      expect(second.promptMemoryChunkPlanningDiagnostics).toEqual(
-        first.promptMemoryChunkPlanningDiagnostics,
-      )
+      expect(second.promptMemoryChunkPlanningDiagnostics).toEqual(first.promptMemoryChunkPlanningDiagnostics)
       expect(firstStats).toMatchObject({ entries: 2, hits: 0, misses: 2 })
       expect(secondStats.misses).toBe(firstStats.misses)
       expect(secondStats.hits - firstStats.hits).toBe(2)
@@ -1799,10 +1741,7 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
 
       const bounded = await selectMemory(dbFor(0.5))
 
-      expect(bounded.promptMemoryRows?.map((row) => row.content)).toEqual([
-        texts[0].trim(),
-        texts[3].trim(),
-      ])
+      expect(bounded.promptMemoryRows?.map((row) => row.content)).toEqual([texts[0].trim(), texts[3].trim()])
       const boundedAllocation = bounded.promptMemorySelectionDiagnostics?.selection?.allocation
       expect(boundedAllocation).toMatchObject({
         availableTokens: 50,
@@ -1832,8 +1771,7 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
         remainingTokens: 15,
       })
       expect(
-        tighter.promptMemorySelectionDiagnostics?.selection?.allocation.categories.similar
-          .skippedForBudget,
+        tighter.promptMemorySelectionDiagnostics?.selection?.allocation.categories.similar.skippedForBudget,
       ).toEqual([{ summaryId: 'summary-1', tokens: 17 }])
     } finally {
       memoryDb.close()
@@ -1884,10 +1822,9 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
       fillMemoryAndPostHistory(state)
 
       expect(state.promptMemoryRows).toHaveLength(1)
-      expect(
-        state.promptMemorySelectionDiagnostics?.selection?.allocation.categories.recent
-          .skippedForBudget,
-      ).toEqual([{ summaryId: 'overflow-summary-7', tokens: 17 }])
+      expect(state.promptMemorySelectionDiagnostics?.selection?.allocation.categories.recent.skippedForBudget).toEqual([
+        { summaryId: 'overflow-summary-7', tokens: 17 },
+      ])
 
       await renderAndBudget(state)
 
@@ -2513,9 +2450,7 @@ describe('Phase 7-11f renderAndBudget + assemblePrompt', () => {
         makeCharacter({
           chaId: 'char-tess',
           firstMessage: 'Hi.',
-          triggerscript: [
-            { comment: '', type: 'start', conditions: [], effect: [{ type: 'stop' }] },
-          ] as never,
+          triggerscript: [{ comment: '', type: 'start', conditions: [], effect: [{ type: 'stop' }] }] as never,
           chats: [makeChat({ id: 'chat-1' })],
         } as Partial<character>),
       ],
@@ -2533,10 +2468,7 @@ describe('Phase 7-11f renderAndBudget + assemblePrompt', () => {
   it('renderAndBudget aborts with overflow when pinned rows exceed maxContext', async () => {
     // Tiny budget + a non-removable (pinned) description row → finalize
     // cannot trim it, so the budget recheck overflows.
-    const state = beginAssembly(
-      baseInput(),
-      depsFor(makeDatabase({ maxContext: 1 } as Partial<Database>)),
-    )
+    const state = beginAssembly(baseInput(), depsFor(makeDatabase({ maxContext: 1 } as Partial<Database>)))
     state.unformated.description.push({ role: 'system', content: 'a pinned description row' })
     await renderAndBudget(state)
 
@@ -2609,12 +2541,8 @@ describe('Phase 7-12d-i assemble mutation contract', () => {
       index: 1,
       message: { role: 'user', data: 'new user' },
     })
-    expect(
-      typeof (mutations.messageMutations[0] as { message: { chatId: unknown } }).message.chatId,
-    ).toBe('string')
-    expect(
-      typeof (mutations.messageMutations[0] as { message: { time: unknown } }).message.time,
-    ).toBe('number')
+    expect(typeof (mutations.messageMutations[0] as { message: { chatId: unknown } }).message.chatId).toBe('string')
+    expect(typeof (mutations.messageMutations[0] as { message: { time: unknown } }).message.time).toBe('number')
 
     const runVarPatch = mutations.messageMutations.find((m) => m.source === 'run_var')
     expect(runVarPatch).toMatchObject({
@@ -2623,9 +2551,7 @@ describe('Phase 7-12d-i assemble mutation contract', () => {
       beforeLength: 2,
       afterLength: 2,
     })
-    expect((runVarPatch as { messages: Array<{ data: string }> }).messages[0].data).toBe(
-      'before after',
-    )
+    expect((runVarPatch as { messages: Array<{ data: string }> }).messages[0].data).toBe('before after')
 
     const startPatch = mutations.messageMutations.find((m) => m.source === 'start_trigger')
     expect(startPatch).toMatchObject({
@@ -2633,9 +2559,11 @@ describe('Phase 7-12d-i assemble mutation contract', () => {
       source: 'start_trigger',
       afterLength: 3,
     })
-    expect(
-      (startPatch as { messages: Array<{ data: string }> }).messages.map((m) => m.data),
-    ).toEqual(['edited by trigger', 'new user', 'added by trigger'])
+    expect((startPatch as { messages: Array<{ data: string }> }).messages.map((m) => m.data)).toEqual([
+      'edited by trigger',
+      'new user',
+      'added by trigger',
+    ])
 
     expect(mutations.chatVarMutations).toEqual([
       { key: '$mood', before: null, after: 'bright' },
@@ -2660,10 +2588,7 @@ describe('Phase 7-12d-i assemble mutation contract', () => {
           chaId: 'char-tess',
           firstMessage: 'Hi.',
           triggerscript: [
-            startTrigger([
-              { type: 'setvar', operator: '=', var: 'halted', value: 'yes' },
-              { type: 'stop' },
-            ]),
+            startTrigger([{ type: 'setvar', operator: '=', var: 'halted', value: 'yes' }, { type: 'stop' }]),
           ],
           chats: [makeChat({ id: 'chat-1' })],
         } as Partial<character>),
@@ -2675,9 +2600,7 @@ describe('Phase 7-12d-i assemble mutation contract', () => {
     expect(result.stopSending).toBe(true)
     expect(result.prompt).toBeUndefined()
     expect(result.mutations?.varChanged).toBe(true)
-    expect(result.mutations?.chatVarMutations).toEqual([
-      { key: '$halted', before: null, after: 'yes' },
-    ])
+    expect(result.mutations?.chatVarMutations).toEqual([{ key: '$halted', before: null, after: 'yes' }])
   })
 
   it('does not duplicate a user message that the persisted chat already contains', async () => {
@@ -2740,9 +2663,7 @@ describe('Phase 3 M1 assembly message capture dirty flags', () => {
     } as Partial<Database>)
 
   const captureCount = (
-    source: keyof ReturnType<
-      typeof getAssemblyMessageCaptureInstrumentation
-    >['messageReplacementCaptures'],
+    source: keyof ReturnType<typeof getAssemblyMessageCaptureInstrumentation>['messageReplacementCaptures'],
   ): number => getAssemblyMessageCaptureInstrumentation().messageReplacementCaptures[source] ?? 0
 
   function expectNoFullTranscriptStringify(): void {
@@ -2758,9 +2679,7 @@ describe('Phase 3 M1 assembly message capture dirty flags', () => {
     )
 
     expect(result.stopSending).toBe(false)
-    expect(result.mutations?.messageMutations.map((mutation) => mutation.source)).toEqual([
-      'user_message',
-    ])
+    expect(result.mutations?.messageMutations.map((mutation) => mutation.source)).toEqual(['user_message'])
     const metrics = getAssemblyMessageCaptureInstrumentation()
     expect(metrics.fullTranscriptClones.messageReplacement).toBe(0)
     expect(metrics.fullTranscriptClones.submitTranscript).toBe(0)
@@ -2779,9 +2698,7 @@ describe('Phase 3 M1 assembly message capture dirty flags', () => {
     expect(fixed.stopSending).toBe(false)
     expect(fixed.mutations?.messageMutations).toEqual([])
     expect(captureCount('run_var')).toBe(0)
-    expect(getAssemblyMessageCaptureInstrumentation().fullTranscriptClones.messageReplacement).toBe(
-      0,
-    )
+    expect(getAssemblyMessageCaptureInstrumentation().fullTranscriptClones.messageReplacement).toBe(0)
     expectNoFullTranscriptStringify()
 
     resetAssemblyMessageCaptureInstrumentation()
@@ -2792,12 +2709,8 @@ describe('Phase 3 M1 assembly message capture dirty flags', () => {
 
     expect(rewritten.stopSending).toBe(false)
     expect(captureCount('run_var')).toBe(1)
-    expect(getAssemblyMessageCaptureInstrumentation().fullTranscriptClones.messageReplacement).toBe(
-      1,
-    )
-    const runVarPatch = rewritten.mutations?.messageMutations.find(
-      (mutation) => mutation.source === 'run_var',
-    )
+    expect(getAssemblyMessageCaptureInstrumentation().fullTranscriptClones.messageReplacement).toBe(1)
+    const runVarPatch = rewritten.mutations?.messageMutations.find((mutation) => mutation.source === 'run_var')
     expect(runVarPatch).toMatchObject({
       type: 'replace_all',
       source: 'run_var',
@@ -2805,9 +2718,7 @@ describe('Phase 3 M1 assembly message capture dirty flags', () => {
       afterLength: 1,
       messages: [{ role: 'char', data: 'I am Tess. ', chatId: 'msg-1' }],
     })
-    expect(rewritten.mutations?.chatVarMutations).toEqual([
-      { key: '$mood', before: null, after: 'bright' },
-    ])
+    expect(rewritten.mutations?.chatVarMutations).toEqual([{ key: '$mood', before: null, after: 'bright' }])
     expectNoFullTranscriptStringify()
   })
 
@@ -2819,9 +2730,7 @@ describe('Phase 3 M1 assembly message capture dirty flags', () => {
       depsFor(
         m1Db([], {
           char: {
-            triggerscript: [
-              startTrigger([{ type: 'setvar', operator: '=', var: 'score', value: '9' }]),
-            ] as never,
+            triggerscript: [startTrigger([{ type: 'setvar', operator: '=', var: 'score', value: '9' }])] as never,
           },
         }),
       ),
@@ -2829,15 +2738,9 @@ describe('Phase 3 M1 assembly message capture dirty flags', () => {
 
     expect(result.stopSending).toBe(false)
     expect(result.mutations?.varChanged).toBe(true)
-    expect(result.mutations?.chatVarMutations).toEqual([
-      { key: '$score', before: null, after: '9' },
-    ])
-    expect(result.mutations?.messageMutations.map((mutation) => mutation.source)).toEqual([
-      'user_message',
-    ])
-    expect(getAssemblyMessageCaptureInstrumentation().fullTranscriptClones.messageReplacement).toBe(
-      0,
-    )
+    expect(result.mutations?.chatVarMutations).toEqual([{ key: '$score', before: null, after: '9' }])
+    expect(result.mutations?.messageMutations.map((mutation) => mutation.source)).toEqual(['user_message'])
+    expect(getAssemblyMessageCaptureInstrumentation().fullTranscriptClones.messageReplacement).toBe(0)
     expect(captureCount('start_trigger')).toBe(0)
     expectNoFullTranscriptStringify()
   })
@@ -2877,9 +2780,7 @@ describe('Phase 3 M1 assembly message capture dirty flags', () => {
     })
 
     expect(post.finalText).toBe('assistant reply')
-    expect(post.mutations.chatVarMutations).toEqual([
-      { key: '$l8OutputCount', before: null, after: '3' },
-    ])
+    expect(post.mutations.chatVarMutations).toEqual([{ key: '$l8OutputCount', before: null, after: '3' }])
     const cloneMetrics = getTriggerCloneInstrumentation()
     expect(cloneMetrics.fullTranscriptClones.input).toBe(0)
     expect(cloneMetrics.fullTranscriptClones.start).toBe(0)
@@ -2916,14 +2817,10 @@ describe('Phase 3 M1 assembly message capture dirty flags', () => {
       'user_message',
     ])
     expect(captureCount('input_trigger')).toBe(1)
-    expect(getAssemblyMessageCaptureInstrumentation().fullTranscriptClones.messageReplacement).toBe(
-      1,
-    )
+    expect(getAssemblyMessageCaptureInstrumentation().fullTranscriptClones.messageReplacement).toBe(1)
     expect(getAssemblyMessageCaptureInstrumentation().fullTranscriptClones.submitTranscript).toBe(1)
     expect(result.submitTranscriptChanged).toBe(true)
-    expect(
-      result.submitMessages?.map((message) => ({ role: message.role, data: message.data })),
-    ).toEqual([
+    expect(result.submitMessages?.map((message) => ({ role: message.role, data: message.data }))).toEqual([
       { role: 'char', data: 'input row' },
       { role: 'user', data: 'new user' },
     ])
@@ -2939,27 +2836,20 @@ describe('Phase 3 M1 assembly message capture dirty flags', () => {
       depsFor(
         m1Db([], {
           char: {
-            customscript: [
-              { in: 'hi', out: 'HELLO', type: 'editinput', flag: '', ableFlag: false },
-            ] as never,
+            customscript: [{ in: 'hi', out: 'HELLO', type: 'editinput', flag: '', ableFlag: false }] as never,
           },
         }),
       ),
     )
 
     expect(result.stopSending).toBe(false)
-    expect(result.mutations?.messageMutations.map((mutation) => mutation.source)).toEqual([
-      'user_message',
-      'editinput',
-    ])
+    expect(result.mutations?.messageMutations.map((mutation) => mutation.source)).toEqual(['user_message', 'editinput'])
     expect(captureCount('editinput')).toBe(1)
-    expect(getAssemblyMessageCaptureInstrumentation().fullTranscriptClones.messageReplacement).toBe(
-      1,
-    )
+    expect(getAssemblyMessageCaptureInstrumentation().fullTranscriptClones.messageReplacement).toBe(1)
     expect(getAssemblyMessageCaptureInstrumentation().fullTranscriptClones.submitTranscript).toBe(1)
-    expect(
-      result.submitMessages?.map((message) => ({ role: message.role, data: message.data })),
-    ).toEqual([{ role: 'user', data: 'HELLO' }])
+    expect(result.submitMessages?.map((message) => ({ role: message.role, data: message.data }))).toEqual([
+      { role: 'user', data: 'HELLO' },
+    ])
     expect(result.restoration?.messages).toEqual([])
     expectNoFullTranscriptStringify()
   })
@@ -2970,18 +2860,16 @@ describe('Phase 3 M1 assembly message capture dirty flags', () => {
       depsFor(
         m1Db([], {
           char: {
-            customscript: [
-              { in: 'h(i)', out: 'H$1', type: 'editinput', flag: '', ableFlag: false },
-            ] as never,
+            customscript: [{ in: 'h(i)', out: 'H$1', type: 'editinput', flag: '', ableFlag: false }] as never,
           },
         }),
       ),
     )
 
     expect(result.stopSending).toBe(false)
-    expect(
-      result.submitMessages?.map((message) => ({ role: message.role, data: message.data })),
-    ).toEqual([{ role: 'user', data: 'Hi' }])
+    expect(result.submitMessages?.map((message) => ({ role: message.role, data: message.data }))).toEqual([
+      { role: 'user', data: 'Hi' },
+    ])
   })
 
   it('L9/v4-L7: customscript script.in rejects unsafe imported regex during assembly', async () => {
@@ -2991,9 +2879,7 @@ describe('Phase 3 M1 assembly message capture dirty flags', () => {
         depsFor(
           m1Db([], {
             char: {
-              customscript: [
-                { in: '(a+)+$', out: 'blocked', type: 'editinput', flag: '', ableFlag: false },
-              ] as never,
+              customscript: [{ in: '(a+)+$', out: 'blocked', type: 'editinput', flag: '', ableFlag: false }] as never,
             },
           }),
         ),
@@ -3026,12 +2912,8 @@ describe('Phase 3 M1 assembly message capture dirty flags', () => {
       'start_trigger',
     ])
     expect(captureCount('start_trigger')).toBe(1)
-    expect(getAssemblyMessageCaptureInstrumentation().fullTranscriptClones.messageReplacement).toBe(
-      1,
-    )
-    const startPatch = result.mutations?.messageMutations.find(
-      (mutation) => mutation.source === 'start_trigger',
-    )
+    expect(getAssemblyMessageCaptureInstrumentation().fullTranscriptClones.messageReplacement).toBe(1)
+    const startPatch = result.mutations?.messageMutations.find((mutation) => mutation.source === 'start_trigger')
     expect(startPatch).toMatchObject({
       type: 'replace_all',
       source: 'start_trigger',
@@ -3043,9 +2925,7 @@ describe('Phase 3 M1 assembly message capture dirty flags', () => {
         { role: 'char', data: 'added by trigger' },
       ],
     })
-    expect(result.restoration?.messages).toEqual([
-      { role: 'user', data: 'before start trigger', chatId: 'msg-1' },
-    ])
+    expect(result.restoration?.messages).toEqual([{ role: 'user', data: 'before start trigger', chatId: 'msg-1' }])
     expectNoFullTranscriptStringify()
   })
 
@@ -3077,9 +2957,7 @@ describe('Phase 3 M1 assembly message capture dirty flags', () => {
       },
     ])
     expect(captureCount('regenerate')).toBe(1)
-    expect(getAssemblyMessageCaptureInstrumentation().fullTranscriptClones.messageReplacement).toBe(
-      1,
-    )
+    expect(getAssemblyMessageCaptureInstrumentation().fullTranscriptClones.messageReplacement).toBe(1)
     expect(result.restoration?.messages).toEqual([
       { role: 'user', data: 'try again', chatId: 'msg-user-1' },
       { role: 'char', data: 'old reply', chatId: 'msg-char-1', saying: 'char-tess' },
@@ -3138,10 +3016,7 @@ describe('Phase 2 L2 run-var fixed-point skip', () => {
           chats: [
             makeChat({
               id: 'chat-1',
-              message: [
-                msg('user', prose, 'msg-1'),
-                msg('char', 'I am <bot>. {{setvar::mood::bright}}', 'msg-2'),
-              ],
+              message: [msg('user', prose, 'msg-1'), msg('char', 'I am <bot>. {{setvar::mood::bright}}', 'msg-2')],
             }),
           ],
         } as Partial<character>),
@@ -3158,15 +3033,12 @@ describe('Phase 2 L2 run-var fixed-point skip', () => {
     // stripped the var write, which still landed in the chat-var delta.
     expect(rows[0].data).toBe(prose)
     expect(rows[1].data).toBe('I am Tess. ')
-    expect(result.mutations!.chatVarMutations).toEqual([
-      { key: '$mood', before: null, after: 'bright' },
-    ])
+    expect(result.mutations!.chatVarMutations).toEqual([{ key: '$mood', before: null, after: 'bright' }])
   })
 })
 
 describe('Phase 3 M2/L8/L9 history expansion cost', () => {
-  const msg = (role: Message['role'], data: string, chatId: string): Message =>
-    ({ role, data, chatId }) as Message
+  const msg = (role: Message['role'], data: string, chatId: string): Message => ({ role, data, chatId }) as Message
 
   const active = (overrides: Partial<LoreEntryActive> = {}): LoreEntryActive => ({
     depth: 0,
@@ -3210,11 +3082,7 @@ describe('Phase 3 M2/L8/L9 history expansion cost', () => {
     } as Partial<Database>)
     const spy = vi.spyOn(promptVariables, 'expandVariables')
 
-    const result = await buildHistoryWindow(
-      { database: db },
-      db.characters[0],
-      db.characters[0].chats[0],
-    )
+    const result = await buildHistoryWindow({ database: db }, db.characters[0], db.characters[0].chats[0])
 
     expect(result.messages.find((m) => m.memo === 'plain-row')?.content).toBe(prose)
     expect(result.messages.find((m) => m.memo === 'macro-row')?.content).toBe('hello Alex')
@@ -3240,11 +3108,7 @@ describe('Phase 3 M2/L8/L9 history expansion cost', () => {
           firstMessage: '',
           chats: [
             makeChat({
-              message: [
-                msg('user', 'one', 'one'),
-                msg('char', 'two', 'two'),
-                msg('user', 'three', 'three'),
-              ],
+              message: [msg('user', 'one', 'one'), msg('char', 'two', 'two'), msg('user', 'three', 'three')],
             }),
           ],
         }),
@@ -3252,27 +3116,14 @@ describe('Phase 3 M2/L8/L9 history expansion cost', () => {
     } as Partial<Database>)
     const spy = vi.spyOn(promptVariables, 'expandVariables')
 
-    const result = await buildHistoryWindow(
-      { database: db },
-      db.characters[0],
-      db.characters[0].chats[0],
-      true,
-    )
+    const result = await buildHistoryWindow({ database: db }, db.characters[0], db.characters[0].chats[0], true)
 
-    expect(result.messages.find((m) => m.memo === 'one')?.content).toBe(
-      "<Lyra's Message>\none\n</Lyra's Message>",
+    expect(result.messages.find((m) => m.memo === 'one')?.content).toBe("<Lyra's Message>\none\n</Lyra's Message>")
+    expect(result.messages.find((m) => m.memo === 'two')?.content).toBe("<Lyra's Message>\ntwo\n</Lyra's Message>")
+    expect(result.messages.find((m) => m.memo === 'three')?.content).toBe("<Lyra's Message>\nthree\n</Lyra's Message>")
+    expect(spy.mock.calls.filter(([input]) => String(input).startsWith("<{{char}}'s Message>\n{{slot}}"))).toHaveLength(
+      1,
     )
-    expect(result.messages.find((m) => m.memo === 'two')?.content).toBe(
-      "<Lyra's Message>\ntwo\n</Lyra's Message>",
-    )
-    expect(result.messages.find((m) => m.memo === 'three')?.content).toBe(
-      "<Lyra's Message>\nthree\n</Lyra's Message>",
-    )
-    expect(
-      spy.mock.calls.filter(([input]) =>
-        String(input).startsWith("<{{char}}'s Message>\n{{slot}}"),
-      ),
-    ).toHaveLength(1)
   })
 
   it('expands depth-prompt bodies once for preflight and reuses them for final splice', async () => {
@@ -3313,21 +3164,9 @@ describe('Phase 3 M2/L8/L9 history expansion cost', () => {
       { role: 'user', content: 'first' },
       { role: 'assistant', content: 'reply' },
     ]
-    applyDepthPrompts(
-      messages,
-      { database: db },
-      db.characters[0],
-      activationReport,
-      history.preparedDepthPrompts,
-    )
+    applyDepthPrompts(messages, { database: db }, db.characters[0], activationReport, history.preparedDepthPrompts)
 
-    expect(messages.map((m) => m.content)).toEqual([
-      'NewChat',
-      'depth says Alex',
-      'first',
-      'tail says Alex',
-      'reply',
-    ])
+    expect(messages.map((m) => m.content)).toEqual(['NewChat', 'depth says Alex', 'first', 'tail says Alex', 'reply'])
     expect(spy.mock.calls.filter(([input]) => input === 'depth says {{user}}')).toHaveLength(1)
     expect(spy.mock.calls.filter(([input]) => input === 'tail says {{user}}')).toHaveLength(1)
   })
@@ -3360,9 +3199,7 @@ describe('Phase 3 M3 stable card cache', () => {
 
     expect(result.stopSending).toBe(false)
     expect(result.formated?.map((r) => r.content)).toContain('stable body')
-    expect(result.mutations?.chatVarMutations).toEqual([
-      { key: '$score', before: null, after: '9' },
-    ])
+    expect(result.mutations?.chatVarMutations).toEqual([{ key: '$score', before: null, after: '9' }])
     expect(
       spy.mock.calls.filter(
         ([input, expandCtx]) =>
@@ -3408,9 +3245,7 @@ describe('Phase 3 L4 lorebook sticky chat-var persistence', () => {
     const first = await assemblePrompt(baseInput({ userMessage: 'cat' }), depsFor(db))
 
     expect(first.stopSending).toBe(false)
-    const firstLorebookActivation = first.prompt?.lorebookActivation as
-      | LorebookActivationReport
-      | undefined
+    const firstLorebookActivation = first.prompt?.lorebookActivation as LorebookActivationReport | undefined
     expect(firstLorebookActivation?.actives.map((a) => a.prompt)).toContain('One-shot lore.')
     expect(first.mutations?.varChanged).toBe(true)
     expect(first.mutations?.chatVarMutations).toEqual([
@@ -3419,9 +3254,7 @@ describe('Phase 3 L4 lorebook sticky chat-var persistence', () => {
     expect(first.state?.database.characters[0].chats[0].scriptstate).toEqual({
       '$__internal_da_lore-dont': 'true',
     })
-    expect(first.state?.currentChat.scriptstate).toBe(
-      first.state?.database.characters[0].chats[0].scriptstate,
-    )
+    expect(first.state?.currentChat.scriptstate).toBe(first.state?.database.characters[0].chats[0].scriptstate)
     expect(db.characters[0].chats[0].scriptstate).toBeUndefined()
 
     db.characters[0].chats[0].scriptstate = structuredClone(first.state?.currentChat.scriptstate)
@@ -3429,17 +3262,14 @@ describe('Phase 3 L4 lorebook sticky chat-var persistence', () => {
     const second = await assemblePrompt(baseInput({ userMessage: 'cat' }), depsFor(db))
 
     expect(second.stopSending).toBe(false)
-    const secondLorebookActivation = second.prompt?.lorebookActivation as
-      | LorebookActivationReport
-      | undefined
+    const secondLorebookActivation = second.prompt?.lorebookActivation as LorebookActivationReport | undefined
     expect(secondLorebookActivation?.actives.map((a) => a.prompt)).not.toContain('One-shot lore.')
     expect(second.mutations?.chatVarMutations).toEqual([])
   })
 })
 
 describe('Phase 3 M4 CBS callback memo', () => {
-  const msg = (role: Message['role'], data: string, chatId: string): Message =>
-    ({ role, data, chatId }) as Message
+  const msg = (role: Message['role'], data: string, chatId: string): Message => ({ role, data, chatId }) as Message
 
   const lore = (overrides: Partial<loreBook> = {}): loreBook =>
     ({
@@ -3503,20 +3333,14 @@ describe('Phase 3 M4 CBS callback memo', () => {
             makeChat({
               id: 'chat-1',
               localLore: [lore({ id: 'local-lore', content: 'Local lore' })],
-              message: [
-                msg('user', 'user sees {{user}}', 'msg-user'),
-                msg('char', 'char sees {{char}}', 'msg-char'),
-              ],
+              message: [msg('user', 'user sees {{user}}', 'msg-user'), msg('char', 'char sees {{char}}', 'msg-char')],
             }),
           ],
         }),
       ],
     } as Partial<Database>)
 
-    const result = await assemblePrompt(
-      baseInput({ mode: 'preview', userMessage: undefined }),
-      depsFor(db),
-    )
+    const result = await assemblePrompt(baseInput({ mode: 'preview', userMessage: undefined }), depsFor(db))
 
     expect(result.stopSending).toBe(false)
     const content = result.formated?.find((row) => row.content.includes('U1 '))?.content ?? ''
@@ -3597,9 +3421,7 @@ describe('Phase 3 M4 CBS callback memo', () => {
     expect(getAssemblyCbsCallbackMemoInstrumentation().callbackMisses.lorebook).toBe(1)
 
     state.currentChar.globalLore.push(lore({ id: 'global-two', content: 'Global two' }))
-    state.database.characters[0].chats[0].localLore.push(
-      lore({ id: 'local-two', content: 'Local two' }),
-    )
+    state.database.characters[0].chats[0].localLore.push(lore({ id: 'local-two', content: 'Local two' }))
     state.currentChat.localLore.push(lore({ id: 'local-two', content: 'Local two' }))
 
     const second = read()
@@ -3647,9 +3469,7 @@ describe('Phase 3 M4 CBS callback memo', () => {
 
     expect(firstHistoryData(second)).toBe('cat marker true')
     expect(getAssemblyCbsCallbackMemoInstrumentation().callbackMisses.userhistory).toBe(2)
-    expect(state.database.characters[0].chats[0].scriptstate?.['$__internal_ka_lore-keep']).toBe(
-      'true',
-    )
+    expect(state.database.characters[0].chats[0].scriptstate?.['$__internal_ka_lore-keep']).toBe('true')
     expect(db.characters[0].chats[0].scriptstate).toBeUndefined()
   })
 

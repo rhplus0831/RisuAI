@@ -12,20 +12,11 @@
       "chatId": "msg-char-1"
     }
   ],
-  "stages": [
-    1,
-    3,
-    4
-  ],
+  "stages": [1, 3, 4],
   "sideEffects": [
     {
       "fn": "addRerolls",
-      "args": [
-        "uuid-0",
-        [
-          " there was a curious cat."
-        ]
-      ]
+      "args": ["uuid-0", [" there was a curious cat."]]
     },
     {
       "fn": "runInlayScreen",

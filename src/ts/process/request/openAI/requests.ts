@@ -4,12 +4,7 @@ import { getDatabase } from 'src/ts/storage/database.svelte'
 import { LLMFlags, LLMFormat } from 'src/ts/model/modellist'
 import { strongBan, tokenizeNum } from 'src/ts/tokenizer'
 import { getFreeOpenRouterModels } from 'src/ts/model/openrouter'
-import {
-  addFetchLog,
-  fetchNative,
-  globalFetch,
-  textifyReadableStream,
-} from 'src/ts/globalApi.svelte'
+import { addFetchLog, fetchNative, globalFetch, textifyReadableStream } from 'src/ts/globalApi.svelte'
 import { simplifySchema } from 'src/ts/util'
 import { isLocalNetworkUrl } from 'src/ts/network/localNetwork'
 
@@ -17,11 +12,7 @@ import { extractJSON, getOpenAIJSONSchema } from '../../templates/jsonSchema'
 import { applyChatTemplate } from '../../templates/chatTemplate'
 import { supportsInlayImage } from '../../files/inlays'
 import { callTool, decodeToolCall, encodeToolCall } from '../../mcp/mcp'
-import type {
-  RequestDataArgumentExtended,
-  requestDataResponse,
-  StreamResponseChunk,
-} from '../request'
+import type { RequestDataArgumentExtended, requestDataResponse, StreamResponseChunk } from '../request'
 import { applyAdditionalParameters, applyParameters, getAdditionalParameters } from '../shared'
 
 import type {
@@ -49,9 +40,7 @@ function getLocalNetworkRequestOptions(
   }
 
   const timeoutSec =
-    Number.isFinite(db.localNetworkTimeoutSec) && db.localNetworkTimeoutSec > 0
-      ? db.localNetworkTimeoutSec
-      : 600
+    Number.isFinite(db.localNetworkTimeoutSec) && db.localNetworkTimeoutSec > 0 ? db.localNetworkTimeoutSec : 600
 
   return {
     networkRoute: 'local_network',
@@ -59,9 +48,7 @@ function getLocalNetworkRequestOptions(
   }
 }
 
-export async function requestOpenAI(
-  arg: RequestDataArgumentExtended,
-): Promise<requestDataResponse> {
+export async function requestOpenAI(arg: RequestDataArgumentExtended): Promise<requestDataResponse> {
   let formatedChat: OpenAIChatExtra[] = []
   const formated = arg.formated
   const db = getDatabase()
@@ -169,9 +156,7 @@ export async function requestOpenAI(
   let oobaSystemPrompts: string[] = []
   for (let i = 0; i < formatedChat.length; i++) {
     if (formatedChat[i].role !== 'function') {
-      if (
-        !(formatedChat[i].name && formatedChat[i].name.startsWith('example_') && db.newOAIHandle)
-      ) {
+      if (!(formatedChat[i].name && formatedChat[i].name.startsWith('example_') && db.newOAIHandle)) {
         formatedChat[i].name = undefined
       }
       if (db.newOAIHandle && formatedChat[i].memo && formatedChat[i].memo.startsWith('NewChat')) {
@@ -200,11 +185,7 @@ export async function requestOpenAI(
       delete formatedChat[i].thoughts
       delete formatedChat[i].cachePoint
     }
-    if (
-      aiModel === 'reverse_proxy' &&
-      db.reverseProxyOobaMode &&
-      formatedChat[i].role === 'system'
-    ) {
+    if (aiModel === 'reverse_proxy' && db.reverseProxyOobaMode && formatedChat[i].role === 'system') {
       const cont = formatedChat[i].content
       if (typeof cont === 'string') {
         oobaSystemPrompts.push(cont)
@@ -222,12 +203,7 @@ export async function requestOpenAI(
 
   if (db.newOAIHandle) {
     formatedChat = formatedChat.filter((m) => {
-      return (
-        m.content !== '' ||
-        (m.multimodals && m.multimodals.length > 0) ||
-        m.tool_calls ||
-        m.role === 'tool'
-      )
+      return m.content !== '' || (m.multimodals && m.multimodals.length > 0) || m.tool_calls || m.role === 'tool'
     })
   }
 
@@ -250,8 +226,7 @@ export async function requestOpenAI(
     }
   }
 
-  let requestModel =
-    aiModel === 'reverse_proxy' || aiModel === 'openrouter' ? db.proxyRequestModel : aiModel
+  let requestModel = aiModel === 'reverse_proxy' || aiModel === 'openrouter' ? db.proxyRequestModel : aiModel
   let openrouterRequestModel = db.openrouterRequestModel
   if (aiModel === 'reverse_proxy') {
     requestModel = db.customProxyRequestModel
@@ -713,14 +688,7 @@ export async function requestOpenAI(
 
     return {
       type: 'streaming',
-      result: wrapToolStream(
-        transtream.readable,
-        body,
-        headers,
-        replacerURL,
-        arg,
-        streamingLocalNetworkOptions,
-      ),
+      result: wrapToolStream(transtream.readable, body, headers, replacerURL, arg, streamingLocalNetworkOptions),
     }
   }
 
@@ -776,8 +744,7 @@ export async function requestHTTPOpenAI(
     }
     const msg: OpenAIChatFull = dat.choices[0].message
     let result = msg.content ?? ''
-    const reasoningContentField =
-      dat?.choices[0]?.reasoning_content ?? dat?.choices[0]?.message?.reasoning_content
+    const reasoningContentField = dat?.choices[0]?.reasoning_content ?? dat?.choices[0]?.message?.reasoning_content
     if (arg.modelInfo.flags.includes(LLMFlags.deepSeekThinkingOutput) && !reasoningContentField) {
       let reasoningContent = ''
       result = result.replace(/(.*)\<\/think\>/gms, (m, p1) => {
@@ -843,9 +810,7 @@ export async function requestHTTPOpenAI(
             continue
           }
           try {
-            const functionArgs = toolCall.function.arguments
-              ? JSON.parse(toolCall.function.arguments)
-              : {}
+            const functionArgs = toolCall.function.arguments ? JSON.parse(toolCall.function.arguments) : {}
             if (arg.tools && arg.tools.length > 0) {
               const tool = arg.tools.find((t) => t.name === toolCall.function.name)
               if (!tool) {
@@ -911,8 +876,7 @@ export async function requestHTTPOpenAI(
         const callCode = callCodes.join('\n\n')
 
         // Combine the tool call results with the main response (does not include text response if simplifiedToolUse is enabled)
-        const result =
-          (db.simplifiedToolUse ? '' : (processTextResponse(dat) ?? '') + '\n\n') + callCode
+        const result = (db.simplifiedToolUse ? '' : (processTextResponse(dat) ?? '') + '\n\n') + callCode
 
         if (resRec.type === 'fail') {
           alertError(`Failed to fetch model response after tool execution`)
@@ -977,9 +941,7 @@ export async function requestHTTPOpenAI(
   }
 }
 
-export async function requestOpenAILegacyInstruct(
-  arg: RequestDataArgumentExtended,
-): Promise<requestDataResponse> {
+export async function requestOpenAILegacyInstruct(arg: RequestDataArgumentExtended): Promise<requestDataResponse> {
   const formated = arg.formated
   const db = getDatabase()
   const maxTokens = arg.maxTokens
@@ -1056,9 +1018,7 @@ export async function requestOpenAILegacyInstruct(
   }
 }
 
-export async function requestOpenAIResponseAPI(
-  arg: RequestDataArgumentExtended,
-): Promise<requestDataResponse> {
+export async function requestOpenAIResponseAPI(arg: RequestDataArgumentExtended): Promise<requestDataResponse> {
   const formated = arg.formated
   const db = getDatabase()
   const aiModel = arg.aiModel
@@ -1239,9 +1199,7 @@ export async function requestOpenAIResponseAPI(
   }
 
   let result: string = (
-    response.data.output?.find(
-      (m: ResponseOutputItem) => m.type === 'message',
-    ) as ResponseOutputItem
+    response.data.output?.find((m: ResponseOutputItem) => m.type === 'message') as ResponseOutputItem
   )?.content?.find((m) => m.type === 'output_text')?.text
 
   if (!result) {
@@ -1256,9 +1214,7 @@ export async function requestOpenAIResponseAPI(
   }
 }
 
-function getTranStream(
-  arg: RequestDataArgumentExtended,
-): TransformStream<Uint8Array, StreamResponseChunk> {
+function getTranStream(arg: RequestDataArgumentExtended): TransformStream<Uint8Array, StreamResponseChunk> {
   let dataUint: Uint8Array | Buffer = new Uint8Array([])
   let reasoningContent = ''
   let reasoningFromStructured = false
@@ -1290,10 +1246,7 @@ function getTranStream(
             try {
               const rawChunk = data.replace('data: ', '')
               if (rawChunk === '[DONE]') {
-                if (
-                  arg.modelInfo.flags.includes(LLMFlags.deepSeekThinkingOutput) &&
-                  !reasoningFromStructured
-                ) {
+                if (arg.modelInfo.flags.includes(LLMFlags.deepSeekThinkingOutput) && !reasoningFromStructured) {
                   readed['0'] = readed['0'].replace(/(.*)\<\/think\>/gms, (m, p1) => {
                     reasoningContent = p1
                     return ''
@@ -1390,10 +1343,7 @@ function getTranStream(
           }
         }
 
-        if (
-          arg.modelInfo.flags.includes(LLMFlags.deepSeekThinkingOutput) &&
-          !reasoningFromStructured
-        ) {
+        if (arg.modelInfo.flags.includes(LLMFlags.deepSeekThinkingOutput) && !reasoningFromStructured) {
           readed['0'] = readed['0'].replace(/(.*)\<\/think\>/gms, (m, p1) => {
             reasoningContent = p1
             return ''
@@ -1443,13 +1393,10 @@ function wrapToolStream(
 
       const extractThoughts = (text: string) => {
         let reasoningContent = ''
-        const content = text.replace(
-          /<Thoughts>\n?([\s\S]*?)\n?<\/Thoughts>\n*/g,
-          (_, p1: string) => {
-            reasoningContent += (reasoningContent ? '\n' : '') + p1
-            return ''
-          },
-        )
+        const content = text.replace(/<Thoughts>\n?([\s\S]*?)\n?<\/Thoughts>\n*/g, (_, p1: string) => {
+          reasoningContent += (reasoningContent ? '\n' : '') + p1
+          return ''
+        })
         return {
           content,
           reasoningContent,
@@ -1464,17 +1411,14 @@ function wrapToolStream(
           value = lastValue ?? { '0': '' }
           content = value?.['0'] || ''
 
-          const toolCalls = Object.values(
-            JSON.parse(value?.['__tool_calls'] || '{}') || {},
-          ) as ToolCall[]
+          const toolCalls = Object.values(JSON.parse(value?.['__tool_calls'] || '{}') || {}) as ToolCall[]
           if (toolCalls && toolCalls.length > 0) {
             const messages = body.messages as OpenAIChatExtra[]
             let assistantContent = content
             let assistantReasoningContent = ''
             const shouldPassDeepSeekReasoning =
               arg.modelInfo.flags.includes(LLMFlags.deepSeekThinkingInput) ||
-              (arg.modelInfo.flags.includes(LLMFlags.deepSeekThinkingToggle) &&
-                db.deepseekThinkingType === 'enabled')
+              (arg.modelInfo.flags.includes(LLMFlags.deepSeekThinkingToggle) && db.deepseekThinkingType === 'enabled')
 
             if (shouldPassDeepSeekReasoning) {
               const extracted = extractThoughts(content)
@@ -1574,10 +1518,7 @@ function wrapToolStream(
                 requestTimeoutMs: networkOptions.requestTimeoutMs,
               })
 
-              if (
-                resRec.status == 200 &&
-                resRec.headers.get('Content-Type').includes('text/event-stream')
-              ) {
+              if (resRec.status == 200 && resRec.headers.get('Content-Type').includes('text/event-stream')) {
                 addFetchLog({
                   body: body,
                   response: 'Streaming',
@@ -1601,8 +1542,7 @@ function wrapToolStream(
 
             reader = transtream.readable.getReader()
 
-            prefix +=
-              (content && !db.simplifiedToolUse ? content + '\n\n' : '') + callCodes.join('\n\n')
+            prefix += (content && !db.simplifiedToolUse ? content + '\n\n' : '') + callCodes.join('\n\n')
             controller.enqueue({ '0': prefix })
 
             continue

@@ -11,9 +11,7 @@ const sidebarMocks = vi.hoisted(() => {
   }
 
   class SortableMock {
-    static create = vi.fn(
-      (element: Element, options: unknown) => new SortableMock(element, options),
-    )
+    static create = vi.fn((element: Element, options: unknown) => new SortableMock(element, options))
 
     element: Element
     options: unknown
@@ -385,11 +383,7 @@ function sidebarRoot(): HTMLElement {
 }
 
 function chatRows(): HTMLButtonElement[] {
-  return Array.from(
-    sidebarRoot().querySelectorAll<HTMLButtonElement>(
-      'button[data-risu-chat-idx][data-risu-chat-id]',
-    ),
-  )
+  return Array.from(sidebarRoot().querySelectorAll<HTMLButtonElement>('button[data-risu-chat-idx][data-risu-chat-id]'))
 }
 
 function rowByChatId(chatId: string): HTMLButtonElement {
@@ -400,18 +394,13 @@ function rowByChatId(chatId: string): HTMLButtonElement {
 
 function createButton(): HTMLButtonElement {
   const action = sidebarRoot().querySelector<HTMLElement>('[data-risu-chat-action="create"]')
-  const button =
-    action instanceof HTMLButtonElement
-      ? action
-      : action?.querySelector<HTMLButtonElement>('button')
+  const button = action instanceof HTMLButtonElement ? action : action?.querySelector<HTMLButtonElement>('button')
   expect(button, 'create chat button').toBeTruthy()
   return button!
 }
 
 function backToChatListButton(): HTMLButtonElement {
-  const button = sidebarRoot().querySelector<HTMLButtonElement>(
-    '[data-risu-chat-action="back-to-chat-list"]',
-  )
+  const button = sidebarRoot().querySelector<HTMLButtonElement>('[data-risu-chat-action="back-to-chat-list"]')
   expect(button, 'back to chat list button').toBeTruthy()
   return button!
 }
@@ -441,18 +430,14 @@ function folderHeader(folder: HTMLElement): HTMLButtonElement {
 
 function folderElementById(folderId: string): HTMLElement {
   const folder = Array.from(
-    sidebarRoot().querySelectorAll<HTMLElement>(
-      '[data-risu-chat-folder-idx][data-risu-chat-folder-id]',
-    ),
+    sidebarRoot().querySelectorAll<HTMLElement>('[data-risu-chat-folder-idx][data-risu-chat-folder-id]'),
   ).find((candidate) => candidate.dataset.risuChatFolderId === folderId)
   expect(folder, `folder row ${folderId}`).toBeTruthy()
   return folder!
 }
 
 function folderPanelById(folderId: string): HTMLElement {
-  const panel = sidebarRoot().querySelector<HTMLElement>(
-    `[data-risu-chat-folder-panel-id="${folderId}"]`,
-  )
+  const panel = sidebarRoot().querySelector<HTMLElement>(`[data-risu-chat-folder-panel-id="${folderId}"]`)
   expect(panel, `folder panel ${folderId}`).toBeTruthy()
   return panel!
 }
@@ -513,11 +498,7 @@ describe('SideChatList DOM contract harness', () => {
     component = mount(SideChatListHarness, { target })
     await tick()
 
-    expect(chatRows().map((row) => row.dataset.risuChatId)).toEqual([
-      'chat-foldered',
-      'chat-root-a',
-      'chat-root-b',
-    ])
+    expect(chatRows().map((row) => row.dataset.risuChatId)).toEqual(['chat-foldered', 'chat-root-a', 'chat-root-b'])
     expect(rowByChatId('chat-foldered').dataset.risuChatIdx).toBe('1')
     expect(rowByChatId('chat-foldered').dataset.risuChatFolderId).toBe('folder-a')
     expect(rowByChatId('chat-root-a').dataset.risuChatFolderId).toBe('')
@@ -634,11 +615,7 @@ describe('SideChatList DOM contract harness', () => {
     folderHeader(folderElementById('folder-a')).click()
     await tick()
 
-    expect(sidebarMocks.dispatchUpdateChatFolder).toHaveBeenCalledWith(
-      'folder-a',
-      { folded: true },
-      expect.any(Object),
-    )
+    expect(sidebarMocks.dispatchUpdateChatFolder).toHaveBeenCalledWith('folder-a', { folded: true }, expect.any(Object))
     expect(chara.chatFolders[0].folded).toBe(false)
   })
 
@@ -751,16 +728,8 @@ describe('SideChatList DOM contract harness', () => {
     command.resolve({ error: 'create failed', status: 'error' })
     await flushCommandWork()
 
-    expect(chatRows().map((row) => row.dataset.risuChatId)).toEqual([
-      'chat-foldered',
-      'chat-root-a',
-      'chat-root-b',
-    ])
-    expect(selectedCharacter().chats.map((chat) => chat.name)).toEqual([
-      'Root Chat A',
-      'Foldered Chat',
-      'Root Chat B',
-    ])
+    expect(chatRows().map((row) => row.dataset.risuChatId)).toEqual(['chat-foldered', 'chat-root-a', 'chat-root-b'])
+    expect(selectedCharacter().chats.map((chat) => chat.name)).toEqual(['Root Chat A', 'Foldered Chat', 'Root Chat B'])
     expect(selectedCharacter().chatPage).toBe(1)
     expectRowSelected('chat-foldered', true)
     expect(target.textContent).not.toContain('New Chat 4')
@@ -783,10 +752,7 @@ describe('SideChatList DOM contract harness', () => {
 
     expect(command.settled).toBe(false)
     expect(command.input).toMatchObject({ chatId: 'chat-root-b' })
-    expect(selectedCharacter().chats.map((chat) => chat.name)).toEqual([
-      'Root Chat A',
-      'Foldered Chat',
-    ])
+    expect(selectedCharacter().chats.map((chat) => chat.name)).toEqual(['Root Chat A', 'Foldered Chat'])
     expect(selectedCharacter().chatPage).toBe(1)
     expect(target.textContent).not.toContain('Root Chat B')
     expectRowSelected('chat-foldered', true)
@@ -814,10 +780,7 @@ describe('SideChatList DOM contract harness', () => {
 
     expect(command.settled).toBe(false)
     expect(command.input).toMatchObject({ chatId: 'chat-foldered' })
-    expect(selectedCharacter().chats.map((chat) => chat.name)).toEqual([
-      'Root Chat A',
-      'Root Chat B',
-    ])
+    expect(selectedCharacter().chats.map((chat) => chat.name)).toEqual(['Root Chat A', 'Root Chat B'])
     expect(selectedCharacter().chatPage).toBe(1)
     expect(target.textContent).not.toContain('Foldered Chat')
     expectRowSelected('chat-root-b', true)
@@ -825,17 +788,9 @@ describe('SideChatList DOM contract harness', () => {
     command.resolve({ error: 'delete failed', status: 'error' })
     await flushCommandWork()
 
-    expect(selectedCharacter().chats.map((chat) => chat.name)).toEqual([
-      'Root Chat A',
-      'Foldered Chat',
-      'Root Chat B',
-    ])
+    expect(selectedCharacter().chats.map((chat) => chat.name)).toEqual(['Root Chat A', 'Foldered Chat', 'Root Chat B'])
     expect(selectedCharacter().chatPage).toBe(1)
-    expect(chatRows().map((row) => row.dataset.risuChatId)).toEqual([
-      'chat-foldered',
-      'chat-root-a',
-      'chat-root-b',
-    ])
+    expect(chatRows().map((row) => row.dataset.risuChatId)).toEqual(['chat-foldered', 'chat-root-a', 'chat-root-b'])
     expectRowSelected('chat-foldered', true)
   })
 

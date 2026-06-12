@@ -5,11 +5,7 @@ interface RouteApp {
   patch: (route: string, handler: (req: unknown) => unknown) => void
 }
 
-declare function validateNormalModuleLinks(
-  modules: unknown[],
-  moduleIds: string[],
-  label: string,
-): void
+declare function validateNormalModuleLinks(modules: unknown[], moduleIds: string[], label: string): void
 declare function validateCharacterModuleLinks(modules: unknown[], moduleIds: string[]): void
 
 export function registerCommandRoutes(app: RouteApp): void {

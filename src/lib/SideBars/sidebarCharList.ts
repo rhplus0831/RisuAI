@@ -20,10 +20,7 @@ export type SidebarCharacterListItem =
 
 export type SidebarCharacterListCharacter = Pick<character, 'chaId' | 'name' | 'image'>
 
-export type SidebarCharacterOrderFolder = Omit<
-  Pick<folder, 'name' | 'color' | 'id' | 'imgFile'>,
-  'imgFile'
-> & {
+export type SidebarCharacterOrderFolder = Omit<Pick<folder, 'name' | 'color' | 'id' | 'imgFile'>, 'imgFile'> & {
   data: readonly string[]
   imgFile?: string | null
 }
@@ -172,11 +169,7 @@ export function buildSidebarCharacterListSignature(
   const safeCharacterOrder = safeOrder(characterOrder)
   const safeCharacterList = safeCharacters(characters)
   const indexById = createCharacterIndex(safeCharacterList)
-  return buildSidebarCharacterListSignatureWithIndex(
-    safeCharacterOrder,
-    safeCharacterList,
-    indexById,
-  )
+  return buildSidebarCharacterListSignatureWithIndex(safeCharacterOrder, safeCharacterList, indexById)
 }
 
 export function buildSidebarCharacterListItems(
@@ -200,11 +193,7 @@ export function createSidebarCharacterListMemo() {
     const safeCharacterOrder = safeOrder(characterOrder)
     const safeCharacterList = safeCharacters(characters)
     const indexById = createCharacterIndex(safeCharacterList)
-    const nextSignature = buildSidebarCharacterListSignatureWithIndex(
-      safeCharacterOrder,
-      safeCharacterList,
-      indexById,
-    )
+    const nextSignature = buildSidebarCharacterListSignatureWithIndex(safeCharacterOrder, safeCharacterList, indexById)
 
     if (nextSignature === signature) {
       return {
@@ -215,11 +204,7 @@ export function createSidebarCharacterListMemo() {
     }
 
     signature = nextSignature
-    items = buildSidebarCharacterListItemsWithIndex(
-      safeCharacterOrder,
-      safeCharacterList,
-      indexById,
-    )
+    items = buildSidebarCharacterListItemsWithIndex(safeCharacterOrder, safeCharacterList, indexById)
     return {
       signature,
       items,

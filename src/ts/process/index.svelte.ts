@@ -56,8 +56,7 @@ export let previewBody: string = ''
 
 let activeGenerationAbortController: AbortController | null = null
 const MAX_SERVER_RESEND_DEPTH = 1
-const SERVER_RESEND_CAP_ERROR =
-  'Server-requested resend limit reached. Stopping to avoid a repeated generation loop.'
+const SERVER_RESEND_CAP_ERROR = 'Server-requested resend limit reached. Stopping to avoid a repeated generation loop.'
 
 export function createActiveGenerationAbortController(): AbortController {
   const controller = new AbortController()

@@ -12,16 +12,10 @@
     onCategoryFilter?: (categoryId: string) => void
   }
 
-  let {
-    categoryManagerState = $bindable(),
-    searchState = $bindable(),
-    filterState,
-    onCategoryFilter,
-  }: Props = $props()
+  let { categoryManagerState = $bindable(), searchState = $bindable(), filterState, onCategoryFilter }: Props = $props()
 
   const hypaV3Data = $derived(
-    DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage]
-      .hypaV3Data,
+    DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].hypaV3Data,
   )
 
   let categories = $derived(
@@ -58,10 +52,7 @@
     if (categoryManagerState.editingCategory.id === '') {
       addCategory(categoryManagerState.editingCategory.name)
     } else {
-      updateCategory(
-        categoryManagerState.editingCategory.id,
-        categoryManagerState.editingCategory.name,
-      )
+      updateCategory(categoryManagerState.editingCategory.id, categoryManagerState.editingCategory.name)
     }
 
     categoryManagerState.editingCategory = null
@@ -77,17 +68,13 @@
     const uncategorized = { id: '', name: language.hypaV3Modal.unclassified }
 
     const hasUncategorized = currentCategories.some((c) => c.id === '')
-    const baseCategories = hasUncategorized
-      ? currentCategories
-      : [uncategorized, ...currentCategories]
+    const baseCategories = hasUncategorized ? currentCategories : [uncategorized, ...currentCategories]
 
     hypaV3Data.categories = [...baseCategories, { id, name }]
   }
 
   function updateCategory(id: string, name: string) {
-    hypaV3Data.categories = (hypaV3Data.categories || []).map((c) =>
-      c.id === id ? { ...c, name } : c,
-    )
+    hypaV3Data.categories = (hypaV3Data.categories || []).map((c) => (c.id === id ? { ...c, name } : c))
   }
 
   function deleteCategory(id: string) {
@@ -131,17 +118,11 @@
         <h2 class="text-lg font-semibold text-zinc-300">{language.hypaV3Modal.categoryManager}</h2>
         <div class="flex items-center gap-2">
           <!-- Add Category Button -->
-          <button
-            class="p-2 text-zinc-400 hover:text-green-400 transition-colors"
-            onclick={startAddCategory}
-          >
+          <button class="p-2 text-zinc-400 hover:text-green-400 transition-colors" onclick={startAddCategory}>
             <PlusIcon class="w-5 h-5" />
           </button>
           <!-- Close Button -->
-          <button
-            class="p-2 text-zinc-400 hover:text-zinc-200 transition-colors"
-            onclick={closeCategoryManager}
-          >
+          <button class="p-2 text-zinc-400 hover:text-zinc-200 transition-colors" onclick={closeCategoryManager}>
             <XIcon class="w-5 h-5" />
           </button>
         </div>
@@ -155,11 +136,8 @@
           'all'
             ? 'bg-blue-600 text-white'
             : 'bg-zinc-800 text-zinc-200 hover:bg-zinc-700'}"
-          onclick={() => selectCategory('all')}
-        >
-          <span class="flex-1 text-sm"
-            >{language.hypaV3Modal.allCategories} ({hypaV3Data.summaries.length})</span
-          >
+          onclick={() => selectCategory('all')}>
+          <span class="flex-1 text-sm">{language.hypaV3Modal.allCategories} ({hypaV3Data.summaries.length})</span>
           <!-- Spacer to match button height -->
           <div class="flex gap-1">
             <div class="p-1.5 w-8 h-8"></div>
@@ -168,32 +146,22 @@
         </button>
 
         {#each categories as category}
-          {@const count = hypaV3Data.summaries.filter(
-            (s) => (s.categoryId || '') === category.id,
-          ).length}
+          {@const count = hypaV3Data.summaries.filter((s) => (s.categoryId || '') === category.id).length}
           <div
             class="flex items-center gap-3 px-3 py-2.5 rounded transition-colors {categoryManagerState.selectedCategoryFilter ===
             category.id
               ? 'bg-blue-600 text-white'
-              : 'bg-zinc-800 text-zinc-200 hover:bg-zinc-700'}"
-          >
+              : 'bg-zinc-800 text-zinc-200 hover:bg-zinc-700'}">
             {#if categoryManagerState.editingCategory?.id === category.id}
               <input
                 type="text"
                 class="flex-1 px-3 py-1.5 text-sm rounded-sm border border-zinc-600 bg-zinc-900 text-zinc-200 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
                 bind:value={categoryManagerState.editingCategory.name}
-                placeholder={language.hypaV3Modal.categoryName}
-              />
-              <button
-                class="p-1.5 text-green-400 hover:text-green-300 transition-colors"
-                onclick={saveEditingCategory}
-              >
+                placeholder={language.hypaV3Modal.categoryName} />
+              <button class="p-1.5 text-green-400 hover:text-green-300 transition-colors" onclick={saveEditingCategory}>
                 <CheckIcon class="w-4 h-4" />
               </button>
-              <button
-                class="p-1.5 text-zinc-400 hover:text-zinc-200 transition-colors"
-                onclick={cancelEditingCategory}
-              >
+              <button class="p-1.5 text-zinc-400 hover:text-zinc-200 transition-colors" onclick={cancelEditingCategory}>
                 <XIcon class="w-4 h-4" />
               </button>
             {:else}
@@ -203,14 +171,12 @@
               {#if category.id !== ''}
                 <button
                   class="p-1.5 text-zinc-400 hover:text-zinc-200 transition-colors"
-                  onclick={() => startEditCategory(category)}
-                >
+                  onclick={() => startEditCategory(category)}>
                   <SquarePenIcon class="w-4 h-4" />
                 </button>
                 <button
                   class="p-1.5 text-red-400 hover:text-red-300 transition-colors"
-                  onclick={() => deleteCategory(category.id)}
-                >
+                  onclick={() => deleteCategory(category.id)}>
                   <Trash2Icon class="w-4 h-4" />
                 </button>
               {:else}

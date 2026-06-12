@@ -35,9 +35,7 @@
       .filter((opt) => !opt.condition || opt.condition(ctx))
       .map((opt) => ({
         value: opt.value,
-        label: opt.labelKey
-          ? ((language as any)[opt.labelKey] ?? opt.label ?? '')
-          : (opt.label ?? ''),
+        label: opt.labelKey ? ((language as any)[opt.labelKey] ?? opt.label ?? '') : (opt.label ?? ''),
       })),
   )
 

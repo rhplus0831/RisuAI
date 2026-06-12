@@ -47,34 +47,23 @@ export function resolveOobaLegacyRequest(input: ResolveInput): OobaLegacyRequest
       ? input.maxTokens
       : undefined
   const truncationLength =
-    typeof input.truncationLength === 'number' &&
-    Number.isFinite(input.truncationLength) &&
-    input.truncationLength > 0
+    typeof input.truncationLength === 'number' && Number.isFinite(input.truncationLength) && input.truncationLength > 0
       ? input.truncationLength
       : undefined
   const temperature =
-    typeof input.temperature === 'number' && Number.isFinite(input.temperature)
-      ? input.temperature
-      : undefined
-  const topP =
-    typeof input.topP === 'number' && Number.isFinite(input.topP) ? input.topP : undefined
-  const topK =
-    typeof input.topK === 'number' && Number.isFinite(input.topK) ? input.topK : undefined
-  const typicalP =
-    typeof input.typicalP === 'number' && Number.isFinite(input.typicalP)
-      ? input.typicalP
-      : undefined
+    typeof input.temperature === 'number' && Number.isFinite(input.temperature) ? input.temperature : undefined
+  const topP = typeof input.topP === 'number' && Number.isFinite(input.topP) ? input.topP : undefined
+  const topK = typeof input.topK === 'number' && Number.isFinite(input.topK) ? input.topK : undefined
+  const typicalP = typeof input.typicalP === 'number' && Number.isFinite(input.typicalP) ? input.typicalP : undefined
   const repetitionPenalty =
     typeof input.repetitionPenalty === 'number' && Number.isFinite(input.repetitionPenalty)
       ? input.repetitionPenalty
       : undefined
   const stoppingStrings =
-    Array.isArray(input.stoppingStrings) &&
-    input.stoppingStrings.every((s) => typeof s === 'string')
+    Array.isArray(input.stoppingStrings) && input.stoppingStrings.every((s) => typeof s === 'string')
       ? (input.stoppingStrings as string[])
       : undefined
-  const apiKey =
-    typeof input.apiKey === 'string' && input.apiKey.length > 0 ? input.apiKey : undefined
+  const apiKey = typeof input.apiKey === 'string' && input.apiKey.length > 0 ? input.apiKey : undefined
 
   return {
     prompt,

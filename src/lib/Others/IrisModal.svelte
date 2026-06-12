@@ -85,8 +85,7 @@
 
   let isUnsupportedModel = $derived.by(() => {
     const currentModel =
-      (DBState.db.seperateModelsForAxModels ? DBState.db.seperateModels.otherAx : '') ||
-      DBState.db.subModel
+      (DBState.db.seperateModelsForAxModels ? DBState.db.seperateModels.otherAx : '') || DBState.db.subModel
     const modelInfo = getModelInfo(currentModel)
     return !(
       modelInfo.format === LLMFormat.Anthropic ||
@@ -310,14 +309,12 @@
 <div
   class="fixed inset-0 z-50 flex items-end justify-center bg-black/60"
   transition:fade={{ duration: 300 }}
-  role="presentation"
->
+  role="presentation">
   <!-- Close button (mobile only) -->
   <button
     onclick={hide}
     class="absolute right-4 top-4 flex items-center gap-1 rounded-md bg-black/40 px-2 py-1 text-xs text-white/50 transition hover:bg-black/60 hover:text-white/80"
-    aria-label="Close"
-  >
+    aria-label="Close">
     <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
       <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
     </svg>
@@ -325,24 +322,17 @@
   </button>
 
   <!-- Character sprite -->
-  <div
-    class="absolute bottom-55 left-1/2 -translate-x-1/2"
-    transition:fly={{ y: 20, duration: 400 }}
-  >
+  <div class="absolute bottom-55 left-1/2 -translate-x-1/2" transition:fly={{ y: 20, duration: 400 }}>
     <img src={IrisImage} alt="Iris" class="h-120 w-auto object-contain drop-shadow-2xl" />
   </div>
 
   <!-- Backlog overlay -->
   {#if showBacklog}
-    <div
-      class="absolute inset-0 z-10 flex items-center justify-center bg-black/70"
-      transition:fade={{ duration: 200 }}
-    >
+    <div class="absolute inset-0 z-10 flex items-center justify-center bg-black/70" transition:fade={{ duration: 200 }}>
       <div
         class="flex w-full max-w-2xl flex-col rounded-2xl border border-white/15 bg-black/90 shadow-2xl"
         style="max-height: 70vh;"
-        transition:fly={{ y: -20, duration: 250 }}
-      >
+        transition:fly={{ y: -20, duration: 250 }}>
         <!-- Header -->
         <div class="flex items-center justify-end border-b border-white/10 px-6 py-3 gap-3">
           <button
@@ -351,34 +341,19 @@
             onclick={() => {
               resetDialogue()
               showBacklog = false
-            }}
-          >
-            <svg
-              class="h-4 w-4"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              viewBox="0 0 24 24"
-            >
+            }}>
+            <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
               <path
                 stroke-linecap="round"
                 stroke-linejoin="round"
-                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-              />
+                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
           </button>
           <button
             onclick={() => (showBacklog = false)}
             class="text-white/40 transition hover:text-white/80"
-            aria-label="Close backlog"
-          >
-            <svg
-              class="h-4 w-4"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              viewBox="0 0 24 24"
-            >
+            aria-label="Close backlog">
+            <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
@@ -387,23 +362,14 @@
         <!-- Scrollable log -->
         <div bind:this={backlogEl} class="flex-1 overflow-y-auto px-6 py-4 space-y-4">
           {#each seenDialogue as line, i}
-            <div
-              class="flex flex-col gap-0.5 {line.speaker === 'You' ? 'items-end' : 'items-start'}"
-            >
-              <span
-                class="text-xs font-semibold {line.speaker === 'You'
-                  ? 'text-emerald-400'
-                  : 'text-indigo-400'}"
-              >
+            <div class="flex flex-col gap-0.5 {line.speaker === 'You' ? 'items-end' : 'items-start'}">
+              <span class="text-xs font-semibold {line.speaker === 'You' ? 'text-emerald-400' : 'text-indigo-400'}">
                 {line.speaker}
               </span>
               <div
                 class="max-w-prose rounded-xl px-4 py-2 text-sm leading-relaxed text-white/90
-                {line.speaker === 'You'
-                  ? 'rounded-tr-sm bg-emerald-900/60'
-                  : 'rounded-tl-sm bg-indigo-900/60'}
-                {i === currentIndex ? 'ring-1 ring-white/20' : ''}"
-              >
+                {line.speaker === 'You' ? 'rounded-tr-sm bg-emerald-900/60' : 'rounded-tl-sm bg-indigo-900/60'}
+                {i === currentIndex ? 'ring-1 ring-white/20' : ''}">
                 {line.text}
               </div>
             </div>
@@ -420,15 +386,8 @@
       <button
         onclick={openBacklog}
         title="View backlog (L)"
-        class="absolute right-4 top-4 flex items-center gap-1 rounded-md px-2 py-1 text-xs text-white/40 transition hover:bg-white/10 hover:text-white/70"
-      >
-        <svg
-          class="h-3.5 w-3.5"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          viewBox="0 0 24 24"
-        >
+        class="absolute right-4 top-4 flex items-center gap-1 rounded-md px-2 py-1 text-xs text-white/40 transition hover:bg-white/10 hover:text-white/70">
+        <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 10h16M4 14h10" />
         </svg>
         Log
@@ -438,8 +397,7 @@
       {#if dialogue[currentIndex].speaker}
         <div
           class="absolute -top-5 left-6 rounded-md px-4 py-1 text-sm font-semibold tracking-wide text-white shadow-lg
-            {dialogue[currentIndex].speaker === 'You' ? 'bg-emerald-600' : 'bg-indigo-600'}"
-        >
+            {dialogue[currentIndex].speaker === 'You' ? 'bg-emerald-600' : 'bg-indigo-600'}">
           {dialogue[currentIndex].speaker}
         </div>
       {/if}
@@ -460,8 +418,7 @@
           : `${dialogue[currentIndex].speaker}: ${displayedText}. Click to advance.`}
         aria-live="polite"
         aria-atomic="true"
-        class="min-h-20 cursor-pointer select-none text-base leading-relaxed text-white/90"
-      >
+        class="min-h-20 cursor-pointer select-none text-base leading-relaxed text-white/90">
         {displayedText}
         {#if isTyping}
           <span class="animate-pulse" aria-hidden="true">▌</span>
@@ -472,8 +429,7 @@
         {/if}
         {#if isUnsupportedModel}
           <div class="mt-2 rounded-md bg-red-600/80 px-3 py-2 text-sm text-white">
-            {unsupportedModelDialogue[DBState.db.language]?.[0].text ??
-              unsupportedModelDialogue.en[0].text}
+            {unsupportedModelDialogue[DBState.db.language]?.[0].text ?? unsupportedModelDialogue.en[0].text}
           </div>
         {/if}
       </div>
@@ -483,15 +439,9 @@
         <div class="mt-1 flex items-center gap-2" transition:fade={{ duration: 150 }}>
           <span class="text-xs text-white/40">Iris is typing</span>
           <span class="flex gap-1">
-            <span
-              class="h-1.5 w-1.5 animate-bounce rounded-full bg-indigo-400 [animation-delay:0ms]"
-            ></span>
-            <span
-              class="h-1.5 w-1.5 animate-bounce rounded-full bg-indigo-400 [animation-delay:150ms]"
-            ></span>
-            <span
-              class="h-1.5 w-1.5 animate-bounce rounded-full bg-indigo-400 [animation-delay:300ms]"
-            ></span>
+            <span class="h-1.5 w-1.5 animate-bounce rounded-full bg-indigo-400 [animation-delay:0ms]"></span>
+            <span class="h-1.5 w-1.5 animate-bounce rounded-full bg-indigo-400 [animation-delay:150ms]"></span>
+            <span class="h-1.5 w-1.5 animate-bounce rounded-full bg-indigo-400 [animation-delay:300ms]"></span>
           </span>
         </div>
       {/if}
@@ -505,13 +455,11 @@
             type="text"
             placeholder={waitingForReply ? 'Waiting for reply…' : 'Type a message…'}
             disabled={waitingForReply}
-            class="flex-1 rounded-lg border border-white/20 bg-white/10 px-3 py-1.5 text-sm text-white placeholder-white/30 outline-none transition focus:border-indigo-400 focus:bg-white/15 disabled:cursor-not-allowed disabled:opacity-50"
-          />
+            class="flex-1 rounded-lg border border-white/20 bg-white/10 px-3 py-1.5 text-sm text-white placeholder-white/30 outline-none transition focus:border-indigo-400 focus:bg-white/15 disabled:cursor-not-allowed disabled:opacity-50" />
           <button
             onclick={submitUserInput}
             disabled={!userInput.trim() || waitingForReply || isUnsupportedModel}
-            class="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-indigo-500 disabled:opacity-40"
-          >
+            class="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-indigo-500 disabled:opacity-40">
             Send
           </button>
         </div>
@@ -524,7 +472,6 @@
     <button
       onclick={advance}
       class="absolute inset-0 -z-10 h-full w-full cursor-pointer bg-transparent"
-      aria-label="Advance dialogue"
-    ></button>
+      aria-label="Advance dialogue"></button>
   {/if}
 </div>

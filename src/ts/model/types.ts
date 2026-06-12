@@ -135,12 +135,7 @@ export const ProviderNames = new Map<LLMProvider, string>([
   [LLMProvider.Ollama, 'Ollama'],
 ])
 
-export const OpenAIParameters: LLMParameter[] = [
-  'temperature',
-  'top_p',
-  'frequency_penalty',
-  'presence_penalty',
-]
+export const OpenAIParameters: LLMParameter[] = ['temperature', 'top_p', 'frequency_penalty', 'presence_penalty']
 export const GPT5Parameters: LLMParameter[] = [
   'temperature',
   'top_p',

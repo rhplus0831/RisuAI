@@ -6,9 +6,7 @@
       "chatId": "msg-user-1"
     }
   ],
-  "stages": [
-    1
-  ],
+  "stages": [1],
   "sideEffects": [],
   "providerCalls": [],
   "doingChat": false

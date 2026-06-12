@@ -3,24 +3,13 @@ import { findCharacterIndexbyId } from './util'
 import { characterFormatUpdate, createBlankChar } from './characters'
 import { setCharacterByIndex, type character } from './storage/database.svelte'
 import { DBState, PlaygroundStore, selectedCharID } from './stores.svelte'
-import {
-  currentCharacterSelectionSnapshot,
-  dispatchSelectCharacter,
-  toCharacterSnapshot,
-} from './characterCommands'
+import { currentCharacterSelectionSnapshot, dispatchSelectCharacter, toCharacterSnapshot } from './characterCommands'
 import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
-import {
-  canUseServerCommands,
-  createAndSelectCharacterCommand,
-  runServerCommand,
-} from './server/commands'
+import { canUseServerCommands, createAndSelectCharacterCommand, runServerCommand } from './server/commands'
 import { fetchServerProjectionResource } from './server/projection'
 import { mergeServerProjectionFields } from './storage/database.svelte'
 import { resetChatHydration } from './server/chatMessageHydration.svelte'
-import {
-  recordHydratedCharacterLorebooks,
-  resetLorebookHydration,
-} from './server/lorebookBridge.svelte'
+import { recordHydratedCharacterLorebooks, resetLorebookHydration } from './server/lorebookBridge.svelte'
 
 export const PLAYGROUND_CHARACTER_ID = '§playground'
 

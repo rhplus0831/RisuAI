@@ -68,27 +68,19 @@ export function flattenForLegacyInstruct(messages: RawChatMessage[]): string {
   return lines.join('') + '\n## Response\n'
 }
 
-export function resolveOpenAILegacyInstructRequest(
-  input: ResolveInput,
-): OpenAILegacyInstructRequest | null {
+export function resolveOpenAILegacyInstructRequest(input: ResolveInput): OpenAILegacyInstructRequest | null {
   if (typeof input.model !== 'string' || input.model.length === 0) return null
   if (!Array.isArray(input.messages)) return null
   if (typeof input.apiKey !== 'string' || input.apiKey.length === 0) return null
 
-  const baseUrl =
-    typeof input.baseUrl === 'string' && input.baseUrl.length > 0
-      ? input.baseUrl
-      : DEFAULT_BASE_URL
+  const baseUrl = typeof input.baseUrl === 'string' && input.baseUrl.length > 0 ? input.baseUrl : DEFAULT_BASE_URL
   const maxTokens =
     typeof input.maxTokens === 'number' && Number.isFinite(input.maxTokens) && input.maxTokens > 0
       ? input.maxTokens
       : undefined
   const temperature =
-    typeof input.temperature === 'number' && Number.isFinite(input.temperature)
-      ? input.temperature
-      : undefined
-  const topP =
-    typeof input.topP === 'number' && Number.isFinite(input.topP) ? input.topP : undefined
+    typeof input.temperature === 'number' && Number.isFinite(input.temperature) ? input.temperature : undefined
+  const topP = typeof input.topP === 'number' && Number.isFinite(input.topP) ? input.topP : undefined
   const presencePenalty =
     typeof input.presencePenalty === 'number' && Number.isFinite(input.presencePenalty)
       ? input.presencePenalty
@@ -98,9 +90,7 @@ export function resolveOpenAILegacyInstructRequest(
       ? input.frequencyPenalty
       : undefined
   const stop =
-    Array.isArray(input.stop) && input.stop.every((s) => typeof s === 'string')
-      ? (input.stop as string[])
-      : undefined
+    Array.isArray(input.stop) && input.stop.every((s) => typeof s === 'string') ? (input.stop as string[]) : undefined
 
   return {
     model: input.model,
@@ -132,9 +122,7 @@ function buildHeaders(req: OpenAILegacyInstructRequest): Record<string, string> 
   }
 }
 
-function buildRequestInit(
-  req: OpenAILegacyInstructRequest,
-): { body: string; headers: Record<string, string> } {
+function buildRequestInit(req: OpenAILegacyInstructRequest): { body: string; headers: Record<string, string> } {
   const body = buildPayload(req)
   const headers = buildHeaders(req)
   if (req.additionalParams !== undefined && req.additionalParams.length > 0) {
@@ -163,9 +151,7 @@ interface LegacyInstructResponse {
   error?: { message?: unknown }
 }
 
-export async function runOpenAILegacyInstruct(
-  req: OpenAILegacyInstructRequest,
-): Promise<CompletionResult> {
+export async function runOpenAILegacyInstruct(req: OpenAILegacyInstructRequest): Promise<CompletionResult> {
   if (req.signal.aborted) {
     return { type: 'fail', result: 'aborted', aborted: true }
   }
@@ -196,8 +182,7 @@ export async function runOpenAILegacyInstruct(
   }
 
   if (!response.ok) {
-    const upstreamMsg =
-      typeof body.error?.message === 'string' ? body.error.message : `HTTP ${response.status}`
+    const upstreamMsg = typeof body.error?.message === 'string' ? body.error.message : `HTTP ${response.status}`
     return { type: 'fail', result: upstreamMsg }
   }
 

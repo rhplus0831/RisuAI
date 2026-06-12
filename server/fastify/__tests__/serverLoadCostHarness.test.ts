@@ -20,11 +20,7 @@ import {
   loadStubbedProjectionFields,
   type PersistedAsset,
 } from '../src/repository.js'
-import {
-  MASKED_PROVIDER_SECRET,
-  maskProviderSecrets,
-  maskProviderSecretsInPlace,
-} from '../src/providerSecrets.js'
+import { MASKED_PROVIDER_SECRET, maskProviderSecrets, maskProviderSecretsInPlace } from '../src/providerSecrets.js'
 import { emitProtocolMetric, protocolMetricsEnabled } from '../src/protocolMetrics.js'
 import {
   appendActiveChatMessageTail,
@@ -42,19 +38,9 @@ import {
   getChatDispatchReformatInstrumentation,
   resetChatDispatchReformatInstrumentation,
 } from '../src/prompt/chatDispatch.js'
-import {
-  getPromptAssetTableInstrumentation,
-  resetPromptAssetTableInstrumentation,
-} from '../src/prompt/promptAssets.js'
-import {
-  getTriggerCloneInstrumentation,
-  resetTriggerCloneInstrumentation,
-} from '../src/prompt/triggers.js'
-import {
-  createMemoryChunk,
-  createMemoryEmbedding,
-  createMemorySummary,
-} from '../src/memoryRepository.js'
+import { getPromptAssetTableInstrumentation, resetPromptAssetTableInstrumentation } from '../src/prompt/promptAssets.js'
+import { getTriggerCloneInstrumentation, resetTriggerCloneInstrumentation } from '../src/prompt/triggers.js'
+import { createMemoryChunk, createMemoryEmbedding, createMemorySummary } from '../src/memoryRepository.js'
 import { resourceProjectionFields } from '../src/routes/projection.js'
 import { setupAuthedClient } from './helpers/auth.js'
 import {
@@ -63,10 +49,7 @@ import {
   withServerLoadInstrumentation,
 } from './helpers/loadCostHarness.js'
 import type { GenerationChatRouteOptions } from '../src/routes/generationChat.js'
-import {
-  buildLargeCorpusFixture,
-  type LargeCorpusFixture,
-} from '../../../src/ts/__tests__/largeCorpusFixture.js'
+import { buildLargeCorpusFixture, type LargeCorpusFixture } from '../../../src/ts/__tests__/largeCorpusFixture.js'
 
 // Phase 0 (measurement-baseline-harness): prove the server load-count harness
 // can (a) pass a genuinely scoped hot path and (b) FAIL a path that performs a
@@ -167,21 +150,15 @@ async function configureImportedCurrentChatGenerationSettings(
   return (res.json() as { revision: number }).revision
 }
 
-function activeChatGenerationSettings(
-  database: unknown,
-): { chatId: string; generationSettings: JsonRecord } | null {
+function activeChatGenerationSettings(database: unknown): { chatId: string; generationSettings: JsonRecord } | null {
   if (!isJsonRecord(database)) return null
   const characters = Array.isArray(database.characters) ? database.characters : []
-  const currentCharIndex = Number.isInteger(database.currentChar as number)
-    ? (database.currentChar as number)
-    : 0
+  const currentCharIndex = Number.isInteger(database.currentChar as number) ? (database.currentChar as number) : 0
   const character = findRecordAt(characters, currentCharIndex) ?? findRecordAt(characters, 0)
   if (!character) return null
 
   const chats = Array.isArray(character.chats) ? character.chats : []
-  const chatPage = Number.isInteger(character.chatPage as number)
-    ? (character.chatPage as number)
-    : 0
+  const chatPage = Number.isInteger(character.chatPage as number) ? (character.chatPage as number) : 0
   const chat = findRecordAt(chats, chatPage) ?? findRecordAt(chats, 0)
   if (!chat || typeof chat.id !== 'string') return null
   const generationSettings = chat.generationSettings
@@ -233,9 +210,7 @@ function promptReadyLargeCorpusDatabase(fixture: LargeCorpusFixture): Record<str
     maxContext: 100_000,
     maxResponse: 50,
   }
-  const botPresets = Array.isArray(database.botPresets)
-    ? (database.botPresets as Array<Record<string, unknown>>)
-    : []
+  const botPresets = Array.isArray(database.botPresets) ? (database.botPresets as Array<Record<string, unknown>>) : []
   if (botPresets[0]) {
     const promptReadyPreset: Record<string, unknown> = {
       ...botPresets[0],
@@ -342,10 +317,7 @@ function characterLorebookGet(characterId: string) {
   })
 }
 
-function selectFields(
-  database: Record<string, unknown>,
-  fieldKeys: readonly string[],
-): Record<string, unknown> {
+function selectFields(database: Record<string, unknown>, fieldKeys: readonly string[]): Record<string, unknown> {
   const fields: Record<string, unknown> = {}
   for (const key of fieldKeys) {
     if (Object.prototype.hasOwnProperty.call(database, key)) {
@@ -365,12 +337,7 @@ async function withJsonStringifySizeInstrumentation<T>(
   const original = JSON.stringify
   let stringifyCount = 0
   let maxStringifiedSize = 0
-  JSON.stringify = function trackedStringify(
-    this: unknown,
-    value: unknown,
-    replacer?: unknown,
-    space?: unknown,
-  ) {
+  JSON.stringify = function trackedStringify(this: unknown, value: unknown, replacer?: unknown, space?: unknown) {
     stringifyCount += 1
     const out = (original as (...args: unknown[]) => string).call(this, value, replacer, space)
     if (typeof out === 'string' && out.length > maxStringifiedSize) {
@@ -435,18 +402,16 @@ describe('classifyCorpusStatement', () => {
   it('flags the whole-corpus payload loaders by their SQL', () => {
     // getAllChatMessagesGrouped
     expect(
-      classifyCorpusStatement(
-        'SELECT chat_id, json FROM messages WHERE alternate = 0 ORDER BY chat_id, seq',
-      ),
+      classifyCorpusStatement('SELECT chat_id, json FROM messages WHERE alternate = 0 ORDER BY chat_id, seq'),
     ).toEqual({ table: 'messages' })
     // getAllChatHypaV3Grouped
     expect(classifyCorpusStatement('SELECT chat_id, json FROM chat_hypa_v3')).toEqual({
       table: 'chat_hypa_v3',
     })
     // loadCharactersFromSqlite (both statements)
-    expect(
-      classifyCorpusStatement('SELECT id, position, data_json FROM characters ORDER BY position'),
-    ).toEqual({ table: 'characters' })
+    expect(classifyCorpusStatement('SELECT id, position, data_json FROM characters ORDER BY position')).toEqual({
+      table: 'characters',
+    })
     expect(
       classifyCorpusStatement(
         'SELECT id, character_id, position, data_json FROM chats ORDER BY character_id, position',
@@ -457,9 +422,9 @@ describe('classifyCorpusStatement', () => {
       table: 'modules',
     })
     // getAllAssetMetadata (L5)
-    expect(
-      classifyCorpusStatement('SELECT id, ext, size, content_type FROM assets ORDER BY id'),
-    ).toEqual({ table: 'assets' })
+    expect(classifyCorpusStatement('SELECT id, ext, size, content_type FROM assets ORDER BY id')).toEqual({
+      table: 'assets',
+    })
     // listPersistedCommandEventHistory (L10)
     expect(
       classifyCorpusStatement(
@@ -471,9 +436,7 @@ describe('classifyCorpusStatement', () => {
   it('does not flag scoped, id-only, non-corpus, or write statements', () => {
     // getChatMessages / getChatMessagesGroupedByIds (row-scoped)
     expect(
-      classifyCorpusStatement(
-        'SELECT json FROM messages WHERE chat_id = ? AND alternate = 0 ORDER BY seq',
-      ),
+      classifyCorpusStatement('SELECT json FROM messages WHERE chat_id = ? AND alternate = 0 ORDER BY seq'),
     ).toBeNull()
     expect(
       classifyCorpusStatement(
@@ -481,39 +444,25 @@ describe('classifyCorpusStatement', () => {
       ),
     ).toBeNull()
     expect(classifyCorpusStatement('SELECT json FROM chat_hypa_v3 WHERE chat_id = ?')).toBeNull()
+    expect(classifyCorpusStatement('SELECT id, ext, size, content_type FROM assets WHERE id = ?')).toBeNull()
     expect(
-      classifyCorpusStatement('SELECT id, ext, size, content_type FROM assets WHERE id = ?'),
-    ).toBeNull()
-    expect(
-      classifyCorpusStatement(
-        "SELECT json_extract(data_json, '$.image') AS image FROM characters ORDER BY position",
-      ),
+      classifyCorpusStatement("SELECT json_extract(data_json, '$.image') AS image FROM characters ORDER BY position"),
     ).toBeNull()
     // Id-only scans stay cheap and do not count.
-    expect(
-      classifyCorpusStatement('SELECT DISTINCT chat_id FROM messages WHERE alternate = 0'),
-    ).toBeNull()
+    expect(classifyCorpusStatement('SELECT DISTINCT chat_id FROM messages WHERE alternate = 0')).toBeNull()
     expect(classifyCorpusStatement('SELECT chat_id FROM chat_hypa_v3')).toBeNull()
     // The command-event prune threshold walk reads only the revision column.
     expect(
-      classifyCorpusStatement(
-        'SELECT revision FROM command_events ORDER BY revision DESC LIMIT 1 OFFSET ?',
-      ),
+      classifyCorpusStatement('SELECT revision FROM command_events ORDER BY revision DESC LIMIT 1 OFFSET ?'),
     ).toBeNull()
     expect(
-      classifyCorpusStatement(
-        'SELECT COUNT(*) AS count FROM messages WHERE chat_id = ? AND alternate = 0',
-      ),
+      classifyCorpusStatement('SELECT COUNT(*) AS count FROM messages WHERE chat_id = ? AND alternate = 0'),
     ).toBeNull()
     // Non-corpus tables (settings is one bounded row).
     expect(classifyCorpusStatement('SELECT data_json FROM settings WHERE id = 1')).toBeNull()
-    expect(
-      classifyCorpusStatement('SELECT version, revision FROM schema_version WHERE id = 1'),
-    ).toBeNull()
+    expect(classifyCorpusStatement('SELECT version, revision FROM schema_version WHERE id = 1')).toBeNull()
     // Writes.
-    expect(
-      classifyCorpusStatement('INSERT INTO characters (id, position, data_json) VALUES (?, ?, ?)'),
-    ).toBeNull()
+    expect(classifyCorpusStatement('INSERT INTO characters (id, position, data_json) VALUES (?, ?, ?)')).toBeNull()
     expect(classifyCorpusStatement('DELETE FROM command_events WHERE revision < ?')).toBeNull()
   })
 })
@@ -533,9 +482,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     expect(body.hypaV3Data).toBeDefined()
 
     if (process.env.RISU_PROTOCOL_METRICS === '1') {
-      console.info(
-        `[load-cost] scoped hydration (hot chat): ${scopedMs.toFixed(1)}ms, 0 corpus loads`,
-      )
+      console.info(`[load-cost] scoped hydration (hot chat): ${scopedMs.toFixed(1)}ms, 0 corpus loads`)
     }
   })
 
@@ -559,9 +506,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     expect(body.hypaV3Data).toBeUndefined()
 
     if (process.env.RISU_PROTOCOL_METRICS === '1') {
-      console.info(
-        `[load-cost] H1 guarded hydration (no-hypa chat): ${scopedMs.toFixed(1)}ms, 0 corpus loads`,
-      )
+      console.info(`[load-cost] H1 guarded hydration (no-hypa chat): ${scopedMs.toFixed(1)}ms, 0 corpus loads`)
     }
   })
 
@@ -577,9 +522,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     ]
     const db = openDatabase(harness.dataDir)
     try {
-      db.prepare(
-        'INSERT INTO chats (id, character_id, position, data_json) VALUES (?, ?, ?, ?)',
-      ).run(
+      db.prepare('INSERT INTO chats (id, character_id, position, data_json) VALUES (?, ?, ?, ?)').run(
         'pre-extract-chat',
         fixture.hot.characterId,
         999,
@@ -665,9 +608,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
               name: 'H2 load created',
               note: '',
               localLore: [],
-              message: [
-                { role: 'user', data: 'created under H2 load guard', chatId: 'h2-load-msg-1' },
-              ],
+              message: [{ role: 'user', data: 'created under H2 load guard', chatId: 'h2-load-msg-1' }],
             },
           },
         }),
@@ -700,9 +641,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
 
     const hydrated = await hydrationGet('h2-load-created-chat')
     expect(hydrated.statusCode).toBe(200)
-    expect((hydrated.json().message as Array<{ chatId: string }>).map((m) => m.chatId)).toEqual([
-      'h2-load-msg-1',
-    ])
+    expect((hydrated.json().message as Array<{ chatId: string }>).map((m) => m.chatId)).toEqual(['h2-load-msg-1'])
   })
 
   it('L14: append-only message diff cost stays constant with long prefixes', () => {
@@ -832,14 +771,9 @@ describe('server load-count harness on the large-corpus fixture', () => {
     expect(body.missing).toEqual(['missing-char'])
     // The table stores the full un-stubbed globalLore; each bulk row carries
     // exactly what the single characterLorebook hydration route serves.
-    expect(body.characters.map((row: { characterId: string }) => row.characterId)).toEqual([
-      charA,
-      charB,
-    ])
+    expect(body.characters.map((row: { characterId: string }) => row.characterId)).toEqual([charA, charB])
     for (const row of body.characters) {
-      const single = (
-        await assertScopedLoadOnHotPath(() => characterLorebookGet(row.characterId))
-      ).json()
+      const single = (await assertScopedLoadOnHotPath(() => characterLorebookGet(row.characterId))).json()
       expect(row.globalLore).toHaveLength(fixture.characters[0].globalLore.length)
       expect(JSON.stringify(row.globalLore)).toBe(JSON.stringify(single.globalLore))
     }
@@ -860,9 +794,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     ]
     const db = openDatabase(harness.dataDir)
     try {
-      db.prepare(
-        'INSERT INTO chats (id, character_id, position, data_json) VALUES (?, ?, ?, ?)',
-      ).run(
+      db.prepare('INSERT INTO chats (id, character_id, position, data_json) VALUES (?, ?, ?, ?)').run(
         'pre-extract-chat',
         fixture.hot.characterId,
         999,
@@ -992,9 +924,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
       (character) => character.chaId === fixture.hot.characterId,
     )
     if (!hotCharacter) throw new Error('large-corpus hot character missing')
-    hotCharacter.customscript = [
-      { in: 'hi', out: 'HELLO', type: 'editinput', flag: '', ableFlag: false },
-    ]
+    hotCharacter.customscript = [{ in: 'hi', out: 'HELLO', type: 'editinput', flag: '', ableFlag: false }]
 
     await importDatabase(editinputDatabase)
     const editinputRun = await withServerLoadInstrumentation(() =>
@@ -1181,10 +1111,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
         model: 'summary-model',
         text: 'L20 selected summary',
         metadata: {
-          chatMemos: Array.from(
-            { length: fixture.hot.messageCount },
-            (_unused, index) => `corpus-msg-0-0-${index}`,
-          ),
+          chatMemos: Array.from({ length: fixture.hot.messageCount }, (_unused, index) => `corpus-msg-0-0-${index}`),
         },
         tokens: 4,
       })
@@ -1220,8 +1147,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     type LoadedChat = { id?: unknown; message?: unknown[]; hypaV3Data?: unknown }
     const chatsById = (database: unknown): Map<string, LoadedChat> => {
       const out = new Map<string, LoadedChat>()
-      const characters =
-        (database as { characters?: Array<{ chats?: LoadedChat[] }> })?.characters ?? []
+      const characters = (database as { characters?: Array<{ chats?: LoadedChat[] }> })?.characters ?? []
       for (const character of characters) {
         for (const chat of character.chats ?? []) {
           if (typeof chat.id === 'string') out.set(chat.id, chat)
@@ -1269,9 +1195,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     ]
     const db = openDatabase(harness.dataDir)
     try {
-      db.prepare(
-        'INSERT INTO chats (id, character_id, position, data_json) VALUES (?, ?, ?, ?)',
-      ).run(
+      db.prepare('INSERT INTO chats (id, character_id, position, data_json) VALUES (?, ?, ?, ?)').run(
         'pre-extract-chat',
         fixture.hot.characterId,
         999,
@@ -1286,8 +1210,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
 
       const persisted = loadPersistedForAssembly(db, harness.dataDir, 'pre-extract-chat')
       const characters =
-        (persisted.database as { characters?: Array<{ chats?: Array<Record<string, unknown>> }> })
-          ?.characters ?? []
+        (persisted.database as { characters?: Array<{ chats?: Array<Record<string, unknown>> }> })?.characters ?? []
       const chat = characters
         .flatMap((character) => character.chats ?? [])
         .find((candidate) => candidate.id === 'pre-extract-chat')
@@ -1303,17 +1226,13 @@ describe('server load-count harness on the large-corpus fixture', () => {
     const db = openDatabase(harness.dataDir)
     try {
       // The genuine full-corpus consumer's loader is loud under the harness…
-      const broad = await withServerLoadInstrumentation(() =>
-        loadPersistedWithMessages(db, harness.dataDir),
-      )
+      const broad = await withServerLoadInstrumentation(() => loadPersistedWithMessages(db, harness.dataDir))
       expect(broad.loadCountByTable.messages).toBeGreaterThanOrEqual(1)
       expect(broad.loadCountByTable.characters).toBeGreaterThanOrEqual(1)
       expect(broad.corpusLoadCount).toBeGreaterThanOrEqual(3)
 
       // …and the scoped per-id loader is silent, with identical row results.
-      const scoped = await assertScopedLoadOnHotPath(() =>
-        getChatMessagesGroupedByIds(db, [fixture.hot.chatId]),
-      )
+      const scoped = await assertScopedLoadOnHotPath(() => getChatMessagesGroupedByIds(db, [fixture.hot.chatId]))
       expect(scoped.get(fixture.hot.chatId)).toHaveLength(fixture.hot.messageCount)
 
       // `allowTables` permits a declared exception but nothing else.
@@ -1355,9 +1274,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     expect(body.character.chaId).toBe(fixture.hot.characterId)
     // The stub contract holds: chats present, message-free; secrets masked.
     expect(body.character.chats).toHaveLength(3)
-    expect(
-      body.character.chats.every((chat: { message: unknown[] }) => chat.message.length === 0),
-    ).toBe(true)
+    expect(body.character.chats.every((chat: { message: unknown[] }) => chat.message.length === 0)).toBe(true)
     expect(body.character.oaiTTSConfig.apiKey).toBe(MASKED_PROVIDER_SECRET)
   })
 
@@ -1373,9 +1290,8 @@ describe('server load-count harness on the large-corpus fixture', () => {
     const db = openDatabase(harness.dataDir)
     try {
       // The pre-M4 route composition: broad stubbed load + whole-array mask clone.
-      const broadRows = maskProviderSecrets(
-        loadStubbedProjectionFields(db, harness.dataDir, ['characters']),
-      ).characters as Array<Record<string, unknown>>
+      const broadRows = maskProviderSecrets(loadStubbedProjectionFields(db, harness.dataDir, ['characters']))
+        .characters as Array<Record<string, unknown>>
       expect(broadRows).toHaveLength(fixture.characters.length)
 
       for (const broadRow of broadRows) {
@@ -1408,8 +1324,9 @@ describe('server load-count harness on the large-corpus fixture', () => {
       expect(scoped).not.toHaveProperty('globalLore')
 
       const broadRow = (
-        maskProviderSecrets(loadStubbedProjectionFields(db, harness.dataDir, ['characters']))
-          .characters as Array<Record<string, unknown>>
+        maskProviderSecrets(loadStubbedProjectionFields(db, harness.dataDir, ['characters'])).characters as Array<
+          Record<string, unknown>
+        >
       ).find((row) => row.chaId === fixture.hot.characterId)
       const masked = maskProviderSecretsInPlace({ characters: [scoped!] }).characters[0]
       expect(JSON.stringify(masked)).toBe(JSON.stringify(broadRow))
@@ -1436,9 +1353,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
         {
           chaId: 'embedded-char',
           name: 'Embedded',
-          chats: [
-            { id: 'embedded-chat', name: 'E', message: [{ role: 'user', data: 'embedded hi' }] },
-          ],
+          chats: [{ id: 'embedded-chat', name: 'E', message: [{ role: 'user', data: 'embedded hi' }] }],
         },
       ]
       db.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(settings))
@@ -1856,9 +1771,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
       expect(observed.loadCountByTable.bot_presets ?? 0).toBe(0)
       expect(observed.loadCountByTable.messages ?? 0).toBe(0)
       expect(observed.loadCountByTable.chat_hypa_v3 ?? 0).toBe(0)
-      expect(
-        observed.corpusLoads.filter((load) => load.table !== 'assets').map((load) => load.table),
-      ).toEqual([])
+      expect(observed.corpusLoads.filter((load) => load.table !== 'assets').map((load) => load.table)).toEqual([])
     } finally {
       db.close()
     }
@@ -1953,9 +1866,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
 
     // Replay requested: the history load is the path's legitimate breadth.
     const replayRun = await withProtocolMetricsEnv('', () =>
-      withServerLoadInstrumentation(() =>
-        connect(`${baseUrl}/api/v1/events?sinceRevision=${revision}`),
-      ),
+      withServerLoadInstrumentation(() => connect(`${baseUrl}/api/v1/events?sinceRevision=${revision}`)),
     )
     expect(replayRun.loadCountByTable.command_events).toBeGreaterThanOrEqual(1)
 
@@ -2014,9 +1925,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
       (arg as { resource?: unknown }).resource === 'chatMessages' &&
       (arg as { mode?: unknown }).mode === 'chat-messages'
     const bootstrapShaped = (arg: unknown): boolean =>
-      !!arg &&
-      typeof arg === 'object' &&
-      (arg as { assetBaseUrl?: unknown }).assetBaseUrl === '/api/v1/assets'
+      !!arg && typeof arg === 'object' && (arg as { assetBaseUrl?: unknown }).assetBaseUrl === '/api/v1/assets'
 
     const hydrate = () => hydrationGet(fixture.hot.chatId)
     const bootstrap = () =>
@@ -2026,20 +1935,12 @@ describe('server load-count harness on the large-corpus fixture', () => {
         headers: { 'risu-auth': assertion },
       })
 
-    const hydrationOff = await withProtocolMetricsEnv('', () =>
-      countResponseStringifies(hydrate, hydrationShaped),
-    )
-    const hydrationOn = await withProtocolMetricsEnv('1', () =>
-      countResponseStringifies(hydrate, hydrationShaped),
-    )
+    const hydrationOff = await withProtocolMetricsEnv('', () => countResponseStringifies(hydrate, hydrationShaped))
+    const hydrationOn = await withProtocolMetricsEnv('1', () => countResponseStringifies(hydrate, hydrationShaped))
     expect(hydrationOn).toBe(hydrationOff + 1)
 
-    const bootstrapOff = await withProtocolMetricsEnv('', () =>
-      countResponseStringifies(bootstrap, bootstrapShaped),
-    )
-    const bootstrapOn = await withProtocolMetricsEnv('1', () =>
-      countResponseStringifies(bootstrap, bootstrapShaped),
-    )
+    const bootstrapOff = await withProtocolMetricsEnv('', () => countResponseStringifies(bootstrap, bootstrapShaped))
+    const bootstrapOn = await withProtocolMetricsEnv('1', () => countResponseStringifies(bootstrap, bootstrapShaped))
     expect(bootstrapOn).toBe(bootstrapOff + 1)
   })
 

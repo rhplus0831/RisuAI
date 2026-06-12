@@ -1,10 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite'
-import {
-  type PersistedAsset,
-  getAllAssetMetadata,
-  isValidAssetId,
-  loadPersisted,
-} from '../repository.js'
+import { type PersistedAsset, getAllAssetMetadata, isValidAssetId, loadPersisted } from '../repository.js'
 
 type JsonRecord = Record<string, unknown>
 
@@ -31,21 +26,14 @@ export interface RisuSaveAssetReport {
 
 const INLAY_TOKEN_RE = /\{\{(inlay|inlayed|inlayeddata)::(.+?)\}\}/g
 
-export function buildRepositoryRisuSaveAssetReport(
-  dataDir: string,
-  db: DatabaseSync,
-): RisuSaveAssetReport {
+export function buildRepositoryRisuSaveAssetReport(dataDir: string, db: DatabaseSync): RisuSaveAssetReport {
   // Message inlay references come from a column-only `messages.data` scan
   // (audit M10) instead of hydrating every chat's message JSON; the message-free
   // `loadPersisted` projection covers all non-message references and supplies
   // the chat path labels, so the report is identical to the hydrated walk.
   const persisted = loadPersisted(db, dataDir)
   const assets = getAllAssetMetadata(db)
-  return buildRisuSaveAssetReport(
-    persisted.database,
-    assets,
-    collectMessageInlayReferences(db, persisted.database),
-  )
+  return buildRisuSaveAssetReport(persisted.database, assets, collectMessageInlayReferences(db, persisted.database))
 }
 
 export function buildRisuSaveAssetReport(
@@ -84,10 +72,7 @@ export function summarizeRisuSaveAssetReport(
  * hydrated walker byte-for-byte. Rows whose chat is not in the projection are
  * skipped, mirroring the hydrate-then-walk behavior.
  */
-export function collectMessageInlayReferences(
-  db: DatabaseSync,
-  database: unknown,
-): RisuSaveAssetReferenceSource[] {
+export function collectMessageInlayReferences(db: DatabaseSync, database: unknown): RisuSaveAssetReferenceSource[] {
   // chatId → every `database.characters[i].chats[j]` label that carries it
   // (duplicate chat ids across characters hydrate the same rows into each).
   const chatLabels = new Map<string, string[]>()
@@ -201,11 +186,7 @@ function addMessageInlayReferenceSources(
   }
 }
 
-function addChatInlayReferences(
-  found: Map<string, Set<string>>,
-  value: unknown,
-  label: string,
-): void {
+function addChatInlayReferences(found: Map<string, Set<string>>, value: unknown, label: string): void {
   readArray(value).forEach((chat, chatIndex) => {
     const chatRecord = readRecord(chat)
     if (!chatRecord) return
@@ -228,11 +209,7 @@ function addTupleReferences(found: Map<string, Set<string>>, value: unknown, lab
   })
 }
 
-function addCcAssetReferences(
-  found: Map<string, Set<string>>,
-  value: unknown,
-  label: string,
-): void {
+function addCcAssetReferences(found: Map<string, Set<string>>, value: unknown, label: string): void {
   readArray(value).forEach((entry, index) => {
     const record = readRecord(entry)
     if (!record) return
@@ -253,11 +230,7 @@ function addReferenceList(found: Map<string, Set<string>>, value: unknown, label
   readArray(value).forEach((entry, index) => addReference(found, entry, `${label}[${index}]`))
 }
 
-function addGptSoVitsReference(
-  found: Map<string, Set<string>>,
-  value: unknown,
-  label: string,
-): void {
+function addGptSoVitsReference(found: Map<string, Set<string>>, value: unknown, label: string): void {
   const record = readRecord(value)
   const refAudio = readRecord(record?.ref_audio_data)
   if (!refAudio) return
@@ -266,9 +239,7 @@ function addGptSoVitsReference(
 
 function addReference(found: Map<string, Set<string>>, value: unknown, path: string): void {
   if (typeof value !== 'string') return
-  const localAssetPath = value.startsWith('assets/')
-    ? /^assets\/([a-f0-9]{64})\.[a-z0-9]+$/i.exec(value)
-    : null
+  const localAssetPath = value.startsWith('assets/') ? /^assets\/([a-f0-9]{64})\.[a-z0-9]+$/i.exec(value) : null
   const id = isValidAssetId(value) ? value : (localAssetPath?.[1] ?? null)
   if (!id) return
   const paths = found.get(id) ?? new Set<string>()

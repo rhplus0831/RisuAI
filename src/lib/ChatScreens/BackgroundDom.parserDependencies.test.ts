@@ -18,9 +18,7 @@ const backgroundParserMocks = vi.hoisted(() => ({
     ) => {
       const chara = arg?.chara
       const charName = chara?.nickname || chara?.name || ''
-      return `parsed:${html
-        .replaceAll('{{char}}', charName)
-        .replaceAll('{{personality}}', chara?.personality ?? '')}`
+      return `parsed:${html.replaceAll('{{char}}', charName).replaceAll('{{personality}}', chara?.personality ?? '')}`
     },
   ),
 }))
@@ -204,9 +202,7 @@ describe('BackgroundDom parser dependencies', () => {
     })
     await waitForParserCalls(1)
 
-    expect(backgroundParserMocks.risuChatParser.mock.calls[0][0]).toBe(
-      '<section>background two</section>\n',
-    )
+    expect(backgroundParserMocks.risuChatParser.mock.calls[0][0]).toBe('<section>background two</section>\n')
     expect(backgroundParserMocks.ParseMarkdown).toHaveBeenCalledTimes(1)
 
     backgroundParserMocks.risuChatParser.mockClear()

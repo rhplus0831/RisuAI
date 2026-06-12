@@ -250,8 +250,7 @@ describe('trigger durable writes under the projection guard', () => {
 
     const cmd = await waitForCommand(
       calls,
-      (call) =>
-        call.url === '/api/v1/commands/characters/char-a/lorebooks' && call.method === 'PUT',
+      (call) => call.url === '/api/v1/commands/characters/char-a/lorebooks' && call.method === 'PUT',
     )
     expect(cmd.body.entries).toBeDefined()
   })
@@ -287,8 +286,7 @@ describe('trigger durable writes under the projection guard', () => {
 
     const cmd = await waitForCommand(
       calls,
-      (call) =>
-        call.url === '/api/v1/commands/characters/char-a/lorebooks' && call.method === 'PUT',
+      (call) => call.url === '/api/v1/commands/characters/char-a/lorebooks' && call.method === 'PUT',
     )
     expect(cmd.body.entries).toBeDefined()
     expect(cmd.body.entries.length).toBe(1)
@@ -315,9 +313,7 @@ describe('trigger durable writes under the projection guard', () => {
         ],
       },
     ])
-    char.globalLore = [
-      { key: 'k', comment: 'entry', content: 'c', mode: 'normal', insertorder: 100 },
-    ] as any
+    char.globalLore = [{ key: 'k', comment: 'entry', content: 'c', mode: 'normal', insertorder: 100 }] as any
 
     await expect(
       runTrigger(char, 'manual', { chat: char.chats[char.chatPage], manualName: 'delete-lore' }),
@@ -325,8 +321,7 @@ describe('trigger durable writes under the projection guard', () => {
 
     const cmd = await waitForCommand(
       calls,
-      (call) =>
-        call.url === '/api/v1/commands/characters/char-a/lorebooks' && call.method === 'PUT',
+      (call) => call.url === '/api/v1/commands/characters/char-a/lorebooks' && call.method === 'PUT',
     )
     expect(cmd.body.entries).toBeDefined()
     expect(cmd.body.entries.length).toBe(0)
@@ -367,8 +362,7 @@ describe('trigger durable writes under the projection guard', () => {
 
     const cmd = await waitForCommand(
       calls,
-      (call) =>
-        call.url === '/api/v1/commands/characters/char-a/lorebooks' && call.method === 'PUT',
+      (call) => call.url === '/api/v1/commands/characters/char-a/lorebooks' && call.method === 'PUT',
     )
     expect(cmd.body.entries).toBeDefined()
   })
@@ -411,9 +405,7 @@ describe('trigger durable writes under the projection guard', () => {
         comment: 'set',
         type: 'manual',
         conditions: [],
-        effect: [
-          { type: 'v2SetVar', var: 'score', operator: '=', valueType: 'value', value: '7' },
-        ],
+        effect: [{ type: 'v2SetVar', var: 'score', operator: '=', valueType: 'value', value: '7' }],
       },
     ])
 
@@ -429,8 +421,7 @@ describe('trigger durable writes under the projection guard', () => {
     // ...and the scriptstate patch was dispatched to the chat scriptstate command.
     const cmd = await waitForCommand(
       calls,
-      (call) =>
-        call.url === '/api/v1/commands/chats/chat-1/scriptstate' && call.method === 'PATCH',
+      (call) => call.url === '/api/v1/commands/chats/chat-1/scriptstate' && call.method === 'PATCH',
     )
     expect(cmd.body.patch.$score).toBe('7')
   })

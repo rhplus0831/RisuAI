@@ -18,8 +18,7 @@
     [className]: !!className,
   }}
   {id}
-  {onclick}
->
+  {onclick}>
   {@render children?.()}
 
   {#if name}

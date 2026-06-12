@@ -1,13 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import {
-  resolveAnthropicRequest,
-  runAnthropic,
-  runAnthropicStream,
-} from '../src/generation/anthropic.js'
-import {
-  MAX_STREAM_BUFFER_CHARS,
-  STREAM_BUFFER_OVERFLOW_ERROR,
-} from '../src/generation/sse.js'
+import { resolveAnthropicRequest, runAnthropic, runAnthropicStream } from '../src/generation/anthropic.js'
+import { MAX_STREAM_BUFFER_CHARS, STREAM_BUFFER_OVERFLOW_ERROR } from '../src/generation/sse.js'
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -189,10 +182,7 @@ describe('runAnthropic (non-streaming)', () => {
   })
 
   it('returns fail when no text content blocks are present', async () => {
-    vi.stubGlobal(
-      'fetch',
-      async () => new Response(JSON.stringify({ content: [] }), { status: 200 }),
-    )
+    vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ content: [] }), { status: 200 }))
     const r = await runAnthropic({
       model: 'm',
       messages: [],
@@ -242,16 +232,11 @@ function sseUpstream(chunks: string[]): Response {
 }
 
 function deltaEvent(text: string): string {
-  return (
-    `event: content_block_delta\n` +
-    `data: ${JSON.stringify({ delta: { type: 'text_delta', text } })}\n\n`
-  )
+  return `event: content_block_delta\n` + `data: ${JSON.stringify({ delta: { type: 'text_delta', text } })}\n\n`
 }
 
 function messageDeltaEvent(stopReason: string): string {
-  return (
-    `event: message_delta\n` + `data: ${JSON.stringify({ delta: { stop_reason: stopReason } })}\n\n`
-  )
+  return `event: message_delta\n` + `data: ${JSON.stringify({ delta: { stop_reason: stopReason } })}\n\n`
 }
 
 const MESSAGE_STOP = `event: message_stop\ndata: {}\n\n`
@@ -379,13 +364,10 @@ describe('runAnthropicStream', () => {
 
   it('surfaces upstream non-OK responses as error frames', async () => {
     vi.stubGlobal('fetch', async () => {
-      return new Response(
-        JSON.stringify({ error: { message: 'overloaded', type: 'overloaded_error' } }),
-        {
-          status: 529,
-          headers: { 'content-type': 'application/json' },
-        },
-      )
+      return new Response(JSON.stringify({ error: { message: 'overloaded', type: 'overloaded_error' } }), {
+        status: 529,
+        headers: { 'content-type': 'application/json' },
+      })
     })
     const frames: unknown[] = []
     for await (const f of runAnthropicStream({
@@ -399,9 +381,7 @@ describe('runAnthropicStream', () => {
     })) {
       frames.push(f)
     }
-    expect(frames).toEqual([
-      { kind: 'error', error: 'overloaded', status: 529, code: 'overloaded_error' },
-    ])
+    expect(frames).toEqual([{ kind: 'error', error: 'overloaded', status: 529, code: 'overloaded_error' }])
   })
 
   it('surfaces a missing upstream stream body as an error frame', async () => {
@@ -418,15 +398,11 @@ describe('runAnthropicStream', () => {
     })) {
       frames.push(f)
     }
-    expect(frames).toEqual([
-      { kind: 'error', error: 'upstream returned no stream body', status: 200 },
-    ])
+    expect(frames).toEqual([{ kind: 'error', error: 'upstream returned no stream body', status: 200 }])
   })
 
   it('surfaces invalid upstream stream JSON as an error frame', async () => {
-    vi.stubGlobal('fetch', async () =>
-      sseUpstream([`event: content_block_delta\ndata: {nope}\n\n`]),
-    )
+    vi.stubGlobal('fetch', async () => sseUpstream([`event: content_block_delta\ndata: {nope}\n\n`]))
     const frames: unknown[] = []
     for await (const f of runAnthropicStream({
       model: 'm',

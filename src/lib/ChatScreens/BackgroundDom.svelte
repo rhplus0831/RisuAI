@@ -18,10 +18,7 @@
     reloadKey: string
   }
 
-  function backgroundCharacterSignature(
-    selectedId: number,
-    selectedCharacter: character | undefined,
-  ) {
+  function backgroundCharacterSignature(selectedId: number, selectedCharacter: character | undefined) {
     if (!selectedCharacter) {
       return JSON.stringify({ selectedId })
     }
@@ -72,11 +69,7 @@
     return untrack(() => {
       const currentChar = DBState.db?.characters?.[input.selectedId] as character | undefined
       const source = (input.html || '') + '\n' + (input.moduleEmbedding || '')
-      return ParseMarkdown(
-        risuChatParser(source, { chara: currentChar }),
-        currentChar,
-        'back',
-      )
+      return ParseMarkdown(risuChatParser(source, { chara: currentChar }), currentChar, 'back')
     })
   }
 

@@ -213,9 +213,7 @@ export function buildLargeCorpusFixture(options: LargeCorpusOptions = {}): Large
       chatPage: 0,
       chats,
       chatFolders: [],
-      globalLore: Array.from({ length: lorebookEntriesPerCharacter }, (_unused, i) =>
-        lorebookEntry(`char-${c}`, i),
-      ),
+      globalLore: Array.from({ length: lorebookEntriesPerCharacter }, (_unused, i) => lorebookEntry(`char-${c}`, i)),
       lastInteraction: c,
     })
   }

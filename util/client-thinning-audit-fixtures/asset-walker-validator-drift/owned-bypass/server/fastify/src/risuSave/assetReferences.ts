@@ -61,9 +61,7 @@ function addVitsReferences(_f: Found, _v: unknown, _l: string): void {}
 function addReferenceList(_f: Found, _v: unknown, _l: string): void {}
 function addGptSoVitsReference(_f: Found, _v: unknown, _l: string): void {}
 function readRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null
 }
 function readArray(value: unknown): unknown[] {
   return Array.isArray(value) ? value : []

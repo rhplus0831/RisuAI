@@ -81,9 +81,7 @@
     navigate('/')
   }
 
-  let routeChatIsOpen = $derived(
-    $currentRoute.kind === 'character' && typeof $currentRoute.chatId === 'string',
-  )
+  let routeChatIsOpen = $derived($currentRoute.kind === 'character' && typeof $currentRoute.chatId === 'string')
 
   $effect(() => {
     if (!$loadedStore) return
@@ -162,8 +160,7 @@
         break
       }
     }
-  }}
->
+  }}>
   {#if !import.meta.env.VITE_RISU_LEGAL_CONFIGURED}
     <Legal />
   {:else if aprilFools}
@@ -180,12 +177,10 @@
                 if (e.key === 'Enter') {
                   aprilFoolsPage = 1
                 }
-              }}
-            >
+              }}>
               <textarea
                 class="absolute top-0 left-0 w-full placeholder-[#bbbbbb] rounded-3xl h-full p-4 bg-transparent resize-none"
-                placeholder="Ask me"
-              ></textarea>
+                placeholder="Ask me"></textarea>
               <div class="absolute bottom-2 left-4 flex gap-1.5">
                 <button class="p-2 rounded-full border border-[#bbbbbb30]">
                   <PlusIcon size={18} color="#bbbbbb" />
@@ -205,8 +200,7 @@
               class="flex gap-1.5"
               onclick={() => {
                 aprilFoolsPage = 1
-              }}
-            >
+              }}>
               <button class="rounded-full border border-[#bbbbbb15] px-4 py-2">
                 <span class="text-[#bbbbbb]">🔍</span>
                 Search
@@ -231,36 +225,25 @@
                 onclick={() => {
                   aprilFoolsPage = 0
                   aprilFools = false
-                }}
-              >
+                }}>
                 Go to Risuai
               </a>
             </p>
           {/if}
         </div>
       </div>
-      <span class="absolute top-4 left-4 font-bold text-[#bbbbbb] text-md md:text-lg"
-        >RisyGTP 9+ Mytho Ultra Free</span
-      >
+      <span class="absolute top-4 left-4 font-bold text-[#bbbbbb] text-md md:text-lg">RisyGTP 9+ Mytho Ultra Free</span>
     </div>
   {:else if !$loadedStore}
-    <div
-      class="w-full h-full flex justify-center items-center text-textcolor text-xl bg-gray-900 flex-col"
-    >
+    <div class="w-full h-full flex justify-center items-center text-textcolor text-xl bg-gray-900 flex-col">
       <div class="flex flex-row items-center">
         <svg
           class="animate-spin -ml-1 mr-3 h-5 w-5 text-textcolor"
           xmlns="http://www.w3.org/2000/svg"
           fill="none"
-          viewBox="0 0 24 24"
-        >
-          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"
-          ></circle>
-          <path
-            class="opacity-75"
-            fill="currentColor"
-            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-          ></path>
+          viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
         </svg>
         <span>Loading...</span>
       </div>
@@ -279,21 +262,18 @@
         openGrid={() => {
           navigate('/grid')
         }}
-        hidden={!$sideBarStore}
-      />
+        hidden={!$sideBarStore} />
     {:else}
       <div
         class="top-0 w-full h-full left-0 z-30 flex flex-row items-center"
         class:fixed={$sideBarStore}
-        class:hidden={!$sideBarStore}
-      >
+        class:hidden={!$sideBarStore}>
         <!-- svelte-ignore a11y_click_events_have_key_events -->
         <Sidebar
           openGrid={() => {
             navigate('/grid')
           }}
-          hidden={false}
-        />
+          hidden={false} />
       </div>
     {/if}
     <ChatScreen />
@@ -308,16 +288,10 @@
     <RealmFrame />
   {/if}
   {#if $openPresetList}
-    <Botpreset
-      mode={presetListModalStore.mode}
-      close={closePresetListModal}
-    />
+    <Botpreset mode={presetListModalStore.mode} close={closePresetListModal} />
   {/if}
   {#if $openPersonaList}
-    <ListedPersona
-      mode={personaListModalStore.mode}
-      close={closePersonaListModal}
-    />
+    <ListedPersona mode={personaListModalStore.mode} close={closePersonaListModal} />
   {/if}
   {#if $bookmarkListOpen}
     <BookmarkList />

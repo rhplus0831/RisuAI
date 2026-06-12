@@ -18,11 +18,7 @@ import {
   type CommandEventSink,
 } from '../src/commands/events.js'
 import { bumpRevision, openDatabase } from '../src/db.js'
-import {
-  createMemoryEventBus,
-  type MemoryEvent,
-  type MemoryEventSink,
-} from '../src/memoryEvents.js'
+import { createMemoryEventBus, type MemoryEvent, type MemoryEventSink } from '../src/memoryEvents.js'
 
 const subtle = webcrypto.subtle
 
@@ -61,9 +57,7 @@ interface Harness {
   closed: boolean
 }
 
-async function startHarness(
-  opts: { dataDir?: string; memoryEvents?: MemoryEventSink } = {},
-): Promise<Harness> {
+async function startHarness(opts: { dataDir?: string; memoryEvents?: MemoryEventSink } = {}): Promise<Harness> {
   process.env.LOG_LEVEL = 'silent'
   const dataDir = opts.dataDir ?? mkdtempSync(path.join(tmpdir(), 'risu-fastify-events-'))
   const commandEvents = new TrackingCommandEventSink()
@@ -100,11 +94,7 @@ async function listen(app: FastifyInstance): Promise<string> {
   return `http://127.0.0.1:${address.port}`
 }
 
-async function signAssertion(
-  privateKey: CryptoKey,
-  publicJwk: JsonWebKey,
-  ttlSec = 60,
-): Promise<string> {
+async function signAssertion(privateKey: CryptoKey, publicJwk: JsonWebKey, ttlSec = 60): Promise<string> {
   const now = Math.floor(Date.now() / 1000)
   const header = { alg: 'ES256', typ: 'JWT' }
   const payload = { iat: now, exp: now + ttlSec, pub: publicJwk }
@@ -269,9 +259,7 @@ describe('Phase 9-5a command events stream', () => {
       for (let revision = 1; revision <= 5; revision++) {
         persistCommandEvent(db, { type: 'settings.updated', revision, resource: 'settings' }, 3)
       }
-      expect(listPersistedCommandEventHistory(db).map((event) => event.revision)).toEqual([
-        3, 4, 5,
-      ])
+      expect(listPersistedCommandEventHistory(db).map((event) => event.revision)).toEqual([3, 4, 5])
 
       // Keep-window semantics: retention is the revision window ending at the
       // just-persisted revision (12 - 3 = 9; everything <= 9 is deleted), not
@@ -281,9 +269,7 @@ describe('Phase 9-5a command events stream', () => {
 
       // Below the window nothing is deleted (negative threshold is a no-op).
       persistCommandEvent(db, { type: 'settings.updated', revision: 13, resource: 'settings' }, 1000)
-      expect(listPersistedCommandEventHistory(db).map((event) => event.revision)).toEqual([
-        12, 13,
-      ])
+      expect(listPersistedCommandEventHistory(db).map((event) => event.revision)).toEqual([12, 13])
     } finally {
       db.close()
       rmSync(dataDir, { recursive: true, force: true })
@@ -458,9 +444,7 @@ describe('Phase 9-5a command events stream', () => {
     // The origin persists with the event row...
     const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
     try {
-      const persisted = listPersistedCommandEventHistory(db).find(
-        (event) => event.revision === nextRevision,
-      )
+      const persisted = listPersistedCommandEventHistory(db).find((event) => event.revision === nextRevision)
       expect(persisted?.origin).toEqual({ writerSessionId: 'writer-l29' })
     } finally {
       db.close()

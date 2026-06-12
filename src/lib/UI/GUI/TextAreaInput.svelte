@@ -127,10 +127,7 @@
     inputDom.dispatchEvent(new Event('change', { bubbles: true }))
   }
 
-  const replaceSelectionText = (
-    insertContent: string,
-    type: 'autoComplete' | 'paste' = 'paste',
-  ) => {
+  const replaceSelectionText = (insertContent: string, type: 'autoComplete' | 'paste' = 'paste') => {
     if (!inputDom) {
       return false
     }
@@ -204,10 +201,7 @@
     autoCompleteDom.style.display = 'flex'
   }
 
-  const insertContent = (
-    insertContent: string,
-    type: 'autoComplete' | 'paste' = 'autoComplete',
-  ) => {
+  const insertContent = (insertContent: string, type: 'autoComplete' | 'paste' = 'autoComplete') => {
     console.log(insertContent)
     if (replaceSelectionText(insertContent, type)) {
       hideAutoComplete()
@@ -250,10 +244,7 @@
     if (autocompleteContents.length >= 1) {
       switch (e.key) {
         case 'ArrowDown':
-          selectingAutoComplete = Math.min(
-            selectingAutoComplete + 1,
-            autocompleteContents.length - 1,
-          )
+          selectingAutoComplete = Math.min(selectingAutoComplete + 1, autocompleteContents.length - 1)
           e.preventDefault()
           return
         case 'ArrowUp':
@@ -332,8 +323,7 @@
   bind:this={highlightDom}
   onfocusout={() => {
     hideAutoComplete()
-  }}
->
+  }}>
   {#if !highlight || $disableHighlight}
     <textarea
       class="w-full h-full bg-transparent focus-within:outline-hidden resize-none absolute top-0 left-0 z-50 overflow-y-auto"
@@ -399,8 +389,7 @@
             }
           }, 100)
         }
-      }}
-    ></textarea>
+      }}></textarea>
   {:else}
     <div
       class="w-full h-full bg-transparent focus-within:outline-hidden resize-none absolute top-0 left-0 z-50 overflow-y-auto px-4 py-2 wrap-break-word whitespace-pre-wrap"
@@ -420,23 +409,18 @@
         onchange()
       }}
       bind:this={inputDom}
-      translate="no"
-    >
+      translate="no">
       {value ?? ''}
     </div>
   {/if}
-  <div
-    class="hidden absolute z-100 bg-bgcolor border border-darkborderc p-2 flex-col"
-    bind:this={autoCompleteDom}
-  >
+  <div class="hidden absolute z-100 bg-bgcolor border border-darkborderc p-2 flex-col" bind:this={autoCompleteDom}>
     {#each autocompleteContents as content, i}
       <button
         class="w-full text-left py-1 px-2 bg-bgcolor"
         class:text-blue-500={selectingAutoComplete === i}
         onclick={() => {
           insertContent(content)
-        }}>{content}</button
-      >
+        }}>{content}</button>
     {/each}
   </div>
 </div>

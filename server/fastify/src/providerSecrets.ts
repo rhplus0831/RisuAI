@@ -130,12 +130,7 @@ function maskPath(target: unknown, path: PathSegment[]): void {
   maskPath(target[segment], rest)
 }
 
-function resolvePath(
-  source: unknown,
-  target: unknown,
-  path: PathSegment[],
-  arrayKey?: string,
-): void {
+function resolvePath(source: unknown, target: unknown, path: PathSegment[], arrayKey?: string): void {
   if (path.length === 0) return
   const [segment, ...rest] = path
 
@@ -168,12 +163,7 @@ function resolvePath(
   resolvePath(isRecord(source) ? source[segment] : undefined, target[segment], rest, segment)
 }
 
-function resolveArrayWildcard(
-  source: unknown,
-  target: unknown[],
-  rest: PathSegment[],
-  arrayKey?: string,
-): void {
+function resolveArrayWildcard(source: unknown, target: unknown[], rest: PathSegment[], arrayKey?: string): void {
   if (!target.some((row) => hasMaskedPlaceholderAtPath(row, rest))) return
 
   const identityKey = arrayKey ? ARRAY_ROW_IDENTITY_KEYS[arrayKey] : undefined
@@ -194,19 +184,13 @@ function resolveArrayWildcard(
 
     const sourceRow = sourceRows.get(rowId)
     if (!sourceRow) {
-      throw new ValidationError(
-        `Cannot resolve masked provider secret for unknown ${arrayKey} row: ${rowId}`,
-      )
+      throw new ValidationError(`Cannot resolve masked provider secret for unknown ${arrayKey} row: ${rowId}`)
     }
     resolvePath(sourceRow, row, rest)
   }
 }
 
-function buildUniqueRowIdentityMap(
-  rows: unknown[],
-  identityKey: string,
-  arrayKey?: string,
-): Map<string, unknown> {
+function buildUniqueRowIdentityMap(rows: unknown[], identityKey: string, arrayKey?: string): Map<string, unknown> {
   const byId = new Map<string, unknown>()
   const duplicateIds = new Set<string>()
   for (const row of rows) {
@@ -221,9 +205,7 @@ function buildUniqueRowIdentityMap(
   }
 
   if (duplicateIds.size > 0) {
-    throw new ValidationError(
-      `Duplicate ${arrayKey ?? 'array'} row identity: ${Array.from(duplicateIds).join(', ')}`,
-    )
+    throw new ValidationError(`Duplicate ${arrayKey ?? 'array'} row identity: ${Array.from(duplicateIds).join(', ')}`)
   }
   return byId
 }

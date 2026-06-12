@@ -92,9 +92,7 @@ function stubFailedImportCommandFetch(): CapturedFetch[] {
 
 async function waitForImportCommand(calls: CapturedFetch[]): Promise<CapturedFetch> {
   for (let attempt = 0; attempt < 40; attempt += 1) {
-    const match = calls.find(
-      (call) => call.url === '/api/v1/commands/presets/import' && call.method === 'POST',
-    )
+    const match = calls.find((call) => call.url === '/api/v1/commands/presets/import' && call.method === 'POST')
     if (match) return match
     await new Promise((resolve) => setTimeout(resolve, 0))
   }
@@ -222,9 +220,7 @@ describe('importPreset warm-path logging (L37)', () => {
     const beforePresets = clonePlain(DBState.db.botPresets)
     const beforeSelected = DBState.db.botPresetsId
     const calls = stubFailedImportCommandFetch()
-    const file = new TextEncoder().encode(
-      JSON.stringify({ name: 'Import Will Roll Back', temperature: 66 }),
-    )
+    const file = new TextEncoder().encode(JSON.stringify({ name: 'Import Will Roll Back', temperature: 66 }))
 
     await importPreset({ name: 'plain-preset.json', data: file })
 

@@ -4,19 +4,14 @@ import { generateAIImage } from './stableDiff'
 
 const imggenRegex = [/<ImgGen="(.+?)">/gi, /{{ImgGen="(.+?)"}}/gi] as const
 
-export function runInlayScreen(
-  char: character,
-  data: string,
-): { text: string; promise?: Promise<string> } {
+export function runInlayScreen(char: character, data: string): { text: string; promise?: Promise<string> } {
   if (char.inlayViewScreen) {
     if (char.viewScreen === 'emotion') {
       return { text: data.replace(/<Emotion="(.+?)">/gi, '{{emotion::$1}}') }
     }
     if (char.viewScreen === 'imggen') {
       return {
-        text: data
-          .replace(imggenRegex[0], '[Generating...]')
-          .replace(imggenRegex[1], '[Generating...]'),
+        text: data.replace(imggenRegex[0], '[Generating...]').replace(imggenRegex[1], '[Generating...]'),
         promise: (async () => {
           for (const regex of imggenRegex) {
             const promises: Promise<string | false>[] = []

@@ -149,8 +149,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
       {
         testPath: 'server/fastify/__tests__/generation.chat.test.ts',
-        testName:
-          'reviews representative generation prompt metric families for next-slice selection',
+        testName: 'reviews representative generation prompt metric families for next-slice selection',
       },
     ],
   ),
@@ -163,8 +162,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     [
       {
         testPath: 'server/fastify/__tests__/assemble.test.ts',
-        testName:
-          'M2: caps tokens:0 Hypa memory before final budgeting so old summaries do not overflow',
+        testName: 'M2: caps tokens:0 Hypa memory before final budgeting so old summaries do not overflow',
       },
     ],
   ),
@@ -207,8 +205,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     [
       {
         testPath: 'src/ts/process/__tests__/sendChatContext.test.ts',
-        testName:
-          'M5: failed first-send backfill restores only active chat messages and lastInteraction',
+        testName: 'M5: failed first-send backfill restores only active chat messages and lastInteraction',
       },
       {
         testPath: 'src/ts/__tests__/sendCloneCountProbe.test.ts',
@@ -225,8 +222,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     [
       {
         testPath: 'src/lib/Others/GridCatalog.svelte.test.ts',
-        testName:
-          'M6: MobileCharacters helper preserves sort, trash filtering, legacy keys, search, and ago text',
+        testName: 'M6: MobileCharacters helper preserves sort, trash filtering, legacy keys, search, and ago text',
       },
     ],
   ),
@@ -268,28 +264,23 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
       {
         testPath: 'src/ts/server/characterBridge.svelte.test.ts',
-        testName:
-          'M8: flushes pending character profile edits with keepalive and clears the debounce',
+        testName: 'M8: flushes pending character profile edits with keepalive and clears the debounce',
       },
       {
         testPath: 'src/ts/server/characterBridge.svelte.test.ts',
-        testName:
-          'M8: watcher teardown flushes pending character profile edits and clears the debounce',
+        testName: 'M8: watcher teardown flushes pending character profile edits and clears the debounce',
       },
       {
         testPath: 'src/ts/server/chatBridge.svelte.test.ts',
-        testName:
-          'M8: flushes pending chat and folder metadata with keepalive and clears debounces',
+        testName: 'M8: flushes pending chat and folder metadata with keepalive and clears debounces',
       },
       {
         testPath: 'src/ts/server/chatBridge.svelte.test.ts',
-        testName:
-          'M8: watcher teardown flushes pending chat and folder metadata and clears debounces',
+        testName: 'M8: watcher teardown flushes pending chat and folder metadata and clears debounces',
       },
       {
         testPath: 'src/ts/server/lorebookBridge.svelte.test.ts',
-        testName:
-          'M8: bridge flush sends pending lorebook replacements with keepalive and clears debounce',
+        testName: 'M8: bridge flush sends pending lorebook replacements with keepalive and clears debounce',
       },
       {
         testPath: 'src/ts/server/lorebookBridge.svelte.test.ts',
@@ -309,8 +300,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
       {
         testPath: 'src/ts/server/scriptDefinitionBridge.svelte.test.ts',
-        testName:
-          'M8: watcher teardown flushes pending script-definition edits and clears debounce',
+        testName: 'M8: watcher teardown flushes pending script-definition edits and clears debounce',
       },
     ],
   ),
@@ -344,8 +334,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     [
       {
         testPath: 'server/fastify/__tests__/assemble.test.ts',
-        testName:
-          'L1: repeated asset prompt refs share one async stored-asset read during assembly',
+        testName: 'L1: repeated asset prompt refs share one async stored-asset read during assembly',
       },
     ],
   ),
@@ -371,8 +360,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     [
       {
         testPath: 'server/fastify/__tests__/serverLoadCostHarness.test.ts',
-        testName:
-          'Phase 7 L3/K3: default chat dispatch performs zero prompt and restoration clones',
+        testName: 'Phase 7 L3/K3: default chat dispatch performs zero prompt and restoration clones',
       },
       {
         testPath: 'server/fastify/__tests__/assemble.test.ts',
@@ -433,13 +421,11 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
       {
         testPath: 'server/fastify/__tests__/assemble.test.ts',
-        testName:
-          'L8: input, start, and output chat-var triggers avoid full trigger transcript clones',
+        testName: 'L8: input, start, and output chat-var triggers avoid full trigger transcript clones',
       },
       {
         testPath: 'server/fastify/__tests__/serverLoadCostHarness.test.ts',
-        testName:
-          'Phase 7 L8: no-message input/start/output triggers perform zero full transcript clones',
+        testName: 'Phase 7 L8: no-message input/start/output triggers perform zero full transcript clones',
       },
     ],
   ),
@@ -464,13 +450,11 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
       {
         testPath: 'server/fastify/__tests__/generation.chat.test.ts',
-        testName:
-          'L9/v4-L7: unsafe imported regex stops before provider dispatch and assistant persistence',
+        testName: 'L9/v4-L7: unsafe imported regex stops before provider dispatch and assistant persistence',
       },
       {
         testPath: 'server/fastify/__tests__/generation.chat.test.ts',
-        testName:
-          'L9/v4-L7: valid imported lorebook and customscript regexes preserve generation output',
+        testName: 'L9/v4-L7: valid imported lorebook and customscript regexes preserve generation output',
       },
     ],
   ),
@@ -504,8 +488,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     [
       {
         testPath: 'server/fastify/__tests__/commandMutationReadNarrowing.test.ts',
-        testName:
-          'L11: collection scoped reads fall back broad for unrelated embedded settings rows',
+        testName: 'L11: collection scoped reads fall back broad for unrelated embedded settings rows',
       },
     ],
   ),
@@ -560,8 +543,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
       {
         testPath: 'server/fastify/__tests__/assemble.test.ts',
-        testName:
-          'L15: memoizes unchanged summarized-prefix token counts across assembly planning passes',
+        testName: 'L15: memoizes unchanged summarized-prefix token counts across assembly planning passes',
       },
     ],
   ),
@@ -578,8 +560,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
       {
         testPath: 'server/fastify/__tests__/memoryEmbedJobHandler.test.ts',
-        testName:
-          'L16: aborts a hung single contextual embedding provider call within the deadline',
+        testName: 'L16: aborts a hung single contextual embedding provider call within the deadline',
       },
       {
         testPath: 'server/fastify/__tests__/memoryEmbedJobHandler.test.ts',
@@ -617,8 +598,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
       {
         testPath: 'server/fastify/__tests__/realmImport.test.ts',
-        testName:
-          'L18: rejects JSON-card fetched resources above the per-asset cap before reading the body',
+        testName: 'L18: rejects JSON-card fetched resources above the per-asset cap before reading the body',
       },
       {
         testPath: 'server/fastify/__tests__/realmImport.test.ts',
@@ -689,8 +669,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
       {
         testPath: 'src/ts/storage/database.svelte.test.ts',
-        testName:
-          'L21: failed copy restores the original collection after save-current and generated copy id',
+        testName: 'L21: failed copy restores the original collection after save-current and generated copy id',
       },
       {
         testPath: 'src/ts/storage/database.svelte.test.ts',
@@ -757,13 +736,11 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     [
       {
         testPath: 'src/ts/server/lorebookBridge.svelte.test.ts',
-        testName:
-          'L24: global lorebook rename rollback suppresses watcher echo and keeps later edits live',
+        testName: 'L24: global lorebook rename rollback suppresses watcher echo and keeps later edits live',
       },
       {
         testPath: 'src/ts/server/lorebookBridge.svelte.test.ts',
-        testName:
-          'L24: global lorebook direct rollback closures restore under an active watcher without echoes',
+        testName: 'L24: global lorebook direct rollback closures restore under an active watcher without echoes',
       },
     ],
   ),
@@ -833,8 +810,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     [
       {
         testPath: 'src/lib/ChatScreens/ChatBody.parseMemo.test.ts',
-        testName:
-          'L30: cached-only LLM detection reuses a prebuilt parse key without rebuilding it',
+        testName: 'L30: cached-only LLM detection reuses a prebuilt parse key without rebuilding it',
       },
     ],
   ),
@@ -847,8 +823,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     [
       {
         testPath: 'src/lib/ChatScreens/Chat.customHtml.test.ts',
-        testName:
-          'L31: guiHTML changes and cbs-condition changes invalidate the customHTML template memo',
+        testName: 'L31: guiHTML changes and cbs-condition changes invalidate the customHTML template memo',
       },
     ],
   ),
@@ -889,8 +864,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
       {
         testPath: 'src/ts/translator/translator.cache.test.ts',
-        testName:
-          'v4-L30: current translator preset sync reads from a snapshot without mutating live legacy fields',
+        testName: 'v4-L30: current translator preset sync reads from a snapshot without mutating live legacy fields',
       },
       {
         testPath: 'src/ts/translator/translator.cache.test.ts',
@@ -912,8 +886,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
       {
         testPath: 'src/ts/process/scripts.editdisplay.test.ts',
-        testName:
-          'I20: @@inject display action runs under the projection guard without durable persistence',
+        testName: 'I20: @@inject display action runs under the projection guard without durable persistence',
       },
     ],
   ),
@@ -934,8 +907,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
       {
         testPath: 'src/ts/process/mcp/mcp.test.ts',
-        testName:
-          'v4-L33: isolates a failing internal handshake while keeping other MCP tools usable',
+        testName: 'v4-L33: isolates a failing internal handshake while keeping other MCP tools usable',
       },
       {
         testPath: 'src/ts/__tests__/fixCompletenessGateV3.test.ts',
@@ -1089,8 +1061,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
       {
         testPath: 'src/ts/process/mcp/filesystemclient.test.ts',
-        testName:
-          'v4-L35: encodes capped base64 reads in chunks instead of spreading the whole file',
+        testName: 'v4-L35: encodes capped base64 reads in chunks instead of spreading the whole file',
       },
       {
         testPath: 'src/ts/process/mcp/filesystemclient.test.ts',
@@ -1114,8 +1085,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     [
       {
         testPath: 'src/ts/process/tts.test.ts',
-        testName:
-          'L50/I16: GPT-SoVITS and FishSpeech do not console-log request or response bodies',
+        testName: 'L50/I16: GPT-SoVITS and FishSpeech do not console-log request or response bodies',
       },
     ],
   ),
@@ -1201,8 +1171,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
       {
         testPath: 'src/ts/globalApi.proxy.test.ts',
-        testName:
-          'does not DELETE on WebSocket close before terminal when the request was not locally aborted',
+        testName: 'does not DELETE on WebSocket close before terminal when the request was not locally aborted',
       },
     ],
   ),
@@ -1227,8 +1196,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
       {
         testPath: 'server/fastify/__tests__/memorySimilarityRanking.test.ts',
-        testName:
-          'K1: reads embedding vectors and preserves ranking diagnostics for valid query vectors',
+        testName: 'K1: reads embedding vectors and preserves ranking diagnostics for valid query vectors',
       },
     ],
   ),
@@ -1241,8 +1209,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     [
       {
         testPath: 'server/fastify/__tests__/auth.test.ts',
-        testName:
-          'K2: unauthenticated proxy and hub requests stop before body parsing or forwarding',
+        testName: 'K2: unauthenticated proxy and hub requests stop before body parsing or forwarding',
       },
     ],
   ),
@@ -1255,8 +1222,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     [
       {
         testPath: 'server/fastify/__tests__/serverLoadCostHarness.test.ts',
-        testName:
-          'Phase 7 L3/K3: default chat dispatch performs zero prompt and restoration clones',
+        testName: 'Phase 7 L3/K3: default chat dispatch performs zero prompt and restoration clones',
       },
     ],
   ),
@@ -1270,53 +1236,26 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
 ]
 
 const NO_ACTION: RegistryReason[] = [
-  noAction(
-    'I1',
-    'Active-writer guard manifest scan per request (method-prefiltered, cached regexes).',
-  ),
-  noAction(
-    'I2',
-    'Bulk projection unbounded (deduped) ids + O(N·M) apply loop (export readers only).',
-  ),
+  noAction('I1', 'Active-writer guard manifest scan per request (method-prefiltered, cached regexes).'),
+  noAction('I2', 'Bulk projection unbounded (deduped) ids + O(N·M) apply loop (export readers only).'),
   noAction('I3', 'Proxy copies the request body before forwarding (bounded by bodyLimit).'),
   noAction('I4', 'Finalization retry lacks attempt cap/backoff (realistic errors self-heal).'),
-  noAction(
-    'I5',
-    'JS trigger budget recreated per phase; may ride Phase 7 (shared per-send budget) if free.',
-  ),
+  noAction('I5', 'JS trigger budget recreated per phase; may ride Phase 7 (shared per-send budget) if free.'),
   noAction(
     'I6',
     'Summarize handler O(total chats) existence scan; may ride Phase 3 (hoist per batch / indexed probe) if free.',
   ),
-  noAction(
-    'I7',
-    'Server prompt-assembly classifier runs twice per send; may ride Phase 1 if free.',
-  ),
-  noAction(
-    'I8',
-    '`assetByteReadCounts` diagnostics Map populated with metrics off (no live consumer).',
-  ),
+  noAction('I7', 'Server prompt-assembly classifier runs twice per send; may ride Phase 1 if free.'),
+  noAction('I8', '`assetByteReadCounts` diagnostics Map populated with metrics off (no live consumer).'),
   noAction('I9', '`addFetchLog` (streaming) never trims while the JSON path caps at 20.'),
   noAction('I10', '`addFetchLog` positional index-0 aliasing corrupts the debug fetch view.'),
-  noAction(
-    'I11',
-    "`evaluateIgp` appends `'[object Object]'` — fixed as part of L34, not separately.",
-  ),
+  noAction('I11', "`evaluateIgp` appends `'[object Object]'` — fixed as part of L34, not separately."),
   noAction('I12', 'ModuleChatMenu per-keystroke sort (v2-L43 sibling); may ride Phase 6 if free.'),
   noAction('I13', 'Code-block download object URL never revoked.'),
   noAction('I14', 'BotSettings preset-icon object URL never revoked.'),
-  noAction(
-    'I15',
-    '`hypaVector` IndexedDB embedding cache grows without eviction (intentional disk cache).',
-  ),
-  noAction(
-    'I16',
-    "GPT-SoVITS/FishSpeech TTS log full bodies; may ride Phase 8's L50 log sweep if free.",
-  ),
-  noAction(
-    'I17',
-    "LLM translator logs `translatorNote` per cache-missed call; may ride Phase 8's L50 sweep if free.",
-  ),
+  noAction('I15', '`hypaVector` IndexedDB embedding cache grows without eviction (intentional disk cache).'),
+  noAction('I16', "GPT-SoVITS/FishSpeech TTS log full bodies; may ride Phase 8's L50 log sweep if free."),
+  noAction('I17', "LLM translator logs `translatorNote` per cache-missed call; may ride Phase 8's L50 sweep if free."),
   noAction(
     'I18',
     '`templateCheck` re-scans per guarded write while Prompt Settings is open (v2-M13 deferred); may ride Phase 6 if free.',
@@ -1329,15 +1268,9 @@ const NO_ACTION: RegistryReason[] = [
     'I20',
     "`@@inject` display action silent no-op under the guard; rides Phase 5's guard-repair batch (same wrap pattern as L34-L36).",
   ),
-  noAction(
-    'I21',
-    "`alertError` throws on undefined rejection reasons; rides L37's handler hardening.",
-  ),
+  noAction('I21', "`alertError` throws on undefined rejection reasons; rides L37's handler hardening."),
   noAction('I22', 'Production image ships 74 MB of sourcemaps (build hygiene; optional).'),
-  noAction(
-    'I23',
-    'No `manualChunks`; ~3.5 MB eager app graph incl. all-locale lang chunk (optional split).',
-  ),
+  noAction('I23', 'No `manualChunks`; ~3.5 MB eager app graph incl. all-locale lang chunk (optional split).'),
   noAction(
     'R1',
     '`similaritySearchVectorWithScore` comparator concern is empirically byte-identical on V8/Node 24 and highest-impact consumers sort correctly.',
@@ -1362,8 +1295,7 @@ const NO_ACTION: RegistryReason[] = [
 
 const GATED_CONTEXT_REASONS: GateContextReason[] = [
   {
-    reason:
-      '`v2-L12` stays as archived owner-decision context for wasmoon boot serialization, not a v3 scheduled ID.',
+    reason: '`v2-L12` stays as archived owner-decision context for wasmoon boot serialization, not a v3 scheduled ID.',
   },
   {
     reason:
@@ -1674,10 +1606,7 @@ function activeRiskDismissedCandidateIds(text = readDoc(RISK_DOC)): string[] {
   return sortedIds([...section.matchAll(/^- (R\d+) - /gm)].map((match) => match[1]))
 }
 
-function v3DocUniverse(
-  auditText = readDoc(AUDIT_DOC),
-  riskText = readDoc(RISK_DOC),
-): Record<V3DocKind, string[]> {
+function v3DocUniverse(auditText = readDoc(AUDIT_DOC), riskText = readDoc(RISK_DOC)): Record<V3DocKind, string[]> {
   const auditUniverse = auditFindingIdsByKind(auditText)
   return {
     ...auditUniverse,
@@ -1723,20 +1652,12 @@ function collectIdRangeDriftProblems<K extends string>(
   return problems
 }
 
-function collectDocUniverseDriftProblems(
-  universe: Record<V3DocKind, string[]> = v3DocUniverse(),
-): string[] {
+function collectDocUniverseDriftProblems(universe: Record<V3DocKind, string[]> = v3DocUniverse()): string[] {
   return collectIdRangeDriftProblems(universe, EXPECTED_DOC_RANGES)
 }
 
-function collectActiveRiskUniverseDriftProblems(
-  rows: ActiveRiskRoutingRow[] = activeRiskRoutingRows(),
-): string[] {
-  return collectIdRangeDriftProblems(
-    activeRiskIdsByKind(rows),
-    EXPECTED_ACTIVE_RISK_RANGES,
-    'active-risk ids',
-  )
+function collectActiveRiskUniverseDriftProblems(rows: ActiveRiskRoutingRow[] = activeRiskRoutingRows()): string[] {
+  return collectIdRangeDriftProblems(activeRiskIdsByKind(rows), EXPECTED_ACTIVE_RISK_RANGES, 'active-risk ids')
 }
 
 function isValidPhase(value: number | null): value is Phase {
@@ -1982,11 +1903,7 @@ export function collectGateProblems(input: GateProblemInput = {}): string[] {
 describe('v3 fix-completeness gate doc universe', () => {
   it('points at the archived v3 closeout sources', () => {
     expect(AUDIT_DOC).toContain(
-      path.join(
-        '.archived-docs',
-        'audit-stability-and-performance-v3',
-        'audit-stability-and-performance-v3.md',
-      ),
+      path.join('.archived-docs', 'audit-stability-and-performance-v3', 'audit-stability-and-performance-v3.md'),
     )
     expect(RISK_DOC).toContain(
       path.join('.archived-docs', 'audit-stability-and-performance-v3', 'active-risk-analysis.md'),
@@ -2047,9 +1964,7 @@ describe('v3 fix-completeness gate doc universe', () => {
     const rows = activeRiskRoutingRows(riskText)
 
     expect(rows.find((row) => row.id === 'M10')?.status).toBe('PENDING')
-    expect(collectActiveRiskUniverseDriftProblems(rows)).toEqual([
-      'M: unexpected active-risk ids M10',
-    ])
+    expect(collectActiveRiskUniverseDriftProblems(rows)).toEqual(['M: unexpected active-risk ids M10'])
   })
 
   it('accepts heading separators and table rows without mining prior-audit prose', () => {
@@ -2076,9 +1991,7 @@ Mentions v2-L12 and v1-L4 in prose only.
 
   it('collects K residuals from active-risk and treats audit overlaps as evidence', () => {
     const rows = knownOverlapResidualRows()
-    const overlapEvidenceUniverse = auditFindingIdsByKind(
-      sectionOf(readDoc(AUDIT_DOC), 'Known-Item Overlaps'),
-    )
+    const overlapEvidenceUniverse = auditFindingIdsByKind(sectionOf(readDoc(AUDIT_DOC), 'Known-Item Overlaps'))
 
     expect(rows).toHaveLength(4)
     expect(rows.map((row) => row.id)).toEqual(rangeIds('K', 4))
@@ -2114,12 +2027,7 @@ describe('v3 fix-completeness gate routing registry', () => {
     const scheduledIds = SCHEDULED_FIXES.map((entry) => entry.id)
     const noActionIds = NO_ACTION.map((entry) => entry.id)
 
-    expect(scheduledIds).toEqual([
-      ...rangeIds('H', 1),
-      ...rangeIds('M', 9),
-      ...rangeIds('L', 56),
-      ...rangeIds('K', 4),
-    ])
+    expect(scheduledIds).toEqual([...rangeIds('H', 1), ...rangeIds('M', 9), ...rangeIds('L', 56), ...rangeIds('K', 4)])
     expect(noActionIds.filter((id) => id.startsWith('I'))).toEqual(rangeIds('I', 23))
     expect(noActionIds.filter((id) => id.startsWith('R'))).toEqual(rangeIds('R', 5))
   })
@@ -2211,9 +2119,7 @@ describe('v3 fix-completeness gate routing registry', () => {
 
   it('keeps the live registry green with every scheduled v3 id marked DONE', () => {
     expect(SCHEDULED_FIXES).toHaveLength(70)
-    expect(
-      SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE').map((entry) => entry.id),
-    ).toEqual([
+    expect(SCHEDULED_FIXES.filter((entry) => entry.status === 'DONE').map((entry) => entry.id)).toEqual([
       'H1',
       'M1',
       'M2',
@@ -2289,9 +2195,7 @@ describe('v3 fix-completeness gate routing registry', () => {
   })
 
   it('records Phase 5 guard-repair bounded inventory dispositions', () => {
-    expect(GUARD_REPAIR_INVENTORY_PROOF.map((entry) => entry.surface)).toEqual(
-      REQUIRED_GUARD_REPAIR_INVENTORY_SURFACES,
-    )
+    expect(GUARD_REPAIR_INVENTORY_PROOF.map((entry) => entry.surface)).toEqual(REQUIRED_GUARD_REPAIR_INVENTORY_SURFACES)
     expect(new Set(GUARD_REPAIR_INVENTORY_PROOF.map((entry) => entry.surface)).size).toBe(
       REQUIRED_GUARD_REPAIR_INVENTORY_SURFACES.length,
     )
@@ -2329,10 +2233,7 @@ describe('v3 fix-completeness gate routing registry', () => {
   })
 
   it('records legacy gated and owner-decision context only as explanatory context', () => {
-    const registeredIds = [
-      ...SCHEDULED_FIXES.map((entry) => entry.id),
-      ...NO_ACTION.map((entry) => entry.id),
-    ]
+    const registeredIds = [...SCHEDULED_FIXES.map((entry) => entry.id), ...NO_ACTION.map((entry) => entry.id)]
     const contextText = GATED_CONTEXT_REASONS.map((entry) => entry.reason).join('\n')
 
     expect(registeredIds).not.toContain('v2-L12')
@@ -2402,10 +2303,7 @@ describe('v3 fix-completeness gate routing registry', () => {
     )
 
     expect(collectGateProblems({ scheduled: syntheticDone })).toEqual(
-      expect.arrayContaining([
-        'L50: DONE without a registered testPath',
-        'L50: DONE without a registered testName',
-      ]),
+      expect.arrayContaining(['L50: DONE without a registered testPath', 'L50: DONE without a registered testName']),
     )
   })
 
@@ -2499,9 +2397,7 @@ describe('v3 fix-completeness gate routing registry', () => {
       .filter((line) => markdownTableCells(line)?.[0] !== 'H1')
       .join('\n')
 
-    expect(collectGateProblems({ riskText })).toContain(
-      'H1: SCHEDULED_FIXES entry missing from active-risk docs',
-    )
+    expect(collectGateProblems({ riskText })).toContain('H1: SCHEDULED_FIXES entry missing from active-risk docs')
   })
 
   it('self-proves phase mismatch detection against an in-memory active-risk doc', () => {
@@ -2514,9 +2410,7 @@ describe('v3 fix-completeness gate routing registry', () => {
       `| H1 | [2](phases/phase-2-command-surface-scoping.md) | ${h1.fix} | PENDING |`,
     )
 
-    expect(collectGateProblems({ riskText: withWrongPhase })).toContain(
-      'H1: phase mismatch (registry 1, docs 2)',
-    )
+    expect(collectGateProblems({ riskText: withWrongPhase })).toContain('H1: phase mismatch (registry 1, docs 2)')
   })
 
   it('self-proves informational scheduled-conflict detection', () => {
@@ -2532,15 +2426,10 @@ describe('v3 fix-completeness gate routing registry', () => {
   })
 
   it('self-proves duplicate and missing classification detection', () => {
-    const duplicateH1 = [
-      ...NO_ACTION,
-      noAction('H1', 'Duplicate self-proof classification reason for scheduled H1.'),
-    ]
+    const duplicateH1 = [...NO_ACTION, noAction('H1', 'Duplicate self-proof classification reason for scheduled H1.')]
     const missingM1 = SCHEDULED_FIXES.filter((entry) => entry.id !== 'M1')
 
-    expect(collectGateProblems({ noAction: duplicateH1 })).toContain(
-      'H1: classified 2 times (scheduled, no-action)',
-    )
+    expect(collectGateProblems({ noAction: duplicateH1 })).toContain('H1: classified 2 times (scheduled, no-action)')
     expect(collectGateProblems({ scheduled: missingM1 })).toEqual(
       expect.arrayContaining([
         'M1: missing classification bucket',
@@ -2550,10 +2439,7 @@ describe('v3 fix-completeness gate routing registry', () => {
   })
 
   it('self-proves unregistered registry id detection', () => {
-    const withUnregisteredId = [
-      ...SCHEDULED_FIXES,
-      planned('M10', 2, 'Synthetic unregistered registry drift.'),
-    ]
+    const withUnregisteredId = [...SCHEDULED_FIXES, planned('M10', 2, 'Synthetic unregistered registry drift.')]
 
     expect(collectGateProblems({ scheduled: withUnregisteredId })).toEqual(
       expect.arrayContaining([

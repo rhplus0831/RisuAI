@@ -55,30 +55,21 @@ export function normalizePersonaCollection(database: unknown): void {
   ensurePersonaCollection(database as JsonRecord)
 }
 
-export function createPersonaRecord(
-  input: unknown,
-  options: { assetDb?: DatabaseSync } = {},
-): PersonaRecord {
+export function createPersonaRecord(input: unknown, options: { assetDb?: DatabaseSync } = {}): PersonaRecord {
   const persona = readJsonObject(input, 'persona') as PersonaRecord
   persona.id = readPersonaId(persona.id, 'persona.id')
   validatePersonaRecord(persona, 'persona', options)
   return persona
 }
 
-function repairPersonaRecord(
-  input: unknown,
-  options: { assetDb?: DatabaseSync } = {},
-): PersonaRecord {
+function repairPersonaRecord(input: unknown, options: { assetDb?: DatabaseSync } = {}): PersonaRecord {
   const persona = readJsonObject(input, 'persona') as PersonaRecord
   persona.id = typeof persona.id === 'string' && persona.id.trim() ? persona.id : randomUUID()
   validatePersonaRecord(persona, 'persona', options)
   return persona
 }
 
-export function readPersonaPatch(
-  input: unknown,
-  options: { assetDb?: DatabaseSync } = {},
-): JsonRecord {
+export function readPersonaPatch(input: unknown, options: { assetDb?: DatabaseSync } = {}): JsonRecord {
   const patch = readJsonObject(input, 'patch')
   if (Object.keys(patch).length === 0) {
     throw new ValidationError('patch must include at least one persona field')
@@ -122,20 +113,13 @@ export function requirePersonaIndex(personas: readonly PersonaRecord[], personaI
   return index
 }
 
-export function selectedPersonaId(
-  database: JsonRecord,
-  personas: readonly PersonaRecord[],
-): string | null {
-  const index = Number.isInteger(database.selectedPersona as number)
-    ? (database.selectedPersona as number)
-    : -1
+export function selectedPersonaId(database: JsonRecord, personas: readonly PersonaRecord[]): string | null {
+  const index = Number.isInteger(database.selectedPersona as number) ? (database.selectedPersona as number) : -1
   return personas[index]?.id ?? null
 }
 
 export function saveSelectedPersonaSnapshot(database: JsonRecord, personas: PersonaRecord[]): void {
-  const index = Number.isInteger(database.selectedPersona as number)
-    ? (database.selectedPersona as number)
-    : -1
+  const index = Number.isInteger(database.selectedPersona as number) ? (database.selectedPersona as number) : -1
   if (index < 0 || index >= personas.length) return
 
   personas[index] = {
@@ -177,11 +161,7 @@ export function validateFullPersonaIdList(
   }
 }
 
-function validatePersonaRecord(
-  record: JsonRecord,
-  label: string,
-  options: { assetDb?: DatabaseSync } = {},
-): void {
+function validatePersonaRecord(record: JsonRecord, label: string, options: { assetDb?: DatabaseSync } = {}): void {
   if ('id' in record && (typeof record.id !== 'string' || record.id.trim() === '')) {
     throw new ValidationError(`${label}.id must be a non-empty string`)
   }

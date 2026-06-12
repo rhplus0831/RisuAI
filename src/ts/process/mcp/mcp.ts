@@ -400,14 +400,8 @@ export async function importMCPModule() {
     ['internal:graphmem', 'Graph Memory Client (internal:graphmem)'],
     ['https://mcp.paypal.com/sse', 'PayPal MCP (https://mcp.paypal.com/sse)'],
     ['https://mcp.linear.app/sse', 'Linear MCP (https://mcp.linear.app/sse)'],
-    [
-      'https://rag-mcp-2.whatsmcp.workers.dev/sse',
-      'OneContext MCP (https://rag-mcp-2.whatsmcp.workers.dev/sse)',
-    ],
-    [
-      'https://browser.mcp.cloudflare.com/sse',
-      'Cloudflare Browser MCP (https://browser.mcp.cloudflare.com/sse)',
-    ],
+    ['https://rag-mcp-2.whatsmcp.workers.dev/sse', 'OneContext MCP (https://rag-mcp-2.whatsmcp.workers.dev/sse)'],
+    ['https://browser.mcp.cloudflare.com/sse', 'Cloudflare Browser MCP (https://browser.mcp.cloudflare.com/sse)'],
     ['https://mcp.deepwiki.com/mcp', 'DeepWiki MCP (https://mcp.deepwiki.com/mcp)'],
   ])
 

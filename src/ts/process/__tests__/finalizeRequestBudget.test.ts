@@ -51,10 +51,7 @@ describe('finalizeRequestBudget', () => {
     const result = await finalizeRequestBudget(formated, 30, 50, fakeTokenizer())
     expect(result.ok).toBe(true)
     if (!result.ok) return
-    expect(result.formated.map((c) => c.content)).toEqual([
-      'system-prompt',
-      'final-question',
-    ])
+    expect(result.formated.map((c) => c.content)).toEqual(['system-prompt', 'final-question'])
     expect(result.inputTokens).toBe(27)
     expect(result.outputTokens).toBe(3)
   })

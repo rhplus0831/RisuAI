@@ -80,9 +80,7 @@ function fileAgeMs(file: string, now: number): number | null {
 }
 
 function readRecord(value: unknown): JsonRecord | null {
-  return !!value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as JsonRecord)
-    : null
+  return !!value && typeof value === 'object' && !Array.isArray(value) ? (value as JsonRecord) : null
 }
 
 function readJsonFragment(value: unknown): unknown {
@@ -99,9 +97,7 @@ function setIfPresent(record: JsonRecord, key: string, value: unknown): void {
 }
 
 function loadSettingsReferenceShape(db: DatabaseSync): JsonRecord | null {
-  const row = db.prepare('SELECT data_json FROM settings WHERE id = 1').get() as
-    | { data_json: string }
-    | undefined
+  const row = db.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string } | undefined
   if (!row) return null
   const parsed = JSON.parse(row.data_json) as unknown
   return readRecord(parsed)
@@ -114,11 +110,7 @@ function collectionRows(db: DatabaseSync, tableName: string, fieldPath: string):
   return rows.map((row) => row.value)
 }
 
-function collectionRowsWithJsonFragment(
-  db: DatabaseSync,
-  tableName: string,
-  fieldPath: string,
-): unknown[] {
+function collectionRowsWithJsonFragment(db: DatabaseSync, tableName: string, fieldPath: string): unknown[] {
   return collectionRows(db, tableName, fieldPath).map(readJsonFragment)
 }
 
@@ -197,28 +189,13 @@ function loadAssetGcReferenceDatabase(db: DatabaseSync): unknown {
 
   const database: JsonRecord = { ...settings }
 
-  applyCollectionOverride(
-    database,
-    'modules',
-    collectionRowsWithJsonFragment(db, 'modules', '$.assets'),
-    (assets) => ({
-      assets,
-    }),
-  )
-  applyCollectionOverride(
-    database,
-    'personas',
-    collectionRows(db, 'personas', '$.icon'),
-    (icon) => ({
-      icon,
-    }),
-  )
-  applyCollectionOverride(
-    database,
-    'botPresets',
-    collectionRows(db, 'bot_presets', '$.image'),
-    (image) => ({ image }),
-  )
+  applyCollectionOverride(database, 'modules', collectionRowsWithJsonFragment(db, 'modules', '$.assets'), (assets) => ({
+    assets,
+  }))
+  applyCollectionOverride(database, 'personas', collectionRows(db, 'personas', '$.icon'), (icon) => ({
+    icon,
+  }))
+  applyCollectionOverride(database, 'botPresets', collectionRows(db, 'bot_presets', '$.image'), (image) => ({ image }))
 
   const characterRows = loadCharacterReferenceRows(db)
   if (characterRows.length > 0 || !Array.isArray(settings.characters)) {
@@ -228,9 +205,7 @@ function loadAssetGcReferenceDatabase(db: DatabaseSync): unknown {
       chats.push(buildMinimalChat(row))
       chatsByCharacterId.set(row.characterId, chats)
     }
-    database.characters = characterRows.map((row) =>
-      buildMinimalCharacter(row, chatsByCharacterId.get(row.id) ?? []),
-    )
+    database.characters = characterRows.map((row) => buildMinimalCharacter(row, chatsByCharacterId.get(row.id) ?? []))
   }
 
   return database

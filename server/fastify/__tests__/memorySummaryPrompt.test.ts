@@ -61,8 +61,7 @@ describe('Hypa V3 summary prompt builder', () => {
     const result = buildHypaV3SummaryPrompt({
       messages: [chat('user', 'first'), chat('assistant', 'second')],
       settings: {
-        summarizationPrompt:
-          '<|im_start|>system\nSummarize only.<|im_end|><|im_start|>user\n{{slot}}<|im_end|>',
+        summarizationPrompt: '<|im_start|>system\nSummarize only.<|im_end|><|im_start|>user\n{{slot}}<|im_end|>',
         reSummarizationPrompt: '',
       },
     })
@@ -91,23 +90,14 @@ describe('Hypa V3 summary prompt builder', () => {
   })
 
   it('sanitizes inlay tokens and line endings in message text', () => {
-    expect(sanitizeSummaryMessageContent(' hi\r\n{{inlayeddata::asset-1}}\r\n')).toBe(
-      'hi\n[Image]',
+    expect(sanitizeSummaryMessageContent(' hi\r\n{{inlayeddata::asset-1}}\r\n')).toBe('hi\n[Image]')
+    expect(buildSummaryChunkText([chat('assistant', '  {{inlay::asset-2}} appears  '), chat('user', 'ok')])).toBe(
+      'assistant: [Image] appears\nuser: ok',
     )
-    expect(
-      buildSummaryChunkText([
-        chat('assistant', '  {{inlay::asset-2}} appears  '),
-        chat('user', 'ok'),
-      ]),
-    ).toBe('assistant: [Image] appears\nuser: ok')
   })
 
   it('parses ChatML with separator and newline role forms', () => {
-    expect(
-      parseSummaryChatML(
-        '<|im_start|>system<|im_sep|>A<|im_end|><|im_start|>assistant\nB<|im_end|>',
-      ),
-    ).toEqual([
+    expect(parseSummaryChatML('<|im_start|>system<|im_sep|>A<|im_end|><|im_start|>assistant\nB<|im_end|>')).toEqual([
       { role: 'system', content: 'A', thoughts: [] },
       { role: 'assistant', content: 'B', thoughts: [] },
     ])
@@ -116,9 +106,7 @@ describe('Hypa V3 summary prompt builder', () => {
   it('scrubs provider thought wrappers and rejects empty results', () => {
     expect(scrubThoughtsSummaryOutput('<Thoughts>hidden</Thoughts>\nSummary')).toBe('Summary')
     expect(scrubThinkSummaryOutput('<think>hidden</think>\nSummary')).toBe('Summary')
-    expect(() => scrubThoughtsSummaryOutput('<Thoughts>hidden</Thoughts>')).toThrow(
-      SummaryPromptError,
-    )
+    expect(() => scrubThoughtsSummaryOutput('<Thoughts>hidden</Thoughts>')).toThrow(SummaryPromptError)
     expect(() => scrubThinkSummaryOutput('<think>hidden</think>')).toThrow(SummaryPromptError)
   })
 })

@@ -16,11 +16,7 @@ import {
   type ServerChatInput,
 } from '../serverChat'
 import { handleActiveWriterStaleResponse } from '../../../server/activeWriterSession'
-import {
-  CLIENT_PROMPT_CHAT_EVENT_TYPES,
-  type JobAcceptedEvent,
-  type ServerChatMessagePatch,
-} from '../serverChatEvents'
+import { CLIENT_PROMPT_CHAT_EVENT_TYPES, type JobAcceptedEvent, type ServerChatMessagePatch } from '../serverChatEvents'
 import { PROMPT_CHAT_EVENT_TYPES } from '../../../../../server/fastify/src/prompt/sseEvents'
 import {
   getServerChatCalls,
@@ -239,9 +235,7 @@ describe('requestServerChat', () => {
 
   it('handles stale writer responses before opening the stream', async () => {
     vi.stubGlobal('fetch', async (_url: string, init?: RequestInit) => {
-      expect((init?.headers as Record<string, string>)['risu-writer-session']).toBe(
-        'writer-session-1',
-      )
+      expect((init?.headers as Record<string, string>)['risu-writer-session']).toBe('writer-session-1')
       return new Response(JSON.stringify({ error: 'active_writer_stale' }), {
         status: 423,
         headers: { 'content-type': 'application/json' },
@@ -272,9 +266,7 @@ describe('requestServerChat', () => {
       const enc = new TextEncoder()
       const stream = new ReadableStream<Uint8Array>({
         start(controller) {
-          controller.enqueue(
-            enc.encode('event: stage\ndata: {"stage":"prompt","status":"start"}\n\n'),
-          )
+          controller.enqueue(enc.encode('event: stage\ndata: {"stage":"prompt","status":"start"}\n\n'))
           controller.enqueue(enc.encode('event: done\ndata: {}\n\n'))
           controller.close()
         },
@@ -295,12 +287,8 @@ describe('requestServerChat', () => {
       const stream = new ReadableStream<Uint8Array>({
         start(controller) {
           controller.enqueue(enc.encode('event: token\ndata: {"content":"x"}\n\n'))
-          controller.enqueue(
-            enc.encode('event: side_effect\ndata: {"kind":"tts","payload":{}}\n\n'),
-          )
-          controller.enqueue(
-            enc.encode('event: prompt\ndata: {"messages":[{"role":"user","content":"hi"}]}\n\n'),
-          )
+          controller.enqueue(enc.encode('event: side_effect\ndata: {"kind":"tts","payload":{}}\n\n'))
+          controller.enqueue(enc.encode('event: prompt\ndata: {"messages":[{"role":"user","content":"hi"}]}\n\n'))
           controller.enqueue(enc.encode('event: done\ndata: {}\n\n'))
           controller.close()
         },
@@ -384,9 +372,7 @@ describe('requestServerChat', () => {
           start(controller) {
             controller.enqueue(enc.encode('event: future_event\ndata: {"ignored":true}\n\n'))
             controller.enqueue(enc.encode('event: warning\ndata: {"message":"careful"}\n\n'))
-            controller.enqueue(
-              enc.encode('event: prompt\ndata: {"messages":[{"role":"user","content":"hi"}]}\n\n'),
-            )
+            controller.enqueue(enc.encode('event: prompt\ndata: {"messages":[{"role":"user","content":"hi"}]}\n\n'))
             controller.enqueue(
               enc.encode(
                 'event: info\ndata: {"generationId":"gen-taxonomy","generationInfo":{"generationId":"gen-taxonomy","model":"m"}}\n\n',
@@ -555,12 +541,8 @@ describe('requestServerChatGeneration durable cancel-on-abort', () => {
       }
       const stream = new ReadableStream<Uint8Array>({
         start(controller) {
-          controller.enqueue(
-            enc.encode(`event: job_accepted\ndata: ${JSON.stringify({ jobId })}\n\n`),
-          )
-          controller.enqueue(
-            enc.encode('event: stage\ndata: {"stage":"prompt","status":"start"}\n\n'),
-          )
+          controller.enqueue(enc.encode(`event: job_accepted\ndata: ${JSON.stringify({ jobId })}\n\n`))
+          controller.enqueue(enc.encode('event: stage\ndata: {"stage":"prompt","status":"start"}\n\n'))
           // Intentionally never closes — the abort must end the stream.
         },
       })
@@ -610,22 +592,16 @@ describe('requestServerChatGeneration reattach mode (Phase 7)', () => {
       }
       const stream = new ReadableStream<Uint8Array>({
         start(controller) {
+          controller.enqueue(enc.encode(`event: job_accepted\ndata: ${JSON.stringify({ jobId })}\n\n`))
           controller.enqueue(
-            enc.encode(`event: job_accepted\ndata: ${JSON.stringify({ jobId })}\n\n`),
-          )
-          controller.enqueue(
-            enc.encode(
-              `event: prompt\ndata: ${JSON.stringify({ formated: [{ role: 'user', content: 'hi' }] })}\n\n`,
-            ),
+            enc.encode(`event: prompt\ndata: ${JSON.stringify({ formated: [{ role: 'user', content: 'hi' }] })}\n\n`),
           )
           controller.enqueue(
             enc.encode(
               `event: info\ndata: ${JSON.stringify({ generationId: jobId, generationInfo: { model: 'm', generationId: jobId } })}\n\n`,
             ),
           )
-          controller.enqueue(
-            enc.encode(`event: token\ndata: ${JSON.stringify({ content: 'partial reply' })}\n\n`),
-          )
+          controller.enqueue(enc.encode(`event: token\ndata: ${JSON.stringify({ content: 'partial reply' })}\n\n`))
           if (!opts.hang) {
             controller.enqueue(
               enc.encode(

@@ -30,120 +30,105 @@
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1 md:col-span-2"
         onclick={() => {
           navigate('/playground/chat')
-        }}
-      >
+        }}>
         <h1 class="text-2xl font-bold text-start">{language.Chat}</h1>
       </button>
       <button
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1"
         onclick={() => {
           navigate('/playground/cbs')
-        }}
-      >
+        }}>
         <h1 class="text-2xl font-bold text-start">CBS Doc</h1>
       </button>
       <button
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1"
         onclick={() => {
           navigate('/playground/embedding')
-        }}
-      >
+        }}>
         <h1 class="text-2xl font-bold text-start">{language.embedding}</h1>
       </button>
       <button
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1"
         onclick={() => {
           navigate('/playground/tokenizer')
-        }}
-      >
+        }}>
         <h1 class="text-2xl font-bold text-start">{language.tokenizer}</h1>
       </button>
       <button
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1"
         onclick={() => {
           navigate('/playground/syntax')
-        }}
-      >
+        }}>
         <h1 class="text-2xl font-bold text-start">{language.syntax}</h1>
       </button>
       <button
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1"
         onclick={() => {
           navigate('/playground/jinja')
-        }}
-      >
+        }}>
         <h1 class="text-2xl font-bold text-start">Jinja</h1>
       </button>
       <button
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1"
         onclick={() => {
           navigate('/playground/image-gen')
-        }}
-      >
+        }}>
         <h1 class="text-2xl font-bold text-start">{language.imageGeneration}</h1>
       </button>
       <button
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1"
         onclick={() => {
           navigate('/playground/parser')
-        }}
-      >
+        }}>
         <h1 class="text-2xl font-bold text-start">Parser</h1>
       </button>
       <button
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1"
         onclick={() => {
           navigate('/playground/subtitles')
-        }}
-      >
+        }}>
         <h1 class="text-2xl font-bold text-start">{language.subtitles}</h1>
       </button>
       <button
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1"
         onclick={() => {
           navigate('/playground/image-trans')
-        }}
-      >
+        }}>
         <h1 class="text-2xl font-bold text-start">{language.imageTranslation}</h1>
       </button>
       <button
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1"
         onclick={() => {
           navigate('/playground/translation')
-        }}
-      >
+        }}>
         <h1 class="text-2xl font-bold text-start">{language.translator}</h1>
       </button>
       <button
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1"
         onclick={() => {
           navigate('/playground/mcp')
-        }}
-      >
+        }}>
         <h1 class="text-2xl font-bold text-start">MCP</h1>
       </button>
       <button
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1"
         onclick={() => {
           navigate('/inlay')
-        }}
-      >
+        }}>
         <h1 class="text-2xl font-bold text-start">{language.playground.inlayExplorer}</h1>
       </button>
       <button
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1"
         onclick={() => {
           navigate('/playground/tools')
-        }}
-      >
+        }}>
         <h1 class="text-2xl font-bold text-start">{language.promptConvertion}</h1>
       </button>
       <button
         class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1"
         onclick={() => {
           easterEggTouch += 1
-        }}
-      >
+        }}>
         <h1 class="text-2xl font-bold text-start">
           {#if easterEggTouch <= 10}
             🤗 Coming soon
@@ -161,10 +146,7 @@
     {/if}
     <div class="w-full max-w-4xl flex flex-col p-2">
       <div class="flex items-center mt-4">
-        <button
-          class="mr-2 text-textcolor2 hover:text-green-500"
-          onclick={() => navigate('/playground')}
-        >
+        <button class="mr-2 text-textcolor2 hover:text-green-500" onclick={() => navigate('/playground')}>
           <ArrowLeft />
         </button>
       </div>

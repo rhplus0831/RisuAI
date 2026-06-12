@@ -1,11 +1,6 @@
 import { get, writable } from 'svelte/store'
 import { language } from '../../lang'
-import {
-  getCurrentCharacter,
-  getDatabase,
-  setDatabase,
-  setDatabaseLite,
-} from '../storage/database.svelte'
+import { getCurrentCharacter, getDatabase, setDatabase, setDatabaseLite } from '../storage/database.svelte'
 import { alertConfirm, alertError, alertPluginConfirm } from '../alert'
 import { selectSingleFile, sleep } from '../util'
 import type { OpenAIChat } from '../process/index.svelte'
@@ -15,12 +10,7 @@ import type { ScriptMode } from '../process/scripts'
 import type { RisuModule } from '../process/modules'
 import { safeStructuredClone } from '../polyfill'
 import { checkCodeSafety } from './pluginSafety'
-import {
-  SafeDocument,
-  SafeIdbFactory,
-  SafeLocalStorage,
-  isDeviceLocalPluginStorageEnabled,
-} from './pluginSafeClass'
+import { SafeDocument, SafeIdbFactory, SafeLocalStorage, isDeviceLocalPluginStorageEnabled } from './pluginSafeClass'
 import { loadV3Plugins } from './apiV3/v3.svelte'
 import { pluginCodeTranspiler } from './apiV3/transpiler'
 import {
@@ -43,10 +33,7 @@ import {
   sanitizeModulePatch,
   toModuleSnapshot,
 } from '../moduleCommands'
-import {
-  currentCharacterStateSnapshot,
-  dispatchCompatibleCharacterUpdate,
-} from '../characterCommands'
+import { currentCharacterStateSnapshot, dispatchCompatibleCharacterUpdate } from '../characterCommands'
 import { runOptimisticCommandSequence } from '../chatCommands'
 import {
   canUseServerCommands,
@@ -343,9 +330,7 @@ export async function importPlugin(
         versionOfPlugin = line.split(' ').slice(1).join(' ').trim()
 
         const versionLocation = jsFile.indexOf('//@version')
-        const numberOfBytesBefore = new TextEncoder().encode(
-          jsFile.slice(0, versionLocation) + line,
-        ).length
+        const numberOfBytesBefore = new TextEncoder().encode(jsFile.slice(0, versionLocation) + line).length
         if (numberOfBytesBefore > 500) {
           showError(
             'plugin version declaration must be within the first 512 Bytes of the file for proper parsing. move //@version line to the top of the file.',
@@ -357,9 +342,7 @@ export async function importPlugin(
       if (line.startsWith('//@allowed-ipc')) {
         const provied = line.trim().split(' ')
         if (provied.length < 2) {
-          showError(
-            'plugin allowed IPC declaration is incorrect, did you put space after //@allowed-ipc?',
-          )
+          showError('plugin allowed IPC declaration is incorrect, did you put space after //@allowed-ipc?')
           return
         }
 
@@ -375,9 +358,7 @@ export async function importPlugin(
     }
 
     if (updateURL && versionOfPlugin.length === 0) {
-      showError(
-        'plugin version not found, did you put it correctly? It is required when update URL is provided.',
-      )
+      showError('plugin version not found, did you put it correctly? It is required when update URL is provided.')
       return
     }
 
@@ -447,9 +428,7 @@ export async function importPlugin(
       db.plugins ??= []
     })
 
-    const oldPluginIndex = getDatabase().plugins.findIndex(
-      (p: RisuPlugin) => p.name === pluginData.name,
-    )
+    const oldPluginIndex = getDatabase().plugins.findIndex((p: RisuPlugin) => p.name === pluginData.name)
 
     if (originalPluginName && originalPluginName !== pluginData.name) {
       showError(
@@ -530,13 +509,8 @@ export type PluginV2ProviderOptions = {
   tokenizerFunc?: (content: string) => number[] | Promise<number[]>
 }
 
-export type EditFunction = (
-  content: string,
-) => string | null | undefined | Promise<string | null | undefined>
-type ReplacerFunction = (
-  content: OpenAIChat[],
-  type: string,
-) => OpenAIChat[] | Promise<OpenAIChat[]>
+export type EditFunction = (content: string) => string | null | undefined | Promise<string | null | undefined>
+type ReplacerFunction = (content: OpenAIChat[], type: string) => OpenAIChat[] | Promise<OpenAIChat[]>
 
 export const pluginV2 = {
   providers: new Map<
@@ -661,13 +635,9 @@ function replacePluginStorage(values: Record<string, unknown>): void {
   }
 }
 
-function applyPluginDatabasePatch(
-  newDb: Record<string, unknown>,
-  options: { full: boolean },
-): void {
+function applyPluginDatabasePatch(newDb: Record<string, unknown>, options: { full: boolean }): void {
   const previous = currentPluginStateSnapshot()
-  const previousModules =
-    'modules' in newDb || 'enabledModules' in newDb ? currentGlobalModuleStateSnapshot() : null
+  const previousModules = 'modules' in newDb || 'enabledModules' in newDb ? currentGlobalModuleStateSnapshot() : null
   const serverMode = canUseServerCommands()
   const settingsPatch: Record<string, unknown> = {}
   const storageValues: Record<string, unknown> = {}
@@ -706,9 +676,7 @@ function applyPluginDatabasePatch(
       } else if (key === 'modules' && Array.isArray(value) && previousModules) {
         dispatchModuleCollectionPatch(value as RisuModule[], previousModules)
       } else if (key === 'enabledModules' && Array.isArray(value) && previousModules) {
-        const moduleSource = Array.isArray(newDb.modules)
-          ? (newDb.modules as RisuModule[])
-          : DBState.db.modules
+        const moduleSource = Array.isArray(newDb.modules) ? (newDb.modules as RisuModule[]) : DBState.db.modules
         dispatchEnabledModulesPatch(value, previousModules, moduleSource ?? [])
       } else {
         settingsPatch[key] = value
@@ -797,27 +765,21 @@ function dispatchModuleCollectionPatch(
     const before = beforeModules.get(module.id)
     if (!before) {
       const moduleSnapshot = toModuleSnapshot(module)
-      factories.push((baseRevision) =>
-        createModuleCommand({ baseRevision, module: moduleSnapshot }),
-      )
+      factories.push((baseRevision) => createModuleCommand({ baseRevision, module: moduleSnapshot }))
       continue
     }
     if (JSON.stringify(before) !== JSON.stringify(module)) {
       const commandPatch = sanitizeModulePatch(toModuleSnapshot(module))
       if (Object.keys(commandPatch).length === 0) continue
       const moduleId = module.id
-      factories.push((baseRevision) =>
-        updateModuleCommand({ baseRevision, moduleId, patch: commandPatch }),
-      )
+      factories.push((baseRevision) => updateModuleCommand({ baseRevision, moduleId, patch: commandPatch }))
     }
   }
 
   for (const module of previous.modules) {
     if (typeof module.id === 'string' && module.id.trim() && !nextModules.has(module.id)) {
       const moduleId = module.id
-      factories.push((baseRevision) =>
-        deleteModuleCommand({ baseRevision, moduleId }),
-      )
+      factories.push((baseRevision) => deleteModuleCommand({ baseRevision, moduleId }))
     }
   }
 
@@ -825,9 +787,7 @@ function dispatchModuleCollectionPatch(
   const nextOrder = modules.map((module) => module.id).join('\n')
   if (beforeOrder !== nextOrder && modules.every((module) => beforeModules.has(module.id))) {
     const moduleIds = modules.map((module) => module.id)
-    factories.push((baseRevision) =>
-      reorderModulesCommand({ baseRevision, moduleIds }),
-    )
+    factories.push((baseRevision) => reorderModulesCommand({ baseRevision, moduleIds }))
   }
 
   if (factories.length > 0) {
@@ -852,16 +812,12 @@ function dispatchEnabledModulesPatch(
 
   for (const moduleId of next) {
     if (!before.has(moduleId) && knownModules.has(moduleId)) {
-      factories.push((baseRevision) =>
-        enableModuleCommand({ baseRevision, moduleId, enabled: true }),
-      )
+      factories.push((baseRevision) => enableModuleCommand({ baseRevision, moduleId, enabled: true }))
     }
   }
   for (const moduleId of before) {
     if (!next.has(moduleId) && knownModules.has(moduleId)) {
-      factories.push((baseRevision) =>
-        enableModuleCommand({ baseRevision, moduleId, enabled: false }),
-      )
+      factories.push((baseRevision) => enableModuleCommand({ baseRevision, moduleId, enabled: false }))
     }
   }
 
@@ -900,7 +856,7 @@ export const getV2PluginAPIs = () => {
       func: (
         arg: PluginV2ProviderArgument,
         abortSignal?: AbortSignal,
-    ) => Promise<{ success: boolean; content: string }>,
+      ) => Promise<{ success: boolean; content: string }>,
       options?: PluginV2ProviderOptions,
     ) => {
       pluginV2.providers.set(name, func)
@@ -1045,11 +1001,7 @@ export const getV2PluginAPIs = () => {
         get(target, prop) {
           if (typeof prop === 'string' && allowedDbKeys.includes(prop)) {
             return (target as any)[prop]
-          } else if (
-            typeof prop === 'string' &&
-            canUseServerCommands() &&
-            unsupportedServerBridgeKeys.has(prop)
-          ) {
+          } else if (typeof prop === 'string' && canUseServerCommands() && unsupportedServerBridgeKeys.has(prop)) {
             return undefined
           } else if (target.pluginCustomStorage) {
             console.log('Getting custom db property', prop.toString())
@@ -1065,11 +1017,7 @@ export const getV2PluginAPIs = () => {
               ;(target as any)[prop] = value
             }
             return true
-          } else if (
-            typeof prop === 'string' &&
-            canUseServerCommands() &&
-            unsupportedServerBridgeKeys.has(prop)
-          ) {
+          } else if (typeof prop === 'string' && canUseServerCommands() && unsupportedServerBridgeKeys.has(prop)) {
             // Recognized resource family with no bridge command: route through
             // applyPluginDatabasePatch so it is blocked + warned instead of
             // being silently shadowed in plugin storage.
@@ -1082,9 +1030,7 @@ export const getV2PluginAPIs = () => {
           }
         },
         ownKeys(target) {
-          const keys = Reflect.ownKeys(target).filter(
-            (key) => typeof key === 'string' && allowedDbKeys.includes(key),
-          )
+          const keys = Reflect.ownKeys(target).filter((key) => typeof key === 'string' && allowedDbKeys.includes(key))
           if (target.pluginCustomStorage) {
             keys.push(
               ...Object.keys(target.pluginCustomStorage).filter(
@@ -1190,9 +1136,7 @@ export const getV2PluginAPIs = () => {
         path = path.slice(7)
       }
       if (path.includes('/') || path.includes('\\')) {
-        throw new Error(
-          "readImage path cannot contain '/' or '\\' for security reasons, except assets/ prefix.",
-        )
+        throw new Error("readImage path cannot contain '/' or '\\' for security reasons, except assets/ prefix.")
       }
       //re-add assets/ prefix
       return readImage('assets/' + path)
@@ -1337,20 +1281,14 @@ export async function pluginProcess(
 export async function handlePluginInstallViaPlugin(plugins: RisuPlugin[]) {
   const trimmedPlugins: RisuPlugin[] = []
   for (const plugin of plugins) {
-    if (
-      !DBState.db.plugins.find(
-        (p: RisuPlugin) => p.name === plugin.name && p.script === plugin.script,
-      )
-    ) {
+    if (!DBState.db.plugins.find((p: RisuPlugin) => p.name === plugin.name && p.script === plugin.script)) {
       if (plugin.version !== '3.0') {
         console.warn(
           `Plugin "${plugin.name}" has version "${plugin.version}", which is not supported for installation via plugin. Only API version 3.0 plugins can be installed via plugin. Skipping installation of this plugin.`,
         )
         continue
       }
-      const confirmation = await alertConfirm(
-        language.confirmInstallPluginViaPlugin.replace('{plugin}', plugin.name),
-      )
+      const confirmation = await alertConfirm(language.confirmInstallPluginViaPlugin.replace('{plugin}', plugin.name))
       if (confirmation) {
         trimmedPlugins.push(plugin)
       }

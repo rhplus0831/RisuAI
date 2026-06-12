@@ -53,17 +53,13 @@ describe('#each re-injection (Phase 7 prefix-drop rewrite)', () => {
 
   test('two sequential blocks each keep their surrounding text', () => {
     expect(
-      risuChatParser(
-        'A{{#each::keep [1, 2] as n}}{{slot::n}}{{/}}B{{#each::keep [3, 4] as m}}{{slot::m}}{{/}}C',
-      ),
+      risuChatParser('A{{#each::keep [1, 2] as n}}{{slot::n}}{{/}}B{{#each::keep [3, 4] as m}}{{slot::m}}{{/}}C'),
     ).toBe('A12B34C')
   })
 
   test('nested blocks expand the inner template per outer element', () => {
     expect(
-      risuChatParser(
-        '{{#each::keep [1, 2] as x}}{{#each::keep [3, 4] as y}}{{slot::x}}{{slot::y}}\n{{/}}{{/}}',
-      ),
+      risuChatParser('{{#each::keep [1, 2] as x}}{{#each::keep [3, 4] as y}}{{slot::x}}{{slot::y}}\n{{/}}{{/}}'),
     ).toBe('13\n14\n23\n24\n')
   })
 
@@ -96,28 +92,21 @@ describe('#each budget (Phase 3 L10)', () => {
   test('L10: keeps normal and nested #each output byte-identical below the cap', () => {
     expect(risuChatParser('A{{#each [1, 2] as n}}({{slot::n}}){{/}}Z')).toBe('A(1)(2)Z')
     expect(
-      risuChatParser(
-        '{{#each::keep [1, 2] as x}}{{#each::keep ["a", "b"] as y}}{{slot::x}}:{{slot::y}};{{/}}{{/}}',
-      ),
+      risuChatParser('{{#each::keep [1, 2] as x}}{{#each::keep ["a", "b"] as y}}{{slot::x}}:{{slot::y}};{{/}}{{/}}'),
     ).toBe('1:a;1:b;2:a;2:b;')
   })
 
   test('L10: throws parser budget error when #each element count exceeds cap', () => {
-    const arr = Array.from(
-      { length: RISU_EACH_EXPANSION_BUDGET.maxElements + 1 },
-      (_unused, i) => i,
-    )
+    const arr = Array.from({ length: RISU_EACH_EXPANSION_BUDGET.maxElements + 1 }, (_unused, i) => i)
 
-    expect(() =>
-      risuChatParser(`{{#each::keep ${JSON.stringify(arr)} as n}}{{slot::n}}{{/}}`),
-    ).toThrow(RisuParserBudgetError)
+    expect(() => risuChatParser(`{{#each::keep ${JSON.stringify(arr)} as n}}{{slot::n}}{{/}}`)).toThrow(
+      RisuParserBudgetError,
+    )
   })
 
   test('L10: throws parser budget error when #each expanded output exceeds cap', () => {
     const body = 'x'.repeat(Math.floor(RISU_EACH_EXPANSION_BUDGET.maxExpandedChars / 2) + 1)
 
-    expect(() => risuChatParser(`{{#each::keep [1, 2] as n}}${body}{{/}}`)).toThrow(
-      /expanded output budget exceeded/,
-    )
+    expect(() => risuChatParser(`{{#each::keep [1, 2] as n}}${body}{{/}}`)).toThrow(/expanded output budget exceeded/)
   })
 })

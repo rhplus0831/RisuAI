@@ -64,24 +64,16 @@ describe('alertError', () => {
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     try {
       expect(() => alertError(undefined)).not.toThrow()
-      expect(alertTestState.alertStoreSet).toHaveBeenLastCalledWith(
-        expect.objectContaining({ msg: 'undefined' }),
-      )
+      expect(alertTestState.alertStoreSet).toHaveBeenLastCalledWith(expect.objectContaining({ msg: 'undefined' }))
 
       expect(() => alertError(null)).not.toThrow()
-      expect(alertTestState.alertStoreSet).toHaveBeenLastCalledWith(
-        expect.objectContaining({ msg: 'null' }),
-      )
+      expect(alertTestState.alertStoreSet).toHaveBeenLastCalledWith(expect.objectContaining({ msg: 'null' }))
 
       expect(() => alertError({ code: 'plain-object' })).not.toThrow()
-      expect(alertTestState.alertStoreSet).toHaveBeenLastCalledWith(
-        expect.objectContaining({ msg: '[object Object]' }),
-      )
+      expect(alertTestState.alertStoreSet).toHaveBeenLastCalledWith(expect.objectContaining({ msg: '[object Object]' }))
 
       expect(() => alertError(Symbol('reason'))).not.toThrow()
-      expect(alertTestState.alertStoreSet).toHaveBeenLastCalledWith(
-        expect.objectContaining({ msg: 'Symbol(reason)' }),
-      )
+      expect(alertTestState.alertStoreSet).toHaveBeenLastCalledWith(expect.objectContaining({ msg: 'Symbol(reason)' }))
     } finally {
       consoleErrorSpy.mockRestore()
     }

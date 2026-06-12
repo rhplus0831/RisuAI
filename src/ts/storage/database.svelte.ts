@@ -11,11 +11,7 @@ import { prebuiltNAIpresets, prebuiltPresets } from '../process/templates/templa
 import { defaultColorScheme, type ColorScheme } from '../gui/colorscheme'
 import type { PromptItem, PromptSettings } from '../process/prompt'
 import type { OobaChatCompletionRequestParams } from '../model/ooba'
-import {
-  type HypaV3Settings,
-  type HypaV3Preset,
-  createHypaV3Preset,
-} from '../process/memory/hypav3'
+import { type HypaV3Settings, type HypaV3Preset, createHypaV3Preset } from '../process/memory/hypav3'
 import { normalizeTranslatorPresetState, type TranslatorPreset } from '../translator/presets'
 import { safeStructuredClone } from '../polyfill'
 import {
@@ -31,10 +27,7 @@ import {
   type PresetSnapshot,
   type ServerCommandResult,
 } from '../server/commands'
-import {
-  currentCharacterRowSnapshot,
-  dispatchCompatibleCharacterUpdateScoped,
-} from '../characterCommands'
+import { currentCharacterRowSnapshot, dispatchCompatibleCharacterUpdateScoped } from '../characterCommands'
 import { currentChatScopedSnapshot, dispatchCompatibleChatUpdateScoped } from '../chatCommands'
 import {
   createReadOnlyServerProjection,
@@ -43,14 +36,8 @@ import {
   withServerProjectionApply,
   withTrustedServerProjectionWrite,
 } from '../server/projectionWriteGuard.svelte'
-import {
-  isServerChatMessagePlaceholder,
-  SERVER_UNLOADED_CHAT_MESSAGE_MARKER,
-} from '../server/chatMessagePlaceholders'
-import {
-  DEFAULT_CHAT_DISPLAY_TAIL_COUNT,
-  normalizeChatDisplayTailCount,
-} from '../chatDisplayTailCount'
+import { isServerChatMessagePlaceholder, SERVER_UNLOADED_CHAT_MESSAGE_MARKER } from '../server/chatMessagePlaceholders'
+import { DEFAULT_CHAT_DISPLAY_TAIL_COUNT, normalizeChatDisplayTailCount } from '../chatDisplayTailCount'
 import type { ChatGenerationSettings } from '../chatGenerationSettings'
 
 //APP_VERSION_POINT is to locate the app version in the database file for version bumping
@@ -85,8 +72,7 @@ function normalizeBotPresetIds(data: Pick<Database, 'botPresets' | 'botPresetsId
   const seen = new Set<string>()
   for (const preset of data.botPresets) {
     if (!preset) continue
-    const id =
-      typeof preset.id === 'string' && preset.id.trim() ? preset.id : createClientPresetId()
+    const id = typeof preset.id === 'string' && preset.id.trim() ? preset.id : createClientPresetId()
     preset.id = seen.has(id) ? createClientPresetId() : id
     seen.add(preset.id)
   }
@@ -208,9 +194,7 @@ function currentPresetRollbackSnapshot(
   return {
     botPresets: safeStructuredClone(db.botPresets),
     botPresetsId: db.botPresetsId,
-    ...(options.includeSetPresetSettings
-      ? { setPresetSettings: snapshotSetPresetSettings(db) }
-      : {}),
+    ...(options.includeSetPresetSettings ? { setPresetSettings: snapshotSetPresetSettings(db) } : {}),
   }
 }
 
@@ -641,10 +625,7 @@ export function setDatabase(data: Database) {
     data.localNetworkMode = false
   }
   data.localNetworkTimeoutSec ??= 600
-  if (
-    typeof data.localNetworkTimeoutSec !== 'number' ||
-    Number.isNaN(data.localNetworkTimeoutSec)
-  ) {
+  if (typeof data.localNetworkTimeoutSec !== 'number' || Number.isNaN(data.localNetworkTimeoutSec)) {
     data.localNetworkTimeoutSec = 600
   }
   data.gptVisionQuality ??= 'low'
@@ -687,8 +668,7 @@ export function setDatabase(data: Database) {
   data.antiClaudeOverload ??= false
   data.ollamaURL ??= ''
   data.ollamaModel ??= ''
-  data.ollamaModelSource ??=
-    data.aiModel === 'ollama-cloud' || data.subModel === 'ollama-cloud' ? 'cloud' : 'local'
+  data.ollamaModelSource ??= data.aiModel === 'ollama-cloud' || data.subModel === 'ollama-cloud' ? 'cloud' : 'local'
   data.ollamaInputMode ??= 'manual'
   data.ollamaRequestFormat ??= LLMFormat.Ollama
   data.ollamaApiKey ??= ''
@@ -696,10 +676,7 @@ export function setDatabase(data: Database) {
   data.ollamaCloudModel ??= ''
   data.ollamaCloudModelName ??= ''
   data.ollamaThinkingMode ??= 'auto'
-  if (
-    (data.aiModel === 'ollama-cloud' || data.subModel === 'ollama-cloud') &&
-    !data.ollamaCloudModel
-  ) {
+  if ((data.aiModel === 'ollama-cloud' || data.subModel === 'ollama-cloud') && !data.ollamaCloudModel) {
     data.ollamaCloudModel = data.ollamaModel
     data.ollamaCloudModelName = data.ollamaModelName
   }
@@ -724,10 +701,7 @@ export function setDatabase(data: Database) {
       if (typeof preset.localNetworkMode !== 'boolean') {
         preset.localNetworkMode = false
       }
-      if (
-        typeof preset.localNetworkTimeoutSec !== 'number' ||
-        Number.isNaN(preset.localNetworkTimeoutSec)
-      ) {
+      if (typeof preset.localNetworkTimeoutSec !== 'number' || Number.isNaN(preset.localNetworkTimeoutSec)) {
         preset.localNetworkTimeoutSec = 600
       }
       if (typeof preset.openrouterProvider === 'string') {
@@ -958,9 +932,7 @@ export function mergeServerProjectionFields(fields: Partial<Database>) {
  * dropping loaded history. Returns false if the character is unknown so the
  * caller can fall back to a full bootstrap.
  */
-export function mergeServerProjectionCharacterRow(
-  character: { chaId?: string } & Record<string, unknown>,
-): boolean {
+export function mergeServerProjectionCharacterRow(character: { chaId?: string } & Record<string, unknown>): boolean {
   return withServerProjectionApply(() => {
     const characters = DBState.db.characters
     if (!Array.isArray(characters) || typeof character?.chaId !== 'string') return false
@@ -971,8 +943,7 @@ export function mergeServerProjectionCharacterRow(
     // The shipped chats are stubs (empty message[]); carry over any messages
     // this client already hydrated so a metadata refresh keeps loaded history.
     const incomingChats = (character as { chats?: Array<Record<string, unknown>> }).chats
-    const existingChats = (existing as { chats?: Array<Record<string, unknown>> } | undefined)
-      ?.chats
+    const existingChats = (existing as { chats?: Array<Record<string, unknown>> } | undefined)?.chats
     if (Array.isArray(incomingChats) && Array.isArray(existingChats)) {
       const existingById = new Map(existingChats.map((chat) => [chat?.id, chat]))
       for (const chat of incomingChats) {
@@ -992,9 +963,7 @@ export function mergeServerProjectionCharacterRow(
       existing &&
       (existing as { globalLore?: unknown }).globalLore !== undefined
     ) {
-      ;(character as { globalLore?: unknown }).globalLore = (
-        existing as { globalLore?: unknown }
-      ).globalLore
+      ;(character as { globalLore?: unknown }).globalLore = (existing as { globalLore?: unknown }).globalLore
     }
 
     characters[index] = character as unknown as (typeof characters)[number]
@@ -1009,9 +978,7 @@ export function applyServerCharacterSelectionProjection(input: {
 }) {
   return withServerProjectionApply(() => {
     ;(DBState.db as unknown as { currentChar?: number }).currentChar = input.currentChar
-    const character = DBState.db.characters?.find(
-      (candidate) => candidate?.chaId === input.characterId,
-    )
+    const character = DBState.db.characters?.find((candidate) => candidate?.chaId === input.characterId)
     if (character && input.lastInteraction !== undefined) {
       character.lastInteraction = input.lastInteraction
     }
@@ -1088,10 +1055,7 @@ export function hydrateServerChatMessages(
  * on character-open. Targets by `chaId`; a trusted projection write so it passes
  * the read-only guard. Returns true if found and hydrated.
  */
-export function hydrateServerCharacterLorebook(
-  characterId: string,
-  globalLore: unknown[],
-): boolean {
+export function hydrateServerCharacterLorebook(characterId: string, globalLore: unknown[]): boolean {
   return withTrustedServerProjectionWrite(() => {
     return writeServerCharacterLorebook(characterId, globalLore)
   })
@@ -1102,10 +1066,7 @@ export function hydrateServerCharacterLorebook(
  * user-open hydration, this advances the projection epoch so mounted bridge
  * watchers refresh their baselines instead of echoing the foreign edit.
  */
-export function applyServerCharacterLorebookProjection(
-  characterId: string,
-  globalLore: unknown[],
-): boolean {
+export function applyServerCharacterLorebookProjection(characterId: string, globalLore: unknown[]): boolean {
   return withServerProjectionApply(() => {
     return writeServerCharacterLorebook(characterId, globalLore)
   })
@@ -1121,11 +1082,7 @@ function writeServerCharacterLorebook(characterId: string, globalLore: unknown[]
   return false
 }
 
-export {
-  isServerProjectionWriteGuardEnabled,
-  setServerProjectionWriteGuardEnabled,
-  withTrustedServerProjectionWrite,
-}
+export { isServerProjectionWriteGuardEnabled, setServerProjectionWriteGuardEnabled, withTrustedServerProjectionWrite }
 
 export function setDatabaseLite(data: Database) {
   DBState.db = isServerProjectionWriteGuardEnabled() ? createReadOnlyServerProjection(data) : data
@@ -1151,19 +1108,13 @@ export function getCurrentCharacter(options: getDatabaseOptions = {}): character
   return char
 }
 
-export function setCurrentCharacter(
-  char: character,
-  options: { dispatchServerCommand?: boolean } = {},
-) {
+export function setCurrentCharacter(char: character, options: { dispatchServerCommand?: boolean } = {}) {
   withTrustedServerProjectionWrite(() => {
     const shouldDispatch = options.dispatchServerCommand ?? true
     const index = get(selectedCharID)
-    const previousState =
-      shouldDispatch && canUseServerCommands() ? currentCharacterRowSnapshot(index) : null
+    const previousState = shouldDispatch && canUseServerCommands() ? currentCharacterRowSnapshot(index) : null
     const previousCharacter =
-      previousState && DBState.db.characters
-        ? $state.snapshot(DBState.db.characters[index])
-        : undefined
+      previousState && DBState.db.characters ? $state.snapshot(DBState.db.characters[index]) : undefined
 
     if (!DBState.db.characters) {
       DBState.db.characters = []
@@ -1188,9 +1139,7 @@ export function setCharacterByIndex(index: number, char: character) {
   withTrustedServerProjectionWrite(() => {
     const previousState = canUseServerCommands() ? currentCharacterRowSnapshot(index) : null
     const previousCharacter =
-      previousState && DBState.db.characters
-        ? $state.snapshot(DBState.db.characters[index])
-        : undefined
+      previousState && DBState.db.characters ? $state.snapshot(DBState.db.characters[index]) : undefined
 
     if (!DBState.db.characters) {
       DBState.db.characters = []
@@ -1840,33 +1789,11 @@ export interface character {
       assetId: string
     }
     volume?: number
-    text_lang?:
-      | 'auto'
-      | 'auto_yue'
-      | 'en'
-      | 'zh'
-      | 'ja'
-      | 'yue'
-      | 'ko'
-      | 'all_zh'
-      | 'all_ja'
-      | 'all_yue'
-      | 'all_ko'
+    text_lang?: 'auto' | 'auto_yue' | 'en' | 'zh' | 'ja' | 'yue' | 'ko' | 'all_zh' | 'all_ja' | 'all_yue' | 'all_ko'
     text?: string
     use_prompt?: boolean
     prompt?: string | null
-    prompt_lang?:
-      | 'auto'
-      | 'auto_yue'
-      | 'en'
-      | 'zh'
-      | 'ja'
-      | 'yue'
-      | 'ko'
-      | 'all_zh'
-      | 'all_ja'
-      | 'all_yue'
-      | 'all_ko'
+    prompt_lang?: 'auto' | 'auto_yue' | 'en' | 'zh' | 'ja' | 'yue' | 'ko' | 'all_zh' | 'all_ja' | 'all_yue' | 'all_ko'
     top_p?: number
     temperature?: number
     speed?: number
@@ -2354,8 +2281,7 @@ export const defaultOoba: OobaSettings = {
   epsilon_cutoff: 0,
   eta_cutoff: 0,
   formating: {
-    header:
-      'Below is an instruction that describes a task. Write a response that appropriately completes the request.',
+    header: 'Below is an instruction that describes a task. Write a response that appropriately completes the request.',
     systemPrefix: '### Instruction:',
     userPrefix: '### Input:',
     assistantPrefix: '### Response:',
@@ -2503,9 +2429,7 @@ function saveCurrentPresetLocal() {
     adaptiveThinkingEffort: db.adaptiveThinkingEffort ?? 'high',
     deepseekReasoningEffort: db.deepseekReasoningEffort ?? 'high',
     outputImageModal: db.outputImageModal ?? false,
-    seperateModelsForAxModels: db.doNotChangeSeperateModels
-      ? false
-      : (db.seperateModelsForAxModels ?? false),
+    seperateModelsForAxModels: db.doNotChangeSeperateModels ? false : (db.seperateModelsForAxModels ?? false),
     seperateModels: db.doNotChangeSeperateModels ? null : safeStructuredClone(db.seperateModels),
     modelTools: safeStructuredClone(db.modelTools),
     fallbackModels: safeStructuredClone(db.fallbackModels),
@@ -2674,9 +2598,7 @@ export function deletePreset(id: number, selectIndex = 0, apply = true) {
     let botPresets = db.botPresets
     botPresets.splice(id, 1)
     db.botPresets = botPresets
-    const selectedIndex = selectPresetId
-      ? db.botPresets.findIndex((preset) => preset.id === selectPresetId)
-      : -1
+    const selectedIndex = selectPresetId ? db.botPresets.findIndex((preset) => preset.id === selectPresetId) : -1
     if (selectedIndex >= 0) {
       db.botPresetsId = selectedIndex
       if (apply) {
@@ -2704,12 +2626,7 @@ export function reorderPresets(fromIndex: number, toIndex: number) {
     let db = DBState.db
     const rollback = currentPresetRollbackSnapshot(db)
     if (fromIndex === toIndex) return
-    if (
-      fromIndex < 0 ||
-      toIndex < 0 ||
-      fromIndex >= db.botPresets.length ||
-      toIndex > db.botPresets.length
-    ) {
+    if (fromIndex < 0 || toIndex < 0 || fromIndex >= db.botPresets.length || toIndex > db.botPresets.length) {
       return
     }
 
@@ -2938,9 +2855,7 @@ export async function importPreset(
     if ((decoded.presetVersion === 0 || decoded.presetVersion === 2) && decoded.type === 'preset') {
       pre = {
         ...presetTemplate,
-        ...decodeMsgpack(
-          Buffer.from(await decryptBuffer(decoded.preset ?? decoded.pres, 'risupreset')),
-        ),
+        ...decodeMsgpack(Buffer.from(await decryptBuffer(decoded.preset ?? decoded.pres, 'risupreset'))),
       }
     }
   } else {

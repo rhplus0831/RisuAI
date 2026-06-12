@@ -130,9 +130,7 @@ export function selectPromptMemory(input: PromptMemoryAdapterInput): PromptMemor
   }
 }
 
-export function assemblePromptMemoryRows(
-  selection: PromptMemoryAdapterResult,
-): PromptMemoryRowAssemblyResult {
+export function assemblePromptMemoryRows(selection: PromptMemoryAdapterResult): PromptMemoryRowAssemblyResult {
   const rows: OpenAIChat[] = []
   const skippedEmptySummaryIds: string[] = []
 
@@ -157,9 +155,7 @@ export function assemblePromptMemoryRows(
   }
 }
 
-function getDisabledReason(
-  input: PromptMemoryAdapterInput,
-): PromptMemoryAdapterDisabledReason | null {
+function getDisabledReason(input: PromptMemoryAdapterInput): PromptMemoryAdapterDisabledReason | null {
   if (!input.enabled) return 'feature-disabled'
   if (input.chatId.trim() === '') return 'missing-chat-id'
   if (input.summaryModel.trim() === '') return 'missing-summary-model'
@@ -224,9 +220,7 @@ function emptyMissingMemoryDiagnostics(): PromptMemoryMissingMemoryDiagnostics {
   }
 }
 
-function buildMissingMemoryDiagnostics(
-  selection: MemorySelectionResult,
-): PromptMemoryMissingMemoryDiagnostics {
+function buildMissingMemoryDiagnostics(selection: MemorySelectionResult): PromptMemoryMissingMemoryDiagnostics {
   const repository = selection.diagnostics.repository
   const hasMissingMemory =
     repository.summaryIdsMissingChunks.length > 0 ||

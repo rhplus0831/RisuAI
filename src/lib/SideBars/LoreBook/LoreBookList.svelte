@@ -93,17 +93,13 @@
   }
 
   function updateChatLoreValue(index: number, value: loreBook): void {
-    const chat = DBState.db.characters[$selectedCharID]?.chats?.[
-      DBState.db.characters[$selectedCharID]?.chatPage ?? 0
-    ]
+    const chat = DBState.db.characters[$selectedCharID]?.chats?.[DBState.db.characters[$selectedCharID]?.chatPage ?? 0]
     if (!chat?.id) return
     applyLorebookEntryDraftEdit({ kind: 'chat', chatId: chat.id }, index, value)
   }
 
   function flushChatLoreValue(): void {
-    const chat = DBState.db.characters[$selectedCharID]?.chats?.[
-      DBState.db.characters[$selectedCharID]?.chatPage ?? 0
-    ]
+    const chat = DBState.db.characters[$selectedCharID]?.chats?.[DBState.db.characters[$selectedCharID]?.chatPage ?? 0]
     if (!chat?.id) return
     flushPendingLorebookEntryDraftEdit({ kind: 'chat', chatId: chat.id })
   }
@@ -156,9 +152,7 @@
     } else if (submenu === 1) {
       expectedElements = DBState.db.characters[$selectedCharID].chats[
         DBState.db.characters[$selectedCharID].chatPage
-      ].localLore.filter(
-        (item) => (!showFolder && !item.folder) || showFolder === item.folder,
-      ).length
+      ].localLore.filter((item) => (!showFolder && !item.folder) || showFolder === item.folder).length
     } else if (globalMode) {
       expectedElements = DBState.db.loreBook[DBState.db.loreBookPage].data.filter(
         (item) => (!showFolder && !item.folder) || showFolder === item.folder,
@@ -264,9 +258,7 @@
           currentArray = externalLoreBooks
         } else if (submenu === 1) {
           currentArray =
-            DBState.db.characters[$selectedCharID].chats[
-              DBState.db.characters[$selectedCharID].chatPage
-            ].localLore
+            DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].localLore
         } else if (globalMode) {
           currentArray = DBState.db.loreBook[DBState.db.loreBookPage].data
         } else {
@@ -402,8 +394,7 @@
   <div
     class="border-solid border-selected p-2 flex flex-col border-1 rounded-md"
     bind:this={ele}
-    data-show-folder={showFolder || ''}
-  >
+    data-show-folder={showFolder || ''}>
     {#if globalMode}
       <!-- Global lorebooks render elsewhere. -->
     {:else if externalLoreBooks}
@@ -457,8 +448,7 @@
               {externalLoreBooks}
               {onCollectionChange}
               {onEntryChange}
-              {onEntrySettled}
-            />
+              {onEntrySettled} />
           {:else}
             <!-- Hidden marker for filtered items (for SortableJS) -->
             <div data-risu-idx={i} data-risu-idgroup={idgroup} style="display: none;"></div>
@@ -517,8 +507,7 @@
               externalLoreBooks={DBState.db.characters[$selectedCharID].globalLore}
               onCollectionChange={updateCharacterGlobalLoreCollection}
               onEntryChange={updateCharacterGlobalLoreValue}
-              onEntrySettled={flushCharacterGlobalLoreValue}
-            />
+              onEntrySettled={flushCharacterGlobalLoreValue} />
           {:else}
             <!-- Hidden marker for filtered items (for SortableJS) -->
             <div data-risu-idx={i} data-risu-idgroup={idgroup} style="display: none;"></div>
@@ -537,9 +526,8 @@
           {#if (!showFolder && !book.folder) || showFolder === book.folder}
             <LoreBookData
               {idgroup}
-              value={DBState.db.characters[$selectedCharID].chats[
-                DBState.db.characters[$selectedCharID].chatPage
-              ].localLore[i]}
+              value={DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage]
+                .localLore[i]}
               onDraftChange={(value) => updateChatLoreValue(i, value)}
               onDraftSettled={flushChatLoreValue}
               idx={i}
@@ -554,9 +542,8 @@
                 }
 
                 let lore = [
-                  ...DBState.db.characters[$selectedCharID].chats[
-                    DBState.db.characters[$selectedCharID].chatPage
-                  ].localLore,
+                  ...DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage]
+                    .localLore,
                 ]
 
                 // When deleting a folder, also delete all items that belong to that folder
@@ -580,15 +567,12 @@
               onOpen={(isDetail = true) => onOpen(isDetail, book)}
               onClose={(isDetail = true) => onClose(isDetail, book)}
               {lorePlus}
-              externalLoreBooks={
-                DBState.db.characters[$selectedCharID].chats[
-                  DBState.db.characters[$selectedCharID].chatPage
-                ].localLore
-              }
+              externalLoreBooks={DBState.db.characters[$selectedCharID].chats[
+                DBState.db.characters[$selectedCharID].chatPage
+              ].localLore}
               onCollectionChange={updateChatLoreCollection}
               onEntryChange={updateChatLoreValue}
-              onEntrySettled={flushChatLoreValue}
-            />
+              onEntrySettled={flushChatLoreValue} />
           {:else}
             <!-- Hidden marker for filtered items (for SortableJS) -->
             <div data-risu-idx={i} data-risu-idgroup={idgroup} style="display: none;"></div>

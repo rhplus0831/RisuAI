@@ -40,8 +40,7 @@
   class={{
     'w-5 h-5': !className,
     [className]: className,
-  }}
->
+  }}>
   {#if ico.iconType === 'html'}
     {@html iconPurify(ico.icon)}
   {:else if ico.iconType === 'img'}

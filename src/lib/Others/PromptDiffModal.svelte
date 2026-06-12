@@ -55,9 +55,7 @@
 
   type WordToken = { t: SimpleDiff; v: string }
 
-  type CardDiffSummaryPart =
-    | { k: SimpleDiff; card: PromptCard }
-    | { k: 'modify'; left: PromptCard; right: PromptCard }
+  type CardDiffSummaryPart = { k: SimpleDiff; card: PromptCard } | { k: 'modify'; left: PromptCard; right: PromptCard }
 
   type CardDiffSummary = {
     parts: CardDiffSummaryPart[]
@@ -98,9 +96,7 @@
 
   type Side = 'left' | 'right'
 
-  type RenderLine =
-    | { kind: 'simple'; part: DiffPart }
-    | { kind: 'modifyGroup'; parts: ModifyPart[] }
+  type RenderLine = { kind: 'simple'; part: DiffPart } | { kind: 'modifyGroup'; parts: ModifyPart[] }
 
   type DiffSegment =
     | { kind: 'context' | 'changes'; parts: DiffPart[] }
@@ -343,10 +339,7 @@
   }
 
   function tagText(part: ModifyPart): string | null {
-    if (
-      part.src === 'linebyline' &&
-      (part.right.lineRole === 'name' || part.right.lineRole === 'header')
-    ) {
+    if (part.src === 'linebyline' && (part.right.lineRole === 'name' || part.right.lineRole === 'header')) {
       return part.right.lineRole === 'name' ? 'NAME' : 'TYPE'
     }
     return null
@@ -357,8 +350,7 @@
     const isPromptItemPlain = (item: PromptItem): item is PromptItemPlain =>
       item.type === 'plain' || item.type === 'jailbreak' || item.type === 'cot'
 
-    const isPromptItemChatML = (item: PromptItem): item is PromptItemChatML =>
-      item.type === 'chatML'
+    const isPromptItemChatML = (item: PromptItem): item is PromptItemChatML => item.type === 'chatML'
 
     const isPromptItemTyped = (item: PromptItem): item is PromptItemTyped =>
       item.type === 'persona' ||
@@ -367,8 +359,7 @@
       item.type === 'postEverything' ||
       item.type === 'memory'
 
-    const isPromptItemAuthorNote = (item: PromptItem): item is PromptItemAuthorNote =>
-      item.type === 'authornote'
+    const isPromptItemAuthorNote = (item: PromptItem): item is PromptItemAuthorNote => item.type === 'authornote'
 
     const isPromptItemChat = (item: PromptItem): item is PromptItemChat => item.type === 'chat'
 
@@ -565,8 +556,7 @@
   ): Promise<CardDiffSummary> {
     const diff = await loadDiffModule()
     const arrayDiffs = diff.diffArrays(prompt1, prompt2, {
-      comparator: (x, y) =>
-        x.body === y.body && x.header === y.header && x.kind === y.kind && x.name === y.name,
+      comparator: (x, y) => x.body === y.body && x.header === y.header && x.kind === y.kind && x.name === y.name,
     })
 
     const parts: CardDiffSummaryPart[] = []
@@ -686,15 +676,9 @@
             }
           } else {
             const band =
-              maxLen <= FULL_DP_LIMIT
-                ? null
-                : Math.max(DEFAULT_BAND_MIN, Math.floor(maxLen * DEFAULT_BAND_RATIO))
+              maxLen <= FULL_DP_LIMIT ? null : Math.max(DEFAULT_BAND_MIN, Math.floor(maxLen * DEFAULT_BAND_RATIO))
             const pairs = alignByDP(leftLines, rightLines, SIM_THRESHOLD, band)
-            const replaceBlockPairs = buildAlignmentFromAnchorPair(
-              leftLines.length,
-              rightLines.length,
-              pairs,
-            )
+            const replaceBlockPairs = buildAlignmentFromAnchorPair(leftLines.length, rightLines.length, pairs)
 
             for (const pair of replaceBlockPairs) {
               const left = pair.leftIndex != null ? leftLines[pair.leftIndex] : null
@@ -748,11 +732,7 @@
     return { parts, counts: { modifiedCount, addedCount, removedCount } }
   }
 
-  async function computeDiffFlat(
-    prompt1: string,
-    prompt2: string,
-    style: DiffStyle,
-  ): Promise<DiffResult> {
+  async function computeDiffFlat(prompt1: string, prompt2: string, style: DiffStyle): Promise<DiffResult> {
     const diff = await loadDiffModule()
     const lineDiffs = diff.diffLines(prompt1, prompt2)
 
@@ -890,10 +870,7 @@
     while (prefix < minLen && a.charCodeAt(prefix) === b.charCodeAt(prefix)) prefix++
 
     let suffix = 0
-    while (
-      suffix + prefix < minLen &&
-      a.charCodeAt(la - 1 - suffix) === b.charCodeAt(lb - 1 - suffix)
-    ) {
+    while (suffix + prefix < minLen && a.charCodeAt(la - 1 - suffix) === b.charCodeAt(lb - 1 - suffix)) {
       suffix++
     }
 
@@ -1039,11 +1016,7 @@
 
   function buildAlignmentFromAnchorPair(nLeft: number, nRight: number, pairs: Pair[]): PairCell[] {
     const cells: PairCell[] = []
-    const extPairs: Pair[] = [
-      { leftIndex: -1, rightIndex: -1 },
-      ...pairs,
-      { leftIndex: nLeft, rightIndex: nRight },
-    ]
+    const extPairs: Pair[] = [{ leftIndex: -1, rightIndex: -1 }, ...pairs, { leftIndex: nLeft, rightIndex: nRight }]
 
     for (let k = 0; k < extPairs.length - 1; k++) {
       const curr = extPairs[k]
@@ -1290,8 +1263,7 @@
         <label
           class={`${pillBase} ${value === opt.value ? pillActive : pillInactive} ${
             disabled ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''
-          }`}
-        >
+          }`}>
           <input
             class="hidden"
             type="radio"
@@ -1302,8 +1274,7 @@
             onchange={() => {
               if (disabled) return
               setValue(opt.value)
-            }}
-          />
+            }} />
           {opt.label}
         </label>
       {/each}
@@ -1322,28 +1293,19 @@
     <label
       class={`flex items-center gap-1 text-xs cursor-pointer select-none ${
         disabled && dimWhenDisabled ? 'text-textcolor2/50' : 'text-textcolor2'
-      }`}
-    >
+      }`}>
       <input
         type="checkbox"
         class="accent-green-500"
         {disabled}
         {checked}
-        onchange={(e) => setChecked((e.currentTarget as HTMLInputElement).checked)}
-      />
+        onchange={(e) => setChecked((e.currentTarget as HTMLInputElement).checked)} />
       {label}
     </label>
   </div>
 {/snippet}
 
-{#snippet rangeControl(
-  label: string,
-  value: number,
-  setValue: (v: number) => void,
-  min = 0,
-  max = 5,
-  disabled = false,
-)}
+{#snippet rangeControl(label: string, value: number, setValue: (v: number) => void, min = 0, max = 5, disabled = false)}
   <div class="flex items-center gap-2">
     <span class={`text-xs ${disabled ? 'text-textcolor2/50' : 'text-textcolor2'}`}>
       {label}
@@ -1360,11 +1322,8 @@
         if (disabled) return
         const target = e.currentTarget as HTMLInputElement
         setValue(parseInt(target.value, 10))
-      }}
-    />
-    <span
-      class={`text-[11px] w-4 text-right ${disabled ? 'text-textcolor2/40' : 'text-textcolor2/80'}`}
-    >
+      }} />
+    <span class={`text-[11px] w-4 text-right ${disabled ? 'text-textcolor2/40' : 'text-textcolor2/80'}`}>
       {value}
     </span>
   </div>
@@ -1392,9 +1351,7 @@
     {#if isLineby(part) && part.line.lineRole === 'body' && part.line.text === ''}
       <br />
     {:else}
-      {lineTextOf(
-        part,
-      )}{#if isLineby(part) && (part.line.lineRole === 'name' || part.line.lineRole === 'header')}
+      {lineTextOf(part)}{#if isLineby(part) && (part.line.lineRole === 'name' || part.line.lineRole === 'header')}
         <span class={nameHeaderTagClass}>
           {part.line.lineRole === 'name' ? 'NAME' : 'TYPE'}
         </span>
@@ -1418,22 +1375,18 @@
   {#if diffStyle === 'line'}
     <div
       class={`whitespace-pre-wrap ${lineRemoveClass}`}
-      class:mt-5={isLineby(part) && part.right.lineRole === 'name' && idx > 0}
-    >
-      {@render renderTokens(part.tokens, 'add', tokenPackLineRemove)}{#if tag}<span
-          class={nameHeaderTagClass}>{tag}</span
+      class:mt-5={isLineby(part) && part.right.lineRole === 'name' && idx > 0}>
+      {@render renderTokens(part.tokens, 'add', tokenPackLineRemove)}{#if tag}<span class={nameHeaderTagClass}
+          >{tag}</span
         >{/if}
     </div>
 
-    <div
-      class={`whitespace-pre-wrap ${lineAddClass}`}
-      class:mb-5={isLineby(part) && part.right.lineRole === 'header'}
-    >
+    <div class={`whitespace-pre-wrap ${lineAddClass}`} class:mb-5={isLineby(part) && part.right.lineRole === 'header'}>
       {#if part.src === 'linebyline' && part.right.text === ''}
         <span class="text-textcolor2/60 italic">[empty line]</span>
       {:else}
-        {@render renderTokens(part.tokens, 'remove', tokenPackLineAdd)}{#if tag}<span
-            class={nameHeaderTagClass}>{tag}</span
+        {@render renderTokens(part.tokens, 'remove', tokenPackLineAdd)}{#if tag}<span class={nameHeaderTagClass}
+            >{tag}</span
           >{/if}
       {/if}
     </div>
@@ -1441,10 +1394,8 @@
     <div
       class={`whitespace-pre-wrap ${lineModifyClass}`}
       class:mt-5={isLineby(part) && part.right.lineRole === 'name' && idx > 0}
-      class:mb-5={isLineby(part) && part.right.lineRole === 'header'}
-    >
-      {@render renderTokens(part.tokens, null, tokenPackIntraline)}{#if tag}<span
-          class={nameHeaderTagClass}>{tag}</span
+      class:mb-5={isLineby(part) && part.right.lineRole === 'header'}>
+      {@render renderTokens(part.tokens, null, tokenPackIntraline)}{#if tag}<span class={nameHeaderTagClass}>{tag}</span
         >{/if}
     </div>
   {/if}
@@ -1497,9 +1448,7 @@
               {@render renderTokens(part.tokens, 'remove', tokenPackLineAdd)}
             </div>
           {:else}
-            <div
-              class={`whitespace-pre-wrap ${side === 'left' ? 'text-red-400' : 'text-green-400'}`}
-            >
+            <div class={`whitespace-pre-wrap ${side === 'left' ? 'text-red-400' : 'text-green-400'}`}>
               {@render renderTokens(
                 part.tokens,
                 side === 'left' ? 'add' : 'remove',
@@ -1507,33 +1456,20 @@
               )}
             </div>
           {/if}
+        {:else if side === null}
+          <div class="whitespace-pre-wrap">
+            {@render renderTokens(part.tokens, null, tokenPackIntraline)}
+          </div>
         {:else}
-          {#if side === null}
-            <div class="whitespace-pre-wrap">
-              {@render renderTokens(part.tokens, null, tokenPackIntraline)}
-            </div>
-          {:else}
-            <div
-              class={`whitespace-pre-wrap ${side === 'left' ? 'text-red-300' : 'text-green-300'}`}
-            >
-              {@render renderTokens(
-                part.tokens,
-                side === 'left' ? 'add' : 'remove',
-                tokenPackIntraline,
-              )}
-            </div>
-          {/if}
+          <div class={`whitespace-pre-wrap ${side === 'left' ? 'text-red-300' : 'text-green-300'}`}>
+            {@render renderTokens(part.tokens, side === 'left' ? 'add' : 'remove', tokenPackIntraline)}
+          </div>
         {/if}
       {:else}
         <div
           class={`whitespace-pre-wrap ${
-            part.k === 'same'
-              ? 'text-textcolor'
-              : part.k === 'add'
-                ? 'text-green-400'
-                : 'text-red-400'
-          }`}
-        >
+            part.k === 'same' ? 'text-textcolor' : part.k === 'add' ? 'text-green-400' : 'text-red-400'
+          }`}>
           {part.line.text}
         </div>
       {/if}
@@ -1552,8 +1488,7 @@
         ${d.omitted > 0 ? 'hover:border-white/40 hover:text-textcolor hover:shadow-lg cursor-pointer' : 'text-textcolor2/50 cursor-default'}`}
       disabled={d.omitted === 0}
       onclick={() => expandRange(scope, d.from, d.to)}
-      title={d.omitted > 0 ? 'Click to expand hidden lines' : ''}
-    >
+      title={d.omitted > 0 ? 'Click to expand hidden lines' : ''}>
       {#if d.pos === 'start'}
         {#if d.omitted > 0}
           … {d.omitted} lines above not shown (click to expand) …
@@ -1562,12 +1497,10 @@
         {/if}
       {:else if d.pos === 'between'}
         … {d.omitted} lines skipped (click to expand) …
+      {:else if d.omitted > 0}
+        … {d.omitted} lines below not shown (click to expand) …
       {:else}
-        {#if d.omitted > 0}
-          … {d.omitted} lines below not shown (click to expand) …
-        {:else}
-          EOF
-        {/if}
+        EOF
       {/if}
     </button>
 
@@ -1578,13 +1511,7 @@
 {#snippet renderSplitCell(cell: SplitCell, idx: number)}
   {@const role = cell.role}
   {#if cell.kind === 'empty'}
-    <div
-      class={splitEmptyLineClass}
-      class:mt-5={role === 'name' && idx > 0}
-      class:mb-5={role === 'header'}
-    >
-      &nbsp;
-    </div>
+    <div class={splitEmptyLineClass} class:mt-5={role === 'name' && idx > 0} class:mb-5={role === 'header'}>&nbsp;</div>
   {:else}
     {@const part = cell.part}
     {@const side = cell.side}
@@ -1599,19 +1526,14 @@
       <div
         class={`whitespace-pre-wrap ${isLeft ? lineRemoveClass : lineAddClass}`}
         class:mt-5={role === 'name' && idx > 0}
-        class:mb-5={role === 'header'}
-      >
+        class:mb-5={role === 'header'}>
         {#if isLineby(part) && sideText === ''}
           <span class="text-textcolor2/60 italic">[empty line]</span>
         {:else}
           {@render renderTokens(
             part.tokens,
             isLeft ? 'add' : 'remove',
-            diffStyle === 'line'
-              ? isLeft
-                ? tokenPackLineRemove
-                : tokenPackLineAdd
-              : tokenPackIntraline,
+            diffStyle === 'line' ? (isLeft ? tokenPackLineRemove : tokenPackLineAdd) : tokenPackIntraline,
           )}
         {/if}
 
@@ -1662,13 +1584,7 @@
   <div class="bg-darkbg rounded-md w-full max-w-4xl max-h-full overflow-hidden flex flex-col">
     <div class="flex items-center justify-between px-4 py-3 border-b border-darkborderc">
       <div class="flex items-center gap-4 flex-wrap">
-        {@render pillRadioGroup(
-          'Diff',
-          'diffStyle',
-          diffOptions,
-          diffStyle,
-          (v) => (diffStyle = v as DiffStyle),
-        )}
+        {@render pillRadioGroup('Diff', 'diffStyle', diffOptions, diffStyle, (v) => (diffStyle = v as DiffStyle))}
         {@render pillRadioGroup(
           'Format',
           'formatStyle',
@@ -1693,13 +1609,7 @@
           isFlatText || diffStyle !== 'line' || viewStyle === 'split',
           true,
         )}
-        {@render checkboxToggle(
-          'Only changes',
-          showOnlyChanges,
-          (v) => (showOnlyChanges = v),
-          isFlatText,
-          true,
-        )}
+        {@render checkboxToggle('Only changes', showOnlyChanges, (v) => (showOnlyChanges = v), isFlatText, true)}
         {#if !isFlatText && showOnlyChanges}
           {@render rangeControl('Context', contextRadius, (v) => (contextRadius = v), 0, 5)}
         {/if}
@@ -1709,8 +1619,7 @@
         class="text-textcolor2 hover:text-green-500"
         onclick={(e) => {
           handleClose()
-        }}
-      >
+        }}>
         <XIcon size={20} />
       </button>
     </div>
@@ -1755,9 +1664,7 @@
                 {@const headerPart = lines[1]}
                 {@const bodyParts = lines.slice(2)}
 
-                <div
-                  class="prompt-diff-hover bg-black/40 border border-darkborderc rounded-xl p-3 flex flex-col gap-2"
-                >
+                <div class="prompt-diff-hover bg-black/40 border border-darkborderc rounded-xl p-3 flex flex-col gap-2">
                   <div class="flex items-start justify-between gap-2">
                     <div class="flex flex-col gap-2 min-w-0">
                       {@render renderCardMeta(namePart, 'name', null)}
@@ -1841,8 +1748,7 @@
                         </div>
                       {:else}
                         <div
-                          class="h-[70px] rounded-lg border border-dashed border-white/10 bg-black/10 flex items-center justify-center"
-                        >
+                          class="h-[70px] rounded-lg border border-dashed border-white/10 bg-black/10 flex items-center justify-center">
                           <span class="text-textcolor2/60 italic text-xs select-none">-</span>
                         </div>
                       {/if}
@@ -1859,8 +1765,7 @@
                         </div>
                       {:else}
                         <div
-                          class="h-[70px] rounded-lg border border-dashed border-white/10 bg-black/10 flex items-center justify-center"
-                        >
+                          class="h-[70px] rounded-lg border border-dashed border-white/10 bg-black/10 flex items-center justify-center">
                           <span class="text-textcolor2/60 italic text-xs select-none">-</span>
                         </div>
                       {/if}
@@ -1877,16 +1782,11 @@
                       {:else}
                         <div class="contents group">
                           <div
-                            class="px-3 py-0.5 font-mono text-sm leading-5 group-hover:bg-white/10 group-hover:outline group-hover:outline-1 group-hover:outline-white/15"
-                          >
-                            {@render renderSplitCell(
-                              leftExists ? r.left : { kind: 'empty', role: r.left.role },
-                              rIdx,
-                            )}
+                            class="px-3 py-0.5 font-mono text-sm leading-5 group-hover:bg-white/10 group-hover:outline group-hover:outline-1 group-hover:outline-white/15">
+                            {@render renderSplitCell(leftExists ? r.left : { kind: 'empty', role: r.left.role }, rIdx)}
                           </div>
                           <div
-                            class="px-3 py-0.5 font-mono text-sm leading-5 group-hover:bg-white/10 group-hover:outline group-hover:outline-1 group-hover:outline-white/15"
-                          >
+                            class="px-3 py-0.5 font-mono text-sm leading-5 group-hover:bg-white/10 group-hover:outline group-hover:outline-1 group-hover:outline-white/15">
                             {@render renderSplitCell(
                               rightExists ? r.right : { kind: 'empty', role: r.right.role },
                               rIdx,
@@ -1903,84 +1803,79 @@
         {:else}
           <div class="text-textcolor2 text-sm">No diff computed yet.</div>
         {/if}
-      {:else}
-        {#if currentFlatResult}
-          {@const segments = buildSegments(currentFlatResult.parts, {
-            showOnlyChanges,
-            contextRadius,
-            scope: 'raw',
-            expandedRanges,
-          })}
-          {@render renderCounts(currentFlatResult.counts)}
+      {:else if currentFlatResult}
+        {@const segments = buildSegments(currentFlatResult.parts, {
+          showOnlyChanges,
+          contextRadius,
+          scope: 'raw',
+          expandedRanges,
+        })}
+        {@render renderCounts(currentFlatResult.counts)}
 
-          {#if showOnlyChanges && segments.length === 0}
-            <div class="flex items-center justify-center py-10">
-              <div
-                class="flex items-center gap-2 px-3 py-2 rounded-lg border border-darkborderc bg-black/30 text-textcolor2"
-              >
-                <span class="inline-block w-2 h-2 rounded-full bg-green-500/70"></span>
-                <span class="text-sm">No changes</span>
-              </div>
+        {#if showOnlyChanges && segments.length === 0}
+          <div class="flex items-center justify-center py-10">
+            <div
+              class="flex items-center gap-2 px-3 py-2 rounded-lg border border-darkborderc bg-black/30 text-textcolor2">
+              <span class="inline-block w-2 h-2 rounded-full bg-green-500/70"></span>
+              <span class="text-sm">No changes</span>
             </div>
-          {:else if viewStyle === 'unified' || isFlatText}
-            <div class="font-mono text-sm leading-5">
-              {#each segments as seg, sIdx (sIdx)}
-                {#if seg.kind === 'divider'}
-                  {@render renderDivider(seg, 'raw')}
-                {:else if seg.kind === 'context'}
-                  {#each seg.parts as part, idx (idx)}
+          </div>
+        {:else if viewStyle === 'unified' || isFlatText}
+          <div class="font-mono text-sm leading-5">
+            {#each segments as seg, sIdx (sIdx)}
+              {#if seg.kind === 'divider'}
+                {@render renderDivider(seg, 'raw')}
+              {:else if seg.kind === 'context'}
+                {#each seg.parts as part, idx (idx)}
+                  {#if part.k !== 'modify'}
+                    {@render renderSimpleLine(part)}
+                  {/if}
+                {/each}
+              {:else}
+                {@const lines = buildLines(seg.parts)}
+                {#each lines as line, idx (idx)}
+                  {#if line.kind === 'simple'}
+                    {@const part = line.part}
                     {#if part.k !== 'modify'}
                       {@render renderSimpleLine(part)}
-                    {/if}
-                  {/each}
-                {:else}
-                  {@const lines = buildLines(seg.parts)}
-                  {#each lines as line, idx (idx)}
-                    {#if line.kind === 'simple'}
-                      {@const part = line.part}
-                      {#if part.k !== 'modify'}
-                        {@render renderSimpleLine(part)}
-                      {:else}
-                        {@render renderModify(part, idx)}
-                      {/if}
                     {:else}
-                      {@render renderModifyGroup(line.parts)}
+                      {@render renderModify(part, idx)}
                     {/if}
-                  {/each}
+                  {:else}
+                    {@render renderModifyGroup(line.parts)}
+                  {/if}
+                {/each}
+              {/if}
+            {/each}
+          </div>
+        {:else}
+          {@const rows = toSplitRows(segments, 'raw')}
+          <div class="rounded-xl border border-darkborderc bg-black/30 overflow-hidden">
+            <div class="grid grid-cols-[1fr_auto_1fr] gap-0 font-mono text-sm leading-5">
+              {#each rows as r, idx (r.key)}
+                {#if r.kind === 'divider'}
+                  <div class="col-span-3 px-2">
+                    {@render renderDivider(r.seg, r.scope)}
+                  </div>
+                {:else}
+                  <div class="contents group">
+                    <div
+                      class="px-3 py-0.5 bg-black/10 group-hover:bg-white/10 group-hover:outline group-hover:outline-1 group-hover:outline-white/15">
+                      {@render renderSplitCell(r.left, idx)}
+                    </div>
+                    <div class="w-px bg-white/10"></div>
+                    <div
+                      class="px-3 py-0.5 bg-black/10 group-hover:bg-white/10 group-hover:outline group-hover:outline-1 group-hover:outline-white/15">
+                      {@render renderSplitCell(r.right, idx)}
+                    </div>
+                  </div>
                 {/if}
               {/each}
             </div>
-          {:else}
-            {@const rows = toSplitRows(segments, 'raw')}
-            <div class="rounded-xl border border-darkborderc bg-black/30 overflow-hidden">
-              <div class="grid grid-cols-[1fr_auto_1fr] gap-0 font-mono text-sm leading-5">
-                {#each rows as r, idx (r.key)}
-                  {#if r.kind === 'divider'}
-                    <div class="col-span-3 px-2">
-                      {@render renderDivider(r.seg, r.scope)}
-                    </div>
-                  {:else}
-                    <div class="contents group">
-                      <div
-                        class="px-3 py-0.5 bg-black/10 group-hover:bg-white/10 group-hover:outline group-hover:outline-1 group-hover:outline-white/15"
-                      >
-                        {@render renderSplitCell(r.left, idx)}
-                      </div>
-                      <div class="w-px bg-white/10"></div>
-                      <div
-                        class="px-3 py-0.5 bg-black/10 group-hover:bg-white/10 group-hover:outline group-hover:outline-1 group-hover:outline-white/15"
-                      >
-                        {@render renderSplitCell(r.right, idx)}
-                      </div>
-                    </div>
-                  {/if}
-                {/each}
-              </div>
-            </div>
-          {/if}
-        {:else}
-          <div class="text-textcolor2 text-sm">No diff computed yet.</div>
+          </div>
         {/if}
+      {:else}
+        <div class="text-textcolor2 text-sm">No diff computed yet.</div>
       {/if}
     </div>
   </div>

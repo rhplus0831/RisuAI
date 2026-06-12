@@ -1,9 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite'
 import { RisuSaveBlockType, encodeRisuSaveBlockEnvelope } from './blockCodec.js'
-import {
-  type LegacyRisuSaveEnvelopeKind,
-  encodeLegacyRisuSaveEnvelope,
-} from './legacyEnvelopeCodec.js'
+import { type LegacyRisuSaveEnvelopeKind, encodeLegacyRisuSaveEnvelope } from './legacyEnvelopeCodec.js'
 import { normalizeRisuSaveSnapshotDatabase } from './importSnapshot.js'
 import { type Persisted, ValidationError, loadPersistedWithMessages } from '../repository.js'
 
@@ -27,19 +24,14 @@ const BLOCK_RESOURCE_KEYS = new Set([
   '__directory',
 ])
 
-export function buildRepositoryRisuSaveExportSnapshot(
-  db: DatabaseSync,
-  dataDir: string,
-): RisuSaveExportSnapshot {
+export function buildRepositoryRisuSaveExportSnapshot(db: DatabaseSync, dataDir: string): RisuSaveExportSnapshot {
   // Messages live in SQLite; hydrate them back so exported
   // CHARACTER_WITH_CHAT blocks carry the full chat history.
   const persisted = loadPersistedWithMessages(db, dataDir)
   return buildRisuSaveExportSnapshotFromPersisted(persisted)
 }
 
-export function buildRisuSaveExportSnapshotFromPersisted(
-  persisted: Persisted,
-): RisuSaveExportSnapshot {
+export function buildRisuSaveExportSnapshotFromPersisted(persisted: Persisted): RisuSaveExportSnapshot {
   if (persisted.database === null || persisted.database === undefined) {
     throw new ValidationError('database payload missing')
   }
@@ -53,10 +45,7 @@ export function encodeRepositoryRisuSaveLegacyExport(
   dataDir: string,
   kind: LegacyRisuSaveEnvelopeKind = 'legacy-compressed',
 ): Uint8Array {
-  return encodeRisuSaveLegacyExportSnapshot(
-    buildRepositoryRisuSaveExportSnapshot(db, dataDir),
-    kind,
-  )
+  return encodeRisuSaveLegacyExportSnapshot(buildRepositoryRisuSaveExportSnapshot(db, dataDir), kind)
 }
 
 export function encodeRepositoryRisuSaveBlockExport(
@@ -64,10 +53,7 @@ export function encodeRepositoryRisuSaveBlockExport(
   dataDir: string,
   options: RisuSaveBlockExportOptions = {},
 ): Uint8Array {
-  return encodeRisuSaveBlockExportSnapshot(
-    buildRepositoryRisuSaveExportSnapshot(db, dataDir),
-    options,
-  )
+  return encodeRisuSaveBlockExportSnapshot(buildRepositoryRisuSaveExportSnapshot(db, dataDir), options)
 }
 
 export function encodeRisuSaveLegacyExportSnapshot(

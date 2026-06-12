@@ -15,10 +15,7 @@
 import { getNodeServerProxyAuth } from '../../storage/fastifyStorage'
 import type { MessageGenerationInfo } from '../../storage/database.svelte'
 import { setCachedServerCommandRevision } from '../../server/commands'
-import {
-  activeWriterSessionHeader,
-  handleActiveWriterStaleResponse,
-} from '../../server/activeWriterSession'
+import { activeWriterSessionHeader, handleActiveWriterStaleResponse } from '../../server/activeWriterSession'
 import { iterateSseEvents } from './sseParse'
 import type {
   DoneEvent,
@@ -109,15 +106,8 @@ function parseData(data: string): Record<string, unknown> | null {
   }
 }
 
-function httpErrorReason(body: {
-  error?: unknown
-  message?: unknown
-  reason?: unknown
-}): string | null {
-  if (
-    body.error === INCOMPLETE_CHAT_GENERATION_SETTINGS_ERROR &&
-    typeof body.message === 'string'
-  ) {
+function httpErrorReason(body: { error?: unknown; message?: unknown; reason?: unknown }): string | null {
+  if (body.error === INCOMPLETE_CHAT_GENERATION_SETTINGS_ERROR && typeof body.message === 'string') {
     return body.message
   }
   if (typeof body.error === 'string') return body.error
@@ -163,9 +153,7 @@ async function openChatResponse(
   input: ServerChatInput,
   signal: AbortSignal | null,
   reattachJobId?: string,
-): Promise<
-  { status: 'ok'; response: Response } | { status: 'error'; error: string } | { status: 'aborted' }
-> {
+): Promise<{ status: 'ok'; response: Response } | { status: 'error'; error: string } | { status: 'aborted' }> {
   const auth = await getNodeServerProxyAuth()
 
   let response: Response
@@ -225,10 +213,7 @@ async function openChatResponse(
  * `done` event (or stream end) closes a successful run; an `error` event is
  * terminal and surfaces its message; an abort resolves as `aborted`.
  */
-export async function requestServerChat(
-  input: ServerChatInput,
-  signal: AbortSignal | null,
-): Promise<ServerChatResult> {
+export async function requestServerChat(input: ServerChatInput, signal: AbortSignal | null): Promise<ServerChatResult> {
   const opened = await openChatResponse(input, signal)
   if (opened.status !== 'ok') return opened
   const response = opened.response
@@ -443,8 +428,7 @@ export async function requestServerChatGeneration(
                 break
               }
               case 'error': {
-                const error =
-                  typeof data.error === 'string' ? data.error : 'provider dispatch failed'
+                const error = typeof data.error === 'string' ? data.error : 'provider dispatch failed'
                 const restoration =
                   data.restoration && typeof data.restoration === 'object'
                     ? (data.restoration as unknown as ServerChatRestoration)

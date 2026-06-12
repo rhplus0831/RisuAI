@@ -94,18 +94,14 @@ async function commandMetric(
   request: CommandRequest,
 ): Promise<{ revision: number; metric: ProtocolMetric }> {
   const before = metrics.length
-  const inject = harness.app.inject as unknown as (
-    request: CommandRequest,
-  ) => Promise<CommandResponse>
+  const inject = harness.app.inject as unknown as (request: CommandRequest) => Promise<CommandResponse>
   const res = await inject({
     ...request,
     headers: { 'risu-auth': assertion, ...(request.headers ?? {}) },
   })
   expect(res.statusCode).toBe(200)
   const body = res.json() as { revision: number }
-  const metric = metrics
-    .slice(before)
-    .find((entry) => entry.metric === 'command_mutation' && entry.status === 'ok')
+  const metric = metrics.slice(before).find((entry) => entry.metric === 'command_mutation' && entry.status === 'ok')
   expect(metric, `missing command_mutation metric for ${expectedType}`).toBeTruthy()
   expect(metric?.type).toBe(expectedType)
   return { revision: body.revision, metric: metric as ProtocolMetric }
@@ -295,9 +291,7 @@ describe('command protocol metrics', () => {
     // `select`) to one `UPDATE chats`.
     expect(chat.metric.writtenTables, 'chat.writtenTables').toEqual(['chats'])
     expect(settings.metric.writtenTables, 'settings.writtenTables').toEqual(['settings'])
-    expect(pluginStorage.metric.writtenTables, 'pluginStorage.writtenTables').toEqual([
-      'plugin_custom_storage',
-    ])
+    expect(pluginStorage.metric.writtenTables, 'pluginStorage.writtenTables').toEqual(['plugin_custom_storage'])
     expect(characterSelect.metric.writtenTables).toEqual(['characters', 'settings'])
     for (const metric of [
       messageAppend.metric,

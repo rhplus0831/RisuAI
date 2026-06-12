@@ -7,10 +7,7 @@ interface ReadServerAssetOptions {
   fetchImpl?: typeof fetch
 }
 
-export async function readServerAssetBytes(
-  loc: string,
-  options: ReadServerAssetOptions = {},
-): Promise<Uint8Array> {
+export async function readServerAssetBytes(loc: string, options: ReadServerAssetOptions = {}): Promise<Uint8Array> {
   const assetUrl = serverAssetUrl(loc) ?? loc
   const auth = options.auth ?? 'fixture-auth'
   const fetchImpl = options.fetchImpl ?? fetch

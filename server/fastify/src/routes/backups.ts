@@ -3,13 +3,7 @@ import type { DatabaseSync } from 'node:sqlite'
 import type { AuthState } from '../auth.js'
 import type { CommandEventSink } from '../commands/events.js'
 import { requireAuth } from '../http.js'
-import {
-  EntityNotFoundError,
-  createBackup,
-  deleteBackup,
-  listBackups,
-  restoreBackup,
-} from '../repository.js'
+import { EntityNotFoundError, createBackup, deleteBackup, listBackups, restoreBackup } from '../repository.js'
 
 interface CreateBody {
   label?: unknown

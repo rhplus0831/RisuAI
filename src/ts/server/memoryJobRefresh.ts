@@ -1,7 +1,4 @@
-import type {
-  ServerMemoryJob,
-  ServerMemoryResult,
-} from '../process/request/serverMemory'
+import type { ServerMemoryJob, ServerMemoryResult } from '../process/request/serverMemory'
 
 const DEFAULT_REFRESH_INTERVAL_MS = 5000
 
@@ -16,10 +13,7 @@ export interface MemoryJobRefreshController {
 export interface MemoryJobRefreshControllerOptions {
   chatId: string
   intervalMs?: number
-  listJobs: (
-    chatId: string,
-    signal?: AbortSignal | null,
-  ) => Promise<ServerMemoryResult<{ jobs: ServerMemoryJob[] }>>
+  listJobs: (chatId: string, signal?: AbortSignal | null) => Promise<ServerMemoryResult<{ jobs: ServerMemoryJob[] }>>
   onJobs(jobs: ServerMemoryJob[], loadedAt: string): void
   onError(error: string): void
   onClear(): void
@@ -95,11 +89,7 @@ export function createMemoryJobRefreshController(
         syncPolling(result.jobs)
       } else {
         stopPolling()
-        options.onError(
-          result.status === 'unavailable'
-            ? 'Server memory jobs are unavailable.'
-            : result.error,
-        )
+        options.onError(result.status === 'unavailable' ? 'Server memory jobs are unavailable.' : result.error)
       }
     } catch (err) {
       if (disposed || serial !== requestSerial || controller.signal.aborted) return

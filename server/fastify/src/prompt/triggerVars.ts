@@ -1,7 +1,4 @@
-import type {
-  Chat,
-  Database,
-} from '../../../../src/ts/storage/database.svelte'
+import type { Chat, Database } from '../../../../src/ts/storage/database.svelte'
 
 /**
  * Trigger variable engine, ported from the closures inside
@@ -75,9 +72,7 @@ export interface TriggerVarEngine {
   readonly varChanged: boolean
 }
 
-export function createTriggerVarEngine(
-  opts: TriggerVarEngineOptions,
-): TriggerVarEngine {
+export function createTriggerVarEngine(opts: TriggerVarEngineOptions): TriggerVarEngine {
   const { database, selectedCharID, chatPage, defaultVariables } = opts
   let chat = opts.chat
   const displayMode = opts.displayMode ?? false

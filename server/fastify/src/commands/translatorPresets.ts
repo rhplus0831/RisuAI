@@ -33,10 +33,7 @@ export function ensureTranslatorPresetCollection(database: JsonRecord): Translat
     const preset = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as JsonRecord) : {}
     const record = repairTranslatorPresetRecord({
       id: preset.id,
-      name:
-        typeof preset.name === 'string' && preset.name.trim().length > 0
-          ? preset.name
-          : `Preset ${index + 1}`,
+      name: typeof preset.name === 'string' && preset.name.trim().length > 0 ? preset.name : `Preset ${index + 1}`,
       prompt: preset.prompt,
       maxResponse: preset.maxResponse,
     })
@@ -115,17 +112,11 @@ export function readOptionalBoolean(value: unknown, label: string, fallback: boo
   return value
 }
 
-export function findTranslatorPresetIndex(
-  presets: readonly TranslatorPresetRecord[],
-  presetId: string,
-): number {
+export function findTranslatorPresetIndex(presets: readonly TranslatorPresetRecord[], presetId: string): number {
   return presets.findIndex((preset) => preset.id === presetId)
 }
 
-export function requireTranslatorPresetIndex(
-  presets: readonly TranslatorPresetRecord[],
-  presetId: string,
-): number {
+export function requireTranslatorPresetIndex(presets: readonly TranslatorPresetRecord[], presetId: string): number {
   const index = findTranslatorPresetIndex(presets, presetId)
   if (index === -1) {
     throw new EntityNotFoundError(`Translator preset not found: ${presetId}`)
@@ -137,9 +128,7 @@ export function selectedTranslatorPresetId(
   database: JsonRecord,
   presets: readonly TranslatorPresetRecord[],
 ): string | null {
-  const index = Number.isInteger(database.translatorPresetId as number)
-    ? (database.translatorPresetId as number)
-    : 0
+  const index = Number.isInteger(database.translatorPresetId as number) ? (database.translatorPresetId as number) : 0
   return presets[index]?.id ?? null
 }
 
@@ -147,9 +136,7 @@ export function syncSelectedTranslatorPresetToLegacyFields(
   database: JsonRecord,
   presets: readonly TranslatorPresetRecord[],
 ): void {
-  const index = Number.isInteger(database.translatorPresetId as number)
-    ? (database.translatorPresetId as number)
-    : 0
+  const index = Number.isInteger(database.translatorPresetId as number) ? (database.translatorPresetId as number) : 0
   const preset = presets[index]
   if (!preset) return
   database.translatorPrompt = preset.prompt
@@ -174,10 +161,7 @@ function validateTranslatorPresetRecord(record: JsonRecord, label: string): void
   if ('prompt' in record && typeof record.prompt !== 'string') {
     throw new ValidationError(`${label}.prompt must be a string`)
   }
-  if (
-    'maxResponse' in record &&
-    (typeof record.maxResponse !== 'number' || !Number.isFinite(record.maxResponse))
-  ) {
+  if ('maxResponse' in record && (typeof record.maxResponse !== 'number' || !Number.isFinite(record.maxResponse))) {
     throw new ValidationError(`${label}.maxResponse must be a finite number`)
   }
 }

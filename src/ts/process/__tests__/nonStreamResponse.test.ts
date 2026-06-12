@@ -1,10 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const {
-  processScriptFullSpy,
-  runInlayScreenSpy,
-  sayTTSSpy,
-} = vi.hoisted(() => ({
+const { processScriptFullSpy, runInlayScreenSpy, sayTTSSpy } = vi.hoisted(() => ({
   processScriptFullSpy: vi.fn(),
   runInlayScreenSpy: vi.fn(),
   sayTTSSpy: vi.fn(),
@@ -74,7 +70,11 @@ function seed(): character {
   return DBState.db.characters[0]
 }
 
-function callArgs(req: requestDataResponse, currentChar: character, overrides: Partial<Parameters<typeof applyNonStreamResponse>[0]> = {}) {
+function callArgs(
+  req: requestDataResponse,
+  currentChar: character,
+  overrides: Partial<Parameters<typeof applyNonStreamResponse>[0]> = {},
+) {
   return {
     req,
     arg: {},

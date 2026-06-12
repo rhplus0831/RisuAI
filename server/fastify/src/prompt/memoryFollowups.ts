@@ -111,9 +111,7 @@ export function enqueuePromptMemoryFollowUps(
     result.embedChunkIds.push(chunkId)
   }
 
-  result.skippedSummaryIdsMissingChunks.push(
-    ...sortedUnique(input.diagnostics.summaryIdsMissingChunks),
-  )
+  result.skippedSummaryIdsMissingChunks.push(...sortedUnique(input.diagnostics.summaryIdsMissingChunks))
   return result
 }
 

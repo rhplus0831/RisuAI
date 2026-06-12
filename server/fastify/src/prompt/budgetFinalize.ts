@@ -44,9 +44,7 @@ export interface FinalizeRequestBudgetInput {
   maxResponse: number
 }
 
-export function finalizeRequestBudget(
-  input: FinalizeRequestBudgetInput,
-): FinalizeRequestBudgetResult {
+export function finalizeRequestBudget(input: FinalizeRequestBudgetInput): FinalizeRequestBudgetResult {
   const { db, formated, maxContextTokens, maxResponse } = input
   const { encoding, options } = tokenizerOptionsFromDb(db)
 

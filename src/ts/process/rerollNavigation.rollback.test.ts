@@ -28,12 +28,7 @@ import { clearCachedServerCommandRevision } from '../server/commands'
 import { setServerProjectionWriteGuardEnabled } from '../server/projectionWriteGuard.svelte'
 import { DBState, selectedCharID } from '../stores.svelte'
 import { withCloneInstrumentation } from '../__tests__/cloneCostHarness'
-import {
-  getRerollId,
-  resetRerollNavigation,
-  seedRerollBufferFromAlternates,
-  unReroll,
-} from './rerollNavigation.svelte'
+import { getRerollId, resetRerollNavigation, seedRerollBufferFromAlternates, unReroll } from './rerollNavigation.svelte'
 
 type Msg = { role: string; data: string; chatId: string }
 
@@ -85,15 +80,13 @@ function seedDb(activeChatId: string | undefined): { siblingSize: number } {
 }
 
 function activeTailUid(): string {
-  const character = (DBState as { db: { characters: { chats: { message: Msg[] }[] }[] } }).db
-    .characters[0]
+  const character = (DBState as { db: { characters: { chats: { message: Msg[] }[] }[] } }).db.characters[0]
   const message = character.chats[0].message
   return message[message.length - 1].chatId
 }
 
 function siblingMessageCount(): number {
-  return (DBState as { db: { characters: { chats: { message: Msg[] }[] }[] } }).db.characters[1]
-    .chats[0].message.length
+  return (DBState as { db: { characters: { chats: { message: Msg[] }[] }[] } }).db.characters[1].chats[0].message.length
 }
 
 async function waitForCallCount(calls: CapturedFetch[], expected: number): Promise<void> {

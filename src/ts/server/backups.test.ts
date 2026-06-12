@@ -188,9 +188,7 @@ describe('server backup helpers', () => {
       language: 'ko',
       characters: [{ chaId: 'char-a', name: 'Restored', chats: [] }],
     })
-    expect(projectionResyncSpies.setActiveGenerationJobs).toHaveBeenCalledWith([
-      { chatId: 'chat-a', jobId: 'job-a' },
-    ])
+    expect(projectionResyncSpies.setActiveGenerationJobs).toHaveBeenCalledWith([{ chatId: 'chat-a', jobId: 'job-a' }])
     expect(projectionResyncSpies.triggerOpenChatGenerationReattach).toHaveBeenCalledTimes(1)
     expect(projectionResyncSpies.resetChatHydration).toHaveBeenCalled()
     expect(projectionResyncSpies.hydrateActiveChat).toHaveBeenCalledWith({ force: true })
@@ -377,9 +375,7 @@ describe('device backup helpers (Save/Load Backup Locally)', () => {
 
     expect(result.status).toBe('ok')
     expect(
-      progress
-        .filter((frame) => frame.phase === 'download')
-        .every((frame) => typeof frame.percent === 'number'),
+      progress.filter((frame) => frame.phase === 'download').every((frame) => typeof frame.percent === 'number'),
     ).toBe(true)
     expect(
       progress.some(
@@ -400,9 +396,7 @@ describe('device backup helpers (Save/Load Backup Locally)', () => {
   })
 
   it('reports server errors when the bundle export fails', async () => {
-    const backupFetch = makeBackupFetch(() =>
-      jsonResponse({ error: 'database payload missing' }, 400),
-    )
+    const backupFetch = makeBackupFetch(() => jsonResponse({ error: 'database payload missing' }, 400))
     vi.stubGlobal('fetch', backupFetch.fetch)
 
     await expect(exportServerBundle()).resolves.toEqual({
@@ -549,10 +543,7 @@ describe('device backup helpers (Save/Load Backup Locally)', () => {
     expect(
       progress.some(
         (frame) =>
-          frame.phase === 'upload' &&
-          frame.loadedBytes === 1 &&
-          frame.totalBytes === 4 &&
-          frame.percent === 22.5,
+          frame.phase === 'upload' && frame.loadedBytes === 1 && frame.totalBytes === 4 && frame.percent === 22.5,
       ),
     ).toBe(true)
     expect(progress.some((frame) => frame.phase === 'process' && frame.percent === 80)).toBe(true)

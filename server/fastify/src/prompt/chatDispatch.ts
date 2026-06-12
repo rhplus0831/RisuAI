@@ -1,34 +1,19 @@
 import type { Database } from '../../../../src/ts/storage/database.svelte'
 import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
-import {
-  LLMFlags,
-  LLMFormat,
-  type LLMFormat as LLMFormatValue,
-} from '../../../../src/ts/model/types'
+import { LLMFlags, LLMFormat, type LLMFormat as LLMFormatValue } from '../../../../src/ts/model/types'
 import { OpenAIModels } from '../../../../src/ts/model/providers/openai'
 import type { CompletionResult, CompletionStreamFrame } from '../generation/frames.js'
 import { resolveEchoRequest, runEcho, runEchoStream } from '../generation/echo.js'
 import { resolveOpenAIRequest, runOpenAI, runOpenAIStream } from '../generation/openai.js'
-import {
-  resolveAnthropicRequest,
-  runAnthropic,
-  runAnthropicStream,
-} from '../generation/anthropic.js'
+import { resolveAnthropicRequest, runAnthropic, runAnthropicStream } from '../generation/anthropic.js'
 import { resolveMistralRequest, runMistral, runMistralStream } from '../generation/mistral.js'
 import { resolveCohereRequest, runCohere } from '../generation/cohere.js'
 import { resolveGeminiRequest, runGemini, runGeminiStream } from '../generation/gemini.js'
-import {
-  resolveOpenAILegacyInstructRequest,
-  runOpenAILegacyInstruct,
-} from '../generation/openaiLegacyInstruct.js'
+import { resolveOpenAILegacyInstructRequest, runOpenAILegacyInstruct } from '../generation/openaiLegacyInstruct.js'
 import { resolveOpenAIResponsesRequest, runOpenAIResponses } from '../generation/openaiResponses.js'
 import { resolveKoboldRequest, runKobold } from '../generation/kobold.js'
 import { resolveOllamaRequest, runOllama, runOllamaStream } from '../generation/ollama.js'
-import {
-  coerceBedrockCredentials,
-  resolveBedrockRequest,
-  runBedrock,
-} from '../generation/bedrock.js'
+import { coerceBedrockCredentials, resolveBedrockRequest, runBedrock } from '../generation/bedrock.js'
 import { resolveHordeRequest, runHorde } from '../generation/horde.js'
 import { resolveOobaLegacyRequest, runOobaLegacy } from '../generation/oobaLegacy.js'
 import {
@@ -116,10 +101,7 @@ function asNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined
 }
 
-function normalizeDispatchSampler(
-  value: unknown,
-  options: { scale?: number } = {},
-): number | undefined {
+function normalizeDispatchSampler(value: unknown, options: { scale?: number } = {}): number | undefined {
   const numeric = asNumber(value)
   if (numeric === undefined || numeric === DISABLED_SAMPLER_SENTINEL) return undefined
   return options.scale ? numeric / options.scale : numeric
@@ -406,11 +388,7 @@ function cloneDispatchRows(rows: OpenAIChat[]): OpenAIChat[] {
   return structuredClone(rows)
 }
 
-export function reformatMessages(
-  db: Database,
-  rows: OpenAIChat[],
-  flags: readonly number[],
-): OpenAIChat[] {
+export function reformatMessages(db: Database, rows: OpenAIChat[], flags: readonly number[]): OpenAIChat[] {
   const needs = resolveReformatBranchNeeds(flags)
   if (!needsReformatClone(needs)) return rows
 
@@ -519,10 +497,7 @@ function buildChatCapabilityInput(db: Database, info: ModelInfoLite): ProviderCa
  * browser completion path; only the prose differs (see
  * `docs/client-thinning/reference/provider-capability-table.md`).
  */
-function chatProviderUnsupportedReason(
-  reason: ProviderUnsupportedReason,
-  info: ModelInfoLite,
-): string {
+function chatProviderUnsupportedReason(reason: ProviderUnsupportedReason, info: ModelInfoLite): string {
   switch (reason) {
     case 'novelai':
       return 'unsupported /chat provider: NovelAI text generation must use local dispatch'
@@ -542,9 +517,7 @@ function chatProviderUnsupportedReason(
   }
 }
 
-export type ChatProviderRoute =
-  | { routable: true; provider: string }
-  | { routable: false; reason: string }
+export type ChatProviderRoute = { routable: true; provider: string } | { routable: false; reason: string }
 
 /**
  * The /chat counterpart to `resolveServerCompletionRoute`. The unknown-id guard
@@ -554,10 +527,7 @@ export type ChatProviderRoute =
  * The stale `reverse_proxy` + `reverseProxyOobaMode` rejection is gone — the
  * openai adapter applies `oobaSystemHoist` itself.
  */
-export function resolveChatProviderRoute(
-  db: Database,
-  info: ModelInfoLite = resolveModelInfo(db),
-): ChatProviderRoute {
+export function resolveChatProviderRoute(db: Database, info: ModelInfoLite = resolveModelInfo(db)): ChatProviderRoute {
   if (info.unsupportedReason) {
     return { routable: false, reason: info.unsupportedReason }
   }
@@ -592,8 +562,7 @@ function resolveProviderModel(db: Database, info: ModelInfoLite, provider: strin
   }
   if (aiModel === 'reverse_proxy') return db.customProxyRequestModel ?? ''
   if (provider === 'bedrock') return resolveBedrockWireModel(info.internalID ?? info.id)
-  if (provider === 'horde')
-    return aiModel.startsWith('horde:::') ? aiModel.slice('horde:::'.length) : aiModel
+  if (provider === 'horde') return aiModel.startsWith('horde:::') ? aiModel.slice('horde:::'.length) : aiModel
   if (provider === 'nanogpt') return db.nanogptRequestModel ?? ''
   if (provider === 'openrouter') return db.openrouterRequestModel ?? ''
   if (provider === 'gemini') {
@@ -601,26 +570,18 @@ function resolveProviderModel(db: Database, info: ModelInfoLite, provider: strin
     return raw.startsWith('models/') ? raw.slice('models/'.length) : raw
   }
   if (provider === 'openai-legacy-instruct') {
-    return info.format === LLMFormat.NanoGPTLegacy
-      ? (db.nanogptRequestModel ?? '')
-      : 'gpt-3.5-turbo-instruct'
+    return info.format === LLMFormat.NanoGPTLegacy ? (db.nanogptRequestModel ?? '') : 'gpt-3.5-turbo-instruct'
   }
   if (provider === 'anthropic' && info.format === LLMFormat.NanoGPTMessages) {
     return db.nanogptRequestModel ?? ''
   }
   if (provider === 'openai-responses') {
-    return info.format === LLMFormat.NanoGPTResponses
-      ? (db.nanogptRequestModel ?? '')
-      : (info.internalID ?? info.id)
+    return info.format === LLMFormat.NanoGPTResponses ? (db.nanogptRequestModel ?? '') : (info.internalID ?? info.id)
   }
   return info.id
 }
 
-function resolveOpenAIVariant(
-  db: Database,
-  info: ModelInfoLite,
-  provider: string,
-): OpenAICompatibleVariant | null {
+function resolveOpenAIVariant(db: Database, info: ModelInfoLite, provider: string): OpenAICompatibleVariant | null {
   const aiModel = asString(db.aiModel) ?? ''
   if (aiModel === 'ollama-cloud') {
     const apiKey = asString(db.ollamaApiKey)
@@ -640,10 +601,7 @@ function resolveOpenAIVariant(
     const apiKey = asString(db.proxyKey)
     const rawUrl = asString(db.forceReplaceUrl)
     if (!apiKey || !rawUrl) return null
-    const { baseUrl, risuIdentify } = resolveReverseProxyUrl(
-      rawUrl,
-      db.autofillRequestUrl !== false,
-    )
+    const { baseUrl, risuIdentify } = resolveReverseProxyUrl(rawUrl, db.autofillRequestUrl !== false)
     return {
       apiKey,
       baseUrl,
@@ -704,12 +662,7 @@ function applyChatTemplate(db: Database, messages: OpenAIChat[]): string {
   return `${rows.join('\n\n')}\n\nassistant:`
 }
 
-function unstringlizeChat(
-  text: string,
-  formated: OpenAIChat[],
-  char: string,
-  username: string,
-): string {
+function unstringlizeChat(text: string, formated: OpenAIChat[], char: string, username: string): string {
   const chunks = ['system note:', 'system:', 'system note：', 'system：']
   if (char) chunks.push(`${char}:`, `${char}：`, `${char}: `, `${char}： `)
   if (username) chunks.push(`${username}:`, `${username}：`, `${username}: `, `${username}： `)
@@ -724,9 +677,7 @@ function unstringlizeChat(
   return minIndex === -1 ? text : text.substring(0, minIndex).trim()
 }
 
-async function* resultFrames(
-  resultPromise: Promise<CompletionResult>,
-): AsyncGenerator<CompletionStreamFrame> {
+async function* resultFrames(resultPromise: Promise<CompletionResult>): AsyncGenerator<CompletionStreamFrame> {
   const result = await resultPromise
   if (result.aborted === true) return
   if (result.type === 'fail') throw new Error(result.result)
@@ -734,9 +685,7 @@ async function* resultFrames(
   yield { kind: 'done', finishReason: 'stop' }
 }
 
-export async function dispatchChatProvider(
-  args: ChatDispatchArgs,
-): Promise<AsyncIterable<CompletionStreamFrame>> {
+export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<AsyncIterable<CompletionStreamFrame>> {
   const { database: db, outputTokens, signal } = args
   const info = resolveModelInfo(db)
   const route = resolveChatProviderRoute(db, info)
@@ -786,15 +735,10 @@ export async function dispatchChatProvider(
       model,
       messages,
       apiKey,
-      baseUrl:
-        db.nanogptUseSubscriptionEndpoint === true
-          ? NANOGPT_SUBSCRIPTION_BASE_URL
-          : NANOGPT_BASE_URL,
+      baseUrl: db.nanogptUseSubscriptionEndpoint === true ? NANOGPT_SUBSCRIPTION_BASE_URL : NANOGPT_BASE_URL,
       maxTokens,
       temperature,
-      extraHeaders: asString(db.nanogptProvider)
-        ? { 'X-Provider': db.nanogptProvider as string }
-        : undefined,
+      extraHeaders: asString(db.nanogptProvider) ? { 'X-Provider': db.nanogptProvider as string } : undefined,
       signal,
     })
     if (!request) throw new Error('options.nanogpt.apiKey is required')
@@ -816,10 +760,7 @@ export async function dispatchChatProvider(
       baseUrl = NANOGPT_BASE_URL
     } else if (aiModel === 'reverse_proxy') {
       apiKey = db.proxyKey
-      baseUrl = resolveReverseProxyAnthropicUrl(
-        db.forceReplaceUrl ?? '',
-        db.autofillRequestUrl !== false,
-      )
+      baseUrl = resolveReverseProxyAnthropicUrl(db.forceReplaceUrl ?? '', db.autofillRequestUrl !== false)
       ap = additionalParams(db.additionalParams)
     } else if (aiModel.startsWith('xcustom:::')) {
       const entry = findXcustomEntry(db, aiModel)
@@ -851,10 +792,7 @@ export async function dispatchChatProvider(
     let ap: Array<[string, string]> | undefined
     if (aiModel === 'reverse_proxy') {
       apiKey = db.proxyKey
-      const resolved = resolveReverseProxyUrl(
-        db.forceReplaceUrl ?? '',
-        db.autofillRequestUrl !== false,
-      )
+      const resolved = resolveReverseProxyUrl(db.forceReplaceUrl ?? '', db.autofillRequestUrl !== false)
       baseUrl = resolved.baseUrl
       extraHeaders = resolved.risuIdentify ? { 'X-Proxy-Risu': 'RisuAI' } : undefined
       ap = additionalParams(db.additionalParams)
@@ -887,10 +825,7 @@ export async function dispatchChatProvider(
     let ap: Array<[string, string]> | undefined
     if (aiModel === 'reverse_proxy') {
       apiKey = db.proxyKey
-      baseUrl = resolveReverseProxyCohereUrl(
-        db.forceReplaceUrl ?? '',
-        db.autofillRequestUrl !== false,
-      )
+      baseUrl = resolveReverseProxyCohereUrl(db.forceReplaceUrl ?? '', db.autofillRequestUrl !== false)
       ap = additionalParams(db.additionalParams)
     } else if (aiModel.startsWith('xcustom:::')) {
       const entry = findXcustomEntry(db, aiModel)
@@ -941,8 +876,7 @@ export async function dispatchChatProvider(
 
   if (provider === 'openai-legacy-instruct') {
     const aiModel = asString(db.aiModel) ?? ''
-    let apiKey: string | undefined =
-      info.format === LLMFormat.NanoGPTLegacy ? db.nanogptKey : db.openAIKey
+    let apiKey: string | undefined = info.format === LLMFormat.NanoGPTLegacy ? db.nanogptKey : db.openAIKey
     let baseUrl = info.format === LLMFormat.NanoGPTLegacy ? NANOGPT_BASE_URL : undefined
     let extraHeaders: Record<string, string> | undefined
     let ap: Array<[string, string]> | undefined
@@ -950,10 +884,7 @@ export async function dispatchChatProvider(
       extraHeaders = { 'X-Provider': db.nanogptProvider as string }
     } else if (aiModel === 'reverse_proxy') {
       apiKey = db.proxyKey
-      baseUrl = resolveReverseProxyLegacyInstructUrl(
-        db.forceReplaceUrl ?? '',
-        db.autofillRequestUrl !== false,
-      )
+      baseUrl = resolveReverseProxyLegacyInstructUrl(db.forceReplaceUrl ?? '', db.autofillRequestUrl !== false)
       ap = additionalParams(db.additionalParams)
     } else if (aiModel.startsWith('xcustom:::')) {
       const entry = findXcustomEntry(db, aiModel)
@@ -979,8 +910,7 @@ export async function dispatchChatProvider(
 
   if (provider === 'openai-responses') {
     const aiModel = asString(db.aiModel) ?? ''
-    let apiKey: string | undefined =
-      info.format === LLMFormat.NanoGPTResponses ? db.nanogptKey : db.openAIKey
+    let apiKey: string | undefined = info.format === LLMFormat.NanoGPTResponses ? db.nanogptKey : db.openAIKey
     let baseUrl = info.format === LLMFormat.NanoGPTResponses ? NANOGPT_BASE_URL : undefined
     let extraHeaders: Record<string, string> | undefined
     let ap: Array<[string, string]> | undefined
@@ -991,10 +921,7 @@ export async function dispatchChatProvider(
       baseUrl = 'https://ollama.com/v1'
     } else if (aiModel === 'reverse_proxy') {
       apiKey = db.proxyKey
-      baseUrl = resolveReverseProxyResponsesUrl(
-        db.forceReplaceUrl ?? '',
-        db.autofillRequestUrl !== false,
-      )
+      baseUrl = resolveReverseProxyResponsesUrl(db.forceReplaceUrl ?? '', db.autofillRequestUrl !== false)
       ap = additionalParams(db.additionalParams)
     } else if (aiModel.startsWith('xcustom:::')) {
       const entry = findXcustomEntry(db, aiModel)
@@ -1097,12 +1024,7 @@ export async function dispatchChatProvider(
         result.type === 'success'
           ? {
               ...result,
-              result: unstringlizeChat(
-                result.result,
-                messages,
-                char?.name ?? '',
-                db.username ?? '',
-              ),
+              result: unstringlizeChat(result.result, messages, char?.name ?? '', db.username ?? ''),
             }
           : result,
       ),
@@ -1126,9 +1048,7 @@ export function getServerGenerationModelString(db: Database): string {
     case 'ollama-hosted':
     case 'ollama-cloud': {
       const modelLabel =
-        name === 'ollama-cloud'
-          ? db.ollamaCloudModelName || db.ollamaCloudModel
-          : db.ollamaModelName || db.ollamaModel
+        name === 'ollama-cloud' ? db.ollamaCloudModelName || db.ollamaCloudModel : db.ollamaModelName || db.ollamaModel
       return `Ollama ${name === 'ollama-cloud' ? 'Cloud' : 'Local'} ${modelLabel}`
     }
     default:

@@ -36,10 +36,7 @@ vi.mock('../src/protocolMetrics.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/protocolMetrics.js')>()
   return {
     ...actual,
-    emitProtocolMetric: (
-      name: string,
-      fields: Record<string, unknown> | (() => Record<string, unknown>),
-    ) => {
+    emitProtocolMetric: (name: string, fields: Record<string, unknown> | (() => Record<string, unknown>)) => {
       if (!actual.protocolMetricsEnabled()) return
       capturedMetrics.push({
         metric: name,
@@ -208,17 +205,11 @@ describe('Phase 9-8d repository .risu bundle export route', () => {
     )
 
     const files = unzipBundle(exported.rawPayload)
-    expect(Object.keys(files).sort()).toEqual([
-      `assets/${INCLUDED_ASSET}.png`,
-      'database.risu',
-      'manifest.json',
-    ])
+    expect(Object.keys(files).sort()).toEqual([`assets/${INCLUDED_ASSET}.png`, 'database.risu', 'manifest.json'])
     expect(Buffer.from(files[`assets/${INCLUDED_ASSET}.png`]).toString('utf8')).toBe('included-png')
 
     const decoded = decodeRisuSaveImportSnapshot(files['database.risu'])
-    expect((decoded.database.characters as Array<Record<string, unknown>>)[0].image).toBe(
-      INCLUDED_ASSET,
-    )
+    expect((decoded.database.characters as Array<Record<string, unknown>>)[0].image).toBe(INCLUDED_ASSET)
 
     const manifest = parseManifest(files)
     expect(manifest.risu).toEqual({
@@ -255,9 +246,7 @@ describe('Phase 9-8d repository .risu bundle export route', () => {
         path: `assets/${MISSING_FILE}.webp`,
       },
     ])
-    expect(manifest.orphanedAssets).toEqual([
-      { id: ORPHANED_ASSET, ext: 'png', size: 7, contentType: 'image/png' },
-    ])
+    expect(manifest.orphanedAssets).toEqual([{ id: ORPHANED_ASSET, ext: 'png', size: 7, contentType: 'image/png' }])
     expect(harness.commandEvents.list()).toEqual([
       {
         type: 'state.exported',
@@ -303,17 +292,13 @@ describe('Phase 9-8d repository .risu bundle export route', () => {
 
     const records = parseLegacyLocalBackupBin(exported.rawPayload)
     expect([...records.keys()].sort()).toEqual([`${INCLUDED_ASSET}.png`, 'database.risudat'])
-    expect(Buffer.from(records.get(`${INCLUDED_ASSET}.png`) ?? []).toString('utf8')).toBe(
-      'included-png',
-    )
+    expect(Buffer.from(records.get(`${INCLUDED_ASSET}.png`) ?? []).toString('utf8')).toBe('included-png')
 
     const databaseBytes = records.get('database.risudat')
     expect(databaseBytes).toBeInstanceOf(Uint8Array)
     const decoded = decodeRisuSaveImportSnapshot(databaseBytes ?? new Uint8Array())
     expect(decoded.envelope).toBe('legacy-compressed')
-    expect((decoded.database.characters as Array<Record<string, unknown>>)[0].image).toBe(
-      INCLUDED_ASSET,
-    )
+    expect((decoded.database.characters as Array<Record<string, unknown>>)[0].image).toBe(INCLUDED_ASSET)
     expect(harness.commandEvents.list()).toEqual([
       {
         type: 'state.exported',
@@ -342,9 +327,7 @@ describe('Phase 9-8d repository .risu bundle export route', () => {
         },
         assets: [],
       })
-      insertAssetMetadataBatch(legacyDb, [
-        { id: INCLUDED_ASSET, ext: 'png', size: 12, contentType: 'image/png' },
-      ])
+      insertAssetMetadataBatch(legacyDb, [{ id: INCLUDED_ASSET, ext: 'png', size: 12, contentType: 'image/png' }])
     } finally {
       legacyDb.close()
     }
@@ -359,9 +342,7 @@ describe('Phase 9-8d repository .risu bundle export route', () => {
 
     expect(exported.statusCode).toBe(200)
     const files = unzipBundle(exported.rawPayload)
-    expect(Buffer.from(files[`assets/${INCLUDED_ASSET}.png`]).toString('utf8')).toBe(
-      'legacy-path-png',
-    )
+    expect(Buffer.from(files[`assets/${INCLUDED_ASSET}.png`]).toString('utf8')).toBe('legacy-path-png')
     expect(parseManifest(files).assetReport).toEqual({
       referencedCount: 1,
       missingCount: 0,
@@ -505,9 +486,7 @@ describe('bundle export materialization measurement', () => {
     })
     expect(exported.statusCode).toBe(200)
 
-    const metric = [...capturedMetrics]
-      .reverse()
-      .find((entry) => entry.metric === 'risusave_export')
+    const metric = [...capturedMetrics].reverse().find((entry) => entry.metric === 'risusave_export')
     expect(metric, 'missing risusave_export metric').toBeTruthy()
     expect(metric?.bundle).toBe(true)
     expect(metric?.envelope).toBe('risusave-blocks')

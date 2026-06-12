@@ -106,10 +106,7 @@ export function requirePluginIndex(plugins: readonly PluginRecord[], pluginId: s
   return index
 }
 
-export function validateFullPluginOrder(
-  plugins: readonly PluginRecord[],
-  pluginIds: readonly string[],
-): void {
+export function validateFullPluginOrder(plugins: readonly PluginRecord[], pluginIds: readonly string[]): void {
   const existing = new Set(plugins.map((plugin) => plugin.name))
   const seen = new Set<string>()
   for (const pluginId of pluginIds) {
@@ -133,11 +130,7 @@ function validatePluginRecord(record: JsonRecord, label: string): void {
   validatePluginPatch(record, label, { allowName: true })
 }
 
-function validatePluginPatch(
-  record: JsonRecord,
-  label: string,
-  options: { allowName?: boolean } = {},
-): void {
+function validatePluginPatch(record: JsonRecord, label: string, options: { allowName?: boolean } = {}): void {
   for (const key of Object.keys(record)) {
     if (!options.allowName && PLUGIN_PATCH_EXCLUDED_KEYS.has(key)) {
       throw new ValidationError(`${label}.${key} cannot be changed by plugin commands`)

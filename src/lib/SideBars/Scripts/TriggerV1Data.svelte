@@ -32,8 +32,7 @@
 
 <div
   class="w-full flex flex-col pt-2 mt-2 border-t border-t-selected first:pt-0 first:mt-0 first:border-0"
-  data-risu-idx2={idx}
->
+  data-risu-idx2={idx}>
   <div class="flex items-center transition-colors w-full">
     <button
       class="endflex valuer border-borderc"
@@ -44,8 +43,7 @@
         } else {
           onClose()
         }
-      }}
-    >
+      }}>
       <span>{value.comment.length === 0 ? 'Unnamed Trigger' : value.comment}</span>
     </button>
     <button
@@ -58,8 +56,7 @@
           }
           onRemove()
         }
-      }}
-    >
+      }}>
       <XIcon />
     </button>
   </div>
@@ -88,8 +85,7 @@
               var: '',
             })
             value.conditions = value.conditions
-          }}><PlusIcon size={18} /></button
-        >
+          }}><PlusIcon size={18} /></button>
       </span>
       <div class="flex flex-col px-2 py-4 border border-selected rounded-md">
         {#if value.conditions.length === 0}
@@ -107,8 +103,7 @@
               onclick={() => {
                 value.conditions.splice(i, 1)
                 value.conditions = value.conditions
-              }}><XIcon size={18} /></button
-            >
+              }}><XIcon size={18} /></button>
           </span>
           <SelectInput
             bind:value={cond.type}
@@ -137,8 +132,7 @@
                   operator: '=',
                 }
               }
-            }}
-          >
+            }}>
             <OptionInput value="value">{language.ifValue}</OptionInput>
             <OptionInput value="exists">{language.triggerCondExists}</OptionInput>
             <OptionInput value="var">{language.triggerCondVar}</OptionInput>
@@ -204,8 +198,7 @@
               })
             }
             value.effect = value.effect
-          }}><PlusIcon size={18} /></button
-        >
+          }}><PlusIcon size={18} /></button>
       </span>
 
       <div class="flex flex-col px-2 py-4 border border-selected rounded-md">
@@ -224,8 +217,7 @@
               onclick={() => {
                 value.effect.splice(i, 1)
                 value.effect = value.effect
-              }}><XIcon size={18} /></button
-            >
+              }}><XIcon size={18} /></button>
           </span>
           <SelectInput
             bind:value={effect.type}
@@ -323,8 +315,7 @@
                   inputVar: '',
                 }
               }
-            }}
-          >
+            }}>
             <OptionInput value="setvar">{language.triggerEffSetVar}</OptionInput>
             <OptionInput value="impersonate">{language.triggerEffImperson}</OptionInput>
             <OptionInput value="command">{language.triggerEffCommand}</OptionInput>
@@ -382,9 +373,7 @@
             <TextAreaInput highlight bind:value={effect.value} />
           {/if}
           {#if effect.type === 'runLLM'}
-            <span class="text-textcolor2 text-sm"
-              >{language.prompt} <Help key="triggerLLMPrompt" /></span
-            >
+            <span class="text-textcolor2 text-sm">{language.prompt} <Help key="triggerLLMPrompt" /></span>
             <TextAreaInput highlight bind:value={effect.value} />
 
             <span class="text-textcolor2 text-sm">{language.resultStoredVar}</span>
@@ -470,9 +459,7 @@
           {/if}
 
           {#if effect.type === 'runAxLLM'}
-            <span class="text-textcolor2 text-sm"
-              >{language.prompt} <Help key="triggerLLMPrompt" /></span
-            >
+            <span class="text-textcolor2 text-sm">{language.prompt} <Help key="triggerLLMPrompt" /></span>
             <TextAreaInput highlight bind:value={effect.value} />
 
             <span class="text-textcolor2 text-sm">{language.resultStoredVar}</span>

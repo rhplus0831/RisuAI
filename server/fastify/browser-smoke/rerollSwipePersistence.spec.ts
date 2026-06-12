@@ -43,9 +43,7 @@ test.afterAll(async () => {
   rmSync(harness.dataDir, { recursive: true, force: true })
 })
 
-test('rerolled candidates survive a reload and stay swipe-recoverable (Phase 6c)', async ({
-  page,
-}) => {
+test('rerolled candidates survive a reload and stay swipe-recoverable (Phase 6c)', async ({ page }) => {
   const diagnostics: string[] = []
   page.on('console', (m) => diagnostics.push(`console.${m.type()}: ${m.text()}`))
   page.on('pageerror', (e) => diagnostics.push(`pageerror: ${e.message}`))
@@ -71,9 +69,7 @@ test('rerolled candidates survive a reload and stay swipe-recoverable (Phase 6c)
       () =>
         page.evaluate(() => {
           const snap = window.__RISU_FASTIFY_BROWSER_SMOKE__!.getDatabaseSnapshot()
-          const chat = (
-            snap.characters as Array<{ chats: Array<{ message: Array<{ data: string }> }> }>
-          )[0].chats[0]
+          const chat = (snap.characters as Array<{ chats: Array<{ message: Array<{ data: string }> }> }>)[0].chats[0]
           return chat.message.map((m) => m.data)
         }),
       { timeout: 15_000 },
@@ -120,23 +116,15 @@ test('rerolled candidates survive a reload and stay swipe-recoverable (Phase 6c)
     .poll(() => page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.getRerollCandidates()), {
       timeout: 15_000,
     })
-    .toEqual(
-      expect.arrayContaining([
-        expect.stringContaining('old reply'),
-        expect.stringContaining('rerolled reply'),
-      ]),
-    )
-  const candidatesAfterReload = await page.evaluate(() =>
-    window.__RISU_FASTIFY_BROWSER_SMOKE__!.getRerollCandidates(),
-  )
+    .toEqual(expect.arrayContaining([expect.stringContaining('old reply'), expect.stringContaining('rerolled reply')]))
+  const candidatesAfterReload = await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.getRerollCandidates())
   expect(candidatesAfterReload.length).toBe(2)
 
   // The active tail is the new candidate before swiping.
   const tailBefore = await page.evaluate(() => {
     const snap = window.__RISU_FASTIFY_BROWSER_SMOKE__!.getDatabaseSnapshot()
-    const message = (
-      snap.characters as Array<{ chats: Array<{ message: Array<{ data: string }> }> }>
-    )[0].chats[0].message
+    const message = (snap.characters as Array<{ chats: Array<{ message: Array<{ data: string }> }> }>)[0].chats[0]
+      .message
     return message.at(-1)!.data
   })
   expect(tailBefore).toContain('rerolled reply')
@@ -149,9 +137,8 @@ test('rerolled candidates survive a reload and stay swipe-recoverable (Phase 6c)
       () =>
         page.evaluate(() => {
           const snap = window.__RISU_FASTIFY_BROWSER_SMOKE__!.getDatabaseSnapshot()
-          const message = (
-            snap.characters as Array<{ chats: Array<{ message: Array<{ data: string }> }> }>
-          )[0].chats[0].message
+          const message = (snap.characters as Array<{ chats: Array<{ message: Array<{ data: string }> }> }>)[0].chats[0]
+            .message
           return message.at(-1)?.data ?? ''
         }),
       { timeout: 15_000 },
@@ -287,11 +274,7 @@ async function startHarness(): Promise<Harness> {
   return { app, baseUrl: `http://127.0.0.1:${address.port}`, dataDir }
 }
 
-async function importDatabase(
-  app: FastifyInstance,
-  auth: string,
-  database: Record<string, unknown>,
-) {
+async function importDatabase(app: FastifyInstance, auth: string, database: Record<string, unknown>) {
   const imported = await app.inject({
     method: 'POST',
     url: '/api/v1/import/risusave',

@@ -14,20 +14,17 @@
     class="h-12 w-44"
     onclick={() => {
       openURL('https://www.patreon.com/RisuAI')
-    }}
-  >
+    }}>
     <img
       src="https://c5.patreon.com/external/logo/become_a_patron_button.png"
       alt="patreon button"
-      class="w-full h-full"
-    />
+      class="w-full h-full" />
   </button>
   <button
     class="h-12 w-44 bg-slate-700 font-bold text-sm"
     onclick={() => {
       openURL('https://sv.risuai.xyz/patreon')
-    }}
-  >
+    }}>
     ADD YOUR NAME
   </button>
 </div>
@@ -40,9 +37,7 @@
   <h3 class="text-xl font-bold mt-4">Supporter V</h3>
   <div class="flex w-full max-w-full flex-wrap gap-2">
     {#each supporter.V as support, index (`V-${index}-${support}`)}
-      <div
-        class="supporter-chip flex flex-col items-center justify-center border-selected border rounded-sm"
-      >
+      <div class="supporter-chip flex flex-col items-center justify-center border-selected border rounded-sm">
         <div class="flex justify-center items-center py-4 px-8">
           <span class="font-black prism-font prism-font-gold text-3xl">{support}</span>
         </div>
@@ -52,9 +47,7 @@
   <h3 class="text-xl font-bold mt-4">Supporter IV</h3>
   <div class="flex w-full max-w-3xl flex-wrap gap-2">
     {#each supporter.IV as support, index (`IV-${index}-${support}`)}
-      <div
-        class="supporter-chip flex flex-col items-center justify-center border-selected border rounded-sm"
-      >
+      <div class="supporter-chip flex flex-col items-center justify-center border-selected border rounded-sm">
         <div class="flex justify-center items-center py-4 px-8">
           <span class="font-black prism-font prism-font-silver text-2xl">{support}</span>
         </div>
@@ -64,9 +57,7 @@
   <h3 class="text-xl font-bold mt-4">Supporter III</h3>
   <div class="flex w-full max-w-3xl flex-wrap gap-2">
     {#each supporter.III as support, index (`III-${index}-${support}`)}
-      <div
-        class="supporter-chip flex flex-col items-center justify-center border-selected border rounded-sm"
-      >
+      <div class="supporter-chip flex flex-col items-center justify-center border-selected border rounded-sm">
         <div class="w-32 flex justify-center items-center py-3 px-6">
           <span class="font-black prism-font prism-font-silver text-xl">{support}</span>
         </div>
@@ -76,9 +67,7 @@
   <h3 class="text-xl font-bold mt-4">Supporter II</h3>
   <div class="flex w-full max-w-3xl flex-wrap gap-2">
     {#each supporter.II as support, index (`II-${index}-${support}`)}
-      <div
-        class="supporter-chip flex flex-col items-center justify-center border-selected border rounded-sm"
-      >
+      <div class="supporter-chip flex flex-col items-center justify-center border-selected border rounded-sm">
         <div class="w-32 flex justify-center items-center p-1">
           <span class="font-bold prism-font prism-font-copper text-lg">{support}</span>
         </div>
@@ -88,9 +77,7 @@
   <h3 class="text-xl font-bold mt-4">Supporter I</h3>
   <div class="flex w-full max-w-3xl flex-wrap gap-2">
     {#each supporter.I as support, index (`I-${index}-${support}`)}
-      <div
-        class="supporter-chip flex flex-col items-center justify-center border-selected border rounded-sm"
-      >
+      <div class="supporter-chip flex flex-col items-center justify-center border-selected border rounded-sm">
         <div class="w-32 flex justify-center items-center p-1">
           <span class="font-bold prism-font prism-font-copper">{support}</span>
         </div>

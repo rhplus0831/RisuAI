@@ -19,8 +19,7 @@ class StreamChunkWriter {
     await this.pushData(data.slice(0, 8))
 
     while (pos < data.length) {
-      const len =
-        data[pos] * 0x1000000 + data[pos + 1] * 0x10000 + data[pos + 2] * 0x100 + data[pos + 3]
+      const len = data[pos] * 0x1000000 + data[pos + 1] * 0x10000 + data[pos + 2] * 0x100 + data[pos + 3]
       const type = data.slice(pos + 4, pos + 8)
       const typeString = new TextDecoder().decode(type)
       if (typeString === 'IEND') {
@@ -67,12 +66,7 @@ class StreamChunkWriter {
     await this.pushData(value)
     const crc = crc32(Buffer.concat([type, keyData, new Uint8Array([0]), value]))
     await this.pushData(
-      new Uint8Array([
-        (crc / 0x1000000) % 0x100,
-        (crc / 0x10000) % 0x100,
-        (crc / 0x100) % 0x100,
-        crc % 0x100,
-      ]),
+      new Uint8Array([(crc / 0x1000000) % 0x100, (crc / 0x10000) % 0x100, (crc / 0x100) % 0x100, crc % 0x100]),
     )
   }
   async end() {
@@ -82,12 +76,7 @@ class StreamChunkWriter {
     await this.pushData(type)
     const crc = crc32(type as Buffer)
     await this.pushData(
-      new Uint8Array([
-        (crc / 0x1000000) % 0x100,
-        (crc / 0x10000) % 0x100,
-        (crc / 0x100) % 0x100,
-        crc % 0x100,
-      ]),
+      new Uint8Array([(crc / 0x1000000) % 0x100, (crc / 0x10000) % 0x100, (crc / 0x100) % 0x100, crc % 0x100]),
     )
     this.writer.close()
   }
@@ -98,8 +87,7 @@ export const PngChunk = {
     let pos = 8
     let chunks: { [key: string]: string } = {}
     while (pos < data.length) {
-      const len =
-        data[pos] * 0x1000000 + data[pos + 1] * 0x10000 + data[pos + 2] * 0x100 + data[pos + 3]
+      const len = data[pos] * 0x1000000 + data[pos + 1] * 0x10000 + data[pos + 2] * 0x100 + data[pos + 3]
       const type = data.slice(pos + 4, pos + 8)
       const typeString = new TextDecoder().decode(type)
       if (arg.checkCrc) {
@@ -187,15 +175,13 @@ export const PngChunk = {
     const size = data instanceof Uint8Array ? data.length : Infinity
     while (pos < size) {
       const dataPart = await slice(pos, pos + 4)
-      const len =
-        dataPart[0] * 0x1000000 + dataPart[1] * 0x10000 + dataPart[2] * 0x100 + dataPart[3]
+      const len = dataPart[0] * 0x1000000 + dataPart[1] * 0x10000 + dataPart[2] * 0x100 + dataPart[3]
       const type = await slice(pos + 4, pos + 8)
       const typeString = new TextDecoder().decode(type)
       if (arg.checkCrc && !(data instanceof ReadableStream)) {
         //crc check is not supported for stream
         const dataPart = await slice(pos + 8 + len, pos + 12 + len)
-        const crc =
-          dataPart[0] * 0x1000000 + dataPart[1] * 0x10000 + dataPart[2] * 0x100 + dataPart[3]
+        const crc = dataPart[0] * 0x1000000 + dataPart[1] * 0x10000 + dataPart[2] * 0x100 + dataPart[3]
         const crcCheck = crc32((await slice(pos + 4, pos + 8 + len)) as Buffer)
         if (crc !== crcCheck) {
           throw new Error('crc check failed')
@@ -232,8 +218,7 @@ export const PngChunk = {
     let pos = 8
     let newData: Uint8Array[] = []
     while (pos < data.length) {
-      const len =
-        data[pos] * 0x1000000 + data[pos + 1] * 0x10000 + data[pos + 2] * 0x100 + data[pos + 3]
+      const len = data[pos] * 0x1000000 + data[pos + 1] * 0x10000 + data[pos + 2] * 0x100 + data[pos + 3]
       const type = data.slice(pos + 4, pos + 8)
       const typeString = new TextDecoder().decode(type)
       if (typeString === 'IEND') {
@@ -270,8 +255,7 @@ export const PngChunk = {
     await pushData(data.slice(0, 8))
 
     while (pos < data.length) {
-      const len =
-        data[pos] * 0x1000000 + data[pos + 1] * 0x10000 + data[pos + 2] * 0x100 + data[pos + 3]
+      const len = data[pos] * 0x1000000 + data[pos + 1] * 0x10000 + data[pos + 2] * 0x100 + data[pos + 3]
       const type = data.slice(pos + 4, pos + 8)
       const typeString = new TextDecoder().decode(type)
       if (typeString === 'IEND') {
@@ -303,12 +287,7 @@ export const PngChunk = {
       await pushData(value)
       const crc = crc32(Buffer.concat([type, keyData, new Uint8Array([0]), value]))
       await pushData(
-        new Uint8Array([
-          (crc / 0x1000000) % 0x100,
-          (crc / 0x10000) % 0x100,
-          (crc / 0x100) % 0x100,
-          crc % 0x100,
-        ]),
+        new Uint8Array([(crc / 0x1000000) % 0x100, (crc / 0x10000) % 0x100, (crc / 0x100) % 0x100, crc % 0x100]),
       )
     }
     //create IEND chunk
@@ -319,12 +298,7 @@ export const PngChunk = {
       await pushData(type)
       const crc = crc32(type as Buffer)
       await pushData(
-        new Uint8Array([
-          (crc / 0x1000000) % 0x100,
-          (crc / 0x10000) % 0x100,
-          (crc / 0x100) % 0x100,
-          crc % 0x100,
-        ]),
+        new Uint8Array([(crc / 0x1000000) % 0x100, (crc / 0x10000) % 0x100, (crc / 0x100) % 0x100, crc % 0x100]),
       )
     }
 

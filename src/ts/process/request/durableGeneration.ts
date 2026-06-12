@@ -51,11 +51,7 @@ function deriveMode(input: ServerPromptAssemblyInput): DurableGenerationMode {
  * and scriptstate delta. This gate adds only the generating-mode restriction on
  * top of the assembly verdict.
  */
-const DURABLE_MODES: ReadonlySet<DurableGenerationMode> = new Set([
-  'send',
-  'continue',
-  'regenerate',
-])
+const DURABLE_MODES: ReadonlySet<DurableGenerationMode> = new Set(['send', 'continue', 'regenerate'])
 
 export function resolveDurableGeneration(input: ServerPromptAssemblyInput): DurableGenerationRoute {
   if (!DURABLE_MODES.has(deriveMode(input))) {

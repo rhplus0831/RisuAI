@@ -48,14 +48,7 @@ vi.mock('./scriptDefinitionBridge.svelte', () => ({
 import { flushAllPendingBridgePatches, startBridgePatchLifecycleFlush } from './bridgeFlush'
 
 function allCallBuckets(): unknown[][] {
-  return [
-    calls.settings,
-    calls.character,
-    calls.chat,
-    calls.lorebook,
-    calls.promptTemplate,
-    calls.scriptDefinition,
-  ]
+  return [calls.settings, calls.character, calls.chat, calls.lorebook, calls.promptTemplate, calls.scriptDefinition]
 }
 
 beforeEach(() => {

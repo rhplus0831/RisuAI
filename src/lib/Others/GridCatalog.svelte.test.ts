@@ -28,10 +28,7 @@ vi.mock('src/ts/characterCommands', () => characterCommandSpies)
 vi.mock('src/ts/server/commands', () => commandSpies)
 vi.mock('src/ts/globalApi.svelte', () => globalApiSpies)
 
-import GridCatalog, {
-  formatGridCatalogCharacterLists,
-  normalizeGridCatalogSearch,
-} from './GridCatalog.svelte'
+import GridCatalog, { formatGridCatalogCharacterLists, normalizeGridCatalogSearch } from './GridCatalog.svelte'
 import MobileCharacters, {
   filterMobileCharacterRows,
   formatMobileCharacterRows,
@@ -147,9 +144,7 @@ function catalogRoot() {
 }
 
 function catalogTab(listKind: GridCatalogListKind) {
-  const tab = target.querySelector<HTMLElement>(
-    `[data-risu-grid-tab][data-risu-list-kind="${listKind}"]`,
-  )
+  const tab = target.querySelector<HTMLElement>(`[data-risu-grid-tab][data-risu-list-kind="${listKind}"]`)
   expect(tab, `grid catalog tab ${listKind}`).toBeTruthy()
   return tab!
 }
@@ -177,28 +172,22 @@ function catalogCountText() {
 
 function gridRows(listKind: GridCatalogListKind) {
   return Array.from(
-    target.querySelectorAll<HTMLElement>(
-      `[data-risu-grid-character-row][data-risu-list-kind="${listKind}"]`,
-    ),
+    target.querySelectorAll<HTMLElement>(`[data-risu-grid-character-row][data-risu-list-kind="${listKind}"]`),
   )
 }
 
 function listHeadings(listKind: GridCatalogListKind) {
-  return gridRows(listKind).map((row) =>
-    row.querySelector('[data-risu-character-name]')?.textContent?.trim(),
-  )
+  return gridRows(listKind).map((row) => row.querySelector('[data-risu-character-name]')?.textContent?.trim())
 }
 
 function mobileRowNames() {
-  return Array.from(target.querySelectorAll<HTMLElement>('[data-risu-mobile-character-row]')).map(
-    (button) => button.querySelector('[data-risu-mobile-character-name]')?.textContent?.trim(),
+  return Array.from(target.querySelectorAll<HTMLElement>('[data-risu-mobile-character-row]')).map((button) =>
+    button.querySelector('[data-risu-mobile-character-name]')?.textContent?.trim(),
   )
 }
 
 function rowForCharacterId(listKind: GridCatalogListKind, characterId: string) {
-  const row = gridRows(listKind).find(
-    (candidate) => candidate.getAttribute('data-risu-row-id') === characterId,
-  )
+  const row = gridRows(listKind).find((candidate) => candidate.getAttribute('data-risu-row-id') === characterId)
   expect(row, `grid catalog ${listKind} row ${characterId}`).toBeTruthy()
   return row!
 }
@@ -369,11 +358,9 @@ describe('GridCatalog derived lists', () => {
     })
     expect(rows.find((char) => char.name === 'Unnamed')?.agoText).toBe('Unknown')
     expect(mobileCharacterRowKey(rows[3])).toBe('legacy-4')
-    expect(
-      filterMobileCharacterRows(rows, normalizeMobileCharacterSearch('AL PHA')).map(
-        (char) => char.name,
-      ),
-    ).toEqual(['Alpha Tie'])
+    expect(filterMobileCharacterRows(rows, normalizeMobileCharacterSearch('AL PHA')).map((char) => char.name)).toEqual([
+      'Alpha Tie',
+    ])
 
     const rowsWithTrash = formatMobileCharacterRows(
       [

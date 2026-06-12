@@ -6,10 +6,7 @@ import type { FastifyInstance } from 'fastify'
 import { DatabaseSync } from 'node:sqlite'
 import { buildApp } from '../src/app.js'
 import { setupAuthedClient } from './helpers/auth.js'
-import {
-  assertCommandMetricGate,
-  type CommandMutationMetric,
-} from './helpers/commandMetricGates.js'
+import { assertCommandMetricGate, type CommandMutationMetric } from './helpers/commandMetricGates.js'
 import { assertOnlyRowsWritten, tableRowidsById } from './helpers/rowStability.js'
 
 // Phase 4 (collection-table paths) regression. Each Tier-4 collection family
@@ -85,11 +82,7 @@ function seedDatabase(): Record<string, unknown> {
       { id: 'mod-a', name: 'Module A', regex: [], trigger: [], lorebook: [] },
       { id: 'mod-b', name: 'Module B', regex: [], trigger: [], lorebook: [] },
     ],
-    plugins: [
-      pluginRecord('plugin-a'),
-      pluginRecord('plugin-b'),
-      pluginRecord('plugin-c'),
-    ],
+    plugins: [pluginRecord('plugin-a'), pluginRecord('plugin-b'), pluginRecord('plugin-c')],
     personas: [
       { id: 'persona-a', name: 'Persona A', personaPrompt: 'pa-prompt', note: 'pa-note' },
       { id: 'persona-b', name: 'Persona B', personaPrompt: 'pb-prompt', note: 'pb-note' },
@@ -168,18 +161,14 @@ async function runCommand(
   request: CommandRequest,
 ): Promise<{ revision: number; metric: CommandMutationMetric; body: Record<string, unknown> }> {
   const before = metrics.length
-  const inject = harness.app.inject as unknown as (
-    request: CommandRequest,
-  ) => Promise<CommandResponse>
+  const inject = harness.app.inject as unknown as (request: CommandRequest) => Promise<CommandResponse>
   const res = await inject({
     ...request,
     headers: { 'risu-auth': assertion, ...(request.headers ?? {}) },
   })
   expect(res.statusCode, JSON.stringify(res.json())).toBe(200)
   const body = res.json() as Record<string, unknown>
-  const metric = metrics
-    .slice(before)
-    .find((entry) => entry.metric === 'command_mutation' && entry.status === 'ok')
+  const metric = metrics.slice(before).find((entry) => entry.metric === 'command_mutation' && entry.status === 'ok')
   expect(metric, `missing command_mutation metric for ${request.url}`).toBeTruthy()
   return { revision: body.revision as number, metric: metric as CommandMutationMetric, body }
 }
@@ -224,9 +213,10 @@ function collectionRowidsByPosition(table: string): Record<number, number> {
 }
 
 /** Assert no character or chat row was rewritten (every rowid stayed put). */
-function expectNoCharacterOrChatChurn(
-  before: { characters: Record<string, number>; chats: Record<string, number> },
-): void {
+function expectNoCharacterOrChatChurn(before: {
+  characters: Record<string, number>
+  chats: Record<string, number>
+}): void {
   assertOnlyRowsWritten(before.characters, tableRowidsById(harness.dataDir, 'characters'))
   assertOnlyRowsWritten(before.chats, tableRowidsById(harness.dataDir, 'chats'))
 }
@@ -322,10 +312,7 @@ describe('Phase 4 plugins collection range', () => {
     expect(metric.writtenTables).toEqual(['plugins'])
     assertCommandMetricGate(metric)
     expectNoCharacterOrChatChurn(before)
-    expect(readCollection('plugins').map((p) => (p as { name: string }).name)).toEqual([
-      'plugin-a',
-      'plugin-c',
-    ])
+    expect(readCollection('plugins').map((p) => (p as { name: string }).name)).toEqual(['plugin-a', 'plugin-c'])
     expect(readSettings().currentPluginProvider).toBe('plugin-a')
   })
 
@@ -344,10 +331,7 @@ describe('Phase 4 plugins collection range', () => {
     expect(metric.writtenTables).toEqual(['plugins', 'settings'])
     assertCommandMetricGate(metric)
     expectNoCharacterOrChatChurn(before)
-    expect(readCollection('plugins').map((p) => (p as { name: string }).name)).toEqual([
-      'plugin-b',
-      'plugin-c',
-    ])
+    expect(readCollection('plugins').map((p) => (p as { name: string }).name)).toEqual(['plugin-b', 'plugin-c'])
     expect(readSettings().currentPluginProvider).toBe('')
   })
 
@@ -496,10 +480,7 @@ describe('Phase 4 presets collection range', () => {
     expect(metric.writtenTables).toEqual(['bot_presets', 'settings'])
     assertCommandMetricGate(metric)
     expectNoCharacterOrChatChurn(before)
-    expect(readCollection('bot_presets').map((p) => (p as { id: string }).id)).toEqual([
-      'preset-1',
-      'preset-0',
-    ])
+    expect(readCollection('bot_presets').map((p) => (p as { id: string }).id)).toEqual(['preset-1', 'preset-0'])
     expect(readSettings().botPresetsId).toBe(1)
   })
 
@@ -643,10 +624,7 @@ describe('Phase 4 prompt-items collection range', () => {
     expect(metric.writtenTables).toEqual(['prompt_templates'])
     assertCommandMetricGate(metric)
     expectNoCharacterOrChatChurn(before)
-    expect((readCollection('prompt_templates') as Array<{ id: string }>).map((i) => i.id)).toEqual([
-      'item-0',
-      'item-2',
-    ])
+    expect((readCollection('prompt_templates') as Array<{ id: string }>).map((i) => i.id)).toEqual(['item-0', 'item-2'])
   })
 
   it('POST prompt-items/enable=false clears only the prompt_templates table', async () => {
@@ -822,9 +800,7 @@ describe('Phase 4 personas collection range', () => {
     expect(metric.writtenTables).toEqual(['personas', 'settings'])
     assertCommandMetricGate(metric)
     expectNoCharacterOrChatChurn(before)
-    expect((readCollection('personas') as Array<{ id: string }>).map((p) => p.id)).toEqual([
-      'persona-b',
-    ])
+    expect((readCollection('personas') as Array<{ id: string }>).map((p) => p.id)).toEqual(['persona-b'])
     expect(readSettings().selectedPersona).toBe(0)
     expect(body.selectedPersonaId).toBe('persona-b')
     // Default mirror refreshed the legacy scalars from the new selection.
@@ -846,10 +822,7 @@ describe('Phase 4 personas collection range', () => {
     expect(metric.writtenTables).toEqual(['personas', 'settings'])
     assertCommandMetricGate(metric)
     expectNoCharacterOrChatChurn(before)
-    expect((readCollection('personas') as Array<{ id: string }>).map((p) => p.id)).toEqual([
-      'persona-b',
-      'persona-a',
-    ])
+    expect((readCollection('personas') as Array<{ id: string }>).map((p) => p.id)).toEqual(['persona-b', 'persona-a'])
     expect(readSettings().selectedPersona).toBe(1)
   })
 })
@@ -876,9 +849,11 @@ describe('Phase 4 translator-presets collection range', () => {
     expect(metric.writtenTables).toEqual(EXPECTED)
     assertCommandMetricGate(metric)
     expectNoCharacterOrChatChurn(before)
-    expect((readCollection('translator_presets') as Array<{ id: string }>).map((p) => p.id)).toEqual(
-      ['tp-a', 'tp-b', 'tp-c'],
-    )
+    expect((readCollection('translator_presets') as Array<{ id: string }>).map((p) => p.id)).toEqual([
+      'tp-a',
+      'tp-b',
+      'tp-c',
+    ])
     // No select: pointer + legacy fields still reflect tp-a.
     expect(readSettings().translatorPresetId).toBe(0)
     expect(readSettings().translatorPrompt).toBe('pa-prompt')
@@ -916,9 +891,7 @@ describe('Phase 4 translator-presets collection range', () => {
     expect(metric.writtenTables).toEqual(EXPECTED)
     assertCommandMetricGate(metric)
     expectNoCharacterOrChatChurn(before)
-    expect((readCollection('translator_presets') as Array<{ id: string }>).map((p) => p.id)).toEqual(
-      ['tp-a'],
-    )
+    expect((readCollection('translator_presets') as Array<{ id: string }>).map((p) => p.id)).toEqual(['tp-a'])
     expect(body.selectedPresetId).toBe('tp-a')
   })
 
@@ -999,9 +972,7 @@ describe('Phase 4 loadouts collection range', () => {
     expect(metric.writtenTables).toEqual(['loadouts'])
     assertCommandMetricGate(metric)
     expectNoCharacterOrChatChurn(before)
-    expect((readCollection('loadouts') as Array<{ id: string }>).map((l) => l.id)).toEqual([
-      'loadout-b',
-    ])
+    expect((readCollection('loadouts') as Array<{ id: string }>).map((l) => l.id)).toEqual(['loadout-b'])
   })
 
   it('POST loadouts/:id/favorite rewrites only the loadouts table', async () => {
@@ -1105,9 +1076,7 @@ describe('Phase 4 lorebooks collection range', () => {
     expect(metric.writtenTables).toEqual(['lore_books', 'settings'])
     assertCommandMetricGate(metric)
     expectNoCharacterOrChatChurn(before)
-    expect((readCollection('lore_books') as Array<{ id: string }>).map((l) => l.id)).toEqual([
-      'lore-1',
-    ])
+    expect((readCollection('lore_books') as Array<{ id: string }>).map((l) => l.id)).toEqual(['lore-1'])
     expect(readSettings().loreBookPage).toBe(0)
   })
 
@@ -1126,10 +1095,7 @@ describe('Phase 4 lorebooks collection range', () => {
     expect(metric.writtenTables).toEqual(['lore_books', 'settings'])
     assertCommandMetricGate(metric)
     expectNoCharacterOrChatChurn(before)
-    expect((readCollection('lore_books') as Array<{ id: string }>).map((l) => l.id)).toEqual([
-      'lore-1',
-      'lore-0',
-    ])
+    expect((readCollection('lore_books') as Array<{ id: string }>).map((l) => l.id)).toEqual(['lore-1', 'lore-0'])
     expect(readSettings().loreBookPage).toBe(1)
   })
 
@@ -1207,10 +1173,7 @@ describe('Phase 4 modules collection range', () => {
     expect(metric.writtenTables).toEqual(['modules'])
     assertCommandMetricGate(metric)
     expectNoCharacterOrChatChurn(before)
-    expect((readCollection('modules') as Array<{ id: string }>).map((m) => m.id)).toEqual([
-      'mod-b',
-      'mod-a',
-    ])
+    expect((readCollection('modules') as Array<{ id: string }>).map((m) => m.id)).toEqual(['mod-b', 'mod-a'])
   })
 
   it('PUT modules/:id/lorebooks updates one row in place', async () => {

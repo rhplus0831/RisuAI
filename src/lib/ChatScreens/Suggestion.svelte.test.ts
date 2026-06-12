@@ -91,8 +91,7 @@ describe('runSuggestionTranslation', () => {
       getCurrentRunId: () => currentRunId,
       getCurrentRequestId: () => 1,
       getCurrentMessages: () => currentMessages,
-      translateMessage: async (message) =>
-        message === 'slow-a' ? slowFirstMessage.promise : `translated:${message}`,
+      translateMessage: async (message) => (message === 'slow-a' ? slowFirstMessage.promise : `translated:${message}`),
       clear: vi.fn(),
       commit: (messages) => commits.push(messages),
     })

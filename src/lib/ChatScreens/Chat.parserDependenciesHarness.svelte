@@ -56,6 +56,5 @@
     firstMessage={index === 0}
     img=""
     rerollIcon={false}
-    disabled={false}
-  />
+    disabled={false} />
 {/each}

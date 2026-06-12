@@ -20,13 +20,7 @@
     idx: number
   }
 
-  let {
-    value = $bindable(),
-    onRemove = () => {},
-    onClose = () => {},
-    onOpen = () => {},
-    idx,
-  }: Props = $props()
+  let { value = $bindable(), onRemove = () => {}, onClose = () => {}, onOpen = () => {}, idx }: Props = $props()
 
   const checkFlagContain = (flag: string, matchFlag: string) => {
     if (flag.length === 1) {
@@ -81,8 +75,7 @@
 
 <div
   class="w-full flex flex-col pt-2 mt-2 border-t border-t-selected first:pt-0 first:mt-0 first:border-0"
-  data-risu-idx={idx}
->
+  data-risu-idx={idx}>
   <div class="flex items-center transition-colors w-full">
     <button
       class="endflex valuer border-borderc"
@@ -93,8 +86,7 @@
         } else {
           onClose()
         }
-      }}
-    >
+      }}>
       <span>{value.comment.length === 0 ? 'Unnamed Script' : value.comment}</span>
     </button>
     <button
@@ -107,8 +99,7 @@
           }
           onRemove()
         }
-      }}
-    >
+      }}>
       <XIcon />
     </button>
   </div>
@@ -120,15 +111,13 @@
         bind:value={value.comment}
         onchange={(e) => {
           reloadGuiAfterDefinitionChange()
-        }}
-      />
+        }} />
       <span class="text-textcolor mt-4">Modification Type</span>
       <SelectInput
         bind:value={value.type}
         onchange={(e) => {
           reloadGuiAfterDefinitionChange()
-        }}
-      >
+        }}>
         <OptionInput value="editinput">{language.editInput}</OptionInput>
         <OptionInput value="editoutput">{language.editOutput}</OptionInput>
         <OptionInput value="editprocess">{language.editProcess}</OptionInput>
@@ -146,8 +135,7 @@
         bind:value={value.out}
         onInput={(e) => {
           reloadGuiAfterDefinitionChange()
-        }}
-      />
+        }} />
       {#if value.ableFlag}
         <Accordion styled name="FLAGS">
           <span class="text-textcolor mt-3">Normal Flag</span>
@@ -161,8 +149,7 @@
                 class:text-textcolor={checkFlagContain(flag[1], value.flag)}
                 onclick={() => {
                   toggleFlag(flag[1])
-                }}
-              >
+                }}>
                 <span>{flag[0]}</span>
               </button>
             {/each}
@@ -173,8 +160,7 @@
             value={getOrder(value.flag)}
             onChange={(e) => {
               changeOrder(parseInt(e.currentTarget.value))
-            }}
-          />
+            }} />
         </Accordion>
       {/if}
       <div class="flex items-center mt-4">
@@ -184,8 +170,7 @@
             if (!value.flag) {
               value.flag = 'g'
             }
-          }}
-        />
+          }} />
         <span>Custom Flag</span>
       </div>
     </div>

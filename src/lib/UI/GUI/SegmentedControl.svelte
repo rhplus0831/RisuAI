@@ -76,8 +76,7 @@
       class:py-2={size === 'md'}
       class:px-6={size === 'lg'}
       class:py-3={size === 'lg'}
-      onclick={() => handleSelect(opt)}
-    >
+      onclick={() => handleSelect(opt)}>
       {opt.label}
     </button>
   {/each}

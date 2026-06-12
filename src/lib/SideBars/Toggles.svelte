@@ -30,9 +30,7 @@
     }),
   )
 
-  let hasJailbreakPrompt = $derived.by(
-    () => activeGenerationSettings.readiness.requirements.jailbreakToggle.displayed,
-  )
+  let hasJailbreakPrompt = $derived.by(() => activeGenerationSettings.readiness.requirements.jailbreakToggle.displayed)
 
   let requiredSidebarToggles = $derived.by(() => activeGenerationSettings.requiredSidebarToggles)
 
@@ -67,15 +65,11 @@
         data-risu-generation-toggle-control
         data-risu-toggle-key={toggle.key}
         data-risu-toggle-kind={toggle.kind}
-        data-risu-input-kind="select"
-      >
+        data-risu-input-kind="select">
         <span>{toggle.label}</span>
         <SelectInput
           className="w-32"
-          bind:value={
-            () => getToggleValue(toggle.key), (value) => setToggleValue(toggle.key, String(value))
-          }
-        >
+          bind:value={() => getToggleValue(toggle.key), (value) => setToggleValue(toggle.key, String(value))}>
           {#each toggle.options as option, i}
             <OptionInput value={i.toString()}>{option}</OptionInput>
           {/each}
@@ -88,15 +82,11 @@
         data-risu-generation-toggle-control
         data-risu-toggle-key={toggle.key}
         data-risu-toggle-kind={toggle.kind}
-        data-risu-input-kind="text"
-      >
+        data-risu-input-kind="text">
         <span>{toggle.label}</span>
         <TextInput
           className="w-32"
-          bind:value={
-            () => getToggleValue(toggle.key), (value) => setToggleValue(toggle.key, value)
-          }
-        />
+          bind:value={() => getToggleValue(toggle.key), (value) => setToggleValue(toggle.key, value)} />
       </div>
     {:else if toggle.kind === 'textarea'}
       <div
@@ -105,16 +95,12 @@
         data-risu-generation-toggle-control
         data-risu-toggle-key={toggle.key}
         data-risu-toggle-kind={toggle.kind}
-        data-risu-input-kind="textarea"
-      >
+        data-risu-input-kind="textarea">
         <span class="mt-1.5">{toggle.label}</span>
         <TextAreaInput
           className="w-32"
           height="20"
-          bind:value={
-            () => getToggleValue(toggle.key), (value) => setToggleValue(toggle.key, value)
-          }
-        />
+          bind:value={() => getToggleValue(toggle.key), (value) => setToggleValue(toggle.key, value)} />
       </div>
     {:else}
       <div
@@ -124,16 +110,14 @@
         data-risu-toggle-key={toggle.key}
         data-risu-toggle-kind={toggle.kind}
         data-risu-input-kind="checkbox"
-        data-risu-selected={getToggleValue(toggle.key) === '1' ? 'true' : 'false'}
-      >
+        data-risu-selected={getToggleValue(toggle.key) === '1' ? 'true' : 'false'}>
         <CheckInput
           check={getToggleValue(toggle.key) === '1'}
           {reverse}
           name={toggle.label}
           onChange={(check) => {
             setToggleValue(toggle.key, check ? '1' : '0')
-          }}
-        />
+          }} />
       </div>
     {/if}
   {/each}
@@ -152,25 +136,18 @@
         data-risu-toggle-key="jailbreakToggle"
         data-risu-toggle-kind="jailbreak"
         data-risu-input-kind="checkbox"
-        data-risu-selected={getJailbreakToggleValue() ? 'true' : 'false'}
-      >
+        data-risu-selected={getJailbreakToggleValue() ? 'true' : 'false'}>
         <CheckInput
           bind:check={() => getJailbreakToggleValue(), setJailbreakToggleValue}
           name={language.jailbreakToggle}
-          reverse
-        />
+          reverse />
       </div>
     {/if}
 
     {@render toggles(requiredSidebarToggles, true)}
     {#if chara && DBState.db.hypaV3}
       <div class="flex mt-2 items-center w-full" class:justify-end={$MobileGUI}>
-        <CheckInput
-          check={chara.supaMemory}
-          reverse
-          name={language.ToggleHypaMemory}
-          onChange={setSupaMemoryValue}
-        />
+        <CheckInput check={chara.supaMemory} reverse name={language.ToggleHypaMemory} onChange={setSupaMemoryValue} />
       </div>
     {/if}
   </div>
@@ -185,22 +162,16 @@
       data-risu-toggle-key="jailbreakToggle"
       data-risu-toggle-kind="jailbreak"
       data-risu-input-kind="checkbox"
-      data-risu-selected={getJailbreakToggleValue() ? 'true' : 'false'}
-    >
+      data-risu-selected={getJailbreakToggleValue() ? 'true' : 'false'}>
       <CheckInput
         bind:check={() => getJailbreakToggleValue(), setJailbreakToggleValue}
-        name={language.jailbreakToggle}
-      />
+        name={language.jailbreakToggle} />
     </div>
   {/if}
   {@render toggles(requiredSidebarToggles)}
   {#if chara && DBState.db.hypaV3}
     <div class="flex mt-2 items-center">
-      <CheckInput
-        check={chara.supaMemory}
-        name={language.ToggleHypaMemory}
-        onChange={setSupaMemoryValue}
-      />
+      <CheckInput check={chara.supaMemory} name={language.ToggleHypaMemory} onChange={setSupaMemoryValue} />
     </div>
   {/if}
 {/if}

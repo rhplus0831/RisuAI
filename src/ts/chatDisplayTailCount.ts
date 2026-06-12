@@ -11,8 +11,5 @@ export function normalizeChatDisplayTailCount(value: unknown): number {
         : DEFAULT_CHAT_DISPLAY_TAIL_COUNT
 
   if (!Number.isFinite(parsed)) return DEFAULT_CHAT_DISPLAY_TAIL_COUNT
-  return Math.min(
-    MAX_CHAT_DISPLAY_TAIL_COUNT,
-    Math.max(MIN_CHAT_DISPLAY_TAIL_COUNT, Math.round(parsed)),
-  )
+  return Math.min(MAX_CHAT_DISPLAY_TAIL_COUNT, Math.max(MIN_CHAT_DISPLAY_TAIL_COUNT, Math.round(parsed)))
 }

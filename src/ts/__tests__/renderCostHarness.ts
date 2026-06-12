@@ -183,10 +183,7 @@ async function waitForVisibleMessages(target: HTMLElement, expectedTexts: string
     await settleRenderWork()
     const mountedMessages = target.querySelectorAll('.risu-chat').length
     const text = target.textContent ?? ''
-    if (
-      mountedMessages === expectedTexts.length &&
-      expectedTexts.every((item) => text.includes(item))
-    ) {
+    if (mountedMessages === expectedTexts.length && expectedTexts.every((item) => text.includes(item))) {
       return
     }
   }
@@ -241,9 +238,7 @@ async function finishCacheProofAfterBump(
   }
 }
 
-export async function runRenderCostHarness(
-  options: RenderCostHarnessOptions,
-): Promise<RenderCostHarnessResult> {
+export async function runRenderCostHarness(options: RenderCostHarnessOptions): Promise<RenderCostHarnessResult> {
   const previousDb = DBState.db
   const previousSelectedChar = get(selectedCharID)
   const previousReloadGui = get(ReloadGUIPointer)
@@ -327,8 +322,7 @@ export async function runRenderCostHarness(
       parsesBeforeBump,
       parsesAfterBump,
       editDisplayRunsAfterBump: parsesAfterBump.editDisplay,
-      cacheWarmBeforeBump:
-        cacheProof.regexCacheWarmBeforeBump && cacheProof.scriptCacheWarmBeforeBump,
+      cacheWarmBeforeBump: cacheProof.regexCacheWarmBeforeBump && cacheProof.scriptCacheWarmBeforeBump,
       cacheWiped: cacheProof.regexCacheWipedAfterBump && cacheProof.scriptCacheWipedAfterBump,
       cacheProof,
     }

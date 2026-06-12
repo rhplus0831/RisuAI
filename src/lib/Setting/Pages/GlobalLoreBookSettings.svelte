@@ -17,7 +17,6 @@
     openLoreList = true
   }}
   class="mt-4 drop-shadow-lg p-3 flex justify-center items-center ml-2 mr-2 rounded-lg bg-selected mb-4"
-  >{DBState.db.loreBook[DBState.db.loreBookPage].name}</button
->
+  >{DBState.db.loreBook[DBState.db.loreBookPage].name}</button>
 
 <LoreBookSetting globalMode />

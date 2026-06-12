@@ -5,17 +5,10 @@ vi.mock('../modules', async (importActual) => {
   return { ...actual, moduleUpdate: () => {} }
 })
 
-import {
-  setDatabase,
-  type Database,
-  type character,
-} from '../../storage/database.svelte'
+import { setDatabase, type Database, type character } from '../../storage/database.svelte'
 import { selectedCharID } from '../../stores.svelte'
 import type { OpenAIChat } from '../index.svelte'
-import {
-  buildLorebookContext,
-  type UnformatedLorebookSlots,
-} from '../promptAssembly/buildLorebookContext'
+import { buildLorebookContext, type UnformatedLorebookSlots } from '../promptAssembly/buildLorebookContext'
 
 interface LoreEntry {
   key?: string
@@ -143,10 +136,7 @@ describe('buildLorebookContext - placement', () => {
   })
 
   it('routes depth=0 system-role lore into postEverything before assistant-role lore', async () => {
-    seedWithLore([
-      { content: '@@end\nSystem entry' },
-      { content: '@@end\n@@role assistant\nAssistant entry' },
-    ])
+    seedWithLore([{ content: '@@end\nSystem entry' }, { content: '@@end\n@@role assistant\nAssistant entry' }])
     const slots = emptySlots()
     await buildLorebookContext(makeChar(), slots)
     expect(slots.postEverything).toEqual([
@@ -214,10 +204,7 @@ describe('buildLorebookContext - depthPrompts', () => {
   })
 
   it('excludes @@end (depth=0) entries because those land in postEverything instead', async () => {
-    seedWithLore([
-      { content: '@@end\nAt end' },
-      { content: '@@depth 1\nAt depth 1' },
-    ])
+    seedWithLore([{ content: '@@end\nAt end' }, { content: '@@depth 1\nAt depth 1' }])
     const lore = await buildLorebookContext(makeChar(), emptySlots())
     expect(lore.depthPrompts).toHaveLength(1)
     expect(lore.depthPrompts[0].prompt).toBe('At depth 1')

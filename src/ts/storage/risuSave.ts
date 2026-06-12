@@ -39,10 +39,7 @@ async function checkCompressionStreams() {
   }
 }
 
-export function encodeRisuSaveLegacy(
-  data: any,
-  compression: 'noCompression' | 'compression' = 'noCompression',
-) {
+export function encodeRisuSaveLegacy(data: any, compression: 'noCompression' | 'compression' = 'noCompression') {
   let encoded: Uint8Array = packr.encode(data)
   if (compression === 'compression') {
     encoded = fflate.compressSync(encoded)
@@ -328,10 +325,7 @@ export class RisuSaveEncoder {
   }
 
   async encodeBlock(arg: EncodeBlockArg, option: EncodeBlockOption = { remote: 'none' }) {
-    if (
-      option.remote === 'force' ||
-      (option.remote === 'prefer' && !disableRemoteSaving())
-    ) {
+    if (option.remote === 'force' || (option.remote === 'prefer' && !disableRemoteSaving())) {
       return await this.encodeRemoteBlock(arg)
     }
     return await this.encodeRawBlock(arg)
@@ -376,9 +370,7 @@ export class RisuSaveEncoder {
         fileExists = true
       }
       if (!fileExists) {
-        console.log(
-          `Remote file ${fileName} does not exist, disabling skipRemoteSaving for this block.`,
-        )
+        console.log(`Remote file ${fileName} does not exist, disabling skipRemoteSaving for this block.`)
         arg.skipRemoteSaving = false
       }
       checkedRemoteExistence.add(arg.name)
@@ -474,9 +466,7 @@ export class RisuSaveDecoder {
                   if (!loadedBlocks.has(dirKey)) {
                     try {
                       console.log(`Loading directory block ${dirKey} from cache`)
-                      console.warn(
-                        `RisuSave cache block ${dirKey} is not available in server-backed web mode.`,
-                      )
+                      console.warn(`RisuSave cache block ${dirKey} is not available in server-backed web mode.`)
                       continue
                     } catch (error) {
                       console.error(`Error loading directory block ${dirKey}:`, error)
@@ -526,9 +516,7 @@ export class RisuSaveDecoder {
             } = JSON.parse(this.blocks[key].content)
             const fileName = `remotes/${remoteInfo.name}.local.bin`
             let remoteData: Uint8Array | null = null
-            console.warn(
-              `RisuSave remote block ${remoteInfo.name} is not available in server-backed web mode.`,
-            )
+            console.warn(`RisuSave remote block ${remoteInfo.name} is not available in server-backed web mode.`)
             break
 
             if (!remoteData) {
@@ -555,9 +543,7 @@ export class RisuSaveDecoder {
             break
           }
           default: {
-            console.warn(
-              `Not Implemented RisuSaveType: ${this.blocks[key].type} for ${this.blocks[key].name}`,
-            )
+            console.warn(`Not Implemented RisuSaveType: ${this.blocks[key].type} for ${this.blocks[key].name}`)
           }
         }
       } catch (error) {

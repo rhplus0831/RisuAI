@@ -118,11 +118,7 @@ export function registerSessionToken(state: AuthState): string {
 }
 
 function persistKnownSessionTokens(state: AuthState): void {
-  fs.writeFileSync(
-    state.sessionTokensPath,
-    JSON.stringify(Array.from(state.knownSessionTokenHashes)),
-    'utf-8',
-  )
+  fs.writeFileSync(state.sessionTokensPath, JSON.stringify(Array.from(state.knownSessionTokenHashes)), 'utf-8')
 }
 
 export function passwordMatches(state: AuthState, candidate: string | undefined): boolean {
@@ -173,14 +169,7 @@ export type VerifyResult =
   | { ok: true }
   | {
       ok: false
-      reason:
-        | 'missing'
-        | 'malformed'
-        | 'expired'
-        | 'unknown-key'
-        | 'bad-alg'
-        | 'bad-signature'
-        | 'error'
+      reason: 'missing' | 'malformed' | 'expired' | 'unknown-key' | 'bad-alg' | 'bad-signature' | 'error'
     }
 
 export async function verifyAssertion(state: AuthState, token: string): Promise<VerifyResult> {
@@ -207,13 +196,9 @@ export async function verifyAssertion(state: AuthState, token: string): Promise<
   touch(state.knownKeyHashes, pubHash)
 
   try {
-    const key = await subtle.importKey(
-      'jwk',
-      decoded.payload.pub,
-      { name: 'ECDSA', namedCurve: 'P-256' },
-      false,
-      ['verify'],
-    )
+    const key = await subtle.importKey('jwk', decoded.payload.pub, { name: 'ECDSA', namedCurve: 'P-256' }, false, [
+      'verify',
+    ])
     const valid = await subtle.verify(
       { name: 'ECDSA', hash: { name: 'SHA-256' } },
       key,

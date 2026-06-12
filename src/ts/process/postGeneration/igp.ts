@@ -29,11 +29,7 @@ export async function evaluateIgp(opts: EvaluateIgpOptions): Promise<void> {
   const parsed = risuChatParser(opts.promptTemplate ?? '')
   if (!parsed) return
   const formated = parseChatML(parsed)
-  const rq = await requestChatData(
-    { formated, bias: {} },
-    'emotion',
-    opts.abortSignal,
-  )
+  const rq = await requestChatData({ formated, bias: {} }, 'emotion', opts.abortSignal)
   const appended = formatIgpAppendPayload(rq)
   mutateChatWithScopedCommand(
     (chat) => {

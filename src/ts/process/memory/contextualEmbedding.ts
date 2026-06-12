@@ -93,14 +93,11 @@ class VoyageContext3Provider implements ContextualEmbeddingProvider {
       throw new Error(JSON.stringify(response.data))
     }
 
-    return response.data.data.map(
-      (group: { data: { embedding: VectorArray }[] }) => group.data[0].embedding,
-    )
+    return response.data.data.map((group: { data: { embedding: VectorArray }[] }) => group.data[0].embedding)
   }
 
   getCacheKeySuffix(contextTexts?: string[]): string {
-    const ctxPart =
-      contextTexts && contextTexts.length > 1 ? `|ctx:${contextHash(contextTexts)}` : ''
+    const ctxPart = contextTexts && contextTexts.length > 1 ? `|ctx:${contextHash(contextTexts)}` : ''
     return `|voyageContext3${ctxPart}`
   }
 
@@ -112,8 +109,7 @@ class VoyageContext3Provider implements ContextualEmbeddingProvider {
     for (const group of groups) {
       if (
         currentBatch.length > 0 &&
-        (currentBatch.length + 1 > MAX_INPUTS_PER_REQUEST ||
-          currentChunkCount + group.length > MAX_CHUNKS_PER_REQUEST)
+        (currentBatch.length + 1 > MAX_INPUTS_PER_REQUEST || currentChunkCount + group.length > MAX_CHUNKS_PER_REQUEST)
       ) {
         batches.push(currentBatch)
         currentBatch = []

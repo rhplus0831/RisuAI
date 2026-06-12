@@ -97,9 +97,7 @@ export function createTranslatorPreset(
     name,
     prompt: typeof existing.prompt === 'string' ? existing.prompt : '',
     maxResponse:
-      typeof existing.maxResponse === 'number' && Number.isFinite(existing.maxResponse)
-        ? existing.maxResponse
-        : 1000,
+      typeof existing.maxResponse === 'number' && Number.isFinite(existing.maxResponse) ? existing.maxResponse : 1000,
   }
   if (typeof existing.id === 'string' && existing.id.trim().length > 0) {
     preset.id = existing.id
@@ -122,9 +120,7 @@ export function normalizeTranslatorPresetState<T extends TranslatorPresetStateLi
       normalizedPreset,
     )
     const id =
-      typeof normalized.id === 'string' && normalized.id.trim().length > 0
-        ? normalized.id
-        : crypto.randomUUID()
+      typeof normalized.id === 'string' && normalized.id.trim().length > 0 ? normalized.id : crypto.randomUUID()
     normalized.id = seen.has(id) ? crypto.randomUUID() : id
     seen.add(normalized.id)
     return normalized
@@ -135,17 +131,12 @@ export function normalizeTranslatorPresetState<T extends TranslatorPresetStateLi
       ? state.translatorPresetId
       : 0
 
-  state.translatorPresetId = Math.min(
-    Math.max(requestedId, 0),
-    Math.max(state.translatorPresets.length - 1, 0),
-  )
+  state.translatorPresetId = Math.min(Math.max(requestedId, 0), Math.max(state.translatorPresets.length - 1, 0))
 
   return syncCurrentTranslatorPresetToLegacyFields(state)
 }
 
-export function syncCurrentTranslatorPresetToLegacyFields<T extends TranslatorPresetStateLike>(
-  state: T,
-): T {
+export function syncCurrentTranslatorPresetToLegacyFields<T extends TranslatorPresetStateLike>(state: T): T {
   const preset = state.translatorPresets?.[state.translatorPresetId ?? 0]
 
   if (!isTranslatorPresetValue(preset)) {
@@ -158,24 +149,17 @@ export function syncCurrentTranslatorPresetToLegacyFields<T extends TranslatorPr
   return state
 }
 
-export function getCurrentTranslatorPresetFromState<T extends TranslatorPresetStateLike>(
-  state: T,
-): TranslatorPreset {
+export function getCurrentTranslatorPresetFromState<T extends TranslatorPresetStateLike>(state: T): TranslatorPreset {
   const presetId =
     typeof state.translatorPresetId === 'number' && Number.isInteger(state.translatorPresetId)
       ? state.translatorPresetId
       : -1
-  const preset = Array.isArray(state.translatorPresets)
-    ? state.translatorPresets[presetId]
-    : undefined
+  const preset = Array.isArray(state.translatorPresets) ? state.translatorPresets[presetId] : undefined
 
   if (!isTranslatorPresetValue(preset)) {
     const normalizedState = normalizeTranslatorPresetState(state)
-    const normalizedPreset =
-      normalizedState.translatorPresets?.[normalizedState.translatorPresetId ?? 0]
-    return isTranslatorPresetValue(normalizedPreset)
-      ? normalizedPreset
-      : getDefaultTranslatorPreset(normalizedState)
+    const normalizedPreset = normalizedState.translatorPresets?.[normalizedState.translatorPresetId ?? 0]
+    return isTranslatorPresetValue(normalizedPreset) ? normalizedPreset : getDefaultTranslatorPreset(normalizedState)
   }
 
   state.translatorPrompt = preset.prompt
@@ -231,10 +215,7 @@ async function decodeEncryptedTranslatorPresetFile(data: Uint8Array): Promise<Tr
 }
 
 export async function encodeTranslatorPresetFile(preset: TranslatorPreset): Promise<Uint8Array> {
-  const normalizedPreset = createTranslatorPreset(
-    preset.name.trim().length > 0 ? preset.name : 'Preset',
-    preset,
-  )
+  const normalizedPreset = createTranslatorPreset(preset.name.trim().length > 0 ? preset.name : 'Preset', preset)
   const encryptedPreset = new Uint8Array(
     await encryptBuffer(encodeMsgpack(normalizedPreset), translatorPresetEncryptionKey),
   )

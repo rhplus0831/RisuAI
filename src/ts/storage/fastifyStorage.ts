@@ -1,9 +1,6 @@
 import { language } from 'src/lang'
 import { alertError, alertInput, waitAlert } from '../alert'
-import {
-  activeWriterSessionHeader,
-  handleActiveWriterStaleResponse,
-} from '../server/activeWriterSession'
+import { activeWriterSessionHeader, handleActiveWriterStaleResponse } from '../server/activeWriterSession'
 import { base64url, getKeypairStore, saveKeypairStore } from '../util'
 
 const ROUTES = {
@@ -27,9 +24,7 @@ const FASTIFY_BROWSER_SMOKE_PASSWORD = 'risu-fastify-browser-smoke'
 const SESSION_AUTH_PREFIX = 'session.'
 
 function fastifyBrowserSmokePassword(): string | null {
-  return import.meta.env.VITE_FASTIFY_BROWSER_SMOKE === 'TRUE'
-    ? FASTIFY_BROWSER_SMOKE_PASSWORD
-    : null
+  return import.meta.env.VITE_FASTIFY_BROWSER_SMOKE === 'TRUE' ? FASTIFY_BROWSER_SMOKE_PASSWORD : null
 }
 
 function subtleCrypto(): SubtleCrypto | null {
@@ -90,18 +85,10 @@ export class FastifyStorage {
         hash: 'SHA-256',
       },
       keyPair.privateKey,
-      Buffer.from(
-        this.JSONStringlifyAndbase64Url(header) + '.' + this.JSONStringlifyAndbase64Url(payload),
-      ),
+      Buffer.from(this.JSONStringlifyAndbase64Url(header) + '.' + this.JSONStringlifyAndbase64Url(payload)),
     )
     const sigString = base64url(new Uint8Array(sig))
-    return (
-      this.JSONStringlifyAndbase64Url(header) +
-      '.' +
-      this.JSONStringlifyAndbase64Url(payload) +
-      '.' +
-      sigString
-    )
+    return this.JSONStringlifyAndbase64Url(header) + '.' + this.JSONStringlifyAndbase64Url(payload) + '.' + sigString
   }
 
   async getProxyAuth() {
@@ -227,9 +214,7 @@ export class FastifyStorage {
         const keypair = canUseWebCrypto ? await this.getKeyPair() : null
         const publicKey = keypair ? await subtleCrypto()!.exportKey('jwk', keypair.publicKey) : null
         const smokePassword = fastifyBrowserSmokePassword()
-        const input = await digestPassword(
-          smokePassword ?? (await alertInput(language.setNodePassword)),
-        )
+        const input = await digestPassword(smokePassword ?? (await alertInput(language.setNodePassword)))
         const s = await fetch(ROUTES.setPassword, {
           method: 'POST',
           body: JSON.stringify({
@@ -240,11 +225,7 @@ export class FastifyStorage {
             'content-type': 'application/json',
           },
         })
-        const sessionAuth = await readPasswordAuthResponse(
-          s,
-          `Password setup failed (${s.status})`,
-          !canUseWebCrypto,
-        )
+        const sessionAuth = await readPasswordAuthResponse(s, `Password setup failed (${s.status})`, !canUseWebCrypto)
         if (sessionAuth) {
           saveSessionAuth(sessionAuth)
         }
@@ -254,9 +235,7 @@ export class FastifyStorage {
         const keypair = canUseWebCrypto ? await this.getKeyPair() : null
         const publicKey = keypair ? await subtleCrypto()!.exportKey('jwk', keypair.publicKey) : null
         const smokePassword = fastifyBrowserSmokePassword()
-        const input = await digestPassword(
-          smokePassword ?? (await alertInput(language.inputNodePassword)),
-        )
+        const input = await digestPassword(smokePassword ?? (await alertInput(language.inputNodePassword)))
 
         const s = await fetch(ROUTES.login, {
           method: 'POST',
@@ -268,11 +247,7 @@ export class FastifyStorage {
             'content-type': 'application/json',
           },
         })
-        const sessionAuth = await readPasswordAuthResponse(
-          s,
-          `Login failed (${s.status})`,
-          !canUseWebCrypto,
-        )
+        const sessionAuth = await readPasswordAuthResponse(s, `Login failed (${s.status})`, !canUseWebCrypto)
         if (sessionAuth) {
           saveSessionAuth(sessionAuth)
         }

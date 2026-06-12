@@ -98,9 +98,7 @@ export function applyOptimisticCreatedChat(
   withTrustedServerProjectionWrite(() => {
     const character = locateSnapshotCharacter(characterId, snapshot.selectedCharID)
     if (!character?.chats) return
-    const existingIndex = chat.id
-      ? character.chats.findIndex((candidate) => candidate.id === chat.id)
-      : -1
+    const existingIndex = chat.id ? character.chats.findIndex((candidate) => candidate.id === chat.id) : -1
     if (existingIndex >= 0) {
       character.chatPage = existingIndex
       applied = true
@@ -187,8 +185,7 @@ function applyOptimisticChatSelection(chatId: string, snapshot: ChatSelectionSna
 
   withTrustedServerProjectionWrite(() => {
     const liveCharacter = locateSnapshotCharacter(snapshot.characterId, snapshot.selectedCharID)
-    const liveChatIndex =
-      liveCharacter?.chats?.findIndex((candidate) => candidate.id === chatId) ?? -1
+    const liveChatIndex = liveCharacter?.chats?.findIndex((candidate) => candidate.id === chatId) ?? -1
     if (!liveCharacter || liveChatIndex < 0) return
     liveCharacter.chatPage = liveChatIndex
   })
@@ -242,19 +239,14 @@ export function restoreChatScopedState(snapshot: ChatScopedSnapshot): void {
   })
 }
 
-export function currentChatGenerationSettingsSnapshot(
-  chatId: string,
-): ChatGenerationSettingsSnapshot | null {
+export function currentChatGenerationSettingsSnapshot(chatId: string): ChatGenerationSettingsSnapshot | null {
   const location = locateChatById(chatId)
   if (!location) return null
   const chatRecord = location.chat as unknown as Record<string, unknown>
   return {
     characterId: location.character.chaId,
     chatId,
-    hadGenerationSettings: Object.prototype.propertyIsEnumerable.call(
-      chatRecord,
-      'generationSettings',
-    ),
+    hadGenerationSettings: Object.prototype.propertyIsEnumerable.call(chatRecord, 'generationSettings'),
     generationSettings: cloneJsonValue(location.chat.generationSettings),
   }
 }
@@ -305,10 +297,7 @@ export function restoreChatScriptstate(snapshot: ChatScriptstateSnapshot): void 
   })
 }
 
-function locateSnapshotCharacter(
-  characterId: string | undefined,
-  fallbackIndex: number,
-): character | undefined {
+function locateSnapshotCharacter(characterId: string | undefined, fallbackIndex: number): character | undefined {
   if (characterId) {
     const byId = DBState.db.characters?.find((candidate) => candidate.chaId === characterId)
     if (byId) return byId
@@ -350,14 +339,9 @@ function locateScriptstateChat(snapshot: ChatScriptstateSnapshot): Chat | undefi
   return character?.chats?.[character.chatPage]
 }
 
-function locateChatById(
-  chatId: string,
-  preferredCharacterId?: string,
-): { character: character; chat: Chat } | null {
+function locateChatById(chatId: string, preferredCharacterId?: string): { character: character; chat: Chat } | null {
   if (preferredCharacterId) {
-    const character = DBState.db.characters?.find(
-      (candidate) => candidate.chaId === preferredCharacterId,
-    )
+    const character = DBState.db.characters?.find((candidate) => candidate.chaId === preferredCharacterId)
     const chat = character?.chats?.find((candidate) => candidate.id === chatId)
     if (character && chat) return { character, chat }
   }
@@ -491,12 +475,7 @@ function runChatCommandSequence(
   runOptimisticCommandSequence(commands, rollback)
 }
 
-export function dispatchCreateChat(
-  characterId: string,
-  chat: Chat,
-  previous: ChatStateSnapshot,
-  select = true,
-): void {
+export function dispatchCreateChat(characterId: string, chat: Chat, previous: ChatStateSnapshot, select = true): void {
   runChatCommand(
     (baseRevision) =>
       createChatCommand({
@@ -579,11 +558,7 @@ export function dispatchUpdateChatRow(
 // Chat-scoped-rollback variant of `dispatchUpdateChat` for paths that mutate the
 // active chat row alongside its message history (e.g. bookmark toggles): a failed
 // command restores that one chat row, not the whole characters array.
-export function dispatchUpdateChatScoped(
-  chatId: string,
-  patch: ChatSnapshot,
-  previous: ChatScopedSnapshot,
-): void {
+export function dispatchUpdateChatScoped(chatId: string, patch: ChatSnapshot, previous: ChatScopedSnapshot): void {
   const commandPatch = sanitizeChatPatch(patch)
   if (Object.keys(commandPatch).length === 0) return
   runChatCommand(
@@ -651,8 +626,7 @@ export function dispatchCompatibleChatUpdateScoped(
   previous: ChatScopedSnapshot,
 ): void {
   const factories = buildCompatibleChatUpdateFactories(previousChat, nextChat)
-  if (factories.length > 0)
-    runChatCommandSequence(factories, () => restoreChatScopedState(previous))
+  if (factories.length > 0) runChatCommandSequence(factories, () => restoreChatScopedState(previous))
 }
 
 export async function dispatchCompatibleChatUpdateScopedAsync(
@@ -730,11 +704,7 @@ export async function mutateChatWithScopedCommandAsync(
 
   const nextChat = DBState.db.characters?.[selectedChar]?.chats?.[selectedChat]
   if (!nextChat) return false
-  await dispatchCompatibleChatUpdateScopedAsync(
-    previousChat,
-    cloneJsonValue(nextChat) as Chat,
-    scopedRollback,
-  )
+  await dispatchCompatibleChatUpdateScopedAsync(previousChat, cloneJsonValue(nextChat) as Chat, scopedRollback)
   return true
 }
 
@@ -844,11 +814,7 @@ export function dispatchForkChat(
   )
 }
 
-export function dispatchReorderChats(
-  characterId: string,
-  previous: ChatStateSnapshot,
-  selectedChatId?: string,
-): void {
+export function dispatchReorderChats(characterId: string, previous: ChatStateSnapshot, selectedChatId?: string): void {
   const character = DBState.db.characters.find((candidate) => candidate.chaId === characterId)
   if (!character) return
   const folderByChatId: Record<string, string | null> = {}
@@ -885,11 +851,7 @@ export function dispatchReorderChatsByIds(
   )
 }
 
-export function dispatchCreateChatFolder(
-  characterId: string,
-  folder: ChatFolder,
-  previous: ChatStateSnapshot,
-): void {
+export function dispatchCreateChatFolder(characterId: string, folder: ChatFolder, previous: ChatStateSnapshot): void {
   runChatCommand(
     (baseRevision) =>
       createChatFolderCommand({
@@ -994,11 +956,7 @@ export function toChatFolderSnapshot(folder: ChatFolder): ChatFolderSnapshot {
   return cloneJsonValue(folder) as unknown as ChatFolderSnapshot
 }
 
-export function dispatchAppendMessage(
-  chatId: string,
-  message: Message,
-  previous: ChatStateSnapshot,
-): void {
+export function dispatchAppendMessage(chatId: string, message: Message, previous: ChatStateSnapshot): void {
   ensureMessageId(message)
   runMessageCommand(
     (baseRevision) =>
@@ -1105,8 +1063,7 @@ function removeOptimisticCurrentChatMessage(input: {
     if (!character?.chats) return
     const chatIndex = locateChatIndex(character, input.chatId)
     if (chatIndex < 0 && input.chatId !== undefined) return
-    const chat =
-      chatIndex >= 0 ? character.chats[chatIndex] : character.chats[character.chatPage ?? 0]
+    const chat = chatIndex >= 0 ? character.chats[chatIndex] : character.chats[character.chatPage ?? 0]
     if (!chat?.message) return
     const messageIndex = chat.message.findIndex((message) => message.chatId === input.messageId)
     if (messageIndex >= 0) {
@@ -1120,11 +1077,7 @@ function removeOptimisticCurrentChatMessage(input: {
 // scoped variants restore only the active chat row on failure; the broad ones
 // remain for the reroll/swipe path (narrowed separately) and any caller that
 // still holds a whole-collection snapshot.
-function dispatchUpdateMessageWith(
-  messageId: string,
-  patch: MessageSnapshot,
-  rollback: () => void,
-): void {
+function dispatchUpdateMessageWith(messageId: string, patch: MessageSnapshot, rollback: () => void): void {
   const commandPatch = sanitizeMessagePatch(patch)
   if (Object.keys(commandPatch).length === 0) return
   runMessageCommand(
@@ -1138,11 +1091,7 @@ function dispatchUpdateMessageWith(
   )
 }
 
-export function dispatchUpdateMessage(
-  messageId: string,
-  patch: MessageSnapshot,
-  previous: ChatStateSnapshot,
-): void {
+export function dispatchUpdateMessage(messageId: string, patch: MessageSnapshot, previous: ChatStateSnapshot): void {
   dispatchUpdateMessageWith(messageId, patch, () => restoreChatState(previous))
 }
 
@@ -1173,11 +1122,7 @@ export function dispatchDeleteMessageScoped(messageId: string, previous: ChatSco
   dispatchDeleteMessageWith(messageId, () => restoreChatScopedState(previous))
 }
 
-function dispatchTruncateMessagesWith(
-  chatId: string,
-  afterMessageId: string | null,
-  rollback: () => void,
-): void {
+function dispatchTruncateMessagesWith(chatId: string, afterMessageId: string | null, rollback: () => void): void {
   runMessageCommand(
     (baseRevision) =>
       truncateMessagesCommand({
@@ -1205,11 +1150,7 @@ export function dispatchTruncateMessagesScoped(
   dispatchTruncateMessagesWith(chatId, afterMessageId, () => restoreChatScopedState(previous))
 }
 
-function dispatchReplaceMessagesWith(
-  chatId: string,
-  messages: Message[],
-  rollback: () => void,
-): void {
+function dispatchReplaceMessagesWith(chatId: string, messages: Message[], rollback: () => void): void {
   if (hasServerChatMessagePlaceholders(messages)) {
     console.warn('Skipped replaceMessagesCommand for a partially hydrated chat transcript.')
     return
@@ -1232,19 +1173,11 @@ function hasServerChatMessagePlaceholders(messages: readonly Message[]): boolean
   return messages.some(isServerChatMessagePlaceholder)
 }
 
-export function dispatchReplaceMessages(
-  chatId: string,
-  messages: Message[],
-  previous: ChatStateSnapshot,
-): void {
+export function dispatchReplaceMessages(chatId: string, messages: Message[], previous: ChatStateSnapshot): void {
   dispatchReplaceMessagesWith(chatId, messages, () => restoreChatState(previous))
 }
 
-export function dispatchReplaceMessagesScoped(
-  chatId: string,
-  messages: Message[],
-  previous: ChatScopedSnapshot,
-): void {
+export function dispatchReplaceMessagesScoped(chatId: string, messages: Message[], previous: ChatScopedSnapshot): void {
   dispatchReplaceMessagesWith(chatId, messages, () => restoreChatScopedState(previous))
 }
 
@@ -1287,9 +1220,7 @@ export function dispatchPatchChatScriptstateScoped(
   deleteKeys: string[],
   previous: ChatScriptstateSnapshot,
 ): void {
-  dispatchPatchChatScriptstateWith(chatId, patch, deleteKeys, () =>
-    restoreChatScriptstate(previous),
-  )
+  dispatchPatchChatScriptstateWith(chatId, patch, deleteKeys, () => restoreChatScriptstate(previous))
 }
 
 export function dispatchCurrentChatScriptstatePatch(
@@ -1305,11 +1236,7 @@ export function dispatchCurrentChatScriptstatePatch(
 // Author-note write (`v2SetAuthorNote`) with a scriptstate-scoped rollback. The
 // note is a chat-row scalar, so the command is a chat update, but the rollback
 // reuses the pass's `ChatScriptstateSnapshot` (which also restores `note`).
-export function dispatchUpdateChatNoteScoped(
-  chatId: string,
-  note: string,
-  previous: ChatScriptstateSnapshot,
-): void {
+export function dispatchUpdateChatNoteScoped(chatId: string, note: string, previous: ChatScriptstateSnapshot): void {
   runChatCommand(
     (baseRevision) =>
       updateChatCommand({
@@ -1370,9 +1297,7 @@ export function sanitizeScriptstatePatch(patch: ChatScriptstatePatch): ChatScrip
 
 function isScriptstateValue(value: unknown): value is ChatScriptstateValue {
   return (
-    typeof value === 'string' ||
-    typeof value === 'boolean' ||
-    (typeof value === 'number' && Number.isFinite(value))
+    typeof value === 'string' || typeof value === 'boolean' || (typeof value === 'number' && Number.isFinite(value))
   )
 }
 
@@ -1394,8 +1319,7 @@ export function changedChatMetadata(previous: Chat, current: Chat): ChatSnapshot
     const currentValue = sanitizedChatMetadataValue(currentRecord, key)
     const currentSnapshotJson = snapshotJson(currentValue)
     if (snapshotJson(previousValue) !== currentSnapshotJson) {
-      const patchValue =
-        currentSnapshotJson === JSON_UNDEFINED_SNAPSHOT ? undefined : cloneJsonValue(currentValue)
+      const patchValue = currentSnapshotJson === JSON_UNDEFINED_SNAPSHOT ? undefined : cloneJsonValue(currentValue)
       changedValues.set(key, patchValue)
     }
   }
@@ -1436,8 +1360,7 @@ function sanitizedChatMetadataValue(record: Record<string, unknown>, key: string
 
 function hasSanitizedChatMetadataValue(record: Record<string, unknown>, key: string): boolean {
   return (
-    Object.prototype.propertyIsEnumerable.call(record, key) &&
-    snapshotJson(record[key]) !== JSON_UNDEFINED_SNAPSHOT
+    Object.prototype.propertyIsEnumerable.call(record, key) && snapshotJson(record[key]) !== JSON_UNDEFINED_SNAPSHOT
   )
 }
 

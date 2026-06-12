@@ -24,15 +24,8 @@ import {
   assertCommandMetricGate,
   type CommandMutationMetric,
 } from './helpers/commandMetricGates.js'
-import {
-  expectNoSuccessDoneAfterAbort,
-  parseEvents,
-  type PromptChatFrame,
-} from './helpers/terminalFrameAssertions.js'
-import {
-  getChatMessageDiffInstrumentation,
-  resetChatMessageDiffInstrumentation,
-} from '../src/messageStore.js'
+import { expectNoSuccessDoneAfterAbort, parseEvents, type PromptChatFrame } from './helpers/terminalFrameAssertions.js'
+import { getChatMessageDiffInstrumentation, resetChatMessageDiffInstrumentation } from '../src/messageStore.js'
 import { emitProviderChunks } from '../src/prompt/providerTransport.js'
 import type { PromptChatEvent } from '../src/prompt/sseEvents.js'
 
@@ -71,11 +64,7 @@ async function restartHarness(generationChat: GenerationChatRouteOptions): Promi
   harness = await startHarness(generationChat)
 }
 
-async function signAssertion(
-  privateKey: CryptoKey,
-  publicJwk: JsonWebKey,
-  ttlSec = 60,
-): Promise<string> {
+async function signAssertion(privateKey: CryptoKey, publicJwk: JsonWebKey, ttlSec = 60): Promise<string> {
   const now = Math.floor(Date.now() / 1000)
   const header = { alg: 'ES256', typ: 'JWT' }
   const payload = { iat: now, exp: now + ttlSec, pub: publicJwk }
@@ -197,9 +186,7 @@ function ensureDefaultFixturePersona(database: JsonRecord): void {
 
 function ensureDefaultFixturePreset(database: JsonRecord): void {
   if (!Array.isArray(database.botPresets) || database.botPresets.length === 0) {
-    const presets: Parameters<typeof saveCurrentPresetSnapshot>[1] = [
-      { id: DEFAULT_TEST_PRESET_ID, name: 'Default' },
-    ]
+    const presets: Parameters<typeof saveCurrentPresetSnapshot>[1] = [{ id: DEFAULT_TEST_PRESET_ID, name: 'Default' }]
     database.botPresets = presets
     database.botPresetsId = 0
     saveCurrentPresetSnapshot(database, presets)
@@ -236,11 +223,7 @@ function isJsonRecord(value: unknown): value is JsonRecord {
   return !!value && typeof value === 'object' && !Array.isArray(value)
 }
 
-async function seedDatabase(
-  _app: FastifyInstance,
-  _assertion: string,
-  database: unknown,
-): Promise<number> {
+async function seedDatabase(_app: FastifyInstance, _assertion: string, database: unknown): Promise<number> {
   const db = openDatabase(harness.dataDir)
   try {
     const result = applyImport(
@@ -254,11 +237,7 @@ async function seedDatabase(
   }
 }
 
-async function importRisuSaveDatabase(
-  app: FastifyInstance,
-  assertion: string,
-  database: unknown,
-): Promise<number> {
+async function importRisuSaveDatabase(app: FastifyInstance, assertion: string, database: unknown): Promise<number> {
   const res = await app.inject({
     method: 'POST',
     url: '/api/v1/import/risusave',
@@ -342,17 +321,11 @@ function metricSummary(metric: ProtocolMetric | undefined): Record<string, unkno
     ...(typeof metric.revision === 'number' ? { revision: metric.revision } : {}),
     ...(typeof metric.durationMs === 'number' ? { durationMs: metric.durationMs } : {}),
     ...(typeof metric.promptMs === 'number' ? { promptMs: metric.promptMs } : {}),
-    ...(typeof metric.databaseLoadCount === 'number'
-      ? { databaseLoadCount: metric.databaseLoadCount }
-      : {}),
+    ...(typeof metric.databaseLoadCount === 'number' ? { databaseLoadCount: metric.databaseLoadCount } : {}),
     ...(typeof metric.databaseLoadMs === 'number' ? { databaseLoadMs: metric.databaseLoadMs } : {}),
     ...(metric.stageTimingsMs ? { stageTimingsMs: metric.stageTimingsMs } : {}),
-    ...(typeof metric.chatVarMutationCount === 'number'
-      ? { chatVarMutationCount: metric.chatVarMutationCount }
-      : {}),
-    ...(typeof metric.persistMessages === 'boolean'
-      ? { persistMessages: metric.persistMessages }
-      : {}),
+    ...(typeof metric.chatVarMutationCount === 'number' ? { chatVarMutationCount: metric.chatVarMutationCount } : {}),
+    ...(typeof metric.persistMessages === 'boolean' ? { persistMessages: metric.persistMessages } : {}),
     ...(typeof metric.hasVarWrite === 'boolean' ? { hasVarWrite: metric.hasVarWrite } : {}),
     ...(typeof metric.dbJsonWriteMs === 'number' ? { dbJsonWriteMs: metric.dbJsonWriteMs } : {}),
     ...(typeof metric.totalMs === 'number' ? { totalMs: metric.totalMs } : {}),
@@ -368,10 +341,7 @@ async function listenHarness(): Promise<string> {
   return `http://127.0.0.1:${(address as AddressInfo).port}`
 }
 
-function authHeaders(
-  assertion: string,
-  extra: Record<string, string> = {},
-): Record<string, string> {
+function authHeaders(assertion: string, extra: Record<string, string> = {}): Record<string, string> {
   return { 'risu-auth': assertion, ...extra }
 }
 
@@ -428,16 +398,11 @@ describe('H1 provider transport abort contract', () => {
       controller.abort()
     }
 
-    const result = await emitProviderChunks(
-      frames(),
-      (event) => events.push(event),
-      controller.signal,
-      {
-        doneMetadata: () => ({ generationId: 'generation-h1' }),
-        sideEffects,
-        postGeneration,
-      },
-    )
+    const result = await emitProviderChunks(frames(), (event) => events.push(event), controller.signal, {
+      doneMetadata: () => ({ generationId: 'generation-h1' }),
+      sideEffects,
+      postGeneration,
+    })
 
     expect(result).toEqual({ status: 'aborted', result: 'partial' })
     expect(events).toEqual([{ type: 'token', content: 'partial' }])
@@ -458,16 +423,11 @@ describe('H1 provider transport abort contract', () => {
       yield { kind: 'done', finishReason: 'stop' }
     }
 
-    const result = await emitProviderChunks(
-      frames(),
-      (event) => events.push(event),
-      controller.signal,
-      {
-        doneMetadata: () => ({ generationId: 'generation-h1-race' }),
-        sideEffects,
-        postGeneration,
-      },
-    )
+    const result = await emitProviderChunks(frames(), (event) => events.push(event), controller.signal, {
+      doneMetadata: () => ({ generationId: 'generation-h1-race' }),
+      sideEffects,
+      postGeneration,
+    })
 
     expect(result).toEqual({ status: 'aborted', result: 'partial' })
     expect(events).toEqual([{ type: 'token', content: 'partial' }])
@@ -487,16 +447,11 @@ describe('H1 provider transport abort contract', () => {
       controller.abort()
     }
 
-    const result = await emitProviderChunks(
-      frames(),
-      (event) => events.push(event),
-      controller.signal,
-      {
-        doneMetadata: () => ({ generationId: 'generation-h1-resultframes' }),
-        sideEffects,
-        postGeneration,
-      },
-    )
+    const result = await emitProviderChunks(frames(), (event) => events.push(event), controller.signal, {
+      doneMetadata: () => ({ generationId: 'generation-h1-resultframes' }),
+      sideEffects,
+      postGeneration,
+    })
 
     expect(result).toEqual({ status: 'aborted', result: '' })
     expect(events).toEqual([])
@@ -510,17 +465,13 @@ describe('per-generation stored asset cache', () => {
   it('caches stored asset reads by normalized asset id and purpose', async () => {
     const assetId = 'a'.repeat(64)
     const reads: string[] = []
-    const resolver = createRequestScopedStoredAssetResolver(
-      null as any,
-      '/data',
-      (_db, _dataDir, id, purpose) => {
-        reads.push(`${purpose}:${id}`)
-        return {
-          type: purpose === 'inlay' ? 'audio' : 'image',
-          base64: `data:${purpose}:${id}`,
-        }
-      },
-    )
+    const resolver = createRequestScopedStoredAssetResolver(null as any, '/data', (_db, _dataDir, id, purpose) => {
+      reads.push(`${purpose}:${id}`)
+      return {
+        type: purpose === 'inlay' ? 'audio' : 'image',
+        base64: `data:${purpose}:${id}`,
+      }
+    })
 
     const first = await resolver(assetId, 'asset_prompt')
     const second = await resolver(`assets/${assetId}.png`, 'asset_prompt')
@@ -859,9 +810,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(res.statusCode).toBe(200)
     const events = parseEvents(res.body)
     expect(events.find((e) => e.type === 'prompt')).toBeUndefined()
-    expect(String(events.find((e) => e.type === 'error')?.data.error)).toMatch(
-      /latest assistant message/,
-    )
+    expect(String(events.find((e) => e.type === 'error')?.data.error)).toMatch(/latest assistant message/)
     expect(events.at(-1)?.type).toBe('done')
   })
 
@@ -898,9 +847,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     // `role`/`content` of the lossy `messages` projection.
     const formated = prompt.data.formated as Array<{ role: string; content: unknown }>
     expect(Array.isArray(formated)).toBe(true)
-    expect(formated.map((r) => ({ role: r.role, content: r.content }))).toEqual(
-      prompt.data.messages,
-    )
+    expect(formated.map((r) => ({ role: r.role, content: r.content }))).toEqual(prompt.data.messages)
     expect((prompt.data as Record<string, unknown>).biases).toBeUndefined()
     const messagePatch = events.find((e) => e.type === 'message_patch')
     expect(messagePatch?.data.patch).toMatchObject({
@@ -1054,9 +1001,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
         }
       | undefined
     expect(firstPatch?.varChanged).toBe(true)
-    expect(firstPatch?.chatVarMutations).toEqual([
-      { key: '$__internal_ka_lore-keep', before: null, after: 'true' },
-    ])
+    expect(firstPatch?.chatVarMutations).toEqual([{ key: '$__internal_ka_lore-keep', before: null, after: 'true' }])
     expect(firstEvents.find((e) => e.type === 'info')?.data.revision).toBe(2)
 
     const bootstrap = await harness.app.inject({
@@ -1118,9 +1063,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       expect(assembly?.databaseLoadMs).toBeGreaterThanOrEqual(0)
       expectPromptAssemblyStageTimings(assembly)
 
-      const persistence = metrics.find(
-        (entry) => entry.metric === 'generation_assembly_persistence',
-      )
+      const persistence = metrics.find((entry) => entry.metric === 'generation_assembly_persistence')
       expect(persistence).toMatchObject({
         status: 'ok',
         chatId: 'chat-1',
@@ -1166,9 +1109,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
         databaseLoadCount: 1,
       })
       expectPromptAssemblyStageTimings(plainAssembly)
-      expect(
-        plain.find((entry) => entry.metric === 'generation_assembly_persistence'),
-      ).toMatchObject({
+      expect(plain.find((entry) => entry.metric === 'generation_assembly_persistence')).toMatchObject({
         status: 'skipped',
         mode: 'send',
         persistMessages: false,
@@ -1191,12 +1132,8 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       before = metrics.length
       await postChat(auth.assertion, basePayload)
       const chatVar = collect('chat-var-side-effect', before)
-      expectPromptAssemblyStageTimings(
-        chatVar.find((entry) => entry.metric === 'generation_prompt_assembly'),
-      )
-      expect(
-        chatVar.find((entry) => entry.metric === 'generation_assembly_persistence'),
-      ).toMatchObject({
+      expectPromptAssemblyStageTimings(chatVar.find((entry) => entry.metric === 'generation_prompt_assembly'))
+      expect(chatVar.find((entry) => entry.metric === 'generation_assembly_persistence')).toMatchObject({
         status: 'ok',
         mode: 'send',
         eventType: 'chat.scriptstate.updated',
@@ -1208,9 +1145,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
         mutationPath: 'targeted-assembly',
         writtenTables: [...BROAD_WRITE_TABLES],
       })
-      assertCommandMetricGate(
-        chatVar.find((entry) => entry.metric === 'command_mutation') as CommandMutationMetric,
-      )
+      assertCommandMetricGate(chatVar.find((entry) => entry.metric === 'command_mutation') as CommandMutationMetric)
 
       await seedDatabase(
         harness.app,
@@ -1227,12 +1162,8 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       before = metrics.length
       await postChat(auth.assertion, basePayload)
       const transcriptRewrite = collect('editinput-transcript-rewrite', before)
-      expectPromptAssemblyStageTimings(
-        transcriptRewrite.find((entry) => entry.metric === 'generation_prompt_assembly'),
-      )
-      expect(
-        transcriptRewrite.find((entry) => entry.metric === 'generation_assembly_persistence'),
-      ).toMatchObject({
+      expectPromptAssemblyStageTimings(transcriptRewrite.find((entry) => entry.metric === 'generation_prompt_assembly'))
+      expect(transcriptRewrite.find((entry) => entry.metric === 'generation_assembly_persistence')).toMatchObject({
         status: 'ok',
         mode: 'send',
         eventType: 'messages.replaced',
@@ -1245,9 +1176,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
         writtenTables: ['messages'],
       })
       assertCommandMetricGate(
-        transcriptRewrite.find(
-          (entry) => entry.metric === 'command_mutation',
-        ) as CommandMutationMetric,
+        transcriptRewrite.find((entry) => entry.metric === 'command_mutation') as CommandMutationMetric,
       )
 
       await seedDatabase(
@@ -1266,25 +1195,19 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       expectPromptAssemblyStageTimings(
         combinedSideEffects.find((entry) => entry.metric === 'generation_prompt_assembly'),
       )
-      expect(
-        combinedSideEffects.find((entry) => entry.metric === 'generation_assembly_persistence'),
-      ).toMatchObject({
+      expect(combinedSideEffects.find((entry) => entry.metric === 'generation_assembly_persistence')).toMatchObject({
         status: 'ok',
         mode: 'send',
         eventType: 'messages.replaced',
         persistMessages: true,
         hasVarWrite: true,
       })
-      expect(
-        combinedSideEffects.find((entry) => entry.metric === 'command_mutation'),
-      ).toMatchObject({
+      expect(combinedSideEffects.find((entry) => entry.metric === 'command_mutation')).toMatchObject({
         type: 'messages.replaced',
         mutationPath: 'targeted-assembly',
       })
       assertCommandMetricGate(
-        combinedSideEffects.find(
-          (entry) => entry.metric === 'command_mutation',
-        ) as CommandMutationMetric,
+        combinedSideEffects.find((entry) => entry.metric === 'command_mutation') as CommandMutationMetric,
       )
 
       await seedDatabase(harness.app, auth.assertion, fixtureDatabase)
@@ -1297,18 +1220,14 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       })
       expect(preview.statusCode).toBe(200)
       const previewMetrics = collect('preview-prompt', before)
-      const previewAssembly = previewMetrics.find(
-        (entry) => entry.metric === 'generation_prompt_assembly',
-      )
+      const previewAssembly = previewMetrics.find((entry) => entry.metric === 'generation_prompt_assembly')
       expect(previewAssembly).toMatchObject({
         status: 'ok',
         mode: 'preview_prompt',
         databaseLoadCount: 1,
       })
       expectPromptAssemblyStageTimings(previewAssembly)
-      expect(
-        previewMetrics.some((entry) => entry.metric === 'generation_assembly_persistence'),
-      ).toBe(false)
+      expect(previewMetrics.some((entry) => entry.metric === 'generation_assembly_persistence')).toBe(false)
 
       await restartHarness({
         dispatchProvider: () => {
@@ -1331,9 +1250,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
         databaseLoadCount: 1,
       })
       expectPromptAssemblyStageTimings(durableAssembly)
-      expect(
-        durable.find((entry) => entry.metric === 'generation_assembly_persistence'),
-      ).toMatchObject({
+      expect(durable.find((entry) => entry.metric === 'generation_assembly_persistence')).toMatchObject({
         status: 'skipped',
         mode: 'send',
       })
@@ -1355,18 +1272,12 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
           JSON.stringify(
             samples.map(({ label, metrics: slice }) => ({
               label,
-              promptAssembly: metricSummary(
-                slice.find((entry) => entry.metric === 'generation_prompt_assembly'),
-              ),
+              promptAssembly: metricSummary(slice.find((entry) => entry.metric === 'generation_prompt_assembly')),
               assemblyPersistence: metricSummary(
                 slice.find((entry) => entry.metric === 'generation_assembly_persistence'),
               ),
-              generationPersistence: metricSummary(
-                slice.find((entry) => entry.metric === 'generation_persistence'),
-              ),
-              commandMutation: metricSummary(
-                slice.find((entry) => entry.metric === 'command_mutation'),
-              ),
+              generationPersistence: metricSummary(slice.find((entry) => entry.metric === 'generation_persistence')),
+              commandMutation: metricSummary(slice.find((entry) => entry.metric === 'command_mutation')),
             })),
             null,
             2,
@@ -1420,9 +1331,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     // ran over the final server-assembled rows.
     expect(messages.some((m) => m.content === 'MAIN [LUA]')).toBe(true)
     expect(messages.some((m) => m.content === 'MAIN')).toBe(false)
-    expect(
-      messages.every((m) => typeof m.content === 'string' && m.content.endsWith(' [LUA]')),
-    ).toBe(true)
+    expect(messages.every((m) => typeof m.content === 'string' && m.content.endsWith(' [LUA]'))).toBe(true)
   })
 
   it('persists a Lua editRequest setChatVar write via the assembly chat-var delta (slice 3b)', async () => {
@@ -1507,17 +1416,12 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
 
     // Load the committed local golden and pull its editRequest marker row.
     const goldenPath = fileURLToPath(
-      new URL(
-        '../../../src/ts/process/__fixtures__/expected/editrequest-trigger.json',
-        import.meta.url,
-      ),
+      new URL('../../../src/ts/process/__fixtures__/expected/editrequest-trigger.json', import.meta.url),
     )
     const golden = JSON.parse(readFileSync(goldenPath, 'utf8')) as {
       providerCalls: Array<{ formated: Array<Record<string, unknown>> }>
     }
-    const goldenMarker = golden.providerCalls[0].formated.find(
-      (row) => row.content === '[edit-request marker]',
-    )
+    const goldenMarker = golden.providerCalls[0].formated.find((row) => row.content === '[edit-request marker]')
     expect(goldenMarker).toBeDefined()
     expect(serverMarker).toEqual(goldenMarker)
   })
@@ -1778,9 +1682,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
 
     const db = openDatabase(harness.dataDir)
     try {
-      const event = listPersistedCommandEventHistory(db).find(
-        (candidate) => candidate.type === 'messages.replaced',
-      )
+      const event = listPersistedCommandEventHistory(db).find((candidate) => candidate.type === 'messages.replaced')
       expect(event).toMatchObject({
         type: 'messages.replaced',
         resource: 'message',
@@ -1799,17 +1701,13 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     const db = structuredClone(fixtureDatabase) as typeof fixtureDatabase & {
       characters: Array<(typeof fixtureDatabase.characters)[number] & { customscript?: unknown }>
     }
-    db.characters[0].customscript = [
-      { in: 'hi', out: 'HELLO', type: 'editinput', flag: '', ableFlag: false },
-    ]
+    db.characters[0].customscript = [{ in: 'hi', out: 'HELLO', type: 'editinput', flag: '', ableFlag: false }]
     await seedDatabase(harness.app, assertion, db)
 
     await sendBase(assertion)
 
     const chat = await bootstrapChat(assertion)
-    expect(chat.message.map((m) => ({ role: m.role, data: m.data }))).toEqual([
-      { role: 'user', data: 'HELLO' },
-    ])
+    expect(chat.message.map((m) => ({ role: m.role, data: m.data }))).toEqual([{ role: 'user', data: 'HELLO' }])
   })
 
   it('L9/v4-L7: unsafe imported regex stops before provider dispatch and assistant persistence', async () => {
@@ -1887,9 +1785,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     db.aiModel = 'echo_model'
     db.echoMessage = 'server echo reply'
     db.echoDelay = 0
-    db.characters[0].customscript = [
-      { in: 'h(i)', out: 'H$1', type: 'editinput', flag: '', ableFlag: false },
-    ]
+    db.characters[0].customscript = [{ in: 'h(i)', out: 'H$1', type: 'editinput', flag: '', ableFlag: false }]
     db.characters[0].globalLore = [
       {
         key: '/^Hi$/i',
@@ -1940,9 +1836,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       messageMutations?: Array<{ source: string }>
     }
     expect(patch.messageMutations?.some((m) => m.source === 'user_message')).toBe(true)
-    expect(
-      patch.messageMutations?.some((m) => m.source === 'editinput' || m.source === 'input_trigger'),
-    ).toBe(false)
+    expect(patch.messageMutations?.some((m) => m.source === 'editinput' || m.source === 'input_trigger')).toBe(false)
     // …but the route persisted nothing (no revision bump, transcript untouched).
     const info = events.find((e) => e.type === 'info')
     expect(info?.data.revision).toBeUndefined()
@@ -1961,11 +1855,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     })
     expect(upload.statusCode).toBe(201)
     const assetId = upload.json().assetId as string
-    await seedDatabase(
-      harness.app,
-      assertion,
-      dbWithHistoryMessage(`look {{inlayeddata::${assetId}}}`),
-    )
+    await seedDatabase(harness.app, assertion, dbWithHistoryMessage(`look {{inlayeddata::${assetId}}}`))
 
     const res = await harness.app.inject({
       method: 'POST',
@@ -1982,8 +1872,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       multimodals?: unknown
     }>
     const userRow = formated.find(
-      (row) =>
-        row.role === 'user' && typeof row.content === 'string' && row.content.includes('look'),
+      (row) => row.role === 'user' && typeof row.content === 'string' && row.content.includes('look'),
     )
     // `processInlays` resolved the id from the server asset store and pushed bytes…
     expect(userRow?.multimodals).toEqual([
@@ -2024,8 +1913,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       multimodals?: unknown
     }>
     const userRow = formated.find(
-      (row) =>
-        row.role === 'user' && typeof row.content === 'string' && row.content.includes('look'),
+      (row) => row.role === 'user' && typeof row.content === 'string' && row.content.includes('look'),
     )
     expect(userRow?.multimodals).toEqual([
       { type: 'image', base64: `data:image/png;base64,${bytes.toString('base64')}` },
@@ -2067,8 +1955,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       multimodals?: unknown
     }>
     const userRow = formated.find(
-      (row) =>
-        row.role === 'user' && typeof row.content === 'string' && row.content.includes('show'),
+      (row) => row.role === 'user' && typeof row.content === 'string' && row.content.includes('show'),
     )
     // `processAssetPrompts` mapped the name → reference → store bytes, re-wrapped
     // as a png data URI (byte-parity with the browser's readImage path).
@@ -2166,11 +2053,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(res.statusCode).toBe(200)
     const prompt = parseEvents(res.body).find((e) => e.type === 'prompt')!
     const messages = prompt.data.messages as Array<{ role: string; content: string }>
-    expect(
-      messages.some(
-        (m) => m.content.includes('emotion') || m.content.includes('Generate an image'),
-      ),
-    ).toBe(false)
+    expect(messages.some((m) => m.content.includes('emotion') || m.content.includes('Generate an image'))).toBe(false)
   })
 
   it('emits stop-trigger mutations and restoration before the terminal error', async () => {
@@ -2178,9 +2061,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     const db = structuredClone(fixtureDatabase) as typeof fixtureDatabase & {
       characters: Array<(typeof fixtureDatabase.characters)[number] & { triggerscript?: unknown }>
     }
-    ;(db.characters[0].chats[0] as any).message = [
-      { role: 'user', data: 'before stop', chatId: 'msg-before-stop' },
-    ]
+    ;(db.characters[0].chats[0] as any).message = [{ role: 'user', data: 'before stop', chatId: 'msg-before-stop' }]
     ;(db.characters[0].chats[0] as any).scriptstate = { $score: '1' }
     db.characters[0].triggerscript = [
       {
@@ -2205,14 +2086,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(res.statusCode).toBe(200)
 
     const events = parseEvents(res.body)
-    expect(events.map((e) => e.type)).toEqual([
-      'stage',
-      'stage',
-      'stage',
-      'message_patch',
-      'error',
-      'done',
-    ])
+    expect(events.map((e) => e.type)).toEqual(['stage', 'stage', 'stage', 'message_patch', 'error', 'done'])
     const patch = events[3].data.patch as {
       varChanged?: boolean
       chatVarMutations?: unknown[]
@@ -2318,9 +2192,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     const patch = events.find((e) => e.type === 'message_patch')?.data.patch as
       | { chatVarMutations?: Array<{ key: string; before: unknown; after: unknown }> }
       | undefined
-    expect(patch?.chatVarMutations).toEqual([
-      { key: '$__internal_ka_preview-lore-keep', before: null, after: 'true' },
-    ])
+    expect(patch?.chatVarMutations).toEqual([{ key: '$__internal_ka_preview-lore-keep', before: null, after: 'true' }])
 
     const bootstrap = await harness.app.inject({
       method: 'GET',
@@ -2515,9 +2387,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       headers: { 'risu-auth': assertion },
     })
     expect(importedBootstrap.statusCode).toBe(200)
-    expect(
-      importedBootstrap.json().database.characters[0].chats[0].generationSettings,
-    ).toBeUndefined()
+    expect(importedBootstrap.json().database.characters[0].chats[0].generationSettings).toBeUndefined()
 
     const blocked = await harness.app.inject({
       method: 'POST',
@@ -2776,10 +2646,10 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       expect(initialEvents.some((event) => event.type === 'token')).toBe(true)
 
       observerController = new AbortController()
-      const observer = await fetch(
-        `${baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}/stream`,
-        { headers: authHeaders(assertion), signal: observerController.signal },
-      )
+      const observer = await fetch(`${baseUrl}/api/v1/generate/chat/${encodeURIComponent(jobId)}/stream`, {
+        headers: authHeaders(assertion),
+        signal: observerController.signal,
+      })
       expect(observer.status).toBe(200)
       const observerEventsPromise = readStreamingEvents(observer, (event) => event.type === 'done')
 
@@ -2845,9 +2715,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
 
       const commandMetric = metrics
         .slice(before)
-        .find(
-          (entry) => entry.metric === 'command_mutation' && entry.type === 'generation.persisted',
-        )
+        .find((entry) => entry.metric === 'command_mutation' && entry.type === 'generation.persisted')
       expect(commandMetric).toMatchObject({
         mutationPath: 'targeted-generation',
         dbJsonWriteMs: 0,
@@ -2887,9 +2755,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     // The run-var pass stripped the `{{setvar}}` from the final text and persisted
     // the chat-var write.
     expect(done.postGeneration?.finalText).toBe('reply done')
-    expect(done.postGeneration?.messagePatch?.chatVarMutations).toEqual([
-      { key: '$seen', before: null, after: '1' },
-    ])
+    expect(done.postGeneration?.messagePatch?.chatVarMutations).toEqual([{ key: '$seen', before: null, after: '1' }])
     expect(done.postGeneration?.revision).toBe(2)
 
     const bootstrap = await harness.app.inject({
@@ -2906,9 +2772,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       harness.app,
       assertion,
       dbWithServerDispatch({
-        customscript: [
-          { comment: '', in: 'reply', out: 'REPLY', type: 'editoutput', flag: '', ableFlag: false },
-        ],
+        customscript: [{ comment: '', in: 'reply', out: 'REPLY', type: 'editoutput', flag: '', ableFlag: false }],
       }),
     )
 
@@ -3193,52 +3057,49 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       error:
         'unsupported /chat provider: unknown OpenAI-compatible model "unregistered-local-model" cannot be dispatched by the server',
     },
-  ])(
-    'emits an explicit unsupported-provider error for $label without provider tokens',
-    async ({ database, error }) => {
-      const { assertion } = await setupAuthedClient(harness.app)
-      await seedDatabase(harness.app, assertion, {
-        ...fixtureDatabase,
-        ...database,
-      })
+  ])('emits an explicit unsupported-provider error for $label without provider tokens', async ({ database, error }) => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, {
+      ...fixtureDatabase,
+      ...database,
+    })
 
-      const res = await harness.app.inject({
-        method: 'POST',
-        url: '/api/v1/generate/chat',
-        headers: { 'risu-auth': assertion },
-        payload: basePayload,
-      })
-      expect(res.statusCode).toBe(200)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+    expect(res.statusCode).toBe(200)
 
-      const events = parseEvents(res.body)
-      expect(events.map((e) => e.type)).toEqual([
-        'stage',
-        'stage',
-        'stage',
-        'prompt',
-        'message_patch',
-        'stage',
-        'info',
-        'error',
-        'done',
-      ])
-      expect(events.some((e) => e.type === 'token')).toBe(false)
-      expect(events.at(-2)).toEqual({
-        type: 'error',
-        data: {
-          error,
-          restoration: {
-            chatId: 'chat-1',
-            characterId: 'char-1',
-            selectedCharID: 0,
-            chatPage: 0,
-            messages: [],
-          },
+    const events = parseEvents(res.body)
+    expect(events.map((e) => e.type)).toEqual([
+      'stage',
+      'stage',
+      'stage',
+      'prompt',
+      'message_patch',
+      'stage',
+      'info',
+      'error',
+      'done',
+    ])
+    expect(events.some((e) => e.type === 'token')).toBe(false)
+    expect(events.at(-2)).toEqual({
+      type: 'error',
+      data: {
+        error,
+        restoration: {
+          chatId: 'chat-1',
+          characterId: 'char-1',
+          selectedCharID: 0,
+          chatPage: 0,
+          messages: [],
         },
-      })
-      expect(typeof events.at(-1)?.data.generationId).toBe('string')
-    },
-  )
+      },
+    })
+    expect(typeof events.at(-1)?.data.generationId).toBe('string')
+  })
 
   it('emits a typed tts side_effect before done when auto speech is enabled', async () => {
     await restartHarness({
@@ -3434,9 +3295,7 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
       message: 'Chat generation settings are incomplete',
       chatId: 'chat-1',
     })
-    expect(body.missing.map((reason: { code: string }) => reason.code)).toContain(
-      'settings_missing',
-    )
+    expect(body.missing.map((reason: { code: string }) => reason.code)).toContain('settings_missing')
 
     const bootstrap = await harness.app.inject({
       method: 'GET',
@@ -3623,16 +3482,16 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
         })
       }
       if (url.endsWith('/generate/text/status/job-1')) {
-        return new Response(
-          JSON.stringify({ done: true, generations: [{ text: 'disabled response' }] }),
-          { status: 200, headers: { 'content-type': 'application/json' } },
-        )
+        return new Response(JSON.stringify({ done: true, generations: [{ text: 'disabled response' }] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
       }
       if (url.endsWith('/generate/text/status/job-2')) {
-        return new Response(
-          JSON.stringify({ done: true, generations: [{ text: 'active response' }] }),
-          { status: 200, headers: { 'content-type': 'application/json' } },
-        )
+        return new Response(JSON.stringify({ done: true, generations: [{ text: 'active response' }] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
       }
       throw new Error(`unexpected Horde URL: ${url}`)
     })
@@ -3725,9 +3584,7 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
       chatId: 'chat-1',
       staleSidebarToggleKeys: [],
     })
-    expect(res.json().missing.map((reason: { code: string }) => reason.code)).toContain(
-      'settings_missing',
-    )
+    expect(res.json().missing.map((reason: { code: string }) => reason.code)).toContain('settings_missing')
   })
 
   it('keeps deleted preset and persona references scoped to affected configured chats', async () => {
@@ -3855,12 +3712,8 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
       id: string
       generationSettings?: Record<string, unknown>
     }>
-    const deletedPresetSettings = chats.find(
-      (chat) => chat.id === 'chat-deleted-preset',
-    )?.generationSettings
-    const deletedPersonaSettings = chats.find(
-      (chat) => chat.id === 'chat-deleted-persona',
-    )?.generationSettings
+    const deletedPresetSettings = chats.find((chat) => chat.id === 'chat-deleted-preset')?.generationSettings
+    const deletedPersonaSettings = chats.find((chat) => chat.id === 'chat-deleted-persona')?.generationSettings
     expect(deletedPresetSettings).toMatchObject({
       personaId: 'persona-survivor',
       presetId: 'preset-deleted',
@@ -3957,10 +3810,7 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
   })
 })
 
-function configuredChat(
-  id: string,
-  settings: { personaId: string; presetId: string },
-): Record<string, unknown> {
+function configuredChat(id: string, settings: { personaId: string; presetId: string }): Record<string, unknown> {
   return {
     id,
     message: [],

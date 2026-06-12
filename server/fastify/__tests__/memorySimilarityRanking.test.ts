@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import {
-  cosineSimilarity,
-  rankMemorySummariesBySimilarity,
-} from '../src/memorySimilarityRanking.js'
+import { cosineSimilarity, rankMemorySummariesBySimilarity } from '../src/memorySimilarityRanking.js'
 import type { MemoryChunk, MemoryEmbedding, MemorySummary } from '../src/memoryRepository.js'
 
 function chunk(input: Partial<MemoryChunk> & { id: string; rangeStartSeq: number }): MemoryChunk {
@@ -101,11 +98,7 @@ describe('memory similarity ranking', () => {
       embeddings,
     })
 
-    expect(result.ranked.map((row) => row.summary.id)).toEqual([
-      'summary-a',
-      'summary-c',
-      'summary-b',
-    ])
+    expect(result.ranked.map((row) => row.summary.id)).toEqual(['summary-a', 'summary-c', 'summary-b'])
     expect(result.ranked[0].bestSimilarity).toBeCloseTo(1)
     expect(result.diagnostics).toMatchObject({
       queryVectors: 1,
@@ -187,11 +180,7 @@ describe('memory similarity ranking', () => {
 
     const vectorReads = [embeddingA.reads(), embeddingB.reads(), embeddingC.reads()]
     expect(vectorReads.every((reads) => reads > 0)).toBe(true)
-    expect(result.ranked.map((row) => row.summary.id)).toEqual([
-      'summary-a',
-      'summary-c',
-      'summary-b',
-    ])
+    expect(result.ranked.map((row) => row.summary.id)).toEqual(['summary-a', 'summary-c', 'summary-b'])
     expect(result.diagnostics).toMatchObject({
       queryVectors: 1,
       validQueryVectors: 1,
@@ -210,9 +199,7 @@ describe('memory similarity ranking', () => {
       chunk({ id: 'chunk-b', rangeStartSeq: 2 }),
       chunk({ id: 'chunk-c', rangeStartSeq: 4 }),
     ]
-    const summaries = chunks.map((row) =>
-      summary({ id: row.id.replace('chunk', 'summary'), chunkId: row.id }),
-    )
+    const summaries = chunks.map((row) => summary({ id: row.id.replace('chunk', 'summary'), chunkId: row.id }))
     const embeddings = [
       embedding({ id: 'embedding-a', chunkId: 'chunk-a', vector: [1, 0] }),
       embedding({ id: 'embedding-b', chunkId: 'chunk-b', vector: [0, 1] }),
@@ -229,18 +216,11 @@ describe('memory similarity ranking', () => {
       embeddings,
     })
 
-    expect(result.ranked.map((row) => row.summary.id)).toEqual([
-      'summary-b',
-      'summary-c',
-      'summary-a',
-    ])
+    expect(result.ranked.map((row) => row.summary.id)).toEqual(['summary-b', 'summary-c', 'summary-a'])
   })
 
   it('handles Voyage contextual rows from the flat embedding shape', () => {
-    const chunks = [
-      chunk({ id: 'chunk-a', rangeStartSeq: 0 }),
-      chunk({ id: 'chunk-b', rangeStartSeq: 1 }),
-    ]
+    const chunks = [chunk({ id: 'chunk-a', rangeStartSeq: 0 }), chunk({ id: 'chunk-b', rangeStartSeq: 1 })]
     const summaries = [
       summary({ id: 'summary-a', chunkId: 'chunk-a' }),
       summary({ id: 'summary-b', chunkId: 'chunk-b' }),
@@ -270,10 +250,7 @@ describe('memory similarity ranking', () => {
     })
 
     expect(result.ranked.map((row) => row.summary.id)).toEqual(['summary-a', 'summary-b'])
-    expect(result.ranked.map((row) => row.matchedEmbeddingIds)).toEqual([
-      ['embedding-a'],
-      ['embedding-b'],
-    ])
+    expect(result.ranked.map((row) => row.matchedEmbeddingIds)).toEqual([['embedding-a'], ['embedding-b']])
   })
 
   it('skips invalid vectors and reports missing relationships', () => {
@@ -287,7 +264,10 @@ describe('memory similarity ranking', () => {
     ]
 
     const result = rankMemorySummariesBySimilarity({
-      queryVectors: [[1, 0], [0, 0]],
+      queryVectors: [
+        [1, 0],
+        [0, 0],
+      ],
       summaries,
       chunks,
       embeddings,
@@ -354,10 +334,6 @@ describe('memory similarity ranking', () => {
       embeddings,
     })
 
-    expect(result.ranked.map((row) => row.summary.id)).toEqual([
-      'summary-a',
-      'summary-c',
-      'summary-b',
-    ])
+    expect(result.ranked.map((row) => row.summary.id)).toEqual(['summary-a', 'summary-c', 'summary-b'])
   })
 })

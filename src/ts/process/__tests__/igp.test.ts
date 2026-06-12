@@ -72,9 +72,7 @@ function stubCommandFetch(): CapturedFetch[] {
 
 async function waitForMessageCommand(calls: CapturedFetch[]): Promise<CapturedFetch> {
   for (let attempt = 0; attempt < 40; attempt += 1) {
-    const match = calls.find(
-      (call) => call.url === '/api/v1/commands/chats/chat-1/messages' && call.method === 'PUT',
-    )
+    const match = calls.find((call) => call.url === '/api/v1/commands/chats/chat-1/messages' && call.method === 'PUT')
     if (match) return match
     await new Promise((resolve) => setTimeout(resolve, 0))
   }
@@ -150,8 +148,7 @@ describe('evaluateIgp', () => {
   // non-ChatML string the function passes formated: null down to
   // requestChatData. These tests use a well-formed ChatML prompt so the
   // happy path is exercised end-to-end.
-  const CHATML_PROMPT =
-    '<|im_start|>system<|im_sep|>Rate the response.<|im_end|>'
+  const CHATML_PROMPT = '<|im_start|>system<|im_sep|>Rate the response.<|im_end|>'
 
   it('dispatches with parsed ChatML and emotion mode when the prompt is non-empty', async () => {
     stubCommandFetch()

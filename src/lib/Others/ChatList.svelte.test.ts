@@ -246,11 +246,7 @@ function seedModalDatabase(): character {
     chaId: 'char-a',
     name: 'Harness Character',
     chatPage: 1,
-    chats: [
-      makeChat('chat-a', 'Modal Chat A'),
-      makeChat('chat-b', 'Modal Chat B'),
-      makeChat('chat-c', 'Modal Chat C'),
-    ],
+    chats: [makeChat('chat-a', 'Modal Chat A'), makeChat('chat-b', 'Modal Chat B'), makeChat('chat-c', 'Modal Chat C')],
     chatFolders: [],
     firstMessage: '',
     desc: '',
@@ -507,11 +503,7 @@ describe('ChatList DOM contract harness', () => {
     await flushCommandWork()
 
     expect(chatRows().map((row) => row.dataset.risuChatId)).toEqual(['chat-a', 'chat-b', 'chat-c'])
-    expect(selectedCharacter().chats.map((chat) => chat.name)).toEqual([
-      'Modal Chat A',
-      'Modal Chat B',
-      'Modal Chat C',
-    ])
+    expect(selectedCharacter().chats.map((chat) => chat.name)).toEqual(['Modal Chat A', 'Modal Chat B', 'Modal Chat C'])
     expect(selectedCharacter().chatPage).toBe(1)
     expectRowSelected('chat-b', true)
     expect(target.textContent).not.toContain('New Chat 4')
@@ -533,10 +525,7 @@ describe('ChatList DOM contract harness', () => {
 
     expect(command.settled).toBe(false)
     expect(command.input).toMatchObject({ chatId: 'chat-b' })
-    expect(selectedCharacter().chats.map((chat) => chat.name)).toEqual([
-      'Modal Chat A',
-      'Modal Chat C',
-    ])
+    expect(selectedCharacter().chats.map((chat) => chat.name)).toEqual(['Modal Chat A', 'Modal Chat C'])
     expect(selectedCharacter().chatPage).toBe(1)
     expect(target.textContent).not.toContain('Modal Chat B')
     expectRowSelected('chat-c', true)
@@ -547,11 +536,7 @@ describe('ChatList DOM contract harness', () => {
     command.resolve({ error: 'delete failed', status: 'error' })
     await flushCommandWork()
 
-    expect(selectedCharacter().chats.map((chat) => chat.name)).toEqual([
-      'Modal Chat A',
-      'Modal Chat B',
-      'Modal Chat C',
-    ])
+    expect(selectedCharacter().chats.map((chat) => chat.name)).toEqual(['Modal Chat A', 'Modal Chat B', 'Modal Chat C'])
     expect(selectedCharacter().chatPage).toBe(1)
     expect(chatRows().map((row) => row.dataset.risuChatId)).toEqual(['chat-a', 'chat-b', 'chat-c'])
     expectRowSelected('chat-b', true)

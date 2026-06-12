@@ -241,11 +241,7 @@ function commandMutationContext(req: FastifyRequest, eventSink: CommandEventSink
   return origin ? { eventSink, eventOrigin: origin } : { eventSink }
 }
 
-function emitCommandEventForRequest(
-  req: FastifyRequest,
-  eventSink: CommandEventSink,
-  event: CommandEvent,
-): void {
+function emitCommandEventForRequest(req: FastifyRequest, eventSink: CommandEventSink, event: CommandEvent): void {
   const origin = commandEventOrigin(req)
   eventSink.emit(origin ? { ...event, origin } : event)
 }
@@ -291,9 +287,7 @@ function characterOrderWithout(order: readonly unknown[], characterId: string): 
       continue
     }
     const folder = entry as Record<string, unknown>
-    const data = Array.isArray(folder.data)
-      ? folder.data.filter((id) => id !== characterId)
-      : folder.data
+    const data = Array.isArray(folder.data) ? folder.data.filter((id) => id !== characterId) : folder.data
     if (Array.isArray(data) && data.length === 0) continue
     next.push({ ...folder, data })
   }
@@ -384,9 +378,7 @@ function buildChatGenerationSettingsValidationContext(
   }
 }
 
-function cloneChatGenerationSettings(
-  settings: ChatGenerationSettings | undefined,
-): ChatGenerationSettings | undefined {
+function cloneChatGenerationSettings(settings: ChatGenerationSettings | undefined): ChatGenerationSettings | undefined {
   if (!settings) return undefined
   return {
     ...settings,
@@ -545,15 +537,7 @@ const SETTINGS_GROUPS = [
 ] as const
 
 type SettingsGroup = (typeof SETTINGS_GROUPS)[number]
-type SettingValueKind =
-  | 'boolean'
-  | 'number'
-  | 'string'
-  | 'stringOrNull'
-  | 'object'
-  | 'array'
-  | 'arrayOrNull'
-  | 'json'
+type SettingValueKind = 'boolean' | 'number' | 'string' | 'stringOrNull' | 'object' | 'array' | 'arrayOrNull' | 'json'
 
 const SETTINGS_GROUP_KEYS: Record<SettingsGroup, readonly string[]> = {
   providers: [
@@ -1390,8 +1374,7 @@ export function registerCommandRoutes(
       const presetId = readPresetId((req.params as { presetId?: unknown }).presetId)
       const body = (req.body ?? {}) as PresetCommandBody
       const baseRevision = readBaseRevision(body)
-      const selectPresetId =
-        body.presetId === undefined ? undefined : readPresetId(body.presetId, 'presetId')
+      const selectPresetId = body.presetId === undefined ? undefined : readPresetId(body.presetId, 'presetId')
       const apply = readOptionalBoolean(body.apply, 'apply', false)
       const saveCurrent = readOptionalBoolean(body.saveCurrent, 'saveCurrent', false)
       const result = applyTargetedCommandMutation<{
@@ -1910,11 +1893,7 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as PersonaCommandBody
       const baseRevision = readBaseRevision(body)
       const persona = createPersonaRecord(body.persona, { assetDb: db })
-      const mirror = readPersonaOptionalBoolean(
-        body.mirrorLegacyProfile,
-        'mirrorLegacyProfile',
-        false,
-      )
+      const mirror = readPersonaOptionalBoolean(body.mirrorLegacyProfile, 'mirrorLegacyProfile', false)
       const result = applyTargetedCommandMutation<{ personaId: string }>({
         db,
         dataDir,
@@ -1962,11 +1941,7 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as PersonaCommandBody
       const baseRevision = readBaseRevision(body)
       const patch = readPersonaPatch(body.patch, { assetDb: db })
-      const mirror = readPersonaOptionalBoolean(
-        body.mirrorLegacyProfile,
-        'mirrorLegacyProfile',
-        false,
-      )
+      const mirror = readPersonaOptionalBoolean(body.mirrorLegacyProfile, 'mirrorLegacyProfile', false)
       if (Object.prototype.hasOwnProperty.call(patch, 'id') && patch.id !== personaId) {
         throw new ValidationError('patch.id must match personaId')
       }
@@ -2018,14 +1993,8 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as PersonaCommandBody
       const baseRevision = readBaseRevision(body)
       const selectPersonaId =
-        body.selectPersonaId === undefined
-          ? undefined
-          : readPersonaId(body.selectPersonaId, 'selectPersonaId')
-      const mirror = readPersonaOptionalBoolean(
-        body.mirrorLegacyProfile,
-        'mirrorLegacyProfile',
-        true,
-      )
+        body.selectPersonaId === undefined ? undefined : readPersonaId(body.selectPersonaId, 'selectPersonaId')
+      const mirror = readPersonaOptionalBoolean(body.mirrorLegacyProfile, 'mirrorLegacyProfile', true)
       const saveCurrent = readPersonaOptionalBoolean(body.saveCurrent, 'saveCurrent', false)
       const result = applyTargetedCommandMutation<{
         personaId: string
@@ -2102,11 +2071,7 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as PersonaCommandBody
       const baseRevision = readBaseRevision(body)
       const personaId = readPersonaId(body.personaId, 'personaId')
-      const mirror = readPersonaOptionalBoolean(
-        body.mirrorLegacyProfile,
-        'mirrorLegacyProfile',
-        true,
-      )
+      const mirror = readPersonaOptionalBoolean(body.mirrorLegacyProfile, 'mirrorLegacyProfile', true)
       const saveCurrent = readPersonaOptionalBoolean(body.saveCurrent, 'saveCurrent', true)
       const result = applyTargetedCommandMutation<{ personaId: string }>({
         db,
@@ -2256,10 +2221,7 @@ export function registerCommandRoutes(
     if (!(await requireAuth(authState, req, reply))) return
 
     try {
-      const presetId = readTranslatorPresetId(
-        (req.params as { presetId?: unknown }).presetId,
-        'presetId',
-      )
+      const presetId = readTranslatorPresetId((req.params as { presetId?: unknown }).presetId, 'presetId')
       const body = (req.body ?? {}) as TranslatorPresetCommandBody
       const baseRevision = readBaseRevision(body)
       const patch = readTranslatorPresetPatch(body.patch)
@@ -2307,16 +2269,11 @@ export function registerCommandRoutes(
     if (!(await requireAuth(authState, req, reply))) return
 
     try {
-      const presetId = readTranslatorPresetId(
-        (req.params as { presetId?: unknown }).presetId,
-        'presetId',
-      )
+      const presetId = readTranslatorPresetId((req.params as { presetId?: unknown }).presetId, 'presetId')
       const body = (req.body ?? {}) as TranslatorPresetCommandBody
       const baseRevision = readBaseRevision(body)
       const selectPresetId =
-        body.selectPresetId === undefined
-          ? undefined
-          : readTranslatorPresetId(body.selectPresetId, 'selectPresetId')
+        body.selectPresetId === undefined ? undefined : readTranslatorPresetId(body.selectPresetId, 'selectPresetId')
       const result = applyTargetedCommandMutation<{
         presetId: string
         selectedPresetId: string | null
@@ -2345,9 +2302,7 @@ export function registerCommandRoutes(
             nextSelectedId = currentSelectedId ?? presets[0]?.id
           }
 
-          const selectedIndex = nextSelectedId
-            ? requireTranslatorPresetIndex(presets, nextSelectedId)
-            : 0
+          const selectedIndex = nextSelectedId ? requireTranslatorPresetIndex(presets, nextSelectedId) : 0
           target.translatorPresetId = selectedIndex
           syncSelectedTranslatorPresetToLegacyFields(target, presets)
           writeTranslatorPresetMutation(innerDb, target, presets)
@@ -2723,12 +2678,7 @@ export function registerCommandRoutes(
           if (index === -1) {
             throw new EntityNotFoundError(`Character not found: ${characterId}`)
           }
-          const patched = buildPatchedCharacterCollectionRow(
-            characters[index],
-            patch,
-            characterId,
-            index,
-          )
+          const patched = buildPatchedCharacterCollectionRow(characters[index], patch, characterId, index)
           characters[index] = patched
           writeSingleCharacterRow(innerDb, characterId, patched)
           if (Object.prototype.hasOwnProperty.call(patch, 'trashTime')) {
@@ -3127,8 +3077,7 @@ export function registerCommandRoutes(
       const forkedChat = createChatRecord(body.chat)
       const forkedMessages = readReplacementMessages(forkedChat.message)
       forkedChat.message = forkedMessages
-      const sourcePatch =
-        body.sourcePatch === undefined ? {} : readChatPatch(body.sourcePatch, { allowEmpty: true })
+      const sourcePatch = body.sourcePatch === undefined ? {} : readChatPatch(body.sourcePatch, { allowEmpty: true })
       const folder = body.folder === undefined ? null : createChatFolderRecord(body.folder)
       const selectFork = readChatOptionalBoolean(body.select, 'select') ?? true
       const result = applyTargetedCommandMutation<{
@@ -3161,15 +3110,9 @@ export function registerCommandRoutes(
             }
           }
           if (sourcePatch.modules) {
-            validateNormalModuleLinks(
-              modules,
-              sourcePatch.modules as string[],
-              'sourcePatch.modules',
-            )
+            validateNormalModuleLinks(modules, sourcePatch.modules as string[], 'sourcePatch.modules')
           }
-          const inheritedGenerationSettings = cloneChatGenerationSettings(
-            chats[chatIndex].generationSettings,
-          )
+          const inheritedGenerationSettings = cloneChatGenerationSettings(chats[chatIndex].generationSettings)
           chats[chatIndex] = {
             ...chats[chatIndex],
             ...sourcePatch,
@@ -3256,9 +3199,7 @@ export function registerCommandRoutes(
       const chatIds = readChatIdList(body.chatIds)
       const folderByChatId = readOptionalFolderByChatId(body.folderByChatId)
       const selectedId =
-        body.selectedChatId === undefined
-          ? undefined
-          : readChatId(body.selectedChatId, 'selectedChatId')
+        body.selectedChatId === undefined ? undefined : readChatId(body.selectedChatId, 'selectedChatId')
       const result = applyTargetedCommandMutation<{ selectedChatId: string | null }>({
         db,
         dataDir,
@@ -3460,9 +3401,7 @@ export function registerCommandRoutes(
       const baseRevision = readBaseRevision(body)
       const folderIds = readChatFolderIdList(body.folderIds)
       const selectedId =
-        body.selectedChatId === undefined
-          ? undefined
-          : readChatId(body.selectedChatId, 'selectedChatId')
+        body.selectedChatId === undefined ? undefined : readChatId(body.selectedChatId, 'selectedChatId')
       const result = applyTargetedCommandMutation<{ selectedChatId: string | null }>({
         db,
         dataDir,
@@ -3718,9 +3657,7 @@ export function registerCommandRoutes(
           requireChatLocation(characters, chatId)
           const truncated = truncateActiveChatMessages(targetDb, chatId, afterMessageId)
           if (truncated.ok === false) {
-            throw new EntityNotFoundError(
-              `Message not found for chat ${chatId}: ${truncated.afterMessageId}`,
-            )
+            throw new EntityNotFoundError(`Message not found for chat ${chatId}: ${truncated.afterMessageId}`)
           }
           return {
             event: { ...COMMAND_EVENT_CATALOG.messageTruncated, parentId: chatId },
@@ -3810,9 +3747,7 @@ export function registerCommandRoutes(
           if (write.ok === false) {
             switch (write.reason) {
               case 'missing-target':
-                throw new EntityNotFoundError(
-                  `Message not found for chat ${chatId}: ${write.targetMessageId}`,
-                )
+                throw new EntityNotFoundError(`Message not found for chat ${chatId}: ${write.targetMessageId}`)
               case 'duplicate':
                 throw new ValidationError(`Duplicate message id: ${write.messageId}`)
             }
@@ -3987,9 +3922,7 @@ export function registerCommandRoutes(
           const byId = new Map(lorebooks.map((lorebook) => [lorebook.id, lorebook]))
           const reordered = lorebookIds.map((id) => byId.get(id))
           target.loreBook = reordered
-          const currentPage = Number.isInteger(target.loreBookPage as number)
-            ? (target.loreBookPage as number)
-            : 0
+          const currentPage = Number.isInteger(target.loreBookPage as number) ? (target.loreBookPage as number) : 0
           const selectedLorebookId = lorebooks[currentPage]?.id ?? null
           target.loreBookPage = Math.max(
             0,
@@ -4094,9 +4027,7 @@ export function registerCommandRoutes(
     if (!(await requireAuth(authState, req, reply))) return
 
     try {
-      const characterId = readLorebookCharacterId(
-        (req.params as { characterId?: unknown }).characterId,
-      )
+      const characterId = readLorebookCharacterId((req.params as { characterId?: unknown }).characterId)
       const body = (req.body ?? {}) as { baseRevision?: unknown; entries?: unknown }
       const baseRevision = readBaseRevision(body)
       const entries = validateLorebookEntries(body.entries)
@@ -4376,9 +4307,7 @@ export function registerCommandRoutes(
     if (!(await requireAuth(authState, req, reply))) return
 
     try {
-      const characterId = readModuleCharacterId(
-        (req.params as { characterId?: unknown }).characterId,
-      )
+      const characterId = readModuleCharacterId((req.params as { characterId?: unknown }).characterId)
       const body = (req.body ?? {}) as ModuleCommandBody
       const baseRevision = readBaseRevision(body)
       const moduleIds = readModuleIdList(body.moduleIds)
@@ -5068,10 +4997,7 @@ function applySettingsPatch(database: unknown, patch: Record<string, unknown>): 
   }
 }
 
-function sendCommandError(
-  reply: FastifyReply,
-  err: unknown,
-): { error: string; currentRevision?: number } {
+function sendCommandError(reply: FastifyReply, err: unknown): { error: string; currentRevision?: number } {
   if (err instanceof RevisionMismatchError) {
     reply.code(409)
     return { error: 'revision_conflict', currentRevision: err.currentRevision }

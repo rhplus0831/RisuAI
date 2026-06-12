@@ -11,16 +11,10 @@ export type EchoStreamFrame = CompletionStreamFrame
 
 const DEFAULT_MESSAGE = 'Echo Message'
 
-export function resolveEchoRequest(input: {
-  message?: unknown
-  delayMs?: unknown
-  signal: AbortSignal
-}): EchoRequest {
+export function resolveEchoRequest(input: { message?: unknown; delayMs?: unknown; signal: AbortSignal }): EchoRequest {
   const message = typeof input.message === 'string' ? input.message : DEFAULT_MESSAGE
   const delayMs =
-    typeof input.delayMs === 'number' && Number.isFinite(input.delayMs) && input.delayMs > 0
-      ? input.delayMs
-      : 0
+    typeof input.delayMs === 'number' && Number.isFinite(input.delayMs) && input.delayMs > 0 ? input.delayMs : 0
   return { message, delayMs, signal: input.signal }
 }
 
@@ -55,9 +49,7 @@ export async function runEcho(req: EchoRequest): Promise<EchoResult> {
   return { type: 'success', result: req.message }
 }
 
-export async function* runEchoStream(
-  req: EchoRequest,
-): AsyncGenerator<EchoStreamFrame, void, void> {
+export async function* runEchoStream(req: EchoRequest): AsyncGenerator<EchoStreamFrame, void, void> {
   if (req.signal.aborted) return
   const { aborted } = await delay(req.delayMs, req.signal)
   if (aborted) return

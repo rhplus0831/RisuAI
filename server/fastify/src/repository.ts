@@ -5,11 +5,7 @@ import type { DatabaseSync } from 'node:sqlite'
 import { createInitialDatabase } from './databaseDefaults.js'
 import { repairStoredChatGenerationSettings } from './chatGenerationSettingsStorage.js'
 import { getSchemaState } from './db.js'
-import {
-  COMMAND_EVENT_CATALOG,
-  persistRevisionedCommandEvent,
-  type CommandEvent,
-} from './commands/events.js'
+import { COMMAND_EVENT_CATALOG, persistRevisionedCommandEvent, type CommandEvent } from './commands/events.js'
 import { recordTableWrite } from './protocolMetrics.js'
 import {
   applyChatMessageDiff,
@@ -96,11 +92,7 @@ const COLLECTION_FIELDS = [
 
 export type CollectionFieldKey = (typeof COLLECTION_FIELDS)[number]
 
-const NON_SETTINGS_FIELDS = new Set<string>([
-  'characters',
-  ...COLLECTION_FIELDS,
-  'pluginCustomStorage',
-])
+const NON_SETTINGS_FIELDS = new Set<string>(['characters', ...COLLECTION_FIELDS, 'pluginCustomStorage'])
 
 const COLLECTION_TABLE_MAP: Record<string, string> = {
   modules: 'modules',
@@ -131,23 +123,21 @@ export function createCollectionTables(db: DatabaseSync): void {
   `)
 }
 
-function loadCollectionsFromSqlite(
-  db: DatabaseSync,
-  database: Record<string, unknown>,
-): Record<string, unknown> {
+function loadCollectionsFromSqlite(db: DatabaseSync, database: Record<string, unknown>): Record<string, unknown> {
   const merged = { ...database }
   for (const [field, tableName] of Object.entries(COLLECTION_TABLE_MAP)) {
-    const rows = db
-      .prepare(`SELECT data_json FROM ${tableName} ORDER BY position`)
-      .all() as unknown as Array<{ data_json: string }>
+    const rows = db.prepare(`SELECT data_json FROM ${tableName} ORDER BY position`).all() as unknown as Array<{
+      data_json: string
+    }>
     if (rows.length > 0) {
       merged[field] = rows.map((r) => JSON.parse(r.data_json))
     }
     // SQLite empty → keep existing value ([] marker or absent); don't fabricate a field.
   }
-  const storageRows = db
-    .prepare('SELECT key, value_json FROM plugin_custom_storage')
-    .all() as unknown as Array<{ key: string; value_json: string }>
+  const storageRows = db.prepare('SELECT key, value_json FROM plugin_custom_storage').all() as unknown as Array<{
+    key: string
+    value_json: string
+  }>
   if (storageRows.length > 0) {
     const storage: Record<string, unknown> = {}
     for (const row of storageRows) {
@@ -192,17 +182,13 @@ export function createSettingsTable(db: DatabaseSync): void {
 }
 
 export function loadSettingsFromSqlite(db: DatabaseSync): Record<string, unknown> | null {
-  const row = db.prepare('SELECT data_json FROM settings WHERE id = 1').get() as
-    | { data_json: string }
-    | undefined
+  const row = db.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string } | undefined
   if (!row) return null
   const parsed = JSON.parse(row.data_json)
   return isRecord(parsed) ? parsed : null
 }
 
-export function loadServerIntentCompletionSettings(
-  db: DatabaseSync,
-): Record<string, unknown> | null {
+export function loadServerIntentCompletionSettings(db: DatabaseSync): Record<string, unknown> | null {
   return loadSettingsFromSqlite(db)
 }
 
@@ -305,9 +291,7 @@ function loadCharactersFromSqlite(db: DatabaseSync): unknown[] {
   if (charRows.length === 0) return []
 
   const chatRows = db
-    .prepare(
-      'SELECT id, character_id, position, data_json FROM chats ORDER BY character_id, position',
-    )
+    .prepare('SELECT id, character_id, position, data_json FROM chats ORDER BY character_id, position')
     .all() as unknown as ChatRow[]
 
   const chatsByCharId = new Map<string, unknown[]>()
@@ -326,8 +310,7 @@ function loadCharactersFromSqlite(db: DatabaseSync): unknown[] {
 }
 
 export function replaceAllCharactersInTable(db: DatabaseSync, database: unknown): void {
-  const characters =
-    isRecord(database) && Array.isArray(database.characters) ? database.characters : []
+  const characters = isRecord(database) && Array.isArray(database.characters) ? database.characters : []
 
   recordTableWrite('characters')
   recordTableWrite('chats')
@@ -337,9 +320,7 @@ export function replaceAllCharactersInTable(db: DatabaseSync, database: unknown)
   if (characters.length === 0) return
 
   const insertChar = db.prepare('INSERT INTO characters (id, position, data_json) VALUES (?, ?, ?)')
-  const insertChat = db.prepare(
-    'INSERT INTO chats (id, character_id, position, data_json) VALUES (?, ?, ?, ?)',
-  )
+  const insertChat = db.prepare('INSERT INTO chats (id, character_id, position, data_json) VALUES (?, ?, ?, ?)')
 
   for (let i = 0; i < characters.length; i++) {
     const char = characters[i]
@@ -363,18 +344,15 @@ export function replaceAllCharactersInTable(db: DatabaseSync, database: unknown)
   }
 }
 
-export function loadCharacterSelectionRows(
-  db: DatabaseSync,
-  characterId: string,
-): CharacterSelectionRows {
+export function loadCharacterSelectionRows(db: DatabaseSync, characterId: string): CharacterSelectionRows {
   const settings = loadSettingsFromSqlite(db)
   if (settings === null) {
     throw new ValidationError('database must be an object before character commands can run')
   }
 
-  const row = db
-    .prepare('SELECT id, position, data_json FROM characters WHERE id = ?')
-    .get(characterId) as unknown as CharacterRow | undefined
+  const row = db.prepare('SELECT id, position, data_json FROM characters WHERE id = ?').get(characterId) as unknown as
+    | CharacterRow
+    | undefined
   if (!row) {
     throw new EntityNotFoundError(`Character not found: ${characterId}`)
   }
@@ -394,10 +372,7 @@ export function loadCharacterSelectionRows(
 
 export function writeCharacterSelectionRows(db: DatabaseSync, rows: CharacterSelectionRows): void {
   recordTableWrite('characters')
-  db.prepare('UPDATE characters SET data_json = ? WHERE id = ?').run(
-    JSON.stringify(rows.character),
-    rows.characterId,
-  )
+  db.prepare('UPDATE characters SET data_json = ? WHERE id = ?').run(JSON.stringify(rows.character), rows.characterId)
   recordTableWrite('settings')
   db.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(rows.settings))
 }
@@ -406,16 +381,14 @@ export function loadCharacterSelectionProjection(
   db: DatabaseSync,
   characterId: string,
 ): CharacterSelectionProjection | null {
-  const row = db
-    .prepare('SELECT position, data_json FROM characters WHERE id = ?')
-    .get(characterId) as Pick<CharacterRow, 'position' | 'data_json'> | undefined
+  const row = db.prepare('SELECT position, data_json FROM characters WHERE id = ?').get(characterId) as
+    | Pick<CharacterRow, 'position' | 'data_json'>
+    | undefined
   if (!row) return null
 
   const settings = loadSettingsFromSqlite(db)
   const currentChar =
-    settings !== null && Number.isInteger(settings.currentChar)
-      ? (settings.currentChar as number)
-      : row.position
+    settings !== null && Number.isInteger(settings.currentChar) ? (settings.currentChar as number) : row.position
   const character = JSON.parse(row.data_json)
   const lastInteraction = isRecord(character) ? character.lastInteraction : undefined
   return {
@@ -444,40 +417,29 @@ export function writeSettingsOnly(db: DatabaseSync, settings: JsonRecord): void 
 
 /** `UPDATE characters WHERE id=?` for one character row. `chats` is stripped to
  *  match the storage contract (chats live in the `chats` table). */
-export function writeSingleCharacterRow(
-  db: DatabaseSync,
-  characterId: string,
-  character: JsonRecord,
-): void {
+export function writeSingleCharacterRow(db: DatabaseSync, characterId: string, character: JsonRecord): void {
   const { chats: _chats, ...charWithoutChats } = character
   recordTableWrite('characters')
-  db.prepare('UPDATE characters SET data_json = ? WHERE id = ?').run(
-    JSON.stringify(charWithoutChats),
-    characterId,
-  )
+  db.prepare('UPDATE characters SET data_json = ? WHERE id = ?').run(JSON.stringify(charWithoutChats), characterId)
 }
 
 export function characterRowExists(db: DatabaseSync, characterId: string): boolean {
-  const row = db
-    .prepare('SELECT 1 AS found FROM characters WHERE id = ? LIMIT 1')
-    .get(characterId) as { found: number } | undefined
+  const row = db.prepare('SELECT 1 AS found FROM characters WHERE id = ? LIMIT 1').get(characterId) as
+    | { found: number }
+    | undefined
   return !!row
 }
 
 export function nextCharacterRowPosition(db: DatabaseSync): number {
-  const row = db
-    .prepare('SELECT COALESCE(MAX(position) + 1, 0) AS position FROM characters')
-    .get() as { position: number }
+  const row = db.prepare('SELECT COALESCE(MAX(position) + 1, 0) AS position FROM characters').get() as {
+    position: number
+  }
   return row.position
 }
 
 /** INSERT one brand-new character row at the supplied position. `chats` is
  *  stripped to match the storage contract (chats live in the `chats` table). */
-export function insertCharacterRow(
-  db: DatabaseSync,
-  position: number,
-  character: JsonRecord,
-): void {
+export function insertCharacterRow(db: DatabaseSync, position: number, character: JsonRecord): void {
   const characterId = character.chaId
   if (typeof characterId !== 'string' || characterId.trim() === '') {
     throw new ValidationError('character.chaId must be a non-empty string')
@@ -504,11 +466,7 @@ export function writeSingleChatRow(db: DatabaseSync, chatId: string, chat: JsonR
  *  Pairs with the message-store deletes for a chat removal; the caller re-stamps
  *  the remaining rows' positions. Keyed by character so a character-wide delete
  *  can iterate it. */
-export function deleteCharacterChatRow(
-  db: DatabaseSync,
-  chatId: string,
-  characterId: string,
-): void {
+export function deleteCharacterChatRow(db: DatabaseSync, chatId: string, characterId: string): void {
   recordTableWrite('chats')
   db.prepare('DELETE FROM chats WHERE id = ? AND character_id = ?').run(chatId, characterId)
 }
@@ -538,15 +496,9 @@ export function deleteCharacterRow(db: DatabaseSync, characterId: string): void 
  *  updated `data_json`, keyed by id, for reorder / folder-cascade edits where the
  *  chat set is unchanged. Each row keeps its rowid (UPDATE, not DELETE+reINSERT);
  *  `message` / `hypaV3Data` are stripped (they live in the message store). */
-export function writeCharacterChatRows(
-  db: DatabaseSync,
-  characterId: string,
-  chats: readonly JsonRecord[],
-): void {
+export function writeCharacterChatRows(db: DatabaseSync, characterId: string, chats: readonly JsonRecord[]): void {
   recordTableWrite('chats')
-  const stmt = db.prepare(
-    'UPDATE chats SET position = ?, data_json = ? WHERE id = ? AND character_id = ?',
-  )
+  const stmt = db.prepare('UPDATE chats SET position = ?, data_json = ? WHERE id = ? AND character_id = ?')
   for (let i = 0; i < chats.length; i++) {
     const chat = chats[i]
     const chatId = chat.id
@@ -635,11 +587,7 @@ function collectionTableForField(field: string): string {
 
 /** Rebuild one collection table (DELETE + ordered reinsert) for
  *  create/delete/reorder. Leaves the other eight tables untouched. */
-export function writeSingleCollectionTable(
-  db: DatabaseSync,
-  field: string,
-  array: readonly unknown[],
-): void {
+export function writeSingleCollectionTable(db: DatabaseSync, field: string, array: readonly unknown[]): void {
   const tableName = collectionTableForField(field)
   recordTableWrite(tableName)
   db.exec(`DELETE FROM ${tableName}`)
@@ -652,18 +600,10 @@ export function writeSingleCollectionTable(
 
 /** `UPDATE <collection> WHERE position=?` for a single pure field edit. Keeps
  *  the row's rowid stable (no delete+reinsert). */
-export function writeSingleCollectionRow(
-  db: DatabaseSync,
-  field: string,
-  position: number,
-  value: unknown,
-): void {
+export function writeSingleCollectionRow(db: DatabaseSync, field: string, position: number, value: unknown): void {
   const tableName = collectionTableForField(field)
   recordTableWrite(tableName)
-  db.prepare(`UPDATE ${tableName} SET data_json = ? WHERE position = ?`).run(
-    JSON.stringify(value),
-    position,
-  )
+  db.prepare(`UPDATE ${tableName} SET data_json = ? WHERE position = ?`).run(JSON.stringify(value), position)
 }
 
 // The `promptTemplate` collection (`prompt_templates` table) is written through
@@ -728,20 +668,15 @@ export function getAllAssetMetadata(db: DatabaseSync): PersistedAsset[] {
 }
 
 export function getAssetMetadataById(db: DatabaseSync, id: string): PersistedAsset | null {
-  const row = db
-    .prepare('SELECT id, ext, size, content_type FROM assets WHERE id = ?')
-    .get(id) as unknown as AssetMetadataRow | undefined
+  const row = db.prepare('SELECT id, ext, size, content_type FROM assets WHERE id = ?').get(id) as unknown as
+    | AssetMetadataRow
+    | undefined
   return row ? rowToPersistedAsset(row) : null
 }
 
-export function insertAssetMetadataBatch(
-  db: DatabaseSync,
-  assets: readonly PersistedAsset[],
-): void {
+export function insertAssetMetadataBatch(db: DatabaseSync, assets: readonly PersistedAsset[]): void {
   if (assets.length === 0) return
-  const stmt = db.prepare(
-    'INSERT OR IGNORE INTO assets (id, ext, size, content_type) VALUES (?, ?, ?, ?)',
-  )
+  const stmt = db.prepare('INSERT OR IGNORE INTO assets (id, ext, size, content_type) VALUES (?, ?, ?, ?)')
   for (const asset of assets) {
     stmt.run(asset.id, asset.ext, asset.size, asset.contentType)
   }
@@ -988,17 +923,18 @@ function loadDatabaseFieldsFromSqlite(
 }
 
 function loadCollectionFieldFromSqlite(db: DatabaseSync, tableName: string): unknown[] | null {
-  const rows = db
-    .prepare(`SELECT data_json FROM ${tableName} ORDER BY position`)
-    .all() as unknown as Array<{ data_json: string }>
+  const rows = db.prepare(`SELECT data_json FROM ${tableName} ORDER BY position`).all() as unknown as Array<{
+    data_json: string
+  }>
   if (rows.length === 0) return null
   return rows.map((row) => JSON.parse(row.data_json))
 }
 
 function loadPluginCustomStorageFieldFromSqlite(db: DatabaseSync): Record<string, unknown> | null {
-  const rows = db
-    .prepare('SELECT key, value_json FROM plugin_custom_storage')
-    .all() as unknown as Array<{ key: string; value_json: string }>
+  const rows = db.prepare('SELECT key, value_json FROM plugin_custom_storage').all() as unknown as Array<{
+    key: string
+    value_json: string
+  }>
   if (rows.length === 0) return null
   const storage: Record<string, unknown> = {}
   for (const row of rows) {
@@ -1022,11 +958,7 @@ function loadPluginCustomStorageFieldFromSqlite(db: DatabaseSync): Record<string
  * same `null` 404; a pre-extraction database keeps its embedded-characters
  * fallback). The returned row is freshly parsed and owned by the caller.
  */
-export function loadSingleCharacterStubRow(
-  db: DatabaseSync,
-  dataDir: string,
-  characterId: string,
-): JsonRecord | null {
+export function loadSingleCharacterStubRow(db: DatabaseSync, dataDir: string, characterId: string): JsonRecord | null {
   const settings = loadSettingsFromSqlite(db)
   if (settings === null) return loadSingleCharacterStubRowBroad(db, dataDir, characterId)
 
@@ -1039,9 +971,7 @@ export function loadSingleCharacterStubRow(
   if (!isRecord(character)) return loadSingleCharacterStubRowBroad(db, dataDir, characterId)
 
   const chatRows = db
-    .prepare(
-      'SELECT id, character_id, position, data_json FROM chats WHERE character_id = ? ORDER BY position',
-    )
+    .prepare('SELECT id, character_id, position, data_json FROM chats WHERE character_id = ? ORDER BY position')
     .all(charRow.id) as unknown as ChatRow[]
   character.chats = chatRows.map((row) => {
     const chat = parseStoredChatRow(row.data_json)
@@ -1056,16 +986,10 @@ export function loadSingleCharacterStubRow(
   return character
 }
 
-function loadSingleCharacterStubRowBroad(
-  db: DatabaseSync,
-  dataDir: string,
-  characterId: string,
-): JsonRecord | null {
+function loadSingleCharacterStubRowBroad(db: DatabaseSync, dataDir: string, characterId: string): JsonRecord | null {
   const fields = loadStubbedProjectionFields(db, dataDir, ['characters'])
   const characters = Array.isArray(fields.characters) ? fields.characters : []
-  const character = characters.find(
-    (candidate) => isRecord(candidate) && candidate.chaId === characterId,
-  )
+  const character = characters.find((candidate) => isRecord(candidate) && candidate.chaId === characterId)
   return isRecord(character) ? character : null
 }
 
@@ -1198,11 +1122,7 @@ export interface ChatMutationTarget {
  * Never combine with a whole-database write-back (`writeDatabase`); the
  * mutation helper guards this.
  */
-export function loadPersistedForChatMutation(
-  db: DatabaseSync,
-  dataDir: string,
-  target: ChatMutationTarget,
-): Persisted {
+export function loadPersistedForChatMutation(db: DatabaseSync, dataDir: string, target: ChatMutationTarget): Persisted {
   let chatId = target.chatId
   if (chatId === undefined && target.messageId !== undefined) {
     // Id-only resolution (no payload column) of the message's parent chat.
@@ -1248,11 +1168,7 @@ export function loadPersistedForChatMutation(
  * fallback for a not-yet-extracted chat. The broad loader stays for the
  * genuine full-corpus consumers (assetGc / export / save / boot backfill).
  */
-export function loadPersistedForAssembly(
-  db: DatabaseSync,
-  dataDir: string,
-  chatId: string,
-): Persisted {
+export function loadPersistedForAssembly(db: DatabaseSync, dataDir: string, chatId: string): Persisted {
   const persisted = loadPersisted(db, dataDir)
   const rows = getChatMessagesGroupedByIds(db, [chatId]).get(chatId)
   const hypaGrouped = getChatHypaV3GroupedByIds(db, [chatId])
@@ -1293,9 +1209,9 @@ export function loadPersistedDatabaseForMemoryJob(db: DatabaseSync, dataDir: str
   const settings = loadSettingsFromSqlite(db)
   if (settings === null) return loadPersisted(db, dataDir).database
 
-  const charRows = db
-    .prepare('SELECT id, position FROM characters ORDER BY position')
-    .all() as unknown as Array<Pick<CharacterRow, 'id' | 'position'>>
+  const charRows = db.prepare('SELECT id, position FROM characters ORDER BY position').all() as unknown as Array<
+    Pick<CharacterRow, 'id' | 'position'>
+  >
   if (charRows.length === 0 && Array.isArray(settings.characters)) {
     return loadPersisted(db, dataDir).database
   }
@@ -1316,9 +1232,9 @@ export function loadPersistedDatabaseForMemoryJob(db: DatabaseSync, dataDir: str
 
   // Mirror `loadCollectionsFromSqlite`: the table wins only when non-empty,
   // otherwise any embedded settings value is kept.
-  const presetRows = db
-    .prepare('SELECT data_json FROM hypa_v3_presets ORDER BY position')
-    .all() as unknown as Array<{ data_json: string }>
+  const presetRows = db.prepare('SELECT data_json FROM hypa_v3_presets ORDER BY position').all() as unknown as Array<{
+    data_json: string
+  }>
   if (presetRows.length > 0) {
     settings.hypaV3Presets = presetRows.map((row) => JSON.parse(row.data_json))
   }
@@ -1354,11 +1270,7 @@ export function splitChatMessagesIntoTable(db: DatabaseSync, next: Persisted): P
  * Convenience for non-transactional callers (and tests): split messages into
  * SQLite tables and sync all table families.
  */
-export function writePersistedWithMessages(
-  db: DatabaseSync,
-  _dataDir: string,
-  next: Persisted,
-): void {
+export function writePersistedWithMessages(db: DatabaseSync, _dataDir: string, next: Persisted): void {
   const messageFree = splitChatMessagesIntoTable(db, next)
   replaceAllCharactersInTable(db, messageFree.database)
   replaceAllCollectionsInTable(db, messageFree.database)
@@ -1371,11 +1283,7 @@ export function writePersistedWithMessages(
  * writing only changed rows. Removed chats have their rows dropped. Runs inside
  * the caller's open transaction; does NOT touch db.json.
  */
-export function syncChatMessages(
-  db: DatabaseSync,
-  baselineDatabase: unknown,
-  nextDatabase: unknown,
-): void {
+export function syncChatMessages(db: DatabaseSync, baselineDatabase: unknown, nextDatabase: unknown): void {
   const baseline = new Map<string, unknown[]>()
   const baselineHypa = new Map<string, unknown>()
   eachChat(baselineDatabase, (chat) => {
@@ -1483,8 +1391,7 @@ function stubCharacterLorebooks(persisted: Persisted): void {
 }
 
 function stripCharacterGlobalLore(database: unknown): void {
-  const characters =
-    isRecord(database) && Array.isArray(database.characters) ? database.characters : []
+  const characters = isRecord(database) && Array.isArray(database.characters) ? database.characters : []
   for (const character of characters) {
     if (character && typeof character === 'object') delete character.globalLore
   }
@@ -1535,17 +1442,13 @@ export interface ChatHydrationRangePayload {
   messageTotal: number
 }
 
-function normalizedMessageRange(
-  total: number,
-  range: ChatHydrationRangeInput,
-): { start: number; limit: number } {
+function normalizedMessageRange(total: number, range: ChatHydrationRangeInput): { start: number; limit: number } {
   if (Number.isInteger(range.tail) && (range.tail as number) > 0) {
     const limit = Math.min(range.tail as number, total)
     return { start: Math.max(0, total - limit), limit }
   }
 
-  const start =
-    Number.isInteger(range.start) && (range.start as number) > 0 ? (range.start as number) : 0
+  const start = Number.isInteger(range.start) && (range.start as number) > 0 ? (range.start as number) : 0
   const limit =
     Number.isInteger(range.limit) && (range.limit as number) > 0
       ? Math.min(range.limit as number, Math.max(0, total - start))
@@ -1732,8 +1635,7 @@ export function loadCharacterLorebookHydration(
       } | null
     )?.characters ?? []
   const character = characters.find((candidate) => candidate?.chaId === characterId)
-  const globalLore =
-    character && Array.isArray(character.globalLore) ? (character.globalLore as unknown[]) : []
+  const globalLore = character && Array.isArray(character.globalLore) ? (character.globalLore as unknown[]) : []
   return { globalLore }
 }
 
@@ -1757,19 +1659,14 @@ export function loadCharacterLorebookHydrations(
     characters = [...getCharacterRowsByIds(db, characterIds).values()]
   } else {
     const persisted = loadPersisted(db, dataDir)
-    characters =
-      (persisted.database as { characters?: Array<Record<string, unknown> | null> } | null)
-        ?.characters ?? []
+    characters = (persisted.database as { characters?: Array<Record<string, unknown> | null> } | null)?.characters ?? []
   }
 
   for (const character of characters) {
     if (typeof character?.chaId !== 'string') continue
     knownCharacterIds.add(character.chaId)
     if (!requestedCharacterIds.has(character.chaId)) continue
-    globalLoreById.set(
-      character.chaId,
-      Array.isArray(character.globalLore) ? (character.globalLore as unknown[]) : [],
-    )
+    globalLoreById.set(character.chaId, Array.isArray(character.globalLore) ? (character.globalLore as unknown[]) : [])
   }
 
   const hydrated: CharacterLorebookHydrationPayload[] = []
@@ -1790,10 +1687,7 @@ export function loadCharacterLorebookHydrations(
 
 /** The requested character rows by id (`WHERE id IN`, chunked). Non-record
  *  payloads are skipped (read as missing, like the broad walk's guards). */
-function getCharacterRowsByIds(
-  db: DatabaseSync,
-  characterIds: readonly string[],
-): Map<string, JsonRecord> {
+function getCharacterRowsByIds(db: DatabaseSync, characterIds: readonly string[]): Map<string, JsonRecord> {
   const byId = new Map<string, JsonRecord>()
   const chunkSize = 500
   for (let index = 0; index < characterIds.length; index += chunkSize) {
@@ -1936,11 +1830,7 @@ export function addAsset(db: DatabaseSync, dataDir: string, args: AddAssetInput)
   return addAssets(db, dataDir, [args])[0]
 }
 
-export function addAssets(
-  db: DatabaseSync,
-  dataDir: string,
-  assets: readonly AddAssetInput[],
-): AddAssetResult[] {
+export function addAssets(db: DatabaseSync, dataDir: string, assets: readonly AddAssetInput[]): AddAssetResult[] {
   for (const asset of assets) {
     if (!CONTENT_TYPE_EXTENSIONS[asset.contentType]) {
       throw new ValidationError(`Unsupported content-type: ${asset.contentType}`)
@@ -2117,11 +2007,7 @@ function checkpointWal(db: DatabaseSync): void {
   }
 }
 
-export function createBackup(
-  db: DatabaseSync,
-  dataDir: string,
-  label: string | null = null,
-): BackupManifest {
+export function createBackup(db: DatabaseSync, dataDir: string, label: string | null = null): BackupManifest {
   const { revision } = getSchemaState(db)
   const id = generateBackupId()
   const dir = backupDir(dataDir, id)
@@ -2175,11 +2061,7 @@ export function listBackups(dataDir: string): BackupManifest[] {
   return manifests
 }
 
-function restoreSqliteFromBackup(
-  db: DatabaseSync,
-  backupDbPath: string,
-  beforeCommit?: () => void,
-): void {
+function restoreSqliteFromBackup(db: DatabaseSync, backupDbPath: string, beforeCommit?: () => void): void {
   // Use ATTACH + table-level swap so the existing `db` handle stays valid
   // (file-rename would orphan open file descriptors and break every other
   // active route holding the same handle). The transaction is atomic with
@@ -2212,9 +2094,7 @@ function restoreSqliteFromBackup(
       for (const table of SQLITE_BACKUP_TABLES) {
         // Verify the table exists in the backup; older snapshots may predate
         // memory tables.
-        const exists = db
-          .prepare(`SELECT name FROM bak.sqlite_master WHERE type = 'table' AND name = ?`)
-          .get(table)
+        const exists = db.prepare(`SELECT name FROM bak.sqlite_master WHERE type = 'table' AND name = ?`).get(table)
         if (table === 'schema_version') {
           // Special-case: schema_version has the PK row (id=1). Update in
           // place from the backup rather than DELETE+INSERT to avoid

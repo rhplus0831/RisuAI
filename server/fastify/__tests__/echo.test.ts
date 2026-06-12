@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import {
-  resolveEchoRequest,
-  runEcho,
-  runEchoStream,
-} from '../src/generation/echo.js'
+import { resolveEchoRequest, runEcho, runEchoStream } from '../src/generation/echo.js'
 
 describe('resolveEchoRequest', () => {
   it('falls back to "Echo Message" when message is missing', () => {

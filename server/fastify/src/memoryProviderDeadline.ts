@@ -7,14 +7,8 @@ export function resolveMemoryProviderFetchDeadlineMs(override?: number): number 
   return Math.max(1, Math.floor(override))
 }
 
-export function armMemoryProviderFetchDeadline(
-  controller: AbortController,
-  deadlineMs?: number,
-): () => void {
-  const timer = setTimeout(
-    () => controller.abort(),
-    resolveMemoryProviderFetchDeadlineMs(deadlineMs),
-  )
+export function armMemoryProviderFetchDeadline(controller: AbortController, deadlineMs?: number): () => void {
+  const timer = setTimeout(() => controller.abort(), resolveMemoryProviderFetchDeadlineMs(deadlineMs))
   timer.unref?.()
   return () => clearTimeout(timer)
 }

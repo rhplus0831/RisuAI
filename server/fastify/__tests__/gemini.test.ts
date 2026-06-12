@@ -1,14 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import {
-  reformatForGemini,
-  resolveGeminiRequest,
-  runGemini,
-  runGeminiStream,
-} from '../src/generation/gemini.js'
-import {
-  MAX_STREAM_BUFFER_CHARS,
-  STREAM_BUFFER_OVERFLOW_ERROR,
-} from '../src/generation/sse.js'
+import { reformatForGemini, resolveGeminiRequest, runGemini, runGeminiStream } from '../src/generation/gemini.js'
+import { MAX_STREAM_BUFFER_CHARS, STREAM_BUFFER_OVERFLOW_ERROR } from '../src/generation/sse.js'
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -126,9 +118,7 @@ describe('runGemini', () => {
       captured = { url, init }
       return ok({
         modelVersion: 'gemini-2.5-flash',
-        candidates: [
-          { content: { parts: [{ text: 'hi' }, { text: ' there' }] }, finishReason: 'STOP' },
-        ],
+        candidates: [{ content: { parts: [{ text: 'hi' }, { text: ' there' }] }, finishReason: 'STOP' }],
       })
     })
     const resolved = resolveGeminiRequest({
@@ -188,10 +178,9 @@ describe('runGemini', () => {
 
   it('returns fail with upstream error.message on non-2xx', async () => {
     vi.stubGlobal('fetch', async () => {
-      return new Response(
-        JSON.stringify({ error: { message: 'API_KEY_INVALID', status: 'INVALID_ARGUMENT' } }),
-        { status: 400 },
-      )
+      return new Response(JSON.stringify({ error: { message: 'API_KEY_INVALID', status: 'INVALID_ARGUMENT' } }), {
+        status: 400,
+      })
     })
     const resolved = resolveGeminiRequest({
       model: 'm',
@@ -347,13 +336,10 @@ describe('runGeminiStream', () => {
 
   it('surfaces upstream non-OK responses as error frames', async () => {
     vi.stubGlobal('fetch', async () => {
-      return new Response(
-        JSON.stringify({ error: { message: 'permission denied', status: 'PERMISSION_DENIED' } }),
-        {
-          status: 403,
-          headers: { 'content-type': 'application/json' },
-        },
-      )
+      return new Response(JSON.stringify({ error: { message: 'permission denied', status: 'PERMISSION_DENIED' } }), {
+        status: 403,
+        headers: { 'content-type': 'application/json' },
+      })
     })
     const resolved = resolveGeminiRequest({
       model: 'm',
@@ -363,9 +349,7 @@ describe('runGeminiStream', () => {
     })!
     const frames: unknown[] = []
     for await (const f of runGeminiStream(resolved)) frames.push(f)
-    expect(frames).toEqual([
-      { kind: 'error', error: 'permission denied', status: 403, code: 'PERMISSION_DENIED' },
-    ])
+    expect(frames).toEqual([{ kind: 'error', error: 'permission denied', status: 403, code: 'PERMISSION_DENIED' }])
   })
 
   it('surfaces a missing upstream stream body as an error frame', async () => {
@@ -378,9 +362,7 @@ describe('runGeminiStream', () => {
     })!
     const frames: unknown[] = []
     for await (const f of runGeminiStream(resolved)) frames.push(f)
-    expect(frames).toEqual([
-      { kind: 'error', error: 'upstream returned no stream body', status: 200 },
-    ])
+    expect(frames).toEqual([{ kind: 'error', error: 'upstream returned no stream body', status: 200 }])
   })
 
   it('surfaces invalid upstream stream JSON as an error frame', async () => {
@@ -460,10 +442,10 @@ describe('Vertex AI Gemini routing', () => {
     vi.stubGlobal('fetch', async (url: string, init: RequestInit) => {
       calls.push({ url, init })
       if (url === 'https://oauth2.googleapis.com/token') {
-        return new Response(
-          JSON.stringify({ access_token: 'ya29.vertex-token', expires_in: 3599 }),
-          { status: 200, headers: { 'content-type': 'application/json' } },
-        )
+        return new Response(JSON.stringify({ access_token: 'ya29.vertex-token', expires_in: 3599 }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
       }
       return new Response(
         JSON.stringify({
@@ -517,10 +499,7 @@ describe('Vertex AI Gemini routing', () => {
         })
       }
       predictionUrl = url
-      return new Response(
-        JSON.stringify({ candidates: [{ content: { parts: [{ text: 'g' }] } }] }),
-        { status: 200 },
-      )
+      return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: 'g' }] } }] }), { status: 200 })
     })
 
     const { privateKey } = (await import('node:crypto')).generateKeyPairSync('rsa', {
@@ -557,10 +536,7 @@ describe('Vertex AI Gemini routing', () => {
         })
       }
       predictionUrl = url
-      return new Response(
-        JSON.stringify({ candidates: [{ content: { parts: [{ text: 'g' }] } }] }),
-        { status: 200 },
-      )
+      return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: 'g' }] } }] }), { status: 200 })
     })
 
     const { privateKey } = (await import('node:crypto')).generateKeyPairSync('rsa', {
@@ -583,9 +559,7 @@ describe('Vertex AI Gemini routing', () => {
       signal: new AbortController().signal,
     })!
     await runGemini(resolved)
-    expect(predictionUrl).toContain(
-      'https://aiplatform.googleapis.com/v1/projects/p/locations/global/',
-    )
+    expect(predictionUrl).toContain('https://aiplatform.googleapis.com/v1/projects/p/locations/global/')
   })
 
   it('returns fail with the vertexAuth error when token exchange fails', async () => {

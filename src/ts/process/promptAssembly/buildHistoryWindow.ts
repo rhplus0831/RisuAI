@@ -1,10 +1,5 @@
 import { DBState } from '../../stores.svelte'
-import {
-  setCurrentChat,
-  type Chat,
-  type Message,
-  type character,
-} from '../../storage/database.svelte'
+import { setCurrentChat, type Chat, type Message, type character } from '../../storage/database.svelte'
 import type { ChatTokenizer } from '../../tokenizer'
 import { getUserName } from '../../util'
 import { exampleMessage } from '../exampleMessages'
@@ -52,17 +47,9 @@ export type BuildHistoryWindowResult =
  * abort, or the full window plus the trigger result for downstream
  * additonalSysPrompt processing.
  */
-export async function buildHistoryWindow(
-  args: BuildHistoryWindowArgs,
-): Promise<BuildHistoryWindowResult> {
-  const {
-    currentChar,
-    usingPromptTemplate,
-    tokenizer,
-    findCharacterbyIdwithCache,
-    depthPrompts,
-    resolvePosition,
-  } = args
+export async function buildHistoryWindow(args: BuildHistoryWindowArgs): Promise<BuildHistoryWindowResult> {
+  const { currentChar, usingPromptTemplate, tokenizer, findCharacterbyIdwithCache, depthPrompts, resolvePosition } =
+    args
   let currentChat = args.currentChat
   const nowChatroom = currentChar
 
@@ -105,17 +92,11 @@ export async function buildHistoryWindow(
 
   if (!msReseted) {
     const firstMsg =
-      currentChat.fmIndex === -1
-        ? nowChatroom.firstMessage
-        : nowChatroom.alternateGreetings[currentChat.fmIndex]
+      currentChat.fmIndex === -1 ? nowChatroom.firstMessage : nowChatroom.alternateGreetings[currentChat.fmIndex]
 
     const chat: OpenAIChat = {
       role: 'assistant',
-      content: await processScript(
-        nowChatroom,
-        risuChatParser(firstMsg, { chara: currentChar }),
-        'editprocess',
-      ),
+      content: await processScript(nowChatroom, risuChatParser(firstMsg, { chara: currentChar }), 'editprocess'),
     }
 
     if (usingPromptTemplate && DBState.db.promptSettings.sendName) {

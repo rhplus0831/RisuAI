@@ -48,10 +48,7 @@ export interface PlainPromptSections {
   globalNote: OpenAIChat[]
 }
 
-export function buildPlainPromptSections(
-  ctx: ExpandContext,
-  currentChar: character,
-): PlainPromptSections {
+export function buildPlainPromptSections(ctx: ExpandContext, currentChar: character): PlainPromptSections {
   const db = ctx.database
   const mainPrompt = db.mainPrompt ?? ''
 
@@ -61,20 +58,16 @@ export function buildPlainPromptSections(
       : mainPrompt
 
   const additionalSuffix =
-    db.additionalPrompt && db.additionalPrompt.length > 0 && db.promptPreprocess
-      ? `\n${db.additionalPrompt}`
-      : ''
+    db.additionalPrompt && db.additionalPrompt.length > 0 && db.promptPreprocess ? `\n${db.additionalPrompt}` : ''
 
   const main = formatPrompt(expand(ctx, mainSource + additionalSuffix))
 
-  const jailbreak = db.jailbreakToggle
-    ? formatPrompt(expand(ctx, db.jailbreak ?? ''))
-    : []
+  const jailbreak = db.jailbreakToggle ? formatPrompt(expand(ctx, db.jailbreak ?? '')) : []
 
   const globalNoteSource =
     currentChar.replaceGlobalNote && currentChar.replaceGlobalNote.length > 0
       ? currentChar.replaceGlobalNote.replaceAll('{{original}}', db.globalNote ?? '')
-      : db.globalNote ?? ''
+      : (db.globalNote ?? '')
 
   const globalNote = formatPrompt(expand(ctx, globalNoteSource))
 

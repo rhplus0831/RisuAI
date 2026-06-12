@@ -3,10 +3,7 @@ import net from 'node:net'
 import { Readable } from 'node:stream'
 import { bufferToBodyInit, filterResponseHeaders, normalizeForwardHeaders } from './proxy.js'
 import { STREAM_CLIENT_MAX_BUFFERED_BYTES } from './streamBackpressure.js'
-import {
-  SHARED_DEFAULT_REQUEST_TIMEOUT_MS,
-  SHARED_MAX_REQUEST_TIMEOUT_MS,
-} from './requestTimeouts.js'
+import { SHARED_DEFAULT_REQUEST_TIMEOUT_MS, SHARED_MAX_REQUEST_TIMEOUT_MS } from './requestTimeouts.js'
 
 export const PROXY_STREAM_DEFAULT_TIMEOUT_MS = SHARED_DEFAULT_REQUEST_TIMEOUT_MS
 export const PROXY_STREAM_MAX_TIMEOUT_MS = SHARED_MAX_REQUEST_TIMEOUT_MS
@@ -150,10 +147,7 @@ export function normalizeStreamTimeoutMs(raw: unknown): number {
 export function normalizeHeartbeatSec(raw: unknown): number {
   const value = typeof raw === 'string' ? Number.parseInt(raw, 10) : Number(raw)
   if (!Number.isFinite(value)) return PROXY_STREAM_DEFAULT_HEARTBEAT_SEC
-  return Math.min(
-    PROXY_STREAM_HEARTBEAT_MAX_SEC,
-    Math.max(PROXY_STREAM_HEARTBEAT_MIN_SEC, Math.floor(value)),
-  )
+  return Math.min(PROXY_STREAM_HEARTBEAT_MAX_SEC, Math.max(PROXY_STREAM_HEARTBEAT_MIN_SEC, Math.floor(value)))
 }
 
 export interface CreateJobOptions {
@@ -237,9 +231,7 @@ function appendDurableReplayFrame(job: StreamJob, text: string): void {
   if (!job.replayEvents || job.replayBytes === undefined) return
   const type = serializedSseEventType(text)
   if (type === 'info') {
-    const existingInfoIndex = job.replayEvents.findIndex(
-      (event) => serializedSseEventType(event) === 'info',
-    )
+    const existingInfoIndex = job.replayEvents.findIndex((event) => serializedSseEventType(event) === 'info')
     if (existingInfoIndex !== -1) removeReplayFrame(job, existingInfoIndex)
   }
   job.replayEvents.push(text)
@@ -268,8 +260,7 @@ function closeJobClient(client: JobClient): void {
 
 function sendBoundedJobClient(client: JobClient, text: string): boolean {
   if (!client.open) return false
-  const bufferedBytes =
-    typeof client.bufferedBytes === 'number' ? Math.max(0, client.bufferedBytes) : 0
+  const bufferedBytes = typeof client.bufferedBytes === 'number' ? Math.max(0, client.bufferedBytes) : 0
   if (bufferedBytes + Buffer.byteLength(text) > STREAM_CLIENT_MAX_BUFFERED_BYTES) {
     closeJobClient(client)
     return false
@@ -452,11 +443,7 @@ export class JobRegistry {
         this.cleanup(jobId)
         continue
       }
-      if (
-        !job.done &&
-        t - job.updatedAt >
-          Math.max(PROXY_STREAM_DEFAULT_TIMEOUT_MS, job.timeoutMs * 2)
-      ) {
+      if (!job.done && t - job.updatedAt > Math.max(PROXY_STREAM_DEFAULT_TIMEOUT_MS, job.timeoutMs * 2)) {
         this.cleanup(jobId)
       }
     }
@@ -471,11 +458,7 @@ export interface RunStreamJobArg {
   clientIp: string
 }
 
-export async function runStreamJob(
-  registry: JobRegistry,
-  job: StreamJob,
-  arg: RunStreamJobArg,
-): Promise<void> {
+export async function runStreamJob(registry: JobRegistry, job: StreamJob, arg: RunStreamJobArg): Promise<void> {
   const targetUrl = sanitizeLocalTargetUrl(arg.targetUrl)
   if (!targetUrl) {
     registry.pushEvent(job, {
@@ -507,9 +490,7 @@ export async function runStreamJob(
     })
 
     if (upstream.body) {
-      const stream = Readable.fromWeb(
-        upstream.body as Parameters<typeof Readable.fromWeb>[0],
-      )
+      const stream = Readable.fromWeb(upstream.body as Parameters<typeof Readable.fromWeb>[0])
       for await (const value of stream) {
         if (job.abortController.signal.aborted) break
         const chunk = Buffer.isBuffer(value) ? value : Buffer.from(value as Uint8Array)
@@ -540,8 +521,7 @@ export async function runStreamJob(
     registry.markDone(job)
   } catch (err) {
     const name = (err as { name?: string } | null)?.name
-    const message =
-      name === 'AbortError' ? 'Proxy stream job aborted' : `${err}`
+    const message = name === 'AbortError' ? 'Proxy stream job aborted' : `${err}`
     registry.pushEvent(job, { type: 'error', status: 504, message })
     registry.markDone(job)
   }

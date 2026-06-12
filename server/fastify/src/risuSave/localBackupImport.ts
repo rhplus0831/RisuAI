@@ -85,9 +85,7 @@ export async function decodeLocalBackup(
   options: DecodeLocalBackupOptions,
 ): Promise<DecodedLocalBackup> {
   const format = sniffLocalBackupFormat(readHead(filePath, ZIP_MAGIC.length))
-  return format === 'risu-bundle-zip'
-    ? decodeBundleZip(filePath, options)
-    : decodeLegacyLocalBackup(filePath, options)
+  return format === 'risu-bundle-zip' ? decodeBundleZip(filePath, options) : decodeLegacyLocalBackup(filePath, options)
 }
 
 function readHead(filePath: string, length: number): Uint8Array {
@@ -139,14 +137,8 @@ class ExpandedSizeTracker {
   }
 }
 
-function decodeBundleZip(
-  filePath: string,
-  options: DecodeLocalBackupOptions,
-): Promise<DecodedLocalBackup> {
-  const batcher = new AssetBatcher(
-    options.registerAssets,
-    options.assetBatchBytes ?? DEFAULT_ASSET_BATCH_BYTES,
-  )
+function decodeBundleZip(filePath: string, options: DecodeLocalBackupOptions): Promise<DecodedLocalBackup> {
+  const batcher = new AssetBatcher(options.registerAssets, options.assetBatchBytes ?? DEFAULT_ASSET_BATCH_BYTES)
   const sizeTracker = new ExpandedSizeTracker(options.maxExpandedBytes)
   let databaseBytes: Uint8Array | undefined
   let manifestBytes: Uint8Array | undefined
@@ -284,10 +276,7 @@ async function decodeLegacyLocalBackup(
   filePath: string,
   options: DecodeLocalBackupOptions,
 ): Promise<DecodedLocalBackup> {
-  const batcher = new AssetBatcher(
-    options.registerAssets,
-    options.assetBatchBytes ?? DEFAULT_ASSET_BATCH_BYTES,
-  )
+  const batcher = new AssetBatcher(options.registerAssets, options.assetBatchBytes ?? DEFAULT_ASSET_BATCH_BYTES)
   const sizeTracker = new ExpandedSizeTracker(options.maxExpandedBytes)
   let databaseBytes: Uint8Array | undefined
 

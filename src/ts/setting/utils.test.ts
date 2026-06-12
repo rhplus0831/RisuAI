@@ -105,13 +105,11 @@ afterEach(() => {
 
 describe('server-backed data-driven settings', () => {
   it('maps every data-driven SettingRenderer binding to a server command group', () => {
-    const missing = settingRendererItemSets
-      .flatMap(collectSettingItems)
-      .flatMap((item) => {
-        const key = serverCommandKeyForSetting(item)
-        if (!key || settingsGroupForKey(key)) return []
-        return [`${item.id} -> ${key}`]
-      })
+    const missing = settingRendererItemSets.flatMap(collectSettingItems).flatMap((item) => {
+      const key = serverCommandKeyForSetting(item)
+      if (!key || settingsGroupForKey(key)) return []
+      return [`${item.id} -> ${key}`]
+    })
 
     expect(missing).toEqual([])
   })

@@ -38,11 +38,7 @@ async function stopHarness(h: Harness): Promise<void> {
   rmSync(h.dataDir, { recursive: true, force: true })
 }
 
-async function signAssertion(
-  privateKey: CryptoKey,
-  publicJwk: JsonWebKey,
-  ttlSec = 60,
-): Promise<string> {
+async function signAssertion(privateKey: CryptoKey, publicJwk: JsonWebKey, ttlSec = 60): Promise<string> {
   const now = Math.floor(Date.now() / 1000)
   const header = { alg: 'ES256', typ: 'JWT' }
   const payload = { iat: now, exp: now + ttlSec, pub: publicJwk }
@@ -87,20 +83,17 @@ interface CapturedRequest {
 interface EchoServer {
   url: string
   requests: CapturedRequest[]
-  setResponder(
-    fn: (req: http.IncomingMessage, res: http.ServerResponse, body: Buffer) => void | Promise<void>,
-  ): void
+  setResponder(fn: (req: http.IncomingMessage, res: http.ServerResponse, body: Buffer) => void | Promise<void>): void
   close(): Promise<void>
 }
 
 function startEcho(): Promise<EchoServer> {
   return new Promise((resolve) => {
     const requests: CapturedRequest[] = []
-    let responder: (
-      req: http.IncomingMessage,
-      res: http.ServerResponse,
-      body: Buffer,
-    ) => void | Promise<void> = (_req, res) => {
+    let responder: (req: http.IncomingMessage, res: http.ServerResponse, body: Buffer) => void | Promise<void> = (
+      _req,
+      res,
+    ) => {
       res.writeHead(200, { 'content-type': 'text/plain' })
       res.end('ok')
     }
@@ -153,8 +146,7 @@ async function injectAndCollect(
     let resolved = false
     const onInit = (ws: WebSocket): void => {
       ws.on('message', (data) => {
-        const text =
-          typeof data === 'string' ? data : Buffer.from(data as Buffer).toString('utf8')
+        const text = typeof data === 'string' ? data : Buffer.from(data as Buffer).toString('utf8')
         const ev = JSON.parse(text) as { type: string }
         events.push(ev)
         if (until(ev) && !resolved) {
@@ -358,9 +350,7 @@ describe('Phase 3B-2 WebSocket /api/v1/proxy/stream-jobs/:id/ws', () => {
       type: 'chunk'
       dataBase64: string
     }[]
-    const combined = chunks
-      .map((c) => Buffer.from(c.dataBase64, 'base64').toString('utf8'))
-      .join('')
+    const combined = chunks.map((c) => Buffer.from(c.dataBase64, 'base64').toString('utf8')).join('')
     expect(combined).toBe('onetwo')
   })
 
@@ -375,12 +365,7 @@ describe('Phase 3B-2 WebSocket /api/v1/proxy/stream-jobs/:id/ws', () => {
     const { jobId } = create.json() as { jobId: string }
 
     const url = `/api/v1/proxy/stream-jobs/${jobId}/ws?risu-auth=${encodeURIComponent(assertion)}`
-    const { ws, events } = await injectAndCollect(
-      harness.app,
-      url,
-      {},
-      (e) => e.type === 'done',
-    )
+    const { ws, events } = await injectAndCollect(harness.app, url, {}, (e) => e.type === 'done')
     ws.close()
     expect(events[0].type).toBe('job_accepted')
     expect(events.at(-1)?.type).toBe('done')
@@ -392,18 +377,13 @@ describe('Phase 3B-2 WebSocket /api/v1/proxy/stream-jobs/:id/ws', () => {
       url: '/api/v1/auth/setup',
       payload: { password: 'hunter2' },
     })
-    await expect(
-      harness.app.injectWS('/api/v1/proxy/stream-jobs/anything/ws'),
-    ).rejects.toThrow(/401/)
+    await expect(harness.app.injectWS('/api/v1/proxy/stream-jobs/anything/ws')).rejects.toThrow(/401/)
   })
 
   it('rejects WS upgrade for unknown job id', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await expect(
-      harness.app.injectWS(
-        '/api/v1/proxy/stream-jobs/no-such-id/ws',
-        { headers: { 'risu-auth': assertion } },
-      ),
+      harness.app.injectWS('/api/v1/proxy/stream-jobs/no-such-id/ws', { headers: { 'risu-auth': assertion } }),
     ).rejects.toThrow(/404/)
   })
 
@@ -469,10 +449,7 @@ describe('Phase 3B-2 WebSocket /api/v1/proxy/stream-jobs/:id/ws', () => {
       events.push(JSON.parse(Buffer.from(data as Buffer).toString('utf8')) as { type: string })
     })
     await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(
-        () => reject(new Error('server did not close the done-job viewer')),
-        3_000,
-      )
+      const timer = setTimeout(() => reject(new Error('server did not close the done-job viewer')), 3_000)
       ws.once('close', () => {
         clearTimeout(timer)
         resolve()

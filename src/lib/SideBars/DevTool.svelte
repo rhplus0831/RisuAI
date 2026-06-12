@@ -26,11 +26,7 @@
     currentChatStateSnapshot,
     dispatchPatchChatScriptstate,
   } from 'src/ts/chatCommands'
-  import {
-    canUseServerCommands,
-    type ChatScriptstatePatch,
-    type ChatScriptstateValue,
-  } from 'src/ts/server/commands'
+  import { canUseServerCommands, type ChatScriptstatePatch, type ChatScriptstateValue } from 'src/ts/server/commands'
   import CheckInput from '../UI/GUI/CheckInput.svelte'
 
   let previewMode = $state('chat')
@@ -58,10 +54,7 @@
 
     if (previewJoin === 'prompt') {
       md += '### Prompt\n'
-      md +=
-        '```json\n' +
-        JSON.stringify(JSON.parse(previewBody), null, 2).replaceAll('```', '\\`\\`\\`') +
-        '\n```\n'
+      md += '```json\n' + JSON.stringify(JSON.parse(previewBody), null, 2).replaceAll('```', '\\`\\`\\`') + '\n```\n'
       alertMd(md)
       return
     }
@@ -148,21 +141,13 @@
     applyScriptstatePatchToChat(chat, patch)
   }
 
-  function applyScriptstatePatch(
-    chatId: string,
-    patch: ChatScriptstatePatch,
-    deleteKeys: string[] = [],
-  ): void {
+  function applyScriptstatePatch(chatId: string, patch: ChatScriptstatePatch, deleteKeys: string[] = []): void {
     const chat = findChatById(chatId)
     if (!chat) return
     applyScriptstatePatchToChat(chat, patch, deleteKeys)
   }
 
-  function applyScriptstatePatchToChat(
-    chat: Chat,
-    patch: ChatScriptstatePatch,
-    deleteKeys: string[] = [],
-  ): void {
+  function applyScriptstatePatchToChat(chat: Chat, patch: ChatScriptstatePatch, deleteKeys: string[] = []): void {
     chat.scriptstate ??= {}
     for (const key of deleteKeys) {
       delete chat.scriptstate[key]
@@ -183,9 +168,7 @@
 
   function isEditableScriptstateValue(value: unknown): value is ChatScriptstateValue {
     return (
-      typeof value === 'string' ||
-      typeof value === 'boolean' ||
-      (typeof value === 'number' && Number.isFinite(value))
+      typeof value === 'string' || typeof value === 'boolean' || (typeof value === 'number' && Number.isFinite(value))
     )
   }
 
@@ -208,22 +191,15 @@
         {#if typeof value === 'object'}
           <div class="p-2 text-center">Object</div>
         {:else if typeof value === 'string'}
-          <TextInput
-            {value}
-            onchange={(event) => commitScriptstateValue(key, event.currentTarget.value)}
-          />
+          <TextInput {value} onchange={(event) => commitScriptstateValue(key, event.currentTarget.value)} />
         {:else if typeof value === 'number'}
-          <NumberInput
-            {value}
-            onChange={(event) => commitScriptstateValue(key, event.currentTarget.valueAsNumber)}
-          />
+          <NumberInput {value} onChange={(event) => commitScriptstateValue(key, event.currentTarget.valueAsNumber)} />
         {:else if typeof value === 'boolean'}
           <CheckInput
             check={value}
             hiddenName
             name={key}
-            onChange={(checked) => commitScriptstateValue(key, checked)}
-          />
+            onChange={(checked) => commitScriptstateValue(key, checked)} />
         {/if}
       {/each}
     {:else}
@@ -262,9 +238,7 @@
       {/await}
     {/if}
   </div>
-  <span class="text-sm text-textcolor2"
-    >This is a estimate. The actual token count may be different.</span
-  >
+  <span class="text-sm text-textcolor2">This is a estimate. The actual token count may be different.</span>
 </Accordion>
 
 <Accordion styled name={'Autopilot'}>
@@ -279,8 +253,7 @@
       onclick={() => {
         autopilot.pop()
         autopilot = autopilot
-      }}
-    >
+      }}>
       <TrashIcon />
     </button>
 
@@ -289,8 +262,7 @@
       onclick={() => {
         autopilot.push('')
         autopilot = autopilot
-      }}
-    >
+      }}>
       <PlusIcon />
     </button>
 
@@ -310,18 +282,13 @@
         }
         if (selected.name.endsWith('.csv')) {
           autopilot = file.split('\n').map((x) => {
-            return x
-              .replace(/\r/g, '')
-              .replace(/\\n/g, '\n')
-              .replace(/\\t/g, '\t')
-              .replace(/\\r/g, '\r')
+            return x.replace(/\r/g, '').replace(/\\n/g, '\n').replace(/\\t/g, '\t').replace(/\\r/g, '\r')
           })
         }
         if (selected.name.endsWith('.txt')) {
           autopilot = file.split('\n')
         }
-      }}
-    >
+      }}>
       <HardDriveUploadIcon />
     </button>
   </div>
@@ -342,8 +309,7 @@
         }
         await sendChat(i)
       }
-    }}>Run</Button
-  >
+    }}>Run</Button>
 </Accordion>
 
 <Accordion styled name={'Preview Prompt'}>
@@ -375,8 +341,7 @@
     className="mt-2"
     onclick={() => {
       preview()
-    }}>Run</Button
-  >
+    }}>Run</Button>
 </Accordion>
 
 <Accordion styled name={'Preview Lorebook'}>
@@ -392,8 +357,7 @@
           .join('\n')}
         `.trim()
       alertMd(html)
-    }}>Test Lore</Button
-  >
+    }}>Test Lore</Button>
   <Button
     className="mt-2"
     onclick={async () => {
@@ -419,8 +383,7 @@
         </table>
         `.trim()
       alertMd(html)
-    }}>Match Sources</Button
-  >
+    }}>Match Sources</Button>
 </Accordion>
 
 <Button
@@ -435,12 +398,10 @@
       .join('\n')}
     `.trim()
     alertMd(html)
-  }}>Preview Module</Button
->
+  }}>Preview Module</Button>
 
 <Button
   className="mt-2"
   onclick={() => {
     alertMd(getRequestLog())
-  }}>Request Log</Button
->
+  }}>Request Log</Button>

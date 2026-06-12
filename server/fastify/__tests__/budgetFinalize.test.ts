@@ -78,10 +78,7 @@ describe('Phase 7-8c finalizeRequestBudget — trimming', () => {
     if (!result.ok) return
     // Totals (overhead 5): 8 + 7 + 8 + 7 = 30.
     // Trim row1 (-7 → 23), trim row2 (-8 → 15 ≤ 20). Pinned rows kept.
-    expect(result.formated.map((c) => c.content)).toEqual([
-      'system-prompt',
-      'final-question',
-    ])
+    expect(result.formated.map((c) => c.content)).toEqual(['system-prompt', 'final-question'])
     expect(result.inputTokens).toBe(15)
     // 15 + 50 > 20 → 20 - 15 = 5.
     expect(result.outputTokens).toBe(5)
@@ -132,9 +129,7 @@ describe('Phase 7-8c finalizeRequestBudget — trimming', () => {
 
 describe('Phase 7-8c finalizeRequestBudget — tokenizer routing', () => {
   it('uses overhead 3 + name accounting for non-gpt models', () => {
-    const formated: OpenAIChat[] = [
-      { role: 'system', content: 'hello', name: 'hello' },
-    ]
+    const formated: OpenAIChat[] = [{ role: 'system', content: 'hello', name: 'hello' }]
     const result = finalizeRequestBudget({
       db: makeDb('claude-3-5-sonnet'),
       formated,
@@ -149,9 +144,7 @@ describe('Phase 7-8c finalizeRequestBudget — tokenizer routing', () => {
   })
 
   it('routes through o200k_base for the gpt-4o family', () => {
-    const formated: OpenAIChat[] = [
-      { role: 'system', content: 'café résumé 漢字' },
-    ]
+    const formated: OpenAIChat[] = [{ role: 'system', content: 'café résumé 漢字' }]
     const result = finalizeRequestBudget({
       db: makeDb('gpt-4o'),
       formated,

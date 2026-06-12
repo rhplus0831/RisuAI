@@ -13,13 +13,7 @@
   } from '@lucide/svelte'
   import { language } from 'src/lang'
   import { hypaV3ModalOpen, settingsOpen, SettingsMenuIndex } from 'src/ts/stores.svelte'
-  import type {
-    SearchState,
-    BulkEditState,
-    CategoryManagerState,
-    FilterState,
-    UIState,
-  } from './types'
+  import type { SearchState, BulkEditState, CategoryManagerState, FilterState, UIState } from './types'
 
   interface Props {
     searchState: SearchState
@@ -129,8 +123,7 @@
     <button
       class="p-2 transition-colors text-zinc-400 hover:text-zinc-200"
       tabindex="-1"
-      onclick={async () => await toggleSearch()}
-    >
+      onclick={async () => await toggleSearch()}>
       <SearchIcon class="w-6 h-6" />
     </button>
 
@@ -140,8 +133,7 @@
         ? 'text-yellow-400 hover:text-yellow-300'
         : 'text-zinc-400 hover:text-zinc-200'}"
       tabindex="-1"
-      onclick={toggleFilterImportant}
-    >
+      onclick={toggleFilterImportant}>
       <StarIcon class="w-6 h-6" />
     </button>
 
@@ -152,8 +144,7 @@
           ? 'text-blue-400 hover:text-blue-300'
           : 'text-zinc-400 hover:text-zinc-200'}"
         tabindex="-1"
-        onclick={toggleBulkEditMode}
-      >
+        onclick={toggleBulkEditMode}>
         <SquarePenIcon class="w-6 h-6" />
       </button>
     {/if}
@@ -163,35 +154,24 @@
       <button
         class="p-2 text-zinc-400 hover:text-zinc-200 transition-colors"
         tabindex="-1"
-        onclick={openCategoryManager}
-      >
+        onclick={openCategoryManager}>
         <TagIcon class="w-6 h-6" />
       </button>
     {/if}
 
     <!-- Open Global Settings Button -->
-    <button
-      class="p-2 transition-colors text-zinc-400 hover:text-zinc-200"
-      tabindex="-1"
-      onclick={openGlobalSettings}
-    >
+    <button class="p-2 transition-colors text-zinc-400 hover:text-zinc-200" tabindex="-1" onclick={openGlobalSettings}>
       <SettingsIcon class="w-6 h-6" />
     </button>
 
     <!-- Open Dropdown Button -->
     <div class="relative">
-      <button
-        class="p-2 transition-colors text-zinc-400 hover:text-zinc-200"
-        tabindex="-1"
-        onclick={openDropdown}
-      >
+      <button class="p-2 transition-colors text-zinc-400 hover:text-zinc-200" tabindex="-1" onclick={openDropdown}>
         <MoreVerticalIcon class="w-6 h-6" />
       </button>
 
       {#if dropdownOpen}
-        <div
-          class="absolute right-0 z-10 p-2 mt-1 border rounded-md shadow-lg border-zinc-700 bg-zinc-800"
-        >
+        <div class="absolute right-0 z-10 p-2 mt-1 border rounded-md shadow-lg border-zinc-700 bg-zinc-800">
           <!-- Buttons Container -->
           <div class="flex items-center gap-2">
             <!-- Filter Selected Summary Button -->
@@ -200,8 +180,7 @@
                 ? 'text-blue-400 hover:text-blue-300'
                 : 'text-zinc-400 hover:text-zinc-200'}"
               tabindex="-1"
-              onclick={toggleFilterSelected}
-            >
+              onclick={toggleFilterSelected}>
               <BarChartIcon class="w-6 h-6" />
             </button>
 
@@ -210,8 +189,7 @@
               <button
                 class="p-2 transition-colors text-zinc-400 hover:text-rose-300"
                 tabindex="-1"
-                onclick={async () => await resetData()}
-              >
+                onclick={async () => await resetData()}>
                 <Trash2Icon class="w-6 h-6" />
               </button>
             {/if}
@@ -221,11 +199,7 @@
     </div>
 
     <!-- Close Modal Button -->
-    <button
-      class="p-2 transition-colors text-zinc-400 hover:text-zinc-200"
-      tabindex="-1"
-      onclick={closeModal}
-    >
+    <button class="p-2 transition-colors text-zinc-400 hover:text-zinc-200" tabindex="-1" onclick={closeModal}>
       <XIcon class="w-6 h-6" />
     </button>
   </div>

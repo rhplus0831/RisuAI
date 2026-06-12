@@ -1,9 +1,4 @@
-import type {
-  Chat,
-  MessageGenerationInfo,
-  MessagePresetInfo,
-  character,
-} from '../../storage/database.svelte'
+import type { Chat, MessageGenerationInfo, MessagePresetInfo, character } from '../../storage/database.svelte'
 import { DBState } from '../../stores.svelte'
 import { trimUntilPunctuation } from '../../util'
 import { withTrustedServerProjectionWrite } from '../../server/projectionWriteGuard.svelte'
@@ -55,27 +50,18 @@ export async function applyNonStreamResponse(
 
   // `editoutput` runs server-side on the server-owned path; here it degrades to
   // the reformatted text (the server ships final text on `done`).
-  const runEditOutput = (
-    text: string,
-    idx: number,
-  ): Promise<{ data: string; emoChanged: boolean }> =>
+  const runEditOutput = (text: string, idx: number): Promise<{ data: string; emoChanged: boolean }> =>
     skipEditOutput
       ? Promise.resolve({ data: reformatContent(text), emoChanged: false })
       : processScriptFull(nowChatroom, reformatContent(text), 'editoutput', idx)
 
-  const msgs =
-    req.type === 'success'
-      ? ([['char', req.result]] as const)
-      : req.type === 'multiline'
-        ? req.result
-        : []
+  const msgs = req.type === 'success' ? ([['char', req.result]] as const) : req.type === 'multiline' ? req.result : []
 
   let result = ''
   let emoChanged = false
   const mrerolls: string[] = []
 
-  const messagesAt = (): Chat['message'] =>
-    DBState.db.characters[selectedChar].chats[selectedChat].message
+  const messagesAt = (): Chat['message'] => DBState.db.characters[selectedChar].chats[selectedChat].message
 
   for (let i = 0; i < msgs.length; i++) {
     const msg = msgs[i]

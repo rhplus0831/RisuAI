@@ -40,8 +40,7 @@
 {#if popupStore.children}
   <div
     class="bg-darkbg border-darkborderc border rounded-md p-4 gap-2 flex flex-col fixed z-50 items-start"
-    style={styleString}
-  >
+    style={styleString}>
     {@render popupStore.children()}
   </div>
 {/if}

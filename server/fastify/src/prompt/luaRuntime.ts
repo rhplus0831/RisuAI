@@ -96,9 +96,7 @@ export interface LuaExecBudget {
   usedMs: number
 }
 
-export function createLuaExecBudget(
-  totalMs: number = DEFAULT_LUA_AGGREGATE_BUDGET_MS,
-): LuaExecBudget {
+export function createLuaExecBudget(totalMs: number = DEFAULT_LUA_AGGREGATE_BUDGET_MS): LuaExecBudget {
   return { totalMs, usedMs: 0 }
 }
 
@@ -150,11 +148,7 @@ export interface EgressDeps {
   /** Perform the actual fetch against a pre-validated address set. Defaults to a
    * pinned `https.request`. Receives the originating request's abort signal so an
    * in-flight egress fetch dies with the request that spawned it (audit L20). */
-  fetchImpl?: (
-    url: string,
-    addresses: string[],
-    signal?: AbortSignal,
-  ) => Promise<{ status: number; data: string }>
+  fetchImpl?: (url: string, addresses: string[], signal?: AbortSignal) => Promise<{ status: number; data: string }>
   /** Clock seam for the rate limiter. Defaults to `Date.now`. */
   now?: () => number
 }
@@ -168,9 +162,7 @@ export interface RequestRateState {
 
 const sharedRateState: RequestRateState = { count: 0, resetAt: 0 }
 
-export type EgressVerdict =
-  | { ok: true; addresses: string[] }
-  | { ok: false; status: number; data: string }
+export type EgressVerdict = { ok: true; addresses: string[] } | { ok: false; status: number; data: string }
 
 /**
  * True for any address the server must not connect to: loopback, link-local
@@ -266,8 +258,7 @@ function embeddedV4InV6(ip: string): string | null {
   const groups = parseV6Groups(ip)
   if (!groups) return null
   const v4 = (hi: number, lo: number): string => `${hi >> 8}.${hi & 0xff}.${lo >> 8}.${lo & 0xff}`
-  const allZero = (from: number, to: number): boolean =>
-    groups.slice(from, to).every((group) => group === 0)
+  const allZero = (from: number, to: number): boolean => groups.slice(from, to).every((group) => group === 0)
   // IPv4-mapped ::ffff:0:0/96 (hex form; the dotted form is unwrapped by
   // `isBlockedAddress`) and IPv4-compatible ::/96.
   if (allZero(0, 5) && (groups[5] === 0xffff || groups[5] === 0)) {
@@ -289,10 +280,7 @@ function embeddedV4InV6(ip: string): string | null {
  * {@link isBlockedAddress}. Returns the validated address set so the caller can
  * pin the connection to it (no DNS-rebinding window).
  */
-export async function validateEgressUrl(
-  url: string,
-  deps: EgressDeps = {},
-): Promise<EgressVerdict> {
+export async function validateEgressUrl(url: string, deps: EgressDeps = {}): Promise<EgressVerdict> {
   if (typeof url !== 'string' || url.length > MAX_URL_LENGTH) {
     return { ok: false, status: 413, data: 'URL to large. max is 120 characters' }
   }
@@ -914,9 +902,7 @@ function declareHostFunctions(engine: LuaEngine): (next: RuntimeState) => void {
   })
   declare('getChatLength', (_id: string) => state.ctx.chat.message.length)
   declare('getFullChatMain', (_id: string) =>
-    JSON.stringify(
-      state.ctx.chat.message.map((v) => ({ role: v.role, data: v.data, time: v.time ?? 0 })),
-    ),
+    JSON.stringify(state.ctx.chat.message.map((v) => ({ role: v.role, data: v.data, time: v.time ?? 0 }))),
   )
   declare('setFullChatMain', (id: string, value: string) => {
     if (!canWrite(id)) return
@@ -1023,13 +1009,7 @@ function declareHostFunctions(engine: LuaEngine): (next: RuntimeState) => void {
       if (!canWrite(id)) return
       const char = asCharacter(state.ctx)
       if (!char) return
-      const {
-        alwaysActive = false,
-        insertOrder = 100,
-        key = '',
-        regex = false,
-        secondKey = '',
-      } = options ?? {}
+      const { alwaysActive = false, insertOrder = 100, key = '', regex = false, secondKey = '' } = options ?? {}
       const chat = state.ctx.chat
       chat.localLore = (chat.localLore ?? []).filter((book) => book.comment !== name)
       chat.localLore.push({
@@ -1316,10 +1296,7 @@ async function runStringWithTimeout(
  * browser swallows them — but a timeout or interactive-API invocation is surfaced
  * on the result so callers can act on it.
  */
-export async function runServerLua(
-  opts: RunServerLuaOptions,
-  ctx: ServerLuaRuntimeContext,
-): Promise<ServerLuaResult> {
+export async function runServerLua(opts: RunServerLuaOptions, ctx: ServerLuaRuntimeContext): Promise<ServerLuaResult> {
   const execTimeoutMs = opts.execTimeoutMs ?? DEFAULT_EXEC_TIMEOUT_MS
   const data = opts.data ?? ''
   const meta = opts.meta ?? {}
@@ -1408,8 +1385,7 @@ export async function runServerLua(
 
     try {
       let res: unknown
-      const get = (name: string) =>
-        engine.global.get(name) as ((...a: unknown[]) => unknown) | undefined
+      const get = (name: string) => engine.global.get(name) as ((...a: unknown[]) => unknown) | undefined
       switch (opts.mode) {
         case 'input': {
           const fn = get('onInput')
@@ -1518,8 +1494,7 @@ export async function runLuaEditTrigger<T extends string | OpenAIChat[]>(
   try {
     let data: T = content
 
-    const ownTriggers =
-      (char as { type?: string }).type === 'simple' ? [] : ((char as character).triggerscript ?? [])
+    const ownTriggers = (char as { type?: string }).type === 'simple' ? [] : ((char as character).triggerscript ?? [])
     const triggers = ownTriggers.concat(ctx.moduleTriggers ?? [])
 
     for (const trigger of triggers) {

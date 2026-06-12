@@ -103,9 +103,7 @@ describe('reattach open-chat generation (Phase 4)', () => {
 
   it('reattaches a regenerate job with its target id', async () => {
     openChat('chat-1')
-    setActiveGenerationJobs([
-      { chatId: 'chat-1', jobId: 'job-r', mode: 'regenerate', regenerateMessageId: 'msg-1' },
-    ])
+    setActiveGenerationJobs([{ chatId: 'chat-1', jobId: 'job-r', mode: 'regenerate', regenerateMessageId: 'msg-1' }])
 
     await maybeReattachOpenChatGeneration()
 
@@ -188,10 +186,7 @@ describe('reattach open-chat generation (Phase 4)', () => {
     await first
 
     await vi.waitFor(() => {
-      expect(h.sendChat).toHaveBeenCalledWith(
-        -1,
-        expect.objectContaining({ reattachJobId: 'job-2' }),
-      )
+      expect(h.sendChat).toHaveBeenCalledWith(-1, expect.objectContaining({ reattachJobId: 'job-2' }))
     })
     expect(get(activeGenerationJobs)).toEqual([])
   })

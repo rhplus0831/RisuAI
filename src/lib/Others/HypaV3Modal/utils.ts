@@ -5,10 +5,7 @@ import { alertConfirm } from 'src/ts/alert'
 import { DBState, selectedCharID } from 'src/ts/stores.svelte'
 import { language } from 'src/lang'
 
-export async function alertConfirmTwice(
-  firstMessage: string,
-  secondMessage: string,
-): Promise<boolean> {
+export async function alertConfirmTwice(firstMessage: string, secondMessage: string): Promise<boolean> {
   return (await alertConfirm(firstMessage)) && (await alertConfirm(secondMessage))
 }
 
@@ -93,15 +90,9 @@ export function getFirstMessage(): string | null {
 export async function processRegexScript(msg: Message, msgIndex: number = -1): Promise<Message> {
   const char = DBState.db.characters[get(selectedCharID)]
   const newData: string = (
-    await processScriptFull(
-      char,
-      risuChatParser(msg.data, { chara: char, role: msg.role }),
-      'editprocess',
-      msgIndex,
-      {
-        chatRole: msg.role,
-      },
-    )
+    await processScriptFull(char, risuChatParser(msg.data, { chara: char, role: msg.role }), 'editprocess', msgIndex, {
+      chatRole: msg.role,
+    })
   ).data
 
   return {

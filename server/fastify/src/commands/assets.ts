@@ -5,11 +5,7 @@ type JsonRecord = Record<string, unknown>
 
 const CLEARABLE_ASSET_VALUES = new Set(['', '-'])
 
-export function validateOptionalServerAssetRef(
-  db: DatabaseSync,
-  value: unknown,
-  label: string,
-): void {
+export function validateOptionalServerAssetRef(db: DatabaseSync, value: unknown, label: string): void {
   if (value === undefined || value === null) return
   if (typeof value !== 'string') {
     throw new ValidationError(`${label} must be a server asset id`)

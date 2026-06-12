@@ -56,9 +56,7 @@ export function registerProxyRoutes(app: FastifyInstance, authState: AuthState):
 
         const method = req.method
         const body =
-          Buffer.isBuffer(req.body) && !METHODS_WITHOUT_BODY.has(method) && req.body.length > 0
-            ? req.body
-            : undefined
+          Buffer.isBuffer(req.body) && !METHODS_WITHOUT_BODY.has(method) && req.body.length > 0 ? req.body : undefined
 
         try {
           const upstream = await fetch(url, {
@@ -77,9 +75,7 @@ export function registerProxyRoutes(app: FastifyInstance, authState: AuthState):
           if (!upstream.body) {
             return reply.send()
           }
-          return reply.send(
-            Readable.fromWeb(upstream.body as Parameters<typeof Readable.fromWeb>[0]),
-          )
+          return reply.send(Readable.fromWeb(upstream.body as Parameters<typeof Readable.fromWeb>[0]))
         } catch (err) {
           const name = (err as { name?: string } | null)?.name
           if (signal.aborted || name === 'AbortError') {

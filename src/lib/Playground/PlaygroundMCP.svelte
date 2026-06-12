@@ -1,13 +1,7 @@
 <script lang="ts">
   import TextAreaInput from '../UI/GUI/TextAreaInput.svelte'
   import Button from '../UI/GUI/Button.svelte'
-  import {
-    type MCPToolWithURL,
-    callMCPTool,
-    getMCPMeta,
-    getMCPTools,
-    initializeMCPs,
-  } from 'src/ts/process/mcp/mcp'
+  import { type MCPToolWithURL, callMCPTool, getMCPMeta, getMCPTools, initializeMCPs } from 'src/ts/process/mcp/mcp'
   import { alertMd } from 'src/ts/alert'
 
   let metadatas = $state('')
@@ -39,11 +33,8 @@
       <Button
         onclick={async () => {
           const x = await callMCPTool(tool.name, JSON.parse(toolInputs[tool.name]))
-          alertMd(
-            `Tool ${tool.name} executed\n\nResponse:\n\`\`\`json\n${JSON.stringify(x, null, 2)}\n\`\`\``,
-          )
-        }}>Execute {tool.name}</Button
-      >
+          alertMd(`Tool ${tool.name} executed\n\nResponse:\n\`\`\`json\n${JSON.stringify(x, null, 2)}\n\`\`\``)
+        }}>Execute {tool.name}</Button>
     </div>
   {/each}
 </div>

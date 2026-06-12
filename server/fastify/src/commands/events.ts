@@ -57,9 +57,7 @@ export function selectCommandEventReplay(
 
   const oldestRevision = history[0]?.revision
   const latestRevision = history.at(-1)?.revision
-  const events = history.filter(
-    (event) => event.revision > sinceRevision && event.revision <= currentRevision,
-  )
+  const events = history.filter((event) => event.revision > sinceRevision && event.revision <= currentRevision)
 
   let expectedRevision = sinceRevision + 1
   for (const event of events) {
@@ -142,11 +140,7 @@ export function selectPersistedCommandEventReplay(
   sinceRevision: number,
   currentRevision: number,
 ): CommandEventReplaySelection {
-  return selectCommandEventReplay(
-    listPersistedCommandEventHistory(db),
-    sinceRevision,
-    currentRevision,
-  )
+  return selectCommandEventReplay(listPersistedCommandEventHistory(db), sinceRevision, currentRevision)
 }
 
 /**
@@ -159,11 +153,7 @@ export function selectPersistedCommandEventReplay(
  * (`bumpRevision` callers all persist inside the same transaction), so the
  * revision window equals the former keep-latest-N-rows retention.
  */
-function pruneCommandEventHistory(
-  db: DatabaseSync,
-  historyLimit: number,
-  latestRevision: number,
-): void {
+function pruneCommandEventHistory(db: DatabaseSync, historyLimit: number, latestRevision: number): void {
   if (!Number.isSafeInteger(historyLimit) || historyLimit < 1) {
     throw new RangeError('Command event history limit must be a positive safe integer')
   }
@@ -186,9 +176,7 @@ function commandEventFromRow(row: PersistedCommandEventRow): CommandEvent {
     resource: row.resource,
     ...(row.id !== null ? { id: row.id } : {}),
     ...(row.parentId !== null ? { parentId: row.parentId } : {}),
-    ...(row.originWriterSessionId !== null
-      ? { origin: { writerSessionId: row.originWriterSessionId } }
-      : {}),
+    ...(row.originWriterSessionId !== null ? { origin: { writerSessionId: row.originWriterSessionId } } : {}),
   }
 }
 

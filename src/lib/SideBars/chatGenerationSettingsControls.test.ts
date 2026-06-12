@@ -283,10 +283,7 @@ function pickerButton(kind: 'preset' | 'persona'): HTMLButtonElement {
 }
 
 function resetDefaultsButton(): HTMLButtonElement {
-  return elementBySelector<HTMLButtonElement>(
-    '[data-risu-generation-reset-defaults] button',
-    'reset defaults button',
-  )
+  return elementBySelector<HTMLButtonElement>('[data-risu-generation-reset-defaults] button', 'reset defaults button')
 }
 
 function pickerRoot(kind: 'preset' | 'persona', mode: GenerationSettingsPickerMode): HTMLElement {
@@ -311,10 +308,7 @@ function toggleControl(key: string): HTMLElement {
 }
 
 function jailbreakControl(): HTMLElement {
-  return elementBySelector<HTMLElement>(
-    '[data-risu-generation-jailbreak-control]',
-    'jailbreak toggle control',
-  )
+  return elementBySelector<HTMLElement>('[data-risu-generation-jailbreak-control]', 'jailbreak toggle control')
 }
 
 function checkboxWithin(container: HTMLElement, label: string): HTMLInputElement {
@@ -404,14 +398,10 @@ describe('sidebar chat generation settings controls', () => {
     await tick()
 
     expect(
-      target.querySelectorAll(
-        '[data-risu-generation-picker-control][data-risu-picker-kind="preset"]',
-      ),
+      target.querySelectorAll('[data-risu-generation-picker-control][data-risu-picker-kind="preset"]'),
     ).toHaveLength(1)
     expect(
-      target.querySelectorAll(
-        '[data-risu-generation-picker-control][data-risu-picker-kind="persona"]',
-      ),
+      target.querySelectorAll('[data-risu-generation-picker-control][data-risu-picker-kind="persona"]'),
     ).toHaveLength(1)
   })
 
@@ -451,10 +441,7 @@ describe('sidebar chat generation settings controls', () => {
     expect(state.persona).toBeUndefined()
     expect(state.preset).toBeUndefined()
     expect(state.readiness.ready).toBe(false)
-    expect(state.readiness.missing.map((reason) => reason.code)).toEqual([
-      'persona_missing',
-      'preset_missing',
-    ])
+    expect(state.readiness.missing.map((reason) => reason.code)).toEqual(['persona_missing', 'preset_missing'])
     expect(state.missingLabels).toEqual(['Persona', 'Preset'])
     expect(pickerControl('preset').dataset.risuPickerSelectedId).toBe(missingPresetId)
     expect(pickerControl('preset').textContent).toContain('Select chat preset')
@@ -522,9 +509,7 @@ describe('sidebar chat generation settings controls', () => {
     await tick()
 
     expect(resolveActiveChatGenerationSettings().readiness.ready).toBe(false)
-    expect(resolveActiveChatGenerationSettings().missingLabels).toEqual([
-      'Configuration confirmation',
-    ])
+    expect(resolveActiveChatGenerationSettings().missingLabels).toEqual(['Configuration confirmation'])
     expect(pickerControl('preset').dataset.risuPickerSelectedId).toBe('preset-a')
     expect(pickerControl('preset').textContent).toContain('Preset Alpha')
     expect(pickerControl('persona').dataset.risuPickerSelectedId).toBe('persona-a')
@@ -862,9 +847,7 @@ describe('sidebar chat generation settings controls', () => {
     await tick()
 
     expect(pickerControl('preset').dataset.risuPickerSelectedId).toBe('')
-    expect(
-      target.querySelector('[data-risu-generation-toggle-control][data-risu-toggle-key="mood"]'),
-    ).toBeNull()
+    expect(target.querySelector('[data-risu-generation-toggle-control][data-risu-toggle-key="mood"]')).toBeNull()
 
     pickerButton('preset').click()
     await tick()
@@ -888,9 +871,9 @@ describe('sidebar chat generation settings controls', () => {
     expect(selectToggleInput('mood').value).toBe('0')
     expect(toggleCheckbox('flag').checked).toBe(false)
     expect(textToggleInput('note').value).toBe('')
-    expect(
-      resolveActiveChatGenerationSettings().readiness.missing.map((reason) => reason.code),
-    ).not.toContain('sidebar_toggle_missing')
+    expect(resolveActiveChatGenerationSettings().readiness.missing.map((reason) => reason.code)).not.toContain(
+      'sidebar_toggle_missing',
+    )
     expect(calls[1]).toMatchObject({
       url: '/api/v1/commands/chats/chat-a/generation-settings',
       method: 'PUT',

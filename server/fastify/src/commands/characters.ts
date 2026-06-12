@@ -57,8 +57,7 @@ export function ensureCharacterCollection(database: JsonRecord): CharacterRecord
 
   const seen = new Set<string>()
   const characters = (database.characters as unknown[]).map((raw, index) => {
-    const character =
-      raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as JsonRecord) : {}
+    const character = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as JsonRecord) : {}
     const record = repairCharacterCollectionRow(character, index)
     if (seen.has(record.chaId)) {
       record.chaId = randomUUID()
@@ -79,10 +78,7 @@ export function normalizeCharacterCollection(database: unknown): void {
   ensureCharacterCollection(database as JsonRecord)
 }
 
-export function createCharacterRecord(
-  input: unknown,
-  options: { assetDb?: DatabaseSync } = {},
-): CharacterRecord {
+export function createCharacterRecord(input: unknown, options: { assetDb?: DatabaseSync } = {}): CharacterRecord {
   const character = readJsonObject(input, 'character') as CharacterRecord
   character.chaId = readCharacterId(character.chaId, 'character.chaId')
   validateCharacterRecord(character, 'character', options)
@@ -94,8 +90,7 @@ export function repairCharacterCollectionRow(
   index = 0,
   options: { assetDb?: DatabaseSync } = {},
 ): CharacterRecord {
-  const character =
-    input && typeof input === 'object' && !Array.isArray(input) ? (input as JsonRecord) : {}
+  const character = input && typeof input === 'object' && !Array.isArray(input) ? (input as JsonRecord) : {}
   return repairCharacterRecord({ ...characterCollectionRowDefaults(index), ...character }, options)
 }
 
@@ -106,8 +101,7 @@ export function buildPatchedCharacterCollectionRow(
   index = 0,
   options: { assetDb?: DatabaseSync } = {},
 ): CharacterRecord {
-  const character =
-    input && typeof input === 'object' && !Array.isArray(input) ? (input as JsonRecord) : {}
+  const character = input && typeof input === 'object' && !Array.isArray(input) ? (input as JsonRecord) : {}
   const patched = {
     ...characterCollectionRowDefaults(index),
     ...character,
@@ -119,13 +113,9 @@ export function buildPatchedCharacterCollectionRow(
   return patched as CharacterRecord
 }
 
-export function repairCharacterRecord(
-  input: unknown,
-  options: { assetDb?: DatabaseSync } = {},
-): CharacterRecord {
+export function repairCharacterRecord(input: unknown, options: { assetDb?: DatabaseSync } = {}): CharacterRecord {
   const character = readJsonObject(input, 'character') as CharacterRecord
-  character.chaId =
-    typeof character.chaId === 'string' && character.chaId.trim() ? character.chaId : randomUUID()
+  character.chaId = typeof character.chaId === 'string' && character.chaId.trim() ? character.chaId : randomUUID()
   validateCharacterRecord(character, 'character', options)
   return character
 }
@@ -163,10 +153,7 @@ function characterCollectionRowDefaults(index: number): JsonRecord {
   }
 }
 
-export function readCharacterPatch(
-  input: unknown,
-  options: { assetDb?: DatabaseSync } = {},
-): JsonRecord {
+export function readCharacterPatch(input: unknown, options: { assetDb?: DatabaseSync } = {}): JsonRecord {
   const patch = readJsonObject(input, 'patch')
   if (Object.keys(patch).length === 0) {
     throw new ValidationError('patch must include at least one character field')
@@ -190,17 +177,11 @@ export function readJsonObject(value: unknown, label: string): JsonRecord {
   return value as JsonRecord
 }
 
-export function findCharacterIndex(
-  characters: readonly CharacterRecord[],
-  characterId: string,
-): number {
+export function findCharacterIndex(characters: readonly CharacterRecord[], characterId: string): number {
   return characters.findIndex((character) => character.chaId === characterId)
 }
 
-export function requireCharacterIndex(
-  characters: readonly CharacterRecord[],
-  characterId: string,
-): number {
+export function requireCharacterIndex(characters: readonly CharacterRecord[], characterId: string): number {
   const index = findCharacterIndex(characters, characterId)
   if (index === -1) {
     throw new EntityNotFoundError(`Character not found: ${characterId}`)
@@ -208,13 +189,8 @@ export function requireCharacterIndex(
   return index
 }
 
-export function selectedCharacterId(
-  database: JsonRecord,
-  characters: readonly CharacterRecord[],
-): string | null {
-  const index = Number.isInteger(database.currentChar as number)
-    ? (database.currentChar as number)
-    : -1
+export function selectedCharacterId(database: JsonRecord, characters: readonly CharacterRecord[]): string | null {
+  const index = Number.isInteger(database.currentChar as number) ? (database.currentChar as number) : -1
   return characters[index]?.chaId ?? null
 }
 
@@ -258,10 +234,7 @@ export function validateFullCharacterOrder(
   }
 }
 
-export function validateCharacterOrderAssetRefs(
-  db: DatabaseSync,
-  order: readonly CharacterOrderEntry[],
-): void {
+export function validateCharacterOrderAssetRefs(db: DatabaseSync, order: readonly CharacterOrderEntry[]): void {
   order.forEach((entry, index) => {
     if (typeof entry === 'string') return
     validateCharacterOrderLegacyImageRef(db, entry.img, `characterOrder[${index}].img`)
@@ -269,19 +242,12 @@ export function validateCharacterOrderAssetRefs(
   })
 }
 
-function validateCharacterOrderLegacyImageRef(
-  db: DatabaseSync,
-  value: unknown,
-  label: string,
-): void {
+function validateCharacterOrderLegacyImageRef(db: DatabaseSync, value: unknown, label: string): void {
   if (typeof value !== 'string' || !SERVER_ASSET_ID_RE.test(value)) return
   validateOptionalServerAssetRef(db, value, label)
 }
 
-function normalizeCharacterOrder(
-  database: JsonRecord,
-  characters: readonly CharacterRecord[],
-): void {
+function normalizeCharacterOrder(database: JsonRecord, characters: readonly CharacterRecord[]): void {
   const rawOrder = Array.isArray(database.characterOrder) ? database.characterOrder : []
   const activeIds = new Set(
     characters
@@ -353,11 +319,7 @@ function readCharacterOrderEntry(entry: unknown, index: number): CharacterOrderE
   if (!Array.isArray(folder.data) || folder.data.some((id) => typeof id !== 'string' || !id)) {
     throw new ValidationError(`characterOrder[${index}].data must be an array of character ids`)
   }
-  if (
-    folder.imgFile !== undefined &&
-    folder.imgFile !== null &&
-    typeof folder.imgFile !== 'string'
-  ) {
+  if (folder.imgFile !== undefined && folder.imgFile !== null && typeof folder.imgFile !== 'string') {
     throw new ValidationError(`characterOrder[${index}].imgFile must be a string or null`)
   }
   if (folder.img !== undefined && typeof folder.img !== 'string') {
@@ -373,11 +335,7 @@ function readCharacterOrderEntry(entry: unknown, index: number): CharacterOrderE
   } as CharacterFolderRecord
 }
 
-function validateOrderedCharacterId(
-  characterId: string,
-  activeIds: Set<string>,
-  seenCharacterIds: Set<string>,
-): void {
+function validateOrderedCharacterId(characterId: string, activeIds: Set<string>, seenCharacterIds: Set<string>): void {
   if (!activeIds.has(characterId)) {
     throw new ValidationError(`Unknown character id in characterOrder: ${characterId}`)
   }
@@ -387,11 +345,7 @@ function validateOrderedCharacterId(
   seenCharacterIds.add(characterId)
 }
 
-function validateCharacterRecord(
-  record: JsonRecord,
-  label: string,
-  options: { assetDb?: DatabaseSync } = {},
-): void {
+function validateCharacterRecord(record: JsonRecord, label: string, options: { assetDb?: DatabaseSync } = {}): void {
   if ('chaId' in record && (typeof record.chaId !== 'string' || record.chaId.trim() === '')) {
     throw new ValidationError(`${label}.chaId must be a non-empty string`)
   }
@@ -411,11 +365,7 @@ function validateCharacterRecord(
   }
 }
 
-function validateCharacterPatch(
-  record: JsonRecord,
-  label: string,
-  options: { assetDb?: DatabaseSync } = {},
-): void {
+function validateCharacterPatch(record: JsonRecord, label: string, options: { assetDb?: DatabaseSync } = {}): void {
   for (const key of Object.keys(record)) {
     if (EXCLUDED_CHARACTER_PATCH_KEYS.has(key)) {
       throw new ValidationError(`${label}.${key} is owned by a later command slice`)
@@ -469,18 +419,10 @@ function validateGptSoVitsAssetRefs(db: DatabaseSync, value: unknown, label: str
     throw new ValidationError(`${label} must be an object`)
   }
   const record = value as JsonRecord
-  if (
-    !('ref_audio_data' in record) ||
-    record.ref_audio_data === undefined ||
-    record.ref_audio_data === null
-  ) {
+  if (!('ref_audio_data' in record) || record.ref_audio_data === undefined || record.ref_audio_data === null) {
     return
   }
-  if (
-    !record.ref_audio_data ||
-    typeof record.ref_audio_data !== 'object' ||
-    Array.isArray(record.ref_audio_data)
-  ) {
+  if (!record.ref_audio_data || typeof record.ref_audio_data !== 'object' || Array.isArray(record.ref_audio_data)) {
     throw new ValidationError(`${label}.ref_audio_data must be an object`)
   }
   const refAudio = record.ref_audio_data as JsonRecord

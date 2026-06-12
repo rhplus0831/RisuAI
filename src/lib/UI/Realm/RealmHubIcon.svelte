@@ -15,33 +15,27 @@
 
 <button
   class="bg-darkbg rounded-lg p-4 flex flex-col hover:bg-selected transition-colors relative lg:w-96 w-full items-start"
-  onclick={onClick}
->
+  onclick={onClick}>
   <div class="flex gap-2 w-full">
     {#if DBState.db.hideAllImages}
       <div
-        class="w-20 min-w-20 h-20 sm:h-28 sm:w-28 rounded-md bg-darkbutton flex items-center justify-center text-textcolor2"
-      >
+        class="w-20 min-w-20 h-20 sm:h-28 sm:w-28 rounded-md bg-darkbutton flex items-center justify-center text-textcolor2">
         <span class="text-4xl">?</span>
       </div>
     {:else}
       <img
         class="w-20 min-w-20 h-20 sm:h-28 sm:w-28 rounded-md object-top object-cover"
         alt={chara.name}
-        src={`${hubURL}/resource/` + chara.img}
-      />
+        src={`${hubURL}/resource/` + chara.img} />
     {/if}
     <div class="flex flex-col grow min-w-0">
-      <span
-        class="text-textcolor text-lg min-w-0 max-w-full text-ellipsis whitespace-nowrap overflow-hidden text-start"
-        >{chara.name}</span
-      >
+      <span class="text-textcolor text-lg min-w-0 max-w-full text-ellipsis whitespace-nowrap overflow-hidden text-start"
+        >{chara.name}</span>
       <span
         class="text-textcolor2 text-xs min-w-0 max-w-full text-ellipsis wrap-break-word max-h-8 whitespace-nowrap overflow-hidden text-start"
         >{parseMultilangString(chara.desc)[DBState.db.language] ??
           parseMultilangString(chara.desc).en ??
-          parseMultilangString(chara.desc).xx}</span
-      >
+          parseMultilangString(chara.desc).xx}</span>
       <div class="flex flex-wrap">
         {#each chara.tags as tag, i}
           {#if i < 4}
@@ -62,8 +56,7 @@
               e.stopPropagation()
               alertNormal('This character includes emotion images')
             }}
-            onkeydown={(e) => {}}
-          >
+            onkeydown={(e) => {}}>
             <SmileIcon />
           </div>
         {/if}
@@ -76,8 +69,7 @@
               e.stopPropagation()
               alertNormal('This character includes additional assets')
             }}
-            onkeydown={(e) => {}}
-          >
+            onkeydown={(e) => {}}>
             <ImageIcon />
           </div>
         {/if}
@@ -90,12 +82,10 @@
               e.stopPropagation()
               alertNormal('This character includes lorebook')
             }}
-            onkeydown={(e) => {}}
-          >
+            onkeydown={(e) => {}}>
             <BookIcon />
           </div>
         {/if}
       </div>
     </div>
-  </div></button
->
+  </div></button>

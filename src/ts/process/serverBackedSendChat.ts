@@ -1,11 +1,5 @@
 import { DBState } from '../stores.svelte'
-import type {
-  character,
-  Chat,
-  Message,
-  MessageGenerationInfo,
-  MessagePresetInfo,
-} from '../storage/database.svelte'
+import type { character, Chat, Message, MessageGenerationInfo, MessagePresetInfo } from '../storage/database.svelte'
 import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
 import { getInlayAssetMetadata, getServerInlayAssetId } from './files/inlays'
 import { runInlayScreen } from './inlayScreen'
@@ -278,10 +272,7 @@ export async function assembleServerBackedSendChat(args: {
     currentChat,
     formated: served.prompt.formated,
     biases: served.prompt.biases ?? [],
-    inputTokens:
-      numberFrom(served.info?.tokens?.prompt) ??
-      numberFrom(served.prompt.promptInfo?.inputTokens) ??
-      0,
+    inputTokens: numberFrom(served.info?.tokens?.prompt) ?? numberFrom(served.prompt.promptInfo?.inputTokens) ?? 0,
     outputTokens:
       numberFrom(served.info?.responseBudget) ??
       numberFrom(served.prompt.promptInfo?.outputTokens) ??
@@ -318,11 +309,7 @@ export async function reattachServerBackedSendChat(args: {
   // buffered frames), but carrying the real mode keeps `input.mode` honest and lets
   // the caller render continue/regenerate on the right row.
   const mode: ServerChatInput['mode'] =
-    typeof args.regenerateMessageId === 'string'
-      ? 'regenerate'
-      : args.continue
-        ? 'continue'
-        : 'send'
+    typeof args.regenerateMessageId === 'string' ? 'regenerate' : args.continue ? 'continue' : 'send'
   const input: ServerChatInput = {
     chatId: args.currentChat.id ?? '',
     characterId: args.currentChar.chaId,
@@ -377,10 +364,7 @@ export async function reattachServerBackedSendChat(args: {
     currentChat,
     formated: served.prompt.formated,
     biases: served.prompt.biases ?? [],
-    inputTokens:
-      numberFrom(served.info?.tokens?.prompt) ??
-      numberFrom(served.prompt.promptInfo?.inputTokens) ??
-      0,
+    inputTokens: numberFrom(served.info?.tokens?.prompt) ?? numberFrom(served.prompt.promptInfo?.inputTokens) ?? 0,
     outputTokens:
       numberFrom(served.info?.responseBudget) ??
       numberFrom(served.prompt.promptInfo?.outputTokens) ??
@@ -454,9 +438,7 @@ export async function applyServerBackedTerminal(args: {
     assistant =
       findGeneratedAssistantMessage(liveChat, generationId) ??
       (args.targetMessageId
-        ? liveChat.message.find(
-            (message) => message.chatId === args.targetMessageId && message.role === 'char',
-          )
+        ? liveChat.message.find((message) => message.chatId === args.targetMessageId && message.role === 'char')
         : undefined)
     if (assistant) {
       const baseText = typeof postGen?.finalText === 'string' ? postGen.finalText : assistant.data

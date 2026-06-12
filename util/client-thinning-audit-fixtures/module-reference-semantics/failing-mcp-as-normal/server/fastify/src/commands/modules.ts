@@ -5,11 +5,7 @@ interface ModuleRecord {
   mcp?: boolean
 }
 
-export function validateNormalModuleLinks(
-  modules: ModuleRecord[],
-  moduleIds: string[],
-  label: string,
-): void {
+export function validateNormalModuleLinks(modules: ModuleRecord[], moduleIds: string[], label: string): void {
   // Anti-pattern: MCP module rows are treated as normal link targets because the
   // linkable set is not filtered by module type.
   const linkable = new Set(modules.map((module) => module.id))

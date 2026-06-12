@@ -79,9 +79,7 @@ export interface CohereReformatFailure {
   reason: string
 }
 
-export function reformatForCohere(
-  messages: RawChatMessage[],
-): CohereReformatResult | CohereReformatFailure {
+export function reformatForCohere(messages: RawChatMessage[]): CohereReformatResult | CohereReformatFailure {
   const working: RawChatMessage[] = [...messages]
   if (working.length === 0) {
     return { ok: false, reason: 'cohere requires at least one user message' }
@@ -144,22 +142,15 @@ export function resolveCohereRequest(input: CohereResolveInput): CohereRequest |
   const reformat = reformatForCohere(input.messages as RawChatMessage[])
   if (!reformat.ok) return null
 
-  const baseUrl =
-    typeof input.baseUrl === 'string' && input.baseUrl.length > 0
-      ? input.baseUrl
-      : DEFAULT_BASE_URL
+  const baseUrl = typeof input.baseUrl === 'string' && input.baseUrl.length > 0 ? input.baseUrl : DEFAULT_BASE_URL
   const safetyMode =
     typeof input.safetyMode === 'string' && VALID_SAFETY_MODES.has(input.safetyMode)
       ? (input.safetyMode as 'NONE' | 'CONTEXTUAL' | 'STRICT')
       : undefined
   const temperature =
-    typeof input.temperature === 'number' && Number.isFinite(input.temperature)
-      ? input.temperature
-      : undefined
-  const topK =
-    typeof input.topK === 'number' && Number.isFinite(input.topK) ? input.topK : undefined
-  const topP =
-    typeof input.topP === 'number' && Number.isFinite(input.topP) ? input.topP : undefined
+    typeof input.temperature === 'number' && Number.isFinite(input.temperature) ? input.temperature : undefined
+  const topK = typeof input.topK === 'number' && Number.isFinite(input.topK) ? input.topK : undefined
+  const topP = typeof input.topP === 'number' && Number.isFinite(input.topP) ? input.topP : undefined
   const presencePenalty =
     typeof input.presencePenalty === 'number' && Number.isFinite(input.presencePenalty)
       ? input.presencePenalty
@@ -228,9 +219,7 @@ function buildHeaders(req: CohereRequest): Record<string, string> {
   return headers
 }
 
-function buildRequestInit(
-  req: CohereRequest,
-): { body: string; headers: Record<string, string> } {
+function buildRequestInit(req: CohereRequest): { body: string; headers: Record<string, string> } {
   const body = buildPayload(req)
   const headers = buildHeaders(req)
   if (req.additionalParams !== undefined && req.additionalParams.length > 0) {

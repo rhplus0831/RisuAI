@@ -227,10 +227,7 @@ import { importCharacterProcess } from './characterCards'
 import { PngChunk } from './pngChunk'
 
 const BASE_PNG = new Uint8Array(
-  Buffer.from(
-    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=',
-    'base64',
-  ),
+  Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=', 'base64'),
 )
 
 let consoleLogSpy: ReturnType<typeof vi.spyOn>
@@ -280,9 +277,9 @@ describe('PNG character card import', () => {
     for (const chunkText of fixture.assetChunkTexts) {
       expect(counters.chunkSliceCounts.get(chunkText)).toBe(1)
     }
-    expect(
-      globalApiState.saveAssets.mock.calls[0][0].map((asset) => Array.from(asset.data)),
-    ).toEqual(fixture.assetPayloads.map((asset) => Array.from(asset)))
+    expect(globalApiState.saveAssets.mock.calls[0][0].map((asset) => Array.from(asset.data))).toEqual(
+      fixture.assetPayloads.map((asset) => Array.from(asset)),
+    )
   })
 
   it('L51: preserves multi-asset PNG import output and progress order', async () => {
@@ -295,9 +292,9 @@ describe('PNG character card import', () => {
 
     expect(alertState.alertError).not.toHaveBeenCalled()
     expect(globalApiState.saveAsset).toHaveBeenCalledTimes(1)
-    expect(
-      globalApiState.saveAssets.mock.calls[0][0].map((asset) => Array.from(asset.data)),
-    ).toEqual(fixture.assetPayloads.map((asset) => Array.from(asset)))
+    expect(globalApiState.saveAssets.mock.calls[0][0].map((asset) => Array.from(asset.data))).toEqual(
+      fixture.assetPayloads.map((asset) => Array.from(asset)),
+    )
     expect(dbState.db.characters).toHaveLength(1)
     expect(dbState.db.characters[0]).toMatchObject({
       name: 'PNG Multi Asset',

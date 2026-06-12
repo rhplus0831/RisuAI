@@ -22,12 +22,7 @@
   import OtherBotSettings from './Pages/OtherBotSettings.svelte'
   import PluginSettings from './Pages/PluginSettings.svelte'
   import AdvancedSettings from './Pages/AdvancedSettings.svelte'
-  import {
-    additionalSettingsMenu,
-    easyPanelStore,
-    MobileGUI,
-    SettingsMenuIndex,
-  } from 'src/ts/stores.svelte'
+  import { additionalSettingsMenu, easyPanelStore, MobileGUI, SettingsMenuIndex } from 'src/ts/stores.svelte'
   import { DBState } from 'src/ts/stores.svelte'
   import Communities from './Pages/Communities.svelte'
   import GlobalLoreBookSettings from './Pages/GlobalLoreBookSettings.svelte'
@@ -73,16 +68,14 @@
 <div
   class="h-full w-full flex justify-center rs-setting-cont"
   class:bg-bgcolor={$MobileGUI}
-  class:setting-bg={!$MobileGUI}
->
+  class:setting-bg={!$MobileGUI}>
   <div class="h-full max-w-(--breakpoint-lg) w-full flex relative rs-setting-cont-2">
     {#if (window.innerWidth >= 700 && !$MobileGUI) || $SettingsMenuIndex === -1}
       <div
         class="flex h-full flex-col p-4 pt-8 gap-2 overflow-y-auto relative rs-setting-cont-3 shrink-0"
         class:w-full={window.innerWidth < 700 || $MobileGUI}
         class:bg-darkbg={!$MobileGUI}
-        class:bg-bgcolor={$MobileGUI}
-      >
+        class:bg-bgcolor={$MobileGUI}>
         {#if !$isLite}
           <button
             class="flex gap-2 items-center hover:text-textcolor"
@@ -90,8 +83,7 @@
             class:text-textcolor2={$SettingsMenuIndex !== 1 && $SettingsMenuIndex !== 13}
             onclick={() => {
               navigate('/settings/bot-preset')
-            }}
-          >
+            }}>
             <BotIcon />
             <span>{language.chatBot}</span>
           </button>
@@ -101,8 +93,7 @@
             class:text-textcolor2={$SettingsMenuIndex !== 12}
             onclick={() => {
               navigate('/settings/persona')
-            }}
-          >
+            }}>
             <ContactIcon />
             <span>{language.persona}</span>
           </button>
@@ -112,8 +103,7 @@
             class:text-textcolor2={$SettingsMenuIndex !== 2}
             onclick={() => {
               navigate('/settings/other-bots')
-            }}
-          >
+            }}>
             <Sailboat />
             <span>{language.otherBots}</span>
           </button>
@@ -123,8 +113,7 @@
             class:text-textcolor2={$SettingsMenuIndex !== 3}
             onclick={() => {
               navigate('/settings/display')
-            }}
-          >
+            }}>
             <MonitorIcon />
             <span>{language.display}</span>
           </button>
@@ -135,8 +124,7 @@
           class:text-textcolor2={$SettingsMenuIndex !== 10}
           onclick={() => {
             navigate('/settings/language')
-          }}
-        >
+          }}>
           <LanguagesIcon />
           <span>{language.language}</span>
         </button>
@@ -147,8 +135,7 @@
             class:text-textcolor2={$SettingsMenuIndex !== 11}
             onclick={() => {
               navigate('/settings/accessibility')
-            }}
-          >
+            }}>
             <AccessibilityIcon />
             <span>{language.accessibility}</span>
           </button>
@@ -158,8 +145,7 @@
             class:text-textcolor2={$SettingsMenuIndex !== 14}
             onclick={() => {
               navigate('/settings/modules')
-            }}
-          >
+            }}>
             <PackageIcon />
             <span>{language.modules}</span>
           </button>
@@ -169,8 +155,7 @@
             class:text-textcolor2={$SettingsMenuIndex !== 4}
             onclick={() => {
               navigate('/settings/plugins')
-            }}
-          >
+            }}>
             <CodeIcon />
             <span>{language.plugin}</span>
           </button>
@@ -181,8 +166,7 @@
           class:text-textcolor2={$SettingsMenuIndex !== 0}
           onclick={() => {
             navigate('/settings/backup')
-          }}
-        >
+          }}>
           <HardDrive />
           <span>{language.backupRestore}</span>
         </button>
@@ -192,8 +176,7 @@
           class:text-textcolor2={$SettingsMenuIndex !== 15}
           onclick={() => {
             navigate('/settings/hotkeys')
-          }}
-        >
+          }}>
           <KeyboardIcon />
           <span>{language.hotkey}</span>
         </button>
@@ -204,8 +187,7 @@
             class:text-textcolor2={$SettingsMenuIndex !== 6}
             onclick={() => {
               navigate('/settings/advanced')
-            }}
-          >
+            }}>
             <ActivityIcon />
             <span>{language.advancedSettings}</span>
           </button>
@@ -213,8 +195,7 @@
             class="flex gap-2 items-center hover:text-textcolor"
             class:text-textcolor={$SettingsMenuIndex === 77}
             class:text-textcolor2={$SettingsMenuIndex !== 77}
-            onclick={openSupporterThanks}
-          >
+            onclick={openSupporterThanks}>
             <BoxIcon />
             <span>{language.supporterThanks}</span>
           </button>
@@ -223,8 +204,7 @@
               class="flex gap-2 items-center hover:text-textcolor text-textcolor2"
               onclick={() => {
                 menu.callback()
-              }}
-            >
+              }}>
               <PluginDefinedIcon ico={menu} />
               <span>{menu.name}</span>
             </button>
@@ -237,8 +217,7 @@
               class:text-textcolor2={$SettingsMenuIndex !== 16}
               onclick={() => {
                 easyPanelStore.open = true
-              }}
-            >
+              }}>
               <!-- From Lucide Icons, licensed under MIT/ISC License, modified to fit the design. see license from bundled lucide icons. -->
               <svg width={24} height={24}>
                 <defs>
@@ -258,8 +237,7 @@
             class="absolute top-2 right-2 hover:text-green-500 text-textcolor"
             onclick={() => {
               navigate('/')
-            }}
-          >
+            }}>
             <CircleXIcon size={DBState.db.settingsCloseButtonSize} />
           </button>
         {/if}
@@ -268,16 +246,14 @@
     {#if (window.innerWidth >= 700 && !$MobileGUI) || $SettingsMenuIndex !== -1}
       {#key $SettingsMenuIndex}
         <div
-          class="grow py-6 px-4 bg-bgcolor flex flex-col text-textcolor overflow-y-auto relative rs-setting-cont-4 min-w-0"
-        >
+          class="grow py-6 px-4 bg-bgcolor flex flex-col text-textcolor overflow-y-auto relative rs-setting-cont-4 min-w-0">
           {#if $SettingsMenuIndex === 0}
             <UserSettings />
           {:else if $SettingsMenuIndex === 1}
             <BotSettings
               goPromptTemplate={() => {
                 navigate('/settings/prompt')
-              }}
-            />
+              }} />
           {:else if $SettingsMenuIndex === 2}
             <OtherBotSettings />
           {:else if $SettingsMenuIndex === 3}
@@ -304,8 +280,7 @@
             <PromptSettings
               onGoBack={() => {
                 navigate('/settings/bot-preset')
-              }}
-            />
+              }} />
           {:else if $SettingsMenuIndex === 15}
             <HotkeySettings />
           {:else if $SettingsMenuIndex === 77}
@@ -318,8 +293,7 @@
           class="absolute top-2 right-2 hover:text-green-500 text-textcolor"
           onclick={() => {
             navigate('/')
-          }}
-        >
+          }}>
           <CircleXIcon size={DBState.db.settingsCloseButtonSize} />
         </button>
       {/if}
@@ -330,16 +304,11 @@
   <Lorepreset
     close={() => {
       openLoreList = false
-    }}
-  />
+    }} />
 {/if}
 
 <style>
   .setting-bg {
-    background: linear-gradient(
-      to right,
-      var(--risu-theme-darkbg) 50%,
-      var(--risu-theme-bgcolor) 50%
-    );
+    background: linear-gradient(to right, var(--risu-theme-darkbg) 50%, var(--risu-theme-bgcolor) 50%);
   }
 </style>
