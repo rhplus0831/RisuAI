@@ -6,7 +6,7 @@ import type { AuthState } from '../auth.js'
 import type { GenerationJobRegistry } from '../generationJobs.js'
 import { requireAuth } from '../http.js'
 import { getSchemaState } from '../db.js'
-import { loadStubProjection } from '../repository.js'
+import { loadStubProjectionDatabase } from '../repository.js'
 import { maskProviderSecretsInPlace } from '../providerSecrets.js'
 import { emitProtocolMetric, jsonPayloadBytes } from '../protocolMetrics.js'
 
@@ -28,14 +28,14 @@ export function registerBootstrapRoutes(
     const { version, revision } = getSchemaState(db)
     // Ship chat stubs (metadata, no message[]); the client hydrates messages via
     // the projection endpoint when a chat opens.
-    const persisted = loadStubProjection(db, dataDir)
+    const database = loadStubProjectionDatabase(db, dataDir)
     const response = {
       revision,
       schemaVersion: version,
-      // In-place mask `loadStubProjection` freshly builds this
+      // In-place mask `loadStubProjectionDatabase` freshly builds this
       // object and nothing else references it, so the response skips the
       // whole-stubbed-DB JSON round-trip clone the copying mask pays.
-      database: maskProviderSecretsInPlace(persisted.database),
+      database: maskProviderSecretsInPlace(database),
       assetBaseUrl: ASSET_BASE_URL,
       // Transient running generations so a returning client, even after a full
       // reload, can discover and reattach. Server-memory only.

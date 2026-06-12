@@ -759,9 +759,9 @@ export function emptyPersisted(): Persisted {
   return { _version: PERSISTED_VERSION, database: null, assets: [] }
 }
 
-export function loadPersisted(db: DatabaseSync, _dataDir: string): Persisted {
+function loadPersistedDatabase(db: DatabaseSync, _dataDir: string): unknown | null {
   let database: unknown = loadSettingsFromSqlite(db)
-  if (database === null) return emptyPersisted()
+  if (database === null) return null
   const rec = database as Record<string, unknown>
   for (const field of COLLECTION_FIELDS) {
     if (field !== 'promptTemplate' && !(field in rec)) rec[field] = []
@@ -772,6 +772,12 @@ export function loadPersisted(db: DatabaseSync, _dataDir: string): Persisted {
     rec.characters = sqliteChars
   }
   database = loadCollectionsFromSqlite(db, rec)
+  return database
+}
+
+export function loadPersisted(db: DatabaseSync, dataDir: string): Persisted {
+  const database = loadPersistedDatabase(db, dataDir)
+  if (database === null) return emptyPersisted()
   return {
     _version: PERSISTED_VERSION,
     database,
@@ -1364,12 +1370,27 @@ export function ensureDbJsonImported(db: DatabaseSync, dataDir: string): void {
  */
 export function loadStubProjection(db: DatabaseSync, dataDir: string): Persisted {
   const persisted = loadPersisted(db, dataDir)
-  eachChat(persisted.database, (chat) => {
+  stubDatabaseProjection(persisted.database)
+  return persisted
+}
+
+/**
+ * Database-only variant of {@link loadStubProjection} for wire projections that
+ * never return the persisted `assets` array. Keeps the database JSON identical
+ * to `loadStubProjection(...).database` without scanning asset metadata.
+ */
+export function loadStubProjectionDatabase(db: DatabaseSync, dataDir: string): unknown | null {
+  const database = loadPersistedDatabase(db, dataDir)
+  stubDatabaseProjection(database)
+  return database
+}
+
+function stubDatabaseProjection(database: unknown): void {
+  eachChat(database, (chat) => {
     chat.message = []
     delete chat.hypaV3Data
   })
-  stubCharacterLorebooks(persisted)
-  return persisted
+  stubCharacterLorebooks(database)
 }
 
 /**
@@ -1382,9 +1403,9 @@ export function loadStubProjection(db: DatabaseSync, dataDir: string): Persisted
  * Keep disabled until the full client `globalLore` reader surface is validated
  * against stubbed characters.
  */
-function stubCharacterLorebooks(persisted: Persisted): void {
-  if (!isRecord(persisted.database) || persisted.database.enableLorebookStubs !== true) return
-  stripCharacterGlobalLore(persisted.database)
+function stubCharacterLorebooks(database: unknown): void {
+  if (!isRecord(database) || database.enableLorebookStubs !== true) return
+  stripCharacterGlobalLore(database)
 }
 
 function stripCharacterGlobalLore(database: unknown): void {

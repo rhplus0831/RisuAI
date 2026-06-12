@@ -1803,6 +1803,34 @@ describe('server load-count harness on the large-corpus fixture', () => {
     }
   })
 
+  it('L5: bootstrap skips asset metadata reads while preserving database bytes', async () => {
+    const fixture = buildLargeCorpusFixture()
+    await importDatabase({ ...fixture.database, openAIKey: 'sk-bootstrap-secret' })
+
+    const db = openDatabase(harness.dataDir)
+    let expectedDatabaseJson = ''
+    try {
+      insertAssetMetadataBatch(db, [asset('a'.repeat(64))])
+      expectedDatabaseJson = JSON.stringify(maskProviderSecrets(loadStubProjection(db, harness.dataDir).database))
+    } finally {
+      db.close()
+    }
+
+    const { result: res, loadCountByTable } = await withProtocolMetricsEnv('', () =>
+      withServerLoadInstrumentation(() =>
+        harness.app.inject({
+          method: 'GET',
+          url: '/api/v1/bootstrap',
+          headers: { 'risu-auth': assertion },
+        }),
+      ),
+    )
+
+    expect(res.statusCode).toBe(200)
+    expect(JSON.stringify(res.json().database)).toBe(expectedDatabaseJson)
+    expect(loadCountByTable.assets ?? 0).toBe(0)
+  })
+
   it('L10: a fresh (no-replay) SSE connect performs zero command-event history reads', async () => {
     const fixture = buildLargeCorpusFixture()
     await importDatabase(fixture.database)

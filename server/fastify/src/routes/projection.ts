@@ -12,7 +12,6 @@ import {
   loadChatHydrations,
   loadPersistedDatabaseFields,
   loadSingleCharacterStubRow,
-  loadStubProjection,
   loadStubbedProjectionFields,
 } from '../repository.js'
 import { maskProviderSecrets, maskProviderSecretsInPlace } from '../providerSecrets.js'
@@ -97,24 +96,6 @@ const NARROW_FIELD_PROJECTION_RESOURCES = new Set([
   'translatorPreset',
   'loadout',
   'plugin',
-])
-
-const NARROW_STUBBED_PROJECTION_RESOURCES = new Set([
-  'character',
-  'chat',
-  'chatFolder',
-  'message',
-  'generation',
-  'scriptDefinition',
-  'triggerDefinition',
-  'moduleScriptDefinition',
-  'moduleTriggerDefinition',
-  'globalLorebook',
-  'lorebook',
-  'module',
-  'moduleUpdated',
-  'moduleReordered',
-  'moduleEnabled',
 ])
 
 // Resources whose projected state intentionally sprawls across many top-level
@@ -453,9 +434,7 @@ export function registerProjectionRoutes(
 
     const fields = NARROW_FIELD_PROJECTION_RESOURCES.has(resource)
       ? maskProviderSecrets(loadPersistedDatabaseFields(db, dataDir, fieldKeys))
-      : NARROW_STUBBED_PROJECTION_RESOURCES.has(resource)
-        ? maskProviderSecrets(loadStubbedProjectionFields(db, dataDir, fieldKeys))
-        : loadStubProjectionFields(db, dataDir, fieldKeys)
+      : maskProviderSecrets(loadStubbedProjectionFields(db, dataDir, fieldKeys))
 
     const response = { revision, resource, mode: 'fields' as const, fields }
     emitProjectionMetric(req.log, resource, revision, response, {
@@ -542,26 +521,6 @@ function readChatMessageRange(query: {
   const limit = readPositiveInteger(query.limit)
   if (start === null || limit === null) return 'invalid'
   return { start, limit }
-}
-
-function loadStubProjectionFields(
-  db: DatabaseSync,
-  dataDir: string,
-  fieldKeys: readonly string[],
-): Record<string, unknown> {
-  // Ship chat stubs (message-free) here too; the client re-hydrates the open
-  // chat after merging a `characters` projection (see bootstrap.ts hydration).
-  const persisted = loadStubProjection(db, dataDir)
-  const masked = maskProviderSecrets(persisted.database)
-  const source =
-    masked && typeof masked === 'object' && !Array.isArray(masked) ? (masked as Record<string, unknown>) : {}
-  const fields: Record<string, unknown> = {}
-  for (const key of fieldKeys) {
-    if (Object.prototype.hasOwnProperty.call(source, key)) {
-      fields[key] = source[key]
-    }
-  }
-  return fields
 }
 
 function loadSingleCharacterRow(
