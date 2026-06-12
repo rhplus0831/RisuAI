@@ -102,7 +102,7 @@
   } from './DefaultChatScreen.loadPages'
   import { normalizeChatDisplayTailCount } from 'src/ts/chatDisplayTailCount'
   import { guardActiveChatGenerationSettingsForSend } from 'src/ts/activeChatGenerationSettings'
-  import { currentRoute } from 'src/ts/router'
+  import { characterRoutePath, currentRoute, navigate } from 'src/ts/router'
 
   const loadPlaygroundMenu = () =>
     import('../Playground/PlaygroundMenu.svelte').then((m) => m.default)
@@ -182,6 +182,19 @@
     scrollToMessageRunId += 1
     chatFoldedState.data = null
     chatFoldedStateMessageIndex.index = -1
+  }
+
+  let mostRecentChat = $derived.by(() => {
+    const character = DBState.db.characters?.[$selectedCharID]
+    return character?.chats?.[character.chatPage] ?? character?.chats?.[0] ?? null
+  })
+
+  function openMostRecentChat() {
+    const character = DBState.db.characters?.[$selectedCharID]
+    const chat = character?.chats?.[character.chatPage] ?? character?.chats?.[0]
+    if (!character?.chaId || !chat?.id) return
+
+    navigate(characterRoutePath(character.chaId, chat.id))
   }
 
   async function expandTranscriptWindow(nextLoadPages: number) {
@@ -783,6 +796,13 @@
     >
       <h2 class="text-2xl font-bold mb-2">{DBState.db.characters[$selectedCharID]?.name}</h2>
       <p class="text-textcolor2">{language.selectChatToOpen}</p>
+      {#if mostRecentChat}
+        <Button className="mt-4 flex items-center gap-2" onclick={openMostRecentChat}>
+          <StepForwardIcon size={18} />
+          <span>{language.openMostRecentChat}</span>
+        </Button>
+        <span class="mt-2 max-w-full truncate text-sm text-textcolor2">{mostRecentChat.name}</span>
+      {/if}
     </div>
   {:else}
     <div

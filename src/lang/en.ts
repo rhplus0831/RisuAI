@@ -802,6 +802,7 @@ export const languageEnglish = {
   reroll: 'Regenerate',
   chatList: 'Chat List',
   selectChatToOpen: 'Select a chat from the list to start.',
+  openMostRecentChat: 'Open most recent chat',
   removeChat: 'Remove this message?',
   loreBook: 'Lorebook',
   character: 'Character',
