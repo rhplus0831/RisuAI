@@ -74,6 +74,27 @@ const sidebarMocks = vi.hoisted(() => {
   }
 
   const unusedCommand = vi.fn(async () => okCommandResult())
+  const currentRouteSubscribers = new Set<(value: unknown) => void>()
+  let currentRouteValue: unknown = {
+    kind: 'character',
+    path: '/character/char-a',
+    chaId: 'char-a',
+  }
+
+  const currentRoute = {
+    subscribe(run: (value: unknown) => void) {
+      run(currentRouteValue)
+      currentRouteSubscribers.add(run)
+      return () => {
+        currentRouteSubscribers.delete(run)
+      }
+    },
+  }
+
+  function setCurrentRoute(value: unknown): void {
+    currentRouteValue = value
+    currentRouteSubscribers.forEach((run) => run(value))
+  }
 
   return {
     SortableMock,
@@ -96,6 +117,7 @@ const sidebarMocks = vi.hoisted(() => {
     createDeferredDeleteCommand,
     createDeferredSelectCommand,
     createChatCopyName: vi.fn((name: string, suffix: string) => `${name} ${suffix}`),
+    currentRoute,
     createChatFolderCommand: unusedCommand,
     deleteChatCommand: vi.fn((input: unknown) => {
       if (!pendingDeleteCommand) {
@@ -127,6 +149,11 @@ const sidebarMocks = vi.hoisted(() => {
       pendingDeleteCommand = undefined
       pendingSelectCommand = undefined
       serverCommandsEnabled = false
+      setCurrentRoute({
+        kind: 'character',
+        path: '/character/char-a',
+        chaId: 'char-a',
+      })
     },
     runServerCommand: vi.fn(
       async (input: { command: (baseRevision: number) => Promise<any>; rollback?: () => void }) => {
@@ -150,6 +177,7 @@ const sidebarMocks = vi.hoisted(() => {
     setServerCommandsEnabled: (enabled: boolean) => {
       serverCommandsEnabled = enabled
     },
+    setCurrentRoute,
     truncateMessagesCommand: unusedCommand,
     updateChatCommand: vi.fn((input: unknown) => {
       if ((input as { select?: boolean }).select) {
@@ -178,6 +206,7 @@ vi.mock('src/lang', () => ({
     doYouWantToBindCurrentPersona: 'Bind persona?',
     doYouWantToUnbindCurrentPersona: 'Unbind persona?',
     errors: { onlyOneChat: 'Only one chat' },
+    goback: 'Back',
     newChat: 'New Chat',
     personaBindedSuccess: 'Persona bound',
     personaUnbindedSuccess: 'Persona unbound',
@@ -238,6 +267,7 @@ vi.mock('src/ts/process/scripts', () => ({
 vi.mock('src/ts/router', () => ({
   characterRoutePath: (characterId: string, chatId?: string) =>
     chatId ? `/character/${characterId}/${chatId}` : `/character/${characterId}`,
+  currentRoute: sidebarMocks.currentRoute,
   navigate: sidebarMocks.navigate,
 }))
 
@@ -378,6 +408,14 @@ function createButton(): HTMLButtonElement {
   return button!
 }
 
+function backToChatListButton(): HTMLButtonElement {
+  const button = sidebarRoot().querySelector<HTMLButtonElement>(
+    '[data-risu-chat-action="back-to-chat-list"]',
+  )
+  expect(button, 'back to chat list button').toBeTruthy()
+  return button!
+}
+
 function rowActionButton(row: HTMLElement, actionKind: string): HTMLElement {
   const action = row.querySelector<HTMLElement>(`[data-risu-chat-action="${actionKind}"]`)
   expect(action, `${actionKind} chat action`).toBeTruthy()
@@ -488,7 +526,31 @@ describe('SideChatList DOM contract harness', () => {
     expectRowSelected('chat-foldered', true)
     expectRowSelected('chat-root-a', false)
     expectRowSelected('chat-root-b', false)
+    expect(sidebarRoot().dataset.risuChatOpen).toBe('false')
+    expect(target.querySelector('[data-testid="side-chat-list-toggles-stub"]')).toBeNull()
     expect(sidebarMocks.watchServerBackedChatMetadata).toHaveBeenCalledOnce()
+  })
+
+  it('shows active-chat controls instead of the chat list on a chat route', async () => {
+    seedSidebarDatabase()
+    sidebarMocks.setCurrentRoute({
+      kind: 'character',
+      path: '/character/char-a/chat-foldered',
+      chaId: 'char-a',
+      chatId: 'chat-foldered',
+    })
+
+    component = mount(SideChatListHarness, { target })
+    await tick()
+
+    expect(sidebarRoot().dataset.risuChatOpen).toBe('true')
+    expect(chatRows()).toEqual([])
+    expect(target.querySelector('[data-testid="side-chat-list-toggles-stub"]')).toBeTruthy()
+
+    backToChatListButton().click()
+    await tick()
+
+    expect(sidebarMocks.navigate).toHaveBeenCalledWith('/character/char-a')
   })
 
   it('keeps foldered chat row indexes tied to original chat positions', async () => {

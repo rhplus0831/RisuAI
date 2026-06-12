@@ -75,11 +75,15 @@
   function closeGridRoute() {
     const character = DBState.db.characters?.[$selectedCharID]
     if ($selectedCharID >= 0 && character?.chaId) {
-      navigate(characterRoutePath(character.chaId, character.chats?.[character.chatPage]?.id))
+      navigate(characterRoutePath(character.chaId))
       return
     }
     navigate('/')
   }
+
+  let routeChatIsOpen = $derived(
+    $currentRoute.kind === 'character' && typeof $currentRoute.chatId === 'string',
+  )
 
   $effect(() => {
     if (!$loadedStore) return
@@ -100,7 +104,7 @@
       selectedCharID: $selectedCharID,
       playgroundStore: $PlaygroundStore,
       characterId: character?.chaId,
-      chatId: character?.chats?.[character.chatPage]?.id,
+      chatId: routeChatIsOpen ? character?.chats?.[character.chatPage]?.id : undefined,
     })
   })
 </script>

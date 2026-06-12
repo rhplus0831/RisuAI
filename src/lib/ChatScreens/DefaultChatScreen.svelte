@@ -102,6 +102,7 @@
   } from './DefaultChatScreen.loadPages'
   import { normalizeChatDisplayTailCount } from 'src/ts/chatDisplayTailCount'
   import { guardActiveChatGenerationSettingsForSend } from 'src/ts/activeChatGenerationSettings'
+  import { currentRoute } from 'src/ts/router'
 
   const loadPlaygroundMenu = () =>
     import('../Playground/PlaygroundMenu.svelte').then((m) => m.default)
@@ -132,6 +133,16 @@
     customStyle = '',
   }: Props = $props()
   let currentCharacter = $derived(DBState.db.characters[$selectedCharID])
+  let activeChatOpen = $derived.by(() => {
+    if ($selectedCharID < 0) return false
+    const characterId = DBState.db.characters?.[$selectedCharID]?.chaId
+    if (characterId === '§playground') return $PlaygroundStore === 2
+    return (
+      $currentRoute.kind === 'character' &&
+      $currentRoute.chaId === characterId &&
+      typeof $currentRoute.chatId === 'string'
+    )
+  })
   let currentChat = $derived(currentCharacter?.chats[currentCharacter.chatPage]?.message ?? [])
   let configuredChatLoadPages = $derived(
     normalizeChatDisplayTailCount(DBState.db.chatDisplayTailCount),
@@ -140,10 +151,11 @@
   // resolves; show a loading state over the message area until then so the
   // history does not flash in over the greeting-only stub.
   let activeChatMessagesLoading = $derived(
-    isChatMessageHydrationPending(
-      currentCharacter?.chats[currentCharacter.chatPage]?.id,
-      currentChat.length,
-    ),
+    activeChatOpen &&
+      isChatMessageHydrationPending(
+        currentCharacter?.chats[currentCharacter.chatPage]?.id,
+        currentChat.length,
+      ),
   )
 
   function scrollToBottom() {
@@ -764,6 +776,14 @@
         <PlaygroundMenu />
       {/await}
     {/if}
+  {:else if !activeChatOpen}
+    <div
+      class="h-full w-full flex flex-col items-center justify-center text-center px-6"
+      data-risu-chat-empty-state
+    >
+      <h2 class="text-2xl font-bold mb-2">{DBState.db.characters[$selectedCharID]?.name}</h2>
+      <p class="text-textcolor2">{language.selectChatToOpen}</p>
+    </div>
   {:else}
     <div
       class="h-full w-full flex flex-col-reverse overflow-y-auto relative default-chat-screen"

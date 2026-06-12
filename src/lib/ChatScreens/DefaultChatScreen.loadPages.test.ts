@@ -22,6 +22,17 @@ const loadPageMocks = vi.hoisted(() => ({
   guardActiveChatGenerationSettingsForSend: vi.fn(() => ({ status: 'ok' })),
   hydrateActiveChatFully: vi.fn(async () => undefined),
   hydrateActiveChatWindow: vi.fn(async () => undefined),
+  currentRouteSubscribers: new Set<(value: unknown) => void>(),
+  currentRouteValue: {
+    kind: 'character',
+    path: '/character/character-0/chat-0',
+    chaId: 'character-0',
+    chatId: 'chat-0',
+  } as unknown,
+  setCurrentRoute(value: unknown) {
+    loadPageMocks.currentRouteValue = value
+    loadPageMocks.currentRouteSubscribers.forEach((run) => run(value))
+  },
   toCanvas: vi.fn(),
 }))
 
@@ -171,6 +182,18 @@ vi.mock('src/ts/server/chatMessageHydration.svelte', () => ({
   isChatMessageHydrationPending: () => false,
 }))
 
+vi.mock('src/ts/router', () => ({
+  currentRoute: {
+    subscribe(run: (value: unknown) => void) {
+      run(loadPageMocks.currentRouteValue)
+      loadPageMocks.currentRouteSubscribers.add(run)
+      return () => {
+        loadPageMocks.currentRouteSubscribers.delete(run)
+      }
+    },
+  },
+}))
+
 vi.mock('src/ts/globalApi.svelte', () => ({
   aiLawApplies: () => false,
   chatFoldedState: loadPageMocks.chatFoldedState,
@@ -243,6 +266,12 @@ function makeCharacter(index: number, messageCount: number) {
 
 function seedDatabase(messageCounts: number[]) {
   selectedCharID.set(0)
+  loadPageMocks.setCurrentRoute({
+    kind: 'character',
+    path: '/character/character-0/chat-0',
+    chaId: 'character-0',
+    chatId: 'chat-0',
+  })
   PlaygroundStore.set(0)
   ScrollToMessageStore.value = -1
   loadPageMocks.chatFoldedState.data = null
@@ -408,6 +437,12 @@ describe('DefaultChatScreen transcript window state', () => {
     })
 
     selectedCharID.set(1)
+    loadPageMocks.setCurrentRoute({
+      kind: 'character',
+      path: '/character/character-1/chat-1',
+      chaId: 'character-1',
+      chatId: 'chat-1',
+    })
 
     await waitFor(() => {
       const indexes = messageRowIndexes()
@@ -416,6 +451,23 @@ describe('DefaultChatScreen transcript window state', () => {
       expect(indexes).toContain(120)
       expect(indexes).not.toContain(5)
       expect(indexes).not.toContain(0)
+    })
+  })
+
+  it('shows a choose-chat empty state when a character route has no chat id', async () => {
+    seedDatabase([12])
+    loadPageMocks.setCurrentRoute({
+      kind: 'character',
+      path: '/character/character-0',
+      chaId: 'character-0',
+    })
+
+    mountScreen()
+
+    await waitFor(() => {
+      expect(target.querySelector('[data-risu-chat-empty-state]')).toBeTruthy()
+      expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeNull()
+      expect(messageRowIndexes()).toEqual([])
     })
   })
 

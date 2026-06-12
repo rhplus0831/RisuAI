@@ -82,7 +82,7 @@
       return
     }
     reseter()
-    navigate(characterRoutePath(character.chaId, character.chats?.[character.chatPage]?.id))
+    navigate(characterRoutePath(character.chaId))
   }
 
   const getSidebarCharacterList = createSidebarCharacterListMemo()
