@@ -3,10 +3,10 @@ import { readFileSync, readdirSync } from 'node:fs'
 import path from 'node:path'
 
 /**
- * Phase 8 verification budget: clone-cost gate completeness.
+ * Verifies clone-cost regression gates remain registered and present.
  *
- * The deep-clone narrowing plan replaced whole-`Database` / whole-`characters`
- * rollback snapshots with scalar, single-row, or single-chat snapshots on each
+ * Narrowed hot paths use scalar, single-row, or single-chat snapshots instead of
+ * whole-`Database` / whole-`characters` rollback snapshots on each
  * Critical/High hot path. Every such narrowing must keep a clone-cost gate (a
  * test importing `cloneCostHarness` that proves the path no longer reaches the
  * whole-collection clone) and, for the snapshot/watcher paths, a
@@ -35,7 +35,7 @@ type Kind = 'guard' | 'snapshot' | 'watcher'
 interface GateEntry {
   /** The narrowed hot path. */
   area: string
-  /** The plan phase that landed the narrowing. */
+  /** Routing bucket for this hot path. */
   phase: number
   severity: Severity
   kind: Kind
@@ -48,9 +48,9 @@ interface GateEntry {
 }
 
 // Paths are relative to `src`. Every Critical/High snapshot/watcher path carries
-// both a clone-cost gate and a rollback-correctness gate; the Phase 1 guard
-// (the per-write clone amplifier fix) carries a clone-cost gate plus an
-// immutability/refreeze gate in place of an optimistic rollback.
+// both a clone-cost gate and a rollback-correctness gate; the per-write clone
+// amplifier guard carries an immutability/refreeze gate instead of optimistic
+// rollback.
 const NARROWED_HOT_PATHS: GateEntry[] = [
   {
     area: 'Projection write guard (copy-on-write unwrap/refreeze)',
@@ -151,10 +151,7 @@ const NARROWED_HOT_PATHS: GateEntry[] = [
     cloneCostGates: ['ts/characters.imageEmotion.test.ts'],
     rollbackGates: ['ts/characters.imageEmotion.test.ts'],
   },
-  // Landed by the v1 stability/performance plan (now archived at
-  // .archived-docs/audit-stability-and-performance/, Phase 1 H2), not the
-  // original clone-narrowing phases; registered here because this is the one
-  // budget surface for clone-cost gates.
+  // Registered here so this remains the single surface for clone-cost gates.
   {
     area: 'Chat-selection scalar snapshot (changeChatTo / sidebar selectChat) — stability plan H2',
     phase: 1,
@@ -164,9 +161,7 @@ const NARROWED_HOT_PATHS: GateEntry[] = [
     cloneCostGates: ['ts/globalApi.changeChatTo.test.ts', 'ts/chatCommands.test.ts'],
     rollbackGates: ['ts/chatCommands.test.ts'],
   },
-  // Landed by the stability/performance plan Phase 3 (client clone narrowing).
-  // `phase` below still refers to THIS registry's narrowing-plan phase column;
-  // these entries reuse the plan phase that landed the underlying helper.
+  // These entries reuse the routing bucket for the underlying helper.
   {
     area: 'Send-context single-row rollback (setupSendChatContext) — stability plan M14',
     phase: 2,
@@ -275,7 +270,7 @@ const ROLLBACK_TOKENS = /assertRollbackRestoresOnly|rollback|restore|refreeze|re
 describe('clone-cost gate completeness', () => {
   it('finds the known clone-cost gate tests (the scan is not vacuous)', () => {
     const harnessFiles = collectHarnessGateFiles()
-    // There is at least one clone-cost gate per landed phase plus the partners.
+    // There is at least one clone-cost gate per registered hot path plus partners.
     expect(harnessFiles.length).toBeGreaterThanOrEqual(NARROWED_HOT_PATHS.length)
   })
 

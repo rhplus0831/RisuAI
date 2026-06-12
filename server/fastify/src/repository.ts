@@ -398,9 +398,9 @@ export function loadCharacterSelectionProjection(
   }
 }
 
-// --- Targeted writer kit (Phase 0) ------------------------------------------
+// --- Targeted writer kit -----------------------------------------------------
 // Narrow SQLite writers that touch exactly the rows a single command changed,
-// the building blocks the Tier write slices route the over-broad commands onto.
+// the building blocks that route broad commands onto row-level updates.
 // Each writer performs only its `UPDATE`/`DELETE`+`INSERT` and reports its table
 // to the mutation-range metric; it owns no revision/event emission and runs
 // inside the caller's open `BEGIN IMMEDIATE` transaction. None of them touch the
@@ -475,7 +475,7 @@ export function deleteCharacterChatRow(db: DatabaseSync, chatId: string, charact
  *  the `characters` table stays contiguous (matching the broad rewrite). The
  *  `chats.character_id` FK declares `ON DELETE CASCADE` and `openDatabase`
  *  sets `PRAGMA foreign_keys = ON`, so this single DELETE also removes the
- *  character's chat rows (audit L9 — the explicit chats DELETE was redundant).
+ *  character's chat rows.
  *  Pairs with the message-store deletes for a character removal. Remaining
  *  rows keep their rowids (UPDATE/DELETE, no reINSERT). */
 export function deleteCharacterRow(db: DatabaseSync, characterId: string): void {
@@ -607,10 +607,9 @@ export function writeSingleCollectionRow(db: DatabaseSync, field: string, positi
 }
 
 // The `promptTemplate` collection (`prompt_templates` table) is written through
-// these named wrappers, never the bare field string, so the EC4 "promptTemplate
-// is not a generic-settings key" audit can keep its literal-`'promptTemplate'`
-// scan over `routes/commands.ts` while the targeted-collection writes (the preset
-// apply path and the prompt-items family) still address the table directly.
+// these named wrappers, never the bare field string, so literal-`'promptTemplate'`
+// checks over `routes/commands.ts` stay focused on generic-settings writes while
+// targeted-collection writes still address the table directly.
 export function writePromptTemplatesTable(db: DatabaseSync, items: readonly unknown[]): void {
   writeSingleCollectionTable(db, 'promptTemplate', items)
 }
@@ -944,7 +943,7 @@ function loadPluginCustomStorageFieldFromSqlite(db: DatabaseSync): Record<string
 }
 
 /**
- * Single-character stub row for the `characterRow` projection (audit M4). The
+ * Single-character stub row for the `characterRow` projection. The
  * route ships exactly one character, so it must not pay
  * `loadCharactersFromSqlite`'s whole characters+chats payload parse. Read the
  * one character row (`WHERE id = ?`, precedent: `loadCharacterSelectionRows`)
@@ -1103,11 +1102,11 @@ export interface ChatMutationTarget {
 }
 
 /**
- * Chat-scoped read for the targeted command-mutation hot paths (audit M3, L5,
- * L6). A message/scriptstate/generation mutation only locates one chat row and
+ * Chat-scoped read for targeted command-mutation hot paths. A
+ * message/scriptstate/generation mutation only locates one chat row and
  * mutates it (or does message-table writes through the kit writers), so it
- * must not pay `loadPersisted`'s 9-collection-table parse (M3), the assets
- * metadata scan (L5), or the whole characters+chats payload parse (L6). Load
+ * must not pay `loadPersisted`'s 9-collection-table parse, the assets
+ * metadata scan, or the whole characters+chats payload parse. Load
  * exactly the target chat row plus its parent character row.
  *
  * Behavior is preserved by construction:
@@ -1159,13 +1158,13 @@ export function loadPersistedForChatMutation(db: DatabaseSync, dataDir: string, 
 }
 
 /**
- * `loadPersisted` + join ONLY the target chat's messages/hypaV3 (audit M1).
+ * `loadPersisted` + join ONLY the target chat's messages/hypaV3.
  * Prompt assembly reads exactly one chat's transcript, so it must not pay the
  * whole-table `getAllChatMessagesGrouped` / `getAllChatHypaV3Grouped` parse.
  * Every non-target chat gets `message = []` (downstream `eachChat`-style
  * iteration still sees an array); the target chat keeps
  * `loadPersistedWithMessages`'s exact semantics, including the embedded-array
- * fallback for a not-yet-extracted chat. The broad loader stays for the
+ * fallback for a chat that is not extracted. The broad loader stays for the
  * genuine full-corpus consumers (assetGc / export / save / boot backfill).
  */
 export function loadPersistedForAssembly(db: DatabaseSync, dataDir: string, chatId: string): Persisted {
@@ -1191,7 +1190,7 @@ export function loadPersistedForAssembly(db: DatabaseSync, dataDir: string, chat
 }
 
 /**
- * Memory-job-scoped database read (audit L18). The embed/summarize batch
+ * Memory-job-scoped database read. The embed/summarize batch
  * handlers read only settings-level fields (the hypa settings/presets/keys
  * and the summary-model routing fields) plus chat EXISTENCE
  * (`assertChatExists`), so they must not pay `loadPersisted`'s whole
@@ -1374,16 +1373,14 @@ export function loadStubProjection(db: DatabaseSync, dataDir: string): Persisted
 }
 
 /**
- * Lazy-projection Phase 5 (EXPERIMENTAL, off by default — `enableLorebookStubs`):
- * strip every character's `globalLore` so the projection ships it as a stub. The
- * client hydrates a character's globalLore on character-open
+ * Optional lorebook projection stubbing, enabled by `enableLorebookStubs`.
+ * Strips every character's `globalLore` so the projection ships it as a stub.
+ * The client hydrates a character's globalLore on character-open
  * (`GET /api/v1/projection/characterLorebook?id=`), and the lorebook watcher's
  * hydrated-character registry keeps a re-stub from being persisted as a deletion.
  *
- * TODO: Requires validation in the real app. The full client `globalLore` reader
- * surface (cbs.ts `{{lorebook}}`, triggers, slash commands, bulk export/tokenizer)
- * has NOT been validated against stubbed characters — keep this setting OFF until
- * it is.
+ * Keep disabled until the full client `globalLore` reader surface is validated
+ * against stubbed characters.
  */
 function stubCharacterLorebooks(persisted: Persisted): void {
   if (!isRecord(persisted.database) || persisted.database.enableLorebookStubs !== true) return
@@ -1400,7 +1397,7 @@ function stripCharacterGlobalLore(database: unknown): void {
 /**
  * One chat's hydration payload: messages, hypaV3Data, and reroll alternates for
  * the hydration endpoint. Uses the table with embedded db.json fallback for
- * not-yet-extracted chats. `alternates` is always present, empty when none.
+ * chats that are not extracted. `alternates` is always present, empty when none.
  */
 export function loadChatHydration(
   db: DatabaseSync,
@@ -1414,10 +1411,10 @@ export function loadChatHydration(
     // The messages table is authoritative once populated: extraction writes
     // messages and hypaV3Data together, so a missing `chat_hypa_v3` row means
     // the chat has none. A legitimately `undefined` hypaV3Data must not drop
-    // the request into the whole-corpus `loadPersisted` fallback (audit H1).
+    // the request into the whole-corpus `loadPersisted` fallback.
     return { message, hypaV3Data, alternates }
   }
-  // Fallback for a chat not yet extracted into the table (zero message rows;
+  // Fallback for a chat not extracted into the table (zero message rows;
   // defensive — startup extraction normally makes the table authoritative).
   const persisted = loadPersisted(db, dataDir)
   eachChat(persisted.database, (chat) => {
@@ -1508,7 +1505,7 @@ export function loadChatHydrations(
   const alternatesById = getAlternateMessagesGroupedByIds(db, chatIds)
 
   // Known-id + embedded-fallback resolution reads only the REQUESTED chat rows
-  // (`WHERE id IN`), not the whole corpus (audit U1). The chats table is the
+  // (`WHERE id IN`), not the whole corpus. The chats table is the
   // known-id authority on exactly the states where `loadPersisted` would have
   // served it (settings present, characters extracted into SQLite — the FK ties
   // every chat row to a character row); any other state falls back to the broad
@@ -1651,7 +1648,7 @@ export function loadCharacterLorebookHydrations(
   const globalLoreById = new Map<string, unknown[]>()
 
   // Known-id + lore resolution reads only the REQUESTED character rows
-  // (`WHERE id IN`), not the whole corpus (audit U1); the table stores the
+  // (`WHERE id IN`), not the whole corpus; the table stores the
   // full un-stubbed `globalLore`. Same authority gate + broad fallback as
   // `loadChatHydrations`.
   let characters: ReadonlyArray<Record<string, unknown> | null>
@@ -2045,7 +2042,7 @@ export function listBackups(dataDir: string): BackupManifest[] {
     const manifestPath = path.join(root, id, 'manifest.json')
     if (!fs.existsSync(manifestPath)) continue
     // One unreadable/corrupt manifest must not 500 the whole backups list
-    // (audit L27): skip the broken entry, keep listing the healthy ones. The
+    // skip the broken entry, keep listing the healthy ones. The
     // sort below relies on `createdAt`, so a parsed-but-misshapen manifest is
     // skipped too.
     let parsed: BackupManifest
@@ -2173,11 +2170,8 @@ export function restoreBackup(
   let event: CommandEvent | undefined
   try {
     restoreSqliteFromBackup(db, backupSqlite, () => {
-      // If the backup predates Phase 5 and carries a db.json, import it into
-      // SQLite so no legacy data is lost. Runs INSIDE the restore transaction
-      // and BEFORE the restore event is persisted (audit L28): a failed
-      // re-import rolls the whole restore back instead of leaving the swapped
-      // tables half-overwritten after the event already announced success.
+      // If the backup carries a legacy db.json, import it into SQLite inside the
+      // restore transaction so a failed re-import rolls the whole restore back.
       if (fs.existsSync(legacySnapshot)) {
         fs.copyFileSync(legacySnapshot, dbJsonPath(dataDir))
         ensureDbJsonImported(db, dataDir)

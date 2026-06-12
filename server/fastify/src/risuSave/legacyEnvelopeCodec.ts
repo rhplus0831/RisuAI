@@ -66,7 +66,7 @@ export function decodeLegacyRisuSaveEnvelope(data: Uint8Array, options: Expanded
     return unpackr.decode(payload)
   }
   if (kind === 'legacy-compressed') {
-    // Streaming bounded inflate (audit M9): the cap is enforced while the
+    // Streaming bounded inflate the cap is enforced while the
     // payload expands, so an oversized compressed envelope aborts at the limit
     // instead of fully materializing first.
     const payload = decompressBounded(data.subarray(LEGACY_COMPRESSED_HEADER.length), options)

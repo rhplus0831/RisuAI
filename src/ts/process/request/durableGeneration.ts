@@ -5,10 +5,7 @@ import { resolveServerPromptAssembly, type ServerPromptAssemblyInput } from './s
  * non-durable result is still correct; it just cannot survive disconnect. This
  * gate therefore falls back to the inline flow instead of hard-failing.
  *
- * `reason` is for diagnostics / tests and a future "why can't this chat survive
- * disconnect?" hint — it never triggers a hard fail.
- *
- * See `.archived-docs/durable-generation/steps/step-1-subset-gate.md`.
+ * `reason` is for diagnostics, tests, and UI hints; it never triggers a hard fail.
  */
 export type DurableGenerationRoute = { type: 'durable' } | { type: 'non-durable'; reason: string }
 

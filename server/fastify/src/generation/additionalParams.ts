@@ -105,7 +105,7 @@ export function parseAdditionalParamJsonValue(value: string): unknown | undefine
  * Key segments that would walk into (or overwrite) the prototype chain instead
  * of plain data. `a.__proto__.x` traverses to `Object.prototype` and then
  * writes onto it — a server-global pollution, unlike the browser where the DSL
- * only affects one tab (audit L24). Entries carrying one are dropped whole.
+ * only affects one tab. Entries carrying one are dropped whole.
  */
 const FORBIDDEN_KEY_SEGMENTS = new Set(['__proto__', 'constructor', 'prototype'])
 

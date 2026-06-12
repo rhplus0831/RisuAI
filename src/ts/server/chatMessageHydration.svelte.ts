@@ -319,7 +319,7 @@ export function applyServerChatMessagesProjection(
  * Reactive: is the given chat's message history still being hydrated from the
  * server (so the UI should show a loading state instead of the greeting-only
  * stub)? True only while the open chat is an un-hydrated, empty stub whose first
- * hydration attempt has not yet finished. Reads reactive `SvelteSet`s, so a
+ * hydration attempt is pending. Reads reactive `SvelteSet`s, so a
  * `$derived`/`$effect` reading it re-runs when hydration settles.
  *
  * Returns false once messages arrive (so it never lingers over real content),

@@ -1,9 +1,7 @@
 /**
  * Shared large-corpus fixture (test-only).
  *
- * Phase 0 of the v1 stability/performance remediation plan
- * (`.archived-docs/audit-stability-and-performance/phases/slices/phase-0-baseline-foundations/measurement-baseline-harness.md`)
- * needs one seeded corpus both suites can drive their cost assertions against:
+ * Shared seeded corpus used by server and client cost assertions:
  *
  * - server tests import it from `server/fastify/__tests__/` and seed it through
  *   `POST /api/v1/import/risusave` (or `writePersistedWithMessages`), then put
@@ -106,7 +104,7 @@ export interface LargeCorpusFixture {
   /**
    * A chat with message rows but NO `hypaV3Data` — after import its
    * `chat_hypa_v3` row is absent, the exact shape whose hydration falls into
-   * the whole-corpus `loadPersisted` fallback today (audit H1).
+   * the whole-corpus `loadPersisted` fallback.
    */
   noHypa: { characterId: string; chatId: string; messageCount: number }
   /** Every chat id in the corpus, hot chat first. */

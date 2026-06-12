@@ -1,5 +1,5 @@
 // @ts-nocheck
-// Legacy file - not currently in use
+// Re-export Three.js MMD loader dependencies.
 
 const { Scene, PerspectiveCamera, WebGLRenderer, AmbientLight, DirectionalLight } = await import('three')
 const { MMDLoader } = await import('three/examples/jsm/loaders/MMDLoader')

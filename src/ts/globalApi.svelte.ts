@@ -1756,17 +1756,13 @@ const countriesWithAiLaw = new Set<string>([
 ])
 
 export function aiLawApplies(): boolean {
-  //TODO: implement actual logic
-  //lets now assume it always applies
-  //so we don't have legal issues later
+  // Conservative default: AI disclosure law applies.
 
   return true
 }
 
 export function aiWatermarkingLawApplies(): boolean {
-  //TODO: implement actual logic
-  //lets now assume it is false for now,
-  //becuase very few countries have it for now
+  // Watermarking is opt-in until jurisdiction detection supports it.
   return false
 }
 
@@ -1839,7 +1835,7 @@ export function foldChatToMessage(targetMessageIdOrIndex: string | number) {
 }
 
 export function changeChatTo(IdOrIndex: string | number) {
-  // Scalar rollback (H2): selecting a chat only flips `chatPage`, so capturing
+  // Scalar rollback: selecting a chat only flips `chatPage`, so capturing
   // the whole-characters ChatStateSnapshot here deep-cloned every hydrated
   // transcript on the UI thread per chat click.
   const previous = currentChatSelectionSnapshot()

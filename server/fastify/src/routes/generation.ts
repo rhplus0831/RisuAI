@@ -359,7 +359,7 @@ function isCompletionDeadlineActivityFrame(frame: CompletionStreamFrame): boolea
   return typeof frame.content === 'string' && frame.content.length > 0
 }
 
-// Disconnect + generous-deadline abort plumbing (audit M8) shared with the
+// Disconnect + generous-deadline abort plumbing shared with the
 // chat route; see `requestAbort.ts`.
 
 export async function pipeStream(
@@ -1398,7 +1398,7 @@ export function registerGenerationRoutes(
     if (provider === 'ooba-legacy') {
       if (body.stream === true) {
         // The local code uses a WebSocket stream for ooba legacy. The fetch
-        // SSE envelope doesn't apply; deferred.
+        // SSE envelope is unsupported.
         reply.code(400).send({
           error: 'ooba-legacy streaming is not yet supported; set stream: false',
         })
@@ -1432,7 +1432,7 @@ export function registerGenerationRoutes(
     if (provider === 'horde') {
       if (body.stream === true) {
         // Horde's poll-loop wire isn't incremental; one final payload
-        // either lands or doesn't. Streaming envelope deferred.
+        // either lands or doesn't.
         reply.code(400).send({
           error: 'horde streaming is not yet supported; set stream: false',
         })

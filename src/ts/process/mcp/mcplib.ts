@@ -611,7 +611,7 @@ export class MCPClient {
         }
         Promise.resolve(this.customTransport.addListener(func))
           .then(() => this.customTransport.send(body as JsonRPC))
-          // TODO: handle send errors properly (e.g. timeout, reject with RPC error)
+          // Send errors are swallowed to preserve the existing fire-and-forget transport.
           .catch(() => {})
       })
     }

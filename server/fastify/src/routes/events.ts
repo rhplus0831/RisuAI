@@ -75,7 +75,7 @@ export function registerEventsRoutes(
     // The full history read+map exists for replay — and for the opt-in
     // replay metric's oldest/latest fields, so metric output stays identical
     // when metrics are on. A fresh no-replay connect in the default config
-    // must not pay it (audit L10).
+    // must not pay it.
     const history =
       cursor.sinceRevision !== null || protocolMetricsEnabled()
         ? listPersistedCommandEventHistory(db)
@@ -166,7 +166,7 @@ export function registerEventsRoutes(
  * the replay flush. When the flush itself tore the stream down — a
  * slow-consumer overflow runs `cleanup` mid-handler via `writeBoundedRaw`'s
  * `onOverflow` — arming anyway would leak both forever: `cleanup` already ran
- * and its `cleanedUp` latch keeps it from ever running again (audit L11).
+ * and its `cleanedUp` latch keeps it from ever running again.
  * Exported for the regression test.
  */
 export function armSseLiveDelivery(args: {

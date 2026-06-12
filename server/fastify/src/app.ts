@@ -47,7 +47,7 @@ import { createSummarizeMemoryJobBatchHandler, createSummarizeMemoryJobHandler }
 import { registerRequestTrace } from './requestTrace.js'
 
 /**
- * Node `server.requestTimeout` backstop (audit M6): the wall-clock bound for
+ * Node `server.requestTimeout` backstop the wall-clock bound for
  * receiving one request. Mirrors the durable generation path's 600s
  * `deadlineAt` reference instead of Node's implicit 300s default.
  */
@@ -90,7 +90,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
     logger: process.env.LOG_LEVEL === 'silent' ? false : { level: process.env.LOG_LEVEL ?? 'info' },
     bodyLimit: config.bodyLimit,
     trustProxy: config.trustProxy,
-    // Generous explicit backstop for receiving a request (audit M6), aligned
+    // Generous explicit backstop for receiving a request, aligned
     // with the durable path's 600s deadline. Bounds only the request-receive
     // phase (Node clears it once the body has arrived), so long SSE responses
     // and slow generations are unaffected; multi-GB backup uploads on a LAN
@@ -219,7 +219,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
     }
     // Detached generation runners were just aborted; wait for them to settle
     // (their cancel path persists the streamed-so-far text) BEFORE closing the
-    // SQLite handle, so no runner ever touches a closed database (audit L13).
+    // SQLite handle, so no runner ever touches a closed database.
     await generationJobRegistry.settleRunners()
     db.close()
   })

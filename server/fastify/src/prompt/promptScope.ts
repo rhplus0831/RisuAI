@@ -2,23 +2,8 @@ import type { Database } from '../../../../src/ts/storage/database.svelte'
 import type { ChatVarBackend } from '../../../../src/ts/parser/chatVarBackend'
 
 /**
- * Server-side prompt scope. Module-level singleton, matching the
- * single-user assumption documented in `.archived-docs/fastify/other/plan.md`.
- *
- * Holds pointers into the active request's `Database` snapshot
- * (the `db.json` blob loaded by the route handler) so the CBS callbacks
- * registered via `cbs.ts` can read user / persona / character / chat
- * fields without re-resolving them per call.
- *
- * Chat-var writes mutate `scriptstate['$' + key]` in place and flip
- * `dirty`. The route handler decides whether to persist via
- * `applyImport(db, dataDir, database)` after `expandVariables` returns.
- *
- * Concurrency: matches the SPA's existing race behavior. Two concurrent
- * `expandVariables` calls would interleave their chat-var writes; this
- * is the same risk the SPA's `DBState.db` carries today and is
- * acceptable under the single-user assumption. If concurrent server-driven work
- * arrives, swap this singleton for an `AsyncLocalStorage`-backed scope.
+ * Request-local prompt scope used by CBS callbacks to read and mutate chat
+ * variables during prompt expansion.
  */
 
 export interface PromptScope {

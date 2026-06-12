@@ -14,8 +14,7 @@ import { expandVariables, type ExpandContext } from './variables.js'
  * `buildDescription` returns a single object; the server smooths the
  * asymmetry so the assembler can `.flatMap` uniformly).
  *
- * Deferred:
- * - `additionalInformations` (embedding-based extras).
+ * Embedding-based `additionalInformations` are not included in static sections.
  */
 
 const COT_INSTRUCTION =
@@ -95,8 +94,8 @@ export function buildCotInstruction(ctx: ExpandContext, usingPromptTemplate: boo
  * `inlayViewScreen` is set, so the `?? ''` fallback only guards the
  * (browser-crashing) malformed case without diverging on the supported path.
  *
- * The actual image generation / inlay-screen rendering stays a post-gen browser
- * effect (B1) — only this instruction text moves to the server.
+ * Image generation and inlay-screen rendering remain post-generation browser
+ * effects; only this instruction text is assembled server-side.
  */
 export function buildInlayViewInstruction(currentChar: character): OpenAIChat[] {
   if (!currentChar.inlayViewScreen) return []

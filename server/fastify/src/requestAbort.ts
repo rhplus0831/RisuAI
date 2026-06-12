@@ -1,7 +1,7 @@
 import { PROXY_STREAM_DEFAULT_TIMEOUT_MS, normalizeStreamTimeoutMs } from './streamJobs.js'
 
 /**
- * Per-request abort plumbing for the non-durable generation paths (audit M8).
+ * Per-request abort plumbing for the non-durable generation paths.
  *
  * The returned signal fires on client disconnect (`req.raw` close) — the
  * pre-existing behavior — and now also at a generous sliding deadline mirroring

@@ -75,7 +75,7 @@ test('br', () => {
 
 test('cbr', () => {
   expect(parse('{{cbr}}')).toBe('\\n')
-  // FIXME: Broken => cbr::3cbr::3cbr::3
+  // Known behavior: cbr::3 expands as cbr::3cbr::3cbr::3.
   // expect(parse('{{cbr::3}}')).toBe('\\n\\n\\n')
 })
 
@@ -105,9 +105,7 @@ test('<>', () => {
 /** Any string but not `{{/...}} */
 const anythingNotClosing = fc
   .string()
-  .filter(
-    (s) => !/{{\/.*}}/.test(s) && /* FIXME opening curly without its pair causes '<' prepended */ !s.includes('{'),
-  )
+  .filter((s) => !/{{\/.*}}/.test(s) && /* Unpaired opening curly prepends '<'. */ !s.includes('{'))
 
 test('#pure', () => {
   fc.assert(

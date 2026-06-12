@@ -3,16 +3,13 @@ import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 
 /**
- * V3 fix-completeness gate, Phase 0.
+ * V3 fix-completeness gate.
  *
- * Phase 0 seeds the document universe plus the routing registry. Later phases
- * flip scheduled entries from PLANNED to DONE and attach regression proof
- * fields; while entries are PLANNED, proof fields are forbidden so the gate
- * cannot imply coverage before a fix lands.
+ * Keeps the document universe and routing registry aligned. Entries without
+ * proof fields cannot imply regression coverage.
  */
 
-// `vitest run` executes from the repo root. Match the v1/v2 gates and keep
-// v3 pointed at the archived closeout docs.
+// `vitest run` executes from the repo root, matching the companion gates.
 const ROOT = process.cwd()
 const PLAN = '.archived-docs/audit-stability-and-performance-v3'
 const AUDIT_DOC = path.join(ROOT, PLAN, 'audit-stability-and-performance-v3.md')
@@ -30,16 +27,16 @@ type Phase = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8
 interface ScheduledFix {
   /** V3 audit/risk finding id (`H*`, `M*`, `L*`, `K*`). */
   id: string
-  /** Plan phase that owns the fix (1-8). */
+  /** Routing bucket for this finding. */
   phase: Phase
   /** Target-fix label mirrored from active-risk-analysis.md. */
   fix: string
   status: GateStatus
-  /** Repo-root-relative regression test path; forbidden while PLANNED. */
+  /** Repo-root-relative regression test path; omitted for entries without proof. */
   testPath?: string
-  /** A string the registered test must contain; forbidden while PLANNED. */
+  /** A string the registered test must contain; omitted for entries without proof. */
   testName?: string
-  /** Additional regression proofs; forbidden while PLANNED. */
+  /** Additional regression proofs; omitted for entries without proof. */
   extraTests?: Array<{ testPath: string; testName: string }>
 }
 

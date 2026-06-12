@@ -134,7 +134,7 @@ export const MIGRATIONS: readonly MigrationStep[] = [
     name: 'command-event-origin',
     up: (db) => {
       // Persist the writer-session origin with each replayable command event
-      // (audit L29) so an SSE reconnect replay carries the same own-echo
+      // so an SSE reconnect replay carries the same own-echo
       // suppression metadata as the live event. Fresh databases get the column
       // from `createCommandEventTable`.
       ensureColumn(

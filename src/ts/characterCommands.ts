@@ -437,14 +437,14 @@ export function sanitizeCharacterPatch(patch: CharacterSnapshot): CharacterSnaps
   return sanitized
 }
 
-// Diff per kept key without first deep-cloning the whole character (M13). The
+// Diff per kept key without first deep-cloning the whole character. The
 // old shape cloned `previous` and `current` in full — `chats` with every
 // hydrated history included — and then immediately stripped exactly those heavy
 // keys via `sanitizeCharacterPatch`. Skipping `CHARACTER_PATCH_EXCLUDED_KEYS`
 // before any clone keeps the diff O(kept fields); per-key JSON comparison on
 // the raw values is equivalent to comparing the cloned values (the clone was a
 // JSON round-trip, and `JSON.stringify` is stable across that round-trip).
-// Only changed kept values are cloned into the patch. Exported for the M13
+// Only changed kept values are cloned into the patch. Exported for the
 // clone-cost/parity gate.
 export function changedCharacterFields(previous: character, current: character): CharacterSnapshot {
   const patch: CharacterSnapshot = {}

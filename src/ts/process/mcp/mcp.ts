@@ -380,12 +380,12 @@ export async function callMCPTool(methodName: string, args: any): Promise<RPCToo
   ]
 }
 
-//Currently just a wrapper for getMCPTools, but can be extended later for more than MCPs
+// Tool registry entrypoint.
 export async function getTools() {
   return await getMCPTools()
 }
 
-//Currently just a wrapper for callMCPTool, but can be extended later for more than MCPs
+// Tool call entrypoint.
 export async function callTool(methodName: string, args: any) {
   return await callMCPTool(methodName, args)
 }

@@ -22,20 +22,20 @@ import { tokenize, encodingForModel } from './tokens.js'
  *
  * Runtime notes:
  *
- * 1. **Exec limit = wasmoon's built-in `lua_sethook` count hook (README option 1).**
+ * 1. **Exec limit:** wasmoon's built-in `lua_sethook` count hook.
  *    wasmoon 1.16.0 installs an instruction-count hook (every 1000 ops) that throws
  *    when wall-clock passes a deadline, exposed two ways: `createEngine({
  *    functionTimeout })` bounds every JS→Lua call (the dispatch: `callListenMain`,
  *    `onStart`, …) and `thread.run(argCount, { timeout })` bounds a loaded chunk. We
  *    use BOTH — `functionTimeout` for dispatch and {@link runStringWithTimeout} for
  *    the top-level user code — so a top-level `while true do end` is bounded too. No
- *    `worker_threads` fallback (README option 2) is needed. The timeout surfaces as a
+ *    `worker_threads` fallback is needed. The timeout surfaces as a
  *    generic `Error` whose message contains "timeout" (the `LuaTimeoutError` class is
  *    lost across the Lua→JS error boundary), so we detect it by message.
  * 2. **`json.lua` is read from disk at boot**, path resolved relative to this module
  *    (`import.meta.url`) so it is deterministic under `pnpm api:test` regardless of
  *    cwd. Mounted once into a module-singleton {@link LuaFactory}.
- * 3. **Per-call engine isolation, pre-warmed (audit L21).** The factory (wasm +
+ * 3. **Per-call engine isolation, pre-warmed.** The factory (wasm +
  *    mounted json.lua) is a singleton; each {@link runServerLua} call still gets an
  *    engine of its own and closes it in `finally`, so one chat's Lua globals never
  *    leak into another. To keep the per-send hot path from paying the engine boot +
@@ -50,7 +50,7 @@ import { tokenize, encodingForModel } from './tokens.js'
  *    `listenEdit` anyway. Access-control sets (`safeIds`/`lowLevelIds`/
  *    `editDisplayIds`) remain per-call closures rather than the browser's
  *    module-level sets.
- * 5. **Aggregate exec budget (audit L19).** Callers may hand every run of one
+ * 5. **Aggregate exec budget.** Callers may hand every run of one
  *    request the same {@link LuaExecBudget}; each run's wall clock is charged
  *    against it, a constrained run gets `min(execTimeoutMs, remaining)`, and an
  *    exhausted budget short-circuits before any engine boots — so a card stacking
@@ -78,7 +78,7 @@ const MAX_SLEEP_MS = 2000
 const MAX_TOTAL_SLEEP_MS = 6000
 
 /**
- * Default aggregate Lua wall-clock budget per request (audit L19). Shared by
+ * Default aggregate Lua wall-clock budget per request. Shared by
  * every hook phase (input/output triggers, editinput/editRequest/editoutput)
  * of one assembly+post-generation pass, so a card stacking many runaway
  * `triggerlua` hooks cannot stall the send for `hooks × per-run-limit`.
@@ -147,7 +147,7 @@ export interface EgressDeps {
   lookup?: (host: string) => Promise<Array<{ address: string; family: number }>>
   /** Perform the actual fetch against a pre-validated address set. Defaults to a
    * pinned `https.request`. Receives the originating request's abort signal so an
-   * in-flight egress fetch dies with the request that spawned it (audit L20). */
+   * in-flight egress fetch dies with the request that spawned it. */
   fetchImpl?: (url: string, addresses: string[], signal?: AbortSignal) => Promise<{ status: number; data: string }>
   /** Clock seam for the rate limiter. Defaults to `Date.now`. */
   now?: () => number
@@ -209,7 +209,7 @@ function isBlockedV6(ip: string): boolean {
   // fc00::/7 unique-local (includes fd00::/8).
   if (/^f[cd]/.test(ip)) return true
   // Transition addresses embed an IPv4 target the connection ultimately
-  // reaches; classify that embedded address too (audit L23). Covers
+  // reaches; classify that embedded address too. Covers
   // IPv4-mapped in hex form (`::ffff:7f00:1`), IPv4-compatible (`::7f00:1`),
   // 6to4 (`2002:7f00:1::`), and NAT64 (`64:ff9b::7f00:1`).
   const embedded = embeddedV4InV6(ip)
@@ -383,7 +383,7 @@ function pinnedHttpsFetch(
         res.on('end', () => resolve({ status: res.statusCode ?? 0, data: body }))
       },
     )
-    // Abort propagation (audit L20): when the originating request ends, the
+    // Abort propagation: when the originating request ends, the
     // in-flight egress socket is torn down instead of waiting out
     // REQUEST_TIMEOUT_MS. `destroy(err)` fires the 'error' handler → reject.
     const onAbort = (): void => {
@@ -430,9 +430,9 @@ export async function serverLuaRequest(
     return JSON.stringify({ status: failure.status, data: failure.data })
   }
   // An abort during DNS validation must not consume the egress budget or open
-  // a socket (audit L20): throw so the in-flight `:await()` terminates the run.
+  // a socket: throw so the in-flight `:await()` terminates the run.
   if (signal?.aborted) throw new LuaAbortError('request aborted')
-  // Count only validated requests (audit L25): a blocked URL must not consume
+  // Count only validated requests: a blocked URL must not consume
   // the egress budget, or a single misbehaving script could starve legit calls.
   rateState.count++
   try {
@@ -440,7 +440,7 @@ export async function serverLuaRequest(
     const result = await fetchImpl(url, verdict.addresses, signal)
     return JSON.stringify({ status: result.status, data: result.data })
   } catch (error) {
-    // Abort is a cancellation, not a fetch failure: rethrow (audit L20) so the
+    // Abort is a cancellation, not a fetch failure: rethrow so the
     // Lua `:await()` raises and the surrounding pcall unwinds, instead of the
     // script continuing on a synthetic 400.
     if (signal?.aborted) throw new LuaAbortError('request aborted')
@@ -458,7 +458,7 @@ export async function serverLuaRequest(
  * `getState`/`setState`, `async`, and `callListenMain` — and is the contract
  * the edit-hook dispatch depends on, so it must stay identical for
  * `callListenMain` to round-trip. It is static, so prepared engines run it
- * once at warm-up (audit L21) and the user code loads as its own chunk; the
+ * once at warm-up and the user code loads as its own chunk; the
  * wrapper's top-level statements define globals/closures only and call no
  * host functions, which is what makes the pre-run safe.
  */
@@ -641,7 +641,7 @@ export interface ServerLuaRuntimeContext {
   /** Shared `request()` rate-limit state; defaults to the module singleton. */
   rateState?: RequestRateState
   /**
-   * Originating-request abort signal (audit L20). When it fires, in-flight
+   * Originating-request abort signal. When it fires, in-flight
    * hook work is cancelled: the load thread's deadline is pulled to "now"
    * (cooperating with the exec-limit hook), every host-fn call throws, and
    * `sleep` wakes early. Pure-compute stretches between host calls remain
@@ -649,7 +649,7 @@ export interface ServerLuaRuntimeContext {
    */
   signal?: AbortSignal
   /**
-   * Aggregate exec budget shared by every Lua run of one request (audit L19).
+   * Aggregate exec budget shared by every Lua run of one request.
    * Each run charges its wall clock; a constrained run gets
    * `min(execTimeoutMs, remaining)` and an exhausted budget short-circuits
    * before any engine boots.
@@ -690,7 +690,7 @@ export interface ServerLuaResult {
   timedOut: boolean
   /** An interactive host fn was invoked (no server equivalent → `unsupported`). */
   interactiveInvoked: boolean
-  /** The originating request's abort signal fired during the run (L20). */
+  /** The originating request's abort signal fired during the run. */
   aborted?: boolean
   /** Captured load/dispatch error message, if any (the browser swallows these). */
   error?: string
@@ -749,14 +749,14 @@ function isTimeoutError(error: unknown): boolean {
 /** Error thrown by interactive host fns so the dispatch can tag the result. */
 class InteractiveApiError extends Error {}
 
-/** Error thrown by every host fn once the request signal has fired (L20). */
+/** Error thrown by every host fn once the request signal has fired. */
 class LuaAbortError extends Error {}
 
-// ── Host functions (the disposition table, README §Host-function disposition) ─
+// ── Host functions ─
 
 /**
  * Sentinel state a prepared engine carries until {@link runServerLua} binds the
- * real per-call state (audit L21). The prelude's top-level statements call no
+ * real per-call state. The prelude's top-level statements call no
  * host functions, so this is belt-and-braces: its pre-aborted signal makes any
  * unexpected pre-bind host call throw {@link LuaAbortError} instead of touching
  * a stale chat.
@@ -786,8 +786,8 @@ const UNBOUND_RUNTIME_STATE: RuntimeState = (() => {
  * Declare the full browser host-fn surface on `engine`:
  *   - **Pure** fns operate on the server's in-memory chat / vars / char / db;
  *   - **Gated** fns (`request`) run behind the SSRF guard + low-level access;
- *   - **Deferred** privileged fns (`LLM`/`similarity`/`generateImage`/image getters/
- *     lorebook loaders) return an explicit error/empty so callers do not crash;
+ *   - **Unsupported** privileged fns (`LLM`/`similarity`/`generateImage`/image
+ *     getters/lorebook loaders) return an explicit error/empty so callers do not crash;
  *   - **Interactive** fns (`alert*Input/Select/Confirm`) throw and flag the run;
  *   - **Browser-only** fns (`alertError`/`alertNormal`/`reloadDisplay`/`reloadChat`)
  *     are no-ops.
@@ -795,14 +795,14 @@ const UNBOUND_RUNTIME_STATE: RuntimeState = (() => {
  * `editDisplayIds` additionally for `setChatVar`, `lowLevelIds` for privileged).
  *
  * The per-call {@link RuntimeState} is bound through the returned setter rather
- * than a parameter (audit L21): the host fns close over a mutable `state`, so
+ * than a parameter: the host fns close over a mutable `state`, so
  * the (engine-boot-time) declaration can happen once at pool warm-up while each
  * call rebinds its own state before running user code.
  */
 function declareHostFunctions(engine: LuaEngine): (next: RuntimeState) => void {
   let state: RuntimeState = UNBOUND_RUNTIME_STATE
   const declare = (name: string, fn: (...args: any[]) => unknown) => {
-    // Every host fn is the abort checkpoint (L20): once the request signal
+    // Every host fn is the abort checkpoint: once the request signal
     // fires, the next host call throws, terminating the surrounding pcall.
     engine.global.set(name, (...args: any[]) => {
       if (state.ctx.signal?.aborted) {
@@ -1055,10 +1055,10 @@ function declareHostFunctions(engine: LuaEngine): (next: RuntimeState) => void {
     return true
   })
 
-  // ── Deferred privileged fns: explicit error / empty (README disposition) ──
+  // ── Unsupported privileged fns: explicit error / empty result ──
   declare('similarity', async (id: string) => {
     if (!canLowLevel(id)) return
-    return [] // server embedding infra deferred to a later slice
+    return [] // similarity is unavailable in server prompt assembly
   })
   declare('generateImage', async (id: string) => {
     if (!canLowLevel(id)) return
@@ -1088,7 +1088,7 @@ function declareHostFunctions(engine: LuaEngine): (next: RuntimeState) => void {
   }
 }
 
-// ── Prepared engines: warm pool + acquire (audit L21) ───────────────────────
+// ── Prepared engines: warm pool + acquire ───────────────────────
 
 /** An engine that is booted, host-fn-declared, and prelude-loaded, waiting for
  *  exactly one call's state bind. Never reused after a run. */
@@ -1270,7 +1270,7 @@ async function runStringWithTimeout(
   const global = engine.global
   const thread = global.newThread()
   const threadIndex = global.getTop()
-  // Abort propagation (L20): pulling the thread deadline to the epoch makes the
+  // Abort propagation: pulling the thread deadline to the epoch makes the
   // run loop's next yield-boundary check throw. A pure-compute chunk that never
   // yields stays bounded by `timeoutMs` itself (the count hook's own deadline).
   const onAbort = (): void => thread.setTimeout(1)
@@ -1289,7 +1289,7 @@ async function runStringWithTimeout(
 
 /**
  * Server port of `runScripted` (`scriptings.ts:62`), Lua only. Acquires an
- * engine of its own (pre-warmed when possible — decision 3 / audit L21), binds
+ * engine of its own (pre-warmed when possible), binds
  * the per-call state into the host-fn surface, runs the user code under the
  * exec limit, mints an access key, dispatches by `mode`, and returns a
  * structured result. Load/dispatch errors are captured (not thrown) the way the
@@ -1303,7 +1303,7 @@ export async function runServerLua(opts: RunServerLuaOptions, ctx: ServerLuaRunt
   const lowLevelAccess = opts.lowLevelAccess ?? false
   const signal = ctx.signal
 
-  // An already-cancelled request never boots an engine (L20).
+  // An already-cancelled request never boots an engine.
   if (signal?.aborted) {
     return {
       stopSending: false,
@@ -1315,7 +1315,7 @@ export async function runServerLua(opts: RunServerLuaOptions, ctx: ServerLuaRunt
     }
   }
 
-  // An exhausted aggregate budget never boots an engine either (L19); the
+  // An exhausted aggregate budget never boots an engine either; the
   // caller's hook loop degrades to identity instead of stalling assembly.
   const budget = ctx.execBudget
   if (budget && budget.usedMs >= budget.totalMs) {
@@ -1438,10 +1438,10 @@ export async function runServerLua(opts: RunServerLuaOptions, ctx: ServerLuaRunt
     result.stopSending = state.stopSending
     result.interactiveInvoked = state.interactiveInvoked
     if (signal?.aborted) result.aborted = true
-    // Charge the aggregate budget with this run's wall clock (L19).
+    // Charge the aggregate budget with this run's wall clock.
     if (budget) budget.usedMs += Date.now() - runStartedAt
     // One call per engine: closing here (never returning to the pool) is what
-    // preserves per-call isolation (L21).
+    // preserves per-call isolation.
     engine.global.close()
     activeLuaRuns--
     // Wake any fresh-boot acquire parked on the drain (it re-checks the gate

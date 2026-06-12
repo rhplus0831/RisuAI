@@ -4,7 +4,7 @@ export interface SseEventBlock {
 }
 
 /**
- * Cap for the per-stream accumulation buffer (audit L22). The buffer should
+ * Cap for the per-stream accumulation buffer. The buffer should
  * only ever hold one partial event block / NDJSON line between reads; an
  * upstream that never sends a delimiter would otherwise grow it without
  * bound. 8 MB is far above any legitimate single event (a whole long

@@ -810,7 +810,7 @@ export function setDatabase(data: Database) {
   data.adaptiveThinkingEffort ??= 'high'
   data.deepseekReasoningEffort ??= 'high'
   if (data.antiClaudeOverload) {
-    //migration
+    // Rename antiClaudeOverload to antiServerOverloads.
     data.antiClaudeOverload = false
     data.antiServerOverloads = true
   }
@@ -1160,7 +1160,7 @@ export function setCurrentChat(chat: Chat) {
   withTrustedServerProjectionWrite(() => {
     // Replacing the active chat row only mutates that one chat, so the scoped
     // snapshot's single-chat clone serves as both the diff baseline and the
-    // rollback — never a deep clone of the whole characters array (U4).
+    // rollback — never a deep clone of the whole characters array.
     const previousState = canUseServerCommands() ? currentChatScopedSnapshot() : null
     const char = getCurrentCharacter()
     const previousChat = previousState?.chat
@@ -1623,13 +1623,7 @@ export interface Database {
   pluginDevelopMode?: boolean
   echoMessage?: string
   echoDelay?: number
-  /**
-   * Lazy-projection Phase 5 (EXPERIMENTAL, Fastify-only, off by default — NOT
-   * RECOMMENDED). When on, the server projection ships character `globalLore` as a
-   * stub for non-open characters and the client hydrates it on character-open. The
-   * full reader surface still needs real-app validation (see the TODO in
-   * `server/fastify/src/repository.ts` loadStubProjection).
-   */
+  /** Enables `globalLore` stubs for non-open characters; hydrate before reading lore. */
   enableLorebookStubs?: boolean
   createFolderOnBranch?: boolean
   hamburgerButtonBottom?: boolean

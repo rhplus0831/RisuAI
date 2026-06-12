@@ -21,5 +21,3 @@
 
   const props: Props = $props()
 </script>
-
-<!-- TODO -->

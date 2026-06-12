@@ -46,7 +46,7 @@ export function registerProxyRoutes(app: FastifyInstance, authState: AuthState):
 
         const timeoutMs = getRequestTimeoutMs(req.headers['risu-timeout-ms'])
         const timeout = createTimeoutController(timeoutMs)
-        // Abort the upstream when the browser disconnects (audit M6). Without
+        // Abort the upstream when the browser disconnects. Without
         // this, a cancelled/navigated-away client leaves the server reading the
         // provider until undici's own timeout.
         const closeController = new AbortController()

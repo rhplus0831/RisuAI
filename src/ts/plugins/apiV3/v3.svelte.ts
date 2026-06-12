@@ -869,8 +869,7 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin, lifecycl
       )
       const handler = async (arg: PluginV2ProviderArgument, abortSignal?: AbortSignal) => {
         await getPluginPermission(plugin.name, 'provider', 'periodically')
-        //mode is overridden to v3, due to vulnerabilities using mode.
-        //Alternative to mode will be added in future
+        // Force v3 mode for plugin provider isolation.
         arg.mode = 'v3'
         return await func(arg, abortSignal)
       }
@@ -1170,10 +1169,7 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin, lifecycl
     getCharacter: oldApis.getChar,
     setCharacter: oldApis.setChar,
 
-    showContainer: (
-      //more types may be added in future
-      type: 'fullscreen' = 'fullscreen',
-    ) => {
+    showContainer: (type: 'fullscreen' = 'fullscreen') => {
       iframe.style.display = 'block'
 
       switch (type) {
@@ -1555,8 +1551,7 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin, lifecycl
       }
     },
     saveSecretHeader: async (key: string, value: string | string[]) => {
-      //TODO: Implement server-side secret storage with write-only access for plugins, to enhance security when handling sensitive information like API keys.
-      //This will have rate-limit, to prevent saving it publicly and writing as secret every time before using it.
+      // Secret header storage is intentionally unavailable until write-only storage exists.
       console.warn(
         `[RisuAI Plugin: ${plugin.name}] saveServerSecret is not implemented yet. This API is intended for securely storing sensitive information like API keys with write-only access for plugins. Please avoid using this API until it is implemented.`,
       )

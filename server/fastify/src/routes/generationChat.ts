@@ -132,7 +132,7 @@ export interface GenerationChatRouteOptions {
         terminalRetentionMaxPerSweep?: number
       }
   /**
-   * Cadence of the durable viewer's SSE comment heartbeat (audit L14).
+   * Cadence of the durable viewer's SSE comment heartbeat.
    * Defaults to the job's `heartbeatSec`; injectable for tests.
    */
   viewerHeartbeatMs?: number
@@ -224,7 +224,7 @@ function validatePreview(body: ChatRequestBody): { ok: true } | { ok: false; err
   return { ok: true }
 }
 
-// Disconnect + generous-deadline abort plumbing (audit M8) shared with the
+// Disconnect + generous-deadline abort plumbing shared with the
 // standalone generation routes; see `requestAbort.ts`.
 
 /** Map a validated request body to the assembler input contract. */
@@ -374,7 +374,7 @@ function loadDatabaseDeps(
     signal,
     loadDatabase: () => {
       const startedAt = measurement ? protocolNowMs() : 0
-      // Assembly reads only the target chat's transcript (audit M1): hydrate
+      // Assembly reads only the target chat's transcript hydrate
       // that chat alone; every sibling chat stays `message = []`.
       database = loadPersistedForAssembly(db, dataDir, chatId).database as Database | null
       if (measurement) {
@@ -1219,7 +1219,7 @@ function attachGenerationViewer(
   const client = makeSseJobClient(reply)
   client.send(formatPromptChatFrame({ type: 'job_accepted', jobId: job.id }))
   registry.registry.attach(job.id, client)
-  // SSE comment heartbeat (audit L14): a long assembly or provider connect can
+  // SSE comment heartbeat a long assembly or provider connect can
   // leave the stream silent past idle-proxy timeouts before the first token.
   // Comments are invisible to the SSE block parser and are written directly to
   // this viewer's socket — they never enter the job's replay buffer.
@@ -1435,7 +1435,7 @@ function queueAndPersistGenerationFinalization(args: {
   eventSink: CommandEventSink
   attempt: GenerationFinalizationAttempt
 }): number {
-  // Shutdown guard (audit L13): an aborted runner's cancel-persist can land
+  // Shutdown guard an aborted runner's cancel-persist can land
   // after `onClose` closed the SQLite handle (the runner-settle wait covers
   // tracked runners; this covers any straggler). Fail with a clear error
   // instead of touching a closed database.
@@ -1460,7 +1460,7 @@ export function retryQueuedGenerationFinalizations(args: {
   logger?: GenerationFinalizationRetryLogger
   maxPerSweep?: number
 }): { attempted: number; persisted: number; terminal: number; retryable: number } {
-  // Shutdown guard (audit L13): a sweep that fires while `onClose` is tearing
+  // Shutdown guard a sweep that fires while `onClose` is tearing
   // down must not touch the closed handle.
   if (!args.db.isOpen) {
     return { attempted: 0, persisted: 0, terminal: 0, retryable: 0 }
@@ -1923,7 +1923,7 @@ function startDurableGeneration(args: {
   generationJobs.register(input.chatId, job.id)
   attachGenerationViewer(req, reply, generationJobs, job, args.options.viewerHeartbeatMs)
   // Fire-and-forget, but tracked: shutdown awaits the runner before closing
-  // the database (audit L13).
+  // the database.
   generationJobs.trackRunner(
     runGenerationJob({
       registry: generationJobs,

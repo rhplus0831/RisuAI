@@ -167,7 +167,7 @@ describe('consumeStreamResponse', () => {
     const out = await promise
     expect(out.result).toBe('abc')
     expect(DBState.db.characters[0].chats[0].message[1].data).toBe('abc')
-    // H3 render coalescing: the microtask-paced chunks share one full-fidelity
+    // Render coalescing: the microtask-paced chunks share one full-fidelity
     // apply at settle time instead of one editoutput parse per chunk.
     expect(processScriptFullSpy).toHaveBeenCalledTimes(1)
     expect(processScriptFullSpy).toHaveBeenCalledWith(currentChar, 'abc', 'editoutput', 1)
@@ -291,9 +291,7 @@ describe('consumeStreamResponse', () => {
   })
 })
 
-// Stability/performance plan, Phase 1 H3: token-driven display writes are
-// coalesced (at most one parse-triggering apply per animation frame, plus the
-// final settle), so an N-token stream no longer costs N whole-message parses.
+// Streaming display writes are frame-coalesced instead of parsed per token.
 describe('H3 streaming render coalescing', () => {
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ['Date'] })

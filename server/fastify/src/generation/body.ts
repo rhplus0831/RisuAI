@@ -1,5 +1,5 @@
 /**
- * Bounded buffering for upstream provider bodies (audit M8).
+ * Bounded buffering for upstream provider bodies.
  *
  * Non-streaming adapters buffer the whole response (`.json()` / `.text()`),
  * which is unbounded if a misbehaving or misconfigured upstream keeps

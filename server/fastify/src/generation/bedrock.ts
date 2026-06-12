@@ -15,9 +15,8 @@ import { readBoundedBodyText } from './body.js'
  *  - Auth via AWS SigV4. The `service` name on the signing line is
  *    `bedrock` (not `bedrock-runtime`).
  *
- * Streaming is intentionally deferred: the `:invoke-with-response-stream`
- * variant uses AWS EventStream binary framing, not SSE, so it needs a
- * separate parser. Buffered-only matches how Cohere shipped in 6-7.
+ * Streaming is unsupported because the `:invoke-with-response-stream`
+ * variant uses AWS EventStream binary framing rather than SSE.
  */
 
 export interface BedrockCredentials {

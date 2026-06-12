@@ -1,11 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-// Regression coverage (stability/perf plan, Phase 7 L37): `importPreset` used
-// to `console.log` full decoded preset objects on every import — the msgpack
-// `decoded` envelope for `.risupreset`/`.risup` files, the parsed `pre` object
-// for JSON files, and per-prompt dumps (`p` / 'Prompt not found') while
-// mapping ST presets. Those logs are gone; importing must stay silent while
-// the preset still lands and dispatches the import command.
+// Importing presets must not write decoded payloads to console.log.
 
 vi.mock('./fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'preset-import-token',

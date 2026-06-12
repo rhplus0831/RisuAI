@@ -556,7 +556,7 @@ export class CharacterHandler extends MCPToolHandler {
     }
     if (canUseServerCommands()) {
       // A field patch touches one character row, so its rollback needs only
-      // that row — not a deep clone of the whole characters array (L35).
+      // that row, not a deep clone of the whole characters array.
       const index = DBState.db.characters?.findIndex((candidate) => candidate.chaId === char.chaId) ?? -1
       if (index >= 0) {
         dispatchUpdateCharacterScoped(char.chaId, patch, currentCharacterRowSnapshot(index))

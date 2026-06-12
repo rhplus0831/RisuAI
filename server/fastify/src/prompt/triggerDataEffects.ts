@@ -59,7 +59,7 @@ import {
  * un-guarded `JSON.parse(displayState.data)`: in `request` mode the
  * caller contractually supplies a valid `OpenAIChat[]` JSON payload.
  *
- * Deferred or handled elsewhere, so they fall through to `return false`: the
+ * Unsupported or externally handled effects fall through to `return false`: the
  * persistent character/persona/author-note
  * get+set pairs, the `lowLevelAccess`-gated
  * alert/LLM/image/similarity/extractRegex arms, `command`,
@@ -76,11 +76,11 @@ export interface V2DataEffectDeps {
   char: character
   /** Model id for `v2Tokenize`'s encoder; defaults to `cl100k_base`. */
   model?: string | null
-  /** `display` / `request` runs that gate the state arms (7-9e). */
+  /** `display` / `request` runs that gate the state arms. */
   displayMode?: boolean
-  /** Mutable per-run display/request state slot (7-9e). */
+  /** Mutable per-run display/request state slot. */
   displayState?: { data: string | undefined }
-  /** Per-run trigger hot-path cache (Phase 3 L6). */
+  /** Per-run trigger hot-path cache. */
   triggerCache?: TriggerRunCache
 }
 
@@ -580,7 +580,7 @@ export function applyV2DataEffect(effect: triggerEffect, deps: V2DataEffectDeps)
       return true
     }
 
-    // ---- Display state (7-9e) ----
+    // ---- Display state ----
     case 'v2GetDisplayState': {
       if (!deps.displayMode) {
         return true
@@ -598,7 +598,7 @@ export function applyV2DataEffect(effect: triggerEffect, deps: V2DataEffectDeps)
       return true
     }
 
-    // ---- Request state over JSON.parse(displayState.data) (7-9e) ----
+    // ---- Request state over JSON.parse(displayState.data) ----
     case 'v2GetRequestState': {
       if (!deps.displayMode) {
         return true

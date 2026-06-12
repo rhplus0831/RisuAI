@@ -528,7 +528,7 @@ describe('setupSendChatContext - M5 field-scoped send rollback', () => {
     const calls = stubCommandFetch()
 
     // Messages already carry chatIds, so the only optimistic write is the
-    // lastInteraction stamp. M5 narrows that rollback to scalar locator data
+    // lastInteraction stamp. Rollback uses scalar locator data
     // plus the previous timestamp, so the synchronous send setup performs no
     // JSON/structured clone at all.
     const instrumented = withCloneInstrumentation(() => setupSendChatContext({ chatProcessIndex: -1 }))

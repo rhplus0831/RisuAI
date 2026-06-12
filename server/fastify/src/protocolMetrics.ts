@@ -25,7 +25,7 @@ export function jsonPayloadBytes(value: unknown): number | null {
 
 /**
  * Emit an opt-in protocol metric. `fields` may be a thunk for call sites whose
- * fields are expensive to build (audit M5: `jsonPayloadBytes(response)` is a
+ * fields are expensive to build` is a
  * full second serialization of the heaviest read payloads) — the thunk runs
  * only after the `protocolMetricsEnabled()` guard, so the default
  * metrics-off path never pays it.

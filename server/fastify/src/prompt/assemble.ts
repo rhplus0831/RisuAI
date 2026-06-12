@@ -123,7 +123,7 @@ export interface AssembleDeps {
   resolveStoredAsset?: ResolveStoredAsset
   /**
    * Originating-request (or durable-job) abort signal, threaded into the Lua
-   * runtime so a disconnect/cancel stops in-flight hook work (audit L20).
+   * runtime so a disconnect/cancel stops in-flight hook work.
    */
   signal?: AbortSignal
 }
@@ -374,11 +374,11 @@ export interface AssemblyState {
   formatOrder: FormatOrderKey[]
   /** `input.mode === 'continue'`; drives the `[Continue the last response]` marker. */
   isContinue: boolean
-  /** Abort signal from `AssembleDeps.signal`, handed to every Lua run (L20). */
+  /** Abort signal from `AssembleDeps.signal`, handed to every Lua run. */
   signal?: AbortSignal
   /**
    * Aggregate Lua exec budget shared by every hook phase of this request
-   * (input/output triggers, editinput/editRequest/editoutput — audit L19), so
+   * (input/output triggers, editinput/editRequest/editoutput), so
    * a card stacking runaway hooks cannot stall assembly indefinitely.
    */
   luaExecBudget?: LuaExecBudget
@@ -541,9 +541,8 @@ function resolveScope(input: AssembleInput, deps: AssembleDeps): ResolvedScope {
 }
 
 /**
- * Build the 7-11a `AssemblyState`: resolve scope, construct the shared
- * `ExpandContext` + empty slots, and run the pure template helpers. Sync
- * — none of the 7-11a steps await.
+ * Build the `AssemblyState`: resolve scope, construct the shared
+ * `ExpandContext` + empty slots, and run the pure template helpers.
  */
 export function beginAssembly(input: AssembleInput, deps: AssembleDeps): AssemblyState {
   const { database, currentChar, currentChat, selectedCharID, chatPage } = resolveScope(input, deps)
@@ -945,7 +944,7 @@ export function applyCurrentChatRunVars(
   let chatVarDirty = false
   let messageDirty = false
   const messages = (state.currentChat.message ??= [])
-  // Invariant across the loop (audit L2): the expand context never varies per
+  // Invariant across the loop the expand context never varies per
   // row, so build it once instead of re-spreading per message.
   const expandCtx: ExpandContext = { ...state.ctx, chara: state.currentChar, runVar: true }
   for (const message of messages) {
@@ -1067,13 +1066,13 @@ export function fillStaticSlots(state: AssemblyState): void {
 }
 
 /**
- * 7-11c — activate the lorebook, distribute the activated entries into
- * the slots, build the `positionParser` + `depthPrompts`, and run the
+ * Activate the lorebook, distribute the activated entries into the slots, build
+ * the `positionParser` + `depthPrompts`, and run the
  * template-wide token preflight. Mirrors `index.svelte.ts:206-225`.
  *
  * Runs after `fillStaticSlots` so the `before_desc` / `after_desc`
  * placement sees the static description row and the preflight tokenizes
- * the now-full slots. Sets the 7-11c fields on `state`.
+ * the now-full slots. Mutates the lorebook fields on `state`.
  */
 export function fillLorebookSlots(state: AssemblyState): void {
   const { ctx, currentChar, currentChat, unformated, promptTemplate, usingPromptTemplate } = state
@@ -1564,8 +1563,8 @@ function buildLuaEditRequest(state: AssemblyState): {
 }
 
 /**
- * 7-11f — render the now-complete slots into the flat prompt and run the
- * budget recheck, mutating `state` in place. Mirrors
+ * Render the now-complete slots into the flat prompt and run the budget recheck,
+ * mutating `state` in place. Mirrors
  * `index.svelte.ts:306-345`:
  *   - `renderFinalPrompt` over `state.formatOrder` (which already has
  *     `postEverything` appended by `buildFormatOrder`, so it is **not**

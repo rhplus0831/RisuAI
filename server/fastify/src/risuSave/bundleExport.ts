@@ -100,7 +100,7 @@ async function writeBundleZipStream(
   manifest: RisuSaveBundleManifest,
   assetCandidates: RisuSaveBundleAssetCandidate[],
 ): Promise<void> {
-  // Audit M11: an aborted download destroys the reply stream with a clean
+  // An aborted download destroys the reply stream with a clean
   // 'close' (no 'error'), which a bare `once(stream, 'drain')` never observes —
   // the entry loop would park forever, leaking the in-flight asset FD and the
   // Zip state. Track terminal stream state and make every backpressure wait

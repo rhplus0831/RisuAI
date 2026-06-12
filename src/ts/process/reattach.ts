@@ -25,13 +25,13 @@ function openChatId(): string | undefined {
 
 let reattaching = false
 let reattachQueued = false
-// A trigger that arrived while a reattach was streaming (audit L30): the user
+// A trigger that arrived while a reattach was streaming the user
 // switched to another chat with its own live job. Re-arm one probe after the
 // in-flight reattach settles instead of dropping the request.
 let reattachDeferred = false
 
 /**
- * Request a near-future reattach probe after projection state has settled. This
+ * Request a delayed reattach probe after projection state has settled. This
  * coalesces bursts from selected-character changes, active-chat projection
  * updates, and full resyncs into one guarded `maybeReattachOpenChatGeneration`.
  */
@@ -86,7 +86,7 @@ export async function maybeReattachOpenChatGeneration(): Promise<void> {
     // projection refresh.
   } finally {
     reattaching = false
-    // Re-arm (audit L30): a probe requested mid-stream targets whatever chat is
+    // Re-arm a probe requested mid-stream targets whatever chat is
     // open NOW — without this, switching between two chats with live jobs left
     // the second un-reattached until another selection change.
     if (reattachDeferred) {

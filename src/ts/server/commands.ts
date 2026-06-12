@@ -2266,7 +2266,7 @@ export async function runServerCommand<T extends Record<string, unknown> = {}>(
     // A command-factory rejection must roll back and surface as an error result.
     // Without this, the fire-and-forget runners (`void runServerCommand(...)`)
     // swallowed the rejection and the optimistic write silently diverged from
-    // the server (stability/perf plan, Phase 3 L36).
+    // the server.
     console.error('Server command factory rejected:', error)
     input.rollback?.()
     const message = error instanceof Error ? error.message : String(error)

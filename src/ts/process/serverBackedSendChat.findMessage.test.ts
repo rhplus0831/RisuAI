@@ -1,11 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-// L39 (Phase 7): the terminal assistant-message lookup used to copy the whole
-// transcript (`[...chat.message].reverse().find(...)`) on every terminal
-// settle. It now scans newest-to-oldest in place. The no-copy proof: a spread
-// copy goes through the array's Symbol.iterator, while indexed access
-// (`find`, the backward for-loop) never does — so a booby-trapped iterator
-// throws on the old implementation and is silent on the new one.
+// Terminal assistant lookup scans newest-to-oldest without copying the transcript.
 
 vi.mock('../platform', async (importActual) => {
   const actual = await importActual<typeof import('../platform')>()

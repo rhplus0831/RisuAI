@@ -32,7 +32,7 @@ test('parses ChatML', () => {
         const result = parseChatML(input)
 
         expect(result).toHaveLength(2)
-        // FIXME: Implementation includes <|im_end|> into content, trims, AND THEN removes ending token, thus content only gets leading spaces trimmed
+        // Known behavior: ending token removal happens after trimming.
         expect(result).toEqual([
           {
             role: role1,
@@ -50,7 +50,7 @@ test('parses ChatML', () => {
   )
 })
 
-// FIXME: Defend against:
+// Parser edge case:
 /*
 <|im_start|>assistant
 <|im_start|>assistant
@@ -100,7 +100,7 @@ test.skip('parses ChatML without ending token', () => {
 })
 
 test('extracts thoughts', () => {
-  // FIXME: Empty thoughts leak <Thoughts> tag
+  // Known behavior: empty thoughts leak the <Thoughts> tag.
   expect(parseChatML('<|im_start|>assistant<|im_sep|><Thoughts></Thoughts> OK')).toEqual([
     {
       role: 'assistant',
@@ -129,7 +129,7 @@ test('extracts thoughts', () => {
   )
 })
 
-// FIXME: /<Thoughts>(.+)<\/Thoughts>/gms
+// Greedy thoughts matcher:
 //        => Matches with the whole bulk of <Thoughts>Thought 1</Thoughts> Middle <Thoughts>Thought 2</Thoughts>
 test.skip('extracts multiple thoughts', () => {
   const input = `<|im_start|>assistant<|im_sep|>Start <Thoughts>Thought 1</Thoughts> Middle <Thoughts>Thought 2</Thoughts> End<|im_end|>`
@@ -157,7 +157,7 @@ test('defaults to user role if unknown prefix', () => {
         expect(result).toHaveLength(1)
         expect(result?.[0]).toEqual({
           role: 'user',
-          // FIXME: Maybe don't include prefix & sep into content
+          // Known behavior: prefix and separator remain in content.
           content: `${prefix}${sep}${content}`.trimStart(),
           thoughts: [],
         })

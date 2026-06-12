@@ -23,8 +23,7 @@ export class GenerationJobRegistry {
   private readonly runners = new Set<Promise<void>>()
 
   /**
-   * Track a detached runner promise so shutdown can wait for it (audit L13):
-   * `onClose` aborts every job and then settles the runners *before* closing
+   * Track a detached runner promise so shutdown can wait for it    * `onClose` aborts every job and then settles the runners *before* closing
    * the SQLite handle, so an in-flight cancel-persist still writes to an open
    * database instead of racing `db.close()`.
    */
@@ -46,8 +45,8 @@ export class GenerationJobRegistry {
   }
 
   /**
-   * The currently *running* (not done) job for a chat, if any. A done-but-not-yet
-   * GC'd job does not count — the submission lock releases at completion so the
+   * The currently *running* (not done) job for a chat, if any. A completed,
+   * uncollected job does not count — the submission lock releases at completion so the
    * next send is accepted during the reattach grace.
    */
   runningJobForChat(chatId: string): StreamJob | undefined {
@@ -55,7 +54,7 @@ export class GenerationJobRegistry {
     if (!jobId) return undefined
     const job = this.registry.get(jobId)
     if (!job || job.done) {
-      // Stale index entry (job GC'd, or done and not yet cleared): prune + report free.
+      // Stale index entry (job GC'd, or completed and uncleared): prune + report free.
       this.runningByChat.delete(chatId)
       return undefined
     }

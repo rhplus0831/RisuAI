@@ -634,7 +634,7 @@ export function cleanupOrphanedMemory(
     return { summariesDeleted: 0, chunksDeleted: 0 }
   }
 
-  // Cheap pre-check (audit L16): the overwhelming case is a chat with no
+  // Cheap pre-check the overwhelming case is a chat with no
   // summaries at all — an id-only EXISTS probe skips the summary metadata
   // re-parse and the write transaction entirely.
   const hasSummaries = getRow<{ present: number }>(
@@ -675,7 +675,7 @@ export function cleanupOrphanedMemoryWithSummarySnapshot(
   const summaryIds = orphanedSummaries.map((summary) => summary.id)
   const chunkIds = [...new Set(orphanedSummaries.map((summary) => summary.chunkId))]
 
-  // Nothing orphaned → no `BEGIN IMMEDIATE` write transaction (audit L16).
+  // Nothing orphaned → no `BEGIN IMMEDIATE` write transaction.
   // The deletes below would be no-ops; opening a write txn on every
   // generation just contends with the writer for nothing.
   if (summaryIds.length === 0 && chunkIds.length === 0) {
@@ -913,7 +913,7 @@ export function listMemoryJobs(
 /**
  * Chat ids with at least one runnable (`pending`, due) job, ordered by their
  * oldest pending job (FIFO across fresh chats). Id-only aggregate — no payload
- * columns — so the worker's fairness scan (audit L17) stays off the corpus
+ * columns — so the worker's fairness scan stays off the corpus
  * read path.
  */
 export function listPendingMemoryJobChatIds(db: DatabaseSync, filter: { now?: string | Date } = {}): string[] {

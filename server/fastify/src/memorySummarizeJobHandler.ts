@@ -87,7 +87,7 @@ export function createSummarizeMemoryJobBatchHandler(opts: SummarizeMemoryJobHan
     const settings = resolveHypaV3Settings(database)
     const maxConcurrent = Math.max(1, settings.summarizationMaxConcurrent)
     const jobs = [firstJob]
-    // Bounded drain (audit M7/L17): leave any overflow pending for later
+    // Bounded drain leave any overflow pending for later
     // ticks instead of holding the single-flight worker for one chat's
     // whole backlog.
     while (jobs.length < MEMORY_JOB_BATCH_MAX_JOBS) {
@@ -335,7 +335,7 @@ function parseSummarizePayload(payload: unknown): HypaV3SummarizeJobPayload {
 }
 
 function loadDatabase(opts: SummarizeMemoryJobHandlerOptions): Database {
-  // Memory-job-scoped read (audit L18): settings + hypa presets + chat-id
+  // Memory-job-scoped read settings + hypa presets + chat-id
   // stubs only — `assertChatExists` needs chat ids, never chat payloads.
   const database = opts.loadDatabase
     ? opts.loadDatabase()

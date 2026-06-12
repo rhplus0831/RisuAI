@@ -28,7 +28,7 @@ vi.mock('../index.svelte', () => ({
   sendChat: sendChatMock,
 }))
 
-// M12/L32 spy: count setDatabase normalizer runs without changing its behavior.
+// Spy: count setDatabase normalizer runs without changing its behavior.
 // `/setvar`/`/addvar` and send-family message mutations must not reach it: the
 // trusted in-place write plus scoped dispatch persist the change without the
 // whole-database normalizer and language refresh churn.

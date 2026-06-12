@@ -28,7 +28,7 @@ const INLAY_TOKEN_RE = /\{\{(inlay|inlayed|inlayeddata)::(.+?)\}\}/g
 
 export function buildRepositoryRisuSaveAssetReport(dataDir: string, db: DatabaseSync): RisuSaveAssetReport {
   // Message inlay references come from a column-only `messages.data` scan
-  // (audit M10) instead of hydrating every chat's message JSON; the message-free
+  // instead of hydrating every chat's message JSON; the message-free
   // `loadPersisted` projection covers all non-message references and supplies
   // the chat path labels, so the report is identical to the hydrated walk.
   const persisted = loadPersisted(db, dataDir)
@@ -67,7 +67,7 @@ export function summarizeRisuSaveAssetReport(
 
 /**
  * Inlay-token references from the messages table, without hydrating any chat
- * (audit M10): a column-only scan of `messages.data` in `seq` order, labeled
+ * a column-only scan of `messages.data` in `seq` order, labeled
  * via each chat's position in the projected database so the paths match the
  * hydrated walker byte-for-byte. Rows whose chat is not in the projection are
  * skipped, mirroring the hydrate-then-walk behavior.
@@ -171,7 +171,7 @@ function collectRisuSaveAssetReferences(
 }
 
 /**
- * Merge the table-scanned message inlay references (audit M10). Like the
+ * Merge the table-scanned message inlay references. Like the
  * hydrated `addChatInlayReferences` walk these relocate, message `data` is
  * free text scanned by regex — deliberately outside the EC6 validator-owned
  * asset-field collectors; each candidate still passes `addReference`'s id

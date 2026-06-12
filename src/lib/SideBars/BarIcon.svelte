@@ -1,5 +1,3 @@
-<!-- TODO: REMOVE AND REFACTOR TO BASE BUTTON UI COMPONENT -->
-
 <script lang="ts">
   interface Props {
     onClick?: any

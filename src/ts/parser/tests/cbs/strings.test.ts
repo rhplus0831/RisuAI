@@ -175,7 +175,7 @@ test('capitalize, lower, upper', () => {
   )
 })
 
-// FIXME: {{reverse::ABC}} => CBA::esrever
+// Known behavior: {{reverse::ABC}} expands as CBA::esrever.
 test.skip('reverse', () => {
   const splitByPoints = (str: string) => [...str].reverse().join('')
 

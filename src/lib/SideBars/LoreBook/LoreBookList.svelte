@@ -81,7 +81,7 @@
   function updateCharacterGlobalLoreCollection(entries: loreBook[]): void {
     const characterId = DBState.db.characters[$selectedCharID]?.chaId
     if (!characterId) return
-    // Scoped rollback for the one edited collection (L32) — not the whole-DB
+    // Scoped rollback for the one edited collection, not the whole-DB
     // clone + id-assign the broad snapshot performs.
     const previous = currentLorebookCollectionScopedSnapshot({ kind: 'character', characterId })
     const cloned = cloneLoreBooks(entries)

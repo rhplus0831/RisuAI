@@ -150,7 +150,7 @@ describe('applyPromptItemProjectionWrite', () => {
 
   it('falls back to a full sync when the projection has no matching row yet', () => {
     seedTemplate()
-    // The draft has a brand-new item not yet present in the projection.
+    // The draft has a brand-new item absent from the projection.
     const draft = draftCopy()
     draft.push(item('p-new', 'fresh'))
     const result = applyPromptItemProjectionWrite(draft, 'p-new')

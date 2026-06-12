@@ -3,19 +3,16 @@ import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 
 /**
- * V2 fix-completeness gate, Phase 0.
+ * V2 fix-completeness gate.
  *
- * Phase 0 seeds the document universe plus the routing registry. Later phases
- * flip scheduled entries from PLANNED to DONE and attach regression proof
- * fields; while entries are PLANNED, proof fields are forbidden so the gate
- * cannot imply coverage before a fix lands.
+ * Keeps the document universe and routing registry aligned. Entries without
+ * proof fields cannot imply regression coverage.
  */
 
 // `vitest run` executes from the repo root. Under the client vite transform,
 // import.meta.url is not a reliable filesystem anchor, so match the v1 gate.
-// Phase 9 repointed v2 to the archived plan docs. Negative self-proofs below
-// use doc-string overrides or cloned registry arrays, never writes to these
-// files.
+// Negative self-proofs use doc-string overrides or cloned registry arrays,
+// never writes to these files.
 const ROOT = process.cwd()
 const ARCHIVED_PLAN = '.archived-docs/audit-stability-and-performance-v2'
 const AUDIT_DOC = path.join(ROOT, ARCHIVED_PLAN, 'audit-stability-and-performance-v2.md')
@@ -30,16 +27,16 @@ type Phase = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8
 interface ScheduledFix {
   /** V2 audit/risk finding id (`H*`, `M*`, `L*`, `K*`). */
   id: string
-  /** Plan phase that owns the fix (1-8). */
+  /** Routing bucket for this finding. */
   phase: Phase
   /** Short target-fix label (mirrors active-risk-analysis.md). */
   fix: string
   status: GateStatus
-  /** Repo-root-relative regression test path; forbidden while PLANNED. */
+  /** Repo-root-relative regression test path; omitted for entries without proof. */
   testPath?: string
-  /** A string the registered test must contain; forbidden while PLANNED. */
+  /** A string the registered test must contain; omitted for entries without proof. */
   testName?: string
-  /** Additional regression proofs; forbidden while PLANNED. */
+  /** Additional regression proofs; omitted for entries without proof. */
   extraTests?: Array<{ testPath: string; testName: string }>
 }
 

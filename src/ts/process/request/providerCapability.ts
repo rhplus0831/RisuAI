@@ -254,8 +254,8 @@ function isVanillaLegacyInstruct(input: ProviderCapabilityInput): boolean {
     const entry = findXcustomEntry(config, aiModel)
     return entry !== null && entry.format === LLMFormat.OpenAILegacyInstruct
   }
-  // NanoGPTLegacy carries a fixed-format model id and stays routable; a vanilla
-  // LegacyInstruct endpoint override is deferred.
+  // NanoGPTLegacy carries a fixed-format model id and stays routable; vanilla
+  // LegacyInstruct endpoint overrides are unsupported.
   if (nonEmpty(input.endpoint) && input.format !== LLMFormat.NanoGPTLegacy) return false
   return true
 }

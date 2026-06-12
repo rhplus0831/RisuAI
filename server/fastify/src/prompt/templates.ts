@@ -16,50 +16,27 @@ import { expandVariables, type ExpandContext } from './variables.js'
  *     coalescing helper that every later card branch reuses), and
  *   - `renderByFormatOrder` (the branch-free non-template walk).
  *
- * 7-10b adds the content-card renderer:
- *   - `renderContentCard` (`renderFinalPrompt.ts:140-300`): the per-card
- *     row builder. This is the single source of truth for per-card
- *     content: `preflight.ts` (7-8b) consumes the same builder to count
- *     tokens, so the two never drift.
- *   - `renderByTemplate`: the template-walk path (`renderFinalPrompt.ts`
- *     `if (promptTemplate)` branch) that dispatches content cards
- *     through `renderContentCard` + `coalesceRows`.
+ * `renderContentCard` is the single source of truth for per-card rows, shared by
+ * preflight token counting and final template rendering. It covers `persona`,
+ * `description`, `authornote`, `lorebook`, `postEverything`, `plain`,
+ * `jailbreak`, `cot`, `chatML`, and `chat`, returning `null` only for
+ * `memory` / `cache`.
  *
- * 7-10c adds the `chat` card to `renderContentCard` (range math + the
- * `systemizeChat` lift) so the builder now covers `persona` /
- * `description` / `authornote` / `lorebook` / `postEverything` /
- * `plain` / `jailbreak` / `cot` / `chatML` / `chat`, returning `null`
- * only for `memory` / `cache`.
- *
- * 7-10d adds `memory` / `cache` and the automatic cache-point walk-back.
  * `renderContentCard` still returns `null` for `memory` / `cache`
  * because they are not pure row-builders: `memory` needs the injected
  * `memories` input and `cache` (plus the automatic walk-back) mutates
  * the accumulated `formated` array. Both are handled directly in
  * `renderByTemplate`.
  *
- * 7-10e adds prompt-info capture + the content trim. `renderByTemplate`
- * now returns `{ formated, promptInfo }` (a `RenderedTemplate`): when
+ * `renderByTemplate` returns `{ formated, promptInfo }`: when
  * both `promptInfoInsideChat` and `promptTextInfoInsideChat` are on it
  * collects a parallel info array via the `deps.promptInfo` sink, and it
  * trims row contents on both the template and (via `renderByFormatOrder`)
- * the non-template paths. The injected `positionParser` is already the
- * position seam (Tier 3 builds the real `resolvePosition`).
+ * the non-template paths. The injected `positionParser` supplies
+ * `resolvePosition` behavior.
  *
- * 7-10f adds the unifying top-level `renderFinalPrompt` entry
- * (`renderFinalPrompt.ts:60-396`): the `isContinue`
- * `[Continue the last response]` pre-push, dispatch to the template vs
- * non-template path renderer, the `depth_prompt` splice (after the
- * 7-10e trim), and the `editRequest` request-edit seam (an injectable
- * async identity by default; browser Lua execution stays deferred). It
- * returns `{ formated, promptText }`. This completes the template
- * renderer.
- *
- * Deferred to Tier 3 (7-11a/b): the assemble root that loads state,
- * builds the injection-lore-aware `positionParser` / `resolvePosition`,
- * supplies `memories` from `buildMemoryWindow`, applies
- * `triggerResult.additonalSysPrompt`, wires the real `editRequest`, and
- * connects the chat route.
+ * `renderFinalPrompt` handles continue prompts, template/non-template
+ * dispatch, `depth_prompt` splicing, and request editing.
  */
 
 /**
@@ -174,9 +151,8 @@ export function coalesceRows(formated: OpenAIChat[], rows: OpenAIChat[], aiModel
 /**
  * The branch-free non-template render path (`renderFinalPrompt.ts:352-357`):
  * walk `formatOrder`, pushing each slot through `coalesceRows`, then
- * trim row contents (7-10e). This path has no prompt-info capture (the
- * SPA's `else` branch). The remaining finalization (`depth_prompt`
- * splice, `editRequest` Lua hook) is deferred to 7-10f.
+ * trim row contents. This path has no prompt-info capture; final render
+ * handles `depth_prompt` splicing and request editing.
  */
 export function renderByFormatOrder(
   unformated: UnformatedPromptSlots,
@@ -188,8 +164,7 @@ export function renderByFormatOrder(
     coalesceRows(formated, unformated[key], aiModel)
   }
   // SPA trailing trim (`renderFinalPrompt.ts:359-362`); this path has no
-  // prompt-info capture (SPA `:352-356`). `depth_prompt` + `editRequest`
-  // stay 7-10f.
+  // prompt-info capture. Final render handles `depth_prompt` + `editRequest`.
   trimContentsInPlace(formated)
   return formated
 }
@@ -324,10 +299,10 @@ export interface ContentCardDeps {
   currentChar: character
   unformated: UnformatedPromptSlots
   usingPromptTemplate: boolean
-  /** `{{position::}}` + injection-lore substitution (Tier 3 builds the real one). */
+  /** `{{position::}}` and injection-lore substitution supplied by the caller. */
   positionParser: (text: string, loc: string) => string
   /**
-   * Prompt-info capture sink (7-10e). When present, persona /
+   * Prompt-info capture sink. When present, persona /
    * description / authornote (raw `innerFormat`) and non-globalNote
    * plain / jailbreak / cot (parsed content) rows append a parallel
    * info row here. `renderByTemplate` only supplies it when both
@@ -339,7 +314,7 @@ export interface ContentCardDeps {
   onVarDirty?: () => void
 }
 
-/** Render result for the template-walk path (7-10e). */
+/** Render result for the template-walk path. */
 export interface RenderedTemplate {
   formated: OpenAIChat[]
   /** Parallel prompt-info rows; defined only when capture is on. */
@@ -451,7 +426,7 @@ export function renderContentCardWithStableCache(
 /**
  * Build the OpenAIChat rows for a single content card
  * (`renderFinalPrompt.ts:140-266`). Returns `null` only for `memory` /
- * `cache`, which `renderByTemplate` handles directly (7-10d) because
+ * `cache`, which `renderByTemplate` handles directly because
  * they mutate injected/accumulated state rather than producing rows. A
  * gated-off `jailbreak` / `cot` card returns `[]`.
  *
@@ -459,7 +434,7 @@ export function renderContentCardWithStableCache(
  * `renderByTemplate` (which coalesces them), so the per-card content
  * logic has a single source of truth.
  *
- * 7-10e: when `deps.promptInfo` is supplied, persona / description /
+ * When `deps.promptInfo` is supplied, persona / description /
  * authornote (raw `innerFormat`) and non-globalNote plain / jailbreak /
  * cot (parsed content) rows also append a parallel prompt-info row.
  * `preflight.ts` never supplies the sink, so its tokenization is
@@ -585,7 +560,7 @@ export function renderContentCard(card: PromptItem, deps: ContentCardDeps): Open
       return slice
     }
     default:
-      // `memory` / `cache` — 7-10d.
+      // `memory` / `cache`.
       return null
   }
 }
@@ -594,11 +569,10 @@ export function renderContentCard(card: PromptItem, deps: ContentCardDeps): Open
  * The template-walk render path (`renderFinalPrompt.ts` `if
  * (promptTemplate)` branch). Dispatches content + `chat` cards through
  * `renderContentCard` + `coalesceRows`, and handles `memory` / `cache`
- * plus the automatic cache-point walk-back inline (7-10d). When both
+ * plus the automatic cache-point walk-back inline. When both
  * `promptInfoInsideChat` and `promptTextInfoInsideChat` are on, it also
  * collects the parallel prompt-info rows, then trims both arrays and
- * returns them (7-10e). The remaining finalization (`depth_prompt`
- * splice, Lua `editRequest`, and the unifying top-level entry) is 7-10f.
+ * returns them. Final render handles `depth_prompt` splicing and `editRequest`.
  */
 export function renderByTemplate(
   ctx: ExpandContext,
@@ -699,14 +673,14 @@ export function renderByTemplate(
 
   // SPA trailing trim (`renderFinalPrompt.ts:359-369`). The `depth_prompt`
   // splice + `editRequest` seam run after this, in the top-level
-  // `renderFinalPrompt` (7-10f).
+  // `renderFinalPrompt`.
   trimContentsInPlace(formated)
   if (promptInfo) trimContentsInPlace(promptInfo)
 
   return { formated, promptInfo }
 }
 
-/** Args for the top-level `renderFinalPrompt` entry (7-10f). */
+/** Args for the top-level `renderFinalPrompt` entry. */
 export interface RenderFinalPromptArgs {
   ctx: ExpandContext
   currentChar: character
@@ -715,17 +689,16 @@ export interface RenderFinalPromptArgs {
   usingPromptTemplate: boolean
   /** Cloned + `postEverything`-appended `formatingOrder`; non-template path only. */
   formatOrder: FormatOrderKey[]
-  /** Memory rows for the `memory` template card (Tier 3 / `buildMemoryWindow`). */
+  /** Memory rows for the `memory` template card. */
   memories?: OpenAIChat[]
-  /** `{{position::}}` + injection-lore substitution (Tier 3 builds the real one). */
+  /** `{{position::}}` and injection-lore substitution supplied by the caller. */
   positionParser?: (text: string, loc: string) => string
   /** Pushes a `[Continue the last response]` system entry under gpt/claude/openrouter/reverse_proxy. */
   isContinue?: boolean
   /**
    * The `editRequest` request-edit seam (`renderFinalPrompt.ts:384`).
-   * Defaults to an identity transform; Tier 3 / dispatch supplies the
-   * real one (this is where the 7-9e request-state transform plugs in).
-   * Browser Lua execution stays deferred.
+   * Defaults to an identity transform; dispatch may supply the request-edit
+   * transform.
    */
   editRequest?: (rows: OpenAIChat[]) => OpenAIChat[] | Promise<OpenAIChat[]>
   /** Per-assembly stable-card rows shared by template preflight and final render. */
@@ -754,7 +727,7 @@ function takesContinueMarker(aiModel: string): boolean {
  * (`renderByFormatOrder`) paths with the SPA's pre/post-walk steps:
  *
  *   1. `isContinue` pre-push onto `unformated.postEverything` (`:77-88`),
- *   2. dispatch to the path renderer (each already trims its rows, 7-10e),
+ *   2. dispatch to the path renderer (each already trims its rows),
  *   3. the `depth_prompt` splice (`:372-382`) — after the trim, so the
  *      spliced row is left untrimmed, matching the SPA,
  *   4. the `editRequest` request-edit seam over `formated` and
@@ -788,7 +761,7 @@ export async function renderFinalPrompt(args: RenderFinalPromptArgs): Promise<Re
     })
   }
 
-  // 2. Dispatch. Each path renderer already trims its rows (7-10e); only
+  // 2. Dispatch. Each path renderer already trims its rows; only
   //    the template path captures prompt-info.
   let formated: OpenAIChat[]
   let promptInfo: OpenAIChat[] | undefined

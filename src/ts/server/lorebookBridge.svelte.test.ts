@@ -427,8 +427,7 @@ describe('watchServerBackedLorebooks — no-data-loss invariant', () => {
   })
 })
 
-// Phase 6: scope the watcher's change-detection snapshot to the mounting panel's
-// collection. A keystroke must no longer rebuild a DB-wide lore stringify map.
+// Scope the watcher's change-detection snapshot to the mounting panel's collection.
 
 function setupMultiCollectionDb(): void {
   ;(DBState as { db: unknown }).db = {

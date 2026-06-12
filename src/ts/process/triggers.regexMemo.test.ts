@@ -1,12 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { get } from 'svelte/store'
 
-// L40 (Phase 7): trigger effects compiled `new RegExp(...)` on every effect
-// execution (9 sites across v1/v2 effects and conditions). They now reuse the
-// shared `getCompiledRegex` memo from `./scripts`, so re-running the same
-// trigger compiles each pattern once. Compile counts are observed by swapping
-// the global RegExp constructor for a counting subclass — `new RegExp(...)`
-// inside the memo's miss path resolves the global binding at call time.
+// Trigger regexes are memoized across repeated effect runs.
 
 vi.mock('../platform', async (importActual) => {
   const actual = await importActual<typeof import('../platform')>()
@@ -119,7 +114,7 @@ afterEach(() => {
   selectedCharID.set(-1)
 })
 
-// NOTE on memo lifetime: H3 routes var-writing trigger refreshes away from the
+// NOTE on memo lifetime: var-writing trigger refreshes route away from the
 // definition-level GUI reload, so `resetScriptCache()` is not called at the end
 // of a setVar pass. The compile counts below therefore assert both within-pass
 // reuse and cross-pass survival for variable-only trigger updates.
@@ -190,7 +185,7 @@ describe('trigger-effect compiled regex memoization (L40)', () => {
     expect(second?.chat.scriptstate?.['$out2']).toBe('1')
     // Two effects, one compile within the pass (formerly one per effect).
     expect(compilesAfterFirstPass).toBe(1)
-    // H3 keeps the memo warm across variable-only trigger refreshes.
+    // The memo stays warm across variable-only trigger refreshes.
     expect(compiles.get('l40-w[a-z]+d')).toBe(1)
   })
 

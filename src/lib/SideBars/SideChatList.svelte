@@ -94,7 +94,7 @@
       return
     }
     if (canUseServerCommands() && chatId) {
-      // Scalar rollback (H2): select only flips `chatPage`; the whole-array
+      // Scalar rollback: select only flips `chatPage`; the whole-array
       // snapshot deep-cloned every hydrated transcript per sidebar click.
       dispatchSelectChat(chatId, currentChatSelectionSnapshot())
       return

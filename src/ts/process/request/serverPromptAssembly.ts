@@ -92,12 +92,10 @@ function triggersUseInteractiveLua(triggers: triggerscript[] | undefined): boole
 
 /**
  * pluginV2 edit hooks (local-assembler class 5, plugin arm): any registered
- * pluginV2 edit/replacer function. **Permanent `unsupported`** — server-side
- * plugin code execution is on the no-port list (`docs/client-thinning/plan.md`)
- * and pluginV2 is superseded by Plugin V3. This detector never flips to `server`;
- * the `A4R-pluginv2 no server-side plugin execution` audit invariant
- * (`util/client-thinning-audit.ts`) keeps a server-side execution path from being
- * silently added.
+ * pluginV2 edit/replacer function. **Permanent `unsupported`** because pluginV2
+ * code does not execute server-side and is superseded by Plugin V3. This detector
+ * never flips to `server`; the client-thinning invariant keeps a server-side
+ * execution path from being silently added.
  */
 function hasPluginV2EditSet(): boolean {
   return (

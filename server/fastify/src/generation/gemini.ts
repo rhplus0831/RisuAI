@@ -69,10 +69,9 @@ const DEFAULT_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta'
  *   - `contents` alternating between `user` and `model` roles with `parts`.
  *
  * Function/tool rows are dropped. Consecutive same-role rows are coalesced
- * since Gemini also rejects two `user` (or two `model`) in a row. Mirrors the
- * subset of `src/ts/process/request/google.ts:65-150` that we currently
- * support; tools / multimodal / thinking config / response schema are
- * deferred.
+ * since Gemini also rejects two `user` (or two `model`) in a row. Supports the
+ * text-only browser request shape; tool, multimodal, thinking-config, and
+ * response-schema rows are omitted.
  */
 export interface GeminiReformatResult {
   contents: GeminiContent[]
@@ -434,7 +433,7 @@ export async function* runGeminiStream(req: GeminiRequest): AsyncGenerator<Compl
         }
       }
       // Post-drain the buffer holds at most one partial event; a
-      // delimiter-less upstream must not grow it unbounded (L22).
+      // delimiter-less upstream must not grow it unbounded.
       if (streamBufferExceedsCap(buf)) {
         yield { kind: 'error', error: STREAM_BUFFER_OVERFLOW_ERROR }
         return

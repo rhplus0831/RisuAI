@@ -32,7 +32,7 @@ export function registerBootstrapRoutes(
     const response = {
       revision,
       schemaVersion: version,
-      // In-place mask (audit M4): `loadStubProjection` freshly builds this
+      // In-place mask `loadStubProjection` freshly builds this
       // object and nothing else references it, so the response skips the
       // whole-stubbed-DB JSON round-trip clone the copying mask pays.
       database: maskProviderSecretsInPlace(persisted.database),
@@ -41,7 +41,7 @@ export function registerBootstrapRoutes(
       // reload, can discover and reattach. Server-memory only.
       activeGenerationJobs: generationJobs?.activeJobs() ?? [],
     }
-    // Thunk (audit M5): `jsonPayloadBytes` re-serializes the whole bootstrap
+    // Thunk `jsonPayloadBytes` re-serializes the whole bootstrap
     // payload, so the fields must only be built after the metrics-enabled guard.
     emitProtocolMetric(
       'bootstrap_projection',

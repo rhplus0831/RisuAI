@@ -1,16 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-// Phase 3 clone-cost proof for `runTrigger`. The former
-// `char = arg.displayMode ? char : safeStructuredClone(char)` deep-cloned the
-// whole character — every OTHER chat's full message history included — on every
-// non-display trigger pass, even for zero-trigger characters and for triggers
-// that never touch durable character state. The narrowed path:
-//   - returns early (no char/chat clone at all) for a zero-trigger character, and
-//   - clones only the active chat for a trigger that does not install the
-//     character back into the projection (e.g. a plain `setVar`).
-// The whole-character clone is now lazy (`materializeChar`), paid only when a
-// data effect installs the character (desc / author-note / lorebook); those
-// install paths are covered for correctness by `triggers.projectionGuard.test.ts`.
+// runTrigger clones only the active state required by the trigger path.
 
 vi.mock('../platform', async (importActual) => {
   const actual = await importActual<typeof import('../platform')>()

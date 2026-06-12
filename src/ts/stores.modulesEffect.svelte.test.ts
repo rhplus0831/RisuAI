@@ -4,13 +4,7 @@ import { flushSync } from 'svelte'
 import { readModuleUpdateSignals, type ModuleUpdateSignalSource } from './stores.svelte'
 import { withCloneInstrumentation } from './__tests__/cloneCostHarness'
 
-// L33 (stability/perf plan, Phase 3): the modules `$effect` registered its
-// dependency on the modules array via `$state.snapshot(DBState.db.modules)` —
-// a deep clone of every module (lorebook entries, scripts, triggers included)
-// on every fire, discarded immediately. `readModuleUpdateSignals` replaces it:
-// it reads exactly the fields `moduleUpdate()` consumes (id, hideIcon,
-// backgroundEmbedding, plus the array length) with zero cloning, so unrelated
-// deep module edits no longer re-run the effect at all.
+// Module update signals read only the fields consumed by moduleUpdate().
 
 interface TestModule extends ModuleUpdateSignalSource {
   name: string

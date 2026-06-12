@@ -574,7 +574,6 @@
   function isSummaryVisible(index: number): boolean {
     const summary = hypaV3Data.summaries[index]
 
-    // Use the new shouldShowSummary utility function
     return (
       shouldShowSummary(summary, index, filterState.showImportantOnly, filterState.selectedCategoryFilter) &&
       (!filterSelected ||

@@ -55,7 +55,7 @@
     const allActive = globalLore.every((book) => book.alwaysActive)
     const nextLore = globalLore.map((book) => ({ ...book, alwaysActive: !allActive }))
     // This action edits only the character's globalLore, so capture the scoped
-    // rollback for that one collection (L32) — not the whole-DB clone.
+    // rollback for that one collection, not the whole-DB clone.
     const previous = currentLorebookCollectionScopedSnapshot({
       kind: 'character',
       characterId: character.chaId,
@@ -78,7 +78,7 @@
     const allActive = localLore.every((book) => book.alwaysActive)
     const nextLore = localLore.map((book) => ({ ...book, alwaysActive: !allActive }))
     // This action edits only the active chat's localLore, so capture the scoped
-    // rollback for that one collection (L32) — not the whole-DB clone.
+    // rollback for that one collection, not the whole-DB clone.
     const previous = currentLorebookCollectionScopedSnapshot({ kind: 'chat', chatId: chat.id })
 
     withTrustedServerProjectionWrite(() => {

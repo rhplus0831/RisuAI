@@ -214,7 +214,7 @@ export function registerStreamJobRoutes(app: FastifyInstance, authState: AuthSta
       // Attaching to an already-done (in-grace) job: `attach` just flushed the
       // buffered tail and nothing else will ever close this viewer — the
       // attached client blocks both GC branches, pinning the job and the ping
-      // timer until the client hangs up (audit L12). Mirror the durable
+      // timer until the client hangs up. Mirror the durable
       // viewer: tear down now (the eventual socket 'close' re-running cleanup
       // is a no-op).
       if (job.done) {

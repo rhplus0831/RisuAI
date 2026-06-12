@@ -183,7 +183,7 @@ export interface GlobalLorebookStateSnapshot {
 export function currentGlobalLorebookStateSnapshot(): GlobalLorebookStateSnapshot {
   // This narrow snapshot restores only `loreBook`/`loreBookPage`, so it only
   // needs ids on the global list — the whole-DB id-assign (every character's
-  // globalLore, every chat's localLore, every module) was pure overhead (L32).
+  // globalLore, every chat's localLore, every module) was pure overhead.
   ensureGlobalLorebookListIds()
   return {
     loreBook: cloneJsonValue((DBState.db.loreBook ?? []) as GlobalLorebook[]),
@@ -305,7 +305,7 @@ export function ensureGlobalLorebookListIds(): void {
 }
 
 /**
- * Scoped pre-edit rollback for a DISCRETE editor action on ONE collection (L32):
+ * Scoped pre-edit rollback for a DISCRETE editor action on ONE collection:
  * a global lorebook's entries, a character's globalLore, or a chat's localLore.
  * Builds the same `scopeKey`+`scopedValue` rollback the watcher uses, so a failed
  * command restores only the edited collection — without the whole-DB id-assign
@@ -909,7 +909,7 @@ function collectCharacterLorebookSnapshots(
   localLoreCache?: Map<string, LocalLoreSnapshotCacheEntry>,
 ): void {
   // Snapshot a character's globalLore ONLY when it is hydrated; a stubbed /
-  // not-yet-hydrated character is never tracked, so a re-stub can't be diffed into
+  // unhydrated character is never tracked, so a re-stub can't be diffed into
   // a deletion (the no-data-loss invariant).
   if (character.chaId && hydratedCharacterLorebooks.has(character.chaId)) {
     snapshots.set(`character:${character.chaId}`, snapshotJson(character.globalLore ?? []))

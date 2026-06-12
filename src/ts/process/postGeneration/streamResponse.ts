@@ -84,7 +84,7 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
   let streamAborted: boolean = abortSignal.aborted
   let result = ''
   let emoChanged = false
-  // H3 (stability/perf plan): every `.data` write + `reloadKeys` bump re-runs
+  // Every `.data` write + `reloadKeys` bump re-runs
   // `risuChatParser` + `ParseMarkdown` over the whole growing message, so apply
   // the newest accumulated chunk at most once per animation frame instead of
   // once per token. `settle()` below guarantees the final full-fidelity apply

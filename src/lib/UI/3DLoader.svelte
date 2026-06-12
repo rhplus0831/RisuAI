@@ -1,5 +1,5 @@
 <script>
-  // @ts-nocheck - Legacy file, not currently in use
+  // @ts-nocheck
   import { onDestroy, onMount } from 'svelte'
 
   /** @type {{width?: number, height?: number}} */

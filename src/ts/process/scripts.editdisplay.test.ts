@@ -1,9 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-// L38 (Phase 7): `processScriptFull(..., 'editdisplay')` runs on every message
-// render (Chat.svelte → ChatBody → parser). It used to log
-// `console.log('Trigger time', ...)` per render. The display path must not
-// write to console.log at all on a clean pass.
+// Edit-display script rendering must stay silent on console.log.
 
 vi.mock('../platform', async (importActual) => {
   const actual = await importActual<typeof import('../platform')>()

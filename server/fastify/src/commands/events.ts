@@ -90,7 +90,7 @@ export function persistCommandEvent(
   historyLimit = COMMAND_EVENT_HISTORY_LIMIT,
 ): void {
   validateCommandEventForPersistence(event)
-  // The writer-session origin persists with the event (audit L29) so an SSE
+  // The writer-session origin persists with the event so an SSE
   // reconnect replay carries the same own-echo suppression metadata as the
   // live emit. Metadata only — the projected event payload is unchanged for
   // events that never had an origin.
@@ -144,7 +144,7 @@ export function selectPersistedCommandEventReplay(
 }
 
 /**
- * Bounded keep-window prune (audit L8). Retention is the `historyLimit`-wide
+ * Bounded keep-window prune. Retention is the `historyLimit`-wide
  * revision window ending at the just-persisted revision: everything at or
  * below `latestRevision - historyLimit` is deleted with one primary-key range
  * DELETE. The former implementation walked the newest `historyLimit` rows

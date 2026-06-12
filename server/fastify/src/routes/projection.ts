@@ -120,9 +120,9 @@ const NARROW_STUBBED_PROJECTION_RESOURCES = new Set([
 // Resources whose projected state intentionally sprawls across many top-level
 // settings scalars or server-owned state, so the projection route cannot narrow
 // them and returns `mode: 'full'` on purpose. Any other unlisted resource also
-// falls back to full bootstrap, but as an *unknown* (typically foreign/future)
+// falls back to full bootstrap, but as an *unknown* (typically foreign)
 // resource rather than a known sprawling one. The measurement distinguishes the
-// two so a later targeted-resource slice can tell an expected sprawling
+// two so targeted-resource metrics can tell an expected sprawling
 // fallback from an unexpected unknown-resource fallback.
 const SPRAWLING_FULL_PROJECTION_RESOURCES = new Set([
   'settings',
@@ -569,7 +569,7 @@ function loadSingleCharacterRow(
   dataDir: string,
   characterId: string,
 ): Record<string, unknown> | null {
-  // Single-row read (audit M4): one character + its chat rows, stubbed exactly
+  // Single-row read one character + its chat rows, stubbed exactly
   // like the broad loader (message-free chats, lorebook stubs). The loader
   // returns a freshly parsed object this route owns, so mask it in place;
   // wrapping it in `{ characters: [...] }` keeps the row under the same
@@ -586,7 +586,7 @@ function emitProjectionMetric(
   response: unknown,
   extra: Record<string, unknown> = {},
 ): void {
-  // Thunk (audit M5): `jsonPayloadBytes` re-serializes the full response, so
+  // Thunk `jsonPayloadBytes` re-serializes the full response, so
   // the fields must only be built after the metrics-enabled guard.
   emitProtocolMetric(
     'projection_response',

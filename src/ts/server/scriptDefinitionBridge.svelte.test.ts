@@ -485,9 +485,7 @@ describe('watchServerBackedScriptDefinitions debounced rollback baseline (Phase 
   })
 })
 
-// L31 (stability/perf plan, Phase 3): scope the watcher's per-fire
-// scan-and-stringify to the mounting panel's rows. A script keystroke must no
-// longer re-stringify every character's and module's scripts/triggers.
+// Scope the watcher's per-fire scan-and-stringify to the mounting panel's rows.
 
 function setupMultiCharacterScriptDb(): void {
   ;(DBState as { db: unknown }).db = {

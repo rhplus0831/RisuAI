@@ -232,10 +232,10 @@ export function reloadChatAt(index: number | string) {
 // The modules `$effect` below used to register its dependency on the modules
 // array via `$state.snapshot(DBState.db.modules)` — a deep clone of every
 // module (lorebook entries, scripts, and triggers included) on every fire,
-// discarded immediately (L33). `moduleUpdate()` only consumes each module's
+// discarded immediately. `moduleUpdate()` only consumes each module's
 // identity plus its `hideIcon` / `backgroundEmbedding` fields, so reading
 // exactly those (and the array length, for adds/removes) registers every
-// signal the effect needs with zero cloning. Exported for the L33 regression
+// signal the effect needs with zero cloning. Exported for the regression
 // test, which proves an unrelated deep module edit no longer re-runs the
 // effect while the consumed fields still do.
 export interface ModuleUpdateSignalSource {

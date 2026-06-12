@@ -8,7 +8,7 @@ import type { triggerscript } from '../../../../src/ts/process/triggers'
  * `processScript`.
  *
  * Ports the SPA's `lastModules` / `lastModuleData` memoization
- * (`modules.ts:400-426`) with server-safe keying (audit L1): an assembly
+ * (`modules.ts:400-426`) with server-safe keying an assembly
  * resolves active modules ~8× across its stages (slots, lorebook, history,
  * scripts, asset lookup, triggers) with identical inputs, so the scan +
  * dedupe is cached per loaded `Database` object. Keying the cache on the
@@ -19,13 +19,12 @@ import type { triggerscript } from '../../../../src/ts/process/triggers'
  * mid-assembly module toggle (chat/char/db id-list change) or wholesale
  * `modules` replacement invalidates the entry.
  *
- * Module fields not in scope here (their consumers ship in later
- * slices):
- *   - `module.lorebook` — needs Lorebook (7-7)
+ * Module fields not resolved here:
+ *   - `module.lorebook` — handled by lorebook activation
  *   - `module.cjs`      — browser-only plugin execution
  *
- * `module.regex` (7-6d), `module.assets` (7-5c), and `module.trigger`
- * (7-9a) are now resolved by the helpers below.
+ * `module.regex`, `module.assets`, and `module.trigger` are resolved by the
+ * helpers below.
  */
 
 function dedupeById(modules: RisuModule[]): RisuModule[] {
@@ -49,8 +48,7 @@ interface ActiveModulesMemoEntry {
 
 const activeModulesMemo = new WeakMap<Database, ActiveModulesMemoEntry>()
 
-/** Stable result for the no-active-modules case so downstream memos (audit M2:
- *  the prepared-script cache keys on this function's result by reference) get a
+/** Stable result for the no-active-modules case so downstream memos get a
  *  reference-equal value instead of a fresh `[]` per call. Read-only by
  *  contract — every consumer only iterates it. */
 const NO_ACTIVE_MODULES: RisuModule[] = []
@@ -100,7 +98,7 @@ export function getModuleRegexScripts(modules: RisuModule[]): customscript[] {
 /**
  * Returns the active modules' `[name, id, type]` asset triples. Mirrors
  * `src/ts/process/modules.ts:421-433` `getModuleAssets()` for the prompt
- * leaf's `{{asset_prompt::…}}` resolution in 7-5c.
+ * leaf's `{{asset_prompt::…}}` resolution.
  */
 export function getModuleAssets(modules: RisuModule[]): [string, string, string][] {
   const out: [string, string, string][] = []
@@ -115,7 +113,7 @@ export function getModuleAssets(modules: RisuModule[]): [string, string, string]
  * Returns the active modules' trigger scripts with `lowLevelAccess`
  * inherited from the owning module. Mirrors
  * `src/ts/process/modules.ts:435-452` `getModuleTriggers()` for the
- * trigger runner (7-9a).
+ * trigger runner.
  *
  * Divergence from the SPA: the SPA mutates each trigger object in
  * place (`t.lowLevelAccess = module.lowLevelAccess`). The server runs

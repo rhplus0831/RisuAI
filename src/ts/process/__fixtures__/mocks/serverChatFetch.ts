@@ -38,9 +38,9 @@ interface State {
   calls: ServerChatCall[]
   /** Messages returned on the `prompt` event (lossy projection). */
   promptMessages: Array<{ role: string; content: unknown }>
-  /** Full `OpenAIChat` rows returned on the `prompt` event (7-12b). */
+  /** Full `OpenAIChat` rows returned on the `prompt` event. */
   formated: Array<Record<string, unknown>>
-  /** Logit-bias rows returned on the `prompt` event (7-12b). */
+  /** Logit-bias rows returned on the `prompt` event. */
   biases: [string, number][]
   /** promptInfo returned on the `prompt` event. */
   promptInfo: Record<string, unknown>

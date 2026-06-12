@@ -45,7 +45,7 @@ export const customComponents: Record<string, Component<any>> = {
   CustomBackgroundToggle: CustomBackgroundToggle,
   NullableTextColorToggle: NullableTextColorToggle,
   NotificationToggle: NotificationToggle,
-  // Add more as we migrate complex settings
+  // Registry for custom setting renderers.
 } as const
 
 /**

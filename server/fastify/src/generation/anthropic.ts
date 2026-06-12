@@ -324,7 +324,7 @@ export async function* runAnthropicStream(req: AnthropicRequest): AsyncGenerator
         // message_start / content_block_start / content_block_stop / ping: ignore
       }
       // Post-drain the buffer holds at most one partial event; a
-      // delimiter-less upstream must not grow it unbounded (L22).
+      // delimiter-less upstream must not grow it unbounded.
       if (streamBufferExceedsCap(buf)) {
         yield { kind: 'error', error: STREAM_BUFFER_OVERFLOW_ERROR }
         return

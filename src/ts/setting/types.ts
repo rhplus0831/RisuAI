@@ -144,7 +144,7 @@ export interface SettingItem {
   /** Type-specific options */
   options?: SettingOptions
 
-  /** Search keywords for future search feature */
+  /** Search keywords for setting lookup. */
   keywords?: string[]
 
   /** Custom CSS classes for the main container or label */
@@ -167,13 +167,13 @@ export interface SettingItem {
   /**
    * Optional getter function for the setting's value.
    * Recommended over bindKey/bindPath for complete type safety and reactivity.
-   * TODO: Consider making SettingItem generic or using discriminated unions to eliminate `any` from accessor signatures.
+   * Uses `any` because SettingItem is not discriminated by value type.
    */
   getValue?: (db: Database, ctx?: SettingContext) => any
 
   /**
    * Optional setter function for the setting's value.
-   * TODO: Consider making SettingItem generic or using discriminated unions to eliminate `any` from accessor signatures.
+   * Uses `any` because SettingItem is not discriminated by value type.
    */
   setValue?: (db: Database, val: any, ctx?: SettingContext) => void
 

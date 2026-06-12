@@ -42,7 +42,7 @@ interface RawChatMessage {
  * Filter to the role + content shape Ollama accepts. The local browser path in
  * `src/ts/process/request/request.ts:1227-1234` only forwards user / assistant
  * / system rows; tool / function rows are dropped. Content is coerced to
- * string — multimodal `parts` arrays are not yet supported on this dispatcher.
+ * string; this dispatcher omits multimodal `parts` arrays.
  */
 export function reformatForOllama(messages: RawChatMessage[]): OllamaMessage[] {
   const out: OllamaMessage[] = []
@@ -290,7 +290,7 @@ export async function* runOllamaStream(req: OllamaRequest): AsyncGenerator<Compl
         }
       }
       // Post-drain the buffer holds at most one partial line; a newline-less
-      // upstream must not grow it unbounded (L22).
+      // upstream must not grow it unbounded.
       if (streamBufferExceedsCap(buf)) {
         yield { kind: 'error', error: STREAM_BUFFER_OVERFLOW_ERROR }
         return

@@ -1,9 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createStreamRenderCoalescer, defaultRenderFlushScheduler } from '../postGeneration/streamCoalescer'
 
-// Stability/performance plan, Phase 1 H3: the coalescer is the unit that
-// bounds streaming parse work — `notify()` per token, at most one `apply` per
-// scheduled frame, a guaranteed full-fidelity `settle()` at stream end.
+// Coalescer bounds token updates to scheduled frames and settles fully at stream end.
 
 function manualFrames() {
   const frames: (() => void)[] = []

@@ -19,9 +19,8 @@ import type { character } from '../storage/database.svelte'
  *   `structuredClone`, used by `safeStructuredClone`) so a test can assert a hot
  *   path performs zero whole-collection clones.
  *
- * It is intentionally independent of any specific snapshot helper so Phase 2-7
- * slices can import it directly. It must never ship a runtime instrumentation
- * hook — the audit's measurements were one-off, not a production counter.
+ * It is intentionally independent of any specific snapshot helper and must
+ * never ship a runtime instrumentation hook.
  */
 
 // Keys whose presence in a snapshot means the whole collection was captured.

@@ -816,7 +816,7 @@ interface SafeElement {
  * Note that this SHOULD NOT be used unless absolutely necessary.
  * use other risuai APIs whenever possible, especially using iframe UI
  *
- * Additional restrictions might be added in the future for user safety, including breaking changes.
+ * Additional safety restrictions may apply, including breaking changes.
  *
  * @example
  * ```typescript
@@ -1456,7 +1456,7 @@ interface RisuaiPluginAPI {
    * Saves a secret header for network requests, for protected Headers (like Authorization) that are stripped by Risuai for security.
    * To use saved secret headers, use an object `{ secretHeader: 'Header-Name' }` in the `headers` field of `nativeFetch` options,
    * Like `{ headers: {"Authorization":{ secretHeader: 'Authorization' }} }`
-   * @m This API is work in progress and may have breaking changes in the future.
+   * @m Experimental API; breaking changes may occur.
    * @param key - Header key (e.g., 'Authorization')
    * @param value - Header value.
    */
@@ -1900,7 +1900,7 @@ interface RisuaiPluginAPI {
    * Registers a listener for a named plugin channel (IPC between plugins).
    * @param channelName - The channel name to listen on (scoped to this plugin)
    * @param callback - Function to call when a message is received on this channel
-   * @remarks This API is subject to change. API might be changed, deprecated, or removed in the future without prior notice.
+   * @remarks This API is subject to change and may be changed, deprecated, or removed without prior notice.
    */
   addPluginChannelListener(channelName: string, callback: Function): Promise<void>
 
@@ -1909,7 +1909,7 @@ interface RisuaiPluginAPI {
    * @param pluginName - The internal name of the target plugin
    * @param channelName - The channel name to post to
    * @param message - The message payload to send
-   * @remarks This API is subject to change. API might be changed, deprecated, or removed in the future without prior notice.
+   * @remarks This API is subject to change and may be changed, deprecated, or removed without prior notice.
    */
   postPluginChannelMessage(pluginName: string, channelName: string, message: any): Promise<void>
 

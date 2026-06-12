@@ -144,16 +144,9 @@ export function applyOptimisticDeletedChat(
   return result
 }
 
-// Scalar chat-selection rollback (stability/perf plan, Phase 1 H2). Selecting a
-// chat only flips the owning character's `chatPage` and dispatches an
-// empty-patch select command, so its rollback never needs the heavy
-// `ChatStateSnapshot` (a synchronous JSON clone of every character with all
-// hydrated chat histories — the same class of UI stall the scalar
-// `CharacterSelectionSnapshot` removed from character select). `selectedCharID`
-// is captured to locate the row on restore, not to restore the store: chat
-// select never mutates the character selection, and re-writing it could
-// clobber a concurrent character switch. The full-collection snapshot stays
-// for genuine restructures (create/delete/reorder/fork).
+// Chat selection rollback only restores the owning character's `chatPage`.
+// `selectedCharID` locates the row but is not restored, so a concurrent
+// character switch is not clobbered.
 export interface ChatSelectionSnapshot {
   characterId: string | undefined
   selectedCharID: number
@@ -427,7 +420,7 @@ export function runMessageCommand<T extends Record<string, unknown>>(
 // one fails (including conflict), the rollback is invoked once and the rest
 // are skipped. Without this, sibling `runServerCommand` calls all read the
 // same cached `baseRevision` and the later ones 409 after the first succeeds.
-// A thrown/rejected step is treated as a failure too (L36): it is surfaced and
+// A thrown/rejected step is treated as a failure too: it is surfaced and
 // rolled back instead of escaping the fire-and-forget `void` as an unhandled
 // rejection that left the optimistic write silently diverged.
 export function runOptimisticCommandSequence(
@@ -508,7 +501,7 @@ export function dispatchUpdateChat(
   )
 }
 
-// Scalar-rollback variant of `dispatchUpdateChat` for chat selection (H2): the
+// Scalar-rollback variant of `dispatchUpdateChat` for chat selection: the
 // same empty-patch select command, with the local optimistic write limited to the
 // owning character's `chatPage` instead of cloning the whole characters array.
 export function dispatchSelectChat(chatId: string, previous: ChatSelectionSnapshot): void {

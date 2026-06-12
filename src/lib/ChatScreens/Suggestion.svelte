@@ -230,7 +230,7 @@
 
   $effect.pre(() => {
     $selectedCharID
-    //FIXME add selectedChatPage for optimize render
+    // Reads chatPage so suggestions update when the selected chat changes.
     chatPage = DBState.db.characters[$selectedCharID]?.chatPage
     updateSuggestions()
   })

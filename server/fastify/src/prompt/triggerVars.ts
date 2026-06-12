@@ -7,18 +7,16 @@ import type { Chat, Database } from '../../../../src/ts/storage/database.svelte'
  * The SPA defines `getVar` / `setVar` and the local-variable scope
  * helpers as closures over `runTrigger`'s mutable state. The server
  * extracts them into this factory so they are unit-testable on their
- * own and so `triggers.ts` does
- * not balloon as 7-9c/d add effects that drive them.
+ * own and so `triggers.ts` stays focused on effect dispatch.
  *
- * Resolution order for `getVar` (L1295-1315):
- *   1. the local-variable scope stack (populated only by 7-9d V2
- *      effects; always empty in 7-9b),
+ * Resolution order for `getVar`:
+ *   1. the local-variable scope stack,
  *   2. the working chat's `scriptstate['$' + key]`,
  *   3. `defaultVariables` (char + template defaults),
  *   4. in `displayMode`, `tempVars[key]`,
  *   5. `'null'`.
  *
- * `setVar` (L1317-1338):
+ * `setVar`:
  *   - `displayMode` writes land in `tempVars` only,
  *   - a write to an existing local var stays local at the current
  *     indent,
@@ -63,9 +61,8 @@ export interface TriggerVarEngine {
   setIndent(indent: number): void
   /**
    * Repoints the engine at a new working chat. The `runtrigger` effect
-   * (7-9c) reassigns `runTrigger`'s local `chat` to the recursive
-   * result; without this, later `setVar`s in the same effect list would
-   * keep writing to the stale clone.
+   * Repoints the engine after `runtrigger` recursion so later `setVar`s in
+   * the same effect list write to the latest chat clone.
    */
   setChat(next: Chat): void
   /** True once a non-local, non-display `setVar` wrote chat state. */

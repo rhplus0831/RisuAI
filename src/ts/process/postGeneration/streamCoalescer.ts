@@ -1,5 +1,5 @@
 /**
- * Streaming render coalescer (stability/performance plan, Phase 1 H3).
+ * Streaming render coalescer.
  *
  * During a streamed response every provider delta used to write the full
  * accumulated string into `message[msgIndex].data` and bump `reloadKeys`,

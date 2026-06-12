@@ -61,7 +61,7 @@ const SQLITE_EXPORT_ESTIMATE_FILE = 'risu.db'
 // via RISU_API_IMPORT_MAX_BYTES (see config.ts).
 const DEFAULT_IMPORT_MAX_BYTES = Number.POSITIVE_INFINITY
 // Backstop for the bundle's inner `database.risu` when neither the import
-// ceiling nor the expanded-import cap is finite (audit M9): unlike the asset
+// ceiling nor the expanded-import cap is finite unlike the asset
 // entries, the inner `.risu` inflates fully in memory before decoding, so it
 // always needs a finite expanded-size cap.
 const DEFAULT_BUNDLE_INNER_RISU_MAX_EXPANDED_BYTES = 1024 * 1024 * 1024
@@ -76,7 +76,7 @@ export function registerSaveRoutes(
 ): void {
   const importMaxBytes = options.importMaxBytes ?? DEFAULT_IMPORT_MAX_BYTES
   // The bundle's embedded `database.risu` gets a finite expanded-size cap even
-  // when the bundle import as a whole is unlimited (audit M9): the explicit
+  // when the bundle import as a whole is unlimited the explicit
   // import ceiling when set, else the same expanded cap the ordinary
   // `/import/risusave` route enforces, else a 1 GiB backstop.
   const bundleInnerRisuMaxExpandedBytes = Number.isFinite(importMaxBytes)

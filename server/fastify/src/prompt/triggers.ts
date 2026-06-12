@@ -23,40 +23,14 @@ import {
  * Trigger model + runner shell, ported from the Svelte-bound `runTrigger` in
  * `src/ts/process/triggers.ts`.
  *
- * 7-9a established the deterministic, store-free skeleton:
- *   - the trigger type surface and result shape (`TriggerMode`,
- *     `TriggerRunResult`, `TriggerRunArg`, `TriggerRunContext`),
- *   - module-trigger aggregation with inherited `lowLevelAccess`
- *     (`getModuleTriggers` in `./modules.js`),
- *   - the trigger collection + mode/manual-name filter
- *     (`collectTriggers`, `matchesTrigger`),
- *   - the `runTrigger` shell: input cloning, no-match `null` return,
- *     recursion/trigger-id threading via the explicit `arg`/`ctx`
- *     (never `CurrentTriggerIdStore`), and the terminal token
- *     accounting + return shape.
+ * The runner aggregates module triggers, filters by mode/manual name, evaluates
+ * conditions through the request-local variable engine, and returns the SPA
+ * result shape without reading Svelte stores. Supported V1 arms are `setvar`,
+ * `systemprompt`, `impersonate`, `cutchat`, `modifychat`, `stop`, and bounded
+ * `runtrigger` recursion.
  *
- * 7-9b adds the variable + condition engine: `runTrigger` now builds
- * the char + template `defaultVariables`, constructs the per-run
- * `TriggerVarEngine` (`./triggerVars.js`), and evaluates each selected
- * trigger's `conditions` (`var` / `value` / `chatindex` / `exists`)
- * before its effects would run. Condition strings expand through the
- * server `expandVariables` (`runVar: false`). A failing condition skips
- * the trigger. The result now carries `varChanged` so the caller can
- * decide whether to persist the database.
- *
- * 7-9c adds the deterministic V1 effect arms: a passing trigger now
- * runs `setvar`, `systemprompt`, `impersonate`, `cutchat`,
- * `modifychat`, `stop`, and bounded `runtrigger` recursion
- * (`triggers.ts:1442-1546`). `setvar` writes persist through the var
- * engine; `chat.message` mutations live on the returned `result.chat`
- * (the SPA does not write message edits back to the db mid-run, only
- * `scriptstate`). The `runtrigger` arm recurses through this same
- * `runTrigger` with `recursiveCount + 1`, bounded at 10 unless the
- * trigger has `lowLevelAccess`.
- *
- * 7-9d-i adds the V2 control-flow core: the effect loop is now
- * index-based (`for (let index…)`) so V2 control flow can advance /
- * rewind `index`. Ported arms: `v2Header` / `v2Comment` /
+ * The V2 effect loop is index-based so control flow can advance / rewind
+ * `index`. Ported arms: `v2Header` / `v2Comment` /
  * `v2ConsoleLog` (no-ops), `v2SetVar` (adds `%=`), `v2DeclareLocalVar`,
  * `v2If` / `v2IfAdvanced` (incl. the `∈` / `∋` / `∌` / `≒` / `≡`
  * operators with fail-skip to `v2EndIndent` / `v2Else`), `v2Else`,
@@ -67,27 +41,11 @@ import {
  * deterministic V2 state effects `v2CutChat` / `v2ModifyChat` /
  * `v2SystemPrompt` / `v2Impersonate`.
  *
- * 7-9d-ii adds the V2 safe data helpers (message readers, string /
- * array / dict / math, random, tokenize, regex, quick chat search) in
- * `triggerDataEffects.ts`, dispatched from this switch's `default`
- * case via `applyV2DataEffect`.
+ * V2 data helpers, display/request state effects, and start-trigger handoff
+ * run through the injected helpers below.
  *
- * 7-9e adds the `display` / `request` effect allowlists (`safeSubset` /
- * `displayAllowList` / `requestAllowList`, guarded at the top of the
- * effect loop) and the request/display state arms (`v2GetDisplayState`
- * / `v2SetDisplayState` / the five request-state arms) in
- * `triggerDataEffects.ts`, fed the mutable `displayState` holder this
- * runner threads from `arg.displayData` to `result.displayData`.
- *
- * 7-9f adds the `runStartTrigger` handoff adapter (below), which
- * bridges the prompt-pipeline `ExpandContext` scope to a
- * `TriggerRunContext` and runs the `start` trigger. `history.ts`'s
- * `buildHistoryWindow` consumes it for chat mutation, the
- * `addedTokens` token contribution, `stopSending`, and surfacing
- * `triggerResult.additonalSysPrompt` for the future assemble root.
- *
- * Browser-side and persistent-resource arms remain deferred. Unhandled effect
- * types fall through the `switch` as no-ops: `command` and the
+ * Browser-only and persistent-resource effects fall through the `switch` as
+ * no-ops: `command` and the
  * `lowLevelAccess`-gated `showAlert` / `sendAIprompt` / `runLLM` /
  * `checkSimilarity` / `extractRegex` / `runImgGen` arms, plus browser
  * plugin trigger code (`triggercode`). These bypass the mode filter in
@@ -132,11 +90,8 @@ export interface TriggerLuaRunResult {
  * (`getDatabase()` / `getCurrentChat()` / `getCurrentCharacter()` /
  * `selectedCharID` / `CurrentTriggerIdStore`).
  *
- * 7-9a needs the active module list (trigger aggregation) and the
- * model (terminal token accounting). 7-9b adds the
- * `database`/`selectedCharID`/`chatPage` scope the variable engine
- * persists into and that condition-string expansion reads. Later
- * slices extend this further for the effect handlers.
+ * Carries the active module list, model id, database selection scope, and helper
+ * seams used by condition evaluation and effect handlers.
  */
 export interface TriggerRunContext {
   modules: RisuModule[]
@@ -203,7 +158,7 @@ export interface TriggerRunResult {
 /**
  * Effect-type allowlists for the `display` / `request` run modes, ported
  * verbatim from `src/ts/process/triggers.ts:1099-1146`. In those modes
- * only allowlisted effects run; everything else is skipped (7-9e).
+ * only allowlisted effects run; everything else is skipped.
  *
  * `safeSubset` deliberately omits `v2Loop` (only `v2LoopNTimes` is
  * allowed), the dict ops, message readers, `v2Tokenize`, and
@@ -396,8 +351,7 @@ function effectMayMutateMessages(effect: triggerscript['effect'][number], mode: 
   if (directMessageMutatingEffectTypes.has(effect.type)) {
     return true
   }
-  // Unknown/deferred arms stay conservative: commands, triggercode, updateChatAt,
-  // low-level provider/browser effects, and future effect kinds get isolation.
+  // Unsupported/browser-only arms stay isolated from server-side mutation.
   return !knownNonMessageMutatingEffectTypes.has(effect.type)
 }
 
@@ -563,7 +517,7 @@ function chargeTriggerLoopBack(ctx: TriggerRunContext, budget: TriggerExecutionB
  * character's trigger objects in place. The server clones each entry
  * (`{ ...v, lowLevelAccess }`) so the source `char.triggerscript`
  * objects are never mutated across requests. `getModuleTriggers`
- * (7-9a) already clones the module side.
+ * already clones the module side.
  */
 export function collectTriggers(char: character, modules: RisuModule[]): triggerscript[] {
   const characterLowLevelAccess = char.lowLevelAccess ?? false
@@ -696,7 +650,7 @@ export function evaluateConditions(
 }
 
 /**
- * Collects triggers, classifies the selected phase's effects, clones only the
+ * Collects triggers, classifies the selected mode's effects, clones only the
  * inputs that need isolation, evaluates conditions, and returns the SPA result
  * shape.
  *
@@ -705,8 +659,8 @@ export function evaluateConditions(
  * mode, a result is still returned (mode mismatch is *ignored*, not a
  * no-op return).
  *
- * L8 clone narrowing: in `displayMode` the caller's `char`/`chat` are used
- * directly. Otherwise, effects that can mutate `chat.message` get a private
+ * In `displayMode` the caller's `char`/`chat` are used directly. Otherwise,
+ * effects that can mutate `chat.message` get a private
  * full transcript clone; non-message-mutating trigger sets use a cheap chat
  * envelope clone that shares message rows but keeps scriptstate writes isolated.
  *
@@ -762,7 +716,7 @@ export async function runTrigger(
 
   let recursionVarChanged = false
 
-  // Mutable holder for the per-run display/request state slot (7-9e).
+  // Mutable holder for the per-run display/request state slot.
   // The state arms read/write `displayState.data`; the SPA mutates
   // `arg.displayData` in place. The result surfaces `displayState.data`.
   const displayState = { data: arg.displayData }
@@ -804,7 +758,7 @@ export async function runTrigger(
     // (the SPA's inner numeric `tempVars`, `triggers.ts:1341`).
     const loopCounts: Record<string, number> = {}
 
-    // Index-based walk (7-9d): V2 control flow advances/rewinds `index`.
+    // Index-based walk: V2 control flow advances/rewinds `index`.
     const effects = trigger.effect ?? []
     if (shouldStopTriggerExecution(ctx, budget, 'before effect loop')) {
       return buildResult()
@@ -920,7 +874,7 @@ export async function runTrigger(
           break
         }
 
-        // ---- V2 control flow + deterministic effects (7-9d-i) ----
+        // ---- V2 control flow + deterministic effects ----
         case 'v2Header':
         case 'v2Comment':
         case 'v2ConsoleLog':
@@ -1221,10 +1175,9 @@ export async function runTrigger(
           break
         }
         default: {
-          // 7-9d-ii safe data helpers (message readers, string /
-          // array / dict / math, random, tokenize, regex, quick chat
-          // search) plus the 7-9e request/display state arms. Returns
-          // false for arms still deferred (`command`; the
+          // Safe data helpers (message readers, string / array / dict / math,
+          // random, tokenize, regex, quick chat search) plus request/display
+          // state arms. Returns false for unsupported arms (`command`; the
           // `lowLevelAccess`-gated alert/LLM/image/similarity/regex; the
           // persistent lorebook / character / persona / note arms;
           // `v2UpdateGUI` / `v2UpdateChatAt` / `v2Wait`; `triggercode`),

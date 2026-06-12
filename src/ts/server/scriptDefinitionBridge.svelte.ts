@@ -68,7 +68,7 @@ let selectedCharMirror = $state(-1)
 /**
  * Restrict the watcher's change-detection scan to the mounting panel's rows so a
  * single script keystroke does not re-stringify every character's and module's
- * scripts/triggers on every reactive fire (L31).
+ * scripts/triggers on every reactive fire.
  *
  * - `all` (default): the original whole-DB scan (every character + every module).
  * - `character`: only the selected character's customscript/triggerscript (the
@@ -409,7 +409,7 @@ function dispatchWatchedReplacement(key: string, previousSnapshot: string, delay
 
 /**
  * Build the change-detection snapshot map for the watcher's scope. Exported for
- * the L31 clone-cost regression test, which asserts a scoped fire stringifies
+ * the clone-cost regression test, which asserts a scoped fire stringifies
  * only the mounting panel's rows (O(panel scope)) instead of every character's
  * and module's scripts/triggers (O(all scripts in the DB)). The `all` branch is
  * the original whole-DB scan and stays byte-for-byte identical.

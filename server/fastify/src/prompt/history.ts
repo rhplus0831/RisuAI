@@ -344,7 +344,7 @@ export interface HistoryWindowResult {
   /**
    * Sum of `tokenizeChat` over every emitted row plus the depth-prompt
    * preflight when `report` is provided and the start trigger's
-   * `triggerResult.tokens` (7-9f). Mirrors the SPA's
+   * `triggerResult.tokens`. Mirrors the SPA's
    * `buildHistoryWindow.addedTokens` (`buildHistoryWindow.ts:69`).
    */
   addedTokens: number
@@ -578,7 +578,7 @@ export async function buildHistoryWindow(
  *
  * `pos === 'depth' && depth === 0` entries are intentionally excluded
  * — those belong to the `postEverything` slot owned by the template
- * walker (7-10) or the assemble root (7-11a).
+ * walker or the assemble root.
  */
 export function applyDepthPrompts(
   messages: OpenAIChat[],

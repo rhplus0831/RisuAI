@@ -67,7 +67,7 @@ export interface StreamJob {
   mode?: 'send' | 'continue' | 'regenerate'
   regenerateMessageId?: string
   /**
-   * Set when no-viewer pending frames were dropped at the cap (audit L15). The
+   * Set when no-viewer pending frames were dropped at the cap. The
    * buffered prefix is gone, so a late viewer could never see a coherent
    * stream — the proxy runner aborts the upstream instead of draining the rest
    * of the response into a lossy window. Never set for durable jobs (their
@@ -500,8 +500,8 @@ export async function runStreamJob(registry: JobRegistry, job: StreamJob, arg: R
             dataBase64: chunk.toString('base64'),
           })
         }
-        // No-viewer buffer overflow (audit L15): the pending window already
-        // dropped frames, so any future viewer would see a corrupt stream.
+        // No-viewer buffer overflow the pending window already
+        // dropped frames, so a later viewer would see a corrupt stream.
         // Stop consuming the upstream instead of pulling the whole response
         // through a lossy 2 MB window until the deadline.
         if (job.pendingOverflow && job.clients.size === 0) {

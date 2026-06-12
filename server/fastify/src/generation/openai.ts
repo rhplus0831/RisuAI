@@ -344,7 +344,7 @@ export async function* runOpenAIStream(req: OpenAIRequest): AsyncGenerator<Compl
         }
       }
       // Post-drain the buffer holds at most one partial event; a
-      // delimiter-less upstream must not grow it unbounded (L22).
+      // delimiter-less upstream must not grow it unbounded.
       if (streamBufferExceedsCap(buf)) {
         yield { kind: 'error', error: STREAM_BUFFER_OVERFLOW_ERROR }
         return

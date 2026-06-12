@@ -13,11 +13,11 @@ import {
 import { withTrustedServerProjectionWrite } from './projectionWriteGuard.svelte'
 
 /**
- * Prompt-template editor projection helpers (Phase 5 deep-clone narrowing).
+ * Prompt-template editor projection helpers.
  *
  * The prompt-template editor keeps a local `promptTemplate` draft and mirrors
  * edits into the read-only server projection (`DBState.db.promptTemplate`). The
- * audit found two per-keystroke costs:
+ * These helpers avoid two per-keystroke costs:
  *
  * - the optimistic projection write cloned the WHOLE `promptTemplate` array on
  *   every keystroke (High), and

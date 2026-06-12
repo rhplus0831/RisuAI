@@ -152,7 +152,7 @@ export async function loadFixture(name: string): Promise<LoadedFixture> {
   const selectId = fixture.selectedCharID ?? 0
   selectedCharID.set(selectId)
 
-  // Push injected models (Gemini, future AWS Bedrock, etc.) and remember each
+  // Push injected models (Gemini, AWS Bedrock, etc.) and remember each
   // one's index for cleanup. We splice from the end on cleanup to avoid
   // disturbing other indices. modellist is imported lazily so loading a
   // fixture without injectedModels does not drag the entire model registry

@@ -609,7 +609,7 @@ async function hypaMemoryV3MainExp(
         const batchScoredResults = await processor.similaritySearchScoredBatch(queries.map((query) => query.content))
 
         /*
-                // Hybrid search may be implemented in the future
+                // Hybrid search hook.
                 await keywordEngine.addDocuments(
                   Array.from(processor.vectors.values())
                 );

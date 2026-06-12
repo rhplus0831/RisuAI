@@ -664,7 +664,7 @@ async function checkNewFormat(): Promise<void> {
     db.formatversion = 3
   }
   if (db.formatversion < 4) {
-    //migration removed due to issues
+    // Skip removed formatversion 4 transform.
     db.formatversion = 4
   }
   if (db.formatversion < 5) {

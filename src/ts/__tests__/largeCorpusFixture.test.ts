@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { buildLargeCorpusFixture } from './largeCorpusFixture'
 
-// Phase 0 (measurement-baseline-harness): the shared large-corpus fixture is
-// importable by the client suite and structurally fit for cost assertions —
-// a whole-corpus clone/load over it is unmistakable next to a scoped one.
+// The shared large-corpus fixture is importable by the client suite and shaped
+// so a whole-corpus clone/load is unmistakable next to a scoped one.
 // (The server suite imports the same module in serverLoadCostHarness.test.ts.)
 // NOTE: this is a fixture sanity test, not a clone-cost gate — it must not
 // import the clone-cost harness, so the gate-completeness scan ignores it.

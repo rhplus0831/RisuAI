@@ -2718,12 +2718,9 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.characterRow,
-        // Phase 8 follow-up: no message hydration. Character deletion is
-        // self-contained (no cross-table reference cleanup), so we remove the
-        // character's row + its chat rows + each of those chats' message/hypa
-        // rows directly, and persist the settings pointers (`characterOrder` /
-        // `currentChar`) that `ensureCharacterCollection` re-normalizes. Sibling
-        // character-row repairs mutate the clone only and are discarded.
+        // Character deletion does not hydrate messages; it removes character,
+        // chat, message, and hypa rows directly, then persists settings pointers.
+        // Sibling character-row repairs mutate the clone only and are discarded.
         mutate(database, innerDb) {
           const target = ensureCharacterDatabaseObject(database)
           const characters = ensureCharacterCollection(target)
@@ -2733,7 +2730,7 @@ export function registerCommandRoutes(
           characters.splice(index, 1)
           ensureCharacterCollection(target)
           // The chats.character_id ON DELETE CASCADE removes the chat rows with
-          // the character row (audit L9) — no explicit chats DELETE needed.
+          // the character row; no explicit chats DELETE needed.
           deleteCharacterRow(innerDb, characterId)
           for (const chatId of removedChatIds) {
             deleteChatMessages(innerDb, chatId)
@@ -2809,7 +2806,7 @@ export function registerCommandRoutes(
           validateFullCharacterOrder(characters, order)
           // `characterOrder` is a settings scalar; reorder edits presentation
           // order, not `characters` table positions. The `ensureCharacterCollection`
-          // repair on sibling rows is validate-only (dropped, Prerequisite 2).
+          // repair on sibling rows is validate-only and is not persisted.
           target.characterOrder = order
           writeSettingsOnly(innerDb, extractSettings(target))
           return {
@@ -3029,12 +3026,9 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.characterRow,
-        // Phase 8b: no message hydration. The mutate works on chat metadata only;
-        // the deleted chat's orphan message/hypa rows are cleaned with the
-        // targeted message-store deletes (the sole reason this used to hydrate
-        // every message). `normalizeAllCharacterChats` still runs but its global
-        // sibling id de-dup mutates the clone only and is discarded — we persist
-        // just the parent character's rows.
+        // Chat deletion works on metadata only; orphan message/hypa rows are
+        // removed with targeted deletes. Global sibling id de-dup mutates the
+        // clone only and is discarded.
         mutate(database, innerDb) {
           const characters = normalizeAllCharacterChats(database)
           const { character, chatIndex } = requireChatLocation(characters, chatId)
@@ -3268,7 +3262,7 @@ export function registerCommandRoutes(
             throw new ValidationError(`Duplicate chat folder id: ${folder.id}`)
           }
           // `chatFolders` lives in the character row; sibling-character chat
-          // normalization is validate-only (Prerequisite 2).
+          // normalization is validate-only.
           folders.unshift(folder)
           writeSingleCharacterRow(innerDb, characterId, character)
           return {
@@ -3454,14 +3448,14 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.chatRow,
-        // M3/L5/L6: this callback only locates + rewrites the one chat row.
+        // This callback only locates + rewrites the one chat row.
         chatScopedRead: { chatId },
         mutate(database, innerDb) {
           const characters = normalizeAllCharacterChats(database)
           const { character, chat } = requireChatLocation(characters, chatId)
           // `scriptstate` lives in the chat row. This hot generation/script path
           // no longer hydrates every message or rewrites every character; sibling
-          // chat normalization is validate-only (Prerequisite 2).
+          // chat normalization is validate-only.
           chat.scriptstate ??= {}
           for (const key of deleteKeys) {
             delete chat.scriptstate[key]
@@ -3506,7 +3500,7 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: 'targeted-message',
-        // M3/L5/L6: chat located for validation only; writes go to the message store.
+        // Chat is located for validation only; writes go to the message store.
         chatScopedRead: { chatId },
         mutate(database, targetDb) {
           const characters = normalizeAllCharacterChats(database)
@@ -3550,7 +3544,7 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: 'targeted-message',
-        // M3/L5/L6: the loader resolves the parent chat from the message id;
+        // The loader resolves the parent chat from the message id;
         // a missing message falls back broad and the callback throws as before.
         chatScopedRead: { messageId },
         mutate(database, targetDb) {
@@ -3598,7 +3592,7 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: 'targeted-message',
-        // M3/L5/L6: same message-id-resolved scoped read as the PATCH route.
+        // Same message-id-resolved scoped read as the PATCH route.
         chatScopedRead: { messageId },
         mutate(database, targetDb) {
           const characters = normalizeAllCharacterChats(database)
@@ -3650,7 +3644,7 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: 'targeted-message',
-        // M3/L5/L6: chat located for validation only; truncate hits the message store.
+        // Chat is located for validation only; truncate hits the message store.
         chatScopedRead: { chatId },
         mutate(database, targetDb) {
           const characters = normalizeAllCharacterChats(database)
@@ -3690,7 +3684,7 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: 'targeted-message',
-        // M3/L5/L6: chat located for validation only; replacement hits the message store.
+        // Chat is located for validation only; replacement hits the message store.
         chatScopedRead: { chatId },
         mutate(database, targetDb) {
           const characters = normalizeAllCharacterChats(database)
@@ -3733,7 +3727,7 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: 'targeted-generation',
-        // M3/L5/L6: chat located for validation only; persistence hits the message store.
+        // Chat is located for validation only; persistence hits the message store.
         chatScopedRead: { chatId },
         mutate(database, targetDb) {
           const characters = normalizeAllCharacterChats(database)
@@ -4041,7 +4035,7 @@ export function registerCommandRoutes(
           const target = ensureLorebookDatabase(database)
           const { character } = normalizeSelectedCharacterLorebooks(target, characterId)
           // `globalLore` lives in the character row; cross-character lorebook
-          // normalization is validate-only (Prerequisite 2).
+          // normalization is validate-only.
           character.globalLore = entries
           writeSingleCharacterRow(innerDb, characterId, character)
           return {
@@ -4086,7 +4080,7 @@ export function registerCommandRoutes(
           const target = ensureLorebookDatabase(database)
           const { chat, parentId } = normalizeSelectedChatLorebooks(target, chatId)
           // `localLore` lives in the chat row; cross-character lorebook
-          // normalization is validate-only (Prerequisite 2).
+          // normalization is validate-only.
           chat.localLore = entries
           writeSingleChatRow(innerDb, chatId, chat)
           return {
@@ -4324,7 +4318,7 @@ export function registerCommandRoutes(
           validateCharacterModuleLinks(modules, moduleIds)
           // The only persistent change is `character.modules` (the character
           // row); the `ensureModuleRecords` collection repair is validate-only
-          // (Prerequisite 2), so the `modules` table is not rewritten.
+          // so the `modules` table is not rewritten.
           character.modules = moduleIds
           writeSingleCharacterRow(innerDb, characterId, character)
           return {

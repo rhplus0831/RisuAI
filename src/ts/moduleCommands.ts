@@ -225,7 +225,7 @@ export function toggleSelectedChatModule(moduleId: string): void {
 
   // Toggling a chat's module link mutates only the active chat row, so the
   // rollback needs just that one chat — not a deep clone of every character
-  // with every hydrated history (L34).
+  // with every hydrated history.
   const previous = currentChatScopedSnapshot()
   const nextModules = toggledModuleIds(chat.modules, moduleId)
 

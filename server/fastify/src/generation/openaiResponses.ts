@@ -70,8 +70,8 @@ const DEFAULT_BASE_URL = 'https://api.openai.com/v1'
  * output_text wrappers (with `status: complete` except for a trailing
  * assistant which is marked `incomplete` so the model continues from there).
  * Mirrors the local browser path in
- * `src/ts/process/request/openAI/requests.ts:1075-1143`. Multimodal /
- * input_image / input_file / function rows are deferred.
+ * `src/ts/process/request/openAI/requests.ts:1075-1143`. Multimodal and
+ * function rows are omitted.
  */
 export function buildResponseInput(messages: RawChatMessage[]): ResponseItem[] {
   const items: ResponseItem[] = []

@@ -23,7 +23,7 @@ import {
 import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
 
 // Scoped pre-edit rollback for the discrete lorebook editor actions below
-// (L32): snapshot only the one collection the action edits (`type`/`mode`
+// Snapshot only the one collection the action edits (`type`/`mode`
 // selects it) instead of the whole-DB clone + id-assign the broad snapshot
 // performs. `type` mirrors the editor convention: 0 = the selected character's
 // globalLore, -1 = the open global lorebook, anything else = the active chat's
@@ -595,7 +595,6 @@ export async function loadLoreBookV3Prompt() {
             return
           }
           case 'is_user_icon': {
-            //TODO
             return false
           }
           case 'activate': {

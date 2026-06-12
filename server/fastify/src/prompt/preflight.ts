@@ -30,17 +30,17 @@ import {
  * prompt rows, and route-layer wiring.
  *
  * `positionParser`: the SPA injects `inject_lore` location-targeted
- * lorebooks here too, but 7-7d already filters those entries out of
+ * lorebooks here too, but lorebook activation already filters those entries out of
  * `report.actives` (`lorebook.ts:603-619`), so the SPA's
  * `injectionLorebooks` branch is dead at this layer. The shim just
  * delegates to `resolvePosition`; the `loc` argument is kept for
- * SPA parity so 7-10a can grow it.
+ * SPA parity.
  */
 
 /**
  * Aggregated slot arrays the SPA assembly root passes into the
  * preflight. The canonical definition lives in `templates.ts`
- * (`UnformatedPromptSlots`, 7-10a); re-exported here as
+ * (`UnformatedPromptSlots`); re-exported here as
  * `PromptUnformatedSlots` for the existing consumers.
  */
 export type { PromptUnformatedSlots }
@@ -93,7 +93,7 @@ export function preflightTemplateTokens(input: PreflightInput): PreflightResult 
 
   for (let templateIndex = 0; templateIndex < promptTemplate.length; templateIndex++) {
     const card = promptTemplate[templateIndex]
-    // Content + chat cards share the 7-10b/c `renderContentCard`
+    // Content + chat cards share the `renderContentCard`
     // builder; here we tokenize its rows. Only `memory` / `cache`
     // return `null` and are handled inline below.
     const contentRows = renderContentCardWithStableCache(

@@ -107,7 +107,7 @@ export function decodeRisuSaveBlockEnvelope(
 
     const rawBlockData = data.subarray(offset, offset + byteLength)
     offset += byteLength
-    // Streaming bounded inflate (audit M9): each compressed block expands
+    // Streaming bounded inflate each compressed block expands
     // against the budget the previous blocks left over, so the cumulative cap
     // is enforced *while* a block inflates rather than after it materialized.
     const remainingBudget: ExpandedSizeLimitOptions =

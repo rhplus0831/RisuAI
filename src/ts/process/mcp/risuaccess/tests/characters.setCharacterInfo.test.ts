@@ -1,10 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-// L35 (stability/perf plan, Phase 3): MCP `setCharacterInfo` used to capture the
-// whole-corpus `currentCharacterStateSnapshot` for a single character field
-// patch. The patch now routes through `dispatchUpdateCharacterScoped` +
-// `currentCharacterRowSnapshot`, so a failed command restores only the target
-// row instead of re-cloning every character.
+// MCP `setCharacterInfo` restores only the target row on command failure.
 
 vi.mock('src/ts/platform', async (importActual) => {
   const actual = await importActual<typeof import('src/ts/platform')>()

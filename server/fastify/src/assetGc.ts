@@ -248,7 +248,7 @@ export function runAssetGc(dataDir: string, opts: AssetGcOptions = {}): AssetGcR
   if (!opts.db) return result
 
   // Message inlay references come from a column-only `messages.data` token scan
-  // (audit M10) — no whole-corpus message hydrate / per-row JSON.parse on this
+  // — no whole-corpus message hydrate / per-row JSON.parse on this
   // periodic synchronous sweep. The scoped reference projection covers every
   // other field the broad report walker used to inspect, without loading assets
   // twice or hydrating the character/chat corpus into a persisted Database.

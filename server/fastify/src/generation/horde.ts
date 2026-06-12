@@ -14,16 +14,11 @@ import { readBoundedBodyJson, readBoundedBodyText } from './body.js'
  *      Horde worker stops the in-flight job.
  *
  * The client pre-flattens the prompt via the SPA's `applyChatTemplate`
- * (Jinja chat templates driven by `db.instructChatTemplate`) and ships
- * the resulting string in `options.horde.prompt`. The server keeps no
- * character / user context; the unstringlize step happens client-side
- * after the result lands. This matches the strategy laid out in
- * `.archived-docs/fastify/other/design/novelai-novellist-stringlize.md` (option B).
+ * and sends the resulting string in `options.horde.prompt`. The server
+ * returns buffered text without character or user context.
  *
- * Streaming is intentionally deferred: Horde's poll-loop wire isn't
- * incremental in any useful way (workers return either nothing or the
- * full generation), so per-poll `kind:'token'` frames would only emit
- * one chunk before `done`. The buffered envelope captures it cleanly.
+ * Streaming is unsupported because Horde polling returns only a final
+ * generation payload.
  */
 
 const HORDE_BASE_URL = 'https://stablehorde.net/api/v2'

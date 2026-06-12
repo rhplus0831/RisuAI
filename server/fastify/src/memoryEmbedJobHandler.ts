@@ -88,7 +88,7 @@ export function createEmbedMemoryJobBatchHandler(opts: EmbedMemoryJobHandlerOpti
     const settings = resolveHypaV3Settings(database)
     const maxConcurrent = Math.max(1, settings.embeddingMaxConcurrent)
     const jobs = [firstJob]
-    // Bounded drain (audit M7/L17): leave any overflow pending for later
+    // Bounded drain leave any overflow pending for later
     // ticks instead of materializing one chat's whole backlog into a single
     // batch (and a single worker turn).
     while (jobs.length < MEMORY_JOB_BATCH_MAX_JOBS) {
@@ -123,7 +123,7 @@ export function createEmbedMemoryJobBatchHandler(opts: EmbedMemoryJobHandlerOpti
       }
       emitContextualSubBatchSplitMetric(orderedJobs, plan, modelRequest.request)
 
-      // Token-aware sub-batches, each committed independently (audit M7): an
+      // Token-aware sub-batches, each committed independently an
       // oversized or failing sub-batch retries alone instead of failing the
       // unrelated chunks drained alongside it.
       for (const subBatch of plan.subBatches) {
@@ -298,8 +298,8 @@ async function executeEmbedJob(input: {
 }
 
 /**
- * Slice an ordered contextual batch into provider-budgeted sub-batches (audit
- * M7/L22). Production budgets come from model metadata; the option override is
+ * Slice an ordered contextual batch into provider-budgeted sub-batches.
+ * Production budgets come from model metadata; the option override is
  * only a test seam. A chunk already known to exceed its per-input ceiling is
  * isolated and then failed before provider dispatch, so valid siblings are not
  * serialized into the same doomed request.
@@ -693,7 +693,7 @@ function parseEmbedPayload(payload: unknown): HypaV3EmbedJobPayload {
 }
 
 function loadDatabase(opts: EmbedMemoryJobHandlerOptions): Database {
-  // Memory-job-scoped read (audit L18): settings + hypa presets + chat-id
+  // Memory-job-scoped read settings + hypa presets + chat-id
   // stubs only — never the whole characters/chats/collections payload parse.
   const database = opts.loadDatabase
     ? opts.loadDatabase()

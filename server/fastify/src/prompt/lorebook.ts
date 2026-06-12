@@ -12,22 +12,22 @@ import { expandVariables, type ExpandContext } from './variables.js'
  *
  * Ports the always-on, keyword-driven, and recursive-scanning paths of
  * `loadLoreBookV3Prompt` into a Svelte-free, request-scoped function. The
- * decorator parser scaffold is reused by the remaining work:
+ * decorator parser scaffold handles shared parsing for:
  *
  *   - token-budget truncation.
  *   - depth-prompt emission into history.
  *
  * In-scope decorators (parsed, applied, and stripped from prompt text
  * unless noted):
- *   - 7-7a: `role`, `position`, `depth`/`reverse_depth`, `end`,
+ *   - `role`, `position`, `depth`/`reverse_depth`, `end`,
  *     `priority`, `ignore_on_max_context`, the four `inject_*` forms,
  *     `disable_ui_prompt`.
- *   - 7-7b: `additional_keys`, `exclude_keys`, `exclude_keys_all`,
+ *   - `additional_keys`, `exclude_keys`, `exclude_keys_all`,
  *     `match_full_word`, `match_partial_word`, `scan_depth`,
  *     `activate_only_after`, `activate_only_every`, `is_greeting`,
  *     `probability`, `activate`, `dont_activate`,
  *     `keep_activate_after_match`, `dont_activate_after_match`.
- *   - 7-7c: `recursive`, `unrecursive`, `no_recursive_search`.
+ *   - `recursive`, `unrecursive`, `no_recursive_search`.
  *
  * `instruct_*` and `is_user_icon` stay on the `default: return false`
  * path until their use cases come up.
@@ -35,7 +35,7 @@ import { expandVariables, type ExpandContext } from './variables.js'
  * Note on `CCardLib.decorator.parse`: every leading `@@`-line is
  * stripped from the body regardless of the hook's return value. The
  * hook's `return false` only sets a flag that enables a following
- * `@@@`-conditional decorator (out of scope for 7-7a/7-7b/7-7c). For
+ * `@@@`-conditional decorator. For
  * the two `*_after_match` decorators we still `return false` to
  * preserve SPA parity in case a preset chains a `@@@` line after them.
  *
@@ -44,7 +44,7 @@ import { expandVariables, type ExpandContext } from './variables.js'
  * a separate positive query that must all match). Keys *within* a
  * single decorator are OR-combined inside `searchMatch`.
  *
- * Note on recursion (7-7c): after an entry activates, its
+ * Note on recursion: after an entry activates, its
  * decorator-stripped body is pushed into `recursivePrompt` (subject
  * to the per-entry `recursive`/`unrecursive` decorator or the global
  * `char.loreSettings.recursiveScanning`, default true per SPA `:85`).
@@ -82,7 +82,7 @@ export interface LoreEntryActive {
   /**
    * Token count of the decorator-stripped `prompt` under the
    * encoding resolved by `encodingForModel(input.model)`. Populated
-   * in 7-7d so the priority-desc budget filter has something to
+   * so the priority-desc budget filter has something to
    * drop. Like the SPA (`lorebook.svelte.ts:584`), this is computed
    * once at activation time and not refreshed after `inject_lore`
    * mutates `prompt`.
@@ -102,7 +102,7 @@ export interface LorebookActivationReport {
   actives: LoreEntryActive[]
   disabledUIPrompts: string[]
   /**
-   * Keyword-search audit log. Empty until 7-7b runs `searchMatch`;
+   * Keyword-search trace. Empty until `searchMatch` runs;
    * downstream `prompt`-stage SSE consumers can render the activation
    * reason tree from this.
    */
@@ -345,7 +345,7 @@ function visitSearchEntries(
 }
 
 /**
- * Compiled `/pattern/flags` lorebook-key cache (audit L3). The recursive
+ * Compiled `/pattern/flags` lorebook-key cache. The recursive
  * `while (matching)` activation loop re-runs `searchMatch` over the same
  * entry keys once per pass, and the regex path used to compile
  * `new RegExp(pattern, flags)` per message × per key × per pass. Compile
@@ -418,7 +418,7 @@ function searchMatch(corpus: SearchableMessageCorpus, arg: SearchArg, matchLog: 
     let malformedRegex = false
     const matched = visitSearchEntries(baseEntries, recursiveEntries, (m) => {
       for (const regexString of trimmedKeys) {
-        // L3: compiled once per key string (memoized across messages, passes,
+        // Compiled once per key string (memoized across messages, passes,
         // and activations) instead of per message × per key × per pass.
         const r = getCompiledLoreKeyRegex(regexString)
         if (!r) {
@@ -489,7 +489,7 @@ export function activateLorebook(input: ActivateLorebookInput): LorebookActivati
   const loreBudget = currentChar.loreSettings?.tokenBudget ?? database.loreBookToken ?? 800
   const encoding: TokenEncoding = encodingForModel(input.model)
 
-  // SPA `:263`: walk every not-yet-fired entry; if any new entry
+  // SPA `:263`: walk every unfired entry; if any new entry
   // activates with recursion enabled, flip `matching = true` for
   // another pass against the grown `recursivePrompt` layer.
   // `activatedIndexes.has(i)` bounds the outer loop at O(entries.length)
@@ -681,7 +681,7 @@ export function activateLorebook(input: ActivateLorebookInput): LorebookActivati
             // `return false` matches SPA `:346`. The decorator line is
             // stripped from the body by ccardlib regardless; the return
             // value only enables a following `@@@` conditional, which is
-            // out of scope for 7-7a/7-7b.
+            // ignored by this parser.
             return false
           }
           case 'dont_activate_after_match': {
@@ -790,7 +790,7 @@ export function activateLorebook(input: ActivateLorebookInput): LorebookActivati
   // through the priority-desc list: an entry that doesn't fit is
   // skipped, but later (lower-priority) entries that *do* fit still
   // slip in. `@@ignore_on_max_context` was already demoted to
-  // `priority = -1000` by the 7-7a decorator, so those entries sit
+  // `priority = -1000` by the decorator, so those entries sit
   // at the tail of this list and get dropped first. Token counts
   // are not refreshed after the `inject_lore` mutations below; this
   // matches the SPA comment at `:649` ("performance over accuracy").
@@ -808,7 +808,7 @@ export function activateLorebook(input: ActivateLorebookInput): LorebookActivati
 
   // Apply lore-targeting injections, then drop the injectors from the
   // active list. Mirrors SPA :641-673; cheap and self-contained, so
-  // landing it here avoids a re-pass when 7-10 wires placement.
+  // this keeps placement self-contained.
   const injectors = budgeted.filter((a) => a.inject?.lore)
   const survivors = budgeted.filter((a) => !a.inject?.lore)
   for (const inj of injectors) {
@@ -886,7 +886,7 @@ export interface UnformatedLorebookSlots {
 export interface LorebookContext {
   /**
    * `{{position::}}` resolver for the template / render walkers. The
-   * SPA's injection-lore branch is dead server-side (7-7d filters
+   * SPA's injection-lore branch is dead server-side because filtering removes
    * location-targeted injection entries out of `report.actives`), so
    * this just delegates to `resolvePosition` and ignores `loc` —
    * matching `preflight.ts`'s `positionParserFor` so preflight and the

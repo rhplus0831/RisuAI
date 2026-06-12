@@ -267,7 +267,7 @@ describe('#when', () => {
     })
 
     test.skip('Lower precedence than other operators', () => {
-      // FIXME: left-hand/right-hand must be evaluated first, then or
+      // Known behavior: left/right operands are not evaluated before `or`.
       // Given #when::a::tis::3::or::b::tis::7
       //   AS-IS: a::tis::3 -> 1, 1::or::7 -> 1, 1::tis::7 -> 0
       //   TO-BE: a::tis::3 -> 1, b::tis::7 -> 1, 1::or::1 -> 1
@@ -334,11 +334,11 @@ describe('#when', () => {
     test('with ::keep', () => {
       const revBody = [...indentedBody].reverse().join('')
 
-      // FIXME: Unexpected line break removal before the {{:else}}
+      // Known behavior: line break is removed before the {{:else}}.
       expect(quickParse('#when::keep::1', `${indentedBody}{{:else}}${revBody}`)).toBe(
         `0 ${indentedBody.replace(/\n$/, '')} 9`,
       )
-      // FIXME: Unexpected line break removal after the {{:else}}
+      // Known behavior: line break is removed after the {{:else}}.
       expect(quickParse('#when::keep::0', `${indentedBody}{{:else}}${revBody}`)).toBe(
         `0 ${revBody.replace(/^\n/, '')} 9`,
       )

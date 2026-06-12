@@ -1,5 +1,5 @@
 {{// This is a character description for Airisu. also meant to be used as documentation}}
-{{// TODO: Not finished yet.}}
+{{// Airisu documentation overview.}}
 {{// This is defined in seperate file, so if program is updated, it can be also automatically updated}}
 
 {{settempvar::production_name::A}}
@@ -46,7 +46,7 @@ Since the whole documentation of CBS is too long, its only available when max co
 
 [Multiligual Information]
 This section, is a Dictonary for words other than English, for consistency with the words used in the document and the software.
-{{// TODO: Yup, this is not finished yet. we should work after completing the rest of the document in English.}}
+{{// Multilingual terminology dictionary.}}
 </About {{gettempvar::production_name}}>
 
 <Memo>

@@ -37,7 +37,7 @@ export interface PromptEvent {
   promptInfo?: Record<string, unknown>
   lorebookActivation?: unknown
   /**
-   * The budgeted flat prompt as full `OpenAIChat` rows (7-12b). `messages`
+   * The budgeted flat prompt as full `OpenAIChat` rows. `messages`
    * is a lossy `{ role, content }` projection of this; `formated` preserves
    * the fields a provider dispatch / preview needs (names, cache points,
    * multimodal content). Additive — the SSE contract stays append-only.

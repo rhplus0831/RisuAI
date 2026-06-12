@@ -25,7 +25,7 @@ import {
 import { DBState, selectedCharID } from './stores.svelte'
 // Import the heavy database module AFTER stores.svelte: importing it first
 // triggers a circular-import TDZ when the reactive moduleUpdate $effect runs
-// mid-init (see the clone-narrowing Phase 8 gotcha).
+// mid-init.
 import { setCurrentChat, type Chat, type Message } from './storage/database.svelte'
 import { get } from 'svelte/store'
 import {
@@ -949,10 +949,7 @@ describe('Phase 0 chat-scriptstate snapshot kit', () => {
   })
 })
 
-// Stability/performance plan, Phase 1 H2: chat select only flips the owning
-// character's `chatPage`, so its rollback is a scalar snapshot — never the
-// whole-characters `ChatStateSnapshot` clone the old `changeChatTo` captured
-// on every chat click.
+// Chat selection rollback restores only `chatPage`, not the full character collection.
 describe('H2 chat-selection snapshot', () => {
   it('captures only selection scalars and performs zero clone work', () => {
     DBState.db = seedCloneCostDb() as any

@@ -3,28 +3,12 @@ import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 
 /**
- * Fix-completeness gate (Phase 8 scaffold, seeded in Phase 0).
+ * Static gate that keeps registered audit fixes paired with regression proofs.
  *
- * The v1 stability/performance remediation plan (closed 2026-06-05, archived
- * at `.archived-docs/audit-stability-and-performance/`) scheduled every
- * confirmed audit finding and requires each landed fix to keep a regression
- * test. This file is the single budget surface for that requirement, modeled
- * on the landed `cloneCostGateCompleteness.test.ts`. It stays live against
- * the archived docs as the standing maintenance check; the open v2 plan in
- * `docs/plan/` has its own gate (see the v2 Phase 0 slice):
- *
- * - `SCHEDULED_FIXES` registers every scheduled finding id with its phase and
- *   status. Phase 0 seeds them all as `PLANNED`; the phase that fixes a
- *   finding flips it to `DONE` with a real `testPath` (+ `testName`), which
- *   may point into either suite — server load-count gates are referenced by
- *   path so this one client-side test asserts their existence.
- * - `INTENTIONALLY_GATED` and `NO_ACTION` record the explicitly excluded ids
- *   with reasons, so the registry universe equals the audit universe.
- * - The self-checks parse the finding universe out of the archived
- *   `audit-stability-and-performance.md` and the routing out of the archived
- *   `active-risk-analysis.md`: a new audit id without a registry
- *   entry, a doc/registry phase or status mismatch, a double-classified id,
- *   or a `DONE` id whose test is missing/renamed all fail here.
+ * `SCHEDULED_FIXES` registers each finding id and its expected proof files.
+ * `INTENTIONALLY_GATED` and `NO_ACTION` record explicitly excluded ids. The
+ * self-checks fail when a finding is missing, double-classified, or points at a
+ * missing or renamed test.
  */
 
 // `vitest run` executes from the repo root (the package.json directory), so
@@ -40,22 +24,22 @@ type GateStatus = 'PLANNED' | 'DONE'
 interface ScheduledFix {
   /** Audit finding id (`H*`, `M*`, `L*`, `U*`). */
   id: string
-  /** Plan phase that owns the fix (1-7). */
+  /** Routing bucket for this finding. */
   phase: 1 | 2 | 3 | 4 | 5 | 6 | 7
   /** Short target-fix label (mirrors active-risk-analysis.md). */
   fix: string
   status: GateStatus
-  /** Repo-root-relative regression test path; required once `DONE`. */
+  /** Repo-root-relative regression test path for completed fixes. */
   testPath?: string
   /** A string the registered test must contain (helper or test title). */
   testName?: string
   /** Additional regression proofs for fixes whose coverage spans more than one
-   *  test (e.g. M8's deadline + body-cap halves). Validated like the primary. */
+   *  test (for example deadline + body-cap halves). Validated like the primary. */
   extraTests?: Array<{ testPath: string; testName: string }>
 }
 
 const SCHEDULED_FIXES: ScheduledFix[] = [
-  // High (Phase 1)
+  // High-priority findings
   {
     id: 'H1',
     phase: 1,
@@ -227,7 +211,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     testPath: 'src/ts/process/__tests__/sendChatContext.test.ts',
     testName: 'M14: the send-context rollback captures one character row, never the whole corpus',
   },
-  // Low (scheduled; L4/L7/L26 are gated below)
+  // Low-priority scheduled findings
   {
     id: 'L1',
     phase: 2,
@@ -646,8 +630,7 @@ const INTENTIONALLY_GATED: { id: string; reason: string }[] = [
   },
 ]
 
-// Ids needing no fix at all: U3 plus the audit's five investigated-and-
-// dismissed candidates (assigned R1-R5 here, in the audit's bullet order).
+// Ids needing no fix at all, plus the investigated-and-dismissed candidates.
 const NO_ACTION: { id: string; reason: string }[] = [
   {
     id: 'U3',

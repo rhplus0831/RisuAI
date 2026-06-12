@@ -460,7 +460,7 @@ export class CharXImporter {
 
     const run = async () => {
       try {
-        // audit:image-default — CharX zip asset payloads are image bytes by
+        // CharX zip asset payloads are image bytes by
         // convention; PNG default matches the existing `assets/<sha>.png`
         // path scheme used by `skipSaving`.
         const savedAssetIds = this.skipSaving
@@ -493,7 +493,7 @@ export class CharXImporter {
     void this.#flushAssetBatch()
 
     // Save hash signal for server sync if needed.
-    // audit:image-default — the hash signal is an opaque tracking marker
+    // the hash signal is an opaque tracking marker
     // persisted alongside the CharX asset set; the persisted extension is
     // immaterial because the bytes are never re-served as a media file.
     if (this.hashSignal) {

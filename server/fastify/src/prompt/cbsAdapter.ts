@@ -17,15 +17,14 @@ import { getActiveDatabase, getActiveSelectedCharID } from './promptScope.js'
  * and the HTML emitters (`{{button}}`, `{{tex}}`, `{{ruby}}`, `{{codeblock}}`)
  * register with their original `cbs.ts` bodies, which reference `window`
  * / `navigator` / DOM globals and will throw at invocation on the
- * server. Prompt-assembly paths do not invoke them; fix per fixture if any
- * future preset reaches them.
+ * server. Prompt-assembly paths do not invoke them.
  *
  * `getCurrentTriggerId` returns `'null'` because manual triggers are a
  * browser UI concept.
  *
  * `getModelInfo` returns a placeholder shape (same as
- * `defaultCBSRegisterArg`). The chat route does not yet need the real model
- * metadata at variable-expansion time; revisit when it does.
+ * `defaultCBSRegisterArg`) because variable expansion does not read model
+ * metadata.
  */
 
 // In-process pseudo-random generator, ported from src/ts/util.ts:604.

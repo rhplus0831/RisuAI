@@ -582,8 +582,8 @@ export async function applyModule() {
       })
     }
   }
-  // Keep the bridge dispatchers imported so a future change that needs the
-  // delay-based coalescing can re-use them without re-importing. Reference
+  // Keep the bridge dispatchers imported so delay-based coalescing can use
+  // them without re-importing. Reference
   // them via void to satisfy the linter without dispatching.
   void dispatchReplaceCharacterLorebooks
   void dispatchReplaceCharacterScripts

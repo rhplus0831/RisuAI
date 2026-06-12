@@ -16,7 +16,7 @@ import { getModuleTriggers } from './modules'
 import { get } from 'svelte/store'
 import { CurrentTriggerIdStore, DBState, refreshVariableOnlyGui, reloadChatAt } from '../stores.svelte'
 import { processMultiCommand } from './command'
-// L40: trigger effects re-ran `new RegExp(...)` on every execution; reuse the
+// Trigger effects reuse the
 // compiled-regex memo (lastIndex resets on retrieval).
 import { getCompiledRegex } from './scripts'
 import { parseKeyValue, sleep } from '../util'

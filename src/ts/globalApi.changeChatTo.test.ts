@@ -18,11 +18,7 @@ import { changeChatTo } from './globalApi.svelte'
 import { clearCachedServerCommandRevision } from './server/commands'
 import { seedCloneCostDb, withCloneInstrumentation } from './__tests__/cloneCostHarness'
 
-// Stability/performance plan, Phase 1 H2: `changeChatTo` used to open with
-// `currentChatStateSnapshot()` — a synchronous JSON clone of the entire
-// characters array (hydrated transcripts included) on every chat-list click.
-// It now captures the scalar `ChatSelectionSnapshot` (restoreChatSelection on
-// failure), so the click performs no whole-collection clone at all.
+// Guards chat selection against whole-collection cloning.
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {

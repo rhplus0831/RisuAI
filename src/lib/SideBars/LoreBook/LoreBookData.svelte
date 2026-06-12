@@ -210,7 +210,7 @@
   }
   function toggleLocalActive(check: boolean, book: loreBook) {
     // The toggle edits only the active chat's localLore, so capture the scoped
-    // rollback for that one collection (L32) — not the whole-DB clone.
+    // rollback for that one collection, not the whole-DB clone.
     const chatId = getCurrentChat()?.id
     const previous = chatId ? currentLorebookCollectionScopedSnapshot({ kind: 'chat', chatId }) : null
     if (check) {

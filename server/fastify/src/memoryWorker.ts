@@ -20,8 +20,8 @@ export const MEMORY_WORKER_RETENTION_SWEEP_INTERVAL_MS = 60 * 60 * 1000
  * Cap on the jobs a single batch-handler invocation may drain (the first
  * claimed job plus `claimNext` calls). Bounds one chat's batch so a long
  * imported-chat backlog neither materializes into one huge provider request
- * (audit M7) nor holds the single-flight worker for the whole backlog while
- * other chats wait (audit L17).
+ * nor holds the single-flight worker for the whole backlog while
+ * other chats wait.
  */
 export const MEMORY_JOB_BATCH_MAX_JOBS = 32
 
@@ -65,7 +65,7 @@ export class MemoryWorker {
   private inFlight: Promise<boolean> | null = null
   private active = false
   private lastRetentionSweepAtMs = 0
-  /** Per-chat serve recency for the round-robin claim (audit L17). */
+  /** Per-chat serve recency for the round-robin claim. */
   private readonly chatLastServedAt = new Map<string, number>()
   private serveSequence = 0
 
@@ -154,7 +154,7 @@ export class MemoryWorker {
   }
 
   /**
-   * Round-robin claim across chats (audit L17): serve the pending chat that
+   * Round-robin claim across chats serve the pending chat that
    * was served least recently, so one chat's long embed/summarize backlog
    * cannot starve other chats' jobs. Never-served chats keep their FIFO order
    * (oldest pending job first), which preserves the single-chat behavior.

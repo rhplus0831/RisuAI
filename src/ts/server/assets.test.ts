@@ -52,9 +52,8 @@ describe('Fastify server asset helpers', () => {
   })
 })
 
-// Phase 3 asset-byte fanout measurement (client side). Counts JS-driven byte
-// reads and repeated-id fanout so a later bulk-byte or cache decision has a
-// request-count baseline. Does not change read behavior.
+// Asset-byte fanout diagnostics count JS-driven reads and repeated ids without
+// changing read behavior.
 describe('asset byte read fanout diagnostics', () => {
   it('counts requests, unique ids, and repeated-id fanout', async () => {
     const idA = 'a'.repeat(64)

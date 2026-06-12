@@ -231,7 +231,7 @@ export async function importCharacterProcess(f: {
       msg: 'Loading... (Saving Assets)',
       submsg: '0.00',
     })
-    // audit:image-default — CCv3 PNG-embedded asset payloads are images;
+    // CCv3 PNG-embedded asset payloads are images;
     // server metadata may default to PNG content-type.
     const savedAssetIds = await saveAssets(embeddedAssetPayloads.map((asset) => ({ data: asset.data })))
     for (let i = 0; i < embeddedAssetPayloads.length; i++) {
@@ -314,7 +314,7 @@ export async function importCharacterProcess(f: {
 
   if (parsed.spec !== 'chara_card_v2' && parsed.spec !== 'chara_card_v3') {
     const charaData: OldTavernChar = JSON.parse(Buffer.from(readedChara, 'base64').toString('utf-8'))
-    // audit:image-default — TavernAI v1 card image bytes (PNG).
+    // TavernAI v1 card image bytes (PNG).
     const imgp = await saveAsset(img)
     const previous = currentCharacterStateSnapshot()
     const character = convertOffSpecCards(charaData, imgp)
@@ -587,7 +587,7 @@ async function importCharacterCardSpec(
   console.log(`Importing ${card.spec}, mode is ${mode}`)
 
   const data = card.data
-  // audit:image-default — character card primary image bytes (PNG).
+  // character card primary image bytes (PNG).
   let im = img ? await saveAsset(img) : undefined
   const previous = currentCharacterStateSnapshot()
 
@@ -627,7 +627,7 @@ async function importCharacterCardSpec(
           importedEmotions[i] = [risuext.emotions[i][0], imgp]
           continue
         }
-        // audit:image-default — emotion images carried inline in cards are
+        // emotion images carried inline in cards are
         // image bytes; PNG default is honest for the persisted metadata.
         emotionUploads.push({
           targetIndex: i,
@@ -780,7 +780,7 @@ async function importCharacterCardSpec(
           //data uri
           const b64 = data.assets[i].uri.split(',')[1] ?? ''
           if (b64.length < 50 * 1024 * 1024) {
-            // audit:image-default — CCv3 inline data: URI assets are image
+            // CCv3 inline data: URI assets are image
             // bytes by convention; PNG default is acceptable.
             dataUriUploads.push({ targetIndex: i, data: Buffer.from(b64, 'base64') })
           } else {

@@ -32,7 +32,7 @@
         `## Upload Success\n\nYour character has been uploaded to Realm successfully.\n\n${'```\nhttps://realm.risuai.net/character/' + e.data.id + '\n```'}`,
       )
       if ($ShowRealmFrameStore.startsWith('preset') || $ShowRealmFrameStore.startsWith('module')) {
-        //TODO, add preset edit
+        // Preset and module uploads do not update character state.
       } else if (DBState.db.characters[$selectedCharID].type === 'character') {
         loadingStage = 0
         const char = getCharacterByIndex($selectedCharID, { snapshot: true })
@@ -111,7 +111,7 @@
   const getUrl = () => {
     let url = tk ? `https://realm.risuai.net/upload?token=${tk}&token_id=${id}` : 'https://realm.risuai.net/upload'
     if ($ShowRealmFrameStore.startsWith('preset') || $ShowRealmFrameStore.startsWith('module')) {
-      //TODO, add preset edit
+      // Preset and module uploads use the base upload URL.
     } else if (
       DBState.db.characters[$selectedCharID].type === 'character' &&
       DBState.db.characters[$selectedCharID].realmId

@@ -50,7 +50,7 @@ import { getActiveModules, getModuleRegexScripts } from './modules.js'
  *   - `@@repeat_back` adds an r-null guard the SPA elides
  *     (`scripts.ts:306` accesses `r[0]` blindly).
  *
- * Per-assembly prepared-script memo (audit M2): the history walk runs
+ * Per-assembly prepared-script memo: the history walk runs
  * `processScript` once per window message with identical script inputs, so
  * the module-regex resolution, the `parseScripts` pass, and the per-script
  * invariant prep (flag sanitation, outScript templating, RegExp compile)
@@ -62,7 +62,7 @@ import { getActiveModules, getModuleRegexScripts } from './modules.js'
  * pre-expand `script.in` through `expandVariables` per message and cannot
  * share a compiled RegExp.
  *
- * Deferred:
+ * Not handled here:
  *   - script-cache (`generateScriptCacheKey` / `getScriptCache` /
  *     `cacheScript`)
  *   - `runLuaEditTrigger` — `processScript` stays regex-only; Lua edit hooks
@@ -103,7 +103,7 @@ interface ParsedScript {
 /** A `ParsedScript` plus every per-script invariant `applyOne` used to
  *  recompute per message: the sanitized flag, the prepped replacement
  *  template, the move-action classification, and — for non-`cbs` scripts —
- *  the compiled RegExp (audit M2). */
+ *  the compiled RegExp. */
 interface PreparedScript {
   script: customscript
   order: number
@@ -204,8 +204,8 @@ function applyInject(currentChat: Chat | undefined, chatID: number, data: string
   const target = currentChat.message?.[chatID]
   if (!target) return data
   // SPA mutates message[chatID].data with the FULL pre-strip data (yes,
-  // that is intentional in scripts.ts:244-245). Persistence is a Tier 3
-  // concern: the chat blob will be re-saved after assembly anyway.
+  // that is intentional in scripts.ts:244-245). The assembled chat is
+  // persisted after prompt assembly.
   target.data = data
   return data.replace(reg, '')
 }
@@ -260,7 +260,7 @@ function applyRepeatBack(
 }
 
 /** Hoists the per-script invariant prep out of the per-message apply
- *  (audit M2): flag resolution + sanitation, outScript templating, move
+ *  flag resolution + sanitation, outScript templating, move
  *  classification, and the RegExp compile for non-cbs scripts. */
 function prepareOne(parsed: ParsedScript): PreparedScript {
   const script = parsed.script
@@ -396,7 +396,7 @@ interface PreparedScriptsMemoEntry {
 const preparedScriptsMemo = new WeakMap<Database, PreparedScriptsMemoEntry>()
 
 /** Resolves the sorted, prepared script list for one (db, char, chat) input
- *  set, memoized per loaded `Database` (audit M2). The first-message call
+ *  set, memoized per loaded `Database`. The first-message call
  *  (no `currentChat`) and the per-message calls key to different active-module
  *  sets, but each runs the prep at most once per assembly. */
 function getPreparedScripts(db: Database, char: character, currentChat: Chat | undefined): PreparedScript[] {

@@ -1,8 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-// Phase 2 reroll/swipe rollback narrowing proof. Unlike the unit/guard suites
-// (which mock `../chatCommands`), this suite keeps the REAL snapshot + dispatch so
-// it can prove two things end to end:
+// Reroll/swipe rollback uses the real snapshot and dispatch to prove two things
+// end to end:
 //   - a swipe captures a chat-scoped rollback (only the active chat is cloned,
 //     never the sibling characters), and
 //   - a failed `dispatchReplaceMessagesScoped` restores only the active chat.

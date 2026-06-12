@@ -7,7 +7,7 @@ import { recordTableWrite } from './protocolMetrics.js'
 // table. The `db.json` blob keeps chat *metadata*; the `messages` table keeps the
 // unbounded, high-churn `message[]`.
 //
-// Storage model (see .archived-docs/lazy-projection/reference/storage-model.md):
+// Messages table columns:
 //   - `chat_id` — the chat's id (`Chat.id`).
 //   - `seq`     — explicit array-order index (0-based); a relational table has no
 //                 inherent order and the conversation depends on it.
@@ -15,7 +15,7 @@ import { recordTableWrite } from './protocolMetrics.js'
 //                 `Message.chatId`). Globally unique by the command-layer
 //                 invariant (`normalizeGlobalMessageIds` / `validateUniqueMessageIds`),
 //                 but the table PK is `(chat_id, seq)` so extraction/round-trip
-//                 stay robust even for not-yet-normalized fixtures.
+//                 stay robust for older fixtures.
 //   - `json`    — the full `Message` record, the lossless source of truth that
 //                 `getChatMessages` reconstructs from. The structured columns are
 //                 auxiliary (indexing / stub headers).

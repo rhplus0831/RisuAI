@@ -105,7 +105,7 @@ export interface TargetedCommandMutationArgs<TExtra extends Record<string, unkno
   collectionScopedRead?: readonly CollectionFieldKey[]
   /**
    * Opt-in narrowed read for callbacks that only locate one chat row and
-   * mutate it / do kit-writer message writes (audit M3/L5/L6): load the target
+   * mutate it / do kit-writer message writes load the target
    * chat row + its parent character via {@link loadPersistedForChatMutation},
    * skipping the collection tables, plugin storage, the assets scan, and the
    * sibling character/chat payload parse. Unknown ids and pre-extraction
@@ -144,15 +144,7 @@ export function readBaseRevision(body: unknown): number {
   return baseRevision as number
 }
 
-/**
- * The targeted-write `mutationPath` labels (Phase 0). Each Tier write slice
- * (Phases 2-5) routes its over-broad command onto one of these by passing the
- * label to `applyTargetedCommandMutation` and doing the narrow write in the
- * callback via the repository writer kit (leaving `writeDatabase` off), so the
- * metric and review gates can target the narrowed path. The fixed-shape
- * `targeted-character-selection` reference path keeps its own bespoke helper;
- * these labels cover the remaining single-row / single-collection shapes.
- */
+/** Targeted mutationPath labels used by narrow SQLite command writers. */
 export const TARGETED_MUTATION_PATHS = {
   settings: 'targeted-settings',
   characterRow: 'targeted-character-row',
@@ -251,7 +243,7 @@ export function applyTargetedCommandMutation<TExtra extends Record<string, unkno
     }
     const revision = bumpRevision(args.db)
     const event: CommandEvent = { ...mutation.event, revision }
-    // Persist with the writer-session origin (audit L29) so reconnect replay
+    // Persist with the writer-session origin so reconnect replay
     // keeps own-echo suppression; the returned/route event stays origin-free.
     persistCommandEvent(args.db, liveCommandEvent(event, args.eventOrigin))
     sqliteSyncMs = protocolDurationMs(sqliteSyncStartedAt)
@@ -340,7 +332,7 @@ export function applyMessageFreeJsonCommandMutation<TExtra extends Record<string
     replaceAllSettingsInTable(args.db, persisted.database)
     const revision = bumpRevision(args.db)
     const event: CommandEvent = { ...mutation.event, revision }
-    // Persist with the writer-session origin (audit L29) so reconnect replay
+    // Persist with the writer-session origin so reconnect replay
     // keeps own-echo suppression; the returned/route event stays origin-free.
     persistCommandEvent(args.db, liveCommandEvent(event, args.eventOrigin))
     sqliteSyncMs = protocolDurationMs(sqliteSyncStartedAt)
@@ -429,7 +421,7 @@ export function applyCharacterSelectionCommandMutation(
       id: args.characterId,
       revision,
     }
-    // Persist with the writer-session origin (audit L29) so reconnect replay
+    // Persist with the writer-session origin so reconnect replay
     // keeps own-echo suppression; the returned/route event stays origin-free.
     persistCommandEvent(args.db, liveCommandEvent(event, args.eventOrigin))
     sqliteSyncMs = protocolDurationMs(sqliteSyncStartedAt)
@@ -511,7 +503,7 @@ export function applyJsonCommandMutation<TExtra extends Record<string, unknown> 
 
     // Persist only chats whose messages changed: a message append is one row
     // insert, unrelated chats are not rewritten, and non-message commands write
-    // nothing to the messages table. The db.json write is deferred until COMMIT.
+    // nothing to the messages table. The db.json write waits until COMMIT.
     beginTableWriteCapture()
     const sqliteSyncStartedAt = protocolNowMs()
     syncChatMessages(args.db, hydrated.database, nextDatabase)
@@ -525,7 +517,7 @@ export function applyJsonCommandMutation<TExtra extends Record<string, unknown> 
 
     const revision = bumpRevision(args.db)
     const event: CommandEvent = { ...mutation.event, revision }
-    // Persist with the writer-session origin (audit L29) so reconnect replay
+    // Persist with the writer-session origin so reconnect replay
     // keeps own-echo suppression; the returned/route event stays origin-free.
     persistCommandEvent(args.db, liveCommandEvent(event, args.eventOrigin))
     sqliteSyncMs = protocolDurationMs(sqliteSyncStartedAt)

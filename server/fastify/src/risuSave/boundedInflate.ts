@@ -2,7 +2,7 @@ import * as fflate from 'fflate'
 import { assertExpandedSizeWithinLimit, type ExpandedSizeLimitOptions } from './importLimits.js'
 
 /**
- * Streaming bounded inflate for untrusted `.risu` payloads (audit M9).
+ * Streaming bounded inflate for untrusted `.risu` payloads.
  *
  * The sync decoders (`fflate.gunzipSync` / `decompressSync`) materialize the
  * full expanded payload before any size check can run, so a small compressed
