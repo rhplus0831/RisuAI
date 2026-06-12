@@ -140,9 +140,7 @@
 {/snippet}
 
 {#if !noContainer && requiredSidebarToggles.length > 4}
-  <div
-    class="h-48 border-darkborderc p-2 border rounded-sm flex flex-col items-start mt-2 overflow-y-auto"
-  >
+  <div class="border-darkborderc p-2 border rounded-sm flex flex-col items-start mt-2">
     <ChatGenerationSettingsControls />
     <CustomSideBar />
 
