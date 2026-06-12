@@ -797,11 +797,14 @@
       <h2 class="text-2xl font-bold mb-2">{DBState.db.characters[$selectedCharID]?.name}</h2>
       <p class="text-textcolor2">{language.selectChatToOpen}</p>
       {#if mostRecentChat}
-        <Button className="mt-4 flex items-center gap-2" onclick={openMostRecentChat}>
-          <StepForwardIcon size={18} />
-          <span>{language.openMostRecentChat}</span>
+        <Button className="mt-4 flex flex-col gap-2" onclick={openMostRecentChat}>
+          <div class="flex flex-row gap-2 items-center">
+            <StepForwardIcon size={18} />
+            <span>{language.openMostRecentChat}</span>
+          </div>
+          <hr class="border-darkborderc w-full" />
+          <span class="max-w-full truncate text-sm text-textcolor2">{mostRecentChat.name}</span>
         </Button>
-        <span class="mt-2 max-w-full truncate text-sm text-textcolor2">{mostRecentChat.name}</span>
       {/if}
     </div>
   {:else}
