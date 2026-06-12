@@ -22,7 +22,8 @@ Start by reading `STRUCTURE.md` to understand the project structure.
 
 # Collaboration Guideline
 
-When writing commit titles, use conventional prefixes such as `feat:`, `fix:`, and `refactor:`.
+- Before committing, run Prettier to ensure the formatting is consistent.
+- When writing commit titles, use conventional prefixes such as `feat:`, `fix:`, and `refactor:`.
 
 # In Progress
 
