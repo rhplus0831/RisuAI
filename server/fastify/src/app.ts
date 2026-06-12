@@ -44,6 +44,7 @@ import { backfillLegacyHypaV3MemoryRows } from './memoryLegacyImport.js'
 import { MemoryWorker, type MemoryWorkerOptions } from './memoryWorker.js'
 import { createEmbedMemoryJobBatchHandler, createEmbedMemoryJobHandler } from './memoryEmbedJobHandler.js'
 import { createSummarizeMemoryJobBatchHandler, createSummarizeMemoryJobHandler } from './memorySummarizeJobHandler.js'
+import { registerRequestTrace } from './requestTrace.js'
 
 /**
  * Node `server.requestTimeout` backstop (audit M6): the wall-clock bound for
@@ -96,6 +97,10 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
     // still fit comfortably.
     requestTimeout: REQUEST_RECEIVE_TIMEOUT_MS,
   })
+
+  if (config.requestTrace) {
+    registerRequestTrace(app, { dataDir: config.dataDir, mode: config.requestTrace.mode })
+  }
 
   await app.register(fastifyCompress, {
     global: true,

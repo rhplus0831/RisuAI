@@ -28,7 +28,16 @@ export interface AppConfig {
    * app without getting stuck at the first-run auth prompt.
    */
   agentDevAuthBypass?: boolean
+  /**
+   * Development-only request tracing. When enabled, every response gets a
+   * request UID and API requests are appended to dataDir/trace/<mode>.jsonl.
+   */
+  requestTrace?: {
+    mode: RequestTraceMode
+  }
 }
+
+export type RequestTraceMode = 'agent' | 'human'
 
 function repoRoot(): string {
   return process.cwd()
@@ -103,8 +112,21 @@ function parseBoolean(raw: string | undefined): boolean {
   return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on'
 }
 
+function parseRequestTraceMode(raw: string | undefined): RequestTraceMode | undefined {
+  if (!raw) return undefined
+  const normalized = raw.trim().toLowerCase()
+  if (normalized === 'agent' || normalized === 'human') {
+    return normalized
+  }
+  if (normalized === '0' || normalized === 'false' || normalized === 'off' || normalized === 'none') {
+    return undefined
+  }
+  throw new Error(`Invalid RISU_API_TRACE_MODE: ${raw}`)
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const dataDir = env.RISU_API_DATA_DIR ? path.resolve(env.RISU_API_DATA_DIR) : path.join(repoRoot(), 'data')
+  const requestTraceMode = parseRequestTraceMode(env.RISU_API_TRACE_MODE)
 
   return {
     host: env.RISU_API_HOST ?? '0.0.0.0',
@@ -117,5 +139,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     hubUrl: parseHubUrl(env.RISU_HUB_URL, 'https://sv.risuai.xyz'),
     realmUrl: parseHubUrl(env.RISU_REALM_URL, 'https://realm.risuai.net'),
     agentDevAuthBypass: parseBoolean(env.RISU_AGENT_DEV_AUTH_BYPASS),
+    requestTrace: requestTraceMode ? { mode: requestTraceMode } : undefined,
   }
 }

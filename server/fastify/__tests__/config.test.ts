@@ -26,3 +26,24 @@ describe('loadConfig importMaxBytes', () => {
     }
   })
 })
+
+describe('loadConfig request trace', () => {
+  it('leaves request tracing disabled by default', () => {
+    expect(loadConfig({ ...BASE_ENV }).requestTrace).toBeUndefined()
+  })
+
+  it('enables agent and human request trace modes', () => {
+    expect(loadConfig({ ...BASE_ENV, RISU_API_TRACE_MODE: 'agent' }).requestTrace).toEqual({ mode: 'agent' })
+    expect(loadConfig({ ...BASE_ENV, RISU_API_TRACE_MODE: 'human' }).requestTrace).toEqual({ mode: 'human' })
+  })
+
+  it('accepts explicit off values', () => {
+    for (const raw of ['0', 'false', 'off', 'none']) {
+      expect(loadConfig({ ...BASE_ENV, RISU_API_TRACE_MODE: raw }).requestTrace).toBeUndefined()
+    }
+  })
+
+  it('rejects unknown request trace modes', () => {
+    expect(() => loadConfig({ ...BASE_ENV, RISU_API_TRACE_MODE: 'debug' })).toThrow(/Invalid RISU_API_TRACE_MODE/)
+  })
+})

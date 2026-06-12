@@ -9,6 +9,11 @@
 - `pnpm dev:agent` bypasses password authentication and Terms of Service confirmation for agent-run browser sessions.
 - Stop the dev server when you are done using it so ports `6418` and `6419` are released for the next agent.
 
+# Dev Trace Logs
+
+- `pnpm dev:agent` writes API request traces to `data/trace/agent.jsonl`; `pnpm dev:human` writes them to `data/trace/human.jsonl`.
+- When tracing is enabled, each response has an `X-Request-UID` header. Use `rg "<uid>" data/trace/*.jsonl` to find the matching JSONL entry.
+
 ## Available Tools
 
 - `rg`
