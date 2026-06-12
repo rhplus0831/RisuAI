@@ -1,31 +1,33 @@
 # Structure Notes
 
-Last audited: 2026-06-08.
+Last audited: 2026-06-12.
 
 This is the first-stop map for the Fastify-only RisuAI codebase. Use it for
-orientation, then open the focused note under `docs/structure/` for the area you
-are changing. Historical records under `docs/archive/` explain past decisions;
-they are not the source of current behavior.
+orientation, then open the focused note under `docs/structure/` or `src/docs/`
+for the area you are changing. Historical records under `docs/archive/` explain
+past decisions; they are not the source of current behavior.
 
 ## Read Order
 
 1. `STRUCTURE.md` - repo map, entrypoints, and standing conventions.
 2. `docs/structure/backend.md` - Fastify composition, route families, commands,
    generation, memory.
-3. `docs/structure/frontend.md` - Svelte app, client directories, generation
-   client.
-4. `docs/structure/server-projection-and-bridges.md` - bootstrap, projection,
+3. `src/docs/svelte-ui.md` - Svelte UI/UX app shell, routes/stores, components,
+   settings, controls, chat/sidebar/mobile/playground, styling, tests.
+4. `src/docs/client-runtime.md` - browser Fastify adapters, bootstrap,
+   projection/hydration touchpoints, generation client, assets/storage/plugins.
+5. `docs/structure/server-projection-and-bridges.md` - bootstrap, projection,
    hydration, SSE reconcile, bridge watchers.
-5. `docs/structure/data-and-events.md` - SQLite, auth, active writer, revisions,
+6. `docs/structure/data-and-events.md` - SQLite, auth, active writer, revisions,
    events, streaming.
-6. `docs/structure/assets-and-saves.md` - assets, `.risu`, bundle import/export,
+7. `docs/structure/assets-and-saves.md` - assets, `.risu`, bundle import/export,
    Realm import, backups.
-7. `docs/structure/plugins-and-mcp.md` - browser plugin runtime and MCP clients.
-8. `docs/structure/providers-and-models.md` - model metadata, provider dispatch,
+8. `docs/structure/plugins-and-mcp.md` - browser plugin runtime and MCP clients.
+9. `docs/structure/providers-and-models.md` - model metadata, provider dispatch,
    server routing gates.
-9. `docs/structure/domain-glossary.md` - common terms and no-port concepts.
-10. `docs/structure/testing-and-operations.md` - scripts, checks, env, Docker.
-11. `docs/structure/generated-and-legacy.md` - generated/local/legacy caveats.
+10. `docs/structure/domain-glossary.md` - common terms and no-port concepts.
+11. `docs/structure/testing-and-operations.md` - scripts, checks, env, Docker.
+12. `docs/structure/generated-and-legacy.md` - generated/local/legacy caveats.
 
 ## Top-Level Map
 
@@ -33,6 +35,7 @@ they are not the source of current behavior.
 | ------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`                                                 | Root-only pnpm package, scripts, lockfile, workspace metadata.                                       |
 | `index.html`, `vite.config.ts`, `src/`                                                                  | Svelte 5 SPA, Vite config, browser runtime.                                                          |
+| `src/docs/`                                                                                             | Current frontend/client docs for Svelte UI/UX and browser runtime touchpoints.                       |
 | `server/fastify/`                                                                                       | Fastify API, SQLite persistence, route tests, browser smoke tests.                                   |
 | `public/`, `resources/`                                                                                 | Vite-copied static assets and packaging icon/splash source images.                                   |
 | `util/`                                                                                                 | Tracked helper tools: API flag runner, audits, database analyzer, userscript bridge.                 |
