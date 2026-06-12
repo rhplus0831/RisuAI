@@ -362,8 +362,8 @@ describe('active chat generation settings helper', () => {
       presetId: 'preset-a',
       jailbreakToggle: false,
       sidebarToggles: {
-        mode: '1',
-        global: '1',
+        mode: '0',
+        global: '0',
         chat: '0',
         character: '0',
         integrated: '0',

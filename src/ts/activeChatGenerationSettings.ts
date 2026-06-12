@@ -364,12 +364,11 @@ function fillMissingDefaultSidebarToggles(
   if (readiness.requirements.sidebarToggles.length === 0) return settings
 
   const sidebarToggles = isRecord(settings.sidebarToggles) ? { ...settings.sidebarToggles } : {}
-  const legacyToggleValues = recordOfStrings(state.db.globalChatVariables)
   let changed = false
 
   for (const toggle of readiness.requirements.sidebarToggles) {
     if (typeof sidebarToggles[toggle.key] === 'string') continue
-    sidebarToggles[toggle.key] = initialSidebarToggleValue(toggle, legacyToggleValues)
+    sidebarToggles[toggle.key] = defaultSidebarToggleValue(toggle)
     changed = true
   }
 
@@ -395,29 +394,6 @@ function createDefaultSidebarToggleValues(
 function defaultSidebarToggleValue(toggle: ChatGenerationRequiredSidebarToggle): string {
   if (toggle.kind === 'text' || toggle.kind === 'textarea') return ''
   return '0'
-}
-
-function initialSidebarToggleValue(
-  toggle: ChatGenerationRequiredSidebarToggle,
-  legacyToggleValues: Record<string, string>,
-): string {
-  const legacyValue = legacyToggleValues[`toggle_${toggle.key}`]
-  if (toggle.kind === 'text' || toggle.kind === 'textarea') {
-    return legacyValue ?? defaultSidebarToggleValue(toggle)
-  }
-  if (toggle.kind === 'select') {
-    return isValidSelectToggleValue(legacyValue, toggle.options) ? legacyValue : '0'
-  }
-  return legacyValue ?? defaultSidebarToggleValue(toggle)
-}
-
-function isValidSelectToggleValue(
-  value: string | undefined,
-  options: readonly string[],
-): value is string {
-  if (typeof value !== 'string') return false
-  const index = Number(value)
-  return Number.isInteger(index) && index >= 0 && index < options.length
 }
 
 function normalizeActiveChatGenerationSettingsForSave(
@@ -499,15 +475,6 @@ function nonEmptyString(value: unknown): value is string {
 
 function isRecord(value: unknown): value is Record<string, string> {
   return !!value && typeof value === 'object' && !Array.isArray(value)
-}
-
-function recordOfStrings(value: unknown): Record<string, string> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
-  const out: Record<string, string> = {}
-  for (const [key, raw] of Object.entries(value)) {
-    if (typeof raw === 'string') out[key] = raw
-  }
-  return out
 }
 
 function hasOwn(value: object, key: PropertyKey): boolean {

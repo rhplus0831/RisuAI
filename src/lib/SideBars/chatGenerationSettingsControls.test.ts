@@ -852,7 +852,6 @@ describe('sidebar chat generation settings controls', () => {
 
   it('prefills preset toggle defaults after selecting a chat preset', async () => {
     const calls = stubCommandFetch()
-    DBState.db.globalChatVariables = {}
     activeChat().generationSettings = {
       configured: false,
       personaId: 'persona-a',
