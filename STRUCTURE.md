@@ -4,7 +4,7 @@ Last audited: 2026-06-12.
 
 This is the first-stop map for the Fastify-only RisuAI codebase. Use it for
 orientation, then open the focused note under `docs/structure/` or `src/docs/`
-for the area you are changing. Historical records under `docs/archive/` explain
+for the area you are changing. Historical records under `.archived-docs/` explain
 past decisions; they are not the source of current behavior.
 
 ## Read Order
@@ -41,7 +41,7 @@ past decisions; they are not the source of current behavior.
 | `util/`                                                                                                 | Tracked helper tools: API flag runner, audits, database analyzer, userscript bridge.                 |
 | `docs/plan/`                                                                                            | Active implementation plans and phase routers when present.                                          |
 | `docs/structure/`                                                                                       | Current structure notes for agents.                                                                  |
-| `docs/archive/`                                                                                         | Closed workstreams and dated reports. Expect stale present tense; prefer code and `docs/structure/`. |
+| `.archived-docs/`                                                                                         | Closed workstreams and dated reports. Expect stale present tense; prefer code and `docs/structure/`. |
 | `tsconfig*.json`, `vitest*.ts`, `playwright*.ts`                                                        | TypeScript, Vitest, and Playwright config.                                                           |
 | `Dockerfile`, `docker-compose.yml`, `.dockerignore`                                                     | Container build/run path.                                                                            |
 | `.github/`, `.vscode/`, `.npmrc`, `.gitattributes`, `.gitignore`, `.prettierrc.json`, `.prettierignore` | Automation, editor, install, merge, ignore, and formatting policy.                                   |

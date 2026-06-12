@@ -6,7 +6,7 @@ import path from 'node:path'
  * Fix-completeness gate (Phase 8 scaffold, seeded in Phase 0).
  *
  * The v1 stability/performance remediation plan (closed 2026-06-05, archived
- * at `docs/archive/audit-stability-and-performance/`) scheduled every
+ * at `.archived-docs/audit-stability-and-performance/`) scheduled every
  * confirmed audit finding and requires each landed fix to keep a regression
  * test. This file is the single budget surface for that requirement, modeled
  * on the landed `cloneCostGateCompleteness.test.ts`. It stays live against
@@ -31,7 +31,7 @@ import path from 'node:path'
 // docs and both test trees hang off `process.cwd()`. (import.meta.url is not a
 // file: URL under the client vite test transform, so it cannot anchor reads.)
 const ROOT = process.cwd()
-const ARCHIVED_PLAN = 'docs/archive/audit-stability-and-performance'
+const ARCHIVED_PLAN = '.archived-docs/audit-stability-and-performance'
 const AUDIT_DOC = path.join(ROOT, ARCHIVED_PLAN, 'audit-stability-and-performance.md')
 const RISK_DOC = path.join(ROOT, ARCHIVED_PLAN, 'active-risk-analysis.md')
 

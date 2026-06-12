@@ -21,7 +21,7 @@ generated, local-only, historical, vendored, or intentionally no-port.
 | `src/ts/process/__fixtures__/upstream/`         | Upstream fixture corpus for request/provider tests.                                                                                                    |
 | `*.snap` under test fixtures                    | Vitest snapshots; update through the relevant test workflow.                                                                                           |
 
-`docs/archive/` files are source documentation, but they are historical. They
+`.archived-docs/` files are source documentation, but they are historical. They
 may contain present-tense statements that were true at closeout and are now
 stale. Prefer `STRUCTURE.md`, `docs/structure/`, and code for current behavior.
 
@@ -48,9 +48,9 @@ wrappers, browser-local persistence as primary runtime, peer sync, Drive sync,
 Risu Account Sync, and service-worker behavior are archival unless a new plan
 reopens them.
 
-Closed records under `docs/archive/` explain how the current runtime landed:
+Closed records under `.archived-docs/` explain how the current runtime landed:
 Fastify migration, client thinning, durable generation, lazy projection,
-db-json-to-SQLite (`docs/archive/db-json-to-sqlite.md`), and protocol
+db-json-to-SQLite (`.archived-docs/db-json-to-sqlite.md`), and protocol
 stability/performance. They are design history, not current guidance.
 
 Current core systems that came from those workstreams:

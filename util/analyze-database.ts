@@ -17,7 +17,7 @@
  * NOT reported here (runtime-only): how OFTEN a fallback fires, browser cache hit
  * rate, and prompt-assembly stage timings under real sends. Get those by running
  * the real server with `RISU_PROTOCOL_METRICS=1`. See
- * docs/archive/server-client-protocol-stability-performance/active-risk-analysis.md.
+ * .archived-docs/server-client-protocol-stability-performance/active-risk-analysis.md.
  *
  * Inputs (auto-detected):
  *   - A `.risu` export file (richest single file — re-embeds chat messages).
@@ -425,7 +425,7 @@ function printReport(analysis: DatabaseAnalysis): void {
     '    the projection_response / asset_byte_read / risusave_export lines land in the log.',
   )
   lines.push(
-    '  - see docs/leftover.md and docs/archive/server-client-protocol-stability-performance/active-risk-analysis.md.',
+    '  - see docs/leftover.md and .archived-docs/server-client-protocol-stability-performance/active-risk-analysis.md.',
   )
 
   console.log(lines.join('\n'))

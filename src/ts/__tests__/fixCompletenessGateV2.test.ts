@@ -17,7 +17,7 @@ import path from 'node:path'
 // use doc-string overrides or cloned registry arrays, never writes to these
 // files.
 const ROOT = process.cwd()
-const ARCHIVED_PLAN = 'docs/archive/audit-stability-and-performance-v2'
+const ARCHIVED_PLAN = '.archived-docs/audit-stability-and-performance-v2'
 const AUDIT_DOC = path.join(ROOT, ARCHIVED_PLAN, 'audit-stability-and-performance-v2.md')
 const RISK_DOC = path.join(ROOT, ARCHIVED_PLAN, 'active-risk-analysis.md')
 

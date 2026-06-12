@@ -14,7 +14,7 @@ import path from 'node:path'
 // `vitest run` executes from the repo root. Match the v1/v2 gates and keep
 // v3 pointed at the archived closeout docs.
 const ROOT = process.cwd()
-const PLAN = 'docs/archive/audit-stability-and-performance-v3'
+const PLAN = '.archived-docs/audit-stability-and-performance-v3'
 const AUDIT_DOC = path.join(ROOT, PLAN, 'audit-stability-and-performance-v3.md')
 const RISK_DOC = path.join(ROOT, PLAN, 'active-risk-analysis.md')
 
@@ -1983,14 +1983,13 @@ describe('v3 fix-completeness gate doc universe', () => {
   it('points at the archived v3 closeout sources', () => {
     expect(AUDIT_DOC).toContain(
       path.join(
-        'docs',
-        'archive',
+        '.archived-docs',
         'audit-stability-and-performance-v3',
         'audit-stability-and-performance-v3.md',
       ),
     )
     expect(RISK_DOC).toContain(
-      path.join('docs', 'archive', 'audit-stability-and-performance-v3', 'active-risk-analysis.md'),
+      path.join('.archived-docs', 'audit-stability-and-performance-v3', 'active-risk-analysis.md'),
     )
     expect(AUDIT_DOC).not.toContain(path.join('docs', 'plan'))
     expect(RISK_DOC).not.toContain(path.join('docs', 'plan'))

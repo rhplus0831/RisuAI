@@ -3,7 +3,7 @@ import type { ChatVarBackend } from '../../../../src/ts/parser/chatVarBackend'
 
 /**
  * Server-side prompt scope. Module-level singleton, matching the
- * single-user assumption documented in `docs/archive/fastify/other/plan.md`.
+ * single-user assumption documented in `.archived-docs/fastify/other/plan.md`.
  *
  * Holds pointers into the active request's `Database` snapshot
  * (the `db.json` blob loaded by the route handler) so the CBS callbacks

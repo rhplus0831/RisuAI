@@ -2,7 +2,7 @@
  * Shared large-corpus fixture (test-only).
  *
  * Phase 0 of the v1 stability/performance remediation plan
- * (`docs/archive/audit-stability-and-performance/phases/slices/phase-0-baseline-foundations/measurement-baseline-harness.md`)
+ * (`.archived-docs/audit-stability-and-performance/phases/slices/phase-0-baseline-foundations/measurement-baseline-harness.md`)
  * needs one seeded corpus both suites can drive their cost assertions against:
  *
  * - server tests import it from `server/fastify/__tests__/` and seed it through

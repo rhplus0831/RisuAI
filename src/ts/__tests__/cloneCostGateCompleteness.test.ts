@@ -152,7 +152,7 @@ const NARROWED_HOT_PATHS: GateEntry[] = [
     rollbackGates: ['ts/characters.imageEmotion.test.ts'],
   },
   // Landed by the v1 stability/performance plan (now archived at
-  // docs/archive/audit-stability-and-performance/, Phase 1 H2), not the
+  // .archived-docs/audit-stability-and-performance/, Phase 1 H2), not the
   // original clone-narrowing phases; registered here because this is the one
   // budget surface for clone-cost gates.
   {

@@ -8,7 +8,7 @@ import { resolveServerPromptAssembly, type ServerPromptAssemblyInput } from './s
  * `reason` is for diagnostics / tests and a future "why can't this chat survive
  * disconnect?" hint — it never triggers a hard fail.
  *
- * See `docs/archive/durable-generation/steps/step-1-subset-gate.md`.
+ * See `.archived-docs/durable-generation/steps/step-1-subset-gate.md`.
  */
 export type DurableGenerationRoute = { type: 'durable' } | { type: 'non-durable'; reason: string }
 

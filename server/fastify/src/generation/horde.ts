@@ -18,7 +18,7 @@ import { readBoundedBodyJson, readBoundedBodyText } from './body.js'
  * the resulting string in `options.horde.prompt`. The server keeps no
  * character / user context; the unstringlize step happens client-side
  * after the result lands. This matches the strategy laid out in
- * `docs/archive/fastify/other/design/novelai-novellist-stringlize.md` (option B).
+ * `.archived-docs/fastify/other/design/novelai-novellist-stringlize.md` (option B).
  *
  * Streaming is intentionally deferred: Horde's poll-loop wire isn't
  * incremental in any useful way (workers return either nothing or the

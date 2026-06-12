@@ -4,7 +4,7 @@ import { StatementSync } from 'node:sqlite'
  * Server load-count harness (test-only).
  *
  * The v1 stability/performance remediation plan (Phase 0,
- * `docs/archive/audit-stability-and-performance/phases/slices/phase-0-baseline-foundations/measurement-baseline-harness.md`)
+ * `.archived-docs/audit-stability-and-performance/phases/slices/phase-0-baseline-foundations/measurement-baseline-harness.md`)
  * narrows server hot paths that today rebuild a broad in-memory `Database` from
  * SQLite (`loadPersisted` / `loadPersistedWithMessages` /
  * `loadCollectionsFromSqlite` / `getAllChatMessagesGrouped`). This module is
