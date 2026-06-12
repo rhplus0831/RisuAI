@@ -1,10 +1,41 @@
+st# Dependencies and build output
 node_modules
 dist
 build
 .svelte-kit
 coverage
+test-results
+pnpm-lock.yaml
 
-public/token
+# Runtime/local data and copied backups
+data
+blobs-for-test
+
+# Static/generated payloads
 public/assets
+public/token
 public/plugin_start.7z
+src/etc/docs
+src/etc/o200k_base.json
 src/ts/rpack
+
+# Documentation and agent handoff notes
+*.md
+.archived-docs
+docs
+AGENTS.md
+CLAUDE.md
+HANDOVER.md
+
+# Media and binary assets
+*.7z
+*.bmp
+*.gif
+*.ico
+*.jpg
+*.jpeg
+*.mp3
+*.png
+*.webp
+*.woff
+*.woff2
