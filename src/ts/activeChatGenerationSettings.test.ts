@@ -17,10 +17,12 @@ import { setServerProjectionWriteGuardEnabled } from './server/projectionWriteGu
 import { DBState, selectedCharID } from './stores.svelte'
 import {
   createActiveChatGenerationSettingsPatch,
+  createActiveChatGenerationSettingsDefaultValuesPatch,
   createActiveChatGenerationSettingsSelectionPatch,
   guardActiveChatGenerationSettingsForSend,
   resolveActiveChatGenerationSettings,
   saveActiveChatGenerationSettings,
+  saveActiveChatGenerationSettingsDefaultValues,
   saveActiveChatGenerationSettingsPatch,
   saveActiveChatGenerationSettingsSelection,
 } from './activeChatGenerationSettings'
@@ -318,6 +320,11 @@ describe('active chat generation settings helper', () => {
       personaId: 'persona-a',
       presetId: 'preset-b',
       jailbreakToggle: false,
+      sidebarToggles: {
+        global: '0',
+        chat: '0',
+        character: '0',
+      },
     })
 
     expect(
@@ -326,6 +333,122 @@ describe('active chat generation settings helper', () => {
         presetId: 'preset-b',
       }),
     ).toBe(true)
+
+    await waitForCallCount(calls, 2)
+    expect(DBState.db.characters[0].chats[0].generationSettings).toEqual(nextSettings)
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/chats/chat-a/generation-settings',
+      method: 'PUT',
+      body: {
+        baseRevision: 100,
+        generationSettings: nextSettings,
+      },
+    })
+  })
+
+  it('prefills missing sidebar toggle defaults when selecting a preset', async () => {
+    DBState.db.globalChatVariables = {
+      toggle_mode: '1',
+      toggle_global: '1',
+    } as any
+    const calls = stubCommandFetch()
+    setServerProjectionWriteGuardEnabled(true)
+
+    const nextSettings = createActiveChatGenerationSettingsSelectionPatch({
+      presetId: 'preset-a',
+    })
+    expect(nextSettings).toEqual({
+      configured: true,
+      presetId: 'preset-a',
+      jailbreakToggle: false,
+      sidebarToggles: {
+        mode: '1',
+        global: '1',
+        chat: '0',
+        character: '0',
+        integrated: '0',
+      },
+    })
+    expect(
+      resolveActiveChatGenerationSettings({
+        db: {
+          ...DBState.db,
+          characters: [
+            {
+              ...DBState.db.characters[0],
+              chats: [
+                {
+                  ...DBState.db.characters[0].chats[0],
+                  generationSettings: nextSettings,
+                },
+              ],
+            },
+          ],
+        } as any,
+        selectedCharIndex: 0,
+      }).readiness.missing.map((reason) => reason.code),
+    ).not.toContain('sidebar_toggle_missing')
+
+    expect(
+      saveActiveChatGenerationSettingsSelection({
+        presetId: 'preset-a',
+      }),
+    ).toBe(true)
+
+    await waitForCallCount(calls, 2)
+    expect(DBState.db.characters[0].chats[0].generationSettings).toEqual(nextSettings)
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/chats/chat-a/generation-settings',
+      method: 'PUT',
+      body: {
+        baseRevision: 100,
+        generationSettings: nextSettings,
+      },
+    })
+  })
+
+  it('resets active-chat toggle values to defaults', async () => {
+    DBState.db.botPresets[0].customPromptTemplateToggle =
+      'mode=Mode=select=warm,cold\nflag=Flag\nnote=Note=text\nmemo=Memo=textarea'
+    DBState.db.characters[0].chats[0].generationSettings = {
+      configured: true,
+      personaId: 'persona-a',
+      presetId: 'preset-a',
+      jailbreakToggle: true,
+      sidebarToggles: {
+        mode: '',
+        flag: '1',
+        note: 'old note',
+        memo: 'old memo',
+        global: '1',
+        chat: '',
+        character: '1',
+        integrated: '1',
+        stale: '1',
+      },
+    }
+    const calls = stubCommandFetch()
+    setServerProjectionWriteGuardEnabled(true)
+
+    const nextSettings = createActiveChatGenerationSettingsDefaultValuesPatch()
+    expect(nextSettings).toEqual({
+      configured: true,
+      personaId: 'persona-a',
+      presetId: 'preset-a',
+      jailbreakToggle: false,
+      sidebarToggles: {
+        mode: '0',
+        flag: '0',
+        note: '',
+        memo: '',
+        global: '0',
+        chat: '0',
+        character: '0',
+        integrated: '0',
+      },
+    })
+
+    expect(saveActiveChatGenerationSettingsDefaultValues()).toBe(true)
 
     await waitForCallCount(calls, 2)
     expect(DBState.db.characters[0].chats[0].generationSettings).toEqual(nextSettings)

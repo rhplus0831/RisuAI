@@ -282,6 +282,13 @@ function pickerButton(kind: 'preset' | 'persona'): HTMLButtonElement {
   return input!
 }
 
+function resetDefaultsButton(): HTMLButtonElement {
+  return elementBySelector<HTMLButtonElement>(
+    '[data-risu-generation-reset-defaults] button',
+    'reset defaults button',
+  )
+}
+
 function pickerRoot(kind: 'preset' | 'persona', mode: GenerationSettingsPickerMode): HTMLElement {
   return elementBySelector<HTMLElement>(
     `[data-risu-generation-picker][data-risu-picker-kind="${kind}"][data-risu-picker-mode="${mode}"]`,
@@ -838,6 +845,136 @@ describe('sidebar chat generation settings controls', () => {
           configured: true,
           presetId: 'preset-b',
           personaId: 'persona-b',
+        }),
+      },
+    })
+  })
+
+  it('prefills preset toggle defaults after selecting a chat preset', async () => {
+    const calls = stubCommandFetch()
+    DBState.db.globalChatVariables = {}
+    activeChat().generationSettings = {
+      configured: false,
+      personaId: 'persona-a',
+      jailbreakToggle: false,
+    }
+
+    mountGenerationSettingsPickerHost()
+    await tick()
+
+    expect(pickerControl('preset').dataset.risuPickerSelectedId).toBe('')
+    expect(
+      target.querySelector('[data-risu-generation-toggle-control][data-risu-toggle-key="mood"]'),
+    ).toBeNull()
+
+    pickerButton('preset').click()
+    await tick()
+
+    pickerRow('preset', 'preset-a').click()
+    await tick()
+    await waitForFetchCount(calls, 2)
+
+    expect(activeChat().generationSettings).toMatchObject({
+      configured: true,
+      presetId: 'preset-a',
+      personaId: 'persona-a',
+      jailbreakToggle: false,
+      sidebarToggles: {
+        mood: '0',
+        flag: '0',
+        note: '',
+        moduleFlag: '0',
+      },
+    })
+    expect(selectToggleInput('mood').value).toBe('0')
+    expect(toggleCheckbox('flag').checked).toBe(false)
+    expect(textToggleInput('note').value).toBe('')
+    expect(
+      resolveActiveChatGenerationSettings().readiness.missing.map((reason) => reason.code),
+    ).not.toContain('sidebar_toggle_missing')
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/chats/chat-a/generation-settings',
+      method: 'PUT',
+      authHeader: 'sidebar-generation-settings-token',
+      body: {
+        baseRevision: 300,
+        generationSettings: expect.objectContaining({
+          configured: true,
+          presetId: 'preset-a',
+          sidebarToggles: {
+            mood: '0',
+            flag: '0',
+            note: '',
+            moduleFlag: '0',
+          },
+        }),
+      },
+    })
+  })
+
+  it('resets chat toggle controls to their defaults', async () => {
+    const calls = stubCommandFetch()
+    activeChat().generationSettings = {
+      configured: true,
+      personaId: 'persona-a',
+      presetId: 'preset-a',
+      jailbreakToggle: true,
+      sidebarToggles: {
+        mood: '',
+        flag: '1',
+        note: 'legacy-note',
+        moduleFlag: '1',
+        stale: '1',
+      },
+    }
+
+    mountGenerationSettingsPickerHost()
+    await tick()
+
+    expect(resetDefaultsButton().textContent).toContain('Reset toggle defaults')
+    expect(selectToggleInput('mood').value).toBe('')
+    expect(toggleCheckbox('flag').checked).toBe(true)
+    expect(textToggleInput('note').value).toBe('legacy-note')
+    expect(jailbreakControl().dataset.risuSelected).toBe('true')
+
+    resetDefaultsButton().click()
+    await tick()
+    await waitForFetchCount(calls, 2)
+
+    expect(activeChat().generationSettings).toMatchObject({
+      configured: true,
+      presetId: 'preset-a',
+      personaId: 'persona-a',
+      jailbreakToggle: false,
+      sidebarToggles: {
+        mood: '0',
+        flag: '0',
+        note: '',
+        moduleFlag: '0',
+      },
+    })
+    expect(activeChat().generationSettings?.sidebarToggles).not.toHaveProperty('stale')
+    expect(selectToggleInput('mood').value).toBe('0')
+    expect(toggleCheckbox('flag').checked).toBe(false)
+    expect(textToggleInput('note').value).toBe('')
+    expect(jailbreakControl().dataset.risuSelected).toBe('false')
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/chats/chat-a/generation-settings',
+      method: 'PUT',
+      authHeader: 'sidebar-generation-settings-token',
+      body: {
+        baseRevision: 300,
+        generationSettings: expect.objectContaining({
+          configured: true,
+          presetId: 'preset-a',
+          personaId: 'persona-a',
+          jailbreakToggle: false,
+          sidebarToggles: {
+            mood: '0',
+            flag: '0',
+            note: '',
+            moduleFlag: '0',
+          },
         }),
       },
     })

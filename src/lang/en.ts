@@ -784,6 +784,7 @@ export const languageEnglish = {
   jailbreakToggle: 'Toggle Jailbreak',
   chatGenerationPresetUnconfigured: 'Select chat preset',
   chatGenerationPersonaUnconfigured: 'Select chat persona',
+  chatGenerationResetDefaults: 'Reset toggle defaults',
   charIcon: 'Character Icon',
   characterDisplay: 'Character Display',
   viewScreen: 'Additional Character Screen',

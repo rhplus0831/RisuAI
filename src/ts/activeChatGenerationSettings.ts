@@ -172,6 +172,7 @@ export function createActiveChatGenerationSettingsPatch(
   state: ActiveChatGenerationSettingsState = resolveActiveChatGenerationSettings(),
 ): ChatGenerationSettings {
   const { sidebarToggles, ...scalarPatch } = patch
+  const isPresetSelection = nonEmptyString(patch.presetId)
   const next: ChatGenerationSettings = {
     ...cloneGenerationSettings(state.settings),
     ...scalarPatch,
@@ -182,7 +183,7 @@ export function createActiveChatGenerationSettingsPatch(
   }
 
   const shouldWriteSidebarToggles =
-    hasOwn(patch, 'sidebarToggles') || isRecord(state.settings?.sidebarToggles)
+    hasOwn(patch, 'sidebarToggles') || isPresetSelection || isRecord(state.settings?.sidebarToggles)
   if (shouldWriteSidebarToggles) {
     const mergedSidebarToggles = isRecord(state.settings?.sidebarToggles)
       ? { ...state.settings.sidebarToggles }
@@ -202,7 +203,11 @@ export function createActiveChatGenerationSettingsPatch(
     }).sidebarToggles
   }
 
-  return pruneStaleSidebarToggleKeys(state, next)
+  const pruned = pruneStaleSidebarToggleKeys(state, next)
+  if (isPresetSelection) {
+    return fillMissingDefaultSidebarToggles(state, pruned)
+  }
+  return pruned
 }
 
 export function createActiveChatGenerationSettingsSelectionPatch(
@@ -210,6 +215,18 @@ export function createActiveChatGenerationSettingsSelectionPatch(
   state: ActiveChatGenerationSettingsState = resolveActiveChatGenerationSettings(),
 ): ChatGenerationSettings {
   return createActiveChatGenerationSettingsPatch(selection, state)
+}
+
+export function createActiveChatGenerationSettingsDefaultValuesPatch(
+  state: ActiveChatGenerationSettingsState = resolveActiveChatGenerationSettings(),
+): ChatGenerationSettings {
+  return createActiveChatGenerationSettingsPatch(
+    {
+      jailbreakToggle: false,
+      sidebarToggles: createDefaultSidebarToggleValues(state),
+    },
+    state,
+  )
 }
 
 export function createActiveChatJailbreakToggleGenerationSettingsPatch(
@@ -260,6 +277,19 @@ export function saveActiveChatGenerationSettingsSelection(
   options: ServerCommandTransportOptions = {},
 ): boolean {
   return saveActiveChatGenerationSettingsPatch(selection, options)
+}
+
+export function saveActiveChatGenerationSettingsDefaultValues(
+  options: ServerCommandTransportOptions = {},
+): boolean {
+  const state = resolveActiveChatGenerationSettings()
+  const chatId = state.identity.chatId
+  if (!chatId) return false
+  return dispatchSaveChatGenerationSettings(
+    chatId,
+    createActiveChatGenerationSettingsDefaultValuesPatch(state),
+    options,
+  )
 }
 
 export function saveActiveChatJailbreakToggleGenerationSettings(
@@ -324,6 +354,70 @@ function pruneStaleSidebarToggleKeys(
     ...settings,
     sidebarToggles,
   }
+}
+
+function fillMissingDefaultSidebarToggles(
+  state: ActiveChatGenerationSettingsState,
+  settings: ChatGenerationSettings,
+): ChatGenerationSettings {
+  const readiness = resolveReadiness(state.db, state.character, state.chat, settings)
+  if (readiness.requirements.sidebarToggles.length === 0) return settings
+
+  const sidebarToggles = isRecord(settings.sidebarToggles) ? { ...settings.sidebarToggles } : {}
+  const legacyToggleValues = recordOfStrings(state.db.globalChatVariables)
+  let changed = false
+
+  for (const toggle of readiness.requirements.sidebarToggles) {
+    if (typeof sidebarToggles[toggle.key] === 'string') continue
+    sidebarToggles[toggle.key] = initialSidebarToggleValue(toggle, legacyToggleValues)
+    changed = true
+  }
+
+  if (!changed && isRecord(settings.sidebarToggles)) return settings
+  return {
+    ...settings,
+    sidebarToggles,
+  }
+}
+
+function createDefaultSidebarToggleValues(
+  state: ActiveChatGenerationSettingsState,
+): Record<string, string> {
+  const readiness = resolveReadiness(state.db, state.character, state.chat, state.settings)
+  return Object.fromEntries(
+    readiness.requirements.sidebarToggles.map((toggle) => [
+      toggle.key,
+      defaultSidebarToggleValue(toggle),
+    ]),
+  )
+}
+
+function defaultSidebarToggleValue(toggle: ChatGenerationRequiredSidebarToggle): string {
+  if (toggle.kind === 'text' || toggle.kind === 'textarea') return ''
+  return '0'
+}
+
+function initialSidebarToggleValue(
+  toggle: ChatGenerationRequiredSidebarToggle,
+  legacyToggleValues: Record<string, string>,
+): string {
+  const legacyValue = legacyToggleValues[`toggle_${toggle.key}`]
+  if (toggle.kind === 'text' || toggle.kind === 'textarea') {
+    return legacyValue ?? defaultSidebarToggleValue(toggle)
+  }
+  if (toggle.kind === 'select') {
+    return isValidSelectToggleValue(legacyValue, toggle.options) ? legacyValue : '0'
+  }
+  return legacyValue ?? defaultSidebarToggleValue(toggle)
+}
+
+function isValidSelectToggleValue(
+  value: string | undefined,
+  options: readonly string[],
+): value is string {
+  if (typeof value !== 'string') return false
+  const index = Number(value)
+  return Number.isInteger(index) && index >= 0 && index < options.length
 }
 
 function normalizeActiveChatGenerationSettingsForSave(
@@ -405,6 +499,15 @@ function nonEmptyString(value: unknown): value is string {
 
 function isRecord(value: unknown): value is Record<string, string> {
   return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function recordOfStrings(value: unknown): Record<string, string> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  const out: Record<string, string> = {}
+  for (const [key, raw] of Object.entries(value)) {
+    if (typeof raw === 'string') out[key] = raw
+  }
+  return out
 }
 
 function hasOwn(value: object, key: PropertyKey): boolean {
