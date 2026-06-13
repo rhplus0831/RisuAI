@@ -194,9 +194,16 @@ describe('Phase 2A bootstrap + import', () => {
 
   it('omits promptTemplate from bootstrap while serving it through the promptItem projection', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
+    const activePresetPrompt = [{ id: 'prompt-a', type: 'plain', text: 'lazy prompt', role: 'system' }]
+    const inactivePresetPrompt = [{ id: 'prompt-b', type: 'plain', text: 'inactive preset prompt', role: 'system' }]
     const sample = {
       characters: [{ chaId: 'char-a', name: 'Ada' }],
-      promptTemplate: [{ id: 'prompt-a', type: 'plain', text: 'lazy prompt', role: 'system' }],
+      promptTemplate: activePresetPrompt,
+      botPresets: [
+        { id: 'preset-inactive', name: 'Inactive', promptTemplate: inactivePresetPrompt },
+        { id: 'preset-active', name: 'Active', promptTemplate: activePresetPrompt },
+      ],
+      botPresetsId: 1,
     }
 
     const imported = await harness.app.inject({
@@ -213,7 +220,18 @@ describe('Phase 2A bootstrap + import', () => {
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.statusCode).toBe(200)
-    expect(bootstrap.json().database).not.toHaveProperty('promptTemplate')
+    const bootstrapDatabase = bootstrap.json().database
+    expect(bootstrapDatabase).not.toHaveProperty('promptTemplate')
+    expect(bootstrapDatabase.botPresets).toHaveLength(2)
+    expect(bootstrapDatabase.botPresets[0]).toMatchObject({
+      id: 'preset-inactive',
+      promptTemplate: inactivePresetPrompt,
+    })
+    expect(bootstrapDatabase.botPresets[1]).toMatchObject({
+      id: 'preset-active',
+      name: 'Active',
+    })
+    expect(bootstrapDatabase.botPresets[1]).not.toHaveProperty('promptTemplate')
 
     const projection = await harness.app.inject({
       method: 'GET',

@@ -2,6 +2,8 @@
 
 Date: 2026-06-13.
 
+Last updated: 2026-06-13. H2 and the H1 immediate bootstrap duplicate were remediated after the initial audit.
+
 This audit examines every place the server sends data to the client and every
 place the client sends changes back, looking for endpoints that **transmit or
 accept more data than necessary**. The goal is reducing network usage, not
@@ -78,7 +80,8 @@ better than the instance.
    server already row-diffs the upload against stored rows (`applyChatMessageDiff`)
    — proving it only needs the delta — and the merge infrastructure already
    exists (`loadChatHydrationRange`, a computed-but-unserialized `firstChangedIndex`).
-   See H2, H3, L3, L7.
+   See H3, L3, L7; H2's swipe/reroll case has been remediated with targeted
+   message commands.
 2. **Bootstrap ships heavy collections not read on load (S→C).** `botPresets`,
    `modules`, and `plugins` are shipped in full (~90% of a measured 2.4 MB
    bootstrap) though the list UIs read only names/metadata; the same stub +
@@ -106,8 +109,8 @@ better than the instance.
 
 | ID  | Dir | Endpoint | Frequency | Title |
 | --- | --- | --- | --- | --- |
-| H1  | S→C | GET /bootstrap | per-session + resync | botPresets shipped in full; promptTemplate duplicates the lazy-stripped field |
-| H2  | C→S | PUT /commands/chats/:id/messages | per swipe/reroll | Swipe/reroll re-uploads the entire transcript when only the tail changed |
+| H1  | S→C | GET /bootstrap | per-session + resync | Partially resolved: active preset promptTemplate duplicate stripped; full preset stubbing remains |
+| H2  | C→S | PUT /commands/chats/:id/messages | per swipe/reroll | Resolved: swipe/reroll now uses targeted tail/truncate/message-update commands |
 | H3  | C→S | PUT /commands/.../lorebooks | per lorebook edit | One-entry edit re-uploads the whole lorebook collection |
 | M1  | S→C | GET /projection/generation | per foreign generation | generation.persisted re-ships the whole transcript instead of a tail |
 | M2  | S→C | POST /generate/chat (prompt) | per-generation | `prompt` event ships `messages` duplicating `formated` |
@@ -142,6 +145,11 @@ better than the instance.
 
 ### H1 — Bootstrap ships all `botPresets` in full, and each preset's `promptTemplate` duplicates the field bootstrap already lazy-strips
 
+- **Status:** partially remediated 2026-06-13. Bootstrap now strips
+  `botPresets[botPresetsId].promptTemplate`, removing the active preset's
+  duplicate of the lazy top-level `promptTemplate`. Non-active preset
+  `promptTemplate` arrays still ship until the full preset-stub + lazy-fetch
+  projection is implemented.
 - **Direction / endpoint:** S→C, `GET /api/v1/bootstrap`.
 - **Frequency:** every cold load / first connect, and again on every full resync
   (gap / reconnect / restore).
@@ -166,25 +174,30 @@ better than the instance.
   prompt-diff feature (`PromptDiffModal.svelte:367` reads
   `db.botPresets[id].promptTemplate` for arbitrary ids), so they cannot simply be
   deleted — they need the lazy-fetch endpoint below.
-- **Recommendation:**
-  1. *Immediate, safe win:* strip `botPresets[botPresetsId].promptTemplate` from
-     the bootstrap projection, since it duplicates the lazily-hydrated top-level
-     field (saves ~the active preset's template, e.g. 374 KB, with zero feature
-     loss).
-  2. *Full fix:* stub all presets to `{id, name, image, metadata}` in
-     `loadBootstrapProjectionDatabase` and add a per-preset lazy projection
-     (`GET /api/v1/projection/preset?id=`) fetched by `setPreset` and the diff
-     modal.
+- **Completed remediation:** the immediate safe win is done: strip
+  `botPresets[botPresetsId].promptTemplate` from the bootstrap projection, since
+  it duplicates the lazily-hydrated top-level field (saves ~the active preset's
+  template, e.g. 374 KB, with zero feature loss).
+- **Remaining full fix:** stub all presets to `{id, name, image, metadata}` in
+  `loadBootstrapProjectionDatabase` and add a per-preset lazy projection
+  (`GET /api/v1/projection/preset?id=`) fetched by `setPreset` and the diff
+  modal.
 - **Evidence:** `server/fastify/src/repository.ts:1388-1393` (bootstrap pipeline),
-  `:1403-1406` (strips only top-level promptTemplate), `:126-136` (botPresets
-  loaded in full, never stubbed); client applies wholesale
+  `:1403-1414` (strips top-level promptTemplate and the active preset's duplicate),
+  `:126-136` (botPresets loaded in full, never stubbed); client applies wholesale
   `src/ts/server/bootstrap.ts:118-127`; consumers
   `src/lib/Setting/botpreset.svelte:149,236`,
   `src/ts/storage/database.svelte.ts:2398,2699`,
   `src/lib/Others/PromptDiffModal.svelte:367`.
 
-### H2 — Swipe/reroll navigation re-uploads the entire chat transcript when only the tail message(s) change
+### H2 — Resolved: swipe/reroll navigation used to re-upload the entire chat transcript when only the tail message(s) changed
 
+- **Status:** remediated 2026-06-13. Swipe/reroll now routes single tail data
+  swaps through `PATCH /api/v1/commands/messages/:messageId`, pure truncates
+  through `POST /api/v1/commands/chats/:chatId/messages/truncate`, and saved
+  candidate tail slices through `POST /api/v1/commands/chats/:chatId/messages/tail`.
+  Focused regression coverage exists in `rerollNavigation.test.ts`,
+  `rerollNavigation.rollback.test.ts`, and `server/commands.test.ts`.
 - **Direction / endpoint:** C→S, `PUT /api/v1/commands/chats/:chatId/messages`.
 - **Frequency:** per swipe/reroll navigation to a saved candidate — a frequent
   interactive chat action.
@@ -204,18 +217,17 @@ better than the instance.
   a 10×–100× inflation on a per-click action. The cleanest proof is
   `applyRerollTruncate` (`rerollNavigation.svelte.ts:217`): a *pure truncate* that
   nonetheless sends the full surviving array via replace.
-- **Recommendation:** add a targeted tail protocol — route N=1 tail swaps through
-  `updateMessageCommand` (already wired), route pure truncates through the
-  existing truncate endpoint, and add a `replaceTailMessages {afterMessageId,
-  messages}` (or per-row upsert) for multi-row reroll changes so the body scales
-  with changed rows, not transcript length.
-- **Evidence:** `src/ts/process/rerollNavigation.svelte.ts:120-139,150-163,217`
-  (full-array dispatch); `src/ts/chatCommands.ts:1146-1162` (maps every row via
-  `toMessageSnapshot` = `cloneJsonValue` = all fields); `src/ts/server/commands.ts:2217-2229`
-  (sends whole `body.messages`), `:2294-2314` (uncompressed JSON body); server
-  `commands.ts:3673-3704` (handler), `:3629` (existing cheap truncate);
-  `messageStore.ts:304-305,435-464` (server already row-diffs). Cheap-path
-  precedents: `Chat.svelte:163-197`, `rerollNavigation.svelte.ts:107-116`.
+- **Completed remediation:** N=1 tail data swaps use `updateMessageCommand`, pure
+  truncates use the existing truncate endpoint, and multi-row saved-candidate
+  swaps use a `replaceTailMessages {afterMessageId, messages}` command so the
+  request body scales with changed rows, not transcript length.
+- **Current evidence:** `src/ts/process/rerollNavigation.svelte.ts:107-160`
+  dispatches data swaps, tail-slice swaps, and truncates through targeted
+  helpers; `src/ts/chatCommands.ts:1073-1186` maps those helpers to
+  `updateMessageCommand`, `truncateMessagesCommand`, and
+  `replaceTailMessagesCommand`; `src/ts/server/commands.ts:2182-2238` sends the
+  bounded request bodies; `server/fastify/src/routes/commands.ts:3631-3723`
+  implements the truncate and tail replacement routes.
 
 ### H3 — Editing a single lorebook entry re-uploads the entire lorebook collection
 
@@ -602,26 +614,19 @@ interactive). Fix: add a dedicated `HEAD /storage/read` (200/404) or
 
 Ordered by bytes × frequency × implementation ease:
 
-1. **H2 (swipe/reroll transcript).** Highest frequency × size on an interactive
-   path; route truncates and N=1 swaps through existing endpoints first, add a
-   tail-slice command for multi-row.
-2. **H1 immediate win (strip the active preset's duplicate `promptTemplate`).** One
-   line in `stripLazyBootstrapFields`-adjacent code; removes the largest pure
-   duplicate with zero feature loss. Schedule the full preset-stub + lazy-fetch
-   (H1 full + L1) after.
-3. **H3 (per-entry lorebook commands).** Frequent authoring path; introduces the
+1. **H3 (per-entry lorebook commands).** Frequent authoring path; introduces the
    per-element delta protocol reused by L3.
-4. **M2 + L4 (drop `messages` and `lorebookActivation` from the `prompt` event).**
+2. **M2 + L4 (drop `messages` and `lorebookActivation` from the `prompt` event).**
    One client-capability flag removes both, per-generation, every chat.
-5. **M1 (generation.persisted tail).** Reuse `loadChatHydrationRange` +
+3. **M1 (generation.persisted tail).** Reuse `loadChatHydrationRange` +
    `firstChangedIndex`; low-risk, infra already present (shared with L7).
-6. **M3 + L8 (probe `/assets/exists`, then upload missing as raw binary).** Turns
+4. **M3 + L8 (probe `/assets/exists`, then upload missing as raw binary).** Turns
    duplicate/re-imports into near-zero-byte ops and removes 33% inflation.
-7. **M4 + L21 (binary WS frames, or enable `perMessageDeflate`).** LAN-scoped but
+5. **M4 + L21 (binary WS frames, or enable `perMessageDeflate`).** LAN-scoped but
    hot during streaming.
-8. **Memory cleanup (L9, L10, L11, L12).** Projected job-list shape, event-driven
+6. **Memory cleanup (L9, L10, L11, L12).** Projected job-list shape, event-driven
    upserts, ETag/304, trimmed SSE frame — a coherent batch.
-9. **Remaining lows (L2, L5, L6, L7, L13–L22)** as opportunistic cleanup; L16 and
+7. **Remaining lows (L2, L5, L6, L7, L13–L22)** as opportunistic cleanup; L16 and
    L15 are documented as acceptable-as-is.
 
 ## How To Verify
@@ -632,7 +637,9 @@ Ordered by bytes × frequency × implementation ease:
   server serializer and confirming the client consumer ignores the field
   (grep the field name across `src/` excluding tests). The `file:line` anchors in
   each finding are the entry points.
-- A regression guard could assert the bootstrap projection contains no
-  `botPresets[i].promptTemplate` for the active preset (H1), that the bulk chat
+- Existing regression coverage asserts the bootstrap projection contains no
+  `botPresets[i].promptTemplate` for the active preset (H1). A regression guard
+  could still assert that the bulk chat
   response omits `alternates` (L17), and that the `prompt` SSE event omits
   `messages`/`lorebookActivation` when the capability flag is set (M2/L4).
+  Existing focused tests guard the H2 targeted swipe/reroll command routing.

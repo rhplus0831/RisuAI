@@ -145,8 +145,8 @@ function applyTailSlice(slice: Message[]): void {
  * transcript in place to `keepLength`, then persist the surviving rows. Truncating
  * keeps the existing rows by reference (no whole-transcript clone) and is
  * guard-safe: the surviving rows are the projection's own rows, never re-installed
- * proxies. The dispatch is still a message replace with the surviving rows, so the
- * persisted payload is unchanged.
+ * proxies. The dispatch sends only the last retained message id, so the persisted
+ * payload stays bounded to the truncate point.
  */
 function applyRerollTruncate(keepLength: number): void {
   const previous = currentChatScopedSnapshot()

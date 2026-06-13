@@ -1403,6 +1403,16 @@ function stubDatabaseProjection(database: unknown): void {
 function stripLazyBootstrapFields(database: unknown): void {
   if (!isRecord(database)) return
   delete database.promptTemplate
+  stripActivePresetPromptTemplate(database)
+}
+
+function stripActivePresetPromptTemplate(database: JsonRecord): void {
+  const presets = database.botPresets
+  const activeIndex = database.botPresetsId
+  if (!Array.isArray(presets) || !Number.isInteger(activeIndex)) return
+  const activePreset = presets[activeIndex as number]
+  if (!isRecord(activePreset)) return
+  delete activePreset.promptTemplate
 }
 
 /**
