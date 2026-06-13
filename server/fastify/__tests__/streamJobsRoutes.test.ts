@@ -133,6 +133,7 @@ function startEcho(): Promise<EchoServer> {
 interface CollectedRun {
   ws: WebSocket
   events: { type: string }[]
+  chunks: Buffer[]
 }
 
 async function injectAndCollect(
@@ -143,15 +144,20 @@ async function injectAndCollect(
 ): Promise<CollectedRun> {
   return new Promise<CollectedRun>((resolve, reject) => {
     const events: { type: string }[] = []
+    const chunks: Buffer[] = []
     let resolved = false
     const onInit = (ws: WebSocket): void => {
-      ws.on('message', (data) => {
+      ws.on('message', (data, isBinary) => {
+        if (isBinary) {
+          chunks.push(Buffer.from(data as Buffer))
+          return
+        }
         const text = typeof data === 'string' ? data : Buffer.from(data as Buffer).toString('utf8')
         const ev = JSON.parse(text) as { type: string }
         events.push(ev)
         if (until(ev) && !resolved) {
           resolved = true
-          resolve({ ws, events })
+          resolve({ ws, events, chunks })
         }
       })
       ws.once('error', (err) => {
@@ -160,7 +166,7 @@ async function injectAndCollect(
       ws.once('close', () => {
         if (!resolved) {
           resolved = true
-          resolve({ ws, events })
+          resolve({ ws, events, chunks })
         }
       })
     }
@@ -323,7 +329,7 @@ describe('Phase 3B-2 WebSocket /api/v1/proxy/stream-jobs/:id/ws', () => {
     })
     const { jobId } = create.json() as { jobId: string }
 
-    const { ws, events } = await injectAndCollect(
+    const { ws, events, chunks } = await injectAndCollect(
       harness.app,
       `/api/v1/proxy/stream-jobs/${jobId}/ws`,
       { headers: { 'risu-auth': assertion } },
@@ -333,7 +339,6 @@ describe('Phase 3B-2 WebSocket /api/v1/proxy/stream-jobs/:id/ws', () => {
     const types = events.map((e) => e.type)
     expect(types[0]).toBe('job_accepted')
     expect(types).toContain('upstream_headers')
-    expect(types).toContain('chunk')
     expect(types.at(-1)).toBe('done')
     const head = events.find((e) => e.type === 'upstream_headers') as
       | { type: 'upstream_headers'; status: number; headers: Record<string, string> }
@@ -346,11 +351,7 @@ describe('Phase 3B-2 WebSocket /api/v1/proxy/stream-jobs/:id/ws', () => {
     expect(head?.headers['content-security-policy']).toBeUndefined()
     expect(head?.headers['content-security-policy-report-only']).toBeUndefined()
     expect(head?.headers['clear-site-data']).toBeUndefined()
-    const chunks = events.filter((e) => e.type === 'chunk') as {
-      type: 'chunk'
-      dataBase64: string
-    }[]
-    const combined = chunks.map((c) => Buffer.from(c.dataBase64, 'base64').toString('utf8')).join('')
+    const combined = chunks.map((chunk) => chunk.toString('utf8')).join('')
     expect(combined).toBe('onetwo')
   })
 
@@ -404,7 +405,7 @@ describe('Phase 3B-2 WebSocket /api/v1/proxy/stream-jobs/:id/ws', () => {
     // Let upstream complete before WS attaches.
     await new Promise((r) => setTimeout(r, 80))
 
-    const { ws, events } = await injectAndCollect(
+    const { ws, events, chunks } = await injectAndCollect(
       harness.app,
       `/api/v1/proxy/stream-jobs/${jobId}/ws`,
       { headers: { 'risu-auth': assertion } },
@@ -413,7 +414,7 @@ describe('Phase 3B-2 WebSocket /api/v1/proxy/stream-jobs/:id/ws', () => {
     ws.close()
     expect(events[0].type).toBe('job_accepted')
     expect(events.some((e) => e.type === 'upstream_headers')).toBe(true)
-    expect(events.some((e) => e.type === 'chunk')).toBe(true)
+    expect(chunks.map((chunk) => chunk.toString('utf8')).join('')).toBe('hello')
     expect(events.at(-1)?.type).toBe('done')
   })
 
@@ -445,7 +446,8 @@ describe('Phase 3B-2 WebSocket /api/v1/proxy/stream-jobs/:id/ws', () => {
       `ws://127.0.0.1:${port}/api/v1/proxy/stream-jobs/${jobId}/ws?risu-auth=${encodeURIComponent(assertion)}`,
     )
     const events: { type: string }[] = []
-    ws.on('message', (data) => {
+    ws.on('message', (data, isBinary) => {
+      if (isBinary) return
       events.push(JSON.parse(Buffer.from(data as Buffer).toString('utf8')) as { type: string })
     })
     await new Promise<void>((resolve, reject) => {

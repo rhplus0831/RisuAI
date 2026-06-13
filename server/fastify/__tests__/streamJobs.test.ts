@@ -12,6 +12,7 @@ import {
   PROXY_STREAM_MAX_PENDING_EVENTS,
   PROXY_STREAM_MAX_TIMEOUT_MS,
   type JobClient,
+  type StreamJobFrame,
   type StreamJob,
   isStreamDeadlineActivityFrame,
   normalizeHeartbeatSec,
@@ -22,12 +23,12 @@ import {
 import { STREAM_CLIENT_MAX_BUFFERED_BYTES } from '../src/streamBackpressure.js'
 
 interface FakeClient extends JobClient {
-  messages: string[]
+  messages: StreamJobFrame[]
   closed: boolean
 }
 
 function fakeClient(opts: { bufferedBytes?: number } = {}): FakeClient {
-  const messages: string[] = []
+  const messages: StreamJobFrame[] = []
   let openFlag = true
   return {
     messages,
@@ -40,13 +41,33 @@ function fakeClient(opts: { bufferedBytes?: number } = {}): FakeClient {
     get closed() {
       return !openFlag
     },
-    send(text) {
-      if (openFlag) messages.push(text)
+    send(frame) {
+      if (openFlag) messages.push(frame)
     },
     close() {
       openFlag = false
     },
   }
+}
+
+function jsonMessages(client: FakeClient): unknown[] {
+  return client.messages
+    .filter((message): message is string => typeof message === 'string')
+    .map((message) => JSON.parse(message) as unknown)
+}
+
+function binaryMessages(client: FakeClient): Buffer[] {
+  return client.messages
+    .filter((message): message is Buffer => Buffer.isBuffer(message))
+    .map((message) => Buffer.from(message))
+}
+
+function lastJsonFrame(frames: readonly StreamJobFrame[]): string | undefined {
+  for (let index = frames.length - 1; index >= 0; index -= 1) {
+    const frame = frames[index]
+    if (typeof frame === 'string') return frame
+  }
+  return undefined
 }
 
 interface EchoServer {
@@ -197,8 +218,6 @@ describe('JobRegistry buffering and lifecycle', () => {
     expect(isStreamDeadlineActivityFrame(JSON.stringify({ type: 'upstream_headers', status: 200, headers: {} }))).toBe(
       true,
     )
-    expect(isStreamDeadlineActivityFrame(JSON.stringify({ type: 'chunk', dataBase64: 'AAAA' }))).toBe(true)
-    expect(isStreamDeadlineActivityFrame(JSON.stringify({ type: 'chunk', dataBase64: '' }))).toBe(false)
     expect(isStreamDeadlineActivityFrame(JSON.stringify({ type: 'ping', ts: 1 }))).toBe(false)
     expect(isStreamDeadlineActivityFrame(JSON.stringify({ type: 'done' }))).toBe(false)
     expect(isStreamDeadlineActivityFrame(JSON.stringify({ type: 'error', status: 504, message: 'nope' }))).toBe(false)
@@ -207,15 +226,14 @@ describe('JobRegistry buffering and lifecycle', () => {
   it('buffers events when no client is attached, then flushes on attach', () => {
     const reg = new JobRegistry()
     const job = reg.create({ timeoutMs: 60_000, heartbeatSec: 10 })
-    reg.pushEvent(job, { type: 'chunk', dataBase64: 'AAAA' })
-    reg.pushEvent(job, { type: 'chunk', dataBase64: 'BBBB' })
+    reg.pushBinary(job, Buffer.from('AAAA'))
+    reg.pushBinary(job, Buffer.from('BBBB'))
     expect(job.pendingEvents).toHaveLength(2)
 
     const client = fakeClient()
     expect(reg.attach(job.id, client)).toBe(job)
     expect(client.messages).toHaveLength(2)
-    expect(JSON.parse(client.messages[0])).toEqual({ type: 'chunk', dataBase64: 'AAAA' })
-    expect(JSON.parse(client.messages[1])).toEqual({ type: 'chunk', dataBase64: 'BBBB' })
+    expect(binaryMessages(client).map((message) => message.toString('utf8'))).toEqual(['AAAA', 'BBBB'])
     expect(job.pendingEvents).toHaveLength(0)
     expect(job.pendingBytes).toBe(0)
   })
@@ -239,7 +257,7 @@ describe('JobRegistry buffering and lifecycle', () => {
     const slow = fakeClient({ bufferedBytes: STREAM_CLIENT_MAX_BUFFERED_BYTES })
     reg.attach(job.id, slow)
 
-    reg.pushEvent(job, { type: 'chunk', dataBase64: 'AAAA' })
+    reg.pushBinary(job, Buffer.from('AAAA'))
 
     expect(slow.closed).toBe(true)
     expect(job.clients.has(slow)).toBe(false)
@@ -249,7 +267,7 @@ describe('JobRegistry buffering and lifecycle', () => {
   it('keeps pending events when an attaching client exceeds the buffer cap', () => {
     const reg = new JobRegistry()
     const job = reg.create({ timeoutMs: 60_000, heartbeatSec: 10 })
-    reg.pushEvent(job, { type: 'chunk', dataBase64: 'AAAA' })
+    reg.pushBinary(job, Buffer.from('AAAA'))
     const slow = fakeClient({ bufferedBytes: STREAM_CLIENT_MAX_BUFFERED_BYTES })
 
     expect(reg.attach(job.id, slow)).toBe(job)
@@ -264,20 +282,19 @@ describe('JobRegistry buffering and lifecycle', () => {
     const reg = new JobRegistry()
     const job = reg.create({ timeoutMs: 60_000, heartbeatSec: 10 })
     for (let i = 0; i < PROXY_STREAM_MAX_PENDING_EVENTS + 5; i += 1) {
-      reg.pushEvent(job, { type: 'chunk', dataBase64: `x${i}` })
+      reg.pushBinary(job, Buffer.from(`x${i}`))
     }
     expect(job.pendingEvents.length).toBeLessThanOrEqual(PROXY_STREAM_MAX_PENDING_EVENTS)
     expect(job.pendingBytes).toBeLessThanOrEqual(PROXY_STREAM_MAX_PENDING_BYTES)
-    const first = JSON.parse(job.pendingEvents[0])
-    expect(first.dataBase64).not.toBe('x0')
+    expect(Buffer.from(job.pendingEvents[0] as Buffer).toString('utf8')).not.toBe('x0')
   })
 
   it('caps the pending buffer at MAX_PENDING_BYTES', () => {
     const reg = new JobRegistry()
     const job = reg.create({ timeoutMs: 60_000, heartbeatSec: 10 })
-    const big = 'x'.repeat(256 * 1024)
+    const big = Buffer.alloc(256 * 1024, 'x')
     for (let i = 0; i < 10; i += 1) {
-      reg.pushEvent(job, { type: 'chunk', dataBase64: big })
+      reg.pushBinary(job, big)
     }
     expect(job.pendingBytes).toBeLessThanOrEqual(PROXY_STREAM_MAX_PENDING_BYTES)
   })
@@ -363,7 +380,7 @@ describe('JobRegistry buffering and lifecycle', () => {
     const job = reg.create({ timeoutMs: 1_000, heartbeatSec: 10 })
 
     vi.advanceTimersByTime(900)
-    reg.pushEvent(job, { type: 'chunk', dataBase64: 'AAAA' })
+    reg.pushBinary(job, Buffer.from('AAAA'))
     expect(job.deadlineAt).toBe(3_001_000)
 
     vi.advanceTimersByTime(101)
@@ -389,7 +406,7 @@ describe('JobRegistry buffering and lifecycle', () => {
     vi.advanceTimersByTime(900)
     reg.tickGc()
     expect(job.abortController.signal.aborted).toBe(false)
-    reg.pushEvent(job, { type: 'chunk', dataBase64: 'AAAA' })
+    reg.pushBinary(job, Buffer.from('AAAA'))
     expect(job.deadlineAt).toBe(4_002_800)
 
     const refreshedDeadline = job.deadlineAt
@@ -448,7 +465,7 @@ describe('runStreamJob', () => {
       headers: Record<string, string>
       body: Buffer
     }>,
-  ): Promise<{ registry: JobRegistry; job: StreamJob; events: StreamJobEventLike[] }> {
+  ): Promise<{ registry: JobRegistry; job: StreamJob; client: FakeClient; events: StreamJobEventLike[] }> {
     const registry = new JobRegistry()
     const job = registry.create({ timeoutMs: 30_000, heartbeatSec: 10 })
     const client = fakeClient()
@@ -463,7 +480,8 @@ describe('runStreamJob', () => {
     return {
       registry,
       job,
-      events: client.messages.map((m) => JSON.parse(m) as StreamJobEventLike),
+      client,
+      events: jsonMessages(client) as StreamJobEventLike[],
     }
   }
 
@@ -481,9 +499,9 @@ describe('runStreamJob', () => {
       res.end('hello world')
     })
 
-    const { events } = await runWith({})
+    const { client, events } = await runWith({})
     const types = events.map((e) => e.type)
-    expect(types).toEqual(['upstream_headers', 'chunk', 'done'])
+    expect(types).toEqual(['upstream_headers', 'done'])
     const head = events[0] as { type: 'upstream_headers'; status: number; headers: Record<string, string> }
     expect(head.status).toBe(200)
     expect(head.headers['content-type']).toBe('text/plain')
@@ -493,8 +511,7 @@ describe('runStreamJob', () => {
     expect(head.headers['content-security-policy']).toBeUndefined()
     expect(head.headers['content-security-policy-report-only']).toBeUndefined()
     expect(head.headers['clear-site-data']).toBeUndefined()
-    const chunk = events[1] as { type: 'chunk'; dataBase64: string }
-    expect(Buffer.from(chunk.dataBase64, 'base64').toString('utf8')).toBe('hello world')
+    expect(binaryMessages(client).map((message) => message.toString('utf8'))).toEqual(['hello world'])
   })
 
   it('emits an error event when the target URL is not local-network', async () => {
@@ -545,7 +562,7 @@ describe('runStreamJob', () => {
     })
     setTimeout(() => job.abortController.abort(), 25)
     await run
-    const events = client.messages.map((m) => JSON.parse(m) as StreamJobEventLike)
+    const events = jsonMessages(client) as StreamJobEventLike[]
     expect(events.at(-1)).toMatchObject({ type: 'error', status: 504 })
   })
 
@@ -590,7 +607,7 @@ describe('runStreamJob', () => {
 
     expect(job.done).toBe(true)
     expect(job.abortController.signal.aborted).toBe(true)
-    expect(JSON.parse(job.pendingEvents.at(-1) ?? '{}')).toMatchObject({
+    expect(JSON.parse(lastJsonFrame(job.pendingEvents) ?? '{}')).toMatchObject({
       type: 'error',
       status: 503,
       message: expect.stringContaining('overflowed') as unknown as string,
@@ -608,6 +625,5 @@ describe('runStreamJob', () => {
 
 type StreamJobEventLike =
   | { type: 'upstream_headers'; status: number; headers: Record<string, string> }
-  | { type: 'chunk'; dataBase64: string }
   | { type: 'done' }
   | { type: 'error'; status: number; message: string }

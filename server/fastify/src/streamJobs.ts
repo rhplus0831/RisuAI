@@ -24,13 +24,14 @@ export type StreamJobEvent =
       status: number
       headers: Record<string, string>
     }
-  | { type: 'chunk'; dataBase64: string }
   | { type: 'done' }
   | { type: 'error'; status: number; message: string }
   | { type: 'ping'; ts: number }
 
+export type StreamJobFrame = string | Buffer
+
 export interface JobClient {
-  send(text: string): void
+  send(frame: StreamJobFrame): void
   close(): void
   readonly open: boolean
   readonly bufferedBytes?: number
@@ -43,7 +44,7 @@ export interface StreamJob {
   done: boolean
   cleanupAt: number
   clients: Set<JobClient>
-  pendingEvents: string[]
+  pendingEvents: StreamJobFrame[]
   pendingBytes: number
   replayEvents?: string[]
   replayBytes?: number
@@ -189,25 +190,13 @@ function serializedJsonEventType(text: string): string | undefined {
   }
 }
 
-function serializedJsonEventData(text: string): unknown {
-  try {
-    return JSON.parse(text) as unknown
-  } catch {
-    return undefined
-  }
-}
-
 function isJsonStreamDeadlineActivityFrame(text: string): boolean {
   const type = serializedJsonEventType(text)
   if (!type || type === 'done' || type === 'error' || type === 'ping') return false
   if (type === 'upstream_headers' || type === 'progress' || type === 'info' || type === 'live') {
     return true
   }
-  if (type !== 'chunk') return false
-  const data = serializedJsonEventData(text)
-  if (!data || typeof data !== 'object') return false
-  const dataBase64 = (data as { dataBase64?: unknown }).dataBase64
-  return typeof dataBase64 === 'string' && dataBase64.length > 0
+  return false
 }
 
 export function isStreamDeadlineActivityFrame(text: string): boolean {
@@ -258,15 +247,19 @@ function closeJobClient(client: JobClient): void {
   }
 }
 
-function sendBoundedJobClient(client: JobClient, text: string): boolean {
+function streamJobFrameBytes(frame: StreamJobFrame): number {
+  return typeof frame === 'string' ? Buffer.byteLength(frame) : frame.byteLength
+}
+
+function sendBoundedJobClient(client: JobClient, frame: StreamJobFrame): boolean {
   if (!client.open) return false
   const bufferedBytes = typeof client.bufferedBytes === 'number' ? Math.max(0, client.bufferedBytes) : 0
-  if (bufferedBytes + Buffer.byteLength(text) > STREAM_CLIENT_MAX_BUFFERED_BYTES) {
+  if (bufferedBytes + streamJobFrameBytes(frame) > STREAM_CLIENT_MAX_BUFFERED_BYTES) {
     closeJobClient(client)
     return false
   }
   try {
-    client.send(text)
+    client.send(frame)
   } catch {
     closeJobClient(client)
     return false
@@ -328,6 +321,33 @@ export class JobRegistry {
     job.replayBytes = 0
   }
 
+  private pushFrame(job: StreamJob, frame: StreamJobFrame): void {
+    if (job.clients.size === 0) {
+      if (job.replayEvents) return
+      job.pendingEvents.push(frame)
+      job.pendingBytes += streamJobFrameBytes(frame)
+      while (
+        job.pendingEvents.length > PROXY_STREAM_MAX_PENDING_EVENTS ||
+        job.pendingBytes > PROXY_STREAM_MAX_PENDING_BYTES
+      ) {
+        const removed = job.pendingEvents.shift()
+        if (!removed) break
+        job.pendingBytes -= streamJobFrameBytes(removed)
+        job.pendingOverflow = true
+      }
+      return
+    }
+    const staleClients: JobClient[] = []
+    for (const client of job.clients) {
+      if (!sendBoundedJobClient(client, frame)) {
+        staleClients.push(client)
+      }
+    }
+    for (const client of staleClients) {
+      this.detach(job.id, client)
+    }
+  }
+
   /**
    * Buffer (no client attached) or fan out an **already-serialized** frame
    * string. Generalizes {@link pushEvent} so the durable-generation runner can
@@ -343,30 +363,16 @@ export class JobRegistry {
       this.refreshDeadline(job, t)
     }
     appendDurableReplayFrame(job, text)
-    if (job.clients.size === 0) {
-      if (job.replayEvents) return
-      job.pendingEvents.push(text)
-      job.pendingBytes += Buffer.byteLength(text)
-      while (
-        job.pendingEvents.length > PROXY_STREAM_MAX_PENDING_EVENTS ||
-        job.pendingBytes > PROXY_STREAM_MAX_PENDING_BYTES
-      ) {
-        const removed = job.pendingEvents.shift()
-        if (!removed) break
-        job.pendingBytes -= Buffer.byteLength(removed)
-        job.pendingOverflow = true
-      }
-      return
+    this.pushFrame(job, text)
+  }
+
+  pushBinary(job: StreamJob, bytes: Buffer, now?: number): void {
+    const t = now ?? Date.now()
+    job.updatedAt = t
+    if (job.slidingDeadline && bytes.byteLength > 0) {
+      this.refreshDeadline(job, t)
     }
-    const staleClients: JobClient[] = []
-    for (const client of job.clients) {
-      if (!sendBoundedJobClient(client, text)) {
-        staleClients.push(client)
-      }
-    }
-    for (const client of staleClients) {
-      this.detach(job.id, client)
-    }
+    this.pushFrame(job, bytes)
   }
 
   pushEvent(job: StreamJob, event: StreamJobEvent, now?: number): void {
@@ -495,10 +501,7 @@ export async function runStreamJob(registry: JobRegistry, job: StreamJob, arg: R
         if (job.abortController.signal.aborted) break
         const chunk = Buffer.isBuffer(value) ? value : Buffer.from(value as Uint8Array)
         if (chunk.length > 0) {
-          registry.pushEvent(job, {
-            type: 'chunk',
-            dataBase64: chunk.toString('base64'),
-          })
+          registry.pushBinary(job, chunk)
         }
         // No-viewer buffer overflow the pending window already
         // dropped frames, so a later viewer would see a corrupt stream.

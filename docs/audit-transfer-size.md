@@ -2,7 +2,7 @@
 
 Date: 2026-06-13.
 
-Last updated: 2026-06-13. H2, H3, M1, M2, M3, L4, L8, and the H1 immediate bootstrap duplicate were remediated after the initial audit.
+Last updated: 2026-06-13. H2, H3, M1, M2, M3, M4, L4, L8, L21, and the H1 immediate bootstrap duplicate were remediated after the initial audit.
 
 This audit examines every place the server sends data to the client and every
 place the client sends changes back, looking for endpoints that **transmit or
@@ -20,9 +20,9 @@ anchors. IDs (H/M/L) are scoped to this audit.
   **bytes × frequency**, not raw size alone.
 - All HTTP responses pass through `@fastify/compress` (`global: true`,
   `threshold: 1024`, `app.ts:105-109`), so raw-byte estimates below overstate
-  on-wire cost for repetitive JSON. Two transports bypass it and are called out:
-  the events SSE stream (hijacked raw writes) and the stream-job WebSocket
-  (`perMessageDeflate` off).
+  on-wire cost for repetitive JSON. One transport bypasses it and is called out:
+  the events SSE stream (hijacked raw writes). The stream-job WebSocket now
+  negotiates `perMessageDeflate`.
 - Surfaces audited (per `routeManifest.ts`): bootstrap, per-resource projection,
   bulk hydration, command mutations, command/memory SSE, chat/completion/
   preview generation, import/export/backup/realm, assets, memory reads/jobs,
@@ -96,9 +96,9 @@ better than the instance.
    which resources changed per revision. The foreign `generation.persisted`
    branch now ships a ranged message tail instead of the whole transcript. See
    L2.
-5. **base64-in-JSON for binary (both).** The stream-job WS still base64-wraps raw
-   bytes (~33% inflation) although a raw HTTP path exists. Bulk asset upload was
-   moved to binary framing for missing assets. See M4.
+5. **base64-in-JSON for binary (both).** Resolved for the two audited hot spots:
+   stream-job chunks now use binary WS frames, and bulk asset upload uses binary
+   framing for missing assets.
 6. **Content-addressed dedup not used client-side (C→S).** Resolved for bulk
    asset upload: the client now hashes assets, probes `/assets/exists`, and
    uploads only ids the server reports missing.
@@ -116,7 +116,7 @@ better than the instance.
 | M1  | S→C | GET /projection/generation | per foreign generation | Resolved: generation.persisted ships the changed message tail with range metadata |
 | M2  | S→C | POST /generate/chat (prompt) | per-generation | Resolved: compact-capable clients no longer receive `messages` duplicating `formated` |
 | M3  | C→S | POST /assets/bulk | on-import | Resolved: bulk upload probes /assets/exists and skips duplicate bytes |
-| M4  | S→C | GET /proxy/stream-jobs/:id/ws | per-chunk (LAN stream) | WS base64-encodes every LLM chunk (~33% inflation) |
+| M4  | S→C | GET /proxy/stream-jobs/:id/ws | per-chunk (LAN stream) | Resolved: WS streams chunks as binary frames, not base64 JSON |
 | L1  | S→C | GET /bootstrap | per-session + resync | All modules and plugins shipped in full incl. disabled items |
 | L2  | S→C | GET /bootstrap (resync) | per gap/reconnect | Resync re-pulls the entire projection with no revision delta |
 | L3  | C→S | PUT /commands/.../scripts\|triggers | per edit burst | One script/trigger edit re-uploads the whole array |
@@ -137,7 +137,7 @@ better than the instance.
 | L18 | both | POST /projection/chatMessages/bulk | export only | Bulk endpoints have no maxItems bound and no per-chat window |
 | L19 | S→C | POST /import/bundle | per import | Import response echoes fields incl. unbounded unsupportedReferences |
 | L20 | S→C | POST /import/realm-character | per import | Realm SSE re-sends a constant phase/message string per asset frame |
-| L21 | S→C | GET /proxy/stream-jobs/:id/ws | LAN stream | WS perMessageDeflate off; skips the compression the HTTP path gets |
+| L21 | S→C | GET /proxy/stream-jobs/:id/ws | LAN stream | Resolved: WS negotiates perMessageDeflate |
 | L22 | S→C | GET /storage/list | per save | Remote-block existence check downloads the entire key list for one name |
 
 ---
@@ -375,6 +375,11 @@ better than the instance.
 
 ### M4 — Stream-job WebSocket base64-encodes every LLM chunk inside JSON (~33% inflation)
 
+- **Status:** remediated 2026-06-13. Proxy stream chunks now ride as binary
+  WebSocket frames. JSON frames are reserved for control events
+  (`job_accepted`, `upstream_headers`, `ping`, `done`, `error`), and the browser
+  sets `binaryType = 'arraybuffer'` so chunks enqueue directly into the
+  `ReadableStream<Uint8Array>`.
 - **Direction / endpoint:** S→C, `GET /api/v1/proxy/stream-jobs/:id/ws`.
 - **Frequency:** per upstream chunk on every **local-network** streaming LLM
   generation (`openai_streaming` interceptor) — many frames per message.
@@ -392,13 +397,16 @@ better than the instance.
 - **Nuance:** scoped to `local_network` streaming (Ollama/LM Studio on the user's
   LAN), so the bytes don't cross the internet — which is why this is medium, not
   high.
-- **Recommendation:** send upstream chunks as **binary** WS frames
-  (`socket.send(buffer)`), keeping JSON only for control frames. Failing that,
-  enable `perMessageDeflate` (see L21).
-- **Evidence:** `server/fastify/src/streamJobs.ts:494-502` (per-chunk base64),
-  `:372-373` (JSON.stringify), `routes/streamJobs.ts:53` (text frame); client
-  `src/ts/globalApi.svelte.ts:1162-1165,1312-1317`, `src/ts/network/proxyJobWs.ts:21-23`;
-  raw HTTP contrast `routes/proxy.ts:78`.
+- **Completed remediation:** `JobRegistry.pushBinary` buffers and fans out raw
+  `Buffer` frames with the same backpressure and no-viewer overflow limits as
+  control frames. `runStreamJob` sends upstream chunks through that binary path.
+  The browser consumes binary `ArrayBuffer` frames directly while retaining a
+  legacy decoder for old JSON chunk frames.
+- **Current evidence:** `server/fastify/src/streamJobs.ts` (`StreamJobFrame`,
+  `pushBinary`, binary pending-frame accounting, and `runStreamJob` chunk
+  dispatch); `server/fastify/src/routes/streamJobs.ts` (`socket.send(frame)`);
+  `src/ts/globalApi.svelte.ts` (`ws.binaryType = 'arraybuffer'` and binary chunk
+  enqueue); `src/ts/network/proxyJobWs.ts` (`readProxyJobWsBinaryChunk`).
 
 ---
 
@@ -611,14 +619,12 @@ or throttle per-asset progress.
 
 ### Proxy / hub / legacy (S→C)
 
-**L21 — Stream-job WebSocket has `perMessageDeflate` disabled.** `fastifyWebsocket`
-is registered with no options (`app.ts:128`), so the `ws` server default
-(`perMessageDeflate: false`) means it ignores the browser's deflate offer and
-sends highly-compressible token text uncompressed — while the HTTP proxy path is
-gzip/br compressed by `@fastify/compress`. *Nuance:* LAN-only path (see M4), and
-PMD adds server CPU/memory, so not a pure free win. Fix: register with
-`{ options: { perMessageDeflate: true } }`, or move to binary frames (M4), which
-makes deflate moot. Compounds with M4's base64 inflation.
+**L21 — Resolved: stream-job WebSocket had `perMessageDeflate` disabled.**
+Remediated 2026-06-13. `fastifyWebsocket` now registers with
+`{ options: { perMessageDeflate: true } }`, so compatible clients can negotiate
+compression for stream-job control and binary chunk frames. This is LAN-scoped
+and still trades CPU/memory for bytes, but the route no longer skips the
+available WS compression path.
 
 **L22 — Remote-block existence check downloads the entire storage key list to test
 one filename.** `encodeRemoteBlock` calls `forageStorage.keys()` and uses it only
@@ -635,11 +641,9 @@ interactive). Fix: add a dedicated `HEAD /storage/read` (200/404) or
 
 Ordered by bytes × frequency × implementation ease:
 
-1. **M4 + L21 (binary WS frames, or enable `perMessageDeflate`).** LAN-scoped but
-   hot during streaming.
-2. **Memory cleanup (L9, L10, L11, L12).** Projected job-list shape, event-driven
+1. **Memory cleanup (L9, L10, L11, L12).** Projected job-list shape, event-driven
    upserts, ETag/304, trimmed SSE frame — a coherent batch.
-3. **Remaining lows (L2, L5, L6, L7, L13–L22)** as opportunistic cleanup; L16 and
+2. **Remaining lows (L2, L5, L6, L7, L13–L20, L22)** as opportunistic cleanup; L16 and
    L15 are documented as acceptable-as-is.
 
 ## How To Verify

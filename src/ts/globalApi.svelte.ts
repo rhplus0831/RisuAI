@@ -26,7 +26,12 @@ import { initMobileGesture } from './hotkey'
 import { moduleUpdate } from './process/modules'
 import { makeColdData } from './process/coldstorage.svelte'
 import { isLocalNetworkUrl } from './network/localNetwork'
-import { decodeProxyJobWsChunk, formatProxyStreamErrorMessage, parseProxyJobWsEvent } from './network/proxyJobWs'
+import {
+  decodeProxyJobWsChunk,
+  formatProxyStreamErrorMessage,
+  parseProxyJobWsEvent,
+  readProxyJobWsBinaryChunk,
+} from './network/proxyJobWs'
 import { getNodeServerProxyAuth } from './storage/fastifyStorage'
 import { activeWriterSessionHeader, handleActiveWriterStaleResponse } from './server/activeWriterSession'
 import { setCachedServerCommandRevision } from './server/commands'
@@ -1148,6 +1153,7 @@ async function fetchViaProxyJobWs(
   const encoder = new TextEncoder()
 
   const ws = new WebSocket(wsUrl)
+  ws.binaryType = 'arraybuffer'
   let terminalProxyFrameSeen = false
   let localRequestAborted = false
   let cancelDeleteSent = false
@@ -1216,6 +1222,12 @@ async function fetchViaProxyJobWs(
   }
 
   ws.onmessage = (event) => {
+    const binaryChunk = readProxyJobWsBinaryChunk(event.data)
+    if (binaryChunk) {
+      ensureHeadersReady()
+      streamController?.enqueue(binaryChunk)
+      return
+    }
     const parsed = parseProxyJobWsEvent(typeof event.data === 'string' ? event.data : '')
     if (!parsed || !streamController) {
       return

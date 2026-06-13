@@ -23,7 +23,8 @@ class FakeWebSocket {
   static OPEN = 1
   readonly OPEN = 1
   readyState = FakeWebSocket.OPEN
-  onmessage: ((event: MessageEvent<string>) => void) | null = null
+  binaryType = 'blob'
+  onmessage: ((event: MessageEvent<unknown>) => void) | null = null
   onerror: (() => void) | null = null
   onclose: (() => void) | null = null
   closeCalls = 0
@@ -47,7 +48,13 @@ class FakeWebSocket {
   }
 
   emit(event: unknown): void {
-    this.onmessage?.({ data: JSON.stringify(event) } as MessageEvent<string>)
+    this.onmessage?.({ data: JSON.stringify(event) } as MessageEvent<unknown>)
+  }
+
+  emitBinary(bytes: Uint8Array): void {
+    this.onmessage?.({
+      data: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+    } as MessageEvent<unknown>)
   }
 
   emitError(): void {
@@ -82,10 +89,6 @@ function startStreamingProxyFetch(signal?: AbortSignal): Promise<Response> {
 
 function proxyDeleteCalls() {
   return fetchCalls.filter((call) => call.init?.method === 'DELETE')
-}
-
-function encodedChunk(text: string) {
-  return Buffer.from(text, 'utf-8').toString('base64')
 }
 
 beforeEach(() => {
@@ -217,7 +220,7 @@ describe('Fastify proxy routing', () => {
     })
     const res = await resPromise
 
-    socket.emit({ type: 'chunk', dataBase64: encodedChunk('hello') })
+    socket.emitBinary(new TextEncoder().encode('hello'))
     socket.emit({ type: 'done' })
     controller.abort()
 

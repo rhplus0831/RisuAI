@@ -5,6 +5,7 @@ import { extractRisuAuth } from '../http.js'
 import {
   type JobClient,
   type JobRegistry,
+  type StreamJobFrame,
   PROXY_STREAM_MAX_ACTIVE_JOBS,
   PROXY_STREAM_MAX_BODY_BASE64_BYTES,
   runStreamJob,
@@ -44,13 +45,17 @@ function closeWs(socket: WebSocket): void {
   }
 }
 
-function sendBoundedWs(socket: WebSocket, text: string): void {
+function streamJobFrameBytes(frame: StreamJobFrame): number {
+  return typeof frame === 'string' ? Buffer.byteLength(frame) : frame.byteLength
+}
+
+function sendBoundedWs(socket: WebSocket, frame: StreamJobFrame): void {
   if (socket.readyState !== socket.OPEN) return
-  if (wsBufferedBytes(socket) + Buffer.byteLength(text) > STREAM_CLIENT_MAX_BUFFERED_BYTES) {
+  if (wsBufferedBytes(socket) + streamJobFrameBytes(frame) > STREAM_CLIENT_MAX_BUFFERED_BYTES) {
     closeWs(socket)
     return
   }
-  socket.send(text, (err: unknown) => {
+  socket.send(frame, (err: unknown) => {
     if (err) closeWs(socket)
   })
 }
@@ -99,8 +104,8 @@ async function checkProxyAuthWithQuery(
 
 function wsToJobClient(socket: WebSocket): JobClient {
   return {
-    send(text) {
-      sendBoundedWs(socket, text)
+    send(frame) {
+      sendBoundedWs(socket, frame)
     },
     close() {
       closeWs(socket)

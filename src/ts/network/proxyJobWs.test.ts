@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
-import { decodeProxyJobWsChunk, formatProxyStreamErrorMessage, parseProxyJobWsEvent } from './proxyJobWs'
+import {
+  decodeProxyJobWsChunk,
+  formatProxyStreamErrorMessage,
+  parseProxyJobWsEvent,
+  readProxyJobWsBinaryChunk,
+} from './proxyJobWs'
 
 describe('parseProxyJobWsEvent', () => {
   it('parses valid proxy job events', () => {
@@ -24,6 +29,22 @@ describe('decodeProxyJobWsChunk', () => {
   it('decodes base64 payload into bytes', () => {
     const bytes = decodeProxyJobWsChunk(Buffer.from('abc', 'utf-8').toString('base64'))
     expect(new TextDecoder().decode(bytes)).toBe('abc')
+  })
+})
+
+describe('readProxyJobWsBinaryChunk', () => {
+  it('reads ArrayBuffer websocket payloads directly', () => {
+    const source = new Uint8Array([97, 98, 99])
+    const bytes = readProxyJobWsBinaryChunk(source.buffer)
+    expect(bytes).not.toBeNull()
+    expect(new TextDecoder().decode(bytes ?? new Uint8Array())).toBe('abc')
+  })
+
+  it('reads ArrayBufferView websocket payloads directly', () => {
+    const source = new Uint8Array([0, 97, 98, 99, 0])
+    const bytes = readProxyJobWsBinaryChunk(source.subarray(1, 4))
+    expect(bytes).not.toBeNull()
+    expect(new TextDecoder().decode(bytes ?? new Uint8Array())).toBe('abc')
   })
 })
 

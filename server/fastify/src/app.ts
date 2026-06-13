@@ -128,7 +128,11 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
     done(null, body)
   })
 
-  await app.register(fastifyWebsocket)
+  await app.register(fastifyWebsocket, {
+    options: {
+      perMessageDeflate: true,
+    },
+  })
 
   const db = openDatabase(config.dataDir)
   const activeWriterState = createActiveWriterState()

@@ -1201,8 +1201,10 @@ function readWriterSessionHeader(req: FastifyRequest): string | null {
 /** An SSE-backed `JobClient`: writes raw frame strings to the reply's raw socket. */
 function makeSseJobClient(reply: FastifyReply): JobClient {
   return {
-    send(text) {
-      writeBoundedRaw(reply.raw, text)
+    send(frame) {
+      if (typeof frame === 'string') {
+        writeBoundedRaw(reply.raw, frame)
+      }
     },
     close() {
       try {

@@ -22,6 +22,16 @@ export function decodeProxyJobWsChunk(dataBase64: string): Uint8Array {
   return Buffer.from(dataBase64, 'base64')
 }
 
+export function readProxyJobWsBinaryChunk(data: unknown): Uint8Array | null {
+  if (data instanceof ArrayBuffer) {
+    return new Uint8Array(data)
+  }
+  if (ArrayBuffer.isView(data)) {
+    return new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
+  }
+  return null
+}
+
 export function formatProxyStreamErrorMessage(status: number | undefined, message: string): string {
   const text = message ?? ''
   if (
