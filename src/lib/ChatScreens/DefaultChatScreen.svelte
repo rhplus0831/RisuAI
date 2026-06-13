@@ -33,7 +33,12 @@
   } from '../../ts/stores.svelte'
   import { tick } from 'svelte'
   import Chat from './Chat.svelte'
-  import { getCharacterByIndex, setCharacterByIndex, type Message } from '../../ts/storage/database.svelte'
+  import {
+    getCharacterByIndex,
+    isServerCharacterShell,
+    setCharacterByIndex,
+    type Message,
+  } from '../../ts/storage/database.svelte'
   import { DBState } from 'src/ts/stores.svelte'
   import { getCharImage } from '../../ts/characters'
   import {
@@ -1050,7 +1055,11 @@
           {userIconPortrait}
           bind:hasNewUnreadMessage={showNewMessageButton} />
 
-        {#if DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message.length <= loadPages}
+        <!-- A bootstrap shell strips firstMessage/alternateGreetings (not in
+             BOOTSTRAP_CHARACTER_SHELL_FIELDS); skip the greeting render until the
+             row hydrates so the unguarded `alternateGreetings.length` reads below
+             cannot throw on the correct lazy-shell state. -->
+        {#if !isServerCharacterShell(currentCharacter) && DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message.length <= loadPages}
           <Chat
             character={createSimpleCharacter(DBState.db.characters[$selectedCharID])}
             name={DBState.db.characters[$selectedCharID].name}
