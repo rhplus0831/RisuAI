@@ -8,6 +8,7 @@ import { hydrateSelectedCharacterShell } from './characterShellHydration.svelte'
 import { setCachedServerCommandRevision } from './commands'
 import { hydrateActiveCharacterLorebook, hydrateActiveChat, resetChatHydration } from './chatMessageHydration.svelte'
 import { recordHydratedCharacterLorebooks, resetLorebookHydration } from './lorebookBridge.svelte'
+import { resetPromptTemplateHydration, startPromptTemplateHydration } from './promptTemplateHydration'
 import { recordFullBootstrapResync } from './protocolDiagnostics'
 
 export type ServerProjectionResyncResult =
@@ -72,6 +73,7 @@ async function runServerProjectionResync(): Promise<ServerProjectionResyncResult
         continue
       }
       applyServerProjectionDatabase(bootstrap.projection.database)
+      resetPromptTemplateHydration()
       syncSelectedCharacterAfterResync(bootstrap.projection.database)
       setCachedServerCommandRevision(bootstrap.projection.revision)
       setActiveGenerationJobs(bootstrap.projection.activeGenerationJobs ?? [])
@@ -87,6 +89,7 @@ async function runServerProjectionResync(): Promise<ServerProjectionResyncResult
       await hydrateSelectedCharacterShell()
       void hydrateActiveChat({ force: true })
       void hydrateActiveCharacterLorebook({ force: true })
+      startPromptTemplateHydration()
       applied = { status: 'ok', revision: bootstrap.projection.revision }
     } else if (bootstrap.status === 'error') {
       console.warn(`Server projection refresh failed: ${bootstrap.error}`)

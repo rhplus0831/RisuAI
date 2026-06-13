@@ -70,6 +70,11 @@ const serverProjectionState = vi.hoisted(() => ({
 const serverCommandsState = vi.hoisted(() => ({
   initialize: vi.fn(),
 }))
+const promptTemplateHydrationSpies = vi.hoisted(() => ({
+  resetPromptTemplateHydration: vi.fn(),
+  startPromptTemplateHydration: vi.fn(),
+  markPromptTemplateProjectionApplied: vi.fn(),
+}))
 const activeGenerationReattachSpies = vi.hoisted(() => ({
   setActiveGenerationJobs: vi.fn(),
   startActiveGenerationReattach: vi.fn(),
@@ -112,6 +117,8 @@ vi.mock('./server/projection', () => ({
   canUseServerProjection: () => true,
   fetchServerChatMessages: vi.fn(),
 }))
+
+vi.mock('./server/promptTemplateHydration', () => promptTemplateHydrationSpies)
 
 vi.mock('./server/commands', async (importActual) => {
   const actual = await importActual<typeof import('./server/commands')>()
@@ -272,6 +279,9 @@ beforeEach(() => {
     event: { type: 'state.initialized', revision: 1, resource: 'state' },
   })
   activeGenerationReattachSpies.setActiveGenerationJobs.mockClear()
+  promptTemplateHydrationSpies.resetPromptTemplateHydration.mockClear()
+  promptTemplateHydrationSpies.startPromptTemplateHydration.mockClear()
+  promptTemplateHydrationSpies.markPromptTemplateProjectionApplied.mockClear()
   activeGenerationReattachSpies.startActiveGenerationReattach.mockClear()
   activeGenerationReattachSpies.triggerOpenChatGenerationReattach.mockClear()
   memoryJobEventSpies.publishServerMemoryJobEvent.mockClear()
@@ -450,6 +460,8 @@ describe('web bootstrap startup source', () => {
     expect(forageSpies.setItem).not.toHaveBeenCalled()
     expect(serverEventsState.subscribe).toHaveBeenCalledTimes(1)
     expect(serverEventsState.subscriptions[0].sinceRevision).toBe(5)
+    expect(promptTemplateHydrationSpies.resetPromptTemplateHydration).toHaveBeenCalledTimes(1)
+    expect(promptTemplateHydrationSpies.startPromptTemplateHydration).toHaveBeenCalledTimes(1)
   })
 
   it('hydrates a selected character shell during Fastify startup', async () => {
@@ -576,6 +588,27 @@ describe('web bootstrap startup source', () => {
     expect(hydrationSpies.resetChatHydration).toHaveBeenCalled()
     expect(hydrationSpies.hydrateActiveChat).toHaveBeenCalledWith({ force: true })
     expect(activeGenerationReattachSpies.triggerOpenChatGenerationReattach).toHaveBeenCalledTimes(1)
+  })
+
+  it('applies a promptItem projection and marks promptTemplate hydrated', async () => {
+    await loadWebInitialDatabase()
+    serverProjectionState.fetchResource.mockImplementation(async () => ({
+      status: 'ok' as const,
+      revision: 6,
+      mode: 'fields' as const,
+      fields: {
+        promptTemplate: [{ id: 'prompt-a', type: 'plain', text: 'hydrated', role: 'system' }],
+      },
+    }))
+
+    const subscription = serverEventsState.subscriptions[0]
+    subscription.onCommandEvent({ type: 'promptItem.updated', revision: 6, resource: 'promptItem', id: 'prompt-a' })
+
+    await vi.waitFor(() => {
+      expect(DBState.db.promptTemplate).toEqual([{ id: 'prompt-a', type: 'plain', text: 'hydrated', role: 'system' }])
+    })
+    expect(promptTemplateHydrationSpies.markPromptTemplateProjectionApplied).toHaveBeenCalledTimes(1)
+    expect(peekCachedServerCommandRevision()).toBe(6)
   })
 
   it('applies a character-lorebook projection to one character without rehydrating chats', async () => {

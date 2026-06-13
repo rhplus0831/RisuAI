@@ -11,6 +11,7 @@ import {
   type SettingsPatch,
 } from './commands'
 import { withTrustedServerProjectionWrite } from './projectionWriteGuard.svelte'
+import { isPromptTemplateHydrated } from './promptTemplateHydration'
 
 /**
  * Prompt-template editor projection helpers.
@@ -79,6 +80,7 @@ const pendingPromptSettingsPatch: PendingPromptSettingsPatch = {
  * correct, just not narrowed.
  */
 export function applyPromptItemProjectionWrite(draftItems: PromptItem[], itemId: string): PromptItem | null {
+  if (!isPromptTemplateHydrated()) return null
   const draftItem = (draftItems ?? []).find((item) => item.id === itemId)
   if (!draftItem) return null
   const snapshot = cloneJsonValue(draftItem)
@@ -118,6 +120,7 @@ export function queuePromptItemProjectionUpdate(
   previousItem: PromptItem,
   delayMs = 250,
 ): void {
+  if (!isPromptTemplateHydrated()) return
   const attemptedItem = applyPromptItemProjectionWrite(binding.getItems(), itemId)
   if (!attemptedItem) return
   if (!canUseServerCommands()) return
@@ -261,6 +264,9 @@ export function reconcilePromptTemplateDraft(
   draftItems: PromptItem[],
   previousRevision: number | null,
 ): PromptTemplateReconcileResult {
+  if (!isPromptTemplateHydrated()) {
+    return { revision: previousRevision, nextDraft: null }
+  }
   const serverValue = (DBState.db.promptTemplate ?? []) as PromptItem[]
   const revision = peekCachedServerCommandRevision()
   if (revision === previousRevision) return { revision, nextDraft: null }

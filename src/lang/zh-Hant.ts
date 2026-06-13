@@ -15,6 +15,7 @@ export const languageChineseTraditional = {
   },
   errors: {
     toomuchtoken: '錯誤：所需的 Token 超過了最大可用上下文上限',
+    promptTemplateUnavailable: '提示詞模板仍在載入中。請等待伺服器同步完成後再試。',
     unknownModel: '錯誤：無法識別所選的模型',
     httpError: '錯誤：請求發生錯誤：',
     noData: '檔案格式錯誤或資料已損毀。',

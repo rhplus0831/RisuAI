@@ -50,6 +50,26 @@ const commandMocks = vi.hoisted(() => ({
   }),
 }))
 
+const hydrationState = vi.hoisted(() => {
+  let hydrated = true
+  const subscribers = new Set<(value: boolean) => void>()
+  return {
+    ensure: vi.fn(async () => hydrated),
+    isHydrated: () => hydrated,
+    setHydrated: (value: boolean) => {
+      hydrated = value
+      for (const subscriber of subscribers) subscriber(value)
+    },
+    store: {
+      subscribe: (run: (value: boolean) => void) => {
+        run(hydrated)
+        subscribers.add(run)
+        return () => subscribers.delete(run)
+      },
+    },
+  }
+})
+
 vi.mock('./commands', () => commandMocks)
 vi.mock('src/ts/server/commands', () => commandMocks)
 
@@ -63,6 +83,17 @@ vi.mock('src/ts/server/projectionWriteGuard.svelte', () => ({
 vi.mock('src/ts/server/settingsBridge.svelte', () => ({
   createServerBackedSettingDraft: vi.fn((_key: string, fallback: unknown) => ({ value: fallback })),
   watchServerBackedSettings: vi.fn(() => () => {}),
+}))
+
+vi.mock('./promptTemplateHydration', () => ({
+  ensurePromptTemplateHydrated: hydrationState.ensure,
+  isPromptTemplateHydrated: hydrationState.isHydrated,
+  promptTemplateHydratedStore: hydrationState.store,
+}))
+vi.mock('src/ts/server/promptTemplateHydration', () => ({
+  ensurePromptTemplateHydrated: hydrationState.ensure,
+  isPromptTemplateHydrated: hydrationState.isHydrated,
+  promptTemplateHydratedStore: hydrationState.store,
 }))
 
 import type { PromptItem, PromptSettings as PromptSettingsFixture } from '../process/prompt'
@@ -118,6 +149,8 @@ beforeEach(() => {
   vi.useFakeTimers()
   commandState.revision = 1
   commandState.commands.length = 0
+  hydrationState.setHydrated(true)
+  hydrationState.ensure.mockClear()
 })
 
 afterEach(() => {
@@ -157,6 +190,16 @@ describe('applyPromptItemProjectionWrite', () => {
     expect(result).toEqual(item('p-new', 'fresh'))
     expect((DBState.db.promptTemplate as PromptItem[]).map((p) => p.id)).toEqual(['p-0', 'p-1', 'p-2', 'p-3', 'p-new'])
   })
+
+  it('returns null without creating promptTemplate while the template is unloaded', () => {
+    hydrationState.setHydrated(false)
+    ;(DBState as { db: unknown }).db = {}
+
+    const result = applyPromptItemProjectionWrite([item('p-0', 'draft')], 'p-0')
+
+    expect(result).toBeNull()
+    expect(DBState.db).not.toHaveProperty('promptTemplate')
+  })
 })
 
 describe('restorePromptItemProjectionWrite', () => {
@@ -176,6 +219,24 @@ describe('restorePromptItemProjectionWrite', () => {
 })
 
 describe('flushPendingPromptTemplatePatches', () => {
+  it('does not dispatch prompt item updates while the template is unloaded', async () => {
+    hydrationState.setHydrated(false)
+    ;(DBState as { db: unknown }).db = {}
+    let draftItems = [item('p-0', 'unloaded draft')]
+    const binding: PromptTemplateDraftBinding = {
+      getItems: () => draftItems,
+      setItems: (items) => {
+        draftItems = items
+      },
+    }
+
+    queuePromptItemProjectionUpdate(binding, 'p-0', item('p-0', 'previous'), 500)
+    await vi.advanceTimersByTimeAsync(500)
+
+    expect(commandState.commands).toHaveLength(0)
+    expect(DBState.db).not.toHaveProperty('promptTemplate')
+  })
+
   it('M8: flushes pending prompt item updates with keepalive and clears debounce', async () => {
     seedTemplate()
     let draftItems = draftCopy()
@@ -276,6 +337,31 @@ describe('flushPendingPromptTemplatePatches', () => {
 
     await vi.advanceTimersByTimeAsync(500)
     expect(commandState.commands).toHaveLength(1)
+  })
+
+  it('PromptSettings does not dispatch or write an empty template while unloaded', async () => {
+    hydrationState.setHydrated(false)
+    hydrationState.ensure.mockResolvedValueOnce(false)
+    ;(DBState as { db: unknown }).db = { promptSettings: { ...minimalPromptSettings } }
+
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    let component: MountedComponent | null = null
+    try {
+      component = mount(PromptSettings, {
+        target,
+        props: { mode: 'inline', subMenu: 0 },
+      })
+      await tick()
+      await unmount(component)
+      component = null
+    } finally {
+      if (component) await unmount(component)
+      target.remove()
+    }
+
+    expect(commandState.commands).toHaveLength(0)
+    expect(DBState.db).not.toHaveProperty('promptTemplate')
   })
 
   it('M8: flushes pending prompt settings patches with keepalive and clears debounce', async () => {

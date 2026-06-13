@@ -40,7 +40,7 @@
   import { allBasicParameterItems } from 'src/ts/setting/botSettingsParamsData'
   import SeparateParametersSection from './SeparateParametersSection.svelte'
   import AuxModelSelectors from './Model/AuxModelSelectors.svelte'
-  import { onDestroy, untrack } from 'svelte'
+  import { onDestroy, onMount, untrack } from 'svelte'
   import { createServerBackedSettingDraft, watchServerBackedSettings } from 'src/ts/server/settingsBridge.svelte'
   import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
   import {
@@ -55,6 +55,7 @@
     currentPluginStateSnapshot,
     dispatchSelectPluginProvider,
   } from 'src/ts/pluginCommands'
+  import { ensurePromptTemplateHydrated, promptTemplateHydratedStore } from 'src/ts/server/promptTemplateHydration'
 
   const stopServerSettingsWatch = watchServerBackedSettings(['proxyRequestModel', 'hideApiKey', 'useLegacyGUI'])
   onDestroy(stopServerSettingsWatch)
@@ -147,6 +148,9 @@
   const formatingOrderDraft = createPromptFieldDraft<string[]>('formatingOrder', [])
   const promptPreprocessDraft = createPromptFieldDraft<boolean>('promptPreprocess', false)
   let currentPluginProviderDraft = $state(DBState.db.currentPluginProvider ?? '')
+  let promptTemplateHydrated = $derived(
+    $promptTemplateHydratedStore || Object.prototype.hasOwnProperty.call(DBState.db ?? {}, 'promptTemplate'),
+  )
 
   let initializedPluginProviderWatch = false
   let previousPluginProvider = ''
@@ -396,6 +400,10 @@
     vertexAccessTokenExpiresDraft.value = 0
     console.log('Vertex AI token cleared')
   }
+
+  onMount(() => {
+    void ensurePromptTemplateHydrated()
+  })
 
   onDestroy(() => {
     if (pendingPromptFieldPatch.timer) {
@@ -1130,7 +1138,9 @@
   {/if}
 
   <Accordion styled name={language.promptTemplate}>
-    {#if DBState.db.promptTemplate}
+    {#if !promptTemplateHydrated}
+      <span class="text-textcolor2">{language.loading}</span>
+    {:else if DBState.db.promptTemplate}
       {#if submenu !== -1}
         <PromptSettings mode="inline" subMenu={1} />
       {/if}
@@ -1138,7 +1148,8 @@
       <Check
         check={false}
         name={language.usePromptTemplate}
-        onChange={() => {
+        onChange={async () => {
+          if (!(await ensurePromptTemplateHydrated())) return
           withTrustedServerProjectionWrite(() => {
             DBState.db.promptTemplate = []
           })
@@ -1268,7 +1279,9 @@
 {/if}
 
 {#if submenu === 2 || submenu === -1}
-  {#if !DBState.db.promptTemplate}
+  {#if !promptTemplateHydrated}
+    <span class="text-textcolor2">{language.loading}</span>
+  {:else if !DBState.db.promptTemplate}
     <span class="text-textcolor">{language.mainPrompt} <Help key="mainprompt" /></span>
     <TextAreaInput fullwidth autocomplete="off" height={'32'} bind:value={mainPromptDraft.value}></TextAreaInput>
     <span class="text-textcolor2 mb-6 text-sm mt-2">{tokens.mainPrompt} {language.tokens}</span>
@@ -1288,7 +1301,7 @@
   {/if}
 {/if}
 
-{#if DBState.db.promptTemplate && submenu === -1}
+{#if promptTemplateHydrated && DBState.db.promptTemplate && submenu === -1}
   <div class="mt-2">
     <Button onclick={goPromptTemplate} size="sm">{language.promptTemplate}</Button>
   </div>

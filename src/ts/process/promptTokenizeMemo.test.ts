@@ -89,6 +89,12 @@ describe('prompt template tokenization memo', () => {
     expect(totals).toEqual(expected)
   })
 
+  it('treats absent promptTemplate values as zero tokens', async () => {
+    await expect(tokenizePreset(undefined)).resolves.toBe(0)
+    await expect(tokenizePreset(null)).resolves.toBe(0)
+    expect(tokenizeAccurateMock).not.toHaveBeenCalled()
+  })
+
   it('M13: unchanged prompt items hit cached token totals for both consti variants', async () => {
     const memo = createPromptTokenizeMemo()
     const template: PromptItem[] = [

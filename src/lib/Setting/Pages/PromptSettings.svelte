@@ -33,6 +33,11 @@
     type PromptTemplateDraftBinding,
   } from 'src/ts/server/promptTemplateBridge.svelte'
   import {
+    ensurePromptTemplateHydrated,
+    isPromptTemplateHydrated,
+    promptTemplateHydratedStore,
+  } from 'src/ts/server/promptTemplateHydration'
+  import {
     canUseServerCommands,
     createPromptItemCommand,
     deletePromptItemCommand,
@@ -63,7 +68,7 @@
     },
   })
   const promptTemplateDraft = $state<{ value: PromptItem[] }>({
-    value: cloneJsonValue(DBState.db.promptTemplate ?? []),
+    value: isPromptTemplateHydrated() ? cloneJsonValue(DBState.db.promptTemplate ?? []) : [],
   })
   const promptTemplateDraftBinding: PromptTemplateDraftBinding = {
     getItems: () => promptTemplateDraft.value,
@@ -72,6 +77,9 @@
     },
   }
   let previousPromptTemplateRevision = peekCachedServerCommandRevision()
+  let promptTemplateHydrated = $derived(
+    $promptTemplateHydratedStore || Object.prototype.hasOwnProperty.call(DBState.db ?? {}, 'promptTemplate'),
+  )
   const promptSettingsDraft = createPromptSettingsDraft<Record<string, any>>('promptSettings', {})
   const jsonSchemaEnabledDraft = createPromptSettingsDraft<boolean>('jsonSchemaEnabled', false)
   const outputImageModalDraft = createPromptSettingsDraft<boolean>('outputImageModal', false)
@@ -143,6 +151,7 @@
   }
 
   function dispatchCreatePromptItem(promptItem: PromptItem, previous: PromptItem[]): void {
+    if (!promptTemplateHydrated) return
     if (!canUseServerCommands()) return
     const attempted = currentPromptTemplateSnapshot()
     void runServerCommand({
@@ -156,6 +165,7 @@
   }
 
   function dispatchDeletePromptItem(promptItem: PromptItem, previous: PromptItem[]): void {
+    if (!promptTemplateHydrated) return
     if (!canUseServerCommands()) return
     const itemId = promptItemId(promptItem)
     const attempted = currentPromptTemplateSnapshot()
@@ -170,6 +180,7 @@
   }
 
   function dispatchReorderPromptItems(previous: PromptItem[]): void {
+    if (!promptTemplateHydrated) return
     if (!canUseServerCommands()) return
     withTrustedServerProjectionWrite(() => {
       normalizePromptTemplateIds(DBState.db)
@@ -186,11 +197,13 @@
   }
 
   function queuePromptItemUpdate(promptItem: PromptItem, previousItem: PromptItem): void {
+    if (!promptTemplateHydrated) return
     const itemId = promptItemId(promptItem)
     queuePromptItemProjectionUpdate(promptTemplateDraftBinding, itemId, previousItem)
   }
 
   function movePromptItem(originalIndex: number, nextIndex: number): void {
+    if (!promptTemplateHydrated) return
     if (nextIndex < 0 || nextIndex >= promptTemplateDraft.value.length) return
     const previous = currentPromptTemplateSnapshot()
     const templates = [...promptTemplateDraft.value]
@@ -205,6 +218,7 @@
   }
 
   function applyPromptTemplateDraft(templates: PromptItem[]): void {
+    if (!promptTemplateHydrated) return
     promptTemplateDraft.value = cloneJsonValue(templates)
     withTrustedServerProjectionWrite(() => {
       DBState.db.promptTemplate = cloneJsonValue(templates)
@@ -269,15 +283,18 @@
   }
 
   $effect.pre(() => {
+    if (!promptTemplateHydrated) return
     warns = templateCheck(DBState.db)
   })
   $effect.pre(() => {
+    if (!promptTemplateHydrated) return
     promptTemplateTokenizeSignature(promptTemplateDraft.value)
     untrack(() => {
       promptTokenizeDebouncer.schedule(promptTemplateDraft.value)
     })
   })
   $effect(() => {
+    if (!promptTemplateHydrated) return
     // Reconcile the draft from the projection only when the cached server command
     // revision advances (a real server push / command response), not on every
     // keystroke. `reconcilePromptTemplateDraft` reads `DBState.db.promptTemplate`
@@ -293,6 +310,7 @@
     }
   })
   $effect(() => {
+    if (!promptTemplateHydrated) return
     withTrustedServerProjectionWrite(() => {
       normalizePromptTemplateIds(DBState.db)
     })
@@ -373,6 +391,15 @@
 
   onMount(() => {
     document.addEventListener('keydown', handleKeyDown)
+    let cancelled = false
+    void ensurePromptTemplateHydrated().then((hydrated) => {
+      if (cancelled || !hydrated) return
+      promptTemplateDraft.value = cloneJsonValue(DBState.db.promptTemplate ?? [])
+      previousPromptTemplateRevision = peekCachedServerCommandRevision()
+    })
+    return () => {
+      cancelled = true
+    }
   })
 
   onDestroy(() => {
@@ -409,7 +436,7 @@
     </button>
   </div>
 {/if}
-{#if warns.length > 0 && subMenu === 0}
+{#if promptTemplateHydrated && warns.length > 0 && subMenu === 0}
   <div class="text-red-500 flex flex-col items-start p-2 rounded-md border-red-500 border mt-4">
     <h2 class="text-xl font-bold">Warning</h2>
     <div class="border-b border-b-red-500 mt-1 mb-2 w-full"></div>
@@ -420,97 +447,101 @@
 {/if}
 
 {#if subMenu === 0}
-  <div class="contain w-full max-w-full mt-4 flex flex-col p-3 rounded-md">
-    {#if promptTemplateDraft.value.length === 0}
-      <div class="text-textcolor2">No Format</div>
-    {/if}
-    {#key sorted}
-      {#each getReorderedTemplate() as { item: prompt, originalIndex, displayIndex }}
-        <PromptDataItem
-          bind:promptItem={promptTemplateDraft.value[originalIndex]}
-          isDragging={draggedIndex === originalIndex}
-          isOpened={openedItemIndices.has(originalIndex)}
-          bind:draggedIndex
-          bind:dragOverIndex
-          bind:openedItemIndices
-          currentIndex={originalIndex}
-          {displayIndex}
-          onUpdate={queuePromptItemUpdate}
-          onDrop={handlePromptDrop}
-          onRemove={() => {
-            const previous = currentPromptTemplateSnapshot()
-            const removed = promptTemplateDraft.value[originalIndex]
-            let templates = [...promptTemplateDraft.value]
-            templates.splice(originalIndex, 1)
-            applyPromptTemplateDraft(templates)
+  {#if !promptTemplateHydrated}
+    <div class="text-textcolor2 mt-4">{language.loading}</div>
+  {:else}
+    <div class="contain w-full max-w-full mt-4 flex flex-col p-3 rounded-md">
+      {#if promptTemplateDraft.value.length === 0}
+        <div class="text-textcolor2">No Format</div>
+      {/if}
+      {#key sorted}
+        {#each getReorderedTemplate() as { item: prompt, originalIndex, displayIndex }}
+          <PromptDataItem
+            bind:promptItem={promptTemplateDraft.value[originalIndex]}
+            isDragging={draggedIndex === originalIndex}
+            isOpened={openedItemIndices.has(originalIndex)}
+            bind:draggedIndex
+            bind:dragOverIndex
+            bind:openedItemIndices
+            currentIndex={originalIndex}
+            {displayIndex}
+            onUpdate={queuePromptItemUpdate}
+            onDrop={handlePromptDrop}
+            onRemove={() => {
+              const previous = currentPromptTemplateSnapshot()
+              const removed = promptTemplateDraft.value[originalIndex]
+              let templates = [...promptTemplateDraft.value]
+              templates.splice(originalIndex, 1)
+              applyPromptTemplateDraft(templates)
 
-            const newOpenedIndices = new Set<number>()
-            openedItemIndices.forEach((index) => {
-              if (index === originalIndex) {
+              const newOpenedIndices = new Set<number>()
+              openedItemIndices.forEach((index) => {
+                if (index === originalIndex) {
+                  return
+                } else if (index > originalIndex) {
+                  newOpenedIndices.add(index - 1)
+                } else {
+                  newOpenedIndices.add(index)
+                }
+              })
+              openedItemIndices = newOpenedIndices
+
+              draggedIndex = -1
+              dragOverIndex = -1
+              dispatchDeletePromptItem(removed, previous)
+            }}
+            moveDown={() => {
+              if (originalIndex === promptTemplateDraft.value.length - 1) {
                 return
-              } else if (index > originalIndex) {
-                newOpenedIndices.add(index - 1)
-              } else {
-                newOpenedIndices.add(index)
               }
-            })
-            openedItemIndices = newOpenedIndices
+              movePromptItem(originalIndex, originalIndex + 1)
 
-            draggedIndex = -1
-            dragOverIndex = -1
-            dispatchDeletePromptItem(removed, previous)
-          }}
-          moveDown={() => {
-            if (originalIndex === promptTemplateDraft.value.length - 1) {
-              return
-            }
-            movePromptItem(originalIndex, originalIndex + 1)
-
-            const newOpenedIndices = new Set<number>()
-            openedItemIndices.forEach((index) => {
-              if (index === originalIndex) {
-                newOpenedIndices.add(originalIndex + 1)
-              } else if (index === originalIndex + 1) {
-                newOpenedIndices.add(originalIndex)
-              } else {
-                newOpenedIndices.add(index)
+              const newOpenedIndices = new Set<number>()
+              openedItemIndices.forEach((index) => {
+                if (index === originalIndex) {
+                  newOpenedIndices.add(originalIndex + 1)
+                } else if (index === originalIndex + 1) {
+                  newOpenedIndices.add(originalIndex)
+                } else {
+                  newOpenedIndices.add(index)
+                }
+              })
+              openedItemIndices = newOpenedIndices
+            }}
+            moveUp={() => {
+              if (originalIndex === 0) {
+                return
               }
-            })
-            openedItemIndices = newOpenedIndices
-          }}
-          moveUp={() => {
-            if (originalIndex === 0) {
-              return
-            }
-            movePromptItem(originalIndex, originalIndex - 1)
+              movePromptItem(originalIndex, originalIndex - 1)
 
-            const newOpenedIndices = new Set<number>()
-            openedItemIndices.forEach((index) => {
-              if (index === originalIndex) {
-                newOpenedIndices.add(originalIndex - 1)
-              } else if (index === originalIndex - 1) {
-                newOpenedIndices.add(originalIndex)
-              } else {
-                newOpenedIndices.add(index)
-              }
-            })
-            openedItemIndices = newOpenedIndices
-          }} />
-      {/each}
-    {/key}
-  </div>
+              const newOpenedIndices = new Set<number>()
+              openedItemIndices.forEach((index) => {
+                if (index === originalIndex) {
+                  newOpenedIndices.add(originalIndex - 1)
+                } else if (index === originalIndex - 1) {
+                  newOpenedIndices.add(originalIndex)
+                } else {
+                  newOpenedIndices.add(index)
+                }
+              })
+              openedItemIndices = newOpenedIndices
+            }} />
+        {/each}
+      {/key}
+    </div>
 
-  <button
-    class="font-medium cursor-pointer hover:text-green-500"
-    onclick={() => {
-      const previous = currentPromptTemplateSnapshot()
-      const promptItem = createPromptItem()
-      applyPromptTemplateDraft([...(promptTemplateDraft.value ?? []), promptItem])
-      dispatchCreatePromptItem(promptItem, previous)
-    }}><PlusIcon /></button>
+    <button
+      class="font-medium cursor-pointer hover:text-green-500"
+      onclick={() => {
+        const previous = currentPromptTemplateSnapshot()
+        const promptItem = createPromptItem()
+        applyPromptTemplateDraft([...(promptTemplateDraft.value ?? []), promptItem])
+        dispatchCreatePromptItem(promptItem, previous)
+      }}><PlusIcon /></button>
 
-  <span class="text-textcolor2 text-sm mt-2">{tokens} {language.fixedTokens}</span>
-  <span class="text-textcolor2 mb-6 text-sm mt-2">{extokens} {language.exactTokens}</span>
+    <span class="text-textcolor2 text-sm mt-2">{tokens} {language.fixedTokens}</span>
+    <span class="text-textcolor2 mb-6 text-sm mt-2">{extokens} {language.exactTokens}</span>
+  {/if}
 {:else}
   <span class="text-textcolor mt-4">{language.postEndInnerFormat}</span>
   <TextInput bind:value={promptSettingsDraft.value.postEndInnerFormat} />

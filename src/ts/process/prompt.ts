@@ -71,7 +71,8 @@ export interface PromptItemCache {
   role: 'user' | 'assistant' | 'system' | 'all'
 }
 
-export async function tokenizePreset(prompts: PromptItem[], consti: boolean = false) {
+export async function tokenizePreset(prompts: PromptItem[] | null | undefined, consti: boolean = false) {
+  if (!Array.isArray(prompts)) return 0
   let total = 0
   for (const prompt of prompts) {
     switch (prompt.type) {

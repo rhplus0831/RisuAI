@@ -15,6 +15,7 @@ export const languageVietnamese = {
   },
   errors: {
     toomuchtoken: 'Lỗi: Mã thông báo bắt buộc tối thiểu lớn hơn Kích thước ngữ cảnh tối đa.',
+    promptTemplateUnavailable: 'Mẫu lời nhắc vẫn đang tải. Vui lòng thử lại sau khi đồng bộ máy chủ hoàn tất.',
     unknownModel: 'Lỗi: Đã chọn mô hình không xác định',
     httpError: 'Lỗi: lỗi trong yêu cầu:',
     noData: 'Tệp này có vẻ không hợp lệ hoặc dữ liệu đã bị hỏng.',

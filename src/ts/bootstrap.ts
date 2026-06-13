@@ -59,6 +59,11 @@ import {
   triggerOpenChatGenerationReattach,
 } from './process/reattach'
 import { applyServerHypaV3Progress } from './process/request/serverMemory'
+import {
+  markPromptTemplateProjectionApplied,
+  resetPromptTemplateHydration,
+  startPromptTemplateHydration,
+} from './server/promptTemplateHydration'
 
 const SERVER_PROJECTION_RECONNECT_BASE_DELAY_MS = 1000
 const SERVER_PROJECTION_RECONNECT_MAX_DELAY_MS = 30_000
@@ -138,6 +143,7 @@ export async function loadWebInitialDatabase() {
   const projection =
     bootstrap.projection.database == null ? await initializeFreshServerDatabase() : bootstrap.projection
   applyServerProjectionDatabase(projection.database)
+  resetPromptTemplateHydration()
   selectedCharID.set(initialSelectedCharFromDatabase(projection.database))
   // Record which characters arrive with a REAL (resident) globalLore. The
   // lorebook watcher only persists hydrated characters.
@@ -159,6 +165,7 @@ export async function loadWebInitialDatabase() {
   // open (and re-hydrate after a re-stub).
   startChatMessageHydration()
   void hydrateActiveChat()
+  startPromptTemplateHydration()
   stopBridgePatchLifecycleFlush?.()
   stopBridgePatchLifecycleFlush = startBridgePatchLifecycleFlush()
   await startServerProjectionEvents()
@@ -385,6 +392,9 @@ async function processServerCommandEvent(event: CommandEvent): Promise<void> {
     }
     if (result.status === 'ok' && result.mode === 'fields') {
       mergeServerProjectionFields(result.fields)
+      if (event.resource === 'promptItem' || Object.prototype.hasOwnProperty.call(result.fields, 'promptTemplate')) {
+        markPromptTemplateProjectionApplied()
+      }
       // The `characters` fields are message-free stubs and the merge replaces
       // the whole array, so it re-stubs EVERY chat, not just the open one.
       // Forget cached hydration so re-open or bulk reads refetch stale chats,

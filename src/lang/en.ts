@@ -15,6 +15,7 @@ export const languageEnglish = {
   },
   errors: {
     toomuchtoken: 'Error: The minimum required token is greater than the Max Context Size.',
+    promptTemplateUnavailable: 'Prompt template is still loading. Please try again after server sync finishes.',
     unknownModel: 'Error: Unknown model selected',
     httpError: 'Error: error in request:',
     noData: "The file is invalid, or it's data is corrupted.",

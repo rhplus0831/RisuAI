@@ -16,6 +16,8 @@ export const languageGerman = {
   errors: {
     toomuchtoken:
       'Fehler: Die Mindestgröße für die Antwort der KI in Tokens, die Sie angegeben haben, übersteigt die maximale Kontextgröße des Modells',
+    promptTemplateUnavailable:
+      'Die Prompt-Vorlage wird noch geladen. Bitte versuche es erneut, wenn die Serversynchronisierung abgeschlossen ist.',
     unknownModel: 'Fehler: Unbekanntes Modell ausgewählt',
     httpError: 'Fehler: Es ist ein Fehler bei der Anfrage aufgetreten:',
     noData: 'Die Datei scheint nicht gültig zu sein oder die Daten sind beschädigt.',

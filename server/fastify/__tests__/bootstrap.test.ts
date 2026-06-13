@@ -192,6 +192,44 @@ describe('Phase 2A bootstrap + import', () => {
     expectNormalizedAdaDatabase(bootstrap.json().database, { greeting: 'hi' })
   })
 
+  it('omits promptTemplate from bootstrap while serving it through the promptItem projection', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const sample = {
+      characters: [{ chaId: 'char-a', name: 'Ada' }],
+      promptTemplate: [{ id: 'prompt-a', type: 'plain', text: 'lazy prompt', role: 'system' }],
+    }
+
+    const imported = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      headers: { 'risu-auth': assertion },
+      payload: { database: sample },
+    })
+    expect(imported.statusCode).toBe(200)
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.statusCode).toBe(200)
+    expect(bootstrap.json().database).not.toHaveProperty('promptTemplate')
+
+    const projection = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/projection/promptItem',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(projection.statusCode).toBe(200)
+    expect(projection.json()).toMatchObject({
+      resource: 'promptItem',
+      mode: 'fields',
+      fields: {
+        promptTemplate: [{ id: 'prompt-a', type: 'plain', text: 'lazy prompt', role: 'system' }],
+      },
+    })
+  })
+
   it('L19: gzip-compresses large bootstrap JSON without changing the body', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const sample = {

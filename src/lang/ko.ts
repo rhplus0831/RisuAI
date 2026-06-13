@@ -15,6 +15,7 @@ export const languageKorean = {
   },
   errors: {
     toomuchtoken: '에러: 요청에 필요한 최소 토큰이 최대 토큰보다 큽니다.',
+    promptTemplateUnavailable: '프롬프트 템플릿을 아직 불러오는 중입니다. 서버 동기화가 끝난 뒤 다시 시도하세요.',
     unknownModel: '에러: 알수없는 모델 선택됨',
     httpError: '요청 에러:',
     noData: '올바른 파일이 아니거나 데이터가 손상됐습니다.',

@@ -15,6 +15,7 @@ export const languageChinese = {
   },
   errors: {
     toomuchtoken: '错误：所需的 Token 数超过了可用的最大上下文大小',
+    promptTemplateUnavailable: '提示词模板仍在加载中。请等待服务器同步完成后重试。',
     unknownModel: '错误：无法识别所选的模型',
     httpError: '错误：请求发生错误：',
     noData: '这个文件好像不太对，或者数据已经损坏了。',

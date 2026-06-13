@@ -20,6 +20,7 @@ import { renderFinalPrompt } from './promptAssembly/renderFinalPrompt'
 import { preflightTemplateTokens } from './promptBudget/preflightTemplateTokens'
 import { finalizeRequestBudget } from './promptBudget/finalizeRequestBudget'
 import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
+import { ensurePromptTemplateHydrated, isPromptTemplateHydrated } from '../server/promptTemplateHydration'
 import type { OpenAIChat } from './index.svelte'
 
 export interface SendChatPromptStageTimings {
@@ -97,6 +98,11 @@ export async function assembleLocalSendChatPrompt(args: {
     personaPrompt: [] as OpenAIChat[],
   }
 
+  const promptTemplateHydrated = await ensurePromptTemplateHydrated()
+  if (!promptTemplateHydrated && !isPromptTemplateHydrated()) {
+    args.throwError(language.errors.promptTemplateUnavailable)
+    return { status: 'stopped' }
+  }
   const { promptTemplate, usingPromptTemplate } = normalizeTemplate(args.currentChar)
 
   if (!args.currentChar.utilityBot && !promptTemplate) {

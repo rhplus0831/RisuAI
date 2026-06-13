@@ -22,6 +22,7 @@
   import { createHypaV3Preset } from 'src/ts/process/memory/hypav3'
   import { onDestroy } from 'svelte'
   import { createServerBackedSettingDraft, watchServerBackedSettings } from 'src/ts/server/settingsBridge.svelte'
+  import { ensurePromptTemplateHydrated } from 'src/ts/server/promptTemplateHydration'
 
   const stopServerSettingsWatch = watchServerBackedSettings(['hideApiKey', 'useLegacyGUI'])
   onDestroy(stopServerSettingsWatch)
@@ -110,6 +111,7 @@
   })
 
   async function getMaxMemoryRatio(): Promise<number> {
+    await ensurePromptTemplateHydrated()
     const promptTemplateToken = await tokenizePreset(DBState.db.promptTemplate)
     const char = DBState.db.characters[$selectedCharID]
     const charToken = await getCharToken(char)

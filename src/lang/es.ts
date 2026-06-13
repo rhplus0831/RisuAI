@@ -15,6 +15,8 @@ export const languageSpanish = {
   },
   errors: {
     toomuchtoken: 'Error: El mínimo requerido de tokens es mayor que el Tamaño Máximo del Contexto.',
+    promptTemplateUnavailable:
+      'La plantilla de prompt todavía se está cargando. Inténtalo de nuevo cuando termine la sincronización del servidor.',
     unknownModel: 'Error: Modelo seleccionado desconocido',
     httpError: 'Error: error en la solicitud:',
     noData: 'Ese archivo no parece válido o sus datos están dañados.',

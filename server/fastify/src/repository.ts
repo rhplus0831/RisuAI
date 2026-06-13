@@ -1388,6 +1388,7 @@ export function loadStubProjectionDatabase(db: DatabaseSync, dataDir: string): u
 export function loadBootstrapProjectionDatabase(db: DatabaseSync, dataDir: string): unknown | null {
   const database = loadStubProjectionDatabase(db, dataDir)
   replaceInactiveCharactersWithBootstrapShells(database)
+  stripLazyBootstrapFields(database)
   return database
 }
 
@@ -1397,6 +1398,11 @@ function stubDatabaseProjection(database: unknown): void {
     delete chat.hypaV3Data
   })
   stubCharacterLorebooks(database)
+}
+
+function stripLazyBootstrapFields(database: unknown): void {
+  if (!isRecord(database)) return
+  delete database.promptTemplate
 }
 
 /**
