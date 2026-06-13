@@ -59,7 +59,10 @@ export async function hydrateCharacterShell(characterId: string): Promise<boolea
       shellHydrationWarning(characterId, `response was for character ${result.characterId}`)
       return false
     }
-    if (isOlderThanBaselineRevision(result.revision, baselineRevision)) {
+    if (
+      isOlderThanRevision(result.revision, baselineRevision) ||
+      isOlderThanRevision(result.revision, peekCachedServerCommandRevision())
+    ) {
       return false
     }
 
@@ -78,8 +81,8 @@ export async function hydrateCharacterShell(characterId: string): Promise<boolea
   return request
 }
 
-function isOlderThanBaselineRevision(revision: number, baselineRevision: number | null): boolean {
-  return baselineRevision !== null && revision < baselineRevision
+function isOlderThanRevision(revision: number, comparisonRevision: number | null): boolean {
+  return comparisonRevision !== null && revision < comparisonRevision
 }
 
 function shellHydrationWarning(characterId: string, message: string): void {

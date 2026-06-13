@@ -102,4 +102,29 @@ describe('promptTemplate hydration', () => {
     expect(projectionState.fetchResource).toHaveBeenCalledTimes(1)
     expect(DBState.db.promptTemplate).toEqual([item('p-1', 'once')])
   })
+
+  it('ignores a hydration response older than the current cached command revision', async () => {
+    setCachedServerCommandRevision(5)
+    const response = deferred<{
+      status: 'ok'
+      revision: number
+      mode: 'fields'
+      fields: { promptTemplate: PromptItem[] }
+    }>()
+    projectionState.fetchResource.mockReturnValue(response.promise)
+
+    const pending = ensurePromptTemplateHydrated()
+    setCachedServerCommandRevision(6)
+    response.resolve({
+      status: 'ok',
+      revision: 5,
+      mode: 'fields',
+      fields: { promptTemplate: [item('p-old', 'old template')] },
+    })
+
+    await expect(pending).resolves.toBe(false)
+
+    expect(DBState.db).not.toHaveProperty('promptTemplate')
+    expect(isPromptTemplateHydrated()).toBe(false)
+  })
 })

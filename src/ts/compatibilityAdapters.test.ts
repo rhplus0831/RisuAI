@@ -39,7 +39,7 @@ import {
 import { CharacterHandler } from './process/mcp/risuaccess/characters'
 import { ModuleHandler } from './process/mcp/risuaccess/modules'
 import { DBState, selectedCharID } from './stores.svelte'
-import type { Chat, character } from './storage/database.svelte'
+import { isServerCharacterShell, type Chat, type character } from './storage/database.svelte'
 import { changeChar, changeCharImage, createNewCharacter, rmCharEmotion } from './characters'
 import { alertError } from './alert'
 import { getColdStorageItem } from './process/coldstorage.svelte'
@@ -464,6 +464,74 @@ describe('Phase 9-3f compatibility adapters', () => {
         lastInteraction: DBState.db.characters[0].lastInteraction,
       },
     })
+  })
+
+  it('hydrates a bootstrap character shell before selecting it', async () => {
+    const calls: CapturedFetch[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        const body = typeof init.body === 'string' ? JSON.parse(init.body) : null
+        calls.push({ url, method: init.method ?? 'GET', body })
+        if (url === '/api/v1/bootstrap') {
+          return jsonResponse({ revision: 10 })
+        }
+        if (url.startsWith('/api/v1/projection/characterRow')) {
+          return jsonResponse({
+            revision: 10,
+            mode: 'character-row',
+            characterId: 'char-b',
+            character: {
+              ...seedCharacter(),
+              chaId: 'char-b',
+              name: 'Hydrated B',
+              firstMessage: 'Ready',
+              customscript: [],
+              triggerscript: [],
+              globalLore: [],
+            },
+          })
+        }
+        if (url === '/api/v1/commands/characters/select') {
+          return jsonResponse({
+            revision: 11,
+            event: { type: 'character.selected', revision: 11, resource: 'characterSelection', id: 'char-b' },
+          })
+        }
+        return jsonResponse({ revision: 11 })
+      }) as unknown as typeof fetch,
+    )
+    DBState.db = {
+      currentChar: 0,
+      characters: [
+        seedCharacter(),
+        {
+          __serverCharacterShell: true,
+          chaId: 'char-b',
+          name: 'Shell B',
+          chats: [{ id: 'chat-b', name: 'Chat B', message: [] }],
+          chatPage: 0,
+          chatFolders: [],
+        },
+      ],
+      characterOrder: ['char-a', 'char-b'],
+    } as any
+    selectedCharID.set(0)
+    setServerProjectionWriteGuardEnabled(true)
+
+    await changeChar(1)
+
+    expect(get(selectedCharID)).toBe(1)
+    expect(isServerCharacterShell(DBState.db.characters[1])).toBe(false)
+    expect(DBState.db.characters[1].name).toBe('Hydrated B')
+    await vi.waitFor(() => {
+      expect(calls.some((call) => call.url === '/api/v1/commands/characters/select')).toBe(true)
+    })
+    const hydrationCallIndex = calls.findIndex((call) => call.url.startsWith('/api/v1/projection/characterRow'))
+    const selectionCallIndex = calls.findIndex((call) => call.url === '/api/v1/commands/characters/select')
+    expect(hydrationCallIndex).toBeGreaterThanOrEqual(0)
+    expect(selectionCallIndex).toBeGreaterThan(hydrationCallIndex)
   })
 
   it('captures only scalar selection state, never a deep clone of every character', () => {

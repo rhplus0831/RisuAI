@@ -127,4 +127,36 @@ describe('editdisplay render path logging (L38)', () => {
     expect(result.data).toBe('keep  after')
     expect(DBState.db.characters[0].chats[0].message[0].data).toBe('keep REMOVE after')
   })
+
+  it('skips missing and malformed regex script entries during edit-display processing', async () => {
+    const char = seedDb()
+    ;(DBState.db as any).presetRegex = [undefined]
+    char.customscript = [
+      undefined,
+      null,
+      { comment: 'missing type', in: 'ignored', out: 'ignored' },
+      {
+        comment: 'valid-display-script',
+        type: 'editdisplay',
+        in: 'body',
+        out: 'BODY',
+        flag: 'g',
+        ableFlag: true,
+      },
+    ] as any
+
+    const result = await processScriptFull(char, 'rendered body', 'editdisplay', 0)
+
+    expect(result.data).toBe('rendered BODY')
+  })
+
+  it('treats absent character regex scripts as an empty script list', async () => {
+    const char = seedDb()
+    ;(char as any).customscript = undefined
+    ;(DBState.db as any).presetRegex = undefined
+
+    const result = await processScriptFull(char, 'rendered body', 'editdisplay', 0)
+
+    expect(result.data).toBe('rendered body')
+  })
 })

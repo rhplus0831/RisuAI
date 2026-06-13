@@ -8,6 +8,7 @@ import {
   getDatabase,
   getCharacterByIndex,
   setCharacterByIndex,
+  isServerCharacterShell,
 } from './storage/database.svelte'
 import { alertAddCharacter, alertConfirm, alertError, alertNormal, alertSelect, alertStore, alertWait } from './alert'
 import { language } from '../lang'
@@ -46,7 +47,7 @@ import {
 } from './characterCommands'
 import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
 import { ensureAllChatsHydrated, hydrateChatMessages } from './server/chatMessageHydration.svelte'
-import { hydrateSelectedCharacterShell } from './server/characterShellHydration.svelte'
+import { hydrateCharacterShell, hydrateSelectedCharacterShell } from './server/characterShellHydration.svelte'
 
 export function createNewCharacter(
   options: {
@@ -1018,6 +1019,10 @@ export async function changeChar(
   }
   const characterId = DBState.db.characters?.[index]?.chaId
   if (!characterId) return
+  if (isServerCharacterShell(DBState.db.characters?.[index])) {
+    const hydrated = await hydrateCharacterShell(characterId)
+    if (!hydrated && isServerCharacterShell(DBState.db.characters?.[index])) return
+  }
   const previous = currentCharacterSelectionSnapshot(characterId)
   const lastInteraction = Date.now()
   withTrustedServerProjectionWrite(() => {

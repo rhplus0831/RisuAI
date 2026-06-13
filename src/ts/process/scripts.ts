@@ -35,6 +35,21 @@ type pScript = {
   actions: string[]
 }
 
+function isProcessableCustomScript(script: unknown): script is customscript {
+  return (
+    !!script &&
+    typeof script === 'object' &&
+    !Array.isArray(script) &&
+    typeof (script as Partial<customscript>).type === 'string' &&
+    typeof (script as Partial<customscript>).in === 'string' &&
+    typeof (script as Partial<customscript>).out === 'string'
+  )
+}
+
+function getProcessableCustomScripts(scripts: unknown): customscript[] {
+  return Array.isArray(scripts) ? scripts.filter(isProcessableCustomScript) : []
+}
+
 export async function processScript(
   char: character,
   data: string,
@@ -218,7 +233,9 @@ export async function processScriptFull(
   }
 
   data = risuChatParser(data, { chatID: chatID, cbsConditions })
-  const scripts = (db.presetRegex ?? []).concat(char.customscript).concat(getModuleRegexScripts())
+  const scripts = getProcessableCustomScripts(db.presetRegex)
+    .concat(getProcessableCustomScripts((char as { customscript?: unknown }).customscript))
+    .concat(getProcessableCustomScripts(getModuleRegexScripts()))
   const hash = generateScriptCacheKey(scripts, data, mode, chatID, cbsConditions)
   const cached = getScriptCache(hash)
   if (cached) {

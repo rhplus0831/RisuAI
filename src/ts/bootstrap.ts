@@ -49,6 +49,7 @@ import {
 } from './server/chatMessageHydration.svelte'
 import { recordHydratedCharacterLorebooks, resetLorebookHydration } from './server/lorebookBridge.svelte'
 import {
+  hydrateCharacterShell,
   hydrateSelectedCharacterShell,
   startSelectedCharacterShellHydration,
   stopSelectedCharacterShellHydration,
@@ -352,6 +353,7 @@ async function processServerCommandEvent(event: CommandEvent): Promise<void> {
       parentId: event.parentId,
     })
     if (result.status === 'ok' && result.mode === 'character-selection') {
+      await hydrateCharacterShell(result.characterId)
       applyServerCharacterSelectionProjection({
         characterId: result.characterId,
         currentChar: result.currentChar,

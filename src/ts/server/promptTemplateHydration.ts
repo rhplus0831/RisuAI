@@ -46,7 +46,12 @@ export async function ensurePromptTemplateHydrated(options: { force?: boolean } 
       promptTemplateHydrationWarning(`response mode was ${result.mode}`)
       return false
     }
-    if (isOlderThanBaselineRevision(result.revision, baselineRevision)) return false
+    if (
+      isOlderThanRevision(result.revision, baselineRevision) ||
+      isOlderThanRevision(result.revision, peekCachedServerCommandRevision())
+    ) {
+      return false
+    }
 
     mergeServerProjectionFields(result.fields as Partial<Database>)
     markPromptTemplateProjectionApplied()
@@ -61,8 +66,8 @@ export async function ensurePromptTemplateHydrated(options: { force?: boolean } 
   return request
 }
 
-function isOlderThanBaselineRevision(revision: number, baselineRevision: number | null): boolean {
-  return baselineRevision !== null && revision < baselineRevision
+function isOlderThanRevision(revision: number, comparisonRevision: number | null): boolean {
+  return comparisonRevision !== null && revision < comparisonRevision
 }
 
 function promptTemplateHydrationWarning(message: string): void {
