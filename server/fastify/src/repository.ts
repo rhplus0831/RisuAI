@@ -107,6 +107,36 @@ const COLLECTION_TABLE_MAP: Record<string, string> = {
   hypaV3Presets: 'hypa_v3_presets',
 }
 
+const BODY_CACHE_TRACKED_COLLECTIONS = {
+  modules: { idKey: 'id' },
+  plugins: { idKey: 'name' },
+} as const
+
+type BodyCacheTrackedCollection = keyof typeof BODY_CACHE_TRACKED_COLLECTIONS
+
+export interface BootstrapBodyCacheManifest {
+  epoch: number
+  modules: Record<string, number>
+  plugins: Record<string, number>
+}
+
+export interface BootstrapBodyCacheEntry {
+  id: string
+  revision: number
+  body?: unknown
+}
+
+export interface BootstrapBodyCachePayload {
+  epoch: number
+  modules: BootstrapBodyCacheEntry[]
+  plugins: BootstrapBodyCacheEntry[]
+}
+
+export interface BootstrapProjectionDatabasePayload {
+  database: unknown | null
+  bodyCache: BootstrapBodyCachePayload
+}
+
 export function createCollectionTables(db: DatabaseSync): void {
   for (const tableName of Object.values(COLLECTION_TABLE_MAP)) {
     db.exec(`
@@ -122,6 +152,49 @@ export function createCollectionTables(db: DatabaseSync): void {
       value_json TEXT NOT NULL CHECK (json_valid(value_json))
     )
   `)
+}
+
+export function createProjectionBodyCacheTables(db: DatabaseSync): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS projection_body_cache_state (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      epoch INTEGER NOT NULL DEFAULT 1 CHECK (epoch >= 1)
+    );
+
+    INSERT OR IGNORE INTO projection_body_cache_state (id, epoch) VALUES (1, 1);
+
+    CREATE TABLE IF NOT EXISTS collection_body_revisions (
+      collection_name TEXT NOT NULL,
+      object_id TEXT NOT NULL,
+      revision INTEGER NOT NULL CHECK (revision >= 0),
+      PRIMARY KEY (collection_name, object_id)
+    );
+  `)
+}
+
+export function seedProjectionBodyCacheRevisions(db: DatabaseSync, revision = getSchemaState(db).revision): void {
+  createProjectionBodyCacheTables(db)
+  for (const [field, tracker] of Object.entries(BODY_CACHE_TRACKED_COLLECTIONS)) {
+    const tableName = collectionTableForField(field)
+    const rows = db.prepare(`SELECT data_json FROM ${tableName} ORDER BY position`).all() as unknown as Array<{
+      data_json: string
+    }>
+    const seen = new Set<string>()
+    const upsert = db.prepare(
+      `INSERT INTO collection_body_revisions (collection_name, object_id, revision)
+       VALUES (?, ?, ?)
+       ON CONFLICT(collection_name, object_id) DO UPDATE SET revision = excluded.revision`,
+    )
+    for (const row of rows) {
+      const parsed = JSON.parse(row.data_json) as unknown
+      if (!isRecord(parsed)) continue
+      const id = parsed[tracker.idKey]
+      if (typeof id !== 'string' || id.trim() === '') continue
+      seen.add(id)
+      upsert.run(field, id, revision)
+    }
+    pruneCollectionBodyRevisions(db, field as BodyCacheTrackedCollection, seen)
+  }
 }
 
 function loadCollectionsFromSqlite(db: DatabaseSync, database: Record<string, unknown>): Record<string, unknown> {
@@ -153,14 +226,8 @@ function loadCollectionsFromSqlite(db: DatabaseSync, database: Record<string, un
 export function replaceAllCollectionsInTable(db: DatabaseSync, database: unknown): void {
   if (!isRecord(database)) return
   for (const [field, tableName] of Object.entries(COLLECTION_TABLE_MAP)) {
-    recordTableWrite(tableName)
-    db.exec(`DELETE FROM ${tableName}`)
     const arr = database[field]
-    if (!Array.isArray(arr) || arr.length === 0) continue
-    const stmt = db.prepare(`INSERT INTO ${tableName} (position, data_json) VALUES (?, ?)`)
-    for (let i = 0; i < arr.length; i++) {
-      stmt.run(i, JSON.stringify(arr[i]))
-    }
+    writeCollectionTableRows(db, field, tableName, Array.isArray(arr) ? arr : [])
   }
   recordTableWrite('plugin_custom_storage')
   db.exec('DELETE FROM plugin_custom_storage')
@@ -586,25 +653,164 @@ function collectionTableForField(field: string): string {
   return tableName
 }
 
+function trackedCollection(field: string): (typeof BODY_CACHE_TRACKED_COLLECTIONS)[BodyCacheTrackedCollection] | null {
+  return Object.prototype.hasOwnProperty.call(BODY_CACHE_TRACKED_COLLECTIONS, field)
+    ? BODY_CACHE_TRACKED_COLLECTIONS[field as BodyCacheTrackedCollection]
+    : null
+}
+
+function collectionObjectId(field: string, value: unknown): string | null {
+  const tracker = trackedCollection(field)
+  if (!tracker || !isRecord(value)) return null
+  const id = value[tracker.idKey]
+  return typeof id === 'string' && id.trim() !== '' ? id : null
+}
+
+function loadTrackedCollectionJsonById(db: DatabaseSync, field: string, tableName: string): Map<string, string> {
+  if (!trackedCollection(field)) return new Map()
+  const rows = db.prepare(`SELECT data_json FROM ${tableName} ORDER BY position`).all() as unknown as Array<{
+    data_json: string
+  }>
+  const byId = new Map<string, string>()
+  for (const row of rows) {
+    const parsed = JSON.parse(row.data_json) as unknown
+    const id = collectionObjectId(field, parsed)
+    if (id) byId.set(id, row.data_json)
+  }
+  return byId
+}
+
+function loadCollectionBodyRevisionMap(db: DatabaseSync, field: string): Map<string, number> {
+  if (!trackedCollection(field)) return new Map()
+  const rows = db
+    .prepare('SELECT object_id, revision FROM collection_body_revisions WHERE collection_name = ?')
+    .all(field) as unknown as Array<{ object_id: string; revision: number }>
+  return new Map(rows.map((row) => [row.object_id, row.revision]))
+}
+
+function nextBodyRevision(db: DatabaseSync): number {
+  return getSchemaState(db).revision + 1
+}
+
+function upsertCollectionBodyRevision(
+  db: DatabaseSync,
+  field: BodyCacheTrackedCollection,
+  id: string,
+  revision: number,
+): void {
+  db.prepare(
+    `INSERT INTO collection_body_revisions (collection_name, object_id, revision)
+     VALUES (?, ?, ?)
+     ON CONFLICT(collection_name, object_id) DO UPDATE SET revision = excluded.revision`,
+  ).run(field, id, revision)
+}
+
+function pruneCollectionBodyRevisions(
+  db: DatabaseSync,
+  field: BodyCacheTrackedCollection | string,
+  keepIds: ReadonlySet<string>,
+): void {
+  const rows = db
+    .prepare('SELECT object_id FROM collection_body_revisions WHERE collection_name = ?')
+    .all(field) as unknown as Array<{ object_id: string }>
+  const deleteStmt = db.prepare('DELETE FROM collection_body_revisions WHERE collection_name = ? AND object_id = ?')
+  for (const row of rows) {
+    if (!keepIds.has(row.object_id)) deleteStmt.run(field, row.object_id)
+  }
+}
+
+function writeCollectionTableRows(db: DatabaseSync, field: string, tableName: string, array: readonly unknown[]): void {
+  const tracked = trackedCollection(field)
+  const previousJsonById = tracked ? loadTrackedCollectionJsonById(db, field, tableName) : new Map<string, string>()
+  const previousRevisionById = tracked ? loadCollectionBodyRevisionMap(db, field) : new Map<string, number>()
+  const nextRevision = tracked ? nextBodyRevision(db) : 0
+  const seenIds = new Set<string>()
+
+  recordTableWrite(tableName)
+  db.exec(`DELETE FROM ${tableName}`)
+  if (array.length > 0) {
+    const stmt = db.prepare(`INSERT INTO ${tableName} (position, data_json) VALUES (?, ?)`)
+    for (let i = 0; i < array.length; i++) {
+      const value = array[i]
+      const json = JSON.stringify(value)
+      stmt.run(i, json)
+
+      const id = collectionObjectId(field, value)
+      if (!tracked || !id) continue
+      seenIds.add(id)
+      const previousRevision = previousRevisionById.get(id)
+      const revision =
+        previousRevision !== undefined && previousJsonById.get(id) === json ? previousRevision : nextRevision
+      upsertCollectionBodyRevision(db, field as BodyCacheTrackedCollection, id, revision)
+    }
+  }
+
+  if (tracked) {
+    pruneCollectionBodyRevisions(db, field as BodyCacheTrackedCollection, seenIds)
+  }
+}
+
+interface TrackedCollectionRowSnapshot {
+  id: string | null
+  json: string
+}
+
+function readTrackedCollectionRowAtPosition(
+  db: DatabaseSync,
+  field: string,
+  tableName: string,
+  position: number,
+): TrackedCollectionRowSnapshot | null {
+  if (!trackedCollection(field)) return null
+  const row = db.prepare(`SELECT data_json FROM ${tableName} WHERE position = ?`).get(position) as
+    | { data_json: string }
+    | undefined
+  if (!row) return null
+  const parsed = JSON.parse(row.data_json) as unknown
+  return { id: collectionObjectId(field, parsed), json: row.data_json }
+}
+
+function syncTrackedCollectionRowRevision(
+  db: DatabaseSync,
+  field: string,
+  value: unknown,
+  json: string,
+  previous: TrackedCollectionRowSnapshot | null,
+): void {
+  if (!trackedCollection(field)) return
+  const nextId = collectionObjectId(field, value)
+  if (previous?.id && previous.id !== nextId) {
+    db.prepare('DELETE FROM collection_body_revisions WHERE collection_name = ? AND object_id = ?').run(
+      field,
+      previous.id,
+    )
+  }
+  if (!nextId) return
+
+  const existing = db
+    .prepare('SELECT revision FROM collection_body_revisions WHERE collection_name = ? AND object_id = ?')
+    .get(field, nextId) as { revision: number } | undefined
+  const revision =
+    existing && previous?.id === nextId && previous.json === json ? existing.revision : nextBodyRevision(db)
+  upsertCollectionBodyRevision(db, field as BodyCacheTrackedCollection, nextId, revision)
+}
+
 /** Rebuild one collection table (DELETE + ordered reinsert) for
  *  create/delete/reorder. Leaves the other eight tables untouched. */
 export function writeSingleCollectionTable(db: DatabaseSync, field: string, array: readonly unknown[]): void {
   const tableName = collectionTableForField(field)
-  recordTableWrite(tableName)
-  db.exec(`DELETE FROM ${tableName}`)
-  if (array.length === 0) return
-  const stmt = db.prepare(`INSERT INTO ${tableName} (position, data_json) VALUES (?, ?)`)
-  for (let i = 0; i < array.length; i++) {
-    stmt.run(i, JSON.stringify(array[i]))
-  }
+  writeCollectionTableRows(db, field, tableName, array)
 }
 
 /** `UPDATE <collection> WHERE position=?` for a single pure field edit. Keeps
  *  the row's rowid stable (no delete+reinsert). */
 export function writeSingleCollectionRow(db: DatabaseSync, field: string, position: number, value: unknown): void {
   const tableName = collectionTableForField(field)
+  const previousRow = readTrackedCollectionRowAtPosition(db, field, tableName, position)
+  const json = JSON.stringify(value)
   recordTableWrite(tableName)
-  db.prepare(`UPDATE ${tableName} SET data_json = ? WHERE position = ?`).run(JSON.stringify(value), position)
+  db.prepare(`UPDATE ${tableName} SET data_json = ? WHERE position = ?`).run(json, position)
+  syncTrackedCollectionRowRevision(db, field, value, json, previousRow)
 }
 
 // The `promptTemplate` collection (`prompt_templates` table) is written through
@@ -1410,12 +1616,22 @@ export function loadStubProjectionDatabase(db: DatabaseSync, dataDir: string): u
   return database
 }
 
-export function loadBootstrapProjectionDatabase(db: DatabaseSync, dataDir: string): unknown | null {
+export function loadBootstrapProjectionDatabaseWithBodyCache(
+  db: DatabaseSync,
+  dataDir: string,
+  manifest: BootstrapBodyCacheManifest | null = null,
+): BootstrapProjectionDatabasePayload {
   const database = loadStubProjectionDatabase(db, dataDir)
+  const bodyCache = buildBootstrapBodyCachePayload(db, database, manifest)
   replaceInactiveCharactersWithBootstrapShells(database)
   stripLazyBootstrapFields(database)
   stubBotPresets(database)
-  return database
+  stubModuleAndPluginBodies(database)
+  return { database, bodyCache }
+}
+
+export function loadBootstrapProjectionDatabase(db: DatabaseSync, dataDir: string): unknown | null {
+  return loadBootstrapProjectionDatabaseWithBodyCache(db, dataDir).database
 }
 
 function stubDatabaseProjection(database: unknown): void {
@@ -1452,6 +1668,120 @@ function stubBotPresets(database: unknown): void {
 }
 
 const BOT_PRESET_STUB_FIELDS = ['id', 'name', 'image', 'metadata'] as const
+
+const MODULE_BODY_STUB_FIELDS = [
+  'id',
+  'name',
+  'description',
+  'lowLevelAccess',
+  'hideIcon',
+  'backgroundEmbedding',
+  'namespace',
+  'customModuleToggle',
+  'mcp',
+] as const
+
+const PLUGIN_BODY_STUB_FIELDS = [
+  'name',
+  'displayName',
+  'arguments',
+  'realArg',
+  'version',
+  'customLink',
+  'argMeta',
+  'versionOfPlugin',
+  'updateURL',
+  'enabled',
+  'allowedIPC',
+] as const
+
+function stubModuleAndPluginBodies(database: unknown): void {
+  if (!isRecord(database)) return
+  if (Array.isArray(database.modules)) {
+    database.modules = database.modules.map((module) => {
+      if (!isRecord(module)) return module
+      const stub: JsonRecord = {}
+      copyFields(module, stub, MODULE_BODY_STUB_FIELDS)
+      return stub
+    })
+  }
+  if (Array.isArray(database.plugins)) {
+    database.plugins = database.plugins.map((plugin) => {
+      if (!isRecord(plugin)) return plugin
+      const stub: JsonRecord = {}
+      copyFields(plugin, stub, PLUGIN_BODY_STUB_FIELDS)
+      return stub
+    })
+  }
+}
+
+function buildBootstrapBodyCachePayload(
+  db: DatabaseSync,
+  database: unknown,
+  manifest: BootstrapBodyCacheManifest | null,
+): BootstrapBodyCachePayload {
+  const epoch = getProjectionBodyCacheEpoch(db)
+  const manifestForEpoch = manifest?.epoch === epoch ? manifest : null
+  return {
+    epoch,
+    modules: buildBootstrapBodyCacheEntries(
+      db,
+      'modules',
+      isRecord(database) && Array.isArray(database.modules) ? database.modules : [],
+      manifestForEpoch?.modules ?? {},
+    ),
+    plugins: buildBootstrapBodyCacheEntries(
+      db,
+      'plugins',
+      isRecord(database) && Array.isArray(database.plugins) ? database.plugins : [],
+      manifestForEpoch?.plugins ?? {},
+    ),
+  }
+}
+
+function buildBootstrapBodyCacheEntries(
+  db: DatabaseSync,
+  field: BodyCacheTrackedCollection,
+  values: readonly unknown[],
+  cachedRevisions: Record<string, number>,
+): BootstrapBodyCacheEntry[] {
+  const revisionById = loadCollectionBodyRevisionMap(db, field)
+  const fallbackRevision = getSchemaState(db).revision
+  const entries: BootstrapBodyCacheEntry[] = []
+  for (const value of values) {
+    const id = collectionObjectId(field, value)
+    if (!id) continue
+    const revision = revisionById.get(id) ?? fallbackRevision
+    const entry: BootstrapBodyCacheEntry = { id, revision }
+    if (cachedRevisions[id] !== revision) {
+      entry.body = cloneJsonValue(value)
+    }
+    entries.push(entry)
+  }
+  return entries
+}
+
+function getProjectionBodyCacheEpoch(db: DatabaseSync): number {
+  const row = db.prepare('SELECT epoch FROM projection_body_cache_state WHERE id = 1').get() as
+    | { epoch: number }
+    | undefined
+  return row && Number.isInteger(row.epoch) && row.epoch >= 1 ? row.epoch : 1
+}
+
+export function bumpProjectionBodyCacheEpoch(db: DatabaseSync): number {
+  createProjectionBodyCacheTables(db)
+  const row = db
+    .prepare('UPDATE projection_body_cache_state SET epoch = epoch + 1 WHERE id = 1 RETURNING epoch')
+    .get() as { epoch: number } | undefined
+  if (row) return row.epoch
+  db.prepare('INSERT INTO projection_body_cache_state (id, epoch) VALUES (1, 1)').run()
+  return 1
+}
+
+function cloneJsonValue<T>(value: T): T {
+  if (value === undefined) return value
+  return JSON.parse(JSON.stringify(value)) as T
+}
 
 /**
  * Optional lorebook projection stubbing, enabled by `enableLorebookStubs`.
@@ -1910,6 +2240,7 @@ export function applyImport(
     if (!cloneBeforeMessageSplit) {
       options.beforeRevision?.(db)
     }
+    bumpProjectionBodyCacheEpoch(db)
     const messageFree = splitChatMessagesIntoTable(db, {
       ...current,
       database: cloneBeforeMessageSplit ? structuredClone(database) : database,
@@ -2155,6 +2486,8 @@ const SQLITE_BACKUP_TABLES = [
   'assets',
   'characters',
   'chats',
+  'projection_body_cache_state',
+  'collection_body_revisions',
   'modules',
   'plugins',
   'bot_presets',
@@ -2353,6 +2686,7 @@ export function restoreBackup(
         fs.copyFileSync(legacySnapshot, dbJsonPath(dataDir))
         ensureDbJsonImported(db, dataDir)
       }
+      bumpProjectionBodyCacheEpoch(db)
       event = persistRevisionedCommandEvent(db, COMMAND_EVENT_CATALOG.stateRestored)
       fs.renameSync(tmpAssets, liveAssets)
       fs.renameSync(tmpSave, liveSave)

@@ -9,6 +9,7 @@ import { buildApp } from '../src/app.js'
 import { CURRENT_SCHEMA_VERSION, openDatabase } from '../src/db.js'
 import { loadPersisted } from '../src/repository.js'
 import { MASKED_PROVIDER_SECRET } from '../src/providerSecrets.js'
+import { BODY_CACHE_MANIFEST_HEADER } from '../src/routes/bootstrap.js'
 import type { FastifyInstance } from 'fastify'
 
 const subtle = webcrypto.subtle
@@ -258,6 +259,134 @@ describe('Phase 2A bootstrap + import', () => {
         promptTemplate: inactivePresetPrompt,
       },
     })
+  })
+
+  it('stubs module and plugin bodies in bootstrap and serves only cache misses', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const sample = {
+      characters: [{ chaId: 'char-a', name: 'Ada' }],
+      modules: [
+        {
+          id: 'module-a',
+          name: 'Module A',
+          description: 'Module metadata',
+          lorebook: [{ key: ['alpha'], content: 'large lore body' }],
+          regex: [{ id: 'regex-a', in: 'foo', out: 'bar', type: 'editinput' }],
+          trigger: [{ id: 'trigger-a', type: 'manual', conditions: [], effect: [] }],
+          assets: [['asset label', 'asset-id', 'png']],
+          cjs: 'module.exports = "heavy";',
+          lowLevelAccess: true,
+        },
+      ],
+      plugins: [
+        {
+          name: 'plugin-a',
+          displayName: 'Plugin A',
+          script: 'Risuai.log("heavy plugin script")',
+          arguments: { mode: 'string' },
+          realArg: { mode: 'fast' },
+          customLink: [],
+          argMeta: {},
+          version: '3.0',
+          enabled: false,
+        },
+      ],
+    }
+
+    const imported = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      headers: { 'risu-auth': assertion },
+      payload: { database: sample },
+    })
+    expect(imported.statusCode).toBe(200)
+
+    const first = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(first.statusCode).toBe(200)
+    const firstBody = first.json()
+
+    expect(firstBody.database.modules).toEqual([
+      {
+        id: 'module-a',
+        name: 'Module A',
+        description: 'Module metadata',
+        lowLevelAccess: true,
+      },
+    ])
+    expect(firstBody.database.plugins).toEqual([
+      {
+        name: 'plugin-a',
+        displayName: 'Plugin A',
+        arguments: { mode: 'string' },
+        realArg: { mode: 'fast' },
+        customLink: [],
+        argMeta: {},
+        version: '3.0',
+        enabled: false,
+      },
+    ])
+    expect(firstBody.database.modules[0]).not.toHaveProperty('lorebook')
+    expect(firstBody.database.modules[0]).not.toHaveProperty('regex')
+    expect(firstBody.database.modules[0]).not.toHaveProperty('trigger')
+    expect(firstBody.database.modules[0]).not.toHaveProperty('assets')
+    expect(firstBody.database.modules[0]).not.toHaveProperty('cjs')
+    expect(firstBody.database.plugins[0]).not.toHaveProperty('script')
+
+    expect(firstBody.bodyCache).toMatchObject({
+      epoch: expect.any(Number),
+      modules: [
+        {
+          id: 'module-a',
+          revision: imported.json().revision,
+          body: expect.objectContaining({
+            lorebook: [expect.objectContaining({ content: 'large lore body' })],
+            regex: [{ id: 'regex-a', in: 'foo', out: 'bar', type: 'editinput' }],
+            trigger: [{ id: 'trigger-a', type: 'manual', conditions: [], effect: [] }],
+            assets: [['asset label', 'asset-id', 'png']],
+            cjs: 'module.exports = "heavy";',
+          }),
+        },
+      ],
+      plugins: [
+        {
+          id: 'plugin-a',
+          revision: imported.json().revision,
+          body: expect.objectContaining({
+            script: 'Risuai.log("heavy plugin script")',
+          }),
+        },
+      ],
+    })
+
+    const manifest = encodeURIComponent(
+      JSON.stringify({
+        epoch: firstBody.bodyCache.epoch,
+        modules: { 'module-a': firstBody.bodyCache.modules[0].revision },
+        plugins: { 'plugin-a': firstBody.bodyCache.plugins[0].revision },
+      }),
+    )
+    const second = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: {
+        'risu-auth': assertion,
+        [BODY_CACHE_MANIFEST_HEADER]: manifest,
+      },
+    })
+    expect(second.statusCode).toBe(200)
+    const secondBody = second.json()
+    expect(secondBody.database.modules[0]).not.toHaveProperty('lorebook')
+    expect(secondBody.database.plugins[0]).not.toHaveProperty('script')
+    expect(secondBody.bodyCache.modules).toEqual([
+      { id: 'module-a', revision: firstBody.bodyCache.modules[0].revision },
+    ])
+    expect(secondBody.bodyCache.plugins).toEqual([
+      { id: 'plugin-a', revision: firstBody.bodyCache.plugins[0].revision },
+    ])
   })
 
   it('L19: gzip-compresses large bootstrap JSON without changing the body', async () => {

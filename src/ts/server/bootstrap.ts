@@ -1,6 +1,13 @@
 import type { Database } from '../storage/database.svelte'
 import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
 import { activeWriterSessionHeader } from './activeWriterSession'
+import {
+  BODY_CACHE_MANIFEST_HEADER,
+  mergeBootstrapBodyCache,
+  parseBootstrapBodyCachePayload,
+  prepareBootstrapBodyCacheRequest,
+  type ServerBootstrapBodyCachePayload,
+} from './bootstrapBodyCache'
 import { setCachedServerCommandRevision } from './commands'
 
 const BOOTSTRAP_ENDPOINT = '/api/v1/bootstrap'
@@ -29,6 +36,7 @@ export interface ServerBootstrapProjection {
    * lands. Empty when none.
    */
   activeGenerationJobs?: ActiveGenerationJob[]
+  bodyCache?: ServerBootstrapBodyCachePayload
 }
 
 export type ServerBootstrapResult =
@@ -67,6 +75,7 @@ async function fetchServerBootstrapProjectionWithMode(input: {
   if (!canUseServerBootstrap()) return { status: 'unavailable' }
 
   const auth = await getNodeServerProxyAuth()
+  const bodyCacheRequest = prepareBootstrapBodyCacheRequest()
   let response: Response
   try {
     response = await fetch(BOOTSTRAP_ENDPOINT, {
@@ -75,6 +84,7 @@ async function fetchServerBootstrapProjectionWithMode(input: {
       headers: {
         'risu-auth': auth,
         ...(input.registerActiveWriter ? activeWriterSessionHeader() : {}),
+        ...(bodyCacheRequest.headerValue ? { [BODY_CACHE_MANIFEST_HEADER]: bodyCacheRequest.headerValue } : {}),
       },
     })
   } catch (err) {
@@ -110,20 +120,28 @@ async function fetchServerBootstrapProjectionWithMode(input: {
   if (database !== null && (typeof database !== 'object' || Array.isArray(database))) {
     return { status: 'error', error: 'Invalid bootstrap database' }
   }
+  const bodyCache = parseBootstrapBodyCachePayload(record.bodyCache)
+  if (bodyCache === null) {
+    return { status: 'error', error: 'Invalid bootstrap body cache' }
+  }
+  const mergedDatabase = mergeBootstrapBodyCache(database as Database | null, bodyCache, bodyCacheRequest)
 
   if (input.cacheRevision) {
     setCachedServerCommandRevision(revision as number)
   }
 
+  const projection: ServerBootstrapProjection = {
+    revision: revision as number,
+    schemaVersion: Number.isInteger(record.schemaVersion) ? (record.schemaVersion as number) : undefined,
+    database: mergedDatabase,
+    assetBaseUrl: typeof record.assetBaseUrl === 'string' ? record.assetBaseUrl : undefined,
+    activeGenerationJobs: parseActiveGenerationJobs(record.activeGenerationJobs),
+  }
+  if (bodyCache) projection.bodyCache = bodyCache
+
   return {
     status: 'ok',
-    projection: {
-      revision: revision as number,
-      schemaVersion: Number.isInteger(record.schemaVersion) ? (record.schemaVersion as number) : undefined,
-      database: database as Database | null,
-      assetBaseUrl: typeof record.assetBaseUrl === 'string' ? record.assetBaseUrl : undefined,
-      activeGenerationJobs: parseActiveGenerationJobs(record.activeGenerationJobs),
-    },
+    projection,
   }
 }
 

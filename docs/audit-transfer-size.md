@@ -2,7 +2,7 @@
 
 Date: 2026-06-13.
 
-Last updated: 2026-06-14. H1, H2, H3, M1, M2, M3, M4, L4, L6, L7, L8, L9, L10, L11, L12, L17, L19, L21, and L22 were remediated after the initial audit.
+Last updated: 2026-06-14. H1, H2, H3, M1, M2, M3, M4, L1, L4, L6, L7, L8, L9, L10, L11, L12, L17, L19, L21, and L22 were remediated after the initial audit.
 
 This audit examines every place the server sends data to the client and every
 place the client sends changes back, looking for endpoints that transmit or
@@ -20,9 +20,6 @@ else in the detailed index is remediated.
 
 Actionable items:
 
-- L1 - highest remaining byte impact. Add a module/plugin body cache so bootstrap
-  can send stubs plus body revision metadata, then include only missing or stale
-  bodies. Detailed notes: "Bootstrap / projection".
 - L3 - small, straightforward write-path cleanup. Add per-definition upsert,
   delete, and reorder commands for regex scripts and triggers. Detailed notes:
   "Commands write-path".
@@ -39,7 +36,7 @@ Actionable items:
 No-action decisions for now:
 
 - L2 - keep full-bootstrap resync as the rare recovery fallback unless traces
-  show frequent replay gaps or L1 leaves bootstrap too large.
+  show frequent replay gaps or full resyncs remain too large.
 - L13 - keep global memory-job broadcast; revisit only if multi-client active use
   becomes a supported product goal.
 - L15 - keep the raw SSE event stream uncompressed because frames are already
@@ -118,11 +115,10 @@ better than the instance.
    exists (`loadChatHydrationRange`, a computed-but-unserialized `firstChangedIndex`).
    See H3, L3, L7; H2's swipe/reroll case has been remediated with targeted
    message commands.
-2. Bootstrap ships heavy collections not read on load (S→C). `botPresets`,
-   `modules`, and `plugins` are shipped in full (~90% of a measured 2.4 MB
-   bootstrap) though the list UIs read only names/metadata; the same stub +
-   lazy-hydrate pattern already used for characters/messages/promptTemplate is
-   not applied to them. See H1, L1.
+2. Resolved bootstrap heavy collections (S→C). `botPresets` now use lazy
+   per-preset hydration, and `modules`/`plugins` now use a browser-local
+   revisioned body cache so unchanged bodies are omitted after the first cached
+   load. See H1, L1.
 3. SSE `done` events still carry duplicated fields (S→C).
    `done.result` duplicates the streamed tokens. The previously duplicated
    `prompt.messages` and unread `prompt.lorebookActivation` fields were removed
@@ -153,7 +149,7 @@ better than the instance.
 | M2  | S→C | POST /generate/chat (prompt) | per-generation | Resolved: compact-capable clients no longer receive `messages` duplicating `formated` |
 | M3  | C→S | POST /assets/bulk | on-import | Resolved: bulk upload probes /assets/exists and skips duplicate bytes |
 | M4  | S→C | GET /proxy/stream-jobs/:id/ws | per-chunk (LAN stream) | Resolved: WS streams chunks as binary frames, not base64 JSON |
-| L1  | S→C | GET /bootstrap | per-session + resync | All modules and plugins shipped in full incl. disabled items |
+| L1  | S→C | GET /bootstrap | per-session + resync | Resolved: module/plugin bodies use revisioned bootstrap body cache |
 | L2  | S→C | GET /bootstrap (resync) | per gap/reconnect | Resync re-pulls the entire projection with no revision delta |
 | L3  | C→S | PUT /commands/.../scripts\|triggers | per edit burst | One script/trigger edit re-uploads the whole array |
 | L4  | S→C | POST /generate/chat (prompt) | per-generation | Resolved: compact-capable clients no longer receive unread `lorebookActivation` |
@@ -451,34 +447,24 @@ better than the instance.
 
 ### Bootstrap / projection (S→C)
 
-#### L1 — Bootstrap ships all modules and plugins in full
+#### L1 — Resolved: module/plugin bodies use a revisioned bootstrap body cache
 
-Includes disabled items. All 14 modules (742 KB) and both plugins (342 KB) —
-~46% of the bootstrap — ship full lorebook/regex/trigger/asset/script bodies.
-Module list/menu needs only metadata; disabled plugins' scripts never execute
-(`plugins.svelte.ts:486`). *Nuance (corrects the finder):* the client DOES consume
-module bodies at runtime for active modules via
-`getModuleLorebooks/Triggers/RegexScripts/Assets` (`modules.ts:414-475`, called
-from scripts/triggers/cbs/translator/render), so "metadata only" is wrong and a
-lazy-hydrate must cover all four module-activation paths; and modules have no
-`enabled` field (enablement lives in `settings.enabledModules`). The plugin half
-is cleaner: ship `script` only for enabled plugins, lazy-fetching on
-enable/open.
-
-Design direction: prefer a browser-local body cache over pure lazy hydration.
-Modules/plugins are mostly immutable after import/authoring, and active module
-bodies must be available synchronously to existing lorebook/trigger/regex/asset
-runtime paths. Add per-object body revisions plus a persisted global body-cache
-epoch. Bootstrap sends module/plugin stubs with body revision metadata; the
-client sends its cached manifest for the current epoch; the server includes full
-bodies only for missing/stale items. The client reconstructs full
-`database.modules`/`database.plugins` from cache or returned bodies before
-normal runtime/plugin loading proceeds. On restore or full database replacement,
-bump the body-cache epoch and allow object revisions to restart from zero; the
-epoch prevents stale browser cache collisions across restores without hashing
-large JSON bodies on every bootstrap. Evidence:
-`repository.ts:126-136,1388-1393`; `modules.ts:390-475`;
-`plugins.svelte.ts:486`; `apiV3/v3.svelte.ts:1599`.
+Bootstrap now ships module/plugin metadata stubs plus a `bodyCache` payload with
+the global cache epoch, per-object body revisions, and only missing/stale bodies.
+The browser sends its cached manifest in `x-risu-body-cache-manifest`,
+reconstructs full `database.modules` and `database.plugins` from local cache plus
+returned bodies before applying the projection, and then updates the cache. The
+first uncached load still receives the bodies; subsequent cold loads and full
+resyncs omit unchanged module lorebook/regex/trigger/asset/script bodies and
+unchanged plugin scripts. Schema v16 persists `projection_body_cache_state` and
+`collection_body_revisions`; imports/restores bump the epoch so stale browser
+cache entries cannot collide across database replacements. Evidence:
+`server/fastify/src/repository.ts` (`loadBootstrapProjectionDatabaseWithBodyCache`,
+body stubs, revision tracking), `server/fastify/src/routes/bootstrap.ts`
+(manifest header and `bodyCache` response), `src/ts/server/bootstrapBodyCache.ts`
+(browser cache/reconstruction), and regression coverage in
+`server/fastify/__tests__/bootstrap.test.ts` and
+`src/ts/server/bootstrap.test.ts`.
 
 #### L2 — Full-bootstrap resync re-pulls the entire projection
 
@@ -498,7 +484,7 @@ a revision-delta resync endpoint now. Normal command-event handling already
 applies one affected resource at a time, and the full-bootstrap path is reserved
 for rare recovery cases where a revision gap cannot be replayed safely. Revisit
 only if traces show frequent replay-unavailable/gap recovery, or if full resyncs
-remain large after the L1 module/plugin body-cache work. Triggers:
+remain large after the completed bootstrap body-cache work. Triggers:
 `src/ts/bootstrap.ts:343,383,422-425,429`.
 
 ### Commands write-path (C→S)

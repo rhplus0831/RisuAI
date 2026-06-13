@@ -7,10 +7,12 @@ import {
   createAssetMetadataTable,
   createCharacterTables,
   createCollectionTables,
+  createProjectionBodyCacheTables,
   createSettingsTable,
+  seedProjectionBodyCacheRevisions,
 } from './repository.js'
 
-export const CURRENT_SCHEMA_VERSION = 15
+export const CURRENT_SCHEMA_VERSION = 16
 
 export interface MigrationStep {
   version: number
@@ -145,6 +147,14 @@ export const MIGRATIONS: readonly MigrationStep[] = [
       )
     },
   },
+  {
+    version: 16,
+    name: 'projection-body-cache-revisions',
+    up: (db) => {
+      createProjectionBodyCacheTables(db)
+      seedProjectionBodyCacheRevisions(db)
+    },
+  },
 ]
 
 /** Whether `table` already has a column named `column` (PRAGMA table_info). */
@@ -185,6 +195,7 @@ export function openDatabase(dataDir: string): DatabaseSync {
       createAssetMetadataTable(db)
       createCharacterTables(db)
       createCollectionTables(db)
+      createProjectionBodyCacheTables(db)
       createSettingsTable(db)
     }
     applyMigrations(db, schemaState.version)

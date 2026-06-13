@@ -12,6 +12,7 @@ import {
   fetchServerBootstrapProjectionReadOnly,
 } from './bootstrap'
 import { ACTIVE_WRITER_SESSION_HEADER } from './activeWriterSession'
+import { BODY_CACHE_MANIFEST_HEADER } from './bootstrapBodyCache'
 import {
   clearCachedServerCommandRevision,
   getServerCommandBaseRevision,
@@ -174,5 +175,95 @@ describe('server bootstrap projection helper', () => {
         { chatId: 'chat-d', jobId: 'job-d' },
       ])
     }
+  })
+
+  it('reconstructs module and plugin bodies from the local bootstrap body cache', async () => {
+    const storage = new Map<string, string>()
+    vi.stubGlobal('localStorage', {
+      getItem: vi.fn((key: string) => storage.get(key) ?? null),
+      setItem: vi.fn((key: string, value: string) => {
+        storage.set(key, value)
+      }),
+      removeItem: vi.fn((key: string) => {
+        storage.delete(key)
+      }),
+      clear: vi.fn(() => storage.clear()),
+      key: vi.fn((index: number) => Array.from(storage.keys())[index] ?? null),
+      get length() {
+        return storage.size
+      },
+    })
+
+    const headers: Array<Record<string, string>> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: RequestInfo | URL, init: RequestInit = {}) => {
+        const requestHeaders = (init.headers as Record<string, string> | undefined) ?? {}
+        headers.push(requestHeaders)
+        const hasManifest = typeof requestHeaders[BODY_CACHE_MANIFEST_HEADER] === 'string'
+        return jsonResponse({
+          revision: hasManifest ? 2 : 1,
+          database: {
+            characters: [],
+            modules: [{ id: 'module-a', name: 'Module A' }],
+            plugins: [{ name: 'plugin-a', arguments: {}, realArg: {}, customLink: [], argMeta: {}, enabled: false }],
+          },
+          bodyCache: {
+            epoch: 7,
+            modules: [
+              {
+                id: 'module-a',
+                revision: 11,
+                ...(hasManifest ? {} : { body: { id: 'module-a', name: 'Old Name', lorebook: [{ content: 'body' }] } }),
+              },
+            ],
+            plugins: [
+              {
+                id: 'plugin-a',
+                revision: 12,
+                ...(hasManifest ? {} : { body: { name: 'plugin-a', script: 'Risuai.log("body")' } }),
+              },
+            ],
+          },
+        })
+      }) as unknown as typeof fetch,
+    )
+
+    const first = await fetchServerBootstrapProjection()
+    expect(first.status).toBe('ok')
+    if (first.status === 'ok') {
+      expect(first.projection.database?.modules[0]).toMatchObject({
+        id: 'module-a',
+        name: 'Module A',
+        lorebook: [{ content: 'body' }],
+      })
+      expect(first.projection.database?.plugins[0]).toMatchObject({
+        name: 'plugin-a',
+        script: 'Risuai.log("body")',
+        enabled: false,
+      })
+    }
+    expect(headers[0][BODY_CACHE_MANIFEST_HEADER]).toBeUndefined()
+
+    const second = await fetchServerBootstrapProjectionReadOnly()
+    expect(second.status).toBe('ok')
+    if (second.status === 'ok') {
+      expect(second.projection.database?.modules[0]).toMatchObject({
+        id: 'module-a',
+        name: 'Module A',
+        lorebook: [{ content: 'body' }],
+      })
+      expect(second.projection.database?.plugins[0]).toMatchObject({
+        name: 'plugin-a',
+        script: 'Risuai.log("body")',
+        enabled: false,
+      })
+    }
+
+    expect(JSON.parse(decodeURIComponent(headers[1][BODY_CACHE_MANIFEST_HEADER]))).toEqual({
+      epoch: 7,
+      modules: { 'module-a': 11 },
+      plugins: { 'plugin-a': 12 },
+    })
   })
 })
