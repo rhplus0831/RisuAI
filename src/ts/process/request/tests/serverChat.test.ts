@@ -137,7 +137,37 @@ describe('requestServerChat', () => {
       chatId: 'chat-1',
       characterId: 'char-1',
       mode: 'send',
+      clientCapabilities: { compactPromptEvent: true },
     })
+  })
+
+  it('accepts compact prompt events without the legacy duplicate fields', async () => {
+    vi.stubGlobal('fetch', async () => {
+      const enc = new TextEncoder()
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(
+            enc.encode(
+              'event: prompt\ndata: {"promptInfo":{"promptText":"hi"},"formated":[{"role":"user","content":"hi"}]}\n\n',
+            ),
+          )
+          controller.enqueue(enc.encode('event: info\ndata: {"tokens":{"prompt":1,"total":1},"responseBudget":50}\n\n'))
+          controller.enqueue(enc.encode('event: done\ndata: {}\n\n'))
+          controller.close()
+        },
+      })
+      return new Response(stream, {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' },
+      })
+    })
+
+    const res = await requestServerChat(baseInput, null)
+    expect(res.status).toBe('ok')
+    if (res.status !== 'ok') return
+    expect(res.prompt.messages).toBeUndefined()
+    expect(res.prompt.lorebookActivation).toBeUndefined()
+    expect(res.prompt.formated).toEqual([{ role: 'user', content: 'hi' }])
   })
 
   it('sends regenerate intent with the target message id', async () => {

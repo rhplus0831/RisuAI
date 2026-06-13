@@ -864,6 +864,30 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(events.at(-1)?.type).toBe('done')
   })
 
+  it('M2/L4: omits duplicate prompt fields for compact-capable clients', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, fixtureDatabase)
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        ...basePayload,
+        clientCapabilities: { compactPromptEvent: true },
+      },
+    })
+    expect(res.statusCode).toBe(200)
+
+    const events = parseEvents(res.body)
+    const prompt = events.find((e) => e.type === 'prompt')!
+    expect(prompt).toBeDefined()
+    expect(Object.prototype.hasOwnProperty.call(prompt.data, 'messages')).toBe(false)
+    expect(Object.prototype.hasOwnProperty.call(prompt.data, 'lorebookActivation')).toBe(false)
+    expect(Array.isArray(prompt.data.formated)).toBe(true)
+    expect(prompt.data.promptInfo).toBeDefined()
+  })
+
   it('L19: leaves chat SSE uncompressed when gzip is requested', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await seedDatabase(harness.app, assertion, fixtureDatabase)
@@ -2304,7 +2328,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     await restartHarness({
       dispatchProvider: ({ input, result, signal }) => {
         expect(input.mode).toBe('send')
-        expect(result.prompt.messages.length).toBeGreaterThan(0)
+        expect(result.prompt.messages?.length).toBeGreaterThan(0)
         expect(signal.aborted).toBe(false)
         async function* source(): AsyncGenerator<CompletionStreamFrame> {
           yield { kind: 'token', content: 'Hel' }
@@ -3260,6 +3284,27 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
     expect(Array.isArray(body.formated)).toBe(true)
     expect(body.formated.length).toBe(body.messages.length)
     expect((body as Record<string, unknown>).biases).toBeUndefined()
+  })
+
+  it('M2/L4: omits duplicate prompt fields from preview JSON for compact-capable clients', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, fixtureDatabase)
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/preview-prompt',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        ...previewPayload,
+        clientCapabilities: { compactPromptEvent: true },
+      },
+    })
+    expect(res.statusCode).toBe(200)
+    const body = res.json()
+    expect(Object.prototype.hasOwnProperty.call(body, 'messages')).toBe(false)
+    expect(Object.prototype.hasOwnProperty.call(body, 'lorebookActivation')).toBe(false)
+    expect(Array.isArray(body.formated)).toBe(true)
+    expect(body.promptInfo).toBeDefined()
   })
 
   it('returns a structured generation settings 409 body before opening SSE for durable chat', async () => {

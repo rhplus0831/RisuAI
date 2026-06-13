@@ -30,6 +30,9 @@ import type { requestDataResponse, StreamResponseChunk } from './request'
 
 const CHAT_ENDPOINT = '/api/v1/generate/chat'
 const INCOMPLETE_CHAT_GENERATION_SETTINGS_ERROR = 'chat_generation_settings_incomplete'
+const SERVER_CHAT_CLIENT_CAPABILITIES = {
+  compactPromptEvent: true,
+} as const
 
 /** The request body the `/chat` route expects (mirrors server `AssembleInput`). */
 export interface ServerChatInput {
@@ -46,6 +49,7 @@ export interface ServerChatInput {
   inlayAssets?: unknown[]
   /** Legacy browser-local inlay id -> server asset id aliases. */
   inlayAssetRefs?: unknown[]
+  clientCapabilities?: typeof SERVER_CHAT_CLIENT_CAPABILITIES
   /**
    * When set, the server runs this as a detached, reconnectable job and persists
    * the result itself, so the browser suppresses its own generation-result persist.
@@ -176,7 +180,10 @@ async function openChatResponse(
             'risu-auth': auth,
             ...activeWriterSessionHeader(),
           },
-          body: JSON.stringify(input),
+          body: JSON.stringify({
+            ...input,
+            clientCapabilities: SERVER_CHAT_CLIENT_CAPABILITIES,
+          }),
           signal: signal ?? undefined,
         })
   } catch (err) {

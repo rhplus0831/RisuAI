@@ -34,13 +34,13 @@ export interface JobAcceptedEvent {
 
 export interface PromptEvent {
   type: 'prompt'
-  messages: Array<{ role: string; content: unknown }>
+  messages?: Array<{ role: string; content: unknown }>
   promptInfo?: Record<string, unknown>
   lorebookActivation?: unknown
   /**
-   * The budgeted flat prompt as full `OpenAIChat` rows. `messages` is a lossy
-   * `{ role, content }` projection; `formated` preserves fields a preview /
-   * dispatch needs. Optional for older servers.
+   * The budgeted flat prompt as full `OpenAIChat` rows. When present,
+   * `messages` is a lossy `{ role, content }` projection; `formated` preserves
+   * fields a preview / dispatch needs. Optional for older servers.
    */
   formated?: OpenAIChat[]
   /** Logit-bias rows for dispatch. */

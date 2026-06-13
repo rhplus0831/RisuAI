@@ -93,6 +93,10 @@ type SuccessfulAssembleResult = AssembleResult & {
   prompt: Omit<PromptEvent, 'type'>
 }
 
+interface GenerationClientCapabilities {
+  compactPromptEvent: boolean
+}
+
 type PromptAssemblyRun = Awaited<ReturnType<typeof assemblePromptWithMetrics>>
 
 type AssemblyPreflightResult =
@@ -149,6 +153,26 @@ function badRequest(reply: FastifyReply, error: string): void {
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function readClientCapabilities(body: ChatRequestBody): GenerationClientCapabilities {
+  const clientCapabilities = body.clientCapabilities
+  return {
+    compactPromptEvent: isRecord(clientCapabilities) && clientCapabilities.compactPromptEvent === true,
+  }
+}
+
+function promptEventForClient(
+  prompt: Omit<PromptEvent, 'type'>,
+  capabilities: GenerationClientCapabilities,
+): Omit<PromptEvent, 'type'> {
+  if (!capabilities.compactPromptEvent) return prompt
+  const { messages: _messages, lorebookActivation: _lorebookActivation, ...compactPrompt } = prompt
+  return compactPrompt
 }
 
 function validate(body: ChatRequestBody): { ok: true } | { ok: false; error: string } {
@@ -985,6 +1009,7 @@ async function streamAssembly(
   input: AssembleInput,
   dataDir: string,
   eventSink: CommandEventSink,
+  clientCapabilities: GenerationClientCapabilities,
   options: GenerationChatRouteOptions = {},
   preparedAssembly?: PromptAssemblyRun,
   deferredFailure?: AssemblyDeferredFailure,
@@ -1040,7 +1065,7 @@ async function streamAssembly(
           shouldDispatch && database
             ? createGenerationInfo(database, generationId, successfulResult, promptMs)
             : undefined
-        emit({ type: 'prompt', ...result.prompt })
+        emit({ type: 'prompt', ...promptEventForClient(result.prompt, clientCapabilities) })
         if (result.mutations) {
           emit({ type: 'message_patch', patch: result.mutations })
         }
@@ -1686,11 +1711,23 @@ async function runGenerationJob(args: {
   input: AssembleInput
   dataDir: string
   eventSink: CommandEventSink
+  clientCapabilities: GenerationClientCapabilities
   options: GenerationChatRouteOptions
   preparedAssembly?: PromptAssemblyRun
   deferredFailure?: AssemblyDeferredFailure
 }): Promise<void> {
-  const { registry, job, db, input, dataDir, eventSink, options, preparedAssembly, deferredFailure } = args
+  const {
+    registry,
+    job,
+    db,
+    input,
+    dataDir,
+    eventSink,
+    clientCapabilities,
+    options,
+    preparedAssembly,
+    deferredFailure,
+  } = args
   const emit = (event: PromptChatEvent): void => registry.registry.pushRaw(job, formatPromptChatFrame(event))
   const signal = job.abortController.signal
   const generationId = job.id
@@ -1729,7 +1766,7 @@ async function runGenerationJob(args: {
           shouldDispatch && database
             ? createGenerationInfo(database, generationId, successfulResult, promptMs)
             : undefined
-        emit({ type: 'prompt', ...result.prompt })
+        emit({ type: 'prompt', ...promptEventForClient(result.prompt, clientCapabilities) })
         if (result.mutations) {
           emit({ type: 'message_patch', patch: result.mutations })
         }
@@ -1895,6 +1932,7 @@ function startDurableGeneration(args: {
   input: AssembleInput
   dataDir: string
   eventSink: CommandEventSink
+  clientCapabilities: GenerationClientCapabilities
   options: GenerationChatRouteOptions
   generationJobs: GenerationJobRegistry
   preparedAssembly?: PromptAssemblyRun
@@ -1932,6 +1970,7 @@ function startDurableGeneration(args: {
       input,
       dataDir: args.dataDir,
       eventSink: args.eventSink,
+      clientCapabilities: args.clientCapabilities,
       options: args.options,
       preparedAssembly: args.preparedAssembly,
       deferredFailure: args.deferredFailure,
@@ -1958,6 +1997,7 @@ export function registerGenerationChatRoutes(
     }
 
     const input = toAssembleInput(body)
+    const clientCapabilities = readClientCapabilities(body)
     const requestAbort = attachAbort(req)
     const preflight = preflightChatGenerationSettings(reply, input, dataDir, db)
     if (preflight.status === 'handled') {
@@ -1976,6 +2016,7 @@ export function registerGenerationChatRoutes(
         input,
         dataDir,
         eventSink,
+        clientCapabilities,
         options,
         generationJobs,
         deferredFailure: preflight.status === 'defer' ? preflight.failure : undefined,
@@ -1991,6 +2032,7 @@ export function registerGenerationChatRoutes(
       input,
       dataDir,
       eventSink,
+      clientCapabilities,
       options,
       undefined,
       preflight.status === 'defer' ? preflight.failure : undefined,
@@ -2048,13 +2090,14 @@ export function registerGenerationChatRoutes(
       }
 
       const input = toAssembleInput({ ...body, mode: 'preview_prompt' })
+      const clientCapabilities = readClientCapabilities(body)
       const { signal, cleanup } = attachAbort(req)
       try {
         const { result } = await assemblePromptWithMetrics(input, dataDir, db, signal)
         if (result.stopSending) {
           return { stopSending: true, abortReason: result.abortReason }
         }
-        return result.prompt
+        return result.prompt ? promptEventForClient(result.prompt, clientCapabilities) : result.prompt
       } catch (err) {
         if (sendAssemblyHttpError(reply, err)) return
         throw err

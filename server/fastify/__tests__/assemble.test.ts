@@ -2238,7 +2238,7 @@ describe('Phase 7-11f renderAndBudget + assemblePrompt', () => {
     const result = await assemblePrompt(baseInput(), depsFor(fullDb()))
 
     expect(result.stopSending).toBe(false)
-    expect(result.prompt?.messages.length).toBeGreaterThan(0)
+    expect(result.prompt?.messages?.length).toBeGreaterThan(0)
     expect(typeof result.inputTokens).toBe('number')
     expect(typeof result.outputTokens).toBe('number')
     expect(result.formated?.length).toBeGreaterThan(0)

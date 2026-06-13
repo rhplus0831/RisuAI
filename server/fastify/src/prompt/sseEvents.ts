@@ -33,14 +33,14 @@ export interface JobAcceptedEvent {
 
 export interface PromptEvent {
   type: 'prompt'
-  messages: Array<{ role: string; content: unknown }>
+  messages?: Array<{ role: string; content: unknown }>
   promptInfo?: Record<string, unknown>
   lorebookActivation?: unknown
   /**
-   * The budgeted flat prompt as full `OpenAIChat` rows. `messages`
-   * is a lossy `{ role, content }` projection of this; `formated` preserves
-   * the fields a provider dispatch / preview needs (names, cache points,
-   * multimodal content). Additive — the SSE contract stays append-only.
+   * The budgeted flat prompt as full `OpenAIChat` rows. When present,
+   * `messages` is a lossy `{ role, content }` projection of this; `formated`
+   * preserves the fields a provider dispatch / preview needs (names, cache
+   * points, multimodal content).
    */
   formated?: OpenAIChat[]
 }

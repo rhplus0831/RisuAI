@@ -24,6 +24,7 @@ export interface ServerChatCall {
   mode: string
   userMessage: string
   regenerateMessageId: string
+  clientCapabilities: Record<string, unknown> | null
 }
 
 interface ChatPayload {
@@ -32,6 +33,7 @@ interface ChatPayload {
   mode?: unknown
   userMessage?: unknown
   regenerateMessageId?: unknown
+  clientCapabilities?: unknown
 }
 
 interface State {
@@ -292,6 +294,10 @@ export async function serverChatFetch(input: RequestInfo | URL, init?: RequestIn
     mode: typeof body.mode === 'string' ? body.mode : '',
     userMessage: typeof body.userMessage === 'string' ? body.userMessage : '',
     regenerateMessageId: typeof body.regenerateMessageId === 'string' ? body.regenerateMessageId : '',
+    clientCapabilities:
+      body.clientCapabilities && typeof body.clientCapabilities === 'object' && !Array.isArray(body.clientCapabilities)
+        ? (body.clientCapabilities as Record<string, unknown>)
+        : null,
   })
 
   return sseChatResponse()

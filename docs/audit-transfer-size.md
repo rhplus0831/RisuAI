@@ -2,7 +2,7 @@
 
 Date: 2026-06-13.
 
-Last updated: 2026-06-13. H2, H3, and the H1 immediate bootstrap duplicate were remediated after the initial audit.
+Last updated: 2026-06-13. H2, H3, M2, L4, and the H1 immediate bootstrap duplicate were remediated after the initial audit.
 
 This audit examines every place the server sends data to the client and every
 place the client sends changes back, looking for endpoints that **transmit or
@@ -87,10 +87,10 @@ better than the instance.
    bootstrap) though the list UIs read only names/metadata; the same stub +
    lazy-hydrate pattern already used for characters/messages/promptTemplate is
    not applied to them. See H1, L1.
-3. **SSE `prompt`/`done` events carry duplicated or unread fields (S→C).**
-   `messages` duplicates `formated`, `lorebookActivation` is read by nobody,
-   `done.result` duplicates the streamed tokens. The SSE contract is
-   append-only, so omission needs a client-capability flag. See M2, L4, L5.
+3. **SSE `done` events still carry duplicated fields (S→C).**
+   `done.result` duplicates the streamed tokens. The previously duplicated
+   `prompt.messages` and unread `prompt.lorebookActivation` fields were removed
+   for compact-capable clients behind a client-capability flag. See L5.
 4. **Full-replace projection where a tail/delta would do (S→C).** A foreign
    `generation.persisted` re-ships the whole transcript; any gap resync re-pulls
    the whole bootstrap, even though `command_events` records exactly which
@@ -113,13 +113,13 @@ better than the instance.
 | H2  | C→S | PUT /commands/chats/:id/messages | per swipe/reroll | Resolved: swipe/reroll now uses targeted tail/truncate/message-update commands |
 | H3  | C→S | PUT /commands/.../lorebooks | per lorebook edit | Resolved: entry edit/delete/reorder use compact per-entry lorebook commands |
 | M1  | S→C | GET /projection/generation | per foreign generation | generation.persisted re-ships the whole transcript instead of a tail |
-| M2  | S→C | POST /generate/chat (prompt) | per-generation | `prompt` event ships `messages` duplicating `formated` |
+| M2  | S→C | POST /generate/chat (prompt) | per-generation | Resolved: compact-capable clients no longer receive `messages` duplicating `formated` |
 | M3  | C→S | POST /assets/bulk | on-import | Bulk upload never probes /assets/exists, re-sends duplicate bytes |
 | M4  | S→C | GET /proxy/stream-jobs/:id/ws | per-chunk (LAN stream) | WS base64-encodes every LLM chunk (~33% inflation) |
 | L1  | S→C | GET /bootstrap | per-session + resync | All modules and plugins shipped in full incl. disabled items |
 | L2  | S→C | GET /bootstrap (resync) | per gap/reconnect | Resync re-pulls the entire projection with no revision delta |
 | L3  | C→S | PUT /commands/.../scripts\|triggers | per edit burst | One script/trigger edit re-uploads the whole array |
-| L4  | S→C | POST /generate/chat (prompt) | per-generation | `prompt` event ships `lorebookActivation` no client reads |
+| L4  | S→C | POST /generate/chat (prompt) | per-generation | Resolved: compact-capable clients no longer receive unread `lorebookActivation` |
 | L5  | S→C | POST /generate/chat (done) | per-generation | `done.result` duplicates tokens already streamed |
 | L6  | S→C | POST /generate/preview-prompt | per manual preview | preview returns the full prompt payload; client reads only promptText |
 | L7  | S→C | POST /generate/chat (message_patch) | per rewriting send | `replace_all` carries the full transcript the server just persisted |
@@ -302,6 +302,10 @@ better than the instance.
 
 ### M2 — `prompt` SSE event ships a full `messages` projection that duplicates `formated` and is never read
 
+- **Status:** remediated 2026-06-13. Fresh browser generation requests now send
+  `clientCapabilities.compactPromptEvent: true`; the Fastify route omits
+  `prompt.messages` for capable clients while keeping the legacy field for
+  clients that do not advertise the capability.
 - **Direction / endpoint:** S→C, `POST /api/v1/generate/chat` (and `/preview-prompt`).
 - **Frequency:** per-generation (every send/regenerate/continue) and per manual
   preview.
@@ -316,14 +320,16 @@ better than the instance.
   replay path additionally double-buffers the identical frame.
 - **Magnitude:** roughly the full prompt text a second time — ~3–12 KB per typical
   generation, tens of KB for big-lorebook chats.
-- **Recommendation:** stop emitting `messages` on the `prompt` event. Because the
-  SSE contract is append-only, gate omission behind a client-capability flag in
-  the request body so the server can drop it for clients that read only
-  `formated`.
-- **Evidence:** `server/fastify/src/prompt/assemble.ts:1726` (built), `:1735`
-  (`formated` in the same object); emitted `generationChat.ts:1043,1732`, returned
-  whole `:2057`; client reads only `formated`/`promptInfo`/`biases`
-  `src/ts/process/serverBackedSendChat.ts:232-370`.
+- **Completed remediation:** the browser adapter appends
+  `clientCapabilities.compactPromptEvent: true` to fresh `/generate/chat`
+  requests; the server sanitizes the `prompt` event and `/preview-prompt` JSON
+  response for capable clients. Legacy clients still receive the original field.
+- **Current evidence:** `server/fastify/src/prompt/assemble.ts:1726` (built),
+  `:1735` (`formated` in the same object);
+  `server/fastify/src/routes/generationChat.ts` (`promptEventForClient`);
+  `src/ts/process/request/serverChat.ts` (capability injection);
+  regression coverage in `server/fastify/__tests__/generation.chat.test.ts` and
+  `src/ts/process/request/tests/serverChat.test.ts`.
 
 ### M3 — Bulk upload never probes existence before re-sending asset bytes the server already stores
 
@@ -424,14 +430,12 @@ generation/chat-select hot path. Fix: per-definition upsert/delete/reorder by id
 
 ### Generation SSE (S→C)
 
-**L4 — `prompt` event always ships a `lorebookActivation` report no client reads.**
-The full `LorebookActivationReport` (every activated entry's prompt text — already
-inside `formated` — plus a per-key `matchLog` diagnostic trace) is attached at
-`assemble.ts:1732` and emitted every generation/preview. Repo-wide search finds
-only type decls and a `null` test fixture — no production consumer. Data-dependent
-magnitude (near-zero for small lorebooks, tens of KB for rich ones). Fix: omit
-from the wire or send a compact id/token-count summary, behind the same
-capability flag as M2.
+**L4 — Resolved: `prompt` event shipped a `lorebookActivation` report no client
+reads.** Remediated 2026-06-13 behind the same
+`clientCapabilities.compactPromptEvent` flag as M2. The full
+`LorebookActivationReport` is still built for assembly internals, but it is no
+longer emitted to compact-capable `/generate/chat` SSE clients or
+`/preview-prompt` JSON callers. Legacy clients still receive the original field.
 
 **L5 — Terminal `done.result` re-sends the completion text already streamed.**
 `emitSuccessDone` always stamps the full accumulated text onto `done`
@@ -620,30 +624,27 @@ interactive). Fix: add a dedicated `HEAD /storage/read` (200/404) or
 
 Ordered by bytes × frequency × implementation ease:
 
-1. **M2 + L4 (drop `messages` and `lorebookActivation` from the `prompt` event).**
-   One client-capability flag removes both, per-generation, every chat.
-2. **M1 (generation.persisted tail).** Reuse `loadChatHydrationRange` +
+1. **M1 (generation.persisted tail).** Reuse `loadChatHydrationRange` +
    `firstChangedIndex`; low-risk, infra already present (shared with L7).
-3. **M3 + L8 (probe `/assets/exists`, then upload missing as raw binary).** Turns
+2. **M3 + L8 (probe `/assets/exists`, then upload missing as raw binary).** Turns
    duplicate/re-imports into near-zero-byte ops and removes 33% inflation.
-4. **M4 + L21 (binary WS frames, or enable `perMessageDeflate`).** LAN-scoped but
+3. **M4 + L21 (binary WS frames, or enable `perMessageDeflate`).** LAN-scoped but
    hot during streaming.
-5. **Memory cleanup (L9, L10, L11, L12).** Projected job-list shape, event-driven
+4. **Memory cleanup (L9, L10, L11, L12).** Projected job-list shape, event-driven
    upserts, ETag/304, trimmed SSE frame — a coherent batch.
-6. **Remaining lows (L2, L5, L6, L7, L13–L22)** as opportunistic cleanup; L16 and
+5. **Remaining lows (L2, L5, L6, L7, L13–L22)** as opportunistic cleanup; L16 and
    L15 are documented as acceptable-as-is.
 
 ## How To Verify
 
 - Sizes were measured against the real `data/risu.db` (66 MB) via `sqlite3`
   byte-length sums on `bot_presets`, `modules`, `plugins`, and chat message JSON.
-- For each finding, the over-transmission is reproducible by reading the cited
+- For each open finding, the over-transmission is reproducible by reading the cited
   server serializer and confirming the client consumer ignores the field
   (grep the field name across `src/` excluding tests). The `file:line` anchors in
   each finding are the entry points.
 - Existing regression coverage asserts the bootstrap projection contains no
   `botPresets[i].promptTemplate` for the active preset (H1). A regression guard
   could still assert that the bulk chat
-  response omits `alternates` (L17), and that the `prompt` SSE event omits
-  `messages`/`lorebookActivation` when the capability flag is set (M2/L4).
-  Existing focused tests guard the H2 targeted swipe/reroll command routing.
+  response omits `alternates` (L17). Existing focused tests guard the H2 targeted
+  swipe/reroll command routing and the M2/L4 compact prompt event behavior.
