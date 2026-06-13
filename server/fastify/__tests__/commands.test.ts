@@ -211,6 +211,27 @@ async function projectedCharacterRow(
   return res.json().character as Record<string, unknown>
 }
 
+async function projectedPromptItems(
+  app: FastifyInstance,
+  assertion: string,
+): Promise<{ revision: number; promptTemplate?: Array<Record<string, unknown>> }> {
+  const res = await app.inject({
+    method: 'GET',
+    url: '/api/v1/projection/promptItem',
+    headers: { 'risu-auth': assertion },
+  })
+  expect(res.statusCode).toBe(200)
+  const body = res.json() as {
+    revision: number
+    resource: string
+    mode: string
+    fields: { promptTemplate?: Array<Record<string, unknown>> }
+  }
+  expect(body.resource).toBe('promptItem')
+  expect(body.mode).toBe('fields')
+  return { revision: body.revision, promptTemplate: body.fields.promptTemplate }
+}
+
 async function uploadAsset(
   app: FastifyInstance,
   assertion: string,
@@ -2284,12 +2305,9 @@ describe('Phase 9-2c prompt template and item commands', () => {
       id: 'item-a',
     })
 
-    const bootstrap = await harness.app.inject({
-      method: 'GET',
-      url: '/api/v1/bootstrap',
-      headers: { 'risu-auth': assertion },
-    })
-    expect(bootstrap.json().database.promptTemplate).toEqual([
+    const projected = await projectedPromptItems(harness.app, assertion)
+    expect(projected.revision).toBe(deleted.json().revision)
+    expect(projected.promptTemplate).toEqual([
       {
         id: 'item-b',
         type: 'plain',
@@ -2369,16 +2387,9 @@ describe('Phase 9-2c prompt template and item commands', () => {
     expect(reorder.statusCode).toBe(400)
     expect(reorder.json().error).toBe('Duplicate prompt item id: item-a')
 
-    const bootstrap = await harness.app.inject({
-      method: 'GET',
-      url: '/api/v1/bootstrap',
-      headers: { 'risu-auth': assertion },
-    })
-    expect(bootstrap.json().revision).toBe(1)
-    expect(bootstrap.json().database.promptTemplate.map((item: { id: string }) => item.id)).toEqual([
-      'item-a',
-      'item-b',
-    ])
+    const projected = await projectedPromptItems(harness.app, assertion)
+    expect(projected.revision).toBe(1)
+    expect(projected.promptTemplate?.map((item) => item.id)).toEqual(['item-a', 'item-b'])
   })
 
   it('enables and disables prompt items through prompt-item commands', async () => {
@@ -2413,12 +2424,9 @@ describe('Phase 9-2c prompt template and item commands', () => {
     expect(disabled.statusCode).toBe(200)
     expect(disabled.json()).toMatchObject({ revision: 3, enabled: false })
 
-    const bootstrap = await harness.app.inject({
-      method: 'GET',
-      url: '/api/v1/bootstrap',
-      headers: { 'risu-auth': assertion },
-    })
-    expect(bootstrap.json().database.promptTemplate).toBeUndefined()
+    const projected = await projectedPromptItems(harness.app, assertion)
+    expect(projected.revision).toBe(disabled.json().revision)
+    expect(projected.promptTemplate).toBeUndefined()
   })
 
   it('returns 404 and 409 for missing prompt items and stale revisions', async () => {
