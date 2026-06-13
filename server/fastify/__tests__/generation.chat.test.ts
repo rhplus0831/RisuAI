@@ -731,6 +731,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
         characterId: 'char-1',
         mode: 'regenerate',
         regenerateMessageId: 'msg-char-1',
+        clientCapabilities: { compactPromptEvent: true },
       },
     })
     expect(res.statusCode).toBe(200)
@@ -754,6 +755,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
             source?: string
             beforeLength?: number
             afterLength?: number
+            firstChangedIndex?: number
             messages?: unknown[]
           }>
         }
@@ -764,7 +766,8 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
         source: 'regenerate',
         beforeLength: 2,
         afterLength: 1,
-        messages: [{ role: 'user', data: 'try again', chatId: 'msg-user-1' }],
+        firstChangedIndex: 1,
+        messages: [],
       },
     ])
     const prompt = events.find((e) => e.type === 'prompt')!
@@ -896,7 +899,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       method: 'POST',
       url: '/api/v1/generate/chat',
       headers: { 'risu-auth': assertion, 'accept-encoding': 'gzip' },
-      payload: basePayload,
+      payload: { ...basePayload, clientCapabilities: { compactPromptEvent: true } },
     })
     expect(res.statusCode).toBe(200)
     expect(res.headers['content-type']).toBe('text/event-stream')
@@ -2105,7 +2108,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       method: 'POST',
       url: '/api/v1/generate/chat',
       headers: { 'risu-auth': assertion },
-      payload: basePayload,
+      payload: { ...basePayload, clientCapabilities: { compactPromptEvent: true } },
     })
     expect(res.statusCode).toBe(200)
 
@@ -2114,7 +2117,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     const patch = events[3].data.patch as {
       varChanged?: boolean
       chatVarMutations?: unknown[]
-      messageMutations?: Array<{ type?: string; source?: string; messages?: unknown[] }>
+      messageMutations?: Array<{ type?: string; source?: string; firstChangedIndex?: number; messages?: unknown[] }>
     }
     expect(patch.varChanged).toBe(true)
     expect(patch.chatVarMutations).toEqual([{ key: '$score', before: '1', after: '9' }])
@@ -2122,11 +2125,10 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       ['append', 'user_message'],
       ['replace_all', 'start_trigger'],
     ])
-    expect(patch.messageMutations?.at(-1)?.messages).toMatchObject([
-      { role: 'user', data: 'before stop', chatId: 'msg-before-stop' },
-      { role: 'user', data: 'hi' },
-      { role: 'char', data: 'mutated before stop' },
-    ])
+    expect(patch.messageMutations?.at(-1)).toMatchObject({
+      firstChangedIndex: 2,
+      messages: [{ role: 'char', data: 'mutated before stop' }],
+    })
     expect(events[4]).toEqual({
       type: 'error',
       data: {
@@ -3286,7 +3288,7 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
     expect((body as Record<string, unknown>).biases).toBeUndefined()
   })
 
-  it('M2/L4: omits duplicate prompt fields from preview JSON for compact-capable clients', async () => {
+  it('L6: returns only promptInfo.promptText from preview JSON for compact-capable clients', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await seedDatabase(harness.app, assertion, fixtureDatabase)
 
@@ -3301,10 +3303,12 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
     })
     expect(res.statusCode).toBe(200)
     const body = res.json()
+    expect(Object.keys(body)).toEqual(['promptInfo'])
+    expect(Object.keys(body.promptInfo)).toEqual(['promptText'])
+    expect(typeof body.promptInfo.promptText).toBe('string')
     expect(Object.prototype.hasOwnProperty.call(body, 'messages')).toBe(false)
+    expect(Object.prototype.hasOwnProperty.call(body, 'formated')).toBe(false)
     expect(Object.prototype.hasOwnProperty.call(body, 'lorebookActivation')).toBe(false)
-    expect(Array.isArray(body.formated)).toBe(true)
-    expect(body.promptInfo).toBeDefined()
   })
 
   it('returns a structured generation settings 409 body before opening SSE for durable chat', async () => {

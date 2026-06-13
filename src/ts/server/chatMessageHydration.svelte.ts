@@ -225,9 +225,6 @@ async function hydrateChatsBulk(chatIds: readonly string[], options: BulkHydrati
       continue
     }
     hydratedChatIds.add(chatId)
-    if (activeChatId() === chatId) {
-      seedRerollBufferFromAlternates(hydration.message, hydration.alternates)
-    }
   }
   if (options.strict && missingIds.length > 0) {
     throw new Error(`Bulk chat hydration did not return messages for: ${missingIds.join(', ')}`)

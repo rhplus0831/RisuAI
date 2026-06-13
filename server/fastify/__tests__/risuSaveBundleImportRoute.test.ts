@@ -181,13 +181,13 @@ describe('repository .risu bundle import route', () => {
 
       expect(imported.statusCode).toBe(200)
       const body = imported.json() as Record<string, unknown>
-      expect(body.format).toBe('risu-bundle-zip')
-      expect(body.envelope).toBe('risusave-blocks')
       expect(body.importReport).toEqual({
         incompleteChatCount: 1,
         unsupportedReferenceCount: 0,
-        unsupportedReferences: [],
       })
+      expect(body.importReport).not.toHaveProperty('unsupportedReferences')
+      expect(body).not.toHaveProperty('format')
+      expect(body).not.toHaveProperty('envelope')
       expect(body.bundleReport).toEqual({ includedAssetCount: 1, assetsCreated: true })
       expect(body.assetReport).toMatchObject({ referencedCount: 1, missingCount: 0 })
       expect(typeof body.revision).toBe('number')
@@ -264,12 +264,12 @@ describe('repository .risu bundle import route', () => {
 
       expect(imported.statusCode).toBe(200)
       const body = imported.json() as Record<string, unknown>
-      expect(body.format).toBe('legacy-local-backup')
       expect(body.importReport).toEqual({
         incompleteChatCount: 1,
         unsupportedReferenceCount: 0,
-        unsupportedReferences: [],
       })
+      expect(body.importReport).not.toHaveProperty('unsupportedReferences')
+      expect(body).not.toHaveProperty('format')
       // Only the media record registered; the cold-storage `.json` was skipped.
       expect(body.bundleReport).toEqual({ includedAssetCount: 1, assetsCreated: true })
       expect(body.assetReport).toMatchObject({ referencedCount: 1, missingCount: 0 })

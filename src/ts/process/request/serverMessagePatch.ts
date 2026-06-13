@@ -15,7 +15,15 @@ function sameMessageContent(a: Message | undefined, b: Message): boolean {
 
 function applyMessageMutation(chat: Chat, mutation: ServerChatMessageMutation): void {
   if (mutation.type === 'replace_all') {
-    chat.message = mutation.messages
+    if (
+      Number.isInteger(mutation.firstChangedIndex) &&
+      (mutation.firstChangedIndex as number) >= 0 &&
+      (mutation.firstChangedIndex as number) <= chat.message.length
+    ) {
+      chat.message.splice(mutation.firstChangedIndex as number, chat.message.length, ...mutation.messages)
+    } else {
+      chat.message = mutation.messages
+    }
     return
   }
 

@@ -179,7 +179,7 @@ export function registerProjectionRoutes(
       }
 
       const { revision } = getSchemaState(db)
-      const hydration = loadChatHydrations(db, dataDir, chatIds)
+      const hydration = loadChatHydrations(db, dataDir, chatIds, { includeAlternates: false })
       const response = {
         revision,
         resource: 'chatMessages',

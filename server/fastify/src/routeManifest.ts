@@ -477,6 +477,20 @@ export const PROTOCOL_ROUTE_MANIFEST = [
     streaming: 'binary',
   },
   {
+    id: 'legacy-storage-exists',
+    methods: READ_METHODS,
+    path: '/api/v1/storage/exists',
+    auth: {
+      decision: 'required',
+      reason: 'Legacy storage existence check reveals server-owned compatibility filenames.',
+    },
+    activeWriter: {
+      decision: 'not-applicable',
+      reason: 'Read-only legacy storage existence check.',
+    },
+    streaming: 'none',
+  },
+  {
     id: 'legacy-storage-write',
     methods: ['POST'],
     path: '/api/v1/storage/write',

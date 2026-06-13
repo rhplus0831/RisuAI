@@ -94,11 +94,9 @@ export function registerSaveRoutes(
         return {
           revision,
           event,
-          envelope: snapshot.envelope,
           importReport: {
             incompleteChatCount: snapshot.incompleteChatCount,
             unsupportedReferenceCount: snapshot.unsupportedReferences.length,
-            unsupportedReferences: snapshot.unsupportedReferences,
           },
           assetReport,
         }
@@ -162,12 +160,9 @@ export function registerSaveRoutes(
       return {
         revision,
         event,
-        format: decoded.format,
-        envelope: snapshot.envelope,
         importReport: {
           incompleteChatCount: snapshot.incompleteChatCount,
           unsupportedReferenceCount: snapshot.unsupportedReferences.length,
-          unsupportedReferences: snapshot.unsupportedReferences,
         },
         assetReport,
         bundleReport: {

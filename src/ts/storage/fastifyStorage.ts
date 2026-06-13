@@ -6,6 +6,7 @@ import { base64url, getKeypairStore, saveKeypairStore } from '../util'
 const ROUTES = {
   write: '/api/v1/storage/write',
   read: '/api/v1/storage/read',
+  exists: '/api/v1/storage/exists',
   list: '/api/v1/storage/list',
   remove: '/api/v1/storage/remove',
   crypto: '/api/v1/auth/crypto',
@@ -165,6 +166,24 @@ export class FastifyStorage {
       return null
     }
     return data
+  }
+  async hasItem(key: string): Promise<boolean> {
+    await this.checkAuth()
+    const da = await fetch(ROUTES.exists, {
+      method: 'GET',
+      headers: {
+        'file-path': Buffer.from(key, 'utf-8').toString('hex'),
+        'risu-auth': await this.createAuth(),
+      },
+    })
+    if (da.status < 200 || da.status >= 300) {
+      throw 'existsItem Error'
+    }
+    const data = await da.json()
+    if (data.error) {
+      throw data.error
+    }
+    return data.exists === true
   }
   async keys(): Promise<string[]> {
     await this.checkAuth()

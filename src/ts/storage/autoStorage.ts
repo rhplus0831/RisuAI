@@ -16,6 +16,10 @@ export class AutoStorage {
     await this.Init()
     return await this.realStorage.keys()
   }
+  async hasItem(key: string): Promise<boolean> {
+    await this.Init()
+    return await this.realStorage.hasItem(key)
+  }
   async removeItem(key: string | string[]) {
     await this.Init()
     return await this.realStorage.removeItem(key)

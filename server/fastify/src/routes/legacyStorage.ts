@@ -104,6 +104,22 @@ export function registerLegacyStorageRoutes(app: FastifyInstance, authState: Aut
       return { success: true, content }
     })
 
+    instance.get('/api/v1/storage/exists', async (req, reply) => {
+      if (!(await requireAuth(authState, req, reply))) return
+      const raw = req.headers['file-path']
+      const filePath = Array.isArray(raw) ? raw[0] : raw
+      if (!filePath) {
+        reply.code(400)
+        return { error: 'File path required' }
+      }
+      if (!isHexFilename(filePath)) {
+        reply.code(400)
+        return { error: 'Invalid path' }
+      }
+      const savePath = ensureSaveDir(dataDir)
+      return { success: true, exists: fs.existsSync(path.join(savePath, filePath)) }
+    })
+
     instance.get('/api/v1/storage/read', async (req, reply) => {
       if (!(await requireAuth(authState, req, reply))) return
       const raw = req.headers['file-path']

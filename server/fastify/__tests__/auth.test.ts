@@ -103,6 +103,13 @@ describe('agent dev auth bypass', () => {
         })
         expect(storageList.statusCode).toBe(200)
         expect(storageList.json()).toEqual({ success: true, content: [] })
+        const storageExists = await app.inject({
+          method: 'GET',
+          url: '/api/v1/storage/exists',
+          headers: { 'file-path': Buffer.from('database/database.bin').toString('hex') },
+        })
+        expect(storageExists.statusCode).toBe(200)
+        expect(storageExists.json()).toEqual({ success: true, exists: false })
         expect(fs.existsSync(path.join(dataDir, '__password'))).toBe(false)
       } finally {
         await app.close()

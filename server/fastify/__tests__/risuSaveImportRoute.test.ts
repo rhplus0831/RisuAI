@@ -645,14 +645,14 @@ describe('Phase 9-8a multipart .risu import route', () => {
         revision: 1,
         resource: 'state',
       },
-      envelope: 'legacy-raw',
       importReport: {
         incompleteChatCount: 1,
         unsupportedReferenceCount: 0,
-        unsupportedReferences: [],
       },
       assetReport: { referencedCount: 0, missingCount: 0, orphanedCount: 0 },
     })
+    expect(imported.json()).not.toHaveProperty('envelope')
+    expect(imported.json().importReport).not.toHaveProperty('unsupportedReferences')
     expect(harness.commandEvents.list()).toEqual([imported.json().event])
 
     const verifyDb = openDatabase(harness.dataDir)
@@ -726,8 +726,8 @@ describe('Phase 9-8a multipart .risu import route', () => {
     expect(imported.json().importReport).toEqual({
       incompleteChatCount: 2,
       unsupportedReferenceCount: 0,
-      unsupportedReferences: [],
     })
+    expect(imported.json().importReport).not.toHaveProperty('unsupportedReferences')
 
     const bootstrap = await authedInject({ method: 'GET', url: '/api/v1/bootstrap' })
     const chats = bootstrap.json().database.characters[0].chats as Array<{
@@ -782,14 +782,14 @@ describe('Phase 9-8a multipart .risu import route', () => {
         revision: 1,
         resource: 'state',
       },
-      envelope: 'risusave-blocks',
       importReport: {
         incompleteChatCount: 0,
         unsupportedReferenceCount: 1,
-        unsupportedReferences: [{ name: 'remote-char', type: RisuSaveBlockType.REMOTE, kind: 'remote' }],
       },
       assetReport: { referencedCount: 0, missingCount: 0, orphanedCount: 0 },
     })
+    expect(imported.json()).not.toHaveProperty('envelope')
+    expect(imported.json().importReport).not.toHaveProperty('unsupportedReferences')
   })
 
   it('rejects block uploads whose expanded payload exceeds the import limit', async () => {

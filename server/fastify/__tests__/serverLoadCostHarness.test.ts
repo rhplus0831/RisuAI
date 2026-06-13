@@ -579,12 +579,14 @@ describe('server load-count harness on the large-corpus fixture', () => {
     expect(body.missing).toEqual(['missing-chat'])
     expect(body.chats).toHaveLength(2)
 
-    // Each bulk row carries exactly what the single hydration route serves.
+    // Bulk rows intentionally omit reroll alternates; single-chat hydration keeps
+    // them for active chat reloads.
     for (const chat of body.chats) {
       const single = (await hydrationGet(chat.chatId)).json()
-      expect(JSON.stringify({ m: chat.message, h: chat.hypaV3Data, a: chat.alternates })).toBe(
-        JSON.stringify({ m: single.message, h: single.hypaV3Data, a: single.alternates }),
+      expect(JSON.stringify({ m: chat.message, h: chat.hypaV3Data })).toBe(
+        JSON.stringify({ m: single.message, h: single.hypaV3Data }),
       )
+      expect(chat).not.toHaveProperty('alternates')
     }
     expect(body.chats[0].message).toHaveLength(fixture.hot.messageCount)
     expect(body.chats[0].hypaV3Data).toBeDefined()

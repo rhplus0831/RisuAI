@@ -1043,13 +1043,13 @@ describe('bulk chat message hydration route', () => {
       chatId: 'chat-a',
       message: [{ role: 'user', data: 'hello', chatId: 'm1' }],
       hypaV3Data: { mainChunks: [{ text: 'summary' }] },
-      alternates: [],
     })
+    expect(body.chats[0]).not.toHaveProperty('alternates')
     expect(body.chats[1]).toMatchObject({
       chatId: 'chat-b',
       message: [{ role: 'char', data: 'hi', chatId: 'm2' }],
-      alternates: [],
     })
+    expect(body.chats[1]).not.toHaveProperty('alternates')
     expect(body.chats[1]).not.toHaveProperty('hypaV3Data')
   })
 

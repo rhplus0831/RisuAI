@@ -2,7 +2,7 @@
 
 Date: 2026-06-13.
 
-Last updated: 2026-06-13. H1, H2, H3, M1, M2, M3, M4, L4, L8, L9, L10, L11, L12, and L21 were remediated after the initial audit.
+Last updated: 2026-06-14. H1, H2, H3, M1, M2, M3, M4, L4, L6, L7, L8, L9, L10, L11, L12, L17, L19, L21, and L22 were remediated after the initial audit.
 
 This audit examines every place the server sends data to the client and every
 place the client sends changes back, looking for endpoints that **transmit or
@@ -122,8 +122,8 @@ better than the instance.
 | L3  | C→S | PUT /commands/.../scripts\|triggers | per edit burst | One script/trigger edit re-uploads the whole array |
 | L4  | S→C | POST /generate/chat (prompt) | per-generation | Resolved: compact-capable clients no longer receive unread `lorebookActivation` |
 | L5  | S→C | POST /generate/chat (done) | per-generation | `done.result` duplicates tokens already streamed |
-| L6  | S→C | POST /generate/preview-prompt | per manual preview | preview returns the full prompt payload; client reads only promptText |
-| L7  | S→C | POST /generate/chat (message_patch) | per rewriting send | `replace_all` carries the full transcript the server just persisted |
+| L6  | S→C | POST /generate/preview-prompt | per manual preview | Resolved: compact preview response returns only promptInfo.promptText |
+| L7  | S→C | POST /generate/chat (message_patch) | per rewriting send | Resolved: compact `replace_all` carries only the changed suffix |
 | L8  | C→S | POST /assets/bulk | on-import | Resolved: missing bulk assets upload with binary framing, not base64 JSON |
 | L9  | S→C | GET /memory/jobs | 5s poll + per event | Resolved: job list projects render fields and drops payload/timestamps |
 | L10 | both | GET /memory/jobs | per job transition | Resolved: client upserts the changed job from SSE instead of refetching |
@@ -133,12 +133,12 @@ better than the instance.
 | L14 | S→C | GET /memory/chunks\|summaries/:id | none today | SELECT * full-text reads, unbounded; latent (no caller yet) |
 | L15 | S→C | GET /events | per-session | SSE stream is emitted uncompressed (hijacks before compress hook) |
 | L16 | S→C | GET /events | per command event | origin.writerSessionId rides every frame (usable only by author) |
-| L17 | S→C | POST /projection/chatMessages/bulk | export only | Bulk chat response ships reroll `alternates` the consumer discards |
+| L17 | S→C | POST /projection/chatMessages/bulk | export only | Resolved: bulk chat response omits reroll `alternates` |
 | L18 | both | POST /projection/chatMessages/bulk | export only | Bulk endpoints have no maxItems bound and no per-chat window |
-| L19 | S→C | POST /import/bundle | per import | Import response echoes fields incl. unbounded unsupportedReferences |
+| L19 | S→C | POST /import/bundle | per import | Resolved: import response omits unbounded unsupportedReferences/detail |
 | L20 | S→C | POST /import/realm-character | per import | Realm SSE re-sends a constant phase/message string per asset frame |
 | L21 | S→C | GET /proxy/stream-jobs/:id/ws | LAN stream | Resolved: WS negotiates perMessageDeflate |
-| L22 | S→C | GET /storage/list | per save | Remote-block existence check downloads the entire key list for one name |
+| L22 | S→C | GET /storage/list | per save | Resolved: remote-block existence uses a single-key check |
 
 ---
 
@@ -506,28 +506,28 @@ path has both the digest check and fallback fetch wired, because the hash alone
 can detect corruption/missing tokens but cannot reconstruct the missing text.
 Low-priority.
 
-**L6 — `preview_prompt` returns the whole prompt payload when only
-`promptInfo.promptText` is read.** The preview branch reads only
-`served.prompt.promptInfo?.promptText` (`serverBackedSendChat.ts:231-233`) and
-discards `messages`/`formated`/`lorebookActivation`. *Nuance (corrects the
-finder):* there is no `biases` field in the prompt payload, and the dedicated
-`/preview-prompt` route appears unused by the live client (the preview path is the
-SSE `/chat` route via hotkey). Manual-frequency. Fix: project `preview_prompt`
-down to `promptInfo`.
+**L6 — Resolved: `preview_prompt` returned the whole prompt payload when only
+`promptInfo.promptText` was read.** Remediated 2026-06-14. Compact-capable
+clients now receive only `{promptInfo: {promptText}}` from
+`/api/v1/generate/preview-prompt`; legacy/non-compact callers keep the previous
+full prompt payload.
 
-**L7 — `replace_all` message mutations carry the full transcript the server just
-persisted.** When a trigger/editinput/history-normalize rewrites history, assembly
-emits `{type:'replace_all', messages: <full array>}` on `message_patch`
-(`assemble.ts:694-705`), applied wholesale client-side
-(`serverMessagePatch.ts:17-19`); the same transcript was just written by the
-`messages.replaced` command in the same request. The server already computes
-`firstChangedIndex` (`assemble.ts:689`) but stores it non-enumerable so it never
-serializes — a from-`firstChangedIndex` slice is feasible. *Nuances (correct the
-finder):* it is **not** sent twice (the post-gen `messagePatch` is a separate
-delta), and the patch is applied to the in-memory projection with no refresh, so a
-"re-read by revision" remedy would *add* a round-trip — the right fix is wiring the
-existing `firstChangedIndex` slice. Zero on plain trigger-less sends (those use a
-small `append`).
+Current evidence: `server/fastify/src/routes/generationChat.ts`
+(`promptEventForClient`) and regression coverage in
+`server/fastify/__tests__/generation.chat.test.ts`.
+
+**L7 — Resolved: `replace_all` message mutations carried the full transcript the
+server just persisted.** Remediated 2026-06-14. Compact-capable `message_patch`
+events now serialize the existing `firstChangedIndex` and send only the changed
+suffix. The browser splices that suffix into the cached transcript; an empty
+suffix intentionally truncates from `firstChangedIndex`. Legacy clients still
+receive the full `replace_all` message array.
+
+Current evidence: `server/fastify/src/routes/generationChat.ts`
+(`messagePatchForClient`), `src/ts/process/request/serverChatEvents.ts`,
+`src/ts/process/request/serverMessagePatch.ts`, and regression coverage in
+`server/fastify/__tests__/generation.chat.test.ts` plus
+`src/ts/process/request/tests/serverMessagePatch.test.ts`.
 
 ### Assets (C→S)
 
@@ -653,14 +653,18 @@ per-frame cost is acceptable under the dominant single-active-client model.
 
 ### Bulk hydration (S→C)
 
-**L17 — Bulk chat hydration ships per-chat reroll `alternates` the consumer
-discards.** The bulk response always includes `alternates` (full preserved
-reroll-candidate message rows) per chat (`repository.ts:1641,1677`), but
-`hydrateChatsBulk` seeds the reroll buffer only for the active chat
-(`chatMessageHydration.svelte.ts:228-230`); all bulk callers (export-as-dataset,
-export-all-chats, branch-tree) ignore it. Export-only frequency, and most chats
-carry zero alternates (cleared on next send), so bounded. Fix: drop `alternates`
-from the bulk response; keep it on the single-chat GET that seeds the open chat.
+**L17 — Resolved: bulk chat hydration shipped per-chat reroll `alternates` the
+consumer discarded.** Remediated 2026-06-14. Bulk chat hydration now opts out of
+loading grouped alternates and omits `alternates` from each bulk row. Single-chat
+hydration still returns alternates so the active chat can restore its reroll
+buffer.
+
+Current evidence: `server/fastify/src/repository.ts` (`loadChatHydrations`
+`includeAlternates` option), `server/fastify/src/routes/projection.ts`
+(`chatMessages/bulk`), `src/ts/server/projection.ts`,
+`src/ts/server/chatMessageHydration.svelte.ts`, and regression coverage in
+`server/fastify/__tests__/projection.test.ts` and
+`server/fastify/__tests__/serverLoadCostHarness.test.ts`.
 
 **L18 — Bulk endpoints have no `maxItems` bound and return complete unwindowed
 transcripts.** `bulkChatMessagesBodySchema` caps neither the id list nor the
@@ -681,22 +685,16 @@ limits so bulk projection requests stay bounded.
 
 ### Import / export (S→C)
 
-**L19 — Bundle/risusave import response echoes fields the client discards,
-including an unbounded `unsupportedReferences` array.** The response carries
-`format/envelope/importReport{incompleteChatCount, unsupportedReferenceCount,
-unsupportedReferences}/assetReport/bundleReport` (`save.ts:94-104,162-177`), but
-`readBundleImportResult` reads only `{revision, event}` and the terminal consumer
-reads only `result.status` — zero non-test consumers of the rest.
-`unsupportedReferences` is one object per remote/cache-only block (unbounded).
-Once-per-import, so small. Fix: return only `{revision, event}` (or scalar counts
-if a summary UI is ever added).
+**L19 — Resolved: bundle/risusave import response echoed fields the client
+discarded, including an unbounded `unsupportedReferences` array.** Remediated
+2026-06-14. Import responses now keep `{revision, event}` plus bounded scalar
+summary fields (`incompleteChatCount`, `unsupportedReferenceCount`, asset/bundle
+counts where already useful). They no longer echo `format`, `envelope`, or the
+full `unsupportedReferences` array.
 
-**Design direction:** keep room for a future import summary UI, but avoid
-returning unbounded detail by default. A later cleanup should trim this response
-toward `{revision, event}` plus scalar counts such as incomplete-chat and
-unsupported-reference counts if useful; the full `unsupportedReferences` array
-should not be returned unless a caller explicitly requests a detailed diagnostic
-report.
+Current evidence: `server/fastify/src/routes/save.ts` and regression coverage in
+`server/fastify/__tests__/risuSaveImportRoute.test.ts` plus
+`server/fastify/__tests__/risuSaveBundleImportRoute.test.ts`.
 
 **L20 — Realm-import SSE re-sends a constant phase/message string on every
 per-asset frame.** `createStepProgress` re-emits `{phase, message, percent}` per
@@ -721,19 +719,18 @@ compression for stream-job control and binary chunk frames. This is LAN-scoped
 and still trades CPU/memory for bytes, but the route no longer skips the
 available WS compression path.
 
-**L22 — Remote-block existence check downloads the entire storage key list to test
-one filename.** `encodeRemoteBlock` calls `forageStorage.keys()` and uses it only
-for `stored.includes(fileName)` (`risuSave.ts:368-369`), which hits
-`GET /api/v1/storage/list` returning every hex-decoded save-dir filename
-(`legacyStorage.ts:97-105`) — a few KB to tens of KB to answer one boolean. *Low:*
-memoized per name per session, only for remote-saving users, on save (not
-interactive). Fix: add a dedicated `HEAD /storage/read` (200/404) or
-`GET /storage/exists?path=` and query the single key.
+**L22 — Resolved: remote-block existence check downloaded the entire storage key
+list to test one filename.** Remediated 2026-06-14. `encodeRemoteBlock` now calls
+a storage `hasItem` helper; Fastify storage implements it through authenticated
+`GET /api/v1/storage/exists`, so one remote block existence check returns one
+boolean instead of the full save key list. Non-Fastify-compatible storage can
+still fall back to `keys()`.
 
-**Design direction:** treat L22 as the clean small future fix in this group. Add
-a single-key existence check (`HEAD /api/v1/storage/read` or
-`GET /api/v1/storage/exists?path=`) and update `encodeRemoteBlock` to query that
-instead of downloading the full storage key list for one boolean.
+Current evidence: `server/fastify/src/routes/legacyStorage.ts`,
+`server/fastify/src/routeManifest.ts`, `src/ts/storage/fastifyStorage.ts`,
+`src/ts/storage/autoStorage.ts`, `src/ts/storage/risuSave.ts`, and regression
+coverage in `src/ts/storage/fastifyStorage.test.ts` plus
+`server/fastify/__tests__/auth.test.ts`.
 
 ---
 
@@ -741,8 +738,9 @@ instead of downloading the full storage key list for one boolean.
 
 Ordered by bytes × frequency × implementation ease:
 
-1. **Remaining lows (L2, L5, L6, L7, L13–L20, L22)** as opportunistic cleanup; L16 and
-   L15 are documented as acceptable-as-is.
+1. **Remaining lows (L3, L5, L14, L18)** as opportunistic cleanup. L1 is a larger
+   body-cache design; L2, L13, L15, L16, and L20 are documented as acceptable
+   as-is for now.
 
 ## How To Verify
 
@@ -754,7 +752,8 @@ Ordered by bytes × frequency × implementation ease:
   each finding are the entry points.
 - Existing regression coverage asserts bootstrap/preset field projections contain
   only preset stubs and full preset data is served through lazy per-preset
-  hydration (H1). A regression guard could still assert that the bulk chat
-  response omits `alternates` (L17). Existing focused tests guard the H2 targeted
+  hydration (H1). Focused tests also guard L6 compact preview projection, L7
+  compact `replace_all` suffix application, L17 bulk alternates omission, L19
+  bounded import responses, L22 single-key storage existence, the H2 targeted
   swipe/reroll command routing, the M1 ranged generation projection, and the
   M2/L4 compact prompt event behavior.

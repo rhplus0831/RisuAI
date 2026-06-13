@@ -178,4 +178,39 @@ describe('applyServerMessagePatch', () => {
     expect(chat.message.map((m) => m.data)).toEqual(['edited', 'inserted'])
     expect(chat.scriptstate).toEqual({ $old: '2' })
   })
+
+  it('applies compact replace-all suffix mutations from firstChangedIndex', () => {
+    const chat = {
+      message: [
+        { role: 'user', data: 'keep', chatId: 'm0' },
+        { role: 'char', data: 'old', chatId: 'm1' },
+        { role: 'user', data: 'old tail', chatId: 'm2' },
+      ],
+      note: '',
+      name: '',
+      localLore: [],
+      scriptstate: {},
+    } satisfies Chat
+
+    applyServerMessagePatch(
+      chat,
+      patch({
+        messageMutations: [
+          {
+            type: 'replace_all',
+            source: 'editinput',
+            beforeLength: 3,
+            afterLength: 2,
+            firstChangedIndex: 1,
+            messages: [{ role: 'char', data: 'new', chatId: 'm1-new' }],
+          },
+        ],
+      }),
+    )
+
+    expect(chat.message).toEqual([
+      { role: 'user', data: 'keep', chatId: 'm0' },
+      { role: 'char', data: 'new', chatId: 'm1-new' },
+    ])
+  })
 })

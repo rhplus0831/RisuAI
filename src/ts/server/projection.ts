@@ -276,7 +276,6 @@ export type ServerBulkChatMessagesResult =
         chatId: string
         message: unknown[]
         hypaV3Data?: unknown
-        alternates: unknown[]
       }>
       missing: string[]
     }
@@ -427,7 +426,6 @@ export async function fetchServerBulkChatMessages(
       chatId: chat.chatId,
       message: chat.message as unknown[],
       hypaV3Data: chat.hypaV3Data,
-      alternates: Array.isArray(chat.alternates) ? (chat.alternates as unknown[]) : [],
     })
   }
 

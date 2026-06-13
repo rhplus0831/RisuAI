@@ -39,6 +39,14 @@ async function checkCompressionStreams() {
   }
 }
 
+async function storageHasItem(key: string): Promise<boolean> {
+  const storage = forageStorage as typeof forageStorage & { hasItem?: (key: string) => Promise<boolean> }
+  if (typeof storage.hasItem === 'function') {
+    return await storage.hasItem(key)
+  }
+  return (await forageStorage.keys()).includes(key)
+}
+
 export function encodeRisuSaveLegacy(data: any, compression: 'noCompression' | 'compression' = 'noCompression') {
   let encoded: Uint8Array = packr.encode(data)
   if (compression === 'compression') {
@@ -364,11 +372,7 @@ export class RisuSaveEncoder {
     const fileName = `remotes/${arg.name}.local.bin`
 
     if (arg.skipRemoteSaving && checkedRemoteExistence.has(arg.name) === false) {
-      let fileExists = false
-      const stored = await forageStorage.keys()
-      if (stored.includes(fileName)) {
-        fileExists = true
-      }
+      const fileExists = await storageHasItem(fileName)
       if (!fileExists) {
         console.log(`Remote file ${fileName} does not exist, disabling skipRemoteSaving for this block.`)
         arg.skipRemoteSaving = false

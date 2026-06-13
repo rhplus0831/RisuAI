@@ -169,10 +169,37 @@ function readClientCapabilities(body: ChatRequestBody): GenerationClientCapabili
 function promptEventForClient(
   prompt: Omit<PromptEvent, 'type'>,
   capabilities: GenerationClientCapabilities,
+  mode?: AssembleInput['mode'],
 ): Omit<PromptEvent, 'type'> {
   if (!capabilities.compactPromptEvent) return prompt
+  if (mode === 'preview_prompt') {
+    const promptText = prompt.promptInfo?.promptText
+    return { promptInfo: { promptText: typeof promptText === 'string' ? promptText : '' } }
+  }
   const { messages: _messages, lorebookActivation: _lorebookActivation, ...compactPrompt } = prompt
   return compactPrompt
+}
+
+function messagePatchForClient(
+  mutations: AssembleMutationPayload,
+  capabilities: GenerationClientCapabilities,
+): AssembleMutationPayload {
+  if (!capabilities.compactPromptEvent) return mutations
+  let changed = false
+  const messageMutations = mutations.messageMutations.map((mutation) => {
+    if (mutation.type !== 'replace_all') return mutation
+    const firstChangedIndex = getMessageMutationFirstChangedIndex(mutation)
+    if (firstChangedIndex === undefined || firstChangedIndex <= 0 || firstChangedIndex > mutation.messages.length) {
+      return mutation
+    }
+    changed = true
+    return {
+      ...mutation,
+      firstChangedIndex,
+      messages: mutation.messages.slice(firstChangedIndex),
+    }
+  })
+  return changed ? { ...mutations, messageMutations } : mutations
 }
 
 function validate(body: ChatRequestBody): { ok: true } | { ok: false; error: string } {
@@ -1065,9 +1092,9 @@ async function streamAssembly(
           shouldDispatch && database
             ? createGenerationInfo(database, generationId, successfulResult, promptMs)
             : undefined
-        emit({ type: 'prompt', ...promptEventForClient(result.prompt, clientCapabilities) })
+        emit({ type: 'prompt', ...promptEventForClient(result.prompt, clientCapabilities, input.mode) })
         if (result.mutations) {
-          emit({ type: 'message_patch', patch: result.mutations })
+          emit({ type: 'message_patch', patch: messagePatchForClient(result.mutations, clientCapabilities) })
         }
         emit({ type: 'stage', stage: 'prompt', status: 'end' })
         // `outputTokens` is the response budget, not a completion count, so it
@@ -1154,7 +1181,7 @@ async function streamAssembly(
         }
       } else {
         if (result.mutations) {
-          emit({ type: 'message_patch', patch: result.mutations })
+          emit({ type: 'message_patch', patch: messagePatchForClient(result.mutations, clientCapabilities) })
         }
         emit({
           type: 'error',
@@ -1768,9 +1795,9 @@ async function runGenerationJob(args: {
           shouldDispatch && database
             ? createGenerationInfo(database, generationId, successfulResult, promptMs)
             : undefined
-        emit({ type: 'prompt', ...promptEventForClient(result.prompt, clientCapabilities) })
+        emit({ type: 'prompt', ...promptEventForClient(result.prompt, clientCapabilities, input.mode) })
         if (result.mutations) {
-          emit({ type: 'message_patch', patch: result.mutations })
+          emit({ type: 'message_patch', patch: messagePatchForClient(result.mutations, clientCapabilities) })
         }
         emit({ type: 'stage', stage: 'prompt', status: 'end' })
         emit({
@@ -1880,7 +1907,7 @@ async function runGenerationJob(args: {
         }
       } else {
         if (result.mutations) {
-          emit({ type: 'message_patch', patch: result.mutations })
+          emit({ type: 'message_patch', patch: messagePatchForClient(result.mutations, clientCapabilities) })
         }
         emit({
           type: 'error',
@@ -2099,7 +2126,7 @@ export function registerGenerationChatRoutes(
         if (result.stopSending) {
           return { stopSending: true, abortReason: result.abortReason }
         }
-        return result.prompt ? promptEventForClient(result.prompt, clientCapabilities) : result.prompt
+        return result.prompt ? promptEventForClient(result.prompt, clientCapabilities, input.mode) : result.prompt
       } catch (err) {
         if (sendAssemblyHttpError(reply, err)) return
         throw err

@@ -711,7 +711,8 @@ export interface ChatHydrationPayload {
   chatId: string
   message: unknown[]
   hypaV3Data: unknown
-  alternates: unknown[]
+  /** Present on single-chat hydration; omitted from bulk hydration. */
+  alternates?: unknown[]
 }
 
 export interface BulkChatHydrationPayload {
@@ -1670,12 +1671,13 @@ export function loadChatHydrations(
   db: DatabaseSync,
   dataDir: string,
   chatIds: readonly string[],
+  options: { includeAlternates?: boolean } = {},
 ): BulkChatHydrationPayload {
   if (chatIds.length === 0) return { chats: [], missing: [] }
 
   const messages = getChatMessagesGroupedByIds(db, chatIds)
   const hypaV3ById = getChatHypaV3GroupedByIds(db, chatIds)
-  const alternatesById = getAlternateMessagesGroupedByIds(db, chatIds)
+  const alternatesById = options.includeAlternates === false ? null : getAlternateMessagesGroupedByIds(db, chatIds)
 
   // Known-id + embedded-fallback resolution reads only the REQUESTED chat rows
   // (`WHERE id IN`), not the whole corpus. The chats table is the
@@ -1696,12 +1698,13 @@ export function loadChatHydrations(
       }
       const messageRows = messages.get(chatId)
       const fallbackMessage = Array.isArray(row.message) ? row.message : undefined
-      chats.push({
+      const payload: ChatHydrationPayload = {
         chatId,
         message: messageRows && messageRows.length > 0 ? messageRows : (fallbackMessage ?? []),
         hypaV3Data: hypaV3ById.has(chatId) ? hypaV3ById.get(chatId) : row.hypaV3Data,
-        alternates: alternatesById.get(chatId) ?? [],
-      })
+      }
+      if (alternatesById) payload.alternates = alternatesById.get(chatId) ?? []
+      chats.push(payload)
     }
     return { chats, missing }
   }
@@ -1732,12 +1735,13 @@ export function loadChatHydrations(
     const fallback = fallbackById.get(chatId)
     const messageRows = messages.get(chatId)
     const message = messageRows && messageRows.length > 0 ? messageRows : (fallback?.message ?? [])
-    chats.push({
+    const payload: ChatHydrationPayload = {
       chatId,
       message,
       hypaV3Data: hypaV3ById.has(chatId) ? hypaV3ById.get(chatId) : fallback?.hypaV3Data,
-      alternates: alternatesById.get(chatId) ?? [],
-    })
+    }
+    if (alternatesById) payload.alternates = alternatesById.get(chatId) ?? []
+    chats.push(payload)
   }
 
   return { chats, missing }

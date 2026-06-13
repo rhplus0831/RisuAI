@@ -98,6 +98,7 @@ export type ServerChatMessageMutation =
       source: Exclude<ServerChatMutationSource, 'user_message'>
       beforeLength: number
       afterLength: number
+      firstChangedIndex?: number
       messages: Message[]
     }
 
