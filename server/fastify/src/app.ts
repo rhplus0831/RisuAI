@@ -11,7 +11,7 @@ import { type AppConfig, loadConfig } from './config.js'
 import { createAuthState } from './auth.js'
 import { createCommandEventSink, type CommandEventSink } from './commands/events.js'
 import { openDatabase } from './db.js'
-import { registerAssetsRoutes } from './routes/assets.js'
+import { ASSET_BULK_BINARY_CONTENT_TYPE, registerAssetsRoutes } from './routes/assets.js'
 import { registerAuthRoutes } from './routes/auth.js'
 import { registerBackupRoutes } from './routes/backups.js'
 import { registerBootstrapRoutes } from './routes/bootstrap.js'
@@ -122,6 +122,9 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   })
 
   app.addContentTypeParser(SUPPORTED_ASSET_CONTENT_TYPES, { parseAs: 'buffer' }, (_req, body, done) => {
+    done(null, body)
+  })
+  app.addContentTypeParser(ASSET_BULK_BINARY_CONTENT_TYPE, { parseAs: 'buffer' }, (_req, body, done) => {
     done(null, body)
   })
 

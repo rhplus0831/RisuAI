@@ -21,12 +21,17 @@ import { emitProtocolMetric } from '../protocolMetrics.js'
 
 const IMMUTABLE_CACHE = 'public, max-age=31536000, immutable'
 const BASE64_RE = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/
+export const ASSET_BULK_BINARY_CONTENT_TYPE = 'application/vnd.risu.assets-bulk'
 
 interface ExistsBody {
   ids?: unknown
 }
 
 interface BulkAssetsBody {
+  assets?: unknown
+}
+
+interface BulkAssetBinaryManifest {
   assets?: unknown
 }
 
@@ -120,7 +125,7 @@ function emitAssetByteReadMetric(
   )
 }
 
-function readBulkAssets(body: BulkAssetsBody): { bytes: Buffer; contentType: string }[] {
+function readJsonBulkAssets(body: BulkAssetsBody): { bytes: Buffer; contentType: string }[] {
   if (!Array.isArray(body.assets)) {
     throw new ValidationError('assets: { contentType: string; data: base64 }[] required')
   }
@@ -140,6 +145,63 @@ function readBulkAssets(body: BulkAssetsBody): { bytes: Buffer; contentType: str
       bytes: Buffer.from(record.data, 'base64'),
     }
   })
+}
+
+function readBinaryBulkAssets(body: Buffer): { bytes: Buffer; contentType: string }[] {
+  if (body.byteLength < 4) {
+    throw new ValidationError('binary bulk asset body must start with a manifest length')
+  }
+  const manifestLength = body.readUInt32BE(0)
+  const manifestStart = 4
+  const assetBytesStart = manifestStart + manifestLength
+  if (manifestLength === 0 || assetBytesStart > body.byteLength) {
+    throw new ValidationError('binary bulk asset manifest is invalid')
+  }
+
+  let manifest: BulkAssetBinaryManifest
+  try {
+    manifest = JSON.parse(body.subarray(manifestStart, assetBytesStart).toString('utf8')) as BulkAssetBinaryManifest
+  } catch {
+    throw new ValidationError('binary bulk asset manifest must be JSON')
+  }
+  if (!Array.isArray(manifest.assets)) {
+    throw new ValidationError('binary bulk asset manifest assets required')
+  }
+
+  let offset = assetBytesStart
+  const uploads = manifest.assets.map((asset, index) => {
+    if (!asset || typeof asset !== 'object') {
+      throw new ValidationError(`assets[${index}] must be an object`)
+    }
+    const record = asset as Record<string, unknown>
+    if (typeof record.contentType !== 'string') {
+      throw new ValidationError(`assets[${index}].contentType must be a string`)
+    }
+    if (typeof record.size !== 'number' || !Number.isSafeInteger(record.size) || record.size < 0) {
+      throw new ValidationError(`assets[${index}].size must be a non-negative integer`)
+    }
+    const nextOffset = offset + record.size
+    if (nextOffset > body.byteLength) {
+      throw new ValidationError(`assets[${index}] exceeds binary bulk asset body length`)
+    }
+    const bytes = body.subarray(offset, nextOffset)
+    offset = nextOffset
+    return {
+      contentType: record.contentType,
+      bytes,
+    }
+  })
+  if (offset !== body.byteLength) {
+    throw new ValidationError('binary bulk asset body has trailing bytes')
+  }
+  return uploads
+}
+
+function readBulkAssets(body: unknown): { bytes: Buffer; contentType: string }[] {
+  if (Buffer.isBuffer(body)) {
+    return readBinaryBulkAssets(body)
+  }
+  return readJsonBulkAssets((body ?? {}) as BulkAssetsBody)
 }
 
 export function registerAssetsRoutes(
@@ -198,7 +260,7 @@ export function registerAssetsRoutes(
     async (req, reply) => {
       if (!(await requireAuth(authState, req, reply))) return
       try {
-        const uploads = readBulkAssets((req.body ?? {}) as BulkAssetsBody)
+        const uploads = readBulkAssets(req.body)
         const results = addAssets(db, dataDir, uploads)
         emitCreatedAssetEvents(eventSink, results)
         reply.code(results.some((result) => result.created) ? 201 : 200)

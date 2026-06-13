@@ -8,6 +8,7 @@ import { buildApp } from '../src/app.js'
 import { ACTIVE_WRITER_SESSION_HEADER } from '../src/activeWriter.js'
 import { createCommandEventSink, type CommandEventSink } from '../src/commands/events.js'
 import { getAllAssetMetadata, loadPersisted } from '../src/repository.js'
+import { ASSET_BULK_BINARY_CONTENT_TYPE } from '../src/routes/assets.js'
 import type { FastifyInstance } from 'fastify'
 
 interface AssetByteReadMetric {
@@ -117,6 +118,28 @@ const PNG_BYTES = Buffer.from(
 const PNG_SHA = createHash('sha256').update(PNG_BYTES).digest('hex')
 const OTHER_PNG_BYTES = Buffer.from('other-png-bytes')
 const OTHER_PNG_SHA = createHash('sha256').update(OTHER_PNG_BYTES).digest('hex')
+
+function buildBinaryBulkAssetBody(assets: readonly { contentType: string; bytes: Buffer }[]): Buffer {
+  const manifest = Buffer.from(
+    JSON.stringify({
+      assets: assets.map((asset) => ({
+        contentType: asset.contentType,
+        size: asset.bytes.byteLength,
+      })),
+    }),
+    'utf8',
+  )
+  const length = 4 + manifest.byteLength + assets.reduce((sum, asset) => sum + asset.bytes.byteLength, 0)
+  const body = Buffer.alloc(length)
+  body.writeUInt32BE(manifest.byteLength, 0)
+  manifest.copy(body, 4)
+  let offset = 4 + manifest.byteLength
+  for (const asset of assets) {
+    asset.bytes.copy(body, offset)
+    offset += asset.bytes.byteLength
+  }
+  return body
+}
 
 function failCommandEventPersistence(dataDir: string): void {
   const db = new DatabaseSync(path.join(dataDir, 'risu.db'))
@@ -439,6 +462,47 @@ describe('Phase 2C assets', () => {
     expect(existsSync(path.join(harness.dataDir, 'assets', `${OTHER_PNG_SHA}.png`))).toBe(true)
   })
 
+  it('bulk uploads binary-framed assets with one revision and ordered results', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/assets/bulk',
+      headers: {
+        'content-type': ASSET_BULK_BINARY_CONTENT_TYPE,
+        'risu-auth': assertion,
+      },
+      payload: buildBinaryBulkAssetBody([
+        { contentType: 'image/png', bytes: PNG_BYTES },
+        { contentType: 'image/png', bytes: OTHER_PNG_BYTES },
+      ]),
+    })
+
+    expect(res.statusCode).toBe(201)
+    expect(res.json()).toEqual({
+      assets: [
+        {
+          assetId: PNG_SHA,
+          size: PNG_BYTES.length,
+          contentType: 'image/png',
+          revision: 1,
+          created: true,
+        },
+        {
+          assetId: OTHER_PNG_SHA,
+          size: OTHER_PNG_BYTES.length,
+          contentType: 'image/png',
+          revision: 1,
+          created: true,
+        },
+      ],
+      revision: 1,
+    })
+    expect(harness.commandEvents.list()).toEqual([{ type: 'asset.created', resource: 'asset', revision: 1 }])
+    expect(existsSync(path.join(harness.dataDir, 'assets', `${PNG_SHA}.png`))).toBe(true)
+    expect(existsSync(path.join(harness.dataDir, 'assets', `${OTHER_PNG_SHA}.png`))).toBe(true)
+  })
+
   it('bulk upload is idempotent for existing assets', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const first = await harness.app.inject({
@@ -683,6 +747,17 @@ describe('Phase 2C assets', () => {
       payload: { assets: [{ contentType: 'application/x-evil', data: 'aGVsbG8=' }] },
     })
     expect(badContentType.statusCode).toBe(400)
+
+    const badBinary = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/assets/bulk',
+      headers: {
+        'content-type': ASSET_BULK_BINARY_CONTENT_TYPE,
+        'risu-auth': assertion,
+      },
+      payload: Buffer.from([0, 0, 0, 20, 123]),
+    })
+    expect(badBinary.statusCode).toBe(400)
   })
 
   it('uploaded asset appears in SQLite', async () => {

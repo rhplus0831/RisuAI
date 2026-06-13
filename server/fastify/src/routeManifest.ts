@@ -312,7 +312,7 @@ export const PROTOCOL_ROUTE_MANIFEST = [
       decision: 'active-writer',
       reason: 'Bulk asset upload can bump the repository revision.',
     },
-    streaming: 'none',
+    streaming: 'binary',
   },
   {
     id: 'asset-read',

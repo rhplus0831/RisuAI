@@ -97,6 +97,7 @@ let fileCache: {
 
 const SERVER_ASSET_BULK_MAX_ITEMS = 32
 const SERVER_ASSET_BULK_MAX_RAW_BYTES = 32 * 1024 * 1024
+const SERVER_ASSET_BULK_BINARY_CONTENT_TYPE = 'application/vnd.risu.assets-bulk'
 
 export interface AssetSaveInput {
   data: Uint8Array
@@ -105,6 +106,7 @@ export interface AssetSaveInput {
 }
 
 interface PreparedServerAssetUpload {
+  assetId: string
   data: Uint8Array
   contentType: string
 }
@@ -153,15 +155,67 @@ export async function saveAsset(data: Uint8Array, customId: string = '', fileNam
 
 export async function saveAssets(assets: readonly AssetSaveInput[]): Promise<string[]> {
   if (assets.length === 0) return []
-  const prepared = assets.map((asset) => ({
-    data: asset.data,
-    contentType: serverAssetContentType(assetExtensionFromFileName(asset.fileName ?? '')),
-  }))
-  const saved: string[] = []
-  for (const batch of chunkServerAssetUploads(prepared)) {
-    saved.push(...(await uploadServerAssetsBatch(batch)))
+  const prepared = await Promise.all(
+    assets.map(async (asset) => ({
+      assetId: await sha256Hex(asset.data),
+      data: asset.data,
+      contentType: serverAssetContentType(assetExtensionFromFileName(asset.fileName ?? '')),
+    })),
+  )
+  const missingIds = await findMissingServerAssetIds(prepared.map((asset) => asset.assetId))
+  const missingUploads: PreparedServerAssetUpload[] = []
+  const queuedMissingIds = new Set<string>()
+  for (const asset of prepared) {
+    if (!missingIds.has(asset.assetId) || queuedMissingIds.has(asset.assetId)) continue
+    queuedMissingIds.add(asset.assetId)
+    missingUploads.push(asset)
   }
-  return saved
+
+  for (const batch of chunkServerAssetUploads(missingUploads)) {
+    const uploadedIds = await uploadServerAssetsBatch(batch)
+    for (const [index, uploadedId] of uploadedIds.entries()) {
+      const expectedId = batch[index]?.assetId
+      if (uploadedId !== expectedId) {
+        throw new Error(`Server bulk asset upload returned unexpected asset id: ${uploadedId}`)
+      }
+    }
+  }
+
+  return prepared.map((asset) => asset.assetId)
+}
+
+async function sha256Hex(data: Uint8Array): Promise<string> {
+  const bytes = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer
+  const digest = await globalThis.crypto.subtle.digest('SHA-256', bytes)
+  return Buffer.from(digest).toString('hex')
+}
+
+async function findMissingServerAssetIds(assetIds: readonly string[]): Promise<Set<string>> {
+  const uniqueAssetIds = [...new Set(assetIds)]
+  if (uniqueAssetIds.length === 0) return new Set()
+  const response = await fetch('/api/v1/assets/exists', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({ ids: uniqueAssetIds }),
+  })
+  if (!response.ok) {
+    const body = await response.text().catch(() => '')
+    throw new Error(body || `Failed to check server assets: ${response.status}`)
+  }
+  const responseBody = (await response.json()) as { missing?: unknown }
+  if (!Array.isArray(responseBody.missing)) {
+    throw new Error('Server asset exists response has invalid missing ids')
+  }
+  const missing = new Set<string>()
+  for (const [index, id] of responseBody.missing.entries()) {
+    if (typeof id !== 'string') {
+      throw new Error(`Server asset exists response missing[${index}] is invalid`)
+    }
+    missing.add(id)
+  }
+  return missing
 }
 
 function assetExtensionFromFileName(fileName: string): string {
@@ -213,16 +267,11 @@ async function uploadServerAssetsBatch(assets: readonly PreparedServerAssetUploa
   const response = await fetch('/api/v1/assets/bulk', {
     method: 'POST',
     headers: {
-      'content-type': 'application/json',
+      'content-type': SERVER_ASSET_BULK_BINARY_CONTENT_TYPE,
       'risu-auth': auth,
       ...activeWriterSessionHeader(),
     },
-    body: JSON.stringify({
-      assets: assets.map((asset) => ({
-        contentType: asset.contentType,
-        data: Buffer.from(asset.data).toString('base64'),
-      })),
-    }),
+    body: buildServerAssetBulkBinaryBody(assets),
   })
 
   if (response.status === 413 && assets.length > 1) {
@@ -259,6 +308,27 @@ async function uploadServerAssetsBatch(assets: readonly PreparedServerAssetUploa
     advanceServerAssetRevision(revision)
     return assetId
   })
+}
+
+function buildServerAssetBulkBinaryBody(assets: readonly PreparedServerAssetUpload[]): ArrayBuffer {
+  const manifestBytes = new TextEncoder().encode(
+    JSON.stringify({
+      assets: assets.map((asset) => ({
+        contentType: asset.contentType,
+        size: asset.data.byteLength,
+      })),
+    }),
+  )
+  const bodyLength = 4 + manifestBytes.byteLength + assets.reduce((total, asset) => total + asset.data.byteLength, 0)
+  const body = new Uint8Array(bodyLength)
+  new DataView(body.buffer).setUint32(0, manifestBytes.byteLength)
+  body.set(manifestBytes, 4)
+  let offset = 4 + manifestBytes.byteLength
+  for (const asset of assets) {
+    body.set(asset.data, offset)
+    offset += asset.data.byteLength
+  }
+  return body.buffer
 }
 
 function advanceServerAssetRevision(revision: unknown): void {

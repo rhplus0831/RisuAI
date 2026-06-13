@@ -2,7 +2,7 @@
 
 Date: 2026-06-13.
 
-Last updated: 2026-06-13. H2, H3, M1, M2, L4, and the H1 immediate bootstrap duplicate were remediated after the initial audit.
+Last updated: 2026-06-13. H2, H3, M1, M2, M3, L4, L8, and the H1 immediate bootstrap duplicate were remediated after the initial audit.
 
 This audit examines every place the server sends data to the client and every
 place the client sends changes back, looking for endpoints that **transmit or
@@ -96,12 +96,12 @@ better than the instance.
    which resources changed per revision. The foreign `generation.persisted`
    branch now ships a ranged message tail instead of the whole transcript. See
    L2.
-5. **base64-in-JSON for binary (both).** Bulk asset upload and the stream-job WS
-   both base64-wrap raw bytes (~33% inflation) although a raw-binary path already
-   exists for single-asset upload. See M4, L8.
-6. **Content-addressed dedup not used client-side (C→S).** The `/assets/exists`
-   probe is fully implemented but has zero callers, so duplicate/re-import
-   uploads re-send bytes the server discards. See M3.
+5. **base64-in-JSON for binary (both).** The stream-job WS still base64-wraps raw
+   bytes (~33% inflation) although a raw HTTP path exists. Bulk asset upload was
+   moved to binary framing for missing assets. See M4.
+6. **Content-addressed dedup not used client-side (C→S).** Resolved for bulk
+   asset upload: the client now hashes assets, probes `/assets/exists`, and
+   uploads only ids the server reports missing.
 7. **Over-returning full rows where the UI reads a few fields (S→C).** Memory
    jobs (5 of 11 fields read), the memory.job SSE frame (~50% unread), and the
    import response (all but `{revision, event}` discarded). See L9, L12, L19.
@@ -115,7 +115,7 @@ better than the instance.
 | H3  | C→S | PUT /commands/.../lorebooks | per lorebook edit | Resolved: entry edit/delete/reorder use compact per-entry lorebook commands |
 | M1  | S→C | GET /projection/generation | per foreign generation | Resolved: generation.persisted ships the changed message tail with range metadata |
 | M2  | S→C | POST /generate/chat (prompt) | per-generation | Resolved: compact-capable clients no longer receive `messages` duplicating `formated` |
-| M3  | C→S | POST /assets/bulk | on-import | Bulk upload never probes /assets/exists, re-sends duplicate bytes |
+| M3  | C→S | POST /assets/bulk | on-import | Resolved: bulk upload probes /assets/exists and skips duplicate bytes |
 | M4  | S→C | GET /proxy/stream-jobs/:id/ws | per-chunk (LAN stream) | WS base64-encodes every LLM chunk (~33% inflation) |
 | L1  | S→C | GET /bootstrap | per-session + resync | All modules and plugins shipped in full incl. disabled items |
 | L2  | S→C | GET /bootstrap (resync) | per gap/reconnect | Resync re-pulls the entire projection with no revision delta |
@@ -124,7 +124,7 @@ better than the instance.
 | L5  | S→C | POST /generate/chat (done) | per-generation | `done.result` duplicates tokens already streamed |
 | L6  | S→C | POST /generate/preview-prompt | per manual preview | preview returns the full prompt payload; client reads only promptText |
 | L7  | S→C | POST /generate/chat (message_patch) | per rewriting send | `replace_all` carries the full transcript the server just persisted |
-| L8  | C→S | POST /assets/bulk | on-import | Bulk upload base64-inflates assets ~33% vs the raw single-upload path |
+| L8  | C→S | POST /assets/bulk | on-import | Resolved: missing bulk assets upload with binary framing, not base64 JSON |
 | L9  | S→C | GET /memory/jobs | 5s poll + per event | Returns full job rows; UI reads only 5 of 11 fields |
 | L10 | both | GET /memory/jobs | per job transition | Client re-fetches the whole job list on every SSE event |
 | L11 | S→C | GET /memory/jobs | every 5s | Poll persists with no ETag/304; mostly unchanged bodies |
@@ -342,6 +342,10 @@ better than the instance.
 
 ### M3 — Bulk upload never probes existence before re-sending asset bytes the server already stores
 
+- **Status:** remediated 2026-06-13. `saveAssets` now hashes each input with
+  SHA-256, calls the existing `/api/v1/assets/exists` probe once with unique ids,
+  uploads only ids reported missing, de-duplicates repeated missing ids within
+  the same import batch, and returns the original input ids in order.
 - **Direction / endpoint:** C→S, `POST /api/v1/assets/bulk`.
 - **Frequency:** on-import (character/card import; per imported asset batch).
 - **What is over-transmitted:** the entire byte payload of every asset in an
@@ -358,14 +362,16 @@ better than the instance.
   character import (often several MB of emotion/additional images), bounded only
   by the 32 MB/32-item batch chunking. Zero on the first import of a new
   character.
-- **Recommendation:** before bulk upload, sha256 each asset client-side
-  (Web Crypto `subtle.digest`) and POST the ids to the existing `/assets/exists`;
-  upload bytes only for returned `missing` ids and reuse known ids for the rest.
-- **Evidence:** client `src/ts/globalApi.svelte.ts:201-226` (unconditional),
-  `:154-165` (no pre-check); dead endpoint
-  `server/fastify/src/routes/assets.ts:256-284` →
-  `repository.ts:697-701,2014-2016`; server dedup `repository.ts:1956-1965`;
-  import callers `src/ts/characterCards.ts:236,632-640,675-689,724`.
+- **Completed remediation:** the client pre-hashes import assets with Web Crypto,
+  probes `/assets/exists`, uploads only missing unique ids, validates the
+  content-addressed ids returned by upload, and reuses known ids without sending
+  bytes.
+- **Current evidence:** client `src/ts/globalApi.svelte.ts` (`saveAssets`,
+  `sha256Hex`, `findMissingServerAssetIds`, and missing-id stitching); server
+  existence probe `server/fastify/src/routes/assets.ts` →
+  `repository.ts:697-701,2014-2016`; server dedup remains as a race-safe fallback
+  in `repository.ts:1956-1965`; import callers
+  `src/ts/characterCards.ts:236,632-640,675-689,724`.
 
 ### M4 — Stream-job WebSocket base64-encodes every LLM chunk inside JSON (~33% inflation)
 
@@ -481,17 +487,13 @@ small `append`).
 
 ### Assets (C→S)
 
-**L8 — Bulk upload base64-encodes assets in JSON (~33% inflation) vs the raw
-single-upload path.** `globalApi.svelte.ts:220-225` sends
-`Buffer.from(asset.data).toString('base64')` in a JSON body; the server decodes
-straight back to a Buffer (`assets.ts:135-141`). The single-asset route already
-sends raw binary end-to-end (`src/ts/server/assets.ts:71-82` → buffer parser
-`app.ts:124-126` → `assets.ts:158-193`), proving a multipart/length-framed binary
-bulk body would carry identical info with zero inflation. Import-only frequency;
-uncompressed on the wire. *Nuance:* the 32 MB cap is the client chunker, not the
-server `bodyLimit` (100 MB default), so the 413/split path is a rare fallback, not
-a normal base64 consequence. Pairs naturally with M3 (probe then raw-binary
-upload only the missing).
+**L8 — Resolved: bulk upload base64-encoded assets in JSON (~33% inflation) vs
+the raw single-upload path.** Remediated 2026-06-13. Missing multi-asset batches
+now use `application/vnd.risu.assets-bulk`: a 4-byte manifest length, compact JSON
+metadata (`contentType`, `size`), and concatenated raw bytes. The legacy JSON
+base64 shape remains accepted for compatibility, but the live client no longer
+uses it. Single missing assets still use the existing raw `/assets` route. Covered
+by binary-framed route regression coverage in `server/fastify/__tests__/assets.test.ts`.
 
 ### Memory
 
@@ -633,13 +635,11 @@ interactive). Fix: add a dedicated `HEAD /storage/read` (200/404) or
 
 Ordered by bytes × frequency × implementation ease:
 
-1. **M3 + L8 (probe `/assets/exists`, then upload missing as raw binary).** Turns
-   duplicate/re-imports into near-zero-byte ops and removes 33% inflation.
-2. **M4 + L21 (binary WS frames, or enable `perMessageDeflate`).** LAN-scoped but
+1. **M4 + L21 (binary WS frames, or enable `perMessageDeflate`).** LAN-scoped but
    hot during streaming.
-3. **Memory cleanup (L9, L10, L11, L12).** Projected job-list shape, event-driven
+2. **Memory cleanup (L9, L10, L11, L12).** Projected job-list shape, event-driven
    upserts, ETag/304, trimmed SSE frame — a coherent batch.
-4. **Remaining lows (L2, L5, L6, L7, L13–L22)** as opportunistic cleanup; L16 and
+3. **Remaining lows (L2, L5, L6, L7, L13–L22)** as opportunistic cleanup; L16 and
    L15 are documented as acceptable-as-is.
 
 ## How To Verify
