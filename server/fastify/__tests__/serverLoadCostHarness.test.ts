@@ -1386,7 +1386,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     const db = openDatabase(harness.dataDir)
     try {
       const broadDatabase = loadPersisted(db, harness.dataDir).database as Record<string, unknown>
-      for (const resource of ['preset', 'plugin', 'moduleEnabled'] as const) {
+      for (const resource of ['plugin', 'moduleEnabled'] as const) {
         const fieldKeys = resourceProjectionFields(resource)
         expect(fieldKeys).not.toBeNull()
         const expected = {
@@ -1409,6 +1409,28 @@ describe('server load-count harness on the large-corpus fixture', () => {
         expect(observed.loadCountByTable.characters ?? 0).toBe(0)
         expect(observed.loadCountByTable.chats ?? 0).toBe(0)
       }
+      const presetFields = resourceProjectionFields('preset')
+      expect(presetFields).not.toBeNull()
+      const expectedPreset = {
+        revision,
+        resource: 'preset',
+        mode: 'fields',
+        fields: {
+          ...maskProviderSecrets(selectFields(broadDatabase, presetFields!)),
+          botPresets: [{ id: 'preset-a', name: 'Preset A' }],
+        },
+      }
+      const observedPreset = await withServerLoadInstrumentation(() =>
+        harness.app.inject({
+          method: 'GET',
+          url: '/api/v1/projection/preset',
+          headers: { 'risu-auth': assertion },
+        }),
+      )
+      expect(observedPreset.result.statusCode).toBe(200)
+      expect(observedPreset.result.body).toBe(JSON.stringify(expectedPreset))
+      expect(observedPreset.loadCountByTable.characters ?? 0).toBe(0)
+      expect(observedPreset.loadCountByTable.chats ?? 0).toBe(0)
     } finally {
       db.close()
     }

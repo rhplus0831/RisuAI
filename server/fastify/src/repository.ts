@@ -729,6 +729,11 @@ export interface BulkCharacterLorebookHydrationPayload {
   missing: string[]
 }
 
+export interface PresetHydrationPayload {
+  presetId: string
+  preset: JsonRecord
+}
+
 export class ValidationError extends Error {
   constructor(message: string) {
     super(message)
@@ -876,7 +881,25 @@ export function loadStubbedProjectionFields(
   if (settings?.enableLorebookStubs === true) {
     stripCharacterGlobalLore(fields)
   }
+  stubBotPresets(fields)
   return fields
+}
+
+export function loadPresetHydration(
+  db: DatabaseSync,
+  dataDir: string,
+  presetId: string,
+): PresetHydrationPayload | null {
+  const fields = loadPersistedDatabaseFields(db, dataDir, ['botPresets'])
+  const presets = fields.botPresets
+  if (!Array.isArray(presets)) return null
+  for (const preset of presets) {
+    if (!isRecord(preset)) continue
+    if (preset.id === presetId) {
+      return { presetId, preset }
+    }
+  }
+  return null
 }
 
 function loadDatabaseFieldsFromSqlite(
@@ -1390,6 +1413,7 @@ export function loadBootstrapProjectionDatabase(db: DatabaseSync, dataDir: strin
   const database = loadStubProjectionDatabase(db, dataDir)
   replaceInactiveCharactersWithBootstrapShells(database)
   stripLazyBootstrapFields(database)
+  stubBotPresets(database)
   return database
 }
 
@@ -1415,6 +1439,18 @@ function stripActivePresetPromptTemplate(database: JsonRecord): void {
   if (!isRecord(activePreset)) return
   delete activePreset.promptTemplate
 }
+
+function stubBotPresets(database: unknown): void {
+  if (!isRecord(database) || !Array.isArray(database.botPresets)) return
+  database.botPresets = database.botPresets.map((preset) => {
+    if (!isRecord(preset)) return preset
+    const stub: JsonRecord = {}
+    copyFields(preset, stub, BOT_PRESET_STUB_FIELDS)
+    return stub
+  })
+}
+
+const BOT_PRESET_STUB_FIELDS = ['id', 'name', 'image', 'metadata'] as const
 
 /**
  * Optional lorebook projection stubbing, enabled by `enableLorebookStubs`.

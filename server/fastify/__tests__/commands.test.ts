@@ -1740,14 +1740,8 @@ describe('Phase 9-2b bot preset commands', () => {
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().database.botPresets).toEqual([
-      {
-        id: 'preset-a',
-        name: 'A',
-        mainPrompt: 'a prompt',
-        localNetworkMode: false,
-        localNetworkTimeoutSec: 600,
-      },
-      { id: 'preset-b', name: 'B renamed', mainPrompt: 'b prompt' },
+      { id: 'preset-a', name: 'A' },
+      { id: 'preset-b', name: 'B renamed' },
     ])
   })
 
@@ -1803,13 +1797,7 @@ describe('Phase 9-2b bot preset commands', () => {
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().database.botPresets).toEqual([
-      {
-        id: 'preset-a',
-        name: 'A',
-        image: '-',
-        localNetworkMode: false,
-        localNetworkTimeoutSec: 600,
-      },
+      { id: 'preset-a', name: 'A', image: '-' },
       { id: 'preset-b', name: 'B', image: uploaded.assetId },
     ])
   })
@@ -1900,15 +1888,7 @@ describe('Phase 9-2b bot preset commands', () => {
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(revision)
-    expect(bootstrap.json().database.botPresets).toEqual([
-      {
-        id: 'preset-a',
-        name: 'A',
-        image: '',
-        localNetworkMode: false,
-        localNetworkTimeoutSec: 600,
-      },
-    ])
+    expect(bootstrap.json().database.botPresets).toEqual([{ id: 'preset-a', name: 'A', image: '' }])
   })
 
   it('selects and applies a preset while saving the previously selected snapshot', async () => {
@@ -1957,7 +1937,14 @@ describe('Phase 9-2b bot preset commands', () => {
       mainPrompt: 'target prompt',
       temperature: 90,
     })
-    expect(bootstrap.json().database.botPresets[0]).toMatchObject({
+    expect(bootstrap.json().database.botPresets[0]).toEqual({ id: 'preset-a', name: 'A', image: '' })
+    const savedPreset = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/projection/preset?id=preset-a',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(savedPreset.statusCode).toBe(200)
+    expect(savedPreset.json().preset).toMatchObject({
       id: 'preset-a',
       name: 'A',
       mainPrompt: 'current prompt',

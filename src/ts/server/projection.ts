@@ -30,6 +30,13 @@ export type ServerProjectionResourceResult =
   | {
       status: 'ok'
       revision: number
+      mode: 'preset'
+      presetId: string
+      preset: Record<string, unknown>
+    }
+  | {
+      status: 'ok'
+      revision: number
       mode: 'generation-chat'
       chatId: string
       message: unknown[]
@@ -170,6 +177,22 @@ export async function fetchServerProjectionResource(
     }
   }
 
+  if (record.mode === 'preset') {
+    if (typeof record.presetId !== 'string' || record.presetId.trim() === '') {
+      return { status: 'error', error: 'Invalid preset response' }
+    }
+    if (!record.preset || typeof record.preset !== 'object' || Array.isArray(record.preset)) {
+      return { status: 'error', error: 'Invalid preset response' }
+    }
+    return {
+      status: 'ok',
+      revision: revision as number,
+      mode: 'preset',
+      presetId: record.presetId,
+      preset: record.preset as Record<string, unknown>,
+    }
+  }
+
   if (record.mode === 'generation-chat') {
     if (typeof record.chatId !== 'string' || record.chatId.trim() === '') {
       return { status: 'error', error: 'Invalid generation-chat response' }
@@ -205,6 +228,27 @@ export async function fetchServerProjectionResource(
   }
 
   return { status: 'error', error: 'Invalid projection mode' }
+}
+
+export async function fetchServerPresetProjection(
+  presetId: string,
+  options: { signal?: AbortSignal | null } = {},
+): Promise<
+  | { status: 'ok'; revision: number; presetId: string; preset: Record<string, unknown> }
+  | { status: 'error'; error: string }
+  | { status: 'unavailable' }
+> {
+  const result = await fetchServerProjectionResource('preset', { id: presetId, signal: options.signal })
+  if (result.status !== 'ok') return result
+  if (result.mode !== 'preset') {
+    return { status: 'error', error: `Invalid preset response mode: ${result.mode}` }
+  }
+  return {
+    status: 'ok',
+    revision: result.revision,
+    presetId: result.presetId,
+    preset: result.preset,
+  }
 }
 
 export type ServerChatMessagesResult =

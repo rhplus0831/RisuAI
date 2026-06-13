@@ -192,7 +192,7 @@ describe('Phase 2A bootstrap + import', () => {
     expectNormalizedAdaDatabase(bootstrap.json().database, { greeting: 'hi' })
   })
 
-  it('omits promptTemplate from bootstrap while serving it through the promptItem projection', async () => {
+  it('omits promptTemplate and full bot presets from bootstrap while serving them through lazy projections', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const activePresetPrompt = [{ id: 'prompt-a', type: 'plain', text: 'lazy prompt', role: 'system' }]
     const inactivePresetPrompt = [{ id: 'prompt-b', type: 'plain', text: 'inactive preset prompt', role: 'system' }]
@@ -223,14 +223,9 @@ describe('Phase 2A bootstrap + import', () => {
     const bootstrapDatabase = bootstrap.json().database
     expect(bootstrapDatabase).not.toHaveProperty('promptTemplate')
     expect(bootstrapDatabase.botPresets).toHaveLength(2)
-    expect(bootstrapDatabase.botPresets[0]).toMatchObject({
-      id: 'preset-inactive',
-      promptTemplate: inactivePresetPrompt,
-    })
-    expect(bootstrapDatabase.botPresets[1]).toMatchObject({
-      id: 'preset-active',
-      name: 'Active',
-    })
+    expect(bootstrapDatabase.botPresets[0]).toEqual({ id: 'preset-inactive', name: 'Inactive' })
+    expect(bootstrapDatabase.botPresets[1]).toEqual({ id: 'preset-active', name: 'Active' })
+    expect(bootstrapDatabase.botPresets[0]).not.toHaveProperty('promptTemplate')
     expect(bootstrapDatabase.botPresets[1]).not.toHaveProperty('promptTemplate')
 
     const projection = await harness.app.inject({
@@ -244,6 +239,23 @@ describe('Phase 2A bootstrap + import', () => {
       mode: 'fields',
       fields: {
         promptTemplate: [{ id: 'prompt-a', type: 'plain', text: 'lazy prompt', role: 'system' }],
+      },
+    })
+
+    const presetProjection = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/projection/preset?id=preset-inactive',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(presetProjection.statusCode).toBe(200)
+    expect(presetProjection.json()).toMatchObject({
+      resource: 'preset',
+      mode: 'preset',
+      presetId: 'preset-inactive',
+      preset: {
+        id: 'preset-inactive',
+        name: 'Inactive',
+        promptTemplate: inactivePresetPrompt,
       },
     })
   })
@@ -656,7 +668,7 @@ describe('Phase 2A bootstrap + import', () => {
     }
   })
 
-  it('masks nested preset and character-owned secrets in bootstrap', async () => {
+  it('masks top-level and character-owned secrets while bootstrap ships preset stubs', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const sample = {
       openAIKey: 'sk-top-level',
@@ -708,12 +720,8 @@ describe('Phase 2A bootstrap + import', () => {
     expect(bootstrap.json().database).toMatchObject({
       openAIKey: MASKED_PROVIDER_SECRET,
       botPresets: [
-        {
-          ...sample.botPresets[0],
-          openAIKey: MASKED_PROVIDER_SECRET,
-          proxyKey: MASKED_PROVIDER_SECRET,
-        },
-        { ...sample.botPresets[1] },
+        { id: 'preset-a', name: 'Preset A' },
+        { id: 'preset-b', name: 'Preset B' },
       ],
       characters: [
         {
@@ -725,6 +733,9 @@ describe('Phase 2A bootstrap + import', () => {
         },
       ],
     })
+    expect(bootstrap.json().database.botPresets[0]).not.toHaveProperty('openAIKey')
+    expect(bootstrap.json().database.botPresets[0]).not.toHaveProperty('proxyKey')
+    expect(bootstrap.json().database.botPresets[0]).not.toHaveProperty('aiModel')
     expectNormalizedAdaDatabase(bootstrap.json().database)
 
     const nestedDb = openDatabase(harness.dataDir)

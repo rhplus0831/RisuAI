@@ -24,6 +24,7 @@ import {
   runServerPresetCommand,
   selectPresetCommand,
   updatePresetCommand,
+  peekCachedServerCommandRevision,
   type PresetSnapshot,
   type ServerCommandResult,
 } from '../server/commands'
@@ -39,6 +40,7 @@ import {
 import { isServerChatMessagePlaceholder, SERVER_UNLOADED_CHAT_MESSAGE_MARKER } from '../server/chatMessagePlaceholders'
 import { DEFAULT_CHAT_DISPLAY_TAIL_COUNT, normalizeChatDisplayTailCount } from '../chatDisplayTailCount'
 import type { ChatGenerationSettings } from '../chatGenerationSettings'
+import { canUseServerProjection, fetchServerPresetProjection } from '../server/projection'
 
 //APP_VERSION_POINT is to locate the app version in the database file for version bumping
 export let appVer = 'Fastify Variant Version: Alpha' //<APP_VERSION_POINT>
@@ -89,6 +91,72 @@ function normalizeBotPresetIds(data: Pick<Database, 'botPresets' | 'botPresetsId
 function presetIdAt(index: number): string | null {
   normalizeBotPresetIds(DBState.db)
   return DBState.db.botPresets[index]?.id ?? null
+}
+
+function presetNeedsHydration(preset: botPreset | undefined): boolean {
+  return !!preset?.id && !Object.prototype.hasOwnProperty.call(preset, 'promptTemplate')
+}
+
+const presetHydrationInFlight = new Map<string, Promise<boolean>>()
+
+export async function ensureBotPresetHydrated(index: number): Promise<boolean> {
+  withTrustedServerProjectionWrite(() => {
+    normalizeBotPresetIds(DBState.db)
+  })
+  const preset = DBState.db.botPresets[index]
+  if (!presetNeedsHydration(preset)) return !!preset
+  const presetId = preset.id
+  if (!presetId || !canUseServerProjection()) return false
+
+  const current = presetHydrationInFlight.get(presetId)
+  if (current) return current
+
+  const baselineRevision = peekCachedServerCommandRevision()
+  const request = (async () => {
+    const result = await fetchServerPresetProjection(presetId)
+    if (result.status !== 'ok') {
+      presetHydrationWarning(presetId, result.status === 'error' ? result.error : 'server projection unavailable')
+      return false
+    }
+    if (result.presetId !== presetId) {
+      presetHydrationWarning(presetId, `response was for preset ${result.presetId}`)
+      return false
+    }
+    if (
+      isOlderThanRevision(result.revision, baselineRevision) ||
+      isOlderThanRevision(result.revision, peekCachedServerCommandRevision())
+    ) {
+      return false
+    }
+    return withTrustedServerProjectionWrite(() => {
+      const currentIndex = DBState.db.botPresets.findIndex((candidate) => candidate?.id === presetId)
+      if (currentIndex < 0) return false
+      DBState.db.botPresets[currentIndex] = result.preset as unknown as botPreset
+      return true
+    })
+  })().finally(() => {
+    if (presetHydrationInFlight.get(presetId) === request) {
+      presetHydrationInFlight.delete(presetId)
+    }
+  })
+
+  presetHydrationInFlight.set(presetId, request)
+  return request
+}
+
+function isOlderThanRevision(revision: number, comparisonRevision: number | null): boolean {
+  return comparisonRevision !== null && revision < comparisonRevision
+}
+
+function getHydratedPresetIfReady(index: number): botPreset | undefined {
+  const preset = DBState.db.botPresets[index]
+  if (!presetNeedsHydration(preset)) return preset
+  void ensureBotPresetHydrated(index)
+  return undefined
+}
+
+function presetHydrationWarning(presetId: string, message: string): void {
+  console.warn(`preset ${presetId} hydration failed: ${message}`)
 }
 
 const SET_PRESET_ROLLBACK_KEYS = [
@@ -2395,7 +2463,6 @@ function saveCurrentPresetLocal() {
     proxyRequestModel: db.proxyRequestModel,
     openrouterRequestModel: db.openrouterRequestModel,
     NAISettings: safeStructuredClone(db.NAIsettings),
-    promptTemplate: db.promptTemplate ?? null,
     NAIadventure: db.NAIadventure ?? false,
     NAIappendName: db.NAIappendName ?? false,
     localStopStrings: db.localStopStrings,
@@ -2443,6 +2510,9 @@ function saveCurrentPresetLocal() {
     verbosity: db.verbosity ?? 1,
     dynamicOutput: db.dynamicOutput ?? null,
   }
+  if (Object.prototype.hasOwnProperty.call(db, 'promptTemplate')) {
+    savedPreset.promptTemplate = db.promptTemplate ?? null
+  }
 
   if (!Array.isArray(pres)) {
     pres = []
@@ -2482,6 +2552,12 @@ export function copyPreset(id: number) {
     saveCurrentPresetLocal()
     normalizeBotPresetIds(db)
     let pres = db.botPresets
+    if (!getHydratedPresetIfReady(id)) {
+      void ensureBotPresetHydrated(id).then((hydrated) => {
+        if (hydrated) copyPreset(id)
+      })
+      return
+    }
     const newPres = safeStructuredClone(pres[id])
     if (!newPres?.id) return
     const sourcePresetId = newPres.id
@@ -2515,7 +2591,19 @@ export function changeToPreset(id = 0, savecurrent = true) {
     const targetPresetId = newPres?.id
     db.botPresetsId = id
     if (newPres) {
-      setPreset(db, newPres)
+      const hydratedPreset = getHydratedPresetIfReady(id)
+      if (hydratedPreset) {
+        setPreset(db, hydratedPreset)
+      } else {
+        void ensureBotPresetHydrated(id).then((hydrated) => {
+          if (!hydrated) return
+          withTrustedServerProjectionWrite(() => {
+            const nextIndex = DBState.db.botPresets.findIndex((preset) => preset?.id === targetPresetId)
+            if (nextIndex < 0 || DBState.db.botPresetsId !== nextIndex) return
+            setPreset(DBState.db, DBState.db.botPresets[nextIndex])
+          })
+        })
+      }
     }
     if (targetPresetId) {
       runPresetCommand(
@@ -2608,7 +2696,19 @@ export function deletePreset(id: number, selectIndex = 0, apply = true) {
     if (selectedIndex >= 0) {
       db.botPresetsId = selectedIndex
       if (apply) {
-        setPreset(db, db.botPresets[selectedIndex])
+        const hydratedPreset = getHydratedPresetIfReady(selectedIndex)
+        if (hydratedPreset) {
+          setPreset(db, hydratedPreset)
+        } else {
+          void ensureBotPresetHydrated(selectedIndex).then((hydrated) => {
+            if (!hydrated) return
+            withTrustedServerProjectionWrite(() => {
+              const nextIndex = DBState.db.botPresets.findIndex((preset) => preset?.id === selectPresetId)
+              if (nextIndex < 0 || DBState.db.botPresetsId !== nextIndex) return
+              setPreset(DBState.db, DBState.db.botPresets[nextIndex])
+            })
+          })
+        }
       }
     } else if (db.botPresetsId >= db.botPresets.length) {
       db.botPresetsId = db.botPresets.length - 1
@@ -2799,6 +2899,7 @@ import type { Loadout } from '../loadout'
 
 export async function downloadPreset(id: number, type: 'json' | 'risupreset' | 'return' = 'json') {
   saveCurrentPreset()
+  await ensureBotPresetHydrated(id)
   let db = getDatabase()
   let pres = safeStructuredClone(db.botPresets[id])
   pres.openAIKey = ''

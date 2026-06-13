@@ -349,7 +349,7 @@ async function processServerCommandEvent(event: CommandEvent): Promise<void> {
   }
   if (event.revision === cached + 1) {
     const result = await fetchServerProjectionResource(event.resource, {
-      id: event.id,
+      id: event.resource === 'preset' ? undefined : event.id,
       parentId: event.parentId,
     })
     if (result.status === 'ok' && result.mode === 'character-selection') {

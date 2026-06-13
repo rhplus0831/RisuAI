@@ -1,6 +1,6 @@
 <script lang="ts">
   import { XIcon } from '@lucide/svelte'
-  import { getDatabase, type PromptDiffPrefs } from '../../ts/storage/database.svelte'
+  import { ensureBotPresetHydrated, getDatabase, type PromptDiffPrefs } from '../../ts/storage/database.svelte'
   import { canUseServerCommands, patchServerBackedSettings } from 'src/ts/server/commands'
   import type {
     PromptItem,
@@ -172,6 +172,7 @@
   let diffResult = $state<DiffResult | null>(null)
   let cardDiffResult = $state<CardDiffResult | null>(null)
   let expandedRanges = $state<ExpandedRange[]>([])
+  let promptHydrationVersion = $state(0)
 
   function savePrefsToDB() {
     const nextPrefs = {
@@ -246,14 +247,30 @@
   ] as const
 
   // Inputs
-  const firstCards = $derived.by(() => getPromptCards(firstPresetId))
-  const secondCards = $derived.by(() => getPromptCards(secondPresetId))
+  const firstCards = $derived.by(() => {
+    promptHydrationVersion
+    return getPromptCards(firstPresetId)
+  })
+  const secondCards = $derived.by(() => {
+    promptHydrationVersion
+    return getPromptCards(secondPresetId)
+  })
 
   // Effects (state invariants + diff recompute)
   $effect(() => {
     if (diffStyle !== 'line' && isGrouped) {
       isGrouped = false
     }
+  })
+
+  $effect(() => {
+    const first = firstPresetId
+    const second = secondPresetId
+    void Promise.all([ensureBotPresetHydrated(first), ensureBotPresetHydrated(second)]).then(() => {
+      if (firstPresetId === first && secondPresetId === second) {
+        promptHydrationVersion += 1
+      }
+    })
   })
 
   $effect(() => {
@@ -364,7 +381,7 @@
     const isPromptItemChat = (item: PromptItem): item is PromptItemChat => item.type === 'chat'
 
     const db = getDatabase()
-    const formated = safeStructuredClone(db.botPresets[id].promptTemplate)
+    const formated = safeStructuredClone(db.botPresets[id]?.promptTemplate ?? [])
     const cards: PromptCard[] = []
 
     for (let i = 0; i < formated.length; i++) {

@@ -203,10 +203,20 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     expect(JSON.stringify(body)).not.toContain('Babbage')
   })
 
-  it('masks provider secrets in narrow returned fields', async () => {
+  it('returns preset stubs for preset field refreshes and masks secrets in full preset hydration', async () => {
     await importDatabase({
       characters: [{ chaId: 'char-a', name: 'Ada' }],
-      botPresets: [{ id: 'p1', openAIKey: 'sk-secret', proxyKey: 'px-secret' }],
+      botPresets: [
+        {
+          id: 'p1',
+          name: 'Preset 1',
+          image: 'data:image/png;base64,stub',
+          metadata: { tag: 'kept' },
+          openAIKey: 'sk-secret',
+          proxyKey: 'px-secret',
+          promptTemplate: [{ id: 'prompt-a', type: 'plain', text: 'heavy prompt' }],
+        },
+      ],
       language: 'en',
     })
 
@@ -214,10 +224,26 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     const body = res.json()
     expect(body.mode).toBe('fields')
     expect(Object.keys(body.fields).sort()).toEqual(['botPresets', 'botPresetsId'])
-    expect(body.fields.botPresets[0].openAIKey).toBe(MASKED_PROVIDER_SECRET)
-    expect(body.fields.botPresets[0].proxyKey).toBe(MASKED_PROVIDER_SECRET)
+    expect(body.fields.botPresets).toEqual([
+      {
+        id: 'p1',
+        name: 'Preset 1',
+        image: 'data:image/png;base64,stub',
+        metadata: { tag: 'kept' },
+      },
+    ])
+    expect(body.fields.botPresets[0]).not.toHaveProperty('promptTemplate')
+    expect(body.fields.botPresets[0]).not.toHaveProperty('openAIKey')
     expect(body.fields).not.toHaveProperty('characters')
     expect(body.fields).not.toHaveProperty('language')
+
+    const hydrated = await getProjection('preset', '?id=p1')
+    expect(hydrated.statusCode).toBe(200)
+    const hydratedBody = hydrated.json()
+    expect(hydratedBody.mode).toBe('preset')
+    expect(hydratedBody.preset.openAIKey).toBe(MASKED_PROVIDER_SECRET)
+    expect(hydratedBody.preset.proxyKey).toBe(MASKED_PROVIDER_SECRET)
+    expect(hydratedBody.preset.promptTemplate).toEqual([{ id: 'prompt-a', type: 'plain', text: 'heavy prompt' }])
   })
 
   it('reships promptTemplate (not botPresets) for a promptItem refresh', async () => {
@@ -358,6 +384,7 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     expect(resourceProjectionFields('moduleTriggerDefinition')).toEqual(['modules'])
     expect(resourceProjectionFields('lorebook')).toEqual(['characters', 'modules', 'loreBook', 'loreBookPage'])
     expect(resourceProjectionFields('asset')).toEqual([])
+    expect(resourceProjectionFields('preset')).toEqual(['botPresets', 'botPresetsId'])
     expect(resourceProjectionFields('promptItem')).toEqual(['promptTemplate'])
     expect(resourceProjectionFields('persona')).toEqual([
       'personas',
@@ -521,7 +548,7 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     const db = openDatabase(harness.dataDir)
     try {
       const database = loadPersisted(db, harness.dataDir).database as Record<string, unknown>
-      for (const resource of ['preset', 'plugin', 'moduleEnabled'] as const) {
+      for (const resource of ['plugin', 'moduleEnabled'] as const) {
         const fieldKeys = resourceProjectionFields(resource)
         expect(fieldKeys).not.toBeNull()
         const expected = {
@@ -535,6 +562,21 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
         expect(res.statusCode).toBe(200)
         expect(res.body).toBe(JSON.stringify(expected))
       }
+
+      const presetFields = resourceProjectionFields('preset')
+      expect(presetFields).not.toBeNull()
+      const expectedPreset = {
+        revision,
+        resource: 'preset',
+        mode: 'fields',
+        fields: {
+          ...maskProviderSecrets(selectFields(database, presetFields!)),
+          botPresets: [{ id: 'preset-a', name: 'Preset A' }],
+        },
+      }
+      const presetRes = await getProjection('preset')
+      expect(presetRes.statusCode).toBe(200)
+      expect(presetRes.body).toBe(JSON.stringify(expectedPreset))
     } finally {
       db.close()
     }

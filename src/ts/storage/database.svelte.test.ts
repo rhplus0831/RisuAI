@@ -10,12 +10,13 @@ vi.mock('../process/modules', async (importActual) => {
 })
 
 import { DBState } from '../stores.svelte'
-import { clearCachedServerCommandRevision } from '../server/commands'
+import { clearCachedServerCommandRevision, setCachedServerCommandRevision } from '../server/commands'
 import {
   changeToPreset,
   copyPreset,
   createPreset,
   deletePreset,
+  ensureBotPresetHydrated,
   mergeServerProjectionCharacterRow,
   presetTemplate,
   reorderPresets,
@@ -352,6 +353,86 @@ describe('mergeServerProjectionCharacterRow', () => {
 })
 
 describe('preset command rollback (L21)', () => {
+  it('hydrates a stubbed preset from the server projection before full-preset consumers read it', async () => {
+    seedPresetDatabase({
+      botPresets: [{ id: 'preset-stub', name: 'Stub', image: 'img' } as botPreset],
+      botPresetsId: 0,
+    })
+    setServerProjectionWriteGuardEnabled(true)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        expect(String(input)).toBe('/api/v1/projection/preset?id=preset-stub')
+        return jsonResponse({
+          revision: 7,
+          resource: 'preset',
+          mode: 'preset',
+          presetId: 'preset-stub',
+          preset: makePreset('preset-stub', 'Hydrated', {
+            promptTemplate: [{ id: 'hydrated-prompt', type: 'plain', text: 'hydrated prompt' }] as any,
+          }),
+        })
+      }) as unknown as typeof fetch,
+    )
+
+    await expect(ensureBotPresetHydrated(0)).resolves.toBe(true)
+
+    expect(DBState.db.botPresets[0]).toMatchObject({
+      id: 'preset-stub',
+      name: 'Hydrated',
+      mainPrompt: 'Hydrated prompt',
+      promptTemplate: [{ id: 'hydrated-prompt', type: 'plain', text: 'hydrated prompt' }],
+    })
+  })
+
+  it('does not save an unloaded promptTemplate as null when snapshotting the current preset', async () => {
+    seedPresetDatabase({
+      botPresets: [{ id: 'preset-a', name: 'Alpha', image: 'img' } as botPreset],
+      botPresetsId: 0,
+    })
+    delete (DBState.db as unknown as { promptTemplate?: unknown }).promptTemplate
+    setServerProjectionWriteGuardEnabled(true)
+    const calls = stubFailedPresetCommand()
+
+    saveCurrentPreset()
+
+    const command = await waitForPresetCommand(calls, '/presets/preset-a')
+    expect(command.body.patch).toMatchObject({
+      id: 'preset-a',
+      name: 'Alpha',
+      mainPrompt: 'live main',
+    })
+    expect(command.body.patch).not.toHaveProperty('promptTemplate')
+  })
+
+  it('ignores stale preset hydration responses older than the applied revision', async () => {
+    seedPresetDatabase({
+      botPresets: [{ id: 'preset-stub', name: 'Stub', image: 'img' } as botPreset],
+      botPresetsId: 0,
+    })
+    setServerProjectionWriteGuardEnabled(true)
+    setCachedServerCommandRevision(9)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        expect(String(input)).toBe('/api/v1/projection/preset?id=preset-stub')
+        return jsonResponse({
+          revision: 8,
+          resource: 'preset',
+          mode: 'preset',
+          presetId: 'preset-stub',
+          preset: makePreset('preset-stub', 'Stale', {
+            promptTemplate: [{ id: 'stale-prompt', type: 'plain', text: 'stale prompt' }] as any,
+          }),
+        })
+      }) as unknown as typeof fetch,
+    )
+
+    await expect(ensureBotPresetHydrated(0)).resolves.toBe(false)
+
+    expect(DBState.db.botPresets[0]).toEqual({ id: 'preset-stub', name: 'Stub', image: 'img' })
+  })
+
   it('L21: failed save restores the saved preset collection and selected index', async () => {
     seedPresetDatabase({ temperature: 91 })
     const beforePresets = clonePlain(DBState.db.botPresets)

@@ -12,6 +12,7 @@ import {
   loadChatHydrations,
   loadGenerationChatHydration,
   loadPersistedDatabaseFields,
+  loadPresetHydration,
   loadSingleCharacterStubRow,
   loadStubbedProjectionFields,
 } from '../repository.js'
@@ -418,6 +419,31 @@ export function registerProjectionRoutes(
       }
     }
 
+    // Per-preset hydration fills bootstrap/list stubs when a client needs
+    // promptTemplate or the full generation settings for a preset switch/diff.
+    if (resource === 'preset') {
+      const presetId = req.query.id
+      if (typeof presetId === 'string' && presetId.trim() !== '') {
+        const hydration = loadPresetHydration(db, dataDir, presetId)
+        if (!hydration) {
+          reply.code(404).send({
+            error: 'preset_not_found',
+            reason: `Preset not found: ${presetId}`,
+          })
+          return
+        }
+        const response = {
+          revision,
+          resource,
+          mode: 'preset' as const,
+          presetId,
+          preset: maskProviderSecrets(hydration.preset),
+        }
+        emitProjectionMetric(req.log, resource, revision, response, { id: presetId })
+        return response
+      }
+    }
+
     const fieldKeys = resourceProjectionFields(resource)
 
     if (fieldKeys === null) {
@@ -444,6 +470,10 @@ export function registerProjectionRoutes(
     const fields = NARROW_FIELD_PROJECTION_RESOURCES.has(resource)
       ? maskProviderSecrets(loadPersistedDatabaseFields(db, dataDir, fieldKeys))
       : maskProviderSecrets(loadStubbedProjectionFields(db, dataDir, fieldKeys))
+    if (resource === 'preset') {
+      const projected = loadStubbedProjectionFields(db, dataDir, fieldKeys)
+      fields.botPresets = projected.botPresets
+    }
 
     const response = { revision, resource, mode: 'fields' as const, fields }
     emitProjectionMetric(req.log, resource, revision, response, {
