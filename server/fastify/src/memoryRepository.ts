@@ -95,6 +95,15 @@ export interface MemoryJob {
   updatedAt: string
 }
 
+export interface MemoryJobListItem {
+  id: string
+  chatId: string
+  kind: MemoryJobKind
+  status: MemoryJobStatus
+  attemptCount: number
+  maxAttempts: number
+}
+
 export interface CreateMemoryJobInput {
   id: string
   chatId: string
@@ -420,6 +429,19 @@ export function mapMemoryJobRow(row: MemoryJobRow): MemoryJob {
     nextRunAt: row.next_run_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+  }
+}
+
+function mapMemoryJobListItemRow(
+  row: Pick<MemoryJobRow, 'id' | 'chat_id' | 'kind' | 'status' | 'attempt_count' | 'max_attempts'>,
+): MemoryJobListItem {
+  return {
+    id: row.id,
+    chatId: row.chat_id,
+    kind: requireJobKind(row.kind),
+    status: requireJobStatus(row.status),
+    attemptCount: row.attempt_count,
+    maxAttempts: row.max_attempts,
   }
 }
 
@@ -908,6 +930,48 @@ export function listMemoryJobs(
     ...values,
   )
   return rows.map(mapMemoryJobRow)
+}
+
+export function listMemoryJobItems(
+  db: DatabaseSync,
+  filter: {
+    chatId?: string
+    kind?: MemoryJobKind
+    status?: MemoryJobStatus
+    statuses?: readonly MemoryJobStatus[]
+  } = {},
+): MemoryJobListItem[] {
+  const conditions: string[] = []
+  const values: SqlValue[] = []
+  if (filter.chatId !== undefined) {
+    requireString(filter.chatId, 'chat id')
+    conditions.push('chat_id = ?')
+    values.push(filter.chatId)
+  }
+  if (filter.kind !== undefined) {
+    conditions.push('kind = ?')
+    values.push(requireJobKind(filter.kind))
+  }
+  if (filter.status !== undefined) {
+    conditions.push('status = ?')
+    values.push(requireJobStatus(filter.status))
+  }
+  if (filter.statuses !== undefined) {
+    const statuses = requireJobStatusList(filter.statuses)
+    conditions.push(`status IN (${statuses.map(() => '?').join(', ')})`)
+    values.push(...statuses)
+  }
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
+  const rows = allRows<Pick<MemoryJobRow, 'id' | 'chat_id' | 'kind' | 'status' | 'attempt_count' | 'max_attempts'>>(
+    db.prepare(`
+        SELECT id, chat_id, kind, status, attempt_count, max_attempts
+        FROM memory_jobs
+        ${where}
+        ORDER BY created_at, id
+      `),
+    ...values,
+  )
+  return rows.map(mapMemoryJobListItemRow)
 }
 
 /**

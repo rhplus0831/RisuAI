@@ -136,13 +136,13 @@ describe('memory worker lifecycle and dispatch', () => {
         {
           type: 'memory.job',
           chatId: 'chat-1',
-          jobId: 'job-events',
-          kind: 'summarize',
-          status: 'running',
-          attemptCount: 1,
-          maxAttempts: 3,
-          nextRunAt: expect.any(String),
-          error: null,
+          job: {
+            id: 'job-events',
+            kind: 'summarize',
+            status: 'running',
+            attemptCount: 1,
+            maxAttempts: 3,
+          },
           sideEffect: {
             kind: 'hypav3_progress',
             payload: {
@@ -157,13 +157,13 @@ describe('memory worker lifecycle and dispatch', () => {
         {
           type: 'memory.job',
           chatId: 'chat-1',
-          jobId: 'job-events',
-          kind: 'summarize',
-          status: 'completed',
-          attemptCount: 1,
-          maxAttempts: 3,
-          nextRunAt: expect.any(String),
-          error: null,
+          job: {
+            id: 'job-events',
+            kind: 'summarize',
+            status: 'completed',
+            attemptCount: 1,
+            maxAttempts: 3,
+          },
           sideEffect: {
             kind: 'hypav3_progress',
             payload: {
@@ -518,16 +518,17 @@ describe('memory worker lifecycle and dispatch', () => {
 
       expect(await worker.tick()).toBe(true)
 
-      expect(events.map((event) => event.status)).toEqual(['running', 'failed'])
+      expect(events.map((event) => event.job.status)).toEqual(['running', 'failed'])
       expect(events.at(-1)).toMatchObject({
         type: 'memory.job',
         chatId: 'chat-1',
-        jobId: 'job-fail-events',
-        kind: 'chunk',
-        status: 'failed',
-        error: 'chunk stub exploded',
-        attemptCount: 1,
-        maxAttempts: 1,
+        job: {
+          id: 'job-fail-events',
+          kind: 'chunk',
+          status: 'failed',
+          attemptCount: 1,
+          maxAttempts: 1,
+        },
         sideEffect: {
           kind: 'hypav3_progress',
           payload: {
@@ -626,17 +627,17 @@ describe('memory worker lifecycle and dispatch', () => {
 
       expect(await worker.tick()).toBe(true)
 
-      expect(events.map((event) => event.status)).toEqual(['running', 'pending'])
+      expect(events.map((event) => event.job.status)).toEqual(['running', 'pending'])
       expect(events.at(-1)).toMatchObject({
         type: 'memory.job',
         chatId: 'chat-1',
-        jobId: 'job-retry-events',
-        kind: 'embed',
-        status: 'pending',
-        error: 'embedding stub exploded',
-        attemptCount: 1,
-        maxAttempts: 2,
-        nextRunAt: '2026-05-24T00:00:01.000Z',
+        job: {
+          id: 'job-retry-events',
+          kind: 'embed',
+          status: 'pending',
+          attemptCount: 1,
+          maxAttempts: 2,
+        },
         sideEffect: {
           kind: 'hypav3_progress',
           payload: {
@@ -703,7 +704,7 @@ describe('memory worker lifecycle and dispatch', () => {
       gate.resolve()
       expect(await tick).toBe(true)
 
-      expect(events.map((event) => event.status)).toEqual(['running'])
+      expect(events.map((event) => event.job.status)).toEqual(['running'])
       expect(getMemoryJob(db, 'job-cancel-events')).toMatchObject({ status: 'cancelled' })
     } finally {
       db.close()
@@ -835,18 +836,18 @@ describe('memory worker lifecycle and dispatch', () => {
       worker.start()
       await worker.stop()
 
-      expect(events.map((event) => [event.jobId, event.status])).toEqual([
+      expect(events.map((event) => [event.job.id, event.job.status])).toEqual([
         ['job-recovered', 'pending'],
         ['job-recovered-failed', 'failed'],
       ])
       expect(events[0]).toMatchObject({
         type: 'memory.job',
         chatId: 'chat-1',
-        jobId: 'job-recovered',
-        kind: 'summarize',
-        status: 'pending',
-        error: 'memory job was abandoned while running',
-        nextRunAt: '2026-05-24T00:00:01.000Z',
+        job: {
+          id: 'job-recovered',
+          kind: 'summarize',
+          status: 'pending',
+        },
         sideEffect: {
           kind: 'hypav3_progress',
           payload: {
@@ -859,10 +860,11 @@ describe('memory worker lifecycle and dispatch', () => {
       expect(events[1]).toMatchObject({
         type: 'memory.job',
         chatId: 'chat-2',
-        jobId: 'job-recovered-failed',
-        kind: 'embed',
-        status: 'failed',
-        error: 'memory job was abandoned while running',
+        job: {
+          id: 'job-recovered-failed',
+          kind: 'embed',
+          status: 'failed',
+        },
       })
     } finally {
       db.close()

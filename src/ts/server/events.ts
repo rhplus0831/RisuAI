@@ -3,6 +3,7 @@ import { iterateSseEvents } from '../process/request/sseParse'
 import type { CommandEvent } from './commands'
 import type {
   ServerHypaV3ProgressPayload,
+  ServerMemoryJob,
   ServerMemoryJobKind,
   ServerMemoryJobStatus,
 } from '../process/request/serverMemory'
@@ -14,13 +15,7 @@ export type ServerCommandEventHandler = (event: CommandEvent) => void
 export interface ServerMemoryJobEvent {
   type: 'memory.job'
   chatId: string
-  jobId: string
-  kind: ServerMemoryJobKind
-  status: ServerMemoryJobStatus
-  attemptCount: number
-  maxAttempts: number
-  nextRunAt: string
-  error: string | null
+  job: Omit<ServerMemoryJob, 'chatId'>
   sideEffect?: {
     kind: 'hypav3_progress'
     payload: ServerHypaV3ProgressPayload
@@ -193,29 +188,24 @@ function parseMemoryEvent(data: string): ServerMemoryEvent | null {
   const record = parsed as Record<string, unknown>
   if (record.type !== 'memory.job') return null
   if (typeof record.chatId !== 'string') return null
-  if (typeof record.jobId !== 'string') return null
-  if (!isMemoryJobKind(record.kind)) return null
-  if (!isMemoryJobStatus(record.status)) return null
-  if (!Number.isInteger(record.attemptCount) || (record.attemptCount as number) < 0) return null
-  if (!Number.isInteger(record.maxAttempts) || (record.maxAttempts as number) <= 0) return null
-  if (typeof record.nextRunAt !== 'string') return null
-  if (record.error !== null && typeof record.error !== 'string') return null
-
-  const kind = record.kind
-  const status = record.status
-  const nextRunAt = record.nextRunAt
-  const error = record.error as string | null
+  if (!record.job || typeof record.job !== 'object' || Array.isArray(record.job)) return null
+  const jobRecord = record.job as Record<string, unknown>
+  if (typeof jobRecord.id !== 'string') return null
+  if (!isMemoryJobKind(jobRecord.kind)) return null
+  if (!isMemoryJobStatus(jobRecord.status)) return null
+  if (!Number.isInteger(jobRecord.attemptCount) || (jobRecord.attemptCount as number) < 0) return null
+  if (!Number.isInteger(jobRecord.maxAttempts) || (jobRecord.maxAttempts as number) <= 0) return null
 
   const event: ServerMemoryJobEvent = {
     type: 'memory.job',
     chatId: record.chatId,
-    jobId: record.jobId,
-    kind,
-    status,
-    attemptCount: record.attemptCount as number,
-    maxAttempts: record.maxAttempts as number,
-    nextRunAt,
-    error,
+    job: {
+      id: jobRecord.id,
+      kind: jobRecord.kind,
+      status: jobRecord.status,
+      attemptCount: jobRecord.attemptCount as number,
+      maxAttempts: jobRecord.maxAttempts as number,
+    },
   }
 
   if (record.sideEffect !== undefined) {

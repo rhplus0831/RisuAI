@@ -10,13 +10,8 @@ function job(status: ServerMemoryJob['status'], id = `job-${status}`): ServerMem
     chatId: 'chat-1',
     kind: 'summarize',
     status,
-    payload: {},
-    error: null,
     attemptCount: 1,
     maxAttempts: 3,
-    nextRunAt: NOW.toISOString(),
-    createdAt: NOW.toISOString(),
-    updatedAt: NOW.toISOString(),
   }
 }
 
@@ -108,6 +103,32 @@ describe('memory job refresh controller', () => {
 
     await vi.advanceTimersByTimeAsync(3000)
     expect(listJobs).toHaveBeenCalledTimes(2)
+    controller.dispose()
+  })
+
+  it('reuses the last job list when polling returns not-modified', async () => {
+    const listJobs = vi
+      .fn()
+      .mockResolvedValueOnce({ status: 'ok', etag: '"jobs-a"', jobs: [job('running', 'job-1')] })
+      .mockResolvedValueOnce({ status: 'not-modified', etag: '"jobs-a"' })
+    const seenJobs: ServerMemoryJob[][] = []
+    const controller = createMemoryJobRefreshController({
+      chatId: 'chat-1',
+      intervalMs: 1000,
+      listJobs,
+      onJobs: (jobs) => seenJobs.push(jobs),
+      onError: vi.fn(),
+      onClear: vi.fn(),
+      onLoading: vi.fn(),
+      now: () => NOW,
+    })
+
+    await controller.refresh()
+    await vi.advanceTimersByTimeAsync(1000)
+
+    expect(listJobs).toHaveBeenNthCalledWith(1, 'chat-1', expect.any(AbortSignal), undefined)
+    expect(listJobs).toHaveBeenNthCalledWith(2, 'chat-1', expect.any(AbortSignal), '"jobs-a"')
+    expect(seenJobs.map((jobs) => jobs.map((entry) => entry.id))).toEqual([['job-1'], ['job-1']])
     controller.dispose()
   })
 

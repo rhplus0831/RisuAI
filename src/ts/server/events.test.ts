@@ -75,13 +75,13 @@ describe('server command event subscription helper', () => {
     const memoryEvent: ServerMemoryEvent = {
       type: 'memory.job',
       chatId: 'chat-1',
-      jobId: 'job-1',
-      kind: 'summarize',
-      status: 'pending',
-      attemptCount: 0,
-      maxAttempts: 3,
-      nextRunAt: '2026-05-27T00:00:00.000Z',
-      error: null,
+      job: {
+        id: 'job-1',
+        kind: 'summarize',
+        status: 'pending',
+        attemptCount: 0,
+        maxAttempts: 3,
+      },
       sideEffect: {
         kind: 'hypav3_progress',
         payload: {

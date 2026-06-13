@@ -45,25 +45,22 @@ export interface ServerMemoryJob {
   chatId: string
   kind: ServerMemoryJobKind
   status: ServerMemoryJobStatus
-  payload: unknown
-  error: string | null
   attemptCount: number
   maxAttempts: number
-  nextRunAt: string
-  createdAt: string
-  updatedAt: string
 }
 
 export interface ListServerMemoryJobsInput {
   chatId?: string
   kind?: ServerMemoryJobKind
   status?: ServerMemoryJobStatus
+  etag?: string
 }
 
 export type ServerMemoryResult<T> =
-  | ({ status: 'ok' } & T)
+  | ({ status: 'ok'; etag?: string } & T)
   | { status: 'error'; error: string }
   | { status: 'unavailable' }
+  | { status: 'not-modified'; etag?: string }
 
 export function canUseServerMemoryApi(): boolean {
   return true
@@ -129,6 +126,11 @@ async function requestMemoryJson<T>(
     return { status: 'error', error: `Network error: ${message}` }
   }
 
+  const etag = response.headers.get('etag') ?? undefined
+  if (response.status === 304) {
+    return { status: 'not-modified', ...(etag ? { etag } : {}) }
+  }
+
   let body: unknown = null
   try {
     body = await response.json()
@@ -144,7 +146,7 @@ async function requestMemoryJson<T>(
     }
   }
 
-  return { status: 'ok', ...(body as T) }
+  return { status: 'ok', ...(etag ? { etag } : {}), ...(body as T) }
 }
 
 export async function listServerMemoryChunks(
@@ -177,7 +179,10 @@ export async function listServerMemoryJobs(
       kind: input.kind,
       status: input.status,
     }),
-    { signal: signal ?? undefined },
+    {
+      signal: signal ?? undefined,
+      headers: input.etag ? { 'If-None-Match': input.etag } : undefined,
+    },
   )
 }
 

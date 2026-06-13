@@ -13,7 +13,11 @@ export interface MemoryJobRefreshController {
 export interface MemoryJobRefreshControllerOptions {
   chatId: string
   intervalMs?: number
-  listJobs: (chatId: string, signal?: AbortSignal | null) => Promise<ServerMemoryResult<{ jobs: ServerMemoryJob[] }>>
+  listJobs: (
+    chatId: string,
+    signal?: AbortSignal | null,
+    etag?: string,
+  ) => Promise<ServerMemoryResult<{ jobs: ServerMemoryJob[] }>>
   onJobs(jobs: ServerMemoryJob[], loadedAt: string): void
   onError(error: string): void
   onClear(): void
@@ -37,6 +41,8 @@ export function createMemoryJobRefreshController(
   let disposed = false
   let refreshTimer: TimerHandle | null = null
   let activeController: AbortController | null = null
+  let lastEtag: string | undefined
+  let lastJobs: ServerMemoryJob[] = []
 
   function stopPolling(): void {
     if (!refreshTimer) return
@@ -60,6 +66,8 @@ export function createMemoryJobRefreshController(
     if (!chatId) {
       requestSerial += 1
       queued = false
+      lastEtag = undefined
+      lastJobs = []
       activeController?.abort()
       activeController = null
       inFlight = false
@@ -81,12 +89,18 @@ export function createMemoryJobRefreshController(
     options.onLoading(true)
 
     try {
-      const result = await options.listJobs(chatId, controller.signal)
+      const result = await options.listJobs(chatId, controller.signal, lastEtag)
       if (disposed || serial !== requestSerial) return
 
       if (result.status === 'ok') {
+        lastEtag = result.etag
+        lastJobs = result.jobs
         options.onJobs(result.jobs, now().toISOString())
         syncPolling(result.jobs)
+      } else if (result.status === 'not-modified') {
+        lastEtag = result.etag ?? lastEtag
+        options.onJobs(lastJobs, now().toISOString())
+        syncPolling(lastJobs)
       } else {
         stopPolling()
         options.onError(result.status === 'unavailable' ? 'Server memory jobs are unavailable.' : result.error)
@@ -114,6 +128,8 @@ export function createMemoryJobRefreshController(
     chatId = nextChatId
     requestSerial += 1
     queued = false
+    lastEtag = undefined
+    lastJobs = []
     activeController?.abort()
     activeController = null
     inFlight = false

@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import type { DatabaseSync } from 'node:sqlite'
 import type { AuthState } from '../auth.js'
@@ -9,6 +9,7 @@ import {
   cancelMemoryJob,
   enqueueMemoryJob,
   getMemoryJob,
+  listMemoryJobItems,
   listMemoryJobs,
   type MemoryJobKind,
   type MemoryJobStatus,
@@ -65,6 +66,10 @@ function emitRouteJobEvent(db: DatabaseSync, onEvent: MemoryEventSink | undefine
 
 function badRequest(error: string): { error: string } {
   return { error }
+}
+
+function memoryJobsEtag(jobs: unknown): string {
+  return `"${createHash('sha256').update(JSON.stringify(jobs)).digest('base64url')}"`
 }
 
 export function registerMemoryJobRoutes(
@@ -140,12 +145,18 @@ export function registerMemoryJobRoutes(
       return badRequest('status must be one of: pending, running, completed, failed, cancelled')
     }
 
-    const jobs = listMemoryJobs(db, {
+    const jobs = listMemoryJobItems(db, {
       chatId: typeof query.chatId === 'string' ? query.chatId : undefined,
       kind: isMemoryJobKind(query.kind) ? query.kind : undefined,
       status: isMemoryJobStatus(query.status) ? query.status : undefined,
       statuses: query.status === undefined ? ['pending', 'running'] : undefined,
     })
+    const etag = memoryJobsEtag(jobs)
+    reply.header('etag', etag)
+    if (req.headers['if-none-match'] === etag) {
+      reply.code(304)
+      return
+    }
     return { jobs }
   })
 
@@ -157,6 +168,15 @@ export function registerMemoryJobRoutes(
       return { error: 'memory job not found or not cancellable' }
     }
     emitRouteJobEvent(db, options.onEvent, job.id)
-    return { job }
+    return {
+      job: {
+        id: job.id,
+        chatId: job.chatId,
+        kind: job.kind,
+        status: job.status,
+        attemptCount: job.attemptCount,
+        maxAttempts: job.maxAttempts,
+      },
+    }
   })
 }

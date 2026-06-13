@@ -36,6 +36,7 @@ interface CapturedFetch {
   url: string
   method: string
   authHeader: string | null
+  ifNoneMatch: string | null
 }
 
 const baseChunk: ServerMemoryChunk = {
@@ -66,13 +67,8 @@ const baseJob: ServerMemoryJob = {
   chatId: 'chat 1',
   kind: 'summarize',
   status: 'pending',
-  payload: { chunkId: 'chunk-1' },
-  error: null,
   attemptCount: 0,
   maxAttempts: 3,
-  nextRunAt: '2026-05-25T00:00:00.000Z',
-  createdAt: '2026-05-25T00:00:00.000Z',
-  updatedAt: '2026-05-25T00:00:00.000Z',
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -96,6 +92,7 @@ function makeMemoryFetch(bodyForUrl: (url: string, init: RequestInit) => unknown
         url,
         method: init.method ?? 'GET',
         authHeader: headers?.['risu-auth'] ?? null,
+        ifNoneMatch: headers?.['If-None-Match'] ?? null,
       })
       const body = bodyForUrl(url, init)
       return body instanceof Response ? body : jsonResponse(body)
@@ -134,6 +131,7 @@ describe('server memory API adapter', () => {
         url: '/api/v1/memory/chunks/chat%201',
         method: 'GET',
         authHeader: 'test-auth-token',
+        ifNoneMatch: null,
       },
     ])
   })
@@ -149,6 +147,7 @@ describe('server memory API adapter', () => {
       url: '/api/v1/memory/summaries/chat%201?model=model+a',
       method: 'GET',
       authHeader: 'test-auth-token',
+      ifNoneMatch: null,
     })
   })
 
@@ -176,6 +175,25 @@ describe('server memory API adapter', () => {
       url: '/api/v1/memory/jobs?chatId=chat+1&kind=summarize&status=pending',
       method: 'GET',
       authHeader: 'test-auth-token',
+      ifNoneMatch: null,
+    })
+  })
+
+  it('lists jobs with an If-None-Match validator when provided', async () => {
+    const memoryFetch = makeMemoryFetch(() => jsonResponse(null, 304))
+    vi.stubGlobal('fetch', memoryFetch.fetch)
+
+    const result = await listServerMemoryJobs({
+      chatId: 'chat 1',
+      etag: '"jobs-etag"',
+    })
+
+    expect(result).toEqual({ status: 'not-modified' })
+    expect(memoryFetch.calls[0]).toEqual({
+      url: '/api/v1/memory/jobs?chatId=chat+1',
+      method: 'GET',
+      authHeader: 'test-auth-token',
+      ifNoneMatch: '"jobs-etag"',
     })
   })
 
@@ -193,6 +211,7 @@ describe('server memory API adapter', () => {
       url: '/api/v1/memory/jobs/job%2F1',
       method: 'DELETE',
       authHeader: 'test-auth-token',
+      ifNoneMatch: null,
     })
   })
 
@@ -204,7 +223,6 @@ describe('server memory API adapter', () => {
             {
               ...baseJob,
               status: 'running',
-              payload: { chunkId: 'chunk-1', model: 'summary-model' },
             },
           ],
         }
@@ -214,7 +232,6 @@ describe('server memory API adapter', () => {
           job: {
             ...baseJob,
             status: 'cancelled',
-            payload: { chunkId: 'chunk-1', model: 'summary-model' },
           },
         }
       }
@@ -231,7 +248,6 @@ describe('server memory API adapter', () => {
         {
           ...baseJob,
           status: 'running',
-          payload: { chunkId: 'chunk-1', model: 'summary-model' },
         },
       ],
     })
@@ -240,7 +256,6 @@ describe('server memory API adapter', () => {
       job: {
         ...baseJob,
         status: 'cancelled',
-        payload: { chunkId: 'chunk-1', model: 'summary-model' },
       },
     })
     expect(memoryFetch.calls).toEqual([
@@ -248,11 +263,13 @@ describe('server memory API adapter', () => {
         url: '/api/v1/memory/jobs?chatId=chat+1&status=running',
         method: 'GET',
         authHeader: 'test-auth-token',
+        ifNoneMatch: null,
       },
       {
         url: '/api/v1/memory/jobs/job%2F1',
         method: 'DELETE',
         authHeader: 'test-auth-token',
+        ifNoneMatch: null,
       },
     ])
   })

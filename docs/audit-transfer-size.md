@@ -2,7 +2,7 @@
 
 Date: 2026-06-13.
 
-Last updated: 2026-06-13. H2, H3, M1, M2, M3, M4, L4, L8, L21, and the H1 immediate bootstrap duplicate were remediated after the initial audit.
+Last updated: 2026-06-13. H2, H3, M1, M2, M3, M4, L4, L8, L9, L10, L11, L12, L21, and the H1 immediate bootstrap duplicate were remediated after the initial audit.
 
 This audit examines every place the server sends data to the client and every
 place the client sends changes back, looking for endpoints that **transmit or
@@ -102,9 +102,9 @@ better than the instance.
 6. **Content-addressed dedup not used client-side (C→S).** Resolved for bulk
    asset upload: the client now hashes assets, probes `/assets/exists`, and
    uploads only ids the server reports missing.
-7. **Over-returning full rows where the UI reads a few fields (S→C).** Memory
-   jobs (5 of 11 fields read), the memory.job SSE frame (~50% unread), and the
-   import response (all but `{revision, event}` discarded). See L9, L12, L19.
+7. **Over-returning full rows where the UI reads a few fields (S→C).** Resolved
+   for memory jobs and memory.job SSE frames. The import response still echoes
+   fields that consumers discard except `{revision, event}`. See L19.
 
 ## Findings Index
 
@@ -125,10 +125,10 @@ better than the instance.
 | L6  | S→C | POST /generate/preview-prompt | per manual preview | preview returns the full prompt payload; client reads only promptText |
 | L7  | S→C | POST /generate/chat (message_patch) | per rewriting send | `replace_all` carries the full transcript the server just persisted |
 | L8  | C→S | POST /assets/bulk | on-import | Resolved: missing bulk assets upload with binary framing, not base64 JSON |
-| L9  | S→C | GET /memory/jobs | 5s poll + per event | Returns full job rows; UI reads only 5 of 11 fields |
-| L10 | both | GET /memory/jobs | per job transition | Client re-fetches the whole job list on every SSE event |
-| L11 | S→C | GET /memory/jobs | every 5s | Poll persists with no ETag/304; mostly unchanged bodies |
-| L12 | S→C | GET /events | per job transition | memory.job frame ships a full status block no client reads |
+| L9  | S→C | GET /memory/jobs | 5s poll + per event | Resolved: job list projects render fields and drops payload/timestamps |
+| L10 | both | GET /memory/jobs | per job transition | Resolved: client upserts the changed job from SSE instead of refetching |
+| L11 | S→C | GET /memory/jobs | every 5s | Resolved: job polling uses ETag/If-None-Match and 304 |
+| L12 | S→C | GET /events | per job transition | Resolved: memory.job frame carries compact job fields plus progress |
 | L13 | S→C | GET /events | per job transition | memory.job frames broadcast to every client, no chat scoping |
 | L14 | S→C | GET /memory/chunks\|summaries/:id | none today | SELECT * full-text reads, unbounded; latent (no caller yet) |
 | L15 | S→C | GET /events | per-session | SSE stream is emitted uncompressed (hijacks before compress hook) |
@@ -506,18 +506,29 @@ by binary-framed route regression coverage in `server/fastify/__tests__/assets.t
 ### Memory
 
 **L9 — `GET /memory/jobs` returns full job rows; the UI reads only 5 of 11
-fields.** `listMemoryJobs` does `SELECT *` and `mapMemoryJobRow` emits
+fields.** Resolved 2026-06-13. `GET /memory/jobs` now uses the projected
+`listMemoryJobItems` query (`id/chatId/kind/status/attemptCount/maxAttempts`) and
+sets an ETag for the compact list. `listMemoryJobs` still returns the full row for
+worker/internal paths.
+
+Original finding: `listMemoryJobs` did `SELECT *` and `mapMemoryJobRow` emitted
 `id/chatId/kind/status/payload/error/attemptCount/maxAttempts/nextRunAt/createdAt/
 updatedAt` (`memoryRepository.ts:404-424,901-911`); the modal renders only
 `kind/status/attemptCount/maxAttempts/id`. `payload` (summarize jobs embed a
 `messageIndexes` int array + `chatMemos` UUIDs scaling with window size) is pure
 dead weight. *Nuance:* the route is server-filtered to `['pending','running']`, so
 N is small, and gzip collapses the repetitive numeric/UUID data — real but low.
-Fix: a projected list shape dropping `payload`; full row only on a single-job
-detail fetch.
+Current evidence: `server/fastify/src/memoryRepository.ts` (`MemoryJobListItem`,
+`listMemoryJobItems`); `server/fastify/src/routes/memoryJobs.ts`
+(`GET /memory/jobs` projected response); coverage in
+`server/fastify/__tests__/memoryJobsRoutes.test.ts`.
 
 **L10 — Client re-fetches the whole job list on every SSE `memory.job` event.**
-`server-memory-jobs.svelte:107-111` calls `void refreshJobs()` (full GET) for
+Resolved 2026-06-13. The modal now upserts/removes the compact `event.job` from
+the in-memory list and reserves REST fetches for initial load, manual refresh,
+and reconciliation polling.
+
+Original finding: `server-memory-jobs.svelte:107-111` called `void refreshJobs()` (full GET) for
 every event whose `chatId` matches, although the event already carries the
 changed job's renderable fields. Fix: upsert the single job from the event into
 the in-memory array; reserve the GET for initial mount and the reconciliation
@@ -525,7 +536,11 @@ poll. *Nuance:* the subscriber mounts only while the HypaV3 modal is open, and a
 in-flight-dedup collapses bursts to ~one trailing refresh — modest real impact.
 
 **L11 — 5 s polling persists with no ETag/304.** A 5 s `setInterval` polls
-`GET /memory/jobs` while any job is pending/running and the modal is open
+Resolved 2026-06-13. `GET /memory/jobs` now returns an ETag and honors
+`If-None-Match`; the browser refresh controller stores the last ETag/list and
+uses the cached list on `304 Not Modified`.
+
+Original finding: a 5 s `setInterval` polled `GET /memory/jobs` while any job is pending/running and the modal is open
 (`memoryJobRefresh.ts:3,47-56`); identical lists are re-sent with no conditional
 request. *Nuance (corrects the finder):* the SSE channel is only a fetch trigger,
 not state delivery (it carries one job's scalars, and the consumer reacts by
@@ -533,7 +548,12 @@ firing the same GET), so the poll is a genuine fallback, not a redundant duplica
 of an SSE payload. The real lever is L9 (drop `payload`) + an ETag/304.
 
 **L12 — `memory.job` SSE frame ships a full job-status block no client reads.**
-`buildMemoryJobEvent` serializes `jobId/kind/status/attemptCount/maxAttempts/
+Resolved 2026-06-13. `memory.job` frames now carry `{type, chatId, job}` where
+`job` is the compact renderable item (`id/kind/status/attemptCount/maxAttempts`),
+plus the existing Hypa V3 progress side-effect. The client validator accepts this
+compact shape.
+
+Original finding: `buildMemoryJobEvent` serialized `jobId/kind/status/attemptCount/maxAttempts/
 nextRunAt/error` plus a `hypav3` side-effect (`memoryEvents.ts:70-99`); the only
 consumers read `event.chatId` (then re-fetch via REST) and
 `open/miniMsg/msg/subMsg`. ~50% of each ~400-byte frame is unread (measured
@@ -641,9 +661,7 @@ interactive). Fix: add a dedicated `HEAD /storage/read` (200/404) or
 
 Ordered by bytes × frequency × implementation ease:
 
-1. **Memory cleanup (L9, L10, L11, L12).** Projected job-list shape, event-driven
-   upserts, ETag/304, trimmed SSE frame — a coherent batch.
-2. **Remaining lows (L2, L5, L6, L7, L13–L20, L22)** as opportunistic cleanup; L16 and
+1. **Remaining lows (L2, L5, L6, L7, L13–L20, L22)** as opportunistic cleanup; L16 and
    L15 are documented as acceptable-as-is.
 
 ## How To Verify

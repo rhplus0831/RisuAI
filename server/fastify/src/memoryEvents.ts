@@ -1,4 +1,4 @@
-import type { MemoryJob, MemoryJobKind, MemoryJobStatus } from './memoryRepository.js'
+import type { MemoryJob, MemoryJobListItem, MemoryJobStatus } from './memoryRepository.js'
 
 export interface HypaV3ProgressPayload {
   open: boolean
@@ -17,13 +17,7 @@ export interface MemoryHypaV3ProgressSideEffect {
 export interface MemoryJobEvent {
   type: 'memory.job'
   chatId: string
-  jobId: string
-  kind: MemoryJobKind
-  status: MemoryJobStatus
-  attemptCount: number
-  maxAttempts: number
-  nextRunAt: string
-  error: string | null
+  job: Omit<MemoryJobListItem, 'chatId'>
   sideEffect?: MemoryHypaV3ProgressSideEffect
 }
 
@@ -70,13 +64,13 @@ export function buildMemoryJobEvent(
   const event: MemoryJobEvent = {
     type: 'memory.job',
     chatId: job.chatId,
-    jobId: job.id,
-    kind: job.kind,
-    status: job.status,
-    attemptCount: job.attemptCount,
-    maxAttempts: job.maxAttempts,
-    nextRunAt: job.nextRunAt,
-    error: job.error,
+    job: {
+      id: job.id,
+      kind: job.kind,
+      status: job.status,
+      attemptCount: job.attemptCount,
+      maxAttempts: job.maxAttempts,
+    },
   }
   if (options.includeHypaV3Progress) {
     event.sideEffect = buildHypaV3ProgressSideEffect(job, options.queuedCount)

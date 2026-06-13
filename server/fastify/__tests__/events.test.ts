@@ -281,13 +281,13 @@ describe('Phase 9-5a command events stream', () => {
     const event: MemoryEvent = {
       type: 'memory.job',
       chatId: 'chat-1',
-      jobId: 'job-1',
-      kind: 'summarize',
-      status: 'pending',
-      attemptCount: 0,
-      maxAttempts: 3,
-      nextRunAt: '2026-05-24T00:00:00.000Z',
-      error: null,
+      job: {
+        id: 'job-1',
+        kind: 'summarize',
+        status: 'pending',
+        attemptCount: 0,
+        maxAttempts: 3,
+      },
     }
     const seen: MemoryEvent[] = []
 
@@ -696,12 +696,13 @@ describe('Phase 9-5a command events stream', () => {
       expect(JSON.parse(dataLine!.slice('data: '.length))).toMatchObject({
         type: 'memory.job',
         chatId: 'chat-1',
-        jobId,
-        kind: 'summarize',
-        status: 'pending',
-        attemptCount: 0,
-        maxAttempts: 3,
-        error: null,
+        job: {
+          id: jobId,
+          kind: 'summarize',
+          status: 'pending',
+          attemptCount: 0,
+          maxAttempts: 3,
+        },
         sideEffect: {
           kind: 'hypav3_progress',
           payload: {
@@ -761,8 +762,10 @@ describe('Phase 9-5a command events stream', () => {
       expect(JSON.parse(dataLine!.slice('data: '.length))).toMatchObject({
         type: 'memory.job',
         chatId: 'chat-1',
-        jobId,
-        status: 'pending',
+        job: {
+          id: jobId,
+          status: 'pending',
+        },
       })
     } finally {
       abort.abort()

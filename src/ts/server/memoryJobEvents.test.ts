@@ -6,13 +6,13 @@ function memoryEvent(jobId: string): ServerMemoryEvent {
   return {
     type: 'memory.job',
     chatId: 'chat-1',
-    jobId,
-    kind: 'summarize',
-    status: 'running',
-    attemptCount: 1,
-    maxAttempts: 3,
-    nextRunAt: new Date(0).toISOString(),
-    error: null,
+    job: {
+      id: jobId,
+      kind: 'summarize',
+      status: 'running',
+      attemptCount: 1,
+      maxAttempts: 3,
+    },
   }
 }
 
@@ -27,6 +27,6 @@ describe('server memory job event fanout', () => {
     unsubscribe()
     publishServerMemoryJobEvent(memoryEvent('job-2'))
 
-    expect(seen.map((event) => event.jobId)).toEqual(['job-1'])
+    expect(seen.map((event) => event.job.id)).toEqual(['job-1'])
   })
 })

@@ -62,6 +62,16 @@
     return refreshController?.refresh() ?? Promise.resolve()
   }
 
+  function upsertJob(job: ServerMemoryJob): void {
+    const nextJobs = jobs.filter((current) => current.id !== job.id)
+    if (job.status === 'pending' || job.status === 'running') {
+      nextJobs.push(job)
+    }
+    jobs = nextJobs
+    error = null
+    lastLoadedAt = new Date().toISOString()
+  }
+
   async function cancelJob(jobId: string): Promise<void> {
     if (cancellingJobIds.has(jobId)) return
 
@@ -70,11 +80,16 @@
     setCancelling(jobId, false)
 
     if (result.status === 'ok') {
-      await refreshJobs()
+      upsertJob(result.job)
       return
     }
 
-    error = result.status === 'unavailable' ? 'Server memory jobs are unavailable.' : result.error
+    error =
+      result.status === 'unavailable'
+        ? 'Server memory jobs are unavailable.'
+        : result.status === 'error'
+          ? result.error
+          : null
     await refreshJobs()
   }
 
@@ -85,7 +100,7 @@
   onMount(() => {
     refreshController = createMemoryJobRefreshController({
       chatId,
-      listJobs: (currentChatId, signal) => listServerMemoryJobs({ chatId: currentChatId }, signal),
+      listJobs: (currentChatId, signal, etag) => listServerMemoryJobs({ chatId: currentChatId, etag }, signal),
       onJobs: (nextJobs, loadedAt) => {
         jobs = nextJobs
         error = null
@@ -106,7 +121,7 @@
     })
     unsubscribeMemoryEvents = subscribeServerMemoryJobEvents((event) => {
       if (event.chatId === chatId) {
-        void refreshJobs()
+        upsertJob({ chatId: event.chatId, ...event.job })
       }
     })
     void refreshJobs()

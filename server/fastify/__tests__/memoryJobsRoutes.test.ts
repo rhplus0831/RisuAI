@@ -156,13 +156,13 @@ describe('Phase 8-2e memory job routes', () => {
       {
         type: 'memory.job',
         chatId: 'chat-1',
-        jobId: body.job.id,
-        kind: 'summarize',
-        status: 'pending',
-        attemptCount: 0,
-        maxAttempts: 5,
-        nextRunAt: '2026-05-24T00:00:00.000Z',
-        error: null,
+        job: {
+          id: body.job.id,
+          kind: 'summarize',
+          status: 'pending',
+          attemptCount: 0,
+          maxAttempts: 5,
+        },
         sideEffect: {
           kind: 'hypav3_progress',
           payload: {
@@ -244,6 +244,8 @@ describe('Phase 8-2e memory job routes', () => {
     expect(activeJobs).toHaveLength(2)
     expect(activeJobs).toContainEqual(expect.objectContaining({ id: embedJob.id }))
     expect(activeJobs).toContainEqual(expect.objectContaining({ chatId: 'chat-1', kind: 'summarize' }))
+    expect(activeJobs[0]).not.toHaveProperty('payload')
+    expect(active.headers.etag).toEqual(expect.any(String))
 
     const chatFiltered = await harness.app.inject({
       method: 'GET',
@@ -272,6 +274,14 @@ describe('Phase 8-2e memory job routes', () => {
     })
     expect(cancelled.statusCode).toBe(200)
     expect((cancelled.json() as { jobs: MemoryJob[] }).jobs).toMatchObject([{ id: chunkJob.id, status: 'cancelled' }])
+
+    const unchanged = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/memory/jobs',
+      headers: { 'risu-auth': assertion, 'if-none-match': String(active.headers.etag) },
+    })
+    expect(unchanged.statusCode).toBe(304)
+    expect(unchanged.body).toBe('')
   })
 
   it('L17: lists retained memory jobs after startup retention prunes old terminal rows', async () => {
@@ -381,19 +391,20 @@ describe('Phase 8-2e memory job routes', () => {
       chatId: 'chat-1',
       kind: 'chunk',
       status: 'cancelled',
-      error: null,
+      attemptCount: 0,
+      maxAttempts: 3,
     })
     expect(harness.events).toEqual([
       {
         type: 'memory.job',
         chatId: 'chat-1',
-        jobId: job.id,
-        kind: 'chunk',
-        status: 'cancelled',
-        attemptCount: 0,
-        maxAttempts: 3,
-        nextRunAt: expect.any(String),
-        error: null,
+        job: {
+          id: job.id,
+          kind: 'chunk',
+          status: 'cancelled',
+          attemptCount: 0,
+          maxAttempts: 3,
+        },
         sideEffect: {
           kind: 'hypav3_progress',
           payload: {
