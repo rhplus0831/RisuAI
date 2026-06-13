@@ -319,13 +319,70 @@ function lorebookEntryFromInput(
 }
 
 // Command-path single-entry validator. It must not mint ids.
-function validateLorebookEntry(input: unknown, label: string): LorebookEntryRecord {
+export function validateLorebookEntry(input: unknown, label = 'entry'): LorebookEntryRecord {
   const entry = lorebookEntryFromInput(input, label)
   if (typeof entry.id !== 'string' || entry.id.trim() === '') {
     throw new ValidationError(`${label}.id must be a non-empty string`)
   }
   validateLorebookEntryRecord(entry, label)
   return entry
+}
+
+export function validateLorebookEntryForId(input: unknown, entryId: string, label = 'entry'): LorebookEntryRecord {
+  const entry = validateLorebookEntry(input, label)
+  if (entry.id !== entryId) {
+    throw new ValidationError(`${label}.id must match entryId`)
+  }
+  return entry
+}
+
+export function upsertLorebookEntryById(
+  entries: LorebookEntryRecord[],
+  entryId: string,
+  entry: LorebookEntryRecord,
+): { index: number; created: boolean } {
+  const index = entries.findIndex((candidate) => candidate.id === entryId)
+  if (index === -1) {
+    entries.push(entry)
+    return { index: entries.length - 1, created: true }
+  }
+  entries[index] = entry
+  return { index, created: false }
+}
+
+export function deleteLorebookEntryById(entries: LorebookEntryRecord[], entryId: string): { index: number } {
+  const index = entries.findIndex((candidate) => candidate.id === entryId)
+  if (index === -1) {
+    throw new EntityNotFoundError(`Lorebook entry not found: ${entryId}`)
+  }
+  entries.splice(index, 1)
+  return { index }
+}
+
+export function reorderLorebookEntriesById(entries: LorebookEntryRecord[], entryIds: readonly string[]): void {
+  validateFullLorebookEntryOrder(entries, entryIds)
+  const byId = new Map(entries.map((entry) => [entry.id, entry]))
+  entries.splice(0, entries.length, ...entryIds.map((id) => byId.get(id)!))
+}
+
+export function validateFullLorebookEntryOrder(
+  entries: readonly LorebookEntryRecord[],
+  entryIds: readonly string[],
+): void {
+  const existing = new Set(entries.map((entry) => entry.id))
+  const seen = new Set<string>()
+  for (const entryId of entryIds) {
+    if (!existing.has(entryId)) {
+      throw new ValidationError(`Unknown lorebook entry id in entryIds: ${entryId}`)
+    }
+    if (seen.has(entryId)) {
+      throw new ValidationError(`Duplicate lorebook entry id in entryIds: ${entryId}`)
+    }
+    seen.add(entryId)
+  }
+  if (seen.size !== existing.size) {
+    throw new ValidationError('entryIds must include every lorebook entry')
+  }
 }
 
 // Import/bootstrap-only repair-permissive constructor. Mints `randomUUID()`

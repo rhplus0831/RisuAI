@@ -806,9 +806,41 @@ export interface ReplaceGlobalLorebookEntriesCommandInput extends LorebookComman
   entries: LorebookEntrySnapshot[]
 }
 
+export interface UpsertGlobalLorebookEntryCommandInput extends LorebookCommandInput {
+  lorebookId: string
+  entryId: string
+  entry: LorebookEntrySnapshot
+}
+
+export interface DeleteGlobalLorebookEntryCommandInput extends LorebookCommandInput {
+  lorebookId: string
+  entryId: string
+}
+
+export interface ReorderGlobalLorebookEntriesCommandInput extends LorebookCommandInput {
+  lorebookId: string
+  entryIds: string[]
+}
+
 export interface ReplaceCharacterLorebooksCommandInput extends LorebookCommandInput {
   characterId: string
   entries: LorebookEntrySnapshot[]
+}
+
+export interface UpsertCharacterLorebookEntryCommandInput extends LorebookCommandInput {
+  characterId: string
+  entryId: string
+  entry: LorebookEntrySnapshot
+}
+
+export interface DeleteCharacterLorebookEntryCommandInput extends LorebookCommandInput {
+  characterId: string
+  entryId: string
+}
+
+export interface ReorderCharacterLorebookEntriesCommandInput extends LorebookCommandInput {
+  characterId: string
+  entryIds: string[]
 }
 
 export interface ReplaceChatLorebooksCommandInput extends LorebookCommandInput {
@@ -816,9 +848,41 @@ export interface ReplaceChatLorebooksCommandInput extends LorebookCommandInput {
   entries: LorebookEntrySnapshot[]
 }
 
+export interface UpsertChatLorebookEntryCommandInput extends LorebookCommandInput {
+  chatId: string
+  entryId: string
+  entry: LorebookEntrySnapshot
+}
+
+export interface DeleteChatLorebookEntryCommandInput extends LorebookCommandInput {
+  chatId: string
+  entryId: string
+}
+
+export interface ReorderChatLorebookEntriesCommandInput extends LorebookCommandInput {
+  chatId: string
+  entryIds: string[]
+}
+
 export interface ReplaceModuleLorebooksCommandInput extends LorebookCommandInput {
   moduleId: string
   entries: LorebookEntrySnapshot[]
+}
+
+export interface UpsertModuleLorebookEntryCommandInput extends LorebookCommandInput {
+  moduleId: string
+  entryId: string
+  entry: LorebookEntrySnapshot
+}
+
+export interface DeleteModuleLorebookEntryCommandInput extends LorebookCommandInput {
+  moduleId: string
+  entryId: string
+}
+
+export interface ReorderModuleLorebookEntriesCommandInput extends LorebookCommandInput {
+  moduleId: string
+  entryIds: string[]
 }
 
 export interface ScriptDefinitionCommandInput {
@@ -1843,6 +1907,59 @@ export async function replaceGlobalLorebookEntriesCommand(
   })
 }
 
+export async function upsertGlobalLorebookEntryCommand(
+  input: UpsertGlobalLorebookEntryCommandInput,
+  signal?: AbortSignal | null,
+  keepalive = false,
+): Promise<ServerCommandResult<{ lorebookId: string; entryId: string; entryIndex: number; created: boolean }>> {
+  return requestCommandJson(
+    `/lorebooks/${encodeURIComponent(input.lorebookId)}/entries/${encodeURIComponent(input.entryId)}`,
+    {
+      method: 'PUT',
+      body: {
+        baseRevision: input.baseRevision,
+        entry: input.entry,
+      },
+      signal,
+      keepalive,
+    },
+  )
+}
+
+export async function deleteGlobalLorebookEntryCommand(
+  input: DeleteGlobalLorebookEntryCommandInput,
+  signal?: AbortSignal | null,
+  keepalive = false,
+): Promise<ServerCommandResult<{ lorebookId: string; entryId: string; entryIndex: number }>> {
+  return requestCommandJson(
+    `/lorebooks/${encodeURIComponent(input.lorebookId)}/entries/${encodeURIComponent(input.entryId)}`,
+    {
+      method: 'DELETE',
+      body: {
+        baseRevision: input.baseRevision,
+      },
+      signal,
+      keepalive,
+    },
+  )
+}
+
+export async function reorderGlobalLorebookEntriesCommand(
+  input: ReorderGlobalLorebookEntriesCommandInput,
+  signal?: AbortSignal | null,
+  keepalive = false,
+): Promise<ServerCommandResult<{ lorebookId: string }>> {
+  return requestCommandJson(`/lorebooks/${encodeURIComponent(input.lorebookId)}/entries/reorder`, {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      entryIds: input.entryIds,
+    },
+    signal,
+    keepalive,
+  })
+}
+
 export async function replaceCharacterLorebooksCommand(
   input: ReplaceCharacterLorebooksCommandInput,
   signal?: AbortSignal | null,
@@ -1853,6 +1970,59 @@ export async function replaceCharacterLorebooksCommand(
     body: {
       baseRevision: input.baseRevision,
       entries: input.entries,
+    },
+    signal,
+    keepalive,
+  })
+}
+
+export async function upsertCharacterLorebookEntryCommand(
+  input: UpsertCharacterLorebookEntryCommandInput,
+  signal?: AbortSignal | null,
+  keepalive = false,
+): Promise<ServerCommandResult<{ characterId: string; entryId: string; entryIndex: number; created: boolean }>> {
+  return requestCommandJson(
+    `/characters/${encodeURIComponent(input.characterId)}/lorebooks/entries/${encodeURIComponent(input.entryId)}`,
+    {
+      method: 'PUT',
+      body: {
+        baseRevision: input.baseRevision,
+        entry: input.entry,
+      },
+      signal,
+      keepalive,
+    },
+  )
+}
+
+export async function deleteCharacterLorebookEntryCommand(
+  input: DeleteCharacterLorebookEntryCommandInput,
+  signal?: AbortSignal | null,
+  keepalive = false,
+): Promise<ServerCommandResult<{ characterId: string; entryId: string; entryIndex: number }>> {
+  return requestCommandJson(
+    `/characters/${encodeURIComponent(input.characterId)}/lorebooks/entries/${encodeURIComponent(input.entryId)}`,
+    {
+      method: 'DELETE',
+      body: {
+        baseRevision: input.baseRevision,
+      },
+      signal,
+      keepalive,
+    },
+  )
+}
+
+export async function reorderCharacterLorebookEntriesCommand(
+  input: ReorderCharacterLorebookEntriesCommandInput,
+  signal?: AbortSignal | null,
+  keepalive = false,
+): Promise<ServerCommandResult<{ characterId: string }>> {
+  return requestCommandJson(`/characters/${encodeURIComponent(input.characterId)}/lorebooks/entries/reorder`, {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      entryIds: input.entryIds,
     },
     signal,
     keepalive,
@@ -1875,6 +2045,59 @@ export async function replaceChatLorebooksCommand(
   })
 }
 
+export async function upsertChatLorebookEntryCommand(
+  input: UpsertChatLorebookEntryCommandInput,
+  signal?: AbortSignal | null,
+  keepalive = false,
+): Promise<ServerCommandResult<{ chatId: string; entryId: string; entryIndex: number; created: boolean }>> {
+  return requestCommandJson(
+    `/chats/${encodeURIComponent(input.chatId)}/lorebooks/entries/${encodeURIComponent(input.entryId)}`,
+    {
+      method: 'PUT',
+      body: {
+        baseRevision: input.baseRevision,
+        entry: input.entry,
+      },
+      signal,
+      keepalive,
+    },
+  )
+}
+
+export async function deleteChatLorebookEntryCommand(
+  input: DeleteChatLorebookEntryCommandInput,
+  signal?: AbortSignal | null,
+  keepalive = false,
+): Promise<ServerCommandResult<{ chatId: string; entryId: string; entryIndex: number }>> {
+  return requestCommandJson(
+    `/chats/${encodeURIComponent(input.chatId)}/lorebooks/entries/${encodeURIComponent(input.entryId)}`,
+    {
+      method: 'DELETE',
+      body: {
+        baseRevision: input.baseRevision,
+      },
+      signal,
+      keepalive,
+    },
+  )
+}
+
+export async function reorderChatLorebookEntriesCommand(
+  input: ReorderChatLorebookEntriesCommandInput,
+  signal?: AbortSignal | null,
+  keepalive = false,
+): Promise<ServerCommandResult<{ chatId: string }>> {
+  return requestCommandJson(`/chats/${encodeURIComponent(input.chatId)}/lorebooks/entries/reorder`, {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      entryIds: input.entryIds,
+    },
+    signal,
+    keepalive,
+  })
+}
+
 export async function replaceModuleLorebooksCommand(
   input: ReplaceModuleLorebooksCommandInput,
   signal?: AbortSignal | null,
@@ -1885,6 +2108,59 @@ export async function replaceModuleLorebooksCommand(
     body: {
       baseRevision: input.baseRevision,
       entries: input.entries,
+    },
+    signal,
+    keepalive,
+  })
+}
+
+export async function upsertModuleLorebookEntryCommand(
+  input: UpsertModuleLorebookEntryCommandInput,
+  signal?: AbortSignal | null,
+  keepalive = false,
+): Promise<ServerCommandResult<{ moduleId: string; entryId: string; entryIndex: number; created: boolean }>> {
+  return requestCommandJson(
+    `/modules/${encodeURIComponent(input.moduleId)}/lorebooks/entries/${encodeURIComponent(input.entryId)}`,
+    {
+      method: 'PUT',
+      body: {
+        baseRevision: input.baseRevision,
+        entry: input.entry,
+      },
+      signal,
+      keepalive,
+    },
+  )
+}
+
+export async function deleteModuleLorebookEntryCommand(
+  input: DeleteModuleLorebookEntryCommandInput,
+  signal?: AbortSignal | null,
+  keepalive = false,
+): Promise<ServerCommandResult<{ moduleId: string; entryId: string; entryIndex: number }>> {
+  return requestCommandJson(
+    `/modules/${encodeURIComponent(input.moduleId)}/lorebooks/entries/${encodeURIComponent(input.entryId)}`,
+    {
+      method: 'DELETE',
+      body: {
+        baseRevision: input.baseRevision,
+      },
+      signal,
+      keepalive,
+    },
+  )
+}
+
+export async function reorderModuleLorebookEntriesCommand(
+  input: ReorderModuleLorebookEntriesCommandInput,
+  signal?: AbortSignal | null,
+  keepalive = false,
+): Promise<ServerCommandResult<{ moduleId: string }>> {
+  return requestCommandJson(`/modules/${encodeURIComponent(input.moduleId)}/lorebooks/entries/reorder`, {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      entryIds: input.entryIds,
     },
     signal,
     keepalive,

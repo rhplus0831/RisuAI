@@ -24,13 +24,17 @@ import {
   createTranslatorPresetCommand,
   createGlobalLorebookCommand,
   copyPresetCommand,
+  deleteCharacterLorebookEntryCommand,
   deleteChatCommand,
   deleteChatFolderCommand,
+  deleteChatLorebookEntryCommand,
   deleteCharacterCommand,
   deleteGlobalLorebookCommand,
+  deleteGlobalLorebookEntryCommand,
   deleteLoadoutCommand,
   deleteMessageCommand,
   deleteModuleCommand,
+  deleteModuleLorebookEntryCommand,
   deletePersonaCommand,
   deletePluginCommand,
   deletePluginStorageCommand,
@@ -56,8 +60,12 @@ import {
   reorderChatsCommand,
   reorderPersonasCommand,
   reorderGlobalLorebooksCommand,
+  reorderCharacterLorebookEntriesCommand,
   reorderCharacterModulesCommand,
+  reorderChatLorebookEntriesCommand,
   reorderModulesCommand,
+  reorderGlobalLorebookEntriesCommand,
+  reorderModuleLorebookEntriesCommand,
   reorderPluginsCommand,
   reorderPromptItemsCommand,
   reorderPresetsCommand,
@@ -90,6 +98,10 @@ import {
   updateModuleCommand,
   updatePersonaCommand,
   updatePluginCommand,
+  upsertCharacterLorebookEntryCommand,
+  upsertChatLorebookEntryCommand,
+  upsertGlobalLorebookEntryCommand,
+  upsertModuleLorebookEntryCommand,
   updateTranslatorPresetCommand,
   selectPresetCommand,
   updatePromptItemCommand,
@@ -2154,6 +2166,54 @@ describe('server command API adapter', () => {
     })
     await replaceChatLorebooksCommand({ baseRevision: 8, chatId: 'chat-a', entries: [entry] })
     await replaceModuleLorebooksCommand({ baseRevision: 9, moduleId: 'mod-a', entries: [entry] })
+    await upsertGlobalLorebookEntryCommand({
+      baseRevision: 10,
+      lorebookId: 'book-a',
+      entryId: 'entry-a',
+      entry,
+    })
+    await upsertCharacterLorebookEntryCommand({
+      baseRevision: 11,
+      characterId: 'char-a',
+      entryId: 'entry-a',
+      entry,
+    })
+    await upsertChatLorebookEntryCommand({
+      baseRevision: 12,
+      chatId: 'chat-a',
+      entryId: 'entry-a',
+      entry,
+    })
+    await upsertModuleLorebookEntryCommand({
+      baseRevision: 13,
+      moduleId: 'mod-a',
+      entryId: 'entry-a',
+      entry,
+    })
+    await deleteGlobalLorebookEntryCommand({ baseRevision: 14, lorebookId: 'book-a', entryId: 'entry-a' })
+    await deleteCharacterLorebookEntryCommand({ baseRevision: 15, characterId: 'char-a', entryId: 'entry-a' })
+    await deleteChatLorebookEntryCommand({ baseRevision: 16, chatId: 'chat-a', entryId: 'entry-a' })
+    await deleteModuleLorebookEntryCommand({ baseRevision: 17, moduleId: 'mod-a', entryId: 'entry-a' })
+    await reorderGlobalLorebookEntriesCommand({
+      baseRevision: 18,
+      lorebookId: 'book-a',
+      entryIds: ['entry-b', 'entry-a'],
+    })
+    await reorderCharacterLorebookEntriesCommand({
+      baseRevision: 19,
+      characterId: 'char-a',
+      entryIds: ['entry-b', 'entry-a'],
+    })
+    await reorderChatLorebookEntriesCommand({
+      baseRevision: 20,
+      chatId: 'chat-a',
+      entryIds: ['entry-b', 'entry-a'],
+    })
+    await reorderModuleLorebookEntriesCommand({
+      baseRevision: 21,
+      moduleId: 'mod-a',
+      entryIds: ['entry-b', 'entry-a'],
+    })
 
     expect(commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body }))).toEqual([
       {
@@ -2200,6 +2260,66 @@ describe('server command API adapter', () => {
         url: '/api/v1/commands/modules/mod-a/lorebooks',
         method: 'PUT',
         body: { baseRevision: 9, entries: [entry] },
+      },
+      {
+        url: '/api/v1/commands/lorebooks/book-a/entries/entry-a',
+        method: 'PUT',
+        body: { baseRevision: 10, entry },
+      },
+      {
+        url: '/api/v1/commands/characters/char-a/lorebooks/entries/entry-a',
+        method: 'PUT',
+        body: { baseRevision: 11, entry },
+      },
+      {
+        url: '/api/v1/commands/chats/chat-a/lorebooks/entries/entry-a',
+        method: 'PUT',
+        body: { baseRevision: 12, entry },
+      },
+      {
+        url: '/api/v1/commands/modules/mod-a/lorebooks/entries/entry-a',
+        method: 'PUT',
+        body: { baseRevision: 13, entry },
+      },
+      {
+        url: '/api/v1/commands/lorebooks/book-a/entries/entry-a',
+        method: 'DELETE',
+        body: { baseRevision: 14 },
+      },
+      {
+        url: '/api/v1/commands/characters/char-a/lorebooks/entries/entry-a',
+        method: 'DELETE',
+        body: { baseRevision: 15 },
+      },
+      {
+        url: '/api/v1/commands/chats/chat-a/lorebooks/entries/entry-a',
+        method: 'DELETE',
+        body: { baseRevision: 16 },
+      },
+      {
+        url: '/api/v1/commands/modules/mod-a/lorebooks/entries/entry-a',
+        method: 'DELETE',
+        body: { baseRevision: 17 },
+      },
+      {
+        url: '/api/v1/commands/lorebooks/book-a/entries/reorder',
+        method: 'POST',
+        body: { baseRevision: 18, entryIds: ['entry-b', 'entry-a'] },
+      },
+      {
+        url: '/api/v1/commands/characters/char-a/lorebooks/entries/reorder',
+        method: 'POST',
+        body: { baseRevision: 19, entryIds: ['entry-b', 'entry-a'] },
+      },
+      {
+        url: '/api/v1/commands/chats/chat-a/lorebooks/entries/reorder',
+        method: 'POST',
+        body: { baseRevision: 20, entryIds: ['entry-b', 'entry-a'] },
+      },
+      {
+        url: '/api/v1/commands/modules/mod-a/lorebooks/entries/reorder',
+        method: 'POST',
+        body: { baseRevision: 21, entryIds: ['entry-b', 'entry-a'] },
       },
     ])
   })

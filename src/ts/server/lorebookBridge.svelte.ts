@@ -7,8 +7,16 @@ import { DBState, selectedCharID } from '../stores.svelte'
 import {
   canUseServerCommands,
   createGlobalLorebookCommand,
+  deleteCharacterLorebookEntryCommand,
+  deleteChatLorebookEntryCommand,
   deleteGlobalLorebookCommand,
+  deleteGlobalLorebookEntryCommand,
+  deleteModuleLorebookEntryCommand,
+  reorderCharacterLorebookEntriesCommand,
+  reorderChatLorebookEntriesCommand,
   reorderGlobalLorebooksCommand,
+  reorderGlobalLorebookEntriesCommand,
+  reorderModuleLorebookEntriesCommand,
   replaceCharacterLorebooksCommand,
   replaceChatLorebooksCommand,
   replaceGlobalLorebookEntriesCommand,
@@ -16,6 +24,10 @@ import {
   runServerCommand,
   selectGlobalLorebookCommand,
   updateGlobalLorebookCommand,
+  upsertCharacterLorebookEntryCommand,
+  upsertChatLorebookEntryCommand,
+  upsertGlobalLorebookEntryCommand,
+  upsertModuleLorebookEntryCommand,
   type GlobalLorebookSnapshot,
   type LorebookEntrySnapshot,
   type ServerCommandResult,
@@ -82,6 +94,19 @@ let selectedCharMirror = $state(-1)
 // lorebooks still use field presence because absent module lorebooks are not
 // defaulted.
 const hydratedCharacterLorebooks = new Set<string>()
+
+export function resetServerBackedLorebookBridgeForTests(): void {
+  for (const pending of pendingReplacements.values()) {
+    if (pending.timer) clearTimeout(pending.timer)
+  }
+  pendingReplacements.clear()
+  pendingEntryEditKeys.clear()
+  flushedEntryEditSnapshots.clear()
+  flushedEntryEditClearSnapshots.clear()
+  characterScopeLocalLoreSnapshots.clear()
+  suppressRollbackDispatch = false
+  selectedCharMirror = -1
+}
 
 /** Mark a character's `globalLore` as hydrated (real, persistable). */
 export function markCharacterLorebookHydrated(characterId: string): void {
@@ -368,6 +393,9 @@ function entryDraftRollbackSnapshot(
 ): LorebookReplacementSnapshot {
   if (!existing) return currentLorebookEntryScopedSnapshot(scope, index)
   if (existing.source === 'collection' || !isLorebookEntryStateSnapshot(existing.previous)) {
+    return existing.previous
+  }
+  if (existing.previous.index === index) {
     return existing.previous
   }
   return promoteEntryRollbackToCollectionSnapshot(scope, existing.previous)
@@ -682,6 +710,20 @@ function queueScopedLorebookReplacement(
     (rollbackSnapshot, options = {}) =>
       runServerCommand({
         command: (baseRevision): Promise<ServerCommandResult<Record<string, unknown>>> => {
+          if (source === 'entry' && isLorebookEntryStateSnapshot(rollbackSnapshot)) {
+            const entryCommand = lorebookEntryUpsertCommand(scope, entries, rollbackSnapshot, baseRevision, options)
+            if (entryCommand) return entryCommand
+          }
+          if (source === 'collection' && !isLorebookEntryStateSnapshot(rollbackSnapshot)) {
+            const collectionCommand = lorebookCollectionDeltaCommand(
+              scope,
+              entries,
+              rollbackSnapshot,
+              baseRevision,
+              options,
+            )
+            if (collectionCommand) return collectionCommand
+          }
           const entrySnapshots = cloneLorebookEntriesForCommand(entries)
           switch (scope.kind) {
             case 'character':
@@ -733,6 +775,281 @@ function queueScopedLorebookReplacement(
     delayMs,
     source,
   )
+}
+
+type LorebookCollectionDelta =
+  | { type: 'upsert'; entry: loreBook }
+  | { type: 'delete'; entryId: string }
+  | { type: 'reorder'; entryIds: string[] }
+
+function lorebookCollectionDeltaCommand(
+  scope: DiscreteLorebookEditScope,
+  entries: loreBook[],
+  rollbackSnapshot: LorebookStateSnapshot,
+  baseRevision: number,
+  options: ServerCommandTransportOptions,
+): Promise<ServerCommandResult<Record<string, unknown>>> | null {
+  const delta = detectLorebookCollectionDelta(rollbackSnapshot.scopedValue, entries)
+  if (!delta) return null
+
+  switch (delta.type) {
+    case 'upsert': {
+      const entryId = delta.entry.id
+      if (typeof entryId !== 'string' || entryId.trim() === '') return null
+      return lorebookScopedEntryCommand(scope, 'upsert', baseRevision, options, {
+        entryId,
+        entry: cloneJsonValue(delta.entry) as LorebookEntrySnapshot,
+      })
+    }
+    case 'delete':
+      return lorebookScopedEntryCommand(scope, 'delete', baseRevision, options, { entryId: delta.entryId })
+    case 'reorder':
+      return lorebookScopedEntryCommand(scope, 'reorder', baseRevision, options, { entryIds: delta.entryIds })
+  }
+}
+
+function detectLorebookCollectionDelta(
+  previousValue: unknown,
+  currentEntries: loreBook[],
+): LorebookCollectionDelta | null {
+  if (!Array.isArray(previousValue)) return null
+  const previousEntries = previousValue as loreBook[]
+  const previousIds = lorebookEntryIds(previousEntries)
+  const currentIds = lorebookEntryIds(currentEntries)
+  if (!previousIds || !currentIds) return null
+
+  if (previousEntries.length === currentEntries.length) {
+    if (sameStringArray(previousIds, currentIds)) {
+      const changed = currentEntries.filter(
+        (entry, index) => snapshotJson(entry) !== snapshotJson(previousEntries[index]),
+      )
+      return changed.length === 1 ? { type: 'upsert', entry: changed[0] } : null
+    }
+    if (sameStringSet(previousIds, currentIds) && sameEntriesById(previousEntries, currentEntries)) {
+      return { type: 'reorder', entryIds: currentIds }
+    }
+    return null
+  }
+
+  if (currentEntries.length === previousEntries.length + 1 && sameStringArray(previousIds, currentIds.slice(0, -1))) {
+    return { type: 'upsert', entry: currentEntries[currentEntries.length - 1] }
+  }
+
+  if (currentEntries.length + 1 === previousEntries.length) {
+    const removedIds = previousIds.filter((id) => !currentIds.includes(id))
+    if (removedIds.length !== 1) return null
+    const withoutRemoved = previousIds.filter((id) => id !== removedIds[0])
+    return sameStringArray(withoutRemoved, currentIds) ? { type: 'delete', entryId: removedIds[0] } : null
+  }
+
+  return null
+}
+
+function lorebookEntryIds(entries: loreBook[]): string[] | null {
+  const ids: string[] = []
+  for (const entry of entries) {
+    if (typeof entry.id !== 'string' || entry.id.trim() === '') return null
+    ids.push(entry.id)
+  }
+  return ids
+}
+
+function sameStringArray(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((value, index) => value === b[index])
+}
+
+function sameStringSet(a: readonly string[], b: readonly string[]): boolean {
+  if (a.length !== b.length) return false
+  const set = new Set(a)
+  return set.size === a.length && b.every((value) => set.has(value))
+}
+
+function sameEntriesById(previousEntries: loreBook[], currentEntries: loreBook[]): boolean {
+  const previousById = new Map(previousEntries.map((entry) => [entry.id, snapshotJson(entry)]))
+  return currentEntries.every((entry) => previousById.get(entry.id) === snapshotJson(entry))
+}
+
+function lorebookScopedEntryCommand(
+  scope: DiscreteLorebookEditScope,
+  action: 'upsert',
+  baseRevision: number,
+  options: ServerCommandTransportOptions,
+  payload: { entryId: string; entry: LorebookEntrySnapshot },
+): Promise<ServerCommandResult<Record<string, unknown>>>
+function lorebookScopedEntryCommand(
+  scope: DiscreteLorebookEditScope,
+  action: 'delete',
+  baseRevision: number,
+  options: ServerCommandTransportOptions,
+  payload: { entryId: string },
+): Promise<ServerCommandResult<Record<string, unknown>>>
+function lorebookScopedEntryCommand(
+  scope: DiscreteLorebookEditScope,
+  action: 'reorder',
+  baseRevision: number,
+  options: ServerCommandTransportOptions,
+  payload: { entryIds: string[] },
+): Promise<ServerCommandResult<Record<string, unknown>>>
+function lorebookScopedEntryCommand(
+  scope: DiscreteLorebookEditScope,
+  action: 'upsert' | 'delete' | 'reorder',
+  baseRevision: number,
+  options: ServerCommandTransportOptions,
+  payload: { entryId?: string; entry?: LorebookEntrySnapshot; entryIds?: string[] },
+): Promise<ServerCommandResult<Record<string, unknown>>> {
+  switch (scope.kind) {
+    case 'character':
+      if (action === 'upsert') {
+        return upsertCharacterLorebookEntryCommand(
+          { baseRevision, characterId: scope.characterId, entryId: payload.entryId!, entry: payload.entry! },
+          options.signal,
+          options.keepalive,
+        ) as Promise<ServerCommandResult<Record<string, unknown>>>
+      }
+      if (action === 'delete') {
+        return deleteCharacterLorebookEntryCommand(
+          { baseRevision, characterId: scope.characterId, entryId: payload.entryId! },
+          options.signal,
+          options.keepalive,
+        ) as Promise<ServerCommandResult<Record<string, unknown>>>
+      }
+      return reorderCharacterLorebookEntriesCommand(
+        { baseRevision, characterId: scope.characterId, entryIds: payload.entryIds! },
+        options.signal,
+        options.keepalive,
+      ) as Promise<ServerCommandResult<Record<string, unknown>>>
+    case 'chat':
+      if (action === 'upsert') {
+        return upsertChatLorebookEntryCommand(
+          { baseRevision, chatId: scope.chatId, entryId: payload.entryId!, entry: payload.entry! },
+          options.signal,
+          options.keepalive,
+        ) as Promise<ServerCommandResult<Record<string, unknown>>>
+      }
+      if (action === 'delete') {
+        return deleteChatLorebookEntryCommand(
+          { baseRevision, chatId: scope.chatId, entryId: payload.entryId! },
+          options.signal,
+          options.keepalive,
+        ) as Promise<ServerCommandResult<Record<string, unknown>>>
+      }
+      return reorderChatLorebookEntriesCommand(
+        { baseRevision, chatId: scope.chatId, entryIds: payload.entryIds! },
+        options.signal,
+        options.keepalive,
+      ) as Promise<ServerCommandResult<Record<string, unknown>>>
+    case 'global':
+      if (action === 'upsert') {
+        return upsertGlobalLorebookEntryCommand(
+          { baseRevision, lorebookId: scope.lorebookId, entryId: payload.entryId!, entry: payload.entry! },
+          options.signal,
+          options.keepalive,
+        ) as Promise<ServerCommandResult<Record<string, unknown>>>
+      }
+      if (action === 'delete') {
+        return deleteGlobalLorebookEntryCommand(
+          { baseRevision, lorebookId: scope.lorebookId, entryId: payload.entryId! },
+          options.signal,
+          options.keepalive,
+        ) as Promise<ServerCommandResult<Record<string, unknown>>>
+      }
+      return reorderGlobalLorebookEntriesCommand(
+        { baseRevision, lorebookId: scope.lorebookId, entryIds: payload.entryIds! },
+        options.signal,
+        options.keepalive,
+      ) as Promise<ServerCommandResult<Record<string, unknown>>>
+    case 'module':
+      if (action === 'upsert') {
+        return upsertModuleLorebookEntryCommand(
+          { baseRevision, moduleId: scope.moduleId, entryId: payload.entryId!, entry: payload.entry! },
+          options.signal,
+          options.keepalive,
+        ) as Promise<ServerCommandResult<Record<string, unknown>>>
+      }
+      if (action === 'delete') {
+        return deleteModuleLorebookEntryCommand(
+          { baseRevision, moduleId: scope.moduleId, entryId: payload.entryId! },
+          options.signal,
+          options.keepalive,
+        ) as Promise<ServerCommandResult<Record<string, unknown>>>
+      }
+      return reorderModuleLorebookEntriesCommand(
+        { baseRevision, moduleId: scope.moduleId, entryIds: payload.entryIds! },
+        options.signal,
+        options.keepalive,
+      ) as Promise<ServerCommandResult<Record<string, unknown>>>
+  }
+}
+
+function lorebookEntryUpsertCommand(
+  scope: DiscreteLorebookEditScope,
+  entries: loreBook[],
+  rollbackSnapshot: LorebookEntryStateSnapshot,
+  baseRevision: number,
+  options: ServerCommandTransportOptions,
+): Promise<ServerCommandResult<Record<string, unknown>>> | null {
+  const entry = currentEditedLorebookEntry(entries, rollbackSnapshot)
+  const entryId = entry?.id
+  if (typeof entryId !== 'string' || entryId.trim() === '') return null
+  const entrySnapshot = cloneJsonValue(entry) as LorebookEntrySnapshot
+
+  switch (scope.kind) {
+    case 'character':
+      return upsertCharacterLorebookEntryCommand(
+        {
+          baseRevision,
+          characterId: scope.characterId,
+          entryId,
+          entry: entrySnapshot,
+        },
+        options.signal,
+        options.keepalive,
+      ) as Promise<ServerCommandResult<Record<string, unknown>>>
+    case 'chat':
+      return upsertChatLorebookEntryCommand(
+        {
+          baseRevision,
+          chatId: scope.chatId,
+          entryId,
+          entry: entrySnapshot,
+        },
+        options.signal,
+        options.keepalive,
+      ) as Promise<ServerCommandResult<Record<string, unknown>>>
+    case 'global':
+      return upsertGlobalLorebookEntryCommand(
+        {
+          baseRevision,
+          lorebookId: scope.lorebookId,
+          entryId,
+          entry: entrySnapshot,
+        },
+        options.signal,
+        options.keepalive,
+      ) as Promise<ServerCommandResult<Record<string, unknown>>>
+    case 'module':
+      return upsertModuleLorebookEntryCommand(
+        {
+          baseRevision,
+          moduleId: scope.moduleId,
+          entryId,
+          entry: entrySnapshot,
+        },
+        options.signal,
+        options.keepalive,
+      ) as Promise<ServerCommandResult<Record<string, unknown>>>
+  }
+}
+
+function currentEditedLorebookEntry(
+  entries: loreBook[],
+  rollbackSnapshot: LorebookEntryStateSnapshot,
+): loreBook | undefined {
+  if (rollbackSnapshot.entryId) {
+    const byId = entries.find((entry) => entry.id === rollbackSnapshot.entryId)
+    if (byId) return byId
+  }
+  return entries[rollbackSnapshot.index]
 }
 
 export function dispatchReplaceModuleLorebooks(
@@ -1006,6 +1323,13 @@ function runPendingReplacement(key: string, options: ServerCommandTransportOptio
       flushedEntryEditClearSnapshots.delete(key)
     } else {
       flushedEntryEditSnapshots.set(key, snapshot)
+      if (key.startsWith('chat:')) {
+        const chatId = key.slice('chat:'.length)
+        const chat = findChat(chatId)
+        if (chat) {
+          characterScopeLocalLoreSnapshots.set(chatId, { entries: chat.localLore ?? [], snapshot })
+        }
+      }
     }
   }
   void pending.command(options)

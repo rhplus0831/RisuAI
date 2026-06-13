@@ -6727,6 +6727,125 @@ describe('Phase 9-4a lorebook commands', () => {
     expect(database.modules[0].lorebook[0].id).toBe('entry-module')
   })
 
+  it('upserts one lorebook entry through scoped routes without uploading sibling entries', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const entry = (id: string, comment: string) => ({
+      id,
+      key: comment.toLowerCase(),
+      secondkey: '',
+      insertorder: 100,
+      comment,
+      content: `${comment} content`,
+      mode: 'normal',
+      alwaysActive: false,
+      selective: false,
+    })
+    const revision = await importDatabase(harness.app, assertion, {
+      loreBook: [{ id: 'book-a', name: 'A', data: [entry('global-a', 'Global A'), entry('global-b', 'Global B')] }],
+      loreBookPage: 0,
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          globalLore: [entry('char-a', 'Character A'), entry('char-b', 'Character B')],
+          chats: [
+            {
+              id: 'chat-a',
+              name: 'Chat',
+              note: '',
+              message: [],
+              localLore: [entry('chat-a', 'Chat A'), entry('chat-b', 'Chat B')],
+            },
+          ],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+      modules: [{ id: 'mod-a', name: 'Mod', lorebook: [entry('module-a', 'Module A'), entry('module-b', 'Module B')] }],
+    })
+
+    const global = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/lorebooks/book-a/entries/global-b',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, entry: entry('global-b', 'Global B Updated') },
+    })
+    expect(global.statusCode).toBe(200)
+    expect(global.json()).toMatchObject({
+      revision: revision + 1,
+      lorebookId: 'book-a',
+      entryId: 'global-b',
+      entryIndex: 1,
+      created: false,
+    })
+
+    const character = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/characters/char-a/lorebooks/entries/char-b',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision + 1, entry: entry('char-b', 'Character B Updated') },
+    })
+    expect(character.statusCode).toBe(200)
+    expect(character.json().event).toMatchObject({ resource: 'characterLorebook', id: 'char-a' })
+
+    const chat = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/chats/chat-a/lorebooks/entries/chat-b',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision + 2, entry: entry('chat-b', 'Chat B Updated') },
+    })
+    expect(chat.statusCode).toBe(200)
+    expect(chat.json().event).toMatchObject({ resource: 'chat', id: 'chat-a', parentId: 'char-a' })
+
+    const module = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/modules/mod-a/lorebooks/entries/module-b',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision + 3, entry: entry('module-b', 'Module B Updated') },
+    })
+    expect(module.statusCode).toBe(200)
+    expect(module.json().event).toMatchObject({ resource: 'moduleUpdated', id: 'mod-a' })
+
+    const deleted = await harness.app.inject({
+      method: 'DELETE',
+      url: '/api/v1/commands/lorebooks/book-a/entries/global-a',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision + 4 },
+    })
+    expect(deleted.statusCode).toBe(200)
+    expect(deleted.json()).toMatchObject({ lorebookId: 'book-a', entryId: 'global-a', entryIndex: 0 })
+
+    const reordered = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/modules/mod-a/lorebooks/entries/reorder',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision + 5, entryIds: ['module-b', 'module-a'] },
+    })
+    expect(reordered.statusCode).toBe(200)
+    expect(reordered.json().event).toMatchObject({ resource: 'moduleUpdated', id: 'mod-a' })
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    const database = bootstrap.json().database
+    expect(database.loreBook[0].data.map((item: { comment: string }) => item.comment)).toEqual(['Global B Updated'])
+    expect(database.characters[0].globalLore.map((item: { comment: string }) => item.comment)).toEqual([
+      'Character A',
+      'Character B Updated',
+    ])
+    expect(database.characters[0].chats[0].localLore.map((item: { comment: string }) => item.comment)).toEqual([
+      'Chat A',
+      'Chat B Updated',
+    ])
+    expect(database.modules[0].lorebook.map((item: { comment: string }) => item.comment)).toEqual([
+      'Module B Updated',
+      'Module A',
+    ])
+  })
+
   it('rejects malformed lorebook commands without bumping revision', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {

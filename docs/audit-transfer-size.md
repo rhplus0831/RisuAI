@@ -2,7 +2,7 @@
 
 Date: 2026-06-13.
 
-Last updated: 2026-06-13. H2 and the H1 immediate bootstrap duplicate were remediated after the initial audit.
+Last updated: 2026-06-13. H2, H3, and the H1 immediate bootstrap duplicate were remediated after the initial audit.
 
 This audit examines every place the server sends data to the client and every
 place the client sends changes back, looking for endpoints that **transmit or
@@ -111,7 +111,7 @@ better than the instance.
 | --- | --- | --- | --- | --- |
 | H1  | S→C | GET /bootstrap | per-session + resync | Partially resolved: active preset promptTemplate duplicate stripped; full preset stubbing remains |
 | H2  | C→S | PUT /commands/chats/:id/messages | per swipe/reroll | Resolved: swipe/reroll now uses targeted tail/truncate/message-update commands |
-| H3  | C→S | PUT /commands/.../lorebooks | per lorebook edit | One-entry edit re-uploads the whole lorebook collection |
+| H3  | C→S | PUT /commands/.../lorebooks | per lorebook edit | Resolved: entry edit/delete/reorder use compact per-entry lorebook commands |
 | M1  | S→C | GET /projection/generation | per foreign generation | generation.persisted re-ships the whole transcript instead of a tail |
 | M2  | S→C | POST /generate/chat (prompt) | per-generation | `prompt` event ships `messages` duplicating `formated` |
 | M3  | C→S | POST /assets/bulk | on-import | Bulk upload never probes /assets/exists, re-sends duplicate bytes |
@@ -229,8 +229,13 @@ better than the instance.
   bounded request bodies; `server/fastify/src/routes/commands.ts:3631-3723`
   implements the truncate and tail replacement routes.
 
-### H3 — Editing a single lorebook entry re-uploads the entire lorebook collection
+### H3 — Resolved: editing a single lorebook entry used to re-upload the entire lorebook collection
 
+- **Status:** remediated 2026-06-13. Debounced entry edits now send one entry via
+  scoped upsert commands; simple deletes send one entry id; pure reorders send
+  only an id list. The full `PUT .../lorebooks` routes remain as the fallback for
+  bulk import/replace and mixed changes that cannot be represented by one compact
+  delta.
 - **Direction / endpoint:** C→S,
   `PUT /api/v1/commands/characters/:id/lorebooks` (and `/chats/:id/lorebooks`,
   `/modules/:id/lorebooks`, `/lorebooks/:id/entries`).
@@ -250,15 +255,16 @@ better than the instance.
 - **Magnitude:** O(all entries). Lorebooks with dozens of multi-KB-content
   entries are common; re-sending the whole book to toggle one checkbox is
   10×–100× the needed bytes per burst.
-- **Recommendation:** add per-entry lorebook commands (upsert by id, delete by id,
-  reorder by id list); keep the full PUT only for bulk import/replace.
-- **Evidence:** trigger `LoreBookData.svelte:114-126`; wiring
-  `LoreBookList.svelte:69-99` → `applyLorebookEntryDraftEdit`
-  (`lorebookBridge.svelte.ts:429,444`); full-array clone+send
-  `lorebookBridge.svelte.ts:671-736,1229-1233`; client body
-  `src/ts/server/commands.ts:1833,1849,1865,1881`; server wholesale overwrite
-  `server/fastify/src/routes/commands.ts:3981-4008,4039,4065+`; entry shape with
-  unbounded `content` `database.svelte.ts:1707-1728`.
+- **Completed remediation:** added per-entry lorebook commands (upsert by id,
+  delete by id, reorder by id list) for global lorebooks, character `globalLore`,
+  chat `localLore`, and module lorebooks; kept the full PUT only for
+  bulk/mixed-shape replacement.
+- **Current evidence:** `applyLorebookEntryDraftEdit` now routes single-entry
+  debounced edits through compact upsert commands; collection replacement
+  dispatch detects simple upsert/delete/reorder deltas before falling back to full
+  replacement; typed client helpers live in `src/ts/server/commands.ts`; Fastify
+  scoped entry routes live in `server/fastify/src/routes/commands.ts`; server
+  validators/mutators live in `server/fastify/src/commands/lorebooks.ts`.
 
 ---
 
@@ -614,19 +620,17 @@ interactive). Fix: add a dedicated `HEAD /storage/read` (200/404) or
 
 Ordered by bytes × frequency × implementation ease:
 
-1. **H3 (per-entry lorebook commands).** Frequent authoring path; introduces the
-   per-element delta protocol reused by L3.
-2. **M2 + L4 (drop `messages` and `lorebookActivation` from the `prompt` event).**
+1. **M2 + L4 (drop `messages` and `lorebookActivation` from the `prompt` event).**
    One client-capability flag removes both, per-generation, every chat.
-3. **M1 (generation.persisted tail).** Reuse `loadChatHydrationRange` +
+2. **M1 (generation.persisted tail).** Reuse `loadChatHydrationRange` +
    `firstChangedIndex`; low-risk, infra already present (shared with L7).
-4. **M3 + L8 (probe `/assets/exists`, then upload missing as raw binary).** Turns
+3. **M3 + L8 (probe `/assets/exists`, then upload missing as raw binary).** Turns
    duplicate/re-imports into near-zero-byte ops and removes 33% inflation.
-5. **M4 + L21 (binary WS frames, or enable `perMessageDeflate`).** LAN-scoped but
+4. **M4 + L21 (binary WS frames, or enable `perMessageDeflate`).** LAN-scoped but
    hot during streaming.
-6. **Memory cleanup (L9, L10, L11, L12).** Projected job-list shape, event-driven
+5. **Memory cleanup (L9, L10, L11, L12).** Projected job-list shape, event-driven
    upserts, ETag/304, trimmed SSE frame — a coherent batch.
-7. **Remaining lows (L2, L5, L6, L7, L13–L22)** as opportunistic cleanup; L16 and
+6. **Remaining lows (L2, L5, L6, L7, L13–L22)** as opportunistic cleanup; L16 and
    L15 are documented as acceptable-as-is.
 
 ## How To Verify

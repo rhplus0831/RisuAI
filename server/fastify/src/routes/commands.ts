@@ -133,6 +133,7 @@ import {
   validateUniqueMessageIds,
 } from '../commands/messages.js'
 import {
+  deleteLorebookEntryById,
   ensureGlobalLorebookCollection,
   ensureLorebookDatabase,
   ensureModuleCollection,
@@ -144,11 +145,14 @@ import {
   readLorebookId,
   readLorebookIdList,
   readModuleId,
+  reorderLorebookEntriesById,
   requireGlobalLorebookIndex,
   requireModule,
+  upsertLorebookEntryById,
   validateFullLorebookOrder,
   validateGlobalLorebookCreate,
   validateLorebookEntries,
+  validateLorebookEntryForId,
 } from '../commands/lorebooks.js'
 import {
   readCharacterScriptParent,
@@ -4080,6 +4084,129 @@ export function registerCommandRoutes(
     }
   })
 
+  app.put('/api/v1/commands/lorebooks/:lorebookId/entries/:entryId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const params = req.params as { lorebookId?: unknown; entryId?: unknown }
+      const lorebookId = readLorebookId(params.lorebookId)
+      const entryId = readLorebookId(params.entryId, 'entryId')
+      const body = (req.body ?? {}) as { baseRevision?: unknown; entry?: unknown }
+      const baseRevision = readBaseRevision(body)
+      const entry = validateLorebookEntryForId(body.entry, entryId)
+      const result = applyTargetedCommandMutation<{
+        lorebookId: string
+        entryId: string
+        entryIndex: number
+        created: boolean
+      }>({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.lorebooks,
+        mutate(database, innerDb) {
+          const { lorebooks } = readGlobalLorebookCommandTarget(database)
+          const index = requireGlobalLorebookIndex(lorebooks, lorebookId)
+          const upserted = upsertLorebookEntryById(lorebooks[index].data, entryId, entry)
+          writeSingleCollectionRow(innerDb, 'loreBook', index, lorebooks[index])
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.lorebookEntriesReplaced, id: lorebookId },
+            extra: { lorebookId, entryId, entryIndex: upserted.index, created: upserted.created },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.delete('/api/v1/commands/lorebooks/:lorebookId/entries/:entryId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const params = req.params as { lorebookId?: unknown; entryId?: unknown }
+      const lorebookId = readLorebookId(params.lorebookId)
+      const entryId = readLorebookId(params.entryId, 'entryId')
+      const body = (req.body ?? {}) as { baseRevision?: unknown }
+      const baseRevision = readBaseRevision(body)
+      const result = applyTargetedCommandMutation<{
+        lorebookId: string
+        entryId: string
+        entryIndex: number
+      }>({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.lorebooks,
+        mutate(database, innerDb) {
+          const { lorebooks } = readGlobalLorebookCommandTarget(database)
+          const index = requireGlobalLorebookIndex(lorebooks, lorebookId)
+          const deleted = deleteLorebookEntryById(lorebooks[index].data, entryId)
+          writeSingleCollectionRow(innerDb, 'loreBook', index, lorebooks[index])
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.lorebookEntriesReplaced, id: lorebookId },
+            extra: { lorebookId, entryId, entryIndex: deleted.index },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/lorebooks/:lorebookId/entries/reorder', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const lorebookId = readLorebookId((req.params as { lorebookId?: unknown }).lorebookId)
+      const body = (req.body ?? {}) as { baseRevision?: unknown; entryIds?: unknown }
+      const baseRevision = readBaseRevision(body)
+      const entryIds = readLorebookIdList(body.entryIds, 'entryIds')
+      const result = applyTargetedCommandMutation<{ lorebookId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.lorebooks,
+        mutate(database, innerDb) {
+          const { lorebooks } = readGlobalLorebookCommandTarget(database)
+          const index = requireGlobalLorebookIndex(lorebooks, lorebookId)
+          reorderLorebookEntriesById(lorebooks[index].data, entryIds)
+          writeSingleCollectionRow(innerDb, 'loreBook', index, lorebooks[index])
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.lorebookEntriesReplaced, id: lorebookId },
+            extra: { lorebookId },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
   app.put('/api/v1/commands/characters/:characterId/lorebooks', async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
 
@@ -4125,6 +4252,138 @@ export function registerCommandRoutes(
     }
   })
 
+  app.put('/api/v1/commands/characters/:characterId/lorebooks/entries/:entryId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const params = req.params as { characterId?: unknown; entryId?: unknown }
+      const characterId = readLorebookCharacterId(params.characterId)
+      const entryId = readLorebookId(params.entryId, 'entryId')
+      const body = (req.body ?? {}) as { baseRevision?: unknown; entry?: unknown }
+      const baseRevision = readBaseRevision(body)
+      const entry = validateLorebookEntryForId(body.entry, entryId)
+      const result = applyTargetedCommandMutation<{
+        characterId: string
+        entryId: string
+        entryIndex: number
+        created: boolean
+      }>({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.characterRow,
+        mutate(database, innerDb) {
+          const target = ensureLorebookDatabase(database)
+          const { character, entries } = normalizeSelectedCharacterLorebooks(target, characterId)
+          const upserted = upsertLorebookEntryById(entries, entryId, entry)
+          writeSingleCharacterRow(innerDb, characterId, character)
+          return {
+            event: {
+              ...COMMAND_EVENT_CATALOG.lorebookEntriesReplaced,
+              id: characterId,
+              resource: 'characterLorebook',
+            },
+            extra: { characterId, entryId, entryIndex: upserted.index, created: upserted.created },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.delete('/api/v1/commands/characters/:characterId/lorebooks/entries/:entryId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const params = req.params as { characterId?: unknown; entryId?: unknown }
+      const characterId = readLorebookCharacterId(params.characterId)
+      const entryId = readLorebookId(params.entryId, 'entryId')
+      const body = (req.body ?? {}) as { baseRevision?: unknown }
+      const baseRevision = readBaseRevision(body)
+      const result = applyTargetedCommandMutation<{
+        characterId: string
+        entryId: string
+        entryIndex: number
+      }>({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.characterRow,
+        mutate(database, innerDb) {
+          const target = ensureLorebookDatabase(database)
+          const { character, entries } = normalizeSelectedCharacterLorebooks(target, characterId)
+          const deleted = deleteLorebookEntryById(entries, entryId)
+          writeSingleCharacterRow(innerDb, characterId, character)
+          return {
+            event: {
+              ...COMMAND_EVENT_CATALOG.lorebookEntriesReplaced,
+              id: characterId,
+              resource: 'characterLorebook',
+            },
+            extra: { characterId, entryId, entryIndex: deleted.index },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/characters/:characterId/lorebooks/entries/reorder', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const characterId = readLorebookCharacterId((req.params as { characterId?: unknown }).characterId)
+      const body = (req.body ?? {}) as { baseRevision?: unknown; entryIds?: unknown }
+      const baseRevision = readBaseRevision(body)
+      const entryIds = readLorebookIdList(body.entryIds, 'entryIds')
+      const result = applyTargetedCommandMutation<{ characterId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.characterRow,
+        mutate(database, innerDb) {
+          const target = ensureLorebookDatabase(database)
+          const { character, entries } = normalizeSelectedCharacterLorebooks(target, characterId)
+          reorderLorebookEntriesById(entries, entryIds)
+          writeSingleCharacterRow(innerDb, characterId, character)
+          return {
+            event: {
+              ...COMMAND_EVENT_CATALOG.lorebookEntriesReplaced,
+              id: characterId,
+              resource: 'characterLorebook',
+            },
+            extra: { characterId },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
   app.put('/api/v1/commands/chats/:chatId/lorebooks', async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
 
@@ -4150,6 +4409,141 @@ export function registerCommandRoutes(
             // `localLore` lives in the chat row, so a foreign refresh uses the
             // `chat` resource (chat metadata) instead of the broad global
             // `lorebook` re-ship of characters + modules + loreBook.
+            event: {
+              ...COMMAND_EVENT_CATALOG.lorebookEntriesReplaced,
+              id: chatId,
+              parentId,
+              resource: 'chat',
+            },
+            extra: { chatId },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.put('/api/v1/commands/chats/:chatId/lorebooks/entries/:entryId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const params = req.params as { chatId?: unknown; entryId?: unknown }
+      const chatId = readLorebookChatId(params.chatId)
+      const entryId = readLorebookId(params.entryId, 'entryId')
+      const body = (req.body ?? {}) as { baseRevision?: unknown; entry?: unknown }
+      const baseRevision = readBaseRevision(body)
+      const entry = validateLorebookEntryForId(body.entry, entryId)
+      const result = applyTargetedCommandMutation<{
+        chatId: string
+        entryId: string
+        entryIndex: number
+        created: boolean
+      }>({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.chatRow,
+        mutate(database, innerDb) {
+          const target = ensureLorebookDatabase(database)
+          const { chat, parentId } = normalizeSelectedChatLorebooks(target, chatId)
+          const upserted = upsertLorebookEntryById(chat.localLore, entryId, entry)
+          writeSingleChatRow(innerDb, chatId, chat)
+          return {
+            event: {
+              ...COMMAND_EVENT_CATALOG.lorebookEntriesReplaced,
+              id: chatId,
+              parentId,
+              resource: 'chat',
+            },
+            extra: { chatId, entryId, entryIndex: upserted.index, created: upserted.created },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.delete('/api/v1/commands/chats/:chatId/lorebooks/entries/:entryId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const params = req.params as { chatId?: unknown; entryId?: unknown }
+      const chatId = readLorebookChatId(params.chatId)
+      const entryId = readLorebookId(params.entryId, 'entryId')
+      const body = (req.body ?? {}) as { baseRevision?: unknown }
+      const baseRevision = readBaseRevision(body)
+      const result = applyTargetedCommandMutation<{
+        chatId: string
+        entryId: string
+        entryIndex: number
+      }>({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.chatRow,
+        mutate(database, innerDb) {
+          const target = ensureLorebookDatabase(database)
+          const { chat, parentId } = normalizeSelectedChatLorebooks(target, chatId)
+          const deleted = deleteLorebookEntryById(chat.localLore, entryId)
+          writeSingleChatRow(innerDb, chatId, chat)
+          return {
+            event: {
+              ...COMMAND_EVENT_CATALOG.lorebookEntriesReplaced,
+              id: chatId,
+              parentId,
+              resource: 'chat',
+            },
+            extra: { chatId, entryId, entryIndex: deleted.index },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/chats/:chatId/lorebooks/entries/reorder', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const chatId = readLorebookChatId((req.params as { chatId?: unknown }).chatId)
+      const body = (req.body ?? {}) as { baseRevision?: unknown; entryIds?: unknown }
+      const baseRevision = readBaseRevision(body)
+      const entryIds = readLorebookIdList(body.entryIds, 'entryIds')
+      const result = applyTargetedCommandMutation<{ chatId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.chatRow,
+        mutate(database, innerDb) {
+          const target = ensureLorebookDatabase(database)
+          const { chat, parentId } = normalizeSelectedChatLorebooks(target, chatId)
+          reorderLorebookEntriesById(chat.localLore, entryIds)
+          writeSingleChatRow(innerDb, chatId, chat)
+          return {
             event: {
               ...COMMAND_EVENT_CATALOG.lorebookEntriesReplaced,
               id: chatId,
@@ -4768,6 +5162,144 @@ export function registerCommandRoutes(
             // Only the `modules` table is written, so a foreign refresh ships
             // just `modules` via the module-scoped resource (not the broad
             // global `lorebook` re-ship).
+            event: {
+              ...COMMAND_EVENT_CATALOG.lorebookEntriesReplaced,
+              id: moduleId,
+              resource: 'moduleUpdated',
+            },
+            extra: { moduleId },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.put('/api/v1/commands/modules/:moduleId/lorebooks/entries/:entryId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const params = req.params as { moduleId?: unknown; entryId?: unknown }
+      const moduleId = readModuleId(params.moduleId)
+      const entryId = readLorebookId(params.entryId, 'entryId')
+      const body = (req.body ?? {}) as { baseRevision?: unknown; entry?: unknown }
+      const baseRevision = readBaseRevision(body)
+      const entry = validateLorebookEntryForId(body.entry, entryId)
+      const result = applyTargetedCommandMutation<{
+        moduleId: string
+        entryId: string
+        entryIndex: number
+        created: boolean
+      }>({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        mutate(database, innerDb) {
+          const target = ensureLorebookDatabase(database)
+          const modules = ensureModuleCollection(target)
+          const module = requireModule(modules, moduleId)
+          module.lorebook ??= []
+          const upserted = upsertLorebookEntryById(module.lorebook, entryId, entry)
+          writeSingleCollectionRow(innerDb, 'modules', modules.indexOf(module), module)
+          return {
+            event: {
+              ...COMMAND_EVENT_CATALOG.lorebookEntriesReplaced,
+              id: moduleId,
+              resource: 'moduleUpdated',
+            },
+            extra: { moduleId, entryId, entryIndex: upserted.index, created: upserted.created },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.delete('/api/v1/commands/modules/:moduleId/lorebooks/entries/:entryId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const params = req.params as { moduleId?: unknown; entryId?: unknown }
+      const moduleId = readModuleId(params.moduleId)
+      const entryId = readLorebookId(params.entryId, 'entryId')
+      const body = (req.body ?? {}) as { baseRevision?: unknown }
+      const baseRevision = readBaseRevision(body)
+      const result = applyTargetedCommandMutation<{
+        moduleId: string
+        entryId: string
+        entryIndex: number
+      }>({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        mutate(database, innerDb) {
+          const target = ensureLorebookDatabase(database)
+          const modules = ensureModuleCollection(target)
+          const module = requireModule(modules, moduleId)
+          module.lorebook ??= []
+          const deleted = deleteLorebookEntryById(module.lorebook, entryId)
+          writeSingleCollectionRow(innerDb, 'modules', modules.indexOf(module), module)
+          return {
+            event: {
+              ...COMMAND_EVENT_CATALOG.lorebookEntriesReplaced,
+              id: moduleId,
+              resource: 'moduleUpdated',
+            },
+            extra: { moduleId, entryId, entryIndex: deleted.index },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/modules/:moduleId/lorebooks/entries/reorder', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const moduleId = readModuleId((req.params as { moduleId?: unknown }).moduleId)
+      const body = (req.body ?? {}) as { baseRevision?: unknown; entryIds?: unknown }
+      const baseRevision = readBaseRevision(body)
+      const entryIds = readLorebookIdList(body.entryIds, 'entryIds')
+      const result = applyTargetedCommandMutation<{ moduleId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        mutate(database, innerDb) {
+          const target = ensureLorebookDatabase(database)
+          const modules = ensureModuleCollection(target)
+          const module = requireModule(modules, moduleId)
+          module.lorebook ??= []
+          reorderLorebookEntriesById(module.lorebook, entryIds)
+          writeSingleCollectionRow(innerDb, 'modules', modules.indexOf(module), module)
+          return {
             event: {
               ...COMMAND_EVENT_CATALOG.lorebookEntriesReplaced,
               id: moduleId,

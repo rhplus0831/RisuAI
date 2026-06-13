@@ -32,8 +32,16 @@ vi.mock('./commands', () => ({
   // Builders: identity stubs that tag the command kind so the test can assert which
   // entity (if any) the watcher tried to persist.
   createGlobalLorebookCommand: async (a: unknown) => ({ kind: 'createGlobal', a }),
+  deleteCharacterLorebookEntryCommand: async (a: unknown) => ({ kind: 'deleteCharacterEntry', a }),
+  deleteChatLorebookEntryCommand: async (a: unknown) => ({ kind: 'deleteChatEntry', a }),
   deleteGlobalLorebookCommand: async (a: unknown) => ({ kind: 'deleteGlobal', a }),
+  deleteGlobalLorebookEntryCommand: async (a: unknown) => ({ kind: 'deleteGlobalEntry', a }),
+  deleteModuleLorebookEntryCommand: async (a: unknown) => ({ kind: 'deleteModuleEntry', a }),
+  reorderCharacterLorebookEntriesCommand: async (a: unknown) => ({ kind: 'reorderCharacterEntries', a }),
+  reorderChatLorebookEntriesCommand: async (a: unknown) => ({ kind: 'reorderChatEntries', a }),
   reorderGlobalLorebooksCommand: async (a: unknown) => ({ kind: 'reorderGlobal', a }),
+  reorderGlobalLorebookEntriesCommand: async (a: unknown) => ({ kind: 'reorderGlobalEntries', a }),
+  reorderModuleLorebookEntriesCommand: async (a: unknown) => ({ kind: 'reorderModuleEntries', a }),
   replaceCharacterLorebooksCommand: async (a: { characterId?: string; entries?: unknown[] }) => ({
     kind: 'replaceCharacter',
     ...a,
@@ -46,6 +54,10 @@ vi.mock('./commands', () => ({
   }),
   selectGlobalLorebookCommand: async (a: unknown) => ({ kind: 'selectGlobal', a }),
   updateGlobalLorebookCommand: async (a: unknown) => ({ kind: 'updateGlobal', a }),
+  upsertCharacterLorebookEntryCommand: async (a: unknown) => ({ kind: 'upsertCharacterEntry', a }),
+  upsertChatLorebookEntryCommand: async (a: unknown) => ({ kind: 'upsertChatEntry', a }),
+  upsertGlobalLorebookEntryCommand: async (a: unknown) => ({ kind: 'upsertGlobalEntry', a }),
+  upsertModuleLorebookEntryCommand: async (a: unknown) => ({ kind: 'upsertModuleEntry', a }),
 }))
 vi.mock('./projectionWriteGuard.svelte', () => ({
   getServerProjectionApplyEpoch: () => projectionGuardState.epoch,
@@ -77,6 +89,7 @@ import {
   markCharacterLorebookHydrated,
   recordHydratedCharacterLorebooks,
   resetLorebookHydration,
+  resetServerBackedLorebookBridgeForTests,
   restoreLorebookEntryState,
   restoreLorebookState,
   watchServerBackedLorebooks,
@@ -119,6 +132,18 @@ function characterReplaceCommands(): Array<Record<string, unknown> & { rollback?
   return recorded.commands.filter((c) => c.kind === 'replaceCharacter')
 }
 
+function characterEntryCommands(): Array<Record<string, unknown> & { a?: unknown; rollback?: () => void }> {
+  return recorded.commands.filter((c) => c.kind === 'upsertCharacterEntry')
+}
+
+function characterEntryDeleteCommands(): Array<Record<string, unknown> & { a?: unknown; rollback?: () => void }> {
+  return recorded.commands.filter((c) => c.kind === 'deleteCharacterEntry')
+}
+
+function characterEntryReorderCommands(): Array<Record<string, unknown> & { a?: unknown; rollback?: () => void }> {
+  return recorded.commands.filter((c) => c.kind === 'reorderCharacterEntries')
+}
+
 async function flushServerCommandRecording(): Promise<void> {
   await Promise.resolve()
   await Promise.resolve()
@@ -146,8 +171,10 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  resetServerBackedLorebookBridgeForTests()
   vi.useRealTimers()
   selectedCharID.set(-1)
+  recorded.commands.length = 0
 })
 
 describe('watchServerBackedLorebooks — no-data-loss invariant', () => {
@@ -162,10 +189,9 @@ describe('watchServerBackedLorebooks — no-data-loss invariant', () => {
     flushSync() // diff → queue the replacement
     await vi.advanceTimersByTimeAsync(DELAY)
 
-    const cmds = characterReplaceCommands()
+    const cmds = characterEntryCommands()
     expect(cmds).toHaveLength(1)
-    expect(cmds[0].characterId).toBe('c1')
-    expect((cmds[0].entries as Entry[]).map((e) => e.content)).toEqual(['A', 'B'])
+    expect(cmds[0].a).toMatchObject({ characterId: 'c1', entry: { content: 'B' } })
     stop()
   })
 
@@ -183,7 +209,7 @@ describe('watchServerBackedLorebooks — no-data-loss invariant', () => {
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
 
-    expect(characterReplaceCommands()).toHaveLength(0)
+    expect(recorded.commands).toHaveLength(0)
     stop()
   })
 
@@ -198,7 +224,7 @@ describe('watchServerBackedLorebooks — no-data-loss invariant', () => {
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
 
-    expect(characterReplaceCommands()).toHaveLength(0)
+    expect(recorded.commands).toHaveLength(0)
     stop()
   })
 
@@ -218,7 +244,7 @@ describe('watchServerBackedLorebooks — no-data-loss invariant', () => {
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
     // 'resident' is tracked → its edit persists.
-    expect(characterReplaceCommands().map((c) => c.characterId)).toEqual(['resident'])
+    expect(characterEntryCommands().map((c) => (c.a as { characterId?: string }).characterId)).toEqual(['resident'])
     stop()
   })
 
@@ -234,7 +260,7 @@ describe('watchServerBackedLorebooks — no-data-loss invariant', () => {
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
 
-    expect(characterReplaceCommands()).toHaveLength(0)
+    expect(recorded.commands).toHaveLength(0)
 
     recorded.commands.length = 0
     ;(DBState.db.characters[0].globalLore as Entry[]).push({
@@ -502,8 +528,20 @@ function chatReplaceCommands(): Array<Record<string, unknown> & { a?: unknown; r
   return recorded.commands.filter((c) => c.kind === 'replaceChat')
 }
 
+function chatEntryCommands(): Array<Record<string, unknown> & { a?: unknown; rollback?: () => void }> {
+  return recorded.commands.filter((c) => c.kind === 'upsertChatEntry')
+}
+
+function chatEntryDeleteCommands(): Array<Record<string, unknown> & { a?: unknown; rollback?: () => void }> {
+  return recorded.commands.filter((c) => c.kind === 'deleteChatEntry')
+}
+
 function moduleReplaceCommands(): Array<Record<string, unknown>> {
   return recorded.commands.filter((c) => c.kind === 'replaceModule')
+}
+
+function moduleEntryCommands(): Array<Record<string, unknown> & { a?: unknown }> {
+  return recorded.commands.filter((c) => c.kind === 'upsertModuleEntry')
 }
 
 function setupK4EditorDb(): void {
@@ -618,7 +656,7 @@ describe('K4 lorebook editor entry draft scope', () => {
     expect(recorded.commands).toHaveLength(0)
   })
 
-  it('K4: the debounced final server write contains the final edited entry', async () => {
+  it('K4: the debounced final server write sends only the final edited entry', async () => {
     setupK4EditorDb()
 
     applyLorebookEntryDraftEdit(
@@ -634,19 +672,20 @@ describe('K4 lorebook editor entry draft scope', () => {
       DELAY,
     )
 
-    expect(characterReplaceCommands()).toHaveLength(0)
+    expect(characterEntryCommands()).toHaveLength(0)
     await vi.advanceTimersByTimeAsync(DELAY)
 
-    const cmds = characterReplaceCommands()
+    const cmds = characterEntryCommands()
     expect(cmds).toHaveLength(1)
-    expect(cmds[0].characterId).toBe('c-k4')
-    const entries = cmds[0].entries as Entry[]
-    expect(entries).toHaveLength(24)
-    expect(entries[5]).toMatchObject({ id: 'entry-5', content: 'final draft' })
-    expect(entries[4]).toMatchObject({ id: 'entry-4', content: expect.stringContaining('-4') })
+    expect(cmds[0].a).toMatchObject({
+      characterId: 'c-k4',
+      entryId: 'entry-5',
+      entry: { id: 'entry-5', content: 'final draft' },
+    })
+    expect(characterReplaceCommands()).toHaveLength(0)
   })
 
-  it('K4: flushing a draft sends the final replacement before the debounce delay', async () => {
+  it('K4: flushing a draft sends the final entry before the debounce delay', async () => {
     setupK4EditorDb()
 
     applyLorebookEntryDraftEdit(
@@ -658,12 +697,16 @@ describe('K4 lorebook editor entry draft scope', () => {
     flushPendingLorebookEntryDraftEdit({ kind: 'character', characterId: 'c-k4' })
     await vi.advanceTimersByTimeAsync(0)
 
-    const cmds = characterReplaceCommands()
+    const cmds = characterEntryCommands()
     expect(cmds).toHaveLength(1)
-    expect((cmds[0].entries as Entry[])[3].content).toBe('blur final')
+    expect(cmds[0].a).toMatchObject({
+      characterId: 'c-k4',
+      entryId: 'entry-3',
+      entry: { id: 'entry-3', content: 'blur final' },
+    })
 
     await vi.advanceTimersByTimeAsync(DELAY * 10)
-    expect(characterReplaceCommands()).toHaveLength(1)
+    expect(characterEntryCommands()).toHaveLength(1)
   })
 
   it('M8: bridge flush sends pending lorebook replacements with keepalive and clears debounce', async () => {
@@ -678,13 +721,17 @@ describe('K4 lorebook editor entry draft scope', () => {
     flushPendingServerBackedLorebookPatches({ keepalive: true })
     await vi.advanceTimersByTimeAsync(0)
 
-    const cmds = characterReplaceCommands()
+    const cmds = characterEntryCommands()
     expect(cmds).toHaveLength(1)
     expect(cmds[0].keepalive).toBe(true)
-    expect((cmds[0].entries as Entry[])[4].content).toBe('unload final')
+    expect(cmds[0].a).toMatchObject({
+      characterId: 'c-k4',
+      entryId: 'entry-4',
+      entry: { id: 'entry-4', content: 'unload final' },
+    })
 
     await vi.advanceTimersByTimeAsync(DELAY * 10)
-    expect(characterReplaceCommands()).toHaveLength(1)
+    expect(characterEntryCommands()).toHaveLength(1)
   })
 
   it('M8: watcher teardown flushes pending lorebook replacements and clears debounce', async () => {
@@ -701,13 +748,13 @@ describe('K4 lorebook editor entry draft scope', () => {
     stop()
     await vi.advanceTimersByTimeAsync(0)
 
-    const cmds = characterReplaceCommands()
+    const cmds = characterEntryCommands()
     expect(cmds).toHaveLength(1)
     expect(cmds[0].keepalive).toBeUndefined()
-    expect((cmds[0].entries as Entry[]).map((entry) => entry.content).at(-1)).toBe('Teardown lore')
+    expect(cmds[0].a).toMatchObject({ characterId: 'c-k4', entry: { content: 'Teardown lore' } })
 
     await vi.advanceTimersByTimeAsync(DELAY * 10)
-    expect(characterReplaceCommands()).toHaveLength(1)
+    expect(characterEntryCommands()).toHaveLength(1)
   })
 
   it('K4: immediate flush with an active watcher sends one replacement only', async () => {
@@ -727,18 +774,22 @@ describe('K4 lorebook editor entry draft scope', () => {
       flushSync()
       await vi.advanceTimersByTimeAsync(0)
 
-      const cmds = characterReplaceCommands()
+      const cmds = characterEntryCommands()
       expect(cmds).toHaveLength(1)
-      expect((cmds[0].entries as Entry[])[3].content).toBe('blur final')
+      expect(cmds[0].a).toMatchObject({
+        characterId: 'c-k4',
+        entryId: 'entry-3',
+        entry: { id: 'entry-3', content: 'blur final' },
+      })
 
       await vi.advanceTimersByTimeAsync(DELAY)
-      expect(characterReplaceCommands()).toHaveLength(1)
+      expect(characterEntryCommands()).toHaveLength(1)
     } finally {
       stop()
     }
   })
 
-  it('K4: module external entry drafts avoid collection clones and flush final module replacement', async () => {
+  it('K4: module external entry drafts avoid collection clones and flush final module entry', async () => {
     setupK4ModuleDb()
     const module = (DBState.db.modules as any[])[0] as { lorebook: Entry[] }
     const collectionSize = JSON.stringify(module.lorebook).length
@@ -761,21 +812,21 @@ describe('K4 lorebook editor entry draft scope', () => {
     expect(module.lorebook[2]).toBe(untouchedSibling)
     expect(module.lorebook[9]).toBe(editedEntry)
     expect(module.lorebook[9].content).toBe('module draft final')
-    expect(moduleReplaceCommands()).toHaveLength(0)
+    expect(moduleEntryCommands()).toHaveLength(0)
 
     flushPendingLorebookEntryDraftEdit({ kind: 'module', moduleId: 'module-k4' })
     await vi.advanceTimersByTimeAsync(0)
 
-    const cmds = moduleReplaceCommands()
+    const cmds = moduleEntryCommands()
     expect(cmds).toHaveLength(1)
-    expect(cmds[0].moduleId).toBe('module-k4')
-    expect((cmds[0].entries as Entry[])[9]).toMatchObject({
-      id: 'module-entry-9',
-      content: 'module draft final',
+    expect(cmds[0].a).toMatchObject({
+      moduleId: 'module-k4',
+      entryId: 'module-entry-9',
+      entry: { id: 'module-entry-9', content: 'module draft final' },
     })
 
     await vi.advanceTimersByTimeAsync(DELAY * 10)
-    expect(moduleReplaceCommands()).toHaveLength(1)
+    expect(moduleEntryCommands()).toHaveLength(1)
   })
 
   it('K4: ModuleMenu wires external LoreBookList typing through module draft handlers', () => {
@@ -870,6 +921,40 @@ describe('K4 lorebook editor entry draft scope', () => {
     ;(DBState.db.characters[0].globalLore as Entry[])[1].content = 'collection failed edit'
     restoreLorebookState(previous)
     expect((DBState.db.characters[0].globalLore as Entry[]).map((entry) => entry.id)).toEqual(originalIds)
+  })
+
+  it('K4: simple collection delete and pure reorder use compact entry commands', async () => {
+    setupK4EditorDb()
+    const entries = DBState.db.characters[0].globalLore as Entry[]
+
+    const deletePrevious = currentLorebookCollectionScopedSnapshot({
+      kind: 'character',
+      characterId: 'c-k4',
+    })
+    entries.splice(3, 1)
+    dispatchReplaceCharacterLorebooks('c-k4', entries as any, deletePrevious, DELAY)
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    const deletes = characterEntryDeleteCommands()
+    expect(deletes).toHaveLength(1)
+    expect(deletes[0].a).toMatchObject({ characterId: 'c-k4', entryId: 'entry-3' })
+
+    recorded.commands.length = 0
+    const reorderPrevious = currentLorebookCollectionScopedSnapshot({
+      kind: 'character',
+      characterId: 'c-k4',
+    })
+    const moved = entries.shift()
+    if (moved) entries.push(moved)
+    dispatchReplaceCharacterLorebooks('c-k4', entries as any, reorderPrevious, DELAY)
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    const reorders = characterEntryReorderCommands()
+    expect(reorders).toHaveLength(1)
+    expect(reorders[0].a).toMatchObject({
+      characterId: 'c-k4',
+      entryIds: entries.map((entry) => entry.id),
+    })
   })
 })
 
@@ -1082,7 +1167,7 @@ describe('watchServerBackedLorebooks — scoped change detection (Phase 6)', () 
     ] as never
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
-    expect(chatReplaceChatIds()).toContain('c0chat')
+    expect(chatEntryCommands().map((c) => (c.a as { chatId?: string }).chatId)).toContain('c0chat')
     stop()
   })
 
@@ -1100,13 +1185,13 @@ describe('watchServerBackedLorebooks — scoped change detection (Phase 6)', () 
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
 
-    const cmds = chatReplaceCommands()
+    const cmds = chatEntryCommands()
     expect(cmds).toHaveLength(1)
-    expect((cmds[0].a as { chatId?: string }).chatId).toBe('closed-chat')
-    expect(((cmds[0].a as { entries?: Entry[] }).entries ?? []).map((entry) => entry.content)).toEqual([
-      'Closed lore',
-      'Non-open replacement',
-    ])
+    expect(cmds[0].a).toMatchObject({
+      chatId: 'closed-chat',
+      entryId: 'closed-lore-2',
+      entry: { id: 'closed-lore-2', content: 'Non-open replacement' },
+    })
     stop()
   })
 
@@ -1126,11 +1211,13 @@ describe('watchServerBackedLorebooks — scoped change detection (Phase 6)', () 
     await vi.advanceTimersByTimeAsync(0)
     flushSync()
 
-    const directCmds = chatReplaceCommands()
+    const directCmds = chatEntryCommands()
     expect(directCmds).toHaveLength(1)
-    expect(((directCmds[0].a as { entries?: Entry[] }).entries ?? []).map((entry) => entry.content)).toEqual([
-      'Draft B',
-    ])
+    expect(directCmds[0].a).toMatchObject({
+      chatId: 'closed-chat',
+      entryId: 'closed-lore-1',
+      entry: { id: 'closed-lore-1', content: 'Draft B' },
+    })
 
     recorded.commands.length = 0
     closedChat.localLore = [
@@ -1140,12 +1227,13 @@ describe('watchServerBackedLorebooks — scoped change detection (Phase 6)', () 
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
 
-    const cmds = chatReplaceCommands()
+    const cmds = chatEntryCommands()
     expect(cmds).toHaveLength(1)
-    expect(((cmds[0].a as { entries?: Entry[] }).entries ?? []).map((entry) => entry.content)).toEqual([
-      'Draft B',
-      'Queued C',
-    ])
+    expect(cmds[0].a).toMatchObject({
+      chatId: 'closed-chat',
+      entryId: 'queued-c-id',
+      entry: { id: 'queued-c-id', content: 'Queued C' },
+    })
 
     cmds[0].rollback?.()
     expect((closedChat.localLore as Entry[]).map((entry) => entry.content)).toEqual(['Draft B'])
@@ -1172,7 +1260,7 @@ describe('watchServerBackedLorebooks — scoped change detection (Phase 6)', () 
     ;(DBState.db.characters[1].globalLore as Entry[]).push({ key: 'b', content: 'B' })
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
-    expect(characterReplaceCommands().map((c) => c.characterId)).toEqual(['c1'])
+    expect(characterEntryCommands().map((c) => (c.a as { characterId?: string }).characterId)).toEqual(['c1'])
 
     // ...while an edit to the no-longer-selected c0 is ignored.
     recorded.commands.length = 0
