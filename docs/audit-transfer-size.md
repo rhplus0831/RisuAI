@@ -2,7 +2,7 @@
 
 Date: 2026-06-13.
 
-Last updated: 2026-06-13. H2, H3, M1, M2, M3, M4, L4, L8, L9, L10, L11, L12, L21, and the H1 immediate bootstrap duplicate were remediated after the initial audit.
+Last updated: 2026-06-13. H1, H2, H3, M1, M2, M3, M4, L4, L8, L9, L10, L11, L12, and L21 were remediated after the initial audit.
 
 This audit examines every place the server sends data to the client and every
 place the client sends changes back, looking for endpoints that **transmit or
@@ -110,7 +110,7 @@ better than the instance.
 
 | ID  | Dir | Endpoint | Frequency | Title |
 | --- | --- | --- | --- | --- |
-| H1  | S→C | GET /bootstrap | per-session + resync | Partially resolved: active preset promptTemplate duplicate stripped; full preset stubbing remains |
+| H1  | S→C | GET /bootstrap | per-session + resync | Resolved: preset bootstrap/field projections are stubbed with lazy full-preset hydration |
 | H2  | C→S | PUT /commands/chats/:id/messages | per swipe/reroll | Resolved: swipe/reroll now uses targeted tail/truncate/message-update commands |
 | H3  | C→S | PUT /commands/.../lorebooks | per lorebook edit | Resolved: entry edit/delete/reorder use compact per-entry lorebook commands |
 | M1  | S→C | GET /projection/generation | per foreign generation | Resolved: generation.persisted ships the changed message tail with range metadata |
@@ -146,11 +146,10 @@ better than the instance.
 
 ### H1 — Bootstrap ships all `botPresets` in full, and each preset's `promptTemplate` duplicates the field bootstrap already lazy-strips
 
-- **Status:** partially remediated 2026-06-13. Bootstrap now strips
-  `botPresets[botPresetsId].promptTemplate`, removing the active preset's
-  duplicate of the lazy top-level `promptTemplate`. Non-active preset
-  `promptTemplate` arrays still ship until the full preset-stub + lazy-fetch
-  projection is implemented.
+- **Status:** remediated 2026-06-13. Bootstrap and preset field projections now
+  ship lightweight preset stubs, while full preset data is fetched through
+  per-preset lazy hydration when a consumer needs `promptTemplate` or full
+  generation settings.
 - **Direction / endpoint:** S→C, `GET /api/v1/bootstrap`.
 - **Frequency:** every cold load / first connect, and again on every full resync
   (gap / reconnect / restore).
@@ -175,21 +174,23 @@ better than the instance.
   prompt-diff feature (`PromptDiffModal.svelte:367` reads
   `db.botPresets[id].promptTemplate` for arbitrary ids), so they cannot simply be
   deleted — they need the lazy-fetch endpoint below.
-- **Completed remediation:** the immediate safe win is done: strip
-  `botPresets[botPresetsId].promptTemplate` from the bootstrap projection, since
-  it duplicates the lazily-hydrated top-level field (saves ~the active preset's
-  template, e.g. 374 KB, with zero feature loss).
-- **Remaining full fix:** stub all presets to `{id, name, image, metadata}` in
-  `loadBootstrapProjectionDatabase` and add a per-preset lazy projection
-  (`GET /api/v1/projection/preset?id=`) fetched by `setPreset` and the diff
-  modal.
-- **Evidence:** `server/fastify/src/repository.ts:1388-1393` (bootstrap pipeline),
-  `:1403-1414` (strips top-level promptTemplate and the active preset's duplicate),
-  `:126-136` (botPresets loaded in full, never stubbed); client applies wholesale
-  `src/ts/server/bootstrap.ts:118-127`; consumers
-  `src/lib/Setting/botpreset.svelte:149,236`,
-  `src/ts/storage/database.svelte.ts:2398,2699`,
-  `src/lib/Others/PromptDiffModal.svelte:367`.
+- **Completed remediation:** bootstrap stubs all presets to
+  `{id, name, image, metadata}`; `GET /api/v1/projection/preset?id=` returns one
+  full masked preset; preset command-event field refreshes remain stubbed; client
+  preset switch/copy/download and prompt-diff consumers hydrate full presets on
+  demand. Preset hydration ignores stale projection revisions, and current-preset
+  saves no longer overwrite an unloaded `promptTemplate` with `null`.
+- **Evidence:** `server/fastify/src/repository.ts` (`stubBotPresets`,
+  `loadPresetHydration`, bootstrap projection), `server/fastify/src/routes/projection.ts`
+  (`mode: 'preset'` hydration and stubbed field refresh), `src/ts/server/projection.ts`
+  (`fetchServerPresetProjection`), `src/ts/storage/database.svelte.ts`
+  (`ensureBotPresetHydrated`, preset switch/copy/download hydration),
+  `src/lib/Others/PromptDiffModal.svelte` (diff hydration), and regression
+  coverage in `server/fastify/__tests__/bootstrap.test.ts`,
+  `server/fastify/__tests__/projection.test.ts`,
+  `server/fastify/__tests__/commands.test.ts`,
+  `server/fastify/__tests__/serverLoadCostHarness.test.ts`, and
+  `src/ts/storage/database.svelte.test.ts`.
 
 ### H2 — Resolved: swipe/reroll navigation used to re-upload the entire chat transcript when only the tail message(s) changed
 
@@ -425,7 +426,21 @@ from scripts/triggers/cbs/translator/render), so "metadata only" is wrong and a
 lazy-hydrate must cover all four module-activation paths; and modules have no
 `enabled` field (enablement lives in `settings.enabledModules`). The plugin half
 is cleaner: ship `script` only for enabled plugins, lazy-fetching on
-enable/open. Evidence: `repository.ts:126-136,1388-1393`; `modules.ts:390-475`;
+enable/open.
+
+**Design direction:** prefer a browser-local body cache over pure lazy hydration.
+Modules/plugins are mostly immutable after import/authoring, and active module
+bodies must be available synchronously to existing lorebook/trigger/regex/asset
+runtime paths. Add per-object body revisions plus a persisted global body-cache
+epoch. Bootstrap sends module/plugin stubs with body revision metadata; the
+client sends its cached manifest for the current epoch; the server includes full
+bodies only for missing/stale items. The client reconstructs full
+`database.modules`/`database.plugins` from cache or returned bodies before
+normal runtime/plugin loading proceeds. On restore or full database replacement,
+bump the body-cache epoch and allow object revisions to restart from zero; the
+epoch prevents stale browser cache collisions across restores without hashing
+large JSON bodies on every bootstrap. Evidence:
+`repository.ts:126-136,1388-1393`; `modules.ts:390-475`;
 `plugins.svelte.ts:486`; `apiV3/v3.svelte.ts:1599`.
 
 **L2 — Full-bootstrap resync re-pulls the entire projection with no revision
@@ -438,7 +453,15 @@ resource, id, parent_id}` per revision (`db.ts:383-391`), so a
 back to full bootstrap only when the event log no longer covers R. *Nuance:* rare
 (single-writer invariant means steady-state gaps essentially only arise on SSE
 reconnect/replay-unavailable); this is a self-healing recovery cost, not a hot
-path. Triggers: `src/ts/bootstrap.ts:343,383,422-425,429`.
+path.
+
+**Decision:** keep the current full-bootstrap fallback for L2 rather than adding
+a revision-delta resync endpoint now. Normal command-event handling already
+applies one affected resource at a time, and the full-bootstrap path is reserved
+for rare recovery cases where a revision gap cannot be replayed safely. Revisit
+only if traces show frequent replay-unavailable/gap recovery, or if full resyncs
+remain large after the L1 module/plugin body-cache work. Triggers:
+`src/ts/bootstrap.ts:343,383,422-425,429`.
 
 ### Commands write-path (C→S)
 
@@ -468,7 +491,20 @@ redundant second copy (~2–16 KB/generation). *Nuance:* `done.result` is **not*
 dead — it is the durable-reattach recovery payload (`done` is replay-protected
 while `token` is evicted first, `streamJobs.ts:79-87`), and a single emitted frame
 goes to both the live socket and the replay buffer, so suppressing it only on the
-live socket needs an architectural split. Low-priority.
+live socket needs an architectural split.
+
+**Design direction:** for compact-capable clients, replace the live-stream
+`done.result` copy with a final result digest such as
+`{resultHash, resultLength}`. The browser compares the digest against the text it
+assembled from streamed `token` deltas; if it matches, no final text copy is
+needed. If the accumulated text is empty, incomplete, or hash-mismatched, the
+client fetches the final persisted generation result through a recovery endpoint
+or the changed chat-tail projection and applies that result. Use SHA-256 (or an
+existing project-standard digest) rather than MD5, since browser Web Crypto
+supports SHA-256 directly. Keep legacy `done.result` behavior until the compact
+path has both the digest check and fallback fetch wired, because the hash alone
+can detect corruption/missing tokens but cannot reconstruct the missing text.
+Low-priority.
 
 **L6 — `preview_prompt` returns the whole prompt payload when only
 `promptInfo.promptText` is read.** The preview branch reads only
@@ -570,6 +606,14 @@ applies the global, non-chat-scoped `hypaV3ProgressStore`
 the multi-tab case. The high-value fix is the L12 payload trim; relevance scoping
 (a client current-chat hint) is optional.
 
+**Decision:** keep global memory-job broadcast unchanged. Current and previous
+RisuAI behavior is not designed around multiple active devices sharing one
+server concurrently; in practice, users normally have a single active
+connection, and write access is effectively owned by the most recently active
+client. With L12 already trimming the payload, per-client current-chat tracking
+would add protocol/state complexity for little real-world byte savings. Revisit
+only if multi-client active use becomes a supported product goal.
+
 **L14 — `GET /memory/chunks|summaries/:id` are unbounded `SELECT *` full-text
 reads with no production caller (latent).** Routes return full chunk/summary text
 for an entire chat with no pagination/projection/count option
@@ -588,6 +632,11 @@ per-frame `Z_SYNC_FLUSH` on tiny frames recovers little (the 60–80% figure ass
 a buffered corpus). Not clearly worth the per-frame-flush complexity; record as
 known.
 
+**Decision:** keep the SSE event stream uncompressed. Command/memory frames are
+already compact and heartbeats are tiny, while adding compression to a raw
+hijacked SSE stream would introduce per-frame flush complexity for little
+practical byte savings.
+
 **L16 — `origin.writerSessionId` rides on every command frame but is usable only
 by the authoring client.** ~64 bytes/frame that a foreign recipient can never
 match (`bootstrap.ts:432-435`). *Nuance (corrects the finder):* this is **not**
@@ -596,6 +645,11 @@ advances its cached revision, and without `origin` the author would treat its ow
 echo as foreign and fire a wasteful resource re-fetch (`bootstrap.ts:350-351`). In
 the dominant single-tab case the only recipient is the author, who consumes it.
 Treat as acceptable-as-is, not a fixable waste.
+
+**Decision:** keep `origin.writerSessionId` on command frames. It prevents the
+authoring client from treating its own SSE echo as a foreign write when the echo
+arrives before the HTTP command response updates the cached revision. The small
+per-frame cost is acceptable under the dominant single-active-client model.
 
 ### Bulk hydration (S→C)
 
@@ -616,6 +670,15 @@ use case the bytes are fully consumed — there is **no** redundant transfer —
 this is a request-size/buffering **hardening** item (add `maxItems`, chunk the
 export into bounded pages), not transfer waste per se. Listed for completeness.
 
+**Design direction:** treat `ensureAllChatsHydrated` as deprecated and track its
+remaining callers separately for later optimization. Ideally no workflow should
+hydrate every chat into the live browser projection; if a workflow truly needs
+the whole corpus, it should process chats in bounded chunks or a streaming export
+pipeline rather than loading all transcripts into memory at once. A future fix
+should inventory current `ensureAllChatsHydrated` callers, replace export/dataset
+paths with streaming or chunked processors, and then add server-side `maxItems`
+limits so bulk projection requests stay bounded.
+
 ### Import / export (S→C)
 
 **L19 — Bundle/risusave import response echoes fields the client discards,
@@ -628,6 +691,13 @@ reads only `result.status` — zero non-test consumers of the rest.
 Once-per-import, so small. Fix: return only `{revision, event}` (or scalar counts
 if a summary UI is ever added).
 
+**Design direction:** keep room for a future import summary UI, but avoid
+returning unbounded detail by default. A later cleanup should trim this response
+toward `{revision, event}` plus scalar counts such as incomplete-chat and
+unsupported-reference counts if useful; the full `unsupportedReferences` array
+should not be returned unless a caller explicitly requests a detailed diagnostic
+report.
+
 **L20 — Realm-import SSE re-sends a constant phase/message string on every
 per-asset frame.** `createStepProgress` re-emits `{phase, message, percent}` per
 staged/saved asset though only `percent` changes intra-phase
@@ -636,6 +706,11 @@ three. ~50–70 redundant bytes/frame; realistic cards have a handful-to-dozens 
 assets (~1–3 KB), and it is localhost + once-per-import — trivial. Fix: emit
 `message`/`phase` once per phase, percent-only deltas after (small client change),
 or throttle per-asset progress.
+
+**Decision:** keep Realm-import progress frames unchanged for now. The redundant
+phase/message bytes are tiny, once-per-import, and the current client parser
+requires complete progress frames. Revisit only if the Realm progress protocol is
+being changed for another reason.
 
 ### Proxy / hub / legacy (S→C)
 
@@ -655,6 +730,11 @@ memoized per name per session, only for remote-saving users, on save (not
 interactive). Fix: add a dedicated `HEAD /storage/read` (200/404) or
 `GET /storage/exists?path=` and query the single key.
 
+**Design direction:** treat L22 as the clean small future fix in this group. Add
+a single-key existence check (`HEAD /api/v1/storage/read` or
+`GET /api/v1/storage/exists?path=`) and update `encodeRemoteBlock` to query that
+instead of downloading the full storage key list for one boolean.
+
 ---
 
 ## Suggested Remediation Order
@@ -672,9 +752,9 @@ Ordered by bytes × frequency × implementation ease:
   server serializer and confirming the client consumer ignores the field
   (grep the field name across `src/` excluding tests). The `file:line` anchors in
   each finding are the entry points.
-- Existing regression coverage asserts the bootstrap projection contains no
-  `botPresets[i].promptTemplate` for the active preset (H1). A regression guard
-  could still assert that the bulk chat
+- Existing regression coverage asserts bootstrap/preset field projections contain
+  only preset stubs and full preset data is served through lazy per-preset
+  hydration (H1). A regression guard could still assert that the bulk chat
   response omits `alternates` (L17). Existing focused tests guard the H2 targeted
   swipe/reroll command routing, the M1 ranged generation projection, and the
   M2/L4 compact prompt event behavior.
