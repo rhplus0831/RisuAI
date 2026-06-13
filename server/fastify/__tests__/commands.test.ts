@@ -197,6 +197,20 @@ async function persistedChatMessages(
   return res.json().message as Array<Record<string, unknown>>
 }
 
+async function projectedCharacterRow(
+  app: FastifyInstance,
+  assertion: string,
+  characterId: string,
+): Promise<Record<string, unknown>> {
+  const res = await app.inject({
+    method: 'GET',
+    url: `/api/v1/projection/characterRow?id=${encodeURIComponent(characterId)}`,
+    headers: { 'risu-auth': assertion },
+  })
+  expect(res.statusCode).toBe(200)
+  return res.json().character as Record<string, unknown>
+}
+
 async function uploadAsset(
   app: FastifyInstance,
   assertion: string,
@@ -5790,7 +5804,9 @@ describe('Phase 9-3c message history commands', () => {
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(revision)
-    const [, charB] = bootstrap.json().database.characters
+    const charB = (await projectedCharacterRow(harness.app, assertion, 'char-b')) as {
+      chats: Array<{ bookmarks?: unknown; bookmarkNames?: unknown }>
+    }
     const chatAMessages = await persistedChatMessages(harness.app, assertion, 'chat-a')
     const chatBMessages = await persistedChatMessages(harness.app, assertion, 'chat-b')
     const renamedMessageId = chatBMessages[0].chatId as string
@@ -5798,7 +5814,8 @@ describe('Phase 9-3c message history commands', () => {
     expect(renamedMessageId).not.toBe('msg-shared')
     expect(typeof renamedMessageId).toBe('string')
     // The import's cross-chat uid repair also rewrote chat-b's bookmarks
-    // (metadata) to the renamed id — verified against the stub bootstrap.
+    // (metadata) to the renamed id — verified against the hydrated character
+    // row because bootstrap now shells inactive characters.
     expect(charB.chats[0].bookmarks).toEqual([renamedMessageId])
     expect(charB.chats[0].bookmarkNames).toEqual({ [renamedMessageId]: 'Pinned' })
   })
@@ -8164,7 +8181,7 @@ describe('Phase 9-4d asset reference commands', () => {
         ref_audio_data: { fileName: 'ref.wav', assetId: secondAsset.assetId },
       },
     })
-    expect(database.characters[1]).toMatchObject({
+    expect(await projectedCharacterRow(harness.app, assertion, 'char-b')).toMatchObject({
       chaId: 'char-b',
       vits: { files: { greeting: firstAsset.assetId } },
       gptSoVitsConfig: {
@@ -8389,18 +8406,16 @@ describe('Phase 9-4d asset reference commands', () => {
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    const characters = bootstrap.json().database.characters
+    expect(bootstrap.statusCode).toBe(200)
     for (const [index, clearValue] of clearValues.entries()) {
-      expect(
-        characters.find((character: { chaId: string }) => character.chaId === `char-clear-${index}`),
-      ).toMatchObject({
+      expect(await projectedCharacterRow(harness.app, assertion, `char-clear-${index}`)).toMatchObject({
         vits: { files: { greeting: clearValue } },
         gptSoVitsConfig: {
           ref_audio_data: { fileName: 'ref.wav', assetId: clearValue },
         },
       })
     }
-    expect(characters.find((character: { chaId: string }) => character.chaId === 'char-a')).toMatchObject({
+    expect(await projectedCharacterRow(harness.app, assertion, 'char-a')).toMatchObject({
       vits: { files: { greeting: '-' } },
       gptSoVitsConfig: {
         ref_audio_data: { fileName: 'ref.wav', assetId: '-' },

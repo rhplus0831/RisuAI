@@ -339,6 +339,144 @@ describe('Phase 2A bootstrap + import', () => {
     })
   })
 
+  it('ships inactive character shells in bootstrap and hydrates full rows via characterRow', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const sample = {
+      currentChar: 0,
+      characterOrder: ['char-a', 'char-b'],
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'Ada',
+          image: 'ada-icon',
+          desc: 'Selected description',
+          firstMessage: 'Selected greeting',
+          chats: [{ id: 'chat-a', name: 'Selected chat', message: [{ role: 'user', data: 'hello' }] }],
+          globalLore: [{ key: 'selected', content: 'selected lore' }],
+        },
+        {
+          chaId: 'char-b',
+          name: 'Babbage',
+          image: 'babbage-icon',
+          lastInteraction: 123,
+          chatPage: 0,
+          chatFolders: [{ id: 'folder-a', name: 'Pinned', folded: false }],
+          desc: 'Inactive heavy description',
+          firstMessage: 'Inactive greeting',
+          exampleMessage: 'Inactive example',
+          customscript: [{ type: 'start', script: 'heavy script' }],
+          globalLore: [{ key: 'inactive', content: 'inactive lore' }],
+          oaiTTSConfig: {
+            enabled: true,
+            baseURL: 'https://api.openai.com/v1',
+            apiKey: 'sk-character-tts',
+            model: 'tts-1',
+          },
+          chats: [
+            {
+              id: 'chat-b',
+              name: 'Inactive chat',
+              note: 'chat note',
+              fmIndex: -1,
+              folderId: 'folder-a',
+              modules: ['module-a'],
+              localLore: [{ key: 'chat-lore', content: 'chat lore' }],
+              bookmarks: ['msg-b'],
+              bookmarkNames: { 'msg-b': 'Pinned' },
+              message: [{ role: 'char', data: 'heavy message' }],
+              hypaV3Data: { mainChunks: [{ text: 'summary' }] },
+            },
+          ],
+        },
+      ],
+    }
+
+    const imported = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      headers: { 'risu-auth': assertion },
+      payload: { database: sample },
+    })
+    expect(imported.statusCode).toBe(200)
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.statusCode).toBe(200)
+    const characters = bootstrap.json().database.characters
+    expect(characters[0]).toMatchObject({
+      chaId: 'char-a',
+      name: 'Ada',
+      desc: 'Selected description',
+      firstMessage: 'Selected greeting',
+    })
+    expect(characters[0]).not.toHaveProperty('__serverCharacterShell')
+    expect(characters[0].chats[0].message).toEqual([])
+
+    expect(characters[1]).toMatchObject({
+      __serverCharacterShell: true,
+      chaId: 'char-b',
+      name: 'Babbage',
+      image: 'babbage-icon',
+      lastInteraction: 123,
+      chatPage: 0,
+      chatFolders: [{ id: 'folder-a', name: 'Pinned', folded: false }],
+      chats: [
+        {
+          id: 'chat-b',
+          name: 'Inactive chat',
+          note: 'chat note',
+          fmIndex: -1,
+          folderId: 'folder-a',
+          modules: ['module-a'],
+          localLore: [{ key: 'chat-lore', content: 'chat lore' }],
+          bookmarks: ['msg-b'],
+          bookmarkNames: { 'msg-b': 'Pinned' },
+          message: [],
+        },
+      ],
+    })
+    expect(characters[1]).not.toHaveProperty('desc')
+    expect(characters[1]).not.toHaveProperty('firstMessage')
+    expect(characters[1]).not.toHaveProperty('exampleMessage')
+    expect(characters[1]).not.toHaveProperty('customscript')
+    expect(characters[1]).not.toHaveProperty('globalLore')
+    expect(characters[1]).not.toHaveProperty('oaiTTSConfig')
+    expect(characters[1].chats[0]).not.toHaveProperty('hypaV3Data')
+
+    const hydration = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/projection/characterRow?id=char-b',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(hydration.statusCode).toBe(200)
+    expect(hydration.json()).toMatchObject({
+      resource: 'characterRow',
+      mode: 'character-row',
+      characterId: 'char-b',
+      character: {
+        chaId: 'char-b',
+        name: 'Babbage',
+        desc: 'Inactive heavy description',
+        firstMessage: 'Inactive greeting',
+        exampleMessage: 'Inactive example',
+        customscript: [{ type: 'start', script: 'heavy script' }],
+        globalLore: [{ key: 'inactive', content: 'inactive lore' }],
+        oaiTTSConfig: {
+          enabled: true,
+          baseURL: 'https://api.openai.com/v1',
+          apiKey: MASKED_PROVIDER_SECRET,
+          model: 'tts-1',
+        },
+      },
+    })
+    expect(hydration.json().character).not.toHaveProperty('__serverCharacterShell')
+    expect(hydration.json().character.chats[0].message).toEqual([])
+    expect(hydration.json().character.chats[0]).not.toHaveProperty('hypaV3Data')
+  })
+
   it('rejects import with missing database field', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const res = await harness.app.inject({

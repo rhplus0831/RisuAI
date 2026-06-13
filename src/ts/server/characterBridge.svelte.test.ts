@@ -258,6 +258,50 @@ describe('createServerBackedCharacterDraft seed gating', () => {
     stop()
     stopWatcher()
   })
+
+  it('does not dispatch draft defaults from a selected character shell', async () => {
+    setupCharacters([
+      {
+        __serverCharacterShell: true,
+        chaId: 'char-1',
+        name: 'Shell',
+        chats: [{ id: 'char-1-chat', name: 'Chat', message: [] }],
+        chatPage: 0,
+        chatFolders: [],
+      },
+    ])
+    const stopWatcher = watchServerBackedCharacterProfile({ delayMs: DELAY })
+    flushSync()
+    const { draft, stop } = await createDraft(['name', 'desc', 'newGenData'])
+
+    expect(draft.characterId).toBeNull()
+    expect(draft.value.name).toBe('')
+
+    draft.value.name = 'Typed before hydration'
+    draft.value.newGenData.prompt = 'Should not patch'
+    await flushAndSettle()
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    expect(recorded.characterUpdates).toEqual([])
+    expect(DBState.db.characters[0].name).toBe('Shell')
+
+    const applied = mergeServerProjectionCharacterRow(characterRow('char-1', 'Hydrated'))
+    expect(applied).toBe(true)
+    await flushAndSettle()
+
+    expect(draft.characterId).toBe('char-1')
+    expect(draft.value.name).toBe('Hydrated')
+
+    draft.value.name = 'Local after hydration'
+    await flushAndSettle()
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    expect(recorded.characterUpdates).toHaveLength(1)
+    expect(recorded.characterUpdates[0].characterId).toBe('char-1')
+    expect(recorded.characterUpdates[0].patch).toMatchObject({ name: 'Local after hydration' })
+    stop()
+    stopWatcher()
+  })
 })
 
 describe('watchServerBackedCharacterProfile baselines', () => {
@@ -277,6 +321,40 @@ describe('watchServerBackedCharacterProfile baselines', () => {
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
 
+    expect(recorded.characterUpdates).toEqual([])
+
+    DBState.db.characters[0].name = 'Local'
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    expect(recorded.characterUpdates).toEqual([{ characterId: 'char-1', patch: { name: 'Local' } }])
+    stop()
+  })
+
+  it('does not dispatch profile patches while the selected row is a shell', async () => {
+    setupCharacters([
+      {
+        __serverCharacterShell: true,
+        chaId: 'char-1',
+        name: 'Shell',
+        chats: [{ id: 'char-1-chat', name: 'Chat', message: [] }],
+        chatPage: 0,
+        chatFolders: [],
+      },
+    ])
+    const stop = watchServerBackedCharacterProfile({ delayMs: DELAY })
+    flushSync()
+
+    DBState.db.characters[0].name = 'Shell local'
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    expect(recorded.characterUpdates).toEqual([])
+
+    const applied = mergeServerProjectionCharacterRow(characterRow('char-1', 'Hydrated'))
+    expect(applied).toBe(true)
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
     expect(recorded.characterUpdates).toEqual([])
 
     DBState.db.characters[0].name = 'Local'

@@ -12,6 +12,7 @@ import { openDatabase } from '../src/db.js'
 import type { CompletionStreamFrame } from '../src/generation/frames.js'
 import {
   insertAssetMetadataBatch,
+  loadBootstrapProjectionDatabase,
   loadPersisted,
   loadPersistedForAssembly,
   loadPersistedWithMessages,
@@ -1792,9 +1793,21 @@ describe('server load-count harness on the large-corpus fixture', () => {
 
     const db = openDatabase(harness.dataDir)
     try {
-      // Same wire bytes as the pre-M4 copying mask…
-      const expected = maskProviderSecrets(loadStubProjection(db, harness.dataDir).database)
+      // Same wire bytes as the copying mask over the bootstrap-specific
+      // database projection, while inactive character rows are shell-light.
+      const expected = maskProviderSecrets(loadBootstrapProjectionDatabase(db, harness.dataDir))
       expect(JSON.stringify(body.database)).toBe(JSON.stringify(expected))
+      expect(body.database.characters[0]).not.toHaveProperty('__serverCharacterShell')
+      expect(body.database.characters[1]).toMatchObject({
+        __serverCharacterShell: true,
+        chaId: fixture.characters[1].chaId,
+        name: fixture.characters[1].name,
+      })
+      expect(body.database.characters[1]).not.toHaveProperty('desc')
+      expect(body.database.characters[1]).not.toHaveProperty('globalLore')
+      expect(JSON.stringify(body.database).length).toBeLessThan(
+        JSON.stringify(maskProviderSecrets(loadStubProjection(db, harness.dataDir).database)).length,
+      )
       // …and the in-place mask never reaches the persisted rows.
       const onDisk = loadPersisted(db, harness.dataDir).database as Record<string, unknown>
       expect(onDisk.openAIKey).toBe('sk-bootstrap-secret')
@@ -1811,7 +1824,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     let expectedDatabaseJson = ''
     try {
       insertAssetMetadataBatch(db, [asset('a'.repeat(64))])
-      expectedDatabaseJson = JSON.stringify(maskProviderSecrets(loadStubProjection(db, harness.dataDir).database))
+      expectedDatabaseJson = JSON.stringify(maskProviderSecrets(loadBootstrapProjectionDatabase(db, harness.dataDir)))
     } finally {
       db.close()
     }

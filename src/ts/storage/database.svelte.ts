@@ -923,6 +923,17 @@ export function mergeServerProjectionFields(fields: Partial<Database>) {
   })
 }
 
+export const SERVER_CHARACTER_SHELL_MARKER = '__serverCharacterShell'
+
+export function isServerCharacterShell(character: unknown): boolean {
+  return (
+    !!character &&
+    typeof character === 'object' &&
+    !Array.isArray(character) &&
+    (character as Record<string, unknown>)[SERVER_CHARACTER_SHELL_MARKER] === true
+  )
+}
+
 /**
  * Surgically replace a single character row by `chaId` without touching the rest
  * of the `characters` array. Used for foreign per-character refreshes
@@ -934,6 +945,7 @@ export function mergeServerProjectionFields(fields: Partial<Database>) {
  */
 export function mergeServerProjectionCharacterRow(character: { chaId?: string } & Record<string, unknown>): boolean {
   return withServerProjectionApply(() => {
+    delete character[SERVER_CHARACTER_SHELL_MARKER]
     const characters = DBState.db.characters
     if (!Array.isArray(characters) || typeof character?.chaId !== 'string') return false
     const index = characters.findIndex((candidate) => candidate?.chaId === character.chaId)

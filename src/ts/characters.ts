@@ -46,6 +46,7 @@ import {
 } from './characterCommands'
 import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
 import { ensureAllChatsHydrated, hydrateChatMessages } from './server/chatMessageHydration.svelte'
+import { hydrateSelectedCharacterShell } from './server/characterShellHydration.svelte'
 
 export function createNewCharacter(
   options: {
@@ -1028,4 +1029,5 @@ export async function changeChar(
     selectedCharID.set(index)
   })
   dispatchSelectCharacter(characterId, previous, lastInteraction)
+  await hydrateSelectedCharacterShell()
 }

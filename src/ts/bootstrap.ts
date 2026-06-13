@@ -49,6 +49,11 @@ import {
 } from './server/chatMessageHydration.svelte'
 import { recordHydratedCharacterLorebooks, resetLorebookHydration } from './server/lorebookBridge.svelte'
 import {
+  hydrateSelectedCharacterShell,
+  startSelectedCharacterShellHydration,
+  stopSelectedCharacterShellHydration,
+} from './server/characterShellHydration.svelte'
+import {
   setActiveGenerationJobs,
   startActiveGenerationReattach,
   triggerOpenChatGenerationReattach,
@@ -146,6 +151,10 @@ export async function loadWebInitialDatabase() {
   // to the live stream.
   setActiveGenerationJobs(projection.activeGenerationJobs ?? [])
   startActiveGenerationReattach()
+  // Inactive characters can arrive as lightweight shells; hydrate the selected
+  // row before chat/lorebook-specific hydration tries to use heavyweight fields.
+  startSelectedCharacterShellHydration()
+  await hydrateSelectedCharacterShell()
   // Chats arrive as message-free stubs; hydrate the open chat's messages on
   // open (and re-hydrate after a re-stub).
   startChatMessageHydration()
@@ -209,6 +218,7 @@ export function stopServerProjectionEvents() {
   serverProjectionEventSubscription = null
   stopBridgePatchLifecycleFlush?.()
   stopBridgePatchLifecycleFlush = null
+  stopSelectedCharacterShellHydration()
   if (serverProjectionReconnectTimer) {
     clearTimeout(serverProjectionReconnectTimer)
     serverProjectionReconnectTimer = null

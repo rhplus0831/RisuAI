@@ -283,6 +283,7 @@ beforeEach(() => {
   persistenceSpies.makeColdData.mockClear()
   hydrationSpies.startChatMessageHydration.mockClear()
   hydrationSpies.hydrateActiveChat.mockClear()
+  hydrationSpies.hydrateActiveCharacterLorebook.mockClear()
   hydrationSpies.resetChatHydration.mockClear()
   hydrationSpies.ensureAllChatsHydrated.mockClear()
   hydrationSpies.hydrateChatMessages.mockClear()
@@ -449,6 +450,65 @@ describe('web bootstrap startup source', () => {
     expect(forageSpies.setItem).not.toHaveBeenCalled()
     expect(serverEventsState.subscribe).toHaveBeenCalledTimes(1)
     expect(serverEventsState.subscriptions[0].sinceRevision).toBe(5)
+  })
+
+  it('hydrates a selected character shell during Fastify startup', async () => {
+    serverBootstrapState.response = {
+      status: 'ok',
+      projection: {
+        revision: 5,
+        database: {
+          characters: [
+            {
+              __serverCharacterShell: true,
+              chaId: 'char-a',
+              name: 'Ada shell',
+              chats: [{ id: 'chat-a', name: 'Chat A', message: [] }],
+              chatPage: 0,
+              chatFolders: [],
+            },
+          ],
+          currentChar: 0,
+          modules: [],
+          personas: [],
+          language: 'en',
+        },
+      },
+    }
+    serverProjectionState.fetchResource.mockImplementation(async (resource: string) => {
+      if (resource === 'characterRow') {
+        return {
+          status: 'ok' as const,
+          revision: 5,
+          mode: 'character-row' as const,
+          characterId: 'char-a',
+          character: {
+            chaId: 'char-a',
+            name: 'Ada full',
+            desc: 'Hydrated description',
+            firstMessage: 'Hello',
+            chats: [{ id: 'chat-a', name: 'Chat A', message: [] }],
+            chatPage: 0,
+            chatFolders: [],
+            globalLore: [],
+          },
+        }
+      }
+      return { status: 'ok' as const, revision: 5, mode: 'full' as const }
+    })
+
+    await loadWebInitialDatabase()
+
+    expect(serverProjectionState.fetchResource).toHaveBeenCalledWith('characterRow', { id: 'char-a' })
+    expect(DBState.db.characters[0]).toMatchObject({
+      chaId: 'char-a',
+      name: 'Ada full',
+      desc: 'Hydrated description',
+      firstMessage: 'Hello',
+    })
+    expect(DBState.db.characters[0]).not.toHaveProperty('__serverCharacterShell')
+    expect(hydrationSpies.hydrateActiveChat).toHaveBeenCalled()
+    expect(hydrationSpies.hydrateActiveCharacterLorebook).toHaveBeenCalled()
   })
 
   it('skips its own echoed command events without any refetch', async () => {
@@ -793,6 +853,91 @@ describe('web bootstrap startup source', () => {
     expect(activeGenerationReattachSpies.triggerOpenChatGenerationReattach).not.toHaveBeenCalled()
   })
 
+  it('hydrates a shell selected by a character-selection projection', async () => {
+    serverBootstrapState.response = {
+      status: 'ok',
+      projection: {
+        revision: 5,
+        database: {
+          characters: [
+            { chaId: 'char-a', name: 'Ada', chats: [{ id: 'chat-a', message: [] }], chatPage: 0 },
+            {
+              __serverCharacterShell: true,
+              chaId: 'char-b',
+              name: 'Babbage shell',
+              chats: [{ id: 'chat-b', name: 'Chat B', message: [] }],
+              chatPage: 0,
+              chatFolders: [],
+            },
+          ],
+          currentChar: 0,
+          modules: [],
+          personas: [],
+          language: 'en',
+        },
+      },
+    }
+    await loadWebInitialDatabase()
+    hydrationSpies.resetChatHydration.mockClear()
+    hydrationSpies.hydrateActiveChat.mockClear()
+    hydrationSpies.hydrateActiveCharacterLorebook.mockClear()
+
+    serverProjectionState.fetchResource.mockImplementation(async (resource: string) => {
+      if (resource === 'characterSelection') {
+        return {
+          status: 'ok' as const,
+          revision: 6,
+          mode: 'character-selection' as const,
+          characterId: 'char-b',
+          currentChar: 1,
+          lastInteraction: 222,
+        }
+      }
+      if (resource === 'characterRow') {
+        return {
+          status: 'ok' as const,
+          revision: 6,
+          mode: 'character-row' as const,
+          characterId: 'char-b',
+          character: {
+            chaId: 'char-b',
+            name: 'Babbage full',
+            desc: 'Hydrated Babbage',
+            firstMessage: 'Hello from B',
+            lastInteraction: 222,
+            chats: [{ id: 'chat-b', name: 'Chat B', message: [] }],
+            chatPage: 0,
+            chatFolders: [],
+            globalLore: [],
+          },
+        }
+      }
+      return { status: 'ok' as const, revision: 6, mode: 'full' as const }
+    })
+
+    const subscription = serverEventsState.subscriptions[0]
+    subscription.onCommandEvent({
+      type: 'character.selected',
+      revision: 6,
+      resource: 'characterSelection',
+      id: 'char-b',
+    })
+
+    await vi.waitFor(() => {
+      expect(DBState.db.characters?.[1]?.desc).toBe('Hydrated Babbage')
+    })
+    expect(get(selectedCharID)).toBe(1)
+    expect(serverProjectionState.fetchResource).toHaveBeenCalledWith('characterSelection', {
+      id: 'char-b',
+      parentId: undefined,
+    })
+    expect(serverProjectionState.fetchResource).toHaveBeenCalledWith('characterRow', { id: 'char-b' })
+    expect(DBState.db.characters[1]).not.toHaveProperty('__serverCharacterShell')
+    expect(hydrationSpies.resetChatHydration).not.toHaveBeenCalled()
+    expect(hydrationSpies.hydrateActiveChat).toHaveBeenCalled()
+    expect(hydrationSpies.hydrateActiveCharacterLorebook).toHaveBeenCalled()
+  })
+
   it('advances empty targeted projection events without full bootstrap or hydration reset', async () => {
     await loadWebInitialDatabase()
     expect(peekCachedServerCommandRevision()).toBe(5)
@@ -960,6 +1105,88 @@ describe('web bootstrap startup source', () => {
     expect(serverBootstrapState.fetchReadOnly).toHaveBeenCalledTimes(1)
     expect(peekCachedServerCommandRevision()).toBe(9)
     expectFullBootstrapResyncDelta(diagnosticsBefore, 'revision-gap')
+  })
+
+  it('syncs the active selected character after a full-bootstrap resync', async () => {
+    serverBootstrapState.response = {
+      status: 'ok',
+      projection: {
+        revision: 5,
+        database: {
+          characters: [
+            { chaId: 'char-a', name: 'Ada', chats: [{ id: 'chat-a', message: [] }], chatPage: 0 },
+            {
+              chaId: 'char-b',
+              name: 'Babbage full',
+              desc: 'Initial full row',
+              chats: [{ id: 'chat-b', name: 'Chat B', message: [] }],
+              chatPage: 0,
+              chatFolders: [],
+            },
+          ],
+          currentChar: 1,
+          modules: [],
+          personas: [],
+          language: 'en',
+        },
+      },
+    }
+    await loadWebInitialDatabase()
+    expect(get(selectedCharID)).toBe(1)
+    hydrationSpies.resetChatHydration.mockClear()
+    hydrationSpies.hydrateActiveChat.mockClear()
+    hydrationSpies.hydrateActiveCharacterLorebook.mockClear()
+    activeGenerationReattachSpies.triggerOpenChatGenerationReattach.mockClear()
+
+    serverBootstrapState.response = {
+      status: 'ok',
+      projection: {
+        revision: 9,
+        database: {
+          characters: [
+            {
+              chaId: 'char-a',
+              name: 'Ada full',
+              desc: 'Server-selected full row',
+              chats: [{ id: 'chat-a', message: [] }],
+              chatPage: 0,
+            },
+            {
+              __serverCharacterShell: true,
+              chaId: 'char-b',
+              name: 'Babbage shell',
+              chats: [{ id: 'chat-b', name: 'Chat B', message: [] }],
+              chatPage: 0,
+              chatFolders: [],
+            },
+          ],
+          currentChar: 0,
+          modules: [],
+          personas: [],
+          language: 'ko',
+        },
+      },
+    }
+    const subscription = serverEventsState.subscriptions[0]
+    subscription.onCommandEvent({ type: 'chat.updated', revision: 9, resource: 'chat' })
+
+    await vi.waitFor(() => {
+      expect(get(selectedCharID)).toBe(0)
+    })
+    expect(DBState.db.language).toBe('ko')
+    expect(DBState.db.characters[0]).toMatchObject({
+      chaId: 'char-a',
+      desc: 'Server-selected full row',
+    })
+    expect(DBState.db.characters[1]).toMatchObject({
+      __serverCharacterShell: true,
+      chaId: 'char-b',
+    })
+    expect(serverProjectionState.fetchResource).not.toHaveBeenCalled()
+    expect(hydrationSpies.resetChatHydration).toHaveBeenCalled()
+    expect(hydrationSpies.hydrateActiveChat).toHaveBeenCalledWith({ force: true })
+    expect(hydrationSpies.hydrateActiveCharacterLorebook).toHaveBeenCalledWith({ force: true })
+    expect(activeGenerationReattachSpies.triggerOpenChatGenerationReattach).toHaveBeenCalledTimes(1)
   })
 
   it('re-subscribes with a replay cursor after the event stream drops', async () => {

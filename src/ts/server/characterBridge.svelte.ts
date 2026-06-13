@@ -11,6 +11,7 @@ import {
 import { canUseServerCommands, type CharacterSnapshot, type ServerCommandTransportOptions } from './commands'
 import { DBState, selectedCharID } from '../stores.svelte'
 import { getServerProjectionApplyEpoch, withTrustedServerProjectionWrite } from './projectionWriteGuard.svelte'
+import { isServerCharacterShell, SERVER_CHARACTER_SHELL_MARKER } from '../storage/database.svelte'
 
 interface PendingCharacterPatch {
   characterId: string
@@ -56,7 +57,9 @@ export function createServerBackedCharacterDraft(keys: readonly string[]): Serve
   $effect(() => {
     const selected = selectedCharMirror.value
     const projectionApplyEpoch = getServerProjectionApplyEpoch()
-    const characterId = DBState.db.characters?.[selected]?.chaId ?? null
+    const selectedCharacter = DBState.db.characters?.[selected]
+    const characterId =
+      selectedCharacter && !isServerCharacterShell(selectedCharacter) ? (selectedCharacter.chaId ?? null) : null
     const identityChanged = !initialized || selected !== previousSeedSelected || characterId !== previousSeedCharacterId
     const projectionApplyChanged = projectionApplyEpoch !== previousSeedProjectionApplyEpoch
 
@@ -127,9 +130,15 @@ function currentCharacterDraftSeed(
   keys: readonly string[],
 ): { serverSnapshot: string; serverValue: CharacterDraftValue } {
   const character = DBState.db.characters?.[selected]
-  const serverValue = character
-    ? normalizeCharacterDraft(pickCharacterFields(character as unknown as CharacterSnapshot, keys))
-    : {}
+  if (!character || isServerCharacterShell(character)) {
+    const serverValue = normalizeCharacterDraft({})
+    return {
+      serverSnapshot: snapshotJson({ characterId: null, value: serverValue }),
+      serverValue,
+    }
+  }
+
+  const serverValue = normalizeCharacterDraft(pickCharacterFields(character as unknown as CharacterSnapshot, keys))
   return {
     serverSnapshot: snapshotJson({ characterId, value: serverValue }),
     serverValue,
@@ -150,13 +159,16 @@ export function watchServerBackedCharacterProfile(options: WatchServerBackedChar
       const projectionApplyEpoch = getServerProjectionApplyEpoch()
       const index = get(selectedCharID)
       const character = DBState.db.characters?.[index]
-      const currentProfile = character ? scalarCharacterProfile(character as unknown as Record<string, unknown>) : {}
+      const isShell = isServerCharacterShell(character)
+      const currentProfile =
+        character && !isShell ? scalarCharacterProfile(character as unknown as Record<string, unknown>) : {}
       const currentProfileSnapshot = snapshotJson(currentProfile)
 
       if (
         !initialized ||
         index !== previousSelected ||
         !character?.chaId ||
+        isShell ||
         projectionApplyEpoch !== previousProjectionApplyEpoch
       ) {
         initialized = true
@@ -243,6 +255,7 @@ function runPendingCharacterPatch(characterId: string, options: ServerCommandTra
 function scalarCharacterProfile(character: Record<string, unknown>): CharacterSnapshot {
   const profile: CharacterSnapshot = {}
   for (const [key, value] of Object.entries(character)) {
+    if (key === SERVER_CHARACTER_SHELL_MARKER) continue
     if (CHARACTER_PATCH_EXCLUDED_KEYS.has(key) || value === undefined) continue
     profile[key] = cloneJsonValue(value)
   }

@@ -1385,6 +1385,12 @@ export function loadStubProjectionDatabase(db: DatabaseSync, dataDir: string): u
   return database
 }
 
+export function loadBootstrapProjectionDatabase(db: DatabaseSync, dataDir: string): unknown | null {
+  const database = loadStubProjectionDatabase(db, dataDir)
+  replaceInactiveCharactersWithBootstrapShells(database)
+  return database
+}
+
 function stubDatabaseProjection(database: unknown): void {
   eachChat(database, (chat) => {
     chat.message = []
@@ -1412,6 +1418,84 @@ function stripCharacterGlobalLore(database: unknown): void {
   const characters = isRecord(database) && Array.isArray(database.characters) ? database.characters : []
   for (const character of characters) {
     if (character && typeof character === 'object') delete character.globalLore
+  }
+}
+
+const SERVER_CHARACTER_SHELL_MARKER = '__serverCharacterShell'
+
+const BOOTSTRAP_CHARACTER_SHELL_FIELDS = [
+  'chaId',
+  'name',
+  'type',
+  'image',
+  'icon',
+  'avatar',
+  'lastInteraction',
+  'chatPage',
+  'chatFolders',
+  'trashTime',
+  'coldstorage',
+  'largePortrait',
+  'hideChatIcon',
+  'creatorNotes',
+  'tags',
+  'realmId',
+  'imported',
+  'modules',
+] as const
+
+const BOOTSTRAP_CHAT_SHELL_FIELDS = [
+  'id',
+  'name',
+  'note',
+  'fmIndex',
+  'folderId',
+  'modules',
+  'localLore',
+  'generationSettings',
+  'bookmarks',
+  'bookmarkNames',
+] as const
+
+function replaceInactiveCharactersWithBootstrapShells(database: unknown): void {
+  if (!isRecord(database) || !Array.isArray(database.characters)) return
+  const currentChar = Number.isInteger(database.currentChar) ? (database.currentChar as number) : -1
+
+  database.characters = database.characters.map((character, index) => {
+    if (index === currentChar) return character
+    if (!isRecord(character)) return character
+    return createBootstrapCharacterShell(character)
+  })
+}
+
+function createBootstrapCharacterShell(character: JsonRecord): JsonRecord {
+  const shell: JsonRecord = { [SERVER_CHARACTER_SHELL_MARKER]: true }
+  copyFields(character, shell, BOOTSTRAP_CHARACTER_SHELL_FIELDS)
+
+  const chats = Array.isArray(character.chats) ? character.chats : []
+  shell.chats = chats.map((chat) => {
+    if (!isRecord(chat)) return chat
+    const chatShell: JsonRecord = {}
+    copyFields(chat, chatShell, BOOTSTRAP_CHAT_SHELL_FIELDS)
+    chatShell.message = []
+    return chatShell
+  })
+
+  if (!Array.isArray(shell.chatFolders)) {
+    shell.chatFolders = []
+  }
+  if (!Number.isInteger(shell.chatPage)) {
+    shell.chatPage = 0
+  }
+
+  return shell
+}
+
+function copyFields(source: JsonRecord, target: JsonRecord, fields: readonly string[]): void {
+  for (const field of fields) {
+    if (Object.prototype.hasOwnProperty.call(source, field)) {
+      target[field] = source[field]
+    }
   }
 }
 

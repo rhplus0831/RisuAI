@@ -301,6 +301,33 @@ describe('mergeServerProjectionCharacterRow', () => {
     expect(DBState.db.characters[0].chats[0].hypaV3Data).toBeUndefined()
   })
 
+  it('clears the bootstrap shell marker when a full character row hydrates', () => {
+    seedDatabase([
+      {
+        __serverCharacterShell: true,
+        chaId: 'char-a',
+        name: 'Ada shell',
+        chats: [{ id: 'chat-a', message: [] }],
+      },
+    ])
+
+    const applied = mergeServerProjectionCharacterRow({
+      __serverCharacterShell: true,
+      chaId: 'char-a',
+      name: 'Ada full',
+      desc: 'Hydrated description',
+      chats: [{ id: 'chat-a', message: [] }],
+    })
+
+    expect(applied).toBe(true)
+    expect(DBState.db.characters[0]).toMatchObject({
+      chaId: 'char-a',
+      name: 'Ada full',
+      desc: 'Hydrated description',
+    })
+    expect(DBState.db.characters[0]).not.toHaveProperty('__serverCharacterShell')
+  })
+
   it('returns false for unknown characters without mutating the corpus', () => {
     seedDatabase([
       {

@@ -254,6 +254,15 @@ export function readModuleUpdateSignals(modules: readonly ModuleUpdateSignalSour
   }
 }
 
+function isServerCharacterShellRow(character: unknown): boolean {
+  return (
+    !!character &&
+    typeof character === 'object' &&
+    !Array.isArray(character) &&
+    (character as { __serverCharacterShell?: unknown }).__serverCharacterShell === true
+  )
+}
+
 $effect.root(() => {
   selectedCharID.subscribe((v) => {
     selIdState.selId = v
@@ -261,7 +270,7 @@ $effect.root(() => {
     if (DBState?.db?.characters?.[selIdState.selId]) {
       if (DBState.db.hypaV3 && DBState.db.hypaV3Presets?.[DBState.db.hypaV3PresetId]?.settings?.alwaysToggleOn) {
         const char = DBState.db.characters[selIdState.selId]
-        if (!char.supaMemory && char.chaId) {
+        if (!isServerCharacterShellRow(char) && !char.supaMemory && char.chaId) {
           const characterId = char.chaId
           void import('./characterCommands').then(({ setCharacterSupaMemory }) => {
             setCharacterSupaMemory(characterId, true)
