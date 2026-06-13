@@ -2,7 +2,7 @@
 
 Date: 2026-06-13.
 
-Last updated: 2026-06-13. H2, H3, M2, L4, and the H1 immediate bootstrap duplicate were remediated after the initial audit.
+Last updated: 2026-06-13. H2, H3, M1, M2, L4, and the H1 immediate bootstrap duplicate were remediated after the initial audit.
 
 This audit examines every place the server sends data to the client and every
 place the client sends changes back, looking for endpoints that **transmit or
@@ -91,10 +91,11 @@ better than the instance.
    `done.result` duplicates the streamed tokens. The previously duplicated
    `prompt.messages` and unread `prompt.lorebookActivation` fields were removed
    for compact-capable clients behind a client-capability flag. See L5.
-4. **Full-replace projection where a tail/delta would do (S→C).** A foreign
-   `generation.persisted` re-ships the whole transcript; any gap resync re-pulls
-   the whole bootstrap, even though `command_events` records exactly which
-   resources changed per revision. See M1, L2.
+4. **Full-replace projection where a tail/delta would do (S→C).** Any gap resync
+   re-pulls the whole bootstrap, even though `command_events` records exactly
+   which resources changed per revision. The foreign `generation.persisted`
+   branch now ships a ranged message tail instead of the whole transcript. See
+   L2.
 5. **base64-in-JSON for binary (both).** Bulk asset upload and the stream-job WS
    both base64-wrap raw bytes (~33% inflation) although a raw-binary path already
    exists for single-asset upload. See M4, L8.
@@ -112,7 +113,7 @@ better than the instance.
 | H1  | S→C | GET /bootstrap | per-session + resync | Partially resolved: active preset promptTemplate duplicate stripped; full preset stubbing remains |
 | H2  | C→S | PUT /commands/chats/:id/messages | per swipe/reroll | Resolved: swipe/reroll now uses targeted tail/truncate/message-update commands |
 | H3  | C→S | PUT /commands/.../lorebooks | per lorebook edit | Resolved: entry edit/delete/reorder use compact per-entry lorebook commands |
-| M1  | S→C | GET /projection/generation | per foreign generation | generation.persisted re-ships the whole transcript instead of a tail |
+| M1  | S→C | GET /projection/generation | per foreign generation | Resolved: generation.persisted ships the changed message tail with range metadata |
 | M2  | S→C | POST /generate/chat (prompt) | per-generation | Resolved: compact-capable clients no longer receive `messages` duplicating `formated` |
 | M3  | C→S | POST /assets/bulk | on-import | Bulk upload never probes /assets/exists, re-sends duplicate bytes |
 | M4  | S→C | GET /proxy/stream-jobs/:id/ws | per-chunk (LAN stream) | WS base64-encodes every LLM chunk (~33% inflation) |
@@ -272,6 +273,11 @@ better than the instance.
 
 ### M1 — `generation.persisted` projection re-ships the entire transcript instead of a tail/delta
 
+- **Status:** remediated 2026-06-13. The generation projection now uses the
+  event message id to return the changed message's absolute-index tail via
+  `loadChatHydrationRange`, including `messageStart`/`messageTotal`; the client
+  splices that range into the existing transcript instead of replacing the whole
+  array.
 - **Direction / endpoint:** S→C, `GET /api/v1/projection/generation?parentId=<chatId>`.
 - **Frequency:** per foreign `generation.persisted` event (other tabs/devices
   live-viewing the same chat; the originating session is own-echo-skipped). Not
@@ -290,15 +296,18 @@ better than the instance.
 - **Magnitude:** up to the full chat per event — measured top chat
   `772eff9f` = 278 messages / 2.65 MB. For an active long chat under multi-session
   viewing, each foreign turn re-ships megabytes vs. a few-KB delta.
-- **Recommendation:** have the generation branch ship only the changed tail
-  (`loadChatHydrationRange` with a small tail + `messageStart`/`messageTotal`) so
-  the client splices by absolute index instead of replacing the array. Low-risk:
-  the infrastructure already exists.
-- **Evidence:** `server/fastify/src/routes/projection.ts:394-409`;
-  `repository.ts:1513-1537` (full `getChatMessages`); client
-  `src/ts/bootstrap.ts:386-393` (foreign-only via `isOwnCommandEvent` `:336-339`),
-  `chatMessageHydration.svelte.ts:301-316`; range-capable alt
-  `projection.ts:259-289` + `repository.ts:1572-1605`.
+- **Completed remediation:** the projection branch calls
+  `loadGenerationChatHydration`, which cuts from the event's persisted message id
+  when available and falls back to a small tail otherwise. The response carries
+  `messageStart`/`messageTotal`; `applyServerChatMessagesProjection` forwards
+  that range into `hydrateServerChatMessages`.
+- **Current evidence:** `server/fastify/src/routes/projection.ts`
+  (`resource === 'generation'` branch);
+  `server/fastify/src/repository.ts` (`loadGenerationChatHydration`);
+  `src/ts/bootstrap.ts` (`generation-chat` apply path);
+  `src/ts/server/chatMessageHydration.svelte.ts`
+  (`applyServerChatMessagesProjection` range parameter); regression coverage in
+  `server/fastify/__tests__/projection.test.ts` and `src/ts/bootstrap.test.ts`.
 
 ### M2 — `prompt` SSE event ships a full `messages` projection that duplicates `formated` and is never read
 
@@ -624,15 +633,13 @@ interactive). Fix: add a dedicated `HEAD /storage/read` (200/404) or
 
 Ordered by bytes × frequency × implementation ease:
 
-1. **M1 (generation.persisted tail).** Reuse `loadChatHydrationRange` +
-   `firstChangedIndex`; low-risk, infra already present (shared with L7).
-2. **M3 + L8 (probe `/assets/exists`, then upload missing as raw binary).** Turns
+1. **M3 + L8 (probe `/assets/exists`, then upload missing as raw binary).** Turns
    duplicate/re-imports into near-zero-byte ops and removes 33% inflation.
-3. **M4 + L21 (binary WS frames, or enable `perMessageDeflate`).** LAN-scoped but
+2. **M4 + L21 (binary WS frames, or enable `perMessageDeflate`).** LAN-scoped but
    hot during streaming.
-4. **Memory cleanup (L9, L10, L11, L12).** Projected job-list shape, event-driven
+3. **Memory cleanup (L9, L10, L11, L12).** Projected job-list shape, event-driven
    upserts, ETag/304, trimmed SSE frame — a coherent batch.
-5. **Remaining lows (L2, L5, L6, L7, L13–L22)** as opportunistic cleanup; L16 and
+4. **Remaining lows (L2, L5, L6, L7, L13–L22)** as opportunistic cleanup; L16 and
    L15 are documented as acceptable-as-is.
 
 ## How To Verify
@@ -647,4 +654,5 @@ Ordered by bytes × frequency × implementation ease:
   `botPresets[i].promptTemplate` for the active preset (H1). A regression guard
   could still assert that the bulk chat
   response omits `alternates` (L17). Existing focused tests guard the H2 targeted
-  swipe/reroll command routing and the M2/L4 compact prompt event behavior.
+  swipe/reroll command routing, the M1 ranged generation projection, and the
+  M2/L4 compact prompt event behavior.

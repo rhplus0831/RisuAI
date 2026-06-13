@@ -787,16 +787,15 @@ describe('web bootstrap startup source', () => {
     hydrationSpies.applyServerChatMessagesProjection.mockClear()
     activeGenerationReattachSpies.triggerOpenChatGenerationReattach.mockClear()
 
-    const generatedTail = [
-      { role: 'user', data: 'hi', chatId: 'm1' },
-      { role: 'char', data: 'fresh answer', chatId: 'gen-1' },
-    ]
+    const generatedTail = [{ role: 'char', data: 'fresh answer', chatId: 'gen-1' }]
     serverProjectionState.fetchResource.mockImplementation(async () => ({
       status: 'ok' as const,
       revision: 6,
       mode: 'generation-chat' as const,
       chatId: 'chat-a',
       message: generatedTail,
+      messageStart: 1,
+      messageTotal: 2,
       alternates: [],
     }))
 
@@ -822,6 +821,7 @@ describe('web bootstrap startup source', () => {
       generatedTail,
       undefined,
       [],
+      { start: 1, total: 2 },
     )
     // The open-chat generation reattach is re-armed.
     expect(activeGenerationReattachSpies.triggerOpenChatGenerationReattach).toHaveBeenCalledTimes(1)

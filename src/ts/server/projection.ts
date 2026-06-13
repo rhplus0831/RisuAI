@@ -34,6 +34,8 @@ export type ServerProjectionResourceResult =
       chatId: string
       message: unknown[]
       hypaV3Data?: unknown
+      messageStart?: number
+      messageTotal?: number
       alternates: unknown[]
     }
   | { status: 'ok'; revision: number; mode: 'full' }
@@ -175,6 +177,16 @@ export async function fetchServerProjectionResource(
     if (!Array.isArray(record.message)) {
       return { status: 'error', error: 'Invalid generation-chat response' }
     }
+    if (
+      (record.messageStart !== undefined || record.messageTotal !== undefined) &&
+      (!Number.isInteger(record.messageStart) ||
+        (record.messageStart as number) < 0 ||
+        !Number.isInteger(record.messageTotal) ||
+        (record.messageTotal as number) < 0 ||
+        (record.messageStart as number) > (record.messageTotal as number))
+    ) {
+      return { status: 'error', error: 'Invalid generation-chat range' }
+    }
     return {
       status: 'ok',
       revision: revision as number,
@@ -182,6 +194,12 @@ export async function fetchServerProjectionResource(
       chatId: record.chatId,
       message: record.message as unknown[],
       hypaV3Data: record.hypaV3Data,
+      ...(typeof record.messageStart === 'number' && typeof record.messageTotal === 'number'
+        ? {
+            messageStart: record.messageStart,
+            messageTotal: record.messageTotal,
+          }
+        : {}),
       alternates: Array.isArray(record.alternates) ? (record.alternates as unknown[]) : [],
     }
   }

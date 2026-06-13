@@ -303,11 +303,14 @@ export function applyServerChatMessagesProjection(
   message: unknown[],
   hypaV3Data: unknown,
   alternates: unknown[],
+  range?: { start: number; total: number },
 ): boolean {
   if (!chatId) return false
-  const applied = hydrateServerChatMessages(chatId, message, hypaV3Data)
+  const applied = hydrateServerChatMessages(chatId, message, hypaV3Data, range)
   if (!applied) return false
-  hydratedChatIds.add(chatId)
+  if (!range || isFullRange(range.start, range.total, message.length)) {
+    hydratedChatIds.add(chatId)
+  }
   attemptedChatIds.add(chatId)
   if (activeChatId() === chatId) {
     seedRerollBufferFromAlternates(message, alternates)

@@ -10,6 +10,7 @@ import {
   loadChatHydration,
   loadChatHydrationRange,
   loadChatHydrations,
+  loadGenerationChatHydration,
   loadPersistedDatabaseFields,
   loadSingleCharacterStubRow,
   loadStubbedProjectionFields,
@@ -394,7 +395,8 @@ export function registerProjectionRoutes(
     if (resource === 'generation') {
       const chatId = req.query.parentId
       if (typeof chatId === 'string' && chatId.trim() !== '') {
-        const hydration = loadChatHydration(db, dataDir, chatId)
+        const messageId = typeof req.query.id === 'string' && req.query.id.trim() !== '' ? req.query.id : undefined
+        const hydration = loadGenerationChatHydration(db, dataDir, chatId, messageId)
         const response = {
           revision,
           resource,
@@ -402,9 +404,16 @@ export function registerProjectionRoutes(
           chatId,
           message: hydration.message,
           hypaV3Data: hydration.hypaV3Data,
+          messageStart: hydration.messageStart,
+          messageTotal: hydration.messageTotal,
           alternates: hydration.alternates,
         }
-        emitProjectionMetric(req.log, resource, revision, response, { id: chatId })
+        emitProjectionMetric(req.log, resource, revision, response, {
+          id: chatId,
+          messageStart: hydration.messageStart,
+          messageTotal: hydration.messageTotal,
+          returnedCount: hydration.message.length,
+        })
         return response
       }
     }

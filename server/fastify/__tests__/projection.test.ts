@@ -875,10 +875,12 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     expect(appended.json().event).toMatchObject({ resource: 'generation', parentId: 'chat-a' })
 
     // The narrow per-chat branch fires when the event parentId (chatId) is sent.
-    const body = (await getProjection('generation', '?parentId=chat-a')).json()
+    const body = (await getProjection('generation', '?parentId=chat-a&id=gen-1')).json()
     expect(body.mode).toBe('generation-chat')
     expect(body.chatId).toBe('chat-a')
-    expect(body.message.map((m: { chatId: string }) => m.chatId)).toEqual(['msg-a', 'gen-1'])
+    expect(body.message.map((m: { chatId: string }) => m.chatId)).toEqual(['gen-1'])
+    expect(body.messageStart).toBe(1)
+    expect(body.messageTotal).toBe(2)
     expect(body).not.toHaveProperty('fields')
     expect(body).not.toHaveProperty('characters')
 

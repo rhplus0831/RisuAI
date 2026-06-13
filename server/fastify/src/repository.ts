@@ -20,6 +20,7 @@ import {
   getChatMessages,
   getChatMessagesRange,
   getChatMessagesGroupedByIds,
+  getActiveMessageLocationById,
   replaceAllChatHypaV3,
   replaceAllChatMessages,
   setChatHypaV3,
@@ -1612,6 +1613,21 @@ export function loadChatHydrationRange(
     messageStart: start,
     messageTotal: full.message.length,
   }
+}
+
+const GENERATION_CHAT_FALLBACK_TAIL = 8
+
+export function loadGenerationChatHydration(
+  db: DatabaseSync,
+  dataDir: string,
+  chatId: string,
+  messageId?: string,
+): ChatHydrationRangePayload {
+  const location = messageId ? getActiveMessageLocationById(db, messageId) : undefined
+  if (location?.chatId === chatId) {
+    return loadChatHydrationRange(db, dataDir, chatId, { start: location.seq })
+  }
+  return loadChatHydrationRange(db, dataDir, chatId, { tail: GENERATION_CHAT_FALLBACK_TAIL })
 }
 
 export function loadChatHydrations(

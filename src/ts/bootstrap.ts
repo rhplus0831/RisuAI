@@ -387,7 +387,11 @@ async function processServerCommandEvent(event: CommandEvent): Promise<void> {
       // Foreign server-owned generation: apply just the changed chat's message
       // tail and re-arm the open-chat reattach, instead of re-stubbing every
       // character and re-hydrating the open chat.
-      applyServerChatMessagesProjection(result.chatId, result.message, result.hypaV3Data, result.alternates)
+      const range =
+        typeof result.messageStart === 'number' && typeof result.messageTotal === 'number'
+          ? { start: result.messageStart, total: result.messageTotal }
+          : undefined
+      applyServerChatMessagesProjection(result.chatId, result.message, result.hypaV3Data, result.alternates, range)
       triggerOpenChatGenerationReattach()
       setCachedServerCommandRevision(event.revision)
       return
