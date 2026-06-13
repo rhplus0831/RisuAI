@@ -286,10 +286,14 @@ describe('trigger durable writes under the projection guard', () => {
 
     const cmd = await waitForCommand(
       calls,
-      (call) => call.url === '/api/v1/commands/characters/char-a/lorebooks' && call.method === 'PUT',
+      (call) =>
+        /\/api\/v1\/commands\/characters\/char-a\/lorebooks\/entries\/[^/]+$/.test(call.url) && call.method === 'PUT',
     )
-    expect(cmd.body.entries).toBeDefined()
-    expect(cmd.body.entries.length).toBe(1)
+    expect(cmd.body.entry).toMatchObject({
+      key: 'my-key',
+      comment: 'new-lore',
+      content: 'my-content',
+    })
   })
 
   it('routes v2DeleteLorebookByIndex through a lorebook command instead of a guarded direct write', async () => {

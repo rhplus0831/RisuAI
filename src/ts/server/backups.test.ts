@@ -6,7 +6,9 @@ const projectionResyncSpies = vi.hoisted(() => ({
   recordHydratedCharacterLorebooks: vi.fn(),
   resetChatHydration: vi.fn(),
   resetLorebookHydration: vi.fn(),
+  resetPromptTemplateHydration: vi.fn(),
   setActiveGenerationJobs: vi.fn(),
+  startPromptTemplateHydration: vi.fn(),
   triggerOpenChatGenerationReattach: vi.fn(),
 }))
 
@@ -25,6 +27,11 @@ vi.mock('./chatMessageHydration.svelte', () => ({
 vi.mock('./lorebookBridge.svelte', () => ({
   recordHydratedCharacterLorebooks: projectionResyncSpies.recordHydratedCharacterLorebooks,
   resetLorebookHydration: projectionResyncSpies.resetLorebookHydration,
+}))
+
+vi.mock('./promptTemplateHydration', () => ({
+  resetPromptTemplateHydration: projectionResyncSpies.resetPromptTemplateHydration,
+  startPromptTemplateHydration: projectionResyncSpies.startPromptTemplateHydration,
 }))
 
 vi.mock('../process/reattach', () => ({
@@ -109,7 +116,9 @@ beforeEach(() => {
   projectionResyncSpies.recordHydratedCharacterLorebooks.mockClear()
   projectionResyncSpies.resetChatHydration.mockClear()
   projectionResyncSpies.resetLorebookHydration.mockClear()
+  projectionResyncSpies.resetPromptTemplateHydration.mockClear()
   projectionResyncSpies.setActiveGenerationJobs.mockClear()
+  projectionResyncSpies.startPromptTemplateHydration.mockClear()
   projectionResyncSpies.triggerOpenChatGenerationReattach.mockClear()
 })
 

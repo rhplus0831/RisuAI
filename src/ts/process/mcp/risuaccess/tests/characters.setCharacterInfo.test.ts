@@ -116,7 +116,8 @@ describe('MCP setCharacterInfo single-row snapshot (L35)', () => {
     await waitForCallCount(calls, 2)
     await new Promise((resolve) => setTimeout(resolve, 0))
 
-    // the single-row restore (restoreCharacterRow) touched only char-1
+    // dispatchUpdateCharacterScoped rolls back through the single-row restore
+    // (restoreCharacterRow), touching only char-1.
     expect(DBState.db.characters[1].name).toBe('Character 1')
     expect(DBState.db.characters[0].name).toBe('Concurrent sibling edit')
   })

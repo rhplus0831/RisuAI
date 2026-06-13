@@ -64,6 +64,12 @@ function stubCommandFetch(): CapturedFetch[] {
         body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
       })
       if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+      if (/\/api\/v1\/commands\/lorebooks\/[^/]+\/entries\/[^/]+$/.test(url)) {
+        return jsonResponse({
+          revision: 11,
+          event: { type: 'lorebook.entry.upserted', revision: 11, resource: 'lorebook' },
+        })
+      }
       if (/\/api\/v1\/commands\/lorebooks\/[^/]+\/entries$/.test(url)) {
         return jsonResponse({
           revision: 11,
@@ -109,7 +115,7 @@ function seedDatabase(): void {
 }
 
 const isGlobalEntries = (call: CapturedFetch) =>
-  /\/api\/v1\/commands\/lorebooks\/lore-1\/entries$/.test(call.url) && call.method === 'PUT'
+  /\/api\/v1\/commands\/lorebooks\/lore-1\/entries\/[^/]+$/.test(call.url) && call.method === 'PUT'
 
 beforeEach(() => {
   ;(globalThis as Record<string, unknown>).safeStructuredClone = safeStructuredClone
@@ -140,7 +146,7 @@ describe('global lorebook durable writes under the projection guard', () => {
     expect((DBState.db.loreBook[0] as { data: unknown[] }).data).toHaveLength(1)
 
     const cmd = await waitForCommand(calls, isGlobalEntries)
-    expect(cmd.body.entries).toHaveLength(1)
+    expect(cmd.body.entry).toMatchObject({ comment: 'New Lore 1' })
   })
 
   it('addLorebookFolder(-1) appends a global folder and dispatches the entries command', async () => {
@@ -153,7 +159,7 @@ describe('global lorebook durable writes under the projection guard', () => {
     expect(entries[0].mode).toBe('folder')
 
     const cmd = await waitForCommand(calls, isGlobalEntries)
-    expect(cmd.body.entries).toHaveLength(1)
+    expect(cmd.body.entry).toMatchObject({ comment: 'New Folder', mode: 'folder' })
   })
 
   it('importLoreBook(sglobal) merges imported entries and dispatches the entries command', async () => {
@@ -166,7 +172,6 @@ describe('global lorebook durable writes under the projection guard', () => {
     expect((DBState.db.loreBook[0] as { data: unknown[] }).data).toHaveLength(1)
 
     const cmd = await waitForCommand(calls, isGlobalEntries)
-    expect(cmd.body.entries).toHaveLength(1)
-    expect(cmd.body.entries[0].comment).toBe('Imported')
+    expect(cmd.body.entry).toMatchObject({ comment: 'Imported' })
   })
 })

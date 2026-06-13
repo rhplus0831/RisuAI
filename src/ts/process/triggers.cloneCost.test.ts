@@ -121,7 +121,8 @@ describe('runTrigger clone cost (Phase 3)', () => {
     const { siblingSize } = seedDb()
     expect(siblingSize).toBeGreaterThan(50_000)
     stubCommandFetch()
-    // Runs under the projection guard: `setVar` now writes the optimistic
+    // Runs under the projection guard: this path must not trip runTrigger's
+    // lazy whole-character `materializeChar` helper. `setVar` writes the optimistic
     // scriptstate through `withTrustedServerProjectionWrite`, so a trigger-bearing
     // pass clones only the active chat (the large sibling transcript a whole-char
     // clone would serialize is never cloned) and does not throw on the read-only

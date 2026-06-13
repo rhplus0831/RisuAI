@@ -1550,11 +1550,11 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     [
       {
         testPath: 'src/ts/server/lorebookBridge.svelte.test.ts',
-        testName: 'K4: the debounced final server write contains the final edited entry',
+        testName: 'K4: the debounced final server write sends only the final edited entry',
       },
       {
         testPath: 'src/ts/server/lorebookBridge.svelte.test.ts',
-        testName: 'K4: flushing a draft sends the final replacement before the debounce delay',
+        testName: 'K4: flushing a draft sends the final entry before the debounce delay',
       },
       {
         testPath: 'src/ts/server/lorebookBridge.svelte.test.ts',
@@ -1562,7 +1562,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
       {
         testPath: 'src/ts/server/lorebookBridge.svelte.test.ts',
-        testName: 'K4: module external entry drafts avoid collection clones and flush final module replacement',
+        testName: 'K4: module external entry drafts avoid collection clones and flush final module entry',
       },
       {
         testPath: 'src/ts/server/lorebookBridge.svelte.test.ts',
