@@ -129,6 +129,7 @@ import {
   readMessagePatch,
   readReplacementMessages,
   readTruncateAfterMessageId,
+  type MessageRecord,
   validateUniqueMessageIds,
 } from '../commands/messages.js'
 import {
@@ -204,6 +205,7 @@ import {
   deleteChatHypaV3,
   deleteChatMessages,
   getActiveMessageLocationById,
+  getChatMessages,
   replaceActiveChatMessages,
   truncateActiveChatMessages,
   updateActiveMessageById,
@@ -3656,6 +3658,67 @@ export function registerCommandRoutes(
           return {
             event: { ...COMMAND_EVENT_CATALOG.messageTruncated, parentId: chatId },
             extra: { chatId, afterMessageId, removedCount: truncated.removedCount },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/chats/:chatId/messages/tail', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const chatId = readChatId((req.params as { chatId?: unknown }).chatId)
+      const body = (req.body ?? {}) as MessageCommandBody
+      const baseRevision = readBaseRevision(body)
+      const afterMessageId = readTruncateAfterMessageId(body.afterMessageId)
+      const replacement = readReplacementMessages(body.messages)
+      const result = applyTargetedCommandMutation<{
+        chatId: string
+        afterMessageId: string | null
+        messageIds: string[]
+        replacedCount: number
+      }>({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: 'targeted-message',
+        // Chat is located for validation only; replacement hits the message store.
+        chatScopedRead: { chatId },
+        mutate(database, targetDb) {
+          const characters = normalizeAllCharacterChats(database)
+          requireChatLocation(characters, chatId)
+          const base = getChatMessages(targetDb, chatId)
+          const keepCount =
+            afterMessageId === null ? 0 : base.findIndex((message) => message.chatId === afterMessageId) + 1
+          if (afterMessageId !== null && keepCount === 0) {
+            throw new EntityNotFoundError(`Message not found for chat ${chatId}: ${afterMessageId}`)
+          }
+          const next = [...base.slice(0, keepCount), ...replacement]
+          validateUniqueMessageIds(next as MessageRecord[])
+          for (const message of replacement) {
+            if (activeMessageIdExistsOutsideChat(targetDb, message.chatId, chatId)) {
+              throw new ValidationError(`Duplicate message id: ${message.chatId}`)
+            }
+          }
+          replaceActiveChatMessages(targetDb, chatId, next)
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.messagesReplaced, parentId: chatId },
+            extra: {
+              chatId,
+              afterMessageId,
+              messageIds: replacement.map((message) => message.chatId),
+              replacedCount: base.length - keepCount,
+            },
           }
         },
       })

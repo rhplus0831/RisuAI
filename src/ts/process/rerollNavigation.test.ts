@@ -6,7 +6,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const commandSpies = vi.hoisted(() => ({
   currentChatScopedSnapshot: vi.fn(() => ({ snapshot: true })),
+  dispatchReplaceTailMessagesScoped: vi.fn(),
   dispatchReplaceMessagesScoped: vi.fn(),
+  dispatchTruncateMessagesScoped: vi.fn(),
   dispatchUpdateMessageScoped: vi.fn(),
   ensureMessageId: vi.fn((message: { chatId?: string }) => {
     if (!message.chatId) message.chatId = 'minted'
@@ -153,8 +155,13 @@ describe('reroll swipe navigation (post-seed, durable for free)', () => {
     await unReroll()
     expect(getRerollId()).toBe(1)
     expect(tailUids()).toEqual(['u1', 'g2'])
-    expect(commandSpies.dispatchReplaceMessagesScoped).toHaveBeenCalledTimes(1)
-    expect(commandSpies.dispatchReplaceMessagesScoped.mock.calls[0][0]).toBe('chat-1')
+    expect(commandSpies.dispatchReplaceTailMessagesScoped).toHaveBeenCalledTimes(1)
+    expect(commandSpies.dispatchReplaceTailMessagesScoped.mock.calls[0][0]).toBe('chat-1')
+    expect(commandSpies.dispatchReplaceTailMessagesScoped.mock.calls[0][1]).toBe('u1')
+    expect(
+      commandSpies.dispatchReplaceTailMessagesScoped.mock.calls[0][2].map((message: Msg) => message.chatId),
+    ).toEqual(['g2'])
+    expect(commandSpies.dispatchReplaceMessagesScoped).not.toHaveBeenCalled()
   })
 
   it('reroll navigates forward to the next candidate without generating', async () => {
@@ -176,6 +183,12 @@ describe('reroll swipe navigation (post-seed, durable for free)', () => {
     expect(sendChatMain).toHaveBeenCalledTimes(1)
     expect(sendChatMain).toHaveBeenCalledWith(false, 'g3')
     expect(tailUids()).toEqual(['u1'])
+    expect(commandSpies.dispatchTruncateMessagesScoped).toHaveBeenCalledWith(
+      'chat-1',
+      'u1',
+      expect.objectContaining({ snapshot: true }),
+    )
+    expect(commandSpies.dispatchReplaceMessagesScoped).not.toHaveBeenCalled()
   })
 
   it('does not wipe the seeded buffer on the next reroll (char-change guard primed)', async () => {

@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // end to end:
 //   - a swipe captures a chat-scoped rollback (only the active chat is cloned,
 //     never the sibling characters), and
-//   - a failed `dispatchReplaceMessagesScoped` restores only the active chat.
+//   - a failed tail command restores only the active chat.
 
 vi.mock('../platform', async (importActual) => ({
   ...(await (importActual() as Promise<object>)),
@@ -27,7 +27,13 @@ import { clearCachedServerCommandRevision } from '../server/commands'
 import { setServerProjectionWriteGuardEnabled } from '../server/projectionWriteGuard.svelte'
 import { DBState, selectedCharID } from '../stores.svelte'
 import { withCloneInstrumentation } from '../__tests__/cloneCostHarness'
-import { getRerollId, resetRerollNavigation, seedRerollBufferFromAlternates, unReroll } from './rerollNavigation.svelte'
+import {
+  getRerollId,
+  reroll,
+  resetRerollNavigation,
+  seedRerollBufferFromAlternates,
+  unReroll,
+} from './rerollNavigation.svelte'
 
 type Msg = { role: string; data: string; chatId: string }
 
@@ -131,7 +137,7 @@ describe('reroll/swipe chat-scoped rollback (Phase 2)', () => {
     expect(siblingSize).toBeGreaterThan(50_000)
   })
 
-  it('a failed swipe replace restores only the active chat (sibling untouched)', async () => {
+  it('a failed swipe tail replace restores only the active chat and sends only the changed tail', async () => {
     const calls: CapturedFetch[] = []
     vi.stubGlobal(
       'fetch',
@@ -145,7 +151,7 @@ describe('reroll/swipe chat-scoped rollback (Phase 2)', () => {
         if (url === '/api/v1/bootstrap') {
           return new Response(JSON.stringify({ revision: 10 }), { status: 200 })
         }
-        if (url === '/api/v1/commands/chats/chat-active/messages') {
+        if (url === '/api/v1/commands/chats/chat-active/messages/tail') {
           return new Response(JSON.stringify({ error: 'nope' }), { status: 500 })
         }
         return new Response(JSON.stringify({ error: `unexpected ${url}` }), { status: 404 })
@@ -159,9 +165,61 @@ describe('reroll/swipe chat-scoped rollback (Phase 2)', () => {
     await waitForCallCount(calls, 2)
     await waitFor(() => activeTailUid() === 'g2')
 
-    // The failed replace rolls back to the captured active chat only.
+    const commandCall = calls.find((call) => call.url === '/api/v1/commands/chats/chat-active/messages/tail')
+    expect(commandCall?.method).toBe('POST')
+    expect(commandCall?.body).toEqual({
+      baseRevision: 10,
+      afterMessageId: 'u1',
+      messages: [{ role: 'char', data: 'c1', chatId: 'g1' }],
+    })
+
+    // The failed tail replace rolls back to the captured active chat only.
     expect(activeTailUid()).toBe('g2')
     // The large sibling transcript was never part of the rollback.
     expect(siblingMessageCount()).toBe(40)
+  })
+
+  it('regenerate truncate sends a truncate command instead of the surviving transcript', async () => {
+    const calls: CapturedFetch[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        calls.push({
+          url,
+          method: init.method ?? 'GET',
+          body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+        })
+        if (url === '/api/v1/bootstrap') {
+          return new Response(JSON.stringify({ revision: 10 }), { status: 200 })
+        }
+        if (url === '/api/v1/commands/chats/chat-active/messages/truncate') {
+          return new Response(
+            JSON.stringify({
+              revision: 11,
+              event: { type: 'message.truncated', revision: 11, resource: 'message', parentId: 'chat-active' },
+              chatId: 'chat-active',
+              afterMessageId: 'u1',
+              removedCount: 1,
+            }),
+            { status: 200 },
+          )
+        }
+        return new Response(JSON.stringify({ error: `unexpected ${url}` }), { status: 404 })
+      }) as unknown as typeof fetch,
+    )
+    seedDb('chat-active')
+
+    const sendChatMain = vi.fn(async () => {})
+    await reroll({ sendChatMain, closeMenu: vi.fn() })
+    await waitForCallCount(calls, 2)
+
+    const commandCall = calls.find((call) => call.url === '/api/v1/commands/chats/chat-active/messages/truncate')
+    expect(commandCall?.method).toBe('POST')
+    expect(commandCall?.body).toEqual({
+      baseRevision: 10,
+      afterMessageId: 'u1',
+    })
+    expect(sendChatMain).toHaveBeenCalledWith(false, 'g2')
   })
 })

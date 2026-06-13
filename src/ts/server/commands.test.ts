@@ -63,6 +63,7 @@ import {
   reorderPresetsCommand,
   runServerCommand,
   runServerPresetCommand,
+  replaceTailMessagesCommand,
   replaceMessagesCommand,
   replaceCharacterScriptsCommand,
   replaceCharacterTriggersCommand,
@@ -1789,12 +1790,22 @@ describe('server command API adapter', () => {
           removedCount: 2,
         }
       }
+      if (url.endsWith('/messages/tail')) {
+        return {
+          revision: 5,
+          event: { type: 'messages.replaced', revision: 5, resource: 'message' },
+          chatId: 'chat-a',
+          afterMessageId: 'msg-a',
+          messageIds: ['msg-b'],
+          replacedCount: 1,
+        }
+      }
       if (url.endsWith('/chats/chat-a/messages')) {
         const method = commandFetch.calls.at(-1)?.method
         return method === 'PUT'
           ? {
-              revision: 5,
-              event: { type: 'messages.replaced', revision: 5, resource: 'message' },
+              revision: 6,
+              event: { type: 'messages.replaced', revision: 6, resource: 'message' },
               chatId: 'chat-a',
             }
           : {
@@ -1837,10 +1848,10 @@ describe('server command API adapter', () => {
       }
       if (url.endsWith('/chats/chat-a/generation-result')) {
         return {
-          revision: 6,
+          revision: 7,
           event: {
             type: 'generation.persisted',
-            revision: 6,
+            revision: 7,
             resource: 'generation',
             id: 'gen-a',
           },
@@ -1884,16 +1895,25 @@ describe('server command API adapter', () => {
     ).resolves.toMatchObject({ status: 'ok', revision: 4, removedCount: 2 })
 
     await expect(
-      replaceMessagesCommand({
+      replaceTailMessagesCommand({
         baseRevision: 4,
+        chatId: 'chat-a',
+        afterMessageId: 'msg-a',
+        messages: [{ role: 'char', data: 'replacement', chatId: 'msg-b' }],
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 5, chatId: 'chat-a', messageIds: ['msg-b'] })
+
+    await expect(
+      replaceMessagesCommand({
+        baseRevision: 5,
         chatId: 'chat-a',
         messages: [{ role: 'char', data: 'replacement', chatId: 'msg-b' }],
       }),
-    ).resolves.toMatchObject({ status: 'ok', revision: 5, chatId: 'chat-a' })
+    ).resolves.toMatchObject({ status: 'ok', revision: 6, chatId: 'chat-a' })
 
     await expect(
       persistGenerationResultCommand({
-        baseRevision: 5,
+        baseRevision: 6,
         chatId: 'chat-a',
         generationResult: {
           targetMessageId: 'msg-b',
@@ -1906,7 +1926,7 @@ describe('server command API adapter', () => {
           },
         },
       }),
-    ).resolves.toMatchObject({ status: 'ok', revision: 6, messageId: 'gen-a' })
+    ).resolves.toMatchObject({ status: 'ok', revision: 7, messageId: 'gen-a' })
 
     expect(commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body }))).toEqual([
       {
@@ -1941,10 +1961,19 @@ describe('server command API adapter', () => {
         },
       },
       {
+        url: '/api/v1/commands/chats/chat-a/messages/tail',
+        method: 'POST',
+        body: {
+          baseRevision: 4,
+          afterMessageId: 'msg-a',
+          messages: [{ role: 'char', data: 'replacement', chatId: 'msg-b' }],
+        },
+      },
+      {
         url: '/api/v1/commands/chats/chat-a/messages',
         method: 'PUT',
         body: {
-          baseRevision: 4,
+          baseRevision: 5,
           messages: [{ role: 'char', data: 'replacement', chatId: 'msg-b' }],
         },
       },
@@ -1952,7 +1981,7 @@ describe('server command API adapter', () => {
         url: '/api/v1/commands/chats/chat-a/generation-result',
         method: 'POST',
         body: {
-          baseRevision: 5,
+          baseRevision: 6,
           generationResult: {
             targetMessageId: 'msg-b',
             message: {

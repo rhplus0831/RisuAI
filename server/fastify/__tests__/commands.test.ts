@@ -5676,6 +5676,67 @@ describe('Phase 9-3c message history commands', () => {
     ])
   })
 
+  it('replaces only the requested message tail', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [
+            {
+              id: 'chat-a',
+              name: 'A chat',
+              note: '',
+              message: [
+                { role: 'user', data: 'one', chatId: 'msg-1' },
+                { role: 'char', data: 'two', chatId: 'msg-2' },
+                { role: 'user', data: 'three', chatId: 'msg-3' },
+              ],
+              localLore: [],
+            },
+          ],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+
+    const tailReplaced = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/chats/chat-a/messages/tail',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        afterMessageId: 'msg-1',
+        messages: [
+          { role: 'char', data: 'two alt', chatId: 'msg-2b', generationInfo: { model: 'm' } },
+          { role: 'user', data: 'three alt', chatId: 'msg-3b' },
+        ],
+      },
+    })
+
+    expect(tailReplaced.statusCode).toBe(200)
+    expect(tailReplaced.json()).toMatchObject({
+      revision: 2,
+      event: {
+        type: 'messages.replaced',
+        resource: 'message',
+        parentId: 'chat-a',
+      },
+      chatId: 'chat-a',
+      afterMessageId: 'msg-1',
+      messageIds: ['msg-2b', 'msg-3b'],
+      replacedCount: 2,
+    })
+    expect(await persistedChatMessages(harness.app, assertion, 'chat-a')).toEqual([
+      { role: 'user', data: 'one', chatId: 'msg-1' },
+      { role: 'char', data: 'two alt', chatId: 'msg-2b', generationInfo: { model: 'm' } },
+      { role: 'user', data: 'three alt', chatId: 'msg-3b' },
+    ])
+  })
+
   it('normalizes missing message ids and rejects malformed message commands without bumping revision', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {

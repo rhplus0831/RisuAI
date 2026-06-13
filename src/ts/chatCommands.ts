@@ -11,6 +11,7 @@ import {
   patchChatScriptstateCommand,
   reorderChatFoldersCommand,
   reorderChatsCommand,
+  replaceTailMessagesCommand,
   replaceMessagesCommand,
   runServerCommand,
   saveChatGenerationSettingsCommand,
@@ -1068,8 +1069,7 @@ function removeOptimisticCurrentChatMessage(input: {
 // Each message-dispatch helper has a `*With(... rollback)` core plus a broad
 // (`ChatStateSnapshot`) and a chat-scoped (`ChatScopedSnapshot`) export. The
 // scoped variants restore only the active chat row on failure; the broad ones
-// remain for the reroll/swipe path (narrowed separately) and any caller that
-// still holds a whole-collection snapshot.
+// remain for callers that still hold a whole-collection snapshot.
 function dispatchUpdateMessageWith(messageId: string, patch: MessageSnapshot, rollback: () => void): void {
   const commandPatch = sanitizeMessagePatch(patch)
   if (Object.keys(commandPatch).length === 0) return
@@ -1141,6 +1141,49 @@ export function dispatchTruncateMessagesScoped(
   previous: ChatScopedSnapshot,
 ): void {
   dispatchTruncateMessagesWith(chatId, afterMessageId, () => restoreChatScopedState(previous))
+}
+
+function dispatchReplaceTailMessagesWith(
+  chatId: string,
+  afterMessageId: string | null,
+  messages: Message[],
+  rollback: () => void,
+): void {
+  if (hasServerChatMessagePlaceholders(messages)) {
+    console.warn('Skipped replaceTailMessagesCommand for a partially hydrated chat transcript tail.')
+    return
+  }
+  for (const message of messages) {
+    ensureMessageId(message)
+  }
+  runMessageCommand(
+    (baseRevision) =>
+      replaceTailMessagesCommand({
+        baseRevision,
+        chatId,
+        afterMessageId,
+        messages: messages.map(toMessageSnapshot),
+      }),
+    rollback,
+  )
+}
+
+export function dispatchReplaceTailMessages(
+  chatId: string,
+  afterMessageId: string | null,
+  messages: Message[],
+  previous: ChatStateSnapshot,
+): void {
+  dispatchReplaceTailMessagesWith(chatId, afterMessageId, messages, () => restoreChatState(previous))
+}
+
+export function dispatchReplaceTailMessagesScoped(
+  chatId: string,
+  afterMessageId: string | null,
+  messages: Message[],
+  previous: ChatScopedSnapshot,
+): void {
+  dispatchReplaceTailMessagesWith(chatId, afterMessageId, messages, () => restoreChatScopedState(previous))
 }
 
 function dispatchReplaceMessagesWith(chatId: string, messages: Message[], rollback: () => void): void {

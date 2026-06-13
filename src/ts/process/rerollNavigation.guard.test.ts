@@ -12,7 +12,9 @@ vi.mock('../platform', async (importActual) => ({
 
 const commandSpies = vi.hoisted(() => ({
   currentChatScopedSnapshot: vi.fn(() => ({ snapshot: true })),
+  dispatchReplaceTailMessagesScoped: vi.fn(),
   dispatchReplaceMessagesScoped: vi.fn(),
+  dispatchTruncateMessagesScoped: vi.fn(),
   dispatchUpdateMessageScoped: vi.fn(),
   ensureMessageId: vi.fn((message: { chatId?: string }) => {
     if (!message.chatId) message.chatId = 'minted'
@@ -80,7 +82,8 @@ describe('reroll swipe under the read-only projection guard', () => {
     await expect(unReroll()).resolves.toBeUndefined()
     expect(tailUid()).toBe('g2')
     expect(getRerollId()).toBe(1)
-    expect(commandSpies.dispatchReplaceMessagesScoped).toHaveBeenCalledTimes(1)
+    expect(commandSpies.dispatchReplaceTailMessagesScoped).toHaveBeenCalledTimes(1)
+    expect(commandSpies.dispatchReplaceMessagesScoped).not.toHaveBeenCalled()
   })
 
   it('reroll navigates forward on the frozen projection', async () => {
@@ -100,7 +103,8 @@ describe('reroll swipe under the read-only projection guard', () => {
     await expect(reroll({ sendChatMain, closeMenu: vi.fn() })).resolves.toBeUndefined()
     expect(tailUid()).toBe('u1')
     expect(sendChatMain).toHaveBeenCalledWith(false, 'g3')
-    expect(commandSpies.dispatchReplaceMessagesScoped).toHaveBeenCalledTimes(1)
+    expect(commandSpies.dispatchTruncateMessagesScoped).toHaveBeenCalledTimes(1)
+    expect(commandSpies.dispatchReplaceMessagesScoped).not.toHaveBeenCalled()
   })
 
   it('a direct projection write still throws (the guard is genuinely active)', () => {

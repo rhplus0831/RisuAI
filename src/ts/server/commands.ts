@@ -940,6 +940,12 @@ export interface TruncateMessagesCommandInput extends ChatCommandInput {
   afterMessageId?: string | null
 }
 
+export interface ReplaceTailMessagesCommandInput extends ChatCommandInput {
+  chatId: string
+  afterMessageId?: string | null
+  messages: MessageSnapshot[]
+}
+
 export interface ReplaceMessagesCommandInput extends ChatCommandInput {
   chatId: string
   messages: MessageSnapshot[]
@@ -2209,6 +2215,23 @@ export async function truncateMessagesCommand(
     body: {
       baseRevision: input.baseRevision,
       afterMessageId: input.afterMessageId ?? null,
+    },
+    signal,
+  })
+}
+
+export async function replaceTailMessagesCommand(
+  input: ReplaceTailMessagesCommandInput,
+  signal?: AbortSignal | null,
+): Promise<
+  ServerCommandResult<{ chatId: string; afterMessageId: string | null; messageIds: string[]; replacedCount: number }>
+> {
+  return requestCommandJson(`/chats/${encodeURIComponent(input.chatId)}/messages/tail`, {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      afterMessageId: input.afterMessageId ?? null,
+      messages: input.messages,
     },
     signal,
   })

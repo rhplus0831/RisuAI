@@ -2,7 +2,8 @@ import { get } from 'svelte/store'
 import { DBState, selectedCharID } from '../stores.svelte'
 import {
   currentChatScopedSnapshot,
-  dispatchReplaceMessagesScoped,
+  dispatchReplaceTailMessagesScoped,
+  dispatchTruncateMessagesScoped,
   dispatchUpdateMessageScoped,
   ensureMessageId,
 } from '../chatCommands'
@@ -119,23 +120,23 @@ function applyTailDataSwap(data: string): void {
 /** Overwrite the last `slice.length` messages with a saved candidate, then persist. */
 function applyTailSlice(slice: Message[]): void {
   const previous = currentChatScopedSnapshot()
-  withTrustedServerProjectionWrite(() => {
+  const tail = withTrustedServerProjectionWrite(() => {
     const msgs = activeChatRecord().message
+    const start = msgs.length - slice.length
+    const afterMessageId = start > 0 ? ensureMessageId(msgs[start - 1]) : null
     for (let i = 0; i < slice.length; i++) {
-      msgs[msgs.length - slice.length + i] = slice[i]
+      msgs[start + i] = slice[i]
     }
     // Mint ids while the projection is writable so the by-reference dispatch
     // below never has to mutate a refrozen read-only message row.
-    for (const message of msgs) {
+    for (const message of msgs.slice(start)) {
       ensureMessageId(message)
     }
+    return { afterMessageId, messages: msgs.slice(start) }
   })
   const record = activeChatRecord()
   if (record.id) {
-    // `dispatchReplaceMessagesScoped` deep-clones each row via `toMessageSnapshot`,
-    // so the former `safeStructuredClone(record.message)` was a redundant second
-    // full-transcript clone. Pass the rows by reference (ids already minted above).
-    dispatchReplaceMessagesScoped(record.id, record.message, previous)
+    dispatchReplaceTailMessagesScoped(record.id, tail.afterMessageId, tail.messages, previous)
   }
 }
 
@@ -149,16 +150,14 @@ function applyTailSlice(slice: Message[]): void {
  */
 function applyRerollTruncate(keepLength: number): void {
   const previous = currentChatScopedSnapshot()
-  withTrustedServerProjectionWrite(() => {
+  const afterMessageId = withTrustedServerProjectionWrite(() => {
     const msgs = activeChatRecord().message
     msgs.length = keepLength
-    for (const message of msgs) {
-      ensureMessageId(message)
-    }
+    return msgs.length > 0 ? ensureMessageId(msgs[msgs.length - 1]) : null
   })
   const record = activeChatRecord()
   if (record.id) {
-    dispatchReplaceMessagesScoped(record.id, record.message, previous)
+    dispatchTruncateMessagesScoped(record.id, afterMessageId, previous)
   }
 }
 
