@@ -22,6 +22,9 @@ is root-only; there is no `server/fastify/package.json`.
 | `pnpm client-thinning:audit`       | Run `util/client-thinning-audit.ts`.                                                                          |
 | `pnpm analyze:db <path>`           | Analyze `.risu`, `db.json`, raw database JSON, or legacy data dirs. Add `--json` for machine-readable output. |
 | `pnpm format`, `pnpm format:check` | Prettier write/check.                                                                                         |
+| `pnpm coverage:frontend`           | Run root/browser Vitest tests with broad frontend coverage under `coverage/frontend`.                          |
+| `pnpm coverage:backend`            | Run Fastify/server Vitest tests with broad backend coverage under `coverage/backend`.                          |
+| `pnpm coverage:all`                | Run frontend and backend coverage, preserving a failing exit code if either side fails.                        |
 
 There is no ESLint config or `lint` script.
 
@@ -69,19 +72,25 @@ disables Fastify static serving.
 | Area                        | Command/config                                                     | Environment | Locations                                                                                                                  |
 | --------------------------- | ------------------------------------------------------------------ | ----------- | -------------------------------------------------------------------------------------------------------------------------- |
 | Browser/client/domain tests | `pnpm test`, `vitest.config.ts`                                    | `happy-dom` | Root suite outside `server/**`, including `src/**` and `util/**/*.test.ts`.                                                |
+| Frontend coverage           | `pnpm coverage:frontend`, `vitest.config.ts`                       | `happy-dom` | Broad coverage over `src/**/*.{ts,svelte}` and `util/**/*.ts`, excluding audit fixtures; reports under `coverage/frontend`. |
 | UI coverage map             | `pnpm coverage:ui-map`, `vitest.config.ts`                         | `happy-dom` | Focused UI integration tests mapped over `src/lib/ChatScreens`, `src/lib/Others`, `src/lib/SideBars`, and `src/ts/server`. |
 | Fastify/server tests        | `pnpm api:test`, `server/fastify/vitest.config.ts`                 | Node        | `server/fastify/__tests__/**/*.test.ts`.                                                                                   |
+| Backend coverage            | `pnpm coverage:backend`, `server/fastify/vitest.config.ts`         | Node        | Broad coverage over `server/fastify/src/**/*.ts`; reports under `coverage/backend`.                                        |
 | Browser smoke               | `pnpm smoke:fastify-browser`, `playwright.fastify-smoke.config.ts` | Chromium    | `server/fastify/browser-smoke/`.                                                                                           |
 | Architecture audit          | `pnpm client-thinning:audit`                                       | ts-morph    | Invariant checks in `util/client-thinning-audit.ts`.                                                                       |
 
 Pick the smallest command that covers the changed area. On a fresh machine, run
 `pnpm exec playwright install chromium` before browser smoke.
 
+`pnpm coverage:frontend` and `pnpm coverage:backend` are broad coverage views for
+coverage analysis. `pnpm coverage:all` runs both sides and still executes backend
+coverage when frontend tests fail, then exits non-zero if either side failed.
+
 `pnpm coverage:ui-map` is an opt-in map for Phase 5/6 UI state coverage, not a
 default test gate. It uses `@vitest/coverage-v8`, runs the focused ChatScreens,
 Others, and SideBars UI test files, and emits `text`, `json-summary`, and `html`
-reports under `coverage/ui-map`. The repository ignores `coverage/`; keep these
-reports local unless a plan slice explicitly asks for extracted results.
+reports under `coverage/ui-map`. The repository ignores `coverage/`; keep all
+coverage reports local unless a plan slice explicitly asks for extracted results.
 
 Prompt/generation fixtures live in `src/ts/process/__fixtures__/`; set
 `UPDATE_FIXTURES=1` to rewrite expected fixtures. Server `.risu` fixture helpers
