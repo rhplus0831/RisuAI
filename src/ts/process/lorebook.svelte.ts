@@ -25,7 +25,7 @@ import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard
 // Scoped pre-edit rollback for the discrete lorebook editor actions below
 // Snapshot only the one collection the action edits (`type`/`mode`
 // selects it) instead of the whole-DB clone + id-assign the broad snapshot
-// performs. `type` mirrors the editor convention: 0 = the selected character's
+// used to perform. `type` mirrors the editor convention: 0 = the selected character's
 // globalLore, -1 = the open global lorebook, anything else = the active chat's
 // localLore. Returns null when the target has no stable id yet — the matching
 // dispatch is skipped by the same guard, so the rollback is never needed.

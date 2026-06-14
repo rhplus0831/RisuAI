@@ -50,6 +50,11 @@ coherent rollback/resync story.
     `presetIdAt()` is pure, and `ensureBotPresetHydrated()` fails closed for
     missing, blank, duplicate, or invalid-index preset IDs before fetching
     hydration.
+- `src/ts/server/lorebookBridge.svelte.ts`
+  - Lorebook broad/global snapshots and watcher baseline setup no longer assign
+    missing IDs or initialize absent arrays. Watcher collection snapshots require
+    stable scope IDs and stable unique entry IDs, and malformed watched
+    collections are skipped instead of silently normalized.
 
 ## Findings
 
@@ -104,9 +109,6 @@ listed under keep categories.
 Normalization should be server-side, pure, or limited to command payloads.
 Hidden client projection mutation can diverge from server-owned durable state.
 
-- `src/ts/server/lorebookBridge.svelte.ts`
-  - Watcher/snapshot paths assign lorebook IDs, initialize arrays, and mutate
-    entries before snapshots.
 - `src/ts/server/scriptDefinitionBridge.svelte.ts`
   - Watcher/snapshot paths assign missing script and trigger IDs.
 

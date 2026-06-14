@@ -197,13 +197,13 @@ afterEach(() => {
 
 describe('watchServerBackedLorebooks — no-data-loss invariant', () => {
   it('persists an edit to a HYDRATED character globalLore (the watcher is alive)', async () => {
-    setupCharacter([{ key: 'a', content: 'A' }] as Entry[])
+    setupCharacter([{ key: 'a', content: 'A', id: 'entry-a' }] as Entry[])
     markCharacterLorebookHydrated('c1')
     const stop = watchServerBackedLorebooks({ delayMs: DELAY })
     flushSync() // initialize the snapshot baseline
 
     recorded.commands.length = 0
-    ;(DBState.db.characters[0].globalLore as Entry[]).push({ key: 'b', content: 'B' })
+    ;(DBState.db.characters[0].globalLore as Entry[]).push({ key: 'b', content: 'B', id: 'entry-b' })
     flushSync() // diff → queue the replacement
     await vi.advanceTimersByTimeAsync(DELAY)
 
@@ -214,7 +214,7 @@ describe('watchServerBackedLorebooks — no-data-loss invariant', () => {
   })
 
   it('NEVER persists a re-stubbed (no-longer-hydrated) character — the data-loss path', async () => {
-    setupCharacter([{ key: 'a', content: 'A' }] as Entry[])
+    setupCharacter([{ key: 'a', content: 'A', id: 'entry-a' }] as Entry[])
     markCharacterLorebookHydrated('c1')
     const stop = watchServerBackedLorebooks({ delayMs: DELAY })
     flushSync() // baseline = hydrated [A]
@@ -249,16 +249,16 @@ describe('watchServerBackedLorebooks — no-data-loss invariant', () => {
   it('recordHydratedCharacterLorebooks marks characters whose projected globalLore is present', async () => {
     // Resident (array) → hydrated; stubbed (absent) → not.
     recordHydratedCharacterLorebooks([
-      { chaId: 'resident', globalLore: [{ key: 'k' }] },
+      { chaId: 'resident', globalLore: [{ key: 'k', id: 'resident-entry' }] },
       { chaId: 'stub' /* globalLore absent */ },
     ])
-    setupCharacter([{ key: 'a', content: 'A' }] as Entry[])
+    setupCharacter([{ key: 'a', content: 'A', id: 'entry-a' }] as Entry[])
     ;(DBState.db.characters[0] as { chaId: string }).chaId = 'resident'
     const stop = watchServerBackedLorebooks({ delayMs: DELAY })
     flushSync()
 
     recorded.commands.length = 0
-    ;(DBState.db.characters[0].globalLore as Entry[]).push({ key: 'b', content: 'B' })
+    ;(DBState.db.characters[0].globalLore as Entry[]).push({ key: 'b', content: 'B', id: 'entry-b' })
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
     // 'resident' is tracked → its edit persists.
@@ -267,13 +267,15 @@ describe('watchServerBackedLorebooks — no-data-loss invariant', () => {
   })
 
   it('M11: foreign character-lorebook projection apply refreshes baseline without echoing, then local edits dispatch', async () => {
-    setupCharacter([{ key: 'a', content: 'A' }] as Entry[])
+    setupCharacter([{ key: 'a', content: 'A', id: 'entry-a' }] as Entry[])
     markCharacterLorebookHydrated('c1')
     const stop = watchServerBackedLorebooks({ delayMs: DELAY })
     flushSync()
 
     recorded.commands.length = 0
-    const applied = applyServerCharacterLorebookProjection('c1', [{ key: 'server', content: 'Server' }])
+    const applied = applyServerCharacterLorebookProjection('c1', [
+      { key: 'server', content: 'Server', id: 'server-entry' },
+    ])
     expect(applied).toBe(true)
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
@@ -284,14 +286,18 @@ describe('watchServerBackedLorebooks — no-data-loss invariant', () => {
     ;(DBState.db.characters[0].globalLore as Entry[]).push({
       key: 'local',
       content: 'Local',
+      id: 'local-entry',
     })
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
 
-    const cmds = characterReplaceCommands()
+    const cmds = characterEntryCommands()
     expect(cmds).toHaveLength(1)
-    expect(cmds[0].characterId).toBe('c1')
-    expect((cmds[0].entries as Entry[]).map((entry) => entry.content)).toEqual(['Server', 'Local'])
+    expect(cmds[0].a).toMatchObject({
+      characterId: 'c1',
+      entryId: 'local-entry',
+      entry: { id: 'local-entry', content: 'Local' },
+    })
     stop()
   })
 
@@ -468,6 +474,37 @@ describe('watchServerBackedLorebooks — no-data-loss invariant', () => {
         stop()
       }
     }
+  })
+})
+
+describe('P1 lorebook snapshot purity', () => {
+  it('state snapshots clone malformed lorebook data as-is without assigning ids or stub arrays', () => {
+    ;(DBState as { db: unknown }).db = {
+      loreBook: [{ name: 'Missing ids' }],
+      loreBookPage: 0,
+      characters: [
+        {
+          chaId: 'snapshot-char',
+          chats: [{ id: 'snapshot-chat' }],
+        },
+      ],
+      modules: [{ id: 'snapshot-module' }],
+    }
+    selectedCharID.set(0)
+
+    const broad = currentLorebookStateSnapshot()
+    const global = currentGlobalLorebookStateSnapshot()
+
+    expect((DBState.db.loreBook[0] as { id?: string }).id).toBeUndefined()
+    expect(DBState.db.loreBook[0]).not.toHaveProperty('data')
+    expect(DBState.db.characters[0]).not.toHaveProperty('globalLore')
+    expect(DBState.db.characters[0].chats[0]).not.toHaveProperty('localLore')
+    expect((DBState.db.modules[0] as { lorebook?: unknown }).lorebook).toBeUndefined()
+
+    expect(broad.loreBook[0]).not.toHaveProperty('id')
+    expect(broad.loreBook[0]).not.toHaveProperty('data')
+    expect(global.loreBook[0]).not.toHaveProperty('id')
+    expect(global.loreBook[0]).not.toHaveProperty('data')
   })
 })
 
@@ -895,6 +932,7 @@ describe('K4 lorebook editor entry draft scope', () => {
 
     recorded.commands.length = 0
     ;(DBState.db.characters[0].globalLore as Entry[]).push({
+      id: 'teardown-entry',
       key: 'teardown',
       content: 'Teardown lore',
     })
@@ -905,7 +943,11 @@ describe('K4 lorebook editor entry draft scope', () => {
     const cmds = characterEntryCommands()
     expect(cmds).toHaveLength(1)
     expect(cmds[0].keepalive).toBeUndefined()
-    expect(cmds[0].a).toMatchObject({ characterId: 'c-k4', entry: { content: 'Teardown lore' } })
+    expect(cmds[0].a).toMatchObject({
+      characterId: 'c-k4',
+      entryId: 'teardown-entry',
+      entry: { id: 'teardown-entry', content: 'Teardown lore' },
+    })
 
     await vi.advanceTimersByTimeAsync(DELAY * 10)
     expect(characterEntryCommands()).toHaveLength(1)
@@ -1563,7 +1605,7 @@ describe('watchServerBackedLorebooks — scoped change detection (Phase 6)', () 
     stop()
   })
 
-  it('L32: a character-scoped watcher first-run id ensure touches only the selected character collections', () => {
+  it('P1: a character-scoped watcher first run does not assign ids or initialize other collections', () => {
     setupMultiCollectionDb()
     stripIdsForScopedEnsureRegression()
     markCharacterLorebookHydrated('c0')
@@ -1573,8 +1615,8 @@ describe('watchServerBackedLorebooks — scoped change detection (Phase 6)', () 
     const stop = watchServerBackedLorebooks({ scope: { kind: 'character' }, delayMs: DELAY })
     flushSync()
 
-    expect((DBState.db.characters[0].globalLore as Entry[])[0].id).toEqual(expect.any(String))
-    expect((DBState.db.characters[0].chats[0].localLore as Entry[])[0].id).toEqual(expect.any(String))
+    expect((DBState.db.characters[0].globalLore as Entry[])[0].id).toBeUndefined()
+    expect((DBState.db.characters[0].chats[0].localLore as Entry[])[0].id).toBeUndefined()
     expect((DBState.db.characters[1].globalLore as Entry[])[0].id).toBeUndefined()
     expect((DBState.db.characters[1].chats[0].localLore as Entry[])[0].id).toBeUndefined()
     expect(((DBState.db.modules as any[])[0].lorebook as Entry[])[0].id).toBeUndefined()
@@ -1585,14 +1627,14 @@ describe('watchServerBackedLorebooks — scoped change detection (Phase 6)', () 
     selectedCharID.set(1)
     flushSync()
 
-    expect((DBState.db.characters[1].globalLore as Entry[])[0].id).toEqual(expect.any(String))
-    expect((DBState.db.characters[1].chats[0].localLore as Entry[])[0].id).toEqual(expect.any(String))
+    expect((DBState.db.characters[1].globalLore as Entry[])[0].id).toBeUndefined()
+    expect((DBState.db.characters[1].chats[0].localLore as Entry[])[0].id).toBeUndefined()
     expect(((DBState.db.modules as any[])[0].lorebook as Entry[])[0].id).toBeUndefined()
     expect(((DBState.db.loreBook as any[])[0] as { id?: string }).id).toBeUndefined()
     stop()
   })
 
-  it('L32: a global-scoped watcher first-run id ensure touches only the global lorebook list', () => {
+  it('P1: a global-scoped watcher first run does not assign global lorebook or entry ids', () => {
     setupMultiCollectionDb()
     stripIdsForScopedEnsureRegression()
     markCharacterLorebookHydrated('c0')
@@ -1601,19 +1643,80 @@ describe('watchServerBackedLorebooks — scoped change detection (Phase 6)', () 
     const stop = watchServerBackedLorebooks({ scope: { kind: 'global' }, delayMs: DELAY })
     flushSync()
 
-    expect(((DBState.db.loreBook as any[])[0] as { id?: string }).id).toEqual(expect.any(String))
-    expect(((DBState.db.loreBook as any[])[0].data as Entry[])[0].id).toEqual(expect.any(String))
+    expect(((DBState.db.loreBook as any[])[0] as { id?: string }).id).toBeUndefined()
+    expect(((DBState.db.loreBook as any[])[0].data as Entry[])[0].id).toBeUndefined()
     expect((DBState.db.characters[0].globalLore as Entry[])[0].id).toBeUndefined()
     expect((DBState.db.characters[0].chats[0].localLore as Entry[])[0].id).toBeUndefined()
     expect(((DBState.db.modules as any[])[0].lorebook as Entry[])[0].id).toBeUndefined()
     stop()
   })
 
-  it('L32: the global lorebook modal mount does not call the broad id ensure', () => {
+  it('P1: watcher skips malformed selected-character lore without dispatch or id mutation', async () => {
+    setupMultiCollectionDb()
+    stripIdsForScopedEnsureRegression()
+    markCharacterLorebookHydrated('c0')
+    selectedCharID.set(0)
+    const stop = watchServerBackedLorebooks({ scope: { kind: 'character' }, delayMs: DELAY })
+    flushSync()
+
+    recorded.commands.length = 0
+    ;(DBState.db.characters[0].globalLore as Entry[])[0].content = 'Changed without stable id'
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    expect(recorded.commands).toHaveLength(0)
+    expect((DBState.db.characters[0].globalLore as Entry[])[0].id).toBeUndefined()
+    expect((DBState.db.characters[0].chats[0].localLore as Entry[])[0].id).toBeUndefined()
+    stop()
+  })
+
+  it('P1: watcher skips selected-character lore with duplicate entry ids', async () => {
+    setupMultiCollectionDb()
+    markCharacterLorebookHydrated('c0')
+    selectedCharID.set(0)
+    const stop = watchServerBackedLorebooks({ scope: { kind: 'character' }, delayMs: DELAY })
+    flushSync()
+
+    recorded.commands.length = 0
+    ;(DBState.db.characters[0].globalLore as Entry[]).push({
+      key: 'duplicate',
+      content: 'Duplicate id',
+      id: 'c0g1',
+    })
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    expect(recorded.commands).toHaveLength(0)
+    expect((DBState.db.characters[0].globalLore as Entry[]).map((entry) => entry.id)).toEqual(['c0g1', 'c0g1'])
+    stop()
+  })
+
+  it('P1: watcher revalidates ids at debounce flush before sending replacements', async () => {
+    setupMultiCollectionDb()
+    markCharacterLorebookHydrated('c0')
+    selectedCharID.set(0)
+    const stop = watchServerBackedLorebooks({ scope: { kind: 'character' }, delayMs: DELAY })
+    flushSync()
+
+    recorded.commands.length = 0
+    const entry = (DBState.db.characters[0].globalLore as Entry[])[0]
+    entry.content = 'Queued while id is stable'
+    flushSync()
+
+    delete entry.id
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    expect(recorded.commands).toHaveLength(0)
+    expect(entry.id).toBeUndefined()
+    stop()
+  })
+
+  it('P1: the global lorebook modal mount does not normalize ids', () => {
     const source = readFileSync(path.join(process.cwd(), 'src/lib/Setting/lorepreset.svelte'), 'utf8')
     const mountEffect = source.slice(source.indexOf('$effect'), source.indexOf('</script>'))
 
-    expect(mountEffect).toContain('ensureGlobalLorebookListIds()')
+    expect(mountEffect).not.toContain('ensureGlobalLorebookListIds')
     expect(mountEffect).not.toContain('ensureAllClientLorebookIds')
   })
 
@@ -1639,7 +1742,7 @@ describe('watchServerBackedLorebooks — scoped change detection (Phase 6)', () 
     recorded.commands.length = 0
     DBState.db.characters[0].chats[0].localLore = [
       ...(DBState.db.characters[0].chats[0].localLore as Entry[]),
-      { key: 'y', content: 'Y' },
+      { key: 'y', content: 'Y', id: 'c0l2' },
     ] as never
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
@@ -1733,14 +1836,14 @@ describe('watchServerBackedLorebooks — scoped change detection (Phase 6)', () 
 
     // An edit to the now-selected c1 is dispatched...
     recorded.commands.length = 0
-    ;(DBState.db.characters[1].globalLore as Entry[]).push({ key: 'b', content: 'B' })
+    ;(DBState.db.characters[1].globalLore as Entry[]).push({ key: 'b', content: 'B', id: 'c1g2' })
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
     expect(characterEntryCommands().map((c) => (c.a as { characterId?: string }).characterId)).toEqual(['c1'])
 
     // ...while an edit to the no-longer-selected c0 is ignored.
     recorded.commands.length = 0
-    ;(DBState.db.characters[0].globalLore as Entry[]).push({ key: 'z', content: 'Z' })
+    ;(DBState.db.characters[0].globalLore as Entry[]).push({ key: 'z', content: 'Z', id: 'c0g2' })
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
     expect(characterReplaceCommands()).toHaveLength(0)

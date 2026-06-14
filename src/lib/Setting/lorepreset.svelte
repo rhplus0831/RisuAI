@@ -8,7 +8,6 @@
   import {
     createGlobalLorebook,
     deleteGlobalLorebook,
-    ensureGlobalLorebookListIds,
     renameGlobalLorebook,
     selectGlobalLorebook,
     watchServerBackedLorebooks,
@@ -18,7 +17,6 @@
   let { close = () => {} } = $props()
 
   $effect(() => {
-    ensureGlobalLorebookListIds()
     // This modal only edits the global lorebook list, so scope change detection
     // to it instead of scanning every character/chat/module per keystroke.
     const stopLorebooks = watchServerBackedLorebooks({ scope: { kind: 'global' } })
