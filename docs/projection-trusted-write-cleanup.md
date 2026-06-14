@@ -87,6 +87,10 @@ coherent rollback/resync story.
     sanitized character patch used by the command, apply only those kept fields
     to the local row, preserve excluded fields and the original character ID,
     and skip no-op excluded-only replacements.
+- `src/ts/process/triggers.ts`
+  - `v2SetPersonaDesc` now routes through a persona domain helper that captures
+    the pre-trigger snapshot, mirrors the legacy prompt/profile fields in one
+    optimistic write, and rolls back both prompt locations on command failure.
 
 ## Findings
 
@@ -150,8 +154,6 @@ state, or routed through server-owned finalization/patch commands.
   `src/ts/process/postGeneration/stage4Finalize.ts`
   - Retained local post-generation writes final text, inlay text, trigger
     output, reload state, or timing metadata without command ownership.
-- `src/ts/process/triggers.ts`
-  - Persona prompt trigger writes before `saveUserPersona()` captures rollback.
 - `src/ts/process/promptAssembly/buildMemoryWindow.ts`
   - `lastMemory` can be written without a chat id and without persistence.
 - `src/ts/process/scripts.ts`

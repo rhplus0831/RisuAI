@@ -9,7 +9,7 @@ import {
   type Chat,
   type character,
 } from '../storage/database.svelte'
-import { saveUserPersona } from '../persona'
+import { setSelectedPersonaPromptFromTrigger } from '../persona'
 import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
 import { tokenize } from '../tokenizer'
 import { getModuleTriggers } from './modules'
@@ -2652,12 +2652,7 @@ export async function runTrigger(
             effect.valueType === 'value'
               ? risuChatParser(effect.value, { chara: char })
               : getVar(risuChatParser(effect.value, { chara: char }))
-          if (DBState.db.personas[DBState.db.selectedPersona]) {
-            withTrustedServerProjectionWrite(() => {
-              DBState.db.personaPrompt = value
-            })
-            saveUserPersona()
-          }
+          setSelectedPersonaPromptFromTrigger(value)
           break
         }
         case 'v2GetReplaceGlobalNote': {

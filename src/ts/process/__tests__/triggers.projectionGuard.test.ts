@@ -42,7 +42,7 @@ function jsonResponse(body: unknown, status = 200): Response {
   })
 }
 
-function stubCommandFetch(): CapturedFetch[] {
+function stubCommandFetch(options: { failPersonaPatch?: boolean } = {}): CapturedFetch[] {
   const calls: CapturedFetch[] = []
   vi.stubGlobal(
     'fetch',
@@ -61,6 +61,9 @@ function stubCommandFetch(): CapturedFetch[] {
         })
       }
       if (url.startsWith('/api/v1/commands/personas/')) {
+        if (options.failPersonaPatch) {
+          return jsonResponse({ error: 'persona patch failed' }, 500)
+        }
         return jsonResponse({
           revision: 11,
           event: { type: 'persona.updated', revision: 11, resource: 'persona' },
@@ -219,6 +222,49 @@ describe('trigger durable writes under the projection guard', () => {
       (call) => call.url === '/api/v1/commands/personas/persona-a' && call.method === 'PATCH',
     )
     expect(patch.body.patch.personaPrompt).toBe('persona prompt')
+    expect(patch.body.mirrorLegacyProfile).toBe(true)
+  })
+
+  it('rolls back v2SetPersonaDesc optimism when the persona command fails', async () => {
+    DBState.db.personaPrompt = 'legacy prompt before trigger'
+    DBState.db.personas[0].personaPrompt = 'saved prompt before trigger'
+    const selectedPersona = DBState.db.selectedPersona
+    const calls = stubCommandFetch({ failPersonaPatch: true })
+    setServerProjectionWriteGuardEnabled(true)
+
+    // Baseline: the guard is active, so a raw legacy prompt write throws.
+    expect(() => {
+      DBState.db.personaPrompt = 'raw prompt'
+    }).toThrow()
+
+    const char = characterWithTriggers([
+      {
+        comment: 'persona-fail',
+        type: 'manual',
+        conditions: [],
+        effect: [{ type: 'v2SetPersonaDesc', valueType: 'value', value: 'trigger prompt' }],
+      },
+    ])
+
+    await expect(
+      runTrigger(char, 'manual', { chat: char.chats[char.chatPage], manualName: 'persona-fail' }),
+    ).resolves.not.toThrow()
+
+    const patch = await waitForCommand(
+      calls,
+      (call) => call.url === '/api/v1/commands/personas/persona-a' && call.method === 'PATCH',
+    )
+    expect(patch.body.patch.personaPrompt).toBe('trigger prompt')
+    expect(patch.body.mirrorLegacyProfile).toBe(true)
+
+    await waitFor(
+      () =>
+        DBState.db.personaPrompt === 'legacy prompt before trigger' &&
+        DBState.db.personas[selectedPersona]?.personaPrompt === 'saved prompt before trigger',
+    )
+
+    expect(DBState.db.personaPrompt).toBe('legacy prompt before trigger')
+    expect(DBState.db.personas[selectedPersona]?.personaPrompt).toBe('saved prompt before trigger')
   })
 
   it('routes v2ModifyLorebook through a lorebook command instead of a guarded direct write', async () => {

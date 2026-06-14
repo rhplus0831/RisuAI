@@ -446,6 +446,35 @@ export function saveUserPersona(options: { dispatch?: boolean } = {}) {
   }
 }
 
+export function setSelectedPersonaPromptFromTrigger(value: string): void {
+  const persona = DBState.db.personas[DBState.db.selectedPersona]
+  if (!persona) return
+  const personaId = selectedPersonaId()
+  if (!personaId) return
+  const previous = currentPersonaStateSnapshot()
+
+  withTrustedServerProjectionWrite(() => {
+    const selectedPersona = DBState.db.personas[DBState.db.selectedPersona]
+    if (!selectedPersona) return
+    DBState.db.personaPrompt = value
+    selectedPersona.name = DBState.db.username
+    selectedPersona.icon = DBState.db.userIcon
+    selectedPersona.personaPrompt = value
+    selectedPersona.note = DBState.db.userNote
+  })
+
+  runPersonaCommand(
+    (baseRevision) =>
+      updatePersonaCommand({
+        baseRevision,
+        personaId,
+        patch: personaPatchFromLegacyProfile(),
+        mirrorLegacyProfile: true,
+      }),
+    () => restorePersonaStateSnapshot(previous),
+  )
+}
+
 export function selectUserPersonaLocally(id: number, save: 'save' | 'noSave' = 'save'): boolean {
   if (!personaCommandIdList()) return false
   if (!validUniquePersonaIdAt(id)) return false
