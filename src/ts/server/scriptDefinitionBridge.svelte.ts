@@ -97,6 +97,26 @@ export function restoreScriptDefinitionState(snapshot: ScriptDefinitionStateSnap
   })
 }
 
+export function applyCharacterScriptDefinitionDraft(
+  characterId: string | null | undefined,
+  scripts: customscript[],
+  triggers: triggerscript[],
+): boolean {
+  if (!characterId) return false
+  const character = DBState.db.characters?.find((candidate) => candidate.chaId === characterId)
+  if (!character) return false
+
+  let applied = false
+  withTrustedServerProjectionWrite(() => {
+    const target = DBState.db.characters?.find((candidate) => candidate.chaId === characterId)
+    if (!target) return
+    target.customscript = cloneJsonValue(scripts)
+    target.triggerscript = cloneJsonValue(triggers)
+    applied = true
+  })
+  return applied
+}
+
 export function ensureClientScriptDefinitionIds(scripts: customscript[]): customscript[] {
   for (const script of scripts ?? []) {
     script.id = typeof script.id === 'string' && script.id.trim() ? script.id : v4()
@@ -163,6 +183,7 @@ export function dispatchReplaceCharacterScripts(
 ): void {
   if (!canUseServerCommands()) return
   ensureClientScriptDefinitionIds(scripts)
+  const scriptPayload = cloneJsonValue(scripts) as ScriptDefinitionSnapshot[]
   queueReplacement(
     `characterScripts:${characterId}`,
     previous,
@@ -173,7 +194,7 @@ export function dispatchReplaceCharacterScripts(
             {
               baseRevision,
               characterId,
-              scripts: cloneJsonValue(scripts) as ScriptDefinitionSnapshot[],
+              scripts: scriptPayload,
             },
             options.signal,
             options.keepalive,
@@ -194,6 +215,7 @@ export function dispatchReplaceCharacterTriggers(
 ): void {
   if (!canUseServerCommands()) return
   ensureClientTriggerDefinitionIds(triggers)
+  const triggerPayload = cloneJsonValue(triggers) as TriggerDefinitionSnapshot[]
   queueReplacement(
     `characterTriggers:${characterId}`,
     previous,
@@ -204,7 +226,7 @@ export function dispatchReplaceCharacterTriggers(
             {
               baseRevision,
               characterId,
-              triggers: cloneJsonValue(triggers) as TriggerDefinitionSnapshot[],
+              triggers: triggerPayload,
             },
             options.signal,
             options.keepalive,
@@ -225,6 +247,7 @@ export function dispatchReplaceModuleScripts(
 ): void {
   if (!canUseServerCommands()) return
   ensureClientScriptDefinitionIds(scripts)
+  const scriptPayload = cloneJsonValue(scripts) as ScriptDefinitionSnapshot[]
   queueReplacement(
     `moduleScripts:${moduleId}`,
     previous,
@@ -235,7 +258,7 @@ export function dispatchReplaceModuleScripts(
             {
               baseRevision,
               moduleId,
-              scripts: cloneJsonValue(scripts) as ScriptDefinitionSnapshot[],
+              scripts: scriptPayload,
             },
             options.signal,
             options.keepalive,
@@ -256,6 +279,7 @@ export function dispatchReplaceModuleTriggers(
 ): void {
   if (!canUseServerCommands()) return
   ensureClientTriggerDefinitionIds(triggers)
+  const triggerPayload = cloneJsonValue(triggers) as TriggerDefinitionSnapshot[]
   queueReplacement(
     `moduleTriggers:${moduleId}`,
     previous,
@@ -266,7 +290,7 @@ export function dispatchReplaceModuleTriggers(
             {
               baseRevision,
               moduleId,
-              triggers: cloneJsonValue(triggers) as TriggerDefinitionSnapshot[],
+              triggers: triggerPayload,
             },
             options.signal,
             options.keepalive,

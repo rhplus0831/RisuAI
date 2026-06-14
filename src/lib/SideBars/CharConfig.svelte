@@ -79,8 +79,10 @@
     watchServerBackedCharacterProfile,
   } from 'src/ts/server/characterBridge.svelte'
   import { watchServerBackedChatMetadata } from 'src/ts/server/chatBridge.svelte'
-  import { watchServerBackedScriptDefinitions } from 'src/ts/server/scriptDefinitionBridge.svelte'
-  import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
+  import {
+    applyCharacterScriptDefinitionDraft,
+    watchServerBackedScriptDefinitions,
+  } from 'src/ts/server/scriptDefinitionBridge.svelte'
   import { currentChatStateSnapshot, dispatchUpdateChat, setCurrentChatGreetingIndex } from 'src/ts/chatCommands'
 
   let iconRemoveMode = $state(false)
@@ -191,13 +193,9 @@
     if (suppressScriptDraftDispatch || !characterId || snapshot === scriptDraftSnapshot) return
 
     untrack(() => {
-      withTrustedServerProjectionWrite(() => {
-        const character = DBState.db.characters?.find((candidate) => candidate.chaId === characterId)
-        if (!character) return
-        character.customscript = cloneJsonValue(characterScriptsDraft)
-        character.triggerscript = cloneJsonValue(characterTriggersDraft)
-      })
-      scriptDraftSnapshot = snapshot
+      if (applyCharacterScriptDefinitionDraft(characterId, characterScriptsDraft, characterTriggersDraft)) {
+        scriptDraftSnapshot = snapshot
+      }
     })
   })
 
