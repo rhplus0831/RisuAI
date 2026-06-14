@@ -830,6 +830,67 @@ function replaceLorebookEntryInPlace(target: loreBook, next: loreBook): void {
   Object.assign(writableTarget, writableNext)
 }
 
+export function selectGlobalLorebook(index: number): boolean {
+  const lorebookId = ((DBState.db.loreBook ?? []) as GlobalLorebook[])[index]?.id
+  if (canUseServerCommands() && lorebookId) {
+    dispatchSelectGlobalLorebook(lorebookId, currentGlobalLorebookStateSnapshot())
+    return true
+  }
+
+  withTrustedServerProjectionWrite(() => {
+    DBState.db.loreBookPage = index
+  })
+  return true
+}
+
+export function createGlobalLorebook(): boolean {
+  const previous = currentGlobalLorebookStateSnapshot()
+  const lorebook: GlobalLorebook = {
+    name: 'New LoreBook',
+    data: [],
+  }
+
+  withTrustedServerProjectionWrite(() => {
+    const loreBooks = (DBState.db.loreBook ?? []) as GlobalLorebook[]
+    loreBooks.push(lorebook)
+    DBState.db.loreBook = loreBooks as typeof DBState.db.loreBook
+    dispatchCreateGlobalLorebook(lorebook, previous)
+  })
+
+  return true
+}
+
+export function renameGlobalLorebook(index: number, name: string): boolean {
+  if (!((DBState.db.loreBook ?? []) as GlobalLorebook[])[index]) return false
+
+  withTrustedServerProjectionWrite(() => {
+    const lorebook = ((DBState.db.loreBook ?? []) as GlobalLorebook[])[index]
+    if (lorebook) lorebook.name = name
+  })
+
+  return true
+}
+
+export function deleteGlobalLorebook(index: number): boolean {
+  const loreBooks = (DBState.db.loreBook ?? []) as GlobalLorebook[]
+  if (loreBooks.length <= 1 || !loreBooks[index]) return false
+
+  const previous = currentGlobalLorebookStateSnapshot()
+  const lorebookId = ((DBState.db.loreBook ?? []) as GlobalLorebook[])[index]?.id
+  withTrustedServerProjectionWrite(() => {
+    const current = (DBState.db.loreBook ?? []) as GlobalLorebook[]
+    if (current.length <= 1 || !current[index]) return
+    current.splice(index, 1)
+    DBState.db.loreBookPage = 0
+    DBState.db.loreBook = current as typeof DBState.db.loreBook
+    if (lorebookId) {
+      dispatchDeleteGlobalLorebook(lorebookId, previous)
+    }
+  })
+
+  return true
+}
+
 // Global-lorebook select/create/delete only touch `loreBook` / `loreBookPage`, so
 // they take the narrow `GlobalLorebookStateSnapshot` and roll back via
 // `restoreGlobalLorebookState` — never the whole characters + modules clone the

@@ -74,10 +74,12 @@ import { applyServerCharacterLorebookProjection } from '../storage/database.svel
 import {
   applyLorebookEntryDraftEdit,
   collectLorebookCollectionSnapshots,
+  createGlobalLorebook,
   currentGlobalLorebookStateSnapshot,
   currentLorebookCollectionScopedSnapshot,
   currentLorebookEntryScopedSnapshot,
   currentLorebookStateSnapshot,
+  deleteGlobalLorebook,
   dispatchCreateGlobalLorebook,
   dispatchDeleteGlobalLorebook,
   dispatchReorderGlobalLorebooks,
@@ -93,6 +95,7 @@ import {
   resetServerBackedLorebookBridgeForTests,
   restoreLorebookEntryState,
   restoreLorebookState,
+  renameGlobalLorebook,
   setActiveChatLorebookLocalActivation,
   watchServerBackedLorebooks,
 } from './lorebookBridge.svelte'
@@ -144,6 +147,18 @@ function characterEntryDeleteCommands(): Array<Record<string, unknown> & { a?: u
 
 function characterEntryReorderCommands(): Array<Record<string, unknown> & { a?: unknown; rollback?: () => void }> {
   return recorded.commands.filter((c) => c.kind === 'reorderCharacterEntries')
+}
+
+function globalCreateCommands(): Array<Record<string, unknown> & { a?: unknown; rollback?: () => void }> {
+  return recorded.commands.filter((c) => c.kind === 'createGlobal')
+}
+
+function globalDeleteCommands(): Array<Record<string, unknown> & { a?: unknown; rollback?: () => void }> {
+  return recorded.commands.filter((c) => c.kind === 'deleteGlobal')
+}
+
+function globalUpdateCommands(): Array<Record<string, unknown> & { a?: unknown; rollback?: () => void }> {
+  return recorded.commands.filter((c) => c.kind === 'updateGlobal')
 }
 
 async function flushServerCommandRecording(): Promise<void> {
@@ -451,6 +466,113 @@ describe('watchServerBackedLorebooks — no-data-loss invariant', () => {
       } finally {
         stop()
       }
+    }
+  })
+})
+
+describe('global lorebook modal bridge helpers', () => {
+  it('routes lorepreset create, rename, and delete writes through bridge helpers', () => {
+    const source = readFileSync(path.join(process.cwd(), 'src/lib/Setting/lorepreset.svelte'), 'utf8')
+
+    expect(source).not.toContain('withTrustedServerProjectionWrite')
+    expect(source).not.toContain('currentGlobalLorebookStateSnapshot')
+    expect(source).not.toContain('dispatchCreateGlobalLorebook')
+    expect(source).not.toContain('dispatchDeleteGlobalLorebook')
+    expect(source).toContain('createGlobalLorebook()')
+    expect(source).toContain('renameGlobalLorebook(ind, value)')
+    expect(source).toContain('deleteGlobalLorebook(ind)')
+  })
+
+  it('creates a global lorebook, dispatches create, and rolls back to the previous list', async () => {
+    setupGlobalLorebooks()
+
+    expect(createGlobalLorebook()).toBe(true)
+    await flushServerCommandRecording()
+
+    const lorebooks = DBState.db.loreBook as unknown as GlobalLorebookFixture[]
+    expect(lorebooks).toHaveLength(2)
+    expect(lorebooks[1]).toMatchObject({
+      id: expect.any(String),
+      name: 'New LoreBook',
+      data: [],
+    })
+
+    const creates = globalCreateCommands()
+    expect(creates).toHaveLength(1)
+    expect(creates[0].a).toMatchObject({
+      lorebook: {
+        id: lorebooks[1].id,
+        name: 'New LoreBook',
+        data: [],
+      },
+    })
+
+    creates[0].rollback?.()
+    expect(globalLorebookIds()).toEqual(['g1'])
+  })
+
+  it('deletes a global lorebook, resets page, dispatches delete, and rolls back list/page', async () => {
+    setupGlobalLorebooks(
+      [
+        { id: 'g1', name: 'Initial', data: [] },
+        { id: 'g2', name: 'Second', data: [] },
+      ],
+      1,
+    )
+
+    expect(deleteGlobalLorebook(1)).toBe(true)
+    await flushServerCommandRecording()
+
+    expect(globalLorebookIds()).toEqual(['g1'])
+    expect(DBState.db.loreBookPage).toBe(0)
+
+    const deletes = globalDeleteCommands()
+    expect(deletes).toHaveLength(1)
+    expect(deletes[0].a).toMatchObject({ lorebookId: 'g2' })
+
+    deletes[0].rollback?.()
+    expect(globalLorebookIds()).toEqual(['g1', 'g2'])
+    expect(DBState.db.loreBookPage).toBe(1)
+  })
+
+  it('does not delete the only global lorebook', async () => {
+    setupGlobalLorebooks()
+
+    expect(deleteGlobalLorebook(0)).toBe(false)
+    await flushServerCommandRecording()
+
+    expect(globalLorebookIds()).toEqual(['g1'])
+    expect(DBState.db.loreBookPage).toBe(0)
+    expect(globalDeleteCommands()).toHaveLength(0)
+  })
+
+  it('renames through the bridge and keeps watcher update rollback suppressed', async () => {
+    setupGlobalLorebooks()
+    const stop = watchServerBackedLorebooks({ scope: { kind: 'global' }, delayMs: DELAY })
+    flushSync()
+    recorded.commands.length = 0
+
+    try {
+      expect(renameGlobalLorebook(0, 'Renamed')).toBe(true)
+      expect(DBState.db.loreBook[0].name).toBe('Renamed')
+      flushSync()
+      await vi.advanceTimersByTimeAsync(DELAY)
+
+      const updates = globalUpdateCommands()
+      expect(updates).toHaveLength(1)
+      expect(updates[0].a).toMatchObject({
+        lorebookId: 'g1',
+        patch: { name: 'Renamed' },
+      })
+
+      updates[0].rollback?.()
+      flushSync()
+      await vi.advanceTimersByTimeAsync(DELAY)
+
+      expect(DBState.db.loreBook[0].name).toBe('Initial')
+      expect(globalUpdateCommands()).toHaveLength(1)
+    } finally {
+      stop()
     }
   })
 })
@@ -1380,7 +1502,7 @@ describe('watchServerBackedLorebooks — scoped change detection (Phase 6)', () 
 
   it('L32: the global lorebook modal mount does not call the broad id ensure', () => {
     const source = readFileSync(path.join(process.cwd(), 'src/lib/Setting/lorepreset.svelte'), 'utf8')
-    const mountEffect = source.slice(source.indexOf('$effect'), source.indexOf('function selectLorebook'))
+    const mountEffect = source.slice(source.indexOf('$effect'), source.indexOf('</script>'))
 
     expect(mountEffect).toContain('ensureGlobalLorebookListIds()')
     expect(mountEffect).not.toContain('ensureAllClientLorebookIds')
