@@ -363,6 +363,39 @@ describe('H3 streaming render coalescing', () => {
     expect(processScriptFullSpy).toHaveBeenCalledTimes(2)
   })
 
+  it('retargets a coalesced write after a server projection moves the generated row', async () => {
+    const currentChar = seed()
+    const frames: (() => void)[] = []
+    const { stream, push, close } = makeControlledStream()
+    const ctrl = new AbortController()
+    const promise = consumeStreamResponse(
+      callArgs(streamingReq(stream), currentChar, ctrl.signal, {
+        renderFlushScheduler: (flush) => {
+          frames.push(flush)
+        },
+      }),
+    )
+
+    push({ msgKey: 'server stream' })
+    await vi.waitFor(() => expect(frames.length).toBe(1))
+
+    DBState.db.characters[0].chats[0].message = [
+      {
+        role: 'char',
+        data: 'projection final',
+        chatId: 'gen-1',
+        generationInfo: { generationId: 'gen-1' },
+      },
+    ]
+    close()
+
+    const out = await promise
+    expect(out.msgIndex).toBe(0)
+    expect(DBState.db.characters[0].chats[0].message).toHaveLength(1)
+    expect(DBState.db.characters[0].chats[0].message[0].data).toBe('server stream')
+    expect(processScriptFullSpy).toHaveBeenCalledWith(currentChar, 'server stream', 'editoutput', 0)
+  })
+
   it('a mid-stream apply failure propagates and still runs the finally cleanup', async () => {
     const currentChar = seed()
     processScriptFullSpy.mockRejectedValue(new Error('script-broke'))

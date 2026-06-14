@@ -1,4 +1,4 @@
-import type { MessageGenerationInfo, MessagePresetInfo, character } from '../../storage/database.svelte'
+import type { Chat, Message, MessageGenerationInfo, MessagePresetInfo, character } from '../../storage/database.svelte'
 import { DBState } from '../../stores.svelte'
 import { trimUntilPunctuation } from '../../util'
 import { withTrustedServerProjectionWrite } from '../../server/projectionWriteGuard.svelte'
@@ -58,14 +58,41 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
   } = opts
 
   const reader = req.result.getReader()
-  let msgIndex = DBState.db.characters[selectedChar].chats[selectedChat].message.length
+  const currentLiveCharacter = (): character | undefined => DBState.db.characters?.[selectedChar]
+  let streamChatId: string | undefined
+  const currentLiveChat = (): Chat | undefined => {
+    const chats = currentLiveCharacter()?.chats
+    if (!Array.isArray(chats)) return undefined
+    const indexedChat = chats[selectedChat]
+    if (!streamChatId || indexedChat?.id === streamChatId) return indexedChat
+    return chats.find((chat) => chat.id === streamChatId) ?? indexedChat
+  }
+  const bumpReloadKey = (): void => {
+    const character = currentLiveCharacter()
+    if (character) character.reloadKeys += 1
+  }
+  const initialChat = currentLiveChat()
+  if (!initialChat) {
+    throw new Error('Active chat is unavailable for the streaming response')
+  }
+  streamChatId = initialChat.id
+  const initialMessages = Array.isArray(initialChat.message) ? initialChat.message : []
+  let msgIndex = initialMessages.length
   let prefix = ''
+  let streamTargetMessageId: string | undefined = generationId
   if (arg.continue) {
     msgIndex -= 1
-    prefix = DBState.db.characters[selectedChar].chats[selectedChat].message[msgIndex].data
+    const continueTarget = initialMessages[msgIndex]
+    prefix = continueTarget?.data ?? ''
+    streamTargetMessageId = continueTarget?.chatId
   } else {
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters[selectedChar].chats[selectedChat].message.push({
+      const targetChat = currentLiveChat()
+      if (!targetChat) {
+        throw new Error('Active chat is unavailable for the streaming response')
+      }
+      targetChat.message ??= []
+      targetChat.message.push({
         role: 'char',
         data: '',
         saying: currentChar.chaId,
@@ -76,9 +103,36 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
       })
     })
   }
+
+  const findStreamMessageIndex = (messages: readonly Message[]): number => {
+    if (streamTargetMessageId) {
+      const index = messages.findIndex((message) => message?.chatId === streamTargetMessageId)
+      if (index >= 0) return index
+    }
+    if (generationId) {
+      const index = messages.findIndex(
+        (message) => message?.chatId === generationId || message?.generationInfo?.generationId === generationId,
+      )
+      if (index >= 0) return index
+    }
+    return msgIndex >= 0 && msgIndex < messages.length ? msgIndex : -1
+  }
+
+  const resolveStreamMessage = (): { chat: Chat; index: number; message: Message } | null => {
+    const chat = currentLiveChat()
+    const messages = chat?.message
+    if (!chat || !Array.isArray(messages)) return null
+    const index = findStreamMessageIndex(messages)
+    if (index < 0) return null
+    const message = messages[index]
+    if (!message) return null
+    return { chat, index, message }
+  }
+
   withTrustedServerProjectionWrite(() => {
-    DBState.db.characters[selectedChar].chats[selectedChat].isStreaming = true
-    DBState.db.characters[selectedChar].reloadKeys += 1
+    const targetChat = currentLiveChat()
+    if (targetChat) targetChat.isStreaming = true
+    bumpReloadKey()
   })
   let lastResponseChunk: StreamResponseChunk = {}
   let streamAborted: boolean = abortSignal.aborted
@@ -90,6 +144,9 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
   // once per token. `settle()` below guarantees the final full-fidelity apply
   // (including `editoutput`) before this function returns.
   const applyLatestChunk = async (): Promise<void> => {
+    const targetBeforeScript = resolveStreamMessage()
+    if (!targetBeforeScript) return
+    msgIndex = targetBeforeScript.index
     let nextData: string
     if (skipEditOutput) {
       // The server owns `editoutput`; write the reformatted stream for display
@@ -101,8 +158,11 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
       emoChanged = result2.emoChanged
     }
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters[selectedChar].chats[selectedChat].message[msgIndex].data = nextData
-      DBState.db.characters[selectedChar].reloadKeys += 1
+      const target = resolveStreamMessage()
+      if (!target) return
+      msgIndex = target.index
+      target.message.data = nextData
+      bumpReloadKey()
     })
   }
   const renderCoalescer = createStreamRenderCoalescer(applyLatestChunk, opts.renderFlushScheduler)
@@ -151,8 +211,9 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
     // swallow apply errors here so they cannot mask the propagating one.
     await renderCoalescer.settle().catch(() => {})
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters[selectedChar].chats[selectedChat].isStreaming = false
-      DBState.db.characters[selectedChar].reloadKeys += 1
+      const targetChat = currentLiveChat()
+      if (targetChat) targetChat.isStreaming = false
+      bumpReloadKey()
     })
     void reader.cancel().catch(() => {})
   }
