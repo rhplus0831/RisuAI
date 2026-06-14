@@ -9,13 +9,11 @@
   import Help from 'src/lib/Others/Help.svelte'
   import { selectedCharID } from 'src/ts/stores.svelte'
   import {
-    currentLorebookCollectionScopedSnapshot,
-    dispatchReplaceCharacterLorebooks,
-    dispatchReplaceChatLorebooks,
+    replaceCharacterLorebookCollection,
+    replaceChatLorebookCollection,
     watchServerBackedLorebooks,
     type LorebookWatchScope,
   } from 'src/ts/server/lorebookBridge.svelte'
-  import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
   import { createServerBackedCharacterDraft } from 'src/ts/server/characterBridge.svelte'
 
   let submenu = $state(0)
@@ -54,18 +52,7 @@
 
     const allActive = globalLore.every((book) => book.alwaysActive)
     const nextLore = globalLore.map((book) => ({ ...book, alwaysActive: !allActive }))
-    // This action edits only the character's globalLore, so capture the scoped
-    // rollback for that one collection, not the whole-DB clone.
-    const previous = currentLorebookCollectionScopedSnapshot({
-      kind: 'character',
-      characterId: character.chaId,
-    })
-
-    withTrustedServerProjectionWrite(() => {
-      const liveCharacter = DBState.db.characters?.[$selectedCharID]
-      if (liveCharacter) liveCharacter.globalLore = nextLore
-    })
-    dispatchReplaceCharacterLorebooks(character.chaId, nextLore, previous)
+    replaceCharacterLorebookCollection(character.chaId, nextLore)
   }
 
   function toggleChatLoreAlwaysActive() {
@@ -77,16 +64,7 @@
 
     const allActive = localLore.every((book) => book.alwaysActive)
     const nextLore = localLore.map((book) => ({ ...book, alwaysActive: !allActive }))
-    // This action edits only the active chat's localLore, so capture the scoped
-    // rollback for that one collection, not the whole-DB clone.
-    const previous = currentLorebookCollectionScopedSnapshot({ kind: 'chat', chatId: chat.id })
-
-    withTrustedServerProjectionWrite(() => {
-      const liveCharacter = DBState.db.characters?.[$selectedCharID]
-      const liveChat = liveCharacter?.chats?.[liveCharacter.chatPage]
-      if (liveChat) liveChat.localLore = nextLore
-    })
-    dispatchReplaceChatLorebooks(chat.id, nextLore, previous)
+    replaceChatLorebookCollection(chat.id, nextLore)
   }
 </script>
 

@@ -88,6 +88,7 @@ import {
   flushPendingServerBackedLorebookPatches,
   markCharacterLorebookHydrated,
   recordHydratedCharacterLorebooks,
+  replaceCharacterLorebookCollection,
   resetLorebookHydration,
   resetServerBackedLorebookBridgeForTests,
   restoreLorebookEntryState,
@@ -843,6 +844,23 @@ describe('K4 lorebook editor entry draft scope', () => {
     expect(lorebookList).toContain('onCollectionChange={updateModuleLorebookCollection}')
   })
 
+  it('Batch 4: lorebook components route collection writes through bridge helpers', () => {
+    const setting = readFileSync(path.join(process.cwd(), 'src/lib/SideBars/LoreBook/LoreBookSetting.svelte'), 'utf8')
+    const list = readFileSync(path.join(process.cwd(), 'src/lib/SideBars/LoreBook/LoreBookList.svelte'), 'utf8')
+
+    for (const source of [setting, list]) {
+      expect(source).not.toContain('withTrustedServerProjectionWrite')
+      expect(source).not.toContain('currentLorebookCollectionScopedSnapshot')
+      expect(source).not.toContain('dispatchReplaceCharacterLorebooks')
+      expect(source).not.toContain('dispatchReplaceChatLorebooks')
+      expect(source).not.toContain('dispatchReplaceGlobalLorebookEntries')
+    }
+
+    expect(setting).toContain('replaceCharacterLorebookCollection')
+    expect(setting).toContain('replaceChatLorebookCollection')
+    expect(list).toContain('replaceGlobalLorebookEntryCollection')
+  })
+
   it('K4: failed entry-draft rollback restores only the edited entry', () => {
     setupK4EditorDb()
     const previous = currentLorebookEntryScopedSnapshot({ kind: 'character', characterId: 'c-k4' }, 2)
@@ -920,6 +938,47 @@ describe('K4 lorebook editor entry draft scope', () => {
     expect((cmds[0].entries as Entry[]).map((entry) => entry.id)).toEqual([...originalIds.slice(1), originalIds[0]])
     ;(DBState.db.characters[0].globalLore as Entry[])[1].content = 'collection failed edit'
     restoreLorebookState(previous)
+    expect((DBState.db.characters[0].globalLore as Entry[]).map((entry) => entry.id)).toEqual(originalIds)
+  })
+
+  it('Batch 4: collection replacement helper owns the optimistic write, clone, dispatch, and rollback', async () => {
+    setupK4EditorDb()
+    const originalIds = (DBState.db.characters[0].globalLore as Entry[]).map((entry) => entry.id)
+    const nextEntries = [
+      ...(DBState.db.characters[0].globalLore as Entry[]),
+      {
+        id: 'helper-entry',
+        key: 'helper',
+        secondkey: '',
+        insertorder: 100,
+        comment: 'Helper',
+        content: 'Helper lore',
+        mode: 'normal',
+        alwaysActive: false,
+        selective: false,
+      },
+    ]
+
+    const replaced = replaceCharacterLorebookCollection('c-k4', nextEntries as any, DELAY)
+
+    expect(replaced).toBe(true)
+    expect(DBState.db.characters[0].globalLore).not.toBe(nextEntries)
+    expect((DBState.db.characters[0].globalLore as Entry[]).at(-1)?.content).toBe('Helper lore')
+
+    nextEntries[nextEntries.length - 1].content = 'caller mutation after replace'
+    expect((DBState.db.characters[0].globalLore as Entry[]).at(-1)?.content).toBe('Helper lore')
+
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    const cmds = characterEntryCommands()
+    expect(cmds).toHaveLength(1)
+    expect(cmds[0].a).toMatchObject({
+      characterId: 'c-k4',
+      entryId: 'helper-entry',
+      entry: { id: 'helper-entry', content: 'Helper lore' },
+    })
+
+    cmds[0].rollback?.()
     expect((DBState.db.characters[0].globalLore as Entry[]).map((entry) => entry.id)).toEqual(originalIds)
   })
 

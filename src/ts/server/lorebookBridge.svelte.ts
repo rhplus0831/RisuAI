@@ -570,6 +570,74 @@ export function flushPendingLorebookEntryDraftEdit(
   runPendingReplacement(key, options)
 }
 
+export function replaceCharacterLorebookCollection(characterId: string, entries: loreBook[], delayMs = 250): boolean {
+  if (!characterId) return false
+  return replaceLorebookCollection({ kind: 'character', characterId }, entries, delayMs)
+}
+
+export function replaceChatLorebookCollection(chatId: string, entries: loreBook[], delayMs = 250): boolean {
+  if (!chatId) return false
+  return replaceLorebookCollection({ kind: 'chat', chatId }, entries, delayMs)
+}
+
+export function replaceGlobalLorebookEntryCollection(lorebookId: string, entries: loreBook[], delayMs = 250): boolean {
+  if (!lorebookId) return false
+  return replaceLorebookCollection({ kind: 'global', lorebookId }, entries, delayMs)
+}
+
+type ReplaceableLorebookCollectionScope =
+  | { kind: 'character'; characterId: string }
+  | { kind: 'chat'; chatId: string }
+  | { kind: 'global'; lorebookId: string }
+
+function replaceLorebookCollection(
+  scope: ReplaceableLorebookCollectionScope,
+  entries: loreBook[],
+  delayMs: number,
+): boolean {
+  const previous = currentLorebookCollectionScopedSnapshot(scope)
+  const cloned = cloneJsonValue(entries ?? [])
+  const applied = withTrustedServerProjectionWrite(() => assignLorebookCollection(scope, cloned))
+  if (!applied) return false
+
+  switch (scope.kind) {
+    case 'character':
+      dispatchReplaceCharacterLorebooks(scope.characterId, cloned, previous, delayMs)
+      return true
+    case 'chat':
+      dispatchReplaceChatLorebooks(scope.chatId, cloned, previous, delayMs)
+      return true
+    case 'global':
+      dispatchReplaceGlobalLorebookEntries(scope.lorebookId, cloned, previous, delayMs)
+      return true
+  }
+}
+
+function assignLorebookCollection(scope: ReplaceableLorebookCollectionScope, entries: loreBook[]): boolean {
+  switch (scope.kind) {
+    case 'character': {
+      const character = DBState.db.characters?.find((candidate) => candidate.chaId === scope.characterId)
+      if (!character) return false
+      character.globalLore = entries
+      return true
+    }
+    case 'chat': {
+      const chat = findChat(scope.chatId)
+      if (!chat) return false
+      chat.localLore = entries
+      return true
+    }
+    case 'global': {
+      const lorebook = ((DBState.db.loreBook ?? []) as GlobalLorebook[]).find(
+        (candidate) => candidate.id === scope.lorebookId,
+      )
+      if (!lorebook) return false
+      lorebook.data = entries
+      return true
+    }
+  }
+}
+
 // Assign missing ids on the edited collection only. The target is re-read inside
 // the trusted write scope — a reference captured outside it would still be the
 // read-only projection and throw on assignment.

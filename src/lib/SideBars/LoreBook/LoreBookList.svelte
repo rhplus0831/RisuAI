@@ -10,13 +10,11 @@
   import { alertError } from 'src/ts/alert'
   import {
     applyLorebookEntryDraftEdit,
-    currentLorebookCollectionScopedSnapshot,
-    dispatchReplaceCharacterLorebooks,
-    dispatchReplaceChatLorebooks,
-    dispatchReplaceGlobalLorebookEntries,
     flushPendingLorebookEntryDraftEdit,
+    replaceCharacterLorebookCollection,
+    replaceChatLorebookCollection,
+    replaceGlobalLorebookEntryCollection,
   } from 'src/ts/server/lorebookBridge.svelte'
-  import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
 
   let reinitializeSortable = false
 
@@ -81,15 +79,7 @@
   function updateCharacterGlobalLoreCollection(entries: loreBook[]): void {
     const characterId = DBState.db.characters[$selectedCharID]?.chaId
     if (!characterId) return
-    // Scoped rollback for the one edited collection, not the whole-DB
-    // clone + id-assign the broad snapshot performs.
-    const previous = currentLorebookCollectionScopedSnapshot({ kind: 'character', characterId })
-    const cloned = cloneLoreBooks(entries)
-    withTrustedServerProjectionWrite(() => {
-      const character = DBState.db.characters[$selectedCharID]
-      if (character) character.globalLore = cloned
-    })
-    dispatchReplaceCharacterLorebooks(characterId, cloned, previous)
+    replaceCharacterLorebookCollection(characterId, entries)
   }
 
   function updateChatLoreValue(index: number, value: loreBook): void {
@@ -109,27 +99,14 @@
     const chatPage = character?.chatPage ?? 0
     const chatId = character?.chats?.[chatPage]?.id
     if (!chatId) return
-    const previous = currentLorebookCollectionScopedSnapshot({ kind: 'chat', chatId })
-    const cloned = cloneLoreBooks(entries)
-    withTrustedServerProjectionWrite(() => {
-      const targetCharacter = DBState.db.characters[$selectedCharID]
-      const targetChat = targetCharacter?.chats?.[targetCharacter.chatPage ?? 0]
-      if (targetChat) targetChat.localLore = cloned
-    })
-    dispatchReplaceChatLorebooks(chatId, cloned, previous)
+    replaceChatLorebookCollection(chatId, entries)
   }
 
   function updateGlobalLorebookCollection(entries: loreBook[]): void {
     const lorebook = DBState.db.loreBook?.[DBState.db.loreBookPage]
     const lorebookId = (lorebook as { id?: string } | undefined)?.id
     if (!lorebookId) return
-    const previous = currentLorebookCollectionScopedSnapshot({ kind: 'global', lorebookId })
-    const cloned = cloneLoreBooks(entries)
-    withTrustedServerProjectionWrite(() => {
-      const target = DBState.db.loreBook?.[DBState.db.loreBookPage]
-      if (target) target.data = cloned
-    })
-    dispatchReplaceGlobalLorebookEntries(lorebookId, cloned, previous)
+    replaceGlobalLorebookEntryCollection(lorebookId, entries)
   }
 
   const waitForDOMReady = async () => {
