@@ -11,7 +11,7 @@
     QuickSettings,
     additionalHamburgerMenu,
   } from '../../ts/stores.svelte'
-  import { setDatabase, type folder } from '../../ts/storage/database.svelte'
+  import { setDatabase } from '../../ts/storage/database.svelte'
   import { DBState } from 'src/ts/stores.svelte'
   import BarIcon from './BarIcon.svelte'
   import SidebarIndicator from './SidebarIndicator.svelte'
@@ -32,15 +32,20 @@
   import SidebarAvatar from './SidebarAvatar.svelte'
   import BaseRoundedButton from '../UI/BaseRoundedButton.svelte'
   import { selectSingleFile } from 'src/ts/util'
-  import { v4 } from 'uuid'
-  import { checkCharOrder, getFileSrc, saveAsset } from 'src/ts/globalApi.svelte'
+  import { getFileSrc, saveAsset } from 'src/ts/globalApi.svelte'
   import { alertInput, alertSelect } from 'src/ts/alert'
   import SideChatList from './SideChatList.svelte'
   import { sideBarSize } from 'src/ts/gui/guisize'
   import DevTool from './DevTool.svelte'
   import QuickSettingsGui from '../Others/QuickSettingsGUI.svelte'
   import PluginDefinedIcon from '../Others/PluginDefinedIcon.svelte'
-  import { currentCharacterStateSnapshot, dispatchReorderCharacters } from 'src/ts/characterCommands'
+  import {
+    createCharacterOrderFolder,
+    currentCharacterStateSnapshot,
+    dispatchReorderCharacters,
+    moveCharacterOrderItem,
+    type CharacterOrderDragPosition,
+  } from 'src/ts/characterCommands'
   import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
   import { createSidebarCharacterListMemo, type SidebarCharacterListItem } from './sidebarCharList'
   import { characterRoutePath, navigate } from 'src/ts/router'
@@ -98,100 +103,7 @@
 
   sideBarClosing.set(false)
 
-  const inserter = (mainIndex: DragData, targetIndex: DragData) => {
-    if (mainIndex.index === targetIndex.index && mainIndex.folder === targetIndex.folder) {
-      return
-    }
-    const previous = currentCharacterStateSnapshot()
-    let changed = false
-    withTrustedServerProjectionWrite(() => {
-      let db = DBState.db
-      let mainFolderIndex = mainIndex.folder ? getFolderIndex(mainIndex.folder) : null
-      let targetFolderIndex = targetIndex.folder ? getFolderIndex(targetIndex.folder) : null
-      let mainFolderId = mainIndex.folder ? (db.characterOrder[mainFolderIndex] as folder).id : ''
-      let movingFolder: folder | false = false
-      let mainId = ''
-      if (mainIndex.folder) {
-        mainId = (db.characterOrder[mainFolderIndex] as folder).data[mainIndex.index]
-      } else {
-        const da = db.characterOrder[mainIndex.index]
-        if (typeof da !== 'string') {
-          mainId = da.id
-          movingFolder = $state.snapshot(da)
-          if (targetIndex.folder) {
-            return
-          }
-        } else {
-          mainId = da
-        }
-      }
-      if (targetIndex.folder) {
-        const folder = db.characterOrder[targetFolderIndex] as folder
-        folder.data.splice(targetIndex.index, 0, mainId)
-        db.characterOrder[targetFolderIndex] = folder
-      } else if (movingFolder) {
-        db.characterOrder.splice(targetIndex.index, 0, movingFolder)
-      } else {
-        db.characterOrder.splice(targetIndex.index, 0, mainId)
-      }
-      if (mainIndex.folder) {
-        mainFolderIndex = -1
-        for (let i = 0; i < db.characterOrder.length; i++) {
-          const a = db.characterOrder[i]
-          if (typeof a !== 'string') {
-            if (a.id === mainFolderId) {
-              mainFolderIndex = i
-              break
-            }
-          }
-        }
-        if (mainFolderIndex !== -1) {
-          const folder: folder = db.characterOrder[mainFolderIndex] as folder
-          const ind =
-            mainIndex.index > targetIndex.index ? folder.data.lastIndexOf(mainId) : folder.data.indexOf(mainId)
-          if (ind !== -1) {
-            folder.data.splice(ind, 1)
-          }
-          db.characterOrder[mainFolderIndex] = folder
-        } else {
-          console.log('folder not found')
-        }
-      } else if (movingFolder) {
-        let idList: string[] = []
-        for (const ord of db.characterOrder) {
-          idList.push(typeof ord === 'string' ? ord : ord.id)
-        }
-        const ind = mainIndex.index > targetIndex.index ? idList.lastIndexOf(mainId) : idList.indexOf(mainId)
-        if (ind !== -1) {
-          db.characterOrder.splice(ind, 1)
-        }
-      } else {
-        const ind =
-          mainIndex.index > targetIndex.index
-            ? db.characterOrder.lastIndexOf(mainId)
-            : db.characterOrder.indexOf(mainId)
-        if (ind !== -1) {
-          db.characterOrder.splice(ind, 1)
-        }
-      }
-
-      DBState.db.characterOrder = db.characterOrder
-      checkCharOrder()
-      changed = true
-    })
-    if (!changed) return
-    dispatchReorderCharacters(previous)
-  }
-
-  function getFolderIndex(id: string) {
-    for (let i = 0; i < DBState.db.characterOrder.length; i++) {
-      const data = DBState.db.characterOrder[i]
-      if (typeof data !== 'string' && data.id === id) {
-        return i
-      }
-    }
-    return -1
-  }
+  const inserter = (mainIndex: DragData, targetIndex: DragData) => moveCharacterOrderItem(mainIndex, targetIndex)
 
   function scrollToActiveCharacter() {
     const selectedId = $selectedCharID
@@ -242,62 +154,13 @@
     }
   })
 
-  const createFolder = (mainIndex: DragData, targetIndex: DragData) => {
-    if (mainIndex.index === targetIndex.index && mainIndex.folder === targetIndex.folder) {
-      return
-    }
-    const previous = currentCharacterStateSnapshot()
-    let changed = false
-    withTrustedServerProjectionWrite(() => {
-      let db = DBState.db
-      let mainFolderIndex = mainIndex.folder ? getFolderIndex(mainIndex.folder) : null
-      let mainFolder = db.characterOrder[mainFolderIndex] as folder
-      if (targetIndex.folder) {
-        return
-      }
-      const main = mainIndex.folder ? mainFolder.data[mainIndex.index] : db.characterOrder[mainIndex.index]
-      const target = db.characterOrder[targetIndex.index]
-      if (typeof main !== 'string') {
-        return
-      }
-      if (typeof target === 'string') {
-        const newFolder: folder = {
-          name: 'New Folder',
-          data: [main, target],
-          color: '',
-          id: v4(),
-        }
-        db.characterOrder[targetIndex.index] = newFolder
-        if (mainIndex.folder) {
-          mainFolder.data.splice(mainIndex.index, 1)
-          db.characterOrder[mainFolderIndex] = mainFolder
-        } else {
-          db.characterOrder.splice(mainIndex.index, 1)
-        }
-      } else {
-        target.data.push(main)
-        if (mainIndex.folder) {
-          mainFolder.data.splice(mainIndex.index, 1)
-          db.characterOrder[mainFolderIndex] = mainFolder
-        } else {
-          db.characterOrder.splice(mainIndex.index, 1)
-        }
-      }
-      DBState.db.characterOrder = db.characterOrder
-      checkCharOrder()
-      changed = true
-    })
-    if (!changed) return
-    dispatchReorderCharacters(previous)
-  }
+  const createFolder = (mainIndex: DragData, targetIndex: DragData) =>
+    createCharacterOrderFolder(mainIndex, targetIndex)
 
   type DragEv = DragEvent & {
     currentTarget: EventTarget & HTMLDivElement
   }
-  type DragData = {
-    index: number
-    folder?: string
-  }
+  type DragData = CharacterOrderDragPosition
   const avatarDragStart = (ind: DragData, e: DragEv) => {
     e.dataTransfer.setData('text/plain', '')
     e.dataTransfer.setData('application/x-risu-internal', 'true')

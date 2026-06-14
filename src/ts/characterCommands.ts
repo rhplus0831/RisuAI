@@ -1,4 +1,5 @@
 import { get } from 'svelte/store'
+import { v4 } from 'uuid'
 import {
   canUseServerCommands,
   createAndSelectCharacterCommand,
@@ -35,6 +36,11 @@ export interface CharacterSelectionSnapshot {
   lastInteraction: number | undefined
   currentChar?: number
   selectedCharID: number
+}
+
+export interface CharacterOrderDragPosition {
+  index: number
+  folder?: string
 }
 
 export const CHARACTER_PATCH_EXCLUDED_KEYS = new Set([
@@ -408,6 +414,243 @@ export function dispatchReorderCharacters(previous: CharacterStateSnapshot): voi
       }),
     () => restoreCharacterState(previous),
   )
+}
+
+export function moveCharacterOrderItem(
+  mainIndex: CharacterOrderDragPosition,
+  targetIndex: CharacterOrderDragPosition,
+): boolean {
+  if (isSameCharacterOrderPosition(mainIndex, targetIndex)) return false
+
+  const previous = currentCharacterStateSnapshot()
+  let changed = false
+  withTrustedServerProjectionWrite(() => {
+    const characterOrder = ensureCharacterOrder()
+    let mainFolderIndex = mainIndex.folder ? getCharacterOrderFolderIndex(mainIndex.folder) : null
+    const targetFolderIndex = targetIndex.folder ? getCharacterOrderFolderIndex(targetIndex.folder) : null
+    const mainFolder = mainFolderIndex === null ? null : characterOrder[mainFolderIndex]
+    const mainFolderId = mainIndex.folder && isCharacterOrderFolder(mainFolder) ? mainFolder.id : ''
+    let movingFolder: folder | false = false
+    let mainId = ''
+
+    if (mainIndex.folder) {
+      if (!isCharacterOrderFolder(mainFolder)) return
+      mainId = mainFolder.data[mainIndex.index]
+    } else {
+      const item = characterOrder[mainIndex.index]
+      if (typeof item !== 'string') {
+        if (!isCharacterOrderFolder(item)) return
+        mainId = item.id
+        movingFolder = cloneJsonValue(item)
+        if (targetIndex.folder) return
+      } else {
+        mainId = item
+      }
+    }
+    if (!mainId) return
+
+    if (targetIndex.folder) {
+      if (targetFolderIndex === null) return
+      const targetFolder = targetFolderIndex === null ? null : characterOrder[targetFolderIndex]
+      if (!isCharacterOrderFolder(targetFolder)) return
+      targetFolder.data.splice(targetIndex.index, 0, mainId)
+      characterOrder[targetFolderIndex] = targetFolder
+    } else if (movingFolder) {
+      characterOrder.splice(targetIndex.index, 0, movingFolder)
+    } else {
+      characterOrder.splice(targetIndex.index, 0, mainId)
+    }
+
+    if (mainIndex.folder) {
+      mainFolderIndex = findCharacterOrderFolderIndex(characterOrder, mainFolderId)
+      if (mainFolderIndex !== -1) {
+        const folder = characterOrder[mainFolderIndex]
+        if (isCharacterOrderFolder(folder)) {
+          const ind =
+            mainIndex.index > targetIndex.index ? folder.data.lastIndexOf(mainId) : folder.data.indexOf(mainId)
+          if (ind !== -1) {
+            folder.data.splice(ind, 1)
+          }
+          characterOrder[mainFolderIndex] = folder
+        }
+      } else {
+        console.log('folder not found')
+      }
+    } else if (movingFolder) {
+      const idList: string[] = []
+      for (const item of characterOrder) {
+        idList.push(typeof item === 'string' ? item : item.id)
+      }
+      const ind = mainIndex.index > targetIndex.index ? idList.lastIndexOf(mainId) : idList.indexOf(mainId)
+      if (ind !== -1) {
+        characterOrder.splice(ind, 1)
+      }
+    } else {
+      const ind =
+        mainIndex.index > targetIndex.index ? characterOrder.lastIndexOf(mainId) : characterOrder.indexOf(mainId)
+      if (ind !== -1) {
+        characterOrder.splice(ind, 1)
+      }
+    }
+
+    DBState.db.characterOrder = characterOrder
+    normalizeCharacterOrder()
+    changed = true
+  })
+
+  if (!changed) return false
+  dispatchReorderCharacters(previous)
+  return true
+}
+
+export function createCharacterOrderFolder(
+  mainIndex: CharacterOrderDragPosition,
+  targetIndex: CharacterOrderDragPosition,
+  createFolderId: () => string = v4,
+): boolean {
+  if (isSameCharacterOrderPosition(mainIndex, targetIndex)) return false
+
+  const previous = currentCharacterStateSnapshot()
+  let changed = false
+  withTrustedServerProjectionWrite(() => {
+    const characterOrder = ensureCharacterOrder()
+    const mainFolderIndex = mainIndex.folder ? getCharacterOrderFolderIndex(mainIndex.folder) : null
+    const mainFolder = mainFolderIndex === null ? null : characterOrder[mainFolderIndex]
+    if (targetIndex.folder) {
+      return
+    }
+    if (mainIndex.folder && !isCharacterOrderFolder(mainFolder)) {
+      return
+    }
+
+    const main =
+      mainIndex.folder && isCharacterOrderFolder(mainFolder)
+        ? mainFolder.data[mainIndex.index]
+        : characterOrder[mainIndex.index]
+    const target = characterOrder[targetIndex.index]
+    if (typeof main !== 'string') {
+      return
+    }
+    if (typeof target === 'string') {
+      const newFolder: folder = {
+        name: 'New Folder',
+        data: [main, target],
+        color: '',
+        id: createFolderId(),
+      }
+      characterOrder[targetIndex.index] = newFolder
+      if (mainIndex.folder && isCharacterOrderFolder(mainFolder) && mainFolderIndex !== null) {
+        mainFolder.data.splice(mainIndex.index, 1)
+        characterOrder[mainFolderIndex] = mainFolder
+      } else {
+        characterOrder.splice(mainIndex.index, 1)
+      }
+    } else {
+      if (!isCharacterOrderFolder(target)) return
+      target.data.push(main)
+      if (mainIndex.folder && isCharacterOrderFolder(mainFolder) && mainFolderIndex !== null) {
+        mainFolder.data.splice(mainIndex.index, 1)
+        characterOrder[mainFolderIndex] = mainFolder
+      } else {
+        characterOrder.splice(mainIndex.index, 1)
+      }
+    }
+    DBState.db.characterOrder = characterOrder
+    normalizeCharacterOrder()
+    changed = true
+  })
+
+  if (!changed) return false
+  dispatchReorderCharacters(previous)
+  return true
+}
+
+function isSameCharacterOrderPosition(
+  mainIndex: CharacterOrderDragPosition,
+  targetIndex: CharacterOrderDragPosition,
+): boolean {
+  return mainIndex.index === targetIndex.index && mainIndex.folder === targetIndex.folder
+}
+
+function ensureCharacterOrder(): (string | folder)[] {
+  DBState.db.characterOrder = DBState.db.characterOrder ?? []
+  return DBState.db.characterOrder
+}
+
+function isCharacterOrderFolder(value: string | folder | undefined | null): value is folder {
+  return !!value && typeof value !== 'string'
+}
+
+function getCharacterOrderFolderIndex(id: string): number {
+  return findCharacterOrderFolderIndex(DBState.db.characterOrder ?? [], id)
+}
+
+function findCharacterOrderFolderIndex(characterOrder: (string | folder)[], id: string): number {
+  for (let i = 0; i < characterOrder.length; i++) {
+    const data = characterOrder[i]
+    if (isCharacterOrderFolder(data) && data.id === id) {
+      return i
+    }
+  }
+  return -1
+}
+
+function normalizeCharacterOrder(): void {
+  const characterOrder = ensureCharacterOrder()
+  const ordered: string[] = []
+  for (let i = 0; i < characterOrder.length; i++) {
+    const folder = characterOrder[i]
+    if (isCharacterOrderFolder(folder)) {
+      for (const f of folder.data) {
+        ordered.push(f)
+      }
+    }
+    if (typeof folder === 'string') {
+      ordered.push(folder)
+    }
+  }
+
+  const charIdList: string[] = []
+  const characters = DBState.db.characters ?? []
+  for (let i = 0; i < characters.length; i++) {
+    const char = characters[i]
+    const charId = char.chaId
+    if (!char.trashTime) {
+      charIdList.push(charId)
+    }
+    if (!ordered.includes(charId)) {
+      if (charId !== '§temp' && charId !== '§playground' && !char.trashTime) {
+        characterOrder.push(charId)
+      }
+    }
+  }
+
+  for (let i = 0; i < characterOrder.length; i++) {
+    const data = characterOrder[i]
+    if (isCharacterOrderFolder(data)) {
+      if (data.data.length === 0) {
+        characterOrder.splice(i, 1)
+        i--
+        continue
+      }
+      for (let i2 = 0; i2 < data.data.length; i2++) {
+        const data2 = data.data[i2]
+        if (!charIdList.includes(data2)) {
+          data.data.splice(i2, 1)
+          i2--
+        }
+      }
+      characterOrder[i] = data
+    } else if (typeof data === 'string') {
+      if (!charIdList.includes(data)) {
+        characterOrder.splice(i, 1)
+        i--
+      }
+    } else {
+      characterOrder.splice(i, 1)
+      i--
+    }
+  }
 }
 
 export function setCharacterSupaMemory(characterId: string, enabled: boolean): void {
