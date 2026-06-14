@@ -20,12 +20,10 @@
   import { v4 } from 'uuid'
   import {
     applyLorebookEntryDraftEdit,
-    currentLorebookCollectionScopedSnapshot,
-    dispatchReplaceModuleLorebooks,
     flushPendingLorebookEntryDraftEdit,
+    replaceModuleLorebookCollectionDraft,
     watchServerBackedLorebooks,
   } from 'src/ts/server/lorebookBridge.svelte'
-  import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
   import { watchServerBackedScriptDefinitions } from 'src/ts/server/scriptDefinitionBridge.svelte'
 
   let submenu = $state(0)
@@ -81,16 +79,6 @@
     assetFileExtensions = nextExtensions
   })
 
-  function cloneLoreBooks(entries: loreBook[]): loreBook[] {
-    return JSON.parse(JSON.stringify(entries ?? []))
-  }
-
-  function findLiveModule(): RisuModule | null {
-    const moduleId = currentModule?.id
-    if (!moduleId) return null
-    return DBState.db.modules?.find((candidate) => candidate.id === moduleId) ?? currentModule
-  }
-
   function updateModuleLorebookValue(index: number, value: loreBook): void {
     const moduleId = currentModule?.id
     if (!moduleId) return
@@ -106,14 +94,7 @@
   function updateModuleLorebookCollection(entries: loreBook[]): void {
     const moduleId = currentModule?.id
     if (!moduleId) return
-    const previous = currentLorebookCollectionScopedSnapshot({ kind: 'module', moduleId })
-    const cloned = cloneLoreBooks(entries)
-    withTrustedServerProjectionWrite(() => {
-      const liveModule = findLiveModule()
-      if (liveModule) liveModule.lorebook = cloned
-      currentModule.lorebook = cloned
-    })
-    dispatchReplaceModuleLorebooks(moduleId, cloned, previous)
+    replaceModuleLorebookCollectionDraft(moduleId, currentModule, entries)
   }
 
   function addLorebook() {

@@ -91,6 +91,7 @@ import {
   markCharacterLorebookHydrated,
   recordHydratedCharacterLorebooks,
   replaceCharacterLorebookCollection,
+  replaceModuleLorebookCollectionDraft,
   resetLorebookHydration,
   resetServerBackedLorebookBridgeForTests,
   restoreLorebookEntryState,
@@ -685,7 +686,7 @@ function chatEntryDeleteCommands(): Array<Record<string, unknown> & { a?: unknow
   return recorded.commands.filter((c) => c.kind === 'deleteChatEntry')
 }
 
-function moduleReplaceCommands(): Array<Record<string, unknown>> {
+function moduleReplaceCommands(): Array<Record<string, unknown> & { entries?: unknown[]; rollback?: () => void }> {
   return recorded.commands.filter((c) => c.kind === 'replaceModule')
 }
 
@@ -784,6 +785,10 @@ function setupK4ModuleDb(): void {
     ],
   }
   selectedCharID.set(-1)
+}
+
+function cloneEntries(entries: Entry[]): Entry[] {
+  return JSON.parse(JSON.stringify(entries)) as Entry[]
 }
 
 describe('K4 lorebook editor entry draft scope', () => {
@@ -987,6 +992,10 @@ describe('K4 lorebook editor entry draft scope', () => {
 
     expect(source).toContain("applyLorebookEntryDraftEdit({ kind: 'module', moduleId }, index, value)")
     expect(source).toContain("flushPendingLorebookEntryDraftEdit({ kind: 'module', moduleId })")
+    expect(source).toContain('replaceModuleLorebookCollectionDraft(moduleId, currentModule, entries)')
+    expect(source).not.toContain('withTrustedServerProjectionWrite')
+    expect(source).not.toContain('currentLorebookCollectionScopedSnapshot')
+    expect(source).not.toContain('dispatchReplaceModuleLorebooks')
     expect(lorebookList).toContain('onEntryChange={updateModuleLorebookValue}')
     expect(lorebookList).toContain('onEntrySettled={flushModuleLorebookValue}')
     expect(lorebookList).toContain('onCollectionChange={updateModuleLorebookCollection}')
@@ -1288,6 +1297,106 @@ describe('K4 lorebook editor entry draft scope', () => {
 
     cmds[0].rollback?.()
     expect((DBState.db.characters[0].globalLore as Entry[]).map((entry) => entry.id)).toEqual(originalIds)
+  })
+
+  it('Batch 6: module collection draft helper owns live/draft optimistic write, dispatch, and rollback', async () => {
+    setupK4ModuleDb()
+    const liveModule = DBState.db.modules[0] as unknown as { id: string; lorebook: Entry[] }
+    const draftModule = {
+      id: liveModule.id,
+      name: 'Draft Module',
+      description: '',
+      lorebook: cloneEntries(liveModule.lorebook),
+    }
+    const originalLive = cloneEntries(liveModule.lorebook)
+    const nextEntries = cloneEntries(liveModule.lorebook)
+    nextEntries[0].content = 'module helper first'
+    nextEntries[1].content = 'module helper second'
+
+    const replaced = replaceModuleLorebookCollectionDraft(liveModule.id, draftModule as any, nextEntries as any, DELAY)
+
+    expect(replaced).toBe(true)
+    expect(liveModule.lorebook).not.toBe(nextEntries)
+    expect(draftModule.lorebook).not.toBe(nextEntries)
+    expect(draftModule.lorebook).toEqual(liveModule.lorebook)
+    expect(liveModule.lorebook[0].content).toBe('module helper first')
+    expect(draftModule.lorebook[1].content).toBe('module helper second')
+
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    const cmds = moduleReplaceCommands()
+    expect(cmds).toHaveLength(1)
+    expect(cmds[0].moduleId).toBe(liveModule.id)
+    expect((cmds[0].entries as Entry[]).slice(0, 2)).toEqual([
+      expect.objectContaining({ id: 'module-entry-0', content: 'module helper first' }),
+      expect.objectContaining({ id: 'module-entry-1', content: 'module helper second' }),
+    ])
+
+    cmds[0].rollback?.()
+    expect(liveModule.lorebook).toEqual(originalLive)
+  })
+
+  it('Batch 6: module collection draft helper returns false for missing module id without mutation or command', async () => {
+    setupK4ModuleDb()
+    const liveModule = DBState.db.modules[0] as unknown as { lorebook: Entry[] }
+    const originalLive = cloneEntries(liveModule.lorebook)
+    const draftModule = {
+      id: '',
+      name: 'Draft Module',
+      description: '',
+      lorebook: [{ id: 'draft-entry', content: 'draft original' }] as Entry[],
+    }
+    const originalDraft = cloneEntries(draftModule.lorebook)
+
+    const replaced = replaceModuleLorebookCollectionDraft(
+      '',
+      draftModule as any,
+      [{ content: 'replacement' }] as any,
+      DELAY,
+    )
+
+    expect(replaced).toBe(false)
+    expect(liveModule.lorebook).toEqual(originalLive)
+    expect(draftModule.lorebook).toEqual(originalDraft)
+
+    await vi.advanceTimersByTimeAsync(DELAY)
+    expect(moduleReplaceCommands()).toHaveLength(0)
+    expect(moduleEntryCommands()).toHaveLength(0)
+  })
+
+  it('Batch 6: module collection draft helper freezes the delayed command payload', async () => {
+    setupK4ModuleDb()
+    const liveModule = DBState.db.modules[0] as unknown as { id: string; lorebook: Entry[] }
+    const draftModule = {
+      id: liveModule.id,
+      name: 'Draft Module',
+      description: '',
+      lorebook: cloneEntries(liveModule.lorebook),
+    }
+    const nextEntries = cloneEntries(liveModule.lorebook)
+    nextEntries[0].content = 'queued first'
+    nextEntries[1].content = 'queued second'
+
+    const replaced = replaceModuleLorebookCollectionDraft(liveModule.id, draftModule as any, nextEntries as any, DELAY)
+
+    expect(replaced).toBe(true)
+    liveModule.lorebook[0].content = 'late live mutation'
+    draftModule.lorebook[1].content = 'late draft mutation'
+    liveModule.lorebook.push({
+      id: 'late-entry',
+      key: 'late',
+      content: 'late push',
+    })
+
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    const cmds = moduleReplaceCommands()
+    expect(cmds).toHaveLength(1)
+    expect((cmds[0].entries as Entry[]).map((entry) => entry.content).slice(0, 2)).toEqual([
+      'queued first',
+      'queued second',
+    ])
+    expect((cmds[0].entries as Entry[]).some((entry) => entry.id === 'late-entry')).toBe(false)
   })
 
   it('K4: simple collection delete and pure reorder use compact entry commands', async () => {

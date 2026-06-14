@@ -632,6 +632,34 @@ export function replaceGlobalLorebookEntryCollection(lorebookId: string, entries
   return replaceLorebookCollection({ kind: 'global', lorebookId }, entries, delayMs)
 }
 
+export function replaceModuleLorebookCollectionDraft(
+  moduleId: string | null | undefined,
+  currentModule: RisuModule | null | undefined,
+  entries: loreBook[],
+  delayMs = 250,
+): boolean {
+  if (!moduleId) return false
+
+  const previous = currentLorebookCollectionScopedSnapshot({ kind: 'module', moduleId })
+  const cloned = cloneJsonValue(entries ?? [])
+  ensureClientLorebookEntryIds(cloned)
+  const commandEntries = cloneJsonValue(cloned)
+
+  const applied = withTrustedServerProjectionWrite(() => {
+    const liveModule = findModule(moduleId)
+    const draftModule = currentModule?.id === moduleId ? currentModule : null
+    if (!liveModule && !draftModule) return false
+
+    if (liveModule) liveModule.lorebook = cloned
+    if (draftModule) draftModule.lorebook = cloned
+    return true
+  })
+  if (!applied) return false
+
+  dispatchReplaceModuleLorebooks(moduleId, commandEntries, previous, delayMs)
+  return true
+}
+
 type ReplaceableLorebookCollectionScope =
   | { kind: 'character'; characterId: string }
   | { kind: 'chat'; chatId: string }
