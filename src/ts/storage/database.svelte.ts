@@ -126,12 +126,19 @@ function normalizedBotPresetsId(presetCount: number, selected: unknown): number 
 }
 
 function presetIdAt(index: number): string | null {
-  if (botPresetIdsNeedNormalization(DBState.db)) {
-    withTrustedServerProjectionWrite(() => {
-      normalizeBotPresetIds(DBState.db)
-    })
+  const presets = DBState.db.botPresets
+  if (!Number.isInteger(index) || index < 0 || !Array.isArray(presets) || index >= presets.length) {
+    return null
   }
-  return DBState.db.botPresets[index]?.id ?? null
+
+  const seen = new Set<string>()
+  for (const preset of presets) {
+    const id = typeof preset?.id === 'string' && preset.id.trim() ? preset.id : null
+    if (!id || seen.has(id)) return null
+    seen.add(id)
+  }
+
+  return presets[index]?.id ?? null
 }
 
 function presetNeedsHydration(preset: botPreset | undefined): boolean {
@@ -141,15 +148,12 @@ function presetNeedsHydration(preset: botPreset | undefined): boolean {
 const presetHydrationInFlight = new Map<string, Promise<boolean>>()
 
 export async function ensureBotPresetHydrated(index: number): Promise<boolean> {
-  if (botPresetIdsNeedNormalization(DBState.db)) {
-    withTrustedServerProjectionWrite(() => {
-      normalizeBotPresetIds(DBState.db)
-    })
-  }
+  const presetId = presetIdAt(index)
+  if (!presetId) return false
+
   const preset = DBState.db.botPresets[index]
-  if (!presetNeedsHydration(preset)) return !!preset
-  const presetId = preset.id
-  if (!presetId || !canUseServerProjection()) return false
+  if (!presetNeedsHydration(preset)) return true
+  if (!canUseServerProjection()) return false
 
   const current = presetHydrationInFlight.get(presetId)
   if (current) return current

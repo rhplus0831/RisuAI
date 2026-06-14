@@ -419,20 +419,64 @@ describe('preset command rollback (L21)', () => {
     expect(DBState.db).toBe(before)
   })
 
-  it('normalizes missing bot preset ids under the projection guard', async () => {
+  it('fails closed without repairing, refreezing, or fetching when projected preset ids are invalid', async () => {
+    const cases: Array<{ name: string; botPresets: botPreset[] }> = [
+      {
+        name: 'missing id',
+        botPresets: [{ name: 'Alpha', promptTemplate: [] } as botPreset],
+      },
+      {
+        name: 'duplicate id',
+        botPresets: [
+          { id: 'preset-dupe', name: 'Alpha', image: 'img' } as botPreset,
+          { id: 'preset-dupe', name: 'Beta', image: 'img' } as botPreset,
+        ],
+      },
+    ]
+
+    for (const scenario of cases) {
+      seedPresetDatabase({
+        botPresets: scenario.botPresets,
+        botPresetsId: 0,
+      })
+      setServerProjectionWriteGuardEnabled(true)
+      const fetchSpy = vi.fn(async () => {
+        throw new Error(`unexpected preset hydration fetch for ${scenario.name}`)
+      })
+      vi.stubGlobal('fetch', fetchSpy)
+      const before = DBState.db
+      const beforeJson = JSON.stringify(DBState.db)
+
+      expect(botPresetIdsNeedNormalization(DBState.db)).toBe(true)
+      await expect(ensureBotPresetHydrated(0)).resolves.toBe(false)
+
+      expect(fetchSpy).not.toHaveBeenCalled()
+      expect(DBState.db).toBe(before)
+      expect(JSON.stringify(DBState.db)).toBe(beforeJson)
+
+      setServerProjectionWriteGuardEnabled(false)
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('fails closed without fetching when preset hydration is asked for an invalid index', async () => {
     seedPresetDatabase({
-      botPresets: [{ name: 'Alpha', promptTemplate: [] } as botPreset],
+      botPresets: [{ id: 'preset-stub', name: 'Stub', image: 'img' } as botPreset],
       botPresetsId: 0,
     })
     setServerProjectionWriteGuardEnabled(true)
+    const fetchSpy = vi.fn(async () => {
+      throw new Error('unexpected preset hydration fetch for invalid index')
+    })
+    vi.stubGlobal('fetch', fetchSpy)
     const before = DBState.db
 
-    expect(botPresetIdsNeedNormalization(DBState.db)).toBe(true)
-    await expect(ensureBotPresetHydrated(0)).resolves.toBe(true)
+    await expect(ensureBotPresetHydrated(-1)).resolves.toBe(false)
+    await expect(ensureBotPresetHydrated(1)).resolves.toBe(false)
+    await expect(ensureBotPresetHydrated(0.5)).resolves.toBe(false)
 
-    expect(DBState.db).not.toBe(before)
-    expect(botPresetIdsNeedNormalization(DBState.db)).toBe(false)
-    expect(DBState.db.botPresets[0].id).toEqual(expect.any(String))
+    expect(fetchSpy).not.toHaveBeenCalled()
+    expect(DBState.db).toBe(before)
   })
 
   it('hydrates a stubbed preset from the server projection before full-preset consumers read it', async () => {

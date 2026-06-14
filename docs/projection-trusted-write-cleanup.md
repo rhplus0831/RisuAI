@@ -45,6 +45,11 @@ coherent rollback/resync story.
     character-order repair lives in `src/ts/characterCommands.ts`, where callers
     choose command-backed reorder dispatch or suppressed repair for create/delete
     command flows.
+- `src/ts/storage/database.svelte.ts`
+  - Preset ID reads no longer perform hidden projection repair.
+    `presetIdAt()` is pure, and `ensureBotPresetHydrated()` fails closed for
+    missing, blank, duplicate, or invalid-index preset IDs before fetching
+    hydration.
 
 ## Findings
 
@@ -99,9 +104,6 @@ listed under keep categories.
 Normalization should be server-side, pure, or limited to command payloads.
 Hidden client projection mutation can diverge from server-owned durable state.
 
-- `src/ts/storage/database.svelte.ts`
-  - Preset ID normalization in `presetIdAt()` and
-    `ensureBotPresetHydrated()`.
 - `src/ts/server/lorebookBridge.svelte.ts`
   - Watcher/snapshot paths assign lorebook IDs, initialize arrays, and mutate
     entries before snapshots.
