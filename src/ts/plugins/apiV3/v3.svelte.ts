@@ -1644,10 +1644,10 @@ export const __v3PluginLifecycleTestHooks = {
   createMutationObserver(lifecycle: PluginLifecycleCleanup, callback: SafeMutationCallback) {
     return new SafeMutationObserver(callback, lifecycle)
   },
-  createApi(plugin: RisuPlugin) {
+  createApi(plugin: RisuPlugin): Record<string, unknown> {
     const iframe = document.createElement('iframe')
     const lifecycle = new PluginLifecycleCleanup()
-    return makeRisuaiAPIV3(iframe, plugin, lifecycle)
+    return makeRisuaiAPIV3(iframe, plugin, lifecycle) as Record<string, unknown>
   },
   registerProvider(
     pluginName: string,
