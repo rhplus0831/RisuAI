@@ -47,6 +47,7 @@ import {
   restoreCharacterTrashTime,
   sanitizeCharacterPatch,
   setCharacterSupaMemory,
+  updateCharacterOrderFolder,
 } from './characterCommands'
 import { setCharacterByIndex } from './storage/database.svelte'
 import { clearCachedServerCommandRevision } from './server/commands'
@@ -215,6 +216,26 @@ describe('Sidebar character order projection cleanup', () => {
     expect(createFolderBody).not.toContain('withTrustedServerProjectionWrite')
     expect(createFolderBody).not.toContain('dispatchReorderCharacters')
   })
+
+  it('routes folder metadata writes through character command helpers', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/lib/SideBars/Sidebar.svelte'), 'utf8')
+    const contextMenuStart = source.indexOf('oncontextmenu={async (e) => {')
+    const onClickStart = source.indexOf('onClick={() => {', contextMenuStart)
+
+    expect(contextMenuStart).toBeGreaterThanOrEqual(0)
+    expect(onClickStart).toBeGreaterThan(contextMenuStart)
+
+    const contextMenuBody = source.slice(contextMenuStart, onClickStart)
+
+    expect(source).not.toContain('withTrustedServerProjectionWrite')
+    expect(source).not.toContain('currentCharacterStateSnapshot')
+    expect(source).not.toContain('dispatchReorderCharacters')
+    expect(contextMenuBody.match(/updateCharacterOrderFolder/g) ?? []).toHaveLength(4)
+    expect(contextMenuBody).toContain('{ name: v }')
+    expect(contextMenuBody).toContain('{ color: colors[sel] }')
+    expect(contextMenuBody).toContain("{ imgFile: null, img: '' }")
+    expect(contextMenuBody).toContain('{ imgFile: folderImageData, img: folderImageSrc }')
+  })
 })
 
 describe('character order command helpers', () => {
@@ -355,6 +376,119 @@ describe('character order command helpers', () => {
     await flushAsyncWork()
     expect(DBState.db.characterOrder).toEqual(previousOrder)
     expect(calls).toHaveLength(0)
+  })
+
+  it.each([
+    [
+      'rename',
+      { name: 'Renamed Folder' },
+      { id: 'folder-b', name: 'Renamed Folder', color: 'blue', data: ['char-b'], imgFile: 'asset-old', img: 'old-src' },
+    ],
+    [
+      'color',
+      { color: 'PURPLE' },
+      { id: 'folder-b', name: 'Folder B', color: 'purple', data: ['char-b'], imgFile: 'asset-old', img: 'old-src' },
+    ],
+    [
+      'image reset',
+      { imgFile: null, img: '' },
+      { id: 'folder-b', name: 'Folder B', color: 'blue', data: ['char-b'], imgFile: null, img: '' },
+    ],
+    [
+      'image update',
+      { imgFile: 'asset-new', img: '/api/v1/assets/asset-new' },
+      {
+        id: 'folder-b',
+        name: 'Folder B',
+        color: 'blue',
+        data: ['char-b'],
+        imgFile: 'asset-new',
+        img: '/api/v1/assets/asset-new',
+      },
+    ],
+  ])(
+    'updates folder metadata for %s, dispatches reorder, and rolls back on failure',
+    async (_, patch, expectedFolder) => {
+      const calls = stubReorderCommandFetch({ failReorder: true })
+      DBState.db = {
+        characters: [
+          { chaId: 'char-a', name: 'A', chats: [] },
+          { chaId: 'char-b', name: 'B', chats: [] },
+        ],
+        characterOrder: [
+          { id: 'folder-a', name: 'Folder A', color: 'red', data: ['char-a'] },
+          { id: 'folder-b', name: 'Folder B', color: 'blue', data: ['char-b'], imgFile: 'asset-old', img: 'old-src' },
+        ],
+        currentChar: 0,
+      } as any
+      const previousOrder = cloneForExpect(DBState.db.characterOrder)
+      const expectedOrder = [previousOrder[0], expectedFolder]
+      setServerProjectionWriteGuardEnabled(true)
+
+      expect(updateCharacterOrderFolder({ id: 'folder-b', index: 0 }, patch)).toBe(true)
+
+      expect(DBState.db.characterOrder).toEqual(expectedOrder)
+      await waitForCallCount(calls, 2)
+      expect(calls[1]).toEqual({
+        url: '/api/v1/commands/characters/reorder',
+        method: 'POST',
+        authHeader: 'character-command-token',
+        body: {
+          baseRevision: 10,
+          characterOrder: expectedOrder,
+        },
+      })
+      await vi.waitFor(() => {
+        expect(DBState.db.characterOrder).toEqual(previousOrder)
+      })
+    },
+  )
+
+  it('returns false without mutation or command for a missing folder target', async () => {
+    const calls = stubReorderCommandFetch()
+    DBState.db = {
+      characters: [{ chaId: 'char-a', name: 'A', chats: [] }],
+      characterOrder: [{ id: 'folder-a', name: 'Folder A', color: '', data: ['char-a'] }],
+    } as any
+    const previousOrder = cloneForExpect(DBState.db.characterOrder)
+    setServerProjectionWriteGuardEnabled(true)
+
+    expect(updateCharacterOrderFolder({ id: 'missing-folder', index: 0 }, { name: 'Wrong' })).toBe(false)
+    expect(updateCharacterOrderFolder({}, { name: 'Wrong' })).toBe(false)
+
+    await flushAsyncWork()
+    expect(DBState.db.characterOrder).toEqual(previousOrder)
+    expect(calls).toHaveLength(0)
+  })
+
+  it('uses stable folder id instead of a stale fallback index', async () => {
+    const calls = stubReorderCommandFetch()
+    DBState.db = {
+      characters: [
+        { chaId: 'char-a', name: 'A', chats: [] },
+        { chaId: 'char-b', name: 'B', chats: [] },
+      ],
+      characterOrder: [
+        { id: 'folder-a', name: 'Folder A', color: '', data: ['char-a'] },
+        { id: 'folder-b', name: 'Folder B', color: '', data: ['char-b'] },
+      ],
+    } as any
+    setServerProjectionWriteGuardEnabled(true)
+
+    expect(updateCharacterOrderFolder({ id: 'folder-b', index: 0 }, { name: 'Updated B' })).toBe(true)
+
+    expect(DBState.db.characterOrder).toEqual([
+      { id: 'folder-a', name: 'Folder A', color: '', data: ['char-a'] },
+      { id: 'folder-b', name: 'Updated B', color: '', data: ['char-b'] },
+    ])
+    await waitForCallCount(calls, 2)
+    expect(calls[1].body).toEqual({
+      baseRevision: 10,
+      characterOrder: [
+        { id: 'folder-a', name: 'Folder A', color: '', data: ['char-a'] },
+        { id: 'folder-b', name: 'Updated B', color: '', data: ['char-b'] },
+      ],
+    })
   })
 })
 

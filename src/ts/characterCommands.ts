@@ -43,6 +43,21 @@ export interface CharacterOrderDragPosition {
   folder?: string
 }
 
+export type CharacterOrderFolderTarget =
+  | string
+  | number
+  | {
+      id?: string | null
+      index?: number | null
+    }
+
+export interface CharacterOrderFolderMetadataPatch {
+  name?: string
+  color?: string
+  imgFile?: string | null
+  img?: string
+}
+
 export const CHARACTER_PATCH_EXCLUDED_KEYS = new Set([
   'chaId',
   'chats',
@@ -565,6 +580,53 @@ export function createCharacterOrderFolder(
   return true
 }
 
+export function updateCharacterOrderFolder(
+  folderIdOrIndex: CharacterOrderFolderTarget,
+  patch: CharacterOrderFolderMetadataPatch,
+): boolean {
+  const patchEntries = Object.entries(patch).filter(([, value]) => value !== undefined)
+  if (patchEntries.length === 0) return false
+
+  const previous = currentCharacterStateSnapshot()
+  let changed = false
+  withTrustedServerProjectionWrite(() => {
+    const characterOrder = ensureCharacterOrder()
+    const folderIndex = resolveCharacterOrderFolderIndex(characterOrder, folderIdOrIndex)
+    if (folderIndex === -1) return
+
+    const targetFolder = characterOrder[folderIndex]
+    if (!isCharacterOrderFolder(targetFolder)) return
+
+    const mutableFolder = targetFolder as folder & { imgFile?: string | null }
+    for (const [key, value] of patchEntries) {
+      switch (key) {
+        case 'name':
+          mutableFolder.name = value as string
+          break
+
+        case 'color':
+          mutableFolder.color = (value as string).toLocaleLowerCase()
+          break
+
+        case 'imgFile':
+          mutableFolder.imgFile = value as string | null
+          break
+
+        case 'img':
+          mutableFolder.img = value as string
+          break
+      }
+    }
+    characterOrder[folderIndex] = mutableFolder
+    DBState.db.characterOrder = characterOrder
+    changed = true
+  })
+
+  if (!changed) return false
+  dispatchReorderCharacters(previous)
+  return true
+}
+
 function isSameCharacterOrderPosition(
   mainIndex: CharacterOrderDragPosition,
   targetIndex: CharacterOrderDragPosition,
@@ -593,6 +655,28 @@ function findCharacterOrderFolderIndex(characterOrder: (string | folder)[], id: 
     }
   }
   return -1
+}
+
+function resolveCharacterOrderFolderIndex(
+  characterOrder: (string | folder)[],
+  folderIdOrIndex: CharacterOrderFolderTarget,
+): number {
+  if (typeof folderIdOrIndex === 'string') {
+    return folderIdOrIndex ? findCharacterOrderFolderIndex(characterOrder, folderIdOrIndex) : -1
+  }
+
+  if (typeof folderIdOrIndex === 'number') {
+    return isCharacterOrderFolder(characterOrder[folderIdOrIndex]) ? folderIdOrIndex : -1
+  }
+
+  const folderId = folderIdOrIndex.id ?? ''
+  if (folderId) {
+    return findCharacterOrderFolderIndex(characterOrder, folderId)
+  }
+
+  const fallbackIndex = folderIdOrIndex.index
+  if (typeof fallbackIndex !== 'number') return -1
+  return isCharacterOrderFolder(characterOrder[fallbackIndex]) ? fallbackIndex : -1
 }
 
 function normalizeCharacterOrder(): void {

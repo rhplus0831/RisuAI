@@ -41,12 +41,10 @@
   import PluginDefinedIcon from '../Others/PluginDefinedIcon.svelte'
   import {
     createCharacterOrderFolder,
-    currentCharacterStateSnapshot,
-    dispatchReorderCharacters,
     moveCharacterOrderItem,
+    updateCharacterOrderFolder,
     type CharacterOrderDragPosition,
   } from 'src/ts/characterCommands'
-  import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
   import { createSidebarCharacterListMemo, type SidebarCharacterListItem } from './sidebarCharList'
   import { characterRoutePath, navigate } from 'src/ts/router'
   let sideBarMode = $state(0)
@@ -360,48 +358,18 @@
                       if (sel === 0) {
                         const v = await alertInput(language.changeFolderName, [], char.name)
                         if (v) {
-                          const previous = currentCharacterStateSnapshot()
-                          withTrustedServerProjectionWrite(() => {
-                            const oder = DBState.db.characterOrder[ind]
-                            if (typeof oder === 'string') {
-                              return
-                            }
-                            oder.name = v
-                            DBState.db.characterOrder[ind] = oder
-                          })
-                          dispatchReorderCharacters(previous)
+                          updateCharacterOrderFolder({ id: char.id, index: ind }, { name: v })
                         }
                       } else if (sel === 1) {
                         const colors = ['red', 'green', 'blue', 'yellow', 'indigo', 'purple', 'pink', 'default']
                         const sel = parseInt(await alertSelect(colors))
-                        const previous = currentCharacterStateSnapshot()
-                        withTrustedServerProjectionWrite(() => {
-                          const oder = DBState.db.characterOrder[ind]
-                          if (typeof oder === 'string') {
-                            return
-                          }
-                          oder.color = colors[sel].toLocaleLowerCase()
-                          DBState.db.characterOrder[ind] = oder
-                        })
-                        dispatchReorderCharacters(previous)
+                        updateCharacterOrderFolder({ id: char.id, index: ind }, { color: colors[sel] })
                       } else if (sel === 2) {
                         const sel = parseInt(await alertSelect(['Reset to Default Image', 'Select Image File']))
-                        const db = DBState.db
-                        const previous = currentCharacterStateSnapshot()
-                        const oder = db.characterOrder[ind]
-                        if (typeof oder === 'string') {
-                          return
-                        }
 
                         switch (sel) {
                           case 0:
-                            withTrustedServerProjectionWrite(() => {
-                              const current = DBState.db.characterOrder[ind]
-                              if (typeof current === 'string') return
-                              current.imgFile = null
-                              current.img = ''
-                              DBState.db.characterOrder[ind] = current
-                            })
+                            updateCharacterOrderFolder({ id: char.id, index: ind }, { imgFile: null, img: '' })
                             break
 
                           case 1:
@@ -414,16 +382,12 @@
                             const folderImageData = await saveAsset(folderImage.data)
 
                             const folderImageSrc = await getFileSrc(folderImageData)
-                            withTrustedServerProjectionWrite(() => {
-                              const current = DBState.db.characterOrder[ind]
-                              if (typeof current === 'string') return
-                              current.imgFile = folderImageData
-                              current.img = folderImageSrc
-                              DBState.db.characterOrder[ind] = current
-                            })
+                            updateCharacterOrderFolder(
+                              { id: char.id, index: ind },
+                              { imgFile: folderImageData, img: folderImageSrc },
+                            )
                             break
                         }
-                        dispatchReorderCharacters(previous)
                       }
                     }}
                     onClick={() => {
