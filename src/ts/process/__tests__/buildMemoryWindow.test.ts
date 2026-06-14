@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../../platform', async (importActual) => {
   const actual = await importActual<typeof import('../../platform')>()
@@ -12,6 +12,10 @@ vi.mock('../modules', async (importActual) => {
   const actual = await importActual<typeof import('../modules')>()
   return { ...actual, moduleUpdate: () => {}, getModuleAssets: () => [] }
 })
+
+vi.mock('../../storage/fastifyStorage', () => ({
+  getNodeServerProxyAuth: async () => 'build-memory-window-token',
+}))
 
 // hypaMemoryV3 is invoked only on the (supaMemory && hypaV3) branch. The
 // hoisted holder lets each test stage a return value (or fallthrough error).
@@ -33,6 +37,7 @@ vi.mock('../memory/hypav3', async (importActual) => {
 })
 
 import { setDatabase, type Chat, type Database, type character } from '../../storage/database.svelte'
+import { clearCachedServerCommandRevision } from '../../server/commands'
 import { DBState } from '../../stores.svelte'
 import type { ChatTokenizer } from '../../tokenizer'
 import type { OpenAIChat } from '../index.svelte'
@@ -40,6 +45,11 @@ import { buildMemoryWindow, type BuildMemoryWindowResult } from '../promptAssemb
 import type { PromptItem } from '../prompt'
 
 type NonStop = Exclude<BuildMemoryWindowResult, { stopSending: true }>
+interface CapturedFetch {
+  url: string
+  method: string
+  body: unknown
+}
 
 function assertNotStopped(result: BuildMemoryWindowResult): asserts result is NonStop {
   if (result.stopSending) throw new Error('expected non-stop result')
@@ -124,10 +134,58 @@ function fakeTokenizer(): ChatTokenizer {
   return new FakeTokenizer() as unknown as ChatTokenizer
 }
 
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  })
+}
+
+function stubCommandFetch(): CapturedFetch[] {
+  const calls: CapturedFetch[] = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const url = String(input)
+      calls.push({
+        url,
+        method: init.method ?? 'GET',
+        body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+      })
+      if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+      if (url.startsWith('/api/v1/commands/chats/')) {
+        return jsonResponse({
+          revision: 11,
+          event: { type: 'chat.updated', revision: 11, resource: 'chat' },
+        })
+      }
+      return jsonResponse({ error: `unexpected ${url}` }, 404)
+    }) as unknown as typeof fetch,
+  )
+  return calls
+}
+
+async function waitForCommand(
+  calls: CapturedFetch[],
+  predicate: (call: CapturedFetch) => boolean,
+): Promise<CapturedFetch> {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const match = calls.find(predicate)
+    if (match) return match
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  }
+  throw new Error(`command not dispatched; saw: ${JSON.stringify(calls)}`)
+}
+
 beforeEach(() => {
+  clearCachedServerCommandRevision()
   hypaState.next = null
   hypaState.throws = null
   hypaState.calls = 0
+})
+
+afterEach(() => {
+  vi.unstubAllGlobals()
 })
 
 describe('buildMemoryWindow - HypaV3 branch', () => {
@@ -310,6 +368,85 @@ describe('buildMemoryWindow - HypaV3 branch', () => {
 })
 
 describe('buildMemoryWindow - fallback budget trim', () => {
+  it('writes lastMemory through DBState and dispatches a chat patch when server command mode has a chat id', async () => {
+    seedDb()
+    const calls = stubCommandFetch()
+    const rec = makeRecorder()
+    const currentChat = makeChat({ id: 'chat-1' })
+    DBState.db.characters[0].chats[0] = currentChat
+    const chats: OpenAIChat[] = [
+      { role: 'user', content: 'keep', memo: 'leadingMemo' },
+      { role: 'assistant', content: 'reply' },
+    ]
+
+    const result = await buildMemoryWindow({
+      chats,
+      currentTokens: 50,
+      maxContextTokens: 1000,
+      currentChat,
+      nowChatroom: makeChar({ supaMemory: false }),
+      tokenizer: fakeTokenizer(),
+      selectedChar: 0,
+      selectedChat: 0,
+      memoryCardUsed: false,
+      promptTemplate: [{ type: 'description' }] as PromptItem[],
+      unformated: makeUnformated(),
+      stageTimings: makeStageTimings(),
+      throwError: rec.throwError,
+      setProcessStage: rec.setProcessStage,
+    })
+
+    assertNotStopped(result)
+    expect(DBState.db.characters[0].chats[0].lastMemory).toBe('leadingMemo')
+    expect(result.currentChat).toBe(DBState.db.characters[0].chats[0])
+    expect(result.currentChat.lastMemory).toBe('leadingMemo')
+
+    const command = await waitForCommand(
+      calls,
+      (call) => call.url === '/api/v1/commands/chats/chat-1' && call.method === 'PATCH',
+    )
+    expect(command.body).toMatchObject({
+      baseRevision: 10,
+      patch: { lastMemory: 'leadingMemo' },
+    })
+  })
+
+  it('keeps lastMemory request-local when server command mode has no chat id', async () => {
+    seedDb()
+    const calls = stubCommandFetch()
+    const rec = makeRecorder()
+    const currentChat = makeChat({ lastMemory: 'request-original' })
+    DBState.db.characters[0].chats[0] = makeChat({ lastMemory: 'server-original' })
+    const chats: OpenAIChat[] = [
+      { role: 'user', content: 'keep', memo: 'requestMemo' },
+      { role: 'assistant', content: 'reply' },
+    ]
+
+    const result = await buildMemoryWindow({
+      chats,
+      currentTokens: 50,
+      maxContextTokens: 1000,
+      currentChat,
+      nowChatroom: makeChar({ supaMemory: false }),
+      tokenizer: fakeTokenizer(),
+      selectedChar: 0,
+      selectedChat: 0,
+      memoryCardUsed: false,
+      promptTemplate: [{ type: 'description' }] as PromptItem[],
+      unformated: makeUnformated(),
+      stageTimings: makeStageTimings(),
+      throwError: rec.throwError,
+      setProcessStage: rec.setProcessStage,
+    })
+
+    assertNotStopped(result)
+    expect(DBState.db.characters[0].chats[0].lastMemory).toBe('server-original')
+    expect(result.currentChat).not.toBe(DBState.db.characters[0].chats[0])
+    expect(result.currentChat.lastMemory).toBe('requestMemo')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(calls.filter((call) => call.url.startsWith('/api/v1/commands/chats/'))).toEqual([])
+  })
+
   it('is a no-op when already within budget and captures lastMemory', async () => {
     seedDb()
     const rec = makeRecorder()
@@ -338,7 +475,8 @@ describe('buildMemoryWindow - fallback budget trim', () => {
 
     assertNotStopped(result)
     expect(result.chats.length).toBe(2)
-    expect(DBState.db.characters[0].chats[0].lastMemory).toBe('leadingMemo')
+    expect(result.currentChat.lastMemory).toBe('leadingMemo')
+    expect(DBState.db.characters[0].chats[0].lastMemory).toBeUndefined()
     expect(result.currentTokens).toBe(50)
   })
 
@@ -374,7 +512,8 @@ describe('buildMemoryWindow - fallback budget trim', () => {
     // First-shift trims 40 tokens, leaving 15 (under 30).
     expect(result.currentTokens).toBe(15)
     expect(result.chats.length).toBe(2)
-    expect(DBState.db.characters[0].chats[0].lastMemory).toBe('middle')
+    expect(result.currentChat.lastMemory).toBe('middle')
+    expect(DBState.db.characters[0].chats[0].lastMemory).toBeUndefined()
   })
 
   it('returns stopSending and throws toomuchtoken when chats cannot shrink to fit', async () => {

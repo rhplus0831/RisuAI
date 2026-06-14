@@ -91,6 +91,10 @@ coherent rollback/resync story.
   - `v2SetPersonaDesc` now routes through a persona domain helper that captures
     the pre-trigger snapshot, mirrors the legacy prompt/profile fields in one
     optimistic write, and rolls back both prompt locations on command failure.
+- `src/ts/process/promptAssembly/buildMemoryWindow.ts`
+  - `lastMemory` still uses the command-backed optimistic DBState write when a
+    chat id is available, but no-id server command requests now keep the value
+    request-local instead of mutating projection without a durable command.
 
 ## Findings
 
@@ -154,8 +158,6 @@ state, or routed through server-owned finalization/patch commands.
   `src/ts/process/postGeneration/stage4Finalize.ts`
   - Retained local post-generation writes final text, inlay text, trigger
     output, reload state, or timing metadata without command ownership.
-- `src/ts/process/promptAssembly/buildMemoryWindow.ts`
-  - `lastMemory` can be written without a chat id and without persistence.
 - `src/ts/process/scripts.ts`
   - `@@inject` can mutate a live message during script processing without a
     command.

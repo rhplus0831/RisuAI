@@ -132,10 +132,7 @@ export async function buildMemoryWindow(args: BuildMemoryWindowArgs): Promise<Bu
       dispatchUpdateChat(currentChat.id, { lastMemory }, previous)
       currentChat = DBState.db.characters[selectedChar].chats[selectedChat]
     } else if (canUseServerCommands()) {
-      withTrustedServerProjectionWrite(() => {
-        DBState.db.characters[selectedChar].chats[selectedChat].lastMemory = lastMemory
-      })
-      currentChat = DBState.db.characters[selectedChar].chats[selectedChat]
+      currentChat = { ...currentChat, lastMemory }
     } else {
       currentChat.lastMemory = lastMemory
     }
