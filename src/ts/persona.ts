@@ -98,6 +98,18 @@ function suppressPersonaSettingsWatcherUntilNextTask(): void {
   }, 0)
 }
 
+export function applyPersonaStateSnapshotLocally(snapshot: PersonaStateSnapshot): void {
+  suppressPersonaSettingsWatcherUntilNextTask()
+  withTrustedServerProjectionWrite(() => {
+    DBState.db.personas = cloneJsonValue(snapshot.personas)
+    DBState.db.selectedPersona = snapshot.selectedPersona
+    DBState.db.username = snapshot.username
+    DBState.db.userIcon = snapshot.userIcon
+    DBState.db.personaPrompt = snapshot.personaPrompt
+    DBState.db.userNote = snapshot.userNote
+  })
+}
+
 export function restorePersonaStateSnapshot(snapshot: PersonaStateSnapshot): void {
   const token = ++personaSettingsWatcherSuppressionToken
   personaSettingsWatcherSuppressed = true
@@ -434,25 +446,33 @@ export function saveUserPersona(options: { dispatch?: boolean } = {}) {
   }
 }
 
+export function selectUserPersonaLocally(id: number, save: 'save' | 'noSave' = 'save'): boolean {
+  if (!personaCommandIdList()) return false
+  if (!validUniquePersonaIdAt(id)) return false
+  const target = DBState.db.personas[id]
+  if (!target) return false
+
+  suppressPersonaSettingsWatcherUntilNextTask()
+  if (save === 'save') {
+    saveUserPersona({ dispatch: false })
+  }
+
+  withTrustedServerProjectionWrite(() => {
+    DBState.db.personaPrompt = target.personaPrompt
+    DBState.db.username = target.name
+    DBState.db.userIcon = target.icon
+    DBState.db.userNote = target.note
+    DBState.db.selectedPersona = id
+  })
+  return true
+}
+
 export function changeUserPersona(id: number, save: 'save' | 'noSave' = 'save') {
   if (!personaCommandIdList()) return
   const personaId = validUniquePersonaIdAt(id)
   if (!personaId) return
   const previous = currentPersonaStateSnapshot()
-  const target = DBState.db.personas[id]
-  if (!target) return
-  suppressPersonaSettingsWatcherUntilNextTask()
-  if (save === 'save') {
-    saveUserPersona({ dispatch: false })
-  }
-  const pr = target
-  withTrustedServerProjectionWrite(() => {
-    DBState.db.personaPrompt = pr.personaPrompt
-    DBState.db.username = pr.name
-    DBState.db.userIcon = pr.icon
-    DBState.db.userNote = pr.note
-    DBState.db.selectedPersona = id
-  })
+  if (!selectUserPersonaLocally(id, save)) return
   if (personaId) {
     runPersonaCommand(
       (baseRevision) =>

@@ -61,6 +61,11 @@ coherent rollback/resync story.
     collection snapshots and watcher-origin replacement flushes require stable
     unique scope and script/trigger IDs, and malformed watched collections are
     skipped instead of silently normalized.
+- `src/ts/loadout.ts`
+  - `applyLoadout()` now applies requested facets in a single optimistic
+    projection write and routes persona, preset, module, settings, and loadout
+    touch commands through `runOptimisticCommandSequence()` with one scoped
+    rollback for the facets touched by the apply.
 
 ## Findings
 
@@ -117,9 +122,6 @@ revision-checked commands can partially succeed on the server while the browser
 rolls back or diverges. Prefer a bulk server command or a serialized optimistic
 command sequence with one rollback/resync strategy.
 
-- `src/ts/loadout.ts`
-  - `applyLoadout()` updates projection and fires persona, preset, module,
-    settings, and loadout commands independently.
 - `src/ts/characters.ts`
   - Multi-chat import pushes folders/chats locally, then loops folder/chat
     commands.
