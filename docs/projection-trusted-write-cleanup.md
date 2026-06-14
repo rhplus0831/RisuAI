@@ -99,6 +99,35 @@ coherent rollback/resync story.
   - `@@inject` is display-only during `editdisplay`, and server-backed
     non-display injection now requires a message id so the optimistic write can
     dispatch a scoped message patch with rollback.
+- `src/ts/process/sendChatPromptAssembly.ts`
+  - The browser-local prompt assembler is retained for the local/parity test
+    path. Live Fastify sends route through `resolveServerPromptAssembly()` into
+    `assembleServerBackedSendChat()` and `POST /api/v1/generate/chat`; supported
+    sends are server-assembled, unsupported sends hard-fail, and durable run-var
+    / message mutation is owned by the server assembly/generation route instead
+    of this local projection write.
+- `src/ts/process/postGeneration/nonStreamResponse.ts`,
+  `src/ts/process/postGeneration/orchestrateResponse.ts`,
+  `src/ts/process/postGeneration/outputTrigger.ts`,
+  `src/ts/process/postGeneration/stage4Finalize.ts`
+  - `nonStreamResponse` and `outputTrigger` are retained local-only
+    post-generation behavior. On the server-dispatch path,
+    `orchestrateResponse` relays the stream for display and skips local output
+    trigger, inlay, TTS, and editoutput derivation while the terminal
+    `done.postGeneration` patch supplies server-owned final text, scriptstate
+    changes, and resend state. `stage4Finalize` only writes browser-side timing
+    metadata onto an existing in-memory `generationInfo`; it does not create a
+    durable generation result. Residual timing metadata is therefore
+    non-durable unless durable timing persistence becomes a product
+    requirement.
+- `src/ts/process/serverBackedSendChat.ts`
+  - Browser inlay rendering in `applyServerBackedTerminal()` runs after applying
+    the server-owned final text/message patch. The durable generation result is
+    still persisted by `POST /api/v1/generate/chat` through
+    `persistServerGenerationResult`, not by legacy `/generation-result`; the
+    inlay result is browser display text over the server-owned final message.
+    Residual inlay display text is non-durable unless durable inlay rendering
+    becomes a product requirement.
 
 ## Findings
 
@@ -147,23 +176,6 @@ listed under keep categories.
     dispatch.
 - `src/lib/Others/WelcomeRisu.svelte`
   - Onboarding applies settings by mutating projection first and diffing after.
-
-### P2: Retained Local Generation And Compatibility Paths
-
-These paths may be legacy or retained compatibility behavior. They should be
-classified as unreachable in Fastify mode, converted to local-only ephemeral
-state, or routed through server-owned finalization/patch commands.
-
-- `src/ts/process/sendChatPromptAssembly.ts`
-  - Local prompt assembly writes run-var-expanded messages back to projection.
-- `src/ts/process/postGeneration/nonStreamResponse.ts`,
-  `src/ts/process/postGeneration/orchestrateResponse.ts`,
-  `src/ts/process/postGeneration/outputTrigger.ts`,
-  `src/ts/process/postGeneration/stage4Finalize.ts`
-  - Retained local post-generation writes final text, inlay text, trigger
-    output, reload state, or timing metadata without command ownership.
-- `src/ts/process/serverBackedSendChat.ts`
-  - Browser inlay rendering mutates assistant text after server patch apply.
 
 ## Cleanup Order
 
