@@ -119,20 +119,44 @@ export function restorePersonaStateSnapshot(snapshot: PersonaStateSnapshot): voi
   }
 }
 
-export function normalizePersonaIds(): void {
-  withTrustedServerProjectionWrite(() => {
-    const seen = new Set<string>()
-    for (const persona of DBState.db.personas ?? []) {
-      const id = typeof persona.id === 'string' && persona.id.trim() ? persona.id : v4()
-      persona.id = seen.has(id) ? v4() : id
-      seen.add(persona.id)
+function nonBlankPersonaId(persona: Persona | undefined): string | null {
+  const id = persona?.id
+  return typeof id === 'string' && id.trim().length > 0 ? id : null
+}
+
+function uniquePersonaIdAt(personas: readonly Persona[], index: number): string | null {
+  const id = nonBlankPersonaId(personas[index])
+  if (!id) return null
+
+  let matches = 0
+  for (const persona of personas) {
+    if (nonBlankPersonaId(persona) === id) {
+      matches += 1
     }
-  })
+  }
+  return matches === 1 ? id : null
+}
+
+export function validUniquePersonaIdAt(index: number): string | null {
+  return uniquePersonaIdAt(DBState.db.personas ?? [], index)
+}
+
+function personaCommandIdList(personas: readonly Persona[] = DBState.db.personas ?? []): string[] | null {
+  const ids: string[] = []
+  const seen = new Set<string>()
+
+  for (const persona of personas) {
+    const id = nonBlankPersonaId(persona)
+    if (!id || seen.has(id)) return null
+    seen.add(id)
+    ids.push(id)
+  }
+
+  return ids
 }
 
 export function selectedPersonaId(): string | null {
-  normalizePersonaIds()
-  return DBState.db.personas[DBState.db.selectedPersona]?.id ?? null
+  return validUniquePersonaIdAt(DBState.db.selectedPersona)
 }
 
 function personaPatchFromLegacyProfile(): PersonaSnapshot {
@@ -203,11 +227,9 @@ function dispatchDeletePersona(
 
 function dispatchReorderPersonas(previous: PersonaStateSnapshot): void {
   if (!canUseServerCommands()) return
-  normalizePersonaIds()
+  const personaIds = personaCommandIdList()
+  if (!personaIds) return
   const attempted = currentPersonaStateSnapshot()
-  const personaIds = DBState.db.personas
-    .map((persona) => persona.id)
-    .filter((personaId): personaId is string => typeof personaId === 'string')
   void runServerCommand({
     command: (baseRevision) =>
       reorderPersonasCommand({
@@ -300,8 +322,9 @@ export function createNewUserPersona(): Persona {
 }
 
 export function beginPersonaReorder(): string | null {
-  normalizePersonaIds()
-  const personaId = DBState.db.personas[DBState.db.selectedPersona]?.id ?? null
+  if (!personaCommandIdList()) return null
+  const personaId = selectedPersonaId()
+  if (!personaId) return null
   saveUserPersona({ dispatch: false })
   return personaId
 }
@@ -312,6 +335,7 @@ export function reorderUserPersonasByIndices(indices: number[], selectedPersonaI
     .map((index) => DBState.db.personas[index])
     .filter((persona): persona is Persona => Boolean(persona))
   if (personas.length !== DBState.db.personas.length) return false
+  if (!personaCommandIdList(personas)) return false
 
   suppressPersonaSettingsWatcherUntilNextTask()
   withTrustedServerProjectionWrite(() => {
@@ -325,16 +349,15 @@ export function reorderUserPersonasByIndices(indices: number[], selectedPersonaI
 
 export function deleteSelectedUserPersona(): boolean {
   if (DBState.db.personas.length === 1) return false
-  normalizePersonaIds()
+  if (!personaCommandIdList()) return false
+  const personaId = selectedPersonaId()
+  if (!personaId) return false
   const previous = currentPersonaStateSnapshot()
   saveUserPersona({ dispatch: false })
 
-  const personaId = DBState.db.personas[DBState.db.selectedPersona]?.id
-  if (!personaId) return false
-
   const personas = [...DBState.db.personas]
   personas.splice(DBState.db.selectedPersona, 1)
-  let selectedId: string | undefined
+  const selectedId = uniquePersonaIdAt(personas, 0) ?? undefined
 
   suppressPersonaSettingsWatcherUntilNextTask()
   withTrustedServerProjectionWrite(() => {
@@ -345,7 +368,6 @@ export function deleteSelectedUserPersona(): boolean {
     DBState.db.userIcon = selected.icon
     DBState.db.personaPrompt = selected.personaPrompt
     DBState.db.userNote = selected.note ?? ''
-    selectedId = selected.id
   })
   dispatchDeletePersona(personaId, selectedId, previous)
   return true
@@ -359,15 +381,16 @@ export async function selectUserImg() {
   const previous = currentPersonaStateSnapshot()
   const img = selected.data
   const imgp = await saveImage(img)
+  const persona = DBState.db.personas[DBState.db.selectedPersona]
+  if (!persona) return
   withTrustedServerProjectionWrite(() => {
     DBState.db.userIcon = imgp
     DBState.db.personas[DBState.db.selectedPersona] = {
-      ...DBState.db.personas[DBState.db.selectedPersona],
+      ...persona,
       name: DBState.db.username,
       icon: DBState.db.userIcon,
       personaPrompt: DBState.db.personaPrompt,
       note: DBState.db.userNote,
-      id: DBState.db.personas[DBState.db.selectedPersona]?.id ?? v4(),
     }
   })
   const personaId = selectedPersonaId()
@@ -395,8 +418,9 @@ export function saveUserPersona(options: { dispatch?: boolean } = {}) {
     DBState.db.personas[DBState.db.selectedPersona].personaPrompt = DBState.db.personaPrompt
     DBState.db.personas[DBState.db.selectedPersona].note = DBState.db.userNote
   })
+  if (!dispatch) return
   const personaId = selectedPersonaId()
-  if (dispatch && personaId) {
+  if (personaId) {
     runPersonaCommand(
       (baseRevision) =>
         updatePersonaCommand({
@@ -411,6 +435,9 @@ export function saveUserPersona(options: { dispatch?: boolean } = {}) {
 }
 
 export function changeUserPersona(id: number, save: 'save' | 'noSave' = 'save') {
+  if (!personaCommandIdList()) return
+  const personaId = validUniquePersonaIdAt(id)
+  if (!personaId) return
   const previous = currentPersonaStateSnapshot()
   const target = DBState.db.personas[id]
   if (!target) return
@@ -418,8 +445,6 @@ export function changeUserPersona(id: number, save: 'save' | 'noSave' = 'save') 
   if (save === 'save') {
     saveUserPersona({ dispatch: false })
   }
-  normalizePersonaIds()
-  const personaId = target.id
   const pr = target
   withTrustedServerProjectionWrite(() => {
     DBState.db.personaPrompt = pr.personaPrompt

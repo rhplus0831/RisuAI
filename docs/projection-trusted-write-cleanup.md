@@ -91,8 +91,6 @@ listed under keep categories.
 Normalization should be server-side, pure, or limited to command payloads.
 Hidden client projection mutation can diverge from server-owned durable state.
 
-- `src/ts/persona.ts`
-  - `normalizePersonaIds()` mutates personas during read/select flows.
 - `src/ts/globalApi.svelte.ts`
   - `checkCharOrder()` repairs `characterOrder` without a command.
 - `src/ts/storage/database.svelte.ts`

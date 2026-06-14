@@ -3,7 +3,7 @@
   import { language } from '../../lang'
 
   import { DBState, selectedCharID, type GenerationSettingsPickerMode } from 'src/ts/stores.svelte'
-  import { changeUserPersona, normalizePersonaIds } from 'src/ts/persona'
+  import { changeUserPersona, validUniquePersonaIdAt } from 'src/ts/persona'
   import {
     resolveActiveChatGenerationSettings,
     saveActiveChatGenerationSettingsSelection,
@@ -31,8 +31,7 @@
 
   function selectPersona(index: number) {
     if (isChatGenerationSelectionMode) {
-      normalizePersonaIds()
-      const personaId = nonEmptyId(DBState.db.personas[index]?.id)
+      const personaId = validUniquePersonaIdAt(index)
       if (!personaId) return
       if (saveActiveChatGenerationSettingsSelection({ personaId })) {
         close()
