@@ -93,7 +93,7 @@ function dispatchCreateLoadout(loadout: Loadout, previous: LoadoutStateSnapshot)
   )
 }
 
-export function dispatchDeleteLoadout(loadoutId: string, previous: LoadoutStateSnapshot): void {
+function dispatchDeleteLoadout(loadoutId: string, previous: LoadoutStateSnapshot): void {
   runLoadoutCommand(
     (baseRevision) =>
       deleteLoadoutCommand({
@@ -104,7 +104,7 @@ export function dispatchDeleteLoadout(loadoutId: string, previous: LoadoutStateS
   )
 }
 
-export function dispatchFavoriteLoadout(loadoutId: string, favorite: boolean, previous: LoadoutStateSnapshot): void {
+function dispatchFavoriteLoadout(loadoutId: string, favorite: boolean, previous: LoadoutStateSnapshot): void {
   runLoadoutCommand(
     (baseRevision) =>
       favoriteLoadoutCommand({
@@ -114,6 +114,36 @@ export function dispatchFavoriteLoadout(loadoutId: string, favorite: boolean, pr
       }),
     () => restoreLoadoutState(previous),
   )
+}
+
+export function toggleLoadoutFavorite(loadoutId: string): boolean {
+  const loadout = DBState.db.loadouts?.find((item) => item.id === loadoutId)
+  if (!loadout) return false
+
+  const previous = currentLoadoutStateSnapshot()
+  const favorite = !loadout.favorite
+  withTrustedServerProjectionWrite(() => {
+    const targetLoadout = DBState.db.loadouts.find((item) => item.id === loadoutId)
+    if (!targetLoadout) return
+    targetLoadout.favorite = favorite
+  })
+  dispatchFavoriteLoadout(loadoutId, favorite, previous)
+  return true
+}
+
+export function deleteLoadout(loadoutId: string): boolean {
+  const index = DBState.db.loadouts?.findIndex((loadout) => loadout.id === loadoutId) ?? -1
+  if (index === -1) return false
+
+  const previous = currentLoadoutStateSnapshot()
+  withTrustedServerProjectionWrite(() => {
+    const targetIndex = DBState.db.loadouts.findIndex((loadout) => loadout.id === loadoutId)
+    if (targetIndex !== -1) {
+      DBState.db.loadouts.splice(targetIndex, 1)
+    }
+  })
+  dispatchDeleteLoadout(loadoutId, previous)
+  return true
 }
 
 function dispatchTouchLoadout(

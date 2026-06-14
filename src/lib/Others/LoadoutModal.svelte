@@ -2,16 +2,8 @@
   import { XIcon, StarIcon, ClockIcon, UserIcon, ListIcon, SaveIcon, TrashIcon } from '@lucide/svelte'
   import { DBState } from 'src/ts/stores.svelte'
   import { loadoutModalStore } from 'src/ts/stores.svelte'
-  import {
-    applyLoadout,
-    currentLoadoutStateSnapshot,
-    dispatchDeleteLoadout,
-    dispatchFavoriteLoadout,
-    saveCurrentLoadout,
-    type Loadout,
-  } from 'src/ts/loadout'
+  import { applyLoadout, deleteLoadout, saveCurrentLoadout, toggleLoadoutFavorite, type Loadout } from 'src/ts/loadout'
   import { getCurrentCharacter } from 'src/ts/storage/database.svelte'
-  import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
 
   type LoadoutApplyOption = 'modules' | 'globalVariables' | 'preset' | 'persona'
 
@@ -69,13 +61,7 @@
 
   function toggleFavorite(loadout: Loadout, e: MouseEvent) {
     e.stopPropagation()
-    const previous = currentLoadoutStateSnapshot()
-    const favorite = !loadout.favorite
-    withTrustedServerProjectionWrite(() => {
-      const targetLoadout = DBState.db.loadouts.find((item) => item.id === loadout.id) ?? loadout
-      targetLoadout.favorite = favorite
-    })
-    dispatchFavoriteLoadout(loadout.id, favorite, previous)
+    toggleLoadoutFavorite(loadout.id)
   }
 
   function formatDate(ts: number): string {
@@ -89,14 +75,7 @@
   }
 
   function removeLoadout(loadout: Loadout) {
-    const index = DBState.db.loadouts.findIndex((l) => l.id === loadout.id)
-    if (index !== -1) {
-      const previous = currentLoadoutStateSnapshot()
-      withTrustedServerProjectionWrite(() => {
-        DBState.db.loadouts.splice(index, 1)
-      })
-      dispatchDeleteLoadout(loadout.id, previous)
-    }
+    deleteLoadout(loadout.id)
   }
 </script>
 
