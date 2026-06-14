@@ -77,7 +77,11 @@ describe('Fastify-only browser local surface policy', () => {
   it('does not bind DevTool variable editors directly to server scriptstate', () => {
     const devTool = readWorkspaceFile('src/lib/SideBars/DevTool.svelte')
 
-    expect(devTool).toContain('dispatchPatchChatScriptstate')
+    expect(devTool).toContain('setChatScriptstateValue')
+    expect(devTool).not.toContain('withTrustedServerProjectionWrite')
+    expect(devTool).not.toContain('currentChatStateSnapshot')
+    expect(devTool).not.toContain('dispatchPatchChatScriptstate')
+    expect(devTool).not.toContain('canUseServerCommands')
     expect(devTool).not.toMatch(/bind:value=\{[\s\S]{0,240}?scriptstate\[/)
   })
 

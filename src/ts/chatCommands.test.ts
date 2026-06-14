@@ -41,7 +41,6 @@ import {
   dispatchCreateChat,
   dispatchCreateChatFolder,
   dispatchDeleteChat,
-  dispatchPatchChatScriptstate,
   dispatchPatchChatScriptstateScoped,
   dispatchReorderChatFoldersByIds,
   dispatchReorderChatsByIds,
@@ -58,6 +57,7 @@ import {
   restoreChatSelection,
   runOptimisticCommandSequence,
   sanitizeChatPatch,
+  setChatScriptstateValue,
 } from './chatCommands'
 import {
   assertRollbackRestoresOnly,
@@ -156,6 +156,18 @@ function stubCommandFetch(): CapturedFetch[] {
             id: 'chat-a',
           },
           chatId: 'chat-a',
+        })
+      }
+      if (url === '/api/v1/commands/chats/chat-b/scriptstate') {
+        return jsonResponse({
+          revision: 16,
+          event: {
+            type: 'chat.scriptstate.updated',
+            revision: 16,
+            resource: 'chat',
+            id: 'chat-b',
+          },
+          chatId: 'chat-b',
         })
       }
       if (url === '/api/v1/commands/chats/chat-a/generation-settings') {
@@ -540,19 +552,16 @@ describe('chat command projection helpers', () => {
     expect(DBState.db.characters[0].chats[1].name).toBe('Concurrent sibling edit')
   })
 
-  it('routes DevTool-style scriptstate edits through the chat scriptstate command', async () => {
+  it('sets DevTool-style scriptstate values through the chat scriptstate command helper', async () => {
     const calls = stubCommandFetch()
     setServerProjectionWriteGuardEnabled(true)
-    const previous = currentChatStateSnapshot()
 
     expect(() => {
       DBState.db.characters[0].chats[0].scriptstate!.$score = 'direct'
     }).toThrow()
 
-    withTrustedServerProjectionWrite(() => {
-      DBState.db.characters[0].chats[0].scriptstate!.$score = '9'
-    })
-    dispatchPatchChatScriptstate('chat-a', { $score: '9' }, [], previous)
+    expect(setChatScriptstateValue('chat-a', '$score', '9')).toBe(true)
+    expect(DBState.db.characters[0].chats[0].scriptstate).toMatchObject({ $score: '9' })
 
     await waitForCallCount(calls, 2)
     expect(calls).toEqual([
@@ -574,6 +583,44 @@ describe('chat command projection helpers', () => {
       },
     ])
     expect(DBState.db.characters[0].chats[0].scriptstate).toMatchObject({ $score: '9' })
+  })
+
+  it('creates scriptstate when setting a value on a chat without one', async () => {
+    const calls = stubCommandFetch()
+    setServerProjectionWriteGuardEnabled(true)
+
+    expect(DBState.db.characters[0].chats[1]).not.toHaveProperty('scriptstate')
+
+    expect(setChatScriptstateValue('chat-b', '$enabled', true)).toBe(true)
+
+    expect(DBState.db.characters[0].chats[1].scriptstate).toEqual({ $enabled: true })
+    await waitForCallCount(calls, 2)
+    expect(calls[1]).toEqual({
+      url: '/api/v1/commands/chats/chat-b/scriptstate',
+      method: 'PATCH',
+      authHeader: 'chat-command-token',
+      body: {
+        baseRevision: 10,
+        patch: { $enabled: true },
+        deleteKeys: [],
+      },
+    })
+  })
+
+  it('rejects missing or invalid DevTool-style scriptstate targets without mutating or dispatching', () => {
+    const calls = stubCommandFetch()
+    setServerProjectionWriteGuardEnabled(true)
+    const before = jsonClone(DBState.db.characters[0].chats[0].scriptstate)
+
+    expect(setChatScriptstateValue(undefined, '$score', '2')).toBe(false)
+    expect(setChatScriptstateValue('', '$score', '2')).toBe(false)
+    expect(setChatScriptstateValue('missing-chat', '$score', '2')).toBe(false)
+    expect(setChatScriptstateValue('chat-a', '', '2')).toBe(false)
+    expect(setChatScriptstateValue('chat-a', '$object', { nested: true })).toBe(false)
+    expect(setChatScriptstateValue('chat-a', '$nan', Number.NaN)).toBe(false)
+
+    expect(DBState.db.characters[0].chats[0].scriptstate).toEqual(before)
+    expect(calls).toEqual([])
   })
 
   it('appends DevTool Autopilot user messages through an awaited message command', async () => {
@@ -676,7 +723,7 @@ describe('chat command projection helpers', () => {
     expect(calls[1].body).not.toHaveProperty('messages')
   })
 
-  it('rolls back optimistic scriptstate edits when the command fails', async () => {
+  it('rolls back helper scriptstate edits without touching concurrent message edits', async () => {
     const calls: CapturedFetch[] = []
     vi.stubGlobal(
       'fetch',
@@ -692,21 +739,36 @@ describe('chat command projection helpers', () => {
 
         if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
         if (url === '/api/v1/commands/chats/chat-a/scriptstate') {
+          withTrustedServerProjectionWrite(() => {
+            DBState.db.characters[0].chats[0].message.push({
+              role: 'char',
+              data: 'concurrent same-chat message',
+              chatId: 'msg-concurrent',
+            })
+            DBState.db.characters[0].chats[1].name = 'Concurrent sibling edit'
+          })
           return jsonResponse({ error: 'nope' }, 500)
         }
         return jsonResponse({ error: `unexpected ${url}` }, 404)
       }) as unknown as typeof fetch,
     )
     setServerProjectionWriteGuardEnabled(true)
-    const previous = currentChatStateSnapshot()
 
-    withTrustedServerProjectionWrite(() => {
-      DBState.db.characters[0].chats[0].scriptstate!.$score = 'failed'
-    })
-    dispatchPatchChatScriptstate('chat-a', { $score: 'failed' }, [], previous)
+    expect(setChatScriptstateValue('chat-a', '$score', 'failed')).toBe(true)
+    expect(DBState.db.characters[0].chats[0].scriptstate).toEqual({ $score: 'failed', $old: 'gone' })
 
     await waitForCallCount(calls, 2)
-    expect(DBState.db.characters[0].chats[0].scriptstate).toEqual({ $score: '1', $old: 'gone' })
+    await vi.waitFor(() => {
+      expect(DBState.db.characters[0].chats[0].scriptstate).toEqual({ $score: '1', $old: 'gone' })
+    })
+    expect(DBState.db.characters[0].chats[0].message).toEqual([
+      {
+        role: 'char',
+        data: 'concurrent same-chat message',
+        chatId: 'msg-concurrent',
+      },
+    ])
+    expect(DBState.db.characters[0].chats[1].name).toBe('Concurrent sibling edit')
   })
 
   it('rolls back failed send appends by appended message id only', async () => {

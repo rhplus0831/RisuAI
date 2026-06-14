@@ -1329,6 +1329,41 @@ export function dispatchCurrentChatScriptstatePatch(
   dispatchPatchChatScriptstateScoped(chatId, patch, deleteKeys, previous)
 }
 
+export function setChatScriptstateValue(chatId: string | undefined, key: string, value: unknown): boolean {
+  return patchChatScriptstateValue(chatId, { [key]: value })
+}
+
+export function patchChatScriptstateValue(
+  chatId: string | undefined,
+  patch: Record<string, unknown>,
+  deleteKeys: readonly string[] = [],
+): boolean {
+  if (!chatId) return false
+
+  const commandPatch = sanitizeScriptstatePatch(patch)
+  const commandDeleteKeys = sanitizeScriptstateDeleteKeys(deleteKeys)
+  if (Object.keys(commandPatch).length === 0 && commandDeleteKeys.length === 0) return false
+
+  const location = locateChatById(chatId)
+  if (!location) return false
+  if (!wouldChangeScriptstate(location.chat.scriptstate, commandPatch, commandDeleteKeys)) return false
+
+  const previous = currentChatScriptstateSnapshotForChat(chatId)
+  if (!previous) return false
+
+  let applied = false
+  withTrustedServerProjectionWrite(() => {
+    const liveLocation = locateChatById(chatId)
+    if (!liveLocation) return
+    applyScriptstatePatchToChat(liveLocation.chat, commandPatch, commandDeleteKeys)
+    applied = true
+  })
+  if (!applied) return false
+
+  dispatchPatchChatScriptstateScoped(chatId, commandPatch, commandDeleteKeys, previous)
+  return true
+}
+
 // Author-note write (`v2SetAuthorNote`) with a scriptstate-scoped rollback. The
 // note is a chat-row scalar, so the command is a chat update, but the rollback
 // reuses the pass's `ChatScriptstateSnapshot` (which also restores `note`).
@@ -1350,6 +1385,57 @@ export function currentSelectedChatId(): string | undefined {
   const character = DBState.db.characters?.[selectedChar]
   const chat = character?.chats?.[character.chatPage]
   return chat?.id
+}
+
+function currentChatScriptstateSnapshotForChat(chatId: string): ChatScriptstateSnapshot | null {
+  const location = locateChatById(chatId)
+  if (!location) return null
+  return {
+    chatId,
+    selectedCharID: get(selectedCharID),
+    scriptstate: location.chat.scriptstate ? { ...location.chat.scriptstate } : undefined,
+  }
+}
+
+function sanitizeScriptstateDeleteKeys(deleteKeys: readonly string[]): string[] {
+  const sanitized: string[] = []
+  const seen = new Set<string>()
+  for (const key of deleteKeys) {
+    if (key.length === 0 || seen.has(key)) continue
+    seen.add(key)
+    sanitized.push(key)
+  }
+  return sanitized
+}
+
+function applyScriptstatePatchToChat(
+  chat: Chat,
+  patch: ChatScriptstatePatch,
+  deleteKeys: readonly string[] = [],
+): void {
+  chat.scriptstate ??= {}
+  for (const key of deleteKeys) {
+    delete chat.scriptstate[key]
+  }
+  Object.assign(chat.scriptstate, cloneJsonValue(patch))
+  if (Object.keys(chat.scriptstate).length === 0) {
+    delete chat.scriptstate
+  }
+}
+
+function wouldChangeScriptstate(
+  scriptstate: Chat['scriptstate'] | undefined,
+  patch: ChatScriptstatePatch,
+  deleteKeys: readonly string[],
+): boolean {
+  const current = scriptstate ?? {}
+  for (const key of deleteKeys) {
+    if (Object.prototype.propertyIsEnumerable.call(current, key)) return true
+  }
+  for (const [key, value] of Object.entries(patch)) {
+    if (snapshotJson(current[key]) !== snapshotJson(value)) return true
+  }
+  return false
 }
 
 export function ensureMessageId(message: Message): string {
@@ -1381,7 +1467,7 @@ export function sanitizeMessagePatch(patch: MessageSnapshot): MessageSnapshot {
   return sanitized
 }
 
-export function sanitizeScriptstatePatch(patch: ChatScriptstatePatch): ChatScriptstatePatch {
+export function sanitizeScriptstatePatch(patch: Record<string, unknown>): ChatScriptstatePatch {
   const sanitized: ChatScriptstatePatch = {}
   for (const [key, value] of Object.entries(patch)) {
     if (key.length === 0 || value === undefined) continue

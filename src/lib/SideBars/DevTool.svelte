@@ -11,7 +11,6 @@
 
   import { DBState } from 'src/ts/stores.svelte'
   import { type Chat } from 'src/ts/storage/database.svelte'
-  import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
   import TextAreaInput from '../UI/GUI/TextAreaInput.svelte'
   import { HardDriveUploadIcon, PlusIcon, TrashIcon } from '@lucide/svelte'
   import { selectSingleFile } from 'src/ts/util'
@@ -21,12 +20,7 @@
   import OptionInput from '../UI/GUI/OptionInput.svelte'
   import { loadLoreBookV3Prompt } from 'src/ts/process/lorebook.svelte'
   import { getModules } from 'src/ts/process/modules'
-  import {
-    appendCurrentChatUserMessageForSend,
-    currentChatStateSnapshot,
-    dispatchPatchChatScriptstate,
-  } from 'src/ts/chatCommands'
-  import { canUseServerCommands, type ChatScriptstatePatch, type ChatScriptstateValue } from 'src/ts/server/commands'
+  import { appendCurrentChatUserMessageForSend, setChatScriptstateValue } from 'src/ts/chatCommands'
   import CheckInput from '../UI/GUI/CheckInput.svelte'
 
   let previewMode = $state('chat')
@@ -122,64 +116,7 @@
   }
 
   function commitScriptstateValue(key: string, value: unknown): void {
-    const chat = currentDevToolChat()
-    if (!chat || !isEditableScriptstateValue(value)) return
-    if (snapshotJson(chat.scriptstate?.[key]) === snapshotJson(value)) return
-
-    const patch: ChatScriptstatePatch = { [key]: cloneJsonValue(value) }
-    if (canUseServerCommands()) {
-      if (!chat.id) return
-      const chatId = chat.id
-      const previous = currentChatStateSnapshot()
-      withTrustedServerProjectionWrite(() => {
-        applyScriptstatePatch(chatId, patch)
-      })
-      dispatchPatchChatScriptstate(chatId, patch, [], previous)
-      return
-    }
-
-    applyScriptstatePatchToChat(chat, patch)
-  }
-
-  function applyScriptstatePatch(chatId: string, patch: ChatScriptstatePatch, deleteKeys: string[] = []): void {
-    const chat = findChatById(chatId)
-    if (!chat) return
-    applyScriptstatePatchToChat(chat, patch, deleteKeys)
-  }
-
-  function applyScriptstatePatchToChat(chat: Chat, patch: ChatScriptstatePatch, deleteKeys: string[] = []): void {
-    chat.scriptstate ??= {}
-    for (const key of deleteKeys) {
-      delete chat.scriptstate[key]
-    }
-    Object.assign(chat.scriptstate, cloneJsonValue(patch))
-    if (Object.keys(chat.scriptstate).length === 0) {
-      delete chat.scriptstate
-    }
-  }
-
-  function findChatById(chatId: string): Chat | undefined {
-    for (const character of DBState.db.characters ?? []) {
-      const chat = character.chats?.find((candidate) => candidate.id === chatId)
-      if (chat) return chat
-    }
-    return undefined
-  }
-
-  function isEditableScriptstateValue(value: unknown): value is ChatScriptstateValue {
-    return (
-      typeof value === 'string' || typeof value === 'boolean' || (typeof value === 'number' && Number.isFinite(value))
-    )
-  }
-
-  function snapshotJson(value: unknown): string {
-    const snapshot = JSON.stringify(value)
-    return snapshot === undefined ? '__undefined__' : snapshot
-  }
-
-  function cloneJsonValue<T>(value: T): T {
-    if (value === undefined) return value
-    return JSON.parse(JSON.stringify(value)) as T
+    setChatScriptstateValue(currentDevToolChat()?.id, key, value)
   }
 </script>
 
