@@ -13,13 +13,7 @@
     type RisuPlugin,
     updatePlugin,
   } from 'src/ts/plugins/plugins.svelte'
-  import {
-    currentPluginStateSnapshot,
-    dispatchDeletePlugin,
-    dispatchEnablePlugin,
-    dispatchUpdatePlugin,
-  } from 'src/ts/pluginCommands'
-  import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
+  import { deletePlugin, setPluginArgument, togglePluginEnabled } from 'src/ts/pluginCommands'
   import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
   import NumberInput from 'src/lib/UI/GUI/NumberInput.svelte'
   import SelectInput from 'src/lib/UI/GUI/SelectInput.svelte'
@@ -56,21 +50,7 @@
   }
 
   function setPluginArg(pluginName: string, arg: string, value: number | string) {
-    const current = findPluginByName(pluginName)
-    if (!current) return
-    const { plugin, index } = current
-    const previous = currentPluginStateSnapshot()
-    const nextRealArg = {
-      ...(plugin.realArg ?? {}),
-      [arg]: value,
-    }
-    withTrustedServerProjectionWrite(() => {
-      DBState.db.plugins[index] = {
-        ...plugin,
-        realArg: nextRealArg,
-      }
-    })
-    dispatchUpdatePlugin(plugin.name, { realArg: nextRealArg }, previous)
+    setPluginArgument(pluginName, arg, value)
   }
 </script>
 
@@ -153,20 +133,10 @@
         class="textcolor2 hover:gray-200 cursor-pointer"
         onclick={async (e) => {
           e.stopPropagation()
-          const current = findPluginByName(plugin.name)
-          if (!current) return
-          const { plugin: currentPlugin, index } = current
-          const previous = currentPluginStateSnapshot()
-          const enabled = !currentPlugin.enabled
-          withTrustedServerProjectionWrite(() => {
-            DBState.db.plugins[index] = {
-              ...currentPlugin,
-              enabled,
-            }
-          })
-          dispatchEnablePlugin(currentPlugin.name, enabled, previous)
-          loadPlugins()
-          e.preventDefault()
+          if (togglePluginEnabled(plugin.name)) {
+            loadPlugins()
+            e.preventDefault()
+          }
         }}>
         {#if plugin.enabled}
           <PowerIcon />
@@ -181,21 +151,10 @@
           e.stopPropagation()
           const v = await alertConfirm(language.removeConfirm + (plugin.displayName ?? plugin.name))
           if (v) {
-            const current = findPluginByName(plugin.name)
-            if (!current) return
-            const { plugin: currentPlugin } = current
-            const previous = currentPluginStateSnapshot()
-            withTrustedServerProjectionWrite(() => {
-              if (DBState.db.currentPluginProvider === currentPlugin.name) {
-                DBState.db.currentPluginProvider = ''
-              }
-              DBState.db.plugins = (DBState.db.plugins ?? []).filter(
-                (candidate) => candidate.name !== currentPlugin.name,
-              )
-            })
-            expandedPluginNames = expandedPluginNames.filter((name) => name !== currentPlugin.name)
-            dispatchDeletePlugin(currentPlugin.name, previous)
-            loadPlugins()
+            if (deletePlugin(plugin.name)) {
+              expandedPluginNames = expandedPluginNames.filter((name) => name !== plugin.name)
+              loadPlugins()
+            }
           }
         }}>
         <TrashIcon />

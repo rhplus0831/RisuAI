@@ -112,6 +112,73 @@ export function dispatchEnablePlugin(pluginId: string, enabled: boolean, previou
   )
 }
 
+function findPluginByName(pluginName: string): { plugin: RisuPlugin; index: number } | null {
+  const plugins = DBState.db.plugins ?? []
+  const index = plugins.findIndex((plugin) => plugin.name === pluginName)
+  if (index === -1) return null
+  return { plugin: plugins[index], index }
+}
+
+export function setPluginArgument(pluginName: string, arg: string, value: number | string): boolean {
+  const current = findPluginByName(pluginName)
+  if (!current) return false
+
+  const { plugin } = current
+  const previous = currentPluginStateSnapshot()
+  const nextRealArg = cloneJsonValue({
+    ...(plugin.realArg ?? {}),
+    [arg]: value,
+  })
+
+  withTrustedServerProjectionWrite(() => {
+    const target = findPluginByName(pluginName)
+    if (!target) return
+    DBState.db.plugins[target.index] = {
+      ...target.plugin,
+      realArg: nextRealArg,
+    }
+  })
+  dispatchUpdatePlugin(plugin.name, { realArg: nextRealArg }, previous)
+  return true
+}
+
+export function togglePluginEnabled(pluginName: string): boolean {
+  const current = findPluginByName(pluginName)
+  if (!current) return false
+
+  const { plugin } = current
+  const previous = currentPluginStateSnapshot()
+  const enabled = !plugin.enabled
+
+  withTrustedServerProjectionWrite(() => {
+    const target = findPluginByName(pluginName)
+    if (!target) return
+    DBState.db.plugins[target.index] = {
+      ...target.plugin,
+      enabled,
+    }
+  })
+  dispatchEnablePlugin(plugin.name, enabled, previous)
+  return true
+}
+
+export function deletePlugin(pluginName: string): boolean {
+  const current = findPluginByName(pluginName)
+  if (!current) return false
+
+  const { plugin } = current
+  const previous = currentPluginStateSnapshot()
+
+  withTrustedServerProjectionWrite(() => {
+    if (DBState.db.currentPluginProvider === plugin.name) {
+      DBState.db.currentPluginProvider = ''
+    }
+    DBState.db.plugins = (DBState.db.plugins ?? []).filter((candidate) => candidate.name !== plugin.name)
+  })
+  dispatchDeletePlugin(plugin.name, previous)
+  return true
+}
+
 export function dispatchSelectPluginProvider(provider: string, previous: PluginStateSnapshot): void {
   runPluginCommand(
     (baseRevision) =>
