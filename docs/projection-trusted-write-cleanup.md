@@ -50,6 +50,12 @@ coherent rollback/resync story.
     `presetIdAt()` is pure, and `ensureBotPresetHydrated()` fails closed for
     missing, blank, duplicate, or invalid-index preset IDs before fetching
     hydration.
+- `src/ts/storage/database.svelte.ts`
+  - Preset save/copy/select/create/import/update/delete/reorder APIs now route
+    projection mutation and command dispatch through one shared optimistic
+    preset boundary. Current public operations intentionally remain one server
+    command each; the boundary uses `runOptimisticCommandSequence()` so future
+    multi-command preset flows advance revisions under one rollback snapshot.
 - `src/ts/server/lorebookBridge.svelte.ts`
   - Lorebook broad/global snapshots and watcher baseline setup no longer assign
     missing IDs or initialize absent arrays. Watcher collection snapshots require
@@ -123,17 +129,6 @@ listed under keep categories.
     dispatch.
 - `src/lib/Others/WelcomeRisu.svelte`
   - Onboarding applies settings by mutating projection first and diffing after.
-
-### P1: Multi-Command Fanout
-
-Flows that apply one optimistic local mutation and then fan out several
-revision-checked commands can partially succeed on the server while the browser
-rolls back or diverges. Prefer a bulk server command or a serialized optimistic
-command sequence with one rollback/resync strategy.
-
-- `src/ts/storage/database.svelte.ts`
-  - Preset save/copy/select/create/import/update/delete/reorder APIs mutate
-    projection first and command later.
 
 ### P2: Retained Local Generation And Compatibility Paths
 

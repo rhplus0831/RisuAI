@@ -593,6 +593,32 @@ describe('preset command rollback (L21)', () => {
     })
   })
 
+  it('L21: shared preset boundary keeps copy as one rollback-safe command', async () => {
+    seedPresetDatabase({ temperature: 77 })
+    const beforePresets = clonePlain(DBState.db.botPresets)
+    const beforeSelected = DBState.db.botPresetsId
+    const calls = stubFailedPresetCommand()
+
+    copyPreset(0)
+
+    await waitForPresetCommand(calls, '/presets/preset-a/copy')
+    await waitForState(() => {
+      expect(DBState.db.botPresets).toEqual(beforePresets)
+      expect(DBState.db.botPresetsId).toBe(beforeSelected)
+    })
+
+    // Public preset operations currently stay one server command each; copy
+    // folds save-current into the copy payload instead of dispatching fanout.
+    const presetCommands = calls.filter((call) => call.url.startsWith('/api/v1/commands/presets'))
+    expect(presetCommands).toHaveLength(1)
+    expect(presetCommands[0].body).toMatchObject({
+      baseRevision: 100,
+      name: 'Alpha Copy',
+      saveCurrent: true,
+    })
+    expect(presetCommands[0].body.newPresetId).toBeTruthy()
+  })
+
   it('L21: failed create removes the optimistic preset and generated id', async () => {
     seedPresetDatabase()
     const beforePresets = clonePlain(DBState.db.botPresets)
