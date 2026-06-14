@@ -81,9 +81,8 @@
     appendCurrentChatUserMessageForSend,
     cloneJsonValue,
     currentChatScopedSnapshot,
-    currentChatStateSnapshot,
     dispatchReplaceMessagesScoped,
-    dispatchUpdateChat,
+    setCurrentChatGreetingIndex,
   } from 'src/ts/chatCommands'
   import { applyServerBackedSetting } from 'src/ts/server/settingsBridge.svelte'
   import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
@@ -637,21 +636,7 @@
   }
 
   function updateGreetingIndex(fmIndex: number) {
-    const selectedChar = $selectedCharID
-    const character = DBState.db.characters[selectedChar]
-    const chat = character?.chats[character.chatPage]
-    if (!chat) return
-    const previous = currentChatStateSnapshot()
-    withTrustedServerProjectionWrite(() => {
-      const liveCharacter = DBState.db.characters[selectedChar]
-      const liveChat = liveCharacter?.chats[liveCharacter.chatPage]
-      if (liveChat?.id === chat.id) {
-        liveChat.fmIndex = fmIndex
-      }
-    })
-    if (chat.id) {
-      dispatchUpdateChat(chat.id, { fmIndex }, previous)
-    }
+    setCurrentChatGreetingIndex(fmIndex, { selectedChar: $selectedCharID })
   }
 </script>
 

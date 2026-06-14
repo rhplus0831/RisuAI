@@ -81,7 +81,7 @@
   import { watchServerBackedChatMetadata } from 'src/ts/server/chatBridge.svelte'
   import { watchServerBackedScriptDefinitions } from 'src/ts/server/scriptDefinitionBridge.svelte'
   import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
-  import { currentChatStateSnapshot, dispatchUpdateChat } from 'src/ts/chatCommands'
+  import { currentChatStateSnapshot, dispatchUpdateChat, setCurrentChatGreetingIndex } from 'src/ts/chatCommands'
 
   let iconRemoveMode = $state(false)
   let viewSubMenu = $state(0)
@@ -465,10 +465,6 @@
   function updateCharacterDraft(mutator: (character: character) => void): void {
     mutator(characterDraft.value as unknown as character)
     characterDraft.value = { ...characterDraft.value }
-  }
-
-  function updateSelectedChatMetadata(mutator: () => void): void {
-    withTrustedServerProjectionWrite(mutator)
   }
 
   function clearOrRotateCharacterImage(): void {
@@ -904,10 +900,9 @@
                     class="hover:text-blue-500"
                     onclick={() => {
                       if (DBState.db.characters[$selectedCharID].type === 'character') {
-                        updateSelectedChatMetadata(() => {
-                          DBState.db.characters[$selectedCharID].chats[
-                            DBState.db.characters[$selectedCharID].chatPage
-                          ].fmIndex = -1
+                        setCurrentChatGreetingIndex(-1, {
+                          selectedChar: $selectedCharID,
+                          dispatch: false,
                         })
                         let additionalAssets = characterDraft.value.additionalAssets
                         additionalAssets.splice(i, 1)
@@ -1504,10 +1499,9 @@
                   class="hover:text-red-500 p-1"
                   onclick={() => {
                     if (characterDraft.value.type === 'character') {
-                      updateSelectedChatMetadata(() => {
-                        DBState.db.characters[$selectedCharID].chats[
-                          DBState.db.characters[$selectedCharID].chatPage
-                        ].fmIndex = -1
+                      setCurrentChatGreetingIndex(-1, {
+                        selectedChar: $selectedCharID,
+                        dispatch: false,
                       })
                       let alternateGreetings = characterDraft.value.alternateGreetings
                       alternateGreetings.splice(i, 1)

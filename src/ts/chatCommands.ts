@@ -210,6 +210,10 @@ export interface MutateChatScopedOptions {
   selectedChat?: number
 }
 
+export interface SetCurrentChatGreetingIndexOptions extends MutateChatScopedOptions {
+  dispatch?: boolean
+}
+
 export function currentChatScopedSnapshot(): ChatScopedSnapshot {
   const selectedChar = get(selectedCharID)
   const character = DBState.db.characters?.[selectedChar]
@@ -565,6 +569,36 @@ export function dispatchUpdateChatScoped(chatId: string, patch: ChatSnapshot, pr
       }),
     () => restoreChatScopedState(previous),
   )
+}
+
+export function setCurrentChatGreetingIndex(
+  fmIndex: number,
+  options: SetCurrentChatGreetingIndexOptions = {},
+): boolean {
+  const selectedChar = options.selectedChar ?? get(selectedCharID)
+  const character = DBState.db.characters?.[selectedChar]
+  if (!character?.chats) return false
+  const selectedChat = options.selectedChat ?? character.chatPage
+  const chat = character.chats?.[selectedChat]
+  if (!chat) return false
+  const chatId = chat.id
+
+  const shouldDispatch = options.dispatch !== false
+  const previous = shouldDispatch && chatId ? currentChatStateSnapshot() : null
+  let applied = false
+  withTrustedServerProjectionWrite(() => {
+    const liveCharacter = DBState.db.characters?.[selectedChar]
+    const liveChat = liveCharacter?.chats?.[selectedChat]
+    if (!liveChat || (chatId && liveChat.id !== chatId)) return
+    liveChat.fmIndex = fmIndex
+    applied = true
+  })
+  if (!applied) return false
+
+  if (chatId && previous) {
+    dispatchUpdateChat(chatId, { fmIndex }, previous)
+  }
+  return true
 }
 
 export function dispatchSaveChatGenerationSettings(
