@@ -41,7 +41,9 @@ import {
   currentCharacterTrashTimeSnapshot,
   dispatchCompatibleCharacterUpdateScoped,
   moveCharacterOrderItem,
+  normalizeCharacterOrder,
   prepareCompatibleCharacterUpdate,
+  repairCharacterOrderOptimistically,
   restoreCharacterRow,
   restoreCharacterSupaMemory,
   restoreCharacterTrashTime,
@@ -239,6 +241,110 @@ describe('Sidebar character order projection cleanup', () => {
 })
 
 describe('character order command helpers', () => {
+  it('computes normalized character order without mutating the input order', () => {
+    const order = [
+      'missing',
+      'char-a',
+      { id: 'folder-1', name: 'Folder', color: 'blue', data: ['char-b', 'char-a', '§temp', 'char-c'] },
+      null,
+      '§playground',
+      'char-b',
+    ] as any[]
+    const originalOrder = cloneForExpect(order)
+
+    const result = normalizeCharacterOrder(order, [
+      { chaId: 'char-a', name: 'A', chats: [] },
+      { chaId: 'char-b', name: 'B', chats: [] },
+      { chaId: 'char-c', name: 'C', chats: [] },
+      { chaId: 'char-d', name: 'D', chats: [] },
+      { chaId: 'trash', name: 'Trash', chats: [], trashTime: 123 },
+      { chaId: '§temp', name: 'Temp', chats: [] },
+      { chaId: '§playground', name: 'Playground', chats: [] },
+    ] as any)
+
+    expect(result).toEqual({
+      changed: true,
+      characterOrder: [
+        'char-a',
+        { id: 'folder-1', name: 'Folder', color: 'blue', data: ['char-b', 'char-c'] },
+        '§playground',
+        'char-d',
+      ],
+    })
+    expect(order).toEqual(originalOrder)
+    expect(result.characterOrder).not.toBe(order)
+    expect(result.characterOrder[1]).not.toBe(order[2])
+  })
+
+  it('applies normalized character order through the character command domain and dispatches reorder', async () => {
+    const calls = stubReorderCommandFetch()
+    DBState.db = {
+      characters: [
+        { chaId: 'char-a', name: 'A', chats: [] },
+        { chaId: 'char-b', name: 'B', chats: [] },
+        { chaId: 'char-c', name: 'C', chats: [] },
+        { chaId: 'trash', name: 'Trash', chats: [], trashTime: 123 },
+        { chaId: '§playground', name: 'Playground', chats: [] },
+      ],
+      characterOrder: [
+        { id: 'folder-1', name: 'Folder', color: '', data: ['char-b', 'missing', 'char-a', 'trash'] },
+        'char-b',
+        '§playground',
+      ],
+    } as any
+    const expectedOrder = [
+      { id: 'folder-1', name: 'Folder', color: '', data: ['char-b', 'char-a'] },
+      '§playground',
+      'char-c',
+    ]
+    setServerProjectionWriteGuardEnabled(true)
+
+    expect(repairCharacterOrderOptimistically()).toBe(true)
+
+    expect(DBState.db.characterOrder).toEqual(expectedOrder)
+    await waitForCallCount(calls, 2)
+    expect(calls[1]).toEqual({
+      url: '/api/v1/commands/characters/reorder',
+      method: 'POST',
+      authHeader: 'character-command-token',
+      body: {
+        baseRevision: 10,
+        characterOrder: expectedOrder,
+      },
+    })
+  })
+
+  it('can apply a suppressed optimistic repair for character create/delete command flows', async () => {
+    const calls = stubReorderCommandFetch()
+    DBState.db = {
+      characters: [
+        { chaId: 'char-a', name: 'A', chats: [] },
+        { chaId: 'char-b', name: 'B', chats: [] },
+      ],
+      characterOrder: ['char-a'],
+    } as any
+    setServerProjectionWriteGuardEnabled(true)
+
+    expect(repairCharacterOrderOptimistically({ dispatchReorder: false })).toBe(true)
+
+    expect(DBState.db.characterOrder).toEqual(['char-a', 'char-b'])
+    await flushAsyncWork()
+    expect(calls).toHaveLength(0)
+  })
+
+  it('keeps the global checkCharOrder compatibility helper free of trusted writes', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/ts/globalApi.svelte.ts'), 'utf8')
+    const start = source.indexOf('export function checkCharOrder')
+    const end = source.indexOf('/**\n * Retrieves the request log', start)
+
+    expect(start).toBeGreaterThanOrEqual(0)
+    expect(end).toBeGreaterThan(start)
+
+    const checkCharOrderSource = source.slice(start, end)
+    expect(checkCharOrderSource).toContain('normalizeCharacterOrder')
+    expect(checkCharOrderSource).not.toContain('withTrustedServerProjectionWrite')
+  })
+
   it('moves a root character into a folder, dispatches reorder, normalizes order, and rolls back on failure', async () => {
     const calls = stubReorderCommandFetch({ failReorder: true })
     DBState.db = {
@@ -1030,7 +1136,7 @@ describe('Phase 3 kept-key character diff (M13)', () => {
 })
 
 describe('Phase 4 removeChar trashTime field rollback (L33)', () => {
-  it('L33: trashTime snapshots are scalar and restore only the target field', () => {
+  it('L33: trashTime snapshots are scalar and restore only the target field plus order placement', () => {
     DBState.db = seedCloneCostDb() as any
     selectedCharID.set(1)
 
@@ -1041,6 +1147,10 @@ describe('Phase 4 removeChar trashTime field rollback (L33)', () => {
       index: 1,
       hadTrashTime: false,
       trashTime: undefined,
+      orderPlacement: {
+        characterId: 'char-1',
+        rootIndex: 1,
+      },
       currentChar: 0,
       selectedCharID: 1,
     })
@@ -1053,12 +1163,14 @@ describe('Phase 4 removeChar trashTime field rollback (L33)', () => {
     DBState.db.characters[1].trashTime = 123
     DBState.db.characters[1].name = 'Same row concurrent edit'
     DBState.db.characters[0].name = 'Sibling concurrent edit'
+    DBState.db.characterOrder = ['char-0', 'char-2']
 
     restoreCharacterTrashTime(snapshot)
 
     expect(Object.prototype.hasOwnProperty.call(DBState.db.characters[1], 'trashTime')).toBe(false)
     expect(DBState.db.characters[1].name).toBe('Same row concurrent edit')
     expect(DBState.db.characters[0].name).toBe('Sibling concurrent edit')
+    expect(DBState.db.characterOrder).toEqual(['char-0', 'char-1', 'char-2'])
   })
 
   it('L33: removeChar normal trash captures no whole-characters clone and reuses one timestamp', async () => {
@@ -1149,6 +1261,7 @@ describe('Phase 4 removeChar trashTime field rollback (L33)', () => {
     await withMockedNow(222222, () => removeChar(0, 'Character', 'normal'))
     await waitForCharacterPatch(calls, 'char-a')
     expect(DBState.db.characters[0].trashTime).toBe(222222)
+    expect(DBState.db.characterOrder).toEqual(['char-b'])
     expect(get(selectedCharID)).toBe(-1)
 
     DBState.db.characters[0].name = 'Same row concurrent edit'
@@ -1160,6 +1273,7 @@ describe('Phase 4 removeChar trashTime field rollback (L33)', () => {
     })
     expect(DBState.db.characters[0].name).toBe('Same row concurrent edit')
     expect(DBState.db.characters[1].name).toBe('Sibling concurrent edit')
+    expect(DBState.db.characterOrder).toEqual(['char-a', 'char-b'])
     expect(get(selectedCharID)).toBe(0)
   })
 

@@ -58,6 +58,11 @@ export interface CharacterOrderFolderMetadataPatch {
   img?: string
 }
 
+export interface CharacterOrderNormalizationResult {
+  characterOrder: (string | folder)[]
+  changed: boolean
+}
+
 export const CHARACTER_PATCH_EXCLUDED_KEYS = new Set([
   'chaId',
   'chats',
@@ -133,6 +138,7 @@ export interface CharacterTrashTimeSnapshot {
   index: number
   hadTrashTime: boolean
   trashTime: number | null | undefined
+  orderPlacement: CharacterOrderPlacement | null
   currentChar?: number
   selectedCharID: number
 }
@@ -141,6 +147,15 @@ export interface CharacterSupaMemorySnapshot {
   characterId: string
   hadSupaMemory: boolean
   supaMemory: boolean | undefined
+}
+
+interface CharacterOrderPlacement {
+  characterId: string
+  rootIndex?: number
+  folderIndex?: number
+  folderId?: string
+  folderDataIndex?: number
+  folder?: folder
 }
 
 export function currentCharacterRowSnapshot(index: number = get(selectedCharID)): CharacterRowSnapshot {
@@ -161,6 +176,7 @@ export function currentCharacterTrashTimeSnapshot(index: number = get(selectedCh
     index,
     hadTrashTime: !!character && Object.prototype.hasOwnProperty.call(character, 'trashTime'),
     trashTime: character?.trashTime,
+    orderPlacement: character?.chaId ? currentCharacterOrderPlacement(character.chaId) : null,
     currentChar: (DBState.db as unknown as { currentChar?: number }).currentChar,
     selectedCharID: get(selectedCharID),
   }
@@ -204,6 +220,7 @@ export function restoreCharacterTrashTime(snapshot: CharacterTrashTimeSnapshot):
         }
       }
     }
+    restoreCharacterOrderPlacement(snapshot)
     ;(DBState.db as unknown as { currentChar?: number }).currentChar = snapshot.currentChar
     selectedCharID.set(snapshot.selectedCharID)
   })
@@ -229,6 +246,92 @@ function locateCharacterIndex(characters: character[], characterId: string | und
     if (byId >= 0) return byId
   }
   return fallbackIndex >= 0 && fallbackIndex < characters.length ? fallbackIndex : -1
+}
+
+function currentCharacterOrderPlacement(characterId: string): CharacterOrderPlacement | null {
+  const characterOrder = DBState.db.characterOrder ?? []
+  for (let index = 0; index < characterOrder.length; index += 1) {
+    const entry = characterOrder[index]
+    if (entry === characterId) {
+      return { characterId, rootIndex: index }
+    }
+    if (!isCharacterOrderFolder(entry)) continue
+    const folderDataIndex = entry.data.indexOf(characterId)
+    if (folderDataIndex === -1) continue
+    return {
+      characterId,
+      folderIndex: index,
+      folderId: entry.id,
+      folderDataIndex,
+      folder: cloneJsonValue(entry),
+    }
+  }
+  return null
+}
+
+function restoreCharacterOrderPlacement(snapshot: CharacterTrashTimeSnapshot): void {
+  const placement = snapshot.orderPlacement
+  if (!placement?.characterId) return
+
+  const character = DBState.db.characters?.find((candidate) => candidate.chaId === placement.characterId)
+  if (!character || character.trashTime) return
+
+  const characterOrder = ensureCharacterOrder()
+  if (characterOrderIncludes(characterOrder, placement.characterId)) return
+
+  if (placement.folder) {
+    const folderIndex = resolveRestoredFolderIndex(characterOrder, placement)
+    if (folderIndex !== -1) {
+      const targetFolder = characterOrder[folderIndex]
+      if (isCharacterOrderFolder(targetFolder)) {
+        targetFolder.data.splice(
+          clampInsertionIndex(placement.folderDataIndex, targetFolder.data.length),
+          0,
+          placement.characterId,
+        )
+        characterOrder[folderIndex] = targetFolder
+        return
+      }
+    }
+
+    const restoredFolder = cloneJsonValue(placement.folder)
+    if (!restoredFolder.data.includes(placement.characterId)) {
+      restoredFolder.data.splice(
+        clampInsertionIndex(placement.folderDataIndex, restoredFolder.data.length),
+        0,
+        placement.characterId,
+      )
+    }
+    characterOrder.splice(clampInsertionIndex(placement.folderIndex, characterOrder.length), 0, restoredFolder)
+    return
+  }
+
+  characterOrder.splice(clampInsertionIndex(placement.rootIndex, characterOrder.length), 0, placement.characterId)
+}
+
+function resolveRestoredFolderIndex(characterOrder: (string | folder)[], placement: CharacterOrderPlacement): number {
+  if (placement.folderId) {
+    const folderIndex = findCharacterOrderFolderIndex(characterOrder, placement.folderId)
+    if (folderIndex !== -1) return folderIndex
+  }
+  const fallbackIndex = placement.folderIndex
+  if (typeof fallbackIndex === 'number' && isCharacterOrderFolder(characterOrder[fallbackIndex])) {
+    return fallbackIndex
+  }
+  return -1
+}
+
+function characterOrderIncludes(characterOrder: readonly (string | folder)[], characterId: string): boolean {
+  for (const entry of characterOrder) {
+    if (entry === characterId) return true
+    if (isCharacterOrderFolder(entry) && entry.data.includes(characterId)) return true
+  }
+  return false
+}
+
+function clampInsertionIndex(index: number | undefined, length: number): number {
+  if (typeof index !== 'number' || !Number.isFinite(index)) return length
+  return Math.max(0, Math.min(index, length))
 }
 
 export function runCharacterCommand<T extends Record<string, unknown>>(
@@ -431,6 +534,76 @@ export function dispatchReorderCharacters(previous: CharacterStateSnapshot): voi
   )
 }
 
+export function normalizeCharacterOrder(
+  characterOrder: readonly (string | folder | null | undefined)[] | null | undefined,
+  characters: readonly character[] | null | undefined,
+): CharacterOrderNormalizationResult {
+  const rawOrder = Array.isArray(characterOrder) ? characterOrder : []
+  const activeIds = new Set<string>()
+  const normalized: (string | folder)[] = []
+  const seen = new Set<string>()
+
+  for (const char of characters ?? []) {
+    const charId = char?.chaId
+    if (isCharacterOrderableId(charId) && !char.trashTime) {
+      activeIds.add(charId)
+    }
+  }
+
+  for (const entry of rawOrder) {
+    if (typeof entry === 'string') {
+      if (activeIds.has(entry) && !seen.has(entry)) {
+        normalized.push(entry)
+        seen.add(entry)
+      }
+      continue
+    }
+
+    if (!isCharacterOrderFolder(entry)) continue
+    const normalizedFolder = cloneJsonValue(entry)
+    normalizedFolder.data = []
+    for (const id of entry.data) {
+      if (activeIds.has(id) && !seen.has(id)) {
+        normalizedFolder.data.push(id)
+        seen.add(id)
+      }
+    }
+    if (normalizedFolder.data.length > 0) {
+      normalized.push(normalizedFolder)
+    }
+  }
+
+  for (const id of activeIds) {
+    if (!seen.has(id)) {
+      normalized.push(id)
+    }
+  }
+
+  return {
+    characterOrder: normalized,
+    changed: !Array.isArray(characterOrder) || !characterOrderEquals(rawOrder, normalized),
+  }
+}
+
+export function repairCharacterOrderOptimistically(
+  options: {
+    dispatchReorder?: boolean
+  } = {},
+): boolean {
+  const normalized = normalizeCharacterOrder(DBState.db.characterOrder, DBState.db.characters)
+  if (!normalized.changed) return false
+
+  const shouldDispatchReorder = options.dispatchReorder ?? true
+  const previous = shouldDispatchReorder ? currentCharacterStateSnapshot() : null
+  withTrustedServerProjectionWrite(() => {
+    DBState.db.characterOrder = normalized.characterOrder
+  })
+  if (previous) {
+    dispatchReorderCharacters(previous)
+  }
+  return true
+}
+
 export function moveCharacterOrderItem(
   mainIndex: CharacterOrderDragPosition,
   targetIndex: CharacterOrderDragPosition,
@@ -509,7 +682,7 @@ export function moveCharacterOrderItem(
     }
 
     DBState.db.characterOrder = characterOrder
-    normalizeCharacterOrder()
+    replaceCharacterOrderWithNormalized()
     changed = true
   })
 
@@ -571,7 +744,7 @@ export function createCharacterOrderFolder(
       }
     }
     DBState.db.characterOrder = characterOrder
-    normalizeCharacterOrder()
+    replaceCharacterOrderWithNormalized()
     changed = true
   })
 
@@ -640,7 +813,7 @@ function ensureCharacterOrder(): (string | folder)[] {
 }
 
 function isCharacterOrderFolder(value: string | folder | undefined | null): value is folder {
-  return !!value && typeof value !== 'string'
+  return !!value && typeof value !== 'string' && Array.isArray((value as folder).data)
 }
 
 function getCharacterOrderFolderIndex(id: string): number {
@@ -679,62 +852,20 @@ function resolveCharacterOrderFolderIndex(
   return isCharacterOrderFolder(characterOrder[fallbackIndex]) ? fallbackIndex : -1
 }
 
-function normalizeCharacterOrder(): void {
-  const characterOrder = ensureCharacterOrder()
-  const ordered: string[] = []
-  for (let i = 0; i < characterOrder.length; i++) {
-    const folder = characterOrder[i]
-    if (isCharacterOrderFolder(folder)) {
-      for (const f of folder.data) {
-        ordered.push(f)
-      }
-    }
-    if (typeof folder === 'string') {
-      ordered.push(folder)
-    }
-  }
+function replaceCharacterOrderWithNormalized(): void {
+  const normalized = normalizeCharacterOrder(ensureCharacterOrder(), DBState.db.characters)
+  DBState.db.characterOrder = normalized.characterOrder
+}
 
-  const charIdList: string[] = []
-  const characters = DBState.db.characters ?? []
-  for (let i = 0; i < characters.length; i++) {
-    const char = characters[i]
-    const charId = char.chaId
-    if (!char.trashTime) {
-      charIdList.push(charId)
-    }
-    if (!ordered.includes(charId)) {
-      if (charId !== '§temp' && charId !== '§playground' && !char.trashTime) {
-        characterOrder.push(charId)
-      }
-    }
-  }
+function isCharacterOrderableId(value: unknown): value is string {
+  return typeof value === 'string' && value !== '' && value !== '§temp'
+}
 
-  for (let i = 0; i < characterOrder.length; i++) {
-    const data = characterOrder[i]
-    if (isCharacterOrderFolder(data)) {
-      if (data.data.length === 0) {
-        characterOrder.splice(i, 1)
-        i--
-        continue
-      }
-      for (let i2 = 0; i2 < data.data.length; i2++) {
-        const data2 = data.data[i2]
-        if (!charIdList.includes(data2)) {
-          data.data.splice(i2, 1)
-          i2--
-        }
-      }
-      characterOrder[i] = data
-    } else if (typeof data === 'string') {
-      if (!charIdList.includes(data)) {
-        characterOrder.splice(i, 1)
-        i--
-      }
-    } else {
-      characterOrder.splice(i, 1)
-      i--
-    }
-  }
+function characterOrderEquals(
+  left: readonly (string | folder | null | undefined)[],
+  right: readonly (string | folder)[],
+): boolean {
+  return JSON.stringify(left) === JSON.stringify(right)
 }
 
 export function setCharacterSupaMemory(characterId: string, enabled: boolean): void {

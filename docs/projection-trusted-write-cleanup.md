@@ -38,6 +38,14 @@ coherent rollback/resync story.
   `src/lib/Setting/Pages/BotSettings.svelte`, and
   `src/lib/Setting/Pages/Language/TranslatorPresetSettings.svelte`.
 
+## Solved Findings
+
+- `src/ts/globalApi.svelte.ts`
+  - `checkCharOrder()` is now a pure compatibility check. Explicit optimistic
+    character-order repair lives in `src/ts/characterCommands.ts`, where callers
+    choose command-backed reorder dispatch or suppressed repair for create/delete
+    command flows.
+
 ## Findings
 
 ### P0: Component-Level Trusted Writes
@@ -91,8 +99,6 @@ listed under keep categories.
 Normalization should be server-side, pure, or limited to command payloads.
 Hidden client projection mutation can diverge from server-owned durable state.
 
-- `src/ts/globalApi.svelte.ts`
-  - `checkCharOrder()` repairs `characterOrder` without a command.
 - `src/ts/storage/database.svelte.ts`
   - Preset ID normalization in `presetIdAt()` and
     `ensureBotPresetHydrated()`.

@@ -16,14 +16,7 @@ import { checkNullish, findCharacterbyId, getUserName, selectMultipleFile, selec
 import { v4 as uuidv4, v4 } from 'uuid'
 import { getImageType } from './media'
 import { DBState, MobileGUIStack, OpenRealmStore, botMakerMode, selectedCharID } from './stores.svelte'
-import {
-  AppendableBuffer,
-  changeChatTo,
-  checkCharOrder,
-  downloadFile,
-  getFileSrc,
-  requiresFullEncoderReload,
-} from './globalApi.svelte'
+import { AppendableBuffer, changeChatTo, downloadFile, getFileSrc, requiresFullEncoderReload } from './globalApi.svelte'
 import { updateInlayScreen } from './process/inlayScreen'
 import { parseMarkdownSafe } from './parser/parser.svelte'
 import { translateHTML } from './translator/translator'
@@ -44,6 +37,7 @@ import {
   dispatchDeleteCharacter,
   dispatchSelectCharacter,
   dispatchUpdateCharacterTrashTime,
+  repairCharacterOrderOptimistically,
 } from './characterCommands'
 import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
 import { ensureAllChatsHydrated, hydrateChatMessages } from './server/chatMessageHydration.svelte'
@@ -61,7 +55,6 @@ export function createNewCharacter(
   let index = -1
   withTrustedServerProjectionWrite(() => {
     DBState.db.characters.push(character)
-    checkCharOrder()
     index = DBState.db.characters.length - 1
     if (select) {
       character.lastInteraction = lastInteraction
@@ -69,6 +62,7 @@ export function createNewCharacter(
       selectedCharID.set(index)
     }
   })
+  repairCharacterOrderOptimistically({ dispatchReorder: false })
   if (select) {
     dispatchCreateAndSelectCharacter(character, previous, lastInteraction)
   } else {
@@ -961,7 +955,7 @@ export async function removeChar(
       dispatchDeleteCharacter(characterId, previous)
     }
   }
-  checkCharOrder()
+  repairCharacterOrderOptimistically({ dispatchReorder: false })
   requiresFullEncoderReload.state = true
   selectedCharID.set(-1)
 }
