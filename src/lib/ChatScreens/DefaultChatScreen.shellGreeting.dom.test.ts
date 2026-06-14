@@ -26,6 +26,7 @@ const shellMocks = vi.hoisted(() => ({
   alertError: vi.fn(),
   alertNormal: vi.fn(),
   alertWait: vi.fn(),
+  appendCurrentChatEmptyCharMessage: vi.fn(),
   appendCurrentChatUserMessageForSend: vi.fn(async () => ({ status: 'ok' })),
   applySuccessfulSendChatEffects: vi.fn(() => true),
   chatFoldedState: { data: null as null | Record<string, string> },
@@ -141,6 +142,7 @@ vi.mock('src/ts/process/coldstorage.svelte', () => ({
 vi.mock('src/ts/process/tts', () => ({ stopTTS: vi.fn() }))
 
 vi.mock('src/ts/chatCommands', () => ({
+  appendCurrentChatEmptyCharMessage: shellMocks.appendCurrentChatEmptyCharMessage,
   appendCurrentChatUserMessageForSend: shellMocks.appendCurrentChatUserMessageForSend,
   cloneJsonValue: <T>(value: T) => JSON.parse(JSON.stringify(value)) as T,
   currentChatScopedSnapshot: vi.fn(() => ({ before: 'chat-scoped' })),

@@ -78,14 +78,11 @@
   import Button from '../UI/GUI/Button.svelte'
   import PluginDefinedIcon from '../Others/PluginDefinedIcon.svelte'
   import {
+    appendCurrentChatEmptyCharMessage,
     appendCurrentChatUserMessageForSend,
-    cloneJsonValue,
-    currentChatScopedSnapshot,
-    dispatchReplaceMessagesScoped,
     setCurrentChatGreetingIndex,
   } from 'src/ts/chatCommands'
   import { applyServerBackedSetting } from 'src/ts/server/settingsBridge.svelte'
-  import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
   import {
     hydrateActiveChatFully,
     hydrateActiveChatWindow,
@@ -878,27 +875,7 @@
           </button>
         {:else}
           <div
-            onclick={(e) => {
-              const previous = currentChatScopedSnapshot()
-              const selectedChar = $selectedCharID
-              const currentChatRecord =
-                DBState.db.characters[selectedChar].chats[DBState.db.characters[selectedChar].chatPage]
-              const nextMessages = cloneJsonValue(currentChatRecord.message ?? [])
-              nextMessages.push({
-                role: 'char',
-                data: '',
-              })
-              withTrustedServerProjectionWrite(() => {
-                const liveCharacter = DBState.db.characters[selectedChar]
-                const liveChat = liveCharacter?.chats[liveCharacter.chatPage]
-                if (liveChat && (!currentChatRecord.id || liveChat.id === currentChatRecord.id)) {
-                  liveChat.message = cloneJsonValue(nextMessages)
-                }
-              })
-              if (currentChatRecord.id) {
-                dispatchReplaceMessagesScoped(currentChatRecord.id, nextMessages, previous)
-              }
-            }}
+            onclick={() => appendCurrentChatEmptyCharMessage()}
             class="peer-focus:border-textcolor mr-2 flex border-y border-r border-darkborderc justify-center items-center text-textcolor p-3 rounded-r-md hover:bg-blue-500 hover:text-white transition-colors"
             style:height={inputHeight}>
             <Plus />

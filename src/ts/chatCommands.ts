@@ -997,6 +997,32 @@ export function dispatchAppendMessage(chatId: string, message: Message, previous
   )
 }
 
+export function appendCurrentChatEmptyCharMessage(): void {
+  const previous = currentChatScopedSnapshot()
+  const selectedChar = get(selectedCharID)
+  const currentCharacter = DBState.db.characters?.[selectedChar]
+  const currentChatRecord = currentCharacter?.chats?.[currentCharacter.chatPage]
+  if (!currentChatRecord) return
+
+  const nextMessages = cloneJsonValue(currentChatRecord.message ?? [])
+  nextMessages.push({
+    role: 'char',
+    data: '',
+  })
+
+  withTrustedServerProjectionWrite(() => {
+    const liveCharacter = DBState.db.characters?.[selectedChar]
+    const liveChat = liveCharacter?.chats?.[liveCharacter.chatPage]
+    if (liveChat && (!currentChatRecord.id || liveChat.id === currentChatRecord.id)) {
+      liveChat.message = cloneJsonValue(nextMessages)
+    }
+  })
+
+  if (currentChatRecord.id) {
+    dispatchReplaceMessagesScoped(currentChatRecord.id, nextMessages, previous)
+  }
+}
+
 export async function appendCurrentChatUserMessageForSend(
   input: string | Message,
 ): Promise<AppendCurrentChatUserMessageResult> {

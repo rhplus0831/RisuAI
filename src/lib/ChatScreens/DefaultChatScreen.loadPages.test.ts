@@ -6,6 +6,7 @@ const loadPageMocks = vi.hoisted(() => ({
   alertError: vi.fn(),
   alertNormal: vi.fn(),
   alertWait: vi.fn(),
+  appendCurrentChatEmptyCharMessage: vi.fn(),
   appendCurrentChatUserMessageForSend: vi.fn(async () => ({ status: 'ok' })),
   applySuccessfulSendChatEffects: vi.fn(() => true),
   chatFoldedState: { data: null as null | Record<string, string> },
@@ -150,6 +151,7 @@ vi.mock('src/ts/process/tts', () => ({
 }))
 
 vi.mock('src/ts/chatCommands', () => ({
+  appendCurrentChatEmptyCharMessage: loadPageMocks.appendCurrentChatEmptyCharMessage,
   appendCurrentChatUserMessageForSend: loadPageMocks.appendCurrentChatUserMessageForSend,
   cloneJsonValue: <T>(value: T) => JSON.parse(JSON.stringify(value)) as T,
   currentChatScopedSnapshot: vi.fn(() => ({ before: 'chat-scoped' })),
