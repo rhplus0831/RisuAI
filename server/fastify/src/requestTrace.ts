@@ -4,9 +4,11 @@ import type { OutgoingHttpHeader, OutgoingHttpHeaders } from 'node:http'
 import path from 'node:path'
 import { performance } from 'node:perf_hooks'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
+import { ACTIVE_WRITER_SESSION_HEADER, readActiveWriterSessionId } from './activeWriter.js'
 import type { RequestTraceMode } from './config.js'
 
 export const REQUEST_UID_HEADER = 'X-Request-UID'
+const CALLER_HEADER = 'x-risu-caller'
 
 interface RegisterRequestTraceOptions {
   dataDir: string
@@ -22,6 +24,10 @@ interface RequestTraceState {
 }
 
 interface RequestTraceEntry {
+  Method: string
+  Url: string
+  Route?: string
+  Caller?: string
   'Request-Header': string
   'Response-Header': string
   'X-Request-UID': string
@@ -39,6 +45,29 @@ const REDACTED_HEADER_NAMES = new Set([
   'proxy-authorization',
   'risu-auth',
   'set-cookie',
+  'x-api-key',
+  'xi-api-key',
+])
+
+const SENSITIVE_QUERY_PARAM_NAMES = new Set([
+  'access_token',
+  'api_key',
+  'apikey',
+  'auth',
+  'authorization',
+  'code',
+  'id_token',
+  'key',
+  'password',
+  'passwd',
+  'refresh_token',
+  'risu-auth',
+  'secret',
+  'session',
+  'session_token',
+  'sig',
+  'signature',
+  'token',
   'x-api-key',
   'xi-api-key',
 ])
@@ -83,7 +112,13 @@ export function registerRequestTrace(app: FastifyInstance, opts: RegisterRequest
       responseHeaders[REQUEST_UID_HEADER] = state.uid
     }
 
+    const caller = resolveCaller(request)
+    const route = resolveRoutePattern(request)
     const entry: RequestTraceEntry = {
+      Method: request.method.toUpperCase(),
+      Url: redactSensitiveQueryParams(request.raw.url ?? request.url),
+      ...(route ? { Route: route } : {}),
+      ...(caller ? { Caller: caller } : {}),
       'Request-Header': serializeHeaders(request.headers),
       'Response-Header': serializeHeaders(responseHeaders),
       'X-Request-UID': state.uid,
@@ -112,7 +147,8 @@ function generateRequestUid(): string {
 }
 
 function isApiRequest(url: string): boolean {
-  return url === '/api' || url.startsWith('/api/')
+  const path = url.split('?', 1)[0] ?? url
+  return path === '/api' || path.startsWith('/api/')
 }
 
 function markSendStarted(state: RequestTraceState): void {
@@ -149,6 +185,89 @@ function serializeHeaders(headers: HeaderRecord): string {
     normalized[name] = REDACTED_HEADER_NAMES.has(name.toLowerCase()) ? '[redacted]' : value
   }
   return JSON.stringify(normalized)
+}
+
+function resolveRoutePattern(request: FastifyRequest): string | undefined {
+  const route = request.routeOptions.url
+  return typeof route === 'string' && route.trim() !== '' ? route : undefined
+}
+
+function resolveCaller(request: FastifyRequest): string | undefined {
+  const explicit = readHeaderString(request.headers[CALLER_HEADER])
+  if (explicit) {
+    return `${CALLER_HEADER}=${redactSensitiveQueryParams(explicit)}`
+  }
+
+  const parts: string[] = []
+  const referer = readHeaderString(request.headers.referer) ?? readHeaderString(request.headers.referrer)
+  if (referer) {
+    parts.push(`referer=${redactSensitiveQueryParams(referer)}`)
+  }
+
+  const userAgent = readHeaderString(request.headers['user-agent'])
+  if (userAgent) {
+    parts.push(`user-agent=${userAgent}`)
+  }
+
+  const writerSession = readActiveWriterSessionId(request)
+  if (writerSession) {
+    parts.push(`${ACTIVE_WRITER_SESSION_HEADER}=${writerSession}`)
+  }
+
+  return parts.length > 0 ? parts.join('; ') : undefined
+}
+
+function readHeaderString(value: string | string[] | undefined): string | undefined {
+  const raw = Array.isArray(value) ? value.find((entry) => entry.trim() !== '') : value
+  if (typeof raw !== 'string') return undefined
+  const trimmed = raw.trim()
+  return trimmed === '' ? undefined : trimmed
+}
+
+function redactSensitiveQueryParams(rawUrl: string): string {
+  const queryStart = rawUrl.indexOf('?')
+  if (queryStart === -1) return rawUrl
+  const hashStart = rawUrl.indexOf('#', queryStart + 1)
+  const queryEnd = hashStart === -1 ? rawUrl.length : hashStart
+  const query = rawUrl.slice(queryStart + 1, queryEnd)
+  if (query === '') return rawUrl
+
+  const redactedQuery = query
+    .split('&')
+    .map((part) => redactQueryParam(part))
+    .join('&')
+  return `${rawUrl.slice(0, queryStart + 1)}${redactedQuery}${rawUrl.slice(queryEnd)}`
+}
+
+function redactQueryParam(part: string): string {
+  if (part === '') return part
+  const separatorIndex = part.indexOf('=')
+  const rawName = separatorIndex === -1 ? part : part.slice(0, separatorIndex)
+  if (!isSensitiveQueryParamName(rawName)) return part
+  return `${rawName}=[redacted]`
+}
+
+function isSensitiveQueryParamName(rawName: string): boolean {
+  const normalized = decodeQueryComponent(rawName).trim().toLowerCase()
+  if (SENSITIVE_QUERY_PARAM_NAMES.has(normalized)) return true
+
+  const compact = normalized.replace(/[-_]/g, '')
+  return (
+    compact.includes('token') ||
+    compact.includes('secret') ||
+    compact.includes('password') ||
+    compact === 'apikey' ||
+    compact === 'authorization' ||
+    compact === 'risuauth'
+  )
+}
+
+function decodeQueryComponent(raw: string): string {
+  try {
+    return decodeURIComponent(raw.replace(/\+/g, ' '))
+  } catch {
+    return raw
+  }
 }
 
 function hasHeader(headers: HeaderRecord, name: string): boolean {

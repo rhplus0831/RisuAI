@@ -13,6 +13,10 @@ interface Harness {
 }
 
 interface TraceEntry {
+  Method: string
+  Url: string
+  Route?: string
+  Caller?: string
   'Request-Header': string
   'Response-Header': string
   'X-Request-UID': string
@@ -117,6 +121,7 @@ describe('request trace', () => {
       url: '/api/v1/health',
       headers: {
         'risu-auth': 'secret-auth-token',
+        'user-agent': '',
         'x-debug-test': 'trace-me',
       },
     })
@@ -124,6 +129,10 @@ describe('request trace', () => {
     const responseUid = String(res.headers[uidHeaderName])
     expect(responseUid).toMatch(/^[a-f0-9]{64}$/)
     const [entry] = await waitForTraceEntries(harness, 'agent', 1)
+    expect(entry.Method).toBe('GET')
+    expect(entry.Url).toBe('/api/v1/health')
+    expect(entry.Route).toBe('/api/v1/health')
+    expect(entry.Caller).toBeUndefined()
     expect(entry['X-Request-UID']).toBe(responseUid)
     expectTiming(entry.Timing.process)
     expectTiming(entry.Timing.send)
@@ -134,6 +143,44 @@ describe('request trace', () => {
     expect(requestHeaders['risu-auth']).toBe('[redacted]')
     expect(requestHeaders[uidHeaderName]).toBe(responseUid)
     expect(responseHeaders[uidHeaderName]).toBe(responseUid)
+  })
+
+  it('records route metadata, explicit caller, and redacted query params', async () => {
+    harness = await startHarness('agent')
+
+    const res = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/projection/chatMessages?id=chat-1&token=secret-token&api_key=secret-key&safe=visible',
+      headers: {
+        'x-risu-caller': 'client-bootstrap?access_token=secret-caller-token&view=main',
+      },
+    })
+
+    expect(res.statusCode).toBe(401)
+    const [entry] = await waitForTraceEntries(harness, 'agent', 1)
+    expect(entry.Method).toBe('GET')
+    expect(entry.Url).toBe('/api/v1/projection/chatMessages?id=chat-1&token=[redacted]&api_key=[redacted]&safe=visible')
+    expect(entry.Route).toBe('/api/v1/projection/:resource')
+    expect(entry.Caller).toBe('x-risu-caller=client-bootstrap?access_token=[redacted]&view=main')
+  })
+
+  it('falls back to referer, user-agent, and writer session caller details', async () => {
+    harness = await startHarness('agent')
+
+    await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/health',
+      headers: {
+        referer: 'http://localhost:6418/?token=secret-token&panel=chat',
+        'user-agent': 'trace-test-agent',
+        'risu-writer-session': 'writer-a',
+      },
+    })
+
+    const [entry] = await waitForTraceEntries(harness, 'agent', 1)
+    expect(entry.Caller).toBe(
+      'referer=http://localhost:6418/?token=[redacted]&panel=chat; user-agent=trace-test-agent; risu-writer-session=writer-a',
+    )
   })
 
   it('uses the selected trace mode file', async () => {
