@@ -969,6 +969,37 @@ describe('Durable generation (Milestone 1)', () => {
     expect(messages.some((m) => m.data === 'old reply')).toBe(false)
   })
 
+  it('appends a durable regenerate when the requested target was already truncated', async () => {
+    await seedChatWithMessages([{ role: 'user', data: 'greet me', chatId: 'msg-user-1' }])
+    providerImpl = () => {
+      async function* gen(): AsyncGenerator<CompletionStreamFrame> {
+        yield { kind: 'token', content: 'a brand new reply' }
+        yield { kind: 'done', finishReason: 'stop' }
+      }
+      return gen()
+    }
+
+    const res = await postDurable({
+      mode: 'regenerate',
+      regenerateMessageId: 'stale-msg-char-1',
+      userMessage: undefined,
+    })
+    const events = await readSse(res, (ev) => ev.type === 'done')
+    expect(events.some((ev) => ev.type === 'error')).toBe(false)
+
+    const appended = await waitFor(async () => {
+      const row = (await chatMessages(await bootstrap())).find((m) => m.role === 'char')
+      return row?.data === 'a brand new reply' ? row : undefined
+    })
+    expect(appended.chatId).not.toBe('stale-msg-char-1')
+
+    const messages = await chatMessages(await bootstrap())
+    expect(messages).toHaveLength(2)
+    expect(messages[0]).toMatchObject({ role: 'user', chatId: 'msg-user-1' })
+    expect(messages[1]).toMatchObject({ role: 'char', data: 'a brand new reply' })
+    expect(generationFinalizationRetryRows()).toEqual([])
+  })
+
   it('cancels a durable continue and extends the row with the streamed-so-far text (Phase 6b)', async () => {
     await seedChatWithMessages([
       { role: 'user', data: 'story', chatId: 'msg-user-1' },

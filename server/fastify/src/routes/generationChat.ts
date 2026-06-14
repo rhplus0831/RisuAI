@@ -781,7 +781,9 @@ function persistAssemblyMutations(args: {
  *     own `chatId`, no separate target.
  *   - regenerate: a NEW row keyed by `generationId` was appended after the
  *     transcript was truncated to the target; persist it but REPLACE the old
- *     target (`regenerateMessageId`).
+ *     target (`regenerateMessageId`) when that target existed at assembly start.
+ *     If the client already truncated back to the user row and sent a stale
+ *     regenerate id, match `prepareRegenerateTranscript` and append instead.
  */
 function resolveInlineGenerationMessage(args: {
   state: AssemblyState
@@ -815,7 +817,7 @@ function resolveInlineGenerationMessage(args: {
   )
   return {
     message,
-    targetMessageId: args.input.mode === 'regenerate' ? args.input.regenerateMessageId : undefined,
+    targetMessageId: regenerateTargetMessageIdFromInitialMessages(args.input, args.state.initialMessages),
   }
 }
 
@@ -833,12 +835,14 @@ function findContinueRow(state: AssemblyState): Message | undefined {
  * Mode-aware RAW assistant message (no post-gen derivation) + replace target,
  * shared by the post-gen derivation-failure fallback and the streaming-cancel
  * persist. `continue` extends the captured continue row in place (keeping its id);
- * `regenerate` replaces the target (`regenerateMessageId`); `send` appends a fresh
- * row keyed by `generationId`. The mode-aware target is what makes a durable
- * continue/regenerate land on the right row even without a post-gen pass.
+ * `regenerate` replaces the target (`regenerateMessageId`) only when that target
+ * existed at assembly start; `send` appends a fresh row keyed by `generationId`.
+ * The mode-aware target is what makes a durable continue/regenerate land on the
+ * right row even without a post-gen pass.
  */
 function buildRawModeMessage(args: {
   input: AssembleInput
+  initialMessages?: readonly Message[]
   continueRow: Message | undefined
   text: string
   generationId: string
@@ -864,7 +868,7 @@ function buildRawModeMessage(args: {
       generationInfo: args.generationInfo,
       promptInfo: args.promptInfo,
     }),
-    targetMessageId: args.input.mode === 'regenerate' ? args.input.regenerateMessageId : undefined,
+    targetMessageId: regenerateTargetMessageIdFromInitialMessages(args.input, args.initialMessages),
   }
 }
 
@@ -917,6 +921,7 @@ async function resolvePostGenerationResult(args: {
     // Derivation threw: persist the raw provider text so the result is not lost.
     const raw = buildRawModeMessage({
       input: args.input,
+      initialMessages: args.state.initialMessages,
       continueRow,
       text: args.completionText,
       generationId: args.generationId,
@@ -1345,6 +1350,17 @@ function extractAssistantMessage(
   })
 }
 
+function regenerateTargetMessageIdFromInitialMessages(
+  input: AssembleInput,
+  initialMessages: readonly Message[] | undefined,
+): string | undefined {
+  if (input.mode !== 'regenerate') return undefined
+  const targetMessageId = input.regenerateMessageId
+  if (!targetMessageId) return undefined
+  const target = initialMessages?.find((message) => message.chatId === targetMessageId)
+  return target?.role === 'char' ? targetMessageId : undefined
+}
+
 /**
  * Step 3 (A2 / EC-D1 persistence half): write the durable generation result. In a
  * single targeted command mutation (one revision bump, one event, rollback on
@@ -1699,6 +1715,7 @@ function persistRawCancelledResult(args: {
   const continueRow = args.input.mode === 'continue' ? findContinueRow(args.state) : undefined
   const raw = buildRawModeMessage({
     input: args.input,
+    initialMessages: args.state.initialMessages,
     continueRow,
     text: args.text,
     generationId: args.generationId,

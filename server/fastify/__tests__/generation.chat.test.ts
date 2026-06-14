@@ -2910,6 +2910,37 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(persisted.some((m) => m.data === 'old reply')).toBe(false)
   })
 
+  it('appends a regenerate result when the requested target was already truncated', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedChatWithMessages(
+      assertion,
+      [{ role: 'user', data: 'greet me', chatId: 'msg-user-1' }],
+      'a brand new reply',
+    )
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        chatId: 'chat-1',
+        characterId: 'char-1',
+        mode: 'regenerate',
+        regenerateMessageId: 'stale-msg-char-1',
+      },
+    })
+    expect(res.statusCode).toBe(200)
+    const done = doneFrame(parseEvents(res.body))
+    expect(done.postGeneration?.revision).toBe(2)
+
+    const persisted = await persistedMessages(assertion)
+    expect(persisted).toHaveLength(2)
+    expect(persisted[0]).toMatchObject({ role: 'user', chatId: 'msg-user-1' })
+    expect(persisted[1]).toMatchObject({ role: 'char', data: 'a brand new reply' })
+    expect(persisted[1].chatId).not.toBe('stale-msg-char-1')
+    expect(await persistedAlternates(assertion)).toHaveLength(0)
+  })
+
   // The reroll buffer preserves both the replaced candidate and the new one as
   // alternates, accumulates further regenerates by uid, and clears on send.
   it('preserves both the replaced and the new candidate as alternates, accumulates, and clears on send (Phase 6c)', async () => {
