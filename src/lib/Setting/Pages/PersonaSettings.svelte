@@ -8,232 +8,45 @@
   import { alertConfirm, alertSelect } from 'src/ts/alert'
   import { getCharImage } from 'src/ts/characters'
   import {
+    beginPersonaReorder,
     changeUserPersona,
+    createNewUserPersona,
+    currentPersonaStateSnapshot,
+    currentSelectedPersonaProjectionSnapshot,
+    deleteSelectedUserPersona,
     exportUserPersona,
     importUserPersona,
-    normalizePersonaIds,
-    saveUserPersona,
+    isPersonaSettingsWatcherSuppressed,
+    queueSelectedPersonaUpdate,
+    reorderUserPersonasByIndices,
     selectUserImg,
+    snapshotPersonaJson,
+    updateSelectedPersonaField,
+    updateSelectedPersonaLargePortrait,
+    type PersonaStateSnapshot,
   } from 'src/ts/persona'
   import Sortable from 'sortablejs/modular/sortable.core.esm.js'
   import { onDestroy, onMount, untrack } from 'svelte'
   import { sleep, sortableOptions } from 'src/ts/util'
   import { DBState } from 'src/ts/stores.svelte'
-  import { v4 } from 'uuid'
-  import {
-    canUseServerCommands,
-    createPersonaCommand,
-    deletePersonaCommand,
-    reorderPersonasCommand,
-    runServerCommand,
-    updatePersonaCommand,
-    type PersonaSnapshot,
-  } from 'src/ts/server/commands'
-  import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
 
   let stb: Sortable = null
   let ele: HTMLDivElement = $state()
   let sorted = $state(0)
-  let selectedId: string = null
-  const pendingPersonaUpdate = {
-    timer: null as ReturnType<typeof setTimeout> | null,
-    previous: null as PersonaStateSnapshot | null,
-    attempted: null as PersonaStateSnapshot | null,
-  }
+  let selectedId: string | null = null
   let personaWatcherInitialized = false
   let previousPersonaSnapshot = ''
   let previousPersonaState: PersonaStateSnapshot | null = null
-  let suppressPersonaRollback = false
-
-  type Persona = (typeof DBState.db.personas)[number]
-  interface PersonaStateSnapshot {
-    personas: Persona[]
-    selectedPersona: number
-    username: string
-    userIcon: string
-    personaPrompt: string
-    userNote: string
-  }
-
-  function cloneJsonValue<T>(value: T): T {
-    if (value === undefined) return value
-    return JSON.parse(JSON.stringify(value)) as T
-  }
-
-  function snapshotJson(value: unknown): string {
-    const snapshot = JSON.stringify(value)
-    return snapshot === undefined ? '__undefined__' : snapshot
-  }
-
-  function currentPersonaStateSnapshot(): PersonaStateSnapshot {
-    return {
-      personas: cloneJsonValue(DBState.db.personas ?? []),
-      selectedPersona: DBState.db.selectedPersona,
-      username: DBState.db.username,
-      userIcon: DBState.db.userIcon,
-      personaPrompt: DBState.db.personaPrompt,
-      userNote: DBState.db.userNote,
-    }
-  }
-
-  function restorePersonaState(snapshot: PersonaStateSnapshot): void {
-    suppressPersonaRollback = true
-    try {
-      withTrustedServerProjectionWrite(() => {
-        DBState.db.personas = cloneJsonValue(snapshot.personas)
-        DBState.db.selectedPersona = snapshot.selectedPersona
-        DBState.db.username = snapshot.username
-        DBState.db.userIcon = snapshot.userIcon
-        DBState.db.personaPrompt = snapshot.personaPrompt
-        DBState.db.userNote = snapshot.userNote
-      })
-    } finally {
-      queueMicrotask(() => {
-        suppressPersonaRollback = false
-      })
-    }
-  }
-
-  function runWithoutPersonaWatcher(mutator: () => void): void {
-    suppressPersonaRollback = true
-    try {
-      withTrustedServerProjectionWrite(mutator)
-    } finally {
-      setTimeout(() => {
-        suppressPersonaRollback = false
-      }, 0)
-    }
-  }
-
-  function updateSelectedPersonaField(field: 'username' | 'userNote' | 'personaPrompt', value: string): void {
-    withTrustedServerProjectionWrite(() => {
-      DBState.db[field] = value
-    })
-  }
-
-  function updateSelectedPersonaLargePortrait(value: boolean): void {
-    withTrustedServerProjectionWrite(() => {
-      DBState.db.personas[DBState.db.selectedPersona].largePortrait = value
-    })
-  }
-
-  function selectedPersonaId(): string | null {
-    normalizePersonaIds()
-    return DBState.db.personas[DBState.db.selectedPersona]?.id ?? null
-  }
-
-  function selectedPersonaPatch(): PersonaSnapshot {
-    return {
-      name: DBState.db.username,
-      icon: DBState.db.userIcon,
-      personaPrompt: DBState.db.personaPrompt,
-      note: DBState.db.userNote,
-      largePortrait: DBState.db.personas[DBState.db.selectedPersona]?.largePortrait ?? false,
-    }
-  }
-
-  function dispatchCreatePersona(persona: Persona, previous: PersonaStateSnapshot): void {
-    if (!canUseServerCommands()) return
-    const attempted = currentPersonaStateSnapshot()
-    void runServerCommand({
-      command: (baseRevision) =>
-        createPersonaCommand({
-          baseRevision,
-          persona: cloneJsonValue(persona) as PersonaSnapshot,
-          mirrorLegacyProfile: true,
-        }),
-      rollback: () => restorePersonaState(previous),
-    })
-    pendingPersonaUpdate.attempted = attempted
-  }
-
-  function dispatchDeletePersona(
-    personaId: string,
-    selectPersonaId: string | undefined,
-    previous: PersonaStateSnapshot,
-  ): void {
-    if (!canUseServerCommands()) return
-    void runServerCommand({
-      command: (baseRevision) =>
-        deletePersonaCommand({
-          baseRevision,
-          personaId,
-          selectPersonaId,
-          mirrorLegacyProfile: true,
-          saveCurrent: true,
-        }),
-      rollback: () => restorePersonaState(previous),
-    })
-  }
-
-  function dispatchReorderPersonas(previous: PersonaStateSnapshot): void {
-    if (!canUseServerCommands()) return
-    normalizePersonaIds()
-    const attempted = currentPersonaStateSnapshot()
-    void runServerCommand({
-      command: (baseRevision) =>
-        reorderPersonasCommand({
-          baseRevision,
-          personaIds: DBState.db.personas.map((persona) => persona.id),
-        }),
-      rollback: () => {
-        if (snapshotJson(currentPersonaStateSnapshot()) === snapshotJson(attempted)) {
-          restorePersonaState(previous)
-        }
-      },
-    })
-  }
-
-  function queueSelectedPersonaUpdate(previous: PersonaStateSnapshot, attempted: PersonaStateSnapshot): void {
-    if (!canUseServerCommands() || suppressPersonaRollback) return
-    const personaId = selectedPersonaId()
-    if (!personaId) return
-    pendingPersonaUpdate.previous ??= previous
-    pendingPersonaUpdate.attempted = attempted
-    if (pendingPersonaUpdate.timer) clearTimeout(pendingPersonaUpdate.timer)
-    pendingPersonaUpdate.timer = setTimeout(() => {
-      pendingPersonaUpdate.timer = null
-      const commandPrevious = pendingPersonaUpdate.previous
-      const commandAttempted = pendingPersonaUpdate.attempted
-      pendingPersonaUpdate.previous = null
-      pendingPersonaUpdate.attempted = null
-      void runServerCommand({
-        command: (baseRevision) =>
-          updatePersonaCommand({
-            baseRevision,
-            personaId,
-            patch: selectedPersonaPatch(),
-            mirrorLegacyProfile: true,
-          }),
-        rollback: () => {
-          if (
-            commandPrevious &&
-            commandAttempted &&
-            snapshotJson(currentPersonaStateSnapshot()) === snapshotJson(commandAttempted)
-          ) {
-            restorePersonaState(commandPrevious)
-          }
-        },
-      })
-    }, 250)
-  }
 
   $effect(() => {
-    const current = snapshotJson({
-      selectedPersona: DBState.db.selectedPersona,
-      username: DBState.db.username,
-      userIcon: DBState.db.userIcon,
-      personaPrompt: DBState.db.personaPrompt,
-      userNote: DBState.db.userNote,
-      largePortrait: DBState.db.personas[DBState.db.selectedPersona]?.largePortrait ?? false,
-    })
+    const current = snapshotPersonaJson(currentSelectedPersonaProjectionSnapshot())
     if (!personaWatcherInitialized) {
       personaWatcherInitialized = true
       previousPersonaSnapshot = current
       previousPersonaState = currentPersonaStateSnapshot()
       return
     }
-    if (suppressPersonaRollback) {
+    if (isPersonaSettingsWatcherSuppressed()) {
       previousPersonaSnapshot = current
       previousPersonaState = currentPersonaStateSnapshot()
       return
@@ -253,33 +66,14 @@
   const createStb = () => {
     stb = Sortable.create(ele, {
       onStart: async () => {
-        normalizePersonaIds()
-        selectedId = DBState.db.personas[DBState.db.selectedPersona].id
-        saveUserPersona({ dispatch: false })
+        selectedId = beginPersonaReorder()
       },
       onEnd: async () => {
-        const previous = currentPersonaStateSnapshot()
         let idx: number[] = []
         ele.querySelectorAll('[data-risu-idx]').forEach((e, i) => {
           idx.push(parseInt(e.getAttribute('data-risu-idx')))
         })
-        let newValue: {
-          personaPrompt: string
-          name: string
-          icon: string
-          note?: string
-          largePortrait?: boolean
-          id?: string
-        }[] = []
-        idx.forEach((i) => {
-          newValue.push(DBState.db.personas[i])
-        })
-        runWithoutPersonaWatcher(() => {
-          DBState.db.personas = newValue
-          const selectedPersona = DBState.db.personas.findIndex((e) => e.id === selectedId)
-          DBState.db.selectedPersona = selectedPersona !== -1 ? selectedPersona : 0
-        })
-        dispatchReorderPersonas(previous)
+        reorderUserPersonasByIndices(idx, selectedId)
         try {
           stb.destroy()
         } catch (error) {}
@@ -312,9 +106,7 @@
       <button
         data-risu-idx={i}
         onclick={() => {
-          runWithoutPersonaWatcher(() => {
-            changeUserPersona(i)
-          })
+          changeUserPersona(i)
         }}>
         {#if persona.icon === ''}
           <div
@@ -342,23 +134,7 @@
         onClick={async () => {
           const sel = parseInt(await alertSelect([language.createfromScratch, language.importCharacter]))
           if (sel === 0) {
-            const previous = currentPersonaStateSnapshot()
-            const persona = {
-              id: v4(),
-              name: 'New Persona',
-              icon: '',
-              personaPrompt: '',
-              note: '',
-            }
-            runWithoutPersonaWatcher(() => {
-              DBState.db.personas.push(persona)
-              DBState.db.selectedPersona = DBState.db.personas.length - 1
-              DBState.db.username = persona.name
-              DBState.db.userIcon = persona.icon
-              DBState.db.personaPrompt = persona.personaPrompt
-              DBState.db.userNote = persona.note
-            })
-            dispatchCreatePersona(persona, previous)
+            createNewUserPersona()
           } else if (sel === 1) {
             await importUserPersona()
           }
@@ -428,24 +204,7 @@
             `${language.removeConfirm}${DBState.db.personas[DBState.db.selectedPersona].name}`,
           )
           if (d) {
-            normalizePersonaIds()
-            const previous = currentPersonaStateSnapshot()
-            saveUserPersona({ dispatch: false })
-            const personaId = DBState.db.personas[DBState.db.selectedPersona].id
-            let personas = [...DBState.db.personas]
-            personas.splice(DBState.db.selectedPersona, 1)
-            let selectedId = ''
-            runWithoutPersonaWatcher(() => {
-              DBState.db.personas = personas
-              DBState.db.selectedPersona = 0
-              const selected = DBState.db.personas[0]
-              DBState.db.username = selected.name
-              DBState.db.userIcon = selected.icon
-              DBState.db.personaPrompt = selected.personaPrompt
-              DBState.db.userNote = selected.note
-              selectedId = selected.id
-            })
-            dispatchDeletePersona(personaId, selectedId, previous)
+            deleteSelectedUserPersona()
           }
         }}>{language.remove}</Button>
       <Check
