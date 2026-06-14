@@ -18,7 +18,6 @@
     dispatchUpdateChat,
   } from 'src/ts/chatCommands'
   import { canUseServerCommands } from 'src/ts/server/commands'
-  import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
   import { watchServerBackedChatMetadata } from 'src/ts/server/chatBridge.svelte'
   import { characterRoutePath, navigate } from 'src/ts/router'
 
@@ -45,14 +44,7 @@
   function updateChatName(chat, name) {
     if (!chat?.id || chat.name === name) return
     const previous = currentChatStateSnapshot()
-    if (canUseServerCommands()) {
-      dispatchUpdateChat(chat.id, { name }, previous)
-      return
-    }
-
-    withTrustedServerProjectionWrite(() => {
-      chat.name = name
-    })
+    dispatchUpdateChat(chat.id, { name }, previous)
   }
 
   function openChatRoute(index) {

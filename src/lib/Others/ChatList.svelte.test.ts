@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -304,6 +305,12 @@ function createButton(): HTMLButtonElement {
   return button!
 }
 
+function editButton(): HTMLButtonElement {
+  const button = modalRoot().querySelector<HTMLButtonElement>('[data-risu-chat-action="edit"]')
+  expect(button, 'edit chat button').toBeTruthy()
+  return button!
+}
+
 function rowActionButton(row: HTMLElement, actionKind: string): HTMLElement {
   const action = row.querySelector<HTMLElement>(`[data-risu-chat-action="${actionKind}"]`)
   expect(action, `${actionKind} chat action`).toBeTruthy()
@@ -383,6 +390,48 @@ describe('ChatList DOM contract harness', () => {
     expectRowSelected('chat-a', false)
     expectRowSelected('chat-c', false)
     expect(chatListMocks.watchServerBackedChatMetadata).toHaveBeenCalledOnce()
+  })
+
+  it('does not own trusted projection writes in component source', () => {
+    const source = readFileSync('src/lib/Others/ChatList.svelte', 'utf8')
+
+    expect(source).not.toContain('withTrustedServerProjectionWrite')
+  })
+
+  it('dispatches chat rename through the update command helper without local fallback mutation', async () => {
+    seedModalDatabase()
+
+    component = mount(ChatList, { target, props: { close: vi.fn() } })
+    await tick()
+
+    editButton().click()
+    await tick()
+    vi.clearAllMocks()
+
+    const input = rowByChatId('chat-b').querySelector<HTMLInputElement>('input')
+    expect(input, 'chat-b name input').toBeTruthy()
+    input!.value = 'Renamed Modal Chat B'
+    input!.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+    input!.dispatchEvent(new Event('change', { bubbles: true }))
+    await tick()
+
+    expect(chatListMocks.canUseServerCommands).not.toHaveBeenCalled()
+    expect(chatListMocks.withTrustedServerProjectionWrite).not.toHaveBeenCalled()
+    expect(chatListMocks.dispatchUpdateChat).toHaveBeenCalledOnce()
+    const [chatId, patch, previous] = chatListMocks.dispatchUpdateChat.mock.calls[0]
+    expect(chatId).toBe('chat-b')
+    expect(patch).toEqual({ name: 'Renamed Modal Chat B' })
+    expect(previous).toMatchObject({
+      selectedCharID: 0,
+      characters: [
+        {
+          chaId: 'char-a',
+          chats: [{ name: 'Modal Chat A' }, { name: 'Modal Chat B' }, { name: 'Modal Chat C' }],
+        },
+      ],
+    })
+    expect(selectedCharacter().chats[1].name).toBe('Modal Chat B')
   })
 
   it('navigates when selecting a modal row and reflects the route-applied selection', async () => {

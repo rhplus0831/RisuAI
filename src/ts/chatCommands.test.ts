@@ -1039,6 +1039,25 @@ describe('H2 chat-selection snapshot', () => {
     })
   })
 
+  it('dispatchUpdateChat sends chat rename patches through the chat update command', async () => {
+    const calls = stubCommandFetch()
+    const previous = currentChatStateSnapshot()
+
+    dispatchUpdateChat('chat-a', { name: 'Renamed Chat A' }, previous)
+    await waitForCallCount(calls, 2)
+
+    expect(calls[1]).toEqual({
+      url: '/api/v1/commands/chats/chat-a',
+      method: 'PATCH',
+      authHeader: 'chat-command-token',
+      body: {
+        baseRevision: 10,
+        patch: { name: 'Renamed Chat A' },
+        select: false,
+      },
+    })
+  })
+
   it('dispatchSelectChat optimistically updates chatPage before the PATCH resolves', async () => {
     const calls = stubCommandFetch()
     setServerProjectionWriteGuardEnabled(true)
