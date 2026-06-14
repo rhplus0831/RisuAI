@@ -28,9 +28,61 @@ import { safeStructuredClone } from '../polyfill'
 import { DBState, selectedCharID } from '../stores.svelte'
 import type { character } from '../storage/database.svelte'
 import { setServerProjectionWriteGuardEnabled } from '../server/projectionWriteGuard.svelte'
+import { clearCachedServerCommandRevision } from '../server/commands'
 
-function seedDb(): character {
+interface CapturedFetch {
+  url: string
+  method: string
+  body: unknown
+}
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  })
+}
+
+function stubCommandFetch(): CapturedFetch[] {
+  const calls: CapturedFetch[] = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const url = String(input)
+      calls.push({
+        url,
+        method: init.method ?? 'GET',
+        body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+      })
+      if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+      if (url === '/api/v1/commands/messages/m-0') {
+        return jsonResponse({
+          revision: 11,
+          event: { type: 'message.updated', revision: 11, resource: 'message', id: 'm-0', parentId: 'chat-1' },
+          chatId: 'chat-1',
+          messageId: 'm-0',
+        })
+      }
+      return jsonResponse({ error: `unexpected ${url}` }, 404)
+    }) as unknown as typeof fetch,
+  )
+  return calls
+}
+
+async function waitForCallCount(calls: CapturedFetch[], expected: number): Promise<void> {
+  for (let attempt = 0; attempt < 20 && calls.length < expected; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  }
+  expect(calls).toHaveLength(expected)
+}
+
+function seedDb(messageChatId: string | null = 'm-0'): character {
   selectedCharID.set(0)
+  const message = {
+    role: 'char',
+    data: 'rendered body',
+    ...(messageChatId !== null ? { chatId: messageChatId } : {}),
+  }
   DBState.db = {
     characters: [
       {
@@ -41,7 +93,7 @@ function seedDb(): character {
         chats: [
           {
             id: 'chat-1',
-            message: [{ role: 'char', data: 'rendered body', chatId: 'm-0' }],
+            message: [message],
             note: '',
             name: 'main',
             localLore: [],
@@ -79,12 +131,14 @@ function seedDb(): character {
 
 beforeEach(() => {
   ;(globalThis as Record<string, unknown>).safeStructuredClone = safeStructuredClone
+  clearCachedServerCommandRevision()
   resetScriptCache()
   setServerProjectionWriteGuardEnabled(false)
 })
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  clearCachedServerCommandRevision()
   setServerProjectionWriteGuardEnabled(false)
   selectedCharID.set(-1)
 })
@@ -125,7 +179,61 @@ describe('editdisplay render path logging (L38)', () => {
     const result = await processScriptFull(char, 'keep REMOVE after', 'editdisplay', 0)
 
     expect(result.data).toBe('keep  after')
+    expect(DBState.db.characters[0].chats[0].message[0].data).toBe('rendered body')
+  })
+
+  it('server-mode non-display @@inject optimistically updates and dispatches a message patch', async () => {
+    const calls = stubCommandFetch()
+    const char = seedDb()
+    char.customscript = [
+      {
+        comment: 'inject-process-command',
+        type: 'editprocess',
+        in: 'REMOVE',
+        out: '@@inject',
+        flag: 'g',
+        ableFlag: true,
+      },
+    ] as any
+    setServerProjectionWriteGuardEnabled(true)
+
+    const result = await processScriptFull(char, 'keep REMOVE after', 'editprocess', 0)
+
+    expect(result.data).toBe('keep  after')
     expect(DBState.db.characters[0].chats[0].message[0].data).toBe('keep REMOVE after')
+    await waitForCallCount(calls, 2)
+    expect(calls.map((call) => call.url)).toEqual(['/api/v1/bootstrap', '/api/v1/commands/messages/m-0'])
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/messages/m-0',
+      method: 'PATCH',
+      body: {
+        baseRevision: 10,
+        patch: { data: 'keep REMOVE after' },
+      },
+    })
+  })
+
+  it('server-mode non-display @@inject without a message id strips display data without a projection write', async () => {
+    const calls = stubCommandFetch()
+    const char = seedDb(null)
+    char.customscript = [
+      {
+        comment: 'inject-process-no-message-id',
+        type: 'editprocess',
+        in: 'REMOVE',
+        out: '@@inject',
+        flag: 'g',
+        ableFlag: true,
+      },
+    ] as any
+    setServerProjectionWriteGuardEnabled(true)
+
+    const result = await processScriptFull(char, 'keep REMOVE after', 'editprocess', 0)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(result.data).toBe('keep  after')
+    expect(DBState.db.characters[0].chats[0].message[0].data).toBe('rendered body')
+    expect(calls).toHaveLength(0)
   })
 
   it('skips missing and malformed regex script entries during edit-display processing', async () => {

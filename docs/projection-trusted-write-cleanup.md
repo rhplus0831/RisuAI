@@ -95,6 +95,10 @@ coherent rollback/resync story.
   - `lastMemory` still uses the command-backed optimistic DBState write when a
     chat id is available, but no-id server command requests now keep the value
     request-local instead of mutating projection without a durable command.
+- `src/ts/process/scripts.ts`
+  - `@@inject` is display-only during `editdisplay`, and server-backed
+    non-display injection now requires a message id so the optimistic write can
+    dispatch a scoped message patch with rollback.
 
 ## Findings
 
@@ -158,11 +162,9 @@ state, or routed through server-owned finalization/patch commands.
   `src/ts/process/postGeneration/stage4Finalize.ts`
   - Retained local post-generation writes final text, inlay text, trigger
     output, reload state, or timing metadata without command ownership.
-- `src/ts/process/scripts.ts`
-  - `@@inject` can mutate a live message during script processing without a
-    command.
 - `src/ts/process/serverBackedSendChat.ts`
   - Browser inlay rendering mutates assistant text after server patch apply.
+
 ## Cleanup Order
 
 1. Centralize persona UI mutations into persona domain helpers.

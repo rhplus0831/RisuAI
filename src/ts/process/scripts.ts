@@ -23,6 +23,8 @@ import { runLuaEditTrigger } from './scriptings'
 import { pluginV2 } from '../plugins/plugins.svelte'
 import { runTrigger } from './triggers'
 import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
+import { canUseServerCommands } from '../server/commands'
+import { currentChatScopedSnapshot, dispatchUpdateMessageScoped } from '../chatCommands'
 
 const dreg = /{{data}}/g
 const randomness = /\|\|\|/g
@@ -164,6 +166,42 @@ export function getBestMatchForTesting(cacheKey: string) {
 
 export function getBestMatchCacheSizeForTesting() {
   return bestMatchCache.size
+}
+
+function selectedChatMessage(chatID: number) {
+  const selchar = getDatabase().characters?.[get(selectedCharID)]
+  const chat = selchar?.chats?.[selchar.chatPage]
+  return chat?.message?.[chatID]
+}
+
+function applyInjectMutation(data: string, mode: ScriptMode, chatID: number) {
+  if (mode === 'editdisplay' || chatID === -1) return
+
+  if (canUseServerCommands()) {
+    const messageId = selectedChatMessage(chatID)?.chatId
+    if (!messageId) return
+
+    const previous = currentChatScopedSnapshot()
+    let updated = false
+    withTrustedServerProjectionWrite(() => {
+      const message = selectedChatMessage(chatID)
+      if (!message || message.chatId !== messageId) return
+      message.data = data
+      updated = true
+    })
+
+    if (updated) {
+      dispatchUpdateMessageScoped(messageId, { data }, previous)
+    }
+    return
+  }
+
+  withTrustedServerProjectionWrite(() => {
+    const message = selectedChatMessage(chatID)
+    if (message) {
+      message.data = data
+    }
+  })
 }
 
 // Regex-script sources are constant across the per-token streaming re-runs that
@@ -314,12 +352,8 @@ export async function processScriptFull(
                 }
               }
             }
-          } else if ((outScript.startsWith('@@inject') || pscript.actions.includes('inject')) && chatID !== -1) {
-            withTrustedServerProjectionWrite(() => {
-              const writableDb = getDatabase()
-              const selchar = writableDb.characters[get(selectedCharID)]
-              selchar.chats[selchar.chatPage].message[chatID].data = data
-            })
+          } else if (outScript.startsWith('@@inject') || pscript.actions.includes('inject')) {
+            applyInjectMutation(data, mode, chatID)
             data = data.replace(reg, '')
           } else if (
             outScript.startsWith('@@move_top') ||
