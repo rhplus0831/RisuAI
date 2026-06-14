@@ -71,6 +71,10 @@ coherent rollback/resync story.
     projection write and route create-folder/create-chat commands through
     `runOptimisticCommandSequence()` so failures roll back the whole import and
     skip later commands.
+- `src/ts/plugins/plugins.svelte.ts`
+  - Plugin collection replacement now routes create, update, delete, and reorder
+    diffs through one serialized optimistic command sequence with a single
+    collection rollback.
 
 ## Findings
 
@@ -127,9 +131,6 @@ revision-checked commands can partially succeed on the server while the browser
 rolls back or diverges. Prefer a bulk server command or a serialized optimistic
 command sequence with one rollback/resync strategy.
 
-- `src/ts/plugins/plugins.svelte.ts`
-  - Plugin collection replacement fans out create, update, delete, and reorder
-    commands.
 - `src/ts/storage/database.svelte.ts`
   - Preset save/copy/select/create/import/update/delete/reorder APIs mutate
     projection first and command later.

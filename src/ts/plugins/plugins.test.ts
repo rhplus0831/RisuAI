@@ -56,7 +56,7 @@ function stubCommandFetch(): CapturedFetch[] {
   return calls
 }
 
-function seedPlugin(name: string): RisuPlugin {
+function seedPlugin(name: string, patch: Partial<RisuPlugin> = {}): RisuPlugin {
   return {
     name,
     script: 'Risuai.log("plugin")',
@@ -66,6 +66,7 @@ function seedPlugin(name: string): RisuPlugin {
     customLink: [],
     argMeta: {},
     enabled: true,
+    ...patch,
   }
 }
 
@@ -346,6 +347,180 @@ describe('plugin database command bridge', () => {
     // Pre-fix: 100 (parallel race on shared cache). Post-fix: 101 (read
     // from cache after the first command returns).
     expect(captured[1].body?.baseRevision).toBe(101)
+  })
+
+  it('serializes plugin collection create/update/delete commands against advancing revisions', async () => {
+    let nextRevision = 300
+    const captured: { url: string; method: string; body: { baseRevision?: number; [key: string]: unknown } }[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        if (url === '/api/v1/bootstrap') {
+          return jsonResponse({ revision: nextRevision })
+        }
+        const body = typeof init.body === 'string' ? JSON.parse(init.body) : null
+        captured.push({ url, method: init.method ?? 'GET', body })
+        nextRevision += 1
+        return jsonResponse({
+          revision: nextRevision,
+          event: {
+            type: 'plugin.updated',
+            revision: nextRevision,
+            resource: 'plugin',
+          } as unknown as CommandEvent,
+        })
+      }) as unknown as typeof fetch,
+    )
+
+    DBState.db.plugins = [seedPlugin('plugin-a'), seedPlugin('plugin-c')]
+    const apis = getV2PluginAPIs()
+
+    apis.setDatabaseLite({
+      plugins: [
+        seedPlugin('plugin-a', { displayName: 'Updated A' }),
+        seedPlugin('plugin-b', { displayName: 'Plugin B' }),
+      ],
+    })
+
+    await vi.waitFor(() => {
+      expect(captured.length).toBe(3)
+    })
+    expect(captured[0]).toMatchObject({
+      url: '/api/v1/commands/plugins/plugin-a',
+      method: 'PATCH',
+      body: {
+        baseRevision: 300,
+        patch: expect.objectContaining({ displayName: 'Updated A' }),
+      },
+    })
+    expect(captured[0].body.patch).not.toHaveProperty('name')
+    expect(captured[1]).toMatchObject({
+      url: '/api/v1/commands/plugins',
+      method: 'POST',
+      body: {
+        baseRevision: 301,
+        plugin: expect.objectContaining({ name: 'plugin-b', displayName: 'Plugin B' }),
+      },
+    })
+    expect(captured[2]).toMatchObject({
+      url: '/api/v1/commands/plugins/plugin-c',
+      method: 'DELETE',
+      body: {
+        baseRevision: 302,
+      },
+    })
+    expect(captured.some((call) => call.url === '/api/v1/commands/plugins/reorder')).toBe(false)
+  })
+
+  it('serializes plugin collection reorder commands against advancing revisions', async () => {
+    let nextRevision = 400
+    const captured: { url: string; method: string; body: { baseRevision?: number; [key: string]: unknown } }[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        if (url === '/api/v1/bootstrap') {
+          return jsonResponse({ revision: nextRevision })
+        }
+        const body = typeof init.body === 'string' ? JSON.parse(init.body) : null
+        captured.push({ url, method: init.method ?? 'GET', body })
+        nextRevision += 1
+        return jsonResponse({
+          revision: nextRevision,
+          event: {
+            type: 'plugin.updated',
+            revision: nextRevision,
+            resource: 'plugin',
+          } as unknown as CommandEvent,
+        })
+      }) as unknown as typeof fetch,
+    )
+
+    DBState.db.plugins = [seedPlugin('plugin-a'), seedPlugin('plugin-b'), seedPlugin('plugin-c')]
+    const apis = getV2PluginAPIs()
+
+    apis.setDatabaseLite({
+      plugins: [seedPlugin('plugin-c', { displayName: 'Updated C' }), seedPlugin('plugin-b')],
+    })
+
+    await vi.waitFor(() => {
+      expect(captured.length).toBe(3)
+    })
+    expect(captured[0]).toMatchObject({
+      url: '/api/v1/commands/plugins/plugin-c',
+      method: 'PATCH',
+      body: {
+        baseRevision: 400,
+        patch: expect.objectContaining({ displayName: 'Updated C' }),
+      },
+    })
+    expect(captured[1]).toMatchObject({
+      url: '/api/v1/commands/plugins/plugin-a',
+      method: 'DELETE',
+      body: {
+        baseRevision: 401,
+      },
+    })
+    expect(captured[2]).toMatchObject({
+      url: '/api/v1/commands/plugins/reorder',
+      method: 'POST',
+      body: {
+        baseRevision: 402,
+        pluginIds: ['plugin-c', 'plugin-b'],
+      },
+    })
+  })
+
+  it('rolls back plugin collection replacement when a sequenced command fails and skips later commands', async () => {
+    const previousPlugins = [seedPlugin('plugin-a'), seedPlugin('plugin-c')]
+    const captured: { url: string; method: string; body: { baseRevision?: number; [key: string]: unknown } }[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        if (url === '/api/v1/bootstrap') {
+          return jsonResponse({ revision: 500 })
+        }
+        const body = typeof init.body === 'string' ? JSON.parse(init.body) : null
+        captured.push({ url, method: init.method ?? 'GET', body })
+        if (captured.length === 1) {
+          return jsonResponse({ error: 'failed plugin update' }, 500)
+        }
+        return jsonResponse({
+          revision: 501,
+          event: {
+            type: 'plugin.updated',
+            revision: 501,
+            resource: 'plugin',
+          } as unknown as CommandEvent,
+        })
+      }) as unknown as typeof fetch,
+    )
+
+    DBState.db.plugins = previousPlugins
+    const apis = getV2PluginAPIs()
+
+    apis.setDatabaseLite({
+      plugins: [
+        seedPlugin('plugin-a', { displayName: 'Updated A' }),
+        seedPlugin('plugin-b', { displayName: 'Plugin B' }),
+      ],
+    })
+
+    await vi.waitFor(() => {
+      expect(DBState.db.plugins).toEqual(previousPlugins)
+    })
+    expect(captured).toHaveLength(1)
+    expect(captured[0]).toMatchObject({
+      url: '/api/v1/commands/plugins/plugin-a',
+      method: 'PATCH',
+      body: {
+        baseRevision: 500,
+      },
+    })
+    expect(captured.some((call) => call.url === '/api/v1/commands/plugins')).toBe(false)
+    expect(captured.some((call) => call.url === '/api/v1/commands/plugins/plugin-c')).toBe(false)
   })
 
   it('serializes enabled-modules diff commands against advancing revisions', async () => {

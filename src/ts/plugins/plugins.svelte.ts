@@ -18,13 +18,13 @@ import {
   currentPluginStateSnapshot,
   dispatchBulkPluginStorage,
   dispatchCreatePlugin,
-  dispatchDeletePlugin,
   dispatchDeletePluginStorage,
   dispatchPluginSettingsPatch,
   dispatchPutPluginStorage,
-  dispatchReorderPlugins,
   dispatchSelectPluginProvider,
   dispatchUpdatePlugin,
+  restorePluginState,
+  sanitizePluginPatch,
   toPluginSnapshot,
 } from '../pluginCommands'
 import {
@@ -37,10 +37,14 @@ import { currentCharacterStateSnapshot, dispatchCompatibleCharacterUpdate } from
 import { runOptimisticCommandSequence } from '../chatCommands'
 import {
   canUseServerCommands,
+  createPluginCommand,
   createModuleCommand,
+  deletePluginCommand,
   deleteModuleCommand,
   enableModuleCommand,
+  reorderPluginsCommand,
   reorderModulesCommand,
+  updatePluginCommand,
   updateModuleCommand,
   type ServerCommandResult,
 } from '../server/commands'
@@ -722,27 +726,39 @@ function dispatchPluginCollectionPatch(
   const beforePlugins = new Map(previous.plugins.map((plugin) => [plugin.name, plugin]))
   const nextPlugins = new Map(plugins.map((plugin) => [plugin.name, plugin]))
 
+  const factories: Array<(baseRevision: number) => Promise<ServerCommandResult>> = []
+
   for (const plugin of plugins) {
     const before = beforePlugins.get(plugin.name)
     if (!before) {
-      dispatchCreatePlugin(plugin, previous)
+      const pluginSnapshot = toPluginSnapshot(plugin)
+      factories.push((baseRevision) => createPluginCommand({ baseRevision, plugin: pluginSnapshot }))
       continue
     }
     if (JSON.stringify(before) !== JSON.stringify(plugin)) {
-      dispatchUpdatePlugin(plugin.name, toPluginSnapshot(plugin), previous)
+      const commandPatch = sanitizePluginPatch(toPluginSnapshot(plugin))
+      if (Object.keys(commandPatch).length === 0) continue
+      const pluginId = plugin.name
+      factories.push((baseRevision) => updatePluginCommand({ baseRevision, pluginId, patch: commandPatch }))
     }
   }
 
   for (const plugin of previous.plugins) {
     if (!nextPlugins.has(plugin.name)) {
-      dispatchDeletePlugin(plugin.name, previous)
+      const pluginId = plugin.name
+      factories.push((baseRevision) => deletePluginCommand({ baseRevision, pluginId }))
     }
   }
 
   const beforeOrder = previous.plugins.map((plugin) => plugin.name).join('\n')
   const nextOrder = plugins.map((plugin) => plugin.name).join('\n')
   if (beforeOrder !== nextOrder && plugins.every((plugin) => beforePlugins.has(plugin.name))) {
-    dispatchReorderPlugins(previous)
+    const pluginIds = plugins.map((plugin) => plugin.name)
+    factories.push((baseRevision) => reorderPluginsCommand({ baseRevision, pluginIds }))
+  }
+
+  if (factories.length > 0) {
+    runOptimisticCommandSequence(factories, () => restorePluginState(previous))
   }
 }
 
