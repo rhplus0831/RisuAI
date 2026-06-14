@@ -840,6 +840,10 @@ const SETTINGS_GROUP_KEYS: Record<SettingsGroup, readonly string[]> = {
     'useTokenizerCaching',
     'auxModelUnderModelSettings',
     'pluginCompatibilityMode',
+    'complexRegexCompatibilityMode',
+    'complexRegexInputTimeoutMs',
+    'complexRegexOutputTimeoutMs',
+    'complexRegexDisplayTimeoutMs',
     'pluginDevelopMode',
     'showDeprecatedTriggerV1',
     'showDeprecatedTriggerV2',
@@ -1016,6 +1020,9 @@ const NUMBER_SETTING_KEYS = new Set([
   'assetWidth',
   'autoContinueMinTokens',
   'chatDisplayTailCount',
+  'complexRegexInputTimeoutMs',
+  'complexRegexOutputTimeoutMs',
+  'complexRegexDisplayTimeoutMs',
   'customAPIFormat',
   'echoDelay',
   'falLoraScale',
@@ -1062,6 +1069,7 @@ const STRING_SETTING_KEYS = new Set([
   'autoSuggestPrefix',
   'claudeAPIKey',
   'cohereAPIKey',
+  'complexRegexCompatibilityMode',
   'customBackground',
   'customCSS',
   'customFont',
@@ -5509,6 +5517,15 @@ function readSettingsGroupPatch(group: SettingsGroup, patch: unknown): Record<st
 }
 
 function validateSettingValue(key: string, value: unknown): void {
+  if (key === 'complexRegexCompatibilityMode' && value !== 'strict' && value !== 'worker') {
+    throw new ValidationError('complexRegexCompatibilityMode must be strict or worker')
+  }
+  if (
+    ['complexRegexInputTimeoutMs', 'complexRegexOutputTimeoutMs', 'complexRegexDisplayTimeoutMs'].includes(key) &&
+    (typeof value !== 'number' || !Number.isFinite(value) || value < 0)
+  ) {
+    throw new ValidationError(`${key} must be a non-negative finite number`)
+  }
   const kind = settingValueKind(key)
   if (kind === 'json') {
     validateJsonValue(key, value)

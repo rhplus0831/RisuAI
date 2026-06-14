@@ -506,6 +506,48 @@ export const advancedSettingsItems: SettingItem[] = [
     helpUnrecommended: true,
     classes: 'mt-4',
   },
+  {
+    id: 'adv.complexRegexCompatibilityMode',
+    type: 'select',
+    labelKey: 'complexRegexCompatibilityMode',
+    bindKey: 'complexRegexCompatibilityMode',
+    helpKey: 'complexRegexCompatibilityMode',
+    helpUnrecommended: true,
+    classes: 'mt-4',
+    options: {
+      selectOptions: [
+        { value: 'strict', labelKey: 'complexRegexStrictMode' },
+        { value: 'worker', labelKey: 'complexRegexWorkerMode' },
+      ],
+    },
+  },
+  {
+    id: 'adv.complexRegexInputTimeoutMs',
+    type: 'number',
+    labelKey: 'complexRegexInputTimeoutMs',
+    bindKey: 'complexRegexInputTimeoutMs',
+    condition: (ctx) => ctx.db.complexRegexCompatibilityMode === 'worker',
+    containerClasses: 'pl-7',
+    options: { min: 0, max: 60000, step: 1000 },
+  },
+  {
+    id: 'adv.complexRegexOutputTimeoutMs',
+    type: 'number',
+    labelKey: 'complexRegexOutputTimeoutMs',
+    bindKey: 'complexRegexOutputTimeoutMs',
+    condition: (ctx) => ctx.db.complexRegexCompatibilityMode === 'worker',
+    containerClasses: 'pl-7',
+    options: { min: 0, max: 60000, step: 1000 },
+  },
+  {
+    id: 'adv.complexRegexDisplayTimeoutMs',
+    type: 'number',
+    labelKey: 'complexRegexDisplayTimeoutMs',
+    bindKey: 'complexRegexDisplayTimeoutMs',
+    condition: (ctx) => ctx.db.complexRegexCompatibilityMode === 'worker',
+    containerClasses: 'pl-7',
+    options: { min: 0, max: 60000, step: 1000 },
+  },
 
   // More Experimental (Condition: useExperimental)
   {

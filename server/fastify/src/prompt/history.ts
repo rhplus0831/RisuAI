@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { Chat, Message, character } from '../../../../src/ts/storage/database.svelte'
 import type { MultiModal, OpenAIChat } from '../../../../src/ts/process/index.svelte'
 import { expandVariables, type ExpandContext } from './variables.js'
-import { processScript } from './scripts.js'
+import { processScriptAsync } from './scripts.js'
 import { getDepthPrompts, resolvePosition, type LoreEntryActive, type LorebookActivationReport } from './lorebook.js'
 import { tokenizeChat } from './tokens.js'
 import { tokenizerOptionsFromDb } from './tokenizerConfig.js'
@@ -300,7 +300,7 @@ async function formatHistoryMessage(
   // A browser no-op, so identity unless the assembler supplies the VM hook.
   const luaProcessed = await editProcess(preExpanded, index)
 
-  let formatted = processScript(
+  let formatted = await processScriptAsync(
     ctx,
     currentChar,
     luaProcessed,
@@ -478,7 +478,7 @@ export async function buildHistoryWindow(
     // Lua `editprocess` no-op hook. The SPA threads the first message through
     // `processScript` with `chatID = -1`, so `runLuaEditTrigger` sees `{ index: -1 }`.
     const luaProcessed = await editProcess(preExpanded, -1)
-    let content = processScript(ctx, currentChar, luaProcessed, 'editprocess')
+    let content = await processScriptAsync(ctx, currentChar, luaProcessed, 'editprocess')
     const firstMessage: OpenAIChat = { role: 'assistant', content }
     if (usingPromptTemplate && db.promptSettings?.sendName) {
       firstMessage.content = `${currentChar.name}: ${content}`

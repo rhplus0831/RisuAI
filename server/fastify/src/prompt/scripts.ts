@@ -4,9 +4,18 @@ import type { RisuModule } from '../../../../src/ts/process/modules'
 import {
   assertBoundedRegexHaystack,
   assertBoundedRegexReplacement,
+  type BoundedRegexCompatibilityOptions,
+  type BoundedRegexLike,
   compileBoundedRegex,
+  compileBoundedRegexWithCompatibility,
+  complexRegexCompatibilityOptions,
   isBoundedRegexError,
+  isComplexBoundedRegex,
+  matchFirstBoundedRegexWithCompatibility,
+  moveBoundedRegexWithCompatibility,
+  replaceBoundedRegexWithCompatibility,
   testBoundedRegex,
+  testBoundedRegexWithCompatibility,
 } from './boundedRegex.js'
 import { expandVariables, type ExpandContext } from './variables.js'
 import { getActiveModules, getModuleRegexScripts } from './modules.js'
@@ -121,7 +130,7 @@ interface PreparedScript {
    *  use). `null` when `in` is empty, the script is cbs, or the source failed
    *  to compile (formerly a throw per message swallowed by `processScript`'s
    *  per-script catch — the apply stays a no-op either way). */
-  reg: RegExp | null
+  reg: BoundedRegexLike | null
 }
 
 function parseScripts(rawScripts: customscript[]): {
@@ -262,7 +271,7 @@ function applyRepeatBack(
 /** Hoists the per-script invariant prep out of the per-message apply
  *  flag resolution + sanitation, outScript templating, move
  *  classification, and the RegExp compile for non-cbs scripts. */
-function prepareOne(parsed: ParsedScript): PreparedScript {
+function prepareOne(parsed: ParsedScript, options?: BoundedRegexCompatibilityOptions): PreparedScript {
   const script = parsed.script
   const actions = parsed.actions
 
@@ -292,10 +301,12 @@ function prepareOne(parsed: ParsedScript): PreparedScript {
   flag = sanitizeFlag(flag)
 
   const isCbs = actions.includes('cbs')
-  let reg: RegExp | null = null
+  let reg: BoundedRegexLike | null = null
   if (!isCbs && script.in) {
     try {
-      reg = compileBoundedRegex(script.in, flag, 'customscript script.in pattern')
+      reg = options
+        ? compileBoundedRegexWithCompatibility(script.in, flag, 'customscript script.in pattern', options)
+        : compileBoundedRegex(script.in, flag, 'customscript script.in pattern')
     } catch (err) {
       if (isBoundedRegexError(err)) throw err
       // Formerly thrown per message inside applyOne and swallowed by
@@ -339,6 +350,9 @@ function applyOne(
     reg = compileBoundedRegex(regexIn, flag, 'customscript cbs script.in pattern')
   } else {
     if (!prepared.reg) return data
+    if (isComplexBoundedRegex(prepared.reg)) {
+      throw new Error('complex regex requires async script execution')
+    }
     reg = prepared.reg
     // The shared compiled regex carries `lastIndex` across messages; reset so
     // a reused global/sticky regex behaves exactly like a fresh compile.
@@ -382,6 +396,165 @@ function applyOne(
   return expandVariables(replaced, { ...ctx, cbsConditions }).text
 }
 
+async function applyMoveAsync(
+  data: string,
+  reg: BoundedRegexLike,
+  outScript: string,
+  toTop: boolean,
+  options: BoundedRegexCompatibilityOptions,
+): Promise<string> {
+  if (!isComplexBoundedRegex(reg)) {
+    return applyMove(data, reg, reg.flags, outScript, toTop)
+  }
+  return moveBoundedRegexWithCompatibility(
+    reg,
+    data,
+    outScript,
+    toTop,
+    'customscript move source',
+    'customscript move replacement',
+    options,
+  )
+}
+
+async function applyInjectAsync(
+  currentChat: Chat | undefined,
+  chatID: number,
+  data: string,
+  reg: BoundedRegexLike,
+  options: BoundedRegexCompatibilityOptions,
+): Promise<string> {
+  if (!isComplexBoundedRegex(reg)) return applyInject(currentChat, chatID, data, reg)
+
+  assertBoundedRegexHaystack(data, 'customscript inject source')
+  if (!currentChat || chatID < 0) return data
+  const target = currentChat.message?.[chatID]
+  if (!target) return data
+  target.data = data
+  return replaceBoundedRegexWithCompatibility(
+    reg,
+    data,
+    '',
+    'customscript inject source',
+    'customscript inject replacement',
+    options,
+  )
+}
+
+async function applyRepeatBackAsync(
+  currentChar: character,
+  currentChat: Chat | undefined,
+  chatID: number,
+  data: string,
+  reg: BoundedRegexLike,
+  outScript: string,
+  options: BoundedRegexCompatibilityOptions,
+): Promise<string> {
+  if (!isComplexBoundedRegex(reg)) {
+    return applyRepeatBack(currentChar, currentChat, chatID, data, reg, outScript)
+  }
+  if (!currentChat || chatID < 0) return data
+  const target = currentChat.message?.[chatID]
+  if (!target) return data
+
+  const v = outScript.split(' ', 2)[1]
+  const fmIndex = currentChat.fmIndex ?? -1
+  let lastChat = fmIndex === -1 ? (currentChar.firstMessage ?? '') : (currentChar.alternateGreetings?.[fmIndex] ?? '')
+
+  let pointer = chatID - 1
+  while (pointer >= 0) {
+    if (currentChat.message[pointer].role === target.role) {
+      lastChat = currentChat.message[pointer].data
+      break
+    }
+    pointer--
+  }
+
+  const match = await matchFirstBoundedRegexWithCompatibility(reg, lastChat, 'customscript repeat_back source', options)
+  if (!match) return data
+
+  if (!v) return data + match
+  switch (v) {
+    case 'end':
+      return data + match
+    case 'start':
+      return match + data
+    case 'end_nl':
+      return data + '\n' + match
+    case 'start_nl':
+      return match + '\n' + data
+    default:
+      return data
+  }
+}
+
+async function applyOneAsync(
+  ctx: ExpandContext,
+  char: character,
+  data: string,
+  prepared: PreparedScript,
+  cbsConditions: CbsConditions | undefined,
+  chatID: number,
+  currentChat: Chat | undefined,
+  options: BoundedRegexCompatibilityOptions,
+): Promise<string> {
+  const script = prepared.script
+  const actions = prepared.actions
+  if (!script.in) return data
+
+  const { flag, outScript, isMoveTop, isMoveBottom } = prepared
+
+  let reg: BoundedRegexLike
+  if (prepared.isCbs) {
+    const regexIn = expandVariables(script.in, { ...ctx, cbsConditions }).text
+    reg = compileBoundedRegexWithCompatibility(regexIn, flag, 'customscript cbs script.in pattern', options)
+  } else {
+    if (!prepared.reg) return data
+    reg = prepared.reg
+    if (!isComplexBoundedRegex(reg)) reg.lastIndex = 0
+  }
+
+  const isAction = outScript.startsWith('@@') || actions.length > 0
+  if (isAction) {
+    assertBoundedRegexHaystack(data, 'customscript action source')
+    assertBoundedRegexReplacement(outScript, 'customscript action replacement')
+    const matched = await testBoundedRegexWithCompatibility(reg, data, 'customscript action source', options)
+    if (!isComplexBoundedRegex(reg)) reg.lastIndex = 0
+    if (matched) {
+      if (outScript.startsWith('@@emo ')) return data
+      if (outScript.startsWith('@@inject') || actions.includes('inject')) {
+        return applyInjectAsync(currentChat, chatID, data, reg, options)
+      }
+      if (isMoveTop || isMoveBottom) {
+        return applyMoveAsync(data, reg, outScript, isMoveTop, options)
+      }
+      const replaced = await replaceBoundedRegexWithCompatibility(
+        reg,
+        data,
+        outScript,
+        'customscript action replace source',
+        'customscript action replace replacement',
+        options,
+      )
+      return expandVariables(replaced, { ...ctx, cbsConditions }).text
+    }
+    if (outScript.startsWith('@@repeat_back') || actions.includes('repeat_back')) {
+      return applyRepeatBackAsync(char, currentChat, chatID, data, reg, outScript, options)
+    }
+    return data
+  }
+
+  const replaced = await replaceBoundedRegexWithCompatibility(
+    reg,
+    data,
+    outScript,
+    'customscript replace source',
+    'customscript replace replacement',
+    options,
+  )
+  return expandVariables(replaced, { ...ctx, cbsConditions }).text
+}
+
 interface PreparedScriptsMemoEntry {
   /** Inputs the prepared list was computed from, compared by reference. A
    *  request loads a fresh `Database`, so within one assembly these refs are
@@ -390,6 +563,8 @@ interface PreparedScriptsMemoEntry {
   presetRegexRef: customscript[] | undefined
   customscriptRef: customscript[] | undefined
   activeModulesRef: RisuModule[]
+  compatEnabled: boolean
+  compatStage: BoundedRegexCompatibilityOptions['stage'] | null
   prepared: PreparedScript[]
 }
 
@@ -399,7 +574,12 @@ const preparedScriptsMemo = new WeakMap<Database, PreparedScriptsMemoEntry>()
  *  set, memoized per loaded `Database`. The first-message call
  *  (no `currentChat`) and the per-message calls key to different active-module
  *  sets, but each runs the prep at most once per assembly. */
-function getPreparedScripts(db: Database, char: character, currentChat: Chat | undefined): PreparedScript[] {
+function getPreparedScripts(
+  db: Database,
+  char: character,
+  currentChat: Chat | undefined,
+  options?: BoundedRegexCompatibilityOptions,
+): PreparedScript[] {
   const activeModules = getActiveModules(db, char, currentChat)
   const memo = preparedScriptsMemo.get(db)
   if (
@@ -407,7 +587,9 @@ function getPreparedScripts(db: Database, char: character, currentChat: Chat | u
     memo.charRef === char &&
     memo.presetRegexRef === db.presetRegex &&
     memo.customscriptRef === char.customscript &&
-    memo.activeModulesRef === activeModules
+    memo.activeModulesRef === activeModules &&
+    memo.compatEnabled === (options?.enabled ?? false) &&
+    memo.compatStage === (options?.stage ?? null)
   ) {
     return memo.prepared
   }
@@ -417,12 +599,14 @@ function getPreparedScripts(db: Database, char: character, currentChat: Chat | u
   if (orderChanged) {
     parsed.sort((a, b) => b.order - a.order)
   }
-  const prepared = parsed.map(prepareOne)
+  const prepared = parsed.map((script) => prepareOne(script, options?.enabled ? options : undefined))
   preparedScriptsMemo.set(db, {
     charRef: char,
     presetRegexRef: db.presetRegex,
     customscriptRef: char.customscript,
     activeModulesRef: activeModules,
+    compatEnabled: options?.enabled ?? false,
+    compatStage: options?.stage ?? null,
     prepared,
   })
   return prepared
@@ -447,6 +631,37 @@ export function processScript(
     } catch (err) {
       if (isBoundedRegexError(err)) throw err
       // Mirror SPA behavior: one bad regex should not stop the rest of the chain.
+    }
+  }
+
+  return current
+}
+
+function stageForScriptMode(mode: ScriptMode): BoundedRegexCompatibilityOptions['stage'] {
+  if (mode === 'editoutput') return 'output'
+  if (mode === 'editdisplay') return 'display'
+  return 'input'
+}
+
+export async function processScriptAsync(
+  ctx: ExpandContext,
+  char: character,
+  data: string,
+  mode: ScriptMode,
+  cbsConditions: CbsConditions = {},
+  chatID: number = -1,
+  currentChat: Chat | undefined = undefined,
+): Promise<string> {
+  const options = complexRegexCompatibilityOptions(ctx.database, stageForScriptMode(mode))
+  const prepared = getPreparedScripts(ctx.database, char, currentChat, options)
+
+  let current = data
+  for (const p of prepared) {
+    if (p.script.type !== mode) continue
+    try {
+      current = await applyOneAsync(ctx, char, current, p, cbsConditions, chatID, currentChat, options)
+    } catch (err) {
+      if (isBoundedRegexError(err)) throw err
     }
   }
 

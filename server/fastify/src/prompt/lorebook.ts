@@ -3,7 +3,16 @@ import type { Chat, Database, Message, character, loreBook } from '../../../../s
 import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
 import { pickHashRand } from '../../../../src/ts/util/loreHash'
 import { getActiveModules } from './modules.js'
-import { compileBoundedRegex, isBoundedRegexError, testBoundedRegex } from './boundedRegex.js'
+import {
+  type BoundedRegexCompatibilityOptions,
+  type BoundedRegexLike,
+  compileBoundedRegex,
+  compileBoundedRegexWithCompatibility,
+  complexRegexCompatibilityOptions,
+  isBoundedRegexError,
+  testBoundedRegex,
+  testBoundedRegexWithCompatibility,
+} from './boundedRegex.js'
 import { encodingForModel, tokenize, type TokenEncoding } from './tokens.js'
 import { expandVariables, type ExpandContext } from './variables.js'
 
@@ -388,6 +397,33 @@ function getCompiledLoreKeyRegex(regexString: string): RegExp | null {
   return cached
 }
 
+function getCompiledLoreKeyRegexWithCompatibility(
+  regexString: string,
+  options: BoundedRegexCompatibilityOptions,
+): BoundedRegexLike | null {
+  if (!options.enabled) return getCompiledLoreKeyRegex(regexString)
+
+  const flagsIdx = regexString.lastIndexOf('/')
+  if (!regexString.startsWith('/') || flagsIdx <= 0) {
+    return null
+  }
+  try {
+    return getCompiledLoreKeyRegex(regexString)
+  } catch (err) {
+    try {
+      return compileBoundedRegexWithCompatibility(
+        regexString.slice(1, flagsIdx),
+        regexString.slice(flagsIdx + 1),
+        'lorebook useRegex key',
+        options,
+      )
+    } catch (innerErr) {
+      if (isBoundedRegexError(innerErr)) throw innerErr
+      return null
+    }
+  }
+}
+
 /**
  * Ports `searchMatch` from
  * `src/ts/process/lorebook.svelte.ts:97-239`. Walks the last
@@ -433,6 +469,74 @@ function searchMatch(corpus: SearchableMessageCorpus, arg: SearchArg, matchLog: 
       return false
     })
     return matched && !malformedRegex
+  }
+
+  const allMode = arg.all ?? false
+  let allModeMatched = true
+  const lowerKeys = trimmedKeys.map((key) => key.toLocaleLowerCase())
+  const compactKeys = lowerKeys.map((key) => key.replace(/ /g, ''))
+
+  const matched = visitSearchEntries(baseEntries, recursiveEntries, (m) => {
+    if (arg.fullWordMatching) {
+      for (let i = 0; i < trimmedKeys.length; i++) {
+        if (m.wordData.includes(lowerKeys[i])) {
+          matchLog.push({ prompt: m.strippedPrompt, source: m.source, activated: trimmedKeys[i] })
+          if (!allMode) return true
+        } else if (allMode) {
+          allModeMatched = false
+        }
+      }
+    } else {
+      for (let i = 0; i < trimmedKeys.length; i++) {
+        if (m.compactData.includes(compactKeys[i])) {
+          matchLog.push({ prompt: m.strippedPrompt, source: m.source, activated: trimmedKeys[i] })
+          if (!allMode) return true
+        } else if (allMode) {
+          allModeMatched = false
+        }
+      }
+    }
+    return false
+  })
+  if (matched) return true
+
+  return allMode && allModeMatched
+}
+
+async function searchMatchAsync(
+  corpus: SearchableMessageCorpus,
+  arg: SearchArg,
+  matchLog: LoreMatchLogEntry[],
+  options: BoundedRegexCompatibilityOptions,
+): Promise<boolean> {
+  const trimmedKeys: string[] = []
+  for (const k of arg.keys) {
+    const t = k.trim()
+    if (t.length > 0) trimmedKeys.push(t)
+  }
+  if (trimmedKeys.length === 0) return false
+
+  const baseEntries = baseSearchEntriesForDepth(corpus, arg.searchDepth)
+  const recursiveEntries = arg.dontSearchWhenRecursive ? NO_SEARCH_ENTRIES : corpus.recursiveEntries
+
+  if (arg.regex) {
+    let malformedRegex = false
+    for (const entries of [baseEntries, recursiveEntries]) {
+      for (const m of entries) {
+        for (const regexString of trimmedKeys) {
+          const r = getCompiledLoreKeyRegexWithCompatibility(regexString, options)
+          if (!r) {
+            malformedRegex = true
+            return false
+          }
+          if (await testBoundedRegexWithCompatibility(r, m.data, 'lorebook useRegex search text', options)) {
+            matchLog.push({ prompt: m.prompt, source: m.source, activated: regexString })
+            return !malformedRegex
+          }
+        }
+      }
+    }
+    return false
   }
 
   const allMode = arg.all ?? false
@@ -829,6 +933,343 @@ export function activateLorebook(input: ActivateLorebookInput): LorebookActivati
 
   // Final reverse to match the SPA's return order so downstream
   // template/root slices can append in document order.
+  survivors.reverse()
+
+  return {
+    actives: survivors,
+    disabledUIPrompts,
+    matchLog,
+  }
+}
+
+export async function activateLorebookAsync(input: ActivateLorebookInput): Promise<LorebookActivationReport> {
+  const { database, currentChar, currentChat } = input
+  const regexCompatibility = complexRegexCompatibilityOptions(database, 'input')
+  if (!regexCompatibility.enabled) return activateLorebook(input)
+
+  const entries = collectEntries(input)
+  const actives: LoreEntryActive[] = []
+  const disabledUIPrompts: string[] = []
+  const matchLog: LoreMatchLogEntry[] = []
+  const activatedIndexes = new Set<number>()
+  const searchCorpus = buildSearchableCorpus(currentChat.message ?? [], database, currentChar)
+
+  const chatLength = (currentChat.message?.length ?? 0) + 1
+  const defaultScanDepth = currentChar.loreSettings?.scanDepth ?? database.loreBookDepth ?? 5
+  const defaultFullWord = currentChar.loreSettings?.fullWordMatching ?? false
+  const recursiveScanning = currentChar.loreSettings?.recursiveScanning ?? true
+  const loreBudget = currentChar.loreSettings?.tokenBudget ?? database.loreBookToken ?? 800
+  const encoding: TokenEncoding = encodingForModel(input.model)
+
+  let matching = true
+  while (matching) {
+    matching = false
+
+    for (let i = 0; i < entries.length; i++) {
+      const entry = entries[i]
+      if (!entry) continue
+      if (activatedIndexes.has(i)) continue
+      if (entry.mode === 'folder') continue
+      if (!entry.alwaysActive && !entry.key) continue
+
+      let activated = true
+      let forceState: 'none' | 'activate' | 'deactivate' = 'none'
+      let keepAfterMatch = false
+      let dontAfterMatch = false
+      let pos: LorePosition = ''
+      let depth = 0
+      let role: 'system' | 'user' | 'assistant' = 'system'
+      let order = entry.insertorder
+      let priority = entry.insertorder
+      let inject: LoreInject | null = null
+      let scanDepth = defaultScanDepth
+      let fullWordMatching = defaultFullWord
+      let itemRecursive: 'global' | true | false = 'global'
+      let dontSearchWhenRecursive = false
+      const searchQueries: { keys: string[]; negative: boolean; all?: boolean }[] = []
+
+      if (entry.mode === 'child') {
+        activated = false
+        for (let j = 0; j < i; j++) {
+          if (entries[j] && entries[j].id === entry.id) {
+            if (!activatedIndexes.has(j)) {
+              entry.comment = entries[j].comment
+              entry.content = entries[j].content
+              entry.alwaysActive = true
+              activated = true
+            }
+            break
+          }
+        }
+      }
+
+      const stripped = CCardLib.decorator.parse(entry.content, (name, arg) => {
+        switch (name) {
+          case 'end': {
+            pos = 'depth'
+            depth = 0
+            return
+          }
+          case 'depth':
+          case 'reverse_depth': {
+            const int = parseInt(arg[0])
+            if (Number.isNaN(int)) return false
+            depth = int
+            pos = name === 'depth' ? 'depth' : 'reverse_depth'
+            return
+          }
+          case 'role': {
+            if (arg[0] === 'user' || arg[0] === 'assistant' || arg[0] === 'system') {
+              role = arg[0]
+              return
+            }
+            return false
+          }
+          case 'position': {
+            const value = arg[0]
+            if (value.startsWith('pt_')) {
+              pos = value as LorePosition
+              return
+            }
+            if (POSITION_NAMED.has(value)) {
+              pos = value as LorePosition
+              return
+            }
+            return false
+          }
+          case 'inject_lore': {
+            inject ??= { operation: 'append', location: '', param: '', lore: true }
+            inject.location = arg.join(' ')
+            inject.lore = true
+            return
+          }
+          case 'inject_at': {
+            inject ??= { operation: 'append', location: '', param: '', lore: false }
+            inject.location = arg.join(' ')
+            inject.lore = false
+            return
+          }
+          case 'inject_replace': {
+            inject ??= { operation: 'replace', location: '', param: '', lore: false }
+            inject.operation = 'replace'
+            inject.param = arg.join(' ')
+            return
+          }
+          case 'inject_prepend': {
+            inject ??= { operation: 'prepend', location: '', param: '', lore: false }
+            inject.operation = 'prepend'
+            inject.param = arg.join(' ')
+            return
+          }
+          case 'ignore_on_max_context': {
+            priority = -1000
+            return
+          }
+          case 'priority': {
+            const int = parseInt(arg[0])
+            if (Number.isNaN(int)) return false
+            priority = int
+            return
+          }
+          case 'disable_ui_prompt': {
+            if (arg[0] === 'post_history_instructions' || arg[0] === 'system_prompt') {
+              disabledUIPrompts.push(arg[0])
+              return
+            }
+            return false
+          }
+          case 'additional_keys': {
+            searchQueries.push({ keys: arg, negative: false })
+            return
+          }
+          case 'exclude_keys': {
+            searchQueries.push({ keys: arg, negative: true })
+            return
+          }
+          case 'exclude_keys_all': {
+            searchQueries.push({ keys: arg, negative: true, all: true })
+            return
+          }
+          case 'match_full_word': {
+            fullWordMatching = true
+            return
+          }
+          case 'match_partial_word': {
+            fullWordMatching = false
+            return
+          }
+          case 'scan_depth': {
+            const int = parseInt(arg[0])
+            if (Number.isNaN(int)) return false
+            scanDepth = int
+            return
+          }
+          case 'activate_only_after': {
+            const int = parseInt(arg[0])
+            if (Number.isNaN(int)) return false
+            if (chatLength < int) activated = false
+            return
+          }
+          case 'activate_only_every': {
+            const int = parseInt(arg[0])
+            if (Number.isNaN(int)) return false
+            if (chatLength % int !== 0) activated = false
+            return
+          }
+          case 'is_greeting': {
+            const int = parseInt(arg[0])
+            if (Number.isNaN(int)) return false
+            if ((currentChat.fmIndex ?? -1) + 1 !== int) activated = false
+            return
+          }
+          case 'probability': {
+            const int = parseInt(arg[0])
+            if (Number.isNaN(int)) return false
+            if (Math.random() * 100 > int) activated = false
+            return
+          }
+          case 'activate': {
+            forceState = 'activate'
+            return
+          }
+          case 'dont_activate': {
+            forceState = 'deactivate'
+            return
+          }
+          case 'keep_activate_after_match': {
+            if (readChatVar(currentChat, '__internal_ka_' + loreId(entry)) === 'true') {
+              forceState = 'activate'
+            } else {
+              keepAfterMatch = true
+            }
+            return false
+          }
+          case 'dont_activate_after_match': {
+            if (readChatVar(currentChat, '__internal_da_' + loreId(entry)) === 'true') {
+              forceState = 'deactivate'
+            } else {
+              dontAfterMatch = true
+            }
+            return false
+          }
+          case 'recursive': {
+            itemRecursive = true
+            return
+          }
+          case 'unrecursive': {
+            itemRecursive = false
+            return
+          }
+          case 'no_recursive_search': {
+            dontSearchWhenRecursive = true
+            return
+          }
+          default: {
+            return false
+          }
+        }
+      })
+
+      if (activated && forceState === 'none' && !entry.alwaysActive) {
+        searchQueries.push({ keys: entry.key.split(','), negative: false })
+        if (entry.secondkey && entry.selective) {
+          searchQueries.push({ keys: entry.secondkey.split(','), negative: false })
+        }
+        for (const q of searchQueries) {
+          const hit = await searchMatchAsync(
+            searchCorpus,
+            {
+              keys: q.keys,
+              searchDepth: scanDepth,
+              regex: entry.useRegex ?? false,
+              fullWordMatching,
+              all: q.all,
+              dontSearchWhenRecursive,
+            },
+            matchLog,
+            regexCompatibility,
+          )
+          if (q.negative) {
+            if (hit) {
+              activated = false
+              break
+            }
+          } else if (!hit) {
+            activated = false
+            break
+          }
+        }
+      }
+
+      const effectiveForceState = forceState as 'none' | 'activate' | 'deactivate'
+      if (effectiveForceState === 'activate') activated = true
+      else if (effectiveForceState === 'deactivate') activated = false
+
+      if (!activated) continue
+
+      actives.push({
+        depth,
+        pos,
+        prompt: stripped,
+        role,
+        order,
+        priority,
+        tokens: tokenize(stripped, encoding),
+        source: entry.comment || `lorebook ${i}`,
+        inject,
+      })
+      activatedIndexes.add(i)
+
+      if (keepAfterMatch) {
+        writeStickyChatVar(input, '__internal_ka_' + loreId(entry), 'true')
+      }
+      if (dontAfterMatch) {
+        writeStickyChatVar(input, '__internal_da_' + loreId(entry), 'true')
+      }
+
+      const recurse = itemRecursive === 'global' ? recursiveScanning : itemRecursive
+      if (recurse) {
+        matching = true
+        appendRecursiveSearchEntry(searchCorpus, {
+          prompt: stripped,
+          data: stripped,
+          source: entry.comment || `lorebook ${i}`,
+        })
+      }
+    }
+  }
+
+  actives.sort((a, b) => b.priority - a.priority)
+
+  let usedTokens = 0
+  const budgeted = actives.filter((a) => {
+    if (usedTokens + a.tokens <= loreBudget) {
+      usedTokens += a.tokens
+      return true
+    }
+    return false
+  })
+
+  budgeted.sort((a, b) => b.order - a.order)
+
+  const injectors = budgeted.filter((a) => a.inject?.lore)
+  const survivors = budgeted.filter((a) => !a.inject?.lore)
+  for (const inj of injectors) {
+    const target = survivors.find((s) => s.source === inj.inject!.location)
+    if (!target) continue
+    switch (inj.inject!.operation) {
+      case 'append':
+        target.prompt += ' ' + inj.prompt
+        break
+      case 'prepend':
+        target.prompt = inj.prompt + ' ' + target.prompt
+        break
+      case 'replace':
+        target.prompt = target.prompt.replace(inj.inject!.param, inj.prompt)
+        break
+    }
+  }
+
   survivors.reverse()
 
   return {

@@ -6,9 +6,14 @@ import { encodingForModel, tokenize } from './tokens.js'
 import {
   assertBoundedRegexHaystack,
   assertBoundedRegexReplacement,
+  type BoundedRegexCompatibilityOptions,
   compileBoundedRegex,
+  compileBoundedRegexWithCompatibility,
   isBoundedRegexError,
+  splitBoundedRegexWithCompatibility,
   testBoundedRegex,
+  testBoundedRegexWithCompatibility,
+  triggerReplaceBoundedRegexWithCompatibility,
 } from './boundedRegex.js'
 import type { TriggerVarEngine } from './triggerVars.js'
 import {
@@ -82,6 +87,59 @@ export interface V2DataEffectDeps {
   displayState?: { data: string | undefined }
   /** Per-run trigger hot-path cache. */
   triggerCache?: TriggerRunCache
+  /** Enables isolated-worker fallback for complexity-screened regexes. */
+  regexCompatibility?: BoundedRegexCompatibilityOptions
+}
+
+function compileTriggerRegexWithCompatibility(deps: V2DataEffectDeps, pattern: string, flags: string, context: string) {
+  const options = deps.regexCompatibility
+  if (!options?.enabled) {
+    return deps.triggerCache
+      ? getCachedTriggerRegex(deps.triggerCache, pattern, flags, context)
+      : compileBoundedRegex(pattern, flags, context)
+  }
+  try {
+    return deps.triggerCache
+      ? getCachedTriggerRegex(deps.triggerCache, pattern, flags, context)
+      : compileBoundedRegex(pattern, flags, context)
+  } catch (err) {
+    return compileBoundedRegexWithCompatibility(pattern, flags, context, options)
+  }
+}
+
+function compileDelimiterWithCompatibility(deps: V2DataEffectDeps, delimiter: string, context: string) {
+  const options = deps.regexCompatibility
+  if (!options?.enabled) {
+    return deps.triggerCache
+      ? getCachedRegexDelimiter(deps.triggerCache, delimiter, context)
+      : (() => {
+          const regexMatch = delimiter.match(/^\/(.+)\/([gimuy]*)$/)
+          if (regexMatch) {
+            const [, pattern, flags] = regexMatch
+            return compileBoundedRegex(pattern, flags, context)
+          }
+          return compileBoundedRegex(delimiter, '', context)
+        })()
+  }
+  try {
+    return deps.triggerCache
+      ? getCachedRegexDelimiter(deps.triggerCache, delimiter, context)
+      : (() => {
+          const regexMatch = delimiter.match(/^\/(.+)\/([gimuy]*)$/)
+          if (regexMatch) {
+            const [, pattern, flags] = regexMatch
+            return compileBoundedRegex(pattern, flags, context)
+          }
+          return compileBoundedRegex(delimiter, '', context)
+        })()
+  } catch (err) {
+    const regexMatch = delimiter.match(/^\/(.+)\/([gimuy]*)$/)
+    if (regexMatch) {
+      const [, pattern, flags] = regexMatch
+      return compileBoundedRegexWithCompatibility(pattern, flags, context, options)
+    }
+    return compileBoundedRegexWithCompatibility(delimiter, '', context, options)
+  }
 }
 
 export function applyV2DataEffect(effect: triggerEffect, deps: V2DataEffectDeps): boolean {
@@ -656,4 +714,126 @@ export function applyV2DataEffect(effect: triggerEffect, deps: V2DataEffectDeps)
     default:
       return false
   }
+}
+
+export async function applyV2DataEffectAsync(effect: triggerEffect, deps: V2DataEffectDeps): Promise<boolean> {
+  const { engine, expand, chat } = deps
+  const resolve = (raw: string, isValue: boolean): string => (isValue ? expand(raw) : engine.getVar(expand(raw)))
+  const options = deps.regexCompatibility
+
+  if (effect.type === 'v2SplitString' && effect.delimiterType === 'regex') {
+    const source = resolve(effect.source, effect.sourceType === 'value')
+    const delimiter = expand(effect.delimiter)
+    let result: string[]
+    try {
+      const regex = compileDelimiterWithCompatibility(deps, delimiter, 'trigger v2SplitString delimiter')
+      result = options?.enabled
+        ? await splitBoundedRegexWithCompatibility(regex, source, 'trigger v2SplitString source', options)
+        : (() => {
+            assertBoundedRegexHaystack(source, 'trigger v2SplitString source')
+            return source.split(regex as RegExp)
+          })()
+    } catch (err) {
+      if (isBoundedRegexError(err)) throw err
+      result = [source]
+    }
+    engine.setVar(expand(effect.outputVar), JSON.stringify(result))
+    return true
+  }
+
+  if (effect.type === 'v2ReplaceString') {
+    try {
+      const source = resolve(effect.source, effect.sourceType === 'value')
+      const regexPattern = resolve(effect.regex, effect.regexType === 'value')
+      const resultFormat = resolve(effect.result, effect.resultType === 'value')
+      const replacement = resolve(effect.replacement, effect.replacementType === 'value')
+      const flags = resolve(effect.flags, effect.flagsType === 'value')
+      const regex = compileTriggerRegexWithCompatibility(deps, regexPattern, flags, 'trigger v2ReplaceString pattern')
+      const result = options?.enabled
+        ? await triggerReplaceBoundedRegexWithCompatibility(
+            regex,
+            source,
+            resultFormat,
+            replacement,
+            'trigger v2ReplaceString source',
+            'trigger v2ReplaceString result template',
+            'trigger v2ReplaceString replacement',
+            options,
+          )
+        : (() => {
+            assertBoundedRegexHaystack(source, 'trigger v2ReplaceString source')
+            assertBoundedRegexReplacement(resultFormat, 'trigger v2ReplaceString result template')
+            assertBoundedRegexReplacement(replacement, 'trigger v2ReplaceString replacement')
+            return source.replace(regex as RegExp, (...args) => {
+              const match = args[0] as string
+              const groups = args.slice(1, -2) as string[]
+              const targetGroupMatch = resultFormat.match(/^\$(\d+)$/)
+              if (targetGroupMatch) {
+                const targetIndex = Number(targetGroupMatch[1])
+                if (targetIndex === 0) {
+                  return replacement
+                }
+                const targetGroup = groups[targetIndex - 1]
+                if (targetGroup) {
+                  return match.replace(targetGroup, replacement)
+                }
+              }
+              return resultFormat
+                .replace(/\$[0-9]+/g, (placeholder) => {
+                  const index = Number(placeholder.slice(1))
+                  return index === 0 ? match : groups[index - 1] || ''
+                })
+                .replace(/\$&/g, match)
+                .replace(/\$\$/g, '$')
+            })
+          })()
+      engine.setVar(expand(effect.outputVar), result)
+    } catch (err) {
+      if (isBoundedRegexError(err)) throw err
+      engine.setVar(expand(effect.outputVar), resolve(effect.source, effect.sourceType === 'value'))
+    }
+    return true
+  }
+
+  if (effect.type === 'v2RegexTest') {
+    const outVar = expand(effect.outputVar)
+    try {
+      const value = resolve(effect.value, effect.valueType === 'value')
+      const regexPattern = resolve(effect.regex, effect.regexType === 'value')
+      const flags = resolve(effect.flags, effect.flagsType === 'value')
+      const regex = compileTriggerRegexWithCompatibility(deps, regexPattern, flags, 'trigger v2RegexTest pattern')
+      const pass = options?.enabled
+        ? await testBoundedRegexWithCompatibility(regex, value, 'trigger v2RegexTest value', options)
+        : testBoundedRegex(regex as RegExp, value, 'trigger v2RegexTest value')
+      engine.setVar(outVar, pass ? '1' : '0')
+    } catch (err) {
+      if (isBoundedRegexError(err)) throw err
+      engine.setVar(outVar, '0')
+    }
+    return true
+  }
+
+  if (effect.type === 'v2QuickSearchChat' && effect.condition === 'regex') {
+    const outVar = expand(effect.outputVar)
+    const value = resolve(effect.value, effect.valueType === 'value')
+    const depth = Number(resolve(effect.depth, effect.depthType === 'value'))
+    if (isNaN(depth)) {
+      engine.setVar(outVar, '0')
+      return true
+    }
+    const da = deps.triggerCache
+      ? getRecentTranscriptRaw(deps.triggerCache, chat, depth)
+      : chat.message
+          .slice(0 - depth)
+          .map((v) => v.data)
+          .join(' ')
+    const regex = compileTriggerRegexWithCompatibility(deps, value, '', 'trigger v2QuickSearchChat pattern')
+    const pass = options?.enabled
+      ? await testBoundedRegexWithCompatibility(regex, da, 'trigger v2QuickSearchChat transcript', options)
+      : testBoundedRegex(regex as RegExp, da, 'trigger v2QuickSearchChat transcript')
+    engine.setVar(outVar, pass ? '1' : '0')
+    return true
+  }
+
+  return applyV2DataEffect(effect, deps)
 }

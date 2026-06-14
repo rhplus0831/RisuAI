@@ -2887,6 +2887,28 @@ describe('Phase 3 M1 assembly message capture dirty flags', () => {
     ).rejects.toThrow(/bounded regex rejected: customscript script\.in pattern: complexity screen/)
   })
 
+  it('runs complexity-screened customscript regexes in worker compatibility mode', async () => {
+    const result = await assemblePrompt(
+      baseInput({ userMessage: 'aaa' }),
+      depsFor(
+        m1Db([], {
+          db: {
+            complexRegexCompatibilityMode: 'worker',
+            complexRegexInputTimeoutMs: 10000,
+          } as never,
+          char: {
+            customscript: [{ in: '(a+)+$', out: 'OK', type: 'editinput', flag: '', ableFlag: false }] as never,
+          },
+        }),
+      ),
+    )
+
+    expect(result.stopSending).toBe(false)
+    expect(result.submitMessages?.map((message) => ({ role: message.role, data: message.data }))).toEqual([
+      { role: 'user', data: 'OK' },
+    ])
+  })
+
   it('captures start-trigger chat edits once and preserves stop/error restoration baseline', async () => {
     resetAssemblyMessageCaptureInstrumentation()
 

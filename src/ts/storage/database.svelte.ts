@@ -544,6 +544,22 @@ export function setDatabase(data: Database) {
   if (checkNullish(data.pluginCompatibilityMode)) {
     data.pluginCompatibilityMode = false
   }
+  data.complexRegexCompatibilityMode ??= 'strict'
+  if (data.complexRegexCompatibilityMode !== 'worker') {
+    data.complexRegexCompatibilityMode = 'strict'
+  }
+  data.complexRegexInputTimeoutMs ??= 10000
+  if (typeof data.complexRegexInputTimeoutMs !== 'number' || Number.isNaN(data.complexRegexInputTimeoutMs)) {
+    data.complexRegexInputTimeoutMs = 10000
+  }
+  data.complexRegexOutputTimeoutMs ??= 10000
+  if (typeof data.complexRegexOutputTimeoutMs !== 'number' || Number.isNaN(data.complexRegexOutputTimeoutMs)) {
+    data.complexRegexOutputTimeoutMs = 10000
+  }
+  data.complexRegexDisplayTimeoutMs ??= 10000
+  if (typeof data.complexRegexDisplayTimeoutMs !== 'number' || Number.isNaN(data.complexRegexDisplayTimeoutMs)) {
+    data.complexRegexDisplayTimeoutMs = 10000
+  }
   if (checkNullish(data.elevenLabKey)) {
     data.elevenLabKey = ''
   }
@@ -1404,6 +1420,10 @@ export interface Database {
   showUnrecommended: boolean
   doNotWarnExternalServers: boolean
   pluginCompatibilityMode: boolean
+  complexRegexCompatibilityMode: 'strict' | 'worker'
+  complexRegexInputTimeoutMs: number
+  complexRegexOutputTimeoutMs: number
+  complexRegexDisplayTimeoutMs: number
   elevenLabKey: string
   voicevoxUrl: string
   useExperimental: boolean

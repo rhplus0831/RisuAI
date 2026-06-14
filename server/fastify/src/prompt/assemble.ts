@@ -32,6 +32,7 @@ import {
 import { buildPlainPromptSections } from './plainSections.js'
 import {
   activateLorebook,
+  activateLorebookAsync,
   buildLorebookContext,
   type LoreEntryActive,
   type LorebookActivationReport,
@@ -70,7 +71,7 @@ import {
   type LuaExecBudget,
   type ServerLuaEditTriggerContext,
 } from './luaRuntime.js'
-import { processScript } from './scripts.js'
+import { processScriptAsync } from './scripts.js'
 import { getActiveModules, getModuleTriggers } from './modules.js'
 import { parseKeyValue } from '../../../../src/ts/util/parseKeyValue'
 import { expandVariables, type ExpandContext } from './variables.js'
@@ -876,7 +877,7 @@ async function applyEditInput(state: AssemblyState): Promise<void> {
   const { editCtx, varEngine } = buildLuaEditTriggerContext(state)
   let text = await runLuaEditTrigger(state.currentChar, 'editinput', rawUserMessage, { index: -1 }, editCtx)
   text = expandVariables(text, { ...state.ctx, chara: state.currentChar }).text
-  text = processScript(state.ctx, state.currentChar, text, 'editinput', {}, -1, state.currentChat)
+  text = await processScriptAsync(state.ctx, state.currentChar, text, 'editinput', {}, -1, state.currentChat)
 
   if (varEngine.varChanged) {
     state.varChanged = true
@@ -1074,26 +1075,13 @@ export function fillStaticSlots(state: AssemblyState): void {
  * placement sees the static description row and the preflight tokenizes
  * the now-full slots. Mutates the lorebook fields on `state`.
  */
-export function fillLorebookSlots(state: AssemblyState): void {
-  const { ctx, currentChar, currentChat, unformated, promptTemplate, usingPromptTemplate } = state
+function applyLorebookReport(
+  state: AssemblyState,
+  report: LorebookActivationReport,
+  stickyChatVarDirty: boolean,
+): void {
+  const { ctx, currentChar, unformated, promptTemplate, usingPromptTemplate } = state
   const db = state.database
-  let stickyChatVarDirty = false
-
-  const report = activateLorebook({
-    database: db,
-    currentChar,
-    currentChat,
-    model: db.aiModel,
-    writeChatVar: (key, value) => {
-      const persisted = currentPersistedChat(state)
-      if (!persisted) return
-      persisted.scriptstate ??= {}
-      const stateKey = '$' + key
-      if (persisted.scriptstate[stateKey] === value) return
-      persisted.scriptstate[stateKey] = value
-      stickyChatVarDirty = true
-    },
-  })
   if (stickyChatVarDirty) {
     state.varChanged = true
     syncWorkingScriptstate(state)
@@ -1123,6 +1111,54 @@ export function fillLorebookSlots(state: AssemblyState): void {
   state.currentTokens = currentTokens
   state.memoryCardUsed = preflight.memoryCardUsed
   state.hasCachePoint = preflight.hasCachePoint
+}
+
+export function fillLorebookSlots(state: AssemblyState): void {
+  const { currentChar, currentChat } = state
+  const db = state.database
+  let stickyChatVarDirty = false
+
+  const report = activateLorebook({
+    database: db,
+    currentChar,
+    currentChat,
+    model: db.aiModel,
+    writeChatVar: (key, value) => {
+      const persisted = currentPersistedChat(state)
+      if (!persisted) return
+      persisted.scriptstate ??= {}
+      const stateKey = '$' + key
+      if (persisted.scriptstate[stateKey] === value) return
+      persisted.scriptstate[stateKey] = value
+      stickyChatVarDirty = true
+    },
+  })
+
+  applyLorebookReport(state, report, stickyChatVarDirty)
+}
+
+export async function fillLorebookSlotsAsync(state: AssemblyState): Promise<void> {
+  const { currentChar, currentChat } = state
+  const db = state.database
+  let stickyChatVarDirty = false
+
+  const report = await activateLorebookAsync({
+    database: db,
+    currentChar,
+    currentChat,
+    model: db.aiModel,
+    writeChatVar: (key, value) => {
+      const persisted = currentPersistedChat(state)
+      if (!persisted) return
+      persisted.scriptstate ??= {}
+      const stateKey = '$' + key
+      if (persisted.scriptstate[stateKey] === value) return
+      persisted.scriptstate[stateKey] = value
+      stickyChatVarDirty = true
+    },
+  })
+
+  applyLorebookReport(state, report, stickyChatVarDirty)
 }
 
 /**
@@ -1703,7 +1739,7 @@ export async function assemblePrompt(input: AssembleInput, deps: AssembleDeps): 
     applyCurrentChatRunVars(state)
   })
   measureAssemblyStage(state, 'static_plain_slots', () => fillStaticSlots(state))
-  measureAssemblyStage(state, 'lorebook_preflight', () => fillLorebookSlots(state))
+  await measureAssemblyStageAsync(state, 'lorebook_preflight', () => fillLorebookSlotsAsync(state))
   await measureAssemblyStageAsync(state, 'history_bias', () => fillHistoryAndBias(state))
   measureAssemblyStage(state, 'memory_bridge', () => fillMemoryAndPostHistory(state))
   await renderAndBudget(state)
@@ -1801,7 +1837,7 @@ async function applyEditOutput(state: AssemblyState, text: string, msgIndex: num
   const { editCtx, varEngine } = buildLuaEditTriggerContext(state)
   let out = await runLuaEditTrigger(state.currentChar, 'editoutput', text, { index: msgIndex }, editCtx)
   out = expandVariables(out, { ...state.ctx, chara: state.currentChar }).text
-  out = processScript(state.ctx, state.currentChar, out, 'editoutput', {}, msgIndex, state.currentChat)
+  out = await processScriptAsync(state.ctx, state.currentChar, out, 'editoutput', {}, msgIndex, state.currentChat)
   if (varEngine.varChanged) {
     state.varChanged = true
     syncWorkingScriptstate(state)

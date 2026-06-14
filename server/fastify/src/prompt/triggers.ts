@@ -3,10 +3,16 @@ import type { RisuModule } from '../../../../src/ts/process/modules'
 import type { additonalSysPrompt, triggerCondition, triggerscript } from '../../../../src/ts/process/triggers'
 import { parseKeyValue } from '../../../../src/ts/util/parseKeyValue'
 import { getActiveModules, getModuleTriggers } from './modules.js'
-import { compileBoundedRegex, testBoundedRegex } from './boundedRegex.js'
+import {
+  compileBoundedRegex,
+  compileBoundedRegexWithCompatibility,
+  complexRegexCompatibilityOptions,
+  testBoundedRegex,
+  testBoundedRegexWithCompatibility,
+} from './boundedRegex.js'
 import { encodingForModel, tokenize } from './tokens.js'
 import { createTriggerVarEngine, type TriggerVarEngine } from './triggerVars.js'
-import { applyV2DataEffect } from './triggerDataEffects.js'
+import { applyV2DataEffectAsync } from './triggerDataEffects.js'
 import { expandVariables, type ExpandContext } from './variables.js'
 import { runServerLua, throwServerLuaFailure } from './luaRuntime.js'
 import {
@@ -649,6 +655,109 @@ export function evaluateConditions(
   return true
 }
 
+function stageForTriggerMode(mode: TriggerMode) {
+  if (mode === 'output') return 'output'
+  if (mode === 'display') return 'display'
+  return 'input'
+}
+
+async function evaluateConditionsAsync(
+  conditions: triggerCondition[],
+  engine: TriggerVarEngine,
+  chat: Chat,
+  expand: (text: string) => string,
+  triggerCache: TriggerRunCache | undefined,
+  mode: TriggerMode,
+  database: Database,
+): Promise<boolean> {
+  const regexCompatibility = complexRegexCompatibilityOptions(database, stageForTriggerMode(mode))
+  for (const condition of conditions) {
+    let pass = true
+    if (condition.type === 'var' || condition.type === 'chatindex' || condition.type === 'value') {
+      let varValue: string | null =
+        condition.type === 'var'
+          ? (engine.getVar(condition.var) ?? 'null')
+          : condition.type === 'chatindex'
+            ? chat.message.length.toString()
+            : condition.var
+
+      if (varValue === undefined || varValue === null) {
+        pass = false
+      } else {
+        const conditionValue = expand(condition.value)
+        varValue = expand(varValue)
+        switch (condition.operator) {
+          case 'true':
+            if (varValue !== 'true' && varValue !== '1') pass = false
+            break
+          case '=':
+            if (varValue !== conditionValue) pass = false
+            break
+          case '!=':
+            if (varValue === conditionValue) pass = false
+            break
+          case '>':
+            if (Number(varValue) <= Number(conditionValue)) pass = false
+            break
+          case '<':
+            if (Number(varValue) >= Number(conditionValue)) pass = false
+            break
+          case '>=':
+            if (Number(varValue) < Number(conditionValue)) pass = false
+            break
+          case '<=':
+            if (Number(varValue) > Number(conditionValue)) pass = false
+            break
+          case 'null':
+            if (varValue !== 'null') pass = false
+            break
+        }
+      }
+    } else if (condition.type === 'exists') {
+      const conditionValue = expand(condition.value)
+      const val = expand(conditionValue)
+      if (condition.type2 === 'strict') {
+        pass = triggerCache
+          ? getRecentTranscriptStrictWords(triggerCache, chat, condition.depth).has(val)
+          : chat.message
+              .slice(0 - condition.depth)
+              .map((v) => v.data)
+              .join(' ')
+              .split(' ')
+              .includes(val)
+      } else if (condition.type2 === 'loose') {
+        pass = triggerCache
+          ? getRecentTranscriptLower(triggerCache, chat, condition.depth).includes(val.toLowerCase())
+          : chat.message
+              .slice(0 - condition.depth)
+              .map((v) => v.data)
+              .join(' ')
+              .toLowerCase()
+              .includes(val.toLowerCase())
+      } else if (condition.type2 === 'regex') {
+        const da = triggerCache
+          ? getRecentTranscriptRaw(triggerCache, chat, condition.depth)
+          : chat.message
+              .slice(0 - condition.depth)
+              .map((v) => v.data)
+              .join(' ')
+        const regex = regexCompatibility.enabled
+          ? compileBoundedRegexWithCompatibility(val, '', 'trigger condition regex pattern', regexCompatibility)
+          : triggerCache
+            ? getCachedTriggerRegex(triggerCache, val, '', 'trigger condition regex pattern')
+            : compileBoundedRegex(val, '', 'trigger condition regex pattern')
+        pass = regexCompatibility.enabled
+          ? await testBoundedRegexWithCompatibility(regex, da, 'trigger condition regex transcript', regexCompatibility)
+          : testBoundedRegex(regex as RegExp, da, 'trigger condition regex transcript')
+      }
+    }
+    if (!pass) {
+      return false
+    }
+  }
+  return true
+}
+
 /**
  * Collects triggers, classifies the selected mode's effects, clones only the
  * inputs that need isolation, evaluates conditions, and returns the SPA result
@@ -746,7 +855,9 @@ export async function runTrigger(
     if (shouldStopTriggerExecution(ctx, budget, 'before trigger conditions')) {
       return buildResult()
     }
-    if (!evaluateConditions(trigger.conditions ?? [], engine, chat, expand, triggerCache)) {
+    if (
+      !(await evaluateConditionsAsync(trigger.conditions ?? [], engine, chat, expand, triggerCache, mode, ctx.database))
+    ) {
       continue
     }
 
@@ -1182,7 +1293,7 @@ export async function runTrigger(
           // persistent lorebook / character / persona / note arms;
           // `v2UpdateGUI` / `v2UpdateChatAt` / `v2Wait`; `triggercode`),
           // which fall through as no-ops.
-          applyV2DataEffect(effect, {
+          await applyV2DataEffectAsync(effect, {
             engine,
             expand,
             chat,
@@ -1191,6 +1302,7 @@ export async function runTrigger(
             displayMode: arg.displayMode,
             displayState,
             triggerCache,
+            regexCompatibility: complexRegexCompatibilityOptions(ctx.database, stageForTriggerMode(mode)),
           })
           break
         }

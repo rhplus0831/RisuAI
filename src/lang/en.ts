@@ -144,6 +144,8 @@ export const languageEnglish = {
       'If enabled, it will show unrecommended, deprecated settings. It is NOT RECOMMENDED to use these settings.',
     pluginCompatibilityMode:
       'Restores legacy device-local plugin storage APIs in Fastify server mode. Data written there is device-local, unsynced, and excluded from server backup/export. Prefer pluginStorage for durable plugin data.',
+    complexRegexCompatibilityMode:
+      'Strict mode rejects risky nested regex patterns before they run. Compatibility mode runs those patterns in an isolated worker and fails the stage if the configured timeout is exceeded.',
     imageCompression:
       "If enabled, it will compress images when exporting character. if animated images doesn't works, try disabling this option.",
     useExperimental: 'If enabled, it will show some experimental features.',
@@ -1603,6 +1605,12 @@ export const languageEnglish = {
   newMessageButtonTopBar: 'Top Bar',
   trimStartNewChat: "Trim 'Start New Chat' Messages",
   pluginCompatibilityMode: 'Plugin Compatibility Mode',
+  complexRegexCompatibilityMode: 'Complex Regex Compatibility',
+  complexRegexStrictMode: 'Strict',
+  complexRegexWorkerMode: 'Compatibility',
+  complexRegexInputTimeoutMs: 'Input Regex Timeout (ms)',
+  complexRegexOutputTimeoutMs: 'Output Regex Timeout (ms)',
+  complexRegexDisplayTimeoutMs: 'Display Regex Timeout (ms)',
   pluginDevelopMode: 'Plugin Develop Mode',
   fetchLogConsent:
     'Plugin {} is requesting to fetch logs, which may expose sensitive information. Do you want to allow this?',
