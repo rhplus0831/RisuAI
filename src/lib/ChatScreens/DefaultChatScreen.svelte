@@ -49,7 +49,7 @@
     doingChat,
     sendChat,
   } from '../../ts/process/index.svelte'
-  import { sleep } from '../../ts/util'
+  import { getUserIcon, getUserIconProtrait, getUserName, sleep } from '../../ts/util'
   import { language } from '../../lang'
   import { isExpTranslator, translate } from '../../ts/translator/translator'
   import { alertError, alertNormal, alertWait } from '../../ts/alert'
@@ -468,26 +468,10 @@
   }
 
   let { userIconPortrait, currentUsername, userIcon } = $derived.by(() => {
-    const bindedPersona =
-      DBState?.db?.characters?.[$selectedCharID]?.chats?.[DBState?.db?.characters?.[$selectedCharID]?.chatPage]
-        ?.bindedPersona
-
-    if (bindedPersona) {
-      const persona = DBState.db.personas.find((p) => p.id === bindedPersona)
-      if (persona) {
-        return {
-          currentUsername: persona.name,
-          userIconPortrait: persona.largePortrait,
-          userIcon: persona.icon,
-        }
-      }
-    }
-
-    const selectedPersonaIndex = DBState.db.selectedPersona
     return {
-      currentUsername: DBState.db.username,
-      userIconPortrait: DBState.db.personas[selectedPersonaIndex].largePortrait,
-      userIcon: DBState.db.personas[selectedPersonaIndex].icon,
+      currentUsername: getUserName(),
+      userIconPortrait: getUserIconProtrait(),
+      userIcon: getUserIcon(),
     }
   })
 

@@ -70,10 +70,14 @@ export function checkPersonaBinded() {
     const selectedChar = get(selectedCharID)
     const character = db.characters[selectedChar]
     const chat = character.chats[character.chatPage]
-    if (!chat.bindedPersona) {
+    const personaId =
+      typeof chat.generationSettings?.personaId === 'string' && chat.generationSettings.personaId.trim()
+        ? chat.generationSettings.personaId
+        : chat.bindedPersona
+    if (!personaId) {
       return null
     }
-    const persona = db.personas.find((v) => v.id === chat.bindedPersona)
+    const persona = db.personas.find((v) => v.id === personaId)
     return persona
   } catch (error) {
     return null
