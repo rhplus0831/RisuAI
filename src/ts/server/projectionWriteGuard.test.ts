@@ -135,4 +135,28 @@ describe('Phase 1 copy-on-write projection write guard', () => {
     expect(observedInside).toBe('42')
     expect(DBState.db.characters[0].chats[0].scriptstate.$score).toBe('42')
   })
+
+  it('unwraps read-only nested projection values assigned during trusted writes', () => {
+    DBState.db.personas = [
+      { id: 'persona-a', name: 'A', icon: '', personaPrompt: '', note: '' },
+      { id: 'persona-b', name: 'B', icon: '', personaPrompt: '', note: '' },
+    ]
+    DBState.db.selectedPersona = 0
+    setServerProjectionWriteGuardEnabled(true)
+
+    const reordered = [DBState.db.personas[1], DBState.db.personas[0]]
+
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.personas = reordered
+      DBState.db.selectedPersona = 1
+    })
+
+    expect(DBState.db.personas.map((persona) => persona.id)).toEqual(['persona-b', 'persona-a'])
+    expect(() => {
+      withTrustedServerProjectionWrite(() => {
+        DBState.db.personas[0].id = 'persona-b-edited'
+      })
+    }).not.toThrow()
+    expect(DBState.db.personas[0].id).toBe('persona-b-edited')
+  })
 })

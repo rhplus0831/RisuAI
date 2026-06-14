@@ -2,7 +2,7 @@ import { DBState } from '../stores.svelte'
 import type { Database } from '../storage/database.svelte'
 
 let serverProjectionWriteGuardEnabled = false
-// Maps a top-level read-only projection proxy back to its plain source.
+// Maps a read-only projection proxy back to its plain source.
 const readOnlyServerProjectionSources = new WeakMap<object, object>()
 // Maps a writable copy-on-write working proxy back to its plain mutable source.
 const trustedServerProjectionWorkingCopies = new WeakMap<object, object>()
@@ -87,7 +87,6 @@ export function createReadOnlyServerProjection<T extends object>(target: T): T {
   // and breaks cycles within a single wrap.
   const memo = new WeakMap<object, object>()
   const proxy = createReadOnlyServerProjectionProxy(target, memo)
-  readOnlyServerProjectionSources.set(proxy, target)
   readOnlyServerProjection = proxy as Database
   return proxy as T
 }
@@ -124,23 +123,68 @@ function createReadOnlyServerProjectionProxy(target: object, memo: WeakMap<objec
     },
   })
   memo.set(target, proxy)
+  readOnlyServerProjectionSources.set(proxy, target)
   return proxy
 }
 
-// A guarded write hands the callback this writable working copy: a pass-through
-// proxy over the plain projection source. Its only non-default trap is
-// getPrototypeOf, which reports a non-Object/Array prototype so Svelte's `$state`
-// does NOT deep-proxy it on assignment. That preserves the source's plain
-// identity (so refreeze can re-wrap it with no clone) and lets the callback's
-// mutations write straight through to the source.
+// A guarded write hands the callback this writable working copy: a proxy over
+// the plain projection source. getPrototypeOf reports a non-Object/Array
+// prototype so Svelte's `$state` does NOT deep-proxy it on assignment. Top-level
+// writes also unwrap read-only projection values so reorder/filter flows do not
+// write proxies back into the mutable source.
 function createTrustedServerProjectionWorkingCopy(source: Database): Database {
   const working = new Proxy(source as object, {
+    defineProperty(currentTarget, key, descriptor) {
+      const nextDescriptor = { ...descriptor }
+      if ('value' in nextDescriptor) {
+        nextDescriptor.value = unwrapServerProjectionValue(nextDescriptor.value)
+      }
+      return Reflect.defineProperty(currentTarget, key, nextDescriptor)
+    },
     getPrototypeOf() {
       return readOnlyServerProjectionPrototype
+    },
+    set(currentTarget, key, value) {
+      return Reflect.set(currentTarget, key, unwrapServerProjectionValue(value))
     },
   })
   trustedServerProjectionWorkingCopies.set(working, source as object)
   return working as Database
+}
+
+function unwrapServerProjectionValue<T>(value: T, memo = new WeakMap<object, unknown>()): T {
+  if (!value || typeof value !== 'object') return value
+
+  const source =
+    trustedServerProjectionWorkingCopies.get(value as object) ?? readOnlyServerProjectionSources.get(value as object)
+  if (source) return source as T
+
+  const existing = memo.get(value as object)
+  if (existing) return existing as T
+
+  if (Array.isArray(value)) {
+    let changed = false
+    const next: unknown[] = []
+    memo.set(value, next)
+    for (const item of value) {
+      const unwrapped = unwrapServerProjectionValue(item, memo)
+      changed ||= unwrapped !== item
+      next.push(unwrapped)
+    }
+    return (changed ? next : value) as T
+  }
+
+  if (Object.getPrototypeOf(value) !== Object.prototype) return value
+
+  let changed = false
+  const next: Record<string, unknown> = {}
+  memo.set(value as object, next)
+  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    const unwrapped = unwrapServerProjectionValue(item, memo)
+    changed ||= unwrapped !== item
+    next[key] = unwrapped
+  }
+  return (changed ? next : value) as T
 }
 
 // Resolve the plain mutable source behind whatever DBState.db currently holds:
