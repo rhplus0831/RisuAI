@@ -47,7 +47,7 @@
   import LoreBook from './LoreBook/LoreBookSetting.svelte'
   import { alertTOS } from '../../ts/alert'
   import BarIcon from './BarIcon.svelte'
-  import { findCharacterbyId, getAuthorNoteDefaultText, selectMultipleFile, selectSingleFile } from '../../ts/util'
+  import { selectMultipleFile, selectSingleFile } from '../../ts/util'
   import Help from '../Others/Help.svelte'
   import { exportChar } from 'src/ts/characterCards'
   import {
@@ -73,7 +73,6 @@
   import { applyModule } from 'src/ts/process/modules'
   import { exportRegex, importRegex } from 'src/ts/process/scripts'
   import SliderInput from '../UI/GUI/SliderInput.svelte'
-  import Toggles from './Toggles.svelte'
   import {
     createServerBackedCharacterDraft,
     watchServerBackedCharacterProfile,
@@ -83,7 +82,7 @@
     applyCharacterScriptDefinitionDraft,
     watchServerBackedScriptDefinitions,
   } from 'src/ts/server/scriptDefinitionBridge.svelte'
-  import { currentChatStateSnapshot, dispatchUpdateChat, setCurrentChatGreetingIndex } from 'src/ts/chatCommands'
+  import { setCurrentChatGreetingIndex } from 'src/ts/chatCommands'
 
   let iconRemoveMode = $state(false)
   let viewSubMenu = $state(0)
@@ -91,8 +90,6 @@
   let tokens = $state({
     desc: 0,
     firstMsg: 0,
-    localNote: 0,
-    charaNote: 0,
   })
   const characterDraft = createServerBackedCharacterDraft([
     'name',
@@ -202,12 +199,10 @@
   let lasttokens = {
     desc: '',
     firstMsg: '',
-    localNote: '',
-    charaNote: '',
   }
   let tokenizeRun = 0
 
-  async function loadTokenize(desc: string | null, firstMsg: string | null, localNote: string, run: number) {
+  async function loadTokenize(desc: string | null, firstMsg: string | null, run: number) {
     if (desc !== null && lasttokens.desc !== desc) {
       const count = await tokenizeAccurate(desc)
       if (run !== tokenizeRun) return
@@ -220,20 +215,14 @@
       lasttokens.firstMsg = firstMsg
       tokens.firstMsg = count
     }
-    if (lasttokens.localNote !== localNote) {
-      const count = await tokenizeAccurate(localNote)
-      if (run !== tokenizeRun) return
-      lasttokens.localNote = localNote
-      tokens.localNote = count
-    }
   }
 
-  function scheduleTokenize(desc: string | null, firstMsg: string | null, localNote: string) {
+  function scheduleTokenize(desc: string | null, firstMsg: string | null) {
     const run = ++tokenizeRun
     setTimeout(() => {
       requestAnimationFrame(() => {
         if (run !== tokenizeRun) return
-        void loadTokenize(desc, firstMsg, localNote, run)
+        void loadTokenize(desc, firstMsg, run)
       })
     }, 0)
   }
@@ -241,10 +230,6 @@
   let assetFileExtensions: Record<string, string | undefined> = $state({})
   let assetFilePath: Record<string, string | undefined> = $state({})
   let assetPreviewRun = 0
-  let authorNoteDraft = $state('')
-  let authorNoteChatId: string | null = $state(null)
-  let authorNoteServerNote = ''
-  let authorNoteLastSubmitted = ''
   let licensed = $state(
     DBState.db.characters[$selectedCharID].type === 'character'
       ? (DBState.db.characters[$selectedCharID] as character).license
@@ -255,10 +240,9 @@
     const chara = DBState.db.characters[$selectedCharID]
     const desc = chara.desc
     const firstMsg = chara.firstMessage
-    const localNote = authorNoteDraft
 
     untrack(() => {
-      scheduleTokenize(desc, firstMsg, localNote)
+      scheduleTokenize(desc, firstMsg)
     })
   })
 
@@ -286,40 +270,6 @@
       }
     }
     assetFileExtensions = nextExtensions
-  })
-
-  $effect(() => {
-    const character = DBState.db.characters[$selectedCharID]
-    const chat = character?.chats?.[character.chatPage]
-    const nextChatId = chat?.id ?? null
-    const nextNote = chat?.note ?? ''
-    if (nextChatId !== authorNoteChatId) {
-      authorNoteChatId = nextChatId
-      authorNoteDraft = nextNote
-      authorNoteServerNote = nextNote
-      authorNoteLastSubmitted = nextNote
-    } else if (nextNote !== authorNoteServerNote) {
-      authorNoteServerNote = nextNote
-      if (authorNoteDraft === authorNoteLastSubmitted) {
-        authorNoteDraft = nextNote
-      }
-      authorNoteLastSubmitted = nextNote
-    }
-  })
-
-  $effect(() => {
-    const chatId = authorNoteChatId
-    const note = authorNoteDraft
-    if (!chatId || note === authorNoteLastSubmitted) return
-
-    const timer = setTimeout(() => {
-      authorNoteLastSubmitted = note
-      dispatchUpdateChat(chatId, { note }, currentChatStateSnapshot())
-    }, 250)
-
-    return () => {
-      clearTimeout(timer)
-    }
   })
 
   $effect.pre(() => {
@@ -569,18 +519,6 @@
     <TextAreaInput highlight margin="both" autocomplete="off" bind:value={characterDraft.value.firstMessage}
     ></TextAreaInput>
     <span class="text-textcolor2 mb-6 text-sm">{tokens.firstMsg} {language.tokens}</span>
-  {/if}
-  <span class="text-textcolor">{language.authorNote} <Help key="chatNote" /></span>
-  <TextAreaInput
-    margin="both"
-    autocomplete="off"
-    bind:value={authorNoteDraft}
-    highlight
-    placeholder={getAuthorNoteDefaultText()} />
-  <span class="text-textcolor2 mb-6 text-sm">{tokens.localNote} {language.tokens}</span>
-
-  {#if !$MobileGUI}
-    <Toggles bind:chara={DBState.db.characters[$selectedCharID]} noContainer />
   {/if}
 {:else if licensed === 'private'}
   <span>You are not allowed</span>

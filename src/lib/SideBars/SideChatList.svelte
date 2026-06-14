@@ -28,6 +28,7 @@
   import { bookmarkListOpen } from 'src/ts/stores.svelte'
   import { language } from 'src/lang'
   import Toggles from './Toggles.svelte'
+  import AuthorNoteEditor from './AuthorNoteEditor.svelte'
   import { changeChatTo, createChatCopyName } from 'src/ts/globalApi.svelte'
   import { ensureAllChatsHydrated } from 'src/ts/server/chatMessageHydration.svelte'
   import {
@@ -380,6 +381,7 @@
       </button>
 
       {#if DBState.db.characters[$selectedCharID]?.chaId !== '§playground'}
+        <AuthorNoteEditor {chara} />
         <Toggles bind:chara />
       {/if}
     </div>

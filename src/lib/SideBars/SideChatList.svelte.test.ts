@@ -205,10 +205,14 @@ vi.mock('src/lang', () => ({
     doYouWantToUnbindCurrentPersona: 'Unbind persona?',
     errors: { onlyOneChat: 'Only one chat' },
     goback: 'Back',
+    authorNote: "Author's Note",
+    help: { chatNote: 'Chat note help' },
     newChat: 'New Chat',
     personaBindedSuccess: 'Persona bound',
     personaUnbindedSuccess: 'Persona unbound',
     removeConfirm: 'Remove ',
+    showHelp: 'Show help',
+    tokens: 'tokens',
   },
 }))
 
@@ -526,6 +530,7 @@ describe('SideChatList DOM contract harness', () => {
 
     expect(sidebarRoot().dataset.risuChatOpen).toBe('true')
     expect(chatRows()).toEqual([])
+    expect(target.querySelector('[data-risu-chat-author-note]')).toBeTruthy()
     expect(target.querySelector('[data-testid="side-chat-list-toggles-stub"]')).toBeTruthy()
 
     backToChatListButton().click()
