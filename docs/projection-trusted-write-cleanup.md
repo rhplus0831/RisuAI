@@ -81,6 +81,12 @@ coherent rollback/resync story.
   - Plugin collection replacement now routes create, update, delete, and reorder
     diffs through one serialized optimistic command sequence with a single
     collection rollback.
+- `src/ts/plugins/plugins.svelte.ts` and
+  `src/ts/plugins/apiV3/v3.svelte.ts`
+  - Server-backed full-character plugin replacements now prepare the same
+    sanitized character patch used by the command, apply only those kept fields
+    to the local row, preserve excluded fields and the original character ID,
+    and skip no-op excluded-only replacements.
 
 ## Findings
 
@@ -153,11 +159,6 @@ state, or routed through server-owned finalization/patch commands.
     command.
 - `src/ts/process/serverBackedSendChat.ts`
   - Browser inlay rendering mutates assistant text after server patch apply.
-- `src/ts/plugins/plugins.svelte.ts` and
-  `src/ts/plugins/apiV3/v3.svelte.ts`
-  - Full-character plugin replacement can locally mutate fields intentionally
-    stripped by the compatible character command.
-
 ## Cleanup Order
 
 1. Centralize persona UI mutations into persona domain helpers.

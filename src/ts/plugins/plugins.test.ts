@@ -16,7 +16,7 @@ vi.mock('./pluginSafety', () => ({
 
 import { clearCachedServerCommandRevision, type CommandEvent } from '../server/commands'
 import { setServerProjectionWriteGuardEnabled } from '../server/projectionWriteGuard.svelte'
-import { DBState } from '../stores.svelte'
+import { DBState, selectedCharID } from '../stores.svelte'
 import { SafeLocalPluginStorage } from './pluginSafeClass'
 import { getV2PluginAPIs, type RisuPlugin } from './plugins.svelte'
 import type { RisuModule } from '../process/modules'
@@ -197,6 +197,95 @@ describe('plugin database command bridge', () => {
       body: { patch: { realArg: { myarg: 'myvalue' } } },
     })
     expect(DBState.db.plugins[0].realArg.myarg).toBe('myvalue')
+  })
+
+  it('setChar applies only command-compatible character fields in server mode', async () => {
+    const calls = stubCommandFetch()
+    const apis = getV2PluginAPIs()
+    selectedCharID.set(0)
+    DBState.db.characters = [
+      {
+        chaId: 'char-a',
+        name: 'Old name',
+        desc: 'Old desc',
+        chats: [{ id: 'chat-a', message: [{ role: 'user', data: 'old', chatId: 'msg-a' }] }],
+        globalLore: [{ key: 'old lore' }],
+        customscript: 'old custom script',
+        triggerscript: 'old trigger script',
+        modules: ['old-module'],
+      },
+    ] as any
+
+    apis.setChar({
+      chaId: 'plugin-supplied-id',
+      name: 'New name',
+      desc: 'New desc',
+      chats: [{ id: 'chat-a', message: [{ role: 'user', data: 'changed', chatId: 'msg-a' }] }],
+      globalLore: [{ key: 'changed lore' }],
+      customscript: 'changed custom script',
+      triggerscript: 'changed trigger script',
+      modules: ['changed-module'],
+    })
+
+    expect(DBState.db.characters[0]).toEqual({
+      chaId: 'char-a',
+      name: 'New name',
+      desc: 'New desc',
+      chats: [{ id: 'chat-a', message: [{ role: 'user', data: 'old', chatId: 'msg-a' }] }],
+      globalLore: [{ key: 'old lore' }],
+      customscript: 'old custom script',
+      triggerscript: 'old trigger script',
+      modules: ['old-module'],
+    })
+    await vi.waitFor(() => {
+      expect(calls.some((call) => call.url === '/api/v1/commands/characters/char-a')).toBe(true)
+    })
+    const update = calls.find((call) => call.url === '/api/v1/commands/characters/char-a')
+    expect(update).toMatchObject({
+      method: 'PATCH',
+      body: {
+        baseRevision: 10,
+        patch: {
+          name: 'New name',
+          desc: 'New desc',
+        },
+      },
+    })
+    const patch = (update?.body as any)?.patch
+    expect(patch).not.toHaveProperty('chaId')
+    expect(patch).not.toHaveProperty('chats')
+    expect(patch).not.toHaveProperty('globalLore')
+    expect(patch).not.toHaveProperty('customscript')
+    expect(patch).not.toHaveProperty('triggerscript')
+    expect(patch).not.toHaveProperty('modules')
+    expect(calls.some((call) => call.url === '/api/v1/commands/characters/plugin-supplied-id')).toBe(false)
+  })
+
+  it('setChar skips projection mutation and command dispatch for excluded-only character changes', async () => {
+    const calls = stubCommandFetch()
+    const apis = getV2PluginAPIs()
+    selectedCharID.set(0)
+    DBState.db.characters = [
+      {
+        chaId: 'char-a',
+        name: 'Old name',
+        chats: [{ id: 'chat-a', message: [{ role: 'user', data: 'old', chatId: 'msg-a' }] }],
+        globalLore: [{ key: 'old lore' }],
+      },
+    ] as any
+    const originalCharacter = JSON.parse(JSON.stringify(DBState.db.characters[0]))
+
+    apis.setChar({
+      ...originalCharacter,
+      chaId: 'plugin-supplied-id',
+      chats: [{ id: 'chat-a', message: [{ role: 'user', data: 'changed', chatId: 'msg-a' }] }],
+      globalLore: [{ key: 'changed lore' }],
+    })
+
+    await new Promise((resolve) => setTimeout(resolve, 30))
+
+    expect(DBState.db.characters[0]).toEqual(originalCharacter)
+    expect(calls.some((call) => call.url.startsWith('/api/v1/commands/characters/'))).toBe(false)
   })
 
   it('routes plugin module-integration database writes through settings commands', async () => {
@@ -590,14 +679,14 @@ describe('plugin database command bridge', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const calls = stubCommandFetch()
     const apis = getV2PluginAPIs()
-    DBState.db.characters = [{ chaId: 'char-a', name: 'Ada' }] as any
+    DBState.db.characters = [{ chaId: 'char-a', name: 'Ada', chats: [], chatPage: 0 }] as any
 
     apis.setDatabaseLite({ characters: [{ chaId: 'char-b', name: 'Grace' }] })
 
     await new Promise((resolve) => setTimeout(resolve, 30))
 
     // No projection change, no plugin-storage shadow, no command dispatched.
-    expect(DBState.db.characters).toEqual([{ chaId: 'char-a', name: 'Ada' }])
+    expect(DBState.db.characters).toEqual([{ chaId: 'char-a', name: 'Ada', chats: [], chatPage: 0 }])
     expect(DBState.db.pluginCustomStorage.characters).toBeUndefined()
     expect(calls.some((call) => call.url.includes('/api/v1/commands/'))).toBe(false)
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('characters'))
@@ -641,7 +730,7 @@ describe('plugin database command bridge', () => {
 
   it('does not expose server-owned resource shadows through V2 getDatabase in server mode', () => {
     const apis = getV2PluginAPIs()
-    DBState.db.characters = [{ chaId: 'char-a', name: 'Ada' }] as any
+    DBState.db.characters = [{ chaId: 'char-a', name: 'Ada', chats: [], chatPage: 0 }] as any
     DBState.db.pluginCustomStorage = {
       characters: [{ chaId: 'shadow-char', name: 'Shadow' }],
       pluginV2: [{ name: 'shadow-v2' }],
@@ -651,7 +740,7 @@ describe('plugin database command bridge', () => {
 
     const safeDb = apis.getDatabase() as any
 
-    expect(safeDb.characters).toEqual([{ chaId: 'char-a', name: 'Ada' }])
+    expect(safeDb.characters).toEqual([{ chaId: 'char-a', name: 'Ada', chats: [], chatPage: 0 }])
     expect(safeDb.pluginV2).toBeUndefined()
     expect(safeDb.botPresets).toBeUndefined()
     expect(safeDb.customPluginKey).toBe('visible')

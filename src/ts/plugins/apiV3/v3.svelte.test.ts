@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { get } from 'svelte/store'
 
-const { makeStore, mockDbState, mockPluginV2, mockCustomProviderStore } = vi.hoisted(() => {
+const { makeStore, mockDbState, mockPluginV2, mockCustomProviderStore, mockServerCommands } = vi.hoisted(() => {
   const makeStore = <T>(initial: T) => {
     let value = initial
     return {
@@ -39,7 +39,10 @@ const { makeStore, mockDbState, mockPluginV2, mockCustomProviderStore } = vi.hoi
       currentPluginProvider: '',
     },
   }
-  return { makeStore, mockDbState, mockPluginV2, mockCustomProviderStore }
+  const mockServerCommands = {
+    canUse: false,
+  }
+  return { makeStore, mockDbState, mockPluginV2, mockCustomProviderStore, mockServerCommands }
 })
 
 vi.mock('../plugins.svelte', () => ({
@@ -125,7 +128,7 @@ vi.mock('src/ts/pluginCommands', () => ({
 }))
 
 vi.mock('src/ts/server/commands', () => ({
-  canUseServerCommands: () => false,
+  canUseServerCommands: () => mockServerCommands.canUse,
   patchServerBackedSettings: vi.fn(),
 }))
 
@@ -227,6 +230,8 @@ vi.mock('src/ts/server/projectionWriteGuard.svelte', () => ({
 }))
 
 import { customProviderStore, pluginV2 } from '../plugins.svelte'
+import { prepareCompatibleCharacterUpdate } from 'src/ts/characterCommands'
+import { runOptimisticCommandSequence } from 'src/ts/chatCommands'
 import {
   __v3PluginLifecycleTestHooks,
   customV3ProviderMetaStore,
@@ -254,12 +259,70 @@ function messageCalls(spy: { mock: { calls: unknown[][] } }) {
 
 beforeEach(async () => {
   document.body.innerHTML = ''
+  mockServerCommands.canUse = false
+  mockDbState.db = {
+    plugins: [],
+    characters: {},
+    aiModel: 'test-model',
+    pluginCustomStorage: {},
+    currentPluginProvider: '',
+  }
+  vi.mocked(prepareCompatibleCharacterUpdate).mockClear()
+  vi.mocked(runOptimisticCommandSequence).mockClear()
   await __v3PluginLifecycleTestHooks.reset()
 })
 
 afterEach(async () => {
   await __v3PluginLifecycleTestHooks.reset()
   vi.restoreAllMocks()
+})
+
+describe('V3 character command bridge', () => {
+  it('setCharacterToIndex applies the shared compatible optimistic row in server mode', () => {
+    mockServerCommands.canUse = true
+    const existingCharacter = {
+      chaId: 'char-a',
+      name: 'Old name',
+      chats: [{ id: 'chat-a', message: [{ role: 'user', data: 'old', chatId: 'msg-a' }] }],
+      globalLore: [{ key: 'old lore' }],
+    }
+    const optimisticCharacter = {
+      chaId: 'char-a',
+      name: 'New name',
+      chats: existingCharacter.chats,
+      globalLore: existingCharacter.globalLore,
+    }
+    const factories = [vi.fn()]
+    const rollback = vi.fn()
+    mockDbState.db.characters = {
+      0: existingCharacter,
+    }
+    vi.mocked(prepareCompatibleCharacterUpdate).mockReturnValueOnce({
+      characterId: 'char-a',
+      patch: { name: 'New name' },
+      optimisticCharacter,
+      factories,
+      rollback,
+    } as any)
+    const api = __v3PluginLifecycleTestHooks.createApi(seedV3Plugin('plugin-a')) as any
+    const pluginCharacter = {
+      chaId: 'plugin-supplied-id',
+      name: 'New name',
+      chats: [{ id: 'chat-a', message: [{ role: 'user', data: 'changed', chatId: 'msg-a' }] }],
+      globalLore: [{ key: 'changed lore' }],
+    }
+
+    api.setCharacterToIndex(0, pluginCharacter)
+
+    expect(prepareCompatibleCharacterUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ chaId: 'char-a' }),
+      pluginCharacter,
+      expect.anything(),
+    )
+    expect(mockDbState.db.characters[0]).toBe(optimisticCharacter)
+    expect(mockDbState.db.characters[0]).not.toBe(pluginCharacter)
+    expect(runOptimisticCommandSequence).toHaveBeenCalledWith(factories, rollback)
+  })
 })
 
 describe('V3 plugin lifecycle cleanup', () => {

@@ -63,6 +63,14 @@ export interface CharacterOrderNormalizationResult {
   changed: boolean
 }
 
+export interface CompatibleCharacterUpdatePreparation {
+  characterId?: string
+  patch: CharacterSnapshot
+  optimisticCharacter?: character
+  factories: Array<(baseRevision: number) => Promise<ServerCommandResult>>
+  rollback: () => void
+}
+
 export const CHARACTER_PATCH_EXCLUDED_KEYS = new Set([
   'chaId',
   'chats',
@@ -440,7 +448,7 @@ function dispatchCompatibleCharacterUpdateWith(
   nextCharacter: character | undefined,
   rollback: () => void,
 ): void {
-  const characterId = nextCharacter?.chaId ?? previousCharacter?.chaId
+  const characterId = previousCharacter?.chaId
   if (!characterId || !previousCharacter || !nextCharacter) return
 
   const patch = changedCharacterFields(previousCharacter, nextCharacter)
@@ -474,26 +482,51 @@ export function prepareCompatibleCharacterUpdate(
   previousCharacter: character | undefined,
   nextCharacter: character | undefined,
   previous: CharacterStateSnapshot,
-): {
-  factories: Array<(baseRevision: number) => Promise<ServerCommandResult>>
-  rollback: () => void
-} {
+): CompatibleCharacterUpdatePreparation {
   const factories: Array<(baseRevision: number) => Promise<ServerCommandResult>> = []
-  const characterId = nextCharacter?.chaId ?? previousCharacter?.chaId
-  if (characterId && previousCharacter && nextCharacter) {
-    const patch = changedCharacterFields(previousCharacter, nextCharacter)
-    const commandPatch = sanitizeCharacterPatch(patch)
-    if (Object.keys(commandPatch).length > 0) {
-      factories.push((baseRevision) =>
-        updateCharacterCommand({
-          baseRevision,
-          characterId,
-          patch: commandPatch,
-        }),
-      )
-    }
+  const compatibleUpdate = prepareCompatibleCharacterProjectionUpdate(previousCharacter, nextCharacter)
+  if (compatibleUpdate.characterId && Object.keys(compatibleUpdate.patch).length > 0) {
+    const characterId = compatibleUpdate.characterId
+    const commandPatch = compatibleUpdate.patch
+    factories.push((baseRevision) =>
+      updateCharacterCommand({
+        baseRevision,
+        characterId,
+        patch: commandPatch,
+      }),
+    )
   }
-  return { factories, rollback: () => restoreCharacterState(previous) }
+  return { ...compatibleUpdate, factories, rollback: () => restoreCharacterState(previous) }
+}
+
+export function prepareCompatibleCharacterProjectionUpdate(
+  previousCharacter: character | undefined,
+  nextCharacter: character | undefined,
+): Pick<CompatibleCharacterUpdatePreparation, 'characterId' | 'patch' | 'optimisticCharacter'> {
+  const characterId = previousCharacter?.chaId
+  if (!characterId || !previousCharacter || !nextCharacter) {
+    return { patch: {} }
+  }
+
+  const commandPatch = sanitizeCharacterPatch(changedCharacterFields(previousCharacter, nextCharacter))
+  if (Object.keys(commandPatch).length === 0) {
+    return { characterId, patch: commandPatch }
+  }
+
+  return {
+    characterId,
+    patch: commandPatch,
+    optimisticCharacter: applyCompatibleCharacterPatch(previousCharacter, commandPatch),
+  }
+}
+
+export function applyCompatibleCharacterPatch(previousCharacter: character, patch: CharacterSnapshot): character {
+  const sanitizedPatch = sanitizeCharacterPatch(patch)
+  const nextRecord = { ...(previousCharacter as unknown as Record<string, unknown>) }
+  for (const [key, value] of Object.entries(sanitizedPatch)) {
+    nextRecord[key] = cloneJsonValue(value)
+  }
+  return nextRecord as unknown as character
 }
 
 export function dispatchDeleteCharacter(characterId: string, previous: CharacterStateSnapshot): void {

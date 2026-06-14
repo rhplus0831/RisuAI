@@ -1115,14 +1115,26 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin, lifecycl
       const charIds = Object.keys(db.characters)
       const charId = charIds[index]
       if (charId) {
+        if (!canUseServerCommands()) {
+          withTrustedServerProjectionWrite(() => {
+            DBState.db.characters[charId] = char
+          })
+          return
+        }
+
         const previous = currentCharacterStateSnapshot()
         const previousCharacter = $state.snapshot(DBState.db.characters[charId])
-        withTrustedServerProjectionWrite(() => {
-          DBState.db.characters[charId] = char
-        })
         // Route through the sequencer so this call shares one advancing revision
         // baseline with other makeRisuaiAPIV3 command factories.
-        const { factories, rollback } = prepareCompatibleCharacterUpdate(previousCharacter, char, previous)
+        const { factories, optimisticCharacter, rollback } = prepareCompatibleCharacterUpdate(
+          previousCharacter,
+          char,
+          previous,
+        )
+        if (!optimisticCharacter || factories.length === 0) return
+        withTrustedServerProjectionWrite(() => {
+          DBState.db.characters[charId] = optimisticCharacter
+        })
         runOptimisticCommandSequence(factories, rollback)
       }
     },
@@ -1631,6 +1643,11 @@ export const __v3PluginLifecycleTestHooks = {
   },
   createMutationObserver(lifecycle: PluginLifecycleCleanup, callback: SafeMutationCallback) {
     return new SafeMutationObserver(callback, lifecycle)
+  },
+  createApi(plugin: RisuPlugin) {
+    const iframe = document.createElement('iframe')
+    const lifecycle = new PluginLifecycleCleanup()
+    return makeRisuaiAPIV3(iframe, plugin, lifecycle)
   },
   registerProvider(
     pluginName: string,

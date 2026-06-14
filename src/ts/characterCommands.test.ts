@@ -39,6 +39,7 @@ import {
   currentCharacterSupaMemorySnapshot,
   currentCharacterStateSnapshot,
   currentCharacterTrashTimeSnapshot,
+  dispatchCompatibleCharacterUpdate,
   dispatchCompatibleCharacterUpdateScoped,
   moveCharacterOrderItem,
   normalizeCharacterOrder,
@@ -1132,6 +1133,105 @@ describe('Phase 3 kept-key character diff (M13)', () => {
 
     expect(instrumented.maxClonedSize).toBeLessThan(chatsSize)
     expect(instrumented.result.factories).toHaveLength(1)
+  })
+
+  it('P2: prepareCompatibleCharacterUpdate builds local projection from the sanitized command patch', () => {
+    DBState.db = {
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'Old name',
+          desc: 'Old desc',
+          chats: [{ id: 'chat-a', message: [{ role: 'user', data: 'old', chatId: 'msg-a' }] }],
+          globalLore: [{ key: 'old lore' }],
+          customscript: 'old custom script',
+          triggerscript: 'old trigger script',
+          modules: ['old-module'],
+        },
+      ],
+      characterOrder: [],
+    } as any
+    const previous = DBState.db.characters[0]
+    const next = {
+      chaId: 'plugin-supplied-id',
+      name: 'New name',
+      desc: 'New desc',
+      chats: [{ id: 'chat-a', message: [{ role: 'user', data: 'changed', chatId: 'msg-a' }] }],
+      globalLore: [{ key: 'changed lore' }],
+      customscript: 'changed custom script',
+      triggerscript: 'changed trigger script',
+      modules: ['changed-module'],
+    }
+    const stateSnapshot = currentCharacterStateSnapshot()
+
+    const prepared = prepareCompatibleCharacterUpdate(previous, next as any, stateSnapshot)
+
+    expect(prepared.characterId).toBe('char-a')
+    expect(prepared.patch).toEqual({
+      name: 'New name',
+      desc: 'New desc',
+    })
+    expect(prepared.factories).toHaveLength(1)
+    expect(prepared.optimisticCharacter).toEqual({
+      chaId: 'char-a',
+      name: 'New name',
+      desc: 'New desc',
+      chats: [{ id: 'chat-a', message: [{ role: 'user', data: 'old', chatId: 'msg-a' }] }],
+      globalLore: [{ key: 'old lore' }],
+      customscript: 'old custom script',
+      triggerscript: 'old trigger script',
+      modules: ['old-module'],
+    })
+  })
+
+  it('P2: prepareCompatibleCharacterUpdate is a no-op when only excluded or deleted fields change', () => {
+    const previous = {
+      chaId: 'char-a',
+      name: 'Old name',
+      desc: 'Deleted desc',
+      chats: [{ id: 'chat-a', message: [{ role: 'user', data: 'old', chatId: 'msg-a' }] }],
+      globalLore: [{ key: 'old lore' }],
+    }
+    const next = {
+      chaId: 'plugin-supplied-id',
+      name: 'Old name',
+      chats: [{ id: 'chat-a', message: [{ role: 'user', data: 'changed', chatId: 'msg-a' }] }],
+      globalLore: [{ key: 'changed lore' }],
+    }
+    const stateSnapshot = currentCharacterStateSnapshot()
+
+    const prepared = prepareCompatibleCharacterUpdate(previous as any, next as any, stateSnapshot)
+
+    expect(prepared.characterId).toBe('char-a')
+    expect(prepared.patch).toEqual({})
+    expect(prepared.optimisticCharacter).toBeUndefined()
+    expect(prepared.factories).toHaveLength(0)
+  })
+
+  it('P2: compatible character updates do not target a replacement chaId when the previous row has no id', async () => {
+    const calls = stubCommandFetch()
+    const previousCharacter = {
+      name: 'Missing id',
+      chats: [],
+    }
+    const nextCharacter = {
+      chaId: 'replacement-id',
+      name: 'Replacement name',
+      chats: [],
+    }
+    const stateSnapshot = currentCharacterStateSnapshot()
+
+    const prepared = prepareCompatibleCharacterUpdate(previousCharacter as any, nextCharacter as any, stateSnapshot)
+
+    expect(prepared.characterId).toBeUndefined()
+    expect(prepared.patch).toEqual({})
+    expect(prepared.optimisticCharacter).toBeUndefined()
+    expect(prepared.factories).toHaveLength(0)
+
+    dispatchCompatibleCharacterUpdate(previousCharacter as any, nextCharacter as any, stateSnapshot)
+    await flushAsyncWork()
+
+    expect(calls).toHaveLength(0)
   })
 })
 

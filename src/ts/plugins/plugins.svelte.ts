@@ -33,7 +33,7 @@ import {
   sanitizeModulePatch,
   toModuleSnapshot,
 } from '../moduleCommands'
-import { currentCharacterStateSnapshot, dispatchCompatibleCharacterUpdate } from '../characterCommands'
+import { currentCharacterStateSnapshot, prepareCompatibleCharacterUpdate } from '../characterCommands'
 import { runOptimisticCommandSequence } from '../chatCommands'
 import {
   canUseServerCommands,
@@ -860,12 +860,27 @@ export const getV2PluginAPIs = () => {
     },
     setChar: (char: any) => {
       const charid = get(selectedCharID)
+      if (!canUseServerCommands()) {
+        withTrustedServerProjectionWrite(() => {
+          DBState.db.characters[charid] = char
+        })
+        return
+      }
+
+      const previousCharacter = DBState.db.characters?.[charid]
+        ? $state.snapshot(DBState.db.characters[charid])
+        : undefined
       const previous = currentCharacterStateSnapshot()
-      const previousCharacter = $state.snapshot(DBState.db.characters[charid])
+      const { factories, optimisticCharacter, rollback } = prepareCompatibleCharacterUpdate(
+        previousCharacter,
+        char,
+        previous,
+      )
+      if (!optimisticCharacter || factories.length === 0) return
       withTrustedServerProjectionWrite(() => {
-        DBState.db.characters[charid] = char
+        DBState.db.characters[charid] = optimisticCharacter
       })
-      dispatchCompatibleCharacterUpdate(previousCharacter, char, previous)
+      runOptimisticCommandSequence(factories, rollback)
     },
     addProvider: (
       name: string,
