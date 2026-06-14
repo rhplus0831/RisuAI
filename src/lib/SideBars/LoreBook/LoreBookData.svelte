@@ -1,6 +1,5 @@
 <script lang="ts">
   import { XIcon, LinkIcon, SunIcon, BookCopyIcon, FolderIcon, FolderOpen, PlusIcon } from '@lucide/svelte'
-  import { v4 } from 'uuid'
   import { language } from '../../../lang'
   import { getCurrentCharacter, getCurrentChat, type loreBook } from '../../../ts/storage/database.svelte'
   import { alertConfirm, alertMd } from '../../../ts/alert'
@@ -12,11 +11,7 @@
   import { tokenizeAccurate } from 'src/ts/tokenizer'
   import { DBState } from 'src/ts/stores.svelte'
   import LoreBookList from './LoreBookList.svelte'
-  import {
-    currentLorebookCollectionScopedSnapshot,
-    dispatchReplaceChatLorebooks,
-  } from 'src/ts/server/lorebookBridge.svelte'
-  import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
+  import { setActiveChatLorebookLocalActivation } from 'src/ts/server/lorebookBridge.svelte'
   import { onDestroy } from 'svelte'
 
   const tokenCountCache = new Map<string, number>()
@@ -178,50 +173,11 @@
   function isLocallyActivated(book: loreBook) {
     return book.id ? getCurrentChat()?.localLore.some((e) => e.id === book.id) : false
   }
-  function activateLocally(book: loreBook) {
-    withTrustedServerProjectionWrite(() => {
-      if (!book.id) {
-        book.id = v4()
-      }
-
-      const childLore: loreBook = {
-        key: '',
-        comment: '',
-        content: '',
-        mode: 'child',
-        insertorder: 100,
-        alwaysActive: true,
-        secondkey: '',
-        selective: false,
-        id: book.id,
-      }
-      getCurrentChat().localLore.push(childLore)
-    })
-  }
   function deactivateLocally(book: loreBook) {
-    if (!book.id) return
-    withTrustedServerProjectionWrite(() => {
-      const chat = getCurrentChat()
-      const childLore = chat?.localLore?.find((e) => e.id === book.id)
-      if (childLore) {
-        chat.localLore = chat.localLore.filter((e) => e.id !== book.id)
-      }
-    })
+    setActiveChatLorebookLocalActivation(book, false)
   }
   function toggleLocalActive(check: boolean, book: loreBook) {
-    // The toggle edits only the active chat's localLore, so capture the scoped
-    // rollback for that one collection, not the whole-DB clone.
-    const chatId = getCurrentChat()?.id
-    const previous = chatId ? currentLorebookCollectionScopedSnapshot({ kind: 'chat', chatId }) : null
-    if (check) {
-      activateLocally(book)
-    } else {
-      deactivateLocally(book)
-    }
-    const chat = getCurrentChat()
-    if (chat?.id && previous) {
-      dispatchReplaceChatLorebooks(chat.id, chat.localLore ?? [], previous)
-    }
+    setActiveChatLorebookLocalActivation(book, check)
   }
   function getParentLoreName(book: loreBook) {
     if (book.mode === 'child') {

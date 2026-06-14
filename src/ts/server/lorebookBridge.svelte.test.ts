@@ -93,6 +93,7 @@ import {
   resetServerBackedLorebookBridgeForTests,
   restoreLorebookEntryState,
   restoreLorebookState,
+  setActiveChatLorebookLocalActivation,
   watchServerBackedLorebooks,
 } from './lorebookBridge.svelte'
 import { withCloneInstrumentation } from '../__tests__/cloneCostHarness'
@@ -508,6 +509,31 @@ function setupSelectedCharacterLocalLoreCacheDb(): void {
   selectedCharID.set(0)
 }
 
+function setupActiveChatLocalActivationDb(chatId: string | null = 'active-chat'): void {
+  const chat: Record<string, unknown> = {
+    name: 'Active Chat',
+    localLore: [],
+  }
+  if (chatId !== null) {
+    chat.id = chatId
+  }
+
+  ;(DBState as { db: unknown }).db = {
+    loreBook: [],
+    loreBookPage: 0,
+    characters: [
+      {
+        chaId: 'activation-char',
+        chatPage: 0,
+        globalLore: [],
+        chats: [chat],
+      },
+    ],
+    modules: [],
+  }
+  selectedCharID.set(0)
+}
+
 function stripIdsForScopedEnsureRegression(): void {
   const db = DBState.db as any
   delete db.loreBook[0].id
@@ -859,6 +885,166 @@ describe('K4 lorebook editor entry draft scope', () => {
     expect(setting).toContain('replaceCharacterLorebookCollection')
     expect(setting).toContain('replaceChatLorebookCollection')
     expect(list).toContain('replaceGlobalLorebookEntryCollection')
+  })
+
+  it('Batch 5: LoreBookData local activation delegates trusted writes to the bridge', () => {
+    const source = readFileSync(path.join(process.cwd(), 'src/lib/SideBars/LoreBook/LoreBookData.svelte'), 'utf8')
+
+    expect(source).not.toContain('withTrustedServerProjectionWrite')
+    expect(source).not.toContain('currentLorebookCollectionScopedSnapshot')
+    expect(source).not.toContain('dispatchReplaceChatLorebooks')
+    expect(source).toContain('setActiveChatLorebookLocalActivation')
+  })
+
+  it('Batch 5: activating a global lorebook locally assigns an id, creates child lore, and dispatches', async () => {
+    setupActiveChatLocalActivationDb()
+    const book = {
+      key: 'parent-key',
+      secondkey: '',
+      insertorder: 100,
+      comment: 'Parent lore',
+      content: 'Parent content',
+      mode: 'normal',
+      alwaysActive: false,
+      selective: false,
+    } as Entry
+
+    const applied = setActiveChatLorebookLocalActivation(book as any, true, DELAY)
+
+    expect(applied).toBe(true)
+    expect(book.id).toEqual(expect.any(String))
+    expect(DBState.db.characters[0].chats[0].localLore).toEqual([
+      {
+        key: '',
+        comment: '',
+        content: '',
+        mode: 'child',
+        insertorder: 100,
+        alwaysActive: true,
+        secondkey: '',
+        selective: false,
+        id: book.id,
+      },
+    ])
+
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    const cmds = chatEntryCommands()
+    expect(cmds).toHaveLength(1)
+    expect(cmds[0].a).toMatchObject({
+      chatId: 'active-chat',
+      entryId: book.id,
+      entry: {
+        id: book.id,
+        mode: 'child',
+        alwaysActive: true,
+      },
+    })
+
+    cmds[0].rollback?.()
+    expect(DBState.db.characters[0].chats[0].localLore).toEqual([])
+  })
+
+  it('Batch 5: local activation dispatch uses the cloned activation snapshot after later live mutations', async () => {
+    setupActiveChatLocalActivationDb()
+    const book = {
+      key: 'parent-key',
+      secondkey: '',
+      insertorder: 100,
+      comment: 'Parent lore',
+      content: 'Parent content',
+      mode: 'normal',
+      alwaysActive: false,
+      selective: false,
+    } as Entry
+
+    const applied = setActiveChatLorebookLocalActivation(book as any, true, DELAY)
+    const activatedId = book.id
+
+    expect(applied).toBe(true)
+    expect(activatedId).toEqual(expect.any(String))
+
+    DBState.db.characters[0].chats[0].localLore.push({
+      key: 'later',
+      comment: 'Later mutation',
+      content: 'This should not be in the delayed activation command',
+      mode: 'normal',
+      insertorder: 100,
+      alwaysActive: false,
+      secondkey: '',
+      selective: false,
+      id: 'later-live-entry',
+    } as never)
+
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    const upserts = chatEntryCommands()
+    expect(upserts).toHaveLength(1)
+    expect(upserts[0].a).toMatchObject({
+      chatId: 'active-chat',
+      entryId: activatedId,
+      entry: {
+        id: activatedId,
+        mode: 'child',
+        alwaysActive: true,
+      },
+    })
+    expect((upserts[0].a as { entry?: { id?: string } }).entry?.id).not.toBe('later-live-entry')
+    expect(chatReplaceCommands()).toHaveLength(0)
+  })
+
+  it('Batch 5: deactivating a local activation removes the child lore and dispatches', async () => {
+    setupActiveChatLocalActivationDb()
+    DBState.db.characters[0].chats[0].localLore = [
+      {
+        key: '',
+        comment: '',
+        content: '',
+        mode: 'child',
+        insertorder: 100,
+        alwaysActive: true,
+        secondkey: '',
+        selective: false,
+        id: 'parent-entry',
+      },
+    ] as never
+
+    const applied = setActiveChatLorebookLocalActivation({ id: 'parent-entry' } as any, false, DELAY)
+
+    expect(applied).toBe(true)
+    expect(DBState.db.characters[0].chats[0].localLore).toEqual([])
+
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    const cmds = chatEntryDeleteCommands()
+    expect(cmds).toHaveLength(1)
+    expect(cmds[0].a).toMatchObject({
+      chatId: 'active-chat',
+      entryId: 'parent-entry',
+    })
+  })
+
+  it('Batch 5: local activation is a no-op without a current chat id', async () => {
+    setupActiveChatLocalActivationDb(null)
+    const book = {
+      key: 'parent-key',
+      secondkey: '',
+      insertorder: 100,
+      comment: 'Parent lore',
+      content: 'Parent content',
+      mode: 'normal',
+      alwaysActive: false,
+      selective: false,
+    } as Entry
+
+    const applied = setActiveChatLorebookLocalActivation(book as any, true, DELAY)
+
+    expect(applied).toBe(false)
+    expect(book.id).toBeUndefined()
+    expect(DBState.db.characters[0].chats[0].localLore).toEqual([])
+
+    await vi.advanceTimersByTimeAsync(DELAY)
+    expect(recorded.commands).toHaveLength(0)
   })
 
   it('K4: failed entry-draft rollback restores only the edited entry', () => {

@@ -2,7 +2,7 @@ import { untrack } from 'svelte'
 import { get } from 'svelte/store'
 import { v4 } from 'uuid'
 import type { RisuModule } from '../process/modules'
-import type { character, Chat, loreBook } from '../storage/database.svelte'
+import { getCurrentChat, type character, type Chat, type loreBook } from '../storage/database.svelte'
 import { DBState, selectedCharID } from '../stores.svelte'
 import {
   canUseServerCommands,
@@ -578,6 +578,53 @@ export function replaceCharacterLorebookCollection(characterId: string, entries:
 export function replaceChatLorebookCollection(chatId: string, entries: loreBook[], delayMs = 250): boolean {
   if (!chatId) return false
   return replaceLorebookCollection({ kind: 'chat', chatId }, entries, delayMs)
+}
+
+export function setActiveChatLorebookLocalActivation(book: loreBook, active: boolean, delayMs = 250): boolean {
+  const chatId = getCurrentChat()?.id
+  const previous = chatId ? currentLorebookCollectionScopedSnapshot({ kind: 'chat', chatId }) : null
+  if (!chatId || !previous) return false
+
+  let entries: loreBook[] | null = null
+  const applied = withTrustedServerProjectionWrite(() => {
+    const chat = getCurrentChat()
+    if (!chat || chat.id !== chatId) return false
+
+    if (!Array.isArray(chat.localLore)) {
+      chat.localLore = []
+    }
+
+    if (active) {
+      if (!book.id) {
+        book.id = v4()
+      }
+
+      const childLore: loreBook = {
+        key: '',
+        comment: '',
+        content: '',
+        mode: 'child',
+        insertorder: 100,
+        alwaysActive: true,
+        secondkey: '',
+        selective: false,
+        id: book.id,
+      }
+      chat.localLore.push(childLore)
+    } else if (book.id) {
+      const childLore = chat.localLore.find((entry) => entry.id === book.id)
+      if (childLore) {
+        chat.localLore = chat.localLore.filter((entry) => entry.id !== book.id)
+      }
+    }
+
+    entries = cloneJsonValue(chat.localLore ?? [])
+    return true
+  })
+
+  if (!applied || !entries) return false
+  dispatchReplaceChatLorebooks(chatId, entries, previous, delayMs)
+  return true
 }
 
 export function replaceGlobalLorebookEntryCollection(lorebookId: string, entries: loreBook[], delayMs = 250): boolean {
