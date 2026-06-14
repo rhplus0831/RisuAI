@@ -2,14 +2,14 @@
 
 Last audited: 2026-06-14.
 
-This document records the `withTrustedServerProjectionWrite` caller audit and
-the stabilization queue for moving trusted writes to projection, hydration,
-command, rollback, and bridge boundaries.
+This document records the `withTrustedServerProjectionWrite` caller audit, the
+resolved stabilization work, and the regression guardrails for keeping trusted
+writes at projection, hydration, command, rollback, and bridge boundaries.
 
 ## Scope
 
-The audit found 211 production `withTrustedServerProjectionWrite(...)` call
-expressions across 53 source files, excluding tests and docs. Most are
+The audit found 189 production `withTrustedServerProjectionWrite(...)` call
+expressions across 39 source files, excluding tests and docs. Most are
 legitimate projection or command boundaries. The cleanup target is not zero
 trusted writes. The target is that trusted writes should not live in arbitrary
 UI handlers, hidden normalization paths, or multi-command fanout flows without a
@@ -128,64 +128,40 @@ coherent rollback/resync story.
     inlay result is browser display text over the server-owned final message.
     Residual inlay display text is non-durable unless durable inlay rendering
     becomes a product requirement.
+- `src/lib/Setting/Pages/PersonaSettings.svelte`,
+  `src/lib/SideBars/Sidebar.svelte`,
+  `src/lib/ChatScreens/DefaultChatScreen.svelte`,
+  `src/lib/SideBars/LoreBook/LoreBookList.svelte`,
+  `src/lib/SideBars/LoreBook/LoreBookSetting.svelte`,
+  `src/lib/SideBars/LoreBook/LoreBookData.svelte`,
+  `src/lib/Setting/Pages/Module/ModuleMenu.svelte`,
+  `src/lib/Setting/lorepreset.svelte`,
+  `src/lib/Setting/Pages/PluginSettings.svelte`,
+  `src/lib/Others/LoadoutModal.svelte`,
+  `src/lib/Others/ChatList.svelte`,
+  `src/lib/SideBars/CharConfig.svelte`,
+  `src/lib/SideBars/DevTool.svelte`, and
+  `src/lib/Others/WelcomeRisu.svelte`
+  - The final P0 component audit found no remaining component-owned
+    `withTrustedServerProjectionWrite(...)` calls or generic trusted mutator
+    wrappers in the named targets. Persona, sidebar, default chat, chat list,
+    dev tool, plugin, loadout, and onboarding mutations now route through
+    persona, character, chat, plugin, loadout, and settings helpers. Lorebook
+    and module lorebook edits now route through scoped `lorebookBridge` helpers.
+    Character profile and script edits now use `createServerBackedCharacterDraft`
+    and `applyCharacterScriptDefinitionDraft` bridge boundaries. The only
+    remaining `src/lib` production trusted writes are the already-classified
+    narrow settings draft and rollback boundaries listed under Keep Categories.
 
 ## Findings
 
-### P0: Component-Level Trusted Writes
-
-UI components should not expose generic trusted mutator wrappers or own
-durable-domain mutation details. Move these writes into domain helpers that own
-snapshot capture, optimistic projection write, command dispatch, and rollback.
-The list below is the current target list for component cleanup, not a complete
-list of every Svelte caller; narrow settings draft and rollback boundaries are
-listed under keep categories.
-
-- `src/lib/Setting/Pages/PersonaSettings.svelte`
-  - Generic `runWithoutPersonaWatcher(mutator)` for persona select, reorder,
-    create, and delete.
-  - Selected persona field setters directly mutate projection and rely on a
-    component-local watcher to dispatch commands.
-- `src/lib/SideBars/Sidebar.svelte`
-  - Character order and folder metadata mutations in UI handlers.
-- `src/lib/ChatScreens/DefaultChatScreen.svelte`
-  - Active chat `fmIndex` and playground message append mutations in UI
-    handlers.
-- `src/lib/SideBars/LoreBook/LoreBookList.svelte`
-  and `src/lib/SideBars/LoreBook/LoreBookSetting.svelte`
-  - Lorebook collection replacement from UI handlers.
-- `src/lib/SideBars/LoreBook/LoreBookData.svelte`
-  - Local activation toggles mutate active chat lore directly.
-- `src/lib/Setting/Pages/Module/ModuleMenu.svelte`
-  - Module lorebook edits dual-write the live module and local draft before
-    dispatching replacement.
-- `src/lib/Setting/lorepreset.svelte`
-  - Global lorebook create, rename, and delete mutate projection in the
-    component.
-- `src/lib/Setting/Pages/PluginSettings.svelte`
-  - Plugin arg, enable, and delete mutations live in the component.
-- `src/lib/Others/LoadoutModal.svelte`
-  - Loadout favorite/delete mutations live in the component.
-- `src/lib/Others/ChatList.svelte`
-  - Contains a command-unavailable rename fallback; in Fastify mode command
-    helpers should own the path.
-- `src/lib/SideBars/CharConfig.svelte`
-  - Generic trusted mutator for chat `fmIndex`; script/trigger draft copy into
-    character row.
-- `src/lib/SideBars/DevTool.svelte`
-  - Chat scriptstate patch uses a broad component-level projection write before
-    dispatch.
-- `src/lib/Others/WelcomeRisu.svelte`
-  - Onboarding applies settings by mutating projection first and diffing after.
+No active projection trusted-write cleanup findings remain from this audit.
+Residual non-durable generation display/timing behavior is classified above.
 
 ## Cleanup Order
 
-1. Centralize persona UI mutations into persona domain helpers.
-2. Move chat, character, lorebook, plugin, loadout, and onboarding UI trusted
-   writes into domain or bridge helpers.
-3. Move hidden ID/default normalization server-side or make it pure.
-4. Replace multi-command fanout with bulk commands or serialized command
-   sequences.
-5. Classify and clean retained local generation and plugin compatibility paths.
+No cleanup queue remains for the audited projection trusted-write findings.
+Future work should use the acceptance criteria below as regression guardrails.
 
 ## Acceptance Criteria
 
