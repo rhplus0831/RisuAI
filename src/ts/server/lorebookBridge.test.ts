@@ -17,6 +17,7 @@ import {
   currentLorebookStateSnapshot,
   dispatchSelectGlobalLorebook,
   ensureGlobalLorebookListIds,
+  globalLorebookListIdsNeedNormalization,
   markCharacterLorebookHydrated,
   resetLorebookHydration,
   restoreGlobalLorebookState,
@@ -270,6 +271,31 @@ describe('Phase 3 discrete-editor scoped snapshot (L32)', () => {
     // the global-list ensure never reaches characters or chats
     expect((DBState.db.characters[1].globalLore as any[])[0].id).toBeUndefined()
     expect((DBState.db.characters[1].chats[0].localLore as any[])[0].id).toBeUndefined()
+  })
+
+  it('skips projection refreeze when global lorebook ids are already normalized', () => {
+    DBState.db.loreBook = [{ id: 'book-1', name: 'Global', data: [{ id: 'entry-1', key: 'k', content: 'c' }] }] as any
+    setServerProjectionWriteGuardEnabled(true)
+    const before = DBState.db
+
+    expect(globalLorebookListIdsNeedNormalization()).toBe(false)
+    ensureGlobalLorebookListIds()
+
+    expect(DBState.db).toBe(before)
+  })
+
+  it('normalizes missing global lorebook ids under the projection guard', () => {
+    DBState.db.loreBook = [{ name: 'Global', data: [{ key: 'k', content: 'c' }] }] as any
+    setServerProjectionWriteGuardEnabled(true)
+    const before = DBState.db
+
+    expect(globalLorebookListIdsNeedNormalization()).toBe(true)
+    ensureGlobalLorebookListIds()
+
+    expect(DBState.db).not.toBe(before)
+    expect(globalLorebookListIdsNeedNormalization()).toBe(false)
+    expect((DBState.db.loreBook as any[])[0].id).toEqual(expect.any(String))
+    expect((DBState.db.loreBook as any[])[0].data[0].id).toEqual(expect.any(String))
   })
 
   it('L32: a global-scoped editor snapshot restores only the edited book entries', () => {

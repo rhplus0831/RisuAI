@@ -12,6 +12,7 @@ vi.mock('../process/modules', async (importActual) => {
 import { DBState } from '../stores.svelte'
 import { clearCachedServerCommandRevision, setCachedServerCommandRevision } from '../server/commands'
 import {
+  botPresetIdsNeedNormalization,
   changeToPreset,
   copyPreset,
   createPreset,
@@ -404,6 +405,36 @@ describe('mergeServerProjectionCharacterRow', () => {
 })
 
 describe('preset command rollback (L21)', () => {
+  it('skips projection refreeze when hydrated bot preset ids are already normalized', async () => {
+    seedPresetDatabase({
+      botPresets: [makePreset('preset-a', 'Alpha')],
+      botPresetsId: 0,
+    })
+    setServerProjectionWriteGuardEnabled(true)
+    const before = DBState.db
+
+    expect(botPresetIdsNeedNormalization(DBState.db)).toBe(false)
+    await expect(ensureBotPresetHydrated(0)).resolves.toBe(true)
+
+    expect(DBState.db).toBe(before)
+  })
+
+  it('normalizes missing bot preset ids under the projection guard', async () => {
+    seedPresetDatabase({
+      botPresets: [{ name: 'Alpha', promptTemplate: [] } as botPreset],
+      botPresetsId: 0,
+    })
+    setServerProjectionWriteGuardEnabled(true)
+    const before = DBState.db
+
+    expect(botPresetIdsNeedNormalization(DBState.db)).toBe(true)
+    await expect(ensureBotPresetHydrated(0)).resolves.toBe(true)
+
+    expect(DBState.db).not.toBe(before)
+    expect(botPresetIdsNeedNormalization(DBState.db)).toBe(false)
+    expect(DBState.db.botPresets[0].id).toEqual(expect.any(String))
+  })
+
   it('hydrates a stubbed preset from the server projection before full-preset consumers read it', async () => {
     seedPresetDatabase({
       botPresets: [{ id: 'preset-stub', name: 'Stub', image: 'img' } as botPreset],

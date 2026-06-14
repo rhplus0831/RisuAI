@@ -89,21 +89,48 @@ function normalizeBotPresetIds(data: Pick<Database, 'botPresets' | 'botPresetsId
   for (const preset of data.botPresets) {
     if (!preset) continue
     const id = typeof preset.id === 'string' && preset.id.trim() ? preset.id : createClientPresetId()
-    preset.id = seen.has(id) ? createClientPresetId() : id
-    seen.add(preset.id)
+    const nextId = seen.has(id) ? createClientPresetId() : id
+    if (preset.id !== nextId) {
+      preset.id = nextId
+    }
+    seen.add(nextId)
   }
 
-  if (!Number.isInteger(data.botPresetsId)) {
-    data.botPresetsId = data.botPresets.length > 0 ? 0 : -1
-  } else if (data.botPresetsId >= data.botPresets.length) {
-    data.botPresetsId = data.botPresets.length > 0 ? data.botPresets.length - 1 : -1
-  } else if (data.botPresetsId < -1) {
-    data.botPresetsId = data.botPresets.length > 0 ? 0 : -1
+  const nextSelected = normalizedBotPresetsId(data.botPresets.length, data.botPresetsId)
+  if (data.botPresetsId !== nextSelected) {
+    data.botPresetsId = nextSelected
   }
 }
 
+export function botPresetIdsNeedNormalization(data: Pick<Database, 'botPresets' | 'botPresetsId'>) {
+  if (!Array.isArray(data.botPresets)) return true
+
+  const seen = new Set<string>()
+  for (const preset of data.botPresets) {
+    if (!preset) continue
+    const id = typeof preset.id === 'string' && preset.id.trim() ? preset.id : null
+    if (!id || seen.has(id)) return true
+    seen.add(id)
+  }
+
+  return data.botPresetsId !== normalizedBotPresetsId(data.botPresets.length, data.botPresetsId)
+}
+
+function normalizedBotPresetsId(presetCount: number, selected: unknown): number {
+  if (!Number.isInteger(selected)) return presetCount > 0 ? 0 : -1
+
+  const index = selected as number
+  if (index >= presetCount) return presetCount > 0 ? presetCount - 1 : -1
+  if (index < -1) return presetCount > 0 ? 0 : -1
+  return index
+}
+
 function presetIdAt(index: number): string | null {
-  normalizeBotPresetIds(DBState.db)
+  if (botPresetIdsNeedNormalization(DBState.db)) {
+    withTrustedServerProjectionWrite(() => {
+      normalizeBotPresetIds(DBState.db)
+    })
+  }
   return DBState.db.botPresets[index]?.id ?? null
 }
 
@@ -114,9 +141,11 @@ function presetNeedsHydration(preset: botPreset | undefined): boolean {
 const presetHydrationInFlight = new Map<string, Promise<boolean>>()
 
 export async function ensureBotPresetHydrated(index: number): Promise<boolean> {
-  withTrustedServerProjectionWrite(() => {
-    normalizeBotPresetIds(DBState.db)
-  })
+  if (botPresetIdsNeedNormalization(DBState.db)) {
+    withTrustedServerProjectionWrite(() => {
+      normalizeBotPresetIds(DBState.db)
+    })
+  }
   const preset = DBState.db.botPresets[index]
   if (!presetNeedsHydration(preset)) return !!preset
   const presetId = preset.id

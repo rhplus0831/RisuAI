@@ -237,26 +237,67 @@ export function ensureClientLorebookEntryIds(entries: loreBook[]): loreBook[] {
   return entries
 }
 
+function lorebookEntryIdsNeedNormalization(entries: loreBook[] | undefined): boolean {
+  return (entries ?? []).some((entry) => typeof entry.id !== 'string' || !entry.id.trim())
+}
+
 export function ensureAllClientLorebookIds(): void {
+  if (!allClientLorebookIdsNeedNormalization()) return
+
   withTrustedServerProjectionWrite(() => {
     assignGlobalLorebookListIds()
     for (const character of DBState.db.characters ?? []) {
       // Only touch a HYDRATED character's globalLore — assigning ids to a stubbed
       // one would default its absent globalLore to `[]` and mask the stub.
       if (character.chaId && hydratedCharacterLorebooks.has(character.chaId)) {
-        character.globalLore = ensureClientLorebookEntryIds(character.globalLore ?? [])
+        if (!Array.isArray(character.globalLore)) {
+          character.globalLore = []
+        } else {
+          ensureClientLorebookEntryIds(character.globalLore)
+        }
       }
       // Chat localLore stays resident, not stubbed.
       for (const chat of character.chats ?? []) {
-        chat.localLore = ensureClientLorebookEntryIds(chat.localLore ?? [])
+        if (!Array.isArray(chat.localLore)) {
+          chat.localLore = []
+        } else {
+          ensureClientLorebookEntryIds(chat.localLore)
+        }
       }
     }
     for (const module of (DBState.db.modules ?? []) as RisuModule[]) {
       if (Array.isArray(module.lorebook)) {
-        module.lorebook = ensureClientLorebookEntryIds(module.lorebook)
+        ensureClientLorebookEntryIds(module.lorebook)
       }
     }
   })
+}
+
+function allClientLorebookIdsNeedNormalization(): boolean {
+  if (globalLorebookListIdsNeedNormalization()) return true
+
+  for (const character of DBState.db.characters ?? []) {
+    if (
+      character.chaId &&
+      hydratedCharacterLorebooks.has(character.chaId) &&
+      (!Array.isArray(character.globalLore) || lorebookEntryIdsNeedNormalization(character.globalLore))
+    ) {
+      return true
+    }
+    for (const chat of character.chats ?? []) {
+      if (!Array.isArray(chat.localLore) || lorebookEntryIdsNeedNormalization(chat.localLore)) {
+        return true
+      }
+    }
+  }
+
+  for (const module of (DBState.db.modules ?? []) as RisuModule[]) {
+    if (Array.isArray(module.lorebook) && lorebookEntryIdsNeedNormalization(module.lorebook)) {
+      return true
+    }
+  }
+
+  return false
 }
 
 function ensureWatchScopeClientLorebookIds(scope: LorebookWatchScope): void {
@@ -292,41 +333,89 @@ function lorebookWatchScopeIdKey(scope: LorebookWatchScope): string {
 }
 
 function ensureSelectedCharacterLorebookIds(): void {
+  if (!selectedCharacterLorebookIdsNeedNormalization()) return
+
   withTrustedServerProjectionWrite(() => {
     const character = DBState.db.characters?.[selectedCharMirror]
     if (!character) return
     if (character.chaId && hydratedCharacterLorebooks.has(character.chaId)) {
-      character.globalLore = ensureClientLorebookEntryIds(character.globalLore ?? [])
+      if (!Array.isArray(character.globalLore)) {
+        character.globalLore = []
+      } else {
+        ensureClientLorebookEntryIds(character.globalLore)
+      }
     }
     for (const chat of character.chats ?? []) {
-      chat.localLore = ensureClientLorebookEntryIds(chat.localLore ?? [])
+      if (!Array.isArray(chat.localLore)) {
+        chat.localLore = []
+      } else {
+        ensureClientLorebookEntryIds(chat.localLore)
+      }
     }
   })
 }
 
 function ensureModuleLorebookIds(moduleId: string): void {
+  const module = ((DBState.db.modules ?? []) as RisuModule[]).find((candidate) => candidate.id === moduleId)
+  if (!module || !Array.isArray(module.lorebook) || !lorebookEntryIdsNeedNormalization(module.lorebook)) return
+
   withTrustedServerProjectionWrite(() => {
-    const module = ((DBState.db.modules ?? []) as RisuModule[]).find((candidate) => candidate.id === moduleId)
-    if (module && Array.isArray(module.lorebook)) {
-      module.lorebook = ensureClientLorebookEntryIds(module.lorebook)
+    const target = ((DBState.db.modules ?? []) as RisuModule[]).find((candidate) => candidate.id === moduleId)
+    if (target && Array.isArray(target.lorebook)) {
+      ensureClientLorebookEntryIds(target.lorebook)
     }
   })
+}
+
+function selectedCharacterLorebookIdsNeedNormalization(): boolean {
+  const character = DBState.db.characters?.[selectedCharMirror]
+  if (!character) return false
+
+  if (
+    character.chaId &&
+    hydratedCharacterLorebooks.has(character.chaId) &&
+    (!Array.isArray(character.globalLore) || lorebookEntryIdsNeedNormalization(character.globalLore))
+  ) {
+    return true
+  }
+
+  return (character.chats ?? []).some(
+    (chat) => !Array.isArray(chat.localLore) || lorebookEntryIdsNeedNormalization(chat.localLore),
+  )
 }
 
 // Shared by the whole-DB ensure above and the global-list-only ensure below.
 // Must run inside a trusted write scope (it re-reads `DBState.db` itself).
 function assignGlobalLorebookListIds(): void {
   for (const lorebook of (DBState.db.loreBook ?? []) as GlobalLorebook[]) {
-    lorebook.id = typeof lorebook.id === 'string' && lorebook.id.trim() ? lorebook.id : v4()
-    lorebook.data = ensureClientLorebookEntryIds(lorebook.data ?? [])
+    if (typeof lorebook.id !== 'string' || !lorebook.id.trim()) {
+      lorebook.id = v4()
+    }
+    if (!Array.isArray(lorebook.data)) {
+      lorebook.data = []
+    } else {
+      ensureClientLorebookEntryIds(lorebook.data)
+    }
   }
 }
 
 /** Assign ids on the global lorebook list only (book ids + entry ids). */
 export function ensureGlobalLorebookListIds(): void {
+  if (!globalLorebookListIdsNeedNormalization()) return
+
   withTrustedServerProjectionWrite(() => {
     assignGlobalLorebookListIds()
   })
+}
+
+export function globalLorebookListIdsNeedNormalization(): boolean {
+  return ((DBState.db.loreBook ?? []) as GlobalLorebook[]).some(
+    (lorebook) =>
+      typeof lorebook.id !== 'string' ||
+      !lorebook.id.trim() ||
+      !Array.isArray(lorebook.data) ||
+      lorebookEntryIdsNeedNormalization(lorebook.data),
+  )
 }
 
 /**
@@ -485,6 +574,8 @@ export function flushPendingLorebookEntryDraftEdit(
 // the trusted write scope — a reference captured outside it would still be the
 // read-only projection and throw on assignment.
 function ensureScopedClientLorebookIds(scope: DiscreteLorebookEditScope): void {
+  if (!scopedClientLorebookIdsNeedNormalization(scope)) return
+
   withTrustedServerProjectionWrite(() => {
     switch (scope.kind) {
       case 'character': {
@@ -493,31 +584,74 @@ function ensureScopedClientLorebookIds(scope: DiscreteLorebookEditScope): void {
         // character's globalLore — assigning ids to a stubbed one would default
         // its absent globalLore to `[]` and mask the stub.
         if (character?.chaId && hydratedCharacterLorebooks.has(character.chaId)) {
-          character.globalLore = ensureClientLorebookEntryIds(character.globalLore ?? [])
+          if (!Array.isArray(character.globalLore)) {
+            character.globalLore = []
+          } else {
+            ensureClientLorebookEntryIds(character.globalLore)
+          }
         }
         return
       }
       case 'chat': {
         const chat = findChat(scope.chatId)
-        if (chat) chat.localLore = ensureClientLorebookEntryIds(chat.localLore ?? [])
+        if (chat) {
+          if (!Array.isArray(chat.localLore)) {
+            chat.localLore = []
+          } else {
+            ensureClientLorebookEntryIds(chat.localLore)
+          }
+        }
         return
       }
       case 'global': {
         const lorebook = ((DBState.db.loreBook ?? []) as GlobalLorebook[]).find(
           (candidate) => candidate.id === scope.lorebookId,
         )
-        if (lorebook) lorebook.data = ensureClientLorebookEntryIds(lorebook.data ?? [])
+        if (lorebook) {
+          if (!Array.isArray(lorebook.data)) {
+            lorebook.data = []
+          } else {
+            ensureClientLorebookEntryIds(lorebook.data)
+          }
+        }
         return
       }
       case 'module': {
         const module = findModule(scope.moduleId)
         if (module && Array.isArray(module.lorebook)) {
-          module.lorebook = ensureClientLorebookEntryIds(module.lorebook)
+          ensureClientLorebookEntryIds(module.lorebook)
         }
         return
       }
     }
   })
+}
+
+function scopedClientLorebookIdsNeedNormalization(scope: DiscreteLorebookEditScope): boolean {
+  switch (scope.kind) {
+    case 'character': {
+      const character = DBState.db.characters?.find((candidate) => candidate.chaId === scope.characterId)
+      return !!(
+        character?.chaId &&
+        hydratedCharacterLorebooks.has(character.chaId) &&
+        (!Array.isArray(character.globalLore) || lorebookEntryIdsNeedNormalization(character.globalLore))
+      )
+    }
+    case 'chat': {
+      const chat = findChat(scope.chatId)
+      return !!chat && (!Array.isArray(chat.localLore) || lorebookEntryIdsNeedNormalization(chat.localLore))
+    }
+    case 'global': {
+      const lorebook = ((DBState.db.loreBook ?? []) as GlobalLorebook[]).find(
+        (candidate) => candidate.id === scope.lorebookId,
+      )
+      return !!lorebook && (!Array.isArray(lorebook.data) || lorebookEntryIdsNeedNormalization(lorebook.data))
+    }
+    case 'module': {
+      const module = findModule(scope.moduleId)
+      return !!(module && Array.isArray(module.lorebook) && lorebookEntryIdsNeedNormalization(module.lorebook))
+    }
+  }
 }
 
 function ensureScopedClientLorebookEntryId(scope: DiscreteLorebookEditScope, index: number): void {
