@@ -55,6 +55,12 @@ coherent rollback/resync story.
     missing IDs or initialize absent arrays. Watcher collection snapshots require
     stable scope IDs and stable unique entry IDs, and malformed watched
     collections are skipped instead of silently normalized.
+- `src/ts/server/scriptDefinitionBridge.svelte.ts`
+  - Script definition broad snapshots and watcher baseline setup no longer
+    assign missing script/trigger IDs or initialize absent arrays. Watcher
+    collection snapshots and watcher-origin replacement flushes require stable
+    unique scope and script/trigger IDs, and malformed watched collections are
+    skipped instead of silently normalized.
 
 ## Findings
 
@@ -103,14 +109,6 @@ listed under keep categories.
     dispatch.
 - `src/lib/Others/WelcomeRisu.svelte`
   - Onboarding applies settings by mutating projection first and diffing after.
-
-### P1: Hidden Client-Side Normalization Writes
-
-Normalization should be server-side, pure, or limited to command payloads.
-Hidden client projection mutation can diverge from server-owned durable state.
-
-- `src/ts/server/scriptDefinitionBridge.svelte.ts`
-  - Watcher/snapshot paths assign missing script and trigger IDs.
 
 ### P1: Multi-Command Fanout
 

@@ -30,8 +30,8 @@ export interface ScriptDefinitionStateSnapshot {
  * field restores to `[]`).
  */
 export type ScopedScriptDefinitionRollback =
-  | { kind: 'characterScripts'; characterId: string; scripts: customscript[] }
-  | { kind: 'characterTriggers'; characterId: string; triggers: triggerscript[] }
+  | { kind: 'characterScripts'; characterId: string; scripts: customscript[]; hadScriptsField?: boolean }
+  | { kind: 'characterTriggers'; characterId: string; triggers: triggerscript[]; hadTriggersField?: boolean }
   | { kind: 'moduleScripts'; moduleId: string; scripts: customscript[] }
   | { kind: 'moduleTriggers'; moduleId: string; triggers: triggerscript[] }
 
@@ -83,7 +83,6 @@ export interface WatchServerBackedScriptDefinitionsOptions {
 }
 
 export function currentScriptDefinitionStateSnapshot(): ScriptDefinitionStateSnapshot {
-  ensureAllClientScriptDefinitionIds()
   return {
     characters: cloneJsonValue(DBState.db.characters ?? []),
     modules: cloneJsonValue((DBState.db.modules ?? []) as RisuModule[]),
@@ -101,19 +100,64 @@ export function applyCharacterScriptDefinitionDraft(
   characterId: string | null | undefined,
   scripts: customscript[],
   triggers: triggerscript[],
+  delayMs = 250,
 ): boolean {
   if (!characterId) return false
   const character = DBState.db.characters?.find((candidate) => candidate.chaId === characterId)
   if (!character) return false
 
+  const previousScripts = cloneJsonValue(character.customscript ?? [])
+  const previousTriggers = cloneJsonValue(character.triggerscript ?? [])
+  const hadScriptsField = Object.prototype.hasOwnProperty.call(character, 'customscript')
+  const hadTriggersField = Object.prototype.hasOwnProperty.call(character, 'triggerscript')
+  const nextScripts = ensureClientScriptDefinitionIds(cloneJsonValue(scripts))
+  const nextTriggers = ensureClientTriggerDefinitionIds(cloneJsonValue(triggers))
+  const scriptsChanged = snapshotJson(previousScripts) !== snapshotJson(nextScripts)
+  const triggersChanged = snapshotJson(previousTriggers) !== snapshotJson(nextTriggers)
   let applied = false
+
+  suppressRollbackDispatch = true
   withTrustedServerProjectionWrite(() => {
     const target = DBState.db.characters?.find((candidate) => candidate.chaId === characterId)
     if (!target) return
-    target.customscript = cloneJsonValue(scripts)
-    target.triggerscript = cloneJsonValue(triggers)
+    if (scriptsChanged || hadScriptsField) {
+      target.customscript = cloneJsonValue(nextScripts)
+    }
+    if (triggersChanged || hadTriggersField) {
+      target.triggerscript = cloneJsonValue(nextTriggers)
+    }
     applied = true
   })
+  queueMicrotask(() => {
+    suppressRollbackDispatch = false
+  })
+
+  if (applied && scriptsChanged) {
+    dispatchReplaceCharacterScripts(
+      characterId,
+      nextScripts,
+      {
+        kind: 'characterScripts',
+        characterId,
+        scripts: previousScripts,
+        hadScriptsField,
+      },
+      delayMs,
+    )
+  }
+  if (applied && triggersChanged) {
+    dispatchReplaceCharacterTriggers(
+      characterId,
+      nextTriggers,
+      {
+        kind: 'characterTriggers',
+        characterId,
+        triggers: previousTriggers,
+        hadTriggersField,
+      },
+      delayMs,
+    )
+  }
   return applied
 }
 
@@ -129,50 +173,6 @@ export function ensureClientTriggerDefinitionIds(triggers: triggerscript[]): tri
     trigger.id = typeof trigger.id === 'string' && trigger.id.trim() ? trigger.id : v4()
   }
   return triggers
-}
-
-export function ensureAllClientScriptDefinitionIds(): void {
-  let needsUpdate = false
-  for (const character of DBState.db.characters ?? []) {
-    needsUpdate ||= needsScriptDefinitionIds(character.customscript ?? [])
-    needsUpdate ||= needsTriggerDefinitionIds(character.triggerscript ?? [])
-    if (needsUpdate) break
-  }
-  if (!needsUpdate) {
-    for (const module of (DBState.db.modules ?? []) as RisuModule[]) {
-      if (Array.isArray(module.regex)) {
-        needsUpdate ||= needsScriptDefinitionIds(module.regex)
-      }
-      if (Array.isArray(module.trigger)) {
-        needsUpdate ||= needsTriggerDefinitionIds(module.trigger)
-      }
-      if (needsUpdate) break
-    }
-  }
-  if (!needsUpdate) return
-
-  withTrustedServerProjectionWrite(() => {
-    for (const character of DBState.db.characters ?? []) {
-      character.customscript = ensureClientScriptDefinitionIds(character.customscript ?? [])
-      character.triggerscript = ensureClientTriggerDefinitionIds(character.triggerscript ?? [])
-    }
-    for (const module of (DBState.db.modules ?? []) as RisuModule[]) {
-      if (Array.isArray(module.regex)) {
-        module.regex = ensureClientScriptDefinitionIds(module.regex)
-      }
-      if (Array.isArray(module.trigger)) {
-        module.trigger = ensureClientTriggerDefinitionIds(module.trigger)
-      }
-    }
-  })
-}
-
-function needsScriptDefinitionIds(scripts: customscript[]): boolean {
-  return (scripts ?? []).some((script) => !(typeof script.id === 'string' && script.id.trim()))
-}
-
-function needsTriggerDefinitionIds(triggers: triggerscript[]): boolean {
-  return (triggers ?? []).some((trigger) => !(typeof trigger.id === 'string' && trigger.id.trim()))
 }
 
 export function dispatchReplaceCharacterScripts(
@@ -326,9 +326,6 @@ export function watchServerBackedScriptDefinitions(
   const stop = $effect.root(() => {
     $effect(() => {
       const projectionApplyEpoch = getServerProjectionApplyEpoch()
-      // Scoped fires assign missing ids (and register dependencies) only within
-      // the panel's rows; the whole-DB ensure stays on the `all` scope.
-      ensureScopedClientScriptDefinitionIds(scope)
       // The per-key stringify map is the only change-detection input and the only
       // per-fire clone: each value is one row's small scripts/triggers array, not
       // the whole characters+modules graph (which carries hydrated histories).
@@ -364,69 +361,29 @@ export function watchServerBackedScriptDefinitions(
 function dispatchWatchedReplacement(key: string, previousSnapshot: string, delayMs: number): void {
   if (key.startsWith('characterScripts:')) {
     const characterId = key.slice('characterScripts:'.length)
-    const character = DBState.db.characters?.find((candidate) => candidate.chaId === characterId)
-    if (character) {
-      dispatchReplaceCharacterScripts(
-        characterId,
-        character.customscript ?? [],
-        {
-          kind: 'characterScripts',
-          characterId,
-          scripts: parseSnapshotArray<customscript>(previousSnapshot),
-        },
-        delayMs,
-      )
+    if (currentCharacterScriptsForWatchedCommand(characterId)) {
+      queueWatchedCharacterScripts(characterId, previousSnapshot, delayMs)
     }
     return
   }
   if (key.startsWith('characterTriggers:')) {
     const characterId = key.slice('characterTriggers:'.length)
-    const character = DBState.db.characters?.find((candidate) => candidate.chaId === characterId)
-    if (character) {
-      dispatchReplaceCharacterTriggers(
-        characterId,
-        character.triggerscript ?? [],
-        {
-          kind: 'characterTriggers',
-          characterId,
-          triggers: parseSnapshotArray<triggerscript>(previousSnapshot),
-        },
-        delayMs,
-      )
+    if (currentCharacterTriggersForWatchedCommand(characterId)) {
+      queueWatchedCharacterTriggers(characterId, previousSnapshot, delayMs)
     }
     return
   }
   if (key.startsWith('moduleScripts:')) {
     const moduleId = key.slice('moduleScripts:'.length)
-    const module = ((DBState.db.modules ?? []) as RisuModule[]).find((candidate) => candidate.id === moduleId)
-    if (module?.regex) {
-      dispatchReplaceModuleScripts(
-        moduleId,
-        module.regex,
-        {
-          kind: 'moduleScripts',
-          moduleId,
-          scripts: parseSnapshotArray<customscript>(previousSnapshot),
-        },
-        delayMs,
-      )
+    if (currentModuleScriptsForWatchedCommand(moduleId)) {
+      queueWatchedModuleScripts(moduleId, previousSnapshot, delayMs)
     }
     return
   }
   if (key.startsWith('moduleTriggers:')) {
     const moduleId = key.slice('moduleTriggers:'.length)
-    const module = ((DBState.db.modules ?? []) as RisuModule[]).find((candidate) => candidate.id === moduleId)
-    if (module?.trigger) {
-      dispatchReplaceModuleTriggers(
-        moduleId,
-        module.trigger,
-        {
-          kind: 'moduleTriggers',
-          moduleId,
-          triggers: parseSnapshotArray<triggerscript>(previousSnapshot),
-        },
-        delayMs,
-      )
+    if (currentModuleTriggersForWatchedCommand(moduleId)) {
+      queueWatchedModuleTriggers(moduleId, previousSnapshot, delayMs)
     }
   }
 }
@@ -435,8 +392,9 @@ function dispatchWatchedReplacement(key: string, previousSnapshot: string, delay
  * Build the change-detection snapshot map for the watcher's scope. Exported for
  * the clone-cost regression test, which asserts a scoped fire stringifies
  * only the mounting panel's rows (O(panel scope)) instead of every character's
- * and module's scripts/triggers (O(all scripts in the DB)). The `all` branch is
- * the original whole-DB scan and stays byte-for-byte identical.
+ * and module's scripts/triggers (O(all scripts in the DB)). Collections without
+ * stable scope IDs and stable unique script/trigger IDs are left out of the
+ * watcher baseline.
  */
 export function collectScriptDefinitionCollectionSnapshots(
   scope: ScriptDefinitionWatchScope = { kind: 'all' },
@@ -447,89 +405,55 @@ export function collectScriptDefinitionCollectionSnapshots(
     // Track only the selected character's rows. Reading the $state mirror (not a
     // bare get()) re-runs the effect on a character switch, so the first edit to
     // the newly selected character is never dropped.
-    const character = DBState.db.characters?.[selectedCharMirror]
-    if (character?.chaId) {
+    const characters = DBState.db.characters ?? []
+    const stableCharacterIds = uniqueStableCharacterIds(characters)
+    const character = characters[selectedCharMirror]
+    if (character?.chaId && stableCharacterIds.has(character.chaId)) {
       collectCharacterScriptDefinitionSnapshots(snapshots, character)
     }
     return snapshots
   }
 
   if (scope.kind === 'module') {
-    const module = ((DBState.db.modules ?? []) as RisuModule[]).find((candidate) => candidate.id === scope.moduleId)
-    if (module) collectModuleScriptDefinitionSnapshots(snapshots, module)
+    const modules = (DBState.db.modules ?? []) as RisuModule[]
+    const stableModuleIds = uniqueStableModuleIds(modules)
+    const module = modules.find((candidate) => candidate.id === scope.moduleId)
+    if (module?.id && stableModuleIds.has(module.id)) collectModuleScriptDefinitionSnapshots(snapshots, module)
     return snapshots
   }
 
+  const stableCharacterIds = uniqueStableCharacterIds(DBState.db.characters ?? [])
   for (const character of DBState.db.characters ?? []) {
-    if (character.chaId) {
+    if (character.chaId && stableCharacterIds.has(character.chaId)) {
       collectCharacterScriptDefinitionSnapshots(snapshots, character)
     }
   }
-  for (const module of (DBState.db.modules ?? []) as RisuModule[]) {
-    collectModuleScriptDefinitionSnapshots(snapshots, module)
+  const modules = (DBState.db.modules ?? []) as RisuModule[]
+  const stableModuleIds = uniqueStableModuleIds(modules)
+  for (const module of modules) {
+    if (module.id && stableModuleIds.has(module.id)) {
+      collectModuleScriptDefinitionSnapshots(snapshots, module)
+    }
   }
   return snapshots
 }
 
 function collectCharacterScriptDefinitionSnapshots(snapshots: Map<string, string>, character: character): void {
-  snapshots.set(`characterScripts:${character.chaId}`, snapshotJson(character.customscript ?? []))
-  snapshots.set(`characterTriggers:${character.chaId}`, snapshotJson(character.triggerscript ?? []))
+  if (hasStableUniqueScriptDefinitionIds(character.customscript)) {
+    snapshots.set(`characterScripts:${character.chaId}`, snapshotJson(character.customscript))
+  }
+  if (hasStableUniqueTriggerDefinitionIds(character.triggerscript)) {
+    snapshots.set(`characterTriggers:${character.chaId}`, snapshotJson(character.triggerscript))
+  }
 }
 
 function collectModuleScriptDefinitionSnapshots(snapshots: Map<string, string>, module: RisuModule): void {
-  if (module.id && Array.isArray(module.regex)) {
+  if (module.id && hasStableUniqueScriptDefinitionIds(module.regex)) {
     snapshots.set(`moduleScripts:${module.id}`, snapshotJson(module.regex))
   }
-  if (module.id && Array.isArray(module.trigger)) {
+  if (module.id && hasStableUniqueTriggerDefinitionIds(module.trigger)) {
     snapshots.set(`moduleTriggers:${module.id}`, snapshotJson(module.trigger))
   }
-}
-
-// Scoped variant of `ensureAllClientScriptDefinitionIds` for the watcher's
-// per-fire ensure: assign missing ids (and register reactive dependencies) only
-// on the rows the scope tracks. The mutation re-reads its target inside the
-// trusted write scope — a reference captured outside it would still be the
-// read-only projection and throw.
-function ensureScopedClientScriptDefinitionIds(scope: ScriptDefinitionWatchScope): void {
-  if (scope.kind === 'all') {
-    ensureAllClientScriptDefinitionIds()
-    return
-  }
-
-  if (scope.kind === 'character') {
-    const character = DBState.db.characters?.[selectedCharMirror]
-    if (!character) return
-    if (
-      !needsScriptDefinitionIds(character.customscript ?? []) &&
-      !needsTriggerDefinitionIds(character.triggerscript ?? [])
-    ) {
-      return
-    }
-    withTrustedServerProjectionWrite(() => {
-      const target = DBState.db.characters?.[selectedCharMirror]
-      if (!target) return
-      target.customscript = ensureClientScriptDefinitionIds(target.customscript ?? [])
-      target.triggerscript = ensureClientTriggerDefinitionIds(target.triggerscript ?? [])
-    })
-    return
-  }
-
-  const module = ((DBState.db.modules ?? []) as RisuModule[]).find((candidate) => candidate.id === scope.moduleId)
-  if (!module) return
-  const needsUpdate =
-    (Array.isArray(module.regex) && needsScriptDefinitionIds(module.regex)) ||
-    (Array.isArray(module.trigger) && needsTriggerDefinitionIds(module.trigger))
-  if (!needsUpdate) return
-  withTrustedServerProjectionWrite(() => {
-    const target = ((DBState.db.modules ?? []) as RisuModule[]).find((candidate) => candidate.id === scope.moduleId)
-    if (!target) return
-    if (Array.isArray(target.regex)) {
-      target.regex = ensureClientScriptDefinitionIds(target.regex)
-    }
-    if (Array.isArray(target.trigger)) {
-      target.trigger = ensureClientTriggerDefinitionIds(target.trigger)
-    }
-  })
 }
 
 function queueReplacement(
@@ -555,6 +479,134 @@ function queueReplacement(
   }
   pending.timer = setTimeout(() => runPendingScriptDefinitionReplacement(key), delay)
   pendingReplacements.set(key, pending)
+}
+
+function queueWatchedCharacterScripts(characterId: string, previousSnapshot: string, delayMs: number): void {
+  queueReplacement(
+    `characterScripts:${characterId}`,
+    {
+      kind: 'characterScripts',
+      characterId,
+      scripts: parseSnapshotArray<customscript>(previousSnapshot),
+    },
+    (rollback, options = {}) => {
+      const scripts = currentCharacterScriptsForWatchedCommand(characterId)
+      if (!scripts) return Promise.resolve({ status: 'unavailable' })
+      const scriptPayload = cloneJsonValue(scripts) as ScriptDefinitionSnapshot[]
+      return runServerCommand({
+        command: (baseRevision) =>
+          replaceCharacterScriptsCommand(
+            {
+              baseRevision,
+              characterId,
+              scripts: scriptPayload,
+            },
+            options.signal,
+            options.keepalive,
+          ),
+        rollback: () => rollbackServerBackedScriptDefinitions(rollback),
+        signal: options.signal,
+        keepalive: options.keepalive,
+      })
+    },
+    delayMs,
+  )
+}
+
+function queueWatchedCharacterTriggers(characterId: string, previousSnapshot: string, delayMs: number): void {
+  queueReplacement(
+    `characterTriggers:${characterId}`,
+    {
+      kind: 'characterTriggers',
+      characterId,
+      triggers: parseSnapshotArray<triggerscript>(previousSnapshot),
+    },
+    (rollback, options = {}) => {
+      const triggers = currentCharacterTriggersForWatchedCommand(characterId)
+      if (!triggers) return Promise.resolve({ status: 'unavailable' })
+      const triggerPayload = cloneJsonValue(triggers) as TriggerDefinitionSnapshot[]
+      return runServerCommand({
+        command: (baseRevision) =>
+          replaceCharacterTriggersCommand(
+            {
+              baseRevision,
+              characterId,
+              triggers: triggerPayload,
+            },
+            options.signal,
+            options.keepalive,
+          ),
+        rollback: () => rollbackServerBackedScriptDefinitions(rollback),
+        signal: options.signal,
+        keepalive: options.keepalive,
+      })
+    },
+    delayMs,
+  )
+}
+
+function queueWatchedModuleScripts(moduleId: string, previousSnapshot: string, delayMs: number): void {
+  queueReplacement(
+    `moduleScripts:${moduleId}`,
+    {
+      kind: 'moduleScripts',
+      moduleId,
+      scripts: parseSnapshotArray<customscript>(previousSnapshot),
+    },
+    (rollback, options = {}) => {
+      const scripts = currentModuleScriptsForWatchedCommand(moduleId)
+      if (!scripts) return Promise.resolve({ status: 'unavailable' })
+      const scriptPayload = cloneJsonValue(scripts) as ScriptDefinitionSnapshot[]
+      return runServerCommand({
+        command: (baseRevision) =>
+          replaceModuleScriptsCommand(
+            {
+              baseRevision,
+              moduleId,
+              scripts: scriptPayload,
+            },
+            options.signal,
+            options.keepalive,
+          ),
+        rollback: () => rollbackServerBackedScriptDefinitions(rollback),
+        signal: options.signal,
+        keepalive: options.keepalive,
+      })
+    },
+    delayMs,
+  )
+}
+
+function queueWatchedModuleTriggers(moduleId: string, previousSnapshot: string, delayMs: number): void {
+  queueReplacement(
+    `moduleTriggers:${moduleId}`,
+    {
+      kind: 'moduleTriggers',
+      moduleId,
+      triggers: parseSnapshotArray<triggerscript>(previousSnapshot),
+    },
+    (rollback, options = {}) => {
+      const triggers = currentModuleTriggersForWatchedCommand(moduleId)
+      if (!triggers) return Promise.resolve({ status: 'unavailable' })
+      const triggerPayload = cloneJsonValue(triggers) as TriggerDefinitionSnapshot[]
+      return runServerCommand({
+        command: (baseRevision) =>
+          replaceModuleTriggersCommand(
+            {
+              baseRevision,
+              moduleId,
+              triggers: triggerPayload,
+            },
+            options.signal,
+            options.keepalive,
+          ),
+        rollback: () => rollbackServerBackedScriptDefinitions(rollback),
+        signal: options.signal,
+        keepalive: options.keepalive,
+      })
+    },
+    delayMs,
+  )
 }
 
 export function flushPendingServerBackedScriptDefinitionPatches(options: ServerCommandTransportOptions = {}): void {
@@ -594,12 +646,22 @@ function restoreScopedScriptDefinition(rollback: ScopedScriptDefinitionRollback)
     switch (rollback.kind) {
       case 'characterScripts': {
         const character = DBState.db.characters?.find((candidate) => candidate.chaId === rollback.characterId)
-        if (character) character.customscript = cloneJsonValue(rollback.scripts)
+        if (!character) return
+        if (rollback.hadScriptsField === false) {
+          delete character.customscript
+        } else {
+          character.customscript = cloneJsonValue(rollback.scripts)
+        }
         return
       }
       case 'characterTriggers': {
         const character = DBState.db.characters?.find((candidate) => candidate.chaId === rollback.characterId)
-        if (character) character.triggerscript = cloneJsonValue(rollback.triggers)
+        if (!character) return
+        if (rollback.hadTriggersField === false) {
+          delete character.triggerscript
+        } else {
+          character.triggerscript = cloneJsonValue(rollback.triggers)
+        }
         return
       }
       case 'moduleScripts': {
@@ -626,12 +688,84 @@ function snapshotJson(value: unknown): string {
 }
 
 // Parse a per-key snapshot string back into the pre-edit scripts/triggers array.
-// `collectScriptDefinitionCollectionSnapshots` always stringifies an array
-// (`?? []`), so a non-array or `'__undefined__'` marker restores to `[]`.
+// Watched snapshots stringify arrays only; a non-array or `'__undefined__'`
+// marker restores to `[]` defensively.
 function parseSnapshotArray<T>(snapshot: string): T[] {
   if (snapshot === '__undefined__') return []
   const parsed = JSON.parse(snapshot) as unknown
   return Array.isArray(parsed) ? (parsed as T[]) : []
+}
+
+function currentCharacterScriptsForWatchedCommand(characterId: string): customscript[] | null {
+  if (!uniqueStableCharacterIds(DBState.db.characters ?? []).has(characterId)) return null
+  const character = DBState.db.characters?.find((candidate) => candidate.chaId === characterId)
+  if (!character || !hasStableUniqueScriptDefinitionIds(character.customscript)) return null
+  return character.customscript
+}
+
+function currentCharacterTriggersForWatchedCommand(characterId: string): triggerscript[] | null {
+  if (!uniqueStableCharacterIds(DBState.db.characters ?? []).has(characterId)) return null
+  const character = DBState.db.characters?.find((candidate) => candidate.chaId === characterId)
+  if (!character || !hasStableUniqueTriggerDefinitionIds(character.triggerscript)) return null
+  return character.triggerscript
+}
+
+function currentModuleScriptsForWatchedCommand(moduleId: string): customscript[] | null {
+  const modules = (DBState.db.modules ?? []) as RisuModule[]
+  if (!uniqueStableModuleIds(modules).has(moduleId)) return null
+  const module = modules.find((candidate) => candidate.id === moduleId)
+  if (!module || !hasStableUniqueScriptDefinitionIds(module.regex)) return null
+  return module.regex
+}
+
+function currentModuleTriggersForWatchedCommand(moduleId: string): triggerscript[] | null {
+  const modules = (DBState.db.modules ?? []) as RisuModule[]
+  if (!uniqueStableModuleIds(modules).has(moduleId)) return null
+  const module = modules.find((candidate) => candidate.id === moduleId)
+  if (!module || !hasStableUniqueTriggerDefinitionIds(module.trigger)) return null
+  return module.trigger
+}
+
+function isStableCommandId(value: unknown): value is string {
+  return typeof value === 'string' && value.trim() !== ''
+}
+
+function hasStableUniqueCommandIds(values: readonly unknown[]): values is string[] {
+  const seen = new Set<string>()
+  for (const value of values) {
+    if (!isStableCommandId(value)) return false
+    if (seen.has(value)) return false
+    seen.add(value)
+  }
+  return true
+}
+
+function hasStableUniqueScriptDefinitionIds(scripts: unknown): scripts is customscript[] {
+  if (!Array.isArray(scripts)) return false
+  return hasStableUniqueCommandIds(scripts.map((script) => (script as { id?: unknown }).id))
+}
+
+function hasStableUniqueTriggerDefinitionIds(triggers: unknown): triggers is triggerscript[] {
+  if (!Array.isArray(triggers)) return false
+  return hasStableUniqueCommandIds(triggers.map((trigger) => (trigger as { id?: unknown }).id))
+}
+
+function uniqueStableCharacterIds(characters: readonly character[]): Set<string> {
+  const counts = new Map<string, number>()
+  for (const character of characters) {
+    if (!isStableCommandId(character.chaId)) continue
+    counts.set(character.chaId, (counts.get(character.chaId) ?? 0) + 1)
+  }
+  return new Set([...counts].filter(([, count]) => count === 1).map(([id]) => id))
+}
+
+function uniqueStableModuleIds(modules: readonly RisuModule[]): Set<string> {
+  const counts = new Map<string, number>()
+  for (const module of modules) {
+    if (!isStableCommandId(module.id)) continue
+    counts.set(module.id, (counts.get(module.id) ?? 0) + 1)
+  }
+  return new Set([...counts].filter(([, count]) => count === 1).map(([id]) => id))
 }
 
 function cloneJsonValue<T>(value: T): T {

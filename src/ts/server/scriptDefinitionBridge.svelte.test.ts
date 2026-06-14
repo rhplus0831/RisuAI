@@ -57,6 +57,7 @@ import { withCloneInstrumentation } from '../__tests__/cloneCostHarness'
 import {
   applyCharacterScriptDefinitionDraft,
   collectScriptDefinitionCollectionSnapshots,
+  currentScriptDefinitionStateSnapshot,
   dispatchReplaceCharacterScripts,
   dispatchReplaceCharacterTriggers,
   flushPendingServerBackedScriptDefinitionPatches,
@@ -103,6 +104,34 @@ function trigger(
   }
 }
 
+function scriptWithoutId(out: string): {
+  comment: string
+  in: string
+  out: string
+  type: string
+} {
+  return {
+    comment: out,
+    in: '',
+    out,
+    type: 'regex',
+  }
+}
+
+function triggerWithoutId(comment: string): {
+  comment: string
+  type: 'manual'
+  conditions: []
+  effect: []
+} {
+  return {
+    comment,
+    type: 'manual',
+    conditions: [],
+    effect: [],
+  }
+}
+
 function setupScriptDefinitions(): void {
   ;(DBState as { db: unknown }).db = {
     characters: [
@@ -133,6 +162,113 @@ afterEach(() => {
   ;(DBState as { db: unknown }).db = {}
 })
 
+describe('P1 script definition watcher purity', () => {
+  it('state snapshots clone malformed script data as-is without assigning ids or stub arrays', () => {
+    ;(DBState as { db: unknown }).db = {
+      characters: [
+        {
+          chaId: 'snapshot-char',
+          customscript: [scriptWithoutId('missing script id')],
+        },
+      ],
+      modules: [
+        {
+          id: 'snapshot-module',
+          regex: [scriptWithoutId('missing module script id')],
+        },
+      ],
+    }
+
+    const snapshot = currentScriptDefinitionStateSnapshot()
+
+    expect(DBState.db.characters[0].customscript[0].id).toBeUndefined()
+    expect(DBState.db.characters[0]).not.toHaveProperty('triggerscript')
+    expect(DBState.db.modules[0].regex[0].id).toBeUndefined()
+    expect(DBState.db.modules[0]).not.toHaveProperty('trigger')
+
+    expect(snapshot.characters[0].customscript?.[0].id).toBeUndefined()
+    expect(snapshot.characters[0]).not.toHaveProperty('triggerscript')
+    expect(snapshot.modules[0].regex?.[0].id).toBeUndefined()
+    expect(snapshot.modules[0]).not.toHaveProperty('trigger')
+  })
+
+  it('watcher first run does not assign script or trigger ids', () => {
+    ;(DBState as { db: unknown }).db = {
+      characters: [
+        {
+          chaId: 'char-missing-ids',
+          customscript: [scriptWithoutId('missing script id')],
+          triggerscript: [triggerWithoutId('missing trigger id')],
+        },
+      ],
+      modules: [
+        {
+          id: 'module-missing-ids',
+          regex: [scriptWithoutId('missing module script id')],
+          trigger: [triggerWithoutId('missing module trigger id')],
+        },
+      ],
+    }
+
+    const stop = watchServerBackedScriptDefinitions({ delayMs: DELAY })
+    flushSync()
+
+    expect(DBState.db.characters[0].customscript[0].id).toBeUndefined()
+    expect(DBState.db.characters[0].triggerscript[0].id).toBeUndefined()
+    expect(DBState.db.modules[0].regex[0].id).toBeUndefined()
+    expect(DBState.db.modules[0].trigger[0].id).toBeUndefined()
+    expect(recorded.commands).toEqual([])
+    stop()
+  })
+
+  it('watcher skips malformed and duplicate ids without dispatch or mutation', async () => {
+    ;(DBState as { db: unknown }).db = {
+      characters: [
+        {
+          chaId: 'char-malformed',
+          customscript: [scriptWithoutId('missing script id')],
+          triggerscript: [trigger('duplicate-trigger', 'first'), trigger('duplicate-trigger', 'second')],
+        },
+      ],
+      modules: [],
+    }
+
+    const stop = watchServerBackedScriptDefinitions({ delayMs: DELAY })
+    flushSync()
+
+    DBState.db.characters[0].customscript[0].out = 'changed without id'
+    DBState.db.characters[0].triggerscript[1].comment = 'changed duplicate id'
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    expect(recorded.commands).toEqual([])
+    expect(DBState.db.characters[0].customscript[0].id).toBeUndefined()
+    expect(DBState.db.characters[0].triggerscript.map((entry) => entry.id)).toEqual([
+      'duplicate-trigger',
+      'duplicate-trigger',
+    ])
+    stop()
+  })
+
+  it('watcher revalidates ids at debounce flush before sending replacements', async () => {
+    setupScriptDefinitions()
+    const stop = watchServerBackedScriptDefinitions({ delayMs: DELAY })
+    flushSync()
+
+    DBState.db.characters[0].customscript = [script('script-1', 'queued while stable')]
+    flushSync()
+
+    DBState.db.characters[0].customscript = [scriptWithoutId('malformed before flush') as never]
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+    await Promise.resolve()
+
+    expect(recorded.commands).toEqual([])
+    expect(DBState.db.characters[0].customscript[0].id).toBeUndefined()
+    stop()
+  })
+})
+
 describe('character script definition draft bridge', () => {
   it('routes CharConfig script draft writes through the bridge helper', () => {
     const source = readFileSync(path.join(process.cwd(), 'src/lib/SideBars/CharConfig.svelte'), 'utf8')
@@ -149,7 +285,7 @@ describe('character script definition draft bridge', () => {
     const draftScripts = [script('script-1', 'draft script')]
     const draftTriggers = [trigger('trigger-1', 'draft trigger')]
 
-    expect(applyCharacterScriptDefinitionDraft('char-1', draftScripts, draftTriggers)).toBe(true)
+    expect(applyCharacterScriptDefinitionDraft('char-1', draftScripts, draftTriggers, DELAY)).toBe(true)
     expect(DBState.db.characters[0].customscript).toEqual([script('script-1', 'draft script')])
     expect(DBState.db.characters[0].triggerscript).toEqual([trigger('trigger-1', 'draft trigger')])
     expect(DBState.db.characters[0].customscript).not.toBe(draftScripts)
@@ -192,6 +328,115 @@ describe('character script definition draft bridge', () => {
     stop()
   })
 
+  it('assigns ids on explicit character draft writes without mutating the draft arrays', async () => {
+    setupScriptDefinitions()
+    const stop = watchServerBackedScriptDefinitions({ delayMs: DELAY })
+    flushSync()
+
+    const draftScripts = [scriptWithoutId('new script')]
+    const draftTriggers = [triggerWithoutId('new trigger')]
+
+    expect(applyCharacterScriptDefinitionDraft('char-1', draftScripts, draftTriggers, DELAY)).toBe(true)
+    expect((draftScripts[0] as { id?: string }).id).toBeUndefined()
+    expect((draftTriggers[0] as { id?: string }).id).toBeUndefined()
+    expect(DBState.db.characters[0].customscript[0]).toMatchObject({
+      id: expect.any(String),
+      out: 'new script',
+    })
+    expect(DBState.db.characters[0].triggerscript[0]).toMatchObject({
+      id: expect.any(String),
+      comment: 'new trigger',
+    })
+
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+    await Promise.resolve()
+
+    const [scriptCommand, triggerCommand] = recorded.commands.map((entry) => entry.built)
+    expect(scriptCommand).toMatchObject({
+      kind: 'replaceCharacterScripts',
+      characterId: 'char-1',
+      scripts: [{ id: expect.any(String), out: 'new script' }],
+    })
+    expect(triggerCommand).toMatchObject({
+      kind: 'replaceCharacterTriggers',
+      characterId: 'char-1',
+      triggers: [{ id: expect.any(String), comment: 'new trigger' }],
+    })
+    stop()
+  })
+
+  it('persists explicit character drafts when the watcher skipped an initially absent collection', async () => {
+    ;(DBState as { db: unknown }).db = {
+      characters: [{ chaId: 'char-1' }],
+      modules: [],
+    }
+    const stop = watchServerBackedScriptDefinitions({ delayMs: DELAY })
+    flushSync()
+
+    const draftScripts = [scriptWithoutId('created script')]
+    const draftTriggers = [triggerWithoutId('created trigger')]
+
+    expect(applyCharacterScriptDefinitionDraft('char-1', draftScripts, draftTriggers, DELAY)).toBe(true)
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+    await Promise.resolve()
+
+    const [scriptCommand, triggerCommand] = recorded.commands
+    expect(scriptCommand.built).toMatchObject({
+      kind: 'replaceCharacterScripts',
+      characterId: 'char-1',
+      scripts: [{ id: expect.any(String), out: 'created script' }],
+    })
+    expect(triggerCommand.built).toMatchObject({
+      kind: 'replaceCharacterTriggers',
+      characterId: 'char-1',
+      triggers: [{ id: expect.any(String), comment: 'created trigger' }],
+    })
+
+    scriptCommand.rollback?.()
+    triggerCommand.rollback?.()
+    expect(DBState.db.characters[0]).not.toHaveProperty('customscript')
+    expect(DBState.db.characters[0]).not.toHaveProperty('triggerscript')
+    stop()
+  })
+
+  it('does not create an absent trigger field for script-only character draft edits', async () => {
+    ;(DBState as { db: unknown }).db = {
+      characters: [
+        {
+          chaId: 'char-1',
+          customscript: [script('script-1', 'initial')],
+        },
+      ],
+      modules: [],
+    }
+    const stop = watchServerBackedScriptDefinitions({ delayMs: DELAY })
+    flushSync()
+
+    expect(applyCharacterScriptDefinitionDraft('char-1', [script('script-1', 'script-only edit')], [], DELAY)).toBe(
+      true,
+    )
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+    await Promise.resolve()
+
+    expect(recorded.commands.map((entry) => entry.built)).toEqual([
+      {
+        kind: 'replaceCharacterScripts',
+        baseRevision: 1,
+        characterId: 'char-1',
+        scripts: [script('script-1', 'script-only edit')],
+      },
+    ])
+    expect(DBState.db.characters[0]).not.toHaveProperty('triggerscript')
+
+    recorded.commands[0].rollback?.()
+    expect(DBState.db.characters[0].customscript).toEqual([script('script-1', 'initial')])
+    expect(DBState.db.characters[0]).not.toHaveProperty('triggerscript')
+    stop()
+  })
+
   it('returns false without mutating or dispatching when the character id is missing', async () => {
     setupScriptDefinitions()
     const stop = watchServerBackedScriptDefinitions({ delayMs: DELAY })
@@ -214,7 +459,7 @@ describe('character script definition draft bridge', () => {
 
     const draftScripts = [script('script-1', 'queued script')]
     const draftTriggers = [trigger('trigger-1', 'queued trigger')]
-    expect(applyCharacterScriptDefinitionDraft('char-1', draftScripts, draftTriggers)).toBe(true)
+    expect(applyCharacterScriptDefinitionDraft('char-1', draftScripts, draftTriggers, DELAY)).toBe(true)
 
     const liveScripts = DBState.db.characters[0].customscript
     const liveTriggers = DBState.db.characters[0].triggerscript
