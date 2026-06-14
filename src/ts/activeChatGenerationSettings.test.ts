@@ -206,6 +206,45 @@ describe('active chat generation settings helper', () => {
     ])
   })
 
+  it('resolves preset toggles from bootstrap-shaped preset stubs without global fallback', () => {
+    DBState.db.customPromptTemplateToggle = 'fallback=Fallback'
+    DBState.db.botPresets = [
+      {
+        id: 'preset-a',
+        name: 'Preset A',
+        image: 'preset-a.png',
+        customPromptTemplateToggle: 'mode=Mode=select=warm,cold',
+        moduleIntergration: 'preset-integrated-space',
+      },
+    ] as any
+    DBState.db.characters[0].chats[0].generationSettings = {
+      configured: true,
+      personaId: 'persona-a',
+      presetId: 'preset-a',
+      jailbreakToggle: false,
+      sidebarToggles: {
+        mode: '1',
+        global: '0',
+        chat: '0',
+        character: '0',
+        integrated: '1',
+      },
+    }
+
+    const state = resolveActiveChatGenerationSettings()
+
+    expect(state.readiness.ready).toBe(true)
+    expect(state.requiredSidebarToggles.map((toggle) => toggle.key)).toEqual([
+      'mode',
+      'global',
+      'chat',
+      'character',
+      'integrated',
+    ])
+    expect(state.requiredSidebarToggles.map((toggle) => toggle.key)).not.toContain('fallback')
+    expect(state.requiredSidebarToggles.map((toggle) => toggle.key)).not.toContain('globalIntegrated')
+  })
+
   it('returns a stable guard error with active-chat missing labels', () => {
     DBState.db.characters[0].chats[0].generationSettings = {
       personaId: 'persona-a',

@@ -332,7 +332,7 @@ describe('UIA-001 / BOOT-1: bootstrap shell greeting render (DOM oracle, Tier 1)
     // The store is in its CORRECT lazy-shell state (not a wrong value): this is
     // what makes the divergence in-scope rather than a logic bug.
     expect(isServerCharacterShell(DBState.db.characters[0])).toBe(true)
-    expect((DBState.db.characters[0] as Record<string, unknown>).alternateGreetings).toBeUndefined()
+    expect((DBState.db.characters[0] as unknown as Record<string, unknown>).alternateGreetings).toBeUndefined()
 
     const error = tryMount()
     await tick()

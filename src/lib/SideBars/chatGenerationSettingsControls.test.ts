@@ -650,6 +650,36 @@ describe('sidebar chat generation settings controls', () => {
     expect(toggleControl('moduleFlag').dataset.risuSelected).toBe('false')
   })
 
+  it('renders preset-owned toggles from bootstrap-shaped preset stubs', async () => {
+    DBState.db.customPromptTemplateToggle = 'fallback=Fallback'
+    DBState.db.botPresets = [
+      {
+        id: 'preset-a',
+        name: 'Preset Alpha',
+        image: 'preset-alpha.png',
+        customPromptTemplateToggle: 'stubFlag=Stub Flag',
+      },
+    ] as any
+    activeChat().generationSettings = {
+      configured: true,
+      personaId: 'persona-a',
+      presetId: 'preset-a',
+      jailbreakToggle: false,
+      sidebarToggles: {
+        stubFlag: '1',
+        moduleFlag: '0',
+      },
+    }
+
+    mountToggles()
+    await tick()
+
+    expect(toggleCheckbox('stubFlag').checked).toBe(true)
+    expect(toggleCheckbox('moduleFlag').checked).toBe(false)
+    expect(target.textContent).toContain('Stub Flag')
+    expect(target.textContent).not.toContain('Fallback')
+  })
+
   it('renders custom toggle group and groupEnd rows as an accordion', async () => {
     DBState.db.botPresets[0].customPromptTemplateToggle =
       '=Preset Group=group\nmood=Mood=select=Calm,Spicy\nflag=Flag\n==groupend\nnote=Note=text'

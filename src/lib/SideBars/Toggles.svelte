@@ -16,14 +16,25 @@
     saveActiveChatJailbreakToggleGenerationSettings,
     saveActiveChatSidebarToggleGenerationSettings,
   } from 'src/ts/activeChatGenerationSettings'
-  import type { ChatGenerationDisplayedSidebarToggle } from 'src/ts/chatGenerationSettings'
+  import type {
+    ChatGenerationDisplayedSidebarToggle,
+    ChatGenerationRequiredSidebarToggle,
+    ChatGenerationSidebarToggleLayout,
+  } from 'src/ts/chatGenerationSettings'
+
+  type GroupedSidebarToggleGroup = Omit<ChatGenerationSidebarToggleLayout, 'kind'> & {
+    kind: 'group'
+    children: GroupedSidebarToggle[]
+  }
+
+  type GroupedSidebarToggleLayout = Omit<ChatGenerationSidebarToggleLayout, 'kind'> & {
+    kind: Exclude<ChatGenerationSidebarToggleLayout['kind'], 'group'>
+  }
 
   type GroupedSidebarToggle =
-    | ChatGenerationDisplayedSidebarToggle
-    | (ChatGenerationDisplayedSidebarToggle & {
-        kind: 'group'
-        children: GroupedSidebarToggle[]
-      })
+    | ChatGenerationRequiredSidebarToggle
+    | GroupedSidebarToggleLayout
+    | GroupedSidebarToggleGroup
 
   interface Props {
     chara?: character
@@ -65,11 +76,11 @@
 
   function groupSidebarToggles(items: ChatGenerationDisplayedSidebarToggle[]): GroupedSidebarToggle[] {
     const grouped: GroupedSidebarToggle[] = []
-    const stack: Extract<GroupedSidebarToggle, { kind: 'group' }>[] = []
+    const stack: GroupedSidebarToggleGroup[] = []
 
     for (const item of items) {
       if (item.kind === 'group') {
-        const group = { ...item, children: [] }
+        const group: GroupedSidebarToggleGroup = { ...item, kind: 'group', children: [] }
         appendGroupedToggle(grouped, stack, group)
         stack.push(group)
         continue
@@ -78,7 +89,7 @@
         stack.pop()
         continue
       }
-      appendGroupedToggle(grouped, stack, item)
+      appendGroupedToggle(grouped, stack, item as GroupedSidebarToggle)
     }
 
     return grouped
@@ -86,7 +97,7 @@
 
   function appendGroupedToggle(
     grouped: GroupedSidebarToggle[],
-    stack: Extract<GroupedSidebarToggle, { kind: 'group' }>[],
+    stack: GroupedSidebarToggleGroup[],
     item: GroupedSidebarToggle,
   ): void {
     const parent = stack.at(-1)

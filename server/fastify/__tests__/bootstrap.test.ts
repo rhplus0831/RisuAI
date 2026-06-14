@@ -809,6 +809,9 @@ describe('Phase 2A bootstrap + import', () => {
           openAIKey: 'sk-preset-key',
           proxyKey: 'proxy-preset-key',
           aiModel: 'gpt4o-chatgpt',
+          customPromptTemplateToggle: 'mode=Mode',
+          moduleIntergration: 'preset-space',
+          promptTemplate: [{ id: 'prompt-a', type: 'plain', text: 'heavy prompt' }],
         },
         {
           id: 'preset-b',
@@ -849,7 +852,12 @@ describe('Phase 2A bootstrap + import', () => {
     expect(bootstrap.json().database).toMatchObject({
       openAIKey: MASKED_PROVIDER_SECRET,
       botPresets: [
-        { id: 'preset-a', name: 'Preset A' },
+        {
+          id: 'preset-a',
+          name: 'Preset A',
+          customPromptTemplateToggle: 'mode=Mode',
+          moduleIntergration: 'preset-space',
+        },
         { id: 'preset-b', name: 'Preset B' },
       ],
       characters: [
@@ -865,6 +873,7 @@ describe('Phase 2A bootstrap + import', () => {
     expect(bootstrap.json().database.botPresets[0]).not.toHaveProperty('openAIKey')
     expect(bootstrap.json().database.botPresets[0]).not.toHaveProperty('proxyKey')
     expect(bootstrap.json().database.botPresets[0]).not.toHaveProperty('aiModel')
+    expect(bootstrap.json().database.botPresets[0]).not.toHaveProperty('promptTemplate')
     expectNormalizedAdaDatabase(bootstrap.json().database)
 
     const nestedDb = openDatabase(harness.dataDir)

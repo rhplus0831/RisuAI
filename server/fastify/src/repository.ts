@@ -1667,7 +1667,14 @@ function stubBotPresets(database: unknown): void {
   })
 }
 
-const BOT_PRESET_STUB_FIELDS = ['id', 'name', 'image', 'metadata'] as const
+const BOT_PRESET_STUB_FIELDS = [
+  'id',
+  'name',
+  'image',
+  'metadata',
+  'customPromptTemplateToggle',
+  'moduleIntergration',
+] as const
 
 const MODULE_BODY_STUB_FIELDS = [
   'id',

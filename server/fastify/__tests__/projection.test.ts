@@ -212,6 +212,8 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
           name: 'Preset 1',
           image: 'data:image/png;base64,stub',
           metadata: { tag: 'kept' },
+          customPromptTemplateToggle: 'mode=Mode',
+          moduleIntergration: 'preset-space',
           openAIKey: 'sk-secret',
           proxyKey: 'px-secret',
           promptTemplate: [{ id: 'prompt-a', type: 'plain', text: 'heavy prompt' }],
@@ -230,6 +232,8 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
         name: 'Preset 1',
         image: 'data:image/png;base64,stub',
         metadata: { tag: 'kept' },
+        customPromptTemplateToggle: 'mode=Mode',
+        moduleIntergration: 'preset-space',
       },
     ])
     expect(body.fields.botPresets[0]).not.toHaveProperty('promptTemplate')
