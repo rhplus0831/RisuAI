@@ -66,6 +66,20 @@ export function normalizePromptTemplateIds(data: Pick<Database, 'promptTemplate'
   }
 }
 
+export function promptTemplateIdsNeedNormalization(data: Pick<Database, 'promptTemplate'>) {
+  if (!Array.isArray(data.promptTemplate)) return false
+
+  const seen = new Set<string>()
+  for (const item of data.promptTemplate) {
+    if (!item || typeof item !== 'object') continue
+    const id = typeof item.id === 'string' && item.id.trim() ? item.id : null
+    if (!id || seen.has(id)) return true
+    seen.add(id)
+  }
+
+  return false
+}
+
 function normalizeBotPresetIds(data: Pick<Database, 'botPresets' | 'botPresetsId'>) {
   if (!Array.isArray(data.botPresets)) {
     data.botPresets = []

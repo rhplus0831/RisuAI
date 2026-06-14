@@ -22,7 +22,7 @@
   import { onDestroy, onMount, untrack } from 'svelte'
   import { defaultAutoSuggestPrompt } from '../../../ts/storage/defaultPrompts'
   import AuxModelSelectors from './Model/AuxModelSelectors.svelte'
-  import { normalizePromptTemplateIds } from 'src/ts/storage/database.svelte'
+  import { normalizePromptTemplateIds, promptTemplateIdsNeedNormalization } from 'src/ts/storage/database.svelte'
   import { watchServerBackedSettings } from 'src/ts/server/settingsBridge.svelte'
   import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
   import {
@@ -311,6 +311,7 @@
   })
   $effect(() => {
     if (!promptTemplateHydrated) return
+    if (!promptTemplateIdsNeedNormalization(DBState.db)) return
     withTrustedServerProjectionWrite(() => {
       normalizePromptTemplateIds(DBState.db)
     })

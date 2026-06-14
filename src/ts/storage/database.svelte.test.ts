@@ -18,7 +18,9 @@ import {
   deletePreset,
   ensureBotPresetHydrated,
   mergeServerProjectionCharacterRow,
+  normalizePromptTemplateIds,
   presetTemplate,
+  promptTemplateIdsNeedNormalization,
   reorderPresets,
   saveCurrentPreset,
   setServerProjectionWriteGuardEnabled,
@@ -131,6 +133,55 @@ function makePreset(id: string, name: string, patch: Partial<botPreset> = {}): b
     ...patch,
   }
 }
+
+describe('promptTemplateIdsNeedNormalization', () => {
+  it('skips already-normalized prompt templates', () => {
+    const data = {
+      promptTemplate: [
+        { id: 'prompt-a', type: 'plain', text: 'A' },
+        { id: 'prompt-b', type: 'plain', text: 'B' },
+      ],
+    } as unknown as Pick<Database, 'promptTemplate'>
+
+    expect(promptTemplateIdsNeedNormalization(data)).toBe(false)
+  })
+
+  it('detects missing, blank, and duplicate prompt template ids', () => {
+    expect(
+      promptTemplateIdsNeedNormalization({
+        promptTemplate: [{ type: 'plain', text: 'A' }],
+      } as unknown as Pick<Database, 'promptTemplate'>),
+    ).toBe(true)
+    expect(
+      promptTemplateIdsNeedNormalization({
+        promptTemplate: [{ id: ' ', type: 'plain', text: 'A' }],
+      } as unknown as Pick<Database, 'promptTemplate'>),
+    ).toBe(true)
+    expect(
+      promptTemplateIdsNeedNormalization({
+        promptTemplate: [
+          { id: 'prompt-a', type: 'plain', text: 'A' },
+          { id: 'prompt-a', type: 'plain', text: 'B' },
+        ],
+      } as unknown as Pick<Database, 'promptTemplate'>),
+    ).toBe(true)
+  })
+
+  it('returns false after normalization repairs prompt template ids', () => {
+    const data = {
+      promptTemplate: [
+        { id: 'prompt-a', type: 'plain', text: 'A' },
+        { id: 'prompt-a', type: 'plain', text: 'B' },
+        { type: 'plain', text: 'C' },
+      ],
+    } as unknown as Pick<Database, 'promptTemplate'>
+
+    normalizePromptTemplateIds(data)
+
+    expect(promptTemplateIdsNeedNormalization(data)).toBe(false)
+    expect(new Set(data.promptTemplate?.map((item) => item.id)).size).toBe(data.promptTemplate?.length ?? 0)
+  })
+})
 
 function seedPresetDatabase(patch: Partial<Database> = {}): void {
   DBState.db = {
