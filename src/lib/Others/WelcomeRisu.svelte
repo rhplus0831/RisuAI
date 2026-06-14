@@ -1,20 +1,17 @@
 <script lang="ts">
   import { Send } from '@lucide/svelte'
   import { changeLanguage, language } from 'src/lang'
-  import { setPreset } from 'src/ts/storage/database.svelte'
   import { DBState } from 'src/ts/stores.svelte'
   import Chat from '../ChatScreens/Chat.svelte'
-  import { prebuiltPresets } from 'src/ts/process/templates/templates'
   import { updateTextThemeAndCSS } from 'src/ts/gui/colorscheme'
   import { alertError } from 'src/ts/alert'
   import Airisu from '../../etc/Airisu.webp'
   import { onDestroy } from 'svelte'
   import {
+    applyOnboardingServerBackedSettings,
     applyServerBackedSetting,
-    applyServerBackedSettingsPatch,
     watchServerBackedSettings,
   } from 'src/ts/server/settingsBridge.svelte'
-  import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
 
   const stopServerSettingsWatch = watchServerBackedSettings([
     'language',
@@ -107,107 +104,12 @@
     if (step === 10 && !setupApplied) {
       setupApplied = true
       setTimeout(() => {
-        const patch: Record<string, unknown> = {
-          textTheme: 'highcontrast',
-          claudeCachingExperimental: true,
-        }
-        // Capture preset changes that are outside the explicit patch below.
-        const beforeSetup = safeStructuredClone(DBState.db as unknown as Record<string, unknown>)
-        withTrustedServerProjectionWrite(() => {
-          DBState.db = setPreset(DBState.db, prebuiltPresets.OAI2)
-          Object.assign(DBState.db as unknown as Record<string, unknown>, patch)
+        applyOnboardingServerBackedSettings({
+          chatMemorySelection,
+          provider,
+          chatLang,
         })
         updateTextThemeAndCSS()
-
-        switch (chatMemorySelection) {
-          case 0: {
-            patch.maxContext = 16000
-            patch.maxResponse = 1000
-            break
-          }
-          case 1: {
-            patch.maxContext = 8000
-            patch.maxResponse = 500
-            break
-          }
-          case 2: {
-            patch.maxContext = 12000
-            patch.maxResponse = 800
-            break
-          }
-          case 3: {
-            patch.maxContext = 100000
-            patch.maxResponse = 1000
-            break
-          }
-        }
-
-        if (provider === 'claude') {
-          patch.aiModel = 'claude-3-5-sonnet-20241022'
-          patch.subModel = 'claude-3-5-sonnet-20241022'
-        }
-
-        if (provider === 'openai') {
-          patch.aiModel = 'gpt4o-chatgpt'
-          patch.subModel = 'gpt4o-chatgpt'
-        }
-
-        if (provider === 'openrouter') {
-          patch.aiModel = 'openrouter'
-          patch.subModel = 'openrouter'
-          patch.openrouterRequestModel = 'risu/free'
-        }
-        if (provider === 'horde') {
-          patch.aiModel = 'horde:::auto'
-          patch.subModel = 'horde:::auto'
-        }
-        if (chatLang !== 0) {
-          switch (DBState.db.language) {
-            case 'de': {
-              patch.translator = 'de'
-              break
-            }
-            case 'en': {
-              patch.translator = 'en'
-              break
-            }
-            case 'ko': {
-              patch.translator = 'ko'
-              break
-            }
-            case 'cn': {
-              patch.translator = 'zh'
-              break
-            }
-            case 'vi': {
-              patch.translator = 'vi'
-              break
-            }
-            case 'zh-Hant': {
-              patch.translator = 'zh-TW'
-              break
-            }
-          }
-        }
-        if (chatLang === 1) {
-          patch.autoTranslate = true
-          patch.translatorType = 'google'
-          patch.useAutoTranslateInput = true
-        }
-
-        patch.didFirstSetup = true
-        withTrustedServerProjectionWrite(() => {
-          Object.assign(DBState.db as unknown as Record<string, unknown>, patch)
-        })
-        // Persist command-backed preset fields so server projection refresh keeps them.
-        const afterSetup = DBState.db as unknown as Record<string, unknown>
-        const fullPatch: Record<string, unknown> = { ...patch }
-        for (const key of Object.keys(afterSetup)) {
-          if (JSON.stringify(afterSetup[key]) !== JSON.stringify(beforeSetup[key])) {
-            fullPatch[key] = afterSetup[key]
-          }
-        }
-        void applyServerBackedSettingsPatch(fullPatch)
       }, 1000)
     }
   })

@@ -1,4 +1,6 @@
 import { untrack } from 'svelte'
+import { prebuiltPresets } from '../process/templates/templates'
+import { setPreset } from '../storage/database.svelte'
 import { DBState } from '../stores.svelte'
 import {
   canUseServerCommands,
@@ -31,6 +33,12 @@ export interface WatchServerBackedSettingsOptions {
 
 export interface ServerBackedSettingDraft<T> {
   value: T
+}
+
+export interface ApplyOnboardingServerBackedSettingsOptions {
+  chatMemorySelection: number
+  provider: string
+  chatLang: number
 }
 
 export function applyServerBackedSetting(key: string, value: unknown): void {
@@ -117,6 +125,38 @@ export function applyServerBackedSettingsPatch(patch: SettingsPatch): void {
       }
     })
   })
+
+  dispatchServerBackedSettingsPatch(commandPatch, previous, attempted)
+}
+
+export function applyOnboardingServerBackedSettings(options: ApplyOnboardingServerBackedSettingsOptions): void {
+  const patch = buildOnboardingSettingsPatch(options)
+  const beforeSetup = snapshotServerBackedSettings(DBState.db as unknown as Record<string, unknown>)
+  let fullPatch: SettingsPatch = {}
+  let previous: SettingsPatch = {}
+  let attempted: SettingsPatch = {}
+
+  withSuppressedSettingsWatcher(() => {
+    withTrustedServerProjectionWrite(() => {
+      DBState.db = setPreset(DBState.db, prebuiltPresets.OAI2)
+      Object.assign(DBState.db as unknown as Record<string, unknown>, patch)
+
+      const diff = diffServerBackedSettingsSnapshot(beforeSetup, DBState.db as unknown as Record<string, unknown>)
+      fullPatch = diff.patch
+      previous = diff.previous
+      attempted = diff.attempted
+    })
+  })
+
+  dispatchServerBackedSettingsPatch(fullPatch, previous, attempted)
+}
+
+function dispatchServerBackedSettingsPatch(
+  commandPatch: SettingsPatch,
+  previous: SettingsPatch,
+  attempted: SettingsPatch,
+): void {
+  if (Object.keys(commandPatch).length === 0) return
 
   void patchServerBackedSettings({
     patch: commandPatch,
@@ -253,6 +293,134 @@ function rollbackSettings(previous: SettingsPatch, attempted: SettingsPatch): vo
       }
     }
   })
+}
+
+function buildOnboardingSettingsPatch(options: ApplyOnboardingServerBackedSettingsOptions): SettingsPatch {
+  const patch: SettingsPatch = {
+    textTheme: 'highcontrast',
+    claudeCachingExperimental: true,
+  }
+
+  switch (options.chatMemorySelection) {
+    case 0: {
+      patch.maxContext = 16000
+      patch.maxResponse = 1000
+      break
+    }
+    case 1: {
+      patch.maxContext = 8000
+      patch.maxResponse = 500
+      break
+    }
+    case 2: {
+      patch.maxContext = 12000
+      patch.maxResponse = 800
+      break
+    }
+    case 3: {
+      patch.maxContext = 100000
+      patch.maxResponse = 1000
+      break
+    }
+  }
+
+  if (options.provider === 'claude') {
+    patch.aiModel = 'claude-3-5-sonnet-20241022'
+    patch.subModel = 'claude-3-5-sonnet-20241022'
+  }
+
+  if (options.provider === 'openai') {
+    patch.aiModel = 'gpt4o-chatgpt'
+    patch.subModel = 'gpt4o-chatgpt'
+  }
+
+  if (options.provider === 'openrouter') {
+    patch.aiModel = 'openrouter'
+    patch.subModel = 'openrouter'
+    patch.openrouterRequestModel = 'risu/free'
+  }
+
+  if (options.provider === 'horde') {
+    patch.aiModel = 'horde:::auto'
+    patch.subModel = 'horde:::auto'
+  }
+
+  if (options.chatLang !== 0) {
+    const translator = onboardingTranslatorForLanguage(String(DBState.db.language ?? ''))
+    if (translator) patch.translator = translator
+  }
+
+  if (options.chatLang === 1) {
+    patch.autoTranslate = true
+    patch.translatorType = 'google'
+    patch.useAutoTranslateInput = true
+  }
+
+  patch.didFirstSetup = true
+  return patch
+}
+
+function onboardingTranslatorForLanguage(language: string): string | null {
+  switch (language) {
+    case 'de':
+      return 'de'
+    case 'en':
+      return 'en'
+    case 'ko':
+      return 'ko'
+    case 'cn':
+      return 'zh'
+    case 'vi':
+      return 'vi'
+    case 'zh-Hant':
+      return 'zh-TW'
+    default:
+      return null
+  }
+}
+
+interface ServerBackedSettingsSnapshotEntry {
+  snapshot: string
+  value: unknown
+}
+
+function snapshotServerBackedSettings(
+  settings: Record<string, unknown>,
+): Map<string, ServerBackedSettingsSnapshotEntry> {
+  const snapshot = new Map<string, ServerBackedSettingsSnapshotEntry>()
+  for (const [key, value] of Object.entries(settings)) {
+    if (!settingsGroupForKey(key) || value === undefined) continue
+    snapshot.set(key, {
+      snapshot: snapshotJson(value),
+      value: cloneJsonValue(value),
+    })
+  }
+  return snapshot
+}
+
+function diffServerBackedSettingsSnapshot(
+  before: Map<string, ServerBackedSettingsSnapshotEntry>,
+  after: Record<string, unknown>,
+): { patch: SettingsPatch; previous: SettingsPatch; attempted: SettingsPatch } {
+  const patch: SettingsPatch = {}
+  const previous: SettingsPatch = {}
+  const attempted: SettingsPatch = {}
+  const keys = new Set([...before.keys(), ...Object.keys(after)])
+
+  for (const key of keys) {
+    if (!settingsGroupForKey(key)) continue
+    const value = after[key]
+    if (value === undefined) continue
+
+    const previousEntry = before.get(key)
+    if (previousEntry?.snapshot === snapshotJson(value)) continue
+
+    patch[key] = cloneJsonValue(value)
+    previous[key] = cloneJsonValue(previousEntry?.value)
+    attempted[key] = cloneJsonValue(value)
+  }
+
+  return { patch, previous, attempted }
 }
 
 function snapshotJson(value: unknown): string {

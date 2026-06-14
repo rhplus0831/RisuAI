@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushSync } from 'svelte'
 
@@ -9,6 +10,27 @@ const recorded = vi.hoisted(() => ({
   }>,
 }))
 const projectionGuardState = vi.hoisted(() => ({ epoch: 0 }))
+const presetMocks = vi.hoisted(() => ({
+  OAI: {
+    mainPrompt: 'default main prompt',
+    jailbreak: 'default jailbreak',
+  },
+  OAI2: {
+    apiType: 'preset-api',
+    temperature: 0.75,
+    mainPrompt: 'preset prompt',
+    maxContext: 16000,
+    maxResponse: 1000,
+  },
+  setPreset: vi.fn((db: Record<string, unknown>, preset: Record<string, unknown>) => {
+    db.apiType = preset.apiType
+    db.temperature = preset.temperature
+    db.mainPrompt = preset.mainPrompt
+    db.maxContext = preset.maxContext
+    db.maxResponse = preset.maxResponse
+    return db
+  }),
+}))
 
 vi.mock('./commands', () => ({
   canUseServerCommands: () => true,
@@ -19,7 +41,27 @@ vi.mock('./commands', () => ({
     },
   ),
   settingsGroupForKey: (key: string) =>
-    new Set(['notification', 'useAutoSuggestions', 'sdConfig']).has(key) ? 'test' : null,
+    new Set([
+      'aiModel',
+      'apiType',
+      'autoTranslate',
+      'claudeCachingExperimental',
+      'didFirstSetup',
+      'maxContext',
+      'maxResponse',
+      'notification',
+      'openrouterRequestModel',
+      'sdConfig',
+      'subModel',
+      'temperature',
+      'textTheme',
+      'translator',
+      'translatorType',
+      'useAutoSuggestions',
+      'useAutoTranslateInput',
+    ]).has(key)
+      ? 'test'
+      : null,
 }))
 
 vi.mock('./projectionWriteGuard.svelte', () => ({
@@ -27,8 +69,26 @@ vi.mock('./projectionWriteGuard.svelte', () => ({
   withTrustedServerProjectionWrite: (fn: () => unknown) => fn(),
 }))
 
+vi.mock('../process/templates/templates', () => ({
+  prebuiltPresets: {
+    OAI: presetMocks.OAI,
+    OAI2: presetMocks.OAI2,
+  },
+}))
+
+vi.mock('../storage/database.svelte', () => ({
+  appVer: 'test',
+  defaultSdDataFunc: () => ({}),
+  getCurrentCharacter: () => null,
+  getCurrentChat: () => null,
+  getDatabase: () => ({}),
+  setDatabase: vi.fn(),
+  setPreset: presetMocks.setPreset,
+}))
+
 import { DBState } from '../stores.svelte'
 import {
+  applyOnboardingServerBackedSettings,
   applyServerBackedSettingsPatch,
   flushPendingServerBackedSettingsPatch,
   watchServerBackedSettings,
@@ -44,6 +104,7 @@ beforeEach(() => {
   vi.useFakeTimers()
   recorded.patches.length = 0
   projectionGuardState.epoch = 0
+  presetMocks.setPreset.mockClear()
 })
 
 afterEach(() => {
@@ -52,6 +113,97 @@ afterEach(() => {
 })
 
 describe('settingsBridge coalescing', () => {
+  it('applies onboarding preset/settings and persists the full changed settings patch', async () => {
+    setupSettings({
+      language: 'cn',
+      apiType: 'old-api',
+      temperature: 0.2,
+      mainPrompt: 'old prompt',
+      maxContext: 4096,
+      maxResponse: 256,
+      textTheme: 'default',
+      claudeCachingExperimental: false,
+      aiModel: 'old-model',
+      subModel: 'old-sub-model',
+      openrouterRequestModel: 'old/openrouter',
+      translator: 'en',
+      autoTranslate: false,
+      translatorType: 'deepl',
+      useAutoTranslateInput: false,
+      didFirstSetup: false,
+    })
+
+    applyOnboardingServerBackedSettings({
+      chatMemorySelection: 2,
+      provider: 'openrouter',
+      chatLang: 1,
+    })
+    await Promise.resolve()
+
+    expect(presetMocks.setPreset).toHaveBeenCalledWith(expect.any(Object), presetMocks.OAI2)
+    expect(DBState.db).toMatchObject({
+      apiType: 'preset-api',
+      temperature: 0.75,
+      mainPrompt: 'preset prompt',
+      maxContext: 12000,
+      maxResponse: 800,
+      textTheme: 'highcontrast',
+      claudeCachingExperimental: true,
+      aiModel: 'openrouter',
+      subModel: 'openrouter',
+      openrouterRequestModel: 'risu/free',
+      translator: 'zh',
+      autoTranslate: true,
+      translatorType: 'google',
+      useAutoTranslateInput: true,
+      didFirstSetup: true,
+    })
+    expect(recorded.patches.map((entry) => entry.patch)).toEqual([
+      {
+        apiType: 'preset-api',
+        temperature: 0.75,
+        maxContext: 12000,
+        maxResponse: 800,
+        textTheme: 'highcontrast',
+        claudeCachingExperimental: true,
+        aiModel: 'openrouter',
+        subModel: 'openrouter',
+        openrouterRequestModel: 'risu/free',
+        translator: 'zh',
+        autoTranslate: true,
+        translatorType: 'google',
+        useAutoTranslateInput: true,
+        didFirstSetup: true,
+      },
+    ])
+    expect(recorded.patches[0].patch).not.toHaveProperty('mainPrompt')
+
+    recorded.patches[0].rollback?.()
+    expect(DBState.db).toMatchObject({
+      apiType: 'old-api',
+      temperature: 0.2,
+      maxContext: 4096,
+      maxResponse: 256,
+      textTheme: 'default',
+      claudeCachingExperimental: false,
+      aiModel: 'old-model',
+      subModel: 'old-sub-model',
+      openrouterRequestModel: 'old/openrouter',
+      translator: 'en',
+      autoTranslate: false,
+      translatorType: 'deepl',
+      useAutoTranslateInput: false,
+      didFirstSetup: false,
+    })
+  })
+
+  it('keeps the WelcomeRisu component free of direct trusted projection writes', () => {
+    const source = readFileSync('src/lib/Others/WelcomeRisu.svelte', 'utf8')
+
+    expect(source).toContain('applyOnboardingServerBackedSettings')
+    expect(source).not.toContain('withTrustedServerProjectionWrite')
+  })
+
   it('skips immediate patches whose values already match the projection', async () => {
     setupSettings({
       notification: true,
