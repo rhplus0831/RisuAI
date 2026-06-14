@@ -3,6 +3,7 @@ import {
   saveImage,
   type character,
   type Chat,
+  type ChatFolder,
   defaultSdDataFunc,
   type loreBook,
   getDatabase,
@@ -23,7 +24,15 @@ import { translateHTML } from './translator/translator'
 import { doingChat } from './process/index.svelte'
 import { importCharacter } from './characterCards'
 import { PngChunk } from './pngChunk'
-import { currentChatStateSnapshot, dispatchCreateChat, dispatchCreateChatFolder } from './chatCommands'
+import {
+  currentChatStateSnapshot,
+  dispatchCreateChat,
+  restoreChatState,
+  runOptimisticCommandSequence,
+  toChatFolderSnapshot,
+  toChatSnapshot,
+  type ChatStateSnapshot,
+} from './chatCommands'
 import { CHAT_GENERATION_SETTINGS_FIELD, type ChatGenerationSettings } from './chatGenerationSettings'
 import { getColdStorageItem } from './process/coldstorage.svelte'
 import {
@@ -42,6 +51,7 @@ import {
 import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
 import { ensureAllChatsHydrated, hydrateChatMessages } from './server/chatMessageHydration.svelte'
 import { hydrateCharacterShell, hydrateSelectedCharacterShell } from './server/characterShellHydration.svelte'
+import { createChatCommand, createChatFolderCommand } from './server/commands'
 
 export function createNewCharacter(
   options: {
@@ -507,17 +517,6 @@ export async function importChat() {
             folderIdMap[folder.id] = folder.id
           }
         })
-        withTrustedServerProjectionWrite(() => {
-          if (DBState.db.characters[selectedID].chatFolders === undefined) {
-            DBState.db.characters[selectedID].chatFolders = []
-          }
-          DBState.db.characters[selectedID].chatFolders.push(...folders)
-        })
-        if (characterId) {
-          for (const folder of folders) {
-            dispatchCreateChatFolder(characterId, folder, previous)
-          }
-        }
         chats.forEach((chat) => {
           if (chat.folderId && folderIdMap[chat.folderId]) {
             chat.folderId = folderIdMap[chat.folderId]
@@ -526,13 +525,13 @@ export async function importChat() {
           normalizeImportedChatGenerationSettings(chat)
         })
         withTrustedServerProjectionWrite(() => {
+          if (DBState.db.characters[selectedID].chatFolders === undefined) {
+            DBState.db.characters[selectedID].chatFolders = []
+          }
+          DBState.db.characters[selectedID].chatFolders.push(...folders)
           DBState.db.characters[selectedID].chats.unshift(...chats)
         })
-        if (characterId) {
-          for (const chat of chats) {
-            dispatchCreateChat(characterId, chat, previous, false)
-          }
-        }
+        dispatchCreateImportedChats(characterId, folders, chats, previous)
         alertNormal(language.successImport)
         return
       }
@@ -553,11 +552,7 @@ export async function importChat() {
           withTrustedServerProjectionWrite(() => {
             DBState.db.characters[selectedID].chats.unshift(...normalizedChats)
           })
-          if (characterId) {
-            for (const chat of normalizedChats) {
-              dispatchCreateChat(characterId, chat, previous, false)
-            }
-          }
+          dispatchCreateImportedChats(characterId, [], normalizedChats, previous)
           alertNormal(language.successImport)
           return
         } else {
@@ -615,6 +610,35 @@ export async function importChat() {
   } catch (error) {
     alertError(error)
   }
+}
+
+function dispatchCreateImportedChats(
+  characterId: string | undefined,
+  folders: ChatFolder[],
+  chats: Chat[],
+  previous: ChatStateSnapshot,
+): void {
+  if (!characterId) return
+  const factories: Parameters<typeof runOptimisticCommandSequence>[0] = [
+    ...folders.map(
+      (folder) => (baseRevision: number) =>
+        createChatFolderCommand({
+          baseRevision,
+          characterId,
+          folder: toChatFolderSnapshot(folder),
+        }),
+    ),
+    ...chats.map(
+      (chat) => (baseRevision: number) =>
+        createChatCommand({
+          baseRevision,
+          characterId,
+          chat: toChatSnapshot(chat),
+          select: false,
+        }),
+    ),
+  ]
+  runOptimisticCommandSequence(factories, () => restoreChatState(previous))
 }
 
 function normalizeImportedChatGenerationSettings(chat: unknown): void {

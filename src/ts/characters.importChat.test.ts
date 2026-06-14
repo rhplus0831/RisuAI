@@ -55,6 +55,10 @@ interface CapturedFetch {
   body: unknown
 }
 
+interface StubCommandFetchOptions {
+  failCommandNumber?: number
+}
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -62,8 +66,10 @@ function jsonResponse(body: unknown, status = 200): Response {
   })
 }
 
-function stubCommandFetch(): CapturedFetch[] {
+function stubCommandFetch(options: StubCommandFetchOptions = {}): CapturedFetch[] {
   const calls: CapturedFetch[] = []
+  let revision = 10
+  let commandCount = 0
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
@@ -77,10 +83,25 @@ function stubCommandFetch(): CapturedFetch[] {
       })
 
       if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
-      if (url === '/api/v1/commands/characters/char-a/chats') {
+      if (url.startsWith('/api/v1/commands/')) {
+        commandCount += 1
+        if (options.failCommandNumber === commandCount) {
+          return jsonResponse({ error: 'command failed' }, 500)
+        }
+      }
+      if (url === '/api/v1/commands/characters/char-a/chat-folders') {
+        revision += 1
         return jsonResponse({
-          revision: 11,
-          event: { type: 'chat.created', revision: 11, resource: 'chat' },
+          revision,
+          event: { type: 'chatFolder.created', revision, resource: 'chat-folder' },
+          folderId: null,
+        })
+      }
+      if (url === '/api/v1/commands/characters/char-a/chats') {
+        revision += 1
+        return jsonResponse({
+          revision,
+          event: { type: 'chat.created', revision, resource: 'chat' },
           selectedChatId: null,
         })
       }
@@ -90,8 +111,23 @@ function stubCommandFetch(): CapturedFetch[] {
   return calls
 }
 
+function commandCalls(calls: CapturedFetch[]): CapturedFetch[] {
+  return calls.filter((call) => call.url.startsWith('/api/v1/commands/'))
+}
+
+function createFolderCalls(calls: CapturedFetch[]): CapturedFetch[] {
+  return calls.filter((call) => call.url === '/api/v1/commands/characters/char-a/chat-folders')
+}
+
 function createChatCalls(calls: CapturedFetch[]): CapturedFetch[] {
   return calls.filter((call) => call.url === '/api/v1/commands/characters/char-a/chats')
+}
+
+async function waitForCommandCalls(calls: CapturedFetch[], expectedCount: number): Promise<CapturedFetch[]> {
+  await vi.waitFor(() => {
+    expect(commandCalls(calls)).toHaveLength(expectedCount)
+  })
+  return commandCalls(calls)
 }
 
 async function waitForCreateChatCalls(calls: CapturedFetch[], expectedCount = 1): Promise<CapturedFetch[]> {
@@ -209,6 +245,92 @@ describe('chat import projection helpers', () => {
         select: false,
       },
     })
+  })
+
+  it('sequences v2 multi-chat imports as folder creates before chat creates with advancing revisions', async () => {
+    const calls = stubCommandFetch()
+    DBState.db.characters[0].chatFolders = [{ id: 'folder-a', name: 'Existing Folder', color: '#111', folded: false }]
+    selectJsonFile('chats.json', {
+      type: 'risuAllChats',
+      ver: 2,
+      folders: [
+        { id: 'folder-a', name: 'Folder A', color: '#c00', folded: false },
+        { id: 'folder-b', name: 'Folder B', color: '#0c0', folded: true },
+      ],
+      data: [
+        importedChat({ name: 'Imported One', folderId: 'folder-a' }),
+        importedChat({ name: 'Imported Two', folderId: 'folder-b' }),
+      ],
+    })
+
+    await importChat()
+
+    const commands = await waitForCommandCalls(calls, 4)
+    expect(commands.map((call) => call.url)).toEqual([
+      '/api/v1/commands/characters/char-a/chat-folders',
+      '/api/v1/commands/characters/char-a/chat-folders',
+      '/api/v1/commands/characters/char-a/chats',
+      '/api/v1/commands/characters/char-a/chats',
+    ])
+    expect(commands.map((call) => (call.body as any).baseRevision)).toEqual([10, 11, 12, 13])
+    const folderPayloads = createFolderCalls(calls).map((call) => (call.body as any).folder)
+    const chatPayloads = createChatCalls(calls).map((call) => (call.body as any).chat)
+    expect(folderPayloads.map((folder) => folder.name)).toEqual(['Folder A', 'Folder B'])
+    expect(chatPayloads.map((chat) => chat.name)).toEqual(['Imported One', 'Imported Two'])
+    expect(folderPayloads[0].id).not.toBe('folder-a')
+    expect(folderPayloads[1].id).toBe('folder-b')
+    expect(chatPayloads[0].folderId).toBe(folderPayloads[0].id)
+    expect(chatPayloads[1].folderId).toBe('folder-b')
+  })
+
+  it('rolls back a failed sequenced v2 import and skips later commands', async () => {
+    const calls = stubCommandFetch({ failCommandNumber: 2 })
+    selectJsonFile('chats.json', {
+      type: 'risuAllChats',
+      ver: 2,
+      folders: [
+        { id: 'folder-a', name: 'Folder A', color: '#c00', folded: false },
+        { id: 'folder-b', name: 'Folder B', color: '#0c0', folded: true },
+      ],
+      data: [
+        importedChat({ name: 'Imported One', folderId: 'folder-a' }),
+        importedChat({ name: 'Imported Two', folderId: 'folder-b' }),
+      ],
+    })
+
+    await importChat()
+
+    await vi.waitFor(() => {
+      expect(commandCalls(calls)).toHaveLength(2)
+      expect(DBState.db.characters[0].chatFolders).toEqual([])
+      expect(DBState.db.characters[0].chats).toHaveLength(1)
+    })
+    expect(DBState.db.characters[0].chats[0]).toMatchObject({ id: 'chat-a', name: 'Chat A' })
+    expect(createChatCalls(calls)).toHaveLength(0)
+  })
+
+  it('sequences v1 all-chat multi-import create-chat commands with advancing revisions', async () => {
+    const calls = stubCommandFetch()
+    selectJsonFile('chats.json', {
+      type: 'risuAllChats',
+      ver: 1,
+      data: [
+        importedChat({ id: 'v1-a', name: 'V1 One' }),
+        importedChat({ id: 'v1-b', name: 'V1 Two' }),
+        importedChat({ id: 'v1-c', name: 'V1 Three' }),
+      ],
+    })
+
+    await importChat()
+
+    const commands = await waitForCommandCalls(calls, 3)
+    expect(commands.map((call) => call.url)).toEqual([
+      '/api/v1/commands/characters/char-a/chats',
+      '/api/v1/commands/characters/char-a/chats',
+      '/api/v1/commands/characters/char-a/chats',
+    ])
+    expect(commands.map((call) => (call.body as any).baseRevision)).toEqual([10, 11, 12])
+    expect(commands.map((call) => (call.body as any).chat.name)).toEqual(['V1 One', 'V1 Two', 'V1 Three'])
   })
 
   it('normalizes risuChat v1 generation settings to incomplete prefill before create-chat dispatch', async () => {

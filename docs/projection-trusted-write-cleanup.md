@@ -66,6 +66,11 @@ coherent rollback/resync story.
     projection write and routes persona, preset, module, settings, and loadout
     touch commands through `runOptimisticCommandSequence()` with one scoped
     rollback for the facets touched by the apply.
+- `src/ts/characters.ts`
+  - Multi-chat imports now apply imported folders/chats in one optimistic
+    projection write and route create-folder/create-chat commands through
+    `runOptimisticCommandSequence()` so failures roll back the whole import and
+    skip later commands.
 
 ## Findings
 
@@ -122,9 +127,6 @@ revision-checked commands can partially succeed on the server while the browser
 rolls back or diverges. Prefer a bulk server command or a serialized optimistic
 command sequence with one rollback/resync strategy.
 
-- `src/ts/characters.ts`
-  - Multi-chat import pushes folders/chats locally, then loops folder/chat
-    commands.
 - `src/ts/plugins/plugins.svelte.ts`
   - Plugin collection replacement fans out create, update, delete, and reorder
     commands.
