@@ -25,7 +25,6 @@
   } from '@lucide/svelte'
   import TextInput from '../UI/GUI/TextInput.svelte'
   import { prebuiltPresets } from 'src/ts/process/templates/templates'
-  import { ShowRealmFrameStore } from 'src/ts/stores.svelte'
   import PromptDiffModal from '../Others/PromptDiffModal.svelte'
   import {
     resolveActiveChatGenerationSettings,
@@ -282,9 +281,6 @@
               console.log(data.type)
               if (data.type === '') {
                 downloadPreset(i, 'risupreset')
-              }
-              if (data.type === 'realm') {
-                $ShowRealmFrameStore = `preset:${i}`
               }
             }}
             onkeydown={(e) => {

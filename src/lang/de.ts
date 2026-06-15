@@ -862,7 +862,6 @@ export const languageGerman = {
   active: 'Aktiv',
   loreRandomActivation: 'Verwenden Sie Wahrscheinlichkeitsbedingungen',
   activationProbability: 'Wahrscheinlichkeit',
-  shareCloud: 'Auf RisuRealm teilen',
   hub: 'RisuRealm',
   tags: 'Schlagwörter',
   backgroundHTML: 'Hintergrund-Einbettung',
@@ -1043,8 +1042,6 @@ export const languageGerman = {
   inputCardPassword: 'Kartenpasswort eingeben',
   ccv2Desc: 'Charakterkarte V2 ist ein Format, das häufig in Chatbot-Programmen verwendet wird.',
   ccv3Desc: 'Charakterkarte V3 ist ein Format der nächsten Generation, das in Chatbot-Programmen verwendet wird.',
-  realmDesc:
-    'RisuRealm ist eine Plattform zum Teilen von Inhalten für Risuai. Sie können Ihren Charakter mit anderen Benutzern teilen.',
   rccDesc:
     'Risu Refined Character Card ist ein Format mit zusätzlichen Funktionen wie Passwort, Integritätsprüfung usw.',
   password: 'Passwort',
@@ -1089,9 +1086,6 @@ export const languageGerman = {
   heightMode: 'Höhenmodus',
   useAdvancedEditor: 'Erweiterten Editor verwenden',
   noWaitForTranslate: 'Nicht auf Übersetzung warten',
-  updateRealm: 'Auf RisuRealm aktualisieren',
-  updateRealmDesc:
-    'Sie versuchen, Ihren Charakter auf RisuRealm zu aktualisieren. Dadurch wird Ihr Charakter auf RisuRealm aktualisiert, und Sie können dies nicht rückgängig machen.',
   antiClaudeOverload: 'Anti-Claude-Überlastung',
   activeTabChange:
     'Aktueller Tab ist inaktiv, da ein anderer Tab aktiv ist. Um diesen Tab zu aktivieren, klicken Sie auf OK',
@@ -1120,7 +1114,7 @@ export const languageGerman = {
   trash: 'Papierkorb',
   trashDesc:
     'Gelöschte Charaktere werden in den Papierkorb verschoben. Sie können sie wiederherstellen oder dauerhaft löschen. Gelöschte Charaktere werden nach 3 Tagen automatisch bereinigt.',
-  shareExport: 'Teilen/Exportieren',
+  shareExport: 'Exportieren',
   risupresetDesc: 'Risupreset-Format ist ein Format, das speziell für Risuai-Voreinstellungen entwickelt wurde.',
   risuMDesc: 'RisuM-Format ist ein Format, das speziell für Risuai-Module entwickelt wurde.',
   jsonDesc:

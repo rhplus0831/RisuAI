@@ -184,9 +184,6 @@ vi.mock('./lib/Others/BookmarkList.svelte', async () => ({
 vi.mock('./lib/Setting/Settings.svelte', async () => ({
   default: (await import('./App.routeEffect.dom.AppMarker.svelte')).default,
 }))
-vi.mock('./lib/UI/Realm/RealmFrame.svelte', async () => ({
-  default: (await import('./App.routeEffect.dom.AppMarker.svelte')).default,
-}))
 vi.mock('./lib/Others/SavePopupIcon.svelte', async () => ({
   default: (await import('./App.routeEffect.dom.AppMarker.svelte')).default,
 }))
@@ -259,7 +256,6 @@ import {
   PlaygroundStore,
   QuickSettings,
   SettingsMenuIndex,
-  ShowRealmFrameStore,
   alertStore,
   bookmarkListOpen,
   botMakerMode,
@@ -365,7 +361,6 @@ function seedStores() {
   sideBarClosing.set(false)
   CustomGUISettingMenuStore.set(false)
   SettingsMenuIndex.set(-1)
-  ShowRealmFrameStore.set('')
   openPresetList.set(false)
   openPersonaList.set(false)
   bookmarkListOpen.set(false)

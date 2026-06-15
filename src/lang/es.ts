@@ -847,7 +847,6 @@ export const languageSpanish = {
   active: 'Activo',
   loreRandomActivation: 'Usar Condición de Probabilidad',
   activationProbability: 'Probabilidad',
-  shareCloud: 'Compartir en RisuRealm',
   hub: 'RisuRealm',
   tags: 'Etiquetas',
   backgroundHTML: 'Incrustación de Fondo',
@@ -1027,8 +1026,6 @@ export const languageSpanish = {
   inputCardPassword: 'Ingresa la Contraseña de la Tarjeta',
   ccv2Desc: 'Character Card V2 es un formato ampliamente utilizado en programas de chatbot.',
   ccv3Desc: 'Character Card V3 es un formato de próxima generación que se usa en programas de chatbot.',
-  realmDesc:
-    'RisuRealm es una plataforma de compartición de contenido para Risuai. Puedes compartir tu personaje con otros usuarios.',
   rccDesc:
     'Risu Refined Character Card es un formato con características adicionales como contraseña, verificación de integridad, etc.',
   password: 'Contraseña',
@@ -1070,9 +1067,6 @@ export const languageSpanish = {
   heightMode: 'Modo de Altura',
   useAdvancedEditor: 'Usar Editor Avanzado',
   noWaitForTranslate: 'Sin Espera para Traducir',
-  updateRealm: 'Actualizar a RisuRealm',
-  updateRealmDesc:
-    'Estás intentando actualizar tu personaje a RisuRealm. Esto actualizará tu personaje en RisuRealm, y no podrás revertirlo.',
   antiClaudeOverload: 'Anti-Sobrecarga de Claude',
   activeTabChange:
     'La pestaña actual se desactivó porque otra pestaña está activa. para activar esta pestaña, haz clic en Aceptar',
@@ -1101,7 +1095,7 @@ export const languageSpanish = {
   trash: 'Papelera',
   trashDesc:
     'Los personajes eliminados se mueven a la papelera. Puedes restaurarlos o eliminarlos permanentemente. Los personajes eliminados se purgan automáticamente después de 3 días.',
-  shareExport: 'Compartir/Exportar',
+  shareExport: 'Exportar',
   risupresetDesc: 'El formato Risupreset es un formato específicamente diseñado para presets de Risuai.',
   risuMDesc: 'El formato RisuM es un formato diseñado específicamente para módulos de Risuai.',
   jsonDesc: 'El formato JSON es un formato fácil de leer y escribir tanto para humanos como para máquinas.',

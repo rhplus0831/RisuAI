@@ -160,7 +160,6 @@ vi.mock('./stores.svelte', () => {
     selectedCharID: store(),
     SettingsMenuIndex: store(),
     settingsOpen: store(),
-    ShowRealmFrameStore: store(),
   }
 })
 

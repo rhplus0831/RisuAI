@@ -4,7 +4,6 @@
     DynamicGUI,
     settingsOpen,
     sideBarStore,
-    ShowRealmFrameStore,
     openPresetList,
     openPersonaList,
     closePresetListModal,
@@ -38,7 +37,6 @@
   import { importPreset, getDatabase, setDatabase } from './ts/storage/database.svelte'
   import { alertError, alertNormal } from './ts/alert'
   import { language } from './lang'
-  import RealmFrame from './lib/UI/Realm/RealmFrame.svelte'
   import SavePopupIconComp from './lib/Others/SavePopupIcon.svelte'
   import Botpreset from './lib/Setting/botpreset.svelte'
   import ListedPersona from './lib/Setting/listedPersona.svelte'
@@ -283,9 +281,6 @@
   {/if}
   {#if $showRealmInfoStore}
     <RealmPopUp bind:openedData={$showRealmInfoStore} />
-  {/if}
-  {#if $ShowRealmFrameStore}
-    <RealmFrame />
   {/if}
   {#if $openPresetList}
     <Botpreset mode={presetListModalStore.mode} close={closePresetListModal} />

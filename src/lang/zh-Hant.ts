@@ -1050,7 +1050,7 @@ export const languageChineseTraditional = {
   list: '列表',
   trash: '垃圾桶',
   trashDesc: '刪除的角色將移至垃圾桶，您可選擇還原或永久刪除。垃圾桶內的資料將於 3 天後自動永久刪除。',
-  shareExport: '分享/匯出',
+  shareExport: '匯出',
   risupresetDesc: 'Risupreset 是專為 Risuai 預設設計的格式。',
   risuMDesc: 'RisuM 是專為 Risuai 模組設計的格式。',
   jsonDesc: 'JSON 是一種易於人類與機器讀寫的純文字格式。',

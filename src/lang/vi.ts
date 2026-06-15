@@ -840,7 +840,6 @@ export const languageVietnamese = {
   active: 'Tích cực',
   loreRandomActivation: 'Sử dụng điều kiện xác suất',
   activationProbability: 'Xác suất',
-  shareCloud: 'Chia sẻ lên RisuRealm',
   hub: 'RisuRealm',
   tags: 'Thẻ',
   backgroundHTML: 'Nhúng nền',
@@ -1020,8 +1019,6 @@ export const languageVietnamese = {
   inputCardPassword: 'Nhập mật khẩu thẻ',
   ccv2Desc: 'Character Card V2 là định dạng được sử dụng rộng rãi trong các chương trình chatbot.',
   ccv3Desc: 'Character Card V3 là định dạng thế hệ tiếp theo được sử dụng trong các chương trình chatbot.',
-  realmDesc:
-    'RisuRealm là nền tảng chia sẻ nội dung cho Risuai. Bạn có thể chia sẻ nhân vật của mình cho người dùng khác.',
   rccDesc:
     'Risu Refined Character Card là định dạng có các tính năng bổ sung như mật khẩu, kiểm tra tính toàn vẹn, v.v.',
   password: 'Mật khẩu',
@@ -1063,9 +1060,6 @@ export const languageVietnamese = {
   heightMode: 'Chế độ chiều cao',
   useAdvancedEditor: 'Sử dụng trình biên tập nâng cao',
   noWaitForTranslate: 'Không chờ dịch',
-  updateRealm: 'Cập nhật lên RisuRealm',
-  updateRealmDesc:
-    'Bạn đang cố gắng cập nhật nhân vật của mình lên RisuRealm. Điều này sẽ cập nhật nhân vật của bạn lên RisuRealm và bạn không thể hoàn tác.',
   antiClaudeOverload: 'Chống quá tải Claude',
   activeTabChange: 'Tab hiện tại bị vô hiệu hóa vì tab khác đang hoạt động. Để kích hoạt tab này, nhấp OK',
   addCharacter: 'Thêm nhân vật',
@@ -1093,7 +1087,7 @@ export const languageVietnamese = {
   trash: 'Thùng rác',
   trashDesc:
     'Các nhân vật đã xóa sẽ được chuyển vào thùng rác. Bạn có thể khôi phục hoặc xóa vĩnh viễn chúng. Các nhân vật đã xóa sẽ tự động bị xóa sau 3 ngày.',
-  shareExport: 'Chia sẻ/Xuất',
+  shareExport: 'Xuất',
   risupresetDesc: 'Định dạng Risupreset là định dạng được thiết kế dành riêng cho các cài đặt trước Risuai.',
   risuMDesc: 'Định dạng RisuM là định dạng được thiết kế dành riêng cho các mô-đun Risuai.',
   jsonDesc: 'Định dạng JSON là định dạng dễ đọc và viết cho cả con người và máy móc.',

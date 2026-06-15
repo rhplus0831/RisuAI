@@ -70,9 +70,8 @@
 
   let btn
   let input = $state('')
-  let cardExportType = $state('realm')
+  let cardExportType = $state('')
   let cardExportType2 = $state('')
-  let cardLicense = $state('')
   let generationInfoMenuIndex = $state(0)
   let branchHover: null | {
     x: number
@@ -141,9 +140,8 @@
       branchHover = null
     }
     if ($alertStore.type !== 'cardexport') {
-      cardExportType = 'realm'
+      cardExportType = ''
       cardExportType2 = ''
-      cardLicense = ''
     }
     if ($alertStore.type !== 'requestlogs') {
       expandedLogs = new Set()
@@ -864,8 +862,7 @@
         {:else if $alertStore.submsg === 'preset'}
           <span class="text-textcolor2 text-sm">{language.risupresetDesc}</span>
           {#if cardExportType2 === 'preset' && (DBState.db.botPresets[DBState.db.botPresetsId].image || DBState.db.botPresets[DBState.db.botPresetsId].regex?.length > 0)}
-            <span class="text-red-500 text-sm"
-              >Use RisuRealm to share the preset. Preset with image or regexes cannot be exported for now.</span>
+            <span class="text-red-500 text-sm">Preset with image or regexes cannot be exported for now.</span>
           {/if}
         {:else}
           <span class="text-textcolor2 text-sm">{language.ccv3Desc}</span>
@@ -878,30 +875,16 @@
       {:else if cardExportType === 'ccv2'}
         <span class="text-textcolor2 text-sm">{language.ccv2Desc}</span>
         <span class="text-red-500 text-sm">{language.v2Warning}</span>
-      {:else}
-        <span class="text-textcolor2 text-sm">{language.realmDesc}</span>
       {/if}
       <div class="flex items-center flex-wrap mt-2">
         {#if $alertStore.submsg === 'preset'}
           <button
             class="bg-bgcolor px-2 py-4 rounded-lg flex-1"
-            class:ring-1={cardExportType === 'realm'}
-            onclick={() => {
-              cardExportType = 'realm'
-            }}>RisuRealm</button>
-          <button
-            class="bg-bgcolor px-2 py-4 rounded-lg ml-2 flex-1"
             class:ring-1={cardExportType === ''}
             onclick={() => {
               cardExportType = ''
             }}>Risupreset</button>
         {:else if $alertStore.submsg === 'module'}
-          <button
-            class="bg-bgcolor px-2 py-4 rounded-lg ml-2 flex-1"
-            class:ring-1={cardExportType === 'realm'}
-            onclick={() => {
-              cardExportType = 'realm'
-            }}>RisuRealm</button>
           <button
             class="bg-bgcolor px-2 py-4 rounded-lg flex-1"
             class:ring-1={cardExportType === ''}
@@ -911,12 +894,6 @@
         {:else}
           <button
             class="bg-bgcolor px-2 py-4 rounded-lg flex-1"
-            class:ring-1={cardExportType === 'realm'}
-            onclick={() => {
-              cardExportType = 'realm'
-            }}>RisuRealm</button>
-          <button
-            class="bg-bgcolor px-2 py-4 rounded-lg ml-2 flex-1"
             class:ring-1={cardExportType === ''}
             onclick={() => {
               cardExportType = ''
@@ -949,7 +926,7 @@
               type2: cardExportType2,
             }),
           })
-        }}>{cardExportType === 'realm' ? language.shareCloud : language.export}</Button>
+        }}>{language.export}</Button>
     </div>
   </div>
 {:else if $alertStore.type === 'toast'}
