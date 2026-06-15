@@ -3508,6 +3508,90 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
     expect(events.at(-1)?.data).toMatchObject({ result: 'chat preset reply' })
   })
 
+  it('lets prompt presets override selected model preset parameters and model-side Others when enabled', async () => {
+    let providerBody: Record<string, unknown> | undefined
+    vi.stubGlobal('fetch', async (_url: string, init?: RequestInit) => {
+      providerBody = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+      return new Response(
+        JSON.stringify({
+          model: 'gpt-5.4',
+          choices: [{ message: { content: 'prompt override reply' }, finish_reason: 'stop' }],
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )
+    })
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, {
+      ...fixtureDatabase,
+      modelPresets: [
+        {
+          id: 'model-chat',
+          name: 'Chat Model',
+          aiModel: 'reverse_proxy',
+          forceReplaceUrl: 'https://proxy.example/v1/chat/completions',
+          proxyKey: 'sk-chat',
+          customProxyRequestModel: 'model-from-model-preset',
+          temperature: 11,
+          maxContext: 1111,
+          maxResponse: 11,
+          additionalParams: [['top_p', '0.9']],
+        },
+      ],
+      promptPresets: [
+        {
+          id: 'prompt-chat',
+          name: 'Chat Prompt',
+          overrideModelParameters: true,
+          overrideModelOthers: true,
+          temperature: 44,
+          maxContext: 4444,
+          maxResponse: 44,
+          additionalParams: [['top_p', '0.5']],
+        },
+      ],
+      modelPresetsId: 0,
+      promptPresetsId: 0,
+      characters: [
+        {
+          ...fixtureDatabase.characters[0],
+          chats: [
+            {
+              ...fixtureDatabase.characters[0].chats[0],
+              generationSettings: {
+                configured: true,
+                personaId: DEFAULT_TEST_PERSONA_ID,
+                modelPresetId: 'model-chat',
+                promptPresetId: 'prompt-chat',
+                jailbreakToggle: false,
+                sidebarToggles: {},
+              },
+            },
+          ],
+        },
+      ],
+    })
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+    expect(res.statusCode).toBe(200)
+
+    const info = parseEvents(res.body).find((event) => event.type === 'info')
+    expect(info?.data.generationInfo).toMatchObject({
+      outputTokens: 44,
+      maxContext: 4444,
+    })
+    expect(providerBody).toMatchObject({
+      model: 'model-from-model-preset',
+      temperature: 0.44,
+      max_tokens: 44,
+      top_p: 0.5,
+    })
+  })
+
   it('omits disabled temperature and unsupported bias fields from default OpenAI dispatch', async () => {
     const captured: Array<{ url: string; body: Record<string, unknown> }> = []
     vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {

@@ -21,6 +21,11 @@ import {
 } from '../server/commands'
 import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
 import { mirrorTopLevelPresetField } from '../presetFieldMirror'
+import {
+  currentPromptPresetModelOverrideValue,
+  mirrorPromptPresetModelOverrideField,
+} from '../promptPresetModelOverrides.svelte'
+import { promptPresetModelOverrideFieldForDatabaseKey } from '../presetSplit'
 
 /**
  * Sentinel value representing an uninitialized local state in wrapper components.
@@ -37,6 +42,9 @@ export function getLabel(item: SettingItem): string {
 }
 
 export function getSettingValue(item: SettingItem, ctx: SettingContext): any {
+  const promptOverrideValue = getPromptPresetOverrideSettingValue(item, ctx)
+  if (promptOverrideValue.found) return promptOverrideValue.value
+
   if (item.getValue) {
     return item.getValue(DBState.db, ctx)
   }
@@ -66,14 +74,17 @@ export function setSettingValue(item: SettingItem, newValue: any, ctx: SettingCo
     item.onChange(newValue, ctx)
   }
 
-  const mirroredToPreset = mirrorSettingValueToSelectedPreset(item, newValue)
+  const mirroredToPreset = mirrorSettingValueToSelectedPreset(item, newValue, ctx)
 
   if (commandPatch && !mirroredToPreset) {
     void patchServerBackedSetting(item, commandPatch, newValue, previousValue, ctx)
   }
 }
 
-function mirrorSettingValueToSelectedPreset(item: SettingItem, newValue: unknown): boolean {
+function mirrorSettingValueToSelectedPreset(item: SettingItem, newValue: unknown, ctx: SettingContext): boolean {
+  const promptOverrideMirror = mirrorPromptPresetOverrideSettingValue(item, newValue, ctx)
+  if (promptOverrideMirror !== null) return promptOverrideMirror
+
   if (item.bindPath) {
     const key = item.bindPath.split('.')[0]
     return mirrorTopLevelPresetField(key, cloneJsonValue((DBState.db as any)[key]))
@@ -82,6 +93,50 @@ function mirrorSettingValueToSelectedPreset(item: SettingItem, newValue: unknown
   const key = item.bindKey ?? serverPatchKeyForItem(item)
   if (!key) return false
   return mirrorTopLevelPresetField(String(key), newValue)
+}
+
+function getPromptPresetOverrideSettingValue(
+  item: SettingItem,
+  ctx: SettingContext,
+): { found: true; value: unknown } | { found: false } {
+  if (ctx.presetMirrorTarget !== 'promptModelOverrides') return { found: false }
+
+  if (item.bindPath) {
+    const parts = item.bindPath.split('.')
+    const rootKey = parts[0]
+    if (!promptPresetModelOverrideFieldForDatabaseKey(rootKey)) return { found: false }
+    let value: any = currentPromptPresetModelOverrideValue(rootKey, (DBState.db as any)[rootKey])
+    for (const part of parts.slice(1)) {
+      value = value?.[part]
+    }
+    return { found: true, value }
+  }
+
+  const key = item.bindKey ?? serverPatchKeyForItem(item)
+  if (!key || !promptPresetModelOverrideFieldForDatabaseKey(String(key))) return { found: false }
+  return {
+    found: true,
+    value: currentPromptPresetModelOverrideValue(String(key), (DBState.db as any)[key]),
+  }
+}
+
+function mirrorPromptPresetOverrideSettingValue(
+  item: SettingItem,
+  newValue: unknown,
+  ctx: SettingContext,
+): boolean | null {
+  if (ctx.presetMirrorTarget !== 'promptModelOverrides') return null
+  if (!item.bindPath && !item.bindKey && !serverPatchKeyForItem(item)) return null
+
+  if (item.bindPath) {
+    const rootKey = item.bindPath.split('.')[0]
+    if (!promptPresetModelOverrideFieldForDatabaseKey(rootKey)) return null
+    return mirrorPromptPresetModelOverrideField(rootKey, cloneJsonValue((DBState.db as any)[rootKey]))
+  }
+
+  const key = item.bindKey ?? serverPatchKeyForItem(item)
+  if (!key || !promptPresetModelOverrideFieldForDatabaseKey(String(key))) return null
+  return mirrorPromptPresetModelOverrideField(String(key), newValue)
 }
 
 function setLocalSettingValue(item: SettingItem, newValue: any, ctx: SettingContext): void {

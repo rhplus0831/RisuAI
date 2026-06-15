@@ -60,10 +60,15 @@ import { canUseServerProjection, fetchServerPresetProjection } from '../server/p
 import {
   createExtractedModelPreset,
   createExtractedPromptPreset,
+  databaseKeyForModelPresetField,
   findEquivalentModelPreset,
   MODEL_PRESET_FIELDS,
   PROMPT_PRESET_FIELDS,
+  PROMPT_PRESET_MODEL_OTHERS_OVERRIDE_FIELDS,
+  PROMPT_PRESET_MODEL_PARAMETER_OVERRIDE_FIELDS,
   promptPresetExportPayload,
+  promptPresetOverridesModelOthers,
+  promptPresetOverridesModelParameters,
 } from '../presetSplit'
 
 //APP_VERSION_POINT is to locate the app version in the database file for version bumping
@@ -2126,6 +2131,7 @@ export interface botPreset {
   openAIKey?: string
   localNetworkMode?: boolean
   localNetworkTimeoutSec?: number
+  additionalParams?: [string, string][]
   mainPrompt: string
   jailbreak: string
   globalNote: string
@@ -2231,6 +2237,8 @@ export type ModelPreset = Partial<botPreset> & {
 export type PromptPreset = Partial<botPreset> & {
   id?: string
   name?: string
+  overrideModelParameters?: boolean
+  overrideModelOthers?: boolean
 }
 
 interface hordeConfig {
@@ -2611,6 +2619,7 @@ function saveCurrentPresetLocal() {
     openAIKey: db.openAIKey,
     localNetworkMode: db.localNetworkMode,
     localNetworkTimeoutSec: db.localNetworkTimeoutSec,
+    additionalParams: safeStructuredClone(db.additionalParams),
     mainPrompt: db.mainPrompt,
     jailbreak: db.jailbreak,
     globalNote: db.globalNote,
@@ -3277,8 +3286,8 @@ function movedSelectedIndex(currentId: number, fromIndex: number, adjustedToInde
 }
 
 const MODEL_PRESET_DATABASE_KEY_OVERRIDES: Record<string, string> = {
-  NAISettings: 'NAIsettings',
-  reasonEffort: 'reasoningEffort',
+  NAISettings: databaseKeyForModelPresetField('NAISettings'),
+  reasonEffort: databaseKeyForModelPresetField('reasonEffort'),
 }
 
 const PROMPT_PRESET_DATABASE_KEY_OVERRIDES: Record<string, string> = {
@@ -3288,10 +3297,27 @@ const PROMPT_PRESET_DATABASE_KEY_OVERRIDES: Record<string, string> = {
 
 function applyModelPresetFieldsToDatabase(db: Database, preset: ModelPreset | undefined): void {
   applySplitPresetFieldsToDatabase(db, preset, MODEL_PRESET_FIELDS, MODEL_PRESET_DATABASE_KEY_OVERRIDES)
+  applyPromptPresetFieldsToDatabase(db, db.promptPresets?.[db.promptPresetsId])
 }
 
 function applyPromptPresetFieldsToDatabase(db: Database, preset: PromptPreset | undefined): void {
   applySplitPresetFieldsToDatabase(db, preset, PROMPT_PRESET_FIELDS, PROMPT_PRESET_DATABASE_KEY_OVERRIDES)
+  if (promptPresetOverridesModelParameters(preset)) {
+    applySplitPresetFieldsToDatabase(
+      db,
+      preset,
+      PROMPT_PRESET_MODEL_PARAMETER_OVERRIDE_FIELDS,
+      MODEL_PRESET_DATABASE_KEY_OVERRIDES,
+    )
+  }
+  if (promptPresetOverridesModelOthers(preset)) {
+    applySplitPresetFieldsToDatabase(
+      db,
+      preset,
+      PROMPT_PRESET_MODEL_OTHERS_OVERRIDE_FIELDS,
+      MODEL_PRESET_DATABASE_KEY_OVERRIDES,
+    )
+  }
 }
 
 function applySplitPresetFieldsToDatabase(
@@ -3313,6 +3339,7 @@ export function setPreset(db: Database, newPres: botPreset) {
   db.apiType = newPres.apiType ?? db.apiType
   db.localNetworkMode = newPres.localNetworkMode ?? db.localNetworkMode
   db.localNetworkTimeoutSec = newPres.localNetworkTimeoutSec ?? db.localNetworkTimeoutSec
+  db.additionalParams = safeStructuredClone(newPres.additionalParams) ?? db.additionalParams
   db.mainPrompt = newPres.mainPrompt ?? db.mainPrompt
   db.jailbreak = newPres.jailbreak ?? db.jailbreak
   db.globalNote = newPres.globalNote ?? db.globalNote

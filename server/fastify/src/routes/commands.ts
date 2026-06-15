@@ -340,6 +340,15 @@ function updateCharacterOrderForPatchedRow(
     : [...currentOrder, characterId]
 }
 
+function applySelectedPromptPresetAfterModelPreset(target: Record<string, unknown>): void {
+  const promptPresets = ensurePromptPresetCollection(target)
+  const promptPresetIndex = Number.isInteger(target.promptPresetsId as number) ? (target.promptPresetsId as number) : -1
+  const promptPreset = promptPresetIndex >= 0 ? promptPresets[promptPresetIndex] : undefined
+  if (promptPreset) {
+    applyPromptPreset(target, promptPreset)
+  }
+}
+
 /** The shared narrow write for every translator-preset route: a full
  *  `translator_presets` rewrite plus an unconditional `settings` write.
  *  `ensureTranslatorPresetCollection` reassigns the whole array and re-syncs the
@@ -1797,6 +1806,7 @@ export function registerCommandRoutes(
           writeSingleCollectionRow(innerDb, 'modelPresets', index, presets[index])
           if (target.modelPresetsId === index) {
             applyModelPreset(target, presets[index])
+            applySelectedPromptPresetAfterModelPreset(target)
             writeSettingsOnly(innerDb, extractSettings(target))
           }
           return {
@@ -1852,6 +1862,7 @@ export function registerCommandRoutes(
           target.modelPresetsId = nextSelectedIndex
           if (nextSelectedIndex >= 0) {
             applyModelPreset(target, presets[nextSelectedIndex])
+            applySelectedPromptPresetAfterModelPreset(target)
           }
           writeSingleCollectionTable(innerDb, 'modelPresets', presets)
           if (target.modelPresetsId !== beforeSelected || deletedWasSelected) {
@@ -1898,6 +1909,7 @@ export function registerCommandRoutes(
           const nextSelectedIndex = requireModelPresetIndex(presets, modelPresetId)
           target.modelPresetsId = nextSelectedIndex
           applyModelPreset(target, presets[nextSelectedIndex])
+          applySelectedPromptPresetAfterModelPreset(target)
           if (target.modelPresetsId !== beforeSelected) {
             writeSettingsOnly(innerDb, extractSettings(target))
           }

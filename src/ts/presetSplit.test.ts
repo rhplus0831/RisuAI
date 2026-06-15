@@ -15,6 +15,9 @@ describe('preset split helpers', () => {
     apiType: 'openai',
     temperature: 0.7,
     maxContext: 16000,
+    additionalParams: [['temperature', '{{none}}']],
+    enableCustomFlags: true,
+    customFlags: [8],
     mainPrompt: 'Prompt text',
     jailbreak: 'Jailbreak text',
     customPromptTemplateToggle: 'mode=Mode',
@@ -33,6 +36,9 @@ describe('preset split helpers', () => {
       apiType: 'openai',
       temperature: 0.7,
       maxContext: 16000,
+      additionalParams: [['temperature', '{{none}}']],
+      enableCustomFlags: true,
+      customFlags: [8],
       proxyKey: 'secret',
     })
     expect(modelPreset).not.toHaveProperty('mainPrompt')
@@ -45,6 +51,11 @@ describe('preset split helpers', () => {
       jailbreak: 'Jailbreak text',
       customPromptTemplateToggle: 'mode=Mode',
       promptTemplate: [{ type: 'plain', text: 'Template row' }],
+      temperature: 0.7,
+      maxContext: 16000,
+      additionalParams: [['temperature', '{{none}}']],
+      enableCustomFlags: true,
+      customFlags: [8],
     })
     expect(promptPreset).not.toHaveProperty('aiModel')
     expect(promptPreset).not.toHaveProperty('proxyKey')
@@ -66,14 +77,27 @@ describe('preset split helpers', () => {
     expect(findEquivalentModelPreset([first], second)).toBe(first)
   })
 
-  it('exports only prompt preset fields', () => {
-    expect(promptPresetExportPayload(legacyPreset)).toEqual({
+  it('exports prompt preset fields plus stored model override values', () => {
+    expect(
+      promptPresetExportPayload({
+        ...legacyPreset,
+        overrideModelParameters: true,
+        overrideModelOthers: false,
+      }),
+    ).toEqual({
       id: 'legacy-a',
       name: 'Legacy A',
       mainPrompt: 'Prompt text',
       jailbreak: 'Jailbreak text',
       customPromptTemplateToggle: 'mode=Mode',
       promptTemplate: [{ type: 'plain', text: 'Template row' }],
+      overrideModelParameters: true,
+      overrideModelOthers: false,
+      temperature: 0.7,
+      maxContext: 16000,
+      additionalParams: [['temperature', '{{none}}']],
+      enableCustomFlags: true,
+      customFlags: [8],
     })
   })
 })

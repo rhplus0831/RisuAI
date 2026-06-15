@@ -4,6 +4,7 @@
   import CheckInput from 'src/lib/UI/GUI/CheckInput.svelte'
   import AllSeperateParameters from 'src/lib/Others/AllSeperateParameters.svelte'
   import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
+  import { createPromptPresetModelOverrideDraft } from 'src/ts/promptPresetModelOverrides.svelte'
   import type { SeparateParameters } from 'src/ts/storage/database.svelte'
 
   type SeparateParameterSettings = {
@@ -14,14 +15,44 @@
     overrides: Record<string, SeparateParameters>
   }
 
-  const seperateParametersEnabledDraft = createServerBackedSettingDraft<boolean>('seperateParametersEnabled', false)
-  const seperateParametersDraft = createServerBackedSettingDraft<SeparateParameterSettings>('seperateParameters', {
+  interface Props {
+    promptPresetModelOverrideMode?: boolean
+  }
+
+  let { promptPresetModelOverrideMode = false }: Props = $props()
+
+  const modelSeperateParametersEnabledDraft = createServerBackedSettingDraft<boolean>(
+    'seperateParametersEnabled',
+    false,
+  )
+  const modelSeperateParametersDraft = createServerBackedSettingDraft<SeparateParameterSettings>('seperateParameters', {
     memory: {},
     emotion: {},
     translate: {},
     otherAx: {},
     overrides: {},
   })
+  const promptSeperateParametersEnabledDraft = createPromptPresetModelOverrideDraft<boolean>(
+    'seperateParametersEnabled',
+    false,
+  )
+  const promptSeperateParametersDraft = createPromptPresetModelOverrideDraft<SeparateParameterSettings>(
+    'seperateParameters',
+    {
+      memory: {},
+      emotion: {},
+      translate: {},
+      otherAx: {},
+      overrides: {},
+    },
+  )
+
+  let seperateParametersEnabledDraft = $derived(
+    promptPresetModelOverrideMode ? promptSeperateParametersEnabledDraft : modelSeperateParametersEnabledDraft,
+  )
+  let seperateParametersDraft = $derived(
+    promptPresetModelOverrideMode ? promptSeperateParametersDraft : modelSeperateParametersDraft,
+  )
 
   const paramLabels: Record<string, string> = {
     memory: 'longTermMemory',

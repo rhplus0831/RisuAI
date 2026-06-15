@@ -48,6 +48,11 @@
     type SettingsPatch,
   } from 'src/ts/server/commands'
   import { mirrorTopLevelPresetField } from 'src/ts/presetFieldMirror'
+  import {
+    currentPromptPresetModelOverrideValue,
+    mirrorPromptPresetModelOverrideField,
+  } from 'src/ts/promptPresetModelOverrides.svelte'
+  import { promptPresetModelOverrideFieldForDatabaseKey } from 'src/ts/presetSplit'
 
   const stopServerSettingsWatch = watchServerBackedSettings(['showUnrecommended'])
   onDestroy(stopServerSettingsWatch)
@@ -61,6 +66,22 @@
   let openedItemIndices = $state(new Set<number>())
   type FallbackModelKey = 'model' | 'memory' | 'translate' | 'emotion' | 'otherAx'
   type FallbackModelsDraft = Record<FallbackModelKey, string[]>
+  interface Props {
+    onGoBack?: () => void
+    mode?: 'independent' | 'inline'
+    subMenu?: number
+    promptPresetModelOverrideMode?: boolean
+    showPromptModelOverrideFields?: boolean
+  }
+
+  let {
+    onGoBack = () => {},
+    mode = 'independent',
+    subMenu = $bindable(0),
+    promptPresetModelOverrideMode = false,
+    showPromptModelOverrideFields = true,
+  }: Props = $props()
+
   const promptTokenizeDebouncer = createPromptTokenizeDebouncer({
     debounceMs: 300,
     onResult: (totals) => {
@@ -102,13 +123,6 @@
   })
   const fallbackWhenBlankResponseDraft = createPromptSettingsDraft<boolean>('fallbackWhenBlankResponse', false)
   const doNotChangeFallbackModelsDraft = createPromptSettingsDraft<boolean>('doNotChangeFallbackModels', false)
-  interface Props {
-    onGoBack?: () => void
-    mode?: 'independent' | 'inline'
-    subMenu?: number
-  }
-
-  let { onGoBack = () => {}, mode = 'independent', subMenu = $bindable(0) }: Props = $props()
 
   function promptItemId(item: PromptItem): string {
     withTrustedServerProjectionWrite(() => {
@@ -271,7 +285,9 @@
           const target = DBState.db as unknown as Record<string, unknown>
           target[key] = attempted
         })
-        const mirroredToPreset = mirrorTopLevelPresetField(key, attempted)
+        const mirroredToPreset = usePromptPresetModelOverrideForKey(key)
+          ? mirrorPromptPresetModelOverrideField(key, attempted)
+          : mirrorTopLevelPresetField(key, attempted)
         if (!mirroredToPreset) {
           queuePromptSettingsPatch({ [key]: attempted }, { [key]: previous })
         }
@@ -283,9 +299,16 @@
   }
 
   function currentPromptSettingValue<T>(key: string, fallback: T): T {
+    if (usePromptPresetModelOverrideForKey(key)) {
+      return currentPromptPresetModelOverrideValue(key, fallback)
+    }
     const target = DBState.db as unknown as Record<string, unknown> | undefined
     const value = target?.[key]
     return value === undefined ? fallback : (value as T)
+  }
+
+  function usePromptPresetModelOverrideForKey(key: string): boolean {
+    return promptPresetModelOverrideMode && !!promptPresetModelOverrideFieldForDatabaseKey(key)
   }
 
   $effect.pre(() => {
@@ -557,10 +580,12 @@
   <Check bind:check={promptSettingsDraft.value.sendName} name={language.formatGroupInSingle} className="mt-4" />
   <Check bind:check={promptSettingsDraft.value.trimStartNewChat} name={language.trimStartNewChat} className="mt-4" />
   <Check bind:check={promptSettingsDraft.value.utilOverride} name={language.utilOverride} className="mt-4" />
-  <Check bind:check={jsonSchemaEnabledDraft.value} name={language.enableJsonSchema} className="mt-4" />
-  <Check bind:check={outputImageModalDraft.value} name={language.outputImageModal} className="mt-4" />
+  {#if showPromptModelOverrideFields}
+    <Check bind:check={jsonSchemaEnabledDraft.value} name={language.enableJsonSchema} className="mt-4" />
+    <Check bind:check={outputImageModalDraft.value} name={language.outputImageModal} className="mt-4" />
 
-  <Check bind:check={strictJsonSchemaDraft.value} name={language.strictJsonSchema} className="mt-4" />
+    <Check bind:check={strictJsonSchemaDraft.value} name={language.strictJsonSchema} className="mt-4" />
+  {/if}
 
   {#if DBState.db.showUnrecommended}
     <Check
@@ -581,21 +606,23 @@
   <TextAreaInput bind:value={OAIPredictionDraft.value} />
   <span class="text-textcolor mt-4">{language.autoSuggest} <Help key="autoSuggest" /></span>
   <TextAreaInput bind:value={autoSuggestPromptDraft.value} placeholder={defaultAutoSuggestPrompt} />
-  <span class="text-textcolor mt-4">{language.systemContentReplacement} <Help key="systemContentReplacement" /></span>
-  <TextAreaInput bind:value={systemContentReplacementDraft.value} />
-  <span class="text-textcolor mt-4">{language.systemRoleReplacement} <Help key="systemRoleReplacement" /></span>
-  <SelectInput bind:value={systemRoleReplacementDraft.value}>
-    <OptionInput value="user">User</OptionInput>
-    <OptionInput value="assistant">assistant</OptionInput>
-  </SelectInput>
-  {#if jsonSchemaEnabledDraft.value}
-    <span class="text-textcolor mt-4">{language.jsonSchema} <Help key="jsonSchema" /></span>
-    <TextAreaInput bind:value={jsonSchemaDraft.value} />
-    <span class="text-textcolor mt-4">{language.extractJson} <Help key="extractJson" /></span>
-    <TextInput bind:value={extractJsonDraft.value} />
+  {#if showPromptModelOverrideFields}
+    <span class="text-textcolor mt-4">{language.systemContentReplacement} <Help key="systemContentReplacement" /></span>
+    <TextAreaInput bind:value={systemContentReplacementDraft.value} />
+    <span class="text-textcolor mt-4">{language.systemRoleReplacement} <Help key="systemRoleReplacement" /></span>
+    <SelectInput bind:value={systemRoleReplacementDraft.value}>
+      <OptionInput value="user">User</OptionInput>
+      <OptionInput value="assistant">assistant</OptionInput>
+    </SelectInput>
+    {#if jsonSchemaEnabledDraft.value}
+      <span class="text-textcolor mt-4">{language.jsonSchema} <Help key="jsonSchema" /></span>
+      <TextAreaInput bind:value={jsonSchemaDraft.value} />
+      <span class="text-textcolor mt-4">{language.extractJson} <Help key="extractJson" /></span>
+      <TextInput bind:value={extractJsonDraft.value} />
+    {/if}
   {/if}
 
-  {#if !DBState.db.auxModelUnderModelSettings}
+  {#if showPromptModelOverrideFields && !promptPresetModelOverrideMode && !DBState.db.auxModelUnderModelSettings}
     <AuxModelSelectors />
   {/if}
 
@@ -623,30 +650,34 @@
     </div>
   {/snippet}
 
-  <Accordion name={language.fallbackModel} styled>
-    <Check
-      bind:check={fallbackWhenBlankResponseDraft.value}
-      name={language.fallbackWhenBlankResponse}
-      className="mt-4" />
-    <Check
-      bind:check={doNotChangeFallbackModelsDraft.value}
-      name={language.doNotChangeFallbackModels}
-      className="mt-4" />
+  {#if showPromptModelOverrideFields}
+    <Accordion name={language.fallbackModel} styled>
+      <Check
+        bind:check={fallbackWhenBlankResponseDraft.value}
+        name={language.fallbackWhenBlankResponse}
+        className="mt-4" />
+      {#if !promptPresetModelOverrideMode}
+        <Check
+          bind:check={doNotChangeFallbackModelsDraft.value}
+          name={language.doNotChangeFallbackModels}
+          className="mt-4" />
+      {/if}
 
-    <Accordion name={language.model} styled>
-      {@render fallbackModelList('model')}
+      <Accordion name={language.model} styled>
+        {@render fallbackModelList('model')}
+      </Accordion>
+      <Accordion name={'Memory'} styled>
+        {@render fallbackModelList('memory')}
+      </Accordion>
+      <Accordion name={'Translations'} styled>
+        {@render fallbackModelList('translate')}
+      </Accordion>
+      <Accordion name={'Emotion'} styled>
+        {@render fallbackModelList('emotion')}
+      </Accordion>
+      <Accordion name={'OtherAx'} styled>
+        {@render fallbackModelList('otherAx')}
+      </Accordion>
     </Accordion>
-    <Accordion name={'Memory'} styled>
-      {@render fallbackModelList('memory')}
-    </Accordion>
-    <Accordion name={'Translations'} styled>
-      {@render fallbackModelList('translate')}
-    </Accordion>
-    <Accordion name={'Emotion'} styled>
-      {@render fallbackModelList('emotion')}
-    </Accordion>
-    <Accordion name={'OtherAx'} styled>
-      {@render fallbackModelList('otherAx')}
-    </Accordion>
-  </Accordion>
+  {/if}
 {/if}

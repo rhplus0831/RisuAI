@@ -860,6 +860,8 @@ export const languageEnglish = {
   presets: 'Presets',
   modelPresets: 'Model presets',
   promptPresets: 'Prompt presets',
+  overrideModelParameters: 'Override model parameters',
+  overrideModelOthers: 'Override model Others options',
   legacyBotPresets: 'Legacy bot presets',
   legacyBotPresetMigration: 'Legacy bot preset migration',
   noLegacyBotPresets: 'No legacy bot presets',

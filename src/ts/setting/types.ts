@@ -16,6 +16,7 @@ export interface SettingContext {
   db: Database
   modelInfo: LLMModel
   subModelInfo: LLMModel
+  presetMirrorTarget?: 'auto' | 'promptModelOverrides'
 }
 
 /**

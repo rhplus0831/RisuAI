@@ -12,9 +12,10 @@
     modelInfo?: LLMModel
     /** Optional subModelInfo, derived automatically if not provided */
     subModelInfo?: LLMModel
+    presetMirrorTarget?: SettingContext['presetMirrorTarget']
   }
 
-  let { items, modelInfo, subModelInfo }: Props = $props()
+  let { items, modelInfo, subModelInfo, presetMirrorTarget = 'auto' }: Props = $props()
 
   // Derive modelInfo if not provided
   let effectiveModelInfo = $derived(modelInfo ?? getModelInfo(DBState.db.aiModel))
@@ -25,6 +26,7 @@
     db: DBState.db,
     modelInfo: effectiveModelInfo,
     subModelInfo: effectiveSubModelInfo,
+    presetMirrorTarget,
   })
 </script>
 

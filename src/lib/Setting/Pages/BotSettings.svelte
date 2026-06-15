@@ -57,6 +57,12 @@
   } from 'src/ts/pluginCommands'
   import { ensurePromptTemplateHydrated, promptTemplateHydratedStore } from 'src/ts/server/promptTemplateHydration'
   import { mirrorTopLevelPresetField } from 'src/ts/presetFieldMirror'
+  import {
+    createPromptPresetModelOverrideDraft,
+    promptPresetModelOverrideEnabled,
+    setPromptPresetModelOverrideEnabled,
+  } from 'src/ts/promptPresetModelOverrides.svelte'
+  import { promptPresetModelOverrideFieldForDatabaseKey } from 'src/ts/presetSplit'
 
   const stopServerSettingsWatch = watchServerBackedSettings(['proxyRequestModel', 'useLegacyGUI'])
   onDestroy(stopServerSettingsWatch)
@@ -90,11 +96,19 @@
     'doNotChangeFallbackModels',
   ])
   const oobaDraft = createServerBackedSettingDraft<Record<string, any>>('ooba', { formating: {} })
+  const promptOobaDraft = createPromptPresetModelOverrideDraft<Record<string, any>>('ooba', { formating: {} })
   const localStopStringsDraft = createServerBackedSettingDraft<string[] | null>('localStopStrings', null)
+  const promptLocalStopStringsDraft = createPromptPresetModelOverrideDraft<string[] | null>('localStopStrings', null)
   const NAIsettingsDraft = createServerBackedSettingDraft<Record<string, any>>('NAIsettings', {})
+  const promptNAIsettingsDraft = createPromptPresetModelOverrideDraft<Record<string, any>>('NAIsettings', {})
   const ainconfigDraft = createServerBackedSettingDraft<Record<string, any>>('ainconfig', {})
+  const promptAinconfigDraft = createPromptPresetModelOverrideDraft<Record<string, any>>('ainconfig', {})
   const biasDraft = createPromptFieldDraft<Array<[string, number]>>('bias', [])
   const additionalParamsDraft = createServerBackedSettingDraft<Array<[string, string]>>('additionalParams', [])
+  const promptAdditionalParamsDraft = createPromptPresetModelOverrideDraft<Array<[string, string]>>(
+    'additionalParams',
+    [],
+  )
   const aiModelDraft = createServerBackedSettingDraft<string>('aiModel', '')
   const subModelDraft = createServerBackedSettingDraft<string>('subModel', '')
   const googleDraft = createServerBackedSettingDraft<Record<string, string>>('google', {
@@ -163,8 +177,11 @@
   const textgenWebUIBlockingURLDraft = createServerBackedSettingDraft<string>('textgenWebUIBlockingURL', '')
   const enableCustomFlagsDraft = createServerBackedSettingDraft<boolean>('enableCustomFlags', false)
   const customFlagsDraft = createServerBackedSettingDraft<LLMFlags[]>('customFlags', [])
+  const promptEnableCustomFlagsDraft = createPromptPresetModelOverrideDraft<boolean>('enableCustomFlags', false)
+  const promptCustomFlagsDraft = createPromptPresetModelOverrideDraft<LLMFlags[]>('customFlags', [])
   const moduleIntergrationDraft = createPromptFieldDraft<string>('moduleIntergration', '')
   const modelToolsDraft = createServerBackedSettingDraft<string[]>('modelTools', [])
+  const promptModelToolsDraft = createPromptPresetModelOverrideDraft<string[]>('modelTools', [])
   const presetRegexDraft = createPromptFieldDraft<any[]>('presetRegex', [])
   const mainPromptDraft = createPromptFieldDraft<string>('mainPrompt', '')
   const jailbreakDraft = createPromptFieldDraft<string>('jailbreak', '')
@@ -294,6 +311,25 @@
 
   let { goPromptTemplate = () => {}, settingsKind = 'legacy' }: Props = $props()
 
+  let promptParameterOverrideMode = $derived(
+    settingsKind === 'prompt' && promptPresetModelOverrideEnabled('parameters'),
+  )
+  let promptOthersOverrideMode = $derived(settingsKind === 'prompt' && promptPresetModelOverrideEnabled('others'))
+  let activeOobaDraft = $derived(promptParameterOverrideMode ? promptOobaDraft : oobaDraft)
+  let activeLocalStopStringsDraft = $derived(
+    promptParameterOverrideMode ? promptLocalStopStringsDraft : localStopStringsDraft,
+  )
+  let activeNAIsettingsDraft = $derived(promptParameterOverrideMode ? promptNAIsettingsDraft : NAIsettingsDraft)
+  let activeAinconfigDraft = $derived(promptParameterOverrideMode ? promptAinconfigDraft : ainconfigDraft)
+  let activeAdditionalParamsDraft = $derived(
+    promptOthersOverrideMode ? promptAdditionalParamsDraft : additionalParamsDraft,
+  )
+  let activeEnableCustomFlagsDraft = $derived(
+    promptOthersOverrideMode ? promptEnableCustomFlagsDraft : enableCustomFlagsDraft,
+  )
+  let activeCustomFlagsDraft = $derived(promptOthersOverrideMode ? promptCustomFlagsDraft : customFlagsDraft)
+  let activeModelToolsDraft = $derived(promptOthersOverrideMode ? promptModelToolsDraft : modelToolsDraft)
+
   function defaultSubmenuForKind(kind: BotSettingsKind): number {
     if (kind === 'model') return 0
     if (kind === 'prompt') return 2
@@ -304,7 +340,7 @@
   let submenu = $state(defaultSubmenuForKind(settingsKind))
   let availableSubmenus = $derived.by(() => {
     if (settingsKind === 'model') return [0, 1, 3]
-    if (settingsKind === 'prompt') return [2, 3]
+    if (settingsKind === 'prompt') return promptParameterOverrideMode ? [1, 2, 3] : [2, 3]
     return [0, 1, 2, 3]
   })
   let pageTitle = $derived(
@@ -313,9 +349,24 @@
   let showSubmenuSwitcher = $derived(submenu !== -1 && availableSubmenus.length > 1)
   let showModelExtras = $derived(settingsKind !== 'prompt')
   let showPromptExtras = $derived(settingsKind !== 'model')
+  let showModelOthersControls = $derived(showModelExtras || promptOthersOverrideMode)
   let showModelPresetButton = $derived(settingsKind !== 'prompt' && submenu !== -1)
   let showPromptPresetButton = $derived(settingsKind === 'prompt' || (settingsKind === 'legacy' && submenu === -1))
   let showLegacyMigrationButton = $derived(settingsKind === 'legacy' && DBState.db.botPresets?.length > 0)
+  let parameterItems = $derived.by(() =>
+    promptParameterOverrideMode
+      ? allBasicParameterItems.filter((item) => {
+          const key = item.bindPath?.split('.')[0] ?? item.bindKey
+          return typeof key === 'string' && !!promptPresetModelOverrideFieldForDatabaseKey(key)
+        })
+      : allBasicParameterItems,
+  )
+
+  $effect(() => {
+    if (!availableSubmenus.includes(submenu)) {
+      submenu = defaultSubmenuForKind(settingsKind)
+    }
+  })
 
   function hasSubmenu(id: number): boolean {
     return availableSubmenus.includes(id)
@@ -337,19 +388,21 @@
 
   function toggleCustomFlag(flag: number): void {
     const typedFlag = flag as LLMFlags
-    const flags = customFlagsDraft.value ?? []
-    customFlagsDraft.value = flags.includes(typedFlag)
+    const flags = activeCustomFlagsDraft.value ?? []
+    activeCustomFlagsDraft.value = flags.includes(typedFlag)
       ? flags.filter((candidate) => candidate !== typedFlag)
       : [...flags, typedFlag]
   }
 
   function customFlagEnabled(flag: number): boolean {
-    return (customFlagsDraft.value ?? []).includes(flag as LLMFlags)
+    return (activeCustomFlagsDraft.value ?? []).includes(flag as LLMFlags)
   }
 
   function toggleModelTool(tool: string): void {
-    const tools = modelToolsDraft.value ?? []
-    modelToolsDraft.value = tools.includes(tool) ? tools.filter((candidate) => candidate !== tool) : [...tools, tool]
+    const tools = activeModelToolsDraft.value ?? []
+    activeModelToolsDraft.value = tools.includes(tool)
+      ? tools.filter((candidate) => candidate !== tool)
+      : [...tools, tool]
   }
 
   function createPromptFieldDraft<T>(key: string, fallback: T): { value: T } {
@@ -531,6 +584,23 @@
 </script>
 
 <h2 class="mb-2 text-2xl font-bold mt-2">{pageTitle}</h2>
+
+{#if settingsKind === 'prompt'}
+  <div class="flex flex-col gap-2 rounded-md border border-darkborderc p-3 mb-4">
+    <Check
+      check={promptParameterOverrideMode}
+      name={language.overrideModelParameters}
+      onChange={(enabled) => {
+        setPromptPresetModelOverrideEnabled('parameters', enabled)
+      }} />
+    <Check
+      check={promptOthersOverrideMode}
+      name={language.overrideModelOthers}
+      onChange={(enabled) => {
+        setPromptPresetModelOverrideEnabled('others', enabled)
+      }} />
+  </div>
+{/if}
 
 {#if showSubmenuSwitcher}
   <div class="flex w-full rounded-md border border-darkborderc mb-4">
@@ -943,69 +1013,85 @@
 {/if}
 
 {#if sectionVisible(1)}
-  <SettingRenderer items={allBasicParameterItems} {modelInfo} {subModelInfo} />
+  <SettingRenderer
+    items={parameterItems}
+    {modelInfo}
+    {subModelInfo}
+    presetMirrorTarget={promptParameterOverrideMode ? 'promptModelOverrides' : 'auto'} />
   {#if DBState.db.aiModel === 'textgen_webui' || DBState.db.aiModel === 'mancer' || DBState.db.aiModel.startsWith('local_') || DBState.db.aiModel.startsWith('hf:::')}
     <span class="text-textcolor">Repetition Penalty</span>
-    <SliderInput min={1} max={1.5} step={0.01} fixed={2} marginBottom bind:value={oobaDraft.value.repetition_penalty} />
+    <SliderInput
+      min={1}
+      max={1.5}
+      step={0.01}
+      fixed={2}
+      marginBottom
+      bind:value={activeOobaDraft.value.repetition_penalty} />
     <span class="text-textcolor">Length Penalty</span>
-    <SliderInput min={-5} max={5} step={0.05} marginBottom fixed={2} bind:value={oobaDraft.value.length_penalty} />
+    <SliderInput
+      min={-5}
+      max={5}
+      step={0.05}
+      marginBottom
+      fixed={2}
+      bind:value={activeOobaDraft.value.length_penalty} />
     <span class="text-textcolor">Top K</span>
-    <SliderInput min={0} max={100} step={1} marginBottom bind:value={oobaDraft.value.top_k} />
+    <SliderInput min={0} max={100} step={1} marginBottom bind:value={activeOobaDraft.value.top_k} />
     <span class="text-textcolor">Top P</span>
-    <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={oobaDraft.value.top_p} />
+    <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={activeOobaDraft.value.top_p} />
     <span class="text-textcolor">Typical P</span>
-    <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={oobaDraft.value.typical_p} />
+    <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={activeOobaDraft.value.typical_p} />
     <span class="text-textcolor">Top A</span>
-    <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={oobaDraft.value.top_a} />
+    <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={activeOobaDraft.value.top_a} />
     <span class="text-textcolor">No Repeat n-gram Size</span>
-    <SliderInput min={0} max={20} step={1} marginBottom bind:value={oobaDraft.value.no_repeat_ngram_size} />
+    <SliderInput min={0} max={20} step={1} marginBottom bind:value={activeOobaDraft.value.no_repeat_ngram_size} />
     <div class="flex items-center mt-4">
-      <Check bind:check={oobaDraft.value.do_sample} name={'Do Sample'} />
+      <Check bind:check={activeOobaDraft.value.do_sample} name={'Do Sample'} />
     </div>
     <div class="flex items-center mt-4">
-      <Check bind:check={oobaDraft.value.add_bos_token} name={'Add BOS Token'} />
+      <Check bind:check={activeOobaDraft.value.add_bos_token} name={'Add BOS Token'} />
     </div>
     <div class="flex items-center mt-4">
-      <Check bind:check={oobaDraft.value.ban_eos_token} name={'Ban EOS Token'} />
+      <Check bind:check={activeOobaDraft.value.ban_eos_token} name={'Ban EOS Token'} />
     </div>
     <div class="flex items-center mt-4">
-      <Check bind:check={oobaDraft.value.skip_special_tokens} name={'Skip Special Tokens'} />
+      <Check bind:check={activeOobaDraft.value.skip_special_tokens} name={'Skip Special Tokens'} />
     </div>
     <div class="flex items-center mt-4">
       <Check
-        check={!!localStopStringsDraft.value}
+        check={!!activeLocalStopStringsDraft.value}
         name={language.customStopWords}
         onChange={() => {
-          if (!localStopStringsDraft.value) {
-            localStopStringsDraft.value = []
+          if (!activeLocalStopStringsDraft.value) {
+            activeLocalStopStringsDraft.value = []
           } else {
-            localStopStringsDraft.value = null
+            activeLocalStopStringsDraft.value = null
           }
         }} />
     </div>
-    {#if localStopStringsDraft.value}
+    {#if activeLocalStopStringsDraft.value}
       <div class="flex flex-col p-2 rounded-sm border border-selected mt-2 gap-1">
         <div class="p-2">
           <button
             class="font-medium flex justify-center items-center h-full cursor-pointer hover:text-green-500 w-full"
             onclick={() => {
-              const localStopStrings = localStopStringsDraft.value ?? []
+              const localStopStrings = activeLocalStopStringsDraft.value ?? []
               localStopStrings.push('')
-              localStopStringsDraft.value = localStopStrings
+              activeLocalStopStringsDraft.value = localStopStrings
             }}><PlusIcon /></button>
         </div>
-        {#each localStopStringsDraft.value as stopString, i}
+        {#each activeLocalStopStringsDraft.value as stopString, i}
           <div class="flex w-full">
             <div class="grow">
-              <TextInput marginBottom bind:value={localStopStringsDraft.value[i]} fullwidth fullh />
+              <TextInput marginBottom bind:value={activeLocalStopStringsDraft.value[i]} fullwidth fullh />
             </div>
             <div>
               <button
                 class="font-medium flex justify-center items-center h-full cursor-pointer hover:text-green-500 w-full"
                 onclick={() => {
-                  const localStopStrings = localStopStringsDraft.value ?? []
+                  const localStopStrings = activeLocalStopStringsDraft.value ?? []
                   localStopStrings.splice(i, 1)
-                  localStopStringsDraft.value = localStopStrings
+                  activeLocalStopStringsDraft.value = localStopStrings
                 }}><TrashIcon /></button>
             </div>
           </div>
@@ -1015,20 +1101,20 @@
     <div class="flex flex-col p-3 rounded-md border-selected border mt-4">
       <ChatFormatSettings />
     </div>
-    <Check bind:check={oobaDraft.value.formating.useName} name={language.useNamePrefix} />
+    <Check bind:check={activeOobaDraft.value.formating.useName} name={language.useNamePrefix} />
   {:else if modelInfo.format === LLMFormat.NovelAI}
     <div class="flex flex-col p-3 bg-darkbg mt-4">
       <span class="text-textcolor">Starter</span>
-      <TextInput bind:value={NAIsettingsDraft.value.starter} placeholder={'⁂'} />
+      <TextInput bind:value={activeNAIsettingsDraft.value.starter} placeholder={'⁂'} />
       <span class="text-textcolor">Seperator</span>
-      <TextInput bind:value={NAIsettingsDraft.value.seperator} placeholder={'\\n'} />
+      <TextInput bind:value={activeNAIsettingsDraft.value.seperator} placeholder={'\\n'} />
     </div>
     <span class="text-textcolor">Top P</span>
-    <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={NAIsettingsDraft.value.topP} />
+    <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={activeNAIsettingsDraft.value.topP} />
     <span class="text-textcolor">Top K</span>
-    <SliderInput min={0} max={100} step={1} marginBottom bind:value={NAIsettingsDraft.value.topK} />
+    <SliderInput min={0} max={100} step={1} marginBottom bind:value={activeNAIsettingsDraft.value.topK} />
     <span class="text-textcolor">Top A</span>
-    <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={NAIsettingsDraft.value.topA} />
+    <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={activeNAIsettingsDraft.value.topA} />
     <span class="text-textcolor">Tailfree Sampling</span>
     <SliderInput
       min={0}
@@ -1036,9 +1122,15 @@
       step={0.001}
       marginBottom
       fixed={3}
-      bind:value={NAIsettingsDraft.value.tailFreeSampling} />
+      bind:value={activeNAIsettingsDraft.value.tailFreeSampling} />
     <span class="text-textcolor">Typical P</span>
-    <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={NAIsettingsDraft.value.typicalp} />
+    <SliderInput
+      min={0}
+      max={1}
+      step={0.01}
+      marginBottom
+      fixed={2}
+      bind:value={activeNAIsettingsDraft.value.typicalp} />
     <span class="text-textcolor">Repetition Penalty</span>
     <SliderInput
       min={0}
@@ -1046,7 +1138,7 @@
       step={0.01}
       marginBottom
       fixed={2}
-      bind:value={NAIsettingsDraft.value.repetitionPenalty} />
+      bind:value={activeNAIsettingsDraft.value.repetitionPenalty} />
     <span class="text-textcolor">Repetition Penalty Range</span>
     <SliderInput
       min={0}
@@ -1054,7 +1146,7 @@
       step={1}
       marginBottom
       fixed={0}
-      bind:value={NAIsettingsDraft.value.repetitionPenaltyRange} />
+      bind:value={activeNAIsettingsDraft.value.repetitionPenaltyRange} />
     <span class="text-textcolor">Repetition Penalty Slope</span>
     <SliderInput
       min={0}
@@ -1062,7 +1154,7 @@
       step={0.01}
       marginBottom
       fixed={2}
-      bind:value={NAIsettingsDraft.value.repetitionPenaltySlope} />
+      bind:value={activeNAIsettingsDraft.value.repetitionPenaltySlope} />
     <span class="text-textcolor">Frequency Penalty</span>
     <SliderInput
       min={-2}
@@ -1070,7 +1162,7 @@
       step={0.01}
       marginBottom
       fixed={2}
-      bind:value={NAIsettingsDraft.value.frequencyPenalty} />
+      bind:value={activeNAIsettingsDraft.value.frequencyPenalty} />
     <span class="text-textcolor">Presence Penalty</span>
     <SliderInput
       min={-2}
@@ -1078,28 +1170,58 @@
       step={0.01}
       marginBottom
       fixed={2}
-      bind:value={NAIsettingsDraft.value.presencePenalty} />
+      bind:value={activeNAIsettingsDraft.value.presencePenalty} />
     <span class="text-textcolor">Mirostat LR</span>
-    <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={NAIsettingsDraft.value.mirostat_lr} />
+    <SliderInput
+      min={0}
+      max={1}
+      step={0.01}
+      marginBottom
+      fixed={2}
+      bind:value={activeNAIsettingsDraft.value.mirostat_lr} />
     <span class="text-textcolor">Mirostat Tau</span>
-    <SliderInput min={0} max={6} step={0.01} marginBottom fixed={2} bind:value={NAIsettingsDraft.value.mirostat_tau} />
+    <SliderInput
+      min={0}
+      max={6}
+      step={0.01}
+      marginBottom
+      fixed={2}
+      bind:value={activeNAIsettingsDraft.value.mirostat_tau} />
     <span class="text-textcolor">Cfg Scale</span>
-    <SliderInput min={1} max={3} step={0.01} marginBottom fixed={2} bind:value={NAIsettingsDraft.value.cfg_scale} />
+    <SliderInput
+      min={1}
+      max={3}
+      step={0.01}
+      marginBottom
+      fixed={2}
+      bind:value={activeNAIsettingsDraft.value.cfg_scale} />
   {:else if modelInfo.format === LLMFormat.NovelList}
     <span class="text-textcolor">Top P</span>
-    <SliderInput min={0} max={2} step={0.01} marginBottom fixed={2} bind:value={ainconfigDraft.value.top_p} />
+    <SliderInput min={0} max={2} step={0.01} marginBottom fixed={2} bind:value={activeAinconfigDraft.value.top_p} />
     <span class="text-textcolor">Reputation Penalty</span>
-    <SliderInput min={0} max={2} step={0.01} marginBottom fixed={2} bind:value={ainconfigDraft.value.rep_pen} />
+    <SliderInput min={0} max={2} step={0.01} marginBottom fixed={2} bind:value={activeAinconfigDraft.value.rep_pen} />
     <span class="text-textcolor">Reputation Penalty Range</span>
-    <SliderInput min={0} max={2048} step={1} marginBottom fixed={2} bind:value={ainconfigDraft.value.rep_pen_range} />
+    <SliderInput
+      min={0}
+      max={2048}
+      step={1}
+      marginBottom
+      fixed={2}
+      bind:value={activeAinconfigDraft.value.rep_pen_range} />
     <span class="text-textcolor">Reputation Penalty Slope</span>
-    <SliderInput min={0} max={10} step={0.1} marginBottom fixed={2} bind:value={ainconfigDraft.value.rep_pen_slope} />
+    <SliderInput
+      min={0}
+      max={10}
+      step={0.1}
+      marginBottom
+      fixed={2}
+      bind:value={activeAinconfigDraft.value.rep_pen_slope} />
     <span class="text-textcolor">Top K</span>
-    <SliderInput min={1} max={500} step={1} marginBottom fixed={2} bind:value={ainconfigDraft.value.top_k} />
+    <SliderInput min={1} max={500} step={1} marginBottom fixed={2} bind:value={activeAinconfigDraft.value.top_k} />
     <span class="text-textcolor">Top A</span>
-    <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={ainconfigDraft.value.top_a} />
+    <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={activeAinconfigDraft.value.top_a} />
     <span class="text-textcolor">Typical P</span>
-    <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={ainconfigDraft.value.typical_p} />
+    <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={activeAinconfigDraft.value.typical_p} />
   {:else}
     <!-- Standard parameters come from SettingRenderer. -->
   {/if}
@@ -1112,7 +1234,7 @@
     <OpenrouterSettings />
   {/if}
 
-  <SeparateParametersSection />
+  <SeparateParametersSection promptPresetModelOverrideMode={promptParameterOverrideMode} />
 {/if}
 
 {#if sectionVisible(3)}
@@ -1175,7 +1297,7 @@
     </Accordion>
   {/if}
 
-  {#if showModelExtras && DBState.db.aiModel === 'reverse_proxy'}
+  {#if showModelOthersControls && DBState.db.aiModel === 'reverse_proxy'}
     <Accordion styled name="{language.additionalParams} " help="additionalParams">
       <table class="contain w-full max-w-full tabler">
         <tbody>
@@ -1186,28 +1308,30 @@
               <button
                 class="font-medium cursor-pointer hover:text-green-500 w-full flex justify-center items-center"
                 onclick={() => {
-                  additionalParamsDraft.value = [...additionalParamsDraft.value, ['', '']]
+                  activeAdditionalParamsDraft.value = [...activeAdditionalParamsDraft.value, ['', '']]
                 }}><PlusIcon /></button>
             </th>
           </tr>
-          {#if additionalParamsDraft.value.length === 0}
+          {#if activeAdditionalParamsDraft.value.length === 0}
             <tr class="text-textcolor2">
               <td colspan="3">{language.noData}</td>
             </tr>
           {/if}
-          {#each additionalParamsDraft.value as additionalParams, i}
+          {#each activeAdditionalParamsDraft.value as additionalParams, i}
             <tr>
               <td class="font-medium truncate">
-                <TextInput bind:value={additionalParamsDraft.value[i][0]} size="lg" fullwidth />
+                <TextInput bind:value={activeAdditionalParamsDraft.value[i][0]} size="lg" fullwidth />
               </td>
               <td class="font-medium truncate">
-                <TextInput bind:value={additionalParamsDraft.value[i][1]} size="lg" fullwidth />
+                <TextInput bind:value={activeAdditionalParamsDraft.value[i][1]} size="lg" fullwidth />
               </td>
               <td>
                 <button
                   class="font-medium flex justify-center items-center h-full cursor-pointer hover:text-green-500 w-full"
                   onclick={() => {
-                    additionalParamsDraft.value = additionalParamsDraft.value.filter((_, index) => index !== i)
+                    activeAdditionalParamsDraft.value = activeAdditionalParamsDraft.value.filter(
+                      (_, index) => index !== i,
+                    )
                   }}><TrashIcon /></button>
               </td>
             </tr>
@@ -1223,7 +1347,11 @@
         <span class="text-textcolor2">{language.loading}</span>
       {:else if DBState.db.promptTemplate}
         {#if submenu !== -1}
-          <PromptSettings mode="inline" subMenu={1} />
+          <PromptSettings
+            mode="inline"
+            subMenu={1}
+            promptPresetModelOverrideMode={promptOthersOverrideMode}
+            showPromptModelOverrideFields={settingsKind !== 'prompt' || promptOthersOverrideMode} />
         {/if}
       {:else}
         <Check
@@ -1266,11 +1394,11 @@
     </Button>
   {/snippet}
 
-  {#if showModelExtras}
+  {#if showModelOthersControls}
     <Accordion styled name={language.customFlags}>
-      <Check bind:check={enableCustomFlagsDraft.value} name={language.enableCustomFlags} />
+      <Check bind:check={activeEnableCustomFlagsDraft.value} name={language.enableCustomFlags} />
 
-      {#if enableCustomFlagsDraft.value}
+      {#if activeEnableCustomFlagsDraft.value}
         {@render CustomFlagButton('hasImageInput', 0)}
         {@render CustomFlagButton('hasImageOutput', 1)}
         {@render CustomFlagButton('hasAudioInput', 2)}
@@ -1304,11 +1432,11 @@
     </Accordion>
   {/if}
 
-  {#if showModelExtras}
+  {#if showModelOthersControls}
     <Accordion styled name={language.tools}>
       <Check
         name={language.search}
-        check={(modelToolsDraft.value ?? []).includes('search')}
+        check={(activeModelToolsDraft.value ?? []).includes('search')}
         onChange={() => {
           toggleModelTool('search')
         }} />
