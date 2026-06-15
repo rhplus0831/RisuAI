@@ -56,14 +56,29 @@ type TraceBodyEntry =
       contentType?: string
       contentLength?: number
       bytes?: number
+      gzipBytes?: number
+      sha256?: string
+      redacted?: true
+      preview?: string
       reason: string
     }
 
 const uidHeaderName = REQUEST_UID_HEADER.toLowerCase()
 
-async function startHarness(mode?: RequestTraceMode): Promise<Harness> {
+async function startHarness(
+  mode?: RequestTraceMode,
+  options: { bodySidecarMaxGzipBytes?: number } = {},
+): Promise<Harness> {
   process.env.LOG_LEVEL = 'silent'
   const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-fastify-trace-'))
+  const requestTrace = mode
+    ? {
+        mode,
+        ...(options.bodySidecarMaxGzipBytes !== undefined
+          ? { bodySidecarMaxGzipBytes: options.bodySidecarMaxGzipBytes }
+          : {}),
+      }
+    : undefined
   const { app } = await buildApp({
     config: {
       host: '127.0.0.1',
@@ -73,7 +88,7 @@ async function startHarness(mode?: RequestTraceMode): Promise<Harness> {
       importMaxBytes: Infinity,
       trustProxy: false,
       hubUrl: 'https://sv.risuai.xyz',
-      requestTrace: mode ? { mode } : undefined,
+      requestTrace,
     },
     memoryWorker: false,
     assetGc: false,
@@ -120,6 +135,16 @@ function requireTraceBody(entry: TraceEntry, key: 'Request-Body' | 'Response-Bod
   const body = entry[key]
   expect(body).toBeDefined()
   return body!
+}
+
+function deterministicLowCompressionText(length: number): string {
+  let state = 0x12345678
+  let text = ''
+  while (text.length < length) {
+    state = (state * 1664525 + 1013904223) >>> 0
+    text += state.toString(16).padStart(8, '0')
+  }
+  return text.slice(0, length)
 }
 
 let harness: Harness
@@ -266,7 +291,7 @@ describe('request trace', () => {
   })
 
   it('stores large text bodies as gzip sidecars', async () => {
-    harness = await startHarness('agent')
+    harness = await startHarness('agent', { bodySidecarMaxGzipBytes: 512 })
 
     const note = 'x'.repeat(5 * 1024)
     await harness.app.inject({
@@ -295,6 +320,35 @@ describe('request trace', () => {
     expect(existsSync(sidecarPath)).toBe(true)
     const sidecarText = gunzipSync(readFileSync(sidecarPath)).toString('utf8')
     expect(JSON.parse(sidecarText)).toEqual({ ids: [], note })
+  })
+
+  it('omits text sidecars above the compressed body size cap', async () => {
+    harness = await startHarness('agent', { bodySidecarMaxGzipBytes: 512 })
+
+    const note = deterministicLowCompressionText(8 * 1024)
+    await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/assets/exists',
+      headers: {
+        'content-type': 'application/json',
+      },
+      payload: JSON.stringify({
+        ids: [],
+        note,
+      }),
+    })
+
+    const [entry] = await waitForTraceEntries(harness, 'agent', 1)
+    const requestBody = requireTraceBody(entry, 'Request-Body')
+    expect(requestBody.storage).toBe('omitted')
+    if (requestBody.storage !== 'omitted') return
+
+    expect(requestBody.reason).toBe('compressed-too-large')
+    expect(requestBody.bytes).toBeGreaterThan(4 * 1024)
+    expect(requestBody.gzipBytes).toBeGreaterThan(512)
+    expect(requestBody.sha256).toMatch(/^[a-f0-9]{64}$/)
+    expect(requestBody.preview).toContain('"note"')
+    expect(requestBody.preview!.length).toBeGreaterThan(0)
   })
 
   it('records omitted metadata for streaming response bodies', async () => {

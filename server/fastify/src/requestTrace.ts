@@ -14,11 +14,13 @@ export const REQUEST_UID_HEADER = 'X-Request-UID'
 const CALLER_HEADER = 'x-risu-caller'
 const INLINE_BODY_MAX_BYTES = 4 * 1024
 const GZIP_BODY_PREVIEW_MAX_BYTES = 4 * 1024
+const TRACE_BODY_MAX_GZIP_BYTES = 10 * 1024 * 1024
 const gzipAsync = promisify(gzip)
 
 interface RegisterRequestTraceOptions {
   dataDir: string
   mode: RequestTraceMode
+  bodySidecarMaxGzipBytes?: number
 }
 
 interface RequestTraceState {
@@ -83,6 +85,10 @@ type TraceBodyEntry =
       contentType?: string
       contentLength?: number
       bytes?: number
+      gzipBytes?: number
+      sha256?: string
+      redacted?: true
+      preview?: string
       reason: string
     }
 
@@ -217,6 +223,7 @@ export function registerRequestTrace(app: FastifyInstance, opts: RegisterRequest
       createTraceBodyEntry({
         dataDir: opts.dataDir,
         mode: opts.mode,
+        bodySidecarMaxGzipBytes: opts.bodySidecarMaxGzipBytes,
         uid: state.uid,
         direction: 'request',
         source: captureRequestBodySource(request),
@@ -225,6 +232,7 @@ export function registerRequestTrace(app: FastifyInstance, opts: RegisterRequest
       createTraceBodyEntry({
         dataDir: opts.dataDir,
         mode: opts.mode,
+        bodySidecarMaxGzipBytes: opts.bodySidecarMaxGzipBytes,
         uid: state.uid,
         direction: 'response',
         source: state.responseBody ?? captureRawResponseBodySource(request, responseHeaders),
@@ -399,6 +407,7 @@ function captureRawResponseBodySource(request: FastifyRequest, headers: HeaderRe
 async function createTraceBodyEntry(opts: {
   dataDir: string
   mode: RequestTraceMode
+  bodySidecarMaxGzipBytes?: number
   uid: string
   direction: BodyTraceDirection
   source?: PendingTraceBody
@@ -445,13 +454,25 @@ async function createTraceBodyEntry(opts: {
   }
 
   try {
+    const compressed = await gzipAsync(bodyBuffer)
+    const bodySidecarMaxGzipBytes = normalizeBodySidecarMaxGzipBytes(opts.bodySidecarMaxGzipBytes)
+    if (compressed.byteLength > bodySidecarMaxGzipBytes) {
+      return {
+        storage: 'omitted',
+        ...base,
+        gzipBytes: compressed.byteLength,
+        preview: truncateUtf8Text(bodyText.text, GZIP_BODY_PREVIEW_MAX_BYTES),
+        reason: 'compressed-too-large',
+      }
+    }
+
     const sidecar = await writeGzipBodySidecar({
       dataDir: opts.dataDir,
       mode: opts.mode,
       uid: opts.uid,
       direction: opts.direction,
       format: bodyText.format,
-      body: bodyBuffer,
+      compressed,
     })
     return {
       storage: 'gzip',
@@ -631,17 +652,20 @@ async function writeGzipBodySidecar(opts: {
   uid: string
   direction: BodyTraceDirection
   format: TraceBodyText['format']
-  body: Buffer
+  compressed: Buffer
 }): Promise<{ relativePath: string; gzipBytes: number }> {
   const extension = opts.format === 'json' ? 'json' : 'txt'
   const relativePath = path.posix.join('trace', 'bodies', opts.mode, `${opts.uid}.${opts.direction}.${extension}.gz`)
   const fullPath = path.join(opts.dataDir, ...relativePath.split('/'))
-  const compressed = await gzipAsync(opts.body)
 
   await fs.mkdir(path.dirname(fullPath), { recursive: true })
-  await fs.writeFile(fullPath, compressed)
+  await fs.writeFile(fullPath, opts.compressed)
 
-  return { relativePath, gzipBytes: compressed.byteLength }
+  return { relativePath, gzipBytes: opts.compressed.byteLength }
+}
+
+function normalizeBodySidecarMaxGzipBytes(raw: number | undefined): number {
+  return typeof raw === 'number' && Number.isSafeInteger(raw) && raw > 0 ? raw : TRACE_BODY_MAX_GZIP_BYTES
 }
 
 function readHeader(headers: HeaderRecord, name: string): string | number | string[] | undefined {

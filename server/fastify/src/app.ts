@@ -99,7 +99,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   })
 
   if (config.requestTrace) {
-    registerRequestTrace(app, { dataDir: config.dataDir, mode: config.requestTrace.mode })
+    registerRequestTrace(app, { dataDir: config.dataDir, ...config.requestTrace })
   }
 
   await app.register(fastifyCompress, {

@@ -34,6 +34,7 @@ export interface AppConfig {
    */
   requestTrace?: {
     mode: RequestTraceMode
+    bodySidecarMaxGzipBytes?: number
   }
 }
 

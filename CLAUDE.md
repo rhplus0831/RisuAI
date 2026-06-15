@@ -13,7 +13,7 @@
 
 - `pnpm dev:agent` writes API request traces to `data/trace/agent.jsonl`; `pnpm dev:human` writes them to `data/trace/human.jsonl`.
 - When tracing is enabled, each response has an `X-Request-UID` header. Use `rg "<uid>" data/trace/*.jsonl` to find the matching JSONL entry.
-- Trace entries inline small text bodies; larger captured text bodies are stored as `.gz` sidecars under `data/trace/bodies/<mode>/`.
+- Trace entries inline small text bodies; larger captured text bodies are stored as `.gz` sidecars under `data/trace/bodies/<mode>/` when the compressed sidecar is at most 10 MiB.
 
 ## Available Tools
 

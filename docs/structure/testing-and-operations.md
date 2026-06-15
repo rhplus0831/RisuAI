@@ -61,8 +61,9 @@ served; `src/ts/platform.ts` still makes the browser Fastify-backed.
 `data/trace/<mode>.jsonl`. Each traced response includes `X-Request-UID`; search
 that UID in the JSONL file to correlate a visible failure to one API call. Small
 text request/response bodies are inlined in the entry, while larger captured
-text bodies are written as `.gz` sidecars under `data/trace/bodies/<mode>/`.
-Multipart, binary, SSE, and stream bodies are recorded as omitted metadata.
+text bodies are written as `.gz` sidecars under `data/trace/bodies/<mode>/`
+when the compressed sidecar is at most 10 MiB. Oversized compressed bodies,
+multipart, binary, SSE, and stream bodies are recorded as omitted metadata.
 
 To serve a built SPA through Fastify:
 
