@@ -2232,12 +2232,12 @@ export function applyImport(
     throw new ValidationError('database payload missing')
   }
   // The imported payload carries embedded `message[]`; split them into the
-  // messages table and write a message-free db.json. By default we persist a
-  // *clone* so the caller's `database` object is left fully hydrated —
+  // messages table and persist the message-free domain tables. By default we
+  // persist a *clone* so the caller's `database` object is left fully hydrated —
   // downstream consumers (e.g. the legacy hypaV3 memory backfill in
   // routes/save.ts) read chat.message after this returns, and splitting mutates
-  // its argument in place. db.json is written only after COMMIT so it never
-  // lands ahead of the message rows.
+  // its argument in place. SQLite writes commit atomically so table families
+  // never land ahead of the message rows.
   const cloneBeforeMessageSplit = options.cloneBeforeMessageSplit ?? true
   const current = loadPersisted(db, dataDir)
   let transactionOpen = false
@@ -2462,8 +2462,7 @@ export function backupDir(dataDir: string, id: string): string {
 // and restored by `restoreBackup`.
 //
 // Implementation notes per entry:
-//   - 'db.json'  : the user-owned JSON state. Copied via file write/rename.
-//   - 'assets'   : asset bytes referenced from db.json. Copied as a directory.
+//   - 'assets'   : content-addressed asset bytes. Copied as a directory.
 //   - 'risu.db'  : SQLite database (schema_version + hypa-v3 memory tables +
 //                  chat-history tables). Backed up after a WAL checkpoint; restored
 //                  via ATTACH so the live `DatabaseSync` handle stays valid. Every
@@ -2484,7 +2483,7 @@ function sqliteDbPath(dataDir: string): string {
 // `createChatBlobTable`), command event replay history, and `schema_version` in `db.ts`. `createBackup`
 // file-copies all of risu.db, but `restoreBackup` swaps tables one-by-one via
 // ATTACH. A table absent here would not be restored, leaving live rows desynced
-// from the restored db.json.
+// from the restored SQLite snapshot.
 const SQLITE_BACKUP_TABLES = [
   'schema_version',
   'command_events',

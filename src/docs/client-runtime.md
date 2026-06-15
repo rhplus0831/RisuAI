@@ -1,6 +1,6 @@
 # Client Runtime Guide
 
-Last audited: 2026-06-12.
+Last audited: 2026-06-15.
 
 This file covers browser TypeScript areas that influence visible Svelte UI. For
 component ownership and UI triage, start with `src/docs/svelte-ui.md`.
@@ -40,19 +40,21 @@ the preloading element.
 2. If the server has no database, initialize a fresh server database and refetch
    the read-only projection.
 3. Apply the server database into `DBState.db`.
-4. Seed selected character state from the projection.
-5. Record hydrated lorebook coverage.
-6. Cache the server command revision.
-7. Enable the projection write guard.
-8. Seed active generation jobs and start durable reattach.
-9. Start chat message hydration and hydrate the active chat.
-10. Start bridge patch lifecycle flushing.
-11. Subscribe to server events.
-12. Load plugins.
-13. Update color scheme, text theme, animation speed, height mode, error
+4. Merge bootstrap body-cache entries for heavy module/plugin bodies.
+5. Seed selected character state from the projection.
+6. Record hydrated lorebook coverage.
+7. Cache the server command revision.
+8. Enable the projection write guard.
+9. Seed active generation jobs and start durable reattach.
+10. Hydrate the selected character shell, start prompt-template hydration, start
+    chat message hydration, and hydrate the active chat.
+11. Start bridge patch lifecycle flushing.
+12. Subscribe to server events.
+13. Load plugins.
+14. Update color scheme, text theme, animation speed, height mode, error
     handling, and GUI size CSS variables.
-14. Apply startup UI state such as `botSettingAtStart`.
-15. Set `loadedStore`, start DOM observers, register dynamic models, run module
+15. Apply startup UI state such as `botSettingAtStart`.
+16. Set `loadedStore`, start DOM observers, register dynamic models, run module
     update, and show TOS as needed.
 
 Visible startup bugs often sit at the boundary between `loadedStore`,
@@ -69,20 +71,28 @@ Important files:
 
 - `src/ts/server/projectionWriteGuard.svelte.ts` protects server-owned
   projection state from direct browser mutation.
+- `src/ts/server/bootstrapBodyCache.ts` merges cached module/plugin body payloads
+  advertised by bootstrap.
 - `src/ts/server/commands.ts` sends revision-checked command mutations.
 - `src/ts/server/events.ts` subscribes to `/api/v1/events`.
 - `src/ts/server/projectionResync.ts` handles full or targeted resync after
   revision gaps.
 - `src/ts/server/chatMessageHydration.svelte.ts` hydrates active chat messages
   and transcript windows.
+- `src/ts/server/characterShellHydration.svelte.ts` hydrates selected inactive
+  character shell rows.
+- `src/ts/server/promptTemplateHydration.ts` hydrates stripped prompt-template
+  and preset prompt bodies.
 - `src/ts/server/lorebookBridge.svelte.ts`, `chatBridge.svelte.ts`,
-  `characterBridge.svelte.ts`, and `settingsBridge.svelte.ts` bridge visible UI
-  state to command-backed server changes.
+  `characterBridge.svelte.ts`, `promptTemplateBridge.svelte.ts`,
+  `scriptDefinitionBridge.svelte.ts`, and `settingsBridge.svelte.ts` bridge
+  visible UI state to command-backed server changes.
 
 If a component shows stale or missing data, confirm whether the data is:
 
 - absent from bootstrap by design;
-- waiting on chat/lorebook hydration;
+- waiting on chat, lorebook, character shell, prompt template, preset, or
+  module/plugin body-cache hydration;
 - hidden by a route/store condition;
 - optimistically changed but awaiting command confirmation;
 - rolled back after command failure;
@@ -115,8 +125,10 @@ Important files:
   the current chat to durable server jobs.
 
 Durable sends such as send, continue, and regenerate set `durable: true` when
-allowed. Generation results are persisted server-side, so the browser suppresses
-the old generation-result command in server-backed paths.
+allowed. Disconnect detaches from durable jobs; abort/cancel uses the durable
+DELETE path when a job exists. Terminal `postGeneration` data can advance the
+revision cache. Generation results are persisted server-side, so the browser
+suppresses the old generation-result command in server-backed paths.
 
 When generation UI is wrong, inspect both the Svelte surface
 `src/lib/ChatScreens/DefaultChatScreen.svelte` and the runtime files above.

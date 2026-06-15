@@ -15,8 +15,8 @@ import {
   collectMessageInlayReferences,
 } from './risuSave/assetReferences.js'
 
-// How often the periodic sweep runs. Asset GC is cheap but reads + (when it
-// reclaims) rewrites db.json, so it runs well outside the request hot path.
+// How often the periodic sweep runs. Asset GC is cheap but can delete metadata
+// and files when it reclaims, so it runs well outside the request hot path.
 export const ASSET_GC_INTERVAL_MS = 15 * 60_000
 
 // An unreferenced asset must have been on disk (by file mtime) for at least this

@@ -315,7 +315,7 @@ export function applyMessageFreeJsonCommandMutation<TExtra extends Record<string
     }
 
     // Only use this path for commands that never inspect or mutate chat
-    // messages; it intentionally reads the message-free db.json blob.
+    // messages; it intentionally reads message-free repository tables.
     const loadStartedAt = protocolNowMs()
     const persisted = loadPersisted(args.db, args.dataDir)
     loadMs = protocolDurationMs(loadStartedAt)
@@ -503,7 +503,7 @@ export function applyJsonCommandMutation<TExtra extends Record<string, unknown> 
 
     // Persist only chats whose messages changed: a message append is one row
     // insert, unrelated chats are not rewritten, and non-message commands write
-    // nothing to the messages table. The db.json write waits until COMMIT.
+    // nothing to the messages table. Repository table writes wait until COMMIT.
     beginTableWriteCapture()
     const sqliteSyncStartedAt = protocolNowMs()
     syncChatMessages(args.db, hydrated.database, nextDatabase)

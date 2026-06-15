@@ -1,6 +1,6 @@
 # Svelte UI Guide
 
-Last audited: 2026-06-12.
+Last audited: 2026-06-15.
 
 The frontend is a Svelte 5 SPA. There is no SvelteKit `src/routes/` tree:
 navigation is URL parsing plus Svelte stores, and `src/App.svelte` chooses the
@@ -42,8 +42,8 @@ generation, assets, storage, Realm import, plugins, or MCP.
 | `src/ts/platform.ts`  | Fastify-only platform flag. `isFastifyServer` is hard-coded true.                                                                                                                                        |
 
 `src/LiteMain.svelte` exists but is not the live entrypoint. Live lite behavior
-comes from `VITE_RISU_LITE`, `src/ts/lite.ts`, and branches inside the normal
-SPA.
+comes from `VITE_RISU_LITE`, `src/ts/lite.ts`, and consumers in settings/theme
+and legacy mobile code.
 
 ## App Render Priority
 
@@ -177,6 +177,13 @@ quick settings, dev tool, and character config switching. It uses
 chats, creating/deleting/forking chats, chat folders, reordering, exports, and
 server-backed metadata watchers.
 
+When a concrete chat route is open, `SideChatList` enters a chat-open mode with
+back/author-note/toggle controls and tears down Sortable until it returns to the
+list. Chat-scoped generation controls live in
+`ChatGenerationSettingsControls.svelte`, `Toggles.svelte`, and
+`src/ts/activeChatGenerationSettings.ts`; server send/preview/continue/
+regenerate reads the effective overlay in `server/fastify/src/prompt/`.
+
 Risk areas:
 
 - Sidebar route application can reset `botMakerMode`; see the route-effect
@@ -210,6 +217,12 @@ Data-driven setting definitions use `SettingItem` from `src/ts/setting/types.ts`
 Important fields are `id`, `type`, `labelKey`, `helpKey`, `bindKey`,
 `bindPath`, `condition`, `getValue`, `setValue`, `onChange`, `options`,
 `keywords`, `componentId`, and `componentProps`.
+
+The settings shell currently separates model and prompt work: settings index
+`17` is model settings, `18` is prompt settings, `13` is prompt templates, and
+the legacy Chat Bot/bot-preset page appears only when legacy bot presets still
+exist. Keep router slug maps, `SettingsMenuIndex`, and page visibility
+conditions aligned when changing these sections.
 
 Value binding and persistence are centralized in `src/ts/setting/utils.ts`:
 
@@ -330,7 +343,7 @@ Common commands:
 
 ```sh
 pnpm check
-pnpm test -- src/ts/router.test.ts
+pnpm test -- src/ts/router.test.ts # light pending-route coverage, not a full route-map matrix
 pnpm test -- src/App.routeEffect.test.ts src/App.routeEffect.dom.test.ts
 pnpm test -- src/lib/Setting/Settings.svelte.test.ts src/ts/setting/utils.test.ts
 pnpm test -- src/lib/SideBars/SideChatList.svelte.test.ts

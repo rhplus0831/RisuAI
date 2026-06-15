@@ -12,18 +12,23 @@ through command helpers or explicit server-owned mutation routes.
   `/api/v1/bootstrap`.
 - Empty bootstrap (`database: null`) triggers
   `POST /api/v1/commands/state/initialize`, then a read-only bootstrap refetch.
-- The projection is applied through trusted write scopes, revision cache is
-  seeded, projection write guard is enabled, active generation jobs are handed
-  to reattach logic, hydration starts, and `/api/v1/events` subscribes.
+- The projection is merged with any bootstrap body-cache entries, applied through
+  trusted write scopes, revision cache is seeded, projection write guard is
+  enabled, active generation jobs are handed to reattach logic, character shell
+  and prompt-template hydration start, chat hydration starts, and
+  `/api/v1/events` subscribes.
 - Full recovery uses `fetchServerBootstrapProjectionReadOnly()` so passive
   resync does not steal writer ownership from another browser session.
 
-| Path                                | Role                                                                                                       |
-| ----------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `src/ts/server/bootstrap.ts`        | Validates bootstrap payloads and exposes writer-intent/read-only variants.                                 |
-| `src/ts/server/projection.ts`       | Targeted projection, chat/lorebook hydration, character-selection projection.                              |
-| `src/ts/server/projectionResync.ts` | Full-bootstrap recovery for event replay misses, projection gaps, backup restore, partial-success repairs. |
-| `src/ts/process/reattach.ts`        | Reattaches active durable generation jobs from bootstrap.                                                  |
+| Path                                             | Role                                                                                                       |
+| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
+| `src/ts/server/bootstrap.ts`                     | Validates bootstrap payloads and exposes writer-intent/read-only variants.                                 |
+| `src/ts/server/bootstrapBodyCache.ts`            | Merges module/plugin heavy bodies from bootstrap cache manifests and local cache.                          |
+| `src/ts/server/projection.ts`                    | Targeted projection, chat/lorebook hydration, character-selection and collection projections.              |
+| `src/ts/server/projectionResync.ts`              | Full-bootstrap recovery for event replay misses, projection gaps, backup restore, partial-success repairs. |
+| `src/ts/server/characterShellHydration.svelte.ts` | Hydrates inactive/selected character shell rows through `characterRow`.                                    |
+| `src/ts/server/promptTemplateHydration.ts`       | Hydrates stripped prompt-template and preset prompt bodies.                                                |
+| `src/ts/process/reattach.ts`                     | Reattaches active durable generation jobs from bootstrap.                                                  |
 
 ## Event Reconcile
 
@@ -33,9 +38,10 @@ command events serially:
 
 - Own echoes and already-applied revisions are skipped.
 - Contiguous foreign events fetch `GET /api/v1/projection/:resource`.
-- Narrow resources include `characterSelection`, `characterRow`, and
-  `generation`. `generation.persisted` events are keyed by chat id and may
-  return projection mode `generation-chat`.
+- Narrow resources include `characterSelection`, `characterRow`, `preset`,
+  `promptItem`, `modelPreset`, `promptPreset`, `translatorPreset`, `loadout`,
+  `plugin`, `asset`, and `generation`. `generation.persisted` events are keyed by
+  chat id and may return projection mode `generation-chat`.
 - Gaps, replay-unavailable responses, projection failures, unknown resources, or
   server-requested full mode fall back to read-only full bootstrap.
 - Memory events bypass projection refresh and update Hypa V3 job/progress UI
@@ -48,16 +54,21 @@ notifications and are not replayed.
 
 ## Hydration
 
-Bootstrap and broad targeted projections contain chat stubs: metadata is
-present, while messages, per-chat `hypaV3Data`, and reroll alternates hydrate on
-demand.
+Bootstrap and broad targeted projections contain lazy bodies: chat metadata is
+present while messages, per-chat `hypaV3Data`, and reroll alternates hydrate on
+demand; inactive character rows can be shells; prompt templates and active preset
+prompt templates can be stripped; bot presets can be stubs; module/plugin bodies
+can be delivered through bootstrap body cache.
 
-| Flow                      | Endpoint                                          | Browser code                                              |
-| ------------------------- | ------------------------------------------------- | --------------------------------------------------------- |
-| Active chat messages      | `GET /api/v1/projection/chatMessages?id=...`      | `hydrateActiveChat()` in `chatMessageHydration.svelte.ts` |
-| Read-many chat histories  | `POST /api/v1/projection/chatMessages/bulk`       | `ensureAllChatsHydrated()`                                |
-| Active character lorebook | `GET /api/v1/projection/characterLorebook?id=...` | `hydrateActiveCharacterLorebook()`                        |
-| Read-many lorebooks       | `POST /api/v1/projection/characterLorebooks/bulk` | `ensureAllCharacterLorebooksHydrated()`                   |
+| Flow                                      | Endpoint                                                        | Browser code                                              |
+| ----------------------------------------- | --------------------------------------------------------------- | --------------------------------------------------------- |
+| Active chat messages, tail/range windows  | `GET /api/v1/projection/chatMessages?id=...&tail=...` or `start`/`limit` | `hydrateActiveChat()` in `chatMessageHydration.svelte.ts` |
+| Read-many chat histories                  | `POST /api/v1/projection/chatMessages/bulk`                     | `ensureAllChatsHydrated()`                                |
+| Active character lorebook                 | `GET /api/v1/projection/characterLorebook?id=...`               | `hydrateActiveCharacterLorebook()`                        |
+| Read-many lorebooks                       | `POST /api/v1/projection/characterLorebooks/bulk`               | `ensureAllCharacterLorebooksHydrated()`                   |
+| Inactive/selected character shell         | `GET /api/v1/projection/characterRow?id=...`                    | `hydrateSelectedCharacterShell()`                         |
+| Prompt-template item / active preset body | `GET /api/v1/projection/promptItem?id=...`, `preset` projection | `promptTemplateHydration.ts`                              |
+| Module/plugin heavy body cache            | `/api/v1/bootstrap` body-cache manifest                         | `bootstrapBodyCache.ts`                                   |
 
 Stale-response drops, hydration-generation resets, and reroll alternate seeding
 live in `src/ts/server/chatMessageHydration.svelte.ts`. Character lorebook

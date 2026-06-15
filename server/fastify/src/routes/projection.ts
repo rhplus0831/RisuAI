@@ -283,8 +283,8 @@ export function registerProjectionRoutes(
           hypaV3Data: hydration.hypaV3Data,
           messageStart: hydration.messageStart,
           messageTotal: hydration.messageTotal,
-          // Preserved reroll candidates. Present, possibly empty; the current
-          // client ignores it.
+          // Preserved reroll candidates. Present, possibly empty; the client
+          // uses them to seed reroll/swipe state after hydration.
           alternates: hydration.alternates,
         }
         emitProjectionMetric(req.log, resource, revision, response, {
@@ -304,8 +304,8 @@ export function registerProjectionRoutes(
         chatId,
         message: hydration.message,
         hypaV3Data: hydration.hypaV3Data,
-        // Preserved reroll candidates. Present, possibly empty; the current
-        // client ignores it.
+        // Preserved reroll candidates. Present, possibly empty; the client
+        // uses them to seed reroll/swipe state after hydration.
         alternates: hydration.alternates,
       }
       emitProjectionMetric(req.log, resource, revision, response, { id: chatId })

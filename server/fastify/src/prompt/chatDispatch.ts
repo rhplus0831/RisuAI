@@ -493,9 +493,9 @@ function buildChatCapabilityInput(db: Database, info: ModelInfoLite): ProviderCa
 
 /**
  * Map the shared capability table's unsupported category to the specific /chat
- * error message clients/tests rely on. The routing decision is shared with the
- * browser completion path; only the prose differs (see
- * `docs/client-thinning/reference/provider-capability-table.md`).
+ * error message clients/tests rely on. The routing decision is shared with
+ * server-intent completion through Fastify; only the prose differs (see
+ * `docs/structure/providers-and-models.md`).
  */
 function chatProviderUnsupportedReason(reason: ProviderUnsupportedReason, info: ModelInfoLite): string {
   switch (reason) {
@@ -523,7 +523,7 @@ export type ChatProviderRoute = { routable: true; provider: string } | { routabl
  * The /chat counterpart to `resolveServerCompletionRoute`. The unknown-id guard
  * stays in `resolveModelInfo` (the server has no endpoint for an unrecognized
  * OpenAI-compatible id); then the shared `resolveProviderCapability` table owns
- * the routing decision, so /chat cannot drift from the browser completion path.
+ * the routing decision, so /chat cannot drift from server-intent completion.
  * The stale `reverse_proxy` + `reverseProxyOobaMode` rejection is gone — the
  * openai adapter applies `oobaSystemHoist` itself.
  */

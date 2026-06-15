@@ -7,9 +7,9 @@ import { tokenizerOptionsFromDb } from './tokenizerConfig.js'
 
 /**
  * Server memory window: ports the SPA's non-Hypa budget fallback from
- * `buildMemoryWindow.ts`. Hypa V3 summary creation remains out of scope; today
- * server history rows do not carry `supaMemory` / `hypaMemory` memos, so
- * `memories` is empty in practice.
+ * `buildMemoryWindow.ts`. Hypa V3 planning/selection happens earlier in
+ * `prompt/assemble.ts`; this splitter receives any prepared `supaMemory` /
+ * `hypaMemory` rows and applies the final context-window budget.
  */
 
 export interface MemoryWindowInput {

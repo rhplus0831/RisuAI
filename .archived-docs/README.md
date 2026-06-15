@@ -3,9 +3,9 @@
 Completed workstreams. These are the design/decision records, kept after the work
 landed. They are **historical**: prefer the present-tense map in
 [`../STRUCTURE.md`](../STRUCTURE.md), active plans under
-[`../docs/plan/`](../docs/plan/) when present, and the live open-items list in
-[`../leftover.md`](leftover.md) for current state. The codebase is the source of
-truth.
+[`../docs/plan/`](../docs/plan/) when present. The codebase is the source of
+truth; `.archived-docs/leftover.md` is historical unless a current plan
+explicitly reopens an item.
 
 | Workstream                                                                                                | Archived   | What it delivered                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | --------------------------------------------------------------------------------------------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -29,8 +29,8 @@ truth.
 The archived workstreams have intentionally-deferred items and follow-ups (e.g.
 durable-generation Milestone 2 / server-restart durability, multi-tenant Lua
 hardening, and evidence-gated protocol runtime narrowing). Long-lived deferred
-items remain in [`../leftover.md`](leftover.md); active remediation workstreams
-live under [`../docs/plan/`](../docs/plan/) when present.
+items remain in [`leftover.md`](leftover.md) for archive context; active
+remediation workstreams live under [`../docs/plan/`](../docs/plan/) when present.
 
 ## Note on `fastify/client-thinning/`
 

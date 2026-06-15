@@ -1,6 +1,6 @@
 # Structure Notes
 
-Last audited: 2026-06-12.
+Last audited: 2026-06-15.
 
 This is the first-stop map for the Fastify-only RisuAI codebase. Use it for
 orientation, then open the focused note under `docs/structure/` or `src/docs/`
@@ -38,7 +38,7 @@ past decisions; they are not the source of current behavior.
 | `src/docs/`                                                                                             | Current frontend/client docs for Svelte UI/UX and browser runtime touchpoints.                       |
 | `server/fastify/`                                                                                       | Fastify API, SQLite persistence, route tests, browser smoke tests.                                   |
 | `public/`, `resources/`                                                                                 | Vite-copied static assets and packaging icon/splash source images.                                   |
-| `util/`                                                                                                 | Tracked helper tools: API flag runner, audits, database analyzer, userscript bridge.                 |
+| `util/`                                                                                                 | Tracked helper tools: full-stack dev runner, API flag runner, audits, database analyzer, tsserver wrapper, userscript bridge. |
 | `docs/plan/`                                                                                            | Active implementation plans and phase routers when present.                                          |
 | `docs/structure/`                                                                                       | Current structure notes for agents.                                                                  |
 | `.archived-docs/`                                                                                         | Closed workstreams and dated reports. Expect stale present tense; prefer code and `docs/structure/`. |
@@ -47,7 +47,7 @@ past decisions; they are not the source of current behavior.
 | `.github/`, `.vscode/`, `.npmrc`, `.gitattributes`, `.gitignore`, `.prettierrc.json`, `.prettierignore` | Automation, editor, install, merge, ignore, and formatting policy.                                   |
 | `README.md`, `plugins.md`, `version.json`, `LICENSE`                                                    | Project docs, plugin API notes, version metadata, license.                                           |
 | `AGENTS.md`, `CLAUDE.md`, `HANDOVER.md` when present                                                    | Agent and handoff context. Read `AGENTS.md` first.                                                   |
-| `dist/`, `data/`, `node_modules/`, `test-results/`, `scripts/` when present, `.idea/`, `.claude/`       | Generated, runtime, ignored scratch, or local editor/agent state. Do not edit as source.             |
+| `dist/`, `data/`, `node_modules/`, `server/fastify/node_modules/`, `coverage/`, `test-results/`, `blobs-for-test/`, `scripts/` when present, `.idea/`, `.claude/` | Generated, runtime, ignored scratch, or local editor/agent state. Do not edit as source. |
 
 ## Primary Entrypoints
 
@@ -56,7 +56,7 @@ past decisions; they are not the source of current behavior.
 | `server/fastify/src/index.ts`                                                                                                               | API process entrypoint: load config, build app, listen.                                                                     |
 | `server/fastify/src/app.ts`                                                                                                                 | Fastify composition root: plugins, SQLite, auth, active writer, routes, workers, timers, optional static SPA.               |
 | `server/fastify/src/config.ts`, `server/fastify/src/routeRateLimits.ts`                                                                     | Runtime env parsing and per-route rate-limit presets.                                                                       |
-| `server/fastify/src/db.ts`                                                                                                                  | SQLite schema v15, migrations, schema version, global revision.                                                             |
+| `server/fastify/src/db.ts`                                                                                                                  | SQLite schema v17, migrations, schema version, global revision.                                                             |
 | `server/fastify/src/repository.ts`, `server/fastify/src/messageStore.ts`                                                                    | SQLite-backed domain repository, asset metadata, imports/exports/backups, chat message tables.                              |
 | `server/fastify/src/routeManifest.ts`                                                                                                       | Auth, active-writer, streaming, and route inventory used by tests/audits. Update it for route changes.                      |
 | `server/fastify/src/routes/`, `server/fastify/src/commands/`                                                                                | `/api/v1/*` route registrars and revision-checked mutation helpers.                                                         |
@@ -65,7 +65,7 @@ past decisions; they are not the source of current behavior.
 | `server/fastify/src/risuSave/`, `server/fastify/src/realmImport/`                                                                           | `.risu` codecs/bundles/asset reports and Realm/charx import conversion.                                                     |
 | `src/main.ts`, `src/App.svelte`, `src/ts/bootstrap.ts`                                                                                      | Browser bootstrap, app shell, Fastify projection startup.                                                                   |
 | `src/lib/`                                                                                                                                  | Svelte UI components by feature area.                                                                                       |
-| `src/ts/server/`                                                                                                                            | Browser Fastify adapters: bootstrap, commands, projection/hydration/resync, events, bridges, assets, backups, Realm import. |
+| `src/ts/server/`                                                                                                                            | Browser Fastify adapters: bootstrap/body cache, commands, projection/hydration/resync, character/prompt hydration, events, bridges, assets, backups, Realm import. |
 | `src/ts/process/`, `src/ts/process/request/`                                                                                                | `sendChat`, server-backed generation bridge, request routing, SSE parsing, retained parity helpers.                         |
 | `src/ts/storage/`                                                                                                                           | Browser projection state, server-backed auth/storage, `.risu` and backup helpers.                                           |
 | `src/ts/plugins/`, `src/ts/process/mcp/`                                                                                                    | Browser plugin runtime, Plugin V3 API host, MCP clients/tools.                                                              |
@@ -82,9 +82,9 @@ past decisions; they are not the source of current behavior.
   API server. Run `pnpm api:dev` or `pnpm api:dev:flag` separately. For
   agent-facing full-stack dev, `pnpm dev:agent` serves the SPA on port 6418 and
   starts the API on port 6419 behind the same `/api` proxy.
-- If an agent-run API server is expected on port `6002` and the port is already
-  open, try `touch .risu-api-restart` for the flag-gated runner before starting
-  another server.
+- If a normal or flag-gated API server is expected on port `6002` and the port
+  is already open, try `touch .risu-api-restart` for the flag-gated runner before
+  starting another server. `pnpm dev:agent` uses API port `6419` instead.
 - Add new routes from `buildApp()` in `server/fastify/src/app.ts`. Handlers
   should call `requireAuth()` unless intentionally public, and every route needs
   a `routeManifest.ts` decision.

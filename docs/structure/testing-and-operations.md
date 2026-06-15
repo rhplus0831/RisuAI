@@ -8,6 +8,8 @@ is root-only; there is no `server/fastify/package.json`.
 | Command                            | Purpose                                                                                                       |
 | ---------------------------------- | ------------------------------------------------------------------------------------------------------------- |
 | `pnpm dev`                         | Start Vite client dev server on `0.0.0.0:5174`.                                                               |
+| `pnpm dev:agent`                   | Start full-stack agent dev server: frontend `6418`, Fastify `6419`, trace mode `agent`, auth/TOS bypass defaults. |
+| `pnpm dev:human`                   | Start full-stack human trace server: frontend `6002`, Fastify `6001`, trace mode `human`, auth/TOS bypass defaults unless overridden. |
 | `pnpm api:dev`                     | Start Fastify with `tsx watch server/fastify/src/index.ts`.                                                   |
 | `pnpm api:dev:flag`                | Start Fastify through `util/api-flag-dev.ts`; restarts only when `.risu-api-restart` is touched/created.      |
 | `pnpm api:start`                   | Start Fastify once with `tsx server/fastify/src/index.ts`.                                                    |
@@ -58,13 +60,20 @@ Vite proxies `/api` to `RISU_API_PROXY_TARGET` or `http://localhost:6002`.
 Fastify defaults to `0.0.0.0:6002`. Vite dev changes only how the SPA bundle is
 served; `src/ts/platform.ts` still makes the browser Fastify-backed.
 
-`pnpm dev:agent` and `pnpm dev:human` enable API request traces under
-`data/trace/<mode>.jsonl`. Each traced response includes `X-Request-UID`; search
-that UID in the JSONL file to correlate a visible failure to one API call. Small
-text request/response bodies are inlined in the entry, while larger captured
-text bodies are written as `.gz` sidecars under `data/trace/bodies/<mode>/`
-when the compressed sidecar is at most 10 MiB. Oversized compressed bodies,
-multipart, binary, SSE, and stream bodies are recorded as omitted metadata.
+`pnpm dev:agent` and `pnpm dev:human` run both Fastify and Vite through
+`util/agent-dev.ts`; they set `RISU_API_TRACE_MODE` to `agent` or `human`,
+respect `RISU_AGENT_DEV_HOST` / `RISU_AGENT_DEV_PORT` /
+`RISU_AGENT_API_PORT`, set auth/TOS bypass defaults unless overridden, and
+proxy `/api` to the spawned API port.
+
+Request tracing writes API request traces under `data/trace/<mode>.jsonl`. Every
+response receives `X-Request-UID`, but only API requests are appended to JSONL;
+search that UID in the trace file to correlate a visible failure to one API call.
+Small text request/response bodies are inlined in the entry, while larger
+captured text bodies are written as `.gz` sidecars under
+`data/trace/bodies/<mode>/` when the compressed sidecar is at most 10 MiB.
+Oversized compressed bodies, multipart, binary, SSE, and stream bodies are
+recorded as omitted metadata.
 
 To serve a built SPA through Fastify:
 
@@ -85,7 +94,7 @@ disables Fastify static serving.
 | UI coverage map             | `pnpm coverage:ui-map`, `vitest.config.ts`                         | `happy-dom` | Focused UI integration tests mapped over `src/lib/ChatScreens`, `src/lib/Others`, `src/lib/SideBars`, and `src/ts/server`. |
 | Fastify/server tests        | `pnpm api:test`, `server/fastify/vitest.config.ts`                 | Node        | `server/fastify/__tests__/**/*.test.ts`.                                                                                   |
 | Backend coverage            | `pnpm coverage:backend`, `server/fastify/vitest.config.ts`         | Node        | Broad coverage over `server/fastify/src/**/*.ts`; reports under `coverage/backend`.                                        |
-| Browser smoke               | `pnpm smoke:fastify-browser`, `playwright.fastify-smoke.config.ts` | Chromium    | `server/fastify/browser-smoke/`.                                                                                           |
+| Browser smoke               | `pnpm smoke:fastify-browser`, `playwright.fastify-smoke.config.ts` | Chromium    | `server/fastify/browser-smoke/`; specs start an in-process Fastify app on a random port serving `dist`.                     |
 | Architecture audit          | `pnpm client-thinning:audit`                                       | ts-morph    | Invariant checks in `util/client-thinning-audit.ts`.                                                                       |
 
 Pick the smallest command that covers the changed area. On a fresh machine, run
@@ -130,7 +139,7 @@ memo signatures, or render dependency keys.
 - `server/fastify/tsconfig.json` is strict and references
   `tsconfig.client-lib.json`.
 - Prettier uses `prettier-plugin-svelte`, no semicolons, single quotes, and
-  print width 100.
+  print width 120.
 
 Server TypeScript check workflow:
 
@@ -172,11 +181,12 @@ Server:
 | `RISU_API_DATA_DIR`          | `<repo>/data`              | SQLite, asset bytes, backups, auth files, legacy import artifacts.                                         |
 | `RISU_API_BODY_LIMIT`        | `104857600`                | JSON/body and multipart file limit.                                                                        |
 | `RISU_API_IMPORT_MAX_BYTES`  | unlimited                  | Streamed device-backup import limit; positive byte count caps, `0`/`unlimited`/`none`/`infinity` opts out. |
+| `RISU_API_TRACE_MODE`        | unset                      | Enables API request tracing when `agent` or `human`; `0`/`false`/`off`/`none` disable it.                  |
 | `TRUST_PROXY`                | `false`                    | Fastify trust proxy setting; accepts boolean, integer, or string.                                          |
 | `RISU_API_STATIC_ROOT`       | `<repo>/dist`              | Static SPA root; empty, `none`, or `off` disables.                                                         |
 | `RISU_HUB_URL`               | `https://sv.risuai.xyz`    | Hub passthrough target.                                                                                    |
 | `RISU_REALM_URL`             | `https://realm.risuai.net` | Realm character import target.                                                                             |
-| `RISU_AGENT_DEV_AUTH_BYPASS` | unset                      | Agent-only dev escape hatch; `pnpm dev:agent` sets it to bypass password auth for protected routes.        |
+| `RISU_AGENT_DEV_AUTH_BYPASS` | unset                      | Dev escape hatch; full-stack dev runners default it to `TRUE` so protected routes bypass password auth.    |
 | `LOG_LEVEL`                  | `info`                     | Use `silent` to disable Fastify logger.                                                                    |
 | `RISU_PROTOCOL_METRICS`      | unset                      | Enables structured protocol metrics when `1`, `true`, `yes`, or `on`.                                      |
 
@@ -185,7 +195,10 @@ Local/dev:
 | Variable                         | Default             | Notes                                                                                 |
 | -------------------------------- | ------------------- | ------------------------------------------------------------------------------------- |
 | `RISU_API_RESTART_FLAG`          | `.risu-api-restart` | Flag file watched by `pnpm api:dev:flag`.                                             |
-| `RISU_AGENT_DEV_AUTH_BYPASS`     | `TRUE`              | Set by `pnpm dev:agent`; protected API routes ignore password auth for agent access.  |
+| `RISU_AGENT_DEV_HOST`            | `0.0.0.0`           | Host used by `pnpm dev:agent` / `pnpm dev:human` for both spawned processes.          |
+| `RISU_AGENT_DEV_PORT`            | `6418`              | Frontend port for `pnpm dev:agent`; `pnpm dev:human` sets it to `6002`.               |
+| `RISU_AGENT_API_PORT`            | `6419`              | Fastify port for `pnpm dev:agent`; `pnpm dev:human` sets it to `6001`.                |
+| `RISU_AGENT_DEV_AUTH_BYPASS`     | `TRUE`              | Defaulted by full-stack dev runners; protected API routes ignore password auth.       |
 | `RISU_TS_AGENT_TSSERVER_LOG`     | unset               | Set to `1` or a path to capture verbose `pnpm ts:agent` tsserver logs.                |
 | `VITE_RISU_AGENT_DEV_IGNORE_TOS` | `TRUE`              | Set by `pnpm dev:agent`; `alertTOS()` returns accepted without showing the TOS modal. |
 
@@ -196,7 +209,7 @@ Client/build:
 | `RISU_API_PROXY_TARGET`                                                          | Vite dev proxy target for `/api`.                                |
 | `VITE_RISU_LEGAL_CONFIGURED`                                                     | Controls legal/setup gating in builds and smoke.                 |
 | `VITE_FASTIFY_BROWSER_SMOKE`                                                     | Enables browser smoke hook and fixed smoke password setup/login. |
-| `VITE_RISU_LITE`                                                                 | Enables lite/mobile branch.                                      |
+| `VITE_RISU_LITE`                                                                 | Enables lite-mode consumers in settings/theme/legacy mobile code; does not mount the old mobile shell. |
 | `VITE_AD_CLIENT`, `VITE_AD_CLIENT_MOBILE`, `VITE_AD_SLOT`, `VITE_AD_SLOT_MOBILE` | Ad UI configuration.                                             |
 
 Test/audit summary variables include `CLIENT_THINNING_AUDIT_CHECK_IDS`,

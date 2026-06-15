@@ -139,9 +139,9 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   // Legacy memory backfill reads chat.message[]; hydrate from the table (or the
   // still-embedded db.json on a first v3→v4 boot) so it sees the real history.
   backfillLegacyHypaV3MemoryRows(db, loadPersistedWithMessages(db, config.dataDir).database)
-  // Proactively move any embedded chat.message[] into the SQLite table and make
-  // db.json message-free. No-op once converged. Must run after the backfill
-  // above, which needs the embedded messages on the first upgrade boot.
+  // Proactively import any legacy db.json into SQLite and retire the file.
+  // No-op once converged. Must run after the backfill above, which needs the
+  // embedded messages on the first upgrade boot.
   ensureDbJsonImported(db, config.dataDir)
   const memoryEventBus = createMemoryEventBus()
   const emitMemoryEvent: MemoryEventSink = (event) => {

@@ -3,9 +3,9 @@ import type { DatabaseSync } from 'node:sqlite'
 import { recordTableWrite } from './protocolMetrics.js'
 
 // Chat messages live in their own SQLite table, one row per message, instead of
-// being embedded in `data/db.json`. This module is the pure CRUD layer over that
-// table. The `db.json` blob keeps chat *metadata*; the `messages` table keeps the
-// unbounded, high-churn `message[]`.
+// being embedded in the domain projection. This module is the pure CRUD layer
+// over that table. Chat metadata stays in the `chats` table; the `messages`
+// table keeps the unbounded, high-churn `message[]`.
 //
 // Messages table columns:
 //   - `chat_id` — the chat's id (`Chat.id`).
@@ -87,8 +87,8 @@ export function createMessageTable(db: DatabaseSync): void {
   `)
 }
 
-// The heavy per-chat `hypaV3Data` blob lives in its own table, out of db.json and
-// the wire projection, hydrated on open like messages. Distinct from the Hypa V3
+// The heavy per-chat `hypaV3Data` blob lives in its own table, outside the lean
+// wire projection, hydrated on open like messages. Distinct from the Hypa V3
 // memory tables (chunks/summaries/...).
 export function createChatBlobTable(db: DatabaseSync): void {
   db.exec(`
@@ -405,7 +405,7 @@ export function replaceAllChatMessages(
   }
 }
 
-/** Delete one chat's messages (logical cascade — db.json owns chat lifecycle). */
+/** Delete one chat's messages (logical cascade — the chats table owns lifecycle). */
 export function deleteChatMessages(db: DatabaseSync, chatId: string): void {
   recordTableWrite('messages')
   db.prepare('DELETE FROM messages WHERE chat_id = ?').run(chatId)

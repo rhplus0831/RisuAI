@@ -3,11 +3,10 @@ import { LLMFormat } from '../../../model/types'
 import { formatToServerProvider, resolveProviderCapability, type ProviderCapabilityInput } from '../providerCapability'
 
 // The shared capability table is the single source of truth for the server
-// provider-routing decision (closeout decision #5). Both the browser completion
-// classifier and the server /chat dispatcher call it, so this matrix is the
-// parity proof: there is only one classifier. The per-consumer wiring (and the
-// reverse_proxy + ooba flip on each side) is proven in serverCompletion.test.ts
-// and the server providerCapabilityRoute.test.ts.
+// provider-routing decision (closeout decision #5). Server-intent completion
+// and the server /chat dispatcher both reach it through Fastify, so this matrix
+// is the parity proof: there is only one classifier. The per-consumer wiring is
+// proven in serverCompletion.test.ts and the server providerCapabilityRoute.test.ts.
 
 function input(overrides: Partial<ProviderCapabilityInput> = {}): ProviderCapabilityInput {
   return {

@@ -9,13 +9,16 @@ generated, local-only, historical, vendored, or intentionally no-port.
 | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `dist/`                                         | Vite build output plus client-lib declarations under `dist/client-types`. Regenerate with `pnpm build`/`pnpm build:site` or the client-lib `tsc` step. |
 | `node_modules/`, `server/fastify/node_modules/` | Installed dependencies.                                                                                                                                |
+| `coverage/`                                     | Local coverage reports from frontend/backend/UI coverage scripts.                                                                                       |
 | `test-results/`                                 | Playwright/test output.                                                                                                                                |
+| `blobs-for-test/`                               | Ignored local binary/test scratch payloads.                                                                                                             |
 | `*.tsbuildinfo`                                 | TypeScript incremental build artifacts, including `tsconfig.client-lib.tsbuildinfo`.                                                                   |
 | `data/`                                         | Local runtime state: `risu.db`/WAL/SHM, assets, backups, auth, optional `data/dev`, legacy import artifacts. Useful for debugging, not source.         |
 | `scripts/` when present                         | Ignored local scratch/tooling directory.                                                                                                               |
 | `public/token/`                                 | Vendor/tokenizer data. Only touch when intentionally updating those assets.                                                                            |
 | `public/assets/`                                | Bundled Bergamot/browser translator workers. Only touch when intentionally updating vendor assets.                                                     |
 | `public/plugin_start.7z`                        | Packaged starter plugin archive.                                                                                                                       |
+| `src/etc/docs/`, `src/etc/o200k_base.json`      | Bundled/static documentation and tokenizer payloads; treat as static payloads unless intentionally updating them.                                       |
 | `src/ts/rpack/`                                 | Vendored rpack implementation; excluded from Prettier.                                                                                                 |
 | `src/ts/process/__fixtures__/expected/`         | Prompt/generation golden fixtures; regenerate with `UPDATE_FIXTURES=1`.                                                                                |
 | `src/ts/process/__fixtures__/upstream/`         | Upstream fixture corpus for request/provider tests.                                                                                                    |
@@ -82,7 +85,9 @@ state is not written back to live `db.json`.
 ## Stale Or No-Port Surfaces
 
 - `src/LiteMain.svelte` is unwired. Live lite mode is `VITE_RISU_LITE` driving
-  branches in `src/App.svelte` and `src/ts/lite.ts`.
+  `src/ts/lite.ts` plus consumers such as settings, color scheme, and legacy
+  mobile component branches; it does not re-enable `LiteMain.svelte` or the old
+  mobile shell.
 - `src/lib/UI/3DLoader.svelte` and `src/ts/3d/threeload.ts` are legacy and not
   imported by the current app shell.
 - Old worktrees may contain `src/lib/UI/NewGUI/` or `src/ts/sync/`; both are
@@ -94,5 +99,6 @@ state is not written back to live `db.json`.
 Removed or intentionally no-port concepts: group chat, peer sync, Google Drive
 sync, Risu Account Sync, browser-local durable persistence as the primary
 runtime, native/mobile wrapper runtime modes, service-worker behavior, and
-standalone SupaMemory/Hypa V2/Hanurai engines. `supaMemory` field/key/memo names
-remain active compatibility names for the maintained Hypa V3 path.
+standalone SupaMemory/Hypa V2/Hanurai engines. `HypaProcessorV2` remains an
+active helper inside maintained Hypa V3 logic, and `supaMemory` field/key/memo
+names remain active compatibility names for that maintained path.

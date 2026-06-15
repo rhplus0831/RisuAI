@@ -176,7 +176,7 @@ export async function loadWebInitialDatabase() {
  * One-time first-run seed. When bootstrap returns `database: null`, ask the
  * server to create its default database and then refetch the server-shaped
  * projection. A failed seed is fatal for this startup: the app should not enter
- * the home screen while the server still has no db.json-backed database.
+ * the home screen while the server still has no SQLite-backed database.
  */
 async function initializeFreshServerDatabase(): Promise<{
   revision: number

@@ -11,6 +11,7 @@ shape across table families.
 | ------------------- | ---------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
 | Character           | Bot/persona-like participant with prompts, chats, lorebooks, scripts, modules, emotion images, and settings.     | `database.svelte.ts`, `commands/characters.ts`, `repository.ts`         |
 | Chat                | Conversation under a character with metadata, messages, script state, lorebook state, and memory metadata.       | `commands/chats.ts`, `messageStore.ts`                                  |
+| Chat generation settings | Chat-scoped overrides for persona, preset, jailbreak, and sidebar toggles used by send/preview/continue/regenerate. | `activeChatGenerationSettings.ts`, `ChatGenerationSettingsControls.svelte`, `prompt/effectiveGenerationConfig.ts` |
 | Message             | Chat row stored in SQLite `messages`; commands append, update, truncate, replace, or persist generation results. | `messageStore.ts`, `commands/messages.ts`, `routes/commands.ts`         |
 | Reroll alternate    | Preserved reroll candidate stored as alternate message rows and hydrated with active chat messages.              | `messageStore.ts`, `routes/projection.ts`, `rerollNavigation.svelte.ts` |
 | Chat folder         | Character-level chat grouping metadata; command paths normalize/validate ids.                                    | `commands/chats.ts`, `chatCommands.ts`                                  |
@@ -35,6 +36,7 @@ shape across table families.
 | ----------------------------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Command mutation                    | Revision-checked server write that updates SQLite-backed domain state and usually persists one command event. | `commands/mutations.ts`, `routes/commands.ts`, `src/ts/server/commands.ts`                                                                                         |
 | Command event / projection resource | Revisioned event that tells clients which targeted projection slice to refresh.                               | `server/fastify/src/commands/events.ts`, `server/fastify/src/routes/projection.ts`, `src/ts/server/events.ts`                                                      |
+| Bootstrap body cache / projection body cache | Versioned cache for heavy module/plugin bodies omitted from lean bootstrap when unchanged.              | `bootstrapBodyCache.ts`, `repository.ts`, `projection_body_cache_state`                                                                                              |
 | Active writer                       | Single-writer mutation lease carried by `risu-writer-session`; stale writers get 423.                         | `server/fastify/src/routeManifest.ts`, `server/fastify/src/activeWriter.ts`, `src/ts/server/activeWriterSession.ts`                                                |
 | Provider secret                     | API-key/token fields masked in projections and resolved back on writes.                                       | `providerSecrets.ts`, `routes/bootstrap.ts`, `routes/projection.ts`                                                                                                |
 | Model / `LLMModel`                  | Browser model-registry entry with provider, format, tokenizer, flags, and model id metadata.                  | `src/ts/model/`, `providers-and-models.md`                                                                                                                         |
@@ -54,6 +56,6 @@ Public command APIs should use stable ids, not array indexes. Reordering
 commands should validate complete id lists for the resource they reorder.
 
 For the full no-port list, use `generated-and-legacy.md`. In particular,
-standalone SupaMemory/Hypa V2/Hanurai engines are no-port; `supaMemory`
-field/key/memo names remain active compatibility names for the maintained Hypa
-V3 path.
+standalone SupaMemory/Hypa V2/Hanurai engines are no-port; `HypaProcessorV2`
+remains an active helper inside maintained Hypa V3 logic, and `supaMemory`
+field/key/memo names remain active compatibility names for that maintained path.

@@ -12,13 +12,14 @@ instead of writing runtime state directly.
 | `server/fastify/src/repository.ts`                      | Asset id validation, sha256 dedupe, SQLite metadata, file paths, missing-asset checks.                                        |
 | `server/fastify/src/assetGc.ts`                         | Reference-counted asset garbage collection.                                                                                   |
 | `server/fastify/src/risuSave/assetReferences.ts`        | Known-field asset-reference walker for import/export/GC reports.                                                              |
-| `src/ts/server/assets.ts`, `src/ts/globalApi.svelte.ts` | Browser upload/read adapters and asset URL normalization; the existence probe is server-only unless a client helper is added. |
+| `src/ts/server/assets.ts`, `src/ts/globalApi.svelte.ts` | Browser upload/read adapters, asset URL normalization, and private bulk-upload existence probing. |
 
 Asset ids are lowercase sha256 hex strings. Metadata lives in SQLite `assets`;
 bytes live at `data/assets/<sha256>.<ext>`. Supported content types are defined
 by `CONTENT_TYPE_EXTENSIONS` and mirrored in `SERVER_ASSET_CONTENT_TYPES`.
 `POST /api/v1/assets` accepts raw supported asset bytes;
-`POST /api/v1/assets/bulk` accepts JSON/base64 batches for import paths.
+`POST /api/v1/assets/bulk` accepts compact binary framing for browser bulk
+uploads and keeps JSON/base64 batch compatibility for import paths.
 Uploads are authenticated and active-writer guarded;
 successful new assets bump the domain revision and emit `asset.created`.
 Re-uploading existing bytes is idempotent and can heal a missing file.
@@ -27,10 +28,11 @@ Re-uploading existing bytes is idempotent and can heal a missing file.
 in metadata and on disk. `POST /api/v1/assets/exists` is a public read-only POST
 that reports missing ids.
 
-`runAssetGc()` walks known asset-reference fields across persisted state,
-including hydrated chat messages, then removes unreferenced metadata and stray
-files. A grace window protects upload-then-reference races. GC does not bump the
-revision or emit command events.
+`runAssetGc()` walks known asset-reference fields across a minimal SQLite
+projection and scans `messages.data` for inlay references, then removes
+unreferenced metadata and stray files. A grace window protects
+upload-then-reference races. GC does not bump the revision or emit command
+events.
 
 ## `.risu` And Bundle Routes
 
@@ -75,6 +77,9 @@ mutation path.
 
 Server conversion and asset mapping live in `server/fastify/src/realmImport/`;
 browser progress/reconcile handling lives in `src/ts/server/realmImport.ts`.
+Server Realm import is primary but not exclusive: unsupported server Realm
+responses can fall back to the older browser path, and local `charx` file import
+still has a browser-native path.
 
 ## Backups
 

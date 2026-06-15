@@ -12,7 +12,7 @@ import { LLMFormat } from '../../model/types'
  * This module is pure: no `getDatabase()`, no `isFastifyServer`, no I/O. It reads
  * only its `input`. The `db → modelInfo` derivation (registry on the browser,
  * string-prefix on the server) and the user-facing reason **prose** stay
- * per-side; see `docs/client-thinning/reference/provider-capability-table.md`.
+ * per-side; see `docs/structure/providers-and-models.md`.
  */
 
 /** Stable reason category. Each consumer maps it to its own user-facing prose. */
@@ -238,10 +238,8 @@ function isVanillaHorde(input: ProviderCapabilityInput): boolean {
   const { aiModel, config } = input
   if (!aiModel.startsWith('horde:::')) return false
   if (aiModel.slice('horde:::'.length).length === 0) return false
-  // The completion path flattens the Horde prompt client-side via
-  // applyChatTemplate, so it needs a chosen template. The /chat path flattens
-  // server-side with a default and omits this gate; see the capability-table
-  // reference (divergence 3).
+  // Horde dispatch needs a concrete instruct template for both server-intent
+  // completion and /chat; prompt shaping happens later on the owning path.
   if (!nonEmpty(config.instructChatTemplate)) return false
   if (config.instructChatTemplate === 'jinja' && !nonEmpty(config.jinjaTemplate)) return false
   return true

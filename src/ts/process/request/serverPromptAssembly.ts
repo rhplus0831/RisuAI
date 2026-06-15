@@ -250,7 +250,7 @@ export function resolveServerPromptAssembly(input: ServerPromptAssemblyInput): S
     }
   }
 
-  // Group chat is legacy (filtered at load, `database.svelte.ts:110`, and
+  // Group chat is legacy (filtered at load in `database.svelte.ts`, and
   // `isGroupChat` is hardcoded false) but the flag's JSDoc still lists it as a
   // non-parity item — surface it explicitly instead of trusting the filter.
   if ((input.currentChar as { type?: string }).type === 'group') {
