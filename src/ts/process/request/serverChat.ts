@@ -41,7 +41,6 @@ export interface ServerChatInput {
   mode: 'send' | 'continue' | 'preview' | 'preview_prompt' | 'regenerate'
   userMessage?: string
   regenerateMessageId?: string
-  presetId?: string
   loadoutId?: string
   resetMessages?: boolean
   expectedRevision?: number

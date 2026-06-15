@@ -1,4 +1,5 @@
 import type { PromptItem } from '../process/prompt'
+import { mirrorTopLevelPresetField } from '../presetFieldMirror'
 import { DBState } from '../stores.svelte'
 import {
   canUseServerCommands,
@@ -123,6 +124,7 @@ export function queuePromptItemProjectionUpdate(
   if (!isPromptTemplateHydrated()) return
   const attemptedItem = applyPromptItemProjectionWrite(binding.getItems(), itemId)
   if (!attemptedItem) return
+  mirrorTopLevelPresetField('promptTemplate', binding.getItems())
   if (!canUseServerCommands()) return
 
   const existing = pendingPromptItemUpdates.get(itemId)

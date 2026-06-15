@@ -13,6 +13,7 @@ const ARRAY_ROW_IDENTITY_KEYS: Record<string, string> = {
   botPresets: 'id',
   characters: 'chaId',
   customModels: 'id',
+  modelPresets: 'id',
 }
 
 const SECRET_PATHS: PathSegment[][] = [
@@ -38,6 +39,8 @@ const SECRET_PATHS: PathSegment[][] = [
   ['hypaV3Key'],
   ['mancerHeader'],
   ['mistralKey'],
+  ['modelPresets', WILDCARD, 'openAIKey'],
+  ['modelPresets', WILDCARD, 'proxyKey'],
   ['nanogptKey'],
   ['NAIApiKey'],
   ['novelai', 'token'],

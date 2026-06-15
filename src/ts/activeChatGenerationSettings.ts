@@ -4,9 +4,10 @@ import {
   resolveDisplayedSidebarToggles,
   resolveChatGenerationSettingsReadiness,
   type ChatGenerationDisplayedSidebarToggle,
+  type ChatGenerationModelPresetReference,
   type ChatGenerationModuleReference,
   type ChatGenerationPersonaReference,
-  type ChatGenerationPresetReference,
+  type ChatGenerationPromptPresetReference,
   type ChatGenerationRequiredSidebarToggle,
   type ChatGenerationSettings,
   type ChatGenerationSettingsMissingReason,
@@ -18,7 +19,7 @@ import type { ServerCommandTransportOptions } from './server/commands'
 import { DBState, selectedCharID } from './stores.svelte'
 import type { Chat, Database, character } from './storage/database.svelte'
 
-type ActiveChatGenerationPresetReference = ChatGenerationPresetReference & {
+type ActiveChatGenerationPromptPresetReference = ChatGenerationPromptPresetReference & {
   moduleIntergration?: unknown
 }
 
@@ -37,7 +38,8 @@ export interface ActiveChatGenerationSettingsState {
   chat?: Chat
   settings?: ChatGenerationSettings
   persona?: ChatGenerationPersonaReference
-  preset?: ChatGenerationPresetReference
+  modelPreset?: ChatGenerationModelPresetReference
+  promptPreset?: ChatGenerationPromptPresetReference
   readiness: ChatGenerationSettingsReadiness
   requiredSidebarToggles: ChatGenerationRequiredSidebarToggle[]
   displayedSidebarToggles: ChatGenerationDisplayedSidebarToggle[]
@@ -73,8 +75,11 @@ export function resolveActiveChatGenerationSettings(
   const personas = safeArray<ChatGenerationPersonaReference>(
     db.personas as unknown as ChatGenerationPersonaReference[] | undefined,
   )
-  const presets = safeArray<ActiveChatGenerationPresetReference>(
-    db.botPresets as unknown as ActiveChatGenerationPresetReference[] | undefined,
+  const modelPresets = safeArray<ChatGenerationModelPresetReference>(
+    db.modelPresets as unknown as ChatGenerationModelPresetReference[] | undefined,
+  )
+  const promptPresets = safeArray<ActiveChatGenerationPromptPresetReference>(
+    db.promptPresets as unknown as ActiveChatGenerationPromptPresetReference[] | undefined,
   )
 
   const readiness = resolveReadiness(db, character, chat, settings)
@@ -93,7 +98,8 @@ export function resolveActiveChatGenerationSettings(
     chat,
     settings,
     persona: findById(personas, settings?.personaId),
-    preset: findById(presets, settings?.presetId),
+    modelPreset: findById(modelPresets, settings?.modelPresetId),
+    promptPreset: findById(promptPresets, settings?.promptPresetId),
     readiness,
     requiredSidebarToggles: readiness.requirements.sidebarToggles,
     displayedSidebarToggles: resolveDisplayedToggles(db, character, chat, settings),
@@ -172,7 +178,7 @@ export function createActiveChatGenerationSettingsPatch(
   state: ActiveChatGenerationSettingsState = resolveActiveChatGenerationSettings(),
 ): ChatGenerationSettings {
   const { sidebarToggles, ...scalarPatch } = patch
-  const isPresetSelection = nonEmptyString(patch.presetId)
+  const isPromptPresetSelection = nonEmptyString(patch.promptPresetId)
   const next: ChatGenerationSettings = {
     ...cloneGenerationSettings(state.settings),
     ...scalarPatch,
@@ -183,7 +189,7 @@ export function createActiveChatGenerationSettingsPatch(
   }
 
   const shouldWriteSidebarToggles =
-    hasOwn(patch, 'sidebarToggles') || isPresetSelection || isRecord(state.settings?.sidebarToggles)
+    hasOwn(patch, 'sidebarToggles') || isPromptPresetSelection || isRecord(state.settings?.sidebarToggles)
   if (shouldWriteSidebarToggles) {
     const mergedSidebarToggles = isRecord(state.settings?.sidebarToggles) ? { ...state.settings.sidebarToggles } : {}
     if (sidebarToggles) {
@@ -202,14 +208,14 @@ export function createActiveChatGenerationSettingsPatch(
   }
 
   const pruned = pruneStaleSidebarToggleKeys(state, next)
-  if (isPresetSelection) {
+  if (isPromptPresetSelection) {
     return fillMissingDefaultSidebarToggles(state, pruned)
   }
   return pruned
 }
 
 export function createActiveChatGenerationSettingsSelectionPatch(
-  selection: Pick<ActiveChatGenerationSettingsPatch, 'personaId' | 'presetId'>,
+  selection: Pick<ActiveChatGenerationSettingsPatch, 'personaId' | 'modelPresetId' | 'promptPresetId'>,
   state: ActiveChatGenerationSettingsState = resolveActiveChatGenerationSettings(),
 ): ChatGenerationSettings {
   return createActiveChatGenerationSettingsPatch(selection, state)
@@ -267,7 +273,7 @@ export function saveActiveChatGenerationSettings(
 }
 
 export function saveActiveChatGenerationSettingsSelection(
-  selection: Pick<ActiveChatGenerationSettingsPatch, 'personaId' | 'presetId'>,
+  selection: Pick<ActiveChatGenerationSettingsPatch, 'personaId' | 'modelPresetId' | 'promptPresetId'>,
   options: ServerCommandTransportOptions = {},
 ): boolean {
   return saveActiveChatGenerationSettingsPatch(selection, options)
@@ -305,17 +311,21 @@ function resolveReadiness(
   chat: Chat | undefined,
   settings: ChatGenerationSettings | undefined,
 ): ChatGenerationSettingsReadiness {
-  const presets = safeArray<ActiveChatGenerationPresetReference>(
-    db.botPresets as unknown as ActiveChatGenerationPresetReference[] | undefined,
+  const modelPresets = safeArray<ChatGenerationModelPresetReference>(
+    db.modelPresets as unknown as ChatGenerationModelPresetReference[] | undefined,
   )
-  const selectedPreset = findById(presets, settings?.presetId)
+  const promptPresets = safeArray<ActiveChatGenerationPromptPresetReference>(
+    db.promptPresets as unknown as ActiveChatGenerationPromptPresetReference[] | undefined,
+  )
+  const selectedPromptPreset = findById(promptPresets, settings?.promptPresetId)
 
   return resolveChatGenerationSettingsReadiness({
     settings,
     personas: safeArray<ChatGenerationPersonaReference>(
       db.personas as unknown as ChatGenerationPersonaReference[] | undefined,
     ),
-    presets,
+    modelPresets,
+    promptPresets,
     modules: safeArray<ChatGenerationModuleReference>(
       db.modules as unknown as ChatGenerationModuleReference[] | undefined,
     ),
@@ -323,7 +333,7 @@ function resolveReadiness(
     chatModuleIds: stringArray(chat?.modules),
     characterModuleIds: stringArray(character?.modules),
     moduleIntegration:
-      typeof selectedPreset?.moduleIntergration === 'string' ? selectedPreset.moduleIntergration : null,
+      typeof selectedPromptPreset?.moduleIntergration === 'string' ? selectedPromptPreset.moduleIntergration : null,
   })
 }
 
@@ -333,14 +343,19 @@ function resolveDisplayedToggles(
   chat: Chat | undefined,
   settings: ChatGenerationSettings | undefined,
 ): ChatGenerationDisplayedSidebarToggle[] {
-  const presets = safeArray<ActiveChatGenerationPresetReference>(
-    db.botPresets as unknown as ActiveChatGenerationPresetReference[] | undefined,
+  const modelPresets = safeArray<ChatGenerationModelPresetReference>(
+    db.modelPresets as unknown as ChatGenerationModelPresetReference[] | undefined,
   )
-  const selectedPreset = findById(presets, settings?.presetId)
+  const promptPresets = safeArray<ActiveChatGenerationPromptPresetReference>(
+    db.promptPresets as unknown as ActiveChatGenerationPromptPresetReference[] | undefined,
+  )
+  const selectedPromptPreset = findById(promptPresets, settings?.promptPresetId)
 
   return resolveDisplayedSidebarToggles({
-    presetId: settings?.presetId,
-    presets,
+    modelPresetId: settings?.modelPresetId,
+    promptPresetId: settings?.promptPresetId,
+    modelPresets,
+    promptPresets,
     modules: safeArray<ChatGenerationModuleReference>(
       db.modules as unknown as ChatGenerationModuleReference[] | undefined,
     ),
@@ -348,7 +363,7 @@ function resolveDisplayedToggles(
     chatModuleIds: stringArray(chat?.modules),
     characterModuleIds: stringArray(character?.modules),
     moduleIntegration:
-      typeof selectedPreset?.moduleIntergration === 'string' ? selectedPreset.moduleIntergration : null,
+      typeof selectedPromptPreset?.moduleIntergration === 'string' ? selectedPromptPreset.moduleIntergration : null,
   })
 }
 
@@ -425,7 +440,8 @@ function cloneGenerationSettings(settings: ChatGenerationSettings | undefined): 
   const clone: ChatGenerationSettings = {}
   if (hasOwn(settings, 'configured')) clone.configured = settings.configured
   if (hasOwn(settings, 'personaId')) clone.personaId = settings.personaId
-  if (hasOwn(settings, 'presetId')) clone.presetId = settings.presetId
+  if (hasOwn(settings, 'modelPresetId')) clone.modelPresetId = settings.modelPresetId
+  if (hasOwn(settings, 'promptPresetId')) clone.promptPresetId = settings.promptPresetId
   if (hasOwn(settings, 'jailbreakToggle')) clone.jailbreakToggle = settings.jailbreakToggle
   if (isRecord(settings.sidebarToggles)) clone.sidebarToggles = { ...settings.sidebarToggles }
   return clone
@@ -444,9 +460,12 @@ function missingReasonLabel(
     case 'persona_id_missing':
     case 'persona_missing':
       return 'Persona'
-    case 'preset_id_missing':
-    case 'preset_missing':
-      return 'Preset'
+    case 'model_preset_id_missing':
+    case 'model_preset_missing':
+      return 'Model preset'
+    case 'prompt_preset_id_missing':
+    case 'prompt_preset_missing':
+      return 'Prompt preset'
     case 'jailbreak_toggle_missing':
     case 'jailbreak_toggle_invalid':
       return 'Jailbreak toggle'

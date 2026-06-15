@@ -258,11 +258,13 @@ function seedReadyActiveChatGenerationSettings(): void {
         largePortrait: false,
       },
     ] as any
-    DBState.db.botPresets = [{ id: 'preset-a', name: 'Preset A' }] as any
+    DBState.db.modelPresets = [{ id: 'model-preset-a', name: 'Model Preset A' }] as any
+    DBState.db.promptPresets = [{ id: 'preset-a', name: 'Preset A' }] as any
     DBState.db.characters[0].chats[0].generationSettings = {
       configured: true,
       personaId: 'persona-a',
-      presetId: 'preset-a',
+      modelPresetId: 'model-preset-a',
+      promptPresetId: 'preset-a',
       jailbreakToggle: false,
       sidebarToggles: {},
     }
@@ -461,7 +463,8 @@ describe('chat command projection helpers', () => {
     const generationSettings = {
       configured: true,
       personaId: 'persona-a',
-      presetId: 'preset-a',
+      modelPresetId: 'model-preset-a',
+      promptPresetId: 'preset-a',
       jailbreakToggle: false,
       sidebarToggles: {
         mode: '0',
@@ -518,7 +521,8 @@ describe('chat command projection helpers', () => {
     const nextGenerationSettings = {
       configured: true,
       personaId: 'persona-a',
-      presetId: 'preset-a',
+      modelPresetId: 'model-preset-a',
+      promptPresetId: 'preset-a',
       jailbreakToggle: true,
       sidebarToggles: {
         mode: '1',
@@ -676,7 +680,7 @@ describe('chat command projection helpers', () => {
     expect(result).toEqual({
       status: 'error',
       error:
-        'Chat generation settings are incomplete. Missing: Generation settings, Configuration confirmation, Persona, Preset, Jailbreak toggle.',
+        'Chat generation settings are incomplete. Missing: Generation settings, Configuration confirmation, Persona, Model preset, Prompt preset, Jailbreak toggle.',
     })
     expect(calls).toEqual([])
     expect(DBState.db.characters[0].chats[0].message).toEqual([])
@@ -1283,13 +1287,15 @@ describe('Phase 4 chat metadata allowed-key diff (M9)', () => {
     previous.generationSettings = {
       configured: true,
       personaId: 'persona-old',
-      presetId: 'preset-old',
+      modelPresetId: 'model-preset-old',
+      promptPresetId: 'preset-old',
       jailbreakToggle: false,
     }
     current.generationSettings = {
       configured: true,
       personaId: 'persona-new',
-      presetId: 'preset-new',
+      modelPresetId: 'model-preset-new',
+      promptPresetId: 'preset-new',
       jailbreakToggle: true,
       sidebarToggles: { mode: '1' },
     }

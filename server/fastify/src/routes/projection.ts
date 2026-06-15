@@ -60,6 +60,9 @@ const RESOURCE_PROJECTION_FIELDS: Record<string, string[]> = {
   // replayed historical `lorebook` event from an older event log still applies.
   lorebook: ['characters', 'modules', 'loreBook', 'loreBookPage'],
   preset: ['botPresets', 'botPresetsId'],
+  modelPreset: ['modelPresets', 'modelPresetsId'],
+  promptPreset: ['promptPresets', 'promptPresetsId'],
+  legacyBotPreset: ['botPresets', 'botPresetsId', 'modelPresets', 'modelPresetsId', 'promptPresets', 'promptPresetsId'],
   // `prompt` (prompt-settings) writes ~21 scattered settings scalars, not a
   // single owned field, so it falls back to a full bootstrap (listed in
   // SPRAWLING_FULL_PROJECTION_RESOURCES). The old `['botPresets']` mapping was a
@@ -93,6 +96,9 @@ const RESOURCE_PROJECTION_FIELDS: Record<string, string[]> = {
 
 const NARROW_FIELD_PROJECTION_RESOURCES = new Set([
   'preset',
+  'modelPreset',
+  'promptPreset',
+  'legacyBotPreset',
   'promptItem',
   'persona',
   'translatorPreset',

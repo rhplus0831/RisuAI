@@ -12,7 +12,7 @@ import {
   seedProjectionBodyCacheRevisions,
 } from './repository.js'
 
-export const CURRENT_SCHEMA_VERSION = 16
+export const CURRENT_SCHEMA_VERSION = 17
 
 export interface MigrationStep {
   version: number
@@ -153,6 +153,13 @@ export const MIGRATIONS: readonly MigrationStep[] = [
     up: (db) => {
       createProjectionBodyCacheTables(db)
       seedProjectionBodyCacheRevisions(db)
+    },
+  },
+  {
+    version: 17,
+    name: 'split-model-prompt-presets',
+    up: (db) => {
+      createCollectionTables(db)
     },
   },
 ]

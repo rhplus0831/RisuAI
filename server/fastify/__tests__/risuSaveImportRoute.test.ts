@@ -287,11 +287,13 @@ describe('Phase 9-8a multipart .risu import route', () => {
         database: {
           version: 1,
           selectedPersona: 'global-persona-must-not-configure-chat',
-          botPresetsId: 0,
+          modelPresetsId: 0,
+          promptPresetsId: 0,
           jailbreakToggle: true,
           globalChatVariables: { toggle_mode: 'global-mode' },
           personas: [{ id: 'persona-a', name: 'Persona A' }],
-          botPresets: [{ id: 'preset-a', name: 'Preset A' }],
+          modelPresets: [{ id: 'model-a', name: 'Model A' }],
+          promptPresets: [{ id: 'prompt-a', name: 'Prompt A' }],
           characters: [
             {
               chaId: 'char-generation-settings-json',
@@ -306,7 +308,8 @@ describe('Phase 9-8a multipart .risu import route', () => {
                   generationSettings: {
                     configured: true,
                     personaId: 'persona-a',
-                    presetId: 'preset-a',
+                    modelPresetId: 'model-a',
+                    promptPresetId: 'prompt-a',
                     jailbreakToggle: false,
                     sidebarToggles: {
                       mode: 'source-mode',
@@ -338,7 +341,8 @@ describe('Phase 9-8a multipart .risu import route', () => {
     expect(chats[0].generationSettings).toEqual({
       configured: false,
       personaId: 'persona-a',
-      presetId: 'preset-a',
+      modelPresetId: 'model-a',
+      promptPresetId: 'prompt-a',
       jailbreakToggle: false,
       sidebarToggles: { mode: 'source-mode' },
     })
@@ -439,7 +443,14 @@ describe('Phase 9-8a multipart .risu import route', () => {
       alwaysActive: false,
       selective: true,
     })
-    expect(database.modules[0].lorebook[0]).toMatchObject({
+    const db = openDatabase(harness.dataDir)
+    let persistedDatabase: { modules: Array<{ lorebook?: Array<Record<string, unknown>> }> }
+    try {
+      persistedDatabase = loadPersisted(db, harness.dataDir).database as typeof persistedDatabase
+    } finally {
+      db.close()
+    }
+    expect(persistedDatabase.modules[0].lorebook?.[0]).toMatchObject({
       id: 'module-entry-array',
       key: '',
       secondkey: '',
@@ -680,7 +691,8 @@ describe('Phase 9-8a multipart .risu import route', () => {
         {
           version: 1,
           personas: [{ id: 'persona-risu', name: 'Persona Risu' }],
-          botPresets: [{ id: 'preset-risu', name: 'Preset Risu' }],
+          modelPresets: [{ id: 'model-risu', name: 'Model Risu' }],
+          promptPresets: [{ id: 'prompt-risu', name: 'Prompt Risu' }],
           characters: [
             {
               chaId: 'char-generation-settings-risu',
@@ -695,7 +707,8 @@ describe('Phase 9-8a multipart .risu import route', () => {
                   generationSettings: {
                     configured: true,
                     personaId: 'persona-risu',
-                    presetId: 'preset-risu',
+                    modelPresetId: 'model-risu',
+                    promptPresetId: 'prompt-risu',
                     jailbreakToggle: true,
                     sidebarToggles: { tone: 'warm' },
                   },
@@ -736,7 +749,8 @@ describe('Phase 9-8a multipart .risu import route', () => {
     expect(chats[0].generationSettings).toEqual({
       configured: false,
       personaId: 'persona-risu',
-      presetId: 'preset-risu',
+      modelPresetId: 'model-risu',
+      promptPresetId: 'prompt-risu',
       jailbreakToggle: true,
       sidebarToggles: { tone: 'warm' },
     })

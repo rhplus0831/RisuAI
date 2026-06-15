@@ -569,6 +569,75 @@ export interface ReorderPresetsCommandInput extends PresetCommandInput {
   presetIds: string[]
 }
 
+export type ModelPresetSnapshot = Record<string, unknown>
+export type PromptPresetSnapshot = Record<string, unknown>
+
+export interface ModelPresetCommandInput {
+  baseRevision: number
+}
+
+export interface CreateModelPresetCommandInput extends ModelPresetCommandInput {
+  preset: ModelPresetSnapshot
+}
+
+export interface UpdateModelPresetCommandInput extends ModelPresetCommandInput {
+  modelPresetId: string
+  patch: ModelPresetSnapshot
+}
+
+export interface DeleteModelPresetCommandInput extends ModelPresetCommandInput {
+  modelPresetId: string
+  selectModelPresetId?: string
+}
+
+export interface SelectModelPresetCommandInput extends ModelPresetCommandInput {
+  modelPresetId: string
+}
+
+export interface ImportModelPresetCommandInput extends ModelPresetCommandInput {
+  preset: ModelPresetSnapshot
+}
+
+export interface ReorderModelPresetsCommandInput extends ModelPresetCommandInput {
+  modelPresetIds: string[]
+}
+
+export interface PromptPresetCommandInput {
+  baseRevision: number
+}
+
+export interface CreatePromptPresetCommandInput extends PromptPresetCommandInput {
+  preset: PromptPresetSnapshot
+}
+
+export interface UpdatePromptPresetCommandInput extends PromptPresetCommandInput {
+  promptPresetId: string
+  patch: PromptPresetSnapshot
+}
+
+export interface DeletePromptPresetCommandInput extends PromptPresetCommandInput {
+  promptPresetId: string
+  selectPromptPresetId?: string
+}
+
+export interface SelectPromptPresetCommandInput extends PromptPresetCommandInput {
+  promptPresetId: string
+}
+
+export interface ImportPromptPresetCommandInput extends PromptPresetCommandInput {
+  preset: PromptPresetSnapshot
+}
+
+export interface ReorderPromptPresetsCommandInput extends PromptPresetCommandInput {
+  promptPresetIds: string[]
+}
+
+export interface ExtractLegacyBotPresetCommandInput {
+  baseRevision: number
+  presetId: string
+  mode: 'all' | 'model' | 'prompt'
+}
+
 export interface PatchPromptSettingsCommandInput {
   baseRevision: number
   patch: SettingsPatch
@@ -1278,6 +1347,195 @@ export async function reorderPresetsCommand(
     body: {
       baseRevision: input.baseRevision,
       presetIds: input.presetIds,
+    },
+    signal,
+  })
+}
+
+export async function createModelPresetCommand(
+  input: CreateModelPresetCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ modelPresetId: string }>> {
+  return requestCommandJson('/model-presets', {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      preset: input.preset,
+    },
+    signal,
+  })
+}
+
+export async function updateModelPresetCommand(
+  input: UpdateModelPresetCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ modelPresetId: string }>> {
+  return requestCommandJson(`/model-presets/${encodeURIComponent(input.modelPresetId)}`, {
+    method: 'PATCH',
+    body: {
+      baseRevision: input.baseRevision,
+      patch: input.patch,
+    },
+    signal,
+  })
+}
+
+export async function deleteModelPresetCommand(
+  input: DeleteModelPresetCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ modelPresetId: string; selectedModelPresetId: string | null }>> {
+  return requestCommandJson(`/model-presets/${encodeURIComponent(input.modelPresetId)}`, {
+    method: 'DELETE',
+    body: {
+      baseRevision: input.baseRevision,
+      modelPresetId: input.selectModelPresetId,
+    },
+    signal,
+  })
+}
+
+export async function selectModelPresetCommand(
+  input: SelectModelPresetCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ modelPresetId: string }>> {
+  return requestCommandJson('/model-presets/select', {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      modelPresetId: input.modelPresetId,
+    },
+    signal,
+  })
+}
+
+export async function importModelPresetCommand(
+  input: ImportModelPresetCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ modelPresetId: string }>> {
+  return requestCommandJson('/model-presets/import', {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      preset: input.preset,
+    },
+    signal,
+  })
+}
+
+export async function reorderModelPresetsCommand(
+  input: ReorderModelPresetsCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ selectedModelPresetId: string | null }>> {
+  return requestCommandJson('/model-presets/reorder', {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      modelPresetIds: input.modelPresetIds,
+    },
+    signal,
+  })
+}
+
+export async function createPromptPresetCommand(
+  input: CreatePromptPresetCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ promptPresetId: string }>> {
+  return requestCommandJson('/prompt-presets', {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      preset: input.preset,
+    },
+    signal,
+  })
+}
+
+export async function updatePromptPresetCommand(
+  input: UpdatePromptPresetCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ promptPresetId: string }>> {
+  return requestCommandJson(`/prompt-presets/${encodeURIComponent(input.promptPresetId)}`, {
+    method: 'PATCH',
+    body: {
+      baseRevision: input.baseRevision,
+      patch: input.patch,
+    },
+    signal,
+  })
+}
+
+export async function deletePromptPresetCommand(
+  input: DeletePromptPresetCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ promptPresetId: string; selectedPromptPresetId: string | null }>> {
+  return requestCommandJson(`/prompt-presets/${encodeURIComponent(input.promptPresetId)}`, {
+    method: 'DELETE',
+    body: {
+      baseRevision: input.baseRevision,
+      promptPresetId: input.selectPromptPresetId,
+    },
+    signal,
+  })
+}
+
+export async function selectPromptPresetCommand(
+  input: SelectPromptPresetCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ promptPresetId: string }>> {
+  return requestCommandJson('/prompt-presets/select', {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      promptPresetId: input.promptPresetId,
+    },
+    signal,
+  })
+}
+
+export async function importPromptPresetCommand(
+  input: ImportPromptPresetCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ promptPresetId: string }>> {
+  return requestCommandJson('/prompt-presets/import', {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      preset: input.preset,
+    },
+    signal,
+  })
+}
+
+export async function reorderPromptPresetsCommand(
+  input: ReorderPromptPresetsCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ selectedPromptPresetId: string | null }>> {
+  return requestCommandJson('/prompt-presets/reorder', {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      promptPresetIds: input.promptPresetIds,
+    },
+    signal,
+  })
+}
+
+export async function extractLegacyBotPresetCommand(
+  input: ExtractLegacyBotPresetCommandInput,
+  signal?: AbortSignal | null,
+): Promise<
+  ServerCommandResult<{
+    legacyPresetId: string
+    modelPresetId?: string
+    promptPresetId?: string
+    reusedModelPreset?: boolean
+  }>
+> {
+  return requestCommandJson(`/legacy-bot-presets/${encodeURIComponent(input.presetId)}/extract`, {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      mode: input.mode,
     },
     signal,
   })

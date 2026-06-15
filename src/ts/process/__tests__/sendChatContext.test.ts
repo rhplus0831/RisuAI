@@ -165,7 +165,7 @@ describe('setupSendChatContext - preset chain', () => {
       botPresetsId: 0,
     })
     setupSendChatContext({ chatProcessIndex: -1 })
-    // Server-backed generation uses chat.generationSettings.presetId instead
+    // Server-backed generation uses chat.generationSettings promptPresetId instead
     // of letting presetChain retarget the global editing preset.
     expect(DBState.db.botPresetsId).toBe(0)
     expect(toastCalls.calls).toEqual([])
@@ -363,11 +363,12 @@ describe('setupSendChatContext - promptInfo seed', () => {
   it('returns promptName from the active chat selected preset in server-backed mode', () => {
     seedDb({
       promptInfoInsideChat: true,
-      botPresets: [
+      modelPresets: [{ id: 'model-preset-a', name: 'Model Preset' }],
+      promptPresets: [
         { id: 'global-preset', name: 'Global Preset' },
         { id: 'chat-preset', name: 'Chat Preset' },
-      ] as unknown as Database['botPresets'],
-      botPresetsId: 0,
+      ] as unknown as Database['promptPresets'],
+      promptPresetsId: 0,
       characters: [
         makeChar({
           chats: [
@@ -375,7 +376,8 @@ describe('setupSendChatContext - promptInfo seed', () => {
               generationSettings: {
                 configured: true,
                 personaId: 'persona-a',
-                presetId: 'chat-preset',
+                modelPresetId: 'model-preset-a',
+                promptPresetId: 'chat-preset',
                 jailbreakToggle: false,
                 sidebarToggles: {},
               },
@@ -387,13 +389,14 @@ describe('setupSendChatContext - promptInfo seed', () => {
     const ctx = setupSendChatContext({ chatProcessIndex: -1 })
     expect(ctx.promptInfo.promptName).toBe('Chat Preset')
     expect(ctx.promptInfo.promptToggles).toEqual([])
-    expect(DBState.db.botPresetsId).toBe(0)
+    expect(DBState.db.promptPresetsId).toBe(0)
   })
 
   it('seeds chat-scoped boolean, select, text, and module toggles without global overrides', () => {
     seedDb({
       promptInfoInsideChat: true,
-      botPresets: [
+      modelPresets: [{ id: 'model-preset-a', name: 'Model Preset' }],
+      promptPresets: [
         {
           id: 'global-preset',
           name: 'Global Preset',
@@ -405,8 +408,8 @@ describe('setupSendChatContext - promptInfo seed', () => {
           customPromptTemplateToggle: 'flag=Flag\ntone=Tone=select=warm,formal,curt\nnote=Note=text',
           moduleIntergration: 'chat-integrated-space',
         },
-      ] as unknown as Database['botPresets'],
-      botPresetsId: 0,
+      ] as unknown as Database['promptPresets'],
+      promptPresetsId: 0,
       customPromptTemplateToggle: 'globalOnly=Global Only',
       globalChatVariables: {
         toggle_flag: '0',
@@ -445,7 +448,8 @@ describe('setupSendChatContext - promptInfo seed', () => {
               generationSettings: {
                 configured: true,
                 personaId: 'persona-a',
-                presetId: 'chat-preset',
+                modelPresetId: 'model-preset-a',
+                promptPresetId: 'chat-preset',
                 jailbreakToggle: false,
                 sidebarToggles: {
                   flag: '1',

@@ -100,6 +100,19 @@ function stubCommandFetch(): CapturedFetch[] {
       })
 
       if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 200 })
+      if (url.endsWith('/prompt-presets/select')) {
+        return jsonResponse({
+          status: 'ok',
+          revision: 201,
+          event: {
+            type: 'promptPreset.selected',
+            revision: 201,
+            resource: 'promptPreset',
+            id: 'preset-b',
+          },
+          promptPresetId: 'preset-b',
+        })
+      }
       if (url.endsWith('/generation-settings')) {
         return jsonResponse({
           status: 'ok',
@@ -129,8 +142,15 @@ async function waitForCommandFetches(calls: CapturedFetch[]): Promise<void> {
 function seedDb(): void {
   selectedCharID.set(0)
   DBState.db = {
-    botPresetsId: 0,
-    botPresets: [
+    modelPresetsId: 0,
+    modelPresets: [
+      {
+        id: 'model-preset-a',
+        name: 'Model Preset A',
+      },
+    ],
+    promptPresetsId: 0,
+    promptPresets: [
       {
         id: 'preset-a',
         name: 'Preset A',
@@ -202,7 +222,8 @@ function seedDb(): void {
             generationSettings: {
               configured: true,
               personaId: 'persona-b',
-              presetId: 'preset-b',
+              modelPresetId: 'model-preset-a',
+              promptPresetId: 'preset-b',
               jailbreakToggle: false,
               sidebarToggles: {},
             },
@@ -219,30 +240,30 @@ function elementBySelector<T extends Element>(selector: string, label: string): 
   return element!
 }
 
-function pickerRoot(kind: 'preset' | 'persona', mode: GenerationSettingsPickerMode): HTMLElement {
+function pickerRoot(kind: 'model' | 'prompt' | 'persona', mode: GenerationSettingsPickerMode): HTMLElement {
   return elementBySelector<HTMLElement>(
     `[data-risu-generation-picker][data-risu-picker-kind="${kind}"][data-risu-picker-mode="${mode}"]`,
     `${kind} ${mode} picker root`,
   )
 }
 
-function pickerRow(kind: 'preset' | 'persona', id: string): HTMLButtonElement {
-  return elementBySelector<HTMLButtonElement>(
-    `button[data-risu-generation-picker-row][data-risu-picker-kind="${kind}"][data-risu-row-id="${id}"]`,
+function pickerRow(kind: 'model' | 'prompt' | 'persona', id: string): HTMLElement {
+  return elementBySelector<HTMLElement>(
+    `[data-risu-generation-picker-row][data-risu-picker-kind="${kind}"][data-risu-row-id="${id}"]`,
     `${kind} row ${id}`,
   )
 }
 
-function expectPickerRowSelection(kind: 'preset' | 'persona', id: string, selected: boolean): void {
+function expectPickerRowSelection(kind: 'model' | 'prompt' | 'persona', id: string, selected: boolean): void {
   const row = pickerRow(kind, id)
   expect(row.dataset.risuSelected).toBe(selected ? 'true' : 'false')
   expect(row.getAttribute('aria-current')).toBe(selected ? 'true' : null)
 }
 
-function mountPresetPicker(mode: GenerationSettingsPickerMode, close = vi.fn()) {
+function mountPresetPicker(mode: GenerationSettingsPickerMode, close = vi.fn(), kind: 'model' | 'prompt' = 'prompt') {
   component = mount(Botpreset, {
     target,
-    props: { mode, close },
+    props: { mode, close, kind },
   })
   return close
 }
@@ -280,13 +301,13 @@ describe('generation settings picker mode', () => {
     const calls = stubCommandFetch()
     const close = mountPresetPicker('active-chat-generation-settings')
 
-    expect(pickerRoot('preset', 'active-chat-generation-settings')).toBeTruthy()
-    expect(pickerRow('preset', 'preset-a').dataset.risuRowIndex).toBe('0')
-    expect(pickerRow('preset', 'preset-b').dataset.risuRowIndex).toBe('1')
-    expectPickerRowSelection('preset', 'preset-a', false)
-    expectPickerRowSelection('preset', 'preset-b', true)
+    expect(pickerRoot('prompt', 'active-chat-generation-settings')).toBeTruthy()
+    expect(pickerRow('prompt', 'preset-a').dataset.risuRowIndex).toBe('0')
+    expect(pickerRow('prompt', 'preset-b').dataset.risuRowIndex).toBe('1')
+    expectPickerRowSelection('prompt', 'preset-a', false)
+    expectPickerRowSelection('prompt', 'preset-b', true)
 
-    pickerRow('preset', 'preset-a').click()
+    pickerRow('prompt', 'preset-a').click()
     await tick()
     await waitForCommandFetches(calls)
 
@@ -295,7 +316,8 @@ describe('generation settings picker mode', () => {
     expect(DBState.db.characters[0].chats[0].generationSettings).toEqual({
       configured: true,
       personaId: 'persona-b',
-      presetId: 'preset-a',
+      modelPresetId: 'model-preset-a',
+      promptPresetId: 'preset-a',
       jailbreakToggle: false,
       sidebarToggles: {},
     })
@@ -306,7 +328,7 @@ describe('generation settings picker mode', () => {
       body: {
         baseRevision: 200,
         generationSettings: expect.objectContaining({
-          presetId: 'preset-a',
+          promptPresetId: 'preset-a',
         }),
       },
     })
@@ -316,17 +338,26 @@ describe('generation settings picker mode', () => {
     const calls = stubCommandFetch()
     const close = mountPresetPicker('global')
 
-    expect(pickerRoot('preset', 'global')).toBeTruthy()
-    expectPickerRowSelection('preset', 'preset-a', true)
-    expectPickerRowSelection('preset', 'preset-b', false)
+    expect(pickerRoot('prompt', 'global')).toBeTruthy()
+    expectPickerRowSelection('prompt', 'preset-a', true)
+    expectPickerRowSelection('prompt', 'preset-b', false)
 
-    pickerRow('preset', 'preset-b').click()
+    pickerRow('prompt', 'preset-b').click()
     await tick()
+    await waitForCommandFetches(calls)
 
-    expect(presetSpies.changeToPreset).toHaveBeenCalledWith(1)
     expect(close).toHaveBeenCalledOnce()
-    expect(DBState.db.characters[0].chats[0].generationSettings?.presetId).toBe('preset-b')
-    expect(calls).toEqual([])
+    expect(DBState.db.promptPresetsId).toBe(1)
+    expect(DBState.db.characters[0].chats[0].generationSettings?.promptPresetId).toBe('preset-b')
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/prompt-presets/select',
+      method: 'POST',
+      authHeader: 'picker-generation-settings-token',
+      body: {
+        baseRevision: 200,
+        promptPresetId: 'preset-b',
+      },
+    })
   })
 
   it('saves persona rows to the active chat without calling global persona selection', async () => {
@@ -348,7 +379,8 @@ describe('generation settings picker mode', () => {
     expect(DBState.db.characters[0].chats[0].generationSettings).toEqual({
       configured: true,
       personaId: 'persona-a',
-      presetId: 'preset-b',
+      modelPresetId: 'model-preset-a',
+      promptPresetId: 'preset-b',
       jailbreakToggle: false,
       sidebarToggles: {},
     })

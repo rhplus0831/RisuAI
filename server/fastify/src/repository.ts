@@ -82,6 +82,8 @@ function rowToPersistedAsset(row: AssetMetadataRow): PersistedAsset {
 const COLLECTION_FIELDS = [
   'modules',
   'plugins',
+  'modelPresets',
+  'promptPresets',
   'botPresets',
   'promptTemplate',
   'personas',
@@ -98,6 +100,8 @@ const NON_SETTINGS_FIELDS = new Set<string>(['characters', ...COLLECTION_FIELDS,
 const COLLECTION_TABLE_MAP: Record<string, string> = {
   modules: 'modules',
   plugins: 'plugins',
+  modelPresets: 'model_presets',
+  promptPresets: 'prompt_presets',
   botPresets: 'bot_presets',
   promptTemplate: 'prompt_templates',
   personas: 'personas',

@@ -235,7 +235,7 @@ function createInitialPromptInfo(serverBacked: boolean): MessagePresetInfo {
 function createServerBackedPromptInfo(): MessagePresetInfo {
   const activeSettings = resolveActiveChatGenerationSettings()
   return {
-    promptName: stringProperty(activeSettings.preset, 'name'),
+    promptName: stringProperty(activeSettings.promptPreset, 'name'),
     promptToggles: activeSettings.requiredSidebarToggles.flatMap((toggle) =>
       formatChatScopedPromptToggle(toggle, activeSettings.settings?.sidebarToggles?.[toggle.key]),
     ),

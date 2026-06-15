@@ -20,6 +20,7 @@ import {
   type SettingsGroup,
 } from '../server/commands'
 import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
+import { mirrorTopLevelPresetField } from '../presetFieldMirror'
 
 /**
  * Sentinel value representing an uninitialized local state in wrapper components.
@@ -65,9 +66,22 @@ export function setSettingValue(item: SettingItem, newValue: any, ctx: SettingCo
     item.onChange(newValue, ctx)
   }
 
-  if (commandPatch) {
+  const mirroredToPreset = mirrorSettingValueToSelectedPreset(item, newValue)
+
+  if (commandPatch && !mirroredToPreset) {
     void patchServerBackedSetting(item, commandPatch, newValue, previousValue, ctx)
   }
+}
+
+function mirrorSettingValueToSelectedPreset(item: SettingItem, newValue: unknown): boolean {
+  if (item.bindPath) {
+    const key = item.bindPath.split('.')[0]
+    return mirrorTopLevelPresetField(key, cloneJsonValue((DBState.db as any)[key]))
+  }
+
+  const key = item.bindKey ?? serverPatchKeyForItem(item)
+  if (!key) return false
+  return mirrorTopLevelPresetField(String(key), newValue)
 }
 
 function setLocalSettingValue(item: SettingItem, newValue: any, ctx: SettingContext): void {

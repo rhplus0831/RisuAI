@@ -47,6 +47,7 @@
     type PromptItemSnapshot,
     type SettingsPatch,
   } from 'src/ts/server/commands'
+  import { mirrorTopLevelPresetField } from 'src/ts/presetFieldMirror'
 
   const stopServerSettingsWatch = watchServerBackedSettings(['showUnrecommended'])
   onDestroy(stopServerSettingsWatch)
@@ -214,6 +215,7 @@
     withTrustedServerProjectionWrite(() => {
       DBState.db.promptTemplate = cloneJsonValue(templates)
     })
+    mirrorTopLevelPresetField('promptTemplate', templates)
     dispatchReorderPromptItems(previous)
   }
 
@@ -223,6 +225,7 @@
     withTrustedServerProjectionWrite(() => {
       DBState.db.promptTemplate = cloneJsonValue(templates)
     })
+    mirrorTopLevelPresetField('promptTemplate', templates)
   }
 
   function queuePromptSettingsPatch(patch: SettingsPatch, previous: SettingsPatch): void {
@@ -268,7 +271,10 @@
           const target = DBState.db as unknown as Record<string, unknown>
           target[key] = attempted
         })
-        queuePromptSettingsPatch({ [key]: attempted }, { [key]: previous })
+        const mirroredToPreset = mirrorTopLevelPresetField(key, attempted)
+        if (!mirroredToPreset) {
+          queuePromptSettingsPatch({ [key]: attempted }, { [key]: previous })
+        }
         previousServerSnapshot = snapshot
       })
     })

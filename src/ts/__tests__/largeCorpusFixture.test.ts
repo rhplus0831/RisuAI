@@ -22,7 +22,8 @@ describe('large-corpus fixture', () => {
     // Every collection family is populated (the server stores each in its own
     // table; an unscoped read of any of them is observable).
     for (const family of [
-      'botPresets',
+      'modelPresets',
+      'promptPresets',
       'modules',
       'personas',
       'loadouts',
@@ -32,6 +33,7 @@ describe('large-corpus fixture', () => {
     ] as const) {
       expect(a.database[family], family).toHaveLength(6)
     }
+    expect(a.database.botPresets).toEqual([])
     expect(a.database.promptTemplate).toHaveLength(1)
   })
 

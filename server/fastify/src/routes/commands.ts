@@ -57,6 +57,30 @@ import {
   validateFullPresetIdList,
 } from '../commands/presets.js'
 import {
+  applyModelPreset,
+  applyPromptPreset,
+  createModelPresetRecord,
+  createPromptPresetRecord,
+  ensureDatabaseObject as ensureSplitPresetDatabaseObject,
+  ensureModelPresetCollection,
+  ensurePromptPresetCollection,
+  extractLegacyBotPreset,
+  findModelPresetIndex,
+  findPromptPresetIndex,
+  readModelPresetId,
+  readModelPresetPatch,
+  readPromptPresetId,
+  readPromptPresetPatch,
+  requireModelPresetIndex,
+  requirePromptPresetIndex,
+  resolveModelPresetMaskedSecrets,
+  selectedModelPresetId,
+  selectedPromptPresetId,
+  validateFullModelPresetIdList,
+  validateFullPromptPresetIdList,
+  type LegacyBotPresetExtractionMode,
+} from '../commands/splitPresets.js'
+import {
   createTranslatorPresetRecord,
   ensureDatabaseObject as ensureTranslatorPresetDatabaseObject,
   ensureTranslatorPresetCollection,
@@ -376,7 +400,8 @@ function buildChatGenerationSettingsValidationContext(
 
   return {
     personas: ensurePersonaCollection(target),
-    presets: ensurePresetCollection(target),
+    modelPresets: ensureModelPresetCollection(target),
+    promptPresets: ensurePromptPresetCollection(target),
     modules: ensureModuleRecords(target),
     enabledModuleIds: ensureEnabledModules(target),
     characterModuleIds,
@@ -393,6 +418,9 @@ function cloneChatGenerationSettings(settings: ChatGenerationSettings | undefine
 }
 
 const COLLECTION_SCOPED_READS = {
+  modelPresets: ['modelPresets'],
+  promptPresets: ['promptPresets'],
+  legacyBotPresetExtraction: ['botPresets', 'modelPresets', 'promptPresets'],
   presets: ['botPresets'],
   presetsWithPromptTemplate: ['botPresets', 'promptTemplate'],
   personas: ['personas'],
@@ -417,6 +445,29 @@ interface PresetCommandBody {
   apply?: unknown
   saveCurrent?: unknown
   name?: unknown
+}
+
+interface ModelPresetCommandBody {
+  baseRevision?: unknown
+  preset?: unknown
+  patch?: unknown
+  modelPresetId?: unknown
+  modelPresetIds?: unknown
+  selectModelPresetId?: unknown
+}
+
+interface PromptPresetCommandBody {
+  baseRevision?: unknown
+  preset?: unknown
+  patch?: unknown
+  promptPresetId?: unknown
+  promptPresetIds?: unknown
+  selectPromptPresetId?: unknown
+}
+
+interface LegacyBotPresetCommandBody {
+  baseRevision?: unknown
+  mode?: unknown
 }
 
 interface PromptCommandBody {
@@ -1662,6 +1713,613 @@ export function registerCommandRoutes(
           return {
             event: COMMAND_EVENT_CATALOG.presetReordered,
             extra: { selectedPresetId: selectedPresetId(target, reordered) },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/model-presets', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = (req.body ?? {}) as ModelPresetCommandBody
+      const baseRevision = readBaseRevision(body)
+      const preset = createModelPresetRecord(readJsonObject(body.preset, 'preset'), 'New Model Preset')
+      const result = applyTargetedCommandMutation<{ modelPresetId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.modelPresets,
+        mutate(database, innerDb) {
+          const target = ensureSplitPresetDatabaseObject(database)
+          const presets = ensureModelPresetCollection(target)
+          if (findModelPresetIndex(presets, preset.id) !== -1) {
+            throw new ValidationError(`Duplicate model preset id: ${preset.id}`)
+          }
+          presets.push(resolveModelPresetMaskedSecrets(undefined, preset) as typeof preset)
+          writeSingleCollectionTable(innerDb, 'modelPresets', presets)
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.modelPresetCreated, id: preset.id },
+            extra: { modelPresetId: preset.id },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.patch('/api/v1/commands/model-presets/:modelPresetId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const modelPresetId = readModelPresetId((req.params as { modelPresetId?: unknown }).modelPresetId)
+      const body = (req.body ?? {}) as ModelPresetCommandBody
+      const baseRevision = readBaseRevision(body)
+      const patch = readModelPresetPatch(readJsonObject(body.patch, 'patch'))
+      if (Object.prototype.hasOwnProperty.call(patch, 'id') && patch.id !== modelPresetId) {
+        throw new ValidationError('patch.id must match modelPresetId')
+      }
+      const result = applyTargetedCommandMutation<{ modelPresetId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.modelPresets,
+        mutate(database, innerDb) {
+          const target = ensureSplitPresetDatabaseObject(database)
+          const presets = ensureModelPresetCollection(target)
+          const index = requireModelPresetIndex(presets, modelPresetId)
+          const resolvedPatch = resolveModelPresetMaskedSecrets(presets[index], patch)
+          presets[index] = {
+            ...presets[index],
+            ...resolvedPatch,
+            id: modelPresetId,
+          }
+          writeSingleCollectionRow(innerDb, 'modelPresets', index, presets[index])
+          if (target.modelPresetsId === index) {
+            applyModelPreset(target, presets[index])
+            writeSettingsOnly(innerDb, extractSettings(target))
+          }
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.modelPresetUpdated, id: modelPresetId },
+            extra: { modelPresetId },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.delete('/api/v1/commands/model-presets/:modelPresetId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const modelPresetId = readModelPresetId((req.params as { modelPresetId?: unknown }).modelPresetId)
+      const body = (req.body ?? {}) as ModelPresetCommandBody
+      const baseRevision = readBaseRevision(body)
+      const selectModelPresetId =
+        body.modelPresetId === undefined ? undefined : readModelPresetId(body.modelPresetId, 'modelPresetId')
+      const result = applyTargetedCommandMutation<{
+        modelPresetId: string
+        selectedModelPresetId: string | null
+      }>({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.modelPresets,
+        mutate(database, innerDb) {
+          const target = ensureSplitPresetDatabaseObject(database)
+          const presets = ensureModelPresetCollection(target)
+          if (presets.length <= 1) {
+            throw new ValidationError('Cannot delete the only model preset')
+          }
+          const beforeSelected = target.modelPresetsId
+          const deletedIndex = requireModelPresetIndex(presets, modelPresetId)
+          const currentSelectedId = selectedModelPresetId(target, presets)
+          const deletedWasSelected = currentSelectedId === modelPresetId
+          presets.splice(deletedIndex, 1)
+          const nextSelectedId =
+            selectModelPresetId ?? (deletedWasSelected ? presets[0]?.id : (currentSelectedId ?? presets[0]?.id))
+          const nextSelectedIndex = nextSelectedId ? requireModelPresetIndex(presets, nextSelectedId) : -1
+          target.modelPresetsId = nextSelectedIndex
+          if (nextSelectedIndex >= 0) {
+            applyModelPreset(target, presets[nextSelectedIndex])
+          }
+          writeSingleCollectionTable(innerDb, 'modelPresets', presets)
+          if (target.modelPresetsId !== beforeSelected || deletedWasSelected) {
+            writeSettingsOnly(innerDb, extractSettings(target))
+          }
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.modelPresetDeleted, id: modelPresetId },
+            extra: {
+              modelPresetId,
+              selectedModelPresetId: selectedModelPresetId(target, presets),
+            },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/model-presets/select', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = (req.body ?? {}) as ModelPresetCommandBody
+      const baseRevision = readBaseRevision(body)
+      const modelPresetId = readModelPresetId(body.modelPresetId, 'modelPresetId')
+      const result = applyTargetedCommandMutation<{ modelPresetId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.modelPresets,
+        mutate(database, innerDb) {
+          const target = ensureSplitPresetDatabaseObject(database)
+          const presets = ensureModelPresetCollection(target)
+          const beforeSelected = target.modelPresetsId
+          const nextSelectedIndex = requireModelPresetIndex(presets, modelPresetId)
+          target.modelPresetsId = nextSelectedIndex
+          applyModelPreset(target, presets[nextSelectedIndex])
+          if (target.modelPresetsId !== beforeSelected) {
+            writeSettingsOnly(innerDb, extractSettings(target))
+          }
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.modelPresetSelected, id: modelPresetId },
+            extra: { modelPresetId },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/model-presets/import', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = (req.body ?? {}) as ModelPresetCommandBody
+      const baseRevision = readBaseRevision(body)
+      const preset = createModelPresetRecord(readJsonObject(body.preset, 'preset'), 'Imported Model')
+      const result = applyTargetedCommandMutation<{ modelPresetId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.modelPresets,
+        mutate(database, innerDb) {
+          const target = ensureSplitPresetDatabaseObject(database)
+          const presets = ensureModelPresetCollection(target)
+          if (findModelPresetIndex(presets, preset.id) !== -1) {
+            throw new ValidationError(`Duplicate model preset id: ${preset.id}`)
+          }
+          presets.push(resolveModelPresetMaskedSecrets(undefined, preset) as typeof preset)
+          writeSingleCollectionTable(innerDb, 'modelPresets', presets)
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.modelPresetImported, id: preset.id },
+            extra: { modelPresetId: preset.id },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/model-presets/reorder', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = (req.body ?? {}) as ModelPresetCommandBody
+      const baseRevision = readBaseRevision(body)
+      if (!Array.isArray(body.modelPresetIds)) {
+        throw new ValidationError('modelPresetIds must be an array')
+      }
+      const modelPresetIds = body.modelPresetIds
+      const result = applyTargetedCommandMutation<{ selectedModelPresetId: string | null }>({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.modelPresets,
+        mutate(database, innerDb) {
+          const target = ensureSplitPresetDatabaseObject(database)
+          const presets = ensureModelPresetCollection(target)
+          const beforeSelected = target.modelPresetsId
+          const currentSelectedId = selectedModelPresetId(target, presets)
+          validateFullModelPresetIdList(presets, modelPresetIds)
+          const byId = new Map(presets.map((preset) => [preset.id, preset]))
+          const reordered = modelPresetIds.map((id) => byId.get(id as string)!)
+          target.modelPresets = reordered
+          target.modelPresetsId = currentSelectedId
+            ? requireModelPresetIndex(reordered, currentSelectedId)
+            : reordered.length > 0
+              ? 0
+              : -1
+          writeSingleCollectionTable(innerDb, 'modelPresets', reordered)
+          if (target.modelPresetsId !== beforeSelected) {
+            writeSettingsOnly(innerDb, extractSettings(target))
+          }
+          return {
+            event: COMMAND_EVENT_CATALOG.modelPresetReordered,
+            extra: { selectedModelPresetId: selectedModelPresetId(target, reordered) },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/prompt-presets', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = (req.body ?? {}) as PromptPresetCommandBody
+      const baseRevision = readBaseRevision(body)
+      const preset = createPromptPresetRecord(readJsonObject(body.preset, 'preset'), 'New Prompt Preset')
+      const result = applyTargetedCommandMutation<{ promptPresetId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.promptPresets,
+        mutate(database, innerDb) {
+          const target = ensureSplitPresetDatabaseObject(database)
+          const presets = ensurePromptPresetCollection(target)
+          if (findPromptPresetIndex(presets, preset.id) !== -1) {
+            throw new ValidationError(`Duplicate prompt preset id: ${preset.id}`)
+          }
+          presets.push(preset)
+          writeSingleCollectionTable(innerDb, 'promptPresets', presets)
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.promptPresetCreated, id: preset.id },
+            extra: { promptPresetId: preset.id },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.patch('/api/v1/commands/prompt-presets/:promptPresetId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const promptPresetId = readPromptPresetId((req.params as { promptPresetId?: unknown }).promptPresetId)
+      const body = (req.body ?? {}) as PromptPresetCommandBody
+      const baseRevision = readBaseRevision(body)
+      const patch = readPromptPresetPatch(readJsonObject(body.patch, 'patch'))
+      if (Object.prototype.hasOwnProperty.call(patch, 'id') && patch.id !== promptPresetId) {
+        throw new ValidationError('patch.id must match promptPresetId')
+      }
+      const result = applyTargetedCommandMutation<{ promptPresetId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.promptPresets,
+        mutate(database, innerDb) {
+          const target = ensureSplitPresetDatabaseObject(database)
+          const presets = ensurePromptPresetCollection(target)
+          const index = requirePromptPresetIndex(presets, promptPresetId)
+          presets[index] = {
+            ...presets[index],
+            ...patch,
+            id: promptPresetId,
+          }
+          writeSingleCollectionRow(innerDb, 'promptPresets', index, presets[index])
+          if (target.promptPresetsId === index) {
+            applyPromptPreset(target, presets[index])
+            writeSettingsOnly(innerDb, extractSettings(target))
+          }
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.promptPresetUpdated, id: promptPresetId },
+            extra: { promptPresetId },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.delete('/api/v1/commands/prompt-presets/:promptPresetId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const promptPresetId = readPromptPresetId((req.params as { promptPresetId?: unknown }).promptPresetId)
+      const body = (req.body ?? {}) as PromptPresetCommandBody
+      const baseRevision = readBaseRevision(body)
+      const selectPromptPresetId =
+        body.promptPresetId === undefined ? undefined : readPromptPresetId(body.promptPresetId, 'promptPresetId')
+      const result = applyTargetedCommandMutation<{
+        promptPresetId: string
+        selectedPromptPresetId: string | null
+      }>({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.promptPresets,
+        mutate(database, innerDb) {
+          const target = ensureSplitPresetDatabaseObject(database)
+          const presets = ensurePromptPresetCollection(target)
+          if (presets.length <= 1) {
+            throw new ValidationError('Cannot delete the only prompt preset')
+          }
+          const beforeSelected = target.promptPresetsId
+          const deletedIndex = requirePromptPresetIndex(presets, promptPresetId)
+          const currentSelectedId = selectedPromptPresetId(target, presets)
+          const deletedWasSelected = currentSelectedId === promptPresetId
+          presets.splice(deletedIndex, 1)
+          const nextSelectedId =
+            selectPromptPresetId ?? (deletedWasSelected ? presets[0]?.id : (currentSelectedId ?? presets[0]?.id))
+          const nextSelectedIndex = nextSelectedId ? requirePromptPresetIndex(presets, nextSelectedId) : -1
+          target.promptPresetsId = nextSelectedIndex
+          if (nextSelectedIndex >= 0) {
+            applyPromptPreset(target, presets[nextSelectedIndex])
+          }
+          writeSingleCollectionTable(innerDb, 'promptPresets', presets)
+          if (target.promptPresetsId !== beforeSelected || deletedWasSelected) {
+            writeSettingsOnly(innerDb, extractSettings(target))
+          }
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.promptPresetDeleted, id: promptPresetId },
+            extra: {
+              promptPresetId,
+              selectedPromptPresetId: selectedPromptPresetId(target, presets),
+            },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/prompt-presets/select', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = (req.body ?? {}) as PromptPresetCommandBody
+      const baseRevision = readBaseRevision(body)
+      const promptPresetId = readPromptPresetId(body.promptPresetId, 'promptPresetId')
+      const result = applyTargetedCommandMutation<{ promptPresetId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.promptPresets,
+        mutate(database, innerDb) {
+          const target = ensureSplitPresetDatabaseObject(database)
+          const presets = ensurePromptPresetCollection(target)
+          const beforeSelected = target.promptPresetsId
+          const nextSelectedIndex = requirePromptPresetIndex(presets, promptPresetId)
+          target.promptPresetsId = nextSelectedIndex
+          applyPromptPreset(target, presets[nextSelectedIndex])
+          if (target.promptPresetsId !== beforeSelected) {
+            writeSettingsOnly(innerDb, extractSettings(target))
+          }
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.promptPresetSelected, id: promptPresetId },
+            extra: { promptPresetId },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/prompt-presets/import', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = (req.body ?? {}) as PromptPresetCommandBody
+      const baseRevision = readBaseRevision(body)
+      const preset = createPromptPresetRecord(readJsonObject(body.preset, 'preset'), 'Imported Prompt')
+      const result = applyTargetedCommandMutation<{ promptPresetId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.promptPresets,
+        mutate(database, innerDb) {
+          const target = ensureSplitPresetDatabaseObject(database)
+          const presets = ensurePromptPresetCollection(target)
+          if (findPromptPresetIndex(presets, preset.id) !== -1) {
+            throw new ValidationError(`Duplicate prompt preset id: ${preset.id}`)
+          }
+          presets.push(preset)
+          writeSingleCollectionTable(innerDb, 'promptPresets', presets)
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.promptPresetImported, id: preset.id },
+            extra: { promptPresetId: preset.id },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/prompt-presets/reorder', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = (req.body ?? {}) as PromptPresetCommandBody
+      const baseRevision = readBaseRevision(body)
+      if (!Array.isArray(body.promptPresetIds)) {
+        throw new ValidationError('promptPresetIds must be an array')
+      }
+      const promptPresetIds = body.promptPresetIds
+      const result = applyTargetedCommandMutation<{ selectedPromptPresetId: string | null }>({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.promptPresets,
+        mutate(database, innerDb) {
+          const target = ensureSplitPresetDatabaseObject(database)
+          const presets = ensurePromptPresetCollection(target)
+          const beforeSelected = target.promptPresetsId
+          const currentSelectedId = selectedPromptPresetId(target, presets)
+          validateFullPromptPresetIdList(presets, promptPresetIds)
+          const byId = new Map(presets.map((preset) => [preset.id, preset]))
+          const reordered = promptPresetIds.map((id) => byId.get(id as string)!)
+          target.promptPresets = reordered
+          target.promptPresetsId = currentSelectedId
+            ? requirePromptPresetIndex(reordered, currentSelectedId)
+            : reordered.length > 0
+              ? 0
+              : -1
+          writeSingleCollectionTable(innerDb, 'promptPresets', reordered)
+          if (target.promptPresetsId !== beforeSelected) {
+            writeSettingsOnly(innerDb, extractSettings(target))
+          }
+          return {
+            event: COMMAND_EVENT_CATALOG.promptPresetReordered,
+            extra: { selectedPromptPresetId: selectedPromptPresetId(target, reordered) },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/legacy-bot-presets/:presetId/extract', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const presetId = readPresetId((req.params as { presetId?: unknown }).presetId)
+      const body = (req.body ?? {}) as LegacyBotPresetCommandBody
+      const baseRevision = readBaseRevision(body)
+      const mode = readLegacyBotPresetExtractionMode(body.mode)
+      const result = applyTargetedCommandMutation<{
+        legacyPresetId: string
+        modelPresetId?: string
+        promptPresetId?: string
+        reusedModelPreset?: boolean
+      }>({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.legacyBotPresetExtraction,
+        mutate(database, innerDb) {
+          const target = ensureSplitPresetDatabaseObject(database)
+          const extraction = extractLegacyBotPreset(target, presetId, mode)
+          writeSingleCollectionTable(innerDb, 'botPresets', asArray(target.botPresets))
+          writeSingleCollectionTable(innerDb, 'modelPresets', asArray(target.modelPresets))
+          writeSingleCollectionTable(innerDb, 'promptPresets', asArray(target.promptPresets))
+          writeSettingsOnly(innerDb, extractSettings(target))
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.legacyBotPresetExtracted, id: presetId },
+            extra: extraction,
           }
         },
       })
@@ -5585,6 +6243,11 @@ function readSelectionLastInteraction(value: unknown): number {
     throw new ValidationError('lastInteraction must be a finite number')
   }
   return value
+}
+
+function readLegacyBotPresetExtractionMode(value: unknown): LegacyBotPresetExtractionMode {
+  if (value === 'all' || value === 'model' || value === 'prompt') return value
+  throw new ValidationError('mode must be one of all, model, or prompt')
 }
 
 function validateSettingsAssetRefs(db: DatabaseSync, patch: Record<string, unknown>): void {

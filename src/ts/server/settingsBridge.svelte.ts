@@ -1,5 +1,6 @@
 import { untrack } from 'svelte'
 import { prebuiltPresets } from '../process/templates/templates'
+import { mirrorTopLevelPresetField } from '../presetFieldMirror'
 import { setPreset } from '../storage/database.svelte'
 import { DBState } from '../stores.svelte'
 import {
@@ -92,7 +93,10 @@ export function createServerBackedSettingDraft<T>(
         const target = DBState.db as unknown as Record<string, unknown>
         target[key] = attempted
       })
-      queueSettingsPatch({ [key]: attempted }, { [key]: previous }, delayMs)
+      const mirroredToPreset = mirrorTopLevelPresetField(key, attempted)
+      if (!mirroredToPreset) {
+        queueSettingsPatch({ [key]: attempted }, { [key]: previous }, delayMs)
+      }
       previousServerSnapshot = snapshot
     })
   })

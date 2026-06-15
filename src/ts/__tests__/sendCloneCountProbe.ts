@@ -95,7 +95,8 @@ function normalizeProbeCharacter(row: character, index: number): character {
     chat.generationSettings ??= {
       configured: true,
       personaId: PROBE_PERSONA_ID,
-      presetId: PROBE_PRESET_ID,
+      modelPresetId: 'probe-model-preset',
+      promptPresetId: PROBE_PRESET_ID,
       jailbreakToggle: false,
       sidebarToggles: {},
     }
@@ -130,8 +131,17 @@ function seedProbeDb(options: Required<SendCloneCountProbeOptions>): SendCloneCo
         note: '',
       },
     ],
-    botPresetsId: 0,
-    botPresets: [
+    modelPresetsId: 0,
+    modelPresets: [
+      {
+        id: 'probe-model-preset',
+        name: 'Probe Model Preset',
+        aiModel: 'echo_model',
+        subModel: 'echo_model',
+      },
+    ],
+    promptPresetsId: 0,
+    promptPresets: [
       {
         id: PROBE_PRESET_ID,
         name: 'Probe Preset',

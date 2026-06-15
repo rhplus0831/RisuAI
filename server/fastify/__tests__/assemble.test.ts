@@ -150,13 +150,35 @@ function makeDatabase(overrides: Partial<Database> = {}): Database {
       },
     ] as unknown as Database['botPresets']
   }
+  if (!overrides.modelPresets) {
+    database.modelPresets = [
+      {
+        id: 'model-preset-default',
+        name: 'Default Model',
+        aiModel: database.aiModel,
+        subModel: database.subModel,
+        apiType: database.apiType,
+        maxContext: database.maxContext,
+        maxResponse: database.maxResponse,
+        temperature: database.temperature,
+      },
+    ] as unknown as Database['modelPresets']
+  }
+  if (!overrides.promptPresets) {
+    database.promptPresets = (database.botPresets ?? []).map((preset) =>
+      structuredClone(preset),
+    ) as unknown as Database['promptPresets']
+  }
+  database.modelPresetsId = Number.isInteger(database.modelPresetsId) ? database.modelPresetsId : 0
+  database.promptPresetsId = Number.isInteger(database.promptPresetsId) ? database.promptPresetsId : 0
   for (const character of database.characters ?? []) {
     for (const chat of character.chats ?? []) {
       if (Object.prototype.hasOwnProperty.call(chat, 'generationSettings')) continue
       chat.generationSettings = {
         configured: true,
         personaId: database.personas[0]?.id ?? 'persona-default',
-        presetId: database.botPresets[0]?.id ?? 'preset-default',
+        modelPresetId: database.modelPresets[0]?.id ?? 'model-preset-default',
+        promptPresetId: database.promptPresets[0]?.id ?? 'preset-default',
         jailbreakToggle: database.jailbreakToggle === true,
         sidebarToggles: {},
       }
@@ -580,7 +602,8 @@ describe('Phase 7-11a resolveScope (via beginAssembly)', () => {
               generationSettings: {
                 configured: false,
                 personaId: 'persona-default',
-                presetId: 'preset-default',
+                modelPresetId: 'model-preset-default',
+                promptPresetId: 'preset-default',
                 jailbreakToggle: false,
                 sidebarToggles: {},
               },
@@ -603,7 +626,8 @@ describe('Phase 7-11a resolveScope (via beginAssembly)', () => {
               generationSettings: {
                 configured: true,
                 personaId: 'persona-default',
-                presetId: 'deleted-preset',
+                modelPresetId: 'model-preset-default',
+                promptPresetId: 'deleted-preset',
                 jailbreakToggle: false,
                 sidebarToggles: {},
               },
@@ -612,7 +636,7 @@ describe('Phase 7-11a resolveScope (via beginAssembly)', () => {
         }),
       ],
     } as unknown as Partial<Database>)
-    expectIncompleteAssembly(deletedPresetDb, ['preset_missing'])
+    expectIncompleteAssembly(deletedPresetDb, ['prompt_preset_missing'])
 
     const deletedPersonaDb = makeDatabase({
       characters: [
@@ -623,7 +647,8 @@ describe('Phase 7-11a resolveScope (via beginAssembly)', () => {
               generationSettings: {
                 configured: true,
                 personaId: 'deleted-persona',
-                presetId: 'preset-default',
+                modelPresetId: 'model-preset-default',
+                promptPresetId: 'preset-default',
                 jailbreakToggle: false,
                 sidebarToggles: {},
               },
@@ -656,7 +681,8 @@ describe('Phase 7-11a resolveScope (via beginAssembly)', () => {
               generationSettings: {
                 configured: true,
                 personaId: 'persona-default',
-                presetId: 'preset-default',
+                modelPresetId: 'model-preset-default',
+                promptPresetId: 'preset-default',
                 jailbreakToggle: false,
                 sidebarToggles: {},
               },
@@ -678,7 +704,8 @@ describe('Phase 7-11a resolveScope (via beginAssembly)', () => {
               generationSettings: {
                 configured: true,
                 personaId: 'persona-default',
-                presetId: 'preset-default',
+                modelPresetId: 'model-preset-default',
+                promptPresetId: 'preset-default',
                 jailbreakToggle: false,
                 sidebarToggles: { mode: '0' },
               },
@@ -739,7 +766,8 @@ describe('Phase 7-11a resolveScope (via beginAssembly)', () => {
               generationSettings: {
                 configured: true,
                 personaId: 'persona-chat',
-                presetId: 'preset-chat',
+                modelPresetId: 'model-preset-default',
+                promptPresetId: 'preset-chat',
                 jailbreakToggle: true,
                 sidebarToggles: { mode: '1' },
               },
@@ -749,12 +777,13 @@ describe('Phase 7-11a resolveScope (via beginAssembly)', () => {
       ],
     } as unknown as Partial<Database>)
 
-    const state = beginAssembly(baseInput({ presetId: 'request-ignored' }), depsFor(db))
+    const state = beginAssembly(baseInput(), depsFor(db))
 
     expect(state.database).not.toBe(db)
     expect(state.ctx.database).toBe(state.database)
-    expect(state.presetId).toBe('preset-chat')
-    expect(state.database.botPresetsId).toBe(1)
+    expect(state.modelPresetId).toBe('model-preset-default')
+    expect(state.promptPresetId).toBe('preset-chat')
+    expect(state.database.promptPresetsId).toBe(1)
     expect(state.database.mainPrompt).toBe('CHAT MAIN {{toggle::mode::Mode}}')
     expect(state.database.jailbreak).toBe('CHAT JB')
     expect(state.database.globalNote).toBe('CHAT GLOBAL NOTE')
@@ -796,7 +825,8 @@ describe('Phase 7-11a resolveScope (via beginAssembly)', () => {
               generationSettings: {
                 configured: true,
                 personaId: 'persona-default',
-                presetId: 'preset-chat',
+                modelPresetId: 'model-preset-default',
+                promptPresetId: 'preset-chat',
                 jailbreakToggle: false,
                 sidebarToggles: {},
               },
@@ -842,7 +872,8 @@ describe('Phase 7-11a resolveScope (via beginAssembly)', () => {
               generationSettings: {
                 configured: true,
                 personaId: 'persona-a',
-                presetId: 'preset-a',
+                modelPresetId: 'model-preset-default',
+                promptPresetId: 'preset-a',
                 jailbreakToggle: false,
                 sidebarToggles: { mode: '1' },
               },
@@ -852,7 +883,8 @@ describe('Phase 7-11a resolveScope (via beginAssembly)', () => {
               generationSettings: {
                 configured: true,
                 personaId: 'persona-b',
-                presetId: 'preset-b',
+                modelPresetId: 'model-preset-default',
+                promptPresetId: 'preset-b',
                 jailbreakToggle: false,
                 sidebarToggles: { mode: '0' },
               },
@@ -1017,8 +1049,9 @@ describe('Phase 7-11a beginAssembly context + template normalization', () => {
 
   it('records the chat preset / loadout identity', () => {
     const db = makeDatabase()
-    const state = beginAssembly(baseInput({ presetId: 'preset-x', loadoutId: 'loadout-y' }), depsFor(db))
-    expect(state.presetId).toBe('preset-default')
+    const state = beginAssembly(baseInput({ loadoutId: 'loadout-y' }), depsFor(db))
+    expect(state.modelPresetId).toBe('model-preset-default')
+    expect(state.promptPresetId).toBe('preset-default')
     expect(state.loadoutId).toBe('loadout-y')
   })
 
@@ -2315,7 +2348,8 @@ describe('Phase 7-11f renderAndBudget + assemblePrompt', () => {
               generationSettings: {
                 configured: true,
                 personaId: 'persona-chat',
-                presetId: 'preset-chat',
+                modelPresetId: 'model-preset-default',
+                promptPresetId: 'preset-chat',
                 jailbreakToggle: false,
                 sidebarToggles: { mode: '1' },
               },

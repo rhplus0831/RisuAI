@@ -61,7 +61,8 @@ export interface LargeCorpusMessage {
 export interface LargeCorpusGenerationSettings {
   configured: true
   personaId: string
-  presetId: string
+  modelPresetId: string
+  promptPresetId: string
   jailbreakToggle: boolean
   sidebarToggles: Record<string, string>
 }
@@ -151,7 +152,8 @@ export function buildLargeCorpusFixture(options: LargeCorpusOptions = {}): Large
   const characterBulkBytes = options.characterBulkBytes ?? 2048
 
   const personaId = 'corpus-persona-0'
-  const presetId = 'corpus-preset-0'
+  const modelPresetId = 'corpus-model-preset-0'
+  const promptPresetId = 'corpus-prompt-preset-0'
   const body = 'x'.repeat(messageBodySize)
   const cardBody = 'A character card paragraph. '.repeat(Math.ceil(characterBulkBytes / 28))
   const characters: LargeCorpusCharacter[] = []
@@ -185,7 +187,8 @@ export function buildLargeCorpusFixture(options: LargeCorpusOptions = {}): Large
         generationSettings: {
           configured: true,
           personaId,
-          presetId,
+          modelPresetId,
+          promptPresetId,
           jailbreakToggle: false,
           sidebarToggles: {},
         },
@@ -228,15 +231,23 @@ export function buildLargeCorpusFixture(options: LargeCorpusOptions = {}): Large
     userNote: '',
     theme: 'dark',
     loreBookPage: 0,
-    botPresetsId: 0,
+    botPresets: [],
+    modelPresetsId: 0,
+    promptPresetsId: 0,
     selectedPersona: 0,
     enabledModules: ['corpus-module-0'],
     temperature: 0.7,
     // Collection families (one row per index).
-    botPresets: collectionIndices.map((i) => ({
-      id: `corpus-preset-${i}`,
-      name: `Preset ${i}`,
+    modelPresets: collectionIndices.map((i) => ({
+      id: `corpus-model-preset-${i}`,
+      name: `Model Preset ${i}`,
       temperature: 0.1 * i,
+      maxContext: 100_000,
+      maxResponse: 50,
+    })),
+    promptPresets: collectionIndices.map((i) => ({
+      id: `corpus-prompt-preset-${i}`,
+      name: `Prompt Preset ${i}`,
       promptTemplate: [{ type: 'plain', text: `preset prompt ${i}`, role: 'system' }],
     })),
     modules: collectionIndices.map((i) => ({

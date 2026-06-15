@@ -119,10 +119,18 @@ function markActiveChatGenerationSettingsReady(): void {
     })
   }
 
-  const presetId = 'test-chat-preset'
-  if (!db.botPresets.some((preset) => preset.id === presetId)) {
-    db.botPresets.push({
-      id: presetId,
+  const modelPresetId = 'test-chat-model-preset'
+  if (!db.modelPresets.some((preset) => preset.id === modelPresetId)) {
+    db.modelPresets.push({
+      id: modelPresetId,
+      name: 'Chat Test Model Preset',
+    })
+  }
+
+  const promptPresetId = 'test-chat-preset'
+  if (!db.promptPresets.some((preset) => preset.id === promptPresetId)) {
+    db.promptPresets.push({
+      id: promptPresetId,
       name: 'Chat Test Preset',
     })
   }
@@ -133,7 +141,8 @@ function markActiveChatGenerationSettingsReady(): void {
   chat.generationSettings = {
     configured: true,
     personaId,
-    presetId,
+    modelPresetId,
+    promptPresetId,
     jailbreakToggle: false,
     sidebarToggles: {},
   }

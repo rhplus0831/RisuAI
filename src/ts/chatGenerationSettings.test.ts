@@ -8,25 +8,27 @@ import {
   resolveDisplayedSidebarToggles,
   resolveChatGenerationSettingsReadiness,
   resolveRequiredSidebarToggles,
-  type ChatGenerationPresetReference,
+  type ChatGenerationPromptPresetReference,
   type ResolveChatGenerationSettingsReadinessInput,
 } from './chatGenerationSettings'
 
 const personas = [{ id: 'persona-a' }]
+const modelPresets = [{ id: 'model-a' }]
 
 function readinessInput(
   overrides: Partial<ResolveChatGenerationSettingsReadinessInput>,
 ): ResolveChatGenerationSettingsReadinessInput {
   return {
     personas,
-    presets: [],
+    modelPresets,
+    promptPresets: [],
     ...overrides,
   }
 }
 
 describe('chat generation settings contract', () => {
-  it('resolves displayed preset toggles from the selected presetId', () => {
-    const presets: ChatGenerationPresetReference[] = [
+  it('resolves displayed preset toggles from the selected promptPresetId', () => {
+    const promptPresets: ChatGenerationPromptPresetReference[] = [
       {
         id: 'preset-a',
         customPromptTemplateToggle: 'tone=Tone=select=warm,formal\ncot=Chain of thought',
@@ -38,8 +40,10 @@ describe('chat generation settings contract', () => {
     ]
 
     const toggles = resolveRequiredSidebarToggles({
-      presetId: 'preset-b',
-      presets,
+      modelPresetId: 'model-a',
+      promptPresetId: 'preset-b',
+      modelPresets,
+      promptPresets,
     })
 
     expect(toggles).toEqual([
@@ -56,8 +60,10 @@ describe('chat generation settings contract', () => {
 
   it('resolves active module toggles from global, chat, character, and namespace links', () => {
     const toggles = resolveRequiredSidebarToggles({
-      presetId: 'preset-empty',
-      presets: [{ id: 'preset-empty', customPromptTemplateToggle: '' }],
+      modelPresetId: 'model-a',
+      promptPresetId: 'preset-empty',
+      modelPresets,
+      promptPresets: [{ id: 'preset-empty', customPromptTemplateToggle: '' }],
       modules: [
         { id: 'enabled-module', customModuleToggle: 'enabled=Enabled module' },
         { id: 'chat-module', customModuleToggle: 'chat=Chat module=select=a,b' },
@@ -84,7 +90,7 @@ describe('chat generation settings contract', () => {
   })
 
   it('preserves layout-only rows for display without making them required', () => {
-    const presets: ChatGenerationPresetReference[] = [
+    const promptPresets: ChatGenerationPromptPresetReference[] = [
       {
         id: 'preset-a',
         customPromptTemplateToggle:
@@ -93,8 +99,10 @@ describe('chat generation settings contract', () => {
     ]
 
     const input = {
-      presetId: 'preset-a',
-      presets,
+      modelPresetId: 'model-a',
+      promptPresetId: 'preset-a',
+      modelPresets,
+      promptPresets,
     }
 
     expect(resolveRequiredSidebarToggles(input).map((toggle) => toggle.key)).toEqual(['mode', 'outside'])
@@ -110,8 +118,10 @@ describe('chat generation settings contract', () => {
 
   it('keeps jailbreak as a required chat-owned control and reports whether it is displayed', () => {
     const withJailbreakTemplate = resolveChatGenerationControlRequirements({
-      presetId: 'preset-jailbreak',
-      presets: [
+      modelPresetId: 'model-a',
+      promptPresetId: 'preset-jailbreak',
+      modelPresets,
+      promptPresets: [
         {
           id: 'preset-jailbreak',
           promptTemplate: [{ type: 'plain', text: 'Use {{jbtoggled}} here.' }],
@@ -119,8 +129,10 @@ describe('chat generation settings contract', () => {
       ],
     })
     const withoutJailbreakTemplate = resolveChatGenerationControlRequirements({
-      presetId: 'preset-plain',
-      presets: [{ id: 'preset-plain', jailbreak: '' }],
+      modelPresetId: 'model-a',
+      promptPresetId: 'preset-plain',
+      modelPresets,
+      promptPresets: [{ id: 'preset-plain', jailbreak: '' }],
     })
 
     expect(withJailbreakTemplate.jailbreakToggle).toEqual({
@@ -138,7 +150,7 @@ describe('chat generation settings contract', () => {
   it('treats explicit off and empty raw values as configured when keys are present', () => {
     const readiness = resolveChatGenerationSettingsReadiness(
       readinessInput({
-        presets: [
+        promptPresets: [
           {
             id: 'preset-a',
             customPromptTemplateToggle: 'mode=Mode\nnotes=Notes=text',
@@ -148,7 +160,8 @@ describe('chat generation settings contract', () => {
         settings: {
           configured: true,
           personaId: 'persona-a',
-          presetId: 'preset-a',
+          modelPresetId: 'model-a',
+          promptPresetId: 'preset-a',
           jailbreakToggle: false,
           sidebarToggles: {
             mode: '0',
@@ -165,11 +178,12 @@ describe('chat generation settings contract', () => {
   it('returns missing reason codes for absent required values', () => {
     const readiness = resolveChatGenerationSettingsReadiness(
       readinessInput({
-        presets: [{ id: 'preset-a', customPromptTemplateToggle: 'mode=Mode\nmood=Mood' }],
+        promptPresets: [{ id: 'preset-a', customPromptTemplateToggle: 'mode=Mode\nmood=Mood' }],
         settings: {
           configured: true,
           personaId: 'persona-a',
-          presetId: 'preset-a',
+          modelPresetId: 'model-a',
+          promptPresetId: 'preset-a',
           sidebarToggles: {
             mode: '1',
           },
@@ -192,7 +206,8 @@ describe('chat generation settings contract', () => {
     const settings = {
       configured: true,
       personaId: 'deleted-persona',
-      presetId: 'deleted-preset',
+      modelPresetId: 'deleted-model',
+      promptPresetId: 'deleted-preset',
       jailbreakToggle: false,
       sidebarToggles: {},
     }
@@ -200,14 +215,15 @@ describe('chat generation settings contract', () => {
     const readiness = resolveChatGenerationSettingsReadiness(
       readinessInput({
         personas: [{ id: 'persona-a' }],
-        presets: [{ id: 'preset-a', customPromptTemplateToggle: 'mode=Mode' }],
+        modelPresets,
+        promptPresets: [{ id: 'preset-a', customPromptTemplateToggle: 'mode=Mode' }],
         settings,
       }),
     )
 
     expect(readiness.ready).toBe(false)
-    expect(readiness.requirements.preset).toBeUndefined()
-    expect(readiness.requirements.presetFound).toBe(false)
+    expect(readiness.requirements.promptPreset).toBeUndefined()
+    expect(readiness.requirements.promptPresetFound).toBe(false)
     expect(readiness.requirements.sidebarToggles).toEqual([])
     expect(readiness.missing).toEqual([
       {
@@ -216,25 +232,32 @@ describe('chat generation settings contract', () => {
         personaId: 'deleted-persona',
       },
       {
-        code: 'preset_missing',
-        field: 'generationSettings.presetId',
-        presetId: 'deleted-preset',
+        code: 'model_preset_missing',
+        field: 'generationSettings.modelPresetId',
+        modelPresetId: 'deleted-model',
+      },
+      {
+        code: 'prompt_preset_missing',
+        field: 'generationSettings.promptPresetId',
+        promptPresetId: 'deleted-preset',
       },
     ])
     expect(settings).toMatchObject({
       personaId: 'deleted-persona',
-      presetId: 'deleted-preset',
+      modelPresetId: 'deleted-model',
+      promptPresetId: 'deleted-preset',
     })
   })
 
   it('ignores stale sidebar toggle keys for readiness and reports them for pruning', () => {
     const readiness = resolveChatGenerationSettingsReadiness(
       readinessInput({
-        presets: [{ id: 'preset-a', customPromptTemplateToggle: 'mode=Mode' }],
+        promptPresets: [{ id: 'preset-a', customPromptTemplateToggle: 'mode=Mode' }],
         settings: {
           configured: true,
           personaId: 'persona-a',
-          presetId: 'preset-a',
+          modelPresetId: 'model-a',
+          promptPresetId: 'preset-a',
           jailbreakToggle: true,
           sidebarToggles: {
             mode: '1',
@@ -254,10 +277,12 @@ describe('chat generation settings contract', () => {
         settings: {
           configured: true,
           personaId: 'missing-persona',
-          presetId: 'missing-preset',
+          modelPresetId: 'missing-model',
+          promptPresetId: 'missing-preset',
           jailbreakToggle: false,
           sidebarToggles: {},
         },
+        promptPresets: [],
       }),
     )
 
@@ -273,9 +298,14 @@ describe('chat generation settings contract', () => {
           personaId: 'missing-persona',
         },
         {
-          code: 'preset_missing',
-          field: 'generationSettings.presetId',
-          presetId: 'missing-preset',
+          code: 'model_preset_missing',
+          field: 'generationSettings.modelPresetId',
+          modelPresetId: 'missing-model',
+        },
+        {
+          code: 'prompt_preset_missing',
+          field: 'generationSettings.promptPresetId',
+          promptPresetId: 'missing-preset',
         },
       ],
       staleSidebarToggleKeys: [],

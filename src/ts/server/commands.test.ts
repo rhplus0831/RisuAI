@@ -2074,7 +2074,8 @@ describe('server command API adapter', () => {
         generationSettings: {
           configured: true,
           personaId: 'persona-a',
-          presetId: 'preset-a',
+          modelPresetId: 'model-preset-a',
+          promptPresetId: 'preset-a',
           jailbreakToggle: false,
           sidebarToggles: {
             mode: '0',
@@ -2093,7 +2094,8 @@ describe('server command API adapter', () => {
           generationSettings: {
             configured: true,
             personaId: 'persona-a',
-            presetId: 'preset-a',
+            modelPresetId: 'model-preset-a',
+            promptPresetId: 'preset-a',
             jailbreakToggle: false,
             sidebarToggles: {
               mode: '0',

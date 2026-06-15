@@ -156,7 +156,8 @@ function seedDb(): void {
   DBState.db = {
     username: 'Global User',
     selectedPersona: 0,
-    botPresetsId: 0,
+    modelPresetsId: 0,
+    promptPresetsId: 0,
     jailbreakToggle: true,
     globalChatVariables: {
       toggle_flag: 'global-flag',
@@ -183,16 +184,17 @@ function seedDb(): void {
         note: '',
       },
     ],
-    botPresets: [
+    modelPresets: [{ id: 'model-preset-a', name: 'Model Prompt preset Alpha' }],
+    promptPresets: [
       {
         id: 'preset-a',
-        name: 'Preset Alpha',
+        name: 'Prompt preset Alpha',
         jailbreak: 'Jailbreak',
         customPromptTemplateToggle: 'mood=Mood=select=Calm,Spicy\nflag=Flag\nnote=Note=text',
       },
       {
         id: 'preset-b',
-        name: 'Preset Beta',
+        name: 'Prompt preset Beta',
         jailbreak: 'Jailbreak',
         customPromptTemplateToggle: 'mood=Mood=select=Calm,Spicy\nflag=Flag\nnote=Note=text',
       },
@@ -214,7 +216,8 @@ function seedDb(): void {
             generationSettings: {
               configured: true,
               personaId: 'persona-a',
-              presetId: 'preset-a',
+              modelPresetId: 'model-preset-a',
+              promptPresetId: 'preset-a',
               jailbreakToggle: true,
               sidebarToggles: {
                 mood: '1',
@@ -233,7 +236,8 @@ function seedDb(): void {
             generationSettings: {
               configured: true,
               personaId: 'persona-b',
-              presetId: 'preset-b',
+              modelPresetId: 'model-preset-a',
+              promptPresetId: 'preset-b',
               jailbreakToggle: false,
               sidebarToggles: {
                 mood: '0',
@@ -269,14 +273,14 @@ function elementBySelector<T extends Element>(selector: string, label: string): 
   return element!
 }
 
-function pickerControl(kind: 'preset' | 'persona'): HTMLElement {
+function pickerControl(kind: 'model' | 'prompt' | 'persona'): HTMLElement {
   return elementBySelector<HTMLElement>(
     `[data-risu-generation-picker-control][data-risu-picker-kind="${kind}"]`,
     `${kind} picker control`,
   )
 }
 
-function pickerButton(kind: 'preset' | 'persona'): HTMLButtonElement {
+function pickerButton(kind: 'model' | 'prompt' | 'persona'): HTMLButtonElement {
   const input = pickerControl(kind).querySelector<HTMLButtonElement>('button')
   expect(input, `${kind} picker button`).toBeTruthy()
   return input!
@@ -286,16 +290,16 @@ function resetDefaultsButton(): HTMLButtonElement {
   return elementBySelector<HTMLButtonElement>('[data-risu-generation-reset-defaults] button', 'reset defaults button')
 }
 
-function pickerRoot(kind: 'preset' | 'persona', mode: GenerationSettingsPickerMode): HTMLElement {
+function pickerRoot(kind: 'model' | 'prompt' | 'persona', mode: GenerationSettingsPickerMode): HTMLElement {
   return elementBySelector<HTMLElement>(
     `[data-risu-generation-picker][data-risu-picker-kind="${kind}"][data-risu-picker-mode="${mode}"]`,
     `${kind} ${mode} picker root`,
   )
 }
 
-function pickerRow(kind: 'preset' | 'persona', id: string): HTMLButtonElement {
-  return elementBySelector<HTMLButtonElement>(
-    `button[data-risu-generation-picker-row][data-risu-picker-kind="${kind}"][data-risu-row-id="${id}"]`,
+function pickerRow(kind: 'model' | 'prompt' | 'persona', id: string): HTMLElement {
+  return elementBySelector<HTMLElement>(
+    `[data-risu-generation-picker-row][data-risu-picker-kind="${kind}"][data-risu-row-id="${id}"]`,
     `${kind} picker row ${id}`,
   )
 }
@@ -383,7 +387,7 @@ describe('sidebar chat generation settings controls', () => {
     mountToggles()
     await tick()
 
-    expect(pickerControl('preset').textContent).toContain('Select chat preset')
+    expect(pickerControl('prompt').textContent).toContain('Select prompt preset')
     expect(pickerControl('persona').textContent).toContain('Select chat persona')
   })
 
@@ -398,7 +402,10 @@ describe('sidebar chat generation settings controls', () => {
     await tick()
 
     expect(
-      target.querySelectorAll('[data-risu-generation-picker-control][data-risu-picker-kind="preset"]'),
+      target.querySelectorAll('[data-risu-generation-picker-control][data-risu-picker-kind="model"]'),
+    ).toHaveLength(1)
+    expect(
+      target.querySelectorAll('[data-risu-generation-picker-control][data-risu-picker-kind="prompt"]'),
     ).toHaveLength(1)
     expect(
       target.querySelectorAll('[data-risu-generation-picker-control][data-risu-picker-kind="persona"]'),
@@ -415,8 +422,8 @@ describe('sidebar chat generation settings controls', () => {
     mountToggles()
     await tick()
 
-    expect(pickerControl('preset').dataset.risuPickerMode).toBe('active-chat-generation-settings')
-    expect(pickerControl('preset').textContent).toContain('Select chat preset')
+    expect(pickerControl('prompt').dataset.risuPickerMode).toBe('active-chat-generation-settings')
+    expect(pickerControl('prompt').textContent).toContain('Select prompt preset')
     expect(pickerControl('persona').dataset.risuPickerMode).toBe('active-chat-generation-settings')
     expect(pickerControl('persona').textContent).toContain('Select chat persona')
   })
@@ -427,7 +434,8 @@ describe('sidebar chat generation settings controls', () => {
     activeChat().generationSettings = {
       configured: true,
       personaId: missingPersonaId,
-      presetId: missingPresetId,
+      modelPresetId: 'model-preset-a',
+      promptPresetId: missingPresetId,
       jailbreakToggle: false,
       sidebarToggles: {
         moduleFlag: '1',
@@ -439,32 +447,32 @@ describe('sidebar chat generation settings controls', () => {
 
     const state = resolveActiveChatGenerationSettings()
     expect(state.persona).toBeUndefined()
-    expect(state.preset).toBeUndefined()
+    expect(state.promptPreset).toBeUndefined()
     expect(state.readiness.ready).toBe(false)
-    expect(state.readiness.missing.map((reason) => reason.code)).toEqual(['persona_missing', 'preset_missing'])
-    expect(state.missingLabels).toEqual(['Persona', 'Preset'])
-    expect(pickerControl('preset').dataset.risuPickerSelectedId).toBe(missingPresetId)
-    expect(pickerControl('preset').textContent).toContain('Select chat preset')
-    expect(pickerControl('preset').textContent).not.toContain('Preset Alpha')
+    expect(state.readiness.missing.map((reason) => reason.code)).toEqual(['persona_missing', 'prompt_preset_missing'])
+    expect(state.missingLabels).toEqual(['Persona', 'Prompt preset'])
+    expect(pickerControl('prompt').dataset.risuPickerSelectedId).toBe(missingPresetId)
+    expect(pickerControl('prompt').textContent).toContain('Select prompt preset')
+    expect(pickerControl('prompt').textContent).not.toContain('Prompt preset Alpha')
     expect(pickerControl('persona').dataset.risuPickerSelectedId).toBe(missingPersonaId)
     expect(pickerControl('persona').textContent).toContain('Select chat persona')
     expect(pickerControl('persona').textContent).not.toContain('Persona Alpha')
     expect(activeChat().generationSettings).toMatchObject({
       personaId: missingPersonaId,
-      presetId: missingPresetId,
+      promptPresetId: missingPresetId,
     })
-    expect(DBState.db.botPresetsId).toBe(0)
+    expect(DBState.db.promptPresetsId).toBe(0)
     expect(DBState.db.selectedPersona).toBe(0)
 
-    pickerButton('preset').click()
+    pickerButton('prompt').click()
     await tick()
 
     expect(get(openPresetList)).toBe(true)
     expect(presetListModalStore.mode).toBe('active-chat-generation-settings')
-    expect(pickerRow('preset', 'preset-a').dataset.risuSelected).toBe('false')
-    expect(pickerRow('preset', 'preset-a').getAttribute('aria-current')).toBeNull()
-    expect(pickerRow('preset', 'preset-b').dataset.risuSelected).toBe('false')
-    expect(pickerRow('preset', 'preset-b').getAttribute('aria-current')).toBeNull()
+    expect(pickerRow('prompt', 'preset-a').dataset.risuSelected).toBe('false')
+    expect(pickerRow('prompt', 'preset-a').getAttribute('aria-current')).toBeNull()
+    expect(pickerRow('prompt', 'preset-b').dataset.risuSelected).toBe('false')
+    expect(pickerRow('prompt', 'preset-b').getAttribute('aria-current')).toBeNull()
 
     closePresetListModal()
     await tick()
@@ -484,9 +492,9 @@ describe('sidebar chat generation settings controls', () => {
 
     expect(activeChat().generationSettings).toMatchObject({
       personaId: missingPersonaId,
-      presetId: missingPresetId,
+      promptPresetId: missingPresetId,
     })
-    expect(DBState.db.botPresetsId).toBe(0)
+    expect(DBState.db.promptPresetsId).toBe(0)
     expect(DBState.db.selectedPersona).toBe(0)
   })
 
@@ -495,7 +503,8 @@ describe('sidebar chat generation settings controls', () => {
     activeChat().generationSettings = {
       configured: false,
       personaId: 'persona-a',
-      presetId: 'preset-a',
+      modelPresetId: 'model-preset-a',
+      promptPresetId: 'preset-a',
       jailbreakToggle: true,
       sidebarToggles: {
         mood: '1',
@@ -510,8 +519,8 @@ describe('sidebar chat generation settings controls', () => {
 
     expect(resolveActiveChatGenerationSettings().readiness.ready).toBe(false)
     expect(resolveActiveChatGenerationSettings().missingLabels).toEqual(['Configuration confirmation'])
-    expect(pickerControl('preset').dataset.risuPickerSelectedId).toBe('preset-a')
-    expect(pickerControl('preset').textContent).toContain('Preset Alpha')
+    expect(pickerControl('prompt').dataset.risuPickerSelectedId).toBe('preset-a')
+    expect(pickerControl('prompt').textContent).toContain('Prompt preset Alpha')
     expect(pickerControl('persona').dataset.risuPickerSelectedId).toBe('persona-a')
     expect(pickerControl('persona').textContent).toContain('Persona Alpha')
     expect(selectToggleInput('mood').value).toBe('1')
@@ -526,7 +535,7 @@ describe('sidebar chat generation settings controls', () => {
     expect(activeChat().generationSettings).toMatchObject({
       configured: true,
       personaId: 'persona-a',
-      presetId: 'preset-a',
+      promptPresetId: 'preset-a',
       jailbreakToggle: false,
       sidebarToggles: {
         mood: '1',
@@ -536,12 +545,12 @@ describe('sidebar chat generation settings controls', () => {
       },
     })
     expect(resolveActiveChatGenerationSettings().readiness.ready).toBe(true)
-    expect(pickerControl('preset').dataset.risuPickerSelectedId).toBe('preset-a')
-    expect(pickerControl('preset').textContent).toContain('Preset Alpha')
+    expect(pickerControl('prompt').dataset.risuPickerSelectedId).toBe('preset-a')
+    expect(pickerControl('prompt').textContent).toContain('Prompt preset Alpha')
     expect(pickerControl('persona').dataset.risuPickerSelectedId).toBe('persona-a')
     expect(pickerControl('persona').textContent).toContain('Persona Alpha')
     expect(jailbreakControl().dataset.risuSelected).toBe('false')
-    expect(target.textContent).not.toContain('Select chat preset')
+    expect(target.textContent).not.toContain('Select prompt preset')
     expect(target.textContent).not.toContain('Select chat persona')
     expect(calls[1]).toMatchObject({
       url: '/api/v1/commands/chats/chat-a/generation-settings',
@@ -552,7 +561,7 @@ describe('sidebar chat generation settings controls', () => {
         generationSettings: expect.objectContaining({
           configured: true,
           personaId: 'persona-a',
-          presetId: 'preset-a',
+          promptPresetId: 'preset-a',
           jailbreakToggle: false,
         }),
       },
@@ -564,8 +573,8 @@ describe('sidebar chat generation settings controls', () => {
     mountToggles()
     await tick()
 
-    expect(pickerControl('preset').dataset.risuPickerSelectedId).toBe('preset-a')
-    expect(pickerControl('preset').textContent).toContain('Preset Alpha')
+    expect(pickerControl('prompt').dataset.risuPickerSelectedId).toBe('preset-a')
+    expect(pickerControl('prompt').textContent).toContain('Prompt preset Alpha')
     expect(pickerControl('persona').dataset.risuPickerSelectedId).toBe('persona-a')
     expect(pickerControl('persona').textContent).toContain('Persona Alpha')
     expect(jailbreakCheckbox().checked).toBe(true)
@@ -588,7 +597,7 @@ describe('sidebar chat generation settings controls', () => {
     expect(activeChat().generationSettings).toMatchObject({
       configured: true,
       personaId: 'persona-a',
-      presetId: 'preset-a',
+      promptPresetId: 'preset-a',
       jailbreakToggle: true,
       sidebarToggles: {
         mood: '1',
@@ -597,8 +606,8 @@ describe('sidebar chat generation settings controls', () => {
         moduleFlag: '1',
       },
     })
-    expect(pickerControl('preset').dataset.risuPickerSelectedId).toBe('preset-a')
-    expect(pickerControl('preset').textContent).toContain('Preset Alpha')
+    expect(pickerControl('prompt').dataset.risuPickerSelectedId).toBe('preset-a')
+    expect(pickerControl('prompt').textContent).toContain('Prompt preset Alpha')
     expect(pickerControl('persona').dataset.risuPickerSelectedId).toBe('persona-a')
     expect(pickerControl('persona').textContent).toContain('Persona Alpha')
     expect(jailbreakCheckbox().checked).toBe(true)
@@ -612,7 +621,7 @@ describe('sidebar chat generation settings controls', () => {
         generationSettings: expect.objectContaining({
           configured: true,
           personaId: 'persona-a',
-          presetId: 'preset-a',
+          promptPresetId: 'preset-a',
           jailbreakToggle: false,
         }),
       },
@@ -623,8 +632,8 @@ describe('sidebar chat generation settings controls', () => {
     mountToggles()
     await tick()
 
-    expect(pickerControl('preset').dataset.risuPickerSelectedId).toBe('preset-a')
-    expect(pickerControl('preset').textContent).toContain('Preset Alpha')
+    expect(pickerControl('prompt').dataset.risuPickerSelectedId).toBe('preset-a')
+    expect(pickerControl('prompt').textContent).toContain('Prompt preset Alpha')
     expect(pickerControl('persona').dataset.risuPickerSelectedId).toBe('persona-a')
     expect(pickerControl('persona').textContent).toContain('Persona Alpha')
     expect(selectToggleInput('mood').value).toBe('1')
@@ -638,8 +647,8 @@ describe('sidebar chat generation settings controls', () => {
     DBState.db.characters[0].chatPage = 1
     await tick()
 
-    expect(pickerControl('preset').dataset.risuPickerSelectedId).toBe('preset-b')
-    expect(pickerControl('preset').textContent).toContain('Preset Beta')
+    expect(pickerControl('prompt').dataset.risuPickerSelectedId).toBe('preset-b')
+    expect(pickerControl('prompt').textContent).toContain('Prompt preset Beta')
     expect(pickerControl('persona').dataset.risuPickerSelectedId).toBe('persona-b')
     expect(pickerControl('persona').textContent).toContain('Persona Beta')
     expect(selectToggleInput('mood').value).toBe('0')
@@ -652,10 +661,10 @@ describe('sidebar chat generation settings controls', () => {
 
   it('renders preset-owned toggles from bootstrap-shaped preset stubs', async () => {
     DBState.db.customPromptTemplateToggle = 'fallback=Fallback'
-    DBState.db.botPresets = [
+    DBState.db.promptPresets = [
       {
         id: 'preset-a',
-        name: 'Preset Alpha',
+        name: 'Prompt preset Alpha',
         image: 'preset-alpha.png',
         customPromptTemplateToggle: 'stubFlag=Stub Flag',
       },
@@ -663,7 +672,8 @@ describe('sidebar chat generation settings controls', () => {
     activeChat().generationSettings = {
       configured: true,
       personaId: 'persona-a',
-      presetId: 'preset-a',
+      modelPresetId: 'model-preset-a',
+      promptPresetId: 'preset-a',
       jailbreakToggle: false,
       sidebarToggles: {
         stubFlag: '1',
@@ -681,17 +691,17 @@ describe('sidebar chat generation settings controls', () => {
   })
 
   it('renders custom toggle group and groupEnd rows as an accordion', async () => {
-    DBState.db.botPresets[0].customPromptTemplateToggle =
-      '=Preset Group=group\nmood=Mood=select=Calm,Spicy\nflag=Flag\n==groupend\nnote=Note=text'
+    DBState.db.promptPresets[0].customPromptTemplateToggle =
+      '=Prompt preset Group=group\nmood=Mood=select=Calm,Spicy\nflag=Flag\n==groupend\nnote=Note=text'
 
     mountToggles()
     await tick()
 
     const group = elementBySelector<HTMLElement>(
-      '[data-risu-generation-toggle-group][data-risu-toggle-label="Preset Group"]',
+      '[data-risu-generation-toggle-group][data-risu-toggle-label="Prompt preset Group"]',
       'preset toggle group',
     )
-    expect(group.textContent).toContain('Preset Group')
+    expect(group.textContent).toContain('Prompt preset Group')
     expect(target.querySelector('[data-risu-generation-toggle-control][data-risu-toggle-key="mood"]')).toBeNull()
     expect(textToggleInput('note').value).toBe('alpha-note')
 
@@ -712,8 +722,8 @@ describe('sidebar chat generation settings controls', () => {
       '[data-risu-generation-settings-picker-controls]',
       'mounted generation settings controls',
     )
-    expect(pickerControl('preset').dataset.risuPickerSelectedId).toBe('preset-a')
-    expect(pickerControl('preset').textContent).toContain('Preset Alpha')
+    expect(pickerControl('prompt').dataset.risuPickerSelectedId).toBe('preset-a')
+    expect(pickerControl('prompt').textContent).toContain('Prompt preset Alpha')
     expect(pickerControl('persona').dataset.risuPickerSelectedId).toBe('persona-a')
     expect(pickerControl('persona').textContent).toContain('Persona Alpha')
     expect(selectToggleInput('mood').value).toBe('1')
@@ -732,7 +742,8 @@ describe('sidebar chat generation settings controls', () => {
             ? {
                 configured: true,
                 personaId: 'persona-b',
-                presetId: 'preset-b',
+                modelPresetId: 'model-preset-a',
+                promptPresetId: 'preset-b',
                 jailbreakToggle: false,
                 sidebarToggles: {
                   mood: '0',
@@ -749,8 +760,8 @@ describe('sidebar chat generation settings controls', () => {
 
     expect(mountedControls.isConnected).toBe(true)
     expect(target.contains(mountedControls)).toBe(true)
-    expect(pickerControl('preset').dataset.risuPickerSelectedId).toBe('preset-b')
-    expect(pickerControl('preset').textContent).toContain('Preset Beta')
+    expect(pickerControl('prompt').dataset.risuPickerSelectedId).toBe('preset-b')
+    expect(pickerControl('prompt').textContent).toContain('Prompt preset Beta')
     expect(pickerControl('persona').dataset.risuPickerSelectedId).toBe('persona-b')
     expect(pickerControl('persona').textContent).toContain('Persona Beta')
     expect(selectToggleInput('mood').value).toBe('0')
@@ -767,7 +778,7 @@ describe('sidebar chat generation settings controls', () => {
     mountToggles()
     await tick()
 
-    pickerButton('preset').click()
+    pickerButton('prompt').click()
     await tick()
 
     expect(get(openPresetList)).toBe(true)
@@ -787,6 +798,7 @@ describe('sidebar chat generation settings controls', () => {
     const calls = stubCommandFetch()
     activeChat().generationSettings = {
       configured: false,
+      modelPresetId: 'model-preset-a',
       jailbreakToggle: true,
       sidebarToggles: {
         mood: '1',
@@ -800,31 +812,31 @@ describe('sidebar chat generation settings controls', () => {
     await tick()
 
     expect(resolveActiveChatGenerationSettings().readiness.ready).toBe(false)
-    expect(pickerControl('preset').dataset.risuPickerSelectedId).toBe('')
-    expect(pickerControl('preset').textContent).toContain('Select chat preset')
+    expect(pickerControl('prompt').dataset.risuPickerSelectedId).toBe('')
+    expect(pickerControl('prompt').textContent).toContain('Select prompt preset')
     expect(pickerControl('persona').dataset.risuPickerSelectedId).toBe('')
     expect(pickerControl('persona').textContent).toContain('Select chat persona')
 
-    pickerButton('preset').click()
+    pickerButton('prompt').click()
     await tick()
 
     expect(get(openPresetList)).toBe(true)
     expect(presetListModalStore.mode).toBe('active-chat-generation-settings')
-    expect(pickerRoot('preset', 'active-chat-generation-settings')).toBeTruthy()
-    expect(pickerRow('preset', 'preset-b').textContent).toContain('Preset Beta')
-    expect(pickerRow('preset', 'preset-b').dataset.risuSelected).toBe('false')
+    expect(pickerRoot('prompt', 'active-chat-generation-settings')).toBeTruthy()
+    expect(pickerRow('prompt', 'preset-b').textContent).toContain('Prompt preset Beta')
+    expect(pickerRow('prompt', 'preset-b').dataset.risuSelected).toBe('false')
 
-    pickerRow('preset', 'preset-b').click()
+    pickerRow('prompt', 'preset-b').click()
     await tick()
     await waitForFetchCount(calls, 2)
 
     expect(get(openPresetList)).toBe(false)
-    expect(activeChat().generationSettings?.presetId).toBe('preset-b')
+    expect(activeChat().generationSettings?.promptPresetId).toBe('preset-b')
     expect(activeChat().generationSettings?.personaId).toBeUndefined()
-    expect(DBState.db.botPresetsId).toBe(0)
+    expect(DBState.db.promptPresetsId).toBe(0)
     expect(DBState.db.selectedPersona).toBe(0)
-    expect(pickerControl('preset').dataset.risuPickerSelectedId).toBe('preset-b')
-    expect(pickerControl('preset').textContent).toContain('Preset Beta')
+    expect(pickerControl('prompt').dataset.risuPickerSelectedId).toBe('preset-b')
+    expect(pickerControl('prompt').textContent).toContain('Prompt preset Beta')
     expect(pickerControl('persona').textContent).toContain('Select chat persona')
 
     pickerButton('persona').click()
@@ -843,7 +855,7 @@ describe('sidebar chat generation settings controls', () => {
     expect(get(openPersonaList)).toBe(false)
     expect(activeChat().generationSettings).toMatchObject({
       configured: true,
-      presetId: 'preset-b',
+      promptPresetId: 'preset-b',
       personaId: 'persona-b',
       jailbreakToggle: true,
       sidebarToggles: {
@@ -854,13 +866,13 @@ describe('sidebar chat generation settings controls', () => {
       },
     })
     expect(resolveActiveChatGenerationSettings().readiness.ready).toBe(true)
-    expect(DBState.db.botPresetsId).toBe(0)
+    expect(DBState.db.promptPresetsId).toBe(0)
     expect(DBState.db.selectedPersona).toBe(0)
-    expect(pickerControl('preset').dataset.risuPickerSelectedId).toBe('preset-b')
-    expect(pickerControl('preset').textContent).toContain('Preset Beta')
+    expect(pickerControl('prompt').dataset.risuPickerSelectedId).toBe('preset-b')
+    expect(pickerControl('prompt').textContent).toContain('Prompt preset Beta')
     expect(pickerControl('persona').dataset.risuPickerSelectedId).toBe('persona-b')
     expect(pickerControl('persona').textContent).toContain('Persona Beta')
-    expect(target.textContent).not.toContain('Select chat preset')
+    expect(target.textContent).not.toContain('Select prompt preset')
     expect(target.textContent).not.toContain('Select chat persona')
     expect(calls[1]).toMatchObject({
       url: '/api/v1/commands/chats/chat-a/generation-settings',
@@ -870,7 +882,7 @@ describe('sidebar chat generation settings controls', () => {
         baseRevision: 300,
         generationSettings: expect.objectContaining({
           configured: true,
-          presetId: 'preset-b',
+          promptPresetId: 'preset-b',
         }),
       },
     })
@@ -882,7 +894,7 @@ describe('sidebar chat generation settings controls', () => {
         baseRevision: 301,
         generationSettings: expect.objectContaining({
           configured: true,
-          presetId: 'preset-b',
+          promptPresetId: 'preset-b',
           personaId: 'persona-b',
         }),
       },
@@ -894,25 +906,26 @@ describe('sidebar chat generation settings controls', () => {
     activeChat().generationSettings = {
       configured: false,
       personaId: 'persona-a',
+      modelPresetId: 'model-preset-a',
       jailbreakToggle: false,
     }
 
     mountGenerationSettingsPickerHost()
     await tick()
 
-    expect(pickerControl('preset').dataset.risuPickerSelectedId).toBe('')
+    expect(pickerControl('prompt').dataset.risuPickerSelectedId).toBe('')
     expect(target.querySelector('[data-risu-generation-toggle-control][data-risu-toggle-key="mood"]')).toBeNull()
 
-    pickerButton('preset').click()
+    pickerButton('prompt').click()
     await tick()
 
-    pickerRow('preset', 'preset-a').click()
+    pickerRow('prompt', 'preset-a').click()
     await tick()
     await waitForFetchCount(calls, 2)
 
     expect(activeChat().generationSettings).toMatchObject({
       configured: true,
-      presetId: 'preset-a',
+      promptPresetId: 'preset-a',
       personaId: 'persona-a',
       jailbreakToggle: false,
       sidebarToggles: {
@@ -936,7 +949,7 @@ describe('sidebar chat generation settings controls', () => {
         baseRevision: 300,
         generationSettings: expect.objectContaining({
           configured: true,
-          presetId: 'preset-a',
+          promptPresetId: 'preset-a',
           sidebarToggles: {
             mood: '0',
             flag: '0',
@@ -953,7 +966,7 @@ describe('sidebar chat generation settings controls', () => {
     activeChat().generationSettings = {
       configured: true,
       personaId: 'persona-a',
-      presetId: 'preset-a',
+      promptPresetId: 'preset-a',
       jailbreakToggle: true,
       sidebarToggles: {
         mood: '',
@@ -979,7 +992,7 @@ describe('sidebar chat generation settings controls', () => {
 
     expect(activeChat().generationSettings).toMatchObject({
       configured: true,
-      presetId: 'preset-a',
+      promptPresetId: 'preset-a',
       personaId: 'persona-a',
       jailbreakToggle: false,
       sidebarToggles: {
@@ -1002,7 +1015,7 @@ describe('sidebar chat generation settings controls', () => {
         baseRevision: 300,
         generationSettings: expect.objectContaining({
           configured: true,
-          presetId: 'preset-a',
+          promptPresetId: 'preset-a',
           personaId: 'persona-a',
           jailbreakToggle: false,
           sidebarToggles: {

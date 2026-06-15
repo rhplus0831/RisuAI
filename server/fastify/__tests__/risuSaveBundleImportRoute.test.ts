@@ -74,7 +74,8 @@ function persistDatabaseWithAsset(dataDir: string): void {
                 generationSettings: {
                   configured: true,
                   personaId: 'persona-a',
-                  presetId: 'preset-a',
+                  modelPresetId: 'model-a',
+                  promptPresetId: 'prompt-a',
                   jailbreakToggle: false,
                   sidebarToggles: { mode: 'source-mode' },
                 },
@@ -85,7 +86,8 @@ function persistDatabaseWithAsset(dataDir: string): void {
         ],
         characterOrder: ['bundle-import-char'],
         personas: [{ id: 'persona-a', name: 'Persona A' }],
-        botPresets: [{ id: 'preset-a', name: 'Preset A' }],
+        modelPresets: [{ id: 'model-a', name: 'Model A' }],
+        promptPresets: [{ id: 'prompt-a', name: 'Prompt A' }],
         modules: [{ id: 'module-a', name: 'Module A' }],
         loadouts: [{ id: 'loadout-a', name: 'Loadout A' }],
         plugins: [{ id: 'plugin-a', name: 'Plugin A' }],
@@ -210,7 +212,8 @@ describe('repository .risu bundle import route', () => {
       expect(bootstrap.json().database.characters[0].chats[0].generationSettings).toEqual({
         configured: false,
         personaId: 'persona-a',
-        presetId: 'preset-a',
+        modelPresetId: 'model-a',
+        promptPresetId: 'prompt-a',
         jailbreakToggle: false,
         sidebarToggles: { mode: 'source-mode' },
       })

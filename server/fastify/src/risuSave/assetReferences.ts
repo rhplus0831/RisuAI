@@ -143,6 +143,18 @@ function collectRisuSaveAssetReferences(
     addReference(found, record.image, `database.botPresets[${index}].image`)
   })
 
+  readArray(root.modelPresets).forEach((preset, index) => {
+    const record = readRecord(preset)
+    if (!record) return
+    addReference(found, record.image, `database.modelPresets[${index}].image`)
+  })
+
+  readArray(root.promptPresets).forEach((preset, index) => {
+    const record = readRecord(preset)
+    if (!record) return
+    addReference(found, record.image, `database.promptPresets[${index}].image`)
+  })
+
   readArray(root.modules).forEach((module, index) => {
     const record = readRecord(module)
     if (!record) return

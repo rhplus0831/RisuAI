@@ -22,8 +22,11 @@ export function normalizeStoredChatGenerationSettings(value: unknown): ChatGener
   if (typeof value.personaId === 'string') {
     normalized.personaId = value.personaId
   }
-  if (typeof value.presetId === 'string') {
-    normalized.presetId = value.presetId
+  if (typeof value.modelPresetId === 'string') {
+    normalized.modelPresetId = value.modelPresetId
+  }
+  if (typeof value.promptPresetId === 'string') {
+    normalized.promptPresetId = value.promptPresetId
   }
   if (typeof value.jailbreakToggle === 'boolean') {
     normalized.jailbreakToggle = value.jailbreakToggle

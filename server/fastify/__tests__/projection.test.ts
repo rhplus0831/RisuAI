@@ -821,7 +821,8 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
 
   it('projects chat generation settings on stubbed character rows', async () => {
     const revision = await importDatabase({
-      botPresets: [{ id: 'preset-a', name: 'Preset A' }],
+      modelPresets: [{ id: 'model-a', name: 'Model A' }],
+      promptPresets: [{ id: 'prompt-a', name: 'Prompt A' }],
       personas: [{ id: 'persona-a', name: 'Persona A', icon: '', personaPrompt: '', note: '' }],
       characters: [
         {
@@ -846,7 +847,8 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     const generationSettings = {
       configured: true,
       personaId: 'persona-a',
-      presetId: 'preset-a',
+      modelPresetId: 'model-a',
+      promptPresetId: 'prompt-a',
       jailbreakToggle: false,
       sidebarToggles: {},
     }
@@ -1118,7 +1120,8 @@ describe('targeted projection field loader', () => {
     const generationSettings = {
       configured: true,
       personaId: 'persona-a',
-      presetId: 'preset-a',
+      modelPresetId: 'model-a',
+      promptPresetId: 'prompt-a',
       jailbreakToggle: false,
       sidebarToggles: { mode: '1' },
     }

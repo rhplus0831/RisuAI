@@ -357,7 +357,6 @@ describe('chat import projection helpers', () => {
     const expectedGenerationSettings = {
       configured: false,
       personaId: 'persona-a',
-      presetId: 'preset-a',
       jailbreakToggle: true,
       sidebarToggles: {
         mode: 'warm',
@@ -416,7 +415,6 @@ describe('chat import projection helpers', () => {
       generationSettings: {
         configured: false,
         personaId: 'persona-b',
-        presetId: 'preset-b',
         jailbreakToggle: false,
         sidebarToggles: {},
       },
@@ -431,7 +429,6 @@ describe('chat import projection helpers', () => {
         generationSettings: {
           configured: false,
           personaId: 'persona-b',
-          presetId: 'preset-b',
           jailbreakToggle: false,
           sidebarToggles: {},
         },
@@ -467,7 +464,6 @@ describe('chat import projection helpers', () => {
       generationSettings: {
         configured: false,
         personaId: 'persona-a',
-        presetId: 'preset-a',
         jailbreakToggle: false,
         sidebarToggles: {
           mode: 'cold',
@@ -480,7 +476,6 @@ describe('chat import projection helpers', () => {
         generationSettings: {
           configured: false,
           personaId: 'persona-a',
-          presetId: 'preset-a',
           jailbreakToggle: false,
           sidebarToggles: {
             mode: 'cold',

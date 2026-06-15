@@ -3,9 +3,10 @@ import { EntityNotFoundError, ValidationError } from '../repository.js'
 import {
   CHAT_GENERATION_SETTINGS_FIELD,
   resolveChatGenerationSettingsReadiness,
+  type ChatGenerationModelPresetReference,
   type ChatGenerationModuleReference,
   type ChatGenerationPersonaReference,
-  type ChatGenerationPresetReference,
+  type ChatGenerationPromptPresetReference,
   type ChatGenerationSettings,
 } from '../../../../src/ts/chatGenerationSettings.js'
 import { repairStoredChatGenerationSettings } from '../chatGenerationSettingsStorage.js'
@@ -39,13 +40,14 @@ export interface ChatLocation {
   chatIndex: number
 }
 
-type ChatGenerationPresetWithModuleIntegration = ChatGenerationPresetReference & {
+type ChatGenerationPromptPresetWithModuleIntegration = ChatGenerationPromptPresetReference & {
   moduleIntergration?: unknown
 }
 
 export interface ChatGenerationSettingsValidationContext {
   personas: readonly ChatGenerationPersonaReference[]
-  presets: readonly ChatGenerationPresetWithModuleIntegration[]
+  modelPresets: readonly ChatGenerationModelPresetReference[]
+  promptPresets: readonly ChatGenerationPromptPresetWithModuleIntegration[]
   modules?: readonly ChatGenerationModuleReference[]
   enabledModuleIds?: readonly string[]
   characterModuleIds?: readonly string[]
@@ -321,7 +323,8 @@ export function readChatGenerationSettingsSave(
     if (
       key !== 'configured' &&
       key !== 'personaId' &&
-      key !== 'presetId' &&
+      key !== 'modelPresetId' &&
+      key !== 'promptPresetId' &&
       key !== 'jailbreakToggle' &&
       key !== 'sidebarToggles'
     ) {
@@ -346,13 +349,23 @@ export function readChatGenerationSettingsSave(
     }
   }
 
-  if (hasOwn(raw, 'presetId')) {
-    if (typeof raw.presetId !== 'string') {
-      throw new ValidationError(`${label}.presetId must be a string`)
+  if (hasOwn(raw, 'modelPresetId')) {
+    if (typeof raw.modelPresetId !== 'string') {
+      throw new ValidationError(`${label}.modelPresetId must be a string`)
     }
-    normalized.presetId = raw.presetId
-    if (raw.presetId.trim() !== '' && !context.presets.some((preset) => preset.id === raw.presetId)) {
-      throw new ValidationError(`Unknown preset id in ${label}.presetId: ${raw.presetId}`)
+    normalized.modelPresetId = raw.modelPresetId
+    if (raw.modelPresetId.trim() !== '' && !context.modelPresets.some((preset) => preset.id === raw.modelPresetId)) {
+      throw new ValidationError(`Unknown model preset id in ${label}.modelPresetId: ${raw.modelPresetId}`)
+    }
+  }
+
+  if (hasOwn(raw, 'promptPresetId')) {
+    if (typeof raw.promptPresetId !== 'string') {
+      throw new ValidationError(`${label}.promptPresetId must be a string`)
+    }
+    normalized.promptPresetId = raw.promptPresetId
+    if (raw.promptPresetId.trim() !== '' && !context.promptPresets.some((preset) => preset.id === raw.promptPresetId)) {
+      throw new ValidationError(`Unknown prompt preset id in ${label}.promptPresetId: ${raw.promptPresetId}`)
     }
   }
 
@@ -368,13 +381,13 @@ export function readChatGenerationSettingsSave(
     normalized.sidebarToggles = readSidebarToggleValueMap(raw.sidebarToggles, `${label}.sidebarToggles`)
   }
 
-  const selectedPreset = isNonEmptyString(normalized.presetId)
-    ? context.presets.find((preset) => preset.id === normalized.presetId)
+  const selectedPromptPreset = isNonEmptyString(normalized.promptPresetId)
+    ? context.promptPresets.find((preset) => preset.id === normalized.promptPresetId)
     : undefined
   const readiness = resolveChatGenerationSettingsReadiness({
     ...context,
     settings: normalized,
-    moduleIntegration: readOptionalStringValue(selectedPreset?.moduleIntergration),
+    moduleIntegration: readOptionalStringValue(selectedPromptPreset?.moduleIntergration),
   })
   if (readiness.staleSidebarToggleKeys.length > 0 && normalized.sidebarToggles) {
     const pruned = { ...normalized.sidebarToggles }

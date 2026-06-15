@@ -40,7 +40,8 @@ let providerImpl: ChatProviderDispatcher = () => {
 let failNextGenerationPersistEvent = false
 
 const DURABLE_PERSONA_ID = 'durable-persona'
-const DURABLE_PRESET_ID = 'durable-preset'
+const DURABLE_MODEL_PRESET_ID = 'durable-model-preset'
+const DURABLE_PROMPT_PRESET_ID = 'durable-prompt-preset'
 const durablePromptSettings = {
   assistantPrefill: '',
   postEndInnerFormat: '',
@@ -103,7 +104,8 @@ function durableGenerationSettings(): Record<string, unknown> {
   return {
     configured: true,
     personaId: DURABLE_PERSONA_ID,
-    presetId: DURABLE_PRESET_ID,
+    modelPresetId: DURABLE_MODEL_PRESET_ID,
+    promptPresetId: DURABLE_PROMPT_PRESET_ID,
     jailbreakToggle: false,
     sidebarToggles: {},
   }
@@ -144,14 +146,22 @@ const fixtureDatabase = {
       note: '',
     },
   ],
-  botPresetsId: 0,
-  botPresets: [
+  modelPresetsId: 0,
+  promptPresetsId: 0,
+  botPresets: [],
+  modelPresets: [
     {
-      id: DURABLE_PRESET_ID,
-      name: 'Durable Preset',
-      mainPrompt: 'MAIN',
+      id: DURABLE_MODEL_PRESET_ID,
+      name: 'Durable Model Preset',
       maxContext: 100_000,
       maxResponse: 50,
+    },
+  ],
+  promptPresets: [
+    {
+      id: DURABLE_PROMPT_PRESET_ID,
+      name: 'Durable Prompt Preset',
+      mainPrompt: 'MAIN',
       formatingOrder: ['main', 'description', 'chats'],
       promptSettings: durablePromptSettings,
       customPromptTemplateToggle: '',
@@ -256,8 +266,10 @@ function generationSettingReferencesExist(database: JsonRecord, settings: JsonRe
   return (
     typeof settings.personaId === 'string' &&
     collectionHasId(database.personas, settings.personaId) &&
-    typeof settings.presetId === 'string' &&
-    collectionHasId(database.botPresets, settings.presetId)
+    typeof settings.modelPresetId === 'string' &&
+    collectionHasId(database.modelPresets, settings.modelPresetId) &&
+    typeof settings.promptPresetId === 'string' &&
+    collectionHasId(database.promptPresets, settings.promptPresetId)
   )
 }
 

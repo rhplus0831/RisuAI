@@ -176,8 +176,10 @@ function generationSettingReferencesExist(database: JsonRecord, settings: JsonRe
   return (
     typeof settings.personaId === 'string' &&
     collectionHasId(database.personas, settings.personaId) &&
-    typeof settings.presetId === 'string' &&
-    collectionHasId(database.botPresets, settings.presetId)
+    typeof settings.modelPresetId === 'string' &&
+    collectionHasId(database.modelPresets, settings.modelPresetId) &&
+    typeof settings.promptPresetId === 'string' &&
+    collectionHasId(database.promptPresets, settings.promptPresetId)
   )
 }
 
@@ -211,20 +213,31 @@ function promptReadyLargeCorpusDatabase(fixture: LargeCorpusFixture): Record<str
     maxContext: 100_000,
     maxResponse: 50,
   }
-  const botPresets = Array.isArray(database.botPresets) ? (database.botPresets as Array<Record<string, unknown>>) : []
-  if (botPresets[0]) {
+  const modelPresets = Array.isArray(database.modelPresets)
+    ? (database.modelPresets as Array<Record<string, unknown>>)
+    : []
+  if (modelPresets[0]) {
+    modelPresets[0] = {
+      ...modelPresets[0],
+      maxContext: database.maxContext,
+      maxResponse: database.maxResponse,
+    }
+    database.modelPresets = modelPresets
+  }
+  const promptPresets = Array.isArray(database.promptPresets)
+    ? (database.promptPresets as Array<Record<string, unknown>>)
+    : []
+  if (promptPresets[0]) {
     const promptReadyPreset: Record<string, unknown> = {
-      ...botPresets[0],
+      ...promptPresets[0],
       mainPrompt: database.mainPrompt,
       formatingOrder: database.formatingOrder,
       promptSettings,
-      maxContext: database.maxContext,
-      maxResponse: database.maxResponse,
       customPromptTemplateToggle: '',
     }
     delete promptReadyPreset.promptTemplate
-    botPresets[0] = promptReadyPreset
-    database.botPresets = botPresets
+    promptPresets[0] = promptReadyPreset
+    database.promptPresets = promptPresets
   }
   return database
 }

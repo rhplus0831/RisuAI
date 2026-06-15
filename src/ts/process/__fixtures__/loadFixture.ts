@@ -6,9 +6,10 @@ import { DBState, selectedCharID } from '../../stores.svelte'
 import { setDatabase, type Database, type character } from '../../storage/database.svelte'
 import {
   resolveChatGenerationControlRequirements,
+  type ChatGenerationModelPresetReference,
   type ChatGenerationModuleReference,
   type ChatGenerationPersonaReference,
-  type ChatGenerationPresetReference,
+  type ChatGenerationPromptPresetReference,
 } from '../../chatGenerationSettings'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -218,33 +219,50 @@ export function markFixtureActiveChatGenerationSettingsReady(): void {
     }
   }
   const persona = db.personas[personaIndex] as ChatGenerationPersonaReference
+  backfillFixturePersonaFromDatabase(db, persona)
   if (!isNonEmptyString(persona.id)) {
     persona.id = `fixture-persona-${personaIndex}`
   }
+  mirrorFixturePersonaIntoDatabase(db, persona)
 
-  const presetIndex = Math.min(Math.max(getInteger(db.botPresetsId, 0), 0), db.botPresets.length)
-  if (!db.botPresets[presetIndex]) {
-    db.botPresets[presetIndex] = {
-      id: `fixture-preset-${presetIndex}`,
-      name: 'Fixture Preset',
-    } as Database['botPresets'][number]
+  const modelPresetIndex = Math.min(Math.max(getInteger(db.modelPresetsId, 0), 0), db.modelPresets.length)
+  if (!db.modelPresets[modelPresetIndex]) {
+    db.modelPresets[modelPresetIndex] = {
+      id: `fixture-model-preset-${modelPresetIndex}`,
+      name: 'Fixture Model Preset',
+    } as Database['modelPresets'][number]
   }
-  const preset = db.botPresets[presetIndex] as ChatGenerationPresetReference
-  if (!isNonEmptyString(preset.id)) {
-    preset.id = `fixture-preset-${presetIndex}`
+  const modelPreset = db.modelPresets[modelPresetIndex] as ChatGenerationModelPresetReference
+  if (!isNonEmptyString(modelPreset.id)) {
+    modelPreset.id = `fixture-model-preset-${modelPresetIndex}`
   }
-  mirrorFixtureDatabaseIntoPreset(db, preset)
+
+  const promptPresetIndex = Math.min(Math.max(getInteger(db.promptPresetsId, 0), 0), db.promptPresets.length)
+  if (!db.promptPresets[promptPresetIndex]) {
+    db.promptPresets[promptPresetIndex] = {
+      id: `fixture-prompt-preset-${promptPresetIndex}`,
+      name: 'Fixture Prompt Preset',
+    } as Database['promptPresets'][number]
+  }
+  const promptPreset = db.promptPresets[promptPresetIndex] as ChatGenerationPromptPresetReference
+  if (!isNonEmptyString(promptPreset.id)) {
+    promptPreset.id = `fixture-prompt-preset-${promptPresetIndex}`
+  }
+  mirrorFixtureDatabaseIntoPreset(db, modelPreset)
+  mirrorFixtureDatabaseIntoPreset(db, promptPreset)
 
   const requirements = resolveChatGenerationControlRequirements({
-    presetId: preset.id,
-    presets: db.botPresets as unknown as ChatGenerationPresetReference[],
+    modelPresetId: modelPreset.id,
+    promptPresetId: promptPreset.id,
+    modelPresets: db.modelPresets as unknown as ChatGenerationModelPresetReference[],
+    promptPresets: db.promptPresets as unknown as ChatGenerationPromptPresetReference[],
     modules: (Array.isArray(db.modules) ? db.modules : []) as ChatGenerationModuleReference[],
     enabledModuleIds: stringArray(db.enabledModules),
     characterModuleIds: stringArray(character.modules),
     chatModuleIds: stringArray(chat.modules),
     moduleIntegration:
-      typeof (preset as { moduleIntergration?: unknown }).moduleIntergration === 'string'
-        ? (preset as { moduleIntergration: string }).moduleIntergration
+      typeof (promptPreset as { moduleIntergration?: unknown }).moduleIntergration === 'string'
+        ? (promptPreset as { moduleIntergration: string }).moduleIntergration
         : null,
   })
   const globalChatVariables = recordOfStrings(db.globalChatVariables)
@@ -255,18 +273,46 @@ export function markFixtureActiveChatGenerationSettingsReady(): void {
   chat.generationSettings = {
     configured: true,
     personaId: persona.id,
-    presetId: preset.id,
+    modelPresetId: modelPreset.id,
+    promptPresetId: promptPreset.id,
     jailbreakToggle: db.jailbreakToggle === true,
     sidebarToggles,
   }
 }
 
-function mirrorFixtureDatabaseIntoPreset(db: Database, preset: ChatGenerationPresetReference): void {
+function mirrorFixtureDatabaseIntoPreset(
+  db: Database,
+  preset: ChatGenerationModelPresetReference | ChatGenerationPromptPresetReference,
+): void {
   const dbRecord = db as unknown as Record<string, unknown>
   const presetRecord = preset as unknown as Record<string, unknown>
   for (const [presetKey, databaseKey] of FIXTURE_PRESET_MIRROR_KEYS) {
     if (!hasOwn(dbRecord, databaseKey)) continue
     presetRecord[presetKey] = cloneFixtureJson(dbRecord[databaseKey])
+  }
+}
+
+function mirrorFixturePersonaIntoDatabase(db: Database, persona: ChatGenerationPersonaReference): void {
+  const personaRecord = persona as Record<string, unknown>
+  db.personaPrompt = typeof personaRecord.personaPrompt === 'string' ? personaRecord.personaPrompt : ''
+  db.userNote = typeof personaRecord.note === 'string' ? personaRecord.note : ''
+  db.username = typeof personaRecord.name === 'string' ? personaRecord.name : (db.username ?? '')
+  db.userIcon = typeof personaRecord.icon === 'string' ? personaRecord.icon : (db.userIcon ?? '')
+}
+
+function backfillFixturePersonaFromDatabase(db: Database, persona: ChatGenerationPersonaReference): void {
+  const personaRecord = persona as Record<string, unknown>
+  if (!isNonEmptyString(personaRecord.personaPrompt) && typeof db.personaPrompt === 'string') {
+    personaRecord.personaPrompt = db.personaPrompt
+  }
+  if (typeof personaRecord.note !== 'string' && typeof db.userNote === 'string') {
+    personaRecord.note = db.userNote
+  }
+  if (!isNonEmptyString(personaRecord.name) && typeof db.username === 'string') {
+    personaRecord.name = db.username
+  }
+  if (typeof personaRecord.icon !== 'string' && typeof db.userIcon === 'string') {
+    personaRecord.icon = db.userIcon
   }
 }
 

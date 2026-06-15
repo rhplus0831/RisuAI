@@ -560,7 +560,9 @@ describe('first-run database seed', () => {
       username: 'Test',
       theme: 'fastify',
       temperature: 80,
-      botPresets: [expect.objectContaining({ id: 'default-preset' })],
+      botPresets: [],
+      modelPresets: [expect.objectContaining({ id: 'default-model-preset' })],
+      promptPresets: [expect.objectContaining({ id: 'default-prompt-preset' })],
       personas: [expect.objectContaining({ id: 'default-persona' })],
     })
   })
@@ -1952,7 +1954,7 @@ describe('Phase 9-2b bot preset commands', () => {
       mainPrompt: 'target prompt',
       temperature: 90,
     })
-    expect(bootstrap.json().database.botPresets[0]).toEqual({ id: 'preset-a', name: 'A', image: '' })
+    expect(bootstrap.json().database.botPresets[0]).toMatchObject({ id: 'preset-a', name: 'A', image: '' })
     const savedPreset = await harness.app.inject({
       method: 'GET',
       url: '/api/v1/projection/preset?id=preset-a',
@@ -4032,13 +4034,8 @@ describe('Phase 9-3b chat record and folder commands', () => {
   it('keeps native create chats incomplete by default and persists explicit generation settings', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
-      botPresets: [
-        {
-          id: 'preset-a',
-          name: 'Preset A',
-          customPromptTemplateToggle: 'mode=Mode',
-        },
-      ],
+      modelPresets: [{ id: 'model-a', name: 'Model A' }],
+      promptPresets: [{ id: 'prompt-a', name: 'Prompt A', customPromptTemplateToggle: 'mode=Mode' }],
       personas: [{ id: 'persona-a', name: 'Persona A', icon: '', personaPrompt: '', note: '' }],
       characters: [
         {
@@ -4072,7 +4069,8 @@ describe('Phase 9-3b chat record and folder commands', () => {
     const explicitSettings = {
       configured: true,
       personaId: 'persona-a',
-      presetId: 'preset-a',
+      modelPresetId: 'model-a',
+      promptPresetId: 'prompt-a',
       jailbreakToggle: false,
       sidebarToggles: { mode: '1' },
     }
@@ -4183,10 +4181,11 @@ describe('Phase 9-3b chat record and folder commands', () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
       enabledModules: ['mod-global'],
-      botPresets: [
+      modelPresets: [{ id: 'model-a', name: 'Model A' }],
+      promptPresets: [
         {
-          id: 'preset-a',
-          name: 'Preset A',
+          id: 'prompt-a',
+          name: 'Prompt A',
           jailbreak: 'jailbreak text',
           customPromptTemplateToggle: 'mode=Mode\nnotes=Notes=text',
           moduleIntergration: 'preset-space',
@@ -4246,7 +4245,8 @@ describe('Phase 9-3b chat record and folder commands', () => {
         generationSettings: {
           configured: true,
           personaId: 'persona-a',
-          presetId: 'preset-a',
+          modelPresetId: 'model-a',
+          promptPresetId: 'prompt-a',
           jailbreakToggle: false,
           sidebarToggles: {
             mode: '0',
@@ -4281,7 +4281,8 @@ describe('Phase 9-3b chat record and folder commands', () => {
     expect(bootstrap.json().database.characters[0].chats[0].generationSettings).toEqual({
       configured: true,
       personaId: 'persona-a',
-      presetId: 'preset-a',
+      modelPresetId: 'model-a',
+      promptPresetId: 'prompt-a',
       jailbreakToggle: false,
       sidebarToggles: {
         mode: '0',
@@ -4297,7 +4298,8 @@ describe('Phase 9-3b chat record and folder commands', () => {
   it('rejects invalid chat generation settings without bumping revision', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
-      botPresets: [{ id: 'preset-a', name: 'Preset A' }],
+      modelPresets: [{ id: 'model-a', name: 'Model A' }],
+      promptPresets: [{ id: 'prompt-a', name: 'Prompt A' }],
       personas: [{ id: 'persona-a', name: 'Persona A', icon: '', personaPrompt: '', note: '' }],
       characters: [
         {
@@ -4314,7 +4316,8 @@ describe('Phase 9-3b chat record and folder commands', () => {
     const validBase = {
       configured: true,
       personaId: 'persona-a',
-      presetId: 'preset-a',
+      modelPresetId: 'model-a',
+      promptPresetId: 'prompt-a',
       jailbreakToggle: true,
       sidebarToggles: {},
     }
@@ -4324,8 +4327,12 @@ describe('Phase 9-3b chat record and folder commands', () => {
         error: 'Unknown persona id in generationSettings.personaId: missing-persona',
       },
       {
-        generationSettings: { ...validBase, presetId: 'missing-preset' },
-        error: 'Unknown preset id in generationSettings.presetId: missing-preset',
+        generationSettings: { ...validBase, modelPresetId: 'missing-model-preset' },
+        error: 'Unknown model preset id in generationSettings.modelPresetId: missing-model-preset',
+      },
+      {
+        generationSettings: { ...validBase, promptPresetId: 'missing-prompt-preset' },
+        error: 'Unknown prompt preset id in generationSettings.promptPresetId: missing-prompt-preset',
       },
       {
         generationSettings: { ...validBase, sidebarToggles: { mode: 1 } },
@@ -4335,7 +4342,8 @@ describe('Phase 9-3b chat record and folder commands', () => {
         generationSettings: {
           configured: true,
           personaId: 'persona-a',
-          presetId: 'preset-a',
+          modelPresetId: 'model-a',
+          promptPresetId: 'prompt-a',
           sidebarToggles: {},
         },
         error: 'generationSettings.jailbreakToggle must be present',
@@ -4415,7 +4423,8 @@ describe('Phase 9-3b chat record and folder commands', () => {
   it('normalizes malformed stored chat generation settings on bootstrap', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await importDatabase(harness.app, assertion, {
-      botPresets: [{ id: 'preset-a', name: 'Preset A' }],
+      modelPresets: [{ id: 'model-a', name: 'Model A' }],
+      promptPresets: [{ id: 'prompt-a', name: 'Prompt A' }],
       personas: [{ id: 'persona-a', name: 'Persona A', icon: '', personaPrompt: '', note: '' }],
       characters: [
         {
@@ -4437,7 +4446,8 @@ describe('Phase 9-3b chat record and folder commands', () => {
       generationSettings: {
         configured: true,
         personaId: 123,
-        presetId: 'preset-a',
+        modelPresetId: 'model-a',
+        promptPresetId: 'prompt-a',
         jailbreakToggle: 'bad',
         sidebarToggles: {
           valid: 'on',
@@ -4469,21 +4479,28 @@ describe('Phase 9-3b chat record and folder commands', () => {
     }>
     expect(chats[0].generationSettings).toEqual({
       configured: true,
-      presetId: 'preset-a',
+      modelPresetId: 'model-a',
+      promptPresetId: 'prompt-a',
       sidebarToggles: { valid: 'on' },
     })
-    expect(Object.keys(chats[0].generationSettings ?? {}).sort()).toEqual(['configured', 'presetId', 'sidebarToggles'])
+    expect(Object.keys(chats[0].generationSettings ?? {}).sort()).toEqual([
+      'configured',
+      'modelPresetId',
+      'promptPresetId',
+      'sidebarToggles',
+    ])
     expect(chats[1].generationSettings).toBeUndefined()
   })
 
   it('leaves chat generation settings unchanged when global persona and preset selections move', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
-      botPresets: [
-        { id: 'preset-a', name: 'Preset A', mainPrompt: 'a' },
-        { id: 'preset-b', name: 'Preset B', mainPrompt: 'b' },
+      modelPresets: [{ id: 'model-a', name: 'Model A' }],
+      promptPresets: [
+        { id: 'prompt-a', name: 'Prompt A', mainPrompt: 'a' },
+        { id: 'prompt-b', name: 'Prompt B', mainPrompt: 'b' },
       ],
-      botPresetsId: 0,
+      promptPresetsId: 0,
       personas: [
         { id: 'persona-a', name: 'Persona A', icon: '', personaPrompt: 'a', note: '' },
         { id: 'persona-b', name: 'Persona B', icon: '', personaPrompt: 'b', note: '' },
@@ -4511,7 +4528,8 @@ describe('Phase 9-3b chat record and folder commands', () => {
     const chatGenerationSettings = {
       configured: true,
       personaId: 'persona-a',
-      presetId: 'preset-a',
+      modelPresetId: 'model-a',
+      promptPresetId: 'prompt-a',
       jailbreakToggle: false,
       sidebarToggles: {},
     }
@@ -4537,9 +4555,9 @@ describe('Phase 9-3b chat record and folder commands', () => {
 
     const preset = await harness.app.inject({
       method: 'POST',
-      url: '/api/v1/commands/presets/select',
+      url: '/api/v1/commands/prompt-presets/select',
       headers: { 'risu-auth': assertion },
-      payload: { baseRevision: persona.json().revision, presetId: 'preset-b' },
+      payload: { baseRevision: persona.json().revision, promptPresetId: 'prompt-b' },
     })
     expect(preset.statusCode).toBe(200)
 
@@ -4554,15 +4572,16 @@ describe('Phase 9-3b chat record and folder commands', () => {
   it('inherits complete and incomplete source generation settings on fork unless the fork supplies an explicit override', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
-      botPresets: [
+      modelPresets: [{ id: 'model-a', name: 'Model A' }],
+      promptPresets: [
         {
-          id: 'preset-a',
-          name: 'Preset A',
+          id: 'prompt-a',
+          name: 'Prompt A',
           customPromptTemplateToggle: 'mode=Mode',
         },
         {
-          id: 'preset-b',
-          name: 'Preset B',
+          id: 'prompt-b',
+          name: 'Prompt B',
           customPromptTemplateToggle: 'tone=Tone',
         },
       ],
@@ -4594,7 +4613,8 @@ describe('Phase 9-3b chat record and folder commands', () => {
     const sourceSettings = {
       configured: true,
       personaId: 'persona-a',
-      presetId: 'preset-a',
+      modelPresetId: 'model-a',
+      promptPresetId: 'prompt-a',
       jailbreakToggle: false,
       sidebarToggles: { mode: 'source' },
     }
@@ -4629,7 +4649,8 @@ describe('Phase 9-3b chat record and folder commands', () => {
     const overrideSettings = {
       configured: true,
       personaId: 'persona-b',
-      presetId: 'preset-b',
+      modelPresetId: 'model-a',
+      promptPresetId: 'prompt-b',
       jailbreakToggle: true,
       sidebarToggles: { tone: 'warm' },
     }
@@ -4654,7 +4675,8 @@ describe('Phase 9-3b chat record and folder commands', () => {
     const incompleteSettings = {
       configured: true,
       personaId: 'persona-a',
-      presetId: 'preset-a',
+      modelPresetId: 'model-a',
+      promptPresetId: 'prompt-a',
       jailbreakToggle: false,
     }
     const savedIncomplete = await harness.app.inject({
@@ -6776,10 +6798,13 @@ describe('Phase 9-4a lorebook commands', () => {
       headers: { 'risu-auth': assertion },
     })
     const database = bootstrap.json().database
+    const persisted = loadPersistedFromDir(harness.dataDir).database as {
+      modules: Array<{ lorebook?: Array<{ id: string }> }>
+    }
     expect(database.loreBook[0].data[0].id).toBe('entry-global')
     expect(database.characters[0].globalLore[0].id).toBe('entry-char')
     expect(database.characters[0].chats[0].localLore[0].id).toBe('entry-chat')
-    expect(database.modules[0].lorebook[0].id).toBe('entry-module')
+    expect(persisted.modules[0].lorebook?.[0].id).toBe('entry-module')
   })
 
   it('upserts one lorebook entry through scoped routes without uploading sibling entries', async () => {
@@ -6886,6 +6911,9 @@ describe('Phase 9-4a lorebook commands', () => {
       headers: { 'risu-auth': assertion },
     })
     const database = bootstrap.json().database
+    const persisted = loadPersistedFromDir(harness.dataDir).database as {
+      modules: Array<{ lorebook?: Array<{ comment: string }> }>
+    }
     expect(database.loreBook[0].data.map((item: { comment: string }) => item.comment)).toEqual(['Global B Updated'])
     expect(database.characters[0].globalLore.map((item: { comment: string }) => item.comment)).toEqual([
       'Character A',
@@ -6895,7 +6923,7 @@ describe('Phase 9-4a lorebook commands', () => {
       'Chat A',
       'Chat B Updated',
     ])
-    expect(database.modules[0].lorebook.map((item: { comment: string }) => item.comment)).toEqual([
+    expect(persisted.modules[0].lorebook?.map((item: { comment: string }) => item.comment)).toEqual([
       'Module B Updated',
       'Module A',
     ])
@@ -7154,9 +7182,12 @@ describe('Phase 9-4a lorebook commands', () => {
     })
     expect(bootstrap.json().revision).toBe(revision)
     const database = bootstrap.json().database
+    const persisted = loadPersistedFromDir(harness.dataDir).database as {
+      modules: Array<{ lorebook?: unknown[] }>
+    }
     expect(database.characters[0].globalLore).toEqual([])
     expect(database.characters[0].chats[0].localLore).toEqual([])
-    expect(database.modules[0].lorebook).toEqual([])
+    expect(persisted.modules[0].lorebook).toEqual([])
   })
 
   it('L12: global lorebook commands skip unrelated child-lore validation and keep target payload checks strict', async () => {
@@ -7358,10 +7389,13 @@ describe('Phase 9-4b script and trigger definition commands', () => {
       headers: { 'risu-auth': assertion },
     })
     const database = bootstrap.json().database
+    const persisted = loadPersistedFromDir(harness.dataDir).database as {
+      modules: Array<{ regex?: Array<{ id: string }>; trigger?: Array<{ id: string }> }>
+    }
     expect(database.characters[0].customscript[0].id).toBe('script-a')
     expect(database.characters[0].triggerscript[0].id).toBe('trigger-a')
-    expect(database.modules[0].regex[0].id).toBe('module-script')
-    expect(database.modules[0].trigger[0].id).toBe('module-trigger')
+    expect(persisted.modules[0].regex?.[0].id).toBe('module-script')
+    expect(persisted.modules[0].trigger?.[0].id).toBe('module-trigger')
     expect(
       harness.commandEvents
         .list()
@@ -8431,7 +8465,10 @@ describe('Phase 9-4d asset reference commands', () => {
         ref_audio_data: { fileName: 'ref.wav', assetId: secondAsset.assetId },
       },
     })
-    expect(database.modules[0].assets).toEqual([['module.png', firstAsset.assetId, 'png']])
+    const persisted = loadPersistedFromDir(harness.dataDir).database as {
+      modules: Array<{ assets?: unknown[] }>
+    }
+    expect(persisted.modules[0].assets).toEqual([['module.png', firstAsset.assetId, 'png']])
     expect(database.personas[0].icon).toBe(secondAsset.assetId)
     expect(database.customBackground).toBe(firstAsset.assetId)
     expect(database.characterOrder[0].imgFile).toBe(secondAsset.assetId)

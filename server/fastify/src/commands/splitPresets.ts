@@ -1,0 +1,348 @@
+import { randomUUID } from 'node:crypto'
+import {
+  createExtractedModelPreset,
+  createExtractedPromptPreset,
+  findEquivalentModelPreset,
+  MODEL_PRESET_FIELDS,
+  PROMPT_PRESET_FIELDS,
+  type ModelPresetRecord,
+  type PromptPresetRecord,
+} from '../../../../src/ts/presetSplit.js'
+import { MASKED_PROVIDER_SECRET } from '../providerSecrets.js'
+import { EntityNotFoundError, ValidationError } from '../repository.js'
+
+type JsonRecord = Record<string, unknown>
+type PresetKind = 'modelPreset' | 'promptPreset'
+
+export type { ModelPresetRecord, PromptPresetRecord }
+
+export type LegacyBotPresetExtractionMode = 'all' | 'model' | 'prompt'
+
+export interface LegacyBotPresetExtractionResult {
+  legacyPresetId: string
+  modelPresetId?: string
+  promptPresetId?: string
+  reusedModelPreset?: boolean
+}
+
+const MODEL_PRESET_APPLY_KEYS: Array<[string, string]> = MODEL_PRESET_FIELDS.map((key) => {
+  if (key === 'NAISettings') return [key, 'NAIsettings']
+  if (key === 'reasonEffort') return [key, 'reasoningEffort']
+  return [key, key]
+})
+
+const PROMPT_PRESET_APPLY_KEYS: Array<[string, string]> = PROMPT_PRESET_FIELDS.map((key) => {
+  if (key === 'regex' || key === 'presetRegex') return [key, 'presetRegex']
+  return [key, key]
+})
+
+export function ensureDatabaseObject(database: unknown): JsonRecord {
+  if (!database || typeof database !== 'object' || Array.isArray(database)) {
+    throw new ValidationError('database must be an object before split preset commands can run')
+  }
+  return database as JsonRecord
+}
+
+export function ensureModelPresetCollection(database: JsonRecord): ModelPresetRecord[] {
+  return ensureSplitPresetCollection(database, 'modelPresets', 'modelPresetsId', 'modelPreset') as ModelPresetRecord[]
+}
+
+export function ensurePromptPresetCollection(database: JsonRecord): PromptPresetRecord[] {
+  return ensureSplitPresetCollection(
+    database,
+    'promptPresets',
+    'promptPresetsId',
+    'promptPreset',
+  ) as PromptPresetRecord[]
+}
+
+export function normalizeSplitPresetCollections(database: unknown): void {
+  const target = ensureDatabaseObject(database)
+  ensureModelPresetCollection(target)
+  ensurePromptPresetCollection(target)
+}
+
+export function createModelPresetRecord(input: JsonRecord, fallbackName = 'New Model Preset'): ModelPresetRecord {
+  return createSplitPresetRecord(input, 'modelPreset', fallbackName) as ModelPresetRecord
+}
+
+export function createPromptPresetRecord(input: JsonRecord, fallbackName = 'New Prompt Preset'): PromptPresetRecord {
+  return createSplitPresetRecord(input, 'promptPreset', fallbackName) as PromptPresetRecord
+}
+
+export function readModelPresetPatch(input: JsonRecord): JsonRecord {
+  return readSplitPresetPatch(input, 'modelPreset')
+}
+
+export function readPromptPresetPatch(input: JsonRecord): JsonRecord {
+  return readSplitPresetPatch(input, 'promptPreset')
+}
+
+export function readModelPresetId(value: unknown, label = 'modelPresetId'): string {
+  return readSplitPresetId(value, label)
+}
+
+export function readPromptPresetId(value: unknown, label = 'promptPresetId'): string {
+  return readSplitPresetId(value, label)
+}
+
+export function findModelPresetIndex(presets: readonly ModelPresetRecord[], presetId: string): number {
+  return presets.findIndex((preset) => preset.id === presetId)
+}
+
+export function findPromptPresetIndex(presets: readonly PromptPresetRecord[], presetId: string): number {
+  return presets.findIndex((preset) => preset.id === presetId)
+}
+
+export function requireModelPresetIndex(presets: readonly ModelPresetRecord[], presetId: string): number {
+  const index = findModelPresetIndex(presets, presetId)
+  if (index === -1) throw new EntityNotFoundError(`Model preset not found: ${presetId}`)
+  return index
+}
+
+export function requirePromptPresetIndex(presets: readonly PromptPresetRecord[], presetId: string): number {
+  const index = findPromptPresetIndex(presets, presetId)
+  if (index === -1) throw new EntityNotFoundError(`Prompt preset not found: ${presetId}`)
+  return index
+}
+
+export function selectedModelPresetId(database: JsonRecord, presets: readonly ModelPresetRecord[]): string | null {
+  return selectedSplitPresetId(database.modelPresetsId, presets)
+}
+
+export function selectedPromptPresetId(database: JsonRecord, presets: readonly PromptPresetRecord[]): string | null {
+  return selectedSplitPresetId(database.promptPresetsId, presets)
+}
+
+export function validateFullModelPresetIdList(
+  presets: readonly ModelPresetRecord[],
+  presetIds: readonly unknown[],
+): void {
+  validateFullSplitPresetIdList(presets, presetIds, 'modelPresetIds')
+}
+
+export function validateFullPromptPresetIdList(
+  presets: readonly PromptPresetRecord[],
+  presetIds: readonly unknown[],
+): void {
+  validateFullSplitPresetIdList(presets, presetIds, 'promptPresetIds')
+}
+
+export function applyModelPreset(database: JsonRecord, preset: ModelPresetRecord): void {
+  applySplitPreset(database, preset, MODEL_PRESET_APPLY_KEYS)
+}
+
+export function applyPromptPreset(database: JsonRecord, preset: PromptPresetRecord): void {
+  applySplitPreset(database, preset, PROMPT_PRESET_APPLY_KEYS)
+}
+
+export function resolveModelPresetMaskedSecrets(
+  existing: ModelPresetRecord | undefined,
+  patch: JsonRecord,
+): JsonRecord {
+  if (!existing) return patch
+  const resolved = cloneJson(patch) as JsonRecord
+  for (const key of ['openAIKey', 'proxyKey']) {
+    if (resolved[key] === MASKED_PROVIDER_SECRET && Object.prototype.hasOwnProperty.call(existing, key)) {
+      resolved[key] = cloneJson(existing[key])
+    }
+  }
+  return resolved
+}
+
+export function extractLegacyBotPreset(
+  database: JsonRecord,
+  legacyPresetId: string,
+  mode: LegacyBotPresetExtractionMode,
+): LegacyBotPresetExtractionResult {
+  if (mode !== 'all' && mode !== 'model' && mode !== 'prompt') {
+    throw new ValidationError('mode must be one of all, model, or prompt')
+  }
+
+  const legacyPresets = ensureLegacyBotPresetCollection(database)
+  const legacyIndex = legacyPresets.findIndex((preset) => preset.id === legacyPresetId)
+  if (legacyIndex === -1) {
+    throw new EntityNotFoundError(`Legacy bot preset not found: ${legacyPresetId}`)
+  }
+
+  const legacyPreset = legacyPresets[legacyIndex]
+  const legacyName = typeof legacyPreset.name === 'string' && legacyPreset.name.trim() ? legacyPreset.name : 'Legacy'
+  const result: LegacyBotPresetExtractionResult = { legacyPresetId }
+
+  if (mode === 'all' || mode === 'model') {
+    const modelPresets = ensureModelPresetCollection(database)
+    const candidate = createExtractedModelPreset(legacyPreset, {
+      id: randomUUID(),
+      name: `${legacyName} Model`,
+    })
+    const equivalent = findEquivalentModelPreset(modelPresets, candidate)
+    if (equivalent?.id) {
+      result.modelPresetId = equivalent.id
+      result.reusedModelPreset = true
+    } else {
+      modelPresets.push(candidate)
+      result.modelPresetId = candidate.id
+      result.reusedModelPreset = false
+    }
+  }
+
+  if (mode === 'all' || mode === 'prompt') {
+    const promptPresets = ensurePromptPresetCollection(database)
+    const promptPreset = createExtractedPromptPreset(legacyPreset, {
+      id: randomUUID(),
+      name: `${legacyName} Prompt`,
+    })
+    promptPresets.push(promptPreset)
+    result.promptPresetId = promptPreset.id
+  }
+
+  const beforeSelected = Number.isInteger(database.botPresetsId as number) ? (database.botPresetsId as number) : -1
+  legacyPresets.splice(legacyIndex, 1)
+  database.botPresetsId = normalizeSelectedIndex(legacyPresets.length, beforeSelected)
+  if (beforeSelected > legacyIndex) {
+    database.botPresetsId = beforeSelected - 1
+  } else if (beforeSelected === legacyIndex) {
+    database.botPresetsId = legacyPresets.length > 0 ? Math.min(legacyIndex, legacyPresets.length - 1) : -1
+  }
+
+  return result
+}
+
+function ensureSplitPresetCollection(
+  database: JsonRecord,
+  collectionKey: 'modelPresets' | 'promptPresets',
+  selectedKey: 'modelPresetsId' | 'promptPresetsId',
+  idPrefix: string,
+): Array<ModelPresetRecord | PromptPresetRecord> {
+  if (!Array.isArray(database[collectionKey])) {
+    database[collectionKey] = []
+  }
+
+  const seen = new Set<string>()
+  const presets = (database[collectionKey] as unknown[]).map((raw, index) => {
+    const preset = isRecord(raw) ? raw : {}
+    const requestedId = typeof preset.id === 'string' && preset.id.trim() ? preset.id : ''
+    const fallbackId = index === 0 ? `default-${idPrefix}` : `${idPrefix}-${index + 1}`
+    const id = requestedId && !seen.has(requestedId) ? requestedId : fallbackId
+    preset.id = seen.has(id) ? `${id}-${index + 1}` : id
+    preset.name = typeof preset.name === 'string' ? preset.name : `Preset ${index + 1}`
+    seen.add(preset.id as string)
+    return preset as ModelPresetRecord | PromptPresetRecord
+  })
+  database[collectionKey] = presets
+  database[selectedKey] = normalizeSelectedIndex(presets.length, database[selectedKey])
+  return presets
+}
+
+function ensureLegacyBotPresetCollection(database: JsonRecord): Array<JsonRecord & { id: string }> {
+  if (!Array.isArray(database.botPresets)) {
+    database.botPresets = []
+  }
+
+  const seen = new Set<string>()
+  const presets = (database.botPresets as unknown[]).map((raw, index) => {
+    const preset = isRecord(raw) ? raw : {}
+    const requestedId = typeof preset.id === 'string' && preset.id.trim() ? preset.id : ''
+    const fallbackId = index === 0 ? 'legacy-bot-preset' : `legacy-bot-preset-${index + 1}`
+    const id = requestedId && !seen.has(requestedId) ? requestedId : fallbackId
+    preset.id = seen.has(id) ? `${id}-${index + 1}` : id
+    seen.add(preset.id as string)
+    return preset as JsonRecord & { id: string }
+  })
+  database.botPresets = presets
+  database.botPresetsId = normalizeSelectedIndex(presets.length, database.botPresetsId)
+  return presets
+}
+
+function createSplitPresetRecord(
+  input: JsonRecord,
+  label: PresetKind,
+  fallbackName: string,
+): JsonRecord & { id: string } {
+  const preset = cloneJson(input) as JsonRecord & { id: string; name?: unknown }
+  preset.id = readSplitPresetId(preset.id, `${label}.id`)
+  if (preset.name !== undefined && typeof preset.name !== 'string') {
+    throw new ValidationError(`${label}.name must be a string`)
+  }
+  preset.name ??= fallbackName
+  validateJsonValue(label, preset)
+  return preset
+}
+
+function readSplitPresetPatch(input: JsonRecord, label: PresetKind): JsonRecord {
+  const patch = cloneJson(input) as JsonRecord
+  validateJsonValue(label, patch)
+  return patch
+}
+
+function readSplitPresetId(value: unknown, label: string): string {
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new ValidationError(`${label} must be a non-empty string`)
+  }
+  return value
+}
+
+function selectedSplitPresetId<T extends { id?: string }>(selected: unknown, presets: readonly T[]): string | null {
+  const index = Number.isInteger(selected as number) ? (selected as number) : -1
+  return presets[index]?.id ?? null
+}
+
+function validateFullSplitPresetIdList<T extends { id: string }>(
+  presets: readonly T[],
+  presetIds: readonly unknown[],
+  label: string,
+): void {
+  const existing = new Set(presets.map((preset) => preset.id))
+  const seen = new Set<string>()
+  if (presetIds.length !== presets.length) {
+    throw new ValidationError(`${label} must include every existing preset id`)
+  }
+  for (const id of presetIds) {
+    if (typeof id !== 'string' || id.trim() === '') {
+      throw new ValidationError(`${label} must contain non-empty strings`)
+    }
+    if (seen.has(id)) {
+      throw new ValidationError(`Duplicate preset id: ${id}`)
+    }
+    if (!existing.has(id)) {
+      throw new ValidationError(`Unknown preset id: ${id}`)
+    }
+    seen.add(id)
+  }
+}
+
+function applySplitPreset(database: JsonRecord, preset: JsonRecord, keys: ReadonlyArray<[string, string]>): void {
+  for (const [presetKey, databaseKey] of keys) {
+    if (Object.prototype.hasOwnProperty.call(preset, presetKey)) {
+      database[databaseKey] = cloneJson(preset[presetKey])
+    }
+  }
+}
+
+function normalizeSelectedIndex(count: number, selected: unknown): number {
+  if (!Number.isInteger(selected)) return count > 0 ? 0 : -1
+  const index = selected as number
+  if (index >= count) return count > 0 ? count - 1 : -1
+  if (index < -1) return count > 0 ? 0 : -1
+  return index
+}
+
+function validateJsonValue(label: string, value: unknown): void {
+  try {
+    JSON.stringify(value)
+  } catch {
+    throw new ValidationError(`${label} must be JSON-serializable`)
+  }
+  if (value === undefined) {
+    throw new ValidationError(`${label} must be JSON-serializable`)
+  }
+}
+
+function cloneJson<T>(value: T): T {
+  if (value === undefined) return value
+  return JSON.parse(JSON.stringify(value)) as T
+}
+
+function isRecord(value: unknown): value is JsonRecord {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}

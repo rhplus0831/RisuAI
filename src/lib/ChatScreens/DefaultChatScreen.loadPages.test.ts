@@ -522,7 +522,8 @@ describe('DefaultChatScreen transcript window state', () => {
         personaPrompt: '',
       },
     ]
-    DBState.db.botPresets = [
+    DBState.db.modelPresets = [{ id: 'model-preset-a', name: 'Model Preset Alpha' }] as any
+    DBState.db.promptPresets = [
       {
         ...presetTemplate,
         id: 'preset-a',
@@ -534,7 +535,8 @@ describe('DefaultChatScreen transcript window state', () => {
     DBState.db.characters[0].chats[0].generationSettings = {
       configured: false,
       personaId: 'persona-a',
-      presetId: 'preset-a',
+      modelPresetId: 'model-preset-a',
+      promptPresetId: 'preset-a',
       jailbreakToggle: true,
       sidebarToggles: {
         mood: '1',

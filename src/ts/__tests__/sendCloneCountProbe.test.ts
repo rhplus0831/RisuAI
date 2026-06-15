@@ -96,9 +96,9 @@ describe('send clone-count probe', () => {
         finalMessageCount: 42,
         messageBodySize: 200,
         transcriptJsonSizeBeforeSend: 9941,
-        activeChatJsonSizeBeforeSend: 10225,
-        activeCharacterJsonSizeBeforeSend: 10503,
-        charactersJsonSizeBeforeSend: 12127,
+        activeChatJsonSizeBeforeSend: 10268,
+        activeCharacterJsonSizeBeforeSend: 10546,
+        charactersJsonSizeBeforeSend: 12256,
       },
       commands: {
         totalCommandCount: 2,

@@ -153,7 +153,6 @@ export interface PromptMemoryChunkPlanningDiagnostics {
 export interface AssembleInput {
   chatId: string
   characterId: string
-  presetId?: string
   loadoutId?: string
   mode: 'send' | 'continue' | 'preview' | 'preview_prompt' | 'regenerate'
   regenerateMessageId?: string
@@ -384,7 +383,8 @@ export interface AssemblyState {
    */
   luaExecBudget?: LuaExecBudget
   /** Recorded identity only; live assembly config comes from chat.generationSettings. */
-  presetId?: string
+  modelPresetId?: string
+  promptPresetId?: string
   loadoutId?: string
   // --- Lorebook placement + token preflight (set by `fillLorebookSlots`) ---
   /** The lorebook activation report (entries that fired + why). */
@@ -582,7 +582,8 @@ export function beginAssembly(input: AssembleInput, deps: AssembleDeps): Assembl
     signal: deps.signal,
     luaExecBudget,
     isContinue: input.mode === 'continue',
-    presetId: currentChat.generationSettings?.presetId,
+    modelPresetId: currentChat.generationSettings?.modelPresetId,
+    promptPresetId: currentChat.generationSettings?.promptPresetId,
     loadoutId: input.loadoutId,
     initialMessages,
     messageMutationCheckpoint: initialMessages,

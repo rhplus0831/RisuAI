@@ -219,6 +219,58 @@ export const COMMAND_EVENT_CATALOG = {
     type: 'preset.reordered',
     resource: 'preset',
   },
+  modelPresetCreated: {
+    type: 'modelPreset.created',
+    resource: 'modelPreset',
+  },
+  modelPresetUpdated: {
+    type: 'modelPreset.updated',
+    resource: 'modelPreset',
+  },
+  modelPresetDeleted: {
+    type: 'modelPreset.deleted',
+    resource: 'modelPreset',
+  },
+  modelPresetSelected: {
+    type: 'modelPreset.selected',
+    resource: 'modelPreset',
+  },
+  modelPresetImported: {
+    type: 'modelPreset.imported',
+    resource: 'modelPreset',
+  },
+  modelPresetReordered: {
+    type: 'modelPreset.reordered',
+    resource: 'modelPreset',
+  },
+  promptPresetCreated: {
+    type: 'promptPreset.created',
+    resource: 'promptPreset',
+  },
+  promptPresetUpdated: {
+    type: 'promptPreset.updated',
+    resource: 'promptPreset',
+  },
+  promptPresetDeleted: {
+    type: 'promptPreset.deleted',
+    resource: 'promptPreset',
+  },
+  promptPresetSelected: {
+    type: 'promptPreset.selected',
+    resource: 'promptPreset',
+  },
+  promptPresetImported: {
+    type: 'promptPreset.imported',
+    resource: 'promptPreset',
+  },
+  promptPresetReordered: {
+    type: 'promptPreset.reordered',
+    resource: 'promptPreset',
+  },
+  legacyBotPresetExtracted: {
+    type: 'legacyBotPreset.extracted',
+    resource: 'legacyBotPreset',
+  },
   promptSettingsUpdated: {
     type: 'prompt.settings.updated',
     resource: 'prompt',

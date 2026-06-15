@@ -31,9 +31,9 @@
   import OpenrouterSettings from './OpenrouterSettings.svelte'
   import ChatFormatSettings from './ChatFormatSettings.svelte'
   import PromptSettings from './PromptSettings.svelte'
-  import { openPresetList } from 'src/ts/stores.svelte'
+  import { openPresetListModal } from 'src/ts/stores.svelte'
   import { selectSingleFile } from 'src/ts/util'
-  import { updatePreset } from 'src/ts/storage/database.svelte'
+  import { updatePromptPreset, type PromptPreset } from 'src/ts/storage/database.svelte'
   import { getModelInfo, LLMFlags, LLMFormat, LLMProvider } from 'src/ts/model/modellist'
   import RegexList from 'src/lib/SideBars/Scripts/RegexList.svelte'
   import SettingRenderer from '../SettingRenderer.svelte'
@@ -56,6 +56,7 @@
     dispatchSelectPluginProvider,
   } from 'src/ts/pluginCommands'
   import { ensurePromptTemplateHydrated, promptTemplateHydratedStore } from 'src/ts/server/promptTemplateHydration'
+  import { mirrorTopLevelPresetField } from 'src/ts/presetFieldMirror'
 
   const stopServerSettingsWatch = watchServerBackedSettings(['proxyRequestModel', 'useLegacyGUI'])
   onDestroy(stopServerSettingsWatch)
@@ -65,11 +66,34 @@
     attempted: {} as SettingsPatch,
     timer: null as ReturnType<typeof setTimeout> | null,
   }
+  const PROMPT_SETTINGS_COMMAND_KEYS = new Set<string>([
+    'mainPrompt',
+    'jailbreak',
+    'globalNote',
+    'formatingOrder',
+    'promptPreprocess',
+    'presetRegex',
+    'promptSettings',
+    'jsonSchemaEnabled',
+    'jsonSchema',
+    'strictJsonSchema',
+    'extractJson',
+    'customPromptTemplateToggle',
+    'templateDefaultVariables',
+    'OAIPrediction',
+    'autoSuggestPrompt',
+    'systemContentReplacement',
+    'systemRoleReplacement',
+    'outputImageModal',
+    'fallbackModels',
+    'fallbackWhenBlankResponse',
+    'doNotChangeFallbackModels',
+  ])
   const oobaDraft = createServerBackedSettingDraft<Record<string, any>>('ooba', { formating: {} })
   const localStopStringsDraft = createServerBackedSettingDraft<string[] | null>('localStopStrings', null)
   const NAIsettingsDraft = createServerBackedSettingDraft<Record<string, any>>('NAIsettings', {})
   const ainconfigDraft = createServerBackedSettingDraft<Record<string, any>>('ainconfig', {})
-  const biasDraft = createServerBackedSettingDraft<Array<[string, number]>>('bias', [])
+  const biasDraft = createPromptFieldDraft<Array<[string, number]>>('bias', [])
   const additionalParamsDraft = createServerBackedSettingDraft<Array<[string, string]>>('additionalParams', [])
   const aiModelDraft = createServerBackedSettingDraft<string>('aiModel', '')
   const subModelDraft = createServerBackedSettingDraft<string>('subModel', '')
@@ -125,8 +149,8 @@
   const openAIKeyDraft = createServerBackedSettingDraft<string>('openAIKey', '')
   const OaiCompAPIKeysDraft = createServerBackedSettingDraft<Record<string, string>>('OaiCompAPIKeys', {})
   const reverseProxyOobaModeDraft = createServerBackedSettingDraft<boolean>('reverseProxyOobaMode', false)
-  const NAIadventureDraft = createServerBackedSettingDraft<boolean>('NAIadventure', false)
-  const NAIappendNameDraft = createServerBackedSettingDraft<boolean>('NAIappendName', false)
+  const NAIadventureDraft = createPromptFieldDraft<boolean>('NAIadventure', false)
+  const NAIappendNameDraft = createPromptFieldDraft<boolean>('NAIappendName', false)
   const koboldURLDraft = createServerBackedSettingDraft<string>('koboldURL', '')
   const echoMessageDraft = createServerBackedSettingDraft<string>('echoMessage', '')
   const echoDelayDraft = createServerBackedSettingDraft<number>('echoDelay', 0)
@@ -139,7 +163,7 @@
   const textgenWebUIBlockingURLDraft = createServerBackedSettingDraft<string>('textgenWebUIBlockingURL', '')
   const enableCustomFlagsDraft = createServerBackedSettingDraft<boolean>('enableCustomFlags', false)
   const customFlagsDraft = createServerBackedSettingDraft<LLMFlags[]>('customFlags', [])
-  const moduleIntergrationDraft = createServerBackedSettingDraft<string>('moduleIntergration', '')
+  const moduleIntergrationDraft = createPromptFieldDraft<string>('moduleIntergration', '')
   const modelToolsDraft = createServerBackedSettingDraft<string[]>('modelTools', [])
   const presetRegexDraft = createPromptFieldDraft<any[]>('presetRegex', [])
   const mainPromptDraft = createPromptFieldDraft<string>('mainPrompt', '')
@@ -151,6 +175,20 @@
   let promptTemplateHydrated = $derived(
     $promptTemplateHydratedStore || Object.prototype.hasOwnProperty.call(DBState.db ?? {}, 'promptTemplate'),
   )
+  let selectedPromptPreset = $derived(DBState.db.promptPresets?.[DBState.db.promptPresetsId])
+  let promptTemplatePresetSyncInitialized = false
+
+  $effect(() => {
+    const promptTemplate = DBState.db.promptTemplate
+    const selectedIndex = DBState.db.promptPresetsId
+    snapshotJson(promptTemplate)
+    if (!promptTemplatePresetSyncInitialized) {
+      promptTemplatePresetSyncInitialized = true
+      return
+    }
+    if (selectedIndex < 0 || promptTemplate === undefined) return
+    untrack(() => writeSelectedPromptPresetField('promptTemplate', promptTemplate))
+  })
 
   let initializedPluginProviderWatch = false
   let previousPluginProvider = ''
@@ -188,8 +226,11 @@
     withTrustedServerProjectionWrite(() => {
       DBState.db.currentPluginProvider = provider
     })
+    const mirroredToPreset = mirrorTopLevelPresetField('currentPluginProvider', provider)
     previousPluginProvider = provider
-    untrack(() => dispatchSelectPluginProvider(provider, previous))
+    if (!mirroredToPreset) {
+      untrack(() => dispatchSelectPluginProvider(provider, previous))
+    }
   })
 
   const openrouterPinnedItems: ModelGridPinnedItem[] = [
@@ -312,7 +353,10 @@
           const target = DBState.db as unknown as Record<string, unknown>
           target[key] = attempted
         })
-        queuePromptFieldPatch({ [key]: attempted }, { [key]: previous })
+        const mirroredToPreset = writeSelectedPromptPresetField(key, attempted)
+        if (!mirroredToPreset && PROMPT_SETTINGS_COMMAND_KEYS.has(key)) {
+          queuePromptFieldPatch({ [key]: attempted }, { [key]: previous })
+        }
         previousServerSnapshot = snapshot
       })
     })
@@ -363,9 +407,27 @@
   }
 
   function currentPromptFieldValue<T>(key: string, fallback: T): T {
+    const preset = DBState.db.promptPresets?.[DBState.db.promptPresetsId] as Record<string, unknown> | undefined
+    if (preset) {
+      if (Object.prototype.hasOwnProperty.call(preset, key)) return preset[key] as T
+      if (key === 'presetRegex' && Object.prototype.hasOwnProperty.call(preset, 'regex')) {
+        return preset.regex as T
+      }
+    }
     const target = DBState.db as unknown as Record<string, unknown> | undefined
     const value = target?.[key]
     return value === undefined ? fallback : (value as T)
+  }
+
+  function writeSelectedPromptPresetField<T>(key: string, value: T): boolean {
+    if (value === undefined) return false
+    const selectedIndex = DBState.db.promptPresetsId
+    if (selectedIndex < 0) return false
+    const preset = DBState.db.promptPresets?.[selectedIndex] as Record<string, unknown> | undefined
+    if (!preset) return false
+    if (snapshotJson(preset[key]) === snapshotJson(value)) return false
+    updatePromptPreset(selectedIndex, { [key]: cloneJsonValue(value) } as Partial<PromptPreset>)
+    return true
   }
 
   function snapshotJson(value: unknown): string {
@@ -1204,13 +1266,9 @@
         {language.preview}
       </span>
       <div class="flex items-center justify-center gap-2">
-        {#if DBState.db.botPresets[DBState.db.botPresetsId]?.image}
-          <img
-            src={DBState.db.botPresets[DBState.db.botPresetsId]?.image}
-            alt="icon"
-            class="w-6 h-6 rounded-md"
-            decoding="async" />
-          <span class="text-textcolor2">{DBState.db.botPresets[DBState.db.botPresetsId]?.name}</span>
+        {#if selectedPromptPreset?.image}
+          <img src={selectedPromptPreset.image} alt="icon" class="w-6 h-6 rounded-md" decoding="async" />
+          <span class="text-textcolor2">{selectedPromptPreset.name}</span>
         {:else}
           <span class="text-textcolor2">{language.noImages}</span>
         {/if}
@@ -1231,7 +1289,7 @@
         canvas.height = 48
         ctx.drawImage(img, 0, 0, 48, 48)
         const data = canvas.toDataURL('image/jpeg', 0.7)
-        updatePreset(DBState.db.botPresetsId, { image: data }) //Since its small (max 2304 pixels), its okay to store it directly
+        updatePromptPreset(DBState.db.promptPresetsId, { image: data }) // Since its small (max 2304 pixels), it is okay to store it directly.
       }}>
       <UploadIcon />
     </button>
@@ -1239,9 +1297,9 @@
   {#if submenu !== -1}
     <Button
       onclick={() => {
-        $openPresetList = true
+        openPresetListModal('global', 'model')
       }}
-      className="mt-4">{language.presets}</Button>
+      className="mt-4">{language.modelPresets}</Button>
   {/if}
 {/if}
 
@@ -1276,7 +1334,14 @@
 {#if submenu === -1}
   <Button
     onclick={() => {
-      $openPresetList = true
+      openPresetListModal('global', 'prompt')
     }}
-    className="mt-4">{language.presets}</Button>
+    className="mt-4">{language.promptPresets}</Button>
+  {#if DBState.db.botPresets?.length > 0}
+    <Button
+      onclick={() => {
+        openPresetListModal('global', 'legacy')
+      }}
+      className="mt-2">{language.legacyBotPresetMigration}</Button>
+  {/if}
 {/if}

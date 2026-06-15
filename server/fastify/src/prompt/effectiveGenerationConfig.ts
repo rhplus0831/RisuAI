@@ -5,11 +5,16 @@ import {
   type ChatGenerationSettingsIncompleteErrorBody,
   type ChatGenerationSettingsReadiness,
 } from '../../../../src/ts/chatGenerationSettings'
-import { applyPreset, type PresetRecord } from '../commands/presets.js'
+import {
+  applyModelPreset,
+  applyPromptPreset,
+  type ModelPresetRecord,
+  type PromptPresetRecord,
+} from '../commands/splitPresets.js'
 import { mirrorLegacyProfile, type PersonaRecord } from '../commands/personas.js'
 
 type JsonRecord = Record<string, unknown>
-type EffectivePresetRecord = PresetRecord & { moduleIntergration?: unknown }
+type EffectivePromptPresetRecord = PromptPresetRecord & { moduleIntergration?: unknown }
 
 export class ChatGenerationSettingsIncompleteAssemblyError extends Error {
   readonly statusCode = 409
@@ -45,19 +50,22 @@ export interface EffectiveGenerationConfigResult {
 
 export function buildEffectiveGenerationConfig(input: EffectiveGenerationConfigInput): EffectiveGenerationConfigResult {
   const settings = input.currentChat.generationSettings
-  const presets = (input.database.botPresets ?? []) as unknown as EffectivePresetRecord[]
+  const modelPresets = (input.database.modelPresets ?? []) as unknown as ModelPresetRecord[]
+  const promptPresets = (input.database.promptPresets ?? []) as unknown as EffectivePromptPresetRecord[]
   const personas = (input.database.personas ?? []) as PersonaRecord[]
-  const selectedPreset = findById(presets, settings?.presetId)
+  const selectedModelPreset = findById(modelPresets, settings?.modelPresetId)
+  const selectedPromptPreset = findById(promptPresets, settings?.promptPresetId)
   const readiness = resolveChatGenerationSettingsReadiness({
     settings,
     personas,
-    presets,
+    modelPresets,
+    promptPresets,
     modules: input.database.modules ?? [],
     enabledModuleIds: stringArray(input.database.enabledModules),
     characterModuleIds: stringArray(input.currentChar.modules),
     chatModuleIds: stringArray(input.currentChat.modules),
     moduleIntegration:
-      typeof selectedPreset?.moduleIntergration === 'string' ? selectedPreset.moduleIntergration : null,
+      typeof selectedPromptPreset?.moduleIntergration === 'string' ? selectedPromptPreset.moduleIntergration : null,
   })
 
   if (!readiness.ready) {
@@ -65,27 +73,35 @@ export function buildEffectiveGenerationConfig(input: EffectiveGenerationConfigI
   }
 
   const persona = findById(personas, settings?.personaId) as PersonaRecord | undefined
-  const preset = selectedPreset as PresetRecord | undefined
-  if (!persona || !preset) {
+  const modelPreset = selectedModelPreset as ModelPresetRecord | undefined
+  const promptPreset = selectedPromptPreset as PromptPresetRecord | undefined
+  if (!persona || !modelPreset || !promptPreset) {
     throw new ChatGenerationSettingsIncompleteAssemblyError(readiness, input.currentChat.id)
   }
 
   const effectiveDatabase = structuredClone(input.database) as Database
-  const effectivePresets = (effectiveDatabase.botPresets ?? []) as unknown as EffectivePresetRecord[]
+  const effectiveModelPresets = (effectiveDatabase.modelPresets ?? []) as unknown as ModelPresetRecord[]
+  const effectivePromptPresets = (effectiveDatabase.promptPresets ?? []) as unknown as EffectivePromptPresetRecord[]
   const effectivePersonas = (effectiveDatabase.personas ?? []) as PersonaRecord[]
-  const effectivePresetIndex = effectivePresets.findIndex(
-    (candidate: EffectivePresetRecord) => candidate.id === preset.id,
+  const effectiveModelPresetIndex = effectiveModelPresets.findIndex(
+    (candidate: ModelPresetRecord) => candidate.id === modelPreset.id,
+  )
+  const effectivePromptPresetIndex = effectivePromptPresets.findIndex(
+    (candidate: EffectivePromptPresetRecord) => candidate.id === promptPreset.id,
   )
   const effectivePersonaIndex = effectivePersonas.findIndex((candidate: PersonaRecord) => candidate.id === persona.id)
-  const effectivePreset = effectivePresets[effectivePresetIndex] as PresetRecord | undefined
+  const effectiveModelPreset = effectiveModelPresets[effectiveModelPresetIndex] as ModelPresetRecord | undefined
+  const effectivePromptPreset = effectivePromptPresets[effectivePromptPresetIndex] as PromptPresetRecord | undefined
   const effectivePersona = effectivePersonas[effectivePersonaIndex] as PersonaRecord | undefined
 
-  if (!effectivePreset || !effectivePersona) {
+  if (!effectiveModelPreset || !effectivePromptPreset || !effectivePersona) {
     throw new ChatGenerationSettingsIncompleteAssemblyError(readiness, input.currentChat.id)
   }
 
-  effectiveDatabase.botPresetsId = effectivePresetIndex
-  applyPreset(effectiveDatabase as unknown as JsonRecord, effectivePreset)
+  effectiveDatabase.modelPresetsId = effectiveModelPresetIndex
+  effectiveDatabase.promptPresetsId = effectivePromptPresetIndex
+  applyModelPreset(effectiveDatabase as unknown as JsonRecord, effectiveModelPreset)
+  applyPromptPreset(effectiveDatabase as unknown as JsonRecord, effectivePromptPreset)
 
   effectiveDatabase.selectedPersona = effectivePersonaIndex
   mirrorLegacyProfile(effectiveDatabase as unknown as JsonRecord, effectivePersona)

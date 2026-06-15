@@ -665,9 +665,15 @@ function normalizeImportedGenerationSettingsValue(value: unknown): ChatGeneratio
     hasPrefill = true
   }
 
-  const presetId = normalizeImportedPresetId(value.presetId)
-  if (presetId) {
-    normalized.presetId = presetId
+  const modelPresetId = normalizeImportedModelPresetId(value.modelPresetId)
+  if (modelPresetId) {
+    normalized.modelPresetId = modelPresetId
+    hasPrefill = true
+  }
+
+  const promptPresetId = normalizeImportedPromptPresetId(value.promptPresetId)
+  if (promptPresetId) {
+    normalized.promptPresetId = promptPresetId
     hasPrefill = true
   }
 
@@ -707,9 +713,15 @@ function normalizeImportedPersonaId(value: unknown): string | undefined {
   return personas.some((persona) => persona?.id === value) ? value : undefined
 }
 
-function normalizeImportedPresetId(value: unknown): string | undefined {
+function normalizeImportedModelPresetId(value: unknown): string | undefined {
   if (!isNonEmptyString(value)) return undefined
-  const presets = Array.isArray(DBState.db.botPresets) ? DBState.db.botPresets : []
+  const presets = Array.isArray(DBState.db.modelPresets) ? DBState.db.modelPresets : []
+  return presets.some((preset) => preset?.id === value) ? value : undefined
+}
+
+function normalizeImportedPromptPresetId(value: unknown): string | undefined {
+  if (!isNonEmptyString(value)) return undefined
+  const presets = Array.isArray(DBState.db.promptPresets) ? DBState.db.promptPresets : []
   return presets.some((preset) => preset?.id === value) ? value : undefined
 }
 

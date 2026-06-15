@@ -3,6 +3,7 @@ import { prebuiltNAIpresets, prebuiltPresets } from '../../../src/ts/process/tem
 import { defaultHotkeys } from '../../../src/ts/defaulthotkeys.js'
 import { LLMFormat } from '../../../src/ts/model/types.js'
 import { DEFAULT_CHAT_DISPLAY_TAIL_COUNT } from '../../../src/ts/chatDisplayTailCount.js'
+import { createExtractedModelPreset, createExtractedPromptPreset } from '../../../src/ts/presetSplit.js'
 
 type JsonRecord = Record<string, unknown>
 
@@ -218,6 +219,7 @@ export function normalizeDatabaseDefaults(
   setDefault(database, 'emotionPrompt', '')
   setDefault(database, 'proxyKey', '')
   normalizeBotPresets(database)
+  normalizeSplitPresets(database)
   setDefault(database, 'sdProvider', '')
   setDefault(database, 'webUiUrl', 'http://127.0.0.1:7860/')
   setDefault(database, 'sdSteps', 30)
@@ -467,7 +469,7 @@ function normalizeCharacters(database: JsonRecord): void {
 
 function normalizeBotPresets(database: JsonRecord): void {
   if (isNullish(database.botPresets)) {
-    database.botPresets = [createDefaultPreset()]
+    database.botPresets = []
   } else if (!Array.isArray(database.botPresets)) {
     database.botPresets = []
   }
@@ -493,6 +495,58 @@ function normalizeBotPresets(database: JsonRecord): void {
     database.botPresetsId = presets.length > 0 ? presets.length - 1 : -1
   } else if ((database.botPresetsId as number) < -1) {
     database.botPresetsId = presets.length > 0 ? 0 : -1
+  }
+}
+
+function normalizeSplitPresets(database: JsonRecord): void {
+  const defaultPreset = createDefaultPreset()
+  if (!Array.isArray(database.modelPresets) || database.modelPresets.length === 0) {
+    database.modelPresets = [
+      createExtractedModelPreset(defaultPreset, {
+        id: 'default-model-preset',
+        name: 'Default Model',
+      }),
+    ]
+    database.modelPresetsId = 0
+  }
+  normalizePresetCollection(database, 'modelPresets', 'modelPresetsId', 'model-preset')
+
+  if (!Array.isArray(database.promptPresets) || database.promptPresets.length === 0) {
+    database.promptPresets = [
+      createExtractedPromptPreset(defaultPreset, {
+        id: 'default-prompt-preset',
+        name: 'Default Prompt',
+      }),
+    ]
+    database.promptPresetsId = 0
+  }
+  normalizePresetCollection(database, 'promptPresets', 'promptPresetsId', 'prompt-preset')
+}
+
+function normalizePresetCollection(
+  database: JsonRecord,
+  collectionKey: 'modelPresets' | 'promptPresets',
+  selectedKey: 'modelPresetsId' | 'promptPresetsId',
+  fallbackPrefix: string,
+): void {
+  const presets = database[collectionKey] as unknown[]
+  const seen = new Set<string>()
+  for (const [index, rawPreset] of presets.entries()) {
+    if (!isRecord(rawPreset)) continue
+    const requestedId = typeof rawPreset.id === 'string' && rawPreset.id.trim() ? rawPreset.id : ''
+    const fallbackId = index === 0 ? `default-${fallbackPrefix}` : `${fallbackPrefix}-${index + 1}`
+    const id = requestedId && !seen.has(requestedId) ? requestedId : fallbackId
+    rawPreset.id = seen.has(id) ? `${id}-${index + 1}` : id
+    if (typeof rawPreset.name !== 'string') rawPreset.name = `Preset ${index + 1}`
+    seen.add(rawPreset.id as string)
+  }
+
+  if (!Number.isInteger(database[selectedKey])) {
+    database[selectedKey] = presets.length > 0 ? 0 : -1
+  } else if ((database[selectedKey] as number) >= presets.length) {
+    database[selectedKey] = presets.length > 0 ? presets.length - 1 : -1
+  } else if ((database[selectedKey] as number) < -1) {
+    database[selectedKey] = presets.length > 0 ? 0 : -1
   }
 }
 

@@ -34,8 +34,10 @@ export const moduleBackgroundEmbedding = writable('')
 export const openPresetList = writable(false)
 export const openPersonaList = writable(false)
 export type GenerationSettingsPickerMode = 'global' | 'active-chat-generation-settings'
+export type PresetPickerKind = 'model' | 'prompt' | 'legacy'
 export const presetListModalStore = $state({
   mode: 'global' as GenerationSettingsPickerMode,
+  kind: 'model' as PresetPickerKind,
 })
 export const personaListModalStore = $state({
   mode: 'global' as GenerationSettingsPickerMode,
@@ -113,6 +115,7 @@ export const DBState = $state({
 openPresetList.subscribe((open) => {
   if (!open) {
     presetListModalStore.mode = 'global'
+    presetListModalStore.kind = 'model'
   }
 })
 
@@ -122,8 +125,9 @@ openPersonaList.subscribe((open) => {
   }
 })
 
-export function openPresetListModal(mode: GenerationSettingsPickerMode = 'global') {
+export function openPresetListModal(mode: GenerationSettingsPickerMode = 'global', kind: PresetPickerKind = 'model') {
   presetListModalStore.mode = mode
+  presetListModalStore.kind = kind
   openPresetList.set(true)
 }
 

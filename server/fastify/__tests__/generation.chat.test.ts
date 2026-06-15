@@ -16,7 +16,6 @@ import {
   type GenerationChatRouteOptions,
 } from '../src/routes/generationChat.js'
 import { normalizeRisuSaveSnapshotDatabase } from '../src/risuSave/importSnapshot.js'
-import { saveCurrentPresetSnapshot } from '../src/commands/presets.js'
 import { saveSelectedPersonaSnapshot } from '../src/commands/personas.js'
 import { LLMFormat } from '../../../src/ts/model/types'
 import {
@@ -154,14 +153,15 @@ const fixtureDatabase = {
 type JsonRecord = Record<string, unknown>
 
 const DEFAULT_TEST_PERSONA_ID = 'persona-default'
-const DEFAULT_TEST_PRESET_ID = 'preset-default'
+const DEFAULT_TEST_MODEL_PRESET_ID = 'model-preset-default'
+const DEFAULT_TEST_PROMPT_PRESET_ID = 'prompt-preset-default'
 
 function normalizeGenerationFixtureDatabase(database: unknown): unknown {
   const normalized = structuredClone(database)
   if (!isJsonRecord(normalized)) return normalized
 
   ensureDefaultFixturePersona(normalized)
-  ensureDefaultFixturePreset(normalized)
+  ensureDefaultFixturePresets(normalized)
   fillDefaultChatGenerationSettings(normalized)
 
   return normalized
@@ -184,18 +184,44 @@ function ensureDefaultFixturePersona(database: JsonRecord): void {
   }
 }
 
-function ensureDefaultFixturePreset(database: JsonRecord): void {
-  if (!Array.isArray(database.botPresets) || database.botPresets.length === 0) {
-    const presets: Parameters<typeof saveCurrentPresetSnapshot>[1] = [{ id: DEFAULT_TEST_PRESET_ID, name: 'Default' }]
-    database.botPresets = presets
-    database.botPresetsId = 0
-    saveCurrentPresetSnapshot(database, presets)
+function ensureDefaultFixturePresets(database: JsonRecord): void {
+  if (!Array.isArray(database.modelPresets) || database.modelPresets.length === 0) {
+    database.modelPresets = [
+      {
+        id: DEFAULT_TEST_MODEL_PRESET_ID,
+        name: 'Default Model',
+        maxContext: database.maxContext ?? 100_000,
+        maxResponse: database.maxResponse ?? 50,
+      },
+    ]
+    database.modelPresetsId = 0
+  }
+
+  if (!Array.isArray(database.promptPresets) || database.promptPresets.length === 0) {
+    database.promptPresets = [
+      {
+        id: DEFAULT_TEST_PROMPT_PRESET_ID,
+        name: 'Default Prompt',
+        mainPrompt: database.mainPrompt ?? 'MAIN',
+        formatingOrder: database.formatingOrder ?? ['main', 'description', 'chats'],
+        promptSettings: database.promptSettings ?? {
+          assistantPrefill: '',
+          postEndInnerFormat: '',
+          sendChatAsSystem: false,
+          sendName: false,
+          utilOverride: false,
+        },
+        customPromptTemplateToggle: '',
+      },
+    ]
+    database.promptPresetsId = 0
   }
 }
 
 function fillDefaultChatGenerationSettings(database: JsonRecord): void {
   const personaId = firstId(database.personas, DEFAULT_TEST_PERSONA_ID)
-  const presetId = firstId(database.botPresets, DEFAULT_TEST_PRESET_ID)
+  const modelPresetId = firstId(database.modelPresets, DEFAULT_TEST_MODEL_PRESET_ID)
+  const promptPresetId = firstId(database.promptPresets, DEFAULT_TEST_PROMPT_PRESET_ID)
   const characters = Array.isArray(database.characters) ? database.characters : []
   for (const character of characters) {
     if (!isJsonRecord(character) || !Array.isArray(character.chats)) continue
@@ -205,7 +231,8 @@ function fillDefaultChatGenerationSettings(database: JsonRecord): void {
       chat.generationSettings = {
         configured: true,
         personaId,
-        presetId,
+        modelPresetId,
+        promptPresetId,
         jailbreakToggle: database.jailbreakToggle === true,
         sidebarToggles: {},
       }
@@ -2378,8 +2405,10 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       aiModel: 'echo_model',
       echoMessage: 'configured import reply',
       echoDelay: 0,
-      botPresets: [{ id: 'preset-import', name: 'Import Preset' }],
-      botPresetsId: 0,
+      modelPresets: [{ id: 'model-import', name: 'Import Model', aiModel: 'echo_model' }],
+      promptPresets: [{ id: 'prompt-import', name: 'Import Prompt' }],
+      modelPresetsId: 0,
+      promptPresetsId: 0,
       personas: [
         {
           id: 'persona-import',
@@ -2432,7 +2461,8 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     const configuredSettings = {
       configured: true,
       personaId: 'persona-import',
-      presetId: 'preset-import',
+      modelPresetId: 'model-import',
+      promptPresetId: 'prompt-import',
       jailbreakToggle: false,
       sidebarToggles: {},
     }
@@ -3410,10 +3440,10 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
       temperature: 11,
       maxContext: 1111,
       maxResponse: 11,
-      botPresets: [
+      modelPresets: [
         {
-          id: 'preset-global',
-          name: 'Global',
+          id: 'model-global',
+          name: 'Global Model',
           aiModel: 'echo_model',
           echoMessage: 'global echo reply',
           openAIKey: 'sk-global',
@@ -3422,8 +3452,8 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
           maxResponse: 11,
         },
         {
-          id: 'preset-chat',
-          name: 'Chat',
+          id: 'model-chat',
+          name: 'Chat Model',
           aiModel: 'gpt-5.4',
           openAIKey: 'sk-chat',
           temperature: 73,
@@ -3431,7 +3461,9 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
           maxResponse: 37,
         },
       ],
-      botPresetsId: 0,
+      promptPresets: [{ id: 'prompt-chat', name: 'Chat Prompt' }],
+      modelPresetsId: 0,
+      promptPresetsId: 0,
       characters: [
         {
           ...fixtureDatabase.characters[0],
@@ -3441,7 +3473,8 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
               generationSettings: {
                 configured: true,
                 personaId: DEFAULT_TEST_PERSONA_ID,
-                presetId: 'preset-chat',
+                modelPresetId: 'model-chat',
+                promptPresetId: 'prompt-chat',
                 jailbreakToggle: false,
                 sidebarToggles: {},
               },
@@ -3455,7 +3488,7 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
       method: 'POST',
       url: '/api/v1/generate/chat',
       headers: { 'risu-auth': assertion },
-      payload: { ...basePayload, presetId: 'preset-global' },
+      payload: basePayload,
     })
     expect(res.statusCode).toBe(200)
 
@@ -3672,7 +3705,8 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
     let revision = await seedDatabase(harness.app, assertion, {
       ...fixtureDatabase,
       selectedPersona: 1,
-      botPresetsId: 1,
+      modelPresetsId: 0,
+      promptPresetsId: 1,
       personas: [
         {
           id: 'persona-survivor',
@@ -3689,20 +3723,24 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
           note: '',
         },
       ],
-      botPresets: [
+      modelPresets: [
         {
-          id: 'preset-survivor',
-          name: 'Survivor Preset',
-          mainPrompt: 'SURVIVOR MAIN',
+          id: 'model-survivor',
+          name: 'Survivor Model Preset',
           maxContext: 100_000,
           maxResponse: 50,
         },
+      ],
+      promptPresets: [
         {
-          id: 'preset-deleted',
-          name: 'Deleted Preset',
+          id: 'prompt-survivor',
+          name: 'Survivor Prompt Preset',
+          mainPrompt: 'SURVIVOR MAIN',
+        },
+        {
+          id: 'prompt-deleted',
+          name: 'Deleted Prompt Preset',
           mainPrompt: 'DELETED MAIN',
-          maxContext: 100_000,
-          maxResponse: 50,
         },
       ],
       characters: [
@@ -3711,15 +3749,18 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
           chats: [
             configuredChat('chat-ok', {
               personaId: 'persona-survivor',
-              presetId: 'preset-survivor',
+              modelPresetId: 'model-survivor',
+              promptPresetId: 'prompt-survivor',
             }),
             configuredChat('chat-deleted-preset', {
               personaId: 'persona-survivor',
-              presetId: 'preset-deleted',
+              modelPresetId: 'model-survivor',
+              promptPresetId: 'prompt-deleted',
             }),
             configuredChat('chat-deleted-persona', {
               personaId: 'persona-deleted',
-              presetId: 'preset-survivor',
+              modelPresetId: 'model-survivor',
+              promptPresetId: 'prompt-survivor',
             }),
           ],
         },
@@ -3728,14 +3769,14 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
 
     const deletePreset = await harness.app.inject({
       method: 'DELETE',
-      url: '/api/v1/commands/presets/preset-deleted',
+      url: '/api/v1/commands/prompt-presets/prompt-deleted',
       headers: { 'risu-auth': assertion },
       payload: { baseRevision: revision },
     })
     expect(deletePreset.statusCode).toBe(200)
     expect(deletePreset.json()).toMatchObject({
-      presetId: 'preset-deleted',
-      selectedPresetId: 'preset-survivor',
+      promptPresetId: 'prompt-deleted',
+      selectedPromptPresetId: 'prompt-survivor',
     })
     revision = deletePreset.json().revision as number
 
@@ -3764,17 +3805,17 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
 
     const deletedPreset = await preview('chat-deleted-preset')
     expect(deletedPreset.statusCode).toBe(409)
-    expectMissingCodes(deletedPreset.json(), ['preset_missing'], ['persona_missing'])
+    expectMissingCodes(deletedPreset.json(), ['prompt_preset_missing'], ['persona_missing'])
     expect(deletedPreset.json().missing).toContainEqual(
       expect.objectContaining({
-        code: 'preset_missing',
-        presetId: 'preset-deleted',
+        code: 'prompt_preset_missing',
+        promptPresetId: 'prompt-deleted',
       }),
     )
 
     const deletedPersona = await preview('chat-deleted-persona')
     expect(deletedPersona.statusCode).toBe(409)
-    expectMissingCodes(deletedPersona.json(), ['persona_missing'], ['preset_missing'])
+    expectMissingCodes(deletedPersona.json(), ['persona_missing'], ['prompt_preset_missing'])
     expect(deletedPersona.json().missing).toContainEqual(
       expect.objectContaining({
         code: 'persona_missing',
@@ -3796,11 +3837,13 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
     const deletedPersonaSettings = chats.find((chat) => chat.id === 'chat-deleted-persona')?.generationSettings
     expect(deletedPresetSettings).toMatchObject({
       personaId: 'persona-survivor',
-      presetId: 'preset-deleted',
+      modelPresetId: 'model-survivor',
+      promptPresetId: 'prompt-deleted',
     })
     expect(deletedPersonaSettings).toMatchObject({
       personaId: 'persona-deleted',
-      presetId: 'preset-survivor',
+      modelPresetId: 'model-survivor',
+      promptPresetId: 'prompt-survivor',
     })
   })
 
@@ -3808,7 +3851,8 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await seedDatabase(harness.app, assertion, {
       ...fixtureDatabase,
-      botPresets: [{ id: 'preset-a', name: 'Preset A' }],
+      modelPresets: [{ id: 'model-a', name: 'Model A' }],
+      promptPresets: [{ id: 'prompt-a', name: 'Prompt A' }],
       personas: [
         {
           id: 'persona-a',
@@ -3827,7 +3871,8 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
               generationSettings: {
                 configured: true,
                 personaId: 'persona-a',
-                presetId: 'preset-a',
+                modelPresetId: 'model-a',
+                promptPresetId: 'prompt-a',
                 jailbreakToggle: false,
                 sidebarToggles: {},
               },
@@ -3847,7 +3892,7 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
 
     const patchedPreset = await harness.app.inject({
       method: 'PATCH',
-      url: '/api/v1/commands/presets/preset-a',
+      url: '/api/v1/commands/prompt-presets/prompt-a',
       headers: { 'risu-auth': assertion },
       payload: {
         baseRevision: revision,
@@ -3890,7 +3935,10 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
   })
 })
 
-function configuredChat(id: string, settings: { personaId: string; presetId: string }): Record<string, unknown> {
+function configuredChat(
+  id: string,
+  settings: { personaId: string; modelPresetId: string; promptPresetId: string },
+): Record<string, unknown> {
   return {
     id,
     message: [],
@@ -3900,7 +3948,8 @@ function configuredChat(id: string, settings: { personaId: string; presetId: str
     generationSettings: {
       configured: true,
       personaId: settings.personaId,
-      presetId: settings.presetId,
+      modelPresetId: settings.modelPresetId,
+      promptPresetId: settings.promptPresetId,
       jailbreakToggle: false,
       sidebarToggles: {},
     },

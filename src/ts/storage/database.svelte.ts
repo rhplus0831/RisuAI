@@ -16,14 +16,28 @@ import { normalizeTranslatorPresetState, type TranslatorPreset } from '../transl
 import { safeStructuredClone } from '../polyfill'
 import {
   canUseServerCommands,
+  createModelPresetCommand,
+  createPromptPresetCommand,
   copyPresetCommand,
   createPresetCommand,
+  deleteModelPresetCommand,
+  deletePromptPresetCommand,
   deletePresetCommand,
+  extractLegacyBotPresetCommand,
+  importPromptPresetCommand,
   importPresetCommand,
+  reorderModelPresetsCommand,
+  reorderPromptPresetsCommand,
   reorderPresetsCommand,
+  selectModelPresetCommand,
+  selectPromptPresetCommand,
   selectPresetCommand,
+  updateModelPresetCommand,
+  updatePromptPresetCommand,
   updatePresetCommand,
+  type ModelPresetSnapshot,
   peekCachedServerCommandRevision,
+  type PromptPresetSnapshot,
   type PresetSnapshot,
 } from '../server/commands'
 import { currentCharacterRowSnapshot, dispatchCompatibleCharacterUpdateScoped } from '../characterCommands'
@@ -43,6 +57,14 @@ import { isServerChatMessagePlaceholder, SERVER_UNLOADED_CHAT_MESSAGE_MARKER } f
 import { DEFAULT_CHAT_DISPLAY_TAIL_COUNT, normalizeChatDisplayTailCount } from '../chatDisplayTailCount'
 import type { ChatGenerationSettings } from '../chatGenerationSettings'
 import { canUseServerProjection, fetchServerPresetProjection } from '../server/projection'
+import {
+  createExtractedModelPreset,
+  createExtractedPromptPreset,
+  findEquivalentModelPreset,
+  MODEL_PRESET_FIELDS,
+  PROMPT_PRESET_FIELDS,
+  promptPresetExportPayload,
+} from '../presetSplit'
 
 //APP_VERSION_POINT is to locate the app version in the database file for version bumping
 export let appVer = 'Fastify Variant Version: Alpha' //<APP_VERSION_POINT>
@@ -101,6 +123,37 @@ function normalizeBotPresetIds(data: Pick<Database, 'botPresets' | 'botPresetsId
   const nextSelected = normalizedBotPresetsId(data.botPresets.length, data.botPresetsId)
   if (data.botPresetsId !== nextSelected) {
     data.botPresetsId = nextSelected
+  }
+}
+
+function normalizeSplitPresetIds(
+  data: Pick<Database, 'modelPresets' | 'modelPresetsId' | 'promptPresets' | 'promptPresetsId'>,
+) {
+  normalizePresetCollectionIds(data.modelPresets, (next) => {
+    data.modelPresets = next as ModelPreset[]
+  })
+  data.modelPresetsId = normalizedBotPresetsId(data.modelPresets.length, data.modelPresetsId)
+  normalizePresetCollectionIds(data.promptPresets, (next) => {
+    data.promptPresets = next as PromptPreset[]
+  })
+  data.promptPresetsId = normalizedBotPresetsId(data.promptPresets.length, data.promptPresetsId)
+}
+
+function normalizePresetCollectionIds<T extends { id?: string }>(presets: T[], assign: (next: T[]) => void) {
+  if (!Array.isArray(presets)) {
+    assign([])
+    return
+  }
+
+  const seen = new Set<string>()
+  for (const preset of presets) {
+    if (!preset) continue
+    const id = typeof preset.id === 'string' && preset.id.trim() ? preset.id : createClientPresetId()
+    const nextId = seen.has(id) ? createClientPresetId() : id
+    if (preset.id !== nextId) {
+      preset.id = nextId
+    }
+    seen.add(nextId)
   }
 }
 
@@ -291,6 +344,10 @@ type SetPresetRollbackKey = (typeof SET_PRESET_ROLLBACK_KEYS)[number]
 interface PresetRollbackSnapshot {
   botPresets: botPreset[]
   botPresetsId: number
+  modelPresets: ModelPreset[]
+  modelPresetsId: number
+  promptPresets: PromptPreset[]
+  promptPresetsId: number
   setPresetSettings?: Partial<Record<SetPresetRollbackKey, unknown>>
 }
 
@@ -308,9 +365,14 @@ function currentPresetRollbackSnapshot(
   options: { includeSetPresetSettings?: boolean } = {},
 ): PresetRollbackSnapshot {
   normalizeBotPresetIds(db)
+  normalizeSplitPresetIds(db)
   return {
     botPresets: safeStructuredClone(db.botPresets),
     botPresetsId: db.botPresetsId,
+    modelPresets: safeStructuredClone(db.modelPresets),
+    modelPresetsId: db.modelPresetsId,
+    promptPresets: safeStructuredClone(db.promptPresets),
+    promptPresetsId: db.promptPresetsId,
     ...(options.includeSetPresetSettings ? { setPresetSettings: snapshotSetPresetSettings(db) } : {}),
   }
 }
@@ -319,6 +381,10 @@ function restorePresetRollbackSnapshot(snapshot: PresetRollbackSnapshot): void {
   withTrustedServerProjectionWrite(() => {
     DBState.db.botPresets = safeStructuredClone(snapshot.botPresets)
     DBState.db.botPresetsId = snapshot.botPresetsId
+    DBState.db.modelPresets = safeStructuredClone(snapshot.modelPresets)
+    DBState.db.modelPresetsId = snapshot.modelPresetsId
+    DBState.db.promptPresets = safeStructuredClone(snapshot.promptPresets)
+    DBState.db.promptPresetsId = snapshot.promptPresetsId
     if (snapshot.setPresetSettings) {
       const dbRecord = DBState.db as unknown as Record<SetPresetRollbackKey, unknown>
       for (const key of SET_PRESET_ROLLBACK_KEYS) {
@@ -487,14 +553,31 @@ export function setDatabase(data: Database) {
     data.proxyKey = ''
   }
   if (checkNullish(data.botPresets)) {
-    let defaultPreset = safeStructuredClone(presetTemplate)
-    defaultPreset.name = 'Default'
-    data.botPresets = [defaultPreset]
+    data.botPresets = []
   }
   normalizeBotPresetIds(data)
   if (checkNullish(data.botPresetsId)) {
-    data.botPresetsId = 0
+    data.botPresetsId = data.botPresets.length > 0 ? 0 : -1
   }
+  if (checkNullish(data.modelPresets) || !Array.isArray(data.modelPresets) || data.modelPresets.length === 0) {
+    const defaultModelPreset = safeStructuredClone(presetTemplate) as ModelPreset
+    defaultModelPreset.id = 'default-model-preset'
+    defaultModelPreset.name = 'Default Model'
+    data.modelPresets = [defaultModelPreset]
+  }
+  if (checkNullish(data.promptPresets) || !Array.isArray(data.promptPresets) || data.promptPresets.length === 0) {
+    const defaultPromptPreset = safeStructuredClone(presetTemplate) as PromptPreset
+    defaultPromptPreset.id = 'default-prompt-preset'
+    defaultPromptPreset.name = 'Default Prompt'
+    data.promptPresets = [defaultPromptPreset]
+  }
+  if (checkNullish(data.modelPresetsId)) {
+    data.modelPresetsId = 0
+  }
+  if (checkNullish(data.promptPresetsId)) {
+    data.promptPresetsId = 0
+  }
+  normalizeSplitPresetIds(data)
   if (checkNullish(data.sdProvider)) {
     data.sdProvider = ''
   }
@@ -1384,6 +1467,10 @@ export interface Database {
   formatversion: number
   waifuWidth: number
   waifuWidth2: number
+  modelPresets: ModelPreset[]
+  modelPresetsId: number
+  promptPresets: PromptPreset[]
+  promptPresetsId: number
   botPresets: botPreset[]
   botPresetsId: number
   sdProvider: string
@@ -2136,6 +2223,16 @@ export interface botPreset {
   dynamicOutput?: DynamicOutput
 }
 
+export type ModelPreset = Partial<botPreset> & {
+  id?: string
+  name?: string
+}
+
+export type PromptPreset = Partial<botPreset> & {
+  id?: string
+  name?: string
+}
+
 interface hordeConfig {
   apiKey: string
   model: string
@@ -2823,6 +2920,310 @@ export function reorderPresets(fromIndex: number, toIndex: number) {
   })
 }
 
+export function createModelPreset(preset: ModelPreset) {
+  runOptimisticPresetCommands((db) => {
+    const newPreset = safeStructuredClone(preset)
+    newPreset.id ??= createClientPresetId()
+    db.modelPresets.push(newPreset)
+    db.modelPresets = db.modelPresets
+    return [
+      (baseRevision) =>
+        createModelPresetCommand({
+          baseRevision,
+          preset: safeStructuredClone(newPreset) as unknown as ModelPresetSnapshot,
+        }),
+    ]
+  })
+}
+
+export function updateModelPreset(id: number, patch: Partial<ModelPreset>) {
+  runOptimisticPresetCommands((db) => {
+    const modelPresetId = db.modelPresets[id]?.id
+    if (!modelPresetId) return []
+    Object.assign(db.modelPresets[id], patch)
+    if (db.modelPresetsId === id) {
+      applyModelPresetFieldsToDatabase(db, db.modelPresets[id])
+    }
+    return [
+      (baseRevision) =>
+        updateModelPresetCommand({
+          baseRevision,
+          modelPresetId,
+          patch: safeStructuredClone({ ...patch, id: modelPresetId }) as ModelPresetSnapshot,
+        }),
+    ]
+  })
+}
+
+export function deleteModelPreset(id: number, selectIndex = 0) {
+  runOptimisticPresetCommands((db) => {
+    if (db.modelPresets.length <= 1) return []
+    const modelPresetId = db.modelPresets[id]?.id
+    const nextSelectedPreset =
+      db.modelPresets[selectIndex]?.id === modelPresetId
+        ? db.modelPresets.find((preset) => preset.id !== modelPresetId)
+        : db.modelPresets[selectIndex]
+    const selectModelPresetId = nextSelectedPreset?.id
+    if (!modelPresetId) return []
+    db.modelPresets.splice(id, 1)
+    db.modelPresets = db.modelPresets
+    const selectedIndex = selectModelPresetId
+      ? db.modelPresets.findIndex((preset) => preset.id === selectModelPresetId)
+      : -1
+    db.modelPresetsId = selectedIndex >= 0 ? selectedIndex : Math.min(db.modelPresetsId, db.modelPresets.length - 1)
+    applyModelPresetFieldsToDatabase(db, db.modelPresets[db.modelPresetsId])
+    return [
+      (baseRevision) =>
+        deleteModelPresetCommand({
+          baseRevision,
+          modelPresetId,
+          selectModelPresetId,
+        }),
+    ]
+  })
+}
+
+export function selectModelPreset(id: number) {
+  runOptimisticPresetCommands((db) => {
+    const modelPresetId = db.modelPresets[id]?.id
+    if (!modelPresetId) return []
+    db.modelPresetsId = id
+    applyModelPresetFieldsToDatabase(db, db.modelPresets[id])
+    return [
+      (baseRevision) =>
+        selectModelPresetCommand({
+          baseRevision,
+          modelPresetId,
+        }),
+    ]
+  })
+}
+
+export function reorderModelPresets(fromIndex: number, toIndex: number) {
+  runOptimisticPresetCommands((db) => {
+    if (fromIndex === toIndex) return []
+    if (fromIndex < 0 || toIndex < 0 || fromIndex >= db.modelPresets.length || toIndex > db.modelPresets.length) {
+      return []
+    }
+    const modelPresets = [...db.modelPresets]
+    const movedItem = modelPresets.splice(fromIndex, 1)[0]
+    if (!movedItem) return []
+    const adjustedToIndex = fromIndex < toIndex ? toIndex - 1 : toIndex
+    modelPresets.splice(adjustedToIndex, 0, movedItem)
+    db.modelPresetsId = movedSelectedIndex(db.modelPresetsId, fromIndex, adjustedToIndex)
+    db.modelPresets = modelPresets
+    const modelPresetIds = db.modelPresets.map((preset) => preset.id).filter((id): id is string => !!id)
+    return [
+      (baseRevision) =>
+        reorderModelPresetsCommand({
+          baseRevision,
+          modelPresetIds,
+        }),
+    ]
+  })
+}
+
+export function createPromptPreset(preset: PromptPreset) {
+  runOptimisticPresetCommands((db) => {
+    const newPreset = safeStructuredClone(preset)
+    newPreset.id ??= createClientPresetId()
+    db.promptPresets.push(newPreset)
+    db.promptPresets = db.promptPresets
+    return [
+      (baseRevision) =>
+        createPromptPresetCommand({
+          baseRevision,
+          preset: safeStructuredClone(newPreset) as unknown as PromptPresetSnapshot,
+        }),
+    ]
+  })
+}
+
+export function addImportedPromptPreset(preset: PromptPreset) {
+  runOptimisticPresetCommands((db) => {
+    const newPreset = safeStructuredClone(promptPresetExportPayload(preset)) as PromptPreset
+    newPreset.id ??= createClientPresetId()
+    db.promptPresets.push(newPreset)
+    db.promptPresets = db.promptPresets
+    return [
+      (baseRevision) =>
+        importPromptPresetCommand({
+          baseRevision,
+          preset: safeStructuredClone(newPreset) as unknown as PromptPresetSnapshot,
+        }),
+    ]
+  })
+}
+
+export function updatePromptPreset(id: number, patch: Partial<PromptPreset>) {
+  runOptimisticPresetCommands((db) => {
+    const promptPresetId = db.promptPresets[id]?.id
+    if (!promptPresetId) return []
+    Object.assign(db.promptPresets[id], patch)
+    if (db.promptPresetsId === id) {
+      applyPromptPresetFieldsToDatabase(db, db.promptPresets[id])
+    }
+    return [
+      (baseRevision) =>
+        updatePromptPresetCommand({
+          baseRevision,
+          promptPresetId,
+          patch: safeStructuredClone({ ...patch, id: promptPresetId }) as PromptPresetSnapshot,
+        }),
+    ]
+  })
+}
+
+export function deletePromptPreset(id: number, selectIndex = 0) {
+  runOptimisticPresetCommands((db) => {
+    if (db.promptPresets.length <= 1) return []
+    const promptPresetId = db.promptPresets[id]?.id
+    const nextSelectedPreset =
+      db.promptPresets[selectIndex]?.id === promptPresetId
+        ? db.promptPresets.find((preset) => preset.id !== promptPresetId)
+        : db.promptPresets[selectIndex]
+    const selectPromptPresetId = nextSelectedPreset?.id
+    if (!promptPresetId) return []
+    db.promptPresets.splice(id, 1)
+    db.promptPresets = db.promptPresets
+    const selectedIndex = selectPromptPresetId
+      ? db.promptPresets.findIndex((preset) => preset.id === selectPromptPresetId)
+      : -1
+    db.promptPresetsId = selectedIndex >= 0 ? selectedIndex : Math.min(db.promptPresetsId, db.promptPresets.length - 1)
+    applyPromptPresetFieldsToDatabase(db, db.promptPresets[db.promptPresetsId])
+    return [
+      (baseRevision) =>
+        deletePromptPresetCommand({
+          baseRevision,
+          promptPresetId,
+          selectPromptPresetId,
+        }),
+    ]
+  })
+}
+
+export function selectPromptPreset(id: number) {
+  runOptimisticPresetCommands((db) => {
+    const promptPresetId = db.promptPresets[id]?.id
+    if (!promptPresetId) return []
+    db.promptPresetsId = id
+    applyPromptPresetFieldsToDatabase(db, db.promptPresets[id])
+    return [
+      (baseRevision) =>
+        selectPromptPresetCommand({
+          baseRevision,
+          promptPresetId,
+        }),
+    ]
+  })
+}
+
+export function reorderPromptPresets(fromIndex: number, toIndex: number) {
+  runOptimisticPresetCommands((db) => {
+    if (fromIndex === toIndex) return []
+    if (fromIndex < 0 || toIndex < 0 || fromIndex >= db.promptPresets.length || toIndex > db.promptPresets.length) {
+      return []
+    }
+    const promptPresets = [...db.promptPresets]
+    const movedItem = promptPresets.splice(fromIndex, 1)[0]
+    if (!movedItem) return []
+    const adjustedToIndex = fromIndex < toIndex ? toIndex - 1 : toIndex
+    promptPresets.splice(adjustedToIndex, 0, movedItem)
+    db.promptPresetsId = movedSelectedIndex(db.promptPresetsId, fromIndex, adjustedToIndex)
+    db.promptPresets = promptPresets
+    const promptPresetIds = db.promptPresets.map((preset) => preset.id).filter((id): id is string => !!id)
+    return [
+      (baseRevision) =>
+        reorderPromptPresetsCommand({
+          baseRevision,
+          promptPresetIds,
+        }),
+    ]
+  })
+}
+
+export function extractLegacyBotPresetByIndex(id: number, mode: 'all' | 'model' | 'prompt') {
+  runOptimisticPresetCommands((db) => {
+    const preset = db.botPresets[id]
+    const presetId = preset?.id
+    if (!presetId) return []
+    const legacyName = typeof preset.name === 'string' && preset.name.trim() ? preset.name : 'Legacy'
+
+    if (mode === 'all' || mode === 'model') {
+      const modelPreset = createExtractedModelPreset(preset, {
+        id: createClientPresetId(),
+        name: `${legacyName} Model`,
+      }) as ModelPreset
+      const existing = findEquivalentModelPreset(db.modelPresets, modelPreset)
+      if (!existing) {
+        db.modelPresets.push(modelPreset)
+      }
+    }
+
+    if (mode === 'all' || mode === 'prompt') {
+      const promptPreset = createExtractedPromptPreset(preset, {
+        id: createClientPresetId(),
+        name: `${legacyName} Prompt`,
+      }) as PromptPreset
+      db.promptPresets.push(promptPreset)
+    }
+
+    db.botPresets.splice(id, 1)
+    db.botPresets = db.botPresets
+    db.modelPresets = db.modelPresets
+    db.promptPresets = db.promptPresets
+    db.botPresetsId = normalizedBotPresetsId(db.botPresets.length, db.botPresetsId)
+    return [
+      (baseRevision) =>
+        extractLegacyBotPresetCommand({
+          baseRevision,
+          presetId,
+          mode,
+        }),
+    ]
+  })
+}
+
+function movedSelectedIndex(currentId: number, fromIndex: number, adjustedToIndex: number): number {
+  if (currentId === fromIndex) return adjustedToIndex
+  if (fromIndex < currentId && adjustedToIndex >= currentId) return currentId - 1
+  if (fromIndex > currentId && adjustedToIndex <= currentId) return currentId + 1
+  return currentId
+}
+
+const MODEL_PRESET_DATABASE_KEY_OVERRIDES: Record<string, string> = {
+  NAISettings: 'NAIsettings',
+  reasonEffort: 'reasoningEffort',
+}
+
+const PROMPT_PRESET_DATABASE_KEY_OVERRIDES: Record<string, string> = {
+  regex: 'presetRegex',
+  presetRegex: 'presetRegex',
+}
+
+function applyModelPresetFieldsToDatabase(db: Database, preset: ModelPreset | undefined): void {
+  applySplitPresetFieldsToDatabase(db, preset, MODEL_PRESET_FIELDS, MODEL_PRESET_DATABASE_KEY_OVERRIDES)
+}
+
+function applyPromptPresetFieldsToDatabase(db: Database, preset: PromptPreset | undefined): void {
+  applySplitPresetFieldsToDatabase(db, preset, PROMPT_PRESET_FIELDS, PROMPT_PRESET_DATABASE_KEY_OVERRIDES)
+}
+
+function applySplitPresetFieldsToDatabase(
+  db: Database,
+  preset: Record<string, unknown> | undefined,
+  fields: readonly string[],
+  databaseKeyOverrides: Record<string, string>,
+): void {
+  if (!preset) return
+  const target = db as unknown as Record<string, unknown>
+  for (const field of fields) {
+    if (!Object.prototype.hasOwnProperty.call(preset, field)) continue
+    const databaseKey = databaseKeyOverrides[field] ?? field
+    target[databaseKey] = safeStructuredClone(preset[field])
+  }
+}
+
 export function setPreset(db: Database, newPres: botPreset) {
   db.apiType = newPres.apiType ?? db.apiType
   db.localNetworkMode = newPres.localNetworkMode ?? db.localNetworkMode
@@ -2956,10 +3357,8 @@ import type { OpenAIChat } from '../process/index.svelte'
 import type { Loadout } from '../loadout'
 
 export async function downloadPreset(id: number, type: 'json' | 'risupreset' | 'return' = 'json') {
-  saveCurrentPreset()
-  await ensureBotPresetHydrated(id)
   let db = getDatabase()
-  let pres = safeStructuredClone(db.botPresets[id])
+  let pres = promptPresetExportPayload(safeStructuredClone(db.promptPresets[id]))
   pres.openAIKey = ''
   pres.forceReplaceUrl = ''
   pres.forceReplaceUrl2 = ''
@@ -3047,7 +3446,7 @@ export async function importPreset(
     pr.NAISettings.mirostat_lr = pre.parameters.mirostat_lr
     pr.NAISettings.mirostat_tau = pre.parameters.mirostat_tau
     pr.name = pre.name ?? 'Imported'
-    addImportedPreset(pr)
+    addImportedPromptPreset(pr)
     return
   }
 
@@ -3147,12 +3546,12 @@ export async function importPreset(
       })
     }
     pr.name = 'Imported ST Preset'
-    addImportedPreset(pr)
+    addImportedPromptPreset(pr)
     return
   }
   pre.name ??= 'Imported'
   if (!Array.isArray(db.botPresets)) {
     db.botPresets = []
   }
-  addImportedPreset(pre)
+  addImportedPromptPreset(pre)
 }

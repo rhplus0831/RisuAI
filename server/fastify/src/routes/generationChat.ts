@@ -76,7 +76,6 @@ const SERVER_INLAY_SIGNATURE_CONTENT_TYPE = 'application/x-risu-inlay-signature+
 interface ChatRequestBody {
   chatId?: unknown
   characterId?: unknown
-  presetId?: unknown
   loadoutId?: unknown
   mode?: unknown
   regenerateMessageId?: unknown
@@ -223,8 +222,11 @@ function validate(body: ChatRequestBody): { ok: true } | { ok: false; error: str
       error: 'regenerateMessageId is required when mode is "regenerate"',
     }
   }
-  if (body.presetId !== undefined && typeof body.presetId !== 'string') {
-    return { ok: false, error: 'presetId must be a string when provided' }
+  if (Object.prototype.hasOwnProperty.call(body, 'presetId')) {
+    return {
+      ok: false,
+      error: 'presetId is not supported; use chat generationSettings modelPresetId and promptPresetId',
+    }
   }
   if (body.loadoutId !== undefined && typeof body.loadoutId !== 'string') {
     return { ok: false, error: 'loadoutId must be a string when provided' }
@@ -258,8 +260,11 @@ function validatePreview(body: ChatRequestBody): { ok: true } | { ok: false; err
   if (!isNonEmptyString(body.characterId)) {
     return { ok: false, error: 'characterId is required' }
   }
-  if (body.presetId !== undefined && typeof body.presetId !== 'string') {
-    return { ok: false, error: 'presetId must be a string when provided' }
+  if (Object.prototype.hasOwnProperty.call(body, 'presetId')) {
+    return {
+      ok: false,
+      error: 'presetId is not supported; use chat generationSettings modelPresetId and promptPresetId',
+    }
   }
   if (body.loadoutId !== undefined && typeof body.loadoutId !== 'string') {
     return { ok: false, error: 'loadoutId must be a string when provided' }
@@ -285,7 +290,6 @@ function toAssembleInput(body: ChatRequestBody): AssembleInput {
     chatId: body.chatId as string,
     characterId: body.characterId as string,
     mode: body.mode as AssembleInput['mode'],
-    presetId: typeof body.presetId === 'string' ? body.presetId : undefined,
     loadoutId: typeof body.loadoutId === 'string' ? body.loadoutId : undefined,
     regenerateMessageId: typeof body.regenerateMessageId === 'string' ? body.regenerateMessageId : undefined,
     userMessage: typeof body.userMessage === 'string' ? body.userMessage : undefined,

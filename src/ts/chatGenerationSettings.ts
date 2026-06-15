@@ -9,7 +9,8 @@ const JAILBREAK_TOGGLE_TOKEN = '{{jbtoggled}}'
 export interface ChatGenerationSettings {
   configured?: boolean
   personaId?: string
-  presetId?: string
+  modelPresetId?: string
+  promptPresetId?: string
   jailbreakToggle?: boolean
   sidebarToggles?: Record<string, string>
 }
@@ -25,12 +26,18 @@ export interface ChatGenerationPromptTemplateItemReference {
   defaultText?: string
 }
 
-export interface ChatGenerationPresetReference {
+export interface ChatGenerationModelPresetReference {
+  id?: string | null
+}
+
+export interface ChatGenerationPromptPresetReference {
   id?: string | null
   jailbreak?: string | null
   promptTemplate?: readonly ChatGenerationPromptTemplateItemReference[] | null
   customPromptTemplateToggle?: string | null
 }
+
+export type ChatGenerationPresetReference = ChatGenerationPromptPresetReference
 
 export interface ChatGenerationModuleReference {
   id: string
@@ -78,15 +85,19 @@ export interface ChatGenerationJailbreakToggleRequirement {
 }
 
 export interface ChatGenerationControlRequirements {
-  preset: ChatGenerationPresetReference | undefined
-  presetFound: boolean
+  modelPreset: ChatGenerationModelPresetReference | undefined
+  modelPresetFound: boolean
+  promptPreset: ChatGenerationPromptPresetReference | undefined
+  promptPresetFound: boolean
   jailbreakToggle: ChatGenerationJailbreakToggleRequirement
   sidebarToggles: ChatGenerationRequiredSidebarToggle[]
 }
 
 export interface ResolveChatGenerationRequirementsInput {
-  presetId?: string
-  presets: readonly ChatGenerationPresetReference[]
+  modelPresetId?: string
+  promptPresetId?: string
+  modelPresets: readonly ChatGenerationModelPresetReference[]
+  promptPresets: readonly ChatGenerationPromptPresetReference[]
   modules?: readonly ChatGenerationModuleReference[]
   enabledModuleIds?: readonly string[]
   chatModuleIds?: readonly string[]
@@ -104,8 +115,10 @@ export const CHAT_GENERATION_SETTINGS_MISSING_REASON_CODES = [
   'settings_not_configured',
   'persona_id_missing',
   'persona_missing',
-  'preset_id_missing',
-  'preset_missing',
+  'model_preset_id_missing',
+  'model_preset_missing',
+  'prompt_preset_id_missing',
+  'prompt_preset_missing',
   'jailbreak_toggle_missing',
   'jailbreak_toggle_invalid',
   'sidebar_toggles_missing',
@@ -119,7 +132,8 @@ export type ChatGenerationSettingsFieldPath =
   | typeof CHAT_GENERATION_SETTINGS_FIELD
   | `${typeof CHAT_GENERATION_SETTINGS_FIELD}.configured`
   | `${typeof CHAT_GENERATION_SETTINGS_FIELD}.personaId`
-  | `${typeof CHAT_GENERATION_SETTINGS_FIELD}.presetId`
+  | `${typeof CHAT_GENERATION_SETTINGS_FIELD}.modelPresetId`
+  | `${typeof CHAT_GENERATION_SETTINGS_FIELD}.promptPresetId`
   | `${typeof CHAT_GENERATION_SETTINGS_FIELD}.jailbreakToggle`
   | `${typeof CHAT_GENERATION_SETTINGS_FIELD}.sidebarToggles`
   | `${typeof CHAT_GENERATION_SETTINGS_FIELD}.sidebarToggles.${string}`
@@ -143,13 +157,22 @@ export type ChatGenerationSettingsMissingReason =
       personaId: string
     }
   | {
-      code: 'preset_id_missing'
-      field: `${typeof CHAT_GENERATION_SETTINGS_FIELD}.presetId`
+      code: 'model_preset_id_missing'
+      field: `${typeof CHAT_GENERATION_SETTINGS_FIELD}.modelPresetId`
     }
   | {
-      code: 'preset_missing'
-      field: `${typeof CHAT_GENERATION_SETTINGS_FIELD}.presetId`
-      presetId: string
+      code: 'model_preset_missing'
+      field: `${typeof CHAT_GENERATION_SETTINGS_FIELD}.modelPresetId`
+      modelPresetId: string
+    }
+  | {
+      code: 'prompt_preset_id_missing'
+      field: `${typeof CHAT_GENERATION_SETTINGS_FIELD}.promptPresetId`
+    }
+  | {
+      code: 'prompt_preset_missing'
+      field: `${typeof CHAT_GENERATION_SETTINGS_FIELD}.promptPresetId`
+      promptPresetId: string
     }
   | {
       code: 'jailbreak_toggle_missing'
@@ -207,15 +230,18 @@ export function resolveDisplayedSidebarToggles(
 export function resolveChatGenerationControlRequirements(
   input: ResolveChatGenerationRequirementsInput,
 ): ChatGenerationControlRequirements {
-  const preset = resolvePreset(input.presets, input.presetId)
+  const modelPreset = resolvePreset(input.modelPresets, input.modelPresetId)
+  const promptPreset = resolvePreset(input.promptPresets, input.promptPresetId)
 
   return {
-    preset,
-    presetFound: !!preset,
+    modelPreset,
+    modelPresetFound: !!modelPreset,
+    promptPreset,
+    promptPresetFound: !!promptPreset,
     jailbreakToggle: {
       field: 'jailbreakToggle',
       required: true,
-      displayed: presetDisplaysJailbreakToggle(preset),
+      displayed: presetDisplaysJailbreakToggle(promptPreset),
     },
     sidebarToggles: collectRequiredSidebarToggles(input),
   }
@@ -227,7 +253,8 @@ export function resolveChatGenerationSettingsReadiness(
   const settings = input.settings
   const requirements = resolveChatGenerationControlRequirements({
     ...input,
-    presetId: settings?.presetId,
+    modelPresetId: settings?.modelPresetId,
+    promptPresetId: settings?.promptPresetId,
   })
   const missing: ChatGenerationSettingsMissingReason[] = []
 
@@ -259,17 +286,31 @@ export function resolveChatGenerationSettingsReadiness(
     })
   }
 
-  const presetId = settings?.presetId
-  if (!isNonEmptyString(presetId)) {
+  const modelPresetId = settings?.modelPresetId
+  if (!isNonEmptyString(modelPresetId)) {
     missing.push({
-      code: 'preset_id_missing',
-      field: `${CHAT_GENERATION_SETTINGS_FIELD}.presetId`,
+      code: 'model_preset_id_missing',
+      field: `${CHAT_GENERATION_SETTINGS_FIELD}.modelPresetId`,
     })
-  } else if (!requirements.presetFound) {
+  } else if (!requirements.modelPresetFound) {
     missing.push({
-      code: 'preset_missing',
-      field: `${CHAT_GENERATION_SETTINGS_FIELD}.presetId`,
-      presetId,
+      code: 'model_preset_missing',
+      field: `${CHAT_GENERATION_SETTINGS_FIELD}.modelPresetId`,
+      modelPresetId,
+    })
+  }
+
+  const promptPresetId = settings?.promptPresetId
+  if (!isNonEmptyString(promptPresetId)) {
+    missing.push({
+      code: 'prompt_preset_id_missing',
+      field: `${CHAT_GENERATION_SETTINGS_FIELD}.promptPresetId`,
+    })
+  } else if (!requirements.promptPresetFound) {
+    missing.push({
+      code: 'prompt_preset_missing',
+      field: `${CHAT_GENERATION_SETTINGS_FIELD}.promptPresetId`,
+      promptPresetId,
     })
   }
 
@@ -348,7 +389,7 @@ function collectRequiredSidebarToggles(
 ): ChatGenerationRequiredSidebarToggle[] {
   const toggles: ChatGenerationRequiredSidebarToggle[] = []
   const seenKeys = new Set<string>()
-  const preset = resolvePreset(input.presets, input.presetId)
+  const preset = resolvePreset(input.promptPresets, input.promptPresetId)
 
   if (preset?.id) {
     appendUniqueToggles(
@@ -381,7 +422,7 @@ function collectDisplayedSidebarToggles(
 ): ChatGenerationDisplayedSidebarToggle[] {
   const toggles: ChatGenerationDisplayedSidebarToggle[] = []
   const seenKeys = new Set<string>()
-  const preset = resolvePreset(input.presets, input.presetId)
+  const preset = resolvePreset(input.promptPresets, input.promptPresetId)
 
   if (preset?.id) {
     appendUniqueDisplayedToggles(
@@ -504,10 +545,10 @@ function isRequiredSidebarToggle(
   return toggle.kind === 'boolean' || toggle.kind === 'select' || toggle.kind === 'text' || toggle.kind === 'textarea'
 }
 
-function resolvePreset(
-  presets: readonly ChatGenerationPresetReference[],
+function resolvePreset<T extends { id?: string | null }>(
+  presets: readonly T[],
   presetId: string | undefined,
-): ChatGenerationPresetReference | undefined {
+): T | undefined {
   if (!isNonEmptyString(presetId)) return undefined
   return presets.find((preset) => preset.id === presetId)
 }

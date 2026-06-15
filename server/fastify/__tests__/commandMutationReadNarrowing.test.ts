@@ -124,18 +124,30 @@ function expectCollectionCommandReadOnlyTables(
   readCountByTable: Record<string, number>,
   collectionTables: readonly string[],
 ): void {
-  expect(readCountByTable).toEqual({
-    schema_version: 1,
+  const trackedCollectionRead = collectionTables.some((table) => table === 'modules' || table === 'plugins')
+  const expected: Record<string, number> = {
+    schema_version: trackedCollectionRead ? 2 : 1,
     settings: 1,
     ...Object.fromEntries(collectionTables.map((table) => [table, 1])),
-  })
+  }
+  if (trackedCollectionRead) {
+    expected.collection_body_revisions = 2
+    for (const table of collectionTables) {
+      if (table === 'modules' || table === 'plugins') expected[table] = 2
+    }
+  }
+  expect(readCountByTable).toEqual(expected)
 }
 
 function expectCollectionLoadOnlyTables(
   loadCountByTable: Record<string, number>,
   collectionTables: readonly string[],
 ): void {
-  expect(loadCountByTable).toEqual(Object.fromEntries(collectionTables.map((table) => [table, 1])))
+  const expected = Object.fromEntries(collectionTables.map((table) => [table, 1]))
+  for (const table of collectionTables) {
+    if (table === 'modules' || table === 'plugins') expected[table] = 2
+  }
+  expect(loadCountByTable).toEqual(expected)
 }
 
 function readSettingsRecord(): Record<string, unknown> {
@@ -380,7 +392,8 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
         generationSettings: {
           configured: true,
           personaId: 'corpus-persona-0',
-          presetId: 'corpus-preset-0',
+          modelPresetId: 'corpus-model-preset-0',
+          promptPresetId: 'corpus-prompt-preset-0',
           jailbreakToggle: false,
           sidebarToggles: {},
         },
@@ -399,7 +412,8 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
       expect(JSON.parse(row.data_json).generationSettings).toEqual({
         configured: true,
         personaId: 'corpus-persona-0',
-        presetId: 'corpus-preset-0',
+        modelPresetId: 'corpus-model-preset-0',
+        promptPresetId: 'corpus-prompt-preset-0',
         jailbreakToggle: false,
         sidebarToggles: {},
       })
@@ -586,7 +600,7 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
     await runScopedCollectionCommand(
       'POST',
       '/api/v1/commands/presets/select',
-      { baseRevision: revision, presetId: 'corpus-preset-1' },
+      { baseRevision: revision, presetId: 'l11-preset' },
       ['bot_presets', 'prompt_templates'],
     )
 

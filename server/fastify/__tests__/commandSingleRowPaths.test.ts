@@ -51,7 +51,8 @@ function seedDatabase(): Record<string, unknown> {
     currentChar: 0,
     theme: 'dark',
     characterOrder: ['char-a', 'char-b'],
-    botPresets: [{ id: 'preset-a', name: 'Preset A' }],
+    modelPresets: [{ id: 'model-a', name: 'Model A' }],
+    promptPresets: [{ id: 'prompt-a', name: 'Prompt A' }],
     personas: [{ id: 'persona-a', name: 'Persona A', icon: '', personaPrompt: '', note: '' }],
     modules: [
       { id: 'mod-a', name: 'Module A' },
@@ -413,7 +414,8 @@ describe('Phase 3 single chat-row paths', () => {
         generationSettings: {
           configured: true,
           personaId: 'persona-a',
-          presetId: 'preset-a',
+          modelPresetId: 'model-a',
+          promptPresetId: 'prompt-a',
           jailbreakToggle: false,
           sidebarToggles: {},
         },
@@ -433,7 +435,8 @@ describe('Phase 3 single chat-row paths', () => {
     expect(readChat('chat-a-1').generationSettings).toEqual({
       configured: true,
       personaId: 'persona-a',
-      presetId: 'preset-a',
+      modelPresetId: 'model-a',
+      promptPresetId: 'prompt-a',
       jailbreakToggle: false,
       sidebarToggles: {},
     })

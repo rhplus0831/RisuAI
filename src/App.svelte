@@ -283,7 +283,7 @@
     <RealmPopUp bind:openedData={$showRealmInfoStore} />
   {/if}
   {#if $openPresetList}
-    <Botpreset mode={presetListModalStore.mode} close={closePresetListModal} />
+    <Botpreset mode={presetListModalStore.mode} kind={presetListModalStore.kind} close={closePresetListModal} />
   {/if}
   {#if $openPersonaList}
     <ListedPersona mode={personaListModalStore.mode} close={closePersonaListModal} />

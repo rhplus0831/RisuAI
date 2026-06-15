@@ -75,15 +75,24 @@ function seedDb(): void {
     username: 'User',
     selectedPersona: 0,
     botPresetsId: 0,
+    modelPresetsId: 0,
+    promptPresetsId: 0,
     jailbreakToggle: true,
     customPromptTemplateToggle: '',
     customSidebarItems: [],
     hypaV3: false,
     personas: [{ id: 'persona-a', name: 'Persona A', personaPrompt: '', icon: '', note: '' }],
-    botPresets: [
+    botPresets: [],
+    modelPresets: [
       {
-        id: 'preset-a',
-        name: 'Preset A',
+        id: 'model-a',
+        name: 'Model A',
+      },
+    ],
+    promptPresets: [
+      {
+        id: 'prompt-a',
+        name: 'Prompt A',
         jailbreak: 'Jailbreak',
         customPromptTemplateToggle: 'flag=Flag',
       },
@@ -105,7 +114,8 @@ function seedDb(): void {
             generationSettings: {
               configured: true,
               personaId: 'persona-a',
-              presetId: 'preset-a',
+              modelPresetId: 'model-a',
+              promptPresetId: 'prompt-a',
               jailbreakToggle: true,
               sidebarToggles: { flag: '1' },
             },

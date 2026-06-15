@@ -18,10 +18,16 @@
     }),
   )
 
-  let presetName = $derived.by(
+  let modelPresetName = $derived.by(
     () =>
-      (activeGenerationSettings.preset as NamedGenerationReference | undefined)?.name ||
-      language.chatGenerationPresetUnconfigured,
+      (activeGenerationSettings.modelPreset as NamedGenerationReference | undefined)?.name ||
+      language.chatGenerationModelPresetUnconfigured,
+  )
+
+  let promptPresetName = $derived.by(
+    () =>
+      (activeGenerationSettings.promptPreset as NamedGenerationReference | undefined)?.name ||
+      language.chatGenerationPromptPresetUnconfigured,
   )
 
   let personaName = $derived.by(
@@ -41,16 +47,32 @@
   data-risu-picker-mode="active-chat-generation-settings">
   <div
     data-risu-generation-picker-control
-    data-risu-picker-kind="preset"
+    data-risu-picker-kind="model"
     data-risu-picker-mode="active-chat-generation-settings"
-    data-risu-picker-selected-id={activeGenerationSettings.settings?.presetId ?? ''}>
+    data-risu-picker-selected-id={activeGenerationSettings.settings?.modelPresetId ?? ''}>
     <Button
       className="flex w-full min-w-0 justify-start text-left"
       onclick={() => {
-        openPresetListModal('active-chat-generation-settings')
+        openPresetListModal('active-chat-generation-settings', 'model')
       }}>
       <div class="flex-1 flex-col flex text-left min-w-0">
-        <span class="truncate">{presetName}</span>
+        <span class="truncate">{modelPresetName}</span>
+      </div>
+    </Button>
+  </div>
+
+  <div
+    data-risu-generation-picker-control
+    data-risu-picker-kind="prompt"
+    data-risu-picker-mode="active-chat-generation-settings"
+    data-risu-picker-selected-id={activeGenerationSettings.settings?.promptPresetId ?? ''}>
+    <Button
+      className="flex w-full min-w-0 justify-start text-left"
+      onclick={() => {
+        openPresetListModal('active-chat-generation-settings', 'prompt')
+      }}>
+      <div class="flex-1 flex-col flex text-left min-w-0">
+        <span class="truncate">{promptPresetName}</span>
       </div>
     </Button>
   </div>

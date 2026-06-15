@@ -51,7 +51,7 @@ function stubCommandFetch(): CapturedFetch[] {
         body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
       })
       if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
-      if (url === '/api/v1/commands/presets/import') {
+      if (url === '/api/v1/commands/prompt-presets/import') {
         return jsonResponse({
           revision: 11,
           event: { type: 'preset.imported', revision: 11, resource: 'preset' },
@@ -76,7 +76,7 @@ function stubFailedImportCommandFetch(): CapturedFetch[] {
         body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
       })
       if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 20 })
-      if (url === '/api/v1/commands/presets/import') {
+      if (url === '/api/v1/commands/prompt-presets/import') {
         return jsonResponse({ error: 'forced import failure' }, 500)
       }
       return jsonResponse({ error: `unexpected ${url}` }, 404)
@@ -87,7 +87,7 @@ function stubFailedImportCommandFetch(): CapturedFetch[] {
 
 async function waitForImportCommand(calls: CapturedFetch[]): Promise<CapturedFetch> {
   for (let attempt = 0; attempt < 40; attempt += 1) {
-    const match = calls.find((call) => call.url === '/api/v1/commands/presets/import' && call.method === 'POST')
+    const match = calls.find((call) => call.url === '/api/v1/commands/prompt-presets/import' && call.method === 'POST')
     if (match) return match
     await new Promise((resolve) => setTimeout(resolve, 0))
   }
@@ -123,8 +123,8 @@ beforeEach(() => {
   clearCachedServerCommandRevision()
   setServerProjectionWriteGuardEnabled(false)
   DBState.db = {
-    botPresets: [],
-    botPresetsId: -1,
+    promptPresets: [],
+    promptPresetsId: -1,
   } as any
 })
 
@@ -142,8 +142,9 @@ describe('importPreset warm-path logging (L37)', () => {
       await importPreset({ name: 'roundtrip.risupreset', data: file })
 
       // The decoded envelope and preset really landed (non-vacuous)...
-      const imported = DBState.db.botPresets[DBState.db.botPresets.length - 1]
-      expect(imported).toMatchObject({ name: 'Risup Roundtrip', temperature: 42 })
+      const imported = DBState.db.promptPresets[DBState.db.promptPresets.length - 1]
+      expect(imported).toMatchObject({ name: 'Risup Roundtrip' })
+      expect(imported).not.toHaveProperty('temperature')
       const cmd = await waitForImportCommand(calls)
       expect(cmd.body.preset).toMatchObject({ name: 'Risup Roundtrip' })
       // ...without the former `console.log(decoded)` dump.
@@ -187,7 +188,7 @@ describe('importPreset warm-path logging (L37)', () => {
 
       // The mapped preset really landed (non-vacuous): main + unknown-default
       // rows kept their text, the missing prompt contributed nothing.
-      const imported = DBState.db.botPresets[DBState.db.botPresets.length - 1] as any
+      const imported = DBState.db.promptPresets[DBState.db.promptPresets.length - 1] as any
       expect(imported.name).toBe('Imported ST Preset')
       const texts = imported.promptTemplate
         .filter((row: any) => typeof row.text === 'string')
@@ -203,7 +204,7 @@ describe('importPreset warm-path logging (L37)', () => {
   })
 
   it('L21: a failed preset import rolls back the optimistic imported row', async () => {
-    DBState.db.botPresets = [
+    DBState.db.promptPresets = [
       {
         ...clonePlain(presetTemplate),
         id: 'preset-existing',
@@ -211,19 +212,19 @@ describe('importPreset warm-path logging (L37)', () => {
         temperature: 33,
       },
     ]
-    DBState.db.botPresetsId = 0
-    const beforePresets = clonePlain(DBState.db.botPresets)
-    const beforeSelected = DBState.db.botPresetsId
+    DBState.db.promptPresetsId = 0
+    const beforePresets = clonePlain(DBState.db.promptPresets)
+    const beforeSelected = DBState.db.promptPresetsId
     const calls = stubFailedImportCommandFetch()
     const file = new TextEncoder().encode(JSON.stringify({ name: 'Import Will Roll Back', temperature: 66 }))
 
     await importPreset({ name: 'plain-preset.json', data: file })
 
-    expect(DBState.db.botPresets.map((preset) => preset.name)).toContain('Import Will Roll Back')
+    expect(DBState.db.promptPresets.map((preset) => preset.name)).toContain('Import Will Roll Back')
     await waitForImportCommand(calls)
     await waitForState(() => {
-      expect(DBState.db.botPresets).toEqual(beforePresets)
-      expect(DBState.db.botPresetsId).toBe(beforeSelected)
+      expect(DBState.db.promptPresets).toEqual(beforePresets)
+      expect(DBState.db.promptPresetsId).toBe(beforeSelected)
     })
   })
 })

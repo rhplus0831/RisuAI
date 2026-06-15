@@ -89,7 +89,8 @@ function seedDb(): void {
       { id: 'persona-a', name: 'Persona A', personaPrompt: '', icon: '', note: '' },
       { id: 'persona-b', name: 'Persona B', personaPrompt: '', icon: '', note: '' },
     ],
-    botPresets: [
+    modelPresets: [{ id: 'model-preset-a', name: 'Model Preset A' }],
+    promptPresets: [
       {
         id: 'preset-a',
         name: 'Preset A',
@@ -146,7 +147,8 @@ function seedDb(): void {
             generationSettings: {
               configured: true,
               personaId: 'persona-b',
-              presetId: 'preset-b',
+              modelPresetId: 'model-preset-a',
+              promptPresetId: 'preset-b',
               jailbreakToggle: false,
               sidebarToggles: {},
             },
@@ -172,7 +174,8 @@ describe('active chat generation settings helper', () => {
   it('resolves unconfigured active-chat state, required toggles, and missing labels', () => {
     DBState.db.characters[0].chats[0].generationSettings = {
       personaId: 'persona-a',
-      presetId: 'preset-a',
+      modelPresetId: 'model-preset-a',
+      promptPresetId: 'preset-a',
       sidebarToggles: {},
     }
 
@@ -186,7 +189,7 @@ describe('active chat generation settings helper', () => {
       chatId: 'chat-a',
     })
     expect(state.persona).toMatchObject({ id: 'persona-a' })
-    expect(state.preset).toMatchObject({ id: 'preset-a' })
+    expect(state.promptPreset).toMatchObject({ id: 'preset-a' })
     expect(state.readiness.ready).toBe(false)
     expect(state.requiredSidebarToggles.map((toggle) => toggle.key)).toEqual([
       'mode',
@@ -208,7 +211,7 @@ describe('active chat generation settings helper', () => {
 
   it('resolves preset toggles from bootstrap-shaped preset stubs without global fallback', () => {
     DBState.db.customPromptTemplateToggle = 'fallback=Fallback'
-    DBState.db.botPresets = [
+    DBState.db.promptPresets = [
       {
         id: 'preset-a',
         name: 'Preset A',
@@ -220,7 +223,8 @@ describe('active chat generation settings helper', () => {
     DBState.db.characters[0].chats[0].generationSettings = {
       configured: true,
       personaId: 'persona-a',
-      presetId: 'preset-a',
+      modelPresetId: 'model-preset-a',
+      promptPresetId: 'preset-a',
       jailbreakToggle: false,
       sidebarToggles: {
         mode: '1',
@@ -248,7 +252,8 @@ describe('active chat generation settings helper', () => {
   it('returns a stable guard error with active-chat missing labels', () => {
     DBState.db.characters[0].chats[0].generationSettings = {
       personaId: 'persona-a',
-      presetId: 'preset-a',
+      modelPresetId: 'model-preset-a',
+      promptPresetId: 'preset-a',
       sidebarToggles: {},
     }
 
@@ -264,11 +269,12 @@ describe('active chat generation settings helper', () => {
 
   it('blocks send when deleted preset and persona ids remain on the active chat', () => {
     DBState.db.selectedPersona = 0
-    DBState.db.botPresetsId = 0
+    DBState.db.promptPresetsId = 0
     DBState.db.characters[0].chats[0].generationSettings = {
       configured: true,
       personaId: 'deleted-persona',
-      presetId: 'deleted-preset',
+      modelPresetId: 'deleted-model',
+      promptPresetId: 'deleted-preset',
       jailbreakToggle: false,
       sidebarToggles: {
         global: '1',
@@ -280,7 +286,7 @@ describe('active chat generation settings helper', () => {
     const state = resolveActiveChatGenerationSettings()
 
     expect(state.persona).toBeUndefined()
-    expect(state.preset).toBeUndefined()
+    expect(state.promptPreset).toBeUndefined()
     expect(state.readiness.ready).toBe(false)
     expect(state.readiness.missing).toEqual([
       {
@@ -289,32 +295,41 @@ describe('active chat generation settings helper', () => {
         personaId: 'deleted-persona',
       },
       {
-        code: 'preset_missing',
-        field: 'generationSettings.presetId',
-        presetId: 'deleted-preset',
+        code: 'model_preset_missing',
+        field: 'generationSettings.modelPresetId',
+        modelPresetId: 'deleted-model',
+      },
+      {
+        code: 'prompt_preset_missing',
+        field: 'generationSettings.promptPresetId',
+        promptPresetId: 'deleted-preset',
       },
     ])
-    expect(state.missingLabels).toEqual(['Persona', 'Preset'])
+    expect(state.missingLabels).toEqual(['Persona', 'Model preset', 'Prompt preset'])
 
     const guard = guardActiveChatGenerationSettingsForSend(state)
 
     expect(guard.status).toBe('error')
     if (guard.status === 'error') {
-      expect(guard.error).toBe('Chat generation settings are incomplete. Missing: Persona, Preset.')
+      expect(guard.error).toBe(
+        'Chat generation settings are incomplete. Missing: Persona, Model preset, Prompt preset.',
+      )
     }
     expect(DBState.db.characters[0].chats[0].generationSettings).toMatchObject({
       personaId: 'deleted-persona',
-      presetId: 'deleted-preset',
+      modelPresetId: 'deleted-model',
+      promptPresetId: 'deleted-preset',
     })
     expect(DBState.db.selectedPersona).toBe(0)
-    expect(DBState.db.botPresetsId).toBe(0)
+    expect(DBState.db.promptPresetsId).toBe(0)
   })
 
   it('ignores global moduleIntergration when the selected preset does not link integrated modules', () => {
     DBState.db.characters[0].chats[0].generationSettings = {
       configured: true,
       personaId: 'persona-a',
-      presetId: 'preset-b',
+      modelPresetId: 'model-preset-a',
+      promptPresetId: 'preset-b',
       jailbreakToggle: false,
       sidebarToggles: {
         global: '1',
@@ -352,12 +367,12 @@ describe('active chat generation settings helper', () => {
 
     const nextSettings = createActiveChatGenerationSettingsSelectionPatch({
       personaId: 'persona-a',
-      presetId: 'preset-b',
+      promptPresetId: 'preset-b',
     })
     expect(nextSettings).toEqual({
       configured: true,
       personaId: 'persona-a',
-      presetId: 'preset-b',
+      promptPresetId: 'preset-b',
       jailbreakToggle: false,
       sidebarToggles: {
         global: '0',
@@ -369,7 +384,7 @@ describe('active chat generation settings helper', () => {
     expect(
       saveActiveChatGenerationSettingsSelection({
         personaId: 'persona-a',
-        presetId: 'preset-b',
+        promptPresetId: 'preset-b',
       }),
     ).toBe(true)
 
@@ -394,11 +409,11 @@ describe('active chat generation settings helper', () => {
     setServerProjectionWriteGuardEnabled(true)
 
     const nextSettings = createActiveChatGenerationSettingsSelectionPatch({
-      presetId: 'preset-a',
+      promptPresetId: 'preset-a',
     })
     expect(nextSettings).toEqual({
       configured: true,
-      presetId: 'preset-a',
+      promptPresetId: 'preset-a',
       jailbreakToggle: false,
       sidebarToggles: {
         mode: '0',
@@ -430,7 +445,7 @@ describe('active chat generation settings helper', () => {
 
     expect(
       saveActiveChatGenerationSettingsSelection({
-        presetId: 'preset-a',
+        promptPresetId: 'preset-a',
       }),
     ).toBe(true)
 
@@ -447,12 +462,13 @@ describe('active chat generation settings helper', () => {
   })
 
   it('resets active-chat toggle values to defaults', async () => {
-    DBState.db.botPresets[0].customPromptTemplateToggle =
+    DBState.db.promptPresets[0].customPromptTemplateToggle =
       'mode=Mode=select=warm,cold\nflag=Flag\nnote=Note=text\nmemo=Memo=textarea'
     DBState.db.characters[0].chats[0].generationSettings = {
       configured: true,
       personaId: 'persona-a',
-      presetId: 'preset-a',
+      modelPresetId: 'model-preset-a',
+      promptPresetId: 'preset-a',
       jailbreakToggle: true,
       sidebarToggles: {
         mode: '',
@@ -473,7 +489,8 @@ describe('active chat generation settings helper', () => {
     expect(nextSettings).toEqual({
       configured: true,
       personaId: 'persona-a',
-      presetId: 'preset-a',
+      modelPresetId: 'model-preset-a',
+      promptPresetId: 'preset-a',
       jailbreakToggle: false,
       sidebarToggles: {
         mode: '0',
@@ -508,7 +525,8 @@ describe('active chat generation settings helper', () => {
     expect(
       saveActiveChatGenerationSettings({
         personaId: 'persona-a',
-        presetId: 'preset-b',
+        modelPresetId: 'model-preset-a',
+        promptPresetId: 'preset-b',
       }),
     ).toBe(true)
 
@@ -516,7 +534,8 @@ describe('active chat generation settings helper', () => {
     const nextSettings = {
       configured: true,
       personaId: 'persona-a',
-      presetId: 'preset-b',
+      modelPresetId: 'model-preset-a',
+      promptPresetId: 'preset-b',
       jailbreakToggle: false,
     }
     expect(DBState.db.characters[0].chats[0].generationSettings).toEqual(nextSettings)
@@ -546,12 +565,12 @@ describe('active chat generation settings helper', () => {
 
     const nextSettings = createActiveChatGenerationSettingsSelectionPatch({
       personaId: 'persona-b',
-      presetId: 'preset-a',
+      promptPresetId: 'preset-a',
     })
     expect(nextSettings).toEqual({
       configured: true,
       personaId: 'persona-b',
-      presetId: 'preset-a',
+      promptPresetId: 'preset-a',
       jailbreakToggle: false,
       sidebarToggles: {
         mode: 'warm',
@@ -565,7 +584,7 @@ describe('active chat generation settings helper', () => {
     expect(
       saveActiveChatGenerationSettingsSelection({
         personaId: 'persona-b',
-        presetId: 'preset-a',
+        promptPresetId: 'preset-a',
       }),
     ).toBe(true)
 
@@ -594,7 +613,8 @@ describe('active chat generation settings helper', () => {
     DBState.db.characters[0].chats[0].generationSettings = {
       configured: true,
       personaId: 'persona-a',
-      presetId: 'preset-a',
+      modelPresetId: 'model-preset-a',
+      promptPresetId: 'preset-a',
       jailbreakToggle: true,
       sidebarToggles: {
         mode: 'warm',
@@ -620,7 +640,8 @@ describe('active chat generation settings helper', () => {
     expect(nextSettings).toEqual({
       configured: true,
       personaId: 'persona-a',
-      presetId: 'preset-a',
+      modelPresetId: 'model-preset-a',
+      promptPresetId: 'preset-a',
       jailbreakToggle: false,
       sidebarToggles: {
         mode: 'cold',
@@ -656,7 +677,8 @@ describe('active chat generation settings helper', () => {
     DBState.db.characters[0].chats[0].generationSettings = {
       configured: true,
       personaId: 'persona-a',
-      presetId: 'preset-a',
+      modelPresetId: 'model-preset-a',
+      promptPresetId: 'preset-a',
       jailbreakToggle: true,
       sidebarToggles: {
         mode: 'warm',
@@ -669,18 +691,18 @@ describe('active chat generation settings helper', () => {
 
     expect(resolveActiveChatGenerationSettings()).toMatchObject({
       identity: { chatId: 'chat-a' },
-      settings: { personaId: 'persona-a', presetId: 'preset-a' },
+      settings: { personaId: 'persona-a', promptPresetId: 'preset-a' },
       persona: { id: 'persona-a' },
-      preset: { id: 'preset-a' },
+      promptPreset: { id: 'preset-a' },
     })
 
     DBState.db.characters[0].chatPage = 1
 
     expect(resolveActiveChatGenerationSettings()).toMatchObject({
       identity: { chatId: 'chat-b' },
-      settings: { personaId: 'persona-b', presetId: 'preset-b' },
+      settings: { personaId: 'persona-b', promptPresetId: 'preset-b' },
       persona: { id: 'persona-b' },
-      preset: { id: 'preset-b' },
+      promptPreset: { id: 'preset-b' },
     })
   })
 
@@ -692,7 +714,8 @@ describe('active chat generation settings helper', () => {
     expect(
       saveActiveChatGenerationSettingsPatch({
         personaId: 'persona-a',
-        presetId: 'preset-a',
+        modelPresetId: 'model-preset-a',
+        promptPresetId: 'preset-a',
         jailbreakToggle: false,
         sidebarToggles: {
           mode: 'warm',
