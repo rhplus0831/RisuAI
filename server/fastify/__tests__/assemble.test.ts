@@ -839,6 +839,50 @@ describe('Phase 7-11a resolveScope (via beginAssembly)', () => {
     expect(() => beginAssembly(baseInput(), depsFor(db))).toThrow(ChatGenerationSettingsIncompleteAssemblyError)
   })
 
+  it('clears stale global module integration when the chat selected prompt has none', () => {
+    const db = makeDatabase({
+      moduleIntergration: 'global-space',
+      presetRegex: [{ id: 'global-regex', type: 'editprocess', in: 'GLOBAL', out: 'global' }],
+      botPresets: [
+        {
+          id: 'global-preset',
+          name: 'Global',
+          moduleIntergration: 'global-space',
+          presetRegex: [{ id: 'global-regex', type: 'editprocess', in: 'GLOBAL', out: 'global' }],
+        },
+        {
+          id: 'chat-preset',
+          name: 'Chat',
+        },
+      ],
+      botPresetsId: 0,
+      characters: [
+        makeCharacter({
+          chats: [
+            makeChat({
+              id: 'chat-1',
+              generationSettings: {
+                configured: true,
+                personaId: 'persona-default',
+                modelPresetId: 'model-preset-default',
+                promptPresetId: 'chat-preset',
+                jailbreakToggle: false,
+                sidebarToggles: {},
+              },
+            }),
+          ],
+        }),
+      ],
+    } as unknown as Partial<Database>)
+
+    const state = beginAssembly(baseInput(), depsFor(db))
+
+    expect(state.database.moduleIntergration).toBe('')
+    expect(state.database.presetRegex).toEqual([])
+    expect(db.moduleIntergration).toBe('global-space')
+    expect(db.presetRegex).toEqual([{ id: 'global-regex', type: 'editprocess', in: 'GLOBAL', out: 'global' }])
+  })
+
   it('lets two chats produce different persona, preset, and toggle prompt output without global changes', () => {
     const db = makeDatabase({
       mainPrompt: 'GLOBAL MAIN',

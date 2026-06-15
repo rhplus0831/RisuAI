@@ -12,6 +12,7 @@ import {
   type PromptPresetRecord,
 } from '../commands/splitPresets.js'
 import { mirrorLegacyProfile, type PersonaRecord } from '../commands/personas.js'
+import { resolvePromptPresetRegexField } from '../../../../src/ts/presetSplit.js'
 
 type JsonRecord = Record<string, unknown>
 type EffectivePromptPresetRecord = PromptPresetRecord & { moduleIntergration?: unknown }
@@ -102,6 +103,12 @@ export function buildEffectiveGenerationConfig(input: EffectiveGenerationConfigI
   effectiveDatabase.promptPresetsId = effectivePromptPresetIndex
   applyModelPreset(effectiveDatabase as unknown as JsonRecord, effectiveModelPreset)
   applyPromptPreset(effectiveDatabase as unknown as JsonRecord, effectivePromptPreset)
+  effectiveDatabase.moduleIntergration =
+    typeof effectivePromptPreset.moduleIntergration === 'string' ? effectivePromptPreset.moduleIntergration : ''
+  const promptPresetRegex = resolvePromptPresetRegexField(effectivePromptPreset)
+  effectiveDatabase.presetRegex = structuredClone(
+    promptPresetRegex.present && Array.isArray(promptPresetRegex.value) ? promptPresetRegex.value : [],
+  ) as Database['presetRegex']
 
   effectiveDatabase.selectedPersona = effectivePersonaIndex
   mirrorLegacyProfile(effectiveDatabase as unknown as JsonRecord, effectivePersona)

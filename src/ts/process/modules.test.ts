@@ -10,9 +10,11 @@ const alertError = vi.hoisted(() => vi.fn())
 const saveAsset = vi.hoisted(() => vi.fn())
 const createGlobalModule = vi.hoisted(() => vi.fn())
 const getCurrentCharacter = vi.hoisted(() => vi.fn())
+const getCurrentChatMock = vi.hoisted(() => vi.fn())
 type ModuleDatabaseFixture = {
   enabledModules?: string[]
   moduleIntergration?: string
+  promptPresets?: Array<Record<string, unknown>>
   modules: Array<Record<string, unknown>>
 }
 const getDatabase = vi.hoisted(() => vi.fn((): ModuleDatabaseFixture => ({ modules: [] })))
@@ -55,7 +57,7 @@ vi.mock('../alert', () => ({
 
 vi.mock('../storage/database.svelte', () => ({
   getCurrentCharacter,
-  getCurrentChat: vi.fn(),
+  getCurrentChat: getCurrentChatMock,
   getDatabase,
   setCurrentCharacter: vi.fn(),
   setDatabase: vi.fn(),
@@ -132,7 +134,7 @@ vi.mock('../server/projectionWriteGuard.svelte', () => ({
   withTrustedServerProjectionWrite: (fn: () => void) => fn(),
 }))
 
-import { applyModule, getModuleTriggers, importModule, refreshModules } from './modules'
+import { applyModule, getModuleRegexScripts, getModuleTriggers, importModule, refreshModules } from './modules'
 import { DBState } from '../stores.svelte'
 import type { character } from '../storage/database.svelte'
 
@@ -145,6 +147,7 @@ describe('module imports', () => {
     alertModuleSelect.mockReset()
     alertNormal.mockClear()
     getCurrentCharacter.mockReset()
+    getCurrentChatMock.mockReset()
     getDatabase.mockReset()
     getDatabase.mockReturnValue({ modules: [] })
     dispatchReplaceCharacterLorebooks.mockClear()
@@ -301,6 +304,94 @@ describe('module imports', () => {
       type: 'triggerlua',
       code: 'new triggerlua with AOS',
     })
+  })
+
+  it('resolves module regex from the active chat selected prompt preset integration', () => {
+    getCurrentChatMock.mockReturnValue({
+      modules: [],
+      generationSettings: {
+        promptPresetId: 'chat-preset',
+      },
+    })
+    getCurrentCharacter.mockReturnValue({ modules: [] })
+    getDatabase.mockReturnValue({
+      enabledModules: [],
+      moduleIntergration: 'global-space',
+      promptPresets: [
+        { id: 'global-preset', moduleIntergration: 'global-space' },
+        { id: 'chat-preset', moduleIntergration: 'chat-space' },
+      ],
+      modules: [
+        {
+          id: 'global-module',
+          namespace: 'global-space',
+          regex: [{ comment: 'global regex', in: 'GLOBAL', out: 'global', type: 'editdisplay' }],
+        },
+        {
+          id: 'chat-module',
+          namespace: 'chat-space',
+          regex: [{ comment: 'chat regex', in: 'CHAT', out: 'chat', type: 'editdisplay' }],
+        },
+      ],
+    })
+
+    expect(getModuleRegexScripts().map((script) => script.comment)).toEqual(['chat regex'])
+  })
+
+  it('does not use global prompt integration when the active chat selected prompt has none', () => {
+    getCurrentChatMock.mockReturnValue({
+      modules: [],
+      generationSettings: {
+        promptPresetId: 'plain-preset',
+      },
+    })
+    getCurrentCharacter.mockReturnValue({ modules: [] })
+    getDatabase.mockReturnValue({
+      enabledModules: [],
+      moduleIntergration: 'global-space',
+      promptPresets: [{ id: 'plain-preset' }],
+      modules: [
+        {
+          id: 'global-module',
+          namespace: 'global-space',
+          regex: [{ comment: 'global regex', in: 'GLOBAL', out: 'global', type: 'editdisplay' }],
+        },
+      ],
+    })
+
+    expect(getModuleRegexScripts()).toEqual([])
+  })
+
+  it('keeps active module cache keys collision-safe for hyphenated ids', () => {
+    const db = {
+      enabledModules: ['a-b', 'c'],
+      moduleIntergration: '',
+      modules: [
+        {
+          id: 'a-b',
+          regex: [{ comment: 'first-a-b', in: 'A', out: 'a', type: 'editdisplay' }],
+        },
+        {
+          id: 'c',
+          regex: [{ comment: 'first-c', in: 'C', out: 'c', type: 'editdisplay' }],
+        },
+        {
+          id: 'a',
+          regex: [{ comment: 'second-a', in: 'A', out: 'a', type: 'editdisplay' }],
+        },
+        {
+          id: 'b-c',
+          regex: [{ comment: 'second-b-c', in: 'B', out: 'b', type: 'editdisplay' }],
+        },
+      ],
+    }
+    getDatabase.mockReturnValue(db)
+
+    expect(getModuleRegexScripts().map((script) => script.comment)).toEqual(['first-a-b', 'first-c'])
+
+    db.enabledModules = ['a', 'b-c']
+
+    expect(getModuleRegexScripts().map((script) => script.comment)).toEqual(['second-a', 'second-b-c'])
   })
 
   it('does not mutate module trigger rows when attaching low-level access metadata', () => {

@@ -60,6 +60,10 @@ const testState = vi.hoisted(() => {
 
 vi.mock('../storage/database.svelte', () => ({
   getDatabase: () => testState.db,
+  getCurrentChat: () => {
+    const character = testState.db.characters?.[0]
+    return character?.chats?.[character.chatPage]
+  },
 }))
 
 vi.mock('../stores.svelte', () => ({
@@ -263,6 +267,48 @@ describe('translateHTML streaming guards', () => {
     expect(parseSpy).toHaveBeenCalledTimes(beforeRegenerateParseCount + 1)
     expect(parseSpy).toHaveBeenCalledTimes(3)
     expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(__translatorTestHooks.getTranslateHTMLMemoEntries()).toHaveLength(2)
+  })
+
+  it('v4-L24: keys translated HTML memo by the active chat selected prompt regex', async () => {
+    const fetchMock = stubGoogleFetch()
+    testState.db.presetRegex = [
+      {
+        id: 'global-regex',
+        type: 'editdisplay',
+        in: 'GLOBAL',
+        out: 'global one',
+      },
+    ]
+    testState.db.promptPresets = [
+      {
+        id: 'chat-preset',
+        presetRegex: [
+          {
+            id: 'chat-regex',
+            type: 'editdisplay',
+            in: 'CHAT',
+            out: 'chat one',
+          },
+        ],
+      },
+    ]
+    testState.db.characters[0].chats[0].generationSettings = {
+      promptPresetId: 'chat-preset',
+    }
+
+    const first = await translateHTML('<p>Hello</p>', false, 'char-a', 0)
+    const second = await translateHTML('<p>Hello</p>', false, 'char-a', 0)
+    testState.db.presetRegex[0].out = 'global two'
+    const globalChanged = await translateHTML('<p>Hello</p>', false, 'char-a', 0)
+    expect(__translatorTestHooks.getTranslateHTMLMemoEntries()).toHaveLength(1)
+    testState.db.promptPresets[0].presetRegex[0].out = 'chat two'
+    const selectedPromptChanged = await translateHTML('<p>Hello</p>', false, 'char-a', 0)
+
+    expect(second).toBe(first)
+    expect(globalChanged).toBe(first)
+    expect(selectedPromptChanged).toBe(first)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(__translatorTestHooks.getTranslateHTMLMemoEntries()).toHaveLength(2)
   })
 

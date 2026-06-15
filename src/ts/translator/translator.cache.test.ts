@@ -59,6 +59,10 @@ const testState = vi.hoisted(() => {
 vi.mock('../storage/database.svelte', () => ({
   getDatabase: (options: { snapshot?: boolean } = {}) =>
     options.snapshot ? JSON.parse(JSON.stringify(testState.db)) : testState.db,
+  getCurrentChat: () => {
+    const character = testState.db.characters?.[0]
+    return character?.chats?.[character.chatPage]
+  },
 }))
 
 vi.mock('../stores.svelte', () => ({

@@ -258,6 +258,64 @@ describe('editdisplay render path logging (L38)', () => {
     expect(result.data).toBe('rendered BODY')
   })
 
+  it('uses regex from the active chat selected prompt preset', async () => {
+    const char = seedDb()
+    ;(DBState.db as any).presetRegex = [
+      {
+        comment: 'global-regex',
+        type: 'editdisplay',
+        in: 'GLOBAL',
+        out: 'global',
+        flag: 'g',
+        ableFlag: true,
+      },
+    ]
+    ;(DBState.db as any).promptPresets = [
+      {
+        id: 'chat-preset',
+        presetRegex: [
+          {
+            comment: 'chat-preset-regex',
+            type: 'editdisplay',
+            in: 'CHAT',
+            out: 'chat',
+            flag: 'g',
+            ableFlag: true,
+          },
+        ],
+      },
+    ]
+    ;(DBState.db.characters[0].chats[0] as any).generationSettings = {
+      promptPresetId: 'chat-preset',
+    }
+
+    const result = await processScriptFull(char, 'CHAT GLOBAL', 'editdisplay', 0)
+
+    expect(result.data).toBe('chat GLOBAL')
+  })
+
+  it('does not fall back to global regex when the active chat selected prompt has none', async () => {
+    const char = seedDb()
+    ;(DBState.db as any).presetRegex = [
+      {
+        comment: 'global-regex',
+        type: 'editdisplay',
+        in: 'GLOBAL',
+        out: 'global',
+        flag: 'g',
+        ableFlag: true,
+      },
+    ]
+    ;(DBState.db as any).promptPresets = [{ id: 'plain-preset' }]
+    ;(DBState.db.characters[0].chats[0] as any).generationSettings = {
+      promptPresetId: 'plain-preset',
+    }
+
+    const result = await processScriptFull(char, 'CHAT GLOBAL', 'editdisplay', 0)
+
+    expect(result.data).toBe('CHAT GLOBAL')
+  })
+
   it('treats absent character regex scripts as an empty script list', async () => {
     const char = seedDb()
     ;(char as any).customscript = undefined

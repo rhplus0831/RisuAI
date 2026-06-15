@@ -414,6 +414,45 @@ describe('ChatBody content-keyed parse memo', () => {
     })
   })
 
+  it('keys parser settings from the active chat selected prompt regex', async () => {
+    const char = seedDb()
+    const script = (id: string, out: string) => ({
+      id,
+      comment: '',
+      in: '',
+      out,
+      type: 'regex',
+      flag: '',
+      ableFlag: '',
+    })
+    DBState.db.presetRegex = [script('global-regex', 'global one')] as any
+    DBState.db.promptPresets = [
+      {
+        id: 'chat-preset',
+        presetRegex: [script('chat-regex', 'chat one')],
+      },
+    ] as any
+    ;(char.chats[0] as any).generationSettings = {
+      promptPresetId: 'chat-preset',
+    }
+
+    const memoModule = await import('./ChatBodyParseMemo')
+    memoModule.clearChatBodyParseMemo()
+    const input = {
+      data: 'active prompt regex memo body',
+      charArg: char.chaId,
+      mode: 'notrim' as const,
+      chatID: 0,
+      cbsConditions: { firstmsg: false, chatRole: 'char' },
+    }
+
+    const selectedPromptKey = memoModule.getChatBodyParseMemoKey(input)
+    DBState.db.presetRegex[0].out = 'global two'
+    expect(memoModule.getChatBodyParseMemoKey(input)).toBe(selectedPromptKey)
+    ;(DBState.db.promptPresets[0] as any).presetRegex[0].out = 'chat two'
+    expect(memoModule.getChatBodyParseMemoKey(input)).not.toBe(selectedPromptKey)
+  })
+
   it('L30: cached-only LLM detection reuses a prebuilt parse key without rebuilding it', async () => {
     const char = seedDb({
       autoTranslate: true,

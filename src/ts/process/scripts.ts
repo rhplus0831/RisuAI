@@ -25,6 +25,7 @@ import { runTrigger } from './triggers'
 import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
 import { canUseServerCommands } from '../server/commands'
 import { currentChatScopedSnapshot, dispatchUpdateMessageScoped } from '../chatCommands'
+import { getActivePromptPresetRegexScripts } from './promptPresetRegex'
 
 const dreg = /{{data}}/g
 const randomness = /\|\|\|/g
@@ -271,7 +272,7 @@ export async function processScriptFull(
   }
 
   data = risuChatParser(data, { chatID: chatID, cbsConditions })
-  const scripts = getProcessableCustomScripts(db.presetRegex)
+  const scripts = getProcessableCustomScripts(getActivePromptPresetRegexScripts(db))
     .concat(getProcessableCustomScripts((char as { customscript?: unknown }).customscript))
     .concat(getProcessableCustomScripts(getModuleRegexScripts()))
   const hash = generateScriptCacheKey(scripts, data, mode, chatID, cbsConditions)

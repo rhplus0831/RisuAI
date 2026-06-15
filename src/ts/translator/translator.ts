@@ -9,6 +9,7 @@ import { doingChat, type OpenAIChat } from '../process/index.svelte'
 import { applyMarkdownToNode, type simpleCharacterArgument } from '../parser/parser.svelte'
 import { selectedCharID } from '../stores.svelte'
 import { getModuleRegexScripts } from '../process/modules'
+import { getActivePromptPresetRegexScripts } from '../process/promptPresetRegex'
 import { getNodetextToSentence, sleep } from '../util'
 import { processScriptFull } from '../process/scripts'
 import localforage from 'localforage'
@@ -198,7 +199,7 @@ function getRelevantScriptSignature(
 ) {
   const isRelevant = (script: customscript) => script.type === 'edittrans' || script.type === 'editdisplay'
   return {
-    presetRegex: getScriptSignature((db.presetRegex ?? []).filter(isRelevant)),
+    presetRegex: getScriptSignature(getActivePromptPresetRegexScripts(db).filter(isRelevant)),
     characterScripts: getScriptSignature((alwaysExistChar?.customscript ?? []).filter(isRelevant)),
     moduleScripts: getScriptSignature((getModuleRegexScripts() ?? []).filter(isRelevant)),
     globalscript: getScriptSignature((db.globalscript ?? []).filter(isRelevant)),

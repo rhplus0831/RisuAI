@@ -380,6 +380,31 @@ function deduplicateModuleById(modules: RisuModule[]) {
   return newModules
 }
 
+type PromptPresetModuleIntegration = {
+  id?: unknown
+  moduleIntergration?: unknown
+}
+
+function promptPresetModuleIntegration(
+  db: ReturnType<typeof getDatabase>,
+  currentChat: ReturnType<typeof getCurrentChat>,
+) {
+  const promptPresetId = currentChat?.generationSettings?.promptPresetId
+  if (typeof promptPresetId === 'string' && promptPresetId.trim().length > 0) {
+    const promptPresets = Array.isArray(db.promptPresets) ? (db.promptPresets as PromptPresetModuleIntegration[]) : []
+    const preset = promptPresets.find((candidate) => candidate?.id === promptPresetId)
+    return typeof preset?.moduleIntergration === 'string' ? preset.moduleIntergration : ''
+  }
+  return typeof db.moduleIntergration === 'string' ? db.moduleIntergration : ''
+}
+
+function parseModuleIntegration(value: string) {
+  return value
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0)
+}
+
 let lastModules = ''
 let lastModuleData: RisuModule[] = []
 let lastModuleSource: RisuModule[] | undefined
@@ -395,11 +420,11 @@ export function getModules() {
   if (character && character.modules) {
     ids = ids.concat(character.modules)
   }
-  if (db.moduleIntergration) {
-    const intList = db.moduleIntergration.split(',').map((s) => s.trim())
-    ids = ids.concat(intList)
+  const moduleIntergration = promptPresetModuleIntegration(db, currentChat)
+  if (moduleIntergration) {
+    ids = ids.concat(parseModuleIntegration(moduleIntergration))
   }
-  const idsJoined = ids.join('-')
+  const idsJoined = JSON.stringify(ids)
   if (lastModules === idsJoined && lastModuleSource === moduleSource) {
     return lastModuleData
   }

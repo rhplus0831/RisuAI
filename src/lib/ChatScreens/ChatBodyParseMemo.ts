@@ -5,6 +5,7 @@ import type { customscript, triggerscript, character, Database } from '../../ts/
 import { getCurrentChat } from '../../ts/storage/database.svelte'
 import { DBState, CurrentTriggerIdStore, ReloadGUIPointer, selectedCharID } from '../../ts/stores.svelte'
 import { getLLMCache, getLLMCacheMutationEpoch } from '../../ts/translator/translator'
+import { getActivePromptPresetRegexScripts } from '../../ts/process/promptPresetRegex'
 
 type ChatBodyParseMode = 'normal' | 'back' | 'pretranslate' | 'notrim'
 
@@ -212,6 +213,15 @@ function safeGetModules() {
   }
 }
 
+function safeGetActivePromptPresetRegexScripts() {
+  try {
+    return getActivePromptPresetRegexScripts(DBState.db as Database)
+  } catch {
+    const db = DBState.db as Partial<Database>
+    return Array.isArray(db.presetRegex) ? db.presetRegex : []
+  }
+}
+
 function moduleSignature(modules = safeGetModules()) {
   try {
     return modules.map((module) => ({
@@ -321,7 +331,7 @@ function parseSettingsSignature(modules = safeGetModules()) {
   return {
     reloadEpoch: get(ReloadGUIPointer),
     currentTriggerId: get(CurrentTriggerIdStore),
-    presetRegex: scriptListSignature(db.presetRegex),
+    presetRegex: scriptListSignature(safeGetActivePromptPresetRegexScripts()),
     moduleRegex: moduleRegexSignature(modules),
     moduleAssets: moduleAssetsSignature(modules),
     hideAllImages: db.hideAllImages,
@@ -343,7 +353,7 @@ function settingsSignatureToken(modules = safeGetModules()) {
   return {
     reloadEpoch: get(ReloadGUIPointer),
     currentTriggerId: get(CurrentTriggerIdStore),
-    presetRegex: scriptListSignature(db.presetRegex),
+    presetRegex: scriptListSignature(safeGetActivePromptPresetRegexScripts()),
     moduleRegex: moduleRegexSignature(modules),
     moduleAssets: tupleListSignature(moduleAssetsSignature(modules)),
     hideAllImages: db.hideAllImages,
