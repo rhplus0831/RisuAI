@@ -253,6 +253,22 @@ export function promptPresetOverridesModelParameters(preset: unknown): boolean {
   return isRecord(preset) && preset[PROMPT_PRESET_MODEL_PARAMETERS_OVERRIDE_KEY] === true
 }
 
+export function resolvePromptPresetRegexField(source: unknown): { present: boolean; value: unknown } {
+  if (!isRecord(source)) return { present: false, value: undefined }
+
+  const hasLegacyRegex = Object.prototype.hasOwnProperty.call(source, 'regex')
+  const hasPresetRegex = Object.prototype.hasOwnProperty.call(source, 'presetRegex')
+  if (!hasLegacyRegex && !hasPresetRegex) return { present: false, value: undefined }
+
+  const legacyRegex = source.regex
+  const presetRegex = source.presetRegex
+
+  if (isNonEmptyArray(presetRegex)) return { present: true, value: presetRegex }
+  if (isNonEmptyArray(legacyRegex)) return { present: true, value: legacyRegex }
+  if (hasPresetRegex) return { present: true, value: presetRegex }
+  return { present: true, value: legacyRegex }
+}
+
 function pickPresetFields(source: unknown, fields: readonly string[]): JsonRecord {
   if (!isRecord(source)) return {}
   const picked: JsonRecord = {}
@@ -281,6 +297,10 @@ function sortJsonValue(value: unknown): unknown {
 function cloneJsonValue<T>(value: T): T {
   if (value === undefined) return value
   return JSON.parse(JSON.stringify(value)) as T
+}
+
+function isNonEmptyArray(value: unknown): value is readonly unknown[] {
+  return Array.isArray(value) && value.length > 0
 }
 
 function isRecord(value: unknown): value is JsonRecord {

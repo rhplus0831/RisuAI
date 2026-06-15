@@ -1,6 +1,6 @@
 import { getDatabase } from '../../storage/database.svelte'
-import type { character, Chat, triggerscript } from '../../storage/database.svelte'
-import { getModelInfo, LLMFlags } from '../../model/modellist'
+import type { character, Chat, Database, triggerscript } from '../../storage/database.svelte'
+import { getModelInfo, LLMFlags, LLMModels } from '../../model/modellist'
 import { getModuleTriggers } from '../modules'
 import { pluginV2 } from '../../plugins/plugins.svelte'
 import type { RequestDataArgumentExtended } from './request'
@@ -9,6 +9,13 @@ import {
   type CustomModelEntryLike,
   type ProviderCapabilityInput,
 } from './providerCapability'
+import {
+  databaseKeyForModelPresetField,
+  MODEL_PRESET_FIELDS,
+  PROMPT_PRESET_MODEL_OTHERS_OVERRIDE_FIELDS,
+  PROMPT_PRESET_MODEL_PARAMETER_OVERRIDE_FIELDS,
+  promptPresetOverridesModelParameters,
+} from '../../presetSplit'
 
 /**
  * Three-arm verdict for the `sendChat` prompt-assembly gate, mirroring
@@ -64,8 +71,9 @@ function sendHasMultimodalOrAsset(currentChat: Chat): boolean {
 }
 
 /** Whether the active model accepts inline image input (`getModelInfo().flags`). */
-function modelAcceptsImageInput(): boolean {
-  return getModelInfo(getDatabase().aiModel).flags.includes(LLMFlags.hasImageInput)
+function modelAcceptsImageInput(input: ServerPromptAssemblyInput): boolean {
+  const db = effectiveModelDatabaseForChat(input.currentChat)
+  return getModelInfoForDatabase(db.aiModel, db).flags.includes(LLMFlags.hasImageInput)
 }
 
 // Interactive Lua dialog APIs. A `triggerlua` script that calls one of these
@@ -131,7 +139,7 @@ function sendHasUnsupportedContent(input: ServerPromptAssemblyInput): string | n
   // (`formatHistoryMessage.ts:111-114`) — a browser-only ML pipeline with no
   // server equivalent. Rather than emit a silently captionless prompt, any
   // image/asset/inlay content on a non-vision model is `unsupported`.
-  if (sendHasMultimodalOrAsset(input.currentChat) && !modelAcceptsImageInput()) {
+  if (sendHasMultimodalOrAsset(input.currentChat) && !modelAcceptsImageInput(input)) {
     return 'This model has no image input, so image/asset content would need the browser caption fallback, which server prompt assembly cannot reproduce. Select a vision-capable server-routed model before retrying.'
   }
   // Image-gen / emotion view instructions are server-assembled. The post-gen
@@ -157,10 +165,9 @@ function sendHasUnsupportedContent(input: ServerPromptAssemblyInput): string | n
  * (formated/maxTokens/…) are omitted. `getModelInfo` returns a fresh clone, so the
  * reverse_proxy `format` mutation is local to this throwaway target.
  */
-function buildCompletionTarg(): RequestDataArgumentExtended {
-  const db = getDatabase()
+function buildCompletionTarg(db: Database): RequestDataArgumentExtended {
   const aiModel = db.aiModel
-  const modelInfo = getModelInfo(aiModel)
+  const modelInfo = getModelInfoForDatabase(aiModel, db)
   if (aiModel === 'reverse_proxy') {
     modelInfo.internalID = db.customProxyRequestModel
     modelInfo.format = db.customAPIFormat
@@ -168,12 +175,59 @@ function buildCompletionTarg(): RequestDataArgumentExtended {
   return { aiModel, modelInfo } as RequestDataArgumentExtended
 }
 
+function effectiveModelDatabaseForChat(currentChat: Chat): Database {
+  const db = getDatabase()
+  const effective = { ...db } as Database & Record<string, unknown>
+  const settings = currentChat.generationSettings
+  const modelPreset = findPresetById(db.modelPresets, settings?.modelPresetId)
+  if (modelPreset) {
+    applyModelPresetFields(effective, modelPreset, MODEL_PRESET_FIELDS)
+  }
+
+  const promptPreset = findPresetById(db.promptPresets, settings?.promptPresetId)
+  if (promptPreset) {
+    if (promptPresetOverridesModelParameters(promptPreset)) {
+      applyModelPresetFields(effective, promptPreset, PROMPT_PRESET_MODEL_PARAMETER_OVERRIDE_FIELDS)
+    }
+    applyModelPresetFields(effective, promptPreset, PROMPT_PRESET_MODEL_OTHERS_OVERRIDE_FIELDS)
+  }
+  return effective
+}
+
+function findPresetById(collection: unknown, id: string | undefined): Record<string, unknown> | undefined {
+  if (!id || !Array.isArray(collection)) return undefined
+  return collection.find((item): item is Record<string, unknown> => {
+    return !!item && typeof item === 'object' && !Array.isArray(item) && (item as { id?: unknown }).id === id
+  })
+}
+
+function applyModelPresetFields(
+  target: Record<string, unknown>,
+  preset: Record<string, unknown>,
+  fields: readonly string[],
+): void {
+  for (const field of fields) {
+    if (!Object.prototype.hasOwnProperty.call(preset, field)) continue
+    target[databaseKeyForModelPresetField(field)] = preset[field]
+  }
+}
+
+function getModelInfoForDatabase(aiModel: string | undefined, db: Database): ReturnType<typeof getModelInfo> {
+  const modelInfo = getModelInfo(aiModel)
+  if (db.enableCustomFlags) {
+    modelInfo.flags = Array.isArray(db.customFlags) ? [...db.customFlags] : []
+  } else {
+    const baseModel = LLMModels.find((model) => model.id === aiModel)
+    if (baseModel) modelInfo.flags = [...baseModel.flags]
+  }
+  return modelInfo
+}
+
 function unsupportedServerGenerationReason(aiModel: string): string {
   return `Generation for ${aiModel} is not supported in Fastify server mode. Select a server-routed provider or change this model before retrying.`
 }
 
-function buildCapabilityInput(targ: RequestDataArgumentExtended): ProviderCapabilityInput | null {
-  const db = getDatabase()
+function buildCapabilityInput(targ: RequestDataArgumentExtended, db: Database): ProviderCapabilityInput | null {
   const modelInfo = targ.modelInfo
   if (!modelInfo) return null
   return {
@@ -201,9 +255,10 @@ function buildCapabilityInput(targ: RequestDataArgumentExtended): ProviderCapabi
   }
 }
 
-function resolveServerProviderPreflight(): ServerPromptAssemblyRoute | null {
-  const targ = buildCompletionTarg()
-  const input = buildCapabilityInput(targ)
+function resolveServerProviderPreflight(currentChat: Chat): ServerPromptAssemblyRoute | null {
+  const db = effectiveModelDatabaseForChat(currentChat)
+  const targ = buildCompletionTarg(db)
+  const input = buildCapabilityInput(targ, db)
   if (!input) {
     return {
       type: 'unsupported',
@@ -260,7 +315,7 @@ export function resolveServerPromptAssembly(input: ServerPromptAssemblyInput): S
     }
   }
 
-  const providerReason = resolveServerProviderPreflight()
+  const providerReason = resolveServerProviderPreflight(input.currentChat)
   if (providerReason !== null) return providerReason
 
   const contentReason = sendHasUnsupportedContent(input)

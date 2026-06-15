@@ -81,6 +81,7 @@ import {
 import { DBState } from '../../stores.svelte'
 import { abortChat, chatProcessStage, doingChat } from '../index.svelte'
 import * as chatModule from '../index.svelte'
+import { dispatchSaveChatGenerationSettings } from '../../chatCommands'
 
 let cleanups: (() => void)[] = []
 
@@ -156,6 +157,20 @@ async function seedEcho(options: { ready?: boolean } = {}): Promise<void> {
   }
 }
 
+async function waitForState(assertion: () => void): Promise<void> {
+  let lastError: unknown
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    try {
+      assertion()
+      return
+    } catch (error) {
+      lastError = error
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    }
+  }
+  throw lastError
+}
+
 describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
   it('routes mode=preview to /chat and fills previewFormated', async () => {
     await seedEcho()
@@ -217,6 +232,52 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
       ])
     },
   )
+
+  it('waits for a pending chat generation-settings save before server generation', async () => {
+    await seedEcho()
+    setServerChatDispatchResult('server reply', { model: 'echo_model', outputTokens: 2, maxContext: 4000 })
+    let resolveSettingsSave: (response: Response) => void = () => {
+      throw new Error('generation settings save was not requested')
+    }
+    const pendingSettingsSave = new Promise<Response>((resolve) => {
+      resolveSettingsSave = resolve
+    })
+    let settingsSaveRequests = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        if (url.endsWith('/generation-settings')) {
+          settingsSaveRequests += 1
+          return pendingSettingsSave
+        }
+        return serverChatFetch(input, init)
+      }) as unknown as typeof fetch,
+    )
+
+    const activeChat = DBState.db.characters[0].chats[0]
+    activeChat.id = 'chat-1'
+    expect(dispatchSaveChatGenerationSettings(activeChat.id, activeChat.generationSettings!)).toBe(true)
+    await waitForState(() => expect(settingsSaveRequests).toBe(1))
+
+    const sendPromise = chatModule.sendChat(-1)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(getServerChatCalls()).toHaveLength(0)
+
+    resolveSettingsSave(
+      new Response(
+        JSON.stringify({
+          revision: 2,
+          event: { type: 'chat.updated', revision: 2, resource: 'characterRow', id: 'chat-1' },
+          chatId: 'chat-1',
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      ),
+    )
+
+    await expect(sendPromise).resolves.toBe(true)
+    expect(getServerChatCalls()).toHaveLength(1)
+  })
 
   it('routes regenerate to /chat with regenerateMessageId and no userMessage', async () => {
     await seedEcho()

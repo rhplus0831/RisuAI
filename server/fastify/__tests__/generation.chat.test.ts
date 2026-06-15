@@ -1764,6 +1764,58 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(chat.message.map((m) => ({ role: m.role, data: m.data }))).toEqual([{ role: 'user', data: 'HELLO' }])
   })
 
+  it('runs the regex from the chat-selected prompt preset, including legacy regex aliases', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const db = structuredClone(fixtureDatabase) as typeof fixtureDatabase & {
+      modelPresets: Array<Record<string, unknown>>
+      modelPresetsId: number
+      promptPresets: Array<Record<string, unknown>>
+      promptPresetsId: number
+      characters: Array<
+        (typeof fixtureDatabase.characters)[number] & {
+          chats: Array<(typeof fixtureDatabase.characters)[number]['chats'][number] & { generationSettings?: unknown }>
+        }
+      >
+    }
+    db.modelPresets = [
+      {
+        id: DEFAULT_TEST_MODEL_PRESET_ID,
+        name: 'Default Model',
+        maxContext: 100_000,
+        maxResponse: 50,
+      },
+    ]
+    db.modelPresetsId = 0
+    db.promptPresets = [
+      {
+        id: 'global-prompt',
+        name: 'Global Prompt',
+        regex: [{ in: 'hi', out: 'GLOBAL', type: 'editinput', flag: '', ableFlag: false }],
+      },
+      {
+        id: 'chat-prompt',
+        name: 'Chat Prompt',
+        regex: [{ in: 'hi', out: 'CHAT', type: 'editinput', flag: '', ableFlag: false }],
+        presetRegex: [],
+      },
+    ]
+    db.promptPresetsId = 0
+    db.characters[0].chats[0].generationSettings = {
+      configured: true,
+      personaId: DEFAULT_TEST_PERSONA_ID,
+      modelPresetId: DEFAULT_TEST_MODEL_PRESET_ID,
+      promptPresetId: 'chat-prompt',
+      jailbreakToggle: false,
+      sidebarToggles: {},
+    }
+    await seedDatabase(harness.app, assertion, db)
+
+    await sendBase(assertion)
+
+    const chat = await bootstrapChat(assertion)
+    expect(chat.message.map((m) => ({ role: m.role, data: m.data }))).toEqual([{ role: 'user', data: 'CHAT' }])
+  })
+
   it('L9/v4-L7: unsafe imported regex stops before provider dispatch and assistant persistence', async () => {
     let providerCalls = 0
     await restartHarness({

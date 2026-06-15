@@ -98,6 +98,25 @@ describe('resolveServerPromptAssembly', () => {
       expect(resolveServerPromptAssembly(makeInput())).toEqual({ type: 'server' })
     })
 
+    it('uses the chat-selected model preset for provider preflight', () => {
+      seedDb({
+        aiModel: 'novelai',
+        modelPresets: [{ id: 'model-chat', name: 'Chat Model', aiModel: 'echo_model' }],
+        promptPresets: [{ id: 'prompt-chat', name: 'Chat Prompt' }],
+      } as never)
+      const input = makeInput({
+        currentChat: {
+          ...makeChat(),
+          generationSettings: {
+            configured: true,
+            modelPresetId: 'model-chat',
+            promptPresetId: 'prompt-chat',
+          },
+        } as Chat,
+      })
+      expect(resolveServerPromptAssembly(input)).toEqual({ type: 'server' })
+    })
+
     it('routes continue (no user-message structural requirement) to server', () => {
       const input = makeInput({
         continue: true,
@@ -136,6 +155,34 @@ describe('resolveServerPromptAssembly', () => {
       seedVisionDb()
       const input = makeInput({
         currentChat: makeChat([{ role: 'user', data: 'see {{inlayed::img1}}' }]),
+      })
+      expect(resolveServerPromptAssembly(input)).toEqual({ type: 'server' })
+    })
+
+    it('uses image-input flags from the chat-selected model preset', () => {
+      seedDb({
+        enableCustomFlags: false,
+        customFlags: [],
+        modelPresets: [
+          {
+            id: 'model-vision',
+            name: 'Vision Model',
+            aiModel: 'echo_model',
+            enableCustomFlags: true,
+            customFlags: [LLMFlags.hasImageInput],
+          },
+        ],
+        promptPresets: [{ id: 'prompt-chat', name: 'Chat Prompt' }],
+      } as never)
+      const input = makeInput({
+        currentChat: {
+          ...makeChat([{ role: 'user', data: 'see {{inlayed::img1}}' }]),
+          generationSettings: {
+            configured: true,
+            modelPresetId: 'model-vision',
+            promptPresetId: 'prompt-chat',
+          },
+        } as Chat,
       })
       expect(resolveServerPromptAssembly(input)).toEqual({ type: 'server' })
     })

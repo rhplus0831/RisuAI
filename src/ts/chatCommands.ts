@@ -205,6 +205,8 @@ export interface ChatGenerationSettingsSnapshot {
   generationSettings?: ChatGenerationSettings
 }
 
+const pendingChatGenerationSettingsSaves = new Map<string, Promise<ServerCommandResult | null>>()
+
 export interface MutateChatScopedOptions {
   selectedChar?: number
   selectedChat?: number
@@ -260,6 +262,13 @@ export function restoreChatGenerationSettings(snapshot: ChatGenerationSettingsSn
       delete row.generationSettings
     }
   })
+}
+
+export function waitForPendingChatGenerationSettingsSave(
+  chatId: string | undefined,
+): Promise<ServerCommandResult | null> {
+  if (!chatId) return Promise.resolve(null)
+  return pendingChatGenerationSettingsSaves.get(chatId) ?? Promise.resolve(null)
 }
 
 // Narrow scriptstate rollback. `setVar`/`setChatVar`/`/setvar`/`/addvar` only
@@ -619,21 +628,43 @@ export function dispatchSaveChatGenerationSettings(
   })
   if (!applied) return false
 
-  runChatCommand(
-    (baseRevision) =>
-      saveChatGenerationSettingsCommand(
-        {
-          baseRevision,
-          chatId,
-          generationSettings: commandSettings,
-        },
-        options.signal,
-        options.keepalive,
-      ),
-    () => restoreChatGenerationSettings(rollback),
-    options,
-  )
+  if (canUseServerCommands()) {
+    const savePromise = enqueueChatGenerationSettingsSave(chatId, () =>
+      runServerCommand({
+        command: (baseRevision) =>
+          saveChatGenerationSettingsCommand(
+            {
+              baseRevision,
+              chatId,
+              generationSettings: commandSettings,
+            },
+            options.signal,
+            options.keepalive,
+          ),
+        rollback: () => restoreChatGenerationSettings(rollback),
+        ...options,
+      }),
+    )
+    void savePromise
+  }
   return true
+}
+
+function enqueueChatGenerationSettingsSave(
+  chatId: string,
+  run: () => Promise<ServerCommandResult>,
+): Promise<ServerCommandResult | null> {
+  const previous = pendingChatGenerationSettingsSaves.get(chatId) ?? Promise.resolve(null)
+  const next = previous
+    .catch(() => null)
+    .then(() => run())
+    .finally(() => {
+      if (pendingChatGenerationSettingsSaves.get(chatId) === next) {
+        pendingChatGenerationSettingsSaves.delete(chatId)
+      }
+    })
+  pendingChatGenerationSettingsSaves.set(chatId, next)
+  return next
 }
 
 export function dispatchCompatibleChatUpdate(

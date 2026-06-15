@@ -68,6 +68,7 @@ import {
   PROMPT_PRESET_MODEL_PARAMETER_OVERRIDE_FIELDS,
   promptPresetExportPayload,
   promptPresetOverridesModelParameters,
+  resolvePromptPresetRegexField,
 } from '../presetSplit'
 
 //APP_VERSION_POINT is to locate the app version in the database file for version bumping
@@ -3076,11 +3077,11 @@ export function updatePromptPreset(id: number, patch: Partial<PromptPreset>) {
     const db = DBState.db
     const promptPresetId = db.promptPresets[id]?.id
     if (!promptPresetId) return
+    const attempted = normalizePromptPresetPatchAliases(safeStructuredClone(patch))
     const previous = splitPresetPatchSnapshot(
       db.promptPresets[id] as unknown as Record<string, unknown>,
-      patch as Record<string, unknown>,
+      attempted as Record<string, unknown>,
     )
-    const attempted = safeStructuredClone(patch)
     Object.assign(db.promptPresets[id], attempted)
     if (db.promptPresetsId === id) {
       applyPromptPresetFieldsToDatabase(db, db.promptPresets[id])
@@ -3097,6 +3098,14 @@ export function updatePromptPreset(id: number, patch: Partial<PromptPreset>) {
       () => rollbackPromptPresetPatch(promptPresetId, previous, attempted),
     )
   })
+}
+
+function normalizePromptPresetPatchAliases<T extends Partial<PromptPreset>>(patch: T): T {
+  if (Object.prototype.hasOwnProperty.call(patch, 'presetRegex')) {
+    const target = patch as Record<string, unknown>
+    target.regex = []
+  }
+  return patch
 }
 
 function splitPresetPatchSnapshot(
@@ -3288,10 +3297,9 @@ const MODEL_PRESET_DATABASE_KEY_OVERRIDES: Record<string, string> = {
   reasonEffort: databaseKeyForModelPresetField('reasonEffort'),
 }
 
-const PROMPT_PRESET_DATABASE_KEY_OVERRIDES: Record<string, string> = {
-  regex: 'presetRegex',
-  presetRegex: 'presetRegex',
-}
+const PROMPT_PRESET_APPLY_FIELDS = PROMPT_PRESET_FIELDS.filter((field) => field !== 'regex' && field !== 'presetRegex')
+
+const PROMPT_PRESET_DATABASE_KEY_OVERRIDES: Record<string, string> = {}
 
 function applyModelPresetFieldsToDatabase(db: Database, preset: ModelPreset | undefined): void {
   applySplitPresetFieldsToDatabase(db, preset, MODEL_PRESET_FIELDS, MODEL_PRESET_DATABASE_KEY_OVERRIDES)
@@ -3299,7 +3307,8 @@ function applyModelPresetFieldsToDatabase(db: Database, preset: ModelPreset | un
 }
 
 function applyPromptPresetFieldsToDatabase(db: Database, preset: PromptPreset | undefined): void {
-  applySplitPresetFieldsToDatabase(db, preset, PROMPT_PRESET_FIELDS, PROMPT_PRESET_DATABASE_KEY_OVERRIDES)
+  applySplitPresetFieldsToDatabase(db, preset, PROMPT_PRESET_APPLY_FIELDS, PROMPT_PRESET_DATABASE_KEY_OVERRIDES)
+  applyPromptPresetRegexFieldToDatabase(db, preset)
   if (promptPresetOverridesModelParameters(preset)) {
     applySplitPresetFieldsToDatabase(
       db,
@@ -3314,6 +3323,13 @@ function applyPromptPresetFieldsToDatabase(db: Database, preset: PromptPreset | 
     PROMPT_PRESET_MODEL_OTHERS_OVERRIDE_FIELDS,
     MODEL_PRESET_DATABASE_KEY_OVERRIDES,
   )
+}
+
+function applyPromptPresetRegexFieldToDatabase(db: Database, preset: PromptPreset | undefined): void {
+  const regexField = resolvePromptPresetRegexField(preset)
+  if (!regexField.present) return
+  const target = db as unknown as Record<string, unknown>
+  target.presetRegex = safeStructuredClone(regexField.value)
 }
 
 function applySplitPresetFieldsToDatabase(
@@ -3404,7 +3420,8 @@ export function setPreset(db: Database, newPres: botPreset) {
   db.systemRoleReplacement = newPres.systemRoleReplacement ?? 'user'
   db.customFlags = safeStructuredClone(newPres.customFlags) ?? []
   db.enableCustomFlags = newPres.enableCustomFlags ?? false
-  db.presetRegex = newPres.regex ?? []
+  const presetRegexField = resolvePromptPresetRegexField(newPres)
+  db.presetRegex = (presetRegexField.present ? safeStructuredClone(presetRegexField.value) : []) as customscript[]
   db.reasoningEffort = newPres.reasonEffort ?? 0
   db.thinkingTokens = newPres.thinkingTokens ?? null
   db.thinkingType = newPres.thinkingType ?? 'budget'

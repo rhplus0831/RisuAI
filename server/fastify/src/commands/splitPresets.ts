@@ -11,6 +11,7 @@ import {
   type PromptPresetRecord,
   databaseKeyForModelPresetField,
   promptPresetOverridesModelParameters,
+  resolvePromptPresetRegexField,
 } from '../../../../src/ts/presetSplit.js'
 import { MASKED_PROVIDER_SECRET } from '../providerSecrets.js'
 import { EntityNotFoundError, ValidationError } from '../repository.js'
@@ -33,10 +34,9 @@ const MODEL_PRESET_APPLY_KEYS: Array<[string, string]> = MODEL_PRESET_FIELDS.map
   return [key, databaseKeyForModelPresetField(key)]
 })
 
-const PROMPT_PRESET_APPLY_KEYS: Array<[string, string]> = PROMPT_PRESET_FIELDS.map((key) => {
-  if (key === 'regex' || key === 'presetRegex') return [key, 'presetRegex']
-  return [key, key]
-})
+const PROMPT_PRESET_APPLY_KEYS: Array<[string, string]> = PROMPT_PRESET_FIELDS.filter(
+  (key) => key !== 'regex' && key !== 'presetRegex',
+).map((key) => [key, key])
 
 const PROMPT_PRESET_PARAMETER_OVERRIDE_APPLY_KEYS: Array<[string, string]> =
   PROMPT_PRESET_MODEL_PARAMETER_OVERRIDE_FIELDS.map((key) => [key, databaseKeyForModelPresetField(key)])
@@ -83,7 +83,9 @@ export function readModelPresetPatch(input: JsonRecord): JsonRecord {
 }
 
 export function readPromptPresetPatch(input: JsonRecord): JsonRecord {
-  return readSplitPresetPatch(input, 'promptPreset')
+  const patch = readSplitPresetPatch(input, 'promptPreset')
+  normalizePromptPresetPatchAliases(patch)
+  return patch
 }
 
 export function readModelPresetId(value: unknown, label = 'modelPresetId'): string {
@@ -142,10 +144,17 @@ export function applyModelPreset(database: JsonRecord, preset: ModelPresetRecord
 
 export function applyPromptPreset(database: JsonRecord, preset: PromptPresetRecord): void {
   applySplitPreset(database, preset, PROMPT_PRESET_APPLY_KEYS)
+  applyPromptPresetRegexField(database, preset)
   if (promptPresetOverridesModelParameters(preset)) {
     applySplitPreset(database, preset, PROMPT_PRESET_PARAMETER_OVERRIDE_APPLY_KEYS)
   }
   applySplitPreset(database, preset, PROMPT_PRESET_OTHERS_OVERRIDE_APPLY_KEYS)
+}
+
+function applyPromptPresetRegexField(database: JsonRecord, preset: PromptPresetRecord): void {
+  const regexField = resolvePromptPresetRegexField(preset)
+  if (!regexField.present) return
+  database.presetRegex = cloneJson(regexField.value)
 }
 
 export function resolveModelPresetMaskedSecrets(
@@ -285,6 +294,12 @@ function readSplitPresetPatch(input: JsonRecord, label: PresetKind): JsonRecord 
   const patch = cloneJson(input) as JsonRecord
   validateJsonValue(label, patch)
   return patch
+}
+
+function normalizePromptPresetPatchAliases(patch: JsonRecord): void {
+  if (Object.prototype.hasOwnProperty.call(patch, 'presetRegex')) {
+    patch.regex = []
+  }
 }
 
 function readSplitPresetId(value: unknown, label: string): string {

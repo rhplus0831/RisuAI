@@ -25,8 +25,10 @@ import {
   reorderPresets,
   saveCurrentPreset,
   setServerProjectionWriteGuardEnabled,
+  selectPromptPreset,
   updatePreset,
   updateModelPreset,
+  updatePromptPreset,
   type botPreset,
   type Database,
   type ModelPreset,
@@ -438,6 +440,74 @@ describe('mergeServerProjectionCharacterRow', () => {
 })
 
 describe('preset command rollback (L21)', () => {
+  it('applies a prompt preset legacy regex alias when presetRegex is empty', async () => {
+    const liveRegex = [{ id: 'live-regex', in: 'hi', out: 'LIVE', type: 'editinput' }]
+    const selectedRegex = [{ id: 'selected-regex', in: 'hi', out: 'SELECTED', type: 'editinput' }]
+    seedPresetDatabase({
+      presetRegex: liveRegex as any,
+      promptPresets: [
+        { id: 'prompt-a', name: 'Prompt A', presetRegex: liveRegex },
+        { id: 'prompt-b', name: 'Prompt B', regex: selectedRegex, presetRegex: [] },
+      ] as any,
+      promptPresetsId: 0,
+    })
+    setCachedServerCommandRevision(100)
+    const fetchSpy = vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      expect(String(input)).toBe('/api/v1/commands/prompt-presets/select')
+      expect(init.method).toBe('POST')
+      return jsonResponse({
+        revision: 101,
+        event: {
+          type: 'promptPreset.selected',
+          revision: 101,
+          resource: 'preset',
+          id: 'prompt-b',
+        },
+        promptPresetId: 'prompt-b',
+      })
+    })
+    vi.stubGlobal('fetch', fetchSpy as unknown as typeof fetch)
+
+    selectPromptPreset(1)
+
+    expect(DBState.db.promptPresetsId).toBe(1)
+    expect(DBState.db.presetRegex).toEqual(selectedRegex)
+    await waitForState(() => expect(fetchSpy).toHaveBeenCalledTimes(1))
+  })
+
+  it('clears stale legacy regex when updating canonical prompt preset regex', async () => {
+    const staleRegex = [{ id: 'stale-regex', in: 'hi', out: 'STALE', type: 'editinput' }]
+    seedPresetDatabase({
+      presetRegex: staleRegex as any,
+      promptPresets: [{ id: 'prompt-a', name: 'Prompt A', regex: staleRegex, presetRegex: [] }] as any,
+      promptPresetsId: 0,
+    })
+    setCachedServerCommandRevision(100)
+    const fetchSpy = vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      expect(String(input)).toBe('/api/v1/commands/prompt-presets/prompt-a')
+      expect(init.method).toBe('PATCH')
+      const body = typeof init.body === 'string' ? JSON.parse(init.body) : null
+      expect(body.patch).toMatchObject({ presetRegex: [], regex: [] })
+      return jsonResponse({
+        revision: 101,
+        event: {
+          type: 'promptPreset.updated',
+          revision: 101,
+          resource: 'preset',
+          id: 'prompt-a',
+        },
+        promptPresetId: 'prompt-a',
+      })
+    })
+    vi.stubGlobal('fetch', fetchSpy as unknown as typeof fetch)
+
+    updatePromptPreset(0, { presetRegex: [] } as any)
+
+    expect(DBState.db.promptPresets[0]).toMatchObject({ regex: [], presetRegex: [] })
+    expect(DBState.db.presetRegex).toEqual([])
+    await waitForState(() => expect(fetchSpy).toHaveBeenCalledTimes(1))
+  })
+
   it('skips projection refreeze when hydrated bot preset ids are already normalized', async () => {
     seedPresetDatabase({
       botPresets: [makePreset('preset-a', 'Alpha')],

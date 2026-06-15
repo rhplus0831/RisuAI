@@ -22,6 +22,7 @@ import {
 } from './sendChatPromptAssembly'
 import { guardActiveChatGenerationSettingsForSend } from '../activeChatGenerationSettings'
 import { alertError } from '../alert'
+import { waitForPendingChatGenerationSettingsSave } from '../chatCommands'
 
 export interface OpenAIChat {
   role: 'system' | 'user' | 'assistant' | 'function'
@@ -57,6 +58,16 @@ export let previewBody: string = ''
 let activeGenerationAbortController: AbortController | null = null
 const MAX_SERVER_RESEND_DEPTH = 1
 const SERVER_RESEND_CAP_ERROR = 'Server-requested resend limit reached. Stopping to avoid a repeated generation loop.'
+const CHAT_GENERATION_SETTINGS_SAVE_ERROR =
+  'Chat generation settings could not be saved before generation. Please retry.'
+
+function chatGenerationSettingsSaveError(
+  result: NonNullable<Awaited<ReturnType<typeof waitForPendingChatGenerationSettingsSave>>>,
+): string {
+  if (result.status === 'error') return result.error
+  if (result.status === 'conflict') return CHAT_GENERATION_SETTINGS_SAVE_ERROR
+  return CHAT_GENERATION_SETTINGS_SAVE_ERROR
+}
 
 export function createActiveGenerationAbortController(): AbortController {
   const controller = new AbortController()
@@ -184,6 +195,20 @@ export async function sendChat(
 
     currentChar = nowChatroom
     let currentChat = nowChatroom.chats[selectedChat]
+
+    if (!arg.reattachJobId) {
+      const settingsSaveResult = await waitForPendingChatGenerationSettingsSave(currentChat.id)
+      if (settingsSaveResult && settingsSaveResult.status !== 'ok') {
+        throwError(chatGenerationSettingsSaveError(settingsSaveResult))
+        return false
+      }
+      currentChat = nowChatroom.chats[selectedChat]
+      const generationSettingsGuard = guardActiveChatGenerationSettingsForSend()
+      if (generationSettingsGuard.status === 'error') {
+        alertError(generationSettingsGuard.error)
+        return false
+      }
+    }
 
     let formated: OpenAIChat[] = []
     let biases: [string, number][] = []

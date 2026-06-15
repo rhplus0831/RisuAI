@@ -5,6 +5,7 @@ import {
   findEquivalentModelPreset,
   modelPresetFingerprint,
   promptPresetExportPayload,
+  resolvePromptPresetRegexField,
 } from './presetSplit'
 
 describe('preset split helpers', () => {
@@ -96,6 +97,28 @@ describe('preset split helpers', () => {
       additionalParams: [['temperature', '{{none}}']],
       enableCustomFlags: true,
       customFlags: [8],
+    })
+  })
+
+  it('resolves prompt preset regex aliases as one logical field', () => {
+    const legacy = [{ id: 'legacy-regex', in: 'hello', out: 'hi', type: 'editinput' }]
+    const canonical = [{ id: 'canonical-regex', in: 'hello', out: 'hey', type: 'editinput' }]
+
+    expect(resolvePromptPresetRegexField({ regex: legacy, presetRegex: [] })).toEqual({
+      present: true,
+      value: legacy,
+    })
+    expect(resolvePromptPresetRegexField({ regex: legacy, presetRegex: canonical })).toEqual({
+      present: true,
+      value: canonical,
+    })
+    expect(resolvePromptPresetRegexField({ presetRegex: [] })).toEqual({
+      present: true,
+      value: [],
+    })
+    expect(resolvePromptPresetRegexField({ mainPrompt: 'Prompt text' })).toEqual({
+      present: false,
+      value: undefined,
     })
   })
 })
