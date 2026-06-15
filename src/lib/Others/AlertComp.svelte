@@ -28,6 +28,7 @@
   import { translateStackTrace } from '../../ts/sourcemap'
   import { getDetailedOSLabel, getFallbackOSLabel, getRisuEnvironmentLabel } from 'src/ts/platform'
   import versionData from '../../../version.json'
+  import { normalizeMessagePromptInfo } from './alertPromptInfo'
 
   let showDetails = $state(false)
   let translatedStackTrace = $state('')
@@ -58,6 +59,14 @@
 
     return lines.join('\n')
   })
+  const generationMessage = $derived.by(() => {
+    const info = $alertGenerationInfoStore
+    if (!info) return undefined
+    const character = DBState.db.characters?.[$selectedCharID]
+    const chat = character?.chats?.[character.chatPage]
+    return chat?.message?.[info.idx]
+  })
+  const promptInfoView = $derived.by(() => normalizeMessagePromptInfo(generationMessage))
 
   let btn
   let input = $state('')
@@ -656,24 +665,21 @@
           {/await}
         {/if}
         {#if generationInfoMenuIndex === 3}
-          {#if Object.keys(DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message[$alertGenerationInfoStore.idx].promptInfo || {}).length === 0}
+          {#if !promptInfoView.hasPromptInfo}
             <div class="text-gray-300 text-lg mt-2">{language.promptInfoEmptyMessage}</div>
           {:else}
             <div class="grid grid-cols-2 gap-y-2 gap-x-4 mt-4">
               <span class="text-blue-500">Preset Name</span>
-              <span class="text-blue-500 justify-self-end"
-                >{DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message[
-                  $alertGenerationInfoStore.idx
-                ].promptInfo.promptName}</span>
+              <span class="text-blue-500 justify-self-end">{promptInfoView.promptName || '-'}</span>
               <span class="text-purple-500">Toggles</span>
               <div class="col-span-2 max-h-32 overflow-y-auto border border-stone-500 rounded-sm p-2 bg-gray-900">
-                {#if DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message[$alertGenerationInfoStore.idx].promptInfo.promptToggles.length === 0}
+                {#if promptInfoView.promptToggles.length === 0}
                   <div class="text-gray-500 italic text-center py-4">
                     {language.promptInfoEmptyToggle}
                   </div>
                 {:else}
                   <div class="grid grid-cols-2 gap-y-2 gap-x-4">
-                    {#each DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message[$alertGenerationInfoStore.idx].promptInfo.promptToggles as toggle}
+                    {#each promptInfoView.promptToggles as toggle}
                       <span class="text-gray-200 truncate">{toggle.key}</span>
                       <span class="text-gray-200 justify-self-end truncate">{toggle.value}</span>
                     {/each}
@@ -682,12 +688,12 @@
               </div>
               <span class="text-red-500">Prompt Text</span>
               <div class="col-span-2 max-h-80 overflow-y-auto border border-stone-500 rounded-sm p-4 bg-gray-900">
-                {#if !DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message[$alertGenerationInfoStore.idx].promptInfo.promptText}
+                {#if promptInfoView.promptText.length === 0}
                   <div class="text-gray-500 italic text-center py-4">
                     {language.promptInfoEmptyText}
                   </div>
                 {:else}
-                  {#each DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message[$alertGenerationInfoStore.idx].promptInfo.promptText as block}
+                  {#each promptInfoView.promptText as block}
                     <div class="mb-2">
                       <div class="font-bold text-gray-600">{block.role}</div>
                       <pre
