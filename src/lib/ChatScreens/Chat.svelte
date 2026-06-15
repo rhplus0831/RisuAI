@@ -11,7 +11,6 @@
     GitBranch,
     HamburgerIcon,
     LanguagesIcon,
-    MenuIcon,
     PencilIcon,
     RefreshCcwIcon,
     SplitIcon,
@@ -57,6 +56,7 @@
   import AutoresizeArea from '../UI/GUI/TextAreaResizable.svelte'
   import ChatBody from './ChatBody.svelte'
   import PopupButton from '../UI/PopupButton.svelte'
+  import RerollList from './RerollList.svelte'
   import PartialEditController from './PartialEditController.svelte'
   import { getLLMCache, setLLMCache } from '../../ts/translator/translator'
   import { renderCustomHtmlTemplate } from './ChatCustomHtmlTemplate'
@@ -94,6 +94,8 @@
     totalLength?: number
     onReroll?: () => void
     unReroll?: () => void
+    onNewReroll?: () => void
+    onSelectRerollCandidate?: (index: number) => void
     character?: simpleCharacterArgument | string | null
     firstMessage?: boolean
     altGreeting?: boolean
@@ -116,6 +118,8 @@
     totalLength = 0,
     onReroll = () => {},
     unReroll = () => {},
+    onNewReroll = onReroll,
+    onSelectRerollCandidate = () => {},
     character = null,
     firstMessage = false,
     altGreeting = false,
@@ -128,6 +132,19 @@
   let msgDisplay = $state('')
   let translated = $state(false)
   let partialEditEnabled = $state(true)
+  let rerollMenuButtonId = Math.random()
+
+  function openRerollMenu(e: MouseEvent, children: import('svelte').Snippet): void {
+    if (popupStore.openId === rerollMenuButtonId && popupStore.children) {
+      popupStore.children = null
+      popupStore.openId = 0
+      return
+    }
+    popupStore.mouseX = e.clientX
+    popupStore.mouseY = e.clientY
+    popupStore.children = children
+    popupStore.openId = rerollMenuButtonId
+  }
 
   function cloneMessagesWithIds(chat: Chat): Message[] {
     const messages = cloneJsonValue(chat.message ?? [])
@@ -1068,7 +1085,7 @@
 
 {#snippet rerolls()}
   {#if rerollIcon || altGreeting}
-    {#if DBState.db.swipe || altGreeting}
+    {#if altGreeting}
       <button
         class="flex items-center hover:text-blue-500 transition-colors button-icon-unreroll"
         class:dyna-icon={rerollIcon === 'dynamic'}
@@ -1084,6 +1101,13 @@
         onclick={onReroll}>
         <ArrowRight size={22} />
       </button>
+    {:else if DBState.db.swipe}
+      <button
+        class="flex items-center hover:text-blue-500 transition-colors button-icon-reroll"
+        class:dyna-icon={rerollIcon === 'dynamic'}
+        onclick={(e) => openRerollMenu(e, rerollMenu)}>
+        <RefreshCcwIcon size={20} />
+      </button>
     {:else}
       <button
         class="flex items-center hover:text-blue-500 transition-colors button-icon-reroll"
@@ -1093,6 +1117,10 @@
       </button>
     {/if}
   {/if}
+{/snippet}
+
+{#snippet rerollMenu()}
+  <RerollList currentMessage={message} {onNewReroll} {onSelectRerollCandidate} />
 {/snippet}
 
 {#snippet minorIconButtonsBody(showNames: boolean)}

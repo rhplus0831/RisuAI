@@ -64,6 +64,8 @@
   import {
     reroll as rerollNav,
     unReroll as unRerollNav,
+    newReroll as newRerollNav,
+    selectRerollCandidate as selectRerollCandidateNav,
     recordGeneratedReroll,
     resetRerollOnCharChange,
     clearRerollBuffer,
@@ -418,6 +420,22 @@
     }
     await hydrateActiveChatFully()
     await unRerollNav()
+  }
+
+  async function newReroll() {
+    if ($doingChat) {
+      return
+    }
+    await hydrateActiveChatFully()
+    await newRerollNav({ sendChatMain, closeMenu: () => (openMenu = false) })
+  }
+
+  async function selectRerollCandidate(index: number) {
+    if ($doingChat) {
+      return
+    }
+    await hydrateActiveChatFully()
+    await selectRerollCandidateNav(index)
   }
 
   function playSendSoundIfEnabled() {
@@ -995,6 +1013,8 @@
           {loadPages}
           onReroll={reroll}
           {unReroll}
+          onNewReroll={newReroll}
+          onSelectRerollCandidate={selectRerollCandidate}
           {currentCharacter}
           {currentUsername}
           {userIcon}

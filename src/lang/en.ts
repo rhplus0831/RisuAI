@@ -770,6 +770,8 @@ export const languageEnglish = {
   emotion: 'Emotion Name',
   value: 'Value',
   reroll: 'Regenerate',
+  rerollCandidate: 'Response',
+  newReroll: 'New reroll',
   chatList: 'Chat List',
   selectChatToOpen: 'Select a chat from the list to start.',
   openMostRecentChat: 'Open most recent chat',

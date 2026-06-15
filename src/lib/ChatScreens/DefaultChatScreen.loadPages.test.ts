@@ -119,9 +119,11 @@ vi.mock('src/ts/process/index.svelte', async () => {
 vi.mock('src/ts/process/rerollNavigation.svelte', () => ({
   clearRerollBuffer: vi.fn(),
   markRerollChar: vi.fn(),
+  newReroll: vi.fn(async () => undefined),
   recordGeneratedReroll: vi.fn(),
   reroll: vi.fn(async () => undefined),
   resetRerollOnCharChange: vi.fn(),
+  selectRerollCandidate: vi.fn(async () => undefined),
   unReroll: vi.fn(async () => undefined),
 }))
 

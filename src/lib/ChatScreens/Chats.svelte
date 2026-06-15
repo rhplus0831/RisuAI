@@ -20,6 +20,8 @@
     currentCharacter,
     onReroll,
     unReroll,
+    onNewReroll,
+    onSelectRerollCandidate,
     currentUsername,
     userIcon,
     loadPages,
@@ -30,6 +32,8 @@
     currentCharacter: character
     onReroll: () => void
     unReroll: () => void
+    onNewReroll: () => void
+    onSelectRerollCandidate: (index: number) => void
     currentUsername: string
     userIcon: string
     loadPages: number
@@ -145,6 +149,8 @@
         img={row.img}
         {onReroll}
         {unReroll}
+        {onNewReroll}
+        {onSelectRerollCandidate}
         rerollIcon="dynamic"
         character={row.character}
         largePortrait={row.largePortrait}

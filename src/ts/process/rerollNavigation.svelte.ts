@@ -36,6 +36,12 @@ export interface RerollDeps {
   closeMenu: () => void
 }
 
+export interface RerollCandidate {
+  index: number
+  active: boolean
+  messages: readonly Message[]
+}
+
 function activeChatRecord(): Chat {
   const character = DBState.db.characters[get(selectedCharID)]
   return character.chats[character.chatPage]
@@ -161,28 +167,7 @@ function applyRerollTruncate(keepLength: number): void {
   }
 }
 
-// Concurrency contract: callers MUST NOT invoke reroll/unReroll while a generation
-// is in flight (the component wrappers gate on `$doingChat`). A swipe's
-// dispatchReplaceMessages would otherwise race an in-flight regenerate's persist —
-// the swap could remove the regenerate's target row before the server commits it.
-// The one-job-per-chat lock + the `$doingChat` gate keep these mutually exclusive.
-export async function reroll(deps: RerollDeps): Promise<void> {
-  resetRerollOnCharChange()
-  const genId = currentTailGenerationId()
-  if (genId) {
-    const r = Prereroll(genId)
-    if (r) {
-      applyTailDataSwap(r)
-      return
-    }
-  }
-  if (rerollid < rerolls.length - 1) {
-    if (Array.isArray(rerolls[rerollid + 1])) {
-      rerollid += 1
-      applyTailSlice(safeStructuredClone(rerolls[rerollid]))
-    }
-    return
-  }
+async function regenerateFromCurrentTail(deps: RerollDeps): Promise<void> {
   if (rerolls.length === 0) {
     rerolls.push(safeStructuredClone([activeChatRecord().message.at(-1)]) as Message[])
     rerollid = rerolls.length - 1
@@ -217,6 +202,40 @@ export async function reroll(deps: RerollDeps): Promise<void> {
   await deps.sendChatMain(false, regenerateMessageId)
 }
 
+function applyNextPrefetchedReroll(): boolean {
+  const genId = currentTailGenerationId()
+  if (!genId) return false
+  const r = Prereroll(genId)
+  if (!r) return false
+  applyTailDataSwap(r)
+  return true
+}
+
+// Concurrency contract: callers MUST NOT invoke reroll/unReroll while a generation
+// is in flight (the component wrappers gate on `$doingChat`). A swipe's
+// dispatchReplaceMessages would otherwise race an in-flight regenerate's persist —
+// the swap could remove the regenerate's target row before the server commits it.
+// The one-job-per-chat lock + the `$doingChat` gate keep these mutually exclusive.
+export async function reroll(deps: RerollDeps): Promise<void> {
+  resetRerollOnCharChange()
+  if (applyNextPrefetchedReroll()) return
+  if (rerollid < rerolls.length - 1) {
+    if (Array.isArray(rerolls[rerollid + 1])) {
+      rerollid += 1
+      applyTailSlice(safeStructuredClone(rerolls[rerollid]))
+    }
+    return
+  }
+  await regenerateFromCurrentTail(deps)
+}
+
+/** Generate a fresh reroll candidate from the currently selected tail. */
+export async function newReroll(deps: RerollDeps): Promise<void> {
+  resetRerollOnCharChange()
+  if (applyNextPrefetchedReroll()) return
+  await regenerateFromCurrentTail(deps)
+}
+
 export async function unReroll(): Promise<void> {
   resetRerollOnCharChange()
   const genId = currentTailGenerationId()
@@ -234,6 +253,15 @@ export async function unReroll(): Promise<void> {
     rerollid -= 1
     applyTailSlice(safeStructuredClone(rerolls[rerollid]))
   }
+}
+
+/** Select an existing candidate from the reroll list by absolute buffer index. */
+export async function selectRerollCandidate(index: number): Promise<void> {
+  resetRerollOnCharChange()
+  if (!Number.isInteger(index) || index < 0 || index >= rerolls.length) return
+  if (index === rerollid) return
+  rerollid = index
+  applyTailSlice(safeStructuredClone(rerolls[rerollid]))
 }
 
 /** The per-message id (stored, by historical misnomer, on `Message.chatId`). */
@@ -302,6 +330,13 @@ export function getRerollBuffer(): Message[][] {
 }
 export function getRerollId(): number {
   return rerollid
+}
+export function getRerollCandidates(): RerollCandidate[] {
+  return rerolls.map((messages, index) => ({
+    index,
+    active: index === rerollid,
+    messages,
+  }))
 }
 export function resetRerollNavigation(): void {
   rerolls = []

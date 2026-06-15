@@ -30,13 +30,16 @@ import { withCloneInstrumentation } from '../__tests__/cloneCostHarness'
 import {
   clearRerollBuffer,
   getRerollBuffer,
+  getRerollCandidates,
   getRerollId,
   markRerollChar,
+  newReroll,
   recordGeneratedReroll,
   reroll,
   resetRerollNavigation,
   resetRerollOnCharChange,
   seedRerollBufferFromAlternates,
+  selectRerollCandidate,
   unReroll,
 } from './rerollNavigation.svelte'
 
@@ -189,6 +192,48 @@ describe('reroll swipe navigation (post-seed, durable for free)', () => {
       expect.objectContaining({ snapshot: true }),
     )
     expect(commandSpies.dispatchReplaceMessagesScoped).not.toHaveBeenCalled()
+  })
+
+  it('selectRerollCandidate jumps directly to a saved candidate', async () => {
+    seedThreeCandidates()
+    await selectRerollCandidate(0)
+    expect(getRerollId()).toBe(0)
+    expect(tailUids()).toEqual(['u1', 'g1'])
+    expect(commandSpies.dispatchReplaceTailMessagesScoped).toHaveBeenCalledTimes(1)
+    expect(
+      commandSpies.dispatchReplaceTailMessagesScoped.mock.calls[0][2].map((message: Msg) => message.chatId),
+    ).toEqual(['g1'])
+  })
+
+  it('newReroll regenerates instead of moving to the next saved candidate', async () => {
+    seedThreeCandidates()
+    await selectRerollCandidate(0)
+    const sendChatMain = vi.fn(async () => {})
+    await newReroll({ sendChatMain, closeMenu: vi.fn() })
+    expect(getRerollId()).toBe(0)
+    expect(sendChatMain).toHaveBeenCalledTimes(1)
+    expect(sendChatMain).toHaveBeenCalledWith(false, 'g1')
+    expect(tailUids()).toEqual(['u1'])
+    expect(commandSpies.dispatchTruncateMessagesScoped).toHaveBeenCalledWith(
+      'chat-1',
+      'u1',
+      expect.objectContaining({ snapshot: true }),
+    )
+  })
+
+  it('getRerollCandidates exposes active candidate metadata for the list UI', () => {
+    seedThreeCandidates()
+    expect(
+      getRerollCandidates().map((candidate) => ({
+        index: candidate.index,
+        active: candidate.active,
+        uids: candidate.messages.map((message) => (message as unknown as Msg).chatId),
+      })),
+    ).toEqual([
+      { index: 0, active: false, uids: ['g1'] },
+      { index: 1, active: false, uids: ['g2'] },
+      { index: 2, active: true, uids: ['g3'] },
+    ])
   })
 
   it('does not wipe the seeded buffer on the next reroll (char-change guard primed)', async () => {
