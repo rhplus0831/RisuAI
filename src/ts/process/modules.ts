@@ -408,6 +408,14 @@ function parseModuleIntegration(value: string) {
 let lastModules = ''
 let lastModuleData: RisuModule[] = []
 let lastModuleSource: RisuModule[] | undefined
+
+function activeModuleCacheRowsStillPresent(moduleSource: RisuModule[]): boolean {
+  if (lastModuleData.length === 0) return true
+
+  const sourceRows = new Set(moduleSource)
+  return lastModuleData.every((module) => sourceRows.has(module))
+}
+
 export function getModules() {
   const currentChat = getCurrentChat()
   const character = getCurrentCharacter()
@@ -425,7 +433,11 @@ export function getModules() {
     ids = ids.concat(parseModuleIntegration(moduleIntergration))
   }
   const idsJoined = JSON.stringify(ids)
-  if (lastModules === idsJoined && lastModuleSource === moduleSource) {
+  if (
+    lastModules === idsJoined &&
+    lastModuleSource === moduleSource &&
+    activeModuleCacheRowsStillPresent(moduleSource)
+  ) {
     return lastModuleData
   }
 
@@ -639,9 +651,7 @@ export function moduleUpdate() {
     }
   })
 
-  if (backgroundEmbedding) {
-    moduleBackgroundEmbedding.set(backgroundEmbedding)
-  }
+  moduleBackgroundEmbedding.set(backgroundEmbedding)
   HideIconStore.set(getCurrentCharacter()?.hideChatIcon || moduleHideIcon)
 
   if (lastModuleIds !== ids) {

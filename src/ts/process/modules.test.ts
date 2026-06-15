@@ -134,8 +134,15 @@ vi.mock('../server/projectionWriteGuard.svelte', () => ({
   withTrustedServerProjectionWrite: (fn: () => void) => fn(),
 }))
 
-import { applyModule, getModuleRegexScripts, getModuleTriggers, importModule, refreshModules } from './modules'
-import { DBState } from '../stores.svelte'
+import {
+  applyModule,
+  getModuleRegexScripts,
+  getModuleTriggers,
+  importModule,
+  moduleUpdate,
+  refreshModules,
+} from './modules'
+import { DBState, moduleBackgroundEmbedding } from '../stores.svelte'
 import type { character } from '../storage/database.svelte'
 
 describe('module imports', () => {
@@ -150,6 +157,7 @@ describe('module imports', () => {
     getCurrentChatMock.mockReset()
     getDatabase.mockReset()
     getDatabase.mockReturnValue({ modules: [] })
+    vi.mocked(moduleBackgroundEmbedding.set).mockClear()
     dispatchReplaceCharacterLorebooks.mockClear()
     dispatchReplaceCharacterScripts.mockClear()
     dispatchReplaceCharacterTriggers.mockClear()
@@ -304,6 +312,68 @@ describe('module imports', () => {
       type: 'triggerlua',
       code: 'new triggerlua with AOS',
     })
+  })
+
+  it('refreshes module background embedding when an active module row is replaced in place', () => {
+    const db = {
+      enabledModules: ['module-a'],
+      moduleIntergration: '',
+      modules: [
+        {
+          id: 'module-a',
+          name: 'Module A',
+          description: '',
+          backgroundEmbedding: '<style>.chattext .name { color: red; }</style>',
+        },
+      ],
+    }
+    getDatabase.mockReturnValue(db)
+
+    moduleUpdate()
+    expect(moduleBackgroundEmbedding.set).toHaveBeenLastCalledWith('\n<style>.chattext .name { color: red; }</style>\n')
+
+    vi.mocked(moduleBackgroundEmbedding.set).mockClear()
+    db.modules[0] = {
+      id: 'module-a',
+      name: 'Module A',
+      description: '',
+      backgroundEmbedding: '<style>.chattext .name { color: blue; }</style>',
+    }
+
+    moduleUpdate()
+    expect(moduleBackgroundEmbedding.set).toHaveBeenLastCalledWith(
+      '\n<style>.chattext .name { color: blue; }</style>\n',
+    )
+  })
+
+  it('clears module background embedding when active modules no longer provide one', () => {
+    const db = {
+      enabledModules: ['module-a'],
+      moduleIntergration: '',
+      modules: [
+        {
+          id: 'module-a',
+          name: 'Module A',
+          description: '',
+          backgroundEmbedding: '<style>.chattext .name { color: red; }</style>',
+        },
+      ],
+    }
+    getDatabase.mockReturnValue(db)
+
+    moduleUpdate()
+    expect(moduleBackgroundEmbedding.set).toHaveBeenLastCalledWith('\n<style>.chattext .name { color: red; }</style>\n')
+
+    vi.mocked(moduleBackgroundEmbedding.set).mockClear()
+    db.modules[0] = {
+      id: 'module-a',
+      name: 'Module A',
+      description: '',
+      backgroundEmbedding: '',
+    }
+
+    moduleUpdate()
+    expect(moduleBackgroundEmbedding.set).toHaveBeenLastCalledWith('')
   })
 
   it('resolves module regex from the active chat selected prompt preset integration', () => {
