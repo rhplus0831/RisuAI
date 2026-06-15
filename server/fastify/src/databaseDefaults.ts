@@ -209,7 +209,7 @@ export function normalizeDatabaseDefaults(
   setDefault(database, 'fullScreen', false)
   setDefault(database, 'playMessage', false)
   setDefault(database, 'iconsize', 100)
-  setDefault(database, 'theme', '')
+  setDefault(database, 'theme', 'fastify')
   if (providerDefaults) {
     setDefault(database, 'subModel', 'gemini-3-flash-preview')
   }

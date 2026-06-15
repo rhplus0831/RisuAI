@@ -750,6 +750,7 @@ export const languageGerman = {
   useCharLorebook: 'Verwenden Sie Lores in Charakteren',
   selectChar: 'Charakter auswählen',
   theme: 'Thema',
+  fastifyTheme: 'Fastify',
   editOrder: 'Reihenfolge bearbeiten',
   autoMode: 'Automatischer Modus',
   submodel: 'Hilfsmodell',

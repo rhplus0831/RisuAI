@@ -683,6 +683,7 @@ export const languageChinese = {
   useCharLorebook: '使用角色世界书',
   selectChar: '选择角色',
   theme: '介面主题',
+  fastifyTheme: 'Fastify',
   editOrder: '编辑顺序',
   autoMode: '自动模式',
   submodel: '辅助模型',

@@ -709,6 +709,7 @@ export const languageChineseTraditional = {
   useCharLorebook: '使用角色 Lorebook',
   selectChar: '選擇角色',
   theme: '介面主題',
+  fastifyTheme: 'Fastify',
   editOrder: '編輯順序',
   submodel: '輔助模型',
   timeOutinSec: '超時時間（秒）',

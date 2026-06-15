@@ -737,6 +737,7 @@ export const languageSpanish = {
   useCharLorebook: 'Usar Lores en Personajes',
   selectChar: 'Seleccionar Personaje',
   theme: 'Tema',
+  fastifyTheme: 'Fastify',
   editOrder: 'Editar Orden',
   autoMode: 'Modo Automático',
   submodel: 'Modelo Auxiliar',

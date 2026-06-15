@@ -733,6 +733,7 @@ export const languageKorean = {
   useCharLorebook: '캐릭터에 있는 로어 사용',
   selectChar: '캐릭터 선택',
   theme: '테마',
+  fastifyTheme: 'Fastify',
   editOrder: '캐릭터 순서 변경',
   autoMode: '오토 모드',
   submodel: '보조 모델',

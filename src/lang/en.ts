@@ -830,6 +830,7 @@ export const languageEnglish = {
   useCharLorebook: 'Use Lores in Characters',
   selectChar: 'Select Character',
   theme: 'Theme',
+  fastifyTheme: 'Fastify',
   editOrder: 'Edit Order',
   autoMode: 'Auto Mode',
   submodel: 'Auxiliary Model',

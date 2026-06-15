@@ -544,6 +544,7 @@ describe('first-run database seed', () => {
     expect(bootstrap.json().revision).toBe(2)
     expect(bootstrap.json().database).toMatchObject({
       username: 'Test',
+      theme: 'fastify',
       temperature: 80,
       botPresets: [expect.objectContaining({ id: 'default-preset' })],
       personas: [expect.objectContaining({ id: 'default-persona' })],

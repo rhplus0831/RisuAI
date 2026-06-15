@@ -469,7 +469,7 @@ export function setDatabase(data: Database) {
     data.iconsize = 100
   }
   if (checkNullish(data.theme)) {
-    data.theme = ''
+    data.theme = 'fastify'
   }
   if (checkNullish(data.subModel)) {
     data.subModel = 'gemini-3-flash-preview'

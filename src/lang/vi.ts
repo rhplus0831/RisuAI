@@ -731,6 +731,7 @@ export const languageVietnamese = {
   useCharLorebook: 'Sử dụng truyền thuyết trong nhân vật',
   selectChar: 'Chọn nhân vật',
   theme: 'chủ đề',
+  fastifyTheme: 'Fastify',
   editOrder: 'Chỉnh sửa đơn hàng',
   autoMode: 'Chế độ tự động',
   submodel: 'Mô hình phụ trợ',
