@@ -1,14 +1,20 @@
+import { isUtf8 } from 'node:buffer'
 import { createHash, randomBytes } from 'node:crypto'
 import fs from 'node:fs/promises'
 import type { OutgoingHttpHeader, OutgoingHttpHeaders } from 'node:http'
 import path from 'node:path'
 import { performance } from 'node:perf_hooks'
+import { promisify } from 'node:util'
+import { gzip } from 'node:zlib'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { ACTIVE_WRITER_SESSION_HEADER, readActiveWriterSessionId } from './activeWriter.js'
 import type { RequestTraceMode } from './config.js'
 
 export const REQUEST_UID_HEADER = 'X-Request-UID'
 const CALLER_HEADER = 'x-risu-caller'
+const INLINE_BODY_MAX_BYTES = 4 * 1024
+const GZIP_BODY_PREVIEW_MAX_BYTES = 4 * 1024
+const gzipAsync = promisify(gzip)
 
 interface RegisterRequestTraceOptions {
   dataDir: string
@@ -21,6 +27,7 @@ interface RequestTraceState {
   sendStartedAtMs?: number
   processMs?: number
   logApiRequest: boolean
+  responseBody?: PendingTraceBody
 }
 
 interface RequestTraceEntry {
@@ -29,7 +36,9 @@ interface RequestTraceEntry {
   Route?: string
   Caller?: string
   'Request-Header': string
+  'Request-Body'?: TraceBodyEntry
   'Response-Header': string
+  'Response-Body'?: TraceBodyEntry
   'X-Request-UID': string
   Timing: {
     process: number
@@ -38,6 +47,50 @@ interface RequestTraceEntry {
 }
 
 type HeaderRecord = Record<string, string | number | string[] | undefined>
+
+type BodyTraceDirection = 'request' | 'response'
+
+interface PendingTraceBody {
+  value?: unknown
+  contentType?: string
+  contentLength?: number
+  omittedReason?: string
+}
+
+type TraceBodyEntry =
+  | {
+      storage: 'inline'
+      contentType?: string
+      contentLength?: number
+      bytes: number
+      sha256: string
+      redacted?: true
+      text: string
+    }
+  | {
+      storage: 'gzip'
+      contentType?: string
+      contentLength?: number
+      bytes: number
+      gzipBytes: number
+      sha256: string
+      redacted?: true
+      path: string
+      preview: string
+    }
+  | {
+      storage: 'omitted'
+      contentType?: string
+      contentLength?: number
+      bytes?: number
+      reason: string
+    }
+
+interface TraceBodyText {
+  text: string
+  format: 'json' | 'text'
+  redacted: boolean
+}
 
 const REDACTED_HEADER_NAMES = new Set([
   'authorization',
@@ -72,6 +125,33 @@ const SENSITIVE_QUERY_PARAM_NAMES = new Set([
   'xi-api-key',
 ])
 
+const SENSITIVE_BODY_FIELD_NAMES = new Set([
+  'access_token',
+  'apikey',
+  'api_key',
+  'assertion',
+  'auth',
+  'authorization',
+  'cookie',
+  'id_token',
+  'key',
+  'password',
+  'passwd',
+  'private_key',
+  'proxy_authorization',
+  'refresh_token',
+  'risu-auth',
+  'secret',
+  'session',
+  'session_token',
+  'set-cookie',
+  'sig',
+  'signature',
+  'token',
+  'x-api-key',
+  'xi-api-key',
+])
+
 export function registerRequestTrace(app: FastifyInstance, opts: RegisterRequestTraceOptions): void {
   const traceFilePath = path.join(opts.dataDir, 'trace', `${opts.mode}.jsonl`)
   const traceStates = new WeakMap<FastifyRequest, RequestTraceState>()
@@ -91,9 +171,14 @@ export function registerRequestTrace(app: FastifyInstance, opts: RegisterRequest
     installWriteHeadProbe(reply.raw, () => markSendStarted(state))
   })
 
-  app.addHook('onSend', async (request, _reply, payload) => {
+  app.addHook('onSend', async (request, reply, payload) => {
     const state = traceStates.get(request)
-    if (state) markSendStarted(state)
+    if (state) {
+      markSendStarted(state)
+      if (state.logApiRequest) {
+        state.responseBody = captureResponseBodySource(request, reply, payload)
+      }
+    }
     return payload
   })
 
@@ -128,6 +213,27 @@ export function registerRequestTrace(app: FastifyInstance, opts: RegisterRequest
       },
     }
 
+    const [requestBody, responseBody] = await Promise.all([
+      createTraceBodyEntry({
+        dataDir: opts.dataDir,
+        mode: opts.mode,
+        uid: state.uid,
+        direction: 'request',
+        source: captureRequestBodySource(request),
+        request,
+      }),
+      createTraceBodyEntry({
+        dataDir: opts.dataDir,
+        mode: opts.mode,
+        uid: state.uid,
+        direction: 'response',
+        source: state.responseBody ?? captureRawResponseBodySource(request, responseHeaders),
+        request,
+      }),
+    ])
+    if (requestBody) entry['Request-Body'] = requestBody
+    if (responseBody) entry['Response-Body'] = responseBody
+
     const write = appendTraceEntry(traceFilePath, entry, request)
     pendingWrites.add(write)
     try {
@@ -144,6 +250,10 @@ export function registerRequestTrace(app: FastifyInstance, opts: RegisterRequest
 
 function generateRequestUid(): string {
   return createHash('sha256').update(randomBytes(32)).digest('hex')
+}
+
+function sha256Hex(input: string | Buffer): string {
+  return createHash('sha256').update(input).digest('hex')
 }
 
 function isApiRequest(url: string): boolean {
@@ -187,6 +297,458 @@ function serializeHeaders(headers: HeaderRecord): string {
   return JSON.stringify(normalized)
 }
 
+function captureRequestBodySource(request: FastifyRequest): PendingTraceBody | undefined {
+  const contentType = normalizeContentType(readHeaderString(request.headers['content-type']))
+  const contentLength = readContentLength(request.headers['content-length'])
+
+  if (isMultipartContentType(contentType)) {
+    return {
+      contentType,
+      contentLength,
+      omittedReason: 'multipart',
+    }
+  }
+
+  if (request.body === undefined || request.body === null) {
+    return hasRequestBodySignal(request)
+      ? {
+          contentType,
+          contentLength,
+          omittedReason: 'unavailable',
+        }
+      : undefined
+  }
+
+  return {
+    value: request.body,
+    contentType,
+    contentLength,
+  }
+}
+
+function captureResponseBodySource(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  payload: unknown,
+): PendingTraceBody | undefined {
+  if (request.method.toUpperCase() === 'HEAD') return undefined
+
+  const headers: HeaderRecord = {
+    ...reply.getHeaders(),
+    ...reply.raw.getHeaders(),
+  }
+  const contentType = normalizeContentType(readHeaderString(readHeader(headers, 'content-type')))
+  const contentLength = readContentLength(readHeader(headers, 'content-length'))
+
+  if (isEventStreamContentType(contentType)) {
+    return {
+      contentType,
+      contentLength,
+      omittedReason: 'event-stream',
+    }
+  }
+
+  if (payload === undefined || payload === null) {
+    return contentLength && contentLength > 0
+      ? {
+          contentType,
+          contentLength,
+          omittedReason: 'unavailable',
+        }
+      : undefined
+  }
+
+  if (isStreamLike(payload)) {
+    return {
+      contentType,
+      contentLength,
+      omittedReason: 'stream',
+    }
+  }
+
+  return {
+    value: payload,
+    contentType,
+    contentLength,
+  }
+}
+
+function captureRawResponseBodySource(request: FastifyRequest, headers: HeaderRecord): PendingTraceBody | undefined {
+  if (request.method.toUpperCase() === 'HEAD') return undefined
+
+  const contentType = normalizeContentType(readHeaderString(readHeader(headers, 'content-type')))
+  const contentLength = readContentLength(readHeader(headers, 'content-length'))
+
+  if (isEventStreamContentType(contentType)) {
+    return {
+      contentType,
+      contentLength,
+      omittedReason: 'event-stream',
+    }
+  }
+
+  return contentLength && contentLength > 0
+    ? {
+        contentType,
+        contentLength,
+        omittedReason: 'unavailable',
+      }
+    : undefined
+}
+
+async function createTraceBodyEntry(opts: {
+  dataDir: string
+  mode: RequestTraceMode
+  uid: string
+  direction: BodyTraceDirection
+  source?: PendingTraceBody
+  request: FastifyRequest
+}): Promise<TraceBodyEntry | undefined> {
+  const source = opts.source
+  if (!source) return undefined
+
+  if (source.omittedReason) {
+    return {
+      storage: 'omitted',
+      ...(source.contentType ? { contentType: source.contentType } : {}),
+      ...(source.contentLength !== undefined ? { contentLength: source.contentLength } : {}),
+      reason: source.omittedReason,
+    }
+  }
+
+  const bodyText = traceBodyText(source.value, source.contentType)
+  if ('omittedReason' in bodyText) {
+    return {
+      storage: 'omitted',
+      ...(source.contentType ? { contentType: source.contentType } : {}),
+      ...(source.contentLength !== undefined ? { contentLength: source.contentLength } : {}),
+      ...(bodyText.bytes !== undefined ? { bytes: bodyText.bytes } : {}),
+      reason: bodyText.omittedReason,
+    }
+  }
+
+  const bodyBuffer = Buffer.from(bodyText.text, 'utf8')
+  const base = {
+    ...(source.contentType ? { contentType: source.contentType } : {}),
+    ...(source.contentLength !== undefined ? { contentLength: source.contentLength } : {}),
+    bytes: bodyBuffer.byteLength,
+    sha256: sha256Hex(bodyBuffer),
+    ...(bodyText.redacted ? { redacted: true as const } : {}),
+  }
+
+  if (bodyBuffer.byteLength <= INLINE_BODY_MAX_BYTES) {
+    return {
+      storage: 'inline',
+      ...base,
+      text: bodyText.text,
+    }
+  }
+
+  try {
+    const sidecar = await writeGzipBodySidecar({
+      dataDir: opts.dataDir,
+      mode: opts.mode,
+      uid: opts.uid,
+      direction: opts.direction,
+      format: bodyText.format,
+      body: bodyBuffer,
+    })
+    return {
+      storage: 'gzip',
+      ...base,
+      gzipBytes: sidecar.gzipBytes,
+      path: sidecar.relativePath,
+      preview: truncateUtf8Text(bodyText.text, GZIP_BODY_PREVIEW_MAX_BYTES),
+    }
+  } catch (err) {
+    opts.request.log.warn({ err, uid: opts.uid, direction: opts.direction }, 'failed to write request trace body')
+    return {
+      storage: 'omitted',
+      ...(source.contentType ? { contentType: source.contentType } : {}),
+      ...(source.contentLength !== undefined ? { contentLength: source.contentLength } : {}),
+      bytes: bodyBuffer.byteLength,
+      reason: 'sidecar-write-failed',
+    }
+  }
+}
+
+function traceBodyText(
+  value: unknown,
+  contentType: string | undefined,
+): TraceBodyText | { omittedReason: string; bytes?: number } {
+  if (Buffer.isBuffer(value)) {
+    if (!isTextBodyContentType(contentType)) {
+      return { omittedReason: 'non-text', bytes: value.byteLength }
+    }
+    if (!isUtf8(value)) {
+      return { omittedReason: 'non-utf8', bytes: value.byteLength }
+    }
+    return redactTraceText(value.toString('utf8'), contentType)
+  }
+
+  if (ArrayBuffer.isView(value)) {
+    const buffer = Buffer.from(value.buffer, value.byteOffset, value.byteLength)
+    return traceBodyText(buffer, contentType)
+  }
+
+  if (value instanceof ArrayBuffer) {
+    return traceBodyText(Buffer.from(value), contentType)
+  }
+
+  if (typeof value === 'string') {
+    return redactTraceText(value, contentType)
+  }
+
+  const redacted = normalizeAndRedactJsonValue(value)
+  return {
+    text: JSON.stringify(redacted.value),
+    format: 'json',
+    redacted: redacted.redacted,
+  }
+}
+
+function redactTraceText(text: string, contentType: string | undefined): TraceBodyText {
+  if (isUrlEncodedContentType(contentType)) {
+    return redactUrlEncodedText(text)
+  }
+
+  if (isJsonContentType(contentType) || isJsonLikeText(text)) {
+    try {
+      const parsed = JSON.parse(text) as unknown
+      const redacted = normalizeAndRedactJsonValue(parsed)
+      return {
+        text: JSON.stringify(redacted.value),
+        format: 'json',
+        redacted: redacted.redacted,
+      }
+    } catch {
+      // Fall through to conservative text redaction. Malformed JSON is useful
+      // in traces precisely because it failed parsing.
+    }
+  }
+
+  const redacted = redactSecretLikeText(text)
+  return {
+    text: redacted.text,
+    format: 'text',
+    redacted: redacted.redacted,
+  }
+}
+
+function redactUrlEncodedText(text: string): TraceBodyText {
+  const params = new URLSearchParams(text)
+  let redacted = false
+  for (const key of Array.from(params.keys())) {
+    if (isSensitiveBodyFieldName(key)) {
+      params.set(key, '[redacted]')
+      redacted = true
+    }
+  }
+  return {
+    text: params.toString(),
+    format: 'text',
+    redacted,
+  }
+}
+
+function redactSecretLikeText(text: string): { text: string; redacted: boolean } {
+  let redacted = false
+  const next = text.replace(
+    /\b(access[_-]?token|api[_-]?key|authorization|id[_-]?token|password|passwd|refresh[_-]?token|secret|session[_-]?token|x-api-key|xi-api-key)\b(\s*[:=]\s*)(["']?)[^\s"',;&]+/gi,
+    (_match, key: string, separator: string, quote: string) => {
+      redacted = true
+      return `${key}${separator}${quote}[redacted]`
+    },
+  )
+  return { text: next, redacted }
+}
+
+function normalizeAndRedactJsonValue(
+  value: unknown,
+  seen: WeakSet<object> = new WeakSet(),
+  depth = 0,
+): { value: unknown; redacted: boolean } {
+  if (depth > 40) {
+    return { value: '[max-depth]', redacted: false }
+  }
+
+  if (value === undefined || typeof value === 'function' || typeof value === 'symbol') {
+    return { value: null, redacted: false }
+  }
+  if (typeof value === 'bigint') {
+    return { value: value.toString(), redacted: false }
+  }
+  if (value === null || typeof value !== 'object') {
+    return { value, redacted: false }
+  }
+  if (value instanceof Date) {
+    return { value: value.toISOString(), redacted: false }
+  }
+  if (Buffer.isBuffer(value)) {
+    return { value: `[buffer ${value.byteLength} bytes]`, redacted: false }
+  }
+  if (ArrayBuffer.isView(value)) {
+    return { value: `[binary ${value.byteLength} bytes]`, redacted: false }
+  }
+  if (value instanceof ArrayBuffer) {
+    return { value: `[binary ${value.byteLength} bytes]`, redacted: false }
+  }
+  if (seen.has(value)) {
+    return { value: '[circular]', redacted: false }
+  }
+  seen.add(value)
+
+  if (Array.isArray(value)) {
+    let redacted = false
+    const items = value.map((entry) => {
+      const next = normalizeAndRedactJsonValue(entry, seen, depth + 1)
+      redacted ||= next.redacted
+      return next.value
+    })
+    seen.delete(value)
+    return { value: items, redacted }
+  }
+
+  let redacted = false
+  const out: Record<string, unknown> = {}
+  for (const [key, entry] of Object.entries(value)) {
+    if (isSensitiveBodyFieldName(key)) {
+      out[key] = '[redacted]'
+      redacted = true
+      continue
+    }
+    const next = normalizeAndRedactJsonValue(entry, seen, depth + 1)
+    redacted ||= next.redacted
+    out[key] = next.value
+  }
+  seen.delete(value)
+  return { value: out, redacted }
+}
+
+async function writeGzipBodySidecar(opts: {
+  dataDir: string
+  mode: RequestTraceMode
+  uid: string
+  direction: BodyTraceDirection
+  format: TraceBodyText['format']
+  body: Buffer
+}): Promise<{ relativePath: string; gzipBytes: number }> {
+  const extension = opts.format === 'json' ? 'json' : 'txt'
+  const relativePath = path.posix.join('trace', 'bodies', opts.mode, `${opts.uid}.${opts.direction}.${extension}.gz`)
+  const fullPath = path.join(opts.dataDir, ...relativePath.split('/'))
+  const compressed = await gzipAsync(opts.body)
+
+  await fs.mkdir(path.dirname(fullPath), { recursive: true })
+  await fs.writeFile(fullPath, compressed)
+
+  return { relativePath, gzipBytes: compressed.byteLength }
+}
+
+function readHeader(headers: HeaderRecord, name: string): string | number | string[] | undefined {
+  const normalized = name.toLowerCase()
+  for (const [headerName, value] of Object.entries(headers)) {
+    if (headerName.toLowerCase() === normalized) return value
+  }
+  return undefined
+}
+
+function readContentLength(value: string | number | string[] | undefined): number | undefined {
+  const raw = readHeaderString(value)
+  if (!raw) return undefined
+  const parsed = Number(raw)
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : undefined
+}
+
+function hasRequestBodySignal(request: FastifyRequest): boolean {
+  const contentLength = readContentLength(request.headers['content-length'])
+  if (contentLength !== undefined) return contentLength > 0
+  return readHeaderString(request.headers['transfer-encoding']) !== undefined
+}
+
+function normalizeContentType(raw: string | undefined): string | undefined {
+  if (!raw) return undefined
+  const trimmed = raw.trim()
+  return trimmed === '' ? undefined : trimmed
+}
+
+function baseContentType(contentType: string | undefined): string {
+  return contentType?.split(';', 1)[0]?.trim().toLowerCase() ?? ''
+}
+
+function isMultipartContentType(contentType: string | undefined): boolean {
+  return baseContentType(contentType) === 'multipart/form-data'
+}
+
+function isEventStreamContentType(contentType: string | undefined): boolean {
+  return baseContentType(contentType) === 'text/event-stream'
+}
+
+function isJsonContentType(contentType: string | undefined): boolean {
+  const base = baseContentType(contentType)
+  return base === 'application/json' || base === 'application/x-ndjson' || base.endsWith('+json')
+}
+
+function isUrlEncodedContentType(contentType: string | undefined): boolean {
+  return baseContentType(contentType) === 'application/x-www-form-urlencoded'
+}
+
+function isTextBodyContentType(contentType: string | undefined): boolean {
+  const base = baseContentType(contentType)
+  if (!base || isEventStreamContentType(contentType) || isMultipartContentType(contentType)) return false
+  return (
+    base.startsWith('text/') ||
+    isJsonContentType(contentType) ||
+    isUrlEncodedContentType(contentType) ||
+    base === 'application/graphql' ||
+    base === 'application/javascript' ||
+    base === 'application/xml' ||
+    base.endsWith('+xml')
+  )
+}
+
+function isJsonLikeText(text: string): boolean {
+  const trimmed = text.trimStart()
+  return trimmed.startsWith('{') || trimmed.startsWith('[')
+}
+
+function isStreamLike(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false
+  const record = value as Record<string, unknown>
+  const asyncIterable = value as { [Symbol.asyncIterator]?: unknown }
+  return (
+    typeof record.pipe === 'function' ||
+    typeof record.getReader === 'function' ||
+    typeof asyncIterable[Symbol.asyncIterator] === 'function'
+  )
+}
+
+function isSensitiveBodyFieldName(rawName: string): boolean {
+  const normalized = rawName.trim().toLowerCase()
+  if (SENSITIVE_BODY_FIELD_NAMES.has(normalized)) return true
+
+  const compact = normalized.replace(/[-_\s.]/g, '')
+  return (
+    compact === 'apikey' ||
+    compact === 'authorization' ||
+    compact === 'cookie' ||
+    compact === 'privatekey' ||
+    compact === 'risuauth' ||
+    compact === 'setcookie' ||
+    compact.endsWith('apikey') ||
+    compact.endsWith('authorization') ||
+    compact.endsWith('password') ||
+    compact.endsWith('privatekey') ||
+    compact.endsWith('secret') ||
+    compact.endsWith('token')
+  )
+}
+
+function truncateUtf8Text(text: string, maxBytes: number): string {
+  const buffer = Buffer.from(text, 'utf8')
+  if (buffer.byteLength <= maxBytes) return text
+  return buffer.subarray(0, maxBytes).toString('utf8')
+}
+
 function resolveRoutePattern(request: FastifyRequest): string | undefined {
   const route = request.routeOptions.url
   return typeof route === 'string' && route.trim() !== '' ? route : undefined
@@ -217,8 +779,12 @@ function resolveCaller(request: FastifyRequest): string | undefined {
   return parts.length > 0 ? parts.join('; ') : undefined
 }
 
-function readHeaderString(value: string | string[] | undefined): string | undefined {
-  const raw = Array.isArray(value) ? value.find((entry) => entry.trim() !== '') : value
+function readHeaderString(value: string | number | string[] | undefined): string | undefined {
+  const raw = Array.isArray(value)
+    ? value.find((entry) => entry.trim() !== '')
+    : typeof value === 'number'
+      ? String(value)
+      : value
   if (typeof raw !== 'string') return undefined
   const trimmed = raw.trim()
   return trimmed === '' ? undefined : trimmed

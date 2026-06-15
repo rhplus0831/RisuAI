@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { Readable } from 'node:stream'
+import { gunzipSync } from 'node:zlib'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import type { RequestTraceMode } from '../src/config.js'
@@ -18,13 +20,44 @@ interface TraceEntry {
   Route?: string
   Caller?: string
   'Request-Header': string
+  'Request-Body'?: TraceBodyEntry
   'Response-Header': string
+  'Response-Body'?: TraceBodyEntry
   'X-Request-UID': string
   Timing: {
     process: number
     send: number
   }
 }
+
+type TraceBodyEntry =
+  | {
+      storage: 'inline'
+      contentType?: string
+      contentLength?: number
+      bytes: number
+      sha256: string
+      redacted?: true
+      text: string
+    }
+  | {
+      storage: 'gzip'
+      contentType?: string
+      contentLength?: number
+      bytes: number
+      gzipBytes: number
+      sha256: string
+      redacted?: true
+      path: string
+      preview: string
+    }
+  | {
+      storage: 'omitted'
+      contentType?: string
+      contentLength?: number
+      bytes?: number
+      reason: string
+    }
 
 const uidHeaderName = REQUEST_UID_HEADER.toLowerCase()
 
@@ -81,6 +114,12 @@ async function waitForTraceEntries(h: Harness, mode: RequestTraceMode, count: nu
 function expectTiming(value: unknown): void {
   expect(typeof value).toBe('number')
   expect(value).toBeGreaterThanOrEqual(0)
+}
+
+function requireTraceBody(entry: TraceEntry, key: 'Request-Body' | 'Response-Body'): TraceBodyEntry {
+  const body = entry[key]
+  expect(body).toBeDefined()
+  return body!
 }
 
 let harness: Harness
@@ -181,6 +220,99 @@ describe('request trace', () => {
     expect(entry.Caller).toBe(
       'referer=http://localhost:6418/?token=[redacted]&panel=chat; user-agent=trace-test-agent; risu-writer-session=writer-a',
     )
+  })
+
+  it('inlines small JSON request and response bodies with body redaction', async () => {
+    harness = await startHarness('agent')
+
+    await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/assets/exists',
+      headers: {
+        'content-type': 'application/json',
+      },
+      payload: JSON.stringify({
+        ids: [],
+        apiKey: 'secret-api-key',
+        nested: {
+          accessToken: 'secret-access-token',
+          visible: 'keep-me',
+        },
+      }),
+    })
+
+    const [entry] = await waitForTraceEntries(harness, 'agent', 1)
+    const requestBody = requireTraceBody(entry, 'Request-Body')
+    expect(requestBody.storage).toBe('inline')
+    expect(requestBody.contentType).toContain('application/json')
+    if (requestBody.storage === 'inline') {
+      expect(requestBody.redacted).toBe(true)
+      const parsed = JSON.parse(requestBody.text) as {
+        apiKey: string
+        nested: { accessToken: string; visible: string }
+      }
+      expect(parsed.apiKey).toBe('[redacted]')
+      expect(parsed.nested.accessToken).toBe('[redacted]')
+      expect(parsed.nested.visible).toBe('keep-me')
+      expect(requestBody.bytes).toBe(Buffer.byteLength(requestBody.text, 'utf8'))
+      expect(requestBody.sha256).toMatch(/^[a-f0-9]{64}$/)
+    }
+
+    const responseBody = requireTraceBody(entry, 'Response-Body')
+    expect(responseBody.storage).toBe('inline')
+    if (responseBody.storage === 'inline') {
+      expect(JSON.parse(responseBody.text)).toEqual({ missing: [] })
+    }
+  })
+
+  it('stores large text bodies as gzip sidecars', async () => {
+    harness = await startHarness('agent')
+
+    const note = 'x'.repeat(5 * 1024)
+    await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/assets/exists',
+      headers: {
+        'content-type': 'application/json',
+      },
+      payload: JSON.stringify({
+        ids: [],
+        note,
+      }),
+    })
+
+    const [entry] = await waitForTraceEntries(harness, 'agent', 1)
+    const requestBody = requireTraceBody(entry, 'Request-Body')
+    expect(requestBody.storage).toBe('gzip')
+    if (requestBody.storage !== 'gzip') return
+
+    expect(requestBody.path).toMatch(/^trace\/bodies\/agent\/[a-f0-9]{64}\.request\.json\.gz$/)
+    expect(requestBody.preview.length).toBeGreaterThan(0)
+    expect(requestBody.bytes).toBeGreaterThan(4 * 1024)
+    expect(requestBody.gzipBytes).toBeGreaterThan(0)
+
+    const sidecarPath = path.join(harness.dataDir, requestBody.path)
+    expect(existsSync(sidecarPath)).toBe(true)
+    const sidecarText = gunzipSync(readFileSync(sidecarPath)).toString('utf8')
+    expect(JSON.parse(sidecarText)).toEqual({ ids: [], note })
+  })
+
+  it('records omitted metadata for streaming response bodies', async () => {
+    harness = await startHarness('agent')
+    harness.app.get('/api/test/trace-stream', async (_req, reply) => {
+      reply.header('content-type', 'text/plain')
+      return reply.send(Readable.from(['streamed body']))
+    })
+
+    await harness.app.inject({ method: 'GET', url: '/api/test/trace-stream' })
+
+    const [entry] = await waitForTraceEntries(harness, 'agent', 1)
+    const responseBody = requireTraceBody(entry, 'Response-Body')
+    expect(responseBody).toEqual({
+      storage: 'omitted',
+      contentType: 'text/plain',
+      reason: 'stream',
+    })
   })
 
   it('uses the selected trace mode file', async () => {

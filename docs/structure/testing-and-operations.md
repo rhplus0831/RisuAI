@@ -57,6 +57,13 @@ Vite proxies `/api` to `RISU_API_PROXY_TARGET` or `http://localhost:6002`.
 Fastify defaults to `0.0.0.0:6002`. Vite dev changes only how the SPA bundle is
 served; `src/ts/platform.ts` still makes the browser Fastify-backed.
 
+`pnpm dev:agent` and `pnpm dev:human` enable API request traces under
+`data/trace/<mode>.jsonl`. Each traced response includes `X-Request-UID`; search
+that UID in the JSONL file to correlate a visible failure to one API call. Small
+text request/response bodies are inlined in the entry, while larger captured
+text bodies are written as `.gz` sidecars under `data/trace/bodies/<mode>/`.
+Multipart, binary, SSE, and stream bodies are recorded as omitted metadata.
+
 To serve a built SPA through Fastify:
 
 ```sh
