@@ -196,6 +196,7 @@
           </SelectInput>
           <span class="text-textcolor">{language.proxyAPIKey}</span>
           <TextInput
+            hideText
             size={'sm'}
             bind:value={
               () => customModelsDraft.value[index]?.key ?? '', (value) => updateCustomModel(index, { key: value })

@@ -1102,7 +1102,7 @@
         <span class="text-textcolor">API Key (overrides global)</span>
         <TextInput
           className="mb-4 mt-2"
-          hideText={DBState.db.hideApiKey}
+          hideText
           bind:value={characterDraft.value.oaiTTSConfig.apiKey}
           placeholder="Leave empty to use global OpenAI API key" />
 

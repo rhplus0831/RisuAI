@@ -25,7 +25,7 @@ import {
   seedSetting,
 } from './botSettingsParamsData'
 import { chatFormatSettingsItems } from './chatFormatSettingsData'
-import { displaySettingsItems } from './displaySettingsData.svelte'
+import { displayOtherSettingsItems, displaySettingsItems } from './displaySettingsData.svelte'
 import { languageSettingsItems } from './languageSettingsData.svelte'
 import type { SettingContext, SettingItem } from './types'
 import { setSettingValue } from './utils'
@@ -112,6 +112,20 @@ describe('server-backed data-driven settings', () => {
     })
 
     expect(missing).toEqual([])
+  })
+
+  it('does not expose the legacy API-key visibility toggle', () => {
+    const displayItems = collectSettingItems(displayOtherSettingsItems)
+
+    expect(displayItems.some((item) => item.id === 'display.hideApiKey')).toBe(false)
+    expect(displayItems.some((item) => item.bindKey === 'hideApiKey')).toBe(false)
+  })
+
+  it('renders data-driven translator secrets as hidden text fields', () => {
+    const languageItems = collectSettingItems(languageSettingsItems)
+
+    expect(languageItems.find((item) => item.bindPath === 'deeplOptions.key')?.options?.hideText).toBe(true)
+    expect(languageItems.find((item) => item.bindPath === 'deeplXOptions.token')?.options?.hideText).toBe(true)
   })
 
   it('surfaces conflicts without replaying the same setting patch', async () => {

@@ -24,7 +24,7 @@
   import { createServerBackedSettingDraft, watchServerBackedSettings } from 'src/ts/server/settingsBridge.svelte'
   import { ensurePromptTemplateHydrated } from 'src/ts/server/promptTemplateHydration'
 
-  const stopServerSettingsWatch = watchServerBackedSettings(['hideApiKey', 'useLegacyGUI'])
+  const stopServerSettingsWatch = watchServerBackedSettings(['useLegacyGUI'])
   onDestroy(stopServerSettingsWatch)
 
   const sdProviderDraft = createServerBackedSettingDraft<string>('sdProvider', '')
@@ -381,7 +381,7 @@
       <span class="text-textcolor mt-2">Novel AI {language.providerURL}</span>
       <TextInput size="sm" marginBottom placeholder="https://image.novelai.net" bind:value={NAIImgUrlDraft.value} />
       <span class="text-textcolor">API Key</span>
-      <TextInput size="sm" marginBottom placeholder="pst-..." bind:value={NAIApiKeyDraft.value} />
+      <TextInput hideText size="sm" marginBottom placeholder="pst-..." bind:value={NAIApiKeyDraft.value} />
 
       <span class="text-textcolor">Model</span>
       <SelectInput className="mb-4" bind:value={NAIImgModelDraft.value}>
@@ -713,7 +713,7 @@
 
     {#if sdProviderDraft.value === 'dalle'}
       <span class="text-textcolor">OpenAI API Key</span>
-      <TextInput size="sm" marginBottom placeholder="sk-..." bind:value={openAIKeyDraft.value} />
+      <TextInput hideText size="sm" marginBottom placeholder="sk-..." bind:value={openAIKeyDraft.value} />
 
       <span class="text-textcolor mt-4">Dall-E Quality</span>
       <SelectInput className="mt-2 mb-4" bind:value={dallEQualityDraft.value}>
@@ -724,7 +724,7 @@
 
     {#if sdProviderDraft.value === 'stability'}
       <span class="text-textcolor">Stability API Key</span>
-      <TextInput size="sm" marginBottom placeholder="..." bind:value={stabilityKeyDraft.value} />
+      <TextInput hideText size="sm" marginBottom placeholder="..." bind:value={stabilityKeyDraft.value} />
 
       <span class="text-textcolor">Stability Model</span>
       <SelectInput className="mt-2 mb-4" bind:value={stabilityModelDraft.value}>
@@ -796,7 +796,7 @@
 
     {#if sdProviderDraft.value === 'fal'}
       <span class="text-textcolor">Fal.ai API Key</span>
-      <TextInput size="sm" marginBottom placeholder="..." bind:value={falTokenDraft.value} />
+      <TextInput hideText size="sm" marginBottom placeholder="..." bind:value={falTokenDraft.value} />
 
       <span class="text-textcolor mt-4">Width</span>
       <NumberInput size="sm" marginBottom min={0} max={2048} bind:value={sdConfigDraft.value.width} />
@@ -826,7 +826,7 @@
         marginBottom={true}
         size={'sm'}
         placeholder="..."
-        hideText={DBState.db.hideApiKey}
+        hideText
         bind:value={googleDraft.value.accessToken} />
 
       <span class="text-textcolor">Model</span>
@@ -871,12 +871,7 @@
         bind:value={openaiCompatImageDraft.value.url} />
 
       <span class="text-textcolor">API Key</span>
-      <TextInput
-        size="sm"
-        marginBottom
-        placeholder="sk-..."
-        hideText={DBState.db.hideApiKey}
-        bind:value={openaiCompatImageDraft.value.key} />
+      <TextInput size="sm" marginBottom placeholder="sk-..." hideText bind:value={openaiCompatImageDraft.value.key} />
 
       <span class="text-textcolor">Model</span>
       <TextInput size="sm" marginBottom placeholder="dall-e-3" bind:value={openaiCompatImageDraft.value.model} />
@@ -901,12 +896,7 @@
 
     {#if sdProviderDraft.value === 'wavespeed'}
       <span class="text-textcolor">API Key</span>
-      <TextInput
-        size="sm"
-        marginBottom
-        placeholder="sk-..."
-        hideText={DBState.db.hideApiKey}
-        bind:value={wavespeedImageDraft.value.key} />
+      <TextInput size="sm" marginBottom placeholder="sk-..." hideText bind:value={wavespeedImageDraft.value.key} />
 
       <span class="text-textcolor">Model</span>
       <button
@@ -1026,22 +1016,22 @@
     <CheckInput bind:check={ttsAutoSpeechDraft.value} />
 
     <span class="text-textcolor mt-2">ElevenLabs API key</span>
-    <TextInput size="sm" marginBottom bind:value={elevenLabKeyDraft.value} />
+    <TextInput hideText size="sm" marginBottom bind:value={elevenLabKeyDraft.value} />
 
     <span class="text-textcolor mt-2">VOICEVOX URL</span>
     <TextInput size="sm" marginBottom bind:value={voicevoxUrlDraft.value} />
 
     <span class="text-textcolor">OpenAI Key</span>
-    <TextInput size="sm" marginBottom bind:value={openAIKeyDraft.value} />
+    <TextInput hideText size="sm" marginBottom bind:value={openAIKeyDraft.value} />
 
     <span class="text-textcolor mt-2">NovelAI API key</span>
-    <TextInput size="sm" marginBottom placeholder="pst-..." bind:value={NAIApiKeyDraft.value} />
+    <TextInput hideText size="sm" marginBottom placeholder="pst-..." bind:value={NAIApiKeyDraft.value} />
 
     <span class="text-textcolor">Huggingface Key</span>
-    <TextInput size="sm" marginBottom bind:value={huggingfaceKeyDraft.value} placeholder="hf_..." />
+    <TextInput hideText size="sm" marginBottom bind:value={huggingfaceKeyDraft.value} placeholder="hf_..." />
 
     <span class="text-textcolor">fish-speech API Key</span>
-    <TextInput size="sm" marginBottom bind:value={fishSpeechKeyDraft.value} />
+    <TextInput hideText size="sm" marginBottom bind:value={fishSpeechKeyDraft.value} />
   </Accordion>
 {/if}
 
@@ -1348,21 +1338,21 @@
 
     {#if hypaModelDraft.value === 'openai3small' || hypaModelDraft.value === 'openai3large' || hypaModelDraft.value === 'ada'}
       <span class="text-textcolor">OpenAI API Key</span>
-      <TextInput size="sm" marginBottom bind:value={hypaV3KeyDraft.value} />
+      <TextInput hideText size="sm" marginBottom bind:value={hypaV3KeyDraft.value} />
     {/if}
 
     {#if hypaModelDraft.value === 'custom'}
       <span class="text-textcolor">URL</span>
       <TextInput size="sm" marginBottom bind:value={hypaCustomSettingsDraft.value.url} />
       <span class="text-textcolor">Key/Password</span>
-      <TextInput size="sm" marginBottom bind:value={hypaCustomSettingsDraft.value.key} />
+      <TextInput hideText size="sm" marginBottom bind:value={hypaCustomSettingsDraft.value.key} />
       <span class="text-textcolor">Request Model</span>
       <TextInput size="sm" marginBottom bind:value={hypaCustomSettingsDraft.value.model} />
     {/if}
 
     {#if hypaModelDraft.value === 'voyageContext3'}
       <span class="text-textcolor">Voyage API Key</span>
-      <TextInput size="sm" marginBottom hideText={DBState.db.hideApiKey} bind:value={voyageApiKeyDraft.value} />
+      <TextInput size="sm" marginBottom hideText bind:value={voyageApiKeyDraft.value} />
     {/if}
   </Accordion>
 {/if}

@@ -57,7 +57,7 @@
   } from 'src/ts/pluginCommands'
   import { ensurePromptTemplateHydrated, promptTemplateHydratedStore } from 'src/ts/server/promptTemplateHydration'
 
-  const stopServerSettingsWatch = watchServerBackedSettings(['proxyRequestModel', 'hideApiKey', 'useLegacyGUI'])
+  const stopServerSettingsWatch = watchServerBackedSettings(['proxyRequestModel', 'useLegacyGUI'])
   onDestroy(stopServerSettingsWatch)
   const pendingPromptFieldPatch = {
     patch: {} as SettingsPatch,
@@ -479,12 +479,7 @@
 
   {#if modelInfo.provider === LLMProvider.GoogleCloud || subModelInfo.provider === LLMProvider.GoogleCloud}
     <span class="text-textcolor">GoogleAI API Key</span>
-    <TextInput
-      marginBottom={true}
-      size={'sm'}
-      placeholder="..."
-      hideText={DBState.db.hideApiKey}
-      bind:value={googleDraft.value.accessToken} />
+    <TextInput marginBottom={true} size={'sm'} placeholder="..." hideText bind:value={googleDraft.value.accessToken} />
   {/if}
   {#if modelInfo.provider === LLMProvider.VertexAI || subModelInfo.provider === LLMProvider.VertexAI}
     <span class="text-textcolor">Project ID</span>
@@ -506,7 +501,7 @@
       marginBottom={true}
       size={'sm'}
       placeholder="..."
-      hideText={DBState.db.hideApiKey}
+      hideText
       bind:value={vertexPrivateKeyDraft.value}
       oninput={clearVertexToken} />
     <span class="text-textcolor">Region</span>
@@ -523,50 +518,30 @@
   {/if}
   {#if modelInfo.provider === LLMProvider.NovelList || subModelInfo.provider === LLMProvider.NovelList}
     <span class="text-textcolor">NovelList {language.apiKey}</span>
-    <TextInput
-      hideText={DBState.db.hideApiKey}
-      marginBottom={true}
-      size={'sm'}
-      placeholder="..."
-      bind:value={novellistAPIDraft.value} />
+    <TextInput hideText marginBottom={true} size={'sm'} placeholder="..." bind:value={novellistAPIDraft.value} />
   {/if}
   {#if DBState.db.aiModel.startsWith('mancer') || DBState.db.subModel.startsWith('mancer')}
     <span class="text-textcolor">Mancer {language.apiKey}</span>
-    <TextInput
-      hideText={DBState.db.hideApiKey}
-      marginBottom={true}
-      size={'sm'}
-      placeholder="..."
-      bind:value={mancerHeaderDraft.value} />
+    <TextInput hideText marginBottom={true} size={'sm'} placeholder="..." bind:value={mancerHeaderDraft.value} />
   {/if}
   {#if modelInfo.provider === LLMProvider.Anthropic || subModelInfo.provider === LLMProvider.Anthropic || modelInfo.provider === LLMProvider.AWS || subModelInfo.provider === LLMProvider.AWS}
     <span class="text-textcolor">Claude {language.apiKey}</span>
-    <TextInput
-      hideText={DBState.db.hideApiKey}
-      marginBottom={true}
-      size={'sm'}
-      placeholder="..."
-      bind:value={claudeAPIKeyDraft.value} />
+    <TextInput hideText marginBottom={true} size={'sm'} placeholder="..." bind:value={claudeAPIKeyDraft.value} />
   {/if}
   {#if modelInfo.provider === LLMProvider.Mistral || subModelInfo.provider === LLMProvider.Mistral}
     <span class="text-textcolor">Mistral {language.apiKey}</span>
-    <TextInput
-      hideText={DBState.db.hideApiKey}
-      marginBottom={true}
-      size={'sm'}
-      placeholder="..."
-      bind:value={mistralKeyDraft.value} />
+    <TextInput hideText marginBottom={true} size={'sm'} placeholder="..." bind:value={mistralKeyDraft.value} />
   {/if}
   {#if modelInfo.provider === LLMProvider.NovelAI || subModelInfo.provider === LLMProvider.NovelAI}
     <span class="text-textcolor">NovelAI Bearer Token</span>
-    <TextInput bind:value={novelaiDraft.value.token} />
+    <TextInput hideText bind:value={novelaiDraft.value.token} />
   {/if}
   {#if DBState.db.aiModel === 'reverse_proxy' || DBState.db.subModel === 'reverse_proxy'}
     <span class="text-textcolor mt-2">URL <Help key="forceUrl" /></span>
     <TextInput marginBottom={false} size={'sm'} bind:value={forceReplaceUrlDraft.value} placeholder="https//..." />
     <span class="text-textcolor mt-4"> {language.proxyAPIKey}</span>
     <TextInput
-      hideText={DBState.db.hideApiKey}
+      hideText
       marginBottom={false}
       size={'sm'}
       placeholder="leave it blank if it hasn't password"
@@ -589,7 +564,7 @@
   {/if}
   {#if modelInfo.provider === LLMProvider.Cohere || subModelInfo.provider === LLMProvider.Cohere}
     <span class="text-textcolor mt-4">Cohere {language.apiKey}</span>
-    <TextInput hideText={DBState.db.hideApiKey} marginBottom={false} size={'sm'} bind:value={cohereAPIKeyDraft.value} />
+    <TextInput hideText marginBottom={false} size={'sm'} bind:value={cohereAPIKeyDraft.value} />
   {/if}
   {#if usesOllamaLocal || usesOllamaCloud}
     {#if usesOllamaLocal}
@@ -632,11 +607,7 @@
       {/if}
 
       <span class="text-textcolor mt-4">Ollama {language.apiKey}</span>
-      <TextInput
-        hideText={DBState.db.hideApiKey}
-        marginBottom={false}
-        size={'sm'}
-        bind:value={ollamaApiKeyDraft.value} />
+      <TextInput hideText marginBottom={false} size={'sm'} bind:value={ollamaApiKeyDraft.value} />
 
       <span class="text-textcolor mt-4">Ollama {language.format}</span>
       <SelectInput
@@ -682,7 +653,7 @@
   {/if}
   {#if DBState.db.aiModel === 'nanogpt' || DBState.db.subModel === 'nanogpt'}
     <span class="text-textcolor mt-4">NanoGPT {language.apiKey}</span>
-    <TextInput hideText={DBState.db.hideApiKey} marginBottom={false} size={'sm'} bind:value={nanogptKeyDraft.value} />
+    <TextInput hideText marginBottom={false} size={'sm'} bind:value={nanogptKeyDraft.value} />
 
     <NanoGPTDashboard apiKey={nanogptKeyDraft.value} />
 
@@ -737,11 +708,7 @@
   {/if}
   {#if DBState.db.aiModel === 'openrouter' || DBState.db.subModel === 'openrouter'}
     <span class="text-textcolor mt-4">OpenRouter {language.apiKey}</span>
-    <TextInput
-      hideText={DBState.db.hideApiKey}
-      marginBottom={false}
-      size={'sm'}
-      bind:value={openrouterKeyDraft.value} />
+    <TextInput hideText marginBottom={false} size={'sm'} bind:value={openrouterKeyDraft.value} />
 
     <span class="text-textcolor mt-4">OpenRouter {language.model}</span>
     {#await getOpenRouterModels()}
@@ -764,7 +731,7 @@
   {#if modelInfo.provider === LLMProvider.OpenAI || subModelInfo.provider === LLMProvider.OpenAI}
     <span class="text-textcolor">OpenAI {language.apiKey} <Help key="oaiapikey" /></span>
     <TextInput
-      hideText={DBState.db.hideApiKey}
+      hideText
       marginBottom={false}
       size={'sm'}
       bind:value={openAIKeyDraft.value}
@@ -774,7 +741,7 @@
   {#if modelInfo.keyIdentifier}
     <span class="text-textcolor">{modelInfo.name} {language.apiKey}</span>
     <TextInput
-      hideText={DBState.db.hideApiKey}
+      hideText
       marginBottom={false}
       size={'sm'}
       bind:value={OaiCompAPIKeysDraft.value[modelInfo.keyIdentifier]}
@@ -784,7 +751,7 @@
   {#if subModelInfo.keyIdentifier && subModelInfo.keyIdentifier !== modelInfo.keyIdentifier}
     <span class="text-textcolor">{subModelInfo.name} {language.apiKey}</span>
     <TextInput
-      hideText={DBState.db.hideApiKey}
+      hideText
       marginBottom={false}
       size={'sm'}
       bind:value={OaiCompAPIKeysDraft.value[subModelInfo.keyIdentifier]}
@@ -837,7 +804,7 @@
 
   {#if DBState.db.aiModel.startsWith('horde') || DBState.db.subModel.startsWith('horde')}
     <span class="text-textcolor">Horde {language.apiKey}</span>
-    <TextInput hideText={DBState.db.hideApiKey} marginBottom={true} bind:value={hordeConfigDraft.value.apiKey} />
+    <TextInput hideText marginBottom={true} bind:value={hordeConfigDraft.value.apiKey} />
   {/if}
   {#if DBState.db.aiModel === 'textgen_webui' || DBState.db.subModel === 'textgen_webui' || DBState.db.aiModel === 'mancer' || DBState.db.subModel === 'mancer'}
     <span class="text-textcolor mt-2">Blocking {language.providerURL}</span>

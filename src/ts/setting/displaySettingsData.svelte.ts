@@ -398,13 +398,6 @@ export const displayOtherSettingsItems: SettingItem[] = [
     keywords: ['legacy', 'gui'],
   },
   {
-    id: 'display.hideApiKey',
-    type: 'check',
-    labelKey: 'hideApiKeys',
-    bindKey: 'hideApiKey',
-    keywords: ['api', 'key', 'hide'],
-  },
-  {
     id: 'display.unformatQuotes',
     type: 'check',
     labelKey: 'unformatQuotes',

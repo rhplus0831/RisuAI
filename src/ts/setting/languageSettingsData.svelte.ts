@@ -153,6 +153,7 @@ export const languageSettingsItems: SettingItem[] = [
     labelKey: 'deeplKey',
     bindPath: 'deeplOptions.key',
     classes: 'mt-4',
+    options: { hideText: true },
     condition: (ctx) => !!ctx.db.translator && ctx.db.translatorType === 'deepl',
   },
 
@@ -180,6 +181,7 @@ export const languageSettingsItems: SettingItem[] = [
     labelKey: 'deeplXToken',
     bindPath: 'deeplXOptions.token',
     classes: 'mt-4',
+    options: { hideText: true },
     condition: (ctx) => !!ctx.db.translator && ctx.db.translatorType === 'deeplX',
   },
 

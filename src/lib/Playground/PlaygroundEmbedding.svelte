@@ -57,14 +57,14 @@
 
 {#if model === 'openai3small' || model === 'openai3large' || model === 'ada'}
   <span class="text-textcolor text-lg">OpenAI API Key</span>
-  <TextInput size="sm" marginBottom bind:value={hypaV3KeyDraft.value} />
+  <TextInput hideText size="sm" marginBottom bind:value={hypaV3KeyDraft.value} />
 {/if}
 
 {#if model === 'custom'}
   <span class="text-textcolor text-lg">URL</span>
   <TextInput size="sm" marginBottom bind:value={hypaCustomSettingsDraft.value.url} />
   <span class="text-textcolor text-lg">Key/Password</span>
-  <TextInput size="sm" marginBottom bind:value={hypaCustomSettingsDraft.value.key} />
+  <TextInput hideText size="sm" marginBottom bind:value={hypaCustomSettingsDraft.value.key} />
   <span class="text-textcolor text-lg">Request Model</span>
   <TextInput size="sm" marginBottom bind:value={hypaCustomSettingsDraft.value.model} />
 {/if}
