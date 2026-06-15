@@ -1,6 +1,6 @@
 # UI/UX Behavioral Audit — Results
 
-Audit plan: [`docs/AUDIT-PLAN.md`](../../docs/AUDIT-PLAN.md).
+Audit plan: [`docs/AUDIT-PLAN.md`](../AUDIT-PLAN.md).
 Date: 2026-06-13. Tree: branch `fastify` at `35559c767`.
 
 This audit measures **rendered-state divergence**: a user-driven transition that
