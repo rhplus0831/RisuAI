@@ -285,11 +285,49 @@
     globalNote: 0,
   })
 
+  type BotSettingsKind = 'legacy' | 'model' | 'prompt'
+
   interface Props {
-    goPromptTemplate?: any
+    goPromptTemplate?: () => void
+    settingsKind?: BotSettingsKind
   }
 
-  let { goPromptTemplate = () => {} }: Props = $props()
+  let { goPromptTemplate = () => {}, settingsKind = 'legacy' }: Props = $props()
+
+  function defaultSubmenuForKind(kind: BotSettingsKind): number {
+    if (kind === 'model') return 0
+    if (kind === 'prompt') return 2
+    return DBState.db.useLegacyGUI ? -1 : 0
+  }
+
+  // svelte-ignore state_referenced_locally
+  let submenu = $state(defaultSubmenuForKind(settingsKind))
+  let availableSubmenus = $derived.by(() => {
+    if (settingsKind === 'model') return [0, 1, 3]
+    if (settingsKind === 'prompt') return [2, 3]
+    return [0, 1, 2, 3]
+  })
+  let pageTitle = $derived(
+    settingsKind === 'model' ? language.model : settingsKind === 'prompt' ? language.prompt : language.chatBot,
+  )
+  let showSubmenuSwitcher = $derived(submenu !== -1 && availableSubmenus.length > 1)
+  let showModelExtras = $derived(settingsKind !== 'prompt')
+  let showPromptExtras = $derived(settingsKind !== 'model')
+  let showModelPresetButton = $derived(settingsKind !== 'prompt' && submenu !== -1)
+  let showPromptPresetButton = $derived(settingsKind === 'prompt' || (settingsKind === 'legacy' && submenu === -1))
+  let showLegacyMigrationButton = $derived(settingsKind === 'legacy' && DBState.db.botPresets?.length > 0)
+
+  function hasSubmenu(id: number): boolean {
+    return availableSubmenus.includes(id)
+  }
+
+  function isLastSubmenu(id: number): boolean {
+    return availableSubmenus[availableSubmenus.length - 1] === id
+  }
+
+  function sectionVisible(id: number): boolean {
+    return submenu === id || (submenu === -1 && hasSubmenu(id))
+  }
 
   async function loadTokenize() {
     tokens.mainPrompt = await tokenizeAccurate(mainPromptDraft.value, true)
@@ -473,7 +511,6 @@
     }
   })
 
-  let submenu = $state(DBState.db.useLegacyGUI ? -1 : 0)
   let modelInfo = $derived(getModelInfo(DBState.db.aiModel))
   let subModelInfo = $derived(getModelInfo(DBState.db.subModel))
   let nanogptInputMode = $state<'list' | 'manual'>(
@@ -493,46 +530,58 @@
   let usesOllamaCloud = $derived(DBState.db.aiModel === 'ollama-cloud' || DBState.db.subModel === 'ollama-cloud')
 </script>
 
-<h2 class="mb-2 text-2xl font-bold mt-2">{language.chatBot}</h2>
+<h2 class="mb-2 text-2xl font-bold mt-2">{pageTitle}</h2>
 
-{#if submenu !== -1}
+{#if showSubmenuSwitcher}
   <div class="flex w-full rounded-md border border-darkborderc mb-4">
-    <button
-      onclick={() => {
-        submenu = 0
-      }}
-      class="p-2 flex-1 border-r border-darkborderc"
-      class:bg-darkbutton={submenu === 0}>
-      <span>{language.model}</span>
-    </button>
-    <button
-      onclick={() => {
-        submenu = 1
-      }}
-      class="p2 flex-1 border-r border-darkborderc"
-      class:bg-darkbutton={submenu === 1}>
-      <span>{language.parameters}</span>
-    </button>
-    <button
-      onclick={() => {
-        submenu = 2
-      }}
-      class="p-2 flex-1 border-r border-darkborderc"
-      class:bg-darkbutton={submenu === 2}>
-      <span>{language.prompt}</span>
-    </button>
-    <button
-      onclick={() => {
-        submenu = 3
-      }}
-      class="p-2 flex-1"
-      class:bg-darkbutton={submenu === 3}>
-      <span>{language.others}</span>
-    </button>
+    {#if hasSubmenu(0)}
+      <button
+        onclick={() => {
+          submenu = 0
+        }}
+        class="p-2 flex-1 border-darkborderc"
+        class:border-r={!isLastSubmenu(0)}
+        class:bg-darkbutton={submenu === 0}>
+        <span>{language.model}</span>
+      </button>
+    {/if}
+    {#if hasSubmenu(1)}
+      <button
+        onclick={() => {
+          submenu = 1
+        }}
+        class="p-2 flex-1 border-darkborderc"
+        class:border-r={!isLastSubmenu(1)}
+        class:bg-darkbutton={submenu === 1}>
+        <span>{language.parameters}</span>
+      </button>
+    {/if}
+    {#if hasSubmenu(2)}
+      <button
+        onclick={() => {
+          submenu = 2
+        }}
+        class="p-2 flex-1 border-darkborderc"
+        class:border-r={!isLastSubmenu(2)}
+        class:bg-darkbutton={submenu === 2}>
+        <span>{language.prompt}</span>
+      </button>
+    {/if}
+    {#if hasSubmenu(3)}
+      <button
+        onclick={() => {
+          submenu = 3
+        }}
+        class="p-2 flex-1 border-darkborderc"
+        class:border-r={!isLastSubmenu(3)}
+        class:bg-darkbutton={submenu === 3}>
+        <span>{language.others}</span>
+      </button>
+    {/if}
   </div>
 {/if}
 
-{#if submenu === 0 || submenu === -1}
+{#if sectionVisible(0)}
   <span class="text-textcolor mt-4">{language.model} <Help key="model" /></span>
   <ModelList bind:value={aiModelDraft.value} />
 
@@ -893,7 +942,7 @@
   {/if}
 {/if}
 
-{#if submenu === 1 || submenu === -1}
+{#if sectionVisible(1)}
   <SettingRenderer items={allBasicParameterItems} {modelInfo} {subModelInfo} />
   {#if DBState.db.aiModel === 'textgen_webui' || DBState.db.aiModel === 'mancer' || DBState.db.aiModel.startsWith('local_') || DBState.db.aiModel.startsWith('hf:::')}
     <span class="text-textcolor">Repetition Penalty</span>
@@ -1066,65 +1115,67 @@
   <SeparateParametersSection />
 {/if}
 
-{#if submenu === 3 || submenu === -1}
-  <Accordion styled name="Bias " help="bias">
-    <table class="contain w-full max-w-full tabler">
-      <tbody>
-        <tr>
-          <th class="font-medium">Bias</th>
-          <th class="font-medium">{language.value}</th>
-          <th>
-            <button
-              class="font-medium cursor-pointer hover:text-green-500 w-full flex justify-center items-center"
-              onclick={() => {
-                biasDraft.value = [...biasDraft.value, ['', 0]]
-              }}><PlusIcon /></button>
-          </th>
-        </tr>
-        {#if biasDraft.value.length === 0}
+{#if sectionVisible(3)}
+  {#if showPromptExtras}
+    <Accordion styled name="Bias " help="bias">
+      <table class="contain w-full max-w-full tabler">
+        <tbody>
           <tr>
-            <td colspan="3" class="text-textcolor2">{language.noBias}</td>
-          </tr>
-        {/if}
-        {#each biasDraft.value as bias, i}
-          <tr>
-            <td class="font-medium truncate">
-              <TextInput bind:value={biasDraft.value[i][0]} size="lg" fullwidth />
-            </td>
-            <td class="font-medium truncate">
-              <NumberInput bind:value={biasDraft.value[i][1]} max={100} min={-101} size="lg" fullwidth />
-            </td>
-            <td>
+            <th class="font-medium">Bias</th>
+            <th class="font-medium">{language.value}</th>
+            <th>
               <button
-                class="font-medium flex justify-center items-center h-full cursor-pointer hover:text-green-500 w-full"
+                class="font-medium cursor-pointer hover:text-green-500 w-full flex justify-center items-center"
                 onclick={() => {
-                  biasDraft.value = biasDraft.value.filter((_, index) => index !== i)
-                }}><TrashIcon /></button>
-            </td>
+                  biasDraft.value = [...biasDraft.value, ['', 0]]
+                }}><PlusIcon /></button>
+            </th>
           </tr>
-        {/each}
-      </tbody>
-    </table>
-    <div class="text-textcolor2 mt-2 flex items-center gap-2">
-      <button
-        class="font-medium cursor-pointer hover:text-textcolor gap-2"
-        onclick={() => {
-          const data = JSON.stringify(biasDraft.value, null, 2)
-          downloadFile('bias.json', data)
-        }}><DownloadIcon /></button>
-      <button
-        class="font-medium cursor-pointer hover:text-textcolor"
-        onclick={async () => {
-          const sel = await selectSingleFile(['json'])
-          const utf8 = new TextDecoder().decode(sel.data)
-          if (Array.isArray(JSON.parse(utf8))) {
-            biasDraft.value = JSON.parse(utf8)
-          }
-        }}><HardDriveUploadIcon /></button>
-    </div>
-  </Accordion>
+          {#if biasDraft.value.length === 0}
+            <tr>
+              <td colspan="3" class="text-textcolor2">{language.noBias}</td>
+            </tr>
+          {/if}
+          {#each biasDraft.value as bias, i}
+            <tr>
+              <td class="font-medium truncate">
+                <TextInput bind:value={biasDraft.value[i][0]} size="lg" fullwidth />
+              </td>
+              <td class="font-medium truncate">
+                <NumberInput bind:value={biasDraft.value[i][1]} max={100} min={-101} size="lg" fullwidth />
+              </td>
+              <td>
+                <button
+                  class="font-medium flex justify-center items-center h-full cursor-pointer hover:text-green-500 w-full"
+                  onclick={() => {
+                    biasDraft.value = biasDraft.value.filter((_, index) => index !== i)
+                  }}><TrashIcon /></button>
+              </td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+      <div class="text-textcolor2 mt-2 flex items-center gap-2">
+        <button
+          class="font-medium cursor-pointer hover:text-textcolor gap-2"
+          onclick={() => {
+            const data = JSON.stringify(biasDraft.value, null, 2)
+            downloadFile('bias.json', data)
+          }}><DownloadIcon /></button>
+        <button
+          class="font-medium cursor-pointer hover:text-textcolor"
+          onclick={async () => {
+            const sel = await selectSingleFile(['json'])
+            const utf8 = new TextDecoder().decode(sel.data)
+            if (Array.isArray(JSON.parse(utf8))) {
+              biasDraft.value = JSON.parse(utf8)
+            }
+          }}><HardDriveUploadIcon /></button>
+      </div>
+    </Accordion>
+  {/if}
 
-  {#if DBState.db.aiModel === 'reverse_proxy'}
+  {#if showModelExtras && DBState.db.aiModel === 'reverse_proxy'}
     <Accordion styled name="{language.additionalParams} " help="additionalParams">
       <table class="contain w-full max-w-full tabler">
         <tbody>
@@ -1166,41 +1217,43 @@
     </Accordion>
   {/if}
 
-  <Accordion styled name={language.promptTemplate}>
-    {#if !promptTemplateHydrated}
-      <span class="text-textcolor2">{language.loading}</span>
-    {:else if DBState.db.promptTemplate}
-      {#if submenu !== -1}
-        <PromptSettings mode="inline" subMenu={1} />
-      {/if}
-    {:else}
-      <Check
-        check={false}
-        name={language.usePromptTemplate}
-        onChange={async () => {
-          if (!(await ensurePromptTemplateHydrated())) return
-          withTrustedServerProjectionWrite(() => {
-            DBState.db.promptTemplate = []
-          })
-          if (canUseServerCommands()) {
-            void runServerCommand({
-              command: (baseRevision) =>
-                enablePromptItemsCommand({
-                  baseRevision,
-                  enabled: true,
-                }),
-              rollback: () => {
-                withTrustedServerProjectionWrite(() => {
-                  if (Array.isArray(DBState.db.promptTemplate) && DBState.db.promptTemplate.length === 0) {
-                    DBState.db.promptTemplate = undefined
-                  }
-                })
-              },
+  {#if showPromptExtras}
+    <Accordion styled name={language.promptTemplate}>
+      {#if !promptTemplateHydrated}
+        <span class="text-textcolor2">{language.loading}</span>
+      {:else if DBState.db.promptTemplate}
+        {#if submenu !== -1}
+          <PromptSettings mode="inline" subMenu={1} />
+        {/if}
+      {:else}
+        <Check
+          check={false}
+          name={language.usePromptTemplate}
+          onChange={async () => {
+            if (!(await ensurePromptTemplateHydrated())) return
+            withTrustedServerProjectionWrite(() => {
+              DBState.db.promptTemplate = []
             })
-          }
-        }} />
-    {/if}
-  </Accordion>
+            if (canUseServerCommands()) {
+              void runServerCommand({
+                command: (baseRevision) =>
+                  enablePromptItemsCommand({
+                    baseRevision,
+                    enabled: true,
+                  }),
+                rollback: () => {
+                  withTrustedServerProjectionWrite(() => {
+                    if (Array.isArray(DBState.db.promptTemplate) && DBState.db.promptTemplate.length === 0) {
+                      DBState.db.promptTemplate = undefined
+                    }
+                  })
+                },
+              })
+            }
+          }} />
+      {/if}
+    </Accordion>
+  {/if}
 
   {#snippet CustomFlagButton(name: string, flag: number)}
     <Button
@@ -1213,97 +1266,106 @@
     </Button>
   {/snippet}
 
-  <Accordion styled name={language.customFlags}>
-    <Check bind:check={enableCustomFlagsDraft.value} name={language.enableCustomFlags} />
+  {#if showModelExtras}
+    <Accordion styled name={language.customFlags}>
+      <Check bind:check={enableCustomFlagsDraft.value} name={language.enableCustomFlags} />
 
-    {#if enableCustomFlagsDraft.value}
-      {@render CustomFlagButton('hasImageInput', 0)}
-      {@render CustomFlagButton('hasImageOutput', 1)}
-      {@render CustomFlagButton('hasAudioInput', 2)}
-      {@render CustomFlagButton('hasAudioOutput', 3)}
-      {@render CustomFlagButton('hasPrefill', 4)}
-      {@render CustomFlagButton('hasCache', 5)}
-      {@render CustomFlagButton('hasFullSystemPrompt', 6)}
-      {@render CustomFlagButton('hasFirstSystemPrompt', 7)}
-      {@render CustomFlagButton('hasStreaming', 8)}
-      {@render CustomFlagButton('requiresAlternateRole', 9)}
-      {@render CustomFlagButton('mustStartWithUserInput', 10)}
-      {@render CustomFlagButton('hasVideoInput', 12)}
-      {@render CustomFlagButton('OAICompletionTokens', 13)}
-      {@render CustomFlagButton('DeveloperRole', 14)}
-      {@render CustomFlagButton('geminiThinking', 15)}
-      {@render CustomFlagButton('geminiBlockOff', 16)}
-      {@render CustomFlagButton('deepSeekPrefix', 17)}
-      {@render CustomFlagButton('deepSeekThinkingInput', 18)}
-      {@render CustomFlagButton('deepSeekThinkingOutput', 19)}
-      {@render CustomFlagButton('noCivilIntegrity', 20)}
-      {@render CustomFlagButton('claudeThinking', 21)}
-      {@render CustomFlagButton('claudeAdaptiveThinking', 22)}
-      {@render CustomFlagButton('deepSeekThinkingToggle', 24)}
-    {/if}
-  </Accordion>
+      {#if enableCustomFlagsDraft.value}
+        {@render CustomFlagButton('hasImageInput', 0)}
+        {@render CustomFlagButton('hasImageOutput', 1)}
+        {@render CustomFlagButton('hasAudioInput', 2)}
+        {@render CustomFlagButton('hasAudioOutput', 3)}
+        {@render CustomFlagButton('hasPrefill', 4)}
+        {@render CustomFlagButton('hasCache', 5)}
+        {@render CustomFlagButton('hasFullSystemPrompt', 6)}
+        {@render CustomFlagButton('hasFirstSystemPrompt', 7)}
+        {@render CustomFlagButton('hasStreaming', 8)}
+        {@render CustomFlagButton('requiresAlternateRole', 9)}
+        {@render CustomFlagButton('mustStartWithUserInput', 10)}
+        {@render CustomFlagButton('hasVideoInput', 12)}
+        {@render CustomFlagButton('OAICompletionTokens', 13)}
+        {@render CustomFlagButton('DeveloperRole', 14)}
+        {@render CustomFlagButton('geminiThinking', 15)}
+        {@render CustomFlagButton('geminiBlockOff', 16)}
+        {@render CustomFlagButton('deepSeekPrefix', 17)}
+        {@render CustomFlagButton('deepSeekThinkingInput', 18)}
+        {@render CustomFlagButton('deepSeekThinkingOutput', 19)}
+        {@render CustomFlagButton('noCivilIntegrity', 20)}
+        {@render CustomFlagButton('claudeThinking', 21)}
+        {@render CustomFlagButton('claudeAdaptiveThinking', 22)}
+        {@render CustomFlagButton('deepSeekThinkingToggle', 24)}
+      {/if}
+    </Accordion>
+  {/if}
 
-  <Accordion styled name={language.moduleIntergration} help="moduleIntergration">
-    <TextAreaInput bind:value={moduleIntergrationDraft.value} fullwidth height={'32'} autocomplete="off" />
-  </Accordion>
+  {#if showPromptExtras}
+    <Accordion styled name={language.moduleIntergration} help="moduleIntergration">
+      <TextAreaInput bind:value={moduleIntergrationDraft.value} fullwidth height={'32'} autocomplete="off" />
+    </Accordion>
+  {/if}
 
-  <Accordion styled name={language.tools}>
-    <Check
-      name={language.search}
-      check={(modelToolsDraft.value ?? []).includes('search')}
-      onChange={() => {
-        toggleModelTool('search')
-      }} />
-  </Accordion>
+  {#if showModelExtras}
+    <Accordion styled name={language.tools}>
+      <Check
+        name={language.search}
+        check={(modelToolsDraft.value ?? []).includes('search')}
+        onChange={() => {
+          toggleModelTool('search')
+        }} />
+    </Accordion>
+  {/if}
 
-  <Accordion styled name={language.regexScript}>
-    <RegexList bind:value={presetRegexDraft.value} buttons />
-  </Accordion>
+  {#if showPromptExtras}
+    <Accordion styled name={language.regexScript}>
+      <RegexList bind:value={presetRegexDraft.value} buttons />
+    </Accordion>
 
-  <Accordion styled name={language.icon}>
-    <div class="p-2 rounded-md border border-darkborderc flex flex-col items-center gap-2">
-      <span>
-        {language.preview}
-      </span>
-      <div class="flex items-center justify-center gap-2">
-        {#if selectedPromptPreset?.image}
-          <img src={selectedPromptPreset.image} alt="icon" class="w-6 h-6 rounded-md" decoding="async" />
-          <span class="text-textcolor2">{selectedPromptPreset.name}</span>
-        {:else}
-          <span class="text-textcolor2">{language.noImages}</span>
-        {/if}
+    <Accordion styled name={language.icon}>
+      <div class="p-2 rounded-md border border-darkborderc flex flex-col items-center gap-2">
+        <span>
+          {language.preview}
+        </span>
+        <div class="flex items-center justify-center gap-2">
+          {#if selectedPromptPreset?.image}
+            <img src={selectedPromptPreset.image} alt="icon" class="w-6 h-6 rounded-md" decoding="async" />
+            <span class="text-textcolor2">{selectedPromptPreset.name}</span>
+          {:else}
+            <span class="text-textcolor2">{language.noImages}</span>
+          {/if}
+        </div>
       </div>
-    </div>
-    <button
-      class="mt-2 text-textcolor2 hover:text-textcolor focus-within:text-textcolor"
-      onclick={async () => {
-        const sel = await selectSingleFile(['png', 'jpg', 'jpeg', 'webp'])
-        const canvas = document.createElement('canvas')
-        const ctx = canvas.getContext('2d')
-        const img = new Image()
-        //@ts-expect-error Uint8Array buffer type (ArrayBufferLike) is incompatible with BlobPart's ArrayBuffer
-        const blob = new Blob([sel.data], { type: 'image/png' })
-        img.src = URL.createObjectURL(blob)
-        await img.decode()
-        canvas.width = 48
-        canvas.height = 48
-        ctx.drawImage(img, 0, 0, 48, 48)
-        const data = canvas.toDataURL('image/jpeg', 0.7)
-        updatePromptPreset(DBState.db.promptPresetsId, { image: data }) // Since its small (max 2304 pixels), it is okay to store it directly.
-      }}>
-      <UploadIcon />
-    </button>
-  </Accordion>
-  {#if submenu !== -1}
-    <Button
-      onclick={() => {
-        openPresetListModal('global', 'model')
-      }}
-      className="mt-4">{language.modelPresets}</Button>
+      <button
+        class="mt-2 text-textcolor2 hover:text-textcolor focus-within:text-textcolor"
+        onclick={async () => {
+          const sel = await selectSingleFile(['png', 'jpg', 'jpeg', 'webp'])
+          const canvas = document.createElement('canvas')
+          const ctx = canvas.getContext('2d')
+          const img = new Image()
+          //@ts-expect-error Uint8Array buffer type (ArrayBufferLike) is incompatible with BlobPart's ArrayBuffer
+          const blob = new Blob([sel.data], { type: 'image/png' })
+          img.src = URL.createObjectURL(blob)
+          await img.decode()
+          canvas.width = 48
+          canvas.height = 48
+          ctx.drawImage(img, 0, 0, 48, 48)
+          const data = canvas.toDataURL('image/jpeg', 0.7)
+          updatePromptPreset(DBState.db.promptPresetsId, { image: data }) // Since its small (max 2304 pixels), it is okay to store it directly.
+        }}>
+        <UploadIcon />
+      </button>
+    </Accordion>
   {/if}
 {/if}
 
-{#if submenu === 2 || submenu === -1}
+{#if showModelPresetButton}
+  <Button
+    onclick={() => {
+      openPresetListModal('global', 'model')
+    }}
+    className="mt-4">{language.modelPresets}</Button>
+{/if}
+
+{#if sectionVisible(2)}
   {#if !promptTemplateHydrated}
     <span class="text-textcolor2">{language.loading}</span>
   {:else if !DBState.db.promptTemplate}
@@ -1331,17 +1393,17 @@
     <Button onclick={goPromptTemplate} size="sm">{language.promptTemplate}</Button>
   </div>
 {/if}
-{#if submenu === -1}
+{#if showPromptPresetButton}
   <Button
     onclick={() => {
       openPresetListModal('global', 'prompt')
     }}
     className="mt-4">{language.promptPresets}</Button>
-  {#if DBState.db.botPresets?.length > 0}
-    <Button
-      onclick={() => {
-        openPresetListModal('global', 'legacy')
-      }}
-      className="mt-2">{language.legacyBotPresetMigration}</Button>
-  {/if}
+{/if}
+{#if showLegacyMigrationButton}
+  <Button
+    onclick={() => {
+      openPresetListModal('global', 'legacy')
+    }}
+    className="mt-2">{language.legacyBotPresetMigration}</Button>
 {/if}

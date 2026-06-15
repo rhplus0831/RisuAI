@@ -64,6 +64,10 @@ function supporterButton() {
   return button!
 }
 
+function settingsButton(label: string) {
+  return Array.from(target.querySelectorAll('button')).find((candidate) => candidate.textContent?.trim() === label)
+}
+
 async function flushClick() {
   await Promise.resolve()
   await tick()
@@ -165,5 +169,32 @@ describe('Settings supporter tab', () => {
     expect(get(SettingsMenuIndex)).toBe(77)
     expect(supporterSpies.loadSupporters).toHaveBeenCalledOnce()
     expect(fetch).toHaveBeenCalledWith(SUPPORTER_ENDPOINT)
+  })
+
+  it('shows split model and prompt settings items without the legacy Chat Bot item by default', () => {
+    expect(settingsButton(language.model)).toBeTruthy()
+    expect(settingsButton(language.prompt)).toBeTruthy()
+    expect(settingsButton(language.chatBot)).toBeUndefined()
+  })
+
+  it('shows the legacy Chat Bot settings item only when legacy bot presets remain', async () => {
+    expect(settingsButton(language.chatBot)).toBeUndefined()
+
+    if (component) {
+      unmount(component)
+      component = undefined
+    }
+    DBState.db = {
+      enableRisuaiProTools: false,
+      doNotWarnExternalServers: false,
+      settingsCloseButtonSize: 24,
+      botPresets: [{ id: 'legacy-preset', name: 'Legacy preset' }],
+    } as any
+    component = mount(Settings, { target })
+    await tick()
+
+    expect(settingsButton(language.model)).toBeTruthy()
+    expect(settingsButton(language.prompt)).toBeTruthy()
+    expect(settingsButton(language.chatBot)).toBeTruthy()
   })
 })

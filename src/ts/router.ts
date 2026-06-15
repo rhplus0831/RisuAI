@@ -34,7 +34,7 @@ interface StateRouteInput {
   chatId?: string
 }
 
-const DEFAULT_SETTINGS_INDEX = 1
+const DEFAULT_SETTINGS_INDEX = 17
 const DEFAULT_PLAYGROUND_INDEX = 1
 
 const settingIndexBySlug = new Map<string, number>([
@@ -48,6 +48,9 @@ const settingIndexBySlug = new Map<string, number>([
   ['botpreset', 1],
   ['preset', 1],
   ['presets', 1],
+  ['model', 17],
+  ['model-settings', 17],
+  ['models', 17],
   ['other-bots', 2],
   ['otherbots', 2],
   ['display', 3],
@@ -67,6 +70,10 @@ const settingIndexBySlug = new Map<string, number>([
   ['persona', 12],
   ['prompt', 13],
   ['prompt-template', 13],
+  ['prompt-settings', 18],
+  ['prompt-preset', 18],
+  ['prompt-presets', 18],
+  ['prompts', 18],
   ['modules', 14],
   ['module', 14],
   ['hotkey', 15],
@@ -91,6 +98,8 @@ const settingSlugByIndex = new Map<number, string>([
   [13, 'prompt'],
   [14, 'modules'],
   [15, 'hotkeys'],
+  [17, 'model'],
+  [18, 'prompt-settings'],
   [77, 'supporter'],
 ])
 
@@ -260,7 +269,7 @@ export function parseRoute(pathname: string): AppRoute {
     return {
       kind: 'settings',
       path,
-      section: section || settingSlugByIndex.get(DEFAULT_SETTINGS_INDEX) || 'bot-preset',
+      section: section || settingSlugByIndex.get(DEFAULT_SETTINGS_INDEX) || 'model',
       index: index ?? DEFAULT_SETTINGS_INDEX,
     }
   }
@@ -312,7 +321,7 @@ export function characterRoutePath(characterId: string, chatId?: string): string
 
 function routePathFromState(input: StateRouteInput): string {
   if (input.settingsOpen) {
-    return `/settings/${settingSlugByIndex.get(input.settingsMenuIndex) ?? 'bot-preset'}`
+    return `/settings/${settingSlugByIndex.get(input.settingsMenuIndex) ?? 'model'}`
   }
 
   if (input.selectedCharID >= 0 && input.characterId) {

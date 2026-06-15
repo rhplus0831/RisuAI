@@ -43,7 +43,7 @@
   let openLoreList = $state(false)
   let supporterConfirmOpen = $state(false)
   if (window.innerWidth >= 900 && $SettingsMenuIndex === -1 && !$MobileGUI) {
-    $SettingsMenuIndex = 1
+    $SettingsMenuIndex = 17
   }
 
   async function openSupporterThanks() {
@@ -79,14 +79,36 @@
         {#if !$isLite}
           <button
             class="flex gap-2 items-center hover:text-textcolor"
-            class:text-textcolor={$SettingsMenuIndex === 1 || $SettingsMenuIndex === 13}
-            class:text-textcolor2={$SettingsMenuIndex !== 1 && $SettingsMenuIndex !== 13}
+            class:text-textcolor={$SettingsMenuIndex === 17}
+            class:text-textcolor2={$SettingsMenuIndex !== 17}
             onclick={() => {
-              navigate('/settings/bot-preset')
+              navigate('/settings/model')
             }}>
-            <BotIcon />
-            <span>{language.chatBot}</span>
+            <ActivityIcon />
+            <span>{language.model}</span>
           </button>
+          <button
+            class="flex gap-2 items-center hover:text-textcolor"
+            class:text-textcolor={$SettingsMenuIndex === 18 || $SettingsMenuIndex === 13}
+            class:text-textcolor2={$SettingsMenuIndex !== 18 && $SettingsMenuIndex !== 13}
+            onclick={() => {
+              navigate('/settings/prompt-settings')
+            }}>
+            <SparkleIcon />
+            <span>{language.prompt}</span>
+          </button>
+          {#if DBState.db.botPresets?.length > 0}
+            <button
+              class="flex gap-2 items-center hover:text-textcolor"
+              class:text-textcolor={$SettingsMenuIndex === 1}
+              class:text-textcolor2={$SettingsMenuIndex !== 1}
+              onclick={() => {
+                navigate('/settings/bot-preset')
+              }}>
+              <BotIcon />
+              <span>{language.chatBot}</span>
+            </button>
+          {/if}
           <button
             class="flex gap-2 items-center hover:text-textcolor"
             class:text-textcolor={$SettingsMenuIndex === 12}
@@ -250,10 +272,15 @@
           {#if $SettingsMenuIndex === 0}
             <UserSettings />
           {:else if $SettingsMenuIndex === 1}
-            <BotSettings
-              goPromptTemplate={() => {
-                navigate('/settings/prompt')
-              }} />
+            {#if DBState.db.botPresets?.length > 0}
+              <BotSettings
+                settingsKind="legacy"
+                goPromptTemplate={() => {
+                  navigate('/settings/prompt')
+                }} />
+            {:else}
+              <BotSettings settingsKind="model" />
+            {/if}
           {:else if $SettingsMenuIndex === 2}
             <OtherBotSettings />
           {:else if $SettingsMenuIndex === 3}
@@ -279,10 +306,18 @@
           {:else if $SettingsMenuIndex === 13}
             <PromptSettings
               onGoBack={() => {
-                navigate('/settings/bot-preset')
+                navigate('/settings/prompt-settings')
               }} />
           {:else if $SettingsMenuIndex === 15}
             <HotkeySettings />
+          {:else if $SettingsMenuIndex === 17}
+            <BotSettings settingsKind="model" />
+          {:else if $SettingsMenuIndex === 18}
+            <BotSettings
+              settingsKind="prompt"
+              goPromptTemplate={() => {
+                navigate('/settings/prompt')
+              }} />
           {:else if $SettingsMenuIndex === 77}
             <ThanksPage />
           {/if}

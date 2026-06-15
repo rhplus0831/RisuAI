@@ -415,7 +415,7 @@ export async function characterURLImport() {
       name: 'imported.risupreset',
       data: importData,
     })
-    SettingsMenuIndex.set(1)
+    SettingsMenuIndex.set(18)
     settingsOpen.set(true)
     return
   }
@@ -432,7 +432,7 @@ export async function characterURLImport() {
         name: name,
         data: data,
       })
-      SettingsMenuIndex.set(1)
+      SettingsMenuIndex.set(18)
       settingsOpen.set(true)
       alertNormal(language.successImport)
       return
