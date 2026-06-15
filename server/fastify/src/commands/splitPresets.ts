@@ -10,7 +10,6 @@ import {
   type ModelPresetRecord,
   type PromptPresetRecord,
   databaseKeyForModelPresetField,
-  promptPresetOverridesModelOthers,
   promptPresetOverridesModelParameters,
 } from '../../../../src/ts/presetSplit.js'
 import { MASKED_PROVIDER_SECRET } from '../providerSecrets.js'
@@ -146,9 +145,7 @@ export function applyPromptPreset(database: JsonRecord, preset: PromptPresetReco
   if (promptPresetOverridesModelParameters(preset)) {
     applySplitPreset(database, preset, PROMPT_PRESET_PARAMETER_OVERRIDE_APPLY_KEYS)
   }
-  if (promptPresetOverridesModelOthers(preset)) {
-    applySplitPreset(database, preset, PROMPT_PRESET_OTHERS_OVERRIDE_APPLY_KEYS)
-  }
+  applySplitPreset(database, preset, PROMPT_PRESET_OTHERS_OVERRIDE_APPLY_KEYS)
 }
 
 export function resolveModelPresetMaskedSecrets(

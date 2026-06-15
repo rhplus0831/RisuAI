@@ -314,21 +314,17 @@
   let promptParameterOverrideMode = $derived(
     settingsKind === 'prompt' && promptPresetModelOverrideEnabled('parameters'),
   )
-  let promptOthersOverrideMode = $derived(settingsKind === 'prompt' && promptPresetModelOverrideEnabled('others'))
+  let promptOwnsOthers = $derived(settingsKind === 'prompt')
   let activeOobaDraft = $derived(promptParameterOverrideMode ? promptOobaDraft : oobaDraft)
   let activeLocalStopStringsDraft = $derived(
     promptParameterOverrideMode ? promptLocalStopStringsDraft : localStopStringsDraft,
   )
   let activeNAIsettingsDraft = $derived(promptParameterOverrideMode ? promptNAIsettingsDraft : NAIsettingsDraft)
   let activeAinconfigDraft = $derived(promptParameterOverrideMode ? promptAinconfigDraft : ainconfigDraft)
-  let activeAdditionalParamsDraft = $derived(
-    promptOthersOverrideMode ? promptAdditionalParamsDraft : additionalParamsDraft,
-  )
-  let activeEnableCustomFlagsDraft = $derived(
-    promptOthersOverrideMode ? promptEnableCustomFlagsDraft : enableCustomFlagsDraft,
-  )
-  let activeCustomFlagsDraft = $derived(promptOthersOverrideMode ? promptCustomFlagsDraft : customFlagsDraft)
-  let activeModelToolsDraft = $derived(promptOthersOverrideMode ? promptModelToolsDraft : modelToolsDraft)
+  let activeAdditionalParamsDraft = $derived(promptOwnsOthers ? promptAdditionalParamsDraft : additionalParamsDraft)
+  let activeEnableCustomFlagsDraft = $derived(promptOwnsOthers ? promptEnableCustomFlagsDraft : enableCustomFlagsDraft)
+  let activeCustomFlagsDraft = $derived(promptOwnsOthers ? promptCustomFlagsDraft : customFlagsDraft)
+  let activeModelToolsDraft = $derived(promptOwnsOthers ? promptModelToolsDraft : modelToolsDraft)
 
   function defaultSubmenuForKind(kind: BotSettingsKind): number {
     if (kind === 'model') return 0
@@ -339,7 +335,7 @@
   // svelte-ignore state_referenced_locally
   let submenu = $state(defaultSubmenuForKind(settingsKind))
   let availableSubmenus = $derived.by(() => {
-    if (settingsKind === 'model') return [0, 1, 3]
+    if (settingsKind === 'model') return [0, 1]
     if (settingsKind === 'prompt') return promptParameterOverrideMode ? [1, 2, 3] : [2, 3]
     return [0, 1, 2, 3]
   })
@@ -347,9 +343,8 @@
     settingsKind === 'model' ? language.model : settingsKind === 'prompt' ? language.prompt : language.chatBot,
   )
   let showSubmenuSwitcher = $derived(submenu !== -1 && availableSubmenus.length > 1)
-  let showModelExtras = $derived(settingsKind !== 'prompt')
   let showPromptExtras = $derived(settingsKind !== 'model')
-  let showModelOthersControls = $derived(showModelExtras || promptOthersOverrideMode)
+  let showModelOthersControls = $derived(settingsKind !== 'model')
   let showModelPresetButton = $derived(settingsKind !== 'prompt' && submenu !== -1)
   let showPromptPresetButton = $derived(settingsKind === 'prompt' || (settingsKind === 'legacy' && submenu === -1))
   let showLegacyMigrationButton = $derived(settingsKind === 'legacy' && DBState.db.botPresets?.length > 0)
@@ -592,12 +587,6 @@
       name={language.overrideModelParameters}
       onChange={(enabled) => {
         setPromptPresetModelOverrideEnabled('parameters', enabled)
-      }} />
-    <Check
-      check={promptOthersOverrideMode}
-      name={language.overrideModelOthers}
-      onChange={(enabled) => {
-        setPromptPresetModelOverrideEnabled('others', enabled)
       }} />
   </div>
 {/if}
@@ -1350,8 +1339,8 @@
           <PromptSettings
             mode="inline"
             subMenu={1}
-            promptPresetModelOverrideMode={promptOthersOverrideMode}
-            showPromptModelOverrideFields={settingsKind !== 'prompt' || promptOthersOverrideMode} />
+            promptPresetModelOverrideMode={promptOwnsOthers}
+            showPromptModelOverrideFields={true} />
         {/if}
       {:else}
         <Check

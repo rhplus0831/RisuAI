@@ -82,7 +82,6 @@ describe('preset split helpers', () => {
       promptPresetExportPayload({
         ...legacyPreset,
         overrideModelParameters: true,
-        overrideModelOthers: false,
       }),
     ).toEqual({
       id: 'legacy-a',
@@ -92,7 +91,6 @@ describe('preset split helpers', () => {
       customPromptTemplateToggle: 'mode=Mode',
       promptTemplate: [{ type: 'plain', text: 'Template row' }],
       overrideModelParameters: true,
-      overrideModelOthers: false,
       temperature: 0.7,
       maxContext: 16000,
       additionalParams: [['temperature', '{{none}}']],

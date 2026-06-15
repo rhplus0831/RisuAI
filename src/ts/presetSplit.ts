@@ -64,7 +64,6 @@ export const MODEL_PRESET_FIELDS = [
 ] as const
 
 export const PROMPT_PRESET_MODEL_PARAMETERS_OVERRIDE_KEY = 'overrideModelParameters' as const
-export const PROMPT_PRESET_MODEL_OTHERS_OVERRIDE_KEY = 'overrideModelOthers' as const
 
 export const PROMPT_PRESET_MODEL_PARAMETER_OVERRIDE_FIELDS = [
   'temperature',
@@ -176,9 +175,6 @@ export function extractPromptPresetModelOverrideFields(source: unknown): JsonRec
   if (typeof source[PROMPT_PRESET_MODEL_PARAMETERS_OVERRIDE_KEY] === 'boolean') {
     picked[PROMPT_PRESET_MODEL_PARAMETERS_OVERRIDE_KEY] = source[PROMPT_PRESET_MODEL_PARAMETERS_OVERRIDE_KEY]
   }
-  if (typeof source[PROMPT_PRESET_MODEL_OTHERS_OVERRIDE_KEY] === 'boolean') {
-    picked[PROMPT_PRESET_MODEL_OTHERS_OVERRIDE_KEY] = source[PROMPT_PRESET_MODEL_OTHERS_OVERRIDE_KEY]
-  }
   return picked
 }
 
@@ -255,10 +251,6 @@ export function isPromptPresetModelOthersOverrideField(field: string): field is 
 
 export function promptPresetOverridesModelParameters(preset: unknown): boolean {
   return isRecord(preset) && preset[PROMPT_PRESET_MODEL_PARAMETERS_OVERRIDE_KEY] === true
-}
-
-export function promptPresetOverridesModelOthers(preset: unknown): boolean {
-  return isRecord(preset) && preset[PROMPT_PRESET_MODEL_OTHERS_OVERRIDE_KEY] === true
 }
 
 function pickPresetFields(source: unknown, fields: readonly string[]): JsonRecord {

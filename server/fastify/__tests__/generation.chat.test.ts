@@ -3508,7 +3508,7 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
     expect(events.at(-1)?.data).toMatchObject({ result: 'chat preset reply' })
   })
 
-  it('lets prompt presets override selected model preset parameters and model-side Others when enabled', async () => {
+  it('lets prompt presets override selected model preset parameters and Prompt Others fields', async () => {
     let providerBody: Record<string, unknown> | undefined
     vi.stubGlobal('fetch', async (_url: string, init?: RequestInit) => {
       providerBody = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
@@ -3542,7 +3542,6 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
           id: 'prompt-chat',
           name: 'Chat Prompt',
           overrideModelParameters: true,
-          overrideModelOthers: true,
           temperature: 44,
           maxContext: 4444,
           maxResponse: 44,

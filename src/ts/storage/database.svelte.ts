@@ -67,7 +67,6 @@ import {
   PROMPT_PRESET_MODEL_OTHERS_OVERRIDE_FIELDS,
   PROMPT_PRESET_MODEL_PARAMETER_OVERRIDE_FIELDS,
   promptPresetExportPayload,
-  promptPresetOverridesModelOthers,
   promptPresetOverridesModelParameters,
 } from '../presetSplit'
 
@@ -2238,7 +2237,6 @@ export type PromptPreset = Partial<botPreset> & {
   id?: string
   name?: string
   overrideModelParameters?: boolean
-  overrideModelOthers?: boolean
 }
 
 interface hordeConfig {
@@ -3310,14 +3308,12 @@ function applyPromptPresetFieldsToDatabase(db: Database, preset: PromptPreset | 
       MODEL_PRESET_DATABASE_KEY_OVERRIDES,
     )
   }
-  if (promptPresetOverridesModelOthers(preset)) {
-    applySplitPresetFieldsToDatabase(
-      db,
-      preset,
-      PROMPT_PRESET_MODEL_OTHERS_OVERRIDE_FIELDS,
-      MODEL_PRESET_DATABASE_KEY_OVERRIDES,
-    )
-  }
+  applySplitPresetFieldsToDatabase(
+    db,
+    preset,
+    PROMPT_PRESET_MODEL_OTHERS_OVERRIDE_FIELDS,
+    MODEL_PRESET_DATABASE_KEY_OVERRIDES,
+  )
 }
 
 function applySplitPresetFieldsToDatabase(

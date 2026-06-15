@@ -1,19 +1,23 @@
 import { untrack } from 'svelte'
 import {
   databaseKeyForModelPresetField,
-  PROMPT_PRESET_MODEL_OTHERS_OVERRIDE_FIELDS,
-  PROMPT_PRESET_MODEL_OTHERS_OVERRIDE_KEY,
   PROMPT_PRESET_MODEL_PARAMETER_OVERRIDE_FIELDS,
   PROMPT_PRESET_MODEL_PARAMETERS_OVERRIDE_KEY,
   promptPresetModelOverrideFieldForDatabaseKey,
-  promptPresetOverridesModelOthers,
   promptPresetOverridesModelParameters,
 } from './presetSplit'
 import { updatePromptPreset, type PromptPreset } from './storage/database.svelte'
 import { DBState } from './stores.svelte'
 import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
 
-type OverrideGroup = 'parameters' | 'others'
+type OverrideGroup = 'parameters'
+
+const PROMPT_PRESET_MODEL_OVERRIDE_GROUPS = {
+  parameters: {
+    flagKey: PROMPT_PRESET_MODEL_PARAMETERS_OVERRIDE_KEY,
+    fields: PROMPT_PRESET_MODEL_PARAMETER_OVERRIDE_FIELDS,
+  },
+} as const
 
 export interface PromptPresetModelOverrideDraft<T> {
   value: T
@@ -21,9 +25,10 @@ export interface PromptPresetModelOverrideDraft<T> {
 
 export function promptPresetModelOverrideEnabled(group: OverrideGroup): boolean {
   const preset = selectedPromptPreset()
-  return group === 'parameters'
-    ? promptPresetOverridesModelParameters(preset)
-    : promptPresetOverridesModelOthers(preset)
+  const enabledByGroup: Record<OverrideGroup, boolean> = {
+    parameters: promptPresetOverridesModelParameters(preset),
+  }
+  return enabledByGroup[group]
 }
 
 export function setPromptPresetModelOverrideEnabled(group: OverrideGroup, enabled: boolean): void {
@@ -32,10 +37,7 @@ export function setPromptPresetModelOverrideEnabled(group: OverrideGroup, enable
   const preset = DBState.db.promptPresets?.[selectedIndex] as Record<string, unknown> | undefined
   if (!preset) return
 
-  const flagKey =
-    group === 'parameters' ? PROMPT_PRESET_MODEL_PARAMETERS_OVERRIDE_KEY : PROMPT_PRESET_MODEL_OTHERS_OVERRIDE_KEY
-  const fields =
-    group === 'parameters' ? PROMPT_PRESET_MODEL_PARAMETER_OVERRIDE_FIELDS : PROMPT_PRESET_MODEL_OTHERS_OVERRIDE_FIELDS
+  const { flagKey, fields } = PROMPT_PRESET_MODEL_OVERRIDE_GROUPS[group]
   const patch: Record<string, unknown> = { [flagKey]: enabled }
 
   if (enabled) {
