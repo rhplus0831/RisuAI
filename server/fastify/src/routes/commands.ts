@@ -494,7 +494,16 @@ interface MessageCommandBody {
   patch?: unknown
   messages?: unknown
   afterMessageId?: unknown
+  preserveRemovedAsAlternates?: unknown
   generationResult?: unknown
+}
+
+function readOptionalBooleanFlag(value: unknown, label: string): boolean {
+  if (value === undefined || value === null) return false
+  if (typeof value !== 'boolean') {
+    throw new ValidationError(`${label} must be a boolean when provided`)
+  }
+  return value
 }
 
 interface ScriptDefinitionCommandBody {
@@ -3646,6 +3655,10 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as MessageCommandBody
       const baseRevision = readBaseRevision(body)
       const afterMessageId = readTruncateAfterMessageId(body.afterMessageId)
+      const preserveRemovedAsAlternates = readOptionalBooleanFlag(
+        body.preserveRemovedAsAlternates,
+        'preserveRemovedAsAlternates',
+      )
       const result = applyTargetedCommandMutation<{
         chatId: string
         afterMessageId: string | null
@@ -3661,9 +3674,22 @@ export function registerCommandRoutes(
         mutate(database, targetDb) {
           const characters = normalizeAllCharacterChats(database)
           requireChatLocation(characters, chatId)
+          const removedAlternates: unknown[] = []
+          if (preserveRemovedAsAlternates) {
+            const base = getChatMessages(targetDb, chatId)
+            const keepCount =
+              afterMessageId === null ? 0 : base.findIndex((message) => message.chatId === afterMessageId) + 1
+            if (afterMessageId !== null && keepCount === 0) {
+              throw new EntityNotFoundError(`Message not found for chat ${chatId}: ${afterMessageId}`)
+            }
+            removedAlternates.push(...base.slice(keepCount).filter((message) => message.role === 'char'))
+          }
           const truncated = truncateActiveChatMessages(targetDb, chatId, afterMessageId)
           if (truncated.ok === false) {
             throw new EntityNotFoundError(`Message not found for chat ${chatId}: ${truncated.afterMessageId}`)
+          }
+          for (const message of removedAlternates) {
+            addAlternateMessage(targetDb, chatId, message)
           }
           return {
             event: { ...COMMAND_EVENT_CATALOG.messageTruncated, parentId: chatId },

@@ -41,6 +41,7 @@ import {
   activeMessageIdExistsOutsideChat,
   appendActiveChatMessageTail,
   clearAlternateMessages,
+  countAlternateMessages,
   countChatMessages,
   replaceActiveChatMessages,
   writeGenerationChatMessage,
@@ -994,6 +995,7 @@ async function buildPostGenerationFrame(args: {
       message,
       chatVarMutations,
       targetMessageId,
+      mode: finalizationModeFromInput(args.input),
     })
   } catch (err) {
     emitProtocolMetric('generation_persistence', {
@@ -1388,6 +1390,7 @@ function persistServerGenerationResult(args: {
    * leaves it unset and appends by `generationId`.
    */
   targetMessageId?: string
+  mode?: GenerationFinalizationMode
 }): number {
   const patch: Record<string, string | number | boolean> = {}
   const deleteKeys: string[] = []
@@ -1442,7 +1445,9 @@ function persistServerGenerationResult(args: {
       //    replay-idempotent and free of duplicates as candidates accumulate.
       //  - send / continue is the confirm boundary — drop the chat's reroll buffer.
       // Both run inside this mutation's transaction (atomic with the message write).
-      if (args.targetMessageId) {
+      const preservesRerollCandidate =
+        !!args.targetMessageId || (args.mode === 'regenerate' && countAlternateMessages(targetDb, args.chatId) > 0)
+      if (preservesRerollCandidate) {
         if (write.displaced) addAlternateMessage(targetDb, args.chatId, write.displaced)
         addAlternateMessage(targetDb, args.chatId, record)
       } else {
@@ -1483,6 +1488,7 @@ function persistGenerationFinalizationAttempt(args: {
     message: args.attempt.message,
     chatVarMutations: args.attempt.chatVarMutations,
     targetMessageId: args.attempt.targetMessageId,
+    mode: args.attempt.mode,
   })
 }
 

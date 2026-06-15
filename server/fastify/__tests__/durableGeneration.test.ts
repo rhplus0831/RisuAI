@@ -411,15 +411,25 @@ async function bootstrap(): Promise<{
   return (await res.json()) as never
 }
 
-async function chatMessages(boot: Awaited<ReturnType<typeof bootstrap>>): Promise<Array<Record<string, unknown>>> {
+async function chatHydration(boot: Awaited<ReturnType<typeof bootstrap>>): Promise<{
+  message: Array<Record<string, unknown>>
+  alternates: Array<Record<string, unknown>>
+}> {
   // The bootstrap ships chat stubs; read persisted messages via per-chat hydration.
   const chat = boot.database.characters[0]?.chats[0] as { id?: string } | undefined
-  if (!chat?.id) return []
+  if (!chat?.id) return { message: [], alternates: [] }
   const res = await fetch(`${harness.baseUrl}/api/v1/projection/chatMessages?id=${encodeURIComponent(chat.id)}`, {
     headers: authHeaders(),
   })
   expect(res.status).toBe(200)
-  return ((await res.json()) as { message: Array<Record<string, unknown>> }).message
+  return (await res.json()) as {
+    message: Array<Record<string, unknown>>
+    alternates: Array<Record<string, unknown>>
+  }
+}
+
+async function chatMessages(boot: Awaited<ReturnType<typeof bootstrap>>): Promise<Array<Record<string, unknown>>> {
+  return (await chatHydration(boot)).message
 }
 
 async function waitFor<T>(fn: () => Promise<T | undefined>, timeoutMs = 5000): Promise<T> {
@@ -998,6 +1008,50 @@ describe('Durable generation (Milestone 1)', () => {
     expect(messages[0]).toMatchObject({ role: 'user', chatId: 'msg-user-1' })
     expect(messages[1]).toMatchObject({ role: 'char', data: 'a brand new reply' })
     expect(generationFinalizationRetryRows()).toEqual([])
+  })
+
+  it('preserves reroll alternates when durable regenerate follows client-side truncate', async () => {
+    await seedChatWithMessages([
+      { role: 'user', data: 'greet me', chatId: 'msg-user-1' },
+      { role: 'char', data: 'old reply', chatId: 'msg-char-1', saying: 'char-1' },
+    ])
+    providerImpl = () => {
+      async function* gen(): AsyncGenerator<CompletionStreamFrame> {
+        yield { kind: 'token', content: 'a brand new reply' }
+        yield { kind: 'done', finishReason: 'stop' }
+      }
+      return gen()
+    }
+
+    const boot = await bootstrap()
+    const truncated = await fetch(`${harness.baseUrl}/api/v1/commands/chats/chat-1/messages/truncate`, {
+      method: 'POST',
+      headers: authHeaders({ 'content-type': 'application/json' }),
+      body: JSON.stringify({
+        baseRevision: boot.revision,
+        afterMessageId: 'msg-user-1',
+        preserveRemovedAsAlternates: true,
+      }),
+    })
+    expect(truncated.status).toBe(200)
+
+    const res = await postDurable({
+      mode: 'regenerate',
+      regenerateMessageId: 'msg-char-1',
+      userMessage: undefined,
+    })
+    const events = await readSse(res, (ev) => ev.type === 'done')
+    expect(events.some((ev) => ev.type === 'error')).toBe(false)
+
+    const hydration = await chatHydration(await bootstrap())
+    expect(hydration.message).toHaveLength(2)
+    expect(hydration.message[0]).toMatchObject({ role: 'user', chatId: 'msg-user-1' })
+    expect(hydration.message[1]).toMatchObject({ role: 'char', data: 'a brand new reply' })
+    expect(hydration.alternates).toHaveLength(2)
+    expect(hydration.alternates.some((m) => m.chatId === 'msg-char-1' && m.data === 'old reply')).toBe(true)
+    expect(
+      hydration.alternates.some((m) => m.chatId === hydration.message[1].chatId && m.data === 'a brand new reply'),
+    ).toBe(true)
   })
 
   it('cancels a durable continue and extends the row with the streamed-so-far text (Phase 6b)', async () => {

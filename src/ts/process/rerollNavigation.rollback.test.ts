@@ -219,6 +219,7 @@ describe('reroll/swipe chat-scoped rollback (Phase 2)', () => {
     expect(commandCall?.body).toEqual({
       baseRevision: 10,
       afterMessageId: 'u1',
+      preserveRemovedAsAlternates: true,
     })
     expect(sendChatMain).toHaveBeenCalledWith(false, 'g2')
   })

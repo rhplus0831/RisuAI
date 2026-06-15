@@ -197,6 +197,20 @@ async function persistedChatMessages(
   return res.json().message as Array<Record<string, unknown>>
 }
 
+async function persistedChatAlternates(
+  app: FastifyInstance,
+  assertion: string,
+  chatId: string,
+): Promise<Array<Record<string, unknown>>> {
+  const res = await app.inject({
+    method: 'GET',
+    url: `/api/v1/projection/chatMessages?id=${encodeURIComponent(chatId)}`,
+    headers: { 'risu-auth': assertion },
+  })
+  expect(res.statusCode).toBe(200)
+  return res.json().alternates as Array<Record<string, unknown>>
+}
+
 async function projectedCharacterRow(
   app: FastifyInstance,
   assertion: string,
@@ -5661,6 +5675,59 @@ describe('Phase 9-3c message history commands', () => {
 
     expect(await persistedChatMessages(harness.app, assertion, 'chat-a')).toEqual([
       { role: 'user', data: 'one', chatId: 'msg-1' },
+    ])
+  })
+
+  it('can preserve truncated assistant tail rows as reroll alternates', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [
+            {
+              id: 'chat-a',
+              name: 'A chat',
+              note: '',
+              message: [
+                { role: 'user', data: 'one', chatId: 'msg-1' },
+                { role: 'char', data: 'two', chatId: 'msg-2', generationInfo: { model: 'm' } },
+                { role: 'user', data: 'three', chatId: 'msg-3' },
+              ],
+              localLore: [],
+            },
+          ],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+
+    const truncated = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/chats/chat-a/messages/truncate',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        afterMessageId: 'msg-1',
+        preserveRemovedAsAlternates: true,
+      },
+    })
+
+    expect(truncated.statusCode).toBe(200)
+    expect(truncated.json()).toMatchObject({
+      revision: 2,
+      chatId: 'chat-a',
+      afterMessageId: 'msg-1',
+      removedCount: 2,
+    })
+    expect(await persistedChatMessages(harness.app, assertion, 'chat-a')).toEqual([
+      { role: 'user', data: 'one', chatId: 'msg-1' },
+    ])
+    expect(await persistedChatAlternates(harness.app, assertion, 'chat-a')).toEqual([
+      { role: 'char', data: 'two', chatId: 'msg-2', generationInfo: { model: 'm' } },
     ])
   })
 

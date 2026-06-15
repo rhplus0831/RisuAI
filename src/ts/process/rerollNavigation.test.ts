@@ -190,6 +190,7 @@ describe('reroll swipe navigation (post-seed, durable for free)', () => {
       'chat-1',
       'u1',
       expect.objectContaining({ snapshot: true }),
+      { preserveRemovedAsAlternates: true },
     )
     expect(commandSpies.dispatchReplaceMessagesScoped).not.toHaveBeenCalled()
   })
@@ -218,6 +219,7 @@ describe('reroll swipe navigation (post-seed, durable for free)', () => {
       'chat-1',
       'u1',
       expect.objectContaining({ snapshot: true }),
+      { preserveRemovedAsAlternates: true },
     )
   })
 

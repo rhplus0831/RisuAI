@@ -1175,13 +1175,23 @@ export function dispatchDeleteMessageScoped(messageId: string, previous: ChatSco
   dispatchDeleteMessageWith(messageId, () => restoreChatScopedState(previous))
 }
 
-function dispatchTruncateMessagesWith(chatId: string, afterMessageId: string | null, rollback: () => void): void {
+interface TruncateMessagesOptions {
+  preserveRemovedAsAlternates?: boolean
+}
+
+function dispatchTruncateMessagesWith(
+  chatId: string,
+  afterMessageId: string | null,
+  rollback: () => void,
+  options: TruncateMessagesOptions = {},
+): void {
   runMessageCommand(
     (baseRevision) =>
       truncateMessagesCommand({
         baseRevision,
         chatId,
         afterMessageId,
+        preserveRemovedAsAlternates: options.preserveRemovedAsAlternates,
       }),
     rollback,
   )
@@ -1191,16 +1201,18 @@ export function dispatchTruncateMessages(
   chatId: string,
   afterMessageId: string | null,
   previous: ChatStateSnapshot,
+  options: TruncateMessagesOptions = {},
 ): void {
-  dispatchTruncateMessagesWith(chatId, afterMessageId, () => restoreChatState(previous))
+  dispatchTruncateMessagesWith(chatId, afterMessageId, () => restoreChatState(previous), options)
 }
 
 export function dispatchTruncateMessagesScoped(
   chatId: string,
   afterMessageId: string | null,
   previous: ChatScopedSnapshot,
+  options: TruncateMessagesOptions = {},
 ): void {
-  dispatchTruncateMessagesWith(chatId, afterMessageId, () => restoreChatScopedState(previous))
+  dispatchTruncateMessagesWith(chatId, afterMessageId, () => restoreChatScopedState(previous), options)
 }
 
 function dispatchReplaceTailMessagesWith(

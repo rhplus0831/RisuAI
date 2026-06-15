@@ -163,7 +163,7 @@ function applyRerollTruncate(keepLength: number): void {
   })
   const record = activeChatRecord()
   if (record.id) {
-    dispatchTruncateMessagesScoped(record.id, afterMessageId, previous)
+    dispatchTruncateMessagesScoped(record.id, afterMessageId, previous, { preserveRemovedAsAlternates: true })
   }
 }
 
