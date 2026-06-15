@@ -47,6 +47,14 @@ pnpm exec tsc -p tsconfig.client-lib.json              # build client .d.ts (re-
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit  # check server (strict, zero errors)
 ```
 
+# Agent TypeScript Navigation
+
+- Use `pnpm ts:agent --help` for the tsserver-backed debugging wrapper.
+- Locations are `file:line:character` with 1-based line and character numbers.
+- Prefer `pnpm ts:agent references ...`, `definition ...`, `hover ...`, `diagnostics ...`, and `rename-preview ...` before broad grep-based edits.
+- For strict server checks, pass `--project server/fastify/tsconfig.json` to project-wide commands such as `diagnostics`, `workspace-symbols`, and `project-files`.
+- Set `RISU_TS_AGENT_TSSERVER_LOG=1` to write a verbose tsserver log under `data/trace/tsserver-agent.log` while debugging the wrapper itself.
+
 # Language File
 
 When adding strings that appear in the frontend UI, create an appropriate key for them under `src/lang`.

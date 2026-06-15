@@ -21,6 +21,7 @@ is root-only; there is no `server/fastify/package.json`.
 | `pnpm smoke:fastify-browser`       | Build site, then run Playwright Fastify browser smoke.                                                        |
 | `pnpm client-thinning:audit`       | Run `util/client-thinning-audit.ts`.                                                                          |
 | `pnpm analyze:db <path>`           | Analyze `.risu`, `db.json`, raw database JSON, or legacy data dirs. Add `--json` for machine-readable output. |
+| `pnpm ts:agent <command>`          | Run the tsserver-backed agent debugging wrapper for hover, definitions, references, diagnostics, and renames. |
 | `pnpm format`, `pnpm format:check` | Prettier write/check.                                                                                         |
 | `pnpm coverage:frontend`           | Run root/browser Vitest tests with broad frontend coverage under `coverage/frontend`.                          |
 | `pnpm coverage:backend`            | Run Fastify/server Vitest tests with broad backend coverage under `coverage/backend`.                          |
@@ -141,6 +142,25 @@ pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 Re-run the client-lib build after client source/type changes that affect server
 imports.
 
+Agent TypeScript navigation wrapper:
+
+```sh
+pnpm ts:agent hover server/fastify/src/app.ts:87:23
+pnpm ts:agent definition server/fastify/src/index.ts:134:37
+pnpm ts:agent references server/fastify/src/app.ts:87:23 --include-declaration
+pnpm ts:agent diagnostics server/fastify/src/app.ts
+pnpm ts:agent diagnostics --project server/fastify/tsconfig.json
+pnpm ts:agent workspace-symbols buildApp --project server/fastify/tsconfig.json
+pnpm ts:agent rename-preview server/fastify/src/index.ts:45:17 nextSignalExitCode
+```
+
+Locations use 1-based `file:line:character` coordinates. The wrapper returns
+JSON so agents can chain the safer loop `references -> diagnostics ->
+rename-preview -> rename-apply -> diagnostics`. `rename-apply` and
+`organize-imports --write` modify files, so inspect `git diff` after using them.
+Set `RISU_TS_AGENT_TSSERVER_LOG=1` to capture a verbose tsserver log at
+`data/trace/tsserver-agent.log` when debugging the wrapper itself.
+
 ## Environment Variables
 
 Server:
@@ -166,6 +186,7 @@ Local/dev:
 | -------------------------------- | ------------------- | ------------------------------------------------------------------------------------- |
 | `RISU_API_RESTART_FLAG`          | `.risu-api-restart` | Flag file watched by `pnpm api:dev:flag`.                                             |
 | `RISU_AGENT_DEV_AUTH_BYPASS`     | `TRUE`              | Set by `pnpm dev:agent`; protected API routes ignore password auth for agent access.  |
+| `RISU_TS_AGENT_TSSERVER_LOG`     | unset               | Set to `1` or a path to capture verbose `pnpm ts:agent` tsserver logs.                |
 | `VITE_RISU_AGENT_DEV_IGNORE_TOS` | `TRUE`              | Set by `pnpm dev:agent`; `alertTOS()` returns accepted without showing the TOS modal. |
 
 Client/build:
