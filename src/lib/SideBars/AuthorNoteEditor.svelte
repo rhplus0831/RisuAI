@@ -2,7 +2,7 @@
   import { untrack } from 'svelte'
 
   import { language } from 'src/lang'
-  import { currentChatStateSnapshot, dispatchUpdateChat } from 'src/ts/chatCommands'
+  import { setChatNoteValue } from 'src/ts/chatCommands'
   import type { character } from 'src/ts/storage/database.svelte'
   import { tokenizeAccurate } from 'src/ts/tokenizer'
   import { getAuthorNoteDefaultText } from 'src/ts/util'
@@ -74,7 +74,7 @@
 
     const timer = setTimeout(() => {
       authorNoteLastSubmitted = note
-      dispatchUpdateChat(chatId, { note }, currentChatStateSnapshot())
+      setChatNoteValue(chatId, note)
     }, 250)
 
     return () => {

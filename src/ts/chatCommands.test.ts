@@ -57,6 +57,7 @@ import {
   restoreChatSelection,
   runOptimisticCommandSequence,
   sanitizeChatPatch,
+  setChatNoteValue,
   setChatScriptstateValue,
 } from './chatCommands'
 import {
@@ -1535,6 +1536,48 @@ describe('Phase 2 scriptstate-scoped var dispatch', () => {
     expect(DBState.db.characters[0].chats[0].note).toBe('original note')
     // the snapshot also restored scriptstate to its captured value
     expect(DBState.db.characters[0].chats[0].scriptstate).toEqual({ $score: '1', $old: 'gone' })
+  })
+
+  it('setChatNoteValue applies the author note under the projection guard and rolls back on failure', async () => {
+    const calls: CapturedFetch[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        calls.push({
+          url,
+          method: init.method ?? 'GET',
+          authHeader: null,
+          body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+        })
+        if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+        if (url === '/api/v1/commands/chats/chat-a') return jsonResponse({ error: 'nope' }, 500)
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+    delete (DBState.db.characters[0].chats[0] as { note?: string }).note
+    setServerProjectionWriteGuardEnabled(true)
+
+    expect(() => {
+      DBState.db.characters[0].chats[0].note = 'direct note'
+    }).toThrow()
+
+    expect(setChatNoteValue('chat-a', 'draft note')).toBe(true)
+    expect(DBState.db.characters[0].chats[0].note).toBe('draft note')
+
+    await waitForCallCount(calls, 2)
+
+    expect(calls[1]).toEqual({
+      url: '/api/v1/commands/chats/chat-a',
+      method: 'PATCH',
+      authHeader: null,
+      body: {
+        baseRevision: 10,
+        patch: { note: 'draft note' },
+        select: false,
+      },
+    })
+    expect(DBState.db.characters[0].chats[0].note).toBe('')
   })
 })
 

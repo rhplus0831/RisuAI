@@ -304,6 +304,47 @@ describe('module command projection helpers', () => {
       },
     ])
   })
+
+  it('optimistically applies global module textarea fields and rolls back on command failure', async () => {
+    const calls = stubFailingCommandFetch()
+    DBState.db.modules[0] = {
+      id: 'mod-a',
+      name: 'Module A',
+      description: '',
+      backgroundEmbedding: 'old background',
+    } as any
+    setServerProjectionWriteGuardEnabled(true)
+
+    expect(() => {
+      DBState.db.modules[0].backgroundEmbedding = 'direct'
+    }).toThrow()
+
+    updateGlobalModule('mod-a', {
+      id: 'mod-a',
+      name: 'Module A',
+      description: '',
+      backgroundEmbedding: 'new background',
+    })
+
+    expect(DBState.db.modules[0].backgroundEmbedding).toBe('new background')
+
+    await waitForCallCount(calls, 2)
+
+    expect(calls[1]).toEqual({
+      url: '/api/v1/commands/modules/mod-a',
+      method: 'PATCH',
+      authHeader: 'module-command-token',
+      body: {
+        baseRevision: 10,
+        patch: {
+          name: 'Module A',
+          description: '',
+          backgroundEmbedding: 'new background',
+        },
+      },
+    })
+    expect(DBState.db.modules[0].backgroundEmbedding).toBe('old background')
+  })
 })
 
 describe('Phase 3 chat-scoped module toggle (L34)', () => {

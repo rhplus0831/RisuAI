@@ -168,6 +168,16 @@ export function createGlobalModule(module: RisuModule): void {
 export function updateGlobalModule(moduleId: string, module: RisuModule): void {
   if (canUseServerCommands()) {
     const previous = currentGlobalModuleStateSnapshot()
+    const nextModule = cloneJsonValue(module)
+    let applied = false
+    withTrustedServerProjectionWrite(() => {
+      const index = DBState.db.modules.findIndex((candidate) => candidate.id === moduleId)
+      if (index !== -1) {
+        DBState.db.modules[index] = nextModule
+        applied = true
+      }
+    })
+    if (applied) reloadGuiAfterDefinitionChange()
     dispatchUpdateModule(moduleId, toModuleSnapshot(module), previous)
     return
   }

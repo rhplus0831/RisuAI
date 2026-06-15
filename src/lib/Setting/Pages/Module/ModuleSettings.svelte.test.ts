@@ -178,6 +178,14 @@ function moduleSurfaceAction(actionKind: string) {
   return button!
 }
 
+function buttonByText(text: string): HTMLButtonElement {
+  const button = Array.from(target.querySelectorAll<HTMLButtonElement>('button')).find(
+    (candidate) => candidate.textContent?.trim() === text,
+  )
+  expect(button, `button ${text}`).toBeTruthy()
+  return button!
+}
+
 async function updateSearch(value: string) {
   const input = target.querySelector(`input[placeholder="${language.search}"]`) as HTMLInputElement | null
   expect(input).toBeTruthy()
@@ -255,6 +263,33 @@ describe('ModuleSettings derived module rows', () => {
       expect.objectContaining({
         id: 'beta-id',
         name: 'beta Module',
+      }),
+    )
+  })
+
+  it('saves Background Embedding textarea edits with the module draft', async () => {
+    mountSettings()
+
+    moduleAction('alpha-id', 'edit').click()
+    await tick()
+
+    buttonByText(language.regexScript).click()
+    await tick()
+
+    const textarea = target.querySelector<HTMLTextAreaElement>(`textarea[placeholder="${language.backgroundHTML}"]`)
+    expect(textarea).toBeTruthy()
+    textarea!.value = '<style>.chattext .name { color: red; }</style>'
+    textarea!.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    await clickModuleSurfaceAction('submit-edit')
+
+    expect(moduleCommandSpies.updateGlobalModule).toHaveBeenCalledOnce()
+    expect(moduleCommandSpies.updateGlobalModule).toHaveBeenCalledWith(
+      'alpha-id',
+      expect.objectContaining({
+        id: 'alpha-id',
+        backgroundEmbedding: '<style>.chattext .name { color: red; }</style>',
       }),
     )
   })

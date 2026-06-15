@@ -291,7 +291,7 @@ export function currentChatScriptstateSnapshot(includeNote = false): ChatScripts
     selectedCharID: selectedChar,
     scriptstate: chat?.scriptstate ? { ...chat.scriptstate } : undefined,
   }
-  if (includeNote) snapshot.note = chat?.note
+  if (includeNote && chat) snapshot.note = chat.note ?? ''
   return snapshot
 }
 
@@ -1423,6 +1423,29 @@ export function dispatchUpdateChatNoteScoped(chatId: string, note: string, previ
   )
 }
 
+export function setChatNoteValue(chatId: string | undefined, note: string): boolean {
+  if (!chatId) return false
+
+  const location = locateChatById(chatId)
+  if (!location) return false
+  if ((location.chat.note ?? '') === note) return false
+
+  const previous = currentChatScriptstateSnapshotForChat(chatId, true)
+  if (!previous) return false
+
+  let applied = false
+  withTrustedServerProjectionWrite(() => {
+    const liveLocation = locateChatById(chatId)
+    if (!liveLocation) return
+    liveLocation.chat.note = note
+    applied = true
+  })
+  if (!applied) return false
+
+  dispatchUpdateChatNoteScoped(chatId, note, previous)
+  return true
+}
+
 export function currentSelectedChatId(): string | undefined {
   const selectedChar = get(selectedCharID)
   const character = DBState.db.characters?.[selectedChar]
@@ -1430,14 +1453,16 @@ export function currentSelectedChatId(): string | undefined {
   return chat?.id
 }
 
-function currentChatScriptstateSnapshotForChat(chatId: string): ChatScriptstateSnapshot | null {
+function currentChatScriptstateSnapshotForChat(chatId: string, includeNote = false): ChatScriptstateSnapshot | null {
   const location = locateChatById(chatId)
   if (!location) return null
-  return {
+  const snapshot: ChatScriptstateSnapshot = {
     chatId,
     selectedCharID: get(selectedCharID),
     scriptstate: location.chat.scriptstate ? { ...location.chat.scriptstate } : undefined,
   }
+  if (includeNote) snapshot.note = location.chat.note ?? ''
+  return snapshot
 }
 
 function sanitizeScriptstateDeleteKeys(deleteKeys: readonly string[]): string[] {

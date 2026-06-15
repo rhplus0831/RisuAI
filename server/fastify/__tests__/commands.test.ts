@@ -7720,7 +7720,12 @@ describe('Phase 9-4c module record and enablement commands', () => {
       headers: { 'risu-auth': assertion },
       payload: {
         baseRevision: 2,
-        patch: { name: 'Renamed C', hideIcon: true, customModuleToggle: 'toggle' },
+        patch: {
+          name: 'Renamed C',
+          hideIcon: true,
+          backgroundEmbedding: '<style>.chattext .name { color: red; }</style>',
+          customModuleToggle: 'toggle',
+        },
       },
     })
     expect(patched.statusCode).toBe(200)
@@ -7783,6 +7788,7 @@ describe('Phase 9-4c module record and enablement commands', () => {
       id: 'mod-c',
       name: 'Renamed C',
       hideIcon: true,
+      backgroundEmbedding: '<style>.chattext .name { color: red; }</style>',
       customModuleToggle: 'toggle',
     })
     expect(database.enabledModules).toEqual(['mod-a'])
