@@ -2937,21 +2937,30 @@ export function createModelPreset(preset: ModelPreset) {
 }
 
 export function updateModelPreset(id: number, patch: Partial<ModelPreset>) {
-  runOptimisticPresetCommands((db) => {
+  withTrustedServerProjectionWrite(() => {
+    const db = DBState.db
     const modelPresetId = db.modelPresets[id]?.id
-    if (!modelPresetId) return []
-    Object.assign(db.modelPresets[id], patch)
+    if (!modelPresetId) return
+    const previous = splitPresetPatchSnapshot(
+      db.modelPresets[id] as unknown as Record<string, unknown>,
+      patch as Record<string, unknown>,
+    )
+    const attempted = safeStructuredClone(patch)
+    Object.assign(db.modelPresets[id], attempted)
     if (db.modelPresetsId === id) {
       applyModelPresetFieldsToDatabase(db, db.modelPresets[id])
     }
-    return [
-      (baseRevision) =>
-        updateModelPresetCommand({
-          baseRevision,
-          modelPresetId,
-          patch: safeStructuredClone({ ...patch, id: modelPresetId }) as ModelPresetSnapshot,
-        }),
-    ]
+    runOptimisticCommandSequence(
+      [
+        (baseRevision) =>
+          updateModelPresetCommand({
+            baseRevision,
+            modelPresetId,
+            patch: safeStructuredClone({ ...attempted, id: modelPresetId }) as ModelPresetSnapshot,
+          }),
+      ],
+      () => rollbackModelPresetPatch(modelPresetId, previous, attempted),
+    )
   })
 }
 
@@ -3056,22 +3065,98 @@ export function addImportedPromptPreset(preset: PromptPreset) {
 }
 
 export function updatePromptPreset(id: number, patch: Partial<PromptPreset>) {
-  runOptimisticPresetCommands((db) => {
+  withTrustedServerProjectionWrite(() => {
+    const db = DBState.db
     const promptPresetId = db.promptPresets[id]?.id
-    if (!promptPresetId) return []
-    Object.assign(db.promptPresets[id], patch)
+    if (!promptPresetId) return
+    const previous = splitPresetPatchSnapshot(
+      db.promptPresets[id] as unknown as Record<string, unknown>,
+      patch as Record<string, unknown>,
+    )
+    const attempted = safeStructuredClone(patch)
+    Object.assign(db.promptPresets[id], attempted)
     if (db.promptPresetsId === id) {
       applyPromptPresetFieldsToDatabase(db, db.promptPresets[id])
     }
-    return [
-      (baseRevision) =>
-        updatePromptPresetCommand({
-          baseRevision,
-          promptPresetId,
-          patch: safeStructuredClone({ ...patch, id: promptPresetId }) as PromptPresetSnapshot,
-        }),
-    ]
+    runOptimisticCommandSequence(
+      [
+        (baseRevision) =>
+          updatePromptPresetCommand({
+            baseRevision,
+            promptPresetId,
+            patch: safeStructuredClone({ ...attempted, id: promptPresetId }) as PromptPresetSnapshot,
+          }),
+      ],
+      () => rollbackPromptPresetPatch(promptPresetId, previous, attempted),
+    )
   })
+}
+
+function splitPresetPatchSnapshot(
+  preset: Record<string, unknown>,
+  patch: Record<string, unknown>,
+): Record<string, unknown> {
+  const previous: Record<string, unknown> = {}
+  for (const key of Object.keys(patch)) {
+    previous[key] = safeStructuredClone(preset[key])
+  }
+  return previous
+}
+
+function rollbackModelPresetPatch(
+  modelPresetId: string,
+  previous: Record<string, unknown>,
+  attempted: Partial<ModelPreset>,
+): void {
+  rollbackSplitPresetPatch('model', modelPresetId, previous, attempted as Record<string, unknown>)
+}
+
+function rollbackPromptPresetPatch(
+  promptPresetId: string,
+  previous: Record<string, unknown>,
+  attempted: Partial<PromptPreset>,
+): void {
+  rollbackSplitPresetPatch('prompt', promptPresetId, previous, attempted as Record<string, unknown>)
+}
+
+function rollbackSplitPresetPatch(
+  kind: 'model' | 'prompt',
+  presetId: string,
+  previous: Record<string, unknown>,
+  attempted: Record<string, unknown>,
+): void {
+  withTrustedServerProjectionWrite(() => {
+    const presets = kind === 'model' ? DBState.db.modelPresets : DBState.db.promptPresets
+    const index = presets.findIndex((preset) => preset?.id === presetId)
+    if (index < 0) return
+
+    const preset = presets[index] as Record<string, unknown>
+    let changed = false
+    for (const key of Object.keys(attempted)) {
+      if (key === 'id') continue
+      if (jsonSnapshot(preset[key]) !== jsonSnapshot(attempted[key])) continue
+      if (previous[key] === undefined) {
+        delete preset[key]
+      } else {
+        preset[key] = safeStructuredClone(previous[key])
+      }
+      changed = true
+    }
+    if (!changed) return
+
+    if (kind === 'model') {
+      if (DBState.db.modelPresetsId === index) {
+        applyModelPresetFieldsToDatabase(DBState.db, DBState.db.modelPresets[index])
+      }
+    } else if (DBState.db.promptPresetsId === index) {
+      applyPromptPresetFieldsToDatabase(DBState.db, DBState.db.promptPresets[index])
+    }
+  })
+}
+
+function jsonSnapshot(value: unknown): string {
+  const snapshot = JSON.stringify(value)
+  return snapshot === undefined ? '__undefined__' : snapshot
 }
 
 export function deletePromptPreset(id: number, selectIndex = 0) {

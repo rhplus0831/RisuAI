@@ -40,12 +40,22 @@
     resolveActiveChatGenerationSettings,
     saveActiveChatGenerationSettingsSelection,
   } from 'src/ts/activeChatGenerationSettings'
+  import { onDestroy } from 'svelte'
 
   type ModernPreset = ModelPreset | PromptPreset
+  type PendingRenameTarget = {
+    kind: 'model' | 'prompt'
+    presetId: string | null
+    index: number
+  }
 
   let editMode = $state(false)
   let isDragging = $state(false)
   let dragOverIndex = $state(-1)
+  let renameDrafts = $state<Record<string, string>>({})
+  const pendingRenameTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  const pendingRenameTargets = new Map<string, PendingRenameTarget>()
+  const RENAME_DEBOUNCE_MS = 250
 
   interface Props {
     close?: () => void
@@ -81,9 +91,78 @@
     return kind === 'prompt' ? DBState.db.promptPresetsId : DBState.db.modelPresetsId
   }
 
-  function renamePreset(index: number, name: string) {
-    if (kind === 'prompt') updatePromptPreset(index, { name })
-    else if (kind === 'model') updateModelPreset(index, { name })
+  function presetDraftKey(preset: ModernPreset | undefined, index: number) {
+    return `${kind}:${nonEmptyId(preset?.id) ?? `index:${index}`}`
+  }
+
+  function presetNameDraft(preset: ModernPreset | undefined, index: number) {
+    const key = presetDraftKey(preset, index)
+    if (Object.prototype.hasOwnProperty.call(renameDrafts, key)) return renameDrafts[key]
+    return preset?.name ?? ''
+  }
+
+  function updatePresetNameDraft(preset: ModernPreset | undefined, index: number, name: string) {
+    const key = presetDraftKey(preset, index)
+    renameDrafts[key] = name
+    schedulePresetRename(key, {
+      kind: kind === 'prompt' ? 'prompt' : 'model',
+      presetId: nonEmptyId(preset?.id),
+      index,
+    })
+  }
+
+  function schedulePresetRename(key: string, target: PendingRenameTarget) {
+    const existing = pendingRenameTimers.get(key)
+    if (existing) clearTimeout(existing)
+    pendingRenameTargets.set(key, target)
+    pendingRenameTimers.set(
+      key,
+      setTimeout(() => {
+        pendingRenameTimers.delete(key)
+        commitPendingRename(key)
+      }, RENAME_DEBOUNCE_MS),
+    )
+  }
+
+  function commitPendingRename(key: string) {
+    const target = pendingRenameTargets.get(key)
+    pendingRenameTargets.delete(key)
+    if (!target) return
+
+    const presets = target.kind === 'prompt' ? DBState.db.promptPresets : DBState.db.modelPresets
+    const index = target.presetId ? presets.findIndex((preset) => preset?.id === target.presetId) : target.index
+    const preset = presets[index]
+    if (!preset) return
+
+    const name = renameDrafts[key] ?? ''
+    if ((preset.name ?? '') === name) return
+    if (target.kind === 'prompt') updatePromptPreset(index, { name })
+    else updateModelPreset(index, { name })
+  }
+
+  function flushPendingRenames() {
+    for (const timer of pendingRenameTimers.values()) {
+      clearTimeout(timer)
+    }
+    pendingRenameTimers.clear()
+    for (const key of Array.from(pendingRenameTargets.keys())) {
+      commitPendingRename(key)
+    }
+  }
+
+  function clearRenameDrafts() {
+    renameDrafts = {}
+  }
+
+  function toggleEditMode() {
+    if (editMode) {
+      flushPendingRenames()
+      clearRenameDrafts()
+      editMode = false
+      return
+    }
+    clearRenameDrafts()
+    editMode = true
   }
 
   function selectPreset(preset: ModernPreset | undefined, index: number) {
@@ -148,6 +227,10 @@
     extractLegacyBotPresetByIndex(index, mode)
     if (legacyPresets.length <= 1) close()
   }
+
+  onDestroy(() => {
+    flushPendingRenames()
+  })
 </script>
 
 <div class="absolute w-full h-full z-40 bg-black/50 flex justify-center items-center">
@@ -259,7 +342,7 @@
           }}>
           {#if editMode}
             <TextInput
-              bind:value={() => modernPresets[i].name, (value) => renamePreset(i, value)}
+              bind:value={() => presetNameDraft(preset, i), (value) => updatePresetNameDraft(preset, i, value)}
               placeholder="string"
               padding={false} />
           {:else}
@@ -324,11 +407,7 @@
             <HardDriveUploadIcon size={18} />
           </button>
         {/if}
-        <button
-          class="text-textcolor2 hover:text-green-500 cursor-pointer"
-          onclick={() => {
-            editMode = !editMode
-          }}>
+        <button class="text-textcolor2 hover:text-green-500 cursor-pointer" onclick={toggleEditMode}>
           <PencilIcon size={18} />
         </button>
       </div>

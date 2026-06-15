@@ -26,8 +26,10 @@ import {
   saveCurrentPreset,
   setServerProjectionWriteGuardEnabled,
   updatePreset,
+  updateModelPreset,
   type botPreset,
   type Database,
+  type ModelPreset,
 } from './database.svelte'
 
 interface CapturedFetch {
@@ -72,6 +74,37 @@ function stubFailedPresetCommand(onCommand?: (call: CapturedFetch) => void): Cap
       if (url.startsWith('/api/v1/commands/presets')) {
         onCommand?.(call)
         return jsonResponse({ error: 'forced preset failure' }, 500)
+      }
+      return jsonResponse({ error: `unexpected ${url}` }, 404)
+    }) as unknown as typeof fetch,
+  )
+  return calls
+}
+
+function stubModelPresetRenameRace(): CapturedFetch[] {
+  const calls: CapturedFetch[] = []
+  let modelPresetCommandCount = 0
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const url = String(input)
+      const call = {
+        url,
+        method: init.method ?? 'GET',
+        body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+      }
+      calls.push(call)
+      if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 100 })
+      if (url.startsWith('/api/v1/commands/model-presets/')) {
+        modelPresetCommandCount += 1
+        if (modelPresetCommandCount === 1) {
+          return jsonResponse({ error: 'forced stale rename failure' }, 500)
+        }
+        return jsonResponse({
+          revision: 101,
+          event: { type: 'modelPreset.updated', revision: 101, resource: 'preset', id: 'model-a' },
+          modelPresetId: 'model-a',
+        })
       }
       return jsonResponse({ error: `unexpected ${url}` }, 404)
     }) as unknown as typeof fetch,
@@ -573,6 +606,24 @@ describe('preset command rollback (L21)', () => {
       expect(DBState.db.botPresets).toEqual(beforePresets)
       expect(DBState.db.botPresetsId).toBe(beforeSelected)
       expect(DBState.db.temperature).toBe(91)
+    })
+  })
+
+  it('keeps a newer model preset rename visible when an older rename request fails', async () => {
+    seedPresetDatabase({
+      modelPresets: [makePreset('model-a', 'Alpha') as unknown as ModelPreset],
+      modelPresetsId: 0,
+    })
+    const calls = stubModelPresetRenameRace()
+
+    updateModelPreset(0, { name: 'Alph' })
+    updateModelPreset(0, { name: 'Alp' })
+
+    expect(DBState.db.modelPresets[0].name).toBe('Alp')
+    await waitForPresetCommand(calls, '/model-presets/model-a')
+    await waitForState(() => {
+      expect(calls.filter((call) => call.url === '/api/v1/commands/model-presets/model-a')).toHaveLength(2)
+      expect(DBState.db.modelPresets[0].name).toBe('Alp')
     })
   })
 
