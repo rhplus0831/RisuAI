@@ -149,7 +149,6 @@ export const languageChineseTraditional = {
     moduleIntergration:
       '可在模組整合區域中輸入模組的命名空間（Namespace）來啟用模組。若要啟用多個模組，可用逗號分隔，例如：`module1,module2,module3`。此功能便於進階使用者通過預設提示詞靈活運用模組。',
     customCSS: '自訂 CSS 樣式。若出現問題，可使用 (Ctrl + .) 啟用或禁用。',
-    betaMobileGUI: '啟用後，將在小於 800px 的螢幕上使用測試版行動介面，需重新整理頁面。',
     enableScrollToActiveChar:
       '若已啟用，按下快捷鍵或在拖曳角色時按住 Ctrl 鍵將捲動至目前選取的角色。若資料夾已關閉，則會自動開啟。',
     unrecommended: '這是不建議使用的設定，建議保持關閉。',
@@ -1129,7 +1128,6 @@ export const languageChineseTraditional = {
   promptConvertion: '提示詞轉換',
   convertionStep1: '請選擇與提示詞相關的檔案（支援 Context、Instruct 及 Sampler JSON）',
   customCSS: '自訂 CSS',
-  betaMobileGUI: '測試版行動介面',
   enableScrollToActiveChar: '啟用捲動至當前角色',
   menu: '選單',
   jsonSchema: 'JSON Schema',

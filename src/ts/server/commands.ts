@@ -44,7 +44,6 @@ export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
   auxModelUnderModelSettings: 'advanced',
   banCharacterset: 'advanced',
   bias: 'providers',
-  betaMobileGUI: 'display',
   blockquoteStyling: 'display',
   botSettingAtStart: 'sidebar',
   bulkEnabling: 'advanced',
