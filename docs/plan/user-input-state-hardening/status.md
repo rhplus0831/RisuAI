@@ -3,17 +3,19 @@
 Date: 2026-06-17
 
 This workstream is active. Phase 0 is complete as a docs/contract baseline, and
-Phase 1 is the next implementation task. The plan consolidates the input
-persistence inventory under `../../user-input-layer-audit/` and stale-state
-risk review under `../../user-stale-state-audit/`.
+the first Phase 1 shared-helper slice has landed. The plan consolidates the
+input persistence inventory under `../../user-input-layer-audit/` and
+stale-state risk review under `../../user-stale-state-audit/`.
 
 ## Snapshot
 
-- Plan state: active, Phase 0 contract decisions complete, implementation not
-  started.
-- Code changes: none from this workstream yet.
-- Verification state: docs-only Phase 0 validation is recorded in
-  `latest-verification.md`; no runtime validation was required.
+- Plan state: active, Phase 0 contract decisions complete, Phase 1 helper
+  primitives implemented; Phase 1 domain adoption remains open.
+- Code changes: `src/ts/server/staleStateGuards.ts` and
+  `src/ts/server/staleStateGuards.test.ts` add shared stale-state primitives
+  and focused helper coverage.
+- Verification state: latest helper-slice validation is recorded in
+  `latest-verification.md`.
 - Highest issue density:
   - Character editor: 52 issue rows, mostly dirty projection and unguarded
     upload callbacks.
@@ -35,8 +37,9 @@ risk review under `../../user-stale-state-audit/`.
 
 - [Phase 0](phases/phase-0-contract-and-baseline.md): complete. Helper
   contracts, source-row corrections, and first regression fixtures are locked.
-- [Phase 1](phases/phase-1-shared-primitives-and-rollback.md): next. Shared
-  operation guards and narrow rollback helpers.
+- [Phase 1](phases/phase-1-shared-primitives-and-rollback.md): in progress.
+  Shared helper primitives are implemented; settings, character, chat/message,
+  and collection rollback adopters remain.
 - [Phase 2](phases/phase-2-dirty-draft-projection.md): pending. Dirty draft
   projection merge behavior.
 - [Phase 3](phases/phase-3-upload-import-fetch-callbacks.md): pending. Upload,
@@ -57,14 +60,23 @@ risk review under `../../user-stale-state-audit/`.
   unless the stale-state audit also marks the path risky. Phase 0 normalized the
   known drift in
   `phases/phase-0-contract-and-baseline.md#baseline-corrections`.
-- Phase 1 should add shared pure helpers in
+- Phase 1 shared pure helpers now exist in
   `src/ts/server/staleStateGuards.ts`, covered by
   `src/ts/server/staleStateGuards.test.ts`: `createLatestOperationGuard`,
   `isLatestOperation`, `applyAttemptedFieldRollback`,
   `applyAttemptedKeyedListRollback`, `mergeProjectionIntoDirtyDraft`, and
   `createDestructiveRefreshToken`.
-- Initial helper adopters are `src/ts/server/settingsBridge.svelte.ts`,
-  `src/ts/server/characterBridge.svelte.ts`, and `src/ts/chatCommands.ts`.
+- Next Phase 1 worker slices should adopt those helpers in
+  `src/ts/server/settingsBridge.svelte.ts`,
+  `src/ts/server/characterBridge.svelte.ts`, and `src/ts/chatCommands.ts`
+  without expanding runtime behavior beyond attempted-value rollback.
+- Remaining broad rollback families to track by phase:
+  - Phase 1: common settings, character profile/row, and chat/message command
+    rollback adapters.
+  - Phase 5: presets, personas, loadouts, lorebooks, scripts, modules,
+    plugins, sidebar chat/folder lists, and character list ordering.
+  - Phase 6: full restore/import/resync, memory jobs, route hydration, and
+    navigation refresh fences.
 - Phase docs that mention `src/ts/process/rerollNavigation.ts` should be read
   as `src/ts/process/rerollNavigation.svelte.ts`.
 - First P0 fixture targets are dirty character projection merge,

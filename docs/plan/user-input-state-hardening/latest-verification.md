@@ -7,17 +7,23 @@ hardening workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: none. Phase 0 was a docs-only contract and
-  baseline update.
-- Command:
+- Runtime/code change under test: Phase 1 shared stale-state primitives in
+  `src/ts/server/staleStateGuards.ts` with focused tests in
+  `src/ts/server/staleStateGuards.test.ts`.
+- Commands:
 
 ```bash
-pnpm exec prettier --check 'docs/plan/user-input-state-hardening/**/*.md'
+pnpm exec vitest run src/ts/server/staleStateGuards.test.ts
+pnpm exec tsc -p tsconfig.client-lib.json
+pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 ```
 
-- Result: passed on 2026-06-17. All matched Markdown files use Prettier style.
-- Residual gaps: Phase 1 through Phase 7 remain open; no runtime tests were
-  required for Phase 0 because no runtime behavior changed.
+- Result: passed on 2026-06-17. The focused helper test file passed 12 tests,
+  and both TypeScript checks passed.
+- Residual gaps: Phase 1 domain adoption remains open for settings, character,
+  chat/message, and later collection rollback users. Future adopters must pass
+  cloned JSON-safe `previous` and `attempted` values; mutable live references
+  would weaken stale-skip guarantees.
 
 ## Required Closeout Proof
 
