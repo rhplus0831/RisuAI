@@ -13,7 +13,10 @@ vi.mock('./storage/fastifyStorage', () => ({
 }))
 
 import { clearCachedServerCommandRevision } from './server/commands'
-import { setServerProjectionWriteGuardEnabled } from './server/projectionWriteGuard.svelte'
+import {
+  setServerProjectionWriteGuardEnabled,
+  withTrustedServerProjectionWrite,
+} from './server/projectionWriteGuard.svelte'
 import { DBState, selectedCharID } from './stores.svelte'
 import { seedCloneCostDb, withCloneInstrumentation } from './__tests__/cloneCostHarness'
 import {
@@ -248,15 +251,23 @@ describe('module command projection helpers', () => {
     }).toThrow()
 
     setGlobalModuleEnabled('mod-a', true)
+    expect(DBState.db.enabledModules).toEqual(['mod-a'])
     await waitForCallCount(calls, 2)
+
     createGlobalModule({ id: 'mod-c', name: 'Module C', description: '' })
+    expect(DBState.db.modules.map((module) => module.id)).toEqual(['mod-a', 'mod-b', 'mod-c'])
     await waitForCallCount(calls, 3)
+
     updateGlobalModule('mod-a', { id: 'mod-a', name: 'Module A renamed', description: '' })
+    expect(DBState.db.modules[0].name).toBe('Module A renamed')
     await waitForCallCount(calls, 4)
+
     deleteGlobalModule('mod-a')
 
     expect(DBState.db.enabledModules).toEqual([])
-    expect(DBState.db.modules.map((module) => module.id)).toEqual(['mod-a', 'mod-b'])
+    expect(DBState.db.modules.map((module) => module.id)).toEqual(['mod-b', 'mod-c'])
+    expect(DBState.db.characters[0].modules).toEqual([])
+    expect(DBState.db.characters[0].chats[0].modules).toEqual([])
 
     await waitForCallCount(calls, 5)
     expect(calls).toEqual([
@@ -344,6 +355,55 @@ describe('module command projection helpers', () => {
       },
     })
     expect(DBState.db.modules[0].backgroundEmbedding).toBe('old background')
+  })
+
+  it('optimistically applies global module create and rolls back on command failure', async () => {
+    const calls = stubFailingCommandFetch()
+    setServerProjectionWriteGuardEnabled(true)
+
+    createGlobalModule({ id: 'mod-c', name: 'Module C', description: '' })
+
+    expect(DBState.db.modules.map((module) => module.id)).toEqual(['mod-a', 'mod-b', 'mod-c'])
+
+    await waitForCallCount(calls, 2)
+    await flushCommandEffects()
+
+    expect(DBState.db.modules.map((module) => module.id)).toEqual(['mod-a', 'mod-b'])
+  })
+
+  it('optimistically applies global module delete references and rolls back on command failure', async () => {
+    const calls = stubFailingCommandFetch()
+    DBState.db.enabledModules = ['mod-a']
+    DBState.db.characters = [
+      {
+        chaId: 'char-a',
+        name: 'Character A',
+        chatPage: 0,
+        chats: [{ id: 'chat-a', name: 'Chat A', modules: ['mod-a', 'chat-module'], message: [] }],
+        modules: ['mod-a', 'character-module'],
+      },
+    ] as any
+    setServerProjectionWriteGuardEnabled(true)
+
+    deleteGlobalModule('mod-a')
+
+    expect(DBState.db.enabledModules).toEqual([])
+    expect(DBState.db.modules.map((module) => module.id)).toEqual(['mod-b'])
+    expect(DBState.db.characters[0].modules).toEqual(['character-module'])
+    expect(DBState.db.characters[0].chats[0].modules).toEqual(['chat-module'])
+
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.characters[0].name = 'Concurrent character edit'
+    })
+
+    await waitForCallCount(calls, 2)
+    await flushCommandEffects()
+
+    expect(DBState.db.enabledModules).toEqual(['mod-a'])
+    expect(DBState.db.modules.map((module) => module.id)).toEqual(['mod-a', 'mod-b'])
+    expect(DBState.db.characters[0].modules).toEqual(['mod-a', 'character-module'])
+    expect(DBState.db.characters[0].chats[0].modules).toEqual(['mod-a', 'chat-module'])
+    expect(DBState.db.characters[0].name).toBe('Concurrent character edit')
   })
 })
 
@@ -491,7 +551,7 @@ describe('Phase 4 module snapshot narrowing (M10)', () => {
     DBState.db.enabledModules = []
 
     setGlobalModuleEnabled('mod-a', true)
-    expect(DBState.db.enabledModules).toEqual([])
+    expect(DBState.db.enabledModules).toEqual(['mod-a'])
 
     DBState.db.characters[0].name = 'Concurrent character edit'
 

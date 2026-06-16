@@ -20,12 +20,33 @@ import { get } from 'svelte/store'
 export interface GlobalModuleStateSnapshot {
   modules: RisuModule[]
   enabledModules: string[]
+  moduleReferences?: ModuleReferenceStateSnapshot
 }
 
 export interface CharacterModuleStateSnapshot {
   characterId: string
   hasModulesField: boolean
   modules: string[] | undefined
+}
+
+interface ModuleIdsFieldSnapshot {
+  hasModulesField: boolean
+  modules: string[] | undefined
+}
+
+interface ChatModuleReferenceSnapshot {
+  chatId: string
+  modules: ModuleIdsFieldSnapshot
+}
+
+interface CharacterModuleReferenceSnapshot {
+  characterId: string
+  modules?: ModuleIdsFieldSnapshot
+  chats: ChatModuleReferenceSnapshot[]
+}
+
+interface ModuleReferenceStateSnapshot {
+  characters: CharacterModuleReferenceSnapshot[]
 }
 
 const MODULE_PATCH_EXCLUDED_KEYS = new Set(['id', 'mcp', 'lorebook', 'regex', 'trigger'])
@@ -35,19 +56,93 @@ export function cloneJsonValue<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
 }
 
-export function currentGlobalModuleStateSnapshot(): GlobalModuleStateSnapshot {
-  return {
+export function currentGlobalModuleStateSnapshot(moduleIdForReferences?: string): GlobalModuleStateSnapshot {
+  const snapshot: GlobalModuleStateSnapshot = {
     modules: cloneJsonValue(DBState.db.modules ?? []),
     enabledModules: cloneJsonValue(DBState.db.enabledModules ?? []),
   }
+
+  if (moduleIdForReferences) {
+    snapshot.moduleReferences = currentModuleReferenceStateSnapshot(moduleIdForReferences)
+  }
+
+  return snapshot
 }
 
 export function restoreGlobalModuleState(snapshot: GlobalModuleStateSnapshot): void {
   withTrustedServerProjectionWrite(() => {
     DBState.db.modules = cloneJsonValue(snapshot.modules)
     DBState.db.enabledModules = cloneJsonValue(snapshot.enabledModules)
+    if (snapshot.moduleReferences) {
+      restoreModuleReferenceState(snapshot.moduleReferences)
+    }
     reloadGuiAfterDefinitionChange()
   })
+}
+
+function currentModuleReferenceStateSnapshot(moduleId: string): ModuleReferenceStateSnapshot {
+  const characters: CharacterModuleReferenceSnapshot[] = []
+
+  for (const candidate of DBState.db.characters ?? []) {
+    if (!candidate?.chaId) continue
+
+    const characterModules = moduleIdsFieldSnapshot(candidate, moduleId)
+    const chats: ChatModuleReferenceSnapshot[] = []
+
+    for (const chat of candidate.chats ?? []) {
+      if (!chat?.id) continue
+      const chatModules = moduleIdsFieldSnapshot(chat, moduleId)
+      if (chatModules) {
+        chats.push({
+          chatId: chat.id,
+          modules: chatModules,
+        })
+      }
+    }
+
+    if (characterModules || chats.length > 0) {
+      characters.push({
+        characterId: candidate.chaId,
+        modules: characterModules,
+        chats,
+      })
+    }
+  }
+
+  return { characters }
+}
+
+function moduleIdsFieldSnapshot(value: { modules?: unknown }, moduleId: string): ModuleIdsFieldSnapshot | undefined {
+  if (!Array.isArray(value.modules) || !value.modules.includes(moduleId)) return undefined
+  return {
+    hasModulesField: Object.prototype.hasOwnProperty.call(value, 'modules'),
+    modules: cloneJsonValue(value.modules.filter((id): id is string => typeof id === 'string')),
+  }
+}
+
+function restoreModuleReferenceState(snapshot: ModuleReferenceStateSnapshot): void {
+  for (const characterSnapshot of snapshot.characters) {
+    const character = findCharacterById(characterSnapshot.characterId)
+    if (!character) continue
+
+    if (characterSnapshot.modules) {
+      restoreModulesField(character, characterSnapshot.modules)
+    }
+
+    for (const chatSnapshot of characterSnapshot.chats) {
+      const chat = character.chats?.find((candidate) => candidate.id === chatSnapshot.chatId)
+      if (!chat) continue
+      restoreModulesField(chat, chatSnapshot.modules)
+    }
+  }
+}
+
+function restoreModulesField(target: { modules?: string[] }, snapshot: ModuleIdsFieldSnapshot): void {
+  if (snapshot.hasModulesField) {
+    target.modules = cloneJsonValue(snapshot.modules)
+  } else {
+    delete target.modules
+  }
 }
 
 function findCharacterById(characterId: string): character | undefined {
@@ -140,6 +235,7 @@ export function dispatchEnableModule(moduleId: string, enabled: boolean, previou
 export function setGlobalModuleEnabled(moduleId: string, enabled: boolean): void {
   if (canUseServerCommands()) {
     const previous = currentGlobalModuleStateSnapshot()
+    applyOptimisticGlobalModuleEnabled(moduleId, enabled)
     dispatchEnableModule(moduleId, enabled, previous)
     return
   }
@@ -157,6 +253,7 @@ export function setGlobalModuleEnabled(moduleId: string, enabled: boolean): void
 export function createGlobalModule(module: RisuModule): void {
   if (canUseServerCommands()) {
     const previous = currentGlobalModuleStateSnapshot()
+    applyOptimisticCreatedGlobalModule(module)
     dispatchCreateModule(module, previous)
     return
   }
@@ -191,14 +288,59 @@ export function updateGlobalModule(moduleId: string, module: RisuModule): void {
 
 export function deleteGlobalModule(moduleId: string): void {
   if (canUseServerCommands()) {
-    const previous = currentGlobalModuleStateSnapshot()
+    const previous = currentGlobalModuleStateSnapshot(moduleId)
+    applyOptimisticDeletedGlobalModule(moduleId)
     dispatchDeleteModule(moduleId, previous)
     return
   }
 
   DBState.db.enabledModules = DBState.db.enabledModules.filter((id) => id !== moduleId)
   DBState.db.modules = DBState.db.modules.filter((module) => module.id !== moduleId)
+  removeProjectedModuleReferences(moduleId)
   reloadGuiAfterDefinitionChange()
+}
+
+function applyOptimisticGlobalModuleEnabled(moduleId: string, enabled: boolean): void {
+  withTrustedServerProjectionWrite(() => {
+    const enabledModules = new Set(DBState.db.enabledModules ?? [])
+    if (enabled) {
+      enabledModules.add(moduleId)
+    } else {
+      enabledModules.delete(moduleId)
+    }
+    DBState.db.enabledModules = Array.from(enabledModules)
+  })
+  reloadGuiAfterDefinitionChange()
+}
+
+function applyOptimisticCreatedGlobalModule(module: RisuModule): void {
+  withTrustedServerProjectionWrite(() => {
+    DBState.db.modules = [...(DBState.db.modules ?? []), cloneJsonValue(module)]
+  })
+  reloadGuiAfterDefinitionChange()
+}
+
+function applyOptimisticDeletedGlobalModule(moduleId: string): void {
+  withTrustedServerProjectionWrite(() => {
+    DBState.db.enabledModules = (DBState.db.enabledModules ?? []).filter((id) => id !== moduleId)
+    DBState.db.modules = (DBState.db.modules ?? []).filter((module) => module.id !== moduleId)
+    removeProjectedModuleReferences(moduleId)
+  })
+  reloadGuiAfterDefinitionChange()
+}
+
+function removeProjectedModuleReferences(moduleId: string): void {
+  for (const character of DBState.db.characters ?? []) {
+    if (Array.isArray(character.modules)) {
+      character.modules = character.modules.filter((id) => id !== moduleId)
+    }
+
+    for (const chat of character.chats ?? []) {
+      if (Array.isArray(chat.modules)) {
+        chat.modules = chat.modules.filter((id) => id !== moduleId)
+      }
+    }
+  }
 }
 
 export function dispatchReorderModules(previous: GlobalModuleStateSnapshot): void {
