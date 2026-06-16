@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
+
   interface CustomTree {
     name: string // dom name, like div, span, etc. for component, we use 'component'
     type: string // type, used for identifying in editor
@@ -7,10 +9,13 @@
   }
 
   let tree: CustomTree[] = $state([]) //children of the main tree
+  const customGUIDraft = createServerBackedSettingDraft<string>('customGUI', '')
   let mainTree: HTMLDivElement = $state()
   let menuOpen: boolean = $state(false)
   let subMenu = $state(0)
   let selectedContatiner = $state('root')
+  let previousCustomGUIHTML = ''
+  let suppressTreePersistence = false
 
   const builtContainerTrees: CustomTree[] = [
     {
@@ -100,6 +105,7 @@
             break
           case 2:
             tree = removeTreeChain(tree, treeChain)
+            persistTree()
             renderMainTree(tree)
             break
         }
@@ -127,6 +133,7 @@
   }
 
   function renderMainTree(tree: CustomTree[]) {
+    if (!mainTree) return
     mainTree.innerHTML = ''
     tree.forEach((child, i) => {
       renderTree(mainTree, child, i.toString())
@@ -143,8 +150,8 @@
       let child = children[i]
       let treeChild: CustomTree = {
         name: child.tagName.toLowerCase(),
-        type: child.tagName.toLowerCase(),
-        class: child.className.split(' '),
+        type: child.getAttribute('data-risu-type') || child.tagName.toLowerCase(),
+        class: child.className.split(' ').filter(Boolean),
         children: [],
       }
       if (child.children.length > 0) {
@@ -178,11 +185,10 @@
     const noClosingTag = ['img', 'input', 'br', 'hr']
     const ind = '    '.repeat(indent)
     tree.forEach((child) => {
-      if (child.class.length > 0) {
-        html += `${ind}<${child.name} class="${child.class.join(' ')}">\n`
-      } else {
-        html += `${ind}<${child.name}>\n`
-      }
+      const attributes: string[] = []
+      if (child.class.length > 0) attributes.push(`class="${escapeAttribute(child.class.join(' '))}"`)
+      if (child.type && child.type !== child.name) attributes.push(`data-risu-type="${escapeAttribute(child.type)}"`)
+      html += `${ind}<${child.name}${attributes.length > 0 ? ` ${attributes.join(' ')}` : ''}>\n`
 
       if (noClosingTag.includes(child.name)) {
         return
@@ -195,6 +201,36 @@
     })
     return html
   }
+
+  function escapeAttribute(value: string): string {
+    return value.replaceAll('&', '&amp;').replaceAll('"', '&quot;')
+  }
+
+  function persistTree() {
+    if (suppressTreePersistence) return
+    const html = treeToHTML(tree)
+    previousCustomGUIHTML = html
+    customGUIDraft.value = html
+  }
+
+  $effect(() => {
+    const html = customGUIDraft.value ?? ''
+    if (html === previousCustomGUIHTML) return
+
+    suppressTreePersistence = true
+    tree = HTMLtoTree(html)
+    selectedContatiner = 'root'
+    previousCustomGUIHTML = html
+    renderMainTree(tree)
+    queueMicrotask(() => {
+      suppressTreePersistence = false
+    })
+  })
+
+  $effect(() => {
+    if (!mainTree) return
+    renderMainTree(tree)
+  })
 
   interface Props {
     oncontextmenu?: (
@@ -253,6 +289,7 @@
           class="p-2 border border-black rounded-sm"
           onclick={() => {
             addContainerToTree(safeStructuredClone(component), selectedContatiner)
+            persistTree()
             renderMainTree(tree)
           }}>{component.type}</button>
       {/each}
@@ -262,6 +299,7 @@
           class="p-2 border border-black rounded-sm"
           onclick={() => {
             addContainerToTree(safeStructuredClone(container), selectedContatiner)
+            persistTree()
             renderMainTree(tree)
           }}>{container.type}</button>
       {/each}
