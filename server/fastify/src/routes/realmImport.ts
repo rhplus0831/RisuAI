@@ -17,7 +17,7 @@ import {
   readBaseRevision,
   type JsonCommandMutationResult,
 } from '../commands/mutations.js'
-import { createCharacterRecord } from '../commands/characters.js'
+import { createCharacterRecord, type CharacterRecord } from '../commands/characters.js'
 import { ensureCharacterChats } from '../commands/chats.js'
 import {
   ValidationError,
@@ -368,7 +368,7 @@ async function importRealmJsonCard(args: {
   const data = readRecord(card.data, 'Realm download response.card.data')
   const extensions = ensureRecordField(data, 'extensions')
   const risuai = ensureRecordField(extensions, 'risuai')
-  risuai.risuRealmImportId = args.id
+  extensions.risuRealmImportId = args.id
   if (risuai.lowLevelAccess === true && args.body.allowLowLevelAccess !== true) {
     throw new LowLevelAccessImportError()
   }
@@ -797,8 +797,17 @@ function appendRealmCharacter(args: {
   character: JsonRecord
 }): JsonCommandMutationResult<{ characterId: string }> {
   const baseRevision = getSchemaState(args.db).revision
-  const characterRecord = createCharacterRecord(args.character, { assetDb: args.db })
-  const chats = ensureCharacterChats(characterRecord)
+  const chatCarrier = { ...args.character } as CharacterRecord
+  const chats = ensureCharacterChats(chatCarrier)
+  const characterRecord = createCharacterRecord(
+    {
+      ...args.character,
+      chats: [],
+      chatFolders: chatCarrier.chatFolders,
+      chatPage: chatCarrier.chatPage,
+    },
+    { assetDb: args.db },
+  )
   return applyTargetedCommandMutation<{ characterId: string }>({
     db: args.db,
     dataDir: args.dataDir,

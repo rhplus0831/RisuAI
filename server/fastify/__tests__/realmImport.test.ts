@@ -707,6 +707,7 @@ describe('Realm character import route', () => {
     expect(character.image).toMatch(/^[a-f0-9]{64}$/)
     expect(character.emotionImages).toEqual([['happy', expect.stringMatching(/^[a-f0-9]{64}$/)]])
     expect(character.additionalAssets).toEqual([['theme', expect.stringMatching(/^[a-f0-9]{64}$/), 'theme.css']])
+    expect(character.extentions).toMatchObject({ risuRealmImportId: 'realm-id' })
     expect(character.vits).toMatchObject({
       files: { 'voice.wav': expect.stringMatching(/^[a-f0-9]{64}$/) },
     })

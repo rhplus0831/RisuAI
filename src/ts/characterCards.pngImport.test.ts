@@ -15,6 +15,7 @@ const alertState = vi.hoisted(() => ({
 }))
 
 const globalApiState = vi.hoisted(() => ({
+  downloadFile: vi.fn(),
   saveAsset: vi.fn(),
   saveAssets: vi.fn(),
   readImage: vi.fn(),
@@ -94,7 +95,7 @@ vi.mock('./globalApi.svelte', () => {
     AppendableBuffer: TestAppendableBuffer,
     BlankWriter: TestWriter,
     checkCharOrder: vi.fn(),
-    downloadFile: vi.fn(),
+    downloadFile: globalApiState.downloadFile,
     loadAsset: vi.fn(),
     LocalWriter: TestWriter,
     openURL: vi.fn(),
@@ -222,7 +223,7 @@ vi.mock('./storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: vi.fn(async () => 'test-token'),
 }))
 
-import { importCharacterProcess } from './characterCards'
+import { exportCharacterCard, importCharacterProcess } from './characterCards'
 import { PngChunk } from './pngChunk'
 
 const BASE_PNG = new Uint8Array(
@@ -240,6 +241,7 @@ beforeEach(() => {
   alertState.alertError.mockClear()
   alertState.alertNormal.mockClear()
   alertState.alertWait.mockClear()
+  globalApiState.downloadFile.mockReset()
   globalApiState.saveAsset.mockReset()
   globalApiState.saveAsset.mockImplementation(async () => 'primary-image')
   globalApiState.saveAssets.mockReset()
@@ -346,6 +348,57 @@ describe('PNG character card import', () => {
   })
 })
 
+describe('v2 character card export assets', () => {
+  it('writes cloned emotion and additional assets as PNG chunks without mutating source arrays', async () => {
+    const char = createExportCharacter()
+    const originalEmotions = structuredClone(char.emotionImages)
+    const originalAdditionalAssets = structuredClone(char.additionalAssets)
+    const writer = new CaptureWriter()
+
+    globalApiState.readImage.mockImplementation(async (key: string) => readExportFixtureAsset(key))
+
+    await exportCharacterCard(char, 'png', { spec: 'v2', writer: writer as any })
+
+    expect(alertState.alertError).not.toHaveBeenCalled()
+    expect(char.emotionImages).toEqual(originalEmotions)
+    expect(char.additionalAssets).toEqual(originalAdditionalAssets)
+
+    const png = new Uint8Array(Buffer.concat(writer.chunks.map((chunk) => Buffer.from(chunk))))
+    const chunks = PngChunk.read(png, ['chara-ext-asset_:1', 'chara-ext-asset_:2', 'chara'])
+    expect(chunks['chara-ext-asset_:1']).toBe(Buffer.from(EXPORT_EMOTION_BYTES).toString('base64'))
+    expect(chunks['chara-ext-asset_:2']).toBe(Buffer.from(EXPORT_ADDITIONAL_BYTES).toString('base64'))
+
+    const card = JSON.parse(Buffer.from(chunks.chara, 'base64').toString('utf-8'))
+    expect(card.data.extensions.risuai.emotions).toEqual([['happy', '__asset:1']])
+    expect(card.data.extensions.risuai.additionalAssets).toEqual([['theme', '__asset:2', 'css']])
+  })
+
+  it('inlines v2 JSON export assets instead of leaving dangling chunk references', async () => {
+    const char = createExportCharacter()
+    const originalEmotions = structuredClone(char.emotionImages)
+    const originalAdditionalAssets = structuredClone(char.additionalAssets)
+
+    globalApiState.readImage.mockImplementation(async (key: string) => readExportFixtureAsset(key))
+
+    await exportCharacterCard(char, 'json', { spec: 'v2' })
+
+    expect(alertState.alertError).not.toHaveBeenCalled()
+    expect(char.emotionImages).toEqual(originalEmotions)
+    expect(char.additionalAssets).toEqual(originalAdditionalAssets)
+    expect(globalApiState.downloadFile).toHaveBeenCalledTimes(1)
+
+    const exportedBytes = globalApiState.downloadFile.mock.calls[0][1] as Uint8Array
+    const card = JSON.parse(Buffer.from(exportedBytes).toString('utf-8'))
+    expect(JSON.stringify(card)).not.toContain('__asset:')
+    expect(card.data.extensions.risuai.emotions).toEqual([
+      ['happy', Buffer.from(EXPORT_EMOTION_BYTES).toString('base64')],
+    ])
+    expect(card.data.extensions.risuai.additionalAssets).toEqual([
+      ['theme', Buffer.from(EXPORT_ADDITIONAL_BYTES).toString('base64'), 'css'],
+    ])
+  })
+})
+
 async function createPngCardFixture(options: { risuaiExtension?: Record<string, unknown> } = {}) {
   const assetPayloads = [new Uint8Array([7, 8, 9]), new Uint8Array([1, 3, 5, 7])]
   const assetBase64Values = assetPayloads.map((asset) => Buffer.from(asset).toString('base64'))
@@ -444,5 +497,68 @@ function installPngReadCounters(assetChunkTexts: string[], assetBase64Values: st
       sliceSpy.mockRestore()
       vi.unstubAllGlobals()
     },
+  }
+}
+
+const EXPORT_EMOTION_BYTES = new Uint8Array([1, 2, 3])
+const EXPORT_ADDITIONAL_BYTES = new Uint8Array([4, 5, 6])
+
+class CaptureWriter {
+  chunks: Uint8Array[] = []
+
+  async init() {}
+
+  async write(data: Uint8Array) {
+    this.chunks.push(data)
+  }
+
+  close() {}
+}
+
+function readExportFixtureAsset(key: string): Uint8Array {
+  if (key === 'portrait') {
+    return BASE_PNG
+  }
+  if (key === 'happy-asset') {
+    return EXPORT_EMOTION_BYTES
+  }
+  if (key === 'theme-asset') {
+    return EXPORT_ADDITIONAL_BYTES
+  }
+  return BASE_PNG
+}
+
+function createExportCharacter(): any {
+  return {
+    name: 'Asset Export',
+    image: 'portrait',
+    firstMessage: 'hello',
+    desc: 'desc',
+    notes: '',
+    chats: [],
+    chatFolders: [],
+    chatPage: 0,
+    viewScreen: 'none',
+    bias: [],
+    emotionImages: [['happy', 'happy-asset']],
+    globalLore: [],
+    chaId: 'character-id',
+    sdData: [],
+    customscript: [],
+    triggerscript: [],
+    utilityBot: false,
+    exampleMessage: '',
+    creatorNotes: '',
+    systemPrompt: '',
+    postHistoryInstructions: '',
+    alternateGreetings: [],
+    tags: [],
+    creator: '',
+    characterVersion: '',
+    personality: '',
+    scenario: '',
+    firstMsgIndex: -1,
+    additionalAssets: [['theme', 'theme-asset', 'css']],
+    replaceGlobalNote: '',
   }
 }

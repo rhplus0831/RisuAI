@@ -1114,13 +1114,13 @@ function createBaseV2(char: character) {
       character_version: `${char.additionalData?.character_version}` || '',
       extensions: {
         risuai: {
-          // emotions: char.emotionImages,
+          emotions: structuredClone(char.emotionImages ?? []),
           bias: char.bias,
           viewScreen: char.viewScreen,
           customScripts: char.customscript,
           utilityBot: char.utilityBot,
           sdData: char.sdData,
-          // additionalAssets: char.additionalAssets,
+          additionalAssets: structuredClone(char.additionalAssets ?? []),
           backgroundHTML: char.backgroundHTML,
           license: char.license,
           triggerscript: char.triggerscript,
@@ -1197,9 +1197,13 @@ export async function exportCharacterCard(
           const key = risuai.emotions[i][1]
           const rData = await readImage(key)
           const b64encoded = Buffer.from(await compressImage(rData)).toString('base64')
-          assetIndex++
-          risuai.emotions[i][1] = `__asset:${assetIndex}`
-          await writer.write('chara-ext-asset_:' + assetIndex, b64encoded)
+          if (type === 'json') {
+            risuai.emotions[i][1] = b64encoded
+          } else {
+            assetIndex++
+            risuai.emotions[i][1] = `__asset:${assetIndex}`
+            await writer.write('chara-ext-asset_:' + assetIndex, b64encoded)
+          }
         }
       }
 
@@ -1213,9 +1217,13 @@ export async function exportCharacterCard(
           const key = risuai.additionalAssets[i][1]
           const rData = await readImage(key)
           const b64encoded = Buffer.from(await compressImage(rData)).toString('base64')
-          assetIndex++
-          risuai.additionalAssets[i][1] = `__asset:${assetIndex}`
-          await writer.write('chara-ext-asset_:' + assetIndex, b64encoded)
+          if (type === 'json') {
+            risuai.additionalAssets[i][1] = b64encoded
+          } else {
+            assetIndex++
+            risuai.additionalAssets[i][1] = `__asset:${assetIndex}`
+            await writer.write('chara-ext-asset_:' + assetIndex, b64encoded)
+          }
         }
       }
 
@@ -1230,9 +1238,13 @@ export async function exportCharacterCard(
           const key = keys[i]
           const rData = await loadAsset(char.vits.files[key])
           const b64encoded = Buffer.from(rData).toString('base64')
-          assetIndex++
-          risuai.vits![key] = `__asset:${assetIndex}`
-          await writer.write('chara-ext-asset_:' + assetIndex, b64encoded)
+          if (type === 'json') {
+            risuai.vits![key] = b64encoded
+          } else {
+            assetIndex++
+            risuai.vits![key] = `__asset:${assetIndex}`
+            await writer.write('chara-ext-asset_:' + assetIndex, b64encoded)
+          }
         }
       }
       if (type === 'json') {
