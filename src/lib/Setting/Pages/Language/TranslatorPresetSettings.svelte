@@ -39,13 +39,17 @@
     translatorMaxResponse: number
   }
 
-  const pendingTranslatorPresetUpdate = {
-    timer: null as ReturnType<typeof setTimeout> | null,
-    presetId: null as string | null,
-    patch: {} as TranslatorPresetSnapshot,
-    previous: null as TranslatorPresetStateSnapshot | null,
-    attempted: null as TranslatorPresetStateSnapshot | null,
+  interface PendingTranslatorPresetUpdate {
+    timer: ReturnType<typeof setTimeout> | null
+    presetId: string
+    patch: TranslatorPresetSnapshot
+    previous: TranslatorPresetStateSnapshot | null
+    attempted: TranslatorPresetStateSnapshot | null
   }
+
+  const translatorPresetUpdateDelayMs = 250
+  const pendingTranslatorPresetUpdates = new Map<string, PendingTranslatorPresetUpdate>()
+  let translatorPresetUpdateDispatchChain: Promise<ServerCommandResult> = Promise.resolve({ status: 'unavailable' })
 
   function cloneJsonValue<T>(value: T): T {
     if (value === undefined) return value
@@ -75,6 +79,47 @@
     })
   }
 
+  function translatorPresetFromSnapshot(
+    snapshot: TranslatorPresetStateSnapshot | null,
+    presetId: string,
+  ): TranslatorPreset | null {
+    return snapshot?.translatorPresets.find((preset) => preset.id === presetId) ?? null
+  }
+
+  function currentTranslatorPresetById(presetId: string): TranslatorPreset | null {
+    return DBState.db.translatorPresets?.find((preset) => preset.id === presetId) ?? null
+  }
+
+  function restoreTranslatorPresetUpdateState(
+    presetId: string,
+    previous: TranslatorPresetStateSnapshot | null,
+    attempted: TranslatorPresetStateSnapshot | null,
+  ): void {
+    const attemptedPreset = translatorPresetFromSnapshot(attempted, presetId)
+    const previousPreset = translatorPresetFromSnapshot(previous, presetId)
+
+    if (
+      !attemptedPreset ||
+      !previousPreset ||
+      snapshotJson(currentTranslatorPresetById(presetId)) !== snapshotJson(attemptedPreset)
+    ) {
+      return
+    }
+
+    withTrustedServerProjectionWrite(() => {
+      const presetIndex = DBState.db.translatorPresets.findIndex((preset) => preset.id === presetId)
+      if (presetIndex === -1) return
+
+      const nextPresets = [...DBState.db.translatorPresets]
+      nextPresets[presetIndex] = cloneJsonValue(previousPreset)
+      DBState.db.translatorPresets = nextPresets
+
+      if (DBState.db.translatorPresetId === presetIndex) {
+        syncCurrentTranslatorPreset()
+      }
+    })
+  }
+
   function createClientTranslatorPresetId(): string {
     return crypto.randomUUID()
   }
@@ -85,6 +130,26 @@
 
   function syncCurrentTranslatorPreset() {
     syncCurrentTranslatorPresetToLegacyFields(DBState.db)
+  }
+
+  function applyTranslatorPresetPatchToDBState(presetId: string, patch: TranslatorPresetSnapshot): void {
+    withTrustedServerProjectionWrite(() => {
+      const presets = DBState.db.translatorPresets ?? []
+      const presetIndex = presets.findIndex((preset) => preset.id === presetId)
+      if (presetIndex === -1) return
+
+      const nextPreset = {
+        ...presets[presetIndex],
+        ...cloneJsonValue(patch),
+      } as TranslatorPreset
+      const nextPresets = [...presets]
+      nextPresets[presetIndex] = nextPreset
+      DBState.db.translatorPresets = nextPresets
+
+      if (DBState.db.translatorPresetId === presetIndex) {
+        syncCurrentTranslatorPreset()
+      }
+    })
   }
 
   function selectedTranslatorPresetId(): string | null {
@@ -141,42 +206,20 @@
     )
   }
 
-  function queueTranslatorPresetUpdate(
-    presetId: string,
-    patch: TranslatorPresetSnapshot,
-    previous: TranslatorPresetStateSnapshot,
-  ): void {
-    if (!canUseServerCommands()) return
-    if (pendingTranslatorPresetUpdate.presetId !== presetId && pendingTranslatorPresetUpdate.timer) {
-      clearTimeout(pendingTranslatorPresetUpdate.timer)
-      pendingTranslatorPresetUpdate.timer = null
-      pendingTranslatorPresetUpdate.patch = {}
-      pendingTranslatorPresetUpdate.previous = null
-      pendingTranslatorPresetUpdate.attempted = null
+  function dispatchPendingTranslatorPresetUpdate(pending: PendingTranslatorPresetUpdate): Promise<ServerCommandResult> {
+    if (pending.timer) {
+      clearTimeout(pending.timer)
+      pending.timer = null
     }
+    pendingTranslatorPresetUpdates.delete(pending.presetId)
 
-    pendingTranslatorPresetUpdate.presetId = presetId
-    pendingTranslatorPresetUpdate.previous ??= previous
-    pendingTranslatorPresetUpdate.attempted = currentTranslatorPresetStateSnapshot()
-    pendingTranslatorPresetUpdate.patch = {
-      ...pendingTranslatorPresetUpdate.patch,
-      ...patch,
-    }
+    const commandPresetId = pending.presetId
+    const commandPatch = pending.patch
+    const commandPrevious = pending.previous
+    const commandAttempted = pending.attempted
 
-    if (pendingTranslatorPresetUpdate.timer) clearTimeout(pendingTranslatorPresetUpdate.timer)
-    pendingTranslatorPresetUpdate.timer = setTimeout(() => {
-      pendingTranslatorPresetUpdate.timer = null
-      const commandPresetId = pendingTranslatorPresetUpdate.presetId
-      const commandPatch = pendingTranslatorPresetUpdate.patch
-      const commandPrevious = pendingTranslatorPresetUpdate.previous
-      const commandAttempted = pendingTranslatorPresetUpdate.attempted
-      pendingTranslatorPresetUpdate.presetId = null
-      pendingTranslatorPresetUpdate.patch = {}
-      pendingTranslatorPresetUpdate.previous = null
-      pendingTranslatorPresetUpdate.attempted = null
-
-      if (!commandPresetId) return
-      void runServerCommand({
+    const dispatch = () =>
+      runServerCommand({
         command: (baseRevision) =>
           updateTranslatorPresetCommand({
             baseRevision,
@@ -184,16 +227,48 @@
             patch: commandPatch,
           }),
         rollback: () => {
-          if (
-            commandPrevious &&
-            commandAttempted &&
-            snapshotJson(currentTranslatorPresetStateSnapshot()) === snapshotJson(commandAttempted)
-          ) {
-            restoreTranslatorPresetState(commandPrevious)
-          }
+          restoreTranslatorPresetUpdateState(commandPresetId, commandPrevious, commandAttempted)
         },
       })
-    }, 250)
+
+    translatorPresetUpdateDispatchChain = translatorPresetUpdateDispatchChain.then(dispatch, dispatch)
+    return translatorPresetUpdateDispatchChain
+  }
+
+  async function flushPendingTranslatorPresetUpdates(): Promise<void> {
+    if (!canUseServerCommands()) return
+    for (const pending of Array.from(pendingTranslatorPresetUpdates.values())) {
+      await dispatchPendingTranslatorPresetUpdate(pending)
+    }
+    await translatorPresetUpdateDispatchChain
+  }
+
+  function queueTranslatorPresetUpdate(
+    presetId: string,
+    patch: TranslatorPresetSnapshot,
+    previous: TranslatorPresetStateSnapshot,
+  ): void {
+    if (!canUseServerCommands()) return
+
+    const pending = pendingTranslatorPresetUpdates.get(presetId) ?? {
+      timer: null,
+      presetId,
+      patch: {},
+      previous: null,
+      attempted: null,
+    }
+    pending.previous ??= previous
+    pending.attempted = currentTranslatorPresetStateSnapshot()
+    pending.patch = {
+      ...pending.patch,
+      ...patch,
+    }
+    pendingTranslatorPresetUpdates.set(presetId, pending)
+
+    if (pending.timer) clearTimeout(pending.timer)
+    pending.timer = setTimeout(() => {
+      void dispatchPendingTranslatorPresetUpdate(pending)
+    }, translatorPresetUpdateDelayMs)
   }
 </script>
 
@@ -203,14 +278,19 @@
   bind:value={
     () => DBState.db.translatorPresetId,
     (value) => {
-      const previous = currentTranslatorPresetStateSnapshot()
       const presetIndex = Number(value)
       const presetId = DBState.db.translatorPresets[presetIndex]?.id ?? null
       if (!canUseServerCommands()) {
+        const previous = currentTranslatorPresetStateSnapshot()
         DBState.db.translatorPresetId = presetIndex
         syncCurrentTranslatorPreset()
+        if (presetId) dispatchSelectTranslatorPreset(presetId, previous)
+      } else if (presetId) {
+        void flushPendingTranslatorPresetUpdates().finally(() => {
+          const previous = currentTranslatorPresetStateSnapshot()
+          dispatchSelectTranslatorPreset(presetId, previous)
+        })
       }
-      if (presetId) dispatchSelectTranslatorPreset(presetId, previous)
     }
   }>
   {#each DBState.db.translatorPresets as preset, i}
@@ -221,7 +301,8 @@
 <div class="flex items-center mb-4">
   <button
     class="mr-2 text-textcolor2 hover:text-green-500 cursor-pointer"
-    onclick={() => {
+    onclick={async () => {
+      await flushPendingTranslatorPresetUpdates()
       const previous = currentTranslatorPresetStateSnapshot()
       const newPreset = createTranslatorPreset()
       newPreset.id = createClientTranslatorPresetId()
@@ -261,6 +342,8 @@
         preset.name = newName
         DBState.db.translatorPresets = presets
         syncCurrentTranslatorPreset()
+      } else if (presetId) {
+        applyTranslatorPresetPatchToDBState(presetId, { name: newName })
       }
       if (presetId) queueTranslatorPresetUpdate(presetId, { name: newName }, previous)
     }}>
@@ -283,6 +366,7 @@
 
       if (!confirmed) return
 
+      await flushPendingTranslatorPresetUpdates()
       if (!canUseServerCommands()) {
         normalizeTranslatorPresets()
       }
@@ -340,6 +424,7 @@
 
         const newPreset = await decodeTranslatorPresetFile(selectedFile.data)
         newPreset.id = createClientTranslatorPresetId()
+        await flushPendingTranslatorPresetUpdates()
         const previous = currentTranslatorPresetStateSnapshot()
         if (!canUseServerCommands()) {
           const presets = DBState.db.translatorPresets
@@ -377,6 +462,8 @@
         if (!canUseServerCommands()) {
           preset.maxResponse = value
           syncCurrentTranslatorPreset()
+        } else if (presetId) {
+          applyTranslatorPresetPatchToDBState(presetId, { maxResponse: value })
         }
         if (presetId) queueTranslatorPresetUpdate(presetId, { maxResponse: value }, previous)
       }
@@ -391,6 +478,8 @@
         if (!canUseServerCommands()) {
           preset.prompt = value
           syncCurrentTranslatorPreset()
+        } else if (presetId) {
+          applyTranslatorPresetPatchToDBState(presetId, { prompt: value })
         }
         if (presetId) queueTranslatorPresetUpdate(presetId, { prompt: value }, previous)
       }
