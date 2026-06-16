@@ -770,15 +770,15 @@ function replaceLorebookEntryInPlace(target: loreBook, next: loreBook): void {
 }
 
 export function selectGlobalLorebook(index: number): boolean {
+  const previous = currentGlobalLorebookStateSnapshot()
   const lorebookId = ((DBState.db.loreBook ?? []) as GlobalLorebook[])[index]?.id
-  if (canUseServerCommands() && lorebookId) {
-    dispatchSelectGlobalLorebook(lorebookId, currentGlobalLorebookStateSnapshot())
-    return true
-  }
 
   withTrustedServerProjectionWrite(() => {
     DBState.db.loreBookPage = index
   })
+  if (canUseServerCommands() && lorebookId) {
+    dispatchSelectGlobalLorebook(lorebookId, previous)
+  }
   return true
 }
 

@@ -97,6 +97,7 @@ import {
   restoreLorebookEntryState,
   restoreLorebookState,
   renameGlobalLorebook,
+  selectGlobalLorebook,
   setActiveChatLorebookLocalActivation,
   watchServerBackedLorebooks,
 } from './lorebookBridge.svelte'
@@ -160,6 +161,10 @@ function globalDeleteCommands(): Array<Record<string, unknown> & { a?: unknown; 
 
 function globalUpdateCommands(): Array<Record<string, unknown> & { a?: unknown; rollback?: () => void }> {
   return recorded.commands.filter((c) => c.kind === 'updateGlobal')
+}
+
+function globalSelectCommands(): Array<Record<string, unknown> & { a?: unknown; rollback?: () => void }> {
+  return recorded.commands.filter((c) => c.kind === 'selectGlobal')
 }
 
 async function flushServerCommandRecording(): Promise<void> {
@@ -547,6 +552,50 @@ describe('global lorebook modal bridge helpers', () => {
 
     creates[0].rollback?.()
     expect(globalLorebookIds()).toEqual(['g1'])
+  })
+
+  it('selects a global lorebook optimistically before the command response', async () => {
+    setupGlobalLorebooks(
+      [
+        { id: 'g1', name: 'Initial', data: [] },
+        { id: 'g2', name: 'Second', data: [] },
+      ],
+      0,
+    )
+
+    expect(selectGlobalLorebook(1)).toBe(true)
+
+    expect(DBState.db.loreBookPage).toBe(1)
+    expect(globalSelectCommands()).toHaveLength(0)
+
+    await flushServerCommandRecording()
+
+    const selects = globalSelectCommands()
+    expect(selects).toHaveLength(1)
+    expect(selects[0].a).toMatchObject({ lorebookId: 'g2' })
+    expect(DBState.db.loreBookPage).toBe(1)
+  })
+
+  it('rolls back an optimistic global lorebook selection to the previous page', async () => {
+    setupGlobalLorebooks(
+      [
+        { id: 'g1', name: 'Initial', data: [] },
+        { id: 'g2', name: 'Second', data: [] },
+      ],
+      0,
+    )
+
+    expect(selectGlobalLorebook(1)).toBe(true)
+    expect(DBState.db.loreBookPage).toBe(1)
+
+    await flushServerCommandRecording()
+
+    const selects = globalSelectCommands()
+    expect(selects).toHaveLength(1)
+
+    selects[0].rollback?.()
+    expect(DBState.db.loreBookPage).toBe(0)
+    expect(globalLorebookIds()).toEqual(['g1', 'g2'])
   })
 
   it('deletes a global lorebook, resets page, dispatches delete, and rolls back list/page', async () => {
