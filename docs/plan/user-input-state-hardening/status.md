@@ -2,16 +2,18 @@
 
 Date: 2026-06-17
 
-This workstream is active and not yet implemented. The plan consolidates the
-input persistence inventory under `../../user-input-layer-audit/` and
-stale-state risk review under `../../user-stale-state-audit/`.
+This workstream is active. Phase 0 is complete as a docs/contract baseline, and
+Phase 1 is the next implementation task. The plan consolidates the input
+persistence inventory under `../../user-input-layer-audit/` and stale-state
+risk review under `../../user-stale-state-audit/`.
 
 ## Snapshot
 
-- Plan state: active, phase planning complete, implementation not started.
+- Plan state: active, Phase 0 contract decisions complete, implementation not
+  started.
 - Code changes: none from this workstream yet.
-- Verification state: no runtime validation yet; plan-file formatting and link
-  checks should be recorded in `latest-verification.md` after the first run.
+- Verification state: docs-only Phase 0 validation is recorded in
+  `latest-verification.md`; no runtime validation was required.
 - Highest issue density:
   - Character editor: 52 issue rows, mostly dirty projection and unguarded
     upload callbacks.
@@ -31,9 +33,9 @@ stale-state risk review under `../../user-stale-state-audit/`.
 
 ## Phase Router
 
-- [Phase 0](phases/phase-0-contract-and-baseline.md): open. Lock exact helper
-  contracts, source-row corrections, and first regression fixtures.
-- [Phase 1](phases/phase-1-shared-primitives-and-rollback.md): pending. Shared
+- [Phase 0](phases/phase-0-contract-and-baseline.md): complete. Helper
+  contracts, source-row corrections, and first regression fixtures are locked.
+- [Phase 1](phases/phase-1-shared-primitives-and-rollback.md): next. Shared
   operation guards and narrow rollback helpers.
 - [Phase 2](phases/phase-2-dirty-draft-projection.md): pending. Dirty draft
   projection merge behavior.
@@ -52,8 +54,23 @@ stale-state risk review under `../../user-stale-state-audit/`.
 ## Implementation Notes
 
 - Treat `Issue` rows in `../../user-input-layer-audit/` as source-row drift
-  unless the stale-state audit also marks the path risky. Phase 0 should
-  normalize those anchors before implementation work starts.
+  unless the stale-state audit also marks the path risky. Phase 0 normalized the
+  known drift in
+  `phases/phase-0-contract-and-baseline.md#baseline-corrections`.
+- Phase 1 should add shared pure helpers in
+  `src/ts/server/staleStateGuards.ts`, covered by
+  `src/ts/server/staleStateGuards.test.ts`: `createLatestOperationGuard`,
+  `isLatestOperation`, `applyAttemptedFieldRollback`,
+  `applyAttemptedKeyedListRollback`, `mergeProjectionIntoDirtyDraft`, and
+  `createDestructiveRefreshToken`.
+- Initial helper adopters are `src/ts/server/settingsBridge.svelte.ts`,
+  `src/ts/server/characterBridge.svelte.ts`, and `src/ts/chatCommands.ts`.
+- Phase docs that mention `src/ts/process/rerollNavigation.ts` should be read
+  as `src/ts/process/rerollNavigation.svelte.ts`.
+- First P0 fixture targets are dirty character projection merge,
+  composer/file callback active-chat freshness, reroll active-chat guard,
+  character asset upload target freshness, and durable generation finalization
+  freshness.
 - Prefer shared helpers for operation tokens, attempted rollback, and dirty
   projection merge. Use local component tokens only when the lifetime is truly
   local.

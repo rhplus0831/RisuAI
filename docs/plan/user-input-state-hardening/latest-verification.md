@@ -7,9 +7,17 @@ hardening workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: none yet. This is the initial plan scaffold.
-- Result: pending.
-- Residual gaps: all implementation phases remain open.
+- Runtime/code change under test: none. Phase 0 was a docs-only contract and
+  baseline update.
+- Command:
+
+```bash
+pnpm exec prettier --check 'docs/plan/user-input-state-hardening/**/*.md'
+```
+
+- Result: passed on 2026-06-17. All matched Markdown files use Prettier style.
+- Residual gaps: Phase 1 through Phase 7 remain open; no runtime tests were
+  required for Phase 0 because no runtime behavior changed.
 
 ## Required Closeout Proof
 
