@@ -41,6 +41,8 @@ import {
   currentCharacterTrashTimeSnapshot,
   dispatchCompatibleCharacterUpdate,
   dispatchCompatibleCharacterUpdateScoped,
+  dispatchCreateAndSelectCharacter,
+  dispatchCreateCharacter,
   moveCharacterOrderItem,
   normalizeCharacterOrder,
   prepareCompatibleCharacterUpdate,
@@ -99,6 +101,41 @@ function stubCommandFetch(): CapturedFetch[] {
         return jsonResponse({
           revision: 11,
           event: { type: 'character.updated', revision: 11, resource: 'character' },
+        })
+      }
+      return jsonResponse({ error: `unexpected ${url}` }, 404)
+    }) as unknown as typeof fetch,
+  )
+  return calls
+}
+
+function stubCreateCharacterCommandFetch(): CapturedFetch[] {
+  const calls: CapturedFetch[] = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const headers = init.headers as Record<string, string> | undefined
+      const url = String(input)
+      calls.push({
+        url,
+        method: init.method ?? 'GET',
+        authHeader: headers?.['risu-auth'] ?? null,
+        body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+      })
+
+      if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+      if (url === '/api/v1/commands/characters') {
+        return jsonResponse({
+          revision: 11,
+          event: { type: 'character.created', revision: 11, resource: 'character' },
+          characterId: 'char-created',
+        })
+      }
+      if (url === '/api/v1/commands/characters/create-and-select') {
+        return jsonResponse({
+          revision: 11,
+          event: { type: 'character.createdAndSelected', revision: 11, resource: 'character' },
+          characterId: 'char-selected',
         })
       }
       return jsonResponse({ error: `unexpected ${url}` }, 404)
@@ -194,6 +231,84 @@ beforeEach(() => {
 afterEach(() => {
   setServerProjectionWriteGuardEnabled(false)
   vi.unstubAllGlobals()
+})
+
+describe('character create command payloads', () => {
+  it('dispatchCreateCharacter omits embedded chats from the server payload and preserves the optimistic character', async () => {
+    const calls = stubCreateCharacterCommandFetch()
+    const previous = currentCharacterStateSnapshot()
+    const starterChat = {
+      id: 'chat-created',
+      name: 'Starter',
+      message: [{ role: 'user', data: 'hello' }],
+    }
+    const character = {
+      chaId: 'char-created',
+      name: 'Imported card',
+      firstMessage: 'Hi',
+      chatPage: 0,
+      chats: [starterChat],
+    } as any
+
+    dispatchCreateCharacter(character, previous)
+    await waitForCallCount(calls, 2)
+
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/characters',
+      method: 'POST',
+      body: {
+        baseRevision: 10,
+        character: {
+          chaId: 'char-created',
+          name: 'Imported card',
+          firstMessage: 'Hi',
+          chatPage: 0,
+        },
+      },
+    })
+    expect(calls[1].body).not.toHaveProperty('character.chats')
+    expect(character.chats).toEqual([starterChat])
+  })
+
+  it('dispatchCreateAndSelectCharacter omits embedded chats while keeping local selection data intact', async () => {
+    const calls = stubCreateCharacterCommandFetch()
+    const previous = currentCharacterStateSnapshot()
+    const starterChat = {
+      id: 'chat-selected',
+      name: 'Starter',
+      message: [{ role: 'char', data: 'hi' }],
+    }
+    const character = {
+      chaId: 'char-selected',
+      name: 'Scratch character',
+      firstMessage: 'Hello',
+      chatPage: 0,
+      chats: [starterChat],
+      lastInteraction: 5555,
+    } as any
+
+    dispatchCreateAndSelectCharacter(character, previous, 5555)
+    await waitForCallCount(calls, 2)
+
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/characters/create-and-select',
+      method: 'POST',
+      body: {
+        baseRevision: 10,
+        character: {
+          chaId: 'char-selected',
+          name: 'Scratch character',
+          firstMessage: 'Hello',
+          chatPage: 0,
+          lastInteraction: 5555,
+        },
+        lastInteraction: 5555,
+      },
+    })
+    expect(calls[1].body).not.toHaveProperty('character.chats')
+    expect(character.chats).toEqual([starterChat])
+    expect(character.lastInteraction).toBe(5555)
+  })
 })
 
 describe('Sidebar character order projection cleanup', () => {

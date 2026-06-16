@@ -1341,6 +1341,79 @@ describe('server command API adapter', () => {
     expect(commandFetch.calls.map((call) => call.body)).toEqual([null, { baseRevision: 40, favorite: false }])
   })
 
+  it('strips embedded chats from character create command payloads without mutating input', async () => {
+    const commandFetch = makeCommandFetch((url) => ({
+      revision: url.endsWith('/create-and-select') ? 3 : 2,
+      event: {
+        type: url.endsWith('/create-and-select') ? 'character.createdAndSelected' : 'character.created',
+        revision: url.endsWith('/create-and-select') ? 3 : 2,
+        resource: 'character',
+      },
+      characterId: url.endsWith('/create-and-select') ? 'char-selected' : 'char-created',
+    }))
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    const createChat = {
+      id: 'chat-created',
+      name: 'Starter',
+      message: [{ role: 'user', data: 'hello' }],
+    }
+    const createCharacter = {
+      chaId: 'char-created',
+      name: 'Created',
+      chatPage: 0,
+      chats: [createChat],
+    }
+    const selectChat = {
+      id: 'chat-selected',
+      name: 'Starter',
+      message: [{ role: 'char', data: 'hi' }],
+    }
+    const selectCharacter = {
+      chaId: 'char-selected',
+      name: 'Selected',
+      chatPage: 0,
+      chats: [selectChat],
+    }
+
+    await expect(
+      createCharacterCommand({
+        baseRevision: 1,
+        character: createCharacter,
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 2, characterId: 'char-created' })
+
+    await expect(
+      createAndSelectCharacterCommand({
+        baseRevision: 2,
+        character: selectCharacter,
+        lastInteraction: 1234,
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 3, characterId: 'char-selected' })
+
+    expect(commandFetch.calls.map((call) => call.body)).toEqual([
+      {
+        baseRevision: 1,
+        character: {
+          chaId: 'char-created',
+          name: 'Created',
+          chatPage: 0,
+        },
+      },
+      {
+        baseRevision: 2,
+        character: {
+          chaId: 'char-selected',
+          name: 'Selected',
+          chatPage: 0,
+        },
+        lastInteraction: 1234,
+      },
+    ])
+    expect(createCharacter.chats).toEqual([createChat])
+    expect(selectCharacter.chats).toEqual([selectChat])
+  })
+
   it('dispatches character commands through typed helpers', async () => {
     const commandFetch = makeCommandFetch((url) => {
       if (url.endsWith('/characters/reorder')) {

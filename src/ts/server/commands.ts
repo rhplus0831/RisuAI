@@ -1843,7 +1843,7 @@ export async function createCharacterCommand(
     method: 'POST',
     body: {
       baseRevision: input.baseRevision,
-      character: input.character,
+      character: characterCreatePayload(input.character),
     },
     signal,
   })
@@ -1857,11 +1857,17 @@ export async function createAndSelectCharacterCommand(
     method: 'POST',
     body: {
       baseRevision: input.baseRevision,
-      character: input.character,
+      character: characterCreatePayload(input.character),
       lastInteraction: input.lastInteraction,
     },
     signal,
   })
+}
+
+function characterCreatePayload(character: CharacterSnapshot): CharacterSnapshot {
+  const payload = { ...character }
+  delete payload.chats
+  return payload
 }
 
 export async function updateCharacterCommand(
