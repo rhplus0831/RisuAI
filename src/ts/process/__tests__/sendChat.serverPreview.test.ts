@@ -82,11 +82,14 @@ import { DBState } from '../../stores.svelte'
 import { abortChat, chatProcessStage, doingChat } from '../index.svelte'
 import * as chatModule from '../index.svelte'
 import { dispatchSaveChatGenerationSettings } from '../../chatCommands'
+import { currentPersonaStateSnapshot, queueSelectedPersonaUpdate, updateSelectedPersonaField } from '../../persona'
+import { clearCachedServerCommandRevision } from '../../server/commands'
 
 let cleanups: (() => void)[] = []
 
 beforeEach(() => {
   vi.stubGlobal('safeStructuredClone', (v: unknown) => JSON.parse(JSON.stringify(v)))
+  clearCachedServerCommandRevision()
   resetServerChatState()
   resetServerCompletionCalls()
   doingChat.set(false)
@@ -169,6 +172,40 @@ async function waitForState(assertion: () => void): Promise<void> {
     }
   }
   throw lastError
+}
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  })
+}
+
+function queuePersonaPromptSave(prompt: string): string {
+  DBState.db.personas = Array.isArray(DBState.db.personas) ? DBState.db.personas : []
+  const character = DBState.db.characters?.[0]
+  const chat = character?.chats?.[character.chatPage ?? 0]
+  const personaId = chat?.generationSettings?.personaId ?? 'test-chat-persona'
+  let selectedPersona = DBState.db.personas.findIndex((persona) => persona.id === personaId)
+  if (selectedPersona < 0) {
+    selectedPersona = DBState.db.personas.length
+    DBState.db.personas.push({
+      id: personaId,
+      name: DBState.db.username ?? 'User',
+      icon: DBState.db.userIcon ?? '',
+      personaPrompt: DBState.db.personaPrompt ?? '',
+      note: DBState.db.userNote ?? '',
+      largePortrait: false,
+    })
+  }
+  DBState.db.selectedPersona = selectedPersona
+  const persona = DBState.db.personas[selectedPersona]
+  if (!persona?.id) throw new Error('Fixture did not seed a selected persona')
+  const previous = currentPersonaStateSnapshot()
+  updateSelectedPersonaField('personaPrompt', prompt)
+  const attempted = currentPersonaStateSnapshot()
+  queueSelectedPersonaUpdate(previous, attempted)
+  return persona.id
 }
 
 describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
@@ -276,6 +313,67 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
     )
 
     await expect(sendPromise).resolves.toBe(true)
+    expect(getServerChatCalls()).toHaveLength(1)
+  })
+
+  it.each([
+    ['preview', { preview: true }],
+    ['send', {}],
+  ] as const)('flushes pending persona updates before server-backed %s', async (_mode, args) => {
+    await seedEcho()
+    setServerChatPrompt(
+      [{ role: 'user', content: 'server-only prompt' }],
+      { promptText: 'SERVER PROMPT', inputTokens: 11, outputTokens: 22 },
+      { formated: [{ role: 'user', content: 'server-only prompt' }] },
+    )
+    setServerChatDispatchResult('fixture echo reply', {
+      model: 'echo_model',
+      generationId: 'uuid-0',
+      inputTokens: 7,
+      outputTokens: 50,
+      maxContext: 4000,
+      stageTiming: { stage1: 1, stage2: 0, stage3: 0, stage4: 0 },
+    })
+
+    const personaId = queuePersonaPromptSave('fresh persona prompt for generation')
+    const requestOrder: string[] = []
+    const personaPatchCalls: Array<{ url: string; body: Record<string, unknown> }> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+        if (url.endsWith('/api/v1/bootstrap')) {
+          return jsonResponse({ revision: 1, database: {} })
+        }
+        if (url.includes(`/api/v1/commands/personas/${encodeURIComponent(personaId)}`)) {
+          requestOrder.push('persona')
+          personaPatchCalls.push({
+            url,
+            body: typeof init?.body === 'string' ? (JSON.parse(init.body) as Record<string, unknown>) : {},
+          })
+          return jsonResponse({
+            revision: 2,
+            event: { type: 'persona.updated', revision: 2, resource: 'persona', id: personaId },
+            personaId,
+          })
+        }
+        if (url.endsWith('/api/v1/generate/chat')) {
+          requestOrder.push('chat')
+          return serverChatFetch(input, init)
+        }
+        return serverChatFetch(input, init)
+      }) as unknown as typeof fetch,
+    )
+
+    const ok = await chatModule.sendChat(-1, args)
+
+    expect(ok).toBe(true)
+    expect(personaPatchCalls).toHaveLength(1)
+    expect(personaPatchCalls[0].body).toMatchObject({
+      patch: { personaPrompt: 'fresh persona prompt for generation' },
+      mirrorLegacyProfile: true,
+    })
+    expect(requestOrder).toEqual(['persona', 'chat'])
     expect(getServerChatCalls()).toHaveLength(1)
   })
 

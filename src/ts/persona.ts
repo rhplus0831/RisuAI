@@ -47,6 +47,8 @@ const pendingPersonaUpdate = {
   previous: null as PersonaStateSnapshot | null,
   attempted: null as PersonaStateSnapshot | null,
   personaId: null as string | null,
+  patch: null as PersonaSnapshot | null,
+  promise: null as Promise<ServerCommandResult<{ personaId: string }> | null> | null,
 }
 
 let personaSettingsWatcherSuppressed = false
@@ -195,6 +197,7 @@ function clearPendingSelectedPersonaUpdate(): void {
   pendingPersonaUpdate.previous = null
   pendingPersonaUpdate.attempted = null
   pendingPersonaUpdate.personaId = null
+  pendingPersonaUpdate.patch = null
 }
 
 function runPersonaCommand<T extends Record<string, unknown>>(
@@ -267,38 +270,91 @@ export function queueSelectedPersonaUpdate(previous: PersonaStateSnapshot, attem
   pendingPersonaUpdate.personaId = personaId
   pendingPersonaUpdate.previous ??= previous
   pendingPersonaUpdate.attempted = attempted
+  pendingPersonaUpdate.patch = patch
   if (pendingPersonaUpdate.timer) clearTimeout(pendingPersonaUpdate.timer)
   pendingPersonaUpdate.timer = setTimeout(() => {
-    pendingPersonaUpdate.timer = null
-    const commandPrevious = pendingPersonaUpdate.previous
-    const commandAttempted = pendingPersonaUpdate.attempted
-    pendingPersonaUpdate.previous = null
-    pendingPersonaUpdate.attempted = null
-    pendingPersonaUpdate.personaId = null
-    void runServerCommand({
-      command: (baseRevision) =>
-        updatePersonaCommand({
-          baseRevision,
-          personaId,
-          patch,
-          mirrorLegacyProfile: true,
-        }),
-      rollback: () => {
-        if (
-          commandPrevious &&
-          commandAttempted &&
-          snapshotPersonaJson(currentPersonaStateSnapshot()) === snapshotPersonaJson(commandAttempted)
-        ) {
-          restorePersonaStateSnapshot(commandPrevious)
-        }
-      },
-    })
+    void flushPendingSelectedPersonaUpdate()
   }, 250)
+}
+
+function takePendingSelectedPersonaUpdate(): {
+  personaId: string
+  patch: PersonaSnapshot
+  previous: PersonaStateSnapshot | null
+  attempted: PersonaStateSnapshot | null
+} | null {
+  if (pendingPersonaUpdate.timer) {
+    clearTimeout(pendingPersonaUpdate.timer)
+  }
+
+  const personaId = pendingPersonaUpdate.personaId
+  const patch = pendingPersonaUpdate.patch
+  const previous = pendingPersonaUpdate.previous
+  const attempted = pendingPersonaUpdate.attempted
+
+  pendingPersonaUpdate.timer = null
+  pendingPersonaUpdate.previous = null
+  pendingPersonaUpdate.attempted = null
+  pendingPersonaUpdate.personaId = null
+  pendingPersonaUpdate.patch = null
+
+  if (!personaId || !patch) return null
+  return { personaId, patch, previous, attempted }
+}
+
+export function flushPendingSelectedPersonaUpdate(): Promise<ServerCommandResult<{ personaId: string }> | null> {
+  if (!canUseServerCommands()) return Promise.resolve(null)
+
+  const pending = takePendingSelectedPersonaUpdate()
+  if (!pending) {
+    return pendingPersonaUpdate.promise ?? Promise.resolve(null)
+  }
+
+  const previousPromise = pendingPersonaUpdate.promise ?? Promise.resolve(null)
+  const next = previousPromise
+    .catch(() => null)
+    .then(() =>
+      runServerCommand({
+        command: (baseRevision) =>
+          updatePersonaCommand({
+            baseRevision,
+            personaId: pending.personaId,
+            patch: pending.patch,
+            mirrorLegacyProfile: true,
+          }),
+        rollback: () => {
+          if (
+            pending.previous &&
+            pending.attempted &&
+            snapshotPersonaJson(currentPersonaStateSnapshot()) === snapshotPersonaJson(pending.attempted)
+          ) {
+            restorePersonaStateSnapshot(pending.previous)
+          }
+        },
+      }),
+    )
+    .finally(() => {
+      if (pendingPersonaUpdate.promise === next) {
+        pendingPersonaUpdate.promise = null
+      }
+    })
+
+  pendingPersonaUpdate.promise = next
+  return next
 }
 
 export function updateSelectedPersonaField(field: SelectedPersonaProfileField, value: string): void {
   withTrustedServerProjectionWrite(() => {
     DBState.db[field] = value
+    const persona = DBState.db.personas[DBState.db.selectedPersona]
+    if (!persona) return
+    if (field === 'username') {
+      persona.name = value
+    } else if (field === 'userNote') {
+      persona.note = value
+    } else {
+      persona.personaPrompt = value
+    }
   })
 }
 

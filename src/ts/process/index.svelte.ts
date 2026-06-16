@@ -23,6 +23,7 @@ import {
 import { guardActiveChatGenerationSettingsForSend } from '../activeChatGenerationSettings'
 import { alertError } from '../alert'
 import { waitForPendingChatGenerationSettingsSave } from '../chatCommands'
+import { flushPendingSelectedPersonaUpdate } from '../persona'
 
 export interface OpenAIChat {
   role: 'system' | 'user' | 'assistant' | 'function'
@@ -60,6 +61,7 @@ const MAX_SERVER_RESEND_DEPTH = 1
 const SERVER_RESEND_CAP_ERROR = 'Server-requested resend limit reached. Stopping to avoid a repeated generation loop.'
 const CHAT_GENERATION_SETTINGS_SAVE_ERROR =
   'Chat generation settings could not be saved before generation. Please retry.'
+const SELECTED_PERSONA_SAVE_ERROR = 'Persona settings could not be saved before generation. Please retry.'
 
 function chatGenerationSettingsSaveError(
   result: NonNullable<Awaited<ReturnType<typeof waitForPendingChatGenerationSettingsSave>>>,
@@ -67,6 +69,14 @@ function chatGenerationSettingsSaveError(
   if (result.status === 'error') return result.error
   if (result.status === 'conflict') return CHAT_GENERATION_SETTINGS_SAVE_ERROR
   return CHAT_GENERATION_SETTINGS_SAVE_ERROR
+}
+
+function selectedPersonaSaveError(
+  result: NonNullable<Awaited<ReturnType<typeof flushPendingSelectedPersonaUpdate>>>,
+): string {
+  if (result.status === 'error') return result.error
+  if (result.status === 'conflict') return SELECTED_PERSONA_SAVE_ERROR
+  return SELECTED_PERSONA_SAVE_ERROR
 }
 
 export function createActiveGenerationAbortController(): AbortController {
@@ -200,6 +210,11 @@ export async function sendChat(
       const settingsSaveResult = await waitForPendingChatGenerationSettingsSave(currentChat.id)
       if (settingsSaveResult && settingsSaveResult.status !== 'ok') {
         throwError(chatGenerationSettingsSaveError(settingsSaveResult))
+        return false
+      }
+      const personaSaveResult = await flushPendingSelectedPersonaUpdate()
+      if (personaSaveResult && personaSaveResult.status !== 'ok') {
+        throwError(selectedPersonaSaveError(personaSaveResult))
         return false
       }
       currentChat = nowChatroom.chats[selectedChat]
