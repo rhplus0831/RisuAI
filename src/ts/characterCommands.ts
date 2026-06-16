@@ -15,6 +15,7 @@ import {
   type ServerCommandTransportOptions,
 } from './server/commands'
 import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
+import { applyAttemptedFieldRollback } from './server/staleStateGuards'
 import { DBState, selectedCharID } from './stores.svelte'
 import type { character, folder } from './storage/database.svelte'
 
@@ -208,16 +209,12 @@ export function restoreCharacterRow(snapshot: CharacterRowSnapshot): void {
       const index = locateCharacterIndex(characters, snapshot.characterId, snapshot.index)
       if (index >= 0) {
         if (snapshot.attempted) {
-          const current = characters[index] as unknown as Record<string, unknown>
-          const previous = snapshot.character as unknown as Record<string, unknown>
-          for (const key of Object.keys(snapshot.attempted)) {
-            if (snapshotJson(current[key]) !== snapshotJson(snapshot.attempted[key])) continue
-            if (Object.prototype.hasOwnProperty.call(previous, key)) {
-              current[key] = cloneJsonValue(previous[key])
-            } else {
-              delete current[key]
-            }
-          }
+          applyAttemptedFieldRollback({
+            target: characters[index] as unknown as Record<string, unknown>,
+            previous: snapshot.character as unknown as Record<string, unknown>,
+            attempted: snapshot.attempted,
+            deleteMissingPrevious: true,
+          })
         } else {
           characters[index] = cloneJsonValue(snapshot.character) as character
         }

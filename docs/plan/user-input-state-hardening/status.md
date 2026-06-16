@@ -10,11 +10,15 @@ stale-state risk review under `../../user-stale-state-audit/`.
 ## Snapshot
 
 - Plan state: active, Phase 0 contract decisions complete, Phase 1 helper
-  primitives implemented; Phase 1 domain adoption remains open.
+  primitives implemented; Phase 1 settings and character rollback adoption
+  landed, with chat/message adoption still open.
 - Code changes: `src/ts/server/staleStateGuards.ts` and
   `src/ts/server/staleStateGuards.test.ts` add shared stale-state primitives
-  and focused helper coverage.
-- Verification state: latest helper-slice validation is recorded in
+  and focused helper coverage. `src/ts/server/settingsBridge.svelte.ts`,
+  `src/ts/server/characterBridge.svelte.ts`, and
+  `src/ts/characterCommands.ts` now use `applyAttemptedFieldRollback` for
+  attempted settings/profile/row rollback.
+- Verification state: latest settings/character adoption validation is recorded in
   `latest-verification.md`.
 - Highest issue density:
   - Character editor: 52 issue rows, mostly dirty projection and unguarded
@@ -38,8 +42,9 @@ stale-state risk review under `../../user-stale-state-audit/`.
 - [Phase 0](phases/phase-0-contract-and-baseline.md): complete. Helper
   contracts, source-row corrections, and first regression fixtures are locked.
 - [Phase 1](phases/phase-1-shared-primitives-and-rollback.md): in progress.
-  Shared helper primitives are implemented; settings, character, chat/message,
-  and collection rollback adopters remain.
+  Shared helper primitives are implemented; settings and character rollback
+  adopters have landed; chat/message rollback adapters remain. Collection
+  rollback domains stay owned by Phase 5.
 - [Phase 2](phases/phase-2-dirty-draft-projection.md): pending. Dirty draft
   projection merge behavior.
 - [Phase 3](phases/phase-3-upload-import-fetch-callbacks.md): pending. Upload,
@@ -66,13 +71,10 @@ stale-state risk review under `../../user-stale-state-audit/`.
   `isLatestOperation`, `applyAttemptedFieldRollback`,
   `applyAttemptedKeyedListRollback`, `mergeProjectionIntoDirtyDraft`, and
   `createDestructiveRefreshToken`.
-- Next Phase 1 worker slices should adopt those helpers in
-  `src/ts/server/settingsBridge.svelte.ts`,
-  `src/ts/server/characterBridge.svelte.ts`, and `src/ts/chatCommands.ts`
+- Next Phase 1 worker slices should adopt those helpers in `src/ts/chatCommands.ts`
   without expanding runtime behavior beyond attempted-value rollback.
 - Remaining broad rollback families to track by phase:
-  - Phase 1: common settings, character profile/row, and chat/message command
-    rollback adapters.
+  - Phase 1: chat/message command rollback adapters.
   - Phase 5: presets, personas, loadouts, lorebooks, scripts, modules,
     plugins, sidebar chat/folder lists, and character list ordering.
   - Phase 6: full restore/import/resync, memory jobs, route hydration, and

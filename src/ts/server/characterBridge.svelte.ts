@@ -12,6 +12,7 @@ import { canUseServerCommands, type CharacterSnapshot, type ServerCommandTranspo
 import { DBState, selectedCharID } from '../stores.svelte'
 import { getServerProjectionApplyEpoch, withTrustedServerProjectionWrite } from './projectionWriteGuard.svelte'
 import { isServerCharacterShell, SERVER_CHARACTER_SHELL_MARKER } from '../storage/database.svelte'
+import { applyAttemptedFieldRollback } from './staleStateGuards'
 
 interface PendingCharacterPatch {
   characterId: string
@@ -428,15 +429,12 @@ export function rollbackServerBackedCharacterProfile(snapshot: CharacterStateSna
         )
         if (!character) return
         if (profileSnapshot.attemptedProfile) {
-          const row = character as unknown as Record<string, unknown>
-          for (const key of Object.keys(profileSnapshot.attemptedProfile)) {
-            if (snapshotJson(row[key]) !== snapshotJson(profileSnapshot.attemptedProfile[key])) continue
-            if (Object.prototype.hasOwnProperty.call(profileSnapshot.profile, key)) {
-              row[key] = cloneJsonValue(profileSnapshot.profile[key])
-            } else {
-              delete row[key]
-            }
-          }
+          applyAttemptedFieldRollback({
+            target: character as unknown as Record<string, unknown>,
+            previous: profileSnapshot.profile,
+            attempted: profileSnapshot.attemptedProfile,
+            deleteMissingPrevious: true,
+          })
           return
         }
         Object.assign(character, cloneJsonValue(profileSnapshot.profile))

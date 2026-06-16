@@ -1112,6 +1112,28 @@ describe('Phase 0 character-row snapshot kit', () => {
     expect(DBState.db.characters[1].name).toBe('Newer local name')
   })
 
+  it('deletes a row field added by a failed attempted rollback when the baseline lacked it', () => {
+    DBState.db = {
+      characters: [
+        { chaId: 'char-a', name: 'Character', chats: [] },
+        { chaId: 'char-b', name: 'Sibling', chats: [] },
+      ],
+      characterOrder: [],
+      currentChar: 0,
+    } as any
+    selectedCharID.set(0)
+    const snapshot = currentCharacterRowSnapshot(0)
+
+    DBState.db.characters[0].creatorNotes = 'Optimistic notes'
+    restoreCharacterRow({
+      ...snapshot,
+      attempted: { creatorNotes: 'Optimistic notes' },
+    })
+
+    expect(Object.hasOwn(DBState.db.characters[0], 'creatorNotes')).toBe(false)
+    expect(DBState.db.characters[1].name).toBe('Sibling')
+  })
+
   it('sanity baseline: the selection snapshot performs zero whole-characters clones, the legacy snapshot performs one', () => {
     DBState.db = seedCloneCostDb() as any
     selectedCharID.set(0)

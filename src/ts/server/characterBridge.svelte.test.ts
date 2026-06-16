@@ -279,6 +279,23 @@ describe('createServerBackedCharacterDraft seed gating', () => {
     expect(DBState.db.characters[0].name).toBe('Newer local name')
   })
 
+  it('deletes a profile field added by a failed attempted rollback when the baseline lacked it', () => {
+    setupCharacter('Initial')
+    DBState.db.characters[0].creatorNotes = 'Attempted notes'
+
+    rollbackServerBackedCharacterProfile({
+      characters: [],
+      characterOrder: [],
+      currentChar: 0,
+      selectedCharID: 0,
+      profileCharacterId: 'char-1',
+      profile: { name: 'Initial' },
+      attemptedProfile: { creatorNotes: 'Attempted notes' },
+    } as any)
+
+    expect(Object.hasOwn(DBState.db.characters[0], 'creatorNotes')).toBe(false)
+  })
+
   it('does not dispatch draft defaults from a selected character shell', async () => {
     setupCharacters([
       {

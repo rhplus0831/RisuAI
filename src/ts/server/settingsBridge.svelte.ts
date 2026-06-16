@@ -11,6 +11,7 @@ import {
   type ServerCommandTransportOptions,
 } from './commands'
 import { getServerProjectionApplyEpoch, withTrustedServerProjectionWrite } from './projectionWriteGuard.svelte'
+import { applyAttemptedFieldRollback } from './staleStateGuards'
 
 interface PendingSettingsPatch {
   patch: SettingsPatch
@@ -314,11 +315,11 @@ function withSuppressedSettingsWatcher(fn: () => void): void {
 function rollbackSettings(previous: SettingsPatch, attempted: SettingsPatch): void {
   withTrustedServerProjectionWrite(() => {
     const target = DBState.db as unknown as Record<string, unknown>
-    for (const [key, previousValue] of Object.entries(previous)) {
-      if (snapshotJson(target[key]) === snapshotJson(attempted[key])) {
-        target[key] = cloneJsonValue(previousValue)
-      }
-    }
+    applyAttemptedFieldRollback({
+      target,
+      previous,
+      attempted,
+    })
   })
 }
 

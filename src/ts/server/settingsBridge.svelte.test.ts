@@ -282,6 +282,51 @@ describe('settingsBridge coalescing', () => {
     stop()
   })
 
+  it('skips rollback for a setting after a newer same-key local edit', async () => {
+    setupSettings({ textTheme: 'before' })
+
+    applyServerBackedSettingsPatch({ textTheme: 'attempted' })
+    await Promise.resolve()
+
+    DBState.db.textTheme = 'newer local'
+    recorded.patches[0].rollback?.()
+
+    expect(DBState.db.textTheme).toBe('newer local')
+  })
+
+  it('restores only still-attempted keys from a multi-key settings rollback', async () => {
+    setupSettings({
+      notification: false,
+      textTheme: 'before',
+    })
+
+    applyServerBackedSettingsPatch({
+      notification: true,
+      textTheme: 'attempted',
+    })
+    await Promise.resolve()
+
+    DBState.db.textTheme = 'newer local'
+    recorded.patches[0].rollback?.()
+
+    expect(DBState.db.notification).toBe(false)
+    expect(DBState.db.textTheme).toBe('newer local')
+  })
+
+  it('preserves the existing undefined/no-delete behavior when rolling back an added setting', async () => {
+    setupSettings({})
+
+    applyServerBackedSettingsPatch({ textTheme: 'attempted' })
+    await Promise.resolve()
+
+    expect(DBState.db.textTheme).toBe('attempted')
+
+    recorded.patches[0].rollback?.()
+
+    expect(Object.hasOwn(DBState.db, 'textTheme')).toBe(true)
+    expect(DBState.db.textTheme).toBeUndefined()
+  })
+
   it('L23: queued settings rollback suppresses watcher echoes for debounced writes', async () => {
     setupSettings({ notification: false })
     const stop = watchServerBackedSettings(['notification'], { delayMs: DELAY })
