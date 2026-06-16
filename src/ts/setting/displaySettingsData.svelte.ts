@@ -34,7 +34,7 @@ export const displayThemeSettingsItems: SettingItem[] = [
     id: 'display.customGui',
     type: 'button',
     labelKey: 'defineCustomGUI',
-    condition: (ctx) => ctx.db.theme === 'custom',
+    condition: (ctx) => ctx.db.theme === 'customHTML',
     options: {
       onClick: () => CustomGUISettingMenuStore.set(true),
     },

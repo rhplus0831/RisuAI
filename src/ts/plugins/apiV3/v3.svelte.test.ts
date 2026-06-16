@@ -150,6 +150,7 @@ vi.mock('src/ts/characterCommands', () => ({
 }))
 
 vi.mock('src/ts/chatCommands', () => ({
+  appendCurrentChatUserMessageForSend: vi.fn(),
   CHAT_PATCH_ALLOWED_KEYS: new Set([
     'name',
     'note',
@@ -257,7 +258,12 @@ vi.mock('src/ts/server/projectionWriteGuard.svelte', () => ({
 
 import { customProviderStore, pluginV2 } from '../plugins.svelte'
 import { prepareCompatibleCharacterUpdate } from 'src/ts/characterCommands'
-import { prepareCompatibleChatUpdate, runOptimisticCommandSequence } from 'src/ts/chatCommands'
+import {
+  appendCurrentChatUserMessageForSend,
+  prepareCompatibleChatUpdate,
+  runOptimisticCommandSequence,
+} from 'src/ts/chatCommands'
+import { sendChat as processSendChat } from 'src/ts/process/index.svelte'
 import {
   __v3PluginLifecycleTestHooks,
   customV3ProviderMetaStore,
@@ -296,6 +302,8 @@ beforeEach(async () => {
   vi.mocked(prepareCompatibleCharacterUpdate).mockClear()
   vi.mocked(prepareCompatibleChatUpdate).mockClear()
   vi.mocked(runOptimisticCommandSequence).mockClear()
+  vi.mocked(appendCurrentChatUserMessageForSend).mockReset()
+  vi.mocked(processSendChat).mockReset()
   await __v3PluginLifecycleTestHooks.reset()
 })
 
@@ -381,6 +389,52 @@ describe('V3 character command bridge', () => {
 })
 
 describe('V3 chat command bridge', () => {
+  it('sendChat appends plugin user input through the server-backed send helper', async () => {
+    const plugin = seedV3Plugin('plugin-a')
+    mockDbState.db.plugins = [plugin]
+    mockDbState.db.characters = {
+      'char-a': {
+        chaId: 'char-a',
+        chatPage: 0,
+        chats: [{ id: 'chat-a', message: [] }],
+      },
+    }
+    vi.mocked(appendCurrentChatUserMessageForSend).mockResolvedValueOnce({
+      status: 'ok',
+      messageId: 'msg-plugin',
+    })
+    vi.mocked(processSendChat).mockResolvedValueOnce(true)
+    const api = __v3PluginLifecycleTestHooks.createApi(plugin) as any
+
+    await expect(api.sendChat('hello from plugin')).resolves.toBe(true)
+
+    expect(appendCurrentChatUserMessageForSend).toHaveBeenCalledWith('hello from plugin')
+    expect(processSendChat).toHaveBeenCalledWith(-1, {})
+    expect(mockDbState.db.characters['char-a'].chats[0].message).toEqual([])
+  })
+
+  it('sendChat stops before generation when the append helper rejects the user input', async () => {
+    const plugin = seedV3Plugin('plugin-a')
+    mockDbState.db.plugins = [plugin]
+    mockDbState.db.characters = {
+      'char-a': {
+        chaId: 'char-a',
+        chatPage: 0,
+        chats: [{ id: 'chat-a', message: [] }],
+      },
+    }
+    vi.mocked(appendCurrentChatUserMessageForSend).mockResolvedValueOnce({
+      status: 'error',
+      error: 'append failed',
+    })
+    const api = __v3PluginLifecycleTestHooks.createApi(plugin) as any
+
+    await expect(api.sendChat('hello from plugin')).rejects.toThrow('append failed')
+
+    expect(processSendChat).not.toHaveBeenCalled()
+    expect(mockDbState.db.characters['char-a'].chats[0].message).toEqual([])
+  })
+
   it('setChatToIndex rejects unsupported chat fields before projection mutation', () => {
     mockServerCommands.canUse = true
     const existingChat = {

@@ -12,7 +12,7 @@ const commandSpies = vi.hoisted(() => ({
 vi.mock('src/ts/server/commands', () => ({
   canUseServerCommands: () => true,
   patchServerBackedSettings: commandSpies.patchServerBackedSettings,
-  settingsGroupForKey: (key: string) => (key === 'customGUI' ? 'display' : undefined),
+  settingsGroupForKey: (key: string) => (key === 'guiHTML' ? 'display' : undefined),
 }))
 
 vi.mock('src/ts/process/modules', () => ({
@@ -43,7 +43,7 @@ beforeEach(() => {
   vi.useFakeTimers()
   commandSpies.patchServerBackedSettings.mockClear()
   ;(DBState as { db: unknown }).db = {
-    customGUI: '',
+    guiHTML: '',
   }
   previousSafeStructuredClone = (globalThis as { safeStructuredClone?: unknown }).safeStructuredClone
   ;(globalThis as { safeStructuredClone?: <T>(value: T) => T }).safeStructuredClone = structuredClone
@@ -64,8 +64,8 @@ afterEach(() => {
 })
 
 describe('CustomGUISettingMenu persistence', () => {
-  it('loads the editor tree from the server-backed customGUI setting', async () => {
-    DBState.db.customGUI = '<component class="flex flex-col flex-1" data-risu-type="fullWidthChat">\n</component>\n'
+  it('loads the editor tree from the server-backed guiHTML setting', async () => {
+    DBState.db.guiHTML = '<component class="flex flex-col flex-1" data-risu-type="fullWidthChat">\n</component>\n'
 
     component = mount(CustomGUISettingMenu, { target })
     await tick()
@@ -74,7 +74,7 @@ describe('CustomGUISettingMenu persistence', () => {
     expect(commandSpies.patchServerBackedSettings).not.toHaveBeenCalled()
   })
 
-  it('persists added GUI nodes through the server-backed customGUI setting', async () => {
+  it('persists added GUI nodes through the server-backed guiHTML setting', async () => {
     component = mount(CustomGUISettingMenu, { target })
     await tick()
 
@@ -83,8 +83,8 @@ describe('CustomGUISettingMenu persistence', () => {
     buttonByText('fullWidthChat').click()
     await tick()
 
-    expect(DBState.db.customGUI).toContain('data-risu-type="fullWidthChat"')
-    expect(DBState.db.customGUI).toContain('<component')
+    expect(DBState.db.guiHTML).toContain('data-risu-type="fullWidthChat"')
+    expect(DBState.db.guiHTML).toContain('<component')
 
     await vi.advanceTimersByTimeAsync(250)
     await tick()
@@ -92,7 +92,7 @@ describe('CustomGUISettingMenu persistence', () => {
     expect(commandSpies.patchServerBackedSettings).toHaveBeenCalledWith(
       expect.objectContaining({
         patch: {
-          customGUI: expect.stringContaining('data-risu-type="fullWidthChat"'),
+          guiHTML: expect.stringContaining('data-risu-type="fullWidthChat"'),
         },
       }),
     )

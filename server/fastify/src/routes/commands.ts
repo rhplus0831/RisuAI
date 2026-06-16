@@ -6214,14 +6214,16 @@ function readSettingsGroupPatch(group: SettingsGroup, patch: unknown): Record<st
     throw new ValidationError('patch must include at least one setting')
   }
 
+  const sanitized: Record<string, unknown> = {}
   for (const [key, value] of entries) {
     if (!SETTINGS_GROUP_KEY_SETS[group].has(key)) {
       throw new ValidationError(`Unsupported ${group} setting: ${key}`)
     }
     validateSettingValue(key, value)
+    sanitized[key] = sanitizeSettingValue(key, value)
   }
 
-  return patch as Record<string, unknown>
+  return sanitized
 }
 
 function validateSettingValue(key: string, value: unknown): void {
@@ -6261,6 +6263,55 @@ function validateSettingValue(key: string, value: unknown): void {
     throw new ValidationError(`${key} must be an array or null`)
   }
   validateJsonValue(key, value)
+}
+
+function sanitizeSettingValue(key: string, value: unknown): unknown {
+  if (key === 'customSidebarItems') {
+    return readCustomSidebarItems(value)
+  }
+  return value
+}
+
+const CUSTOM_SIDEBAR_ITEM_TYPES = new Set(['model', 'databaseKey', 'loadout', 'setting'])
+
+function readCustomSidebarItems(value: unknown): Array<{
+  id: string
+  type: string
+  subType: string
+  label: string
+}> {
+  if (!Array.isArray(value)) {
+    throw new ValidationError('customSidebarItems must be an array')
+  }
+
+  return value.map((item, index) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      throw new ValidationError(`customSidebarItems[${index}] must be an object`)
+    }
+    const record = item as Record<string, unknown>
+    if (typeof record.id !== 'string' || record.id.trim() === '') {
+      throw new ValidationError(`customSidebarItems[${index}].id must be a non-empty string`)
+    }
+    if (typeof record.type !== 'string' || !CUSTOM_SIDEBAR_ITEM_TYPES.has(record.type)) {
+      throw new ValidationError(`customSidebarItems[${index}].type is unsupported`)
+    }
+    if (typeof record.subType !== 'string') {
+      throw new ValidationError(`customSidebarItems[${index}].subType must be a string`)
+    }
+    if (record.type === 'setting' && record.subType.trim() === '') {
+      throw new ValidationError(`customSidebarItems[${index}].subType must be a non-empty string for setting items`)
+    }
+    if (typeof record.label !== 'string') {
+      throw new ValidationError(`customSidebarItems[${index}].label must be a string`)
+    }
+
+    return {
+      id: record.id,
+      type: record.type,
+      subType: record.subType,
+      label: record.label,
+    }
+  })
 }
 
 function readSelectionLastInteraction(value: unknown): number {

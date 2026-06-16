@@ -801,6 +801,76 @@ describe('Phase 9-2a scalar settings groups', () => {
     })
   })
 
+  it('rejects malformed custom sidebar setting rows before persistence', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, { customSidebarItems: [] })
+
+    const res = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/sidebar',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: {
+          customSidebarItems: [
+            {
+              id: 'bad-setting',
+              type: 'setting',
+              label: 'Broken setting',
+            },
+          ],
+        },
+      },
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(res.json()).toEqual({
+      error: 'customSidebarItems[0].subType must be a string',
+    })
+  })
+
+  it('sanitizes custom sidebar rows to the supported persisted shape', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, { customSidebarItems: [] })
+
+    const res = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/sidebar',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: {
+          customSidebarItems: [
+            {
+              id: 'theme-setting',
+              type: 'setting',
+              subType: 'display.theme',
+              label: 'Theme',
+              setting: undefined,
+              nested: { unsafe: true },
+            },
+          ],
+        },
+      },
+    })
+
+    expect(res.statusCode).toBe(200)
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().database.customSidebarItems).toEqual([
+      {
+        id: 'theme-setting',
+        type: 'setting',
+        subType: 'display.theme',
+        label: 'Theme',
+      },
+    ])
+  })
+
   it('allows provider scalar updates and masks them in bootstrap', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {

@@ -370,6 +370,7 @@
 
           value = popUpEditorStore.value
           onInput()
+          onchange()
         }
       }}
       oncontextmenu={(e) => {
@@ -385,6 +386,7 @@
             if (!popUpEditorStore.open) {
               value = popUpEditorStore.value
               onInput()
+              onchange()
               clearInterval(checkInterval)
             }
           }, 100)

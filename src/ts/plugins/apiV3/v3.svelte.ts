@@ -14,6 +14,7 @@ import { currentPluginStateSnapshot, dispatchUpdatePlugin } from 'src/ts/pluginC
 import { canUseServerCommands, patchServerBackedSettings } from 'src/ts/server/commands'
 import { currentCharacterStateSnapshot, prepareCompatibleCharacterUpdate } from 'src/ts/characterCommands'
 import {
+  appendCurrentChatUserMessageForSend,
   currentChatStateSnapshot,
   prepareCompatibleChatUpdate,
   runOptimisticCommandSequence,
@@ -1517,11 +1518,10 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin, lifecycl
       }
 
       if (message) {
-        chat.message.push({
-          role: 'user',
-          data: message,
-          time: Date.now(),
-        })
+        const appendResult = await appendCurrentChatUserMessageForSend(message)
+        if (appendResult.status !== 'ok') {
+          throw new Error(appendResult.error)
+        }
       }
 
       await processSendChat(-1, {})

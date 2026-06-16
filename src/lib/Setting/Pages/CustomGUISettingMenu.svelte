@@ -9,12 +9,12 @@
   }
 
   let tree: CustomTree[] = $state([]) //children of the main tree
-  const customGUIDraft = createServerBackedSettingDraft<string>('customGUI', '')
+  const guiHTMLDraft = createServerBackedSettingDraft<string>('guiHTML', '')
   let mainTree: HTMLDivElement = $state()
   let menuOpen: boolean = $state(false)
   let subMenu = $state(0)
   let selectedContatiner = $state('root')
-  let previousCustomGUIHTML = ''
+  let previousGuiHTML = ''
   let suppressTreePersistence = false
 
   const builtContainerTrees: CustomTree[] = [
@@ -209,18 +209,18 @@
   function persistTree() {
     if (suppressTreePersistence) return
     const html = treeToHTML(tree)
-    previousCustomGUIHTML = html
-    customGUIDraft.value = html
+    previousGuiHTML = html
+    guiHTMLDraft.value = html
   }
 
   $effect(() => {
-    const html = customGUIDraft.value ?? ''
-    if (html === previousCustomGUIHTML) return
+    const html = guiHTMLDraft.value ?? ''
+    if (html === previousGuiHTML) return
 
     suppressTreePersistence = true
     tree = HTMLtoTree(html)
     selectedContatiner = 'root'
-    previousCustomGUIHTML = html
+    previousGuiHTML = html
     renderMainTree(tree)
     queueMicrotask(() => {
       suppressTreePersistence = false

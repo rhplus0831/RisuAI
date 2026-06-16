@@ -1897,13 +1897,33 @@ export interface CustomSideBarItem {
   label: string
 }
 
+const CUSTOM_SIDEBAR_ITEM_TYPES = new Set(['model', 'databaseKey', 'loadout', 'setting'])
+
 function normalizeCustomSidebarItems(value: unknown): CustomSideBarItem[] {
   if (!Array.isArray(value)) return []
-  return value.filter((item): item is CustomSideBarItem => {
-    if (!item || typeof item !== 'object' || Array.isArray(item)) return false
-    const type = (item as { type?: unknown }).type
-    return type !== 'preset' && type !== 'persona'
-  })
+  const normalized: CustomSideBarItem[] = []
+  for (const item of value) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) continue
+    const record = item as Record<string, unknown>
+    if (record.type === 'preset' || record.type === 'persona') continue
+    if (
+      typeof record.id !== 'string' ||
+      typeof record.type !== 'string' ||
+      !CUSTOM_SIDEBAR_ITEM_TYPES.has(record.type) ||
+      typeof record.subType !== 'string' ||
+      typeof record.label !== 'string'
+    ) {
+      continue
+    }
+    if (record.type === 'setting' && record.subType.trim() === '') continue
+    normalized.push({
+      id: record.id,
+      type: record.type as CustomSideBarItem['type'],
+      subType: record.subType,
+      label: record.label,
+    })
+  }
+  return normalized
 }
 
 export interface SeparateParameters {
