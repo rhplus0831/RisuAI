@@ -10,6 +10,7 @@
 
   type NamedGenerationReference = {
     name?: string
+    note?: string
   }
 
   let activeGenerationSettings = $derived.by(() =>
@@ -35,6 +36,11 @@
       (activeGenerationSettings.persona as NamedGenerationReference | undefined)?.name ||
       language.chatGenerationPersonaUnconfigured,
   )
+
+  let personaNote = $derived.by(() => {
+    const note = (activeGenerationSettings.persona as NamedGenerationReference | undefined)?.note
+    return typeof note === 'string' && note.trim().length > 0 ? note : ''
+  })
 
   function resetDefaultValues(): void {
     saveActiveChatGenerationSettingsDefaultValues()
@@ -91,6 +97,10 @@
         <span class="truncate">{personaName}</span>
       </div>
     </Button>
+    {#if personaNote}
+      <span class="mt-1 text-sm opacity-75 whitespace-pre-wrap break-words" data-risu-generation-picker-persona-note
+        >{personaNote}</span>
+    {/if}
   </div>
 
   <div data-risu-generation-reset-defaults data-risu-picker-mode="active-chat-generation-settings">

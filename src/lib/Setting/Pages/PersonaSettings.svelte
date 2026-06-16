@@ -179,14 +179,12 @@
       size="lg"
       placeholder="User"
       bind:value={() => DBState.db.username, (value) => updateSelectedPersonaField('username', value)} />
-    <span class="text-sm text-textcolor2">{language.note}</span>
-    {#if DBState.db.personaNote}
-      <TextInput
-        marginBottom
-        size="lg"
-        bind:value={() => DBState.db.userNote, (value) => updateSelectedPersonaField('userNote', value)}
-        placeholder={`Put a unique identifier for this persona here.\nExample: [Alternate Hunters persona]`} />
-    {/if}
+    <span class="text-sm text-textcolor2">{language.personaNote}</span>
+    <TextAreaInput
+      height="20"
+      margin="bottom"
+      bind:value={() => DBState.db.userNote, (value) => updateSelectedPersonaField('userNote', value)}
+      placeholder={`Put unique notes for this persona here.\nExample: [Alternate Hunters persona]`} />
     <span class="text-sm text-textcolor2">{language.description}</span>
     <TextAreaInput
       autocomplete="off"

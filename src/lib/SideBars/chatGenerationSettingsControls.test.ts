@@ -174,14 +174,14 @@ function seedDb(): void {
         name: 'Persona Alpha',
         personaPrompt: '',
         icon: '',
-        note: '',
+        note: 'Alpha persona note',
       },
       {
         id: 'persona-b',
         name: 'Persona Beta',
         personaPrompt: '',
         icon: '',
-        note: '',
+        note: 'Beta persona note\nsecond line',
       },
     ],
     modelPresets: [{ id: 'model-preset-a', name: 'Model Prompt preset Alpha' }],
@@ -284,6 +284,10 @@ function pickerButton(kind: 'model' | 'prompt' | 'persona'): HTMLButtonElement {
   const input = pickerControl(kind).querySelector<HTMLButtonElement>('button')
   expect(input, `${kind} picker button`).toBeTruthy()
   return input!
+}
+
+function personaNoteLine(): HTMLElement | null {
+  return pickerControl('persona').querySelector<HTMLElement>('[data-risu-generation-picker-persona-note]')
 }
 
 function resetDefaultsButton(): HTMLButtonElement {
@@ -636,6 +640,7 @@ describe('sidebar chat generation settings controls', () => {
     expect(pickerControl('prompt').textContent).toContain('Prompt preset Alpha')
     expect(pickerControl('persona').dataset.risuPickerSelectedId).toBe('persona-a')
     expect(pickerControl('persona').textContent).toContain('Persona Alpha')
+    expect(personaNoteLine()?.textContent).toBe('Alpha persona note')
     expect(selectToggleInput('mood').value).toBe('1')
     expect(textToggleInput('note').value).toBe('alpha-note')
     expect(toggleCheckbox('flag').checked).toBe(true)
@@ -651,6 +656,7 @@ describe('sidebar chat generation settings controls', () => {
     expect(pickerControl('prompt').textContent).toContain('Prompt preset Beta')
     expect(pickerControl('persona').dataset.risuPickerSelectedId).toBe('persona-b')
     expect(pickerControl('persona').textContent).toContain('Persona Beta')
+    expect(personaNoteLine()?.textContent).toBe('Beta persona note\nsecond line')
     expect(selectToggleInput('mood').value).toBe('0')
     expect(textToggleInput('note').value).toBe('beta-note')
     expect(toggleCheckbox('flag').checked).toBe(false)
