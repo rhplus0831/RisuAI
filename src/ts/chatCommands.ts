@@ -29,6 +29,7 @@ import {
 } from './server/commands'
 import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
 import { isServerChatMessagePlaceholder } from './server/chatMessagePlaceholders'
+import { applyAttemptedFieldRollback } from './server/staleStateGuards'
 import { DBState, reloadGuiDisplay, selectedCharID } from './stores.svelte'
 import type { Chat, ChatFolder, Message, character } from './storage/database.svelte'
 import type { ChatGenerationSettings } from './chatGenerationSettings'
@@ -384,11 +385,17 @@ export function restoreChatRowMetadata(snapshot: ChatRowMetadataSnapshot): void 
     const chat = character?.chats?.find((candidate) => candidate.id === snapshot.chatId)
     if (!chat) return
     const row = chat as unknown as Record<string, unknown>
+    if (snapshot.attempted) {
+      applyAttemptedFieldRollback({
+        target: row,
+        previous: snapshot.metadata as Record<string, unknown>,
+        attempted: snapshot.attempted as Record<string, unknown>,
+        keys: CHAT_PATCH_ALLOWED_KEYS,
+        deleteMissingPrevious: true,
+      })
+      return
+    }
     for (const key of CHAT_PATCH_ALLOWED_KEYS) {
-      if (snapshot.attempted) {
-        if (!(key in snapshot.attempted)) continue
-        if (snapshotJson(row[key]) !== snapshotJson(snapshot.attempted[key])) continue
-      }
       if (key in snapshot.metadata) {
         row[key] = cloneJsonValue(snapshot.metadata[key])
       } else {

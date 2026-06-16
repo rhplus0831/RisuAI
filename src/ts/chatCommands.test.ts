@@ -1258,6 +1258,26 @@ describe('Phase 2 chat-metadata-row rollback', () => {
     expect(DBState.db.characters[0].chats[0].name).toBe('Newer local name')
   })
 
+  it('drops attempted metadata missing from the baseline without clobbering newer fields', () => {
+    DBState.db = seedCloneCostDb() as any
+    selectedCharID.set(0)
+    const snapshot = {
+      selectedCharID: 0,
+      characterId: 'char-0',
+      chatId: 'chat-0',
+      metadata: scalarMetadata(0),
+      attempted: { name: 'Optimistic Name', bindedPersona: 'persona-x' },
+    }
+    expect(snapshot.metadata).not.toHaveProperty('bindedPersona')
+
+    DBState.db.characters[0].chats[0].name = 'Newer local name'
+    DBState.db.characters[0].chats[0].bindedPersona = 'persona-x'
+    restoreChatRowMetadata(snapshot)
+
+    expect(DBState.db.characters[0].chats[0].name).toBe('Newer local name')
+    expect(DBState.db.characters[0].chats[0].bindedPersona).toBeUndefined()
+  })
+
   it('restores only the one folder row by stable id', () => {
     DBState.db = seedCloneCostDb() as any
     DBState.db.characters[0].chatFolders = [{ id: 'folder-0', name: 'Folder Zero', color: '#111', folded: false }]
