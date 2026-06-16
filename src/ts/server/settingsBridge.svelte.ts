@@ -121,6 +121,8 @@ export function applyServerBackedSettingsPatch(patch: SettingsPatch): void {
 
   if (Object.keys(commandPatch).length === 0) return
 
+  dropPendingSettingsPatchKeys(Object.keys(commandPatch))
+
   withSuppressedSettingsWatcher(() => {
     withTrustedServerProjectionWrite(() => {
       const target = DBState.db as unknown as Record<string, unknown>
@@ -243,6 +245,27 @@ function queueSettingsPatch(patch: SettingsPatch, previous: SettingsPatch, delay
   pendingSettingsPatch.timer = setTimeout(() => {
     dispatchPendingSettingsPatch()
   }, delay)
+}
+
+function dropPendingSettingsPatchKeys(keys: readonly string[]): void {
+  let dropped = false
+  for (const key of keys) {
+    if (
+      key in pendingSettingsPatch.patch ||
+      key in pendingSettingsPatch.previous ||
+      key in pendingSettingsPatch.attempted
+    ) {
+      dropped = true
+    }
+    delete pendingSettingsPatch.patch[key]
+    delete pendingSettingsPatch.previous[key]
+    delete pendingSettingsPatch.attempted[key]
+  }
+
+  if (dropped && pendingSettingsPatch.timer && Object.keys(pendingSettingsPatch.patch).length === 0) {
+    clearTimeout(pendingSettingsPatch.timer)
+    pendingSettingsPatch.timer = null
+  }
 }
 
 export function flushPendingServerBackedSettingsPatch(options: ServerCommandTransportOptions = {}): void {

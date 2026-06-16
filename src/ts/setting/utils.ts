@@ -196,7 +196,10 @@ async function patchServerBackedSetting(
   }
 
   const patch = { [commandPatch.key]: commandPatch.valueFromDb() }
-  if (patch[commandPatch.key] === undefined) return
+  if (patch[commandPatch.key] === undefined) {
+    rollbackLocalSetting(item, newValue, previousValue, ctx)
+    return
+  }
 
   const result = await patchSettingsGroup({
     group: commandPatch.group,

@@ -24,7 +24,14 @@
     const val = localValue
     if (val === UNINITIALIZED) return
     untrack(() => {
-      if (val !== getSettingValue(item, ctx)) {
+      const currentValue = getSettingValue(item, ctx)
+      if (val === undefined) {
+        if (currentValue !== undefined) {
+          localValue = currentValue
+        }
+        return
+      }
+      if (val !== currentValue) {
         setSettingValue(item, val, ctx)
       }
     })

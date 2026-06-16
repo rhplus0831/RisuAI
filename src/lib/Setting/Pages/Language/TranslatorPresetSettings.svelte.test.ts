@@ -166,6 +166,12 @@ async function switchProjectedPreset(index: number): Promise<void> {
   await tick()
 }
 
+async function flushMicrotasks(): Promise<void> {
+  await Promise.resolve()
+  await Promise.resolve()
+  await Promise.resolve()
+}
+
 beforeEach(() => {
   vi.useFakeTimers()
   commandSpies.failNextUpdate = false
@@ -259,5 +265,23 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     ])
     expect(DBState.db.translatorPresets[0].prompt).toBe('old prompt A')
     expect(DBState.db.translatorPrompt).toBe('old prompt A')
+  })
+
+  it('flushes a pending preset edit when the component is destroyed', async () => {
+    await editPrompt('destroy-flushed prompt A')
+
+    expect(commandSpies.updateInputs).toHaveLength(0)
+
+    unmount(component!)
+    component = undefined
+    await flushMicrotasks()
+
+    expect(commandSpies.updateInputs).toEqual([
+      {
+        baseRevision: 100,
+        presetId: 'preset-a',
+        patch: { prompt: 'destroy-flushed prompt A' },
+      },
+    ])
   })
 })

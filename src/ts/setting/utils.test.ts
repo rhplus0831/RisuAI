@@ -152,4 +152,23 @@ describe('server-backed data-driven settings', () => {
       },
     ])
   })
+
+  it('restores local state when a number clear would produce an undefined server patch', async () => {
+    const calls = stubSettingsFetch()
+    DBState.db = { maxResponse: 100 } as any
+    const item: SettingItem = {
+      id: 'maxResponse',
+      type: 'number',
+      bindKey: 'maxResponse' as keyof typeof DBState.db,
+    }
+    const ctx = { db: DBState.db, modelInfo: {}, subModelInfo: {} } as SettingContext
+
+    setSettingValue(item, undefined, ctx)
+
+    await vi.waitFor(() => {
+      expect(DBState.db.maxResponse).toBe(100)
+    })
+
+    expect(calls).toEqual([{ url: '/api/v1/bootstrap', method: 'GET', body: null }])
+  })
 })

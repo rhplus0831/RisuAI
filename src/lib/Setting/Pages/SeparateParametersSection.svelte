@@ -15,6 +15,8 @@
     overrides: Record<string, SeparateParameters>
   }
 
+  type BaseSeparateParameterKey = Exclude<keyof SeparateParameterSettings, 'overrides'>
+
   interface Props {
     promptPresetModelOverrideMode?: boolean
   }
@@ -54,7 +56,8 @@
     promptPresetModelOverrideMode ? promptSeperateParametersDraft : modelSeperateParametersDraft,
   )
 
-  const paramLabels: Record<string, string> = {
+  const baseSeparateParameterKeys: BaseSeparateParameterKey[] = ['memory', 'emotion', 'translate', 'otherAx']
+  const paramLabels: Record<BaseSeparateParameterKey, string> = {
     memory: 'longTermMemory',
     emotion: 'emotionImage',
     translate: 'translator',
@@ -65,7 +68,7 @@
 <Accordion name={language.seperateParameters} styled>
   <CheckInput bind:check={seperateParametersEnabledDraft.value} name={language.seperateParametersEnabled} />
   {#if seperateParametersEnabledDraft.value}
-    {#each Object.keys(seperateParametersDraft.value) as param}
+    {#each baseSeparateParameterKeys as param}
       <Accordion name={language[paramLabels[param]] ?? param} styled>
         <AllSeperateParameters bind:value={seperateParametersDraft.value[param]} paramKey={param} />
       </Accordion>

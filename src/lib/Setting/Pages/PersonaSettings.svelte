@@ -15,6 +15,7 @@
     currentSelectedPersonaProjectionSnapshot,
     deleteSelectedUserPersona,
     exportUserPersona,
+    flushPendingSelectedPersonaUpdate,
     importUserPersona,
     isPersonaSettingsWatcherSuppressed,
     queueSelectedPersonaUpdate,
@@ -88,6 +89,7 @@
   onMount(createStb)
 
   onDestroy(() => {
+    void flushPendingSelectedPersonaUpdate()
     if (stb) {
       try {
         stb.destroy()

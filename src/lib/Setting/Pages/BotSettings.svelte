@@ -62,7 +62,7 @@
     promptPresetModelOverrideEnabled,
     setPromptPresetModelOverrideEnabled,
   } from 'src/ts/promptPresetModelOverrides.svelte'
-  import { promptPresetModelOverrideFieldForDatabaseKey } from 'src/ts/presetSplit'
+  import { promptPresetModelOverrideFieldForDatabaseKey, resolvePromptPresetRegexField } from 'src/ts/presetSplit'
 
   const stopServerSettingsWatch = watchServerBackedSettings(['proxyRequestModel', 'useLegacyGUI'])
   onDestroy(stopServerSettingsWatch)
@@ -462,23 +462,37 @@
 
     if (pendingPromptFieldPatch.timer) clearTimeout(pendingPromptFieldPatch.timer)
     pendingPromptFieldPatch.timer = setTimeout(() => {
-      pendingPromptFieldPatch.timer = null
-      const commandPatch = pendingPromptFieldPatch.patch
-      const commandPrevious = pendingPromptFieldPatch.previous
-      const commandAttempted = pendingPromptFieldPatch.attempted
-      pendingPromptFieldPatch.patch = {}
-      pendingPromptFieldPatch.previous = {}
-      pendingPromptFieldPatch.attempted = {}
-
-      void runServerCommand({
-        command: (baseRevision) =>
-          patchPromptSettingsCommand({
-            baseRevision,
-            patch: commandPatch,
-          }),
-        rollback: () => rollbackPromptFields(commandPrevious, commandAttempted),
-      })
+      dispatchPendingPromptFieldPatch()
     }, 250)
+  }
+
+  function flushPendingPromptFieldPatch(): void {
+    dispatchPendingPromptFieldPatch()
+  }
+
+  function dispatchPendingPromptFieldPatch(): void {
+    if (pendingPromptFieldPatch.timer) {
+      clearTimeout(pendingPromptFieldPatch.timer)
+      pendingPromptFieldPatch.timer = null
+    }
+
+    const commandPatch = pendingPromptFieldPatch.patch
+    const commandPrevious = pendingPromptFieldPatch.previous
+    const commandAttempted = pendingPromptFieldPatch.attempted
+    pendingPromptFieldPatch.patch = {}
+    pendingPromptFieldPatch.previous = {}
+    pendingPromptFieldPatch.attempted = {}
+
+    if (Object.keys(commandPatch).length === 0) return
+
+    void runServerCommand({
+      command: (baseRevision) =>
+        patchPromptSettingsCommand({
+          baseRevision,
+          patch: commandPatch,
+        }),
+      rollback: () => rollbackPromptFields(commandPrevious, commandAttempted),
+    })
   }
 
   function rollbackPromptFields(previous: SettingsPatch, attempted: SettingsPatch): void {
@@ -495,10 +509,11 @@
   function currentPromptFieldValue<T>(key: string, fallback: T): T {
     const preset = DBState.db.promptPresets?.[DBState.db.promptPresetsId] as Record<string, unknown> | undefined
     if (preset) {
-      if (Object.prototype.hasOwnProperty.call(preset, key)) return preset[key] as T
-      if (key === 'presetRegex' && Object.prototype.hasOwnProperty.call(preset, 'regex')) {
-        return preset.regex as T
+      if (key === 'presetRegex') {
+        const regexField = resolvePromptPresetRegexField(preset)
+        if (regexField.present) return regexField.value as T
       }
+      if (Object.prototype.hasOwnProperty.call(preset, key)) return preset[key] as T
     }
     const target = DBState.db as unknown as Record<string, unknown> | undefined
     const value = target?.[key]
@@ -554,9 +569,7 @@
   })
 
   onDestroy(() => {
-    if (pendingPromptFieldPatch.timer) {
-      clearTimeout(pendingPromptFieldPatch.timer)
-    }
+    flushPendingPromptFieldPatch()
   })
 
   let modelInfo = $derived(getModelInfo(DBState.db.aiModel))

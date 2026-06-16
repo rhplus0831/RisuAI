@@ -29,6 +29,7 @@
   } from 'src/ts/translator/presets'
   import { selectSingleFile } from 'src/ts/util'
   import { language } from 'src/lang'
+  import { onDestroy } from 'svelte'
 
   type TranslatorPreset = (typeof DBState.db.translatorPresets)[number]
 
@@ -270,6 +271,10 @@
       void dispatchPendingTranslatorPresetUpdate(pending)
     }, translatorPresetUpdateDelayMs)
   }
+
+  onDestroy(() => {
+    void flushPendingTranslatorPresetUpdates()
+  })
 </script>
 
 <span class="text-textcolor mt-4">Preset</span>

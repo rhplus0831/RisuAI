@@ -242,6 +242,25 @@ describe('settingsBridge coalescing', () => {
     })
   })
 
+  it('cancels older same-key debounced patches when an immediate patch supersedes them', async () => {
+    setupSettings({ notification: false })
+    const stop = watchServerBackedSettings(['notification'], { delayMs: DELAY * 10 })
+    flushSync()
+
+    DBState.db.notification = true
+    flushSync()
+
+    applyServerBackedSettingsPatch({ notification: false })
+    flushSync()
+    await Promise.resolve()
+
+    expect(recorded.patches.map((entry) => entry.patch)).toEqual([{ notification: false }])
+
+    await vi.advanceTimersByTimeAsync(DELAY * 10)
+    expect(recorded.patches.map((entry) => entry.patch)).toEqual([{ notification: false }])
+    stop()
+  })
+
   it('L23: direct settings patches suppress watcher echoes for optimistic writes and rollback writes', async () => {
     setupSettings({ notification: false })
     const stop = watchServerBackedSettings(['notification'], { delayMs: DELAY })
