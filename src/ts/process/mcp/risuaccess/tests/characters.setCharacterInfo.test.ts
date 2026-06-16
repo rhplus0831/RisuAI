@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-// MCP `setCharacterInfo` restores only the target row on command failure.
+// MCP character writes apply an immediate trusted projection and keep rollback.
 
 vi.mock('src/ts/platform', async (importActual) => {
   const actual = await importActual<typeof import('src/ts/platform')>()
@@ -17,7 +17,11 @@ vi.mock('src/ts/alert', async (importActual) => {
 })
 
 import { clearCachedServerCommandRevision } from 'src/ts/server/commands'
-import { setServerProjectionWriteGuardEnabled } from 'src/ts/server/projectionWriteGuard.svelte'
+import {
+  setServerProjectionWriteGuardEnabled,
+  withTrustedServerProjectionWrite,
+} from 'src/ts/server/projectionWriteGuard.svelte'
+import { resetLorebookHydration } from 'src/ts/server/lorebookBridge.svelte'
 import { DBState, selectedCharID } from 'src/ts/stores.svelte'
 import { seedCloneCostDb } from 'src/ts/__tests__/cloneCostHarness'
 import { CharacterHandler } from '../characters'
@@ -28,6 +32,11 @@ interface CapturedFetch {
   body: any
 }
 
+interface StubCommandFetchOptions {
+  failureStatusByUrl?: Record<string, number>
+  holdUrls?: string[]
+}
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -35,8 +44,14 @@ function jsonResponse(body: unknown, status = 200): Response {
   })
 }
 
-function stubCommandFetch(patchStatus = 200): CapturedFetch[] {
+function stubCommandFetch(options: StubCommandFetchOptions = {}): {
+  calls: CapturedFetch[]
+  releaseHeldResponses: () => void
+} {
   const calls: CapturedFetch[] = []
+  const heldResponses: Array<() => void> = []
+  const holdUrls = new Set(options.holdUrls ?? [])
+  let revision = 10
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
@@ -47,17 +62,75 @@ function stubCommandFetch(patchStatus = 200): CapturedFetch[] {
         body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
       })
       if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
-      if (url === '/api/v1/commands/characters/char-1') {
-        if (patchStatus !== 200) return jsonResponse({ error: 'nope' }, patchStatus)
-        return jsonResponse({
-          revision: 11,
-          event: { type: 'character.updated', revision: 11, resource: 'character' },
-        })
+      if (url.startsWith('/api/v1/commands/characters/char-1')) {
+        const buildResponse = () => {
+          const failureStatus = options.failureStatusByUrl?.[url]
+          if (failureStatus) return jsonResponse({ error: 'nope' }, failureStatus)
+          revision += 1
+          return jsonResponse({
+            revision,
+            event: { type: 'character.updated', revision, resource: 'character' },
+          })
+        }
+        if (holdUrls.has(url)) {
+          return await new Promise<Response>((resolve) => {
+            heldResponses.push(() => {
+              resolve(buildResponse())
+            })
+          })
+        }
+        return buildResponse()
       }
       return jsonResponse({ error: `unexpected ${url}` }, 404)
     }) as unknown as typeof fetch,
   )
-  return calls
+  return {
+    calls,
+    releaseHeldResponses: () => {
+      for (const release of heldResponses.splice(0)) {
+        release()
+      }
+    },
+  }
+}
+
+function toolText(result: Awaited<ReturnType<CharacterHandler['handle']>>): string {
+  const content = result?.[0]
+  expect(content).toMatchObject({ type: 'text' })
+  return (content as { text: string }).text
+}
+
+function parseToolJson<T>(result: Awaited<ReturnType<CharacterHandler['handle']>>): T {
+  return JSON.parse(toolText(result)) as T
+}
+
+function makeLorebook(name: string, content = `${name} content`) {
+  return {
+    id: `${name}-id`,
+    alwaysActive: false,
+    comment: name,
+    content,
+    insertorder: 100,
+    key: `${name}-key`,
+    mode: 'normal' as const,
+    secondkey: '',
+    selective: false,
+  }
+}
+
+function makeLuaTrigger(code: string) {
+  return {
+    id: 'lua-trigger-id',
+    comment: 'Lua trigger',
+    conditions: [],
+    effect: [
+      {
+        code,
+        type: 'triggerlua',
+      },
+    ],
+    type: 'manual',
+  }
 }
 
 async function waitForCallCount(calls: CapturedFetch[], expected: number): Promise<void> {
@@ -67,22 +140,30 @@ async function waitForCallCount(calls: CapturedFetch[], expected: number): Promi
   expect(calls).toHaveLength(expected)
 }
 
+async function waitForSettledCommands(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  await new Promise((resolve) => setTimeout(resolve, 0))
+}
+
 beforeEach(() => {
   clearCachedServerCommandRevision()
+  resetLorebookHydration()
   setServerProjectionWriteGuardEnabled(false)
   DBState.db = seedCloneCostDb() as any // char-0 large (40 messages), siblings small
   selectedCharID.set(0)
 })
 
 afterEach(() => {
+  resetLorebookHydration()
   setServerProjectionWriteGuardEnabled(false)
   selectedCharID.set(-1)
   vi.unstubAllGlobals()
 })
 
-describe('MCP setCharacterInfo single-row snapshot (L35)', () => {
-  it('L35: setCharacterInfo patches via a scoped character command', async () => {
-    const calls = stubCommandFetch()
+describe('MCP character writes optimistic projection', () => {
+  it('setCharacterInfo patches DBState and read-tool output before the command resolves', async () => {
+    setServerProjectionWriteGuardEnabled(true)
+    const { calls } = stubCommandFetch()
     const handler = new CharacterHandler()
 
     const result = await handler.handle('risu-set-character-info', {
@@ -90,8 +171,16 @@ describe('MCP setCharacterInfo single-row snapshot (L35)', () => {
       data: { name: 'Renamed via MCP' },
     })
 
-    expect(result?.[0]).toMatchObject({ type: 'text' })
-    expect((result?.[0] as { text: string }).text).toContain('Successfully updated')
+    expect(toolText(result)).toContain('Successfully updated')
+    expect(DBState.db.characters[1].name).toBe('Renamed via MCP')
+    expect(
+      parseToolJson<{ name: string }>(
+        await handler.handle('risu-get-character-info', {
+          id: 'char-1',
+          fields: ['name'],
+        }),
+      ),
+    ).toEqual({ name: 'Renamed via MCP' })
 
     await waitForCallCount(calls, 2)
     expect(calls[1]).toMatchObject({
@@ -101,24 +190,220 @@ describe('MCP setCharacterInfo single-row snapshot (L35)', () => {
     })
   })
 
-  it('L35: a failed patch rolls back only the target row, preserving sibling edits', async () => {
-    const calls = stubCommandFetch(500)
+  it('a failed setCharacterInfo command rolls back only the target row, preserving sibling edits', async () => {
+    setServerProjectionWriteGuardEnabled(true)
+    const { calls, releaseHeldResponses } = stubCommandFetch({
+      failureStatusByUrl: { '/api/v1/commands/characters/char-1': 500 },
+      holdUrls: ['/api/v1/commands/characters/char-1'],
+    })
     const handler = new CharacterHandler()
 
     await handler.handle('risu-set-character-info', {
       id: 'char-1',
       data: { name: 'Renamed via MCP' },
     })
-    // a concurrent, unrelated sibling edit the old whole-corpus restore
-    // (restoreCharacterState) would have wiped
-    DBState.db.characters[0].name = 'Concurrent sibling edit'
+
+    expect(DBState.db.characters[1].name).toBe('Renamed via MCP')
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.characters[0].name = 'Concurrent sibling edit'
+    })
 
     await waitForCallCount(calls, 2)
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    releaseHeldResponses()
+    await waitForSettledCommands()
 
-    // dispatchUpdateCharacterScoped rolls back through the single-row restore
-    // (restoreCharacterRow), touching only char-1.
     expect(DBState.db.characters[1].name).toBe('Character 1')
     expect(DBState.db.characters[0].name).toBe('Concurrent sibling edit')
+  })
+
+  it('set and delete character lorebooks are immediately visible through DBState and MCP reads', async () => {
+    const { calls } = stubCommandFetch()
+    const handler = new CharacterHandler()
+    DBState.db.characters[1].globalLore = []
+    setServerProjectionWriteGuardEnabled(true)
+
+    await handler.handle('risu-set-character-lorebook', {
+      id: 'char-1',
+      name: 'Created',
+      content: 'created content',
+      keys: ['alpha'],
+    })
+
+    expect(DBState.db.characters[1].globalLore[0]).toMatchObject({
+      comment: 'Created',
+      content: 'created content',
+      key: 'alpha',
+    })
+    expect(
+      parseToolJson<Array<{ name: string; content: string }>>(
+        await handler.handle('risu-get-character-lorebook', {
+          id: 'char-1',
+          names: ['Created'],
+        }),
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        content: 'created content',
+        name: 'Created',
+      }),
+    ])
+    await waitForCallCount(calls, 2)
+
+    await handler.handle('risu-set-character-lorebook', {
+      id: 'char-1',
+      name: 'Created',
+      content: 'updated content',
+      keys: ['alpha', 'beta'],
+    })
+
+    expect(DBState.db.characters[1].globalLore[0]).toMatchObject({
+      comment: 'Created',
+      content: 'updated content',
+      key: 'alpha,beta',
+    })
+    await waitForCallCount(calls, 3)
+
+    await handler.handle('risu-delete-character-lorebook', {
+      id: 'char-1',
+      name: 'Created',
+    })
+
+    expect(DBState.db.characters[1].globalLore).toEqual([])
+    expect(
+      toolText(
+        await handler.handle('risu-get-character-lorebook', {
+          id: 'char-1',
+          names: ['Created'],
+        }),
+      ),
+    ).toContain('not found')
+    await waitForCallCount(calls, 4)
+  })
+
+  it('rejects character lorebook writes when lorebook stubs are enabled and the character is not hydrated', async () => {
+    const { calls } = stubCommandFetch()
+    const handler = new CharacterHandler()
+    const existing = makeLorebook('Existing', 'old content')
+    DBState.db.characters[1].globalLore = [existing]
+    ;(DBState.db as { enableLorebookStubs?: boolean }).enableLorebookStubs = true
+    setServerProjectionWriteGuardEnabled(true)
+
+    const updateResult = await handler.handle('risu-set-character-lorebook', {
+      id: 'char-1',
+      name: 'Existing',
+      content: 'local-only update',
+      keys: ['changed'],
+    })
+
+    expect(toolText(updateResult)).toContain('not hydrated')
+    expect(DBState.db.characters[1].globalLore).toEqual([existing])
+    expect(calls).toEqual([])
+
+    const deleteResult = await handler.handle('risu-delete-character-lorebook', {
+      id: 'char-1',
+      name: 'Existing',
+    })
+
+    expect(toolText(deleteResult)).toContain('not hydrated')
+    expect(DBState.db.characters[1].globalLore).toEqual([existing])
+    expect(calls).toEqual([])
+  })
+
+  it('set and delete character regex scripts are immediately visible through DBState and MCP reads', async () => {
+    const { calls } = stubCommandFetch()
+    const handler = new CharacterHandler()
+    DBState.db.characters[1].customscript = []
+    setServerProjectionWriteGuardEnabled(true)
+
+    await handler.handle('risu-set-character-regex-scripts', {
+      id: 'char-1',
+      name: 'Created script',
+      in: 'created-in',
+      out: 'created-out',
+      type: 'editdisplay',
+      flag: 'g',
+      ableFlag: true,
+    })
+
+    expect(DBState.db.characters[1].customscript[0]).toMatchObject({
+      comment: 'Created script',
+      flag: 'g',
+      in: 'created-in',
+      out: 'created-out',
+      type: 'editdisplay',
+    })
+    expect(
+      parseToolJson<Array<{ comment: string; in: string; out: string }>>(
+        await handler.handle('risu-get-character-regex-scripts', { id: 'char-1' }),
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        comment: 'Created script',
+        in: 'created-in',
+        out: 'created-out',
+      }),
+    ])
+    await waitForCallCount(calls, 2)
+
+    await handler.handle('risu-set-character-regex-scripts', {
+      id: 'char-1',
+      name: 'Created script',
+      in: 'updated-in',
+      out: 'updated-out',
+      type: 'editinput',
+      flag: 'im',
+      ableFlag: true,
+    })
+
+    expect(DBState.db.characters[1].customscript[0]).toMatchObject({
+      comment: 'Created script',
+      flag: 'im',
+      in: 'updated-in',
+      out: 'updated-out',
+      type: 'editinput',
+    })
+    expect(
+      parseToolJson<Array<{ comment: string; in: string; out: string }>>(
+        await handler.handle('risu-get-character-regex-scripts', { id: 'char-1' }),
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        comment: 'Created script',
+        in: 'updated-in',
+        out: 'updated-out',
+      }),
+    ])
+    await waitForCallCount(calls, 3)
+
+    await handler.handle('risu-delete-character-regex-scripts', {
+      id: 'char-1',
+      name: 'Created script',
+    })
+
+    expect(DBState.db.characters[1].customscript).toEqual([])
+    expect(
+      parseToolJson<unknown[]>(await handler.handle('risu-get-character-regex-scripts', { id: 'char-1' })),
+    ).toEqual([])
+    await waitForCallCount(calls, 4)
+  })
+
+  it('setCharacterLuaScript is immediately visible through DBState and the Lua read tool', async () => {
+    const { calls } = stubCommandFetch()
+    const handler = new CharacterHandler()
+    DBState.db.characters[1].triggerscript = [makeLuaTrigger('print("old")') as any]
+    setServerProjectionWriteGuardEnabled(true)
+
+    await handler.handle('risu-set-character-lua-script', {
+      id: 'char-1',
+      code: 'print("new")',
+    })
+
+    expect((DBState.db.characters[1].triggerscript[0].effect[0] as { code: string }).code).toBe('print("new")')
+    expect(toolText(await handler.handle('risu-get-character-lua-script', { id: 'char-1' }))).toBe('print("new")')
+    await waitForCallCount(calls, 2)
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/characters/char-1/triggers',
+      method: 'PUT',
+    })
   })
 })

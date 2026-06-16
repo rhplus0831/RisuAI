@@ -1,11 +1,16 @@
 import { language } from 'src/lang'
 import { alertConfirm } from 'src/ts/alert'
-import { currentCharacterRowSnapshot, dispatchUpdateCharacterScoped } from 'src/ts/characterCommands'
-import { canUseServerCommands } from 'src/ts/server/commands'
 import {
-  currentLorebookStateSnapshot,
-  dispatchReplaceCharacterLorebooks,
+  currentCharacterRowSnapshot,
+  dispatchUpdateCharacterScoped,
+  sanitizeCharacterPatch,
+} from 'src/ts/characterCommands'
+import { canUseServerCommands } from 'src/ts/server/commands'
+import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
+import {
   ensureClientLorebookEntryIds,
+  isCharacterLorebookHydrated,
+  replaceCharacterLorebookCollection,
 } from 'src/ts/server/lorebookBridge.svelte'
 import {
   currentScriptDefinitionStateSnapshot,
@@ -558,8 +563,11 @@ export class CharacterHandler extends MCPToolHandler {
       // A field patch touches one character row, so its rollback needs only
       // that row, not a deep clone of the whole characters array.
       const index = DBState.db.characters?.findIndex((candidate) => candidate.chaId === char.chaId) ?? -1
+      const acceptedPatch = sanitizeCharacterPatch(patch)
       if (index >= 0) {
-        dispatchUpdateCharacterScoped(char.chaId, patch, currentCharacterRowSnapshot(index))
+        const previous = currentCharacterRowSnapshot(index)
+        applyCharacterInfoPatchOptimistically(char.chaId, acceptedPatch)
+        dispatchUpdateCharacterScoped(char.chaId, acceptedPatch, previous)
       }
     } else {
       for (const [field, value] of Object.entries(patch)) {
@@ -607,7 +615,6 @@ export class CharacterHandler extends MCPToolHandler {
       ]
     }
 
-    const previous = currentLorebookStateSnapshot()
     const entries = cloneJsonValue(char.globalLore ?? [])
     const entryIndex = entries.findIndex((entry) => {
       const displayName = entry.comment || 'Unnamed ' + pickHashRand(5515, entry.content)
@@ -627,8 +634,9 @@ export class CharacterHandler extends MCPToolHandler {
       }
       entries.push(newEntry)
       if (canUseServerCommands()) {
-        ensureClientLorebookEntryIds(entries)
-        dispatchReplaceCharacterLorebooks(char.chaId, entries, previous, 0)
+        if (!replaceCharacterLorebooksThroughServerBridge(char.chaId, entries)) {
+          return characterLorebookNotReadyResponse(char)
+        }
       } else {
         char.globalLore = entries
       }
@@ -659,8 +667,9 @@ export class CharacterHandler extends MCPToolHandler {
     }
 
     if (canUseServerCommands()) {
-      ensureClientLorebookEntryIds(entries)
-      dispatchReplaceCharacterLorebooks(char.chaId, entries, previous, 0)
+      if (!replaceCharacterLorebooksThroughServerBridge(char.chaId, entries)) {
+        return characterLorebookNotReadyResponse(char)
+      }
     } else {
       char.globalLore = entries
     }
@@ -697,7 +706,6 @@ export class CharacterHandler extends MCPToolHandler {
       ]
     }
 
-    const previous = currentLorebookStateSnapshot()
     const entries = cloneJsonValue(char.globalLore ?? [])
     const entryIndex = entries.findIndex((entry) => {
       const displayName = entry.comment || 'Unnamed ' + pickHashRand(5515, entry.content)
@@ -714,8 +722,9 @@ export class CharacterHandler extends MCPToolHandler {
 
     entries.splice(entryIndex, 1)
     if (canUseServerCommands()) {
-      ensureClientLorebookEntryIds(entries)
-      dispatchReplaceCharacterLorebooks(char.chaId, entries, previous, 0)
+      if (!replaceCharacterLorebooksThroughServerBridge(char.chaId, entries)) {
+        return characterLorebookNotReadyResponse(char)
+      }
     } else {
       char.globalLore = entries
     }
@@ -812,6 +821,7 @@ export class CharacterHandler extends MCPToolHandler {
       scripts.push(newScript)
       if (previous) {
         ensureClientScriptDefinitionIds(scripts)
+        replaceCharacterRegexScriptsOptimistically(char.chaId, scripts)
         dispatchReplaceCharacterScripts(char.chaId, scripts, previous, 0)
       } else {
         char.customscript = scripts
@@ -834,6 +844,7 @@ export class CharacterHandler extends MCPToolHandler {
     if (ableFlag !== undefined) script.ableFlag = ableFlag
     if (previous) {
       ensureClientScriptDefinitionIds(scripts)
+      replaceCharacterRegexScriptsOptimistically(char.chaId, scripts)
       dispatchReplaceCharacterScripts(char.chaId, scripts, previous, 0)
     } else {
       char.customscript = scripts
@@ -891,6 +902,7 @@ export class CharacterHandler extends MCPToolHandler {
     scripts.splice(scriptIndex, 1)
     if (previous) {
       ensureClientScriptDefinitionIds(scripts)
+      replaceCharacterRegexScriptsOptimistically(char.chaId, scripts)
       dispatchReplaceCharacterScripts(char.chaId, scripts, previous, 0)
     } else {
       char.customscript = scripts
@@ -1038,6 +1050,7 @@ export class CharacterHandler extends MCPToolHandler {
       firstTrigger.effect[0].code = code
       if (previous) {
         ensureClientTriggerDefinitionIds(triggers)
+        replaceCharacterTriggersOptimistically(char.chaId, triggers)
         dispatchReplaceCharacterTriggers(char.chaId, triggers, previous, 0)
       } else {
         char.triggerscript = triggers
@@ -1090,4 +1103,45 @@ function unsupportedServerBackedCharacterWrite(surface: string): RPCToolCallCont
 function cloneJsonValue<T>(value: T): T {
   if (value === undefined) return value
   return JSON.parse(JSON.stringify(value)) as T
+}
+
+function replaceCharacterLorebooksThroughServerBridge(characterId: string, entries: loreBook[]): boolean {
+  if (DBState.db?.enableLorebookStubs && !isCharacterLorebookHydrated(characterId)) return false
+  ensureClientLorebookEntryIds(entries)
+  return replaceCharacterLorebookCollection(characterId, entries, 0)
+}
+
+function characterLorebookNotReadyResponse(char: character): RPCToolCallContent[] {
+  return [
+    {
+      type: 'text',
+      text: `Error: Character lorebooks for ${char.name || char.chaId} are not hydrated yet; open or hydrate this character's lorebook before editing it.`,
+    },
+  ]
+}
+
+function applyCharacterInfoPatchOptimistically(characterId: string, patch: Record<string, unknown>): void {
+  if (Object.keys(patch).length === 0) return
+  withTrustedServerProjectionWrite(() => {
+    const target = DBState.db.characters?.find((candidate) => candidate.chaId === characterId)
+    if (!target) return
+    const mutableTarget = target as unknown as Record<string, unknown>
+    for (const [field, value] of Object.entries(patch)) {
+      mutableTarget[field] = value
+    }
+  })
+}
+
+function replaceCharacterRegexScriptsOptimistically(characterId: string, scripts: character['customscript']): void {
+  withTrustedServerProjectionWrite(() => {
+    const target = DBState.db.characters?.find((candidate) => candidate.chaId === characterId)
+    if (target) target.customscript = scripts
+  })
+}
+
+function replaceCharacterTriggersOptimistically(characterId: string, triggers: character['triggerscript']): void {
+  withTrustedServerProjectionWrite(() => {
+    const target = DBState.db.characters?.find((candidate) => candidate.chaId === characterId)
+    if (target) target.triggerscript = triggers
+  })
 }
