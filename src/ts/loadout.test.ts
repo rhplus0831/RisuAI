@@ -9,7 +9,7 @@ vi.mock('./storage/fastifyStorage', () => ({
 import { clearCachedServerCommandRevision } from './server/commands'
 import { setServerProjectionWriteGuardEnabled } from './server/projectionWriteGuard.svelte'
 import { DBState, selectedCharID } from './stores.svelte'
-import { applyLoadout, deleteLoadout, toggleLoadoutFavorite, type Loadout } from './loadout'
+import { applyLoadout, deleteLoadout, saveCurrentLoadout, toggleLoadoutFavorite, type Loadout } from './loadout'
 import { currentPersonaStateSnapshot, isPersonaSettingsWatcherSuppressed, queueSelectedPersonaUpdate } from './persona'
 
 interface CapturedFetch {
@@ -154,6 +154,92 @@ function seedApplyLoadoutState(): Loadout {
   return DBState.db.loadouts[0] as Loadout
 }
 
+function seedSplitPresetLoadoutState(): Loadout {
+  const loadout = makeLoadout({
+    id: 'split-loadout',
+    name: 'Split Loadout',
+    characterIds: [],
+    modules: ['module-stay'],
+    globalVariables: { mood: 'calm' },
+    presetName: 'Story Model / Story Prompt',
+    modelPresetId: 'model-b',
+    modelPresetName: 'Story Model',
+    promptPresetId: 'prompt-b',
+    promptPresetName: 'Story Prompt',
+    personaId: 'persona-a',
+  })
+
+  selectedCharID.set(0)
+  DBState.db = {
+    loadouts: [cloneJsonValue(loadout)],
+    lastLoadedLoadoutName: 'Before Loadout',
+    characters: [{ chaId: 'char-a', chats: [], chatPage: 0 }],
+    personas: [
+      {
+        id: 'persona-a',
+        name: 'Persona A',
+        icon: 'icon-a',
+        personaPrompt: 'persona-a prompt',
+        note: 'persona-a note',
+      },
+    ],
+    selectedPersona: 0,
+    username: 'Persona A',
+    userIcon: 'icon-a',
+    personaPrompt: 'persona-a prompt',
+    userNote: 'persona-a note',
+    botPresets: [],
+    botPresetsId: -1,
+    modelPresets: [
+      {
+        id: 'model-a',
+        name: 'Default Model',
+        apiType: 'openai',
+        temperature: 0.4,
+        maxResponse: 100,
+      },
+      {
+        id: 'model-b',
+        name: 'Story Model',
+        apiType: 'kobold',
+        temperature: 0.9,
+        maxResponse: 450,
+      },
+    ],
+    modelPresetsId: 0,
+    promptPresets: [
+      {
+        id: 'prompt-a',
+        name: 'Default Prompt',
+        mainPrompt: 'default main',
+        jailbreak: 'default jailbreak',
+        globalNote: 'default global',
+        formatingOrder: ['description'],
+      },
+      {
+        id: 'prompt-b',
+        name: 'Story Prompt',
+        mainPrompt: 'story main',
+        jailbreak: 'story jailbreak',
+        globalNote: 'story global',
+        formatingOrder: ['main'],
+      },
+    ],
+    promptPresetsId: 0,
+    apiType: 'openai',
+    temperature: 0.4,
+    maxResponse: 100,
+    mainPrompt: 'default main',
+    jailbreak: 'default jailbreak',
+    globalNote: 'default global',
+    formatingOrder: ['description'],
+    enabledModules: ['module-stay'],
+    globalChatVariables: { mood: 'calm' },
+  } as any
+
+  return DBState.db.loadouts[0] as Loadout
+}
+
 function stubCommandFetch(options: { failCommands?: boolean } = {}): CapturedFetch[] {
   const calls: CapturedFetch[] = []
   vi.stubGlobal(
@@ -278,6 +364,48 @@ describe('LoadoutModal projection write cleanup', () => {
 })
 
 describe('loadout projection command helpers', () => {
+  it('saves split model and prompt preset ids when no legacy bot preset is selected', async () => {
+    seedSplitPresetLoadoutState()
+    DBState.db.loadouts = []
+    DBState.db.modelPresetsId = 1
+    DBState.db.promptPresetsId = 1
+    const calls = stubApplyLoadoutFetch()
+    vi.spyOn(Date, 'now').mockReturnValue(123456)
+    setServerProjectionWriteGuardEnabled(true)
+
+    const loadout = saveCurrentLoadout('Fresh Split Loadout')
+
+    expect(loadout).toMatchObject({
+      name: 'Fresh Split Loadout',
+      lastUsed: 123456,
+      characterIds: ['char-a'],
+      presetName: 'Story Model / Story Prompt',
+      modelPresetId: 'model-b',
+      modelPresetName: 'Story Model',
+      promptPresetId: 'prompt-b',
+      promptPresetName: 'Story Prompt',
+      personaId: 'persona-a',
+    })
+    expect(DBState.db.loadouts[0]).toMatchObject(loadout)
+
+    await waitForCallCount(calls, 2)
+
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/loadouts',
+      method: 'POST',
+      body: {
+        baseRevision: 10,
+        loadout: expect.objectContaining({
+          name: 'Fresh Split Loadout',
+          modelPresetId: 'model-b',
+          modelPresetName: 'Story Model',
+          promptPresetId: 'prompt-b',
+          promptPresetName: 'Story Prompt',
+        }),
+      },
+    })
+  })
+
   it('applies all requested facets locally and dispatches them as one serialized command sequence', async () => {
     const loadout = seedApplyLoadoutState()
     const calls = stubApplyLoadoutFetch()
@@ -365,6 +493,61 @@ describe('loadout projection command helpers', () => {
         method: 'POST',
         body: {
           baseRevision: 15,
+          lastUsed: 123456,
+          characterId: 'char-a',
+        },
+      },
+    ])
+  })
+
+  it('applies split model and prompt preset selections without falling back to legacy presets', async () => {
+    const loadout = seedSplitPresetLoadoutState()
+    const calls = stubApplyLoadoutFetch()
+    vi.spyOn(Date, 'now').mockReturnValue(123456)
+    setServerProjectionWriteGuardEnabled(true)
+
+    applyLoadout(loadout, ['preset'])
+
+    expect(DBState.db.botPresetsId).toBe(-1)
+    expect(DBState.db.modelPresetsId).toBe(1)
+    expect(DBState.db.promptPresetsId).toBe(1)
+    expect(DBState.db.apiType).toBe('kobold')
+    expect(DBState.db.temperature).toBe(0.9)
+    expect(DBState.db.maxResponse).toBe(450)
+    expect(DBState.db.mainPrompt).toBe('story main')
+    expect(DBState.db.jailbreak).toBe('story jailbreak')
+    expect(DBState.db.globalNote).toBe('story global')
+    expect(DBState.db.lastLoadedLoadoutName).toBe('Split Loadout')
+
+    await waitForCallCount(calls, 4)
+
+    expect(calls.map((call) => ({ url: call.url, method: call.method, body: call.body }))).toEqual([
+      {
+        url: '/api/v1/bootstrap',
+        method: 'GET',
+        body: null,
+      },
+      {
+        url: '/api/v1/commands/model-presets/select',
+        method: 'POST',
+        body: {
+          baseRevision: 10,
+          modelPresetId: 'model-b',
+        },
+      },
+      {
+        url: '/api/v1/commands/prompt-presets/select',
+        method: 'POST',
+        body: {
+          baseRevision: 11,
+          promptPresetId: 'prompt-b',
+        },
+      },
+      {
+        url: '/api/v1/commands/loadouts/split-loadout/touch',
+        method: 'POST',
+        body: {
+          baseRevision: 12,
           lastUsed: 123456,
           characterId: 'char-a',
         },

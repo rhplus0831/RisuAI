@@ -5,6 +5,7 @@ import {
   selectUserPersonaLocally,
   type PersonaStateSnapshot,
 } from './persona'
+import { safeStructuredClone } from './polyfill'
 import {
   canUseServerCommands,
   createLoadoutCommand,
@@ -13,6 +14,8 @@ import {
   favoriteLoadoutCommand,
   patchSettingsGroup,
   runServerCommand,
+  selectModelPresetCommand,
+  selectPromptPresetCommand,
   selectPersonaCommand,
   selectPresetCommand,
   settingsGroupForKey,
@@ -22,10 +25,14 @@ import {
 } from './server/commands'
 import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
 import {
+  applyModelPresetFieldsToDatabase,
+  applyPromptPresetFieldsToDatabase,
   ensureBotPresetHydrated,
   getCurrentCharacter,
   setPreset,
   type Database,
+  type ModelPreset,
+  type PromptPreset,
   type botPreset,
 } from './storage/database.svelte'
 import { DBState } from './stores.svelte'
@@ -39,13 +46,22 @@ export type Loadout = {
   modules: string[]
   globalVariables: { [key: string]: string }
   presetName: string
+  modelPresetId?: string
+  modelPresetName?: string
+  promptPresetId?: string
+  promptPresetName?: string
   personaId: string
 }
 
 export function makeLoadout(options: { name: string }): Loadout {
   const character = getCurrentCharacter()
   const id = crypto.randomUUID()
-  const preset = DBState.db.botPresets[DBState.db.botPresetsId]
+  const legacyPreset = DBState.db.botPresets?.[DBState.db.botPresetsId]
+  const modelPreset = DBState.db.modelPresets?.[DBState.db.modelPresetsId]
+  const promptPreset = DBState.db.promptPresets?.[DBState.db.promptPresetsId]
+  const legacyPresetName = readablePresetName(legacyPreset)
+  const modelPresetName = readablePresetName(modelPreset)
+  const promptPresetName = readablePresetName(promptPreset)
   return safeStructuredClone({
     name: options.name,
     id: id,
@@ -54,7 +70,11 @@ export function makeLoadout(options: { name: string }): Loadout {
     characterIds: character ? [character.chaId] : [],
     modules: DBState.db.enabledModules,
     globalVariables: DBState.db.globalChatVariables,
-    presetName: preset.name ?? '',
+    presetName: legacyPresetName || [modelPresetName, promptPresetName].filter(Boolean).join(' / '),
+    modelPresetId: nonBlankId(modelPreset?.id) ?? '',
+    modelPresetName,
+    promptPresetId: nonBlankId(promptPreset?.id) ?? '',
+    promptPresetName,
     personaId: DBState.db.personas[DBState.db.selectedPersona]?.id,
   })
 }
@@ -71,6 +91,10 @@ type ServerCommandFactory = (baseRevision: number) => Promise<ServerCommandResul
 interface PresetApplySnapshot {
   botPresets: botPreset[]
   botPresetsId: number
+  modelPresets: ModelPreset[]
+  modelPresetsId: number
+  promptPresets: PromptPreset[]
+  promptPresetsId: number
   setPresetSettings: Partial<Record<SetPresetRollbackKey, unknown>>
 }
 
@@ -84,8 +108,10 @@ interface LoadoutApplyStateSnapshot {
 
 const SET_PRESET_ROLLBACK_KEYS = [
   'apiType',
+  'openAIKey',
   'localNetworkMode',
   'localNetworkTimeoutSec',
+  'additionalParams',
   'mainPrompt',
   'jailbreak',
   'globalNote',
@@ -273,6 +299,10 @@ function currentPresetApplySnapshot(): PresetApplySnapshot {
   return {
     botPresets: cloneJsonValue(DBState.db.botPresets ?? []),
     botPresetsId: DBState.db.botPresetsId,
+    modelPresets: cloneJsonValue(DBState.db.modelPresets ?? []),
+    modelPresetsId: DBState.db.modelPresetsId,
+    promptPresets: cloneJsonValue(DBState.db.promptPresets ?? []),
+    promptPresetsId: DBState.db.promptPresetsId,
     setPresetSettings,
   }
 }
@@ -289,6 +319,10 @@ function restoreLoadoutApplyState(snapshot: LoadoutApplyStateSnapshot): void {
     if (snapshot.preset) {
       DBState.db.botPresets = cloneJsonValue(snapshot.preset.botPresets)
       DBState.db.botPresetsId = snapshot.preset.botPresetsId
+      DBState.db.modelPresets = cloneJsonValue(snapshot.preset.modelPresets)
+      DBState.db.modelPresetsId = snapshot.preset.modelPresetsId
+      DBState.db.promptPresets = cloneJsonValue(snapshot.preset.promptPresets)
+      DBState.db.promptPresetsId = snapshot.preset.promptPresetsId
       const dbRecord = DBState.db as unknown as Record<SetPresetRollbackKey, unknown>
       for (const key of SET_PRESET_ROLLBACK_KEYS) {
         if (Object.hasOwn(snapshot.preset.setPresetSettings, key)) {
@@ -317,6 +351,10 @@ function runLoadoutCommand<T extends Record<string, unknown>>(
 
 function toLoadoutSnapshot(loadout: Loadout): LoadoutSnapshot {
   return cloneJsonValue(loadout) as LoadoutSnapshot
+}
+
+function readablePresetName(preset: { name?: unknown } | undefined): string {
+  return typeof preset?.name === 'string' ? preset.name : ''
 }
 
 function dispatchCreateLoadout(loadout: Loadout, previous: LoadoutStateSnapshot): void {
@@ -383,24 +421,6 @@ export function deleteLoadout(loadoutId: string): boolean {
   return true
 }
 
-function dispatchTouchLoadout(
-  loadoutId: string,
-  lastUsed: number,
-  characterId: string | undefined,
-  previous: LoadoutStateSnapshot,
-): void {
-  runLoadoutCommand(
-    (baseRevision) =>
-      touchLoadoutCommand({
-        baseRevision,
-        loadoutId,
-        lastUsed,
-        characterId,
-      }),
-    () => restoreLoadoutState(previous),
-  )
-}
-
 function nonBlankId(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value : null
 }
@@ -416,6 +436,36 @@ function resolvePersonaSelection(personaId: string): { index: number; personaId:
 
   const index = personas.findIndex((persona) => persona.id === personaId)
   return index >= 0 ? { index, personaId } : null
+}
+
+function resolveSplitPresetSelection<T extends { id?: string; name?: string }>(
+  presets: T[] | undefined,
+  presetId: string | undefined,
+  presetName: string | undefined,
+): { index: number; presetId: string } | null {
+  if (!Array.isArray(presets)) return null
+
+  const requestedId = nonBlankId(presetId)
+  if (requestedId) {
+    const index = presets.findIndex((preset) => preset?.id === requestedId)
+    if (index >= 0) return { index, presetId: requestedId }
+  }
+
+  const requestedName = typeof presetName === 'string' && presetName.trim().length > 0 ? presetName : null
+  if (!requestedName) return null
+
+  const index = presets.findIndex((preset) => preset?.name === requestedName)
+  const resolvedId = index >= 0 ? nonBlankId(presets[index]?.id) : null
+  return index >= 0 && resolvedId ? { index, presetId: resolvedId } : null
+}
+
+function loadoutHasSplitPresetReference(loadout: Loadout): boolean {
+  return (
+    !!nonBlankId(loadout.modelPresetId) ||
+    !!nonBlankId(loadout.promptPresetId) ||
+    (typeof loadout.modelPresetName === 'string' && loadout.modelPresetName.trim().length > 0) ||
+    (typeof loadout.promptPresetName === 'string' && loadout.promptPresetName.trim().length > 0)
+  )
 }
 
 function ensureBotPresetCommandIds(): void {
@@ -514,9 +564,17 @@ export function applyLoadout(
 ) {
   const requested = new Set(apply)
   const personaSelection = requested.has('persona') ? resolvePersonaSelection(loadout.personaId) : null
-  const presetIndex = requested.has('preset')
-    ? (DBState.db.botPresets?.findIndex((preset) => preset.name === loadout.presetName) ?? -1)
-    : -1
+  const useSplitPresetSelection = requested.has('preset') && loadoutHasSplitPresetReference(loadout)
+  const modelPresetSelection = useSplitPresetSelection
+    ? resolveSplitPresetSelection(DBState.db.modelPresets, loadout.modelPresetId, loadout.modelPresetName)
+    : null
+  const promptPresetSelection = useSplitPresetSelection
+    ? resolveSplitPresetSelection(DBState.db.promptPresets, loadout.promptPresetId, loadout.promptPresetName)
+    : null
+  const presetIndex =
+    requested.has('preset') && !useSplitPresetSelection
+      ? (DBState.db.botPresets?.findIndex((preset) => preset.name === loadout.presetName) ?? -1)
+      : -1
   const previousModules = cloneJsonValue(DBState.db.enabledModules ?? [])
   const nextModules = cloneJsonValue(loadout.modules ?? [])
   const previousGlobalChatVariables = cloneJsonValue(DBState.db.globalChatVariables ?? {})
@@ -525,13 +583,17 @@ export function applyLoadout(
   const previous: LoadoutApplyStateSnapshot = {
     loadout: currentLoadoutStateSnapshot(),
     ...(personaSelection ? { persona: currentPersonaStateSnapshot() } : {}),
-    ...(presetIndex >= 0 ? { preset: currentPresetApplySnapshot() } : {}),
+    ...(presetIndex >= 0 || modelPresetSelection || promptPresetSelection
+      ? { preset: currentPresetApplySnapshot() }
+      : {}),
     ...(requested.has('modules') ? { enabledModules: previousModules } : {}),
     ...(requested.has('globalVariables') ? { globalChatVariables: previousGlobalChatVariables } : {}),
   }
   const currentCharacterId = getCurrentCharacter()?.chaId
   const lastUsed = Date.now()
-  let selectedPresetId: string | null = null
+  let selectedLegacyPresetId: string | null = null
+  let selectedModelPresetId: string | null = null
+  let selectedPromptPresetId: string | null = null
 
   if (personaSelection) {
     selectUserPersonaLocally(personaSelection.index, 'save')
@@ -548,13 +610,13 @@ export function applyLoadout(
       ensureBotPresetCommandIds()
       saveCurrentPresetSnapshotLocal()
       const targetPreset = DBState.db.botPresets[presetIndex]
-      selectedPresetId = nonBlankId(targetPreset?.id)
+      selectedLegacyPresetId = nonBlankId(targetPreset?.id)
       DBState.db.botPresetsId = presetIndex
       if (targetPreset) {
         if (presetHasHydratedSettings(targetPreset)) {
           setPreset(DBState.db, targetPreset)
         } else {
-          const targetPresetId = selectedPresetId
+          const targetPresetId = selectedLegacyPresetId
           void ensureBotPresetHydrated(presetIndex).then((hydrated) => {
             if (!hydrated || !targetPresetId) return
             withTrustedServerProjectionWrite(() => {
@@ -565,6 +627,18 @@ export function applyLoadout(
           })
         }
       }
+    }
+
+    if (modelPresetSelection) {
+      selectedModelPresetId = modelPresetSelection.presetId
+      DBState.db.modelPresetsId = modelPresetSelection.index
+      applyModelPresetFieldsToDatabase(DBState.db, DBState.db.modelPresets[modelPresetSelection.index])
+    }
+
+    if (promptPresetSelection) {
+      selectedPromptPresetId = promptPresetSelection.presetId
+      DBState.db.promptPresetsId = promptPresetSelection.index
+      applyPromptPresetFieldsToDatabase(DBState.db, DBState.db.promptPresets[promptPresetSelection.index])
     }
 
     if (requested.has('modules')) {
@@ -589,13 +663,29 @@ export function applyLoadout(
       }),
     )
   }
-  if (selectedPresetId) {
+  if (selectedLegacyPresetId) {
     factories.push((baseRevision) =>
       selectPresetCommand({
         baseRevision,
-        presetId: selectedPresetId,
+        presetId: selectedLegacyPresetId,
         apply: true,
         saveCurrent: true,
+      }),
+    )
+  }
+  if (selectedModelPresetId) {
+    factories.push((baseRevision) =>
+      selectModelPresetCommand({
+        baseRevision,
+        modelPresetId: selectedModelPresetId,
+      }),
+    )
+  }
+  if (selectedPromptPresetId) {
+    factories.push((baseRevision) =>
+      selectPromptPresetCommand({
+        baseRevision,
+        promptPresetId: selectedPromptPresetId,
       }),
     )
   }

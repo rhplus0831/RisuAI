@@ -12,6 +12,10 @@ export interface LoadoutRecord extends JsonRecord {
   modules: string[]
   globalVariables: Record<string, string>
   presetName: string
+  modelPresetId: string
+  modelPresetName: string
+  promptPresetId: string
+  promptPresetName: string
   personaId: string
 }
 
@@ -65,6 +69,10 @@ export function createLoadoutRecord(input: unknown): LoadoutRecord {
     modules: stringArrayValue(loadout.modules, 'loadout.modules'),
     globalVariables: stringRecordValue(loadout.globalVariables, 'loadout.globalVariables'),
     presetName: typeof loadout.presetName === 'string' ? loadout.presetName : '',
+    modelPresetId: typeof loadout.modelPresetId === 'string' ? loadout.modelPresetId : '',
+    modelPresetName: typeof loadout.modelPresetName === 'string' ? loadout.modelPresetName : '',
+    promptPresetId: typeof loadout.promptPresetId === 'string' ? loadout.promptPresetId : '',
+    promptPresetName: typeof loadout.promptPresetName === 'string' ? loadout.promptPresetName : '',
     personaId: typeof loadout.personaId === 'string' ? loadout.personaId : '',
   }
   validateLoadoutRecord(record, 'loadout')
@@ -82,6 +90,10 @@ function repairLoadoutRecord(input: unknown): LoadoutRecord {
     modules: stringArrayValue(loadout.modules, 'loadout.modules'),
     globalVariables: stringRecordValue(loadout.globalVariables, 'loadout.globalVariables'),
     presetName: typeof loadout.presetName === 'string' ? loadout.presetName : '',
+    modelPresetId: typeof loadout.modelPresetId === 'string' ? loadout.modelPresetId : '',
+    modelPresetName: typeof loadout.modelPresetName === 'string' ? loadout.modelPresetName : '',
+    promptPresetId: typeof loadout.promptPresetId === 'string' ? loadout.promptPresetId : '',
+    promptPresetName: typeof loadout.promptPresetName === 'string' ? loadout.promptPresetName : '',
     personaId: typeof loadout.personaId === 'string' ? loadout.personaId : '',
   }
   validateLoadoutRecord(record, 'loadout')
@@ -152,7 +164,15 @@ function validateLoadoutRecord(record: JsonRecord, label: string): void {
   if ('id' in record && (typeof record.id !== 'string' || record.id.trim() === '')) {
     throw new ValidationError(`${label}.id must be a non-empty string`)
   }
-  for (const key of ['name', 'presetName', 'personaId']) {
+  for (const key of [
+    'name',
+    'presetName',
+    'modelPresetId',
+    'modelPresetName',
+    'promptPresetId',
+    'promptPresetName',
+    'personaId',
+  ]) {
     if (key in record && typeof record[key] !== 'string') {
       throw new ValidationError(`${label}.${key} must be a string`)
     }

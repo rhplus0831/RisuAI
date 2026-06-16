@@ -3301,12 +3301,12 @@ const PROMPT_PRESET_APPLY_FIELDS = PROMPT_PRESET_FIELDS.filter((field) => field 
 
 const PROMPT_PRESET_DATABASE_KEY_OVERRIDES: Record<string, string> = {}
 
-function applyModelPresetFieldsToDatabase(db: Database, preset: ModelPreset | undefined): void {
+export function applyModelPresetFieldsToDatabase(db: Database, preset: ModelPreset | undefined): void {
   applySplitPresetFieldsToDatabase(db, preset, MODEL_PRESET_FIELDS, MODEL_PRESET_DATABASE_KEY_OVERRIDES)
   applyPromptPresetFieldsToDatabase(db, db.promptPresets?.[db.promptPresetsId])
 }
 
-function applyPromptPresetFieldsToDatabase(db: Database, preset: PromptPreset | undefined): void {
+export function applyPromptPresetFieldsToDatabase(db: Database, preset: PromptPreset | undefined): void {
   applySplitPresetFieldsToDatabase(db, preset, PROMPT_PRESET_APPLY_FIELDS, PROMPT_PRESET_DATABASE_KEY_OVERRIDES)
   applyPromptPresetRegexFieldToDatabase(db, preset)
   if (promptPresetOverridesModelParameters(preset)) {

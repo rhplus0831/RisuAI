@@ -414,6 +414,10 @@ export type LoadoutSnapshot = Record<string, unknown> & {
   modules?: string[]
   globalVariables?: Record<string, string>
   presetName?: string
+  modelPresetId?: string
+  modelPresetName?: string
+  promptPresetId?: string
+  promptPresetName?: string
   personaId?: string
 }
 
