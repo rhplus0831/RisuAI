@@ -1,7 +1,7 @@
 <script lang="ts">
   import { language } from 'src/lang'
   import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
-  import type { loreBook } from 'src/ts/storage/database.svelte'
+  import type { customscript, loreBook, triggerscript } from 'src/ts/storage/database.svelte'
   import LoreBookList from 'src/lib/SideBars/LoreBook/LoreBookList.svelte'
   import { type CCLorebook, convertExternalLorebook } from 'src/ts/process/lorebook.svelte'
   import type { RisuModule } from 'src/ts/process/modules'
@@ -18,13 +18,17 @@
 
   import { DBState } from 'src/ts/stores.svelte'
   import { v4 } from 'uuid'
+  import { untrack } from 'svelte'
   import {
     applyLorebookEntryDraftEdit,
     flushPendingLorebookEntryDraftEdit,
     replaceModuleLorebookCollectionDraft,
     watchServerBackedLorebooks,
   } from 'src/ts/server/lorebookBridge.svelte'
-  import { watchServerBackedScriptDefinitions } from 'src/ts/server/scriptDefinitionBridge.svelte'
+  import {
+    applyModuleScriptDefinitionDraft,
+    watchServerBackedScriptDefinitions,
+  } from 'src/ts/server/scriptDefinitionBridge.svelte'
 
   let submenu = $state(0)
   interface Props {
@@ -35,6 +39,9 @@
   let assetFileExtensions: Record<string, string | undefined> = $state({})
   let assetFilePath: Record<string, string | undefined> = $state({})
   let assetPreviewRun = 0
+  let moduleScriptDraftModuleId = $state<string | null>(null)
+  let moduleScriptDraftSnapshot = ''
+  let suppressModuleScriptDraftDispatch = false
 
   $effect(() => {
     // This panel only edits the open module's lorebook, so scope change detection
@@ -53,6 +60,46 @@
     const moduleId = currentModule?.id ?? ''
     const stopScripts = watchServerBackedScriptDefinitions({ scope: { kind: 'module', moduleId } })
     return () => stopScripts()
+  })
+
+  function snapshotModuleScriptDraft(moduleId = currentModule?.id ?? null): string {
+    return JSON.stringify({
+      moduleId,
+      scripts: currentModule?.regex ?? [],
+      triggers: currentModule?.trigger ?? [],
+    })
+  }
+
+  $effect(() => {
+    const moduleId = currentModule?.id ?? null
+    if (moduleId !== moduleScriptDraftModuleId) {
+      suppressModuleScriptDraftDispatch = true
+      moduleScriptDraftModuleId = moduleId
+      moduleScriptDraftSnapshot = snapshotModuleScriptDraft(moduleId)
+      queueMicrotask(() => {
+        suppressModuleScriptDraftDispatch = false
+      })
+    }
+  })
+
+  $effect(() => {
+    const moduleId = currentModule?.id ?? null
+    const snapshot = snapshotModuleScriptDraft(moduleId)
+    if (suppressModuleScriptDraftDispatch || !moduleId || moduleId !== moduleScriptDraftModuleId) return
+    if (snapshot === moduleScriptDraftSnapshot) return
+
+    untrack(() => {
+      if (
+        applyModuleScriptDefinitionDraft(
+          moduleId,
+          currentModule,
+          currentModule?.regex ?? [],
+          currentModule?.trigger ?? [],
+        )
+      ) {
+        moduleScriptDraftSnapshot = snapshotModuleScriptDraft(moduleId)
+      }
+    })
   })
 
   const moduleAssetSourceKey = $derived(
@@ -97,38 +144,53 @@
     replaceModuleLorebookCollectionDraft(moduleId, currentModule, entries)
   }
 
+  function updateModuleScriptDefinitions(
+    regex: customscript[] = currentModule?.regex ?? [],
+    trigger: triggerscript[] = currentModule?.trigger ?? [],
+  ) {
+    const moduleId = currentModule?.id
+    if (!moduleId) return false
+    const applied = applyModuleScriptDefinitionDraft(moduleId, currentModule, regex, trigger)
+    if (applied) {
+      moduleScriptDraftSnapshot = snapshotModuleScriptDraft(moduleId)
+    }
+    return applied
+  }
+
   function addLorebook() {
     if (Array.isArray(currentModule.lorebook)) {
-      currentModule.lorebook.push({
-        key: '',
-        comment: `New Lore`,
-        content: '',
-        mode: 'normal',
-        insertorder: 100,
-        alwaysActive: false,
-        secondkey: '',
-        selective: false,
-      })
-
-      currentModule.lorebook = currentModule.lorebook
+      updateModuleLorebookCollection([
+        ...currentModule.lorebook,
+        {
+          key: '',
+          comment: `New Lore`,
+          content: '',
+          mode: 'normal',
+          insertorder: 100,
+          alwaysActive: false,
+          secondkey: '',
+          selective: false,
+        },
+      ])
     }
   }
 
   function addLorebookFolder() {
     if (Array.isArray(currentModule.lorebook)) {
       const id = v4()
-      currentModule.lorebook.push({
-        key: '\uf000folder:' + id,
-        comment: `New Folder`,
-        content: '',
-        mode: 'folder',
-        insertorder: 100,
-        alwaysActive: false,
-        secondkey: '',
-        selective: false,
-      })
-
-      currentModule.lorebook = currentModule.lorebook
+      updateModuleLorebookCollection([
+        ...currentModule.lorebook,
+        {
+          key: '\uf000folder:' + id,
+          comment: `New Folder`,
+          content: '',
+          mode: 'folder',
+          insertorder: 100,
+          alwaysActive: false,
+          secondkey: '',
+          selective: false,
+        },
+      ])
     }
   }
 
@@ -153,7 +215,7 @@
   }
 
   async function importLoreBook() {
-    let lore = currentModule.lorebook
+    let lore = [...(currentModule.lorebook ?? [])]
     const lorebook = await selectMultipleFile(['json', 'lorebook'])
     if (!lorebook) {
       return
@@ -171,6 +233,7 @@
           lore.push(...convertExternalLorebook(entries))
         }
       }
+      updateModuleLorebookCollection(lore)
     } catch (error) {
       alertError(`${error}`)
     }
@@ -178,27 +241,31 @@
 
   function addRegex() {
     if (Array.isArray(currentModule.regex)) {
-      currentModule.regex.push({
-        comment: '',
-        in: '',
-        out: '',
-        type: 'editinput',
-      })
-
-      currentModule.regex = currentModule.regex
+      const regex = [
+        ...currentModule.regex,
+        {
+          comment: '',
+          in: '',
+          out: '',
+          type: 'editinput',
+        },
+      ]
+      if (!updateModuleScriptDefinitions(regex, currentModule.trigger ?? [])) currentModule.regex = regex
     }
   }
 
   function addTrigger() {
     if (Array.isArray(currentModule.trigger)) {
-      currentModule.trigger.push({
-        conditions: [],
-        type: 'start',
-        comment: '',
-        effect: [],
-      })
-
-      currentModule.trigger = currentModule.trigger
+      const trigger: triggerscript[] = [
+        ...currentModule.trigger,
+        {
+          conditions: [],
+          type: 'start',
+          comment: '',
+          effect: [],
+        },
+      ]
+      if (!updateModuleScriptDefinitions(currentModule.regex ?? [], trigger)) currentModule.trigger = trigger
     }
   }
 </script>
@@ -223,7 +290,12 @@
   </button>
   <button
     onclick={() => {
-      currentModule.regex ??= []
+      if (!Array.isArray(currentModule.regex)) {
+        const regex: customscript[] = []
+        if (!updateModuleScriptDefinitions(regex, currentModule.trigger ?? []) || !Array.isArray(currentModule.regex)) {
+          currentModule.regex = regex
+        }
+      }
       submenu = 2
     }}
     class="p-2 flex-1 border-r border-darkborderc"
@@ -232,26 +304,34 @@
   </button>
   <button
     onclick={() => {
-      currentModule.trigger ??= [
-        {
-          comment: '',
-          type: 'manual',
-          conditions: [],
-          effect: [
-            {
-              type: 'v2Header',
-              code: '',
-              indent: 0,
-            },
-          ],
-        },
-        {
-          comment: 'New Event',
-          type: 'manual',
-          conditions: [],
-          effect: [],
-        },
-      ]
+      if (!Array.isArray(currentModule.trigger)) {
+        const trigger: triggerscript[] = [
+          {
+            comment: '',
+            type: 'manual',
+            conditions: [],
+            effect: [
+              {
+                type: 'v2Header',
+                code: '',
+                indent: 0,
+              },
+            ],
+          },
+          {
+            comment: 'New Event',
+            type: 'manual',
+            conditions: [],
+            effect: [],
+          },
+        ]
+        if (
+          !updateModuleScriptDefinitions(currentModule.regex ?? [], trigger) ||
+          !Array.isArray(currentModule.trigger)
+        ) {
+          currentModule.trigger = trigger
+        }
+      }
       submenu = 3
     }}
     class="p-2 flex-1 border-r border-darkborderc"
@@ -341,7 +421,8 @@
     <button
       class="font-medium cursor-pointer hover:text-green-500"
       onclick={async () => {
-        currentModule.regex = await importRegex(currentModule.regex)
+        const regex = await importRegex(currentModule.regex)
+        if (!updateModuleScriptDefinitions(regex, currentModule.trigger ?? [])) currentModule.regex = regex
       }}><HardDriveUploadIcon /></button>
   </div>
 {/if}

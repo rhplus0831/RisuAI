@@ -161,6 +161,82 @@ export function applyCharacterScriptDefinitionDraft(
   return applied
 }
 
+export function applyModuleScriptDefinitionDraft(
+  moduleId: string | null | undefined,
+  currentModule: RisuModule | null | undefined,
+  scripts: customscript[],
+  triggers: triggerscript[],
+  delayMs = 250,
+): boolean {
+  if (!moduleId) return false
+
+  const liveModule = findModule(moduleId)
+  const draftModule = currentModule?.id === moduleId ? currentModule : null
+  if (!liveModule && !draftModule) return false
+
+  const previousScripts = cloneJsonValue(liveModule?.regex ?? [])
+  const previousTriggers = cloneJsonValue(liveModule?.trigger ?? [])
+  const hadLiveScriptsField = liveModule ? Object.prototype.hasOwnProperty.call(liveModule, 'regex') : false
+  const hadLiveTriggersField = liveModule ? Object.prototype.hasOwnProperty.call(liveModule, 'trigger') : false
+  const hadDraftScriptsField = draftModule ? Object.prototype.hasOwnProperty.call(draftModule, 'regex') : false
+  const hadDraftTriggersField = draftModule ? Object.prototype.hasOwnProperty.call(draftModule, 'trigger') : false
+  const nextScripts = ensureClientScriptDefinitionIds(cloneJsonValue(scripts ?? []))
+  const nextTriggers = ensureClientTriggerDefinitionIds(cloneJsonValue(triggers ?? []))
+  const scriptsChanged = liveModule ? snapshotJson(previousScripts) !== snapshotJson(nextScripts) : false
+  const triggersChanged = liveModule ? snapshotJson(previousTriggers) !== snapshotJson(nextTriggers) : false
+  const shouldAssignScripts = scriptsChanged || hadLiveScriptsField || hadDraftScriptsField
+  const shouldAssignTriggers = triggersChanged || hadLiveTriggersField || hadDraftTriggersField
+  let applied = false
+
+  suppressRollbackDispatch = true
+  withTrustedServerProjectionWrite(() => {
+    const targetLiveModule = findModule(moduleId)
+    const targetDraftModule = currentModule?.id === moduleId ? currentModule : null
+    if (!targetLiveModule && !targetDraftModule) return
+
+    if (targetLiveModule) {
+      if (shouldAssignScripts) targetLiveModule.regex = cloneJsonValue(nextScripts)
+      if (shouldAssignTriggers) targetLiveModule.trigger = cloneJsonValue(nextTriggers)
+    }
+    if (targetDraftModule) {
+      if (shouldAssignScripts) targetDraftModule.regex = cloneJsonValue(nextScripts)
+      if (shouldAssignTriggers) targetDraftModule.trigger = cloneJsonValue(nextTriggers)
+    }
+    applied = true
+  })
+  queueMicrotask(() => {
+    suppressRollbackDispatch = false
+  })
+
+  if (!applied) return false
+
+  if (liveModule && scriptsChanged) {
+    dispatchReplaceModuleScripts(
+      moduleId,
+      nextScripts,
+      {
+        kind: 'moduleScripts',
+        moduleId,
+        scripts: previousScripts,
+      },
+      delayMs,
+    )
+  }
+  if (liveModule && triggersChanged) {
+    dispatchReplaceModuleTriggers(
+      moduleId,
+      nextTriggers,
+      {
+        kind: 'moduleTriggers',
+        moduleId,
+        triggers: previousTriggers,
+      },
+      delayMs,
+    )
+  }
+  return true
+}
+
 export function ensureClientScriptDefinitionIds(scripts: customscript[]): customscript[] {
   for (const script of scripts ?? []) {
     script.id = typeof script.id === 'string' && script.id.trim() ? script.id : v4()
@@ -724,6 +800,10 @@ function currentModuleTriggersForWatchedCommand(moduleId: string): triggerscript
   const module = modules.find((candidate) => candidate.id === moduleId)
   if (!module || !hasStableUniqueTriggerDefinitionIds(module.trigger)) return null
   return module.trigger
+}
+
+function findModule(moduleId: string): RisuModule | undefined {
+  return ((DBState.db.modules ?? []) as RisuModule[]).find((candidate) => candidate.id === moduleId)
 }
 
 function isStableCommandId(value: unknown): value is string {

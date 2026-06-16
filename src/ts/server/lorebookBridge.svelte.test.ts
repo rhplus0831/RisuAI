@@ -1455,6 +1455,35 @@ describe('K4 lorebook editor entry draft scope', () => {
     expect(moduleEntryCommands()).toHaveLength(0)
   })
 
+  it('Batch 6: module collection draft helper normalizes create-mode drafts without dispatching before create', async () => {
+    setupK4ModuleDb()
+    const draftModule = {
+      id: 'module-new',
+      name: 'Draft Module',
+      description: '',
+      lorebook: [{ content: 'draft original' }] as Entry[],
+    }
+
+    const replaced = replaceModuleLorebookCollectionDraft(
+      draftModule.id,
+      draftModule as any,
+      [{ content: 'replacement' }] as any,
+      DELAY,
+    )
+
+    expect(replaced).toBe(true)
+    expect(draftModule.lorebook).toEqual([
+      expect.objectContaining({
+        id: expect.any(String),
+        content: 'replacement',
+      }),
+    ])
+
+    await vi.advanceTimersByTimeAsync(DELAY)
+    expect(moduleReplaceCommands()).toHaveLength(0)
+    expect(moduleEntryCommands()).toHaveLength(0)
+  })
+
   it('Batch 6: module collection draft helper freezes the delayed command payload', async () => {
     setupK4ModuleDb()
     const liveModule = DBState.db.modules[0] as unknown as { id: string; lorebook: Entry[] }

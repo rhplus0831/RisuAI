@@ -55,6 +55,7 @@ vi.mock('./projectionWriteGuard.svelte', () => ({
 import { DBState, selectedCharID } from '../stores.svelte'
 import { withCloneInstrumentation } from '../__tests__/cloneCostHarness'
 import {
+  applyModuleScriptDefinitionDraft,
   applyCharacterScriptDefinitionDraft,
   collectScriptDefinitionCollectionSnapshots,
   currentScriptDefinitionStateSnapshot,
@@ -1036,5 +1037,87 @@ describe('watchServerBackedScriptDefinitions — scoped change detection (L31)',
       },
     ])
     stop()
+  })
+})
+
+describe('applyModuleScriptDefinitionDraft', () => {
+  it('normalizes module draft ids, updates live/draft rows, and dispatches replacements', async () => {
+    setupScriptDefinitions()
+    const liveModule = DBState.db.modules[0]
+    const draftModule = {
+      id: liveModule.id,
+      regex: [...liveModule.regex, scriptWithoutId('new module script')],
+      trigger: [...liveModule.trigger, triggerWithoutId('new module trigger')],
+    }
+
+    const applied = applyModuleScriptDefinitionDraft(
+      liveModule.id,
+      draftModule as never,
+      draftModule.regex,
+      draftModule.trigger,
+      DELAY,
+    )
+
+    expect(applied).toBe(true)
+    expect(liveModule.regex).toHaveLength(2)
+    expect(liveModule.trigger).toHaveLength(2)
+    expect(draftModule.regex).toEqual(liveModule.regex)
+    expect(draftModule.trigger).toEqual(liveModule.trigger)
+    expect(liveModule.regex[1].id).toEqual(expect.any(String))
+    expect(liveModule.trigger[1].id).toEqual(expect.any(String))
+
+    await vi.advanceTimersByTimeAsync(DELAY)
+    await Promise.resolve()
+
+    expect(recorded.commands.map((entry) => entry.built)).toEqual([
+      {
+        kind: 'replaceModuleScripts',
+        baseRevision: 1,
+        moduleId: liveModule.id,
+        scripts: liveModule.regex,
+      },
+      {
+        kind: 'replaceModuleTriggers',
+        baseRevision: 1,
+        moduleId: liveModule.id,
+        triggers: liveModule.trigger,
+      },
+    ])
+  })
+
+  it('keeps create-mode module drafts normalized without dispatching before the module exists', async () => {
+    setupScriptDefinitions()
+    const draftModule = {
+      id: 'module-new',
+      regex: [scriptWithoutId('draft script')],
+      trigger: [triggerWithoutId('draft trigger')],
+    }
+
+    const applied = applyModuleScriptDefinitionDraft(
+      draftModule.id,
+      draftModule as never,
+      draftModule.regex,
+      draftModule.trigger,
+      DELAY,
+    )
+
+    expect(applied).toBe(true)
+    expect((draftModule.regex[0] as { id?: string }).id).toEqual(expect.any(String))
+    expect((draftModule.trigger[0] as { id?: string }).id).toEqual(expect.any(String))
+
+    await vi.advanceTimersByTimeAsync(DELAY)
+    await Promise.resolve()
+
+    expect(recorded.commands).toEqual([])
+    expect(DBState.db.modules.map((module) => module.id)).toEqual(['module-1'])
+  })
+
+  it('ModuleMenu wires module regex and trigger drafts through the module script bridge', () => {
+    const source = readFileSync(path.join(process.cwd(), 'src/lib/Setting/Pages/Module/ModuleMenu.svelte'), 'utf8')
+
+    expect(source).toContain('applyModuleScriptDefinitionDraft')
+    expect(source).toContain('snapshotModuleScriptDraft')
+    expect(source).toContain('currentModule?.regex ?? []')
+    expect(source).toContain('currentModule?.trigger ?? []')
   })
 })

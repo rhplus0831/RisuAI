@@ -552,6 +552,7 @@ export function replaceModuleLorebookCollectionDraft(
   if (!moduleId) return false
 
   const previous = currentLorebookCollectionScopedSnapshot({ kind: 'module', moduleId })
+  const hasLiveModule = Boolean(findModule(moduleId))
   const cloned = cloneJsonValue(entries ?? [])
   ensureClientLorebookEntryIds(cloned)
   const commandEntries = cloneJsonValue(cloned)
@@ -567,7 +568,7 @@ export function replaceModuleLorebookCollectionDraft(
   })
   if (!applied) return false
 
-  dispatchReplaceModuleLorebooks(moduleId, commandEntries, previous, delayMs)
+  if (hasLiveModule) dispatchReplaceModuleLorebooks(moduleId, commandEntries, previous, delayMs)
   return true
 }
 
