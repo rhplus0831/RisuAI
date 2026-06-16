@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, onMount } from 'svelte'
+  import { onDestroy, onMount, untrack } from 'svelte'
   import { v4 } from 'uuid'
   import Sortable from 'sortablejs/modular/sortable.core.esm.js'
   import {
@@ -85,7 +85,7 @@
   )
 
   $effect(() => {
-    const stop = watchServerBackedChatMetadata()
+    const stop = untrack(() => watchServerBackedChatMetadata())
     return stop
   })
 

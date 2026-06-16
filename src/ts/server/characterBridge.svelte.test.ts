@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { flushSync } from 'svelte'
+import { flushSync, untrack } from 'svelte'
 
 const recorded = vi.hoisted(() => ({
   characterUpdates: [] as Array<{
@@ -75,6 +75,8 @@ import {
   type ServerBackedCharacterDraft,
   watchServerBackedCharacterProfile,
 } from './characterBridge.svelte'
+import { watchServerBackedChatMetadata } from './chatBridge.svelte'
+import { watchServerBackedScriptDefinitions } from './scriptDefinitionBridge.svelte'
 
 const DELAY = 50
 
@@ -305,6 +307,32 @@ describe('createServerBackedCharacterDraft seed gating', () => {
 })
 
 describe('watchServerBackedCharacterProfile baselines', () => {
+  it('keeps the character watcher baseline when started beside chat metadata in an untracked owner effect', async () => {
+    setupCharacter()
+    const stop = $effect.root(() => {
+      $effect(() => {
+        const stops = untrack(() => [
+          watchServerBackedCharacterProfile({ delayMs: DELAY }),
+          watchServerBackedChatMetadata({ delayMs: DELAY }),
+          watchServerBackedScriptDefinitions({ delayMs: DELAY, scope: { kind: 'character' } }),
+        ])
+        return () => {
+          for (const stopWatching of stops) stopWatching()
+        }
+      })
+    })
+    flushSync()
+
+    DBState.db.characters[0].backgroundHTML = '<section>local background</section>'
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    expect(recorded.characterUpdates).toEqual([
+      { characterId: 'char-1', patch: { backgroundHTML: '<section>local background</section>' } },
+    ])
+    stop()
+  })
+
   it('M12: foreign character-row projection apply refreshes baseline without echoing, then local profile edits dispatch', async () => {
     setupCharacter()
     const stop = watchServerBackedCharacterProfile({ delayMs: DELAY })

@@ -139,11 +139,13 @@
   let suppressScriptDraftDispatch = false
 
   $effect(() => {
-    const stopCharacter = watchServerBackedCharacterProfile()
-    const stopChat = watchServerBackedChatMetadata()
-    // This panel only edits the selected character's scripts/triggers, so scope
-    // change detection to that one row (the watcher tracks selection switches).
-    const stopScripts = watchServerBackedScriptDefinitions({ scope: { kind: 'character' } })
+    const { stopCharacter, stopChat, stopScripts } = untrack(() => ({
+      stopCharacter: watchServerBackedCharacterProfile(),
+      stopChat: watchServerBackedChatMetadata(),
+      // This panel only edits the selected character's scripts/triggers, so scope
+      // change detection to that one row (the watcher tracks selection switches).
+      stopScripts: watchServerBackedScriptDefinitions({ scope: { kind: 'character' } }),
+    }))
     return () => {
       stopCharacter()
       stopChat()

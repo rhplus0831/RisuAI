@@ -1,4 +1,5 @@
 <script>
+  import { untrack } from 'svelte'
   import { alertConfirm, alertError } from '../../ts/alert'
   import { language } from '../../lang'
 
@@ -27,7 +28,7 @@
   let { close = () => {} } = $props()
 
   $effect(() => {
-    const stop = watchServerBackedChatMetadata()
+    const stop = untrack(() => watchServerBackedChatMetadata())
     return stop
   })
 
