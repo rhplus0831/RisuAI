@@ -49,6 +49,7 @@ import {
   type ServerCommandResult,
 } from '../server/commands'
 import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
+import { assertNoUnsupportedCharacterChanges } from './unsupportedServerWriteGuard'
 
 export const customProviderStore = writable([] as string[])
 
@@ -868,11 +869,11 @@ export const getV2PluginAPIs = () => {
       }
 
       const previousCharacter = DBState.db.characters?.[charid]
-        ? $state.snapshot(DBState.db.characters[charid])
-        : undefined
+      assertNoUnsupportedCharacterChanges(previousCharacter, char, 'setChar')
       const previous = currentCharacterStateSnapshot()
+      const previousCharacterSnapshot = previousCharacter ? $state.snapshot(previousCharacter) : undefined
       const { factories, optimisticCharacter, rollback } = prepareCompatibleCharacterUpdate(
-        previousCharacter,
+        previousCharacterSnapshot,
         char,
         previous,
       )

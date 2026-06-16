@@ -199,7 +199,7 @@ describe('plugin database command bridge', () => {
     expect(DBState.db.plugins[0].realArg.myarg).toBe('myvalue')
   })
 
-  it('setChar applies only command-compatible character fields in server mode', async () => {
+  it('setChar applies command-compatible character fields in server mode', async () => {
     const calls = stubCommandFetch()
     const apis = getV2PluginAPIs()
     selectedCharID.set(0)
@@ -217,14 +217,14 @@ describe('plugin database command bridge', () => {
     ] as any
 
     apis.setChar({
-      chaId: 'plugin-supplied-id',
+      chaId: 'char-a',
       name: 'New name',
       desc: 'New desc',
-      chats: [{ id: 'chat-a', message: [{ role: 'user', data: 'changed', chatId: 'msg-a' }] }],
-      globalLore: [{ key: 'changed lore' }],
-      customscript: 'changed custom script',
-      triggerscript: 'changed trigger script',
-      modules: ['changed-module'],
+      chats: [{ id: 'chat-a', message: [{ role: 'user', data: 'old', chatId: 'msg-a' }] }],
+      globalLore: [{ key: 'old lore' }],
+      customscript: 'old custom script',
+      triggerscript: 'old trigger script',
+      modules: ['old-module'],
     })
 
     expect(DBState.db.characters[0]).toEqual({
@@ -258,10 +258,40 @@ describe('plugin database command bridge', () => {
     expect(patch).not.toHaveProperty('customscript')
     expect(patch).not.toHaveProperty('triggerscript')
     expect(patch).not.toHaveProperty('modules')
-    expect(calls.some((call) => call.url === '/api/v1/commands/characters/plugin-supplied-id')).toBe(false)
   })
 
-  it('setChar skips projection mutation and command dispatch for excluded-only character changes', async () => {
+  it('setChar rejects unsupported character field changes before projection mutation and command dispatch', async () => {
+    const calls = stubCommandFetch()
+    const apis = getV2PluginAPIs()
+    selectedCharID.set(0)
+    DBState.db.characters = [
+      {
+        chaId: 'char-a',
+        name: 'Old name',
+        chats: [{ id: 'chat-a', message: [{ role: 'user', data: 'old', chatId: 'msg-a' }] }],
+        globalLore: [{ key: 'old lore' }],
+        customscript: 'old custom script',
+      },
+    ] as any
+    const originalCharacter = JSON.parse(JSON.stringify(DBState.db.characters[0]))
+
+    expect(() =>
+      apis.setChar({
+        ...originalCharacter,
+        name: 'New name',
+        chats: [{ id: 'chat-a', message: [{ role: 'user', data: 'changed', chatId: 'msg-a' }] }],
+        globalLore: [{ key: 'changed lore' }],
+        customscript: 'changed custom script',
+      }),
+    ).toThrow(/setChar cannot update unsupported character fields .*chats, globalLore, customscript/)
+
+    await new Promise((resolve) => setTimeout(resolve, 30))
+
+    expect(DBState.db.characters[0]).toEqual(originalCharacter)
+    expect(calls.some((call) => call.url.startsWith('/api/v1/commands/characters/'))).toBe(false)
+  })
+
+  it('setChar rejects excluded-only character changes before projection mutation and command dispatch', async () => {
     const calls = stubCommandFetch()
     const apis = getV2PluginAPIs()
     selectedCharID.set(0)
@@ -275,12 +305,14 @@ describe('plugin database command bridge', () => {
     ] as any
     const originalCharacter = JSON.parse(JSON.stringify(DBState.db.characters[0]))
 
-    apis.setChar({
-      ...originalCharacter,
-      chaId: 'plugin-supplied-id',
-      chats: [{ id: 'chat-a', message: [{ role: 'user', data: 'changed', chatId: 'msg-a' }] }],
-      globalLore: [{ key: 'changed lore' }],
-    })
+    expect(() =>
+      apis.setChar({
+        ...originalCharacter,
+        chaId: 'plugin-supplied-id',
+        chats: [{ id: 'chat-a', message: [{ role: 'user', data: 'changed', chatId: 'msg-a' }] }],
+        globalLore: [{ key: 'changed lore' }],
+      }),
+    ).toThrow(/setChar cannot update unsupported character fields .*chaId, chats, globalLore/)
 
     await new Promise((resolve) => setTimeout(resolve, 30))
 

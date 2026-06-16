@@ -63,6 +63,7 @@ import {
   type TTSHookFn,
 } from 'src/ts/process/ttsHooks'
 import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
+import { assertNoUnsupportedCharacterChanges, assertNoUnsupportedChatChanges } from '../unsupportedServerWriteGuard'
 
 function cloneJsonValue<T>(value: T): T {
   if (value === undefined) return value
@@ -1122,12 +1123,14 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin, lifecycl
           return
         }
 
+        const previousCharacter = DBState.db.characters[charId]
+        assertNoUnsupportedCharacterChanges(previousCharacter, char, 'setCharacterToIndex')
         const previous = currentCharacterStateSnapshot()
-        const previousCharacter = $state.snapshot(DBState.db.characters[charId])
+        const previousCharacterSnapshot = $state.snapshot(previousCharacter)
         // Route through the sequencer so this call shares one advancing revision
         // baseline with other makeRisuaiAPIV3 command factories.
         const { factories, optimisticCharacter, rollback } = prepareCompatibleCharacterUpdate(
-          previousCharacter,
+          previousCharacterSnapshot,
           char,
           previous,
         )
@@ -1157,14 +1160,18 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin, lifecycl
       if (charId) {
         const chats = db.characters[charId].chats
         if (chats && chats[chatIndex]) {
+          const previousChat = DBState.db.characters[charId].chats[chatIndex]
+          if (canUseServerCommands()) {
+            assertNoUnsupportedChatChanges(previousChat, chat, 'setChatToIndex')
+          }
           const previous = currentChatStateSnapshot()
-          const previousChat = $state.snapshot(DBState.db.characters[charId].chats[chatIndex])
+          const previousChatSnapshot = $state.snapshot(previousChat)
           withTrustedServerProjectionWrite(() => {
             DBState.db.characters[charId].chats[chatIndex] = chat
           })
           // Route through the sequencer so this call shares one advancing revision
           // baseline with other makeRisuaiAPIV3 command factories.
-          const { factories, rollback } = prepareCompatibleChatUpdate(previousChat, chat, previous)
+          const { factories, rollback } = prepareCompatibleChatUpdate(previousChatSnapshot, chat, previous)
           runOptimisticCommandSequence(factories, rollback)
         }
       }

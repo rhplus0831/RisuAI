@@ -133,11 +133,37 @@ vi.mock('src/ts/server/commands', () => ({
 }))
 
 vi.mock('src/ts/characterCommands', () => ({
+  CHARACTER_PATCH_EXCLUDED_KEYS: new Set([
+    'chaId',
+    'chats',
+    'chatFolders',
+    'globalLore',
+    'customscript',
+    'triggerscript',
+    'scriptstate',
+    'modules',
+    'coldstorage',
+    'coldStoragedChats',
+  ]),
   currentCharacterStateSnapshot: vi.fn(() => ({})),
   prepareCompatibleCharacterUpdate: vi.fn(() => ({ factories: [], rollback: vi.fn() })),
 }))
 
 vi.mock('src/ts/chatCommands', () => ({
+  CHAT_PATCH_ALLOWED_KEYS: new Set([
+    'name',
+    'note',
+    'sdData',
+    'lastMemory',
+    'suggestMessages',
+    'bindedPersona',
+    'fmIndex',
+    'folderId',
+    'lastDate',
+    'bookmarks',
+    'bookmarkNames',
+    'modules',
+  ]),
   currentChatStateSnapshot: vi.fn(() => ({})),
   prepareCompatibleChatUpdate: vi.fn(() => ({ factories: [], rollback: vi.fn() })),
   runOptimisticCommandSequence: vi.fn(),
@@ -231,7 +257,7 @@ vi.mock('src/ts/server/projectionWriteGuard.svelte', () => ({
 
 import { customProviderStore, pluginV2 } from '../plugins.svelte'
 import { prepareCompatibleCharacterUpdate } from 'src/ts/characterCommands'
-import { runOptimisticCommandSequence } from 'src/ts/chatCommands'
+import { prepareCompatibleChatUpdate, runOptimisticCommandSequence } from 'src/ts/chatCommands'
 import {
   __v3PluginLifecycleTestHooks,
   customV3ProviderMetaStore,
@@ -268,6 +294,7 @@ beforeEach(async () => {
     currentPluginProvider: '',
   }
   vi.mocked(prepareCompatibleCharacterUpdate).mockClear()
+  vi.mocked(prepareCompatibleChatUpdate).mockClear()
   vi.mocked(runOptimisticCommandSequence).mockClear()
   await __v3PluginLifecycleTestHooks.reset()
 })
@@ -306,10 +333,10 @@ describe('V3 character command bridge', () => {
     } as any)
     const api = __v3PluginLifecycleTestHooks.createApi(seedV3Plugin('plugin-a')) as any
     const pluginCharacter = {
-      chaId: 'plugin-supplied-id',
+      chaId: 'char-a',
       name: 'New name',
-      chats: [{ id: 'chat-a', message: [{ role: 'user', data: 'changed', chatId: 'msg-a' }] }],
-      globalLore: [{ key: 'changed lore' }],
+      chats: existingCharacter.chats,
+      globalLore: existingCharacter.globalLore,
     }
 
     api.setCharacterToIndex(0, pluginCharacter)
@@ -321,6 +348,133 @@ describe('V3 character command bridge', () => {
     )
     expect(mockDbState.db.characters[0]).toBe(optimisticCharacter)
     expect(mockDbState.db.characters[0]).not.toBe(pluginCharacter)
+    expect(runOptimisticCommandSequence).toHaveBeenCalledWith(factories, rollback)
+  })
+
+  it('setCharacterToIndex rejects unsupported character fields before projection mutation', () => {
+    mockServerCommands.canUse = true
+    const existingCharacter = {
+      chaId: 'char-a',
+      name: 'Old name',
+      chats: [{ id: 'chat-a', message: [{ role: 'user', data: 'old', chatId: 'msg-a' }] }],
+      globalLore: [{ key: 'old lore' }],
+    }
+    mockDbState.db.characters = {
+      0: existingCharacter,
+    }
+    const api = __v3PluginLifecycleTestHooks.createApi(seedV3Plugin('plugin-a')) as any
+    const pluginCharacter = {
+      ...existingCharacter,
+      name: 'New name',
+      chats: [{ id: 'chat-a', message: [{ role: 'user', data: 'changed', chatId: 'msg-a' }] }],
+      globalLore: [{ key: 'changed lore' }],
+    }
+
+    expect(() => api.setCharacterToIndex(0, pluginCharacter)).toThrow(
+      /setCharacterToIndex cannot update unsupported character fields .*chats, globalLore/,
+    )
+
+    expect(mockDbState.db.characters[0]).toBe(existingCharacter)
+    expect(prepareCompatibleCharacterUpdate).not.toHaveBeenCalled()
+    expect(runOptimisticCommandSequence).not.toHaveBeenCalled()
+  })
+})
+
+describe('V3 chat command bridge', () => {
+  it('setChatToIndex rejects unsupported chat fields before projection mutation', () => {
+    mockServerCommands.canUse = true
+    const existingChat = {
+      id: 'chat-a',
+      name: 'Old chat',
+      message: [{ role: 'user', data: 'old', chatId: 'msg-a' }],
+      scriptstate: { count: 1 },
+      localLore: [{ key: 'old lore' }],
+      generationSettings: { configured: false },
+    }
+    mockDbState.db.characters = {
+      0: {
+        chaId: 'char-a',
+        chats: [existingChat],
+      },
+    }
+    const api = __v3PluginLifecycleTestHooks.createApi(seedV3Plugin('plugin-a')) as any
+    const pluginChat = {
+      ...existingChat,
+      name: 'New chat',
+      localLore: [{ key: 'changed lore' }],
+      generationSettings: { configured: true },
+    }
+
+    expect(() => api.setChatToIndex(0, 0, pluginChat)).toThrow(
+      /setChatToIndex cannot update unsupported chat fields .*localLore, generationSettings/,
+    )
+
+    expect(mockDbState.db.characters[0].chats[0]).toBe(existingChat)
+    expect(prepareCompatibleChatUpdate).not.toHaveBeenCalled()
+    expect(runOptimisticCommandSequence).not.toHaveBeenCalled()
+  })
+
+  it('setChatToIndex rejects unsupported scriptstate value changes before projection mutation', () => {
+    mockServerCommands.canUse = true
+    const existingChat = {
+      id: 'chat-a',
+      name: 'Old chat',
+      message: [{ role: 'user', data: 'old', chatId: 'msg-a' }],
+      scriptstate: { count: 1 },
+    }
+    mockDbState.db.characters = {
+      0: {
+        chaId: 'char-a',
+        chats: [existingChat],
+      },
+    }
+    const api = __v3PluginLifecycleTestHooks.createApi(seedV3Plugin('plugin-a')) as any
+    const pluginChat = {
+      ...existingChat,
+      name: 'New chat',
+      scriptstate: { count: { nested: true } },
+    }
+
+    expect(() => api.setChatToIndex(0, 0, pluginChat)).toThrow(
+      /setChatToIndex cannot update unsupported chat fields .*scriptstate.count/,
+    )
+
+    expect(mockDbState.db.characters[0].chats[0]).toBe(existingChat)
+    expect(prepareCompatibleChatUpdate).not.toHaveBeenCalled()
+    expect(runOptimisticCommandSequence).not.toHaveBeenCalled()
+  })
+
+  it('setChatToIndex still dispatches supported chat changes in server mode', () => {
+    mockServerCommands.canUse = true
+    const existingChat = {
+      id: 'chat-a',
+      name: 'Old chat',
+      message: [{ role: 'user', data: 'old', chatId: 'msg-a' }],
+      scriptstate: { count: 1 },
+      localLore: [{ key: 'old lore' }],
+    }
+    const factories = [vi.fn()]
+    const rollback = vi.fn()
+    mockDbState.db.characters = {
+      0: {
+        chaId: 'char-a',
+        chats: [existingChat],
+      },
+    }
+    vi.mocked(prepareCompatibleChatUpdate).mockReturnValueOnce({ factories, rollback })
+    const api = __v3PluginLifecycleTestHooks.createApi(seedV3Plugin('plugin-a')) as any
+    const pluginChat = {
+      ...existingChat,
+      name: 'New chat',
+      message: [{ role: 'char', data: 'new', chatId: 'msg-b' }],
+      scriptstate: { count: 2 },
+      localLore: existingChat.localLore,
+    }
+
+    api.setChatToIndex(0, 0, pluginChat)
+
+    expect(mockDbState.db.characters[0].chats[0]).toBe(pluginChat)
+    expect(prepareCompatibleChatUpdate).toHaveBeenCalledWith(existingChat, pluginChat, expect.anything())
     expect(runOptimisticCommandSequence).toHaveBeenCalledWith(factories, rollback)
   })
 })
