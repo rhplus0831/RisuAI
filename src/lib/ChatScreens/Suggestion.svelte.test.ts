@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from 'vitest'
+import { mount, tick, unmount } from 'svelte'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const suggestionMocks = vi.hoisted(() => {
   function makeStore<T>(initial: T) {
@@ -65,7 +66,9 @@ vi.mock('src/ts/process/scripts', () => ({
   resetScriptCache: vi.fn(),
 }))
 
-import { runSuggestionTranslation } from './Suggestion.svelte'
+import Suggestion, { runSuggestionTranslation } from './Suggestion.svelte'
+import { DBState, selectedCharID } from 'src/ts/stores.svelte'
+import type { Database } from 'src/ts/storage/database.svelte'
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -74,6 +77,62 @@ function deferred<T>() {
   })
   return { promise, resolve }
 }
+
+type MountedComponent = Parameters<typeof unmount>[0]
+
+async function settle() {
+  for (let i = 0; i < 4; i += 1) {
+    await tick()
+    await Promise.resolve()
+  }
+}
+
+async function waitFor(assertion: () => void) {
+  let lastError: unknown
+  for (let i = 0; i < 20; i += 1) {
+    try {
+      assertion()
+      return
+    } catch (error) {
+      lastError = error
+      await settle()
+    }
+  }
+  throw lastError
+}
+
+function seedSuggestionDatabase(suggestMessages: string[] = ['Take the lead']) {
+  selectedCharID.set(0)
+  DBState.db = {
+    autoSuggestClean: false,
+    autoSuggestPrompt: '',
+    autoTranslate: false,
+    characters: [
+      {
+        chaId: 'character-a',
+        name: 'Character A',
+        chatPage: 0,
+        chats: [
+          {
+            id: 'chat-a',
+            name: 'Chat A',
+            message: [{ role: 'char', data: 'Hello', chatId: 'message-a' }],
+            suggestMessages,
+          },
+        ],
+      },
+    ],
+    subModel: '',
+    translator: '',
+  } as unknown as Database
+}
+
+afterEach(() => {
+  suggestionMocks.doingChat.set(false)
+  selectedCharID.set(-1)
+  DBState.db = {} as Database
+  vi.clearAllMocks()
+})
 
 describe('runSuggestionTranslation', () => {
   it('L58: keeps only the newest overlapping translated suggestion run', async () => {
@@ -168,5 +227,44 @@ describe('runSuggestionTranslation', () => {
 
     expect(clear).toHaveBeenCalledTimes(1)
     expect(translateMessage).not.toHaveBeenCalled()
+  })
+})
+
+describe('Suggestion component persistence', () => {
+  it('persists suggestion clearing when a suggestion is sent', async () => {
+    seedSuggestionDatabase()
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    let component: MountedComponent | undefined
+    const send = vi.fn()
+    const messageInput = vi.fn()
+
+    try {
+      component = mount(Suggestion, {
+        target,
+        props: {
+          send,
+          messageInput,
+        },
+      })
+
+      await waitFor(() => {
+        expect(target.textContent).toContain('Take the lead')
+      })
+
+      const suggestionButton = Array.from(target.querySelectorAll<HTMLButtonElement>('button')).find((button) =>
+        button.textContent?.includes('Take the lead'),
+      )
+      expect(suggestionButton).toBeTruthy()
+      suggestionButton!.click()
+      await settle()
+
+      expect(messageInput).toHaveBeenCalledWith('Take the lead')
+      expect(send).toHaveBeenCalledTimes(1)
+      expect(suggestionMocks.dispatchUpdateChat).toHaveBeenCalledWith('chat-a', { suggestMessages: [] }, {})
+    } finally {
+      if (component) unmount(component)
+      target.remove()
+    }
   })
 })

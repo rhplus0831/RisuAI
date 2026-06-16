@@ -154,7 +154,7 @@ function applyTailSlice(slice: Message[]): void {
  * proxies. The dispatch sends only the last retained message id, so the persisted
  * payload stays bounded to the truncate point.
  */
-function applyRerollTruncate(keepLength: number): void {
+async function applyRerollTruncate(keepLength: number): Promise<boolean> {
   const previous = currentChatScopedSnapshot()
   const afterMessageId = withTrustedServerProjectionWrite(() => {
     const msgs = activeChatRecord().message
@@ -163,8 +163,12 @@ function applyRerollTruncate(keepLength: number): void {
   })
   const record = activeChatRecord()
   if (record.id) {
-    dispatchTruncateMessagesScoped(record.id, afterMessageId, previous, { preserveRemovedAsAlternates: true })
+    const result = await dispatchTruncateMessagesScoped(record.id, afterMessageId, previous, {
+      preserveRemovedAsAlternates: true,
+    })
+    return result === null || result.status === 'ok' || result.status === 'unavailable'
   }
+  return true
 }
 
 async function regenerateFromCurrentTail(deps: RerollDeps): Promise<void> {
@@ -198,7 +202,10 @@ async function regenerateFromCurrentTail(deps: RerollDeps): Promise<void> {
       return
     }
   }
-  applyRerollTruncate(cha.length)
+  const truncatePersisted = await applyRerollTruncate(cha.length)
+  if (!truncatePersisted) {
+    return
+  }
   await deps.sendChatMain(false, regenerateMessageId)
 }
 

@@ -348,6 +348,9 @@
 
       const currentChatRecord = DBState.db.characters[selectedChar].chats[DBState.db.characters[selectedChar].chatPage]
       let userMessage: Message | null = null
+      const composerBeforeSend = messageInput
+      const translatedComposerBeforeSend = messageInputTranslate
+      const filesBeforeSend = [...fileInput]
 
       if (messageInput.startsWith('/')) {
         const commandProcessed = await processMultiCommand(messageInput)
@@ -357,15 +360,15 @@
         }
       }
 
-      if (fileInput.length > 0) {
-        for (const file of fileInput) {
-          messageInput += `{{inlayed::${file}}}`
+      let messageForSend = messageInput
+      if (filesBeforeSend.length > 0) {
+        for (const file of filesBeforeSend) {
+          messageForSend += `{{inlayed::${file}}}`
         }
-        fileInput = []
       }
 
       if (!continueResponse) {
-        if (messageInput === '') {
+        if (messageForSend === '') {
           const messages = currentChatRecord.message ?? []
           if (messages.length === 0 || messages[messages.length - 1].role !== 'user') {
             if (DBState.db.useSayNothing) {
@@ -380,23 +383,27 @@
           // Server prompt assembly owns submit-time input triggers/editinput.
           userMessage = {
             role: 'user',
-            data: messageInput,
+            data: messageForSend,
             time: Date.now(),
             name: null,
           }
         }
       }
-      messageInput = ''
-      messageInputTranslate = ''
       if (userMessage) {
         const appended = await appendCurrentChatUserMessageForSend(userMessage)
         if (appended.status !== 'ok') {
+          messageInput = composerBeforeSend
+          messageInputTranslate = translatedComposerBeforeSend
+          fileInput = filesBeforeSend
           alertError(appended.error)
           await sleep(10)
           updateInputSizeAll()
           return
         }
       }
+      messageInput = ''
+      messageInputTranslate = ''
+      fileInput = []
       await sleep(10)
       updateInputSizeAll()
       // Clear the reroll buffer only after send/continue succeeds.

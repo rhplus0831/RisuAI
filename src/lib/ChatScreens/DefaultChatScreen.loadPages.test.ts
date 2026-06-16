@@ -1,5 +1,6 @@
 import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { AppendCurrentChatUserMessageResult } from 'src/ts/chatCommands'
 
 const loadPageMocks = vi.hoisted(() => ({
   abortActiveGeneration: vi.fn(),
@@ -7,7 +8,9 @@ const loadPageMocks = vi.hoisted(() => ({
   alertNormal: vi.fn(),
   alertWait: vi.fn(),
   appendCurrentChatEmptyCharMessage: vi.fn(),
-  appendCurrentChatUserMessageForSend: vi.fn(async () => ({ status: 'ok' })),
+  appendCurrentChatUserMessageForSend: vi.fn(
+    async (): Promise<AppendCurrentChatUserMessageResult> => ({ status: 'ok', messageId: 'message-a' }),
+  ),
   applySuccessfulSendChatEffects: vi.fn(() => true),
   chatFoldedState: { data: null as null | Record<string, string> },
   chatFoldedStateMessageIndex: { index: -1 },
@@ -358,6 +361,12 @@ async function clickScreenshotMenuItem() {
   screenshotButton!.click()
 }
 
+function findClickableByText(text: string): HTMLElement | undefined {
+  return Array.from(target.querySelectorAll<HTMLElement>('button, div')).find(
+    (element) => element.textContent?.trim() === text,
+  )
+}
+
 beforeEach(() => {
   target = document.createElement('div')
   document.body.appendChild(target)
@@ -586,6 +595,54 @@ describe('DefaultChatScreen transcript window state', () => {
     expect(loadPageMocks.hydrateActiveChatFully).not.toHaveBeenCalled()
     expect(loadPageMocks.processMultiCommand).not.toHaveBeenCalled()
     expect(loadPageMocks.appendCurrentChatUserMessageForSend).not.toHaveBeenCalled()
+    expect(loadPageMocks.sendChat).not.toHaveBeenCalled()
+  })
+
+  it('restores composer text and selected files when appending the user message fails', async () => {
+    seedDatabase([1])
+    loadPageMocks.postChatFile.mockResolvedValueOnce([{ type: 'asset', data: 'asset-a' }])
+    loadPageMocks.appendCurrentChatUserMessageForSend.mockResolvedValueOnce({
+      status: 'error',
+      error: 'append failed',
+    })
+    mountScreen()
+
+    await waitFor(() => {
+      expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy()
+    })
+    const textarea = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+    textarea.value = 'Retry with file'
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    const menuButton = target.querySelector<HTMLButtonElement>('[data-testid="default-chat-menu-button"]')
+    expect(menuButton).toBeTruthy()
+    menuButton!.click()
+    await tick()
+    const postFileMenuItem = findClickableByText('postFile')
+    expect(postFileMenuItem).toBeTruthy()
+    postFileMenuItem!.click()
+
+    await waitFor(() => {
+      expect(target.textContent).toContain('Missing file')
+    })
+
+    const sendButton = target.querySelector<HTMLButtonElement>('[data-testid="default-chat-send-button"]')
+    expect(sendButton).toBeTruthy()
+    sendButton!.click()
+
+    await waitFor(() => {
+      expect(loadPageMocks.alertError).toHaveBeenCalledWith('append failed')
+    })
+
+    expect(loadPageMocks.appendCurrentChatUserMessageForSend).toHaveBeenCalledWith(
+      expect.objectContaining({
+        role: 'user',
+        data: 'Retry with file{{inlayed::asset-a}}',
+      }),
+    )
+    expect(textarea.value).toBe('Retry with file')
+    expect(target.textContent).toContain('Missing file')
     expect(loadPageMocks.sendChat).not.toHaveBeenCalled()
   })
 })

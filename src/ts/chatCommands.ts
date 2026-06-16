@@ -1224,9 +1224,10 @@ function dispatchTruncateMessagesWith(
   afterMessageId: string | null,
   rollback: () => void,
   options: TruncateMessagesOptions = {},
-): void {
-  runMessageCommand(
-    (baseRevision) =>
+): Promise<ServerCommandResult | null> {
+  if (!canUseServerCommands()) return Promise.resolve(null)
+  return runServerCommand({
+    command: (baseRevision) =>
       truncateMessagesCommand({
         baseRevision,
         chatId,
@@ -1234,7 +1235,7 @@ function dispatchTruncateMessagesWith(
         preserveRemovedAsAlternates: options.preserveRemovedAsAlternates,
       }),
     rollback,
-  )
+  })
 }
 
 export function dispatchTruncateMessages(
@@ -1242,8 +1243,8 @@ export function dispatchTruncateMessages(
   afterMessageId: string | null,
   previous: ChatStateSnapshot,
   options: TruncateMessagesOptions = {},
-): void {
-  dispatchTruncateMessagesWith(chatId, afterMessageId, () => restoreChatState(previous), options)
+): Promise<ServerCommandResult | null> {
+  return dispatchTruncateMessagesWith(chatId, afterMessageId, () => restoreChatState(previous), options)
 }
 
 export function dispatchTruncateMessagesScoped(
@@ -1251,8 +1252,8 @@ export function dispatchTruncateMessagesScoped(
   afterMessageId: string | null,
   previous: ChatScopedSnapshot,
   options: TruncateMessagesOptions = {},
-): void {
-  dispatchTruncateMessagesWith(chatId, afterMessageId, () => restoreChatScopedState(previous), options)
+): Promise<ServerCommandResult | null> {
+  return dispatchTruncateMessagesWith(chatId, afterMessageId, () => restoreChatScopedState(previous), options)
 }
 
 function dispatchReplaceTailMessagesWith(

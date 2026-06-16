@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { untrack } from 'svelte'
+  import { onDestroy, untrack } from 'svelte'
 
   import { language } from 'src/lang'
   import { setChatNoteValue } from 'src/ts/chatCommands'
@@ -23,6 +23,8 @@
   let tokenCount = $state(0)
   let lastTokenizedNote = ''
   let tokenizeRun = 0
+  let authorNoteSaveTimer: ReturnType<typeof setTimeout> | null = null
+  let pendingAuthorNoteSave: { chatId: string; note: string } | null = null
 
   async function loadTokenCount(note: string, run: number): Promise<void> {
     if (lastTokenizedNote === note) return
@@ -40,6 +42,33 @@
         void loadTokenCount(note, run)
       })
     }, 0)
+  }
+
+  function clearAuthorNoteSaveTimer(): void {
+    if (!authorNoteSaveTimer) return
+    clearTimeout(authorNoteSaveTimer)
+    authorNoteSaveTimer = null
+  }
+
+  function clearPendingAuthorNoteSave(): void {
+    clearAuthorNoteSaveTimer()
+    pendingAuthorNoteSave = null
+  }
+
+  function flushPendingAuthorNoteSave(): void {
+    const pending = pendingAuthorNoteSave
+    if (!pending) return
+    clearAuthorNoteSaveTimer()
+    pendingAuthorNoteSave = null
+    if (pending.note === authorNoteLastSubmitted) return
+    authorNoteLastSubmitted = pending.note
+    setChatNoteValue(pending.chatId, pending.note)
+  }
+
+  function scheduleAuthorNoteSave(chatId: string, note: string): void {
+    clearAuthorNoteSaveTimer()
+    pendingAuthorNoteSave = { chatId, note }
+    authorNoteSaveTimer = setTimeout(flushPendingAuthorNoteSave, 250)
   }
 
   $effect.pre(() => {
@@ -70,17 +99,19 @@
   $effect(() => {
     const chatId = authorNoteChatId
     const note = authorNoteDraft
-    if (!chatId || note === authorNoteLastSubmitted) return
+    if (!chatId || note === authorNoteLastSubmitted) {
+      clearPendingAuthorNoteSave()
+      return
+    }
 
-    const timer = setTimeout(() => {
-      authorNoteLastSubmitted = note
-      setChatNoteValue(chatId, note)
-    }, 250)
+    scheduleAuthorNoteSave(chatId, note)
 
     return () => {
-      clearTimeout(timer)
+      clearAuthorNoteSaveTimer()
     }
   })
+
+  onDestroy(flushPendingAuthorNoteSave)
 </script>
 
 <div data-risu-chat-author-note>

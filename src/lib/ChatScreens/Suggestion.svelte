@@ -114,6 +114,13 @@
     dispatchUpdateChat(chatId, { suggestMessages: suggestions }, currentChatStateSnapshot())
   }
 
+  function clearCurrentChatSuggestions() {
+    suggestMessages = []
+    const currentChar = DBState.db.characters[$selectedCharID]
+    const currentChat = currentChar?.chats[currentChar.chatPage]
+    persistSuggestions(currentChat?.id, [])
+  }
+
   const unsub = doingChat.subscribe(async (v) => {
     if (v) {
       progress = false
@@ -265,10 +272,7 @@
         onclick={() => {
           alertConfirm(language.askReRollAutoSuggestions).then((result) => {
             if (result) {
-              suggestMessages = []
-              const currentChar = DBState.db.characters[$selectedCharID]
-              const currentChat = currentChar?.chats[currentChar.chatPage]
-              persistSuggestions(currentChat?.id, [])
+              clearCurrentChatSuggestions()
               doingChat.set(true)
               doingChat.set(false)
             }
@@ -282,7 +286,7 @@
         <button
           class="bg-textcolor2 hover:bg-darkbutton text-textcolor font-bold py-2 px-4 rounded-sm"
           onclick={() => {
-            suggestMessages = []
+            clearCurrentChatSuggestions()
             messageInput(suggest)
             send()
           }}>

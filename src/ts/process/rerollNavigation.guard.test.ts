@@ -14,7 +14,7 @@ const commandSpies = vi.hoisted(() => ({
   currentChatScopedSnapshot: vi.fn(() => ({ snapshot: true })),
   dispatchReplaceTailMessagesScoped: vi.fn(),
   dispatchReplaceMessagesScoped: vi.fn(),
-  dispatchTruncateMessagesScoped: vi.fn(),
+  dispatchTruncateMessagesScoped: vi.fn(async () => null as unknown),
   dispatchUpdateMessageScoped: vi.fn(),
   ensureMessageId: vi.fn((message: { chatId?: string }) => {
     if (!message.chatId) message.chatId = 'minted'

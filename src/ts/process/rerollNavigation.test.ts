@@ -8,7 +8,7 @@ const commandSpies = vi.hoisted(() => ({
   currentChatScopedSnapshot: vi.fn(() => ({ snapshot: true })),
   dispatchReplaceTailMessagesScoped: vi.fn(),
   dispatchReplaceMessagesScoped: vi.fn(),
-  dispatchTruncateMessagesScoped: vi.fn(),
+  dispatchTruncateMessagesScoped: vi.fn(async () => null as unknown),
   dispatchUpdateMessageScoped: vi.fn(),
   ensureMessageId: vi.fn((message: { chatId?: string }) => {
     if (!message.chatId) message.chatId = 'minted'
@@ -44,6 +44,14 @@ import {
 } from './rerollNavigation.svelte'
 
 type Msg = { role: string; data: string; chatId: string; generationInfo?: { generationId: string } }
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((resolver) => {
+    resolve = resolver
+  })
+  return { promise, resolve }
+}
 
 function setupChat(message: Msg[], charIndex = 0): void {
   ;(DBState as { db: unknown }).db = {
@@ -193,6 +201,43 @@ describe('reroll swipe navigation (post-seed, durable for free)', () => {
       { preserveRemovedAsAlternates: true },
     )
     expect(commandSpies.dispatchReplaceMessagesScoped).not.toHaveBeenCalled()
+  })
+
+  it('rerolling past the newest candidate waits for truncate persistence before regenerating', async () => {
+    seedThreeCandidates()
+    const truncate = deferred<{
+      status: 'ok'
+      revision: number
+      event: { type: string; revision: number; resource: string }
+    }>()
+    commandSpies.dispatchTruncateMessagesScoped.mockReturnValueOnce(truncate.promise)
+    const sendChatMain = vi.fn(async () => {})
+
+    const rerollPromise = reroll({ sendChatMain, closeMenu: vi.fn() })
+
+    expect(commandSpies.dispatchTruncateMessagesScoped).toHaveBeenCalledTimes(1)
+    expect(sendChatMain).not.toHaveBeenCalled()
+
+    truncate.resolve({
+      status: 'ok',
+      revision: 11,
+      event: { type: 'message.truncated', revision: 11, resource: 'message' },
+    })
+    await rerollPromise
+
+    expect(sendChatMain).toHaveBeenCalledTimes(1)
+    expect(sendChatMain).toHaveBeenCalledWith(false, 'g3')
+  })
+
+  it('rerolling past the newest candidate skips generation when truncate persistence fails', async () => {
+    seedThreeCandidates()
+    commandSpies.dispatchTruncateMessagesScoped.mockResolvedValueOnce({ status: 'error', error: 'truncate failed' })
+    const sendChatMain = vi.fn(async () => {})
+
+    await reroll({ sendChatMain, closeMenu: vi.fn() })
+
+    expect(commandSpies.dispatchTruncateMessagesScoped).toHaveBeenCalledTimes(1)
+    expect(sendChatMain).not.toHaveBeenCalled()
   })
 
   it('selectRerollCandidate jumps directly to a saved candidate', async () => {
