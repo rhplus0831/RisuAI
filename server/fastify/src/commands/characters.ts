@@ -82,6 +82,7 @@ export function createCharacterRecord(input: unknown, options: { assetDb?: Datab
   const character = readJsonObject(input, 'character') as CharacterRecord
   character.chaId = readCharacterId(character.chaId, 'character.chaId')
   validateCharacterRecord(character, 'character', options)
+  validateCharacterCreateRecord(character, 'character')
   return character
 }
 
@@ -362,6 +363,16 @@ function validateCharacterRecord(record: JsonRecord, label: string, options: { a
   }
   if (options.assetDb) {
     validateCharacterAssetRefs(options.assetDb, record, label)
+  }
+}
+
+function validateCharacterCreateRecord(record: JsonRecord, label: string): void {
+  if (!Object.prototype.hasOwnProperty.call(record, 'chats')) return
+  if (!Array.isArray(record.chats)) {
+    throw new ValidationError(`${label}.chats must be an array when provided`)
+  }
+  if (record.chats.length > 0) {
+    throw new ValidationError(`${label}.chats must be empty; create chats with chat commands`)
   }
 }
 

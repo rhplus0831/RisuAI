@@ -3689,6 +3689,50 @@ describe('Phase 9-3a character commands', () => {
     expect(reorder.statusCode).toBe(400)
     expect(reorder.json().error).toBe('Duplicate character id in characterOrder: char-a')
 
+    const embeddedChatCreate = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/characters',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        character: {
+          chaId: 'char-c',
+          name: 'C',
+          chats: [
+            {
+              id: 'chat-c',
+              name: 'C chat',
+              message: [{ chatId: 'msg-c', role: 'user', data: 'embedded transcript' }],
+            },
+          ],
+        },
+      },
+    })
+    expect(embeddedChatCreate.statusCode).toBe(400)
+    expect(embeddedChatCreate.json().error).toBe('character.chats must be empty; create chats with chat commands')
+
+    const embeddedHypaCreate = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/characters/create-and-select',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        character: {
+          chaId: 'char-c',
+          name: 'C',
+          chats: [
+            {
+              id: 'chat-c',
+              name: 'C chat',
+              hypaV3Data: { version: 3, summaries: [] },
+            },
+          ],
+        },
+      },
+    })
+    expect(embeddedHypaCreate.statusCode).toBe(400)
+    expect(embeddedHypaCreate.json().error).toBe('character.chats must be empty; create chats with chat commands')
+
     const bootstrap = await harness.app.inject({
       method: 'GET',
       url: '/api/v1/bootstrap',
