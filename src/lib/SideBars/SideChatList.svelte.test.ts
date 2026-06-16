@@ -308,6 +308,7 @@ vi.mock('./Toggles.svelte', async () => {
 
 import SideChatListHarness from './SideChatList.testHarness.svelte'
 import { DBState, selectedCharID } from 'src/ts/stores.svelte'
+import { setServerProjectionWriteGuardEnabled } from 'src/ts/server/projectionWriteGuard.svelte'
 import type { Chat, character } from 'src/ts/storage/database.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
@@ -486,6 +487,7 @@ describe('SideChatList DOM contract harness', () => {
   })
 
   afterEach(() => {
+    setServerProjectionWriteGuardEnabled(false)
     if (component) {
       unmount(component)
       component = undefined
@@ -582,9 +584,10 @@ describe('SideChatList DOM contract harness', () => {
     expectRowSelected('chat-root-b', false)
   })
 
-  it('dispatches chat and folder rename commands with stable ids from edit mode', async () => {
+  it('optimistically updates server-backed chat and folder names before dispatching edit commands', async () => {
     seedSidebarDatabase()
     sidebarMocks.setServerCommandsEnabled(true)
+    setServerProjectionWriteGuardEnabled(true)
 
     component = mount(SideChatListHarness, { target })
     await tick()
@@ -598,6 +601,10 @@ describe('SideChatList DOM contract harness', () => {
     await setTextInputValue(chatNameInput, 'Renamed Foldered Chat')
     await setTextInputValue(folderNameInput, 'Renamed Folder')
 
+    expect(selectedCharacter().chats[1].name).toBe('Renamed Foldered Chat')
+    expect(selectedCharacter().chatFolders[0].name).toBe('Renamed Folder')
+    expect(chatNameInput.value).toBe('Renamed Foldered Chat')
+    expect(folderNameInput.value).toBe('Renamed Folder')
     expect(sidebarMocks.dispatchUpdateChat).toHaveBeenCalledWith(
       'chat-foldered',
       { name: 'Renamed Foldered Chat' },
@@ -608,6 +615,26 @@ describe('SideChatList DOM contract harness', () => {
       { name: 'Renamed Folder' },
       expect.any(Object),
     )
+    expect(sidebarMocks.dispatchUpdateChat.mock.calls[0][2]).toMatchObject({
+      selectedCharID: 0,
+      characters: [
+        {
+          chaId: 'char-a',
+          chats: [{ name: 'Root Chat A' }, { name: 'Foldered Chat' }, { name: 'Root Chat B' }],
+          chatFolders: [{ name: 'Pinned Folder' }],
+        },
+      ],
+    })
+    expect(sidebarMocks.dispatchUpdateChatFolder.mock.calls[0][2]).toMatchObject({
+      selectedCharID: 0,
+      characters: [
+        {
+          chaId: 'char-a',
+          chats: [{ name: 'Root Chat A' }, { name: 'Renamed Foldered Chat' }, { name: 'Root Chat B' }],
+          chatFolders: [{ name: 'Pinned Folder' }],
+        },
+      ],
+    })
   })
 
   it('dispatches folder folded toggles with the folder stable id', async () => {

@@ -51,6 +51,7 @@
   } from 'src/ts/chatCommands'
   import { canUseServerCommands, reorderChatFoldersCommand, reorderChatsCommand } from 'src/ts/server/commands'
   import { watchServerBackedChatMetadata } from 'src/ts/server/chatBridge.svelte'
+  import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
   import { groupChatsByFolderId } from './chatFolderGrouping'
   import { characterRoutePath, currentRoute, navigate } from 'src/ts/router'
 
@@ -147,9 +148,38 @@
     chara.chats = chara.chats
   }
 
+  function currentSidebarCharacter(): character | undefined {
+    return (
+      DBState.db.characters?.find((candidate) => Boolean(chara.chaId) && candidate.chaId === chara.chaId) ??
+      DBState.db.characters?.[$selectedCharID]
+    )
+  }
+
+  function applyOptimisticChatName(chatId: string, name: string): void {
+    withTrustedServerProjectionWrite(() => {
+      const liveChat = currentSidebarCharacter()?.chats?.find((candidate) => candidate.id === chatId)
+      if (liveChat) {
+        liveChat.name = name
+      }
+    })
+  }
+
+  function applyOptimisticFolderName(folderId: string, name: string): void {
+    withTrustedServerProjectionWrite(() => {
+      const liveFolder = currentSidebarCharacter()?.chatFolders?.find((candidate) => candidate.id === folderId)
+      if (liveFolder) {
+        liveFolder.name = name
+      }
+    })
+  }
+
   function updateChatName(chat: Chat, name: string): void {
     if (canUseServerCommands()) {
-      dispatchUpdateChat(chat.id, { name }, currentChatStateSnapshot())
+      const chatId = chat.id
+      if (!chatId) return
+      const previous = currentChatStateSnapshot()
+      applyOptimisticChatName(chatId, name)
+      dispatchUpdateChat(chatId, { name }, previous)
       return
     }
     chat.name = name
@@ -157,7 +187,11 @@
 
   function updateFolderName(folder: ChatFolder, name: string): void {
     if (canUseServerCommands()) {
-      dispatchUpdateChatFolder(folder.id, { name }, currentChatStateSnapshot())
+      const folderId = folder.id
+      if (!folderId) return
+      const previous = currentChatStateSnapshot()
+      applyOptimisticFolderName(folderId, name)
+      dispatchUpdateChatFolder(folderId, { name }, previous)
       return
     }
     folder.name = name
