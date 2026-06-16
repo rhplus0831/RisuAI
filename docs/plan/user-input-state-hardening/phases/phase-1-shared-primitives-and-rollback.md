@@ -1,6 +1,6 @@
 # Phase 1: Shared Primitives & Rollback
 
-Status: pending.
+Status: complete.
 
 Goal: add reusable stale-state primitives and convert the common broad rollback
 paths that later phases depend on.
@@ -54,10 +54,28 @@ paths that later phases depend on.
 - The remaining broad rollback families are listed in `../status.md` with the
   phase that owns each one.
 
+## Closeout
+
+Phase 1 is complete. Shared helpers exist in
+`src/ts/server/staleStateGuards.ts` with focused coverage in
+`src/ts/server/staleStateGuards.test.ts`, and settings, character, and chat row
+metadata rollback adopters have landed. The chat row metadata adapter gives the
+chat/message helper family a phased path toward narrow rollback without
+expanding Phase 1 into message-body freshness.
+
+Explicit deferrals:
+
+- `restoreChatScopedState` remains Phase 4 work.
+- Message update/delete/truncate/replace freshness remains Phase 4 work.
+- Broader collection rollback remains Phase 5 work.
+
+No known code gap blocks Phase 1 completion. Phase 2 dirty draft projection is
+the next implementation phase.
+
 ## Validation
 
 ```bash
-pnpm exec vitest run src/ts/server/commands.test.ts src/ts/chatCommands.test.ts
+pnpm exec vitest run src/ts/server/staleStateGuards.test.ts src/ts/server/commands.test.ts src/ts/chatCommands.test.ts
 pnpm exec vitest run --config server/fastify/vitest.config.ts \
   server/fastify/__tests__/commands.test.ts \
   server/fastify/__tests__/commandSingleRowPaths.test.ts

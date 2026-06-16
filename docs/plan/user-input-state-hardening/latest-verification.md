@@ -7,27 +7,27 @@ hardening workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 1 chat metadata rollback adoption of
-  `applyAttemptedFieldRollback` in `src/ts/chatCommands.ts`, plus focused chat
-  metadata rollback coverage. Earlier settings and character adopters remain
-  covered by their focused tests.
+- Runtime/code change under test: Phase 1 closeout. Shared helpers exist with
+  focused coverage, and settings, character, and chat row metadata rollback
+  adopters have landed.
 - Commands:
 
 ```bash
-pnpm exec vitest run src/ts/server/staleStateGuards.test.ts src/ts/chatCommands.test.ts
-pnpm exec prettier --write src/ts/chatCommands.ts src/ts/chatCommands.test.ts docs/plan/user-input-state-hardening/status.md docs/plan/user-input-state-hardening/latest-verification.md
+pnpm exec vitest run src/ts/server/staleStateGuards.test.ts src/ts/server/commands.test.ts src/ts/chatCommands.test.ts
+pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/commands.test.ts server/fastify/__tests__/commandSingleRowPaths.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 ```
 
-- Result: passed on 2026-06-17. The focused Vitest set passed 2 files and 55
-  tests; Prettier completed for the touched implementation, test, and status
-  files; and both TypeScript checks passed.
-- Residual gaps: `restoreChatScopedState` and message update/delete/replace
-  rollback remain for Phase 4 message-target freshness. Broader collection
-  rollback remains Phase 5. Future adopters must pass cloned JSON-safe
-  `previous` and `attempted` values; mutable live references would weaken
-  stale-skip guarantees.
+- Result: passed on 2026-06-17. The client focused Vitest set passed 3 files and
+  94 tests. The Fastify command Vitest set passed 2 files and 138 tests. Both
+  TypeScript checks passed.
+- Residual gaps: `restoreChatScopedState` and message
+  update/delete/truncate/replace freshness are explicitly deferred to Phase 4.
+  Broader collection rollback remains Phase 5. No code gap blocks Phase 1
+  completion. Future adopters must pass cloned JSON-safe `previous` and
+  `attempted` values; mutable live references would weaken stale-skip
+  guarantees.
 
 ## Required Closeout Proof
 

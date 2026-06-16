@@ -3,22 +3,24 @@
 Date: 2026-06-17
 
 This workstream is active. Phase 0 is complete as a docs/contract baseline, and
-the first Phase 1 shared-helper slice has landed. The plan consolidates the
-input persistence inventory under `../../user-input-layer-audit/` and
-stale-state risk review under `../../user-stale-state-audit/`.
+Phase 1 is complete as the shared-helper and first rollback-adopter slice. The
+plan consolidates the input persistence inventory under
+`../../user-input-layer-audit/` and stale-state risk review under
+`../../user-stale-state-audit/`.
 
 ## Snapshot
 
-- Plan state: active, Phase 0 contract decisions complete, Phase 1 helper
-  primitives implemented; Phase 1 settings, character, and chat row metadata
-  rollback adoption landed, with message-target freshness still open.
+- Plan state: active, Phase 0 contract decisions complete, Phase 1 complete, and
+  Phase 2 dirty draft projection next. Phase 1 settings, character, and chat row
+  metadata rollback adoption landed; message-target freshness is explicitly
+  deferred to Phase 4.
 - Code changes: `src/ts/server/staleStateGuards.ts` and
   `src/ts/server/staleStateGuards.test.ts` add shared stale-state primitives
   and focused helper coverage. `src/ts/server/settingsBridge.svelte.ts`,
   `src/ts/server/characterBridge.svelte.ts`, `src/ts/characterCommands.ts`,
   and `src/ts/chatCommands.ts` now use `applyAttemptedFieldRollback` for
   attempted settings/profile/row/chat metadata rollback.
-- Verification state: latest chat metadata adoption validation is recorded in
+- Verification state: Phase 1 closeout validation is recorded in
   `latest-verification.md`.
 - Highest issue density:
   - Character editor: 52 issue rows, mostly dirty projection and unguarded
@@ -41,12 +43,13 @@ stale-state risk review under `../../user-stale-state-audit/`.
 
 - [Phase 0](phases/phase-0-contract-and-baseline.md): complete. Helper
   contracts, source-row corrections, and first regression fixtures are locked.
-- [Phase 1](phases/phase-1-shared-primitives-and-rollback.md): in progress.
-  Shared helper primitives are implemented; settings, character, and chat row
-  metadata rollback adopters have landed. `restoreChatScopedState` and message
-  update/delete/replace rollback remain for Phase 4 message-target freshness.
-  Collection rollback domains stay owned by Phase 5.
-- [Phase 2](phases/phase-2-dirty-draft-projection.md): pending. Dirty draft
+- [Phase 1](phases/phase-1-shared-primitives-and-rollback.md): complete. Shared
+  helper primitives exist with focused coverage; settings, character, and chat
+  row metadata rollback adopters have landed. `restoreChatScopedState` and
+  message update/delete/truncate/replace freshness are explicitly deferred to
+  Phase 4. Collection rollback domains stay owned by Phase 5. No known code gap
+  blocks Phase 1 completion.
+- [Phase 2](phases/phase-2-dirty-draft-projection.md): next. Dirty draft
   projection merge behavior.
 - [Phase 3](phases/phase-3-upload-import-fetch-callbacks.md): pending. Upload,
   file, import, decode, and remote-fetch callback tokens.
@@ -72,12 +75,12 @@ stale-state risk review under `../../user-stale-state-audit/`.
   `isLatestOperation`, `applyAttemptedFieldRollback`,
   `applyAttemptedKeyedListRollback`, `mergeProjectionIntoDirtyDraft`, and
   `createDestructiveRefreshToken`.
-- `src/ts/chatCommands.ts` now uses `applyAttemptedFieldRollback` for attempted
-  chat row metadata rollback in `restoreChatRowMetadata` without changing the
-  non-attempted broad metadata restore path.
+- Settings, character, and chat row metadata rollback adopters now use
+  `applyAttemptedFieldRollback` for attempted rollback without broadening Phase
+  1 into message-body freshness or collection-domain rollback.
 - Remaining broad rollback families to track by phase:
-  - Phase 4: `restoreChatScopedState` and message update/delete/replace
-    rollback need message-target freshness.
+  - Phase 4: `restoreChatScopedState` and message
+    update/delete/truncate/replace freshness.
   - Phase 5: presets, personas, loadouts, lorebooks, scripts, modules,
     plugins, sidebar chat/folder lists, and character list ordering.
   - Phase 6: full restore/import/resync, memory jobs, route hydration, and

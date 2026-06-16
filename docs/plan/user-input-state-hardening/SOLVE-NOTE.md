@@ -35,93 +35,50 @@ pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 ```
 
-## Explorer Result Summary
+## Current State
 
-The explorer confirmed that Phase 0 is still open and implementation has not
-formally started in this workstream. Some existing code already contains related
-narrow rollback patterns; use those as baseline examples, not as proof that the
-hardening work is complete.
+Phase 0 and Phase 1 are complete. Phase 0 locked the contract and baseline
+documentation. Phase 1 added shared stale-state helpers with focused coverage and
+landed settings, character, and chat row metadata rollback adopters.
 
-Immediate scope:
+Next manager loop:
 
-1. Complete Phase 0 contract and baseline documentation.
-2. Start Phase 1 shared stale-state primitives only after Phase 0 decisions are
-   recorded.
-3. Do not jump directly to upload, chat UI, generation, or collection-domain
-   callbacks until shared helper contracts are in place.
+1. Read `README.md`, `STRUCTURE.md`, `status.md`, `latest-verification.md`, and
+   `phases/phase-2-dirty-draft-projection.md`.
+2. Spawn an explorer agent for Phase 2 dirty draft projection details.
+3. Spawn a worker agent for the Phase 2 implementation.
+4. Spawn a verification agent after the worker completes.
+5. If verification succeeds, run Prettier, run the relevant validation commands,
+   commit, close finished agents, and move to Phase 3.
+6. If verification fails, close the failed verification agent and spawn or reuse
+   a worker agent to fix the reported issues.
 
 Known path correction:
 
 - Phase docs mention `src/ts/process/rerollNavigation.ts`; the current file is
   `src/ts/process/rerollNavigation.svelte.ts`.
 
-## Phase 0 Plan
+## Completed Phase Proof
 
-Finish Phase 0 as a documentation and contract slice.
-
-Update:
-
-- `docs/plan/user-input-state-hardening/phases/phase-0-contract-and-baseline.md`
-- `docs/plan/user-input-state-hardening/status.md`
-- `docs/plan/user-input-state-hardening/latest-verification.md`
-
-Record:
-
-- Helper owner and names:
-  - `src/ts/server/staleStateGuards.ts`
-  - latest-operation token helpers
-  - attempted-value rollback helpers
-  - keyed-list rollback helpers
-  - dirty-draft projection merge helpers
-  - explicit destructive refresh marker/helper
-- Baseline source-row corrections from Phase 0.
-- First P0 fixture targets:
-  - dirty projection
-  - composer/file callback
-  - reroll active-chat guard
-  - character asset upload
-  - generation finalization freshness
-- Existing tests to extend and new focused test names.
-
-Phase 0 validation:
-
-```bash
-pnpm exec prettier --check 'docs/plan/user-input-state-hardening/**/*.md'
-```
-
-## Phase 1 Plan
-
-After Phase 0 lands, add shared primitives and focused tests.
-
-Likely files:
-
-- `src/ts/server/staleStateGuards.ts`
-- `src/ts/server/staleStateGuards.test.ts`
-- `src/ts/server/settingsBridge.svelte.ts`
-- `src/ts/server/characterBridge.svelte.ts`
-- `src/ts/chatCommands.ts`
-- `src/ts/server/commands.test.ts`
-- `src/ts/chatCommands.test.ts`
-
-Implementation sequence:
-
-1. Add pure helpers for latest operation tokens, attempted-field rollback,
-   keyed-list rollback, and dirty-draft merge.
-2. Cover helpers with focused tests before converting domain code.
-3. Refactor settings and character rollback callers to use shared attempted
-   rollback without intentional behavior expansion.
-4. Add a Phase 1 adapter for chat/message rollback so whole-chat restore paths
-   can move toward attempted-value checks.
-5. Record any remaining broad rollback families in `status.md` with the phase
-   that owns them.
-
-Phase 1 validation:
+Phase 1 closeout validation:
 
 ```bash
 pnpm exec vitest run src/ts/server/staleStateGuards.test.ts src/ts/server/commands.test.ts src/ts/chatCommands.test.ts
+pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/commands.test.ts server/fastify/__tests__/commandSingleRowPaths.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 ```
+
+Results: the client focused Vitest set passed 3 files and 94 tests; the Fastify
+command Vitest set passed 2 files and 138 tests; both TypeScript checks passed.
+
+Explicit deferrals:
+
+- `restoreChatScopedState` remains Phase 4 work.
+- Message update/delete/truncate/replace freshness remains Phase 4 work.
+- Broader collection rollback remains Phase 5 work.
+
+No known code gap blocks Phase 1 completion.
 
 ## Later Phase Order
 
