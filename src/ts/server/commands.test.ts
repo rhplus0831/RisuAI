@@ -104,6 +104,8 @@ import {
   upsertModuleLorebookEntryCommand,
   updateTranslatorPresetCommand,
   selectPresetCommand,
+  setCachedServerCommandRevision,
+  setServerCommandSuccessReconciler,
   updatePromptItemCommand,
 } from './commands'
 
@@ -148,6 +150,7 @@ function makeCommandFetch(bodyForUrl: (url: string, init: RequestInit) => unknow
 
 beforeEach(() => {
   clearCachedServerCommandRevision()
+  setServerCommandSuccessReconciler(null)
 })
 
 afterEach(() => {
@@ -208,6 +211,46 @@ describe('server command API adapter', () => {
         },
       },
     ])
+  })
+
+  it('notifies the command success reconciler before resolving an ok command', async () => {
+    const event = { type: 'settings.updated', revision: 3, resource: 'settings', origin: { writerSessionId: 'w1' } }
+    const commandFetch = makeCommandFetch(() => ({ revision: 3, event }))
+    vi.stubGlobal('fetch', commandFetch.fetch)
+    const observed: unknown[] = []
+
+    setServerCommandSuccessReconciler(async (commandEvent) => {
+      observed.push(commandEvent)
+    })
+
+    const result = await patchSettingsGroup({
+      group: 'display',
+      baseRevision: 2,
+      patch: { theme: 'light' },
+    })
+
+    expect(result).toEqual({ status: 'ok', revision: 3, event })
+    expect(observed).toEqual([event])
+  })
+
+  it('notifies the command success reconciler for custom runServerCommand factories', async () => {
+    const event = { type: 'custom.updated', revision: 8, resource: 'asset' }
+    const observed: unknown[] = []
+    setCachedServerCommandRevision(7)
+    setServerCommandSuccessReconciler(async (commandEvent) => {
+      observed.push(commandEvent)
+    })
+
+    const result = await runServerCommand({
+      command: async (baseRevision) => ({
+        status: 'ok' as const,
+        revision: baseRevision + 1,
+        event,
+      }),
+    })
+
+    expect(result).toEqual({ status: 'ok', revision: 8, event })
+    expect(observed).toEqual([event])
   })
 
   it('maps projection-sweep toggles to server-backed settings groups', () => {

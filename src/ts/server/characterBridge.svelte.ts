@@ -240,13 +240,16 @@ function runPendingCharacterPatch(characterId: string, options: ServerCommandTra
   if (commandPatch.timer) clearTimeout(commandPatch.timer)
   pendingPatches.delete(characterId)
 
+  const rollbackSnapshot = {
+    ...commandPatch.previous,
+    selectedCharID: get(selectedCharID),
+    attemptedProfile: sanitizeCharacterPatch(commandPatch.patch),
+  } as CharacterStateSnapshot
+
   dispatchUpdateCharacter(
     commandPatch.characterId,
     commandPatch.patch,
-    {
-      ...commandPatch.previous,
-      selectedCharID: get(selectedCharID),
-    },
+    rollbackSnapshot,
     rollbackServerBackedCharacterProfile,
     options,
   )
@@ -413,6 +416,7 @@ export function rollbackServerBackedCharacterProfile(snapshot: CharacterStateSna
   const profileSnapshot = snapshot as CharacterStateSnapshot & {
     profileCharacterId?: string
     profile?: CharacterSnapshot
+    attemptedProfile?: CharacterSnapshot
   }
 
   suppressRollbackDispatch = true
@@ -423,6 +427,18 @@ export function rollbackServerBackedCharacterProfile(snapshot: CharacterStateSna
           (candidate) => candidate.chaId === profileSnapshot.profileCharacterId,
         )
         if (!character) return
+        if (profileSnapshot.attemptedProfile) {
+          const row = character as unknown as Record<string, unknown>
+          for (const key of Object.keys(profileSnapshot.attemptedProfile)) {
+            if (snapshotJson(row[key]) !== snapshotJson(profileSnapshot.attemptedProfile[key])) continue
+            if (Object.prototype.hasOwnProperty.call(profileSnapshot.profile, key)) {
+              row[key] = cloneJsonValue(profileSnapshot.profile[key])
+            } else {
+              delete row[key]
+            }
+          }
+          return
+        }
         Object.assign(character, cloneJsonValue(profileSnapshot.profile))
       })
     } else {

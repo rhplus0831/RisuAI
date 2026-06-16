@@ -523,15 +523,14 @@ describe('web bootstrap startup source', () => {
     expect(hydrationSpies.hydrateActiveCharacterLorebook).toHaveBeenCalled()
   })
 
-  it('skips its own echoed command events without any refetch', async () => {
+  it('skips already-applied command events without any refetch', async () => {
     await loadWebInitialDatabase()
     expect(peekCachedServerCommandRevision()).toBe(5)
 
-    // The writer just issued a command, which cached its post-command revision.
+    // The revision is already covered by a prior projection apply.
     setCachedServerCommandRevision(6)
 
     const subscription = serverEventsState.subscriptions[0]
-    // The echoed event carries the revision we already applied.
     subscription.onCommandEvent({ type: 'settings.updated', revision: 6, resource: 'settings' })
     await flushServerProjectionSync()
 
@@ -540,22 +539,30 @@ describe('web bootstrap startup source', () => {
     expect(peekCachedServerCommandRevision()).toBe(6)
   })
 
-  it('skips own command events by writer origin before the command response advances revision', async () => {
+  it('reconciles own command events by writer origin before the command response advances revision', async () => {
     await loadWebInitialDatabase()
     expect(peekCachedServerCommandRevision()).toBe(5)
     const writerSessionId = getActiveWriterSessionId()
+    serverProjectionState.fetchResource.mockImplementation(async () => ({
+      status: 'ok' as const,
+      revision: 6,
+      mode: 'fields' as const,
+      fields: {},
+    }))
 
     const subscription = serverEventsState.subscriptions[0]
     subscription.onCommandEvent({
-      type: 'character.selected',
+      type: 'asset.created',
       revision: 6,
-      resource: 'characterSelection',
-      id: 'char-a',
+      resource: 'asset',
       origin: { writerSessionId },
     })
     await flushServerProjectionSync()
 
-    expect(serverProjectionState.fetchResource).not.toHaveBeenCalled()
+    expect(serverProjectionState.fetchResource).toHaveBeenCalledWith('asset', {
+      id: undefined,
+      parentId: undefined,
+    })
     expect(serverBootstrapState.fetchReadOnly).not.toHaveBeenCalled()
     expect(peekCachedServerCommandRevision()).toBe(6)
   })
@@ -826,6 +833,50 @@ describe('web bootstrap startup source', () => {
     // The open-chat generation reattach is re-armed.
     expect(activeGenerationReattachSpies.triggerOpenChatGenerationReattach).toHaveBeenCalledTimes(1)
     expect(hydrationSpies.resetChatHydration).not.toHaveBeenCalled()
+    expect(serverBootstrapState.fetchReadOnly).not.toHaveBeenCalled()
+  })
+
+  it('applies an ordinary chat-messages projection to the changed chat', async () => {
+    await loadWebInitialDatabase()
+    hydrationSpies.applyServerChatMessagesProjection.mockClear()
+    activeGenerationReattachSpies.triggerOpenChatGenerationReattach.mockClear()
+
+    const messageWindow = [{ role: 'char', data: 'edited', chatId: 'msg-2' }]
+    serverProjectionState.fetchResource.mockImplementation(async () => ({
+      status: 'ok' as const,
+      revision: 6,
+      mode: 'chat-messages' as const,
+      chatId: 'chat-a',
+      message: messageWindow,
+      messageStart: 1,
+      messageTotal: 2,
+      alternates: [],
+    }))
+
+    const subscription = serverEventsState.subscriptions[0]
+    subscription.onCommandEvent({
+      type: 'message.updated',
+      revision: 6,
+      resource: 'message',
+      id: 'msg-2',
+      parentId: 'chat-a',
+    })
+
+    await vi.waitFor(() => {
+      expect(peekCachedServerCommandRevision()).toBe(6)
+    })
+    expect(serverProjectionState.fetchResource).toHaveBeenCalledWith('message', {
+      id: 'msg-2',
+      parentId: 'chat-a',
+    })
+    expect(hydrationSpies.applyServerChatMessagesProjection).toHaveBeenCalledWith(
+      'chat-a',
+      messageWindow,
+      undefined,
+      [],
+      { start: 1, total: 2 },
+    )
+    expect(activeGenerationReattachSpies.triggerOpenChatGenerationReattach).toHaveBeenCalledTimes(1)
     expect(serverBootstrapState.fetchReadOnly).not.toHaveBeenCalled()
   })
 

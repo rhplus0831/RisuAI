@@ -37,7 +37,7 @@ export type ServerProjectionResourceResult =
   | {
       status: 'ok'
       revision: number
-      mode: 'generation-chat'
+      mode: 'generation-chat' | 'chat-messages'
       chatId: string
       message: unknown[]
       hypaV3Data?: unknown
@@ -193,12 +193,12 @@ export async function fetchServerProjectionResource(
     }
   }
 
-  if (record.mode === 'generation-chat') {
+  if (record.mode === 'generation-chat' || record.mode === 'chat-messages') {
     if (typeof record.chatId !== 'string' || record.chatId.trim() === '') {
-      return { status: 'error', error: 'Invalid generation-chat response' }
+      return { status: 'error', error: `Invalid ${record.mode} response` }
     }
     if (!Array.isArray(record.message)) {
-      return { status: 'error', error: 'Invalid generation-chat response' }
+      return { status: 'error', error: `Invalid ${record.mode} response` }
     }
     if (
       (record.messageStart !== undefined || record.messageTotal !== undefined) &&
@@ -208,12 +208,12 @@ export async function fetchServerProjectionResource(
         (record.messageTotal as number) < 0 ||
         (record.messageStart as number) > (record.messageTotal as number))
     ) {
-      return { status: 'error', error: 'Invalid generation-chat range' }
+      return { status: 'error', error: `Invalid ${record.mode} range` }
     }
     return {
       status: 'ok',
       revision: revision as number,
-      mode: 'generation-chat',
+      mode: record.mode,
       chatId: record.chatId,
       message: record.message as unknown[],
       hypaV3Data: record.hypaV3Data,

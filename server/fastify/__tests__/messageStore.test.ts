@@ -21,9 +21,12 @@ import {
   getChatMessages,
   getChatMessagesRange,
   getChatMessageDiffInstrumentation,
+  resolveActiveMessageLocationById,
   replaceChatMessages,
   resetChatMessageDiffInstrumentation,
   setChatHypaV3,
+  updateActiveMessageById,
+  deleteActiveMessageById,
 } from '../src/messageStore.js'
 import {
   ensureDbJsonImported,
@@ -117,6 +120,18 @@ describe('messageStore CRUD', () => {
     replaceChatMessages(db, 'chat-a', [])
     expect(getChatMessages(db, 'chat-a')).toEqual([])
     expect(getAllChatIdsWithMessages(db)).toEqual([])
+  })
+
+  it('treats duplicate active message ids as ambiguous instead of mutating an arbitrary row', () => {
+    const db = makeDb(makeDataDir())
+    replaceChatMessages(db, 'chat-a', [msg('dup', 'user', 'from a')])
+    replaceChatMessages(db, 'chat-b', [msg('dup', 'char', 'from b')])
+
+    expect(resolveActiveMessageLocationById(db, 'dup')).toEqual({ ok: false, reason: 'ambiguous' })
+    expect(updateActiveMessageById(db, 'dup', { data: 'edited' })).toEqual({ ok: false, reason: 'ambiguous' })
+    expect(deleteActiveMessageById(db, 'dup')).toEqual({ ok: false, reason: 'ambiguous' })
+    expect(getChatMessages(db, 'chat-a')).toEqual([msg('dup', 'user', 'from a')])
+    expect(getChatMessages(db, 'chat-b')).toEqual([msg('dup', 'char', 'from b')])
   })
 })
 

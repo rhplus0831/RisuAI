@@ -1113,6 +1113,7 @@ export interface ServerCommandTransportOptions {
 }
 
 let cachedServerCommandRevision: number | null = null
+let serverCommandSuccessReconciler: ((event: CommandEvent) => Promise<void> | void) | null = null
 
 export function canUseServerCommands(): boolean {
   return true
@@ -1130,6 +1131,12 @@ export function setCachedServerCommandRevision(revision: number): void {
 
 export function clearCachedServerCommandRevision(): void {
   cachedServerCommandRevision = null
+}
+
+export function setServerCommandSuccessReconciler(
+  reconciler: ((event: CommandEvent) => Promise<void> | void) | null,
+): void {
+  serverCommandSuccessReconciler = reconciler
 }
 
 /**
@@ -2847,6 +2854,8 @@ export async function runServerCommand<T extends Record<string, unknown> = {}>(
 
   if (result.status !== 'ok') {
     input.rollback?.()
+  } else {
+    await notifyServerCommandSuccessReconciler(result.event)
   }
   return result
 }
@@ -2920,9 +2929,45 @@ async function requestCommandJson<T extends Record<string, unknown> = {}>(
     if (Number.isInteger(revision) && (revision as number) >= 0) {
       setCachedServerCommandRevision(revision as number)
     }
+    const event = readCommandEvent(body)
+    if (event) {
+      await notifyServerCommandSuccessReconciler(event)
+    }
   }
 
   return { status: 'ok', ...(body as { revision: number; event: CommandEvent } & T) }
+}
+
+async function notifyServerCommandSuccessReconciler(event: CommandEvent): Promise<void> {
+  try {
+    await serverCommandSuccessReconciler?.(event)
+  } catch (error) {
+    console.warn('Server command projection reconcile failed', error)
+  }
+}
+
+function readCommandEvent(body: unknown): CommandEvent | null {
+  if (!body || typeof body !== 'object') return null
+  const event = (body as { event?: unknown }).event
+  if (!event || typeof event !== 'object') return null
+  const record = event as Record<string, unknown>
+  if (typeof record.type !== 'string') return null
+  if (!Number.isInteger(record.revision) || (record.revision as number) < 0) return null
+  if (typeof record.resource !== 'string') return null
+  const parsed: CommandEvent = {
+    type: record.type,
+    revision: record.revision as number,
+    resource: record.resource,
+  }
+  if (typeof record.id === 'string') parsed.id = record.id
+  if (typeof record.parentId === 'string') parsed.parentId = record.parentId
+  if (record.origin && typeof record.origin === 'object') {
+    const writerSessionId = (record.origin as { writerSessionId?: unknown }).writerSessionId
+    if (typeof writerSessionId === 'string') {
+      parsed.origin = { writerSessionId }
+    }
+  }
+  return parsed
 }
 
 function readCurrentRevision(body: unknown): number | null {

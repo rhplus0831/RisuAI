@@ -27,6 +27,8 @@ import {
   countChatMessages,
 } from './messageStore.js'
 
+const PLUGIN_CUSTOM_STORAGE_EMPTY_SENTINEL_KEY = '__risu_internal_plugin_custom_storage_empty__'
+
 export const CONTENT_TYPE_EXTENSIONS: Record<string, string> = {
   'application/x-onnx': 'onnx',
   'application/x-risu-inlay-signature+json': 'json',
@@ -219,6 +221,7 @@ function loadCollectionsFromSqlite(db: DatabaseSync, database: Record<string, un
   if (storageRows.length > 0) {
     const storage: Record<string, unknown> = {}
     for (const row of storageRows) {
+      if (isPluginStorageEmptySentinelKey(row.key)) continue
       storage[row.key] = JSON.parse(row.value_json)
     }
     merged.pluginCustomStorage = storage
@@ -237,8 +240,13 @@ export function replaceAllCollectionsInTable(db: DatabaseSync, database: unknown
   db.exec('DELETE FROM plugin_custom_storage')
   const storage = database.pluginCustomStorage
   if (isRecord(storage)) {
+    const entries = Object.entries(storage)
+    if (entries.length === 0) {
+      insertPluginStorageEmptySentinel(db)
+      return
+    }
     const stmt = db.prepare('INSERT INTO plugin_custom_storage (key, value_json) VALUES (?, ?)')
-    for (const [key, value] of Object.entries(storage)) {
+    for (const [key, value] of entries) {
       stmt.run(key, JSON.stringify(value ?? null))
     }
   }
@@ -531,7 +539,13 @@ export function writeSingleChatRow(db: DatabaseSync, chatId: string, chat: JsonR
   const { message: _msg, hypaV3Data: _hypa, ...chatClean } = chat
   repairStoredChatGenerationSettings(chatClean)
   recordTableWrite('chats')
-  db.prepare('UPDATE chats SET data_json = ? WHERE id = ?').run(JSON.stringify(chatClean), chatId)
+  const result = db.prepare('UPDATE chats SET data_json = ? WHERE id = ?').run(JSON.stringify(chatClean), chatId)
+  if (Number(result.changes) === 0) {
+    const row = db.prepare('SELECT 1 AS found FROM chats WHERE id = ? LIMIT 1').get(chatId) as
+      | { found: number }
+      | undefined
+    if (!row) throw new EntityNotFoundError(`Chat row not found: ${chatId}`)
+  }
 }
 
 /** Delete one chat row from the `chats` table (scoped by its parent character).
@@ -832,6 +846,7 @@ export function writePromptTemplateRow(db: DatabaseSync, position: number, value
 /** Single-key upsert on `plugin_custom_storage`. */
 export function writePluginStorageKey(db: DatabaseSync, key: string, value: unknown): void {
   recordTableWrite('plugin_custom_storage')
+  db.prepare('DELETE FROM plugin_custom_storage WHERE key = ?').run(PLUGIN_CUSTOM_STORAGE_EMPTY_SENTINEL_KEY)
   db.prepare(
     'INSERT INTO plugin_custom_storage (key, value_json) VALUES (?, ?) ' +
       'ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json',
@@ -842,6 +857,7 @@ export function writePluginStorageKey(db: DatabaseSync, key: string, value: unkn
 export function deletePluginStorageKey(db: DatabaseSync, key: string): void {
   recordTableWrite('plugin_custom_storage')
   db.prepare('DELETE FROM plugin_custom_storage WHERE key = ?').run(key)
+  if (!hasPluginStorageUserRows(db)) insertPluginStorageEmptySentinel(db)
 }
 
 /** Rewrite the whole `plugin_custom_storage` table (DELETE-all + reinsert) to
@@ -852,11 +868,32 @@ export function replacePluginStorage(db: DatabaseSync, storage: Record<string, u
   recordTableWrite('plugin_custom_storage')
   db.exec('DELETE FROM plugin_custom_storage')
   const keys = Object.keys(storage)
-  if (keys.length === 0) return
+  if (keys.length === 0) {
+    insertPluginStorageEmptySentinel(db)
+    return
+  }
   const stmt = db.prepare('INSERT INTO plugin_custom_storage (key, value_json) VALUES (?, ?)')
   for (const key of keys) {
     stmt.run(key, JSON.stringify(storage[key] ?? null))
   }
+}
+
+function isPluginStorageEmptySentinelKey(key: string): boolean {
+  return key === PLUGIN_CUSTOM_STORAGE_EMPTY_SENTINEL_KEY
+}
+
+function hasPluginStorageUserRows(db: DatabaseSync): boolean {
+  const row = db
+    .prepare('SELECT 1 AS found FROM plugin_custom_storage WHERE key != ? LIMIT 1')
+    .get(PLUGIN_CUSTOM_STORAGE_EMPTY_SENTINEL_KEY) as { found: number } | undefined
+  return !!row
+}
+
+function insertPluginStorageEmptySentinel(db: DatabaseSync): void {
+  db.prepare('INSERT OR IGNORE INTO plugin_custom_storage (key, value_json) VALUES (?, ?)').run(
+    PLUGIN_CUSTOM_STORAGE_EMPTY_SENTINEL_KEY,
+    'null',
+  )
 }
 
 export function createAssetMetadataTable(db: DatabaseSync): void {
@@ -1178,6 +1215,7 @@ function loadPluginCustomStorageFieldFromSqlite(db: DatabaseSync): Record<string
   if (rows.length === 0) return null
   const storage: Record<string, unknown> = {}
   for (const row of rows) {
+    if (isPluginStorageEmptySentinelKey(row.key)) continue
     storage[row.key] = JSON.parse(row.value_json)
   }
   return storage

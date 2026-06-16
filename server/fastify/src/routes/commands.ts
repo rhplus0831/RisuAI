@@ -232,9 +232,9 @@ import {
   deleteActiveMessageById,
   deleteChatHypaV3,
   deleteChatMessages,
-  getActiveMessageLocationById,
   getChatMessages,
   replaceActiveChatMessages,
+  resolveActiveMessageLocationById,
   truncateActiveChatMessages,
   updateActiveMessageById,
   writeGenerationChatMessage,
@@ -4240,13 +4240,20 @@ export function registerCommandRoutes(
         chatScopedRead: { messageId },
         mutate(database, targetDb) {
           const characters = normalizeAllCharacterChats(database)
-          const location = getActiveMessageLocationById(targetDb, messageId)
-          if (!location) {
+          const resolved = resolveActiveMessageLocationById(targetDb, messageId)
+          if (!resolved.ok) {
+            if (resolved.reason === 'ambiguous') {
+              throw new ValidationError(`Ambiguous message id: ${messageId}`)
+            }
             throw new EntityNotFoundError(`Message not found: ${messageId}`)
           }
+          const { location } = resolved
           requireChatLocation(characters, location.chatId)
           const updated = updateActiveMessageById(targetDb, messageId, patch)
           if (!updated.ok) {
+            if (updated.reason === 'ambiguous') {
+              throw new ValidationError(`Ambiguous message id: ${messageId}`)
+            }
             throw new EntityNotFoundError(`Message not found: ${messageId}`)
           }
           return {
@@ -4287,13 +4294,20 @@ export function registerCommandRoutes(
         chatScopedRead: { messageId },
         mutate(database, targetDb) {
           const characters = normalizeAllCharacterChats(database)
-          const location = getActiveMessageLocationById(targetDb, messageId)
-          if (!location) {
+          const resolved = resolveActiveMessageLocationById(targetDb, messageId)
+          if (!resolved.ok) {
+            if (resolved.reason === 'ambiguous') {
+              throw new ValidationError(`Ambiguous message id: ${messageId}`)
+            }
             throw new EntityNotFoundError(`Message not found: ${messageId}`)
           }
+          const { location } = resolved
           requireChatLocation(characters, location.chatId)
           const deleted = deleteActiveMessageById(targetDb, messageId)
           if (!deleted.ok) {
+            if (deleted.reason === 'ambiguous') {
+              throw new ValidationError(`Ambiguous message id: ${messageId}`)
+            }
             throw new EntityNotFoundError(`Message not found: ${messageId}`)
           }
           return {

@@ -161,10 +161,33 @@ function readPluginStorage(): Record<string, unknown> {
       key: string
       value_json: string
     }>
-    return Object.fromEntries(rows.map((r) => [r.key, JSON.parse(r.value_json)]))
+    return Object.fromEntries(
+      rows
+        .filter((r) => r.key !== '__risu_internal_plugin_custom_storage_empty__')
+        .map((r) => [r.key, JSON.parse(r.value_json)]),
+    )
   } finally {
     db.close()
   }
+}
+
+function mutateRawDb(mutator: (db: DatabaseSync) => void): void {
+  const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+  try {
+    mutator(db)
+  } finally {
+    db.close()
+  }
+}
+
+async function fetchBootstrapDatabase(): Promise<Record<string, unknown>> {
+  const res = await harness.app.inject({
+    method: 'GET',
+    url: '/api/v1/bootstrap',
+    headers: { 'risu-auth': assertion },
+  })
+  expect(res.statusCode, JSON.stringify(res.json())).toBe(200)
+  return res.json().database as Record<string, unknown>
 }
 
 /** Assert no character or chat row was rewritten (every rowid stayed put). */
@@ -384,6 +407,27 @@ describe('Phase 2 plugin-storage mutation range', () => {
     expect(readPluginStorage()).toEqual({ keep: { mode: 'baseline' } })
   })
 
+  it('DELETE plugin-storage/:key suppresses legacy embedded fallback when the split table becomes empty', async () => {
+    const revision = await importDatabase({
+      ...seedDatabase(),
+      pluginCustomStorage: { drop: { mode: 'legacy' } },
+    })
+    mutateRawDb((db) => {
+      const settings = readSettings()
+      settings.pluginCustomStorage = { drop: { mode: 'legacy' } }
+      db.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(settings))
+    })
+
+    await runCommand({
+      method: 'DELETE',
+      url: '/api/v1/commands/plugin-storage/drop',
+      payload: { baseRevision: revision },
+    })
+
+    expect(readPluginStorage()).toEqual({})
+    expect((await fetchBootstrapDatabase()).pluginCustomStorage).toEqual({})
+  })
+
   it('POST plugin-storage/bulk applies clear + delete + replace semantics', async () => {
     const revision = await importDatabase(seedDatabase())
     const before = rowidSnapshot()
@@ -404,6 +448,27 @@ describe('Phase 2 plugin-storage mutation range', () => {
     expectNoCharacterOrChatChurn(before)
     // clear=true drops the baseline keys; only the replacement values remain.
     expect(readPluginStorage()).toEqual({ fresh: { mode: 'fresh' }, also: { mode: 'also' } })
+  })
+
+  it('POST plugin-storage/bulk clear suppresses legacy embedded fallback when storage is empty', async () => {
+    const revision = await importDatabase({
+      ...seedDatabase(),
+      pluginCustomStorage: { stale: { mode: 'legacy' } },
+    })
+    mutateRawDb((db) => {
+      const settings = readSettings()
+      settings.pluginCustomStorage = { stale: { mode: 'legacy' } }
+      db.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(settings))
+    })
+
+    await runCommand({
+      method: 'POST',
+      url: '/api/v1/commands/plugin-storage/bulk',
+      payload: { baseRevision: revision, clear: true },
+    })
+
+    expect(readPluginStorage()).toEqual({})
+    expect((await fetchBootstrapDatabase()).pluginCustomStorage).toEqual({})
   })
 
   it('POST plugin-storage/bulk without clear merges over existing keys', async () => {

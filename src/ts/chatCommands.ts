@@ -373,6 +373,7 @@ export interface ChatRowMetadataSnapshot {
   characterId: string | undefined
   chatId: string
   metadata: ChatSnapshot
+  attempted?: ChatSnapshot
 }
 
 type ChatRowMetadataRollback = (snapshot: ChatRowMetadataSnapshot) => void
@@ -384,6 +385,10 @@ export function restoreChatRowMetadata(snapshot: ChatRowMetadataSnapshot): void 
     if (!chat) return
     const row = chat as unknown as Record<string, unknown>
     for (const key of CHAT_PATCH_ALLOWED_KEYS) {
+      if (snapshot.attempted) {
+        if (!(key in snapshot.attempted)) continue
+        if (snapshotJson(row[key]) !== snapshotJson(snapshot.attempted[key])) continue
+      }
       if (key in snapshot.metadata) {
         row[key] = cloneJsonValue(snapshot.metadata[key])
       } else {
@@ -545,6 +550,10 @@ export function dispatchUpdateChatRow(
 ): void {
   const commandPatch = sanitizeChatPatch(patch)
   if (Object.keys(commandPatch).length === 0) return
+  const rollbackSnapshot: ChatRowMetadataSnapshot = {
+    ...rollback,
+    attempted: commandPatch,
+  }
   runChatCommand(
     (baseRevision) =>
       updateChatCommand(
@@ -557,7 +566,7 @@ export function dispatchUpdateChatRow(
         options.signal,
         options.keepalive,
       ),
-    () => rollbackRowMetadata(rollback),
+    () => rollbackRowMetadata(rollbackSnapshot),
     options,
   )
 }

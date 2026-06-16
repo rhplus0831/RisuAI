@@ -139,6 +139,7 @@ export interface CharacterRowSnapshot {
   character: character | undefined
   currentChar?: number
   selectedCharID: number
+  attempted?: CharacterSnapshot
 }
 
 export interface CharacterTrashTimeSnapshot {
@@ -206,7 +207,20 @@ export function restoreCharacterRow(snapshot: CharacterRowSnapshot): void {
     if (snapshot.character && characters) {
       const index = locateCharacterIndex(characters, snapshot.characterId, snapshot.index)
       if (index >= 0) {
-        characters[index] = cloneJsonValue(snapshot.character) as character
+        if (snapshot.attempted) {
+          const current = characters[index] as unknown as Record<string, unknown>
+          const previous = snapshot.character as unknown as Record<string, unknown>
+          for (const key of Object.keys(snapshot.attempted)) {
+            if (snapshotJson(current[key]) !== snapshotJson(snapshot.attempted[key])) continue
+            if (Object.prototype.hasOwnProperty.call(previous, key)) {
+              current[key] = cloneJsonValue(previous[key])
+            } else {
+              delete current[key]
+            }
+          }
+        } else {
+          characters[index] = cloneJsonValue(snapshot.character) as character
+        }
       }
     }
     ;(DBState.db as unknown as { currentChar?: number }).currentChar = snapshot.currentChar
@@ -424,7 +438,9 @@ export function dispatchUpdateCharacterScoped(
   patch: CharacterSnapshot,
   previous: CharacterRowSnapshot,
 ): void {
-  dispatchUpdateCharacterWith(characterId, patch, () => restoreCharacterRow(previous))
+  const attempted = sanitizeCharacterPatch(patch)
+  if (Object.keys(attempted).length === 0) return
+  dispatchUpdateCharacterWith(characterId, attempted, () => restoreCharacterRow({ ...previous, attempted }))
 }
 
 export function dispatchUpdateCharacterTrashTime(
@@ -472,7 +488,11 @@ export function dispatchCompatibleCharacterUpdateScoped(
   nextCharacter: character | undefined,
   previous: CharacterRowSnapshot,
 ): void {
-  dispatchCompatibleCharacterUpdateWith(previousCharacter, nextCharacter, () => restoreCharacterRow(previous))
+  const characterId = previousCharacter?.chaId
+  if (!characterId || !previousCharacter || !nextCharacter) return
+  const attempted = sanitizeCharacterPatch(changedCharacterFields(previousCharacter, nextCharacter))
+  if (Object.keys(attempted).length === 0) return
+  dispatchUpdateCharacterWith(characterId, attempted, () => restoreCharacterRow({ ...previous, attempted }))
 }
 
 // Factory-list form of dispatchCompatibleCharacterUpdate so the V3 plugin API

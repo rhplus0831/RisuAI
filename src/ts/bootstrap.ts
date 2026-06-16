@@ -34,6 +34,7 @@ import {
   initializeServerDatabase,
   peekCachedServerCommandRevision,
   setCachedServerCommandRevision,
+  setServerCommandSuccessReconciler,
   type CommandEvent,
 } from './server/commands'
 import { peekActiveWriterSessionId } from './server/activeWriterSession'
@@ -78,6 +79,9 @@ let serverProjectionSyncChain: Promise<void> = Promise.resolve()
 let serverProjectionEventsDesired = false
 let serverProjectionReconnectTimer: ReturnType<typeof setTimeout> | null = null
 let serverProjectionReconnectAttempt = 0
+const reconciledCommandProjectionRevisions: number[] = []
+const reconciledCommandProjectionRevisionSet = new Set<number>()
+const RECONCILED_COMMAND_PROJECTION_REVISION_LIMIT = 256
 
 function initialSelectedCharFromDatabase(db: Database): number {
   const currentChar = (db as { currentChar?: unknown }).currentChar
@@ -153,6 +157,14 @@ export async function loadWebInitialDatabase() {
   // Seed the surgical-sync baseline: subsequent command events are decided
   // against the revision this client has applied.
   setCachedServerCommandRevision(projection.revision)
+  setServerCommandSuccessReconciler((event) =>
+    enqueueServerProjectionSync(() =>
+      processServerCommandEvent(event, {
+        allowAlreadyKnownRevision: true,
+        markReconciledRevision: true,
+      }),
+    ),
+  )
   setServerProjectionWriteGuardEnabled(true)
   // Surface any in-flight server generations so opening their chat re-attaches
   // to the live stream.
@@ -227,6 +239,9 @@ export function stopServerProjectionEvents() {
   stopBridgePatchLifecycleFlush?.()
   stopBridgePatchLifecycleFlush = null
   stopSelectedCharacterShellHydration()
+  setServerCommandSuccessReconciler(null)
+  reconciledCommandProjectionRevisions.length = 0
+  reconciledCommandProjectionRevisionSet.clear()
   if (serverProjectionReconnectTimer) {
     clearTimeout(serverProjectionReconnectTimer)
     serverProjectionReconnectTimer = null
@@ -326,28 +341,41 @@ function handleServerCommandEvent(event: CommandEvent) {
   enqueueServerProjectionSync(() => processServerCommandEvent(event))
 }
 
-function enqueueServerProjectionSync(task: () => Promise<void>) {
+function enqueueServerProjectionSync(task: () => Promise<void>): Promise<void> {
   serverProjectionSyncChain = serverProjectionSyncChain
     .then(task)
     .catch((error) => console.warn('Server projection sync failed', error))
+  return serverProjectionSyncChain
 }
 
-async function processServerCommandEvent(event: CommandEvent): Promise<void> {
-  if (isOwnCommandEvent(event)) {
-    setCachedServerCommandRevision(event.revision)
+interface ProcessServerCommandEventOptions {
+  allowAlreadyKnownRevision?: boolean
+  markReconciledRevision?: boolean
+}
+
+async function processServerCommandEvent(
+  event: CommandEvent,
+  options: ProcessServerCommandEventOptions = {},
+): Promise<void> {
+  const ownEvent = isOwnCommandEvent(event)
+  if ((ownEvent || options.markReconciledRevision) && reconciledCommandProjectionRevisionSet.has(event.revision)) {
+    advanceCachedServerCommandRevision(event.revision)
     return
   }
   const cached = peekCachedServerCommandRevision()
   if (cached === null) {
     // No baseline yet: reconcile from scratch.
-    await forceServerProjectionResync('no-baseline', { resource: event.resource })
+    const resync = await forceServerProjectionResync('no-baseline', { resource: event.resource })
+    if (resync.status === 'ok' && (ownEvent || options.markReconciledRevision)) {
+      markCommandProjectionRevisionReconciled(event.revision)
+    }
     return
   }
-  if (event.revision <= cached) {
+  if (event.revision <= cached && !ownEvent && !options.allowAlreadyKnownRevision) {
     // Own echo or an event already covered by a prior apply → nothing to do.
     return
   }
-  if (event.revision === cached + 1) {
+  if (event.revision <= cached || event.revision === cached + 1) {
     const result = await fetchServerProjectionResource(event.resource, {
       id: event.resource === 'preset' ? undefined : event.id,
       parentId: event.parentId,
@@ -359,7 +387,7 @@ async function processServerCommandEvent(event: CommandEvent): Promise<void> {
         currentChar: result.currentChar,
         lastInteraction: result.lastInteraction,
       })
-      setCachedServerCommandRevision(event.revision)
+      markAppliedCommandProjectionEvent(event, options)
       return
     }
     if (result.status === 'ok' && result.mode === 'character-lorebook') {
@@ -367,7 +395,7 @@ async function processServerCommandEvent(event: CommandEvent): Promise<void> {
       // character's globalLore instead of re-shipping every character. Works
       // whether or not lorebook stubs are on (the field is set resident).
       applyServerCharacterLorebookProjection(result.characterId, result.globalLore)
-      setCachedServerCommandRevision(event.revision)
+      markAppliedCommandProjectionEvent(event, options)
       return
     }
     if (result.status === 'ok' && result.mode === 'character-row') {
@@ -376,24 +404,25 @@ async function processServerCommandEvent(event: CommandEvent): Promise<void> {
       // already-hydrated chat messages, instead of re-stubbing every character.
       const applied = mergeServerProjectionCharacterRow(result.character)
       if (applied) {
-        setCachedServerCommandRevision(event.revision)
+        markAppliedCommandProjectionEvent(event, options)
         return
       }
       // Unknown character locally → reconcile from scratch.
-      await forceServerProjectionResync('projection-error', { resource: event.resource })
+      const resync = await forceServerProjectionResync('projection-error', { resource: event.resource })
+      if (resync.status === 'ok') markAppliedCommandProjectionEvent(event, options)
       return
     }
-    if (result.status === 'ok' && result.mode === 'generation-chat') {
-      // Foreign server-owned generation: apply just the changed chat's message
-      // tail and re-arm the open-chat reattach, instead of re-stubbing every
-      // character and re-hydrating the open chat.
+    if (result.status === 'ok' && (result.mode === 'generation-chat' || result.mode === 'chat-messages')) {
+      // Server-owned generation and ordinary message commands both change one
+      // chat's messages. Apply just that message window and re-arm the open
+      // chat generation state instead of re-stubbing every character.
       const range =
         typeof result.messageStart === 'number' && typeof result.messageTotal === 'number'
           ? { start: result.messageStart, total: result.messageTotal }
           : undefined
       applyServerChatMessagesProjection(result.chatId, result.message, result.hypaV3Data, result.alternates, range)
       triggerOpenChatGenerationReattach()
-      setCachedServerCommandRevision(event.revision)
+      markAppliedCommandProjectionEvent(event, options)
       return
     }
     if (result.status === 'ok' && result.mode === 'fields') {
@@ -419,23 +448,49 @@ async function processServerCommandEvent(event: CommandEvent): Promise<void> {
       // Advance by exactly one event; the fetch returns the resource as of the
       // server's *current* revision, but later events for other resources must
       // still be processed, so the cursor only moves to this event.
-      setCachedServerCommandRevision(event.revision)
+      markAppliedCommandProjectionEvent(event, options)
       return
     }
     // 'full' mode, error, or unavailable → fall back to a full reconcile.
-    await forceServerProjectionResync(
+    const resync = await forceServerProjectionResync(
       result.status === 'ok' && result.mode === 'full' ? 'projection-full-mode' : 'projection-error',
       { resource: event.resource },
     )
+    if (resync.status === 'ok') markAppliedCommandProjectionEvent(event, options)
     return
   }
   // Gap detected (event.revision > cached + 1) → self-healing full bootstrap.
-  await forceServerProjectionResync('revision-gap', { resource: event.resource })
+  const resync = await forceServerProjectionResync('revision-gap', { resource: event.resource })
+  if (resync.status === 'ok') markAppliedCommandProjectionEvent(event, options)
 }
 
 function isOwnCommandEvent(event: CommandEvent): boolean {
   const writerSessionId = peekActiveWriterSessionId()
   return !!writerSessionId && event.origin?.writerSessionId === writerSessionId
+}
+
+function advanceCachedServerCommandRevision(revision: number): void {
+  const cached = peekCachedServerCommandRevision()
+  if (cached === null || revision > cached) {
+    setCachedServerCommandRevision(revision)
+  }
+}
+
+function markAppliedCommandProjectionEvent(event: CommandEvent, options: ProcessServerCommandEventOptions = {}): void {
+  advanceCachedServerCommandRevision(event.revision)
+  if (isOwnCommandEvent(event) || options.markReconciledRevision) {
+    markCommandProjectionRevisionReconciled(event.revision)
+  }
+}
+
+function markCommandProjectionRevisionReconciled(revision: number): void {
+  if (reconciledCommandProjectionRevisionSet.has(revision)) return
+  reconciledCommandProjectionRevisionSet.add(revision)
+  reconciledCommandProjectionRevisions.push(revision)
+  while (reconciledCommandProjectionRevisions.length > RECONCILED_COMMAND_PROJECTION_REVISION_LIMIT) {
+    const oldest = reconciledCommandProjectionRevisions.shift()
+    if (oldest !== undefined) reconciledCommandProjectionRevisionSet.delete(oldest)
+  }
 }
 
 /**

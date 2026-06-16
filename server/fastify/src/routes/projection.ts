@@ -39,7 +39,9 @@ const RESOURCE_PROJECTION_FIELDS: Record<string, string[]> = {
   characterSelection: [],
   chat: ['characters'],
   chatFolder: ['characters'],
-  message: ['characters'],
+  // Ordinary message events are handled by a per-chat branch below; this empty
+  // field mapping marks them as narrowable for fallback classification.
+  message: [],
   generation: ['characters'],
   // Character scripts/triggers write only a character row's
   // customscript/triggerscript; the cross-module repair is validate-only, so a
@@ -392,6 +394,35 @@ export function registerProjectionRoutes(
       }
       emitProjectionMetric(req.log, resource, revision, response, { id: characterId })
       return response
+    }
+
+    // Ordinary message commands only change one chat's message rows. Events key
+    // the changed chat as `parentId`, so ship the affected chat's message
+    // window instead of the broad message-free `characters` projection.
+    if (resource === 'message') {
+      const chatId = req.query.parentId
+      if (typeof chatId === 'string' && chatId.trim() !== '') {
+        const messageId = typeof req.query.id === 'string' && req.query.id.trim() !== '' ? req.query.id : undefined
+        const hydration = loadGenerationChatHydration(db, dataDir, chatId, messageId)
+        const response = {
+          revision,
+          resource,
+          mode: 'chat-messages' as const,
+          chatId,
+          message: hydration.message,
+          hypaV3Data: hydration.hypaV3Data,
+          messageStart: hydration.messageStart,
+          messageTotal: hydration.messageTotal,
+          alternates: hydration.alternates,
+        }
+        emitProjectionMetric(req.log, resource, revision, response, {
+          id: chatId,
+          messageStart: hydration.messageStart,
+          messageTotal: hydration.messageTotal,
+          returnedCount: hydration.message.length,
+        })
+        return response
+      }
     }
 
     // Per-chat generation: `generation.persisted` is the one foreign-firing

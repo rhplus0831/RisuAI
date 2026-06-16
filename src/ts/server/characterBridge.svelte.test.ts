@@ -72,6 +72,7 @@ import { mergeServerProjectionCharacterRow } from '../storage/database.svelte'
 import {
   createServerBackedCharacterDraft,
   flushPendingServerBackedCharacterPatches,
+  rollbackServerBackedCharacterProfile,
   type ServerBackedCharacterDraft,
   watchServerBackedCharacterProfile,
 } from './characterBridge.svelte'
@@ -259,6 +260,23 @@ describe('createServerBackedCharacterDraft seed gating', () => {
     expect(recorded.characterUpdates[0].patch).not.toHaveProperty('chaId')
     stop()
     stopWatcher()
+  })
+
+  it('does not roll back a profile field after a newer same-row edit', () => {
+    setupCharacter('Initial')
+    DBState.db.characters[0].name = 'Newer local name'
+
+    rollbackServerBackedCharacterProfile({
+      characters: [],
+      characterOrder: [],
+      currentChar: 0,
+      selectedCharID: 0,
+      profileCharacterId: 'char-1',
+      profile: { name: 'Initial' },
+      attemptedProfile: { name: 'Attempted name' },
+    } as any)
+
+    expect(DBState.db.characters[0].name).toBe('Newer local name')
   })
 
   it('does not dispatch draft defaults from a selected character shell', async () => {

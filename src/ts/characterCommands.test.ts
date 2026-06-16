@@ -1098,6 +1098,20 @@ describe('Phase 0 character-row snapshot kit', () => {
     expect(DBState.db.characters[1].name).toBe('Character 0')
   })
 
+  it('does not restore attempted character fields after a newer same-row edit', () => {
+    DBState.db = seedCloneCostDb() as any
+    selectedCharID.set(0)
+    const snapshot = currentCharacterRowSnapshot(1)
+
+    DBState.db.characters[1].name = 'Newer local name'
+    restoreCharacterRow({
+      ...snapshot,
+      attempted: { name: 'Optimistic name' },
+    })
+
+    expect(DBState.db.characters[1].name).toBe('Newer local name')
+  })
+
   it('sanity baseline: the selection snapshot performs zero whole-characters clones, the legacy snapshot performs one', () => {
     DBState.db = seedCloneCostDb() as any
     selectedCharID.set(0)

@@ -160,6 +160,15 @@ function readSettings(): Record<string, unknown> {
   }
 }
 
+function mutateRawDb(mutator: (db: DatabaseSync) => void): void {
+  const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+  try {
+    mutator(db)
+  } finally {
+    db.close()
+  }
+}
+
 /** Chat ids for one character in stored `position` order. */
 function readChatOrder(characterId: string): string[] {
   const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
@@ -400,6 +409,26 @@ describe('Phase 3 single chat-row paths', () => {
     assertCommandMetricGate(metric)
     expectNoChurn(before)
     expect(readChat('chat-a-1').name).toBe('A1 renamed')
+  })
+
+  it('PATCH chats/:id fails when fallback found an embedded chat but the split row is missing', async () => {
+    const revision = await importDatabase(seedDatabase())
+    mutateRawDb((db) => {
+      db.exec('DELETE FROM messages')
+      db.exec('DELETE FROM chats')
+      db.exec('DELETE FROM characters')
+      db.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(seedDatabase()))
+    })
+
+    const res = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/chats/chat-a-1',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, patch: { name: 'Should fail' } },
+    })
+
+    expect(res.statusCode).toBe(404)
+    expect(res.json().error).toBe('Chat row not found: chat-a-1')
   })
 
   it('PUT chats/:id/generation-settings writes only the chat row', async () => {

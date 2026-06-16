@@ -159,7 +159,7 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
       botPresets: [{ id: 'p1', openAIKey: 'sk-secret' }],
     })
 
-    const body = (await getProjection('message')).json()
+    const body = (await getProjection('chat')).json()
     expect(body.mode).toBe('fields')
     expect(Object.keys(body.fields)).toEqual(['characters'])
     expect(body.fields.characters[0].chats[0].message).toEqual([])
@@ -376,6 +376,7 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     // (settings/state/pluginStorage/unknown) intentionally falls back to full.
     expect(resourceProjectionFields('character')).toEqual(['characters', 'characterOrder', 'currentChar'])
     expect(resourceProjectionFields('characterSelection')).toEqual([])
+    expect(resourceProjectionFields('message')).toEqual([])
     expect(resourceProjectionFields('generation')).toEqual(['characters'])
     expect(resourceProjectionFields('module')).toEqual(['modules', 'enabledModules', 'loadouts', 'characters'])
     // Narrowed module-family resources (Phase 5 collection-projection slice).
@@ -936,6 +937,42 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     const fallback = (await getProjection('generation')).json()
     expect(fallback.mode).toBe('fields')
     expect(Object.keys(fallback.fields)).toEqual(['characters'])
+  })
+
+  it('narrows ordinary message refreshes to the changed chat messages', async () => {
+    const revision = await importDatabase({
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'Ada',
+          chats: [
+            {
+              id: 'chat-a',
+              message: [
+                { role: 'user', data: 'hi', chatId: 'msg-a' },
+                { role: 'char', data: 'reply', chatId: 'msg-b' },
+              ],
+            },
+          ],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+
+    const body = (await getProjection('message', '?parentId=chat-a&id=msg-b')).json()
+    expect(body).toMatchObject({
+      revision,
+      resource: 'message',
+      mode: 'chat-messages',
+      chatId: 'chat-a',
+      message: [{ role: 'char', data: 'reply', chatId: 'msg-b' }],
+      messageStart: 1,
+      messageTotal: 2,
+      alternates: [],
+    })
+    expect(body).not.toHaveProperty('fields')
+    expect(body).not.toHaveProperty('characters')
   })
 })
 

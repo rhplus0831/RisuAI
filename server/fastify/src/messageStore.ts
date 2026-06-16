@@ -229,16 +229,30 @@ export interface ActiveMessageLocation {
   message: JsonRecord
 }
 
-export function getActiveMessageLocationById(db: DatabaseSync, messageId: string): ActiveMessageLocation | undefined {
-  const row = db
-    .prepare('SELECT chat_id, seq, json FROM messages WHERE uid = ? AND alternate = 0 LIMIT 1')
-    .get(messageId) as { chat_id: string; seq: number; json: string } | undefined
-  if (!row) return undefined
+export type ActiveMessageLocationResult =
+  | { ok: true; location: ActiveMessageLocation }
+  | { ok: false; reason: 'missing' | 'ambiguous' }
+
+export function resolveActiveMessageLocationById(db: DatabaseSync, messageId: string): ActiveMessageLocationResult {
+  const rows = db
+    .prepare('SELECT chat_id, seq, json FROM messages WHERE uid = ? AND alternate = 0 ORDER BY chat_id, seq LIMIT 2')
+    .all(messageId) as Array<{ chat_id: string; seq: number; json: string }>
+  if (rows.length === 0) return { ok: false, reason: 'missing' }
+  if (rows.length > 1) return { ok: false, reason: 'ambiguous' }
+  const row = rows[0]
   return {
-    chatId: row.chat_id,
-    seq: row.seq,
-    message: JSON.parse(row.json) as JsonRecord,
+    ok: true,
+    location: {
+      chatId: row.chat_id,
+      seq: row.seq,
+      message: JSON.parse(row.json) as JsonRecord,
+    },
   }
+}
+
+export function getActiveMessageLocationById(db: DatabaseSync, messageId: string): ActiveMessageLocation | undefined {
+  const result = resolveActiveMessageLocationById(db, messageId)
+  return result.ok ? result.location : undefined
 }
 
 export function appendChatMessage(db: DatabaseSync, chatId: string, raw: unknown): void {
@@ -258,9 +272,10 @@ export function updateActiveMessageById(
   db: DatabaseSync,
   messageId: string,
   patch: JsonRecord,
-): { ok: true; chatId: string } | { ok: false; reason: 'missing' } {
-  const location = getActiveMessageLocationById(db, messageId)
-  if (!location) return { ok: false, reason: 'missing' }
+): { ok: true; chatId: string } | { ok: false; reason: 'missing' | 'ambiguous' } {
+  const resolved = resolveActiveMessageLocationById(db, messageId)
+  if (!resolved.ok) return { ok: false, reason: resolved.reason }
+  const { location } = resolved
 
   const next = { ...location.message, ...patch, chatId: messageId }
   const row = toRow(next)
@@ -274,9 +289,10 @@ export function updateActiveMessageById(
 export function deleteActiveMessageById(
   db: DatabaseSync,
   messageId: string,
-): { ok: true; chatId: string } | { ok: false; reason: 'missing' } {
-  const location = getActiveMessageLocationById(db, messageId)
-  if (!location) return { ok: false, reason: 'missing' }
+): { ok: true; chatId: string } | { ok: false; reason: 'missing' | 'ambiguous' } {
+  const resolved = resolveActiveMessageLocationById(db, messageId)
+  if (!resolved.ok) return { ok: false, reason: resolved.reason }
+  const { location } = resolved
 
   const base = getChatMessages(db, location.chatId)
   const next = base.slice()
