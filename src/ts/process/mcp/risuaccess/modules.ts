@@ -1,6 +1,14 @@
 import { language } from 'src/lang'
 import { alertConfirm } from 'src/ts/alert'
-import { canUseServerCommands } from 'src/ts/server/commands'
+import { runOptimisticCommandSequence } from 'src/ts/chatCommands'
+import {
+  canUseServerCommands,
+  enableModuleCommand,
+  updateModuleCommand,
+  type ModuleSnapshot,
+  type ServerCommandResult,
+} from 'src/ts/server/commands'
+import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
 import {
   currentLorebookStateSnapshot,
   dispatchReplaceModuleLorebooks,
@@ -15,10 +23,11 @@ import {
 } from 'src/ts/server/scriptDefinitionBridge.svelte'
 import {
   currentGlobalModuleStateSnapshot,
-  dispatchEnableModule,
-  dispatchUpdateModule,
+  restoreGlobalModuleState,
+  sanitizeModulePatch,
   type GlobalModuleStateSnapshot,
 } from 'src/ts/moduleCommands'
+import type { customscript, loreBook, triggerscript } from 'src/ts/storage/database.svelte'
 import { DBState } from 'src/ts/stores.svelte'
 import { pickHashRand } from 'src/ts/util'
 import { type MCPTool, MCPToolHandler, type RPCToolCallContent } from '../mcplib'
@@ -464,10 +473,8 @@ export class ModuleHandler extends MCPToolHandler {
       'customModuleToggle',
     ]
 
-    const previous: GlobalModuleStateSnapshot | null = canUseServerCommands()
-      ? currentGlobalModuleStateSnapshot()
-      : null
-    const patch: Record<string, unknown> = {}
+    const previous = canUseServerCommands() ? currentGlobalModuleStateSnapshot() : null
+    const patch: ModuleSnapshot = {}
     let enabled: boolean | null = null
 
     for (const [key, value] of Object.entries(data)) {
@@ -480,13 +487,10 @@ export class ModuleHandler extends MCPToolHandler {
       }
     }
 
+    const acceptedPatch = sanitizeModulePatch(patch)
     if (previous) {
-      if (Object.keys(patch).length > 0) {
-        dispatchUpdateModule(id, patch, previous)
-      }
-      if (enabled !== null) {
-        dispatchEnableModule(id, enabled, previous)
-      }
+      applyModuleInfoOptimistically(id, acceptedPatch, enabled)
+      dispatchModuleInfoCommands(id, acceptedPatch, enabled, previous)
     } else {
       if (enabled !== null) {
         const enabledModules = new Set(DBState.db.enabledModules || [])
@@ -497,16 +501,17 @@ export class ModuleHandler extends MCPToolHandler {
         }
         DBState.db.enabledModules = Array.from(enabledModules)
       }
-      for (const [key, value] of Object.entries(patch)) {
+      for (const [key, value] of Object.entries(acceptedPatch)) {
         // @ts-ignore
         module[key] = value
       }
     }
 
+    const updatedModuleName = DBState.db.modules.find((m) => m.id === id)?.name || module.name || id
     return [
       {
         type: 'text',
-        text: `Successfully updated module ${module.name || id}`,
+        text: `Successfully updated module ${updatedModuleName}`,
       },
     ]
   }
@@ -597,7 +602,7 @@ export class ModuleHandler extends MCPToolHandler {
       ]
     }
 
-    const previous = currentLorebookStateSnapshot()
+    const previous = canUseServerCommands() ? currentLorebookStateSnapshot() : null
     const entries = cloneJsonValue(module.lorebook ?? [])
     const index = entries.findIndex((l) => {
       const displayName = l.comment || 'Unnamed ' + pickHashRand(5515, l.content)
@@ -617,8 +622,9 @@ export class ModuleHandler extends MCPToolHandler {
         mode: 'normal' as const,
       }
       entries.push(newEntry)
-      if (canUseServerCommands()) {
+      if (previous) {
         ensureClientLorebookEntryIds(entries)
+        replaceModuleLorebooksOptimistically(module.id, entries)
         dispatchReplaceModuleLorebooks(module.id, entries, previous, 0)
       } else {
         module.lorebook = entries
@@ -649,8 +655,9 @@ export class ModuleHandler extends MCPToolHandler {
       }
     }
 
-    if (canUseServerCommands()) {
+    if (previous) {
       ensureClientLorebookEntryIds(entries)
+      replaceModuleLorebooksOptimistically(module.id, entries)
       dispatchReplaceModuleLorebooks(module.id, entries, previous, 0)
     } else {
       module.lorebook = entries
@@ -681,7 +688,7 @@ export class ModuleHandler extends MCPToolHandler {
       ]
     }
 
-    const previous = currentLorebookStateSnapshot()
+    const previous = canUseServerCommands() ? currentLorebookStateSnapshot() : null
     const entries = cloneJsonValue(module.lorebook ?? [])
     const index = entries.findIndex((l) => {
       const displayName = l.comment || 'Unnamed ' + pickHashRand(5515, l.content)
@@ -698,8 +705,9 @@ export class ModuleHandler extends MCPToolHandler {
     }
 
     entries.splice(index, 1)
-    if (canUseServerCommands()) {
+    if (previous) {
       ensureClientLorebookEntryIds(entries)
+      replaceModuleLorebooksOptimistically(module.id, entries)
       dispatchReplaceModuleLorebooks(module.id, entries, previous, 0)
     } else {
       module.lorebook = entries
@@ -788,6 +796,7 @@ export class ModuleHandler extends MCPToolHandler {
       scripts.push(newScript)
       if (previous) {
         ensureClientScriptDefinitionIds(scripts)
+        replaceModuleRegexScriptsOptimistically(module.id, scripts)
         dispatchReplaceModuleScripts(module.id, scripts, previous, 0)
       } else {
         module.regex = scripts
@@ -810,6 +819,7 @@ export class ModuleHandler extends MCPToolHandler {
     if (ableFlag !== undefined) script.ableFlag = ableFlag
     if (previous) {
       ensureClientScriptDefinitionIds(scripts)
+      replaceModuleRegexScriptsOptimistically(module.id, scripts)
       dispatchReplaceModuleScripts(module.id, scripts, previous, 0)
     } else {
       module.regex = scripts
@@ -863,6 +873,7 @@ export class ModuleHandler extends MCPToolHandler {
     scripts.splice(index, 1)
     if (previous) {
       ensureClientScriptDefinitionIds(scripts)
+      replaceModuleRegexScriptsOptimistically(module.id, scripts)
       dispatchReplaceModuleScripts(module.id, scripts, previous, 0)
     } else {
       module.regex = scripts
@@ -923,6 +934,7 @@ export class ModuleHandler extends MCPToolHandler {
       firstTrigger.effect[0].code = code
       if (previous) {
         ensureClientTriggerDefinitionIds(triggers)
+        replaceModuleTriggersOptimistically(module.id, triggers)
         dispatchReplaceModuleTriggers(module.id, triggers, previous, 0)
       } else {
         module.trigger = triggers
@@ -947,4 +959,80 @@ export class ModuleHandler extends MCPToolHandler {
 function cloneJsonValue<T>(value: T): T {
   if (value === undefined) return value
   return JSON.parse(JSON.stringify(value)) as T
+}
+
+function applyModuleInfoOptimistically(moduleId: string, patch: ModuleSnapshot, enabled: boolean | null): void {
+  if (Object.keys(patch).length === 0 && enabled === null) return
+
+  withTrustedServerProjectionWrite(() => {
+    const target = DBState.db.modules?.find((candidate) => candidate.id === moduleId)
+    if (!target) return
+
+    const mutableTarget = target as unknown as Record<string, unknown>
+    for (const [field, value] of Object.entries(patch)) {
+      mutableTarget[field] = value
+    }
+
+    if (enabled !== null) {
+      const enabledModules = new Set(DBState.db.enabledModules ?? [])
+      if (enabled) {
+        enabledModules.add(moduleId)
+      } else {
+        enabledModules.delete(moduleId)
+      }
+      DBState.db.enabledModules = Array.from(enabledModules)
+    }
+  })
+}
+
+function dispatchModuleInfoCommands(
+  moduleId: string,
+  patch: ModuleSnapshot,
+  enabled: boolean | null,
+  previous: GlobalModuleStateSnapshot,
+): void {
+  const commands: Array<(baseRevision: number) => Promise<ServerCommandResult>> = []
+
+  if (Object.keys(patch).length > 0) {
+    commands.push((baseRevision) =>
+      updateModuleCommand({
+        baseRevision,
+        moduleId,
+        patch,
+      }),
+    )
+  }
+
+  if (enabled !== null) {
+    commands.push((baseRevision) =>
+      enableModuleCommand({
+        baseRevision,
+        moduleId,
+        enabled,
+      }),
+    )
+  }
+
+  runOptimisticCommandSequence(commands, () => restoreGlobalModuleState(previous))
+}
+
+function replaceModuleLorebooksOptimistically(moduleId: string, entries: loreBook[]): void {
+  withTrustedServerProjectionWrite(() => {
+    const target = DBState.db.modules?.find((candidate) => candidate.id === moduleId)
+    if (target) target.lorebook = entries
+  })
+}
+
+function replaceModuleRegexScriptsOptimistically(moduleId: string, scripts: customscript[]): void {
+  withTrustedServerProjectionWrite(() => {
+    const target = DBState.db.modules?.find((candidate) => candidate.id === moduleId)
+    if (target) target.regex = scripts
+  })
+}
+
+function replaceModuleTriggersOptimistically(moduleId: string, triggers: triggerscript[]): void {
+  withTrustedServerProjectionWrite(() => {
+    const target = DBState.db.modules?.find((candidate) => candidate.id === moduleId)
+    if (target) target.trigger = triggers
+  })
 }
