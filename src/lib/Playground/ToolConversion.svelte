@@ -22,6 +22,10 @@
     console.log(files)
     files = files
   }
+
+  const deleteFile = (index: number) => {
+    files = files.filter((_, fileIndex) => fileIndex !== index)
+  }
 </script>
 
 <h2 class="text-4xl text-textcolor my-6 font-black relative">{language.promptConvertion}</h2>
@@ -38,7 +42,10 @@
         {/if}
         <span>{file.name}</span>
       </div>
-      <Button>Delete</Button>
+      <Button
+        onclick={() => {
+          deleteFile(i)
+        }}>Delete</Button>
     </div>
   {/each}
   <Button onclick={addFile}>Add</Button>

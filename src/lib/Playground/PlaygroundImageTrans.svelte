@@ -1,3 +1,27 @@
+<script lang="ts" module>
+  export type ImageTranslationRenderItem = {
+    bg_hex_color: string
+    center?: boolean
+    content?: string
+    fontSize?: number
+    text_hex_color: string
+    translation: string
+    x_max: number
+    x_min: number
+    y_max: number
+    y_min: number
+  }
+
+  export function parseImageTranslationRenderOutput(output: string): ImageTranslationRenderItem[] | null {
+    try {
+      const parsed = JSON.parse(output)
+      return Array.isArray(parsed) ? (parsed as ImageTranslationRenderItem[]) : null
+    } catch {
+      return null
+    }
+  }
+</script>
+
 <script lang="ts">
   import { language } from 'src/lang'
   import TextInput from '../UI/GUI/TextInput.svelte'
@@ -25,7 +49,7 @@
   let selLang = $state('en')
   let prompt = $state(autoPrompt)
   let canvas: HTMLCanvasElement
-  let ctx: CanvasRenderingContext2D
+  let ctx: CanvasRenderingContext2D | null
   let inputImage: HTMLImageElement
   let output = $state('')
   let loading = $state(false)
@@ -41,6 +65,11 @@
 
     if (!ctx) {
       ctx = canvas.getContext('2d')
+    }
+    if (!ctx) {
+      alertError('Failed to create canvas context')
+      loading = false
+      return
     }
     const img = new Image()
     inputImage = img
@@ -243,18 +272,24 @@
     }
   }
 
-  async function render() {
+  function render() {
     if (!inputImage) {
       return
     }
     if (!ctx) {
       ctx = canvas.getContext('2d')
     }
+    if (!ctx) {
+      return
+    }
 
     ctx.clearRect(0, 0, canvas.width, canvas.height)
     ctx.drawImage(inputImage, 0, 0, canvas.width, canvas.height)
 
-    const data = JSON.parse(output)
+    const data = parseImageTranslationRenderOutput(output)
+    if (!data) {
+      return
+    }
 
     for (const item of data) {
       let [x_min, y_min, x_max, y_max] = [item.x_min, item.y_min, item.x_max, item.y_max]

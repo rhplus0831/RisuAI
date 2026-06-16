@@ -425,7 +425,11 @@
 
 {#if mode === 'whisperLocal'}
   <span class="text-textcolor text-lg mt-4">{language.sourceLanguage}</span>
-  <SelectInput value={sourceLang === null ? 'auto' : sourceLang}>
+  <SelectInput
+    value={sourceLang === null ? 'auto' : sourceLang}
+    onchange={(event) => {
+      sourceLang = event.currentTarget.value === 'auto' ? null : event.currentTarget.value
+    }}>
     <OptionInput value="auto">Auto</OptionInput>
     {#each getLanguageCodes() as lang}
       <OptionInput value={lang.code}>{lang.name}</OptionInput>
