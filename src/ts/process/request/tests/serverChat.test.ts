@@ -603,6 +603,44 @@ describe('requestServerChatGeneration durable cancel-on-abort', () => {
     await new Promise((r) => setTimeout(r, 5))
     expect(deletes).toEqual([])
   })
+
+  it('does not throw when the token stream is cancelled before the SSE reader observes abort', async () => {
+    const deletes: string[] = []
+    const enc = new TextEncoder()
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      if (init?.method === 'DELETE') {
+        deletes.push(url)
+        return new Response(JSON.stringify({ success: true }), { status: 200 })
+      }
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(enc.encode('event: job_accepted\ndata: {"jobId":"job-cancel-close"}\n\n'))
+          controller.enqueue(enc.encode('event: prompt\ndata: {"formated":[{"role":"user","content":"hi"}]}\n\n'))
+          controller.enqueue(
+            enc.encode(
+              'event: info\ndata: {"generationId":"job-cancel-close","generationInfo":{"generationId":"job-cancel-close","model":"m"}}\n\n',
+            ),
+          )
+          // Intentionally hang until abort.
+        },
+      })
+      return new Response(stream, { status: 200, headers: { 'content-type': 'text/event-stream' } })
+    })
+
+    const controller = new AbortController()
+    const served = await requestServerChatGeneration({ ...baseInput, durable: true }, controller.signal)
+    expect(served.status).toBe('ok')
+    if (served.status !== 'ok') return
+    expect(served.req.type).toBe('streaming')
+    if (served.req.type !== 'streaming') return
+
+    await served.req.result.getReader().cancel()
+    controller.abort()
+
+    await expect(served.terminal).resolves.toMatchObject({ status: 'error', error: 'Aborted' })
+    await new Promise((r) => setTimeout(r, 5))
+    expect(deletes).toContain('/api/v1/generate/chat/job-cancel-close')
+  })
 })
 
 describe('requestServerChatGeneration reattach mode (Phase 7)', () => {

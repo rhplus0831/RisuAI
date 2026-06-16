@@ -166,6 +166,14 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
     })
   }
   const renderCoalescer = createStreamRenderCoalescer(applyLatestChunk, opts.renderFlushScheduler)
+  const removeEmptyGeneratedMessageOnAbort = (): void => {
+    if (arg.continue || (!streamAborted && !abortSignal.aborted)) return
+    const target = resolveStreamMessage()
+    if (!target) return
+    if (target.message.role !== 'char') return
+    if ((target.message.data ?? '').length > 0) return
+    target.chat.message.splice(target.index, 1)
+  }
   const abortReader = () => {
     streamAborted = true
     void reader.cancel().catch(() => {})
@@ -211,6 +219,7 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
     // swallow apply errors here so they cannot mask the propagating one.
     await renderCoalescer.settle().catch(() => {})
     withTrustedServerProjectionWrite(() => {
+      removeEmptyGeneratedMessageOnAbort()
       const targetChat = currentLiveChat()
       if (targetChat) targetChat.isStreaming = false
       bumpReloadKey()

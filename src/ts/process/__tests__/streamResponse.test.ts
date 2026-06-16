@@ -242,6 +242,49 @@ describe('consumeStreamResponse', () => {
     expect(DBState.db.characters[0].chats[0].message[1].data).toBe('first')
   })
 
+  it('mid-stream abort before tokens removes the empty generated message', async () => {
+    const currentChar = seed()
+    const { stream, close } = makeControlledStream()
+    const ctrl = new AbortController()
+    const promise = consumeStreamResponse(callArgs(streamingReq(stream), currentChar, ctrl.signal))
+    expect(DBState.db.characters[0].chats[0].message).toHaveLength(2)
+    expect(DBState.db.characters[0].chats[0].message[1]).toMatchObject({
+      role: 'char',
+      data: '',
+      chatId: 'gen-1',
+    })
+
+    ctrl.abort()
+    close()
+
+    const out = await promise
+    expect(out.streamAborted).toBe(true)
+    expect(DBState.db.characters[0].chats[0].message).toEqual([{ role: 'user', data: 'hi' }])
+    expect(DBState.db.characters[0].chats[0].isStreaming).toBe(false)
+  })
+
+  it('mid-stream abort keeps a non-empty generated message for server reconciliation', async () => {
+    const currentChar = seed()
+    const { stream, push, close } = makeControlledStream()
+    const ctrl = new AbortController()
+    const promise = consumeStreamResponse(callArgs(streamingReq(stream), currentChar, ctrl.signal))
+    push({ msgKey: 'partial' })
+    await Promise.resolve()
+    await Promise.resolve()
+
+    ctrl.abort()
+    close()
+
+    const out = await promise
+    expect(out.streamAborted).toBe(true)
+    expect(DBState.db.characters[0].chats[0].message).toHaveLength(2)
+    expect(DBState.db.characters[0].chats[0].message[1]).toMatchObject({
+      role: 'char',
+      data: 'partial',
+      chatId: 'gen-1',
+    })
+  })
+
   it('reader error after abort is swallowed (streamAborted ends true)', async () => {
     const currentChar = seed()
     const { stream, error } = makeControlledStream()

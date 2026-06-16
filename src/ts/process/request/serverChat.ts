@@ -336,6 +336,7 @@ export async function requestServerChatGeneration(
   const warnings: ServerChatWarning[] = []
   let readyResolved = false
   let terminalResolved = false
+  let tokenStreamInactive = false
   let tokenResult = ''
   let streamKey = 'server-chat'
   // Durable generation: the jobId (= generationId) arrives on the first `job_accepted`
@@ -375,6 +376,23 @@ export async function requestServerChatGeneration(
 
   const tokenStream = new ReadableStream<StreamResponseChunk>({
     start(controller) {
+      const enqueueToken = (chunk: StreamResponseChunk): void => {
+        if (tokenStreamInactive) return
+        try {
+          controller.enqueue(chunk)
+        } catch {
+          tokenStreamInactive = true
+        }
+      }
+      const closeTokenStream = (): void => {
+        if (tokenStreamInactive) return
+        tokenStreamInactive = true
+        try {
+          controller.close()
+        } catch {
+          // The consumer may have cancelled or errored the readable during abort.
+        }
+      }
       const maybeResolveReady = (): void => {
         if (readyResolved || !prompt || !info) return
         const generation = coerceGenerationInfo(info, donePayload)
@@ -430,7 +448,7 @@ export async function requestServerChatGeneration(
               case 'token': {
                 const content = typeof data.content === 'string' ? data.content : ''
                 tokenResult += content
-                controller.enqueue({ [streamKey]: tokenResult })
+                enqueueToken({ [streamKey]: tokenResult })
                 break
               }
               case 'error': {
@@ -452,14 +470,14 @@ export async function requestServerChatGeneration(
                   sideEffects,
                   warnings,
                 })
-                controller.close()
+                closeTokenStream()
                 return
               }
               case 'done':
                 donePayload = data as unknown as Omit<DoneEvent, 'type'>
                 if (typeof donePayload.result === 'string' && tokenResult.length === 0) {
                   tokenResult = donePayload.result
-                  controller.enqueue({ [streamKey]: tokenResult })
+                  enqueueToken({ [streamKey]: tokenResult })
                 }
                 // The post-gen pass may have persisted a scriptstate delta and
                 // bumped the revision; reconcile it so the follow-up command POSTs
@@ -477,7 +495,7 @@ export async function requestServerChatGeneration(
                   })
                 }
                 resolveTerminalOnce({ status: 'done', done: donePayload, sideEffects, warnings })
-                controller.close()
+                closeTokenStream()
                 return
               default:
                 break
@@ -495,7 +513,7 @@ export async function requestServerChatGeneration(
               warnings,
             })
           }
-          controller.close()
+          closeTokenStream()
         } catch (err) {
           if (signal?.aborted) {
             cancelDurableOnAbort()
@@ -506,11 +524,12 @@ export async function requestServerChatGeneration(
             resolveReadyOnce({ status: 'error', error })
             resolveTerminalOnce({ status: 'error', error, warnings })
           }
-          controller.close()
+          closeTokenStream()
         }
       })()
     },
     cancel() {
+      tokenStreamInactive = true
       resolveTerminalOnce({ status: 'error', error: 'Aborted', warnings })
     },
   })
