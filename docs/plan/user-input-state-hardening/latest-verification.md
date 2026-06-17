@@ -7,29 +7,28 @@ hardening workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 3 plugin import/update callback
-  freshness. `updatePlugin` now starts a plugin import operation before remote
-  fetch, checks freshness after fetch/text, and passes the same operation through
-  `importPlugin`. `importPlugin` now guards picker/read, validation alerts,
-  TypeScript transpile, safety modal, duplicate confirm, and final create/update
-  application by latest operation plus plugin-list snapshots.
+- Runtime/code change under test: Phase 3 persona icon upload callback
+  freshness. `selectUserImg` now captures the selected persona target before the
+  picker, starts the upload operation only after a real PNG file is selected,
+  rejects stale selection/icon changes before and after image upload, applies
+  only fresh icon fields, and captures rollback state immediately before apply
+  so same-persona text edits made during upload are preserved.
 - Commands:
 
 ```bash
-pnpm exec vitest run src/ts/server/pluginImport.test.ts src/ts/plugins/plugins.test.ts src/ts/pluginCommands.test.ts src/ts/server/staleStateGuards.test.ts
+pnpm exec vitest run src/ts/server/personaIconUpload.test.ts src/ts/persona.iconUpload.test.ts src/ts/persona.test.ts src/ts/server/staleStateGuards.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 git diff --check
 ```
 
-- Result: passed on 2026-06-17. The plugin-import/stale-guard focused Vitest set
-  passed 4 files and 48 tests. Both TypeScript checks and `git diff --check`
+- Result: passed on 2026-06-17. The persona-icon/stale-guard focused Vitest set
+  passed 4 files and 30 tests. Both TypeScript checks and `git diff --check`
   passed.
-- Residual gaps: stale TypeScript transpile and API 2.1 safety-modal concurrency
-  are source-reviewed but do not have direct integration tests. This slice does
-  not cover plugin enable/delete/args/provider/storage rollback, prompt/persona
-  imports, module import, additional params/bias JSON import, Realm/backup
-  refresh fences, or collection rollback.
+- Residual gaps: no browser smoke was run for the file picker/upload UI. This
+  slice does not cover persona import/create/delete/reorder/select rollback,
+  prompt/persona imports, module import, additional params/bias JSON import,
+  Realm/backup refresh fences, or collection rollback.
 
 ## Required Closeout Proof
 

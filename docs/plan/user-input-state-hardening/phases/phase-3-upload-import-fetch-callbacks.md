@@ -76,6 +76,11 @@ tokens and plugin-list snapshots across remote update fetch/text, file
 picker/read, TypeScript transpile, safety modal, duplicate confirm, and final
 create/update application so stale imports cannot alert or write.
 
+Thirteenth landed slice: persona icon upload callbacks now use latest operation
+tokens issued only after a real PNG is selected, selected-persona/icon snapshots,
+and fresh selected-row resolution before image upload completion can apply icon
+fields.
+
 ## Anchors
 
 - `src/lib/ChatScreens/DefaultChatScreen.svelte`

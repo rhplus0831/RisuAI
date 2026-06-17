@@ -19,6 +19,13 @@ import {
   type ServerCommandResult,
 } from './server/commands'
 import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
+import {
+  beginPersonaIconUpload,
+  capturePersonaIconUploadTarget,
+  clearPersonaIconUpload,
+  resolveFreshPersonaIconUploadIndex,
+  type PersonaIconUploadOperation,
+} from './server/personaIconUpload'
 
 export type Persona = (typeof DBState.db.personas)[number]
 
@@ -544,37 +551,88 @@ export function deleteSelectedUserPersona(): boolean {
 }
 
 export async function selectUserImg() {
-  const selected = await selectSingleFile(['png'])
-  if (!selected) {
-    return
-  }
-  const previous = currentPersonaStateSnapshot()
-  const img = selected.data
-  const imgp = await saveImage(img)
-  const persona = DBState.db.personas[DBState.db.selectedPersona]
-  if (!persona) return
-  withTrustedServerProjectionWrite(() => {
-    DBState.db.userIcon = imgp
-    DBState.db.personas[DBState.db.selectedPersona] = {
-      ...persona,
-      name: DBState.db.username,
-      icon: DBState.db.userIcon,
-      personaPrompt: DBState.db.personaPrompt,
-      note: DBState.db.userNote,
-    }
+  const target = capturePersonaIconUploadTarget({
+    selectedPersona: DBState.db.selectedPersona,
+    userIcon: DBState.db.userIcon,
+    personas: DBState.db.personas,
   })
-  const personaId = selectedPersonaId()
-  if (personaId) {
+  if (!target) return
+
+  let operation: PersonaIconUploadOperation | null = null
+  try {
+    const selected = await selectSingleFile(['png'], {
+      onFileSelected: () => {
+        operation = beginPersonaIconUpload(target)
+      },
+    })
+    if (!selected || !operation) {
+      return
+    }
+
+    if (
+      resolveFreshPersonaIconUploadIndex(operation, {
+        selectedPersona: DBState.db.selectedPersona,
+        userIcon: DBState.db.userIcon,
+        personas: DBState.db.personas,
+      }) === null
+    ) {
+      return
+    }
+
+    const imgp = await saveImage(selected.data)
+    const personaIndex = resolveFreshPersonaIconUploadIndex(operation, {
+      selectedPersona: DBState.db.selectedPersona,
+      userIcon: DBState.db.userIcon,
+      personas: DBState.db.personas,
+    })
+    if (personaIndex === null) {
+      return
+    }
+
+    const previous = currentPersonaStateSnapshot()
+    let attempted: PersonaStateSnapshot | null = null
+    let applied = false
+    withTrustedServerProjectionWrite(() => {
+      const freshIndex = resolveFreshPersonaIconUploadIndex(operation, {
+        selectedPersona: DBState.db.selectedPersona,
+        userIcon: DBState.db.userIcon,
+        personas: DBState.db.personas,
+      })
+      if (freshIndex === null) return
+      const persona = DBState.db.personas[freshIndex]
+      if (!persona) return
+
+      DBState.db.userIcon = imgp
+      DBState.db.personas[freshIndex] = {
+        ...persona,
+        icon: imgp,
+      }
+      attempted = currentPersonaStateSnapshot()
+      applied = true
+    })
+
+    if (!applied || !attempted) {
+      return
+    }
+
     runPersonaCommand(
       (baseRevision) =>
         updatePersonaCommand({
           baseRevision,
-          personaId,
+          personaId: operation.personaId,
           patch: personaPatchFromLegacyProfile(),
           mirrorLegacyProfile: true,
         }),
-      () => restorePersonaStateSnapshot(previous),
+      () => {
+        if (attempted && snapshotPersonaJson(currentPersonaStateSnapshot()) === snapshotPersonaJson(attempted)) {
+          restorePersonaStateSnapshot(previous)
+        }
+      },
     )
+  } finally {
+    if (operation) {
+      clearPersonaIconUpload(operation)
+    }
   }
 }
 

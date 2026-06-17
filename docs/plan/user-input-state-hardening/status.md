@@ -42,6 +42,8 @@ the input persistence inventory under
   Plugin import/update flows now guard remote fetch/text, picker/read,
   validation alerts, TypeScript transpile, safety modal, duplicate confirm, and
   final create/update application by latest operation plus plugin-list snapshots.
+  Persona icon uploads now guard selected-row and icon snapshots around PNG
+  selection and image upload before applying only fresh icon fields.
   Phase 2 landed character profile draft dirty top-level field protection;
   prompt-template item row dirty projection merging; whole-key dirty projection
   protection for
@@ -126,7 +128,11 @@ the input persistence inventory under
 - `src/ts/server/pluginImport.ts` now centralizes plugin import/update snapshot
   capture, latest-operation tracking, freshness checks, and fresh create/update
   target resolution for `src/ts/plugins/plugins.svelte.ts`.
-- Verification state: Phase 3 plugin import/update callback validation is
+- `src/ts/server/personaIconUpload.ts` now centralizes persona icon upload
+  target capture, latest-operation tracking, selected row uniqueness, icon
+  snapshot freshness, and fresh selected-index resolution for
+  `src/ts/persona.ts`.
+- Verification state: Phase 3 persona icon upload callback validation is
   recorded in `latest-verification.md`.
 - Highest issue density:
   - Character editor: 52 issue rows, mostly dirty projection and unguarded
@@ -178,6 +184,7 @@ the input persistence inventory under
   completions; settings media asset uploads for the guarded OtherBotSettings
   image paths now guard stale completions; custom color scheme imports now guard
   stale completions; plugin import/update now guards stale completions;
+  persona icon uploads now guard stale completions;
   remaining import helpers and remaining dashboard/import persistence surfaces
   remain pending. NanoGPT
   dashboard subscription-state fetch persistence now guards stale completions.
@@ -315,6 +322,11 @@ the input persistence inventory under
     after real file picker selection, and lets `importPlugin` apply or alert only
     when plugin state is still fresh across read, transpile, safety modal,
     duplicate confirm, and final create/update application.
+  - Phase 3 persona icon upload slice: `personaIconUpload.ts` captures selected
+    persona id, legacy `userIcon`, and selected row icon snapshots, starts tokens
+    only after a real PNG file is selected, and lets `selectUserImg` apply only
+    fresh icon fields while preserving same-persona text edits made during
+    upload.
   - Phase 4: `restoreChatScopedState`, chat/message/generation freshness, and
     message update/delete/truncate/replace freshness.
   - Phase 5: create/delete/reorder/import/select and broad collection rollback
