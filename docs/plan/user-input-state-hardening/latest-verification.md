@@ -7,30 +7,30 @@ hardening workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 3 settings media asset upload freshness.
-  `OtherBotSettings.svelte` now guards the NovelAI character reference image,
-  NovelAI i2i base image, and WaveSpeed reference image uploads with captured
-  target/context/field snapshots, latest-operation tokens issued only after real
-  file selection, freshness checks around `saveAsset`, and narrow merges into the
-  active settings draft.
+- Runtime/code change under test: Phase 3 character TTS media callback
+  freshness. `CharConfig.svelte` now guards VITS model registration and
+  GPT-SoVITS reference audio upload with captured character row/draft/mode/field
+  snapshots, latest-operation tokens issued only after real file selection,
+  freshness checks around registration or `saveAsset`, and narrow final writes to
+  `character.vits` or `gptSoVitsConfig.ref_audio_data`.
 - Commands:
 
 ```bash
-pnpm exec vitest run src/ts/server/settingsMediaAssetUpload.test.ts src/lib/Setting/Pages/OtherBotSettings.svelte.test.ts src/ts/server/staleStateGuards.test.ts
+pnpm exec vitest run src/ts/server/characterTtsAssetUpload.test.ts src/lib/SideBars/CharConfig.svelte.test.ts src/ts/server/staleStateGuards.test.ts src/ts/process/transformers.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 git diff --check
 ```
 
-- Result: passed on 2026-06-17. The settings-media/stale-guard focused Vitest
-  set passed 3 files and 21 tests. Both TypeScript checks and `git diff --check`
+- Result: passed on 2026-06-17. The TTS-media/stale-guard focused Vitest set
+  passed 4 files and 22 tests. Both TypeScript checks and `git diff --check`
   passed.
 - Residual gaps: coverage is source-contract plus helper unit coverage, not a
-  mounted browser interaction test. Dropped stale uploads may still leave
-  orphaned asset bytes after `saveAsset`. This slice does not cover `.naiv4vibe`
-  import, HypaV3 preset import, custom color scheme import, additional params
-  import, GPT-SoVITS reference audio upload, VITS model registration, plugin
-  import/update, or remaining general import helpers.
+  mounted browser picker flow. Dropped stale uploads may still leave orphaned
+  asset bytes after `saveAsset` or `saveAssets`. This slice does not cover nested
+  TTS dirty projection, plugin import/update, persona/preset import, custom color
+  scheme import, additional params import, Realm/backup refresh, or broader
+  collection rollback.
 
 ## Required Closeout Proof
 

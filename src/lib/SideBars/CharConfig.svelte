@@ -61,7 +61,7 @@
   import TriggerList from './Scripts/TriggerList.svelte'
   import CheckInput from '../UI/GUI/CheckInput.svelte'
   import { updateInlayScreen } from 'src/ts/process/inlayScreen'
-  import { registerOnnxModel } from 'src/ts/process/transformers'
+  import { registerOnnxModelFromFile } from 'src/ts/process/transformers'
   import MultiLangInput from '../UI/GUI/MultiLangInput.svelte'
   import { applyModule } from 'src/ts/process/modules'
   import { exportRegex, importRegex } from 'src/ts/process/scripts'
@@ -79,6 +79,16 @@
     type CharacterAdditionalAssetEntry,
     type CharacterAdditionalAssetUploadOperation,
   } from 'src/ts/server/characterAdditionalAssetUpload'
+  import {
+    applyFreshCharacterGptSoVitsReferenceAudioUpload,
+    applyFreshCharacterVitsModelRegistration,
+    beginCharacterTtsAssetUpload,
+    captureCharacterTtsAssetUploadTarget,
+    clearCharacterTtsAssetUpload,
+    isFreshCharacterTtsAssetUpload,
+    type CharacterTtsAssetUploadKind,
+    type CharacterTtsAssetUploadOperation,
+  } from 'src/ts/server/characterTtsAssetUpload'
   import { watchServerBackedChatMetadata } from 'src/ts/server/chatBridge.svelte'
   import {
     applyCharacterScriptDefinitionDraft,
@@ -110,6 +120,7 @@
     'svg',
     'avif',
   ]
+  type SelectedSingleFile = NonNullable<Awaited<ReturnType<typeof selectSingleFile>>>
   type SelectedAdditionalAssetFile = NonNullable<Awaited<ReturnType<typeof selectMultipleFile>>>[number]
   let tokens = $state({
     desc: 0,
@@ -611,6 +622,108 @@
       characterDraft.value = { ...characterDraft.value }
     } finally {
       clearCharacterAdditionalAssetUpload(operation)
+    }
+  }
+
+  function currentEditorTtsAssetUploadTarget(kind: CharacterTtsAssetUploadKind) {
+    const selectedIndex = $selectedCharID
+    const selectedCharacter = DBState.db.characters?.[selectedIndex]
+    if (selectedCharacter?.type !== 'character' || !selectedCharacter.chaId) return null
+    if (characterDraft.characterId !== selectedCharacter.chaId) return null
+
+    const draft = characterDraft.value as unknown as character
+    return captureCharacterTtsAssetUploadTarget({
+      characterId: selectedCharacter.chaId,
+      characterIndex: selectedIndex,
+      draftCharacterId: characterDraft.characterId,
+      kind,
+      ttsMode: draft.ttsMode,
+      vits: draft.vits,
+      refAudioData: draft.gptSoVitsConfig?.ref_audio_data,
+    })
+  }
+
+  function editorTtsAssetUploadFreshness(operation: CharacterTtsAssetUploadOperation) {
+    const selectedCharacter = DBState.db.characters?.[$selectedCharID]
+    const targetRow =
+      operation.characterIndex === undefined ? undefined : DBState.db.characters?.[operation.characterIndex]
+    const draft = characterDraft.value as unknown as character
+
+    return {
+      currentCharacterId: selectedCharacter?.chaId,
+      rowCharacterId: operation.characterIndex === undefined ? undefined : (targetRow?.chaId ?? null),
+      draftCharacterId: characterDraft.characterId,
+      ttsMode: draft.ttsMode,
+      vits: draft.vits,
+      refAudioData: draft.gptSoVitsConfig?.ref_audio_data,
+    }
+  }
+
+  function isCurrentEditorTtsAssetUpload(operation: CharacterTtsAssetUploadOperation): boolean {
+    return isFreshCharacterTtsAssetUpload(operation, editorTtsAssetUploadFreshness(operation))
+  }
+
+  async function registerVitsModelFromEditor(): Promise<void> {
+    const target = currentEditorTtsAssetUploadTarget('vits-model')
+    if (!target) return
+
+    const selected = (await selectSingleFile(['zip'])) as SelectedSingleFile | null | undefined
+    if (!selected) return
+
+    const operation = beginCharacterTtsAssetUpload(target)
+    try {
+      if (!isCurrentEditorTtsAssetUpload(operation)) return
+
+      const model = await registerOnnxModelFromFile(selected, {
+        shouldContinue: () => isCurrentEditorTtsAssetUpload(operation),
+      })
+      if (!model) return
+
+      const nextModel = applyFreshCharacterVitsModelRegistration({
+        operation,
+        freshness: editorTtsAssetUploadFreshness(operation),
+        model,
+      })
+      if (!nextModel) return
+
+      updateCharacterDraft((character) => {
+        character.vits = nextModel
+      })
+    } finally {
+      clearCharacterTtsAssetUpload(operation)
+    }
+  }
+
+  async function uploadGptSoVitsReferenceAudioFromEditor(): Promise<void> {
+    const target = currentEditorTtsAssetUploadTarget('gptsovits-ref-audio')
+    if (!target) return
+
+    const audio = (await selectSingleFile(['wav', 'ogg', 'aac', 'mp3'])) as SelectedSingleFile | null | undefined
+    if (!audio) return
+
+    const operation = beginCharacterTtsAssetUpload(target)
+    try {
+      if (!isCurrentEditorTtsAssetUpload(operation)) return
+
+      const saveId = await saveAsset(audio.data)
+      if (!isCurrentEditorTtsAssetUpload(operation)) return
+
+      const nextRefAudioData = applyFreshCharacterGptSoVitsReferenceAudioUpload({
+        operation,
+        freshness: editorTtsAssetUploadFreshness(operation),
+        refAudioData: {
+          fileName: audio.name,
+          assetId: saveId,
+        },
+      })
+      if (!nextRefAudioData) return
+
+      updateCharacterDraft((character) => {
+        if (!character.gptSoVitsConfig) return
+        character.gptSoVitsConfig.ref_audio_data = nextRefAudioData
+      })
+    } finally {
+      clearCharacterTtsAssetUpload(operation)
     }
   }
 
@@ -1283,15 +1396,7 @@
       {:else}
         <span class="text-textcolor">No Model</span>
       {/if}
-      <Button
-        onclick={async () => {
-          const model = await registerOnnxModel()
-          if (model && characterDraft.value.type === 'character') {
-            updateCharacterDraft((character) => {
-              character.vits = model
-            })
-          }
-        }}>{language.selectModel}</Button>
+      <Button onclick={registerVitsModelFromEditor}>{language.selectModel}</Button>
     {:else if characterDraft.value.ttsMode === 'gptsovits'}
       <span class="text-textcolor">Volume</span>
       <SliderInput min={0.0} max={1.0} step={0.01} fixed={2} bind:value={characterDraft.value.gptSoVitsConfig.volume} />
@@ -1310,21 +1415,7 @@
       <Check bind:check={characterDraft.value.gptSoVitsConfig.use_long_audio} />
 
       <span class="text-textcolor">Reference Audio Data (3~10s audio file)</span>
-      <Button
-        onclick={async () => {
-          const audio = await selectSingleFile(['wav', 'ogg', 'aac', 'mp3'])
-          if (!audio) {
-            return null
-          }
-          const saveId = await saveAsset(audio.data)
-          updateCharacterDraft((character) => {
-            character.gptSoVitsConfig.ref_audio_data = {
-              fileName: audio.name,
-              assetId: saveId,
-            }
-          })
-        }}
-        className="h-10">
+      <Button onclick={uploadGptSoVitsReferenceAudioFromEditor} className="h-10">
         {#if characterDraft.value.gptSoVitsConfig.ref_audio_data.assetId === '' || characterDraft.value.gptSoVitsConfig.ref_audio_data.assetId === undefined}
           {language.selectFile}
         {:else}

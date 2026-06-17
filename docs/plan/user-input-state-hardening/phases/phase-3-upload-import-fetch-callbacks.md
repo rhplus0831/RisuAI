@@ -61,6 +61,11 @@ target/context/field snapshots, and freshness checks around `saveAsset` before
 NovelAI character reference, NovelAI i2i base, or WaveSpeed reference images can
 write image/base64 settings fields.
 
+Tenth landed slice: character TTS media callbacks now use latest operation
+tokens issued only after selected files exist, selected row/draft/`ttsMode`
+checks, and VITS/ref-audio field snapshots before VITS model registration or
+GPT-SoVITS reference audio upload can apply media fields.
+
 ## Anchors
 
 - `src/lib/ChatScreens/DefaultChatScreen.svelte`

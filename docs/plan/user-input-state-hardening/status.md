@@ -34,9 +34,11 @@ the input persistence inventory under
   emotion list snapshot before appending and dispatching. Settings media asset
   uploads for NovelAI character reference, NovelAI i2i base, and WaveSpeed
   reference images now guard by target/context/field snapshots before writing
-  image and base64 fields. Phase 2 landed character profile draft dirty
-  top-level field protection; prompt-template item row dirty projection merging;
-  whole-key dirty projection protection for
+  image and base64 fields. Character TTS media callbacks now guard VITS model
+  registration and GPT-SoVITS reference audio upload by selected row, draft id,
+  `ttsMode`, and field snapshots before applying narrow media fields. Phase 2
+  landed character profile draft dirty top-level field protection; prompt-template
+  item row dirty projection merging; whole-key dirty projection protection for
   `createServerBackedSettingDraft`; selected persona profile dirty projection
   protection; translator preset `name`/`prompt`/`maxResponse` dirty projection
   protection; lorebook entry draft dirty projection merging; and
@@ -106,7 +108,11 @@ the input persistence inventory under
   target capture, latest-operation tracking, context/field snapshot freshness,
   and narrow asset-field merging for the guarded `OtherBotSettings.svelte` image
   upload buttons.
-- Verification state: Phase 3 settings media asset upload callback validation is
+  `src/ts/server/characterTtsAssetUpload.ts` now centralizes character TTS media
+  target capture, latest-operation tracking, selected row/draft/mode freshness,
+  and field snapshot checks for VITS model registration and GPT-SoVITS reference
+  audio upload.
+- Verification state: Phase 3 character TTS media callback validation is
   recorded in `latest-verification.md`.
 - Highest issue density:
   - Character editor: 52 issue rows, mostly dirty projection and unguarded
@@ -153,7 +159,8 @@ the input persistence inventory under
   additional asset upload callbacks now guard stale completions; character
   emotion image upload callbacks now guard stale completions; character
   reference/model assets remain pending; module asset upload callbacks now guard
-  stale completions; prompt preset icon uploads now guard stale
+  stale completions; character TTS VITS model and GPT-SoVITS reference audio
+  callbacks now guard stale completions; prompt preset icon uploads now guard stale
   completions; settings media asset uploads for the guarded OtherBotSettings
   image paths now guard stale completions; plugin import/update, import helpers,
   and remaining dashboard/import persistence surfaces remain pending. NanoGPT
@@ -277,6 +284,12 @@ the input persistence inventory under
     WaveSpeed reference image buttons. `OtherBotSettings.svelte` now selects
     files before issuing upload tokens, checks freshness around `saveAsset`, and
     applies only a fresh narrow merge into the active settings draft.
+  - Phase 3 character TTS media slice: `characterTtsAssetUpload.ts` captures
+    target character id, row index, draft id, `ttsMode`, and VITS/ref-audio field
+    snapshots. `CharConfig.svelte` now selects files before issuing tokens,
+    checks freshness around VITS model registration and reference audio
+    `saveAsset`, and applies only `character.vits` or
+    `gptSoVitsConfig.ref_audio_data` when the draft is still fresh.
   - Phase 4: `restoreChatScopedState`, chat/message/generation freshness, and
     message update/delete/truncate/replace freshness.
   - Phase 5: create/delete/reorder/import/select and broad collection rollback

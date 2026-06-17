@@ -155,6 +155,15 @@ export interface OnnxModelFiles {
   name?: string
 }
 
+export interface SelectedOnnxModelFile {
+  name: string
+  data: Uint8Array
+}
+
+export interface RegisterOnnxModelOptions {
+  shouldContinue?: () => boolean
+}
+
 export const runVITS = async (text: string, modelData: string | OnnxModelFiles = 'Xenova/mms-tts-eng') => {
   await initTransformers()
   const { WaveFile } = await import('wavefile')
@@ -191,16 +200,16 @@ export const runVITS = async (text: string, modelData: string | OnnxModelFiles =
   sourceNode.start()
 }
 
-export const registerOnnxModel = async (): Promise<OnnxModelFiles> => {
+export const registerOnnxModelFromFile = async (
+  modelFile: SelectedOnnxModelFile,
+  options: RegisterOnnxModelOptions = {},
+): Promise<OnnxModelFiles | undefined> => {
+  const shouldContinue = options.shouldContinue ?? (() => true)
+  if (!shouldContinue()) return
+
   const id = v4().replace(/-/g, '')
 
-  const modelFile = await selectSingleFile(['zip'])
-
-  if (!modelFile) {
-    return
-  }
-
-  const unziped = await new Promise((res, rej) => {
+  const unziped = await new Promise<Record<string, Uint8Array>>((res, rej) => {
     unzip(
       modelFile.data,
       {
@@ -217,18 +226,23 @@ export const registerOnnxModel = async (): Promise<OnnxModelFiles> => {
       },
     )
   })
+  if (!shouldContinue()) return
 
   console.log(unziped)
 
   let fileIdMapped: { [key: string]: string } = {}
 
   const keys = Object.keys(unziped)
+  if (!shouldContinue()) return
+
   const savedAssetIds = await saveAssets(
     keys.map((key) => ({
       data: unziped[key],
       fileName: key.endsWith('.onnx') ? key : '',
     })),
   )
+  if (!shouldContinue()) return
+
   for (let i = 0; i < keys.length; i++) {
     const key = keys[i]
     const fid = savedAssetIds[i]
@@ -244,4 +258,14 @@ export const registerOnnxModel = async (): Promise<OnnxModelFiles> => {
     name: modelFile.name,
     id: id,
   }
+}
+
+export const registerOnnxModel = async (): Promise<OnnxModelFiles | undefined> => {
+  const modelFile = await selectSingleFile(['zip'])
+
+  if (!modelFile) {
+    return
+  }
+
+  return registerOnnxModelFromFile(modelFile)
 }

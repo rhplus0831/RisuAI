@@ -54,6 +54,8 @@ Character emotion image upload callback freshness has landed.
 Settings media asset upload callback freshness has landed for the NovelAI
 character reference image, NovelAI i2i base image, and WaveSpeed reference image
 paths.
+Character TTS media callback freshness has landed for VITS model registration
+and GPT-SoVITS reference audio upload.
 
 Next manager loop:
 
