@@ -229,6 +229,30 @@ describe('reroll swipe navigation (post-seed, durable for free)', () => {
     expect(sendChatMain).toHaveBeenCalledWith(false, 'g3')
   })
 
+  it('rerolling past the newest candidate skips generation when the active chat changes during truncate persistence', async () => {
+    seedThreeCandidates()
+    const truncate = deferred<{
+      status: 'ok'
+      revision: number
+      event: { type: string; revision: number; resource: string }
+    }>()
+    commandSpies.dispatchTruncateMessagesScoped.mockReturnValueOnce(truncate.promise)
+    const sendChatMain = vi.fn(async () => {})
+
+    const rerollPromise = reroll({ sendChatMain, closeMenu: vi.fn() })
+
+    expect(commandSpies.dispatchTruncateMessagesScoped).toHaveBeenCalledTimes(1)
+    selectedCharID.set(1)
+    truncate.resolve({
+      status: 'ok',
+      revision: 12,
+      event: { type: 'message.truncated', revision: 12, resource: 'message' },
+    })
+    await rerollPromise
+
+    expect(sendChatMain).not.toHaveBeenCalled()
+  })
+
   it('rerolling past the newest candidate skips generation when truncate persistence fails', async () => {
     seedThreeCandidates()
     commandSpies.dispatchTruncateMessagesScoped.mockResolvedValueOnce({ status: 'error', error: 'truncate failed' })
@@ -266,6 +290,34 @@ describe('reroll swipe navigation (post-seed, durable for free)', () => {
       expect.objectContaining({ snapshot: true }),
       { preserveRemovedAsAlternates: true },
     )
+  })
+
+  it('newReroll skips generation when the active chat changes during truncate persistence', async () => {
+    seedThreeCandidates()
+    DBState.db.characters[0].chats.push({
+      id: 'chat-1b',
+      message: [{ role: 'user', data: 'other chat', chatId: 'other-u1' }],
+    } as never)
+    const truncate = deferred<{
+      status: 'ok'
+      revision: number
+      event: { type: string; revision: number; resource: string }
+    }>()
+    commandSpies.dispatchTruncateMessagesScoped.mockReturnValueOnce(truncate.promise)
+    const sendChatMain = vi.fn(async () => {})
+
+    const rerollPromise = newReroll({ sendChatMain, closeMenu: vi.fn() })
+
+    expect(commandSpies.dispatchTruncateMessagesScoped).toHaveBeenCalledTimes(1)
+    DBState.db.characters[0].chatPage = 1
+    truncate.resolve({
+      status: 'ok',
+      revision: 13,
+      event: { type: 'message.truncated', revision: 13, resource: 'message' },
+    })
+    await rerollPromise
+
+    expect(sendChatMain).not.toHaveBeenCalled()
   })
 
   it('getRerollCandidates exposes active candidate metadata for the list UI', () => {

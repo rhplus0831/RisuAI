@@ -213,6 +213,7 @@ vi.mock('html-to-image', () => ({
 }))
 
 import DefaultChatScreen from './DefaultChatScreen.svelte'
+import * as rerollNavigation from 'src/ts/process/rerollNavigation.svelte'
 import {
   additionalChatMenu,
   additionalFloatingActionButtons,
@@ -390,6 +391,16 @@ async function clickContinueMenuItem() {
   const continueMenuItem = findClickableByText('continueResponse')
   expect(continueMenuItem).toBeTruthy()
   continueMenuItem!.click()
+}
+
+async function clickSideMenuRerollItem() {
+  const menuButton = target.querySelector<HTMLButtonElement>('[data-testid="default-chat-menu-button"]')
+  expect(menuButton).toBeTruthy()
+  menuButton!.click()
+  await tick()
+  const rerollMenuItem = findClickableByText('reroll')
+  expect(rerollMenuItem).toBeTruthy()
+  rerollMenuItem!.click()
 }
 
 function findClickableByText(text: string): HTMLElement | undefined {
@@ -792,6 +803,34 @@ describe('DefaultChatScreen transcript window state', () => {
       }),
     )
     expect(textarea.value).toBe('Newer draft typed during continue')
+  })
+
+  it('does not call reroll navigation when the active chat changes during reroll hydration', async () => {
+    seedDatabase([2, 2])
+    DBState.db.sideMenuRerollButton = true
+    const hydration = createDeferred<void>()
+    loadPageMocks.hydrateActiveChatFully.mockReturnValueOnce(hydration.promise)
+    mountScreen()
+
+    await waitFor(() => {
+      expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy()
+    })
+
+    await clickSideMenuRerollItem()
+    await waitFor(() => expect(loadPageMocks.hydrateActiveChatFully).toHaveBeenCalledTimes(1))
+
+    selectedCharID.set(1)
+    loadPageMocks.setCurrentRoute({
+      kind: 'character',
+      path: '/character/character-1/chat-1',
+      chaId: 'character-1',
+      chatId: 'chat-1',
+    })
+    await settle()
+    hydration.resolve()
+    await settle()
+
+    expect(rerollNavigation.reroll).not.toHaveBeenCalled()
   })
 
   it('does not let a stale auto-translate result overwrite newer source or target fields', async () => {

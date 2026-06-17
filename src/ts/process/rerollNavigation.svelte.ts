@@ -9,6 +9,7 @@ import {
 } from '../chatCommands'
 import { safeStructuredClone } from '../polyfill'
 import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
+import { createLatestOperationGuard } from '../server/staleStateGuards'
 import type { Chat, Message } from '../storage/database.svelte'
 import { clearPrererolls, PreUnreroll, Prereroll } from './prereroll'
 
@@ -28,6 +29,7 @@ let rerolls: Message[][] = []
 let rerollid = -1
 let lastCharId = -1
 let lastChatKey: string | undefined
+const rerollOperationGuard = createLatestOperationGuard<string>()
 
 export interface RerollDeps {
   /** The component's send wrapper (owns the AbortController + send sound). */
@@ -40,6 +42,10 @@ export interface RerollCandidate {
   index: number
   active: boolean
   messages: readonly Message[]
+}
+
+type RerollOperation = {
+  token: ReturnType<typeof rerollOperationGuard.issue>
 }
 
 function activeChatRecord(): Chat {
@@ -57,6 +63,21 @@ function currentRerollScope(): { charId: number; chatKey: string | undefined } {
     charId,
     chatKey: typeof chat?.id === 'string' && chat.id ? chat.id : `index:${chatPage}`,
   }
+}
+
+function currentRerollScopeTarget(): string {
+  const scope = currentRerollScope()
+  return `char:${scope.charId}|chat:${scope.chatKey ?? 'missing'}`
+}
+
+function beginRerollOperation(): RerollOperation {
+  return {
+    token: rerollOperationGuard.issue(currentRerollScopeTarget()),
+  }
+}
+
+function isCurrentRerollOperation(operation: RerollOperation): boolean {
+  return rerollOperationGuard.isLatest(operation.token) && currentRerollScopeTarget() === operation.token.target
 }
 
 function markRerollScope(): void {
@@ -111,7 +132,8 @@ export function markRerollChar(): void {
 // is identical.
 
 /** Swap just the active tail message's `data` (prefetch reroll), then persist. */
-function applyTailDataSwap(data: string): void {
+function applyTailDataSwap(data: string, operation: RerollOperation): boolean {
+  if (!isCurrentRerollOperation(operation)) return false
   const previous = currentChatScopedSnapshot()
   const messageId = withTrustedServerProjectionWrite(() => {
     const record = activeChatRecord()
@@ -121,10 +143,12 @@ function applyTailDataSwap(data: string): void {
     return id
   })
   dispatchUpdateMessageScoped(messageId, { data }, previous)
+  return true
 }
 
 /** Overwrite the last `slice.length` messages with a saved candidate, then persist. */
-function applyTailSlice(slice: Message[]): void {
+function applyTailSlice(slice: Message[], operation: RerollOperation): boolean {
+  if (!isCurrentRerollOperation(operation)) return false
   const previous = currentChatScopedSnapshot()
   const tail = withTrustedServerProjectionWrite(() => {
     const msgs = activeChatRecord().message
@@ -144,6 +168,7 @@ function applyTailSlice(slice: Message[]): void {
   if (record.id) {
     dispatchReplaceTailMessagesScoped(record.id, tail.afterMessageId, tail.messages, previous)
   }
+  return true
 }
 
 /**
@@ -154,7 +179,8 @@ function applyTailSlice(slice: Message[]): void {
  * proxies. The dispatch sends only the last retained message id, so the persisted
  * payload stays bounded to the truncate point.
  */
-async function applyRerollTruncate(keepLength: number): Promise<boolean> {
+async function applyRerollTruncate(keepLength: number, operation: RerollOperation): Promise<boolean> {
+  if (!isCurrentRerollOperation(operation)) return false
   const previous = currentChatScopedSnapshot()
   const afterMessageId = withTrustedServerProjectionWrite(() => {
     const msgs = activeChatRecord().message
@@ -171,7 +197,10 @@ async function applyRerollTruncate(keepLength: number): Promise<boolean> {
   return true
 }
 
-async function regenerateFromCurrentTail(deps: RerollDeps): Promise<void> {
+async function regenerateFromCurrentTail(deps: RerollDeps, operation: RerollOperation): Promise<void> {
+  if (!isCurrentRerollOperation(operation)) {
+    return
+  }
   if (rerolls.length === 0) {
     rerolls.push(safeStructuredClone([activeChatRecord().message.at(-1)]) as Message[])
     rerollid = rerolls.length - 1
@@ -202,20 +231,20 @@ async function regenerateFromCurrentTail(deps: RerollDeps): Promise<void> {
       return
     }
   }
-  const truncatePersisted = await applyRerollTruncate(cha.length)
-  if (!truncatePersisted) {
+  const truncatePersisted = await applyRerollTruncate(cha.length, operation)
+  if (!truncatePersisted || !isCurrentRerollOperation(operation)) {
     return
   }
   await deps.sendChatMain(false, regenerateMessageId)
 }
 
-function applyNextPrefetchedReroll(): boolean {
+function applyNextPrefetchedReroll(operation: RerollOperation): boolean {
+  if (!isCurrentRerollOperation(operation)) return false
   const genId = currentTailGenerationId()
   if (!genId) return false
   const r = Prereroll(genId)
   if (!r) return false
-  applyTailDataSwap(r)
-  return true
+  return applyTailDataSwap(r, operation)
 }
 
 // Concurrency contract: callers MUST NOT invoke reroll/unReroll while a generation
@@ -224,51 +253,77 @@ function applyNextPrefetchedReroll(): boolean {
 // the swap could remove the regenerate's target row before the server commits it.
 // The one-job-per-chat lock + the `$doingChat` gate keep these mutually exclusive.
 export async function reroll(deps: RerollDeps): Promise<void> {
-  resetRerollOnCharChange()
-  if (applyNextPrefetchedReroll()) return
-  if (rerollid < rerolls.length - 1) {
-    if (Array.isArray(rerolls[rerollid + 1])) {
-      rerollid += 1
-      applyTailSlice(safeStructuredClone(rerolls[rerollid]))
+  const operation = beginRerollOperation()
+  try {
+    resetRerollOnCharChange()
+    if (!isCurrentRerollOperation(operation)) return
+    if (applyNextPrefetchedReroll(operation)) return
+    if (rerollid < rerolls.length - 1) {
+      if (Array.isArray(rerolls[rerollid + 1])) {
+        if (!isCurrentRerollOperation(operation)) return
+        rerollid += 1
+        applyTailSlice(safeStructuredClone(rerolls[rerollid]), operation)
+      }
+      return
     }
-    return
+    await regenerateFromCurrentTail(deps, operation)
+  } finally {
+    rerollOperationGuard.clear(operation.token)
   }
-  await regenerateFromCurrentTail(deps)
 }
 
 /** Generate a fresh reroll candidate from the currently selected tail. */
 export async function newReroll(deps: RerollDeps): Promise<void> {
-  resetRerollOnCharChange()
-  if (applyNextPrefetchedReroll()) return
-  await regenerateFromCurrentTail(deps)
+  const operation = beginRerollOperation()
+  try {
+    resetRerollOnCharChange()
+    if (!isCurrentRerollOperation(operation)) return
+    if (applyNextPrefetchedReroll(operation)) return
+    await regenerateFromCurrentTail(deps, operation)
+  } finally {
+    rerollOperationGuard.clear(operation.token)
+  }
 }
 
 export async function unReroll(): Promise<void> {
-  resetRerollOnCharChange()
-  const genId = currentTailGenerationId()
-  if (genId) {
-    const r = PreUnreroll(genId)
-    if (r) {
-      applyTailDataSwap(r)
+  const operation = beginRerollOperation()
+  try {
+    resetRerollOnCharChange()
+    if (!isCurrentRerollOperation(operation)) return
+    const genId = currentTailGenerationId()
+    if (genId) {
+      const r = PreUnreroll(genId)
+      if (r) {
+        applyTailDataSwap(r, operation)
+        return
+      }
+    }
+    if (rerollid <= 0) {
       return
     }
-  }
-  if (rerollid <= 0) {
-    return
-  }
-  if (Array.isArray(rerolls[rerollid - 1])) {
-    rerollid -= 1
-    applyTailSlice(safeStructuredClone(rerolls[rerollid]))
+    if (Array.isArray(rerolls[rerollid - 1])) {
+      if (!isCurrentRerollOperation(operation)) return
+      rerollid -= 1
+      applyTailSlice(safeStructuredClone(rerolls[rerollid]), operation)
+    }
+  } finally {
+    rerollOperationGuard.clear(operation.token)
   }
 }
 
 /** Select an existing candidate from the reroll list by absolute buffer index. */
 export async function selectRerollCandidate(index: number): Promise<void> {
-  resetRerollOnCharChange()
-  if (!Number.isInteger(index) || index < 0 || index >= rerolls.length) return
-  if (index === rerollid) return
-  rerollid = index
-  applyTailSlice(safeStructuredClone(rerolls[rerollid]))
+  const operation = beginRerollOperation()
+  try {
+    resetRerollOnCharChange()
+    if (!Number.isInteger(index) || index < 0 || index >= rerolls.length) return
+    if (index === rerollid) return
+    if (!isCurrentRerollOperation(operation)) return
+    rerollid = index
+    applyTailSlice(safeStructuredClone(rerolls[rerollid]), operation)
+  } finally {
+    rerollOperationGuard.clear(operation.token)
+  }
 }
 
 /** The per-message id (stored, by historical misnomer, on `Message.chatId`). */

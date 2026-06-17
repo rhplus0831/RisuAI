@@ -13,7 +13,8 @@ output against a stale target.
   file and paste callbacks are covered by Phase 3; composer send/continue
   clear/restore and auto-translate freshness has landed here.
 - Re-check active chat after hydration and before reroll, unreroll, candidate
-  select, truncate, tail replace, and regenerate operations.
+  select, truncate, tail replace, and regenerate operations. Reroll active-chat
+  freshness has landed here.
 - Guard partial edit and partial delete modals with message id, source range,
   and source data freshness.
 - Guard dynamic rendered chat buttons and Lua trigger results before applying
@@ -30,6 +31,14 @@ success/failure and generation-prep clears only mutate a still-fresh composer,
 send builds user messages from the captured snapshot, and stale auto-translate
 results are dropped when the source text, target field version, or active
 transcript changes.
+
+Second landed slice: `DefaultChatScreen.svelte` reroll wrappers now capture
+active transcript identity around hydration. `rerollNavigation.svelte.ts` issues
+operation tokens scoped by selected character and stable chat id/index fallback,
+then checks freshness before tail swaps, tail slices, truncate persistence, and
+post-truncate generation. The guard is target-scoped, so leaving and returning
+to the same chat may still be treated as fresh unless a newer same-target reroll
+operation supersedes it.
 
 ## Anchors
 

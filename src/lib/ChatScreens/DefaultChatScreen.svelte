@@ -639,7 +639,9 @@
     if ($doingChat) {
       return
     }
+    const targetIdentity = getActiveTranscriptWindowIdentity()
     await hydrateActiveChatFully()
+    if (getActiveTranscriptWindowIdentity() !== targetIdentity) return
     await rerollNav({ sendChatMain, closeMenu: () => (openMenu = false) })
   }
 
@@ -647,7 +649,9 @@
     if ($doingChat) {
       return
     }
+    const targetIdentity = getActiveTranscriptWindowIdentity()
     await hydrateActiveChatFully()
+    if (getActiveTranscriptWindowIdentity() !== targetIdentity) return
     await unRerollNav()
   }
 
@@ -655,7 +659,9 @@
     if ($doingChat) {
       return
     }
+    const targetIdentity = getActiveTranscriptWindowIdentity()
     await hydrateActiveChatFully()
+    if (getActiveTranscriptWindowIdentity() !== targetIdentity) return
     await newRerollNav({ sendChatMain, closeMenu: () => (openMenu = false) })
   }
 
@@ -663,7 +669,9 @@
     if ($doingChat) {
       return
     }
+    const targetIdentity = getActiveTranscriptWindowIdentity()
     await hydrateActiveChatFully()
+    if (getActiveTranscriptWindowIdentity() !== targetIdentity) return
     await selectRerollCandidateNav(index)
   }
 
