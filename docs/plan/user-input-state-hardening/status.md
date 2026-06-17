@@ -179,6 +179,14 @@ persistence inventory under
   optimistically, serializes the frozen attempted folder snapshot, and rolls
   back failed creates only when the attempted folder is still unchanged and
   unreferenced by newer chat moves.
+  Loadout create, delete, favorite, and apply command failures now roll back by
+  attempted row, attempted favorite value, module membership, global-variable
+  value, and touch metadata instead of restoring broad loadout/apply snapshots.
+  Failed `applyLoadout()` sequences keep earlier server-accepted persona,
+  preset, and module commands when a later settings or touch command fails, and
+  failed touch rollback restores `lastUsed`, `characterIds`, and
+  `lastLoadedLoadoutName` only while those live values still match the attempted
+  touch.
   Phase 2 landed character profile draft dirty top-level field protection;
   prompt-template item row dirty projection merging; whole-key dirty projection
   protection for

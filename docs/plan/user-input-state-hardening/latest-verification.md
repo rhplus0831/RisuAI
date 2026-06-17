@@ -7,26 +7,29 @@ workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 5 sidebar chat-folder creation
-  optimism. Server-backed create-folder now inserts the folder optimistically,
-  serializes the frozen attempted folder snapshot for the command payload, and
-  rolls back failed creates only when the attempted folder is unchanged and
-  unreferenced by newer chat moves.
+- Runtime/code change under test: Phase 5 loadout command rollback. Loadout
+  create/delete/favorite failures now roll back by attempted row or field value,
+  and `applyLoadout()` command sequences keep earlier accepted persona, preset,
+  and module effects while rolling back only failed or unattempted
+  global-variable/touch tail effects.
 - Commands:
 
 ```bash
-pnpm exec vitest run src/lib/SideBars/SideChatList.svelte.test.ts src/ts/chatCommands.test.ts
-pnpm exec vitest run src/lib/Others/ChatList.svelte.test.ts src/ts/characters.importChat.test.ts src/ts/characterCommands.test.ts
+pnpm exec vitest run src/ts/loadout.test.ts
+pnpm exec vitest run src/ts/persona.test.ts src/lib/Setting/Pages/PersonaSettings.svelte.test.ts src/ts/moduleCommands.test.ts
+pnpm exec vitest run src/ts/presetSplit.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
-pnpm exec prettier --check src/ts/chatCommands.ts src/lib/SideBars/SideChatList.svelte src/lib/SideBars/SideChatList.svelte.test.ts src/ts/chatCommands.test.ts
+pnpm exec prettier --check src/ts/loadout.ts src/ts/loadout.test.ts
 git diff --check
 ```
 
-- Result: passed on 2026-06-18. Focused sidebar/chat-command coverage passed 94
-  tests across 2 files; neighboring ChatList/import/character command coverage
-  passed 75 tests across 3 files; and both TypeScript checks plus Prettier and
-  `git diff --check` passed.
+- Result: passed on 2026-06-18. Focused loadout coverage passed 14 tests across
+  1 file. The neighboring persona/module command set passed 42 tests across 3
+  files. `src/ts/presetStore.test.ts` is absent in this worktree, so
+  `src/ts/presetSplit.test.ts` was run as the preset-adjacent substitute and
+  passed 4 tests. Both TypeScript checks plus Prettier and `git diff --check`
+  passed.
 - Residual gaps: Multi-group plugin settings patch failures still share the
   generic settings rollback
   callback and roll back all still-attempted keys from the failed patch. Full
@@ -46,7 +49,10 @@ git diff --check
   not exhaustive for every mirrored model/prompt operation pair; prompt import
   is covered and no client-side model import caller was found. Hypa V3 rollback
   targets the array shapes emitted by the current controls and does not model
-  arbitrary reorder or multi-row transforms.
+  arbitrary reorder or multi-row transforms. Loadout apply rollback now covers a
+  later failed settings command after accepted persona/preset/module steps, but
+  does not exhaustively test every split-preset failure position inside
+  `applyLoadout()`.
 
 ## Remaining Proof
 
@@ -92,8 +98,9 @@ git diff --check
   5 slice. Plugin import/update runtime reload ordering is covered by the
   twenty-ninth Phase 5 slice. Server-backed sidebar chat-folder creation
   optimism and failed-create rollback are covered by the thirtieth Phase 5
-  slice. Remaining Phase 5 work owns import collection flows and any residual
-  sidebar collection edges.
+  slice. Loadout create/delete/favorite/apply rollback is covered by the
+  thirty-first Phase 5 slice. Remaining Phase 5 work owns import collection
+  flows and any residual sidebar collection edges.
 - Phase 6 owns Realm/backup/local bundle restore/import resyncs, character/chat
   import refresh/navigation edges, memory job list/progress ordering,
   route/selection hydration, welcome/onboarding delayed setup, and DevTool

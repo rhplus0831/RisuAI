@@ -7,7 +7,10 @@ vi.mock('./storage/fastifyStorage', () => ({
 }))
 
 import { clearCachedServerCommandRevision } from './server/commands'
-import { setServerProjectionWriteGuardEnabled } from './server/projectionWriteGuard.svelte'
+import {
+  setServerProjectionWriteGuardEnabled,
+  withTrustedServerProjectionWrite,
+} from './server/projectionWriteGuard.svelte'
 import { DBState, selectedCharID } from './stores.svelte'
 import { applyLoadout, deleteLoadout, saveCurrentLoadout, toggleLoadoutFavorite, type Loadout } from './loadout'
 import { currentPersonaStateSnapshot, isPersonaSettingsWatcherSuppressed, queueSelectedPersonaUpdate } from './persona'
@@ -555,12 +558,8 @@ describe('loadout projection command helpers', () => {
     ])
   })
 
-  it('rolls back every applied loadout facet when one sequenced command fails', async () => {
+  it('keeps accepted loadout apply steps and rolls back only the failed settings/touch tail', async () => {
     const loadout = seedApplyLoadoutState()
-    const previousLoadouts = cloneJsonValue(DBState.db.loadouts)
-    const previousPersonas = cloneJsonValue(DBState.db.personas)
-    const previousBotPresets = cloneJsonValue(DBState.db.botPresets)
-    const previousEnabledModules = cloneJsonValue(DBState.db.enabledModules)
     const previousGlobalVariables = cloneJsonValue(DBState.db.globalChatVariables)
     const calls = stubApplyLoadoutFetch({ failCommandNumber: 5 })
     vi.spyOn(Date, 'now').mockReturnValue(123456)
@@ -583,20 +582,99 @@ describe('loadout projection command helpers', () => {
       '/api/v1/commands/modules/enable',
       '/api/v1/commands/settings/sidebar',
     ])
-    expect(DBState.db.loadouts).toEqual(previousLoadouts)
+    expect(DBState.db.loadouts[0]).toMatchObject({
+      lastUsed: 100,
+      characterIds: [],
+    })
     expect(DBState.db.lastLoadedLoadoutName).toBe('Before Loadout')
-    expect(DBState.db.personas).toEqual(previousPersonas)
-    expect(DBState.db.selectedPersona).toBe(0)
-    expect(DBState.db.username).toBe('Live User')
-    expect(DBState.db.userIcon).toBe('live-icon')
-    expect(DBState.db.personaPrompt).toBe('live persona prompt')
-    expect(DBState.db.userNote).toBe('live user note')
-    expect(DBState.db.botPresets).toEqual(previousBotPresets)
-    expect(DBState.db.botPresetsId).toBe(0)
-    expect(DBState.db.mainPrompt).toBe('live main')
-    expect(DBState.db.temperature).toBe(20)
-    expect(DBState.db.enabledModules).toEqual(previousEnabledModules)
+    expect(DBState.db.selectedPersona).toBe(1)
+    expect(DBState.db.username).toBe('Persona B')
+    expect(DBState.db.userIcon).toBe('icon-b')
+    expect(DBState.db.personaPrompt).toBe('persona-b prompt')
+    expect(DBState.db.userNote).toBe('persona-b note')
+    expect(DBState.db.personas[0]).toMatchObject({
+      name: 'Live User',
+      icon: 'live-icon',
+      personaPrompt: 'live persona prompt',
+      note: 'live user note',
+    })
+    expect(DBState.db.botPresets[0]).toMatchObject({
+      id: 'preset-a',
+      name: 'Preset A',
+      mainPrompt: 'live main',
+      jailbreak: 'live jailbreak',
+      globalNote: 'live global',
+      temperature: 20,
+    })
+    expect(DBState.db.botPresetsId).toBe(1)
+    expect(DBState.db.mainPrompt).toBe('preset-b main')
+    expect(DBState.db.temperature).toBe(66)
+    expect(DBState.db.enabledModules).toEqual(['module-a', 'module-stay'])
     expect(DBState.db.globalChatVariables).toEqual(previousGlobalVariables)
+  })
+
+  it('restores the previously selected legacy preset row after normalizing missing ids on failed preset select', async () => {
+    const loadout = seedApplyLoadoutState()
+    delete DBState.db.botPresets[0].id
+    delete DBState.db.botPresets[1].id
+    const calls = stubApplyLoadoutFetch({ failCommandNumber: 1 })
+    vi.spyOn(Date, 'now').mockReturnValue(123456)
+    setServerProjectionWriteGuardEnabled(true)
+
+    applyLoadout(loadout, ['preset'])
+
+    const previousPresetId = DBState.db.botPresets[0].id
+    const attemptedPresetId = DBState.db.botPresets[1].id
+    expect(previousPresetId).toEqual(expect.any(String))
+    expect(attemptedPresetId).toEqual(expect.any(String))
+    expect(previousPresetId).not.toBe(attemptedPresetId)
+    expect(DBState.db.botPresetsId).toBe(1)
+    expect(DBState.db.mainPrompt).toBe('preset-b main')
+
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.botPresets.push({
+        id: 'preset-later',
+        name: 'Later Preset',
+        mainPrompt: 'later main',
+        jailbreak: 'later jailbreak',
+        globalNote: 'later global',
+        temperature: 1,
+        maxContext: 2,
+        maxResponse: 3,
+        frequencyPenalty: 4,
+        PresensePenalty: 5,
+        formatingOrder: [],
+        promptPreprocess: false,
+        bias: [],
+        ooba: {},
+        ainconfig: {},
+        promptTemplate: [],
+      })
+      DBState.db.enabledModules = ['module-later']
+    })
+
+    await waitForCallCount(calls, 2)
+    await flushCommandEffects()
+
+    expect(calls.map((call) => call.url)).toEqual(['/api/v1/bootstrap', '/api/v1/commands/presets/select'])
+    expect(calls[1]).toMatchObject({
+      method: 'POST',
+      body: {
+        baseRevision: 10,
+        presetId: attemptedPresetId,
+        apply: true,
+        saveCurrent: true,
+      },
+    })
+    expect(DBState.db.botPresetsId).toBe(0)
+    expect(DBState.db.botPresets[0]).toMatchObject({
+      id: previousPresetId,
+      name: 'Preset A',
+      mainPrompt: 'preset-a main',
+    })
+    expect(DBState.db.mainPrompt).toBe('live main')
+    expect(DBState.db.enabledModules).toEqual(['module-later'])
+    expect(DBState.db.botPresets.map((preset) => preset.name)).toContain('Later Preset')
   })
 
   it('applies a subset of facets without mutating or commanding skipped facets', async () => {
@@ -711,9 +789,8 @@ describe('loadout projection command helpers', () => {
     ])
   })
 
-  it('toggles favorite projection, dispatches the favorite command, and rolls back on failure', async () => {
+  it('failed favorite preserves newer sibling edits/appends and newer same-row changes', async () => {
     const calls = stubCommandFetch({ failCommands: true })
-    const previousLoadouts = cloneJsonValue(DBState.db.loadouts)
     setServerProjectionWriteGuardEnabled(true)
 
     expect(() => {
@@ -722,6 +799,12 @@ describe('loadout projection command helpers', () => {
 
     expect(toggleLoadoutFavorite('loadout-a')).toBe(true)
     expect(DBState.db.loadouts[0].favorite).toBe(true)
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.loadouts[0].name = 'Newer Loadout A'
+      DBState.db.loadouts[0].favorite = false
+      DBState.db.loadouts[1].name = 'Edited Loadout B'
+      DBState.db.loadouts.push(makeLoadout({ id: 'loadout-c', name: 'Later Loadout' }))
+    })
 
     await waitForCallCount(calls, 2)
     await flushCommandEffects()
@@ -743,17 +826,66 @@ describe('loadout projection command helpers', () => {
         },
       },
     ])
-    expect(DBState.db.loadouts).toEqual(previousLoadouts)
+    expect(DBState.db.loadouts).toHaveLength(3)
+    expect(DBState.db.loadouts[0]).toMatchObject({
+      id: 'loadout-a',
+      name: 'Newer Loadout A',
+      favorite: false,
+    })
+    expect(DBState.db.loadouts[1]).toMatchObject({
+      id: 'loadout-b',
+      name: 'Edited Loadout B',
+      favorite: true,
+    })
+    expect(DBState.db.loadouts[2]).toMatchObject({
+      id: 'loadout-c',
+      name: 'Later Loadout',
+    })
     expect(DBState.db.lastLoadedLoadoutName).toBe('Loadout A')
   })
 
-  it('removes the deleted loadout projection, dispatches the delete command, and rolls back on failure', async () => {
+  it('failed create removes only the unchanged attempted loadout and preserves later rows', async () => {
+    seedApplyLoadoutState()
     const calls = stubCommandFetch({ failCommands: true })
-    const previousLoadouts = cloneJsonValue(DBState.db.loadouts)
+    setServerProjectionWriteGuardEnabled(true)
+
+    const created = saveCurrentLoadout('Created Loadout')
+    expect(DBState.db.loadouts.map((item) => item.id)).toEqual(['loadout-a', created.id])
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.loadouts[0].name = 'Edited Existing Loadout'
+      DBState.db.loadouts.push(makeLoadout({ id: 'loadout-later', name: 'Later Loadout' }))
+    })
+
+    await waitForCallCount(calls, 2)
+    await flushCommandEffects()
+
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/loadouts',
+      method: 'POST',
+      authHeader: 'loadout-command-token',
+      body: {
+        baseRevision: 10,
+        loadout: expect.objectContaining({
+          id: created.id,
+          name: 'Created Loadout',
+        }),
+      },
+    })
+    expect(DBState.db.loadouts.map((item) => item.id)).toEqual(['loadout-a', 'loadout-later'])
+    expect(DBState.db.loadouts[0].name).toBe('Edited Existing Loadout')
+  })
+
+  it('failed delete reinserts only a still-missing loadout and preserves sibling edits/appends', async () => {
+    const calls = stubCommandFetch({ failCommands: true })
+    const deletedLoadout = cloneJsonValue(DBState.db.loadouts[1])
     setServerProjectionWriteGuardEnabled(true)
 
     expect(deleteLoadout('loadout-b')).toBe(true)
     expect(DBState.db.loadouts.map((loadout) => loadout.id)).toEqual(['loadout-a'])
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.loadouts[0].name = 'Edited Loadout A'
+      DBState.db.loadouts.push(makeLoadout({ id: 'loadout-c', name: 'Later Loadout' }))
+    })
 
     await waitForCallCount(calls, 2)
     await flushCommandEffects()
@@ -774,7 +906,36 @@ describe('loadout projection command helpers', () => {
         },
       },
     ])
-    expect(DBState.db.loadouts).toEqual(previousLoadouts)
+    expect(DBState.db.loadouts.map((loadout) => loadout.id)).toEqual(['loadout-a', 'loadout-b', 'loadout-c'])
+    expect(DBState.db.loadouts[0].name).toBe('Edited Loadout A')
+    expect(DBState.db.loadouts[1]).toEqual(deletedLoadout)
+    expect(DBState.db.loadouts[2]).toMatchObject({
+      id: 'loadout-c',
+      name: 'Later Loadout',
+    })
+    expect(DBState.db.lastLoadedLoadoutName).toBe('Loadout A')
+  })
+
+  it('failed delete skips rollback when the same loadout id was recreated', async () => {
+    const calls = stubCommandFetch({ failCommands: true })
+    setServerProjectionWriteGuardEnabled(true)
+
+    expect(deleteLoadout('loadout-b')).toBe(true)
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.loadouts[0].name = 'Edited Loadout A'
+      DBState.db.loadouts.push(makeLoadout({ id: 'loadout-b', name: 'Recreated Loadout B', lastUsed: 999 }))
+    })
+
+    await waitForCallCount(calls, 2)
+    await flushCommandEffects()
+
+    expect(DBState.db.loadouts.map((loadout) => loadout.id)).toEqual(['loadout-a', 'loadout-b'])
+    expect(DBState.db.loadouts[0].name).toBe('Edited Loadout A')
+    expect(DBState.db.loadouts[1]).toMatchObject({
+      id: 'loadout-b',
+      name: 'Recreated Loadout B',
+      lastUsed: 999,
+    })
     expect(DBState.db.lastLoadedLoadoutName).toBe('Loadout A')
   })
 

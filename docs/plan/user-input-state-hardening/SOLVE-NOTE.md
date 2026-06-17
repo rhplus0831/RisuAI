@@ -93,7 +93,10 @@ rollback has landed for create, create-and-select, import-style create, and
 permanent delete commands. Hypa V3 preset array rollback has landed for
 append/import, rename/settings edit, and delete settings patches. Combined
 sidebar chat/folder reorder rollback has landed for folder drag reorder command
-sequences.
+sequences. Loadout create/delete/favorite rollback now scopes to attempted rows
+or favorite values, and `applyLoadout()` now keeps earlier server-accepted
+persona, preset, and module sequence steps while rolling back only failed or
+unattempted global-variable and touch tail effects.
 
 Next manager loop:
 

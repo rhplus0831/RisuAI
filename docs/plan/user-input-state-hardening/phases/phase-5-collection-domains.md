@@ -225,6 +225,15 @@ serializes the frozen attempted folder snapshot, and failed creates remove only
 an unchanged unreferenced attempted folder so newer chats moved into that folder
 are not orphaned.
 
+Thirty-first landed slice: loadout create, delete, favorite, and apply command
+rollback now uses attempted-value records instead of broad loadout/apply
+snapshots. Failed creates remove only an unchanged attempted loadout row, failed
+deletes reinsert only a still-missing row at a bounded previous index, failed
+favorite commands restore only the `favorite` field while it still matches the
+attempted value, and failed `applyLoadout()` sequences keep earlier
+server-accepted persona, preset, and module steps while rolling back only the
+failed or unattempted global-variable and touch tail effects.
+
 ## Anchors
 
 - `src/lib/Setting/botpreset.svelte`

@@ -1,10 +1,5 @@
 import { runOptimisticCommandSequence } from './chatCommands'
-import {
-  applyPersonaStateSnapshotLocally,
-  currentPersonaStateSnapshot,
-  selectUserPersonaLocally,
-  type PersonaStateSnapshot,
-} from './persona'
+import { currentPersonaStateSnapshot, selectUserPersonaLocally, type PersonaStateSnapshot } from './persona'
 import { safeStructuredClone } from './polyfill'
 import {
   canUseServerCommands,
@@ -24,6 +19,7 @@ import {
   type ServerCommandResult,
 } from './server/commands'
 import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
+import { applyAttemptedFieldRollback, applyAttemptedKeyedListRollback } from './server/staleStateGuards'
 import {
   applyModelPresetFieldsToDatabase,
   applyPromptPresetFieldsToDatabase,
@@ -81,29 +77,85 @@ export function makeLoadout(options: { name: string }): Loadout {
 
 type LoadoutApplyOption = 'modules' | 'globalVariables' | 'preset' | 'persona'
 
-export interface LoadoutStateSnapshot {
-  loadouts: Loadout[]
-  lastLoadedLoadoutName: string
-}
-
 type ServerCommandFactory = (baseRevision: number) => Promise<ServerCommandResult>
 
-interface PresetApplySnapshot {
-  botPresets: botPreset[]
-  botPresetsId: number
-  modelPresets: ModelPreset[]
-  modelPresetsId: number
-  promptPresets: PromptPreset[]
-  promptPresetsId: number
-  setPresetSettings: Partial<Record<SetPresetRollbackKey, unknown>>
+interface LoadoutListRollbackEntry {
+  key: string
+  previous: Loadout | null
+  attempted: Loadout | null
+  previousIndex?: number
 }
 
-interface LoadoutApplyStateSnapshot {
-  loadout: LoadoutStateSnapshot
-  persona?: PersonaStateSnapshot
-  preset?: PresetApplySnapshot
-  enabledModules?: string[]
-  globalChatVariables?: { [key: string]: string }
+interface LoadoutFavoriteRollback {
+  loadoutId: string
+  previousFavorite: boolean
+  attemptedFavorite: boolean
+}
+
+interface LoadoutTouchRollback {
+  loadoutId: string
+  previous: Partial<Pick<Loadout, 'lastUsed' | 'characterIds'>>
+  attempted: Partial<Pick<Loadout, 'lastUsed' | 'characterIds'>>
+  previousLastLoadedLoadoutName: string
+  attemptedLastLoadedLoadoutName: string
+}
+
+interface LoadoutModuleMembershipRollback {
+  moduleId: string
+  previousEnabled: boolean
+  attemptedEnabled: boolean
+  previousModules: string[]
+}
+
+interface LoadoutGlobalVariablesRollback {
+  previous: { [key: string]: string }
+  attempted: { [key: string]: string }
+}
+
+interface LoadoutPersonaRowRollback {
+  personaId: string
+  previous: Record<string, unknown>
+  attempted: Record<string, unknown>
+}
+
+interface LoadoutPersonaSelectionRollback {
+  rows: LoadoutPersonaRowRollback[]
+  previousMirror: Pick<PersonaStateSnapshot, 'selectedPersona' | 'username' | 'userIcon' | 'personaPrompt' | 'userNote'>
+  attemptedMirror: Pick<
+    PersonaStateSnapshot,
+    'selectedPersona' | 'username' | 'userIcon' | 'personaPrompt' | 'userNote'
+  >
+}
+
+interface PresetFieldRollback {
+  presetId: string
+  previous: Record<string, unknown>
+  attempted: Record<string, unknown>
+}
+
+interface PresetSettingsRollback {
+  previous: Partial<Record<SetPresetRollbackKey, unknown>>
+  attempted: Partial<Record<SetPresetRollbackKey, unknown>>
+}
+
+interface LegacyPresetSelectionRollback extends PresetSettingsRollback {
+  previousSelectedId: string | null
+  attemptedSelectedId: string | null
+  saveCurrentRollback: PresetFieldRollback | null
+}
+
+type SplitPresetKind = 'model' | 'prompt'
+
+interface SplitPresetSelectionRollback extends PresetSettingsRollback {
+  kind: SplitPresetKind
+  previousSelectedId: string | null
+  attemptedSelectedId: string | null
+}
+
+interface LoadoutApplyStep {
+  succeeded: boolean
+  command: ServerCommandFactory
+  rollback: () => void
 }
 
 const SET_PRESET_ROLLBACK_KEYS = [
@@ -276,69 +328,326 @@ function snapshotJson(value: unknown): string {
   return snapshot === undefined ? '__undefined__' : snapshot
 }
 
-export function currentLoadoutStateSnapshot(): LoadoutStateSnapshot {
-  return {
-    loadouts: cloneJsonValue(DBState.db.loadouts ?? []),
-    lastLoadedLoadoutName: DBState.db.lastLoadedLoadoutName,
-  }
-}
-
-export function restoreLoadoutState(snapshot: LoadoutStateSnapshot): void {
-  withTrustedServerProjectionWrite(() => {
-    DBState.db.loadouts = cloneJsonValue(snapshot.loadouts)
-    DBState.db.lastLoadedLoadoutName = snapshot.lastLoadedLoadoutName
-  })
-}
-
-function currentPresetApplySnapshot(): PresetApplySnapshot {
+function snapshotPresetSettings(): Partial<Record<SetPresetRollbackKey, unknown>> {
   const dbRecord = DBState.db as unknown as Record<SetPresetRollbackKey, unknown>
   const setPresetSettings: Partial<Record<SetPresetRollbackKey, unknown>> = {}
   for (const key of SET_PRESET_ROLLBACK_KEYS) {
     setPresetSettings[key] = cloneJsonValue(dbRecord[key])
   }
+  return setPresetSettings
+}
+
+function rollbackLoadoutListEntry(entry: LoadoutListRollbackEntry): void {
+  withTrustedServerProjectionWrite(() => {
+    const list = DBState.db.loadouts ?? []
+    const rolledBack = applyAttemptedKeyedListRollback<Loadout, string>({
+      list,
+      entries: [entry],
+      getKey: (loadout) => loadout?.id,
+    })
+    if (rolledBack.length > 0) {
+      DBState.db.loadouts = list
+    }
+  })
+}
+
+function rollbackCreatedLoadout(attemptedLoadout: Loadout): void {
+  rollbackLoadoutListEntry({
+    key: attemptedLoadout.id,
+    previous: null,
+    attempted: cloneJsonValue(attemptedLoadout),
+  })
+}
+
+function rollbackDeletedLoadout(previousLoadout: Loadout, previousIndex: number): void {
+  rollbackLoadoutListEntry({
+    key: previousLoadout.id,
+    previous: cloneJsonValue(previousLoadout),
+    attempted: null,
+    previousIndex,
+  })
+}
+
+function rollbackLoadoutFavorite(rollback: LoadoutFavoriteRollback): void {
+  withTrustedServerProjectionWrite(() => {
+    const loadout = DBState.db.loadouts?.find((item) => item.id === rollback.loadoutId)
+    if (!loadout) return
+    applyAttemptedFieldRollback({
+      target: loadout as unknown as Record<string, unknown>,
+      previous: { favorite: rollback.previousFavorite },
+      attempted: { favorite: rollback.attemptedFavorite },
+      keys: ['favorite'],
+    })
+  })
+}
+
+function rollbackLoadoutTouch(rollback: LoadoutTouchRollback): void {
+  withTrustedServerProjectionWrite(() => {
+    const loadout = DBState.db.loadouts?.find((item) => item.id === rollback.loadoutId)
+    if (loadout) {
+      applyAttemptedFieldRollback({
+        target: loadout as unknown as Record<string, unknown>,
+        previous: rollback.previous as Record<string, unknown>,
+        attempted: rollback.attempted as Record<string, unknown>,
+        keys: Object.keys(rollback.attempted),
+      })
+    }
+
+    if (snapshotJson(DBState.db.lastLoadedLoadoutName) === snapshotJson(rollback.attemptedLastLoadedLoadoutName)) {
+      DBState.db.lastLoadedLoadoutName = rollback.previousLastLoadedLoadoutName
+    }
+  })
+}
+
+function insertModuleAtPreviousPosition(liveModules: string[], moduleId: string, previousModules: string[]): void {
+  const previousIndex = previousModules.indexOf(moduleId)
+  if (previousIndex === -1) {
+    liveModules.push(moduleId)
+    return
+  }
+
+  for (let index = previousIndex - 1; index >= 0; index -= 1) {
+    const liveIndex = liveModules.indexOf(previousModules[index])
+    if (liveIndex !== -1) {
+      liveModules.splice(liveIndex + 1, 0, moduleId)
+      return
+    }
+  }
+
+  for (let index = previousIndex + 1; index < previousModules.length; index += 1) {
+    const liveIndex = liveModules.indexOf(previousModules[index])
+    if (liveIndex !== -1) {
+      liveModules.splice(liveIndex, 0, moduleId)
+      return
+    }
+  }
+
+  liveModules.splice(Math.max(0, Math.min(previousIndex, liveModules.length)), 0, moduleId)
+}
+
+function rollbackModuleMembership(rollback: LoadoutModuleMembershipRollback): void {
+  withTrustedServerProjectionWrite(() => {
+    const liveModules = Array.isArray(DBState.db.enabledModules) ? DBState.db.enabledModules : []
+    const liveEnabled = liveModules.includes(rollback.moduleId)
+    if (liveEnabled !== rollback.attemptedEnabled) return
+
+    if (!rollback.previousEnabled) {
+      DBState.db.enabledModules = liveModules.filter((moduleId) => moduleId !== rollback.moduleId)
+      return
+    }
+
+    if (!liveEnabled) {
+      insertModuleAtPreviousPosition(liveModules, rollback.moduleId, rollback.previousModules)
+      DBState.db.enabledModules = liveModules
+    }
+  })
+}
+
+function rollbackGlobalChatVariables(rollback: LoadoutGlobalVariablesRollback): void {
+  withTrustedServerProjectionWrite(() => {
+    applyAttemptedFieldRollback({
+      target: DBState.db as unknown as Record<string, unknown>,
+      previous: { globalChatVariables: rollback.previous },
+      attempted: { globalChatVariables: rollback.attempted },
+      keys: ['globalChatVariables'],
+    })
+  })
+}
+
+function personaMirrorSnapshot(
+  snapshot: PersonaStateSnapshot,
+): Pick<PersonaStateSnapshot, 'selectedPersona' | 'username' | 'userIcon' | 'personaPrompt' | 'userNote'> {
   return {
-    botPresets: cloneJsonValue(DBState.db.botPresets ?? []),
-    botPresetsId: DBState.db.botPresetsId,
-    modelPresets: cloneJsonValue(DBState.db.modelPresets ?? []),
-    modelPresetsId: DBState.db.modelPresetsId,
-    promptPresets: cloneJsonValue(DBState.db.promptPresets ?? []),
-    promptPresetsId: DBState.db.promptPresetsId,
-    setPresetSettings,
+    selectedPersona: snapshot.selectedPersona,
+    username: snapshot.username,
+    userIcon: snapshot.userIcon,
+    personaPrompt: snapshot.personaPrompt,
+    userNote: snapshot.userNote,
   }
 }
 
-function restoreLoadoutApplyState(snapshot: LoadoutApplyStateSnapshot): void {
-  if (snapshot.persona) {
-    applyPersonaStateSnapshotLocally(snapshot.persona)
+function keyedPersonaRows(snapshot: PersonaStateSnapshot): Map<string, Record<string, unknown>> {
+  const rows = new Map<string, Record<string, unknown>>()
+  for (const persona of snapshot.personas ?? []) {
+    const id = nonBlankId(persona?.id)
+    if (id) {
+      rows.set(id, persona as unknown as Record<string, unknown>)
+    }
+  }
+  return rows
+}
+
+function personaSelectionRollback(
+  previous: PersonaStateSnapshot,
+  attempted: PersonaStateSnapshot,
+): LoadoutPersonaSelectionRollback {
+  const previousRows = keyedPersonaRows(previous)
+  const rows: LoadoutPersonaRowRollback[] = []
+  for (const [personaId, attemptedRow] of keyedPersonaRows(attempted)) {
+    const previousRow = previousRows.get(personaId)
+    if (!previousRow || snapshotJson(previousRow) === snapshotJson(attemptedRow)) continue
+    rows.push({
+      personaId,
+      previous: cloneJsonValue(previousRow),
+      attempted: cloneJsonValue(attemptedRow),
+    })
   }
 
+  return {
+    rows,
+    previousMirror: personaMirrorSnapshot(previous),
+    attemptedMirror: personaMirrorSnapshot(attempted),
+  }
+}
+
+function rollbackPersonaSelection(rollback: LoadoutPersonaSelectionRollback): void {
   withTrustedServerProjectionWrite(() => {
-    DBState.db.loadouts = cloneJsonValue(snapshot.loadout.loadouts)
-    DBState.db.lastLoadedLoadoutName = snapshot.loadout.lastLoadedLoadoutName
-
-    if (snapshot.preset) {
-      DBState.db.botPresets = cloneJsonValue(snapshot.preset.botPresets)
-      DBState.db.botPresetsId = snapshot.preset.botPresetsId
-      DBState.db.modelPresets = cloneJsonValue(snapshot.preset.modelPresets)
-      DBState.db.modelPresetsId = snapshot.preset.modelPresetsId
-      DBState.db.promptPresets = cloneJsonValue(snapshot.preset.promptPresets)
-      DBState.db.promptPresetsId = snapshot.preset.promptPresetsId
-      const dbRecord = DBState.db as unknown as Record<SetPresetRollbackKey, unknown>
-      for (const key of SET_PRESET_ROLLBACK_KEYS) {
-        if (Object.hasOwn(snapshot.preset.setPresetSettings, key)) {
-          dbRecord[key] = cloneJsonValue(snapshot.preset.setPresetSettings[key])
-        }
-      }
+    for (const row of rollback.rows) {
+      const persona = DBState.db.personas?.find((item) => item?.id === row.personaId)
+      if (!persona) continue
+      applyAttemptedFieldRollback({
+        target: persona as unknown as Record<string, unknown>,
+        previous: row.previous,
+        attempted: row.attempted,
+        deleteMissingPrevious: true,
+      })
     }
 
-    if (snapshot.enabledModules) {
-      DBState.db.enabledModules = cloneJsonValue(snapshot.enabledModules)
-    }
-
-    if (snapshot.globalChatVariables) {
-      DBState.db.globalChatVariables = cloneJsonValue(snapshot.globalChatVariables)
-    }
+    applyAttemptedFieldRollback({
+      target: DBState.db as unknown as Record<string, unknown>,
+      previous: rollback.previousMirror as Record<string, unknown>,
+      attempted: rollback.attemptedMirror as Record<string, unknown>,
+      keys: Object.keys(rollback.attemptedMirror),
+    })
   })
+}
+
+function currentBotPresetSelectedId(): string | null {
+  const index = DBState.db.botPresetsId
+  if (!Number.isInteger(index) || index < 0 || !Array.isArray(DBState.db.botPresets)) return null
+  return DBState.db.botPresets[index]?.id ?? null
+}
+
+function restoreBotPresetSelectionToId(presetId: string | null): void {
+  const list = DBState.db.botPresets ?? []
+  const index = presetId ? list.findIndex((preset) => preset?.id === presetId) : -1
+  DBState.db.botPresetsId = index >= 0 ? index : normalizedBotPresetsId(list.length, -1)
+}
+
+function splitPresetList(kind: SplitPresetKind): Array<ModelPreset | PromptPreset> {
+  return (kind === 'model' ? DBState.db.modelPresets : DBState.db.promptPresets) ?? []
+}
+
+function currentSplitPresetSelectedId(kind: SplitPresetKind): string | null {
+  const list = splitPresetList(kind)
+  const index = kind === 'model' ? DBState.db.modelPresetsId : DBState.db.promptPresetsId
+  if (!Number.isInteger(index) || index < 0) return null
+  return list[index]?.id ?? null
+}
+
+function setSplitPresetSelectedIndex(kind: SplitPresetKind, index: number): void {
+  if (kind === 'model') {
+    DBState.db.modelPresetsId = index
+  } else {
+    DBState.db.promptPresetsId = index
+  }
+}
+
+function restoreSplitPresetSelectionToId(kind: SplitPresetKind, presetId: string | null): void {
+  const list = splitPresetList(kind)
+  const index = presetId ? list.findIndex((preset) => preset?.id === presetId) : -1
+  setSplitPresetSelectedIndex(kind, index >= 0 ? index : normalizedBotPresetsId(list.length, -1))
+}
+
+function presetFieldRollbackFromPatch(
+  presetId: string,
+  previousPreset: Record<string, unknown>,
+  attemptedPreset: Record<string, unknown>,
+): PresetFieldRollback {
+  const previous: Record<string, unknown> = {}
+  const attempted = cloneJsonValue(attemptedPreset)
+  const keys = new Set([...Object.keys(previousPreset), ...Object.keys(attempted)])
+
+  for (const key of keys) {
+    if (Object.hasOwn(previousPreset, key)) {
+      previous[key] = cloneJsonValue(previousPreset[key])
+    }
+    if (!Object.hasOwn(attempted, key)) {
+      attempted[key] = undefined
+    }
+  }
+
+  return {
+    presetId,
+    previous,
+    attempted,
+  }
+}
+
+function rollbackPresetFields(rollback: PresetFieldRollback | null): void {
+  if (!rollback) return
+  withTrustedServerProjectionWrite(() => {
+    const preset = DBState.db.botPresets?.find((item) => item?.id === rollback.presetId)
+    if (!preset) return
+    applyAttemptedFieldRollback({
+      target: preset as unknown as Record<string, unknown>,
+      previous: rollback.previous,
+      attempted: rollback.attempted,
+      deleteMissingPrevious: true,
+    })
+  })
+}
+
+function rollbackPresetSettings(rollback: PresetSettingsRollback): void {
+  applyAttemptedFieldRollback({
+    target: DBState.db as unknown as Record<string, unknown>,
+    previous: rollback.previous as Record<string, unknown>,
+    attempted: rollback.attempted as Record<string, unknown>,
+    keys: SET_PRESET_ROLLBACK_KEYS,
+  })
+}
+
+function rollbackLegacyPresetSelection(rollback: LegacyPresetSelectionRollback): void {
+  withTrustedServerProjectionWrite(() => {
+    rollbackPresetFields(rollback.saveCurrentRollback)
+    if (!rollback.attemptedSelectedId || currentBotPresetSelectedId() !== rollback.attemptedSelectedId) return
+    rollbackPresetSettings(rollback)
+    restoreBotPresetSelectionToId(rollback.previousSelectedId)
+  })
+}
+
+function rollbackSplitPresetSelection(rollback: SplitPresetSelectionRollback): void {
+  withTrustedServerProjectionWrite(() => {
+    if (!rollback.attemptedSelectedId || currentSplitPresetSelectedId(rollback.kind) !== rollback.attemptedSelectedId) {
+      return
+    }
+    rollbackPresetSettings(rollback)
+    restoreSplitPresetSelectionToId(rollback.kind, rollback.previousSelectedId)
+  })
+}
+
+function createLoadoutApplyStep(command: ServerCommandFactory, rollback: () => void): LoadoutApplyStep {
+  const step: LoadoutApplyStep = {
+    succeeded: false,
+    command: async (baseRevision) => {
+      const result = await command(baseRevision)
+      if (result.status === 'ok') {
+        step.succeeded = true
+      }
+      return result
+    },
+    rollback,
+  }
+  return step
+}
+
+function rollbackUnacceptedLoadoutApplySteps(steps: LoadoutApplyStep[]): void {
+  for (let index = steps.length - 1; index >= 0; index -= 1) {
+    const step = steps[index]
+    if (!step.succeeded) {
+      step.rollback()
+    }
+  }
 }
 
 function runLoadoutCommand<T extends Record<string, unknown>>(
@@ -357,37 +666,38 @@ function readablePresetName(preset: { name?: unknown } | undefined): string {
   return typeof preset?.name === 'string' ? preset.name : ''
 }
 
-function dispatchCreateLoadout(loadout: Loadout, previous: LoadoutStateSnapshot): void {
+function dispatchCreateLoadout(loadout: Loadout): void {
+  const attemptedLoadout = cloneJsonValue(loadout)
   runLoadoutCommand(
     (baseRevision) =>
       createLoadoutCommand({
         baseRevision,
-        loadout: toLoadoutSnapshot(loadout),
+        loadout: toLoadoutSnapshot(attemptedLoadout),
       }),
-    () => restoreLoadoutState(previous),
+    () => rollbackCreatedLoadout(attemptedLoadout),
   )
 }
 
-function dispatchDeleteLoadout(loadoutId: string, previous: LoadoutStateSnapshot): void {
+function dispatchDeleteLoadout(loadoutId: string, previousLoadout: Loadout, previousIndex: number): void {
   runLoadoutCommand(
     (baseRevision) =>
       deleteLoadoutCommand({
         baseRevision,
         loadoutId,
       }),
-    () => restoreLoadoutState(previous),
+    () => rollbackDeletedLoadout(previousLoadout, previousIndex),
   )
 }
 
-function dispatchFavoriteLoadout(loadoutId: string, favorite: boolean, previous: LoadoutStateSnapshot): void {
+function dispatchFavoriteLoadout(rollback: LoadoutFavoriteRollback): void {
   runLoadoutCommand(
     (baseRevision) =>
       favoriteLoadoutCommand({
         baseRevision,
-        loadoutId,
-        favorite,
+        loadoutId: rollback.loadoutId,
+        favorite: rollback.attemptedFavorite,
       }),
-    () => restoreLoadoutState(previous),
+    () => rollbackLoadoutFavorite(rollback),
   )
 }
 
@@ -395,14 +705,18 @@ export function toggleLoadoutFavorite(loadoutId: string): boolean {
   const loadout = DBState.db.loadouts?.find((item) => item.id === loadoutId)
   if (!loadout) return false
 
-  const previous = currentLoadoutStateSnapshot()
+  const previousFavorite = loadout.favorite
   const favorite = !loadout.favorite
   withTrustedServerProjectionWrite(() => {
     const targetLoadout = DBState.db.loadouts.find((item) => item.id === loadoutId)
     if (!targetLoadout) return
     targetLoadout.favorite = favorite
   })
-  dispatchFavoriteLoadout(loadoutId, favorite, previous)
+  dispatchFavoriteLoadout({
+    loadoutId,
+    previousFavorite,
+    attemptedFavorite: favorite,
+  })
   return true
 }
 
@@ -410,14 +724,14 @@ export function deleteLoadout(loadoutId: string): boolean {
   const index = DBState.db.loadouts?.findIndex((loadout) => loadout.id === loadoutId) ?? -1
   if (index === -1) return false
 
-  const previous = currentLoadoutStateSnapshot()
+  const previousLoadout = cloneJsonValue(DBState.db.loadouts[index])
   withTrustedServerProjectionWrite(() => {
     const targetIndex = DBState.db.loadouts.findIndex((loadout) => loadout.id === loadoutId)
     if (targetIndex !== -1) {
       DBState.db.loadouts.splice(targetIndex, 1)
     }
   })
-  dispatchDeleteLoadout(loadoutId, previous)
+  dispatchDeleteLoadout(loadoutId, previousLoadout, index)
   return true
 }
 
@@ -497,13 +811,14 @@ function normalizedBotPresetsId(presetCount: number, selected: unknown): number 
   return index
 }
 
-function saveCurrentPresetSnapshotLocal(): void {
+function saveCurrentPresetSnapshotLocal(): PresetFieldRollback | null {
   const db = DBState.db
   const index = db.botPresetsId
   const presets = db.botPresets
-  if (!Array.isArray(presets) || index < 0 || index >= presets.length) return
+  if (!Array.isArray(presets) || index < 0 || index >= presets.length) return null
 
   const current = presets[index]
+  const previousPreset = cloneJsonValue(current) as unknown as Record<string, unknown>
   const snapshot: Record<string, unknown> = {
     id: current.id,
     name: typeof current.name === 'string' ? current.name : 'New Preset',
@@ -520,13 +835,15 @@ function saveCurrentPresetSnapshotLocal(): void {
   snapshot.seperateModels = db.doNotChangeSeperateModels ? null : cloneJsonValue(db.seperateModels)
   snapshot.fallbackWhenBlankResponse = db.fallbackWhenBlankResponse ?? false
   presets[index] = snapshot as unknown as botPreset
+  const presetId = nonBlankId(snapshot.id)
+  return presetId ? presetFieldRollbackFromPatch(presetId, previousPreset, snapshot) : null
 }
 
 function presetHasHydratedSettings(preset: botPreset | undefined): preset is botPreset {
   return !!preset?.id && Object.prototype.hasOwnProperty.call(preset, 'promptTemplate')
 }
 
-function changedModuleFactories(previousModules: string[], nextModules: string[]): ServerCommandFactory[] {
+function changedModuleSteps(previousModules: string[], nextModules: string[]): LoadoutApplyStep[] {
   const previousSet = new Set(previousModules)
   const nextSet = new Set(nextModules)
   const enabled = Array.from(nextSet)
@@ -537,25 +854,25 @@ function changedModuleFactories(previousModules: string[], nextModules: string[]
     .sort()
 
   return [
-    ...enabled.map(
-      (moduleId): ServerCommandFactory =>
-        (baseRevision) =>
-          enableModuleCommand({
-            baseRevision,
-            moduleId,
-            enabled: true,
-          }),
+    ...enabled.map((moduleId) => ({ moduleId, enabled: true })),
+    ...disabled.map((moduleId) => ({ moduleId, enabled: false })),
+  ].map(({ moduleId, enabled }) =>
+    createLoadoutApplyStep(
+      (baseRevision) =>
+        enableModuleCommand({
+          baseRevision,
+          moduleId,
+          enabled,
+        }),
+      () =>
+        rollbackModuleMembership({
+          moduleId,
+          previousEnabled: previousSet.has(moduleId),
+          attemptedEnabled: enabled,
+          previousModules,
+        }),
     ),
-    ...disabled.map(
-      (moduleId): ServerCommandFactory =>
-        (baseRevision) =>
-          enableModuleCommand({
-            baseRevision,
-            moduleId,
-            enabled: false,
-          }),
-    ),
-  ]
+  )
 }
 
 export function applyLoadout(
@@ -580,23 +897,33 @@ export function applyLoadout(
   const previousGlobalChatVariables = cloneJsonValue(DBState.db.globalChatVariables ?? {})
   const nextGlobalChatVariables = cloneJsonValue(loadout.globalVariables ?? {})
   const globalVariablesChanged = snapshotJson(previousGlobalChatVariables) !== snapshotJson(nextGlobalChatVariables)
-  const previous: LoadoutApplyStateSnapshot = {
-    loadout: currentLoadoutStateSnapshot(),
-    ...(personaSelection ? { persona: currentPersonaStateSnapshot() } : {}),
-    ...(presetIndex >= 0 || modelPresetSelection || promptPresetSelection
-      ? { preset: currentPresetApplySnapshot() }
-      : {}),
-    ...(requested.has('modules') ? { enabledModules: previousModules } : {}),
-    ...(requested.has('globalVariables') ? { globalChatVariables: previousGlobalChatVariables } : {}),
-  }
   const currentCharacterId = getCurrentCharacter()?.chaId
   const lastUsed = Date.now()
+  const previousLoadout = DBState.db.loadouts?.find((item) => item.id === loadout.id)
+  const touchRollback: LoadoutTouchRollback = {
+    loadoutId: loadout.id,
+    previous: previousLoadout
+      ? {
+          lastUsed: previousLoadout.lastUsed,
+          characterIds: cloneJsonValue(previousLoadout.characterIds ?? []),
+        }
+      : {},
+    attempted: {},
+    previousLastLoadedLoadoutName: DBState.db.lastLoadedLoadoutName,
+    attemptedLastLoadedLoadoutName: loadout.name,
+  }
   let selectedLegacyPresetId: string | null = null
   let selectedModelPresetId: string | null = null
   let selectedPromptPresetId: string | null = null
+  let personaRollback: LoadoutPersonaSelectionRollback | null = null
+  let legacyPresetRollback: LegacyPresetSelectionRollback | null = null
+  let modelPresetRollback: SplitPresetSelectionRollback | null = null
+  let promptPresetRollback: SplitPresetSelectionRollback | null = null
 
   if (personaSelection) {
+    const previousPersona = currentPersonaStateSnapshot()
     selectUserPersonaLocally(personaSelection.index, 'save')
+    personaRollback = personaSelectionRollback(previousPersona, currentPersonaStateSnapshot())
   }
 
   withTrustedServerProjectionWrite(() => {
@@ -605,10 +932,18 @@ export function applyLoadout(
     if (currentCharacterId && !targetLoadout.characterIds.includes(currentCharacterId)) {
       targetLoadout.characterIds.push(currentCharacterId)
     }
+    if (previousLoadout) {
+      touchRollback.attempted = {
+        lastUsed: targetLoadout.lastUsed,
+        characterIds: cloneJsonValue(targetLoadout.characterIds ?? []),
+      }
+    }
 
     if (presetIndex >= 0) {
+      const previousSettings = snapshotPresetSettings()
       ensureBotPresetCommandIds()
-      saveCurrentPresetSnapshotLocal()
+      const previousSelectedId = currentBotPresetSelectedId()
+      const saveCurrentRollback = saveCurrentPresetSnapshotLocal()
       const targetPreset = DBState.db.botPresets[presetIndex]
       selectedLegacyPresetId = nonBlankId(targetPreset?.id)
       DBState.db.botPresetsId = presetIndex
@@ -627,18 +962,43 @@ export function applyLoadout(
           })
         }
       }
+      legacyPresetRollback = {
+        previousSelectedId,
+        attemptedSelectedId: currentBotPresetSelectedId(),
+        previous: previousSettings,
+        attempted: snapshotPresetSettings(),
+        saveCurrentRollback,
+      }
     }
 
     if (modelPresetSelection) {
+      const previousSelectedId = currentSplitPresetSelectedId('model')
+      const previousSettings = snapshotPresetSettings()
       selectedModelPresetId = modelPresetSelection.presetId
       DBState.db.modelPresetsId = modelPresetSelection.index
       applyModelPresetFieldsToDatabase(DBState.db, DBState.db.modelPresets[modelPresetSelection.index])
+      modelPresetRollback = {
+        kind: 'model',
+        previousSelectedId,
+        attemptedSelectedId: currentSplitPresetSelectedId('model'),
+        previous: previousSettings,
+        attempted: snapshotPresetSettings(),
+      }
     }
 
     if (promptPresetSelection) {
+      const previousSelectedId = currentSplitPresetSelectedId('prompt')
+      const previousSettings = snapshotPresetSettings()
       selectedPromptPresetId = promptPresetSelection.presetId
       DBState.db.promptPresetsId = promptPresetSelection.index
       applyPromptPresetFieldsToDatabase(DBState.db, DBState.db.promptPresets[promptPresetSelection.index])
+      promptPresetRollback = {
+        kind: 'prompt',
+        previousSelectedId,
+        attemptedSelectedId: currentSplitPresetSelectedId('prompt'),
+        previous: previousSettings,
+        attempted: snapshotPresetSettings(),
+      }
     }
 
     if (requested.has('modules')) {
@@ -652,78 +1012,108 @@ export function applyLoadout(
     DBState.db.lastLoadedLoadoutName = loadout.name
   })
 
-  const factories: ServerCommandFactory[] = []
-  if (personaSelection) {
-    factories.push((baseRevision) =>
-      selectPersonaCommand({
-        baseRevision,
-        personaId: personaSelection.personaId,
-        mirrorLegacyProfile: true,
-        saveCurrent: true,
-      }),
+  const steps: LoadoutApplyStep[] = []
+  if (personaSelection && personaRollback) {
+    steps.push(
+      createLoadoutApplyStep(
+        (baseRevision) =>
+          selectPersonaCommand({
+            baseRevision,
+            personaId: personaSelection.personaId,
+            mirrorLegacyProfile: true,
+            saveCurrent: true,
+          }),
+        () => rollbackPersonaSelection(personaRollback),
+      ),
     )
   }
-  if (selectedLegacyPresetId) {
-    factories.push((baseRevision) =>
-      selectPresetCommand({
-        baseRevision,
-        presetId: selectedLegacyPresetId,
-        apply: true,
-        saveCurrent: true,
-      }),
+  if (selectedLegacyPresetId && legacyPresetRollback) {
+    steps.push(
+      createLoadoutApplyStep(
+        (baseRevision) =>
+          selectPresetCommand({
+            baseRevision,
+            presetId: selectedLegacyPresetId,
+            apply: true,
+            saveCurrent: true,
+          }),
+        () => rollbackLegacyPresetSelection(legacyPresetRollback),
+      ),
     )
   }
-  if (selectedModelPresetId) {
-    factories.push((baseRevision) =>
-      selectModelPresetCommand({
-        baseRevision,
-        modelPresetId: selectedModelPresetId,
-      }),
+  if (selectedModelPresetId && modelPresetRollback) {
+    steps.push(
+      createLoadoutApplyStep(
+        (baseRevision) =>
+          selectModelPresetCommand({
+            baseRevision,
+            modelPresetId: selectedModelPresetId,
+          }),
+        () => rollbackSplitPresetSelection(modelPresetRollback),
+      ),
     )
   }
-  if (selectedPromptPresetId) {
-    factories.push((baseRevision) =>
-      selectPromptPresetCommand({
-        baseRevision,
-        promptPresetId: selectedPromptPresetId,
-      }),
+  if (selectedPromptPresetId && promptPresetRollback) {
+    steps.push(
+      createLoadoutApplyStep(
+        (baseRevision) =>
+          selectPromptPresetCommand({
+            baseRevision,
+            promptPresetId: selectedPromptPresetId,
+          }),
+        () => rollbackSplitPresetSelection(promptPresetRollback),
+      ),
     )
   }
   if (requested.has('modules')) {
-    factories.push(...changedModuleFactories(previousModules, nextModules))
+    steps.push(...changedModuleSteps(previousModules, nextModules))
   }
   if (requested.has('globalVariables') && globalVariablesChanged) {
     const group = settingsGroupForKey('globalChatVariables')
     if (group) {
-      factories.push((baseRevision) =>
-        patchSettingsGroup({
-          group,
-          baseRevision,
-          patch: {
-            globalChatVariables: nextGlobalChatVariables,
-          },
-        }),
+      steps.push(
+        createLoadoutApplyStep(
+          (baseRevision) =>
+            patchSettingsGroup({
+              group,
+              baseRevision,
+              patch: {
+                globalChatVariables: nextGlobalChatVariables,
+              },
+            }),
+          () =>
+            rollbackGlobalChatVariables({
+              previous: previousGlobalChatVariables,
+              attempted: nextGlobalChatVariables,
+            }),
+        ),
       )
     }
   }
-  factories.push((baseRevision) =>
-    touchLoadoutCommand({
-      baseRevision,
-      loadoutId: loadout.id,
-      lastUsed,
-      characterId: currentCharacterId,
-    }),
+  steps.push(
+    createLoadoutApplyStep(
+      (baseRevision) =>
+        touchLoadoutCommand({
+          baseRevision,
+          loadoutId: loadout.id,
+          lastUsed,
+          characterId: currentCharacterId,
+        }),
+      () => rollbackLoadoutTouch(touchRollback),
+    ),
   )
 
-  runOptimisticCommandSequence(factories, () => restoreLoadoutApplyState(previous))
+  runOptimisticCommandSequence(
+    steps.map((step) => step.command),
+    () => rollbackUnacceptedLoadoutApplySteps(steps),
+  )
 }
 
 export function saveCurrentLoadout(name: string) {
-  const previous = currentLoadoutStateSnapshot()
   const loadout = makeLoadout({ name })
   withTrustedServerProjectionWrite(() => {
     DBState.db.loadouts.push(loadout)
   })
-  dispatchCreateLoadout(loadout, previous)
+  dispatchCreateLoadout(loadout)
   return loadout
 }
