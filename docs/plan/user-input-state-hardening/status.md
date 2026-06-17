@@ -20,9 +20,12 @@ the input persistence inventory under
   identity and composer mutation version before mutating composer text or
   attachments. Character avatar upload callbacks now guard by latest selected
   file operation, target character id, and avatar snapshot before applying image,
-  asset, PNG metadata, or dispatch state. Phase 2 landed character profile draft
-  dirty top-level field protection; prompt-template item row dirty projection
-  merging; whole-key dirty projection protection for
+  asset, PNG metadata, or dispatch state. Character additional asset uploads now
+  guard editor and chat quick-add completions by latest selected file operation,
+  target character id, and additional asset list snapshot before appending to
+  live state. Phase 2 landed character profile draft dirty top-level field
+  protection; prompt-template item row dirty projection merging; whole-key dirty
+  projection protection for
   `createServerBackedSettingDraft`; selected persona profile dirty projection
   protection; translator preset `name`/`prompt`/`maxResponse` dirty projection
   protection; lorebook entry draft dirty projection merging; and
@@ -72,8 +75,11 @@ the input persistence inventory under
   latest-operation token issued only after a real file selection, target row-id
   checks, and avatar snapshot checks before mutating image, `ccAssets`,
   `extentions.pngExif`, or dispatching character updates.
-- Verification state: Phase 3 character avatar upload callback validation is
-  recorded in `latest-verification.md`.
+  `src/ts/server/characterAdditionalAssetUpload.ts` now centralizes additional
+  asset upload target capture, latest-operation tracking, snapshot freshness, and
+  live-list append behavior for the character editor and chat quick-add paths.
+- Verification state: Phase 3 character additional asset upload callback
+  validation is recorded in `latest-verification.md`.
 - Highest issue density:
   - Character editor: 52 issue rows, mostly dirty projection and unguarded
     upload callbacks.
@@ -116,9 +122,10 @@ the input persistence inventory under
   upload/cancel/error callback freshness has landed; composer file callbacks,
   including menu file and pasted image callbacks, now guard stale completions;
   character avatar upload callbacks now guard stale completions; character
-  emotion/additional/reference/model assets, settings media, prompt icons, module
-  assets, plugin import/update, import helpers, and dashboard fetch persistence
-  remain pending.
+  additional asset upload callbacks now guard stale completions; character
+  emotion/reference/model assets, settings media, prompt icons, module assets,
+  plugin import/update, import helpers, and dashboard fetch persistence remain
+  pending.
 - [Phase 4](phases/phase-4-chat-messages-generation.md): pending. Chat,
   message, reroll, trigger, suggestion, and generation target freshness.
 - [Phase 5](phases/phase-5-collection-domains.md): pending. Presets,
@@ -209,6 +216,11 @@ the input persistence inventory under
     character id and avatar snapshot, parses PNG metadata locally, and rechecks
     freshness before upload completion and before applying image, `ccAssets`,
     `extentions.pngExif`, or dispatching character updates.
+  - Phase 3 character additional asset upload slice:
+    `characterAdditionalAssetUpload.ts` captures target character id and asset
+    list snapshots, issues latest-operation tokens only after selected files
+    exist, and lets the editor and chat quick-add paths append uploaded entries
+    only when the live selected row/draft and asset list are still fresh.
   - Phase 4: `restoreChatScopedState`, chat/message/generation freshness, and
     message update/delete/truncate/replace freshness.
   - Phase 5: create/delete/reorder/import/select and broad collection rollback

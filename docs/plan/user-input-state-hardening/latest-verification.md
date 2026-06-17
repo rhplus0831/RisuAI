@@ -7,27 +7,29 @@ hardening workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 3 character avatar upload callback
-  freshness. `selectCharImg` now captures the target character id and avatar
-  snapshot, issues a latest-operation token only after a real file is selected,
-  parses PNG metadata locally, and rechecks freshness before upload completion
-  and before applying image, `ccAssets`, `extentions.pngExif`, or dispatching a
-  character update.
+- Runtime/code change under test: Phase 3 character additional asset upload
+  callback freshness. The character editor and chat quick-add upload paths now
+  capture the target character id and additional asset list snapshot, issue a
+  latest-operation token only after selected files exist, upload entries locally,
+  and append to the live list only when the selected row/draft and list snapshot
+  are still fresh.
 - Commands:
 
 ```bash
-pnpm exec vitest run src/ts/characters.imageEmotion.test.ts src/ts/server/staleStateGuards.test.ts
+pnpm exec vitest run src/ts/server/characterAdditionalAssetUpload.test.ts src/ts/server/staleStateGuards.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 git diff --check
 ```
 
-- Result: passed on 2026-06-17. The avatar/stale-guard focused Vitest set passed
-  2 files and 18 tests. Both TypeScript checks and `git diff --check` passed.
-- Residual gaps: stale asset uploads may still complete server-side, but this
-  slice prevents stale client-side avatar state application and dispatch.
-  Remaining Phase 3 surfaces include character emotion, additional asset,
-  reference audio, and model callbacks; settings media assets; prompt
+- Result: passed on 2026-06-17. The additional-asset/stale-guard focused Vitest
+  set passed 2 files and 16 tests. Both TypeScript checks and `git diff --check`
+  passed.
+- Residual gaps: coverage is focused on the component-facing helper behavior
+  rather than mounted Svelte component tests. Stale asset uploads may still
+  complete server-side, but this slice prevents stale client-side list
+  application. Remaining Phase 3 surfaces include character emotion, reference
+  audio, and model callbacks; settings media assets; prompt
   icon/background/theme imports; module assets; plugin import/update;
   persona/preset/chat/character import helpers; and NanoGPT dashboard fetch
   persistence.

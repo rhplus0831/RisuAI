@@ -31,6 +31,11 @@ token issued only after a real file selection, target character id checks, and a
 avatar snapshot check before async file results can apply image, `ccAssets`, PNG
 metadata, or dispatch updates.
 
+Fourth landed slice: character additional asset upload callbacks now use a
+latest operation token issued only after selected files exist, target character
+id checks, and an additional asset list snapshot before editor or chat quick-add
+uploads can append entries to live state.
+
 ## Anchors
 
 - `src/lib/ChatScreens/DefaultChatScreen.svelte`

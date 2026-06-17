@@ -70,6 +70,15 @@
     createServerBackedCharacterDraft,
     watchServerBackedCharacterProfile,
   } from 'src/ts/server/characterBridge.svelte'
+  import {
+    appendFreshCharacterAdditionalAssets,
+    beginCharacterAdditionalAssetUpload,
+    captureCharacterAdditionalAssetUploadTarget,
+    clearCharacterAdditionalAssetUpload,
+    isFreshCharacterAdditionalAssetUpload,
+    type CharacterAdditionalAssetEntry,
+    type CharacterAdditionalAssetUploadOperation,
+  } from 'src/ts/server/characterAdditionalAssetUpload'
   import { watchServerBackedChatMetadata } from 'src/ts/server/chatBridge.svelte'
   import {
     applyCharacterScriptDefinitionDraft,
@@ -84,6 +93,24 @@
   let iconRemoveMode = $state(false)
   let viewSubMenu = $state(0)
   let iconButtonSize = window.innerWidth > 360 ? (24 as const) : (20 as const)
+  const CHARACTER_ADDITIONAL_ASSET_EXTENSIONS = [
+    'png',
+    'webp',
+    'mp4',
+    'mp3',
+    'gif',
+    'jpeg',
+    'jpg',
+    'ttf',
+    'otf',
+    'css',
+    'webm',
+    'woff',
+    'woff2',
+    'svg',
+    'avif',
+  ]
+  type SelectedAdditionalAssetFile = NonNullable<Awaited<ReturnType<typeof selectMultipleFile>>>[number]
   let tokens = $state({
     desc: 0,
     firstMsg: 0,
@@ -508,6 +535,85 @@
     characterDraft.value = { ...characterDraft.value }
   }
 
+  function additionalAssetExtension(name: string): string {
+    return name.split('.').pop()?.toLowerCase() ?? ''
+  }
+
+  function currentEditorAdditionalAssetUploadTarget() {
+    const selectedIndex = $selectedCharID
+    const selectedCharacter = DBState.db.characters?.[selectedIndex]
+    if (selectedCharacter?.type !== 'character' || !selectedCharacter.chaId) return null
+    if (characterDraft.characterId !== selectedCharacter.chaId) return null
+
+    return captureCharacterAdditionalAssetUploadTarget({
+      characterId: selectedCharacter.chaId,
+      characterIndex: selectedIndex,
+      additionalAssets: (characterDraft.value as unknown as character).additionalAssets,
+    })
+  }
+
+  function editorAdditionalAssetUploadFreshness(operation: CharacterAdditionalAssetUploadOperation) {
+    const selectedCharacter = DBState.db.characters?.[$selectedCharID]
+    const targetRow =
+      operation.characterIndex === undefined ? undefined : DBState.db.characters?.[operation.characterIndex]
+
+    return {
+      currentCharacterId: selectedCharacter?.chaId,
+      rowCharacterId: operation.characterIndex === undefined ? undefined : (targetRow?.chaId ?? null),
+      draftCharacterId: characterDraft.characterId,
+      additionalAssets: (characterDraft.value as unknown as character).additionalAssets,
+    }
+  }
+
+  function isCurrentEditorAdditionalAssetUpload(operation: CharacterAdditionalAssetUploadOperation): boolean {
+    return isFreshCharacterAdditionalAssetUpload(operation, editorAdditionalAssetUploadFreshness(operation))
+  }
+
+  async function uploadAdditionalAssetEntries(
+    files: readonly SelectedAdditionalAssetFile[],
+    operation: CharacterAdditionalAssetUploadOperation,
+    isCurrentUpload: (operation: CharacterAdditionalAssetUploadOperation) => boolean,
+  ): Promise<CharacterAdditionalAssetEntry[] | null> {
+    const entries: CharacterAdditionalAssetEntry[] = []
+
+    for (const file of files) {
+      if (!isCurrentUpload(operation)) return null
+
+      const extension = additionalAssetExtension(file.name)
+      const assetPath = await saveAsset(file.data, '', extension)
+      if (!isCurrentUpload(operation)) return null
+
+      entries.push([file.name, assetPath, extension])
+    }
+
+    return entries
+  }
+
+  async function uploadCharacterAdditionalAssetsFromEditor(): Promise<void> {
+    const target = currentEditorAdditionalAssetUploadTarget()
+    if (!target) return
+
+    const files = await selectMultipleFile(CHARACTER_ADDITIONAL_ASSET_EXTENSIONS)
+    if (!files || files.length === 0) return
+
+    const operation = beginCharacterAdditionalAssetUpload(target)
+    try {
+      const uploadedEntries = await uploadAdditionalAssetEntries(files, operation, isCurrentEditorAdditionalAssetUpload)
+      if (!uploadedEntries || uploadedEntries.length === 0) return
+
+      const nextAdditionalAssets = appendFreshCharacterAdditionalAssets({
+        operation,
+        freshness: editorAdditionalAssetUploadFreshness(operation),
+        entries: uploadedEntries,
+      })
+      if (!nextAdditionalAssets) return
+      ;(characterDraft.value as unknown as character).additionalAssets = nextAdditionalAssets
+      characterDraft.value = { ...characterDraft.value }
+    } finally {
+      clearCharacterAdditionalAssetUpload(operation)
+    }
+  }
+
   function clearOrRotateCharacterImage(): void {
     updateCharacterDraft((character) => {
       if (character.ccAssets && character.ccAssets.length > 0) {
@@ -861,37 +967,7 @@
               <button
                 class="hover:text-green-500"
                 onclick={async () => {
-                  if (DBState.db.characters[$selectedCharID].type === 'character') {
-                    const da = await selectMultipleFile([
-                      'png',
-                      'webp',
-                      'mp4',
-                      'mp3',
-                      'gif',
-                      'jpeg',
-                      'jpg',
-                      'ttf',
-                      'otf',
-                      'css',
-                      'webm',
-                      'woff',
-                      'woff2',
-                      'svg',
-                      'avif',
-                    ])
-                    characterDraft.value.additionalAssets = characterDraft.value.additionalAssets ?? []
-                    if (!da) {
-                      return
-                    }
-                    for (const f of da) {
-                      const img = f.data
-                      const name = f.name
-                      const extension = name.split('.').pop().toLowerCase()
-                      const imgp = await saveAsset(img, '', extension)
-                      characterDraft.value.additionalAssets.push([name, imgp, extension])
-                      characterDraft.value = { ...characterDraft.value }
-                    }
-                  }
+                  await uploadCharacterAdditionalAssetsFromEditor()
                 }}>
                 <PlusIcon />
               </button>

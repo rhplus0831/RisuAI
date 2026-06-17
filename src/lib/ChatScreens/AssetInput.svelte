@@ -2,14 +2,25 @@
   import { FileMusicIcon, PlusIcon } from '@lucide/svelte'
   import { setCharacterByIndex, type character } from 'src/ts/storage/database.svelte'
   import { getFileSrc, saveAsset } from 'src/ts/globalApi.svelte'
-  import { DBState } from 'src/ts/stores.svelte'
+  import { DBState, selectedCharID } from 'src/ts/stores.svelte'
   import { selectMultipleFile } from 'src/ts/util'
+  import {
+    appendFreshCharacterAdditionalAssets,
+    beginCharacterAdditionalAssetUpload,
+    captureCharacterAdditionalAssetUploadTarget,
+    clearCharacterAdditionalAssetUpload,
+    isFreshCharacterAdditionalAssetUpload,
+    type CharacterAdditionalAssetEntry,
+    type CharacterAdditionalAssetUploadOperation,
+  } from 'src/ts/server/characterAdditionalAssetUpload'
   interface Props {
     currentCharacter: character
     onSelect: (additionalAsset: [string, string, string]) => void
   }
 
   const { currentCharacter, onSelect }: Props = $props()
+  const QUICK_ADD_ADDITIONAL_ASSET_EXTENSIONS = ['png', 'webp', 'mp4', 'mp3', 'gif']
+  type SelectedAdditionalAssetFile = NonNullable<Awaited<ReturnType<typeof selectMultipleFile>>>[number]
 
   let assetFileExtensions: Record<string, string | undefined> = $state({})
   let assetFilePath: Record<string, string | undefined> = $state({})
@@ -23,6 +34,102 @@
 
   function cloneCharacter(char: character): character {
     return JSON.parse(JSON.stringify(char)) as character
+  }
+
+  function additionalAssetExtension(name: string): string {
+    return name.split('.').pop()?.toLowerCase() ?? ''
+  }
+
+  function currentQuickAddAdditionalAssetUploadTarget() {
+    if (currentCharacter.type !== 'character' || !currentCharacter.chaId) return null
+
+    return captureCharacterAdditionalAssetUploadTarget({
+      characterId: currentCharacter.chaId,
+      additionalAssets: currentCharacter.additionalAssets,
+    })
+  }
+
+  function findAdditionalAssetUploadCharacter(characterId: string): {
+    index: number
+    character: character | undefined
+  } {
+    const index = DBState.db.characters?.findIndex((candidate) => candidate.chaId === characterId) ?? -1
+    return {
+      index,
+      character: index >= 0 ? DBState.db.characters[index] : undefined,
+    }
+  }
+
+  function quickAddAdditionalAssetUploadFreshness(operation: CharacterAdditionalAssetUploadOperation) {
+    const live = findAdditionalAssetUploadCharacter(operation.characterId)
+
+    return {
+      currentCharacterId: DBState.db.characters?.[$selectedCharID]?.chaId,
+      rowCharacterId: live.character?.chaId ?? null,
+      additionalAssets: live.character?.additionalAssets,
+    }
+  }
+
+  function isCurrentQuickAddAdditionalAssetUpload(operation: CharacterAdditionalAssetUploadOperation): boolean {
+    return isFreshCharacterAdditionalAssetUpload(operation, quickAddAdditionalAssetUploadFreshness(operation))
+  }
+
+  async function uploadAdditionalAssetEntries(
+    files: readonly SelectedAdditionalAssetFile[],
+    operation: CharacterAdditionalAssetUploadOperation,
+  ): Promise<CharacterAdditionalAssetEntry[] | null> {
+    const entries: CharacterAdditionalAssetEntry[] = []
+
+    for (const file of files) {
+      if (!isCurrentQuickAddAdditionalAssetUpload(operation)) return null
+
+      const extension = additionalAssetExtension(file.name)
+      const assetPath = await saveAsset(file.data, '', extension)
+      if (!isCurrentQuickAddAdditionalAssetUpload(operation)) return null
+
+      entries.push([file.name, assetPath, extension])
+    }
+
+    return entries
+  }
+
+  function applyQuickAddAdditionalAssetEntries(
+    operation: CharacterAdditionalAssetUploadOperation,
+    entries: readonly CharacterAdditionalAssetEntry[],
+  ): void {
+    const live = findAdditionalAssetUploadCharacter(operation.characterId)
+    const nextAdditionalAssets = appendFreshCharacterAdditionalAssets({
+      operation,
+      freshness: {
+        currentCharacterId: DBState.db.characters?.[$selectedCharID]?.chaId,
+        rowCharacterId: live.character?.chaId ?? null,
+        additionalAssets: live.character?.additionalAssets,
+      },
+      entries,
+    })
+    if (!nextAdditionalAssets || !live.character || live.index < 0) return
+
+    const nextCharacter = cloneCharacter(live.character)
+    nextCharacter.additionalAssets = nextAdditionalAssets
+    setCharacterByIndex(live.index, nextCharacter)
+  }
+
+  async function uploadQuickAddAdditionalAssets(): Promise<void> {
+    const target = currentQuickAddAdditionalAssetUploadTarget()
+    if (!target) return
+
+    const files = await selectMultipleFile(QUICK_ADD_ADDITIONAL_ASSET_EXTENSIONS)
+    if (!files || files.length === 0) return
+
+    const operation = beginCharacterAdditionalAssetUpload(target)
+    try {
+      const entries = await uploadAdditionalAssetEntries(files, operation)
+      if (!entries || entries.length === 0) return
+
+      applyQuickAddAdditionalAssetEntries(operation, entries)
+    } finally {
+      clearCharacterAdditionalAssetUpload(operation)
+    }
   }
 
   $effect(() => {
@@ -54,29 +161,7 @@
   <button
     class="hover:text-green-500 bg-textcolor2 flex justify-center items-center w-16 h-16 m-1 rounded-md"
     onclick={async () => {
-      if (currentCharacter.type === 'character') {
-        const da = await selectMultipleFile(['png', 'webp', 'mp4', 'mp3', 'gif'])
-        if (!da) {
-          return
-        }
-        const nextAdditionalAssets = [...(currentCharacter.additionalAssets ?? [])]
-        for (const f of da) {
-          console.log(f)
-          const img = f.data
-          const name = f.name
-          const extension = name.split('.').pop().toLowerCase()
-          const imgp = await saveAsset(img, '', extension)
-          nextAdditionalAssets.push([name, imgp, extension])
-        }
-        const characterIndex = DBState.db.characters.findIndex(
-          (candidate) => candidate.chaId === currentCharacter.chaId,
-        )
-        if (characterIndex >= 0) {
-          const nextCharacter = cloneCharacter(DBState.db.characters[characterIndex])
-          nextCharacter.additionalAssets = nextAdditionalAssets
-          setCharacterByIndex(characterIndex, nextCharacter)
-        }
-      }
+      await uploadQuickAddAdditionalAssets()
     }}>
     <PlusIcon />
   </button>
