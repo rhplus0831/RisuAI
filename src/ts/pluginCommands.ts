@@ -68,7 +68,19 @@ interface PluginNonStorageOperationRecord {
   status: PluginNonStorageOperationStatus
 }
 
-type PluginNonStorageRollbackEntry = PluginFieldRollbackEntry | PluginDeleteRollbackEntry | PluginProviderRollbackEntry
+type PluginNonStorageRollbackEntry =
+  | PluginCreateRollbackEntry
+  | PluginFieldRollbackEntry
+  | PluginDeleteRollbackEntry
+  | PluginProviderRollbackEntry
+  | PluginOrderRollbackEntry
+
+interface PluginCreateRollbackEntry {
+  kind: 'plugin-create'
+  target: string
+  pluginId: string
+  attemptedPlugin: RisuPlugin
+}
 
 interface PluginFieldRollbackEntry {
   kind: 'plugin-field'
@@ -97,6 +109,18 @@ interface PluginProviderRollbackEntry {
   target: string
   previousProvider: string
   attemptedProvider: string
+}
+
+interface PluginOrderRollbackEntry {
+  kind: 'plugin-order'
+  target: string
+  previousPluginIds: string[]
+  attemptedPluginIds: string[]
+}
+
+interface PluginCollectionPatchStep {
+  factory: (baseRevision: number) => Promise<ServerCommandResult>
+  rollbackEntries: PluginNonStorageRollbackEntry[]
 }
 
 export function cloneJsonValue<T>(value: T): T {
@@ -134,22 +158,31 @@ export function runPluginCommand<T extends Record<string, unknown>>(
 }
 
 export function dispatchCreatePlugin(plugin: RisuPlugin, previous: PluginStateSnapshot): void {
+  if (!canUseServerCommands()) return
+  const pluginSnapshot = toPluginSnapshot(plugin)
+  const rollbackEntry = pluginCreateRollbackEntry(plugin)
+  const operation = issuePluginNonStorageOperation([rollbackEntry])
   runPluginCommand(
-    (baseRevision) =>
-      createPluginCommand({
+    async (baseRevision) => {
+      const result = await createPluginCommand({
         baseRevision,
-        plugin: toPluginSnapshot(plugin),
-      }),
-    () => restorePluginState(previous),
+        plugin: pluginSnapshot,
+      })
+      if (result.status === 'ok') {
+        clearPluginNonStorageOperation(operation)
+      }
+      return result
+    },
+    () => rollbackPluginNonStorageEntries([rollbackEntry], operation),
   )
 }
 
 export function dispatchUpdatePlugin(pluginId: string, patch: PluginSnapshot, previous: PluginStateSnapshot): void {
-  const commandPatch = sanitizePluginPatch(patch)
+  const commandPatch = cloneJsonValue(sanitizePluginPatch(patch))
   if (Object.keys(commandPatch).length === 0) return
   if (!canUseServerCommands()) return
-  const rollbackEntry = realArgPluginFieldRollbackEntry(pluginId, commandPatch, previous)
-  const operation = rollbackEntry ? issuePluginNonStorageOperation([rollbackEntry]) : null
+  const rollbackEntries = pluginFieldRollbackEntries(pluginId, commandPatch, previous)
+  const operation = rollbackEntries.length > 0 ? issuePluginNonStorageOperation(rollbackEntries) : null
   runPluginCommand(
     async (baseRevision) => {
       const result = await updatePluginCommand({
@@ -163,10 +196,8 @@ export function dispatchUpdatePlugin(pluginId: string, patch: PluginSnapshot, pr
       return result
     },
     () => {
-      if (rollbackEntry && operation) {
-        rollbackPluginNonStorageEntries([rollbackEntry], operation)
-      } else {
-        restorePluginState(previous)
+      if (operation) {
+        rollbackPluginNonStorageEntries(rollbackEntries, operation)
       }
     },
   )
@@ -190,8 +221,6 @@ export function dispatchDeletePlugin(pluginId: string, previous: PluginStateSnap
     () => {
       if (rollbackEntry && operation) {
         rollbackPluginNonStorageEntries([rollbackEntry], operation)
-      } else {
-        restorePluginState(previous)
       }
     },
   )
@@ -216,8 +245,6 @@ export function dispatchEnablePlugin(pluginId: string, enabled: boolean, previou
     () => {
       if (rollbackEntry && operation) {
         rollbackPluginNonStorageEntries([rollbackEntry], operation)
-      } else {
-        restorePluginState(previous)
       }
     },
   )
@@ -310,24 +337,138 @@ export function dispatchSelectPluginProvider(provider: string, previous: PluginS
 }
 
 export function dispatchReorderPlugins(previous: PluginStateSnapshot): void {
+  if (!canUseServerCommands()) return
+  const attemptedPluginIds = (DBState.db.plugins ?? []).map((plugin) => plugin.name)
+  const rollbackEntry = pluginOrderRollbackEntry(previous, attemptedPluginIds)
+  const operation = issuePluginNonStorageOperation([rollbackEntry])
   runPluginCommand(
-    (baseRevision) =>
-      reorderPluginsCommand({
+    async (baseRevision) => {
+      const result = await reorderPluginsCommand({
         baseRevision,
-        pluginIds: (DBState.db.plugins ?? []).map((plugin) => plugin.name),
-      }),
-    () => restorePluginState(previous),
+        pluginIds: attemptedPluginIds,
+      })
+      if (result.status === 'ok') {
+        clearPluginNonStorageOperation(operation)
+      }
+      return result
+    },
+    () => rollbackPluginNonStorageEntries([rollbackEntry], operation),
   )
 }
 
-function realArgPluginFieldRollbackEntry(
+export function dispatchPluginCollectionPatch(plugins: RisuPlugin[], previous: PluginStateSnapshot): void {
+  if (!canUseServerCommands()) return
+
+  const beforePlugins = new Map(previous.plugins.map((plugin) => [plugin.name, plugin]))
+  const nextPlugins = new Map(plugins.map((plugin) => [plugin.name, plugin]))
+
+  const steps: PluginCollectionPatchStep[] = []
+
+  for (const plugin of plugins) {
+    const before = beforePlugins.get(plugin.name)
+    if (!before) {
+      const pluginSnapshot = toPluginSnapshot(plugin)
+      steps.push({
+        factory: (baseRevision) => createPluginCommand({ baseRevision, plugin: pluginSnapshot }),
+        rollbackEntries: [pluginCreateRollbackEntry(plugin)],
+      })
+      continue
+    }
+    if (JSON.stringify(before) !== JSON.stringify(plugin)) {
+      const commandPatch = sanitizePluginPatch(toPluginSnapshot(plugin))
+      if (Object.keys(commandPatch).length === 0) continue
+      const pluginId = plugin.name
+      const rollbackEntries = pluginFieldRollbackEntries(pluginId, commandPatch, previous)
+      if (rollbackEntries.length === 0) continue
+      steps.push({
+        factory: (baseRevision) => updatePluginCommand({ baseRevision, pluginId, patch: commandPatch }),
+        rollbackEntries,
+      })
+    }
+  }
+
+  for (const plugin of previous.plugins) {
+    if (!nextPlugins.has(plugin.name)) {
+      const pluginId = plugin.name
+      const rollbackEntry = deletePluginRollbackEntry(pluginId, previous)
+      if (rollbackEntry) {
+        steps.push({
+          factory: (baseRevision) => deletePluginCommand({ baseRevision, pluginId }),
+          rollbackEntries: [rollbackEntry],
+        })
+      }
+    }
+  }
+
+  const attemptedPluginIds = plugins.map((plugin) => plugin.name)
+  const expectedOrderAfterCreateDelete = previous.plugins
+    .map((plugin) => plugin.name)
+    .filter((pluginId) => nextPlugins.has(pluginId))
+  for (const plugin of plugins) {
+    if (!beforePlugins.has(plugin.name)) {
+      expectedOrderAfterCreateDelete.push(plugin.name)
+    }
+  }
+  if (!isStringArrayEqual(expectedOrderAfterCreateDelete, attemptedPluginIds)) {
+    steps.push({
+      factory: (baseRevision) => reorderPluginsCommand({ baseRevision, pluginIds: attemptedPluginIds }),
+      rollbackEntries: [pluginOrderRollbackEntry(previous, attemptedPluginIds)],
+    })
+  }
+
+  if (steps.length === 0) return
+
+  const operationSteps = steps.map((step) => ({
+    ...step,
+    operation: issuePluginNonStorageOperation(step.rollbackEntries),
+  }))
+
+  void (async () => {
+    let currentStepIndex = 0
+    try {
+      for (currentStepIndex = 0; currentStepIndex < operationSteps.length; currentStepIndex += 1) {
+        const step = operationSteps[currentStepIndex]
+        const result = await runServerCommand({ command: step.factory })
+        if (result.status !== 'ok') {
+          rollbackPluginCollectionPatchSteps(operationSteps, currentStepIndex)
+          return
+        }
+        clearPluginNonStorageOperation(step.operation)
+      }
+    } catch (error) {
+      console.error('Plugin collection command sequence rejected:', error)
+      rollbackPluginCollectionPatchSteps(operationSteps, currentStepIndex)
+    }
+  })()
+}
+
+function rollbackPluginCollectionPatchSteps(
+  steps: Array<PluginCollectionPatchStep & { operation: PluginNonStorageOperationToken }>,
+  failedStepIndex: number,
+): void {
+  for (let index = steps.length - 1; index >= failedStepIndex; index -= 1) {
+    const step = steps[index]
+    rollbackPluginNonStorageEntries(step.rollbackEntries, step.operation)
+  }
+}
+
+function pluginCreateRollbackEntry(plugin: RisuPlugin): PluginCreateRollbackEntry {
+  return {
+    kind: 'plugin-create',
+    target: pluginCreateRollbackTarget(plugin.name),
+    pluginId: plugin.name,
+    attemptedPlugin: cloneJsonValue(plugin),
+  }
+}
+
+function pluginFieldRollbackEntries(
   pluginId: string,
   patch: PluginSnapshot,
   previous: PluginStateSnapshot,
-): PluginFieldRollbackEntry | null {
-  const patchKeys = Object.keys(patch)
-  if (patchKeys.length !== 1 || !hasOwnRecordKey(patch as Record<string, unknown>, 'realArg')) return null
-  return pluginFieldRollbackEntry(pluginId, 'realArg', previous, true, patch.realArg)
+): PluginFieldRollbackEntry[] {
+  return Object.entries(patch)
+    .map(([field, value]) => pluginFieldRollbackEntry(pluginId, field, previous, true, value))
+    .filter((entry): entry is PluginFieldRollbackEntry => entry !== null)
 }
 
 function pluginFieldRollbackEntry(
@@ -377,20 +518,35 @@ function pluginProviderRollbackEntry(provider: string, previous: PluginStateSnap
   }
 }
 
+function pluginOrderRollbackEntry(
+  previous: PluginStateSnapshot,
+  attemptedPluginIds: string[],
+): PluginOrderRollbackEntry {
+  return {
+    kind: 'plugin-order',
+    target: 'plugin-order:current',
+    previousPluginIds: previous.plugins.map((plugin) => plugin.name),
+    attemptedPluginIds: [...attemptedPluginIds],
+  }
+}
+
 function issuePluginNonStorageOperation(entries: PluginNonStorageRollbackEntry[]): PluginNonStorageOperationToken {
+  const targets = [...new Set(entries.flatMap((entry) => pluginNonStorageRollbackTargets(entry)))]
   const token = {
     sequence: ++nextPluginNonStorageOperationSequence,
-    targets: [...new Set(entries.map((entry) => entry.target))],
+    targets,
   }
 
   for (const entry of entries) {
-    const pendingOperations = pendingPluginNonStorageOperationsByTarget.get(entry.target) ?? []
-    pendingOperations.push({
-      sequence: token.sequence,
-      entry,
-      status: 'pending',
-    })
-    pendingPluginNonStorageOperationsByTarget.set(entry.target, pendingOperations)
+    for (const target of pluginNonStorageRollbackTargets(entry)) {
+      const pendingOperations = pendingPluginNonStorageOperationsByTarget.get(target) ?? []
+      pendingOperations.push({
+        sequence: token.sequence,
+        entry,
+        status: 'pending',
+      })
+      pendingPluginNonStorageOperationsByTarget.set(target, pendingOperations)
+    }
   }
 
   return token
@@ -403,18 +559,21 @@ function rollbackPluginNonStorageEntries(
   let changed = false
 
   withTrustedServerProjectionWrite(() => {
-    for (const entry of entries) {
-      const pendingOperations = pendingPluginNonStorageOperationsByTarget.get(entry.target)
-      const operationRecord = pendingOperations?.find((record) => record.sequence === operation.sequence)
-      if (!pendingOperations || !operationRecord) continue
+    void entries
+    for (const target of operation.targets) {
+      const pendingOperations = pendingPluginNonStorageOperationsByTarget.get(target)
+      const operationRecords = pendingOperations?.filter((record) => record.sequence === operation.sequence) ?? []
+      if (!pendingOperations || operationRecords.length === 0) continue
 
-      operationRecord.status = 'failed'
-      changed = cascadeFailedPluginNonStorageOperationsForTarget(entry.target, pendingOperations) || changed
+      for (const operationRecord of operationRecords) {
+        operationRecord.status = 'failed'
+      }
+      changed = cascadeFailedPluginNonStorageOperationsForTarget(target, pendingOperations) || changed
 
       if (pendingOperations.length > 0) {
-        pendingPluginNonStorageOperationsByTarget.set(entry.target, pendingOperations)
+        pendingPluginNonStorageOperationsByTarget.set(target, pendingOperations)
       } else {
-        pendingPluginNonStorageOperationsByTarget.delete(entry.target)
+        pendingPluginNonStorageOperationsByTarget.delete(target)
       }
     }
 
@@ -450,13 +609,28 @@ function cascadeFailedPluginNonStorageOperationsForTarget(
 }
 
 function rollbackPluginNonStorageEntryIfLiveMatches(entry: PluginNonStorageRollbackEntry): boolean {
+  if (entry.kind === 'plugin-create') {
+    return rollbackPluginCreateIfLiveMatches(entry)
+  }
   if (entry.kind === 'plugin-field') {
     return rollbackPluginFieldIfLiveMatches(entry)
   }
   if (entry.kind === 'plugin-delete') {
     return rollbackPluginDeleteIfLiveMatches(entry)
   }
-  return rollbackPluginProviderIfLiveMatches(entry)
+  if (entry.kind === 'plugin-provider') {
+    return rollbackPluginProviderIfLiveMatches(entry)
+  }
+  return rollbackPluginOrderIfLiveMatches(entry)
+}
+
+function rollbackPluginCreateIfLiveMatches(entry: PluginCreateRollbackEntry): boolean {
+  const plugins = DBState.db.plugins ?? []
+  const index = plugins.findIndex((plugin) => plugin.name === entry.pluginId)
+  if (index === -1 || !isJsonValueEqual(plugins[index], entry.attemptedPlugin)) return false
+
+  DBState.db.plugins = plugins.filter((_, pluginIndex) => pluginIndex !== index)
+  return true
 }
 
 function rollbackPluginFieldIfLiveMatches(entry: PluginFieldRollbackEntry): boolean {
@@ -513,6 +687,38 @@ function rollbackPluginProviderIfLiveMatches(entry: PluginProviderRollbackEntry)
   return true
 }
 
+function rollbackPluginOrderIfLiveMatches(entry: PluginOrderRollbackEntry): boolean {
+  const plugins = DBState.db.plugins ?? []
+  const livePluginIds = plugins.map((plugin) => plugin.name)
+  if (!isStringArrayEqual(livePluginIds, entry.attemptedPluginIds)) return false
+
+  const pluginsById = new Map(plugins.map((plugin) => [plugin.name, plugin]))
+  const usedPluginIds = new Set<string>()
+  const reorderedPlugins: RisuPlugin[] = []
+
+  for (const pluginId of entry.previousPluginIds) {
+    const plugin = pluginsById.get(pluginId)
+    if (!plugin) continue
+    reorderedPlugins.push(plugin)
+    usedPluginIds.add(pluginId)
+  }
+
+  for (const plugin of plugins) {
+    if (usedPluginIds.has(plugin.name)) continue
+    reorderedPlugins.push(plugin)
+  }
+
+  if (
+    isStringArrayEqual(
+      reorderedPlugins.map((plugin) => plugin.name),
+      livePluginIds,
+    )
+  )
+    return false
+  DBState.db.plugins = reorderedPlugins
+  return true
+}
+
 function clearPluginNonStorageOperation(operation: PluginNonStorageOperationToken): void {
   for (const target of operation.targets) {
     const pendingOperations = pendingPluginNonStorageOperationsByTarget.get(target)
@@ -537,8 +743,26 @@ function pluginFieldRollbackTarget(pluginId: string, field: string): string {
   return `plugin-field:${pluginId}:${field}`
 }
 
+function pluginRowRollbackTarget(pluginId: string): string {
+  return `plugin-row:${pluginId}`
+}
+
+function pluginCreateRollbackTarget(pluginId: string): string {
+  return `plugin-create:${pluginId}`
+}
+
 function pluginDeleteRollbackTarget(pluginId: string): string {
   return `plugin-delete:${pluginId}`
+}
+
+function pluginNonStorageRollbackTargets(entry: PluginNonStorageRollbackEntry): string[] {
+  if (entry.kind === 'plugin-field') {
+    return [entry.target, pluginRowRollbackTarget(entry.pluginId)]
+  }
+  if (entry.kind === 'plugin-create' || entry.kind === 'plugin-delete') {
+    return [pluginRowRollbackTarget(entry.pluginId)]
+  }
+  return [entry.target]
 }
 
 function boundedInsertIndex(index: number, length: number): number {
@@ -812,6 +1036,11 @@ function hasOwnRecordKey(record: Record<string, unknown>, key: string): boolean 
 
 function isJsonValueEqual(left: unknown, right: unknown): boolean {
   return JSON.stringify(left) === JSON.stringify(right)
+}
+
+function isStringArrayEqual(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) return false
+  return left.every((value, index) => value === right[index])
 }
 
 export function dispatchPluginSettingsPatch(patch: Record<string, unknown>, previous: PluginStateSnapshot): void {

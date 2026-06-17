@@ -73,7 +73,10 @@ vi.mock('./pluginSafety', () => ({
 }))
 
 import { clearCachedServerCommandRevision, type CommandEvent } from '../server/commands'
-import { setServerProjectionWriteGuardEnabled } from '../server/projectionWriteGuard.svelte'
+import {
+  setServerProjectionWriteGuardEnabled,
+  withTrustedServerProjectionWrite,
+} from '../server/projectionWriteGuard.svelte'
 import { DBState, selectedCharID } from '../stores.svelte'
 import { SafeLocalPluginStorage } from './pluginSafeClass'
 import { getV2PluginAPIs, importPlugin, updatePlugin, type RisuPlugin } from './plugins.svelte'
@@ -944,6 +947,194 @@ describe('plugin database command bridge', () => {
     })
     expect(captured.some((call) => call.url === '/api/v1/commands/plugins')).toBe(false)
     expect(captured.some((call) => call.url === '/api/v1/commands/plugins/plugin-c')).toBe(false)
+  })
+
+  it('rolls back failed plugin DB bridge collection effects without clobbering concurrent plugin, storage, or provider edits', async () => {
+    const firstCommand = createDeferred<Response>()
+    const captured: { url: string; method: string; body: { baseRevision?: number; [key: string]: unknown } }[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        if (url === '/api/v1/bootstrap') {
+          return jsonResponse({ revision: 600 })
+        }
+        const body = typeof init.body === 'string' ? JSON.parse(init.body) : null
+        captured.push({ url, method: init.method ?? 'GET', body })
+        if (captured.length === 1) {
+          return firstCommand.promise
+        }
+        return jsonResponse({
+          revision: 601,
+          event: {
+            type: 'plugin.updated',
+            revision: 601,
+            resource: 'plugin',
+          } as unknown as CommandEvent,
+        })
+      }) as unknown as typeof fetch,
+    )
+
+    DBState.db.plugins = [
+      seedPlugin('plugin-a'),
+      seedPlugin('plugin-c', { displayName: 'Plugin C' }),
+      seedPlugin('plugin-d', { script: 'Risuai.log("old d")' }),
+    ]
+    DBState.db.currentPluginProvider = 'plugin-a'
+    DBState.db.pluginCustomStorage = {
+      retained: { value: 1 },
+    }
+    const apis = getV2PluginAPIs()
+
+    apis.setDatabaseLite({
+      plugins: [
+        seedPlugin('plugin-b', { displayName: 'Created B' }),
+        seedPlugin('plugin-d', {
+          script: 'Risuai.log("attempted d")',
+          displayName: 'Attempted D',
+        }),
+        seedPlugin('plugin-a'),
+      ],
+    })
+
+    await vi.waitFor(() => {
+      expect(captured.length).toBe(1)
+    })
+    expect(DBState.db.plugins.map((plugin) => plugin.name)).toEqual(['plugin-b', 'plugin-d', 'plugin-a'])
+
+    withTrustedServerProjectionWrite(() => {
+      const pluginDIndex = DBState.db.plugins.findIndex((plugin) => plugin.name === 'plugin-d')
+      DBState.db.plugins[pluginDIndex] = {
+        ...DBState.db.plugins[pluginDIndex],
+        script: 'Risuai.log("newer d")',
+      }
+      DBState.db.currentPluginProvider = 'plugin-d'
+      DBState.db.pluginCustomStorage.newerStorage = { value: 'kept' }
+    })
+    firstCommand.resolve(jsonResponse({ error: 'failed plugin create' }, 500))
+
+    await vi.waitFor(() => {
+      expect(DBState.db.plugins.map((plugin) => plugin.name)).toEqual(['plugin-a', 'plugin-c', 'plugin-d'])
+    })
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0]).toMatchObject({
+      url: '/api/v1/commands/plugins',
+      method: 'POST',
+      body: {
+        baseRevision: 600,
+        plugin: expect.objectContaining({ name: 'plugin-b', displayName: 'Created B' }),
+      },
+    })
+    expect(DBState.db.plugins).toEqual([
+      seedPlugin('plugin-a'),
+      seedPlugin('plugin-c', { displayName: 'Plugin C' }),
+      seedPlugin('plugin-d', { script: 'Risuai.log("newer d")' }),
+    ])
+    expect(DBState.db.currentPluginProvider).toBe('plugin-d')
+    expect(DBState.db.pluginCustomStorage).toEqual({
+      retained: { value: 1 },
+      newerStorage: { value: 'kept' },
+    })
+  })
+
+  it('keeps successful plugin collection steps when a later create fails', async () => {
+    const secondCommand = createDeferred<Response>()
+    const captured: { url: string; method: string; body: { baseRevision?: number; [key: string]: unknown } }[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        if (url === '/api/v1/bootstrap') {
+          return jsonResponse({ revision: 700 })
+        }
+        const body = typeof init.body === 'string' ? JSON.parse(init.body) : null
+        captured.push({ url, method: init.method ?? 'GET', body })
+        if (captured.length === 1) {
+          return jsonResponse({
+            revision: 701,
+            event: {
+              type: 'plugin.updated',
+              revision: 701,
+              resource: 'plugin',
+              id: 'plugin-d',
+            } as unknown as CommandEvent,
+          })
+        }
+        return secondCommand.promise
+      }) as unknown as typeof fetch,
+    )
+
+    DBState.db.plugins = [
+      seedPlugin('plugin-a'),
+      seedPlugin('plugin-d', {
+        script: 'Risuai.log("old d")',
+        displayName: 'Old D',
+      }),
+    ]
+    DBState.db.currentPluginProvider = 'plugin-a'
+    DBState.db.pluginCustomStorage = {
+      retained: { value: 1 },
+    }
+    const apis = getV2PluginAPIs()
+
+    apis.setDatabaseLite({
+      plugins: [
+        seedPlugin('plugin-a'),
+        seedPlugin('plugin-d', {
+          script: 'Risuai.log("attempted d")',
+          displayName: 'Attempted D',
+        }),
+        seedPlugin('plugin-b', { displayName: 'Created B' }),
+      ],
+    })
+
+    await vi.waitFor(() => {
+      expect(captured.length).toBe(2)
+    })
+    expect(DBState.db.plugins.map((plugin) => plugin.name)).toEqual(['plugin-a', 'plugin-d', 'plugin-b'])
+
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.currentPluginProvider = 'plugin-d'
+      DBState.db.pluginCustomStorage.newerStorage = { value: 'kept' }
+    })
+    secondCommand.resolve(jsonResponse({ error: 'failed plugin create' }, 500))
+
+    await vi.waitFor(() => {
+      expect(DBState.db.plugins.map((plugin) => plugin.name)).toEqual(['plugin-a', 'plugin-d'])
+    })
+
+    expect(captured[0]).toMatchObject({
+      url: '/api/v1/commands/plugins/plugin-d',
+      method: 'PATCH',
+      body: {
+        baseRevision: 700,
+        patch: expect.objectContaining({
+          script: 'Risuai.log("attempted d")',
+          displayName: 'Attempted D',
+        }),
+      },
+    })
+    expect(captured[1]).toMatchObject({
+      url: '/api/v1/commands/plugins',
+      method: 'POST',
+      body: {
+        baseRevision: 701,
+        plugin: expect.objectContaining({ name: 'plugin-b', displayName: 'Created B' }),
+      },
+    })
+    expect(DBState.db.plugins).toEqual([
+      seedPlugin('plugin-a'),
+      seedPlugin('plugin-d', {
+        script: 'Risuai.log("attempted d")',
+        displayName: 'Attempted D',
+      }),
+    ])
+    expect(DBState.db.currentPluginProvider).toBe('plugin-d')
+    expect(DBState.db.pluginCustomStorage).toEqual({
+      retained: { value: 1 },
+      newerStorage: { value: 'kept' },
+    })
   })
 
   it('serializes enabled-modules diff commands against advancing revisions', async () => {

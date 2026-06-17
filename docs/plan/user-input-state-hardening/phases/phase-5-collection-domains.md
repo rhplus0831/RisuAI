@@ -38,6 +38,13 @@ plugin rows, explicit delete failures reinsert only a still-missing plugin row,
 and deferred same-target failures unwind correctly when responses resolve out of
 order.
 
+Fourth landed slice: plugin create, full update, reorder, and plugin DB bridge
+collection patch rollback now use attempted row, field, and order records.
+Create/update payloads are frozen before base-revision lookup, collection patch
+steps clear their rollback operations after successful server commands, and a
+later failed step rolls back only the failed or unattempted tail instead of
+reverting earlier server-accepted changes.
+
 ## Anchors
 
 - `src/lib/Setting/botpreset.svelte`

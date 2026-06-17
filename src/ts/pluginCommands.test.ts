@@ -14,10 +14,14 @@ import {
   currentPluginStateSnapshot,
   currentPluginStorageSnapshot,
   deletePlugin,
+  dispatchCreatePlugin,
+  dispatchReorderPlugins,
   dispatchSelectPluginProvider,
   dispatchBulkPluginStorage,
   dispatchDeletePluginStorage,
+  dispatchDeletePlugin,
   dispatchPutPluginStorage,
+  dispatchUpdatePlugin,
   setPluginArgument,
   togglePluginEnabled,
 } from './pluginCommands'
@@ -125,6 +129,37 @@ function stubDeferredCommandFetch(): {
     }) as unknown as typeof fetch,
   )
   return { calls, commandResponses }
+}
+
+function stubDelayedBootstrapCommandFetch(): {
+  calls: CapturedFetch[]
+  resolveBootstrap: (response: Response) => void
+} {
+  const calls: CapturedFetch[] = []
+  let resolveBootstrap: (response: Response) => void = () => undefined
+  const bootstrapResponse = new Promise<Response>((resolve) => {
+    resolveBootstrap = resolve
+  })
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const headers = init.headers as Record<string, string> | undefined
+      const url = String(input)
+      calls.push({
+        url,
+        method: init.method ?? 'GET',
+        authHeader: headers?.['risu-auth'] ?? null,
+        body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+      })
+
+      if (url === '/api/v1/bootstrap') return bootstrapResponse
+      return jsonResponse({
+        revision: 11,
+        event: { type: 'plugin.updated', revision: 11, resource: 'plugin', id: 'plugin-a' },
+      })
+    }) as unknown as typeof fetch,
+  )
+  return { calls, resolveBootstrap }
 }
 
 async function waitForCallCount(calls: CapturedFetch[], expected: number): Promise<void> {
@@ -460,6 +495,328 @@ describe('plugin projection command helpers', () => {
     expect(DBState.db.currentPluginProvider).toBe('plugin-c')
     expect(DBState.db.plugins).toEqual(expectedPlugins)
     expect(DBState.db.pluginCustomStorage).toEqual(expectedStorage)
+  })
+
+  it('failed dispatchCreatePlugin removes only the attempted new plugin and preserves newer siblings, provider, and storage', async () => {
+    const calls = stubCommandFetch({ failCommands: true })
+    setServerProjectionWriteGuardEnabled(true)
+    const previous = currentPluginStateSnapshot()
+    const attemptedPlugin = seedPlugin('plugin-created', {
+      displayName: 'Attempted Create',
+      realArg: { mode: 'created' },
+    })
+
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.plugins.push(attemptedPlugin)
+    })
+    dispatchCreatePlugin(attemptedPlugin, previous)
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.plugins.push(
+        seedPlugin('plugin-newer', {
+          realArg: { mode: 'newer' },
+        }),
+      )
+      DBState.db.currentPluginProvider = 'plugin-newer'
+      DBState.db.pluginCustomStorage.newerStorage = { value: 'kept' }
+    })
+
+    await waitForCallCount(calls, 2)
+    await flushCommandEffects()
+
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/plugins',
+      method: 'POST',
+      body: {
+        baseRevision: 10,
+        plugin: expect.objectContaining({
+          name: 'plugin-created',
+          displayName: 'Attempted Create',
+        }),
+      },
+    })
+    expect(DBState.db.plugins).toEqual([
+      seedPlugin('plugin-a', {
+        arguments: { mode: ['fast', 'slow'] },
+        realArg: { mode: 'fast', token: 'abc' },
+        enabled: true,
+      }),
+      seedPlugin('plugin-b', {
+        realArg: { mode: 'standby' },
+        enabled: false,
+      }),
+      seedPlugin('plugin-newer', {
+        realArg: { mode: 'newer' },
+      }),
+    ])
+    expect(DBState.db.currentPluginProvider).toBe('plugin-newer')
+    expect(DBState.db.pluginCustomStorage).toEqual({
+      retained: { value: 1 },
+      newerStorage: { value: 'kept' },
+    })
+  })
+
+  it('dispatchCreatePlugin sends the original attempted plugin after delayed bootstrap', async () => {
+    const { calls, resolveBootstrap } = stubDelayedBootstrapCommandFetch()
+    setServerProjectionWriteGuardEnabled(true)
+    const previous = currentPluginStateSnapshot()
+    const attemptedPlugin = seedPlugin('plugin-created', {
+      displayName: 'Attempted Create',
+      arguments: { mode: ['fast', 'slow'] },
+      realArg: { mode: 'created' },
+    })
+
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.plugins.push(attemptedPlugin)
+    })
+    dispatchCreatePlugin(attemptedPlugin, previous)
+    await waitForCallCount(calls, 1)
+
+    attemptedPlugin.displayName = 'Mutated Create'
+    attemptedPlugin.arguments.mode = ['mutated']
+    attemptedPlugin.realArg.mode = 'mutated'
+    resolveBootstrap(jsonResponse({ revision: 10 }))
+    await waitForCallCount(calls, 2)
+
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/plugins',
+      method: 'POST',
+      body: {
+        baseRevision: 10,
+        plugin: expect.objectContaining({
+          name: 'plugin-created',
+          displayName: 'Attempted Create',
+          arguments: { mode: ['fast', 'slow'] },
+          realArg: { mode: 'created' },
+        }),
+      },
+    })
+  })
+
+  it('failed create followed by failed same-plugin update removes the never-persisted plugin after out-of-order responses', async () => {
+    const { calls, commandResponses } = stubDeferredCommandFetch()
+    setServerProjectionWriteGuardEnabled(true)
+    const createPrevious = currentPluginStateSnapshot()
+    const attemptedPlugin = seedPlugin('plugin-created', {
+      displayName: 'Attempted Create',
+      realArg: { mode: 'created' },
+    })
+
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.plugins.push(attemptedPlugin)
+    })
+    dispatchCreatePlugin(attemptedPlugin, createPrevious)
+    await waitForCallCount(calls, 2)
+
+    const updatePrevious = currentPluginStateSnapshot()
+    withTrustedServerProjectionWrite(() => {
+      const index = DBState.db.plugins.findIndex((plugin) => plugin.name === 'plugin-created')
+      DBState.db.plugins[index] = {
+        ...DBState.db.plugins[index],
+        displayName: 'Updated Create',
+        realArg: { mode: 'updated' },
+      }
+    })
+    dispatchUpdatePlugin(
+      'plugin-created',
+      {
+        displayName: 'Updated Create',
+        realArg: { mode: 'updated' },
+      },
+      updatePrevious,
+    )
+    await waitForCallCount(calls, 3)
+
+    commandResponses[0].resolve(jsonResponse({ error: 'forced create failure' }, 500))
+    await flushCommandEffects()
+
+    expect(DBState.db.plugins.find((plugin) => plugin.name === 'plugin-created')).toEqual(
+      seedPlugin('plugin-created', {
+        displayName: 'Updated Create',
+        realArg: { mode: 'updated' },
+      }),
+    )
+
+    commandResponses[1].resolve(jsonResponse({ error: 'forced update failure' }, 500))
+    await flushCommandEffects()
+
+    expect(DBState.db.plugins.map((plugin) => plugin.name)).toEqual(['plugin-a', 'plugin-b'])
+  })
+
+  it('failed full plugin update restores only fields still equal to attempted values', async () => {
+    const calls = stubCommandFetch({ failCommands: true })
+    setServerProjectionWriteGuardEnabled(true)
+    const previous = currentPluginStateSnapshot()
+    const attemptedPlugin = seedPlugin('plugin-a', {
+      script: 'Risuai.log("attempted full update")',
+      displayName: 'Attempted A',
+      arguments: { mode: ['fast', 'slow'], tone: 'string' },
+      realArg: { mode: 'slow', token: 'abc', tone: 'formal' },
+      enabled: false,
+    })
+
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.plugins[0] = attemptedPlugin
+    })
+    dispatchUpdatePlugin('plugin-a', attemptedPlugin, previous)
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.plugins[0] = {
+        ...DBState.db.plugins[0],
+        script: 'Risuai.log("newer same-row script")',
+      }
+      DBState.db.currentPluginProvider = 'plugin-b'
+      DBState.db.pluginCustomStorage.newerStorage = { value: 'kept' }
+    })
+
+    await waitForCallCount(calls, 2)
+    await flushCommandEffects()
+
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/plugins/plugin-a',
+      method: 'PATCH',
+      body: {
+        baseRevision: 10,
+        patch: expect.objectContaining({
+          script: 'Risuai.log("attempted full update")',
+          displayName: 'Attempted A',
+          realArg: { mode: 'slow', token: 'abc', tone: 'formal' },
+          enabled: false,
+        }),
+      },
+    })
+    expect(calls[1].body).toEqual(
+      expect.objectContaining({
+        patch: expect.not.objectContaining({ name: 'plugin-a' }),
+      }),
+    )
+    expect(DBState.db.plugins[0]).toEqual(
+      seedPlugin('plugin-a', {
+        script: 'Risuai.log("newer same-row script")',
+        arguments: { mode: ['fast', 'slow'] },
+        realArg: { mode: 'fast', token: 'abc' },
+        enabled: true,
+      }),
+    )
+    expect(DBState.db.plugins[1]).toEqual(
+      seedPlugin('plugin-b', {
+        realArg: { mode: 'standby' },
+        enabled: false,
+      }),
+    )
+    expect(DBState.db.currentPluginProvider).toBe('plugin-b')
+    expect(DBState.db.pluginCustomStorage).toEqual({
+      retained: { value: 1 },
+      newerStorage: { value: 'kept' },
+    })
+  })
+
+  it('dispatchUpdatePlugin sends the original nested patch after delayed bootstrap', async () => {
+    const { calls, resolveBootstrap } = stubDelayedBootstrapCommandFetch()
+    setServerProjectionWriteGuardEnabled(true)
+    const previous = currentPluginStateSnapshot()
+    const patch = {
+      arguments: { mode: ['fast', 'slow'] },
+      realArg: { mode: 'attempted', token: 'abc' },
+    }
+
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.plugins[0] = {
+        ...DBState.db.plugins[0],
+        ...patch,
+      }
+    })
+    dispatchUpdatePlugin('plugin-a', patch, previous)
+    await waitForCallCount(calls, 1)
+
+    patch.arguments.mode.push('mutated')
+    patch.realArg.mode = 'mutated'
+    resolveBootstrap(jsonResponse({ revision: 10 }))
+    await waitForCallCount(calls, 2)
+
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/plugins/plugin-a',
+      method: 'PATCH',
+      body: {
+        baseRevision: 10,
+        patch: {
+          arguments: { mode: ['fast', 'slow'] },
+          realArg: { mode: 'attempted', token: 'abc' },
+        },
+      },
+    })
+  })
+
+  it('failed delete followed by failed same-name create restores the original plugin after out-of-order responses', async () => {
+    const { calls, commandResponses } = stubDeferredCommandFetch()
+    setServerProjectionWriteGuardEnabled(true)
+    const originalPlugins = cloneJsonValue(DBState.db.plugins)
+    const deletePrevious = currentPluginStateSnapshot()
+
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.plugins = DBState.db.plugins.filter((plugin) => plugin.name !== 'plugin-a')
+      DBState.db.currentPluginProvider = ''
+    })
+    dispatchDeletePlugin('plugin-a', deletePrevious)
+    await waitForCallCount(calls, 2)
+
+    const createPrevious = currentPluginStateSnapshot()
+    const newPlugin = seedPlugin('plugin-a', {
+      displayName: 'Replacement A',
+      realArg: { mode: 'replacement' },
+    })
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.plugins.push(newPlugin)
+    })
+    dispatchCreatePlugin(newPlugin, createPrevious)
+    await waitForCallCount(calls, 3)
+
+    commandResponses[0].resolve(jsonResponse({ error: 'forced delete failure' }, 500))
+    await flushCommandEffects()
+
+    expect(DBState.db.plugins.find((plugin) => plugin.name === 'plugin-a')).toEqual(newPlugin)
+    expect(DBState.db.currentPluginProvider).toBe('')
+
+    commandResponses[1].resolve(jsonResponse({ error: 'forced create failure' }, 500))
+    await flushCommandEffects()
+
+    expect(DBState.db.plugins).toEqual(originalPlugins)
+    expect(DBState.db.currentPluginProvider).toBe('plugin-a')
+  })
+
+  it('failed dispatchReorderPlugins preserves a newer reorder and uses the captured attempted order', async () => {
+    const calls = stubCommandFetch({ failCommands: true })
+    setServerProjectionWriteGuardEnabled(true)
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.plugins = [seedPlugin('plugin-a'), seedPlugin('plugin-b'), seedPlugin('plugin-c')]
+    })
+    const previous = currentPluginStateSnapshot()
+
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.plugins = [seedPlugin('plugin-c'), seedPlugin('plugin-b'), seedPlugin('plugin-a')]
+    })
+    dispatchReorderPlugins(previous)
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.plugins = [seedPlugin('plugin-b'), seedPlugin('plugin-c'), seedPlugin('plugin-a')]
+      DBState.db.currentPluginProvider = 'plugin-c'
+      DBState.db.pluginCustomStorage.newerStorage = { value: 'kept' }
+    })
+
+    await waitForCallCount(calls, 2)
+    await flushCommandEffects()
+
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/plugins/reorder',
+      method: 'POST',
+      body: {
+        baseRevision: 10,
+        pluginIds: ['plugin-c', 'plugin-b', 'plugin-a'],
+      },
+    })
+    expect(DBState.db.plugins.map((plugin) => plugin.name)).toEqual(['plugin-b', 'plugin-c', 'plugin-a'])
+    expect(DBState.db.currentPluginProvider).toBe('plugin-c')
+    expect(DBState.db.pluginCustomStorage).toEqual({
+      retained: { value: 1 },
+      newerStorage: { value: 'kept' },
+    })
   })
 
   it('returns false for missing plugin names without commands or projection changes', () => {

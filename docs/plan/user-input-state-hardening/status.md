@@ -94,7 +94,10 @@ persistence inventory under
   overlapping writes unwind correctly when failures resolve out of order. Plugin
   `realArg`, `enabled`, explicit delete, and provider-selection rollback now
   restores only the targeted field, missing row, or provider value when live
-  state still matches the attempted optimistic state.
+  state still matches the attempted optimistic state. Plugin create, full
+  update, reorder, and DB bridge collection patch rollback now use frozen
+  attempted payloads plus row, field, and order rollback records; successful
+  collection sequence steps are kept when a later step fails.
   Phase 2 landed character profile draft dirty top-level field protection;
   prompt-template item row dirty projection merging; whole-key dirty projection
   protection for
@@ -247,7 +250,13 @@ persistence inventory under
   only fresh attempted fields, reinserts only still-missing deleted plugin rows,
   preserves newer provider/storage/sibling plugin edits, and uses deferred
   same-target failure unwinding for overlapping realArg writes.
-- Verification state: Phase 5 plugin non-storage rollback validation is
+- `src/ts/pluginCommands.ts` and `src/ts/plugins/plugins.svelte.ts` now guard
+  plugin create, full update, reorder, and DB bridge collection patch rollback.
+  Create/update command payloads are frozen before base-revision lookup,
+  full-plugin updates roll back only fields still matching attempted values,
+  reorder rollback compares attempted order, and collection patch sequences clear
+  successful steps before rolling back only a failed or unattempted tail.
+- Verification state: Phase 5 plugin collection/full-plugin rollback validation is
   recorded in `latest-verification.md`.
 - Highest issue density:
   - Character editor: 52 issue rows, mostly dirty projection and unguarded
@@ -305,10 +314,10 @@ persistence inventory under
   code gap blocks Phase 4 completion.
 - [Phase 5](phases/phase-5-collection-domains.md): active. Preset, persona,
   translator, module, lorebook, script, and import collection flows; Hypa V3
-  preset array import/rename/delete; plugin collection/reorder/update;
+  preset array import/rename/delete; plugin settings patch residuals;
   and sidebar/chat/folder/character list create/delete/reorder/import rollback
   remain here. Script/trigger replacement rollback and plugin custom storage
-  plus non-storage rollback slices have landed.
+  plus non-storage and collection rollback slices have landed.
 - [Phase 6](phases/phase-6-resync-memory-navigation.md): pending. Realm, backup,
   and local bundle restore/import resyncs; character/chat import
   refresh/navigation edges; memory job list/progress ordering; route/selection
@@ -527,10 +536,15 @@ persistence inventory under
     fields, reinsert only still-missing plugin rows, preserve newer
     provider/storage/sibling plugin edits, and defer overlapping same-target
     failures.
+  - Phase 5 plugin collection slice: plugin create, full update, reorder, and
+    DB bridge collection patch rollback now capture attempted row, field, and
+    order records. Direct create/update payloads are frozen before base-revision
+    lookup, and collection patch sequence rollback keeps earlier successful
+    server-accepted steps while rolling back only the failed or unattempted tail.
   - Phase 5: preset/persona/translator/module/lorebook/script/import collection
-    flows, Hypa V3 preset array import/rename/delete, plugin
-    collection/reorder/update, sidebar chat/folder lists, character list
-    ordering, and broad create/delete/reorder/import rollback.
+    flows, Hypa V3 preset array import/rename/delete, plugin settings patch
+    residuals, sidebar chat/folder lists, character list ordering, and broad
+    create/delete/reorder/import rollback.
   - Phase 6: Realm/backup/local bundle restore/import resyncs, character/chat
     import refresh/navigation edges, memory job list/progress ordering,
     route/selection hydration, welcome/onboarding delayed setup, DevTool

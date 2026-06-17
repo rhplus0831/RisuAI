@@ -64,7 +64,10 @@ for PUT, DELETE, and bulk operations, preserves newer sibling keys, and unwinds
 overlapping same-key failures correctly even when command responses arrive out
 of order. Plugin non-storage rollback now captures attempted targets for
 `realArg`, `enabled`, explicit delete, and provider selection, preserving newer
-storage, provider, and sibling plugin edits on stale failures.
+storage, provider, and sibling plugin edits on stale failures. Plugin create,
+full update, reorder, and DB bridge collection patch rollback now use frozen
+attempted payloads plus row, field, and order records, and collection sequences
+keep earlier successful server-accepted steps when later steps fail.
 
 Next manager loop:
 
@@ -138,10 +141,12 @@ Explicit deferrals:
   script and trigger replacements. Phase 5 plugin custom storage rollback has
   landed for PUT, DELETE, and bulk storage operations. Phase 5 plugin
   non-storage rollback has landed for `realArg`, `enabled`, explicit delete, and
-  provider selection. Remaining preset/persona/translator/module, lorebook, and
-  import collection flows, Hypa V3 preset array import/rename/delete, plugin
-  collection/reorder/update paths, and sidebar/chat/folder/character list
-  create/delete/reorder/import rollback remain Phase 5 work.
+  provider selection. Phase 5 plugin collection/full-plugin rollback has landed
+  for create, full update, reorder, and DB bridge collection patch paths.
+  Remaining preset/persona/translator/module, lorebook, and import collection
+  flows, Hypa V3 preset array import/rename/delete, plugin settings patch
+  residuals, and sidebar/chat/folder/character list create/delete/reorder/import
+  rollback remain Phase 5 work.
 - Realm/backup/local bundle restore/import resyncs, character/chat import
   refresh/navigation edges, memory job list/progress ordering, route/selection
   hydration, welcome/onboarding delayed setup, and DevTool autopilot long-loop
