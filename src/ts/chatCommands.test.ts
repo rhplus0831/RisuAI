@@ -26,10 +26,11 @@ import { DBState, selectedCharID } from './stores.svelte'
 // Import the heavy database module AFTER stores.svelte: importing it first
 // triggers a circular-import TDZ when the reactive moduleUpdate $effect runs
 // mid-init.
-import { setCurrentChat, type Chat, type Message } from './storage/database.svelte'
+import { setCurrentChat, type Chat, type ChatFolder, type Message } from './storage/database.svelte'
 import { get } from 'svelte/store'
 import {
   applyOptimisticCreatedChat,
+  applyOptimisticCreatedChatFolder,
   applyOptimisticDeletedChat,
   appendCurrentChatEmptyCharMessage,
   appendCurrentChatUserMessageForSend,
@@ -408,6 +409,23 @@ describe('chat command projection helpers', () => {
     expect(DBState.db.characters[0].chats.map((candidate) => candidate.id)).toEqual(['chat-a', 'chat-b'])
   })
 
+  it('optimistically inserts a command-created chat folder under the projection guard', () => {
+    setServerProjectionWriteGuardEnabled(true)
+    const previous = currentChatStateSnapshot()
+    const folder = {
+      id: 'folder-b',
+      name: 'Folder B',
+      folded: false,
+    }
+
+    expect(applyOptimisticCreatedChatFolder('char-a', folder, previous)).toBe(true)
+
+    expect(DBState.db.characters[0].chatFolders.map((candidate) => candidate.id)).toEqual(['folder-b', 'folder-a'])
+
+    restoreChatState(previous)
+    expect(DBState.db.characters[0].chatFolders.map((candidate) => candidate.id)).toEqual(['folder-a'])
+  })
+
   it('optimistically removes a command-deleted chat under the projection guard', () => {
     setServerProjectionWriteGuardEnabled(true)
     const previous = currentChatStateSnapshot()
@@ -538,6 +556,37 @@ describe('chat command projection helpers', () => {
     ])
   })
 
+  it('serializes the attempted create-folder snapshot even if the caller mutates the live folder', async () => {
+    const calls = stubCommandFetch()
+    const previous = currentChatStateSnapshot()
+    const createFolder: ChatFolder = {
+      id: 'folder-b',
+      name: 'Folder B',
+      color: 'blue',
+      folded: false,
+    }
+
+    dispatchCreateChatFolder('char-a', createFolder, previous)
+    createFolder.name = 'Mutated Folder'
+    createFolder.color = 'red'
+    createFolder.folded = true
+
+    await waitForCallCount(calls, 2)
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/characters/char-a/chat-folders',
+      method: 'POST',
+      body: {
+        baseRevision: expect.any(Number),
+        folder: {
+          id: 'folder-b',
+          name: 'Folder B',
+          color: 'blue',
+          folded: false,
+        },
+      },
+    })
+  })
+
   it('preserves newer same-folder edits when a chat folder update rollback fails', async () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/chat-folders/folder-a' && init.method === 'PATCH',
@@ -603,6 +652,36 @@ describe('chat command projection helpers', () => {
     expect(DBState.db.characters[0].chatFolders[1]).toMatchObject({
       id: 'folder-c',
       name: 'Newer sibling folder',
+    })
+  })
+
+  it('keeps a failed attempted folder when newer chats were moved into it', async () => {
+    const calls = stubFailingCommandFetch({
+      matches: (url, init) => url === '/api/v1/commands/characters/char-a/chat-folders' && init.method === 'POST',
+      onCommand: () => {
+        withTrustedServerProjectionWrite(() => {
+          DBState.db.characters[0].chats[0].folderId = 'folder-b'
+        })
+      },
+    })
+    setServerProjectionWriteGuardEnabled(true)
+
+    const previous = currentChatStateSnapshot()
+    const attemptedFolder = {
+      id: 'folder-b',
+      name: 'Attempted Folder',
+      folded: false,
+    }
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.characters[0].chatFolders.unshift(attemptedFolder)
+    })
+
+    dispatchCreateChatFolder('char-a', attemptedFolder, previous)
+
+    await waitForCallCount(calls, 2)
+    await vi.waitFor(() => {
+      expect(DBState.db.characters[0].chatFolders.map((folder) => folder.id)).toEqual(['folder-b', 'folder-a'])
+      expect(DBState.db.characters[0].chats[0].folderId).toBe('folder-b')
     })
   })
 

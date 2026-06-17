@@ -1,6 +1,6 @@
 # User Input State Hardening Solve Note
 
-Date: 2026-06-17
+Date: 2026-06-18
 
 ## Manager Instruction
 
@@ -208,8 +208,12 @@ Explicit deferrals:
   import target freshness has landed for character, chat, and global lorebook
   imports. Phase 5 plugin import/update runtime reload ordering has landed, so
   failed server-backed create/update commands roll back the optimistic plugin DB
-  write without loading rejected runtime side effects. Remaining sidebar and
-  import collection flows remain Phase 5 work.
+  write without loading rejected runtime side effects. Phase 5 sidebar
+  chat-folder creation optimism has landed: server-backed create-folder now
+  inserts the attempted folder locally, dispatch serializes the frozen attempted
+  folder snapshot, and failed creates preserve attempted folders that newer chat
+  moves reference. Remaining import collection flows and residual sidebar
+  collection edges remain Phase 5 work.
 - `src/ts/compatibilityAdapters.test.ts` currently has a pre-existing failure in
   `routes MCP character lorebook writes through lorebook commands in
   server-backed web mode` at line 626. It reproduced in a detached baseline

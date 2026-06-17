@@ -1,6 +1,6 @@
 # User Input State Hardening Status
 
-Date: 2026-06-17
+Date: 2026-06-18
 
 This workstream is active. Phase 0 is complete as a docs/contract baseline,
 Phase 1 is complete as the shared-helper and first rollback-adopter slice,
@@ -175,6 +175,10 @@ persistence inventory under
   Plugin import/update now waits for accepted server-backed create/update
   commands before reloading the plugin runtime, so failed command rollbacks skip
   loading runtime side effects from rejected optimistic plugin state.
+  Server-backed sidebar chat-folder creation now inserts folders
+  optimistically, serializes the frozen attempted folder snapshot, and rolls
+  back failed creates only when the attempted folder is still unchanged and
+  unreferenced by newer chat moves.
   Phase 2 landed character profile draft dirty top-level field protection;
   prompt-template item row dirty projection merging; whole-key dirty projection
   protection for
@@ -804,7 +808,10 @@ persistence inventory under
   - Phase 5 lorebook import freshness slice: lorebook imports now re-resolve
     stable character/chat/global-lorebook targets by id after file-picker awaits
     and snapshot rollback baselines immediately before the import write.
-  - Phase 5: sidebar/import collection flows.
+  - Phase 5 sidebar chat-folder creation slice: server-backed create-folder now
+    appears optimistically in the sidebar and failed creates preserve attempted
+    folders that newer chat moves reference.
+  - Phase 5: import collection flows and any residual sidebar collection edges.
   - Known pre-existing test gap: `pnpm exec vitest run
     src/ts/compatibilityAdapters.test.ts` fails in
     `routes MCP character lorebook writes through lorebook commands in

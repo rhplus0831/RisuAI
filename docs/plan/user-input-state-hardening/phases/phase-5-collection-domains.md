@@ -219,6 +219,12 @@ optimistic DB write and return without loading runtime side effects from the
 rejected plugin state, while successful commands still reload the runtime after
 persistence acceptance.
 
+Thirtieth landed slice: server-backed sidebar chat-folder creation now uses the
+same optimistic insertion pattern as chat creation. The create-folder command
+serializes the frozen attempted folder snapshot, and failed creates remove only
+an unchanged unreferenced attempted folder so newer chats moved into that folder
+are not orphaned.
+
 ## Anchors
 
 - `src/lib/Setting/botpreset.svelte`

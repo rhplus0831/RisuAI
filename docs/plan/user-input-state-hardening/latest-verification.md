@@ -1,30 +1,32 @@
 # Latest Verification
 
-Date: 2026-06-17
+Date: 2026-06-18
 
 This file records the latest validation proof for the user input state hardening
 workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 5 plugin import/update runtime reload
-  ordering. `importPlugin()` now waits for accepted server-backed plugin
-  create/update commands before calling `loadPlugins()`, so failed commands roll
-  back the optimistic DB write and skip loading runtime side effects from a
-  rejected plugin state.
+- Runtime/code change under test: Phase 5 sidebar chat-folder creation
+  optimism. Server-backed create-folder now inserts the folder optimistically,
+  serializes the frozen attempted folder snapshot for the command payload, and
+  rolls back failed creates only when the attempted folder is unchanged and
+  unreferenced by newer chat moves.
 - Commands:
 
 ```bash
-pnpm exec vitest run src/ts/plugins/plugins.test.ts src/ts/server/pluginImport.test.ts src/ts/pluginCommands.test.ts src/ts/plugins/apiV3/v3.svelte.test.ts
+pnpm exec vitest run src/lib/SideBars/SideChatList.svelte.test.ts src/ts/chatCommands.test.ts
+pnpm exec vitest run src/lib/Others/ChatList.svelte.test.ts src/ts/characters.importChat.test.ts src/ts/characterCommands.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
-pnpm exec prettier --check src/ts/plugins/plugins.svelte.ts src/ts/pluginCommands.ts src/ts/plugins/plugins.test.ts
+pnpm exec prettier --check src/ts/chatCommands.ts src/lib/SideBars/SideChatList.svelte src/lib/SideBars/SideChatList.svelte.test.ts src/ts/chatCommands.test.ts
 git diff --check
 ```
 
-- Result: passed on 2026-06-17. Focused plugin import, plugin command, and
-  Plugin V3 coverage passed 78 tests across 4 files, and both TypeScript checks
-  plus Prettier and `git diff --check` passed.
+- Result: passed on 2026-06-18. Focused sidebar/chat-command coverage passed 94
+  tests across 2 files; neighboring ChatList/import/character command coverage
+  passed 75 tests across 3 files; and both TypeScript checks plus Prettier and
+  `git diff --check` passed.
 - Residual gaps: Multi-group plugin settings patch failures still share the
   generic settings rollback
   callback and roll back all still-attempted keys from the failed patch. Full
@@ -32,10 +34,10 @@ git diff --check
   callers. Regex delete uses the same scoped module script dispatcher and has
   optimistic visibility coverage, but this slice does not add a dedicated
   failing delete rollback/stale-skip test. The remaining Phase 5 collection
-  domains still need focused slices: sidebar collection rollback and replacement
-  flows, and residual sidebar/import replacement paths. Chat fork selection
-  preservation uses the shared created-chat rollback selection helper, but there is no
-  fork-only selection-change regression. Translator preset import
+  domains still need focused slices for import collection replacement paths and
+  any residual sidebar edges. Chat fork selection preservation uses the shared
+  created-chat rollback selection helper, but there is no fork-only
+  selection-change regression. Translator preset import
   file-read/decode freshness does not have dedicated coverage, but its
   command-dispatch failure path uses the now rollback-free create dispatcher.
   Prompt-template item rollback coverage does not explicitly cover delete skip
@@ -88,8 +90,10 @@ git diff --check
   slice. Chat import flow rollback is covered by the twenty-seventh Phase 5
   slice. Lorebook import target freshness is covered by the twenty-eighth Phase
   5 slice. Plugin import/update runtime reload ordering is covered by the
-  twenty-ninth Phase 5 slice.
-  Remaining Phase 5 work owns sidebar/import collection flows.
+  twenty-ninth Phase 5 slice. Server-backed sidebar chat-folder creation
+  optimism and failed-create rollback are covered by the thirtieth Phase 5
+  slice. Remaining Phase 5 work owns import collection flows and any residual
+  sidebar collection edges.
 - Phase 6 owns Realm/backup/local bundle restore/import resyncs, character/chat
   import refresh/navigation edges, memory job list/progress ordering,
   route/selection hydration, welcome/onboarding delayed setup, and DevTool

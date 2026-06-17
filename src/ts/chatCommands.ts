@@ -124,6 +124,28 @@ export function applyOptimisticCreatedChat(
   return applied
 }
 
+export function applyOptimisticCreatedChatFolder(
+  characterId: string | undefined,
+  folder: ChatFolder,
+  snapshot: ChatStateSnapshot,
+): boolean {
+  let applied = false
+  withTrustedServerProjectionWrite(() => {
+    const character = locateSnapshotCharacter(characterId, snapshot.selectedCharID)
+    if (!character) return
+    character.chatFolders ??= []
+    const existingIndex = folder.id ? character.chatFolders.findIndex((candidate) => candidate.id === folder.id) : -1
+    if (existingIndex >= 0) {
+      applied = true
+      return
+    }
+    character.chatFolders.unshift(folder)
+    applied = true
+  })
+  if (applied) reloadGuiDisplay()
+  return applied
+}
+
 export interface OptimisticDeletedChatResult {
   applied: boolean
   selectedChatId: string | undefined
@@ -1691,15 +1713,16 @@ export function dispatchReorderChatFoldersAndChatsByIds(
 }
 
 export function dispatchCreateChatFolder(characterId: string, folder: ChatFolder, previous: ChatStateSnapshot): void {
-  const attemptedFolder = cloneJsonValue(folder)
+  const attemptedFolder = freezeJsonValue(cloneJsonValue(folder))
+  const rollback = chatCreatedFolderRollbackFromState(characterId, attemptedFolder, previous)
   runChatCommand(
     (baseRevision) =>
       createChatFolderCommand({
         baseRevision,
         characterId,
-        folder: toChatFolderSnapshot(folder),
+        folder: toChatFolderSnapshot(attemptedFolder),
       }),
-    () => restoreCreatedChatFolderAttempt(characterId, attemptedFolder, previous),
+    () => restoreCreatedChatFolderAttemptIfUnreferenced(rollback),
   )
 }
 

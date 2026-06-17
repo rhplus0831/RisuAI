@@ -25,6 +25,7 @@ const sidebarMocks = vi.hoisted(() => {
 
   let serverCommandsEnabled = false
   let pendingCreateCommand: DeferredCommand | undefined
+  let pendingCreateFolderCommand: DeferredCommand | undefined
   let pendingDeleteCommand: DeferredCommand | undefined
   let pendingSelectCommand: DeferredCommand | undefined
 
@@ -52,6 +53,11 @@ const sidebarMocks = vi.hoisted(() => {
   function createDeferredCreateCommand(): DeferredCommand {
     pendingCreateCommand = createDeferredCommand()
     return pendingCreateCommand
+  }
+
+  function createDeferredCreateFolderCommand(): DeferredCommand {
+    pendingCreateFolderCommand = createDeferredCommand()
+    return pendingCreateFolderCommand
   }
 
   function createDeferredDeleteCommand(): DeferredCommand {
@@ -112,11 +118,18 @@ const sidebarMocks = vi.hoisted(() => {
       return pendingCreateCommand.promise
     }),
     createDeferredCreateCommand,
+    createDeferredCreateFolderCommand,
     createDeferredDeleteCommand,
     createDeferredSelectCommand,
     createChatCopyName: vi.fn((name: string, suffix: string) => `${name} ${suffix}`),
     currentRoute,
-    createChatFolderCommand: unusedCommand,
+    createChatFolderCommand: vi.fn((input: unknown) => {
+      if (!pendingCreateFolderCommand) {
+        throw new Error('No deferred create-folder command was prepared')
+      }
+      pendingCreateFolderCommand.input = input
+      return pendingCreateFolderCommand.promise
+    }),
     deleteChatCommand: vi.fn((input: unknown) => {
       if (!pendingDeleteCommand) {
         throw new Error('No deferred delete-chat command was prepared')
@@ -126,7 +139,6 @@ const sidebarMocks = vi.hoisted(() => {
     }),
     deleteChatFolderCommand: unusedCommand,
     deleteMessageCommand: unusedCommand,
-    dispatchCreateChatFolder: vi.fn(),
     dispatchDeleteChatFolder: vi.fn(),
     dispatchForkChat: vi.fn(),
     dispatchReorderChatFoldersAndChatsByIds: vi.fn(),
@@ -145,6 +157,7 @@ const sidebarMocks = vi.hoisted(() => {
     replaceMessagesCommand: unusedCommand,
     resetCommandHarness: () => {
       pendingCreateCommand = undefined
+      pendingCreateFolderCommand = undefined
       pendingDeleteCommand = undefined
       pendingSelectCommand = undefined
       serverCommandsEnabled = false
@@ -234,7 +247,6 @@ vi.mock('src/ts/chatCommands', async (importActual) => {
   const actual = await importActual<typeof import('src/ts/chatCommands')>()
   return {
     ...actual,
-    dispatchCreateChatFolder: sidebarMocks.dispatchCreateChatFolder,
     dispatchDeleteChatFolder: sidebarMocks.dispatchDeleteChatFolder,
     dispatchForkChat: sidebarMocks.dispatchForkChat,
     dispatchReorderChatFoldersAndChatsByIds: sidebarMocks.dispatchReorderChatFoldersAndChatsByIds,
@@ -401,6 +413,12 @@ function createButton(): HTMLButtonElement {
   const action = sidebarRoot().querySelector<HTMLElement>('[data-risu-chat-action="create"]')
   const button = action instanceof HTMLButtonElement ? action : action?.querySelector<HTMLButtonElement>('button')
   expect(button, 'create chat button').toBeTruthy()
+  return button!
+}
+
+function createFolderButton(): HTMLButtonElement {
+  const button = sidebarRoot().querySelector<HTMLButtonElement>('[data-risu-chat-action="create-folder"]')
+  expect(button, 'create folder button').toBeTruthy()
   return button!
 }
 
@@ -817,6 +835,60 @@ describe('SideChatList DOM contract harness', () => {
     expect(selectedCharacter().chatPage).toBe(1)
     expectRowSelected('chat-foldered', true)
     expect(target.textContent).not.toContain('New Chat 4')
+  })
+
+  it('shows a newly created sidebar folder before the command resolves', async () => {
+    seedSidebarDatabase()
+    sidebarMocks.setServerCommandsEnabled(true)
+    setServerProjectionWriteGuardEnabled(true)
+    const command = sidebarMocks.createDeferredCreateFolderCommand()
+
+    component = mount(SideChatListHarness, { target })
+    await tick()
+
+    createFolderButton().click()
+    await tick()
+
+    const createdFolder = selectedCharacter().chatFolders[0]
+    expect(command.settled).toBe(false)
+    expect(createdFolder.name).toBe('New Folder 2')
+    expect(folderElementById(createdFolder.id).textContent).toContain('New Folder 2')
+    expect(selectedCharacter().chatFolders.map((folder) => folder.name)).toEqual(['New Folder 2', 'Pinned Folder'])
+    expect(command.input).toMatchObject({
+      characterId: 'char-a',
+      folder: {
+        id: createdFolder.id,
+        name: 'New Folder 2',
+        folded: false,
+      },
+    })
+
+    command.resolve({ revision: 12, status: 'ok' })
+    await flushCommandWork()
+  })
+
+  it('rolls back a failed optimistic sidebar folder create in state and DOM', async () => {
+    seedSidebarDatabase()
+    sidebarMocks.setServerCommandsEnabled(true)
+    setServerProjectionWriteGuardEnabled(true)
+    const command = sidebarMocks.createDeferredCreateFolderCommand()
+
+    component = mount(SideChatListHarness, { target })
+    await tick()
+
+    createFolderButton().click()
+    await tick()
+
+    const createdFolderId = selectedCharacter().chatFolders[0].id
+    expect(folderElementById(createdFolderId).textContent).toContain('New Folder 2')
+    expect(selectedCharacter().chatFolders.map((folder) => folder.name)).toEqual(['New Folder 2', 'Pinned Folder'])
+
+    command.resolve({ error: 'create folder failed', status: 'error' })
+    await flushCommandWork()
+
+    expect(selectedCharacter().chatFolders.map((folder) => folder.name)).toEqual(['Pinned Folder'])
+    expect(sidebarRoot().querySelector(`[data-risu-chat-folder-id="${createdFolderId}"]`)).toBeNull()
+    expect(target.textContent).not.toContain('New Folder 2')
   })
 
   it('removes a confirmed root sidebar chat before the delete command resolves', async () => {

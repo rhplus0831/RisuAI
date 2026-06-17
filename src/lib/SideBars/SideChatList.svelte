@@ -33,6 +33,7 @@
   import { ensureAllChatsHydrated } from 'src/ts/server/chatMessageHydration.svelte'
   import {
     applyOptimisticCreatedChat,
+    applyOptimisticCreatedChatFolder,
     applyOptimisticDeletedChat,
     currentChatSelectionSnapshot,
     currentChatStateSnapshot,
@@ -864,16 +865,18 @@
               name: `New Folder ${length + 1}`,
               folded: false,
             }
-            if (!canUseServerCommands()) {
+            if (canUseServerCommands()) {
+              applyOptimisticCreatedChatFolder(chara.chaId, folder, previous)
+            } else {
               if (!chara.chatFolders) {
                 chara.chatFolders = []
               }
               const folders = chara.chatFolders
               folders.unshift(folder)
               chara.chatFolders = folders
+              reloadGuiDisplay()
             }
             dispatchCreateChatFolder(chara.chaId, folder, previous)
-            reloadGuiDisplay()
           }}>
           <FolderPlusIcon size={18} />
         </button>
