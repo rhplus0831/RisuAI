@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { RisuModule } from 'src/ts/process/modules'
-import type { triggerscript } from 'src/ts/storage/database.svelte'
+import type { customscript, loreBook, triggerscript } from 'src/ts/storage/database.svelte'
 
 // MCP module writes apply an immediate trusted projection and sequence multi-command info writes.
 
@@ -115,6 +115,43 @@ function makeLuaTrigger(code: string): triggerscript {
       },
     ],
     type: 'manual',
+  }
+}
+
+function moduleLuaCode(moduleIndex: number): string {
+  return (DBState.db.modules[moduleIndex].trigger?.[0]?.effect?.[0] as { code: string }).code
+}
+
+function setModuleLuaCode(moduleIndex: number, code: string): void {
+  const effect = DBState.db.modules[moduleIndex].trigger?.[0]?.effect?.[0] as { code: string }
+  effect.code = code
+}
+
+function makeRegexScript(overrides: Partial<customscript> = {}): customscript {
+  return {
+    id: 'regex-script-id',
+    ableFlag: true,
+    comment: 'Regex script',
+    flag: 'g',
+    in: 'old-in',
+    out: 'old-out',
+    type: 'editdisplay',
+    ...overrides,
+  }
+}
+
+function makeLorebookEntry(overrides: Partial<loreBook> = {}): loreBook {
+  return {
+    id: 'lorebook-entry-id',
+    alwaysActive: false,
+    comment: 'Lore entry',
+    content: 'old content',
+    insertorder: 100,
+    key: '',
+    mode: 'normal',
+    secondkey: '',
+    selective: false,
+    ...overrides,
   }
 }
 
@@ -352,6 +389,63 @@ describe('MCP module writes optimistic projection', () => {
     await waitForSettledCommands()
   })
 
+  it('rolls back failed module lorebook replacement without restoring unrelated lorebook state', async () => {
+    DBState.db.characters = [
+      {
+        chaId: 'character-a',
+        name: 'Character A',
+        globalLore: [makeLorebookEntry({ id: 'character-lore', comment: 'Character lore' })],
+      },
+    ] as any
+    DBState.db.loreBook = [
+      {
+        id: 'global-lorebook',
+        name: 'Global lorebook',
+        data: [makeLorebookEntry({ id: 'global-entry', comment: 'Global entry' })],
+      },
+    ] as any
+    DBState.db.modules = [
+      makeModule({
+        lorebook: [makeLorebookEntry({ id: 'module-a-lore', comment: 'Module lore', content: 'old module' })],
+      }),
+      makeModule({
+        id: 'module-b',
+        name: 'Module B',
+        lorebook: [makeLorebookEntry({ id: 'module-b-lore', comment: 'Sibling lore', content: 'old sibling' })],
+      }),
+    ]
+    const { calls, releaseHeldResponses } = stubCommandFetch({
+      failUrls: ['/api/v1/commands/modules/module-a/lorebooks/entries/module-a-lore'],
+      holdUrls: ['/api/v1/commands/modules/module-a/lorebooks/entries/module-a-lore'],
+    })
+    const handler = new ModuleHandler()
+
+    await handler.handle('risu-set-module-lorebook', {
+      id: 'module-a',
+      name: 'Module lore',
+      content: 'attempted module',
+    })
+
+    expect(DBState.db.modules[0].lorebook?.[0]?.content).toBe('attempted module')
+    await waitForCallCount(calls, 2)
+
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.modules[1].lorebook![0].content = 'newer sibling'
+      const characterLore = (DBState.db.characters[0] as any).globalLore[0] as loreBook
+      characterLore.content = 'newer character'
+      const globalLore = (DBState.db.loreBook[0] as any).data[0] as loreBook
+      globalLore.content = 'newer global'
+    })
+
+    releaseHeldResponses()
+    await waitForSettledCommands()
+
+    expect(DBState.db.modules[0].lorebook?.[0]?.content).toBe('old module')
+    expect(DBState.db.modules[1].lorebook?.[0]?.content).toBe('newer sibling')
+    expect((DBState.db.characters[0] as any).globalLore[0].content).toBe('newer character')
+    expect((DBState.db.loreBook[0] as any).data[0].content).toBe('newer global')
+  })
+
   it('set and delete module regex scripts are immediately visible through DBState and MCP reads', async () => {
     const { calls } = stubCommandFetch()
     const handler = new ModuleHandler()
@@ -399,6 +493,82 @@ describe('MCP module writes optimistic projection', () => {
     await waitForSettledCommands()
   })
 
+  it('rolls back failed held module regex replacement without restoring triggers, sibling modules, or characters', async () => {
+    DBState.db.characters = [{ chaId: 'character-a', name: 'Character A' }] as any
+    DBState.db.modules = [
+      makeModule({
+        regex: [makeRegexScript({ id: 'module-a-regex', comment: 'Regex script', out: 'old-out' })],
+        trigger: [makeLuaTrigger('print("old trigger")')],
+      }),
+      makeModule({
+        id: 'module-b',
+        name: 'Module B',
+        regex: [makeRegexScript({ id: 'module-b-regex', comment: 'Sibling regex', out: 'old sibling' })],
+      }),
+    ]
+    const { calls, releaseHeldResponses } = stubCommandFetch({
+      failUrls: ['/api/v1/commands/modules/module-a/scripts'],
+      holdUrls: ['/api/v1/commands/modules/module-a/scripts'],
+    })
+    const handler = new ModuleHandler()
+
+    await handler.handle('risu-set-module-regex-script', {
+      id: 'module-a',
+      name: 'Regex script',
+      out: 'attempted-out',
+    })
+
+    expect(DBState.db.modules[0].regex?.[0]?.out).toBe('attempted-out')
+    await waitForCallCount(calls, 2)
+
+    withTrustedServerProjectionWrite(() => {
+      setModuleLuaCode(0, 'print("newer trigger")')
+      DBState.db.modules[1].regex![0].out = 'newer sibling'
+      const character = DBState.db.characters[0] as any
+      character.name = 'Newer character'
+      DBState.db.characters.push({ chaId: 'character-b', name: 'Character B' } as any)
+    })
+
+    releaseHeldResponses()
+    await waitForSettledCommands()
+
+    expect(DBState.db.modules[0].regex?.[0]?.out).toBe('old-out')
+    expect(moduleLuaCode(0)).toBe('print("newer trigger")')
+    expect(DBState.db.modules[1].regex?.[0]?.out).toBe('newer sibling')
+    expect(DBState.db.characters.map((character: any) => character.name)).toEqual(['Newer character', 'Character B'])
+  })
+
+  it('skips failed held module regex rollback when the same module regex changed again', async () => {
+    DBState.db.modules = [
+      makeModule({
+        regex: [makeRegexScript({ id: 'module-a-regex', comment: 'Regex script', out: 'old-out' })],
+      }),
+    ]
+    const { calls, releaseHeldResponses } = stubCommandFetch({
+      failUrls: ['/api/v1/commands/modules/module-a/scripts'],
+      holdUrls: ['/api/v1/commands/modules/module-a/scripts'],
+    })
+    const handler = new ModuleHandler()
+
+    await handler.handle('risu-set-module-regex-script', {
+      id: 'module-a',
+      name: 'Regex script',
+      out: 'attempted-out',
+    })
+
+    expect(DBState.db.modules[0].regex?.[0]?.out).toBe('attempted-out')
+    await waitForCallCount(calls, 2)
+
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.modules[0].regex![0].out = 'newer-out'
+    })
+
+    releaseHeldResponses()
+    await waitForSettledCommands()
+
+    expect(DBState.db.modules[0].regex?.[0]?.out).toBe('newer-out')
+  })
+
   it('setModuleLuaScript is immediately visible through DBState and the Lua read tool', async () => {
     const { calls } = stubCommandFetch()
     const handler = new ModuleHandler()
@@ -409,7 +579,7 @@ describe('MCP module writes optimistic projection', () => {
       code: 'print("new")',
     })
 
-    expect((DBState.db.modules[0].trigger?.[0]?.effect?.[0] as { code: string }).code).toBe('print("new")')
+    expect(moduleLuaCode(0)).toBe('print("new")')
     expect(toolText(await handler.handle('risu-get-module-lua-script', { id: 'module-a' }))).toBe('print("new")')
     await waitForCallCount(calls, 2)
     expect(calls[1]).toMatchObject({
@@ -417,5 +587,75 @@ describe('MCP module writes optimistic projection', () => {
       method: 'PUT',
     })
     await waitForSettledCommands()
+  })
+
+  it('rolls back failed held module Lua trigger replacement without restoring regex, sibling modules, or characters', async () => {
+    DBState.db.characters = [{ chaId: 'character-a', name: 'Character A' }] as any
+    DBState.db.modules = [
+      makeModule({
+        regex: [makeRegexScript({ id: 'module-a-regex', comment: 'Regex script', out: 'old regex' })],
+        trigger: [makeLuaTrigger('print("old lua")')],
+      }),
+      makeModule({
+        id: 'module-b',
+        name: 'Module B',
+        trigger: [makeLuaTrigger('print("old sibling lua")')],
+      }),
+    ]
+    const { calls, releaseHeldResponses } = stubCommandFetch({
+      failUrls: ['/api/v1/commands/modules/module-a/triggers'],
+      holdUrls: ['/api/v1/commands/modules/module-a/triggers'],
+    })
+    const handler = new ModuleHandler()
+
+    await handler.handle('risu-set-module-lua-script', {
+      id: 'module-a',
+      code: 'print("attempted lua")',
+    })
+
+    expect(moduleLuaCode(0)).toBe('print("attempted lua")')
+    await waitForCallCount(calls, 2)
+
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.modules[0].regex![0].out = 'newer regex'
+      setModuleLuaCode(1, 'print("newer sibling lua")')
+      const character = DBState.db.characters[0] as any
+      character.name = 'Newer character'
+      DBState.db.characters.push({ chaId: 'character-b', name: 'Character B' } as any)
+    })
+
+    releaseHeldResponses()
+    await waitForSettledCommands()
+
+    expect(moduleLuaCode(0)).toBe('print("old lua")')
+    expect(DBState.db.modules[0].regex?.[0]?.out).toBe('newer regex')
+    expect(moduleLuaCode(1)).toBe('print("newer sibling lua")')
+    expect(DBState.db.characters.map((character: any) => character.name)).toEqual(['Newer character', 'Character B'])
+  })
+
+  it('skips failed held module Lua trigger rollback when the same trigger changed again', async () => {
+    DBState.db.modules = [makeModule({ trigger: [makeLuaTrigger('print("old lua")')] })]
+    const { calls, releaseHeldResponses } = stubCommandFetch({
+      failUrls: ['/api/v1/commands/modules/module-a/triggers'],
+      holdUrls: ['/api/v1/commands/modules/module-a/triggers'],
+    })
+    const handler = new ModuleHandler()
+
+    await handler.handle('risu-set-module-lua-script', {
+      id: 'module-a',
+      code: 'print("attempted lua")',
+    })
+
+    expect(moduleLuaCode(0)).toBe('print("attempted lua")')
+    await waitForCallCount(calls, 2)
+
+    withTrustedServerProjectionWrite(() => {
+      setModuleLuaCode(0, 'print("newer lua")')
+    })
+
+    releaseHeldResponses()
+    await waitForSettledCommands()
+
+    expect(moduleLuaCode(0)).toBe('print("newer lua")')
   })
 })

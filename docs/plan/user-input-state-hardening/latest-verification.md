@@ -7,28 +7,28 @@ workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 5 top-level global lorebook list
-  rollback. Global lorebook create, rename, delete, reorder, and select
-  failures now roll back by attempted row, name, order, and selected lorebook id
-  instead of broad lorebook snapshots. Delayed command failures preserve newer
-  sibling rows, row-name edits, appended rows, order changes, and newer
-  selection when live state no longer matches the attempted optimistic write,
-  and stale no-op rollback avoids suppressing watcher dispatch.
+- Runtime/code change under test: Phase 5 MCP module lorebook, regex, and
+  Lua-trigger rollback. MCP module lorebook writes now use module-scoped
+  lorebook snapshots, and MCP module regex set/delete plus Lua-trigger writes
+  now use scoped module script/trigger rollback records instead of broad
+  script-definition snapshots. Delayed command failures preserve sibling
+  modules, characters, global lorebooks, and unrelated module fields when live
+  state no longer matches the attempted optimistic write.
 - Commands:
 
 ```bash
-pnpm exec vitest run src/ts/server/lorebookBridge.svelte.test.ts src/ts/server/lorebookBridge.test.ts src/ts/process/__tests__/lorebook.projectionGuard.test.ts
-pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/commandCollectionRange.test.ts server/fastify/__tests__/commands.test.ts
+pnpm exec vitest run src/ts/process/mcp/risuaccess/tests/modules.optimisticProjection.test.ts src/ts/process/mcp/risuaccess/tests/modules.test.ts
+pnpm exec vitest run src/ts/server/scriptDefinitionBridge.svelte.test.ts src/ts/server/lorebookBridge.svelte.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
-pnpm exec prettier --check src/ts/server/lorebookBridge.svelte.ts src/ts/server/lorebookBridge.svelte.test.ts
+pnpm exec prettier --check src/ts/process/mcp/risuaccess/modules.ts src/ts/process/mcp/risuaccess/tests/modules.optimisticProjection.test.ts
 git diff --check
 ```
 
-- Result: passed on 2026-06-17. Lorebook bridge and projection guard coverage
-  passed 95 tests across 3 files, Fastify command collection coverage passed
-  166 tests across 2 files, and both TypeScript checks plus Prettier and
-  `git diff --check` passed.
+- Result: passed on 2026-06-17. MCP module coverage passed 19 tests across 2
+  files, script-definition and lorebook bridge coverage passed 123 tests across
+  2 files, and both TypeScript checks plus Prettier and `git diff --check`
+  passed.
 - Additional check: `pnpm exec vitest run src/ts/compatibilityAdapters.test.ts`
   still fails in the pre-existing character MCP lorebook test
   `routes MCP character lorebook writes through lorebook commands in
@@ -36,16 +36,18 @@ git diff --check
   A detached baseline worktree at commit `30d4ad7ab` reproduced the same
   failure before this slice, so it is tracked as out-of-scope for the module-info
   rollback change.
-- Residual gaps: module lorebook/regex/script/trigger subdomains remain outside
-  sanitized module update rollback and stay as Phase 5 residual work. Multi-group
-  plugin settings patch failures still share the generic settings rollback
+- Residual gaps: `applyModule()` multi-domain rollback and character MCP
+  regex/Lua rollback remain Phase 5 residual work. Multi-group plugin settings
+  patch failures still share the generic settings rollback
   callback and roll back all still-attempted keys from the failed patch. Plugin
   import/update side-effect reload is not fully modeled by rollback. Full
   `ScriptDefinitionStateSnapshot` rollback remains broad for rarer discrete
-  callers. The remaining Phase 5 collection domains still need focused slices:
-  Hypa V3 preset array import/rename/delete, sidebar collection rollback and
-  replacement flows, broader lorebook import/navigation edges, and list-selection
-  paths. Translator preset
+  callers. Regex delete uses the same scoped module script dispatcher and has
+  optimistic visibility coverage, but this slice does not add a dedicated
+  failing delete rollback/stale-skip test. The remaining Phase 5 collection
+  domains still need focused slices: Hypa V3 preset array import/rename/delete,
+  sidebar collection rollback and replacement flows, broader lorebook
+  import/navigation edges, and list-selection paths. Translator preset
   import file-read/decode freshness does not have dedicated coverage, but its
   command-dispatch failure path uses the now rollback-free create dispatcher.
   Prompt-template item rollback coverage does not explicitly cover delete skip
@@ -80,10 +82,12 @@ git diff --check
   twelfth Phase 5 slice. Persona residual command rollback is covered by the
   thirteenth Phase 5 slice. Scoped lorebook entry replacement rollback is
   covered by the fourteenth Phase 5 slice. Top-level global lorebook list
-  rollback is covered by the fifteenth Phase 5 slice. Remaining Phase 5 work
-  owns module regex/script/trigger subdomains, sidebar/import collection flows,
-  broader lorebook import/navigation edges, Hypa V3 preset array import/rename/delete,
-  plugin import/update side-effect reload, and
+  rollback is covered by the fifteenth Phase 5 slice. MCP module lorebook,
+  regex, and Lua-trigger rollback is covered by the sixteenth Phase 5 slice.
+  Remaining Phase 5 work owns `applyModule()` multi-domain rollback, character
+  MCP regex/Lua rollback, sidebar/import collection flows, broader lorebook
+  import/navigation edges, Hypa V3 preset array import/rename/delete, plugin
+  import/update side-effect reload, and
   sidebar/chat/folder/character list create/delete/reorder/import rollback.
 - Phase 6 owns Realm/backup/local bundle restore/import resyncs, character/chat
   import refresh/navigation edges, memory job list/progress ordering,

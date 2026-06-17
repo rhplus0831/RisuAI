@@ -81,7 +81,8 @@ icon save, and import-created rows. Scoped lorebook entry replacement rollback
 has landed for character, chat, global lorebook-entry, and module-lorebook entry
 create/update/delete/reorder/full-replace failures. Top-level global lorebook
 list rollback has landed for create, rename, delete, reorder, and select
-failures.
+failures. MCP module lorebook, regex, and Lua-trigger rollback has landed for
+module-scoped MCP writes.
 
 Next manager loop:
 
@@ -175,10 +176,12 @@ Explicit deferrals:
   rollback has landed for character, chat, global lorebook-entry, and
   module-lorebook entry create/update/delete/reorder/full-replace failures.
   Phase 5 top-level global lorebook list rollback has landed for create, rename,
-  delete, reorder, and select failures. Remaining module regex/script/trigger
-  subdomains, sidebar and import collection flows, broader lorebook
-  import/navigation edges, Hypa V3 preset array import/rename/delete,
-  plugin import/update side-effect reload, and
+  delete, reorder, and select failures. Phase 5 MCP module lorebook, regex, and
+  Lua-trigger rollback has landed for module-scoped MCP writes. Remaining
+  `applyModule()` multi-domain rollback, character MCP regex/Lua rollback,
+  sidebar and import collection flows, broader lorebook import/navigation edges,
+  Hypa V3 preset array import/rename/delete, plugin import/update side-effect
+  reload, and
   sidebar/chat/folder/character list create/delete/reorder/import rollback
   remain Phase 5 work.
 - `src/ts/compatibilityAdapters.test.ts` currently has a pre-existing failure in

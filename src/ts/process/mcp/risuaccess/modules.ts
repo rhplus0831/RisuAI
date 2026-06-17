@@ -3,12 +3,11 @@ import { alertConfirm } from 'src/ts/alert'
 import { canUseServerCommands, type ModuleSnapshot } from 'src/ts/server/commands'
 import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
 import {
-  currentLorebookStateSnapshot,
+  currentLorebookCollectionScopedSnapshot,
   dispatchReplaceModuleLorebooks,
   ensureClientLorebookEntryIds,
 } from 'src/ts/server/lorebookBridge.svelte'
 import {
-  currentScriptDefinitionStateSnapshot,
   dispatchReplaceModuleScripts,
   dispatchReplaceModuleTriggers,
   ensureClientScriptDefinitionIds,
@@ -590,7 +589,9 @@ export class ModuleHandler extends MCPToolHandler {
       ]
     }
 
-    const previous = canUseServerCommands() ? currentLorebookStateSnapshot() : null
+    const previous = canUseServerCommands()
+      ? currentLorebookCollectionScopedSnapshot({ kind: 'module', moduleId: module.id })
+      : null
     const entries = cloneJsonValue(module.lorebook ?? [])
     const index = entries.findIndex((l) => {
       const displayName = l.comment || 'Unnamed ' + pickHashRand(5515, l.content)
@@ -676,7 +677,9 @@ export class ModuleHandler extends MCPToolHandler {
       ]
     }
 
-    const previous = canUseServerCommands() ? currentLorebookStateSnapshot() : null
+    const previous = canUseServerCommands()
+      ? currentLorebookCollectionScopedSnapshot({ kind: 'module', moduleId: module.id })
+      : null
     const entries = cloneJsonValue(module.lorebook ?? [])
     const index = entries.findIndex((l) => {
       const displayName = l.comment || 'Unnamed ' + pickHashRand(5515, l.content)
@@ -764,7 +767,9 @@ export class ModuleHandler extends MCPToolHandler {
       ]
     }
 
-    const previous = canUseServerCommands() ? currentScriptDefinitionStateSnapshot() : null
+    const previous = canUseServerCommands()
+      ? { kind: 'moduleScripts' as const, moduleId: module.id, scripts: cloneJsonValue(module.regex ?? []) }
+      : null
     const scripts = cloneJsonValue(module.regex ?? [])
 
     const index = scripts.findIndex((r) => {
@@ -841,7 +846,9 @@ export class ModuleHandler extends MCPToolHandler {
       ]
     }
 
-    const previous = canUseServerCommands() ? currentScriptDefinitionStateSnapshot() : null
+    const previous = canUseServerCommands()
+      ? { kind: 'moduleScripts' as const, moduleId: module.id, scripts: cloneJsonValue(module.regex ?? []) }
+      : null
     const scripts = cloneJsonValue(module.regex ?? [])
 
     const index = scripts.findIndex((r) => {
@@ -914,7 +921,9 @@ export class ModuleHandler extends MCPToolHandler {
       ]
     }
 
-    const previous = canUseServerCommands() ? currentScriptDefinitionStateSnapshot() : null
+    const previous = canUseServerCommands()
+      ? { kind: 'moduleTriggers' as const, moduleId: module.id, triggers: cloneJsonValue(module.trigger ?? []) }
+      : null
     const triggers = cloneJsonValue(module.trigger ?? [])
     const firstTrigger = triggers[0]
     if (firstTrigger?.effect?.[0]?.type === 'triggerlua') {

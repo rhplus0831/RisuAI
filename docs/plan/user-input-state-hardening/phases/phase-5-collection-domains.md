@@ -118,6 +118,12 @@ restore full lorebook snapshots over newer sibling rows, row-name edits,
 appended rows, order changes, or newer selection, and stale no-op rollback does
 not suppress watcher dispatch.
 
+Sixteenth landed slice: MCP module lorebook, regex, and Lua-trigger writes now
+use scoped module lorebook/script/trigger rollback snapshots. Failed MCP module
+lorebook, regex, or Lua-trigger commands no longer restore broad lorebook or
+script-definition snapshots over sibling modules, characters, global lorebooks,
+or unrelated module fields.
+
 ## Anchors
 
 - `src/lib/Setting/botpreset.svelte`
