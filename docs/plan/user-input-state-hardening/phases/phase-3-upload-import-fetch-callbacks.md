@@ -81,6 +81,12 @@ tokens issued only after a real PNG is selected, selected-persona/icon snapshots
 and fresh selected-row resolution before image upload completion can apply icon
 fields.
 
+Fourteenth landed slice: BotSettings bias JSON import callbacks now use latest
+operation tokens issued only after a real JSON file is selected, selected prompt
+preset id and bias snapshots, and fresh JSON-array resolution before
+`biasDraft.value` can change. The additional-params import row is current audit
+drift because the live UI has no import button.
+
 ## Anchors
 
 - `src/lib/ChatScreens/DefaultChatScreen.svelte`

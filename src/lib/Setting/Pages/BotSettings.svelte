@@ -34,6 +34,7 @@
   import { openPresetListModal } from 'src/ts/stores.svelte'
   import { selectSingleFile } from 'src/ts/util'
   import { updatePromptPreset, type PromptPreset } from 'src/ts/storage/database.svelte'
+  import { alertError } from 'src/ts/alert'
   import { getModelInfo, LLMFlags, LLMFormat, LLMProvider } from 'src/ts/model/modellist'
   import RegexList from 'src/lib/SideBars/Scripts/RegexList.svelte'
   import SettingRenderer from '../SettingRenderer.svelte'
@@ -71,6 +72,15 @@
     resolveFreshPromptPresetIconUploadIndex,
     type PromptPresetIconUploadOperation,
   } from 'src/ts/server/promptPresetIconUpload'
+  import {
+    beginBiasImport,
+    captureBiasImportTarget,
+    clearBiasImport,
+    isFreshBiasImport,
+    parseBiasImport,
+    resolveFreshBiasImportValue,
+    type BiasImportOperation,
+  } from 'src/ts/server/biasImport'
 
   const stopServerSettingsWatch = watchServerBackedSettings(['proxyRequestModel', 'useLegacyGUI'])
   onDestroy(stopServerSettingsWatch)
@@ -562,6 +572,53 @@
 
   function isCurrentPromptPresetIconUpload(operation: PromptPresetIconUploadOperation): boolean {
     return isFreshPromptPresetIconUpload(operation, promptPresetIconUploadFreshness(operation))
+  }
+
+  function currentBiasImportFreshness() {
+    const selectedPreset = DBState.db.promptPresets?.[DBState.db.promptPresetsId]
+    return {
+      selectedPromptPresetId: selectedPreset?.id,
+      bias: biasDraft.value,
+    }
+  }
+
+  async function importBiasJson(): Promise<void> {
+    const target = captureBiasImportTarget(currentBiasImportFreshness())
+    if (!target) return
+
+    let operation: BiasImportOperation | null = null
+    const beginImport = () => {
+      operation ??= beginBiasImport(target)
+    }
+
+    try {
+      const selected = await selectSingleFile(['json'], { onFileSelected: beginImport })
+      if (!selected) return
+
+      beginImport()
+      if (!operation) return
+
+      const importedBias = parseBiasImport(new TextDecoder().decode(selected.data))
+      if (importedBias === null) {
+        if (isFreshBiasImport(operation, currentBiasImportFreshness())) {
+          alertError(language.errors.noData)
+        }
+        return
+      }
+
+      const freshBias = resolveFreshBiasImportValue({
+        operation,
+        freshness: currentBiasImportFreshness(),
+        bias: importedBias,
+      })
+      if (freshBias === null) return
+
+      biasDraft.value = freshBias
+    } finally {
+      if (operation) {
+        clearBiasImport(operation)
+      }
+    }
   }
 
   async function resizePromptPresetIconFile(
@@ -1377,15 +1434,8 @@
             const data = JSON.stringify(biasDraft.value, null, 2)
             downloadFile('bias.json', data)
           }}><DownloadIcon /></button>
-        <button
-          class="font-medium cursor-pointer hover:text-textcolor"
-          onclick={async () => {
-            const sel = await selectSingleFile(['json'])
-            const utf8 = new TextDecoder().decode(sel.data)
-            if (Array.isArray(JSON.parse(utf8))) {
-              biasDraft.value = JSON.parse(utf8)
-            }
-          }}><HardDriveUploadIcon /></button>
+        <button class="font-medium cursor-pointer hover:text-textcolor" onclick={importBiasJson}
+          ><HardDriveUploadIcon /></button>
       </div>
     </Accordion>
   {/if}

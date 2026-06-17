@@ -59,6 +59,7 @@ and GPT-SoVITS reference audio upload.
 Custom color scheme import callback freshness has landed.
 Plugin import/update callback freshness has landed.
 Persona icon upload callback freshness has landed.
+BotSettings bias JSON import callback freshness has landed.
 
 Next manager loop:
 

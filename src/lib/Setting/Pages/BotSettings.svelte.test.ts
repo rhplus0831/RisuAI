@@ -32,4 +32,17 @@ describe('BotSettings prompt edit persistence contracts', () => {
     expect(source).toContain('resolveFreshPromptPresetIconUploadIndex')
     expect(source).not.toContain('updatePromptPreset(DBState.db.promptPresetsId, { image: data })')
   })
+
+  it('routes bias JSON imports through the freshness guard helper', () => {
+    const source = botSettingsSource()
+
+    expect(source).toContain("from 'src/ts/server/biasImport'")
+    expect(source).toContain('async function importBiasJson()')
+    expect(source).toContain("selectSingleFile(['json'], { onFileSelected: beginImport })")
+    expect(source).toContain('const importedBias = parseBiasImport')
+    expect(source).toContain('resolveFreshBiasImportValue')
+    expect(source).toContain('if (isFreshBiasImport(operation, currentBiasImportFreshness()))')
+    expect(source).toContain('onclick={importBiasJson}')
+    expect(source).not.toContain('JSON.parse(utf8)')
+  })
 })

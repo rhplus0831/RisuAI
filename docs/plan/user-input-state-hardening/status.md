@@ -44,6 +44,8 @@ the input persistence inventory under
   final create/update application by latest operation plus plugin-list snapshots.
   Persona icon uploads now guard selected-row and icon snapshots around PNG
   selection and image upload before applying only fresh icon fields.
+  BotSettings bias JSON imports now guard selected prompt preset id and bias
+  snapshots around JSON file selection/read before mutating `biasDraft.value`.
   Phase 2 landed character profile draft dirty top-level field protection;
   prompt-template item row dirty projection merging; whole-key dirty projection
   protection for
@@ -132,7 +134,10 @@ the input persistence inventory under
   target capture, latest-operation tracking, selected row uniqueness, icon
   snapshot freshness, and fresh selected-index resolution for
   `src/ts/persona.ts`.
-- Verification state: Phase 3 persona icon upload callback validation is
+- `src/ts/server/biasImport.ts` now centralizes BotSettings bias JSON import
+  target capture, latest-operation tracking, JSON array parsing, and fresh bias
+  value resolution for `src/lib/Setting/Pages/BotSettings.svelte`.
+- Verification state: Phase 3 BotSettings bias JSON import callback validation is
   recorded in `latest-verification.md`.
 - Highest issue density:
   - Character editor: 52 issue rows, mostly dirty projection and unguarded
@@ -185,8 +190,10 @@ the input persistence inventory under
   image paths now guard stale completions; custom color scheme imports now guard
   stale completions; plugin import/update now guards stale completions;
   persona icon uploads now guard stale completions;
-  remaining import helpers and remaining dashboard/import persistence surfaces
-  remain pending. NanoGPT
+  BotSettings bias JSON imports now guard stale completions; the previously
+  listed additional-params import is audit drift because the live UI has no
+  import button; remaining import helpers and remaining dashboard/import
+  persistence surfaces remain pending. NanoGPT
   dashboard subscription-state fetch persistence now guards stale completions.
 - [Phase 4](phases/phase-4-chat-messages-generation.md): pending. Chat,
   message, reroll, trigger, suggestion, and generation target freshness.
@@ -327,6 +334,12 @@ the input persistence inventory under
     only after a real PNG file is selected, and lets `selectUserImg` apply only
     fresh icon fields while preserving same-persona text edits made during
     upload.
+  - Phase 3 BotSettings bias import slice: `biasImport.ts` captures selected
+    prompt preset id and current bias snapshots, starts tokens only after a real
+    JSON file is selected, preserves the prior JSON-array acceptance behavior,
+    and lets `BotSettings.svelte` mutate `biasDraft.value` only while preset and
+    bias state are fresh. The stale-audit additional-params import row is source
+    drift; the live additional-params block currently has no import button.
   - Phase 4: `restoreChatScopedState`, chat/message/generation freshness, and
     message update/delete/truncate/replace freshness.
   - Phase 5: create/delete/reorder/import/select and broad collection rollback

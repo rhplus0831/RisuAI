@@ -7,27 +7,29 @@ hardening workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 3 persona icon upload callback
-  freshness. `selectUserImg` now captures the selected persona target before the
-  picker, starts the upload operation only after a real PNG file is selected,
-  rejects stale selection/icon changes before and after image upload, applies
-  only fresh icon fields, and captures rollback state immediately before apply
-  so same-persona text edits made during upload are preserved.
+- Runtime/code change under test: Phase 3 BotSettings bias JSON import callback
+  freshness. The bias import button now captures the selected prompt preset id
+  and current bias snapshot before the picker, starts the import operation only
+  after a real JSON file is selected, rejects stale preset changes/manual bias
+  edits/newer imports, parses once, and mutates `biasDraft.value` only while the
+  operation is still fresh.
 - Commands:
 
 ```bash
-pnpm exec vitest run src/ts/server/personaIconUpload.test.ts src/ts/persona.iconUpload.test.ts src/ts/persona.test.ts src/ts/server/staleStateGuards.test.ts
+pnpm exec vitest run src/ts/server/biasImport.test.ts src/lib/Setting/Pages/BotSettings.svelte.test.ts src/ts/server/staleStateGuards.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 git diff --check
 ```
 
-- Result: passed on 2026-06-17. The persona-icon/stale-guard focused Vitest set
-  passed 4 files and 30 tests. Both TypeScript checks and `git diff --check`
+- Result: passed on 2026-06-17. The bias-import/stale-guard focused Vitest set
+  passed 3 files and 22 tests. Both TypeScript checks and `git diff --check`
   passed.
-- Residual gaps: no browser smoke was run for the file picker/upload UI. This
-  slice does not cover persona import/create/delete/reorder/select rollback,
-  prompt/persona imports, module import, additional params/bias JSON import,
+- Residual gaps: no DOM/file-picker integration test covers the alert path.
+  `parseBiasImport` preserves the prior behavior of accepting any JSON array and
+  does not validate tuple element shape. Additional-params import is current
+  audit drift because the live UI has add/remove/key/value controls but no import
+  button. This slice does not cover prompt/persona imports, module import,
   Realm/backup refresh fences, or collection rollback.
 
 ## Required Closeout Proof
