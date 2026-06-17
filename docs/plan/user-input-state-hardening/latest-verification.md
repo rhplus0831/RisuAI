@@ -7,32 +7,30 @@ hardening workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 3 composer paste/menu file callback
-  freshness. `DefaultChatScreen.svelte` now routes menu file and pasted-image
-  continuations through a shared guarded apply path that checks a latest-operation
-  token, active transcript identity, and composer mutation version before
-  mutating `messageInput` or `fileInput`.
+- Runtime/code change under test: Phase 3 character avatar upload callback
+  freshness. `selectCharImg` now captures the target character id and avatar
+  snapshot, issues a latest-operation token only after a real file is selected,
+  parses PNG metadata locally, and rechecks freshness before upload completion
+  and before applying image, `ccAssets`, `extentions.pngExif`, or dispatching a
+  character update.
 - Commands:
 
 ```bash
-pnpm exec vitest run src/lib/ChatScreens/DefaultChatScreen.loadPages.test.ts src/ts/server/staleStateGuards.test.ts
-pnpm exec vitest run src/ts/process/files/multisend.test.ts
+pnpm exec vitest run src/ts/characters.imageEmotion.test.ts src/ts/server/staleStateGuards.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
+git diff --check
 ```
 
-- Result: passed on 2026-06-17. The chat-screen focused Vitest set passed 2
-  files and 23 tests; the multisend focused Vitest file passed 7 tests. Both
-  TypeScript checks passed.
-- Residual gaps: this slice intentionally avoids Phase 4 send/generation
-  freshness beyond invalidating stale file callbacks after composer clear/send.
-  Tests cover stale menu results after composer edit and active chat change, plus
-  stale paste results after composer edit. Paste-after-chat-switch and
-  multi-image one-token behavior were verified by code inspection rather than
-  dedicated tests. Remaining Phase 3 surfaces include character assets, settings
-  media assets, prompt icon/background/theme imports, module assets, plugin
-  import/update, persona/preset/chat/character import helpers, and NanoGPT
-  dashboard fetch persistence.
+- Result: passed on 2026-06-17. The avatar/stale-guard focused Vitest set passed
+  2 files and 18 tests. Both TypeScript checks and `git diff --check` passed.
+- Residual gaps: stale asset uploads may still complete server-side, but this
+  slice prevents stale client-side avatar state application and dispatch.
+  Remaining Phase 3 surfaces include character emotion, additional asset,
+  reference audio, and model callbacks; settings media assets; prompt
+  icon/background/theme imports; module assets; plugin import/update;
+  persona/preset/chat/character import helpers; and NanoGPT dashboard fetch
+  persistence.
 
 ## Required Closeout Proof
 

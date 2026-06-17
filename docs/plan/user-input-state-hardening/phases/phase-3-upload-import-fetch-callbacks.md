@@ -26,6 +26,11 @@ Second landed slice: composer paste/menu file callbacks now use a latest
 operation token, active transcript identity, and composer mutation version before
 async file results can append composer text or inlay asset ids.
 
+Third landed slice: character avatar upload callbacks now use a latest operation
+token issued only after a real file selection, target character id checks, and an
+avatar snapshot check before async file results can apply image, `ccAssets`, PNG
+metadata, or dispatch updates.
+
 ## Anchors
 
 - `src/lib/ChatScreens/DefaultChatScreen.svelte`

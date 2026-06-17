@@ -45,8 +45,8 @@ drafts, prompt-template item rows, generic settings drafts, selected persona
 profile fields, translator preset `name`/`prompt`/`maxResponse` fields,
 lorebook entry drafts, and selected-character script/trigger draft rows while
 keeping clean projection fields refreshed. Phase 3 is in progress; custom
-background upload/cancel/error callback freshness and composer paste/menu file
-callback freshness have landed.
+background upload/cancel/error callback freshness, composer paste/menu file
+callback freshness, and character avatar upload callback freshness have landed.
 
 Next manager loop:
 

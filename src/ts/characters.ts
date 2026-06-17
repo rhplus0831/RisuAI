@@ -52,6 +52,46 @@ import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.
 import { ensureAllChatsHydrated, hydrateChatMessages } from './server/chatMessageHydration.svelte'
 import { hydrateCharacterShell, hydrateSelectedCharacterShell } from './server/characterShellHydration.svelte'
 import { createChatCommand, createChatFolderCommand } from './server/commands'
+import { createLatestOperationGuard, type LatestOperationToken } from './server/staleStateGuards'
+
+interface CharacterAvatarSnapshot {
+  image: string | undefined
+  ccAssets: character['ccAssets'] | undefined
+  pngExif: unknown
+}
+
+const characterAvatarUploadGuard = createLatestOperationGuard<string>()
+
+function cloneJsonValue<T>(value: T): T {
+  if (value === undefined) return value
+  return JSON.parse(JSON.stringify(value)) as T
+}
+
+function characterAvatarSnapshot(character: character | undefined): CharacterAvatarSnapshot {
+  return {
+    image: character?.image,
+    ccAssets: cloneJsonValue(character?.ccAssets),
+    pngExif: cloneJsonValue(character?.extentions?.pngExif),
+  }
+}
+
+function characterAvatarSnapshotMatches(character: character | undefined, snapshot: CharacterAvatarSnapshot): boolean {
+  return JSON.stringify(characterAvatarSnapshot(character)) === JSON.stringify(snapshot)
+}
+
+function isCurrentCharacterAvatarUpload(input: {
+  token: LatestOperationToken<string>
+  charIndex: number
+  characterId: string
+  avatarSnapshot: CharacterAvatarSnapshot
+}): boolean {
+  const character = DBState.db.characters?.[input.charIndex]
+  return (
+    characterAvatarUploadGuard.isLatest(input.token) &&
+    character?.chaId === input.characterId &&
+    characterAvatarSnapshotMatches(character, input.avatarSnapshot)
+  )
+}
 
 export function createNewCharacter(
   options: {
@@ -111,63 +151,104 @@ export async function getCharImage(loc: string, type: 'plain' | 'css' | 'contain
 }
 
 export async function selectCharImg(charIndex: number) {
+  const previous = currentCharacterRowSnapshot(charIndex)
+  const previousCharacter = previous.character
+  const characterId = previousCharacter?.chaId
+  if (!characterId) {
+    return
+  }
+  const avatarSnapshot = characterAvatarSnapshot(previousCharacter)
+
   const selected = await selectSingleFile(['png', 'webp', 'gif', 'jpg', 'jpeg'])
   if (!selected) {
     return
   }
-  const previous = currentCharacterRowSnapshot(charIndex)
-  const previousCharacter = previous.character
-  const img = selected.data
-  let db = DBState.db
 
-  const type = getImageType(img)
-
+  const token = characterAvatarUploadGuard.issue(characterId)
   try {
-    if (type === 'PNG' && db.characters[charIndex].type === 'character') {
-      const gen = PngChunk.readGenerator(img)
-      const allowedChunk = [
-        'parameters',
-        'Comment',
-        'Title',
-        'Description',
-        'Author',
-        'Software',
-        'Source',
-        'Disclaimer',
-        'Warning',
-        'Copyright',
-      ]
-      for await (const chunk of gen) {
-        if (chunk instanceof AppendableBuffer) {
-          continue
+    if (!isCurrentCharacterAvatarUpload({ token, charIndex, characterId, avatarSnapshot })) {
+      return
+    }
+
+    const img = selected.data
+
+    const type = getImageType(img)
+    const pngExif: Record<string, string> = {}
+
+    try {
+      if (type === 'PNG' && DBState.db.characters[charIndex].type === 'character') {
+        const gen = PngChunk.readGenerator(img)
+        const allowedChunk = [
+          'parameters',
+          'Comment',
+          'Title',
+          'Description',
+          'Author',
+          'Software',
+          'Source',
+          'Disclaimer',
+          'Warning',
+          'Copyright',
+        ]
+        for await (const chunk of gen) {
+          if (!isCurrentCharacterAvatarUpload({ token, charIndex, characterId, avatarSnapshot })) {
+            return
+          }
+          if (chunk instanceof AppendableBuffer) {
+            continue
+          }
+          if (!chunk) {
+            continue
+          }
+          if (chunk.value.length > 20_000) {
+            continue
+          }
+          if (allowedChunk.includes(chunk.key)) {
+            console.log(chunk.key, chunk.value)
+            pngExif[chunk.key] = chunk.value
+          }
         }
-        if (!chunk) {
-          continue
-        }
-        if (chunk.value.length > 20_000) {
-          continue
-        }
-        if (allowedChunk.includes(chunk.key)) {
-          console.log(chunk.key, chunk.value)
-          withTrustedServerProjectionWrite(() => {
-            DBState.db.characters[charIndex].extentions ??= {}
-            DBState.db.characters[charIndex].extentions.pngExif ??= {}
-            DBState.db.characters[charIndex].extentions.pngExif[chunk.key] = chunk.value
-          })
+        console.log(DBState.db.characters[charIndex].extentions)
+      }
+    } catch (error) {
+      console.error(error)
+    }
+
+    if (!isCurrentCharacterAvatarUpload({ token, charIndex, characterId, avatarSnapshot })) {
+      return
+    }
+
+    const imgp = await saveImage(img)
+    if (!isCurrentCharacterAvatarUpload({ token, charIndex, characterId, avatarSnapshot })) {
+      return
+    }
+
+    let applied = false
+    withTrustedServerProjectionWrite(() => {
+      if (!isCurrentCharacterAvatarUpload({ token, charIndex, characterId, avatarSnapshot })) {
+        return
+      }
+
+      dumpCharImage(charIndex, { dispatch: false })
+      const character = DBState.db.characters[charIndex]
+      const pngExifEntries = Object.entries(pngExif)
+      if (pngExifEntries.length > 0) {
+        character.extentions ??= {}
+        character.extentions.pngExif ??= {}
+        for (const [key, value] of pngExifEntries) {
+          character.extentions.pngExif[key] = value
         }
       }
-      console.log(db.characters[charIndex].extentions)
-    }
-  } catch (error) {
-    console.error(error)
-  }
+      character.image = imgp
+      applied = true
+    })
 
-  const imgp = await saveImage(img)
-  withTrustedServerProjectionWrite(() => {
-    dumpCharImage(charIndex, { dispatch: false })
-    DBState.db.characters[charIndex].image = imgp
-  })
-  dispatchCompatibleCharacterUpdateScoped(previousCharacter, DBState.db.characters[charIndex], previous)
+    if (applied) {
+      dispatchCompatibleCharacterUpdateScoped(previousCharacter, DBState.db.characters[charIndex], previous)
+    }
+  } finally {
+    characterAvatarUploadGuard.clear(token)
+  }
 }
 
 export function dumpCharImage(charIndex: number, options: { dispatch?: boolean } = {}) {
