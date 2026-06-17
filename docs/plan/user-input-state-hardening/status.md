@@ -36,9 +36,12 @@ the input persistence inventory under
   reference images now guard by target/context/field snapshots before writing
   image and base64 fields. Character TTS media callbacks now guard VITS model
   registration and GPT-SoVITS reference audio upload by selected row, draft id,
-  `ttsMode`, and field snapshots before applying narrow media fields. Phase 2
-  landed character profile draft dirty top-level field protection; prompt-template
-  item row dirty projection merging; whole-key dirty projection protection for
+  `ttsMode`, and field snapshots before applying narrow media fields. Custom
+  color scheme imports now guard valid application and invalid-file alerts by
+  latest selected file operation plus captured theme name/scheme snapshots.
+  Phase 2 landed character profile draft dirty top-level field protection;
+  prompt-template item row dirty projection merging; whole-key dirty projection
+  protection for
   `createServerBackedSettingDraft`; selected persona profile dirty projection
   protection; translator preset `name`/`prompt`/`maxResponse` dirty projection
   protection; lorebook entry draft dirty projection merging; and
@@ -112,7 +115,12 @@ the input persistence inventory under
   target capture, latest-operation tracking, selected row/draft/mode freshness,
   and field snapshot checks for VITS model registration and GPT-SoVITS reference
   audio upload.
-- Verification state: Phase 3 character TTS media callback validation is
+  `src/ts/server/colorSchemeImport.ts` now centralizes custom color scheme import
+  snapshot capture, latest-operation tracking, JSON shape validation, and fresh
+  settings patch resolution. `selectSingleFile` now has an optional
+  `onFileSelected` hook so import tokens can start after real DOM selection but
+  before file reading resolves.
+- Verification state: Phase 3 custom color scheme import callback validation is
   recorded in `latest-verification.md`.
 - Highest issue density:
   - Character editor: 52 issue rows, mostly dirty projection and unguarded
@@ -162,8 +170,9 @@ the input persistence inventory under
   stale completions; character TTS VITS model and GPT-SoVITS reference audio
   callbacks now guard stale completions; prompt preset icon uploads now guard stale
   completions; settings media asset uploads for the guarded OtherBotSettings
-  image paths now guard stale completions; plugin import/update, import helpers,
-  and remaining dashboard/import persistence surfaces remain pending. NanoGPT
+  image paths now guard stale completions; custom color scheme imports now guard
+  stale completions; plugin import/update, remaining import helpers, and
+  remaining dashboard/import persistence surfaces remain pending. NanoGPT
   dashboard subscription-state fetch persistence now guards stale completions.
 - [Phase 4](phases/phase-4-chat-messages-generation.md): pending. Chat,
   message, reroll, trigger, suggestion, and generation target freshness.
@@ -290,6 +299,10 @@ the input persistence inventory under
     checks freshness around VITS model registration and reference audio
     `saveAsset`, and applies only `character.vits` or
     `gptSoVitsConfig.ref_audio_data` when the draft is still fresh.
+  - Phase 3 custom color scheme import slice: `colorSchemeImport.ts` captures
+    theme name/scheme snapshots, starts latest-operation tokens only after a real
+    JSON file is selected, validates imported scheme shape, and lets
+    `importColorScheme` apply or alert only when the theme state is still fresh.
   - Phase 4: `restoreChatScopedState`, chat/message/generation freshness, and
     message update/delete/truncate/replace freshness.
   - Phase 5: create/delete/reorder/import/select and broad collection rollback

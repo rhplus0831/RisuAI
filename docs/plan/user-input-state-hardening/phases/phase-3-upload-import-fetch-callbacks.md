@@ -66,6 +66,11 @@ tokens issued only after selected files exist, selected row/draft/`ttsMode`
 checks, and VITS/ref-audio field snapshots before VITS model registration or
 GPT-SoVITS reference audio upload can apply media fields.
 
+Eleventh landed slice: custom color scheme import callbacks now use latest
+operation tokens issued only after a real JSON file is selected, captured theme
+name/scheme snapshots, and fresh validation before valid imports can apply or
+invalid imports can alert.
+
 ## Anchors
 
 - `src/lib/ChatScreens/DefaultChatScreen.svelte`

@@ -1,0 +1,161 @@
+import { describe, expect, it } from 'vitest'
+
+import {
+  beginColorSchemeImport,
+  captureColorSchemeImportTarget,
+  clearColorSchemeImport,
+  parseColorSchemeImport,
+  resolveFreshColorSchemeImportPatch,
+  type ColorSchemeImportOperation,
+} from './colorSchemeImport'
+import type { ColorScheme } from '../gui/colorscheme'
+
+function scheme(seed: string): ColorScheme {
+  return {
+    bgcolor: `#${seed}001`,
+    darkbg: `#${seed}002`,
+    borderc: `#${seed}003`,
+    selected: `#${seed}004`,
+    draculared: `#${seed}005`,
+    textcolor: `#${seed}006`,
+    textcolor2: `#${seed}007`,
+    darkBorderc: `#${seed}008`,
+    darkbutton: `#${seed}009`,
+    type: 'dark',
+  }
+}
+
+function beginImport(input?: { colorSchemeName?: string; colorScheme?: ColorScheme }): ColorSchemeImportOperation {
+  const target = captureColorSchemeImportTarget({
+    colorSchemeName: input?.colorSchemeName ?? 'default',
+    colorScheme: input?.colorScheme ?? scheme('aaa'),
+  })
+
+  return beginColorSchemeImport(target)
+}
+
+describe('color scheme import freshness', () => {
+  it('rejects completion after colorSchemeName changes', () => {
+    const originalScheme = scheme('aaa')
+    const operation = beginImport({
+      colorSchemeName: 'default',
+      colorScheme: originalScheme,
+    })
+
+    try {
+      expect(
+        resolveFreshColorSchemeImportPatch({
+          operation,
+          freshness: {
+            colorSchemeName: 'light',
+            colorScheme: originalScheme,
+          },
+          colorScheme: scheme('bbb'),
+        }),
+      ).toBeNull()
+    } finally {
+      clearColorSchemeImport(operation)
+    }
+  })
+
+  it('rejects completion after colorScheme changes', () => {
+    const operation = beginImport({
+      colorSchemeName: 'custom',
+      colorScheme: scheme('aaa'),
+    })
+
+    try {
+      expect(
+        resolveFreshColorSchemeImportPatch({
+          operation,
+          freshness: {
+            colorSchemeName: 'custom',
+            colorScheme: scheme('ccc'),
+          },
+          colorScheme: scheme('bbb'),
+        }),
+      ).toBeNull()
+    } finally {
+      clearColorSchemeImport(operation)
+    }
+  })
+
+  it('lets the newer selected import win over an older delayed import', () => {
+    const originalScheme = scheme('aaa')
+    const older = beginImport({
+      colorSchemeName: 'default',
+      colorScheme: originalScheme,
+    })
+    const newer = beginImport({
+      colorSchemeName: 'default',
+      colorScheme: originalScheme,
+    })
+
+    try {
+      expect(
+        resolveFreshColorSchemeImportPatch({
+          operation: newer,
+          freshness: {
+            colorSchemeName: 'default',
+            colorScheme: originalScheme,
+          },
+          colorScheme: scheme('bbb'),
+        }),
+      ).toEqual({
+        colorSchemeName: 'custom',
+        colorScheme: scheme('bbb'),
+      })
+
+      expect(
+        resolveFreshColorSchemeImportPatch({
+          operation: older,
+          freshness: {
+            colorSchemeName: 'default',
+            colorScheme: originalScheme,
+          },
+          colorScheme: scheme('ccc'),
+        }),
+      ).toBeNull()
+    } finally {
+      clearColorSchemeImport(older)
+      clearColorSchemeImport(newer)
+    }
+  })
+
+  it('does not let a canceled newer picker invalidate an older pending import', () => {
+    const originalScheme = scheme('aaa')
+    const older = beginImport({
+      colorSchemeName: 'default',
+      colorScheme: originalScheme,
+    })
+
+    captureColorSchemeImportTarget({
+      colorSchemeName: 'default',
+      colorScheme: originalScheme,
+    })
+
+    try {
+      expect(
+        resolveFreshColorSchemeImportPatch({
+          operation: older,
+          freshness: {
+            colorSchemeName: 'default',
+            colorScheme: originalScheme,
+          },
+          colorScheme: scheme('bbb'),
+        }),
+      ).toEqual({
+        colorSchemeName: 'custom',
+        colorScheme: scheme('bbb'),
+      })
+    } finally {
+      clearColorSchemeImport(older)
+    }
+  })
+
+  it('parses only color scheme-shaped JSON', () => {
+    expect(parseColorSchemeImport(JSON.stringify(scheme('aaa')))).toEqual(scheme('aaa'))
+    expect(parseColorSchemeImport('{')).toBeNull()
+    expect(parseColorSchemeImport(JSON.stringify({ ...scheme('aaa'), bgcolor: 1 }))).toBeNull()
+  })
+})

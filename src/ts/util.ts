@@ -39,9 +39,17 @@ export function checkNullish(data: any) {
   return data === undefined || data === null
 }
 
-export async function selectSingleFile(ext: string[]) {
+export interface SelectSingleFileOptions {
+  onFileSelected?: (file: File) => void
+}
+
+export async function selectSingleFile(ext: string[], options: SelectSingleFileOptions = {}) {
   const v = await selectFileByDom(ext, 'single')
-  const file = v[0]
+  const file = v?.[0]
+  if (!file) {
+    return null
+  }
+  options.onFileSelected?.(file)
   return { name: file.name, data: await readFileAsUint8Array(file) }
 }
 

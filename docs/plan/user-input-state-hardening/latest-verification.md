@@ -7,30 +7,27 @@ hardening workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 3 character TTS media callback
-  freshness. `CharConfig.svelte` now guards VITS model registration and
-  GPT-SoVITS reference audio upload with captured character row/draft/mode/field
-  snapshots, latest-operation tokens issued only after real file selection,
-  freshness checks around registration or `saveAsset`, and narrow final writes to
-  `character.vits` or `gptSoVitsConfig.ref_audio_data`.
+- Runtime/code change under test: Phase 3 custom color scheme import callback
+  freshness. `importColorScheme` now captures the current theme name and color
+  scheme before file selection, starts the import token only after a real JSON
+  file is selected, drops stale valid imports, and suppresses stale invalid-file
+  alerts after newer theme changes.
 - Commands:
 
 ```bash
-pnpm exec vitest run src/ts/server/characterTtsAssetUpload.test.ts src/lib/SideBars/CharConfig.svelte.test.ts src/ts/server/staleStateGuards.test.ts src/ts/process/transformers.test.ts
+pnpm exec vitest run src/ts/server/colorSchemeImport.test.ts src/ts/gui/colorscheme.test.ts src/ts/server/staleStateGuards.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 git diff --check
 ```
 
-- Result: passed on 2026-06-17. The TTS-media/stale-guard focused Vitest set
-  passed 4 files and 22 tests. Both TypeScript checks and `git diff --check`
-  passed.
-- Residual gaps: coverage is source-contract plus helper unit coverage, not a
-  mounted browser picker flow. Dropped stale uploads may still leave orphaned
-  asset bytes after `saveAsset` or `saveAssets`. This slice does not cover nested
-  TTS dirty projection, plugin import/update, persona/preset import, custom color
-  scheme import, additional params import, Realm/backup refresh, or broader
-  collection rollback.
+- Result: passed on 2026-06-17. The color-scheme-import/stale-guard focused
+  Vitest set passed 3 files and 20 tests. Both TypeScript checks and
+  `git diff --check` passed.
+- Residual gaps: no mounted/browser file-picker smoke was run, so real DOM picker
+  cancellation remains source-reviewed. This slice does not cover plugin
+  import/update, prompt/persona imports, module import, additional params/bias
+  JSON import, Realm/backup refresh fences, or collection rollback.
 
 ## Required Closeout Proof
 

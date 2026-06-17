@@ -6,6 +6,16 @@ import { alertError } from '../alert'
 import { isLite } from '../lite'
 import { CustomCSSStore, DBState, SafeModeStore } from '../stores.svelte'
 import { applyServerBackedSettingsPatch } from '../server/settingsBridge.svelte'
+import {
+  beginColorSchemeImport,
+  captureColorSchemeImportTarget,
+  clearColorSchemeImport,
+  isFreshColorSchemeImport,
+  parseColorSchemeImport,
+  resolveFreshColorSchemeImportPatch,
+  type ColorSchemeImportFreshness,
+  type ColorSchemeImportOperation,
+} from '../server/colorSchemeImport'
 
 export interface ColorScheme {
   bgcolor: string
@@ -206,38 +216,60 @@ export function exportColorScheme() {
   downloadFile('colorScheme.json', json)
 }
 
-export async function importColorScheme() {
-  const uarray = await selectSingleFile(['json'])
-  if (uarray == null) {
-    return
+function currentColorSchemeImportFreshness(): ColorSchemeImportFreshness {
+  return {
+    colorSchemeName: DBState.db.colorSchemeName,
+    colorScheme: DBState.db.colorScheme,
   }
-  const string = BufferToText(uarray.data)
-  let colorScheme: ColorScheme
+}
+
+export async function importColorScheme() {
+  const target = captureColorSchemeImportTarget(currentColorSchemeImportFreshness())
+  let operation: ColorSchemeImportOperation | null = null
+  const beginImport = () => {
+    operation ??= beginColorSchemeImport(target)
+  }
+
   try {
-    colorScheme = JSON.parse(string)
-    if (
-      typeof colorScheme.bgcolor !== 'string' ||
-      typeof colorScheme.darkbg !== 'string' ||
-      typeof colorScheme.borderc !== 'string' ||
-      typeof colorScheme.selected !== 'string' ||
-      typeof colorScheme.draculared !== 'string' ||
-      typeof colorScheme.textcolor !== 'string' ||
-      typeof colorScheme.textcolor2 !== 'string' ||
-      typeof colorScheme.darkBorderc !== 'string' ||
-      typeof colorScheme.darkbutton !== 'string' ||
-      typeof colorScheme.type !== 'string'
-    ) {
-      alertError('Invalid color scheme')
+    const uarray = await selectSingleFile(['json'], { onFileSelected: beginImport })
+    if (uarray == null) {
       return
     }
-    applyServerBackedSettingsPatch({
-      colorSchemeName: 'custom',
+
+    beginImport()
+    const string = BufferToText(uarray.data)
+    const colorScheme = parseColorSchemeImport(string)
+    if (!colorScheme) {
+      if (operation && isFreshColorSchemeImport(operation, currentColorSchemeImportFreshness())) {
+        alertError('Invalid color scheme')
+      }
+      return
+    }
+
+    if (!operation) {
+      return
+    }
+
+    const patch = resolveFreshColorSchemeImportPatch({
+      operation,
+      freshness: currentColorSchemeImportFreshness(),
       colorScheme,
     })
+    if (!patch) {
+      return
+    }
+
+    applyServerBackedSettingsPatch(patch)
     updateColorScheme()
   } catch (e) {
-    alertError('Invalid color scheme')
+    if (operation && isFreshColorSchemeImport(operation, currentColorSchemeImportFreshness())) {
+      alertError('Invalid color scheme')
+    }
     return
+  } finally {
+    if (operation) {
+      clearColorSchemeImport(operation)
+    }
   }
 }
 
