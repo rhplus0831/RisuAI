@@ -43,6 +43,7 @@ import {
   dispatchCompatibleCharacterUpdateScoped,
   dispatchCreateAndSelectCharacter,
   dispatchCreateCharacter,
+  dispatchDeleteCharacter,
   moveCharacterOrderItem,
   normalizeCharacterOrder,
   prepareCompatibleCharacterUpdate,
@@ -139,6 +140,70 @@ function stubCreateCharacterCommandFetch(): CapturedFetch[] {
           revision: 11,
           event: { type: 'character.createdAndSelected', revision: 11, resource: 'character' },
           characterId: 'char-selected',
+        })
+      }
+      return jsonResponse({ error: `unexpected ${url}` }, 404)
+    }) as unknown as typeof fetch,
+  )
+  return calls
+}
+
+function stubCharacterCollectionCommandFetch({
+  failCreate = false,
+  failCreateAndSelect = false,
+  failDelete = false,
+  onCreate,
+  onCreateAndSelect,
+  onDelete,
+}: {
+  failCreate?: boolean
+  failCreateAndSelect?: boolean
+  failDelete?: boolean
+  onCreate?: () => void | Promise<void>
+  onCreateAndSelect?: () => void | Promise<void>
+  onDelete?: () => void | Promise<void>
+} = {}): CapturedFetch[] {
+  const calls: CapturedFetch[] = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const headers = init.headers as Record<string, string> | undefined
+      const url = String(input)
+      const method = init.method ?? 'GET'
+      calls.push({
+        url,
+        method,
+        authHeader: headers?.['risu-auth'] ?? null,
+        body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+      })
+
+      if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+      if (url === '/api/v1/commands/characters') {
+        await onCreate?.()
+        if (failCreate) return jsonResponse({ error: 'create failed' }, 500)
+        return jsonResponse({
+          revision: 11,
+          event: { type: 'character.created', revision: 11, resource: 'character' },
+          characterId: 'char-created',
+        })
+      }
+      if (url === '/api/v1/commands/characters/create-and-select') {
+        await onCreateAndSelect?.()
+        if (failCreateAndSelect) return jsonResponse({ error: 'create-and-select failed' }, 500)
+        return jsonResponse({
+          revision: 11,
+          event: { type: 'character.createdAndSelected', revision: 11, resource: 'character' },
+          characterId: 'char-selected',
+        })
+      }
+      if (url === '/api/v1/commands/characters/char-b' && method === 'DELETE') {
+        await onDelete?.()
+        if (failDelete) return jsonResponse({ error: 'delete failed' }, 500)
+        return jsonResponse({
+          revision: 11,
+          event: { type: 'character.deleted', revision: 11, resource: 'character' },
+          characterId: 'char-b',
+          selectedCharacterId: null,
         })
       }
       return jsonResponse({ error: `unexpected ${url}` }, 404)
@@ -318,6 +383,248 @@ describe('character create command payloads', () => {
     expect(calls[1].body).not.toHaveProperty('character.chats')
     expect(character.chats).toEqual([starterChat])
     expect(character.lastInteraction).toBe(5555)
+  })
+})
+
+describe('character list create/delete rollback', () => {
+  it('failed optimistic create removes only unchanged attempted row and preserves sibling edits, selection changes, and folder metadata/order', async () => {
+    const calls = stubCharacterCollectionCommandFetch({
+      failCreate: true,
+      onCreate: () => {
+        withTrustedServerProjectionWrite(() => {
+          DBState.db.characters[0].name = 'Sibling newer edit'
+          DBState.db.characterOrder = [
+            'char-created',
+            { id: 'folder-1', name: 'Newer Folder', color: 'green', data: ['char-a'], imgFile: 'asset-newer' },
+          ] as any
+          ;(DBState.db as any).currentChar = 0
+          selectedCharID.set(0)
+        })
+      },
+    })
+    DBState.db = {
+      characters: [{ chaId: 'char-a', name: 'A', chats: [] }],
+      characterOrder: ['char-a'],
+      currentChar: 0,
+    } as any
+    selectedCharID.set(0)
+    setServerProjectionWriteGuardEnabled(true)
+    const previous = currentCharacterStateSnapshot()
+    const attempted = { chaId: 'char-created', name: 'Created', chats: [] } as any
+
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.characters.push(attempted)
+    })
+    repairCharacterOrderOptimistically({ dispatchReorder: false })
+    dispatchCreateCharacter(attempted, previous)
+
+    await waitForCallCount(calls, 2)
+    await vi.waitFor(() => {
+      expect(DBState.db.characters.map((character: any) => character.chaId)).toEqual(['char-a'])
+    })
+    expect(DBState.db.characters[0].name).toBe('Sibling newer edit')
+    expect(DBState.db.characterOrder).toEqual([
+      { id: 'folder-1', name: 'Newer Folder', color: 'green', data: ['char-a'], imgFile: 'asset-newer' },
+    ])
+    expect(get(selectedCharID)).toBe(0)
+    expect((DBState.db as any).currentChar).toBe(0)
+  })
+
+  it('failed create-and-select removes attempted row and restores previous selection only when attempted row is still selected', async () => {
+    const calls = stubCharacterCollectionCommandFetch({ failCreateAndSelect: true })
+    DBState.db = {
+      characters: [{ chaId: 'char-a', name: 'A', chats: [] }],
+      characterOrder: ['char-a'],
+      currentChar: 0,
+    } as any
+    selectedCharID.set(0)
+    setServerProjectionWriteGuardEnabled(true)
+    const previous = currentCharacterStateSnapshot()
+    const attempted = { chaId: 'char-selected', name: 'Selected', chats: [], lastInteraction: 1234 } as any
+
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.characters.push(attempted)
+      ;(DBState.db as any).currentChar = 1
+      selectedCharID.set(1)
+    })
+    repairCharacterOrderOptimistically({ dispatchReorder: false })
+    dispatchCreateAndSelectCharacter(attempted, previous, 1234)
+
+    await waitForCallCount(calls, 2)
+    await vi.waitFor(() => {
+      expect(DBState.db.characters.map((character: any) => character.chaId)).toEqual(['char-a'])
+    })
+    expect(DBState.db.characterOrder).toEqual(['char-a'])
+    expect(get(selectedCharID)).toBe(0)
+    expect((DBState.db as any).currentChar).toBe(0)
+  })
+
+  it('failed import-style create with no optimistic local row is a no-op rollback and preserves newer local edits', async () => {
+    const calls = stubCharacterCollectionCommandFetch({
+      failCreate: true,
+      onCreate: () => {
+        withTrustedServerProjectionWrite(() => {
+          DBState.db.characters[0].name = 'Local edit after import dispatch'
+          DBState.db.characterOrder = [
+            { id: 'folder-1', name: 'Local Folder', color: 'purple', data: ['char-a'] },
+          ] as any
+          selectedCharID.set(0)
+        })
+      },
+    })
+    DBState.db = {
+      characters: [{ chaId: 'char-a', name: 'A', chats: [] }],
+      characterOrder: ['char-a'],
+      currentChar: 0,
+    } as any
+    selectedCharID.set(0)
+    setServerProjectionWriteGuardEnabled(true)
+    const previous = currentCharacterStateSnapshot()
+    const imported = { chaId: 'char-imported', name: 'Imported', chats: [] } as any
+
+    dispatchCreateCharacter(imported, previous)
+
+    await waitForCallCount(calls, 2)
+    await flushAsyncWork()
+    expect(DBState.db.characters).toEqual([{ chaId: 'char-a', name: 'Local edit after import dispatch', chats: [] }])
+    expect(DBState.db.characterOrder).toEqual([
+      { id: 'folder-1', name: 'Local Folder', color: 'purple', data: ['char-a'] },
+    ])
+    expect(get(selectedCharID)).toBe(0)
+  })
+
+  it('failed permanent delete reinserts only the missing deleted row at the previous index, restores order placement, and preserves sibling edits/appended rows', async () => {
+    const calls = stubCharacterCollectionCommandFetch({
+      failDelete: true,
+      onDelete: () => {
+        withTrustedServerProjectionWrite(() => {
+          DBState.db.characters[0].name = 'A newer edit'
+          DBState.db.characters.push({ chaId: 'char-d', name: 'D appended', chats: [] } as any)
+          const folder = DBState.db.characterOrder.find(
+            (entry: any) => typeof entry !== 'string' && entry.id === 'folder-1',
+          )
+          if (folder && typeof folder !== 'string') {
+            folder.name = 'Newer Folder'
+            folder.color = 'green'
+          }
+          DBState.db.characterOrder.push('char-d')
+        })
+      },
+    })
+    DBState.db = {
+      characters: [
+        { chaId: 'char-a', name: 'A', chats: [] },
+        { chaId: 'char-b', name: 'B deleted', chats: [] },
+        { chaId: 'char-c', name: 'C', chats: [] },
+      ],
+      characterOrder: ['char-a', { id: 'folder-1', name: 'Folder', color: 'blue', data: ['char-b', 'char-c'] }],
+      currentChar: 1,
+    } as any
+    selectedCharID.set(1)
+    setServerProjectionWriteGuardEnabled(true)
+    const previous = currentCharacterStateSnapshot()
+
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.characters.splice(1, 1)
+    })
+    dispatchDeleteCharacter('char-b', previous)
+    repairCharacterOrderOptimistically({ dispatchReorder: false })
+    withTrustedServerProjectionWrite(() => {
+      ;(DBState.db as any).currentChar = undefined
+      selectedCharID.set(-1)
+    })
+
+    await waitForCallCount(calls, 2)
+    await vi.waitFor(() => {
+      expect(DBState.db.characters.map((character: any) => character.chaId)).toEqual([
+        'char-a',
+        'char-b',
+        'char-c',
+        'char-d',
+      ])
+    })
+    expect(DBState.db.characters.map((character: any) => character.name)).toEqual([
+      'A newer edit',
+      'B deleted',
+      'C',
+      'D appended',
+    ])
+    expect(DBState.db.characterOrder).toEqual([
+      'char-a',
+      { id: 'folder-1', name: 'Newer Folder', color: 'green', data: ['char-b', 'char-c'] },
+      'char-d',
+    ])
+    expect(get(selectedCharID)).toBe(1)
+    expect((DBState.db as any).currentChar).toBe(1)
+  })
+
+  it('failed permanent delete preserves a newer selection of the shifted next character after rollback', async () => {
+    const calls = stubCharacterCollectionCommandFetch({
+      failDelete: true,
+      onDelete: () => {
+        withTrustedServerProjectionWrite(() => {
+          ;(DBState.db as any).currentChar = 1
+          selectedCharID.set(1)
+        })
+      },
+    })
+    DBState.db = {
+      characters: [
+        { chaId: 'char-a', name: 'A', chats: [] },
+        { chaId: 'char-b', name: 'B deleted', chats: [] },
+        { chaId: 'char-c', name: 'C', chats: [] },
+      ],
+      characterOrder: ['char-a', 'char-b', 'char-c'],
+      currentChar: 1,
+    } as any
+    selectedCharID.set(1)
+    setServerProjectionWriteGuardEnabled(true)
+    const previous = currentCharacterStateSnapshot()
+
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.characters.splice(1, 1)
+    })
+    dispatchDeleteCharacter('char-b', previous)
+    repairCharacterOrderOptimistically({ dispatchReorder: false })
+
+    await waitForCallCount(calls, 2)
+    await vi.waitFor(() => {
+      expect(DBState.db.characters.map((character: any) => character.chaId)).toEqual(['char-a', 'char-b', 'char-c'])
+      expect(get(selectedCharID)).toBe(2)
+      expect((DBState.db as any).currentChar).toBe(2)
+    })
+  })
+
+  it('failed permanent delete skips rollback overwrite when a same-id row already exists again', async () => {
+    const calls = stubCharacterCollectionCommandFetch({ failDelete: true })
+    DBState.db = {
+      characters: [
+        { chaId: 'char-a', name: 'A', chats: [] },
+        { chaId: 'char-b', name: 'B deleted', chats: [] },
+        { chaId: 'char-c', name: 'C', chats: [] },
+      ],
+      characterOrder: ['char-a', 'char-b', 'char-c'],
+      currentChar: 0,
+    } as any
+    selectedCharID.set(0)
+    setServerProjectionWriteGuardEnabled(true)
+    const previous = currentCharacterStateSnapshot()
+
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.characters.splice(1, 1)
+    })
+    dispatchDeleteCharacter('char-b', previous)
+    repairCharacterOrderOptimistically({ dispatchReorder: false })
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.characters.push({ chaId: 'char-b', name: 'Replacement B', chats: [] } as any)
+      DBState.db.characterOrder.push('char-b')
+    })
+
+    await waitForCallCount(calls, 2)
+    await flushAsyncWork()
+    const charBRows = DBState.db.characters.filter((character: any) => character.chaId === 'char-b')
+    expect(charBRows).toEqual([{ chaId: 'char-b', name: 'Replacement B', chats: [] }])
+    expect(DBState.db.characterOrder).toEqual(['char-a', 'char-c', 'char-b'])
   })
 })
 

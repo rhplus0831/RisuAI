@@ -155,6 +155,16 @@ rollback after newer order writes, keep newer folder metadata while restoring
 the failed attempted order structure, and roll back only still-attempted folder
 metadata fields.
 
+Twenty-second landed slice: character create, create-and-select, import-style
+create, and permanent delete command rollback now scopes to attempted rows,
+order placement, and live selected character ids instead of full
+character-state restore. Failed character list commands remove only unchanged
+attempted creates, no-op rollback import-style creates with no optimistic row,
+reinsert only still-missing deleted rows, preserve same-id replacement rows,
+restore missing order placement without overwriting newer folder metadata, and
+keep newer shifted selections by re-resolving selected character ids after
+rollback.
+
 ## Anchors
 
 - `src/lib/Setting/botpreset.svelte`

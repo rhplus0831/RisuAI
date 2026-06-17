@@ -7,17 +7,17 @@ workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 5 character sidebar `characterOrder`
-  rollback. Character drag reorder, folder creation/order, and folder metadata
-  updates now use order-only or field-only attempted rollback instead of
-  restoring broad character state snapshots. Delayed failures preserve newer
-  selection/current-character changes, newer character-order writes, and newer
-  folder metadata while restoring only the failed attempted order structure or
-  attempted folder metadata fields.
+- Runtime/code change under test: Phase 5 character list create/delete/import
+  rollback. Character create, create-and-select, import-style create, and
+  permanent delete command failures now use attempted row, order-placement, and
+  selection-id rollback instead of restoring broad character state snapshots.
+  Delayed failures preserve sibling edits/appended rows, newer folder metadata,
+  same-id replacement rows, and newer character selections across index shifts.
 - Commands:
 
 ```bash
 pnpm exec vitest run src/ts/characterCommands.test.ts src/lib/SideBars/Sidebar.charList.test.ts
+pnpm exec vitest run src/ts/characterCards.pngImport.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 pnpm exec prettier --check src/ts/characterCommands.ts src/ts/characterCommands.test.ts src/lib/SideBars/Sidebar.charList.test.ts
@@ -25,15 +25,16 @@ git diff --check
 ```
 
 - Result: passed on 2026-06-17. Character command plus focused sidebar character
-  list coverage passed 53 tests across 2 files, and both TypeScript checks plus
-  Prettier and `git diff --check` passed.
+  list coverage passed 59 tests across 2 files, character PNG import coverage
+  passed 5 tests, and both TypeScript checks plus Prettier and
+  `git diff --check` passed.
 - Additional check: `pnpm exec vitest run src/ts/compatibilityAdapters.test.ts`
   still fails in the pre-existing character MCP lorebook test
   `routes MCP character lorebook writes through lorebook commands in
   server-backed web mode` at `src/ts/compatibilityAdapters.test.ts:626`.
   A detached baseline worktree at commit `30d4ad7ab` reproduced the same
   failure before this slice, so it is tracked as out-of-scope for this
-  character sidebar rollback change.
+  character list rollback change.
 - Residual gaps: Multi-group plugin settings patch failures still share the
   generic settings rollback
   callback and roll back all still-attempted keys from the failed patch. Plugin
@@ -45,7 +46,7 @@ git diff --check
   domains still need focused slices: Hypa V3 preset array import/rename/delete,
   sidebar collection rollback and replacement flows, broader lorebook
   import/navigation edges, combined sidebar chat/folder reorder, chat
-  import/fork flows, and character create/delete/import rollback. Translator
+  import/fork flows, and residual sidebar/import replacement paths. Translator
   preset import file-read/decode freshness does not have dedicated coverage, but
   its command-dispatch failure path uses the now rollback-free create
   dispatcher. Prompt-template item rollback coverage does not explicitly cover
@@ -88,11 +89,12 @@ git diff --check
   eighteenth Phase 5 slice. Chat folder command rollback is covered by the
   nineteenth Phase 5 slice. Chat list create/delete/reorder rollback is covered
   by the twentieth Phase 5 slice. Character sidebar order/folder metadata
-  rollback is covered by the twenty-first Phase 5 slice. Remaining Phase 5 work
-  owns sidebar/import collection flows, broader lorebook import/navigation
-  edges, Hypa V3 preset array import/rename/delete, plugin import/update
-  side-effect reload, combined sidebar chat/folder reorder, chat import/fork
-  flows, and character list create/delete/import rollback.
+  rollback is covered by the twenty-first Phase 5 slice. Character list
+  create/delete/import rollback is covered by the twenty-second Phase 5 slice.
+  Remaining Phase 5 work owns sidebar/import collection flows, broader lorebook
+  import/navigation edges, Hypa V3 preset array import/rename/delete, plugin
+  import/update side-effect reload, combined sidebar chat/folder reorder, and
+  chat import/fork flows.
 - Phase 6 owns Realm/backup/local bundle restore/import resyncs, character/chat
   import refresh/navigation edges, memory job list/progress ordering,
   route/selection hydration, welcome/onboarding delayed setup, and DevTool

@@ -15,7 +15,7 @@ import {
   type ServerCommandTransportOptions,
 } from './server/commands'
 import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
-import { applyAttemptedFieldRollback } from './server/staleStateGuards'
+import { applyAttemptedFieldRollback, applyAttemptedKeyedListRollback } from './server/staleStateGuards'
 import { DBState, selectedCharID } from './stores.svelte'
 import type { character, folder } from './storage/database.svelte'
 
@@ -70,6 +70,29 @@ interface CharacterOrderFolderMetadataRollback {
   folderId: string
   previous: Partial<Record<CharacterOrderFolderMetadataKey, unknown>>
   attempted: Partial<Record<CharacterOrderFolderMetadataKey, unknown>>
+}
+
+interface CharacterCreateRollback {
+  characterId: string
+  attemptedCharacter: character
+  restoreSelection: boolean
+  previousCurrentChar?: number
+  previousSelectedCharID: number
+}
+
+interface CharacterDeleteRollback {
+  characterId: string
+  character: character
+  previousIndex: number
+  orderPlacement: CharacterOrderPlacement | null
+  previousCurrentChar?: number
+  previousSelectedCharID: number
+  previousSelectedCharacterId?: string
+}
+
+interface CharacterDeleteRollbackSelection {
+  liveSelectedCharacterId?: string
+  restorePreviousSelection: boolean
 }
 
 export interface CharacterOrderNormalizationResult {
@@ -287,7 +310,13 @@ function locateCharacterIndex(characters: character[], characterId: string | und
 }
 
 function currentCharacterOrderPlacement(characterId: string): CharacterOrderPlacement | null {
-  const characterOrder = DBState.db.characterOrder ?? []
+  return characterOrderPlacementFromOrder(DBState.db.characterOrder ?? [], characterId)
+}
+
+function characterOrderPlacementFromOrder(
+  characterOrder: readonly (string | folder)[],
+  characterId: string,
+): CharacterOrderPlacement | null {
   for (let index = 0; index < characterOrder.length; index += 1) {
     const entry = characterOrder[index]
     if (entry === characterId) {
@@ -314,37 +343,8 @@ function restoreCharacterOrderPlacement(snapshot: CharacterTrashTimeSnapshot): v
   const character = DBState.db.characters?.find((candidate) => candidate.chaId === placement.characterId)
   if (!character || character.trashTime) return
 
-  const characterOrder = ensureCharacterOrder()
-  if (characterOrderIncludes(characterOrder, placement.characterId)) return
-
-  if (placement.folder) {
-    const folderIndex = resolveRestoredFolderIndex(characterOrder, placement)
-    if (folderIndex !== -1) {
-      const targetFolder = characterOrder[folderIndex]
-      if (isCharacterOrderFolder(targetFolder)) {
-        targetFolder.data.splice(
-          clampInsertionIndex(placement.folderDataIndex, targetFolder.data.length),
-          0,
-          placement.characterId,
-        )
-        characterOrder[folderIndex] = targetFolder
-        return
-      }
-    }
-
-    const restoredFolder = cloneJsonValue(placement.folder)
-    if (!restoredFolder.data.includes(placement.characterId)) {
-      restoredFolder.data.splice(
-        clampInsertionIndex(placement.folderDataIndex, restoredFolder.data.length),
-        0,
-        placement.characterId,
-      )
-    }
-    characterOrder.splice(clampInsertionIndex(placement.folderIndex, characterOrder.length), 0, restoredFolder)
-    return
-  }
-
-  characterOrder.splice(clampInsertionIndex(placement.rootIndex, characterOrder.length), 0, placement.characterId)
+  if (characterOrderIncludes(ensureCharacterOrder(), placement.characterId)) return
+  restoreMissingCharacterOrderPlacement(placement)
 }
 
 function resolveRestoredFolderIndex(characterOrder: (string | folder)[], placement: CharacterOrderPlacement): number {
@@ -372,6 +372,195 @@ function clampInsertionIndex(index: number | undefined, length: number): number 
   return Math.max(0, Math.min(index, length))
 }
 
+function characterCreateRollbackFromState(
+  character: character,
+  previous: CharacterStateSnapshot,
+  restoreSelection: boolean,
+): CharacterCreateRollback | null {
+  const characterId = character.chaId
+  if (!characterId) return null
+
+  return {
+    characterId,
+    attemptedCharacter: cloneJsonValue(character),
+    restoreSelection,
+    previousCurrentChar: previous.currentChar,
+    previousSelectedCharID: previous.selectedCharID,
+  }
+}
+
+function restoreCreatedCharacterAttempt(rollback: CharacterCreateRollback | null): void {
+  if (!rollback) return
+
+  withTrustedServerProjectionWrite(() => {
+    const characters = DBState.db.characters
+    if (!characters) return
+
+    const shouldRestoreSelection =
+      rollback.restoreSelection && shouldRestorePreviousSelectionAfterCreatedCharacterRollback(rollback.characterId)
+    const rolledBack = applyAttemptedKeyedListRollback<character, string>({
+      list: characters,
+      entries: [
+        {
+          key: rollback.characterId,
+          previous: null,
+          attempted: rollback.attemptedCharacter,
+        },
+      ],
+      getKey: (candidate) => candidate?.chaId,
+    })
+    if (rolledBack.length === 0) return
+
+    DBState.db.characters = characters
+    replaceCharacterOrderWithNormalized()
+    if (shouldRestoreSelection) {
+      restoreCharacterSelectionScalars(rollback.previousCurrentChar, rollback.previousSelectedCharID)
+    }
+  })
+}
+
+function characterDeleteRollbackFromState(
+  characterId: string,
+  previous: CharacterStateSnapshot,
+): CharacterDeleteRollback | null {
+  const previousIndex = previous.characters.findIndex((candidate) => candidate?.chaId === characterId)
+  if (previousIndex === -1) return null
+
+  return {
+    characterId,
+    character: cloneJsonValue(previous.characters[previousIndex]),
+    previousIndex,
+    orderPlacement: characterOrderPlacementFromOrder(previous.characterOrder, characterId),
+    previousCurrentChar: previous.currentChar,
+    previousSelectedCharID: previous.selectedCharID,
+    previousSelectedCharacterId: previous.characters[previous.selectedCharID]?.chaId,
+  }
+}
+
+function restoreDeletedCharacterAttempt(rollback: CharacterDeleteRollback | null): void {
+  if (!rollback) return
+
+  withTrustedServerProjectionWrite(() => {
+    const characters = DBState.db.characters
+    if (!characters) return
+
+    const selection = currentDeletedCharacterRollbackSelection()
+    const rolledBack = applyAttemptedKeyedListRollback<character, string>({
+      list: characters,
+      entries: [
+        {
+          key: rollback.characterId,
+          previous: rollback.character,
+          attempted: null,
+          previousIndex: rollback.previousIndex,
+        },
+      ],
+      getKey: (candidate) => candidate?.chaId,
+    })
+    if (rolledBack.length === 0) return
+
+    DBState.db.characters = characters
+    restoreMissingCharacterOrderPlacement(rollback.orderPlacement)
+    if (selection.restorePreviousSelection) {
+      restoreCharacterSelectionScalars(rollback.previousCurrentChar, rollback.previousSelectedCharID)
+    } else if (selection.liveSelectedCharacterId && selection.liveSelectedCharacterId !== rollback.characterId) {
+      restoreCharacterSelectionById(selection.liveSelectedCharacterId)
+    }
+  })
+}
+
+function shouldRestorePreviousSelectionAfterCreatedCharacterRollback(characterId: string): boolean {
+  const liveSelectedCharID = get(selectedCharID)
+  if (isCharacterSelectionEmptyOrStale(liveSelectedCharID)) return true
+  return selectedCharacterIdAt(liveSelectedCharID) === characterId
+}
+
+function currentDeletedCharacterRollbackSelection(): CharacterDeleteRollbackSelection {
+  const liveSelectedCharID = get(selectedCharID)
+  const liveSelectedCharacterId = selectedCharacterIdAt(liveSelectedCharID)
+  return {
+    liveSelectedCharacterId,
+    restorePreviousSelection: shouldRestorePreviousSelectionAfterDeletedCharacterRollback(
+      liveSelectedCharID,
+      liveSelectedCharacterId,
+    ),
+  }
+}
+
+function shouldRestorePreviousSelectionAfterDeletedCharacterRollback(
+  liveSelectedCharID: number,
+  liveSelectedCharacterId: string | undefined,
+): boolean {
+  return liveSelectedCharID < 0 || !liveSelectedCharacterId
+}
+
+function isCharacterSelectionEmptyOrStale(index: number): boolean {
+  return index < 0 || !DBState.db.characters?.[index]
+}
+
+function selectedCharacterIdAt(index: number): string | undefined {
+  if (index < 0) return undefined
+  return DBState.db.characters?.[index]?.chaId
+}
+
+function restoreCharacterSelectionScalars(currentChar: number | undefined, selectedCharacterIndex: number): void {
+  ;(DBState.db as unknown as { currentChar?: number }).currentChar = currentChar
+  selectedCharID.set(selectedCharacterIndex)
+}
+
+function restoreCharacterSelectionById(characterId: string): void {
+  const index = DBState.db.characters?.findIndex((candidate) => candidate?.chaId === characterId) ?? -1
+  if (index === -1) return
+  restoreCharacterSelectionScalars(index, index)
+}
+
+function restoreMissingCharacterOrderPlacement(placement: CharacterOrderPlacement | null): void {
+  if (!placement?.characterId) return
+
+  const characterOrder = ensureCharacterOrder()
+  removeCharacterIdFromOrder(characterOrder, placement.characterId)
+
+  if (placement.folder) {
+    const folderIndex = resolveRestoredFolderIndex(characterOrder, placement)
+    if (folderIndex !== -1) {
+      const targetFolder = characterOrder[folderIndex]
+      if (isCharacterOrderFolder(targetFolder)) {
+        targetFolder.data.splice(
+          clampInsertionIndex(placement.folderDataIndex, targetFolder.data.length),
+          0,
+          placement.characterId,
+        )
+        characterOrder[folderIndex] = targetFolder
+        DBState.db.characterOrder = characterOrder
+        return
+      }
+    }
+
+    const restoredFolder = cloneJsonValue(placement.folder)
+    restoredFolder.data = [placement.characterId]
+    characterOrder.splice(clampInsertionIndex(placement.folderIndex, characterOrder.length), 0, restoredFolder)
+    DBState.db.characterOrder = characterOrder
+    return
+  }
+
+  characterOrder.splice(clampInsertionIndex(placement.rootIndex, characterOrder.length), 0, placement.characterId)
+  DBState.db.characterOrder = characterOrder
+}
+
+function removeCharacterIdFromOrder(characterOrder: (string | folder)[], characterId: string): void {
+  for (let index = characterOrder.length - 1; index >= 0; index -= 1) {
+    const entry = characterOrder[index]
+    if (entry === characterId) {
+      characterOrder.splice(index, 1)
+      continue
+    }
+    if (isCharacterOrderFolder(entry)) {
+      entry.data = entry.data.filter((id) => id !== characterId)
+      characterOrder[index] = entry
+    }
+  }
+}
+
 export function runCharacterCommand<T extends Record<string, unknown>>(
   command: (baseRevision: number) => Promise<ServerCommandResult<T>>,
   rollback: () => void,
@@ -382,13 +571,14 @@ export function runCharacterCommand<T extends Record<string, unknown>>(
 }
 
 export function dispatchCreateCharacter(character: character, previous: CharacterStateSnapshot): void {
+  const rollback = characterCreateRollbackFromState(character, previous, false)
   runCharacterCommand(
     (baseRevision) =>
       createCharacterCommand({
         baseRevision,
         character: toCharacterSnapshot(character),
       }),
-    () => restoreCharacterState(previous),
+    () => restoreCreatedCharacterAttempt(rollback),
   )
 }
 
@@ -397,6 +587,7 @@ export function dispatchCreateAndSelectCharacter(
   previous: CharacterStateSnapshot,
   lastInteraction: number,
 ): void {
+  const rollback = characterCreateRollbackFromState(character, previous, true)
   runCharacterCommand(
     (baseRevision) =>
       createAndSelectCharacterCommand({
@@ -404,7 +595,7 @@ export function dispatchCreateAndSelectCharacter(
         character: toCharacterSnapshot(character),
         lastInteraction,
       }),
-    () => restoreCharacterState(previous),
+    () => restoreCreatedCharacterAttempt(rollback),
   )
 }
 
@@ -566,13 +757,14 @@ export function applyCompatibleCharacterPatch(previousCharacter: character, patc
 }
 
 export function dispatchDeleteCharacter(characterId: string, previous: CharacterStateSnapshot): void {
+  const rollback = characterDeleteRollbackFromState(characterId, previous)
   runCharacterCommand(
     (baseRevision) =>
       deleteCharacterCommand({
         baseRevision,
         characterId,
       }),
-    () => restoreCharacterState(previous),
+    () => restoreDeletedCharacterAttempt(rollback),
   )
 }
 
