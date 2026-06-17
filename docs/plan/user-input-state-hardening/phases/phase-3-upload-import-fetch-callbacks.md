@@ -71,6 +71,11 @@ operation tokens issued only after a real JSON file is selected, captured theme
 name/scheme snapshots, and fresh validation before valid imports can apply or
 invalid imports can alert.
 
+Twelfth landed slice: plugin import/update callbacks now use latest operation
+tokens and plugin-list snapshots across remote update fetch/text, file
+picker/read, TypeScript transpile, safety modal, duplicate confirm, and final
+create/update application so stale imports cannot alert or write.
+
 ## Anchors
 
 - `src/lib/ChatScreens/DefaultChatScreen.svelte`

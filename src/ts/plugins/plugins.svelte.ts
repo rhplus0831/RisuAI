@@ -50,6 +50,15 @@ import {
 } from '../server/commands'
 import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
 import { assertNoUnsupportedCharacterChanges } from './unsupportedServerWriteGuard'
+import {
+  beginPluginImport,
+  capturePluginImportTarget,
+  clearPluginImport,
+  isFreshPluginImport,
+  resolveFreshPluginImportApplyTarget,
+  type PluginImportFreshness,
+  type PluginImportOperation,
+} from '../server/pluginImport'
 
 export const customProviderStore = writable([] as string[])
 
@@ -145,22 +154,43 @@ export const checkPluginUpdate = async (plugin: RisuPlugin) => {
   }
 }
 
-export async function updatePlugin(plugin: RisuPlugin) {
+function currentPluginImportFreshness(): PluginImportFreshness<RisuPlugin> {
+  return {
+    plugins: getDatabase().plugins ?? [],
+  }
+}
+
+export async function updatePlugin(plugin: RisuPlugin): Promise<boolean> {
+  let operation: PluginImportOperation | null = null
   try {
     if (!plugin.updateURL) {
       return false
     }
+
+    operation = beginPluginImport(capturePluginImportTarget(currentPluginImportFreshness()))
     const response = await fetch(plugin.updateURL)
+    if (!isFreshPluginImport(operation, currentPluginImportFreshness())) {
+      return false
+    }
     if (response.status >= 200 && response.status < 300) {
       const jsFile = await response.text()
-      await importPlugin(jsFile, {
+      if (!isFreshPluginImport(operation, currentPluginImportFreshness())) {
+        return false
+      }
+      return await importPlugin(jsFile, {
         isUpdate: true,
         originalPluginName: plugin.name,
+        operation,
       })
-      return true
     }
   } catch (error) {
-    console.error('Failed to update plugin:', error)
+    if (!operation || isFreshPluginImport(operation, currentPluginImportFreshness())) {
+      console.error('Failed to update plugin:', error)
+    }
+  } finally {
+    if (operation) {
+      clearPluginImport(operation)
+    }
   }
   return false
 }
@@ -172,8 +202,15 @@ export async function importPlugin(
     originalPluginName?: string
     isHotReload?: boolean
     isTypescript?: boolean
+    operation?: PluginImportOperation
   } = {},
-) {
+): Promise<boolean> {
+  let operation: PluginImportOperation | null = argu.operation ?? null
+  const beginImport = () => {
+    operation ??= beginPluginImport(capturePluginImportTarget(currentPluginImportFreshness()))
+  }
+  const isFreshImport = () => operation !== null && isFreshPluginImport(operation, currentPluginImportFreshness())
+
   try {
     let jsFile = ''
     let isUpdate = argu.isUpdate || false
@@ -181,9 +218,13 @@ export async function importPlugin(
     let isTypescript = argu.isTypescript || false
 
     if (!code) {
-      const f = await selectSingleFile(['js', 'ts'])
+      const f = await selectSingleFile(['js', 'ts'], { onFileSelected: beginImport })
       if (!f) {
-        return
+        return false
+      }
+      beginImport()
+      if (!isFreshImport()) {
+        return false
       }
       if (f.name.endsWith('.ts')) {
         isTypescript = true
@@ -193,6 +234,10 @@ export async function importPlugin(
         .toString('utf-8')
         .replace(/^\uFEFF/gm, '')
     } else {
+      beginImport()
+      if (!isFreshImport()) {
+        return false
+      }
       jsFile = code
     }
 
@@ -205,12 +250,15 @@ export async function importPlugin(
       }
     }
 
-    const showError = (msg: string) => {
-      if (argu.isHotReload) {
-        console.error(`Hot-reload plugin "${name}" error: ${msg}`)
-      } else {
-        alertError(msg)
+    const showError = (msg: string): false => {
+      if (isFreshImport()) {
+        if (argu.isHotReload) {
+          console.error(`Hot-reload plugin "${name}" error: ${msg}`)
+        } else {
+          alertError(msg)
+        }
       }
+      return false
     }
 
     let displayName: string = undefined
@@ -226,8 +274,7 @@ export async function importPlugin(
       if (line.startsWith('//@name')) {
         const provied = line.slice(7)
         if (provied === '') {
-          showError('plugin name must be longer than 0, did you put it correctly?')
-          return
+          return showError('plugin name must be longer than 0, did you put it correctly?')
         }
         name = provied.trim()
       }
@@ -246,8 +293,7 @@ export async function importPlugin(
       if (line.startsWith('//@display-name')) {
         const provied = line.slice('//@display-name'.length + 1)
         if (provied === '') {
-          showError('plugin display name must be longer than 0, did you put it correctly?')
-          return
+          return showError('plugin display name must be longer than 0, did you put it correctly?')
         }
         displayName = provied.trim()
       }
@@ -255,12 +301,10 @@ export async function importPlugin(
       if (line.startsWith('//@link')) {
         const link = line.split(' ')[1]
         if (!link || link === '') {
-          showError('plugin link is empty, did you put it correctly?')
-          return
+          return showError('plugin link is empty, did you put it correctly?')
         }
         if (!link.startsWith('https')) {
-          showError('plugin link must start with https, did you check it?')
-          return
+          return showError('plugin link must start with https, did you check it?')
         }
         const hoverText = line.split(' ').slice(2).join(' ').trim()
         if (hoverText === '') {
@@ -278,14 +322,12 @@ export async function importPlugin(
       if (line.startsWith('//@risu-arg') || line.startsWith('//@arg')) {
         const provied = line.trim().split(' ')
         if (provied.length < 3) {
-          showError('plugin argument is incorrect, did you put space in argument name?')
-          return
+          return showError('plugin argument is incorrect, did you put space in argument name?')
         }
         const provKey = provied[1]
 
         if (provied[2] !== 'int' && provied[2] !== 'string') {
-          showError(`plugin argument type is "${provied[2]}", which is an unknown type.`)
-          return
+          return showError(`plugin argument type is "${provied[2]}", which is an unknown type.`)
         }
         if (provied[2] === 'int') {
           arg[provKey] = 'int'
@@ -322,12 +364,10 @@ export async function importPlugin(
         try {
           const url = new URL(updateURL)
           if (url.protocol !== 'https:') {
-            showError('plugin update URL must start with https, did you put it correctly?')
-            return
+            return showError('plugin update URL must start with https, did you put it correctly?')
           }
         } catch (error) {
-          showError('plugin update URL is not a valid URL, did you put it correctly?')
-          return
+          return showError('plugin update URL is not a valid URL, did you put it correctly?')
         }
       }
 
@@ -337,18 +377,16 @@ export async function importPlugin(
         const versionLocation = jsFile.indexOf('//@version')
         const numberOfBytesBefore = new TextEncoder().encode(jsFile.slice(0, versionLocation) + line).length
         if (numberOfBytesBefore > 500) {
-          showError(
+          return showError(
             'plugin version declaration must be within the first 512 Bytes of the file for proper parsing. move //@version line to the top of the file.',
           )
-          return
         }
       }
 
       if (line.startsWith('//@allowed-ipc')) {
         const provied = line.trim().split(' ')
         if (provied.length < 2) {
-          showError('plugin allowed IPC declaration is incorrect, did you put space after //@allowed-ipc?')
-          return
+          return showError('plugin allowed IPC declaration is incorrect, did you put space after //@allowed-ipc?')
         }
 
         const allowedIPCList = provied.slice(1)
@@ -358,32 +396,44 @@ export async function importPlugin(
     }
 
     if (name.length === 0) {
-      showError('plugin name not found, did you put it correctly?')
-      return
+      return showError('plugin name not found, did you put it correctly?')
     }
 
     if (updateURL && versionOfPlugin.length === 0) {
-      showError('plugin version not found, did you put it correctly? It is required when update URL is provided.')
-      return
+      return showError(
+        'plugin version not found, did you put it correctly? It is required when update URL is provided.',
+      )
     }
 
     if (versionOfPlugin && compareVersions(versionOfPlugin, '0.0.1') === -1) {
-      showError('plugin version must be at least 0.0.1')
-      return
+      return showError('plugin version must be at least 0.0.1')
     }
 
     if (isTypescript) {
+      if (!isFreshImport()) {
+        return false
+      }
       try {
         jsFile = await pluginCodeTranspiler(jsFile)
       } catch (error) {
-        showError('Failed to transpile TypeScript code: ' + error.message)
+        const message = error instanceof Error ? error.message : String(error)
+        return showError('Failed to transpile TypeScript code: ' + message)
+      }
+      if (!isFreshImport()) {
+        return false
       }
     }
 
     let apiInternalVersion: 2 | '2.1' | '3.0' = '2.1'
 
     if (apiVersion === '2.1') {
+      if (!isFreshImport()) {
+        return false
+      }
       const safety = await checkCodeSafety(jsFile)
+      if (!isFreshImport()) {
+        return false
+      }
       if (!safety.isSafe) {
         pluginAlertModalStore.errors = safety.errors
         pluginAlertModalStore.open = true
@@ -391,26 +441,32 @@ export async function importPlugin(
         //I can use event but lazy
         while (pluginAlertModalStore.open) {
           await sleep(100)
+          if (!isFreshImport()) {
+            pluginAlertModalStore.open = false
+            return false
+          }
+        }
+
+        if (!isFreshImport()) {
+          return false
         }
 
         if (pluginAlertModalStore.errors.length > 0) {
-          return
+          return false
         }
       }
       apiInternalVersion = '2.1'
     } else if (apiVersion === '2.0') {
       //Only block installing
-      showError(
+      return showError(
         'Your code does not include //@api or specifies API version 2.0, which is outdated. Please update your plugin to use at least API version 2.1.',
       )
-      return
     } else if (apiVersion === '3.0') {
       apiInternalVersion = '3.0'
     }
 
     if (apiInternalVersion !== '3.0' && argu.isHotReload) {
-      showError('Only API version 3.0 plugins can be hot-reloaded.')
-      return
+      return showError('Only API version 3.0 plugins can be hot-reloaded.')
     }
 
     let pluginData: RisuPlugin = {
@@ -428,41 +484,74 @@ export async function importPlugin(
       enabled: true,
     }
 
-    withTrustedServerProjectionWrite(() => {
-      const db = getDatabase()
-      db.plugins ??= []
-    })
+    const preConfirmTarget = operation
+      ? resolveFreshPluginImportApplyTarget({
+          operation,
+          freshness: currentPluginImportFreshness(),
+          plugin: pluginData,
+          isUpdate,
+          originalPluginName,
+          isHotReload: argu.isHotReload,
+        })
+      : null
 
-    const oldPluginIndex = getDatabase().plugins.findIndex((p: RisuPlugin) => p.name === pluginData.name)
-
-    if (originalPluginName && originalPluginName !== pluginData.name) {
-      showError(
-        `When updating plugin "${originalPluginName}", the plugin name cannot be changed to "${pluginData.name}". Please keep the original name to update.`,
-      )
-      return
+    if (!preConfirmTarget) {
+      return false
     }
 
-    if (!isUpdate && oldPluginIndex !== -1) {
+    if (preConfirmTarget.kind === 'name-mismatch') {
+      return showError(
+        `When updating plugin "${preConfirmTarget.originalPluginName}", the plugin name cannot be changed to "${preConfirmTarget.pluginName}". Please keep the original name to update.`,
+      )
+    }
+
+    if (!isUpdate && preConfirmTarget.kind === 'update') {
       const c = await alertConfirm(language.duplicatePluginFoundUpdateIt)
+      if (!isFreshImport()) {
+        return false
+      }
       if (!c) {
-        return
+        return false
       }
     }
 
+    const applyTarget = operation
+      ? resolveFreshPluginImportApplyTarget({
+          operation,
+          freshness: currentPluginImportFreshness(),
+          plugin: pluginData,
+          isUpdate,
+          originalPluginName,
+          isHotReload: argu.isHotReload,
+        })
+      : null
+
+    if (!applyTarget || applyTarget.kind === 'skip') {
+      return false
+    }
+
+    if (applyTarget.kind === 'name-mismatch') {
+      return showError(
+        `When updating plugin "${applyTarget.originalPluginName}", the plugin name cannot be changed to "${applyTarget.pluginName}". Please keep the original name to update.`,
+      )
+    }
+
     const previous = currentPluginStateSnapshot()
-    if (oldPluginIndex !== -1) {
+    if (applyTarget.kind === 'update') {
       // Re-read the live database inside the trusted write scope so the
       // optimistic update never mutates the read-only server projection
       // through a stale reference captured before the scope.
       withTrustedServerProjectionWrite(() => {
         const db = getDatabase()
-        db.plugins[oldPluginIndex] = pluginData
+        db.plugins ??= []
+        db.plugins[applyTarget.index] = pluginData
         setDatabaseLite(db)
       })
-      dispatchUpdatePlugin(pluginData.name, toPluginSnapshot(pluginData), previous)
-    } else if (!isUpdate || argu.isHotReload) {
+      dispatchUpdatePlugin(applyTarget.pluginId, toPluginSnapshot(pluginData), previous)
+    } else if (applyTarget.kind === 'create') {
       withTrustedServerProjectionWrite(() => {
         const db = getDatabase()
+        db.plugins ??= []
         db.plugins.push(pluginData)
         setDatabaseLite(db)
       })
@@ -476,9 +565,17 @@ export async function importPlugin(
     console.log(`Imported plugin: ${pluginData.name} (API v${apiVersion})`)
 
     loadPlugins()
+    return true
   } catch (error) {
     console.error(error)
-    alertError(language.errors.noData)
+    if (!operation || isFreshPluginImport(operation, currentPluginImportFreshness())) {
+      alertError(language.errors.noData)
+    }
+    return false
+  } finally {
+    if (operation) {
+      clearPluginImport(operation)
+    }
   }
 }
 

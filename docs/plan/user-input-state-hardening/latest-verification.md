@@ -7,27 +7,29 @@ hardening workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 3 custom color scheme import callback
-  freshness. `importColorScheme` now captures the current theme name and color
-  scheme before file selection, starts the import token only after a real JSON
-  file is selected, drops stale valid imports, and suppresses stale invalid-file
-  alerts after newer theme changes.
+- Runtime/code change under test: Phase 3 plugin import/update callback
+  freshness. `updatePlugin` now starts a plugin import operation before remote
+  fetch, checks freshness after fetch/text, and passes the same operation through
+  `importPlugin`. `importPlugin` now guards picker/read, validation alerts,
+  TypeScript transpile, safety modal, duplicate confirm, and final create/update
+  application by latest operation plus plugin-list snapshots.
 - Commands:
 
 ```bash
-pnpm exec vitest run src/ts/server/colorSchemeImport.test.ts src/ts/gui/colorscheme.test.ts src/ts/server/staleStateGuards.test.ts
+pnpm exec vitest run src/ts/server/pluginImport.test.ts src/ts/plugins/plugins.test.ts src/ts/pluginCommands.test.ts src/ts/server/staleStateGuards.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 git diff --check
 ```
 
-- Result: passed on 2026-06-17. The color-scheme-import/stale-guard focused
-  Vitest set passed 3 files and 20 tests. Both TypeScript checks and
-  `git diff --check` passed.
-- Residual gaps: no mounted/browser file-picker smoke was run, so real DOM picker
-  cancellation remains source-reviewed. This slice does not cover plugin
-  import/update, prompt/persona imports, module import, additional params/bias
-  JSON import, Realm/backup refresh fences, or collection rollback.
+- Result: passed on 2026-06-17. The plugin-import/stale-guard focused Vitest set
+  passed 4 files and 48 tests. Both TypeScript checks and `git diff --check`
+  passed.
+- Residual gaps: stale TypeScript transpile and API 2.1 safety-modal concurrency
+  are source-reviewed but do not have direct integration tests. This slice does
+  not cover plugin enable/delete/args/provider/storage rollback, prompt/persona
+  imports, module import, additional params/bias JSON import, Realm/backup
+  refresh fences, or collection rollback.
 
 ## Required Closeout Proof
 

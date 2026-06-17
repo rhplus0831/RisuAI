@@ -57,6 +57,7 @@ paths.
 Character TTS media callback freshness has landed for VITS model registration
 and GPT-SoVITS reference audio upload.
 Custom color scheme import callback freshness has landed.
+Plugin import/update callback freshness has landed.
 
 Next manager loop:
 

@@ -39,6 +39,9 @@ the input persistence inventory under
   `ttsMode`, and field snapshots before applying narrow media fields. Custom
   color scheme imports now guard valid application and invalid-file alerts by
   latest selected file operation plus captured theme name/scheme snapshots.
+  Plugin import/update flows now guard remote fetch/text, picker/read,
+  validation alerts, TypeScript transpile, safety modal, duplicate confirm, and
+  final create/update application by latest operation plus plugin-list snapshots.
   Phase 2 landed character profile draft dirty top-level field protection;
   prompt-template item row dirty projection merging; whole-key dirty projection
   protection for
@@ -120,7 +123,10 @@ the input persistence inventory under
   settings patch resolution. `selectSingleFile` now has an optional
   `onFileSelected` hook so import tokens can start after real DOM selection but
   before file reading resolves.
-- Verification state: Phase 3 custom color scheme import callback validation is
+- `src/ts/server/pluginImport.ts` now centralizes plugin import/update snapshot
+  capture, latest-operation tracking, freshness checks, and fresh create/update
+  target resolution for `src/ts/plugins/plugins.svelte.ts`.
+- Verification state: Phase 3 plugin import/update callback validation is
   recorded in `latest-verification.md`.
 - Highest issue density:
   - Character editor: 52 issue rows, mostly dirty projection and unguarded
@@ -171,8 +177,9 @@ the input persistence inventory under
   callbacks now guard stale completions; prompt preset icon uploads now guard stale
   completions; settings media asset uploads for the guarded OtherBotSettings
   image paths now guard stale completions; custom color scheme imports now guard
-  stale completions; plugin import/update, remaining import helpers, and
-  remaining dashboard/import persistence surfaces remain pending. NanoGPT
+  stale completions; plugin import/update now guards stale completions;
+  remaining import helpers and remaining dashboard/import persistence surfaces
+  remain pending. NanoGPT
   dashboard subscription-state fetch persistence now guards stale completions.
 - [Phase 4](phases/phase-4-chat-messages-generation.md): pending. Chat,
   message, reroll, trigger, suggestion, and generation target freshness.
@@ -303,6 +310,11 @@ the input persistence inventory under
     theme name/scheme snapshots, starts latest-operation tokens only after a real
     JSON file is selected, validates imported scheme shape, and lets
     `importColorScheme` apply or alert only when the theme state is still fresh.
+  - Phase 3 plugin import/update slice: `pluginImport.ts` captures plugin-list
+    snapshots, starts latest-operation tokens before remote update fetches or
+    after real file picker selection, and lets `importPlugin` apply or alert only
+    when plugin state is still fresh across read, transpile, safety modal,
+    duplicate confirm, and final create/update application.
   - Phase 4: `restoreChatScopedState`, chat/message/generation freshness, and
     message update/delete/truncate/replace freshness.
   - Phase 5: create/delete/reorder/import/select and broad collection rollback

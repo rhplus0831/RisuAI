@@ -1,10 +1,68 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('../platform', () => ({ isFastifyServer: true }))
+const pluginImportMocks = vi.hoisted(() => ({
+  alertConfirm: vi.fn(),
+  alertError: vi.fn(),
+  alertPluginConfirm: vi.fn(),
+  selectMultipleFile: vi.fn(),
+  selectSingleFile: vi.fn(),
+  sleep: vi.fn(),
+}))
+
+function createUtilMock() {
+  return {
+    BufferToText: (data: Uint8Array) => new TextDecoder().decode(data),
+    asBuffer: (data: Uint8Array | ArrayBuffer) => (data instanceof Uint8Array ? data : new Uint8Array(data)),
+    base64url: vi.fn((value: string) => value),
+    blobToUint8Array: vi.fn(async () => new Uint8Array()),
+    checkNullish: (data: unknown) => data === undefined || data === null,
+    decryptBuffer: vi.fn(async (data: Uint8Array) => data),
+    encryptBuffer: vi.fn(async (data: Uint8Array) => data),
+    findCharacterIndexbyId: vi.fn(() => -1),
+    findCharacterbyId: vi.fn((id: string) => ({ chaId: id, name: id, chats: [], chatPage: 0 })),
+    getAuthorNoteDefaultText: vi.fn(() => ''),
+    getKeypairStore: vi.fn(() => null),
+    getNodetextToSentence: vi.fn((text: string) => [text]),
+    getPersonaPrompt: vi.fn(() => ''),
+    getUserIcon: vi.fn(() => ''),
+    getUserIconProtrait: vi.fn(() => ''),
+    getUserName: vi.fn(() => 'User'),
+    isKnownUri: vi.fn(() => false),
+    jsonOutputTrimmer: vi.fn((text: string) => text),
+    messageForm: vi.fn((messages: unknown[]) => messages),
+    parseKeyValue: vi.fn(() => ({})),
+    parseMultilangString: vi.fn((text: string) => text),
+    pickHashRand: vi.fn((items: unknown[]) => items?.[0]),
+    prebuiltAssetCommand: vi.fn(() => ''),
+    replaceAsync: vi.fn(async (text: string) => text),
+    replacePlaceholders: vi.fn((text: string) => text),
+    saveKeypairStore: vi.fn(),
+    selectFileByDom: vi.fn(async () => []),
+    selectMultipleFile: pluginImportMocks.selectMultipleFile,
+    selectSingleFile: pluginImportMocks.selectSingleFile,
+    simplifySchema: vi.fn((schema: unknown) => schema),
+    sleep: pluginImportMocks.sleep,
+    sortableOptions: {},
+    toLangName: vi.fn((code: string) => code),
+    trimUntilPunctuation: vi.fn((text: string) => text),
+  }
+}
+
+vi.mock('../platform', () => ({ isFastifyServer: true, isIOS: () => false }))
+vi.mock('src/ts/platform', () => ({ isFastifyServer: true, isIOS: () => false }))
 
 vi.mock('../storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'plugin-test-auth',
 }))
+
+vi.mock('../alert', () => ({
+  alertConfirm: pluginImportMocks.alertConfirm,
+  alertError: pluginImportMocks.alertError,
+  alertPluginConfirm: pluginImportMocks.alertPluginConfirm,
+}))
+
+vi.mock('../util', () => createUtilMock())
+vi.mock('src/ts/util', () => createUtilMock())
 
 vi.mock('./apiV3/v3.svelte', () => ({
   loadV3Plugins: vi.fn(async () => undefined),
@@ -18,7 +76,7 @@ import { clearCachedServerCommandRevision, type CommandEvent } from '../server/c
 import { setServerProjectionWriteGuardEnabled } from '../server/projectionWriteGuard.svelte'
 import { DBState, selectedCharID } from '../stores.svelte'
 import { SafeLocalPluginStorage } from './pluginSafeClass'
-import { getV2PluginAPIs, type RisuPlugin } from './plugins.svelte'
+import { getV2PluginAPIs, importPlugin, updatePlugin, type RisuPlugin } from './plugins.svelte'
 import type { RisuModule } from '../process/modules'
 
 interface CapturedFetch {
@@ -27,11 +85,52 @@ interface CapturedFetch {
   body: unknown
 }
 
+interface SelectedFile {
+  name: string
+  data: Uint8Array
+}
+
+interface SelectSingleFileOptions {
+  onFileSelected?: (file: File) => void
+}
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: { 'content-type': 'application/json' },
   })
+}
+
+function createDeferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve
+    reject = promiseReject
+  })
+  return { promise, resolve, reject }
+}
+
+function createPicker() {
+  const deferred = createDeferred<SelectedFile | null>()
+  let options: SelectSingleFileOptions | undefined
+  let selected: SelectedFile | null = null
+
+  return {
+    selectSingleFile: vi.fn((_extensions: string[], selectOptions?: SelectSingleFileOptions) => {
+      options = selectOptions
+      return deferred.promise
+    }),
+    select(value: SelectedFile | null) {
+      selected = value
+      if (value) {
+        options?.onFileSelected?.(new File([value.data], value.name))
+      }
+    },
+    resolve(value: SelectedFile | null = selected) {
+      deferred.resolve(value)
+    },
+  }
 }
 
 function stubCommandFetch(): CapturedFetch[] {
@@ -47,6 +146,37 @@ function stubCommandFetch(): CapturedFetch[] {
       }
       const event: CommandEvent = {
         type: 'plugin.compat.updated',
+        revision: 11,
+        resource: 'plugin',
+      } as CommandEvent
+      return jsonResponse({ revision: 11, event })
+    }) as unknown as typeof fetch,
+  )
+  return calls
+}
+
+function stubRemotePluginUpdateFetch(input: {
+  remoteUrl: string
+  remoteSource: Promise<string> | string
+}): CapturedFetch[] {
+  const calls: CapturedFetch[] = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (request: RequestInfo | URL, init: RequestInit = {}) => {
+      const url = String(request)
+      if (url === input.remoteUrl) {
+        return {
+          status: 200,
+          text: vi.fn(async () => input.remoteSource),
+        } as unknown as Response
+      }
+      const body = typeof init.body === 'string' ? JSON.parse(init.body) : null
+      if (url === '/api/v1/bootstrap') {
+        return jsonResponse({ revision: 10 })
+      }
+      calls.push({ url, method: init.method ?? 'GET', body })
+      const event: CommandEvent = {
+        type: 'plugin.updated',
         revision: 11,
         resource: 'plugin',
       } as CommandEvent
@@ -77,6 +207,33 @@ function seedModule(id: string, patch: Partial<RisuModule> = {}): RisuModule {
     description: '',
     ...patch,
   } as RisuModule
+}
+
+function pluginSource(
+  name: string,
+  options: {
+    api?: '2.1' | '3.0'
+    body?: string
+    versionOfPlugin?: string
+    updateURL?: string
+  } = {},
+): string {
+  const lines = [`//@name ${name}`, `//@display-name ${name}`, `//@api ${options.api ?? '3.0'}`]
+  if (options.versionOfPlugin) {
+    lines.push(`//@version ${options.versionOfPlugin}`)
+  }
+  if (options.updateURL) {
+    lines.push(`//@update-url ${options.updateURL}`)
+  }
+  lines.push(options.body ?? `Risuai.log("${name}")`)
+  return lines.join('\n')
+}
+
+function selectedPluginFile(source: string, name = 'plugin.js'): SelectedFile {
+  return {
+    name,
+    data: new TextEncoder().encode(source),
+  }
 }
 
 interface PluginStorageCloneStats<T> {
@@ -141,6 +298,16 @@ function withPluginStorageCloneStats<T>(fn: () => T): PluginStorageCloneStats<T>
 beforeEach(() => {
   clearCachedServerCommandRevision()
   vi.unstubAllGlobals()
+  pluginImportMocks.alertConfirm.mockReset()
+  pluginImportMocks.alertConfirm.mockResolvedValue(true)
+  pluginImportMocks.alertError.mockReset()
+  pluginImportMocks.alertPluginConfirm.mockReset()
+  pluginImportMocks.alertPluginConfirm.mockResolvedValue(true)
+  pluginImportMocks.selectMultipleFile.mockReset()
+  pluginImportMocks.selectMultipleFile.mockResolvedValue([])
+  pluginImportMocks.selectSingleFile.mockReset()
+  pluginImportMocks.sleep.mockReset()
+  pluginImportMocks.sleep.mockResolvedValue(undefined)
   setServerProjectionWriteGuardEnabled(false)
   DBState.db = {
     currentPluginProvider: 'old-provider',
@@ -154,6 +321,141 @@ beforeEach(() => {
 
 afterEach(() => {
   setServerProjectionWriteGuardEnabled(false)
+})
+
+describe('plugin import/update freshness', () => {
+  it('drops file import after real file selection if the plugin list changes before file read completes', async () => {
+    const calls = stubCommandFetch()
+    const picker = createPicker()
+    pluginImportMocks.selectSingleFile.mockImplementation(picker.selectSingleFile)
+
+    const importPromise = importPlugin()
+    await vi.waitFor(() => {
+      expect(pluginImportMocks.selectSingleFile).toHaveBeenCalledWith(['js', 'ts'], expect.any(Object))
+    })
+
+    picker.select(selectedPluginFile(pluginSource('plugin-b')))
+    DBState.db.plugins.push(seedPlugin('plugin-newer'))
+    picker.resolve()
+
+    await expect(importPromise).resolves.toBe(false)
+    expect(DBState.db.plugins.map((plugin) => plugin.name)).toEqual(['plugin-a', 'plugin-newer'])
+    expect(calls).toEqual([])
+  })
+
+  it('does not alert for an invalid stale plugin import', async () => {
+    const picker = createPicker()
+    pluginImportMocks.selectSingleFile.mockImplementation(picker.selectSingleFile)
+
+    const importPromise = importPlugin()
+    await vi.waitFor(() => {
+      expect(pluginImportMocks.selectSingleFile).toHaveBeenCalledWith(['js', 'ts'], expect.any(Object))
+    })
+
+    picker.select(selectedPluginFile('not a plugin'))
+    DBState.db.plugins.push(seedPlugin('plugin-newer'))
+    picker.resolve()
+
+    await expect(importPromise).resolves.toBe(false)
+    expect(pluginImportMocks.alertError).not.toHaveBeenCalled()
+    expect(DBState.db.plugins.map((plugin) => plugin.name)).toEqual(['plugin-a', 'plugin-newer'])
+  })
+
+  it('drops duplicate-confirm imports if plugin state changes while the confirm is open', async () => {
+    const calls = stubCommandFetch()
+    const confirm = createDeferred<boolean>()
+    pluginImportMocks.alertConfirm.mockReturnValue(confirm.promise)
+    const originalScript = DBState.db.plugins[0].script
+
+    const importPromise = importPlugin(pluginSource('plugin-a', { body: 'Risuai.log("updated")' }))
+    await vi.waitFor(() => {
+      expect(pluginImportMocks.alertConfirm).toHaveBeenCalled()
+    })
+
+    DBState.db.plugins.push(seedPlugin('plugin-newer'))
+    confirm.resolve(true)
+
+    await expect(importPromise).resolves.toBe(false)
+    expect(DBState.db.plugins[0].script).toBe(originalScript)
+    expect(DBState.db.plugins.map((plugin) => plugin.name)).toEqual(['plugin-a', 'plugin-newer'])
+    expect(calls).toEqual([])
+  })
+
+  it('drops remote update if the original plugin row changes while fetch text is in flight', async () => {
+    const remoteUrl = 'https://plugins.example/plugin-a.js'
+    const remoteSource = createDeferred<string>()
+    const calls = stubRemotePluginUpdateFetch({
+      remoteUrl,
+      remoteSource: remoteSource.promise,
+    })
+    DBState.db.plugins = [
+      seedPlugin('plugin-a', {
+        script: 'Risuai.log("old")',
+        updateURL: remoteUrl,
+        versionOfPlugin: '1.0.0',
+      }),
+    ]
+
+    const updatePromise = updatePlugin(DBState.db.plugins[0])
+    await vi.waitFor(() => {
+      expect(fetch).toHaveBeenCalledWith(remoteUrl)
+    })
+
+    DBState.db.plugins[0] = seedPlugin('plugin-a', {
+      script: 'Risuai.log("reinstalled")',
+      updateURL: remoteUrl,
+      versionOfPlugin: '1.0.0',
+    })
+    remoteSource.resolve(
+      pluginSource('plugin-a', {
+        body: 'Risuai.log("updated")',
+        versionOfPlugin: '1.0.1',
+        updateURL: remoteUrl,
+      }),
+    )
+
+    await expect(updatePromise).resolves.toBe(false)
+    expect(DBState.db.plugins[0].script).toBe('Risuai.log("reinstalled")')
+    expect(calls).toEqual([])
+  })
+
+  it('dispatches the plugin patch command for a fresh remote update', async () => {
+    const remoteUrl = 'https://plugins.example/plugin-a.js'
+    const updatedSource = pluginSource('plugin-a', {
+      body: 'Risuai.log("updated")',
+      versionOfPlugin: '1.0.1',
+      updateURL: remoteUrl,
+    })
+    const calls = stubRemotePluginUpdateFetch({
+      remoteUrl,
+      remoteSource: updatedSource,
+    })
+    DBState.db.plugins = [
+      seedPlugin('plugin-a', {
+        script: 'Risuai.log("old")',
+        updateURL: remoteUrl,
+        versionOfPlugin: '1.0.0',
+      }),
+    ]
+
+    await expect(updatePlugin(DBState.db.plugins[0])).resolves.toBe(true)
+
+    expect(DBState.db.plugins[0].script).toBe(updatedSource)
+    await vi.waitFor(() => {
+      expect(calls.some((call) => call.url === '/api/v1/commands/plugins/plugin-a')).toBe(true)
+    })
+    expect(calls.find((call) => call.url === '/api/v1/commands/plugins/plugin-a')).toMatchObject({
+      method: 'PATCH',
+      body: {
+        baseRevision: 10,
+        patch: expect.objectContaining({
+          script: updatedSource,
+          versionOfPlugin: '1.0.1',
+          updateURL: remoteUrl,
+        }),
+      },
+    })
+  })
 })
 
 describe('plugin database command bridge', () => {
