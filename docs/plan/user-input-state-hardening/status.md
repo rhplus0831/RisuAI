@@ -187,6 +187,12 @@ persistence inventory under
   failed touch rollback restores `lastUsed`, `characterIds`, and
   `lastLoadedLoadoutName` only while those live values still match the attempted
   touch.
+  Plugin V2/V3 compatibility character and chat bridge failures now use scoped
+  target-row and per-command-step rollback instead of broad state restore.
+  Failed plugin character writes restore only attempted target-row fields, and
+  failed V3 chat compatibility update sequences preserve earlier accepted
+  metadata, message, or scriptstate steps while rolling back only unaccepted
+  attempted tail effects.
   Phase 2 landed character profile draft dirty top-level field protection;
   prompt-template item row dirty projection merging; whole-key dirty projection
   protection for
@@ -357,6 +363,11 @@ persistence inventory under
 - `src/ts/pluginCommands.ts` and `src/ts/plugins/plugins.svelte.ts` now guard
   plugin DB bridge settings patch rollback by settings-key attempted values
   instead of broad plugin-state snapshots.
+- `src/ts/characterCommands.ts`, `src/ts/chatCommands.ts`,
+  `src/ts/plugins/plugins.svelte.ts`, and `src/ts/plugins/apiV3/v3.svelte.ts`
+  now route plugin compatibility character/chat bridge writes through scoped
+  target-row and accepted-step rollback helpers instead of broad
+  character/chat-state restore.
 - `src/ts/persona.ts` now guards persona create, delete, and reorder rollback by
   attempted collection state rather than restoring full persona snapshots.
 - `src/ts/persona.ts` also now guards queued persona profile saves, direct
@@ -500,7 +511,9 @@ persistence inventory under
   rollback has also landed. Chat fork rollback has also landed. Chat metadata
   PATCH rollback has also landed. Chat import flow rollback has also landed.
   Lorebook import target freshness has also landed. Plugin import/update runtime
-  reload ordering has also landed.
+  reload ordering has also landed. Sidebar chat-folder creation optimism,
+  loadout create/delete/favorite/apply rollback, and plugin compatibility bridge
+  scoped rollback have also landed.
 - [Phase 6](phases/phase-6-resync-memory-navigation.md): pending. Realm, backup,
   and local bundle restore/import resyncs; character/chat import
   refresh/navigation edges; memory job list/progress ordering; route/selection

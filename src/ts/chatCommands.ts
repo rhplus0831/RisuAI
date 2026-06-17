@@ -346,6 +346,46 @@ export function restoreChatScriptstate(snapshot: ChatScriptstateSnapshot): void 
   })
 }
 
+function restoreChatScriptstateAttempt(
+  snapshot: ChatScriptstateSnapshot,
+  attemptedPatch: ChatScriptstatePatch,
+  attemptedDeleteKeys: readonly string[],
+): void {
+  withTrustedServerProjectionWrite(() => {
+    const chat = locateScriptstateChat(snapshot)
+    if (!chat) return
+
+    const keys = new Set([...Object.keys(attemptedPatch), ...sanitizeScriptstateDeleteKeys(attemptedDeleteKeys)])
+    if (keys.size === 0) return
+
+    const previous: Record<string, ChatScriptstateValue | undefined> = {}
+    const attempted: Record<string, ChatScriptstateValue | undefined> = {}
+    const previousScriptstate = snapshot.scriptstate ?? {}
+    for (const key of keys) {
+      if (Object.prototype.hasOwnProperty.call(previousScriptstate, key)) {
+        previous[key] = previousScriptstate[key]
+      }
+      attempted[key] = Object.prototype.hasOwnProperty.call(attemptedPatch, key) ? attemptedPatch[key] : undefined
+    }
+
+    const target = (chat.scriptstate ?? {}) as Record<string, ChatScriptstateValue | undefined>
+    const rolledBack = applyAttemptedFieldRollback({
+      target,
+      previous,
+      attempted,
+      keys,
+      deleteMissingPrevious: true,
+    })
+    if (rolledBack.length === 0) return
+
+    if (Object.keys(target).length === 0) {
+      delete chat.scriptstate
+    } else {
+      chat.scriptstate = target as Chat['scriptstate']
+    }
+  })
+}
+
 function locateSnapshotCharacter(characterId: string | undefined, fallbackIndex: number): character | undefined {
   if (characterId) {
     const byId = DBState.db.characters?.find((candidate) => candidate.chaId === characterId)
@@ -1440,6 +1480,17 @@ export async function dispatchCompatibleChatUpdateScopedAsync(
   return runOptimisticCommandSequenceAsync(factories, () => restoreChatScopedState(previous))
 }
 
+export interface CompatibleChatUpdatePreparation {
+  factories: Array<(baseRevision: number) => Promise<ServerCommandResult>>
+  rollback: () => void
+}
+
+interface CompatibleChatUpdateStep {
+  accepted: boolean
+  factory: (baseRevision: number) => Promise<ServerCommandResult>
+  rollback: () => void
+}
+
 export function mutateChatWithScopedCommand(
   mutate: (chat: Chat, character: character) => void,
   options: MutateChatScopedOptions = {},
@@ -1517,13 +1568,35 @@ export function prepareCompatibleChatUpdate(
   previousChat: Chat | undefined,
   nextChat: Chat | undefined,
   previous: ChatStateSnapshot,
-): {
-  factories: Array<(baseRevision: number) => Promise<ServerCommandResult>>
-  rollback: () => void
-} {
+): CompatibleChatUpdatePreparation {
   return {
     factories: buildCompatibleChatUpdateFactories(previousChat, nextChat),
     rollback: () => restoreChatState(previous),
+  }
+}
+
+// Scoped factory-list form for plugin compatibility bridges. Each server
+// command step tracks acceptance, so if a later step fails, earlier accepted
+// chat effects remain while only unaccepted optimistic metadata/messages/
+// scriptstate changes are rolled back.
+export function prepareCompatibleChatUpdateScoped(
+  previousChat: Chat | undefined,
+  nextChat: Chat | undefined,
+  previous: ChatScopedSnapshot,
+): CompatibleChatUpdatePreparation {
+  const steps = buildCompatibleChatUpdateScopedSteps(previousChat, nextChat, previous)
+  return {
+    factories: steps.map((step) => async (baseRevision) => {
+      const result = await step.factory(baseRevision)
+      if (result.status === 'ok') step.accepted = true
+      return result
+    }),
+    rollback: () => {
+      for (let index = steps.length - 1; index >= 0; index -= 1) {
+        const step = steps[index]
+        if (!step.accepted) step.rollback()
+      }
+    },
   }
 }
 
@@ -1579,6 +1652,109 @@ function buildCompatibleChatUpdateFactories(
     }
   }
   return factories
+}
+
+function buildCompatibleChatUpdateScopedSteps(
+  previousChat: Chat | undefined,
+  nextChat: Chat | undefined,
+  previous: ChatScopedSnapshot,
+): CompatibleChatUpdateStep[] {
+  const steps: CompatibleChatUpdateStep[] = []
+  const chatId = nextChat?.id ?? previousChat?.id
+  if (!chatId || !previousChat || !nextChat) return steps
+
+  const metadataPatch = sanitizeChatPatch(changedChatMetadata(previousChat, nextChat))
+  if (Object.keys(metadataPatch).length > 0) {
+    const rollback = chatMetadataRollbackFromScopedPatch(chatId, metadataPatch, previous)
+    steps.push({
+      accepted: false,
+      factory: (baseRevision) =>
+        updateChatCommand({
+          baseRevision,
+          chatId,
+          patch: metadataPatch,
+          select: false,
+        }),
+      rollback: () => {
+        if (rollback) restoreChatRowMetadata(rollback)
+      },
+    })
+  }
+
+  if (
+    snapshotJson(previousChat.message ?? []) !== snapshotJson(nextChat.message ?? []) &&
+    !hasServerChatMessagePlaceholders(nextChat.message ?? [])
+  ) {
+    for (const message of nextChat.message ?? []) {
+      ensureMessageId(message)
+    }
+    const attemptedMessages = cloneJsonValue(nextChat.message ?? [])
+    const messages = attemptedMessages.map(toMessageSnapshot)
+    steps.push({
+      accepted: false,
+      factory: (baseRevision) =>
+        replaceMessagesCommand({
+          baseRevision,
+          chatId,
+          messages,
+        }),
+      rollback: () => restoreScopedMessageListAttempt(previous, attemptedMessages),
+    })
+  }
+
+  const scriptstatePatch = changedScriptstatePatch(previousChat.scriptstate, nextChat.scriptstate)
+  const commandPatch = sanitizeScriptstatePatch(scriptstatePatch.patch)
+  const commandDeleteKeys = sanitizeScriptstateDeleteKeys(scriptstatePatch.deleteKeys)
+  if (Object.keys(commandPatch).length > 0 || commandDeleteKeys.length > 0) {
+    const scriptstateSnapshot = chatScriptstateSnapshotFromScoped(previous, chatId)
+    steps.push({
+      accepted: false,
+      factory: (baseRevision) =>
+        patchChatScriptstateCommand({
+          baseRevision,
+          chatId,
+          patch: commandPatch,
+          deleteKeys: commandDeleteKeys,
+        }),
+      rollback: () => restoreChatScriptstateAttempt(scriptstateSnapshot, commandPatch, commandDeleteKeys),
+    })
+  }
+
+  return steps
+}
+
+function chatMetadataRollbackFromScopedPatch(
+  chatId: string,
+  patch: ChatSnapshot,
+  previous: ChatScopedSnapshot,
+): ChatRowMetadataSnapshot | null {
+  if (!previous.chat || Object.keys(patch).length === 0) return null
+  const metadata: ChatSnapshot = {}
+  const attempted: ChatSnapshot = {}
+  const previousRow = previous.chat as unknown as Record<string, unknown>
+  for (const key of CHAT_PATCH_ALLOWED_KEYS) {
+    if (!Object.prototype.hasOwnProperty.call(patch, key)) continue
+    if (Object.prototype.hasOwnProperty.call(previousRow, key)) {
+      metadata[key] = cloneJsonValue(previousRow[key])
+    }
+    attempted[key] = cloneJsonValue(patch[key])
+  }
+  if (Object.keys(attempted).length === 0) return null
+  return {
+    selectedCharID: previous.selectedCharID,
+    characterId: previous.characterId,
+    chatId,
+    metadata,
+    attempted,
+  }
+}
+
+function chatScriptstateSnapshotFromScoped(previous: ChatScopedSnapshot, chatId: string): ChatScriptstateSnapshot {
+  return {
+    chatId,
+    selectedCharID: previous.selectedCharID,
+    scriptstate: previous.chat?.scriptstate ? { ...previous.chat.scriptstate } : undefined,
+  }
 }
 
 export function dispatchDeleteChat(chatId: string, previous: ChatStateSnapshot): void {

@@ -47,6 +47,7 @@ import {
   moveCharacterOrderItem,
   normalizeCharacterOrder,
   prepareCompatibleCharacterUpdate,
+  prepareCompatibleCharacterUpdateScoped,
   repairCharacterOrderOptimistically,
   restoreCharacterRow,
   restoreCharacterSupaMemory,
@@ -1885,6 +1886,54 @@ describe('Phase 3 kept-key character diff (M13)', () => {
     expect(prepared.patch).toEqual({})
     expect(prepared.optimisticCharacter).toBeUndefined()
     expect(prepared.factories).toHaveLength(0)
+  })
+
+  it('P5: prepareCompatibleCharacterUpdateScoped rolls back attempted fields without restoring selection', () => {
+    DBState.db = {
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'Old name',
+          desc: 'Old desc',
+          chats: [{ id: 'chat-a', message: [] }],
+        },
+        {
+          chaId: 'char-b',
+          name: 'Sibling name',
+          chats: [{ id: 'chat-b', message: [] }],
+        },
+      ],
+      characterOrder: [],
+      currentChar: 0,
+    } as any
+    selectedCharID.set(0)
+
+    const previousCharacter = DBState.db.characters[0]
+    const previous = currentCharacterRowSnapshot(0)
+    const nextCharacter = {
+      ...previousCharacter,
+      name: 'Attempted name',
+      desc: 'Attempted desc',
+    }
+
+    const prepared = prepareCompatibleCharacterUpdateScoped(previousCharacter, nextCharacter as any, previous)
+    expect(prepared.optimisticCharacter).toBeDefined()
+    DBState.db.characters[0] = prepared.optimisticCharacter as any
+
+    DBState.db.characters[1].name = 'Newer sibling name'
+    ;(DBState.db as any).currentChar = 1
+    selectedCharID.set(1)
+
+    prepared.rollback()
+
+    expect(DBState.db.characters[0]).toMatchObject({
+      chaId: 'char-a',
+      name: 'Old name',
+      desc: 'Old desc',
+    })
+    expect(DBState.db.characters[1].name).toBe('Newer sibling name')
+    expect((DBState.db as any).currentChar).toBe(1)
+    expect(get(selectedCharID)).toBe(1)
   })
 
   it('P2: compatible character updates do not target a replacement chaId when the previous row has no id', async () => {

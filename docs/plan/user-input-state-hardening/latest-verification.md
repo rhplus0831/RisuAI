@@ -7,40 +7,32 @@ workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 5 loadout command rollback. Loadout
-  create/delete/favorite failures now roll back by attempted row or field value,
-  and `applyLoadout()` command sequences keep earlier accepted persona, preset,
-  and module effects while rolling back only failed or unattempted
-  global-variable/touch tail effects.
+- Runtime/code change under test: Phase 5 plugin compatibility bridge scoped
+  rollback. Plugin V2/V3 compatible character writes now use target-row rollback
+  instead of full character-state restore, and V3 compatible chat writes track
+  metadata, message, and scriptstate command acceptance so later failures roll
+  back only unaccepted attempted effects.
 - Commands:
 
 ```bash
-pnpm exec vitest run src/ts/loadout.test.ts
-pnpm exec vitest run src/ts/persona.test.ts src/lib/Setting/Pages/PersonaSettings.svelte.test.ts src/ts/moduleCommands.test.ts
-pnpm exec vitest run src/ts/presetSplit.test.ts
+pnpm exec vitest run src/ts/plugins/plugins.test.ts src/ts/plugins/apiV3/v3.svelte.test.ts src/ts/characterCommands.test.ts src/ts/chatCommands.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
-pnpm exec prettier --check src/ts/loadout.ts src/ts/loadout.test.ts
+pnpm exec prettier --check src/ts/characterCommands.ts src/ts/chatCommands.ts src/ts/plugins/plugins.svelte.ts src/ts/plugins/apiV3/v3.svelte.ts src/ts/plugins/plugins.test.ts src/ts/plugins/apiV3/v3.svelte.test.ts src/ts/characterCommands.test.ts src/ts/chatCommands.test.ts docs/plan/user-input-state-hardening/SOLVE-NOTE.md docs/plan/user-input-state-hardening/status.md docs/plan/user-input-state-hardening/latest-verification.md docs/plan/user-input-state-hardening/phases/phase-5-collection-domains.md
 git diff --check
 ```
 
-- Result: passed on 2026-06-18. Focused loadout coverage passed 14 tests across
-  1 file. The neighboring persona/module command set passed 42 tests across 3
-  files. `src/ts/presetStore.test.ts` is absent in this worktree, so
-  `src/ts/presetSplit.test.ts` was run as the preset-adjacent substitute and
-  passed 4 tests. Both TypeScript checks plus Prettier and `git diff --check`
-  passed.
+- Result: passed on 2026-06-18. Focused plugin compatibility bridge coverage
+  passed 184 tests across 4 files. Both TypeScript checks plus Prettier and
+  `git diff --check` passed.
 - Residual gaps: Multi-group plugin settings patch failures still share the
-  generic settings rollback
-  callback and roll back all still-attempted keys from the failed patch. Full
-  `ScriptDefinitionStateSnapshot` rollback remains broad for rarer discrete
-  callers. Regex delete uses the same scoped module script dispatcher and has
-  optimistic visibility coverage, but this slice does not add a dedicated
-  failing delete rollback/stale-skip test. The remaining Phase 5 collection
-  domains still need focused slices for import collection replacement paths and
-  any residual sidebar edges. Chat fork selection preservation uses the shared
-  created-chat rollback selection helper, but there is no fork-only
-  selection-change regression. Translator preset import
+  generic settings rollback callback and roll back all still-attempted keys from
+  the failed patch. Full `ScriptDefinitionStateSnapshot` rollback remains broad
+  for rarer discrete callers. Regex delete uses the same scoped module script
+  dispatcher and has optimistic visibility coverage, but this slice does not add
+  a dedicated failing delete rollback/stale-skip test. Chat fork selection
+  preservation uses the shared created-chat rollback selection helper, but there
+  is no fork-only selection-change regression. Translator preset import
   file-read/decode freshness does not have dedicated coverage, but its
   command-dispatch failure path uses the now rollback-free create dispatcher.
   Prompt-template item rollback coverage does not explicitly cover delete skip
@@ -99,8 +91,10 @@ git diff --check
   twenty-ninth Phase 5 slice. Server-backed sidebar chat-folder creation
   optimism and failed-create rollback are covered by the thirtieth Phase 5
   slice. Loadout create/delete/favorite/apply rollback is covered by the
-  thirty-first Phase 5 slice. Remaining Phase 5 work owns import collection
-  flows and any residual sidebar collection edges.
+  thirty-first Phase 5 slice. Plugin compatibility bridge scoped rollback is
+  covered by the thirty-second Phase 5 slice. Remaining Phase 5 work owns
+  multi-group plugin settings rollback and any import/sidebar collection
+  residuals.
 - Phase 6 owns Realm/backup/local bundle restore/import resyncs, character/chat
   import refresh/navigation edges, memory job list/progress ordering,
   route/selection hydration, welcome/onboarding delayed setup, and DevTool

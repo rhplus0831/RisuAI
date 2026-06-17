@@ -267,6 +267,22 @@ export function restoreCharacterRow(snapshot: CharacterRowSnapshot): void {
   })
 }
 
+function restoreCompatibleCharacterRowAttempt(snapshot: CharacterRowSnapshot): void {
+  if (!snapshot.character || !snapshot.attempted) return
+  withTrustedServerProjectionWrite(() => {
+    const characters = DBState.db.characters
+    if (!characters) return
+    const index = locateCharacterIndex(characters, snapshot.characterId, snapshot.index)
+    if (index < 0) return
+    applyAttemptedFieldRollback({
+      target: characters[index] as unknown as Record<string, unknown>,
+      previous: snapshot.character as unknown as Record<string, unknown>,
+      attempted: snapshot.attempted,
+      deleteMissingPrevious: true,
+    })
+  })
+}
+
 export function restoreCharacterTrashTime(snapshot: CharacterTrashTimeSnapshot): void {
   withTrustedServerProjectionWrite(() => {
     const characters = DBState.db.characters
@@ -724,6 +740,35 @@ export function prepareCompatibleCharacterUpdate(
     )
   }
   return { ...compatibleUpdate, factories, rollback: () => restoreCharacterState(previous) }
+}
+
+// Scoped factory-list form for plugin compatibility bridges. It uses the same
+// optimistic projection and command patch as the broad helper, but failed
+// commands roll back only the attempted target-row fields. Later sibling edits
+// and selection changes are left alone.
+export function prepareCompatibleCharacterUpdateScoped(
+  previousCharacter: character | undefined,
+  nextCharacter: character | undefined,
+  previous: CharacterRowSnapshot,
+): CompatibleCharacterUpdatePreparation {
+  const factories: Array<(baseRevision: number) => Promise<ServerCommandResult>> = []
+  const compatibleUpdate = prepareCompatibleCharacterProjectionUpdate(previousCharacter, nextCharacter)
+  if (compatibleUpdate.characterId && Object.keys(compatibleUpdate.patch).length > 0) {
+    const characterId = compatibleUpdate.characterId
+    const commandPatch = compatibleUpdate.patch
+    factories.push((baseRevision) =>
+      updateCharacterCommand({
+        baseRevision,
+        characterId,
+        patch: commandPatch,
+      }),
+    )
+  }
+  return {
+    ...compatibleUpdate,
+    factories,
+    rollback: () => restoreCompatibleCharacterRowAttempt({ ...previous, attempted: compatibleUpdate.patch }),
+  }
 }
 
 export function prepareCompatibleCharacterProjectionUpdate(

@@ -33,7 +33,7 @@ import {
   dispatchEnabledModulesPatch,
   dispatchModuleCollectionPatch,
 } from '../moduleCommands'
-import { currentCharacterStateSnapshot, prepareCompatibleCharacterUpdate } from '../characterCommands'
+import { currentCharacterRowSnapshot, prepareCompatibleCharacterUpdateScoped } from '../characterCommands'
 import { runOptimisticCommandSequence } from '../chatCommands'
 import { canUseServerCommands } from '../server/commands'
 import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
@@ -839,9 +839,9 @@ export const getV2PluginAPIs = () => {
 
       const previousCharacter = DBState.db.characters?.[charid]
       assertNoUnsupportedCharacterChanges(previousCharacter, char, 'setChar')
-      const previous = currentCharacterStateSnapshot()
+      const previous = currentCharacterRowSnapshot(charid)
       const previousCharacterSnapshot = previousCharacter ? $state.snapshot(previousCharacter) : undefined
-      const { factories, optimisticCharacter, rollback } = prepareCompatibleCharacterUpdate(
+      const { factories, optimisticCharacter, rollback } = prepareCompatibleCharacterUpdateScoped(
         previousCharacterSnapshot,
         char,
         previous,

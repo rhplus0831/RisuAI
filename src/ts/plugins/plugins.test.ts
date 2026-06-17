@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { get } from 'svelte/store'
 
 const pluginImportMocks = vi.hoisted(() => ({
   alertConfirm: vi.fn(),
@@ -740,6 +741,55 @@ describe('plugin database command bridge', () => {
     expect(patch).not.toHaveProperty('customscript')
     expect(patch).not.toHaveProperty('triggerscript')
     expect(patch).not.toHaveProperty('modules')
+  })
+
+  it('setChar failure rolls back attempted target fields without clobbering sibling edits or selection', async () => {
+    const calls = stubCommandFetch({ failCommands: true })
+    const apis = getV2PluginAPIs()
+    selectedCharID.set(0)
+    DBState.db.characters = [
+      {
+        chaId: 'char-a',
+        name: 'Old name',
+        desc: 'Old desc',
+        chats: [{ id: 'chat-a', message: [] }],
+      },
+      {
+        chaId: 'char-b',
+        name: 'Sibling name',
+        chats: [{ id: 'chat-b', message: [] }],
+      },
+    ] as any
+    ;(DBState.db as any).currentChar = 0
+
+    apis.setChar({
+      chaId: 'char-a',
+      name: 'Attempted name',
+      desc: 'Attempted desc',
+      chats: [{ id: 'chat-a', message: [] }],
+    })
+
+    expect(DBState.db.characters[0]).toMatchObject({
+      chaId: 'char-a',
+      name: 'Attempted name',
+      desc: 'Attempted desc',
+    })
+
+    DBState.db.characters[1].name = 'Newer sibling name'
+    ;(DBState.db as any).currentChar = 1
+    selectedCharID.set(1)
+
+    await vi.waitFor(() => {
+      expect(calls.some((call) => call.url === '/api/v1/commands/characters/char-a')).toBe(true)
+    })
+    await vi.waitFor(() => {
+      expect(DBState.db.characters[0].name).toBe('Old name')
+    })
+
+    expect(DBState.db.characters[0].desc).toBe('Old desc')
+    expect(DBState.db.characters[1].name).toBe('Newer sibling name')
+    expect((DBState.db as any).currentChar).toBe(1)
+    expect(get(selectedCharID)).toBe(1)
   })
 
   it('setChar rejects unsupported character field changes before projection mutation and command dispatch', async () => {

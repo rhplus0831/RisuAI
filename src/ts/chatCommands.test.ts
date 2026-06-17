@@ -59,6 +59,7 @@ import {
   dispatchUpdateChatFolder,
   dispatchUpdateChatNoteScoped,
   dispatchUpdateMessageScoped,
+  prepareCompatibleChatUpdateScoped,
   restoreChatFolderRowMetadata,
   restoreChatRowMetadata,
   restoreChatState,
@@ -2562,6 +2563,54 @@ describe('Phase 2 chat-scoped message dispatch', () => {
       },
     ])
     expect(DBState.db.characters[1].chats[0].note).toBe('sibling concurrent')
+  })
+
+  it('P5: scoped compatible chat preparation preserves accepted metadata when message persistence fails', async () => {
+    const calls: CapturedFetch[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        calls.push({
+          url,
+          method: init.method ?? 'GET',
+          authHeader: null,
+          body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+        })
+
+        if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+        if (url === '/api/v1/commands/chats/chat-a' && init.method === 'PATCH') {
+          return jsonResponse({
+            revision: 11,
+            event: { type: 'chat.updated', revision: 11, resource: 'chat', id: 'chat-a' },
+            selectedChatId: 'chat-a',
+          })
+        }
+        if (url === '/api/v1/commands/chats/chat-a/messages' && init.method === 'PUT') {
+          return jsonResponse({ error: 'message replace failed' }, 500)
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    const previousChat = jsonClone(DBState.db.characters[0].chats[0])
+    previousChat.message = [{ role: 'user', data: 'before', chatId: 'm-before' }]
+    DBState.db.characters[0].chats[0] = jsonClone(previousChat)
+    const previous = currentChatScopedSnapshot()
+    const nextChat = {
+      ...jsonClone(previousChat),
+      name: 'Accepted name',
+      message: [{ role: 'char', data: 'attempted', chatId: 'm-attempted' }],
+    }
+
+    DBState.db.characters[0].chats[0] = jsonClone(nextChat)
+
+    const prepared = prepareCompatibleChatUpdateScoped(previousChat, nextChat, previous)
+    runOptimisticCommandSequence(prepared.factories, prepared.rollback)
+    await waitForCallCount(calls, 3)
+
+    expect(DBState.db.characters[0].chats[0].name).toBe('Accepted name')
+    expect(DBState.db.characters[0].chats[0].message).toEqual([{ role: 'user', data: 'before', chatId: 'm-before' }])
   })
 })
 

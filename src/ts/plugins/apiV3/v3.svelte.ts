@@ -12,11 +12,10 @@ import { SandboxHost } from './factory'
 import { getDatabase } from 'src/ts/storage/database.svelte'
 import { currentPluginStateSnapshot, dispatchUpdatePlugin } from 'src/ts/pluginCommands'
 import { canUseServerCommands, patchServerBackedSettings } from 'src/ts/server/commands'
-import { currentCharacterStateSnapshot, prepareCompatibleCharacterUpdate } from 'src/ts/characterCommands'
+import { currentCharacterRowSnapshot, prepareCompatibleCharacterUpdateScoped } from 'src/ts/characterCommands'
 import {
   appendCurrentChatUserMessageForSend,
-  currentChatStateSnapshot,
-  prepareCompatibleChatUpdate,
+  prepareCompatibleChatUpdateScoped,
   runOptimisticCommandSequence,
 } from 'src/ts/chatCommands'
 import {
@@ -1126,11 +1125,11 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin, lifecycl
 
         const previousCharacter = DBState.db.characters[charId]
         assertNoUnsupportedCharacterChanges(previousCharacter, char, 'setCharacterToIndex')
-        const previous = currentCharacterStateSnapshot()
+        const previous = currentCharacterRowSnapshot(index)
         const previousCharacterSnapshot = $state.snapshot(previousCharacter)
         // Route through the sequencer so this call shares one advancing revision
         // baseline with other makeRisuaiAPIV3 command factories.
-        const { factories, optimisticCharacter, rollback } = prepareCompatibleCharacterUpdate(
+        const { factories, optimisticCharacter, rollback } = prepareCompatibleCharacterUpdateScoped(
           previousCharacterSnapshot,
           char,
           previous,
@@ -1165,14 +1164,19 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin, lifecycl
           if (canUseServerCommands()) {
             assertNoUnsupportedChatChanges(previousChat, chat, 'setChatToIndex')
           }
-          const previous = currentChatStateSnapshot()
           const previousChatSnapshot = $state.snapshot(previousChat)
+          const previous = {
+            selectedCharID: get(selectedCharID),
+            characterId: DBState.db.characters[charId]?.chaId,
+            chatId: previousChatSnapshot.id,
+            chat: previousChatSnapshot,
+          }
           withTrustedServerProjectionWrite(() => {
             DBState.db.characters[charId].chats[chatIndex] = chat
           })
           // Route through the sequencer so this call shares one advancing revision
           // baseline with other makeRisuaiAPIV3 command factories.
-          const { factories, rollback } = prepareCompatibleChatUpdate(previousChatSnapshot, chat, previous)
+          const { factories, rollback } = prepareCompatibleChatUpdateScoped(previousChatSnapshot, chat, previous)
           runOptimisticCommandSequence(factories, rollback)
         }
       }

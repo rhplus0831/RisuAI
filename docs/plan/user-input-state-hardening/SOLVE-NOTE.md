@@ -96,7 +96,9 @@ sidebar chat/folder reorder rollback has landed for folder drag reorder command
 sequences. Loadout create/delete/favorite rollback now scopes to attempted rows
 or favorite values, and `applyLoadout()` now keeps earlier server-accepted
 persona, preset, and module sequence steps while rolling back only failed or
-unattempted global-variable and touch tail effects.
+unattempted global-variable and touch tail effects. Plugin V2/V3 compatibility
+character and chat bridge rollback now uses scoped target-row and per-command
+step helpers instead of broad character/chat-state restores.
 
 Next manager loop:
 
@@ -215,8 +217,12 @@ Explicit deferrals:
   chat-folder creation optimism has landed: server-backed create-folder now
   inserts the attempted folder locally, dispatch serializes the frozen attempted
   folder snapshot, and failed creates preserve attempted folders that newer chat
-  moves reference. Remaining import collection flows and residual sidebar
-  collection edges remain Phase 5 work.
+  moves reference. Phase 5 loadout create/delete/favorite/apply rollback has
+  landed for attempted rows, attempted favorite values, and accepted
+  `applyLoadout()` sequence steps. Phase 5 plugin compatibility bridge scoped
+  rollback has landed for V2/V3 character writes and V3 chat compatibility
+  update sequences. Multi-group plugin settings rollback, import collection
+  flows, and residual sidebar collection edges remain Phase 5 work.
 - `src/ts/compatibilityAdapters.test.ts` currently has a pre-existing failure in
   `routes MCP character lorebook writes through lorebook commands in
   server-backed web mode` at line 626. It reproduced in a detached baseline

@@ -234,6 +234,12 @@ attempted value, and failed `applyLoadout()` sequences keep earlier
 server-accepted persona, preset, and module steps while rolling back only the
 failed or unattempted global-variable and touch tail effects.
 
+Thirty-second landed slice: plugin V2/V3 compatibility character and chat
+bridges now use scoped rollback helpers instead of broad state restore. Failed
+plugin character writes restore only attempted target-row fields, while V3 chat
+compatibility sequences preserve earlier accepted metadata, message, or
+scriptstate steps and roll back only the unaccepted attempted tail.
+
 ## Anchors
 
 - `src/lib/Setting/botpreset.svelte`

@@ -145,8 +145,8 @@ vi.mock('src/ts/characterCommands', () => ({
     'coldstorage',
     'coldStoragedChats',
   ]),
-  currentCharacterStateSnapshot: vi.fn(() => ({})),
-  prepareCompatibleCharacterUpdate: vi.fn(() => ({ factories: [], rollback: vi.fn() })),
+  currentCharacterRowSnapshot: vi.fn(() => ({})),
+  prepareCompatibleCharacterUpdateScoped: vi.fn(() => ({ factories: [], rollback: vi.fn() })),
 }))
 
 vi.mock('src/ts/chatCommands', () => ({
@@ -165,8 +165,7 @@ vi.mock('src/ts/chatCommands', () => ({
     'bookmarkNames',
     'modules',
   ]),
-  currentChatStateSnapshot: vi.fn(() => ({})),
-  prepareCompatibleChatUpdate: vi.fn(() => ({ factories: [], rollback: vi.fn() })),
+  prepareCompatibleChatUpdateScoped: vi.fn(() => ({ factories: [], rollback: vi.fn() })),
   runOptimisticCommandSequence: vi.fn(),
 }))
 
@@ -257,10 +256,10 @@ vi.mock('src/ts/server/projectionWriteGuard.svelte', () => ({
 }))
 
 import { customProviderStore, pluginV2 } from '../plugins.svelte'
-import { prepareCompatibleCharacterUpdate } from 'src/ts/characterCommands'
+import { prepareCompatibleCharacterUpdateScoped } from 'src/ts/characterCommands'
 import {
   appendCurrentChatUserMessageForSend,
-  prepareCompatibleChatUpdate,
+  prepareCompatibleChatUpdateScoped,
   runOptimisticCommandSequence,
 } from 'src/ts/chatCommands'
 import { sendChat as processSendChat } from 'src/ts/process/index.svelte'
@@ -299,8 +298,8 @@ beforeEach(async () => {
     pluginCustomStorage: {},
     currentPluginProvider: '',
   }
-  vi.mocked(prepareCompatibleCharacterUpdate).mockClear()
-  vi.mocked(prepareCompatibleChatUpdate).mockClear()
+  vi.mocked(prepareCompatibleCharacterUpdateScoped).mockClear()
+  vi.mocked(prepareCompatibleChatUpdateScoped).mockClear()
   vi.mocked(runOptimisticCommandSequence).mockClear()
   vi.mocked(appendCurrentChatUserMessageForSend).mockReset()
   vi.mocked(processSendChat).mockReset()
@@ -332,7 +331,7 @@ describe('V3 character command bridge', () => {
     mockDbState.db.characters = {
       0: existingCharacter,
     }
-    vi.mocked(prepareCompatibleCharacterUpdate).mockReturnValueOnce({
+    vi.mocked(prepareCompatibleCharacterUpdateScoped).mockReturnValueOnce({
       characterId: 'char-a',
       patch: { name: 'New name' },
       optimisticCharacter,
@@ -349,7 +348,7 @@ describe('V3 character command bridge', () => {
 
     api.setCharacterToIndex(0, pluginCharacter)
 
-    expect(prepareCompatibleCharacterUpdate).toHaveBeenCalledWith(
+    expect(prepareCompatibleCharacterUpdateScoped).toHaveBeenCalledWith(
       expect.objectContaining({ chaId: 'char-a' }),
       pluginCharacter,
       expect.anything(),
@@ -383,7 +382,7 @@ describe('V3 character command bridge', () => {
     )
 
     expect(mockDbState.db.characters[0]).toBe(existingCharacter)
-    expect(prepareCompatibleCharacterUpdate).not.toHaveBeenCalled()
+    expect(prepareCompatibleCharacterUpdateScoped).not.toHaveBeenCalled()
     expect(runOptimisticCommandSequence).not.toHaveBeenCalled()
   })
 })
@@ -464,7 +463,7 @@ describe('V3 chat command bridge', () => {
     )
 
     expect(mockDbState.db.characters[0].chats[0]).toBe(existingChat)
-    expect(prepareCompatibleChatUpdate).not.toHaveBeenCalled()
+    expect(prepareCompatibleChatUpdateScoped).not.toHaveBeenCalled()
     expect(runOptimisticCommandSequence).not.toHaveBeenCalled()
   })
 
@@ -494,7 +493,7 @@ describe('V3 chat command bridge', () => {
     )
 
     expect(mockDbState.db.characters[0].chats[0]).toBe(existingChat)
-    expect(prepareCompatibleChatUpdate).not.toHaveBeenCalled()
+    expect(prepareCompatibleChatUpdateScoped).not.toHaveBeenCalled()
     expect(runOptimisticCommandSequence).not.toHaveBeenCalled()
   })
 
@@ -515,7 +514,7 @@ describe('V3 chat command bridge', () => {
         chats: [existingChat],
       },
     }
-    vi.mocked(prepareCompatibleChatUpdate).mockReturnValueOnce({ factories, rollback })
+    vi.mocked(prepareCompatibleChatUpdateScoped).mockReturnValueOnce({ factories, rollback })
     const api = __v3PluginLifecycleTestHooks.createApi(seedV3Plugin('plugin-a')) as any
     const pluginChat = {
       ...existingChat,
@@ -528,7 +527,12 @@ describe('V3 chat command bridge', () => {
     api.setChatToIndex(0, 0, pluginChat)
 
     expect(mockDbState.db.characters[0].chats[0]).toBe(pluginChat)
-    expect(prepareCompatibleChatUpdate).toHaveBeenCalledWith(existingChat, pluginChat, expect.anything())
+    expect(prepareCompatibleChatUpdateScoped).toHaveBeenCalledWith(existingChat, pluginChat, {
+      selectedCharID: 'char-a',
+      characterId: 'char-a',
+      chatId: 'chat-a',
+      chat: existingChat,
+    })
     expect(runOptimisticCommandSequence).toHaveBeenCalledWith(factories, rollback)
   })
 })
