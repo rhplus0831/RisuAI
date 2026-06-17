@@ -1,6 +1,6 @@
 # Phase 3: Upload, Import & Fetch Callbacks
 
-Status: pending.
+Status: active.
 
 Goal: guard long-running file, upload, image decode, import, and remote-fetch
 callbacks so late results do not mutate a newer draft or different target.
@@ -17,6 +17,10 @@ callbacks so late results do not mutate a newer draft or different target.
   persistence.
 - Prefer helpers that return parsed/uploaded results and leave mutation to the
   still-current caller.
+
+First landed slice: custom background upload/cancel/error callbacks now use a
+latest-operation token and live placeholder check before async picker/upload
+completion can apply, restore, or alert.
 
 ## Anchors
 

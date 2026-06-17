@@ -6,6 +6,9 @@
   import Check from 'src/lib/UI/GUI/CheckInput.svelte'
   import { applyServerBackedSetting } from 'src/ts/server/settingsBridge.svelte'
   import { alertError } from 'src/ts/alert'
+  import { createLatestOperationGuard } from 'src/ts/server/staleStateGuards'
+
+  const customBackgroundOperationGuard = createLatestOperationGuard<'customBackground'>()
 
   function formatUploadError(error: unknown) {
     if (error instanceof Error) return error.message
@@ -17,23 +20,34 @@
   <Check
     check={DBState.db.customBackground !== ''}
     onChange={async (check) => {
+      const token = customBackgroundOperationGuard.issue('customBackground')
       const previousBackground = DBState.db.customBackground
-      if (check) {
-        try {
-          applyServerBackedSetting('customBackground', '-')
-          const d = await selectSingleFile(['png', 'webp', 'gif'])
-          if (!d) {
-            applyServerBackedSetting('customBackground', previousBackground)
-            return
-          }
-          const img = await saveImage(d.data)
-          applyServerBackedSetting('customBackground', img)
-        } catch (error) {
-          applyServerBackedSetting('customBackground', previousBackground)
-          alertError(formatUploadError(error))
+      const isCurrentUpload = () =>
+        customBackgroundOperationGuard.isLatest(token) && DBState.db.customBackground === '-'
+
+      try {
+        if (!check) {
+          applyServerBackedSetting('customBackground', '')
+          return
         }
-      } else {
-        applyServerBackedSetting('customBackground', '')
+
+        applyServerBackedSetting('customBackground', '-')
+        const d = await selectSingleFile(['png', 'webp', 'gif'])
+        if (!isCurrentUpload()) return
+        if (!d) {
+          applyServerBackedSetting('customBackground', previousBackground)
+          return
+        }
+
+        const img = await saveImage(d.data)
+        if (!isCurrentUpload()) return
+        applyServerBackedSetting('customBackground', img)
+      } catch (error) {
+        if (!isCurrentUpload()) return
+        applyServerBackedSetting('customBackground', previousBackground)
+        alertError(formatUploadError(error))
+      } finally {
+        customBackgroundOperationGuard.clear(token)
       }
     }}
     name={language.useCustomBackground} />

@@ -44,13 +44,14 @@ adopters. Phase 2 landed dirty projection protection for character profile
 drafts, prompt-template item rows, generic settings drafts, selected persona
 profile fields, translator preset `name`/`prompt`/`maxResponse` fields,
 lorebook entry drafts, and selected-character script/trigger draft rows while
-keeping clean projection fields refreshed.
+keeping clean projection fields refreshed. Phase 3 is in progress; custom
+background upload/cancel/error callback freshness has landed.
 
 Next manager loop:
 
 1. Read `README.md`, `STRUCTURE.md`, `status.md`, `latest-verification.md`, and
    `phases/phase-3-upload-import-fetch-callbacks.md`.
-2. Spawn an explorer agent for the first Phase 3 upload/import/fetch callback
+2. Spawn an explorer agent for the next Phase 3 upload/import/fetch callback
    slice.
 3. Spawn a worker agent for the selected Phase 3 slice, then a verification agent
    after the worker completes.

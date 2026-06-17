@@ -48,10 +48,27 @@ type MountedComponent = Parameters<typeof unmount>[0]
 let target: HTMLElement
 let component: MountedComponent | undefined
 
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve
+    reject = promiseReject
+  })
+
+  return { promise, resolve, reject }
+}
+
 function checkbox() {
   const input = target.querySelector<HTMLInputElement>('input[type="checkbox"]')
   if (!input) throw new Error('custom background checkbox not found')
   return input
+}
+
+async function flushAsync() {
+  await Promise.resolve()
+  await Promise.resolve()
+  await tick()
 }
 
 beforeEach(() => {
@@ -64,6 +81,11 @@ beforeEach(() => {
   backgroundMocks.applyServerBackedSetting.mockReset()
   backgroundMocks.saveImage.mockReset()
   backgroundMocks.selectSingleFile.mockReset()
+  backgroundMocks.applyServerBackedSetting.mockImplementation((key: string, value: unknown) => {
+    if (key === 'customBackground') {
+      DBState.db.customBackground = value as string
+    }
+  })
 })
 
 afterEach(() => {
@@ -97,6 +119,88 @@ describe('CustomBackgroundToggle upload rollback', () => {
       ['customBackground', '-'],
       ['customBackground', ''],
     ])
+    expect(DBState.db.customBackground).toBe('')
     expect(backgroundMocks.alertError).toHaveBeenCalledWith('upload failed')
+  })
+
+  it('drops stale upload completion after a later disable', async () => {
+    const selectedData = new Uint8Array([4, 5, 6])
+    const upload = createDeferred<string>()
+    backgroundMocks.selectSingleFile.mockResolvedValue({
+      data: selectedData,
+      name: 'background.png',
+    })
+    backgroundMocks.saveImage.mockReturnValue(upload.promise)
+
+    component = mount(CustomBackgroundToggle, { target })
+    checkbox().click()
+    await vi.waitFor(() => {
+      expect(backgroundMocks.saveImage).toHaveBeenCalledWith(selectedData)
+    })
+    await tick()
+
+    expect(DBState.db.customBackground).toBe('-')
+
+    checkbox().click()
+    await tick()
+
+    expect(DBState.db.customBackground).toBe('')
+
+    upload.resolve('uploaded-background')
+    await flushAsync()
+
+    expect(backgroundMocks.applyServerBackedSetting.mock.calls).toEqual([
+      ['customBackground', '-'],
+      ['customBackground', ''],
+    ])
+    expect(DBState.db.customBackground).toBe('')
+    expect(backgroundMocks.alertError).not.toHaveBeenCalled()
+  })
+
+  it('does not restore the previous background after a stale picker cancel', async () => {
+    const picker = createDeferred<undefined>()
+    backgroundMocks.selectSingleFile.mockReturnValue(picker.promise)
+
+    component = mount(CustomBackgroundToggle, { target })
+    checkbox().click()
+    await vi.waitFor(() => {
+      expect(backgroundMocks.selectSingleFile).toHaveBeenCalledWith(['png', 'webp', 'gif'])
+    })
+
+    expect(DBState.db.customBackground).toBe('-')
+
+    DBState.db.customBackground = 'newer-background'
+    picker.resolve(undefined)
+    await flushAsync()
+
+    expect(backgroundMocks.applyServerBackedSetting.mock.calls).toEqual([['customBackground', '-']])
+    expect(DBState.db.customBackground).toBe('newer-background')
+    expect(backgroundMocks.alertError).not.toHaveBeenCalled()
+  })
+
+  it('does not restore or alert after a stale upload error', async () => {
+    const selectedData = new Uint8Array([7, 8, 9])
+    const upload = createDeferred<string>()
+    backgroundMocks.selectSingleFile.mockResolvedValue({
+      data: selectedData,
+      name: 'background.png',
+    })
+    backgroundMocks.saveImage.mockReturnValue(upload.promise)
+
+    component = mount(CustomBackgroundToggle, { target })
+    checkbox().click()
+    await vi.waitFor(() => {
+      expect(backgroundMocks.saveImage).toHaveBeenCalledWith(selectedData)
+    })
+
+    expect(DBState.db.customBackground).toBe('-')
+
+    DBState.db.customBackground = 'newer-background'
+    upload.reject(new Error('upload failed'))
+    await flushAsync()
+
+    expect(backgroundMocks.applyServerBackedSetting.mock.calls).toEqual([['customBackground', '-']])
+    expect(DBState.db.customBackground).toBe('newer-background')
+    expect(backgroundMocks.alertError).not.toHaveBeenCalled()
   })
 })
