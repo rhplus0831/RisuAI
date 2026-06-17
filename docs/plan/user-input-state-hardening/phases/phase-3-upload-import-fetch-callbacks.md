@@ -87,6 +87,11 @@ preset id and bias snapshots, and fresh JSON-array resolution before
 `biasDraft.value` can change. The additional-params import row is current audit
 drift because the live UI has no import button.
 
+Fifteenth landed slice: sidebar character-folder image upload callbacks now use
+latest operation tokens issued from `selectSingleFile`'s `onFileSelected` hook,
+stable folder ids, image-field snapshots, and fresh `{ imgFile, img }` patch
+resolution before uploaded folder images can apply.
+
 ## Anchors
 
 - `src/lib/ChatScreens/DefaultChatScreen.svelte`

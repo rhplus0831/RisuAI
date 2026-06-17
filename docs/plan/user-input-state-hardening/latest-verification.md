@@ -7,29 +7,27 @@ hardening workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 3 BotSettings bias JSON import callback
-  freshness. The bias import button now captures the selected prompt preset id
-  and current bias snapshot before the picker, starts the import operation only
-  after a real JSON file is selected, rejects stale preset changes/manual bias
-  edits/newer imports, parses once, and mutates `biasDraft.value` only while the
-  operation is still fresh.
+- Runtime/code change under test: Phase 3 sidebar character-folder image upload
+  callback freshness. Folder image upload now captures a stable folder id plus
+  image-only snapshot, starts the operation from `selectSingleFile`'s
+  `onFileSelected` hook after a real image file is selected, rechecks freshness
+  around upload/source resolution, resolves by folder id, and applies only fresh
+  `{ imgFile, img }` fields.
 - Commands:
 
 ```bash
-pnpm exec vitest run src/ts/server/biasImport.test.ts src/lib/Setting/Pages/BotSettings.svelte.test.ts src/ts/server/staleStateGuards.test.ts
+pnpm exec vitest run src/ts/server/characterFolderImageUpload.test.ts src/ts/characterCommands.test.ts src/ts/server/staleStateGuards.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 git diff --check
 ```
 
-- Result: passed on 2026-06-17. The bias-import/stale-guard focused Vitest set
-  passed 3 files and 22 tests. Both TypeScript checks and `git diff --check`
-  passed.
-- Residual gaps: no DOM/file-picker integration test covers the alert path.
-  `parseBiasImport` preserves the prior behavior of accepting any JSON array and
-  does not validate tuple element shape. Additional-params import is current
-  audit drift because the live UI has add/remove/key/value controls but no import
-  button. This slice does not cover prompt/persona imports, module import,
+- Result: passed on 2026-06-17. The folder-image-upload/stale-guard focused
+  Vitest set passed 3 files and 60 tests. Both TypeScript checks and
+  `git diff --check` passed.
+- Residual gaps: no browser-level picker smoke was run. Stale uploads can leave
+  unused uploaded asset ids, which is accepted for this slice. This slice does
+  not cover sidebar folder/list rollback, prompt/persona imports, module import,
   Realm/backup refresh fences, or collection rollback.
 
 ## Required Closeout Proof

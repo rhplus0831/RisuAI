@@ -45,6 +45,14 @@
     updateCharacterOrderFolder,
     type CharacterOrderDragPosition,
   } from 'src/ts/characterCommands'
+  import {
+    beginCharacterFolderImageUpload,
+    captureCharacterFolderImageUploadTarget,
+    clearCharacterFolderImageUpload,
+    isFreshCharacterFolderImageUpload,
+    resolveFreshCharacterFolderImageUploadPatch,
+    type CharacterFolderImageUploadOperation,
+  } from 'src/ts/server/characterFolderImageUpload'
   import { createSidebarCharacterListMemo, type SidebarCharacterListItem } from './sidebarCharList'
   import { characterRoutePath, navigate } from 'src/ts/router'
   let sideBarMode = $state(0)
@@ -73,6 +81,72 @@
   function openPlaygroundRoute() {
     reseter()
     navigate($selectedCharID === -1 && $PlaygroundStore !== 0 ? '/' : '/playground')
+  }
+
+  async function uploadCharacterFolderImage(folderId: string) {
+    let folderImageUpload: CharacterFolderImageUploadOperation | null = null
+    const folderImage = await selectSingleFile(['png', 'jpg', 'webp'], {
+      onFileSelected: () => {
+        const folderImageTarget = captureCharacterFolderImageUploadTarget({
+          characterOrder: DBState.db.characterOrder,
+          folderId,
+        })
+        if (!folderImageTarget) return
+        folderImageUpload = beginCharacterFolderImageUpload(folderImageTarget)
+      },
+    })
+
+    if (!folderImage || !folderImageUpload) {
+      return
+    }
+    const freshFolderImageUpload = folderImageUpload
+
+    try {
+      if (
+        !isFreshCharacterFolderImageUpload({
+          operation: freshFolderImageUpload,
+          characterOrder: DBState.db.characterOrder,
+        })
+      ) {
+        return
+      }
+
+      const folderImageData = await saveAsset(folderImage.data)
+
+      if (
+        !isFreshCharacterFolderImageUpload({
+          operation: freshFolderImageUpload,
+          characterOrder: DBState.db.characterOrder,
+        })
+      ) {
+        return
+      }
+
+      const folderImageSrc = await getFileSrc(folderImageData)
+
+      if (
+        !isFreshCharacterFolderImageUpload({
+          operation: freshFolderImageUpload,
+          characterOrder: DBState.db.characterOrder,
+        })
+      ) {
+        return
+      }
+
+      const freshImagePatch = resolveFreshCharacterFolderImageUploadPatch({
+        operation: freshFolderImageUpload,
+        characterOrder: DBState.db.characterOrder,
+        patch: { imgFile: folderImageData, img: folderImageSrc },
+      })
+
+      if (!freshImagePatch) {
+        return
+      }
+
+      updateCharacterOrderFolder(freshFolderImageUpload.folderId, freshImagePatch)
+    } finally {
+      clearCharacterFolderImageUpload(freshFolderImageUpload)
+    }
   }
 
   function openCharacterRoute(index: number) {
@@ -373,19 +447,7 @@
                             break
 
                           case 1:
-                            const folderImage = await selectSingleFile(['png', 'jpg', 'webp'])
-
-                            if (!folderImage) {
-                              return
-                            }
-
-                            const folderImageData = await saveAsset(folderImage.data)
-
-                            const folderImageSrc = await getFileSrc(folderImageData)
-                            updateCharacterOrderFolder(
-                              { id: char.id, index: ind },
-                              { imgFile: folderImageData, img: folderImageSrc },
-                            )
+                            await uploadCharacterFolderImage(char.id)
                             break
                         }
                       }

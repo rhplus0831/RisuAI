@@ -46,6 +46,9 @@ the input persistence inventory under
   selection and image upload before applying only fresh icon fields.
   BotSettings bias JSON imports now guard selected prompt preset id and bias
   snapshots around JSON file selection/read before mutating `biasDraft.value`.
+  Sidebar character-folder image uploads now guard by stable folder id and
+  image-field snapshots around image selection, upload, and source resolution
+  before applying fresh folder image fields.
   Phase 2 landed character profile draft dirty top-level field protection;
   prompt-template item row dirty projection merging; whole-key dirty projection
   protection for
@@ -137,8 +140,12 @@ the input persistence inventory under
 - `src/ts/server/biasImport.ts` now centralizes BotSettings bias JSON import
   target capture, latest-operation tracking, JSON array parsing, and fresh bias
   value resolution for `src/lib/Setting/Pages/BotSettings.svelte`.
-- Verification state: Phase 3 BotSettings bias JSON import callback validation is
-  recorded in `latest-verification.md`.
+- `src/ts/server/characterFolderImageUpload.ts` now centralizes sidebar
+  character-folder image upload target capture, latest-operation tracking,
+  image-only snapshot freshness, and fresh `{ imgFile, img }` patch resolution
+  for `src/lib/SideBars/Sidebar.svelte`.
+- Verification state: Phase 3 sidebar character-folder image upload callback
+  validation is recorded in `latest-verification.md`.
 - Highest issue density:
   - Character editor: 52 issue rows, mostly dirty projection and unguarded
     upload callbacks.
@@ -192,8 +199,10 @@ the input persistence inventory under
   persona icon uploads now guard stale completions;
   BotSettings bias JSON imports now guard stale completions; the previously
   listed additional-params import is audit drift because the live UI has no
-  import button; remaining import helpers and remaining dashboard/import
-  persistence surfaces remain pending. NanoGPT
+  import button; sidebar character-folder image uploads now guard stale
+  completions; NovelAI `.naiv4vibe` import, EasyPanel separate-parameters
+  import, and remaining dashboard/import persistence surfaces remain pending.
+  NanoGPT
   dashboard subscription-state fetch persistence now guards stale completions.
 - [Phase 4](phases/phase-4-chat-messages-generation.md): pending. Chat,
   message, reroll, trigger, suggestion, and generation target freshness.
@@ -340,6 +349,12 @@ the input persistence inventory under
     and lets `BotSettings.svelte` mutate `biasDraft.value` only while preset and
     bias state are fresh. The stale-audit additional-params import row is source
     drift; the live additional-params block currently has no import button.
+  - Phase 3 sidebar character-folder image upload slice:
+    `characterFolderImageUpload.ts` captures stable folder id and image-field
+    snapshots only, starts tokens from `selectSingleFile`'s `onFileSelected`
+    hook after a real image file is selected, tolerates reorder/rename/color
+    changes with unchanged image fields, and lets `Sidebar.svelte` apply only a
+    fresh `{ imgFile, img }` patch by folder id.
   - Phase 4: `restoreChatScopedState`, chat/message/generation freshness, and
     message update/delete/truncate/replace freshness.
   - Phase 5: create/delete/reorder/import/select and broad collection rollback
