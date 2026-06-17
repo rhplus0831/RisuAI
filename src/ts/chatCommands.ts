@@ -466,6 +466,46 @@ interface ChatFolderDeleteRollback {
   }>
 }
 
+interface ChatLocation {
+  character: character
+  chat: Chat
+  chatIndex: number
+}
+
+interface ChatCreateRollback {
+  selectedCharID: number
+  characterId: string | undefined
+  chatId: string
+  previousChat: Chat | null
+  attemptedChat: Chat
+  previousSelectedChatId: string | undefined
+  attemptedSelectedChatId: string | undefined
+}
+
+interface ChatDeleteRollback {
+  selectedCharID: number
+  characterId: string | undefined
+  chatId: string
+  chat: Chat
+  previousIndex: number
+  previousSelectedChatId: string | undefined
+  attemptedSelectedChatId: string | undefined
+}
+
+interface ChatFolderAssignmentRollback {
+  previous: string | null | undefined
+  previousHadValue: boolean
+}
+
+interface ChatReorderRollback {
+  selectedCharID: number
+  characterId: string | undefined
+  previousIds: string[]
+  previousFolderByChatId: Record<string, ChatFolderAssignmentRollback>
+  attemptedIds: string[]
+  attemptedFolderByChatId: Record<string, string | null>
+}
+
 function locateSnapshotCharacterInState(
   snapshot: ChatStateSnapshot,
   characterId: string | undefined,
@@ -475,6 +515,43 @@ function locateSnapshotCharacterInState(
     if (byId) return byId
   }
   return snapshot.characters?.[snapshot.selectedCharID]
+}
+
+function selectedChatIdForCharacter(character: character | undefined): string | undefined {
+  if (!character?.chats) return undefined
+  return character.chats[character.chatPage]?.id
+}
+
+function selectChatById(character: character, chatId: string | undefined): boolean {
+  if (!chatId) return false
+  const index = character.chats?.findIndex((chat) => chat.id === chatId) ?? -1
+  if (index < 0) return false
+  character.chatPage = index
+  return true
+}
+
+function preserveOrRestoreChatSelection(
+  character: character,
+  preferredSelectedChatId: string | undefined,
+  fallbackSelectedChatId: string | undefined,
+): void {
+  if (selectChatById(character, preferredSelectedChatId)) return
+  if (selectChatById(character, fallbackSelectedChatId)) return
+  normalizeChatPage(character)
+}
+
+function locateChatInState(snapshot: ChatStateSnapshot, chatId: string): ChatLocation | null {
+  for (const character of snapshot.characters ?? []) {
+    const chatIndex = character.chats?.findIndex((candidate) => candidate.id === chatId) ?? -1
+    if (chatIndex >= 0) {
+      return {
+        character,
+        chat: character.chats[chatIndex],
+        chatIndex,
+      }
+    }
+  }
+  return null
 }
 
 function locateChatFolderInState(snapshot: ChatStateSnapshot, folderId: string): ChatFolderLocation | null {
@@ -489,6 +566,55 @@ function locateChatFolderInState(snapshot: ChatStateSnapshot, folderId: string):
     }
   }
   return null
+}
+
+function chatCreateRollbackFromState(
+  characterId: string,
+  attemptedChat: Chat,
+  previous: ChatStateSnapshot,
+  select: boolean,
+): ChatCreateRollback | null {
+  if (!attemptedChat.id) return null
+  const previousCharacter = locateSnapshotCharacterInState(previous, characterId)
+  const previousChat = previousCharacter?.chats?.find((candidate) => candidate.id === attemptedChat.id)
+  const previousChatSnapshot = previousChat ? cloneJsonValue(previousChat) : null
+  return {
+    selectedCharID: previous.selectedCharID,
+    characterId,
+    chatId: attemptedChat.id,
+    previousChat: previousChatSnapshot,
+    attemptedChat: previousChatSnapshot ?? cloneJsonValue(attemptedChat),
+    previousSelectedChatId: selectedChatIdForCharacter(previousCharacter),
+    attemptedSelectedChatId: select ? attemptedChat.id : undefined,
+  }
+}
+
+function restoreCreatedChatAttempt(rollback: ChatCreateRollback | null): void {
+  if (!rollback) return
+  withTrustedServerProjectionWrite(() => {
+    const character = locateSnapshotCharacter(rollback.characterId, rollback.selectedCharID)
+    const chats = character?.chats
+    if (!character || !chats) return
+
+    const liveSelectedChatId = selectedChatIdForCharacter(character)
+    const rolledBack = applyAttemptedKeyedListRollback<Chat, string>({
+      list: chats,
+      entries: [
+        {
+          key: rollback.chatId,
+          previous: rollback.previousChat,
+          attempted: rollback.attemptedChat,
+        },
+      ],
+      getKey: (chat) => chat?.id,
+    })
+    if (rolledBack.length === 0) return
+    character.chats = chats
+
+    const preferredSelectedChatId =
+      liveSelectedChatId === rollback.attemptedSelectedChatId ? rollback.previousSelectedChatId : liveSelectedChatId
+    preserveOrRestoreChatSelection(character, preferredSelectedChatId, liveSelectedChatId)
+  })
 }
 
 function chatFolderMetadataRollbackFromPatch(
@@ -540,6 +666,51 @@ function restoreCreatedChatFolderAttempt(characterId: string, folder: ChatFolder
       getKey: (candidate) => candidate?.id,
     })
     if (rolledBack.length > 0) character.chatFolders = folders
+  })
+}
+
+function chatDeleteRollbackFromState(chatId: string, previous: ChatStateSnapshot): ChatDeleteRollback | null {
+  const location = locateChatInState(previous, chatId)
+  if (!location) return null
+
+  return {
+    selectedCharID: previous.selectedCharID,
+    characterId: location.character.chaId,
+    chatId,
+    chat: cloneJsonValue(location.chat),
+    previousIndex: location.chatIndex,
+    previousSelectedChatId: selectedChatIdForCharacter(location.character),
+    attemptedSelectedChatId: selectedChatIdForCharacter(
+      locateSnapshotCharacter(location.character.chaId, previous.selectedCharID),
+    ),
+  }
+}
+
+function restoreDeletedChatAttempt(rollback: ChatDeleteRollback | null): void {
+  if (!rollback) return
+  withTrustedServerProjectionWrite(() => {
+    const character = locateSnapshotCharacter(rollback.characterId, rollback.selectedCharID)
+    const chats = character?.chats
+    if (!character || !chats) return
+
+    const liveSelectedChatId = selectedChatIdForCharacter(character)
+    const rolledBack = applyAttemptedKeyedListRollback<Chat, string>({
+      list: chats,
+      entries: [
+        {
+          key: rollback.chatId,
+          previous: rollback.chat,
+          attempted: null,
+          previousIndex: rollback.previousIndex,
+        },
+      ],
+      getKey: (chat) => chat?.id,
+    })
+    if (rolledBack.length > 0) character.chats = chats
+
+    const preferredSelectedChatId =
+      liveSelectedChatId === rollback.attemptedSelectedChatId ? rollback.previousSelectedChatId : liveSelectedChatId
+    preserveOrRestoreChatSelection(character, preferredSelectedChatId, liveSelectedChatId)
   })
 }
 
@@ -619,8 +790,84 @@ function chatFolderIds(folders: readonly ChatFolder[] | undefined): string[] {
   return (folders ?? []).map((folder) => folder.id)
 }
 
+function chatRowIds(chats: readonly Chat[] | undefined): string[] {
+  return (chats ?? []).map((chat) => chat.id).filter(Boolean) as string[]
+}
+
 function stringArraysEqual(left: readonly string[], right: readonly string[]): boolean {
   return left.length === right.length && left.every((value, index) => value === right[index])
+}
+
+function chatFolderAssignmentValue(chat: Chat): string | null {
+  return chat.folderId ?? null
+}
+
+function chatReorderRollbackFromState(
+  characterId: string,
+  chatIds: string[],
+  folderByChatId: Record<string, string | null>,
+  previous: ChatStateSnapshot,
+): ChatReorderRollback | null {
+  const previousCharacter = locateSnapshotCharacterInState(previous, characterId)
+  if (!previousCharacter?.chats) return null
+
+  const previousFolderByChatId: Record<string, ChatFolderAssignmentRollback> = {}
+  for (const chat of previousCharacter.chats) {
+    if (!chat.id) continue
+    previousFolderByChatId[chat.id] = {
+      previous: cloneJsonValue(chat.folderId),
+      previousHadValue: Object.prototype.hasOwnProperty.call(chat, 'folderId'),
+    }
+  }
+
+  return {
+    selectedCharID: previous.selectedCharID,
+    characterId,
+    previousIds: chatRowIds(previousCharacter.chats),
+    previousFolderByChatId,
+    attemptedIds: cloneJsonValue(chatIds),
+    attemptedFolderByChatId: cloneJsonValue(folderByChatId),
+  }
+}
+
+function liveChatFolderAssignmentsMatch(
+  chats: readonly Chat[],
+  attemptedFolderByChatId: Record<string, string | null>,
+): boolean {
+  for (const chat of chats) {
+    if (!chat.id) return false
+    if (chatFolderAssignmentValue(chat) !== (attemptedFolderByChatId[chat.id] ?? null)) return false
+  }
+  return true
+}
+
+function restoreChatOrderAttempt(rollback: ChatReorderRollback | null): void {
+  if (!rollback) return
+  withTrustedServerProjectionWrite(() => {
+    const character = locateSnapshotCharacter(rollback.characterId, rollback.selectedCharID)
+    const chats = character?.chats
+    if (!character || !chats) return
+    if (!stringArraysEqual(chatRowIds(chats), rollback.attemptedIds)) return
+    if (!liveChatFolderAssignmentsMatch(chats, rollback.attemptedFolderByChatId)) return
+
+    const selectedBeforeRollback = selectedChatIdForCharacter(character)
+    const liveChatsById = new Map(chats.map((chat) => [chat.id, chat]))
+    const restored = rollback.previousIds.map((id) => liveChatsById.get(id))
+    if (restored.some((chat) => !chat)) return
+
+    for (const chat of restored) {
+      if (!chat?.id) continue
+      const folderRollback = rollback.previousFolderByChatId[chat.id]
+      if (!folderRollback) continue
+      if (folderRollback.previousHadValue) {
+        chat.folderId = cloneJsonValue(folderRollback.previous)
+      } else {
+        delete (chat as unknown as Record<string, unknown>).folderId
+      }
+    }
+    character.chats = restored as Chat[]
+    preserveOrRestoreChatSelection(character, selectedBeforeRollback, undefined)
+  })
 }
 
 function restoreChatFolderOrderAttempt(
@@ -713,15 +960,17 @@ function runChatCommandSequence(
 }
 
 export function dispatchCreateChat(characterId: string, chat: Chat, previous: ChatStateSnapshot, select = true): void {
+  const attemptedChat = cloneJsonValue(chat)
+  const rollback = chatCreateRollbackFromState(characterId, attemptedChat, previous, select)
   runChatCommand(
     (baseRevision) =>
       createChatCommand({
         baseRevision,
         characterId,
-        chat: toChatSnapshot(chat),
+        chat: toChatSnapshot(attemptedChat),
         select,
       }),
-    () => restoreChatState(previous),
+    () => restoreCreatedChatAttempt(rollback),
   )
 }
 
@@ -1073,13 +1322,14 @@ function buildCompatibleChatUpdateFactories(
 }
 
 export function dispatchDeleteChat(chatId: string, previous: ChatStateSnapshot): void {
+  const rollback = chatDeleteRollbackFromState(chatId, previous)
   runChatCommand(
     (baseRevision) =>
       deleteChatCommand({
         baseRevision,
         chatId,
       }),
-    () => restoreChatState(previous),
+    () => restoreDeletedChatAttempt(rollback),
   )
 }
 
@@ -1131,16 +1381,19 @@ export function dispatchReorderChatsByIds(
   previous: ChatStateSnapshot,
   selectedChatId?: string,
 ): void {
+  const rollback = chatReorderRollbackFromState(characterId, chatIds, folderByChatId, previous)
+  const attemptedIds = rollback?.attemptedIds ?? cloneJsonValue(chatIds)
+  const attemptedFolderByChatId = rollback?.attemptedFolderByChatId ?? cloneJsonValue(folderByChatId)
   runChatCommand(
     (baseRevision) =>
       reorderChatsCommand({
         baseRevision,
         characterId,
-        chatIds: cloneJsonValue(chatIds),
-        folderByChatId,
+        chatIds: attemptedIds,
+        folderByChatId: attemptedFolderByChatId,
         selectedChatId,
       }),
-    () => restoreChatState(previous),
+    () => restoreChatOrderAttempt(rollback),
   )
 }
 

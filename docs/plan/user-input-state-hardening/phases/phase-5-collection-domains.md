@@ -141,6 +141,12 @@ commands now use scoped attempted-value rollback instead of full chat-state
 restore. Failed chat folder commands preserve newer same-folder edits, sibling
 folders, unrelated chat edits, moved affected chats, and newer folder reorders.
 
+Twentieth landed slice: chat create, delete, and reorder commands now use scoped
+attempted-value rollback instead of full chat-state restore. Failed chat list
+commands preserve pre-existing same-id chats, newer same-row edits, sibling
+edits/appends, stable chat-id selection, newer chat reorders, and newer folder
+moves.
+
 ## Anchors
 
 - `src/lib/Setting/botpreset.svelte`

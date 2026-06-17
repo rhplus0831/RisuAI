@@ -682,6 +682,310 @@ describe('chat command projection helpers', () => {
     })
   })
 
+  it('keeps a pre-existing same-id chat after a failed create rollback', async () => {
+    const calls = stubFailingCommandFetch({
+      matches: (url, init) => url === '/api/v1/commands/characters/char-a/chats' && init.method === 'POST',
+    })
+    setServerProjectionWriteGuardEnabled(true)
+
+    const previous = currentChatStateSnapshot()
+    const attemptedChat = jsonClone(DBState.db.characters[0].chats[1])
+
+    expect(applyOptimisticCreatedChat('char-a', attemptedChat, previous)).toBe(true)
+    expect(DBState.db.characters[0].chatPage).toBe(1)
+
+    dispatchCreateChat('char-a', attemptedChat, previous)
+
+    await waitForCallCount(calls, 2)
+    await vi.waitFor(() => {
+      expect(DBState.db.characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b'])
+    })
+    expect(DBState.db.characters[0].chats[1]).toMatchObject({
+      id: 'chat-b',
+      name: 'Chat B',
+    })
+  })
+
+  it('removes only an unchanged attempted chat after a failed create and keeps newer siblings', async () => {
+    const calls = stubFailingCommandFetch({
+      matches: (url, init) => url === '/api/v1/commands/characters/char-a/chats' && init.method === 'POST',
+      onCommand: () => {
+        withTrustedServerProjectionWrite(() => {
+          DBState.db.characters[0].chats[2].name = 'Newer sibling name'
+          DBState.db.characters[0].chats.push({
+            id: 'chat-d',
+            name: 'Newer appended chat',
+            folderId: null,
+            message: [],
+          })
+        })
+      },
+    })
+    setServerProjectionWriteGuardEnabled(true)
+
+    const previous = currentChatStateSnapshot()
+    const attemptedChat = {
+      id: 'chat-c',
+      name: 'Attempted Chat',
+      note: '',
+      folderId: null,
+      message: [],
+      localLore: [],
+      fmIndex: -1,
+    } as Chat
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.characters[0].chats.unshift(attemptedChat)
+      DBState.db.characters[0].chatPage = 0
+    })
+
+    dispatchCreateChat('char-a', attemptedChat, previous)
+
+    await waitForCallCount(calls, 2)
+    await vi.waitFor(() => {
+      expect(DBState.db.characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b', 'chat-d'])
+    })
+    expect(DBState.db.characters[0].chats[1].name).toBe('Newer sibling name')
+    expect(DBState.db.characters[0].chats[2].name).toBe('Newer appended chat')
+    expect(DBState.db.characters[0].chatPage).toBe(0)
+  })
+
+  it('skips failed create rollback when the attempted chat has a newer same-row edit', async () => {
+    const calls = stubFailingCommandFetch({
+      matches: (url, init) => url === '/api/v1/commands/characters/char-a/chats' && init.method === 'POST',
+      onCommand: () => {
+        withTrustedServerProjectionWrite(() => {
+          DBState.db.characters[0].chats[0].name = 'Newer attempted chat name'
+          DBState.db.characters[0].chats[2].name = 'Newer sibling name'
+        })
+      },
+    })
+    setServerProjectionWriteGuardEnabled(true)
+
+    const previous = currentChatStateSnapshot()
+    const attemptedChat = {
+      id: 'chat-c',
+      name: 'Attempted Chat',
+      note: '',
+      folderId: null,
+      message: [],
+      localLore: [],
+      fmIndex: -1,
+    } as Chat
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.characters[0].chats.unshift(attemptedChat)
+      DBState.db.characters[0].chatPage = 0
+    })
+
+    dispatchCreateChat('char-a', attemptedChat, previous)
+
+    await waitForCallCount(calls, 2)
+    await vi.waitFor(() => {
+      expect(DBState.db.characters[0].chats.map((chat) => chat.id)).toEqual(['chat-c', 'chat-a', 'chat-b'])
+    })
+    expect(DBState.db.characters[0].chats[0].name).toBe('Newer attempted chat name')
+    expect(DBState.db.characters[0].chats[2].name).toBe('Newer sibling name')
+    expect(DBState.db.characters[0].chatPage).toBe(0)
+  })
+
+  it('reinserts only a still-missing deleted chat after a failed delete and preserves sibling edits', async () => {
+    const calls = stubFailingCommandFetch({
+      matches: (url, init) => url === '/api/v1/commands/chats/chat-a' && init.method === 'DELETE',
+      onCommand: () => {
+        withTrustedServerProjectionWrite(() => {
+          DBState.db.characters[0].chats[0].name = 'Newer sibling name'
+          DBState.db.characters[0].chats.push({
+            id: 'chat-c',
+            name: 'Newer appended chat',
+            folderId: null,
+            message: [],
+          })
+        })
+      },
+    })
+    setServerProjectionWriteGuardEnabled(true)
+
+    const previous = currentChatStateSnapshot()
+    expect(applyOptimisticDeletedChat('char-a', 'chat-a', previous)).toEqual({
+      applied: true,
+      selectedChatId: 'chat-b',
+    })
+
+    dispatchDeleteChat('chat-a', previous)
+
+    await waitForCallCount(calls, 2)
+    await vi.waitFor(() => {
+      expect(DBState.db.characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b', 'chat-c'])
+    })
+    expect(DBState.db.characters[0].chats[1].name).toBe('Newer sibling name')
+    expect(DBState.db.characters[0].chats[2].name).toBe('Newer appended chat')
+    expect(DBState.db.characters[0].chatPage).toBe(0)
+  })
+
+  it('preserves newer user selection instead of restoring old selection after a failed delete', async () => {
+    DBState.db.characters[0].chats.push({
+      id: 'chat-c',
+      name: 'Chat C',
+      folderId: null,
+      message: [],
+    } as Chat)
+    const calls = stubFailingCommandFetch({
+      matches: (url, init) => url === '/api/v1/commands/chats/chat-a' && init.method === 'DELETE',
+      onCommand: () => {
+        withTrustedServerProjectionWrite(() => {
+          DBState.db.characters[0].chatPage = 1
+        })
+      },
+    })
+    setServerProjectionWriteGuardEnabled(true)
+
+    const previous = currentChatStateSnapshot()
+    expect(applyOptimisticDeletedChat('char-a', 'chat-a', previous)).toEqual({
+      applied: true,
+      selectedChatId: 'chat-b',
+    })
+
+    dispatchDeleteChat('chat-a', previous)
+
+    await waitForCallCount(calls, 2)
+    await vi.waitFor(() => {
+      expect(DBState.db.characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b', 'chat-c'])
+    })
+    expect(DBState.db.characters[0].chats[DBState.db.characters[0].chatPage].id).toBe('chat-c')
+  })
+
+  it('restores failed chat reorder order and folder assignments only when live state still equals the attempt', async () => {
+    DBState.db.characters[0].chatFolders = [
+      { id: 'folder-a', name: 'Folder A', folded: false },
+      { id: 'folder-b', name: 'Folder B', folded: false },
+    ]
+    DBState.db.characters[0].chats = [
+      { id: 'chat-a', name: 'Chat A', folderId: null, message: [] },
+      { id: 'chat-b', name: 'Chat B', folderId: 'folder-a', message: [] },
+      { id: 'chat-c', name: 'Chat C', folderId: 'folder-b', message: [] },
+    ] as any
+    const calls = stubFailingCommandFetch({
+      matches: (url, init) => url === '/api/v1/commands/characters/char-a/chats/reorder' && init.method === 'POST',
+      onCommand: () => {
+        withTrustedServerProjectionWrite(() => {
+          const chat = DBState.db.characters[0].chats.find((candidate) => candidate.id === 'chat-c')
+          if (chat) chat.name = 'Newer Chat C'
+        })
+      },
+    })
+    setServerProjectionWriteGuardEnabled(true)
+
+    const previous = currentChatStateSnapshot()
+    const attemptedIds = ['chat-c', 'chat-a', 'chat-b']
+    const attemptedFolderByChatId = {
+      'chat-a': null,
+      'chat-b': null,
+      'chat-c': 'folder-a',
+    }
+    withTrustedServerProjectionWrite(() => {
+      const chatsById = new Map(DBState.db.characters[0].chats.map((chat) => [chat.id, chat]))
+      DBState.db.characters[0].chats = attemptedIds.map((id) => chatsById.get(id)!)
+      for (const chat of DBState.db.characters[0].chats) {
+        chat.folderId = attemptedFolderByChatId[chat.id]
+      }
+      DBState.db.characters[0].chatPage = 1
+    })
+
+    dispatchReorderChatsByIds('char-a', attemptedIds, attemptedFolderByChatId, previous, 'chat-a')
+
+    await waitForCallCount(calls, 2)
+    await vi.waitFor(() => {
+      expect(DBState.db.characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b', 'chat-c'])
+    })
+    expect(DBState.db.characters[0].chats.map((chat) => chat.folderId)).toEqual([null, 'folder-a', 'folder-b'])
+    expect(DBState.db.characters[0].chats[2].name).toBe('Newer Chat C')
+    expect(DBState.db.characters[0].chats[DBState.db.characters[0].chatPage].id).toBe('chat-a')
+  })
+
+  it('skips failed chat reorder rollback after a newer reorder', async () => {
+    DBState.db.characters[0].chats.push({
+      id: 'chat-c',
+      name: 'Chat C',
+      folderId: null,
+      message: [],
+    } as Chat)
+    const newerIds = ['chat-b', 'chat-c', 'chat-a']
+    const calls = stubFailingCommandFetch({
+      matches: (url, init) => url === '/api/v1/commands/characters/char-a/chats/reorder' && init.method === 'POST',
+      onCommand: () => {
+        withTrustedServerProjectionWrite(() => {
+          const chatsById = new Map(DBState.db.characters[0].chats.map((chat) => [chat.id, chat]))
+          DBState.db.characters[0].chats = newerIds.map((id) => chatsById.get(id)!)
+        })
+      },
+    })
+    setServerProjectionWriteGuardEnabled(true)
+
+    const previous = currentChatStateSnapshot()
+    const attemptedIds = ['chat-c', 'chat-a', 'chat-b']
+    const attemptedFolderByChatId = {
+      'chat-a': null,
+      'chat-b': 'folder-a',
+      'chat-c': null,
+    }
+    withTrustedServerProjectionWrite(() => {
+      const chatsById = new Map(DBState.db.characters[0].chats.map((chat) => [chat.id, chat]))
+      DBState.db.characters[0].chats = attemptedIds.map((id) => chatsById.get(id)!)
+    })
+
+    dispatchReorderChatsByIds('char-a', attemptedIds, attemptedFolderByChatId, previous, 'chat-a')
+
+    await waitForCallCount(calls, 2)
+    await vi.waitFor(() => {
+      expect(DBState.db.characters[0].chats.map((chat) => chat.id)).toEqual(newerIds)
+    })
+  })
+
+  it('skips failed chat reorder rollback after a newer folder move', async () => {
+    DBState.db.characters[0].chatFolders = [
+      { id: 'folder-a', name: 'Folder A', folded: false },
+      { id: 'folder-b', name: 'Folder B', folded: false },
+    ]
+    DBState.db.characters[0].chats.push({
+      id: 'chat-c',
+      name: 'Chat C',
+      folderId: null,
+      message: [],
+    } as Chat)
+    const calls = stubFailingCommandFetch({
+      matches: (url, init) => url === '/api/v1/commands/characters/char-a/chats/reorder' && init.method === 'POST',
+      onCommand: () => {
+        withTrustedServerProjectionWrite(() => {
+          const chat = DBState.db.characters[0].chats.find((candidate) => candidate.id === 'chat-c')
+          if (chat) chat.folderId = 'folder-b'
+        })
+      },
+    })
+    setServerProjectionWriteGuardEnabled(true)
+
+    const previous = currentChatStateSnapshot()
+    const attemptedIds = ['chat-c', 'chat-a', 'chat-b']
+    const attemptedFolderByChatId = {
+      'chat-a': null,
+      'chat-b': 'folder-a',
+      'chat-c': null,
+    }
+    withTrustedServerProjectionWrite(() => {
+      const chatsById = new Map(DBState.db.characters[0].chats.map((chat) => [chat.id, chat]))
+      DBState.db.characters[0].chats = attemptedIds.map((id) => chatsById.get(id)!)
+    })
+
+    dispatchReorderChatsByIds('char-a', attemptedIds, attemptedFolderByChatId, previous, 'chat-a')
+
+    await waitForCallCount(calls, 2)
+    await vi.waitFor(() => {
+      expect(DBState.db.characters[0].chats.map((chat) => chat.id)).toEqual(attemptedIds)
+    })
+    expect(DBState.db.characters[0].chats[0]).toMatchObject({
+      id: 'chat-c',
+      folderId: 'folder-b',
+    })
+  })
+
   it('saves chat generation settings through the dedicated command helper', async () => {
     const calls = stubCommandFetch()
     setServerProjectionWriteGuardEnabled(true)

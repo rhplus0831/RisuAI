@@ -7,31 +7,32 @@ workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 5 chat folder command rollback.
-  Character chat-folder create, update, delete, and reorder commands now use
-  scoped attempted-value rollback instead of restoring broad chat state
-  snapshots. Delayed failures preserve newer same-folder edits, sibling folders,
-  unrelated chat edits, moved affected chat folder assignments, and newer folder
-  reorders when live state no longer matches the attempted optimistic write.
+- Runtime/code change under test: Phase 5 chat list command rollback. Chat
+  create, delete, and reorder commands now use scoped attempted-value rollback
+  instead of restoring broad chat state snapshots. Delayed failures preserve
+  pre-existing same-id chats, newer same-row edits, sibling edits/appends,
+  stable chat-id selection, newer chat reorders, and newer folder moves when
+  live state no longer matches the attempted optimistic write.
 - Commands:
 
 ```bash
-pnpm exec vitest run src/ts/chatCommands.test.ts
+pnpm exec vitest run src/ts/chatCommands.test.ts src/lib/SideBars/SideChatList.svelte.test.ts src/lib/Others/ChatList.svelte.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
-pnpm exec prettier --check src/ts/chatCommands.ts src/ts/chatCommands.test.ts
+pnpm exec prettier --check src/ts/chatCommands.ts src/ts/chatCommands.test.ts src/lib/SideBars/SideChatList.svelte.test.ts src/lib/Others/ChatList.svelte.test.ts
 git diff --check
 ```
 
-- Result: passed on 2026-06-17. Chat command coverage passed 58 tests, and both
-  TypeScript checks plus Prettier and `git diff --check` passed.
+- Result: passed on 2026-06-17. Chat command plus focused sidebar/modal chat
+  list coverage passed 88 tests across 3 files, and both TypeScript checks plus
+  Prettier and `git diff --check` passed.
 - Additional check: `pnpm exec vitest run src/ts/compatibilityAdapters.test.ts`
   still fails in the pre-existing character MCP lorebook test
   `routes MCP character lorebook writes through lorebook commands in
   server-backed web mode` at `src/ts/compatibilityAdapters.test.ts:626`.
   A detached baseline worktree at commit `30d4ad7ab` reproduced the same
-  failure before this slice, so it is tracked as out-of-scope for this chat
-  folder rollback change.
+  failure before this slice, so it is tracked as out-of-scope for this chat list
+  rollback change.
 - Residual gaps: Multi-group plugin settings patch failures still share the
   generic settings rollback
   callback and roll back all still-attempted keys from the failed patch. Plugin
@@ -82,10 +83,12 @@ git diff --check
   MCP character regex and Lua-trigger rollback is covered by the seventeenth
   Phase 5 slice. `applyModule()` multi-domain rollback is covered by the
   eighteenth Phase 5 slice. Chat folder command rollback is covered by the
-  nineteenth Phase 5 slice. Remaining Phase 5 work owns sidebar/import
+  nineteenth Phase 5 slice. Chat list create/delete/reorder rollback is covered
+  by the twentieth Phase 5 slice. Remaining Phase 5 work owns sidebar/import
   collection flows, broader lorebook import/navigation edges, Hypa V3 preset
-  array import/rename/delete, plugin import/update side-effect reload, and
-  chat list plus character list create/delete/reorder/import rollback.
+  array import/rename/delete, plugin import/update side-effect reload,
+  combined sidebar chat/folder reorder, chat import/fork flows, and character
+  list create/delete/reorder/import rollback.
 - Phase 6 owns Realm/backup/local bundle restore/import resyncs, character/chat
   import refresh/navigation edges, memory job list/progress ordering,
   route/selection hydration, welcome/onboarding delayed setup, and DevTool
