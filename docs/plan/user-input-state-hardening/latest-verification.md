@@ -7,26 +7,27 @@ workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 5 translator preset collection
-  rollback. Translator preset create, select, delete, and import command
-  dispatches no longer pass a broad full-state rollback callback for
-  `translatorPresets`, `translatorPresetId`, `translatorPrompt`, and
-  `translatorMaxResponse`. Existing scoped field-update rollback remains intact,
-  and failed delayed collection commands preserve newer projected rows,
-  selection, and mirrored legacy fields.
+- Runtime/code change under test: Phase 5 prompt-template item collection
+  rollback. Prompt item create, delete, and reorder command failures now use
+  focused collection rollback helpers instead of broad whole-template snapshots.
+  Failed create removes only an unchanged attempted row, failed delete reinserts
+  only a still-missing row at a bounded prior index, and failed reorder restores
+  prior id order only while live id order still matches the attempted reorder.
+  Existing prompt item field-update rollback and prompt settings patch rollback
+  remain intact.
 - Commands:
 
 ```bash
-pnpm exec vitest run src/lib/Setting/Pages/Language/TranslatorPresetSettings.svelte.test.ts
+pnpm exec vitest run src/ts/server/promptTemplateBridge.svelte.test.ts
 pnpm exec vitest run src/ts/server/staleStateGuards.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
-pnpm exec prettier --check src/lib/Setting/Pages/Language/TranslatorPresetSettings.svelte src/lib/Setting/Pages/Language/TranslatorPresetSettings.svelte.test.ts
+pnpm exec prettier --check src/lib/Setting/Pages/PromptSettings.svelte src/ts/server/promptTemplateBridge.svelte.ts src/ts/server/promptTemplateBridge.svelte.test.ts
 git diff --check
 ```
 
-- Result: passed on 2026-06-17. Translator preset UI/server-command coverage
-  passed 13 tests, shared stale-state guard coverage passed 12 tests, and both
+- Result: passed on 2026-06-17. Prompt-template bridge coverage passed 22 tests,
+  shared stale-state guard coverage passed 12 tests, and both
   TypeScript checks plus Prettier and `git diff --check` passed.
 - Additional check: `pnpm exec vitest run src/ts/compatibilityAdapters.test.ts`
   still fails in the pre-existing character MCP lorebook test
@@ -44,10 +45,13 @@ git diff --check
   persona import remain separate residual persona paths. Full
   `ScriptDefinitionStateSnapshot` rollback remains broad for rarer discrete
   callers. The remaining Phase 5 collection domains still need focused slices:
-  preset/lorebook/sidebar collection rollback and replacement flows, including
-  create/delete/reorder, import, and list-selection paths. Translator preset
-  import file-read/decode freshness does not have dedicated coverage, but its
-  command-dispatch failure path uses the now rollback-free create dispatcher.
+  prompt preset/model preset array, lorebook/sidebar collection rollback and
+  replacement flows, including create/delete/reorder, import, and list-selection
+  paths. Translator preset import file-read/decode freshness does not have
+  dedicated coverage, but its command-dispatch failure path uses the now
+  rollback-free create dispatcher. Prompt-template item rollback coverage does
+  not explicitly cover delete skip when the row already exists or out-of-bounds
+  insert-index clamping, though the implementation guards both.
 
 ## Remaining Proof
 
@@ -68,12 +72,13 @@ git diff --check
   Phase 5 slice, MCP module-info rollback is covered by the sixth Phase 5 slice,
   plugin DB bridge settings rollback is covered by the seventh Phase 5 slice,
   persona create/delete/reorder rollback is covered by the eighth Phase 5 slice,
-  and translator preset collection command rollback is covered by the ninth
-  Phase 5 slice. Remaining Phase 5 work owns preset, module
-  lorebook/regex/script/trigger subdomains, lorebook, import collection flows,
-  Hypa V3 preset array import/rename/delete, plugin import/update side-effect
-  reload, persona profile/import residuals, and sidebar/chat/folder/character
-  list create/delete/reorder/import rollback.
+  translator preset collection command rollback is covered by the ninth Phase 5
+  slice, and prompt-template item create/delete/reorder rollback is covered by
+  the tenth Phase 5 slice. Remaining Phase 5 work owns prompt/model preset
+  arrays, module lorebook/regex/script/trigger subdomains, lorebook, import
+  collection flows, Hypa V3 preset array import/rename/delete, plugin
+  import/update side-effect reload, persona profile/import residuals, and
+  sidebar/chat/folder/character list create/delete/reorder/import rollback.
 - Phase 6 owns Realm/backup/local bundle restore/import resyncs, character/chat
   import refresh/navigation edges, memory job list/progress ordering,
   route/selection hydration, welcome/onboarding delayed setup, and DevTool

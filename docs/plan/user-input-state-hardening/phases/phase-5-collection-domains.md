@@ -78,6 +78,12 @@ collection commands leave newer projected preset rows, selection, and mirrored
 `translatorPrompt`/`translatorMaxResponse` values intact while preserving the
 existing scoped field-update rollback.
 
+Tenth landed slice: prompt-template item create, delete, and reorder rollback
+now scopes to the attempted item collection change. Failed create removes only
+an unchanged attempted row, failed delete reinserts only a still-missing row at a
+bounded previous index, and failed reorder restores previous id order only while
+live id order still matches the attempted reorder, preserving live row content.
+
 ## Anchors
 
 - `src/lib/Setting/botpreset.svelte`

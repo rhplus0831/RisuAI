@@ -48,6 +48,25 @@ export interface PromptTemplateDraftBinding {
   setItems: (items: PromptItem[]) => void
 }
 
+export interface FailedPromptTemplateItemCreateRollback {
+  binding: PromptTemplateDraftBinding
+  itemId: string
+  attemptedItem: PromptItem
+}
+
+export interface FailedPromptTemplateItemDeleteRollback {
+  binding: PromptTemplateDraftBinding
+  itemId: string
+  previousIndex: number
+  previousItem: PromptItem
+}
+
+export interface FailedPromptTemplateItemReorderRollback {
+  binding: PromptTemplateDraftBinding
+  previousItemIds: string[]
+  attemptedItemIds: string[]
+}
+
 interface PendingPromptItemUpdate {
   itemId: string
   previousItem: PromptItem
@@ -115,6 +134,42 @@ export function restorePromptItemProjectionWrite(itemId: string, previousItem: P
     const index = template.findIndex((item) => item.id === itemId)
     if (index !== -1) template[index] = cloneJsonValue(previousItem)
   })
+}
+
+export function rollbackFailedPromptTemplateItemCreate(input: FailedPromptTemplateItemCreateRollback): void {
+  const liveItems = input.binding.getItems() ?? []
+  const liveIndex = findPromptItemIndexById(liveItems, input.itemId)
+  if (liveIndex === -1) return
+  if (snapshotJson(liveItems[liveIndex]) !== snapshotJson(input.attemptedItem)) return
+
+  const nextItems = [...liveItems]
+  nextItems.splice(liveIndex, 1)
+  applyPromptTemplateCollectionRollback(input.binding, nextItems)
+  promptItemDirtyFieldsById.delete(input.itemId)
+}
+
+export function rollbackFailedPromptTemplateItemDelete(input: FailedPromptTemplateItemDeleteRollback): void {
+  const liveItems = input.binding.getItems() ?? []
+  if (findPromptItemIndexById(liveItems, input.itemId) !== -1) return
+
+  const insertIndex = Math.max(0, Math.min(input.previousIndex, liveItems.length))
+  const nextItems = [...liveItems]
+  nextItems.splice(insertIndex, 0, cloneJsonValue(input.previousItem))
+  applyPromptTemplateCollectionRollback(input.binding, nextItems)
+}
+
+export function rollbackFailedPromptTemplateItemReorder(input: FailedPromptTemplateItemReorderRollback): void {
+  const liveItems = input.binding.getItems() ?? []
+  const liveItemIds = promptItemIdList(liveItems)
+  if (!stringArraysEqual(liveItemIds, input.attemptedItemIds)) return
+
+  const liveItemsById = promptItemsById(liveItems)
+  const previousOrder = input.previousItemIds
+    .map((itemId) => liveItemsById.get(itemId))
+    .filter((item): item is PromptItem => Boolean(item))
+  if (previousOrder.length !== liveItems.length) return
+
+  applyPromptTemplateCollectionRollback(input.binding, previousOrder)
 }
 
 export function queuePromptItemProjectionUpdate(
@@ -416,6 +471,30 @@ function samePromptItemIdSequence(leftItems: PromptItem[], rightItems: PromptIte
   return true
 }
 
+function findPromptItemIndexById(items: PromptItem[], itemId: string | null): number {
+  if (!itemId) return -1
+  return items.findIndex((item) => promptItemIdValue(item) === itemId)
+}
+
+function promptItemIdList(items: PromptItem[]): string[] | null {
+  const itemIds: string[] = []
+  const seen = new Set<string>()
+
+  for (const item of items) {
+    const itemId = promptItemIdValue(item)
+    if (!itemId || seen.has(itemId)) return null
+    seen.add(itemId)
+    itemIds.push(itemId)
+  }
+
+  return itemIds
+}
+
+function stringArraysEqual(left: readonly string[] | null, right: readonly string[] | null): boolean {
+  if (!left || !right || left.length !== right.length) return false
+  return left.every((value, index) => value === right[index])
+}
+
 function promptItemsById(items: PromptItem[]): Map<string, PromptItem> {
   const itemsById = new Map<string, PromptItem>()
   for (const item of items) {
@@ -423,4 +502,11 @@ function promptItemsById(items: PromptItem[]): Map<string, PromptItem> {
     if (itemId) itemsById.set(itemId, item)
   }
   return itemsById
+}
+
+function applyPromptTemplateCollectionRollback(binding: PromptTemplateDraftBinding, nextItems: PromptItem[]): void {
+  binding.setItems(nextItems)
+  withTrustedServerProjectionWrite(() => {
+    DBState.db.promptTemplate = cloneJsonValue(nextItems)
+  })
 }

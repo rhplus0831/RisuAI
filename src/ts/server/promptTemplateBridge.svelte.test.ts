@@ -109,6 +109,9 @@ import {
   queuePromptSettingsProjectionPatch,
   reconcilePromptTemplateDraft,
   restorePromptItemProjectionWrite,
+  rollbackFailedPromptTemplateItemCreate,
+  rollbackFailedPromptTemplateItemDelete,
+  rollbackFailedPromptTemplateItemReorder,
   type PromptTemplateDraftBinding,
 } from './promptTemplateBridge.svelte'
 
@@ -143,6 +146,16 @@ function seedTemplate(): void {
 
 function draftCopy(): PromptItem[] {
   return cloneJsonValue((DBState.db.promptTemplate ?? []) as PromptItem[])
+}
+
+function draftBindingFor(
+  getDraftItems: () => PromptItem[],
+  setDraftItems: (items: PromptItem[]) => void,
+): PromptTemplateDraftBinding {
+  return {
+    getItems: getDraftItems,
+    setItems: setDraftItems,
+  }
 }
 
 async function flushPromptItemDirtyTestState(draftItems: PromptItem[]): Promise<void> {
@@ -222,6 +235,138 @@ describe('restorePromptItemProjectionWrite', () => {
     expect((DBState.db.promptTemplate as PromptItem[])[0]).toEqual(item('p-0', 'original'))
     // A whole-array rollback would have reverted p-1 to BIG; the scoped rollback does not.
     expect(textOf((DBState.db.promptTemplate as PromptItem[])[1])).toBe('concurrent')
+  })
+})
+
+describe('prompt template collection rollback guards', () => {
+  it('failed create removes unchanged attempted item and preserves newer sibling and appended rows', () => {
+    let draftItems = [item('p-0', 'first'), item('p-1', 'second'), item('created', 'new')]
+    ;(DBState as { db: unknown }).db = { promptTemplate: cloneJsonValue(draftItems) }
+    const binding = draftBindingFor(
+      () => draftItems,
+      (items) => {
+        draftItems = items
+      },
+    )
+
+    draftItems = [item('p-0', 'first edited'), item('p-1', 'second'), item('created', 'new'), item('later', 'later')]
+    DBState.db.promptTemplate = cloneJsonValue(draftItems)
+
+    rollbackFailedPromptTemplateItemCreate({
+      binding,
+      itemId: 'created',
+      attemptedItem: item('created', 'new'),
+    })
+
+    expect(draftItems.map((promptItem) => promptItem.id)).toEqual(['p-0', 'p-1', 'later'])
+    expect(textOf(draftItems[0])).toBe('first edited')
+    expect(textOf(draftItems[2])).toBe('later')
+    expect((DBState.db.promptTemplate as PromptItem[]).map((promptItem) => promptItem.id)).toEqual([
+      'p-0',
+      'p-1',
+      'later',
+    ])
+  })
+
+  it('failed create skips rollback when the created row was edited after dispatch', () => {
+    let draftItems = [item('p-0', 'first'), item('created', 'edited after dispatch')]
+    ;(DBState as { db: unknown }).db = { promptTemplate: cloneJsonValue(draftItems) }
+    const binding = draftBindingFor(
+      () => draftItems,
+      (items) => {
+        draftItems = items
+      },
+    )
+
+    rollbackFailedPromptTemplateItemCreate({
+      binding,
+      itemId: 'created',
+      attemptedItem: item('created', 'new'),
+    })
+
+    expect(draftItems.map((promptItem) => promptItem.id)).toEqual(['p-0', 'created'])
+    expect(textOf(draftItems[1])).toBe('edited after dispatch')
+    expect((DBState.db.promptTemplate as PromptItem[]).map((promptItem) => promptItem.id)).toEqual(['p-0', 'created'])
+  })
+
+  it('failed delete reinserts only the missing deleted item and preserves sibling edits', () => {
+    const deleted = item('deleted', 'deleted original')
+    let draftItems = [item('p-0', 'first edited'), item('p-1', 'second'), item('later', 'later')]
+    ;(DBState as { db: unknown }).db = { promptTemplate: cloneJsonValue(draftItems) }
+    const binding = draftBindingFor(
+      () => draftItems,
+      (items) => {
+        draftItems = items
+      },
+    )
+
+    rollbackFailedPromptTemplateItemDelete({
+      binding,
+      itemId: 'deleted',
+      previousIndex: 1,
+      previousItem: deleted,
+    })
+
+    expect(draftItems.map((promptItem) => promptItem.id)).toEqual(['p-0', 'deleted', 'p-1', 'later'])
+    expect(textOf(draftItems[0])).toBe('first edited')
+    expect(textOf(draftItems[1])).toBe('deleted original')
+    expect(textOf(draftItems[3])).toBe('later')
+    expect((DBState.db.promptTemplate as PromptItem[]).map((promptItem) => promptItem.id)).toEqual([
+      'p-0',
+      'deleted',
+      'p-1',
+      'later',
+    ])
+  })
+
+  it('failed reorder restores previous id order while preserving item content edits', () => {
+    let draftItems = [item('p-1', 'second edited'), item('p-0', 'first edited'), item('p-2', 'third')]
+    ;(DBState as { db: unknown }).db = { promptTemplate: cloneJsonValue(draftItems) }
+    const binding = draftBindingFor(
+      () => draftItems,
+      (items) => {
+        draftItems = items
+      },
+    )
+
+    rollbackFailedPromptTemplateItemReorder({
+      binding,
+      previousItemIds: ['p-0', 'p-1', 'p-2'],
+      attemptedItemIds: ['p-1', 'p-0', 'p-2'],
+    })
+
+    expect(draftItems.map((promptItem) => promptItem.id)).toEqual(['p-0', 'p-1', 'p-2'])
+    expect(textOf(draftItems[0])).toBe('first edited')
+    expect(textOf(draftItems[1])).toBe('second edited')
+    expect((DBState.db.promptTemplate as PromptItem[]).map((promptItem) => promptItem.id)).toEqual([
+      'p-0',
+      'p-1',
+      'p-2',
+    ])
+  })
+
+  it('failed reorder skips when a newer reorder changed the live id sequence', () => {
+    let draftItems = [item('p-1', 'second'), item('p-2', 'third'), item('p-0', 'first')]
+    ;(DBState as { db: unknown }).db = { promptTemplate: cloneJsonValue(draftItems) }
+    const binding = draftBindingFor(
+      () => draftItems,
+      (items) => {
+        draftItems = items
+      },
+    )
+
+    rollbackFailedPromptTemplateItemReorder({
+      binding,
+      previousItemIds: ['p-0', 'p-1', 'p-2'],
+      attemptedItemIds: ['p-1', 'p-0', 'p-2'],
+    })
+
+    expect(draftItems.map((promptItem) => promptItem.id)).toEqual(['p-1', 'p-2', 'p-0'])
+    expect((DBState.db.promptTemplate as PromptItem[]).map((promptItem) => promptItem.id)).toEqual([
+      'p-1',
+      'p-2',
+      'p-0',
+    ])
   })
 })
 

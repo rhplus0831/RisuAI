@@ -117,6 +117,9 @@ persistence inventory under
   longer restore broad translator preset snapshots, so newer projected rows,
   selection, and mirrored legacy fields survive stale delayed collection
   failures while scoped field-update rollback remains intact.
+  Prompt-template item create, delete, and reorder command failures now roll
+  back only the attempted item collection change while preserving newer sibling
+  row edits, appended rows, and live row content across reorder rollback.
   Phase 2 landed character profile draft dirty top-level field protection;
   prompt-template item row dirty projection merging; whole-key dirty projection
   protection for
@@ -293,8 +296,12 @@ persistence inventory under
   translator preset create, select, delete, and import collection commands
   without broad full-state rollback callbacks while retaining scoped dirty
   field-update rollback.
-- Verification state: Phase 5 translator preset collection rollback validation
-  is recorded in `latest-verification.md`.
+- `src/lib/Setting/Pages/PromptSettings.svelte` and
+  `src/ts/server/promptTemplateBridge.svelte.ts` now guard prompt-template item
+  create, delete, and reorder rollback by attempted item id/order instead of
+  broad prompt-template snapshots.
+- Verification state: Phase 5 prompt-template item collection rollback
+  validation is recorded in `latest-verification.md`.
 - Highest issue density:
   - Character editor: 52 issue rows, mostly dirty projection and unguarded
     upload callbacks.
@@ -356,7 +363,8 @@ persistence inventory under
   remain here. Script/trigger replacement rollback, plugin custom storage plus
   non-storage and collection rollback slices, global module/MCP module-info,
   plugin DB bridge settings, persona collection, and translator preset
-  collection rollback slices have landed.
+  collection rollback slices have landed. Prompt-template item collection
+  rollback has also landed for create/delete/reorder.
 - [Phase 6](phases/phase-6-resync-memory-navigation.md): pending. Realm, backup,
   and local bundle restore/import resyncs; character/chat import
   refresh/navigation edges; memory job list/progress ordering; route/selection
@@ -606,11 +614,16 @@ persistence inventory under
     rollback. Deferred command-failure tests cover newer row, selection, and
     mirrored `translatorPrompt`/`translatorMaxResponse` preservation while
     field-update rollback stays scoped.
-  - Phase 5: preset/lorebook/script/import collection flows, module
-    lorebook/regex/script/trigger subdomains, Hypa V3 preset array
+  - Phase 5 prompt-template item collection slice: prompt item create, delete,
+    and reorder rollback now uses focused attempted item/order helpers instead
+    of broad prompt-template snapshots. Deferred rollback tests cover unchanged
+    create removal, edited-create skip, delete reinsertion, reorder restoration,
+    and newer-reorder skip.
+  - Phase 5: prompt/model preset array, lorebook/script/import collection flows,
+    module lorebook/regex/script/trigger subdomains, Hypa V3 preset array
     import/rename/delete, plugin import/update side-effect reload, sidebar
-    chat/folder lists, persona profile/import residuals, character list
-    ordering, and broad create/delete/reorder/import rollback.
+    chat/folder lists, persona profile/import residuals, character list ordering,
+    and broad create/delete/reorder/import rollback.
   - Known pre-existing test gap: `pnpm exec vitest run
     src/ts/compatibilityAdapters.test.ts` fails in
     `routes MCP character lorebook writes through lorebook commands in

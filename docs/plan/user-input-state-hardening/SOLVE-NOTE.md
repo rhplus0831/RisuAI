@@ -71,6 +71,8 @@ keep earlier successful server-accepted steps when later steps fail. Global
 module command rollback, MCP module-info rollback, plugin DB bridge settings
 rollback, persona create/delete/reorder rollback, and translator preset
 collection command rollback have also landed for their Phase 5 slices.
+Prompt-template item create/delete/reorder rollback has landed as the next
+preset-domain slice.
 
 Next manager loop:
 
@@ -153,10 +155,11 @@ Explicit deferrals:
   landed for Plugin V2 database settings patches. Phase 5 persona collection
   rollback has landed for create, delete, and reorder commands. Phase 5
   translator preset collection rollback has landed for create, select, delete,
-  and import command-dispatch failures. Remaining preset, module
-  lorebook/regex/script/trigger subdomains, lorebook, and import collection
-  flows, Hypa V3 preset array import/rename/delete, plugin import/update
-  side-effect reload, persona profile/import residuals, and
+  and import command-dispatch failures. Phase 5 prompt-template item collection
+  rollback has landed for create, delete, and reorder commands. Remaining
+  prompt/model preset arrays, module lorebook/regex/script/trigger subdomains,
+  lorebook, and import collection flows, Hypa V3 preset array import/rename/delete,
+  plugin import/update side-effect reload, persona profile/import residuals, and
   sidebar/chat/folder/character list create/delete/reorder/import rollback
   remain Phase 5 work.
 - `src/ts/compatibilityAdapters.test.ts` currently has a pre-existing failure in

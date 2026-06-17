@@ -30,6 +30,9 @@
     queuePromptItemProjectionUpdate,
     queuePromptSettingsProjectionPatch,
     reconcilePromptTemplateDraft,
+    rollbackFailedPromptTemplateItemCreate,
+    rollbackFailedPromptTemplateItemDelete,
+    rollbackFailedPromptTemplateItemReorder,
     type PromptTemplateDraftBinding,
   } from 'src/ts/server/promptTemplateBridge.svelte'
   import {
@@ -143,16 +146,10 @@
   }
 
   function currentPromptTemplateSnapshot(): PromptItem[] {
-    return cloneJsonValue(promptTemplateDraft.value ?? [])
-  }
-
-  function rollbackPromptTemplate(previous: PromptItem[], attempted: PromptItem[]): void {
-    if (snapshotJson(promptTemplateDraft.value ?? []) === snapshotJson(attempted)) {
-      promptTemplateDraft.value = cloneJsonValue(previous)
-      withTrustedServerProjectionWrite(() => {
-        DBState.db.promptTemplate = cloneJsonValue(previous)
-      })
+    for (const item of promptTemplateDraft.value ?? []) {
+      promptItemId(item)
     }
+    return cloneJsonValue(promptTemplateDraft.value ?? [])
   }
 
   function createPromptItem(): PromptItem {
@@ -165,17 +162,37 @@
     }
   }
 
-  function dispatchCreatePromptItem(promptItem: PromptItem, previous: PromptItem[]): void {
+  function promptTemplateItemIds(items: PromptItem[]): string[] | null {
+    const itemIds: string[] = []
+    const seen = new Set<string>()
+
+    for (const item of items) {
+      const itemId = item.id
+      if (typeof itemId !== 'string' || itemId.length === 0 || seen.has(itemId)) return null
+      seen.add(itemId)
+      itemIds.push(itemId)
+    }
+
+    return itemIds
+  }
+
+  function dispatchCreatePromptItem(promptItem: PromptItem): void {
     if (!promptTemplateHydrated) return
     if (!canUseServerCommands()) return
-    const attempted = currentPromptTemplateSnapshot()
+    const itemId = promptItemId(promptItem)
+    const attemptedItem = cloneJsonValue(promptItem)
     void runServerCommand({
       command: (baseRevision) =>
         createPromptItemCommand({
           baseRevision,
-          promptItem: cloneJsonValue(promptItem) as PromptItemSnapshot,
+          promptItem: cloneJsonValue(attemptedItem) as PromptItemSnapshot,
         }),
-      rollback: () => rollbackPromptTemplate(previous, attempted),
+      rollback: () =>
+        rollbackFailedPromptTemplateItemCreate({
+          binding: promptTemplateDraftBinding,
+          itemId,
+          attemptedItem,
+        }),
     })
   }
 
@@ -183,14 +200,21 @@
     if (!promptTemplateHydrated) return
     if (!canUseServerCommands()) return
     const itemId = promptItemId(promptItem)
-    const attempted = currentPromptTemplateSnapshot()
+    const previousIndex = previous.findIndex((item) => item.id === itemId)
+    const previousItem = previousIndex === -1 ? cloneJsonValue(promptItem) : previous[previousIndex]
     void runServerCommand({
       command: (baseRevision) =>
         deletePromptItemCommand({
           baseRevision,
           itemId,
         }),
-      rollback: () => rollbackPromptTemplate(previous, attempted),
+      rollback: () =>
+        rollbackFailedPromptTemplateItemDelete({
+          binding: promptTemplateDraftBinding,
+          itemId,
+          previousIndex,
+          previousItem,
+        }),
     })
   }
 
@@ -200,14 +224,25 @@
     withTrustedServerProjectionWrite(() => {
       normalizePromptTemplateIds(DBState.db)
     })
-    const attempted = currentPromptTemplateSnapshot()
+    for (const item of promptTemplateDraft.value) {
+      promptItemId(item)
+    }
+    const itemIds = promptTemplateItemIds(promptTemplateDraft.value)
+    const previousItemIds = promptTemplateItemIds(previous)
+    if (!itemIds || !previousItemIds) return
+    const attemptedItemIds = [...itemIds]
     void runServerCommand({
       command: (baseRevision) =>
         reorderPromptItemsCommand({
           baseRevision,
-          itemIds: promptTemplateDraft.value.map((item) => promptItemId(item)),
+          itemIds,
         }),
-      rollback: () => rollbackPromptTemplate(previous, attempted),
+      rollback: () =>
+        rollbackFailedPromptTemplateItemReorder({
+          binding: promptTemplateDraftBinding,
+          previousItemIds,
+          attemptedItemIds,
+        }),
     })
   }
 
@@ -563,10 +598,9 @@
     <button
       class="font-medium cursor-pointer hover:text-green-500"
       onclick={() => {
-        const previous = currentPromptTemplateSnapshot()
         const promptItem = createPromptItem()
         applyPromptTemplateDraft([...(promptTemplateDraft.value ?? []), promptItem])
-        dispatchCreatePromptItem(promptItem, previous)
+        dispatchCreatePromptItem(promptItem)
       }}><PlusIcon /></button>
 
     <span class="text-textcolor2 text-sm mt-2">{tokens} {language.fixedTokens}</span>
