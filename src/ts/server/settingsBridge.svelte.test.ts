@@ -47,6 +47,7 @@ vi.mock('./commands', () => ({
       'autoTranslate',
       'claudeCachingExperimental',
       'didFirstSetup',
+      'globalscript',
       'maxContext',
       'maxResponse',
       'notification',
@@ -90,7 +91,9 @@ import { DBState } from '../stores.svelte'
 import {
   applyOnboardingServerBackedSettings,
   applyServerBackedSettingsPatch,
+  createServerBackedSettingDraft,
   flushPendingServerBackedSettingsPatch,
+  type ServerBackedSettingDraft,
   watchServerBackedSettings,
 } from './settingsBridge.svelte'
 
@@ -98,6 +101,33 @@ const DELAY = 50
 
 function setupSettings(settings: Record<string, unknown>): void {
   ;(DBState as { db: unknown }).db = { ...settings }
+}
+
+async function createSettingDraft<T>(
+  key: string,
+  fallback: T,
+): Promise<{ draft: ServerBackedSettingDraft<T>; stop: () => void }> {
+  let draft: ServerBackedSettingDraft<T> | undefined
+  const stop = $effect.root(() => {
+    draft = createServerBackedSettingDraft(key, fallback, { delayMs: DELAY })
+  })
+  await flushAndSettle()
+  if (!draft) {
+    stop()
+    throw new Error('setting draft was not initialized')
+  }
+  return { draft, stop }
+}
+
+async function flushAndSettle(): Promise<void> {
+  flushSync()
+  await Promise.resolve()
+}
+
+async function applyProjectionSetting(key: string, value: unknown): Promise<void> {
+  projectionGuardState.epoch += 1
+  ;(DBState.db as Record<string, unknown>)[key] = value
+  await flushAndSettle()
 }
 
 beforeEach(() => {
@@ -442,6 +472,72 @@ describe('settingsBridge coalescing', () => {
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
     expect(recorded.patches.map((entry) => entry.patch)).toEqual([{ notification: false }])
+    stop()
+  })
+
+  it('preserves a dirty setting draft through a stale projection', async () => {
+    setupSettings({
+      globalscript: [{ id: 'script-a', in: 'server old', out: '', type: 'editinput' }],
+    })
+    const { draft, stop } = await createSettingDraft('globalscript', [] as Array<Record<string, string>>)
+
+    draft.value = [{ id: 'script-a', in: 'local dirty', out: '', type: 'editinput' }]
+    await flushAndSettle()
+
+    await applyProjectionSetting('globalscript', [{ id: 'script-a', in: 'stale server', out: '', type: 'editinput' }])
+
+    expect(draft.value).toEqual([{ id: 'script-a', in: 'local dirty', out: '', type: 'editinput' }])
+    stop()
+  })
+
+  it('reasserts a dirty setting draft value to DBState after a stale projection overwrites it', async () => {
+    setupSettings({
+      globalscript: [{ id: 'script-a', in: 'server old', out: '', type: 'editinput' }],
+    })
+    const { draft, stop } = await createSettingDraft('globalscript', [] as Array<Record<string, string>>)
+
+    draft.value = [{ id: 'script-a', in: 'local dirty', out: '', type: 'editinput' }]
+    await flushAndSettle()
+
+    await applyProjectionSetting('globalscript', [{ id: 'script-a', in: 'stale server', out: '', type: 'editinput' }])
+
+    expect(DBState.db.globalscript).toEqual([{ id: 'script-a', in: 'local dirty', out: '', type: 'editinput' }])
+
+    await vi.advanceTimersByTimeAsync(DELAY)
+    expect(recorded.patches.map((entry) => entry.patch)).toEqual([
+      {
+        globalscript: [{ id: 'script-a', in: 'local dirty', out: '', type: 'editinput' }],
+      },
+    ])
+    stop()
+  })
+
+  it('clears dirty state when projection matches the setting draft value', async () => {
+    setupSettings({
+      globalscript: [{ id: 'script-a', in: 'server old', out: '', type: 'editinput' }],
+    })
+    const { draft, stop } = await createSettingDraft('globalscript', [] as Array<Record<string, string>>)
+
+    draft.value = [{ id: 'script-a', in: 'local accepted', out: '', type: 'editinput' }]
+    await flushAndSettle()
+
+    await applyProjectionSetting('globalscript', [{ id: 'script-a', in: 'local accepted', out: '', type: 'editinput' }])
+    await applyProjectionSetting('globalscript', [{ id: 'script-a', in: 'server later', out: '', type: 'editinput' }])
+
+    expect(draft.value).toEqual([{ id: 'script-a', in: 'server later', out: '', type: 'editinput' }])
+    expect(DBState.db.globalscript).toEqual([{ id: 'script-a', in: 'server later', out: '', type: 'editinput' }])
+    stop()
+  })
+
+  it('reseeds a clean setting draft from a later server projection', async () => {
+    setupSettings({
+      globalscript: [{ id: 'script-a', in: 'server old', out: '', type: 'editinput' }],
+    })
+    const { draft, stop } = await createSettingDraft('globalscript', [] as Array<Record<string, string>>)
+
+    await applyProjectionSetting('globalscript', [{ id: 'script-a', in: 'clean server', out: '', type: 'editinput' }])
+
+    expect(draft.value).toEqual([{ id: 'script-a', in: 'clean server', out: '', type: 'editinput' }])
     stop()
   })
 })

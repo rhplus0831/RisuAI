@@ -58,30 +58,53 @@ export function createServerBackedSettingDraft<T>(
   let initialized = false
   let suppressDraftDispatch = false
   let previousServerSnapshot = snapshotJson(initialValue)
+  let previousProjectionApplyEpoch = getServerProjectionApplyEpoch()
+  let dirty = false
 
   $effect(() => {
+    const projectionApplyEpoch = getServerProjectionApplyEpoch()
+    const projectionApplyChanged = projectionApplyEpoch !== previousProjectionApplyEpoch
     const serverValue = currentSettingValue(key, fallback)
     const serverSnapshot = snapshotJson(serverValue)
     const draftSnapshot = snapshotJson(draft.value)
 
+    if (projectionApplyChanged && dirty && serverSnapshot === draftSnapshot) {
+      dirty = false
+    }
+
     if (serverSnapshot !== previousServerSnapshot && serverSnapshot !== draftSnapshot) {
       suppressDraftDispatch = true
-      draft.value = cloneJsonValue(serverValue)
+      if (projectionApplyChanged && dirty) {
+        reassertDirtySettingDraftValue(key, draft.value)
+      } else {
+        dirty = false
+        draft.value = cloneJsonValue(serverValue)
+      }
       queueMicrotask(() => {
         suppressDraftDispatch = false
       })
     }
 
-    previousServerSnapshot = serverSnapshot
+    previousProjectionApplyEpoch = projectionApplyEpoch
+    previousServerSnapshot = dirty ? snapshotJson(draft.value) : serverSnapshot
   })
 
+  let previousDraftDispatchSnapshot = snapshotJson(initialValue)
   $effect(() => {
     const snapshot = snapshotJson(draft.value)
     if (!initialized) {
       initialized = true
+      previousDraftDispatchSnapshot = snapshot
       return
     }
-    if (suppressDraftDispatch) return
+    if (suppressDraftDispatch) {
+      previousDraftDispatchSnapshot = snapshot
+      return
+    }
+    if (snapshot === previousDraftDispatchSnapshot) return
+
+    dirty = true
+    previousDraftDispatchSnapshot = snapshot
 
     untrack(() => {
       if (!settingsGroupForKey(key)) return
@@ -103,6 +126,17 @@ export function createServerBackedSettingDraft<T>(
   })
 
   return draft
+}
+
+function reassertDirtySettingDraftValue<T>(key: string, value: T): void {
+  if (!settingsGroupForKey(key)) return
+
+  withSuppressedSettingsWatcher(() => {
+    withTrustedServerProjectionWrite(() => {
+      const target = DBState.db as unknown as Record<string, unknown>
+      target[key] = cloneJsonValue(value)
+    })
+  })
 }
 
 export function applyServerBackedSettingsPatch(patch: SettingsPatch): void {

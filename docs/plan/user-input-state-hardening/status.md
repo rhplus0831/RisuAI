@@ -15,7 +15,9 @@ plan consolidates the input persistence inventory under
   slice landed character profile draft dirty top-level field protection. The
   prompt-template item row slice now tracks dirty prompt item fields by id and
   merges same-order server projection rows without overwriting dirty local item
-  fields.
+  fields. The settings draft slice now protects whole-key drafts returned by
+  `createServerBackedSettingDraft` from stale projection reseeds and lets later
+  clean projections reseed once the dirty value is acknowledged.
   Phase 1 settings, character, and chat row metadata rollback adoption landed;
   message-target freshness is explicitly deferred to Phase 4.
 - Code changes: `src/ts/server/staleStateGuards.ts` and
@@ -31,7 +33,11 @@ plan consolidates the input persistence inventory under
   fields per item id from `queuePromptItemProjectionUpdate` and merges same-id
   projection rows so dirty fields are preserved while clean fields and sibling
   rows refresh.
-- Verification state: Phase 2 prompt-template item row validation is recorded in
+  `src/ts/server/settingsBridge.svelte.ts` now tracks dirty setting draft values
+  by helper instance, reasserts dirty values to `DBState.db[key]` after stale
+  projection overwrites, clears dirty state when a projection matches the draft,
+  and resumes normal clean projection reseeding afterward.
+- Verification state: Phase 2 settings draft validation is recorded in
   `latest-verification.md`.
 - Highest issue density:
   - Character editor: 52 issue rows, mostly dirty projection and unguarded
@@ -61,9 +67,10 @@ plan consolidates the input persistence inventory under
   Phase 4. Collection rollback domains stay owned by Phase 5. No known code gap
   blocks Phase 1 completion.
 - [Phase 2](phases/phase-2-dirty-draft-projection.md): in progress. Character
-  profile draft dirty top-level projection protection has landed; prompt,
-  persona, translator, lorebook, script/trigger, module, and plugin draft
-  projection adopters remain pending.
+  profile draft dirty top-level projection protection, prompt item row
+  same-order dirty field merging, and generic settings draft whole-key
+  projection protection have landed; persona, translator, lorebook,
+  script/trigger, module, and plugin draft projection adopters remain pending.
 - [Phase 3](phases/phase-3-upload-import-fetch-callbacks.md): pending. Upload,
   file, import, decode, and remote-fetch callback tokens.
 - [Phase 4](phases/phase-4-chat-messages-generation.md): pending. Chat,
@@ -103,6 +110,13 @@ plan consolidates the input persistence inventory under
   same-id-sequence server rows by id to preserve still-dirty local fields, and
   refreshes clean fields and clean sibling rows. Prompt item create, delete, and
   reorder reconciliation still use the existing full-replacement behavior.
+- Phase 2 settings draft slice: `createServerBackedSettingDraft` tracks whether
+  its draft has diverged from the last clean seed, preserves that dirty draft
+  through stale projection epochs, reasserts the dirty value back to
+  `DBState.db[key]` after projection overwrites, clears dirty state when the
+  projected value matches the draft, and then allows later clean projection
+  reseeds. This is whole-setting-key protection; it does not attempt nested
+  field merging inside arbitrary object/array settings.
 - Remaining broad rollback families to track by phase:
   - Phase 4: `restoreChatScopedState` and message
     update/delete/truncate/replace freshness.

@@ -7,31 +7,32 @@ hardening workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 2 prompt-template item row dirty
-  projection slice. Prompt item edits now track dirty fields by prompt item id;
-  same-order server projection rows merge by id so dirty local fields survive,
-  clean fields on dirty rows refresh, clean sibling rows refresh, and matching
-  server values clear dirty state so later projections can replace normally.
+- Runtime/code change under test: Phase 2 settings draft dirty projection slice.
+  Drafts returned by `createServerBackedSettingDraft` now track whole-key dirty
+  state, preserve dirty values through stale projection reseeds, reassert dirty
+  values back to `DBState.db[key]`, clear dirty state when projection catches up
+  with the draft value, and allow later clean projections to reseed normally.
 - Commands:
 
 ```bash
-pnpm exec vitest run src/ts/server/promptTemplateBridge.svelte.test.ts src/ts/server/staleStateGuards.test.ts
+pnpm exec vitest run src/ts/server/settingsBridge.svelte.test.ts src/ts/server/staleStateGuards.test.ts
 pnpm exec vitest run src/ts/server/commands.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 ```
 
-- Result: passed on 2026-06-17. The prompt-template bridge/helper Vitest set
-  passed 2 files and 29 tests; server command tests passed 1 file and 39 tests.
+- Result: passed on 2026-06-17. The settings bridge/helper Vitest set passed 2
+  files and 31 tests; server command tests passed 1 file and 39 tests.
   Both TypeScript checks passed.
-- Residual gaps: this slice only covers prompt-template item row field edits
-  when the draft and server projection have the same prompt item id sequence.
-  Prompt item create, delete, and reorder behavior remains unchanged. Remaining
-  Phase 2 draft projection adopters for prompt settings scalars, personas,
-  translator presets, global regex/settings drafts, lorebook entries,
-  script/trigger definitions, module drafts, and plugin argument/storage editors
-  remain pending. Character resync/import/restore and asset callback freshness
-  stay deferred to their later phases.
+- Residual gaps: this slice protects each `createServerBackedSettingDraft`
+  instance as a whole setting key; it does not merge clean nested fields inside
+  arbitrary object/array settings while preserving dirty nested siblings.
+  Remaining Phase 2 draft projection adopters for personas, translator presets,
+  lorebook entries, script/trigger definitions, module drafts, and plugin
+  argument/storage editors remain pending. Prompt item create, delete, and
+  reorder behavior remains unchanged from the previous slice. Character
+  resync/import/restore and asset callback freshness stay deferred to their
+  later phases.
 
 ## Required Closeout Proof
 
