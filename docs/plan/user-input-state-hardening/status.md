@@ -3,19 +3,21 @@
 Date: 2026-06-17
 
 This workstream is active. Phase 0 is complete as a docs/contract baseline,
-Phase 1 is complete as the shared-helper and first rollback-adopter slice, and
-Phase 2 is complete as the dirty draft projection slice. The plan consolidates
-the input persistence inventory under
+Phase 1 is complete as the shared-helper and first rollback-adopter slice,
+Phase 2 is complete as the dirty draft projection slice, and Phase 3 is complete
+as the upload/import/fetch callback slice. The plan consolidates the input
+persistence inventory under
 `../../user-input-layer-audit/` and stale-state risk review under
 `../../user-stale-state-audit/`.
 
 ## Snapshot
 
-- Plan state: active, Phase 0 contract decisions complete, Phase 1 complete, and
-  Phase 2 dirty draft projection complete. The next active phase is Phase 3
-  upload/import/fetch callback freshness. The first Phase 3 slice now guards
-  custom background upload/cancel/error callbacks so stale completions cannot
-  restore or apply an old custom background after a newer choice. Composer
+- Plan state: active, Phase 0 contract decisions complete, Phase 1 complete,
+  Phase 2 dirty draft projection complete, and Phase 3 upload/import/fetch
+  callback freshness complete. The next active phase is Phase 4 chat, message,
+  reroll, trigger, suggestion, and generation freshness. The first Phase 3 slice
+  now guards custom background upload/cancel/error callbacks so stale completions
+  cannot restore or apply an old custom background after a newer choice. Composer
   paste/menu file actions now guard stale file callbacks by active transcript
   identity and composer mutation version before mutating composer text or
   attachments. Character avatar upload callbacks now guard by latest selected
@@ -54,7 +56,11 @@ the input persistence inventory under
   fields into `NAIImgConfigDraft.value`.
   EasyPanel separate-parameters JSON imports now guard base/override slot
   context and target-slot snapshots around file selection/read before applying a
-  fresh imported object to only the active slot.
+  fresh imported object to only the active slot. The final Phase 3 closeout audit
+  found no known live upload/import/fetch callback surface still pending. Audit
+  drift is recorded for the BotSettings additional-params import row because the
+  live UI has no import button there; the EasyPanel separate-parameters import
+  path is now guarded.
   Phase 2 landed character profile draft dirty top-level field protection;
   prompt-template item row dirty projection merging; whole-key dirty projection
   protection for
@@ -159,8 +165,8 @@ the input persistence inventory under
   capture, latest-operation tracking, target-slot snapshot freshness, and fresh
   imported-object resolution for `AllSeperateParameters.svelte` and
   `EasyPanel.svelte`.
-- Verification state: Phase 3 EasyPanel separate-parameters import callback
-  validation is recorded in `latest-verification.md`.
+- Verification state: Phase 3 final closeout validation is recorded in
+  `latest-verification.md`.
 - Highest issue density:
   - Character editor: 52 issue rows, mostly dirty projection and unguarded
     upload callbacks.
@@ -198,36 +204,29 @@ the input persistence inventory under
   module/plugin, callback, chat/message/generation, resync/import/restore,
   navigation, memory, and broad collection behavior is explicitly owned by later
   phases below.
-- [Phase 3](phases/phase-3-upload-import-fetch-callbacks.md): active. Upload,
-  file, import, decode, and remote-fetch callback tokens. Custom background
-  upload/cancel/error callback freshness has landed; composer file callbacks,
-  including menu file and pasted image callbacks, now guard stale completions;
-  character avatar upload callbacks now guard stale completions; character
-  additional asset upload callbacks now guard stale completions; character
-  emotion image upload callbacks now guard stale completions; character
-  reference/model assets remain pending; module asset upload callbacks now guard
-  stale completions; character TTS VITS model and GPT-SoVITS reference audio
-  callbacks now guard stale completions; prompt preset icon uploads now guard stale
-  completions; settings media asset uploads for the guarded OtherBotSettings
-  image paths now guard stale completions; custom color scheme imports now guard
-  stale completions; plugin import/update now guards stale completions;
-  persona icon uploads now guard stale completions;
-  BotSettings bias JSON imports now guard stale completions; the previously
-  listed additional-params import is audit drift because the live UI has no
-  import button; sidebar character-folder image uploads now guard stale
-  completions; NovelAI `.naiv4vibe` import now guards stale completions;
-  EasyPanel separate-parameters import now guards stale completions. No known
-  live Phase 3 upload/import/fetch callback surface is currently pending; run a
-  final Phase 3 audit before closing the phase.
-  NanoGPT
-  dashboard subscription-state fetch persistence now guards stale completions.
-- [Phase 4](phases/phase-4-chat-messages-generation.md): pending. Chat,
-  message, reroll, trigger, suggestion, and generation target freshness.
-- [Phase 5](phases/phase-5-collection-domains.md): pending. Presets,
-  personas, loadouts, lorebooks, scripts, modules, plugins, sidebars, and list
-  ordering.
-- [Phase 6](phases/phase-6-resync-memory-navigation.md): pending. Full resync,
-  backups/imports, memory jobs, and navigation/selection refresh.
+- [Phase 3](phases/phase-3-upload-import-fetch-callbacks.md): complete. Upload,
+  file, import, decode, and remote-fetch callback tokens have landed for custom
+  background, composer file/paste, character avatar/additional asset/emotion/TTS,
+  settings media, module asset, prompt preset icon, NanoGPT dashboard fetch,
+  custom color scheme, plugin import/update, persona icon, BotSettings bias JSON,
+  sidebar character-folder image, NovelAI `.naiv4vibe`, and EasyPanel
+  separate-parameters import paths. No known live Phase 3 callback surface
+  remains pending after the final audit. The BotSettings additional-params import
+  row is audit drift because the live UI has no import button there.
+- [Phase 4](phases/phase-4-chat-messages-generation.md): active. Composer
+  send/continue clear/restore, auto-translate, reroll, partial edit/delete,
+  dynamic trigger, suggestion, and generation finalization freshness remain here.
+  Composer file and paste callbacks are already covered by Phase 3.
+- [Phase 5](phases/phase-5-collection-domains.md): pending. Preset, persona,
+  translator, module, lorebook, script, and import collection flows; Hypa V3
+  preset array import/rename/delete; plugin enable/delete/args/provider/storage;
+  and sidebar/chat/folder/character list create/delete/reorder/import rollback
+  remain here.
+- [Phase 6](phases/phase-6-resync-memory-navigation.md): pending. Realm, backup,
+  and local bundle restore/import resyncs; character/chat import
+  refresh/navigation edges; memory job list/progress ordering; route/selection
+  hydration; welcome/onboarding delayed setup; and DevTool autopilot long-loop
+  chat targeting remain here.
 - [Phase 7](phases/phase-7-verification.md): pending. Closeout regression,
   browser smoke, and TypeScript proof.
 
@@ -294,9 +293,9 @@ the input persistence inventory under
   shared merge helper refreshes fields present in the projection surface; it does
   not treat absent optional fields as deletion instructions for this phase.
 - Remaining families to track by phase:
-  - Phase 3: upload/import/fetch callbacks, including module/plugin
+  - Phase 3: complete. Upload/import/fetch callbacks, including module/plugin
     import/update/fetch/upload callbacks and other file/decode/remote-fetch
-    callback freshness.
+    callback freshness, have no known live pending surface after final audit.
   - Phase 3 first slice: `CustomBackgroundToggle.svelte` issues a latest
     operation token for each custom background toggle operation and requires the
     upload placeholder to still be current before applying selected images,
@@ -385,15 +384,19 @@ the input persistence inventory under
     `selectSingleFile`'s `onFileSelected` hook after a real JSON file is
     selected, and lets `EasyPanel.svelte` replace only the fresh active base slot
     or override model slot while preserving unrelated slots.
-  - Phase 4: `restoreChatScopedState`, chat/message/generation freshness, and
-    message update/delete/truncate/replace freshness.
-  - Phase 5: create/delete/reorder/import/select and broad collection rollback
-    for presets, personas, loadouts, lorebooks, scripts, modules, plugins,
-    sidebar chat/folder lists, character list ordering, and module/plugin
-    collection/storage/provider/argument behavior.
-  - Phase 6: resync/import/restore/navigation/memory, including full
-    restore/import/resync, memory jobs, route hydration, and navigation refresh
-    fences.
+  - Phase 4: `restoreChatScopedState`, composer send/continue clear/restore,
+    auto-translate, reroll, partial edit/delete, dynamic trigger, suggestion,
+    message update/delete/truncate/replace freshness, and generation
+    finalization. Composer file and paste callbacks are already covered by Phase
+    3.
+  - Phase 5: preset/persona/translator/module/lorebook/script/import collection
+    flows, Hypa V3 preset array import/rename/delete, plugin
+    enable/delete/args/provider/storage, sidebar chat/folder lists, character
+    list ordering, and broad create/delete/reorder/import rollback.
+  - Phase 6: Realm/backup/local bundle restore/import resyncs, character/chat
+    import refresh/navigation edges, memory job list/progress ordering,
+    route/selection hydration, welcome/onboarding delayed setup, DevTool
+    autopilot long-loop chat targeting, and related navigation refresh fences.
 - Phase docs that mention `src/ts/process/rerollNavigation.ts` should be read
   as `src/ts/process/rerollNavigation.svelte.ts`.
 - First P0 fixture targets are dirty character projection merge,

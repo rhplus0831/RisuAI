@@ -1,6 +1,6 @@
 # Phase 3: Upload, Import & Fetch Callbacks
 
-Status: active.
+Status: complete.
 
 Goal: guard long-running file, upload, image decode, import, and remote-fetch
 callbacks so late results do not mutate a newer draft or different target.
@@ -11,10 +11,13 @@ callbacks so late results do not mutate a newer draft or different target.
 - Guard character avatar, emotion, additional asset, reference audio, and model
   registration callbacks.
 - Guard settings media buttons, prompt preset icon upload, custom background,
-  custom color scheme import, and additional params import.
-- Guard module asset upload, plugin import/update, persona import, preset
-  import, chat/character import helpers, and NanoGPT dashboard fetch
-  persistence.
+  custom color scheme import, and separate-parameters import. The
+  additional-params import audit row has no live import button.
+- Guard module asset upload, plugin import/update, persona icon upload,
+  BotSettings bias import, sidebar folder image upload, NovelAI vibe import,
+  EasyPanel separate-parameters import, and NanoGPT dashboard fetch persistence.
+  Broad preset/persona/chat/character import refresh and collection semantics
+  are deferred to Phases 5 and 6.
 - Prefer helpers that return parsed/uploaded results and leave mutation to the
   still-current caller.
 
@@ -137,18 +140,34 @@ can replace only the active parameter slot.
 - Any accepted destructive import remains explicitly marked and tested as
   destructive.
 
-## Validation
+## Closeout Validation
 
 ```bash
-pnpm exec vitest run src/ts/process/files/multisend.test.ts
-pnpm exec vitest run src/ts/characters.importChat.test.ts \
-  src/ts/characterCards.pngImport.test.ts
+pnpm exec vitest run src/ts/server/staleStateGuards.test.ts src/lib/Setting/Pages/Display/CustomBackgroundToggle.svelte.test.ts src/lib/ChatScreens/DefaultChatScreen.loadPages.test.ts src/ts/process/files/multisend.test.ts src/ts/characters.imageEmotion.test.ts src/ts/server/characterAdditionalAssetUpload.test.ts src/ts/server/moduleAssetUpload.test.ts src/ts/server/promptPresetIconUpload.test.ts src/ts/server/characterEmotionUpload.test.ts src/lib/Setting/Pages/BotSettings.svelte.test.ts
+pnpm exec vitest run src/ts/server/nanoGPTDashboardFetch.test.ts src/lib/UI/NanoGPTDashboard.svelte.test.ts src/ts/server/settingsMediaAssetUpload.test.ts src/lib/Setting/Pages/OtherBotSettings.svelte.test.ts src/ts/server/characterTtsAssetUpload.test.ts src/lib/SideBars/CharConfig.svelte.test.ts src/ts/server/colorSchemeImport.test.ts src/ts/gui/colorscheme.test.ts src/ts/server/pluginImport.test.ts src/ts/plugins/plugins.test.ts src/ts/server/personaIconUpload.test.ts src/ts/persona.iconUpload.test.ts src/ts/server/biasImport.test.ts src/ts/server/characterFolderImageUpload.test.ts src/ts/server/naiVibeImport.test.ts src/ts/server/seperateParametersImport.test.ts src/lib/Others/AllSeperateParameters.svelte.test.ts src/lib/Others/ProTools/EasyPanel.svelte.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
+git diff --check
 ```
 
-Add nearest focused tests for settings, module, plugin, and dashboard callbacks
-as those paths are changed.
+Closeout result on 2026-06-17: the first Vitest set passed 10 files and 67
+tests; the second Vitest set passed 18 files and 106 tests. Both TypeScript
+checks and `git diff --check` passed.
+
+The final audit found no known live Phase 3 upload/import/fetch callback surface
+still pending. Live TTS model/reference media paths are guarded; the BotSettings
+additional-params import row is audit drift because it has no live import
+button; EasyPanel separate-parameters import is guarded.
+
+Deferrals: Phase 4 owns composer send/continue clear/restore, auto-translate,
+reroll, partial edit/delete, dynamic trigger, suggestion, and generation
+finalization. Phase 5 owns preset/persona/translator/module/lorebook/script and
+other collection flows, Hypa V3 preset array import/rename/delete, plugin
+enable/delete/args/provider/storage, and sidebar/chat/folder/character list
+rollback. Phase 6 owns Realm/backup/local bundle restore/import resyncs,
+character/chat import refresh/navigation edges, memory job list/progress
+ordering, route/selection hydration, welcome/onboarding delayed setup, and
+DevTool autopilot long-loop chat targeting.
 
 ## Risks
 

@@ -37,41 +37,29 @@ pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 
 ## Current State
 
-Phase 0, Phase 1, and Phase 2 are complete. Phase 0 locked the contract and
-baseline documentation. Phase 1 added shared stale-state helpers with focused
-coverage and landed settings, character, and chat row metadata rollback
-adopters. Phase 2 landed dirty projection protection for character profile
-drafts, prompt-template item rows, generic settings drafts, selected persona
-profile fields, translator preset `name`/`prompt`/`maxResponse` fields,
+Phase 0, Phase 1, Phase 2, and Phase 3 are complete. Phase 0 locked the
+contract and baseline documentation. Phase 1 added shared stale-state helpers
+with focused coverage and landed settings, character, and chat row metadata
+rollback adopters. Phase 2 landed dirty projection protection for character
+profile drafts, prompt-template item rows, generic settings drafts, selected
+persona profile fields, translator preset `name`/`prompt`/`maxResponse` fields,
 lorebook entry drafts, and selected-character script/trigger draft rows while
-keeping clean projection fields refreshed. Phase 3 is in progress; custom
-background upload/cancel/error callback freshness, composer paste/menu file
-callback freshness, character avatar upload callback freshness, and character
-additional asset upload callback freshness, and module asset upload callback
-freshness, and prompt preset icon upload callback freshness have landed.
-NanoGPT dashboard fetch persistence freshness has also landed.
-Character emotion image upload callback freshness has landed.
-Settings media asset upload callback freshness has landed for the NovelAI
-character reference image, NovelAI i2i base image, and WaveSpeed reference image
-paths.
-Character TTS media callback freshness has landed for VITS model registration
-and GPT-SoVITS reference audio upload.
-Custom color scheme import callback freshness has landed.
-Plugin import/update callback freshness has landed.
-Persona icon upload callback freshness has landed.
-BotSettings bias JSON import callback freshness has landed.
-Sidebar character-folder image upload callback freshness has landed.
-NovelAI `.naiv4vibe` import callback freshness has landed.
-EasyPanel separate-parameters import callback freshness has landed.
+keeping clean projection fields refreshed. Phase 3 closed the
+upload/import/fetch callback slice for custom background, composer file/paste,
+character avatar/additional asset/emotion/TTS, settings media, module asset,
+prompt icon, NanoGPT fetch, color scheme, plugin import/update, persona icon,
+BotSettings bias JSON, sidebar folder image, NovelAI vibe, and EasyPanel
+separate-parameters paths. The final Phase 3 audit found no known live callback
+surface still pending.
 
 Next manager loop:
 
 1. Read `README.md`, `STRUCTURE.md`, `status.md`, `latest-verification.md`, and
-   `phases/phase-3-upload-import-fetch-callbacks.md`.
-2. Spawn an explorer agent for the next Phase 3 upload/import/fetch callback
-   slice.
-3. Spawn a worker agent for the selected Phase 3 slice, then a verification agent
-   after the worker completes.
+   `phases/phase-4-chat-messages-generation.md`.
+2. Spawn an explorer agent for the next Phase 4 chat/message/generation
+   freshness slice.
+3. Spawn a worker agent for the selected Phase 4 slice, then a verification
+   agent after the worker completes.
 4. If verification succeeds, run Prettier, run the relevant validation commands,
    commit, close finished agents, and move to the next task.
 5. If verification fails, close the failed verification agent and spawn or reuse
@@ -108,34 +96,51 @@ Results: closeout explorer returned PASS/CLOSEABLE on 2026-06-17. The latest
 implementation proof for the final Phase 2 live local draft slice passed 3
 files and 109 tests, and both TypeScript checks passed.
 
+Phase 3 closeout validation:
+
+```bash
+pnpm exec vitest run src/ts/server/staleStateGuards.test.ts src/lib/Setting/Pages/Display/CustomBackgroundToggle.svelte.test.ts src/lib/ChatScreens/DefaultChatScreen.loadPages.test.ts src/ts/process/files/multisend.test.ts src/ts/characters.imageEmotion.test.ts src/ts/server/characterAdditionalAssetUpload.test.ts src/ts/server/moduleAssetUpload.test.ts src/ts/server/promptPresetIconUpload.test.ts src/ts/server/characterEmotionUpload.test.ts src/lib/Setting/Pages/BotSettings.svelte.test.ts
+pnpm exec vitest run src/ts/server/nanoGPTDashboardFetch.test.ts src/lib/UI/NanoGPTDashboard.svelte.test.ts src/ts/server/settingsMediaAssetUpload.test.ts src/lib/Setting/Pages/OtherBotSettings.svelte.test.ts src/ts/server/characterTtsAssetUpload.test.ts src/lib/SideBars/CharConfig.svelte.test.ts src/ts/server/colorSchemeImport.test.ts src/ts/gui/colorscheme.test.ts src/ts/server/pluginImport.test.ts src/ts/plugins/plugins.test.ts src/ts/server/personaIconUpload.test.ts src/ts/persona.iconUpload.test.ts src/ts/server/biasImport.test.ts src/ts/server/characterFolderImageUpload.test.ts src/ts/server/naiVibeImport.test.ts src/ts/server/seperateParametersImport.test.ts src/lib/Others/AllSeperateParameters.svelte.test.ts src/lib/Others/ProTools/EasyPanel.svelte.test.ts
+pnpm exec tsc -p tsconfig.client-lib.json
+pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
+git diff --check
+```
+
+Results: the first Vitest set passed 10 files and 67 tests; the second Vitest
+set passed 18 files and 106 tests. Both TypeScript checks and `git diff --check`
+passed. No known live Phase 3 upload/import/fetch callback surface remains
+pending after final audit.
+
 Explicit deferrals:
 
 - `restoreChatScopedState` remains Phase 4 work.
-- Message update/delete/truncate/replace freshness remains Phase 4 work.
-- Upload/import/fetch callbacks remain Phase 3 work.
-- Chat/message/generation freshness remains Phase 4 work.
-- Create/delete/reorder/import/select and broad collection rollback remain Phase
-  5 work.
-- Module/plugin broad rollback, collection, storage, provider, and argument
-  behavior remain Phase 5 work; module/plugin import/update/fetch/upload
-  callbacks remain Phase 3 work. Submit-only module drafts do not block Phase 2.
-- Resync/import/restore/navigation/memory remain Phase 6 work.
+- Composer send/continue clear/restore, auto-translate, reroll, partial
+  edit/delete, dynamic trigger, suggestion, message
+  update/delete/truncate/replace, and generation finalization remain Phase 4
+  work. Composer file and paste callbacks are already covered by Phase 3.
+- Preset/persona/translator/module/lorebook/script/import collection flows, Hypa
+  V3 preset array import/rename/delete, plugin
+  enable/delete/args/provider/storage, and sidebar/chat/folder/character list
+  create/delete/reorder/import rollback remain Phase 5 work.
+- Realm/backup/local bundle restore/import resyncs, character/chat import
+  refresh/navigation edges, memory job list/progress ordering, route/selection
+  hydration, welcome/onboarding delayed setup, and DevTool autopilot long-loop
+  chat targeting remain Phase 6 work.
 - Projection-absent optional clean-field deletion remains outside Phase 2 because
   the shared merge helper refreshes fields present in the projection surface.
 
-No known code gap blocks Phase 1 or Phase 2 completion.
+No known code gap blocks Phase 1, Phase 2, or Phase 3 completion.
 
 ## Later Phase Order
 
 Proceed in this order unless a verification result proves a dependency needs to
 move earlier:
 
-1. Phase 3 upload, import, and fetch callbacks.
-2. Phase 4 chat, message, reroll, trigger, suggestion, and generation
+1. Phase 4 chat, message, reroll, trigger, suggestion, and generation
    freshness.
-3. Phase 5 collection-domain rollback and projection hardening.
-4. Phase 6 resync, memory, restore/import, and navigation fences.
-5. Phase 7 final verification and closeout.
+2. Phase 5 collection-domain rollback and projection hardening.
+3. Phase 6 resync, memory, restore/import, and navigation fences.
+4. Phase 7 final verification and closeout.
 
 Each phase should end with focused tests or an explicit residual gap recorded in
 `status.md` and latest proof recorded in `latest-verification.md`.
