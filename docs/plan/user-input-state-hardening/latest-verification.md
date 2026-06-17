@@ -7,27 +7,29 @@ hardening workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 1 closeout. Shared helpers exist with
-  focused coverage, and settings, character, and chat row metadata rollback
-  adopters have landed.
+- Runtime/code change under test: Phase 2 first implementation slice. Character
+  profile drafts now protect dirty top-level fields from stale same-character
+  projection reseeds while clean sibling fields still refresh.
 - Commands:
 
 ```bash
-pnpm exec vitest run src/ts/server/staleStateGuards.test.ts src/ts/server/commands.test.ts src/ts/chatCommands.test.ts
-pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/commands.test.ts server/fastify/__tests__/commandSingleRowPaths.test.ts
+pnpm exec vitest run src/ts/server/characterBridge.svelte.test.ts src/ts/server/staleStateGuards.test.ts
+pnpm exec vitest run src/ts/characterCommands.test.ts
+pnpm exec vitest run src/ts/server/commands.test.ts src/ts/chatCommands.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 ```
 
-- Result: passed on 2026-06-17. The client focused Vitest set passed 3 files and
-  94 tests. The Fastify command Vitest set passed 2 files and 138 tests. Both
-  TypeScript checks passed.
-- Residual gaps: `restoreChatScopedState` and message
-  update/delete/truncate/replace freshness are explicitly deferred to Phase 4.
-  Broader collection rollback remains Phase 5. No code gap blocks Phase 1
-  completion. Future adopters must pass cloned JSON-safe `previous` and
-  `attempted` values; mutable live references would weaken stale-skip
-  guarantees.
+- Result: passed on 2026-06-17. The character bridge/helper Vitest set passed 2
+  files and 28 tests; character commands passed 1 file and 43 tests; server/chat
+  command tests passed 2 files and 82 tests. Both TypeScript checks passed.
+- Residual gaps: this slice only covers character profile drafts in
+  `createServerBackedCharacterDraft`. Remaining Phase 2 draft projection
+  adopters for prompt settings/items, personas, translator presets, global
+  regex/settings drafts, lorebook entries, script/trigger definitions, module
+  drafts, and plugin argument/storage editors remain pending. Character
+  resync/import/restore and asset callback freshness stay deferred to their
+  later phases.
 
 ## Required Closeout Proof
 

@@ -12,7 +12,7 @@ import { canUseServerCommands, type CharacterSnapshot, type ServerCommandTranspo
 import { DBState, selectedCharID } from '../stores.svelte'
 import { getServerProjectionApplyEpoch, withTrustedServerProjectionWrite } from './projectionWriteGuard.svelte'
 import { isServerCharacterShell, SERVER_CHARACTER_SHELL_MARKER } from '../storage/database.svelte'
-import { applyAttemptedFieldRollback } from './staleStateGuards'
+import { applyAttemptedFieldRollback, mergeProjectionIntoDirtyDraft } from './staleStateGuards'
 
 interface PendingCharacterPatch {
   characterId: string
@@ -46,6 +46,7 @@ export function createServerBackedCharacterDraft(keys: readonly string[]): Serve
   let previousSeedSelected = Number.NaN
   let previousSeedCharacterId: string | null = null
   let previousSeedProjectionApplyEpoch = -1
+  const dirtyFields = new Set<keyof CharacterDraftValue & string>()
   const selectedCharMirror = $state({ value: get(selectedCharID) })
 
   $effect(() => {
@@ -71,6 +72,13 @@ export function createServerBackedCharacterDraft(keys: readonly string[]): Serve
     previousSeedProjectionApplyEpoch = projectionApplyEpoch
 
     const { serverSnapshot, serverValue } = untrack(() => currentCharacterDraftSeed(selected, characterId, keys))
+
+    if (identityChanged || !characterId) {
+      dirtyFields.clear()
+    } else if (projectionApplyChanged) {
+      clearDirtyFieldsMatchingProjection(dirtyFields, draft.value, serverValue)
+    }
+
     const shouldSeedDraft =
       identityChanged ||
       untrack(() => {
@@ -83,15 +91,26 @@ export function createServerBackedCharacterDraft(keys: readonly string[]): Serve
 
     if (shouldSeedDraft) {
       suppressDraftDispatch = true
-      draft.characterId = characterId
-      draft.value = cloneJsonValue(serverValue)
+      if (!identityChanged && projectionApplyChanged && dirtyFields.size > 0) {
+        draft.characterId = characterId
+        mergeProjectionIntoDirtyDraft({
+          draft: draft.value,
+          projection: serverValue,
+          dirtyFields,
+        })
+        reassertDirtyDraftFields(selected, characterId, draft.value, dirtyFields)
+      } else {
+        dirtyFields.clear()
+        draft.characterId = characterId
+        draft.value = cloneJsonValue(serverValue)
+      }
       queueMicrotask(() => {
         suppressDraftDispatch = false
       })
       initialized = true
     }
 
-    previousServerSnapshot = serverSnapshot
+    previousServerSnapshot = dirtyFields.size > 0 ? snapshotJson({ characterId, value: draft.value }) : serverSnapshot
   })
 
   let draftInitialized = false
@@ -109,6 +128,10 @@ export function createServerBackedCharacterDraft(keys: readonly string[]): Serve
       return
     }
     if (draftSnapshot === previousDraftDispatchSnapshot) return
+    const previousDraftValue = parseDraftSnapshot(previousDraftDispatchSnapshot)
+    for (const key of changedTopLevelDraftFields(previousDraftValue, draft.value)) {
+      dirtyFields.add(key)
+    }
     previousDraftDispatchSnapshot = draftSnapshot
 
     untrack(() => {
@@ -123,6 +146,59 @@ export function createServerBackedCharacterDraft(keys: readonly string[]): Serve
   })
 
   return draft
+}
+
+function parseDraftSnapshot(snapshot: string): CharacterDraftValue {
+  if (!snapshot || snapshot === '__undefined__') return {}
+  return JSON.parse(snapshot) as CharacterDraftValue
+}
+
+function changedTopLevelDraftFields(
+  previous: CharacterDraftValue,
+  current: CharacterDraftValue,
+): Array<keyof CharacterDraftValue & string> {
+  const changed: Array<keyof CharacterDraftValue & string> = []
+  const keys = new Set([...Object.keys(previous), ...Object.keys(current)])
+  for (const key of keys) {
+    if (snapshotJson(previous[key]) !== snapshotJson(current[key])) {
+      changed.push(key)
+    }
+  }
+  return changed
+}
+
+function clearDirtyFieldsMatchingProjection(
+  dirtyFields: Set<keyof CharacterDraftValue & string>,
+  draft: CharacterDraftValue,
+  projection: CharacterDraftValue,
+): void {
+  for (const key of Array.from(dirtyFields)) {
+    if (snapshotJson(draft[key]) === snapshotJson(projection[key])) {
+      dirtyFields.delete(key)
+    }
+  }
+}
+
+function reassertDirtyDraftFields(
+  selected: number,
+  characterId: string | null,
+  draft: CharacterDraftValue,
+  dirtyFields: ReadonlySet<keyof CharacterDraftValue & string>,
+): void {
+  if (!characterId || dirtyFields.size === 0) return
+
+  const patch: CharacterSnapshot = {}
+  for (const key of dirtyFields) {
+    patch[key] = cloneJsonValue(draft[key])
+  }
+  const sanitized = sanitizeCharacterPatch(patch)
+  if (Object.keys(sanitized).length === 0) return
+
+  withTrustedServerProjectionWrite(() => {
+    const character = DBState.db.characters?.[selected]
+    if (!character || character.chaId !== characterId || isServerCharacterShell(character)) return
+    Object.assign(character, sanitized)
+  })
 }
 
 function currentCharacterDraftSeed(

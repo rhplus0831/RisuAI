@@ -231,6 +231,114 @@ describe('createServerBackedCharacterDraft seed gating', () => {
     stop()
   })
 
+  it('preserves a dirty scalar field through a stale projection while clean fields refresh', async () => {
+    setupCharacter()
+    const { draft, stop } = await createDraft(['name', 'desc'])
+
+    draft.value.name = 'Local draft name'
+    await flushAndSettle()
+
+    expect(DBState.db.characters[0].name).toBe('Local draft name')
+
+    const applied = mergeServerProjectionCharacterRow({
+      ...characterRow('char-1', 'Stale server name'),
+      desc: 'Fresh server description',
+    })
+    expect(applied).toBe(true)
+    await flushAndSettle()
+
+    expect(draft.value.name).toBe('Local draft name')
+    expect(draft.value.desc).toBe('Fresh server description')
+    expect(DBState.db.characters[0].name).toBe('Local draft name')
+    expect(DBState.db.characters[0].desc).toBe('Fresh server description')
+    stop()
+  })
+
+  it('preserves a dirty nested object as a top-level field through a stale projection', async () => {
+    setupCharacter()
+    const { draft, stop } = await createDraft(['desc', 'newGenData'])
+
+    draft.value.newGenData.prompt = 'Local prompt'
+    await flushAndSettle()
+
+    const applied = mergeServerProjectionCharacterRow({
+      ...characterRow('char-1', 'Server'),
+      desc: 'Fresh server description',
+      newGenData: {
+        prompt: 'Stale server prompt',
+        negative: '',
+        instructions: 'Fresh server instructions',
+        emotionInstructions: '',
+      },
+    })
+    expect(applied).toBe(true)
+    await flushAndSettle()
+
+    expect(draft.value.newGenData.prompt).toBe('Local prompt')
+    expect(draft.value.newGenData.instructions).toBe('')
+    expect(draft.value.desc).toBe('Fresh server description')
+    expect(DBState.db.characters[0].newGenData.prompt).toBe('Local prompt')
+    expect(DBState.db.characters[0].desc).toBe('Fresh server description')
+    stop()
+  })
+
+  it('preserves a dirty list as a top-level field through a stale projection', async () => {
+    setupCharacters([
+      characterRow('char-1', 'Initial', {
+        alternateGreetings: ['Initial alternate greeting'],
+      }),
+    ])
+    const { draft, stop } = await createDraft(['desc', 'alternateGreetings'])
+
+    draft.value.alternateGreetings = ['Local alternate greeting']
+    await flushAndSettle()
+
+    const applied = mergeServerProjectionCharacterRow({
+      ...characterRow('char-1', 'Server', {
+        alternateGreetings: ['Stale server alternate greeting'],
+      }),
+      desc: 'Fresh server description',
+    })
+    expect(applied).toBe(true)
+    await flushAndSettle()
+
+    expect(draft.value.alternateGreetings).toEqual(['Local alternate greeting'])
+    expect(draft.value.desc).toBe('Fresh server description')
+    expect(DBState.db.characters[0].alternateGreetings).toEqual(['Local alternate greeting'])
+    expect(DBState.db.characters[0].desc).toBe('Fresh server description')
+    stop()
+  })
+
+  it('clears a dirty scalar once a matching projection arrives', async () => {
+    setupCharacter()
+    const { draft, stop } = await createDraft(['name', 'desc'])
+
+    draft.value.name = 'Accepted local name'
+    await flushAndSettle()
+
+    const matchingApplied = mergeServerProjectionCharacterRow({
+      ...characterRow('char-1', 'Accepted local name'),
+      desc: 'Accepted server description',
+    })
+    expect(matchingApplied).toBe(true)
+    await flushAndSettle()
+
+    expect(draft.value.name).toBe('Accepted local name')
+    expect(draft.value.desc).toBe('Accepted server description')
+
+    const laterApplied = mergeServerProjectionCharacterRow({
+      ...characterRow('char-1', 'Later server name'),
+      desc: 'Later server description',
+    })
+    expect(laterApplied).toBe(true)
+    await flushAndSettle()
+
+    expect(draft.value.name).toBe('Later server name')
+    expect(draft.value.desc).toBe('Later server description')
+    expect(DBState.db.characters[0].name).toBe('Later server name')
+    stop()
+  })
+
   it('L22: local edits update projection and dispatch sanitized character patches', async () => {
     setupCharacter()
     const stopWatcher = watchServerBackedCharacterProfile({ delayMs: DELAY })

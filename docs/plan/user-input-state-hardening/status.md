@@ -11,16 +11,20 @@ plan consolidates the input persistence inventory under
 ## Snapshot
 
 - Plan state: active, Phase 0 contract decisions complete, Phase 1 complete, and
-  Phase 2 dirty draft projection next. Phase 1 settings, character, and chat row
-  metadata rollback adoption landed; message-target freshness is explicitly
-  deferred to Phase 4.
+  Phase 2 dirty draft projection in progress. The first Phase 2 implementation
+  slice landed character profile draft dirty top-level field protection.
+  Phase 1 settings, character, and chat row metadata rollback adoption landed;
+  message-target freshness is explicitly deferred to Phase 4.
 - Code changes: `src/ts/server/staleStateGuards.ts` and
   `src/ts/server/staleStateGuards.test.ts` add shared stale-state primitives
   and focused helper coverage. `src/ts/server/settingsBridge.svelte.ts`,
   `src/ts/server/characterBridge.svelte.ts`, `src/ts/characterCommands.ts`,
   and `src/ts/chatCommands.ts` now use `applyAttemptedFieldRollback` for
   attempted settings/profile/row/chat metadata rollback.
-- Verification state: Phase 1 closeout validation is recorded in
+  `src/ts/server/characterBridge.svelte.ts` also now tracks dirty top-level
+  character draft fields and merges same-character projection reseeds through
+  `mergeProjectionIntoDirtyDraft`.
+- Verification state: Phase 2 first-slice validation is recorded in
   `latest-verification.md`.
 - Highest issue density:
   - Character editor: 52 issue rows, mostly dirty projection and unguarded
@@ -49,8 +53,10 @@ plan consolidates the input persistence inventory under
   message update/delete/truncate/replace freshness are explicitly deferred to
   Phase 4. Collection rollback domains stay owned by Phase 5. No known code gap
   blocks Phase 1 completion.
-- [Phase 2](phases/phase-2-dirty-draft-projection.md): next. Dirty draft
-  projection merge behavior.
+- [Phase 2](phases/phase-2-dirty-draft-projection.md): in progress. Character
+  profile draft dirty top-level projection protection has landed; prompt,
+  persona, translator, lorebook, script/trigger, module, and plugin draft
+  projection adopters remain pending.
 - [Phase 3](phases/phase-3-upload-import-fetch-callbacks.md): pending. Upload,
   file, import, decode, and remote-fetch callback tokens.
 - [Phase 4](phases/phase-4-chat-messages-generation.md): pending. Chat,
@@ -78,6 +84,12 @@ plan consolidates the input persistence inventory under
 - Settings, character, and chat row metadata rollback adopters now use
   `applyAttemptedFieldRollback` for attempted rollback without broadening Phase
   1 into message-body freshness or collection-domain rollback.
+- Phase 2 first slice: `createServerBackedCharacterDraft` tracks per-draft
+  dirty top-level fields, clears dirty keys on target/full reseed boundaries,
+  clears dirty keys when projection matches the local draft value, merges
+  same-character projection epochs through `mergeProjectionIntoDirtyDraft`, and
+  reasserts still-dirty fields back into the selected character row after a
+  projection overwrite.
 - Remaining broad rollback families to track by phase:
   - Phase 4: `restoreChatScopedState` and message
     update/delete/truncate/replace freshness.
