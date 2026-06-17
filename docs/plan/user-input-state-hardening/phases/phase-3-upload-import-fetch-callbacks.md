@@ -55,6 +55,12 @@ operation token issued only after selected files exist, target character id and
 row checks, and an emotion image list snapshot before uploaded emotions can
 append to a character or dispatch updates.
 
+Ninth landed slice: settings media asset upload callbacks in `OtherBotSettings`
+now use latest operation tokens issued only after selected files exist,
+target/context/field snapshots, and freshness checks around `saveAsset` before
+NovelAI character reference, NovelAI i2i base, or WaveSpeed reference images can
+write image/base64 settings fields.
+
 ## Anchors
 
 - `src/lib/ChatScreens/DefaultChatScreen.svelte`

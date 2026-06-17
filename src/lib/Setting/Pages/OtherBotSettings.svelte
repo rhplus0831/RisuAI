@@ -23,6 +23,17 @@
   import { onDestroy } from 'svelte'
   import { createServerBackedSettingDraft, watchServerBackedSettings } from 'src/ts/server/settingsBridge.svelte'
   import { ensurePromptTemplateHydrated } from 'src/ts/server/promptTemplateHydration'
+  import {
+    applyFreshSettingsMediaAssetUpload,
+    beginSettingsMediaAssetUpload,
+    captureSettingsMediaAssetUploadTarget,
+    clearSettingsMediaAssetUpload,
+    isFreshSettingsMediaAssetUpload,
+    type SettingsMediaAssetUploadFieldKeys,
+    type SettingsMediaAssetUploadFreshness,
+    type SettingsMediaAssetUploadOperation,
+    type SettingsMediaAssetUploadTarget,
+  } from 'src/ts/server/settingsMediaAssetUpload'
 
   const stopServerSettingsWatch = watchServerBackedSettings(['useLegacyGUI'])
   onDestroy(stopServerSettingsWatch)
@@ -72,6 +83,19 @@
     model: '',
   })
   const voyageApiKeyDraft = createServerBackedSettingDraft<string>('voyageApiKey', '')
+
+  const NAI_CHARACTER_REFERENCE_UPLOAD_FIELDS = {
+    image: 'character_image',
+    base64image: 'character_base64image',
+  } satisfies SettingsMediaAssetUploadFieldKeys
+  const NAI_I2I_BASE_UPLOAD_FIELDS = {
+    image: 'image',
+    base64image: 'base64image',
+  } satisfies SettingsMediaAssetUploadFieldKeys
+  const WAVESPEED_REFERENCE_UPLOAD_FIELDS = {
+    image: 'reference_image',
+    base64image: 'reference_base64image',
+  } satisfies SettingsMediaAssetUploadFieldKeys
 
   let submenu = $state(DBState.db.useLegacyGUI ? -1 : 0)
 
@@ -222,8 +246,12 @@
   /**
    * Handle model selection change
    */
+  function getSelectedWavespeedModel(): WavespeedModel | undefined {
+    return wavespeedModels.find((m) => m.model_id === wavespeedImageDraft.value.model)
+  }
+
   function handleModelChange() {
-    const selectedModel = wavespeedModels.find((m) => m.model_id === wavespeedImageDraft.value.model)
+    const selectedModel = getSelectedWavespeedModel()
 
     // Reset reference_mode for text-to-image models
     if (!selectedModel?.supportsImageInput) {
@@ -266,6 +294,146 @@
     const selection = config.vibe_model_selection
     const encodings = selection ? config.vibe_data?.encodings?.[selection] : undefined
     return Object.entries(encodings ?? {}) as Array<[string, { params: { information_extracted: number } }]>
+  }
+
+  function naiCharacterReferenceUploadContext() {
+    return {
+      provider: sdProviderDraft.value,
+      model: NAIImgModelDraft.value,
+      reference_mode: NAIImgConfigDraft.value.reference_mode,
+    }
+  }
+
+  function naiI2IBaseUploadContext() {
+    return {
+      provider: sdProviderDraft.value,
+      model: NAIImgModelDraft.value,
+      i2i: NAII2IDraft.value,
+    }
+  }
+
+  function wavespeedReferenceUploadContext() {
+    return {
+      provider: sdProviderDraft.value,
+      model: wavespeedImageDraft.value.model,
+      reference_mode: wavespeedImageDraft.value.reference_mode,
+      supportsImageInput: getSelectedWavespeedModel()?.supportsImageInput ?? false,
+    }
+  }
+
+  function currentNaiCharacterReferenceUploadTarget(): SettingsMediaAssetUploadTarget {
+    return captureSettingsMediaAssetUploadTarget({
+      targetId: 'nai-character-reference',
+      fieldKeys: NAI_CHARACTER_REFERENCE_UPLOAD_FIELDS,
+      config: NAIImgConfigDraft.value,
+      context: naiCharacterReferenceUploadContext(),
+    })
+  }
+
+  function currentNaiI2IBaseUploadTarget(): SettingsMediaAssetUploadTarget {
+    return captureSettingsMediaAssetUploadTarget({
+      targetId: 'nai-i2i-base',
+      fieldKeys: NAI_I2I_BASE_UPLOAD_FIELDS,
+      config: NAIImgConfigDraft.value,
+      context: naiI2IBaseUploadContext(),
+    })
+  }
+
+  function currentWavespeedReferenceUploadTarget(): SettingsMediaAssetUploadTarget {
+    return captureSettingsMediaAssetUploadTarget({
+      targetId: 'wavespeed-reference',
+      fieldKeys: WAVESPEED_REFERENCE_UPLOAD_FIELDS,
+      config: wavespeedImageDraft.value,
+      context: wavespeedReferenceUploadContext(),
+    })
+  }
+
+  function settingsMediaAssetUploadFreshness(
+    operation: SettingsMediaAssetUploadOperation,
+  ): SettingsMediaAssetUploadFreshness {
+    switch (operation.targetId) {
+      case 'nai-character-reference':
+        return {
+          config: NAIImgConfigDraft.value,
+          context: naiCharacterReferenceUploadContext(),
+        }
+      case 'nai-i2i-base':
+        return {
+          config: NAIImgConfigDraft.value,
+          context: naiI2IBaseUploadContext(),
+        }
+      case 'wavespeed-reference':
+        return {
+          config: wavespeedImageDraft.value,
+          context: wavespeedReferenceUploadContext(),
+        }
+    }
+  }
+
+  function isCurrentSettingsMediaAssetUpload(operation: SettingsMediaAssetUploadOperation): boolean {
+    return isFreshSettingsMediaAssetUpload(operation, settingsMediaAssetUploadFreshness(operation))
+  }
+
+  function writeSettingsMediaAssetUploadConfig(
+    operation: SettingsMediaAssetUploadOperation,
+    config: Record<string, unknown>,
+  ): void {
+    switch (operation.targetId) {
+      case 'nai-character-reference':
+        NAIImgConfigDraft.value = config
+        console.log('Character image set:', NAIImgConfigDraft.value.character_image)
+        return
+      case 'nai-i2i-base':
+        NAIImgConfigDraft.value = config
+        return
+      case 'wavespeed-reference':
+        wavespeedImageDraft.value = config
+        console.log('WaveSpeed reference image set:', wavespeedImageDraft.value.reference_image)
+    }
+  }
+
+  async function uploadSettingsMediaAsset(target: SettingsMediaAssetUploadTarget): Promise<void> {
+    const img = await selectSingleFile(['jpg', 'jpeg', 'png', 'webp'])
+    if (!img) {
+      return
+    }
+
+    const operation = beginSettingsMediaAssetUpload(target)
+    try {
+      if (!isCurrentSettingsMediaAssetUpload(operation)) return
+
+      const imageData = img.data
+      const base64Image = Buffer.from(imageData).toString('base64')
+      const saveId = await saveAsset(imageData)
+      if (!isCurrentSettingsMediaAssetUpload(operation)) return
+
+      const nextConfig = applyFreshSettingsMediaAssetUpload({
+        operation,
+        freshness: settingsMediaAssetUploadFreshness(operation),
+        image: saveId,
+        base64Image,
+      })
+      if (!nextConfig) return
+
+      writeSettingsMediaAssetUploadConfig(operation, nextConfig)
+    } finally {
+      clearSettingsMediaAssetUpload(operation)
+    }
+  }
+
+  async function uploadNaiCharacterReferenceImage(): Promise<void> {
+    const target = currentNaiCharacterReferenceUploadTarget()
+    await uploadSettingsMediaAsset(target)
+  }
+
+  async function uploadNaiI2IBaseImage(): Promise<void> {
+    const target = currentNaiI2IBaseUploadTarget()
+    await uploadSettingsMediaAsset(target)
+  }
+
+  async function uploadWavespeedReferenceImage(): Promise<void> {
+    const target = currentWavespeedReferenceUploadTarget()
+    await uploadSettingsMediaAsset(target)
   }
 
   $effect(() => {
@@ -584,21 +752,7 @@
 
       {#if NAIImgConfigDraft.value.reference_mode === 'character' && (NAIImgModelDraft.value === 'nai-diffusion-4-5-full' || NAIImgModelDraft.value === 'nai-diffusion-4-5-curated')}
         <div class="relative">
-          <button
-            class="mb-2"
-            onclick={async () => {
-              const img = await selectSingleFile(['jpg', 'jpeg', 'png', 'webp'])
-              if (!img) {
-                return null
-              }
-
-              const imageData = img.data
-
-              NAIImgConfigDraft.value.character_base64image = Buffer.from(imageData).toString('base64')
-              const saveId = await saveAsset(imageData)
-              NAIImgConfigDraft.value.character_image = saveId
-              console.log('Character image set:', NAIImgConfigDraft.value.character_image)
-            }}>
+          <button class="mb-2" onclick={uploadNaiCharacterReferenceImage}>
             {#if !NAIImgConfigDraft.value.character_image || NAIImgConfigDraft.value.character_image === ''}
               <div
                 class="rounded-md h-20 w-20 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500 flex items-center justify-center">
@@ -660,17 +814,7 @@
 
       {#if NAII2IDraft.value}
         <div class="relative">
-          <button
-            class="mb-2"
-            onclick={async () => {
-              const img = await selectSingleFile(['jpg', 'jpeg', 'png', 'webp'])
-              if (!img) {
-                return null
-              }
-              NAIImgConfigDraft.value.base64image = Buffer.from(img.data).toString('base64')
-              const saveId = await saveAsset(img.data)
-              NAIImgConfigDraft.value.image = saveId
-            }}>
+          <button class="mb-2" onclick={uploadNaiI2IBaseImage}>
             {#if !NAIImgConfigDraft.value.image || NAIImgConfigDraft.value.image === ''}
               <div
                 class="rounded-md h-20 w-20 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500 flex items-center justify-center">
@@ -951,21 +1095,7 @@
 
         {#if wavespeedImageDraft.value.reference_mode === 'image'}
           <div class="relative">
-            <button
-              class="mb-2"
-              onclick={async () => {
-                const img = await selectSingleFile(['jpg', 'jpeg', 'png', 'webp'])
-                if (!img) {
-                  return null
-                }
-
-                const imageData = img.data
-
-                wavespeedImageDraft.value.reference_base64image = Buffer.from(imageData).toString('base64')
-                const saveId = await saveAsset(imageData)
-                wavespeedImageDraft.value.reference_image = saveId
-                console.log('Character image set:', wavespeedImageDraft.value.reference_image)
-              }}>
+            <button class="mb-2" onclick={uploadWavespeedReferenceImage}>
               {#if !wavespeedImageDraft.value.reference_image || wavespeedImageDraft.value.reference_image === ''}
                 <div
                   class="rounded-md h-20 w-20 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500 flex items-center justify-center">

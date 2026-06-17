@@ -31,9 +31,12 @@ the input persistence inventory under
   state persistence by a fixed latest-operation token and captured API key before
   writing `nanogptSubscriptionState`. Character emotion image uploads now guard
   by latest selected file operation, target character id, row identity, and
-  emotion list snapshot before appending and dispatching. Phase 2 landed
-  character profile draft dirty top-level field protection; prompt-template item
-  row dirty projection merging; whole-key dirty projection protection for
+  emotion list snapshot before appending and dispatching. Settings media asset
+  uploads for NovelAI character reference, NovelAI i2i base, and WaveSpeed
+  reference images now guard by target/context/field snapshots before writing
+  image and base64 fields. Phase 2 landed character profile draft dirty
+  top-level field protection; prompt-template item row dirty projection merging;
+  whole-key dirty projection protection for
   `createServerBackedSettingDraft`; selected persona profile dirty projection
   protection; translator preset `name`/`prompt`/`maxResponse` dirty projection
   protection; lorebook entry draft dirty projection merging; and
@@ -99,7 +102,11 @@ the input persistence inventory under
   upload target capture, latest-operation tracking, selected row freshness,
   emotion-list snapshot checks, and live-list append behavior for
   `addCharEmotion`.
-- Verification state: Phase 3 character emotion upload callback validation is
+  `src/ts/server/settingsMediaAssetUpload.ts` now centralizes settings media
+  target capture, latest-operation tracking, context/field snapshot freshness,
+  and narrow asset-field merging for the guarded `OtherBotSettings.svelte` image
+  upload buttons.
+- Verification state: Phase 3 settings media asset upload callback validation is
   recorded in `latest-verification.md`.
 - Highest issue density:
   - Character editor: 52 issue rows, mostly dirty projection and unguarded
@@ -147,8 +154,9 @@ the input persistence inventory under
   emotion image upload callbacks now guard stale completions; character
   reference/model assets remain pending; module asset upload callbacks now guard
   stale completions; prompt preset icon uploads now guard stale
-  completions; settings media, plugin import/update, import helpers, and
-  remaining dashboard/import persistence surfaces remain pending. NanoGPT
+  completions; settings media asset uploads for the guarded OtherBotSettings
+  image paths now guard stale completions; plugin import/update, import helpers,
+  and remaining dashboard/import persistence surfaces remain pending. NanoGPT
   dashboard subscription-state fetch persistence now guards stale completions.
 - [Phase 4](phases/phase-4-chat-messages-generation.md): pending. Chat,
   message, reroll, trigger, suggestion, and generation target freshness.
@@ -263,6 +271,12 @@ the input persistence inventory under
     latest-operation tokens only after selected files exist, and lets
     `addCharEmotion` append uploaded entries and dispatch only when the selected
     row and live emotion list are still fresh.
+  - Phase 3 settings media asset upload slice: `settingsMediaAssetUpload.ts`
+    captures target ids, overwritten image/base64 fields, and mode/model context
+    snapshots for the NovelAI character reference, NovelAI i2i base, and
+    WaveSpeed reference image buttons. `OtherBotSettings.svelte` now selects
+    files before issuing upload tokens, checks freshness around `saveAsset`, and
+    applies only a fresh narrow merge into the active settings draft.
   - Phase 4: `restoreChatScopedState`, chat/message/generation freshness, and
     message update/delete/truncate/replace freshness.
   - Phase 5: create/delete/reorder/import/select and broad collection rollback

@@ -51,6 +51,9 @@ additional asset upload callback freshness, and module asset upload callback
 freshness, and prompt preset icon upload callback freshness have landed.
 NanoGPT dashboard fetch persistence freshness has also landed.
 Character emotion image upload callback freshness has landed.
+Settings media asset upload callback freshness has landed for the NovelAI
+character reference image, NovelAI i2i base image, and WaveSpeed reference image
+paths.
 
 Next manager loop:
 
