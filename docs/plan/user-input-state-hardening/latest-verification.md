@@ -7,32 +7,33 @@ hardening workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 3 character additional asset upload
-  callback freshness. The character editor and chat quick-add upload paths now
-  capture the target character id and additional asset list snapshot, issue a
-  latest-operation token only after selected files exist, upload entries locally,
-  and append to the live list only when the selected row/draft and list snapshot
-  are still fresh.
+- Runtime/code change under test: Phase 3 module asset upload callback
+  freshness. The module asset editor now captures the target module id and asset
+  list snapshot, issues a latest-operation token only after selected files exist,
+  uploads entries locally, and appends to the live module asset list only when
+  the open module draft and list snapshot are still fresh.
 - Commands:
 
 ```bash
-pnpm exec vitest run src/ts/server/characterAdditionalAssetUpload.test.ts src/ts/server/staleStateGuards.test.ts
+pnpm exec vitest run src/ts/server/moduleAssetUpload.test.ts src/ts/server/staleStateGuards.test.ts
+pnpm exec vitest run src/lib/Setting/Pages/Module/ModuleSettings.svelte.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 git diff --check
 ```
 
-- Result: passed on 2026-06-17. The additional-asset/stale-guard focused Vitest
-  set passed 2 files and 16 tests. Both TypeScript checks and `git diff --check`
-  passed.
-- Residual gaps: coverage is focused on the component-facing helper behavior
-  rather than mounted Svelte component tests. Stale asset uploads may still
-  complete server-side, but this slice prevents stale client-side list
-  application. Remaining Phase 3 surfaces include character emotion, reference
+- Result: passed on 2026-06-17. The module-asset/stale-guard focused Vitest set
+  passed 2 files and 16 tests, and the module settings Svelte test passed 5
+  tests. Both TypeScript checks and `git diff --check` passed.
+- Residual gaps: coverage is focused on exported helper behavior plus existing
+  module settings component coverage, not a mounted picker/upload loop with
+  mocked `selectMultipleFile` and `saveAsset`. Stale asset uploads may still
+  complete server-side, but this slice prevents stale client-side module draft
+  mutation. Remaining Phase 3 surfaces include character emotion, reference
   audio, and model callbacks; settings media assets; prompt
-  icon/background/theme imports; module assets; plugin import/update;
-  persona/preset/chat/character import helpers; and NanoGPT dashboard fetch
-  persistence.
+  icon/background/theme imports; plugin import/update; persona/preset/chat/
+  character import helpers; and NanoGPT dashboard fetch persistence. Broad
+  module rollback and module import behavior remain Phase 5/Phase 3 deferrals.
 
 ## Required Closeout Proof
 

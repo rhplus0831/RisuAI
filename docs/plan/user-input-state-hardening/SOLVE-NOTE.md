@@ -47,7 +47,8 @@ lorebook entry drafts, and selected-character script/trigger draft rows while
 keeping clean projection fields refreshed. Phase 3 is in progress; custom
 background upload/cancel/error callback freshness, composer paste/menu file
 callback freshness, character avatar upload callback freshness, and character
-additional asset upload callback freshness have landed.
+additional asset upload callback freshness, and module asset upload callback
+freshness have landed.
 
 Next manager loop:
 

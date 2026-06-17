@@ -23,7 +23,9 @@ the input persistence inventory under
   asset, PNG metadata, or dispatch state. Character additional asset uploads now
   guard editor and chat quick-add completions by latest selected file operation,
   target character id, and additional asset list snapshot before appending to
-  live state. Phase 2 landed character profile draft dirty top-level field
+  live state. Module asset uploads now guard by latest selected file operation,
+  target module id, and module asset list snapshot before appending to the open
+  module draft. Phase 2 landed character profile draft dirty top-level field
   protection; prompt-template item row dirty projection merging; whole-key dirty
   projection protection for
   `createServerBackedSettingDraft`; selected persona profile dirty projection
@@ -78,8 +80,11 @@ the input persistence inventory under
   `src/ts/server/characterAdditionalAssetUpload.ts` now centralizes additional
   asset upload target capture, latest-operation tracking, snapshot freshness, and
   live-list append behavior for the character editor and chat quick-add paths.
-- Verification state: Phase 3 character additional asset upload callback
-  validation is recorded in `latest-verification.md`.
+  `src/ts/server/moduleAssetUpload.ts` now centralizes module asset upload target
+  capture, latest-operation tracking, snapshot freshness, and live-list append
+  behavior for the module asset editor.
+- Verification state: Phase 3 module asset upload callback validation is
+  recorded in `latest-verification.md`.
 - Highest issue density:
   - Character editor: 52 issue rows, mostly dirty projection and unguarded
     upload callbacks.
@@ -123,9 +128,9 @@ the input persistence inventory under
   including menu file and pasted image callbacks, now guard stale completions;
   character avatar upload callbacks now guard stale completions; character
   additional asset upload callbacks now guard stale completions; character
-  emotion/reference/model assets, settings media, prompt icons, module assets,
-  plugin import/update, import helpers, and dashboard fetch persistence remain
-  pending.
+  emotion/reference/model assets remain pending; module asset upload callbacks
+  now guard stale completions; settings media, prompt icons, plugin
+  import/update, import helpers, and dashboard fetch persistence remain pending.
 - [Phase 4](phases/phase-4-chat-messages-generation.md): pending. Chat,
   message, reroll, trigger, suggestion, and generation target freshness.
 - [Phase 5](phases/phase-5-collection-domains.md): pending. Presets,
@@ -221,6 +226,10 @@ the input persistence inventory under
     list snapshots, issues latest-operation tokens only after selected files
     exist, and lets the editor and chat quick-add paths append uploaded entries
     only when the live selected row/draft and asset list are still fresh.
+  - Phase 3 module asset upload slice: `moduleAssetUpload.ts` captures the
+    target module id and asset list snapshot, issues latest-operation tokens only
+    after selected files exist, and lets the module asset editor append uploaded
+    entries only when the open module draft and asset list are still fresh.
   - Phase 4: `restoreChatScopedState`, chat/message/generation freshness, and
     message update/delete/truncate/replace freshness.
   - Phase 5: create/delete/reorder/import/select and broad collection rollback

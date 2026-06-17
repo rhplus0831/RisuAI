@@ -29,6 +29,35 @@
     applyModuleScriptDefinitionDraft,
     watchServerBackedScriptDefinitions,
   } from 'src/ts/server/scriptDefinitionBridge.svelte'
+  import {
+    appendFreshModuleAssets,
+    beginModuleAssetUpload,
+    captureModuleAssetUploadTarget,
+    clearModuleAssetUpload,
+    isFreshModuleAssetUpload,
+    type ModuleAssetEntry,
+    type ModuleAssetUploadOperation,
+  } from 'src/ts/server/moduleAssetUpload'
+
+  const MODULE_ASSET_EXTENSIONS = [
+    'png',
+    'webp',
+    'mp4',
+    'mp3',
+    'gif',
+    'jpeg',
+    'jpg',
+    'ttf',
+    'otf',
+    'css',
+    'webm',
+    'woff',
+    'woff2',
+    'svg',
+    'avif',
+  ]
+
+  type SelectedModuleAssetFile = NonNullable<Awaited<ReturnType<typeof selectMultipleFile>>>[number]
 
   let submenu = $state(0)
   interface Props {
@@ -155,6 +184,72 @@
       moduleScriptDraftSnapshot = snapshotModuleScriptDraft(moduleId)
     }
     return applied
+  }
+
+  function moduleAssetExtension(name: string): string {
+    return name.split('.').pop()?.toLowerCase() ?? ''
+  }
+
+  function currentModuleAssetUploadTarget() {
+    return captureModuleAssetUploadTarget({
+      moduleId: currentModule?.id,
+      assets: currentModule?.assets,
+    })
+  }
+
+  function moduleAssetUploadFreshness() {
+    return {
+      currentModuleId: currentModule?.id,
+      assets: currentModule?.assets,
+    }
+  }
+
+  function isCurrentModuleAssetUpload(operation: ModuleAssetUploadOperation): boolean {
+    return isFreshModuleAssetUpload(operation, moduleAssetUploadFreshness())
+  }
+
+  async function uploadModuleAssetEntries(
+    files: readonly SelectedModuleAssetFile[],
+    operation: ModuleAssetUploadOperation,
+  ): Promise<ModuleAssetEntry[] | null> {
+    const entries: ModuleAssetEntry[] = []
+
+    for (const file of files) {
+      if (!isCurrentModuleAssetUpload(operation)) return null
+
+      const extension = moduleAssetExtension(file.name)
+      const assetPath = await saveAsset(file.data, '', extension)
+      if (!isCurrentModuleAssetUpload(operation)) return null
+
+      entries.push([file.name, assetPath, extension])
+    }
+
+    return entries
+  }
+
+  async function uploadModuleAssets(): Promise<void> {
+    const target = currentModuleAssetUploadTarget()
+    if (!target) return
+
+    const files = await selectMultipleFile(MODULE_ASSET_EXTENSIONS)
+    if (!files || files.length === 0) return
+
+    const operation = beginModuleAssetUpload(target)
+    try {
+      const entries = await uploadModuleAssetEntries(files, operation)
+      if (!entries || entries.length === 0) return
+
+      const nextAssets = appendFreshModuleAssets({
+        operation,
+        freshness: moduleAssetUploadFreshness(),
+        entries,
+      })
+      if (!nextAssets) return
+
+      currentModule.assets = nextAssets
+    } finally {
+      clearModuleAssetUpload(operation)
+    }
   }
 
   function addLorebook() {
@@ -434,39 +529,7 @@
         <tr>
           <th class="font-medium">{language.value}</th>
           <th class="font-medium cursor-pointer w-10">
-            <button
-              class="hover:text-green-500"
-              onclick={async () => {
-                const da = await selectMultipleFile([
-                  'png',
-                  'webp',
-                  'mp4',
-                  'mp3',
-                  'gif',
-                  'jpeg',
-                  'jpg',
-                  'ttf',
-                  'otf',
-                  'css',
-                  'webm',
-                  'woff',
-                  'woff2',
-                  'svg',
-                  'avif',
-                ])
-                currentModule.assets = currentModule.assets ?? []
-                if (!da) {
-                  return
-                }
-                for (const f of da) {
-                  const img = f.data
-                  const name = f.name
-                  const extension = name.split('.').pop().toLowerCase()
-                  const imgp = await saveAsset(img, '', extension)
-                  currentModule.assets.push([name, imgp, extension])
-                  currentModule.assets = currentModule.assets
-                }
-              }}>
+            <button class="hover:text-green-500" onclick={uploadModuleAssets}>
               <PlusIcon />
             </button>
           </th>

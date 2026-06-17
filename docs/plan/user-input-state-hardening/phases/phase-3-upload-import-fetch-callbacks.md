@@ -36,6 +36,11 @@ latest operation token issued only after selected files exist, target character
 id checks, and an additional asset list snapshot before editor or chat quick-add
 uploads can append entries to live state.
 
+Fifth landed slice: module asset upload callbacks now use a latest operation
+token issued only after selected files exist, target module id checks, and a
+module asset list snapshot before the module asset editor can append entries to
+live draft state.
+
 ## Anchors
 
 - `src/lib/ChatScreens/DefaultChatScreen.svelte`
