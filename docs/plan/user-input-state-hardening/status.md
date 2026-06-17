@@ -104,6 +104,9 @@ persistence inventory under
   sibling and same-target edits while delete rollback restores
   character/chat/loadout references only when live references still match the
   attempted delete state.
+  MCP `risu-set-module-info` now reuses the attempted-aware global module
+  rollback sequencer for PATCH plus enable command sequences, preserving an
+  accepted module PATCH when a later enable command fails.
   Phase 2 landed character profile draft dirty top-level field protection;
   prompt-template item row dirty projection merging; whole-key dirty projection
   protection for
@@ -267,8 +270,12 @@ persistence inventory under
   module/enabledModules patch rollback. Module rollback records are scoped by
   attempted row, field, enabled membership, delete reference, and order state;
   overlapping same-target failures defer behind newer pending operations.
-- Verification state: Phase 5 global module command rollback validation is
-  recorded in `latest-verification.md`.
+- `src/ts/moduleCommands.ts` and `src/ts/process/mcp/risuaccess/modules.ts` now
+  guard MCP module-info PATCH plus enable rollback through the same sequenced
+  module rollback steps, replacing the old broad
+  `restoreGlobalModuleState(previous)` path for `risu-set-module-info`.
+- Verification state: Phase 5 MCP module-info rollback validation is recorded in
+  `latest-verification.md`.
 - Highest issue density:
   - Character editor: 52 issue rows, mostly dirty projection and unguarded
     upload callbacks.
@@ -559,11 +566,20 @@ persistence inventory under
     delete rollback restores character/chat/loadout references only while live
     references still match the attempted delete state, and overlapping failures
     unwind in response order.
+  - Phase 5 MCP module-info slice: `risu-set-module-info` now sends module PATCH
+    and enable command pairs through the attempted-aware module rollback
+    sequencer. A failed PATCH restores only attempted fields and unattempted
+    enable state; a later failed enable leaves an accepted PATCH intact.
   - Phase 5: preset/persona/translator/lorebook/script/import collection flows,
-    module MCP info and module subdomains, Hypa V3 preset array
+    module lorebook/regex/script/trigger subdomains, Hypa V3 preset array
     import/rename/delete, plugin settings patch residuals, sidebar chat/folder
     lists, character list ordering, and broad create/delete/reorder/import
     rollback.
+  - Known pre-existing test gap: `pnpm exec vitest run
+    src/ts/compatibilityAdapters.test.ts` fails in
+    `routes MCP character lorebook writes through lorebook commands in
+    server-backed web mode` at `src/ts/compatibilityAdapters.test.ts:626`. The
+    failure reproduced at baseline commit `30d4ad7ab`.
   - Phase 6: Realm/backup/local bundle restore/import resyncs, character/chat
     import refresh/navigation edges, memory job list/progress ordering,
     route/selection hydration, welcome/onboarding delayed setup, DevTool

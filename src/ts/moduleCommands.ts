@@ -346,6 +346,37 @@ export function dispatchUpdateModule(
   )
 }
 
+export function dispatchModuleInfoPatch(
+  moduleId: string,
+  patch: ModuleSnapshot,
+  enabled: boolean | null,
+  previous: GlobalModuleStateSnapshot,
+): void {
+  if (!canUseServerCommands()) return
+
+  const steps: ModuleCollectionPatchStep[] = []
+  const commandPatch = cloneJsonValue(sanitizeModulePatch(patch))
+
+  if (Object.keys(commandPatch).length > 0) {
+    const rollbackEntries = moduleFieldRollbackEntries(moduleId, commandPatch, previous)
+    if (rollbackEntries.length > 0) {
+      steps.push({
+        factory: (baseRevision) => updateModuleCommand({ baseRevision, moduleId, patch: commandPatch }),
+        rollbackEntries,
+      })
+    }
+  }
+
+  if (enabled !== null) {
+    steps.push({
+      factory: (baseRevision) => enableModuleCommand({ baseRevision, moduleId, enabled }),
+      rollbackEntries: [moduleEnableRollbackEntry(moduleId, enabled, previous)],
+    })
+  }
+
+  runModuleCollectionPatchSteps(steps)
+}
+
 export function dispatchDeleteModule(moduleId: string, previous: GlobalModuleStateSnapshot): void {
   if (!canUseServerCommands()) return
   const rollbackEntries = moduleDeleteRollbackEntries(moduleId, previous)

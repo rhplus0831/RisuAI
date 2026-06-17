@@ -7,37 +7,39 @@ workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 5 global module command rollback.
-  Global module create, update, delete, enable, reorder, and plugin DB bridge
-  module/enabledModules patch commands now use attempted rollback records for
-  rows, fields, enabled membership, delete references, and order changes.
-  Failed module commands restore only live state that still matches the
-  attempted optimistic write, preserve newer sibling and same-target edits, and
-  unwind overlapping same-target failures in response order.
+- Runtime/code change under test: Phase 5 MCP module-info rollback.
+  `risu-set-module-info` now routes its module PATCH and enabled-state command
+  sequence through the shared attempted-aware module rollback helper. A failed
+  PATCH rolls back only attempted module fields and unattempted enable state,
+  while a successful PATCH is kept if a later enable command fails.
 - Commands:
 
 ```bash
-pnpm exec vitest run src/ts/moduleCommands.test.ts src/ts/plugins/plugins.test.ts src/lib/Setting/Pages/Module/ModuleSettings.svelte.test.ts
+pnpm exec vitest run src/ts/process/mcp/risuaccess/tests/modules.optimisticProjection.test.ts src/ts/moduleCommands.test.ts
 pnpm exec vitest run src/ts/server/commands.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 git diff --check
 ```
 
-- Result: passed on 2026-06-17. Module command/plugin bridge/module UI coverage
-  passed 56 tests, client command coverage passed 39 tests, and both TypeScript
-  checks plus `git diff --check` passed.
-- Residual gaps: the MCP module-info path in
-  `src/ts/process/mcp/risuaccess/modules.ts` still uses broad
-  `restoreGlobalModuleState(previous)`. Module lorebook/regex/script/trigger
-  subdomains remain outside sanitized module update rollback and stay as Phase 5
-  residual work. Plugin settings patch rollback still uses the broader
-  plugin-state snapshot path, and plugin import/update side-effect reload is not
-  fully modeled by rollback. Full `ScriptDefinitionStateSnapshot` rollback
-  remains broad for rarer discrete callers. The remaining Phase 5 collection
-  domains still need focused slices: preset/persona/translator/lorebook/sidebar
-  collection rollback and replacement flows, including create/delete/reorder,
-  import, and list-selection paths.
+- Result: passed on 2026-06-17. MCP module projection plus global module command
+  coverage passed 26 tests, client command coverage passed 39 tests, and both
+  TypeScript checks plus `git diff --check` passed.
+- Additional check: `pnpm exec vitest run src/ts/compatibilityAdapters.test.ts`
+  still fails in the pre-existing character MCP lorebook test
+  `routes MCP character lorebook writes through lorebook commands in
+  server-backed web mode` at `src/ts/compatibilityAdapters.test.ts:626`.
+  A detached baseline worktree at commit `30d4ad7ab` reproduced the same
+  failure before this slice, so it is tracked as out-of-scope for the module-info
+  rollback change.
+- Residual gaps: module lorebook/regex/script/trigger subdomains remain outside
+  sanitized module update rollback and stay as Phase 5 residual work. Plugin
+  settings patch rollback still uses the broader plugin-state snapshot path, and
+  plugin import/update side-effect reload is not fully modeled by rollback. Full
+  `ScriptDefinitionStateSnapshot` rollback remains broad for rarer discrete
+  callers. The remaining Phase 5 collection domains still need focused slices:
+  preset/persona/translator/lorebook/sidebar collection rollback and replacement
+  flows, including create/delete/reorder, import, and list-selection paths.
 
 ## Remaining Proof
 
@@ -54,11 +56,12 @@ git diff --check
   Phase 5 slice, plugin custom storage rollback is covered by the second Phase 5
   slice, plugin non-storage field/delete/provider rollback is covered by the
   third Phase 5 slice, plugin collection/full-plugin rollback is covered by the
-  fourth Phase 5 slice, and global module command rollback is covered by the
-  fifth Phase 5 slice. Remaining Phase 5 work owns preset/persona/translator,
-  module MCP info and module subdomains, lorebook, import collection flows, Hypa
-  V3 preset array import/rename/delete, plugin settings patch residuals, and
-  sidebar/chat/folder/character list create/delete/reorder/import rollback.
+  fourth Phase 5 slice, global module command rollback is covered by the fifth
+  Phase 5 slice, and MCP module-info rollback is covered by the sixth Phase 5
+  slice. Remaining Phase 5 work owns preset/persona/translator, module
+  lorebook/regex/script/trigger subdomains, lorebook, import collection flows,
+  Hypa V3 preset array import/rename/delete, plugin settings patch residuals,
+  and sidebar/chat/folder/character list create/delete/reorder/import rollback.
 - Phase 6 owns Realm/backup/local bundle restore/import resyncs, character/chat
   import refresh/navigation edges, memory job list/progress ordering,
   route/selection hydration, welcome/onboarding delayed setup, and DevTool

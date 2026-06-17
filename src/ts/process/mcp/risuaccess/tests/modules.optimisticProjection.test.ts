@@ -19,7 +19,10 @@ vi.mock('src/ts/alert', async (importActual) => {
 })
 
 import { clearCachedServerCommandRevision } from 'src/ts/server/commands'
-import { setServerProjectionWriteGuardEnabled } from 'src/ts/server/projectionWriteGuard.svelte'
+import {
+  setServerProjectionWriteGuardEnabled,
+  withTrustedServerProjectionWrite,
+} from 'src/ts/server/projectionWriteGuard.svelte'
 import { DBState, selectedCharID } from 'src/ts/stores.svelte'
 import { ModuleHandler } from '../modules'
 
@@ -30,6 +33,7 @@ interface CapturedFetch {
 }
 
 interface StubCommandFetchOptions {
+  failUrls?: string[]
   holdUrls?: string[]
 }
 
@@ -46,6 +50,7 @@ function stubCommandFetch(options: StubCommandFetchOptions = {}): {
 } {
   const calls: CapturedFetch[] = []
   const heldResponses: Array<() => void> = []
+  const failUrls = new Set(options.failUrls ?? [])
   const holdUrls = new Set(options.holdUrls ?? [])
   let revision = 10
 
@@ -63,6 +68,9 @@ function stubCommandFetch(options: StubCommandFetchOptions = {}): {
 
       if (url.startsWith('/api/v1/commands/modules')) {
         const buildResponse = () => {
+          if (failUrls.has(url)) {
+            return jsonResponse({ error: 'forced failure' }, 500)
+          }
           revision += 1
           return jsonResponse({
             revision,
@@ -206,6 +214,93 @@ describe('MCP module writes optimistic projection', () => {
       body: { baseRevision: 11, moduleId: 'module-a', enabled: true },
     })
     await waitForSettledCommands()
+  })
+
+  it('rolls back only attempted module-info fields and unattempted enable when a held PATCH fails', async () => {
+    DBState.db.modules = [
+      makeModule(),
+      makeModule({
+        id: 'module-b',
+        description: 'Sibling description',
+        name: 'Module B',
+      }),
+    ]
+    const { calls, releaseHeldResponses } = stubCommandFetch({
+      failUrls: ['/api/v1/commands/modules/module-a'],
+      holdUrls: ['/api/v1/commands/modules/module-a'],
+    })
+    const handler = new ModuleHandler()
+
+    await handler.handle('risu-set-module-info', {
+      id: 'module-a',
+      data: { name: 'Attempted', enabled: true },
+    })
+
+    expect(DBState.db.modules[0]).toMatchObject({
+      description: 'Original description',
+      name: 'Attempted',
+    })
+    expect(DBState.db.enabledModules).toEqual(['module-a'])
+
+    await waitForCallCount(calls, 2)
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.modules[0] = {
+        ...DBState.db.modules[0],
+        description: 'Newer description',
+      }
+      DBState.db.modules[1] = {
+        ...DBState.db.modules[1],
+        name: 'Sibling newer',
+      }
+      DBState.db.modules.push(makeModule({ id: 'module-c', name: 'Module C' }))
+      DBState.db.enabledModules.push('module-b')
+    })
+
+    releaseHeldResponses()
+    await waitForSettledCommands()
+
+    expect(calls).toHaveLength(2)
+    expect(DBState.db.modules.map((module) => module.id)).toEqual(['module-a', 'module-b', 'module-c'])
+    expect(DBState.db.modules[0]).toMatchObject({
+      description: 'Newer description',
+      name: 'Module A',
+    })
+    expect(DBState.db.modules[1]).toMatchObject({
+      description: 'Sibling description',
+      name: 'Sibling newer',
+    })
+    expect(DBState.db.enabledModules).toEqual(['module-b'])
+  })
+
+  it('keeps the accepted module-info PATCH when the later enable command fails', async () => {
+    const { calls } = stubCommandFetch({
+      failUrls: ['/api/v1/commands/modules/enable'],
+    })
+    const handler = new ModuleHandler()
+
+    await handler.handle('risu-set-module-info', {
+      id: 'module-a',
+      data: { name: 'Accepted', enabled: true },
+    })
+
+    expect(DBState.db.modules[0].name).toBe('Accepted')
+    expect(DBState.db.enabledModules).toEqual(['module-a'])
+
+    await waitForCallCount(calls, 3)
+    await waitForSettledCommands()
+
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/modules/module-a',
+      method: 'PATCH',
+      body: { baseRevision: 10, patch: { name: 'Accepted' } },
+    })
+    expect(calls[2]).toMatchObject({
+      url: '/api/v1/commands/modules/enable',
+      method: 'POST',
+      body: { baseRevision: 11, moduleId: 'module-a', enabled: true },
+    })
+    expect(DBState.db.modules[0].name).toBe('Accepted')
+    expect(DBState.db.enabledModules).toEqual([])
   })
 
   it('set and delete module lorebooks are immediately visible through DBState and MCP reads', async () => {

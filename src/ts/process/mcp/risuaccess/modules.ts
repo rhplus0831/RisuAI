@@ -1,13 +1,6 @@
 import { language } from 'src/lang'
 import { alertConfirm } from 'src/ts/alert'
-import { runOptimisticCommandSequence } from 'src/ts/chatCommands'
-import {
-  canUseServerCommands,
-  enableModuleCommand,
-  updateModuleCommand,
-  type ModuleSnapshot,
-  type ServerCommandResult,
-} from 'src/ts/server/commands'
+import { canUseServerCommands, type ModuleSnapshot } from 'src/ts/server/commands'
 import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
 import {
   currentLorebookStateSnapshot,
@@ -21,12 +14,7 @@ import {
   ensureClientScriptDefinitionIds,
   ensureClientTriggerDefinitionIds,
 } from 'src/ts/server/scriptDefinitionBridge.svelte'
-import {
-  currentGlobalModuleStateSnapshot,
-  restoreGlobalModuleState,
-  sanitizeModulePatch,
-  type GlobalModuleStateSnapshot,
-} from 'src/ts/moduleCommands'
+import { currentGlobalModuleStateSnapshot, dispatchModuleInfoPatch, sanitizeModulePatch } from 'src/ts/moduleCommands'
 import type { customscript, loreBook, triggerscript } from 'src/ts/storage/database.svelte'
 import { DBState } from 'src/ts/stores.svelte'
 import { pickHashRand } from 'src/ts/util'
@@ -490,7 +478,7 @@ export class ModuleHandler extends MCPToolHandler {
     const acceptedPatch = sanitizeModulePatch(patch)
     if (previous) {
       applyModuleInfoOptimistically(id, acceptedPatch, enabled)
-      dispatchModuleInfoCommands(id, acceptedPatch, enabled, previous)
+      dispatchModuleInfoPatch(id, acceptedPatch, enabled, previous)
     } else {
       if (enabled !== null) {
         const enabledModules = new Set(DBState.db.enabledModules || [])
@@ -983,37 +971,6 @@ function applyModuleInfoOptimistically(moduleId: string, patch: ModuleSnapshot, 
       DBState.db.enabledModules = Array.from(enabledModules)
     }
   })
-}
-
-function dispatchModuleInfoCommands(
-  moduleId: string,
-  patch: ModuleSnapshot,
-  enabled: boolean | null,
-  previous: GlobalModuleStateSnapshot,
-): void {
-  const commands: Array<(baseRevision: number) => Promise<ServerCommandResult>> = []
-
-  if (Object.keys(patch).length > 0) {
-    commands.push((baseRevision) =>
-      updateModuleCommand({
-        baseRevision,
-        moduleId,
-        patch,
-      }),
-    )
-  }
-
-  if (enabled !== null) {
-    commands.push((baseRevision) =>
-      enableModuleCommand({
-        baseRevision,
-        moduleId,
-        enabled,
-      }),
-    )
-  }
-
-  runOptimisticCommandSequence(commands, () => restoreGlobalModuleState(previous))
 }
 
 function replaceModuleLorebooksOptimistically(moduleId: string, entries: loreBook[]): void {

@@ -53,6 +53,11 @@ preserve newer sibling and same-target edits, restore character/chat/loadout
 references only while they still match the attempted delete state, and unwind
 overlapping same-target failures in response order.
 
+Sixth landed slice: MCP `risu-set-module-info` now reuses the global module
+attempted rollback sequencer for its module PATCH plus enable command pair. A
+failed PATCH rolls back only attempted fields and unattempted enable state, while
+an accepted PATCH remains in live state if a later enable command fails.
+
 ## Anchors
 
 - `src/lib/Setting/botpreset.svelte`
