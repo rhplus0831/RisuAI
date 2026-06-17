@@ -1,6 +1,6 @@
 # Phase 4: Chat, Messages & Generation
 
-Status: active.
+Status: complete.
 
 Goal: harden chat-facing async flows where delayed work can clear composer
 state, edit the wrong message, reroll the wrong chat, or persist generation
@@ -19,7 +19,8 @@ output against a stale target.
   and source data freshness. Partial edit/delete modal freshness has landed
   here.
 - Guard dynamic rendered chat buttons and Lua trigger results before applying
-  returned chat/message/script state.
+  returned chat/message/script state. Dynamic rendered button trigger freshness
+  has landed here.
 - Guard suggestion reroll/send persistence while preserving existing request
   checks. Suggestion persistence freshness has landed here.
 - Add generation finalization freshness checks for durable jobs and target-row
@@ -70,6 +71,14 @@ chat-var or message writes, and already-persisted retry replays return the
 current revision without rewriting chat vars, messages, alternates, or command
 events.
 
+Seventh landed slice: `Chat.svelte` now captures rendered `risu-trigger` and
+`risu-btn` target identity before awaiting manual/Lua trigger work, rechecks the
+active character/chat/message/source transcript before applying, and writes
+accepted results to the captured chat row with scoped rollback. `runTrigger` and
+`runLuaButtonTrigger` support optional freshness/deferred side-effect hooks so
+guarded rendered-button runs keep chat-var and author-note mutations on the
+returned chat instead of writing to a stale active chat.
+
 ## Anchors
 
 - `src/lib/ChatScreens/DefaultChatScreen.svelte`
@@ -102,7 +111,8 @@ events.
 - Tests cover stale composer clear/restore, stale paste/file append, stale
   auto-translate result, reroll after chat switch, partial edit after message
   change, dynamic trigger after chat switch, and generation finalization after
-  target row change. Generation finalization target-row tests have landed.
+  target row change. Dynamic rendered button and generation finalization
+  target-row tests have landed.
 - Chat/message rollback from Phase 1 is used instead of whole-chat restoration
   for the changed paths.
 - Browser smoke covers at least composer/file/reroll or records why unit tests

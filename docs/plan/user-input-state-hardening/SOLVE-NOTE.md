@@ -37,7 +37,7 @@ pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 
 ## Current State
 
-Phase 0, Phase 1, Phase 2, and Phase 3 are complete. Phase 0 locked the
+Phase 0, Phase 1, Phase 2, Phase 3, and Phase 4 are complete. Phase 0 locked the
 contract and baseline documentation. Phase 1 added shared stale-state helpers
 with focused coverage and landed settings, character, and chat row metadata
 rollback adopters. Phase 2 landed dirty projection protection for character
@@ -50,18 +50,20 @@ character avatar/additional asset/emotion/TTS, settings media, module asset,
 prompt icon, NanoGPT fetch, color scheme, plugin import/update, persona icon,
 BotSettings bias JSON, sidebar folder image, NovelAI vibe, and EasyPanel
 separate-parameters paths. The final Phase 3 audit found no known live callback
-surface still pending. Phase 4 is in progress; DefaultChatScreen composer
-send/continue clear/restore, auto-translate freshness, and reroll active-chat
-freshness have landed. Partial edit/delete modal freshness has also landed.
-Suggestion persistence freshness and attempt-aware chat-scoped message rollback
-have landed. Durable generation finalization target-row freshness has landed.
+surface still pending. Phase 4 closed the chat/message/generation slice:
+DefaultChatScreen composer send/continue clear/restore, auto-translate
+freshness, reroll active-chat freshness, partial edit/delete modal freshness,
+suggestion persistence freshness, attempt-aware chat-scoped message rollback,
+durable generation finalization target-row freshness, and dynamic rendered
+button trigger freshness have landed.
 
 Next manager loop:
 
 1. Read `README.md`, `STRUCTURE.md`, `status.md`, `latest-verification.md`, and
-   `phases/phase-4-chat-messages-generation.md`.
-2. Spawn an explorer agent for the next Phase 4 dynamic trigger freshness slice.
-3. Spawn a worker agent for the selected Phase 4 slice, then a verification
+   `phases/phase-5-collection-domains.md`.
+2. Spawn an explorer agent for the next Phase 5 collection-domain rollback and
+   projection-hardening slice.
+3. Spawn a worker agent for the selected Phase 5 slice, then a verification
    agent after the worker completes.
 4. If verification succeeds, run Prettier, run the relevant validation commands,
    commit, close finished agents, and move to the next task.
@@ -116,13 +118,12 @@ pending after final audit.
 
 Explicit deferrals:
 
-- `restoreChatScopedState` remains Phase 4 work.
 - Composer send/continue clear/restore, auto-translate, reroll active-chat
   freshness, partial edit/delete modal freshness, and suggestion persistence
   freshness have landed. Attempt-aware chat-scoped message rollback has landed
   for scoped message update/delete/truncate/replace-tail/replace-all failures.
-  Durable generation finalization target-row freshness has landed. Dynamic
-  trigger freshness remains Phase 4 work.
+  Durable generation finalization target-row freshness and dynamic rendered
+  button trigger freshness have landed. Phase 4 is complete.
   Composer file and paste callbacks are already covered by Phase 3.
 - Preset/persona/translator/module/lorebook/script/import collection flows, Hypa
   V3 preset array import/rename/delete, plugin
@@ -135,7 +136,7 @@ Explicit deferrals:
 - Projection-absent optional clean-field deletion remains outside Phase 2 because
   the shared merge helper refreshes fields present in the projection surface.
 
-No known code gap blocks Phase 1, Phase 2, or Phase 3 completion.
+No known code gap blocks Phase 1, Phase 2, Phase 3, or Phase 4 completion.
 
 ## Later Phase Order
 

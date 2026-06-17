@@ -5,7 +5,8 @@ Date: 2026-06-17
 This workstream is active. Phase 0 is complete as a docs/contract baseline,
 Phase 1 is complete as the shared-helper and first rollback-adopter slice,
 Phase 2 is complete as the dirty draft projection slice, and Phase 3 is complete
-as the upload/import/fetch callback slice. The plan consolidates the input
+as the upload/import/fetch callback slice. Phase 4 is complete as the
+chat/message/generation freshness slice. The plan consolidates the input
 persistence inventory under
 `../../user-input-layer-audit/` and stale-state risk review under
 `../../user-stale-state-audit/`.
@@ -13,9 +14,10 @@ persistence inventory under
 ## Snapshot
 
 - Plan state: active, Phase 0 contract decisions complete, Phase 1 complete,
-  Phase 2 dirty draft projection complete, and Phase 3 upload/import/fetch
-  callback freshness complete. The next active phase is Phase 4 chat, message,
-  reroll, trigger, suggestion, and generation freshness. The first Phase 3 slice
+  Phase 2 dirty draft projection complete, Phase 3 upload/import/fetch callback
+  freshness complete, and Phase 4 chat/message/generation freshness complete.
+  The next active phase is Phase 5 collection-domain rollback and projection
+  hardening. The first Phase 3 slice
   now guards custom background upload/cancel/error callbacks so stale completions
   cannot restore or apply an old custom background after a newer choice. Composer
   paste/menu file actions now guard stale file callbacks by active transcript
@@ -79,6 +81,10 @@ persistence inventory under
   send/continue/regenerate target snapshots, rejects stale persistence before
   chat-var or message writes, stores snapshots on retry rows, terminalizes stale
   retries, and treats already-persisted retry replays as no-op completions.
+  Dynamic rendered chat buttons now capture active character/chat/message target
+  identity, drop stale manual/Lua trigger results, apply accepted results to the
+  captured chat row with scoped rollback, and keep guarded chat-var/note trigger
+  side effects on the returned chat while the target remains fresh.
   Phase 2 landed character profile draft dirty top-level field protection;
   prompt-template item row dirty projection merging; whole-key dirty projection
   protection for
@@ -87,7 +93,7 @@ persistence inventory under
   protection; lorebook entry draft dirty projection merging; and
   selected-character script/trigger live local draft dirty projection merging.
   Phase 1 settings, character, and chat row metadata rollback adoption landed;
-  message-target freshness is explicitly deferred to Phase 4.
+  message-target freshness landed in Phase 4.
 - Code changes: `src/ts/server/staleStateGuards.ts` and
   `src/ts/server/staleStateGuards.test.ts` add shared stale-state primitives
   and focused helper coverage. `src/ts/server/settingsBridge.svelte.ts`,
@@ -209,14 +215,20 @@ persistence inventory under
   through durable persistence and retry storage. `durableGeneration.test.ts`
   covers stale send/continue/regenerate finalization and already-persisted
   no-op retry replay.
-- Verification state: Phase 4 durable generation finalization target-row
+- `src/lib/ChatScreens/chatButtonTriggerFreshness.ts`,
+  `src/lib/ChatScreens/Chat.svelte`, `src/ts/process/triggers.ts`, and
+  `src/ts/process/scriptings.ts` now guard rendered dynamic button trigger
+  results and deferred chat-var/note side effects by captured chat target
+  freshness. `Chat.customHtml.test.ts`, `chatButtonTriggerFreshness.test.ts`,
+  and `triggers.projectionGuard.test.ts` cover stale rendered trigger paths.
+- Verification state: Phase 4 dynamic rendered chat button trigger
   validation is
   recorded in `latest-verification.md`.
 - Highest issue density:
   - Character editor: 52 issue rows, mostly dirty projection and unguarded
     upload callbacks.
   - Chat/messages: composer, file-post, reroll, partial edit, dynamic trigger,
-    and suggestion paths.
+    suggestion, and generation paths are covered through Phase 4.
   - Lorebooks/scripts/modules/plugins: broad rollback and replacement
     collection paths.
   - Presets/personas/loadouts/prompts: dirty projection plus broad collection
@@ -236,9 +248,9 @@ persistence inventory under
 - [Phase 1](phases/phase-1-shared-primitives-and-rollback.md): complete. Shared
   helper primitives exist with focused coverage; settings, character, and chat
   row metadata rollback adopters have landed. `restoreChatScopedState` and
-  message update/delete/truncate/replace freshness are explicitly deferred to
-  Phase 4. Collection rollback domains stay owned by Phase 5. No known code gap
-  blocks Phase 1 completion.
+  message update/delete/truncate/replace freshness landed in Phase 4. Collection
+  rollback domains stay owned by Phase 5. No known code gap blocks Phase 1
+  completion.
 - [Phase 2](phases/phase-2-dirty-draft-projection.md): complete. Character
   profile draft dirty top-level projection protection, prompt item row
   same-order dirty field merging, generic settings draft whole-key projection
@@ -258,14 +270,15 @@ persistence inventory under
   separate-parameters import paths. No known live Phase 3 callback surface
   remains pending after the final audit. The BotSettings additional-params import
   row is audit drift because the live UI has no import button there.
-- [Phase 4](phases/phase-4-chat-messages-generation.md): active. DefaultChatScreen
+- [Phase 4](phases/phase-4-chat-messages-generation.md): complete. DefaultChatScreen
   composer send/continue clear/restore, auto-translate freshness, and reroll
   active-chat freshness have landed. Partial edit/delete modal freshness has
   landed. Suggestion persistence freshness has landed. Attempt-aware
   chat-scoped message rollback has landed. Durable generation finalization
-  freshness has landed. Dynamic trigger freshness remains here. Composer file
-  and paste callbacks are already covered by Phase 3.
-- [Phase 5](phases/phase-5-collection-domains.md): pending. Preset, persona,
+  freshness has landed. Dynamic rendered button trigger freshness has landed.
+  Composer file and paste callbacks are already covered by Phase 3. No known
+  code gap blocks Phase 4 completion.
+- [Phase 5](phases/phase-5-collection-domains.md): active. Preset, persona,
   translator, module, lorebook, script, and import collection flows; Hypa V3
   preset array import/rename/delete; plugin enable/delete/args/provider/storage;
   and sidebar/chat/folder/character list create/delete/reorder/import rollback
@@ -463,7 +476,12 @@ persistence inventory under
     rows, rejects stale target rows before chat-var/message writes, marks stale
     retry rows terminal, and treats already-persisted retry replays as no-op
     completions without revision or command-event churn.
-  - Remaining Phase 4: dynamic trigger freshness.
+  - Phase 4 dynamic rendered button trigger slice: custom rendered
+    `risu-trigger`/`risu-btn` buttons capture active character/chat/message
+    identity before awaits, drop stale results after active target changes, apply
+    fresh results to the captured chat row, and defer guarded chat-var/note side
+    effects into the returned chat.
+  - Phase 4 is complete.
     Composer file and paste callbacks are already covered by Phase 3.
   - Phase 5: preset/persona/translator/module/lorebook/script/import collection
     flows, Hypa V3 preset array import/rename/delete, plugin

@@ -27,7 +27,8 @@ import { Mutex } from '../mutex'
 import { tokenize } from '../tokenizer'
 import { fetchNative, readImage } from '../globalApi.svelte'
 import { loadLoreBookV3Prompt } from './lorebook.svelte'
-import { getPersonaPrompt, getUserName, getUserIcon } from '../util'
+import { getPersonaPrompt, getUserName, getUserIcon, parseKeyValue } from '../util'
+import { safeStructuredClone } from '../polyfill'
 let luaFactory: LuaFactory
 let ScriptingSafeIds = new Set<string>()
 let ScriptingEditDisplayIds = new Set<string>()
@@ -1610,8 +1611,24 @@ export async function runLuaEditTrigger<T extends string | OpenAIChat[]>(
   }
 }
 
-export async function runLuaButtonTrigger(char: character | simpleCharacterArgument, data: string): Promise<any> {
+export async function runLuaButtonTrigger(
+  char: character | simpleCharacterArgument,
+  data: string,
+  options?: {
+    chat?: Chat
+    isFresh?: () => boolean
+    deferLiveChatSideEffects?: boolean
+  },
+): Promise<any> {
   let runResult
+  const workingChat =
+    options?.chat && options.deferLiveChatSideEffects ? safeStructuredClone(options.chat) : options?.chat
+  const getWorkingVar =
+    workingChat && options?.deferLiveChatSideEffects ? createLuaButtonWorkingGetVar(char, workingChat) : undefined
+  const setWorkingVar =
+    workingChat && options?.deferLiveChatSideEffects ? createLuaButtonWorkingSetVar(workingChat) : undefined
+  const isFresh = (): boolean => options?.isFresh?.() !== false
+
   try {
     const triggers =
       char.type === 'simple'
@@ -1624,19 +1641,52 @@ export async function runLuaButtonTrigger(char: character | simpleCharacterArgum
             .concat(getModuleTriggers())
 
     for (let trigger of triggers) {
+      if (!isFresh()) {
+        return null
+      }
       if (trigger?.effect?.[0]?.type === 'triggerlua') {
         runResult = await runScripted(trigger.effect[0].code, {
           char: char,
+          chat: workingChat,
+          setVar: setWorkingVar,
+          getVar: getWorkingVar,
           lowLevelAccess: trigger.lowLevelAccess,
           mode: 'onButtonClick',
           data: data,
         })
+        if (!isFresh()) {
+          return null
+        }
       }
     }
   } catch (error) {
     throw error
   }
   return runResult
+}
+
+function createLuaButtonWorkingSetVar(chat: Chat): (key: string, value: string) => void {
+  return (key: string, value: string) => {
+    chat.scriptstate ??= {}
+    chat.scriptstate['$' + key] = value
+  }
+}
+
+function createLuaButtonWorkingGetVar(char: character | simpleCharacterArgument, chat: Chat): (key: string) => string {
+  return (key: string) => {
+    const state = chat.scriptstate?.['$' + key]
+    if (state !== undefined && state !== null) {
+      return state.toString()
+    }
+
+    const db = getDatabase()
+    const defaultVariables =
+      char.type === 'simple'
+        ? parseKeyValue(db.templateDefaultVariables)
+        : parseKeyValue(char.defaultVariables).concat(parseKeyValue(db.templateDefaultVariables))
+    const defaultVariable = defaultVariables.find((entry) => entry[0] === key)
+    return defaultVariable?.[1] ?? 'null'
+  }
 }
 
 class PyodideContext {

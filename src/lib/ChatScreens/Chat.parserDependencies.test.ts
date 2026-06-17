@@ -16,6 +16,8 @@ const chatParserMocks = vi.hoisted(() => ({
   risuChatParser: vi.fn((message: string, arg?: { cbsConditions?: unknown; chara?: unknown; chatID?: unknown }) => {
     return `parsed:${message}:${JSON.stringify(arg?.cbsConditions ?? {})}`
   }),
+  clearManualTriggerAbortController: vi.fn(),
+  createManualTriggerAbortController: vi.fn(() => new AbortController()),
   runLuaButtonTrigger: vi.fn(async () => undefined),
   runTrigger: vi.fn(async () => undefined),
   sayTTS: vi.fn(),
@@ -115,6 +117,8 @@ vi.mock('../../ts/process/scripts', () => ({
 }))
 
 vi.mock('src/ts/process/triggers', () => ({
+  clearManualTriggerAbortController: chatParserMocks.clearManualTriggerAbortController,
+  createManualTriggerAbortController: chatParserMocks.createManualTriggerAbortController,
   runTrigger: chatParserMocks.runTrigger,
 }))
 
@@ -150,6 +154,7 @@ vi.mock('src/ts/chatCommands', () => ({
   cloneJsonValue: <T>(value: T) => JSON.parse(JSON.stringify(value)) as T,
   currentChatScopedSnapshot: vi.fn(() => ({})),
   currentChatStateSnapshot: vi.fn(() => ({})),
+  dispatchCompatibleChatUpdateScoped: vi.fn(),
   dispatchDeleteMessageScoped: vi.fn(),
   dispatchForkChat: vi.fn(),
   dispatchReplaceMessagesScoped: vi.fn(),

@@ -65,8 +65,8 @@ expanding Phase 1 into message-body freshness.
 
 Explicit deferrals:
 
-- `restoreChatScopedState` remains Phase 4 work.
-- Message update/delete/truncate/replace freshness remains Phase 4 work.
+- `restoreChatScopedState` landed in Phase 4.
+- Message update/delete/truncate/replace freshness landed in Phase 4.
 - Broader collection rollback remains Phase 5 work.
 
 No known code gap blocks Phase 1 completion. Phase 2 dirty draft projection is

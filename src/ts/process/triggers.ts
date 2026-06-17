@@ -1348,6 +1348,8 @@ export async function runTrigger(
     signal?: AbortSignal
     triggerBudget?: TriggerExecutionBudget
     triggerBudgetOptions?: TriggerExecutionBudgetOptions
+    isFresh?: () => boolean
+    deferLiveChatSideEffects?: boolean
   },
 ) {
   arg.recursiveCount ??= 0
@@ -1410,6 +1412,8 @@ export async function runTrigger(
   let chat = arg.displayMode ? arg.chat : safeStructuredClone(arg.chat ?? char.chats[char.chatPage])
 
   let tempVars: Record<string, string> = arg.tempVars ?? {}
+  const isFresh = (): boolean => arg.isFresh?.() !== false
+  const shouldApplyLiveChatSideEffects = (): boolean => !arg.deferLiveChatSideEffects && isFresh()
 
   // One scriptstate-scoped rollback for the whole pass, captured lazily on the
   // first var/author-note write and reused across every `setVar`/`v2SetAuthorNote`
@@ -1523,6 +1527,9 @@ export async function runTrigger(
   // also stays correct after a data effect (e.g. v2 lorebook/desc) re-installs the
   // character mid-pass.
   function syncActiveChatScriptstate(): void {
+    if (!shouldApplyLiveChatSideEffects()) {
+      return
+    }
     withTrustedServerProjectionWrite(() => {
       const liveChat = getCurrentChat()
       if (liveChat) {
@@ -1543,13 +1550,16 @@ export async function runTrigger(
       return
     }
 
-    const previous = captureScriptstateRollback()
+    const shouldDispatchLiveSideEffect = shouldApplyLiveChatSideEffects()
+    const previous = shouldDispatchLiveSideEffect ? captureScriptstateRollback() : null
     varChanged = true
     chat.scriptstate ??= {}
     const stateKey = '$' + key
     chat.scriptstate[stateKey] = value
-    syncActiveChatScriptstate()
-    if (chat.id) {
+    if (shouldDispatchLiveSideEffect) {
+      syncActiveChatScriptstate()
+    }
+    if (chat.id && previous) {
       dispatchPatchChatScriptstateScoped(chat.id, { [stateKey]: value }, [], previous)
     }
   }
@@ -1566,8 +1576,12 @@ export async function runTrigger(
       caculatedTokens += await tokenize(additonalSysPrompt.promptend)
     }
     if (varChanged) {
-      syncActiveChatScriptstate()
-      refreshVariableOnlyGui()
+      if (shouldApplyLiveChatSideEffects()) {
+        syncActiveChatScriptstate()
+      }
+      if (isFresh()) {
+        refreshVariableOnlyGui()
+      }
     }
     if (shouldSetTriggerId && mode !== 'manual') {
       CurrentTriggerIdStore.set(previousTriggerId)
@@ -1590,6 +1604,9 @@ export async function runTrigger(
     let tempVars: Record<string, number> = {}
 
     if (shouldStopTriggerExecution(triggerBudget, arg.signal, 'before trigger pass')) {
+      return await buildResult()
+    }
+    if (!isFresh()) {
       return await buildResult()
     }
 
@@ -1693,6 +1710,9 @@ export async function runTrigger(
       if (chargeTriggerEffectStep(triggerBudget, arg.signal, effect.type)) {
         return await buildResult()
       }
+      if (!isFresh()) {
+        return await buildResult()
+      }
       if (mode === 'display' && !displayAllowList.includes(effect.type)) {
         continue
       }
@@ -1775,6 +1795,8 @@ export async function runTrigger(
               manualName: effect.value,
               signal: arg.signal,
               triggerBudget,
+              isFresh: arg.isFresh,
+              deferLiveChatSideEffects: arg.deferLiveChatSideEffects,
             })
             if (r) {
               additonalSysPrompt = r.additonalSysPrompt
@@ -2199,6 +2221,8 @@ export async function runTrigger(
               manualName: effect.target,
               signal: arg.signal,
               triggerBudget,
+              isFresh: arg.isFresh,
+              deferLiveChatSideEffects: arg.deferLiveChatSideEffects,
             })
             if (r) {
               additonalSysPrompt = r.additonalSysPrompt
@@ -3271,7 +3295,7 @@ export async function runTrigger(
               : getVar(risuChatParser(effect.value, { chara: char }))
           chat.note = value
 
-          if (!arg.displayMode) {
+          if (!arg.displayMode && shouldApplyLiveChatSideEffects()) {
             // Capture before the projection write mutates the note, so the
             // scoped rollback restores the prior note (shared with the pass's
             // setVar snapshot).

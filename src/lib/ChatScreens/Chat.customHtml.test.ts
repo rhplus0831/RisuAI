@@ -7,6 +7,8 @@ const customHtmlMocks = vi.hoisted(() => {
   const templates = {
     base: 'base-template',
     changed: 'changed-template',
+    luaButton: 'lua-button-template',
+    triggerButton: 'trigger-button-template',
     throwing: 'throw-template',
   }
 
@@ -27,6 +29,14 @@ const customHtmlMocks = vi.hoisted(() => {
           throw new Error('template parse failed')
         }
 
+        if (message === templates.triggerButton) {
+          return '<button class="manual-trigger-button" risu-trigger="manual-trigger" risu-id="trigger-id">Run trigger</button>'
+        }
+
+        if (message === templates.luaButton) {
+          return '<button class="lua-trigger-button" risu-btn="lua-event" risu-id="lua-id">Run Lua</button>'
+        }
+
         if (message === templates.base || message === templates.changed) {
           const cbsConditions = arg?.cbsConditions ?? {}
           return `<div class="custom-html-template" data-role="${cbsConditions.chatRole ?? ''}"><span>${message}|first=${String(cbsConditions.firstmsg ?? false)}|role=${cbsConditions.chatRole ?? 'null'}</span></div>`
@@ -35,6 +45,8 @@ const customHtmlMocks = vi.hoisted(() => {
         return `parsed-message:${message}`
       },
     ),
+    clearManualTriggerAbortController: vi.fn(),
+    createManualTriggerAbortController: vi.fn(() => new AbortController()),
     runLuaButtonTrigger: vi.fn(async () => undefined),
     runTrigger: vi.fn(async () => undefined),
     sayTTS: vi.fn(),
@@ -105,6 +117,8 @@ vi.mock('../../ts/process/scripts', () => ({
 }))
 
 vi.mock('src/ts/process/triggers', () => ({
+  clearManualTriggerAbortController: customHtmlMocks.clearManualTriggerAbortController,
+  createManualTriggerAbortController: customHtmlMocks.createManualTriggerAbortController,
   runTrigger: customHtmlMocks.runTrigger,
 }))
 
@@ -126,8 +140,8 @@ vi.mock('../../ts/parser/parser.svelte', () => ({
 }))
 
 vi.mock('../../ts/storage/database.svelte', () => ({
-  getCurrentCharacter: vi.fn(() => null),
-  getCurrentChat: vi.fn(() => null),
+  getCurrentCharacter: vi.fn(),
+  getCurrentChat: vi.fn(),
   setCurrentChat: vi.fn(),
 }))
 
@@ -140,6 +154,7 @@ vi.mock('src/ts/chatCommands', () => ({
   cloneJsonValue: <T>(value: T) => JSON.parse(JSON.stringify(value)) as T,
   currentChatScopedSnapshot: vi.fn(() => ({})),
   currentChatStateSnapshot: vi.fn(() => ({})),
+  dispatchCompatibleChatUpdateScoped: vi.fn(),
   dispatchDeleteMessageScoped: vi.fn(),
   dispatchForkChat: vi.fn(),
   dispatchReplaceMessagesScoped: vi.fn(),
@@ -178,6 +193,8 @@ import {
   selIdState,
   selectedCharID,
 } from '../../ts/stores.svelte'
+import { getCurrentCharacter, getCurrentChat } from '../../ts/storage/database.svelte'
+import { dispatchCompatibleChatUpdateScoped } from 'src/ts/chatCommands'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -224,6 +241,21 @@ function seedDatabase(messageCount: number, guiHTML = customHtmlMocks.templates.
               data: `visible message ${index}`,
               role: 'char',
             })),
+            note: '',
+            bookmarks: [],
+            bookmarkNames: {},
+            localLore: [],
+          },
+          {
+            id: 'custom-html-other-chat',
+            name: 'Other Chat',
+            message: [
+              {
+                chatId: 'other-message-0',
+                data: 'other chat message',
+                role: 'char',
+              },
+            ],
             note: '',
             bookmarks: [],
             bookmarkNames: {},
@@ -289,6 +321,14 @@ async function settle() {
   }
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((res) => {
+    resolve = res
+  })
+  return { promise, resolve }
+}
+
 beforeEach(() => {
   target = document.createElement('div')
   document.body.appendChild(target)
@@ -298,6 +338,11 @@ beforeEach(() => {
   vi.stubGlobal('DOMParser', CountingDOMParser)
   vi.clearAllMocks()
   clearCustomHtmlTemplateMemo()
+  vi.mocked(getCurrentCharacter).mockImplementation(() => DBState.db.characters?.[selIdState.selId] ?? null)
+  vi.mocked(getCurrentChat).mockImplementation(() => {
+    const character = DBState.db.characters?.[selIdState.selId]
+    return character?.chats?.[character.chatPage] ?? null
+  })
 })
 
 afterEach(() => {
@@ -379,5 +424,63 @@ describe('customHTML template memo', () => {
     expect(body.tagName).toBe('DIV')
     expect(body.childNodes).toHaveLength(0)
     expect(getCustomHtmlTemplateMemoSize()).toBe(0)
+  })
+})
+
+describe('customHTML rendered button trigger freshness', () => {
+  it('drops a stale risu-trigger result after the active chat switches', async () => {
+    seedDatabase(1, customHtmlMocks.templates.triggerButton)
+    mountCustomHtmlRows(1)
+    await settle()
+
+    const result = deferred<void>()
+    customHtmlMocks.runTrigger.mockImplementation(async (_char, _mode, arg) => {
+      await result.promise
+      return {
+        chat: {
+          ...arg.chat,
+          message: [{ chatId: 'message-0', data: 'stale trigger result', role: 'char' }],
+        },
+      }
+    })
+
+    target.querySelector<HTMLButtonElement>('.manual-trigger-button')?.click()
+    await tick()
+
+    DBState.db.characters[0].chatPage = 1
+    result.resolve()
+    await settle()
+
+    expect(DBState.db.characters[0].chats[0].message[0].data).toBe('visible message 0')
+    expect(DBState.db.characters[0].chats[1].message[0].data).toBe('other chat message')
+    expect(dispatchCompatibleChatUpdateScoped).not.toHaveBeenCalled()
+  })
+
+  it('drops a stale risu-btn result after the active chat switches', async () => {
+    seedDatabase(1, customHtmlMocks.templates.luaButton)
+    mountCustomHtmlRows(1)
+    await settle()
+
+    const result = deferred<void>()
+    customHtmlMocks.runLuaButtonTrigger.mockImplementation(async (_char, _event, options) => {
+      await result.promise
+      return {
+        chat: {
+          ...options.chat,
+          message: [{ chatId: 'message-0', data: 'stale lua result', role: 'char' }],
+        },
+      }
+    })
+
+    target.querySelector<HTMLButtonElement>('.lua-trigger-button')?.click()
+    await tick()
+
+    DBState.db.characters[0].chatPage = 1
+    result.resolve()
+    await settle()
+
+    expect(DBState.db.characters[0].chats[0].message[0].data).toBe('visible message 0')
+    expect(DBState.db.characters[0].chats[1].message[0].data).toBe('other chat message')
+    expect(dispatchCompatibleChatUpdateScoped).not.toHaveBeenCalled()
   })
 })

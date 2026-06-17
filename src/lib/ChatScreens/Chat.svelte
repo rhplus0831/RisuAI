@@ -46,7 +46,6 @@
   import {
     getCurrentCharacter,
     getCurrentChat,
-    setCurrentChat,
     type Chat,
     type Message,
     type MessageGenerationInfo,
@@ -65,6 +64,7 @@
     currentChatScopedSnapshot,
     currentChatStateSnapshot,
     cloneJsonValue,
+    dispatchCompatibleChatUpdateScoped,
     dispatchDeleteMessageScoped,
     dispatchForkChat,
     dispatchReplaceMessagesScoped,
@@ -74,6 +74,16 @@
     ensureMessageId,
   } from 'src/ts/chatCommands'
   import { canUseServerCommands } from 'src/ts/server/commands'
+  import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
+  import {
+    captureChatButtonTriggerFreshness,
+    chatButtonTriggerChatSignature,
+    renderedChatButtonTriggerOperationTracker,
+    resolveChatButtonTriggerFreshness,
+    type ChatButtonTriggerFreshnessSnapshot,
+    type ChatButtonTriggerIdentity,
+    type ChatButtonTriggerTarget,
+  } from './chatButtonTriggerFreshness'
 
   let translating = $state(false)
   let editMode = $state(false)
@@ -104,6 +114,11 @@
     totalPages?: number
     isComment?: boolean
     disabled?: boolean | 'allBefore'
+  }
+
+  interface CapturedChatButtonTriggerTarget {
+    snapshot: ChatButtonTriggerFreshnessSnapshot
+    previous: ReturnType<typeof currentChatScopedSnapshot>
   }
 
   let {
@@ -425,6 +440,112 @@
     return attributes
   }
 
+  function readChatButtonTriggerLiveTarget(identity: ChatButtonTriggerIdentity): ChatButtonTriggerTarget | null {
+    const selectedCharacterIndex = selIdState.selId
+    const character = DBState.db.characters?.[selectedCharacterIndex]
+    const chatPage = character?.chatPage
+    if (!character || typeof chatPage !== 'number') {
+      return null
+    }
+
+    const chat = character.chats?.[chatPage]
+    if (!chat) {
+      return null
+    }
+
+    const messages = chat.message ?? []
+    const sourceMessage = idx >= 0 ? messages[idx] : undefined
+    if (idx >= 0 && !sourceMessage) {
+      return null
+    }
+    const tailMessage = messages.at(-1)
+
+    return {
+      selectedCharacterIndex,
+      characterId: character.chaId,
+      chatPage,
+      chatId: chat.id,
+      messageIndex: idx,
+      messageId: sourceMessage?.chatId,
+      messageData: sourceMessage?.data ?? null,
+      messageRole: sourceMessage?.role ?? null,
+      transcriptLength: messages.length,
+      tailMessageId: tailMessage?.chatId,
+      tailMessageData: tailMessage?.data ?? null,
+      tailMessageRole: tailMessage?.role ?? null,
+      chatStateSignature: chatButtonTriggerChatSignature(chat),
+      triggerName: identity.triggerName,
+      triggerId: identity.triggerId,
+      btnEvent: identity.btnEvent,
+    }
+  }
+
+  function captureChatButtonTriggerTarget(identity: ChatButtonTriggerIdentity): CapturedChatButtonTriggerTarget | null {
+    const liveTarget = readChatButtonTriggerLiveTarget(identity)
+    if (!liveTarget) {
+      return null
+    }
+
+    const character = DBState.db.characters?.[liveTarget.selectedCharacterIndex]
+    const chat = character?.chats?.[liveTarget.chatPage]
+    if (!chat) {
+      return null
+    }
+
+    return {
+      snapshot: captureChatButtonTriggerFreshness(liveTarget, renderedChatButtonTriggerOperationTracker),
+      previous: {
+        selectedCharID: liveTarget.selectedCharacterIndex,
+        characterId: liveTarget.characterId ?? undefined,
+        chatId: liveTarget.chatId ?? undefined,
+        chat: cloneJsonValue(chat) as Chat,
+      },
+    }
+  }
+
+  function isChatButtonTriggerTargetFresh(target: CapturedChatButtonTriggerTarget): boolean {
+    const liveTarget = readChatButtonTriggerLiveTarget(target.snapshot)
+    if (!liveTarget) {
+      return false
+    }
+
+    return resolveChatButtonTriggerFreshness(target.snapshot, liveTarget, renderedChatButtonTriggerOperationTracker).ok
+  }
+
+  function applyFreshChatButtonTriggerResult(target: CapturedChatButtonTriggerTarget, nextChat: Chat): boolean {
+    if (!isChatButtonTriggerTargetFresh(target)) {
+      return false
+    }
+
+    const nextChatSnapshot = cloneJsonValue(nextChat) as Chat
+    let applied = false
+
+    withTrustedServerProjectionWrite(() => {
+      const characters = DBState.db.characters ?? []
+      const character = target.snapshot.characterId
+        ? characters.find((candidate) => candidate.chaId === target.snapshot.characterId)
+        : characters[target.snapshot.selectedCharacterIndex]
+      if (!character?.chats) {
+        return
+      }
+
+      const chatIndex = target.snapshot.chatId
+        ? character.chats.findIndex((candidate) => candidate.id === target.snapshot.chatId)
+        : target.snapshot.chatPage
+      if (chatIndex < 0 || !character.chats[chatIndex]) {
+        return
+      }
+
+      character.chats[chatIndex] = nextChatSnapshot
+      applied = true
+    })
+
+    if (applied) {
+      dispatchCompatibleChatUpdateScoped(target.previous.chat, nextChatSnapshot, target.previous)
+    }
+    return applied
+  }
+
   async function handleButtonTriggerWithin(event: UIEvent) {
     const currentChar = getCurrentCharacter()
     if (!currentChar) {
@@ -440,26 +561,39 @@
     const triggerName = origin.getAttribute('risu-trigger')
     const triggerId = origin.getAttribute('risu-id')
     const btnEvent = origin.getAttribute('risu-btn')
+    const triggerTarget = captureChatButtonTriggerTarget({
+      triggerName,
+      triggerId,
+      btnEvent,
+    })
+    if (!triggerTarget) {
+      return
+    }
 
     let triggerResult = null
     if (triggerName) {
       const triggerController = createManualTriggerAbortController()
       try {
         triggerResult = await runTrigger(currentChar, 'manual', {
-          chat: getCurrentChat(),
+          chat: triggerTarget.previous.chat ?? getCurrentChat(),
           manualName: triggerName,
           triggerId: triggerId || undefined,
           signal: triggerController.signal,
+          isFresh: () => isChatButtonTriggerTargetFresh(triggerTarget),
+          deferLiveChatSideEffects: true,
         })
       } finally {
         clearManualTriggerAbortController(triggerController)
       }
     } else if (btnEvent) {
-      triggerResult = await runLuaButtonTrigger(currentChar, btnEvent)
+      triggerResult = await runLuaButtonTrigger(currentChar, btnEvent, {
+        chat: triggerTarget.previous.chat,
+        isFresh: () => isChatButtonTriggerTargetFresh(triggerTarget),
+        deferLiveChatSideEffects: true,
+      })
     }
 
-    if (triggerResult) {
-      setCurrentChat(triggerResult.chat)
+    if (triggerResult && applyFreshChatButtonTriggerResult(triggerTarget, triggerResult.chat)) {
       ReloadChatPointer.update((v) => {
         v[idx] = (v[idx] ?? 0) + 1
         return v

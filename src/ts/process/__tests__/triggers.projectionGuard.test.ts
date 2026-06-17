@@ -475,6 +475,64 @@ describe('trigger durable writes under the projection guard', () => {
     )
     expect(cmd.body.patch.$score).toBe('7')
   })
+
+  it('keeps guarded deferred var and author-note side effects on the returned chat', async () => {
+    const calls = stubCommandFetch()
+    setServerProjectionWriteGuardEnabled(true)
+
+    const char = characterWithTriggers([
+      {
+        comment: 'deferred',
+        type: 'manual',
+        conditions: [],
+        effect: [
+          { type: 'v2SetVar', var: 'score', operator: '=', valueType: 'value', value: '7' },
+          { type: 'v2SetAuthorNote', valueType: 'value', value: 'deferred note' },
+        ],
+      },
+    ])
+
+    const result = await runTrigger(char, 'manual', {
+      chat: char.chats[char.chatPage],
+      manualName: 'deferred',
+      isFresh: () => true,
+      deferLiveChatSideEffects: true,
+    })
+
+    expect((result?.chat.scriptstate as any).$score).toBe('7')
+    expect(result?.chat.note).toBe('deferred note')
+    expect((DBState.db.characters[0].chats[0].scriptstate as any).$score).toBeUndefined()
+    expect(DBState.db.characters[0].chats[0].note).toBe('')
+    expect(calls.filter((call) => call.url.startsWith('/api/v1/commands/chats/'))).toHaveLength(0)
+  })
+
+  it('stops guarded trigger effects once the target is stale', async () => {
+    const calls = stubCommandFetch()
+    setServerProjectionWriteGuardEnabled(true)
+
+    const char = characterWithTriggers([
+      {
+        comment: 'stale',
+        type: 'manual',
+        conditions: [],
+        effect: [
+          { type: 'v2SetVar', var: 'score', operator: '=', valueType: 'value', value: '7' },
+          { type: 'v2SetCharacterDesc', valueType: 'value', value: 'stale desc' },
+        ],
+      },
+    ])
+
+    const result = await runTrigger(char, 'manual', {
+      chat: char.chats[char.chatPage],
+      manualName: 'stale',
+      isFresh: () => false,
+      deferLiveChatSideEffects: true,
+    })
+
+    expect(result?.chat.scriptstate).toEqual({})
+    expect(DBState.db.characters[0].desc).toBe('')
+    expect(calls.filter((call) => call.url.startsWith('/api/v1/commands/'))).toHaveLength(0)
+  })
 })
 
 describe('Phase 2 trigger lorebook scoped rollback', () => {
