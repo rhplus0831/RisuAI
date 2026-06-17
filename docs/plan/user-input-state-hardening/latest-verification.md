@@ -7,13 +7,12 @@ workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 5 chat fork rollback. Failed fork
-  commands now roll back only the attempted forked chat row, attempted source
-  chat metadata patch, and attempted branch folder creation instead of restoring
-  broad chat state snapshots. Delayed failures preserve newer sibling
-  chat/folder edits, skip changed fork rows, tolerate sidebar copy paths with no
-  optimistic local insert, and remove a created branch folder only while no live
-  chat still references it.
+- Runtime/code change under test: Phase 5 chat metadata PATCH rollback.
+  `dispatchUpdateChat()` now rolls back failed metadata updates by attempted
+  chat-row fields instead of restoring broad chat state snapshots. Delayed
+  failures restore only still-attempted fields, preserve newer same-row edits,
+  sibling chat edits, folder edits, and selection, and treat empty patch +
+  select-only dispatches as metadata rollback no-ops.
 - Commands:
 
 ```bash
@@ -24,7 +23,7 @@ pnpm exec prettier --check src/ts/chatCommands.ts src/ts/chatCommands.test.ts
 git diff --check
 ```
 
-- Result: passed on 2026-06-17. Focused chat command coverage passed 71 tests
+- Result: passed on 2026-06-17. Focused chat command coverage passed 75 tests
   across 1 file, and both TypeScript checks plus Prettier and `git diff
   --check` passed.
 - Additional check: `pnpm exec vitest run src/ts/compatibilityAdapters.test.ts`
@@ -32,8 +31,8 @@ git diff --check
   `routes MCP character lorebook writes through lorebook commands in
   server-backed web mode` at `src/ts/compatibilityAdapters.test.ts:626`.
   A detached baseline worktree at commit `30d4ad7ab` reproduced the same
-  failure before this slice, so it is tracked as out-of-scope for this chat fork
-  rollback change.
+  failure before this slice, so it is tracked as out-of-scope for this chat
+  metadata rollback change.
 - Residual gaps: Multi-group plugin settings patch failures still share the
   generic settings rollback
   callback and roll back all still-attempted keys from the failed patch. Plugin
@@ -95,6 +94,7 @@ git diff --check
   Hypa V3 preset array rollback is covered by the twenty-third Phase 5 slice.
   Combined sidebar chat/folder reorder rollback is covered by the twenty-fourth
   Phase 5 slice. Chat fork rollback is covered by the twenty-fifth Phase 5
+  slice. Chat metadata PATCH rollback is covered by the twenty-sixth Phase 5
   slice.
   Remaining Phase 5 work owns sidebar/import collection flows, broader lorebook
   import/navigation edges, plugin import/update side-effect reload, and chat

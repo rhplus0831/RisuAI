@@ -189,6 +189,14 @@ edits and changed fork rows, tolerate sidebar copy paths with no optimistic
 local insert, and remove created branch folders only when no live chat still
 references them.
 
+Twenty-sixth landed slice: `dispatchUpdateChat()` metadata PATCH rollback now
+scopes failed chat-row updates to sanitized attempted fields instead of broad
+chat-state restore. Failed metadata updates restore only fields whose live value
+still matches the attempted optimistic patch, preserve newer same-row edits,
+sibling chat/folder edits, and selection, freeze sanitized attempts for rollback
+comparison, and treat empty patch plus select-only dispatches as metadata
+rollback no-ops.
+
 ## Anchors
 
 - `src/lib/Setting/botpreset.svelte`

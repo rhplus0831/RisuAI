@@ -78,6 +78,14 @@ export function cloneJsonValue<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
 }
 
+function freezeJsonValue<T>(value: T): T {
+  if (!value || typeof value !== 'object' || Object.isFrozen(value)) return value
+  for (const child of Object.values(value as Record<string, unknown>)) {
+    freezeJsonValue(child)
+  }
+  return Object.freeze(value) as T
+}
+
 export function currentChatStateSnapshot(): ChatStateSnapshot {
   return {
     characters: cloneJsonValue(DBState.db.characters ?? []),
@@ -630,13 +638,13 @@ function restoreCreatedChatAttempt(rollback: ChatCreateRollback | null): void {
   })
 }
 
-function chatSourcePatchRollbackFromState(
-  sourceChatId: string,
+function chatMetadataRollbackFromPatch(
+  chatId: string,
   patch: ChatSnapshot | undefined,
   previous: ChatStateSnapshot,
 ): ChatRowMetadataSnapshot | null {
   if (!patch || Object.keys(patch).length === 0) return null
-  const location = locateChatInState(previous, sourceChatId)
+  const location = locateChatInState(previous, chatId)
   if (!location) return null
 
   const previousRow = location.chat as unknown as Record<string, unknown>
@@ -654,7 +662,7 @@ function chatSourcePatchRollbackFromState(
   return {
     selectedCharID: previous.selectedCharID,
     characterId: location.character.chaId,
-    chatId: sourceChatId,
+    chatId,
     metadata,
     attempted,
   }
@@ -766,7 +774,7 @@ function chatForkRollbackFromState(
   const characterId = sourceLocation.character.chaId
   return {
     createdChat: chatCreateRollbackFromState(characterId, input.chat, previous, input.select !== false),
-    sourcePatch: chatSourcePatchRollbackFromState(sourceChatId, input.sourcePatch, previous),
+    sourcePatch: chatMetadataRollbackFromPatch(sourceChatId, input.sourcePatch, previous),
     createdFolder: chatCreatedFolderRollbackFromState(characterId, input.folder, previous),
   }
 }
@@ -1089,8 +1097,9 @@ export function dispatchUpdateChat(
   previous: ChatStateSnapshot,
   select = false,
 ): void {
-  const commandPatch = sanitizeChatPatch(patch)
+  const commandPatch = sanitizeFrozenChatPatch(patch)
   if (Object.keys(commandPatch).length === 0 && !select) return
+  const rollback = chatMetadataRollbackFromPatch(chatId, commandPatch, previous)
   runChatCommand(
     (baseRevision) =>
       updateChatCommand({
@@ -1099,7 +1108,9 @@ export function dispatchUpdateChat(
         patch: commandPatch,
         select,
       }),
-    () => restoreChatState(previous),
+    () => {
+      if (rollback) restoreChatRowMetadata(rollback)
+    },
   )
 }
 
@@ -1131,7 +1142,7 @@ export function dispatchUpdateChatRow(
   options: ServerCommandTransportOptions = {},
   rollbackRowMetadata: ChatRowMetadataRollback = restoreChatRowMetadata,
 ): void {
-  const commandPatch = sanitizeChatPatch(patch)
+  const commandPatch = sanitizeFrozenChatPatch(patch)
   if (Object.keys(commandPatch).length === 0) return
   const rollbackSnapshot: ChatRowMetadataSnapshot = {
     ...rollback,
@@ -1453,7 +1464,7 @@ export function dispatchForkChat(
   },
 ): void {
   const attemptedChat = cloneJsonValue(input.chat)
-  const attemptedSourcePatch = input.sourcePatch ? sanitizeChatPatch(input.sourcePatch) : undefined
+  const attemptedSourcePatch = input.sourcePatch ? sanitizeFrozenChatPatch(input.sourcePatch) : undefined
   const attemptedFolder = input.folder ? cloneJsonValue(input.folder) : undefined
   const rollback = chatForkRollbackFromState(sourceChatId, previous, {
     chat: attemptedChat,
@@ -2322,6 +2333,10 @@ export function sanitizeChatPatch(patch: ChatSnapshot): ChatSnapshot {
     sanitized[key] = cloneJsonValue(value)
   }
   return sanitized
+}
+
+function sanitizeFrozenChatPatch(patch: ChatSnapshot): ChatSnapshot {
+  return freezeJsonValue(sanitizeChatPatch(patch))
 }
 
 export function sanitizeMessagePatch(patch: MessageSnapshot): MessageSnapshot {

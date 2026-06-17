@@ -201,10 +201,11 @@ Explicit deferrals:
   array rollback has landed for append/import, rename/settings edit, and delete
   settings patches. Phase 5 combined sidebar chat/folder reorder rollback has
   landed for folder drag reorder command sequences. Phase 5 chat fork rollback
-  has landed for sidebar copy and branch fork command failures. Remaining
-  sidebar and import collection flows, broader lorebook import/navigation edges,
-  plugin import/update side-effect reload, and chat import flows remain Phase 5
-  work.
+  has landed for sidebar copy and branch fork command failures. Phase 5 chat
+  metadata PATCH rollback has landed for direct chat row metadata updates.
+  Remaining sidebar and import collection flows, broader lorebook
+  import/navigation edges, plugin import/update side-effect reload, and chat
+  import flows remain Phase 5 work.
 - `src/ts/compatibilityAdapters.test.ts` currently has a pre-existing failure in
   `routes MCP character lorebook writes through lorebook commands in
   server-backed web mode` at line 626. It reproduced in a detached baseline

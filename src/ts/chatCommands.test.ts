@@ -2013,6 +2013,129 @@ describe('H2 chat-selection snapshot', () => {
   })
 })
 
+describe('Phase 5 chat metadata dispatch rollback', () => {
+  it('failed chat rename restores only attempted name and preserves sibling edits, folders, and selection', async () => {
+    const calls = stubFailingCommandFetch({
+      matches: (url, init) => url === '/api/v1/commands/chats/chat-a' && init.method === 'PATCH',
+      onCommand: () => {
+        withTrustedServerProjectionWrite(() => {
+          DBState.db.characters[0].chats[1].name = 'Newer sibling name'
+          DBState.db.characters[0].chatFolders[0].name = 'Newer folder name'
+          DBState.db.characters[0].chatPage = 1
+        })
+      },
+    })
+    setServerProjectionWriteGuardEnabled(true)
+
+    const previous = currentChatStateSnapshot()
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.characters[0].chats[0].name = 'Attempted rename'
+    })
+
+    dispatchUpdateChat('chat-a', { name: 'Attempted rename' }, previous)
+
+    await waitForCallCount(calls, 2)
+    await vi.waitFor(() => {
+      expect(DBState.db.characters[0].chats[0].name).toBe('Chat A')
+    })
+    expect(DBState.db.characters[0].chats[1].name).toBe('Newer sibling name')
+    expect(DBState.db.characters[0].chatFolders[0].name).toBe('Newer folder name')
+    expect(DBState.db.characters[0].chatPage).toBe(1)
+  })
+
+  it('failed chat rename skips rollback when the live name changed after dispatch', async () => {
+    const calls = stubFailingCommandFetch({
+      matches: (url, init) => url === '/api/v1/commands/chats/chat-a' && init.method === 'PATCH',
+      onCommand: () => {
+        withTrustedServerProjectionWrite(() => {
+          DBState.db.characters[0].chats[0].name = 'Newer live rename'
+        })
+      },
+    })
+    setServerProjectionWriteGuardEnabled(true)
+
+    const previous = currentChatStateSnapshot()
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.characters[0].chats[0].name = 'Attempted rename'
+    })
+
+    dispatchUpdateChat('chat-a', { name: 'Attempted rename' }, previous)
+
+    await waitForCallCount(calls, 2)
+    await vi.waitFor(() => {
+      expect(DBState.db.characters[0].chats[0].name).toBe('Newer live rename')
+    })
+  })
+
+  it('failed multi-key metadata patch rolls back only keys still matching the attempted values', async () => {
+    DBState.db.characters[0].chats[0].bookmarks = ['msg-old']
+    DBState.db.characters[0].chats[0].bookmarkNames = { 'msg-old': 'Old bookmark' }
+
+    const calls = stubFailingCommandFetch({
+      matches: (url, init) => url === '/api/v1/commands/chats/chat-a' && init.method === 'PATCH',
+      onCommand: () => {
+        withTrustedServerProjectionWrite(() => {
+          DBState.db.characters[0].chats[0].bookmarkNames = { 'msg-newer': 'Newer bookmark' }
+        })
+      },
+    })
+    setServerProjectionWriteGuardEnabled(true)
+
+    const previous = currentChatStateSnapshot()
+    const attemptedBookmarks = ['msg-new']
+    const attemptedBookmarkNames: Record<string, string> = { 'msg-new': 'New bookmark' }
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.characters[0].chats[0].bookmarks = jsonClone(attemptedBookmarks)
+      DBState.db.characters[0].chats[0].bookmarkNames = jsonClone(attemptedBookmarkNames)
+    })
+
+    dispatchUpdateChat(
+      'chat-a',
+      {
+        bookmarks: attemptedBookmarks,
+        bookmarkNames: attemptedBookmarkNames,
+      },
+      previous,
+    )
+    attemptedBookmarks.push('msg-mutated')
+    attemptedBookmarkNames['msg-new'] = 'Mutated later'
+
+    await waitForCallCount(calls, 2)
+    expect(calls[1].body).toMatchObject({
+      patch: {
+        bookmarks: ['msg-new'],
+        bookmarkNames: { 'msg-new': 'New bookmark' },
+      },
+    })
+    await vi.waitFor(() => {
+      expect(DBState.db.characters[0].chats[0].bookmarks).toEqual(['msg-old'])
+    })
+    expect(DBState.db.characters[0].chats[0].bookmarkNames).toEqual({ 'msg-newer': 'Newer bookmark' })
+  })
+
+  it('failed empty-patch select dispatch does not restore chat metadata or selection', async () => {
+    const calls = stubFailingCommandFetch({
+      matches: (url, init) => url === '/api/v1/commands/chats/chat-a' && init.method === 'PATCH',
+      onCommand: () => {
+        withTrustedServerProjectionWrite(() => {
+          DBState.db.characters[0].chats[1].name = 'Newer sibling name'
+          DBState.db.characters[0].chatPage = 1
+        })
+      },
+    })
+    setServerProjectionWriteGuardEnabled(true)
+
+    const previous = currentChatStateSnapshot()
+    dispatchUpdateChat('chat-a', {}, previous, true)
+
+    await waitForCallCount(calls, 2)
+    await vi.waitFor(() => {
+      expect(DBState.db.characters[0].chatPage).toBe(1)
+    })
+    expect(DBState.db.characters[0].chats[1].name).toBe('Newer sibling name')
+  })
+})
+
 describe('Phase 2 chat-metadata-row rollback', () => {
   function scalarMetadata(chatIndex: number): ChatSnapshot {
     const chat = DBState.db.characters[0].chats[chatIndex] as unknown as Record<string, unknown>
