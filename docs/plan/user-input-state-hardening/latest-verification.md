@@ -7,25 +7,27 @@ workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 5 persona collection rollback.
-  Persona create, delete, and reorder command failures now roll back only the
-  attempted collection change. Create removes only an unchanged attempted row,
-  delete reinserts only a still-missing row, reorder restores prior ID order only
-  when live order still matches the attempted order, and mirrored selected
-  profile fields restore only while live values still match the attempted
-  command result.
+- Runtime/code change under test: Phase 5 translator preset collection
+  rollback. Translator preset create, select, delete, and import command
+  dispatches no longer pass a broad full-state rollback callback for
+  `translatorPresets`, `translatorPresetId`, `translatorPrompt`, and
+  `translatorMaxResponse`. Existing scoped field-update rollback remains intact,
+  and failed delayed collection commands preserve newer projected rows,
+  selection, and mirrored legacy fields.
 - Commands:
 
 ```bash
-pnpm exec vitest run src/ts/persona.test.ts src/lib/Setting/Pages/PersonaSettings.svelte.test.ts src/ts/server/staleStateGuards.test.ts
+pnpm exec vitest run src/lib/Setting/Pages/Language/TranslatorPresetSettings.svelte.test.ts
+pnpm exec vitest run src/ts/server/staleStateGuards.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
+pnpm exec prettier --check src/lib/Setting/Pages/Language/TranslatorPresetSettings.svelte src/lib/Setting/Pages/Language/TranslatorPresetSettings.svelte.test.ts
 git diff --check
 ```
 
-- Result: passed on 2026-06-17. Persona command/UI plus shared stale-state guard
-  coverage passed 30 tests, and both TypeScript checks plus `git diff --check`
-  passed.
+- Result: passed on 2026-06-17. Translator preset UI/server-command coverage
+  passed 13 tests, shared stale-state guard coverage passed 12 tests, and both
+  TypeScript checks plus Prettier and `git diff --check` passed.
 - Additional check: `pnpm exec vitest run src/ts/compatibilityAdapters.test.ts`
   still fails in the pre-existing character MCP lorebook test
   `routes MCP character lorebook writes through lorebook commands in
@@ -42,8 +44,10 @@ git diff --check
   persona import remain separate residual persona paths. Full
   `ScriptDefinitionStateSnapshot` rollback remains broad for rarer discrete
   callers. The remaining Phase 5 collection domains still need focused slices:
-  preset/translator/lorebook/sidebar collection rollback and replacement flows,
-  including create/delete/reorder, import, and list-selection paths.
+  preset/lorebook/sidebar collection rollback and replacement flows, including
+  create/delete/reorder, import, and list-selection paths. Translator preset
+  import file-read/decode freshness does not have dedicated coverage, but its
+  command-dispatch failure path uses the now rollback-free create dispatcher.
 
 ## Remaining Proof
 
@@ -63,8 +67,9 @@ git diff --check
   fourth Phase 5 slice, global module command rollback is covered by the fifth
   Phase 5 slice, MCP module-info rollback is covered by the sixth Phase 5 slice,
   plugin DB bridge settings rollback is covered by the seventh Phase 5 slice,
-  and persona create/delete/reorder rollback is covered by the eighth Phase 5
-  slice. Remaining Phase 5 work owns preset/translator, module
+  persona create/delete/reorder rollback is covered by the eighth Phase 5 slice,
+  and translator preset collection command rollback is covered by the ninth
+  Phase 5 slice. Remaining Phase 5 work owns preset, module
   lorebook/regex/script/trigger subdomains, lorebook, import collection flows,
   Hypa V3 preset array import/rename/delete, plugin import/update side-effect
   reload, persona profile/import residuals, and sidebar/chat/folder/character

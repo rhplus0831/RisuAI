@@ -79,15 +79,6 @@
     }
   }
 
-  function restoreTranslatorPresetState(snapshot: TranslatorPresetStateSnapshot): void {
-    withTrustedServerProjectionWrite(() => {
-      DBState.db.translatorPresets = cloneJsonValue(snapshot.translatorPresets)
-      DBState.db.translatorPresetId = snapshot.translatorPresetId
-      DBState.db.translatorPrompt = snapshot.translatorPrompt
-      DBState.db.translatorMaxResponse = snapshot.translatorMaxResponse
-    })
-  }
-
   function translatorPresetFromSnapshot(
     snapshot: TranslatorPresetStateSnapshot | null,
     presetId: string,
@@ -327,42 +318,32 @@
     void runServerCommand({ command, rollback })
   }
 
-  function dispatchCreateTranslatorPreset(preset: TranslatorPreset, previous: TranslatorPresetStateSnapshot): void {
-    runTranslatorPresetCommand(
-      (baseRevision) =>
-        createTranslatorPresetCommand({
-          baseRevision,
-          preset: cloneJsonValue(preset) as TranslatorPresetSnapshot,
-          select: true,
-        }),
-      () => restoreTranslatorPresetState(previous),
+  function dispatchCreateTranslatorPreset(preset: TranslatorPreset): void {
+    runTranslatorPresetCommand((baseRevision) =>
+      createTranslatorPresetCommand({
+        baseRevision,
+        preset: cloneJsonValue(preset) as TranslatorPresetSnapshot,
+        select: true,
+      }),
     )
   }
 
-  function dispatchSelectTranslatorPreset(presetId: string, previous: TranslatorPresetStateSnapshot): void {
-    runTranslatorPresetCommand(
-      (baseRevision) =>
-        selectTranslatorPresetCommand({
-          baseRevision,
-          presetId,
-        }),
-      () => restoreTranslatorPresetState(previous),
+  function dispatchSelectTranslatorPreset(presetId: string): void {
+    runTranslatorPresetCommand((baseRevision) =>
+      selectTranslatorPresetCommand({
+        baseRevision,
+        presetId,
+      }),
     )
   }
 
-  function dispatchDeleteTranslatorPreset(
-    presetId: string,
-    selectPresetId: string | undefined,
-    previous: TranslatorPresetStateSnapshot,
-  ): void {
-    runTranslatorPresetCommand(
-      (baseRevision) =>
-        deleteTranslatorPresetCommand({
-          baseRevision,
-          presetId,
-          selectPresetId,
-        }),
-      () => restoreTranslatorPresetState(previous),
+  function dispatchDeleteTranslatorPreset(presetId: string, selectPresetId: string | undefined): void {
+    runTranslatorPresetCommand((baseRevision) =>
+      deleteTranslatorPresetCommand({
+        baseRevision,
+        presetId,
+        selectPresetId,
+      }),
     )
   }
 
@@ -453,14 +434,12 @@
       const presetIndex = Number(value)
       const presetId = DBState.db.translatorPresets[presetIndex]?.id ?? null
       if (!canUseServerCommands()) {
-        const previous = currentTranslatorPresetStateSnapshot()
         DBState.db.translatorPresetId = presetIndex
         syncCurrentTranslatorPreset()
-        if (presetId) dispatchSelectTranslatorPreset(presetId, previous)
+        if (presetId) dispatchSelectTranslatorPreset(presetId)
       } else if (presetId) {
         void flushPendingTranslatorPresetUpdates().finally(() => {
-          const previous = currentTranslatorPresetStateSnapshot()
-          dispatchSelectTranslatorPreset(presetId, previous)
+          dispatchSelectTranslatorPreset(presetId)
         })
       }
     }
@@ -475,7 +454,6 @@
     class="mr-2 text-textcolor2 hover:text-green-500 cursor-pointer"
     onclick={async () => {
       await flushPendingTranslatorPresetUpdates()
-      const previous = currentTranslatorPresetStateSnapshot()
       const newPreset = createTranslatorPreset()
       newPreset.id = createClientTranslatorPresetId()
       if (!canUseServerCommands()) {
@@ -484,9 +462,9 @@
         DBState.db.translatorPresets = presets
         DBState.db.translatorPresetId = DBState.db.translatorPresets.length - 1
         normalizeTranslatorPresets()
-        dispatchCreateTranslatorPreset(DBState.db.translatorPresets[DBState.db.translatorPresetId], previous)
+        dispatchCreateTranslatorPreset(DBState.db.translatorPresets[DBState.db.translatorPresetId])
       } else {
-        dispatchCreateTranslatorPreset(newPreset, previous)
+        dispatchCreateTranslatorPreset(newPreset)
       }
     }}>
     <PlusIcon size={24} />
@@ -543,7 +521,6 @@
       if (!canUseServerCommands()) {
         normalizeTranslatorPresets()
       }
-      const previous = currentTranslatorPresetStateSnapshot()
       const presetId = preset.id
       let selectPresetId: string | undefined
       if (!canUseServerCommands()) {
@@ -558,7 +535,7 @@
         selectPresetId = nextPresets[0]?.id
       }
       if (presetId) {
-        dispatchDeleteTranslatorPreset(presetId, selectPresetId, previous)
+        dispatchDeleteTranslatorPreset(presetId, selectPresetId)
       }
     }}>
     <TrashIcon size={24} />
@@ -598,7 +575,6 @@
         const newPreset = await decodeTranslatorPresetFile(selectedFile.data)
         newPreset.id = createClientTranslatorPresetId()
         await flushPendingTranslatorPresetUpdates()
-        const previous = currentTranslatorPresetStateSnapshot()
         if (!canUseServerCommands()) {
           const presets = DBState.db.translatorPresets
 
@@ -606,9 +582,9 @@
           DBState.db.translatorPresets = presets
           DBState.db.translatorPresetId = DBState.db.translatorPresets.length - 1
           normalizeTranslatorPresets()
-          dispatchCreateTranslatorPreset(DBState.db.translatorPresets[DBState.db.translatorPresetId], previous)
+          dispatchCreateTranslatorPreset(DBState.db.translatorPresets[DBState.db.translatorPresetId])
         } else {
-          dispatchCreateTranslatorPreset(newPreset, previous)
+          dispatchCreateTranslatorPreset(newPreset)
         }
 
         alertNormal(language.successImport)

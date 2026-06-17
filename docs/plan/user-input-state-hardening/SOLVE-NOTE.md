@@ -67,7 +67,10 @@ of order. Plugin non-storage rollback now captures attempted targets for
 storage, provider, and sibling plugin edits on stale failures. Plugin create,
 full update, reorder, and DB bridge collection patch rollback now use frozen
 attempted payloads plus row, field, and order records, and collection sequences
-keep earlier successful server-accepted steps when later steps fail.
+keep earlier successful server-accepted steps when later steps fail. Global
+module command rollback, MCP module-info rollback, plugin DB bridge settings
+rollback, persona create/delete/reorder rollback, and translator preset
+collection command rollback have also landed for their Phase 5 slices.
 
 Next manager loop:
 
@@ -148,10 +151,12 @@ Explicit deferrals:
   5 MCP module-info rollback has landed for `risu-set-module-info` PATCH plus
   enable command sequences. Phase 5 plugin DB bridge settings rollback has
   landed for Plugin V2 database settings patches. Phase 5 persona collection
-  rollback has landed for create, delete, and reorder commands. Remaining
-  preset/translator, module lorebook/regex/script/trigger subdomains, lorebook,
-  and import collection flows, Hypa V3 preset array import/rename/delete, plugin
-  import/update side-effect reload, persona profile/import residuals, and
+  rollback has landed for create, delete, and reorder commands. Phase 5
+  translator preset collection rollback has landed for create, select, delete,
+  and import command-dispatch failures. Remaining preset, module
+  lorebook/regex/script/trigger subdomains, lorebook, and import collection
+  flows, Hypa V3 preset array import/rename/delete, plugin import/update
+  side-effect reload, persona profile/import residuals, and
   sidebar/chat/folder/character list create/delete/reorder/import rollback
   remain Phase 5 work.
 - `src/ts/compatibilityAdapters.test.ts` currently has a pre-existing failure in

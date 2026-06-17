@@ -71,6 +71,13 @@ index, failed reorder restores previous ID order only while live order still
 equals attempted order, and selected profile mirrors restore only
 attempted-matching values.
 
+Ninth landed slice: translator preset create, select, delete, and import
+command dispatch no longer passes a broad full translator state rollback. The
+server-backed collection operations are non-optimistic, so failed delayed
+collection commands leave newer projected preset rows, selection, and mirrored
+`translatorPrompt`/`translatorMaxResponse` values intact while preserving the
+existing scoped field-update rollback.
+
 ## Anchors
 
 - `src/lib/Setting/botpreset.svelte`
