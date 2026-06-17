@@ -18,13 +18,14 @@ import {
   currentPluginStateSnapshot,
   currentPluginSettingsPatchRollbackSnapshot,
   dispatchBulkPluginStorage,
-  dispatchCreatePlugin,
   dispatchPluginCollectionPatch,
   dispatchDeletePluginStorage,
   dispatchPluginSettingsPatch,
   dispatchPutPluginStorage,
   dispatchSelectPluginProvider,
   dispatchUpdatePlugin,
+  runCreatePluginCommand,
+  runUpdatePluginCommand,
   toPluginSnapshot,
 } from '../pluginCommands'
 import {
@@ -524,6 +525,7 @@ export async function importPlugin(
     }
 
     const previous = currentPluginStateSnapshot()
+    let persistenceResult: ReturnType<typeof runCreatePluginCommand> | ReturnType<typeof runUpdatePluginCommand> = null
     if (applyTarget.kind === 'update') {
       // Re-read the live database inside the trusted write scope so the
       // optimistic update never mutates the read-only server projection
@@ -534,7 +536,7 @@ export async function importPlugin(
         db.plugins[applyTarget.index] = pluginData
         setDatabaseLite(db)
       })
-      dispatchUpdatePlugin(applyTarget.pluginId, toPluginSnapshot(pluginData), previous)
+      persistenceResult = runUpdatePluginCommand(applyTarget.pluginId, toPluginSnapshot(pluginData), previous)
     } else if (applyTarget.kind === 'create') {
       withTrustedServerProjectionWrite(() => {
         const db = getDatabase()
@@ -542,7 +544,14 @@ export async function importPlugin(
         db.plugins.push(pluginData)
         setDatabaseLite(db)
       })
-      dispatchCreatePlugin(pluginData, previous)
+      persistenceResult = runCreatePluginCommand(pluginData, previous)
+    }
+
+    if (persistenceResult) {
+      const result = await persistenceResult
+      if (result.status !== 'ok') {
+        return false
+      }
     }
 
     if (argu.isHotReload && !hotReloading.includes(pluginData.name)) {

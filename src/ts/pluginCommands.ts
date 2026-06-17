@@ -166,17 +166,24 @@ export function currentPluginSettingsPatchRollbackSnapshot(
 export function runPluginCommand<T extends Record<string, unknown>>(
   command: (baseRevision: number) => Promise<ServerCommandResult<T>>,
   rollback: () => void,
-): void {
-  if (!canUseServerCommands()) return
-  void runServerCommand({ command, rollback })
+): Promise<ServerCommandResult<T>> | null {
+  if (!canUseServerCommands()) return null
+  return runServerCommand({ command, rollback })
 }
 
 export function dispatchCreatePlugin(plugin: RisuPlugin, previous: PluginStateSnapshot): void {
-  if (!canUseServerCommands()) return
+  void runCreatePluginCommand(plugin, previous)
+}
+
+export function runCreatePluginCommand(
+  plugin: RisuPlugin,
+  previous: PluginStateSnapshot,
+): Promise<ServerCommandResult<{ pluginId: string }>> | null {
+  if (!canUseServerCommands()) return null
   const pluginSnapshot = toPluginSnapshot(plugin)
   const rollbackEntry = pluginCreateRollbackEntry(plugin)
   const operation = issuePluginNonStorageOperation([rollbackEntry])
-  runPluginCommand(
+  return runPluginCommand(
     async (baseRevision) => {
       const result = await createPluginCommand({
         baseRevision,
@@ -192,12 +199,20 @@ export function dispatchCreatePlugin(plugin: RisuPlugin, previous: PluginStateSn
 }
 
 export function dispatchUpdatePlugin(pluginId: string, patch: PluginSnapshot, previous: PluginStateSnapshot): void {
+  void runUpdatePluginCommand(pluginId, patch, previous)
+}
+
+export function runUpdatePluginCommand(
+  pluginId: string,
+  patch: PluginSnapshot,
+  previous: PluginStateSnapshot,
+): Promise<ServerCommandResult<{ pluginId: string }>> | null {
   const commandPatch = cloneJsonValue(sanitizePluginPatch(patch))
-  if (Object.keys(commandPatch).length === 0) return
-  if (!canUseServerCommands()) return
+  if (Object.keys(commandPatch).length === 0) return null
+  if (!canUseServerCommands()) return null
   const rollbackEntries = pluginFieldRollbackEntries(pluginId, commandPatch, previous)
   const operation = rollbackEntries.length > 0 ? issuePluginNonStorageOperation(rollbackEntries) : null
-  runPluginCommand(
+  return runPluginCommand(
     async (baseRevision) => {
       const result = await updatePluginCommand({
         baseRevision,

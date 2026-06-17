@@ -172,6 +172,9 @@ persistence inventory under
   target capture instead of broad chat snapshots or drifted selection.
   Lorebook import now captures stable character/chat/global-lorebook targets and
   post-picker rollback baselines instead of using stale selected indexes/pages.
+  Plugin import/update now waits for accepted server-backed create/update
+  commands before reloading the plugin runtime, so failed command rollbacks skip
+  loading runtime side effects from rejected optimistic plugin state.
   Phase 2 landed character profile draft dirty top-level field protection;
   prompt-template item row dirty projection merging; whole-key dirty projection
   protection for
@@ -484,7 +487,8 @@ persistence inventory under
   preset array rollback has also landed. Combined sidebar chat/folder reorder
   rollback has also landed. Chat fork rollback has also landed. Chat metadata
   PATCH rollback has also landed. Chat import flow rollback has also landed.
-  Lorebook import target freshness has also landed.
+  Lorebook import target freshness has also landed. Plugin import/update runtime
+  reload ordering has also landed.
 - [Phase 6](phases/phase-6-resync-memory-navigation.md): pending. Realm, backup,
   and local bundle restore/import resyncs; character/chat import
   refresh/navigation edges; memory job list/progress ordering; route/selection
@@ -800,8 +804,7 @@ persistence inventory under
   - Phase 5 lorebook import freshness slice: lorebook imports now re-resolve
     stable character/chat/global-lorebook targets by id after file-picker awaits
     and snapshot rollback baselines immediately before the import write.
-  - Phase 5: sidebar/import collection flows and plugin import/update
-    side-effect reload.
+  - Phase 5: sidebar/import collection flows.
   - Known pre-existing test gap: `pnpm exec vitest run
     src/ts/compatibilityAdapters.test.ts` fails in
     `routes MCP character lorebook writes through lorebook commands in

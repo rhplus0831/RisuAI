@@ -212,6 +212,13 @@ immediately before the write against the resolved target, so edits made while
 the picker was pending survive command rollback, and stale selection/page drift
 cannot redirect the import into a different lorebook collection.
 
+Twenty-ninth landed slice: plugin import/update runtime reload now waits for
+accepted server-backed create/update command results before calling
+`loadPlugins()`. Failed plugin import or remote update commands roll back the
+optimistic DB write and return without loading runtime side effects from the
+rejected plugin state, while successful commands still reload the runtime after
+persistence acceptance.
+
 ## Anchors
 
 - `src/lib/Setting/botpreset.svelte`

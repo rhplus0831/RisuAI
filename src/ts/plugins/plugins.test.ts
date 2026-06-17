@@ -79,6 +79,7 @@ import {
 } from '../server/projectionWriteGuard.svelte'
 import { DBState, selectedCharID } from '../stores.svelte'
 import { SafeLocalPluginStorage } from './pluginSafeClass'
+import { loadV3Plugins } from './apiV3/v3.svelte'
 import { getV2PluginAPIs, importPlugin, updatePlugin, type RisuPlugin } from './plugins.svelte'
 import type { RisuModule } from '../process/modules'
 
@@ -136,7 +137,7 @@ function createPicker() {
   }
 }
 
-function stubCommandFetch(): CapturedFetch[] {
+function stubCommandFetch(options: { failCommands?: boolean } = {}): CapturedFetch[] {
   const calls: CapturedFetch[] = []
   vi.stubGlobal(
     'fetch',
@@ -146,6 +147,9 @@ function stubCommandFetch(): CapturedFetch[] {
       calls.push({ url, method: init.method ?? 'GET', body })
       if (url === '/api/v1/bootstrap') {
         return jsonResponse({ revision: 10 })
+      }
+      if (options.failCommands) {
+        return jsonResponse({ error: 'forced command failure' }, 500)
       }
       const event: CommandEvent = {
         type: 'plugin.compat.updated',
@@ -161,6 +165,8 @@ function stubCommandFetch(): CapturedFetch[] {
 function stubRemotePluginUpdateFetch(input: {
   remoteUrl: string
   remoteSource: Promise<string> | string
+  commandResponse?: Promise<Response> | Response
+  failCommands?: boolean
 }): CapturedFetch[] {
   const calls: CapturedFetch[] = []
   vi.stubGlobal(
@@ -178,6 +184,12 @@ function stubRemotePluginUpdateFetch(input: {
         return jsonResponse({ revision: 10 })
       }
       calls.push({ url, method: init.method ?? 'GET', body })
+      if (input.commandResponse) {
+        return input.commandResponse
+      }
+      if (input.failCommands) {
+        return jsonResponse({ error: 'forced command failure' }, 500)
+      }
       const event: CommandEvent = {
         type: 'plugin.updated',
         revision: 11,
@@ -187,6 +199,29 @@ function stubRemotePluginUpdateFetch(input: {
     }) as unknown as typeof fetch,
   )
   return calls
+}
+
+function stubDeferredCommandFetch(): {
+  calls: CapturedFetch[]
+  commandResponses: Array<{ resolve: (response: Response) => void }>
+} {
+  const calls: CapturedFetch[] = []
+  const commandResponses: Array<{ resolve: (response: Response) => void }> = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const url = String(input)
+      const body = typeof init.body === 'string' ? JSON.parse(init.body) : null
+      calls.push({ url, method: init.method ?? 'GET', body })
+      if (url === '/api/v1/bootstrap') {
+        return jsonResponse({ revision: 10 })
+      }
+      return new Promise<Response>((resolve) => {
+        commandResponses.push({ resolve })
+      })
+    }) as unknown as typeof fetch,
+  )
+  return { calls, commandResponses }
 }
 
 function seedPlugin(name: string, patch: Partial<RisuPlugin> = {}): RisuPlugin {
@@ -311,6 +346,7 @@ beforeEach(() => {
   pluginImportMocks.selectSingleFile.mockReset()
   pluginImportMocks.sleep.mockReset()
   pluginImportMocks.sleep.mockResolvedValue(undefined)
+  vi.mocked(loadV3Plugins).mockClear()
   setServerProjectionWriteGuardEnabled(false)
   DBState.db = {
     currentPluginProvider: 'old-provider',
@@ -384,6 +420,56 @@ describe('plugin import/update freshness', () => {
     expect(calls).toEqual([])
   })
 
+  it('rolls back a fresh server-backed plugin import and skips runtime reload when create fails', async () => {
+    const calls = stubCommandFetch({ failCommands: true })
+
+    await expect(importPlugin(pluginSource('plugin-created'))).resolves.toBe(false)
+
+    expect(DBState.db.plugins.map((plugin) => plugin.name)).toEqual(['plugin-a'])
+    expect(calls.find((call) => call.url === '/api/v1/commands/plugins')).toMatchObject({
+      method: 'POST',
+      body: {
+        baseRevision: 10,
+        plugin: expect.objectContaining({
+          name: 'plugin-created',
+        }),
+      },
+    })
+    expect(loadV3Plugins).not.toHaveBeenCalled()
+  })
+
+  it('loads a fresh server-backed plugin import only after create acceptance', async () => {
+    const { calls, commandResponses } = stubDeferredCommandFetch()
+    const importPromise = importPlugin(pluginSource('plugin-created'))
+
+    await vi.waitFor(() => {
+      expect(calls.some((call) => call.url === '/api/v1/commands/plugins')).toBe(true)
+    })
+    expect(DBState.db.plugins.map((plugin) => plugin.name)).toEqual(['plugin-a', 'plugin-created'])
+    expect(loadV3Plugins).not.toHaveBeenCalled()
+
+    commandResponses[0].resolve(
+      jsonResponse({
+        revision: 11,
+        event: {
+          type: 'plugin.created',
+          revision: 11,
+          resource: 'plugin',
+          id: 'plugin-created',
+        } as CommandEvent,
+      }),
+    )
+
+    await expect(importPromise).resolves.toBe(true)
+    await vi.waitFor(() => {
+      expect(loadV3Plugins).toHaveBeenCalledTimes(1)
+    })
+    expect(vi.mocked(loadV3Plugins).mock.calls[0][0].map((plugin) => plugin.name)).toEqual([
+      'plugin-a',
+      'plugin-created',
+    ])
+  })
+
   it('drops remote update if the original plugin row changes while fetch text is in flight', async () => {
     const remoteUrl = 'https://plugins.example/plugin-a.js'
     const remoteSource = createDeferred<string>()
@@ -420,6 +506,97 @@ describe('plugin import/update freshness', () => {
     await expect(updatePromise).resolves.toBe(false)
     expect(DBState.db.plugins[0].script).toBe('Risuai.log("reinstalled")')
     expect(calls).toEqual([])
+  })
+
+  it('rolls back a fresh remote update and skips runtime reload when update command fails', async () => {
+    const remoteUrl = 'https://plugins.example/plugin-a.js'
+    const updatedSource = pluginSource('plugin-a', {
+      body: 'Risuai.log("updated")',
+      versionOfPlugin: '1.0.1',
+      updateURL: remoteUrl,
+    })
+    const calls = stubRemotePluginUpdateFetch({
+      remoteUrl,
+      remoteSource: updatedSource,
+      failCommands: true,
+    })
+    DBState.db.plugins = [
+      seedPlugin('plugin-a', {
+        script: 'Risuai.log("old")',
+        updateURL: remoteUrl,
+        versionOfPlugin: '1.0.0',
+      }),
+    ]
+
+    await expect(updatePlugin(DBState.db.plugins[0])).resolves.toBe(false)
+
+    expect(DBState.db.plugins).toEqual([
+      seedPlugin('plugin-a', {
+        script: 'Risuai.log("old")',
+        updateURL: remoteUrl,
+        versionOfPlugin: '1.0.0',
+      }),
+    ])
+    expect(calls.find((call) => call.url === '/api/v1/commands/plugins/plugin-a')).toMatchObject({
+      method: 'PATCH',
+      body: {
+        baseRevision: 10,
+        patch: expect.objectContaining({
+          script: updatedSource,
+          versionOfPlugin: '1.0.1',
+          updateURL: remoteUrl,
+        }),
+      },
+    })
+    expect(loadV3Plugins).not.toHaveBeenCalled()
+  })
+
+  it('loads a fresh remote update only after update acceptance', async () => {
+    const remoteUrl = 'https://plugins.example/plugin-a.js'
+    const updatedSource = pluginSource('plugin-a', {
+      body: 'Risuai.log("updated")',
+      versionOfPlugin: '1.0.1',
+      updateURL: remoteUrl,
+    })
+    const commandResponse = createDeferred<Response>()
+    const calls = stubRemotePluginUpdateFetch({
+      remoteUrl,
+      remoteSource: updatedSource,
+      commandResponse: commandResponse.promise,
+    })
+    DBState.db.plugins = [
+      seedPlugin('plugin-a', {
+        script: 'Risuai.log("old")',
+        updateURL: remoteUrl,
+        versionOfPlugin: '1.0.0',
+      }),
+    ]
+
+    const updatePromise = updatePlugin(DBState.db.plugins[0])
+
+    await vi.waitFor(() => {
+      expect(calls.some((call) => call.url === '/api/v1/commands/plugins/plugin-a')).toBe(true)
+    })
+    expect(DBState.db.plugins[0].script).toBe(updatedSource)
+    expect(loadV3Plugins).not.toHaveBeenCalled()
+
+    commandResponse.resolve(
+      jsonResponse({
+        revision: 11,
+        event: {
+          type: 'plugin.updated',
+          revision: 11,
+          resource: 'plugin',
+          id: 'plugin-a',
+        } as CommandEvent,
+      }),
+    )
+
+    await expect(updatePromise).resolves.toBe(true)
+    await vi.waitFor(() => {
+      expect(loadV3Plugins).toHaveBeenCalledTimes(1)
+    })
+    expect(vi.mocked(loadV3Plugins).mock.calls[0][0].map((plugin) => plugin.name)).toEqual(['plugin-a'])
   })
 
   it('dispatches the plugin patch command for a fresh remote update', async () => {

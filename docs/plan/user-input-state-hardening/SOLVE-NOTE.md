@@ -206,8 +206,10 @@ Explicit deferrals:
   Phase 5 chat import flow rollback and target freshness has landed for
   multi-chat import sequences and picker selection drift. Phase 5 lorebook
   import target freshness has landed for character, chat, and global lorebook
-  imports. Remaining sidebar and import collection flows and plugin
-  import/update side-effect reload remain Phase 5 work.
+  imports. Phase 5 plugin import/update runtime reload ordering has landed, so
+  failed server-backed create/update commands roll back the optimistic plugin DB
+  write without loading rejected runtime side effects. Remaining sidebar and
+  import collection flows remain Phase 5 work.
 - `src/ts/compatibilityAdapters.test.ts` currently has a pre-existing failure in
   `routes MCP character lorebook writes through lorebook commands in
   server-backed web mode` at line 626. It reproduced in a detached baseline

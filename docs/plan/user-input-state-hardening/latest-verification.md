@@ -7,43 +7,34 @@ workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 5 lorebook import target freshness.
-  `importLoreBook()` now captures stable character/chat/global-lorebook targets
-  before file-picker awaits, re-resolves those targets by id afterward, captures
-  rollback baselines immediately before the import write, and dispatches through
-  the existing scoped lorebook replacement helpers.
+- Runtime/code change under test: Phase 5 plugin import/update runtime reload
+  ordering. `importPlugin()` now waits for accepted server-backed plugin
+  create/update commands before calling `loadPlugins()`, so failed commands roll
+  back the optimistic DB write and skip loading runtime side effects from a
+  rejected plugin state.
 - Commands:
 
 ```bash
-pnpm exec vitest run src/ts/process/__tests__/lorebook.projectionGuard.test.ts src/ts/server/lorebookBridge.svelte.test.ts src/ts/server/lorebookBridge.test.ts
+pnpm exec vitest run src/ts/plugins/plugins.test.ts src/ts/server/pluginImport.test.ts src/ts/pluginCommands.test.ts src/ts/plugins/apiV3/v3.svelte.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
-pnpm exec prettier --check src/ts/process/lorebook.svelte.ts src/ts/process/__tests__/lorebook.projectionGuard.test.ts
+pnpm exec prettier --check src/ts/plugins/plugins.svelte.ts src/ts/pluginCommands.ts src/ts/plugins/plugins.test.ts
 git diff --check
 ```
 
-- Result: passed on 2026-06-17. Focused lorebook import plus lorebook bridge
-  coverage passed 99 tests across 3 files, and both TypeScript checks plus
-  Prettier and `git diff --check` passed.
-- Additional check: `pnpm exec vitest run src/ts/compatibilityAdapters.test.ts`
-  still fails in the pre-existing character MCP lorebook test
-  `routes MCP character lorebook writes through lorebook commands in
-  server-backed web mode` at `src/ts/compatibilityAdapters.test.ts:626`.
-  A detached baseline worktree at commit `30d4ad7ab` reproduced the same
-  failure before this slice, so it is tracked as out-of-scope for this lorebook
-  import freshness change.
+- Result: passed on 2026-06-17. Focused plugin import, plugin command, and
+  Plugin V3 coverage passed 78 tests across 4 files, and both TypeScript checks
+  plus Prettier and `git diff --check` passed.
 - Residual gaps: Multi-group plugin settings patch failures still share the
   generic settings rollback
-  callback and roll back all still-attempted keys from the failed patch. Plugin
-  import/update side-effect reload is not fully modeled by rollback. Full
+  callback and roll back all still-attempted keys from the failed patch. Full
   `ScriptDefinitionStateSnapshot` rollback remains broad for rarer discrete
   callers. Regex delete uses the same scoped module script dispatcher and has
   optimistic visibility coverage, but this slice does not add a dedicated
   failing delete rollback/stale-skip test. The remaining Phase 5 collection
   domains still need focused slices: sidebar collection rollback and replacement
-  flows, residual sidebar/import replacement paths, and plugin runtime reload
-  side effects. Chat fork selection preservation
-  uses the shared created-chat rollback selection helper, but there is no
+  flows, and residual sidebar/import replacement paths. Chat fork selection
+  preservation uses the shared created-chat rollback selection helper, but there is no
   fork-only selection-change regression. Translator preset import
   file-read/decode freshness does not have dedicated coverage, but its
   command-dispatch failure path uses the now rollback-free create dispatcher.
@@ -96,9 +87,9 @@ git diff --check
   slice. Chat metadata PATCH rollback is covered by the twenty-sixth Phase 5
   slice. Chat import flow rollback is covered by the twenty-seventh Phase 5
   slice. Lorebook import target freshness is covered by the twenty-eighth Phase
-  5 slice.
-  Remaining Phase 5 work owns sidebar/import collection flows and plugin
-  import/update side-effect reload.
+  5 slice. Plugin import/update runtime reload ordering is covered by the
+  twenty-ninth Phase 5 slice.
+  Remaining Phase 5 work owns sidebar/import collection flows.
 - Phase 6 owns Realm/backup/local bundle restore/import resyncs, character/chat
   import refresh/navigation edges, memory job list/progress ordering,
   route/selection hydration, welcome/onboarding delayed setup, and DevTool
