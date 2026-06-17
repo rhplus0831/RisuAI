@@ -58,6 +58,12 @@ attempted rollback sequencer for its module PATCH plus enable command pair. A
 failed PATCH rolls back only attempted fields and unattempted enable state, while
 an accepted PATCH remains in live state if a later enable command fails.
 
+Seventh landed slice: plugin V2 database settings patch rollback now captures
+settings-specific previous and attempted values before optimistic bridge writes.
+Failed settings commands restore only live settings keys that still match the
+attempted values, preserving newer same-key edits plus plugin rows, provider
+selection, and custom storage.
+
 ## Anchors
 
 - `src/lib/Setting/botpreset.svelte`

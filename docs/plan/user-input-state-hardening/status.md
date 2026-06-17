@@ -107,6 +107,9 @@ persistence inventory under
   MCP `risu-set-module-info` now reuses the attempted-aware global module
   rollback sequencer for PATCH plus enable command sequences, preserving an
   accepted module PATCH when a later enable command fails.
+  Plugin V2 database settings patches now use settings-specific attempted
+  rollback, preserving newer same-key edits and plugin list/provider/storage
+  state when a settings command fails.
   Phase 2 landed character profile draft dirty top-level field protection;
   prompt-template item row dirty projection merging; whole-key dirty projection
   protection for
@@ -274,8 +277,11 @@ persistence inventory under
   guard MCP module-info PATCH plus enable rollback through the same sequenced
   module rollback steps, replacing the old broad
   `restoreGlobalModuleState(previous)` path for `risu-set-module-info`.
-- Verification state: Phase 5 MCP module-info rollback validation is recorded in
-  `latest-verification.md`.
+- `src/ts/pluginCommands.ts` and `src/ts/plugins/plugins.svelte.ts` now guard
+  plugin DB bridge settings patch rollback by settings-key attempted values
+  instead of broad plugin-state snapshots.
+- Verification state: Phase 5 plugin DB bridge settings rollback validation is
+  recorded in `latest-verification.md`.
 - Highest issue density:
   - Character editor: 52 issue rows, mostly dirty projection and unguarded
     upload callbacks.
@@ -570,11 +576,15 @@ persistence inventory under
     and enable command pairs through the attempted-aware module rollback
     sequencer. A failed PATCH restores only attempted fields and unattempted
     enable state; a later failed enable leaves an accepted PATCH intact.
+  - Phase 5 plugin DB bridge settings slice: Plugin V2 database settings patches
+    now capture previous and attempted settings values before optimistic bridge
+    writes. Failed settings commands restore only still-attempted settings keys
+    and no longer restore plugin rows, provider selection, or custom storage.
   - Phase 5: preset/persona/translator/lorebook/script/import collection flows,
     module lorebook/regex/script/trigger subdomains, Hypa V3 preset array
-    import/rename/delete, plugin settings patch residuals, sidebar chat/folder
-    lists, character list ordering, and broad create/delete/reorder/import
-    rollback.
+    import/rename/delete, plugin import/update side-effect reload, sidebar
+    chat/folder lists, character list ordering, and broad
+    create/delete/reorder/import rollback.
   - Known pre-existing test gap: `pnpm exec vitest run
     src/ts/compatibilityAdapters.test.ts` fails in
     `routes MCP character lorebook writes through lorebook commands in

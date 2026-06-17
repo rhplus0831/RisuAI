@@ -17,6 +17,7 @@ import {
   type ServerCommandResult,
 } from './server/commands'
 import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
+import { applyAttemptedFieldRollback } from './server/staleStateGuards'
 import { DBState } from './stores.svelte'
 
 export interface PluginStateSnapshot {
@@ -26,6 +27,11 @@ export interface PluginStateSnapshot {
 }
 
 export type PluginStorageSnapshot = Record<string, unknown>
+
+export interface PluginSettingsPatchRollbackSnapshot {
+  previous: Record<string, unknown>
+  attempted: Record<string, unknown>
+}
 
 const PLUGIN_PATCH_EXCLUDED_KEYS = new Set(['name'])
 let pluginWatchSuppressionVersion = 0
@@ -147,6 +153,14 @@ export function restorePluginState(snapshot: PluginStateSnapshot): void {
 
 export function currentPluginWatchSuppressionVersion(): number {
   return pluginWatchSuppressionVersion
+}
+
+export function currentPluginSettingsPatchRollbackSnapshot(
+  patch: Record<string, unknown>,
+): PluginSettingsPatchRollbackSnapshot {
+  const snapshot = emptyPluginSettingsPatchRollbackSnapshot()
+  captureCurrentPluginSettingsPatchRollbackEntries(snapshot, patch)
+  return snapshot
 }
 
 export function runPluginCommand<T extends Record<string, unknown>>(
@@ -1043,18 +1057,65 @@ function isStringArrayEqual(left: string[], right: string[]): boolean {
   return left.every((value, index) => value === right[index])
 }
 
-export function dispatchPluginSettingsPatch(patch: Record<string, unknown>, previous: PluginStateSnapshot): void {
+export function dispatchPluginSettingsPatch(
+  patch: Record<string, unknown>,
+  rollbackSnapshot: PluginSettingsPatchRollbackSnapshot,
+): void {
   if (!canUseServerCommands()) return
   const settingsPatch: Record<string, unknown> = {}
+  const rollbackPrevious: Record<string, unknown> = {}
+  const rollbackAttempted: Record<string, unknown> = {}
+
   for (const [key, value] of Object.entries(patch)) {
     if (settingsGroupForKey(key) && value !== undefined) {
       settingsPatch[key] = cloneJsonValue(value)
+      if (hasOwnRecordKey(rollbackSnapshot.previous, key) && hasOwnRecordKey(rollbackSnapshot.attempted, key)) {
+        rollbackPrevious[key] = cloneJsonValue(rollbackSnapshot.previous[key])
+        rollbackAttempted[key] = cloneJsonValue(rollbackSnapshot.attempted[key])
+      }
     }
   }
   if (Object.keys(settingsPatch).length === 0) return
   void patchServerBackedSettings({
     patch: settingsPatch,
-    rollback: () => restorePluginState(previous),
+    rollback: () =>
+      rollbackPluginSettingsPatch({
+        previous: rollbackPrevious,
+        attempted: rollbackAttempted,
+      }),
+  })
+}
+
+function emptyPluginSettingsPatchRollbackSnapshot(): PluginSettingsPatchRollbackSnapshot {
+  return {
+    previous: {},
+    attempted: {},
+  }
+}
+
+function captureCurrentPluginSettingsPatchRollbackEntries(
+  snapshot: PluginSettingsPatchRollbackSnapshot,
+  patch: Record<string, unknown>,
+): void {
+  const currentSettings = DBState.db as unknown as Record<string, unknown>
+
+  for (const [key, value] of Object.entries(patch)) {
+    if (!settingsGroupForKey(key) || value === undefined) continue
+    snapshot.previous[key] = cloneJsonValue(currentSettings[key])
+    snapshot.attempted[key] = cloneJsonValue(value)
+  }
+}
+
+function rollbackPluginSettingsPatch(snapshot: PluginSettingsPatchRollbackSnapshot): void {
+  if (Object.keys(snapshot.attempted).length === 0) return
+
+  withTrustedServerProjectionWrite(() => {
+    const target = DBState.db as unknown as Record<string, unknown>
+    applyAttemptedFieldRollback({
+      target,
+      previous: snapshot.previous,
+      attempted: snapshot.attempted,
+    })
   })
 }
 

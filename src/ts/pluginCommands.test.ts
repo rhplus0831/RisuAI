@@ -11,6 +11,7 @@ import {
 } from './server/projectionWriteGuard.svelte'
 import { DBState } from './stores.svelte'
 import {
+  currentPluginSettingsPatchRollbackSnapshot,
   currentPluginStateSnapshot,
   currentPluginStorageSnapshot,
   deletePlugin,
@@ -20,6 +21,7 @@ import {
   dispatchBulkPluginStorage,
   dispatchDeletePluginStorage,
   dispatchDeletePlugin,
+  dispatchPluginSettingsPatch,
   dispatchPutPluginStorage,
   dispatchUpdatePlugin,
   setPluginArgument,
@@ -834,6 +836,135 @@ describe('plugin projection command helpers', () => {
     expect(DBState.db.plugins).toEqual(previousPlugins)
     expect(DBState.db.currentPluginProvider).toBe(previousProvider)
     expect(DBState.db.pluginCustomStorage).toEqual(previousStorage)
+  })
+
+  it('failed settings patch restores only attempted settings keys and preserves newer plugin state', async () => {
+    const calls = stubCommandFetch({ failCommands: true })
+    setServerProjectionWriteGuardEnabled(true)
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.moduleIntergration = 'old-modules'
+      DBState.db.pluginDevelopMode = false
+    })
+    const patch = {
+      moduleIntergration: 'attempted-modules',
+      pluginDevelopMode: true,
+    }
+    const rollbackSnapshot = currentPluginSettingsPatchRollbackSnapshot(patch)
+
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.moduleIntergration = patch.moduleIntergration
+      DBState.db.pluginDevelopMode = patch.pluginDevelopMode
+    })
+    dispatchPluginSettingsPatch(patch, rollbackSnapshot)
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.plugins.push(
+        seedPlugin('plugin-c', {
+          realArg: { mode: 'newer-plugin' },
+          enabled: true,
+        }),
+      )
+      DBState.db.currentPluginProvider = 'plugin-c'
+      DBState.db.pluginCustomStorage.newerStorage = { value: 'kept' }
+    })
+
+    await waitForCallCount(calls, 2)
+    await flushCommandEffects()
+
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/settings/advanced',
+      method: 'PATCH',
+      body: {
+        baseRevision: 10,
+        patch,
+      },
+    })
+    expect(DBState.db.moduleIntergration).toBe('old-modules')
+    expect(DBState.db.pluginDevelopMode).toBe(false)
+    expect(DBState.db.plugins).toEqual([
+      seedPlugin('plugin-a', {
+        arguments: { mode: ['fast', 'slow'] },
+        realArg: { mode: 'fast', token: 'abc' },
+        enabled: true,
+      }),
+      seedPlugin('plugin-b', {
+        realArg: { mode: 'standby' },
+        enabled: false,
+      }),
+      seedPlugin('plugin-c', {
+        realArg: { mode: 'newer-plugin' },
+        enabled: true,
+      }),
+    ])
+    expect(DBState.db.currentPluginProvider).toBe('plugin-c')
+    expect(DBState.db.pluginCustomStorage).toEqual({
+      retained: { value: 1 },
+      newerStorage: { value: 'kept' },
+    })
+  })
+
+  it('failed settings patch skips rollback when the same settings key changed again', async () => {
+    const calls = stubCommandFetch({ failCommands: true })
+    setServerProjectionWriteGuardEnabled(true)
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.moduleIntergration = 'old-modules'
+    })
+    const patch = {
+      moduleIntergration: 'attempted-modules',
+    }
+    const rollbackSnapshot = currentPluginSettingsPatchRollbackSnapshot(patch)
+
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.moduleIntergration = patch.moduleIntergration
+    })
+    dispatchPluginSettingsPatch(patch, rollbackSnapshot)
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.moduleIntergration = 'newer-modules'
+    })
+
+    await waitForCallCount(calls, 2)
+    await flushCommandEffects()
+
+    expect(DBState.db.moduleIntergration).toBe('newer-modules')
+  })
+
+  it('failed settings patch ignores unsupported and undefined keys for command dispatch and rollback', async () => {
+    const calls = stubCommandFetch({ failCommands: true })
+    setServerProjectionWriteGuardEnabled(true)
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.moduleIntergration = 'old-modules'
+      ;(DBState.db as Record<string, unknown>).notServerBackedSetting = 'old-unsupported'
+      ;(DBState.db as Record<string, unknown>).maxContext = 4096
+    })
+    const patch = {
+      moduleIntergration: 'attempted-modules',
+      notServerBackedSetting: 'attempted-unsupported',
+      maxContext: undefined,
+    }
+    const rollbackSnapshot = currentPluginSettingsPatchRollbackSnapshot(patch)
+
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.moduleIntergration = patch.moduleIntergration
+      ;(DBState.db as Record<string, unknown>).notServerBackedSetting = patch.notServerBackedSetting
+      ;(DBState.db as Record<string, unknown>).maxContext = undefined
+    })
+    dispatchPluginSettingsPatch(patch, rollbackSnapshot)
+
+    await waitForCallCount(calls, 2)
+    await flushCommandEffects()
+
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/settings/advanced',
+      method: 'PATCH',
+      body: {
+        baseRevision: 10,
+        patch: {
+          moduleIntergration: 'attempted-modules',
+        },
+      },
+    })
+    expect(DBState.db.moduleIntergration).toBe('old-modules')
+    expect((DBState.db as Record<string, unknown>).notServerBackedSetting).toBe('attempted-unsupported')
+    expect((DBState.db as Record<string, unknown>).maxContext).toBeUndefined()
   })
 
   it('failed PUT restores only the attempted key and preserves newer sibling keys', async () => {

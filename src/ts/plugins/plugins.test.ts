@@ -646,6 +646,80 @@ describe('plugin database command bridge', () => {
     expect(DBState.db.moduleIntergration).toBe('ns-a, ns-b')
   })
 
+  it('rolls back failed plugin DB bridge settings patches without clobbering newer plugin state', async () => {
+    const advancedCommand = createDeferred<Response>()
+    const captured: { url: string; method: string; body: { baseRevision?: number; [key: string]: unknown } }[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        if (url === '/api/v1/bootstrap') {
+          return jsonResponse({ revision: 50 })
+        }
+        const body = typeof init.body === 'string' ? JSON.parse(init.body) : null
+        captured.push({ url, method: init.method ?? 'GET', body })
+        if (url === '/api/v1/commands/settings/advanced') {
+          return advancedCommand.promise
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+    setServerProjectionWriteGuardEnabled(true)
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.moduleIntergration = 'old-modules'
+      DBState.db.plugins = [seedPlugin('plugin-a')]
+      DBState.db.currentPluginProvider = 'plugin-a'
+      DBState.db.pluginCustomStorage = {
+        retained: { value: 1 },
+      }
+    })
+    const apis = getV2PluginAPIs()
+
+    apis.setDatabaseLite({ moduleIntergration: 'attempted-modules' })
+
+    await vi.waitFor(() => {
+      expect(captured.length).toBe(1)
+    })
+    expect(DBState.db.moduleIntergration).toBe('attempted-modules')
+
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.plugins.push(
+        seedPlugin('plugin-newer', {
+          realArg: { mode: 'newer-plugin' },
+        }),
+      )
+      DBState.db.currentPluginProvider = 'plugin-newer'
+      DBState.db.pluginCustomStorage.newerStorage = { value: 'kept' }
+    })
+    advancedCommand.resolve(jsonResponse({ error: 'forced advanced failure' }, 500))
+
+    await vi.waitFor(() => {
+      expect(DBState.db.moduleIntergration).toBe('old-modules')
+    })
+
+    expect(captured[0]).toMatchObject({
+      url: '/api/v1/commands/settings/advanced',
+      method: 'PATCH',
+      body: {
+        baseRevision: 50,
+        patch: {
+          moduleIntergration: 'attempted-modules',
+        },
+      },
+    })
+    expect(DBState.db.plugins).toEqual([
+      seedPlugin('plugin-a'),
+      seedPlugin('plugin-newer', {
+        realArg: { mode: 'newer-plugin' },
+      }),
+    ])
+    expect(DBState.db.currentPluginProvider).toBe('plugin-newer')
+    expect(DBState.db.pluginCustomStorage).toEqual({
+      retained: { value: 1 },
+      newerStorage: { value: 'kept' },
+    })
+  })
+
   it('routes plugin custom model and advanced database writes through settings commands', async () => {
     const calls = stubCommandFetch()
     const apis = getV2PluginAPIs()

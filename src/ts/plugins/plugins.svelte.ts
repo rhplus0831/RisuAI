@@ -16,6 +16,7 @@ import { pluginCodeTranspiler } from './apiV3/transpiler'
 import {
   currentPluginStorageSnapshot,
   currentPluginStateSnapshot,
+  currentPluginSettingsPatchRollbackSnapshot,
   dispatchBulkPluginStorage,
   dispatchCreatePlugin,
   dispatchPluginCollectionPatch,
@@ -726,6 +727,7 @@ function replacePluginStorage(values: Record<string, unknown>): void {
 function applyPluginDatabasePatch(newDb: Record<string, unknown>, options: { full: boolean }): void {
   const previous = currentPluginStateSnapshot()
   const previousModules = 'modules' in newDb || 'enabledModules' in newDb ? currentGlobalModuleStateSnapshot() : null
+  const settingsRollback = currentPluginSettingsPatchRollbackSnapshot(newDb)
   const serverMode = canUseServerCommands()
   const settingsPatch: Record<string, unknown> = {}
   const storageValues: Record<string, unknown> = {}
@@ -786,7 +788,7 @@ function applyPluginDatabasePatch(newDb: Record<string, unknown>, options: { ful
   }
 
   if (Object.keys(settingsPatch).length > 0) {
-    dispatchPluginSettingsPatch(settingsPatch, previous)
+    dispatchPluginSettingsPatch(settingsPatch, settingsRollback)
   }
 
   if (blockedKeys.length > 0) {
