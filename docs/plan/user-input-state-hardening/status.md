@@ -159,6 +159,9 @@ persistence inventory under
   Character create, create-and-select, import-style create, and permanent
   delete command failures now use attempted row, order-placement, and
   selection-id rollback instead of restoring broad character snapshots.
+  Hypa V3 preset array setting failures now roll back append/import,
+  rename/settings edit, and delete attempts by preset row or insertion index
+  instead of restoring the whole `hypaV3Presets` array.
   Phase 2 landed character profile draft dirty top-level field protection;
   prompt-template item row dirty projection merging; whole-key dirty projection
   protection for
@@ -364,6 +367,10 @@ persistence inventory under
   create-and-select, import-style create, and permanent delete rollback by
   attempted row, order placement, and selected character id instead of broad
   character snapshots.
+- `src/ts/server/settingsBridge.svelte.ts` now guards Hypa V3 preset array
+  rollback by attempted append/import rows, rename/settings edit rows, delete
+  insertion index, and shifted `hypaV3PresetId` selection instead of broad
+  settings-array restore.
 - `src/lib/Setting/Pages/Language/TranslatorPresetSettings.svelte` now dispatches
   translator preset create, select, delete, and import collection commands
   without broad full-state rollback callbacks while retaining scoped dirty
@@ -379,7 +386,7 @@ persistence inventory under
   copy, select, create, update, delete, reorder, and extraction rollback by
   attempted row, field, order, selection, generated split row, and scalar
   settings state.
-- Verification state: Phase 5 character list create/delete/import
+- Verification state: Phase 5 Hypa V3 preset array
   rollback
   validation is recorded in `latest-verification.md`.
 - Highest issue density:
@@ -437,10 +444,10 @@ persistence inventory under
   Composer file and paste callbacks are already covered by Phase 3. No known
   code gap blocks Phase 4 completion.
 - [Phase 5](phases/phase-5-collection-domains.md): active. Sidebar/import
-  collection flows, broader lorebook import/navigation edges; Hypa V3
-  preset array import/rename/delete; plugin settings patch residuals; combined
-  sidebar chat/folder reorder; and chat import/fork flows remain here.
-  Script/trigger replacement rollback, plugin custom storage plus
+  collection flows, broader lorebook import/navigation edges; plugin settings
+  patch residuals; combined sidebar chat/folder reorder; and chat import/fork
+  flows remain here. Script/trigger replacement rollback, plugin custom storage
+  plus
   non-storage and collection rollback slices, global module/MCP module-info,
   plugin DB bridge settings, persona collection, and translator preset
   collection rollback slices have landed. Prompt-template item collection
@@ -451,7 +458,8 @@ persistence inventory under
   Lua-trigger rollback has also landed. `applyModule()` multi-domain rollback
   has also landed. Chat folder command rollback and chat list command rollback
   have also landed. Character sidebar order/folder metadata rollback has also
-  landed. Character list create/delete/import rollback has also landed.
+  landed. Character list create/delete/import rollback has also landed. Hypa V3
+  preset array rollback has also landed.
 - [Phase 6](phases/phase-6-resync-memory-navigation.md): pending. Realm, backup,
   and local bundle restore/import resyncs; character/chat import
   refresh/navigation edges; memory job list/progress ordering; route/selection
@@ -747,10 +755,12 @@ persistence inventory under
     create-and-select, import-style create, and permanent delete rollback now
     uses attempted row, order-placement, and selection-id guards instead of broad
     character snapshots.
+  - Phase 5 Hypa V3 preset array slice: append/import, rename/settings edit, and
+    delete rollback now uses attempted row, insertion-index, and shifted
+    selection-id guards instead of broad `hypaV3Presets` array restore.
   - Phase 5: sidebar/import collection flows, broader lorebook
-    import/navigation edges, Hypa V3 preset array import/rename/delete, plugin
-    import/update side-effect reload, combined sidebar chat/folder reorder, and
-    chat import/fork flows.
+    import/navigation edges, plugin import/update side-effect reload, combined
+    sidebar chat/folder reorder, and chat import/fork flows.
   - Known pre-existing test gap: `pnpm exec vitest run
     src/ts/compatibilityAdapters.test.ts` fails in
     `routes MCP character lorebook writes through lorebook commands in

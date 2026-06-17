@@ -165,6 +165,14 @@ restore missing order placement without overwriting newer folder metadata, and
 keep newer shifted selections by re-resolving selected character ids after
 rollback.
 
+Twenty-third landed slice: Hypa V3 preset array settings rollback now scopes
+append/import, rename/settings edit, and delete failures by attempted preset row
+or insertion index instead of restoring the whole `hypaV3Presets` array. Failed
+Hypa preset commands preserve sibling edits, later appended rows, edited
+attempted rows, duplicate-equivalent live rows, selection-only
+`hypaV3PresetId` rollback, and newer shifted selections when a delete rollback
+reinserts before the selected preset.
+
 ## Anchors
 
 - `src/lib/Setting/botpreset.svelte`

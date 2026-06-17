@@ -48,6 +48,8 @@ vi.mock('./commands', () => ({
       'claudeCachingExperimental',
       'didFirstSetup',
       'globalscript',
+      'hypaV3PresetId',
+      'hypaV3Presets',
       'maxContext',
       'maxResponse',
       'notification',
@@ -101,6 +103,17 @@ const DELAY = 50
 
 function setupSettings(settings: Record<string, unknown>): void {
   ;(DBState as { db: unknown }).db = { ...settings }
+}
+
+function hypaPreset(name: string, settings: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    name,
+    settings: {
+      summarizationPrompt: `${name} prompt`,
+      alwaysToggleOn: false,
+      ...settings,
+    },
+  }
 }
 
 async function createSettingDraft<T>(
@@ -355,6 +368,168 @@ describe('settingsBridge coalescing', () => {
 
     expect(Object.hasOwn(DBState.db, 'textTheme')).toBe(true)
     expect(DBState.db.textTheme).toBeUndefined()
+  })
+
+  it('removes only the failed Hypa V3 appended preset while preserving sibling edits and later appends', async () => {
+    setupSettings({
+      hypaV3Presets: [hypaPreset('Alpha'), hypaPreset('Beta')],
+    })
+
+    applyServerBackedSettingsPatch({
+      hypaV3Presets: [hypaPreset('Alpha'), hypaPreset('Beta'), hypaPreset('Imported')],
+    })
+    await Promise.resolve()
+
+    DBState.db.hypaV3Presets = [
+      hypaPreset('Alpha', { summarizationPrompt: 'newer alpha prompt' }),
+      hypaPreset('Beta'),
+      hypaPreset('Imported'),
+      hypaPreset('Later local'),
+    ]
+    recorded.patches[0].rollback?.()
+
+    expect(DBState.db.hypaV3Presets).toEqual([
+      hypaPreset('Alpha', { summarizationPrompt: 'newer alpha prompt' }),
+      hypaPreset('Beta'),
+      hypaPreset('Later local'),
+    ])
+  })
+
+  it('keeps a failed Hypa V3 appended preset when that row changed after dispatch', async () => {
+    setupSettings({
+      hypaV3Presets: [hypaPreset('Alpha')],
+    })
+
+    applyServerBackedSettingsPatch({
+      hypaV3Presets: [hypaPreset('Alpha'), hypaPreset('Imported')],
+    })
+    await Promise.resolve()
+
+    DBState.db.hypaV3Presets = [
+      hypaPreset('Alpha'),
+      hypaPreset('Imported', { summarizationPrompt: 'edited after dispatch' }),
+      hypaPreset('Later local'),
+    ]
+    recorded.patches[0].rollback?.()
+
+    expect(DBState.db.hypaV3Presets).toEqual([
+      hypaPreset('Alpha'),
+      hypaPreset('Imported', { summarizationPrompt: 'edited after dispatch' }),
+      hypaPreset('Later local'),
+    ])
+  })
+
+  it('restores only the failed Hypa V3 renamed row while preserving sibling edits', async () => {
+    setupSettings({
+      hypaV3Presets: [hypaPreset('Alpha'), hypaPreset('Beta')],
+    })
+    const renamedAlpha = { ...hypaPreset('Alpha'), name: 'Alpha renamed' }
+
+    applyServerBackedSettingsPatch({
+      hypaV3Presets: [renamedAlpha, hypaPreset('Beta')],
+    })
+    await Promise.resolve()
+
+    DBState.db.hypaV3Presets = [
+      renamedAlpha,
+      hypaPreset('Beta', { summarizationPrompt: 'newer beta prompt' }),
+      hypaPreset('Later local'),
+    ]
+    recorded.patches[0].rollback?.()
+
+    expect(DBState.db.hypaV3Presets).toEqual([
+      hypaPreset('Alpha'),
+      hypaPreset('Beta', { summarizationPrompt: 'newer beta prompt' }),
+      hypaPreset('Later local'),
+    ])
+  })
+
+  it('reinserts a failed Hypa V3 deleted preset at its prior index and restores attempted-matching selection', async () => {
+    setupSettings({
+      hypaV3Presets: [hypaPreset('Alpha'), hypaPreset('Beta'), hypaPreset('Gamma')],
+      hypaV3PresetId: 1,
+    })
+
+    applyServerBackedSettingsPatch({
+      hypaV3Presets: [hypaPreset('Alpha'), hypaPreset('Gamma')],
+      hypaV3PresetId: 0,
+    })
+    await Promise.resolve()
+
+    DBState.db.hypaV3Presets = [
+      hypaPreset('Alpha', { summarizationPrompt: 'newer alpha prompt' }),
+      hypaPreset('Gamma'),
+      hypaPreset('Later local'),
+    ]
+    DBState.db.hypaV3PresetId = 0
+    recorded.patches[0].rollback?.()
+
+    expect(DBState.db.hypaV3Presets).toEqual([
+      hypaPreset('Alpha', { summarizationPrompt: 'newer alpha prompt' }),
+      hypaPreset('Beta'),
+      hypaPreset('Gamma'),
+      hypaPreset('Later local'),
+    ])
+    expect(DBState.db.hypaV3PresetId).toBe(1)
+  })
+
+  it('rebases newer live Hypa V3 selection when a failed delete rollback reinserts before it', async () => {
+    setupSettings({
+      hypaV3Presets: [hypaPreset('Alpha'), hypaPreset('Beta'), hypaPreset('Gamma'), hypaPreset('Delta')],
+      hypaV3PresetId: 1,
+    })
+
+    applyServerBackedSettingsPatch({
+      hypaV3Presets: [hypaPreset('Alpha'), hypaPreset('Gamma'), hypaPreset('Delta')],
+      hypaV3PresetId: 0,
+    })
+    await Promise.resolve()
+
+    DBState.db.hypaV3PresetId = 2
+    recorded.patches[0].rollback?.()
+
+    expect(DBState.db.hypaV3Presets).toEqual([
+      hypaPreset('Alpha'),
+      hypaPreset('Beta'),
+      hypaPreset('Gamma'),
+      hypaPreset('Delta'),
+    ])
+    expect(DBState.db.hypaV3PresetId).toBe(3)
+  })
+
+  it('does not duplicate a failed Hypa V3 deleted preset when an equivalent row is already live', async () => {
+    setupSettings({
+      hypaV3Presets: [hypaPreset('Alpha'), hypaPreset('Beta'), hypaPreset('Gamma')],
+      hypaV3PresetId: 1,
+    })
+
+    applyServerBackedSettingsPatch({
+      hypaV3Presets: [hypaPreset('Alpha'), hypaPreset('Gamma')],
+      hypaV3PresetId: 0,
+    })
+    await Promise.resolve()
+
+    DBState.db.hypaV3Presets = [hypaPreset('Alpha'), hypaPreset('Gamma'), hypaPreset('Beta')]
+    DBState.db.hypaV3PresetId = 0
+    recorded.patches[0].rollback?.()
+
+    expect(DBState.db.hypaV3Presets).toEqual([hypaPreset('Alpha'), hypaPreset('Gamma'), hypaPreset('Beta')])
+    expect(DBState.db.hypaV3PresetId).toBe(0)
+  })
+
+  it('keeps selection-only Hypa V3 preset id patches on the generic rollback path', async () => {
+    setupSettings({
+      hypaV3Presets: [hypaPreset('Alpha'), hypaPreset('Beta')],
+      hypaV3PresetId: 0,
+    })
+
+    applyServerBackedSettingsPatch({ hypaV3PresetId: 1 })
+    await Promise.resolve()
+
+    recorded.patches[0].rollback?.()
+
+    expect(DBState.db.hypaV3PresetId).toBe(0)
+    expect(DBState.db.hypaV3Presets).toEqual([hypaPreset('Alpha'), hypaPreset('Beta')])
   })
 
   it('L23: queued settings rollback suppresses watcher echoes for debounced writes', async () => {

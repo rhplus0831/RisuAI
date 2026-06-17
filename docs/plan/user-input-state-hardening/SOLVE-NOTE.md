@@ -90,7 +90,8 @@ landed for create, delete, and reorder commands. Character sidebar
 `characterOrder` rollback has landed for drag reorder, folder creation/order,
 and folder metadata update commands. Character list create/delete/import
 rollback has landed for create, create-and-select, import-style create, and
-permanent delete commands.
+permanent delete commands. Hypa V3 preset array rollback has landed for
+append/import, rename/settings edit, and delete settings patches.
 
 Next manager loop:
 
@@ -194,9 +195,10 @@ Explicit deferrals:
   character sidebar order/folder metadata rollback has landed for drag reorder,
   folder creation/order, and folder metadata update commands. Phase 5 character
   list create/delete/import rollback has landed for create, create-and-select,
-  import-style create, and permanent delete commands. Remaining sidebar and
-  import collection flows, broader lorebook import/navigation edges, Hypa V3
-  preset array import/rename/delete, plugin import/update side-effect reload,
+  import-style create, and permanent delete commands. Phase 5 Hypa V3 preset
+  array rollback has landed for append/import, rename/settings edit, and delete
+  settings patches. Remaining sidebar and import collection flows, broader
+  lorebook import/navigation edges, plugin import/update side-effect reload,
   combined sidebar chat/folder reorder, and chat import/fork flows remain Phase
   5 work.
 - `src/ts/compatibilityAdapters.test.ts` currently has a pre-existing failure in

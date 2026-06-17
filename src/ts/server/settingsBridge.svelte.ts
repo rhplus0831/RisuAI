@@ -20,6 +20,11 @@ interface PendingSettingsPatch {
   timer: ReturnType<typeof setTimeout> | null
 }
 
+interface HypaV3PresetRollbackResult {
+  rolledBack: boolean
+  insertedIndex?: number
+}
+
 const pendingSettingsPatch: PendingSettingsPatch = {
   patch: {},
   previous: {},
@@ -349,12 +354,175 @@ function withSuppressedSettingsWatcher(fn: () => void): void {
 function rollbackSettings(previous: SettingsPatch, attempted: SettingsPatch): void {
   withTrustedServerProjectionWrite(() => {
     const target = DBState.db as unknown as Record<string, unknown>
+    const genericPrevious: SettingsPatch = { ...previous }
+    const genericAttempted: SettingsPatch = { ...attempted }
+
+    rollbackHypaV3Presets(target, genericPrevious, genericAttempted)
     applyAttemptedFieldRollback({
       target,
-      previous,
-      attempted,
+      previous: genericPrevious,
+      attempted: genericAttempted,
     })
   })
+}
+
+function rollbackHypaV3Presets(
+  target: Record<string, unknown>,
+  previous: SettingsPatch,
+  attempted: SettingsPatch,
+): void {
+  if (!hasOwnKey(attempted, 'hypaV3Presets')) return
+
+  const rollbackResult = rollbackHypaV3PresetRows({
+    target,
+    previousPresets: previous.hypaV3Presets,
+    attemptedPresets: attempted.hypaV3Presets,
+    livePresets: target.hypaV3Presets,
+  })
+
+  const shouldRestoreAttemptedSelection =
+    rollbackResult.rolledBack &&
+    hasOwnKey(attempted, 'hypaV3PresetId') &&
+    hasOwnKey(previous, 'hypaV3PresetId') &&
+    isJsonSnapshotEqual(target.hypaV3PresetId, attempted.hypaV3PresetId)
+
+  if (!shouldRestoreAttemptedSelection && rollbackResult.insertedIndex !== undefined) {
+    rebaseHypaV3PresetIdAfterInsert(target, rollbackResult.insertedIndex)
+  }
+
+  if (shouldRestoreAttemptedSelection) {
+    target.hypaV3PresetId = cloneJsonValue(previous.hypaV3PresetId)
+  }
+
+  delete previous.hypaV3Presets
+  delete attempted.hypaV3Presets
+  delete previous.hypaV3PresetId
+  delete attempted.hypaV3PresetId
+}
+
+function rollbackHypaV3PresetRows(input: {
+  target: Record<string, unknown>
+  previousPresets: unknown
+  attemptedPresets: unknown
+  livePresets: unknown
+}): HypaV3PresetRollbackResult {
+  const { target, previousPresets, attemptedPresets, livePresets } = input
+
+  if (!Array.isArray(previousPresets) || !Array.isArray(attemptedPresets) || !Array.isArray(livePresets)) {
+    return { rolledBack: false }
+  }
+
+  if (attemptedPresets.length === previousPresets.length + 1) {
+    return rollbackHypaV3PresetAppend(target, previousPresets, attemptedPresets, livePresets)
+  }
+
+  if (attemptedPresets.length === previousPresets.length) {
+    return rollbackHypaV3PresetEdits(target, previousPresets, attemptedPresets, livePresets)
+  }
+
+  if (attemptedPresets.length === previousPresets.length - 1) {
+    return rollbackHypaV3PresetDelete(target, previousPresets, attemptedPresets, livePresets)
+  }
+
+  return { rolledBack: false }
+}
+
+function rollbackHypaV3PresetAppend(
+  target: Record<string, unknown>,
+  previousPresets: unknown[],
+  attemptedPresets: unknown[],
+  livePresets: unknown[],
+): HypaV3PresetRollbackResult {
+  const appendedIndex = previousPresets.length
+  const attemptedRow = attemptedPresets[appendedIndex]
+
+  if (!isJsonSnapshotEqual(livePresets[appendedIndex], attemptedRow)) return { rolledBack: false }
+
+  const nextPresets = [...livePresets]
+  nextPresets.splice(appendedIndex, 1)
+  target.hypaV3Presets = nextPresets
+  return { rolledBack: true }
+}
+
+function rollbackHypaV3PresetEdits(
+  target: Record<string, unknown>,
+  previousPresets: unknown[],
+  attemptedPresets: unknown[],
+  livePresets: unknown[],
+): HypaV3PresetRollbackResult {
+  let nextPresets: unknown[] | null = null
+
+  for (let index = 0; index < attemptedPresets.length; index += 1) {
+    if (isJsonSnapshotEqual(previousPresets[index], attemptedPresets[index])) continue
+    if (!isJsonSnapshotEqual(livePresets[index], attemptedPresets[index])) continue
+
+    nextPresets ??= [...livePresets]
+    nextPresets[index] = cloneJsonValue(previousPresets[index])
+  }
+
+  if (!nextPresets) return { rolledBack: false }
+
+  target.hypaV3Presets = nextPresets
+  return { rolledBack: true }
+}
+
+function rollbackHypaV3PresetDelete(
+  target: Record<string, unknown>,
+  previousPresets: unknown[],
+  attemptedPresets: unknown[],
+  livePresets: unknown[],
+): HypaV3PresetRollbackResult {
+  const removedIndex = findHypaV3PresetRemovedIndex(previousPresets, attemptedPresets)
+  if (removedIndex === -1) return { rolledBack: false }
+
+  const removedRow = previousPresets[removedIndex]
+  if (livePresets.some((preset) => isJsonSnapshotEqual(preset, removedRow))) return { rolledBack: false }
+
+  const nextPresets = [...livePresets]
+  const insertedIndex = clampInsertIndex(removedIndex, nextPresets.length)
+  nextPresets.splice(insertedIndex, 0, cloneJsonValue(removedRow))
+  target.hypaV3Presets = nextPresets
+  return { rolledBack: true, insertedIndex }
+}
+
+function rebaseHypaV3PresetIdAfterInsert(target: Record<string, unknown>, insertedIndex: number): void {
+  const liveId = target.hypaV3PresetId
+  if (typeof liveId !== 'number' || !Number.isFinite(liveId)) return
+  if (liveId < insertedIndex) return
+
+  target.hypaV3PresetId = liveId + 1
+}
+
+function findHypaV3PresetRemovedIndex(previousPresets: unknown[], attemptedPresets: unknown[]): number {
+  for (let removedIndex = 0; removedIndex < previousPresets.length; removedIndex += 1) {
+    if (hypaV3PresetArraysMatchWithRemovedIndex(previousPresets, attemptedPresets, removedIndex)) {
+      return removedIndex
+    }
+  }
+
+  return -1
+}
+
+function hypaV3PresetArraysMatchWithRemovedIndex(
+  previousPresets: unknown[],
+  attemptedPresets: unknown[],
+  removedIndex: number,
+): boolean {
+  let attemptedIndex = 0
+
+  for (let previousIndex = 0; previousIndex < previousPresets.length; previousIndex += 1) {
+    if (previousIndex === removedIndex) continue
+    if (!isJsonSnapshotEqual(previousPresets[previousIndex], attemptedPresets[attemptedIndex])) return false
+    attemptedIndex += 1
+  }
+
+  return attemptedIndex === attemptedPresets.length
+}
+
+function clampInsertIndex(index: number, length: number): number {
+  if (index < 0) return 0
+  if (index > length) return length
+  return index
 }
 
 function buildOnboardingSettingsPatch(options: ApplyOnboardingServerBackedSettingsOptions): SettingsPatch {
@@ -488,6 +656,14 @@ function diffServerBackedSettingsSnapshot(
 function snapshotJson(value: unknown): string {
   const snapshot = JSON.stringify(value)
   return snapshot === undefined ? '__undefined__' : snapshot
+}
+
+function isJsonSnapshotEqual(left: unknown, right: unknown): boolean {
+  return snapshotJson(left) === snapshotJson(right)
+}
+
+function hasOwnKey(value: object, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(value, key)
 }
 
 function currentSettingValue<T>(key: string, fallback: T): T {
