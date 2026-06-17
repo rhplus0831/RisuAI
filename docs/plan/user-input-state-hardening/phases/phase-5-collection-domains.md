@@ -97,6 +97,13 @@ row, field, order, selection, generated split row, and scalar settings state.
 Failed legacy preset commands no longer restore whole preset snapshots over
 newer sibling rows, same-row edits, split preset edits, or changed selection.
 
+Thirteenth landed slice: persona residual command rollback now scopes queued
+profile saves, direct saves, trigger prompt saves, persona selection, icon save,
+and persona import-created rows by attempted row, profile mirror, selection, and
+created-row state. Failed persona commands no longer restore full persona
+snapshots over newer sibling rows, same-row edits, profile mirrors, or
+selection.
+
 ## Anchors
 
 - `src/lib/Setting/botpreset.svelte`

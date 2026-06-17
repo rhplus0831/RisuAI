@@ -129,6 +129,10 @@ persistence inventory under
   attempted-matching selection/settings, and unchanged generated split rows from
   legacy extraction instead of restoring whole preset snapshots over newer
   same-row edits, sibling rows, split preset edits, or changed selection.
+  Persona residual command failures now roll back only attempted profile row
+  fields, profile mirror fields, selection state, icon fields, and unchanged
+  import-created rows instead of restoring full persona snapshots over newer
+  same-row edits, sibling rows, profile mirrors, or changed selection.
   Phase 2 landed character profile draft dirty top-level field protection;
   prompt-template item row dirty projection merging; whole-key dirty projection
   protection for
@@ -301,6 +305,10 @@ persistence inventory under
   instead of broad plugin-state snapshots.
 - `src/ts/persona.ts` now guards persona create, delete, and reorder rollback by
   attempted collection state rather than restoring full persona snapshots.
+- `src/ts/persona.ts` also now guards queued persona profile saves, direct
+  saves, trigger prompt saves, persona selection, icon saves, and persona import
+  create rollback by attempted row, profile mirror, selection, and created-row
+  state.
 - `src/lib/Setting/Pages/Language/TranslatorPresetSettings.svelte` now dispatches
   translator preset create, select, delete, and import collection commands
   without broad full-state rollback callbacks while retaining scoped dirty
@@ -316,7 +324,7 @@ persistence inventory under
   copy, select, create, update, delete, reorder, and extraction rollback by
   attempted row, field, order, selection, generated split row, and scalar
   settings state.
-- Verification state: Phase 5 legacy bot preset rollback
+- Verification state: Phase 5 persona residual rollback
   validation is recorded in `latest-verification.md`.
 - Highest issue density:
   - Character editor: 52 issue rows, mostly dirty projection and unguarded
@@ -372,16 +380,16 @@ persistence inventory under
   freshness has landed. Dynamic rendered button trigger freshness has landed.
   Composer file and paste callbacks are already covered by Phase 3. No known
   code gap blocks Phase 4 completion.
-- [Phase 5](phases/phase-5-collection-domains.md): active. Persona residuals,
-  module, lorebook, script, and import collection flows; Hypa V3
+- [Phase 5](phases/phase-5-collection-domains.md): active. Module, lorebook,
+  script, and import collection flows; Hypa V3
   preset array import/rename/delete; plugin settings patch residuals; and
   sidebar/chat/folder/character list create/delete/reorder/import rollback
   remain here. Script/trigger replacement rollback, plugin custom storage plus
   non-storage and collection rollback slices, global module/MCP module-info,
   plugin DB bridge settings, persona collection, and translator preset
   collection rollback slices have landed. Prompt-template item collection
-  rollback, split prompt/model preset array rollback, and legacy bot preset
-  rollback have also landed.
+  rollback, split prompt/model preset array rollback, legacy bot preset
+  rollback, and persona residual command rollback have also landed.
 - [Phase 6](phases/phase-6-resync-memory-navigation.md): pending. Realm, backup,
   and local bundle restore/import resyncs; character/chat import
   refresh/navigation edges; memory job list/progress ordering; route/selection
@@ -643,11 +651,15 @@ persistence inventory under
     update, delete, reorder, and extraction rollback now uses targeted row,
     field, order, selection, generated split row, and attempted settings
     rollback instead of broad preset snapshots.
+  - Phase 5 persona residual slice: queued profile saves, direct saves, trigger
+    prompt saves, persona selection, icon saves, and persona import create
+    rollback now use attempted row, profile mirror, selection, and created-row
+    rollback instead of broad persona snapshots.
   - Phase 5: lorebook/script/import collection flows, module
     lorebook/regex/script/trigger subdomains, Hypa V3 preset array
     import/rename/delete, plugin import/update side-effect reload, sidebar
-    chat/folder lists, persona profile/import residuals, character list ordering,
-    and broad create/delete/reorder/import rollback.
+    chat/folder lists, character list ordering, and broad
+    create/delete/reorder/import rollback.
   - Known pre-existing test gap: `pnpm exec vitest run
     src/ts/compatibilityAdapters.test.ts` fails in
     `routes MCP character lorebook writes through lorebook commands in

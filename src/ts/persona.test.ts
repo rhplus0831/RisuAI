@@ -17,13 +17,25 @@ import {
   queueSelectedPersonaUpdate,
   reconcileSelectedPersonaProjectionEpoch,
   reorderUserPersonasByIndices,
+  saveUserPersona,
   selectedPersonaId,
+  setSelectedPersonaPromptFromTrigger,
   updateSelectedPersonaField,
   updateSelectedPersonaLargePortrait,
 } from './persona'
 
 function cloneJsonValue<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
+}
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (error?: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -82,6 +94,15 @@ async function flushCommandEffects(): Promise<void> {
 function mockNextCommandFailure(error = 'persona command failed'): void {
   vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ revision: 1 }))
   vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ error }, 500))
+}
+
+function mockNextDeferredCommandFailure(error = 'persona command failed') {
+  const command = deferred<Response>()
+  vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ revision: 1 }))
+  vi.mocked(fetch).mockReturnValueOnce(command.promise)
+  return {
+    resolve: () => command.resolve(jsonResponse({ error }, 500)),
+  }
 }
 
 beforeEach(() => {
@@ -179,6 +200,256 @@ describe('persona ID read and command preparation', () => {
     expect(result).toEqual({ status: 'error', error: 'persona save failed' })
     expect(fetch).toHaveBeenCalledTimes(2)
     expect(currentPersonaStateSnapshot()).toEqual(previous)
+  })
+
+  it('failed queued selected persona save preserves newer sibling edits and selection/profile changes', async () => {
+    seedPersonaState(
+      [
+        makePersona({
+          id: 'persona-a',
+          name: 'Persona A',
+          icon: 'a.png',
+          personaPrompt: 'Old prompt',
+          note: 'Old note',
+        }),
+        makePersona({
+          id: 'persona-b',
+          name: 'Persona B',
+          icon: 'b.png',
+          personaPrompt: 'B prompt',
+          note: 'B note',
+        }),
+      ],
+      0,
+    )
+    DBState.db.username = 'Persona A'
+    DBState.db.userIcon = 'a.png'
+    DBState.db.personaPrompt = 'Old prompt'
+    DBState.db.userNote = 'Old note'
+    const previous = currentPersonaStateSnapshot()
+    updateSelectedPersonaField('personaPrompt', 'Attempted prompt')
+    const attempted = currentPersonaStateSnapshot()
+    queueSelectedPersonaUpdate(previous, attempted)
+    const failure = mockNextDeferredCommandFailure()
+
+    const resultPromise = flushPendingSelectedPersonaUpdate()
+    await vi.waitFor(() => {
+      expect(fetch).toHaveBeenCalledTimes(2)
+    })
+
+    DBState.db.personas[0] = {
+      ...DBState.db.personas[0],
+      name: 'Persona A edited after dispatch',
+    } as any
+    DBState.db.personas[1] = {
+      ...DBState.db.personas[1],
+      name: 'Persona B edited after dispatch',
+    } as any
+    DBState.db.selectedPersona = 1
+    DBState.db.username = 'Persona B live name'
+    DBState.db.userIcon = 'b-live.png'
+    DBState.db.personaPrompt = 'Persona B live prompt'
+    DBState.db.userNote = 'Persona B live note'
+    failure.resolve()
+
+    expect(await resultPromise).toEqual({ status: 'error', error: 'persona command failed' })
+    expect(DBState.db.personas[0]).toMatchObject({
+      id: 'persona-a',
+      name: 'Persona A edited after dispatch',
+      personaPrompt: 'Old prompt',
+    })
+    expect(DBState.db.personas[1]).toMatchObject({
+      id: 'persona-b',
+      name: 'Persona B edited after dispatch',
+    })
+    expect(DBState.db).toMatchObject({
+      selectedPersona: 1,
+      username: 'Persona B live name',
+      userIcon: 'b-live.png',
+      personaPrompt: 'Persona B live prompt',
+      userNote: 'Persona B live note',
+    })
+  })
+
+  it('failed direct profile save rolls back only attempted selected-row fields', async () => {
+    seedPersonaState(
+      [
+        makePersona({
+          id: 'persona-a',
+          name: 'Persona A row',
+          icon: 'a-row.png',
+          personaPrompt: 'A row prompt',
+          note: 'A row note',
+        }),
+        makePersona({
+          id: 'persona-b',
+          name: 'Persona B',
+          icon: 'b.png',
+          personaPrompt: 'B prompt',
+          note: 'B note',
+        }),
+      ],
+      0,
+    )
+    DBState.db.username = 'Persona A draft'
+    DBState.db.userIcon = 'a-draft.png'
+    DBState.db.personaPrompt = 'A draft prompt'
+    DBState.db.userNote = 'A draft note'
+    const failure = mockNextDeferredCommandFailure()
+
+    saveUserPersona()
+    await vi.waitFor(() => {
+      expect(fetch).toHaveBeenCalledTimes(2)
+    })
+
+    DBState.db.personas[0] = {
+      ...DBState.db.personas[0],
+      note: 'Persona A newer note',
+    } as any
+    DBState.db.personas[1] = {
+      ...DBState.db.personas[1],
+      name: 'Persona B edited after dispatch',
+    } as any
+    DBState.db.selectedPersona = 1
+    DBState.db.username = 'Persona B live name'
+    DBState.db.userIcon = 'b-live.png'
+    DBState.db.personaPrompt = 'Persona B live prompt'
+    DBState.db.userNote = 'Persona B live note'
+    failure.resolve()
+    await flushCommandEffects()
+
+    expect(DBState.db.personas[0]).toMatchObject({
+      id: 'persona-a',
+      name: 'Persona A row',
+      icon: 'a-row.png',
+      personaPrompt: 'A row prompt',
+      note: 'Persona A newer note',
+    })
+    expect(DBState.db.personas[1]).toMatchObject({
+      id: 'persona-b',
+      name: 'Persona B edited after dispatch',
+    })
+    expect(DBState.db).toMatchObject({
+      selectedPersona: 1,
+      username: 'Persona B live name',
+      userIcon: 'b-live.png',
+      personaPrompt: 'Persona B live prompt',
+      userNote: 'Persona B live note',
+    })
+  })
+
+  it('failed trigger prompt save preserves newer same-row profile edits', async () => {
+    seedPersonaState(
+      [
+        makePersona({
+          id: 'persona-a',
+          name: 'Persona A',
+          icon: 'a.png',
+          personaPrompt: 'Old prompt',
+          note: 'Old note',
+        }),
+      ],
+      0,
+    )
+    DBState.db.username = 'Persona A'
+    DBState.db.userIcon = 'a.png'
+    DBState.db.personaPrompt = 'Old prompt'
+    DBState.db.userNote = 'Old note'
+    const failure = mockNextDeferredCommandFailure()
+
+    setSelectedPersonaPromptFromTrigger('Trigger prompt')
+    await vi.waitFor(() => {
+      expect(fetch).toHaveBeenCalledTimes(2)
+    })
+
+    updateSelectedPersonaField('username', 'Newer Persona A name')
+    failure.resolve()
+    await flushCommandEffects()
+
+    expect(DBState.db).toMatchObject({
+      selectedPersona: 0,
+      username: 'Newer Persona A name',
+      userIcon: 'a.png',
+      personaPrompt: 'Old prompt',
+      userNote: 'Old note',
+    })
+    expect(DBState.db.personas[0]).toMatchObject({
+      id: 'persona-a',
+      name: 'Newer Persona A name',
+      icon: 'a.png',
+      personaPrompt: 'Old prompt',
+      note: 'Old note',
+    })
+  })
+
+  it('failed select preserves newer selection/profile changes while rolling back only the attempted save-current row', async () => {
+    seedPersonaState(
+      [
+        makePersona({
+          id: 'persona-a',
+          name: 'Persona A row',
+          icon: 'a-row.png',
+          personaPrompt: 'A row prompt',
+          note: 'A row note',
+        }),
+        makePersona({
+          id: 'persona-b',
+          name: 'Persona B',
+          icon: 'b.png',
+          personaPrompt: 'B prompt',
+          note: 'B note',
+        }),
+        makePersona({
+          id: 'persona-c',
+          name: 'Persona C',
+          icon: 'c.png',
+          personaPrompt: 'C prompt',
+          note: 'C note',
+        }),
+      ],
+      0,
+    )
+    DBState.db.username = 'Persona A draft'
+    DBState.db.userIcon = 'a-draft.png'
+    DBState.db.personaPrompt = 'A draft prompt'
+    DBState.db.userNote = 'A draft note'
+    const failure = mockNextDeferredCommandFailure()
+
+    changeUserPersona(1)
+    await vi.waitFor(() => {
+      expect(fetch).toHaveBeenCalledTimes(2)
+    })
+
+    DBState.db.personas[1] = {
+      ...DBState.db.personas[1],
+      name: 'Persona B edited after dispatch',
+    } as any
+    DBState.db.selectedPersona = 2
+    DBState.db.username = 'Persona C live name'
+    DBState.db.userIcon = 'c-live.png'
+    DBState.db.personaPrompt = 'Persona C live prompt'
+    DBState.db.userNote = 'Persona C live note'
+    failure.resolve()
+    await flushCommandEffects()
+
+    expect(DBState.db.personas[0]).toMatchObject({
+      id: 'persona-a',
+      name: 'Persona A row',
+      icon: 'a-row.png',
+      personaPrompt: 'A row prompt',
+      note: 'A row note',
+    })
+    expect(DBState.db.personas[1]).toMatchObject({
+      id: 'persona-b',
+      name: 'Persona B edited after dispatch',
+    })
+    expect(DBState.db).toMatchObject({
+      selectedPersona: 2,
+      username: 'Persona C live name',
+      userIcon: 'c-live.png',
+      personaPrompt: 'Persona C live prompt',
+      userNote: 'Persona C live note',
+    })
   })
 
   it('selectedPersonaId returns null for missing and duplicate IDs without mutating the projection', () => {

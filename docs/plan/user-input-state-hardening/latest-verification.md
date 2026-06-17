@@ -7,29 +7,26 @@ workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 5 legacy bot preset rollback. Legacy
-  preset save, copy, select, create, update, delete, reorder, and extraction
-  commands now use attempted row, field, order, selection, generated split row,
-  and scalar settings rollback instead of broad preset snapshots. Delayed
-  command failures preserve newer sibling rows, same-row edits, split preset
-  edits, and changed selection when live state no longer matches the attempted
-  optimistic write.
+- Runtime/code change under test: Phase 5 persona residual rollback. Queued
+  persona profile saves, direct saves, trigger prompt saves, persona selection,
+  icon save, and persona import-created row failures now use attempted row,
+  profile mirror, selection, and created-row rollback instead of broad
+  `PersonaStateSnapshot` restores. Delayed command failures preserve newer
+  sibling rows, same-row edits, profile mirrors, and changed selection when live
+  state no longer matches the attempted optimistic write.
 - Commands:
 
 ```bash
-pnpm exec vitest run src/ts/storage/database.svelte.test.ts
-pnpm exec vitest run src/ts/storage/database.importPreset.test.ts
-pnpm exec vitest run src/ts/server/staleStateGuards.test.ts
+pnpm exec vitest run src/ts/persona.test.ts src/ts/persona.iconUpload.test.ts src/ts/process/__tests__/triggers.projectionGuard.test.ts src/ts/loadout.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
-pnpm exec prettier --check src/ts/storage/database.svelte.ts src/ts/storage/database.svelte.test.ts
+pnpm exec prettier --check src/ts/persona.ts src/ts/persona.test.ts src/ts/persona.iconUpload.test.ts
 git diff --check
 ```
 
-- Result: passed on 2026-06-17. Legacy preset storage coverage passed 33 tests,
-  import-preset coverage passed 3 tests, shared stale-state guard coverage
-  passed 12 tests, and both TypeScript checks plus Prettier and
-  `git diff --check` passed.
+- Result: passed on 2026-06-17. Persona residual, icon upload, trigger guard,
+  and loadout coverage passed 48 tests across 4 files, and both TypeScript
+  checks plus Prettier and `git diff --check` passed.
 - Additional check: `pnpm exec vitest run src/ts/compatibilityAdapters.test.ts`
   still fails in the pre-existing character MCP lorebook test
   `routes MCP character lorebook writes through lorebook commands in
@@ -41,9 +38,7 @@ git diff --check
   sanitized module update rollback and stay as Phase 5 residual work. Multi-group
   plugin settings patch failures still share the generic settings rollback
   callback and roll back all still-attempted keys from the failed patch. Plugin
-  import/update side-effect reload is not fully modeled by rollback. Persona
-  selection/profile save, prompt trigger updates, icon upload rollback, and
-  persona import remain separate residual persona paths. Full
+  import/update side-effect reload is not fully modeled by rollback. Full
   `ScriptDefinitionStateSnapshot` rollback remains broad for rarer discrete
   callers. The remaining Phase 5 collection domains still need focused slices:
   Hypa V3 preset array import/rename/delete,
@@ -80,10 +75,11 @@ git diff --check
   slice, and prompt-template item create/delete/reorder rollback is covered by
   the tenth Phase 5 slice. Split prompt/model preset array rollback is covered
   by the eleventh Phase 5 slice. Legacy bot preset rollback is covered by the
-  twelfth Phase 5 slice. Remaining Phase 5 work owns module
+  twelfth Phase 5 slice. Persona residual command rollback is covered by the
+  thirteenth Phase 5 slice. Remaining Phase 5 work owns module
   lorebook/regex/script/trigger subdomains, lorebook, import collection flows,
   Hypa V3 preset array import/rename/delete, plugin import/update side-effect
-  reload, persona profile/import residuals, and
+  reload, and
   sidebar/chat/folder/character list create/delete/reorder/import rollback.
 - Phase 6 owns Realm/backup/local bundle restore/import resyncs, character/chat
   import refresh/navigation edges, memory job list/progress ordering,

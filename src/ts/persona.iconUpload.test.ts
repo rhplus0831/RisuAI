@@ -54,12 +54,17 @@ vi.mock('./util', () => {
 import { clearCachedServerCommandRevision } from './server/commands'
 import { setServerProjectionWriteGuardEnabled } from './server/projectionWriteGuard.svelte'
 import { DBState } from './stores.svelte'
-import { selectUserImg, updateSelectedPersonaField } from './persona'
+import { importUserPersona, selectUserImg, updateSelectedPersonaField } from './persona'
+import { PngChunk } from './pngChunk'
 
 interface CapturedFetch {
   url: string
   method: string
   body: unknown
+}
+
+interface StubCommandFetchOptions {
+  personaCommandResponses?: Array<Promise<Response> | Response>
 }
 
 function deferred<T>() {
@@ -117,13 +122,37 @@ function personaFile(name = 'persona.png') {
   return { name, data: new Uint8Array([1, 2, 3, 4]) }
 }
 
+const BASE_PNG = new Uint8Array(
+  Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=', 'base64'),
+)
+
+async function personaImportFile(
+  patch: { name?: string; personaPrompt?: string; note?: string } = {},
+  name = 'persona-import.png',
+) {
+  const card = {
+    name: 'Imported Persona',
+    personaPrompt: 'Imported prompt',
+    note: 'Imported note',
+    ...patch,
+  }
+  const png = await PngChunk.write(BASE_PNG, {
+    persona: Buffer.from(JSON.stringify(card)).toString('base64'),
+  })
+  if (!png) throw new Error('failed to build persona PNG fixture')
+  return { name, data: new Uint8Array(png) }
+}
+
 async function tick(times = 2): Promise<void> {
   for (let i = 0; i < times; i += 1) {
     await new Promise((resolve) => setTimeout(resolve, 0))
   }
 }
 
-function stubCommandFetch(assetQueue: Array<Promise<string> | string> = []): CapturedFetch[] {
+function stubCommandFetch(
+  assetQueue: Array<Promise<string> | string> = [],
+  options: StubCommandFetchOptions = {},
+): CapturedFetch[] {
   const calls: CapturedFetch[] = []
   let revision = 20
   vi.stubGlobal(
@@ -144,6 +173,8 @@ function stubCommandFetch(assetQueue: Array<Promise<string> | string> = []): Cap
         return jsonResponse({ assetId, revision })
       }
       if (url.startsWith('/api/v1/commands/personas/')) {
+        const nextCommandResponse = options.personaCommandResponses?.shift()
+        if (nextCommandResponse) return nextCommandResponse
         revision += 1
         return jsonResponse({
           revision,
@@ -154,6 +185,21 @@ function stubCommandFetch(assetQueue: Array<Promise<string> | string> = []): Cap
             id: url.split('/').at(-1),
           },
           personaId: url.split('/').at(-1),
+        })
+      }
+      if (url === '/api/v1/commands/personas') {
+        const nextCommandResponse = options.personaCommandResponses?.shift()
+        if (nextCommandResponse) return nextCommandResponse
+        revision += 1
+        return jsonResponse({
+          revision,
+          event: {
+            type: 'persona.created',
+            revision,
+            resource: 'persona',
+            id: 'created-persona',
+          },
+          personaId: 'created-persona',
         })
       }
       return jsonResponse({ error: `unexpected ${url}` }, 404)
@@ -286,5 +332,118 @@ describe('Phase 3 persona icon upload freshness', () => {
 
     expect(DBState.db.userIcon).toBe('older-icon')
     expect(DBState.db.personas[0].icon).toBe('older-icon')
+  })
+
+  it('failed icon save rolls back only attempted icon fields after newer profile and selection changes', async () => {
+    const command = deferred<Response>()
+    const calls = stubCommandFetch(['attempted-icon'], {
+      personaCommandResponses: [command.promise],
+    })
+    selectedFileState.queue.push(personaFile('rollback-icon.png'))
+    seedPersonaState(
+      [
+        makePersona({ id: 'persona-a', name: 'Persona A', icon: 'old-icon-a' }),
+        makePersona({ id: 'persona-b', name: 'Persona B', icon: 'old-icon-b' }),
+      ],
+      0,
+    )
+
+    const operation = selectUserImg()
+    await vi.waitFor(() => {
+      expect(commandCalls(calls)).toHaveLength(1)
+    })
+
+    DBState.db.personas[0] = {
+      ...DBState.db.personas[0],
+      name: 'Persona A edited after dispatch',
+    } as any
+    selectPersonaDirect(1)
+    DBState.db.username = 'Persona B live name'
+    DBState.db.userIcon = 'old-icon-b'
+    DBState.db.personaPrompt = 'Persona B live prompt'
+    DBState.db.userNote = 'Persona B live note'
+    command.resolve(jsonResponse({ error: 'persona icon failed' }, 500))
+    await operation
+    await tick()
+
+    expect(DBState.db.personas[0]).toMatchObject({
+      id: 'persona-a',
+      name: 'Persona A edited after dispatch',
+      icon: 'old-icon-a',
+    })
+    expect(DBState.db).toMatchObject({
+      selectedPersona: 1,
+      username: 'Persona B live name',
+      userIcon: 'old-icon-b',
+      personaPrompt: 'Persona B live prompt',
+      userNote: 'Persona B live note',
+    })
+  })
+
+  it('failed import create removes only the unchanged imported row and preserves newer rows and selection', async () => {
+    const command = deferred<Response>()
+    const calls = stubCommandFetch(['imported-icon'], {
+      personaCommandResponses: [command.promise],
+    })
+    selectedFileState.queue.push(
+      await personaImportFile({
+        name: 'Imported Persona',
+        personaPrompt: 'Imported prompt',
+        note: 'Imported note',
+      }),
+    )
+    seedPersonaState(
+      [
+        makePersona({ id: 'persona-a', name: 'Persona A', icon: 'icon-a' }),
+        makePersona({ id: 'persona-b', name: 'Persona B', icon: 'icon-b' }),
+      ],
+      0,
+    )
+
+    const operation = importUserPersona()
+    await vi.waitFor(() => {
+      expect(commandCalls(calls)).toHaveLength(1)
+    })
+
+    const imported = DBState.db.personas.find((persona) => persona.name === 'Imported Persona')
+    expect(imported?.icon).toBe('imported-icon')
+    DBState.db.personas[0] = {
+      ...DBState.db.personas[0],
+      name: 'Persona A edited after dispatch',
+    } as any
+    DBState.db.personas.push(
+      makePersona({
+        id: 'persona-d',
+        name: 'Persona D appended after dispatch',
+        icon: 'icon-d',
+        personaPrompt: 'D prompt',
+        note: 'D note',
+      }) as any,
+    )
+    DBState.db.selectedPersona = 3
+    DBState.db.username = 'Persona D live name'
+    DBState.db.userIcon = 'icon-d'
+    DBState.db.personaPrompt = 'Persona D live prompt'
+    DBState.db.userNote = 'Persona D live note'
+    command.resolve(jsonResponse({ error: 'persona import failed' }, 500))
+    await operation
+    await tick()
+
+    expect(DBState.db.personas.map((persona) => persona.id)).toEqual(['persona-a', 'persona-b', 'persona-d'])
+    expect(DBState.db.personas[0]).toMatchObject({
+      id: 'persona-a',
+      name: 'Persona A edited after dispatch',
+    })
+    expect(DBState.db.personas[2]).toMatchObject({
+      id: 'persona-d',
+      name: 'Persona D appended after dispatch',
+    })
+    expect(DBState.db).toMatchObject({
+      selectedPersona: 2,
+      username: 'Persona D live name',
+      userIcon: 'icon-d',
+      personaPrompt: 'Persona D live prompt',
+      userNote: 'Persona D live note',
+    })
   })
 })

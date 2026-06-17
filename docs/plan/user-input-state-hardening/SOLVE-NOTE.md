@@ -75,7 +75,9 @@ Prompt-template item create/delete/reorder rollback has landed as the next
 preset-domain slice. Split prompt/model preset array rollback has landed for
 create, prompt import, delete, select, and reorder commands. Legacy bot preset
 rollback has landed for save, copy, select, create, update, delete, reorder, and
-legacy extraction commands.
+legacy extraction commands. Persona residual command rollback has landed for
+queued profile saves, direct saves, trigger prompt saves, persona selection,
+icon save, and import-created rows.
 
 Next manager loop:
 
@@ -163,9 +165,11 @@ Explicit deferrals:
   prompt/model preset array rollback has landed for create, prompt import,
   delete, select, and reorder commands. Phase 5 legacy bot preset rollback has
   landed for save, copy, select, create, update, delete, reorder, and legacy
-  extraction commands. Remaining module lorebook/regex/script/trigger subdomains,
+  extraction commands. Phase 5 persona residual command rollback has landed for
+  queued profile saves, direct saves, trigger prompt saves, persona selection,
+  icon save, and import-created rows. Remaining module lorebook/regex/script/trigger subdomains,
   lorebook, and import collection flows, Hypa V3 preset array import/rename/delete,
-  plugin import/update side-effect reload, persona profile/import residuals, and
+  plugin import/update side-effect reload, and
   sidebar/chat/folder/character list create/delete/reorder/import rollback
   remain Phase 5 work.
 - `src/ts/compatibilityAdapters.test.ts` currently has a pre-existing failure in
