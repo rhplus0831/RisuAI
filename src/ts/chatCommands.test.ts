@@ -31,6 +31,7 @@ import { get } from 'svelte/store'
 import {
   applyOptimisticCreatedChat,
   applyOptimisticDeletedChat,
+  appendCurrentChatEmptyCharMessage,
   appendCurrentChatUserMessageForSend,
   changedChatMetadata,
   CHAT_PATCH_ALLOWED_KEYS,
@@ -41,14 +42,18 @@ import {
   dispatchCreateChat,
   dispatchCreateChatFolder,
   dispatchDeleteChat,
+  dispatchDeleteMessageScoped,
   dispatchPatchChatScriptstateScoped,
   dispatchReorderChatFoldersByIds,
   dispatchReorderChatsByIds,
+  dispatchReplaceTailMessagesScoped,
   dispatchReplaceMessagesScoped,
   dispatchSaveChatGenerationSettings,
   dispatchSelectChat,
+  dispatchTruncateMessagesScoped,
   dispatchUpdateChat,
   dispatchUpdateChatNoteScoped,
+  dispatchUpdateMessageScoped,
   restoreChatFolderRowMetadata,
   restoreChatRowMetadata,
   restoreChatState,
@@ -197,6 +202,34 @@ function stubCommandFetch(): CapturedFetch[] {
           chatId: 'chat-a',
           messageId: body.message?.chatId,
         })
+      }
+      return jsonResponse({ error: `unexpected ${url}` }, 404)
+    }) as unknown as typeof fetch,
+  )
+  return calls
+}
+
+function stubFailingCommandFetch(input: {
+  matches: (url: string, init: RequestInit) => boolean
+  onCommand?: (url: string, init: RequestInit) => void
+}): CapturedFetch[] {
+  const calls: CapturedFetch[] = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (requestInput: RequestInfo | URL, init: RequestInit = {}) => {
+      const headers = init.headers as Record<string, string> | undefined
+      const url = String(requestInput)
+      calls.push({
+        url,
+        method: init.method ?? 'GET',
+        authHeader: headers?.['risu-auth'] ?? null,
+        body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+      })
+
+      if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+      if (input.matches(url, init)) {
+        input.onCommand?.(url, init)
+        return jsonResponse({ error: 'nope' }, 500)
       }
       return jsonResponse({ error: `unexpected ${url}` }, 404)
     }) as unknown as typeof fetch,
@@ -1458,25 +1491,9 @@ describe('Phase 4 chat metadata allowed-key diff (M9)', () => {
 
 describe('Phase 2 chat-scoped message dispatch', () => {
   it('dispatchReplaceMessagesScoped rolls back only the active chat on failure', async () => {
-    const calls: CapturedFetch[] = []
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
-        const headers = init.headers as Record<string, string> | undefined
-        const url = String(input)
-        calls.push({
-          url,
-          method: init.method ?? 'GET',
-          authHeader: headers?.['risu-auth'] ?? null,
-          body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
-        })
-        if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
-        if (url === '/api/v1/commands/chats/chat-a/messages') {
-          return jsonResponse({ error: 'nope' }, 500)
-        }
-        return jsonResponse({ error: `unexpected ${url}` }, 404)
-      }) as unknown as typeof fetch,
-    )
+    const calls = stubFailingCommandFetch({
+      matches: (url, init) => url === '/api/v1/commands/chats/chat-a/messages' && init.method === 'PUT',
+    })
     // a sibling character to prove the scoped rollback never touches it
     DBState.db.characters.push({
       chaId: 'char-b',
@@ -1489,22 +1506,290 @@ describe('Phase 2 chat-scoped message dispatch', () => {
     const scoped = currentChatScopedSnapshot()
     expect(scoped.chatId).toBe('chat-a')
 
-    // optimistic local edits: the active chat plus an unrelated sibling edit
-    DBState.db.characters[0].chats[0].message.push({
+    const attemptedMessages: Message[] = [
+      {
+        role: 'user',
+        data: 'x',
+        chatId: 'm-x',
+      },
+    ]
+    // optimistic local edits: the active message array plus unrelated same-row
+    // and sibling edits a whole-chat restore would wipe.
+    DBState.db.characters[0].chats[0].message = jsonClone(attemptedMessages)
+    DBState.db.characters[0].chats[0].note = 'same chat concurrent note'
+    DBState.db.characters[0].chats[0].localLore = [
+      {
+        id: 'lore-live',
+        key: 'live',
+        content: 'keep me',
+      },
+    ] as any
+    DBState.db.characters[0].chats[0].scriptstate = {
+      $score: 'newer',
+    }
+    DBState.db.characters[0].chats[1].message.push({
       role: 'char',
-      data: 'optimistic',
-      chatId: 'm-opt',
+      data: 'same character sibling',
+      chatId: 'm-sibling',
     })
     DBState.db.characters[1].chats[0].note = 'sibling concurrent'
 
-    dispatchReplaceMessagesScoped('chat-a', [{ role: 'user', data: 'x', chatId: 'm-x' }], scoped)
+    dispatchReplaceMessagesScoped('chat-a', attemptedMessages, scoped)
     await waitForCallCount(calls, 2)
 
-    // only the active chat row is restored
+    // only the active chat's message array is restored
     expect(DBState.db.characters[0].chats[0].message).toEqual([])
-    // sibling character/chat untouched; the active character's other chat too
-    expect(DBState.db.characters[0].chats[1].id).toBe('chat-b')
+    expect(DBState.db.characters[0].chats[0].note).toBe('same chat concurrent note')
+    expect(DBState.db.characters[0].chats[0].localLore).toEqual([
+      {
+        id: 'lore-live',
+        key: 'live',
+        content: 'keep me',
+      },
+    ])
+    expect(DBState.db.characters[0].chats[0].scriptstate).toEqual({ $score: 'newer' })
+    expect(DBState.db.characters[0].chats[1].message).toEqual([
+      {
+        role: 'char',
+        data: 'same character sibling',
+        chatId: 'm-sibling',
+      },
+    ])
     expect(DBState.db.characters[1].chats[0].note).toBe('sibling concurrent')
+  })
+})
+
+describe('Phase 4 chat-scoped message attempt rollback', () => {
+  function seedActiveMessages(messages: Message[]): void {
+    DBState.db.characters[0].chats[0].message = jsonClone(messages)
+  }
+
+  it('failed empty char append replace-all rolls back a newly appended no-id message', async () => {
+    const calls = stubFailingCommandFetch({
+      matches: (url, init) => url === '/api/v1/commands/chats/chat-a/messages' && init.method === 'PUT',
+    })
+    const previousMessages: Message[] = [{ role: 'user', data: 'before', chatId: 'm-1' }]
+    seedActiveMessages(previousMessages)
+
+    appendCurrentChatEmptyCharMessage()
+    await waitForCallCount(calls, 2)
+
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/chats/chat-a/messages',
+      method: 'PUT',
+      body: {
+        baseRevision: 10,
+        messages: [
+          { role: 'user', data: 'before', chatId: 'm-1' },
+          { role: 'char', data: '', chatId: expect.any(String) },
+        ],
+      },
+    })
+    expect(DBState.db.characters[0].chats[0].message).toEqual(previousMessages)
+  })
+
+  it('failed scoped message update restores attempted fields and preserves newer same-chat metadata', async () => {
+    const calls = stubFailingCommandFetch({
+      matches: (url, init) => url === '/api/v1/commands/messages/m-1' && init.method === 'PATCH',
+    })
+    seedActiveMessages([{ role: 'char', data: 'before', chatId: 'm-1' }])
+    const previous = currentChatScopedSnapshot()
+
+    DBState.db.characters[0].chats[0].message[0].data = 'attempted'
+    DBState.db.characters[0].chats[0].name = 'newer metadata'
+
+    dispatchUpdateMessageScoped('m-1', { data: 'attempted' }, previous)
+    await waitForCallCount(calls, 2)
+
+    expect(DBState.db.characters[0].chats[0].message).toEqual([{ role: 'char', data: 'before', chatId: 'm-1' }])
+    expect(DBState.db.characters[0].chats[0].name).toBe('newer metadata')
+  })
+
+  it('failed scoped message update skips rollback when the message changed again after the attempt', async () => {
+    const calls = stubFailingCommandFetch({
+      matches: (url, init) => url === '/api/v1/commands/messages/m-1' && init.method === 'PATCH',
+      onCommand: () => {
+        DBState.db.characters[0].chats[0].message[0].data = 'newer edit'
+      },
+    })
+    seedActiveMessages([{ role: 'char', data: 'before', chatId: 'm-1' }])
+    const previous = currentChatScopedSnapshot()
+
+    DBState.db.characters[0].chats[0].message[0].data = 'attempted'
+
+    dispatchUpdateMessageScoped('m-1', { data: 'attempted' }, previous)
+    await waitForCallCount(calls, 2)
+
+    expect(DBState.db.characters[0].chats[0].message).toEqual([{ role: 'char', data: 'newer edit', chatId: 'm-1' }])
+  })
+
+  it('failed scoped delete restores the prior message list only when live messages equal the attempted deletion', async () => {
+    const calls = stubFailingCommandFetch({
+      matches: (url, init) => url === '/api/v1/commands/messages/m-1' && init.method === 'DELETE',
+    })
+    const previousMessages: Message[] = [
+      { role: 'user', data: 'one', chatId: 'm-1' },
+      { role: 'char', data: 'two', chatId: 'm-2' },
+    ]
+    seedActiveMessages(previousMessages)
+    const previous = currentChatScopedSnapshot()
+
+    DBState.db.characters[0].chats[0].message = [jsonClone(previousMessages[1])]
+
+    dispatchDeleteMessageScoped('m-1', previous)
+    await waitForCallCount(calls, 2)
+
+    expect(DBState.db.characters[0].chats[0].message).toEqual(previousMessages)
+  })
+
+  it('failed scoped delete preserves a newer live message list when it changes again before rollback', async () => {
+    const previousMessages: Message[] = [
+      { role: 'user', data: 'one', chatId: 'm-1' },
+      { role: 'char', data: 'two', chatId: 'm-2' },
+    ]
+    const newerMessages: Message[] = [
+      { role: 'char', data: 'two', chatId: 'm-2' },
+      { role: 'user', data: 'newer after delete', chatId: 'm-newer' },
+    ]
+    const calls = stubFailingCommandFetch({
+      matches: (url, init) => url === '/api/v1/commands/messages/m-1' && init.method === 'DELETE',
+      onCommand: () => {
+        DBState.db.characters[0].chats[0].message = jsonClone(newerMessages)
+      },
+    })
+    seedActiveMessages(previousMessages)
+    const previous = currentChatScopedSnapshot()
+
+    DBState.db.characters[0].chats[0].message = [jsonClone(previousMessages[1])]
+
+    dispatchDeleteMessageScoped('m-1', previous)
+    await waitForCallCount(calls, 2)
+
+    expect(DBState.db.characters[0].chats[0].message).toEqual(newerMessages)
+  })
+
+  it('failed scoped truncate restores the prior message list when live messages equal the attempted truncation', async () => {
+    const calls = stubFailingCommandFetch({
+      matches: (url, init) => url === '/api/v1/commands/chats/chat-a/messages/truncate' && init.method === 'POST',
+    })
+    const previousMessages: Message[] = [
+      { role: 'user', data: 'one', chatId: 'm-1' },
+      { role: 'char', data: 'two', chatId: 'm-2' },
+      { role: 'user', data: 'three', chatId: 'm-3' },
+    ]
+    seedActiveMessages(previousMessages)
+    const previous = currentChatScopedSnapshot()
+
+    DBState.db.characters[0].chats[0].message = [jsonClone(previousMessages[0])]
+
+    await dispatchTruncateMessagesScoped('chat-a', 'm-1', previous)
+    await waitForCallCount(calls, 2)
+
+    expect(DBState.db.characters[0].chats[0].message).toEqual(previousMessages)
+  })
+
+  it('failed scoped truncate skips rollback when live messages diverge from the attempted truncation', async () => {
+    const calls = stubFailingCommandFetch({
+      matches: (url, init) => url === '/api/v1/commands/chats/chat-a/messages/truncate' && init.method === 'POST',
+    })
+    const previousMessages: Message[] = [
+      { role: 'user', data: 'one', chatId: 'm-1' },
+      { role: 'char', data: 'two', chatId: 'm-2' },
+      { role: 'user', data: 'three', chatId: 'm-3' },
+    ]
+    seedActiveMessages(previousMessages)
+    const previous = currentChatScopedSnapshot()
+
+    DBState.db.characters[0].chats[0].message = [
+      jsonClone(previousMessages[0]),
+      { role: 'char', data: 'newer after truncate', chatId: 'm-newer' },
+    ]
+
+    await dispatchTruncateMessagesScoped('chat-a', 'm-1', previous)
+    await waitForCallCount(calls, 2)
+
+    expect(DBState.db.characters[0].chats[0].message).toEqual([
+      { role: 'user', data: 'one', chatId: 'm-1' },
+      { role: 'char', data: 'newer after truncate', chatId: 'm-newer' },
+    ])
+  })
+
+  it('failed scoped replace-tail restores messages while preserving newer same-chat metadata', async () => {
+    const calls = stubFailingCommandFetch({
+      matches: (url, init) => url === '/api/v1/commands/chats/chat-a/messages/tail' && init.method === 'POST',
+    })
+    const previousMessages: Message[] = [
+      { role: 'user', data: 'one', chatId: 'm-1' },
+      { role: 'char', data: 'two', chatId: 'm-2' },
+      { role: 'user', data: 'three', chatId: 'm-3' },
+    ]
+    const replacementTail: Message[] = [{ role: 'char', data: 'replacement', chatId: 'm-r' }]
+    seedActiveMessages(previousMessages)
+    const previous = currentChatScopedSnapshot()
+
+    DBState.db.characters[0].chats[0].message = [jsonClone(previousMessages[0]), jsonClone(replacementTail[0])]
+    DBState.db.characters[0].chats[0].name = 'newer metadata'
+
+    dispatchReplaceTailMessagesScoped('chat-a', 'm-1', replacementTail, previous)
+    await waitForCallCount(calls, 2)
+
+    expect(DBState.db.characters[0].chats[0].message).toEqual(previousMessages)
+    expect(DBState.db.characters[0].chats[0].name).toBe('newer metadata')
+  })
+
+  it('failed scoped replace-tail preserves newer live messages and same-chat metadata after divergence', async () => {
+    const previousMessages: Message[] = [
+      { role: 'user', data: 'one', chatId: 'm-1' },
+      { role: 'char', data: 'two', chatId: 'm-2' },
+      { role: 'user', data: 'three', chatId: 'm-3' },
+    ]
+    const replacementTail: Message[] = [{ role: 'char', data: 'replacement', chatId: 'm-r' }]
+    const newerMessages: Message[] = [
+      { role: 'user', data: 'one', chatId: 'm-1' },
+      { role: 'char', data: 'replacement', chatId: 'm-r' },
+      { role: 'user', data: 'newer after replace-tail', chatId: 'm-newer' },
+    ]
+    const calls = stubFailingCommandFetch({
+      matches: (url, init) => url === '/api/v1/commands/chats/chat-a/messages/tail' && init.method === 'POST',
+      onCommand: () => {
+        DBState.db.characters[0].chats[0].message = jsonClone(newerMessages)
+        DBState.db.characters[0].chats[0].name = 'newer metadata'
+      },
+    })
+    seedActiveMessages(previousMessages)
+    const previous = currentChatScopedSnapshot()
+
+    DBState.db.characters[0].chats[0].message = [jsonClone(previousMessages[0]), jsonClone(replacementTail[0])]
+
+    dispatchReplaceTailMessagesScoped('chat-a', 'm-1', replacementTail, previous)
+    await waitForCallCount(calls, 2)
+
+    expect(DBState.db.characters[0].chats[0].message).toEqual(newerMessages)
+    expect(DBState.db.characters[0].chats[0].name).toBe('newer metadata')
+  })
+
+  it('failed scoped replace-all skips rollback when live messages diverge from the attempted replacement', async () => {
+    const calls = stubFailingCommandFetch({
+      matches: (url, init) => url === '/api/v1/commands/chats/chat-a/messages' && init.method === 'PUT',
+    })
+    seedActiveMessages([{ role: 'user', data: 'before', chatId: 'm-1' }])
+    const previous = currentChatScopedSnapshot()
+    const replacementMessages: Message[] = [{ role: 'char', data: 'replacement', chatId: 'm-r' }]
+
+    DBState.db.characters[0].chats[0].message = [
+      jsonClone(replacementMessages[0]),
+      { role: 'user', data: 'newer follow-up', chatId: 'm-newer' },
+    ]
+    DBState.db.characters[0].chats[0].name = 'newer metadata'
+
+    dispatchReplaceMessagesScoped('chat-a', replacementMessages, previous)
+    await waitForCallCount(calls, 2)
+
+    expect(DBState.db.characters[0].chats[0].message).toEqual([
+      { role: 'char', data: 'replacement', chatId: 'm-r' },
+      { role: 'user', data: 'newer follow-up', chatId: 'm-newer' },
+    ])
+    expect(DBState.db.characters[0].chats[0].name).toBe('newer metadata')
   })
 })
 

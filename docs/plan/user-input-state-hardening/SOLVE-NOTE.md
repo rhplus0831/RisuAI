@@ -53,7 +53,8 @@ separate-parameters paths. The final Phase 3 audit found no known live callback
 surface still pending. Phase 4 is in progress; DefaultChatScreen composer
 send/continue clear/restore, auto-translate freshness, and reroll active-chat
 freshness have landed. Partial edit/delete modal freshness has also landed.
-Suggestion persistence freshness has landed.
+Suggestion persistence freshness and attempt-aware chat-scoped message rollback
+have landed.
 
 Next manager loop:
 
@@ -119,9 +120,10 @@ Explicit deferrals:
 - `restoreChatScopedState` remains Phase 4 work.
 - Composer send/continue clear/restore, auto-translate, reroll active-chat
   freshness, partial edit/delete modal freshness, and suggestion persistence
-  freshness have landed. `restoreChatScopedState`, dynamic trigger, message
-  update/delete/truncate/replace, and generation finalization remain Phase 4
-  work. Composer file and paste callbacks are already covered by Phase 3.
+  freshness have landed. Attempt-aware chat-scoped message rollback has landed
+  for scoped message update/delete/truncate/replace-tail/replace-all failures.
+  Dynamic trigger freshness and generation finalization remain Phase 4 work.
+  Composer file and paste callbacks are already covered by Phase 3.
 - Preset/persona/translator/module/lorebook/script/import collection flows, Hypa
   V3 preset array import/rename/delete, plugin
   enable/delete/args/provider/storage, and sidebar/chat/folder/character list

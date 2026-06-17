@@ -55,6 +55,13 @@ target/list freshness before mutating or calling `send`, and persists
 chat-row metadata. Freshness is target/list scoped rather than a separate
 navigation epoch.
 
+Fifth landed slice: `chatCommands.ts` now applies attempt-aware scoped message
+rollback for message update/delete/truncate/replace-tail/replace-all failures.
+Patch rollback restores only attempted message fields, and list rollback
+restores only `chat.message` when the live array still equals the attempted
+optimistic array, preserving newer same-chat metadata/scriptstate/local lore and
+divergent message edits.
+
 ## Anchors
 
 - `src/lib/ChatScreens/DefaultChatScreen.svelte`

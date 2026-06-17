@@ -232,12 +232,21 @@ export function currentChatScopedSnapshot(): ChatScopedSnapshot {
 export function restoreChatScopedState(snapshot: ChatScopedSnapshot): void {
   if (!snapshot.chat) return
   withTrustedServerProjectionWrite(() => {
+    const chat = locateChatScopedSnapshot(snapshot)
+    if (!chat) return
     const character = locateSnapshotCharacter(snapshot.characterId, snapshot.selectedCharID)
     if (!character?.chats) return
     const index = locateChatIndex(character, snapshot.chatId)
     if (index < 0) return
     character.chats[index] = cloneJsonValue(snapshot.chat) as Chat
   })
+}
+
+function locateChatScopedSnapshot(snapshot: ChatScopedSnapshot): Chat | undefined {
+  const character = locateSnapshotCharacter(snapshot.characterId, snapshot.selectedCharID)
+  if (!character?.chats) return undefined
+  const index = locateChatIndex(character, snapshot.chatId)
+  return index >= 0 ? character.chats[index] : undefined
 }
 
 export function currentChatGenerationSettingsSnapshot(chatId: string): ChatGenerationSettingsSnapshot | null {
@@ -1056,6 +1065,11 @@ export function appendCurrentChatEmptyCharMessage(): void {
     role: 'char',
     data: '',
   })
+  for (const message of nextMessages) {
+    if (!isServerChatMessagePlaceholder(message)) {
+      ensureMessageId(message)
+    }
+  }
 
   withTrustedServerProjectionWrite(() => {
     const liveCharacter = DBState.db.characters?.[selectedChar]
@@ -1173,12 +1187,89 @@ function removeOptimisticCurrentChatMessage(input: {
   })
 }
 
+function restoreScopedMessagePatchAttempt(
+  previous: ChatScopedSnapshot,
+  messageId: string,
+  attemptedPatch: MessageSnapshot,
+): void {
+  if (!previous.chat) return
+  withTrustedServerProjectionWrite(() => {
+    const liveChat = locateChatScopedSnapshot(previous)
+    const liveMessages = liveChat?.message
+    if (!liveMessages) return
+
+    const liveMessageIndex = findMessageIndexById(liveMessages, messageId)
+    if (liveMessageIndex < 0) return
+
+    const previousMessages = previous.chat?.message ?? []
+    const previousMessageById = previousMessages.find((message) => message.chatId === messageId)
+    const previousMessageAtLiveIndex = previousMessages[liveMessageIndex]
+    const previousMessage =
+      previousMessageById ?? (previousMessageAtLiveIndex?.chatId ? undefined : previousMessageAtLiveIndex)
+    if (!previousMessage) return
+
+    applyAttemptedFieldRollback({
+      target: liveMessages[liveMessageIndex] as unknown as Record<string, unknown>,
+      previous: previousMessage as unknown as Record<string, unknown>,
+      attempted: attemptedPatch as Record<string, unknown>,
+      keys: MESSAGE_PATCH_ALLOWED_KEYS,
+      deleteMissingPrevious: true,
+    })
+  })
+}
+
+function restoreScopedMessageListAttempt(previous: ChatScopedSnapshot, attemptedMessages: Message[] | null): void {
+  if (!previous.chat || !attemptedMessages) return
+  const previousMessages = cloneJsonValue(previous.chat.message ?? [])
+  withTrustedServerProjectionWrite(() => {
+    const liveChat = locateChatScopedSnapshot(previous)
+    if (!liveChat) return
+    if (snapshotJson(liveChat.message ?? []) !== snapshotJson(attemptedMessages)) return
+    liveChat.message = previousMessages
+  })
+}
+
+function attemptedMessagesAfterDelete(previous: ChatScopedSnapshot, messageId: string): Message[] | null {
+  const messages = cloneJsonValue(previous.chat?.message ?? [])
+  const index = findMessageIndexById(messages, messageId)
+  if (index < 0) return null
+  messages.splice(index, 1)
+  return messages
+}
+
+function attemptedMessagesAfterTruncate(previous: ChatScopedSnapshot, afterMessageId: string | null): Message[] | null {
+  const messages = cloneJsonValue(previous.chat?.message ?? [])
+  if (afterMessageId === null) return []
+  const index = findMessageIndexById(messages, afterMessageId)
+  if (index < 0) return null
+  return messages.slice(0, index + 1)
+}
+
+function attemptedMessagesAfterReplaceTail(
+  previous: ChatScopedSnapshot,
+  afterMessageId: string | null,
+  messages: Message[],
+): Message[] | null {
+  const previousMessages = cloneJsonValue(previous.chat?.message ?? [])
+  if (afterMessageId === null) return cloneJsonValue(messages)
+  const index = findMessageIndexById(previousMessages, afterMessageId)
+  if (index < 0) return null
+  return previousMessages.slice(0, index + 1).concat(cloneJsonValue(messages))
+}
+
+function findMessageIndexById(messages: readonly Message[], messageId: string): number {
+  return messages.findIndex((message) => message.chatId === messageId)
+}
+
 // Each message-dispatch helper has a `*With(... rollback)` core plus a broad
 // (`ChatStateSnapshot`) and a chat-scoped (`ChatScopedSnapshot`) export. The
 // scoped variants restore only the active chat row on failure; the broad ones
 // remain for callers that still hold a whole-collection snapshot.
-function dispatchUpdateMessageWith(messageId: string, patch: MessageSnapshot, rollback: () => void): void {
-  const commandPatch = sanitizeMessagePatch(patch)
+function dispatchSanitizedUpdateMessageWith(
+  messageId: string,
+  commandPatch: MessageSnapshot,
+  rollback: () => void,
+): void {
   if (Object.keys(commandPatch).length === 0) return
   runMessageCommand(
     (baseRevision) =>
@@ -1191,6 +1282,10 @@ function dispatchUpdateMessageWith(messageId: string, patch: MessageSnapshot, ro
   )
 }
 
+function dispatchUpdateMessageWith(messageId: string, patch: MessageSnapshot, rollback: () => void): void {
+  dispatchSanitizedUpdateMessageWith(messageId, sanitizeMessagePatch(patch), rollback)
+}
+
 export function dispatchUpdateMessage(messageId: string, patch: MessageSnapshot, previous: ChatStateSnapshot): void {
   dispatchUpdateMessageWith(messageId, patch, () => restoreChatState(previous))
 }
@@ -1200,7 +1295,10 @@ export function dispatchUpdateMessageScoped(
   patch: MessageSnapshot,
   previous: ChatScopedSnapshot,
 ): void {
-  dispatchUpdateMessageWith(messageId, patch, () => restoreChatScopedState(previous))
+  const commandPatch = sanitizeMessagePatch(patch)
+  dispatchSanitizedUpdateMessageWith(messageId, commandPatch, () =>
+    restoreScopedMessagePatchAttempt(previous, messageId, commandPatch),
+  )
 }
 
 function dispatchDeleteMessageWith(messageId: string, rollback: () => void): void {
@@ -1219,7 +1317,8 @@ export function dispatchDeleteMessage(messageId: string, previous: ChatStateSnap
 }
 
 export function dispatchDeleteMessageScoped(messageId: string, previous: ChatScopedSnapshot): void {
-  dispatchDeleteMessageWith(messageId, () => restoreChatScopedState(previous))
+  const attemptedMessages = attemptedMessagesAfterDelete(previous, messageId)
+  dispatchDeleteMessageWith(messageId, () => restoreScopedMessageListAttempt(previous, attemptedMessages))
 }
 
 interface TruncateMessagesOptions {
@@ -1260,7 +1359,13 @@ export function dispatchTruncateMessagesScoped(
   previous: ChatScopedSnapshot,
   options: TruncateMessagesOptions = {},
 ): Promise<ServerCommandResult | null> {
-  return dispatchTruncateMessagesWith(chatId, afterMessageId, () => restoreChatScopedState(previous), options)
+  const attemptedMessages = attemptedMessagesAfterTruncate(previous, afterMessageId)
+  return dispatchTruncateMessagesWith(
+    chatId,
+    afterMessageId,
+    () => restoreScopedMessageListAttempt(previous, attemptedMessages),
+    options,
+  )
 }
 
 function dispatchReplaceTailMessagesWith(
@@ -1269,13 +1374,7 @@ function dispatchReplaceTailMessagesWith(
   messages: Message[],
   rollback: () => void,
 ): void {
-  if (hasServerChatMessagePlaceholders(messages)) {
-    console.warn('Skipped replaceTailMessagesCommand for a partially hydrated chat transcript tail.')
-    return
-  }
-  for (const message of messages) {
-    ensureMessageId(message)
-  }
+  if (!prepareReplaceTailMessages(messages)) return
   runMessageCommand(
     (baseRevision) =>
       replaceTailMessagesCommand({
@@ -1303,17 +1402,22 @@ export function dispatchReplaceTailMessagesScoped(
   messages: Message[],
   previous: ChatScopedSnapshot,
 ): void {
-  dispatchReplaceTailMessagesWith(chatId, afterMessageId, messages, () => restoreChatScopedState(previous))
+  if (!prepareReplaceTailMessages(messages)) return
+  const attemptedMessages = attemptedMessagesAfterReplaceTail(previous, afterMessageId, messages)
+  runMessageCommand(
+    (baseRevision) =>
+      replaceTailMessagesCommand({
+        baseRevision,
+        chatId,
+        afterMessageId,
+        messages: messages.map(toMessageSnapshot),
+      }),
+    () => restoreScopedMessageListAttempt(previous, attemptedMessages),
+  )
 }
 
 function dispatchReplaceMessagesWith(chatId: string, messages: Message[], rollback: () => void): void {
-  if (hasServerChatMessagePlaceholders(messages)) {
-    console.warn('Skipped replaceMessagesCommand for a partially hydrated chat transcript.')
-    return
-  }
-  for (const message of messages) {
-    ensureMessageId(message)
-  }
+  if (!prepareReplaceMessages(messages)) return
   runMessageCommand(
     (baseRevision) =>
       replaceMessagesCommand({
@@ -1334,7 +1438,39 @@ export function dispatchReplaceMessages(chatId: string, messages: Message[], pre
 }
 
 export function dispatchReplaceMessagesScoped(chatId: string, messages: Message[], previous: ChatScopedSnapshot): void {
-  dispatchReplaceMessagesWith(chatId, messages, () => restoreChatScopedState(previous))
+  if (!prepareReplaceMessages(messages)) return
+  const attemptedMessages = cloneJsonValue(messages)
+  runMessageCommand(
+    (baseRevision) =>
+      replaceMessagesCommand({
+        baseRevision,
+        chatId,
+        messages: messages.map(toMessageSnapshot),
+      }),
+    () => restoreScopedMessageListAttempt(previous, attemptedMessages),
+  )
+}
+
+function prepareReplaceTailMessages(messages: Message[]): boolean {
+  if (hasServerChatMessagePlaceholders(messages)) {
+    console.warn('Skipped replaceTailMessagesCommand for a partially hydrated chat transcript tail.')
+    return false
+  }
+  for (const message of messages) {
+    ensureMessageId(message)
+  }
+  return true
+}
+
+function prepareReplaceMessages(messages: Message[]): boolean {
+  if (hasServerChatMessagePlaceholders(messages)) {
+    console.warn('Skipped replaceMessagesCommand for a partially hydrated chat transcript.')
+    return false
+  }
+  for (const message of messages) {
+    ensureMessageId(message)
+  }
+  return true
 }
 
 function dispatchPatchChatScriptstateWith(

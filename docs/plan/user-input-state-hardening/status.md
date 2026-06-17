@@ -71,7 +71,11 @@ persistence inventory under
   parent chat row re-checks live target/source freshness before persisting.
   Suggestion send/copy/reroll actions now capture visible suggestion targets,
   re-check active chat and list freshness before mutating/persisting, and
-  persist `suggestMessages` with chat-row metadata rollback.
+  persist `suggestMessages` with chat-row metadata rollback. Scoped message
+  update/delete/truncate/replace-tail/replace-all failures now restore only
+  attempted message fields or `chat.message` arrays when the live state still
+  matches the attempted optimistic state, preserving newer same-chat metadata and
+  divergent message edits.
   Phase 2 landed character profile draft dirty top-level field protection;
   prompt-template item row dirty projection merging; whole-key dirty projection
   protection for
@@ -192,7 +196,12 @@ persistence inventory under
 - `src/lib/ChatScreens/Suggestion.svelte` now uses visible suggestion target
   snapshots and `dispatchUpdateChatRow` for guarded send/copy/reroll and
   generated suggestion persistence.
-- Verification state: Phase 4 suggestion persistence freshness validation is
+- `src/ts/chatCommands.ts` now uses attempt-aware scoped message rollback for
+  message patch and message-list command failures; `appendCurrentChatEmptyCharMessage`
+  mints message ids before optimistic replace-all writes so rollback compares
+  equivalent attempted arrays.
+- Verification state: Phase 4 attempt-aware chat-scoped message rollback
+  validation is
   recorded in `latest-verification.md`.
 - Highest issue density:
   - Character editor: 52 issue rows, mostly dirty projection and unguarded
@@ -243,10 +252,10 @@ persistence inventory under
 - [Phase 4](phases/phase-4-chat-messages-generation.md): active. DefaultChatScreen
   composer send/continue clear/restore, auto-translate freshness, and reroll
   active-chat freshness have landed. Partial edit/delete modal freshness has
-  landed. Suggestion persistence freshness has landed. `restoreChatScopedState`,
-  dynamic trigger, message update/delete/truncate/replace, and generation
-  finalization freshness remain here. Composer file and paste callbacks are
-  already covered by Phase 3.
+  landed. Suggestion persistence freshness has landed. Attempt-aware
+  chat-scoped message rollback has landed. Dynamic trigger freshness and
+  generation finalization freshness remain here. Composer file and paste
+  callbacks are already covered by Phase 3.
 - [Phase 5](phases/phase-5-collection-domains.md): pending. Preset, persona,
   translator, module, lorebook, script, and import collection flows; Hypa V3
   preset array import/rename/delete; plugin enable/delete/args/provider/storage;
@@ -436,8 +445,11 @@ persistence inventory under
     selected character/chat and visible suggestion list before send/copy/reroll
     actions, drops stale action continuations, and persists `suggestMessages`
     with `dispatchUpdateChatRow` so rollback is limited to chat-row metadata.
-  - Remaining Phase 4: `restoreChatScopedState`, dynamic trigger, message
-    update/delete/truncate/replace freshness, and generation finalization.
+  - Phase 4 message rollback slice: scoped message update/delete/truncate,
+    replace-tail, and replace-all failure rollbacks now restore only attempted
+    message fields or `chat.message` arrays, and only while live message state
+    still equals the attempted optimistic state.
+  - Remaining Phase 4: dynamic trigger freshness and generation finalization.
     Composer file and paste callbacks are already covered by Phase 3.
   - Phase 5: preset/persona/translator/module/lorebook/script/import collection
     flows, Hypa V3 preset array import/rename/delete, plugin
