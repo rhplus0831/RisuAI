@@ -16,7 +16,11 @@
     type ServerCommandResult,
     type TranslatorPresetSnapshot,
   } from 'src/ts/server/commands'
-  import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
+  import {
+    getServerProjectionApplyEpoch,
+    withTrustedServerProjectionWrite,
+  } from 'src/ts/server/projectionWriteGuard.svelte'
+  import { applyAttemptedFieldRollback, mergeProjectionIntoDirtyDraft } from 'src/ts/server/staleStateGuards'
   import {
     createTranslatorPreset,
     decodeTranslatorPresetFile,
@@ -29,9 +33,10 @@
   } from 'src/ts/translator/presets'
   import { selectSingleFile } from 'src/ts/util'
   import { language } from 'src/lang'
-  import { onDestroy } from 'svelte'
+  import { onDestroy, untrack } from 'svelte'
 
   type TranslatorPreset = (typeof DBState.db.translatorPresets)[number]
+  type TranslatorPresetDirtyField = 'name' | 'prompt' | 'maxResponse'
 
   interface TranslatorPresetStateSnapshot {
     translatorPresets: TranslatorPreset[]
@@ -49,8 +54,11 @@
   }
 
   const translatorPresetUpdateDelayMs = 250
+  const translatorPresetDirtyFieldNames: readonly TranslatorPresetDirtyField[] = ['name', 'prompt', 'maxResponse']
   const pendingTranslatorPresetUpdates = new Map<string, PendingTranslatorPresetUpdate>()
+  const translatorPresetDirtyFieldsById = new Map<string, Map<TranslatorPresetDirtyField, unknown>>()
   let translatorPresetUpdateDispatchChain: Promise<ServerCommandResult> = Promise.resolve({ status: 'unavailable' })
+  let previousProjectionApplyEpoch = getServerProjectionApplyEpoch()
 
   function cloneJsonValue<T>(value: T): T {
     if (value === undefined) return value
@@ -91,33 +99,184 @@
     return DBState.db.translatorPresets?.find((preset) => preset.id === presetId) ?? null
   }
 
+  function isTranslatorPresetDirtyField(key: string): key is TranslatorPresetDirtyField {
+    return translatorPresetDirtyFieldNames.includes(key as TranslatorPresetDirtyField)
+  }
+
+  function translatorPresetPatchDirtyFields(patch: TranslatorPresetSnapshot): TranslatorPresetDirtyField[] {
+    return Object.keys(patch).filter(isTranslatorPresetDirtyField)
+  }
+
+  function markTranslatorPresetDirtyFields(presetId: string, patch: TranslatorPresetSnapshot): void {
+    const dirtyPatchFields = translatorPresetPatchDirtyFields(patch)
+    if (dirtyPatchFields.length === 0) return
+
+    let dirtyFields = translatorPresetDirtyFieldsById.get(presetId)
+    if (!dirtyFields) {
+      dirtyFields = new Map()
+      translatorPresetDirtyFieldsById.set(presetId, dirtyFields)
+    }
+
+    for (const field of dirtyPatchFields) {
+      dirtyFields.set(field, cloneJsonValue(patch[field]))
+    }
+  }
+
+  function clearTranslatorPresetDirtyFieldsMatchingValues(
+    presetId: string,
+    values: Record<string, unknown>,
+    fields: Iterable<TranslatorPresetDirtyField>,
+  ): void {
+    const dirtyFields = translatorPresetDirtyFieldsById.get(presetId)
+    if (!dirtyFields) return
+
+    for (const field of fields) {
+      if (snapshotJson(dirtyFields.get(field)) === snapshotJson(values[field])) {
+        dirtyFields.delete(field)
+      }
+    }
+
+    if (dirtyFields.size === 0) {
+      translatorPresetDirtyFieldsById.delete(presetId)
+    }
+  }
+
+  function translatorPresetDirtyRollbackFields(
+    presetId: string,
+    attemptedPreset: TranslatorPreset,
+    patch: TranslatorPresetSnapshot,
+  ): TranslatorPresetDirtyField[] {
+    const dirtyFields = translatorPresetDirtyFieldsById.get(presetId)
+    if (!dirtyFields) return []
+
+    return translatorPresetPatchDirtyFields(patch).filter(
+      (field) =>
+        dirtyFields.has(field) && snapshotJson(dirtyFields.get(field)) === snapshotJson(attemptedPreset[field]),
+    )
+  }
+
+  function projectionMatchesTranslatorPresetDirtyValue(
+    preset: TranslatorPreset,
+    presetIndex: number,
+    field: TranslatorPresetDirtyField,
+    value: unknown,
+  ): boolean {
+    if (snapshotJson(preset[field]) !== snapshotJson(value)) return false
+    if (DBState.db.translatorPresetId !== presetIndex) return true
+    if (field === 'prompt') return snapshotJson(DBState.db.translatorPrompt) === snapshotJson(value)
+    if (field === 'maxResponse') return snapshotJson(DBState.db.translatorMaxResponse) === snapshotJson(value)
+    return true
+  }
+
+  function clearTranslatorPresetDirtyFieldsMatchingProjection(
+    preset: TranslatorPreset,
+    presetIndex: number,
+    dirtyFields: Map<TranslatorPresetDirtyField, unknown>,
+  ): void {
+    for (const [field, value] of Array.from(dirtyFields.entries())) {
+      if (projectionMatchesTranslatorPresetDirtyValue(preset, presetIndex, field, value)) {
+        dirtyFields.delete(field)
+      }
+    }
+  }
+
+  function reassertDirtyTranslatorPresetFields(
+    presetId: string,
+    dirtyFields: ReadonlyMap<TranslatorPresetDirtyField, unknown>,
+  ): void {
+    if (dirtyFields.size === 0) return
+
+    withTrustedServerProjectionWrite(() => {
+      const presets = DBState.db.translatorPresets ?? []
+      const presetIndex = presets.findIndex((preset) => preset.id === presetId)
+      if (presetIndex === -1) {
+        translatorPresetDirtyFieldsById.delete(presetId)
+        return
+      }
+
+      const projectionPreset = presets[presetIndex]
+      const dirtyFieldSet = new Set(dirtyFields.keys())
+      const dirtyDraft = cloneJsonValue(projectionPreset) as Record<string, unknown>
+      for (const [field, value] of dirtyFields) {
+        dirtyDraft[field] = cloneJsonValue(value)
+      }
+
+      presets[presetIndex] = mergeProjectionIntoDirtyDraft({
+        draft: dirtyDraft,
+        projection: projectionPreset as Record<string, unknown>,
+        dirtyFields: dirtyFieldSet,
+      }) as TranslatorPreset
+
+      if (DBState.db.translatorPresetId === presetIndex) {
+        syncCurrentTranslatorPreset()
+      }
+    })
+  }
+
+  function reconcileTranslatorPresetProjectionEpoch(): void {
+    if (translatorPresetDirtyFieldsById.size === 0) return
+
+    const presets = DBState.db.translatorPresets ?? []
+    for (const [presetId, dirtyFields] of Array.from(translatorPresetDirtyFieldsById.entries())) {
+      const presetIndex = presets.findIndex((preset) => preset.id === presetId)
+      if (presetIndex === -1) {
+        translatorPresetDirtyFieldsById.delete(presetId)
+        continue
+      }
+
+      clearTranslatorPresetDirtyFieldsMatchingProjection(presets[presetIndex], presetIndex, dirtyFields)
+      if (dirtyFields.size === 0) {
+        translatorPresetDirtyFieldsById.delete(presetId)
+        continue
+      }
+
+      reassertDirtyTranslatorPresetFields(presetId, dirtyFields)
+    }
+  }
+
   function restoreTranslatorPresetUpdateState(
     presetId: string,
     previous: TranslatorPresetStateSnapshot | null,
     attempted: TranslatorPresetStateSnapshot | null,
+    patch: TranslatorPresetSnapshot,
   ): void {
     const attemptedPreset = translatorPresetFromSnapshot(attempted, presetId)
     const previousPreset = translatorPresetFromSnapshot(previous, presetId)
+    const currentPreset = currentTranslatorPresetById(presetId)
 
-    if (
-      !attemptedPreset ||
-      !previousPreset ||
-      snapshotJson(currentTranslatorPresetById(presetId)) !== snapshotJson(attemptedPreset)
-    ) {
+    if (!attemptedPreset || !previousPreset || !currentPreset) {
       return
     }
+
+    const rollbackFields = translatorPresetDirtyRollbackFields(presetId, attemptedPreset, patch)
+    if (rollbackFields.length === 0) return
 
     withTrustedServerProjectionWrite(() => {
       const presetIndex = DBState.db.translatorPresets.findIndex((preset) => preset.id === presetId)
       if (presetIndex === -1) return
 
       const nextPresets = [...DBState.db.translatorPresets]
-      nextPresets[presetIndex] = cloneJsonValue(previousPreset)
+      const nextPreset = cloneJsonValue(nextPresets[presetIndex]) as Record<string, unknown>
+      const rolledBackFields = applyAttemptedFieldRollback({
+        target: nextPreset,
+        previous: previousPreset as Record<string, unknown>,
+        attempted: attemptedPreset as Record<string, unknown>,
+        keys: rollbackFields,
+      }) as TranslatorPresetDirtyField[]
+      if (rolledBackFields.length === 0) return
+
+      nextPresets[presetIndex] = nextPreset as TranslatorPreset
       DBState.db.translatorPresets = nextPresets
 
       if (DBState.db.translatorPresetId === presetIndex) {
         syncCurrentTranslatorPreset()
       }
+
+      clearTranslatorPresetDirtyFieldsMatchingValues(
+        presetId,
+        attemptedPreset as Record<string, unknown>,
+        rolledBackFields,
+      )
     })
   }
 
@@ -228,7 +387,7 @@
             patch: commandPatch,
           }),
         rollback: () => {
-          restoreTranslatorPresetUpdateState(commandPresetId, commandPrevious, commandAttempted)
+          restoreTranslatorPresetUpdateState(commandPresetId, commandPrevious, commandAttempted, commandPatch)
         },
       })
 
@@ -271,6 +430,14 @@
       void dispatchPendingTranslatorPresetUpdate(pending)
     }, translatorPresetUpdateDelayMs)
   }
+
+  $effect(() => {
+    const projectionApplyEpoch = getServerProjectionApplyEpoch()
+    if (projectionApplyEpoch === previousProjectionApplyEpoch) return
+
+    previousProjectionApplyEpoch = projectionApplyEpoch
+    untrack(() => reconcileTranslatorPresetProjectionEpoch())
+  })
 
   onDestroy(() => {
     void flushPendingTranslatorPresetUpdates()
@@ -348,6 +515,7 @@
         DBState.db.translatorPresets = presets
         syncCurrentTranslatorPreset()
       } else if (presetId) {
+        markTranslatorPresetDirtyFields(presetId, { name: newName })
         applyTranslatorPresetPatchToDBState(presetId, { name: newName })
       }
       if (presetId) queueTranslatorPresetUpdate(presetId, { name: newName }, previous)
@@ -468,6 +636,7 @@
           preset.maxResponse = value
           syncCurrentTranslatorPreset()
         } else if (presetId) {
+          markTranslatorPresetDirtyFields(presetId, { maxResponse: value })
           applyTranslatorPresetPatchToDBState(presetId, { maxResponse: value })
         }
         if (presetId) queueTranslatorPresetUpdate(presetId, { maxResponse: value }, previous)
@@ -484,6 +653,7 @@
           preset.prompt = value
           syncCurrentTranslatorPreset()
         } else if (presetId) {
+          markTranslatorPresetDirtyFields(presetId, { prompt: value })
           applyTranslatorPresetPatchToDBState(presetId, { prompt: value })
         }
         if (presetId) queueTranslatorPresetUpdate(presetId, { prompt: value }, previous)

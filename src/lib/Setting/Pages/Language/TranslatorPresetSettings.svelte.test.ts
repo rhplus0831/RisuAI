@@ -119,9 +119,11 @@ vi.mock('src/ts/util', async (importActual) => {
 })
 
 import TranslatorPresetSettings from './TranslatorPresetSettings.svelte'
+import { alertInput } from 'src/ts/alert'
 import { DBState } from 'src/ts/stores.svelte'
 import {
   setServerProjectionWriteGuardEnabled,
+  withServerProjectionApply,
   withTrustedServerProjectionWrite,
 } from 'src/ts/server/projectionWriteGuard.svelte'
 
@@ -150,10 +152,33 @@ function promptTextarea(): HTMLTextAreaElement {
   return textarea!
 }
 
+function maxResponseInput(): HTMLInputElement {
+  const input = target.querySelector<HTMLInputElement>('input[type="number"]')
+  expect(input).toBeTruthy()
+  return input!
+}
+
 async function editPrompt(value: string): Promise<void> {
   const textarea = promptTextarea()
   textarea.value = value
   textarea.dispatchEvent(new Event('input', { bubbles: true }))
+  await tick()
+}
+
+async function editMaxResponse(value: number): Promise<void> {
+  const input = maxResponseInput()
+  input.value = String(value)
+  input.dispatchEvent(new Event('input', { bubbles: true }))
+  await tick()
+}
+
+async function renameSelectedPreset(value: string): Promise<void> {
+  vi.mocked(alertInput).mockResolvedValueOnce(value)
+  const buttons = target.querySelectorAll<HTMLButtonElement>('button')
+  expect(buttons.length).toBeGreaterThan(1)
+  buttons[1].click()
+  await tick()
+  await flushMicrotasks()
   await tick()
 }
 
@@ -163,6 +188,22 @@ async function switchProjectedPreset(index: number): Promise<void> {
     DBState.db.translatorPrompt = DBState.db.translatorPresets[index].prompt
     DBState.db.translatorMaxResponse = DBState.db.translatorPresets[index].maxResponse
   })
+  await tick()
+}
+
+async function applyTranslatorPresetProjection(input: {
+  presets: Array<{ id: string; name: string; prompt: string; maxResponse: number }>
+  selectedIndex?: number
+}): Promise<void> {
+  withServerProjectionApply(() => {
+    const selectedIndex = input.selectedIndex ?? DBState.db.translatorPresetId
+    DBState.db.translatorPresets = input.presets.map((preset) => ({ ...preset }))
+    DBState.db.translatorPresetId = selectedIndex
+    DBState.db.translatorPrompt = DBState.db.translatorPresets[selectedIndex]?.prompt ?? ''
+    DBState.db.translatorMaxResponse = DBState.db.translatorPresets[selectedIndex]?.maxResponse ?? 0
+  })
+  await tick()
+  await flushMicrotasks()
   await tick()
 }
 
@@ -283,5 +324,147 @@ describe('TranslatorPresetSettings server-backed edits', () => {
         patch: { prompt: 'destroy-flushed prompt A' },
       },
     ])
+  })
+
+  it('keeps a dirty prompt through a stale projection for the same preset', async () => {
+    await editPrompt('dirty prompt A')
+
+    await applyTranslatorPresetProjection({
+      presets: [
+        { id: 'preset-a', name: 'Projected A', prompt: 'stale prompt A', maxResponse: 100 },
+        { id: 'preset-b', name: 'Projected B', prompt: 'projected prompt B', maxResponse: 220 },
+      ],
+      selectedIndex: 0,
+    })
+
+    expect(DBState.db.translatorPresets[0]).toMatchObject({
+      id: 'preset-a',
+      name: 'Projected A',
+      prompt: 'dirty prompt A',
+      maxResponse: 100,
+    })
+    expect(DBState.db.translatorPrompt).toBe('dirty prompt A')
+  })
+
+  it('refreshes clean sibling fields while preserving a dirty prompt', async () => {
+    await editPrompt('dirty prompt A')
+
+    await applyTranslatorPresetProjection({
+      presets: [
+        { id: 'preset-a', name: 'Server A', prompt: 'stale prompt A', maxResponse: 333 },
+        { id: 'preset-b', name: 'Projected B', prompt: 'projected prompt B', maxResponse: 444 },
+      ],
+      selectedIndex: 0,
+    })
+
+    expect(DBState.db.translatorPresets[0]).toMatchObject({
+      name: 'Server A',
+      prompt: 'dirty prompt A',
+      maxResponse: 333,
+    })
+    expect(DBState.db.translatorPrompt).toBe('dirty prompt A')
+    expect(DBState.db.translatorMaxResponse).toBe(333)
+  })
+
+  it('clears dirty prompt state when projection catches up so later clean projections apply', async () => {
+    await editPrompt('dirty prompt A')
+
+    await applyTranslatorPresetProjection({
+      presets: [
+        { id: 'preset-a', name: 'Server A', prompt: 'dirty prompt A', maxResponse: 123 },
+        { id: 'preset-b', name: 'Projected B', prompt: 'projected prompt B', maxResponse: 220 },
+      ],
+      selectedIndex: 0,
+    })
+
+    await applyTranslatorPresetProjection({
+      presets: [
+        { id: 'preset-a', name: 'Server A2', prompt: 'server later prompt A', maxResponse: 456 },
+        { id: 'preset-b', name: 'Projected B2', prompt: 'server later prompt B', maxResponse: 230 },
+      ],
+      selectedIndex: 0,
+    })
+
+    expect(DBState.db.translatorPresets[0]).toMatchObject({
+      name: 'Server A2',
+      prompt: 'server later prompt A',
+      maxResponse: 456,
+    })
+    expect(DBState.db.translatorPrompt).toBe('server later prompt A')
+    expect(DBState.db.translatorMaxResponse).toBe(456)
+  })
+
+  it('does not roll back a caught-up dirty prompt when its pending update later fails', async () => {
+    await editPrompt('dirty prompt A')
+
+    await applyTranslatorPresetProjection({
+      presets: [
+        { id: 'preset-a', name: 'Server A', prompt: 'dirty prompt A', maxResponse: 333 },
+        { id: 'preset-b', name: 'Projected B', prompt: 'projected prompt B', maxResponse: 220 },
+      ],
+      selectedIndex: 0,
+    })
+
+    commandSpies.failNextUpdate = true
+    await vi.advanceTimersByTimeAsync(250)
+
+    expect(commandSpies.updateInputs).toEqual([
+      {
+        baseRevision: 100,
+        presetId: 'preset-a',
+        patch: { prompt: 'dirty prompt A' },
+      },
+    ])
+    expect(DBState.db.translatorPresets[0]).toMatchObject({
+      name: 'Server A',
+      prompt: 'dirty prompt A',
+      maxResponse: 333,
+    })
+    expect(DBState.db.translatorPrompt).toBe('dirty prompt A')
+    expect(DBState.db.translatorMaxResponse).toBe(333)
+  })
+
+  it('clears dirty prompt state when the target preset disappears', async () => {
+    await editPrompt('dirty prompt A')
+
+    await applyTranslatorPresetProjection({
+      presets: [{ id: 'preset-b', name: 'Projected B', prompt: 'projected prompt B', maxResponse: 220 }],
+      selectedIndex: 0,
+    })
+
+    await applyTranslatorPresetProjection({
+      presets: [{ id: 'preset-a', name: 'Reintroduced A', prompt: 'server prompt A', maxResponse: 321 }],
+      selectedIndex: 0,
+    })
+
+    expect(DBState.db.translatorPresets[0]).toMatchObject({
+      id: 'preset-a',
+      name: 'Reintroduced A',
+      prompt: 'server prompt A',
+      maxResponse: 321,
+    })
+    expect(DBState.db.translatorPrompt).toBe('server prompt A')
+    expect(DBState.db.translatorMaxResponse).toBe(321)
+  })
+
+  it('keeps dirty maxResponse and rename values through stale projection', async () => {
+    await editMaxResponse(777)
+    await renameSelectedPreset('Dirty Name A')
+
+    await applyTranslatorPresetProjection({
+      presets: [
+        { id: 'preset-a', name: 'Stale Name A', prompt: 'server prompt A', maxResponse: 111 },
+        { id: 'preset-b', name: 'Projected B', prompt: 'projected prompt B', maxResponse: 222 },
+      ],
+      selectedIndex: 0,
+    })
+
+    expect(DBState.db.translatorPresets[0]).toMatchObject({
+      name: 'Dirty Name A',
+      prompt: 'server prompt A',
+      maxResponse: 777,
+    })
+    expect(DBState.db.translatorPrompt).toBe('server prompt A')
+    expect(DBState.db.translatorMaxResponse).toBe(777)
   })
 })

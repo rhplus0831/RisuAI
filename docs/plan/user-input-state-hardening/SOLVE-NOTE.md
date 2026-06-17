@@ -39,18 +39,23 @@ pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 
 Phase 0 and Phase 1 are complete. Phase 0 locked the contract and baseline
 documentation. Phase 1 added shared stale-state helpers with focused coverage and
-landed settings, character, and chat row metadata rollback adopters.
+landed settings, character, and chat row metadata rollback adopters. Phase 2 is
+in progress; character profile drafts, prompt-template item rows, generic
+settings drafts, selected persona profile fields, and translator preset
+`name`/`prompt`/`maxResponse` fields have landed.
 
 Next manager loop:
 
 1. Read `README.md`, `STRUCTURE.md`, `status.md`, `latest-verification.md`, and
    `phases/phase-2-dirty-draft-projection.md`.
-2. Spawn an explorer agent for Phase 2 dirty draft projection details.
-3. Spawn a worker agent for the Phase 2 implementation.
-4. Spawn a verification agent after the worker completes.
-5. If verification succeeds, run Prettier, run the relevant validation commands,
-   commit, close finished agents, and move to Phase 3.
-6. If verification fails, close the failed verification agent and spawn or reuse
+2. Spawn an explorer agent to decide whether Phase 2 can close with explicit
+   deferrals for remaining lorebook/script/module/plugin collection behavior, or
+   whether another narrow dirty projection slice is still required.
+3. If another implementation slice is required, spawn a worker agent, then a
+   verification agent after the worker completes.
+4. If verification succeeds, run Prettier, run the relevant validation commands,
+   commit, close finished agents, and move to the next task.
+5. If verification fails, close the failed verification agent and spawn or reuse
    a worker agent to fix the reported issues.
 
 Known path correction:
