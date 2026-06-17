@@ -1,6 +1,6 @@
 # Phase 5: Collection Domains
 
-Status: pending.
+Status: active.
 
 Goal: finish stale-state hardening for broad collection domains where delayed
 commands or projections can restore old lists over newer edits.
@@ -17,6 +17,13 @@ commands or projections can restore old lists over newer edits.
   controls, and custom storage API.
 - Sidebar chat/folder lists, character grids, folder context menus, ordering,
   create/delete/import, and generation picker rollback.
+
+First landed slice: `scriptDefinitionBridge.svelte.ts` now scopes
+character/module script and trigger replacement rollback by attempted payload.
+Failed scoped replacements restore the prior collection only when live state
+still equals the attempted scripts/triggers; stale same-target edits are
+preserved, coalesced edits retain the first baseline and latest attempted
+payload, and stale no-op rollback clears suppression synchronously.
 
 ## Anchors
 

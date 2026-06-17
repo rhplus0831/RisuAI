@@ -395,7 +395,7 @@ describe('character script definition draft bridge', () => {
     expect(preMismatchSource).toContain('!targetChanged')
   })
 
-  it('applies cloned drafts, dispatches replacements, and rolls back to the previous definitions', async () => {
+  it('applies cloned drafts, dispatches replacements, and preserves newer definitions on stale rollback', async () => {
     setupScriptDefinitions()
     const stop = watchServerBackedScriptDefinitions({ delayMs: DELAY })
     flushSync()
@@ -441,8 +441,8 @@ describe('character script definition draft bridge', () => {
       command.rollback?.()
     }
 
-    expect(DBState.db.characters[0].customscript).toEqual([script('script-1', 'initial')])
-    expect(DBState.db.characters[0].triggerscript).toEqual([trigger('trigger-1', 'initial trigger')])
+    expect(DBState.db.characters[0].customscript).toEqual([script('script-1', 'newer script')])
+    expect(DBState.db.characters[0].triggerscript).toEqual([trigger('trigger-1', 'newer trigger')])
     stop()
   })
 
@@ -516,6 +516,38 @@ describe('character script definition draft bridge', () => {
     triggerCommand.rollback?.()
     expect(DBState.db.characters[0]).not.toHaveProperty('customscript')
     expect(DBState.db.characters[0]).not.toHaveProperty('triggerscript')
+    stop()
+  })
+
+  it('keeps newly created character fields when absent-field rollback is stale', async () => {
+    ;(DBState as { db: unknown }).db = {
+      characters: [{ chaId: 'char-1' }],
+      modules: [],
+    }
+    const stop = watchServerBackedScriptDefinitions({ delayMs: DELAY })
+    flushSync()
+
+    expect(
+      applyCharacterScriptDefinitionDraft(
+        'char-1',
+        [scriptWithoutId('created script')],
+        [triggerWithoutId('created trigger')],
+        DELAY,
+      ),
+    ).toBe(true)
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+    await Promise.resolve()
+    expect(recorded.commands).toHaveLength(2)
+
+    DBState.db.characters[0].customscript = [script('script-newer', 'newer script')]
+    DBState.db.characters[0].triggerscript = [trigger('trigger-newer', 'newer trigger')]
+
+    recorded.commands[0].rollback?.()
+    recorded.commands[1].rollback?.()
+
+    expect(DBState.db.characters[0].customscript).toEqual([script('script-newer', 'newer script')])
+    expect(DBState.db.characters[0].triggerscript).toEqual([trigger('trigger-newer', 'newer trigger')])
     stop()
   })
 
@@ -862,22 +894,18 @@ describe('watchServerBackedScriptDefinitions scoped rollback (Phase 4)', () => {
     }
   }
 
-  it('restores only the changed character, leaving unrelated characters untouched', async () => {
+  it('restores the changed character script when live still matches the attempted payload', async () => {
     setupTwoCharacters()
     const stop = watchServerBackedScriptDefinitions({ delayMs: DELAY })
     flushSync()
 
-    // Edit char-1 → queues a replacement carrying a char-1-scoped rollback.
     DBState.db.characters[0].customscript = [script('script-1', 'char1-local')]
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
     await Promise.resolve()
     expect(recorded.commands).toHaveLength(1)
 
-    // Concurrently, an unrelated character changes and char-1 changes further.
-    // A whole-characters rollback would clobber char-2 back to its baseline.
     DBState.db.characters[1].customscript = [script('script-2', 'char2-concurrent')]
-    DBState.db.characters[0].customscript = [script('script-1', 'char1-newer')]
 
     recorded.commands[0].rollback?.()
 
@@ -886,7 +914,127 @@ describe('watchServerBackedScriptDefinitions scoped rollback (Phase 4)', () => {
     stop()
   })
 
-  it('restores only the changed module trigger, leaving other module fields untouched', async () => {
+  it('restores the changed character trigger when live still matches the attempted payload', async () => {
+    setupTwoCharacters()
+    const stop = watchServerBackedScriptDefinitions({ delayMs: DELAY })
+    flushSync()
+
+    DBState.db.characters[0].triggerscript = [trigger('trigger-1', 'trigger-local')]
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+    await Promise.resolve()
+    expect(recorded.commands).toHaveLength(1)
+
+    DBState.db.characters[1].triggerscript = [trigger('trigger-2', 'trigger2-concurrent')]
+
+    recorded.commands[0].rollback?.()
+
+    expect(DBState.db.characters[0].triggerscript).toEqual([trigger('trigger-1', 'initial trigger')])
+    expect(DBState.db.characters[1].triggerscript).toEqual([trigger('trigger-2', 'trigger2-concurrent')])
+    stop()
+  })
+
+  it('skips character script rollback when the same target changed after dispatch', async () => {
+    setupTwoCharacters()
+    const stop = watchServerBackedScriptDefinitions({ delayMs: DELAY })
+    flushSync()
+
+    DBState.db.characters[0].customscript = [script('script-1', 'char1-local')]
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+    await Promise.resolve()
+    expect(recorded.commands).toHaveLength(1)
+
+    DBState.db.characters[1].customscript = [script('script-2', 'char2-concurrent')]
+    DBState.db.characters[0].customscript = [script('script-1', 'char1-newer')]
+
+    recorded.commands[0].rollback?.()
+
+    expect(DBState.db.characters[0].customscript).toEqual([script('script-1', 'char1-newer')])
+    expect(DBState.db.characters[1].customscript).toEqual([script('script-2', 'char2-concurrent')])
+    stop()
+  })
+
+  it('skips character trigger rollback when the same target changed after dispatch', async () => {
+    setupTwoCharacters()
+    const stop = watchServerBackedScriptDefinitions({ delayMs: DELAY })
+    flushSync()
+
+    DBState.db.characters[0].triggerscript = [trigger('trigger-1', 'trigger-local')]
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+    await Promise.resolve()
+    expect(recorded.commands).toHaveLength(1)
+
+    DBState.db.characters[0].triggerscript = [trigger('trigger-1', 'trigger-newer')]
+
+    recorded.commands[0].rollback?.()
+
+    expect(DBState.db.characters[0].triggerscript).toEqual([trigger('trigger-1', 'trigger-newer')])
+    expect(DBState.db.characters[0].customscript).toEqual([script('script-1', 'initial')])
+    stop()
+  })
+
+  it('restores the changed module script when live still matches the attempted payload', async () => {
+    ;(DBState as { db: unknown }).db = {
+      characters: [],
+      modules: [
+        {
+          id: 'module-1',
+          regex: [script('module-script-1', 'initial module')],
+          trigger: [trigger('module-trigger-1', 'initial module trigger')],
+        },
+      ],
+    }
+    const stop = watchServerBackedScriptDefinitions({ delayMs: DELAY })
+    flushSync()
+
+    DBState.db.modules[0].regex = [script('module-script-1', 'local')]
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+    await Promise.resolve()
+    expect(recorded.commands).toHaveLength(1)
+
+    DBState.db.modules[0].trigger = [trigger('module-trigger-1', 'trigger-concurrent')]
+
+    recorded.commands[0].rollback?.()
+
+    expect(DBState.db.modules[0].regex).toEqual([script('module-script-1', 'initial module')])
+    expect(DBState.db.modules[0].trigger).toEqual([trigger('module-trigger-1', 'trigger-concurrent')])
+    stop()
+  })
+
+  it('skips module script rollback when the same target changed after dispatch', async () => {
+    ;(DBState as { db: unknown }).db = {
+      characters: [],
+      modules: [
+        {
+          id: 'module-1',
+          regex: [script('module-script-1', 'initial module')],
+          trigger: [trigger('module-trigger-1', 'initial module trigger')],
+        },
+      ],
+    }
+    const stop = watchServerBackedScriptDefinitions({ delayMs: DELAY })
+    flushSync()
+
+    DBState.db.modules[0].regex = [script('module-script-1', 'local')]
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+    await Promise.resolve()
+    expect(recorded.commands).toHaveLength(1)
+
+    DBState.db.modules[0].trigger = [trigger('module-trigger-1', 'trigger-concurrent')]
+    DBState.db.modules[0].regex = [script('module-script-1', 'newer')]
+
+    recorded.commands[0].rollback?.()
+
+    expect(DBState.db.modules[0].regex).toEqual([script('module-script-1', 'newer')])
+    expect(DBState.db.modules[0].trigger).toEqual([trigger('module-trigger-1', 'trigger-concurrent')])
+    stop()
+  })
+
+  it('restores the changed module trigger when live still matches the attempted payload', async () => {
     ;(DBState as { db: unknown }).db = {
       characters: [],
       modules: [
@@ -906,14 +1054,77 @@ describe('watchServerBackedScriptDefinitions scoped rollback (Phase 4)', () => {
     await Promise.resolve()
     expect(recorded.commands).toHaveLength(1)
 
-    // A sibling field (regex) and the trigger change after the dispatch.
     DBState.db.modules[0].regex = [script('module-script-1', 'regex-concurrent')]
-    DBState.db.modules[0].trigger = [trigger('module-trigger-1', 'newer')]
 
     recorded.commands[0].rollback?.()
 
     expect(DBState.db.modules[0].trigger).toEqual([trigger('module-trigger-1', 'initial module trigger')])
     expect(DBState.db.modules[0].regex).toEqual([script('module-script-1', 'regex-concurrent')])
+    stop()
+  })
+
+  it('skips module trigger rollback when the same target changed after dispatch', async () => {
+    ;(DBState as { db: unknown }).db = {
+      characters: [],
+      modules: [
+        {
+          id: 'module-1',
+          regex: [script('module-script-1', 'initial module')],
+          trigger: [trigger('module-trigger-1', 'initial module trigger')],
+        },
+      ],
+    }
+    const stop = watchServerBackedScriptDefinitions({ delayMs: DELAY })
+    flushSync()
+
+    DBState.db.modules[0].trigger = [trigger('module-trigger-1', 'local')]
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+    await Promise.resolve()
+    expect(recorded.commands).toHaveLength(1)
+
+    DBState.db.modules[0].regex = [script('module-script-1', 'regex-concurrent')]
+    DBState.db.modules[0].trigger = [trigger('module-trigger-1', 'newer')]
+
+    recorded.commands[0].rollback?.()
+
+    expect(DBState.db.modules[0].trigger).toEqual([trigger('module-trigger-1', 'newer')])
+    expect(DBState.db.modules[0].regex).toEqual([script('module-script-1', 'regex-concurrent')])
+    stop()
+  })
+
+  it('does not let stale no-op rollback suppress watcher dispatch for a newer same-target edit', async () => {
+    setupTwoCharacters()
+    const stop = watchServerBackedScriptDefinitions({ delayMs: DELAY })
+    flushSync()
+
+    DBState.db.characters[0].customscript = [script('script-1', 'edit-A')]
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+    await Promise.resolve()
+    expect(recorded.commands).toHaveLength(1)
+
+    DBState.db.characters[0].customscript = [script('script-1', 'edit-B')]
+    recorded.commands[0].rollback?.()
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+    await Promise.resolve()
+
+    expect(recorded.commands.map((entry) => entry.built)).toEqual([
+      {
+        kind: 'replaceCharacterScripts',
+        baseRevision: 1,
+        characterId: 'char-1',
+        scripts: [script('script-1', 'edit-A')],
+      },
+      {
+        kind: 'replaceCharacterScripts',
+        baseRevision: 1,
+        characterId: 'char-1',
+        scripts: [script('script-1', 'edit-B')],
+      },
+    ])
+    expect(DBState.db.characters[0].customscript).toEqual([script('script-1', 'edit-B')])
     stop()
   })
 })
@@ -951,6 +1162,35 @@ describe('watchServerBackedScriptDefinitions debounced rollback baseline (Phase 
     // not the intermediate 'edit-A' that was never durably committed.
     recorded.commands[0].rollback?.()
     expect(DBState.db.characters[0].customscript).toEqual([script('script-1', 'initial')])
+    stop()
+  })
+
+  it('skips coalesced character-script rollback when live changed after the final attempted edit', async () => {
+    setupScriptDefinitions()
+    const stop = watchServerBackedScriptDefinitions({ delayMs: DELAY })
+    flushSync()
+
+    DBState.db.characters[0].customscript = [script('script-1', 'edit-A')]
+    flushSync()
+    DBState.db.characters[0].customscript = [script('script-1', 'edit-B')]
+    flushSync()
+
+    await vi.advanceTimersByTimeAsync(DELAY)
+    await Promise.resolve()
+
+    expect(recorded.commands.map((entry) => entry.built)).toEqual([
+      {
+        kind: 'replaceCharacterScripts',
+        baseRevision: 1,
+        characterId: 'char-1',
+        scripts: [script('script-1', 'edit-B')],
+      },
+    ])
+
+    DBState.db.characters[0].customscript = [script('script-1', 'edit-C')]
+
+    recorded.commands[0].rollback?.()
+    expect(DBState.db.characters[0].customscript).toEqual([script('script-1', 'edit-C')])
     stop()
   })
 

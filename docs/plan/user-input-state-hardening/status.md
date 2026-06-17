@@ -84,7 +84,11 @@ persistence inventory under
   Dynamic rendered chat buttons now capture active character/chat/message target
   identity, drop stale manual/Lua trigger results, apply accepted results to the
   captured chat row with scoped rollback, and keep guarded chat-var/note trigger
-  side effects on the returned chat while the target remains fresh.
+  side effects on the returned chat while the target remains fresh. Phase 5 has
+  started with script/trigger replacement rollback: character/module script and
+  trigger replacements now compare the attempted payload before scoped rollback,
+  preserve newer same-target edits, and avoid suppressing watcher dispatch on
+  stale no-op rollback.
   Phase 2 landed character profile draft dirty top-level field protection;
   prompt-template item row dirty projection merging; whole-key dirty projection
   protection for
@@ -221,8 +225,12 @@ persistence inventory under
   results and deferred chat-var/note side effects by captured chat target
   freshness. `Chat.customHtml.test.ts`, `chatButtonTriggerFreshness.test.ts`,
   and `triggers.projectionGuard.test.ts` cover stale rendered trigger paths.
-- Verification state: Phase 4 dynamic rendered chat button trigger
-  validation is
+- `src/ts/server/scriptDefinitionBridge.svelte.ts` now guards character/module
+  script/trigger replacement rollback by attempted payload. Failed scoped
+  replacements only restore the prior collection when live state still equals
+  the attempted payload; `scriptDefinitionBridge.svelte.test.ts` covers positive
+  rollback, stale skip, coalesced edits, and stale no-op watcher suppression.
+- Verification state: Phase 5 script/trigger replacement rollback validation is
   recorded in `latest-verification.md`.
 - Highest issue density:
   - Character editor: 52 issue rows, mostly dirty projection and unguarded
@@ -282,7 +290,7 @@ persistence inventory under
   translator, module, lorebook, script, and import collection flows; Hypa V3
   preset array import/rename/delete; plugin enable/delete/args/provider/storage;
   and sidebar/chat/folder/character list create/delete/reorder/import rollback
-  remain here.
+  remain here. The first script/trigger replacement rollback slice has landed.
 - [Phase 6](phases/phase-6-resync-memory-navigation.md): pending. Realm, backup,
   and local bundle restore/import resyncs; character/chat import
   refresh/navigation edges; memory job list/progress ordering; route/selection
@@ -483,6 +491,12 @@ persistence inventory under
     effects into the returned chat.
   - Phase 4 is complete.
     Composer file and paste callbacks are already covered by Phase 3.
+  - Phase 5 first slice: `scriptDefinitionBridge.svelte.ts` now captures the
+    attempted character/module script or trigger payload before replacement
+    dispatch and only applies scoped rollback when live state still matches that
+    attempted payload. Coalesced edits keep the pre-first-edit baseline plus the
+    final attempted payload; stale no-op rollback does not suppress newer
+    watcher dispatch.
   - Phase 5: preset/persona/translator/module/lorebook/script/import collection
     flows, Hypa V3 preset array import/rename/delete, plugin
     enable/delete/args/provider/storage, sidebar chat/folder lists, character

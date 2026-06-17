@@ -7,36 +7,30 @@ workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 4 dynamic rendered chat button trigger
-  freshness. Rendered `risu-trigger` and `risu-btn` operations now capture the
-  active character/chat/message target, use latest-operation tokens, drop stale
-  async results, apply accepted results to the captured chat row, and defer
-  guarded trigger/Lua chat-var and note side effects into the returned chat.
+- Runtime/code change under test: Phase 5 script/trigger replacement rollback.
+  Character and module script/trigger replacements now capture the attempted
+  payload before dispatch and restore the prior collection only when live state
+  still equals that attempted payload. Stale same-target edits are preserved,
+  coalesced edits keep the first rollback baseline with the latest attempted
+  payload, and stale no-op rollback clears watcher suppression synchronously.
 - Commands:
 
 ```bash
-pnpm exec vitest run src/lib/ChatScreens/chatButtonTriggerFreshness.test.ts src/lib/ChatScreens/Chat.customHtml.test.ts
-pnpm exec vitest run src/ts/process/__tests__/triggers.projectionGuard.test.ts
-pnpm exec vitest run src/ts/process/scriptings.test.ts src/lib/ChatScreens/Chat.parserDependencies.test.ts
+pnpm exec vitest run src/ts/server/scriptDefinitionBridge.svelte.test.ts
+pnpm exec vitest run src/ts/process/modules.test.ts src/ts/process/mcp/risuaccess/tests/modules.test.ts src/ts/process/mcp/risuaccess/tests/modules.optimisticProjection.test.ts src/ts/process/mcp/risuaccess/tests/characters.setCharacterInfo.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 git diff --check
 ```
 
-- Result: passed on 2026-06-17. The rendered button helper/custom HTML suite
-  passed 2 files and 13 tests; trigger projection-guard coverage passed 1 file
-  and 13 tests; scriptings plus parser dependency coverage passed 2 files and
-  10 tests. Both TypeScript checks and `git diff --check` passed.
-- Residual gaps: no browser smoke was run. Slash-command `/trigger` remains on
-  its existing active-chat apply path and is not part of the rendered-button
-  slice. Non-chat external trigger effects such as alerts, network calls, and
-  image generation are not rolled back once already executed. Suggestion
-  freshness remains target/list scoped, not a separate navigation-epoch fence.
-  Legacy no-id partial edit/delete fallback cannot distinguish two same-index
-  no-id targets with identical source text beyond index/source equality. Reroll
-  operation freshness remains scoped to the active target, not to every
-  navigation epoch. Auto-translate source freshness is source-text equality
-  based.
+- Result: passed on 2026-06-17. The script definition bridge suite passed 1 file
+  and 45 tests; module and MCP module/character coverage passed 4 files and 28
+  tests. Both TypeScript checks and `git diff --check` passed.
+- Residual gaps: full `ScriptDefinitionStateSnapshot` rollback remains broad for
+  rarer discrete callers. The remaining Phase 5 collection domains still need
+  focused slices: preset/persona/translator/module/lorebook/plugin/sidebar
+  collection rollback and replacement flows, including create/delete/reorder,
+  import, provider/argument/storage, and list-selection paths.
 
 ## Remaining Proof
 
@@ -49,10 +43,11 @@ git diff --check
   fifth Phase 4 slice, durable generation finalization freshness is covered by
   the sixth Phase 4 slice, and dynamic rendered button trigger freshness is
   covered by the seventh Phase 4 slice.
-- Phase 5 owns preset/persona/translator/module/lorebook/script/import
-  collection flows, Hypa V3 preset array import/rename/delete, plugin
-  enable/delete/args/provider/storage, and sidebar/chat/folder/character list
-  create/delete/reorder/import rollback.
+- Phase 5 is active. Script/trigger replacement rollback is covered by the first
+  Phase 5 slice. Remaining Phase 5 work owns preset/persona/translator/module,
+  lorebook, and import collection flows, Hypa V3 preset array
+  import/rename/delete, plugin enable/delete/args/provider/storage, and
+  sidebar/chat/folder/character list create/delete/reorder/import rollback.
 - Phase 6 owns Realm/backup/local bundle restore/import resyncs, character/chat
   import refresh/navigation edges, memory job list/progress ordering,
   route/selection hydration, welcome/onboarding delayed setup, and DevTool

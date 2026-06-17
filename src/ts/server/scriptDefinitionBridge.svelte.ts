@@ -36,6 +36,12 @@ export type ScopedScriptDefinitionRollback =
   | { kind: 'moduleScripts'; moduleId: string; scripts: customscript[] }
   | { kind: 'moduleTriggers'; moduleId: string; triggers: triggerscript[] }
 
+type ScopedScriptDefinitionAttempt =
+  | { kind: 'characterScripts'; characterId: string; scripts: customscript[] }
+  | { kind: 'characterTriggers'; characterId: string; triggers: triggerscript[] }
+  | { kind: 'moduleScripts'; moduleId: string; scripts: customscript[] }
+  | { kind: 'moduleTriggers'; moduleId: string; triggers: triggerscript[] }
+
 /**
  * Rollback accepted by the dispatch functions. The watcher passes a scoped
  * single-row rollback; the rarer discrete callers (module apply, MCP edits) keep
@@ -261,6 +267,7 @@ export function dispatchReplaceCharacterScripts(
   if (!canUseServerCommands()) return
   ensureClientScriptDefinitionIds(scripts)
   const scriptPayload = cloneJsonValue(scripts) as ScriptDefinitionSnapshot[]
+  const attemptedScripts = cloneJsonValue(scriptPayload) as customscript[]
   queueReplacement(
     `characterScripts:${characterId}`,
     previous,
@@ -276,7 +283,12 @@ export function dispatchReplaceCharacterScripts(
             options.signal,
             options.keepalive,
           ),
-        rollback: () => rollbackServerBackedScriptDefinitions(rollback),
+        rollback: () =>
+          rollbackServerBackedScriptDefinitions(rollback, {
+            kind: 'characterScripts',
+            characterId,
+            scripts: attemptedScripts,
+          }),
         signal: options.signal,
         keepalive: options.keepalive,
       }),
@@ -293,6 +305,7 @@ export function dispatchReplaceCharacterTriggers(
   if (!canUseServerCommands()) return
   ensureClientTriggerDefinitionIds(triggers)
   const triggerPayload = cloneJsonValue(triggers) as TriggerDefinitionSnapshot[]
+  const attemptedTriggers = cloneJsonValue(triggerPayload) as triggerscript[]
   queueReplacement(
     `characterTriggers:${characterId}`,
     previous,
@@ -308,7 +321,12 @@ export function dispatchReplaceCharacterTriggers(
             options.signal,
             options.keepalive,
           ),
-        rollback: () => rollbackServerBackedScriptDefinitions(rollback),
+        rollback: () =>
+          rollbackServerBackedScriptDefinitions(rollback, {
+            kind: 'characterTriggers',
+            characterId,
+            triggers: attemptedTriggers,
+          }),
         signal: options.signal,
         keepalive: options.keepalive,
       }),
@@ -325,6 +343,7 @@ export function dispatchReplaceModuleScripts(
   if (!canUseServerCommands()) return
   ensureClientScriptDefinitionIds(scripts)
   const scriptPayload = cloneJsonValue(scripts) as ScriptDefinitionSnapshot[]
+  const attemptedScripts = cloneJsonValue(scriptPayload) as customscript[]
   queueReplacement(
     `moduleScripts:${moduleId}`,
     previous,
@@ -340,7 +359,12 @@ export function dispatchReplaceModuleScripts(
             options.signal,
             options.keepalive,
           ),
-        rollback: () => rollbackServerBackedScriptDefinitions(rollback),
+        rollback: () =>
+          rollbackServerBackedScriptDefinitions(rollback, {
+            kind: 'moduleScripts',
+            moduleId,
+            scripts: attemptedScripts,
+          }),
         signal: options.signal,
         keepalive: options.keepalive,
       }),
@@ -357,6 +381,7 @@ export function dispatchReplaceModuleTriggers(
   if (!canUseServerCommands()) return
   ensureClientTriggerDefinitionIds(triggers)
   const triggerPayload = cloneJsonValue(triggers) as TriggerDefinitionSnapshot[]
+  const attemptedTriggers = cloneJsonValue(triggerPayload) as triggerscript[]
   queueReplacement(
     `moduleTriggers:${moduleId}`,
     previous,
@@ -372,7 +397,12 @@ export function dispatchReplaceModuleTriggers(
             options.signal,
             options.keepalive,
           ),
-        rollback: () => rollbackServerBackedScriptDefinitions(rollback),
+        rollback: () =>
+          rollbackServerBackedScriptDefinitions(rollback, {
+            kind: 'moduleTriggers',
+            moduleId,
+            triggers: attemptedTriggers,
+          }),
         signal: options.signal,
         keepalive: options.keepalive,
       }),
@@ -720,6 +750,7 @@ function queueWatchedCharacterScripts(characterId: string, previousSnapshot: str
       const scripts = currentCharacterScriptsForWatchedCommand(characterId)
       if (!scripts) return Promise.resolve({ status: 'unavailable' })
       const scriptPayload = cloneJsonValue(scripts) as ScriptDefinitionSnapshot[]
+      const attemptedScripts = cloneJsonValue(scriptPayload) as customscript[]
       return runServerCommand({
         command: (baseRevision) =>
           replaceCharacterScriptsCommand(
@@ -731,7 +762,12 @@ function queueWatchedCharacterScripts(characterId: string, previousSnapshot: str
             options.signal,
             options.keepalive,
           ),
-        rollback: () => rollbackServerBackedScriptDefinitions(rollback),
+        rollback: () =>
+          rollbackServerBackedScriptDefinitions(rollback, {
+            kind: 'characterScripts',
+            characterId,
+            scripts: attemptedScripts,
+          }),
         signal: options.signal,
         keepalive: options.keepalive,
       })
@@ -752,6 +788,7 @@ function queueWatchedCharacterTriggers(characterId: string, previousSnapshot: st
       const triggers = currentCharacterTriggersForWatchedCommand(characterId)
       if (!triggers) return Promise.resolve({ status: 'unavailable' })
       const triggerPayload = cloneJsonValue(triggers) as TriggerDefinitionSnapshot[]
+      const attemptedTriggers = cloneJsonValue(triggerPayload) as triggerscript[]
       return runServerCommand({
         command: (baseRevision) =>
           replaceCharacterTriggersCommand(
@@ -763,7 +800,12 @@ function queueWatchedCharacterTriggers(characterId: string, previousSnapshot: st
             options.signal,
             options.keepalive,
           ),
-        rollback: () => rollbackServerBackedScriptDefinitions(rollback),
+        rollback: () =>
+          rollbackServerBackedScriptDefinitions(rollback, {
+            kind: 'characterTriggers',
+            characterId,
+            triggers: attemptedTriggers,
+          }),
         signal: options.signal,
         keepalive: options.keepalive,
       })
@@ -784,6 +826,7 @@ function queueWatchedModuleScripts(moduleId: string, previousSnapshot: string, d
       const scripts = currentModuleScriptsForWatchedCommand(moduleId)
       if (!scripts) return Promise.resolve({ status: 'unavailable' })
       const scriptPayload = cloneJsonValue(scripts) as ScriptDefinitionSnapshot[]
+      const attemptedScripts = cloneJsonValue(scriptPayload) as customscript[]
       return runServerCommand({
         command: (baseRevision) =>
           replaceModuleScriptsCommand(
@@ -795,7 +838,12 @@ function queueWatchedModuleScripts(moduleId: string, previousSnapshot: string, d
             options.signal,
             options.keepalive,
           ),
-        rollback: () => rollbackServerBackedScriptDefinitions(rollback),
+        rollback: () =>
+          rollbackServerBackedScriptDefinitions(rollback, {
+            kind: 'moduleScripts',
+            moduleId,
+            scripts: attemptedScripts,
+          }),
         signal: options.signal,
         keepalive: options.keepalive,
       })
@@ -816,6 +864,7 @@ function queueWatchedModuleTriggers(moduleId: string, previousSnapshot: string, 
       const triggers = currentModuleTriggersForWatchedCommand(moduleId)
       if (!triggers) return Promise.resolve({ status: 'unavailable' })
       const triggerPayload = cloneJsonValue(triggers) as TriggerDefinitionSnapshot[]
+      const attemptedTriggers = cloneJsonValue(triggerPayload) as triggerscript[]
       return runServerCommand({
         command: (baseRevision) =>
           replaceModuleTriggersCommand(
@@ -827,7 +876,12 @@ function queueWatchedModuleTriggers(moduleId: string, previousSnapshot: string, 
             options.signal,
             options.keepalive,
           ),
-        rollback: () => rollbackServerBackedScriptDefinitions(rollback),
+        rollback: () =>
+          rollbackServerBackedScriptDefinitions(rollback, {
+            kind: 'moduleTriggers',
+            moduleId,
+            triggers: attemptedTriggers,
+          }),
         signal: options.signal,
         keepalive: options.keepalive,
       })
@@ -850,60 +904,107 @@ function runPendingScriptDefinitionReplacement(key: string, options: ServerComma
   void pending.command(pending.previous, options)
 }
 
-function rollbackServerBackedScriptDefinitions(rollback: ScriptDefinitionRollback): void {
+function rollbackServerBackedScriptDefinitions(
+  rollback: ScriptDefinitionRollback,
+  attempted?: ScopedScriptDefinitionAttempt,
+): void {
   suppressRollbackDispatch = true
+  let suppressUntilMicrotask = true
   try {
     if ('kind' in rollback) {
-      restoreScopedScriptDefinition(rollback)
+      const restored = restoreScopedScriptDefinition(rollback, attempted)
+      if (!restored) {
+        suppressRollbackDispatch = false
+        suppressUntilMicrotask = false
+      }
     } else {
       restoreScriptDefinitionState(rollback)
     }
   } finally {
-    queueMicrotask(() => {
-      suppressRollbackDispatch = false
-    })
+    if (suppressUntilMicrotask) {
+      queueMicrotask(() => {
+        suppressRollbackDispatch = false
+      })
+    }
   }
 }
 
 // Restore only the changed row's scripts/triggers from a scoped rollback, leaving
 // every other character/module untouched. The full-collection
 // `restoreScriptDefinitionState` is reserved for the rarer discrete callers.
-function restoreScopedScriptDefinition(rollback: ScopedScriptDefinitionRollback): void {
-  withTrustedServerProjectionWrite(() => {
+function restoreScopedScriptDefinition(
+  rollback: ScopedScriptDefinitionRollback,
+  attempted?: ScopedScriptDefinitionAttempt,
+): boolean {
+  return withTrustedServerProjectionWrite(() => {
     switch (rollback.kind) {
       case 'characterScripts': {
         const character = DBState.db.characters?.find((candidate) => candidate.chaId === rollback.characterId)
-        if (!character) return
+        if (!character) return false
+        if (
+          attempted &&
+          (attempted.kind !== 'characterScripts' ||
+            attempted.characterId !== rollback.characterId ||
+            snapshotJson(character.customscript) !== snapshotJson(attempted.scripts))
+        ) {
+          return false
+        }
         if (rollback.hadScriptsField === false) {
           delete character.customscript
         } else {
           character.customscript = cloneJsonValue(rollback.scripts)
         }
-        return
+        return true
       }
       case 'characterTriggers': {
         const character = DBState.db.characters?.find((candidate) => candidate.chaId === rollback.characterId)
-        if (!character) return
+        if (!character) return false
+        if (
+          attempted &&
+          (attempted.kind !== 'characterTriggers' ||
+            attempted.characterId !== rollback.characterId ||
+            snapshotJson(character.triggerscript) !== snapshotJson(attempted.triggers))
+        ) {
+          return false
+        }
         if (rollback.hadTriggersField === false) {
           delete character.triggerscript
         } else {
           character.triggerscript = cloneJsonValue(rollback.triggers)
         }
-        return
+        return true
       }
       case 'moduleScripts': {
         const module = ((DBState.db.modules ?? []) as RisuModule[]).find(
           (candidate) => candidate.id === rollback.moduleId,
         )
-        if (module) module.regex = cloneJsonValue(rollback.scripts)
-        return
+        if (!module) return false
+        if (
+          attempted &&
+          (attempted.kind !== 'moduleScripts' ||
+            attempted.moduleId !== rollback.moduleId ||
+            snapshotJson(module.regex) !== snapshotJson(attempted.scripts))
+        ) {
+          return false
+        }
+        module.regex = cloneJsonValue(rollback.scripts)
+        return true
       }
       case 'moduleTriggers': {
         const module = ((DBState.db.modules ?? []) as RisuModule[]).find(
           (candidate) => candidate.id === rollback.moduleId,
         )
-        if (module) module.trigger = cloneJsonValue(rollback.triggers)
-        return
+        if (!module) return false
+        if (
+          attempted &&
+          (attempted.kind !== 'moduleTriggers' ||
+            attempted.moduleId !== rollback.moduleId ||
+            snapshotJson(module.trigger) !== snapshotJson(attempted.triggers))
+        ) {
+          return false
+        }
+        module.trigger = cloneJsonValue(rollback.triggers)
+        return true
       }
     }
   })

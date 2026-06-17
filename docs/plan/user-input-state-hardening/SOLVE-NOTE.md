@@ -55,7 +55,11 @@ DefaultChatScreen composer send/continue clear/restore, auto-translate
 freshness, reroll active-chat freshness, partial edit/delete modal freshness,
 suggestion persistence freshness, attempt-aware chat-scoped message rollback,
 durable generation finalization target-row freshness, and dynamic rendered
-button trigger freshness have landed.
+button trigger freshness have landed. Phase 5 has started: character/module
+script and trigger replacement rollback now captures attempted payloads,
+preserves newer same-target edits on stale failure, keeps coalesced rollback
+baselines correct, and avoids suppressing watcher dispatch after stale no-op
+rollback.
 
 Next manager loop:
 
@@ -125,10 +129,12 @@ Explicit deferrals:
   Durable generation finalization target-row freshness and dynamic rendered
   button trigger freshness have landed. Phase 4 is complete.
   Composer file and paste callbacks are already covered by Phase 3.
-- Preset/persona/translator/module/lorebook/script/import collection flows, Hypa
-  V3 preset array import/rename/delete, plugin
-  enable/delete/args/provider/storage, and sidebar/chat/folder/character list
-  create/delete/reorder/import rollback remain Phase 5 work.
+- Phase 5 script/trigger replacement rollback has landed for character/module
+  script and trigger replacements. Remaining preset/persona/translator/module,
+  lorebook, and import collection flows, Hypa V3 preset array
+  import/rename/delete, plugin enable/delete/args/provider/storage, and
+  sidebar/chat/folder/character list create/delete/reorder/import rollback
+  remain Phase 5 work.
 - Realm/backup/local bundle restore/import resyncs, character/chat import
   refresh/navigation edges, memory job list/progress ordering, route/selection
   hydration, welcome/onboarding delayed setup, and DevTool autopilot long-loop
@@ -143,11 +149,9 @@ No known code gap blocks Phase 1, Phase 2, Phase 3, or Phase 4 completion.
 Proceed in this order unless a verification result proves a dependency needs to
 move earlier:
 
-1. Phase 4 chat, message, reroll, trigger, suggestion, and generation
-   freshness.
-2. Phase 5 collection-domain rollback and projection hardening.
-3. Phase 6 resync, memory, restore/import, and navigation fences.
-4. Phase 7 final verification and closeout.
+1. Phase 5 collection-domain rollback and projection hardening.
+2. Phase 6 resync, memory, restore/import, and navigation fences.
+3. Phase 7 final verification and closeout.
 
 Each phase should end with focused tests or an explicit residual gap recorded in
 `status.md` and latest proof recorded in `latest-verification.md`.
