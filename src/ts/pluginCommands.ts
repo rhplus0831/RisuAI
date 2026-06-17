@@ -31,6 +31,8 @@ const PLUGIN_PATCH_EXCLUDED_KEYS = new Set(['name'])
 let pluginWatchSuppressionVersion = 0
 let nextPluginStorageOperationSequence = 0
 const pendingPluginStorageOperationsByKey = new Map<string, PluginStorageOperationRecord[]>()
+let nextPluginNonStorageOperationSequence = 0
+const pendingPluginNonStorageOperationsByTarget = new Map<string, PluginNonStorageOperationRecord[]>()
 
 interface PluginStorageOperationToken {
   sequence: number
@@ -51,6 +53,50 @@ interface PluginStorageRollbackEntry {
   previousValue: unknown
   attemptedExists: boolean
   attemptedValue: unknown
+}
+
+interface PluginNonStorageOperationToken {
+  sequence: number
+  targets: string[]
+}
+
+type PluginNonStorageOperationStatus = 'pending' | 'failed'
+
+interface PluginNonStorageOperationRecord {
+  sequence: number
+  entry: PluginNonStorageRollbackEntry
+  status: PluginNonStorageOperationStatus
+}
+
+type PluginNonStorageRollbackEntry = PluginFieldRollbackEntry | PluginDeleteRollbackEntry | PluginProviderRollbackEntry
+
+interface PluginFieldRollbackEntry {
+  kind: 'plugin-field'
+  target: string
+  pluginId: string
+  field: string
+  previousExists: boolean
+  previousValue: unknown
+  attemptedExists: boolean
+  attemptedValue: unknown
+}
+
+interface PluginDeleteRollbackEntry {
+  kind: 'plugin-delete'
+  target: string
+  pluginId: string
+  previousPlugin: RisuPlugin
+  previousIndex: number
+  providerChanged: boolean
+  previousProvider: string
+  attemptedProvider: string
+}
+
+interface PluginProviderRollbackEntry {
+  kind: 'plugin-provider'
+  target: string
+  previousProvider: string
+  attemptedProvider: string
 }
 
 export function cloneJsonValue<T>(value: T): T {
@@ -101,37 +147,79 @@ export function dispatchCreatePlugin(plugin: RisuPlugin, previous: PluginStateSn
 export function dispatchUpdatePlugin(pluginId: string, patch: PluginSnapshot, previous: PluginStateSnapshot): void {
   const commandPatch = sanitizePluginPatch(patch)
   if (Object.keys(commandPatch).length === 0) return
+  if (!canUseServerCommands()) return
+  const rollbackEntry = realArgPluginFieldRollbackEntry(pluginId, commandPatch, previous)
+  const operation = rollbackEntry ? issuePluginNonStorageOperation([rollbackEntry]) : null
   runPluginCommand(
-    (baseRevision) =>
-      updatePluginCommand({
+    async (baseRevision) => {
+      const result = await updatePluginCommand({
         baseRevision,
         pluginId,
         patch: commandPatch,
-      }),
-    () => restorePluginState(previous),
+      })
+      if (operation && result.status === 'ok') {
+        clearPluginNonStorageOperation(operation)
+      }
+      return result
+    },
+    () => {
+      if (rollbackEntry && operation) {
+        rollbackPluginNonStorageEntries([rollbackEntry], operation)
+      } else {
+        restorePluginState(previous)
+      }
+    },
   )
 }
 
 export function dispatchDeletePlugin(pluginId: string, previous: PluginStateSnapshot): void {
+  if (!canUseServerCommands()) return
+  const rollbackEntry = deletePluginRollbackEntry(pluginId, previous)
+  const operation = rollbackEntry ? issuePluginNonStorageOperation([rollbackEntry]) : null
   runPluginCommand(
-    (baseRevision) =>
-      deletePluginCommand({
+    async (baseRevision) => {
+      const result = await deletePluginCommand({
         baseRevision,
         pluginId,
-      }),
-    () => restorePluginState(previous),
+      })
+      if (operation && result.status === 'ok') {
+        clearPluginNonStorageOperation(operation)
+      }
+      return result
+    },
+    () => {
+      if (rollbackEntry && operation) {
+        rollbackPluginNonStorageEntries([rollbackEntry], operation)
+      } else {
+        restorePluginState(previous)
+      }
+    },
   )
 }
 
 export function dispatchEnablePlugin(pluginId: string, enabled: boolean, previous: PluginStateSnapshot): void {
+  if (!canUseServerCommands()) return
+  const rollbackEntry = pluginFieldRollbackEntry(pluginId, 'enabled', previous, true, enabled)
+  const operation = rollbackEntry ? issuePluginNonStorageOperation([rollbackEntry]) : null
   runPluginCommand(
-    (baseRevision) =>
-      enablePluginCommand({
+    async (baseRevision) => {
+      const result = await enablePluginCommand({
         baseRevision,
         pluginId,
         enabled,
-      }),
-    () => restorePluginState(previous),
+      })
+      if (operation && result.status === 'ok') {
+        clearPluginNonStorageOperation(operation)
+      }
+      return result
+    },
+    () => {
+      if (rollbackEntry && operation) {
+        rollbackPluginNonStorageEntries([rollbackEntry], operation)
+      } else {
+        restorePluginState(previous)
+      }
+    },
   )
 }
 
@@ -203,13 +291,21 @@ export function deletePlugin(pluginName: string): boolean {
 }
 
 export function dispatchSelectPluginProvider(provider: string, previous: PluginStateSnapshot): void {
+  if (!canUseServerCommands()) return
+  const rollbackEntry = pluginProviderRollbackEntry(provider, previous)
+  const operation = issuePluginNonStorageOperation([rollbackEntry])
   runPluginCommand(
-    (baseRevision) =>
-      selectPluginProviderCommand({
+    async (baseRevision) => {
+      const result = await selectPluginProviderCommand({
         baseRevision,
         provider,
-      }),
-    () => restorePluginState(previous),
+      })
+      if (result.status === 'ok') {
+        clearPluginNonStorageOperation(operation)
+      }
+      return result
+    },
+    () => rollbackPluginNonStorageEntries([rollbackEntry], operation),
   )
 }
 
@@ -222,6 +318,233 @@ export function dispatchReorderPlugins(previous: PluginStateSnapshot): void {
       }),
     () => restorePluginState(previous),
   )
+}
+
+function realArgPluginFieldRollbackEntry(
+  pluginId: string,
+  patch: PluginSnapshot,
+  previous: PluginStateSnapshot,
+): PluginFieldRollbackEntry | null {
+  const patchKeys = Object.keys(patch)
+  if (patchKeys.length !== 1 || !hasOwnRecordKey(patch as Record<string, unknown>, 'realArg')) return null
+  return pluginFieldRollbackEntry(pluginId, 'realArg', previous, true, patch.realArg)
+}
+
+function pluginFieldRollbackEntry(
+  pluginId: string,
+  field: string,
+  previous: PluginStateSnapshot,
+  attemptedExists: boolean,
+  attemptedValue: unknown,
+): PluginFieldRollbackEntry | null {
+  const previousPlugin = previous.plugins.find((plugin) => plugin.name === pluginId)
+  if (!previousPlugin) return null
+  const previousRecord = previousPlugin as unknown as Record<string, unknown>
+  return {
+    kind: 'plugin-field',
+    target: pluginFieldRollbackTarget(pluginId, field),
+    pluginId,
+    field,
+    previousExists: hasOwnRecordKey(previousRecord, field),
+    previousValue: cloneJsonValue(previousRecord[field]),
+    attemptedExists,
+    attemptedValue: cloneJsonValue(attemptedValue),
+  }
+}
+
+function deletePluginRollbackEntry(pluginId: string, previous: PluginStateSnapshot): PluginDeleteRollbackEntry | null {
+  const previousIndex = previous.plugins.findIndex((plugin) => plugin.name === pluginId)
+  if (previousIndex === -1) return null
+  const providerChanged = previous.currentPluginProvider === pluginId
+  return {
+    kind: 'plugin-delete',
+    target: pluginDeleteRollbackTarget(pluginId),
+    pluginId,
+    previousPlugin: cloneJsonValue(previous.plugins[previousIndex]),
+    previousIndex,
+    providerChanged,
+    previousProvider: previous.currentPluginProvider,
+    attemptedProvider: providerChanged ? '' : previous.currentPluginProvider,
+  }
+}
+
+function pluginProviderRollbackEntry(provider: string, previous: PluginStateSnapshot): PluginProviderRollbackEntry {
+  return {
+    kind: 'plugin-provider',
+    target: 'plugin-provider:current',
+    previousProvider: previous.currentPluginProvider,
+    attemptedProvider: provider,
+  }
+}
+
+function issuePluginNonStorageOperation(entries: PluginNonStorageRollbackEntry[]): PluginNonStorageOperationToken {
+  const token = {
+    sequence: ++nextPluginNonStorageOperationSequence,
+    targets: [...new Set(entries.map((entry) => entry.target))],
+  }
+
+  for (const entry of entries) {
+    const pendingOperations = pendingPluginNonStorageOperationsByTarget.get(entry.target) ?? []
+    pendingOperations.push({
+      sequence: token.sequence,
+      entry,
+      status: 'pending',
+    })
+    pendingPluginNonStorageOperationsByTarget.set(entry.target, pendingOperations)
+  }
+
+  return token
+}
+
+function rollbackPluginNonStorageEntries(
+  entries: PluginNonStorageRollbackEntry[],
+  operation: PluginNonStorageOperationToken,
+): void {
+  let changed = false
+
+  withTrustedServerProjectionWrite(() => {
+    for (const entry of entries) {
+      const pendingOperations = pendingPluginNonStorageOperationsByTarget.get(entry.target)
+      const operationRecord = pendingOperations?.find((record) => record.sequence === operation.sequence)
+      if (!pendingOperations || !operationRecord) continue
+
+      operationRecord.status = 'failed'
+      changed = cascadeFailedPluginNonStorageOperationsForTarget(entry.target, pendingOperations) || changed
+
+      if (pendingOperations.length > 0) {
+        pendingPluginNonStorageOperationsByTarget.set(entry.target, pendingOperations)
+      } else {
+        pendingPluginNonStorageOperationsByTarget.delete(entry.target)
+      }
+    }
+
+    if (changed) {
+      pluginWatchSuppressionVersion += 1
+    }
+  })
+}
+
+function cascadeFailedPluginNonStorageOperationsForTarget(
+  target: string,
+  pendingOperations: PluginNonStorageOperationRecord[],
+): boolean {
+  let changed = false
+
+  while (pendingOperations.length > 0) {
+    const latestOperation = pendingOperations[pendingOperations.length - 1]
+    if (latestOperation.status !== 'failed') break
+
+    if (rollbackPluginNonStorageEntryIfLiveMatches(latestOperation.entry)) {
+      changed = true
+    }
+    pendingOperations.pop()
+  }
+
+  if (pendingOperations.length > 0) {
+    pendingPluginNonStorageOperationsByTarget.set(target, pendingOperations)
+  } else {
+    pendingPluginNonStorageOperationsByTarget.delete(target)
+  }
+
+  return changed
+}
+
+function rollbackPluginNonStorageEntryIfLiveMatches(entry: PluginNonStorageRollbackEntry): boolean {
+  if (entry.kind === 'plugin-field') {
+    return rollbackPluginFieldIfLiveMatches(entry)
+  }
+  if (entry.kind === 'plugin-delete') {
+    return rollbackPluginDeleteIfLiveMatches(entry)
+  }
+  return rollbackPluginProviderIfLiveMatches(entry)
+}
+
+function rollbackPluginFieldIfLiveMatches(entry: PluginFieldRollbackEntry): boolean {
+  const plugins = DBState.db.plugins ?? []
+  const index = plugins.findIndex((plugin) => plugin.name === entry.pluginId)
+  if (index === -1) return false
+
+  const livePlugin = plugins[index] as RisuPlugin & Record<string, unknown>
+  const liveExists = hasOwnRecordKey(livePlugin, entry.field)
+  if (entry.attemptedExists) {
+    if (!liveExists || !isJsonValueEqual(livePlugin[entry.field], entry.attemptedValue)) return false
+  } else if (liveExists) {
+    return false
+  }
+
+  const nextPlugin = {
+    ...livePlugin,
+  }
+
+  if (entry.previousExists) {
+    nextPlugin[entry.field] = cloneJsonValue(entry.previousValue)
+  } else {
+    delete nextPlugin[entry.field]
+  }
+
+  DBState.db.plugins[index] = nextPlugin
+  return true
+}
+
+function rollbackPluginDeleteIfLiveMatches(entry: PluginDeleteRollbackEntry): boolean {
+  let changed = false
+  const plugins = DBState.db.plugins ?? []
+  const liveIndex = plugins.findIndex((plugin) => plugin.name === entry.pluginId)
+
+  if (liveIndex === -1) {
+    const nextPlugins = [...plugins]
+    const insertIndex = boundedInsertIndex(entry.previousIndex, nextPlugins.length)
+    nextPlugins.splice(insertIndex, 0, cloneJsonValue(entry.previousPlugin))
+    DBState.db.plugins = nextPlugins
+    changed = true
+  }
+
+  if (entry.providerChanged && (DBState.db.currentPluginProvider ?? '') === entry.attemptedProvider) {
+    DBState.db.currentPluginProvider = entry.previousProvider
+    changed = true
+  }
+
+  return changed
+}
+
+function rollbackPluginProviderIfLiveMatches(entry: PluginProviderRollbackEntry): boolean {
+  if ((DBState.db.currentPluginProvider ?? '') !== entry.attemptedProvider) return false
+  DBState.db.currentPluginProvider = entry.previousProvider
+  return true
+}
+
+function clearPluginNonStorageOperation(operation: PluginNonStorageOperationToken): void {
+  for (const target of operation.targets) {
+    const pendingOperations = pendingPluginNonStorageOperationsByTarget.get(target)
+    if (!pendingOperations) continue
+
+    const operationIndex = pendingOperations.findIndex((record) => record.sequence === operation.sequence)
+    if (operationIndex === -1) continue
+
+    const nextPendingOperations = pendingOperations.filter(
+      (record, index) =>
+        record.sequence !== operation.sequence && !(index < operationIndex && record.status === 'failed'),
+    )
+    if (nextPendingOperations.length > 0) {
+      pendingPluginNonStorageOperationsByTarget.set(target, nextPendingOperations)
+    } else {
+      pendingPluginNonStorageOperationsByTarget.delete(target)
+    }
+  }
+}
+
+function pluginFieldRollbackTarget(pluginId: string, field: string): string {
+  return `plugin-field:${pluginId}:${field}`
+}
+
+function pluginDeleteRollbackTarget(pluginId: string): string {
+  return `plugin-delete:${pluginId}`
+}
+
+function boundedInsertIndex(index: number, length: number): number {
+  if (index < 0) return 0
+  if (index > length) return length
+  return index
 }
 
 export function currentPluginStorageSnapshot(): PluginStorageSnapshot {

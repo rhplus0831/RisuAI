@@ -31,6 +31,13 @@ operations. Failed older writes no longer restore the whole storage map over
 newer sibling keys, and deferred same-key failures unwind correctly when
 overlapping command failures resolve out of order.
 
+Third landed slice: `pluginCommands.ts` now scopes plugin `realArg`, `enabled`,
+explicit delete, and provider-selection rollback by target and attempted value.
+Failed plugin field/provider commands no longer restore storage or unrelated
+plugin rows, explicit delete failures reinsert only a still-missing plugin row,
+and deferred same-target failures unwind correctly when responses resolve out of
+order.
+
 ## Anchors
 
 - `src/lib/Setting/botpreset.svelte`
