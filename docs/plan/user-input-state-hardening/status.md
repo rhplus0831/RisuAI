@@ -60,7 +60,10 @@ persistence inventory under
   found no known live upload/import/fetch callback surface still pending. Audit
   drift is recorded for the BotSettings additional-params import row because the
   live UI has no import button there; the EasyPanel separate-parameters import
-  path is now guarded.
+  path is now guarded. DefaultChatScreen composer send/continue operations now
+  guard delayed clear/restore by active transcript identity, latest operation,
+  and composer mutation version, and auto-translate writes now re-check source,
+  target, and active transcript freshness before applying.
   Phase 2 landed character profile draft dirty top-level field protection;
   prompt-template item row dirty projection merging; whole-key dirty projection
   protection for
@@ -165,8 +168,12 @@ persistence inventory under
   capture, latest-operation tracking, target-slot snapshot freshness, and fresh
   imported-object resolution for `AllSeperateParameters.svelte` and
   `EasyPanel.svelte`.
-- Verification state: Phase 3 final closeout validation is recorded in
-  `latest-verification.md`.
+- `src/lib/ChatScreens/DefaultChatScreen.svelte` now snapshots composer
+  send/continue operations, builds outgoing user messages from captured drafts,
+  guards stale success clears and failure restores, guards generation-prep
+  composer clears, and drops stale auto-translate results.
+- Verification state: Phase 4 DefaultChatScreen composer freshness validation is
+  recorded in `latest-verification.md`.
 - Highest issue density:
   - Character editor: 52 issue rows, mostly dirty projection and unguarded
     upload callbacks.
@@ -213,10 +220,11 @@ persistence inventory under
   separate-parameters import paths. No known live Phase 3 callback surface
   remains pending after the final audit. The BotSettings additional-params import
   row is audit drift because the live UI has no import button there.
-- [Phase 4](phases/phase-4-chat-messages-generation.md): active. Composer
-  send/continue clear/restore, auto-translate, reroll, partial edit/delete,
-  dynamic trigger, suggestion, and generation finalization freshness remain here.
-  Composer file and paste callbacks are already covered by Phase 3.
+- [Phase 4](phases/phase-4-chat-messages-generation.md): active. DefaultChatScreen
+  composer send/continue clear/restore and auto-translate freshness has landed.
+  Reroll, partial edit/delete, dynamic trigger, suggestion, and generation
+  finalization freshness remain here. Composer file and paste callbacks are
+  already covered by Phase 3.
 - [Phase 5](phases/phase-5-collection-domains.md): pending. Preset, persona,
   translator, module, lorebook, script, and import collection flows; Hypa V3
   preset array import/rename/delete; plugin enable/delete/args/provider/storage;
@@ -384,11 +392,17 @@ persistence inventory under
     `selectSingleFile`'s `onFileSelected` hook after a real JSON file is
     selected, and lets `EasyPanel.svelte` replace only the fresh active base slot
     or override model slot while preserving unrelated slots.
-  - Phase 4: `restoreChatScopedState`, composer send/continue clear/restore,
-    auto-translate, reroll, partial edit/delete, dynamic trigger, suggestion,
-    message update/delete/truncate/replace freshness, and generation
-    finalization. Composer file and paste callbacks are already covered by Phase
-    3.
+  - Phase 4 DefaultChatScreen composer freshness slice: composer send/continue
+    operations capture active transcript identity, latest-operation token,
+    composer mutation version, text, translated text, and files. Send builds the
+    outgoing message from the captured snapshot; delayed append success/failure
+    and generation-prep clears mutate the composer only while fresh.
+    Auto-translate writes re-check active transcript, source text, and target
+    field version before applying delayed results.
+  - Remaining Phase 4: `restoreChatScopedState`, reroll, partial edit/delete,
+    dynamic trigger, suggestion, message update/delete/truncate/replace
+    freshness, and generation finalization. Composer file and paste callbacks are
+    already covered by Phase 3.
   - Phase 5: preset/persona/translator/module/lorebook/script/import collection
     flows, Hypa V3 preset array import/rename/delete, plugin
     enable/delete/args/provider/storage, sidebar chat/folder lists, character

@@ -1,6 +1,6 @@
 # Phase 4: Chat, Messages & Generation
 
-Status: pending.
+Status: active.
 
 Goal: harden chat-facing async flows where delayed work can clear composer
 state, edit the wrong message, reroll the wrong chat, or persist generation
@@ -9,7 +9,9 @@ output against a stale target.
 ## Scope
 
 - Version composer state so send, continue, auto-translate, paste upload, and
-  file-post callbacks cannot clear or append into newer user input.
+  file-post callbacks cannot clear or append into newer user input. Composer
+  file and paste callbacks are covered by Phase 3; composer send/continue
+  clear/restore and auto-translate freshness has landed here.
 - Re-check active chat after hydration and before reroll, unreroll, candidate
   select, truncate, tail replace, and regenerate operations.
 - Guard partial edit and partial delete modals with message id, source range,
@@ -20,6 +22,14 @@ output against a stale target.
   checks.
 - Add generation finalization freshness checks for durable jobs and target-row
   persistence.
+
+First landed slice: `DefaultChatScreen.svelte` now snapshots send/continue
+composer operations by active transcript identity, latest-operation token,
+composer mutation version, text, translated text, and files. Delayed append
+success/failure and generation-prep clears only mutate a still-fresh composer,
+send builds user messages from the captured snapshot, and stale auto-translate
+results are dropped when the source text, target field version, or active
+transcript changes.
 
 ## Anchors
 

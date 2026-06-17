@@ -226,6 +226,7 @@ import {
   createActiveChatGenerationSettingsIncompleteMessage,
   resolveActiveChatGenerationSettings,
 } from 'src/ts/activeChatGenerationSettings'
+import { translate } from '../../ts/translator/translator'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -381,6 +382,16 @@ async function clickPostFileMenuItem() {
   postFileMenuItem!.click()
 }
 
+async function clickContinueMenuItem() {
+  const menuButton = target.querySelector<HTMLButtonElement>('[data-testid="default-chat-menu-button"]')
+  expect(menuButton).toBeTruthy()
+  menuButton!.click()
+  await tick()
+  const continueMenuItem = findClickableByText('continueResponse')
+  expect(continueMenuItem).toBeTruthy()
+  continueMenuItem!.click()
+}
+
 function findClickableByText(text: string): HTMLElement | undefined {
   return Array.from(target.querySelectorAll<HTMLElement>('button, div')).find(
     (element) => element.textContent?.trim() === text,
@@ -399,6 +410,7 @@ beforeEach(() => {
   vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue('data:image/png;base64,AA==')
   consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
   vi.clearAllMocks()
+  vi.mocked(translate).mockImplementation(async (message: string) => message)
   loadPageMocks.toCanvas.mockReset()
   loadPageMocks.toCanvas.mockImplementation(async () => createCanvas())
   loadPageMocks.hydrateActiveChatFully.mockClear()
@@ -665,6 +677,156 @@ describe('DefaultChatScreen transcript window state', () => {
     expect(textarea.value).toBe('Retry with file')
     expect(target.textContent).toContain('Missing file')
     expect(loadPageMocks.sendChat).not.toHaveBeenCalled()
+  })
+
+  it('does not clear newer typed composer text when a delayed append succeeds', async () => {
+    seedDatabase([1])
+    const append = createDeferred<AppendCurrentChatUserMessageResult>()
+    loadPageMocks.appendCurrentChatUserMessageForSend.mockReturnValueOnce(append.promise)
+    mountScreen()
+
+    await waitFor(() => {
+      expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy()
+    })
+    const textarea = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+    textarea.value = 'Send the captured draft'
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    const sendButton = target.querySelector<HTMLButtonElement>('[data-testid="default-chat-send-button"]')
+    expect(sendButton).toBeTruthy()
+    sendButton!.click()
+
+    await waitFor(() => expect(loadPageMocks.appendCurrentChatUserMessageForSend).toHaveBeenCalledTimes(1))
+    expect(loadPageMocks.appendCurrentChatUserMessageForSend).toHaveBeenCalledWith(
+      expect.objectContaining({
+        role: 'user',
+        data: 'Send the captured draft',
+      }),
+    )
+
+    textarea.value = 'Newer draft typed while append waits'
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+    append.resolve({ status: 'ok', messageId: 'delayed-message' })
+
+    await waitFor(() => expect(loadPageMocks.sendChat).toHaveBeenCalledTimes(1))
+    expect(textarea.value).toBe('Newer draft typed while append waits')
+  })
+
+  it('does not restore old text or files over a newer draft when a delayed append fails', async () => {
+    seedDatabase([1])
+    loadPageMocks.postChatFile.mockResolvedValueOnce([{ type: 'asset', data: 'asset-a' }])
+    const append = createDeferred<AppendCurrentChatUserMessageResult>()
+    loadPageMocks.appendCurrentChatUserMessageForSend.mockReturnValueOnce(append.promise)
+    mountScreen()
+
+    await waitFor(() => {
+      expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy()
+    })
+    const textarea = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+    textarea.value = 'Old draft with file'
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    await clickPostFileMenuItem()
+
+    await waitFor(() => {
+      expect(target.textContent).toContain('Missing file')
+    })
+
+    const sendButton = target.querySelector<HTMLButtonElement>('[data-testid="default-chat-send-button"]')
+    expect(sendButton).toBeTruthy()
+    sendButton!.click()
+
+    await waitFor(() => expect(loadPageMocks.appendCurrentChatUserMessageForSend).toHaveBeenCalledTimes(1))
+    expect(loadPageMocks.appendCurrentChatUserMessageForSend).toHaveBeenCalledWith(
+      expect.objectContaining({
+        role: 'user',
+        data: 'Old draft with file{{inlayed::asset-a}}',
+      }),
+    )
+
+    const removeFileButton = target.querySelector<HTMLButtonElement>('.relative > button')
+    expect(removeFileButton).toBeTruthy()
+    removeFileButton!.click()
+    textarea.value = 'Newer draft after removing file'
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    await settle()
+
+    append.resolve({ status: 'error', error: 'append failed' })
+
+    await waitFor(() => {
+      expect(loadPageMocks.alertError).toHaveBeenCalledWith('append failed')
+    })
+
+    expect(textarea.value).toBe('Newer draft after removing file')
+    expect(target.textContent).not.toContain('Missing file')
+    expect(loadPageMocks.sendChat).not.toHaveBeenCalled()
+  })
+
+  it('does not clear newer typed text when continue waits for hydration', async () => {
+    seedDatabase([2])
+    const hydration = createDeferred<void>()
+    loadPageMocks.hydrateActiveChatFully.mockReturnValueOnce(hydration.promise)
+    mountScreen()
+
+    await waitFor(() => {
+      expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy()
+    })
+    const textarea = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+
+    await clickContinueMenuItem()
+    await waitFor(() => expect(loadPageMocks.hydrateActiveChatFully).toHaveBeenCalledTimes(1))
+
+    textarea.value = 'Newer draft typed during continue'
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+    hydration.resolve()
+
+    await waitFor(() => expect(loadPageMocks.sendChat).toHaveBeenCalledTimes(1))
+    expect(loadPageMocks.sendChat).toHaveBeenCalledWith(
+      -1,
+      expect.objectContaining({
+        continue: true,
+      }),
+    )
+    expect(textarea.value).toBe('Newer draft typed during continue')
+  })
+
+  it('does not let a stale auto-translate result overwrite newer source or target fields', async () => {
+    seedDatabase([1])
+    DBState.db.useAutoTranslateInput = true
+    const firstTranslation = createDeferred<string>()
+    const pendingTranslation = new Promise<string>(() => undefined)
+    const translateMock = vi.mocked(translate)
+    translateMock.mockImplementationOnce(() => firstTranslation.promise)
+    translateMock.mockImplementation(() => pendingTranslation)
+    mountScreen()
+
+    await waitFor(() => {
+      expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy()
+      expect(target.querySelector('#messageInputTranslate')).toBeTruthy()
+    })
+    const textarea = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+    const translateTextarea = target.querySelector<HTMLTextAreaElement>('#messageInputTranslate')!
+
+    textarea.value = 'Original source'
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    await waitFor(() => expect(translateMock).toHaveBeenCalledWith('Original source', false))
+
+    translateTextarea.value = 'Manual target'
+    translateTextarea.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+    textarea.value = 'Newer source'
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    firstTranslation.resolve('Stale translated source')
+    await settle()
+
+    expect(textarea.value).toBe('Newer source')
+    expect(translateTextarea.value).toBe('Manual target')
   })
 
   it('ignores a delayed menu file result after composer text changes', async () => {

@@ -98,12 +98,32 @@
 
   const loadPlaygroundMenu = () => import('../Playground/PlaygroundMenu.svelte').then((m) => m.default)
   const composerFileOperationGuard = createLatestOperationGuard<string>()
+  const composerOperationGuard = createLatestOperationGuard<string>()
 
   type PostChatFileResults = NonNullable<Awaited<ReturnType<typeof postChatFile>>>
   type ComposerFileOperation = {
     token: ReturnType<typeof composerFileOperationGuard.issue>
     targetIdentity: string
     composerVersion: number
+  }
+  type ComposerOperationKind = 'send' | 'continue'
+  type ComposerDraftField = 'message' | 'translation' | 'files'
+  type ComposerTextField = 'message' | 'translation'
+  type ComposerOperation = {
+    token: ReturnType<typeof composerOperationGuard.issue>
+    kind: ComposerOperationKind
+    targetIdentity: string
+    composerVersion: number
+    messageInput: string
+    messageInputTranslate: string
+    fileInput: string[]
+  }
+  type AutoTranslateOperation = {
+    sourceField: ComposerTextField
+    targetField: ComposerTextField
+    sourceText: string
+    targetVersion: number
+    targetIdentity: string | null
   }
 
   interface Props {
@@ -125,6 +145,8 @@
   let preparingSend = $state(false)
   let scrollToMessageRunId = 0
   let composerMutationVersion = 0
+  let messageInputMutationVersion = 0
+  let messageInputTranslateMutationVersion = 0
   let activeTranscriptWindowIdentity: string | null = $state(null)
   let activeBgmObserverIdentity: string | null = $state(null)
   let { openModuleList = $bindable(false), openChatList = $bindable(false), customStyle = '' }: Props = $props()
@@ -167,8 +189,17 @@
     })
   }
 
-  function markComposerDraftChanged() {
+  function markComposerDraftChanged(
+    fields: ComposerDraftField | ComposerDraftField[] = ['message', 'translation', 'files'],
+  ) {
+    const changedFields = Array.isArray(fields) ? fields : [fields]
     composerMutationVersion += 1
+    if (changedFields.includes('message')) {
+      messageInputMutationVersion += 1
+    }
+    if (changedFields.includes('translation')) {
+      messageInputTranslateMutationVersion += 1
+    }
   }
 
   function beginComposerFileOperation(): ComposerFileOperation | null {
@@ -188,6 +219,59 @@
       getActiveTranscriptWindowIdentity() === operation.targetIdentity &&
       composerMutationVersion === operation.composerVersion
     )
+  }
+
+  function beginComposerOperation(kind: ComposerOperationKind): ComposerOperation | null {
+    const targetIdentity = getActiveTranscriptWindowIdentity()
+    if (!targetIdentity) return null
+
+    return {
+      token: composerOperationGuard.issue(targetIdentity),
+      kind,
+      targetIdentity,
+      composerVersion: composerMutationVersion,
+      messageInput,
+      messageInputTranslate,
+      fileInput: [...fileInput],
+    }
+  }
+
+  function isCurrentComposerOperation(operation: ComposerOperation): boolean {
+    return (
+      composerOperationGuard.isLatest(operation.token) &&
+      getActiveTranscriptWindowIdentity() === operation.targetIdentity &&
+      composerMutationVersion === operation.composerVersion
+    )
+  }
+
+  function restoreComposerForCurrentOperation(operation: ComposerOperation): boolean {
+    if (!isCurrentComposerOperation(operation)) return false
+
+    messageInput = operation.messageInput
+    messageInputTranslate = operation.messageInputTranslate
+    fileInput = [...operation.fileInput]
+    markComposerDraftChanged()
+    updateInputSizeAll()
+    return true
+  }
+
+  function clearComposerForCurrentOperation(operation: ComposerOperation): boolean {
+    if (!isCurrentComposerOperation(operation)) return false
+
+    messageInput = ''
+    messageInputTranslate = ''
+    fileInput = []
+    markComposerDraftChanged()
+    updateInputSizeAll()
+    return true
+  }
+
+  function clearMessageInputForCurrentOperation(operation?: ComposerOperation): boolean {
+    if (operation && !isCurrentComposerOperation(operation)) return false
+
+    messageInput = ''
+    markComposerDraftChanged('message')
+    return true
   }
 
   function applyChatFileResultsForCurrentComposer(
@@ -215,7 +299,7 @@
 
     messageInput = nextMessageInput
     fileInput = nextFileInput
-    markComposerDraftChanged()
+    markComposerDraftChanged(['message', 'files'])
     updateInputSizeAll()
     return true
   }
@@ -461,7 +545,11 @@
       return
     }
     preparingSend = true
+    const composerOperation = beginComposerOperation(continueResponse ? 'continue' : 'send')
     try {
+      if (!composerOperation) {
+        return
+      }
       const generationSettingsGuard = guardActiveChatGenerationSettingsForSend()
       if (generationSettingsGuard.status === 'error') {
         alertError(generationSettingsGuard.error)
@@ -471,28 +559,28 @@
       }
 
       resetRerollOnCharChange()
-      const targetIdentity = getActiveTranscriptWindowIdentity()
       await hydrateActiveChatFully()
-      if (targetIdentity !== getActiveTranscriptWindowIdentity()) {
+      if (composerOperation.targetIdentity !== getActiveTranscriptWindowIdentity()) {
         return
       }
 
       const currentChatRecord = DBState.db.characters[selectedChar].chats[DBState.db.characters[selectedChar].chatPage]
       let userMessage: Message | null = null
-      const composerBeforeSend = messageInput
-      const translatedComposerBeforeSend = messageInputTranslate
-      const filesBeforeSend = [...fileInput]
+      const composerBeforeSend = composerOperation.messageInput
+      const translatedComposerBeforeSend = composerOperation.messageInputTranslate
+      const filesBeforeSend = [...composerOperation.fileInput]
 
-      if (messageInput.startsWith('/')) {
-        const commandProcessed = await processMultiCommand(messageInput)
+      if (composerBeforeSend.startsWith('/')) {
+        const commandProcessed = await processMultiCommand(composerBeforeSend)
         if (commandProcessed !== false) {
-          messageInput = ''
-          markComposerDraftChanged()
+          if (clearMessageInputForCurrentOperation(composerOperation)) {
+            updateInputSizeAll()
+          }
           return
         }
       }
 
-      let messageForSend = messageInput
+      let messageForSend = composerBeforeSend
       if (filesBeforeSend.length > 0) {
         for (const file of filesBeforeSend) {
           messageForSend += `{{inlayed::${file}}}`
@@ -524,24 +612,25 @@
       if (userMessage) {
         const appended = await appendCurrentChatUserMessageForSend(userMessage)
         if (appended.status !== 'ok') {
-          messageInput = composerBeforeSend
-          messageInputTranslate = translatedComposerBeforeSend
-          fileInput = filesBeforeSend
+          restoreComposerForCurrentOperation({
+            ...composerOperation,
+            messageInput: composerBeforeSend,
+            messageInputTranslate: translatedComposerBeforeSend,
+            fileInput: filesBeforeSend,
+          })
           alertError(appended.error)
           await sleep(10)
-          updateInputSizeAll()
           return
         }
       }
-      messageInput = ''
-      messageInputTranslate = ''
-      fileInput = []
-      markComposerDraftChanged()
+      clearComposerForCurrentOperation(composerOperation)
       await sleep(10)
-      updateInputSizeAll()
       // Clear the reroll buffer only after send/continue succeeds.
-      await sendChatMain(continueResponse, undefined, true)
+      await sendChatMain(continueResponse, undefined, true, composerOperation)
     } finally {
+      if (composerOperation) {
+        composerOperationGuard.clear(composerOperation.token)
+      }
       preparingSend = false
     }
   }
@@ -589,11 +678,11 @@
     continued: boolean = false,
     regenerateMessageId?: string,
     confirmBoundary: boolean = false,
+    composerOperation?: ComposerOperation,
   ) {
     let previousLength =
       DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message.length
-    messageInput = ''
-    markComposerDraftChanged()
+    clearMessageInputForCurrentOperation(composerOperation)
     const abortController = createActiveGenerationAbortController()
     try {
       const ok = await sendChat(-1, {
@@ -663,51 +752,93 @@
     updateInputSizeAll()
   })
 
+  function getComposerTextFieldValue(field: ComposerTextField): string {
+    return field === 'message' ? messageInput : messageInputTranslate
+  }
+
+  function getComposerTextFieldVersion(field: ComposerTextField): number {
+    return field === 'message' ? messageInputMutationVersion : messageInputTranslateMutationVersion
+  }
+
+  function isCurrentAutoTranslateOperation(operation: AutoTranslateOperation): boolean {
+    return (
+      getActiveTranscriptWindowIdentity() === operation.targetIdentity &&
+      getComposerTextFieldValue(operation.sourceField) === operation.sourceText &&
+      getComposerTextFieldVersion(operation.targetField) === operation.targetVersion
+    )
+  }
+
+  function applyAutoTranslateResult(operation: AutoTranslateOperation, translatedMessage: string): boolean {
+    if (!translatedMessage || !isCurrentAutoTranslateOperation(operation)) return false
+
+    if (operation.targetField === 'message') {
+      messageInput = translatedMessage
+      markComposerDraftChanged('message')
+    } else {
+      messageInputTranslate = translatedMessage
+      markComposerDraftChanged('translation')
+    }
+    return true
+  }
+
+  async function translateComposerInputForCurrentFields(reverse: boolean, delayMs = 0) {
+    const sourceField: ComposerTextField = reverse ? 'translation' : 'message'
+    const targetField: ComposerTextField = reverse ? 'message' : 'translation'
+    const operation: AutoTranslateOperation = {
+      sourceField,
+      targetField,
+      sourceText: getComposerTextFieldValue(sourceField),
+      targetVersion: getComposerTextFieldVersion(targetField),
+      targetIdentity: getActiveTranscriptWindowIdentity(),
+    }
+
+    if (delayMs > 0) {
+      await sleep(delayMs)
+      if (!isCurrentAutoTranslateOperation(operation)) return
+    }
+
+    if (!isCurrentAutoTranslateOperation(operation)) return
+    const translatedMessage = await translate(operation.sourceText, reverse)
+    applyAutoTranslateResult(operation, translatedMessage)
+  }
+
   async function updateInputTransateMessage(reverse: boolean) {
     if (!DBState.db.useAutoTranslateInput) {
       return
     }
     if (isExpTranslator()) {
       if (!reverse) {
-        messageInputTranslate = ''
-        markComposerDraftChanged()
+        if (messageInputTranslate !== '') {
+          messageInputTranslate = ''
+          markComposerDraftChanged('translation')
+        }
         return
       }
       if (messageInputTranslate === '') {
-        messageInput = ''
-        markComposerDraftChanged()
+        if (messageInput !== '') {
+          messageInput = ''
+          markComposerDraftChanged('message')
+        }
         return
       }
-      const lastMessageInputTranslate = messageInputTranslate
-      await sleep(1500)
-      if (lastMessageInputTranslate === messageInputTranslate) {
-        translate(reverse ? messageInputTranslate : messageInput, reverse).then((translatedMessage) => {
-          if (translatedMessage) {
-            if (reverse) messageInput = translatedMessage
-            else messageInputTranslate = translatedMessage
-            markComposerDraftChanged()
-          }
-        })
-      }
+      await translateComposerInputForCurrentFields(reverse, 1500)
       return
     }
     if (reverse && messageInputTranslate === '') {
-      messageInput = ''
-      markComposerDraftChanged()
+      if (messageInput !== '') {
+        messageInput = ''
+        markComposerDraftChanged('message')
+      }
       return
     }
     if (!reverse && messageInput === '') {
-      messageInputTranslate = ''
-      markComposerDraftChanged()
+      if (messageInputTranslate !== '') {
+        messageInputTranslate = ''
+        markComposerDraftChanged('translation')
+      }
       return
     }
-    translate(reverse ? messageInputTranslate : messageInput, reverse).then((translatedMessage) => {
-      if (translatedMessage) {
-        if (reverse) messageInput = translatedMessage
-        else messageInputTranslate = translatedMessage
-        markComposerDraftChanged()
-      }
-    })
+    await translateComposerInputForCurrentFields(reverse)
   }
 
   async function screenShot() {
@@ -951,7 +1082,7 @@
           }}
           onpaste={(e) => void handleComposerPaste(e)}
           oninput={() => {
-            markComposerDraftChanged()
+            markComposerDraftChanged('message')
             updateInputSizeAll()
             updateInputTransateMessage(false)
           }}
@@ -1017,7 +1148,7 @@
               }
             }}
             oninput={() => {
-              markComposerDraftChanged()
+              markComposerDraftChanged('translation')
               updateInputSizeAll()
               updateInputTransateMessage(true)
             }}
@@ -1056,7 +1187,7 @@
                   class="absolute -right-1 -top-1 p-1 bg-darkbg text-textcolor rounded-md transition-colors hover:text-draculared focus:text-draculared"
                   onclick={() => {
                     fileInput.splice(i, 1)
-                    markComposerDraftChanged()
+                    markComposerDraftChanged('files')
                     updateInputSizeAll()
                   }}>
                   <XIcon size={18} />
@@ -1079,7 +1210,7 @@
                 else if (fileExtension === 'mp3' || fileExtension === 'wav') fileType = 'audio'
               }
               messageInput += `<span class='notranslate' translate='no'>{{${fileType}::${additionalAsset[0]}}}</span> *${additionalAsset[0]} added*`
-              markComposerDraftChanged()
+              markComposerDraftChanged('message')
               updateInputSizeAll()
             }} />
         </div>
@@ -1095,7 +1226,7 @@
               DBState.db.autoSuggestClean
                 ? msg.replace(/ +\(.+?\) *$| - [^"'*]*?$/, '')
                 : msg
-            markComposerDraftChanged()
+            markComposerDraftChanged('message')
           }}
           {send} />
       {/if}

@@ -50,7 +50,8 @@ character avatar/additional asset/emotion/TTS, settings media, module asset,
 prompt icon, NanoGPT fetch, color scheme, plugin import/update, persona icon,
 BotSettings bias JSON, sidebar folder image, NovelAI vibe, and EasyPanel
 separate-parameters paths. The final Phase 3 audit found no known live callback
-surface still pending.
+surface still pending. Phase 4 is in progress; DefaultChatScreen composer
+send/continue clear/restore and auto-translate freshness has landed.
 
 Next manager loop:
 
