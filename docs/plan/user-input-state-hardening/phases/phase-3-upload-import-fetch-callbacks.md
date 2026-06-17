@@ -98,6 +98,12 @@ provider/model/reference-mode context, vibe-field snapshots, stale alert
 suppression, and fresh narrow patch resolution before vibe data can merge into
 `NAIImgConfigDraft.value`.
 
+Seventeenth landed slice: EasyPanel separate-parameters import callbacks now use
+latest operation tokens issued from `selectSingleFile`'s `onFileSelected` hook,
+explicit base/override target context, active selector and by-model snapshots,
+target-slot snapshots, and fresh imported-object resolution before imported JSON
+can replace only the active parameter slot.
+
 ## Anchors
 
 - `src/lib/ChatScreens/DefaultChatScreen.svelte`

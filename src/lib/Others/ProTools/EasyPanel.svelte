@@ -14,12 +14,32 @@
   import CustomModelsSettings from 'src/lib/Setting/Pages/Advanced/CustomModelsSettings.svelte'
   import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
   import type { SeparateParameters } from 'src/ts/storage/database.svelte'
+  import {
+    beginSeperateParametersImport,
+    captureSeperateParametersImportTarget,
+    clearSeperateParametersImport,
+    isFreshSeperateParametersImport,
+    resolveFreshSeperateParametersImportValue,
+    type SeperateParametersImportFreshness,
+    type SeperateParametersImportOperation,
+    type SeperateParametersImportSlotKind,
+    type SeperateParametersImportTarget,
+  } from 'src/ts/server/seperateParametersImport'
 
   type AuxModelSettings = {
     memory: string
     translate: string
     emotion: string
     otherAx: string
+  }
+  type SeperateParametersBaseKey = keyof AuxModelSettings
+
+  interface GuardedSeperateParametersImport {
+    captureTarget: () => SeperateParametersImportTarget | null
+    beginImport: (target: SeperateParametersImportTarget) => SeperateParametersImportOperation
+    isFreshImport: (operation: SeperateParametersImportOperation) => boolean
+    applyImport: (operation: SeperateParametersImportOperation, imported: SeparateParameters) => void
+    clearImport: (operation: SeperateParametersImportOperation) => void
   }
 
   type SeparateParameterSettings = {
@@ -29,6 +49,8 @@
     otherAx: SeparateParameters
     overrides: Record<string, SeparateParameters>
   }
+
+  const seperateParametersBaseKeys = ['memory', 'translate', 'emotion', 'otherAx'] as const
 
   const seperateParametersEnabledDraft = createServerBackedSettingDraft<boolean>('seperateParametersEnabled', false)
   const doNotChangeSeperateModelsDraft = createServerBackedSettingDraft<boolean>('doNotChangeSeperateModels', false)
@@ -94,6 +116,99 @@
         ...(seperateParametersDraft.value.overrides ?? {}),
         [model]: {},
       },
+    }
+  }
+
+  function isSeperateParametersBaseKey(value: string): value is SeperateParametersBaseKey {
+    return (seperateParametersBaseKeys as readonly string[]).includes(value)
+  }
+
+  function getSeperateParametersImportTargetSlot(
+    slotKind: SeperateParametersImportSlotKind,
+    targetKey: string,
+  ): SeparateParameters | undefined {
+    if (slotKind === 'base') {
+      return isSeperateParametersBaseKey(targetKey) ? seperateParametersDraft.value[targetKey] : undefined
+    }
+
+    return seperateParametersDraft.value.overrides?.[targetKey]
+  }
+
+  function currentSeperateParametersImportFreshness(
+    slotKind: SeperateParametersImportSlotKind,
+    targetKey: string,
+  ): SeperateParametersImportFreshness {
+    const byModel = seperateParametersByModelDraft.value
+
+    return {
+      slotKind,
+      targetKey,
+      selectedOptionIsParameters: selectedOption === 'parameters',
+      byModel,
+      activeSelector: byModel ? parameterModelSelection : selectedParameterOption,
+      targetSlot: getSeperateParametersImportTargetSlot(slotKind, targetKey),
+    }
+  }
+
+  function captureBaseSeperateParametersImportTarget(
+    baseKey: SeperateParametersBaseKey,
+  ): SeperateParametersImportTarget | null {
+    return captureSeperateParametersImportTarget(currentSeperateParametersImportFreshness('base', baseKey))
+  }
+
+  function captureOverrideSeperateParametersImportTarget(model: string): SeperateParametersImportTarget | null {
+    return captureSeperateParametersImportTarget(currentSeperateParametersImportFreshness('override', model))
+  }
+
+  function isCurrentSeperateParametersImport(operation: SeperateParametersImportOperation): boolean {
+    return isFreshSeperateParametersImport(
+      operation,
+      currentSeperateParametersImportFreshness(operation.slotKind, operation.targetKey),
+    )
+  }
+
+  function applySeperateParametersImport(
+    operation: SeperateParametersImportOperation,
+    imported: SeparateParameters,
+  ): void {
+    const freshValue = resolveFreshSeperateParametersImportValue({
+      operation,
+      freshness: currentSeperateParametersImportFreshness(operation.slotKind, operation.targetKey),
+      imported,
+    })
+    if (freshValue === null) return
+
+    if (operation.slotKind === 'base') {
+      if (!isSeperateParametersBaseKey(operation.targetKey)) return
+      const baseKey = operation.targetKey
+      seperateParametersDraft.value = { ...seperateParametersDraft.value, [baseKey]: freshValue }
+      return
+    }
+
+    const overrides = { ...(seperateParametersDraft.value.overrides ?? {}) }
+    overrides[operation.targetKey] = freshValue
+    seperateParametersDraft.value = { ...seperateParametersDraft.value, overrides }
+  }
+
+  function createBaseSeperateParametersImportGuards(
+    baseKey: SeperateParametersBaseKey,
+  ): GuardedSeperateParametersImport {
+    return {
+      captureTarget: () => captureBaseSeperateParametersImportTarget(baseKey),
+      beginImport: beginSeperateParametersImport,
+      isFreshImport: isCurrentSeperateParametersImport,
+      applyImport: applySeperateParametersImport,
+      clearImport: clearSeperateParametersImport,
+    }
+  }
+
+  function createOverrideSeperateParametersImportGuards(model: string): GuardedSeperateParametersImport {
+    return {
+      captureTarget: () => captureOverrideSeperateParametersImportTarget(model),
+      beginImport: beginSeperateParametersImport,
+      isFreshImport: isCurrentSeperateParametersImport,
+      applyImport: applySeperateParametersImport,
+      clearImport: clearSeperateParametersImport,
     }
   }
 </script>
@@ -177,6 +292,7 @@
           <AllSeperateParameters
             bind:value={seperateParametersDraft.value.overrides[parameterModelSelection]}
             withImportExport
+            guardedImport={createOverrideSeperateParametersImportGuards(parameterModelSelection)}
             paramKey={parameterModelSelection} />
         {/if}
       {:else}
@@ -194,21 +310,25 @@
             <AllSeperateParameters
               bind:value={seperateParametersDraft.value.memory}
               withImportExport
+              guardedImport={createBaseSeperateParametersImportGuards('memory')}
               paramKey="memory" />
           {:else if selectedParameterOption === 'translate'}
             <AllSeperateParameters
               bind:value={seperateParametersDraft.value.translate}
               withImportExport
+              guardedImport={createBaseSeperateParametersImportGuards('translate')}
               paramKey="translate" />
           {:else if selectedParameterOption === 'emotion'}
             <AllSeperateParameters
               bind:value={seperateParametersDraft.value.emotion}
               withImportExport
+              guardedImport={createBaseSeperateParametersImportGuards('emotion')}
               paramKey="emotion" />
           {:else if selectedParameterOption === 'otherAx'}
             <AllSeperateParameters
               bind:value={seperateParametersDraft.value.otherAx}
               withImportExport
+              guardedImport={createBaseSeperateParametersImportGuards('otherAx')}
               paramKey="otherAx" />
           {/if}
         </div>

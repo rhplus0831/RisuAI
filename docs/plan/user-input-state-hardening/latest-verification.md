@@ -7,27 +7,27 @@ hardening workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 3 NovelAI `.naiv4vibe` import callback
-  freshness. The import now captures provider/model/reference-mode context plus
-  vibe-field snapshots, starts the operation from `selectSingleFile`'s
-  `onFileSelected` hook after a real vibe file is selected, suppresses stale
-  invalid-file alerts, and merges only a fresh narrow vibe patch into
-  `NAIImgConfigDraft.value`.
+- Runtime/code change under test: Phase 3 EasyPanel separate-parameters import
+  callback freshness. `AllSeperateParameters` now starts guarded import tokens
+  from `selectSingleFile`'s `onFileSelected` hook after a real JSON file is
+  selected, while `EasyPanel` captures explicit base/override slot context and
+  applies fresh imports only to the active target slot.
 - Commands:
 
 ```bash
-pnpm exec vitest run src/ts/server/naiVibeImport.test.ts src/lib/Setting/Pages/OtherBotSettings.svelte.test.ts src/ts/server/staleStateGuards.test.ts
+pnpm exec vitest run src/ts/server/seperateParametersImport.test.ts src/lib/Others/ProTools/EasyPanel.svelte.test.ts src/lib/Others/AllSeperateParameters.svelte.test.ts src/ts/server/staleStateGuards.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 git diff --check
 ```
 
-- Result: passed on 2026-06-17. The vibe-import/stale-guard focused Vitest set
-  passed 3 files and 27 tests. Both TypeScript checks and `git diff --check`
+- Result: passed on 2026-06-17. The separate-parameters-import/stale-guard
+  focused Vitest set passed 4 files and 25 tests. Both TypeScript checks and
+  `git diff --check`
   passed.
-- Residual gaps: no browser/manual file-picker smoke was run. This slice does
-  not cover EasyPanel separate-parameters import, backup/Realm refresh fences,
-  or collection rollback.
+- Residual gaps: Svelte wiring coverage is source-inspection style rather than a
+  browser interaction test. This slice does not cover backup/Realm refresh
+  fences or collection rollback.
 
 ## Required Closeout Proof
 

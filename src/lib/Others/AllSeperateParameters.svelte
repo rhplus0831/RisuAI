@@ -6,21 +6,36 @@
   import ClaudeThinkingSeparateParams from '../Setting/Pages/ClaudeThinkingSeparateParams.svelte'
   import type { SeparateParameters } from 'src/ts/storage/database.svelte'
   import { downloadFile } from 'src/ts/globalApi.svelte'
-  import { FileDownIcon, FileUpIcon, ImportIcon } from '@lucide/svelte'
+  import { FileDownIcon, FileUpIcon } from '@lucide/svelte'
   import { selectSingleFile } from 'src/ts/util'
   import { getModelInfo } from 'src/ts/model/modellist'
+  import {
+    parseSeperateParametersImport,
+    type SeperateParametersImportOperation,
+    type SeperateParametersImportTarget,
+  } from 'src/ts/server/seperateParametersImport'
 
   type AuxModelKey = 'memory' | 'emotion' | 'translate' | 'otherAx'
   const auxModelKeys: AuxModelKey[] = ['memory', 'emotion', 'translate', 'otherAx']
+
+  interface GuardedSeperateParametersImport {
+    captureTarget: () => SeperateParametersImportTarget | null
+    beginImport: (target: SeperateParametersImportTarget) => SeperateParametersImportOperation
+    isFreshImport: (operation: SeperateParametersImportOperation) => boolean
+    applyImport: (operation: SeperateParametersImportOperation, imported: SeparateParameters) => void
+    clearImport: (operation: SeperateParametersImportOperation) => void
+  }
 
   let {
     value = $bindable(),
     withImportExport = false,
     paramKey,
+    guardedImport,
   }: {
     value: SeparateParameters
     withImportExport?: boolean
     paramKey?: string
+    guardedImport?: GuardedSeperateParametersImport
   } = $props()
 
   let effectiveModel = $derived.by(() => {
@@ -35,6 +50,43 @@
   })
   let modelInfo = $derived(getModelInfo(effectiveModel))
   let hasTemperature = $derived(modelInfo.parameters.includes('temperature'))
+
+  async function importParametersJson(): Promise<void> {
+    const target = guardedImport?.captureTarget() ?? null
+    if (guardedImport && !target) return
+
+    let operation: SeperateParametersImportOperation | null = null
+    const beginImport = () => {
+      if (!guardedImport || !target) return
+      operation ??= guardedImport.beginImport(target)
+    }
+
+    try {
+      const file = await selectSingleFile(['json'], { onFileSelected: beginImport })
+      if (!file) return
+
+      beginImport()
+      const imported = parseSeperateParametersImport(new TextDecoder().decode(file.data))
+      if (imported === null) {
+        if (!guardedImport || (operation && guardedImport.isFreshImport(operation))) {
+          alert(language.noData)
+        }
+        return
+      }
+
+      if (guardedImport) {
+        if (!operation) return
+        guardedImport.applyImport(operation, imported)
+        return
+      }
+
+      value = imported
+    } finally {
+      if (operation) {
+        guardedImport?.clearImport(operation)
+      }
+    }
+  }
 </script>
 
 {#if hasTemperature}
@@ -71,17 +123,7 @@
     </button>
     <button
       class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded ml-2"
-      onclick={async () => {
-        const file = await selectSingleFile(['json'])
-        const fileText = await new TextDecoder().decode(file.data)
-        try {
-          const json = JSON.parse(fileText)
-
-          value = json
-        } catch (e) {
-          alert(language.noData)
-        }
-      }}>
+      onclick={importParametersJson}>
       <FileUpIcon />
     </button>
   </div>
