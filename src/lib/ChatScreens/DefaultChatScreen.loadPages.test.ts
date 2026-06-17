@@ -350,6 +350,16 @@ function createCanvas(width = 120, height = 12) {
   return canvas
 }
 
+function createDeferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve
+    reject = promiseReject
+  })
+  return { promise, resolve, reject }
+}
+
 async function clickScreenshotMenuItem() {
   const menuButton = target.querySelector<HTMLElement>('[data-testid="default-chat-menu-button"]')
   expect(menuButton).toBeTruthy()
@@ -359,6 +369,16 @@ async function clickScreenshotMenuItem() {
   const screenshotButton = target.querySelector<HTMLElement>('[data-testid="default-chat-screenshot-button"]')
   expect(screenshotButton).toBeTruthy()
   screenshotButton!.click()
+}
+
+async function clickPostFileMenuItem() {
+  const menuButton = target.querySelector<HTMLButtonElement>('[data-testid="default-chat-menu-button"]')
+  expect(menuButton).toBeTruthy()
+  menuButton!.click()
+  await tick()
+  const postFileMenuItem = findClickableByText('postFile')
+  expect(postFileMenuItem).toBeTruthy()
+  postFileMenuItem!.click()
 }
 
 function findClickableByText(text: string): HTMLElement | undefined {
@@ -391,6 +411,7 @@ afterEach(() => {
     unmount(component)
     component = undefined
   }
+  vi.unstubAllGlobals()
   Element.prototype.scrollIntoView = originalScrollIntoView as Element['scrollIntoView']
   vi.restoreAllMocks()
   selectedCharID.set(-1)
@@ -644,5 +665,141 @@ describe('DefaultChatScreen transcript window state', () => {
     expect(textarea.value).toBe('Retry with file')
     expect(target.textContent).toContain('Missing file')
     expect(loadPageMocks.sendChat).not.toHaveBeenCalled()
+  })
+
+  it('ignores a delayed menu file result after composer text changes', async () => {
+    seedDatabase([1])
+    const upload =
+      createDeferred<Array<{ type: 'asset'; data: string } | { type: 'text'; name: string; data: string }>>()
+    loadPageMocks.postChatFile.mockReturnValueOnce(upload.promise)
+    mountScreen()
+
+    await waitFor(() => {
+      expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy()
+    })
+    const textarea = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+    textarea.value = 'Draft before file'
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    await clickPostFileMenuItem()
+    await waitFor(() => expect(loadPageMocks.postChatFile).toHaveBeenCalledWith('Draft before file'))
+
+    textarea.value = 'Newer draft'
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+    upload.resolve([
+      { type: 'asset', data: 'stale-asset' },
+      { type: 'text', name: 'stale.txt', data: 'stale-text' },
+    ])
+    await settle()
+
+    expect(textarea.value).toBe('Newer draft')
+    expect(textarea.value).not.toContain('stale.txt')
+    expect(target.textContent).not.toContain('Missing file')
+  })
+
+  it('ignores a delayed menu file result after the active chat changes', async () => {
+    seedDatabase([1, 1])
+    const upload =
+      createDeferred<Array<{ type: 'asset'; data: string } | { type: 'text'; name: string; data: string }>>()
+    loadPageMocks.postChatFile.mockReturnValueOnce(upload.promise)
+    mountScreen()
+
+    await waitFor(() => {
+      expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy()
+    })
+    const firstTextarea = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+    firstTextarea.value = 'First chat draft'
+    firstTextarea.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    await clickPostFileMenuItem()
+    await waitFor(() => expect(loadPageMocks.postChatFile).toHaveBeenCalledWith('First chat draft'))
+
+    selectedCharID.set(1)
+    loadPageMocks.setCurrentRoute({
+      kind: 'character',
+      path: '/character/character-1/chat-1',
+      chaId: 'character-1',
+      chatId: 'chat-1',
+    })
+    await settle()
+    const secondTextarea = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+    upload.resolve([
+      { type: 'asset', data: 'other-chat-asset' },
+      { type: 'text', name: 'other-chat.txt', data: 'other-chat-text' },
+    ])
+    await settle()
+
+    expect(secondTextarea.value).toBe('First chat draft')
+    expect(secondTextarea.value).not.toContain('other-chat.txt')
+    expect(target.textContent).not.toContain('Missing file')
+  })
+
+  it('ignores a delayed pasted image result after composer text changes', async () => {
+    seedDatabase([1])
+    const upload =
+      createDeferred<Array<{ type: 'asset'; data: string } | { type: 'text'; name: string; data: string }>>()
+    loadPageMocks.postChatFile.mockReturnValueOnce(upload.promise)
+    const imageBytes = new Uint8Array([1, 2, 3])
+    class MockFileReader {
+      onload: ((event: ProgressEvent<FileReader>) => void) | null = null
+      onerror: (() => void) | null = null
+      error: Error | null = null
+
+      readAsArrayBuffer() {
+        setTimeout(() => {
+          this.onload?.({
+            target: { result: imageBytes.buffer },
+          } as ProgressEvent<FileReader>)
+        }, 0)
+      }
+    }
+    vi.stubGlobal('FileReader', MockFileReader as unknown as typeof FileReader)
+    mountScreen()
+
+    await waitFor(() => {
+      expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy()
+    })
+    const textarea = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+    textarea.value = 'Paste before file'
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    const pastedFile = new File([imageBytes], 'pasted.png', { type: 'image/png' })
+    const pasteEvent = new Event('paste', { bubbles: true, cancelable: true }) as ClipboardEvent
+    Object.defineProperty(pasteEvent, 'clipboardData', {
+      value: {
+        items: [
+          {
+            kind: 'file',
+            type: 'image/png',
+            getAsFile: () => pastedFile,
+          },
+        ],
+      },
+    })
+    textarea.dispatchEvent(pasteEvent)
+    await waitFor(() =>
+      expect(loadPageMocks.postChatFile).toHaveBeenCalledWith({
+        name: 'pasted.png',
+        data: imageBytes,
+      }),
+    )
+
+    textarea.value = 'Newer paste draft'
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+    upload.resolve([
+      { type: 'asset', data: 'pasted-stale-asset' },
+      { type: 'text', name: 'pasted-stale.txt', data: 'pasted-stale-text' },
+    ])
+    await settle()
+
+    expect(pasteEvent.defaultPrevented).toBe(true)
+    expect(textarea.value).toBe('Newer paste draft')
+    expect(textarea.value).not.toContain('pasted-stale.txt')
+    expect(target.textContent).not.toContain('Missing file')
   })
 })

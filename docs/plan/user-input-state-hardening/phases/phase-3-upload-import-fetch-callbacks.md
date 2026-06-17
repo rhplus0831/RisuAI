@@ -22,6 +22,10 @@ First landed slice: custom background upload/cancel/error callbacks now use a
 latest-operation token and live placeholder check before async picker/upload
 completion can apply, restore, or alert.
 
+Second landed slice: composer paste/menu file callbacks now use a latest
+operation token, active transcript identity, and composer mutation version before
+async file results can append composer text or inlay asset ids.
+
 ## Anchors
 
 - `src/lib/ChatScreens/DefaultChatScreen.svelte`

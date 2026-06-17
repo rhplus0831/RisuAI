@@ -15,8 +15,11 @@ the input persistence inventory under
   Phase 2 dirty draft projection complete. The next active phase is Phase 3
   upload/import/fetch callback freshness. The first Phase 3 slice now guards
   custom background upload/cancel/error callbacks so stale completions cannot
-  restore or apply an old custom background after a newer choice. Phase 2 landed
-  character profile draft dirty top-level field protection; prompt-template item row dirty projection
+  restore or apply an old custom background after a newer choice. Composer
+  paste/menu file actions now guard stale file callbacks by active transcript
+  identity and composer mutation version before mutating composer text or
+  attachments. Phase 2 landed character profile draft dirty top-level field
+  protection; prompt-template item row dirty projection
   merging; whole-key dirty projection protection for
   `createServerBackedSettingDraft`; selected persona profile dirty projection
   protection; translator preset `name`/`prompt`/`maxResponse` dirty projection
@@ -59,7 +62,11 @@ the input persistence inventory under
   `src/lib/Setting/Pages/Display/CustomBackgroundToggle.svelte` now uses a
   latest-operation token and live placeholder check before async background
   picker/upload continuations apply, restore, or alert.
-- Verification state: Phase 3 custom background callback validation is recorded in
+  `src/lib/ChatScreens/DefaultChatScreen.svelte` now routes menu and paste file
+  continuations through a shared guarded apply path that checks latest token,
+  active transcript identity, and composer mutation version before appending
+  text or inlay asset ids.
+- Verification state: Phase 3 composer file callback validation is recorded in
   `latest-verification.md`.
 - Highest issue density:
   - Character editor: 52 issue rows, mostly dirty projection and unguarded
@@ -101,6 +108,7 @@ the input persistence inventory under
 - [Phase 3](phases/phase-3-upload-import-fetch-callbacks.md): active. Upload,
   file, import, decode, and remote-fetch callback tokens. Custom background
   upload/cancel/error callback freshness has landed; composer file callbacks,
+  including menu file and pasted image callbacks, now guard stale completions;
   character assets, settings media, prompt icons, module assets, plugin
   import/update, import helpers, and dashboard fetch persistence remain pending.
 - [Phase 4](phases/phase-4-chat-messages-generation.md): pending. Chat,
@@ -183,6 +191,11 @@ the input persistence inventory under
     operation token for each custom background toggle operation and requires the
     upload placeholder to still be current before applying selected images,
     restoring canceled uploads, or showing upload errors.
+  - Phase 3 composer file slice: `DefaultChatScreen.svelte` issues a
+    latest-operation token per menu/paste file operation, captures the active
+    transcript identity and composer mutation version, and drops late file
+    results if the user edits the composer, removes attachments, clears/sends, or
+    changes chat before the callback resolves.
   - Phase 4: `restoreChatScopedState`, chat/message/generation freshness, and
     message update/delete/truncate/replace freshness.
   - Phase 5: create/delete/reorder/import/select and broad collection rollback

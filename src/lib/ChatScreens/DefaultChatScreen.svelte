@@ -94,8 +94,17 @@
   import { normalizeChatDisplayTailCount } from 'src/ts/chatDisplayTailCount'
   import { guardActiveChatGenerationSettingsForSend } from 'src/ts/activeChatGenerationSettings'
   import { characterRoutePath, currentRoute, navigate } from 'src/ts/router'
+  import { createLatestOperationGuard } from 'src/ts/server/staleStateGuards'
 
   const loadPlaygroundMenu = () => import('../Playground/PlaygroundMenu.svelte').then((m) => m.default)
+  const composerFileOperationGuard = createLatestOperationGuard<string>()
+
+  type PostChatFileResults = NonNullable<Awaited<ReturnType<typeof postChatFile>>>
+  type ComposerFileOperation = {
+    token: ReturnType<typeof composerFileOperationGuard.issue>
+    targetIdentity: string
+    composerVersion: number
+  }
 
   interface Props {
     openModuleList?: boolean
@@ -115,6 +124,7 @@
   let isScrollingToMessage = $state(false)
   let preparingSend = $state(false)
   let scrollToMessageRunId = 0
+  let composerMutationVersion = 0
   let activeTranscriptWindowIdentity: string | null = $state(null)
   let activeBgmObserverIdentity: string | null = $state(null)
   let { openModuleList = $bindable(false), openChatList = $bindable(false), customStyle = '' }: Props = $props()
@@ -155,6 +165,127 @@
       chatPage,
       chatId: chat?.id,
     })
+  }
+
+  function markComposerDraftChanged() {
+    composerMutationVersion += 1
+  }
+
+  function beginComposerFileOperation(): ComposerFileOperation | null {
+    const targetIdentity = getActiveTranscriptWindowIdentity()
+    if (!targetIdentity) return null
+
+    return {
+      token: composerFileOperationGuard.issue(targetIdentity),
+      targetIdentity,
+      composerVersion: composerMutationVersion,
+    }
+  }
+
+  function isCurrentComposerFileOperation(operation: ComposerFileOperation): boolean {
+    return (
+      composerFileOperationGuard.isLatest(operation.token) &&
+      getActiveTranscriptWindowIdentity() === operation.targetIdentity &&
+      composerMutationVersion === operation.composerVersion
+    )
+  }
+
+  function applyChatFileResultsForCurrentComposer(
+    results: PostChatFileResults | null,
+    operation: ComposerFileOperation,
+  ): boolean {
+    if (!results || !isCurrentComposerFileOperation(operation)) return false
+
+    let nextMessageInput = messageInput
+    const nextFileInput = [...fileInput]
+    let changed = false
+
+    for (const res of results) {
+      if (res?.type === 'asset') {
+        nextFileInput.push(res.data)
+        changed = true
+      }
+      if (res?.type === 'text') {
+        nextMessageInput += `{{file::${res.name}::${res.data}}}`
+        changed = true
+      }
+    }
+
+    if (!changed) return false
+
+    messageInput = nextMessageInput
+    fileInput = nextFileInput
+    markComposerDraftChanged()
+    updateInputSizeAll()
+    return true
+  }
+
+  function readFileAsArrayBuffer(file: File): Promise<ArrayBuffer> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = (event) => {
+        const result = event.target?.result
+        if (result instanceof ArrayBuffer) {
+          resolve(result)
+          return
+        }
+        reject(new Error('FileReader did not return an ArrayBuffer.'))
+      }
+      reader.onerror = () => reject(reader.error ?? new Error('Failed to read file.'))
+      reader.readAsArrayBuffer(file)
+    })
+  }
+
+  async function handleComposerPaste(event: ClipboardEvent) {
+    const items = event.clipboardData?.items
+    if (!items) return
+
+    const files: File[] = []
+    for (const item of items) {
+      if (item.kind === 'file' && item.type.startsWith('image')) {
+        const file = item.getAsFile()
+        if (file) files.push(file)
+      }
+    }
+
+    if (files.length === 0) return
+
+    event.preventDefault()
+    const operation = beginComposerFileOperation()
+    if (!operation) return
+
+    try {
+      const collectedResults: PostChatFileResults = []
+      for (const file of files) {
+        const buffer = await readFileAsArrayBuffer(file)
+        if (!isCurrentComposerFileOperation(operation)) return
+
+        const results = await postChatFile({
+          name: file.name,
+          data: new Uint8Array(buffer),
+        })
+        if (!isCurrentComposerFileOperation(operation)) return
+        if (results) collectedResults.push(...results)
+      }
+
+      applyChatFileResultsForCurrentComposer(collectedResults, operation)
+    } catch (error) {
+      console.error(error)
+    } finally {
+      composerFileOperationGuard.clear(operation.token)
+    }
+  }
+
+  async function postFileFromMenu() {
+    const operation = beginComposerFileOperation()
+    if (!operation) return
+
+    try {
+      const results = await postChatFile(messageInput)
+      applyChatFileResultsForCurrentComposer(results, operation)
+    } finally {
+      composerFileOperationGuard.clear(operation.token)
+    }
   }
 
   function resetTranscriptWindowForChatSwitch() {
@@ -356,6 +487,7 @@
         const commandProcessed = await processMultiCommand(messageInput)
         if (commandProcessed !== false) {
           messageInput = ''
+          markComposerDraftChanged()
           return
         }
       }
@@ -404,6 +536,7 @@
       messageInput = ''
       messageInputTranslate = ''
       fileInput = []
+      markComposerDraftChanged()
       await sleep(10)
       updateInputSizeAll()
       // Clear the reroll buffer only after send/continue succeeds.
@@ -460,6 +593,7 @@
     let previousLength =
       DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message.length
     messageInput = ''
+    markComposerDraftChanged()
     const abortController = createActiveGenerationAbortController()
     try {
       const ok = await sendChat(-1, {
@@ -536,10 +670,12 @@
     if (isExpTranslator()) {
       if (!reverse) {
         messageInputTranslate = ''
+        markComposerDraftChanged()
         return
       }
       if (messageInputTranslate === '') {
         messageInput = ''
+        markComposerDraftChanged()
         return
       }
       const lastMessageInputTranslate = messageInputTranslate
@@ -549,6 +685,7 @@
           if (translatedMessage) {
             if (reverse) messageInput = translatedMessage
             else messageInputTranslate = translatedMessage
+            markComposerDraftChanged()
           }
         })
       }
@@ -556,16 +693,19 @@
     }
     if (reverse && messageInputTranslate === '') {
       messageInput = ''
+      markComposerDraftChanged()
       return
     }
     if (!reverse && messageInput === '') {
       messageInputTranslate = ''
+      markComposerDraftChanged()
       return
     }
     translate(reverse ? messageInputTranslate : messageInput, reverse).then((translatedMessage) => {
       if (translatedMessage) {
         if (reverse) messageInput = translatedMessage
         else messageInputTranslate = translatedMessage
+        markComposerDraftChanged()
       }
     })
   }
@@ -809,46 +949,9 @@
               e.preventDefault()
             }
           }}
-          onpaste={(e) => {
-            const items = e.clipboardData?.items
-            if (!items) {
-              return
-            }
-            let canceled = false
-
-            for (const item of items) {
-              if (item.kind === 'file' && item.type.startsWith('image')) {
-                if (!canceled) {
-                  e.preventDefault()
-                  canceled = true
-                }
-                const file = item.getAsFile()
-                if (file) {
-                  const reader = new FileReader()
-                  reader.onload = async (e) => {
-                    const buf = e.target?.result as ArrayBuffer
-                    const uint8 = new Uint8Array(buf)
-                    const results = await postChatFile({
-                      name: file.name,
-                      data: uint8,
-                    })
-                    if (!results) return
-                    for (const res of results) {
-                      if (res?.type === 'asset') {
-                        fileInput.push(res.data)
-                      }
-                      if (res?.type === 'text') {
-                        messageInput += `{{file::${res.name}::${res.data}}}`
-                      }
-                    }
-                    updateInputSizeAll()
-                  }
-                  reader.readAsArrayBuffer(file)
-                }
-              }
-            }
-          }}
+          onpaste={(e) => void handleComposerPaste(e)}
           oninput={() => {
+            markComposerDraftChanged()
             updateInputSizeAll()
             updateInputTransateMessage(false)
           }}
@@ -914,6 +1017,7 @@
               }
             }}
             oninput={() => {
+              markComposerDraftChanged()
               updateInputSizeAll()
               updateInputTransateMessage(true)
             }}
@@ -952,6 +1056,7 @@
                   class="absolute -right-1 -top-1 p-1 bg-darkbg text-textcolor rounded-md transition-colors hover:text-draculared focus:text-draculared"
                   onclick={() => {
                     fileInput.splice(i, 1)
+                    markComposerDraftChanged()
                     updateInputSizeAll()
                   }}>
                   <XIcon size={18} />
@@ -974,6 +1079,7 @@
                 else if (fileExtension === 'mp3' || fileExtension === 'wav') fileType = 'audio'
               }
               messageInput += `<span class='notranslate' translate='no'>{{${fileType}::${additionalAsset[0]}}}</span> *${additionalAsset[0]} added*`
+              markComposerDraftChanged()
               updateInputSizeAll()
             }} />
         </div>
@@ -981,14 +1087,16 @@
 
       {#if DBState.db.useAutoSuggestions}
         <Suggestion
-          messageInput={(msg) =>
-            (messageInput =
+          messageInput={(msg) => {
+            messageInput =
               (DBState.db.subModel === 'textgen_webui' ||
                 DBState.db.subModel === 'mancer' ||
                 DBState.db.subModel.startsWith('local_')) &&
               DBState.db.autoSuggestClean
                 ? msg.replace(/ +\(.+?\) *$| - [^"'*]*?$/, '')
-                : msg)}
+                : msg
+            markComposerDraftChanged()
+          }}
           {send} />
       {/if}
 
@@ -1204,19 +1312,7 @@
 
           <div
             class="flex items-center cursor-pointer hover:text-green-500 transition-colors"
-            onclick={async () => {
-              const results = await postChatFile(messageInput)
-              if (!results) return
-              for (const res of results) {
-                if (res?.type === 'asset') {
-                  fileInput.push(res.data)
-                }
-                if (res?.type === 'text') {
-                  messageInput += `{{file::${res.name}::${res.data}}}`
-                }
-              }
-              updateInputSizeAll()
-            }}>
+            onclick={postFileFromMenu}>
             <ImagePlusIcon />
             <span class="ml-2">{language.postFile}</span>
           </div>

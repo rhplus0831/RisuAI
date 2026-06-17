@@ -7,27 +7,32 @@ hardening workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 3 custom background upload/cancel
-  callback freshness. `CustomBackgroundToggle.svelte` now uses a component-local
-  latest-operation guard and live `customBackground === '-'` placeholder check
-  before async picker/upload completions apply an uploaded image, restore a
-  previous value, or show an upload error.
+- Runtime/code change under test: Phase 3 composer paste/menu file callback
+  freshness. `DefaultChatScreen.svelte` now routes menu file and pasted-image
+  continuations through a shared guarded apply path that checks a latest-operation
+  token, active transcript identity, and composer mutation version before
+  mutating `messageInput` or `fileInput`.
 - Commands:
 
 ```bash
-pnpm exec vitest run src/lib/Setting/Pages/Display/CustomBackgroundToggle.svelte.test.ts src/ts/server/staleStateGuards.test.ts
+pnpm exec vitest run src/lib/ChatScreens/DefaultChatScreen.loadPages.test.ts src/ts/server/staleStateGuards.test.ts
+pnpm exec vitest run src/ts/process/files/multisend.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 ```
 
-- Result: passed on 2026-06-17. The focused Vitest set passed 2 files and 16
-  tests. Both TypeScript checks passed.
-- Residual gaps: this slice is intentionally limited to custom background
-  picker/upload/cancel/error completions. Browser/manual file picker smoke was
-  not run. Remaining Phase 3 surfaces include composer file callbacks, character
-  assets, settings media assets, prompt icon/background/theme imports, module
-  assets, plugin import/update, persona/preset/chat/character import helpers,
-  and NanoGPT dashboard fetch persistence.
+- Result: passed on 2026-06-17. The chat-screen focused Vitest set passed 2
+  files and 23 tests; the multisend focused Vitest file passed 7 tests. Both
+  TypeScript checks passed.
+- Residual gaps: this slice intentionally avoids Phase 4 send/generation
+  freshness beyond invalidating stale file callbacks after composer clear/send.
+  Tests cover stale menu results after composer edit and active chat change, plus
+  stale paste results after composer edit. Paste-after-chat-switch and
+  multi-image one-token behavior were verified by code inspection rather than
+  dedicated tests. Remaining Phase 3 surfaces include character assets, settings
+  media assets, prompt icon/background/theme imports, module assets, plugin
+  import/update, persona/preset/chat/character import helpers, and NanoGPT
+  dashboard fetch persistence.
 
 ## Required Closeout Proof
 
