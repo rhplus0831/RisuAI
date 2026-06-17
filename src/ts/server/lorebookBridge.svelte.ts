@@ -34,7 +34,11 @@ import {
   type ServerCommandTransportOptions,
 } from './commands'
 import { getServerProjectionApplyEpoch, withTrustedServerProjectionWrite } from './projectionWriteGuard.svelte'
-import { applyAttemptedKeyedListRollback, mergeProjectionIntoDirtyDraft } from './staleStateGuards'
+import {
+  applyAttemptedFieldRollback,
+  applyAttemptedKeyedListRollback,
+  mergeProjectionIntoDirtyDraft,
+} from './staleStateGuards'
 
 type GlobalLorebook = { id?: string; name: string; data: loreBook[] }
 
@@ -203,6 +207,31 @@ export interface GlobalLorebookStateSnapshot {
   loreBook: GlobalLorebook[]
   loreBookPage: number
   selectedCharID: number
+}
+
+type GlobalLorebookListRollbackEntry = {
+  key: string
+  previous: GlobalLorebook | null
+  attempted: GlobalLorebook | null
+  previousIndex?: number
+}
+
+type GlobalLorebookNameRollback = {
+  lorebookId: string
+  previous: Partial<Pick<GlobalLorebook, 'name'>>
+  attempted: Pick<GlobalLorebook, 'name'>
+}
+
+type GlobalLorebookOrderRollback = {
+  previousIds: string[]
+  attemptedIds: string[]
+}
+
+type GlobalLorebookSelectionRollback = {
+  previousPage: number
+  previousLorebookId: string | null
+  attemptedPage: number
+  attemptedLorebookId: string | null
 }
 
 export function currentGlobalLorebookStateSnapshot(): GlobalLorebookStateSnapshot {
@@ -787,6 +816,7 @@ export function selectGlobalLorebook(index: number): boolean {
 export function createGlobalLorebook(): boolean {
   const previous = currentGlobalLorebookStateSnapshot()
   const lorebook: GlobalLorebook = {
+    id: v4(),
     name: 'New LoreBook',
     data: [],
   }
@@ -832,22 +862,28 @@ export function deleteGlobalLorebook(index: number): boolean {
   return true
 }
 
-// Global-lorebook select/create/delete only touch `loreBook` / `loreBookPage`, so
-// they take the narrow `GlobalLorebookStateSnapshot` and roll back via
-// `restoreGlobalLorebookState` — never the whole characters + modules clone the
-// `LorebookStateSnapshot` carries. The full snapshot stays for the entry-replace
-// dispatchers (which can mutate character/module/chat lore).
+// Global-lorebook list operations roll back only the attempted row/order/page
+// state. The broad snapshot exports remain for direct callers and Phase 0 clone
+// cost checks, but command failures must not restore an old full list over newer
+// sibling rows or selection changes.
 export function dispatchCreateGlobalLorebook(lorebook: GlobalLorebook, previous: GlobalLorebookStateSnapshot): void {
   if (!canUseServerCommands()) return
   lorebook.id = typeof lorebook.id === 'string' && lorebook.id.trim() ? lorebook.id : v4()
   lorebook.data = ensureClientLorebookEntryIds(lorebook.data ?? [])
+  const attempted = cloneJsonValue(lorebook)
+  const rollbackEntry: GlobalLorebookListRollbackEntry = {
+    key: attempted.id as string,
+    previous: null,
+    attempted,
+    previousIndex: previous.loreBook.length,
+  }
   void runServerCommand({
     command: (baseRevision) =>
       createGlobalLorebookCommand({
         baseRevision,
-        lorebook: cloneJsonValue(lorebook) as GlobalLorebookSnapshot,
+        lorebook: cloneJsonValue(attempted) as GlobalLorebookSnapshot,
       }),
-    rollback: () => rollbackServerBackedGlobalLorebooks(previous),
+    rollback: () => rollbackGlobalLorebookListEntry(rollbackEntry),
   })
 }
 
@@ -857,26 +893,39 @@ export function dispatchUpdateGlobalLorebook(
   previous: LorebookStateSnapshot,
 ): void {
   if (!canUseServerCommands()) return
+  const attempted = cloneJsonValue(patch)
+  const rollback = globalLorebookNameRollbackFromSnapshot(lorebookId, previous, attempted)
   void runServerCommand({
     command: (baseRevision) =>
       updateGlobalLorebookCommand({
         baseRevision,
         lorebookId,
-        patch,
+        patch: cloneJsonValue(attempted),
       }),
-    rollback: () => rollbackServerBackedLorebooks(previous),
+    rollback: () => rollbackGlobalLorebookName(rollback),
   })
 }
 
 export function dispatchDeleteGlobalLorebook(lorebookId: string, previous: GlobalLorebookStateSnapshot): void {
   if (!canUseServerCommands()) return
+  const previousIndex = previous.loreBook.findIndex((lorebook) => lorebook.id === lorebookId)
+  const previousLorebook = previousIndex >= 0 ? previous.loreBook[previousIndex] : null
+  const rollbackEntry: GlobalLorebookListRollbackEntry | null = previousLorebook
+    ? {
+        key: lorebookId,
+        previous: cloneJsonValue(previousLorebook),
+        attempted: null,
+        previousIndex,
+      }
+    : null
+  const selectionRollback = globalLorebookSelectionRollbackFromSnapshot(previous)
   void runServerCommand({
     command: (baseRevision) =>
       deleteGlobalLorebookCommand({
         baseRevision,
         lorebookId,
       }),
-    rollback: () => rollbackServerBackedGlobalLorebooks(previous),
+    rollback: () => rollbackDeletedGlobalLorebook(rollbackEntry, selectionRollback),
   })
 }
 
@@ -884,25 +933,32 @@ export function dispatchReorderGlobalLorebooks(previous: LorebookStateSnapshot):
   if (!canUseServerCommands()) return
   const lorebookIds = ((DBState.db.loreBook ?? []) as GlobalLorebook[]).map((lorebook) => lorebook.id)
   if (!hasStableUniqueCommandIds(lorebookIds)) return
+  const previousIds = previous.loreBook.map((lorebook) => lorebook.id)
+  if (!hasStableUniqueCommandIds(previousIds)) return
+  const rollback: GlobalLorebookOrderRollback = {
+    previousIds: previousIds as string[],
+    attemptedIds: lorebookIds as string[],
+  }
   void runServerCommand({
     command: (baseRevision) =>
       reorderGlobalLorebooksCommand({
         baseRevision,
-        lorebookIds,
+        lorebookIds: cloneJsonValue(rollback.attemptedIds),
       }),
-    rollback: () => rollbackServerBackedLorebooks(previous),
+    rollback: () => rollbackGlobalLorebookOrder(rollback),
   })
 }
 
 export function dispatchSelectGlobalLorebook(lorebookId: string, previous: GlobalLorebookStateSnapshot): void {
   if (!canUseServerCommands()) return
+  const rollback = globalLorebookSelectionRollbackFromSnapshot(previous, lorebookId)
   void runServerCommand({
     command: (baseRevision) =>
       selectGlobalLorebookCommand({
         baseRevision,
         lorebookId,
       }),
-    rollback: () => rollbackServerBackedGlobalLorebooks(previous),
+    rollback: () => rollbackGlobalLorebookSelection(rollback),
   })
 }
 
@@ -1771,6 +1827,233 @@ function rollbackServerBackedGlobalLorebooks(snapshot: GlobalLorebookStateSnapsh
   withSuppressedLorebookWatcher(() => {
     restoreGlobalLorebookState(snapshot)
   })
+}
+
+function rollbackGlobalLorebookListEntry(rollbackEntry: GlobalLorebookListRollbackEntry | null): void {
+  if (!rollbackEntry) return
+  if (!canApplyGlobalLorebookListRollback(rollbackEntry)) return
+  const selectedLorebookId = currentSelectedGlobalLorebookId()
+
+  withSuppressedLorebookWatcher(() => {
+    withTrustedServerProjectionWrite(() => {
+      const lorebooks = mutableGlobalLorebookList()
+      if (!canApplyGlobalLorebookListRollback(rollbackEntry, lorebooks)) return
+      const rolledBack = applyAttemptedKeyedListRollback<GlobalLorebook, string>({
+        list: lorebooks,
+        entries: [rollbackEntry],
+        getKey: globalLorebookKey,
+      })
+      if (rolledBack.length === 0) return
+      DBState.db.loreBook = lorebooks as typeof DBState.db.loreBook
+      restoreGlobalLorebookSelectionById(selectedLorebookId)
+    })
+  })
+}
+
+function rollbackDeletedGlobalLorebook(
+  rollbackEntry: GlobalLorebookListRollbackEntry | null,
+  selectionRollback: GlobalLorebookSelectionRollback,
+): void {
+  const shouldRestoreRow = rollbackEntry ? canApplyGlobalLorebookListRollback(rollbackEntry) : false
+  const shouldRestoreSelection = canApplyGlobalLorebookSelectionRollback(selectionRollback)
+  if (!shouldRestoreRow && !shouldRestoreSelection) return
+
+  const selectedLorebookId = currentSelectedGlobalLorebookId()
+  let restoredRow = false
+
+  if (shouldRestoreRow && rollbackEntry) {
+    withTrustedServerProjectionWrite(() => {
+      const lorebooks = mutableGlobalLorebookList()
+      const canRestoreRow = rollbackEntry ? canApplyGlobalLorebookListRollback(rollbackEntry, lorebooks) : false
+      if (!canRestoreRow) return
+
+      withSuppressedLorebookWatcher(() => {
+        restoredRow =
+          applyAttemptedKeyedListRollback<GlobalLorebook, string>({
+            list: lorebooks,
+            entries: [rollbackEntry],
+            getKey: globalLorebookKey,
+          }).length > 0
+        if (restoredRow) DBState.db.loreBook = lorebooks as typeof DBState.db.loreBook
+      })
+    })
+  }
+
+  withTrustedServerProjectionWrite(() => {
+    const canRestoreSelection = canApplyGlobalLorebookSelectionRollback(selectionRollback)
+    if (canRestoreSelection) {
+      restoreGlobalLorebookSelection(selectionRollback)
+    } else if (restoredRow) {
+      restoreGlobalLorebookSelectionById(selectedLorebookId)
+    }
+  })
+}
+
+function canApplyGlobalLorebookListRollback(
+  rollbackEntry: GlobalLorebookListRollbackEntry,
+  lorebooks = (DBState.db.loreBook ?? []) as GlobalLorebook[],
+): boolean {
+  const liveIndex = lorebooks.findIndex((lorebook) => globalLorebookKey(lorebook) === rollbackEntry.key)
+  const liveValue = liveIndex === -1 ? null : lorebooks[liveIndex]
+  return snapshotJson(liveValue) === snapshotJson(rollbackEntry.attempted)
+}
+
+function rollbackGlobalLorebookName(rollback: GlobalLorebookNameRollback): void {
+  if (!canApplyGlobalLorebookNameRollback(rollback)) return
+
+  withSuppressedLorebookWatcher(() => {
+    withTrustedServerProjectionWrite(() => {
+      const lorebooks = mutableGlobalLorebookList()
+      if (!canApplyGlobalLorebookNameRollback(rollback, lorebooks)) return
+      const lorebook = lorebooks.find((candidate) => candidate.id === rollback.lorebookId)
+      if (!lorebook) return
+      applyAttemptedFieldRollback({
+        target: lorebook as unknown as Record<string, unknown>,
+        previous: rollback.previous,
+        attempted: rollback.attempted,
+        keys: ['name'],
+      })
+    })
+  })
+}
+
+function canApplyGlobalLorebookNameRollback(
+  rollback: GlobalLorebookNameRollback,
+  lorebooks = (DBState.db.loreBook ?? []) as GlobalLorebook[],
+): boolean {
+  if (!Object.prototype.hasOwnProperty.call(rollback.attempted, 'name')) return false
+  if (!Object.prototype.hasOwnProperty.call(rollback.previous, 'name')) return false
+  const lorebook = lorebooks.find((candidate) => candidate.id === rollback.lorebookId)
+  return !!lorebook && snapshotJson(lorebook.name) === snapshotJson(rollback.attempted.name)
+}
+
+function rollbackGlobalLorebookOrder(rollback: GlobalLorebookOrderRollback): void {
+  const liveIds = globalLorebookStableIds((DBState.db.loreBook ?? []) as GlobalLorebook[])
+  if (!liveIds || !sameStringArray(liveIds, rollback.attemptedIds)) return
+  const selectedLorebookId = currentSelectedGlobalLorebookId()
+
+  withSuppressedLorebookWatcher(() => {
+    withTrustedServerProjectionWrite(() => {
+      const lorebooks = mutableGlobalLorebookList()
+      const currentIds = globalLorebookStableIds(lorebooks)
+      if (!currentIds || !sameStringArray(currentIds, rollback.attemptedIds)) return
+
+      const lorebooksById = new Map(lorebooks.map((lorebook) => [lorebook.id, lorebook]))
+      const reordered = rollback.previousIds
+        .map((lorebookId) => lorebooksById.get(lorebookId))
+        .filter((lorebook): lorebook is GlobalLorebook => !!lorebook)
+      if (reordered.length !== lorebooks.length) return
+
+      lorebooks.splice(0, lorebooks.length, ...reordered)
+      restoreGlobalLorebookSelectionById(selectedLorebookId)
+    })
+  })
+}
+
+function rollbackGlobalLorebookSelection(rollback: GlobalLorebookSelectionRollback): void {
+  if (!canApplyGlobalLorebookSelectionRollback(rollback)) return
+
+  withSuppressedLorebookWatcher(() => {
+    withTrustedServerProjectionWrite(() => {
+      if (!canApplyGlobalLorebookSelectionRollback(rollback)) return
+      restoreGlobalLorebookSelection(rollback)
+    })
+  })
+}
+
+function globalLorebookNameRollbackFromSnapshot(
+  lorebookId: string,
+  previous: LorebookStateSnapshot,
+  attempted: Pick<GlobalLorebook, 'name'>,
+): GlobalLorebookNameRollback {
+  return {
+    lorebookId,
+    previous: previousGlobalLorebookNamePatch(lorebookId, previous),
+    attempted: cloneJsonValue(attempted),
+  }
+}
+
+function previousGlobalLorebookNamePatch(
+  lorebookId: string,
+  previous: LorebookStateSnapshot,
+): Partial<Pick<GlobalLorebook, 'name'>> {
+  if (previous.scopeKey === `globalMeta:${lorebookId}`) {
+    const value = previous.scopedValue
+    if (value && typeof value === 'object' && typeof (value as { name?: unknown }).name === 'string') {
+      return { name: (value as { name: string }).name }
+    }
+    return {}
+  }
+
+  const lorebook = previous.loreBook.find((candidate) => candidate.id === lorebookId)
+  return typeof lorebook?.name === 'string' ? { name: lorebook.name } : {}
+}
+
+function globalLorebookSelectionRollbackFromSnapshot(
+  previous: GlobalLorebookStateSnapshot,
+  attemptedLorebookId = currentSelectedGlobalLorebookId(),
+): GlobalLorebookSelectionRollback {
+  const previousPage = previous.loreBookPage ?? 0
+  const previousLorebookId = stableGlobalLorebookId(previous.loreBook[previousPage]?.id)
+  const attemptedPage = DBState.db.loreBookPage ?? 0
+  return {
+    previousPage,
+    previousLorebookId,
+    attemptedPage,
+    attemptedLorebookId: stableGlobalLorebookId(attemptedLorebookId),
+  }
+}
+
+function canApplyGlobalLorebookSelectionRollback(rollback: GlobalLorebookSelectionRollback): boolean {
+  if (rollback.attemptedLorebookId) {
+    return currentSelectedGlobalLorebookId() === rollback.attemptedLorebookId
+  }
+  return (DBState.db.loreBookPage ?? 0) === rollback.attemptedPage
+}
+
+function restoreGlobalLorebookSelection(rollback: GlobalLorebookSelectionRollback): void {
+  const lorebooks = (DBState.db.loreBook ?? []) as GlobalLorebook[]
+  if (rollback.previousLorebookId) {
+    restoreGlobalLorebookSelectionById(rollback.previousLorebookId)
+    return
+  }
+
+  if (rollback.previousPage >= 0 && rollback.previousPage < lorebooks.length) {
+    DBState.db.loreBookPage = rollback.previousPage
+  }
+}
+
+function restoreGlobalLorebookSelectionById(lorebookId: string | null): void {
+  if (!lorebookId) return
+  const lorebooks = (DBState.db.loreBook ?? []) as GlobalLorebook[]
+  const index = lorebooks.findIndex((lorebook) => lorebook.id === lorebookId)
+  if (index >= 0) DBState.db.loreBookPage = index
+}
+
+function currentSelectedGlobalLorebookId(): string | null {
+  const lorebooks = (DBState.db.loreBook ?? []) as GlobalLorebook[]
+  const page = DBState.db.loreBookPage ?? 0
+  return stableGlobalLorebookId(lorebooks[page]?.id)
+}
+
+function stableGlobalLorebookId(value: unknown): string | null {
+  return isStableCommandId(value) ? value : null
+}
+
+function globalLorebookKey(lorebook: GlobalLorebook): string | null {
+  return stableGlobalLorebookId(lorebook.id)
+}
+
+function globalLorebookStableIds(lorebooks: GlobalLorebook[]): string[] | null {
+  const ids = lorebooks.map((lorebook) => lorebook.id)
+  return hasStableUniqueCommandIds(ids) ? ids : null
+}
+
+function mutableGlobalLorebookList(): GlobalLorebook[] {
+  if (!Array.isArray(DBState.db.loreBook)) {
+    DBState.db.loreBook = [] as typeof DBState.db.loreBook
+  }
+  return DBState.db.loreBook as GlobalLorebook[]
 }
 
 function rollbackServerBackedLorebookEntry(snapshot: LorebookEntryStateSnapshot, attemptedEntries?: loreBook[]): void {

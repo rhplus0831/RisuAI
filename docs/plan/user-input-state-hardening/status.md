@@ -137,6 +137,10 @@ persistence inventory under
   rows, missing deleted entries, attempted order, or attempted full replacement
   collections instead of restoring broad lorebook snapshots over newer sibling
   entries, same-entry edits, appended entries, or newer order changes.
+  Top-level global lorebook list command failures now roll back only attempted
+  rows, name fields, order, and selected lorebook id instead of restoring full
+  lorebook snapshots over newer sibling rows, row-name edits, appended rows,
+  order changes, or newer selection.
   Phase 2 landed character profile draft dirty top-level field protection;
   prompt-template item row dirty projection merging; whole-key dirty projection
   protection for
@@ -316,6 +320,9 @@ persistence inventory under
 - `src/ts/server/lorebookBridge.svelte.ts` now guards scoped lorebook entry
   replacement rollback for character, chat, global lorebook-entry, and
   module-lorebook entry collections by attempted id, value, and order.
+- `src/ts/server/lorebookBridge.svelte.ts` also now guards top-level global
+  lorebook create, rename, delete, reorder, and select rollback by attempted
+  row, name, order, and selected lorebook id.
 - `src/lib/Setting/Pages/Language/TranslatorPresetSettings.svelte` now dispatches
   translator preset create, select, delete, and import collection commands
   without broad full-state rollback callbacks while retaining scoped dirty
@@ -331,7 +338,7 @@ persistence inventory under
   copy, select, create, update, delete, reorder, and extraction rollback by
   attempted row, field, order, selection, generated split row, and scalar
   settings state.
-- Verification state: Phase 5 scoped lorebook entry replacement rollback
+- Verification state: Phase 5 top-level global lorebook list rollback
   validation is recorded in `latest-verification.md`.
 - Highest issue density:
   - Character editor: 52 issue rows, mostly dirty projection and unguarded
@@ -388,8 +395,8 @@ persistence inventory under
   Composer file and paste callbacks are already covered by Phase 3. No known
   code gap blocks Phase 4 completion.
 - [Phase 5](phases/phase-5-collection-domains.md): active. Module
-  regex/script/trigger subdomains, top-level lorebook/sidebar/import collection
-  flows; Hypa V3
+  regex/script/trigger subdomains, sidebar/import collection flows, broader
+  lorebook import/navigation edges; Hypa V3
   preset array import/rename/delete; plugin settings patch residuals; and
   sidebar/chat/folder/character list create/delete/reorder/import rollback
   remain here. Script/trigger replacement rollback, plugin custom storage plus
@@ -397,8 +404,8 @@ persistence inventory under
   plugin DB bridge settings, persona collection, and translator preset
   collection rollback slices have landed. Prompt-template item collection
   rollback, split prompt/model preset array rollback, legacy bot preset
-  rollback, persona residual command rollback, and scoped lorebook entry
-  replacement rollback have also landed.
+  rollback, persona residual command rollback, scoped lorebook entry replacement
+  rollback, and top-level global lorebook list rollback have also landed.
 - [Phase 6](phases/phase-6-resync-memory-navigation.md): pending. Realm, backup,
   and local bundle restore/import resyncs; character/chat import
   refresh/navigation edges; memory job list/progress ordering; route/selection
@@ -667,10 +674,14 @@ persistence inventory under
   - Phase 5 scoped lorebook entry replacement slice: character, chat, global
     lorebook-entry, and module-lorebook entry replacement rollback now freezes
     attempted collections and rolls back by attempted id, value, and order.
-  - Phase 5: top-level lorebook/sidebar/import collection flows, module
-    regex/script/trigger subdomains, Hypa V3 preset array import/rename/delete,
-    plugin import/update side-effect reload, sidebar chat/folder lists,
-    character list ordering, and broad create/delete/reorder/import rollback.
+  - Phase 5 top-level global lorebook list slice: global lorebook create,
+    rename, delete, reorder, and select rollback now uses attempted row, name,
+    order, and selected-id guards instead of broad lorebook snapshots.
+  - Phase 5: sidebar/import collection flows, broader lorebook import/navigation
+    edges, module regex/script/trigger subdomains, Hypa V3 preset array
+    import/rename/delete, plugin import/update side-effect reload, sidebar
+    chat/folder lists, character list ordering, and broad
+    create/delete/reorder/import rollback.
   - Known pre-existing test gap: `pnpm exec vitest run
     src/ts/compatibilityAdapters.test.ts` fails in
     `routes MCP character lorebook writes through lorebook commands in

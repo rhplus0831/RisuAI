@@ -111,6 +111,13 @@ order. Failed scoped entry create/update/delete/reorder/full-replace commands no
 longer restore broad lorebook snapshots over newer sibling entries, same-entry
 edits, appended entries, or newer order changes.
 
+Fifteenth landed slice: top-level global lorebook list rollback now scopes
+create, rename, delete, reorder, and select failures by attempted row, name,
+order, and selected lorebook id. Failed global lorebook commands no longer
+restore full lorebook snapshots over newer sibling rows, row-name edits,
+appended rows, order changes, or newer selection, and stale no-op rollback does
+not suppress watcher dispatch.
+
 ## Anchors
 
 - `src/lib/Setting/botpreset.svelte`
