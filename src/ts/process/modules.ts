@@ -18,18 +18,18 @@ import { decodeRPack, encodeRPack } from '../rpack/rpack_js'
 import { DBState, HideIconStore, moduleBackgroundEmbedding, reloadGuiAfterDefinitionChange } from '../stores.svelte'
 import { createGlobalModule } from '../moduleCommands'
 import {
-  currentLorebookStateSnapshot,
+  currentLorebookCollectionScopedSnapshot,
   dispatchReplaceCharacterLorebooks,
   ensureClientLorebookEntryIds,
-  restoreLorebookState,
+  isCharacterLorebookHydrated,
+  rollbackCharacterLorebookReplacement,
 } from '../server/lorebookBridge.svelte'
 import {
-  currentScriptDefinitionStateSnapshot,
   dispatchReplaceCharacterScripts,
   dispatchReplaceCharacterTriggers,
   ensureClientScriptDefinitionIds,
   ensureClientTriggerDefinitionIds,
-  restoreScriptDefinitionState,
+  rollbackScopedScriptDefinitionReplacement,
 } from '../server/scriptDefinitionBridge.svelte'
 import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
 import { runOptimisticCommandSequence } from '../chatCommands'
@@ -37,6 +37,7 @@ import {
   replaceCharacterLorebooksCommand,
   replaceCharacterScriptsCommand,
   replaceCharacterTriggersCommand,
+  type ServerCommandResult,
 } from '../server/commands'
 
 export interface MCPModule {
@@ -531,6 +532,38 @@ export function getModuleMcps() {
   return modules.map((v) => v.mcp?.url).filter((v) => v)
 }
 
+type ModuleApplyCommandFactory = (baseRevision: number) => Promise<ServerCommandResult>
+
+interface ModuleApplyStep {
+  succeeded: boolean
+  command: ModuleApplyCommandFactory
+  rollback: () => void
+}
+
+function createModuleApplyStep(command: ModuleApplyCommandFactory, rollback: () => void): ModuleApplyStep {
+  const step: ModuleApplyStep = {
+    succeeded: false,
+    command: async (baseRevision) => {
+      const result = await command(baseRevision)
+      if (result.status === 'ok') {
+        step.succeeded = true
+      }
+      return result
+    },
+    rollback,
+  }
+  return step
+}
+
+function rollbackUnacceptedModuleApplySteps(steps: ModuleApplyStep[]): void {
+  for (let i = steps.length - 1; i >= 0; i--) {
+    const step = steps[i]
+    if (!step.succeeded) {
+      step.rollback()
+    }
+  }
+}
+
 export async function applyModule() {
   const sel = await alertModuleSelect()
   if (!sel) {
@@ -548,17 +581,30 @@ export async function applyModule() {
   }
 
   const characterId = currentChar.chaId
-  const nextLorebooks = module.lorebook
-    ? [...(currentChar.globalLore ?? []), ...safeStructuredClone(module.lorebook)]
-    : undefined
+  if (!characterId) {
+    return
+  }
+
+  const canApplyLorebooks =
+    !!module.lorebook && (!DBState.db?.enableLorebookStubs || isCharacterLorebookHydrated(characterId))
+  const lorePrevious = canApplyLorebooks
+    ? currentLorebookCollectionScopedSnapshot({ kind: 'character', characterId })
+    : null
+  const previousScripts = module.regex ? safeStructuredClone(currentChar.customscript ?? []) : null
+  const previousTriggers = module.trigger ? safeStructuredClone(currentChar.triggerscript ?? []) : null
+  const hadScriptsField = module.regex ? Object.prototype.hasOwnProperty.call(currentChar, 'customscript') : false
+  const hadTriggersField = module.trigger ? Object.prototype.hasOwnProperty.call(currentChar, 'triggerscript') : false
+
+  const nextLorebooks =
+    module.lorebook && lorePrevious
+      ? ensureClientLorebookEntryIds([...(currentChar.globalLore ?? []), ...safeStructuredClone(module.lorebook)])
+      : undefined
   const nextScripts = module.regex
-    ? [...(currentChar.customscript ?? []), ...safeStructuredClone(module.regex)]
+    ? ensureClientScriptDefinitionIds([...(currentChar.customscript ?? []), ...safeStructuredClone(module.regex)])
     : undefined
   const nextTriggers = module.trigger
-    ? [...(currentChar.triggerscript ?? []), ...safeStructuredClone(module.trigger)]
+    ? ensureClientTriggerDefinitionIds([...(currentChar.triggerscript ?? []), ...safeStructuredClone(module.trigger)])
     : undefined
-  const lorePrevious = nextLorebooks ? currentLorebookStateSnapshot() : null
-  const scriptPrevious = nextScripts || nextTriggers ? currentScriptDefinitionStateSnapshot() : null
 
   withTrustedServerProjectionWrite(() => {
     const target = DBState.db.characters.find((character) => character.chaId === characterId)
@@ -568,55 +614,93 @@ export async function applyModule() {
     if (nextTriggers) target.triggerscript = safeStructuredClone(nextTriggers)
   })
 
-  // Serialize the three module-apply replacements against one optimistic
-  // snapshot. The sequencer awaits each response so the next command reads the
-  // updated cached revision.
+  // Serialize the three module-apply replacements. Each optimistic step owns a
+  // scoped rollback record, and the sequencer awaits each response so the next
+  // command reads the updated cached revision.
   if (characterId) {
-    const factories: Array<(baseRevision: number) => Promise<unknown>> = []
+    const steps: ModuleApplyStep[] = []
     if (nextLorebooks && lorePrevious) {
-      const lorebookEntries = ensureClientLorebookEntryIds(nextLorebooks)
-      const lorebookSnapshot = safeStructuredClone(lorebookEntries) as Parameters<
+      const lorebookSnapshot = safeStructuredClone(nextLorebooks) as Parameters<
         typeof replaceCharacterLorebooksCommand
       >[0]['entries']
-      factories.push((baseRevision) =>
-        replaceCharacterLorebooksCommand({
-          baseRevision,
-          characterId,
-          entries: lorebookSnapshot,
-        }),
+      const attemptedLorebooks = safeStructuredClone(lorebookSnapshot) as loreBook[]
+      steps.push(
+        createModuleApplyStep(
+          (baseRevision) =>
+            replaceCharacterLorebooksCommand({
+              baseRevision,
+              characterId,
+              entries: lorebookSnapshot,
+            }),
+          () => rollbackCharacterLorebookReplacement(characterId, lorePrevious, attemptedLorebooks),
+        ),
       )
     }
-    if (nextScripts && scriptPrevious) {
-      const scriptDefs = ensureClientScriptDefinitionIds(nextScripts)
-      const scriptsSnapshot = safeStructuredClone(scriptDefs) as Parameters<
+    if (nextScripts && previousScripts) {
+      const scriptsSnapshot = safeStructuredClone(nextScripts) as Parameters<
         typeof replaceCharacterScriptsCommand
       >[0]['scripts']
-      factories.push((baseRevision) =>
-        replaceCharacterScriptsCommand({
-          baseRevision,
-          characterId,
-          scripts: scriptsSnapshot,
-        }),
+      const attemptedScripts = safeStructuredClone(scriptsSnapshot) as customscript[]
+      steps.push(
+        createModuleApplyStep(
+          (baseRevision) =>
+            replaceCharacterScriptsCommand({
+              baseRevision,
+              characterId,
+              scripts: scriptsSnapshot,
+            }),
+          () =>
+            rollbackScopedScriptDefinitionReplacement(
+              {
+                kind: 'characterScripts',
+                characterId,
+                scripts: previousScripts,
+                hadScriptsField,
+              },
+              {
+                kind: 'characterScripts',
+                characterId,
+                scripts: attemptedScripts,
+              },
+            ),
+        ),
       )
     }
-    if (nextTriggers && scriptPrevious) {
-      const triggerDefs = ensureClientTriggerDefinitionIds(nextTriggers)
-      const triggersSnapshot = safeStructuredClone(triggerDefs) as Parameters<
+    if (nextTriggers && previousTriggers) {
+      const triggersSnapshot = safeStructuredClone(nextTriggers) as Parameters<
         typeof replaceCharacterTriggersCommand
       >[0]['triggers']
-      factories.push((baseRevision) =>
-        replaceCharacterTriggersCommand({
-          baseRevision,
-          characterId,
-          triggers: triggersSnapshot,
-        }),
+      const attemptedTriggers = safeStructuredClone(triggersSnapshot) as triggerscript[]
+      steps.push(
+        createModuleApplyStep(
+          (baseRevision) =>
+            replaceCharacterTriggersCommand({
+              baseRevision,
+              characterId,
+              triggers: triggersSnapshot,
+            }),
+          () =>
+            rollbackScopedScriptDefinitionReplacement(
+              {
+                kind: 'characterTriggers',
+                characterId,
+                triggers: previousTriggers,
+                hadTriggersField,
+              },
+              {
+                kind: 'characterTriggers',
+                characterId,
+                triggers: attemptedTriggers,
+              },
+            ),
+        ),
       )
     }
-    if (factories.length > 0) {
-      runOptimisticCommandSequence(factories as Parameters<typeof runOptimisticCommandSequence>[0], () => {
-        if (lorePrevious) restoreLorebookState(lorePrevious)
-        if (scriptPrevious) restoreScriptDefinitionState(scriptPrevious)
-      })
+    if (steps.length > 0) {
+      runOptimisticCommandSequence(
+        steps.map((step) => step.command) as Parameters<typeof runOptimisticCommandSequence>[0],
+        () => rollbackUnacceptedModuleApplySteps(steps),
+      )
     }
   }
   // Keep the bridge dispatchers imported so delay-based coalescing can use

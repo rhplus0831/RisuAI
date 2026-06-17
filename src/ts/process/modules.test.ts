@@ -21,25 +21,19 @@ const getDatabase = vi.hoisted(() => vi.fn((): ModuleDatabaseFixture => ({ modul
 const dispatchReplaceCharacterLorebooks = vi.hoisted(() => vi.fn())
 const dispatchReplaceCharacterScripts = vi.hoisted(() => vi.fn())
 const dispatchReplaceCharacterTriggers = vi.hoisted(() => vi.fn())
+const currentLorebookCollectionScopedSnapshot = vi.hoisted(() => vi.fn())
 const ensureClientLorebookEntryIds = vi.hoisted(() => vi.fn((entries: unknown) => entries))
+const isCharacterLorebookHydrated = vi.hoisted(() => vi.fn(() => true))
 const restoreLorebookState = vi.hoisted(() => vi.fn())
+const rollbackCharacterLorebookReplacement = vi.hoisted(() => vi.fn())
 const ensureClientScriptDefinitionIds = vi.hoisted(() => vi.fn((scripts: unknown) => scripts))
 const ensureClientTriggerDefinitionIds = vi.hoisted(() => vi.fn((triggers: unknown) => triggers))
 const restoreScriptDefinitionState = vi.hoisted(() => vi.fn())
+const rollbackScopedScriptDefinitionReplacement = vi.hoisted(() => vi.fn())
 const replaceCharacterLorebooksCommand = vi.hoisted(() => vi.fn(async () => ({ status: 'ok', revision: 1, data: {} })))
 const replaceCharacterScriptsCommand = vi.hoisted(() => vi.fn(async () => ({ status: 'ok', revision: 2, data: {} })))
 const replaceCharacterTriggersCommand = vi.hoisted(() => vi.fn(async () => ({ status: 'ok', revision: 3, data: {} })))
-const runOptimisticCommandSequence = vi.hoisted(() =>
-  vi.fn((commands: Array<(rev: number) => Promise<unknown>>, _rollback: () => void) => {
-    void (async () => {
-      let rev = 0
-      for (const command of commands) {
-        await command(rev)
-        rev += 1
-      }
-    })()
-  }),
-)
+const runOptimisticCommandSequence = vi.hoisted(() => vi.fn())
 
 vi.mock('../platform', () => ({
   isFastifyServer: true,
@@ -106,9 +100,12 @@ vi.mock('../moduleCommands', () => ({
 
 vi.mock('../server/lorebookBridge.svelte', () => ({
   currentLorebookStateSnapshot: vi.fn(() => ({ loreBook: [], characters: [], modules: [] })),
+  currentLorebookCollectionScopedSnapshot,
   dispatchReplaceCharacterLorebooks,
   ensureClientLorebookEntryIds,
+  isCharacterLorebookHydrated,
   restoreLorebookState,
+  rollbackCharacterLorebookReplacement,
 }))
 
 vi.mock('../server/scriptDefinitionBridge.svelte', () => ({
@@ -118,6 +115,7 @@ vi.mock('../server/scriptDefinitionBridge.svelte', () => ({
   ensureClientScriptDefinitionIds,
   ensureClientTriggerDefinitionIds,
   restoreScriptDefinitionState,
+  rollbackScopedScriptDefinitionReplacement,
 }))
 
 vi.mock('../chatCommands', () => ({
@@ -145,9 +143,86 @@ import {
 import { DBState, moduleBackgroundEmbedding } from '../stores.svelte'
 import type { character } from '../storage/database.svelte'
 
+function cloneJsonValue<T>(value: T): T {
+  if (value === undefined) return value
+  return JSON.parse(JSON.stringify(value)) as T
+}
+
+function snapshotJson(value: unknown): string {
+  const snapshot = JSON.stringify(value)
+  return snapshot === undefined ? '__undefined__' : snapshot
+}
+
+function characterById(characterId: string): Record<string, unknown> | undefined {
+  return (DBState.db.characters as Array<Record<string, unknown>> | undefined)?.find(
+    (candidate) => candidate.chaId === characterId,
+  )
+}
+
+function installAttemptAwareRollbackMocks(): void {
+  currentLorebookCollectionScopedSnapshot.mockImplementation(({ characterId }: { characterId: string }) => {
+    const character = characterById(characterId)
+    return {
+      scopeKey: `character:${characterId}`,
+      scopedValue: cloneJsonValue((character?.globalLore as unknown[]) ?? []),
+      loreBook: cloneJsonValue(DBState.db.loreBook ?? []),
+      loreBookPage: DBState.db.loreBookPage ?? 0,
+      characters: cloneJsonValue(DBState.db.characters ?? []),
+      modules: cloneJsonValue(DBState.db.modules ?? []),
+      selectedCharID: 0,
+    }
+  })
+  rollbackCharacterLorebookReplacement.mockImplementation(
+    (characterId: string, snapshot: { scopedValue?: unknown }, attemptedEntries: unknown[]) => {
+      const character = characterById(characterId)
+      if (!character || snapshotJson(character.globalLore ?? []) !== snapshotJson(attemptedEntries)) return
+      character.globalLore = cloneJsonValue(snapshot.scopedValue ?? [])
+    },
+  )
+  rollbackScopedScriptDefinitionReplacement.mockImplementation(
+    (
+      rollback:
+        | {
+            kind: 'characterScripts'
+            characterId: string
+            scripts: unknown[]
+            hadScriptsField?: boolean
+          }
+        | {
+            kind: 'characterTriggers'
+            characterId: string
+            triggers: unknown[]
+            hadTriggersField?: boolean
+          },
+      attempted:
+        | { kind: 'characterScripts'; characterId: string; scripts: unknown[] }
+        | { kind: 'characterTriggers'; characterId: string; triggers: unknown[] },
+    ) => {
+      const character = characterById(rollback.characterId)
+      if (!character || rollback.kind !== attempted.kind || rollback.characterId !== attempted.characterId) return
+      if (rollback.kind === 'characterScripts') {
+        if (snapshotJson(character.customscript) !== snapshotJson(attempted.scripts)) return
+        if (rollback.hadScriptsField === false) {
+          delete character.customscript
+        } else {
+          character.customscript = cloneJsonValue(rollback.scripts)
+        }
+        return
+      }
+      if (snapshotJson(character.triggerscript) !== snapshotJson(attempted.triggers)) return
+      if (rollback.hadTriggersField === false) {
+        delete character.triggerscript
+      } else {
+        character.triggerscript = cloneJsonValue(rollback.triggers)
+      }
+    },
+  )
+}
+
 describe('module imports', () => {
   beforeEach(() => {
     selectedFileState.file = null
+    ;(DBState as { db: Record<string, unknown> }).db = { modules: [], characters: [] }
     alertError.mockClear()
     saveAsset.mockClear()
     createGlobalModule.mockClear()
@@ -157,6 +232,25 @@ describe('module imports', () => {
     getCurrentChatMock.mockReset()
     getDatabase.mockReset()
     getDatabase.mockReturnValue({ modules: [] })
+    runOptimisticCommandSequence.mockClear()
+    replaceCharacterLorebooksCommand.mockReset()
+    replaceCharacterLorebooksCommand.mockResolvedValue({ status: 'ok', revision: 1, data: {} })
+    replaceCharacterScriptsCommand.mockReset()
+    replaceCharacterScriptsCommand.mockResolvedValue({ status: 'ok', revision: 2, data: {} })
+    replaceCharacterTriggersCommand.mockReset()
+    replaceCharacterTriggersCommand.mockResolvedValue({ status: 'ok', revision: 3, data: {} })
+    currentLorebookCollectionScopedSnapshot.mockReset()
+    ensureClientLorebookEntryIds.mockReset()
+    ensureClientLorebookEntryIds.mockImplementation((entries: unknown) => entries)
+    isCharacterLorebookHydrated.mockReset()
+    isCharacterLorebookHydrated.mockReturnValue(true)
+    rollbackCharacterLorebookReplacement.mockReset()
+    ensureClientScriptDefinitionIds.mockReset()
+    ensureClientScriptDefinitionIds.mockImplementation((scripts: unknown) => scripts)
+    ensureClientTriggerDefinitionIds.mockReset()
+    ensureClientTriggerDefinitionIds.mockImplementation((triggers: unknown) => triggers)
+    rollbackScopedScriptDefinitionReplacement.mockReset()
+    installAttemptAwareRollbackMocks()
     vi.mocked(moduleBackgroundEmbedding.set).mockClear()
     dispatchReplaceCharacterLorebooks.mockClear()
     dispatchReplaceCharacterScripts.mockClear()
@@ -225,8 +319,6 @@ describe('module imports', () => {
     })
 
     await applyModule()
-    // The sequencer is fire-and-forget; let microtasks settle.
-    await new Promise((resolve) => setTimeout(resolve, 0))
 
     // applyModule serializes its three child-replacement commands via
     // runOptimisticCommandSequence. Assert the sequencer received factories that
@@ -262,7 +354,135 @@ describe('module imports', () => {
         { comment: 'Module trigger', type: 'manual', conditions: [], effect: [] },
       ],
     })
+    expect(replaceCharacterLorebooksCommand.mock.invocationCallOrder[0]).toBeLessThan(
+      replaceCharacterScriptsCommand.mock.invocationCallOrder[0],
+    )
+    expect(replaceCharacterScriptsCommand.mock.invocationCallOrder[0]).toBeLessThan(
+      replaceCharacterTriggersCommand.mock.invocationCallOrder[0],
+    )
     expect(alertNormal).toHaveBeenCalled()
+  })
+
+  it('keeps accepted lorebook apply and rolls back only failed script plus trigger tail', async () => {
+    alertModuleSelect.mockResolvedValue('mod-a')
+    const character = {
+      chaId: 'char-a',
+      globalLore: [{ comment: 'Existing lore', content: 'old' }],
+      customscript: [{ comment: 'Existing regex', in: 'old', out: 'old' }],
+      triggerscript: [{ comment: 'Existing trigger', type: 'manual', conditions: [], effect: [] }],
+    } as unknown as character
+    DBState.db.characters = [character]
+    getCurrentCharacter.mockReturnValue(character)
+    getDatabase.mockReturnValue({
+      modules: [
+        {
+          id: 'mod-a',
+          name: 'Module A',
+          description: '',
+          lorebook: [{ comment: 'Module lore', content: 'lore' }],
+          regex: [{ comment: 'Module regex', in: 'in', out: 'out' }],
+          trigger: [{ comment: 'Module trigger', type: 'manual', conditions: [], effect: [] }],
+        },
+      ],
+    })
+
+    await applyModule()
+
+    const [factories, rollback] = runOptimisticCommandSequence.mock.calls[0] as [
+      Array<(baseRevision: number) => Promise<{ status: string }>>,
+      () => void,
+    ]
+    await factories[0](10)
+    replaceCharacterScriptsCommand.mockResolvedValueOnce({ status: 'conflict', revision: 2, data: {} })
+    character.customscript = [{ comment: 'Newer regex', in: 'newer', out: 'newer' }]
+
+    await factories[1](11)
+    rollback()
+
+    expect(replaceCharacterTriggersCommand).not.toHaveBeenCalled()
+    expect(rollbackCharacterLorebookReplacement).not.toHaveBeenCalled()
+    expect(rollbackScopedScriptDefinitionReplacement).toHaveBeenCalledTimes(2)
+    expect(rollbackScopedScriptDefinitionReplacement.mock.calls.map(([entry]) => entry.kind)).toEqual([
+      'characterTriggers',
+      'characterScripts',
+    ])
+    expect(character.globalLore).toEqual([
+      { comment: 'Existing lore', content: 'old' },
+      { comment: 'Module lore', content: 'lore' },
+    ])
+    expect(character.customscript).toEqual([{ comment: 'Newer regex', in: 'newer', out: 'newer' }])
+    expect(character.triggerscript).toEqual([
+      { comment: 'Existing trigger', type: 'manual', conditions: [], effect: [] },
+    ])
+  })
+
+  it('failure rollback preserves sibling characters and unrelated module/global state', async () => {
+    alertModuleSelect.mockResolvedValue('mod-a')
+    const target = {
+      chaId: 'char-a',
+      globalLore: [{ comment: 'Existing lore', content: 'old' }],
+      customscript: [{ comment: 'Existing regex', in: 'old', out: 'old' }],
+      triggerscript: [{ comment: 'Existing trigger', type: 'manual', conditions: [], effect: [] }],
+    } as unknown as character
+    const sibling = {
+      chaId: 'char-b',
+      globalLore: [{ comment: 'Sibling lore', content: 'sibling' }],
+      customscript: [{ comment: 'Sibling regex', in: 'sib', out: 'sib' }],
+      triggerscript: [{ comment: 'Sibling trigger', type: 'manual', conditions: [], effect: [] }],
+    } as unknown as character
+    DBState.db.characters = [target, sibling]
+    DBState.db.modules = [
+      {
+        id: 'unrelated-module',
+        regex: [{ comment: 'Unrelated module regex', in: 'module', out: 'module' }],
+      },
+    ]
+    DBState.db.loreBook = [{ id: 'global-lore', name: 'Global lore', data: [{ comment: 'Global', content: 'g' }] }]
+    getCurrentCharacter.mockReturnValue(target)
+    getDatabase.mockReturnValue({
+      modules: [
+        {
+          id: 'mod-a',
+          name: 'Module A',
+          description: '',
+          lorebook: [{ comment: 'Module lore', content: 'lore' }],
+          regex: [{ comment: 'Module regex', in: 'in', out: 'out' }],
+          trigger: [{ comment: 'Module trigger', type: 'manual', conditions: [], effect: [] }],
+        },
+      ],
+    })
+
+    await applyModule()
+
+    const [factories, rollback] = runOptimisticCommandSequence.mock.calls[0] as [
+      Array<(baseRevision: number) => Promise<{ status: string }>>,
+      () => void,
+    ]
+    replaceCharacterLorebooksCommand.mockResolvedValueOnce({ status: 'conflict', revision: 1, data: {} })
+    sibling.customscript = [{ comment: 'Sibling newer regex', in: 'new-sib', out: 'new-sib' }]
+    ;(DBState.db.modules as Array<Record<string, unknown>>)[0].regex = [
+      { comment: 'Unrelated module newer regex', in: 'new-module', out: 'new-module' },
+    ]
+    ;(DBState.db.loreBook as Array<Record<string, unknown>>)[0].name = 'Global lore newer'
+
+    await factories[0](10)
+    rollback()
+
+    expect(replaceCharacterScriptsCommand).not.toHaveBeenCalled()
+    expect(replaceCharacterTriggersCommand).not.toHaveBeenCalled()
+    expect(target.globalLore).toEqual([{ comment: 'Existing lore', content: 'old' }])
+    expect(target.customscript).toEqual([{ comment: 'Existing regex', in: 'old', out: 'old' }])
+    expect(target.triggerscript).toEqual([{ comment: 'Existing trigger', type: 'manual', conditions: [], effect: [] }])
+    expect(sibling.customscript).toEqual([{ comment: 'Sibling newer regex', in: 'new-sib', out: 'new-sib' }])
+    expect(DBState.db.modules).toEqual([
+      {
+        id: 'unrelated-module',
+        regex: [{ comment: 'Unrelated module newer regex', in: 'new-module', out: 'new-module' }],
+      },
+    ])
+    expect(DBState.db.loreBook).toEqual([
+      { id: 'global-lore', name: 'Global lore newer', data: [{ comment: 'Global', content: 'g' }] },
+    ])
   })
 
   it('refreshes active module triggers when module rows are replaced under the same enabled namespace', () => {

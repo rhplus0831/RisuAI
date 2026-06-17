@@ -1817,6 +1817,14 @@ function rollbackLorebookReplacement(
   rollbackServerBackedLorebookCollection(scope, snapshot, attemptedEntries)
 }
 
+export function rollbackCharacterLorebookReplacement(
+  characterId: string,
+  snapshot: LorebookStateSnapshot,
+  attemptedEntries: loreBook[],
+): void {
+  rollbackLorebookReplacement({ kind: 'character', characterId }, snapshot, attemptedEntries)
+}
+
 function rollbackServerBackedLorebooks(snapshot: LorebookStateSnapshot): void {
   withSuppressedLorebookWatcher(() => {
     restoreLorebookState(snapshot)

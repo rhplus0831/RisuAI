@@ -7,38 +7,36 @@ workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 5 MCP character regex and Lua-trigger
-  rollback. MCP character regex set/delete writes now use character-scoped
-  script rollback records, and MCP character Lua writes now use
-  character-scoped trigger rollback records instead of broad script-definition
-  snapshots. Delayed command failures preserve sibling characters, module
-  scripts/triggers, and unrelated target fields when live state no longer
-  matches the attempted optimistic write.
+- Runtime/code change under test: Phase 5 `applyModule()` multi-domain
+  rollback. Applying a module to a character now serializes character lorebook,
+  regex, and trigger replacement commands with per-step scoped rollback records
+  instead of one broad lorebook/script-definition restore. Delayed failures keep
+  earlier accepted child commands, roll back only the failed or not-yet-run
+  optimistic tail, and preserve newer sibling/global/module state when live
+  state no longer matches the attempted optimistic write.
 - Commands:
 
 ```bash
-pnpm exec vitest run src/ts/process/mcp/risuaccess/tests/characters.setCharacterInfo.test.ts
-pnpm exec vitest run src/ts/server/scriptDefinitionBridge.svelte.test.ts
-pnpm exec vitest run src/ts/compatibilityAdapters.test.ts -t "routes MCP character regex and Lua writes through script definition commands"
+pnpm exec vitest run src/ts/process/modules.test.ts
+pnpm exec vitest run src/ts/server/lorebookBridge.svelte.test.ts src/ts/server/scriptDefinitionBridge.svelte.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
-pnpm exec prettier --check src/ts/process/mcp/risuaccess/characters.ts src/ts/process/mcp/risuaccess/tests/characters.setCharacterInfo.test.ts
+pnpm exec prettier --check src/ts/process/modules.ts src/ts/process/modules.test.ts src/ts/server/lorebookBridge.svelte.ts src/ts/server/scriptDefinitionBridge.svelte.ts
 git diff --check
 ```
 
-- Result: passed on 2026-06-17. MCP character optimistic projection coverage
-  passed 10 tests, script-definition bridge coverage passed 45 tests, targeted
-  compatibility adapter coverage passed 1 test with 18 skipped, and both
-  TypeScript checks plus Prettier and `git diff --check` passed.
+- Result: passed on 2026-06-17. Module process coverage passed 12 tests,
+  lorebook plus script-definition bridge coverage passed 123 tests across 2
+  files, and both TypeScript checks plus Prettier and `git diff --check`
+  passed.
 - Additional check: `pnpm exec vitest run src/ts/compatibilityAdapters.test.ts`
   still fails in the pre-existing character MCP lorebook test
   `routes MCP character lorebook writes through lorebook commands in
   server-backed web mode` at `src/ts/compatibilityAdapters.test.ts:626`.
   A detached baseline worktree at commit `30d4ad7ab` reproduced the same
-  failure before this slice, so it is tracked as out-of-scope for this MCP
-  character regex/Lua rollback change.
-- Residual gaps: `applyModule()` multi-domain rollback remains Phase 5
-  residual work. Multi-group plugin settings patch failures still share the
+  failure before this slice, so it is tracked as out-of-scope for this
+  `applyModule()` rollback change.
+- Residual gaps: Multi-group plugin settings patch failures still share the
   generic settings rollback
   callback and roll back all still-attempted keys from the failed patch. Plugin
   import/update side-effect reload is not fully modeled by rollback. Full
@@ -86,10 +84,10 @@ git diff --check
   rollback is covered by the fifteenth Phase 5 slice. MCP module lorebook,
   regex, and Lua-trigger rollback is covered by the sixteenth Phase 5 slice.
   MCP character regex and Lua-trigger rollback is covered by the seventeenth
-  Phase 5 slice. Remaining Phase 5 work owns `applyModule()` multi-domain
-  rollback, sidebar/import collection flows, broader lorebook import/navigation
-  edges, Hypa V3 preset array import/rename/delete, plugin import/update
-  side-effect reload, and
+  Phase 5 slice. `applyModule()` multi-domain rollback is covered by the
+  eighteenth Phase 5 slice. Remaining Phase 5 work owns sidebar/import
+  collection flows, broader lorebook import/navigation edges, Hypa V3 preset
+  array import/rename/delete, plugin import/update side-effect reload, and
   sidebar/chat/folder/character list create/delete/reorder/import rollback.
 - Phase 6 owns Realm/backup/local bundle restore/import resyncs, character/chat
   import refresh/navigation edges, memory job list/progress ordering,

@@ -130,6 +130,12 @@ set/delete or Lua-trigger commands no longer restore broad script-definition
 snapshots over sibling characters, module scripts/triggers, or unrelated target
 script/trigger fields.
 
+Eighteenth landed slice: `applyModule()` now uses per-step scoped character
+lorebook/script/trigger rollback records for module-apply fan-out. Failed module
+apply sequences keep earlier accepted child replacements and roll back only the
+failed or not-yet-run optimistic tail instead of restoring broad lorebook or
+script-definition snapshots.
+
 ## Anchors
 
 - `src/lib/Setting/botpreset.svelte`

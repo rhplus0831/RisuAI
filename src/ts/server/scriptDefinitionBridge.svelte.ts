@@ -36,7 +36,7 @@ export type ScopedScriptDefinitionRollback =
   | { kind: 'moduleScripts'; moduleId: string; scripts: customscript[] }
   | { kind: 'moduleTriggers'; moduleId: string; triggers: triggerscript[] }
 
-type ScopedScriptDefinitionAttempt =
+export type ScopedScriptDefinitionAttempt =
   | { kind: 'characterScripts'; characterId: string; scripts: customscript[] }
   | { kind: 'characterTriggers'; characterId: string; triggers: triggerscript[] }
   | { kind: 'moduleScripts'; moduleId: string; scripts: customscript[] }
@@ -927,6 +927,13 @@ function rollbackServerBackedScriptDefinitions(
       })
     }
   }
+}
+
+export function rollbackScopedScriptDefinitionReplacement(
+  rollback: ScopedScriptDefinitionRollback,
+  attempted: ScopedScriptDefinitionAttempt,
+): void {
+  rollbackServerBackedScriptDefinitions(rollback, attempted)
 }
 
 // Restore only the changed row's scripts/triggers from a scoped rollback, leaving

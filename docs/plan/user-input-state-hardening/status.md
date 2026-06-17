@@ -146,6 +146,9 @@ persistence inventory under
   script-definition snapshots.
   MCP character regex and Lua-trigger command failures now use scoped character
   script/trigger rollback records instead of broad script-definition snapshots.
+  `applyModule()` command fan-out now uses scoped per-step rollback records so
+  accepted child replacements stay applied when a later lorebook/script/trigger
+  command fails.
   Phase 2 landed character profile draft dirty top-level field protection;
   prompt-template item row dirty projection merging; whole-key dirty projection
   protection for
@@ -334,6 +337,9 @@ persistence inventory under
 - `src/ts/process/mcp/risuaccess/characters.ts` now passes character-scoped
   script and trigger rollback snapshots for MCP character regex and Lua-trigger
   writes.
+- `src/ts/process/modules.ts` now guards `applyModule()` character lorebook,
+  script, and trigger command fan-out with per-step scoped rollback records and
+  attempted payload checks.
 - `src/lib/Setting/Pages/Language/TranslatorPresetSettings.svelte` now dispatches
   translator preset create, select, delete, and import collection commands
   without broad full-state rollback callbacks while retaining scoped dirty
@@ -349,7 +355,7 @@ persistence inventory under
   copy, select, create, update, delete, reorder, and extraction rollback by
   attempted row, field, order, selection, generated split row, and scalar
   settings state.
-- Verification state: Phase 5 MCP character regex and Lua-trigger
+- Verification state: Phase 5 `applyModule()` multi-domain
   rollback
   validation is recorded in `latest-verification.md`.
 - Highest issue density:
@@ -406,9 +412,8 @@ persistence inventory under
   freshness has landed. Dynamic rendered button trigger freshness has landed.
   Composer file and paste callbacks are already covered by Phase 3. No known
   code gap blocks Phase 4 completion.
-- [Phase 5](phases/phase-5-collection-domains.md): active. `applyModule()`
-  multi-domain rollback, sidebar/import collection flows, broader lorebook
-  import/navigation edges; Hypa V3
+- [Phase 5](phases/phase-5-collection-domains.md): active. Sidebar/import
+  collection flows, broader lorebook import/navigation edges; Hypa V3
   preset array import/rename/delete; plugin settings patch residuals; and
   sidebar/chat/folder/character list create/delete/reorder/import rollback
   remain here. Script/trigger replacement rollback, plugin custom storage plus
@@ -419,7 +424,8 @@ persistence inventory under
   rollback, persona residual command rollback, scoped lorebook entry replacement
   rollback, top-level global lorebook list rollback, and MCP module lorebook,
   regex, and Lua-trigger rollback have also landed. MCP character regex and
-  Lua-trigger rollback has also landed.
+  Lua-trigger rollback has also landed. `applyModule()` multi-domain rollback
+  has also landed.
 - [Phase 6](phases/phase-6-resync-memory-navigation.md): pending. Realm, backup,
   and local bundle restore/import resyncs; character/chat import
   refresh/navigation edges; memory job list/progress ordering; route/selection
@@ -697,11 +703,14 @@ persistence inventory under
   - Phase 5 MCP character subdomain slice: MCP character regex and Lua-trigger
     writes now pass character-scoped rollback snapshots instead of broad
     script-definition snapshots.
-  - Phase 5: `applyModule()` multi-domain rollback, sidebar/import collection
-    flows, broader lorebook import/navigation edges, Hypa V3 preset array
-    import/rename/delete, plugin import/update side-effect reload, sidebar
-    chat/folder lists, character list ordering, and broad
-    create/delete/reorder/import rollback.
+  - Phase 5 `applyModule()` slice: module apply now serializes character
+    lorebook/script/trigger replacement commands with per-step scoped rollback
+    records, preserving earlier accepted child replacements when a later command
+    fails.
+  - Phase 5: sidebar/import collection flows, broader lorebook
+    import/navigation edges, Hypa V3 preset array import/rename/delete, plugin
+    import/update side-effect reload, sidebar chat/folder lists, character list
+    ordering, and broad create/delete/reorder/import rollback.
   - Known pre-existing test gap: `pnpm exec vitest run
     src/ts/compatibilityAdapters.test.ts` fails in
     `routes MCP character lorebook writes through lorebook commands in
