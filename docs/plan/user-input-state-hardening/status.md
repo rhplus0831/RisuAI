@@ -149,6 +149,8 @@ persistence inventory under
   `applyModule()` command fan-out now uses scoped per-step rollback records so
   accepted child replacements stay applied when a later lorebook/script/trigger
   command fails.
+  Chat folder create, update, delete, and reorder command failures now use
+  scoped attempted-value rollback instead of restoring broad chat snapshots.
   Phase 2 landed character profile draft dirty top-level field protection;
   prompt-template item row dirty projection merging; whole-key dirty projection
   protection for
@@ -340,6 +342,9 @@ persistence inventory under
 - `src/ts/process/modules.ts` now guards `applyModule()` character lorebook,
   script, and trigger command fan-out with per-step scoped rollback records and
   attempted payload checks.
+- `src/ts/chatCommands.ts` now guards chat folder create, update, delete, and
+  reorder command rollback by attempted row, metadata, affected chat folder
+  assignment, and order state.
 - `src/lib/Setting/Pages/Language/TranslatorPresetSettings.svelte` now dispatches
   translator preset create, select, delete, and import collection commands
   without broad full-state rollback callbacks while retaining scoped dirty
@@ -355,7 +360,7 @@ persistence inventory under
   copy, select, create, update, delete, reorder, and extraction rollback by
   attempted row, field, order, selection, generated split row, and scalar
   settings state.
-- Verification state: Phase 5 `applyModule()` multi-domain
+- Verification state: Phase 5 chat folder command
   rollback
   validation is recorded in `latest-verification.md`.
 - Highest issue density:
@@ -415,7 +420,7 @@ persistence inventory under
 - [Phase 5](phases/phase-5-collection-domains.md): active. Sidebar/import
   collection flows, broader lorebook import/navigation edges; Hypa V3
   preset array import/rename/delete; plugin settings patch residuals; and
-  sidebar/chat/folder/character list create/delete/reorder/import rollback
+  chat list plus character list create/delete/reorder/import rollback
   remain here. Script/trigger replacement rollback, plugin custom storage plus
   non-storage and collection rollback slices, global module/MCP module-info,
   plugin DB bridge settings, persona collection, and translator preset
@@ -425,7 +430,7 @@ persistence inventory under
   rollback, top-level global lorebook list rollback, and MCP module lorebook,
   regex, and Lua-trigger rollback have also landed. MCP character regex and
   Lua-trigger rollback has also landed. `applyModule()` multi-domain rollback
-  has also landed.
+  has also landed. Chat folder command rollback has also landed.
 - [Phase 6](phases/phase-6-resync-memory-navigation.md): pending. Realm, backup,
   and local bundle restore/import resyncs; character/chat import
   refresh/navigation edges; memory job list/progress ordering; route/selection
@@ -707,10 +712,13 @@ persistence inventory under
     lorebook/script/trigger replacement commands with per-step scoped rollback
     records, preserving earlier accepted child replacements when a later command
     fails.
+  - Phase 5 chat folder command slice: chat folder create, update, delete, and
+    reorder rollback now uses attempted row, metadata, affected-chat, and order
+    guards instead of broad chat snapshots.
   - Phase 5: sidebar/import collection flows, broader lorebook
     import/navigation edges, Hypa V3 preset array import/rename/delete, plugin
-    import/update side-effect reload, sidebar chat/folder lists, character list
-    ordering, and broad create/delete/reorder/import rollback.
+    import/update side-effect reload, chat list and character list ordering, and
+    broad create/delete/reorder/import rollback.
   - Known pre-existing test gap: `pnpm exec vitest run
     src/ts/compatibilityAdapters.test.ts` fails in
     `routes MCP character lorebook writes through lorebook commands in

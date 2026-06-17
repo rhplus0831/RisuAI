@@ -136,6 +136,11 @@ apply sequences keep earlier accepted child replacements and roll back only the
 failed or not-yet-run optimistic tail instead of restoring broad lorebook or
 script-definition snapshots.
 
+Nineteenth landed slice: chat folder create, update, delete, and reorder
+commands now use scoped attempted-value rollback instead of full chat-state
+restore. Failed chat folder commands preserve newer same-folder edits, sibling
+folders, unrelated chat edits, moved affected chats, and newer folder reorders.
+
 ## Anchors
 
 - `src/lib/Setting/botpreset.svelte`

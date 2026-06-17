@@ -29,7 +29,7 @@ import {
 } from './server/commands'
 import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
 import { isServerChatMessagePlaceholder } from './server/chatMessagePlaceholders'
-import { applyAttemptedFieldRollback } from './server/staleStateGuards'
+import { applyAttemptedFieldRollback, applyAttemptedKeyedListRollback } from './server/staleStateGuards'
 import { DBState, reloadGuiDisplay, selectedCharID } from './stores.svelte'
 import type { Chat, ChatFolder, Message, character } from './storage/database.svelte'
 import type { ChatGenerationSettings } from './chatGenerationSettings'
@@ -70,6 +70,8 @@ export const MESSAGE_PATCH_ALLOWED_KEYS = new Set([
   'disabled',
   'isComment',
 ])
+
+export const CHAT_FOLDER_PATCH_ALLOWED_KEYS = new Set(['name', 'color', 'folded'])
 
 export function cloneJsonValue<T>(value: T): T {
   if (value === undefined) return value
@@ -421,6 +423,7 @@ export interface ChatFolderRowMetadataSnapshot {
   characterId: string | undefined
   folderId: string
   metadata: ChatFolderSnapshot
+  attempted?: ChatFolderSnapshot
 }
 
 export function restoreChatFolderRowMetadata(snapshot: ChatFolderRowMetadataSnapshot): void {
@@ -428,9 +431,215 @@ export function restoreChatFolderRowMetadata(snapshot: ChatFolderRowMetadataSnap
     const character = locateSnapshotCharacter(snapshot.characterId, snapshot.selectedCharID)
     const folder = character?.chatFolders?.find((candidate) => candidate.id === snapshot.folderId)
     if (!folder) return
+    if (snapshot.attempted) {
+      applyAttemptedFieldRollback({
+        target: folder as unknown as Record<string, unknown>,
+        previous: snapshot.metadata as Record<string, unknown>,
+        attempted: snapshot.attempted as Record<string, unknown>,
+        keys: CHAT_FOLDER_PATCH_ALLOWED_KEYS,
+        deleteMissingPrevious: true,
+      })
+      return
+    }
     folder.name = snapshot.metadata.name as string | undefined
     folder.color = snapshot.metadata.color as string | undefined
     folder.folded = (snapshot.metadata.folded as boolean | undefined) ?? false
+  })
+}
+
+interface ChatFolderLocation {
+  character: character
+  folder: ChatFolder
+  folderIndex: number
+}
+
+interface ChatFolderDeleteRollback {
+  selectedCharID: number
+  characterId: string | undefined
+  folderId: string
+  folder: ChatFolder
+  previousIndex: number
+  affectedChats: Array<{
+    chatId: string
+    previousFolderId: string | null | undefined
+    attemptedFolderId: string | null | undefined
+  }>
+}
+
+function locateSnapshotCharacterInState(
+  snapshot: ChatStateSnapshot,
+  characterId: string | undefined,
+): character | undefined {
+  if (characterId) {
+    const byId = snapshot.characters?.find((candidate) => candidate.chaId === characterId)
+    if (byId) return byId
+  }
+  return snapshot.characters?.[snapshot.selectedCharID]
+}
+
+function locateChatFolderInState(snapshot: ChatStateSnapshot, folderId: string): ChatFolderLocation | null {
+  for (const character of snapshot.characters ?? []) {
+    const folderIndex = character.chatFolders?.findIndex((candidate) => candidate.id === folderId) ?? -1
+    if (folderIndex >= 0) {
+      return {
+        character,
+        folder: character.chatFolders[folderIndex],
+        folderIndex,
+      }
+    }
+  }
+  return null
+}
+
+function chatFolderMetadataRollbackFromPatch(
+  folderId: string,
+  patch: ChatFolderSnapshot,
+  previous: ChatStateSnapshot,
+): ChatFolderRowMetadataSnapshot | null {
+  const location = locateChatFolderInState(previous, folderId)
+  if (!location) return null
+
+  const previousRow = location.folder as unknown as Record<string, unknown>
+  const metadata: ChatFolderSnapshot = {}
+  const attempted: ChatFolderSnapshot = {}
+  for (const key of CHAT_FOLDER_PATCH_ALLOWED_KEYS) {
+    if (!Object.prototype.hasOwnProperty.call(patch, key)) continue
+    if (Object.prototype.hasOwnProperty.call(previousRow, key)) {
+      metadata[key] = cloneJsonValue(previousRow[key])
+    }
+    attempted[key] = cloneJsonValue(patch[key])
+  }
+  if (Object.keys(attempted).length === 0) return null
+
+  return {
+    selectedCharID: previous.selectedCharID,
+    characterId: location.character.chaId,
+    folderId,
+    metadata,
+    attempted,
+  }
+}
+
+function restoreCreatedChatFolderAttempt(characterId: string, folder: ChatFolder, previous: ChatStateSnapshot): void {
+  if (!folder.id) return
+  const attempted = cloneJsonValue(folder)
+  withTrustedServerProjectionWrite(() => {
+    const character = locateSnapshotCharacter(characterId, previous.selectedCharID)
+    const folders = character?.chatFolders
+    if (!folders) return
+
+    const rolledBack = applyAttemptedKeyedListRollback<ChatFolder, string>({
+      list: folders,
+      entries: [
+        {
+          key: folder.id,
+          previous: null,
+          attempted,
+        },
+      ],
+      getKey: (candidate) => candidate?.id,
+    })
+    if (rolledBack.length > 0) character.chatFolders = folders
+  })
+}
+
+function currentChatFolderIdForChat(
+  characterId: string | undefined,
+  selectedCharId: number,
+  chatId: string,
+): string | null | undefined {
+  const character = locateSnapshotCharacter(characterId, selectedCharId)
+  return character?.chats?.find((chat) => chat.id === chatId)?.folderId
+}
+
+function chatFolderDeleteRollbackFromState(
+  folderId: string,
+  previous: ChatStateSnapshot,
+): ChatFolderDeleteRollback | null {
+  const location = locateChatFolderInState(previous, folderId)
+  if (!location) return null
+
+  const affectedChats = (location.character.chats ?? [])
+    .filter((chat) => chat.id && chat.folderId === folderId)
+    .map((chat) => ({
+      chatId: chat.id as string,
+      previousFolderId: chat.folderId,
+      attemptedFolderId: currentChatFolderIdForChat(
+        location.character.chaId,
+        previous.selectedCharID,
+        chat.id as string,
+      ),
+    }))
+
+  return {
+    selectedCharID: previous.selectedCharID,
+    characterId: location.character.chaId,
+    folderId,
+    folder: cloneJsonValue(location.folder),
+    previousIndex: location.folderIndex,
+    affectedChats,
+  }
+}
+
+function restoreDeletedChatFolderAttempt(rollback: ChatFolderDeleteRollback | null): void {
+  if (!rollback) return
+  withTrustedServerProjectionWrite(() => {
+    const character = locateSnapshotCharacter(rollback.characterId, rollback.selectedCharID)
+    const folders = character?.chatFolders
+    if (!character || !folders) return
+
+    const rolledBack = applyAttemptedKeyedListRollback<ChatFolder, string>({
+      list: folders,
+      entries: [
+        {
+          key: rollback.folderId,
+          previous: rollback.folder,
+          attempted: null,
+          previousIndex: rollback.previousIndex,
+        },
+      ],
+      getKey: (folder) => folder?.id,
+    })
+    if (rolledBack.length > 0) character.chatFolders = folders
+
+    for (const chatRollback of rollback.affectedChats) {
+      const chat = character.chats?.find((candidate) => candidate.id === chatRollback.chatId)
+      if (!chat) continue
+      applyAttemptedFieldRollback({
+        target: chat as unknown as Record<string, unknown>,
+        previous: { folderId: chatRollback.previousFolderId },
+        attempted: { folderId: chatRollback.attemptedFolderId },
+        keys: ['folderId'],
+      })
+    }
+  })
+}
+
+function chatFolderIds(folders: readonly ChatFolder[] | undefined): string[] {
+  return (folders ?? []).map((folder) => folder.id)
+}
+
+function stringArraysEqual(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index])
+}
+
+function restoreChatFolderOrderAttempt(
+  characterId: string,
+  previousIds: string[],
+  attemptedIds: string[],
+  previous: ChatStateSnapshot,
+): void {
+  withTrustedServerProjectionWrite(() => {
+    const character = locateSnapshotCharacter(characterId, previous.selectedCharID)
+    const folders = character?.chatFolders
+    if (!character || !folders) return
+    if (!stringArraysEqual(chatFolderIds(folders), attemptedIds)) return
+
+    const liveFoldersById = new Map(folders.map((folder) => [folder.id, folder]))
+    const restored = previousIds.map((id) => liveFoldersById.get(id))
+    if (restored.some((folder) => !folder)) return
+
+    character.chatFolders = restored as ChatFolder[]
   })
 }
 
@@ -936,6 +1145,7 @@ export function dispatchReorderChatsByIds(
 }
 
 export function dispatchCreateChatFolder(characterId: string, folder: ChatFolder, previous: ChatStateSnapshot): void {
+  const attemptedFolder = cloneJsonValue(folder)
   runChatCommand(
     (baseRevision) =>
       createChatFolderCommand({
@@ -943,7 +1153,7 @@ export function dispatchCreateChatFolder(characterId: string, folder: ChatFolder
         characterId,
         folder: toChatFolderSnapshot(folder),
       }),
-    () => restoreChatState(previous),
+    () => restoreCreatedChatFolderAttempt(characterId, attemptedFolder, previous),
   )
 }
 
@@ -952,14 +1162,18 @@ export function dispatchUpdateChatFolder(
   patch: ChatFolderSnapshot,
   previous: ChatStateSnapshot,
 ): void {
+  const rollback = chatFolderMetadataRollbackFromPatch(folderId, patch, previous)
+  const attemptedPatch = cloneJsonValue(patch)
   runChatCommand(
     (baseRevision) =>
       updateChatFolderCommand({
         baseRevision,
         folderId,
-        patch,
+        patch: attemptedPatch,
       }),
-    () => restoreChatState(previous),
+    () => {
+      if (rollback) restoreChatFolderRowMetadata(rollback)
+    },
   )
 }
 
@@ -972,30 +1186,39 @@ export function dispatchUpdateChatFolderRow(
   rollback: ChatFolderRowMetadataSnapshot,
   options: ServerCommandTransportOptions = {},
 ): void {
+  const attemptedPatch = cloneJsonValue(patch)
+  const attemptedRollback =
+    Object.keys(attemptedPatch).length > 0 || rollback.attempted
+      ? {
+          ...rollback,
+          attempted: { ...(rollback.attempted ?? {}), ...attemptedPatch },
+        }
+      : rollback
   runChatCommand(
     (baseRevision) =>
       updateChatFolderCommand(
         {
           baseRevision,
           folderId,
-          patch,
+          patch: attemptedPatch,
         },
         options.signal,
         options.keepalive,
       ),
-    () => restoreChatFolderRowMetadata(rollback),
+    () => restoreChatFolderRowMetadata(attemptedRollback),
     options,
   )
 }
 
 export function dispatchDeleteChatFolder(folderId: string, previous: ChatStateSnapshot): void {
+  const rollback = chatFolderDeleteRollbackFromState(folderId, previous)
   runChatCommand(
     (baseRevision) =>
       deleteChatFolderCommand({
         baseRevision,
         folderId,
       }),
-    () => restoreChatState(previous),
+    () => restoreDeletedChatFolderAttempt(rollback),
   )
 }
 
@@ -1020,15 +1243,20 @@ export function dispatchReorderChatFoldersByIds(
   previous: ChatStateSnapshot,
   selectedChatId?: string,
 ): void {
+  const previousCharacter = locateSnapshotCharacterInState(previous, characterId)
+  const previousIds = previousCharacter ? chatFolderIds(previousCharacter.chatFolders) : null
+  const attemptedIds = cloneJsonValue(folderIds)
   runChatCommand(
     (baseRevision) =>
       reorderChatFoldersCommand({
         baseRevision,
         characterId,
-        folderIds: cloneJsonValue(folderIds),
+        folderIds: attemptedIds,
         selectedChatId,
       }),
-    () => restoreChatState(previous),
+    () => {
+      if (previousIds) restoreChatFolderOrderAttempt(characterId, previousIds, attemptedIds, previous)
+    },
   )
 }
 
