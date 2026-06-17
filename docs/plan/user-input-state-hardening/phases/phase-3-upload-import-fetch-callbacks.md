@@ -46,6 +46,10 @@ operation token issued only after a selected file exists, target preset id
 checks, selected-row checks, and an image snapshot before decoded icon data can
 update a prompt preset.
 
+Seventh landed slice: NanoGPT dashboard fetch callbacks now use a fixed latest
+operation target plus captured API key checks before subscription-state fetch
+results can persist `nanogptSubscriptionState`.
+
 ## Anchors
 
 - `src/lib/ChatScreens/DefaultChatScreen.svelte`

@@ -49,6 +49,7 @@ background upload/cancel/error callback freshness, composer paste/menu file
 callback freshness, character avatar upload callback freshness, and character
 additional asset upload callback freshness, and module asset upload callback
 freshness, and prompt preset icon upload callback freshness have landed.
+NanoGPT dashboard fetch persistence freshness has also landed.
 
 Next manager loop:
 

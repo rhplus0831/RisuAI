@@ -27,9 +27,11 @@ the input persistence inventory under
   target module id, and module asset list snapshot before appending to the open
   module draft. Prompt preset icon uploads now guard by latest selected file
   operation, target preset id, selected-row identity, and image snapshot before
-  updating the preset icon. Phase 2 landed character profile draft dirty
-  top-level field protection; prompt-template item row dirty projection merging;
-  whole-key dirty projection protection for
+  updating the preset icon. NanoGPT dashboard fetches now guard subscription
+  state persistence by a fixed latest-operation token and captured API key before
+  writing `nanogptSubscriptionState`. Phase 2 landed character profile draft
+  dirty top-level field protection; prompt-template item row dirty projection
+  merging; whole-key dirty projection protection for
   `createServerBackedSettingDraft`; selected persona profile dirty projection
   protection; translator preset `name`/`prompt`/`maxResponse` dirty projection
   protection; lorebook entry draft dirty projection merging; and
@@ -88,7 +90,10 @@ the input persistence inventory under
   `src/ts/server/promptPresetIconUpload.ts` now centralizes prompt preset icon
   upload target capture, latest-operation tracking, selected row freshness, image
   snapshot checks, and fresh update-index resolution for `BotSettings.svelte`.
-- Verification state: Phase 3 prompt preset icon upload callback validation is
+  `src/ts/server/nanoGPTDashboardFetch.ts` now centralizes NanoGPT dashboard
+  fetch operation tracking with a fixed guard target, captured API key freshness,
+  and fresh subscription-state resolution before persistence.
+- Verification state: Phase 3 NanoGPT dashboard fetch callback validation is
   recorded in `latest-verification.md`.
 - Highest issue density:
   - Character editor: 52 issue rows, mostly dirty projection and unguarded
@@ -136,7 +141,8 @@ the input persistence inventory under
   emotion/reference/model assets remain pending; module asset upload callbacks
   now guard stale completions; prompt preset icon uploads now guard stale
   completions; settings media, plugin import/update, import helpers, and
-  dashboard fetch persistence remain pending.
+  remaining dashboard/import persistence surfaces remain pending. NanoGPT
+  dashboard subscription-state fetch persistence now guards stale completions.
 - [Phase 4](phases/phase-4-chat-messages-generation.md): pending. Chat,
   message, reroll, trigger, suggestion, and generation target freshness.
 - [Phase 5](phases/phase-5-collection-domains.md): pending. Presets,
@@ -241,6 +247,10 @@ the input persistence inventory under
     latest-operation tokens only after a selected file exists, and lets
     `BotSettings.svelte` update the icon only when the selected preset row,
     captured row, and image snapshot are still fresh after decode.
+  - Phase 3 NanoGPT dashboard fetch slice: `nanoGPTDashboardFetch.ts` uses a
+    fixed latest-operation target instead of raw API keys, captures the key for
+    equality checks, rejects stale fetch completions after key changes or newer
+    dashboard requests, and preserves fresh empty subscription-state results.
   - Phase 4: `restoreChatScopedState`, chat/message/generation freshness, and
     message update/delete/truncate/replace freshness.
   - Phase 5: create/delete/reorder/import/select and broad collection rollback

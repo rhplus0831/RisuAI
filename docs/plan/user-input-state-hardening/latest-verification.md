@@ -7,31 +7,31 @@ hardening workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 3 prompt preset icon upload callback
-  freshness. `BotSettings.svelte` now captures the target prompt preset id,
-  selected index, and image snapshot, issues a latest-operation token only after a
-  selected icon file exists, rechecks freshness after decode/resize work, and
-  updates the icon through a resolved still-fresh preset index.
+- Runtime/code change under test: Phase 3 NanoGPT dashboard fetch persistence
+  freshness. `NanoGPTDashboard.svelte` now starts a guarded dashboard fetch
+  operation with a fixed latest-operation target, compares completions against
+  the captured API key and current prop value, clears active operations on
+  destroy, and persists `nanogptSubscriptionState` only when the result is still
+  fresh.
 - Commands:
 
 ```bash
-pnpm exec vitest run src/ts/server/promptPresetIconUpload.test.ts src/ts/server/staleStateGuards.test.ts
-pnpm exec vitest run src/lib/Setting/Pages/BotSettings.svelte.test.ts
+pnpm exec vitest run src/ts/server/nanoGPTDashboardFetch.test.ts src/ts/server/staleStateGuards.test.ts
+pnpm exec vitest run src/lib/UI/NanoGPTDashboard.svelte.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 git diff --check
 ```
 
-- Result: passed on 2026-06-17. The prompt-icon/stale-guard focused Vitest set
-  passed 2 files and 18 tests, and the BotSettings source-contract test passed 3
-  tests. Both TypeScript checks and `git diff --check` passed.
-- Residual gaps: `BotSettings.svelte.test.ts` is a source-contract test rather
-  than a mounted picker/decode/update flow with mocked `selectSingleFile`,
-  `Image.decode`, canvas, and `updatePromptPreset`. Remaining Phase 3 surfaces
-  include character emotion, reference audio, and model callbacks; settings media
-  assets; custom background/theme imports beyond the already guarded background
-  upload path; plugin import/update; persona/preset/chat/character import
-  helpers; and NanoGPT dashboard fetch persistence.
+- Result: passed on 2026-06-17. The NanoGPT-dashboard/stale-guard focused Vitest
+  set passed 2 files and 17 tests, and the NanoGPTDashboard source-contract test
+  passed 2 tests. Both TypeScript checks and `git diff --check` passed.
+- Residual gaps: `NanoGPTDashboard.svelte.test.ts` is a source-contract test
+  rather than a mounted async prop-change/unmount flow. Remaining Phase 3
+  surfaces include character emotion, reference audio, and model callbacks;
+  settings media assets; custom background/theme imports beyond the already
+  guarded background upload path; plugin import/update; persona/preset/chat/
+  character import helpers; and other dashboard/import persistence surfaces.
 
 ## Required Closeout Proof
 

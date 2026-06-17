@@ -1,15 +1,23 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte'
   import { getNanoGPTBalance, getNanoGPTSubscription } from 'src/ts/model/nanogpt'
   import type { NanoGPTBalance, NanoGPTSubscriptionUsage } from 'src/ts/model/nanogpt'
   import { getDatabase } from 'src/ts/storage/database.svelte'
   import { language } from 'src/lang'
   import { canUseServerCommands, patchServerBackedSettings } from 'src/ts/server/commands'
+  import {
+    beginNanoGPTDashboardFetch,
+    clearNanoGPTDashboardFetch,
+    resolveFreshNanoGPTSubscriptionState,
+    type NanoGPTDashboardFetchOperation,
+  } from 'src/ts/server/nanoGPTDashboardFetch'
 
   interface Props {
     apiKey: string
   }
 
   let { apiKey }: Props = $props()
+  let activeDashboardOperation: NanoGPTDashboardFetchOperation | null = null
 
   type DashboardData = {
     balance: NanoGPTBalance | null
@@ -21,19 +29,41 @@
   )
 
   async function fetchDashboard(key: string): Promise<DashboardData> {
-    const [balance, subscription] = await Promise.all([getNanoGPTBalance(key), getNanoGPTSubscription(key)])
-    // Persist subscription state so chat requests can pick the right endpoint
-    const subscriptionState = subscription?.state ?? ''
-    if (canUseServerCommands()) {
-      void patchServerBackedSettings({
-        patch: { nanogptSubscriptionState: subscriptionState },
+    const operation = beginNanoGPTDashboardFetch(key)
+    activeDashboardOperation = operation
+
+    try {
+      const [balance, subscription] = await Promise.all([getNanoGPTBalance(key), getNanoGPTSubscription(key)])
+      // Persist subscription state so chat requests can pick the right endpoint.
+      const subscriptionState = resolveFreshNanoGPTSubscriptionState({
+        operation,
+        currentApiKey: apiKey,
+        subscriptionState: subscription?.state ?? '',
       })
-    } else {
-      const db = getDatabase()
-      db.nanogptSubscriptionState = subscriptionState
+      if (subscriptionState !== null) {
+        if (canUseServerCommands()) {
+          void patchServerBackedSettings({
+            patch: { nanogptSubscriptionState: subscriptionState },
+          })
+        } else {
+          const db = getDatabase()
+          db.nanogptSubscriptionState = subscriptionState
+        }
+      }
+      return { balance, subscription }
+    } finally {
+      if (activeDashboardOperation === operation) {
+        activeDashboardOperation = null
+      }
+      clearNanoGPTDashboardFetch(operation)
     }
-    return { balance, subscription }
   }
+
+  onDestroy(() => {
+    if (!activeDashboardOperation) return
+    clearNanoGPTDashboardFetch(activeDashboardOperation)
+    activeDashboardOperation = null
+  })
 
   function fmtUSD(raw: string | undefined): string {
     const n = parseFloat(raw ?? '')
