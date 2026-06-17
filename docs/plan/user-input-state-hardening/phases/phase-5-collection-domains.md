@@ -205,6 +205,13 @@ duplicate-id legacy imports as inserted rows, and re-resolve the import target
 by stable character id after file-picker awaits so selection drift cannot import
 into the wrong character.
 
+Twenty-eighth landed slice: lorebook import now captures stable character,
+chat, or global-lorebook targets before file-picker awaits and re-resolves them
+by id before applying imported entries. Import rollback baselines are captured
+immediately before the write against the resolved target, so edits made while
+the picker was pending survive command rollback, and stale selection/page drift
+cannot redirect the import into a different lorebook collection.
+
 ## Anchors
 
 - `src/lib/Setting/botpreset.svelte`

@@ -7,32 +7,31 @@ workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 5 chat import flow rollback and target
-  freshness. Multi-chat imports now dispatch through an attempted-aware batch
-  helper that preserves earlier server-accepted folder/chat creates, removes
-  only unchanged unaccepted imported rows on later failure, treats duplicate-id
-  legacy imports as inserted rows rather than replacements, and captures the
-  import target by stable character id across file-picker awaits.
+- Runtime/code change under test: Phase 5 lorebook import target freshness.
+  `importLoreBook()` now captures stable character/chat/global-lorebook targets
+  before file-picker awaits, re-resolves those targets by id afterward, captures
+  rollback baselines immediately before the import write, and dispatches through
+  the existing scoped lorebook replacement helpers.
 - Commands:
 
 ```bash
-pnpm exec vitest run src/ts/characters.importChat.test.ts src/ts/chatCommands.test.ts
+pnpm exec vitest run src/ts/process/__tests__/lorebook.projectionGuard.test.ts src/ts/server/lorebookBridge.svelte.test.ts src/ts/server/lorebookBridge.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
-pnpm exec prettier --check src/ts/characters.ts src/ts/chatCommands.ts src/ts/characters.importChat.test.ts src/ts/chatCommands.test.ts
+pnpm exec prettier --check src/ts/process/lorebook.svelte.ts src/ts/process/__tests__/lorebook.projectionGuard.test.ts
 git diff --check
 ```
 
-- Result: passed on 2026-06-17. Focused chat import plus chat command coverage
-  passed 87 tests across 2 files, and both TypeScript checks plus Prettier and
-  `git diff --check` passed.
+- Result: passed on 2026-06-17. Focused lorebook import plus lorebook bridge
+  coverage passed 99 tests across 3 files, and both TypeScript checks plus
+  Prettier and `git diff --check` passed.
 - Additional check: `pnpm exec vitest run src/ts/compatibilityAdapters.test.ts`
   still fails in the pre-existing character MCP lorebook test
   `routes MCP character lorebook writes through lorebook commands in
   server-backed web mode` at `src/ts/compatibilityAdapters.test.ts:626`.
   A detached baseline worktree at commit `30d4ad7ab` reproduced the same
-  failure before this slice, so it is tracked as out-of-scope for this chat
-  import flow rollback change.
+  failure before this slice, so it is tracked as out-of-scope for this lorebook
+  import freshness change.
 - Residual gaps: Multi-group plugin settings patch failures still share the
   generic settings rollback
   callback and roll back all still-attempted keys from the failed patch. Plugin
@@ -42,8 +41,8 @@ git diff --check
   optimistic visibility coverage, but this slice does not add a dedicated
   failing delete rollback/stale-skip test. The remaining Phase 5 collection
   domains still need focused slices: sidebar collection rollback and replacement
-  flows, broader lorebook import/navigation edges, and residual sidebar/import
-  replacement paths. Chat fork selection preservation
+  flows, residual sidebar/import replacement paths, and plugin runtime reload
+  side effects. Chat fork selection preservation
   uses the shared created-chat rollback selection helper, but there is no
   fork-only selection-change regression. Translator preset import
   file-read/decode freshness does not have dedicated coverage, but its
@@ -96,9 +95,10 @@ git diff --check
   Phase 5 slice. Chat fork rollback is covered by the twenty-fifth Phase 5
   slice. Chat metadata PATCH rollback is covered by the twenty-sixth Phase 5
   slice. Chat import flow rollback is covered by the twenty-seventh Phase 5
-  slice.
-  Remaining Phase 5 work owns sidebar/import collection flows, broader lorebook
-  import/navigation edges, and plugin import/update side-effect reload.
+  slice. Lorebook import target freshness is covered by the twenty-eighth Phase
+  5 slice.
+  Remaining Phase 5 work owns sidebar/import collection flows and plugin
+  import/update side-effect reload.
 - Phase 6 owns Realm/backup/local bundle restore/import resyncs, character/chat
   import refresh/navigation edges, memory job list/progress ordering,
   route/selection hydration, welcome/onboarding delayed setup, and DevTool

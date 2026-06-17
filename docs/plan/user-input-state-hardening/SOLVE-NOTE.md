@@ -204,8 +204,9 @@ Explicit deferrals:
   has landed for sidebar copy and branch fork command failures. Phase 5 chat
   metadata PATCH rollback has landed for direct chat row metadata updates.
   Phase 5 chat import flow rollback and target freshness has landed for
-  multi-chat import sequences and picker selection drift. Remaining sidebar and
-  import collection flows, broader lorebook import/navigation edges, and plugin
+  multi-chat import sequences and picker selection drift. Phase 5 lorebook
+  import target freshness has landed for character, chat, and global lorebook
+  imports. Remaining sidebar and import collection flows and plugin
   import/update side-effect reload remain Phase 5 work.
 - `src/ts/compatibilityAdapters.test.ts` currently has a pre-existing failure in
   `routes MCP character lorebook writes through lorebook commands in
