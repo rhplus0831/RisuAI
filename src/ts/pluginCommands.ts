@@ -29,6 +29,29 @@ export type PluginStorageSnapshot = Record<string, unknown>
 
 const PLUGIN_PATCH_EXCLUDED_KEYS = new Set(['name'])
 let pluginWatchSuppressionVersion = 0
+let nextPluginStorageOperationSequence = 0
+const pendingPluginStorageOperationsByKey = new Map<string, PluginStorageOperationRecord[]>()
+
+interface PluginStorageOperationToken {
+  sequence: number
+  keys: string[]
+}
+
+type PluginStorageOperationStatus = 'pending' | 'failed'
+
+interface PluginStorageOperationRecord {
+  sequence: number
+  entry: PluginStorageRollbackEntry
+  status: PluginStorageOperationStatus
+}
+
+interface PluginStorageRollbackEntry {
+  key: string
+  previousExists: boolean
+  previousValue: unknown
+  attemptedExists: boolean
+  attemptedValue: unknown
+}
 
 export function cloneJsonValue<T>(value: T): T {
   if (value === undefined) return value
@@ -213,25 +236,40 @@ export function restorePluginStorage(snapshot: PluginStorageSnapshot): void {
 }
 
 export function dispatchPutPluginStorage(key: string, value: unknown, previous: PluginStorageSnapshot): void {
+  const attemptedValue = cloneJsonValue(value)
+  const rollbackEntry = pluginStorageRollbackEntryForKey(previous, key, true, attemptedValue)
+  const operation = issuePluginStorageOperation([rollbackEntry])
   runPluginCommand(
-    (baseRevision) =>
-      putPluginStorageCommand({
+    async (baseRevision) => {
+      const result = await putPluginStorageCommand({
         baseRevision,
         key,
-        value: cloneJsonValue(value),
-      }),
-    () => restorePluginStorage(previous),
+        value: attemptedValue,
+      })
+      if (result.status === 'ok') {
+        clearPluginStorageOperation(operation)
+      }
+      return result
+    },
+    () => rollbackPluginStorageEntries([rollbackEntry], operation),
   )
 }
 
 export function dispatchDeletePluginStorage(key: string, previous: PluginStorageSnapshot): void {
+  const rollbackEntry = pluginStorageRollbackEntryForKey(previous, key, false, undefined)
+  const operation = issuePluginStorageOperation([rollbackEntry])
   runPluginCommand(
-    (baseRevision) =>
-      deletePluginStorageCommand({
+    async (baseRevision) => {
+      const result = await deletePluginStorageCommand({
         baseRevision,
         key,
-      }),
-    () => restorePluginStorage(previous),
+      })
+      if (result.status === 'ok') {
+        clearPluginStorageOperation(operation)
+      }
+      return result
+    },
+    () => rollbackPluginStorageEntries([rollbackEntry], operation),
   )
 }
 
@@ -246,16 +284,211 @@ export function dispatchBulkPluginStorage(
   const values = cloneJsonValue(input.values ?? {})
   const deleteKeys = [...(input.deleteKeys ?? [])]
   if (!input.clear && Object.keys(values).length === 0 && deleteKeys.length === 0) return
+  const rollbackEntries = buildBulkPluginStorageRollbackEntries(
+    {
+      values,
+      deleteKeys,
+      clear: input.clear ?? false,
+    },
+    previous,
+  )
+  const operation = issuePluginStorageOperation(rollbackEntries)
   runPluginCommand(
-    (baseRevision) =>
-      bulkPluginStorageCommand({
+    async (baseRevision) => {
+      const result = await bulkPluginStorageCommand({
         baseRevision,
         values,
         deleteKeys,
         clear: input.clear,
-      }),
-    () => restorePluginStorage(previous),
+      })
+      if (result.status === 'ok') {
+        clearPluginStorageOperation(operation)
+      }
+      return result
+    },
+    () => rollbackPluginStorageEntries(rollbackEntries, operation),
   )
+}
+
+function pluginStorageRollbackEntryForKey(
+  previous: PluginStorageSnapshot,
+  key: string,
+  attemptedExists: boolean,
+  attemptedValue: unknown,
+): PluginStorageRollbackEntry {
+  return {
+    key,
+    previousExists: hasOwnRecordKey(previous, key),
+    previousValue: cloneJsonValue(previous[key]),
+    attemptedExists,
+    attemptedValue: cloneJsonValue(attemptedValue),
+  }
+}
+
+function buildBulkPluginStorageRollbackEntries(
+  input: {
+    values: Record<string, unknown>
+    deleteKeys: string[]
+    clear: boolean
+  },
+  previous: PluginStorageSnapshot,
+): PluginStorageRollbackEntry[] {
+  const affectedKeys = new Set<string>()
+  const attempted = input.clear ? {} : cloneJsonValue(previous)
+
+  if (input.clear) {
+    for (const key of Object.keys(previous)) {
+      affectedKeys.add(key)
+    }
+  }
+
+  for (const key of input.deleteKeys) {
+    affectedKeys.add(key)
+    delete attempted[key]
+  }
+
+  for (const [key, value] of Object.entries(input.values)) {
+    affectedKeys.add(key)
+    attempted[key] = cloneJsonValue(value)
+  }
+
+  return [...affectedKeys].map((key) =>
+    pluginStorageRollbackEntryForKey(previous, key, hasOwnRecordKey(attempted, key), attempted[key]),
+  )
+}
+
+function rollbackPluginStorageEntries(
+  entries: PluginStorageRollbackEntry[],
+  operation: PluginStorageOperationToken,
+): void {
+  let changed = false
+
+  withTrustedServerProjectionWrite(() => {
+    const liveStorage = ensureLivePluginStorage()
+
+    for (const entry of entries) {
+      const pendingOperations = pendingPluginStorageOperationsByKey.get(entry.key)
+      const operationRecord = pendingOperations?.find((record) => record.sequence === operation.sequence)
+      if (!pendingOperations || !operationRecord) continue
+
+      operationRecord.status = 'failed'
+      changed = cascadeFailedPluginStorageOperationsForKey(entry.key, pendingOperations, liveStorage) || changed
+
+      if (pendingOperations.length > 0) {
+        pendingPluginStorageOperationsByKey.set(entry.key, pendingOperations)
+      } else {
+        pendingPluginStorageOperationsByKey.delete(entry.key)
+      }
+    }
+
+    if (changed) {
+      pluginWatchSuppressionVersion += 1
+    }
+  })
+}
+
+function ensureLivePluginStorage(): Record<string, unknown> {
+  if (!DBState.db.pluginCustomStorage || typeof DBState.db.pluginCustomStorage !== 'object') {
+    DBState.db.pluginCustomStorage = {}
+  }
+  return DBState.db.pluginCustomStorage as Record<string, unknown>
+}
+
+function issuePluginStorageOperation(entries: PluginStorageRollbackEntry[]): PluginStorageOperationToken {
+  const token = {
+    sequence: ++nextPluginStorageOperationSequence,
+    keys: [...new Set(entries.map((entry) => entry.key))],
+  }
+
+  for (const entry of entries) {
+    const pendingOperations = pendingPluginStorageOperationsByKey.get(entry.key) ?? []
+    pendingOperations.push({
+      sequence: token.sequence,
+      entry,
+      status: 'pending',
+    })
+    pendingPluginStorageOperationsByKey.set(entry.key, pendingOperations)
+  }
+
+  return token
+}
+
+function cascadeFailedPluginStorageOperationsForKey(
+  key: string,
+  pendingOperations: PluginStorageOperationRecord[],
+  liveStorage: Record<string, unknown>,
+): boolean {
+  let changed = false
+
+  while (pendingOperations.length > 0) {
+    const latestOperation = pendingOperations[pendingOperations.length - 1]
+    if (latestOperation.status !== 'failed') break
+
+    if (rollbackPluginStorageEntryIfLiveMatches(liveStorage, latestOperation.entry)) {
+      changed = true
+    }
+    pendingOperations.pop()
+  }
+
+  if (pendingOperations.length > 0) {
+    pendingPluginStorageOperationsByKey.set(key, pendingOperations)
+  } else {
+    pendingPluginStorageOperationsByKey.delete(key)
+  }
+
+  return changed
+}
+
+function rollbackPluginStorageEntryIfLiveMatches(
+  liveStorage: Record<string, unknown>,
+  entry: PluginStorageRollbackEntry,
+): boolean {
+  const liveExists = hasOwnRecordKey(liveStorage, entry.key)
+  if (entry.attemptedExists) {
+    if (!liveExists || !isJsonValueEqual(liveStorage[entry.key], entry.attemptedValue)) return false
+  } else if (liveExists) {
+    return false
+  }
+
+  if (entry.previousExists) {
+    liveStorage[entry.key] = cloneJsonValue(entry.previousValue)
+    return true
+  }
+
+  if (liveExists) {
+    delete liveStorage[entry.key]
+    return true
+  }
+
+  return false
+}
+
+function clearPluginStorageOperation(operation: PluginStorageOperationToken): void {
+  for (const key of operation.keys) {
+    const pendingOperations = pendingPluginStorageOperationsByKey.get(key)
+    if (!pendingOperations) continue
+
+    const operationIndex = pendingOperations.findIndex((record) => record.sequence === operation.sequence)
+    if (operationIndex === -1) continue
+
+    const nextPendingOperations = pendingOperations.filter(
+      (record, index) =>
+        record.sequence !== operation.sequence && !(index < operationIndex && record.status === 'failed'),
+    )
+    if (nextPendingOperations.length > 0) {
+      pendingPluginStorageOperationsByKey.set(key, nextPendingOperations)
+    } else {
+      pendingPluginStorageOperationsByKey.delete(key)
+    }
+  }
+}
+
+function hasOwnRecordKey(record: Record<string, unknown>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(record, key)
+}
+
+function isJsonValueEqual(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right)
 }
 
 export function dispatchPluginSettingsPatch(patch: Record<string, unknown>, previous: PluginStateSnapshot): void {

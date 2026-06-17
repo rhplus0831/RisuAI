@@ -25,6 +25,12 @@ still equals the attempted scripts/triggers; stale same-target edits are
 preserved, coalesced edits retain the first baseline and latest attempted
 payload, and stale no-op rollback clears suppression synchronously.
 
+Second landed slice: `pluginCommands.ts` now scopes plugin custom storage
+rollback by affected key and attempted value for PUT, DELETE, and bulk
+operations. Failed older writes no longer restore the whole storage map over
+newer sibling keys, and deferred same-key failures unwind correctly when
+overlapping command failures resolve out of order.
+
 ## Anchors
 
 - `src/lib/Setting/botpreset.svelte`

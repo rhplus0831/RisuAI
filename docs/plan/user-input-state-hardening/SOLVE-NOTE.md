@@ -59,7 +59,10 @@ button trigger freshness have landed. Phase 5 has started: character/module
 script and trigger replacement rollback now captures attempted payloads,
 preserves newer same-target edits on stale failure, keeps coalesced rollback
 baselines correct, and avoids suppressing watcher dispatch after stale no-op
-rollback.
+rollback. Plugin custom storage rollback now captures per-key attempted values
+for PUT, DELETE, and bulk operations, preserves newer sibling keys, and unwinds
+overlapping same-key failures correctly even when command responses arrive out
+of order.
 
 Next manager loop:
 
@@ -130,9 +133,10 @@ Explicit deferrals:
   button trigger freshness have landed. Phase 4 is complete.
   Composer file and paste callbacks are already covered by Phase 3.
 - Phase 5 script/trigger replacement rollback has landed for character/module
-  script and trigger replacements. Remaining preset/persona/translator/module,
-  lorebook, and import collection flows, Hypa V3 preset array
-  import/rename/delete, plugin enable/delete/args/provider/storage, and
+  script and trigger replacements. Phase 5 plugin custom storage rollback has
+  landed for PUT, DELETE, and bulk storage operations. Remaining
+  preset/persona/translator/module, lorebook, and import collection flows, Hypa
+  V3 preset array import/rename/delete, plugin enable/delete/args/provider, and
   sidebar/chat/folder/character list create/delete/reorder/import rollback
   remain Phase 5 work.
 - Realm/backup/local bundle restore/import resyncs, character/chat import

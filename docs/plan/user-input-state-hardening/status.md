@@ -88,7 +88,10 @@ persistence inventory under
   started with script/trigger replacement rollback: character/module script and
   trigger replacements now compare the attempted payload before scoped rollback,
   preserve newer same-target edits, and avoid suppressing watcher dispatch on
-  stale no-op rollback.
+  stale no-op rollback. Plugin custom storage PUT, DELETE, and bulk rollback now
+  restores only affected keys that still match the attempted optimistic state,
+  preserves newer sibling keys, and keeps deferred same-key failures so
+  overlapping writes unwind correctly when failures resolve out of order.
   Phase 2 landed character profile draft dirty top-level field protection;
   prompt-template item row dirty projection merging; whole-key dirty projection
   protection for
@@ -230,7 +233,13 @@ persistence inventory under
   replacements only restore the prior collection when live state still equals
   the attempted payload; `scriptDefinitionBridge.svelte.test.ts` covers positive
   rollback, stale skip, coalesced edits, and stale no-op watcher suppression.
-- Verification state: Phase 5 script/trigger replacement rollback validation is
+- `src/ts/pluginCommands.ts` now guards plugin custom storage PUT, DELETE, and
+  bulk rollback per key and attempted value. It defers non-latest same-key
+  failures and cascades exposed failed operations so overlapping writes unwind in
+  either failure order; `pluginCommands.test.ts` covers sibling preservation,
+  same-key stale skip, both out-of-order PUT failure orders, DELETE rollback,
+  and bulk clear/replace rollback.
+- Verification state: Phase 5 plugin custom storage rollback validation is
   recorded in `latest-verification.md`.
 - Highest issue density:
   - Character editor: 52 issue rows, mostly dirty projection and unguarded
@@ -288,9 +297,10 @@ persistence inventory under
   code gap blocks Phase 4 completion.
 - [Phase 5](phases/phase-5-collection-domains.md): active. Preset, persona,
   translator, module, lorebook, script, and import collection flows; Hypa V3
-  preset array import/rename/delete; plugin enable/delete/args/provider/storage;
+  preset array import/rename/delete; plugin enable/delete/args/provider;
   and sidebar/chat/folder/character list create/delete/reorder/import rollback
-  remain here. The first script/trigger replacement rollback slice has landed.
+  remain here. Script/trigger replacement rollback and plugin custom storage
+  rollback slices have landed.
 - [Phase 6](phases/phase-6-resync-memory-navigation.md): pending. Realm, backup,
   and local bundle restore/import resyncs; character/chat import
   refresh/navigation edges; memory job list/progress ordering; route/selection
@@ -497,10 +507,16 @@ persistence inventory under
     attempted payload. Coalesced edits keep the pre-first-edit baseline plus the
     final attempted payload; stale no-op rollback does not suppress newer
     watcher dispatch.
+  - Phase 5 plugin storage slice: `pluginCommands.ts` now captures per-key
+    rollback records for plugin custom storage PUT, DELETE, and bulk operations.
+    Failed operations restore only keys whose live state still matches the
+    attempted optimistic value or missing state, preserve newer sibling keys, and
+    defer non-latest same-key failures so overlapping failed writes unwind back
+    to the original value regardless of response order.
   - Phase 5: preset/persona/translator/module/lorebook/script/import collection
     flows, Hypa V3 preset array import/rename/delete, plugin
-    enable/delete/args/provider/storage, sidebar chat/folder lists, character
-    list ordering, and broad create/delete/reorder/import rollback.
+    enable/delete/args/provider, sidebar chat/folder lists, character list
+    ordering, and broad create/delete/reorder/import rollback.
   - Phase 6: Realm/backup/local bundle restore/import resyncs, character/chat
     import refresh/navigation edges, memory job list/progress ordering,
     route/selection hydration, welcome/onboarding delayed setup, DevTool
