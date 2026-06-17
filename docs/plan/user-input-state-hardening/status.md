@@ -168,6 +168,8 @@ persistence inventory under
   patch, and branch-folder rollback instead of broad chat snapshots.
   Chat metadata PATCH command failures now use scoped attempted-field rollback
   instead of broad chat snapshots.
+  Chat import command failures now use attempted batch rollback and stable
+  target capture instead of broad chat snapshots or drifted selection.
   Phase 2 landed character profile draft dirty top-level field protection;
   prompt-template item row dirty projection merging; whole-key dirty projection
   protection for
@@ -386,6 +388,9 @@ persistence inventory under
   broad chat snapshots.
 - `src/ts/chatCommands.ts` now guards direct chat metadata PATCH rollback by
   sanitized attempted fields instead of broad chat snapshots.
+- `src/ts/chatCommands.ts` and `src/ts/characters.ts` now guard chat import
+  batch rollback and target freshness by accepted step, attempted imported row,
+  and stable character id instead of broad chat snapshots or current selection.
 - `src/lib/Setting/Pages/Language/TranslatorPresetSettings.svelte` now dispatches
   translator preset create, select, delete, and import collection commands
   without broad full-state rollback callbacks while retaining scoped dirty
@@ -401,7 +406,7 @@ persistence inventory under
   copy, select, create, update, delete, reorder, and extraction rollback by
   attempted row, field, order, selection, generated split row, and scalar
   settings state.
-- Verification state: Phase 5 chat metadata PATCH rollback
+- Verification state: Phase 5 chat import flow rollback
   validation is recorded in `latest-verification.md`.
 - Highest issue density:
   - Character editor: 52 issue rows, mostly dirty projection and unguarded
@@ -458,8 +463,8 @@ persistence inventory under
   Composer file and paste callbacks are already covered by Phase 3. No known
   code gap blocks Phase 4 completion.
 - [Phase 5](phases/phase-5-collection-domains.md): active. Sidebar/import
-  collection flows, broader lorebook import/navigation edges; plugin settings
-  patch residuals; and chat import flows remain here. Script/trigger
+  collection flows, broader lorebook import/navigation edges; and plugin
+  settings patch residuals remain here. Script/trigger
   replacement rollback, plugin custom storage plus
   non-storage and collection rollback slices, global module/MCP module-info,
   plugin DB bridge settings, persona collection, and translator preset
@@ -474,7 +479,7 @@ persistence inventory under
   landed. Character list create/delete/import rollback has also landed. Hypa V3
   preset array rollback has also landed. Combined sidebar chat/folder reorder
   rollback has also landed. Chat fork rollback has also landed. Chat metadata
-  PATCH rollback has also landed.
+  PATCH rollback has also landed. Chat import flow rollback has also landed.
 - [Phase 6](phases/phase-6-resync-memory-navigation.md): pending. Realm, backup,
   and local bundle restore/import resyncs; character/chat import
   refresh/navigation edges; memory job list/progress ordering; route/selection
@@ -783,9 +788,12 @@ persistence inventory under
   - Phase 5 chat metadata PATCH slice: `dispatchUpdateChat()` now restores only
     sanitized attempted chat-row metadata fields that still match the optimistic
     value, preserving newer same-row, sibling, folder, and selection edits.
+  - Phase 5 chat import flow slice: multi-chat imports now preserve accepted
+    folder/chat create steps, remove only unchanged unaccepted imported rows,
+    handle duplicate-id legacy imports as inserted rows, and re-resolve import
+    targets by stable character id after file-picker awaits.
   - Phase 5: sidebar/import collection flows, broader lorebook
-    import/navigation edges, plugin import/update side-effect reload, and chat
-    import flows.
+    import/navigation edges, and plugin import/update side-effect reload.
   - Known pre-existing test gap: `pnpm exec vitest run
     src/ts/compatibilityAdapters.test.ts` fails in
     `routes MCP character lorebook writes through lorebook commands in

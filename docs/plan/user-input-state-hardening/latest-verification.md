@@ -7,32 +7,32 @@ workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 5 chat metadata PATCH rollback.
-  `dispatchUpdateChat()` now rolls back failed metadata updates by attempted
-  chat-row fields instead of restoring broad chat state snapshots. Delayed
-  failures restore only still-attempted fields, preserve newer same-row edits,
-  sibling chat edits, folder edits, and selection, and treat empty patch +
-  select-only dispatches as metadata rollback no-ops.
+- Runtime/code change under test: Phase 5 chat import flow rollback and target
+  freshness. Multi-chat imports now dispatch through an attempted-aware batch
+  helper that preserves earlier server-accepted folder/chat creates, removes
+  only unchanged unaccepted imported rows on later failure, treats duplicate-id
+  legacy imports as inserted rows rather than replacements, and captures the
+  import target by stable character id across file-picker awaits.
 - Commands:
 
 ```bash
-pnpm exec vitest run src/ts/chatCommands.test.ts
+pnpm exec vitest run src/ts/characters.importChat.test.ts src/ts/chatCommands.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
-pnpm exec prettier --check src/ts/chatCommands.ts src/ts/chatCommands.test.ts
+pnpm exec prettier --check src/ts/characters.ts src/ts/chatCommands.ts src/ts/characters.importChat.test.ts src/ts/chatCommands.test.ts
 git diff --check
 ```
 
-- Result: passed on 2026-06-17. Focused chat command coverage passed 75 tests
-  across 1 file, and both TypeScript checks plus Prettier and `git diff
-  --check` passed.
+- Result: passed on 2026-06-17. Focused chat import plus chat command coverage
+  passed 87 tests across 2 files, and both TypeScript checks plus Prettier and
+  `git diff --check` passed.
 - Additional check: `pnpm exec vitest run src/ts/compatibilityAdapters.test.ts`
   still fails in the pre-existing character MCP lorebook test
   `routes MCP character lorebook writes through lorebook commands in
   server-backed web mode` at `src/ts/compatibilityAdapters.test.ts:626`.
   A detached baseline worktree at commit `30d4ad7ab` reproduced the same
   failure before this slice, so it is tracked as out-of-scope for this chat
-  metadata rollback change.
+  import flow rollback change.
 - Residual gaps: Multi-group plugin settings patch failures still share the
   generic settings rollback
   callback and roll back all still-attempted keys from the failed patch. Plugin
@@ -42,8 +42,8 @@ git diff --check
   optimistic visibility coverage, but this slice does not add a dedicated
   failing delete rollback/stale-skip test. The remaining Phase 5 collection
   domains still need focused slices: sidebar collection rollback and replacement
-  flows, broader lorebook import/navigation edges, chat import flows, and
-  residual sidebar/import replacement paths. Chat fork selection preservation
+  flows, broader lorebook import/navigation edges, and residual sidebar/import
+  replacement paths. Chat fork selection preservation
   uses the shared created-chat rollback selection helper, but there is no
   fork-only selection-change regression. Translator preset import
   file-read/decode freshness does not have dedicated coverage, but its
@@ -95,10 +95,10 @@ git diff --check
   Combined sidebar chat/folder reorder rollback is covered by the twenty-fourth
   Phase 5 slice. Chat fork rollback is covered by the twenty-fifth Phase 5
   slice. Chat metadata PATCH rollback is covered by the twenty-sixth Phase 5
+  slice. Chat import flow rollback is covered by the twenty-seventh Phase 5
   slice.
   Remaining Phase 5 work owns sidebar/import collection flows, broader lorebook
-  import/navigation edges, plugin import/update side-effect reload, and chat
-  import flows.
+  import/navigation edges, and plugin import/update side-effect reload.
 - Phase 6 owns Realm/backup/local bundle restore/import resyncs, character/chat
   import refresh/navigation edges, memory job list/progress ordering,
   route/selection hydration, welcome/onboarding delayed setup, and DevTool

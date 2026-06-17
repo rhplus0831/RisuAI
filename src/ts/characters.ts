@@ -3,7 +3,6 @@ import {
   saveImage,
   type character,
   type Chat,
-  type ChatFolder,
   defaultSdDataFunc,
   type loreBook,
   getDatabase,
@@ -17,22 +16,14 @@ import { checkNullish, findCharacterbyId, getUserName, selectMultipleFile, selec
 import { v4 as uuidv4, v4 } from 'uuid'
 import { getImageType } from './media'
 import { DBState, MobileGUIStack, OpenRealmStore, botMakerMode, selectedCharID } from './stores.svelte'
-import { AppendableBuffer, changeChatTo, downloadFile, getFileSrc, requiresFullEncoderReload } from './globalApi.svelte'
+import { AppendableBuffer, downloadFile, getFileSrc, requiresFullEncoderReload } from './globalApi.svelte'
 import { updateInlayScreen } from './process/inlayScreen'
 import { parseMarkdownSafe } from './parser/parser.svelte'
 import { translateHTML } from './translator/translator'
 import { doingChat } from './process/index.svelte'
 import { importCharacter } from './characterCards'
 import { PngChunk } from './pngChunk'
-import {
-  currentChatStateSnapshot,
-  dispatchCreateChat,
-  restoreChatState,
-  runOptimisticCommandSequence,
-  toChatFolderSnapshot,
-  toChatSnapshot,
-  type ChatStateSnapshot,
-} from './chatCommands'
+import { currentChatStateSnapshot, dispatchCreateChat, dispatchCreateImportedChats } from './chatCommands'
 import { CHAT_GENERATION_SETTINGS_FIELD, type ChatGenerationSettings } from './chatGenerationSettings'
 import { getColdStorageItem } from './process/coldstorage.svelte'
 import {
@@ -51,7 +42,6 @@ import {
 import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
 import { ensureAllChatsHydrated, hydrateChatMessages } from './server/chatMessageHydration.svelte'
 import { hydrateCharacterShell, hydrateSelectedCharacterShell } from './server/characterShellHydration.svelte'
-import { createChatCommand, createChatFolderCommand } from './server/commands'
 import { createLatestOperationGuard, type LatestOperationToken } from './server/staleStateGuards'
 import {
   appendFreshCharacterEmotionImages,
@@ -592,15 +582,47 @@ export async function exportChat(page: number) {
   }
 }
 
+interface ChatImportTarget {
+  selectedIndex: number
+  characterId: string
+}
+
+function captureCurrentChatImportTarget(): ChatImportTarget | null {
+  const selectedIndex = get(selectedCharID)
+  const characterId = DBState.db.characters?.[selectedIndex]?.chaId
+  if (!characterId) return null
+  return { selectedIndex, characterId }
+}
+
+function resolveChatImportTarget(target: ChatImportTarget): { selectedIndex: number; characterId: string } | null {
+  const selectedCharacter = DBState.db.characters?.[target.selectedIndex]
+  if (selectedCharacter?.chaId === target.characterId) {
+    return target
+  }
+
+  const selectedIndex = DBState.db.characters?.findIndex((character) => character.chaId === target.characterId) ?? -1
+  if (selectedIndex < 0) return null
+  return { selectedIndex, characterId: target.characterId }
+}
+
 export async function importChat() {
+  const capturedTarget = captureCurrentChatImportTarget()
+  if (!capturedTarget) {
+    return
+  }
+
   const dat = await selectSingleFile(['json', 'jsonl', 'txt', 'html'])
   if (!dat) {
     return
   }
   try {
-    const selectedID = get(selectedCharID)
+    const target = resolveChatImportTarget(capturedTarget)
+    if (!target) {
+      return
+    }
+    const selectedID = target.selectedIndex
     const previous = currentChatStateSnapshot()
-    const characterId = DBState.db.characters[selectedID]?.chaId
+    const characterId = target.characterId
 
     if (dat.name.endsWith('jsonl')) {
       const lines = Buffer.from(dat.data).toString('utf-8').split('\n')
@@ -634,15 +656,17 @@ export async function importChat() {
       }
 
       if (
-        DBState.db.characters[selectedID].chatFolders.filter((folder) => folder.id === newChat.folderId).length === 0
+        (DBState.db.characters[selectedID].chatFolders ?? []).filter((folder) => folder.id === newChat.folderId)
+          .length === 0
       ) {
         newChat.folderId = null
       }
 
       withTrustedServerProjectionWrite(() => {
-        DBState.db.characters[selectedID].chats.unshift(newChat)
+        const character = DBState.db.characters[selectedID]
+        character.chats.unshift(newChat)
+        character.chatPage = 0
       })
-      changeChatTo(0)
       if (characterId) {
         dispatchCreateChat(characterId, newChat, previous)
       }
@@ -652,11 +676,9 @@ export async function importChat() {
       if ((json.type === 'risuAllChats' || json.type === 'risuChat') && json.ver === 2) {
         const folders = json.folders || []
         const chats = Array.isArray(json.data) ? json.data : [json.data]
-        const selectedID = get(selectedCharID)
-        let db = getDatabase()
-        let folderIdMap = {}
+        const folderIdMap: Record<string, string> = {}
         folders.forEach((folder) => {
-          if (db.characters[selectedID].chatFolders?.some((f) => f.id === folder.id)) {
+          if (DBState.db.characters[selectedID].chatFolders?.some((f) => f.id === folder.id)) {
             const newId = uuidv4()
             folderIdMap[folder.id] = newId
             folder.id = newId
@@ -757,35 +779,6 @@ export async function importChat() {
   } catch (error) {
     alertError(error)
   }
-}
-
-function dispatchCreateImportedChats(
-  characterId: string | undefined,
-  folders: ChatFolder[],
-  chats: Chat[],
-  previous: ChatStateSnapshot,
-): void {
-  if (!characterId) return
-  const factories: Parameters<typeof runOptimisticCommandSequence>[0] = [
-    ...folders.map(
-      (folder) => (baseRevision: number) =>
-        createChatFolderCommand({
-          baseRevision,
-          characterId,
-          folder: toChatFolderSnapshot(folder),
-        }),
-    ),
-    ...chats.map(
-      (chat) => (baseRevision: number) =>
-        createChatCommand({
-          baseRevision,
-          characterId,
-          chat: toChatSnapshot(chat),
-          select: false,
-        }),
-    ),
-  ]
-  runOptimisticCommandSequence(factories, () => restoreChatState(previous))
 }
 
 function normalizeImportedChatGenerationSettings(chat: unknown): void {

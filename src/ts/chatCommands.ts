@@ -490,6 +490,14 @@ interface ChatCreateRollback {
   attemptedSelectedChatId: string | undefined
 }
 
+interface ChatImportedCreateRollback {
+  selectedCharID: number
+  characterId: string | undefined
+  attemptedIndex: number
+  attemptedChat: Chat
+  previousSelectedChatId: string | undefined
+}
+
 interface ChatCreatedFolderRollback {
   selectedCharID: number
   characterId: string | undefined
@@ -511,6 +519,16 @@ interface ChatForkRollback {
   createdChat: ChatCreateRollback | null
   sourcePatch: ChatRowMetadataSnapshot | null
   createdFolder: ChatCreatedFolderRollback | null
+}
+
+interface ChatImportBatchRollbackStep<TRollback> {
+  rollback: TRollback | null
+  accepted: boolean
+}
+
+interface ChatImportBatchRollback {
+  folders: Array<ChatImportBatchRollbackStep<ChatCreatedFolderRollback>>
+  chats: Array<ChatImportBatchRollbackStep<ChatImportedCreateRollback>>
 }
 
 interface ChatFolderAssignmentRollback {
@@ -610,6 +628,32 @@ function chatCreateRollbackFromState(
   }
 }
 
+function importedChatCreateRollbackFromState(
+  characterId: string,
+  attemptedChat: Chat,
+  previous: ChatStateSnapshot,
+  usedIndexes: Set<number>,
+): ChatImportedCreateRollback | null {
+  const character = locateSnapshotCharacter(characterId, previous.selectedCharID)
+  const attemptedSnapshot = snapshotJson(attemptedChat)
+  const attemptedIndex =
+    character?.chats?.findIndex((candidate, index) => {
+      if (usedIndexes.has(index)) return false
+      return snapshotJson(candidate) === attemptedSnapshot
+    }) ?? -1
+  if (attemptedIndex < 0) return null
+
+  usedIndexes.add(attemptedIndex)
+  const previousCharacter = locateSnapshotCharacterInState(previous, characterId)
+  return {
+    selectedCharID: previous.selectedCharID,
+    characterId,
+    attemptedIndex,
+    attemptedChat: cloneJsonValue(attemptedChat),
+    previousSelectedChatId: selectedChatIdForCharacter(previousCharacter),
+  }
+}
+
 function restoreCreatedChatAttempt(rollback: ChatCreateRollback | null): void {
   if (!rollback) return
   withTrustedServerProjectionWrite(() => {
@@ -635,6 +679,23 @@ function restoreCreatedChatAttempt(rollback: ChatCreateRollback | null): void {
     const preferredSelectedChatId =
       liveSelectedChatId === rollback.attemptedSelectedChatId ? rollback.previousSelectedChatId : liveSelectedChatId
     preserveOrRestoreChatSelection(character, preferredSelectedChatId, liveSelectedChatId)
+  })
+}
+
+function restoreImportedCreatedChatAttempt(rollback: ChatImportedCreateRollback | null): void {
+  if (!rollback) return
+  withTrustedServerProjectionWrite(() => {
+    const character = locateSnapshotCharacter(rollback.characterId, rollback.selectedCharID)
+    const chats = character?.chats
+    if (!character || !chats) return
+
+    const liveChat = chats[rollback.attemptedIndex]
+    if (snapshotJson(liveChat) !== snapshotJson(rollback.attemptedChat)) return
+
+    const liveSelectedChatId = selectedChatIdForCharacter(character)
+    chats.splice(rollback.attemptedIndex, 1)
+    character.chats = chats
+    preserveOrRestoreChatSelection(character, liveSelectedChatId, rollback.previousSelectedChatId)
   })
 }
 
@@ -736,7 +797,7 @@ function chatCreatedFolderRollbackFromState(
   }
 }
 
-function restoreCreatedForkChatFolderAttempt(rollback: ChatCreatedFolderRollback | null): void {
+function restoreCreatedChatFolderAttemptIfUnreferenced(rollback: ChatCreatedFolderRollback | null): void {
   if (!rollback) return
   withTrustedServerProjectionWrite(() => {
     const character = locateSnapshotCharacter(rollback.characterId, rollback.selectedCharID)
@@ -783,7 +844,17 @@ function restoreForkChatAttempt(rollback: ChatForkRollback | null): void {
   if (!rollback) return
   restoreCreatedChatAttempt(rollback.createdChat)
   if (rollback.sourcePatch) restoreChatRowMetadata(rollback.sourcePatch)
-  restoreCreatedForkChatFolderAttempt(rollback.createdFolder)
+  restoreCreatedChatFolderAttemptIfUnreferenced(rollback.createdFolder)
+}
+
+function restoreImportedChatBatchAttempt(rollback: ChatImportBatchRollback): void {
+  for (let index = rollback.chats.length - 1; index >= 0; index -= 1) {
+    const step = rollback.chats[index]
+    if (!step.accepted) restoreImportedCreatedChatAttempt(step.rollback)
+  }
+  for (const step of rollback.folders) {
+    if (!step.accepted) restoreCreatedChatFolderAttemptIfUnreferenced(step.rollback)
+  }
 }
 
 function chatDeleteRollbackFromState(chatId: string, previous: ChatStateSnapshot): ChatDeleteRollback | null {
@@ -1088,6 +1159,53 @@ export function dispatchCreateChat(characterId: string, chat: Chat, previous: Ch
         select,
       }),
     () => restoreCreatedChatAttempt(rollback),
+  )
+}
+
+export function dispatchCreateImportedChats(
+  characterId: string | undefined,
+  folders: ChatFolder[],
+  chats: Chat[],
+  previous: ChatStateSnapshot,
+): void {
+  if (!characterId) return
+
+  const attemptedFolders = folders.map((folder) => cloneJsonValue(folder))
+  const attemptedChats = chats.map((chat) => cloneJsonValue(chat))
+  const usedImportedChatIndexes = new Set<number>()
+  const folderSteps: ChatImportBatchRollback['folders'] = attemptedFolders.map((folder) => ({
+    rollback: chatCreatedFolderRollbackFromState(characterId, folder, previous),
+    accepted: false,
+  }))
+  const chatSteps: ChatImportBatchRollback['chats'] = attemptedChats.map((chat) => ({
+    rollback: importedChatCreateRollbackFromState(characterId, chat, previous, usedImportedChatIndexes),
+    accepted: false,
+  }))
+
+  const factories: Array<(baseRevision: number) => Promise<ServerCommandResult>> = [
+    ...attemptedFolders.map((folder, index) => async (baseRevision: number) => {
+      const result = await createChatFolderCommand({
+        baseRevision,
+        characterId,
+        folder: toChatFolderSnapshot(folder),
+      })
+      if (result.status === 'ok') folderSteps[index].accepted = true
+      return result
+    }),
+    ...attemptedChats.map((chat, index) => async (baseRevision: number) => {
+      const result = await createChatCommand({
+        baseRevision,
+        characterId,
+        chat: toChatSnapshot(chat),
+        select: false,
+      })
+      if (result.status === 'ok') chatSteps[index].accepted = true
+      return result
+    }),
+  ]
+
+  runOptimisticCommandSequence(factories, () =>
+    restoreImportedChatBatchAttempt({ folders: folderSteps, chats: chatSteps }),
   )
 }
 

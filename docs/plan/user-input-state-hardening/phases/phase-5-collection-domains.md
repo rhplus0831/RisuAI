@@ -197,6 +197,14 @@ sibling chat/folder edits, and selection, freeze sanitized attempts for rollback
 comparison, and treat empty patch plus select-only dispatches as metadata
 rollback no-ops.
 
+Twenty-seventh landed slice: chat import flows now use an attempted-aware import
+batch dispatcher instead of broad chat-state restore. Failed multi-chat imports
+keep earlier server-accepted folder/chat creates, roll back only unchanged
+unaccepted imported folders/chats, preserve edited imported rows, handle
+duplicate-id legacy imports as inserted rows, and re-resolve the import target
+by stable character id after file-picker awaits so selection drift cannot import
+into the wrong character.
+
 ## Anchors
 
 - `src/lib/Setting/botpreset.svelte`

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const platformState = vi.hoisted(() => ({ isFastifyServer: true }))
 const selectedFileState = vi.hoisted(() => ({
   file: null as null | { name: string; data: Uint8Array },
+  beforeResolve: null as null | (() => void | Promise<void>),
 }))
 
 vi.mock('./platform', async (importActual) => {
@@ -30,7 +31,10 @@ vi.mock('./util', () => ({
   pickHashRand: vi.fn(() => 0),
   selectFileByDom: vi.fn(),
   selectMultipleFile: vi.fn(),
-  selectSingleFile: vi.fn(async () => selectedFileState.file),
+  selectSingleFile: vi.fn(async () => {
+    await selectedFileState.beforeResolve?.()
+    return selectedFileState.file
+  }),
   sleep: vi.fn(),
 }))
 
@@ -44,7 +48,10 @@ vi.mock('./alert', async (importActual) => {
 })
 
 import { clearCachedServerCommandRevision } from './server/commands'
-import { setServerProjectionWriteGuardEnabled } from './server/projectionWriteGuard.svelte'
+import {
+  setServerProjectionWriteGuardEnabled,
+  withTrustedServerProjectionWrite,
+} from './server/projectionWriteGuard.svelte'
 import { DBState, selectedCharID } from './stores.svelte'
 import { importChat } from './characters'
 
@@ -57,6 +64,7 @@ interface CapturedFetch {
 
 interface StubCommandFetchOptions {
   failCommandNumber?: number
+  onCommand?: (input: { commandNumber: number; url: string; init: RequestInit }) => void | Promise<void>
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -85,6 +93,7 @@ function stubCommandFetch(options: StubCommandFetchOptions = {}): CapturedFetch[
       if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
       if (url.startsWith('/api/v1/commands/')) {
         commandCount += 1
+        await options.onCommand?.({ commandNumber: commandCount, url, init })
         if (options.failCommandNumber === commandCount) {
           return jsonResponse({ error: 'command failed' }, 500)
         }
@@ -144,6 +153,13 @@ function selectJsonFile(name: string, payload: unknown): void {
   }
 }
 
+function selectJsonlFile(lines: unknown[]): void {
+  selectedFileState.file = {
+    name: 'chat.jsonl',
+    data: Buffer.from(lines.map((line) => JSON.stringify(line)).join('\n')),
+  }
+}
+
 function selectHtmlChatFile(chat: Record<string, unknown>): void {
   selectedFileState.file = {
     name: 'chat.html',
@@ -171,6 +187,7 @@ beforeEach(() => {
   setServerProjectionWriteGuardEnabled(false)
   selectedCharID.set(0)
   selectedFileState.file = null
+  selectedFileState.beforeResolve = null
   DBState.db = {
     personas: [
       { id: 'persona-a', name: 'Persona A', personaPrompt: '', icon: '', note: '' },
@@ -283,7 +300,7 @@ describe('chat import projection helpers', () => {
     expect(chatPayloads[1].folderId).toBe('folder-b')
   })
 
-  it('rolls back a failed sequenced v2 import and skips later commands', async () => {
+  it('keeps an accepted imported folder when a later folder create fails and skips later commands', async () => {
     const calls = stubCommandFetch({ failCommandNumber: 2 })
     selectJsonFile('chats.json', {
       type: 'risuAllChats',
@@ -302,11 +319,109 @@ describe('chat import projection helpers', () => {
 
     await vi.waitFor(() => {
       expect(commandCalls(calls)).toHaveLength(2)
-      expect(DBState.db.characters[0].chatFolders).toEqual([])
+      expect(DBState.db.characters[0].chatFolders).toEqual([
+        { id: 'folder-a', name: 'Folder A', color: '#c00', folded: false },
+      ])
       expect(DBState.db.characters[0].chats).toHaveLength(1)
     })
     expect(DBState.db.characters[0].chats[0]).toMatchObject({ id: 'chat-a', name: 'Chat A' })
     expect(createChatCalls(calls)).toHaveLength(0)
+  })
+
+  it('keeps imported folders when the first chat create fails and removes the chat tail', async () => {
+    const calls = stubCommandFetch({ failCommandNumber: 3 })
+    selectJsonFile('chats.json', {
+      type: 'risuAllChats',
+      ver: 2,
+      folders: [
+        { id: 'folder-a', name: 'Folder A', color: '#c00', folded: false },
+        { id: 'folder-b', name: 'Folder B', color: '#0c0', folded: true },
+      ],
+      data: [
+        importedChat({ name: 'Imported One', folderId: 'folder-a' }),
+        importedChat({ name: 'Imported Two', folderId: 'folder-b' }),
+      ],
+    })
+
+    await importChat()
+
+    await vi.waitFor(() => {
+      expect(commandCalls(calls)).toHaveLength(3)
+      expect(DBState.db.characters[0].chatFolders.map((folder) => folder.name)).toEqual(['Folder A', 'Folder B'])
+      expect(DBState.db.characters[0].chats).toHaveLength(1)
+    })
+    expect(DBState.db.characters[0].chats[0]).toMatchObject({ id: 'chat-a', name: 'Chat A' })
+    expect(createChatCalls(calls)).toHaveLength(1)
+  })
+
+  it('skips stale imported folder and chat rollback when live rows changed before sequence failure', async () => {
+    const calls = stubCommandFetch({
+      failCommandNumber: 1,
+      onCommand: ({ commandNumber }) => {
+        if (commandNumber !== 1) return
+        withTrustedServerProjectionWrite(() => {
+          const character = DBState.db.characters[0]
+          const importedFolder = character.chatFolders.find((folder) => folder.name === 'Folder A')
+          const importedChatRow = character.chats.find((chat) => chat.name === 'Imported One')
+          if (importedFolder) importedFolder.name = 'Folder A edited'
+          if (importedChatRow) importedChatRow.name = 'Imported One edited'
+        })
+      },
+    })
+    selectJsonFile('chats.json', {
+      type: 'risuAllChats',
+      ver: 2,
+      folders: [
+        { id: 'folder-a', name: 'Folder A', color: '#c00', folded: false },
+        { id: 'folder-b', name: 'Folder B', color: '#0c0', folded: true },
+      ],
+      data: [
+        importedChat({ name: 'Imported One', folderId: 'folder-a' }),
+        importedChat({ name: 'Imported Two', folderId: 'folder-b' }),
+      ],
+    })
+
+    await importChat()
+
+    await vi.waitFor(() => {
+      expect(commandCalls(calls)).toHaveLength(1)
+      expect(DBState.db.characters[0].chatFolders.map((folder) => folder.name)).toEqual(['Folder A edited'])
+      expect(DBState.db.characters[0].chats.map((chat) => chat.name)).toEqual(['Imported One edited', 'Chat A'])
+    })
+  })
+
+  it('imports JSONL into the captured character when selection changes while file selection is pending', async () => {
+    const calls = stubCommandFetch()
+    DBState.db.characters.push({
+      chaId: 'char-b',
+      name: 'Character B',
+      chatPage: 1,
+      chats: [
+        { id: 'chat-b-0', name: 'Chat B0', message: [], localLore: [], note: '' },
+        { id: 'chat-b-1', name: 'Chat B1', message: [], localLore: [], note: '' },
+      ],
+      chatFolders: [],
+    } as any)
+    selectJsonlFile([
+      { name: 'User', is_user: true, mes: 'first line is skipped by Tavern import' },
+      { name: 'Bot', is_user: false, mes: 'hello from captured target' },
+    ])
+    selectedFileState.beforeResolve = () => {
+      selectedCharID.set(1)
+    }
+
+    await importChat()
+
+    expect(DBState.db.characters[0].chats[0]).toMatchObject({ name: 'Imported Chat' })
+    expect(DBState.db.characters[0].chatPage).toBe(0)
+    expect(DBState.db.characters[1].chatPage).toBe(1)
+    expect(DBState.db.characters[1].chats).toEqual([
+      { id: 'chat-b-0', name: 'Chat B0', message: [], localLore: [], note: '' },
+      { id: 'chat-b-1', name: 'Chat B1', message: [], localLore: [], note: '' },
+    ])
+    const [createCall] = await waitForCreateChatCalls(calls)
+    expect(createCall.url).toBe('/api/v1/commands/characters/char-a/chats')
+    expect(createCall.body).toMatchObject({ select: true })
   })
 
   it('sequences v1 all-chat multi-import create-chat commands with advancing revisions', async () => {
@@ -331,6 +446,58 @@ describe('chat import projection helpers', () => {
     ])
     expect(commands.map((call) => (call.body as any).baseRevision)).toEqual([10, 11, 12])
     expect(commands.map((call) => (call.body as any).chat.name)).toEqual(['V1 One', 'V1 Two', 'V1 Three'])
+  })
+
+  it('removes an unchanged duplicate-id v1 imported chat when create fails', async () => {
+    const calls = stubCommandFetch({ failCommandNumber: 1 })
+    selectJsonFile('chats.json', {
+      type: 'risuAllChats',
+      ver: 1,
+      data: [importedChat({ id: 'chat-a', name: 'Imported Duplicate' })],
+    })
+
+    await importChat()
+
+    await vi.waitFor(() => {
+      expect(commandCalls(calls)).toHaveLength(1)
+      expect(DBState.db.characters[0].chats).toEqual([
+        { id: 'chat-a', name: 'Chat A', message: [], localLore: [], note: '' },
+      ])
+    })
+    expect((createChatCalls(calls)[0].body as any).chat).toMatchObject({
+      id: 'chat-a',
+      name: 'Imported Duplicate',
+    })
+  })
+
+  it('preserves an edited duplicate-id v1 imported chat when create fails', async () => {
+    const calls = stubCommandFetch({
+      failCommandNumber: 1,
+      onCommand: ({ commandNumber }) => {
+        if (commandNumber !== 1) return
+        withTrustedServerProjectionWrite(() => {
+          const importedChatRow = DBState.db.characters[0].chats[0]
+          if (importedChatRow?.name === 'Imported Duplicate') {
+            importedChatRow.name = 'Imported Duplicate edited'
+          }
+        })
+      },
+    })
+    selectJsonFile('chats.json', {
+      type: 'risuAllChats',
+      ver: 1,
+      data: [importedChat({ id: 'chat-a', name: 'Imported Duplicate' })],
+    })
+
+    await importChat()
+
+    await vi.waitFor(() => {
+      expect(commandCalls(calls)).toHaveLength(1)
+      expect(DBState.db.characters[0].chats.map((chat) => ({ id: chat.id, name: chat.name }))).toEqual([
+        { id: 'chat-a', name: 'Imported Duplicate edited' },
+        { id: 'chat-a', name: 'Chat A' },
+      ])
+    })
   })
 
   it('normalizes risuChat v1 generation settings to incomplete prefill before create-chat dispatch', async () => {
