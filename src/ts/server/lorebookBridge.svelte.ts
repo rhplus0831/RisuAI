@@ -34,7 +34,7 @@ import {
   type ServerCommandTransportOptions,
 } from './commands'
 import { getServerProjectionApplyEpoch, withTrustedServerProjectionWrite } from './projectionWriteGuard.svelte'
-import { mergeProjectionIntoDirtyDraft } from './staleStateGuards'
+import { applyAttemptedKeyedListRollback, mergeProjectionIntoDirtyDraft } from './staleStateGuards'
 
 type GlobalLorebook = { id?: string; name: string; data: loreBook[] }
 
@@ -954,25 +954,35 @@ function queueScopedLorebookReplacement(
   source: LorebookReplacementSource,
 ): void {
   const key = lorebookCollectionScopeKey(scope)
+  const attemptedEntries = cloneJsonValue(entries ?? []) as loreBook[]
   queueReplacement(
     key,
     previous,
     (rollbackSnapshot, options = {}) => {
       const isWatchedCollection = source === 'watchedCollection'
-      if (isWatchedCollection && !hasStableUniqueLorebookEntryIds(entries)) {
-        return Promise.resolve({ status: 'unavailable' })
+      if (isWatchedCollection) {
+        const liveEntries = resolveLorebookCollection(scope)?.entries
+        if (!hasStableUniqueLorebookEntryIds(liveEntries)) {
+          return Promise.resolve({ status: 'unavailable' })
+        }
       }
 
       return runServerCommand({
         command: (baseRevision): Promise<ServerCommandResult<Record<string, unknown>>> => {
           if (source === 'entry' && isLorebookEntryStateSnapshot(rollbackSnapshot)) {
-            const entryCommand = lorebookEntryUpsertCommand(scope, entries, rollbackSnapshot, baseRevision, options)
+            const entryCommand = lorebookEntryUpsertCommand(
+              scope,
+              attemptedEntries,
+              rollbackSnapshot,
+              baseRevision,
+              options,
+            )
             if (entryCommand) return entryCommand
           }
           if (isLorebookCollectionReplacementSource(source) && !isLorebookEntryStateSnapshot(rollbackSnapshot)) {
             const collectionCommand = lorebookCollectionDeltaCommand(
               scope,
-              entries,
+              attemptedEntries,
               rollbackSnapshot,
               baseRevision,
               options,
@@ -980,8 +990,8 @@ function queueScopedLorebookReplacement(
             if (collectionCommand) return collectionCommand
           }
           const entrySnapshots = isWatchedCollection
-            ? (cloneJsonValue(entries ?? []) as LorebookEntrySnapshot[])
-            : cloneLorebookEntriesForCommand(entries)
+            ? (cloneJsonValue(attemptedEntries ?? []) as LorebookEntrySnapshot[])
+            : cloneLorebookEntriesForCommand(attemptedEntries)
           switch (scope.kind) {
             case 'character':
               return replaceCharacterLorebooksCommand(
@@ -1025,7 +1035,7 @@ function queueScopedLorebookReplacement(
               ) as Promise<ServerCommandResult<Record<string, unknown>>>
           }
         },
-        rollback: () => rollbackLorebookReplacement(rollbackSnapshot),
+        rollback: () => rollbackLorebookReplacement(scope, rollbackSnapshot, attemptedEntries),
         signal: options.signal,
         keepalive: options.keepalive,
       })
@@ -1089,7 +1099,11 @@ function detectLorebookCollectionDelta(
     return null
   }
 
-  if (currentEntries.length === previousEntries.length + 1 && sameStringArray(previousIds, currentIds.slice(0, -1))) {
+  if (
+    currentEntries.length === previousEntries.length + 1 &&
+    sameStringArray(previousIds, currentIds.slice(0, -1)) &&
+    sameSharedEntriesById(previousEntries, currentEntries)
+  ) {
     return { type: 'upsert', entry: currentEntries[currentEntries.length - 1] }
   }
 
@@ -1097,7 +1111,9 @@ function detectLorebookCollectionDelta(
     const removedIds = previousIds.filter((id) => !currentIds.includes(id))
     if (removedIds.length !== 1) return null
     const withoutRemoved = previousIds.filter((id) => id !== removedIds[0])
-    return sameStringArray(withoutRemoved, currentIds) ? { type: 'delete', entryId: removedIds[0] } : null
+    return sameStringArray(withoutRemoved, currentIds) && sameSharedEntriesById(previousEntries, currentEntries)
+      ? { type: 'delete', entryId: removedIds[0] }
+      : null
   }
 
   return null
@@ -1129,6 +1145,14 @@ function sameStringSet(a: readonly string[], b: readonly string[]): boolean {
 function sameEntriesById(previousEntries: loreBook[], currentEntries: loreBook[]): boolean {
   const previousById = new Map(previousEntries.map((entry) => [entry.id, snapshotJson(entry)]))
   return currentEntries.every((entry) => previousById.get(entry.id) === snapshotJson(entry))
+}
+
+function sameSharedEntriesById(previousEntries: loreBook[], currentEntries: loreBook[]): boolean {
+  const currentById = new Map(currentEntries.map((entry) => [entry.id, snapshotJson(entry)]))
+  return previousEntries.every((entry) => {
+    const currentSnapshot = currentById.get(entry.id)
+    return currentSnapshot === undefined || currentSnapshot === snapshotJson(entry)
+  })
 }
 
 function isStableCommandId(value: unknown): value is string {
@@ -1725,12 +1749,16 @@ function reconcileFlushedEntrySuppressions(currentSnapshots: Map<string, string>
   }
 }
 
-function rollbackLorebookReplacement(snapshot: LorebookReplacementSnapshot): void {
+function rollbackLorebookReplacement(
+  scope: DiscreteLorebookEditScope,
+  snapshot: LorebookReplacementSnapshot,
+  attemptedEntries: loreBook[],
+): void {
   if (isLorebookEntryStateSnapshot(snapshot)) {
-    rollbackServerBackedLorebookEntry(snapshot)
+    rollbackServerBackedLorebookEntry(snapshot, attemptedEntries)
     return
   }
-  rollbackServerBackedLorebooks(snapshot)
+  rollbackServerBackedLorebookCollection(scope, snapshot, attemptedEntries)
 }
 
 function rollbackServerBackedLorebooks(snapshot: LorebookStateSnapshot): void {
@@ -1745,10 +1773,247 @@ function rollbackServerBackedGlobalLorebooks(snapshot: GlobalLorebookStateSnapsh
   })
 }
 
-function rollbackServerBackedLorebookEntry(snapshot: LorebookEntryStateSnapshot): void {
+function rollbackServerBackedLorebookEntry(snapshot: LorebookEntryStateSnapshot, attemptedEntries?: loreBook[]): void {
+  if (attemptedEntries) {
+    const attemptedEntry = attemptedLorebookEntryForSnapshot(attemptedEntries, snapshot)
+    if (!attemptedEntry) return
+    rollbackLorebookEntryByAttempt(snapshot, attemptedEntry)
+    return
+  }
+
   withSuppressedLorebookWatcher(() => {
     restoreLorebookEntryState(snapshot)
   })
+}
+
+type LorebookListRollbackEntry = {
+  key: string
+  previous: loreBook | null
+  attempted: loreBook | null
+  previousIndex?: number
+}
+
+function rollbackServerBackedLorebookCollection(
+  scope: DiscreteLorebookEditScope,
+  snapshot: LorebookStateSnapshot,
+  attemptedEntries: loreBook[],
+): void {
+  const previousEntries = previousLorebookEntriesForScope(scope, snapshot)
+  if (!previousEntries) return
+
+  const delta = detectLorebookCollectionDelta(previousEntries, attemptedEntries)
+  if (delta) {
+    switch (delta.type) {
+      case 'upsert':
+        rollbackLorebookCollectionUpsert(scope, previousEntries, delta.entry)
+        return
+      case 'delete':
+        rollbackLorebookCollectionDelete(scope, previousEntries, delta.entryId)
+        return
+      case 'reorder':
+        rollbackLorebookCollectionReorder(scope, lorebookEntryIds(previousEntries), delta.entryIds)
+        return
+    }
+  }
+
+  rollbackLorebookCollectionFullReplace(scope, previousEntries, attemptedEntries)
+}
+
+function rollbackLorebookEntryByAttempt(snapshot: LorebookEntryStateSnapshot, attemptedEntry: loreBook): void {
+  const entryId =
+    typeof attemptedEntry.id === 'string' && attemptedEntry.id.trim() ? attemptedEntry.id : snapshot.entryId
+  if (!entryId) return
+  const rollbackEntry: LorebookListRollbackEntry = {
+    key: entryId,
+    previous: snapshot.previousEntry ? cloneJsonValue(snapshot.previousEntry) : null,
+    attempted: cloneJsonValue(attemptedEntry),
+    previousIndex: snapshot.index,
+  }
+  applyScopedLorebookKeyedRollback(snapshot.scopeKey, rollbackEntry)
+}
+
+function rollbackLorebookCollectionUpsert(
+  scope: DiscreteLorebookEditScope,
+  previousEntries: loreBook[],
+  attemptedEntry: loreBook,
+): void {
+  const entryId = attemptedEntry.id
+  if (!isStableCommandId(entryId)) return
+
+  const previousIndex = previousEntries.findIndex((entry) => entry.id === entryId)
+  const previousEntry = previousIndex >= 0 ? previousEntries[previousIndex] : null
+  const rollbackEntry: LorebookListRollbackEntry = {
+    key: entryId,
+    previous: previousEntry ? cloneJsonValue(previousEntry) : null,
+    attempted: cloneJsonValue(attemptedEntry),
+    previousIndex: previousIndex >= 0 ? previousIndex : undefined,
+  }
+  applyScopedLorebookKeyedRollback(lorebookCollectionScopeKey(scope), rollbackEntry)
+}
+
+function rollbackLorebookCollectionDelete(
+  scope: DiscreteLorebookEditScope,
+  previousEntries: loreBook[],
+  entryId: string,
+): void {
+  if (!isStableCommandId(entryId)) return
+  const previousIndex = previousEntries.findIndex((entry) => entry.id === entryId)
+  if (previousIndex < 0) return
+  const rollbackEntry: LorebookListRollbackEntry = {
+    key: entryId,
+    previous: cloneJsonValue(previousEntries[previousIndex]),
+    attempted: null,
+    previousIndex,
+  }
+  applyScopedLorebookKeyedRollback(lorebookCollectionScopeKey(scope), rollbackEntry)
+}
+
+function applyScopedLorebookKeyedRollback(scopeKey: string, rollbackEntry: LorebookListRollbackEntry): void {
+  const target = resolveLorebookCollectionFromKey(scopeKey)
+  if (!target || !canApplyLorebookKeyedRollback(target.entries, rollbackEntry)) return
+
+  withSuppressedLorebookWatcher(() => {
+    withTrustedServerProjectionWrite(() => {
+      const liveTarget = resolveLorebookCollectionFromKey(scopeKey)
+      if (!liveTarget) return
+      applyAttemptedKeyedListRollback<loreBook, string>({
+        list: liveTarget.entries,
+        entries: [rollbackEntry],
+        getKey: lorebookEntryKey,
+      })
+    })
+  })
+}
+
+function canApplyLorebookKeyedRollback(entries: loreBook[], rollbackEntry: LorebookListRollbackEntry): boolean {
+  const liveIndex = entries.findIndex((entry) => lorebookEntryKey(entry) === rollbackEntry.key)
+  const liveValue = liveIndex === -1 ? null : entries[liveIndex]
+  return snapshotJson(liveValue) === snapshotJson(rollbackEntry.attempted)
+}
+
+function rollbackLorebookCollectionReorder(
+  scope: DiscreteLorebookEditScope,
+  previousIds: string[] | null,
+  attemptedIds: string[],
+): void {
+  if (!previousIds) return
+  const scopeKey = lorebookCollectionScopeKey(scope)
+  const target = resolveLorebookCollectionFromKey(scopeKey)
+  const liveIds = target ? lorebookEntryIds(target.entries) : null
+  if (!liveIds || !sameStringArray(liveIds, attemptedIds)) return
+
+  withSuppressedLorebookWatcher(() => {
+    withTrustedServerProjectionWrite(() => {
+      const liveTarget = resolveLorebookCollectionFromKey(scopeKey)
+      if (!liveTarget) return
+      const currentIds = lorebookEntryIds(liveTarget.entries)
+      if (!currentIds || !sameStringArray(currentIds, attemptedIds)) return
+
+      const entriesById = new Map(liveTarget.entries.map((entry) => [entry.id, entry]))
+      const reordered = previousIds
+        .map((entryId) => entriesById.get(entryId))
+        .filter((entry): entry is loreBook => !!entry)
+      if (reordered.length !== liveTarget.entries.length) return
+      liveTarget.entries.splice(0, liveTarget.entries.length, ...reordered)
+    })
+  })
+}
+
+function rollbackLorebookCollectionFullReplace(
+  scope: DiscreteLorebookEditScope,
+  previousEntries: loreBook[],
+  attemptedEntries: loreBook[],
+): void {
+  const scopeKey = lorebookCollectionScopeKey(scope)
+  const target = resolveLorebookCollectionFromKey(scopeKey)
+  if (!target || snapshotJson(target.entries) !== snapshotJson(attemptedEntries)) return
+
+  withSuppressedLorebookWatcher(() => {
+    withTrustedServerProjectionWrite(() => {
+      const liveTarget = resolveLorebookCollectionFromKey(scopeKey)
+      if (!liveTarget || snapshotJson(liveTarget.entries) !== snapshotJson(attemptedEntries)) return
+      assignScopedLorebookCollection(scope, cloneJsonValue(previousEntries))
+    })
+  })
+}
+
+function attemptedLorebookEntryForSnapshot(
+  attemptedEntries: loreBook[],
+  snapshot: LorebookEntryStateSnapshot,
+): loreBook | null {
+  if (snapshot.entryId) {
+    const byId = attemptedEntries.find((entry) => entry.id === snapshot.entryId)
+    if (byId) return byId
+  }
+  return attemptedEntries[snapshot.index] ?? null
+}
+
+function previousLorebookEntriesForScope(
+  scope: DiscreteLorebookEditScope,
+  snapshot: LorebookStateSnapshot,
+): loreBook[] | null {
+  const scopeKey = lorebookCollectionScopeKey(scope)
+  if (snapshot.scopeKey) {
+    if (snapshot.scopeKey !== scopeKey || !Array.isArray(snapshot.scopedValue)) return null
+    return cloneJsonValue(snapshot.scopedValue) as loreBook[]
+  }
+
+  switch (scope.kind) {
+    case 'character': {
+      const character = snapshot.characters.find((candidate) => candidate.chaId === scope.characterId)
+      return Array.isArray(character?.globalLore) ? (cloneJsonValue(character.globalLore) as loreBook[]) : null
+    }
+    case 'chat': {
+      for (const character of snapshot.characters) {
+        const chat = character.chats?.find((candidate) => candidate.id === scope.chatId)
+        if (chat) return Array.isArray(chat.localLore) ? (cloneJsonValue(chat.localLore) as loreBook[]) : null
+      }
+      return null
+    }
+    case 'global': {
+      const lorebook = snapshot.loreBook.find((candidate) => candidate.id === scope.lorebookId)
+      return Array.isArray(lorebook?.data) ? (cloneJsonValue(lorebook.data) as loreBook[]) : null
+    }
+    case 'module': {
+      const module = snapshot.modules.find((candidate) => candidate.id === scope.moduleId)
+      return Array.isArray(module?.lorebook) ? (cloneJsonValue(module.lorebook) as loreBook[]) : null
+    }
+  }
+}
+
+function assignScopedLorebookCollection(scope: DiscreteLorebookEditScope, entries: loreBook[]): boolean {
+  switch (scope.kind) {
+    case 'character': {
+      const character = DBState.db.characters?.find((candidate) => candidate.chaId === scope.characterId)
+      if (!character) return false
+      character.globalLore = entries as typeof character.globalLore
+      return true
+    }
+    case 'chat': {
+      const chat = findChat(scope.chatId)
+      if (!chat) return false
+      chat.localLore = entries as typeof chat.localLore
+      return true
+    }
+    case 'global': {
+      const lorebook = ((DBState.db.loreBook ?? []) as GlobalLorebook[]).find(
+        (candidate) => candidate.id === scope.lorebookId,
+      )
+      if (!lorebook) return false
+      lorebook.data = entries
+      return true
+    }
+    case 'module': {
+      const module = findModule(scope.moduleId)
+      if (!module) return false
+      module.lorebook = entries as typeof module.lorebook
+      return true
+    }
+  }
+}
+
+function lorebookEntryKey(entry: loreBook): string | null {
+  return isStableCommandId(entry.id) ? entry.id : null
 }
 
 function withSuppressedLorebookWatcher(fn: () => void): void {

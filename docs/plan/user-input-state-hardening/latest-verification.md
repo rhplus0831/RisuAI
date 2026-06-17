@@ -7,26 +7,29 @@ workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 5 persona residual rollback. Queued
-  persona profile saves, direct saves, trigger prompt saves, persona selection,
-  icon save, and persona import-created row failures now use attempted row,
-  profile mirror, selection, and created-row rollback instead of broad
-  `PersonaStateSnapshot` restores. Delayed command failures preserve newer
-  sibling rows, same-row edits, profile mirrors, and changed selection when live
-  state no longer matches the attempted optimistic write.
+- Runtime/code change under test: Phase 5 scoped lorebook entry replacement
+  rollback. Character, chat, global lorebook-entry, and module-lorebook entry
+  replacements now freeze attempted entry collections at queue time and roll
+  back create, update, delete, reorder, and full-replace failures by attempted
+  id, value, and order instead of broad lorebook snapshots. Delayed command
+  failures preserve newer sibling entries, same-entry edits, appended entries,
+  and newer order changes when live state no longer matches the attempted
+  optimistic write.
 - Commands:
 
 ```bash
-pnpm exec vitest run src/ts/persona.test.ts src/ts/persona.iconUpload.test.ts src/ts/process/__tests__/triggers.projectionGuard.test.ts src/ts/loadout.test.ts
+pnpm exec vitest run src/ts/server/lorebookBridge.svelte.test.ts src/ts/server/lorebookBridge.test.ts src/ts/process/__tests__/lorebook.projectionGuard.test.ts
+pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/commandCollectionRange.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
-pnpm exec prettier --check src/ts/persona.ts src/ts/persona.test.ts src/ts/persona.iconUpload.test.ts
+pnpm exec prettier --check src/ts/server/lorebookBridge.svelte.ts src/ts/server/lorebookBridge.svelte.test.ts
 git diff --check
 ```
 
-- Result: passed on 2026-06-17. Persona residual, icon upload, trigger guard,
-  and loadout coverage passed 48 tests across 4 files, and both TypeScript
-  checks plus Prettier and `git diff --check` passed.
+- Result: passed on 2026-06-17. Lorebook bridge and projection guard coverage
+  passed 84 tests across 3 files, Fastify command collection range coverage
+  passed 45 tests, and both TypeScript checks plus Prettier and
+  `git diff --check` passed.
 - Additional check: `pnpm exec vitest run src/ts/compatibilityAdapters.test.ts`
   still fails in the pre-existing character MCP lorebook test
   `routes MCP character lorebook writes through lorebook commands in
@@ -41,9 +44,9 @@ git diff --check
   import/update side-effect reload is not fully modeled by rollback. Full
   `ScriptDefinitionStateSnapshot` rollback remains broad for rarer discrete
   callers. The remaining Phase 5 collection domains still need focused slices:
-  Hypa V3 preset array import/rename/delete,
-  lorebook/sidebar collection rollback and replacement flows, including
-  create/delete/reorder, import, and list-selection paths. Translator preset
+  Hypa V3 preset array import/rename/delete, top-level lorebook/sidebar
+  collection rollback and replacement flows, including create/delete/reorder,
+  import, and list-selection paths. Translator preset
   import file-read/decode freshness does not have dedicated coverage, but its
   command-dispatch failure path uses the now rollback-free create dispatcher.
   Prompt-template item rollback coverage does not explicitly cover delete skip
@@ -76,10 +79,11 @@ git diff --check
   the tenth Phase 5 slice. Split prompt/model preset array rollback is covered
   by the eleventh Phase 5 slice. Legacy bot preset rollback is covered by the
   twelfth Phase 5 slice. Persona residual command rollback is covered by the
-  thirteenth Phase 5 slice. Remaining Phase 5 work owns module
-  lorebook/regex/script/trigger subdomains, lorebook, import collection flows,
-  Hypa V3 preset array import/rename/delete, plugin import/update side-effect
-  reload, and
+  thirteenth Phase 5 slice. Scoped lorebook entry replacement rollback is
+  covered by the fourteenth Phase 5 slice. Remaining Phase 5 work owns module
+  regex/script/trigger subdomains, top-level lorebook/sidebar/import collection
+  flows, Hypa V3 preset array import/rename/delete, plugin import/update
+  side-effect reload, and
   sidebar/chat/folder/character list create/delete/reorder/import rollback.
 - Phase 6 owns Realm/backup/local bundle restore/import resyncs, character/chat
   import refresh/navigation edges, memory job list/progress ordering,

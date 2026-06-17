@@ -104,6 +104,13 @@ created-row state. Failed persona commands no longer restore full persona
 snapshots over newer sibling rows, same-row edits, profile mirrors, or
 selection.
 
+Fourteenth landed slice: scoped lorebook entry replacement rollback now freezes
+attempted entry collections at queue time and rolls back character, chat, global
+lorebook-entry, and module-lorebook entry failures by attempted id, value, and
+order. Failed scoped entry create/update/delete/reorder/full-replace commands no
+longer restore broad lorebook snapshots over newer sibling entries, same-entry
+edits, appended entries, or newer order changes.
+
 ## Anchors
 
 - `src/lib/Setting/botpreset.svelte`

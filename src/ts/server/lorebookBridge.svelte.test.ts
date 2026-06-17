@@ -85,7 +85,10 @@ import {
   dispatchCreateGlobalLorebook,
   dispatchDeleteGlobalLorebook,
   dispatchReorderGlobalLorebooks,
+  dispatchReplaceChatLorebooks,
   dispatchReplaceCharacterLorebooks,
+  dispatchReplaceGlobalLorebookEntries,
+  dispatchReplaceModuleLorebooks,
   dispatchSelectGlobalLorebook,
   dispatchUpdateGlobalLorebook,
   flushPendingLorebookEntryDraftEdit,
@@ -152,6 +155,10 @@ function characterEntryDeleteCommands(): Array<Record<string, unknown> & { a?: u
 
 function characterEntryReorderCommands(): Array<Record<string, unknown> & { a?: unknown; rollback?: () => void }> {
   return recorded.commands.filter((c) => c.kind === 'reorderCharacterEntries')
+}
+
+function globalEntryCommands(): Array<Record<string, unknown> & { a?: unknown; rollback?: () => void }> {
+  return recorded.commands.filter((c) => c.kind === 'upsertGlobalEntry')
 }
 
 function globalCreateCommands(): Array<Record<string, unknown> & { a?: unknown; rollback?: () => void }> {
@@ -857,7 +864,7 @@ function moduleReplaceCommands(): Array<Record<string, unknown> & { entries?: un
   return recorded.commands.filter((c) => c.kind === 'replaceModule')
 }
 
-function moduleEntryCommands(): Array<Record<string, unknown> & { a?: unknown }> {
+function moduleEntryCommands(): Array<Record<string, unknown> & { a?: unknown; rollback?: () => void }> {
   return recorded.commands.filter((c) => c.kind === 'upsertModuleEntry')
 }
 
@@ -1632,6 +1639,251 @@ describe('K4 lorebook editor entry draft scope', () => {
       characterId: 'c-k4',
       entryIds: entries.map((entry) => entry.id),
     })
+  })
+
+  it('Phase 5: stale failed creates remove only unchanged attempted entries across scoped collections', async () => {
+    const cases: Array<{
+      label: string
+      setup: () => {
+        entries: Entry[]
+        attemptedId: string
+        command: () => { rollback?: () => void } | undefined
+      }
+    }> = [
+      {
+        label: 'character',
+        setup: () => {
+          setupMultiCollectionDb()
+          const entries = DBState.db.characters[0].globalLore as Entry[]
+          const attemptedId = 'character-created-entry'
+          const previous = currentLorebookCollectionScopedSnapshot({ kind: 'character', characterId: 'c0' })
+          entries.push({ id: attemptedId, key: 'created', content: 'attempted character create' })
+          dispatchReplaceCharacterLorebooks('c0', entries as any, previous, DELAY)
+          return { entries, attemptedId, command: () => characterEntryCommands()[0] }
+        },
+      },
+      {
+        label: 'chat',
+        setup: () => {
+          setupMultiCollectionDb()
+          const entries = DBState.db.characters[0].chats[0].localLore as Entry[]
+          const attemptedId = 'chat-created-entry'
+          const previous = currentLorebookCollectionScopedSnapshot({ kind: 'chat', chatId: 'c0chat' })
+          entries.push({ id: attemptedId, key: 'created', content: 'attempted chat create' })
+          dispatchReplaceChatLorebooks('c0chat', entries as any, previous, DELAY)
+          return { entries, attemptedId, command: () => chatEntryCommands()[0] }
+        },
+      },
+      {
+        label: 'global',
+        setup: () => {
+          setupMultiCollectionDb()
+          const entries = DBState.db.loreBook[0].data as Entry[]
+          const attemptedId = 'global-created-entry'
+          const previous = currentLorebookCollectionScopedSnapshot({ kind: 'global', lorebookId: 'g1' })
+          entries.push({ id: attemptedId, key: 'created', content: 'attempted global create' })
+          dispatchReplaceGlobalLorebookEntries('g1', entries as any, previous, DELAY)
+          return { entries, attemptedId, command: () => globalEntryCommands()[0] }
+        },
+      },
+      {
+        label: 'module',
+        setup: () => {
+          setupMultiCollectionDb()
+          const module = DBState.db.modules[0] as unknown as { lorebook: Entry[] }
+          const entries = module.lorebook
+          const attemptedId = 'module-created-entry'
+          const previous = currentLorebookCollectionScopedSnapshot({ kind: 'module', moduleId: 'm0' })
+          entries.push({ id: attemptedId, key: 'created', content: 'attempted module create' })
+          dispatchReplaceModuleLorebooks('m0', entries as any, previous, DELAY)
+          return { entries, attemptedId, command: () => moduleEntryCommands()[0] }
+        },
+      },
+    ]
+
+    for (const scenario of cases) {
+      recorded.commands.length = 0
+      const { entries, attemptedId, command } = scenario.setup()
+
+      await vi.advanceTimersByTimeAsync(DELAY)
+      const queued = command()
+      expect(queued?.rollback).toEqual(expect.any(Function))
+
+      entries[0].content = `${scenario.label} newer sibling edit`
+      entries.push({
+        id: `${scenario.label}-later-entry`,
+        key: 'later',
+        content: `${scenario.label} later append`,
+      })
+
+      queued?.rollback?.()
+
+      expect(entries.map((entry) => entry.id)).not.toContain(attemptedId)
+      expect(entries.map((entry) => entry.id)).toContain(`${scenario.label}-later-entry`)
+      expect(entries[0].content).toBe(`${scenario.label} newer sibling edit`)
+    }
+  })
+
+  it('Phase 5: stale failed updates restore only attempted rows and skip newer same-row edits', async () => {
+    setupK4EditorDb()
+    const scope = { kind: 'character', characterId: 'c-k4' } as const
+    const originalEntry2Content = (DBState.db.characters[0].globalLore as Entry[])[2].content
+
+    const previous = currentLorebookCollectionScopedSnapshot(scope)
+    const attempted = cloneEntries(DBState.db.characters[0].globalLore as Entry[])
+    attempted[2].content = 'attempted update'
+    DBState.db.characters[0].globalLore = attempted as any
+    dispatchReplaceCharacterLorebooks('c-k4', attempted as any, previous, DELAY)
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    let cmds = characterEntryCommands()
+    expect(cmds).toHaveLength(1)
+    ;(DBState.db.characters[0].globalLore as Entry[])[4].content = 'newer sibling edit'
+    cmds[0].rollback?.()
+
+    expect((DBState.db.characters[0].globalLore as Entry[])[2].content).toBe(originalEntry2Content)
+    expect((DBState.db.characters[0].globalLore as Entry[])[4].content).toBe('newer sibling edit')
+
+    recorded.commands.length = 0
+    const secondPrevious = currentLorebookCollectionScopedSnapshot(scope)
+    const secondAttempted = cloneEntries(DBState.db.characters[0].globalLore as Entry[])
+    secondAttempted[3].content = 'attempted second update'
+    DBState.db.characters[0].globalLore = secondAttempted as any
+    dispatchReplaceCharacterLorebooks('c-k4', secondAttempted as any, secondPrevious, DELAY)
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    cmds = characterEntryCommands()
+    expect(cmds).toHaveLength(1)
+    ;(DBState.db.characters[0].globalLore as Entry[])[3].content = 'newer same-row edit'
+    ;(DBState.db.characters[0].globalLore as Entry[])[5].content = 'newer sibling after second'
+    cmds[0].rollback?.()
+
+    expect((DBState.db.characters[0].globalLore as Entry[])[3].content).toBe('newer same-row edit')
+    expect((DBState.db.characters[0].globalLore as Entry[])[5].content).toBe('newer sibling after second')
+  })
+
+  it('Phase 5: stale failed deletes reinsert only still-missing entries and preserve newer entries', async () => {
+    setupK4EditorDb()
+    const entries = DBState.db.characters[0].globalLore as Entry[]
+    const previous = currentLorebookCollectionScopedSnapshot({ kind: 'character', characterId: 'c-k4' })
+    const deleted = cloneEntries([entries[3]])[0]
+
+    entries.splice(3, 1)
+    dispatchReplaceCharacterLorebooks('c-k4', entries as any, previous, DELAY)
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    const deletes = characterEntryDeleteCommands()
+    expect(deletes).toHaveLength(1)
+    entries[0].content = 'newer edit before delete rollback'
+    entries.push({ id: 'post-delete-entry', key: 'post-delete', content: 'post delete append' })
+
+    deletes[0].rollback?.()
+
+    expect(entries[3]).toMatchObject(deleted)
+    expect(entries[0].content).toBe('newer edit before delete rollback')
+    expect(entries.at(-1)?.id).toBe('post-delete-entry')
+  })
+
+  it('Phase 5: stale failed reorders restore prior order only while live order matches the attempt', async () => {
+    setupK4EditorDb()
+    const entries = DBState.db.characters[0].globalLore as Entry[]
+    const originalIds = entries.map((entry) => entry.id)
+    const previous = currentLorebookCollectionScopedSnapshot({ kind: 'character', characterId: 'c-k4' })
+    const moved = entries.shift()
+    if (moved) entries.push(moved)
+    const attemptedIds = entries.map((entry) => entry.id)
+
+    dispatchReplaceCharacterLorebooks('c-k4', entries as any, previous, DELAY)
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    let reorders = characterEntryReorderCommands()
+    expect(reorders).toHaveLength(1)
+    entries[2].content = 'content changed while order is attempted'
+    const changedEntryId = entries[2].id
+    reorders[0].rollback?.()
+
+    expect(entries.map((entry) => entry.id)).toEqual(originalIds)
+    expect(entries.find((entry) => entry.id === changedEntryId)?.content).toBe(
+      'content changed while order is attempted',
+    )
+
+    recorded.commands.length = 0
+    const secondPrevious = currentLorebookCollectionScopedSnapshot({ kind: 'character', characterId: 'c-k4' })
+    const movedAgain = entries.pop()
+    if (movedAgain) entries.unshift(movedAgain)
+    dispatchReplaceCharacterLorebooks('c-k4', entries as any, secondPrevious, DELAY)
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    reorders = characterEntryReorderCommands()
+    expect(reorders).toHaveLength(1)
+    entries.reverse()
+    const newerOrder = entries.map((entry) => entry.id)
+    expect(newerOrder).not.toEqual(attemptedIds)
+
+    reorders[0].rollback?.()
+
+    expect(entries.map((entry) => entry.id)).toEqual(newerOrder)
+  })
+
+  it('Phase 5: module lorebook helper rollback preserves newer sibling edits and appended entries', async () => {
+    setupK4ModuleDb()
+    const liveModule = DBState.db.modules[0] as unknown as { id: string; lorebook: Entry[] }
+    const draftModule = {
+      id: liveModule.id,
+      name: 'Draft Module',
+      description: '',
+      lorebook: cloneEntries(liveModule.lorebook),
+    }
+    const originalFirstContent = liveModule.lorebook[0].content
+    const nextEntries = cloneEntries(liveModule.lorebook)
+    nextEntries[0].content = 'attempted module helper update'
+
+    const replaced = replaceModuleLorebookCollectionDraft(liveModule.id, draftModule as any, nextEntries as any, DELAY)
+    expect(replaced).toBe(true)
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    const cmds = moduleEntryCommands()
+    expect(cmds).toHaveLength(1)
+    liveModule.lorebook[1].content = 'newer module sibling edit'
+    liveModule.lorebook.push({ id: 'module-later-entry', key: 'later', content: 'module later append' })
+
+    cmds[0].rollback?.()
+
+    expect(liveModule.lorebook[0].content).toBe(originalFirstContent)
+    expect(liveModule.lorebook[1].content).toBe('newer module sibling edit')
+    expect(liveModule.lorebook.map((entry) => entry.id)).toContain('module-later-entry')
+  })
+
+  it('Phase 5: full-replace fallback skips rollback after live collection diverges from the attempt', async () => {
+    setupK4EditorDb()
+    const scope = { kind: 'character', characterId: 'c-k4' } as const
+    const previous = currentLorebookCollectionScopedSnapshot(scope)
+    const attempted = cloneEntries(DBState.db.characters[0].globalLore as Entry[])
+    attempted[0].content = 'attempted complex update'
+    attempted[1] = {
+      id: 'complex-replacement-entry',
+      key: 'complex',
+      content: 'attempted complex replacement',
+    }
+
+    DBState.db.characters[0].globalLore = attempted as any
+    dispatchReplaceCharacterLorebooks('c-k4', attempted as any, previous, DELAY)
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    const replaces = characterReplaceCommands()
+    expect(replaces).toHaveLength(1)
+    ;(DBState.db.characters[0].globalLore as Entry[])[0].content = 'newer divergence'
+    ;(DBState.db.characters[0].globalLore as Entry[]).push({
+      id: 'complex-later-entry',
+      key: 'later',
+      content: 'newer append',
+    })
+
+    replaces[0].rollback?.()
+
+    expect((DBState.db.characters[0].globalLore as Entry[])[0].content).toBe('newer divergence')
+    expect((DBState.db.characters[0].globalLore as Entry[])[1].id).toBe('complex-replacement-entry')
+    expect((DBState.db.characters[0].globalLore as Entry[]).map((entry) => entry.id)).toContain('complex-later-entry')
   })
 })
 

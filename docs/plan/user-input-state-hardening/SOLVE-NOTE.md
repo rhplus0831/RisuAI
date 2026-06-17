@@ -77,7 +77,9 @@ create, prompt import, delete, select, and reorder commands. Legacy bot preset
 rollback has landed for save, copy, select, create, update, delete, reorder, and
 legacy extraction commands. Persona residual command rollback has landed for
 queued profile saves, direct saves, trigger prompt saves, persona selection,
-icon save, and import-created rows.
+icon save, and import-created rows. Scoped lorebook entry replacement rollback
+has landed for character, chat, global lorebook-entry, and module-lorebook entry
+create/update/delete/reorder/full-replace failures.
 
 Next manager loop:
 
@@ -167,8 +169,11 @@ Explicit deferrals:
   landed for save, copy, select, create, update, delete, reorder, and legacy
   extraction commands. Phase 5 persona residual command rollback has landed for
   queued profile saves, direct saves, trigger prompt saves, persona selection,
-  icon save, and import-created rows. Remaining module lorebook/regex/script/trigger subdomains,
-  lorebook, and import collection flows, Hypa V3 preset array import/rename/delete,
+  icon save, and import-created rows. Phase 5 scoped lorebook entry replacement
+  rollback has landed for character, chat, global lorebook-entry, and
+  module-lorebook entry create/update/delete/reorder/full-replace failures.
+  Remaining module regex/script/trigger subdomains, top-level lorebook/sidebar
+  and import collection flows, Hypa V3 preset array import/rename/delete,
   plugin import/update side-effect reload, and
   sidebar/chat/folder/character list create/delete/reorder/import rollback
   remain Phase 5 work.
