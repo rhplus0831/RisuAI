@@ -41,6 +41,11 @@ token issued only after selected files exist, target module id checks, and a
 module asset list snapshot before the module asset editor can append entries to
 live draft state.
 
+Sixth landed slice: prompt preset icon upload callbacks now use a latest
+operation token issued only after a selected file exists, target preset id
+checks, selected-row checks, and an image snapshot before decoded icon data can
+update a prompt preset.
+
 ## Anchors
 
 - `src/lib/ChatScreens/DefaultChatScreen.svelte`

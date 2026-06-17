@@ -63,6 +63,14 @@
     setPromptPresetModelOverrideEnabled,
   } from 'src/ts/promptPresetModelOverrides.svelte'
   import { promptPresetModelOverrideFieldForDatabaseKey, resolvePromptPresetRegexField } from 'src/ts/presetSplit'
+  import {
+    beginPromptPresetIconUpload,
+    capturePromptPresetIconUploadTarget,
+    clearPromptPresetIconUpload,
+    isFreshPromptPresetIconUpload,
+    resolveFreshPromptPresetIconUploadIndex,
+    type PromptPresetIconUploadOperation,
+  } from 'src/ts/server/promptPresetIconUpload'
 
   const stopServerSettingsWatch = watchServerBackedSettings(['proxyRequestModel', 'useLegacyGUI'])
   onDestroy(stopServerSettingsWatch)
@@ -194,6 +202,8 @@
   )
   let selectedPromptPreset = $derived(DBState.db.promptPresets?.[DBState.db.promptPresetsId])
   let promptTemplatePresetSyncInitialized = false
+  const PROMPT_PRESET_ICON_SIZE = 48
+  type SelectedPromptPresetIconFile = NonNullable<Awaited<ReturnType<typeof selectSingleFile>>>
 
   $effect(() => {
     const promptTemplate = DBState.db.promptTemplate
@@ -529,6 +539,87 @@
     if (snapshotJson(preset[key]) === snapshotJson(value)) return false
     updatePromptPreset(selectedIndex, { [key]: cloneJsonValue(value) } as Partial<PromptPreset>)
     return true
+  }
+
+  function currentPromptPresetIconUploadTarget() {
+    const selectedIndex = DBState.db.promptPresetsId
+    return capturePromptPresetIconUploadTarget({
+      presetIndex: selectedIndex,
+      preset: DBState.db.promptPresets?.[selectedIndex],
+    })
+  }
+
+  function promptPresetIconUploadFreshness(operation: PromptPresetIconUploadOperation) {
+    const selectedPreset = DBState.db.promptPresets?.[DBState.db.promptPresetsId]
+    const rowPreset = DBState.db.promptPresets?.[operation.presetIndex]
+
+    return {
+      selectedPresetId: selectedPreset?.id,
+      rowPresetId: rowPreset?.id ?? null,
+      image: rowPreset?.image,
+    }
+  }
+
+  function isCurrentPromptPresetIconUpload(operation: PromptPresetIconUploadOperation): boolean {
+    return isFreshPromptPresetIconUpload(operation, promptPresetIconUploadFreshness(operation))
+  }
+
+  async function resizePromptPresetIconFile(
+    file: SelectedPromptPresetIconFile,
+    operation: PromptPresetIconUploadOperation,
+  ): Promise<string | null> {
+    if (!isCurrentPromptPresetIconUpload(operation)) return null
+
+    const canvas = document.createElement('canvas')
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return null
+
+    const img = new Image()
+    //@ts-expect-error Uint8Array buffer type (ArrayBufferLike) is incompatible with BlobPart's ArrayBuffer
+    const blob = new Blob([file.data], { type: 'image/png' })
+    const objectUrl = URL.createObjectURL(blob)
+
+    try {
+      img.src = objectUrl
+      await img.decode()
+      if (!isCurrentPromptPresetIconUpload(operation)) return null
+
+      canvas.width = PROMPT_PRESET_ICON_SIZE
+      canvas.height = PROMPT_PRESET_ICON_SIZE
+      ctx.drawImage(img, 0, 0, PROMPT_PRESET_ICON_SIZE, PROMPT_PRESET_ICON_SIZE)
+      const data = canvas.toDataURL('image/jpeg', 0.7)
+
+      if (!isCurrentPromptPresetIconUpload(operation)) return null
+      return data
+    } finally {
+      URL.revokeObjectURL(objectUrl)
+    }
+  }
+
+  async function uploadSelectedPromptPresetIcon(): Promise<void> {
+    const target = currentPromptPresetIconUploadTarget()
+    if (!target) return
+
+    const selected = await selectSingleFile(['png', 'jpg', 'jpeg', 'webp'])
+    if (!selected) return
+
+    const operation = beginPromptPresetIconUpload(target)
+    try {
+      if (!isCurrentPromptPresetIconUpload(operation)) return
+
+      const data = await resizePromptPresetIconFile(selected, operation)
+      if (!data) return
+
+      const updateIndex = resolveFreshPromptPresetIconUploadIndex({
+        operation,
+        freshness: promptPresetIconUploadFreshness(operation),
+      })
+      if (updateIndex === null) return
+
+      updatePromptPreset(updateIndex, { image: data }) // Since its small (max 2304 pixels), it is okay to store it directly.
+    } finally {
+      clearPromptPresetIconUpload(operation)
+    }
   }
 
   function snapshotJson(value: unknown): string {
@@ -1466,21 +1557,7 @@
       </div>
       <button
         class="mt-2 text-textcolor2 hover:text-textcolor focus-within:text-textcolor"
-        onclick={async () => {
-          const sel = await selectSingleFile(['png', 'jpg', 'jpeg', 'webp'])
-          const canvas = document.createElement('canvas')
-          const ctx = canvas.getContext('2d')
-          const img = new Image()
-          //@ts-expect-error Uint8Array buffer type (ArrayBufferLike) is incompatible with BlobPart's ArrayBuffer
-          const blob = new Blob([sel.data], { type: 'image/png' })
-          img.src = URL.createObjectURL(blob)
-          await img.decode()
-          canvas.width = 48
-          canvas.height = 48
-          ctx.drawImage(img, 0, 0, 48, 48)
-          const data = canvas.toDataURL('image/jpeg', 0.7)
-          updatePromptPreset(DBState.db.promptPresetsId, { image: data }) // Since its small (max 2304 pixels), it is okay to store it directly.
-        }}>
+        onclick={uploadSelectedPromptPresetIcon}>
         <UploadIcon />
       </button>
     </Accordion>

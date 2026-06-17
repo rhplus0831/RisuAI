@@ -7,33 +7,31 @@ hardening workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 3 module asset upload callback
-  freshness. The module asset editor now captures the target module id and asset
-  list snapshot, issues a latest-operation token only after selected files exist,
-  uploads entries locally, and appends to the live module asset list only when
-  the open module draft and list snapshot are still fresh.
+- Runtime/code change under test: Phase 3 prompt preset icon upload callback
+  freshness. `BotSettings.svelte` now captures the target prompt preset id,
+  selected index, and image snapshot, issues a latest-operation token only after a
+  selected icon file exists, rechecks freshness after decode/resize work, and
+  updates the icon through a resolved still-fresh preset index.
 - Commands:
 
 ```bash
-pnpm exec vitest run src/ts/server/moduleAssetUpload.test.ts src/ts/server/staleStateGuards.test.ts
-pnpm exec vitest run src/lib/Setting/Pages/Module/ModuleSettings.svelte.test.ts
+pnpm exec vitest run src/ts/server/promptPresetIconUpload.test.ts src/ts/server/staleStateGuards.test.ts
+pnpm exec vitest run src/lib/Setting/Pages/BotSettings.svelte.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 git diff --check
 ```
 
-- Result: passed on 2026-06-17. The module-asset/stale-guard focused Vitest set
-  passed 2 files and 16 tests, and the module settings Svelte test passed 5
+- Result: passed on 2026-06-17. The prompt-icon/stale-guard focused Vitest set
+  passed 2 files and 18 tests, and the BotSettings source-contract test passed 3
   tests. Both TypeScript checks and `git diff --check` passed.
-- Residual gaps: coverage is focused on exported helper behavior plus existing
-  module settings component coverage, not a mounted picker/upload loop with
-  mocked `selectMultipleFile` and `saveAsset`. Stale asset uploads may still
-  complete server-side, but this slice prevents stale client-side module draft
-  mutation. Remaining Phase 3 surfaces include character emotion, reference
-  audio, and model callbacks; settings media assets; prompt
-  icon/background/theme imports; plugin import/update; persona/preset/chat/
-  character import helpers; and NanoGPT dashboard fetch persistence. Broad
-  module rollback and module import behavior remain Phase 5/Phase 3 deferrals.
+- Residual gaps: `BotSettings.svelte.test.ts` is a source-contract test rather
+  than a mounted picker/decode/update flow with mocked `selectSingleFile`,
+  `Image.decode`, canvas, and `updatePromptPreset`. Remaining Phase 3 surfaces
+  include character emotion, reference audio, and model callbacks; settings media
+  assets; custom background/theme imports beyond the already guarded background
+  upload path; plugin import/update; persona/preset/chat/character import
+  helpers; and NanoGPT dashboard fetch persistence.
 
 ## Required Closeout Proof
 
