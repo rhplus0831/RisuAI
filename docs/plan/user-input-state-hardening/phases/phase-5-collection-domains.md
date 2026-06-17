@@ -180,6 +180,15 @@ order/folder assignments, roll back folder order only before the folder command
 is accepted, preserve newer row edits, and keep accepted folder reorder results
 when the later chat reorder command fails.
 
+Twenty-fifth landed slice: chat fork rollback now scopes failed fork commands to
+the attempted forked chat row, attempted source chat metadata patch, and
+attempted branch folder creation instead of broad chat-state restore. Failed
+forks remove only unchanged fork rows, restore source folder assignment only
+while it still matches the attempted patch, preserve newer sibling chat/folder
+edits and changed fork rows, tolerate sidebar copy paths with no optimistic
+local insert, and remove created branch folders only when no live chat still
+references them.
+
 ## Anchors
 
 - `src/lib/Setting/botpreset.svelte`

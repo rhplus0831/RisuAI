@@ -164,6 +164,8 @@ persistence inventory under
   instead of restoring the whole `hypaV3Presets` array.
   Combined sidebar chat/folder drag reorder failures now use focused folder/chat
   order rollback instead of broad chat snapshots.
+  Chat fork command failures now use scoped forked-chat row, source metadata
+  patch, and branch-folder rollback instead of broad chat snapshots.
   Phase 2 landed character profile draft dirty top-level field protection;
   prompt-template item row dirty projection merging; whole-key dirty projection
   protection for
@@ -377,6 +379,9 @@ persistence inventory under
   combined sidebar chat/folder drag reorder rollback by attempted folder order,
   accepted folder-command state, chat order, and folder assignments instead of
   broad chat snapshots.
+- `src/ts/chatCommands.ts` now guards chat fork rollback by attempted forked
+  chat row, source chat metadata patch, and branch folder creation instead of
+  broad chat snapshots.
 - `src/lib/Setting/Pages/Language/TranslatorPresetSettings.svelte` now dispatches
   translator preset create, select, delete, and import collection commands
   without broad full-state rollback callbacks while retaining scoped dirty
@@ -392,8 +397,7 @@ persistence inventory under
   copy, select, create, update, delete, reorder, and extraction rollback by
   attempted row, field, order, selection, generated split row, and scalar
   settings state.
-- Verification state: Phase 5 combined sidebar chat/folder reorder
-  rollback
+- Verification state: Phase 5 chat fork rollback
   validation is recorded in `latest-verification.md`.
 - Highest issue density:
   - Character editor: 52 issue rows, mostly dirty projection and unguarded
@@ -451,7 +455,7 @@ persistence inventory under
   code gap blocks Phase 4 completion.
 - [Phase 5](phases/phase-5-collection-domains.md): active. Sidebar/import
   collection flows, broader lorebook import/navigation edges; plugin settings
-  patch residuals; and chat import/fork flows remain here. Script/trigger
+  patch residuals; and chat import flows remain here. Script/trigger
   replacement rollback, plugin custom storage plus
   non-storage and collection rollback slices, global module/MCP module-info,
   plugin DB bridge settings, persona collection, and translator preset
@@ -465,7 +469,7 @@ persistence inventory under
   have also landed. Character sidebar order/folder metadata rollback has also
   landed. Character list create/delete/import rollback has also landed. Hypa V3
   preset array rollback has also landed. Combined sidebar chat/folder reorder
-  rollback has also landed.
+  rollback has also landed. Chat fork rollback has also landed.
 - [Phase 6](phases/phase-6-resync-memory-navigation.md): pending. Realm, backup,
   and local bundle restore/import resyncs; character/chat import
   refresh/navigation edges; memory job list/progress ordering; route/selection
@@ -767,9 +771,13 @@ persistence inventory under
   - Phase 5 combined sidebar chat/folder reorder slice: folder drag now uses a
     focused chat-command helper that preserves accepted folder reorder and rolls
     back attempted chat order/folder assignment without broad chat snapshots.
+  - Phase 5 chat fork slice: fork commands now roll back only the attempted
+    forked chat row, source metadata patch, and created branch folder while
+    preserving newer sibling edits, changed fork rows, and branch folders still
+    referenced by a live chat.
   - Phase 5: sidebar/import collection flows, broader lorebook
     import/navigation edges, plugin import/update side-effect reload, and chat
-    import/fork flows.
+    import flows.
   - Known pre-existing test gap: `pnpm exec vitest run
     src/ts/compatibilityAdapters.test.ts` fails in
     `routes MCP character lorebook writes through lorebook commands in

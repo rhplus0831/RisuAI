@@ -482,6 +482,13 @@ interface ChatCreateRollback {
   attemptedSelectedChatId: string | undefined
 }
 
+interface ChatCreatedFolderRollback {
+  selectedCharID: number
+  characterId: string | undefined
+  folderId: string
+  attemptedFolder: ChatFolder
+}
+
 interface ChatDeleteRollback {
   selectedCharID: number
   characterId: string | undefined
@@ -490,6 +497,12 @@ interface ChatDeleteRollback {
   previousIndex: number
   previousSelectedChatId: string | undefined
   attemptedSelectedChatId: string | undefined
+}
+
+interface ChatForkRollback {
+  createdChat: ChatCreateRollback | null
+  sourcePatch: ChatRowMetadataSnapshot | null
+  createdFolder: ChatCreatedFolderRollback | null
 }
 
 interface ChatFolderAssignmentRollback {
@@ -617,6 +630,36 @@ function restoreCreatedChatAttempt(rollback: ChatCreateRollback | null): void {
   })
 }
 
+function chatSourcePatchRollbackFromState(
+  sourceChatId: string,
+  patch: ChatSnapshot | undefined,
+  previous: ChatStateSnapshot,
+): ChatRowMetadataSnapshot | null {
+  if (!patch || Object.keys(patch).length === 0) return null
+  const location = locateChatInState(previous, sourceChatId)
+  if (!location) return null
+
+  const previousRow = location.chat as unknown as Record<string, unknown>
+  const metadata: ChatSnapshot = {}
+  const attempted: ChatSnapshot = {}
+  for (const key of CHAT_PATCH_ALLOWED_KEYS) {
+    if (!Object.prototype.hasOwnProperty.call(patch, key)) continue
+    if (Object.prototype.hasOwnProperty.call(previousRow, key)) {
+      metadata[key] = cloneJsonValue(previousRow[key])
+    }
+    attempted[key] = cloneJsonValue(patch[key])
+  }
+  if (Object.keys(attempted).length === 0) return null
+
+  return {
+    selectedCharID: previous.selectedCharID,
+    characterId: location.character.chaId,
+    chatId: sourceChatId,
+    metadata,
+    attempted,
+  }
+}
+
 function chatFolderMetadataRollbackFromPatch(
   folderId: string,
   patch: ChatFolderSnapshot,
@@ -667,6 +710,72 @@ function restoreCreatedChatFolderAttempt(characterId: string, folder: ChatFolder
     })
     if (rolledBack.length > 0) character.chatFolders = folders
   })
+}
+
+function chatCreatedFolderRollbackFromState(
+  characterId: string | undefined,
+  folder: ChatFolder | undefined,
+  previous: ChatStateSnapshot,
+): ChatCreatedFolderRollback | null {
+  if (!folder?.id) return null
+  const previousCharacter = locateSnapshotCharacterInState(previous, characterId)
+  if (previousCharacter?.chatFolders?.some((candidate) => candidate.id === folder.id)) return null
+  return {
+    selectedCharID: previous.selectedCharID,
+    characterId,
+    folderId: folder.id,
+    attemptedFolder: cloneJsonValue(folder),
+  }
+}
+
+function restoreCreatedForkChatFolderAttempt(rollback: ChatCreatedFolderRollback | null): void {
+  if (!rollback) return
+  withTrustedServerProjectionWrite(() => {
+    const character = locateSnapshotCharacter(rollback.characterId, rollback.selectedCharID)
+    const folders = character?.chatFolders
+    if (!character || !folders) return
+    if (character.chats?.some((chat) => chat.folderId === rollback.folderId)) return
+
+    const rolledBack = applyAttemptedKeyedListRollback<ChatFolder, string>({
+      list: folders,
+      entries: [
+        {
+          key: rollback.folderId,
+          previous: null,
+          attempted: rollback.attemptedFolder,
+        },
+      ],
+      getKey: (candidate) => candidate?.id,
+    })
+    if (rolledBack.length > 0) character.chatFolders = folders
+  })
+}
+
+function chatForkRollbackFromState(
+  sourceChatId: string,
+  previous: ChatStateSnapshot,
+  input: {
+    chat: Chat
+    sourcePatch?: ChatSnapshot
+    folder?: ChatFolder
+    select?: boolean
+  },
+): ChatForkRollback | null {
+  const sourceLocation = locateChatInState(previous, sourceChatId)
+  if (!sourceLocation) return null
+  const characterId = sourceLocation.character.chaId
+  return {
+    createdChat: chatCreateRollbackFromState(characterId, input.chat, previous, input.select !== false),
+    sourcePatch: chatSourcePatchRollbackFromState(sourceChatId, input.sourcePatch, previous),
+    createdFolder: chatCreatedFolderRollbackFromState(characterId, input.folder, previous),
+  }
+}
+
+function restoreForkChatAttempt(rollback: ChatForkRollback | null): void {
+  if (!rollback) return
+  restoreCreatedChatAttempt(rollback.createdChat)
+  if (rollback.sourcePatch) restoreChatRowMetadata(rollback.sourcePatch)
+  restoreCreatedForkChatFolderAttempt(rollback.createdFolder)
 }
 
 function chatDeleteRollbackFromState(chatId: string, previous: ChatStateSnapshot): ChatDeleteRollback | null {
@@ -1343,17 +1452,26 @@ export function dispatchForkChat(
     select?: boolean
   },
 ): void {
+  const attemptedChat = cloneJsonValue(input.chat)
+  const attemptedSourcePatch = input.sourcePatch ? sanitizeChatPatch(input.sourcePatch) : undefined
+  const attemptedFolder = input.folder ? cloneJsonValue(input.folder) : undefined
+  const rollback = chatForkRollbackFromState(sourceChatId, previous, {
+    chat: attemptedChat,
+    sourcePatch: attemptedSourcePatch,
+    folder: attemptedFolder,
+    select: input.select,
+  })
   runChatCommand(
     (baseRevision) =>
       forkChatCommand({
         baseRevision,
         chatId: sourceChatId,
-        chat: toChatSnapshot(input.chat),
-        sourcePatch: input.sourcePatch ? sanitizeChatPatch(input.sourcePatch) : undefined,
-        folder: input.folder ? toChatFolderSnapshot(input.folder) : undefined,
+        chat: toChatSnapshot(attemptedChat),
+        sourcePatch: attemptedSourcePatch,
+        folder: attemptedFolder ? toChatFolderSnapshot(attemptedFolder) : undefined,
         select: input.select,
       }),
-    () => restoreChatState(previous),
+    () => restoreForkChatAttempt(rollback),
   )
 }
 

@@ -44,6 +44,7 @@ import {
   dispatchDeleteChat,
   dispatchDeleteChatFolder,
   dispatchDeleteMessageScoped,
+  dispatchForkChat,
   dispatchPatchChatScriptstateScoped,
   dispatchReorderChatFoldersAndChatsByIds,
   dispatchReorderChatFoldersByIds,
@@ -969,6 +970,130 @@ describe('chat command projection helpers', () => {
     expect(DBState.db.characters[0].chats[0].name).toBe('Newer attempted chat name')
     expect(DBState.db.characters[0].chats[2].name).toBe('Newer sibling name')
     expect(DBState.db.characters[0].chatPage).toBe(0)
+  })
+
+  it('failed fork with no local optimistic insert preserves a newer sibling chat edit', async () => {
+    const calls = stubFailingCommandFetch({
+      matches: (url, init) => url === '/api/v1/commands/chats/chat-a/fork' && init.method === 'POST',
+      onCommand: () => {
+        withTrustedServerProjectionWrite(() => {
+          DBState.db.characters[0].chats[1].name = 'Newer sibling name'
+        })
+      },
+    })
+    setServerProjectionWriteGuardEnabled(true)
+
+    const previous = currentChatStateSnapshot()
+    const forkedChat = {
+      id: 'chat-c',
+      name: 'Chat A Copy',
+      folderId: null,
+      message: [],
+    } as Chat
+
+    dispatchForkChat('chat-a', previous, { chat: forkedChat })
+
+    await waitForCallCount(calls, 2)
+    await vi.waitFor(() => {
+      expect(DBState.db.characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b'])
+    })
+    expect(DBState.db.characters[0].chats[1]).toMatchObject({
+      id: 'chat-b',
+      name: 'Newer sibling name',
+    })
+  })
+
+  it('failed branch fork removes unchanged forked chat, restores source folder, and removes created folder', async () => {
+    const calls = stubFailingCommandFetch({
+      matches: (url, init) => url === '/api/v1/commands/chats/chat-a/fork' && init.method === 'POST',
+      onCommand: () => {
+        withTrustedServerProjectionWrite(() => {
+          DBState.db.characters[0].chats[2].name = 'Newer sibling name'
+          DBState.db.characters[0].chatFolders[1].name = 'Newer folder name'
+        })
+      },
+    })
+    setServerProjectionWriteGuardEnabled(true)
+
+    const previous = currentChatStateSnapshot()
+    const branchFolder = {
+      id: 'folder-branch',
+      name: 'Branches of Chat A',
+      folded: false,
+    }
+    const forkedChat = {
+      id: 'chat-branch',
+      name: 'Chat A Branch',
+      folderId: branchFolder.id,
+      message: [],
+    } as Chat
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.characters[0].chatFolders.unshift(branchFolder)
+      DBState.db.characters[0].chats[0].folderId = branchFolder.id
+      DBState.db.characters[0].chats.unshift(forkedChat)
+      DBState.db.characters[0].chatPage = 0
+    })
+
+    dispatchForkChat('chat-a', previous, {
+      chat: forkedChat,
+      sourcePatch: { folderId: branchFolder.id },
+      folder: branchFolder,
+    })
+
+    await waitForCallCount(calls, 2)
+    await vi.waitFor(() => {
+      expect(DBState.db.characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b'])
+      expect(DBState.db.characters[0].chatFolders.map((folder) => folder.id)).toEqual(['folder-a'])
+    })
+    expect(DBState.db.characters[0].chats[0]).toMatchObject({
+      id: 'chat-a',
+      folderId: null,
+    })
+    expect(DBState.db.characters[0].chats[1]).toMatchObject({
+      id: 'chat-b',
+      name: 'Newer sibling name',
+    })
+    expect(DBState.db.characters[0].chatFolders[0]).toMatchObject({
+      id: 'folder-a',
+      name: 'Newer folder name',
+    })
+    expect(DBState.db.characters[0].chats[DBState.db.characters[0].chatPage].id).toBe('chat-a')
+  })
+
+  it('failed fork skips forked-chat rollback when the forked row changed after dispatch', async () => {
+    const calls = stubFailingCommandFetch({
+      matches: (url, init) => url === '/api/v1/commands/chats/chat-a/fork' && init.method === 'POST',
+      onCommand: () => {
+        withTrustedServerProjectionWrite(() => {
+          DBState.db.characters[0].chats[0].name = 'Newer forked chat name'
+        })
+      },
+    })
+    setServerProjectionWriteGuardEnabled(true)
+
+    const previous = currentChatStateSnapshot()
+    const forkedChat = {
+      id: 'chat-branch',
+      name: 'Chat A Branch',
+      folderId: null,
+      message: [],
+    } as Chat
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.characters[0].chats.unshift(forkedChat)
+      DBState.db.characters[0].chatPage = 0
+    })
+
+    dispatchForkChat('chat-a', previous, { chat: forkedChat })
+
+    await waitForCallCount(calls, 2)
+    await vi.waitFor(() => {
+      expect(DBState.db.characters[0].chats.map((chat) => chat.id)).toEqual(['chat-branch', 'chat-a', 'chat-b'])
+    })
+    expect(DBState.db.characters[0].chats[0]).toMatchObject({
+      id: 'chat-branch',
+      name: 'Newer forked chat name',
+    })
+    expect(DBState.db.characters[0].chats[DBState.db.characters[0].chatPage].id).toBe('chat-branch')
   })
 
   it('reinserts only a still-missing deleted chat after a failed delete and preserves sibling edits', async () => {
