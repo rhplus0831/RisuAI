@@ -17,7 +17,10 @@ plan consolidates the input persistence inventory under
   merges same-order server projection rows without overwriting dirty local item
   fields. The settings draft slice now protects whole-key drafts returned by
   `createServerBackedSettingDraft` from stale projection reseeds and lets later
-  clean projections reseed once the dirty value is acknowledged.
+  clean projections reseed once the dirty value is acknowledged. The selected
+  persona profile slice now protects dirty selected persona `username`,
+  `userNote`, `personaPrompt`, and selected-row `largePortrait` edits from
+  stale projection epochs while allowing clean selected-row fields to refresh.
   Phase 1 settings, character, and chat row metadata rollback adoption landed;
   message-target freshness is explicitly deferred to Phase 4.
 - Code changes: `src/ts/server/staleStateGuards.ts` and
@@ -37,7 +40,12 @@ plan consolidates the input persistence inventory under
   by helper instance, reasserts dirty values to `DBState.db[key]` after stale
   projection overwrites, clears dirty state when a projection matches the draft,
   and resumes normal clean projection reseeding afterward.
-- Verification state: Phase 2 settings draft validation is recorded in
+  `src/ts/persona.ts` and `src/lib/Setting/Pages/PersonaSettings.svelte` now
+  track dirty selected persona profile fields by persona id, reconcile projection
+  epoch changes before the PersonaSettings watcher queues a normal selected
+  persona update, and reassert still-dirty selected persona fields through
+  trusted projection writes.
+- Verification state: Phase 2 selected persona profile validation is recorded in
   `latest-verification.md`.
 - Highest issue density:
   - Character editor: 52 issue rows, mostly dirty projection and unguarded
@@ -68,9 +76,10 @@ plan consolidates the input persistence inventory under
   blocks Phase 1 completion.
 - [Phase 2](phases/phase-2-dirty-draft-projection.md): in progress. Character
   profile draft dirty top-level projection protection, prompt item row
-  same-order dirty field merging, and generic settings draft whole-key
-  projection protection have landed; persona, translator, lorebook,
-  script/trigger, module, and plugin draft projection adopters remain pending.
+  same-order dirty field merging, generic settings draft whole-key projection
+  protection, and selected persona profile dirty projection protection have
+  landed; translator, lorebook, script/trigger, module, and plugin draft
+  projection adopters remain pending.
 - [Phase 3](phases/phase-3-upload-import-fetch-callbacks.md): pending. Upload,
   file, import, decode, and remote-fetch callback tokens.
 - [Phase 4](phases/phase-4-chat-messages-generation.md): pending. Chat,
@@ -117,6 +126,14 @@ plan consolidates the input persistence inventory under
   projected value matches the draft, and then allows later clean projection
   reseeds. This is whole-setting-key protection; it does not attempt nested
   field merging inside arbitrary object/array settings.
+- Phase 2 selected persona profile slice: `updateSelectedPersonaField` and
+  `updateSelectedPersonaLargePortrait` now mark dirty fields by selected persona
+  id. `reconcileSelectedPersonaProjectionEpoch` operates only on the current
+  selected persona id, clears dirty fields when projection catches up to the
+  local dirty value, reasserts still-dirty legacy fields and selected persona row
+  fields with trusted projection writes, and lets clean selected-row fields from
+  projection remain refreshed. Persona create, delete, reorder, import, icon
+  upload, and collection-wide merge semantics remain unchanged.
 - Remaining broad rollback families to track by phase:
   - Phase 4: `restoreChatScopedState` and message
     update/delete/truncate/replace freshness.

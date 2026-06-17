@@ -14,9 +14,11 @@ import {
   deleteSelectedUserPersona,
   flushPendingSelectedPersonaUpdate,
   queueSelectedPersonaUpdate,
+  reconcileSelectedPersonaProjectionEpoch,
   reorderUserPersonasByIndices,
   selectedPersonaId,
   updateSelectedPersonaField,
+  updateSelectedPersonaLargePortrait,
 } from './persona'
 
 function cloneJsonValue<T>(value: T): T {
@@ -43,6 +45,25 @@ function seedPersonaState(personas: Array<Record<string, unknown>>, selectedPers
     personaPrompt: 'Unsaved persona prompt',
     userNote: 'Unsaved user note',
   } as any
+}
+
+function applySelectedPersonaProjection(
+  persona: Record<string, unknown>,
+  legacy: Partial<{
+    username: string
+    userIcon: string
+    personaPrompt: string
+    userNote: string
+  }> = {},
+): void {
+  DBState.db.personas[DBState.db.selectedPersona] = {
+    ...DBState.db.personas[DBState.db.selectedPersona],
+    ...persona,
+  } as any
+  if ('username' in legacy) DBState.db.username = legacy.username as string
+  if ('userIcon' in legacy) DBState.db.userIcon = legacy.userIcon as string
+  if ('personaPrompt' in legacy) DBState.db.personaPrompt = legacy.personaPrompt as string
+  if ('userNote' in legacy) DBState.db.userNote = legacy.userNote as string
 }
 
 async function flushCommandEffects(): Promise<void> {
@@ -211,5 +232,182 @@ describe('persona ID read and command preparation', () => {
 
     expect(DBState.db).toEqual(before)
     expect(fetch).not.toHaveBeenCalled()
+  })
+})
+
+describe('selected persona dirty projection reconciliation', () => {
+  it('preserves dirty selected profile fields through a stale projection while clean row fields refresh', () => {
+    seedPersonaState(
+      [
+        makePersona({
+          id: 'persona-dirty-profile',
+          name: 'Old Name',
+          icon: 'old-icon.png',
+          personaPrompt: 'Old prompt',
+          note: 'Old note',
+          largePortrait: false,
+        }),
+      ],
+      0,
+    )
+
+    updateSelectedPersonaField('username', 'Local Name')
+    updateSelectedPersonaField('personaPrompt', 'Local prompt')
+    updateSelectedPersonaField('userNote', 'Local note')
+
+    applySelectedPersonaProjection(
+      {
+        id: 'persona-dirty-profile',
+        name: 'Stale Name',
+        icon: 'fresh-icon.png',
+        personaPrompt: 'Stale prompt',
+        note: 'Stale note',
+        largePortrait: true,
+      },
+      {
+        username: 'Stale Name',
+        userIcon: 'fresh-icon.png',
+        personaPrompt: 'Stale prompt',
+        userNote: 'Stale note',
+      },
+    )
+
+    reconcileSelectedPersonaProjectionEpoch()
+
+    expect(DBState.db.username).toBe('Local Name')
+    expect(DBState.db.personaPrompt).toBe('Local prompt')
+    expect(DBState.db.userNote).toBe('Local note')
+    expect(DBState.db.userIcon).toBe('fresh-icon.png')
+    expect(DBState.db.personas[0]).toMatchObject({
+      id: 'persona-dirty-profile',
+      name: 'Local Name',
+      icon: 'fresh-icon.png',
+      personaPrompt: 'Local prompt',
+      note: 'Local note',
+      largePortrait: true,
+    })
+  })
+
+  it('reasserts still-dirty values into both legacy fields and the selected persona row', () => {
+    seedPersonaState(
+      [
+        makePersona({
+          id: 'persona-reassert-profile',
+          name: 'Old Name',
+          personaPrompt: 'Old prompt',
+          note: 'Old note',
+        }),
+      ],
+      0,
+    )
+
+    updateSelectedPersonaField('username', 'Local Name')
+    updateSelectedPersonaField('personaPrompt', 'Local prompt')
+    updateSelectedPersonaField('userNote', 'Local note')
+    applySelectedPersonaProjection(
+      {
+        id: 'persona-reassert-profile',
+        name: 'Server Name',
+        personaPrompt: 'Server prompt',
+        note: 'Server note',
+      },
+      {
+        username: 'Server Name',
+        personaPrompt: 'Server prompt',
+        userNote: 'Server note',
+      },
+    )
+
+    reconcileSelectedPersonaProjectionEpoch()
+
+    expect(DBState.db).toMatchObject({
+      username: 'Local Name',
+      personaPrompt: 'Local prompt',
+      userNote: 'Local note',
+    })
+    expect(DBState.db.personas[0]).toMatchObject({
+      name: 'Local Name',
+      personaPrompt: 'Local prompt',
+      note: 'Local note',
+    })
+  })
+
+  it('clears dirty profile state once projection matches, then lets later clean projections update normally', () => {
+    seedPersonaState(
+      [
+        makePersona({
+          id: 'persona-clear-profile',
+          name: 'Old Name',
+          personaPrompt: 'Old prompt',
+          note: 'Old note',
+        }),
+      ],
+      0,
+    )
+
+    updateSelectedPersonaField('username', 'Local Name')
+    applySelectedPersonaProjection(
+      {
+        id: 'persona-clear-profile',
+        name: 'Local Name',
+      },
+      {
+        username: 'Local Name',
+      },
+    )
+    reconcileSelectedPersonaProjectionEpoch()
+
+    applySelectedPersonaProjection(
+      {
+        id: 'persona-clear-profile',
+        name: 'Clean Server Name',
+      },
+      {
+        username: 'Clean Server Name',
+      },
+    )
+    reconcileSelectedPersonaProjectionEpoch()
+
+    expect(DBState.db.username).toBe('Clean Server Name')
+    expect(DBState.db.personas[0].name).toBe('Clean Server Name')
+  })
+
+  it('protects dirty largePortrait as a selected-row-only field and clears after projection catches up', () => {
+    seedPersonaState(
+      [
+        makePersona({
+          id: 'persona-large-portrait',
+          name: 'Old Name',
+          largePortrait: false,
+        }),
+      ],
+      0,
+    )
+
+    updateSelectedPersonaLargePortrait(true)
+    applySelectedPersonaProjection({
+      id: 'persona-large-portrait',
+      name: 'Fresh server name',
+      largePortrait: false,
+    })
+    reconcileSelectedPersonaProjectionEpoch()
+
+    expect(DBState.db.personas[0]).toMatchObject({
+      name: 'Fresh server name',
+      largePortrait: true,
+    })
+
+    applySelectedPersonaProjection({
+      id: 'persona-large-portrait',
+      largePortrait: true,
+    })
+    reconcileSelectedPersonaProjectionEpoch()
+    applySelectedPersonaProjection({
+      id: 'persona-large-portrait',
+      largePortrait: false,
+    })
+    reconcileSelectedPersonaProjectionEpoch()
+
+    expect(DBState.db.personas[0].largePortrait).toBe(false)
   })
 })

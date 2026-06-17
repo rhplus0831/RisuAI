@@ -41,6 +41,7 @@ export interface SelectedPersonaProjectionSnapshot {
 }
 
 export type SelectedPersonaProfileField = 'username' | 'userNote' | 'personaPrompt'
+export type SelectedPersonaDirtyField = SelectedPersonaProfileField | 'largePortrait'
 
 const pendingPersonaUpdate = {
   timer: null as ReturnType<typeof setTimeout> | null,
@@ -53,6 +54,7 @@ const pendingPersonaUpdate = {
 
 let personaSettingsWatcherSuppressed = false
 let personaSettingsWatcherSuppressionToken = 0
+const dirtySelectedPersonaFieldsById = new Map<string, Map<SelectedPersonaDirtyField, string | boolean>>()
 
 function cloneJsonValue<T>(value: T): T {
   if (value === undefined) return value
@@ -98,6 +100,20 @@ function suppressPersonaSettingsWatcherUntilNextTask(): void {
       personaSettingsWatcherSuppressed = false
     }
   }, 0)
+}
+
+function withSuppressedPersonaSettingsWatcher<T>(callback: () => T): T {
+  const token = ++personaSettingsWatcherSuppressionToken
+  personaSettingsWatcherSuppressed = true
+  try {
+    return callback()
+  } finally {
+    queueMicrotask(() => {
+      if (personaSettingsWatcherSuppressionToken === token) {
+        personaSettingsWatcherSuppressed = false
+      }
+    })
+  }
 }
 
 export function applyPersonaStateSnapshotLocally(snapshot: PersonaStateSnapshot): void {
@@ -187,6 +203,90 @@ function selectedPersonaPatch(): PersonaSnapshot {
     ...personaPatchFromLegacyProfile(),
     largePortrait: DBState.db.personas[DBState.db.selectedPersona]?.largePortrait ?? false,
   }
+}
+
+function selectedPersonaProfileRowField(field: SelectedPersonaProfileField): 'name' | 'note' | 'personaPrompt' {
+  if (field === 'username') return 'name'
+  if (field === 'userNote') return 'note'
+  return 'personaPrompt'
+}
+
+function selectedPersonaFieldProjectionValue(
+  persona: Persona | undefined,
+  field: SelectedPersonaDirtyField,
+): string | boolean | undefined {
+  if (field === 'largePortrait') {
+    return persona?.largePortrait ?? false
+  }
+  const rowField = selectedPersonaProfileRowField(field)
+  return persona?.[rowField] ?? ''
+}
+
+function selectedPersonaLegacyProjectionValue(field: SelectedPersonaProfileField): string {
+  return DBState.db[field] ?? ''
+}
+
+function markSelectedPersonaFieldDirty(field: SelectedPersonaDirtyField, value: string | boolean): void {
+  const personaId = selectedPersonaId()
+  if (!personaId) return
+  let dirtyFields = dirtySelectedPersonaFieldsById.get(personaId)
+  if (!dirtyFields) {
+    dirtyFields = new Map()
+    dirtySelectedPersonaFieldsById.set(personaId, dirtyFields)
+  }
+  dirtyFields.set(field, value)
+}
+
+function clearDirtySelectedPersonaFieldsMatchingProjection(
+  persona: Persona | undefined,
+  dirtyFields: Map<SelectedPersonaDirtyField, string | boolean>,
+): void {
+  for (const [field, value] of Array.from(dirtyFields.entries())) {
+    const rowValue = selectedPersonaFieldProjectionValue(persona, field)
+    const projectionMatchesDirtyValue =
+      field === 'largePortrait'
+        ? rowValue === value
+        : rowValue === value && selectedPersonaLegacyProjectionValue(field) === value
+    if (projectionMatchesDirtyValue) {
+      dirtyFields.delete(field)
+    }
+  }
+}
+
+export function reconcileSelectedPersonaProjectionEpoch(): void {
+  const personaId = selectedPersonaId()
+  if (!personaId) return
+  const dirtyFields = dirtySelectedPersonaFieldsById.get(personaId)
+  if (!dirtyFields || dirtyFields.size === 0) return
+
+  const selectedIndex = DBState.db.selectedPersona
+  const selectedPersona = DBState.db.personas[selectedIndex]
+  if (nonBlankPersonaId(selectedPersona) !== personaId) return
+
+  clearDirtySelectedPersonaFieldsMatchingProjection(selectedPersona, dirtyFields)
+  if (dirtyFields.size === 0) {
+    dirtySelectedPersonaFieldsById.delete(personaId)
+    return
+  }
+
+  withSuppressedPersonaSettingsWatcher(() => {
+    withTrustedServerProjectionWrite(() => {
+      if (DBState.db.selectedPersona !== selectedIndex) return
+      const persona = DBState.db.personas[selectedIndex]
+      if (nonBlankPersonaId(persona) !== personaId) return
+
+      for (const [field, value] of dirtyFields) {
+        if (field === 'largePortrait') {
+          persona.largePortrait = value === true
+          continue
+        }
+
+        const stringValue = String(value)
+        DBState.db[field] = stringValue
+        persona[selectedPersonaProfileRowField(field)] = stringValue
+      }
+    })
+  })
 }
 
 function clearPendingSelectedPersonaUpdate(): void {
@@ -344,6 +444,7 @@ export function flushPendingSelectedPersonaUpdate(): Promise<ServerCommandResult
 }
 
 export function updateSelectedPersonaField(field: SelectedPersonaProfileField, value: string): void {
+  markSelectedPersonaFieldDirty(field, value)
   withTrustedServerProjectionWrite(() => {
     DBState.db[field] = value
     const persona = DBState.db.personas[DBState.db.selectedPersona]
@@ -361,6 +462,7 @@ export function updateSelectedPersonaField(field: SelectedPersonaProfileField, v
 export function updateSelectedPersonaLargePortrait(value: boolean): void {
   const persona = DBState.db.personas[DBState.db.selectedPersona]
   if (!persona) return
+  markSelectedPersonaFieldDirty('largePortrait', value)
   withTrustedServerProjectionWrite(() => {
     DBState.db.personas[DBState.db.selectedPersona].largePortrait = value
   })

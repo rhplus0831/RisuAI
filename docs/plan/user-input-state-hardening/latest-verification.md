@@ -7,32 +7,33 @@ hardening workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 2 settings draft dirty projection slice.
-  Drafts returned by `createServerBackedSettingDraft` now track whole-key dirty
-  state, preserve dirty values through stale projection reseeds, reassert dirty
-  values back to `DBState.db[key]`, clear dirty state when projection catches up
-  with the draft value, and allow later clean projections to reseed normally.
+- Runtime/code change under test: Phase 2 selected persona profile dirty
+  projection slice. Selected persona `username`, `userNote`, `personaPrompt`,
+  and selected-row `largePortrait` local edits now track dirty state by persona
+  id, survive stale projection epochs, reassert dirty values back into legacy
+  fields and the selected persona row, clear when projection catches up, and
+  allow later clean projections to update normally.
 - Commands:
 
 ```bash
-pnpm exec vitest run src/ts/server/settingsBridge.svelte.test.ts src/ts/server/staleStateGuards.test.ts
-pnpm exec vitest run src/ts/server/commands.test.ts
+pnpm exec vitest run src/ts/persona.test.ts src/lib/Setting/Pages/PersonaSettings.svelte.test.ts
+pnpm exec vitest run src/ts/server/staleStateGuards.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 ```
 
-- Result: passed on 2026-06-17. The settings bridge/helper Vitest set passed 2
-  files and 31 tests; server command tests passed 1 file and 39 tests.
+- Result: passed on 2026-06-17. The persona focused Vitest set passed 2 files
+  and 13 tests; the stale-state helper Vitest set passed 1 file and 12 tests.
   Both TypeScript checks passed.
-- Residual gaps: this slice protects each `createServerBackedSettingDraft`
-  instance as a whole setting key; it does not merge clean nested fields inside
-  arbitrary object/array settings while preserving dirty nested siblings.
-  Remaining Phase 2 draft projection adopters for personas, translator presets,
-  lorebook entries, script/trigger definitions, module drafts, and plugin
-  argument/storage editors remain pending. Prompt item create, delete, and
-  reorder behavior remains unchanged from the previous slice. Character
-  resync/import/restore and asset callback freshness stay deferred to their
-  later phases.
+- Residual gaps: this persona slice is intentionally limited to selected
+  persona profile fields and selected-row `largePortrait`. Persona create,
+  delete, reorder, import, icon upload, and collection-wide persona merge
+  semantics remain unchanged. Remaining Phase 2 draft projection adopters for
+  translator presets, lorebook entries, script/trigger definitions, module
+  drafts, and plugin argument/storage editors remain pending. Prompt item
+  create, delete, and reorder behavior remains unchanged from the previous
+  slice. Character resync/import/restore and asset callback freshness stay
+  deferred to their later phases.
 
 ## Required Closeout Proof
 

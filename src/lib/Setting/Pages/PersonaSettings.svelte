@@ -19,6 +19,7 @@
     importUserPersona,
     isPersonaSettingsWatcherSuppressed,
     queueSelectedPersonaUpdate,
+    reconcileSelectedPersonaProjectionEpoch,
     reorderUserPersonasByIndices,
     selectUserImg,
     snapshotPersonaJson,
@@ -30,6 +31,7 @@
   import { onDestroy, onMount, untrack } from 'svelte'
   import { sleep, sortableOptions } from 'src/ts/util'
   import { DBState } from 'src/ts/stores.svelte'
+  import { getServerProjectionApplyEpoch } from 'src/ts/server/projectionWriteGuard.svelte'
 
   let stb: Sortable = null
   let ele: HTMLDivElement = $state()
@@ -38,17 +40,29 @@
   let personaWatcherInitialized = false
   let previousPersonaSnapshot = ''
   let previousPersonaState: PersonaStateSnapshot | null = null
+  let previousProjectionApplyEpoch = getServerProjectionApplyEpoch()
 
   $effect(() => {
+    const projectionApplyEpoch = getServerProjectionApplyEpoch()
+    const projectionApplyChanged = projectionApplyEpoch !== previousProjectionApplyEpoch
     const current = snapshotPersonaJson(currentSelectedPersonaProjectionSnapshot())
     if (!personaWatcherInitialized) {
       personaWatcherInitialized = true
+      previousProjectionApplyEpoch = projectionApplyEpoch
       previousPersonaSnapshot = current
       previousPersonaState = currentPersonaStateSnapshot()
       return
     }
     if (isPersonaSettingsWatcherSuppressed()) {
+      previousProjectionApplyEpoch = projectionApplyEpoch
       previousPersonaSnapshot = current
+      previousPersonaState = currentPersonaStateSnapshot()
+      return
+    }
+    if (projectionApplyChanged) {
+      untrack(() => reconcileSelectedPersonaProjectionEpoch())
+      previousProjectionApplyEpoch = projectionApplyEpoch
+      previousPersonaSnapshot = snapshotPersonaJson(currentSelectedPersonaProjectionSnapshot())
       previousPersonaState = currentPersonaStateSnapshot()
       return
     }
