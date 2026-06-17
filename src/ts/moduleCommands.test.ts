@@ -39,6 +39,16 @@ interface CapturedFetch {
   body: unknown
 }
 
+function createDeferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve
+    reject = promiseReject
+  })
+  return { promise, resolve, reject }
+}
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -132,6 +142,10 @@ async function waitForCallCount(calls: CapturedFetch[], expected: number): Promi
 async function flushCommandEffects(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 0))
   await new Promise((resolve) => setTimeout(resolve, 0))
+}
+
+function moduleNames(): Record<string, string | undefined> {
+  return Object.fromEntries((DBState.db.modules ?? []).map((module) => [module.id, module.name]))
 }
 
 beforeEach(() => {
@@ -404,6 +418,189 @@ describe('module command projection helpers', () => {
     expect(DBState.db.characters[0].modules).toEqual(['mod-a', 'character-module'])
     expect(DBState.db.characters[0].chats[0].modules).toEqual(['mod-a', 'chat-module'])
     expect(DBState.db.characters[0].name).toBe('Concurrent character edit')
+  })
+
+  it('failed module update preserves newer same-module field edit', async () => {
+    const calls = stubFailingCommandFetch()
+    DBState.db.modules[0] = { id: 'mod-a', name: 'Module A', description: 'old description' } as any
+    setServerProjectionWriteGuardEnabled(true)
+
+    updateGlobalModule('mod-a', { id: 'mod-a', name: 'Attempted A', description: 'attempted description' })
+    expect(DBState.db.modules[0]).toMatchObject({
+      name: 'Attempted A',
+      description: 'attempted description',
+    })
+
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.modules[0] = {
+        ...DBState.db.modules[0],
+        name: 'Newer A',
+      }
+    })
+
+    await waitForCallCount(calls, 2)
+    await flushCommandEffects()
+
+    expect(DBState.db.modules[0]).toMatchObject({
+      name: 'Newer A',
+      description: 'old description',
+    })
+  })
+
+  it('failed module update preserves sibling module edit, create, and delete', async () => {
+    const calls = stubFailingCommandFetch()
+    setServerProjectionWriteGuardEnabled(true)
+
+    updateGlobalModule('mod-a', { id: 'mod-a', name: 'Attempted A', description: 'attempted description' })
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.modules[1] = {
+        ...DBState.db.modules[1],
+        name: 'Sibling B newer',
+      }
+      DBState.db.modules.push({ id: 'mod-c', name: 'Sibling C newer' } as any)
+      DBState.db.modules = DBState.db.modules.filter((module) => module.id !== 'mod-b')
+    })
+
+    await waitForCallCount(calls, 2)
+    await flushCommandEffects()
+
+    expect(moduleNames()).toEqual({
+      'mod-a': 'Module A',
+      'mod-c': 'Sibling C newer',
+    })
+  })
+
+  it('failed create removes only the attempted created module, not later-created modules', async () => {
+    const calls = stubFailingCommandFetch()
+    setServerProjectionWriteGuardEnabled(true)
+
+    createGlobalModule({ id: 'mod-c', name: 'Module C', description: '' })
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.modules.push({ id: 'mod-d', name: 'Module D newer' } as any)
+    })
+
+    await waitForCallCount(calls, 2)
+    await flushCommandEffects()
+
+    expect(DBState.db.modules.map((module) => module.id)).toEqual(['mod-a', 'mod-b', 'mod-d'])
+  })
+
+  it('failed enable restores only that module id and preserves newer enabled sibling changes', async () => {
+    const calls = stubFailingCommandFetch()
+    DBState.db.enabledModules = ['mod-b']
+    setServerProjectionWriteGuardEnabled(true)
+
+    setGlobalModuleEnabled('mod-a', true)
+    expect(DBState.db.enabledModules).toEqual(['mod-b', 'mod-a'])
+
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.enabledModules = DBState.db.enabledModules.filter((id) => id !== 'mod-b')
+      DBState.db.enabledModules.push('mod-c')
+    })
+
+    await waitForCallCount(calls, 2)
+    await flushCommandEffects()
+
+    expect(DBState.db.enabledModules).toEqual(['mod-c'])
+  })
+
+  it('failed delete reinserts only deleted module and restores references only while they match attempted deletion', async () => {
+    const calls = stubFailingCommandFetch()
+    DBState.db.enabledModules = ['mod-a', 'mod-b']
+    DBState.db.characters = [
+      {
+        chaId: 'char-a',
+        name: 'Character A',
+        chatPage: 0,
+        chats: [
+          { id: 'chat-a', name: 'Chat A', modules: ['mod-a', 'chat-module'], message: [] },
+          { id: 'chat-b', name: 'Chat B', modules: ['mod-a', 'changed-chat'], message: [] },
+        ],
+        modules: ['mod-a', 'character-module'],
+      },
+      {
+        chaId: 'char-b',
+        name: 'Character B',
+        chatPage: 0,
+        chats: [{ id: 'chat-c', name: 'Chat C', modules: ['mod-a', 'changed-character-chat'], message: [] }],
+        modules: ['mod-a', 'changed-character'],
+      },
+    ] as any
+    DBState.db.loadouts = [
+      { id: 'loadout-a', name: 'Loadout A', modules: ['mod-a', 'loadout-module'] },
+      { id: 'loadout-b', name: 'Loadout B', modules: ['mod-a', 'changed-loadout'] },
+    ] as any
+    setServerProjectionWriteGuardEnabled(true)
+
+    deleteGlobalModule('mod-a')
+    expect(DBState.db.modules.map((module) => module.id)).toEqual(['mod-b'])
+    expect(DBState.db.enabledModules).toEqual(['mod-b'])
+    expect(DBState.db.characters[0].modules).toEqual(['character-module'])
+    expect(DBState.db.characters[0].chats[0].modules).toEqual(['chat-module'])
+    expect(DBState.db.loadouts[0].modules).toEqual(['loadout-module'])
+
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.modules.push({ id: 'mod-c', name: 'Newer Module C' } as any)
+      DBState.db.enabledModules.push('mod-c')
+      DBState.db.characters[1].modules = ['newer-character-ref']
+      DBState.db.characters[1].chats[0].modules = ['newer-chat-ref']
+      DBState.db.loadouts[1].modules = ['newer-loadout-ref']
+    })
+
+    await waitForCallCount(calls, 2)
+    await flushCommandEffects()
+
+    expect(DBState.db.modules.map((module) => module.id)).toEqual(['mod-a', 'mod-b', 'mod-c'])
+    expect(DBState.db.enabledModules).toEqual(['mod-a', 'mod-b', 'mod-c'])
+    expect(DBState.db.characters[0].modules).toEqual(['mod-a', 'character-module'])
+    expect(DBState.db.characters[0].chats[0].modules).toEqual(['mod-a', 'chat-module'])
+    expect(DBState.db.characters[1].modules).toEqual(['newer-character-ref'])
+    expect(DBState.db.characters[1].chats[0].modules).toEqual(['newer-chat-ref'])
+    expect(DBState.db.loadouts[0].modules).toEqual(['mod-a', 'loadout-module'])
+    expect(DBState.db.loadouts[1].modules).toEqual(['newer-loadout-ref'])
+  })
+
+  it('out-of-order overlapping update failures unwind correctly', async () => {
+    const firstUpdate = createDeferred<Response>()
+    const secondUpdate = createDeferred<Response>()
+    const updateResponses = [firstUpdate, secondUpdate]
+    const calls: CapturedFetch[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const headers = init.headers as Record<string, string> | undefined
+        const url = String(input)
+        calls.push({
+          url,
+          method: init.method ?? 'GET',
+          authHeader: headers?.['risu-auth'] ?? null,
+          body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+        })
+
+        if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+        if (url === '/api/v1/commands/modules/mod-a') {
+          const response = updateResponses.shift()
+          if (!response) return jsonResponse({ error: 'unexpected update' }, 500)
+          return response.promise
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+    setServerProjectionWriteGuardEnabled(true)
+
+    updateGlobalModule('mod-a', { id: 'mod-a', name: 'Attempted One', description: '' })
+    updateGlobalModule('mod-a', { id: 'mod-a', name: 'Attempted Two', description: '' })
+
+    await waitForCallCount(calls, 4)
+    expect(DBState.db.modules[0].name).toBe('Attempted Two')
+
+    firstUpdate.resolve(jsonResponse({ error: 'first failed' }, 500))
+    await flushCommandEffects()
+    expect(DBState.db.modules[0].name).toBe('Attempted Two')
+
+    secondUpdate.resolve(jsonResponse({ error: 'second failed' }, 500))
+    await flushCommandEffects()
+    expect(DBState.db.modules[0].name).toBe('Module A')
   })
 })
 

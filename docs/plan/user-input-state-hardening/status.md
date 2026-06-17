@@ -98,6 +98,12 @@ persistence inventory under
   update, reorder, and DB bridge collection patch rollback now use frozen
   attempted payloads plus row, field, and order rollback records; successful
   collection sequence steps are kept when a later step fails.
+  Global module create, update, delete, enable, reorder, and plugin DB bridge
+  module/enabledModules patch rollback now use attempted row, field,
+  enabled-membership, reference, and order records; stale failures preserve newer
+  sibling and same-target edits while delete rollback restores
+  character/chat/loadout references only when live references still match the
+  attempted delete state.
   Phase 2 landed character profile draft dirty top-level field protection;
   prompt-template item row dirty projection merging; whole-key dirty projection
   protection for
@@ -256,7 +262,12 @@ persistence inventory under
   full-plugin updates roll back only fields still matching attempted values,
   reorder rollback compares attempted order, and collection patch sequences clear
   successful steps before rolling back only a failed or unattempted tail.
-- Verification state: Phase 5 plugin collection/full-plugin rollback validation is
+- `src/ts/moduleCommands.ts` and `src/ts/plugins/plugins.svelte.ts` now guard
+  global module create, update, delete, enable, reorder, and plugin DB bridge
+  module/enabledModules patch rollback. Module rollback records are scoped by
+  attempted row, field, enabled membership, delete reference, and order state;
+  overlapping same-target failures defer behind newer pending operations.
+- Verification state: Phase 5 global module command rollback validation is
   recorded in `latest-verification.md`.
 - Highest issue density:
   - Character editor: 52 issue rows, mostly dirty projection and unguarded
@@ -541,10 +552,18 @@ persistence inventory under
     order records. Direct create/update payloads are frozen before base-revision
     lookup, and collection patch sequence rollback keeps earlier successful
     server-accepted steps while rolling back only the failed or unattempted tail.
-  - Phase 5: preset/persona/translator/module/lorebook/script/import collection
-    flows, Hypa V3 preset array import/rename/delete, plugin settings patch
-    residuals, sidebar chat/folder lists, character list ordering, and broad
-    create/delete/reorder/import rollback.
+  - Phase 5 module command slice: global module create, update, delete, enable,
+    reorder, and plugin DB bridge module/enabledModules patch rollback now
+    capture attempted row, field, enabled-membership, reference, and order
+    records. Failed module commands preserve newer same-target and sibling edits,
+    delete rollback restores character/chat/loadout references only while live
+    references still match the attempted delete state, and overlapping failures
+    unwind in response order.
+  - Phase 5: preset/persona/translator/lorebook/script/import collection flows,
+    module MCP info and module subdomains, Hypa V3 preset array
+    import/rename/delete, plugin settings patch residuals, sidebar chat/folder
+    lists, character list ordering, and broad create/delete/reorder/import
+    rollback.
   - Phase 6: Realm/backup/local bundle restore/import resyncs, character/chat
     import refresh/navigation edges, memory job list/progress ordering,
     route/selection hydration, welcome/onboarding delayed setup, DevTool

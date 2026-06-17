@@ -142,11 +142,14 @@ Explicit deferrals:
   landed for PUT, DELETE, and bulk storage operations. Phase 5 plugin
   non-storage rollback has landed for `realArg`, `enabled`, explicit delete, and
   provider selection. Phase 5 plugin collection/full-plugin rollback has landed
-  for create, full update, reorder, and DB bridge collection patch paths.
-  Remaining preset/persona/translator/module, lorebook, and import collection
-  flows, Hypa V3 preset array import/rename/delete, plugin settings patch
-  residuals, and sidebar/chat/folder/character list create/delete/reorder/import
-  rollback remain Phase 5 work.
+  for create, full update, reorder, and DB bridge collection patch paths. Phase
+  5 global module command rollback has landed for create, update, delete,
+  enable, reorder, and plugin DB bridge module/enabledModules patch paths.
+  Remaining preset/persona/translator, module MCP info and module subdomains,
+  lorebook, and import collection flows, Hypa V3 preset array
+  import/rename/delete, plugin settings patch residuals, and
+  sidebar/chat/folder/character list create/delete/reorder/import rollback
+  remain Phase 5 work.
 - Realm/backup/local bundle restore/import resyncs, character/chat import
   refresh/navigation edges, memory job list/progress ordering, route/selection
   hydration, welcome/onboarding delayed setup, and DevTool autopilot long-loop

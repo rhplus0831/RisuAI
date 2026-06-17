@@ -45,6 +45,14 @@ steps clear their rollback operations after successful server commands, and a
 later failed step rolls back only the failed or unattempted tail instead of
 reverting earlier server-accepted changes.
 
+Fifth landed slice: global module create, update, delete, enable, reorder, and
+plugin DB bridge module/enabledModules patch rollback now use attempted row,
+field, enabled-membership, reference, and order records. Failed module commands
+restore only live state that still matches the attempted optimistic write,
+preserve newer sibling and same-target edits, restore character/chat/loadout
+references only while they still match the attempted delete state, and unwind
+overlapping same-target failures in response order.
+
 ## Anchors
 
 - `src/lib/Setting/botpreset.svelte`

@@ -775,6 +775,61 @@ describe('plugin database command bridge', () => {
     expect(captured[1].body?.baseRevision).toBe(101)
   })
 
+  it('preserves newer module edits when a plugin DB module patch fails', async () => {
+    const moduleCommand = createDeferred<Response>()
+    const captured: { url: string; method: string; body: { baseRevision?: number; [key: string]: unknown } }[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        if (url === '/api/v1/bootstrap') {
+          return jsonResponse({ revision: 150 })
+        }
+        const body = typeof init.body === 'string' ? JSON.parse(init.body) : null
+        captured.push({ url, method: init.method ?? 'GET', body })
+        if (url === '/api/v1/commands/modules/mod-a') {
+          return moduleCommand.promise
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    DBState.db.modules = [seedModule('mod-a', { description: 'old description' })]
+    const apis = getV2PluginAPIs()
+
+    apis.setDatabaseLite({
+      modules: [seedModule('mod-a', { description: 'attempted description' })],
+    })
+
+    await vi.waitFor(() => {
+      expect(captured.length).toBe(1)
+    })
+    expect(DBState.db.modules[0].description).toBe('attempted description')
+
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.modules[0] = {
+        ...DBState.db.modules[0],
+        description: 'newer description',
+      }
+    })
+    moduleCommand.resolve(jsonResponse({ error: 'failed module patch' }, 500))
+
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(captured[0]).toMatchObject({
+      url: '/api/v1/commands/modules/mod-a',
+      method: 'PATCH',
+      body: {
+        baseRevision: 150,
+        patch: expect.objectContaining({
+          description: 'attempted description',
+        }),
+      },
+    })
+    expect(DBState.db.modules[0].description).toBe('newer description')
+  })
+
   it('serializes plugin collection create/update/delete commands against advancing revisions', async () => {
     let nextRevision = 300
     const captured: { url: string; method: string; body: { baseRevision?: number; [key: string]: unknown } }[] = []

@@ -28,21 +28,12 @@ import {
 } from '../pluginCommands'
 import {
   currentGlobalModuleStateSnapshot,
-  restoreGlobalModuleState,
-  sanitizeModulePatch,
-  toModuleSnapshot,
+  dispatchEnabledModulesPatch,
+  dispatchModuleCollectionPatch,
 } from '../moduleCommands'
 import { currentCharacterStateSnapshot, prepareCompatibleCharacterUpdate } from '../characterCommands'
 import { runOptimisticCommandSequence } from '../chatCommands'
-import {
-  canUseServerCommands,
-  createModuleCommand,
-  deleteModuleCommand,
-  enableModuleCommand,
-  reorderModulesCommand,
-  updateModuleCommand,
-  type ServerCommandResult,
-} from '../server/commands'
+import { canUseServerCommands } from '../server/commands'
 import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
 import { assertNoUnsupportedCharacterChanges } from './unsupportedServerWriteGuard'
 import {
@@ -807,86 +798,6 @@ function applyPluginDatabasePatch(newDb: Record<string, unknown>, options: { ful
 
   if (!serverMode && options.full) {
     setDatabase(DBState.db)
-  }
-}
-
-function dispatchModuleCollectionPatch(
-  modules: RisuModule[],
-  previous: ReturnType<typeof currentGlobalModuleStateSnapshot>,
-): void {
-  if (!canUseServerCommands()) return
-
-  const beforeModules = new Map(previous.modules.map((module) => [module.id, module]))
-  const nextModules = new Map(modules.map((module) => [module.id, module]))
-
-  // Collect every diff into one sequenced factory list. Each response updates the
-  // cached baseRevision before the next command reads it, avoiding 409s from
-  // parallel fan-out against the same optimistic snapshot.
-  const factories: Array<(baseRevision: number) => Promise<ServerCommandResult>> = []
-
-  for (const module of modules) {
-    if (typeof module.id !== 'string' || module.id.trim() === '') continue
-    const before = beforeModules.get(module.id)
-    if (!before) {
-      const moduleSnapshot = toModuleSnapshot(module)
-      factories.push((baseRevision) => createModuleCommand({ baseRevision, module: moduleSnapshot }))
-      continue
-    }
-    if (JSON.stringify(before) !== JSON.stringify(module)) {
-      const commandPatch = sanitizeModulePatch(toModuleSnapshot(module))
-      if (Object.keys(commandPatch).length === 0) continue
-      const moduleId = module.id
-      factories.push((baseRevision) => updateModuleCommand({ baseRevision, moduleId, patch: commandPatch }))
-    }
-  }
-
-  for (const module of previous.modules) {
-    if (typeof module.id === 'string' && module.id.trim() && !nextModules.has(module.id)) {
-      const moduleId = module.id
-      factories.push((baseRevision) => deleteModuleCommand({ baseRevision, moduleId }))
-    }
-  }
-
-  const beforeOrder = previous.modules.map((module) => module.id).join('\n')
-  const nextOrder = modules.map((module) => module.id).join('\n')
-  if (beforeOrder !== nextOrder && modules.every((module) => beforeModules.has(module.id))) {
-    const moduleIds = modules.map((module) => module.id)
-    factories.push((baseRevision) => reorderModulesCommand({ baseRevision, moduleIds }))
-  }
-
-  if (factories.length > 0) {
-    runOptimisticCommandSequence(factories, () => restoreGlobalModuleState(previous))
-  }
-}
-
-function dispatchEnabledModulesPatch(
-  enabledModules: unknown[],
-  previous: ReturnType<typeof currentGlobalModuleStateSnapshot>,
-  modules: RisuModule[],
-): void {
-  if (!canUseServerCommands()) return
-
-  const before = new Set(previous.enabledModules)
-  const next = new Set(enabledModules.filter((id): id is string => typeof id === 'string'))
-  const knownModules = new Set(modules.map((module) => module.id))
-
-  // Serialize enable/disable diffs against one optimistic snapshot so each
-  // enableModule call reads the revision returned by the previous response.
-  const factories: Array<(baseRevision: number) => Promise<ServerCommandResult>> = []
-
-  for (const moduleId of next) {
-    if (!before.has(moduleId) && knownModules.has(moduleId)) {
-      factories.push((baseRevision) => enableModuleCommand({ baseRevision, moduleId, enabled: true }))
-    }
-  }
-  for (const moduleId of before) {
-    if (!next.has(moduleId) && knownModules.has(moduleId)) {
-      factories.push((baseRevision) => enableModuleCommand({ baseRevision, moduleId, enabled: false }))
-    }
-  }
-
-  if (factories.length > 0) {
-    runOptimisticCommandSequence(factories, () => restoreGlobalModuleState(previous))
   }
 }
 
