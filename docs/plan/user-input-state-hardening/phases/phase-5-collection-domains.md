@@ -124,6 +124,12 @@ lorebook, regex, or Lua-trigger commands no longer restore broad lorebook or
 script-definition snapshots over sibling modules, characters, global lorebooks,
 or unrelated module fields.
 
+Seventeenth landed slice: MCP character regex and Lua-trigger writes now use
+character-scoped script/trigger rollback records. Failed MCP character regex
+set/delete or Lua-trigger commands no longer restore broad script-definition
+snapshots over sibling characters, module scripts/triggers, or unrelated target
+script/trigger fields.
+
 ## Anchors
 
 - `src/lib/Setting/botpreset.svelte`

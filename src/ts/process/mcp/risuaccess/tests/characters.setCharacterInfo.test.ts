@@ -118,9 +118,21 @@ function makeLorebook(name: string, content = `${name} content`) {
   }
 }
 
-function makeLuaTrigger(code: string) {
+function makeRegexScript(comment: string, regexIn = `${comment}-in`, regexOut = `${comment}-out`) {
   return {
-    id: 'lua-trigger-id',
+    id: `${comment.toLowerCase().replace(/\s+/g, '-')}-id`,
+    comment,
+    in: regexIn,
+    out: regexOut,
+    type: 'editdisplay',
+    flag: 'g',
+    ableFlag: true,
+  }
+}
+
+function makeLuaTrigger(code: string, id = 'lua-trigger-id') {
+  return {
+    id,
     comment: 'Lua trigger',
     conditions: [],
     effect: [
@@ -131,6 +143,24 @@ function makeLuaTrigger(code: string) {
     ],
     type: 'manual',
   }
+}
+
+function firstTriggerCode(characterIndex: number): string {
+  return (DBState.db.characters[characterIndex].triggerscript[0].effect[0] as { code: string }).code
+}
+
+function seedSiblingAndModuleScripts() {
+  DBState.db.characters[0].customscript = [makeRegexScript('Sibling regex', 'sibling-old-in', 'sibling-old-out')]
+  DBState.db.characters[0].triggerscript = [makeLuaTrigger('print("sibling old")', 'sibling-trigger-id') as any]
+  DBState.db.modules = [
+    {
+      id: 'module-1',
+      name: 'Module 1',
+      description: 'Module fixture',
+      regex: [makeRegexScript('Module regex', 'module-old-in', 'module-old-out')],
+      trigger: [makeLuaTrigger('print("module old")', 'module-trigger-id') as any],
+    },
+  ] as any
 }
 
 async function waitForCallCount(calls: CapturedFetch[], expected: number): Promise<void> {
@@ -387,6 +417,120 @@ describe('MCP character writes optimistic projection', () => {
     await waitForCallCount(calls, 4)
   })
 
+  it('failed character regex creation rolls back only target scripts and preserves other script domains', async () => {
+    const failureUrl = '/api/v1/commands/characters/char-1/scripts'
+    const { calls, releaseHeldResponses } = stubCommandFetch({
+      failureStatusByUrl: { [failureUrl]: 500 },
+      holdUrls: [failureUrl],
+    })
+    const handler = new CharacterHandler()
+    seedSiblingAndModuleScripts()
+    delete (DBState.db.characters[1] as { customscript?: unknown }).customscript
+    DBState.db.characters[1].triggerscript = [makeLuaTrigger('print("target trigger old")') as any]
+    setServerProjectionWriteGuardEnabled(true)
+
+    await handler.handle('risu-set-character-regex-scripts', {
+      id: 'char-1',
+      name: 'Created script',
+      in: 'created-in',
+      out: 'created-out',
+      type: 'editdisplay',
+    })
+
+    expect(DBState.db.characters[1].customscript[0]).toMatchObject({
+      comment: 'Created script',
+      in: 'created-in',
+      out: 'created-out',
+    })
+    await waitForCallCount(calls, 2)
+
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.characters[1].triggerscript = [
+        makeLuaTrigger('print("target trigger concurrent")', 'target-trigger-concurrent-id') as any,
+      ]
+      DBState.db.characters[0].customscript = [
+        makeRegexScript('Sibling regex concurrent', 'sibling-new-in', 'sibling-new-out'),
+      ]
+      DBState.db.characters[0].triggerscript = [
+        makeLuaTrigger('print("sibling concurrent")', 'sibling-trigger-concurrent-id') as any,
+      ]
+      ;(DBState.db.modules[0] as any).regex = [
+        makeRegexScript('Module regex concurrent', 'module-new-in', 'module-new-out'),
+      ]
+      ;(DBState.db.modules[0] as any).trigger = [
+        makeLuaTrigger('print("module concurrent")', 'module-trigger-concurrent-id') as any,
+      ]
+    })
+
+    releaseHeldResponses()
+    await waitForSettledCommands()
+
+    expect(DBState.db.characters[1]).not.toHaveProperty('customscript')
+    expect(firstTriggerCode(1)).toBe('print("target trigger concurrent")')
+    expect(DBState.db.characters[0].customscript[0]).toMatchObject({ in: 'sibling-new-in', out: 'sibling-new-out' })
+    expect(firstTriggerCode(0)).toBe('print("sibling concurrent")')
+    expect((DBState.db.modules[0] as any).regex[0]).toMatchObject({ in: 'module-new-in', out: 'module-new-out' })
+    expect(((DBState.db.modules[0] as any).trigger[0].effect[0] as { code: string }).code).toBe(
+      'print("module concurrent")',
+    )
+  })
+
+  it('failed character regex deletion skips rollback after a newer target script edit', async () => {
+    const failureUrl = '/api/v1/commands/characters/char-1/scripts'
+    const { calls, releaseHeldResponses } = stubCommandFetch({
+      failureStatusByUrl: { [failureUrl]: 500 },
+      holdUrls: [failureUrl],
+    })
+    const handler = new CharacterHandler()
+    seedSiblingAndModuleScripts()
+    DBState.db.characters[1].customscript = [makeRegexScript('Delete me', 'delete-old-in', 'delete-old-out')]
+    DBState.db.characters[1].triggerscript = [makeLuaTrigger('print("target trigger old")') as any]
+    setServerProjectionWriteGuardEnabled(true)
+
+    await handler.handle('risu-delete-character-regex-scripts', {
+      id: 'char-1',
+      name: 'Delete me',
+    })
+
+    expect(DBState.db.characters[1].customscript).toEqual([])
+    await waitForCallCount(calls, 2)
+
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.characters[1].customscript = [
+        makeRegexScript('Concurrent target regex', 'target-new-in', 'target-new-out'),
+      ]
+      DBState.db.characters[1].triggerscript = [
+        makeLuaTrigger('print("target trigger concurrent")', 'target-trigger-concurrent-id') as any,
+      ]
+      DBState.db.characters[0].customscript = [
+        makeRegexScript('Sibling regex concurrent', 'sibling-new-in', 'sibling-new-out'),
+      ]
+      DBState.db.characters[0].triggerscript = [
+        makeLuaTrigger('print("sibling concurrent")', 'sibling-trigger-concurrent-id') as any,
+      ]
+      ;(DBState.db.modules[0] as any).regex = [
+        makeRegexScript('Module regex concurrent', 'module-new-in', 'module-new-out'),
+      ]
+      ;(DBState.db.modules[0] as any).trigger = [
+        makeLuaTrigger('print("module concurrent")', 'module-trigger-concurrent-id') as any,
+      ]
+    })
+
+    releaseHeldResponses()
+    await waitForSettledCommands()
+
+    expect(DBState.db.characters[1].customscript).toEqual([
+      expect.objectContaining({ comment: 'Concurrent target regex', in: 'target-new-in', out: 'target-new-out' }),
+    ])
+    expect(firstTriggerCode(1)).toBe('print("target trigger concurrent")')
+    expect(DBState.db.characters[0].customscript[0]).toMatchObject({ in: 'sibling-new-in', out: 'sibling-new-out' })
+    expect(firstTriggerCode(0)).toBe('print("sibling concurrent")')
+    expect((DBState.db.modules[0] as any).regex[0]).toMatchObject({ in: 'module-new-in', out: 'module-new-out' })
+    expect(((DBState.db.modules[0] as any).trigger[0].effect[0] as { code: string }).code).toBe(
+      'print("module concurrent")',
+    )
+  })
+
   it('setCharacterLuaScript is immediately visible through DBState and the Lua read tool', async () => {
     const { calls } = stubCommandFetch()
     const handler = new CharacterHandler()
@@ -405,5 +549,110 @@ describe('MCP character writes optimistic projection', () => {
       url: '/api/v1/commands/characters/char-1/triggers',
       method: 'PUT',
     })
+  })
+
+  it('failed Lua trigger writes roll back only target triggers and preserve other script domains', async () => {
+    const failureUrl = '/api/v1/commands/characters/char-1/triggers'
+    const { calls, releaseHeldResponses } = stubCommandFetch({
+      failureStatusByUrl: { [failureUrl]: 500 },
+      holdUrls: [failureUrl],
+    })
+    const handler = new CharacterHandler()
+    seedSiblingAndModuleScripts()
+    DBState.db.characters[1].customscript = [makeRegexScript('Target regex', 'target-old-in', 'target-old-out')]
+    DBState.db.characters[1].triggerscript = [makeLuaTrigger('print("target old")') as any]
+    setServerProjectionWriteGuardEnabled(true)
+
+    await handler.handle('risu-set-character-lua-script', {
+      id: 'char-1',
+      code: 'print("target attempted")',
+    })
+
+    expect(firstTriggerCode(1)).toBe('print("target attempted")')
+    await waitForCallCount(calls, 2)
+
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.characters[1].customscript = [
+        makeRegexScript('Target regex concurrent', 'target-new-in', 'target-new-out'),
+      ]
+      DBState.db.characters[0].customscript = [
+        makeRegexScript('Sibling regex concurrent', 'sibling-new-in', 'sibling-new-out'),
+      ]
+      DBState.db.characters[0].triggerscript = [
+        makeLuaTrigger('print("sibling concurrent")', 'sibling-trigger-concurrent-id') as any,
+      ]
+      ;(DBState.db.modules[0] as any).regex = [
+        makeRegexScript('Module regex concurrent', 'module-new-in', 'module-new-out'),
+      ]
+      ;(DBState.db.modules[0] as any).trigger = [
+        makeLuaTrigger('print("module concurrent")', 'module-trigger-concurrent-id') as any,
+      ]
+    })
+
+    releaseHeldResponses()
+    await waitForSettledCommands()
+
+    expect(firstTriggerCode(1)).toBe('print("target old")')
+    expect(DBState.db.characters[1].customscript[0]).toMatchObject({ in: 'target-new-in', out: 'target-new-out' })
+    expect(DBState.db.characters[0].customscript[0]).toMatchObject({ in: 'sibling-new-in', out: 'sibling-new-out' })
+    expect(firstTriggerCode(0)).toBe('print("sibling concurrent")')
+    expect((DBState.db.modules[0] as any).regex[0]).toMatchObject({ in: 'module-new-in', out: 'module-new-out' })
+    expect(((DBState.db.modules[0] as any).trigger[0].effect[0] as { code: string }).code).toBe(
+      'print("module concurrent")',
+    )
+  })
+
+  it('failed Lua trigger writes skip rollback after a newer target trigger edit', async () => {
+    const failureUrl = '/api/v1/commands/characters/char-1/triggers'
+    const { calls, releaseHeldResponses } = stubCommandFetch({
+      failureStatusByUrl: { [failureUrl]: 500 },
+      holdUrls: [failureUrl],
+    })
+    const handler = new CharacterHandler()
+    seedSiblingAndModuleScripts()
+    DBState.db.characters[1].customscript = [makeRegexScript('Target regex', 'target-old-in', 'target-old-out')]
+    DBState.db.characters[1].triggerscript = [makeLuaTrigger('print("target old")') as any]
+    setServerProjectionWriteGuardEnabled(true)
+
+    await handler.handle('risu-set-character-lua-script', {
+      id: 'char-1',
+      code: 'print("target attempted")',
+    })
+
+    expect(firstTriggerCode(1)).toBe('print("target attempted")')
+    await waitForCallCount(calls, 2)
+
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.characters[1].triggerscript = [
+        makeLuaTrigger('print("target concurrent")', 'target-trigger-concurrent-id') as any,
+      ]
+      DBState.db.characters[1].customscript = [
+        makeRegexScript('Target regex concurrent', 'target-new-in', 'target-new-out'),
+      ]
+      DBState.db.characters[0].customscript = [
+        makeRegexScript('Sibling regex concurrent', 'sibling-new-in', 'sibling-new-out'),
+      ]
+      DBState.db.characters[0].triggerscript = [
+        makeLuaTrigger('print("sibling concurrent")', 'sibling-trigger-concurrent-id') as any,
+      ]
+      ;(DBState.db.modules[0] as any).regex = [
+        makeRegexScript('Module regex concurrent', 'module-new-in', 'module-new-out'),
+      ]
+      ;(DBState.db.modules[0] as any).trigger = [
+        makeLuaTrigger('print("module concurrent")', 'module-trigger-concurrent-id') as any,
+      ]
+    })
+
+    releaseHeldResponses()
+    await waitForSettledCommands()
+
+    expect(firstTriggerCode(1)).toBe('print("target concurrent")')
+    expect(DBState.db.characters[1].customscript[0]).toMatchObject({ in: 'target-new-in', out: 'target-new-out' })
+    expect(DBState.db.characters[0].customscript[0]).toMatchObject({ in: 'sibling-new-in', out: 'sibling-new-out' })
+    expect(firstTriggerCode(0)).toBe('print("sibling concurrent")')
+    expect((DBState.db.modules[0] as any).regex[0]).toMatchObject({ in: 'module-new-in', out: 'module-new-out' })
+    expect(((DBState.db.modules[0] as any).trigger[0].effect[0] as { code: string }).code).toBe(
+      'print("module concurrent")',
+    )
   })
 })

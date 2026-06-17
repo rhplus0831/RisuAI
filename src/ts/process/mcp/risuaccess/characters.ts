@@ -13,7 +13,6 @@ import {
   replaceCharacterLorebookCollection,
 } from 'src/ts/server/lorebookBridge.svelte'
 import {
-  currentScriptDefinitionStateSnapshot,
   dispatchReplaceCharacterScripts,
   dispatchReplaceCharacterTriggers,
   ensureClientScriptDefinitionIds,
@@ -801,8 +800,17 @@ export class CharacterHandler extends MCPToolHandler {
       ]
     }
 
-    const previous = canUseServerCommands() ? currentScriptDefinitionStateSnapshot() : null
-    const scripts = cloneJsonValue(char.customscript ?? [])
+    const hadScriptsField = Object.prototype.hasOwnProperty.call(char, 'customscript')
+    const previousScripts = cloneJsonValue(char.customscript ?? [])
+    const previous = canUseServerCommands()
+      ? {
+          kind: 'characterScripts' as const,
+          characterId: char.chaId,
+          scripts: previousScripts,
+          hadScriptsField,
+        }
+      : null
+    const scripts = cloneJsonValue(previousScripts)
 
     const scriptIndex = scripts.findIndex((script) => {
       const displayName = script.comment || 'Unnamed ' + pickHashRand(5515, script.in + script.out)
@@ -883,8 +891,17 @@ export class CharacterHandler extends MCPToolHandler {
       ]
     }
 
-    const previous = canUseServerCommands() ? currentScriptDefinitionStateSnapshot() : null
-    const scripts = cloneJsonValue(char.customscript ?? [])
+    const hadScriptsField = Object.prototype.hasOwnProperty.call(char, 'customscript')
+    const previousScripts = cloneJsonValue(char.customscript ?? [])
+    const previous = canUseServerCommands()
+      ? {
+          kind: 'characterScripts' as const,
+          characterId: char.chaId,
+          scripts: previousScripts,
+          hadScriptsField,
+        }
+      : null
+    const scripts = cloneJsonValue(previousScripts)
 
     const scriptIndex = scripts.findIndex((script) => {
       const displayName = script.comment || 'Unnamed ' + pickHashRand(5515, script.in + script.out)
@@ -1043,8 +1060,17 @@ export class CharacterHandler extends MCPToolHandler {
       ]
     }
 
-    const previous = canUseServerCommands() ? currentScriptDefinitionStateSnapshot() : null
-    const triggers = cloneJsonValue(char.triggerscript ?? [])
+    const hadTriggersField = Object.prototype.hasOwnProperty.call(char, 'triggerscript')
+    const previousTriggers = cloneJsonValue(char.triggerscript ?? [])
+    const previous = canUseServerCommands()
+      ? {
+          kind: 'characterTriggers' as const,
+          characterId: char.chaId,
+          triggers: previousTriggers,
+          hadTriggersField,
+        }
+      : null
+    const triggers = cloneJsonValue(previousTriggers)
     const firstTrigger = triggers[0]
     if (firstTrigger?.effect?.[0]?.type === 'triggerlua') {
       firstTrigger.effect[0].code = code
