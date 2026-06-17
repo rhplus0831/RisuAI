@@ -7,23 +7,25 @@ workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 5 plugin DB bridge settings rollback.
-  Plugin V2 database settings patches now capture settings-specific previous and
-  attempted values before optimistic writes, roll back only server-backed
-  settings keys whose live value still matches the attempted value, and no
-  longer restore plugin list/provider/storage state on settings command failure.
+- Runtime/code change under test: Phase 5 persona collection rollback.
+  Persona create, delete, and reorder command failures now roll back only the
+  attempted collection change. Create removes only an unchanged attempted row,
+  delete reinserts only a still-missing row, reorder restores prior ID order only
+  when live order still matches the attempted order, and mirrored selected
+  profile fields restore only while live values still match the attempted
+  command result.
 - Commands:
 
 ```bash
-pnpm exec vitest run src/ts/pluginCommands.test.ts src/ts/plugins/plugins.test.ts src/ts/server/commands.test.ts
+pnpm exec vitest run src/ts/persona.test.ts src/lib/Setting/Pages/PersonaSettings.svelte.test.ts src/ts/server/staleStateGuards.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 git diff --check
 ```
 
-- Result: passed on 2026-06-17. Plugin command, plugin DB bridge, and client
-  command coverage passed 96 tests, and both TypeScript checks plus
-  `git diff --check` passed.
+- Result: passed on 2026-06-17. Persona command/UI plus shared stale-state guard
+  coverage passed 30 tests, and both TypeScript checks plus `git diff --check`
+  passed.
 - Additional check: `pnpm exec vitest run src/ts/compatibilityAdapters.test.ts`
   still fails in the pre-existing character MCP lorebook test
   `routes MCP character lorebook writes through lorebook commands in
@@ -35,11 +37,13 @@ git diff --check
   sanitized module update rollback and stay as Phase 5 residual work. Multi-group
   plugin settings patch failures still share the generic settings rollback
   callback and roll back all still-attempted keys from the failed patch. Plugin
-  import/update side-effect reload is not fully modeled by rollback. Full
+  import/update side-effect reload is not fully modeled by rollback. Persona
+  selection/profile save, prompt trigger updates, icon upload rollback, and
+  persona import remain separate residual persona paths. Full
   `ScriptDefinitionStateSnapshot` rollback remains broad for rarer discrete
   callers. The remaining Phase 5 collection domains still need focused slices:
-  preset/persona/translator/lorebook/sidebar collection rollback and replacement
-  flows, including create/delete/reorder, import, and list-selection paths.
+  preset/translator/lorebook/sidebar collection rollback and replacement flows,
+  including create/delete/reorder, import, and list-selection paths.
 
 ## Remaining Proof
 
@@ -58,12 +62,13 @@ git diff --check
   third Phase 5 slice, plugin collection/full-plugin rollback is covered by the
   fourth Phase 5 slice, global module command rollback is covered by the fifth
   Phase 5 slice, MCP module-info rollback is covered by the sixth Phase 5 slice,
-  and plugin DB bridge settings rollback is covered by the seventh Phase 5 slice.
-  Remaining Phase 5 work owns preset/persona/translator, module
+  plugin DB bridge settings rollback is covered by the seventh Phase 5 slice,
+  and persona create/delete/reorder rollback is covered by the eighth Phase 5
+  slice. Remaining Phase 5 work owns preset/translator, module
   lorebook/regex/script/trigger subdomains, lorebook, import collection flows,
   Hypa V3 preset array import/rename/delete, plugin import/update side-effect
-  reload, and sidebar/chat/folder/character list create/delete/reorder/import
-  rollback.
+  reload, persona profile/import residuals, and sidebar/chat/folder/character
+  list create/delete/reorder/import rollback.
 - Phase 6 owns Realm/backup/local bundle restore/import resyncs, character/chat
   import refresh/navigation edges, memory job list/progress ordering,
   route/selection hydration, welcome/onboarding delayed setup, and DevTool

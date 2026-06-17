@@ -64,6 +64,13 @@ Failed settings commands restore only live settings keys that still match the
 attempted values, preserving newer same-key edits plus plugin rows, provider
 selection, and custom storage.
 
+Eighth landed slice: persona create, delete, and reorder rollback now scopes to
+the attempted collection change. Failed create removes only an unchanged
+attempted row, failed delete reinserts only a still-missing row at its previous
+index, failed reorder restores previous ID order only while live order still
+equals attempted order, and selected profile mirrors restore only
+attempted-matching values.
+
 ## Anchors
 
 - `src/lib/Setting/botpreset.svelte`

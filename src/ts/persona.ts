@@ -49,6 +49,22 @@ export interface SelectedPersonaProjectionSnapshot {
 
 export type SelectedPersonaProfileField = 'username' | 'userNote' | 'personaPrompt'
 export type SelectedPersonaDirtyField = SelectedPersonaProfileField | 'largePortrait'
+type PersonaProfileMirrorField = 'username' | 'userIcon' | 'personaPrompt' | 'userNote'
+
+interface PersonaProfileMirrorRollbackSnapshot {
+  selectedPersona: number
+  selectedPersonaId: string | null
+  username: string
+  userIcon: string
+  personaPrompt: string
+  userNote: string
+}
+
+interface PersonaProfileMirrorRollbackMatches {
+  selectedPersona: boolean
+  fields: Record<PersonaProfileMirrorField, boolean>
+  liveSelectedPersonaId: string | null
+}
 
 const pendingPersonaUpdate = {
   timer: null as ReturnType<typeof setTimeout> | null,
@@ -62,6 +78,12 @@ const pendingPersonaUpdate = {
 let personaSettingsWatcherSuppressed = false
 let personaSettingsWatcherSuppressionToken = 0
 const dirtySelectedPersonaFieldsById = new Map<string, Map<SelectedPersonaDirtyField, string | boolean>>()
+const personaProfileMirrorFields: readonly PersonaProfileMirrorField[] = [
+  'username',
+  'userIcon',
+  'personaPrompt',
+  'userNote',
+]
 
 function cloneJsonValue<T>(value: T): T {
   if (value === undefined) return value
@@ -161,6 +183,15 @@ function nonBlankPersonaId(persona: Persona | undefined): string | null {
   return typeof id === 'string' && id.trim().length > 0 ? id : null
 }
 
+function personaJsonEquals(left: unknown, right: unknown): boolean {
+  return snapshotPersonaJson(left) === snapshotPersonaJson(right)
+}
+
+function findPersonaIndexById(personas: readonly Persona[], personaId: string | null): number {
+  if (!personaId) return -1
+  return personas.findIndex((persona) => nonBlankPersonaId(persona) === personaId)
+}
+
 function uniquePersonaIdAt(personas: readonly Persona[], index: number): string | null {
   const id = nonBlankPersonaId(personas[index])
   if (!id) return null
@@ -192,8 +223,140 @@ function personaCommandIdList(personas: readonly Persona[] = DBState.db.personas
   return ids
 }
 
+function stringArraysEqual(left: readonly string[] | null, right: readonly string[] | null): boolean {
+  if (!left || !right || left.length !== right.length) return false
+  return left.every((value, index) => value === right[index])
+}
+
 export function selectedPersonaId(): string | null {
   return validUniquePersonaIdAt(DBState.db.selectedPersona)
+}
+
+function profileMirrorRollbackSnapshotFromState(snapshot: PersonaStateSnapshot): PersonaProfileMirrorRollbackSnapshot {
+  return {
+    selectedPersona: snapshot.selectedPersona,
+    selectedPersonaId: uniquePersonaIdAt(snapshot.personas, snapshot.selectedPersona),
+    username: snapshot.username,
+    userIcon: snapshot.userIcon,
+    personaPrompt: snapshot.personaPrompt,
+    userNote: snapshot.userNote,
+  }
+}
+
+function currentProfileMirrorRollbackSnapshot(): PersonaProfileMirrorRollbackSnapshot {
+  return profileMirrorRollbackSnapshotFromState(currentPersonaStateSnapshot())
+}
+
+function liveSelectedPersonaMatchesProfileSnapshot(snapshot: PersonaProfileMirrorRollbackSnapshot): boolean {
+  if (snapshot.selectedPersonaId) return selectedPersonaId() === snapshot.selectedPersonaId
+  return DBState.db.selectedPersona === snapshot.selectedPersona
+}
+
+function captureProfileMirrorRollbackMatches(
+  attempted: PersonaProfileMirrorRollbackSnapshot,
+): PersonaProfileMirrorRollbackMatches {
+  const fields = {} as Record<PersonaProfileMirrorField, boolean>
+  for (const field of personaProfileMirrorFields) {
+    fields[field] = DBState.db[field] === attempted[field]
+  }
+
+  return {
+    selectedPersona: liveSelectedPersonaMatchesProfileSnapshot(attempted),
+    fields,
+    liveSelectedPersonaId: selectedPersonaId(),
+  }
+}
+
+function resolveProfileMirrorSelectionIndex(snapshot: PersonaProfileMirrorRollbackSnapshot): number {
+  const personas = DBState.db.personas ?? []
+  const selectedIndexById = findPersonaIndexById(personas, snapshot.selectedPersonaId)
+  if (selectedIndexById !== -1) return selectedIndexById
+  if (snapshot.selectedPersona >= 0 && snapshot.selectedPersona < personas.length) return snapshot.selectedPersona
+  return Math.max(0, Math.min(snapshot.selectedPersona, personas.length - 1))
+}
+
+function applyProfileMirrorRollback(
+  previous: PersonaProfileMirrorRollbackSnapshot,
+  matches: PersonaProfileMirrorRollbackMatches,
+): void {
+  if (matches.selectedPersona) {
+    DBState.db.selectedPersona = resolveProfileMirrorSelectionIndex(previous)
+  } else {
+    const liveSelectedIndex = findPersonaIndexById(DBState.db.personas ?? [], matches.liveSelectedPersonaId)
+    if (liveSelectedIndex !== -1) {
+      DBState.db.selectedPersona = liveSelectedIndex
+    }
+  }
+
+  for (const field of personaProfileMirrorFields) {
+    if (matches.fields[field]) {
+      DBState.db[field] = previous[field]
+    }
+  }
+}
+
+function applyCreatePersonaRollback(input: {
+  createdPersonaId: string
+  attemptedCreatedPersona: Persona
+  previousProfile: PersonaProfileMirrorRollbackSnapshot
+  attemptedProfile: PersonaProfileMirrorRollbackSnapshot
+}): void {
+  withSuppressedPersonaSettingsWatcher(() => {
+    withTrustedServerProjectionWrite(() => {
+      const matches = captureProfileMirrorRollbackMatches(input.attemptedProfile)
+      const liveIndex = findPersonaIndexById(DBState.db.personas ?? [], input.createdPersonaId)
+      if (liveIndex !== -1 && personaJsonEquals(DBState.db.personas[liveIndex], input.attemptedCreatedPersona)) {
+        DBState.db.personas.splice(liveIndex, 1)
+      }
+      applyProfileMirrorRollback(input.previousProfile, matches)
+    })
+  })
+}
+
+function applyDeletePersonaRollback(input: {
+  deletedPersonaId: string
+  previousIndex: number
+  previousPersona: Persona
+  previousProfile: PersonaProfileMirrorRollbackSnapshot
+  attemptedProfile: PersonaProfileMirrorRollbackSnapshot
+}): void {
+  withSuppressedPersonaSettingsWatcher(() => {
+    withTrustedServerProjectionWrite(() => {
+      const matches = captureProfileMirrorRollbackMatches(input.attemptedProfile)
+      const existingIndex = findPersonaIndexById(DBState.db.personas ?? [], input.deletedPersonaId)
+      if (existingIndex === -1) {
+        const insertIndex = Math.max(0, Math.min(input.previousIndex, DBState.db.personas.length))
+        DBState.db.personas.splice(insertIndex, 0, cloneJsonValue(input.previousPersona))
+      }
+      applyProfileMirrorRollback(input.previousProfile, matches)
+    })
+  })
+}
+
+function applyReorderPersonaRollback(input: { previousPersonaIds: string[]; attemptedPersonaIds: string[] }): void {
+  withSuppressedPersonaSettingsWatcher(() => {
+    withTrustedServerProjectionWrite(() => {
+      if (!stringArraysEqual(personaCommandIdList(), input.attemptedPersonaIds)) return
+
+      const liveSelectedPersonaId = selectedPersonaId()
+      const personasById = new Map<string, Persona>()
+      for (const persona of DBState.db.personas) {
+        const id = nonBlankPersonaId(persona)
+        if (id) personasById.set(id, persona)
+      }
+
+      const previousOrder = input.previousPersonaIds
+        .map((id) => personasById.get(id))
+        .filter((persona): persona is Persona => Boolean(persona))
+      if (previousOrder.length !== DBState.db.personas.length) return
+
+      DBState.db.personas = previousOrder
+      const selectedIndex = findPersonaIndexById(DBState.db.personas, liveSelectedPersonaId)
+      if (selectedIndex !== -1) {
+        DBState.db.selectedPersona = selectedIndex
+      }
+    })
+  })
 }
 
 function personaPatchFromLegacyProfile(): PersonaSnapshot {
@@ -317,6 +480,11 @@ function runPersonaCommand<T extends Record<string, unknown>>(
 
 function dispatchCreatePersona(persona: Persona, previous: PersonaStateSnapshot): void {
   if (!canUseServerCommands()) return
+  const createdPersonaId = nonBlankPersonaId(persona)
+  if (!createdPersonaId) return
+  const previousProfile = profileMirrorRollbackSnapshotFromState(previous)
+  const attemptedProfile = currentProfileMirrorRollbackSnapshot()
+  const attemptedCreatedPersona = cloneJsonValue(persona)
   void runServerCommand({
     command: (baseRevision) =>
       createPersonaCommand({
@@ -324,7 +492,13 @@ function dispatchCreatePersona(persona: Persona, previous: PersonaStateSnapshot)
         persona: cloneJsonValue(persona) as PersonaSnapshot,
         mirrorLegacyProfile: true,
       }),
-    rollback: () => restorePersonaStateSnapshot(previous),
+    rollback: () =>
+      applyCreatePersonaRollback({
+        createdPersonaId,
+        attemptedCreatedPersona,
+        previousProfile,
+        attemptedProfile,
+      }),
   })
 }
 
@@ -334,6 +508,11 @@ function dispatchDeletePersona(
   previous: PersonaStateSnapshot,
 ): void {
   if (!canUseServerCommands()) return
+  const previousIndex = findPersonaIndexById(previous.personas, personaId)
+  const previousPersona = previousIndex === -1 ? null : previous.personas[previousIndex]
+  if (!previousPersona) return
+  const previousProfile = profileMirrorRollbackSnapshotFromState(previous)
+  const attemptedProfile = currentProfileMirrorRollbackSnapshot()
   void runServerCommand({
     command: (baseRevision) =>
       deletePersonaCommand({
@@ -343,7 +522,14 @@ function dispatchDeletePersona(
         mirrorLegacyProfile: true,
         saveCurrent: true,
       }),
-    rollback: () => restorePersonaStateSnapshot(previous),
+    rollback: () =>
+      applyDeletePersonaRollback({
+        deletedPersonaId: personaId,
+        previousIndex,
+        previousPersona,
+        previousProfile,
+        attemptedProfile,
+      }),
   })
 }
 
@@ -351,18 +537,20 @@ function dispatchReorderPersonas(previous: PersonaStateSnapshot): void {
   if (!canUseServerCommands()) return
   const personaIds = personaCommandIdList()
   if (!personaIds) return
-  const attempted = currentPersonaStateSnapshot()
+  const previousPersonaIds = personaCommandIdList(previous.personas)
+  if (!previousPersonaIds) return
+  const attemptedPersonaIds = [...personaIds]
   void runServerCommand({
     command: (baseRevision) =>
       reorderPersonasCommand({
         baseRevision,
         personaIds,
       }),
-    rollback: () => {
-      if (snapshotPersonaJson(currentPersonaStateSnapshot()) === snapshotPersonaJson(attempted)) {
-        restorePersonaStateSnapshot(previous)
-      }
-    },
+    rollback: () =>
+      applyReorderPersonaRollback({
+        previousPersonaIds,
+        attemptedPersonaIds,
+      }),
   })
 }
 

@@ -10,6 +10,7 @@ import { DBState } from './stores.svelte'
 import {
   beginPersonaReorder,
   changeUserPersona,
+  createNewUserPersona,
   currentPersonaStateSnapshot,
   deleteSelectedUserPersona,
   flushPendingSelectedPersonaUpdate,
@@ -23,6 +24,13 @@ import {
 
 function cloneJsonValue<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
+}
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  })
 }
 
 function makePersona(patch: Record<string, unknown>): Record<string, unknown> {
@@ -69,6 +77,11 @@ function applySelectedPersonaProjection(
 async function flushCommandEffects(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 0))
   await new Promise((resolve) => setTimeout(resolve, 0))
+}
+
+function mockNextCommandFailure(error = 'persona command failed'): void {
+  vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ revision: 1 }))
+  vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ error }, 500))
 }
 
 beforeEach(() => {
@@ -232,6 +245,190 @@ describe('persona ID read and command preparation', () => {
 
     expect(DBState.db).toEqual(before)
     expect(fetch).not.toHaveBeenCalled()
+  })
+})
+
+describe('persona collection rollback guards', () => {
+  it('failed create removes only the still-attempted new persona and preserves newer sibling edit', async () => {
+    seedPersonaState(
+      [
+        makePersona({
+          id: 'persona-a',
+          name: 'Persona A',
+          icon: 'a.png',
+          personaPrompt: 'Prompt A',
+          note: 'Note A',
+        }),
+      ],
+      0,
+    )
+    mockNextCommandFailure()
+
+    createNewUserPersona()
+    DBState.db.personas[0] = {
+      ...DBState.db.personas[0],
+      name: 'Persona A edited after dispatch',
+    } as any
+    await flushCommandEffects()
+
+    expect(DBState.db.personas.map((persona) => persona.id)).toEqual(['persona-a'])
+    expect(DBState.db.personas[0]).toMatchObject({
+      id: 'persona-a',
+      name: 'Persona A edited after dispatch',
+    })
+    expect(DBState.db).toMatchObject({
+      selectedPersona: 0,
+      username: 'Unsaved User Name',
+      userIcon: 'unsaved-user-icon.png',
+      personaPrompt: 'Unsaved persona prompt',
+      userNote: 'Unsaved user note',
+    })
+  })
+
+  it('failed create does not remove the new persona if the row changed after dispatch', async () => {
+    seedPersonaState(
+      [
+        makePersona({
+          id: 'persona-a',
+          name: 'Persona A',
+        }),
+      ],
+      0,
+    )
+    mockNextCommandFailure()
+
+    const created = createNewUserPersona()
+    const createdIndex = DBState.db.personas.findIndex((persona) => persona.id === created.id)
+    DBState.db.personas[createdIndex] = {
+      ...DBState.db.personas[createdIndex],
+      name: 'Edited New Persona',
+    } as any
+    await flushCommandEffects()
+
+    expect(DBState.db.personas.map((persona) => persona.id)).toEqual(['persona-a', created.id])
+    expect(DBState.db.personas[1]).toMatchObject({
+      id: created.id,
+      name: 'Edited New Persona',
+    })
+  })
+
+  it('failed delete reinserts only the deleted persona while preserving newer remaining edits and appended personas', async () => {
+    seedPersonaState(
+      [
+        makePersona({
+          id: 'persona-a',
+          name: 'Persona A',
+          icon: 'a.png',
+          personaPrompt: 'Prompt A',
+          note: 'Note A',
+        }),
+        makePersona({
+          id: 'persona-b',
+          name: 'Persona B',
+          icon: 'b.png',
+          personaPrompt: 'Prompt B',
+          note: 'Note B',
+        }),
+        makePersona({
+          id: 'persona-c',
+          name: 'Persona C',
+          icon: 'c.png',
+          personaPrompt: 'Prompt C',
+          note: 'Note C',
+        }),
+      ],
+      1,
+    )
+    DBState.db.username = 'Persona B'
+    DBState.db.userIcon = 'b.png'
+    DBState.db.personaPrompt = 'Prompt B'
+    DBState.db.userNote = 'Note B'
+    mockNextCommandFailure()
+
+    expect(deleteSelectedUserPersona()).toBe(true)
+    DBState.db.personas[1] = {
+      ...DBState.db.personas[1],
+      name: 'Persona C edited after dispatch',
+    } as any
+    DBState.db.personas.push(
+      makePersona({
+        id: 'persona-d',
+        name: 'Persona D appended after dispatch',
+      }) as any,
+    )
+    await flushCommandEffects()
+
+    expect(DBState.db.personas.map((persona) => persona.id)).toEqual([
+      'persona-a',
+      'persona-b',
+      'persona-c',
+      'persona-d',
+    ])
+    expect(DBState.db.personas[1]).toMatchObject({
+      id: 'persona-b',
+      name: 'Persona B',
+    })
+    expect(DBState.db.personas[2]).toMatchObject({
+      id: 'persona-c',
+      name: 'Persona C edited after dispatch',
+    })
+    expect(DBState.db.personas[3]).toMatchObject({
+      id: 'persona-d',
+      name: 'Persona D appended after dispatch',
+    })
+    expect(DBState.db).toMatchObject({
+      selectedPersona: 1,
+      username: 'Persona B',
+      userIcon: 'b.png',
+      personaPrompt: 'Prompt B',
+      userNote: 'Note B',
+    })
+  })
+
+  it('failed reorder restores the previous ID order while preserving newer row field edits', async () => {
+    seedPersonaState(
+      [
+        makePersona({ id: 'persona-a', name: 'Persona A' }),
+        makePersona({ id: 'persona-b', name: 'Persona B' }),
+        makePersona({ id: 'persona-c', name: 'Persona C' }),
+      ],
+      1,
+    )
+    mockNextCommandFailure()
+
+    expect(reorderUserPersonasByIndices([2, 0, 1], 'persona-b')).toBe(true)
+    DBState.db.personas[0] = {
+      ...DBState.db.personas[0],
+      name: 'Persona C edited after dispatch',
+    } as any
+    await flushCommandEffects()
+
+    expect(DBState.db.personas.map((persona) => persona.id)).toEqual(['persona-a', 'persona-b', 'persona-c'])
+    expect(DBState.db.personas[2]).toMatchObject({
+      id: 'persona-c',
+      name: 'Persona C edited after dispatch',
+    })
+    expect(DBState.db.selectedPersona).toBe(1)
+  })
+
+  it('failed older reorder skips rollback when a newer reorder changed the live ID order', async () => {
+    seedPersonaState(
+      [
+        makePersona({ id: 'persona-a', name: 'Persona A' }),
+        makePersona({ id: 'persona-b', name: 'Persona B' }),
+        makePersona({ id: 'persona-c', name: 'Persona C' }),
+      ],
+      1,
+    )
+    mockNextCommandFailure()
+
+    expect(reorderUserPersonasByIndices([2, 0, 1], 'persona-b')).toBe(true)
+    DBState.db.personas = [DBState.db.personas[2], DBState.db.personas[0], DBState.db.personas[1]]
+    DBState.db.selectedPersona = 0
+    await flushCommandEffects()
+
+    expect(DBState.db.personas.map((persona) => persona.id)).toEqual(['persona-b', 'persona-c', 'persona-a'])
+    expect(DBState.db.selectedPersona).toBe(0)
   })
 })
 

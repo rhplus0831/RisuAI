@@ -110,6 +110,9 @@ persistence inventory under
   Plugin V2 database settings patches now use settings-specific attempted
   rollback, preserving newer same-key edits and plugin list/provider/storage
   state when a settings command fails.
+  Persona create, delete, and reorder command failures now roll back only the
+  attempted persona collection change while preserving newer row edits, appended
+  rows, and changed selection/profile mirrors.
   Phase 2 landed character profile draft dirty top-level field protection;
   prompt-template item row dirty projection merging; whole-key dirty projection
   protection for
@@ -280,8 +283,10 @@ persistence inventory under
 - `src/ts/pluginCommands.ts` and `src/ts/plugins/plugins.svelte.ts` now guard
   plugin DB bridge settings patch rollback by settings-key attempted values
   instead of broad plugin-state snapshots.
-- Verification state: Phase 5 plugin DB bridge settings rollback validation is
-  recorded in `latest-verification.md`.
+- `src/ts/persona.ts` now guards persona create, delete, and reorder rollback by
+  attempted collection state rather than restoring full persona snapshots.
+- Verification state: Phase 5 persona collection rollback validation is recorded
+  in `latest-verification.md`.
 - Highest issue density:
   - Character editor: 52 issue rows, mostly dirty projection and unguarded
     upload callbacks.
@@ -580,10 +585,15 @@ persistence inventory under
     now capture previous and attempted settings values before optimistic bridge
     writes. Failed settings commands restore only still-attempted settings keys
     and no longer restore plugin rows, provider selection, or custom storage.
-  - Phase 5: preset/persona/translator/lorebook/script/import collection flows,
+  - Phase 5 persona collection slice: persona create, delete, and reorder
+    rollback now removes only unchanged attempted created rows, reinserts only
+    still-missing deleted rows, restores previous ID order only while live order
+    still matches attempted order, and restores selected profile mirrors only
+    when live values still match attempted values.
+  - Phase 5: preset/translator/lorebook/script/import collection flows,
     module lorebook/regex/script/trigger subdomains, Hypa V3 preset array
     import/rename/delete, plugin import/update side-effect reload, sidebar
-    chat/folder lists, character list ordering, and broad
+    chat/folder lists, persona profile/import residuals, character list ordering, and broad
     create/delete/reorder/import rollback.
   - Known pre-existing test gap: `pnpm exec vitest run
     src/ts/compatibilityAdapters.test.ts` fails in

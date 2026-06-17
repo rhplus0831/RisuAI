@@ -147,10 +147,11 @@ Explicit deferrals:
   enable, reorder, and plugin DB bridge module/enabledModules patch paths. Phase
   5 MCP module-info rollback has landed for `risu-set-module-info` PATCH plus
   enable command sequences. Phase 5 plugin DB bridge settings rollback has
-  landed for Plugin V2 database settings patches. Remaining
-  preset/persona/translator, module lorebook/regex/script/trigger subdomains,
-  lorebook, and import collection flows, Hypa V3 preset array
-  import/rename/delete, plugin import/update side-effect reload, and
+  landed for Plugin V2 database settings patches. Phase 5 persona collection
+  rollback has landed for create, delete, and reorder commands. Remaining
+  preset/translator, module lorebook/regex/script/trigger subdomains, lorebook,
+  and import collection flows, Hypa V3 preset array import/rename/delete, plugin
+  import/update side-effect reload, persona profile/import residuals, and
   sidebar/chat/folder/character list create/delete/reorder/import rollback
   remain Phase 5 work.
 - `src/ts/compatibilityAdapters.test.ts` currently has a pre-existing failure in
