@@ -7,31 +7,39 @@ hardening workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 2 live local draft dirty projection
-  slice. Lorebook entry drafts now preserve dirty local fields through stale
-  same-entry projection while clean fields refresh. Selected-character
-  script/trigger drafts now preserve dirty same-row fields through stale
-  projection while clean fields and clean sibling rows refresh. Both paths clear
-  dirty state when projection catches up, when the target disappears, or when row
-  sequence changes require full reseed semantics.
-- Commands:
+- Runtime/code change under test: Phase 2 closeout for dirty draft projection.
+  Closeout covers the landed dirty projection slices for character profile
+  drafts, prompt-template item rows, generic server-backed setting drafts,
+  selected persona profile fields, translator preset
+  `name`/`prompt`/`maxResponse` fields, lorebook entry drafts, and
+  selected-character script/trigger live local draft rows.
+- Closeout result: PASS/CLOSEABLE on 2026-06-17. The closeout explorer accepted
+  the landed slices and confirmed the remaining surfaces are explicit later-phase
+  deferrals rather than Phase 2 blockers.
+- Phase 2 validation command matrix:
 
 ```bash
-pnpm exec vitest run src/ts/server/lorebookBridge.svelte.test.ts src/ts/server/scriptDefinitionBridge.svelte.test.ts src/ts/server/staleStateGuards.test.ts
+pnpm exec vitest run src/ts/server/staleStateGuards.test.ts src/ts/server/characterBridge.svelte.test.ts src/ts/server/promptTemplateBridge.svelte.test.ts src/ts/server/settingsBridge.svelte.test.ts src/ts/persona.test.ts src/lib/Setting/Pages/PersonaSettings.svelte.test.ts src/lib/Setting/Pages/Language/TranslatorPresetSettings.svelte.test.ts src/ts/server/lorebookBridge.svelte.test.ts src/ts/server/scriptDefinitionBridge.svelte.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 ```
 
-- Result: passed on 2026-06-17. The focused Vitest set passed 3 files and 109
-  tests. Both TypeScript checks passed.
-- Residual gaps: this slice is intentionally limited to dirty projection merging
-  for existing lorebook entry drafts and selected-character script/trigger rows.
-  Create, delete, reorder, module, plugin, and broad collection rollback
-  behavior remains unchanged and stays owned by later phases unless closeout
-  triage proves otherwise. Projection-absent optional clean-field deletion is
-  outside this slice because the shared merge helper refreshes fields present in
-  the projection surface. Character resync/import/restore and asset callback
-  freshness stay deferred to their later phases.
+- Latest implementation validation result: the final Phase 2 live local draft
+  focused run passed on 2026-06-17. That run covered
+  `src/ts/server/lorebookBridge.svelte.test.ts`,
+  `src/ts/server/scriptDefinitionBridge.svelte.test.ts`, and
+  `src/ts/server/staleStateGuards.test.ts`, passing 3 files and 109 tests. Both
+  TypeScript checks passed.
+- Residual gaps by owner phase: create/delete/reorder/import/select and broad
+  collection rollback stay in Phase 5; upload/import/fetch callbacks stay in
+  Phase 3; chat/message/generation freshness stays in Phase 4;
+  resync/import/restore/navigation/memory stays in Phase 6; module/plugin
+  surfaces stay in Phase 5 for broad rollback/collection/storage/provider/arg
+  behavior and Phase 3 for import/update/fetch/upload callbacks. Submit-only
+  module drafts do not block Phase 2.
+- Projection-absent optional clean-field deletion remains outside Phase 2
+  because the shared merge helper refreshes fields present in the projection
+  surface.
 
 ## Required Closeout Proof
 
@@ -63,5 +71,6 @@ pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 
 ## Validation Commands
 
-Use phase-specific focused subsets while developing. Phase 7 owns the final
-command matrix.
+Use phase-specific focused subsets while developing. Phase 3 is the next active
+phase and owns upload/import/fetch callback validation. Phase 7 owns the final
+workstream command matrix.

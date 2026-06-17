@@ -2,32 +2,26 @@
 
 Date: 2026-06-17
 
-This workstream is active. Phase 0 is complete as a docs/contract baseline, and
-Phase 1 is complete as the shared-helper and first rollback-adopter slice. The
-plan consolidates the input persistence inventory under
+This workstream is active. Phase 0 is complete as a docs/contract baseline,
+Phase 1 is complete as the shared-helper and first rollback-adopter slice, and
+Phase 2 is complete as the dirty draft projection slice. The plan consolidates
+the input persistence inventory under
 `../../user-input-layer-audit/` and stale-state risk review under
 `../../user-stale-state-audit/`.
 
 ## Snapshot
 
 - Plan state: active, Phase 0 contract decisions complete, Phase 1 complete, and
-  Phase 2 dirty draft projection in progress. The first Phase 2 implementation
-  slice landed character profile draft dirty top-level field protection. The
-  prompt-template item row slice now tracks dirty prompt item fields by id and
-  merges same-order server projection rows without overwriting dirty local item
-  fields. The settings draft slice now protects whole-key drafts returned by
-  `createServerBackedSettingDraft` from stale projection reseeds and lets later
-  clean projections reseed once the dirty value is acknowledged. The selected
-  persona profile slice now protects dirty selected persona `username`,
-  `userNote`, `personaPrompt`, and selected-row `largePortrait` edits from
-  stale projection epochs while allowing clean selected-row fields to refresh.
-  The translator preset slice now protects dirty `name`, `prompt`, and
-  `maxResponse` fields by preset id through stale projection epochs while clean
-  sibling fields refresh. The live local draft slice now protects dirty
-  lorebook entry draft fields and selected-character script/trigger row fields
-  while clean projection fields refresh. Phase 1 settings, character, and chat
-  row metadata rollback adoption landed; message-target freshness is explicitly
-  deferred to Phase 4.
+  Phase 2 dirty draft projection complete. The next active phase is Phase 3
+  upload/import/fetch callback freshness. Phase 2 landed character profile draft
+  dirty top-level field protection; prompt-template item row dirty projection
+  merging; whole-key dirty projection protection for
+  `createServerBackedSettingDraft`; selected persona profile dirty projection
+  protection; translator preset `name`/`prompt`/`maxResponse` dirty projection
+  protection; lorebook entry draft dirty projection merging; and
+  selected-character script/trigger live local draft dirty projection merging.
+  Phase 1 settings, character, and chat row metadata rollback adoption landed;
+  message-target freshness is explicitly deferred to Phase 4.
 - Code changes: `src/ts/server/staleStateGuards.ts` and
   `src/ts/server/staleStateGuards.test.ts` add shared stale-state primitives
   and focused helper coverage. `src/ts/server/settingsBridge.svelte.ts`,
@@ -60,7 +54,7 @@ plan consolidates the input persistence inventory under
   updates into dirty lorebook entry drafts, and `src/lib/SideBars/CharConfig.svelte`
   plus `src/ts/server/scriptDefinitionBridge.svelte.ts` now merge same-row
   selected-character script/trigger projections into dirty local draft rows.
-- Verification state: Phase 2 live local draft validation is recorded in
+- Verification state: Phase 2 closeout verification is recorded in
   `latest-verification.md`.
 - Highest issue density:
   - Character editor: 52 issue rows, mostly dirty projection and unguarded
@@ -89,16 +83,17 @@ plan consolidates the input persistence inventory under
   message update/delete/truncate/replace freshness are explicitly deferred to
   Phase 4. Collection rollback domains stay owned by Phase 5. No known code gap
   blocks Phase 1 completion.
-- [Phase 2](phases/phase-2-dirty-draft-projection.md): in progress. Character
+- [Phase 2](phases/phase-2-dirty-draft-projection.md): complete. Character
   profile draft dirty top-level projection protection, prompt item row
   same-order dirty field merging, generic settings draft whole-key projection
-  protection, selected persona profile dirty projection protection, and
-  translator preset dirty field protection have landed. Lorebook entry drafts
-  and selected-character script/trigger live local drafts now merge dirty rows
-  through stale projection; remaining module/plugin and broad collection
-  projection behavior remains pending until closeout triage confirms later-phase
-  ownership.
-- [Phase 3](phases/phase-3-upload-import-fetch-callbacks.md): pending. Upload,
+  protection, selected persona profile dirty projection protection, translator
+  preset dirty field protection, lorebook entry draft dirty projection merging,
+  and selected-character script/trigger live local draft dirty projection
+  merging have landed. Remaining create/delete/reorder/import/select,
+  module/plugin, callback, chat/message/generation, resync/import/restore,
+  navigation, memory, and broad collection behavior is explicitly owned by later
+  phases below.
+- [Phase 3](phases/phase-3-upload-import-fetch-callbacks.md): active. Upload,
   file, import, decode, and remote-fetch callback tokens.
 - [Phase 4](phases/phase-4-chat-messages-generation.md): pending. Chat,
   message, reroll, trigger, suggestion, and generation target freshness.
@@ -166,15 +161,25 @@ plan consolidates the input persistence inventory under
   same-id-sequence projection rows so dirty row fields survive while clean
   fields and clean sibling rows refresh. Both paths clear dirty state when
   projection catches up, when targets/rows disappear, or when row sequences no
-  longer match and a full reseed is required. Create, delete, reorder, module,
-  plugin, and broad collection rollback behavior remains unchanged.
-- Remaining broad rollback families to track by phase:
-  - Phase 4: `restoreChatScopedState` and message
-    update/delete/truncate/replace freshness.
-  - Phase 5: presets, personas, loadouts, lorebooks, scripts, modules,
-    plugins, sidebar chat/folder lists, and character list ordering.
-  - Phase 6: full restore/import/resync, memory jobs, route hydration, and
-    navigation refresh fences.
+  longer match and a full reseed is required. Create, delete, reorder, import,
+  select, module, plugin, and broad collection rollback behavior remains
+  unchanged and is not a Phase 2 blocker.
+- Projection-absent optional clean-field deletion remains outside Phase 2. The
+  shared merge helper refreshes fields present in the projection surface; it does
+  not treat absent optional fields as deletion instructions for this phase.
+- Remaining families to track by phase:
+  - Phase 3: upload/import/fetch callbacks, including module/plugin
+    import/update/fetch/upload callbacks and other file/decode/remote-fetch
+    callback freshness.
+  - Phase 4: `restoreChatScopedState`, chat/message/generation freshness, and
+    message update/delete/truncate/replace freshness.
+  - Phase 5: create/delete/reorder/import/select and broad collection rollback
+    for presets, personas, loadouts, lorebooks, scripts, modules, plugins,
+    sidebar chat/folder lists, character list ordering, and module/plugin
+    collection/storage/provider/argument behavior.
+  - Phase 6: resync/import/restore/navigation/memory, including full
+    restore/import/resync, memory jobs, route hydration, and navigation refresh
+    fences.
 - Phase docs that mention `src/ts/process/rerollNavigation.ts` should be read
   as `src/ts/process/rerollNavigation.svelte.ts`.
 - First P0 fixture targets are dirty character projection merge,
