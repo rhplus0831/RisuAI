@@ -12,7 +12,10 @@ plan consolidates the input persistence inventory under
 
 - Plan state: active, Phase 0 contract decisions complete, Phase 1 complete, and
   Phase 2 dirty draft projection in progress. The first Phase 2 implementation
-  slice landed character profile draft dirty top-level field protection.
+  slice landed character profile draft dirty top-level field protection. The
+  prompt-template item row slice now tracks dirty prompt item fields by id and
+  merges same-order server projection rows without overwriting dirty local item
+  fields.
   Phase 1 settings, character, and chat row metadata rollback adoption landed;
   message-target freshness is explicitly deferred to Phase 4.
 - Code changes: `src/ts/server/staleStateGuards.ts` and
@@ -24,7 +27,11 @@ plan consolidates the input persistence inventory under
   `src/ts/server/characterBridge.svelte.ts` also now tracks dirty top-level
   character draft fields and merges same-character projection reseeds through
   `mergeProjectionIntoDirtyDraft`.
-- Verification state: Phase 2 first-slice validation is recorded in
+  `src/ts/server/promptTemplateBridge.svelte.ts` now tracks dirty prompt item
+  fields per item id from `queuePromptItemProjectionUpdate` and merges same-id
+  projection rows so dirty fields are preserved while clean fields and sibling
+  rows refresh.
+- Verification state: Phase 2 prompt-template item row validation is recorded in
   `latest-verification.md`.
 - Highest issue density:
   - Character editor: 52 issue rows, mostly dirty projection and unguarded
@@ -90,6 +97,12 @@ plan consolidates the input persistence inventory under
   same-character projection epochs through `mergeProjectionIntoDirtyDraft`, and
   reasserts still-dirty fields back into the selected character row after a
   projection overwrite.
+- Phase 2 prompt-template item row slice: `queuePromptItemProjectionUpdate`
+  tracks dirty top-level item fields per prompt item id. `reconcilePromptTemplateDraft`
+  clears matching dirty fields when server projection values catch up, merges
+  same-id-sequence server rows by id to preserve still-dirty local fields, and
+  refreshes clean fields and clean sibling rows. Prompt item create, delete, and
+  reorder reconciliation still use the existing full-replacement behavior.
 - Remaining broad rollback families to track by phase:
   - Phase 4: `restoreChatScopedState` and message
     update/delete/truncate/replace freshness.

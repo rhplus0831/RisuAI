@@ -7,29 +7,31 @@ hardening workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 2 first implementation slice. Character
-  profile drafts now protect dirty top-level fields from stale same-character
-  projection reseeds while clean sibling fields still refresh.
+- Runtime/code change under test: Phase 2 prompt-template item row dirty
+  projection slice. Prompt item edits now track dirty fields by prompt item id;
+  same-order server projection rows merge by id so dirty local fields survive,
+  clean fields on dirty rows refresh, clean sibling rows refresh, and matching
+  server values clear dirty state so later projections can replace normally.
 - Commands:
 
 ```bash
-pnpm exec vitest run src/ts/server/characterBridge.svelte.test.ts src/ts/server/staleStateGuards.test.ts
-pnpm exec vitest run src/ts/characterCommands.test.ts
-pnpm exec vitest run src/ts/server/commands.test.ts src/ts/chatCommands.test.ts
+pnpm exec vitest run src/ts/server/promptTemplateBridge.svelte.test.ts src/ts/server/staleStateGuards.test.ts
+pnpm exec vitest run src/ts/server/commands.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 ```
 
-- Result: passed on 2026-06-17. The character bridge/helper Vitest set passed 2
-  files and 28 tests; character commands passed 1 file and 43 tests; server/chat
-  command tests passed 2 files and 82 tests. Both TypeScript checks passed.
-- Residual gaps: this slice only covers character profile drafts in
-  `createServerBackedCharacterDraft`. Remaining Phase 2 draft projection
-  adopters for prompt settings/items, personas, translator presets, global
-  regex/settings drafts, lorebook entries, script/trigger definitions, module
-  drafts, and plugin argument/storage editors remain pending. Character
-  resync/import/restore and asset callback freshness stay deferred to their
-  later phases.
+- Result: passed on 2026-06-17. The prompt-template bridge/helper Vitest set
+  passed 2 files and 29 tests; server command tests passed 1 file and 39 tests.
+  Both TypeScript checks passed.
+- Residual gaps: this slice only covers prompt-template item row field edits
+  when the draft and server projection have the same prompt item id sequence.
+  Prompt item create, delete, and reorder behavior remains unchanged. Remaining
+  Phase 2 draft projection adopters for prompt settings scalars, personas,
+  translator presets, global regex/settings drafts, lorebook entries,
+  script/trigger definitions, module drafts, and plugin argument/storage editors
+  remain pending. Character resync/import/restore and asset callback freshness
+  stay deferred to their later phases.
 
 ## Required Closeout Proof
 

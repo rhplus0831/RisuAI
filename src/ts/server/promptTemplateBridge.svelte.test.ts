@@ -145,6 +145,13 @@ function draftCopy(): PromptItem[] {
   return cloneJsonValue((DBState.db.promptTemplate ?? []) as PromptItem[])
 }
 
+async function flushPromptItemDirtyTestState(draftItems: PromptItem[]): Promise<void> {
+  DBState.db.promptTemplate = cloneJsonValue(draftItems)
+  flushPendingPromptTemplatePatches()
+  await Promise.resolve()
+  await Promise.resolve()
+}
+
 beforeEach(() => {
   vi.useFakeTimers()
   commandState.revision = 1
@@ -409,6 +416,99 @@ describe('reconcilePromptTemplateDraft', () => {
     expect(result.nextDraft).not.toBeNull()
     expect(result.nextDraft?.map((p) => p.id)).toEqual(['p-0', 'p-1', 'p-2', 'p-3'])
     expect(textOf(result.nextDraft?.[0])).toBe('small')
+  })
+
+  it('preserves dirty prompt item text while clean sibling rows refresh', async () => {
+    ;(DBState as { db: unknown }).db = {
+      promptTemplate: [item('dirty-text', 'server old'), item('clean-sibling', 'sibling old')],
+    }
+    let draftItems = draftCopy()
+    draftItems[0] = item('dirty-text', 'local dirty')
+    const binding: PromptTemplateDraftBinding = {
+      getItems: () => draftItems,
+      setItems: (items) => {
+        draftItems = items
+      },
+    }
+
+    queuePromptItemProjectionUpdate(binding, 'dirty-text', item('dirty-text', 'server old'), 500)
+    DBState.db.promptTemplate = [item('dirty-text', 'server old'), item('clean-sibling', 'sibling fresh')]
+    commandState.revision = 6
+
+    const result = reconcilePromptTemplateDraft(draftItems, 5)
+    if (result.nextDraft) draftItems = result.nextDraft
+
+    expect(result.revision).toBe(6)
+    expect(textOf(result.nextDraft?.[0])).toBe('local dirty')
+    expect(textOf(result.nextDraft?.[1])).toBe('sibling fresh')
+
+    await flushPromptItemDirtyTestState(draftItems)
+  })
+
+  it('refreshes clean fields on the dirty row', async () => {
+    ;(DBState as { db: unknown }).db = {
+      promptTemplate: [{ ...item('dirty-row', 'server old'), name: 'old name', role: 'system' }],
+    }
+    let draftItems = draftCopy()
+    draftItems[0] = { ...item('dirty-row', 'local dirty'), name: 'old name', role: 'system' }
+    const binding: PromptTemplateDraftBinding = {
+      getItems: () => draftItems,
+      setItems: (items) => {
+        draftItems = items
+      },
+    }
+
+    queuePromptItemProjectionUpdate(
+      binding,
+      'dirty-row',
+      { ...item('dirty-row', 'server old'), name: 'old name', role: 'system' },
+      500,
+    )
+    DBState.db.promptTemplate = [{ ...item('dirty-row', 'server old'), name: 'server name', role: 'user' }]
+    commandState.revision = 6
+
+    const result = reconcilePromptTemplateDraft(draftItems, 5)
+    if (result.nextDraft) draftItems = result.nextDraft
+
+    expect(textOf(result.nextDraft?.[0])).toBe('local dirty')
+    expect((result.nextDraft?.[0] as { name?: string } | undefined)?.name).toBe('server name')
+    expect((result.nextDraft?.[0] as { role?: string } | undefined)?.role).toBe('user')
+
+    await flushPromptItemDirtyTestState(draftItems)
+  })
+
+  it('clears dirty state once projection matches local dirty value, so later projection can update that field', async () => {
+    ;(DBState as { db: unknown }).db = {
+      promptTemplate: [item('clears-dirty', 'server old')],
+    }
+    let draftItems = draftCopy()
+    draftItems[0] = item('clears-dirty', 'local dirty')
+    const binding: PromptTemplateDraftBinding = {
+      getItems: () => draftItems,
+      setItems: (items) => {
+        draftItems = items
+      },
+    }
+
+    queuePromptItemProjectionUpdate(binding, 'clears-dirty', item('clears-dirty', 'server old'), 500)
+    DBState.db.promptTemplate = [{ ...item('clears-dirty', 'local dirty'), name: 'server acknowledged' }]
+    commandState.revision = 6
+
+    const acknowledged = reconcilePromptTemplateDraft(draftItems, 5)
+    if (acknowledged.nextDraft) draftItems = acknowledged.nextDraft
+
+    expect(textOf(draftItems[0])).toBe('local dirty')
+    expect((draftItems[0] as { name?: string }).name).toBe('server acknowledged')
+
+    DBState.db.promptTemplate = [{ ...item('clears-dirty', 'server later'), name: 'server acknowledged' }]
+    commandState.revision = 7
+
+    const later = reconcilePromptTemplateDraft(draftItems, 6)
+    if (later.nextDraft) draftItems = later.nextDraft
+
+    expect(textOf(later.nextDraft?.[0])).toBe('server later')
+
+    await flushPromptItemDirtyTestState(draftItems)
   })
 
   it('does not reconcile when the revision advances but content already matches', () => {

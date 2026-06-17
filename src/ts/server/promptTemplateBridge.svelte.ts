@@ -13,6 +13,7 @@ import {
 } from './commands'
 import { withTrustedServerProjectionWrite } from './projectionWriteGuard.svelte'
 import { isPromptTemplateHydrated } from './promptTemplateHydration'
+import { mergeProjectionIntoDirtyDraft } from './staleStateGuards'
 
 /**
  * Prompt-template editor projection helpers.
@@ -69,6 +70,7 @@ const pendingPromptSettingsPatch: PendingPromptSettingsPatch = {
   attempted: {},
   timer: null,
 }
+const promptItemDirtyFieldsById = new Map<string, Set<string>>()
 
 /**
  * Mirror one edited prompt item into the read-only projection in place, without
@@ -124,6 +126,7 @@ export function queuePromptItemProjectionUpdate(
   if (!isPromptTemplateHydrated()) return
   const attemptedItem = applyPromptItemProjectionWrite(binding.getItems(), itemId)
   if (!attemptedItem) return
+  markDirtyPromptItemFields(itemId, previousItem, attemptedItem)
   mirrorTopLevelPresetField('promptTemplate', binding.getItems())
   if (!canUseServerCommands()) return
 
@@ -184,6 +187,12 @@ function runPendingPromptItemUpdate(itemId: string, options: ServerCommandTransp
       rollbackPendingPromptItemUpdate(pending.binding, pending.itemId, pending.previousItem, pending.attemptedItem),
     signal: options.signal,
     keepalive: options.keepalive,
+  }).then((result) => {
+    if (result.status !== 'ok') return
+    clearDirtyPromptItemFieldsMatchingProjection(
+      pending.binding.getItems(),
+      (DBState.db.promptTemplate ?? []) as PromptItem[],
+    )
   })
 }
 
@@ -231,6 +240,7 @@ function rollbackPendingPromptItemUpdate(
   nextItems[index] = cloneJsonValue(previousItem)
   binding.setItems(nextItems)
   restorePromptItemProjectionWrite(itemId, previousItem)
+  clearPromptItemDirtyFields(itemId, changedPromptItemFields(previousItem, attemptedItem))
 }
 
 function rollbackPromptSettingsPatch(previous: SettingsPatch, attempted: SettingsPatch): void {
@@ -272,8 +282,145 @@ export function reconcilePromptTemplateDraft(
   const serverValue = (DBState.db.promptTemplate ?? []) as PromptItem[]
   const revision = peekCachedServerCommandRevision()
   if (revision === previousRevision) return { revision, nextDraft: null }
+  if (promptItemDirtyFieldsById.size > 0) {
+    clearDirtyPromptItemFieldsMatchingProjection(draftItems ?? [], serverValue)
+  }
   if (snapshotJson(serverValue) === snapshotJson(draftItems ?? [])) {
     return { revision, nextDraft: null }
   }
+  if (promptItemDirtyFieldsById.size > 0) {
+    const mergedDraft = mergePromptTemplateProjectionRows(draftItems ?? [], serverValue)
+    if (mergedDraft) {
+      if (snapshotJson(mergedDraft) === snapshotJson(draftItems ?? [])) {
+        return { revision, nextDraft: null }
+      }
+      return { revision, nextDraft: mergedDraft }
+    }
+    promptItemDirtyFieldsById.clear()
+  }
   return { revision, nextDraft: cloneJsonValue(serverValue) }
+}
+
+type PromptItemRecord = Record<string, unknown> & { id?: string }
+
+function promptItemAsRecord(item: PromptItem): PromptItemRecord {
+  return item as unknown as PromptItemRecord
+}
+
+function promptItemIdValue(item: PromptItem): string | null {
+  const id = promptItemAsRecord(item).id
+  return typeof id === 'string' && id.length > 0 ? id : null
+}
+
+function changedPromptItemFields(previousItem: PromptItem, attemptedItem: PromptItem): string[] {
+  const previous = promptItemAsRecord(previousItem)
+  const attempted = promptItemAsRecord(attemptedItem)
+  const changed: string[] = []
+  const keys = new Set([...Object.keys(previous), ...Object.keys(attempted)])
+
+  for (const key of keys) {
+    if (key === 'id') continue
+    if (snapshotJson(previous[key]) !== snapshotJson(attempted[key])) {
+      changed.push(key)
+    }
+  }
+
+  return changed
+}
+
+function markDirtyPromptItemFields(itemId: string, previousItem: PromptItem, attemptedItem: PromptItem): void {
+  const changedFields = changedPromptItemFields(previousItem, attemptedItem)
+  if (changedFields.length === 0) return
+
+  let dirtyFields = promptItemDirtyFieldsById.get(itemId)
+  if (!dirtyFields) {
+    dirtyFields = new Set()
+    promptItemDirtyFieldsById.set(itemId, dirtyFields)
+  }
+
+  for (const field of changedFields) {
+    dirtyFields.add(field)
+  }
+}
+
+function clearPromptItemDirtyFields(itemId: string, fields: Iterable<string>): void {
+  const dirtyFields = promptItemDirtyFieldsById.get(itemId)
+  if (!dirtyFields) return
+
+  for (const field of fields) {
+    dirtyFields.delete(field)
+  }
+
+  if (dirtyFields.size === 0) {
+    promptItemDirtyFieldsById.delete(itemId)
+  }
+}
+
+function clearDirtyPromptItemFieldsMatchingProjection(draftItems: PromptItem[], serverItems: PromptItem[]): void {
+  const draftItemsById = promptItemsById(draftItems)
+  const serverItemsById = promptItemsById(serverItems)
+
+  for (const [itemId, dirtyFields] of Array.from(promptItemDirtyFieldsById.entries())) {
+    const draftItem = draftItemsById.get(itemId)
+    const serverItem = serverItemsById.get(itemId)
+
+    if (!draftItem || !serverItem) {
+      promptItemDirtyFieldsById.delete(itemId)
+      continue
+    }
+
+    const draftRecord = promptItemAsRecord(draftItem)
+    const serverRecord = promptItemAsRecord(serverItem)
+    for (const field of Array.from(dirtyFields)) {
+      if (snapshotJson(draftRecord[field]) === snapshotJson(serverRecord[field])) {
+        dirtyFields.delete(field)
+      }
+    }
+
+    if (dirtyFields.size === 0) {
+      promptItemDirtyFieldsById.delete(itemId)
+    }
+  }
+}
+
+function mergePromptTemplateProjectionRows(draftItems: PromptItem[], serverItems: PromptItem[]): PromptItem[] | null {
+  if (!samePromptItemIdSequence(draftItems, serverItems)) return null
+
+  const draftItemsById = promptItemsById(draftItems)
+  return serverItems.map((serverItem) => {
+    const itemId = promptItemIdValue(serverItem)
+    const dirtyFields = itemId ? promptItemDirtyFieldsById.get(itemId) : undefined
+    const draftItem = itemId ? draftItemsById.get(itemId) : undefined
+
+    if (!itemId || !dirtyFields || dirtyFields.size === 0 || !draftItem) {
+      return cloneJsonValue(serverItem)
+    }
+
+    return mergeProjectionIntoDirtyDraft({
+      draft: cloneJsonValue(promptItemAsRecord(draftItem)),
+      projection: promptItemAsRecord(serverItem),
+      dirtyFields,
+    }) as unknown as PromptItem
+  })
+}
+
+function samePromptItemIdSequence(leftItems: PromptItem[], rightItems: PromptItem[]): boolean {
+  if (leftItems.length !== rightItems.length) return false
+
+  for (let index = 0; index < leftItems.length; index += 1) {
+    const leftId = promptItemIdValue(leftItems[index])
+    const rightId = promptItemIdValue(rightItems[index])
+    if (!leftId || !rightId || leftId !== rightId) return false
+  }
+
+  return true
+}
+
+function promptItemsById(items: PromptItem[]): Map<string, PromptItem> {
+  const itemsById = new Map<string, PromptItem>()
+  for (const item of items) {
+    const itemId = promptItemIdValue(item)
+    if (itemId) itemsById.set(itemId, item)
+  }
+  return itemsById
 }
