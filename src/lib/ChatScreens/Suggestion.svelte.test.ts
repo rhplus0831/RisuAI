@@ -25,7 +25,7 @@ const suggestionMocks = vi.hoisted(() => {
     requestChatData: vi.fn(),
     translate: vi.fn(),
     alertConfirm: vi.fn(async () => false),
-    dispatchUpdateChat: vi.fn(),
+    dispatchUpdateChatRow: vi.fn(),
   }
 })
 
@@ -50,8 +50,7 @@ vi.mock('src/ts/parser/parser.svelte', () => ({
 }))
 
 vi.mock('src/ts/chatCommands', () => ({
-  currentChatStateSnapshot: () => ({}),
-  dispatchUpdateChat: suggestionMocks.dispatchUpdateChat,
+  dispatchUpdateChatRow: suggestionMocks.dispatchUpdateChatRow,
 }))
 
 vi.mock('src/ts/process/modules', () => ({
@@ -118,6 +117,38 @@ function seedSuggestionDatabase(suggestMessages: string[] = ['Take the lead']) {
             name: 'Chat A',
             message: [{ role: 'char', data: 'Hello', chatId: 'message-a' }],
             suggestMessages,
+          },
+        ],
+      },
+    ],
+    subModel: '',
+    translator: '',
+  } as unknown as Database
+}
+
+function seedSuggestionDatabaseWithTwoChats() {
+  selectedCharID.set(0)
+  DBState.db = {
+    autoSuggestClean: false,
+    autoSuggestPrompt: '',
+    autoTranslate: false,
+    characters: [
+      {
+        chaId: 'character-a',
+        name: 'Character A',
+        chatPage: 0,
+        chats: [
+          {
+            id: 'chat-a',
+            name: 'Chat A',
+            message: [{ role: 'char', data: 'Hello from A', chatId: 'message-a' }],
+            suggestMessages: ['Take the lead'],
+          },
+          {
+            id: 'chat-b',
+            name: 'Chat B',
+            message: [{ role: 'char', data: 'Hello from B', chatId: 'message-b' }],
+            suggestMessages: [],
           },
         ],
       },
@@ -261,7 +292,98 @@ describe('Suggestion component persistence', () => {
 
       expect(messageInput).toHaveBeenCalledWith('Take the lead')
       expect(send).toHaveBeenCalledTimes(1)
-      expect(suggestionMocks.dispatchUpdateChat).toHaveBeenCalledWith('chat-a', { suggestMessages: [] }, {})
+      expect(suggestionMocks.dispatchUpdateChatRow).toHaveBeenCalledWith(
+        'chat-a',
+        { suggestMessages: [] },
+        {
+          selectedCharID: 0,
+          characterId: 'character-a',
+          chatId: 'chat-a',
+          metadata: { suggestMessages: ['Take the lead'] },
+        },
+      )
+    } finally {
+      if (component) unmount(component)
+      target.remove()
+    }
+  })
+
+  it('does not reroll suggestions for a chat that became stale during confirmation', async () => {
+    seedSuggestionDatabaseWithTwoChats()
+    const confirmation = deferred<boolean>()
+    suggestionMocks.alertConfirm.mockReturnValueOnce(confirmation.promise)
+    suggestionMocks.requestChatData.mockResolvedValue({ type: 'success', result: '- Fresh suggestion' })
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    let component: MountedComponent | undefined
+    const send = vi.fn()
+    const messageInput = vi.fn()
+
+    try {
+      component = mount(Suggestion, {
+        target,
+        props: {
+          send,
+          messageInput,
+        },
+      })
+
+      await waitFor(() => {
+        expect(target.textContent).toContain('Take the lead')
+      })
+
+      const rerollButton = target.querySelector<HTMLButtonElement>('button')
+      expect(rerollButton).toBeTruthy()
+      rerollButton!.click()
+
+      DBState.db.characters[0].chatPage = 1
+      await settle()
+      confirmation.resolve(true)
+      await settle()
+
+      expect(suggestionMocks.dispatchUpdateChatRow).not.toHaveBeenCalled()
+      expect(suggestionMocks.requestChatData).not.toHaveBeenCalled()
+      expect(messageInput).not.toHaveBeenCalled()
+      expect(send).not.toHaveBeenCalled()
+    } finally {
+      if (component) unmount(component)
+      target.remove()
+    }
+  })
+
+  it('ignores a stale rendered suggestion send after the active chat changes', async () => {
+    seedSuggestionDatabaseWithTwoChats()
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    let component: MountedComponent | undefined
+    const send = vi.fn()
+    const messageInput = vi.fn()
+
+    try {
+      component = mount(Suggestion, {
+        target,
+        props: {
+          send,
+          messageInput,
+        },
+      })
+
+      await waitFor(() => {
+        expect(target.textContent).toContain('Take the lead')
+      })
+
+      const suggestionButton = Array.from(target.querySelectorAll<HTMLButtonElement>('button')).find((button) =>
+        button.textContent?.includes('Take the lead'),
+      )
+      expect(suggestionButton).toBeTruthy()
+
+      DBState.db.characters[0].chatPage = 1
+      suggestionButton!.click()
+      await settle()
+
+      expect(messageInput).not.toHaveBeenCalled()
+      expect(send).not.toHaveBeenCalled()
+      expect(suggestionMocks.dispatchUpdateChatRow).not.toHaveBeenCalled()
     } finally {
       if (component) unmount(component)
       target.remove()

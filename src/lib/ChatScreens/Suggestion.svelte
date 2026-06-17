@@ -77,15 +77,22 @@
   import { onDestroy } from 'svelte'
   import { ParseMarkdown } from 'src/ts/parser/parser.svelte'
   import { defaultAutoSuggestPrompt } from '../../ts/storage/defaultPrompts.js'
-  import { currentChatStateSnapshot, dispatchUpdateChat } from 'src/ts/chatCommands'
+  import { dispatchUpdateChatRow, type ChatRowMetadataSnapshot } from 'src/ts/chatCommands'
 
   interface Props {
     send: () => any
     messageInput: (string: string) => any
   }
 
+  interface SuggestionTargetSnapshot {
+    selectedCharID: number
+    characterId: string | undefined
+    chatId: string | undefined
+    suggestMessages: string[]
+  }
+
   let { send, messageInput }: Props = $props()
-  let suggestMessages: string[] = $state(
+  let suggestMessages: string[] | undefined = $state(
     DBState.db.characters[$selectedCharID]?.chats[DBState.db.characters[$selectedCharID].chatPage]?.suggestMessages,
   )
   let suggestMessagesTranslated: string[] = $state()
@@ -96,6 +103,67 @@
   let progressChatId: string | undefined
   let suggestionRequestId = 0
   let suggestionTranslationId = 0
+  let suggestionTarget: SuggestionTargetSnapshot | undefined = $state()
+
+  function copySuggestionMessages(messages: readonly string[] | undefined): string[] {
+    return [...(messages ?? [])]
+  }
+
+  function activeSuggestionTarget(messages: readonly string[] | undefined): SuggestionTargetSnapshot | undefined {
+    const selectedChar = $selectedCharID
+    const currentChar = DBState.db.characters?.[selectedChar]
+    const currentChat = currentChar?.chats?.[currentChar.chatPage]
+    if (selectedChar < 0 || !currentChar || !currentChat) return undefined
+    return {
+      selectedCharID: selectedChar,
+      characterId: currentChar.chaId,
+      chatId: currentChat.id,
+      suggestMessages: copySuggestionMessages(messages),
+    }
+  }
+
+  function cloneSuggestionTarget(target: SuggestionTargetSnapshot): SuggestionTargetSnapshot {
+    return {
+      ...target,
+      suggestMessages: copySuggestionMessages(target.suggestMessages),
+    }
+  }
+
+  function setVisibleSuggestions(
+    messages: readonly string[] | undefined,
+    target: SuggestionTargetSnapshot | undefined = activeSuggestionTarget(messages),
+  ) {
+    suggestMessages = messages ? copySuggestionMessages(messages) : messages
+    suggestionTarget = target
+      ? {
+          selectedCharID: target.selectedCharID,
+          characterId: target.characterId,
+          chatId: target.chatId,
+          suggestMessages: copySuggestionMessages(messages),
+        }
+      : undefined
+  }
+
+  function captureSuggestionTarget(): SuggestionTargetSnapshot | undefined {
+    return suggestionTarget ? cloneSuggestionTarget(suggestionTarget) : undefined
+  }
+
+  function suggestionMessagesMatch(currentMessages: readonly string[] | undefined, snapshot: readonly string[]) {
+    const current = currentMessages ?? []
+    return current.length === snapshot.length && snapshot.every((message, index) => current[index] === message)
+  }
+
+  function isFreshSuggestionTarget(target: SuggestionTargetSnapshot | undefined) {
+    if (!target) return false
+    if ($selectedCharID !== target.selectedCharID) return false
+    const currentChar = DBState.db.characters?.[target.selectedCharID]
+    const currentChat = currentChar?.chats?.[currentChar.chatPage]
+    return (
+      currentChar?.chaId === target.characterId &&
+      currentChat?.id === target.chatId &&
+      suggestionMessagesMatch(suggestMessages, target.suggestMessages)
+    )
+  }
 
   const updateSuggestions = () => {
     if ($selectedCharID > -1 && !$doingChat) {
@@ -105,27 +173,59 @@
         progress = false
         abortController?.abort()
       }
-      suggestMessages = currentChat?.suggestMessages
+      setVisibleSuggestions(currentChat?.suggestMessages)
     }
   }
 
-  function persistSuggestions(chatId: string | undefined, suggestions: string[]) {
-    if (!chatId) return
-    dispatchUpdateChat(chatId, { suggestMessages: suggestions }, currentChatStateSnapshot())
+  function persistSuggestions(target: SuggestionTargetSnapshot, suggestions: string[]) {
+    if (!target.chatId) return
+    const rollback: ChatRowMetadataSnapshot = {
+      selectedCharID: target.selectedCharID,
+      characterId: target.characterId,
+      chatId: target.chatId,
+      metadata: {
+        suggestMessages: copySuggestionMessages(target.suggestMessages),
+      },
+    }
+    dispatchUpdateChatRow(target.chatId, { suggestMessages: copySuggestionMessages(suggestions) }, rollback)
   }
 
-  function clearCurrentChatSuggestions() {
-    suggestMessages = []
-    const currentChar = DBState.db.characters[$selectedCharID]
-    const currentChat = currentChar?.chats[currentChar.chatPage]
-    persistSuggestions(currentChat?.id, [])
+  function clearFreshSuggestions(target: SuggestionTargetSnapshot | undefined) {
+    if (!target || !isFreshSuggestionTarget(target)) return false
+    setVisibleSuggestions([], target)
+    persistSuggestions(target, [])
+    return true
+  }
+
+  function sendFreshSuggestion(suggest: string, index: number) {
+    const target = captureSuggestionTarget()
+    if (target?.suggestMessages[index] !== suggest) return
+    if (!clearFreshSuggestions(target)) return
+    messageInput(suggest)
+    send()
+  }
+
+  function copyFreshSuggestion(suggest: string, index: number) {
+    const target = captureSuggestionTarget()
+    if (target?.suggestMessages[index] !== suggest || !isFreshSuggestionTarget(target)) return
+    messageInput(suggest)
+  }
+
+  function rerollFreshSuggestions() {
+    const target = captureSuggestionTarget()
+    alertConfirm(language.askReRollAutoSuggestions).then((result) => {
+      if (result && clearFreshSuggestions(target)) {
+        doingChat.set(true)
+        doingChat.set(false)
+      }
+    })
   }
 
   const unsub = doingChat.subscribe(async (v) => {
     if (v) {
       progress = false
       abortController?.abort()
-      suggestMessages = []
+      setVisibleSuggestions([])
     }
     if (!v && $selectedCharID > -1 && (!suggestMessages || suggestMessages.length === 0) && !progress) {
       const requestSelectedCharId = $selectedCharID
@@ -135,6 +235,12 @@
       const requestChat = currentChar?.chats[requestChatPage]
       const requestChatId = requestChat?.id
       if (!currentChar || !requestChat) return
+      const requestSuggestionTarget: SuggestionTargetSnapshot = {
+        selectedCharID: requestSelectedCharId,
+        characterId: requestCharacterId,
+        chatId: requestChatId,
+        suggestMessages: copySuggestionMessages(suggestMessages),
+      }
       let messages: Message[] = []
 
       messages = [...messages, ...requestChat.message]
@@ -193,14 +299,18 @@
           requestId !== suggestionRequestId ||
           requestSelectedCharId !== $selectedCharID ||
           requestCharacterId !== liveChar?.chaId ||
-          requestChatId !== liveChat?.id
+          requestChatId !== liveChat?.id ||
+          !isFreshSuggestionTarget(requestSuggestionTarget)
         if (rq2.type !== 'fail' && rq2.type !== 'streaming' && rq2.type !== 'multiline' && progress && !staleResponse) {
           var suggestMessagesNew = rq2.result
             .split('\n')
             .filter((msg) => msg.startsWith('-'))
             .map((msg) => msg.replace('-', '').trim())
-          suggestMessages = suggestMessagesNew
-          persistSuggestions(requestChatId, suggestMessagesNew)
+          setVisibleSuggestions(suggestMessagesNew, {
+            ...requestSuggestionTarget,
+            suggestMessages: suggestMessagesNew,
+          })
+          persistSuggestions(requestSuggestionTarget, suggestMessagesNew)
         }
         if (requestId === suggestionRequestId) {
           progress = false
@@ -269,15 +379,7 @@
     <div class="flex mr-2 mb-2">
       <button
         class="bg-textcolor2 hover:bg-darkbutton font-bold py-2 px-4 rounded-sm text-textcolor"
-        onclick={() => {
-          alertConfirm(language.askReRollAutoSuggestions).then((result) => {
-            if (result) {
-              clearCurrentChatSuggestions()
-              doingChat.set(true)
-              doingChat.set(false)
-            }
-          })
-        }}>
+        onclick={rerollFreshSuggestions}>
         <RefreshCcwIcon />
       </button>
     </div>
@@ -286,9 +388,7 @@
         <button
           class="bg-textcolor2 hover:bg-darkbutton text-textcolor font-bold py-2 px-4 rounded-sm"
           onclick={() => {
-            clearCurrentChatSuggestions()
-            messageInput(suggest)
-            send()
+            sendFreshSuggestion(suggest, i)
           }}>
           {#await ParseMarkdown(DBState.db.translator !== '' && toggleTranslate && suggestMessagesTranslated && suggestMessagesTranslated.length > 0 ? (suggestMessagesTranslated[i] ?? suggest) : suggest) then md}
             {@html md}
@@ -297,7 +397,7 @@
         <button
           class="bg-textcolor2 hover:bg-darkbutton text-textcolor font-bold py-2 px-4 rounded-sm ml-1"
           onclick={() => {
-            messageInput(suggest)
+            copyFreshSuggestion(suggest, i)
           }}>
           <CopyIcon />
         </button>

@@ -21,7 +21,7 @@ output against a stale target.
 - Guard dynamic rendered chat buttons and Lua trigger results before applying
   returned chat/message/script state.
 - Guard suggestion reroll/send persistence while preserving existing request
-  checks.
+  checks. Suggestion persistence freshness has landed here.
 - Add generation finalization freshness checks for durable jobs and target-row
   persistence.
 
@@ -47,6 +47,13 @@ operation opens. `Chat.svelte` resolves save details through
 `partialEditFreshness.ts`, re-reading the live target before local mutation or
 message patch dispatch. Legacy no-id fallback is limited to index/source-data
 matching.
+
+Fourth landed slice: `Suggestion.svelte` captures selected character, chat, and
+visible suggestion-list snapshots for send/copy/reroll actions, re-checks active
+target/list freshness before mutating or calling `send`, and persists
+`suggestMessages` through `dispatchUpdateChatRow` so rollback is limited to
+chat-row metadata. Freshness is target/list scoped rather than a separate
+navigation epoch.
 
 ## Anchors
 
