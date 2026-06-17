@@ -50,6 +50,11 @@ Seventh landed slice: NanoGPT dashboard fetch callbacks now use a fixed latest
 operation target plus captured API key checks before subscription-state fetch
 results can persist `nanogptSubscriptionState`.
 
+Eighth landed slice: character emotion image upload callbacks now use a latest
+operation token issued only after selected files exist, target character id and
+row checks, and an emotion image list snapshot before uploaded emotions can
+append to a character or dispatch updates.
+
 ## Anchors
 
 - `src/lib/ChatScreens/DefaultChatScreen.svelte`

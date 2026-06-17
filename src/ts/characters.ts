@@ -53,6 +53,15 @@ import { ensureAllChatsHydrated, hydrateChatMessages } from './server/chatMessag
 import { hydrateCharacterShell, hydrateSelectedCharacterShell } from './server/characterShellHydration.svelte'
 import { createChatCommand, createChatFolderCommand } from './server/commands'
 import { createLatestOperationGuard, type LatestOperationToken } from './server/staleStateGuards'
+import {
+  appendFreshCharacterEmotionImages,
+  beginCharacterEmotionUpload,
+  captureCharacterEmotionUploadTarget,
+  clearCharacterEmotionUpload,
+  isFreshCharacterEmotionUpload,
+  type CharacterEmotionImageEntry,
+  type CharacterEmotionUploadOperation,
+} from './server/characterEmotionUpload'
 
 interface CharacterAvatarSnapshot {
   image: string | undefined
@@ -291,27 +300,84 @@ export function changeCharImage(charIndex: number, changeIndex: number) {
 
 export const addingEmotion = writable(false)
 
+function currentCharacterEmotionUploadFreshness(charIndex: number) {
+  const selectedCharacterId = DBState.db.characters?.[get(selectedCharID)]?.chaId
+  const rowCharacter = DBState.db.characters?.[charIndex]
+  return {
+    currentCharacterId: selectedCharacterId,
+    rowCharacterId: rowCharacter?.chaId,
+    emotionImages: rowCharacter?.emotionImages,
+  }
+}
+
+function isCurrentCharacterEmotionUpload(operation: CharacterEmotionUploadOperation, charIndex: number): boolean {
+  return isFreshCharacterEmotionUpload(operation, currentCharacterEmotionUploadFreshness(charIndex))
+}
+
 export async function addCharEmotion(charId: number) {
   addingEmotion.set(true)
-  const selected = await selectMultipleFile(['png', 'webp', 'gif'])
-  if (!selected) {
+  const previous = currentCharacterRowSnapshot(charId)
+  const previousCharacter = previous.character
+  const target = captureCharacterEmotionUploadTarget({
+    characterId: previous.characterId,
+    characterIndex: charId,
+    emotionImages: previousCharacter?.emotionImages,
+  })
+  if (!target) {
     addingEmotion.set(false)
     return
   }
-  const previous = currentCharacterRowSnapshot(charId)
-  const previousCharacter = previous.character
-  for (const f of selected) {
-    const img = f.data
-    const imgp = await saveImage(img)
-    const name = f.name.replace('.png', '').replace('.webp', '')
-    withTrustedServerProjectionWrite(() => {
-      let dbChar = DBState.db.characters[charId]
-      dbChar.emotionImages.push([name, imgp])
-      DBState.db.characters[charId] = dbChar
-    })
+
+  try {
+    const selected = await selectMultipleFile(['png', 'webp', 'gif'])
+    if (!selected || selected.length === 0) {
+      return
+    }
+
+    const operation = beginCharacterEmotionUpload(target)
+    try {
+      const uploadedEntries: CharacterEmotionImageEntry[] = []
+
+      for (const f of selected) {
+        if (!isCurrentCharacterEmotionUpload(operation, charId)) {
+          return
+        }
+
+        const imgp = await saveImage(f.data)
+        if (!isCurrentCharacterEmotionUpload(operation, charId)) {
+          return
+        }
+
+        const name = f.name.replace('.png', '').replace('.webp', '')
+        uploadedEntries.push([name, imgp])
+      }
+
+      let applied = false
+      withTrustedServerProjectionWrite(() => {
+        const dbChar = DBState.db.characters[charId]
+        const emotionImages = appendFreshCharacterEmotionImages({
+          operation,
+          freshness: currentCharacterEmotionUploadFreshness(charId),
+          entries: uploadedEntries,
+        })
+        if (!dbChar || !emotionImages) {
+          return
+        }
+
+        dbChar.emotionImages = emotionImages
+        DBState.db.characters[charId] = dbChar
+        applied = true
+      })
+
+      if (applied) {
+        dispatchCompatibleCharacterUpdateScoped(previousCharacter, DBState.db.characters[charId], previous)
+      }
+    } finally {
+      clearCharacterEmotionUpload(operation)
+    }
+  } finally {
+    addingEmotion.set(false)
   }
-  addingEmotion.set(false)
-  dispatchCompatibleCharacterUpdateScoped(previousCharacter, DBState.db.characters[charId], previous)
 }
 
 export function rmCharEmotion(charId: number, emotionId: number) {

@@ -29,9 +29,11 @@ the input persistence inventory under
   operation, target preset id, selected-row identity, and image snapshot before
   updating the preset icon. NanoGPT dashboard fetches now guard subscription
   state persistence by a fixed latest-operation token and captured API key before
-  writing `nanogptSubscriptionState`. Phase 2 landed character profile draft
-  dirty top-level field protection; prompt-template item row dirty projection
-  merging; whole-key dirty projection protection for
+  writing `nanogptSubscriptionState`. Character emotion image uploads now guard
+  by latest selected file operation, target character id, row identity, and
+  emotion list snapshot before appending and dispatching. Phase 2 landed
+  character profile draft dirty top-level field protection; prompt-template item
+  row dirty projection merging; whole-key dirty projection protection for
   `createServerBackedSettingDraft`; selected persona profile dirty projection
   protection; translator preset `name`/`prompt`/`maxResponse` dirty projection
   protection; lorebook entry draft dirty projection merging; and
@@ -93,7 +95,11 @@ the input persistence inventory under
   `src/ts/server/nanoGPTDashboardFetch.ts` now centralizes NanoGPT dashboard
   fetch operation tracking with a fixed guard target, captured API key freshness,
   and fresh subscription-state resolution before persistence.
-- Verification state: Phase 3 NanoGPT dashboard fetch callback validation is
+  `src/ts/server/characterEmotionUpload.ts` now centralizes character emotion
+  upload target capture, latest-operation tracking, selected row freshness,
+  emotion-list snapshot checks, and live-list append behavior for
+  `addCharEmotion`.
+- Verification state: Phase 3 character emotion upload callback validation is
   recorded in `latest-verification.md`.
 - Highest issue density:
   - Character editor: 52 issue rows, mostly dirty projection and unguarded
@@ -138,8 +144,9 @@ the input persistence inventory under
   including menu file and pasted image callbacks, now guard stale completions;
   character avatar upload callbacks now guard stale completions; character
   additional asset upload callbacks now guard stale completions; character
-  emotion/reference/model assets remain pending; module asset upload callbacks
-  now guard stale completions; prompt preset icon uploads now guard stale
+  emotion image upload callbacks now guard stale completions; character
+  reference/model assets remain pending; module asset upload callbacks now guard
+  stale completions; prompt preset icon uploads now guard stale
   completions; settings media, plugin import/update, import helpers, and
   remaining dashboard/import persistence surfaces remain pending. NanoGPT
   dashboard subscription-state fetch persistence now guards stale completions.
@@ -251,6 +258,11 @@ the input persistence inventory under
     fixed latest-operation target instead of raw API keys, captures the key for
     equality checks, rejects stale fetch completions after key changes or newer
     dashboard requests, and preserves fresh empty subscription-state results.
+  - Phase 3 character emotion upload slice: `characterEmotionUpload.ts` captures
+    target character id, row index, and emotion image list snapshot, issues
+    latest-operation tokens only after selected files exist, and lets
+    `addCharEmotion` append uploaded entries and dispatch only when the selected
+    row and live emotion list are still fresh.
   - Phase 4: `restoreChatScopedState`, chat/message/generation freshness, and
     message update/delete/truncate/replace freshness.
   - Phase 5: create/delete/reorder/import/select and broad collection rollback

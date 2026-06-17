@@ -50,6 +50,7 @@ callback freshness, character avatar upload callback freshness, and character
 additional asset upload callback freshness, and module asset upload callback
 freshness, and prompt preset icon upload callback freshness have landed.
 NanoGPT dashboard fetch persistence freshness has also landed.
+Character emotion image upload callback freshness has landed.
 
 Next manager loop:
 

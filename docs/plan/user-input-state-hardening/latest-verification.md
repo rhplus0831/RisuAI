@@ -7,31 +7,30 @@ hardening workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 3 NanoGPT dashboard fetch persistence
-  freshness. `NanoGPTDashboard.svelte` now starts a guarded dashboard fetch
-  operation with a fixed latest-operation target, compares completions against
-  the captured API key and current prop value, clears active operations on
-  destroy, and persists `nanogptSubscriptionState` only when the result is still
+- Runtime/code change under test: Phase 3 character emotion image upload
+  freshness. `addCharEmotion` now captures the target character id, row index,
+  and emotion image list snapshot before the picker, issues a latest-operation
+  token only after selected files exist, uploads into local entries, and appends
+  plus dispatches only when the selected row and live emotion list are still
   fresh.
 - Commands:
 
 ```bash
-pnpm exec vitest run src/ts/server/nanoGPTDashboardFetch.test.ts src/ts/server/staleStateGuards.test.ts
-pnpm exec vitest run src/lib/UI/NanoGPTDashboard.svelte.test.ts
+pnpm exec vitest run src/ts/server/characterEmotionUpload.test.ts src/ts/characters.imageEmotion.test.ts src/ts/server/staleStateGuards.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 git diff --check
 ```
 
-- Result: passed on 2026-06-17. The NanoGPT-dashboard/stale-guard focused Vitest
-  set passed 2 files and 17 tests, and the NanoGPTDashboard source-contract test
-  passed 2 tests. Both TypeScript checks and `git diff --check` passed.
-- Residual gaps: `NanoGPTDashboard.svelte.test.ts` is a source-contract test
-  rather than a mounted async prop-change/unmount flow. Remaining Phase 3
-  surfaces include character emotion, reference audio, and model callbacks;
-  settings media assets; custom background/theme imports beyond the already
-  guarded background upload path; plugin import/update; persona/preset/chat/
-  character import helpers; and other dashboard/import persistence surfaces.
+- Result: passed on 2026-06-17. The emotion-upload/avatar/stale-guard focused
+  Vitest set passed 3 files and 27 tests. Both TypeScript checks and
+  `git diff --check` passed.
+- Residual gaps: coverage is focused unit/mocked integration coverage, not a
+  mounted character-config browser flow. Stale uploaded asset bytes may remain
+  orphaned if an operation is dropped. This slice does not cover emotion-name
+  dirty projection, remove-emotion projection races, GPT-SoVITS reference audio
+  upload, VITS model registration, settings media uploads, plugin import/update,
+  import helpers, or remaining dashboard/import persistence surfaces.
 
 ## Required Closeout Proof
 
