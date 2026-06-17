@@ -81,7 +81,7 @@ function seedPluginState(): void {
   } as any
 }
 
-function stubCommandFetch(options: { failCommands?: boolean } = {}): CapturedFetch[] {
+function stubCommandFetch(options: { failCommands?: boolean; failCommandUrls?: string[] } = {}): CapturedFetch[] {
   const calls: CapturedFetch[] = []
   vi.stubGlobal(
     'fetch',
@@ -96,7 +96,9 @@ function stubCommandFetch(options: { failCommands?: boolean } = {}): CapturedFet
       })
 
       if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
-      if (options.failCommands) return jsonResponse({ error: 'forced failure' }, 500)
+      if (options.failCommands || options.failCommandUrls?.includes(url)) {
+        return jsonResponse({ error: 'forced failure' }, 500)
+      }
       return jsonResponse({
         revision: 11,
         event: { type: 'plugin.updated', revision: 11, resource: 'plugin', id: 'plugin-a' },
@@ -900,6 +902,93 @@ describe('plugin projection command helpers', () => {
       retained: { value: 1 },
       newerStorage: { value: 'kept' },
     })
+  })
+
+  it('failed later settings group preserves an accepted earlier settings group', async () => {
+    const calls = stubCommandFetch({ failCommandUrls: ['/api/v1/commands/settings/advanced'] })
+    setServerProjectionWriteGuardEnabled(true)
+    const oldCustomModels = [{ id: 'old-model', name: 'Old Model' }]
+    const attemptedCustomModels = [{ id: 'attempted-model', name: 'Attempted Model' }]
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.customModels = oldCustomModels
+      DBState.db.moduleIntergration = 'old-modules'
+    })
+    const patch = {
+      customModels: attemptedCustomModels,
+      moduleIntergration: 'attempted-modules',
+    }
+    const rollbackSnapshot = currentPluginSettingsPatchRollbackSnapshot(patch)
+
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.customModels = cloneJsonValue(patch.customModels)
+      DBState.db.moduleIntergration = patch.moduleIntergration
+    })
+    dispatchPluginSettingsPatch(patch, rollbackSnapshot)
+
+    await waitForCallCount(calls, 3)
+    await flushCommandEffects()
+
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/settings/providers',
+      method: 'PATCH',
+      body: {
+        baseRevision: 10,
+        patch: {
+          customModels: attemptedCustomModels,
+        },
+      },
+    })
+    expect(calls[2]).toMatchObject({
+      url: '/api/v1/commands/settings/advanced',
+      method: 'PATCH',
+      body: {
+        baseRevision: 11,
+        patch: {
+          moduleIntergration: 'attempted-modules',
+        },
+      },
+    })
+    expect(DBState.db.customModels).toEqual(attemptedCustomModels)
+    expect(DBState.db.moduleIntergration).toBe('old-modules')
+  })
+
+  it('failed first settings group rolls back later unaccepted attempted settings keys', async () => {
+    const calls = stubCommandFetch({ failCommandUrls: ['/api/v1/commands/settings/providers'] })
+    setServerProjectionWriteGuardEnabled(true)
+    const oldCustomModels = [{ id: 'old-model', name: 'Old Model' }]
+    const attemptedCustomModels = [{ id: 'attempted-model', name: 'Attempted Model' }]
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.customModels = oldCustomModels
+      DBState.db.moduleIntergration = 'old-modules'
+    })
+    const patch = {
+      customModels: attemptedCustomModels,
+      moduleIntergration: 'attempted-modules',
+    }
+    const rollbackSnapshot = currentPluginSettingsPatchRollbackSnapshot(patch)
+
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.customModels = cloneJsonValue(patch.customModels)
+      DBState.db.moduleIntergration = patch.moduleIntergration
+    })
+    dispatchPluginSettingsPatch(patch, rollbackSnapshot)
+
+    await waitForCallCount(calls, 2)
+    await flushCommandEffects()
+
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/settings/providers',
+      method: 'PATCH',
+      body: {
+        baseRevision: 10,
+        patch: {
+          customModels: attemptedCustomModels,
+        },
+      },
+    })
+    expect(calls.some((call) => call.url === '/api/v1/commands/settings/advanced')).toBe(false)
+    expect(DBState.db.customModels).toEqual(oldCustomModels)
+    expect(DBState.db.moduleIntergration).toBe('old-modules')
   })
 
   it('failed settings patch skips rollback when the same settings key changed again', async () => {

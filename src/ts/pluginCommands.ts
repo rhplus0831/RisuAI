@@ -15,6 +15,7 @@ import {
   updatePluginCommand,
   type PluginSnapshot,
   type ServerCommandResult,
+  type SettingsGroup,
 } from './server/commands'
 import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
 import { applyAttemptedFieldRollback } from './server/staleStateGuards'
@@ -31,6 +32,11 @@ export type PluginStorageSnapshot = Record<string, unknown>
 export interface PluginSettingsPatchRollbackSnapshot {
   previous: Record<string, unknown>
   attempted: Record<string, unknown>
+}
+
+interface PluginSettingsPatchRollbackStep {
+  patch: Record<string, unknown>
+  rollbackSnapshot: PluginSettingsPatchRollbackSnapshot
 }
 
 const PLUGIN_PATCH_EXCLUDED_KEYS = new Set(['name'])
@@ -1077,28 +1083,49 @@ export function dispatchPluginSettingsPatch(
   rollbackSnapshot: PluginSettingsPatchRollbackSnapshot,
 ): void {
   if (!canUseServerCommands()) return
-  const settingsPatch: Record<string, unknown> = {}
-  const rollbackPrevious: Record<string, unknown> = {}
-  const rollbackAttempted: Record<string, unknown> = {}
+  const stepsByGroup = new Map<SettingsGroup, PluginSettingsPatchRollbackStep>()
 
   for (const [key, value] of Object.entries(patch)) {
-    if (settingsGroupForKey(key) && value !== undefined) {
-      settingsPatch[key] = cloneJsonValue(value)
+    const group = settingsGroupForKey(key)
+    if (group && value !== undefined) {
+      let step = stepsByGroup.get(group)
+      if (!step) {
+        step = {
+          patch: {},
+          rollbackSnapshot: emptyPluginSettingsPatchRollbackSnapshot(),
+        }
+        stepsByGroup.set(group, step)
+      }
+      step.patch[key] = cloneJsonValue(value)
       if (hasOwnRecordKey(rollbackSnapshot.previous, key) && hasOwnRecordKey(rollbackSnapshot.attempted, key)) {
-        rollbackPrevious[key] = cloneJsonValue(rollbackSnapshot.previous[key])
-        rollbackAttempted[key] = cloneJsonValue(rollbackSnapshot.attempted[key])
+        step.rollbackSnapshot.previous[key] = cloneJsonValue(rollbackSnapshot.previous[key])
+        step.rollbackSnapshot.attempted[key] = cloneJsonValue(rollbackSnapshot.attempted[key])
       }
     }
   }
-  if (Object.keys(settingsPatch).length === 0) return
-  void patchServerBackedSettings({
-    patch: settingsPatch,
-    rollback: () =>
-      rollbackPluginSettingsPatch({
-        previous: rollbackPrevious,
-        attempted: rollbackAttempted,
-      }),
-  })
+  const steps = Array.from(stepsByGroup.values())
+  if (steps.length === 0) return
+  void dispatchPluginSettingsPatchSteps(steps)
+}
+
+async function dispatchPluginSettingsPatchSteps(steps: PluginSettingsPatchRollbackStep[]): Promise<void> {
+  let acceptedStepCount = 0
+
+  for (const step of steps) {
+    const result = await patchServerBackedSettings({
+      patch: step.patch,
+      rollback: () => rollbackPluginSettingsPatchSteps(steps, acceptedStepCount),
+    })
+
+    if (result.status !== 'ok') return
+    acceptedStepCount += 1
+  }
+}
+
+function rollbackPluginSettingsPatchSteps(steps: PluginSettingsPatchRollbackStep[], startIndex: number): void {
+  for (let index = startIndex; index < steps.length; index += 1) {
+    rollbackPluginSettingsPatch(steps[index].rollbackSnapshot)
+  }
 }
 
 function emptyPluginSettingsPatchRollbackSnapshot(): PluginSettingsPatchRollbackSnapshot {

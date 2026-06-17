@@ -138,7 +138,7 @@ function createPicker() {
   }
 }
 
-function stubCommandFetch(options: { failCommands?: boolean } = {}): CapturedFetch[] {
+function stubCommandFetch(options: { failCommands?: boolean; failCommandUrls?: string[] } = {}): CapturedFetch[] {
   const calls: CapturedFetch[] = []
   vi.stubGlobal(
     'fetch',
@@ -149,7 +149,7 @@ function stubCommandFetch(options: { failCommands?: boolean } = {}): CapturedFet
       if (url === '/api/v1/bootstrap') {
         return jsonResponse({ revision: 10 })
       }
-      if (options.failCommands) {
+      if (options.failCommands || options.failCommandUrls?.includes(url)) {
         return jsonResponse({ error: 'forced command failure' }, 500)
       }
       const event: CommandEvent = {
@@ -945,6 +945,109 @@ describe('plugin database command bridge', () => {
       retained: { value: 1 },
       newerStorage: { value: 'kept' },
     })
+  })
+
+  it('keeps accepted plugin DB bridge settings groups when a later group fails', async () => {
+    const advancedCommand = createDeferred<Response>()
+    const captured: CapturedFetch[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        if (url === '/api/v1/bootstrap') {
+          return jsonResponse({ revision: 50 })
+        }
+        const body = typeof init.body === 'string' ? JSON.parse(init.body) : null
+        captured.push({ url, method: init.method ?? 'GET', body })
+        if (url === '/api/v1/commands/settings/providers') {
+          const event: CommandEvent = {
+            type: 'settings.updated',
+            revision: 51,
+            resource: 'settings',
+          } as CommandEvent
+          return jsonResponse({ revision: 51, event })
+        }
+        if (url === '/api/v1/commands/settings/advanced') {
+          return advancedCommand.promise
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+    setServerProjectionWriteGuardEnabled(true)
+    const oldCustomModels = [{ id: 'old-model', name: 'Old Model' }]
+    const attemptedCustomModels = [{ id: 'attempted-model', name: 'Attempted Model' }]
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.customModels = oldCustomModels
+      DBState.db.moduleIntergration = 'old-modules'
+      DBState.db.plugins = [seedPlugin('plugin-a')]
+      DBState.db.currentPluginProvider = 'plugin-a'
+      DBState.db.pluginCustomStorage = {
+        retained: { value: 1 },
+      }
+      DBState.db.modules = [seedModule('mod-a')]
+    })
+    const apis = getV2PluginAPIs()
+
+    apis.setDatabaseLite({
+      customModels: attemptedCustomModels,
+      moduleIntergration: 'attempted-modules',
+    })
+
+    await vi.waitFor(() => {
+      expect(captured).toHaveLength(2)
+    })
+    expect(DBState.db.customModels).toEqual(attemptedCustomModels)
+    expect(DBState.db.moduleIntergration).toBe('attempted-modules')
+
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.plugins.push(
+        seedPlugin('plugin-newer', {
+          realArg: { mode: 'newer-plugin' },
+        }),
+      )
+      DBState.db.currentPluginProvider = 'plugin-newer'
+      DBState.db.pluginCustomStorage.newerStorage = { value: 'kept' }
+      DBState.db.modules.push(seedModule('mod-newer', { description: 'newer module' }))
+    })
+    advancedCommand.resolve(jsonResponse({ error: 'forced advanced failure' }, 500))
+
+    await vi.waitFor(() => {
+      expect(DBState.db.moduleIntergration).toBe('old-modules')
+    })
+
+    expect(captured[0]).toMatchObject({
+      url: '/api/v1/commands/settings/providers',
+      method: 'PATCH',
+      body: {
+        baseRevision: 50,
+        patch: {
+          customModels: attemptedCustomModels,
+        },
+      },
+    })
+    expect(captured[1]).toMatchObject({
+      url: '/api/v1/commands/settings/advanced',
+      method: 'PATCH',
+      body: {
+        baseRevision: 51,
+        patch: {
+          moduleIntergration: 'attempted-modules',
+        },
+      },
+    })
+    expect(DBState.db.customModels).toEqual(attemptedCustomModels)
+    expect(DBState.db.plugins).toEqual([
+      seedPlugin('plugin-a'),
+      seedPlugin('plugin-newer', {
+        realArg: { mode: 'newer-plugin' },
+      }),
+    ])
+    expect(DBState.db.currentPluginProvider).toBe('plugin-newer')
+    expect(DBState.db.pluginCustomStorage).toEqual({
+      retained: { value: 1 },
+      newerStorage: { value: 'kept' },
+    })
+    expect(DBState.db.modules).toEqual([seedModule('mod-a'), seedModule('mod-newer', { description: 'newer module' })])
   })
 
   it('routes plugin custom model and advanced database writes through settings commands', async () => {

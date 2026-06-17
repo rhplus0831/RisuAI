@@ -240,6 +240,12 @@ plugin character writes restore only attempted target-row fields, while V3 chat
 compatibility sequences preserve earlier accepted metadata, message, or
 scriptstate steps and roll back only the unaccepted attempted tail.
 
+Thirty-third landed slice: multi-group plugin DB bridge settings rollback now
+splits settings patches by server settings group before dispatch. Failed later
+groups preserve earlier server-accepted group effects, while failed first groups
+roll back all unaccepted attempted settings keys and still preserve newer
+same-key edits plus unrelated plugin, provider, storage, and module state.
+
 ## Anchors
 
 - `src/lib/Setting/botpreset.svelte`

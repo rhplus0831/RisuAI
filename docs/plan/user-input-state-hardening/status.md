@@ -193,6 +193,10 @@ persistence inventory under
   failed V3 chat compatibility update sequences preserve earlier accepted
   metadata, message, or scriptstate steps while rolling back only unaccepted
   attempted tail effects.
+  Multi-group plugin DB bridge settings failures now preserve earlier
+  server-accepted settings groups, roll back failed or unaccepted attempted
+  settings keys, and keep newer same-key edits plus unrelated plugin, provider,
+  storage, and module state.
   Phase 2 landed character profile draft dirty top-level field protection;
   prompt-template item row dirty projection merging; whole-key dirty projection
   protection for
@@ -362,7 +366,8 @@ persistence inventory under
   `restoreGlobalModuleState(previous)` path for `risu-set-module-info`.
 - `src/ts/pluginCommands.ts` and `src/ts/plugins/plugins.svelte.ts` now guard
   plugin DB bridge settings patch rollback by settings-key attempted values
-  instead of broad plugin-state snapshots.
+  instead of broad plugin-state snapshots, and multi-group bridge settings
+  dispatch now rolls back only the failed or unaccepted group tail.
 - `src/ts/characterCommands.ts`, `src/ts/chatCommands.ts`,
   `src/ts/plugins/plugins.svelte.ts`, and `src/ts/plugins/apiV3/v3.svelte.ts`
   now route plugin compatibility character/chat bridge writes through scoped
@@ -437,7 +442,7 @@ persistence inventory under
   copy, select, create, update, delete, reorder, and extraction rollback by
   attempted row, field, order, selection, generated split row, and scalar
   settings state.
-- Verification state: Phase 5 lorebook import target freshness
+- Verification state: Phase 5 multi-group plugin settings rollback
   validation is recorded in `latest-verification.md`.
 - Highest issue density:
   - Character editor: 52 issue rows, mostly dirty projection and unguarded
@@ -494,8 +499,8 @@ persistence inventory under
   Composer file and paste callbacks are already covered by Phase 3. No known
   code gap blocks Phase 4 completion.
 - [Phase 5](phases/phase-5-collection-domains.md): active. Sidebar/import
-  collection flows and plugin settings patch residuals remain here. Script/trigger
-  replacement rollback, plugin custom storage plus
+  collection flows remain here. Script/trigger replacement rollback, plugin
+  custom storage plus
   non-storage and collection rollback slices, global module/MCP module-info,
   plugin DB bridge settings, persona collection, and translator preset
   collection rollback slices have landed. Prompt-template item collection
@@ -513,7 +518,8 @@ persistence inventory under
   Lorebook import target freshness has also landed. Plugin import/update runtime
   reload ordering has also landed. Sidebar chat-folder creation optimism,
   loadout create/delete/favorite/apply rollback, and plugin compatibility bridge
-  scoped rollback have also landed.
+  scoped rollback have also landed. Multi-group plugin settings rollback has
+  also landed.
 - [Phase 6](phases/phase-6-resync-memory-navigation.md): pending. Realm, backup,
   and local bundle restore/import resyncs; character/chat import
   refresh/navigation edges; memory job list/progress ordering; route/selection
@@ -832,6 +838,10 @@ persistence inventory under
   - Phase 5 sidebar chat-folder creation slice: server-backed create-folder now
     appears optimistically in the sidebar and failed creates preserve attempted
     folders that newer chat moves reference.
+  - Phase 5 multi-group plugin settings slice: plugin DB bridge settings
+    dispatch now splits patches by settings group, preserves accepted earlier
+    groups when a later group fails, and rolls back the failed or unaccepted
+    attempted tail while keeping newer same-key edits and unrelated state.
   - Phase 5: import collection flows and any residual sidebar collection edges.
   - Known pre-existing test gap: `pnpm exec vitest run
     src/ts/compatibilityAdapters.test.ts` fails in

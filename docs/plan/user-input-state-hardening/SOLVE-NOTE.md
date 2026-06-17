@@ -98,7 +98,9 @@ or favorite values, and `applyLoadout()` now keeps earlier server-accepted
 persona, preset, and module sequence steps while rolling back only failed or
 unattempted global-variable and touch tail effects. Plugin V2/V3 compatibility
 character and chat bridge rollback now uses scoped target-row and per-command
-step helpers instead of broad character/chat-state restores.
+step helpers instead of broad character/chat-state restores. Multi-group plugin
+settings rollback now preserves earlier accepted settings groups when a later
+group fails while rolling back failed or unaccepted attempted settings keys.
 
 Next manager loop:
 
@@ -221,8 +223,9 @@ Explicit deferrals:
   landed for attempted rows, attempted favorite values, and accepted
   `applyLoadout()` sequence steps. Phase 5 plugin compatibility bridge scoped
   rollback has landed for V2/V3 character writes and V3 chat compatibility
-  update sequences. Multi-group plugin settings rollback, import collection
-  flows, and residual sidebar collection edges remain Phase 5 work.
+  update sequences. Phase 5 multi-group plugin settings rollback has landed for
+  provider/advanced and failed-first-group settings patch sequences. Import
+  collection flows and residual sidebar collection edges remain Phase 5 work.
 - `src/ts/compatibilityAdapters.test.ts` currently has a pre-existing failure in
   `routes MCP character lorebook writes through lorebook commands in
   server-backed web mode` at line 626. It reproduced in a detached baseline
