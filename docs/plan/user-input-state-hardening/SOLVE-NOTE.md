@@ -61,6 +61,7 @@ Plugin import/update callback freshness has landed.
 Persona icon upload callback freshness has landed.
 BotSettings bias JSON import callback freshness has landed.
 Sidebar character-folder image upload callback freshness has landed.
+NovelAI `.naiv4vibe` import callback freshness has landed.
 
 Next manager loop:
 

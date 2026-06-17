@@ -34,6 +34,16 @@
     type SettingsMediaAssetUploadOperation,
     type SettingsMediaAssetUploadTarget,
   } from 'src/ts/server/settingsMediaAssetUpload'
+  import {
+    beginNaiVibeImport,
+    captureNaiVibeImportTarget,
+    clearNaiVibeImport,
+    isFreshNaiVibeImport,
+    parseNaiVibeImport,
+    resolveFreshNaiVibeImportPatch,
+    type NaiVibeImportFreshness,
+    type NaiVibeImportOperation,
+  } from 'src/ts/server/naiVibeImport'
 
   const stopServerSettingsWatch = watchServerBackedSettings(['useLegacyGUI'])
   onDestroy(stopServerSettingsWatch)
@@ -436,6 +446,56 @@
     await uploadSettingsMediaAsset(target)
   }
 
+  function currentNaiVibeImportFreshness(): NaiVibeImportFreshness {
+    return {
+      provider: sdProviderDraft.value,
+      model: NAIImgModelDraft.value,
+      reference_mode: NAIImgConfigDraft.value.reference_mode,
+      config: NAIImgConfigDraft.value,
+    }
+  }
+
+  async function importNaiVibeFile(): Promise<void> {
+    const target = captureNaiVibeImportTarget(currentNaiVibeImportFreshness())
+    let operation: NaiVibeImportOperation | null = null
+    const beginImport = () => {
+      operation ??= beginNaiVibeImport(target)
+    }
+
+    try {
+      const selected = await selectSingleFile(['naiv4vibe'], { onFileSelected: beginImport })
+      if (!selected) return
+
+      beginImport()
+      if (!operation) return
+
+      const vibeData = parseNaiVibeImport(new TextDecoder().decode(selected.data))
+      if (vibeData === null) {
+        if (isFreshNaiVibeImport(operation, currentNaiVibeImportFreshness())) {
+          alertError('Invalid vibe file. Version must be 1.')
+        }
+        return
+      }
+
+      const patch = resolveFreshNaiVibeImportPatch({
+        operation,
+        freshness: currentNaiVibeImportFreshness(),
+        vibeData,
+      })
+      if (!patch) return
+
+      NAIImgConfigDraft.value = { ...NAIImgConfigDraft.value, ...patch }
+    } catch (error) {
+      if (operation && isFreshNaiVibeImport(operation, currentNaiVibeImportFreshness())) {
+        alertError('Error parsing vibe file: ' + error)
+      }
+    } finally {
+      if (operation) {
+        clearNaiVibeImport(operation)
+      }
+    }
+  }
+
   $effect(() => {
     // Sync loras to DB, filtering out empty URLs
     if (wavespeedImageDraft.value) {
@@ -615,61 +675,7 @@
 
       {#if NAIImgConfigDraft.value.reference_mode === 'vibe'}
         <div class="relative">
-          <button
-            class="mb-4"
-            onclick={async () => {
-              const file = await selectSingleFile(['naiv4vibe'])
-              if (!file) {
-                return null
-              }
-              try {
-                const vibeData = JSON.parse(new TextDecoder().decode(file.data))
-                if (vibeData.version !== 1 || vibeData.identifier !== 'novelai-vibe-transfer') {
-                  alertError('Invalid vibe file. Version must be 1.')
-                  return
-                }
-
-                // Store the vibe data
-                NAIImgConfigDraft.value.vibe_data = vibeData
-
-                // Set the thumbnail as preview image for display
-                if (vibeData.thumbnail) {
-                  // Clear the array and add the thumbnail
-                  NAIImgConfigDraft.value.reference_image_multiple = []
-
-                  // Set default model selection based on current model
-                  if (NAIImgModelDraft.value.includes('nai-diffusion-4-full')) {
-                    NAIImgConfigDraft.value.vibe_model_selection = 'v4full'
-                  } else if (NAIImgModelDraft.value.includes('nai-diffusion-4-curated')) {
-                    NAIImgConfigDraft.value.vibe_model_selection = 'v4curated'
-                  } else if (NAIImgModelDraft.value.includes('nai-diffusion-4-5-full')) {
-                    NAIImgConfigDraft.value.vibe_model_selection = 'v4-5full'
-                  } else if (NAIImgModelDraft.value.includes('nai-diffusion-4-5-curated')) {
-                    NAIImgConfigDraft.value.vibe_model_selection = 'v4-5curated'
-                  }
-
-                  // Set InfoExtracted to the first value for the selected model
-                  const selectedModel = NAIImgConfigDraft.value.vibe_model_selection
-                  if (selectedModel && vibeData.encodings[selectedModel]) {
-                    const encodings = vibeData.encodings[selectedModel]
-                    const firstKey = Object.keys(encodings)[0]
-                    if (firstKey) {
-                      NAIImgConfigDraft.value.InfoExtracted = Number(encodings[firstKey].params.information_extracted)
-                    }
-                  }
-                }
-
-                // Initialize reference_strength_multiple if not set
-                if (
-                  !NAIImgConfigDraft.value.reference_strength_multiple ||
-                  !Array.isArray(NAIImgConfigDraft.value.reference_strength_multiple)
-                ) {
-                  NAIImgConfigDraft.value.reference_strength_multiple = [0.7]
-                }
-              } catch (error) {
-                alertError('Error parsing vibe file: ' + error)
-              }
-            }}>
+          <button class="mb-4" onclick={importNaiVibeFile}>
             {#if !NAIImgConfigDraft.value.vibe_data || !NAIImgConfigDraft.value.vibe_data.thumbnail}
               <div
                 class="rounded-md h-20 w-20 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500 flex items-center justify-center">

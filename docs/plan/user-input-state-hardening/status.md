@@ -49,6 +49,9 @@ the input persistence inventory under
   Sidebar character-folder image uploads now guard by stable folder id and
   image-field snapshots around image selection, upload, and source resolution
   before applying fresh folder image fields.
+  NovelAI `.naiv4vibe` imports now guard provider/model/reference-mode context
+  and vibe-field snapshots around file selection/read before merging fresh vibe
+  fields into `NAIImgConfigDraft.value`.
   Phase 2 landed character profile draft dirty top-level field protection;
   prompt-template item row dirty projection merging; whole-key dirty projection
   protection for
@@ -144,8 +147,12 @@ the input persistence inventory under
   character-folder image upload target capture, latest-operation tracking,
   image-only snapshot freshness, and fresh `{ imgFile, img }` patch resolution
   for `src/lib/SideBars/Sidebar.svelte`.
-- Verification state: Phase 3 sidebar character-folder image upload callback
-  validation is recorded in `latest-verification.md`.
+- `src/ts/server/naiVibeImport.ts` now centralizes NovelAI `.naiv4vibe` import
+  target capture, latest-operation tracking, vibe file validation, vibe-field
+  snapshot freshness, and fresh narrow patch resolution for
+  `src/lib/Setting/Pages/OtherBotSettings.svelte`.
+- Verification state: Phase 3 NovelAI `.naiv4vibe` import callback validation is
+  recorded in `latest-verification.md`.
 - Highest issue density:
   - Character editor: 52 issue rows, mostly dirty projection and unguarded
     upload callbacks.
@@ -200,8 +207,9 @@ the input persistence inventory under
   BotSettings bias JSON imports now guard stale completions; the previously
   listed additional-params import is audit drift because the live UI has no
   import button; sidebar character-folder image uploads now guard stale
-  completions; NovelAI `.naiv4vibe` import, EasyPanel separate-parameters
-  import, and remaining dashboard/import persistence surfaces remain pending.
+  completions; NovelAI `.naiv4vibe` import now guards stale completions;
+  EasyPanel separate-parameters import and remaining dashboard/import
+  persistence surfaces remain pending.
   NanoGPT
   dashboard subscription-state fetch persistence now guards stale completions.
 - [Phase 4](phases/phase-4-chat-messages-generation.md): pending. Chat,
@@ -355,6 +363,12 @@ the input persistence inventory under
     hook after a real image file is selected, tolerates reorder/rename/color
     changes with unchanged image fields, and lets `Sidebar.svelte` apply only a
     fresh `{ imgFile, img }` patch by folder id.
+  - Phase 3 NovelAI `.naiv4vibe` import slice: `naiVibeImport.ts` captures
+    provider/model/reference-mode context and vibe-field snapshots only, starts
+    tokens from `selectSingleFile`'s `onFileSelected` hook after a real vibe file
+    is selected, validates imported vibe files, suppresses stale invalid-file
+    alerts, and lets `OtherBotSettings.svelte` merge only fresh vibe fields while
+    preserving unrelated NAI image config edits.
   - Phase 4: `restoreChatScopedState`, chat/message/generation freshness, and
     message update/delete/truncate/replace freshness.
   - Phase 5: create/delete/reorder/import/select and broad collection rollback

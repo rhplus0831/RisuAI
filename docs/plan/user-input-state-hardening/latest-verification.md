@@ -7,28 +7,27 @@ hardening workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 3 sidebar character-folder image upload
-  callback freshness. Folder image upload now captures a stable folder id plus
-  image-only snapshot, starts the operation from `selectSingleFile`'s
-  `onFileSelected` hook after a real image file is selected, rechecks freshness
-  around upload/source resolution, resolves by folder id, and applies only fresh
-  `{ imgFile, img }` fields.
+- Runtime/code change under test: Phase 3 NovelAI `.naiv4vibe` import callback
+  freshness. The import now captures provider/model/reference-mode context plus
+  vibe-field snapshots, starts the operation from `selectSingleFile`'s
+  `onFileSelected` hook after a real vibe file is selected, suppresses stale
+  invalid-file alerts, and merges only a fresh narrow vibe patch into
+  `NAIImgConfigDraft.value`.
 - Commands:
 
 ```bash
-pnpm exec vitest run src/ts/server/characterFolderImageUpload.test.ts src/ts/characterCommands.test.ts src/ts/server/staleStateGuards.test.ts
+pnpm exec vitest run src/ts/server/naiVibeImport.test.ts src/lib/Setting/Pages/OtherBotSettings.svelte.test.ts src/ts/server/staleStateGuards.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 git diff --check
 ```
 
-- Result: passed on 2026-06-17. The folder-image-upload/stale-guard focused
-  Vitest set passed 3 files and 60 tests. Both TypeScript checks and
-  `git diff --check` passed.
-- Residual gaps: no browser-level picker smoke was run. Stale uploads can leave
-  unused uploaded asset ids, which is accepted for this slice. This slice does
-  not cover sidebar folder/list rollback, prompt/persona imports, module import,
-  Realm/backup refresh fences, or collection rollback.
+- Result: passed on 2026-06-17. The vibe-import/stale-guard focused Vitest set
+  passed 3 files and 27 tests. Both TypeScript checks and `git diff --check`
+  passed.
+- Residual gaps: no browser/manual file-picker smoke was run. This slice does
+  not cover EasyPanel separate-parameters import, backup/Realm refresh fences,
+  or collection rollback.
 
 ## Required Closeout Proof
 

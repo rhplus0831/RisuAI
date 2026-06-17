@@ -92,6 +92,12 @@ latest operation tokens issued from `selectSingleFile`'s `onFileSelected` hook,
 stable folder ids, image-field snapshots, and fresh `{ imgFile, img }` patch
 resolution before uploaded folder images can apply.
 
+Sixteenth landed slice: NovelAI `.naiv4vibe` import callbacks now use latest
+operation tokens issued from `selectSingleFile`'s `onFileSelected` hook,
+provider/model/reference-mode context, vibe-field snapshots, stale alert
+suppression, and fresh narrow patch resolution before vibe data can merge into
+`NAIImgConfigDraft.value`.
+
 ## Anchors
 
 - `src/lib/ChatScreens/DefaultChatScreen.svelte`
