@@ -7,33 +7,31 @@ hardening workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 2 translator preset dirty projection
-  slice. Translator preset `name`, `prompt`, and `maxResponse` edits now track
-  dirty state by preset id, survive stale projection epochs, reassert dirty
-  values into the selected preset row and legacy selected-preset fields, clear
-  when projection catches up or the target disappears, and avoid rolling back
-  fields whose dirty state already cleared after projection catch-up.
+- Runtime/code change under test: Phase 2 live local draft dirty projection
+  slice. Lorebook entry drafts now preserve dirty local fields through stale
+  same-entry projection while clean fields refresh. Selected-character
+  script/trigger drafts now preserve dirty same-row fields through stale
+  projection while clean fields and clean sibling rows refresh. Both paths clear
+  dirty state when projection catches up, when the target disappears, or when row
+  sequence changes require full reseed semantics.
 - Commands:
 
 ```bash
-pnpm exec vitest run src/lib/Setting/Pages/Language/TranslatorPresetSettings.svelte.test.ts
-pnpm exec vitest run src/ts/server/staleStateGuards.test.ts
+pnpm exec vitest run src/ts/server/lorebookBridge.svelte.test.ts src/ts/server/scriptDefinitionBridge.svelte.test.ts src/ts/server/staleStateGuards.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 ```
 
-- Result: passed on 2026-06-17. The translator focused Vitest set passed 1 file
-  and 10 tests; the stale-state helper Vitest set passed 1 file and 12 tests.
-  Both TypeScript checks passed.
-- Residual gaps: this translator slice is intentionally limited to dirty
-  `name`, `prompt`, and `maxResponse` field projection and debounced rollback.
-  Translator preset create, delete, import, selection, and collection-wide
-  semantics remain unchanged. Remaining Phase 2 draft projection adopters for
-  lorebook entries, script/trigger definitions, module drafts, and plugin
-  argument/storage editors remain pending unless a closeout explorer confirms
-  ownership by later phases. Prompt item create, delete, and reorder behavior
-  remains unchanged from the previous slice. Character resync/import/restore and
-  asset callback freshness stay deferred to their later phases.
+- Result: passed on 2026-06-17. The focused Vitest set passed 3 files and 109
+  tests. Both TypeScript checks passed.
+- Residual gaps: this slice is intentionally limited to dirty projection merging
+  for existing lorebook entry drafts and selected-character script/trigger rows.
+  Create, delete, reorder, module, plugin, and broad collection rollback
+  behavior remains unchanged and stays owned by later phases unless closeout
+  triage proves otherwise. Projection-absent optional clean-field deletion is
+  outside this slice because the shared merge helper refreshes fields present in
+  the projection surface. Character resync/import/restore and asset callback
+  freshness stay deferred to their later phases.
 
 ## Required Closeout Proof
 

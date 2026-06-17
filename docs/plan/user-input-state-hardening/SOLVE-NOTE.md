@@ -42,7 +42,9 @@ documentation. Phase 1 added shared stale-state helpers with focused coverage an
 landed settings, character, and chat row metadata rollback adopters. Phase 2 is
 in progress; character profile drafts, prompt-template item rows, generic
 settings drafts, selected persona profile fields, and translator preset
-`name`/`prompt`/`maxResponse` fields have landed.
+`name`/`prompt`/`maxResponse` fields have landed. Lorebook entry drafts and
+selected-character script/trigger draft rows also now preserve dirty local
+fields through stale projection while clean projection fields refresh.
 
 Next manager loop:
 

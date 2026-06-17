@@ -73,8 +73,12 @@
   import { watchServerBackedChatMetadata } from 'src/ts/server/chatBridge.svelte'
   import {
     applyCharacterScriptDefinitionDraft,
+    clearDirtyScriptDefinitionFieldsMatchingProjection,
+    markDirtyScriptDefinitionRowFields,
+    mergeScriptDefinitionProjectionRows,
     watchServerBackedScriptDefinitions,
   } from 'src/ts/server/scriptDefinitionBridge.svelte'
+  import { getServerProjectionApplyEpoch } from 'src/ts/server/projectionWriteGuard.svelte'
   import { setCurrentChatGreetingIndex } from 'src/ts/chatCommands'
 
   let iconRemoveMode = $state(false)
@@ -136,7 +140,10 @@
   let characterTriggersDraft = $state<triggerscript[]>([])
   let scriptDraftCharacterId = $state<string | null>(null)
   let scriptDraftSnapshot = ''
+  let previousScriptDraftProjectionApplyEpoch = getServerProjectionApplyEpoch()
   let suppressScriptDraftDispatch = false
+  const scriptDirtyFieldsById = new Map<string, Set<string>>()
+  const triggerDirtyFieldsById = new Map<string, Set<string>>()
 
   $effect(() => {
     const { stopCharacter, stopChat, stopScripts } = untrack(() => ({
@@ -154,6 +161,9 @@
   })
 
   $effect(() => {
+    const projectionApplyEpoch = getServerProjectionApplyEpoch()
+    const projectionApplyChanged = projectionApplyEpoch !== previousScriptDraftProjectionApplyEpoch
+    previousScriptDraftProjectionApplyEpoch = projectionApplyEpoch
     const character = DBState.db.characters?.[$selectedCharID]
     const characterId = character?.chaId ?? null
     const snapshot = snapshotJson({
@@ -161,13 +171,63 @@
       scripts: character?.customscript ?? [],
       triggers: character?.triggerscript ?? [],
     })
+    const targetChanged = characterId !== scriptDraftCharacterId
 
-    if (characterId !== scriptDraftCharacterId || snapshot !== scriptDraftSnapshot) {
+    if (targetChanged) {
+      clearScriptDraftDirtyState()
+    }
+
+    if (!targetChanged && projectionApplyChanged && hasDirtyScriptDefinitionDraftFields()) {
+      clearDirtyScriptDefinitionFieldsMatchingProjection(
+        scriptDirtyFieldsById,
+        characterScriptsDraft,
+        character?.customscript ?? [],
+      )
+      clearDirtyScriptDefinitionFieldsMatchingProjection(
+        triggerDirtyFieldsById,
+        characterTriggersDraft,
+        character?.triggerscript ?? [],
+      )
+    }
+
+    if (targetChanged || snapshot !== scriptDraftSnapshot) {
       suppressScriptDraftDispatch = true
       scriptDraftCharacterId = characterId
-      characterScriptsDraft = cloneJsonValue(character?.customscript ?? [])
-      characterTriggersDraft = cloneJsonValue(character?.triggerscript ?? [])
-      scriptDraftSnapshot = snapshot
+
+      if (!targetChanged && projectionApplyChanged && hasDirtyScriptDefinitionDraftFields()) {
+        const nextScripts = reconcileScriptDefinitionDraftRows(
+          characterScriptsDraft,
+          character?.customscript ?? [],
+          scriptDirtyFieldsById,
+        )
+        const nextTriggers = reconcileScriptDefinitionDraftRows(
+          characterTriggersDraft,
+          character?.triggerscript ?? [],
+          triggerDirtyFieldsById,
+        )
+
+        if (nextScripts && nextTriggers) {
+          characterScriptsDraft = nextScripts
+          characterTriggersDraft = nextTriggers
+          scriptDraftSnapshot = snapshotJson({
+            characterId,
+            scripts: characterScriptsDraft,
+            triggers: characterTriggersDraft,
+          })
+        } else {
+          clearScriptDraftDirtyState()
+          characterScriptsDraft = cloneJsonValue(character?.customscript ?? [])
+          characterTriggersDraft = cloneJsonValue(character?.triggerscript ?? [])
+          scriptDraftSnapshot = snapshot
+        }
+      } else {
+        if (!projectionApplyChanged) {
+          clearScriptDraftDirtyState()
+        }
+        characterScriptsDraft = cloneJsonValue(character?.customscript ?? [])
+        characterTriggersDraft = cloneJsonValue(character?.triggerscript ?? [])
+        scriptDraftSnapshot = snapshot
+      }
       queueMicrotask(() => {
         suppressScriptDraftDispatch = false
       })
@@ -186,6 +246,9 @@
 
     untrack(() => {
       if (applyCharacterScriptDefinitionDraft(characterId, characterScriptsDraft, characterTriggersDraft)) {
+        const previousDraft = parseScriptDefinitionDraftSnapshot(scriptDraftSnapshot)
+        markDirtyScriptDefinitionRowFields(scriptDirtyFieldsById, previousDraft.scripts, characterScriptsDraft)
+        markDirtyScriptDefinitionRowFields(triggerDirtyFieldsById, previousDraft.triggers, characterTriggersDraft)
         scriptDraftSnapshot = snapshot
       }
     })
@@ -403,6 +466,41 @@
   function snapshotJson(value: unknown): string {
     const snapshot = JSON.stringify(value)
     return snapshot === undefined ? '__undefined__' : snapshot
+  }
+
+  function hasDirtyScriptDefinitionDraftFields(): boolean {
+    return scriptDirtyFieldsById.size > 0 || triggerDirtyFieldsById.size > 0
+  }
+
+  function clearScriptDraftDirtyState(): void {
+    scriptDirtyFieldsById.clear()
+    triggerDirtyFieldsById.clear()
+  }
+
+  function reconcileScriptDefinitionDraftRows<T extends customscript | triggerscript>(
+    draftRows: T[],
+    projectionRows: T[],
+    dirtyFieldsById: Map<string, Set<string>>,
+  ): T[] | null {
+    if (dirtyFieldsById.size === 0) return cloneJsonValue(projectionRows ?? [])
+    return mergeScriptDefinitionProjectionRows(draftRows ?? [], projectionRows ?? [], dirtyFieldsById)
+  }
+
+  function parseScriptDefinitionDraftSnapshot(snapshot: string): {
+    scripts: customscript[]
+    triggers: triggerscript[]
+  } {
+    if (!snapshot || snapshot === '__undefined__') {
+      return { scripts: [], triggers: [] }
+    }
+    const parsed = JSON.parse(snapshot) as {
+      scripts?: customscript[]
+      triggers?: triggerscript[]
+    }
+    return {
+      scripts: Array.isArray(parsed.scripts) ? parsed.scripts : [],
+      triggers: Array.isArray(parsed.triggers) ? parsed.triggers : [],
+    }
   }
 
   function updateCharacterDraft(mutator: (character: character) => void): void {

@@ -73,6 +73,8 @@ import { DBState, selectedCharID } from '../stores.svelte'
 import { applyServerCharacterLorebookProjection } from '../storage/database.svelte'
 import {
   applyLorebookEntryDraftEdit,
+  changedLorebookEntryDraftFields,
+  clearDirtyLorebookEntryFieldsMatchingProjection,
   collectLorebookCollectionSnapshots,
   createGlobalLorebook,
   currentGlobalLorebookStateSnapshot,
@@ -88,6 +90,7 @@ import {
   dispatchUpdateGlobalLorebook,
   flushPendingLorebookEntryDraftEdit,
   flushPendingServerBackedLorebookPatches,
+  mergeLorebookEntryProjectionDraft,
   markCharacterLorebookHydrated,
   recordHydratedCharacterLorebooks,
   replaceCharacterLorebookCollection,
@@ -103,7 +106,7 @@ import {
 } from './lorebookBridge.svelte'
 import { withCloneInstrumentation } from '../__tests__/cloneCostHarness'
 
-type Entry = { key?: string; content?: string; id?: string; folder?: string }
+type Entry = { key?: string; content?: string; id?: string; folder?: string; comment?: string }
 type GlobalLorebookFixture = { id: string; name: string; data: Entry[] }
 
 const DELAY = 50
@@ -198,6 +201,84 @@ afterEach(() => {
   vi.useRealTimers()
   selectedCharID.set(-1)
   recorded.commands.length = 0
+})
+
+describe('Phase 2 lorebook entry dirty projection merge', () => {
+  function loreEntry(overrides: Partial<Entry> = {}): Entry {
+    return {
+      id: 'entry-1',
+      key: 'initial key',
+      content: 'initial content',
+      comment: 'initial comment',
+      ...overrides,
+    }
+  }
+
+  it('preserves dirty entry fields while refreshing clean projection fields', () => {
+    const previous = loreEntry({ content: 'initial content', comment: 'initial comment' })
+    const draft = loreEntry({ content: 'local newer content', comment: 'initial comment' })
+    const projection = loreEntry({
+      content: 'older projected content',
+      comment: 'projected clean comment',
+      key: 'projected clean key',
+    })
+    const dirtyFields = new Set(changedLorebookEntryDraftFields(previous as any, draft as any))
+
+    clearDirtyLorebookEntryFieldsMatchingProjection(dirtyFields as any, draft as any, projection as any)
+    const merged = mergeLorebookEntryProjectionDraft(draft as any, projection as any, dirtyFields as any) as Entry
+
+    expect([...dirtyFields]).toEqual(['content'])
+    expect(merged.content).toBe('local newer content')
+    expect(merged.comment).toBe('projected clean comment')
+    expect(merged.key).toBe('projected clean key')
+  })
+
+  it('clears exact catch-up dirty fields so later clean projections can replace them', () => {
+    const previous = loreEntry({ content: 'initial content', comment: 'initial comment' })
+    let draft = loreEntry({ content: 'local content', comment: 'initial comment' })
+    const staleProjection = loreEntry({ content: 'older projected content', comment: 'projected clean comment' })
+    const caughtUpProjection = loreEntry({ content: 'local content', comment: 'projected clean comment' })
+    const laterCleanProjection = loreEntry({ content: 'server later content', comment: 'projected clean comment' })
+    const dirtyFields = new Set(changedLorebookEntryDraftFields(previous as any, draft as any))
+
+    clearDirtyLorebookEntryFieldsMatchingProjection(dirtyFields as any, draft as any, staleProjection as any)
+    draft = mergeLorebookEntryProjectionDraft(draft as any, staleProjection as any, dirtyFields as any) as Entry
+
+    expect(dirtyFields).toEqual(new Set(['content']))
+    expect(draft).toMatchObject({
+      content: 'local content',
+      comment: 'projected clean comment',
+    })
+
+    clearDirtyLorebookEntryFieldsMatchingProjection(dirtyFields as any, draft as any, caughtUpProjection as any)
+    draft = mergeLorebookEntryProjectionDraft(draft as any, laterCleanProjection as any, dirtyFields as any) as Entry
+
+    expect(dirtyFields.size).toBe(0)
+    expect(draft.content).toBe('server later content')
+  })
+
+  it('LoreBookData uses dirty projection merge instead of blind draft replacement', () => {
+    const source = readFileSync(path.join(process.cwd(), 'src/lib/SideBars/LoreBook/LoreBookData.svelte'), 'utf8')
+
+    expect(source).toContain('dirtyDraftFields')
+    expect(source).toContain('changedLorebookEntryDraftFields')
+    expect(source).toContain('clearDirtyLorebookEntryFieldsMatchingProjection')
+    expect(source).toContain('mergeLorebookEntryProjectionDraft')
+  })
+
+  it('LoreBookData clears matching dirty fields before the value/draft mismatch branch', () => {
+    const source = readFileSync(path.join(process.cwd(), 'src/lib/SideBars/LoreBook/LoreBookData.svelte'), 'utf8')
+    const valueChangedIndex = source.indexOf('if (valueSnapshot !== previousValueSnapshot)')
+    const draftMismatchIndex = source.indexOf('if (valueSnapshot !== draftSnapshot)', valueChangedIndex)
+    const clearIndex = source.indexOf('clearDirtyLorebookEntryFieldsMatchingProjection', valueChangedIndex)
+    const preMismatchSource = source.slice(valueChangedIndex, draftMismatchIndex)
+
+    expect(valueChangedIndex).toBeGreaterThanOrEqual(0)
+    expect(draftMismatchIndex).toBeGreaterThan(valueChangedIndex)
+    expect(clearIndex).toBeGreaterThan(valueChangedIndex)
+    expect(clearIndex).toBeLessThan(draftMismatchIndex)
+    expect(preMismatchSource).toContain('!targetChanged')
+  })
 })
 
 describe('watchServerBackedLorebooks — no-data-loss invariant', () => {

@@ -16,6 +16,7 @@ import {
   type TriggerDefinitionSnapshot,
 } from './commands'
 import { getServerProjectionApplyEpoch, withTrustedServerProjectionWrite } from './projectionWriteGuard.svelte'
+import { mergeProjectionIntoDirtyDraft } from './staleStateGuards'
 
 export interface ScriptDefinitionStateSnapshot {
   characters: character[]
@@ -512,6 +513,156 @@ export function collectScriptDefinitionCollectionSnapshots(
     }
   }
   return snapshots
+}
+
+export type ScriptDefinitionDirtyFieldsById = Map<string, Set<string>>
+type ScriptDefinitionRow = customscript | triggerscript
+type ScriptDefinitionRowRecord = Record<string, unknown> & { id?: unknown }
+
+export function markDirtyScriptDefinitionRowFields<T extends ScriptDefinitionRow>(
+  dirtyFieldsById: ScriptDefinitionDirtyFieldsById,
+  previousRows: T[],
+  currentRows: T[],
+): void {
+  const previousRowsById = scriptDefinitionRowsById(previousRows)
+  const currentRowIds = new Set<string>()
+
+  for (const currentRow of currentRows ?? []) {
+    const rowId = scriptDefinitionRowId(currentRow)
+    if (!rowId) continue
+    currentRowIds.add(rowId)
+
+    const previousRow = previousRowsById.get(rowId)
+    if (!previousRow) continue
+
+    const changedFields = changedScriptDefinitionRowFields(previousRow, currentRow)
+    if (changedFields.length === 0) continue
+
+    let dirtyFields = dirtyFieldsById.get(rowId)
+    if (!dirtyFields) {
+      dirtyFields = new Set()
+      dirtyFieldsById.set(rowId, dirtyFields)
+    }
+
+    for (const field of changedFields) {
+      dirtyFields.add(field)
+    }
+  }
+
+  pruneDirtyScriptDefinitionRows(dirtyFieldsById, currentRowIds)
+}
+
+export function clearDirtyScriptDefinitionFieldsMatchingProjection<T extends ScriptDefinitionRow>(
+  dirtyFieldsById: ScriptDefinitionDirtyFieldsById,
+  draftRows: T[],
+  projectionRows: T[],
+): void {
+  const draftRowsById = scriptDefinitionRowsById(draftRows)
+  const projectionRowsById = scriptDefinitionRowsById(projectionRows)
+
+  for (const [rowId, dirtyFields] of Array.from(dirtyFieldsById.entries())) {
+    const draftRow = draftRowsById.get(rowId)
+    const projectionRow = projectionRowsById.get(rowId)
+
+    if (!draftRow || !projectionRow) {
+      dirtyFieldsById.delete(rowId)
+      continue
+    }
+
+    const draftRecord = scriptDefinitionRowAsRecord(draftRow)
+    const projectionRecord = scriptDefinitionRowAsRecord(projectionRow)
+    for (const field of Array.from(dirtyFields)) {
+      if (snapshotJson(draftRecord[field]) === snapshotJson(projectionRecord[field])) {
+        dirtyFields.delete(field)
+      }
+    }
+
+    if (dirtyFields.size === 0) {
+      dirtyFieldsById.delete(rowId)
+    }
+  }
+}
+
+export function pruneDirtyScriptDefinitionRows(
+  dirtyFieldsById: ScriptDefinitionDirtyFieldsById,
+  currentRowIds: ReadonlySet<string>,
+): void {
+  for (const rowId of Array.from(dirtyFieldsById.keys())) {
+    if (!currentRowIds.has(rowId)) {
+      dirtyFieldsById.delete(rowId)
+    }
+  }
+}
+
+export function mergeScriptDefinitionProjectionRows<T extends ScriptDefinitionRow>(
+  draftRows: T[],
+  projectionRows: T[],
+  dirtyFieldsById: ScriptDefinitionDirtyFieldsById,
+): T[] | null {
+  if (!sameScriptDefinitionRowIdSequence(draftRows, projectionRows)) return null
+
+  const draftRowsById = scriptDefinitionRowsById(draftRows)
+  return projectionRows.map((projectionRow) => {
+    const rowId = scriptDefinitionRowId(projectionRow)
+    const dirtyFields = rowId ? dirtyFieldsById.get(rowId) : undefined
+    const draftRow = rowId ? draftRowsById.get(rowId) : undefined
+
+    if (!rowId || !dirtyFields || dirtyFields.size === 0 || !draftRow) {
+      return cloneJsonValue(projectionRow)
+    }
+
+    return mergeProjectionIntoDirtyDraft({
+      draft: cloneJsonValue(scriptDefinitionRowAsRecord(draftRow)),
+      projection: scriptDefinitionRowAsRecord(projectionRow),
+      dirtyFields,
+    }) as T
+  })
+}
+
+function changedScriptDefinitionRowFields<T extends ScriptDefinitionRow>(previousRow: T, currentRow: T): string[] {
+  const previous = scriptDefinitionRowAsRecord(previousRow)
+  const current = scriptDefinitionRowAsRecord(currentRow)
+  const changedFields: string[] = []
+  const keys = new Set([...Object.keys(previous), ...Object.keys(current)])
+
+  for (const key of keys) {
+    if (key === 'id') continue
+    if (snapshotJson(previous[key]) !== snapshotJson(current[key])) {
+      changedFields.push(key)
+    }
+  }
+
+  return changedFields
+}
+
+function sameScriptDefinitionRowIdSequence<T extends ScriptDefinitionRow>(leftRows: T[], rightRows: T[]): boolean {
+  if (leftRows.length !== rightRows.length) return false
+
+  for (let index = 0; index < leftRows.length; index += 1) {
+    const leftId = scriptDefinitionRowId(leftRows[index])
+    const rightId = scriptDefinitionRowId(rightRows[index])
+    if (!leftId || !rightId || leftId !== rightId) return false
+  }
+
+  return true
+}
+
+function scriptDefinitionRowsById<T extends ScriptDefinitionRow>(rows: T[]): Map<string, T> {
+  const rowsById = new Map<string, T>()
+  for (const row of rows ?? []) {
+    const rowId = scriptDefinitionRowId(row)
+    if (rowId) rowsById.set(rowId, row)
+  }
+  return rowsById
+}
+
+function scriptDefinitionRowId(row: ScriptDefinitionRow | undefined): string | null {
+  const id = row ? scriptDefinitionRowAsRecord(row).id : null
+  return typeof id === 'string' && id.trim() ? id : null
+}
+
+function scriptDefinitionRowAsRecord(row: ScriptDefinitionRow): ScriptDefinitionRowRecord {
+  return row as unknown as ScriptDefinitionRowRecord
 }
 
 function collectCharacterScriptDefinitionSnapshots(snapshots: Map<string, string>, character: character): void {

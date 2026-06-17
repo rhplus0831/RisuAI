@@ -11,7 +11,13 @@
   import { tokenizeAccurate } from 'src/ts/tokenizer'
   import { DBState } from 'src/ts/stores.svelte'
   import LoreBookList from './LoreBookList.svelte'
-  import { setActiveChatLorebookLocalActivation } from 'src/ts/server/lorebookBridge.svelte'
+  import {
+    changedLorebookEntryDraftFields,
+    clearDirtyLorebookEntryFieldsMatchingProjection,
+    mergeLorebookEntryProjectionDraft,
+    setActiveChatLorebookLocalActivation,
+    type LorebookEntryDirtyField,
+  } from 'src/ts/server/lorebookBridge.svelte'
   import { onDestroy } from 'svelte'
 
   const tokenCountCache = new Map<string, number>()
@@ -65,18 +71,36 @@
   let draft = $state<loreBook>(cloneJsonValue(value))
   let suppressDraftDispatch = false
   let draftInitialized = false
+  let draftTargetKey = lorebookEntryDraftTargetKey(value)
+  const dirtyDraftFields = new Set<LorebookEntryDirtyField>()
   let previousValueSnapshot = snapshotJson(value)
   let lastDraftDispatchSnapshot = snapshotJson(draft)
   let tokenPromise = $state<Promise<number> | null>(null)
 
   $effect(() => {
     const valueSnapshot = snapshotJson(value)
+    const nextTargetKey = lorebookEntryDraftTargetKey(value)
+    const targetChanged = nextTargetKey !== draftTargetKey
+
+    if (targetChanged) {
+      dirtyDraftFields.clear()
+      draftTargetKey = nextTargetKey
+    }
+
     if (valueSnapshot !== previousValueSnapshot) {
       const draftSnapshot = snapshotJson(draft)
+      if (!targetChanged && dirtyDraftFields.size > 0) {
+        clearDirtyLorebookEntryFieldsMatchingProjection(dirtyDraftFields, draft, value)
+      }
       if (valueSnapshot !== draftSnapshot) {
         suppressDraftDispatch = true
-        draft = cloneJsonValue(value)
-        lastDraftDispatchSnapshot = valueSnapshot
+        if (!targetChanged && dirtyDraftFields.size > 0) {
+          draft = mergeLorebookEntryProjectionDraft(draft, value, dirtyDraftFields)
+          lastDraftDispatchSnapshot = snapshotJson(draft)
+        } else {
+          draft = cloneJsonValue(value)
+          lastDraftDispatchSnapshot = valueSnapshot
+        }
         queueMicrotask(() => {
           suppressDraftDispatch = false
         })
@@ -109,6 +133,10 @@
   function propagateDraft(settled: boolean): void {
     const draftSnapshot = snapshotJson(draft)
     if (draftSnapshot !== lastDraftDispatchSnapshot) {
+      const previousDraft = parseLorebookEntrySnapshot(lastDraftDispatchSnapshot)
+      for (const field of changedLorebookEntryDraftFields(previousDraft, draft)) {
+        dirtyDraftFields.add(field)
+      }
       const next = cloneJsonValue(draft)
       if (onDraftChange) {
         onDraftChange(next)
@@ -135,7 +163,18 @@
 
   onDestroy(() => {
     propagateDraft(true)
+    dirtyDraftFields.clear()
   })
+
+  function lorebookEntryDraftTargetKey(entry: loreBook): string {
+    if (typeof entry?.id === 'string' && entry.id.trim()) return `entry:${entry.id}`
+    return `fallback:${idgroup}:${idx}`
+  }
+
+  function parseLorebookEntrySnapshot(snapshot: string): loreBook {
+    if (!snapshot || snapshot === '__undefined__') return {} as loreBook
+    return JSON.parse(snapshot) as loreBook
+  }
 
   function snapshotJson(value: unknown): string {
     const snapshot = JSON.stringify(value)

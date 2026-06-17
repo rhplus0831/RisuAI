@@ -57,11 +57,14 @@ import { withCloneInstrumentation } from '../__tests__/cloneCostHarness'
 import {
   applyModuleScriptDefinitionDraft,
   applyCharacterScriptDefinitionDraft,
+  clearDirtyScriptDefinitionFieldsMatchingProjection,
   collectScriptDefinitionCollectionSnapshots,
   currentScriptDefinitionStateSnapshot,
   dispatchReplaceCharacterScripts,
   dispatchReplaceCharacterTriggers,
   flushPendingServerBackedScriptDefinitionPatches,
+  markDirtyScriptDefinitionRowFields,
+  mergeScriptDefinitionProjectionRows,
   watchServerBackedScriptDefinitions,
 } from './scriptDefinitionBridge.svelte'
 
@@ -151,6 +154,97 @@ function setupScriptDefinitions(): void {
     ],
   }
 }
+
+describe('Phase 2 script definition dirty projection merge', () => {
+  it('preserves dirty script row fields while refreshing clean fields and sibling rows', () => {
+    const previousScripts = [
+      { ...script('script-1', 'initial'), comment: 'initial comment', in: 'initial in' },
+      { ...script('script-2', 'initial sibling'), comment: 'initial sibling comment' },
+    ]
+    const draftScripts = [{ ...previousScripts[0], out: 'local newer out' }, previousScripts[1]]
+    const projectionScripts = [
+      {
+        ...previousScripts[0],
+        comment: 'projected clean comment',
+        in: 'projected clean in',
+        out: 'older projected out',
+      },
+      {
+        ...previousScripts[1],
+        comment: 'projected sibling comment',
+        out: 'projected sibling out',
+      },
+    ]
+    const caughtUpProjectionScripts = [
+      {
+        ...projectionScripts[0],
+        out: 'local newer out',
+      },
+      projectionScripts[1],
+    ]
+    const laterCleanProjectionScripts = [
+      {
+        ...caughtUpProjectionScripts[0],
+        out: 'server later out',
+      },
+      projectionScripts[1],
+    ]
+    const dirtyFieldsById = new Map<string, Set<string>>()
+
+    markDirtyScriptDefinitionRowFields(dirtyFieldsById, previousScripts, draftScripts)
+    clearDirtyScriptDefinitionFieldsMatchingProjection(dirtyFieldsById, draftScripts, projectionScripts)
+    const merged = mergeScriptDefinitionProjectionRows(draftScripts, projectionScripts, dirtyFieldsById)
+
+    expect(dirtyFieldsById.get('script-1')).toEqual(new Set(['out']))
+    expect(merged).toEqual([
+      {
+        ...projectionScripts[0],
+        out: 'local newer out',
+      },
+      projectionScripts[1],
+    ])
+
+    clearDirtyScriptDefinitionFieldsMatchingProjection(dirtyFieldsById, merged!, caughtUpProjectionScripts)
+    const laterMerged = mergeScriptDefinitionProjectionRows(merged!, laterCleanProjectionScripts, dirtyFieldsById)
+
+    expect(dirtyFieldsById.size).toBe(0)
+    expect(laterMerged?.[0].out).toBe('server later out')
+  })
+
+  it('clears exact trigger catch-up dirty fields so later clean projections can replace them', () => {
+    const previousTriggers = [trigger('trigger-1', 'initial trigger'), trigger('trigger-2', 'initial sibling')]
+    const draftTriggers = [{ ...previousTriggers[0], comment: 'local trigger' }, previousTriggers[1]]
+    const staleProjection = [
+      { ...previousTriggers[0], comment: 'older projected trigger' },
+      { ...previousTriggers[1], comment: 'projected sibling trigger' },
+    ]
+    const caughtUpProjection = [
+      { ...previousTriggers[0], comment: 'local trigger' },
+      { ...previousTriggers[1], comment: 'projected sibling trigger' },
+    ]
+    const laterCleanProjection = [{ ...caughtUpProjection[0], comment: 'server later trigger' }, caughtUpProjection[1]]
+    const dirtyFieldsById = new Map<string, Set<string>>()
+
+    markDirtyScriptDefinitionRowFields(dirtyFieldsById, previousTriggers, draftTriggers)
+    const staleMerged = mergeScriptDefinitionProjectionRows(draftTriggers, staleProjection, dirtyFieldsById)
+    expect(staleMerged?.[0].comment).toBe('local trigger')
+    expect(staleMerged?.[1].comment).toBe('projected sibling trigger')
+
+    clearDirtyScriptDefinitionFieldsMatchingProjection(dirtyFieldsById, staleMerged!, caughtUpProjection)
+    const laterMerged = mergeScriptDefinitionProjectionRows(staleMerged!, laterCleanProjection, dirtyFieldsById)
+
+    expect(dirtyFieldsById.size).toBe(0)
+    expect(laterMerged?.[0].comment).toBe('server later trigger')
+  })
+
+  it('falls back to full reseed semantics when dirty row order changes', () => {
+    const dirtyFieldsById = new Map([['script-1', new Set(['out'])]])
+    const draftScripts = [script('script-1', 'local'), script('script-2', 'sibling')]
+    const reorderedProjection = [script('script-2', 'server sibling'), script('script-1', 'server')]
+
+    expect(mergeScriptDefinitionProjectionRows(draftScripts, reorderedProjection, dirtyFieldsById)).toBeNull()
+  })
+})
 
 beforeEach(() => {
   vi.useFakeTimers()
@@ -276,6 +370,29 @@ describe('character script definition draft bridge', () => {
 
     expect(source).not.toContain('withTrustedServerProjectionWrite')
     expect(source).toContain('applyCharacterScriptDefinitionDraft(')
+    expect(source).toContain('getServerProjectionApplyEpoch')
+    expect(source).toContain('markDirtyScriptDefinitionRowFields')
+    expect(source).toContain('clearDirtyScriptDefinitionFieldsMatchingProjection')
+    expect(source).toContain('mergeScriptDefinitionProjectionRows')
+    expect(source).toContain('clearScriptDraftDirtyState()')
+  })
+
+  it('clears matching script dirty fields before the snapshot mismatch branch', () => {
+    const source = readFileSync(path.join(process.cwd(), 'src/lib/SideBars/CharConfig.svelte'), 'utf8')
+    const projectionChangedIndex = source.indexOf('const projectionApplyChanged')
+    const mismatchBranchIndex = source.indexOf(
+      'if (targetChanged || snapshot !== scriptDraftSnapshot)',
+      projectionChangedIndex,
+    )
+    const clearIndex = source.indexOf('clearDirtyScriptDefinitionFieldsMatchingProjection', projectionChangedIndex)
+    const preMismatchSource = source.slice(projectionChangedIndex, mismatchBranchIndex)
+
+    expect(projectionChangedIndex).toBeGreaterThanOrEqual(0)
+    expect(mismatchBranchIndex).toBeGreaterThan(projectionChangedIndex)
+    expect(clearIndex).toBeGreaterThan(projectionChangedIndex)
+    expect(clearIndex).toBeLessThan(mismatchBranchIndex)
+    expect(preMismatchSource).toContain('projectionApplyChanged')
+    expect(preMismatchSource).toContain('!targetChanged')
   })
 
   it('applies cloned drafts, dispatches replacements, and rolls back to the previous definitions', async () => {

@@ -23,9 +23,11 @@ plan consolidates the input persistence inventory under
   stale projection epochs while allowing clean selected-row fields to refresh.
   The translator preset slice now protects dirty `name`, `prompt`, and
   `maxResponse` fields by preset id through stale projection epochs while clean
-  sibling fields refresh. Phase 1 settings, character, and chat row metadata
-  rollback adoption landed; message-target freshness is explicitly deferred to
-  Phase 4.
+  sibling fields refresh. The live local draft slice now protects dirty
+  lorebook entry draft fields and selected-character script/trigger row fields
+  while clean projection fields refresh. Phase 1 settings, character, and chat
+  row metadata rollback adoption landed; message-target freshness is explicitly
+  deferred to Phase 4.
 - Code changes: `src/ts/server/staleStateGuards.ts` and
   `src/ts/server/staleStateGuards.test.ts` add shared stale-state primitives
   and focused helper coverage. `src/ts/server/settingsBridge.svelte.ts`,
@@ -53,7 +55,12 @@ plan consolidates the input persistence inventory under
   epochs, reasserts still-dirty values with trusted projection writes, and
   avoids rolling back fields whose dirty state already cleared after projection
   catch-up.
-- Verification state: Phase 2 translator preset validation is recorded in
+  `src/lib/SideBars/LoreBook/LoreBookData.svelte` and
+  `src/ts/server/lorebookBridge.svelte.ts` now merge same-entry projection
+  updates into dirty lorebook entry drafts, and `src/lib/SideBars/CharConfig.svelte`
+  plus `src/ts/server/scriptDefinitionBridge.svelte.ts` now merge same-row
+  selected-character script/trigger projections into dirty local draft rows.
+- Verification state: Phase 2 live local draft validation is recorded in
   `latest-verification.md`.
 - Highest issue density:
   - Character editor: 52 issue rows, mostly dirty projection and unguarded
@@ -86,8 +93,11 @@ plan consolidates the input persistence inventory under
   profile draft dirty top-level projection protection, prompt item row
   same-order dirty field merging, generic settings draft whole-key projection
   protection, selected persona profile dirty projection protection, and
-  translator preset dirty field protection have landed; lorebook,
-  script/trigger, module, and plugin draft projection adopters remain pending.
+  translator preset dirty field protection have landed. Lorebook entry drafts
+  and selected-character script/trigger live local drafts now merge dirty rows
+  through stale projection; remaining module/plugin and broad collection
+  projection behavior remains pending until closeout triage confirms later-phase
+  ownership.
 - [Phase 3](phases/phase-3-upload-import-fetch-callbacks.md): pending. Upload,
   file, import, decode, and remote-fetch callback tokens.
 - [Phase 4](phases/phase-4-chat-messages-generation.md): pending. Chat,
@@ -149,6 +159,15 @@ plan consolidates the input persistence inventory under
   projection catches up or the target disappears, and scopes failed debounced
   rollback to fields still dirty with the same attempted value. Create, delete,
   import, and collection-level translator preset behavior remains unchanged.
+- Phase 2 live local draft slice: `LoreBookData.svelte` tracks dirty fields for
+  the current lorebook entry draft and merges same-entry projection values so
+  dirty local fields survive while clean fields refresh. `CharConfig.svelte`
+  tracks dirty selected-character script/trigger row fields by row id and merges
+  same-id-sequence projection rows so dirty row fields survive while clean
+  fields and clean sibling rows refresh. Both paths clear dirty state when
+  projection catches up, when targets/rows disappear, or when row sequences no
+  longer match and a full reseed is required. Create, delete, reorder, module,
+  plugin, and broad collection rollback behavior remains unchanged.
 - Remaining broad rollback families to track by phase:
   - Phase 4: `restoreChatScopedState` and message
     update/delete/truncate/replace freshness.

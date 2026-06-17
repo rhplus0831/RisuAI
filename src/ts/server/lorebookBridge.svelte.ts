@@ -34,6 +34,7 @@ import {
   type ServerCommandTransportOptions,
 } from './commands'
 import { getServerProjectionApplyEpoch, withTrustedServerProjectionWrite } from './projectionWriteGuard.svelte'
+import { mergeProjectionIntoDirtyDraft } from './staleStateGuards'
 
 type GlobalLorebook = { id?: string; name: string; data: loreBook[] }
 
@@ -1524,6 +1525,54 @@ export function collectLorebookCollectionSnapshots(scope: LorebookWatchScope): M
   }
 
   return snapshots
+}
+
+export type LorebookEntryDirtyField = keyof loreBook & string
+
+export function changedLorebookEntryDraftFields(
+  previousEntry: loreBook,
+  currentEntry: loreBook,
+): LorebookEntryDirtyField[] {
+  const previous = previousEntry as unknown as Record<string, unknown>
+  const current = currentEntry as unknown as Record<string, unknown>
+  const changedFields: LorebookEntryDirtyField[] = []
+  const keys = new Set([...Object.keys(previous), ...Object.keys(current)])
+
+  for (const key of keys) {
+    if (key === 'id') continue
+    if (snapshotJson(previous[key]) !== snapshotJson(current[key])) {
+      changedFields.push(key as LorebookEntryDirtyField)
+    }
+  }
+
+  return changedFields
+}
+
+export function clearDirtyLorebookEntryFieldsMatchingProjection(
+  dirtyFields: Set<LorebookEntryDirtyField>,
+  draft: loreBook,
+  projection: loreBook,
+): void {
+  const draftRecord = draft as unknown as Record<string, unknown>
+  const projectionRecord = projection as unknown as Record<string, unknown>
+
+  for (const field of Array.from(dirtyFields)) {
+    if (snapshotJson(draftRecord[field]) === snapshotJson(projectionRecord[field])) {
+      dirtyFields.delete(field)
+    }
+  }
+}
+
+export function mergeLorebookEntryProjectionDraft(
+  draft: loreBook,
+  projection: loreBook,
+  dirtyFields: ReadonlySet<LorebookEntryDirtyField>,
+): loreBook {
+  return mergeProjectionIntoDirtyDraft({
+    draft: cloneJsonValue(draft) as unknown as Record<string, unknown>,
+    projection: projection as unknown as Record<string, unknown>,
+    dirtyFields,
+  }) as unknown as loreBook
 }
 
 function collectCharacterLorebookSnapshots(
