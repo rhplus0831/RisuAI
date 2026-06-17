@@ -14,7 +14,7 @@ import {
   markGenerationFinalizationRetryFailure,
   pruneTerminalGenerationFinalizationRetries,
 } from '../src/generationFinalizationRetry.js'
-import type { ChatProviderDispatcher } from '../src/routes/generationChat.js'
+import { retryQueuedGenerationFinalizations, type ChatProviderDispatcher } from '../src/routes/generationChat.js'
 import { setupAuthedClient } from './helpers/auth.js'
 
 // Durable generation lives on a detached job whose lifecycle is not tied to the
@@ -178,6 +178,15 @@ const fixtureDatabase = {
 
 let harness: Harness
 let assertion: string
+
+interface GenerationFinalizationRetryTestRow {
+  generation_id: string
+  chat_id: string
+  status: string
+  failure_count: number
+  last_error: string | null
+  terminal_error: string | null
+}
 
 beforeEach(async () => {
   failNextGenerationPersistEvent = false
@@ -483,14 +492,7 @@ async function cancelJob(jobId: string): Promise<void> {
   expect(del.status).toBe(200)
 }
 
-function generationFinalizationRetryRows(): Array<{
-  generation_id: string
-  chat_id: string
-  status: string
-  failure_count: number
-  last_error: string | null
-  terminal_error: string | null
-}> {
+function generationFinalizationRetryRows(): GenerationFinalizationRetryTestRow[] {
   const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'), { readOnly: true })
   try {
     return db
@@ -501,17 +503,89 @@ function generationFinalizationRetryRows(): Array<{
           ORDER BY generation_id ASC
         `,
       )
-      .all() as Array<{
-      generation_id: string
-      chat_id: string
-      status: string
-      failure_count: number
-      last_error: string | null
-      terminal_error: string | null
-    }>
+      .all() as unknown as GenerationFinalizationRetryTestRow[]
   } finally {
     db.close()
   }
+}
+
+function commandEventTypeCount(type: string): number {
+  const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'), { readOnly: true })
+  try {
+    const row = db.prepare('SELECT COUNT(*) AS count FROM command_events WHERE type = ?').get(type) as
+      | { count: number }
+      | undefined
+    return row?.count ?? 0
+  } finally {
+    db.close()
+  }
+}
+
+function retryQueuedFinalizationsOnce(): ReturnType<typeof retryQueuedGenerationFinalizations> {
+  const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+  try {
+    return retryQueuedGenerationFinalizations({
+      db,
+      dataDir: harness.dataDir,
+      eventSink: createCommandEventSink(),
+      maxPerSweep: 10,
+    })
+  } finally {
+    db.close()
+  }
+}
+
+function jobIdFromEvents(events: ParsedEvent[]): string {
+  const jobId = events.find((ev) => ev.type === 'job_accepted')?.data.jobId
+  expect(typeof jobId).toBe('string')
+  return jobId as string
+}
+
+async function waitForTerminalFinalization(generationId: string): Promise<GenerationFinalizationRetryTestRow> {
+  return waitFor(async () => {
+    const row = generationFinalizationRetryRows().find((retry) => retry.generation_id === generationId)
+    return row?.status === 'terminal' ? row : undefined
+  })
+}
+
+async function patchMessage(messageId: string, patch: Record<string, unknown>): Promise<void> {
+  const boot = await bootstrap()
+  const res = await fetch(`${harness.baseUrl}/api/v1/commands/messages/${encodeURIComponent(messageId)}`, {
+    method: 'PATCH',
+    headers: authHeaders({ 'content-type': 'application/json' }),
+    body: JSON.stringify({ baseRevision: boot.revision, patch }),
+  })
+  expect(res.status).toBe(200)
+}
+
+async function patchChatScriptstate(patch: Record<string, string | number | boolean>): Promise<void> {
+  const boot = await bootstrap()
+  const res = await fetch(`${harness.baseUrl}/api/v1/commands/chats/chat-1/scriptstate`, {
+    method: 'PATCH',
+    headers: authHeaders({ 'content-type': 'application/json' }),
+    body: JSON.stringify({ baseRevision: boot.revision, patch }),
+  })
+  expect(res.status).toBe(200)
+}
+
+async function appendMessage(message: Record<string, unknown>): Promise<void> {
+  const boot = await bootstrap()
+  const res = await fetch(`${harness.baseUrl}/api/v1/commands/chats/chat-1/messages`, {
+    method: 'POST',
+    headers: authHeaders({ 'content-type': 'application/json' }),
+    body: JSON.stringify({ baseRevision: boot.revision, message }),
+  })
+  expect(res.status).toBe(200)
+}
+
+async function truncateChat(afterMessageId: string | null): Promise<void> {
+  const boot = await bootstrap()
+  const res = await fetch(`${harness.baseUrl}/api/v1/commands/chats/chat-1/messages/truncate`, {
+    method: 'POST',
+    headers: authHeaders({ 'content-type': 'application/json' }),
+    body: JSON.stringify({ baseRevision: boot.revision, afterMessageId }),
+  })
+  expect(res.status).toBe(200)
 }
 
 function seedGenerationFinalizationRetryRow(
@@ -591,6 +665,74 @@ describe('Durable generation (Milestone 1)', () => {
     const assistantMessages = messages.filter((m) => m.role === 'char')
     expect(assistantMessages).toHaveLength(1)
     expect(assistantMessages[0].data).toBe('retry me')
+    controller.abort()
+  })
+
+  it('replays an already-persisted chat-var finalization retry as a no-op', async () => {
+    await harness.app.close()
+    rmSync(harness.dataDir, { recursive: true, force: true })
+    harness = await startHarness({ finalizationRetry: false })
+    ;({ assertion } = await setupAuthedClient(harness.app))
+    failNextGenerationPersistEvent = true
+    providerImpl = () => {
+      async function* g(): AsyncGenerator<CompletionStreamFrame> {
+        yield { kind: 'token', content: 'reply text' }
+        yield { kind: 'done', finishReason: 'stop' }
+      }
+      return g()
+    }
+    await seedDatabase({
+      ...fixtureDatabase,
+      characters: [
+        {
+          ...fixtureDatabase.characters[0],
+          triggerscript: [
+            {
+              comment: '',
+              type: 'output',
+              conditions: [],
+              effect: [{ type: 'setvar', operator: '=', var: 'mood', value: 'happy' }],
+            },
+          ],
+        },
+      ],
+    })
+
+    const controller = newController()
+    const res = await postDurable({}, { signal: controller.signal })
+    const events = await readSse(res, (ev) => ev.type === 'error' || ev.type === 'done')
+    expect(events.some((event) => event.type === 'error')).toBe(true)
+    const jobId = jobIdFromEvents(events)
+
+    await waitFor(async () => {
+      const row = generationFinalizationRetryRows().find((retry) => retry.generation_id === jobId)
+      return row?.status === 'pending' ? row : undefined
+    })
+    expect(commandEventTypeCount('generation.persisted')).toBe(1)
+    const failedBoot = await bootstrap()
+    expect(failedBoot.database.characters[0].chats[0].scriptstate).toEqual({ $mood: 'happy' })
+    expect((await chatMessages(failedBoot)).filter((message) => message.role === 'char')).toHaveLength(1)
+
+    await patchChatScriptstate({ $mood: 'user-edited' })
+    const editedBoot = await bootstrap()
+    const revisionBeforeRetry = editedBoot.revision
+    expect(editedBoot.database.characters[0].chats[0].scriptstate).toEqual({ $mood: 'user-edited' })
+
+    expect(retryQueuedFinalizationsOnce()).toEqual({
+      attempted: 1,
+      persisted: 1,
+      terminal: 0,
+      retryable: 0,
+    })
+    expect(generationFinalizationRetryRows()).toEqual([])
+
+    const retriedBoot = await bootstrap()
+    expect(retriedBoot.revision).toBe(revisionBeforeRetry)
+    expect(retriedBoot.database.characters[0].chats[0].scriptstate).toEqual({ $mood: 'user-edited' })
+    const assistantMessages = (await chatMessages(retriedBoot)).filter((message) => message.role === 'char')
+    expect(assistantMessages).toHaveLength(1)
+    expect(assistantMessages[0]).toMatchObject({ data: 'reply text', chatId: jobId })
+    expect(commandEventTypeCount('generation.persisted')).toBe(1)
     controller.abort()
   })
 
@@ -926,6 +1068,80 @@ describe('Durable generation (Milestone 1)', () => {
     expect(boot.database.characters[0].chats[0].scriptstate).toEqual({ $mood: 'happy' })
     const assistant = (await chatMessages(boot)).find((m) => m.role === 'char')
     expect(assistant?.data).toBe('reply text')
+    controller.abort()
+  })
+
+  it('rejects stale durable send finalization when the submitted user tail is truncated', async () => {
+    await seedChatWithMessages([{ role: 'user', data: 'hi', chatId: 'msg-user-1' }])
+    const gated = makeGatedProvider({ before: 'stale', after: ' reply' })
+    providerImpl = gated.dispatchProvider
+
+    const controller = newController()
+    const res = await postDurable({}, { signal: controller.signal })
+    const events = await readSse(res, (ev) => ev.type === 'token')
+    const jobId = jobIdFromEvents(events)
+
+    await truncateChat(null)
+    gated.release()
+
+    const terminal = await waitForTerminalFinalization(jobId)
+    expect(terminal.terminal_error).toContain('stale')
+    expect(await chatMessages(await bootstrap())).toEqual([])
+    controller.abort()
+  })
+
+  it('rejects stale durable continue finalization when a newer row is appended after the target', async () => {
+    await seedChatWithMessages([
+      { role: 'user', data: 'story', chatId: 'msg-user-1' },
+      { role: 'char', data: 'Once upon a time', chatId: 'msg-char-1', saying: 'char-1' },
+    ])
+    const gated = makeGatedProvider({ before: ' and then', after: ' something changed' })
+    providerImpl = gated.dispatchProvider
+
+    const controller = newController()
+    const res = await postDurable({ mode: 'continue', userMessage: undefined }, { signal: controller.signal })
+    const events = await readSse(res, (ev) => ev.type === 'token')
+    const jobId = jobIdFromEvents(events)
+
+    await appendMessage({ role: 'user', data: 'newer user turn', chatId: 'msg-user-2' })
+    gated.release()
+
+    const terminal = await waitForTerminalFinalization(jobId)
+    expect(terminal.terminal_error).toContain('stale')
+    const messages = await chatMessages(await bootstrap())
+    expect(messages).toEqual([
+      { role: 'user', data: 'story', chatId: 'msg-user-1' },
+      { role: 'char', data: 'Once upon a time', chatId: 'msg-char-1', saying: 'char-1' },
+      { role: 'user', data: 'newer user turn', chatId: 'msg-user-2' },
+    ])
+    controller.abort()
+  })
+
+  it('rejects stale durable regenerate finalization when the target assistant was edited', async () => {
+    await seedChatWithMessages([
+      { role: 'user', data: 'greet me', chatId: 'msg-user-1' },
+      { role: 'char', data: 'old reply', chatId: 'msg-char-1', saying: 'char-1' },
+    ])
+    const gated = makeGatedProvider({ before: 'new', after: ' reply' })
+    providerImpl = gated.dispatchProvider
+
+    const controller = newController()
+    const res = await postDurable(
+      { mode: 'regenerate', regenerateMessageId: 'msg-char-1', userMessage: undefined },
+      { signal: controller.signal },
+    )
+    const events = await readSse(res, (ev) => ev.type === 'token')
+    const jobId = jobIdFromEvents(events)
+
+    await patchMessage('msg-char-1', { data: 'edited old reply' })
+    gated.release()
+
+    const terminal = await waitForTerminalFinalization(jobId)
+    expect(terminal.terminal_error).toContain('stale')
+    const messages = await chatMessages(await bootstrap())
+    expect(messages).toHaveLength(2)
+    expect(messages[1]).toMatchObject({ role: 'char', data: 'edited old reply', chatId: 'msg-char-1' })
+    expect(messages.some((message) => message.data === 'new reply')).toBe(false)
     controller.abort()
   })
 

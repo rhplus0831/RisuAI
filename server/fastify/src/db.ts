@@ -12,7 +12,7 @@ import {
   seedProjectionBodyCacheRevisions,
 } from './repository.js'
 
-export const CURRENT_SCHEMA_VERSION = 17
+export const CURRENT_SCHEMA_VERSION = 18
 
 export interface MigrationStep {
   version: number
@@ -160,6 +160,19 @@ export const MIGRATIONS: readonly MigrationStep[] = [
     name: 'split-model-prompt-presets',
     up: (db) => {
       createCollectionTables(db)
+    },
+  },
+  {
+    version: 18,
+    name: 'generation-finalization-target-snapshot',
+    up: (db) => {
+      createGenerationFinalizationRetryTable(db)
+      ensureColumn(
+        db,
+        'generation_finalization_retries',
+        'target_snapshot_json',
+        'ALTER TABLE generation_finalization_retries ADD COLUMN target_snapshot_json TEXT CHECK (target_snapshot_json IS NULL OR json_valid(target_snapshot_json))',
+      )
     },
   },
 ]

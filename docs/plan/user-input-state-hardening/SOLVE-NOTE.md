@@ -54,14 +54,13 @@ surface still pending. Phase 4 is in progress; DefaultChatScreen composer
 send/continue clear/restore, auto-translate freshness, and reroll active-chat
 freshness have landed. Partial edit/delete modal freshness has also landed.
 Suggestion persistence freshness and attempt-aware chat-scoped message rollback
-have landed.
+have landed. Durable generation finalization target-row freshness has landed.
 
 Next manager loop:
 
 1. Read `README.md`, `STRUCTURE.md`, `status.md`, `latest-verification.md`, and
    `phases/phase-4-chat-messages-generation.md`.
-2. Spawn an explorer agent for the next Phase 4 chat/message/generation
-   freshness slice.
+2. Spawn an explorer agent for the next Phase 4 dynamic trigger freshness slice.
 3. Spawn a worker agent for the selected Phase 4 slice, then a verification
    agent after the worker completes.
 4. If verification succeeds, run Prettier, run the relevant validation commands,
@@ -122,7 +121,8 @@ Explicit deferrals:
   freshness, partial edit/delete modal freshness, and suggestion persistence
   freshness have landed. Attempt-aware chat-scoped message rollback has landed
   for scoped message update/delete/truncate/replace-tail/replace-all failures.
-  Dynamic trigger freshness and generation finalization remain Phase 4 work.
+  Durable generation finalization target-row freshness has landed. Dynamic
+  trigger freshness remains Phase 4 work.
   Composer file and paste callbacks are already covered by Phase 3.
 - Preset/persona/translator/module/lorebook/script/import collection flows, Hypa
   V3 preset array import/rename/delete, plugin

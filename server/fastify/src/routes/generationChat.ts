@@ -43,6 +43,7 @@ import {
   clearAlternateMessages,
   countAlternateMessages,
   countChatMessages,
+  getChatMessages,
   replaceActiveChatMessages,
   writeGenerationChatMessage,
 } from '../messageStore.js'
@@ -146,6 +147,26 @@ export interface GenerationFinalizationRetryLogger {
   warn(obj: Record<string, unknown>, msg: string): void
   error(obj: Record<string, unknown>, msg: string): void
 }
+
+interface GenerationFinalizationSnapshotRow {
+  role: Message['role']
+  data: string
+  messageId?: string
+}
+
+export type GenerationFinalizationTargetSnapshot =
+  | {
+      mode: GenerationFinalizationMode
+      kind: 'tail'
+      transcriptLength: number
+      tail?: GenerationFinalizationSnapshotRow
+    }
+  | {
+      mode: GenerationFinalizationMode
+      kind: 'target-tail'
+      transcriptLength: number
+      target: GenerationFinalizationSnapshotRow
+    }
 
 function badRequest(reply: FastifyReply, error: string): void {
   reply.code(400).send({ error })
@@ -877,6 +898,54 @@ function buildRawModeMessage(args: {
   }
 }
 
+function snapshotMessageRow(message: Message | undefined): GenerationFinalizationSnapshotRow | undefined {
+  if (!message) return undefined
+  return {
+    role: message.role,
+    data: message.data,
+    ...(message.chatId ? { messageId: message.chatId } : {}),
+  }
+}
+
+function captureGenerationFinalizationTargetSnapshot(
+  input: AssembleInput,
+  state: AssemblyState,
+): GenerationFinalizationTargetSnapshot | undefined {
+  const mode = finalizationModeFromInput(input)
+  const sourceRows = state.submitMessages ?? state.initialMessages ?? []
+  const transcriptLength = sourceRows.length
+  const tail = sourceRows.at(-1)
+
+  if (mode === 'continue' && tail?.role === 'char') {
+    return {
+      mode,
+      kind: 'target-tail',
+      transcriptLength,
+      target: snapshotMessageRow(tail)!,
+    }
+  }
+
+  if (mode === 'regenerate') {
+    const targetMessageId = input.regenerateMessageId
+    if (targetMessageId && tail?.role === 'char' && tail.chatId === targetMessageId) {
+      return {
+        mode,
+        kind: 'target-tail',
+        transcriptLength,
+        target: snapshotMessageRow(tail)!,
+      }
+    }
+  }
+
+  const tailSnapshot = snapshotMessageRow(tail)
+  return {
+    mode,
+    kind: 'tail',
+    transcriptLength,
+    ...(tailSnapshot ? { tail: tailSnapshot } : {}),
+  }
+}
+
 /**
  * Run the A2 post-gen pass and resolve the mode-aware assistant message + replace
  * target, with a mode-correct raw-text fallback when the derivation throws. Shared
@@ -898,7 +967,9 @@ async function resolvePostGenerationResult(args: {
   message: Message
   targetMessageId?: string
   chatVarMutations: AssembleMutationPayload['chatVarMutations']
+  targetSnapshot?: GenerationFinalizationTargetSnapshot
 }> {
+  const targetSnapshot = captureGenerationFinalizationTargetSnapshot(args.input, args.state)
   // Capture the continue target BEFORE post-gen mutates the row in place.
   const continueRow = args.input.mode === 'continue' ? findContinueRow(args.state) : undefined
   try {
@@ -921,6 +992,7 @@ async function resolvePostGenerationResult(args: {
       message: resolved.message,
       targetMessageId: resolved.targetMessageId,
       chatVarMutations: postGen.mutations.chatVarMutations,
+      targetSnapshot,
     }
   } catch (err) {
     // Derivation threw: persist the raw provider text so the result is not lost.
@@ -938,6 +1010,7 @@ async function resolvePostGenerationResult(args: {
       message: raw.message,
       targetMessageId: raw.targetMessageId,
       chatVarMutations: [],
+      targetSnapshot,
     }
   }
 }
@@ -979,14 +1052,15 @@ async function buildPostGenerationFrame(args: {
   promptInfo?: Record<string, unknown>
   emit?: (event: PromptChatEvent) => void
 }): Promise<PostGenerationFrame | undefined> {
-  const { postGen, postGenError, message, targetMessageId, chatVarMutations } = await resolvePostGenerationResult({
-    state: args.state,
-    input: args.input,
-    completionText: args.completionText,
-    generationId: args.generationId,
-    generationInfo: args.generationInfo,
-    promptInfo: args.promptInfo,
-  })
+  const { postGen, postGenError, message, targetMessageId, chatVarMutations, targetSnapshot } =
+    await resolvePostGenerationResult({
+      state: args.state,
+      input: args.input,
+      completionText: args.completionText,
+      generationId: args.generationId,
+      generationInfo: args.generationInfo,
+      promptInfo: args.promptInfo,
+    })
 
   let revision: number
   const persistStartedAt = protocolNowMs()
@@ -1000,6 +1074,7 @@ async function buildPostGenerationFrame(args: {
       chatVarMutations,
       targetMessageId,
       mode: finalizationModeFromInput(args.input),
+      targetSnapshot,
     })
   } catch (err) {
     emitProtocolMetric('generation_persistence', {
@@ -1367,6 +1442,118 @@ function regenerateTargetMessageIdFromInitialMessages(
   return target?.role === 'char' ? targetMessageId : undefined
 }
 
+function rowMatchesSnapshot(row: unknown, snapshot: GenerationFinalizationSnapshotRow): boolean {
+  if (!isRecord(row)) return false
+  if (row.role !== snapshot.role || row.data !== snapshot.data) return false
+  return snapshot.messageId === undefined || row.chatId === snapshot.messageId
+}
+
+function rowMatchesMessage(row: unknown, message: Message): boolean {
+  if (!isRecord(row)) return false
+  if (row.role !== message.role || row.data !== message.data) return false
+  return message.chatId === undefined || row.chatId === message.chatId
+}
+
+function finalizationAlreadyPersisted(args: {
+  liveRows: readonly unknown[]
+  snapshot: GenerationFinalizationTargetSnapshot
+  message: Message
+}): boolean {
+  if (args.snapshot.kind === 'target-tail') {
+    return (
+      args.liveRows.length >= args.snapshot.transcriptLength &&
+      rowMatchesMessage(args.liveRows[args.snapshot.transcriptLength - 1], args.message)
+    )
+  }
+  return args.liveRows.length > args.snapshot.transcriptLength
+    ? rowMatchesMessage(args.liveRows[args.snapshot.transcriptLength], args.message)
+    : false
+}
+
+function validateGenerationFinalizationTargetFresh(args: {
+  chatId: string
+  liveRows: readonly unknown[]
+  snapshot: GenerationFinalizationTargetSnapshot
+  message: Message
+}): { alreadyPersisted: boolean } {
+  if (finalizationAlreadyPersisted(args)) {
+    return { alreadyPersisted: true }
+  }
+
+  if (args.liveRows.length !== args.snapshot.transcriptLength) {
+    throw new ValidationError(`Generation finalization target is stale for chat ${args.chatId}`)
+  }
+
+  const liveTail = args.liveRows.at(-1)
+  if (args.snapshot.kind === 'target-tail') {
+    if (!rowMatchesSnapshot(liveTail, args.snapshot.target)) {
+      throw new ValidationError(`Generation finalization target is stale for chat ${args.chatId}`)
+    }
+  } else if (args.snapshot.tail) {
+    if (!rowMatchesSnapshot(liveTail, args.snapshot.tail)) {
+      throw new ValidationError(`Generation finalization target is stale for chat ${args.chatId}`)
+    }
+  } else if (liveTail !== undefined) {
+    throw new ValidationError(`Generation finalization target is stale for chat ${args.chatId}`)
+  }
+
+  return { alreadyPersisted: false }
+}
+
+class GenerationFinalizationAlreadyPersistedNoop extends Error {
+  constructor(readonly revision: number) {
+    super('generation finalization already persisted')
+    this.name = 'GenerationFinalizationAlreadyPersistedNoop'
+  }
+}
+
+function readAlreadyPersistedGenerationFinalizationRevision(args: {
+  db: DatabaseSync
+  chatId: string
+  snapshot: GenerationFinalizationTargetSnapshot
+  message: Message
+}): number | undefined {
+  let transactionOpen = false
+  args.db.exec('BEGIN IMMEDIATE')
+  transactionOpen = true
+  try {
+    const { revision } = getSchemaState(args.db)
+    const alreadyPersisted = finalizationAlreadyPersisted({
+      liveRows: getChatMessages(args.db, args.chatId),
+      snapshot: args.snapshot,
+      message: args.message,
+    })
+    args.db.exec('COMMIT')
+    transactionOpen = false
+    return alreadyPersisted ? revision : undefined
+  } catch (err) {
+    if (transactionOpen) {
+      args.db.exec('ROLLBACK')
+    }
+    throw err
+  }
+}
+
+function liveChatVarMutationValue(value: unknown): string | number | boolean | null {
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return value
+  return null
+}
+
+function validateGenerationChatVarMutationsFresh(args: {
+  chatId: string
+  chat: { scriptstate?: Record<string, unknown> }
+  chatVarMutations: AssembleMutationPayload['chatVarMutations']
+}): void {
+  for (const mutation of args.chatVarMutations) {
+    const before = liveChatVarMutationValue(args.chat.scriptstate?.[mutation.key])
+    if (before !== mutation.before) {
+      throw new ValidationError(
+        `Generation finalization chat variable is stale for chat ${args.chatId}: ${mutation.key}`,
+      )
+    }
+  }
+}
+
 /**
  * Step 3 (A2 / EC-D1 persistence half): write the durable generation result. In a
  * single targeted command mutation (one revision bump, one event, rollback on
@@ -1395,6 +1582,7 @@ function persistServerGenerationResult(args: {
    */
   targetMessageId?: string
   mode?: GenerationFinalizationMode
+  targetSnapshot?: GenerationFinalizationTargetSnapshot
 }): number {
   const patch: Record<string, string | number | boolean> = {}
   const deleteKeys: string[] = []
@@ -1405,69 +1593,103 @@ function persistServerGenerationResult(args: {
       patch[mutation.key] = mutation.after
     }
   }
+  if (args.targetSnapshot) {
+    const replayRevision = readAlreadyPersistedGenerationFinalizationRevision({
+      db: args.db,
+      chatId: args.chatId,
+      snapshot: args.targetSnapshot,
+      message: args.message,
+    })
+    if (replayRevision !== undefined) {
+      return replayRevision
+    }
+  }
   const { revision: baseRevision } = getSchemaState(args.db)
   const hasScriptstateWrite = Object.keys(patch).length > 0 || deleteKeys.length > 0
-  const result = applyTargetedCommandMutation<{ chatId: string; messageId: string }>({
-    db: args.db,
-    dataDir: args.dataDir,
-    baseRevision,
-    eventSink: args.eventSink,
-    mutationPath: 'targeted-generation',
-    writeDatabase: hasScriptstateWrite,
-    chatScopedRead: hasScriptstateWrite ? undefined : { chatId: args.chatId },
-    mutate(database, targetDb) {
-      const characters = normalizeAllCharacterChats(database)
-      const { chat } = requireChatLocation(characters, args.chatId)
-      if (hasScriptstateWrite) {
-        chat.scriptstate ??= {}
-        for (const key of deleteKeys) {
-          delete chat.scriptstate[key]
+  try {
+    const result = applyTargetedCommandMutation<{ chatId: string; messageId: string }>({
+      db: args.db,
+      dataDir: args.dataDir,
+      baseRevision,
+      eventSink: args.eventSink,
+      mutationPath: 'targeted-generation',
+      writeDatabase: hasScriptstateWrite,
+      chatScopedRead: hasScriptstateWrite ? undefined : { chatId: args.chatId },
+      mutate(database, targetDb) {
+        const characters = normalizeAllCharacterChats(database)
+        const { chat } = requireChatLocation(characters, args.chatId)
+        if (args.targetSnapshot) {
+          const freshness = validateGenerationFinalizationTargetFresh({
+            chatId: args.chatId,
+            liveRows: getChatMessages(targetDb, args.chatId),
+            snapshot: args.targetSnapshot,
+            message: args.message,
+          })
+          if (freshness.alreadyPersisted) {
+            throw new GenerationFinalizationAlreadyPersistedNoop(baseRevision)
+          }
+          validateGenerationChatVarMutationsFresh({
+            chatId: args.chatId,
+            chat,
+            chatVarMutations: args.chatVarMutations,
+          })
         }
-        Object.assign(chat.scriptstate, patch)
-        if (Object.keys(chat.scriptstate).length === 0) {
-          delete chat.scriptstate
+        if (hasScriptstateWrite) {
+          chat.scriptstate ??= {}
+          for (const key of deleteKeys) {
+            delete chat.scriptstate[key]
+          }
+          Object.assign(chat.scriptstate, patch)
+          if (Object.keys(chat.scriptstate).length === 0) {
+            delete chat.scriptstate
+          }
         }
-      }
-      const record = createMessageRecord(structuredClone(args.message), 'generationResult.message')
-      const write = writeGenerationChatMessage(targetDb, args.chatId, record, args.targetMessageId)
-      if (write.ok === false) {
-        switch (write.reason) {
-          case 'missing-target':
-            throw new EntityNotFoundError(`Message not found for chat ${args.chatId}: ${write.targetMessageId}`)
-          case 'duplicate':
-            throw new ValidationError(`Duplicate message id: ${write.messageId}`)
+        const record = createMessageRecord(structuredClone(args.message), 'generationResult.message')
+        const write = writeGenerationChatMessage(targetDb, args.chatId, record, args.targetMessageId)
+        if (write.ok === false) {
+          switch (write.reason) {
+            case 'missing-target':
+              throw new EntityNotFoundError(`Message not found for chat ${args.chatId}: ${write.targetMessageId}`)
+            case 'duplicate':
+              throw new ValidationError(`Duplicate message id: ${write.messageId}`)
+          }
         }
-      }
-      // Reroll buffer ("don't lose a rerolled result"):
-      //  - regenerate (`targetMessageId` set) REPLACES a candidate; preserve BOTH the
-      //    one it displaces AND the new one it produces as alternate rows, so the
-      //    full candidate set of the turn survives a reload and swipe-navigation is
-      //    durable for free (flipping the active tail never touches the buffer — the
-      //    active is just whichever candidate is positioned, matched by `uid` on
-      //    hydration). This realizes the design doc's "insert the new candidate as an
-      //    alternate row and flip the active tail". Dedup by `uid` keeps it
-      //    replay-idempotent and free of duplicates as candidates accumulate.
-      //  - send / continue is the confirm boundary — drop the chat's reroll buffer.
-      // Both run inside this mutation's transaction (atomic with the message write).
-      const preservesRerollCandidate =
-        !!args.targetMessageId || (args.mode === 'regenerate' && countAlternateMessages(targetDb, args.chatId) > 0)
-      if (preservesRerollCandidate) {
-        if (write.displaced) addAlternateMessage(targetDb, args.chatId, write.displaced)
-        addAlternateMessage(targetDb, args.chatId, record)
-      } else {
-        clearAlternateMessages(targetDb, args.chatId)
-      }
-      return {
-        event: {
-          ...COMMAND_EVENT_CATALOG.generationPersisted,
-          id: write.messageId,
-          parentId: args.chatId,
-        },
-        extra: { chatId: args.chatId, messageId: write.messageId },
-      }
-    },
-  })
-  return result.revision
+        // Reroll buffer ("don't lose a rerolled result"):
+        //  - regenerate (`targetMessageId` set) REPLACES a candidate; preserve BOTH the
+        //    one it displaces AND the new one it produces as alternate rows, so the
+        //    full candidate set of the turn survives a reload and swipe-navigation is
+        //    durable for free (flipping the active tail never touches the buffer — the
+        //    active is just whichever candidate is positioned, matched by `uid` on
+        //    hydration). This realizes the design doc's "insert the new candidate as an
+        //    alternate row and flip the active tail". Dedup by `uid` keeps it
+        //    replay-idempotent and free of duplicates as candidates accumulate.
+        //  - send / continue is the confirm boundary — drop the chat's reroll buffer.
+        // Both run inside this mutation's transaction (atomic with the message write).
+        const preservesRerollCandidate =
+          !!args.targetMessageId || (args.mode === 'regenerate' && countAlternateMessages(targetDb, args.chatId) > 0)
+        if (preservesRerollCandidate) {
+          if (write.displaced) addAlternateMessage(targetDb, args.chatId, write.displaced)
+          addAlternateMessage(targetDb, args.chatId, record)
+        } else {
+          clearAlternateMessages(targetDb, args.chatId)
+        }
+        return {
+          event: {
+            ...COMMAND_EVENT_CATALOG.generationPersisted,
+            id: write.messageId,
+            parentId: args.chatId,
+          },
+          extra: { chatId: args.chatId, messageId: write.messageId },
+        }
+      },
+    })
+    return result.revision
+  } catch (err) {
+    if (err instanceof GenerationFinalizationAlreadyPersistedNoop) {
+      return err.revision
+    }
+    throw err
+  }
 }
 
 function finalizationModeFromInput(input: AssembleInput): GenerationFinalizationMode {
@@ -1493,6 +1715,7 @@ function persistGenerationFinalizationAttempt(args: {
     chatVarMutations: args.attempt.chatVarMutations,
     targetMessageId: args.attempt.targetMessageId,
     mode: args.attempt.mode,
+    targetSnapshot: args.attempt.targetSnapshot,
   })
 }
 
@@ -1635,14 +1858,15 @@ async function buildDurablePostGeneration(args: {
   generationInfo: Record<string, unknown>
   promptInfo?: Record<string, unknown>
 }): Promise<PostGenerationFrame | undefined> {
-  const { postGen, postGenError, message, targetMessageId, chatVarMutations } = await resolvePostGenerationResult({
-    state: args.state,
-    input: args.input,
-    completionText: args.completionText,
-    generationId: args.generationId,
-    generationInfo: args.generationInfo,
-    promptInfo: args.promptInfo,
-  })
+  const { postGen, postGenError, message, targetMessageId, chatVarMutations, targetSnapshot } =
+    await resolvePostGenerationResult({
+      state: args.state,
+      input: args.input,
+      completionText: args.completionText,
+      generationId: args.generationId,
+      generationInfo: args.generationInfo,
+      promptInfo: args.promptInfo,
+    })
 
   let revision: number
   const persistStartedAt = protocolNowMs()
@@ -1658,6 +1882,7 @@ async function buildDurablePostGeneration(args: {
         message,
         chatVarMutations,
         ...(targetMessageId ? { targetMessageId } : {}),
+        ...(targetSnapshot ? { targetSnapshot } : {}),
       },
     })
   } catch (err) {
@@ -1722,6 +1947,7 @@ function persistRawCancelledResult(args: {
   promptInfo?: Record<string, unknown>
   text: string
 }): void {
+  const targetSnapshot = captureGenerationFinalizationTargetSnapshot(args.input, args.state)
   const continueRow = args.input.mode === 'continue' ? findContinueRow(args.state) : undefined
   const raw = buildRawModeMessage({
     input: args.input,
@@ -1744,6 +1970,7 @@ function persistRawCancelledResult(args: {
         message: raw.message,
         chatVarMutations: [],
         ...(raw.targetMessageId ? { targetMessageId: raw.targetMessageId } : {}),
+        ...(targetSnapshot ? { targetSnapshot } : {}),
       },
     })
   } catch {

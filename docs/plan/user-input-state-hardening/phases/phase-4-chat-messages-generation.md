@@ -23,7 +23,7 @@ output against a stale target.
 - Guard suggestion reroll/send persistence while preserving existing request
   checks. Suggestion persistence freshness has landed here.
 - Add generation finalization freshness checks for durable jobs and target-row
-  persistence.
+  persistence. Durable generation finalization freshness has landed here.
 
 First landed slice: `DefaultChatScreen.svelte` now snapshots send/continue
 composer operations by active transcript identity, latest-operation token,
@@ -62,6 +62,14 @@ restores only `chat.message` when the live array still equals the attempted
 optimistic array, preserving newer same-chat metadata/scriptstate/local lore and
 divergent message edits.
 
+Sixth landed slice: `generationChat.ts` now captures target/tail snapshots for
+send, continue, and regenerate finalization and threads them through inline,
+durable, cancel, and retry paths. Queued retries persist nullable
+`target_snapshot_json`, stale finalizations become terminal retry errors before
+chat-var or message writes, and already-persisted retry replays return the
+current revision without rewriting chat vars, messages, alternates, or command
+events.
+
 ## Anchors
 
 - `src/lib/ChatScreens/DefaultChatScreen.svelte`
@@ -94,7 +102,7 @@ divergent message edits.
 - Tests cover stale composer clear/restore, stale paste/file append, stale
   auto-translate result, reroll after chat switch, partial edit after message
   change, dynamic trigger after chat switch, and generation finalization after
-  target row change.
+  target row change. Generation finalization target-row tests have landed.
 - Chat/message rollback from Phase 1 is used instead of whole-chat restoration
   for the changed paths.
 - Browser smoke covers at least composer/file/reroll or records why unit tests

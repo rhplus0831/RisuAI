@@ -1,6 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite'
 import type { Message } from '../../../src/ts/storage/database.svelte'
 import type { AssembleMutationPayload } from './prompt/assemble.js'
+import type { GenerationFinalizationTargetSnapshot } from './routes/generationChat.js'
 
 export type GenerationFinalizationMode = 'send' | 'continue' | 'regenerate'
 
@@ -16,6 +17,7 @@ export interface GenerationFinalizationAttempt {
   targetMessageId?: string
   message: Message
   chatVarMutations: AssembleMutationPayload['chatVarMutations']
+  targetSnapshot?: GenerationFinalizationTargetSnapshot
 }
 
 interface GenerationFinalizationRetryRow {
@@ -25,6 +27,7 @@ interface GenerationFinalizationRetryRow {
   target_message_id: string | null
   message_json: string
   chat_var_mutations_json: string
+  target_snapshot_json: string | null
   failure_count: number
   last_error: string | null
   terminal_error: string | null
@@ -70,6 +73,7 @@ export function createGenerationFinalizationRetryTable(db: DatabaseSync): void {
       target_message_id TEXT,
       message_json TEXT NOT NULL CHECK (json_valid(message_json)),
       chat_var_mutations_json TEXT NOT NULL CHECK (json_valid(chat_var_mutations_json)),
+      target_snapshot_json TEXT CHECK (target_snapshot_json IS NULL OR json_valid(target_snapshot_json)),
       failure_count INTEGER NOT NULL DEFAULT 0 CHECK (failure_count >= 0),
       last_error TEXT,
       terminal_error TEXT,
@@ -93,18 +97,20 @@ export function enqueueGenerationFinalizationRetry(db: DatabaseSync, attempt: Ge
         target_message_id,
         message_json,
         chat_var_mutations_json,
+        target_snapshot_json,
         status,
         last_error,
         terminal_error,
         updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, 'pending', NULL, NULL, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', NULL, NULL, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
       ON CONFLICT(generation_id) DO UPDATE SET
         chat_id = excluded.chat_id,
         mode = excluded.mode,
         target_message_id = excluded.target_message_id,
         message_json = excluded.message_json,
         chat_var_mutations_json = excluded.chat_var_mutations_json,
+        target_snapshot_json = excluded.target_snapshot_json,
         status = 'pending',
         last_error = NULL,
         terminal_error = NULL,
@@ -117,6 +123,7 @@ export function enqueueGenerationFinalizationRetry(db: DatabaseSync, attempt: Ge
     attempt.targetMessageId ?? null,
     JSON.stringify(attempt.message),
     JSON.stringify(attempt.chatVarMutations),
+    attempt.targetSnapshot ? JSON.stringify(attempt.targetSnapshot) : null,
   )
 }
 
@@ -192,6 +199,7 @@ export function listPendingGenerationFinalizationRetries(
           target_message_id,
           message_json,
           chat_var_mutations_json,
+          target_snapshot_json,
           failure_count,
           last_error,
           terminal_error,
@@ -211,5 +219,8 @@ export function listPendingGenerationFinalizationRetries(
     ...(row.target_message_id !== null ? { targetMessageId: row.target_message_id } : {}),
     message: JSON.parse(row.message_json) as Message,
     chatVarMutations: JSON.parse(row.chat_var_mutations_json) as AssembleMutationPayload['chatVarMutations'],
+    ...(row.target_snapshot_json !== null
+      ? { targetSnapshot: JSON.parse(row.target_snapshot_json) as GenerationFinalizationTargetSnapshot }
+      : {}),
   }))
 }

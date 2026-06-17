@@ -75,7 +75,10 @@ persistence inventory under
   update/delete/truncate/replace-tail/replace-all failures now restore only
   attempted message fields or `chat.message` arrays when the live state still
   matches the attempted optimistic state, preserving newer same-chat metadata and
-  divergent message edits.
+  divergent message edits. Durable generation finalization now captures
+  send/continue/regenerate target snapshots, rejects stale persistence before
+  chat-var or message writes, stores snapshots on retry rows, terminalizes stale
+  retries, and treats already-persisted retry replays as no-op completions.
   Phase 2 landed character profile draft dirty top-level field protection;
   prompt-template item row dirty projection merging; whole-key dirty projection
   protection for
@@ -200,14 +203,20 @@ persistence inventory under
   message patch and message-list command failures; `appendCurrentChatEmptyCharMessage`
   mints message ids before optimistic replace-all writes so rollback compares
   equivalent attempted arrays.
-- Verification state: Phase 4 attempt-aware chat-scoped message rollback
+- `server/fastify/src/routes/generationChat.ts`,
+  `server/fastify/src/generationFinalizationRetry.ts`, and
+  `server/fastify/src/db.ts` now carry generation finalization target snapshots
+  through durable persistence and retry storage. `durableGeneration.test.ts`
+  covers stale send/continue/regenerate finalization and already-persisted
+  no-op retry replay.
+- Verification state: Phase 4 durable generation finalization target-row
   validation is
   recorded in `latest-verification.md`.
 - Highest issue density:
   - Character editor: 52 issue rows, mostly dirty projection and unguarded
     upload callbacks.
   - Chat/messages: composer, file-post, reroll, partial edit, dynamic trigger,
-    suggestion, and generation finalization paths.
+    and suggestion paths.
   - Lorebooks/scripts/modules/plugins: broad rollback and replacement
     collection paths.
   - Presets/personas/loadouts/prompts: dirty projection plus broad collection
@@ -253,9 +262,9 @@ persistence inventory under
   composer send/continue clear/restore, auto-translate freshness, and reroll
   active-chat freshness have landed. Partial edit/delete modal freshness has
   landed. Suggestion persistence freshness has landed. Attempt-aware
-  chat-scoped message rollback has landed. Dynamic trigger freshness and
-  generation finalization freshness remain here. Composer file and paste
-  callbacks are already covered by Phase 3.
+  chat-scoped message rollback has landed. Durable generation finalization
+  freshness has landed. Dynamic trigger freshness remains here. Composer file
+  and paste callbacks are already covered by Phase 3.
 - [Phase 5](phases/phase-5-collection-domains.md): pending. Preset, persona,
   translator, module, lorebook, script, and import collection flows; Hypa V3
   preset array import/rename/delete; plugin enable/delete/args/provider/storage;
@@ -449,7 +458,12 @@ persistence inventory under
     replace-tail, and replace-all failure rollbacks now restore only attempted
     message fields or `chat.message` arrays, and only while live message state
     still equals the attempted optimistic state.
-  - Remaining Phase 4: dynamic trigger freshness and generation finalization.
+  - Phase 4 generation finalization slice: durable generation send/continue/
+    regenerate finalization captures target snapshots, persists them on retry
+    rows, rejects stale target rows before chat-var/message writes, marks stale
+    retry rows terminal, and treats already-persisted retry replays as no-op
+    completions without revision or command-event churn.
+  - Remaining Phase 4: dynamic trigger freshness.
     Composer file and paste callbacks are already covered by Phase 3.
   - Phase 5: preset/persona/translator/module/lorebook/script/import collection
     flows, Hypa V3 preset array import/rename/delete, plugin
