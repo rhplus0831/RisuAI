@@ -147,6 +147,14 @@ commands preserve pre-existing same-id chats, newer same-row edits, sibling
 edits/appends, stable chat-id selection, newer chat reorders, and newer folder
 moves.
 
+Twenty-first landed slice: character sidebar `characterOrder` drag reorder,
+folder creation/order, and folder metadata updates now use order-only or
+field-only attempted rollback instead of full character-state restore. Failed
+character order commands preserve newer selected/current-character state, skip
+rollback after newer order writes, keep newer folder metadata while restoring
+the failed attempted order structure, and roll back only still-attempted folder
+metadata fields.
+
 ## Anchors
 
 - `src/lib/Setting/botpreset.svelte`

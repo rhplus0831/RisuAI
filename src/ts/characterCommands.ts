@@ -59,10 +59,25 @@ export interface CharacterOrderFolderMetadataPatch {
   img?: string
 }
 
+type CharacterOrderFolderMetadataKey = keyof CharacterOrderFolderMetadataPatch
+
+interface CharacterOrderRollback {
+  previousOrder: readonly (string | folder)[]
+  attemptedOrder: readonly (string | folder)[]
+}
+
+interface CharacterOrderFolderMetadataRollback {
+  folderId: string
+  previous: Partial<Record<CharacterOrderFolderMetadataKey, unknown>>
+  attempted: Partial<Record<CharacterOrderFolderMetadataKey, unknown>>
+}
+
 export interface CharacterOrderNormalizationResult {
   characterOrder: (string | folder)[]
   changed: boolean
 }
+
+const CHARACTER_ORDER_FOLDER_METADATA_KEYS: CharacterOrderFolderMetadataKey[] = ['name', 'color', 'imgFile', 'img']
 
 export interface CompatibleCharacterUpdatePreparation {
   characterId?: string
@@ -108,6 +123,10 @@ export function restoreCharacterState(snapshot: CharacterStateSnapshot): void {
   })
 }
 
+function currentCharacterOrderSnapshot(): (string | folder)[] {
+  return cloneJsonValue(DBState.db.characterOrder ?? [])
+}
+
 export function currentCharacterSelectionSnapshot(characterId: string): CharacterSelectionSnapshot {
   const character = DBState.db.characters?.find((candidate) => candidate.chaId === characterId)
   return {
@@ -133,7 +152,7 @@ export function restoreCharacterSelection(snapshot: CharacterSelectionSnapshot):
 // `setCurrentCharacter`/`setCharacterByIndex` only mutate one character row (and
 // the selection scalars), so the snapshot clones just that row instead of the
 // whole `characters` array with every hydrated chat history. The full-array
-// `CharacterStateSnapshot` stays for create/delete/reorder.
+// `CharacterStateSnapshot` stays for create/delete/import-era call sites.
 export interface CharacterRowSnapshot {
   characterId: string | undefined
   index: number
@@ -391,7 +410,7 @@ export function dispatchCreateAndSelectCharacter(
 
 // `*With(rollback)` core plus a broad (`CharacterStateSnapshot`) and a single-row
 // (`CharacterRowSnapshot`) export. The scoped variants restore only the target
-// character row on failure; the broad ones remain for create/delete/reorder and
+// character row on failure; the broad ones remain for create/delete/import and
 // any caller that still holds a whole-collection snapshot.
 function dispatchUpdateCharacterWith(
   characterId: string,
@@ -573,15 +592,76 @@ export function dispatchSelectCharacter(
   )
 }
 
-export function dispatchReorderCharacters(previous: CharacterStateSnapshot): void {
+function dispatchCharacterOrderCommand(attemptedOrder: readonly (string | folder)[], rollback: () => void): void {
+  const commandOrder = cloneJsonValue(attemptedOrder)
   runCharacterCommand(
     (baseRevision) =>
       reorderCharactersCommand({
         baseRevision,
-        characterOrder: cloneJsonValue(DBState.db.characterOrder ?? []) as CharacterOrderEntry[],
+        characterOrder: cloneJsonValue(commandOrder) as CharacterOrderEntry[],
       }),
-    () => restoreCharacterState(previous),
+    rollback,
   )
+}
+
+export function dispatchReorderCharacters(previousOrder: (string | folder)[]): void {
+  const rollback = characterOrderRollbackFromOrders(previousOrder, DBState.db.characterOrder ?? [])
+  dispatchCharacterOrderCommand(rollback.attemptedOrder, () => restoreCharacterOrderAttempt(rollback))
+}
+
+function characterOrderRollbackFromOrders(
+  previousOrder: readonly (string | folder)[],
+  attemptedOrder: readonly (string | folder)[],
+): CharacterOrderRollback {
+  return {
+    previousOrder: cloneJsonValue(previousOrder),
+    attemptedOrder: cloneJsonValue(attemptedOrder),
+  }
+}
+
+function restoreCharacterOrderAttempt(rollback: CharacterOrderRollback): void {
+  withTrustedServerProjectionWrite(() => {
+    const liveOrder = DBState.db.characterOrder ?? []
+    if (!characterOrderStructureEquals(liveOrder, rollback.attemptedOrder)) return
+
+    DBState.db.characterOrder = restoreCharacterOrderStructure(rollback.previousOrder, liveOrder)
+  })
+}
+
+function restoreCharacterOrderStructure(
+  previousOrder: readonly (string | folder)[],
+  liveOrder: readonly (string | folder)[],
+): (string | folder)[] {
+  const liveFoldersById = new Map<string, folder>()
+  for (const entry of liveOrder) {
+    if (isCharacterOrderFolder(entry)) {
+      liveFoldersById.set(entry.id, entry)
+    }
+  }
+
+  return previousOrder.map((entry) => {
+    if (typeof entry === 'string') return entry
+    if (!isCharacterOrderFolder(entry)) return cloneJsonValue(entry) as string | folder
+
+    const restoredFolder = cloneJsonValue(liveFoldersById.get(entry.id) ?? entry)
+    restoredFolder.data = cloneJsonValue(entry.data)
+    return restoredFolder
+  })
+}
+
+function characterOrderStructureEquals(
+  left: readonly (string | folder)[],
+  right: readonly (string | folder)[],
+): boolean {
+  return JSON.stringify(characterOrderStructure(left)) === JSON.stringify(characterOrderStructure(right))
+}
+
+function characterOrderStructure(order: readonly (string | folder)[]): unknown[] {
+  return order.map((entry) => {
+    if (typeof entry === 'string') return entry
+    if (!isCharacterOrderFolder(entry)) return cloneJsonValue(entry)
+    return { id: entry.id, data: [...entry.data] }
+  })
 }
 
 export function normalizeCharacterOrder(
@@ -644,12 +724,12 @@ export function repairCharacterOrderOptimistically(
   if (!normalized.changed) return false
 
   const shouldDispatchReorder = options.dispatchReorder ?? true
-  const previous = shouldDispatchReorder ? currentCharacterStateSnapshot() : null
+  const previousOrder = shouldDispatchReorder ? currentCharacterOrderSnapshot() : null
   withTrustedServerProjectionWrite(() => {
     DBState.db.characterOrder = normalized.characterOrder
   })
-  if (previous) {
-    dispatchReorderCharacters(previous)
+  if (previousOrder) {
+    dispatchReorderCharacters(previousOrder)
   }
   return true
 }
@@ -660,7 +740,7 @@ export function moveCharacterOrderItem(
 ): boolean {
   if (isSameCharacterOrderPosition(mainIndex, targetIndex)) return false
 
-  const previous = currentCharacterStateSnapshot()
+  const previousOrder = currentCharacterOrderSnapshot()
   let changed = false
   withTrustedServerProjectionWrite(() => {
     const characterOrder = ensureCharacterOrder()
@@ -737,7 +817,7 @@ export function moveCharacterOrderItem(
   })
 
   if (!changed) return false
-  dispatchReorderCharacters(previous)
+  dispatchReorderCharacters(previousOrder)
   return true
 }
 
@@ -748,7 +828,7 @@ export function createCharacterOrderFolder(
 ): boolean {
   if (isSameCharacterOrderPosition(mainIndex, targetIndex)) return false
 
-  const previous = currentCharacterStateSnapshot()
+  const previousOrder = currentCharacterOrderSnapshot()
   let changed = false
   withTrustedServerProjectionWrite(() => {
     const characterOrder = ensureCharacterOrder()
@@ -799,7 +879,7 @@ export function createCharacterOrderFolder(
   })
 
   if (!changed) return false
-  dispatchReorderCharacters(previous)
+  dispatchReorderCharacters(previousOrder)
   return true
 }
 
@@ -807,10 +887,11 @@ export function updateCharacterOrderFolder(
   folderIdOrIndex: CharacterOrderFolderTarget,
   patch: CharacterOrderFolderMetadataPatch,
 ): boolean {
-  const patchEntries = Object.entries(patch).filter(([, value]) => value !== undefined)
-  if (patchEntries.length === 0) return false
+  const attemptedPatch = normalizeCharacterOrderFolderMetadataPatch(patch)
+  const patchKeys = Object.keys(attemptedPatch) as CharacterOrderFolderMetadataKey[]
+  if (patchKeys.length === 0) return false
 
-  const previous = currentCharacterStateSnapshot()
+  let rollback: CharacterOrderFolderMetadataRollback | null = null
   let changed = false
   withTrustedServerProjectionWrite(() => {
     const characterOrder = ensureCharacterOrder()
@@ -821,14 +902,16 @@ export function updateCharacterOrderFolder(
     if (!isCharacterOrderFolder(targetFolder)) return
 
     const mutableFolder = targetFolder as folder & { imgFile?: string | null }
-    for (const [key, value] of patchEntries) {
+    const previous = captureCharacterOrderFolderMetadata(mutableFolder, patchKeys)
+    for (const key of patchKeys) {
+      const value = attemptedPatch[key]
       switch (key) {
         case 'name':
           mutableFolder.name = value as string
           break
 
         case 'color':
-          mutableFolder.color = (value as string).toLocaleLowerCase()
+          mutableFolder.color = value as string
           break
 
         case 'imgFile':
@@ -840,14 +923,71 @@ export function updateCharacterOrderFolder(
           break
       }
     }
+    rollback = {
+      folderId: mutableFolder.id,
+      previous,
+      attempted: cloneJsonValue(attemptedPatch),
+    }
     characterOrder[folderIndex] = mutableFolder
     DBState.db.characterOrder = characterOrder
     changed = true
   })
 
-  if (!changed) return false
-  dispatchReorderCharacters(previous)
+  if (!changed || !rollback) return false
+  const metadataRollback = rollback
+  dispatchCharacterOrderCommand(currentCharacterOrderSnapshot(), () =>
+    restoreCharacterOrderFolderMetadataAttempt(metadataRollback),
+  )
   return true
+}
+
+function normalizeCharacterOrderFolderMetadataPatch(
+  patch: CharacterOrderFolderMetadataPatch,
+): Partial<Record<CharacterOrderFolderMetadataKey, unknown>> {
+  const normalized: Partial<Record<CharacterOrderFolderMetadataKey, unknown>> = {}
+  for (const key of CHARACTER_ORDER_FOLDER_METADATA_KEYS) {
+    const value = patch[key]
+    if (value === undefined) continue
+    normalized[key] = key === 'color' ? (value as string).toLocaleLowerCase() : cloneJsonValue(value)
+  }
+  return normalized
+}
+
+function captureCharacterOrderFolderMetadata(
+  targetFolder: folder & { imgFile?: string | null },
+  keys: readonly CharacterOrderFolderMetadataKey[],
+): Partial<Record<CharacterOrderFolderMetadataKey, unknown>> {
+  const captured: Partial<Record<CharacterOrderFolderMetadataKey, unknown>> = {}
+  const source = targetFolder as unknown as Record<string, unknown>
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(source, key)) {
+      captured[key] = cloneJsonValue(source[key])
+    }
+  }
+  return captured
+}
+
+function restoreCharacterOrderFolderMetadataAttempt(rollback: CharacterOrderFolderMetadataRollback): void {
+  withTrustedServerProjectionWrite(() => {
+    const characterOrder = DBState.db.characterOrder ?? []
+    const folderIndex = findCharacterOrderFolderIndex(characterOrder, rollback.folderId)
+    if (folderIndex === -1) return
+
+    const targetFolder = characterOrder[folderIndex]
+    if (!isCharacterOrderFolder(targetFolder)) return
+
+    const rolledBack = applyAttemptedFieldRollback({
+      target: targetFolder as unknown as Record<string, unknown>,
+      previous: rollback.previous as Partial<Record<string, unknown>>,
+      attempted: rollback.attempted as Partial<Record<string, unknown>>,
+      keys: CHARACTER_ORDER_FOLDER_METADATA_KEYS,
+      deleteMissingPrevious: true,
+    })
+    if (rolledBack.length === 0) return
+
+    characterOrder[folderIndex] = targetFolder
+    DBState.db.characterOrder = characterOrder
+  })
 }
 
 function isSameCharacterOrderPosition(

@@ -56,7 +56,10 @@ import {
 } from './characterCommands'
 import { setCharacterByIndex } from './storage/database.svelte'
 import { clearCachedServerCommandRevision } from './server/commands'
-import { setServerProjectionWriteGuardEnabled } from './server/projectionWriteGuard.svelte'
+import {
+  setServerProjectionWriteGuardEnabled,
+  withTrustedServerProjectionWrite,
+} from './server/projectionWriteGuard.svelte'
 import { DBState, selectedCharID, selIdState } from './stores.svelte'
 import { removeChar } from './characters'
 import {
@@ -144,7 +147,13 @@ function stubCreateCharacterCommandFetch(): CapturedFetch[] {
   return calls
 }
 
-function stubReorderCommandFetch({ failReorder = false }: { failReorder?: boolean } = {}): CapturedFetch[] {
+function stubReorderCommandFetch({
+  failReorder = false,
+  onReorder,
+}: {
+  failReorder?: boolean
+  onReorder?: () => void | Promise<void>
+} = {}): CapturedFetch[] {
   const calls: CapturedFetch[] = []
   vi.stubGlobal(
     'fetch',
@@ -160,6 +169,7 @@ function stubReorderCommandFetch({ failReorder = false }: { failReorder?: boolea
 
       if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
       if (url === '/api/v1/commands/characters/reorder') {
+        await onReorder?.()
         if (failReorder) return jsonResponse({ error: 'reorder failed' }, 500)
         return jsonResponse({
           revision: 11,
@@ -517,6 +527,50 @@ describe('character order command helpers', () => {
     })
   })
 
+  it('failed character reorder restores previous structure when live still equals attempted', async () => {
+    const calls = stubReorderCommandFetch({
+      failReorder: true,
+      onReorder: () => {
+        withTrustedServerProjectionWrite(() => {
+          ;(DBState.db as any).currentChar = 1
+          selectedCharID.set(1)
+        })
+      },
+    })
+    DBState.db = {
+      characters: [
+        { chaId: 'char-a', name: 'A', chats: [] },
+        { chaId: 'char-b', name: 'B', chats: [] },
+        { chaId: 'char-c', name: 'C', chats: [] },
+        { chaId: 'char-d', name: 'D', chats: [] },
+      ],
+      characterOrder: ['char-a', { id: 'folder-1', name: 'Folder', color: '', data: ['char-b'] }, 'char-c'],
+      currentChar: 0,
+    } as any
+    selectedCharID.set(0)
+    const previousOrder = cloneForExpect(DBState.db.characterOrder)
+    const attemptedOrder = [
+      { id: 'folder-1', name: 'Folder', color: '', data: ['char-b', 'char-a'] },
+      'char-c',
+      'char-d',
+    ]
+    setServerProjectionWriteGuardEnabled(true)
+
+    expect(moveCharacterOrderItem({ index: 0 }, { folder: 'folder-1', index: 1 })).toBe(true)
+
+    expect(DBState.db.characterOrder).toEqual(attemptedOrder)
+    await waitForCallCount(calls, 2)
+    expect(calls[1].body).toEqual({
+      baseRevision: 10,
+      characterOrder: attemptedOrder,
+    })
+    await vi.waitFor(() => {
+      expect(DBState.db.characterOrder).toEqual(previousOrder)
+    })
+    expect(get(selectedCharID)).toBe(1)
+    expect((DBState.db as any).currentChar).toBe(1)
+  })
+
   it('moves a root character to a root position with the existing index behavior and rollback', async () => {
     const calls = stubReorderCommandFetch({ failReorder: true })
     DBState.db = {
@@ -540,6 +594,86 @@ describe('character order command helpers', () => {
     })
     await vi.waitFor(() => {
       expect(DBState.db.characterOrder).toEqual(previousOrder)
+    })
+  })
+
+  it('failed character reorder skips rollback after a newer reorder', async () => {
+    const newerOrder = ['char-b', 'char-c', 'char-a']
+    const calls = stubReorderCommandFetch({
+      failReorder: true,
+      onReorder: () => {
+        withTrustedServerProjectionWrite(() => {
+          DBState.db.characterOrder = cloneForExpect(newerOrder)
+        })
+      },
+    })
+    DBState.db = {
+      characters: [
+        { chaId: 'char-a', name: 'A', chats: [] },
+        { chaId: 'char-b', name: 'B', chats: [] },
+        { chaId: 'char-c', name: 'C', chats: [] },
+      ],
+      characterOrder: ['char-a', 'char-b', 'char-c'],
+    } as any
+    setServerProjectionWriteGuardEnabled(true)
+
+    expect(moveCharacterOrderItem({ index: 2 }, { index: 0 })).toBe(true)
+
+    expect(DBState.db.characterOrder).toEqual(['char-c', 'char-a', 'char-b'])
+    await waitForCallCount(calls, 2)
+    expect(calls[1].body).toEqual({
+      baseRevision: 10,
+      characterOrder: ['char-c', 'char-a', 'char-b'],
+    })
+    await flushAsyncWork()
+    expect(DBState.db.characterOrder).toEqual(newerOrder)
+  })
+
+  it('failed character reorder preserves newer folder metadata while restoring order structure', async () => {
+    const calls = stubReorderCommandFetch({
+      failReorder: true,
+      onReorder: () => {
+        withTrustedServerProjectionWrite(() => {
+          const folder = DBState.db.characterOrder.find((entry) => typeof entry !== 'string' && entry.id === 'folder-1')
+          if (folder) {
+            folder.name = 'Newer Folder'
+            folder.color = 'green'
+            folder.imgFile = 'asset-newer'
+            folder.img = '/api/v1/assets/asset-newer'
+          }
+        })
+      },
+    })
+    DBState.db = {
+      characters: [
+        { chaId: 'char-a', name: 'A', chats: [] },
+        { chaId: 'char-b', name: 'B', chats: [] },
+        { chaId: 'char-c', name: 'C', chats: [] },
+      ],
+      characterOrder: [
+        { id: 'folder-1', name: 'Folder', color: 'red', data: ['char-a'], imgFile: 'asset-old', img: 'old-src' },
+        'char-b',
+        'char-c',
+      ],
+    } as any
+    setServerProjectionWriteGuardEnabled(true)
+
+    expect(moveCharacterOrderItem({ index: 1 }, { folder: 'folder-1', index: 1 })).toBe(true)
+
+    await waitForCallCount(calls, 2)
+    await vi.waitFor(() => {
+      expect(DBState.db.characterOrder).toEqual([
+        {
+          id: 'folder-1',
+          name: 'Newer Folder',
+          color: 'green',
+          data: ['char-a'],
+          imgFile: 'asset-newer',
+          img: '/api/v1/assets/asset-newer',
+        },
+        'char-b',
+        'char-c',
+      ])
     })
   })
 
@@ -683,6 +817,75 @@ describe('character order command helpers', () => {
       })
     },
   )
+
+  it('failed folder metadata rollback skips when the same folder metadata changed again', async () => {
+    const calls = stubReorderCommandFetch({
+      failReorder: true,
+      onReorder: () => {
+        withTrustedServerProjectionWrite(() => {
+          const folder = DBState.db.characterOrder.find((entry) => typeof entry !== 'string' && entry.id === 'folder-b')
+          if (folder) folder.name = 'Newer Folder B'
+        })
+      },
+    })
+    DBState.db = {
+      characters: [
+        { chaId: 'char-a', name: 'A', chats: [] },
+        { chaId: 'char-b', name: 'B', chats: [] },
+      ],
+      characterOrder: [
+        { id: 'folder-a', name: 'Folder A', color: 'red', data: ['char-a'] },
+        { id: 'folder-b', name: 'Folder B', color: 'blue', data: ['char-b'] },
+      ],
+    } as any
+    setServerProjectionWriteGuardEnabled(true)
+
+    expect(updateCharacterOrderFolder({ id: 'folder-b', index: 0 }, { name: 'Attempted Folder B' })).toBe(true)
+
+    expect(DBState.db.characterOrder[1]).toMatchObject({ id: 'folder-b', name: 'Attempted Folder B' })
+    await waitForCallCount(calls, 2)
+    expect(calls[1].body).toEqual({
+      baseRevision: 10,
+      characterOrder: [
+        { id: 'folder-a', name: 'Folder A', color: 'red', data: ['char-a'] },
+        { id: 'folder-b', name: 'Attempted Folder B', color: 'blue', data: ['char-b'] },
+      ],
+    })
+    await flushAsyncWork()
+    expect(DBState.db.characterOrder[1]).toMatchObject({ id: 'folder-b', name: 'Newer Folder B' })
+  })
+
+  it('failed folder metadata rollback does not restore selectedCharID or current character', async () => {
+    const calls = stubReorderCommandFetch({
+      failReorder: true,
+      onReorder: () => {
+        withTrustedServerProjectionWrite(() => {
+          ;(DBState.db as any).currentChar = 1
+          selectedCharID.set(1)
+        })
+      },
+    })
+    DBState.db = {
+      characters: [
+        { chaId: 'char-a', name: 'A', chats: [] },
+        { chaId: 'char-b', name: 'B', chats: [] },
+      ],
+      characterOrder: [{ id: 'folder-b', name: 'Folder B', color: 'blue', data: ['char-b'] }, 'char-a'],
+      currentChar: 0,
+    } as any
+    selectedCharID.set(0)
+    setServerProjectionWriteGuardEnabled(true)
+
+    expect(updateCharacterOrderFolder({ id: 'folder-b', index: 0 }, { color: 'PURPLE' })).toBe(true)
+
+    expect(DBState.db.characterOrder[0]).toMatchObject({ id: 'folder-b', color: 'purple' })
+    await waitForCallCount(calls, 2)
+    await vi.waitFor(() => {
+      expect(DBState.db.characterOrder[0]).toMatchObject({ id: 'folder-b', color: 'blue' })
+    })
+    expect(get(selectedCharID)).toBe(1)
+    expect((DBState.db as any).currentChar).toBe(1)
+  })
 
   it('returns false without mutation or command for a missing folder target', async () => {
     const calls = stubReorderCommandFetch()

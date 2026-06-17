@@ -86,7 +86,9 @@ module-scoped MCP writes. MCP character regex and Lua-trigger rollback has
 landed for character-scoped MCP writes. `applyModule()` multi-domain rollback
 has landed for module-apply fan-out. Chat folder command rollback has landed for
 create, update, delete, and reorder commands. Chat list command rollback has
-landed for create, delete, and reorder commands.
+landed for create, delete, and reorder commands. Character sidebar
+`characterOrder` rollback has landed for drag reorder, folder creation/order,
+and folder metadata update commands.
 
 Next manager loop:
 
@@ -186,11 +188,13 @@ Explicit deferrals:
   writes. Phase 5 `applyModule()` multi-domain rollback has landed for
   module-apply fan-out. Phase 5 chat folder command rollback has landed for
   create, update, delete, and reorder commands. Phase 5 chat list command
-  rollback has landed for create, delete, and reorder commands. Remaining
+  rollback has landed for create, delete, and reorder commands. Phase 5
+  character sidebar order/folder metadata rollback has landed for drag reorder,
+  folder creation/order, and folder metadata update commands. Remaining
   sidebar and import collection flows, broader lorebook import/navigation edges,
   Hypa V3 preset array import/rename/delete, plugin import/update side-effect
   reload, combined sidebar chat/folder reorder, chat import/fork flows, and
-  character list create/delete/reorder/import rollback remain Phase 5 work.
+  character list create/delete/import rollback remain Phase 5 work.
 - `src/ts/compatibilityAdapters.test.ts` currently has a pre-existing failure in
   `routes MCP character lorebook writes through lorebook commands in
   server-backed web mode` at line 626. It reproduced in a detached baseline

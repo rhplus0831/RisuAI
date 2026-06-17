@@ -7,32 +7,33 @@ workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 5 chat list command rollback. Chat
-  create, delete, and reorder commands now use scoped attempted-value rollback
-  instead of restoring broad chat state snapshots. Delayed failures preserve
-  pre-existing same-id chats, newer same-row edits, sibling edits/appends,
-  stable chat-id selection, newer chat reorders, and newer folder moves when
-  live state no longer matches the attempted optimistic write.
+- Runtime/code change under test: Phase 5 character sidebar `characterOrder`
+  rollback. Character drag reorder, folder creation/order, and folder metadata
+  updates now use order-only or field-only attempted rollback instead of
+  restoring broad character state snapshots. Delayed failures preserve newer
+  selection/current-character changes, newer character-order writes, and newer
+  folder metadata while restoring only the failed attempted order structure or
+  attempted folder metadata fields.
 - Commands:
 
 ```bash
-pnpm exec vitest run src/ts/chatCommands.test.ts src/lib/SideBars/SideChatList.svelte.test.ts src/lib/Others/ChatList.svelte.test.ts
+pnpm exec vitest run src/ts/characterCommands.test.ts src/lib/SideBars/Sidebar.charList.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
-pnpm exec prettier --check src/ts/chatCommands.ts src/ts/chatCommands.test.ts src/lib/SideBars/SideChatList.svelte.test.ts src/lib/Others/ChatList.svelte.test.ts
+pnpm exec prettier --check src/ts/characterCommands.ts src/ts/characterCommands.test.ts src/lib/SideBars/Sidebar.charList.test.ts
 git diff --check
 ```
 
-- Result: passed on 2026-06-17. Chat command plus focused sidebar/modal chat
-  list coverage passed 88 tests across 3 files, and both TypeScript checks plus
+- Result: passed on 2026-06-17. Character command plus focused sidebar character
+  list coverage passed 53 tests across 2 files, and both TypeScript checks plus
   Prettier and `git diff --check` passed.
 - Additional check: `pnpm exec vitest run src/ts/compatibilityAdapters.test.ts`
   still fails in the pre-existing character MCP lorebook test
   `routes MCP character lorebook writes through lorebook commands in
   server-backed web mode` at `src/ts/compatibilityAdapters.test.ts:626`.
   A detached baseline worktree at commit `30d4ad7ab` reproduced the same
-  failure before this slice, so it is tracked as out-of-scope for this chat list
-  rollback change.
+  failure before this slice, so it is tracked as out-of-scope for this
+  character sidebar rollback change.
 - Residual gaps: Multi-group plugin settings patch failures still share the
   generic settings rollback
   callback and roll back all still-attempted keys from the failed patch. Plugin
@@ -43,14 +44,16 @@ git diff --check
   failing delete rollback/stale-skip test. The remaining Phase 5 collection
   domains still need focused slices: Hypa V3 preset array import/rename/delete,
   sidebar collection rollback and replacement flows, broader lorebook
-  import/navigation edges, and list-selection paths. Translator preset
-  import file-read/decode freshness does not have dedicated coverage, but its
-  command-dispatch failure path uses the now rollback-free create dispatcher.
-  Prompt-template item rollback coverage does not explicitly cover delete skip
-  when the row already exists or out-of-bounds insert-index clamping, though the
-  implementation guards both. Split preset array coverage is representative but
-  not exhaustive for every mirrored model/prompt operation pair; prompt import
-  is covered and no client-side model import caller was found.
+  import/navigation edges, combined sidebar chat/folder reorder, chat
+  import/fork flows, and character create/delete/import rollback. Translator
+  preset import file-read/decode freshness does not have dedicated coverage, but
+  its command-dispatch failure path uses the now rollback-free create
+  dispatcher. Prompt-template item rollback coverage does not explicitly cover
+  delete skip when the row already exists or out-of-bounds insert-index
+  clamping, though the implementation guards both. Split preset array coverage
+  is representative but not exhaustive for every mirrored model/prompt operation
+  pair; prompt import is covered and no client-side model import caller was
+  found.
 
 ## Remaining Proof
 
@@ -84,11 +87,12 @@ git diff --check
   Phase 5 slice. `applyModule()` multi-domain rollback is covered by the
   eighteenth Phase 5 slice. Chat folder command rollback is covered by the
   nineteenth Phase 5 slice. Chat list create/delete/reorder rollback is covered
-  by the twentieth Phase 5 slice. Remaining Phase 5 work owns sidebar/import
-  collection flows, broader lorebook import/navigation edges, Hypa V3 preset
-  array import/rename/delete, plugin import/update side-effect reload,
-  combined sidebar chat/folder reorder, chat import/fork flows, and character
-  list create/delete/reorder/import rollback.
+  by the twentieth Phase 5 slice. Character sidebar order/folder metadata
+  rollback is covered by the twenty-first Phase 5 slice. Remaining Phase 5 work
+  owns sidebar/import collection flows, broader lorebook import/navigation
+  edges, Hypa V3 preset array import/rename/delete, plugin import/update
+  side-effect reload, combined sidebar chat/folder reorder, chat import/fork
+  flows, and character list create/delete/import rollback.
 - Phase 6 owns Realm/backup/local bundle restore/import resyncs, character/chat
   import refresh/navigation edges, memory job list/progress ordering,
   route/selection hydration, welcome/onboarding delayed setup, and DevTool
