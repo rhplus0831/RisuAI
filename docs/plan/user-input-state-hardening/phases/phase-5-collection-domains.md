@@ -84,6 +84,13 @@ an unchanged attempted row, failed delete reinserts only a still-missing row at 
 bounded previous index, and failed reorder restores previous id order only while
 live id order still matches the attempted reorder, preserving live row content.
 
+Eleventh landed slice: split prompt/model preset array rollback now scopes
+create, prompt import, delete, select, and reorder failures away from broad
+legacy preset snapshots. Create/import/delete use attempted keyed-list rollback,
+reorder preserves live row objects while restoring prior id order only on
+attempted-order matches, and select/delete-selected rollback restores only
+attempted-matching selection and scalar settings.
+
 ## Anchors
 
 - `src/lib/Setting/botpreset.svelte`

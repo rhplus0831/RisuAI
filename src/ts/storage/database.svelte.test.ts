@@ -16,15 +16,19 @@ import {
   changeToPreset,
   copyPreset,
   createPreset,
+  createPromptPreset,
+  deleteModelPreset,
   deletePreset,
   ensureBotPresetHydrated,
   mergeServerProjectionCharacterRow,
   normalizePromptTemplateIds,
   presetTemplate,
   promptTemplateIdsNeedNormalization,
+  reorderPromptPresets,
   reorderPresets,
   saveCurrentPreset,
   setServerProjectionWriteGuardEnabled,
+  selectModelPreset,
   selectPromptPreset,
   updatePreset,
   updateModelPreset,
@@ -32,6 +36,7 @@ import {
   type botPreset,
   type Database,
   type ModelPreset,
+  type PromptPreset,
 } from './database.svelte'
 
 interface CapturedFetch {
@@ -73,7 +78,11 @@ function stubFailedPresetCommand(onCommand?: (call: CapturedFetch) => void): Cap
       }
       calls.push(call)
       if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 100 })
-      if (url.startsWith('/api/v1/commands/presets')) {
+      if (
+        url.startsWith('/api/v1/commands/presets') ||
+        url.startsWith('/api/v1/commands/model-presets') ||
+        url.startsWith('/api/v1/commands/prompt-presets')
+      ) {
         onCommand?.(call)
         return jsonResponse({ error: 'forced preset failure' }, 500)
       }
@@ -694,6 +703,216 @@ describe('preset command rollback (L21)', () => {
     await waitForState(() => {
       expect(calls.filter((call) => call.url === '/api/v1/commands/model-presets/model-a')).toHaveLength(2)
       expect(DBState.db.modelPresets[0].name).toBe('Alp')
+    })
+  })
+
+  it('failed prompt create removes only the unchanged attempted row and preserves split siblings', async () => {
+    seedPresetDatabase({
+      modelPresets: [makePreset('model-a', 'Model A') as unknown as ModelPreset],
+      modelPresetsId: 0,
+      promptPresets: [
+        makePreset('prompt-a', 'Prompt A') as unknown as PromptPreset,
+        makePreset('prompt-b', 'Prompt B') as unknown as PromptPreset,
+      ],
+      promptPresetsId: 0,
+    })
+    const calls = stubFailedPresetCommand(() => {
+      DBState.db.modelPresets[0] = {
+        ...DBState.db.modelPresets[0],
+        name: 'Model A edited after dispatch',
+      }
+      DBState.db.promptPresets[1] = {
+        ...DBState.db.promptPresets[1],
+        name: 'Prompt B edited after dispatch',
+      }
+    })
+
+    createPromptPreset(makePreset('prompt-created', 'Prompt Created') as unknown as PromptPreset)
+
+    expect(DBState.db.promptPresets.map((preset) => preset.id)).toEqual(['prompt-a', 'prompt-b', 'prompt-created'])
+    await waitForPresetCommand(calls, '/prompt-presets')
+    await waitForState(() => {
+      expect(DBState.db.promptPresets.map((preset) => preset.id)).toEqual(['prompt-a', 'prompt-b'])
+      expect(DBState.db.promptPresets[1]).toMatchObject({ name: 'Prompt B edited after dispatch' })
+      expect(DBState.db.modelPresets).toEqual([
+        expect.objectContaining({ id: 'model-a', name: 'Model A edited after dispatch' }),
+      ])
+    })
+  })
+
+  it('failed prompt create keeps the attempted row when it changed after dispatch', async () => {
+    seedPresetDatabase({
+      promptPresets: [makePreset('prompt-a', 'Prompt A') as unknown as PromptPreset],
+      promptPresetsId: 0,
+    })
+    let createdId: string | undefined
+    const calls = stubFailedPresetCommand(() => {
+      const created = DBState.db.promptPresets.find((preset) => preset.name === 'Prompt Created')
+      createdId = created?.id
+      if (created) {
+        created.name = 'Prompt Created edited after dispatch'
+      }
+    })
+
+    createPromptPreset(makePreset('prompt-created', 'Prompt Created') as unknown as PromptPreset)
+
+    await waitForPresetCommand(calls, '/prompt-presets')
+    await waitForState(() => {
+      expect(createdId).toBe('prompt-created')
+      expect(DBState.db.promptPresets.map((preset) => preset.id)).toEqual(['prompt-a', 'prompt-created'])
+      expect(DBState.db.promptPresets[1]).toMatchObject({ name: 'Prompt Created edited after dispatch' })
+    })
+  })
+
+  it('failed model delete reinserts only missing rows and skips a newer same-id row', async () => {
+    seedPresetDatabase({
+      modelPresets: [
+        makePreset('model-a', 'Model A') as unknown as ModelPreset,
+        makePreset('model-b', 'Model B') as unknown as ModelPreset,
+        makePreset('model-c', 'Model C') as unknown as ModelPreset,
+      ],
+      modelPresetsId: 0,
+    })
+    const calls = stubFailedPresetCommand(() => {
+      DBState.db.modelPresets[0] = {
+        ...DBState.db.modelPresets[0],
+        name: 'Model A edited after dispatch',
+      }
+      DBState.db.modelPresets.push(makePreset('model-d', 'Model D appended after dispatch') as unknown as ModelPreset)
+    })
+
+    deleteModelPreset(1, 0)
+
+    expect(DBState.db.modelPresets.map((preset) => preset.id)).toEqual(['model-a', 'model-c'])
+    await waitForPresetCommand(calls, '/model-presets/model-b')
+    await waitForState(() => {
+      expect(DBState.db.modelPresets.map((preset) => preset.id)).toEqual(['model-a', 'model-b', 'model-c', 'model-d'])
+      expect(DBState.db.modelPresets[0]).toMatchObject({ name: 'Model A edited after dispatch' })
+      expect(DBState.db.modelPresets[1]).toMatchObject({ name: 'Model B' })
+      expect(DBState.db.modelPresets[3]).toMatchObject({ name: 'Model D appended after dispatch' })
+    })
+
+    clearCachedServerCommandRevision()
+    vi.unstubAllGlobals()
+    seedPresetDatabase({
+      modelPresets: [
+        makePreset('model-a', 'Model A') as unknown as ModelPreset,
+        makePreset('model-b', 'Model B') as unknown as ModelPreset,
+        makePreset('model-c', 'Model C') as unknown as ModelPreset,
+      ],
+      modelPresetsId: 0,
+    })
+    const secondCalls = stubFailedPresetCommand(() => {
+      DBState.db.modelPresets.push(makePreset('model-b', 'Model B newer same id') as unknown as ModelPreset)
+    })
+
+    deleteModelPreset(1, 0)
+
+    await waitForPresetCommand(secondCalls, '/model-presets/model-b')
+    await waitForState(() => {
+      expect(DBState.db.modelPresets.map((preset) => preset.id)).toEqual(['model-a', 'model-c', 'model-b'])
+      expect(DBState.db.modelPresets[2]).toMatchObject({ name: 'Model B newer same id' })
+    })
+  })
+
+  it('failed prompt reorder restores only the prior id order and preserves row edits', async () => {
+    seedPresetDatabase({
+      promptPresets: [
+        makePreset('prompt-a', 'Prompt A') as unknown as PromptPreset,
+        makePreset('prompt-b', 'Prompt B') as unknown as PromptPreset,
+        makePreset('prompt-c', 'Prompt C') as unknown as PromptPreset,
+      ],
+      promptPresetsId: 1,
+    })
+    const calls = stubFailedPresetCommand(() => {
+      const promptC = DBState.db.promptPresets.find((preset) => preset.id === 'prompt-c')
+      if (promptC) {
+        promptC.name = 'Prompt C edited after dispatch'
+      }
+    })
+
+    reorderPromptPresets(0, 3)
+
+    expect(DBState.db.promptPresets.map((preset) => preset.id)).toEqual(['prompt-b', 'prompt-c', 'prompt-a'])
+    expect(DBState.db.promptPresetsId).toBe(0)
+    await waitForPresetCommand(calls, '/prompt-presets/reorder')
+    await waitForState(() => {
+      expect(DBState.db.promptPresets.map((preset) => preset.id)).toEqual(['prompt-a', 'prompt-b', 'prompt-c'])
+      expect(DBState.db.promptPresets[2]).toMatchObject({ name: 'Prompt C edited after dispatch' })
+      expect(DBState.db.promptPresetsId).toBe(1)
+    })
+  })
+
+  it('failed older prompt reorder skips rollback when a newer order changed live ids', async () => {
+    seedPresetDatabase({
+      promptPresets: [
+        makePreset('prompt-a', 'Prompt A') as unknown as PromptPreset,
+        makePreset('prompt-b', 'Prompt B') as unknown as PromptPreset,
+        makePreset('prompt-c', 'Prompt C') as unknown as PromptPreset,
+      ],
+      promptPresetsId: 1,
+    })
+    const calls = stubFailedPresetCommand(() => {
+      DBState.db.promptPresets = [DBState.db.promptPresets[1], DBState.db.promptPresets[2], DBState.db.promptPresets[0]]
+      DBState.db.promptPresetsId = 0
+    })
+
+    reorderPromptPresets(0, 3)
+
+    await waitForPresetCommand(calls, '/prompt-presets/reorder')
+    await waitForState(() => {
+      expect(DBState.db.promptPresets.map((preset) => preset.id)).toEqual(['prompt-c', 'prompt-a', 'prompt-b'])
+      expect(DBState.db.promptPresetsId).toBe(0)
+    })
+  })
+
+  it('failed model select restores only attempted-matching selection and settings', async () => {
+    seedPresetDatabase({
+      modelPresets: [
+        makePreset('model-a', 'Model A', { aiModel: 'model-a-api', temperature: 11 }) as unknown as ModelPreset,
+        makePreset('model-b', 'Model B', { aiModel: 'model-b-api', temperature: 22 }) as unknown as ModelPreset,
+      ],
+      modelPresetsId: 0,
+    })
+    const calls = stubFailedPresetCommand(() => {
+      DBState.db.temperature = 123
+    })
+
+    selectModelPreset(1)
+
+    expect(DBState.db.modelPresetsId).toBe(1)
+    expect(DBState.db.aiModel).toBe('model-b-api')
+    expect(DBState.db.temperature).toBe(22)
+    await waitForPresetCommand(calls, '/model-presets/select')
+    await waitForState(() => {
+      expect(DBState.db.modelPresetsId).toBe(0)
+      expect(DBState.db.aiModel).toBe('live-model')
+      expect(DBState.db.temperature).toBe(123)
+    })
+  })
+
+  it('failed prompt select restores only attempted-matching selection and settings', async () => {
+    seedPresetDatabase({
+      promptPresets: [
+        makePreset('prompt-a', 'Prompt A') as unknown as PromptPreset,
+        makePreset('prompt-b', 'Prompt B') as unknown as PromptPreset,
+      ],
+      promptPresetsId: 0,
+    })
+    const calls = stubFailedPresetCommand(() => {
+      DBState.db.globalNote = 'newer note after dispatch'
+    })
+
+    selectPromptPreset(1)
+
+    expect(DBState.db.promptPresetsId).toBe(1)
+    expect(DBState.db.mainPrompt).toBe('Prompt B prompt')
+    expect(DBState.db.globalNote).toBe('Prompt B note')
+    await waitForPresetCommand(calls, '/prompt-presets/select')
+    await waitForState(() => {
+      expect(DBState.db.promptPresetsId).toBe(0)
+      expect(DBState.db.mainPrompt).toBe('live main')
+      expect(DBState.db.globalNote).toBe('newer note after dispatch')
     })
   })
 

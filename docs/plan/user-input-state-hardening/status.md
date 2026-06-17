@@ -120,6 +120,10 @@ persistence inventory under
   Prompt-template item create, delete, and reorder command failures now roll
   back only the attempted item collection change while preserving newer sibling
   row edits, appended rows, and live row content across reorder rollback.
+  Split prompt/model preset array command failures now roll back only targeted
+  create/import/delete rows, attempted reorder order, and attempted-matching
+  selection/settings instead of restoring legacy bot preset or sibling split
+  preset snapshots.
   Phase 2 landed character profile draft dirty top-level field protection;
   prompt-template item row dirty projection merging; whole-key dirty projection
   protection for
@@ -300,7 +304,10 @@ persistence inventory under
   `src/ts/server/promptTemplateBridge.svelte.ts` now guard prompt-template item
   create, delete, and reorder rollback by attempted item id/order instead of
   broad prompt-template snapshots.
-- Verification state: Phase 5 prompt-template item collection rollback
+- `src/ts/storage/database.svelte.ts` now guards split model/prompt preset
+  create, prompt import, delete, select, and reorder rollback by attempted row,
+  order, selection, and scalar settings instead of broad preset snapshots.
+- Verification state: Phase 5 split prompt/model preset array rollback
   validation is recorded in `latest-verification.md`.
 - Highest issue density:
   - Character editor: 52 issue rows, mostly dirty projection and unguarded
@@ -364,7 +371,7 @@ persistence inventory under
   non-storage and collection rollback slices, global module/MCP module-info,
   plugin DB bridge settings, persona collection, and translator preset
   collection rollback slices have landed. Prompt-template item collection
-  rollback has also landed for create/delete/reorder.
+  rollback and split prompt/model preset array rollback have also landed.
 - [Phase 6](phases/phase-6-resync-memory-navigation.md): pending. Realm, backup,
   and local bundle restore/import resyncs; character/chat import
   refresh/navigation edges; memory job list/progress ordering; route/selection
@@ -619,8 +626,12 @@ persistence inventory under
     of broad prompt-template snapshots. Deferred rollback tests cover unchanged
     create removal, edited-create skip, delete reinsertion, reorder restoration,
     and newer-reorder skip.
-  - Phase 5: prompt/model preset array, lorebook/script/import collection flows,
-    module lorebook/regex/script/trigger subdomains, Hypa V3 preset array
+  - Phase 5 split prompt/model preset array slice: model/prompt create, prompt
+    import, delete, select, and reorder rollback now uses targeted row, order,
+    selection, and attempted settings rollback instead of broad preset snapshots.
+    Legacy `botPresets` flows remain intentionally broad for a later slice.
+  - Phase 5: legacy bot preset rollback, lorebook/script/import collection
+    flows, module lorebook/regex/script/trigger subdomains, Hypa V3 preset array
     import/rename/delete, plugin import/update side-effect reload, sidebar
     chat/folder lists, persona profile/import residuals, character list ordering,
     and broad create/delete/reorder/import rollback.

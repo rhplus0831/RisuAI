@@ -53,6 +53,7 @@ import {
   withServerProjectionApply,
   withTrustedServerProjectionWrite,
 } from '../server/projectionWriteGuard.svelte'
+import { applyAttemptedFieldRollback, applyAttemptedKeyedListRollback } from '../server/staleStateGuards'
 import { isServerChatMessagePlaceholder, SERVER_UNLOADED_CHAT_MESSAGE_MARKER } from '../server/chatMessagePlaceholders'
 import { DEFAULT_CHAT_DISPLAY_TAIL_COUNT, normalizeChatDisplayTailCount } from '../chatDisplayTailCount'
 import type { ChatGenerationSettings } from '../chatGenerationSettings'
@@ -402,6 +403,23 @@ function restorePresetRollbackSnapshot(snapshot: PresetRollbackSnapshot): void {
 }
 
 type PresetCommandFactory = Parameters<typeof runOptimisticCommandSequence>[0][number]
+type SplitPresetKind = 'model' | 'prompt'
+type SplitPresetRow = ModelPreset | PromptPreset
+
+interface SplitPresetListRollbackEntry {
+  key: string
+  previous: SplitPresetRow | null
+  attempted: SplitPresetRow | null
+  previousIndex?: number
+}
+
+interface SplitPresetSelectionRollback {
+  kind: SplitPresetKind
+  previousSelectedId: string | null
+  attemptedSelectedId: string | null
+  previousSettings: Partial<Record<SetPresetRollbackKey, unknown>>
+  attemptedSettings: Partial<Record<SetPresetRollbackKey, unknown>>
+}
 
 function runOptimisticPresetCommands(
   mutate: (db: Database) => PresetCommandFactory[] | void,
@@ -414,6 +432,128 @@ function runOptimisticPresetCommands(
     if (factories.length === 0) return
     runOptimisticCommandSequence(factories, () => restorePresetRollbackSnapshot(rollback))
   })
+}
+
+function splitPresetList(kind: SplitPresetKind): SplitPresetRow[] {
+  return (kind === 'model' ? DBState.db.modelPresets : DBState.db.promptPresets) as SplitPresetRow[]
+}
+
+function assignSplitPresetList(kind: SplitPresetKind, list: SplitPresetRow[]): void {
+  if (kind === 'model') {
+    DBState.db.modelPresets = list as ModelPreset[]
+  } else {
+    DBState.db.promptPresets = list as PromptPreset[]
+  }
+}
+
+function splitPresetIds(list: SplitPresetRow[]): string[] {
+  return list.map((preset) => preset?.id).filter((id): id is string => typeof id === 'string' && id.length > 0)
+}
+
+function currentSplitPresetSelectedId(kind: SplitPresetKind): string | null {
+  return splitPresetSelectedId(DBState.db, kind)
+}
+
+function splitPresetSelectedId(db: Database, kind: SplitPresetKind): string | null {
+  const list = kind === 'model' ? db.modelPresets : db.promptPresets
+  const selectedIndex = kind === 'model' ? db.modelPresetsId : db.promptPresetsId
+  if (!Number.isInteger(selectedIndex) || selectedIndex < 0 || !Array.isArray(list)) return null
+  return list[selectedIndex]?.id ?? null
+}
+
+function setSplitPresetSelectedIndex(kind: SplitPresetKind, index: number): void {
+  if (kind === 'model') {
+    DBState.db.modelPresetsId = index
+  } else {
+    DBState.db.promptPresetsId = index
+  }
+}
+
+function restoreSplitPresetSelectionToId(kind: SplitPresetKind, presetId: string | null): void {
+  const list = splitPresetList(kind)
+  const index = presetId ? list.findIndex((preset) => preset?.id === presetId) : -1
+  setSplitPresetSelectedIndex(kind, index >= 0 ? index : normalizedBotPresetsId(list.length, -1))
+}
+
+function rollbackSplitPresetListEntry(kind: SplitPresetKind, entry: SplitPresetListRollbackEntry): void {
+  withTrustedServerProjectionWrite(() => {
+    const list = splitPresetList(kind)
+    const selectedId = currentSplitPresetSelectedId(kind)
+    const rolledBack = applyAttemptedKeyedListRollback<SplitPresetRow, string>({
+      list,
+      entries: [entry],
+      getKey: (preset) => preset?.id,
+    })
+    if (rolledBack.length === 0) return
+
+    assignSplitPresetList(kind, list)
+    restoreSplitPresetSelectionToId(kind, selectedId)
+  })
+}
+
+function rollbackSplitPresetCreate(kind: SplitPresetKind, attemptedPreset: SplitPresetRow): void {
+  const presetId = attemptedPreset.id
+  if (!presetId) return
+  rollbackSplitPresetListEntry(kind, {
+    key: presetId,
+    previous: null,
+    attempted: safeStructuredClone(attemptedPreset),
+  })
+}
+
+function rollbackSplitPresetDelete(kind: SplitPresetKind, previousPreset: SplitPresetRow, previousIndex: number): void {
+  const presetId = previousPreset.id
+  if (!presetId) return
+  rollbackSplitPresetListEntry(kind, {
+    key: presetId,
+    previous: safeStructuredClone(previousPreset),
+    attempted: null,
+    previousIndex,
+  })
+}
+
+function rollbackSplitPresetReorder(
+  kind: SplitPresetKind,
+  previousPresetIds: string[],
+  attemptedPresetIds: string[],
+): void {
+  withTrustedServerProjectionWrite(() => {
+    const list = splitPresetList(kind)
+    if (!stringArraysEqual(splitPresetIds(list), attemptedPresetIds)) return
+
+    const selectedId = currentSplitPresetSelectedId(kind)
+    const liveRowsById = new Map<string, SplitPresetRow>()
+    for (const preset of list) {
+      if (preset?.id) {
+        liveRowsById.set(preset.id, preset)
+      }
+    }
+
+    const restored = previousPresetIds.map((id) => liveRowsById.get(id))
+    if (restored.some((preset) => !preset)) return
+
+    assignSplitPresetList(kind, restored as SplitPresetRow[])
+    restoreSplitPresetSelectionToId(kind, selectedId)
+  })
+}
+
+function rollbackSplitPresetSelection(rollback: SplitPresetSelectionRollback): void {
+  withTrustedServerProjectionWrite(() => {
+    if (!rollback.attemptedSelectedId) return
+    if (currentSplitPresetSelectedId(rollback.kind) !== rollback.attemptedSelectedId) return
+
+    applyAttemptedFieldRollback({
+      target: DBState.db as unknown as Record<string, unknown>,
+      previous: rollback.previousSettings as Record<string, unknown>,
+      attempted: rollback.attemptedSettings as Record<string, unknown>,
+      keys: SET_PRESET_ROLLBACK_KEYS,
+    })
+    restoreSplitPresetSelectionToId(rollback.kind, rollback.previousSelectedId)
+  })
+}
+
+function stringArraysEqual(left: string[], right: string[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index])
 }
 
 export function setDatabase(data: Database) {
@@ -2949,18 +3089,24 @@ export function reorderPresets(fromIndex: number, toIndex: number) {
 }
 
 export function createModelPreset(preset: ModelPreset) {
-  runOptimisticPresetCommands((db) => {
+  withTrustedServerProjectionWrite(() => {
+    const db = DBState.db
+    normalizeSplitPresetIds(db)
     const newPreset = safeStructuredClone(preset)
     newPreset.id ??= createClientPresetId()
     db.modelPresets.push(newPreset)
     db.modelPresets = db.modelPresets
-    return [
-      (baseRevision) =>
-        createModelPresetCommand({
-          baseRevision,
-          preset: safeStructuredClone(newPreset) as unknown as ModelPresetSnapshot,
-        }),
-    ]
+    const attemptedPreset = safeStructuredClone(newPreset)
+    runOptimisticCommandSequence(
+      [
+        (baseRevision) =>
+          createModelPresetCommand({
+            baseRevision,
+            preset: safeStructuredClone(attemptedPreset) as unknown as ModelPresetSnapshot,
+          }),
+      ],
+      () => rollbackSplitPresetCreate('model', attemptedPreset),
+    )
   })
 }
 
@@ -2993,15 +3139,20 @@ export function updateModelPreset(id: number, patch: Partial<ModelPreset>) {
 }
 
 export function deleteModelPreset(id: number, selectIndex = 0) {
-  runOptimisticPresetCommands((db) => {
-    if (db.modelPresets.length <= 1) return []
+  withTrustedServerProjectionWrite(() => {
+    const db = DBState.db
+    normalizeSplitPresetIds(db)
+    if (db.modelPresets.length <= 1) return
     const modelPresetId = db.modelPresets[id]?.id
+    const previousPreset = db.modelPresets[id] ? safeStructuredClone(db.modelPresets[id]) : null
+    const previousSelectedId = splitPresetSelectedId(db, 'model')
+    const previousSettings = snapshotSetPresetSettings(db)
     const nextSelectedPreset =
       db.modelPresets[selectIndex]?.id === modelPresetId
         ? db.modelPresets.find((preset) => preset.id !== modelPresetId)
         : db.modelPresets[selectIndex]
     const selectModelPresetId = nextSelectedPreset?.id
-    if (!modelPresetId) return []
+    if (!modelPresetId || !previousPreset) return
     db.modelPresets.splice(id, 1)
     db.modelPresets = db.modelPresets
     const selectedIndex = selectModelPresetId
@@ -3009,86 +3160,131 @@ export function deleteModelPreset(id: number, selectIndex = 0) {
       : -1
     db.modelPresetsId = selectedIndex >= 0 ? selectedIndex : Math.min(db.modelPresetsId, db.modelPresets.length - 1)
     applyModelPresetFieldsToDatabase(db, db.modelPresets[db.modelPresetsId])
-    return [
-      (baseRevision) =>
-        deleteModelPresetCommand({
-          baseRevision,
-          modelPresetId,
-          selectModelPresetId,
-        }),
-    ]
+    const selectionRollback: SplitPresetSelectionRollback = {
+      kind: 'model',
+      previousSelectedId,
+      attemptedSelectedId: splitPresetSelectedId(db, 'model'),
+      previousSettings,
+      attemptedSettings: snapshotSetPresetSettings(db),
+    }
+    runOptimisticCommandSequence(
+      [
+        (baseRevision) =>
+          deleteModelPresetCommand({
+            baseRevision,
+            modelPresetId,
+            selectModelPresetId,
+          }),
+      ],
+      () => {
+        rollbackSplitPresetDelete('model', previousPreset, id)
+        rollbackSplitPresetSelection(selectionRollback)
+      },
+    )
   })
 }
 
 export function selectModelPreset(id: number) {
-  runOptimisticPresetCommands((db) => {
+  withTrustedServerProjectionWrite(() => {
+    const db = DBState.db
+    normalizeSplitPresetIds(db)
+    const previousSelectedId = splitPresetSelectedId(db, 'model')
+    const previousSettings = snapshotSetPresetSettings(db)
     const modelPresetId = db.modelPresets[id]?.id
-    if (!modelPresetId) return []
+    if (!modelPresetId) return
     db.modelPresetsId = id
     applyModelPresetFieldsToDatabase(db, db.modelPresets[id])
-    return [
-      (baseRevision) =>
-        selectModelPresetCommand({
-          baseRevision,
-          modelPresetId,
-        }),
-    ]
+    const selectionRollback: SplitPresetSelectionRollback = {
+      kind: 'model',
+      previousSelectedId,
+      attemptedSelectedId: splitPresetSelectedId(db, 'model'),
+      previousSettings,
+      attemptedSettings: snapshotSetPresetSettings(db),
+    }
+    runOptimisticCommandSequence(
+      [
+        (baseRevision) =>
+          selectModelPresetCommand({
+            baseRevision,
+            modelPresetId,
+          }),
+      ],
+      () => rollbackSplitPresetSelection(selectionRollback),
+    )
   })
 }
 
 export function reorderModelPresets(fromIndex: number, toIndex: number) {
-  runOptimisticPresetCommands((db) => {
-    if (fromIndex === toIndex) return []
+  withTrustedServerProjectionWrite(() => {
+    const db = DBState.db
+    normalizeSplitPresetIds(db)
+    if (fromIndex === toIndex) return
     if (fromIndex < 0 || toIndex < 0 || fromIndex >= db.modelPresets.length || toIndex > db.modelPresets.length) {
-      return []
+      return
     }
+    const previousPresetIds = splitPresetIds(db.modelPresets)
     const modelPresets = [...db.modelPresets]
     const movedItem = modelPresets.splice(fromIndex, 1)[0]
-    if (!movedItem) return []
+    if (!movedItem) return
     const adjustedToIndex = fromIndex < toIndex ? toIndex - 1 : toIndex
     modelPresets.splice(adjustedToIndex, 0, movedItem)
     db.modelPresetsId = movedSelectedIndex(db.modelPresetsId, fromIndex, adjustedToIndex)
     db.modelPresets = modelPresets
     const modelPresetIds = db.modelPresets.map((preset) => preset.id).filter((id): id is string => !!id)
-    return [
-      (baseRevision) =>
-        reorderModelPresetsCommand({
-          baseRevision,
-          modelPresetIds,
-        }),
-    ]
+    runOptimisticCommandSequence(
+      [
+        (baseRevision) =>
+          reorderModelPresetsCommand({
+            baseRevision,
+            modelPresetIds,
+          }),
+      ],
+      () => rollbackSplitPresetReorder('model', previousPresetIds, modelPresetIds),
+    )
   })
 }
 
 export function createPromptPreset(preset: PromptPreset) {
-  runOptimisticPresetCommands((db) => {
+  withTrustedServerProjectionWrite(() => {
+    const db = DBState.db
+    normalizeSplitPresetIds(db)
     const newPreset = safeStructuredClone(preset)
     newPreset.id ??= createClientPresetId()
     db.promptPresets.push(newPreset)
     db.promptPresets = db.promptPresets
-    return [
-      (baseRevision) =>
-        createPromptPresetCommand({
-          baseRevision,
-          preset: safeStructuredClone(newPreset) as unknown as PromptPresetSnapshot,
-        }),
-    ]
+    const attemptedPreset = safeStructuredClone(newPreset)
+    runOptimisticCommandSequence(
+      [
+        (baseRevision) =>
+          createPromptPresetCommand({
+            baseRevision,
+            preset: safeStructuredClone(attemptedPreset) as unknown as PromptPresetSnapshot,
+          }),
+      ],
+      () => rollbackSplitPresetCreate('prompt', attemptedPreset),
+    )
   })
 }
 
 export function addImportedPromptPreset(preset: PromptPreset) {
-  runOptimisticPresetCommands((db) => {
+  withTrustedServerProjectionWrite(() => {
+    const db = DBState.db
+    normalizeSplitPresetIds(db)
     const newPreset = safeStructuredClone(promptPresetExportPayload(preset)) as PromptPreset
     newPreset.id ??= createClientPresetId()
     db.promptPresets.push(newPreset)
     db.promptPresets = db.promptPresets
-    return [
-      (baseRevision) =>
-        importPromptPresetCommand({
-          baseRevision,
-          preset: safeStructuredClone(newPreset) as unknown as PromptPresetSnapshot,
-        }),
-    ]
+    const attemptedPreset = safeStructuredClone(newPreset)
+    runOptimisticCommandSequence(
+      [
+        (baseRevision) =>
+          importPromptPresetCommand({
+            baseRevision,
+            preset: safeStructuredClone(attemptedPreset) as unknown as PromptPresetSnapshot,
+          }),
+      ],
+      () => rollbackSplitPresetCreate('prompt', attemptedPreset),
+    )
   })
 }
 
@@ -3196,15 +3392,20 @@ function jsonSnapshot(value: unknown): string {
 }
 
 export function deletePromptPreset(id: number, selectIndex = 0) {
-  runOptimisticPresetCommands((db) => {
-    if (db.promptPresets.length <= 1) return []
+  withTrustedServerProjectionWrite(() => {
+    const db = DBState.db
+    normalizeSplitPresetIds(db)
+    if (db.promptPresets.length <= 1) return
     const promptPresetId = db.promptPresets[id]?.id
+    const previousPreset = db.promptPresets[id] ? safeStructuredClone(db.promptPresets[id]) : null
+    const previousSelectedId = splitPresetSelectedId(db, 'prompt')
+    const previousSettings = snapshotSetPresetSettings(db)
     const nextSelectedPreset =
       db.promptPresets[selectIndex]?.id === promptPresetId
         ? db.promptPresets.find((preset) => preset.id !== promptPresetId)
         : db.promptPresets[selectIndex]
     const selectPromptPresetId = nextSelectedPreset?.id
-    if (!promptPresetId) return []
+    if (!promptPresetId || !previousPreset) return
     db.promptPresets.splice(id, 1)
     db.promptPresets = db.promptPresets
     const selectedIndex = selectPromptPresetId
@@ -3212,54 +3413,87 @@ export function deletePromptPreset(id: number, selectIndex = 0) {
       : -1
     db.promptPresetsId = selectedIndex >= 0 ? selectedIndex : Math.min(db.promptPresetsId, db.promptPresets.length - 1)
     applyPromptPresetFieldsToDatabase(db, db.promptPresets[db.promptPresetsId])
-    return [
-      (baseRevision) =>
-        deletePromptPresetCommand({
-          baseRevision,
-          promptPresetId,
-          selectPromptPresetId,
-        }),
-    ]
+    const selectionRollback: SplitPresetSelectionRollback = {
+      kind: 'prompt',
+      previousSelectedId,
+      attemptedSelectedId: splitPresetSelectedId(db, 'prompt'),
+      previousSettings,
+      attemptedSettings: snapshotSetPresetSettings(db),
+    }
+    runOptimisticCommandSequence(
+      [
+        (baseRevision) =>
+          deletePromptPresetCommand({
+            baseRevision,
+            promptPresetId,
+            selectPromptPresetId,
+          }),
+      ],
+      () => {
+        rollbackSplitPresetDelete('prompt', previousPreset, id)
+        rollbackSplitPresetSelection(selectionRollback)
+      },
+    )
   })
 }
 
 export function selectPromptPreset(id: number) {
-  runOptimisticPresetCommands((db) => {
+  withTrustedServerProjectionWrite(() => {
+    const db = DBState.db
+    normalizeSplitPresetIds(db)
+    const previousSelectedId = splitPresetSelectedId(db, 'prompt')
+    const previousSettings = snapshotSetPresetSettings(db)
     const promptPresetId = db.promptPresets[id]?.id
-    if (!promptPresetId) return []
+    if (!promptPresetId) return
     db.promptPresetsId = id
     applyPromptPresetFieldsToDatabase(db, db.promptPresets[id])
-    return [
-      (baseRevision) =>
-        selectPromptPresetCommand({
-          baseRevision,
-          promptPresetId,
-        }),
-    ]
+    const selectionRollback: SplitPresetSelectionRollback = {
+      kind: 'prompt',
+      previousSelectedId,
+      attemptedSelectedId: splitPresetSelectedId(db, 'prompt'),
+      previousSettings,
+      attemptedSettings: snapshotSetPresetSettings(db),
+    }
+    runOptimisticCommandSequence(
+      [
+        (baseRevision) =>
+          selectPromptPresetCommand({
+            baseRevision,
+            promptPresetId,
+          }),
+      ],
+      () => rollbackSplitPresetSelection(selectionRollback),
+    )
   })
 }
 
 export function reorderPromptPresets(fromIndex: number, toIndex: number) {
-  runOptimisticPresetCommands((db) => {
-    if (fromIndex === toIndex) return []
+  withTrustedServerProjectionWrite(() => {
+    const db = DBState.db
+    normalizeSplitPresetIds(db)
+    if (fromIndex === toIndex) return
     if (fromIndex < 0 || toIndex < 0 || fromIndex >= db.promptPresets.length || toIndex > db.promptPresets.length) {
-      return []
+      return
     }
+    const previousPresetIds = splitPresetIds(db.promptPresets)
     const promptPresets = [...db.promptPresets]
     const movedItem = promptPresets.splice(fromIndex, 1)[0]
-    if (!movedItem) return []
+    if (!movedItem) return
     const adjustedToIndex = fromIndex < toIndex ? toIndex - 1 : toIndex
     promptPresets.splice(adjustedToIndex, 0, movedItem)
     db.promptPresetsId = movedSelectedIndex(db.promptPresetsId, fromIndex, adjustedToIndex)
     db.promptPresets = promptPresets
     const promptPresetIds = db.promptPresets.map((preset) => preset.id).filter((id): id is string => !!id)
-    return [
-      (baseRevision) =>
-        reorderPromptPresetsCommand({
-          baseRevision,
-          promptPresetIds,
-        }),
-    ]
+    runOptimisticCommandSequence(
+      [
+        (baseRevision) =>
+          reorderPromptPresetsCommand({
+            baseRevision,
+            promptPresetIds,
+          }),
+      ],
+      () => rollbackSplitPresetReorder('prompt', previousPresetIds, promptPresetIds),
+    )
   })
 }
 
