@@ -7,32 +7,33 @@ workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 5 Hypa V3 preset array rollback. Failed
-  Hypa V3 preset append/import, rename/settings edit, and delete settings
-  patches now roll back by attempted preset row/index instead of restoring the
-  whole `hypaV3Presets` array. Delayed failures preserve sibling edits, later
-  appended presets, edited attempted rows, duplicate-equivalent live rows, and
-  newer `hypaV3PresetId` selections across delete reinsertion shifts.
+- Runtime/code change under test: Phase 5 combined sidebar chat/folder reorder
+  rollback. Folder-drag reorder now dispatches folder and chat reorders through
+  a focused helper that rolls back attempted folder order only before the folder
+  command is accepted, and rolls back attempted chat order/folder assignments
+  without restoring broad chat state snapshots. Delayed failures preserve newer
+  chat/folder row edits and keep accepted folder reorder results when a later
+  chat reorder fails.
 - Commands:
 
 ```bash
-pnpm exec vitest run src/ts/server/settingsBridge.svelte.test.ts src/lib/Setting/Pages/OtherBotSettings.svelte.test.ts
+pnpm exec vitest run src/ts/chatCommands.test.ts src/lib/SideBars/SideChatList.svelte.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
-pnpm exec prettier --check src/ts/server/settingsBridge.svelte.ts src/ts/server/settingsBridge.svelte.test.ts
+pnpm exec prettier --check src/ts/chatCommands.ts src/ts/chatCommands.test.ts src/lib/SideBars/SideChatList.svelte src/lib/SideBars/SideChatList.svelte.test.ts
 git diff --check
 ```
 
-- Result: passed on 2026-06-17. Settings bridge plus focused OtherBotSettings
-  coverage passed 34 tests across 2 files, and both TypeScript checks plus
+- Result: passed on 2026-06-17. Chat command plus focused sidebar chat-list
+  coverage passed 82 tests across 2 files, and both TypeScript checks plus
   Prettier and `git diff --check` passed.
 - Additional check: `pnpm exec vitest run src/ts/compatibilityAdapters.test.ts`
   still fails in the pre-existing character MCP lorebook test
   `routes MCP character lorebook writes through lorebook commands in
   server-backed web mode` at `src/ts/compatibilityAdapters.test.ts:626`.
   A detached baseline worktree at commit `30d4ad7ab` reproduced the same
-  failure before this slice, so it is tracked as out-of-scope for this Hypa V3
-  preset rollback change.
+  failure before this slice, so it is tracked as out-of-scope for this combined
+  sidebar reorder rollback change.
 - Residual gaps: Multi-group plugin settings patch failures still share the
   generic settings rollback
   callback and roll back all still-attempted keys from the failed patch. Plugin
@@ -42,18 +43,17 @@ git diff --check
   optimistic visibility coverage, but this slice does not add a dedicated
   failing delete rollback/stale-skip test. The remaining Phase 5 collection
   domains still need focused slices: sidebar collection rollback and replacement
-  flows, broader lorebook import/navigation edges, combined sidebar chat/folder
-  reorder, chat import/fork flows, and residual sidebar/import replacement
-  paths. Translator preset import file-read/decode freshness does not have
-  dedicated coverage, but its command-dispatch failure path uses the now
-  rollback-free create dispatcher. Prompt-template item rollback coverage does
-  not explicitly cover delete skip when the row already exists or out-of-bounds
-  insert-index clamping, though the implementation guards both. Split preset
-  array coverage is representative but not exhaustive for every mirrored
-  model/prompt operation pair; prompt import is covered and no client-side model
-  import caller was found. Hypa V3 rollback targets the array shapes emitted by
-  the current controls and does not model arbitrary reorder or multi-row
-  transforms.
+  flows, broader lorebook import/navigation edges, chat import/fork flows, and
+  residual sidebar/import replacement paths. Translator preset import
+  file-read/decode freshness does not have dedicated coverage, but its
+  command-dispatch failure path uses the now rollback-free create dispatcher.
+  Prompt-template item rollback coverage does not explicitly cover delete skip
+  when the row already exists or out-of-bounds insert-index clamping, though the
+  implementation guards both. Split preset array coverage is representative but
+  not exhaustive for every mirrored model/prompt operation pair; prompt import
+  is covered and no client-side model import caller was found. Hypa V3 rollback
+  targets the array shapes emitted by the current controls and does not model
+  arbitrary reorder or multi-row transforms.
 
 ## Remaining Proof
 
@@ -91,9 +91,11 @@ git diff --check
   rollback is covered by the twenty-first Phase 5 slice. Character list
   create/delete/import rollback is covered by the twenty-second Phase 5 slice.
   Hypa V3 preset array rollback is covered by the twenty-third Phase 5 slice.
+  Combined sidebar chat/folder reorder rollback is covered by the twenty-fourth
+  Phase 5 slice.
   Remaining Phase 5 work owns sidebar/import collection flows, broader lorebook
-  import/navigation edges, plugin import/update side-effect reload, combined
-  sidebar chat/folder reorder, and chat import/fork flows.
+  import/navigation edges, plugin import/update side-effect reload, and chat
+  import/fork flows.
 - Phase 6 owns Realm/backup/local bundle restore/import resyncs, character/chat
   import refresh/navigation edges, memory job list/progress ordering,
   route/selection hydration, welcome/onboarding delayed setup, and DevTool

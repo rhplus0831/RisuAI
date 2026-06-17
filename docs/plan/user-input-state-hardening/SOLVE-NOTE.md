@@ -91,7 +91,9 @@ landed for create, delete, and reorder commands. Character sidebar
 and folder metadata update commands. Character list create/delete/import
 rollback has landed for create, create-and-select, import-style create, and
 permanent delete commands. Hypa V3 preset array rollback has landed for
-append/import, rename/settings edit, and delete settings patches.
+append/import, rename/settings edit, and delete settings patches. Combined
+sidebar chat/folder reorder rollback has landed for folder drag reorder command
+sequences.
 
 Next manager loop:
 
@@ -197,10 +199,11 @@ Explicit deferrals:
   list create/delete/import rollback has landed for create, create-and-select,
   import-style create, and permanent delete commands. Phase 5 Hypa V3 preset
   array rollback has landed for append/import, rename/settings edit, and delete
-  settings patches. Remaining sidebar and import collection flows, broader
-  lorebook import/navigation edges, plugin import/update side-effect reload,
-  combined sidebar chat/folder reorder, and chat import/fork flows remain Phase
-  5 work.
+  settings patches. Phase 5 combined sidebar chat/folder reorder rollback has
+  landed for folder drag reorder command sequences. Remaining sidebar and import
+  collection flows, broader lorebook import/navigation edges, plugin
+  import/update side-effect reload, and chat import/fork flows remain Phase 5
+  work.
 - `src/ts/compatibilityAdapters.test.ts` currently has a pre-existing failure in
   `routes MCP character lorebook writes through lorebook commands in
   server-backed web mode` at line 626. It reproduced in a detached baseline

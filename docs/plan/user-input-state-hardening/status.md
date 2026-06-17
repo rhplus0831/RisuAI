@@ -162,6 +162,8 @@ persistence inventory under
   Hypa V3 preset array setting failures now roll back append/import,
   rename/settings edit, and delete attempts by preset row or insertion index
   instead of restoring the whole `hypaV3Presets` array.
+  Combined sidebar chat/folder drag reorder failures now use focused folder/chat
+  order rollback instead of broad chat snapshots.
   Phase 2 landed character profile draft dirty top-level field protection;
   prompt-template item row dirty projection merging; whole-key dirty projection
   protection for
@@ -371,6 +373,10 @@ persistence inventory under
   rollback by attempted append/import rows, rename/settings edit rows, delete
   insertion index, and shifted `hypaV3PresetId` selection instead of broad
   settings-array restore.
+- `src/ts/chatCommands.ts` and `src/lib/SideBars/SideChatList.svelte` now guard
+  combined sidebar chat/folder drag reorder rollback by attempted folder order,
+  accepted folder-command state, chat order, and folder assignments instead of
+  broad chat snapshots.
 - `src/lib/Setting/Pages/Language/TranslatorPresetSettings.svelte` now dispatches
   translator preset create, select, delete, and import collection commands
   without broad full-state rollback callbacks while retaining scoped dirty
@@ -386,7 +392,7 @@ persistence inventory under
   copy, select, create, update, delete, reorder, and extraction rollback by
   attempted row, field, order, selection, generated split row, and scalar
   settings state.
-- Verification state: Phase 5 Hypa V3 preset array
+- Verification state: Phase 5 combined sidebar chat/folder reorder
   rollback
   validation is recorded in `latest-verification.md`.
 - Highest issue density:
@@ -445,9 +451,8 @@ persistence inventory under
   code gap blocks Phase 4 completion.
 - [Phase 5](phases/phase-5-collection-domains.md): active. Sidebar/import
   collection flows, broader lorebook import/navigation edges; plugin settings
-  patch residuals; combined sidebar chat/folder reorder; and chat import/fork
-  flows remain here. Script/trigger replacement rollback, plugin custom storage
-  plus
+  patch residuals; and chat import/fork flows remain here. Script/trigger
+  replacement rollback, plugin custom storage plus
   non-storage and collection rollback slices, global module/MCP module-info,
   plugin DB bridge settings, persona collection, and translator preset
   collection rollback slices have landed. Prompt-template item collection
@@ -459,7 +464,8 @@ persistence inventory under
   has also landed. Chat folder command rollback and chat list command rollback
   have also landed. Character sidebar order/folder metadata rollback has also
   landed. Character list create/delete/import rollback has also landed. Hypa V3
-  preset array rollback has also landed.
+  preset array rollback has also landed. Combined sidebar chat/folder reorder
+  rollback has also landed.
 - [Phase 6](phases/phase-6-resync-memory-navigation.md): pending. Realm, backup,
   and local bundle restore/import resyncs; character/chat import
   refresh/navigation edges; memory job list/progress ordering; route/selection
@@ -758,9 +764,12 @@ persistence inventory under
   - Phase 5 Hypa V3 preset array slice: append/import, rename/settings edit, and
     delete rollback now uses attempted row, insertion-index, and shifted
     selection-id guards instead of broad `hypaV3Presets` array restore.
+  - Phase 5 combined sidebar chat/folder reorder slice: folder drag now uses a
+    focused chat-command helper that preserves accepted folder reorder and rolls
+    back attempted chat order/folder assignment without broad chat snapshots.
   - Phase 5: sidebar/import collection flows, broader lorebook
-    import/navigation edges, plugin import/update side-effect reload, combined
-    sidebar chat/folder reorder, and chat import/fork flows.
+    import/navigation edges, plugin import/update side-effect reload, and chat
+    import/fork flows.
   - Known pre-existing test gap: `pnpm exec vitest run
     src/ts/compatibilityAdapters.test.ts` fails in
     `routes MCP character lorebook writes through lorebook commands in

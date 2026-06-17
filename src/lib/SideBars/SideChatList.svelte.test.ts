@@ -129,6 +129,7 @@ const sidebarMocks = vi.hoisted(() => {
     dispatchCreateChatFolder: vi.fn(),
     dispatchDeleteChatFolder: vi.fn(),
     dispatchForkChat: vi.fn(),
+    dispatchReorderChatFoldersAndChatsByIds: vi.fn(),
     dispatchReorderChats: vi.fn(),
     dispatchReorderChatsByIds: vi.fn(),
     dispatchUpdateChat: vi.fn(),
@@ -171,7 +172,6 @@ const sidebarMocks = vi.hoisted(() => {
         }
       },
     ),
-    runOptimisticCommandSequence: vi.fn(),
     setServerCommandsEnabled: (enabled: boolean) => {
       serverCommandsEnabled = enabled
     },
@@ -237,11 +237,11 @@ vi.mock('src/ts/chatCommands', async (importActual) => {
     dispatchCreateChatFolder: sidebarMocks.dispatchCreateChatFolder,
     dispatchDeleteChatFolder: sidebarMocks.dispatchDeleteChatFolder,
     dispatchForkChat: sidebarMocks.dispatchForkChat,
+    dispatchReorderChatFoldersAndChatsByIds: sidebarMocks.dispatchReorderChatFoldersAndChatsByIds,
     dispatchReorderChats: sidebarMocks.dispatchReorderChats,
     dispatchReorderChatsByIds: sidebarMocks.dispatchReorderChatsByIds,
     dispatchUpdateChat: sidebarMocks.dispatchUpdateChat,
     dispatchUpdateChatFolder: sidebarMocks.dispatchUpdateChatFolder,
-    runOptimisticCommandSequence: sidebarMocks.runOptimisticCommandSequence,
   }
 })
 
@@ -559,6 +559,58 @@ describe('SideChatList DOM contract harness', () => {
       { id: 'chat-root-a', index: '0' },
       { id: 'chat-root-b', index: '2' },
     ])
+  })
+
+  it('dispatches combined folder and chat reorder helper for server-backed folder drag', async () => {
+    const chara = seedSidebarDatabase()
+    chara.chatFolders.push({ id: 'folder-b', name: 'Second Folder', folded: false } as any)
+    chara.chats.push(makeChat('chat-second-foldered', 'Second Foldered Chat', 'folder-b'))
+    sidebarMocks.setServerCommandsEnabled(true)
+
+    component = mount(SideChatListHarness, { target })
+    await tick()
+
+    const folderA = folderElementById('folder-a')
+    const folderB = folderElementById('folder-b')
+    const folderContainer = folderA.parentElement
+    expect(folderContainer, 'folder container').toBeTruthy()
+    folderContainer!.insertBefore(folderB, folderA)
+
+    const folderSortable = sidebarMocks.SortableMock.create.mock.results.at(-1)?.value as {
+      options: { onEnd: (event: { to: HTMLElement }) => Promise<void> }
+    }
+    await folderSortable.options.onEnd({ to: folderContainer! })
+
+    expect(sidebarMocks.dispatchReorderChatFoldersAndChatsByIds).toHaveBeenCalledOnce()
+    const [characterId, folderIds, chatIds, folderByChatId, previous, selectedChatId] =
+      sidebarMocks.dispatchReorderChatFoldersAndChatsByIds.mock.calls[0]
+    expect(characterId).toBe('char-a')
+    expect(folderIds).toEqual(['folder-b', 'folder-a'])
+    expect(chatIds).toEqual(['chat-second-foldered', 'chat-foldered', 'chat-root-a', 'chat-root-b'])
+    expect(folderByChatId).toEqual({
+      'chat-foldered': 'folder-a',
+      'chat-root-a': null,
+      'chat-root-b': null,
+      'chat-second-foldered': 'folder-b',
+    })
+    expect(previous).toMatchObject({
+      selectedCharID: 0,
+      characters: [
+        {
+          chaId: 'char-a',
+          chatFolders: [{ id: 'folder-a' }, { id: 'folder-b' }],
+          chats: [
+            { id: 'chat-root-a' },
+            { id: 'chat-foldered' },
+            { id: 'chat-root-b' },
+            { id: 'chat-second-foldered' },
+          ],
+        },
+      ],
+    })
+    expect(selectedChatId).toBe('chat-foldered')
+    expect(sidebarMocks.reorderChatFoldersCommand).not.toHaveBeenCalled()
+    expect(sidebarMocks.reorderChatsCommand).not.toHaveBeenCalled()
   })
 
   it('hides folded folder rows without losing selected chat state', async () => {

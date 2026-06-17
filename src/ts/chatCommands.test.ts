@@ -45,6 +45,7 @@ import {
   dispatchDeleteChatFolder,
   dispatchDeleteMessageScoped,
   dispatchPatchChatScriptstateScoped,
+  dispatchReorderChatFoldersAndChatsByIds,
   dispatchReorderChatFoldersByIds,
   dispatchReorderChatsByIds,
   dispatchReplaceTailMessagesScoped,
@@ -232,6 +233,49 @@ function stubFailingCommandFetch(input: {
       if (input.matches(url, init)) {
         input.onCommand?.(url, init)
         return jsonResponse({ error: 'nope' }, 500)
+      }
+      return jsonResponse({ error: `unexpected ${url}` }, 404)
+    }) as unknown as typeof fetch,
+  )
+  return calls
+}
+
+function stubCombinedReorderCommandFetch(input: {
+  fail: 'folders' | 'chats'
+  onFolderCommand?: (url: string, init: RequestInit) => void
+  onChatCommand?: (url: string, init: RequestInit) => void
+}): CapturedFetch[] {
+  const calls: CapturedFetch[] = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (requestInput: RequestInfo | URL, init: RequestInit = {}) => {
+      const headers = init.headers as Record<string, string> | undefined
+      const url = String(requestInput)
+      calls.push({
+        url,
+        method: init.method ?? 'GET',
+        authHeader: headers?.['risu-auth'] ?? null,
+        body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+      })
+
+      if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+      if (url === '/api/v1/commands/characters/char-a/chat-folders/reorder' && init.method === 'POST') {
+        input.onFolderCommand?.(url, init)
+        if (input.fail === 'folders') return jsonResponse({ error: 'folder reorder failed' }, 500)
+        return jsonResponse({
+          revision: 11,
+          event: { type: 'chatFolder.reordered', revision: 11, resource: 'chatFolder' },
+          selectedChatId: 'chat-a',
+        })
+      }
+      if (url === '/api/v1/commands/characters/char-a/chats/reorder' && init.method === 'POST') {
+        input.onChatCommand?.(url, init)
+        if (input.fail === 'chats') return jsonResponse({ error: 'chat reorder failed' }, 500)
+        return jsonResponse({
+          revision: 12,
+          event: { type: 'chat.reordered', revision: 12, resource: 'chat' },
+          selectedChatId: 'chat-a',
+        })
       }
       return jsonResponse({ error: `unexpected ${url}` }, 404)
     }) as unknown as typeof fetch,
@@ -680,6 +724,146 @@ describe('chat command projection helpers', () => {
     await vi.waitFor(() => {
       expect(DBState.db.characters[0].chatFolders.map((folder) => folder.id)).toEqual(newerIds)
     })
+  })
+
+  it('keeps an accepted folder reorder when the combined chat reorder fails', async () => {
+    DBState.db.characters[0].chatFolders = [
+      { id: 'folder-a', name: 'Folder A', folded: false },
+      { id: 'folder-b', name: 'Folder B', folded: false },
+      { id: 'folder-c', name: 'Folder C', folded: false },
+    ]
+    DBState.db.characters[0].chats = [
+      { id: 'chat-a', name: 'Chat A', folderId: null, message: [] },
+      { id: 'chat-b', name: 'Chat B', folderId: 'folder-a', message: [] },
+      { id: 'chat-c', name: 'Chat C', folderId: 'folder-b', message: [] },
+    ] as any
+    const calls = stubCombinedReorderCommandFetch({
+      fail: 'chats',
+      onChatCommand: () => {
+        withTrustedServerProjectionWrite(() => {
+          const folder = DBState.db.characters[0].chatFolders.find((candidate) => candidate.id === 'folder-c')
+          const chat = DBState.db.characters[0].chats.find((candidate) => candidate.id === 'chat-c')
+          if (folder) folder.name = 'Newer Folder C'
+          if (chat) chat.name = 'Newer Chat C'
+        })
+      },
+    })
+    setServerProjectionWriteGuardEnabled(true)
+
+    const previous = currentChatStateSnapshot()
+    const attemptedFolderIds = ['folder-c', 'folder-a', 'folder-b']
+    const attemptedChatIds = ['chat-c', 'chat-a', 'chat-b']
+    const attemptedFolderByChatId = {
+      'chat-a': 'folder-c',
+      'chat-b': null,
+      'chat-c': 'folder-a',
+    }
+    withTrustedServerProjectionWrite(() => {
+      const foldersById = new Map(DBState.db.characters[0].chatFolders.map((folder) => [folder.id, folder]))
+      const chatsById = new Map(DBState.db.characters[0].chats.map((chat) => [chat.id, chat]))
+      DBState.db.characters[0].chatFolders = attemptedFolderIds.map((id) => foldersById.get(id)!)
+      DBState.db.characters[0].chats = attemptedChatIds.map((id) => chatsById.get(id)!)
+      for (const chat of DBState.db.characters[0].chats) {
+        chat.folderId = attemptedFolderByChatId[chat.id]
+      }
+      DBState.db.characters[0].chatPage = 1
+    })
+
+    dispatchReorderChatFoldersAndChatsByIds(
+      'char-a',
+      attemptedFolderIds,
+      attemptedChatIds,
+      attemptedFolderByChatId,
+      previous,
+      'chat-a',
+    )
+
+    await waitForCallCount(calls, 3)
+    await vi.waitFor(() => {
+      expect(DBState.db.characters[0].chatFolders.map((folder) => folder.id)).toEqual(attemptedFolderIds)
+      expect(DBState.db.characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b', 'chat-c'])
+    })
+    expect(DBState.db.characters[0].chatFolders[0]).toMatchObject({
+      id: 'folder-c',
+      name: 'Newer Folder C',
+    })
+    expect(DBState.db.characters[0].chats.map((chat) => chat.folderId)).toEqual([null, 'folder-a', 'folder-b'])
+    expect(DBState.db.characters[0].chats[2].name).toBe('Newer Chat C')
+    expect(DBState.db.characters[0].chats[DBState.db.characters[0].chatPage].id).toBe('chat-a')
+  })
+
+  it('rolls back both attempted orders narrowly when the combined folder reorder fails first', async () => {
+    DBState.db.characters[0].chatFolders = [
+      { id: 'folder-a', name: 'Folder A', folded: false },
+      { id: 'folder-b', name: 'Folder B', folded: false },
+      { id: 'folder-c', name: 'Folder C', folded: false },
+    ]
+    DBState.db.characters[0].chats = [
+      { id: 'chat-a', name: 'Chat A', folderId: null, message: [] },
+      { id: 'chat-b', name: 'Chat B', folderId: 'folder-a', message: [] },
+      { id: 'chat-c', name: 'Chat C', folderId: 'folder-b', message: [] },
+    ] as any
+    const calls = stubCombinedReorderCommandFetch({
+      fail: 'folders',
+      onFolderCommand: () => {
+        withTrustedServerProjectionWrite(() => {
+          const folder = DBState.db.characters[0].chatFolders.find((candidate) => candidate.id === 'folder-c')
+          const chat = DBState.db.characters[0].chats.find((candidate) => candidate.id === 'chat-c')
+          if (folder) folder.name = 'Newer Folder C'
+          if (chat) chat.name = 'Newer Chat C'
+        })
+      },
+    })
+    setServerProjectionWriteGuardEnabled(true)
+
+    const previous = currentChatStateSnapshot()
+    const attemptedFolderIds = ['folder-c', 'folder-a', 'folder-b']
+    const attemptedChatIds = ['chat-c', 'chat-a', 'chat-b']
+    const attemptedFolderByChatId = {
+      'chat-a': 'folder-c',
+      'chat-b': null,
+      'chat-c': 'folder-a',
+    }
+    withTrustedServerProjectionWrite(() => {
+      const foldersById = new Map(DBState.db.characters[0].chatFolders.map((folder) => [folder.id, folder]))
+      const chatsById = new Map(DBState.db.characters[0].chats.map((chat) => [chat.id, chat]))
+      DBState.db.characters[0].chatFolders = attemptedFolderIds.map((id) => foldersById.get(id)!)
+      DBState.db.characters[0].chats = attemptedChatIds.map((id) => chatsById.get(id)!)
+      for (const chat of DBState.db.characters[0].chats) {
+        chat.folderId = attemptedFolderByChatId[chat.id]
+      }
+      DBState.db.characters[0].chatPage = 1
+    })
+
+    dispatchReorderChatFoldersAndChatsByIds(
+      'char-a',
+      attemptedFolderIds,
+      attemptedChatIds,
+      attemptedFolderByChatId,
+      previous,
+      'chat-a',
+    )
+
+    await waitForCallCount(calls, 2)
+    expect(calls.map((call) => call.url)).toEqual([
+      '/api/v1/bootstrap',
+      '/api/v1/commands/characters/char-a/chat-folders/reorder',
+    ])
+    await vi.waitFor(() => {
+      expect(DBState.db.characters[0].chatFolders.map((folder) => folder.id)).toEqual([
+        'folder-a',
+        'folder-b',
+        'folder-c',
+      ])
+      expect(DBState.db.characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b', 'chat-c'])
+    })
+    expect(DBState.db.characters[0].chatFolders[2]).toMatchObject({
+      id: 'folder-c',
+      name: 'Newer Folder C',
+    })
+    expect(DBState.db.characters[0].chats.map((chat) => chat.folderId)).toEqual([null, 'folder-a', 'folder-b'])
+    expect(DBState.db.characters[0].chats[2].name).toBe('Newer Chat C')
+    expect(DBState.db.characters[0].chats[DBState.db.characters[0].chatPage].id).toBe('chat-a')
   })
 
   it('keeps a pre-existing same-id chat after a failed create rollback', async () => {

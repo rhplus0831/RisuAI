@@ -173,6 +173,13 @@ attempted rows, duplicate-equivalent live rows, selection-only
 `hypaV3PresetId` rollback, and newer shifted selections when a delete rollback
 reinserts before the selected preset.
 
+Twenty-fourth landed slice: combined sidebar chat/folder drag reorder now routes
+folder and chat reorder commands through a focused chat-command helper instead
+of broad chat-state restore. Failed combined reorders roll back attempted chat
+order/folder assignments, roll back folder order only before the folder command
+is accepted, preserve newer row edits, and keep accepted folder reorder results
+when the later chat reorder command fails.
+
 ## Anchors
 
 - `src/lib/Setting/botpreset.svelte`

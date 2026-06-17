@@ -41,15 +41,14 @@
     dispatchDeleteChat,
     dispatchDeleteChatFolder,
     dispatchForkChat,
+    dispatchReorderChatFoldersAndChatsByIds,
     dispatchReorderChats,
     dispatchReorderChatsByIds,
     dispatchSelectChat,
     dispatchUpdateChat,
     dispatchUpdateChatFolder,
-    restoreChatState,
-    runOptimisticCommandSequence,
   } from 'src/ts/chatCommands'
-  import { canUseServerCommands, reorderChatFoldersCommand, reorderChatsCommand } from 'src/ts/server/commands'
+  import { canUseServerCommands } from 'src/ts/server/commands'
   import { watchServerBackedChatMetadata } from 'src/ts/server/chatBridge.svelte'
   import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
   import { groupChatsByFolderId } from './chatFolderGrouping'
@@ -341,29 +340,13 @@
 
         const selectedChatId = chara.chats[currentChatPage]?.id
         if (canUseServerCommands()) {
-          // Serialize folder and chat reorders against one optimistic snapshot.
-          const folderIdsSnapshot = [...folderIds]
-          const chatIdsSnapshot = [...chatIds]
-          const folderByChatIdSnapshot = { ...folderByChatId }
-          runOptimisticCommandSequence(
-            [
-              (baseRevision) =>
-                reorderChatFoldersCommand({
-                  baseRevision,
-                  characterId: chara.chaId,
-                  folderIds: folderIdsSnapshot,
-                  selectedChatId,
-                }),
-              (baseRevision) =>
-                reorderChatsCommand({
-                  baseRevision,
-                  characterId: chara.chaId,
-                  chatIds: chatIdsSnapshot,
-                  folderByChatId: folderByChatIdSnapshot,
-                  selectedChatId,
-                }),
-            ],
-            () => restoreChatState(previous),
+          dispatchReorderChatFoldersAndChatsByIds(
+            chara.chaId,
+            folderIds,
+            chatIds,
+            folderByChatId,
+            previous,
+            selectedChatId,
           )
         } else {
           chara.chatFolders = newFolders
