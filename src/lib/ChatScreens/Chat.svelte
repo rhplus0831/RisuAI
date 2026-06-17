@@ -58,6 +58,7 @@
   import PopupButton from '../UI/PopupButton.svelte'
   import RerollList from './RerollList.svelte'
   import PartialEditController from './PartialEditController.svelte'
+  import { resolveFreshPartialEditSave, type PartialEditSaveDetail } from './partialEditFreshness'
   import { getLLMCache, setLLMCache } from '../../ts/translator/translator'
   import { renderCustomHtmlTemplate } from './ChatCustomHtmlTemplate'
   import {
@@ -274,28 +275,46 @@
     dispatchUpdateMessageScoped(localMessageId, { data: message }, previous)
   }
 
-  function handlePartialEditSave(e: CustomEvent<{ newData: string }>) {
+  function handlePartialEditSave(e: CustomEvent<PartialEditSaveDetail>) {
     if (idx >= 0) {
+      const character = DBState.db.characters?.[selIdState.selId]
+      const chatPage = character?.chatPage
+      const chat = chatPage !== undefined && chatPage !== null ? character?.chats?.[chatPage] : undefined
+      const liveMessage = chat?.message?.[idx]
+      const freshness = resolveFreshPartialEditSave(
+        e.detail,
+        liveMessage && chat
+          ? {
+              chatIndex: idx,
+              chatId: chat.id,
+              messageId: liveMessage.chatId,
+              data: liveMessage.data,
+            }
+          : null,
+      )
+
+      if (!freshness.ok || !chat || !liveMessage) return
+
       const previous = currentChatScopedSnapshot()
-      const chat = DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage]
-      message = e.detail.newData
-      const messageId = chat.message[idx]?.chatId
+      const nextData = freshness.detail.newData
+      message = nextData
+      const messageId = liveMessage.chatId
       if (canUseServerCommands()) {
         if (messageId) {
-          dispatchUpdateMessageScoped(messageId, { data: e.detail.newData }, previous)
+          dispatchUpdateMessageScoped(messageId, { data: nextData }, previous)
         } else {
           const nextMessages = cloneMessagesWithIds(chat)
           if (nextMessages[idx]) {
-            nextMessages[idx].data = e.detail.newData
+            nextMessages[idx].data = nextData
             dispatchReplaceMessagesForChat(chat, nextMessages, previous)
           }
         }
       } else {
-        const localMessageId = ensureMessageId(chat.message[idx])
-        chat.message[idx].data = e.detail.newData
-        dispatchUpdateMessageScoped(localMessageId, { data: e.detail.newData }, previous)
+        const localMessageId = ensureMessageId(liveMessage)
+        liveMessage.data = nextData
+        dispatchUpdateMessageScoped(localMessageId, { data: nextData }, previous)
       }
-      displaya(e.detail.newData)
+      displaya(nextData)
     }
   }
 
@@ -370,6 +389,14 @@
       return ''
     }
     return character.chats?.[chatPage]?.message?.[idx]?.chatId ?? ''
+  })
+  let currentChatId = $derived.by(() => {
+    const character = DBState.db.characters?.[selIdState.selId]
+    const chatPage = character?.chatPage
+    if (chatPage === undefined || chatPage === null) {
+      return ''
+    }
+    return character.chats?.[chatPage]?.id ?? ''
   })
 
   $effect.pre(() => {
@@ -694,6 +721,8 @@
         <PartialEditController
           messageData={message}
           chatIndex={idx}
+          chatId={currentChatId || undefined}
+          messageId={messageRowId || undefined}
           {bodyRoot}
           blockEditEnabled={DBState.db.enableBlockPartialEdit}
           dragEditEnabled={DBState.db.enableDragPartialEdit}

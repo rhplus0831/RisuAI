@@ -22,18 +22,48 @@ const chatParserMocks = vi.hoisted(() => ({
   setLLMCache: vi.fn(async () => undefined),
 }))
 
+const languageMocks = vi.hoisted(() => {
+  const partialEdit = {
+    cancelShortcut: 'Cancel',
+    deleteButtonTooltip: 'Delete',
+    deleteConfirmMessage: 'Delete this section?',
+    deleteModalTitle: 'Delete',
+    deleteNo: 'No',
+    deleteYes: 'Yes',
+    editButtonTooltip: 'Edit',
+    editModalTitle: 'Edit',
+    lineNumber: (line: number) => `Line ${line}`,
+    matchFailedMessage: 'No match found.',
+    matchFailedTitle: 'No match',
+    matchesFound: 'matches',
+    matchFound: (method: string) => `Matched by ${method}`,
+    save: 'Save',
+    saveShortcut: 'Save',
+    selectDeleteMatch: 'Select delete match',
+    selectMatch: 'Select match',
+  }
+
+  const language = new Proxy(
+    {},
+    {
+      get: (_target, property) => (property === 'partialEdit' ? partialEdit : String(property)),
+    },
+  )
+
+  return { language }
+})
+
 vi.mock('./ChatBody.svelte', async () => {
   const mock = await import('./DefaultChatScreen.testChat.svelte')
   return { default: mock.default }
 })
 
 vi.mock('../../lang', () => ({
-  language: new Proxy(
-    {},
-    {
-      get: (_target, property) => String(property),
-    },
-  ),
+  language: languageMocks.language,
+}))
+
+vi.mock('src/lang', () => ({
+  language: languageMocks.language,
 }))
 
 vi.mock('src/ts/globalApi.svelte', () => ({
@@ -157,6 +187,7 @@ import {
   setServerProjectionWriteGuardEnabled,
   withTrustedServerProjectionWrite,
 } from '../../ts/server/projectionWriteGuard.svelte'
+import { dispatchUpdateMessageScoped } from 'src/ts/chatCommands'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 type ChatHarnessApi = MountedComponent & {
@@ -173,6 +204,59 @@ const previousReloadChat = get(ReloadChatPointer)
 
 let target: HTMLElement
 let component: ChatHarnessApi | undefined
+
+class VisibleIntersectionObserver implements IntersectionObserver {
+  readonly root: Element | Document | null = null
+  readonly rootMargin = '300px'
+  readonly thresholds: ReadonlyArray<number> = [0]
+
+  constructor(private readonly callback: IntersectionObserverCallback) {}
+
+  observe(target: Element) {
+    const rect = target.getBoundingClientRect()
+    this.callback(
+      [
+        {
+          boundingClientRect: rect,
+          intersectionRatio: 1,
+          intersectionRect: rect,
+          isIntersecting: true,
+          rootBounds: null,
+          target,
+          time: 0,
+        } as IntersectionObserverEntry,
+      ],
+      this,
+    )
+  }
+
+  unobserve() {}
+  disconnect() {}
+  takeRecords(): IntersectionObserverEntry[] {
+    return []
+  }
+}
+
+function domRect(left: number, top: number, width: number, height: number): DOMRect {
+  return {
+    x: left,
+    y: top,
+    left,
+    top,
+    width,
+    height,
+    right: left + width,
+    bottom: top + height,
+    toJSON: () => ({}),
+  } as DOMRect
+}
+
+function setRect(element: HTMLElement, left: number, top: number, width: number, height: number) {
+  Object.defineProperty(element, 'getBoundingClientRect', {
+    configurable: true,
+    value: () => domRect(left, top, width, height),
+  })
+}
 
 function makeRows(count: number): ParserDependencyRow[] {
   return Array.from({ length: count }, (_, index) => ({
@@ -260,6 +344,11 @@ beforeEach(() => {
   target = document.createElement('div')
   document.body.appendChild(target)
   vi.clearAllMocks()
+  chatParserMocks.risuChatParser.mockImplementation(
+    (message: string, arg?: { cbsConditions?: unknown; chara?: unknown; chatID?: unknown }) => {
+      return `parsed:${message}:${JSON.stringify(arg?.cbsConditions ?? {})}`
+    },
+  )
 })
 
 afterEach(() => {
@@ -273,6 +362,8 @@ afterEach(() => {
   selIdState.selId = previousSelectedChar
   ReloadGUIPointer.set(previousReloadGui)
   ReloadChatPointer.set(previousReloadChat)
+  vi.restoreAllMocks()
+  vi.unstubAllGlobals()
   target.remove()
   document.body.innerHTML = ''
 })
@@ -346,5 +437,63 @@ describe('Chat parser dependencies', () => {
       'visible message 2 changed',
       'visible message 3',
     ])
+  })
+
+  it('drops partial edit saves when the live source data changed while the modal was open', async () => {
+    vi.stubGlobal('IntersectionObserver', VisibleIntersectionObserver)
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      callback(1)
+      return 1
+    })
+    vi.stubGlobal('cancelAnimationFrame', vi.fn())
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: vi.fn(),
+    })
+
+    const rows = makeRows(1)
+    chatParserMocks.risuChatParser.mockImplementation((message: string) => message)
+    seedDatabase(rows)
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.enableBlockPartialEdit = true
+    })
+    mountHarness(rows)
+    await settle()
+
+    const bodyRoot = target.querySelector<HTMLElement>('.chattext')
+    const block = target.querySelector<HTMLElement>('.chattext .risu-chat')
+    expect(bodyRoot).not.toBeNull()
+    expect(block).not.toBeNull()
+    setRect(bodyRoot!, 20, 80, 260, 60)
+    setRect(block!, 20, 80, 260, 60)
+    vi.spyOn(document, 'elementFromPoint').mockImplementation((x: number, y: number) => {
+      const rect = block!.getBoundingClientRect()
+      if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+        return block
+      }
+      return null
+    })
+
+    document.dispatchEvent(new MouseEvent('mousemove', { clientX: 40, clientY: 100, bubbles: true }))
+    await settle()
+    document.querySelector<HTMLButtonElement>('.partial-edit-btn-edit')?.click()
+    await settle()
+
+    const textarea = document.querySelector<HTMLTextAreaElement>('.partial-edit-textarea')
+    expect(textarea).not.toBeNull()
+    textarea!.value = 'stale replacement'
+    textarea!.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    vi.mocked(dispatchUpdateMessageScoped).mockClear()
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.characters[0].chats[0].message[0].data = 'newer live data'
+    })
+
+    document.querySelector<HTMLButtonElement>('.partial-edit-save-btn')?.click()
+    await settle()
+
+    expect(dispatchUpdateMessageScoped).not.toHaveBeenCalled()
+    expect(DBState.db.characters[0].chats[0].message[0].data).toBe('newer live data')
   })
 })

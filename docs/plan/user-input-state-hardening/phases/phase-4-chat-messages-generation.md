@@ -16,7 +16,8 @@ output against a stale target.
   select, truncate, tail replace, and regenerate operations. Reroll active-chat
   freshness has landed here.
 - Guard partial edit and partial delete modals with message id, source range,
-  and source data freshness.
+  and source data freshness. Partial edit/delete modal freshness has landed
+  here.
 - Guard dynamic rendered chat buttons and Lua trigger results before applying
   returned chat/message/script state.
 - Guard suggestion reroll/send persistence while preserving existing request
@@ -39,6 +40,13 @@ then checks freshness before tail swaps, tail slices, truncate persistence, and
 post-truncate generation. The guard is target-scoped, so leaving and returning
 to the same chat may still be treated as fresh unless a newer same-target reroll
 operation supersedes it.
+
+Third landed slice: `PartialEditController.svelte` captures source data, source
+range, operation mode, chat id, and message id when a partial edit/delete modal
+operation opens. `Chat.svelte` resolves save details through
+`partialEditFreshness.ts`, re-reading the live target before local mutation or
+message patch dispatch. Legacy no-id fallback is limited to index/source-data
+matching.
 
 ## Anchors
 

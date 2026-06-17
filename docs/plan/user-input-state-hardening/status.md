@@ -66,7 +66,9 @@ persistence inventory under
   target, and active transcript freshness before applying. DefaultChatScreen
   reroll actions now guard active chat freshness by identity/scope around
   hydration, tail swaps, tail slices, truncate persistence, and post-truncate
-  generation.
+  generation. Partial edit/delete modal saves now carry the originally selected
+  source data, source range, operation mode, chat id, and message id, and the
+  parent chat row re-checks live target/source freshness before persisting.
   Phase 2 landed character profile draft dirty top-level field protection;
   prompt-template item row dirty projection merging; whole-key dirty projection
   protection for
@@ -179,7 +181,12 @@ persistence inventory under
 - `src/ts/process/rerollNavigation.svelte.ts` now scopes reroll operations by
   selected character and stable chat id/index fallback, then rejects stale tail
   swaps, tail slices, truncate persistence, and post-truncate generation.
-- Verification state: Phase 4 reroll active-chat freshness validation is
+- `src/lib/ChatScreens/partialEditFreshness.ts`,
+  `src/lib/ChatScreens/PartialEditController.svelte`, and
+  `src/lib/ChatScreens/Chat.svelte` now capture partial edit/delete source
+  snapshots and drop stale modal saves before local mutation or message patch
+  dispatch.
+- Verification state: Phase 4 partial edit/delete modal freshness validation is
   recorded in `latest-verification.md`.
 - Highest issue density:
   - Character editor: 52 issue rows, mostly dirty projection and unguarded
@@ -229,8 +236,8 @@ persistence inventory under
   row is audit drift because the live UI has no import button there.
 - [Phase 4](phases/phase-4-chat-messages-generation.md): active. DefaultChatScreen
   composer send/continue clear/restore, auto-translate freshness, and reroll
-  active-chat freshness have landed. `restoreChatScopedState`, partial
-  edit/delete, dynamic trigger, suggestion, message
+  active-chat freshness have landed. Partial edit/delete modal freshness has
+  landed. `restoreChatScopedState`, dynamic trigger, suggestion, message
   update/delete/truncate/replace, and generation finalization freshness remain
   here. Composer file and paste callbacks are already covered by Phase 3.
 - [Phase 5](phases/phase-5-collection-domains.md): pending. Preset, persona,
@@ -413,10 +420,15 @@ persistence inventory under
     tokens before reroll, unreroll, new reroll, and candidate-selection work.
     Tail swaps, tail slices, truncate persistence, and post-truncate generation
     now apply only while the captured target is still fresh.
-  - Remaining Phase 4: `restoreChatScopedState`, partial edit/delete, dynamic
-    trigger, suggestion, message update/delete/truncate/replace freshness, and
-    generation finalization. Composer file and paste callbacks are already
-    covered by Phase 3.
+  - Phase 4 partial edit/delete modal slice: `PartialEditController.svelte`
+    captures the selected source data/range/mode/chat id/message id when an edit
+    or delete operation opens. `Chat.svelte` resolves the save through
+    `partialEditFreshness.ts` against the current live chat/message and drops
+    stale saves before local display mutation or message update dispatch.
+  - Remaining Phase 4: `restoreChatScopedState`, dynamic trigger, suggestion,
+    message update/delete/truncate/replace freshness, and generation
+    finalization. Composer file and paste callbacks are already covered by Phase
+    3.
   - Phase 5: preset/persona/translator/module/lorebook/script/import collection
     flows, Hypa V3 preset array import/rename/delete, plugin
     enable/delete/args/provider/storage, sidebar chat/folder lists, character

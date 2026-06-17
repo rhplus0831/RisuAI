@@ -1,6 +1,7 @@
 import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import PartialEditController from './PartialEditController.svelte'
+import type { PartialEditSaveDetail } from './partialEditFreshness'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -123,18 +124,30 @@ function stubElementFromPoint(fixtures: HoverFixture[]) {
   })
 }
 
-function mountController(bodyRoot: HTMLElement): MountedComponent {
+function mountController(
+  bodyRoot: HTMLElement,
+  options: {
+    messageData?: string
+    chatIndex?: number
+    chatId?: string
+    messageId?: string
+    events?: Record<string, (event: CustomEvent<PartialEditSaveDetail>) => void>
+  } = {},
+): MountedComponent {
   const target = document.createElement('div')
   document.body.appendChild(target)
   const component = mount(PartialEditController, {
     target,
     props: {
-      messageData: 'partial edit shared hover body',
-      chatIndex: 0,
+      messageData: options.messageData ?? 'partial edit shared hover body',
+      chatIndex: options.chatIndex ?? 0,
+      chatId: options.chatId,
+      messageId: options.messageId,
       bodyRoot,
       blockEditEnabled: true,
       dragEditEnabled: false,
     },
+    events: options.events,
   })
   mountedComponents.push(component)
   return component
@@ -178,6 +191,10 @@ function getBlockButtonWrapper(): HTMLDivElement {
 
 beforeEach(() => {
   vi.stubGlobal('IntersectionObserver', VisibleIntersectionObserver)
+  Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+    configurable: true,
+    value: vi.fn(),
+  })
   rafHarness = stubAnimationFrame()
 })
 
@@ -293,5 +310,55 @@ describe('PartialEditController shared hover handler', () => {
 
     expect(wrapper.style.display).toBe('none')
     expect(rafHarness.pendingCount()).toBe(0)
+  })
+
+  it('emits captured partial edit save detail with source range, mode, chat id, and message id', async () => {
+    const fixture = createHoverFixture({
+      text: 'target block',
+      left: 40,
+      top: 100,
+      width: 180,
+      height: 48,
+    })
+    const save = vi.fn<(event: CustomEvent<PartialEditSaveDetail>) => void>()
+    stubElementFromPoint([fixture])
+    mountController(fixture.bodyRoot, {
+      messageData: 'alpha target block omega',
+      chatIndex: 3,
+      chatId: 'chat-a',
+      messageId: 'message-a',
+      events: { save },
+    })
+    await settleEffects()
+
+    movePointer(60, 112)
+    await flushHoverFrame()
+    getBlockButtonWrapper().querySelector<HTMLButtonElement>('.partial-edit-btn-edit')?.click()
+    await tick()
+
+    const textarea = document.querySelector<HTMLTextAreaElement>('.partial-edit-textarea')
+    expect(textarea).not.toBeNull()
+    textarea!.value = 'replacement block'
+    textarea!.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    document.querySelector<HTMLButtonElement>('.partial-edit-save-btn')?.click()
+    await tick()
+
+    expect(save).toHaveBeenCalledTimes(1)
+    expect(save.mock.calls[0][0].detail).toMatchObject({
+      newData: 'alpha replacement block omega',
+      sourceData: 'alpha target block omega',
+      sourceRange: {
+        start: 6,
+        end: 18,
+        method: 'exact',
+        confidence: 1,
+      },
+      mode: 'edit',
+      chatIndex: 3,
+      chatId: 'chat-a',
+      messageId: 'message-a',
+    })
   })
 })

@@ -194,10 +194,13 @@
     type RangeResult,
     type RangeResultWithContext,
   } from 'src/ts/parser/partialEdit'
+  import type { PartialEditMode, PartialEditSaveDetail } from './partialEditFreshness'
 
   interface Props {
     messageData: string
     chatIndex: number
+    chatId?: string
+    messageId?: string
     bodyRoot: HTMLElement | null
     blockEditEnabled?: boolean
     dragEditEnabled?: boolean
@@ -206,13 +209,15 @@
   let {
     messageData = $bindable(''),
     chatIndex,
+    chatId,
+    messageId,
     bodyRoot,
     blockEditEnabled = false,
     dragEditEnabled = false,
   }: Props = $props()
 
   const dispatch = createEventDispatcher<{
-    save: { newData: string }
+    save: PartialEditSaveDetail
   }>()
 
   const MIN_DRAG_SELECTION_LENGTH = 5
@@ -223,21 +228,67 @@
 
   let isConfirmingDelete = $state(false)
 
-  // Unified matching state: tracks both edit and delete operations
-  type MatchingMode = 'edit' | 'delete' | null
-  let matchingState = $state<{
+  // Unified matching state: tracks both edit and delete operations.
+  type MatchingMode = PartialEditMode | null
+  interface MatchingState {
     mode: MatchingMode
     targetElement: HTMLElement | null
     originalHTML: string
+    sourceData: string
     foundMatches: RangeResultWithContext[]
     selectedRange: RangeResult | null
-  }>({
-    mode: null,
-    targetElement: null,
-    originalHTML: '',
-    foundMatches: [],
-    selectedRange: null,
-  })
+  }
+
+  type CapturedPartialEditOperation = Omit<PartialEditSaveDetail, 'newData'>
+
+  function createEmptyMatchingState(): MatchingState {
+    return {
+      mode: null,
+      targetElement: null,
+      originalHTML: '',
+      sourceData: '',
+      foundMatches: [],
+      selectedRange: null,
+    }
+  }
+
+  function cloneRange(range: RangeResult): RangeResult {
+    return {
+      start: range.start,
+      end: range.end,
+      method: range.method,
+      confidence: range.confidence,
+    }
+  }
+
+  function normalizeOptionalId(value: string | undefined): string | undefined {
+    return value && value.length > 0 ? value : undefined
+  }
+
+  let matchingState = $state<MatchingState>(createEmptyMatchingState())
+  let activeOperation = $state<CapturedPartialEditOperation | null>(null)
+
+  function captureOperation(mode: PartialEditMode, match: RangeResult): CapturedPartialEditOperation {
+    const sourceRange = cloneRange(match)
+    const operation = {
+      sourceData: matchingState.sourceData || messageData,
+      sourceRange,
+      mode,
+      chatIndex,
+      chatId: normalizeOptionalId(chatId),
+      messageId: normalizeOptionalId(messageId),
+    }
+
+    activeOperation = operation
+    matchingState.selectedRange = sourceRange
+
+    return operation
+  }
+
+  function clearMatchingState() {
+    matchingState = createEmptyMatchingState()
+    activeOperation = null
+  }
 
   let showMatchFailedModal = $state(false)
 
@@ -374,13 +425,15 @@
   }
 
   function findAndProcessMatches(
-    mode: MatchingMode,
+    mode: PartialEditMode,
     elementOrText: HTMLElement | string,
     proceedCallback: (match: RangeResultWithContext) => void,
   ) {
     if (!elementOrText || !messageData) return
 
+    const sourceData = messageData
     matchingState.mode = mode
+    matchingState.sourceData = sourceData
 
     const options =
       mode === 'edit'
@@ -390,11 +443,11 @@
     if (typeof elementOrText === 'string') {
       matchingState.targetElement = null
       matchingState.originalHTML = ''
-      matchingState.foundMatches = findAllOriginalRangesFromText(messageData, elementOrText, options)
+      matchingState.foundMatches = findAllOriginalRangesFromText(sourceData, elementOrText, options)
     } else {
       matchingState.targetElement = elementOrText
       matchingState.originalHTML = elementOrText.innerHTML
-      matchingState.foundMatches = findAllOriginalRangesFromHtml(messageData, elementOrText, options)
+      matchingState.foundMatches = findAllOriginalRangesFromHtml(sourceData, elementOrText, options)
     }
 
     if (matchingState.foundMatches.length === 0) {
@@ -435,9 +488,9 @@
   }
 
   function proceedWithEdit(match: RangeResultWithContext) {
-    matchingState.selectedRange = match
+    const operation = captureOperation('edit', match)
     matchingState.mode = null
-    editText = messageData.slice(match.start, match.end)
+    editText = operation.sourceData.slice(operation.sourceRange.start, operation.sourceRange.end)
     isEditing = true
 
     setTimeout(() => {
@@ -471,20 +524,18 @@
       matchingState.targetElement.innerHTML = matchingState.originalHTML
     }
 
-    matchingState = {
-      mode: null,
-      targetElement: null,
-      originalHTML: '',
-      foundMatches: [],
-      selectedRange: null,
-    }
+    clearMatchingState()
   }
 
   function handleSave() {
-    if (!matchingState.selectedRange) return
+    if (!activeOperation) return
 
-    const newData = replaceRange(messageData, matchingState.selectedRange, editText)
-    dispatch('save', { newData })
+    const newData = replaceRange(activeOperation.sourceData, activeOperation.sourceRange, editText)
+    dispatch('save', {
+      ...activeOperation,
+      sourceRange: cloneRange(activeOperation.sourceRange),
+      newData,
+    })
 
     closeEdit()
   }
@@ -499,28 +550,26 @@
   function closeEdit() {
     isEditing = false
     editText = ''
-    matchingState = {
-      mode: null,
-      targetElement: null,
-      originalHTML: '',
-      foundMatches: [],
-      selectedRange: null,
-    }
+    clearMatchingState()
   }
 
   function proceedWithDelete(match: RangeResultWithContext) {
-    matchingState.selectedRange = match
+    captureOperation('delete', match)
     matchingState.mode = null
     isConfirmingDelete = true
   }
 
   function handleConfirmDelete() {
-    if (!matchingState.selectedRange) return
+    if (!activeOperation) return
 
-    let newData = replaceRange(messageData, matchingState.selectedRange, '')
+    let newData = replaceRange(activeOperation.sourceData, activeOperation.sourceRange, '')
     newData = newData.replace(/\n{3,}/g, '\n\n').trim()
 
-    dispatch('save', { newData })
+    dispatch('save', {
+      ...activeOperation,
+      sourceRange: cloneRange(activeOperation.sourceRange),
+      newData,
+    })
     closeDeleteConfirm()
   }
 
@@ -530,13 +579,7 @@
 
   function closeDeleteConfirm() {
     isConfirmingDelete = false
-    matchingState = {
-      mode: null,
-      targetElement: null,
-      originalHTML: '',
-      foundMatches: [],
-      selectedRange: null,
-    }
+    clearMatchingState()
   }
 
   function handleKeydown(e: KeyboardEvent) {
@@ -742,8 +785,10 @@
               <div class="match-context-before">{match.contextBefore}</div>
             {/if}
             <div class="match-text">
-              {messageData.slice(match.start, match.end).slice(0, 150)}{messageData.slice(match.start, match.end)
-                .length > 150
+              {matchingState.sourceData.slice(match.start, match.end).slice(0, 150)}{matchingState.sourceData.slice(
+                match.start,
+                match.end,
+              ).length > 150
                 ? '...'
                 : ''}
             </div>
@@ -808,10 +853,14 @@
       </div>
       <p class="partial-delete-message">{language.partialEdit.deleteConfirmMessage}</p>
       <div class="partial-delete-preview">
-        {matchingState.selectedRange
-          ? messageData.slice(matchingState.selectedRange.start, matchingState.selectedRange.end).slice(0, 200)
+        {matchingState.selectedRange && activeOperation
+          ? activeOperation.sourceData
+              .slice(matchingState.selectedRange.start, matchingState.selectedRange.end)
+              .slice(0, 200)
           : ''}{matchingState.selectedRange &&
-        messageData.slice(matchingState.selectedRange.start, matchingState.selectedRange.end).length > 200
+        activeOperation &&
+        activeOperation.sourceData.slice(matchingState.selectedRange.start, matchingState.selectedRange.end).length >
+          200
           ? '...'
           : ''}
       </div>
