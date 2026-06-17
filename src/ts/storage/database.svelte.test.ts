@@ -20,6 +20,7 @@ import {
   deleteModelPreset,
   deletePreset,
   ensureBotPresetHydrated,
+  extractLegacyBotPresetByIndex,
   mergeServerProjectionCharacterRow,
   normalizePromptTemplateIds,
   presetTemplate,
@@ -80,6 +81,7 @@ function stubFailedPresetCommand(onCommand?: (call: CapturedFetch) => void): Cap
       if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 100 })
       if (
         url.startsWith('/api/v1/commands/presets') ||
+        url.startsWith('/api/v1/commands/legacy-bot-presets') ||
         url.startsWith('/api/v1/commands/model-presets') ||
         url.startsWith('/api/v1/commands/prompt-presets')
       ) {
@@ -671,19 +673,26 @@ describe('preset command rollback (L21)', () => {
     expect(DBState.db.botPresets[0]).toEqual({ id: 'preset-stub', name: 'Stub', image: 'img' })
   })
 
-  it('L21: failed save restores the saved preset collection and selected index', async () => {
+  it('failed legacy save restores only attempted preset fields', async () => {
     seedPresetDatabase({ temperature: 91 })
-    const beforePresets = clonePlain(DBState.db.botPresets)
-    const beforeSelected = DBState.db.botPresetsId
-    const calls = stubFailedPresetCommand()
+    const calls = stubFailedPresetCommand(() => {
+      DBState.db.botPresets[0].name = 'Alpha edited after dispatch'
+      DBState.db.botPresets.push(makePreset('preset-c', 'Gamma appended after dispatch'))
+      DBState.db.botPresetsId = 1
+    })
 
     saveCurrentPreset()
 
     expect(DBState.db.botPresets[0].temperature).toBe(91)
     await waitForPresetCommand(calls, '/presets/preset-a')
     await waitForState(() => {
-      expect(DBState.db.botPresets).toEqual(beforePresets)
-      expect(DBState.db.botPresetsId).toBe(beforeSelected)
+      expect(DBState.db.botPresets.map((preset) => preset.id)).toEqual(['preset-a', 'preset-b', 'preset-c'])
+      expect(DBState.db.botPresets[0]).toMatchObject({
+        name: 'Alpha edited after dispatch',
+        temperature: 11,
+      })
+      expect(DBState.db.botPresets[2]).toMatchObject({ name: 'Gamma appended after dispatch' })
+      expect(DBState.db.botPresetsId).toBe(1)
       expect(DBState.db.temperature).toBe(91)
     })
   })
@@ -916,11 +925,14 @@ describe('preset command rollback (L21)', () => {
     })
   })
 
-  it('L21: failed copy restores the original collection after save-current and generated copy id', async () => {
+  it('failed legacy copy removes only the generated copy and rolls back attempted source-save fields', async () => {
     seedPresetDatabase({ temperature: 88 })
-    const beforePresets = clonePlain(DBState.db.botPresets)
-    const beforeSelected = DBState.db.botPresetsId
-    const calls = stubFailedPresetCommand()
+    let generatedCopyId: string | undefined
+    const calls = stubFailedPresetCommand(() => {
+      generatedCopyId = DBState.db.botPresets.find((preset) => preset.name === 'Alpha Copy')?.id
+      DBState.db.botPresets[0].name = 'Alpha source edited after dispatch'
+      DBState.db.botPresets.push(makePreset('preset-c', 'Gamma appended after dispatch'))
+    })
 
     copyPreset(0)
 
@@ -928,14 +940,21 @@ describe('preset command rollback (L21)', () => {
     expect(DBState.db.botPresets[0].temperature).toBe(88)
     await waitForPresetCommand(calls, '/presets/preset-a/copy')
     await waitForState(() => {
-      expect(DBState.db.botPresets).toEqual(beforePresets)
-      expect(DBState.db.botPresetsId).toBe(beforeSelected)
+      expect(generatedCopyId).toBeTruthy()
+      expect(DBState.db.botPresets.some((preset) => preset.id === generatedCopyId)).toBe(false)
+      expect(DBState.db.botPresets.map((preset) => preset.id)).toEqual(['preset-a', 'preset-b', 'preset-c'])
+      expect(DBState.db.botPresets[0]).toMatchObject({
+        name: 'Alpha source edited after dispatch',
+        temperature: 11,
+      })
+      expect(DBState.db.botPresets[2]).toMatchObject({ name: 'Gamma appended after dispatch' })
+      expect(DBState.db.botPresetsId).toBe(0)
     })
   })
 
   it('L21: shared preset boundary keeps copy as one rollback-safe command', async () => {
     seedPresetDatabase({ temperature: 77 })
-    const beforePresets = clonePlain(DBState.db.botPresets)
+    const beforeSourceTemperature = DBState.db.botPresets[0].temperature
     const beforeSelected = DBState.db.botPresetsId
     const calls = stubFailedPresetCommand()
 
@@ -943,7 +962,9 @@ describe('preset command rollback (L21)', () => {
 
     await waitForPresetCommand(calls, '/presets/preset-a/copy')
     await waitForState(() => {
-      expect(DBState.db.botPresets).toEqual(beforePresets)
+      expect(DBState.db.botPresets.map((preset) => preset.id)).toEqual(['preset-a', 'preset-b'])
+      expect(DBState.db.botPresets.some((preset) => preset.name === 'Alpha Copy')).toBe(false)
+      expect(DBState.db.botPresets[0].temperature).toBe(beforeSourceTemperature)
       expect(DBState.db.botPresetsId).toBe(beforeSelected)
     })
 
@@ -959,12 +980,15 @@ describe('preset command rollback (L21)', () => {
     expect(presetCommands[0].body.newPresetId).toBeTruthy()
   })
 
-  it('L21: failed create removes the optimistic preset and generated id', async () => {
+  it('failed legacy create removes only the unchanged optimistic row and preserves newer siblings', async () => {
     seedPresetDatabase()
-    const beforePresets = clonePlain(DBState.db.botPresets)
-    const beforeSelected = DBState.db.botPresetsId
-    const beforeIds = new Set(beforePresets.map((preset) => preset.id))
-    const calls = stubFailedPresetCommand()
+    let optimisticPresetId: string | undefined
+    const calls = stubFailedPresetCommand(() => {
+      optimisticPresetId = DBState.db.botPresets.find((preset) => preset.name === 'Created')?.id
+      DBState.db.botPresets[0].name = 'Alpha edited after dispatch'
+      DBState.db.botPresets.push(makePreset('preset-c', 'Gamma appended after dispatch'))
+      DBState.db.botPresetsId = 1
+    })
     const newPreset = makePreset('preset-created', 'Created')
     delete newPreset.id
 
@@ -972,36 +996,46 @@ describe('preset command rollback (L21)', () => {
 
     const optimisticPreset = DBState.db.botPresets.find((preset) => preset.name === 'Created')
     expect(optimisticPreset?.id).toBeTruthy()
-    expect(beforeIds.has(optimisticPreset?.id)).toBe(false)
     await waitForPresetCommand(calls, '/presets')
     await waitForState(() => {
-      expect(DBState.db.botPresets).toEqual(beforePresets)
-      expect(DBState.db.botPresetsId).toBe(beforeSelected)
+      expect(optimisticPresetId).toBe(optimisticPreset?.id)
+      expect(DBState.db.botPresets.some((preset) => preset.id === optimisticPreset?.id)).toBe(false)
+      expect(DBState.db.botPresets.map((preset) => preset.id)).toEqual(['preset-a', 'preset-b', 'preset-c'])
+      expect(DBState.db.botPresets[0]).toMatchObject({ name: 'Alpha edited after dispatch' })
+      expect(DBState.db.botPresets[2]).toMatchObject({ name: 'Gamma appended after dispatch' })
+      expect(DBState.db.botPresetsId).toBe(1)
     })
   })
 
-  it('L21: failed update restores the patched preset row', async () => {
+  it('failed legacy update restores only attempted fields and preserves newer same-row edits', async () => {
     seedPresetDatabase()
-    const beforePresets = clonePlain(DBState.db.botPresets)
-    const calls = stubFailedPresetCommand()
+    const calls = stubFailedPresetCommand(() => {
+      DBState.db.botPresets[1].name = 'Newer Beta edit after dispatch'
+      DBState.db.botPresets.push(makePreset('preset-c', 'Gamma appended after dispatch'))
+    })
 
     updatePreset(1, { name: 'Broken Update', temperature: 99 })
 
     expect(DBState.db.botPresets[1]).toMatchObject({ name: 'Broken Update', temperature: 99 })
     await waitForPresetCommand(calls, '/presets/preset-b')
     await waitForState(() => {
-      expect(DBState.db.botPresets).toEqual(beforePresets)
+      expect(DBState.db.botPresets.map((preset) => preset.id)).toEqual(['preset-a', 'preset-b', 'preset-c'])
+      expect(DBState.db.botPresets[1]).toMatchObject({
+        name: 'Newer Beta edit after dispatch',
+        temperature: 22,
+      })
+      expect(DBState.db.botPresets[2]).toMatchObject({ name: 'Gamma appended after dispatch' })
       expect(DBState.db.botPresetsId).toBe(0)
     })
   })
 
-  it('L21: failed delete restores collection, selection, and setPreset scalars', async () => {
+  it('failed legacy delete reinserts only the missing row and preserves newer rows and selection', async () => {
     seedPresetDatabase()
-    const beforePresets = clonePlain(DBState.db.botPresets)
-    const beforePrompt = DBState.db.mainPrompt
-    const beforeTemperature = DBState.db.temperature
-    const beforePromptTemplate = clonePlain(DBState.db.promptTemplate)
-    const calls = stubFailedPresetCommand()
+    const calls = stubFailedPresetCommand(() => {
+      DBState.db.botPresets.push(makePreset('preset-c', 'Gamma appended after dispatch'))
+      DBState.db.botPresetsId = 1
+      DBState.db.mainPrompt = 'newer prompt after dispatch'
+    })
 
     deletePreset(0, 1, true)
 
@@ -1010,22 +1044,25 @@ describe('preset command rollback (L21)', () => {
     expect(DBState.db.mainPrompt).toBe('Beta prompt')
     await waitForPresetCommand(calls, '/presets/preset-a')
     await waitForState(() => {
-      expect(DBState.db.botPresets).toEqual(beforePresets)
-      expect(DBState.db.botPresetsId).toBe(0)
-      expect(DBState.db.mainPrompt).toBe(beforePrompt)
-      expect(DBState.db.temperature).toBe(beforeTemperature)
-      expect(DBState.db.promptTemplate).toEqual(beforePromptTemplate)
+      expect(DBState.db.botPresets.map((preset) => preset.id)).toEqual(['preset-a', 'preset-b', 'preset-c'])
+      expect(DBState.db.botPresets[0]).toMatchObject({ name: 'Alpha' })
+      expect(DBState.db.botPresets[2]).toMatchObject({ name: 'Gamma appended after dispatch' })
+      expect(DBState.db.botPresetsId).toBe(2)
+      expect(DBState.db.mainPrompt).toBe('newer prompt after dispatch')
     })
   })
 
-  it('L21: failed reorder restores collection order and selected index', async () => {
+  it('failed legacy reorder restores the prior id order and preserves row edits', async () => {
     seedPresetDatabase({
       botPresets: [makePreset('preset-a', 'Alpha'), makePreset('preset-b', 'Beta'), makePreset('preset-c', 'Gamma')],
       botPresetsId: 1,
     })
-    const beforePresets = clonePlain(DBState.db.botPresets)
-    const beforeSelected = DBState.db.botPresetsId
-    const calls = stubFailedPresetCommand()
+    const calls = stubFailedPresetCommand(() => {
+      const gamma = DBState.db.botPresets.find((preset) => preset.id === 'preset-c')
+      if (gamma) {
+        gamma.name = 'Gamma edited after dispatch'
+      }
+    })
 
     reorderPresets(0, 3)
 
@@ -1033,19 +1070,39 @@ describe('preset command rollback (L21)', () => {
     expect(DBState.db.botPresetsId).toBe(0)
     await waitForPresetCommand(calls, '/presets/reorder')
     await waitForState(() => {
-      expect(DBState.db.botPresets).toEqual(beforePresets)
-      expect(DBState.db.botPresetsId).toBe(beforeSelected)
+      expect(DBState.db.botPresets.map((preset) => preset.id)).toEqual(['preset-a', 'preset-b', 'preset-c'])
+      expect(DBState.db.botPresets[2]).toMatchObject({ name: 'Gamma edited after dispatch' })
+      expect(DBState.db.botPresetsId).toBe(1)
     })
   })
 
-  it('L21: failed select restores setPreset scalars without overwriting unrelated fields', async () => {
+  it('failed older legacy reorder skips rollback after a newer reorder changes live ids', async () => {
+    seedPresetDatabase({
+      botPresets: [makePreset('preset-a', 'Alpha'), makePreset('preset-b', 'Beta'), makePreset('preset-c', 'Gamma')],
+      botPresetsId: 1,
+    })
+    const calls = stubFailedPresetCommand(() => {
+      DBState.db.botPresets = [DBState.db.botPresets[1], DBState.db.botPresets[2], DBState.db.botPresets[0]]
+      DBState.db.botPresetsId = 0
+    })
+
+    reorderPresets(0, 3)
+
+    await waitForPresetCommand(calls, '/presets/reorder')
+    await waitForState(() => {
+      expect(DBState.db.botPresets.map((preset) => preset.id)).toEqual(['preset-c', 'preset-a', 'preset-b'])
+      expect(DBState.db.botPresetsId).toBe(0)
+    })
+  })
+
+  it('failed legacy select restores only attempted-matching preset-applied settings', async () => {
     seedPresetDatabase()
     const beforePresets = clonePlain(DBState.db.botPresets)
     const beforePrompt = DBState.db.mainPrompt
-    const beforeTemperature = DBState.db.temperature
     const beforePromptTemplate = clonePlain(DBState.db.promptTemplate)
     const beforeNaiSettings = clonePlain(DBState.db.NAIsettings)
     const calls = stubFailedPresetCommand(() => {
+      DBState.db.temperature = 123
       DBState.db.customBackground = 'changed while preset command was in flight'
     })
 
@@ -1059,10 +1116,55 @@ describe('preset command rollback (L21)', () => {
       expect(DBState.db.botPresets).toEqual(beforePresets)
       expect(DBState.db.botPresetsId).toBe(0)
       expect(DBState.db.mainPrompt).toBe(beforePrompt)
-      expect(DBState.db.temperature).toBe(beforeTemperature)
+      expect(DBState.db.temperature).toBe(123)
       expect(DBState.db.promptTemplate).toEqual(beforePromptTemplate)
       expect(DBState.db.NAIsettings).toEqual(beforeNaiSettings)
       expect(DBState.db.customBackground).toBe('changed while preset command was in flight')
+    })
+  })
+
+  it('failed legacy extract preserves split preset edits while removing unchanged generated rows', async () => {
+    seedPresetDatabase({
+      botPresets: [makePreset('preset-a', 'Alpha'), makePreset('preset-b', 'Beta')],
+      botPresetsId: 0,
+      modelPresets: [
+        makePreset('model-existing', 'Existing Model', {
+          aiModel: 'existing-model-api',
+          temperature: 77,
+        }) as unknown as ModelPreset,
+      ],
+      modelPresetsId: 0,
+      promptPresets: [makePreset('prompt-existing', 'Existing Prompt') as unknown as PromptPreset],
+      promptPresetsId: 0,
+    })
+    const calls = stubFailedPresetCommand(() => {
+      DBState.db.modelPresets[0].name = 'Existing Model edited after dispatch'
+      DBState.db.modelPresets.push(
+        makePreset('model-newer', 'Newer Model appended after dispatch', {
+          aiModel: 'newer-model-api',
+        }) as unknown as ModelPreset,
+      )
+      DBState.db.promptPresets[0].name = 'Existing Prompt edited after dispatch'
+      DBState.db.promptPresets.push(
+        makePreset('prompt-newer', 'Newer Prompt appended after dispatch') as unknown as PromptPreset,
+      )
+    })
+
+    extractLegacyBotPresetByIndex(0, 'all')
+
+    expect(DBState.db.botPresets.map((preset) => preset.id)).toEqual(['preset-b'])
+    expect(DBState.db.modelPresets.some((preset) => preset.name === 'Alpha Model')).toBe(true)
+    expect(DBState.db.promptPresets.some((preset) => preset.name === 'Alpha Prompt')).toBe(true)
+    await waitForPresetCommand(calls, '/legacy-bot-presets/preset-a/extract')
+    await waitForState(() => {
+      expect(DBState.db.botPresets.map((preset) => preset.id)).toEqual(['preset-a', 'preset-b'])
+      expect(DBState.db.botPresetsId).toBe(0)
+      expect(DBState.db.modelPresets.map((preset) => preset.id)).toEqual(['model-existing', 'model-newer'])
+      expect(DBState.db.modelPresets[0]).toMatchObject({ name: 'Existing Model edited after dispatch' })
+      expect(DBState.db.modelPresets[1]).toMatchObject({ name: 'Newer Model appended after dispatch' })
+      expect(DBState.db.promptPresets.map((preset) => preset.id)).toEqual(['prompt-existing', 'prompt-newer'])
+      expect(DBState.db.promptPresets[0]).toMatchObject({ name: 'Existing Prompt edited after dispatch' })
+      expect(DBState.db.promptPresets[1]).toMatchObject({ name: 'Newer Prompt appended after dispatch' })
     })
   })
 })

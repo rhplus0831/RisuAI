@@ -25,7 +25,6 @@ import {
   deletePresetCommand,
   extractLegacyBotPresetCommand,
   importPromptPresetCommand,
-  importPresetCommand,
   reorderModelPresetsCommand,
   reorderPromptPresetsCommand,
   reorderPresetsCommand,
@@ -347,16 +346,6 @@ const SET_PRESET_ROLLBACK_KEYS = [
 
 type SetPresetRollbackKey = (typeof SET_PRESET_ROLLBACK_KEYS)[number]
 
-interface PresetRollbackSnapshot {
-  botPresets: botPreset[]
-  botPresetsId: number
-  modelPresets: ModelPreset[]
-  modelPresetsId: number
-  promptPresets: PromptPreset[]
-  promptPresetsId: number
-  setPresetSettings?: Partial<Record<SetPresetRollbackKey, unknown>>
-}
-
 function snapshotSetPresetSettings(db: Database): Partial<Record<SetPresetRollbackKey, unknown>> {
   const snapshot: Partial<Record<SetPresetRollbackKey, unknown>> = {}
   const dbRecord = db as unknown as Record<SetPresetRollbackKey, unknown>
@@ -366,45 +355,28 @@ function snapshotSetPresetSettings(db: Database): Partial<Record<SetPresetRollba
   return snapshot
 }
 
-function currentPresetRollbackSnapshot(
-  db: Database,
-  options: { includeSetPresetSettings?: boolean } = {},
-): PresetRollbackSnapshot {
-  normalizeBotPresetIds(db)
-  normalizeSplitPresetIds(db)
-  return {
-    botPresets: safeStructuredClone(db.botPresets),
-    botPresetsId: db.botPresetsId,
-    modelPresets: safeStructuredClone(db.modelPresets),
-    modelPresetsId: db.modelPresetsId,
-    promptPresets: safeStructuredClone(db.promptPresets),
-    promptPresetsId: db.promptPresetsId,
-    ...(options.includeSetPresetSettings ? { setPresetSettings: snapshotSetPresetSettings(db) } : {}),
-  }
-}
-
-function restorePresetRollbackSnapshot(snapshot: PresetRollbackSnapshot): void {
-  withTrustedServerProjectionWrite(() => {
-    DBState.db.botPresets = safeStructuredClone(snapshot.botPresets)
-    DBState.db.botPresetsId = snapshot.botPresetsId
-    DBState.db.modelPresets = safeStructuredClone(snapshot.modelPresets)
-    DBState.db.modelPresetsId = snapshot.modelPresetsId
-    DBState.db.promptPresets = safeStructuredClone(snapshot.promptPresets)
-    DBState.db.promptPresetsId = snapshot.promptPresetsId
-    if (snapshot.setPresetSettings) {
-      const dbRecord = DBState.db as unknown as Record<SetPresetRollbackKey, unknown>
-      for (const key of SET_PRESET_ROLLBACK_KEYS) {
-        if (Object.hasOwn(snapshot.setPresetSettings, key)) {
-          dbRecord[key] = safeStructuredClone(snapshot.setPresetSettings[key])
-        }
-      }
-    }
-  })
-}
-
-type PresetCommandFactory = Parameters<typeof runOptimisticCommandSequence>[0][number]
 type SplitPresetKind = 'model' | 'prompt'
 type SplitPresetRow = ModelPreset | PromptPreset
+
+interface BotPresetListRollbackEntry {
+  key: string
+  previous: botPreset | null
+  attempted: botPreset | null
+  previousIndex?: number
+}
+
+interface BotPresetFieldRollback {
+  presetId: string
+  previous: Record<string, unknown>
+  attempted: Record<string, unknown>
+}
+
+interface BotPresetSelectionRollback {
+  previousSelectedId: string | null
+  attemptedSelectedId: string | null
+  previousSettings?: Partial<Record<SetPresetRollbackKey, unknown>>
+  attemptedSettings?: Partial<Record<SetPresetRollbackKey, unknown>>
+}
 
 interface SplitPresetListRollbackEntry {
   key: string
@@ -421,16 +393,168 @@ interface SplitPresetSelectionRollback {
   attemptedSettings: Partial<Record<SetPresetRollbackKey, unknown>>
 }
 
-function runOptimisticPresetCommands(
-  mutate: (db: Database) => PresetCommandFactory[] | void,
-  options: { includeSetPresetSettings?: boolean } = {},
-): void {
+function botPresetIds(list: botPreset[]): string[] {
+  return list.map((preset) => preset?.id).filter((id): id is string => typeof id === 'string' && id.length > 0)
+}
+
+function currentBotPresetSelectedId(): string | null {
+  return botPresetSelectedId(DBState.db)
+}
+
+function botPresetSelectedId(db: Database): string | null {
+  const selectedIndex = db.botPresetsId
+  if (!Number.isInteger(selectedIndex) || selectedIndex < 0 || !Array.isArray(db.botPresets)) return null
+  return db.botPresets[selectedIndex]?.id ?? null
+}
+
+function restoreBotPresetSelectionToId(presetId: string | null): void {
+  const list = DBState.db.botPresets
+  const index = presetId ? list.findIndex((preset) => preset?.id === presetId) : -1
+  DBState.db.botPresetsId = index >= 0 ? index : normalizedBotPresetsId(list.length, -1)
+}
+
+function botPresetFieldRollbackFromPatch(
+  presetId: string,
+  previousPreset: Record<string, unknown>,
+  attemptedPatch: Record<string, unknown>,
+  options: { includeRemovedPreviousKeys?: boolean } = {},
+): BotPresetFieldRollback {
+  const previous: Record<string, unknown> = {}
+  const attempted = safeStructuredClone(attemptedPatch)
+  const keys = new Set(Object.keys(attempted))
+  if (options.includeRemovedPreviousKeys) {
+    for (const key of Object.keys(previousPreset)) {
+      keys.add(key)
+    }
+  }
+
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(previousPreset, key)) {
+      previous[key] = safeStructuredClone(previousPreset[key])
+    }
+    if (!Object.prototype.hasOwnProperty.call(attempted, key)) {
+      attempted[key] = undefined
+    }
+  }
+  return {
+    presetId,
+    previous,
+    attempted,
+  }
+}
+
+function saveCurrentPresetLocalWithRollback(): {
+  savedPreset: botPreset | null
+  rollback: BotPresetFieldRollback | null
+} {
+  const db = DBState.db
+  normalizeBotPresetIds(db)
+  const previousPreset = db.botPresets[db.botPresetsId] ? safeStructuredClone(db.botPresets[db.botPresetsId]) : null
+  const savedPreset = saveCurrentPresetLocal()
+  if (!savedPreset?.id || !previousPreset) {
+    return { savedPreset, rollback: null }
+  }
+  return {
+    savedPreset,
+    rollback: botPresetFieldRollbackFromPatch(
+      savedPreset.id,
+      previousPreset as unknown as Record<string, unknown>,
+      savedPreset as unknown as Record<string, unknown>,
+      { includeRemovedPreviousKeys: true },
+    ),
+  }
+}
+
+function rollbackBotPresetListEntry(entry: BotPresetListRollbackEntry): void {
   withTrustedServerProjectionWrite(() => {
-    const rollback = currentPresetRollbackSnapshot(DBState.db, options)
-    const result = mutate(DBState.db)
-    const factories: PresetCommandFactory[] = Array.isArray(result) ? result : []
-    if (factories.length === 0) return
-    runOptimisticCommandSequence(factories, () => restorePresetRollbackSnapshot(rollback))
+    const list = DBState.db.botPresets
+    const selectedId = currentBotPresetSelectedId()
+    const rolledBack = applyAttemptedKeyedListRollback<botPreset, string>({
+      list,
+      entries: [entry],
+      getKey: (preset) => preset?.id,
+    })
+    if (rolledBack.length === 0) return
+
+    DBState.db.botPresets = list
+    restoreBotPresetSelectionToId(selectedId)
+  })
+}
+
+function rollbackBotPresetCreate(attemptedPreset: botPreset): void {
+  const presetId = attemptedPreset.id
+  if (!presetId) return
+  rollbackBotPresetListEntry({
+    key: presetId,
+    previous: null,
+    attempted: safeStructuredClone(attemptedPreset),
+  })
+}
+
+function rollbackBotPresetDelete(previousPreset: botPreset, previousIndex: number): void {
+  const presetId = previousPreset.id
+  if (!presetId) return
+  rollbackBotPresetListEntry({
+    key: presetId,
+    previous: safeStructuredClone(previousPreset),
+    attempted: null,
+    previousIndex,
+  })
+}
+
+function rollbackBotPresetFields(rollback: BotPresetFieldRollback | null): void {
+  if (!rollback) return
+  withTrustedServerProjectionWrite(() => {
+    const index = DBState.db.botPresets.findIndex((preset) => preset?.id === rollback.presetId)
+    if (index < 0) return
+
+    const rolledBack = applyAttemptedFieldRollback({
+      target: DBState.db.botPresets[index] as unknown as Record<string, unknown>,
+      previous: rollback.previous,
+      attempted: rollback.attempted,
+      deleteMissingPrevious: true,
+    })
+    if (rolledBack.length > 0) {
+      DBState.db.botPresets = DBState.db.botPresets
+    }
+  })
+}
+
+function rollbackBotPresetReorder(previousPresetIds: string[], attemptedPresetIds: string[]): void {
+  withTrustedServerProjectionWrite(() => {
+    const list = DBState.db.botPresets
+    if (!stringArraysEqual(botPresetIds(list), attemptedPresetIds)) return
+
+    const selectedId = currentBotPresetSelectedId()
+    const liveRowsById = new Map<string, botPreset>()
+    for (const preset of list) {
+      if (preset?.id) {
+        liveRowsById.set(preset.id, preset)
+      }
+    }
+
+    const restored = previousPresetIds.map((id) => liveRowsById.get(id))
+    if (restored.some((preset) => !preset)) return
+
+    DBState.db.botPresets = restored as botPreset[]
+    restoreBotPresetSelectionToId(selectedId)
+  })
+}
+
+function rollbackBotPresetSelection(rollback: BotPresetSelectionRollback): void {
+  withTrustedServerProjectionWrite(() => {
+    if (!rollback.attemptedSelectedId) return
+    if (currentBotPresetSelectedId() !== rollback.attemptedSelectedId) return
+
+    if (rollback.previousSettings && rollback.attemptedSettings) {
+      applyAttemptedFieldRollback({
+        target: DBState.db as unknown as Record<string, unknown>,
+        previous: rollback.previousSettings as Record<string, unknown>,
+        attempted: rollback.attemptedSettings as Record<string, unknown>,
+        keys: SET_PRESET_ROLLBACK_KEYS,
+      })
+    }
+    restoreBotPresetSelectionToId(rollback.previousSelectedId)
   })
 }
 
@@ -2868,23 +2992,27 @@ function saveCurrentPresetLocal() {
 }
 
 export function saveCurrentPreset() {
-  runOptimisticPresetCommands(() => {
-    const savedPreset = saveCurrentPresetLocal()
+  withTrustedServerProjectionWrite(() => {
+    const { savedPreset, rollback } = saveCurrentPresetLocalWithRollback()
     if (!savedPreset?.id) return []
-    return [
-      (baseRevision) =>
-        updatePresetCommand({
-          baseRevision,
-          presetId: savedPreset.id!,
-          patch: safeStructuredClone(savedPreset) as unknown as PresetSnapshot,
-        }),
-    ]
+    runOptimisticCommandSequence(
+      [
+        (baseRevision) =>
+          updatePresetCommand({
+            baseRevision,
+            presetId: savedPreset.id!,
+            patch: safeStructuredClone(savedPreset) as unknown as PresetSnapshot,
+          }),
+      ],
+      () => rollbackBotPresetFields(rollback),
+    )
   })
 }
 
 export function copyPreset(id: number) {
-  runOptimisticPresetCommands((db) => {
-    saveCurrentPresetLocal()
+  withTrustedServerProjectionWrite(() => {
+    const db = DBState.db
+    const { rollback: saveCurrentRollback } = saveCurrentPresetLocalWithRollback()
     normalizeBotPresetIds(db)
     let pres = db.botPresets
     if (!getHydratedPresetIfReady(id)) {
@@ -2899,146 +3027,178 @@ export function copyPreset(id: number) {
     newPres.id = createClientPresetId()
     newPres.name += ' Copy'
     db.botPresets.push(newPres)
-    return [
-      (baseRevision) =>
-        copyPresetCommand({
-          baseRevision,
-          presetId: sourcePresetId,
-          newPresetId: newPres.id,
-          name: newPres.name,
-          saveCurrent: true,
-        }),
-    ]
+    const attemptedCopy = safeStructuredClone(newPres)
+    runOptimisticCommandSequence(
+      [
+        (baseRevision) =>
+          copyPresetCommand({
+            baseRevision,
+            presetId: sourcePresetId,
+            newPresetId: newPres.id,
+            name: newPres.name,
+            saveCurrent: true,
+          }),
+      ],
+      () => {
+        rollbackBotPresetCreate(attemptedCopy)
+        rollbackBotPresetFields(saveCurrentRollback)
+      },
+    )
   })
 }
 
 export function changeToPreset(id = 0, savecurrent = true) {
-  runOptimisticPresetCommands(
-    (db) => {
-      if (savecurrent) {
-        saveCurrentPresetLocal()
+  withTrustedServerProjectionWrite(() => {
+    const db = DBState.db
+    normalizeBotPresetIds(db)
+    const previousSelectedId = botPresetSelectedId(db)
+    const previousSettings = snapshotSetPresetSettings(db)
+    const saveCurrentRollback = savecurrent ? saveCurrentPresetLocalWithRollback().rollback : null
+    normalizeBotPresetIds(db)
+    let pres = db.botPresets
+    const newPres = pres[id]
+    const targetPresetId = newPres?.id
+    db.botPresetsId = id
+    if (newPres) {
+      const hydratedPreset = getHydratedPresetIfReady(id)
+      if (hydratedPreset) {
+        setPreset(db, hydratedPreset)
+      } else {
+        void ensureBotPresetHydrated(id).then((hydrated) => {
+          if (!hydrated) return
+          withTrustedServerProjectionWrite(() => {
+            const nextIndex = DBState.db.botPresets.findIndex((preset) => preset?.id === targetPresetId)
+            if (nextIndex < 0 || DBState.db.botPresetsId !== nextIndex) return
+            setPreset(DBState.db, DBState.db.botPresets[nextIndex])
+          })
+        })
       }
-      normalizeBotPresetIds(db)
-      let pres = db.botPresets
-      const newPres = pres[id]
-      const targetPresetId = newPres?.id
-      db.botPresetsId = id
-      if (newPres) {
-        const hydratedPreset = getHydratedPresetIfReady(id)
+    }
+    if (!targetPresetId) return
+    const selectionRollback: BotPresetSelectionRollback = {
+      previousSelectedId,
+      attemptedSelectedId: botPresetSelectedId(db),
+      previousSettings,
+      attemptedSettings: snapshotSetPresetSettings(db),
+    }
+    runOptimisticCommandSequence(
+      [
+        (baseRevision) =>
+          selectPresetCommand({
+            baseRevision,
+            presetId: targetPresetId,
+            apply: true,
+            saveCurrent: savecurrent,
+          }),
+      ],
+      () => {
+        rollbackBotPresetFields(saveCurrentRollback)
+        rollbackBotPresetSelection(selectionRollback)
+      },
+    )
+  })
+}
+
+export function createPreset(preset: botPreset) {
+  withTrustedServerProjectionWrite(() => {
+    const db = DBState.db
+    normalizeBotPresetIds(db)
+    const newPreset = safeStructuredClone(preset)
+    newPreset.id ??= createClientPresetId()
+    db.botPresets.push(newPreset)
+    db.botPresets = db.botPresets
+    const attemptedPreset = safeStructuredClone(newPreset)
+    runOptimisticCommandSequence(
+      [
+        (baseRevision) =>
+          createPresetCommand({
+            baseRevision,
+            preset: safeStructuredClone(attemptedPreset) as unknown as PresetSnapshot,
+          }),
+      ],
+      () => rollbackBotPresetCreate(attemptedPreset),
+    )
+  })
+}
+
+export function updatePreset(id: number, patch: Partial<botPreset>) {
+  withTrustedServerProjectionWrite(() => {
+    const db = DBState.db
+    normalizeBotPresetIds(db)
+    const presetId = db.botPresets[id]?.id
+    if (!presetId) return []
+    const attempted = safeStructuredClone(patch)
+    const rollback = botPresetFieldRollbackFromPatch(
+      presetId,
+      db.botPresets[id] as unknown as Record<string, unknown>,
+      attempted as unknown as Record<string, unknown>,
+    )
+    Object.assign(db.botPresets[id], attempted)
+    runOptimisticCommandSequence(
+      [
+        (baseRevision) =>
+          updatePresetCommand({
+            baseRevision,
+            presetId,
+            patch: safeStructuredClone({ ...attempted, id: presetId }) as PresetSnapshot,
+          }),
+      ],
+      () => rollbackBotPresetFields(rollback),
+    )
+  })
+}
+
+export function deletePreset(id: number, selectIndex = 0, apply = true) {
+  withTrustedServerProjectionWrite(() => {
+    const db = DBState.db
+    normalizeBotPresetIds(db)
+    if (db.botPresets.length <= 1) return []
+    const presetId = db.botPresets[id]?.id
+    const previousPreset = db.botPresets[id] ? safeStructuredClone(db.botPresets[id]) : null
+    const previousSelectedId = botPresetSelectedId(db)
+    const previousSettings = apply ? snapshotSetPresetSettings(db) : undefined
+    const nextSelectedPreset =
+      db.botPresets[selectIndex]?.id === presetId
+        ? db.botPresets.find((preset) => preset.id !== presetId)
+        : db.botPresets[selectIndex]
+    const selectPresetId = nextSelectedPreset?.id
+    if (!presetId || !previousPreset) return []
+    let botPresets = db.botPresets
+    botPresets.splice(id, 1)
+    db.botPresets = botPresets
+    const selectedIndex = selectPresetId ? db.botPresets.findIndex((preset) => preset.id === selectPresetId) : -1
+    if (selectedIndex >= 0) {
+      db.botPresetsId = selectedIndex
+      if (apply) {
+        const hydratedPreset = getHydratedPresetIfReady(selectedIndex)
         if (hydratedPreset) {
           setPreset(db, hydratedPreset)
         } else {
-          void ensureBotPresetHydrated(id).then((hydrated) => {
+          void ensureBotPresetHydrated(selectedIndex).then((hydrated) => {
             if (!hydrated) return
             withTrustedServerProjectionWrite(() => {
-              const nextIndex = DBState.db.botPresets.findIndex((preset) => preset?.id === targetPresetId)
+              const nextIndex = DBState.db.botPresets.findIndex((preset) => preset?.id === selectPresetId)
               if (nextIndex < 0 || DBState.db.botPresetsId !== nextIndex) return
               setPreset(DBState.db, DBState.db.botPresets[nextIndex])
             })
           })
         }
       }
-      if (targetPresetId) {
-        return [
-          (baseRevision) =>
-            selectPresetCommand({
-              baseRevision,
-              presetId: targetPresetId,
-              apply: true,
-              saveCurrent: savecurrent,
-            }),
-        ]
-      }
-      return []
-    },
-    { includeSetPresetSettings: true },
-  )
-}
-
-export function createPreset(preset: botPreset) {
-  runOptimisticPresetCommands((db) => {
-    const newPreset = safeStructuredClone(preset)
-    newPreset.id ??= createClientPresetId()
-    db.botPresets.push(newPreset)
-    db.botPresets = db.botPresets
-    return [
-      (baseRevision) =>
-        createPresetCommand({
-          baseRevision,
-          preset: safeStructuredClone(newPreset) as unknown as PresetSnapshot,
-        }),
-    ]
-  })
-}
-
-function addImportedPreset(preset: botPreset) {
-  runOptimisticPresetCommands((db) => {
-    const newPreset = safeStructuredClone(preset)
-    newPreset.id ??= createClientPresetId()
-    db.botPresets.push(newPreset)
-    db.botPresets = db.botPresets
-    return [
-      (baseRevision) =>
-        importPresetCommand({
-          baseRevision,
-          preset: safeStructuredClone(newPreset) as unknown as PresetSnapshot,
-        }),
-    ]
-  })
-}
-
-export function updatePreset(id: number, patch: Partial<botPreset>) {
-  runOptimisticPresetCommands((db) => {
-    const presetId = db.botPresets[id]?.id
-    if (!presetId) return []
-    Object.assign(db.botPresets[id], patch)
-    return [
-      (baseRevision) =>
-        updatePresetCommand({
-          baseRevision,
-          presetId,
-          patch: safeStructuredClone({ ...patch, id: presetId }) as PresetSnapshot,
-        }),
-    ]
-  })
-}
-
-export function deletePreset(id: number, selectIndex = 0, apply = true) {
-  runOptimisticPresetCommands(
-    (db) => {
-      if (db.botPresets.length <= 1) return []
-      const presetId = db.botPresets[id]?.id
-      const nextSelectedPreset =
-        db.botPresets[selectIndex]?.id === presetId
-          ? db.botPresets.find((preset) => preset.id !== presetId)
-          : db.botPresets[selectIndex]
-      const selectPresetId = nextSelectedPreset?.id
-      if (!presetId) return []
-      let botPresets = db.botPresets
-      botPresets.splice(id, 1)
-      db.botPresets = botPresets
-      const selectedIndex = selectPresetId ? db.botPresets.findIndex((preset) => preset.id === selectPresetId) : -1
-      if (selectedIndex >= 0) {
-        db.botPresetsId = selectedIndex
-        if (apply) {
-          const hydratedPreset = getHydratedPresetIfReady(selectedIndex)
-          if (hydratedPreset) {
-            setPreset(db, hydratedPreset)
-          } else {
-            void ensureBotPresetHydrated(selectedIndex).then((hydrated) => {
-              if (!hydrated) return
-              withTrustedServerProjectionWrite(() => {
-                const nextIndex = DBState.db.botPresets.findIndex((preset) => preset?.id === selectPresetId)
-                if (nextIndex < 0 || DBState.db.botPresetsId !== nextIndex) return
-                setPreset(DBState.db, DBState.db.botPresets[nextIndex])
-              })
-            })
+    } else if (db.botPresetsId >= db.botPresets.length) {
+      db.botPresetsId = db.botPresets.length - 1
+    }
+    const selectionRollback: BotPresetSelectionRollback = {
+      previousSelectedId,
+      attemptedSelectedId: botPresetSelectedId(db),
+      ...(apply && previousSettings
+        ? {
+            previousSettings,
+            attemptedSettings: snapshotSetPresetSettings(db),
           }
-        }
-      } else if (db.botPresetsId >= db.botPresets.length) {
-        db.botPresetsId = db.botPresets.length - 1
-      }
-      return [
+        : {}),
+    }
+    runOptimisticCommandSequence(
+      [
         (baseRevision) =>
           deletePresetCommand({
             baseRevision,
@@ -3047,19 +3207,25 @@ export function deletePreset(id: number, selectIndex = 0, apply = true) {
             apply,
             saveCurrent: false,
           }),
-      ]
-    },
-    { includeSetPresetSettings: apply },
-  )
+      ],
+      () => {
+        rollbackBotPresetDelete(previousPreset, id)
+        rollbackBotPresetSelection(selectionRollback)
+      },
+    )
+  })
 }
 
 export function reorderPresets(fromIndex: number, toIndex: number) {
-  runOptimisticPresetCommands((db) => {
+  withTrustedServerProjectionWrite(() => {
+    const db = DBState.db
+    normalizeBotPresetIds(db)
     if (fromIndex === toIndex) return []
     if (fromIndex < 0 || toIndex < 0 || fromIndex >= db.botPresets.length || toIndex > db.botPresets.length) {
       return []
     }
 
+    const previousPresetIds = botPresetIds(db.botPresets)
     let botPresets = [...db.botPresets]
     const movedItem = botPresets.splice(fromIndex, 1)[0]
     if (!movedItem) return []
@@ -3078,13 +3244,16 @@ export function reorderPresets(fromIndex: number, toIndex: number) {
 
     db.botPresets = botPresets
     const presetIds = db.botPresets.map((preset) => preset.id).filter((id): id is string => !!id)
-    return [
-      (baseRevision) =>
-        reorderPresetsCommand({
-          baseRevision,
-          presetIds,
-        }),
-    ]
+    runOptimisticCommandSequence(
+      [
+        (baseRevision) =>
+          reorderPresetsCommand({
+            baseRevision,
+            presetIds,
+          }),
+      ],
+      () => rollbackBotPresetReorder(previousPresetIds, presetIds),
+    )
   })
 }
 
@@ -3498,11 +3667,18 @@ export function reorderPromptPresets(fromIndex: number, toIndex: number) {
 }
 
 export function extractLegacyBotPresetByIndex(id: number, mode: 'all' | 'model' | 'prompt') {
-  runOptimisticPresetCommands((db) => {
+  withTrustedServerProjectionWrite(() => {
+    const db = DBState.db
+    normalizeBotPresetIds(db)
+    normalizeSplitPresetIds(db)
     const preset = db.botPresets[id]
     const presetId = preset?.id
     if (!presetId) return []
+    const previousPreset = safeStructuredClone(preset)
+    const previousSelectedId = botPresetSelectedId(db)
     const legacyName = typeof preset.name === 'string' && preset.name.trim() ? preset.name : 'Legacy'
+    let attemptedModelPreset: ModelPreset | null = null
+    let attemptedPromptPreset: PromptPreset | null = null
 
     if (mode === 'all' || mode === 'model') {
       const modelPreset = createExtractedModelPreset(preset, {
@@ -3512,6 +3688,7 @@ export function extractLegacyBotPresetByIndex(id: number, mode: 'all' | 'model' 
       const existing = findEquivalentModelPreset(db.modelPresets, modelPreset)
       if (!existing) {
         db.modelPresets.push(modelPreset)
+        attemptedModelPreset = safeStructuredClone(modelPreset)
       }
     }
 
@@ -3521,6 +3698,7 @@ export function extractLegacyBotPresetByIndex(id: number, mode: 'all' | 'model' 
         name: `${legacyName} Prompt`,
       }) as PromptPreset
       db.promptPresets.push(promptPreset)
+      attemptedPromptPreset = safeStructuredClone(promptPreset)
     }
 
     db.botPresets.splice(id, 1)
@@ -3528,14 +3706,30 @@ export function extractLegacyBotPresetByIndex(id: number, mode: 'all' | 'model' 
     db.modelPresets = db.modelPresets
     db.promptPresets = db.promptPresets
     db.botPresetsId = normalizedBotPresetsId(db.botPresets.length, db.botPresetsId)
-    return [
-      (baseRevision) =>
-        extractLegacyBotPresetCommand({
-          baseRevision,
-          presetId,
-          mode,
-        }),
-    ]
+    const selectionRollback: BotPresetSelectionRollback = {
+      previousSelectedId,
+      attemptedSelectedId: botPresetSelectedId(db),
+    }
+    runOptimisticCommandSequence(
+      [
+        (baseRevision) =>
+          extractLegacyBotPresetCommand({
+            baseRevision,
+            presetId,
+            mode,
+          }),
+      ],
+      () => {
+        rollbackBotPresetDelete(previousPreset, id)
+        if (attemptedModelPreset) {
+          rollbackSplitPresetCreate('model', attemptedModelPreset)
+        }
+        if (attemptedPromptPreset) {
+          rollbackSplitPresetCreate('prompt', attemptedPromptPreset)
+        }
+        rollbackBotPresetSelection(selectionRollback)
+      },
+    )
   })
 }
 

@@ -91,6 +91,12 @@ reorder preserves live row objects while restoring prior id order only on
 attempted-order matches, and select/delete-selected rollback restores only
 attempted-matching selection and scalar settings.
 
+Twelfth landed slice: legacy bot preset rollback now scopes save, copy, select,
+create, update, delete, reorder, and legacy extraction failures by attempted
+row, field, order, selection, generated split row, and scalar settings state.
+Failed legacy preset commands no longer restore whole preset snapshots over
+newer sibling rows, same-row edits, split preset edits, or changed selection.
+
 ## Anchors
 
 - `src/lib/Setting/botpreset.svelte`

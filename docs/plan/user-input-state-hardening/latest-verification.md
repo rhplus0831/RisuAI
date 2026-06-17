@@ -7,27 +7,29 @@ workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 5 split prompt/model preset array
-  rollback. Split model and prompt preset create, prompt import, delete, select,
-  and reorder commands now use targeted rollback helpers instead of broad preset
-  snapshots that include legacy bot presets and sibling split collections.
-  Create/import/delete use attempted keyed-list rollback, reorder restores prior
-  id order only while live ids still match the attempted order, and select plus
-  delete-selected rollback restores only attempted-matching selection/settings.
+- Runtime/code change under test: Phase 5 legacy bot preset rollback. Legacy
+  preset save, copy, select, create, update, delete, reorder, and extraction
+  commands now use attempted row, field, order, selection, generated split row,
+  and scalar settings rollback instead of broad preset snapshots. Delayed
+  command failures preserve newer sibling rows, same-row edits, split preset
+  edits, and changed selection when live state no longer matches the attempted
+  optimistic write.
 - Commands:
 
 ```bash
-pnpm exec vitest run src/ts/storage/database.svelte.test.ts src/ts/storage/database.importPreset.test.ts
+pnpm exec vitest run src/ts/storage/database.svelte.test.ts
+pnpm exec vitest run src/ts/storage/database.importPreset.test.ts
 pnpm exec vitest run src/ts/server/staleStateGuards.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
-pnpm exec prettier --check src/ts/storage/database.svelte.ts src/ts/storage/database.svelte.test.ts src/ts/storage/database.importPreset.test.ts
+pnpm exec prettier --check src/ts/storage/database.svelte.ts src/ts/storage/database.svelte.test.ts
 git diff --check
 ```
 
-- Result: passed on 2026-06-17. Database split-preset/import coverage passed 34
-  tests, shared stale-state guard coverage passed 12 tests, and both
-  TypeScript checks plus Prettier and `git diff --check` passed.
+- Result: passed on 2026-06-17. Legacy preset storage coverage passed 33 tests,
+  import-preset coverage passed 3 tests, shared stale-state guard coverage
+  passed 12 tests, and both TypeScript checks plus Prettier and
+  `git diff --check` passed.
 - Additional check: `pnpm exec vitest run src/ts/compatibilityAdapters.test.ts`
   still fails in the pre-existing character MCP lorebook test
   `routes MCP character lorebook writes through lorebook commands in
@@ -44,7 +46,7 @@ git diff --check
   persona import remain separate residual persona paths. Full
   `ScriptDefinitionStateSnapshot` rollback remains broad for rarer discrete
   callers. The remaining Phase 5 collection domains still need focused slices:
-  legacy bot preset rollback, Hypa V3 preset array import/rename/delete,
+  Hypa V3 preset array import/rename/delete,
   lorebook/sidebar collection rollback and replacement flows, including
   create/delete/reorder, import, and list-selection paths. Translator preset
   import file-read/decode freshness does not have dedicated coverage, but its
@@ -77,10 +79,11 @@ git diff --check
   translator preset collection command rollback is covered by the ninth Phase 5
   slice, and prompt-template item create/delete/reorder rollback is covered by
   the tenth Phase 5 slice. Split prompt/model preset array rollback is covered
-  by the eleventh Phase 5 slice. Remaining Phase 5 work owns legacy bot presets,
-  module lorebook/regex/script/trigger subdomains, lorebook, import collection
-  flows, Hypa V3 preset array import/rename/delete, plugin import/update
-  side-effect reload, persona profile/import residuals, and
+  by the eleventh Phase 5 slice. Legacy bot preset rollback is covered by the
+  twelfth Phase 5 slice. Remaining Phase 5 work owns module
+  lorebook/regex/script/trigger subdomains, lorebook, import collection flows,
+  Hypa V3 preset array import/rename/delete, plugin import/update side-effect
+  reload, persona profile/import residuals, and
   sidebar/chat/folder/character list create/delete/reorder/import rollback.
 - Phase 6 owns Realm/backup/local bundle restore/import resyncs, character/chat
   import refresh/navigation edges, memory job list/progress ordering,

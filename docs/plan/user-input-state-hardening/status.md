@@ -124,6 +124,11 @@ persistence inventory under
   create/import/delete rows, attempted reorder order, and attempted-matching
   selection/settings instead of restoring legacy bot preset or sibling split
   preset snapshots.
+  Legacy bot preset command failures now roll back only attempted saved fields,
+  generated copies/created rows, deleted rows, attempted reorder order,
+  attempted-matching selection/settings, and unchanged generated split rows from
+  legacy extraction instead of restoring whole preset snapshots over newer
+  same-row edits, sibling rows, split preset edits, or changed selection.
   Phase 2 landed character profile draft dirty top-level field protection;
   prompt-template item row dirty projection merging; whole-key dirty projection
   protection for
@@ -307,7 +312,11 @@ persistence inventory under
 - `src/ts/storage/database.svelte.ts` now guards split model/prompt preset
   create, prompt import, delete, select, and reorder rollback by attempted row,
   order, selection, and scalar settings instead of broad preset snapshots.
-- Verification state: Phase 5 split prompt/model preset array rollback
+- `src/ts/storage/database.svelte.ts` also now guards legacy bot preset save,
+  copy, select, create, update, delete, reorder, and extraction rollback by
+  attempted row, field, order, selection, generated split row, and scalar
+  settings state.
+- Verification state: Phase 5 legacy bot preset rollback
   validation is recorded in `latest-verification.md`.
 - Highest issue density:
   - Character editor: 52 issue rows, mostly dirty projection and unguarded
@@ -363,15 +372,16 @@ persistence inventory under
   freshness has landed. Dynamic rendered button trigger freshness has landed.
   Composer file and paste callbacks are already covered by Phase 3. No known
   code gap blocks Phase 4 completion.
-- [Phase 5](phases/phase-5-collection-domains.md): active. Preset, persona
-  residuals, module, lorebook, script, and import collection flows; Hypa V3
+- [Phase 5](phases/phase-5-collection-domains.md): active. Persona residuals,
+  module, lorebook, script, and import collection flows; Hypa V3
   preset array import/rename/delete; plugin settings patch residuals; and
   sidebar/chat/folder/character list create/delete/reorder/import rollback
   remain here. Script/trigger replacement rollback, plugin custom storage plus
   non-storage and collection rollback slices, global module/MCP module-info,
   plugin DB bridge settings, persona collection, and translator preset
   collection rollback slices have landed. Prompt-template item collection
-  rollback and split prompt/model preset array rollback have also landed.
+  rollback, split prompt/model preset array rollback, and legacy bot preset
+  rollback have also landed.
 - [Phase 6](phases/phase-6-resync-memory-navigation.md): pending. Realm, backup,
   and local bundle restore/import resyncs; character/chat import
   refresh/navigation edges; memory job list/progress ordering; route/selection
@@ -629,9 +639,12 @@ persistence inventory under
   - Phase 5 split prompt/model preset array slice: model/prompt create, prompt
     import, delete, select, and reorder rollback now uses targeted row, order,
     selection, and attempted settings rollback instead of broad preset snapshots.
-    Legacy `botPresets` flows remain intentionally broad for a later slice.
-  - Phase 5: legacy bot preset rollback, lorebook/script/import collection
-    flows, module lorebook/regex/script/trigger subdomains, Hypa V3 preset array
+  - Phase 5 legacy bot preset slice: legacy preset save, copy, select, create,
+    update, delete, reorder, and extraction rollback now uses targeted row,
+    field, order, selection, generated split row, and attempted settings
+    rollback instead of broad preset snapshots.
+  - Phase 5: lorebook/script/import collection flows, module
+    lorebook/regex/script/trigger subdomains, Hypa V3 preset array
     import/rename/delete, plugin import/update side-effect reload, sidebar
     chat/folder lists, persona profile/import residuals, character list ordering,
     and broad create/delete/reorder/import rollback.
