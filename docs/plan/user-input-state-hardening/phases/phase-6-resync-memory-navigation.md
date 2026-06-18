@@ -22,11 +22,19 @@ transitions so late refreshes cannot overwrite newer local work.
   request exists, and returns the final/latest request result. This covers the
   shared full-resync helper used by server backup restore and local bundle
   import.
+- Realm import finish refresh fencing: server-backed Realm import completion in
+  `src/ts/characterCards.ts` now calls
+  `forceServerProjectionResync('realm-import')` instead of directly fetching and
+  applying bootstrap projection. A module-level Realm operation token fences
+  progress callbacks, always runs the fenced resync after successful server
+  commits, and allows only the latest Realm operation to run completion
+  progress, post-refresh `changeChar()` navigation, alert clearing, completion
+  alerts, or refresh-failure alerts.
 
 ## Scope
 
-- Realm import finish refresh, popup import flows, and the direct refresh path
-  in `src/ts/characterCards.ts`.
+- Popup import flows and remaining Realm-adjacent local fallback edges not
+  covered by the server-backed Realm finish refresh fence.
 - Remaining full save import, route, and bootstrap-adjacent refresh paths not
   already covered by `forceServerProjectionResync()`.
 - Character/chat import helper refresh and rollback edges not closed by Phase
@@ -62,6 +70,9 @@ transitions so late refreshes cannot overwrite newer local work.
 - Non-destructive refresh checks local dirty state, active writer revision, or a
   refresh generation before applying.
 - Memory cancel wins over older polling/SSE/list responses for the same job.
+- Server-backed Realm import completion uses the shared full-resync fence, while
+  stale Realm operations cannot overwrite newer progress or post-refresh
+  navigation UI.
 - Route/hydration selection applies only if the route generation is still
   current.
 - Welcome/onboarding setup callbacks apply only to the same setup run, choice

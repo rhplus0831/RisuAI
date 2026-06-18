@@ -19,7 +19,6 @@ import {
   type loreBook,
   type triggerscript,
   importPreset,
-  applyServerProjectionDatabase,
   getDatabase,
   setDatabaseLite,
   appVer,
@@ -55,10 +54,7 @@ import { exportModule, readModule, type RisuModule } from './process/modules'
 import { currentCharacterStateSnapshot, dispatchCreateCharacter } from './characterCommands'
 import { createGlobalModule } from './moduleCommands'
 import { importRealmCharacterFromServer, type ServerRealmImportProgress } from './server/realmImport'
-import { fetchServerBootstrapProjectionReadOnly } from './server/bootstrap'
-import { setCachedServerCommandRevision } from './server/commands'
-import { resetChatHydration } from './server/chatMessageHydration.svelte'
-import { recordHydratedCharacterLorebooks, resetLorebookHydration } from './server/lorebookBridge.svelte'
+import { forceServerProjectionResync } from './server/projectionResync'
 
 export const hubURL = '/api/v1/hub'
 
@@ -1634,6 +1630,25 @@ export type hubType = {
 
 export let hubAdditionalHTML = ''
 
+let latestRealmImportOperationToken = 0
+
+function createRealmImportOperationToken() {
+  latestRealmImportOperationToken += 1
+  return latestRealmImportOperationToken
+}
+
+function isLatestRealmImportOperation(token: number) {
+  return token === latestRealmImportOperationToken
+}
+
+function createRealmImportProgressReporter(token: number) {
+  return (progress: ServerRealmImportProgress) => {
+    if (isLatestRealmImportOperation(token)) {
+      showRealmImportProgress(progress)
+    }
+  }
+}
+
 export async function getRisuHub(arg: {
   search: string
   page: number
@@ -1674,39 +1689,56 @@ export async function downloadRisuHub(
       if (!(await alertTOS())) {
         return
       }
+    }
+    let realmImportOperationToken = createRealmImportOperationToken()
+    let onProgress = createRealmImportProgressReporter(realmImportOperationToken)
+    if (!arg.forceRedirect) {
       alertStore.set({
         type: 'wait',
         msg: 'Downloading...',
       })
     }
-    const onProgress = showRealmImportProgress
     const imported = await importRealmCharacterFromServer(id, { onProgress })
     if (imported.status === 'low-level-access') {
-      const confirmed = await alertConfirm(language.lowLevelAccessConfirm)
-      if (!confirmed) {
-        alertStore.set({ type: 'none', msg: '' })
+      if (!isLatestRealmImportOperation(realmImportOperationToken)) {
         return
       }
+      const confirmed = await alertConfirm(language.lowLevelAccessConfirm)
+      if (!confirmed) {
+        if (isLatestRealmImportOperation(realmImportOperationToken)) {
+          alertStore.set({ type: 'none', msg: '' })
+        }
+        return
+      }
+      if (!isLatestRealmImportOperation(realmImportOperationToken)) {
+        return
+      }
+      realmImportOperationToken = createRealmImportOperationToken()
+      onProgress = createRealmImportProgressReporter(realmImportOperationToken)
       const retry = await importRealmCharacterFromServer(id, {
         allowLowLevelAccess: true,
         onProgress,
       })
       if (retry.status !== 'ok') {
         if (retry.status !== 'unsupported') {
-          alertError(retry.status === 'error' ? retry.error : 'Error while importing')
+          if (isLatestRealmImportOperation(realmImportOperationToken)) {
+            alertError(retry.status === 'error' ? retry.error : 'Error while importing')
+          }
           return
         }
       } else {
-        await finishServerRealmImport(retry.characterId, arg, onProgress)
+        await finishServerRealmImport(retry.characterId, arg, realmImportOperationToken, onProgress)
         return
       }
     } else if (imported.status !== 'ok') {
       if (imported.status !== 'unsupported') {
-        alertError(imported.status === 'error' ? imported.error : 'Error while importing')
+        if (isLatestRealmImportOperation(realmImportOperationToken)) {
+          alertError(imported.status === 'error' ? imported.error : 'Error while importing')
+        }
         return
       }
     } else {
-      await finishServerRealmImport(imported.characterId, arg, onProgress)
+      await finishServerRealmImport(imported.characterId, arg, realmImportOperationToken, onProgress)
       return
     }
     const res = await fetch('https://realm.risuai.net/api/v1/download/dynamic/' + id + '?cors=true', {
@@ -1777,6 +1809,7 @@ async function finishServerRealmImport(
   arg: {
     forceRedirect?: boolean
   },
+  operationToken: number,
   reportProgress?: (progress: ServerRealmImportProgress) => void,
 ) {
   reportProgress?.({
@@ -1784,7 +1817,24 @@ async function finishServerRealmImport(
     message: 'Refreshing imported character',
     percent: 96,
   })
-  await refreshServerProjectionAfterRealmImport()
+  let refreshResult: Awaited<ReturnType<typeof forceServerProjectionResync>>
+  try {
+    refreshResult = await forceServerProjectionResync('realm-import')
+  } catch (error) {
+    if (isLatestRealmImportOperation(operationToken)) {
+      alertError(error instanceof Error && error.message ? error.message : 'Server projection refresh failed')
+    }
+    return
+  }
+  if (refreshResult.status !== 'ok') {
+    if (isLatestRealmImportOperation(operationToken)) {
+      alertError(refreshResult.status === 'error' ? refreshResult.error : 'Server projection refresh is unavailable')
+    }
+    return
+  }
+  if (!isLatestRealmImportOperation(operationToken)) {
+    return
+  }
   reportProgress?.({
     phase: 'refresh',
     message: 'Realm import complete',
@@ -1806,21 +1856,6 @@ async function finishServerRealmImport(
 
 function showRealmImportProgress(progress: ServerRealmImportProgress) {
   alertProgress(progress.message, progress.percent)
-}
-
-async function refreshServerProjectionAfterRealmImport() {
-  const bootstrap = await fetchServerBootstrapProjectionReadOnly()
-  if (bootstrap.status !== 'ok') {
-    throw new Error(bootstrap.status === 'unavailable' ? 'Server bootstrap is unavailable' : bootstrap.error)
-  }
-  if (bootstrap.projection.database == null) {
-    throw new Error('Server bootstrap returned an empty database after Realm import')
-  }
-  applyServerProjectionDatabase(bootstrap.projection.database)
-  setCachedServerCommandRevision(bootstrap.projection.revision)
-  resetChatHydration()
-  resetLorebookHydration()
-  recordHydratedCharacterLorebooks(bootstrap.projection.database?.characters)
 }
 
 export async function getHubResources(id: string) {

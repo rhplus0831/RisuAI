@@ -7,32 +7,34 @@ workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 6 latest-request fencing for full server
-  projection resyncs used by backup restore and local bundle import. The run
-  validates that every coalesced `forceServerProjectionResync()` caller advances
-  the latest request id, older in-flight bootstrap responses skip all apply and
-  hydration side effects, newer success applies once, and newer failure is the
-  returned result instead of an older success.
+- Runtime/code change under test: Phase 6 Realm import finish refresh fencing
+  and latest-operation post-refresh navigation/progress guard. The run validates
+  that server-backed Realm import completion uses
+  `forceServerProjectionResync('realm-import')`, avoids the old direct bootstrap
+  apply/reset path, still resyncs after stale server commits, blocks stale
+  progress/navigation/completion/error UI, and reports latest-operation resync
+  failures without navigating.
 - Commands:
 
 ```bash
-pnpm exec vitest run src/ts/server/projectionResync.test.ts src/ts/server/backups.test.ts src/ts/bootstrap.test.ts
+pnpm exec vitest run src/ts/characterCards.realmImport.test.ts src/ts/characterCards.pngImport.test.ts src/ts/server/projectionResync.test.ts src/ts/server/realmImport.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
-pnpm exec prettier --write src/ts/server/projectionResync.ts src/ts/server/projectionResync.test.ts src/ts/server/backups.test.ts docs/plan/user-input-state-hardening/SOLVE-NOTE.md docs/plan/user-input-state-hardening/status.md docs/plan/user-input-state-hardening/latest-verification.md docs/plan/user-input-state-hardening/phases/phase-6-resync-memory-navigation.md
-pnpm exec prettier --check src/ts/server/projectionResync.ts src/ts/server/projectionResync.test.ts src/ts/server/backups.test.ts docs/plan/user-input-state-hardening/SOLVE-NOTE.md docs/plan/user-input-state-hardening/status.md docs/plan/user-input-state-hardening/latest-verification.md docs/plan/user-input-state-hardening/phases/phase-6-resync-memory-navigation.md
+pnpm exec prettier --write src/ts/characterCards.ts src/ts/characterCards.realmImport.test.ts src/ts/characterCards.pngImport.test.ts docs/plan/user-input-state-hardening/SOLVE-NOTE.md docs/plan/user-input-state-hardening/status.md docs/plan/user-input-state-hardening/latest-verification.md docs/plan/user-input-state-hardening/phases/phase-6-resync-memory-navigation.md
+pnpm exec prettier --check src/ts/characterCards.ts src/ts/characterCards.realmImport.test.ts src/ts/characterCards.pngImport.test.ts docs/plan/user-input-state-hardening/SOLVE-NOTE.md docs/plan/user-input-state-hardening/status.md docs/plan/user-input-state-hardening/latest-verification.md docs/plan/user-input-state-hardening/phases/phase-6-resync-memory-navigation.md
 git diff --check
 ```
 
-- Result: passed on 2026-06-18. The projection/backup/bootstrap Vitest set
-  passed 55 tests across 3 files. Both TypeScript checks passed. Prettier
-  write/check and `git diff --check` passed.
+- Result: passed on 2026-06-18. The focused Realm/PNG/projection/Realm adapter
+  Vitest set passed 14 tests across 4 files. Both TypeScript checks passed.
+  Prettier write/check and `git diff --check` passed.
 - Residual gaps: Phase 6 remains in progress. Memory job terminal/cancel
   ordering is covered for list refreshes, cached `not-modified` refreshes, SSE
   job updates, and Hypa V3 progress side effects. Backup restore and local
   bundle import now share latest-request fenced full projection resyncs. Realm
-  import direct refresh in `src/ts/characterCards.ts`, character/chat import
-  refresh/navigation edges, route hydration races, welcome/onboarding delayed
+  import finish refresh now uses that helper with latest-operation UI guards.
+  Character/chat import refresh/navigation edges, route hydration races, the
+  `changeChar()` shell hydration/selection race, welcome/onboarding delayed
   setup, and DevTool autopilot active-chat locking remain Phase 6 work. The
   known pre-existing `src/ts/compatibilityAdapters.test.ts` failure at line 626
   remains separate.
@@ -88,11 +90,12 @@ git diff --check
   found no live broad collection rollback blocker remaining in the Phase 5
   domains.
 - Phase 6 is in progress. Memory job terminal/cancel ordering is covered by the
-  first Phase 6 slice, and backup/local bundle full projection resync
-  latest-request fencing is covered by the second slice. Realm import direct
-  refresh in `src/ts/characterCards.ts`, character/chat import
-  refresh/navigation edges, route hydration races, welcome/onboarding delayed
-  setup, and DevTool autopilot active-chat locking remain open.
+  first Phase 6 slice, backup/local bundle full projection resync latest-request
+  fencing is covered by the second slice, and Realm import finish refresh
+  fencing plus latest-operation navigation/progress guards are covered by the
+  third slice. Character/chat import refresh/navigation edges, route hydration
+  races, the `changeChar()` shell hydration/selection race, welcome/onboarding
+  delayed setup, and DevTool autopilot active-chat locking remain open.
 - Phase 7 owns final workstream regression, browser smoke where needed, and
   TypeScript proof.
 

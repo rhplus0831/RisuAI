@@ -63,14 +63,18 @@ found no remaining live broad collection rollback blocker in the Phase 5
 domains. Some broad helper exports still exist, but no live Phase 5 collection
 rollback caller remains; the old `ScriptDefinitionStateSnapshot` residual is
 stale because no live caller of `currentScriptDefinitionStateSnapshot()` exists
-outside tests. Phase 6 has landed memory job terminal/cancel ordering and
-backup/local bundle full-resync latest-request fencing. Memory job terminal or
-cancel updates now win over older polling, SSE, cached `not-modified`, and Hypa
-V3 progress updates for the same chat/job id. Full server projection resyncs now
-assign every `forceServerProjectionResync()` call a latest request id, skip all
-older bootstrap apply/hydration/reattach side effects once a newer request
-exists, and return the final/latest request result so an older success cannot
-mask a newer failure.
+outside tests. Phase 6 has landed memory job terminal/cancel ordering,
+backup/local bundle full-resync latest-request fencing, and Realm import finish
+refresh fencing. Memory job terminal or cancel updates now win over older
+polling, SSE, cached `not-modified`, and Hypa V3 progress updates for the same
+chat/job id. Full server projection resyncs now assign every
+`forceServerProjectionResync()` call a latest request id, skip all older
+bootstrap apply/hydration/reattach side effects once a newer request exists, and
+return the final/latest request result so an older success cannot mask a newer
+failure. Server-backed Realm import completion now uses
+`forceServerProjectionResync('realm-import')`, always resyncs after successful
+server commits, and gates completion progress, post-refresh navigation, and
+completion/error alerts to the latest Realm operation.
 
 Next manager loop:
 
@@ -154,11 +158,12 @@ Explicit deferrals:
   server-backed web mode` at line 626. It reproduced in a detached baseline
   worktree at commit `30d4ad7ab`, before the MCP module-info slice.
 - Memory job terminal/cancel ordering has landed for polling, SSE, cached
-  `not-modified`, and Hypa V3 progress updates. Backup restore and local bundle
-  import now use latest-request fenced full projection resyncs. Realm import
-  direct refresh in `src/ts/characterCards.ts`, character/chat import
-  refresh/navigation edges, route hydration races, welcome/onboarding delayed
-  setup, and DevTool autopilot active-chat locking remain Phase 6 work.
+  `not-modified`, and Hypa V3 progress updates. Backup restore, local bundle
+  import, and Realm import completion now use latest-request fenced full
+  projection resyncs where applicable. Character/chat import refresh/navigation
+  edges, route hydration races, the `changeChar()` shell hydration/selection
+  race, welcome/onboarding delayed setup, and DevTool autopilot active-chat
+  locking remain Phase 6 work.
 - Projection-absent optional clean-field deletion remains outside Phase 2 because
   the shared merge helper refreshes fields present in the projection surface.
 
