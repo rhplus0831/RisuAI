@@ -90,6 +90,9 @@ describe('Fastify-only browser local surface policy', () => {
     const autopilotSection = devTool.slice(devTool.indexOf("<Accordion styled name={'Autopilot'}>"))
 
     expect(autopilotSection).toContain('appendCurrentChatUserMessageForSend')
+    expect(autopilotSection).toContain('captureActiveChatTarget')
+    expect(autopilotSection).toContain('isActiveChatTargetFresh')
+    expect(autopilotSection).toContain('expectedTarget: activeTarget')
     expect(autopilotSection).not.toMatch(/\.message\.push\(/)
     expect(autopilotSection).not.toContain('setDatabase(')
   })

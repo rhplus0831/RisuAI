@@ -58,13 +58,21 @@ transitions so late refreshes cannot overwrite newer local work.
   choices still match, and `didFirstSetup` has not already become true. Destroy
   stops the settings watcher, invalidates the setup run, and clears the pending
   timer.
+- Long active-chat loop fencing: `chatCommands.ts` now exports
+  `captureActiveChatTarget()` and `isActiveChatTargetFresh()` using stable
+  character/chat ids. DevTool Autopilot captures the active target once, passes
+  it into `appendCurrentChatUserMessageForSend()`, and stops silently if the
+  active chat changes before append, before generation, or before the next row.
+  Slash `/multisend` uses the same captured target to stop later append/send
+  iterations after an active-chat switch.
 
 ## Remaining Residuals
 
-- DevTool autopilot and other long sequential loops that can outlive the active
-  chat.
 - Server command-event character-selection hydration audit and related navigation
   refresh fences.
+- `src/ts/process/files/multisend.ts` `.po` translation loop active-chat
+  fencing remains residual; this slice covered DevTool Autopilot and slash
+  `/multisend`.
 
 ## Scope
 
@@ -75,8 +83,8 @@ transitions so late refreshes cannot overwrite newer local work.
 - Memory job cancel versus polling/SSE/list refresh ordering.
 - Route apply, shell hydration, chat selection, character open/select, and
   navigation generation guards.
-- DevTool autopilot and other long sequential loops that append/generate across
-  active-chat changes.
+- Remaining long sequential loops that append/generate across active-chat
+  changes, including the `.po` translation loop if it remains live.
 
 ## Anchors
 

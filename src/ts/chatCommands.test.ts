@@ -35,6 +35,7 @@ import {
   appendCurrentChatEmptyCharMessage,
   appendCurrentChatUserMessageForSend,
   changedChatMetadata,
+  captureActiveChatTarget,
   CHAT_PATCH_ALLOWED_KEYS,
   currentChatScopedSnapshot,
   currentChatScriptstateSnapshot,
@@ -59,6 +60,7 @@ import {
   dispatchUpdateChatFolder,
   dispatchUpdateChatNoteScoped,
   dispatchUpdateMessageScoped,
+  isActiveChatTargetFresh,
   prepareCompatibleChatUpdateScoped,
   restoreChatFolderRowMetadata,
   restoreChatRowMetadata,
@@ -1587,6 +1589,63 @@ describe('chat command projection helpers', () => {
         },
       },
     ])
+  })
+
+  it('rejects a captured active-chat target after chatPage changes without mutating or dispatching', async () => {
+    const calls = stubCommandFetch()
+    seedReadyActiveChatGenerationSettings()
+    setServerProjectionWriteGuardEnabled(true)
+    const target = captureActiveChatTarget()
+
+    expect(target).toMatchObject({ characterId: 'char-a', chatId: 'chat-a' })
+    expect(isActiveChatTargetFresh(target)).toBe(true)
+
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.characters[0].chatPage = 1
+    })
+
+    expect(isActiveChatTargetFresh(target)).toBe(false)
+    const result = await appendCurrentChatUserMessageForSend('stale autopilot row', {
+      expectedTarget: target,
+    })
+
+    expect(result).toEqual({
+      status: 'error',
+      error: 'The active chat changed before the message could be appended.',
+    })
+    expect(calls).toEqual([])
+    expect(DBState.db.characters[0].chats[0].message).toEqual([])
+    expect(DBState.db.characters[0].chats[1].message).toEqual([])
+  })
+
+  it('rejects a captured active-chat target after selectedCharID changes without mutating or dispatching', async () => {
+    const calls = stubCommandFetch()
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.characters.push({
+        chaId: 'char-b',
+        name: 'Character B',
+        chatPage: 0,
+        chats: [{ id: 'chat-c', name: 'Chat C', message: [] }],
+      } as any)
+    })
+    setServerProjectionWriteGuardEnabled(true)
+    const target = captureActiveChatTarget()
+
+    expect(target).toMatchObject({ characterId: 'char-a', chatId: 'chat-a' })
+    selectedCharID.set(1)
+
+    expect(isActiveChatTargetFresh(target)).toBe(false)
+    const result = await appendCurrentChatUserMessageForSend('stale character row', {
+      expectedTarget: target,
+    })
+
+    expect(result).toEqual({
+      status: 'error',
+      error: 'The active chat changed before the message could be appended.',
+    })
+    expect(calls).toEqual([])
+    expect(DBState.db.characters[0].chats[0].message).toEqual([])
+    expect(DBState.db.characters[1].chats[0].message).toEqual([])
   })
 
   it('blocks direct send appends when active-chat generation settings are incomplete', async () => {

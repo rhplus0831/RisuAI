@@ -7,37 +7,38 @@ workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 6 Welcome/onboarding delayed setup
-  callback freshness. The run validates that `WelcomeRisu.svelte` schedules
-  final setup with a captured provider/chat-language/memory-choice snapshot,
-  applies exactly once after the 1000ms delay for a fresh final setup, and skips
-  stale callbacks after unmount or when `didFirstSetup` becomes true before the
-  timer fires.
+- Runtime/code change under test: Phase 6 long active-chat loop fencing for
+  DevTool Autopilot and slash `/multisend`. The run validates that captured
+  active-chat targets reject after `chatPage` or `selectedCharID` changes before
+  append mutation/command dispatch, DevTool Autopilot uses the guarded append
+  helper, and slash `/multisend` stops after a mocked first send switches the
+  active chat.
 - Commands:
 
 ```bash
-pnpm exec vitest run src/lib/Others/WelcomeRisu.svelte.test.ts src/ts/server/settingsBridge.svelte.test.ts
+pnpm exec vitest run src/ts/chatCommands.test.ts src/ts/process/__tests__/command.projectionGuard.test.ts src/ts/browserLocalSurface.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
-pnpm exec prettier --write src/lib/Others/WelcomeRisu.svelte src/lib/Others/WelcomeRisu.svelte.test.ts docs/plan/user-input-state-hardening/SOLVE-NOTE.md docs/plan/user-input-state-hardening/status.md docs/plan/user-input-state-hardening/latest-verification.md docs/plan/user-input-state-hardening/phases/phase-6-resync-memory-navigation.md
-pnpm exec prettier --check src/lib/Others/WelcomeRisu.svelte src/lib/Others/WelcomeRisu.svelte.test.ts docs/plan/user-input-state-hardening/SOLVE-NOTE.md docs/plan/user-input-state-hardening/status.md docs/plan/user-input-state-hardening/latest-verification.md docs/plan/user-input-state-hardening/phases/phase-6-resync-memory-navigation.md
+pnpm exec prettier --write src/ts/chatCommands.ts src/lib/SideBars/DevTool.svelte src/ts/process/command.ts src/ts/chatCommands.test.ts src/ts/process/__tests__/command.projectionGuard.test.ts src/ts/browserLocalSurface.test.ts docs/plan/user-input-state-hardening/SOLVE-NOTE.md docs/plan/user-input-state-hardening/status.md docs/plan/user-input-state-hardening/latest-verification.md docs/plan/user-input-state-hardening/phases/phase-6-resync-memory-navigation.md
+pnpm exec prettier --check src/ts/chatCommands.ts src/lib/SideBars/DevTool.svelte src/ts/process/command.ts src/ts/chatCommands.test.ts src/ts/process/__tests__/command.projectionGuard.test.ts src/ts/browserLocalSurface.test.ts docs/plan/user-input-state-hardening/SOLVE-NOTE.md docs/plan/user-input-state-hardening/status.md docs/plan/user-input-state-hardening/latest-verification.md docs/plan/user-input-state-hardening/phases/phase-6-resync-memory-navigation.md
 git diff --check
 ```
 
-- Result: passed on 2026-06-18. The focused Welcome/settings bridge Vitest set
-  passed 29 tests across 2 files. Both TypeScript checks passed. Prettier
-  write/check and `git diff --check` passed.
+- Result: passed on 2026-06-18. The focused long-loop Vitest set passed 105
+  tests across 3 files. Both TypeScript checks passed. Prettier write/check and
+  `git diff --check` passed.
 - Residual gaps: Phase 6 remains in progress. Memory job terminal/cancel
   ordering is covered for list refreshes, cached `not-modified` refreshes, SSE
   job updates, and Hypa V3 progress side effects. Backup restore and local
   bundle import now share latest-request fenced full projection resyncs. Realm
   import finish refresh now uses that helper with latest-operation UI guards.
   Character route and `changeChar()` shell-selection freshness are covered,
-  character/chat import refresh/navigation edges are covered, and this slice
-  covers Welcome/onboarding delayed setup callbacks. Remaining Phase 6 work is
-  DevTool autopilot/other long active-chat loops and the server command-event
-  character-selection hydration audit/navigation refresh fences. The known
-  pre-existing
+  character/chat import refresh/navigation edges are covered,
+  Welcome/onboarding delayed setup callbacks are covered, and this slice covers
+  DevTool Autopilot plus slash `/multisend` active-chat loop fencing. Remaining
+  Phase 6 work is the server command-event character-selection hydration
+  audit/navigation refresh fences and the `src/ts/process/files/multisend.ts`
+  `.po` translation loop active-chat fence. The known pre-existing
   `src/ts/compatibilityAdapters.test.ts` failure at line 626 remains separate.
 
 ## Remaining Proof
@@ -97,9 +98,11 @@ git diff --check
   slice, and character route/`changeChar()` shell-selection freshness is covered
   by the fourth slice. Character/chat import refresh/navigation freshness is
   covered by the fifth slice. Welcome/onboarding delayed setup callback
-  freshness is covered by the sixth slice. DevTool autopilot/other long
-  active-chat loops and the server command-event character-selection hydration
-  audit/navigation refresh fences remain open.
+  freshness is covered by the sixth slice. DevTool Autopilot plus slash
+  `/multisend` active-chat loop fencing is covered by the seventh slice. The
+  server command-event character-selection hydration audit/navigation refresh
+  fences and the `src/ts/process/files/multisend.ts` `.po` translation loop
+  active-chat fence remain open.
 - Phase 7 owns final workstream regression, browser smoke where needed, and
   TypeScript proof.
 

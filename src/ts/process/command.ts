@@ -8,9 +8,11 @@ import { sendChat } from './index.svelte'
 import { loadLoreBookV3Prompt } from './lorebook.svelte'
 import { clearManualTriggerAbortController, createManualTriggerAbortController, runTrigger } from './triggers'
 import {
+  captureActiveChatTarget,
   mutateChatWithScopedCommand,
   currentChatScriptstateSnapshot,
   dispatchPatchChatScriptstateScoped,
+  isActiveChatTargetFresh,
 } from '../chatCommands'
 import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
 import type { Chat } from '../storage/database.svelte'
@@ -165,8 +167,15 @@ async function processCommand(command: string, pipe: string): Promise<false | st
         clearMode = true
         splited.shift()
       }
+      const activeTarget = captureActiveChatTarget()
+      if (!activeTarget) {
+        return ''
+      }
       for (const e of splited) {
-        mutateCurrentChatMessages((chat) => {
+        if (!isActiveChatTargetFresh(activeTarget)) {
+          break
+        }
+        const appended = mutateCurrentChatMessages((chat) => {
           if (clearMode) {
             chat.message = []
           }
@@ -175,7 +184,13 @@ async function processCommand(command: string, pipe: string): Promise<false | st
             data: e,
           })
         })
+        if (!appended || !isActiveChatTargetFresh(activeTarget)) {
+          break
+        }
         await sendChat(-1)
+        if (!isActiveChatTargetFresh(activeTarget)) {
+          break
+        }
       }
       return ''
     }
@@ -319,8 +334,8 @@ async function processCommand(command: string, pipe: string): Promise<false | st
 // mutating the read-only server projection in place. The mutation runs inside
 // a trusted write scope against a freshly read database reference, then the
 // change is forwarded to the server through the compatible chat-update command.
-function mutateCurrentChatMessages(mutate: (chat: Chat) => void): void {
-  mutateChatWithScopedCommand((chat) => mutate(chat))
+function mutateCurrentChatMessages(mutate: (chat: Chat) => void): boolean {
+  return mutateChatWithScopedCommand((chat) => mutate(chat))
 }
 
 function commandParser(command: string, pipe: string) {

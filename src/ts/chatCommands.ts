@@ -44,6 +44,17 @@ export type AppendCurrentChatUserMessageResult =
   | { status: 'ok'; messageId: string }
   | { status: 'error'; error: string }
 
+export interface ActiveChatTarget {
+  selectedCharID: number
+  chatPage: number
+  characterId: string | undefined
+  chatId: string | undefined
+}
+
+export interface AppendCurrentChatUserMessageForSendOptions {
+  expectedTarget?: ActiveChatTarget | null
+}
+
 export const CHAT_PATCH_ALLOWED_KEYS = new Set([
   'name',
   'note',
@@ -259,6 +270,43 @@ export function currentChatScopedSnapshot(): ChatScopedSnapshot {
     chatId: chat?.id,
     chat: chat ? cloneJsonValue(chat) : undefined,
   }
+}
+
+export function captureActiveChatTarget(): ActiveChatTarget | null {
+  const selectedChar = get(selectedCharID)
+  const character = DBState.db.characters?.[selectedChar]
+  const chatPage = character?.chatPage ?? 0
+  const chat = character?.chats?.[chatPage]
+  if (!character || !chat) return null
+
+  return {
+    selectedCharID: selectedChar,
+    chatPage,
+    characterId: character.chaId,
+    chatId: chat.id,
+  }
+}
+
+export function isActiveChatTargetFresh(target: ActiveChatTarget | null | undefined): boolean {
+  if (!target) return false
+
+  const selectedChar = get(selectedCharID)
+  const character = DBState.db.characters?.[selectedChar]
+  const chatPage = character?.chatPage ?? 0
+  const chat = character?.chats?.[chatPage]
+  if (!character || !chat) return false
+
+  if (target.characterId !== undefined || character.chaId !== undefined) {
+    if (target.characterId !== character.chaId) return false
+  } else if (target.selectedCharID !== selectedChar) {
+    return false
+  }
+
+  if (target.chatId !== undefined || chat.id !== undefined) {
+    return target.chatId === chat.id
+  }
+
+  return target.chatPage === chatPage
 }
 
 export function restoreChatScopedState(snapshot: ChatScopedSnapshot): void {
@@ -2059,12 +2107,20 @@ export function appendCurrentChatEmptyCharMessage(): void {
 
 export async function appendCurrentChatUserMessageForSend(
   input: string | Message,
+  options: AppendCurrentChatUserMessageForSendOptions = {},
 ): Promise<AppendCurrentChatUserMessageResult> {
+  if (options.expectedTarget !== undefined && !isActiveChatTargetFresh(options.expectedTarget)) {
+    return { status: 'error', error: 'The active chat changed before the message could be appended.' }
+  }
+
   const readiness = await import('./activeChatGenerationSettings').then((module) =>
     module.guardActiveChatGenerationSettingsForSend(),
   )
   if (readiness.status === 'error') {
     return { status: 'error', error: readiness.error }
+  }
+  if (options.expectedTarget !== undefined && !isActiveChatTargetFresh(options.expectedTarget)) {
+    return { status: 'error', error: 'The active chat changed before the message could be appended.' }
   }
 
   const selectedChar = get(selectedCharID)

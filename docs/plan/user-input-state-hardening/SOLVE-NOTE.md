@@ -94,6 +94,10 @@ the delayed callback delegates to `applyOnboardingServerBackedSettings()` only
 while the component is still mounted, the run is latest, step 10 and captured
 choices still match, and `didFirstSetup` has not already completed. Destroy
 stops the settings watcher, invalidates the run, and clears the pending timer.
+DevTool Autopilot and slash `/multisend` now share active-chat target helpers:
+loops capture the active character/chat id once, guarded appends reject stale
+expected targets before mutation/command dispatch, and later append/send
+iterations stop silently after an active-chat switch.
 
 Next manager loop:
 
@@ -182,9 +186,11 @@ Explicit deferrals:
   projection resyncs where applicable. Character route and `changeChar()` shell
   selection freshness fencing has landed. Character/chat import refresh and
   post-import navigation freshness has landed. Welcome/onboarding delayed setup
-  callback freshness has landed. DevTool autopilot active-chat locking/other
-  long active-chat loops and the server command-event character-selection
-  hydration audit/navigation refresh fences remain Phase 6 work.
+  callback freshness has landed. DevTool Autopilot and slash `/multisend`
+  active-chat loop fencing has landed. The server command-event
+  character-selection hydration audit/navigation refresh fences and
+  `src/ts/process/files/multisend.ts` `.po` translation loop active-chat fence
+  remain Phase 6 work.
 - Projection-absent optional clean-field deletion remains outside Phase 2 because
   the shared merge helper refreshes fields present in the projection surface.
 

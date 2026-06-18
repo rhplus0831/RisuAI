@@ -20,7 +20,12 @@
   import OptionInput from '../UI/GUI/OptionInput.svelte'
   import { loadLoreBookV3Prompt } from 'src/ts/process/lorebook.svelte'
   import { getModules } from 'src/ts/process/modules'
-  import { appendCurrentChatUserMessageForSend, setChatScriptstateValue } from 'src/ts/chatCommands'
+  import {
+    appendCurrentChatUserMessageForSend,
+    captureActiveChatTarget,
+    isActiveChatTargetFresh,
+    setChatScriptstateValue,
+  } from 'src/ts/chatCommands'
   import CheckInput from '../UI/GUI/CheckInput.svelte'
 
   let previewMode = $state('chat')
@@ -235,16 +240,31 @@
       if ($doingChat) {
         return
       }
+      const activeTarget = captureActiveChatTarget()
+      if (!activeTarget) {
+        return
+      }
       for (let i = 0; i < autopilot.length; i++) {
-        if ($doingChat) {
+        if ($doingChat || !isActiveChatTargetFresh(activeTarget)) {
           return
         }
-        const appended = await appendCurrentChatUserMessageForSend(autopilot[i])
+        const appended = await appendCurrentChatUserMessageForSend(autopilot[i], {
+          expectedTarget: activeTarget,
+        })
+        if (!isActiveChatTargetFresh(activeTarget)) {
+          return
+        }
         if (appended.status !== 'ok') {
           alertError(appended.error)
           return
         }
+        if (!isActiveChatTargetFresh(activeTarget)) {
+          return
+        }
         await sendChat(i)
+        if (!isActiveChatTargetFresh(activeTarget)) {
+          return
+        }
       }
     }}>Run</Button>
 </Accordion>

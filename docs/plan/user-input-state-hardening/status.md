@@ -23,9 +23,11 @@ inventory under
   latest-request fencing slice, and Realm import finish refresh/navigation guard
   slice have landed. The Phase 6 character route and shell-selection freshness
   slice, character/chat import refresh/navigation slice, and Welcome/onboarding
-  delayed setup callback freshness slice have also landed. The first Phase 3 slice
-  now guards custom background upload/cancel/error callbacks so stale completions
-  cannot restore or apply an old custom background after a newer choice. Composer
+  delayed setup callback freshness slice have also landed. The Phase 6 long
+  active-chat loop fencing slice for DevTool Autopilot and slash `/multisend`
+  has also landed. The first Phase 3 slice now guards custom background
+  upload/cancel/error callbacks so stale completions cannot restore or apply an
+  old custom background after a newer choice. Composer
   paste/menu file actions now guard stale file callbacks by active transcript
   identity and composer mutation version before mutating composer text or
   attachments. Character avatar upload callbacks now guard by latest selected
@@ -486,8 +488,14 @@ inventory under
   delegating to `applyOnboardingServerBackedSettings()`, and clears the pending
   timer during destroy. `src/lib/Others/WelcomeRisu.svelte.test.ts` covers the
   valid delayed apply, unmount cancellation, and completed-setup stale skip.
-- Verification state: Phase 6 Welcome/onboarding delayed setup callback
-  freshness validation is recorded in `latest-verification.md`.
+- `src/ts/chatCommands.ts` now exports active-chat target capture/freshness
+  helpers and lets `appendCurrentChatUserMessageForSend()` reject stale expected
+  targets before mutating or dispatching. `src/lib/SideBars/DevTool.svelte`
+  captures one target for Autopilot runs and stops before append/generation/next
+  iteration if the active chat changes. `src/ts/process/command.ts` applies the
+  same target fence to slash `/multisend` loops.
+- Verification state: Phase 6 long active-chat loop fencing validation is
+  recorded in `latest-verification.md`.
 - Highest issue density:
   - Character editor: 52 issue rows, mostly dirty projection and unguarded
     upload callbacks.
@@ -583,9 +591,12 @@ inventory under
   fallback navigation by the returned id and Realm operation token, and makes
   overlapping same-character chat imports latest-wins. Welcome/onboarding final
   setup now applies only from a fresh mounted setup run with matching captured
-  choices and an incomplete `didFirstSetup` state. DevTool autopilot active-chat
-  locking/other long active-chat loops and the server command-event
-  character-selection hydration audit remain here.
+  choices and an incomplete `didFirstSetup` state. DevTool Autopilot and slash
+  `/multisend` now capture the active character/chat id once and stop later
+  append/send iterations if that target is no longer active. The server
+  command-event character-selection hydration audit, related navigation refresh
+  fences, and the `src/ts/process/files/multisend.ts` `.po` translation loop
+  active-chat fence remain here.
 - [Phase 7](phases/phase-7-verification.md): pending. Closeout regression,
   browser smoke, and TypeScript proof.
 
@@ -918,10 +929,11 @@ inventory under
     full-resync latest-request fencing, Realm import finish refresh fencing,
     character route/shell-selection freshness fencing, and character/chat import
     refresh/navigation freshness have landed. Welcome/onboarding delayed setup
-    callback freshness has also landed. Remaining Phase 6 work includes DevTool
-    autopilot active-chat locking/other long active-chat loops, the server
-    command-event character-selection hydration audit, and related navigation
-    refresh fences.
+    callback freshness has also landed. DevTool Autopilot and slash
+    `/multisend` active-chat loop fencing has also landed. Remaining Phase 6
+    work includes the server command-event character-selection hydration audit,
+    related navigation refresh fences, and the `src/ts/process/files/multisend.ts`
+    `.po` translation loop active-chat fence.
 - Phase docs that mention `src/ts/process/rerollNavigation.ts` should be read
   as `src/ts/process/rerollNavigation.svelte.ts`.
 - First P0 fixture targets are dirty character projection merge,

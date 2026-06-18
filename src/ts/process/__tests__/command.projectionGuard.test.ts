@@ -437,6 +437,37 @@ describe('slash-command durable writes under the projection guard', () => {
     expect(setDatabaseSpy.count).toBe(0)
   })
 
+  it('L32: /multisend stops after the active chat changes during the first send', async () => {
+    seedDatabase([{ role: 'char', data: 'base', chatId: 'm-base' }], { includeSiblings: true })
+    const calls = stubCommandFetch()
+    setServerProjectionWriteGuardEnabled(true)
+    sendChatMock.mockImplementationOnce(async () => {
+      withTrustedServerProjectionWrite(() => {
+        DBState.db.characters[0].chatPage = 1
+      })
+      return true
+    })
+
+    await expect(processMultiCommand('/multisend first|||second')).resolves.toBe('')
+
+    await waitForMatchingCalls(
+      calls,
+      (call) => call.url === '/api/v1/commands/chats/chat-1/messages' && call.method === 'PUT',
+      1,
+    )
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const messageCommands = calls.filter(
+      (call) => call.url === '/api/v1/commands/chats/chat-1/messages' && call.method === 'PUT',
+    )
+    expect(messageCommands).toHaveLength(1)
+    expect(commandMessages(messageCommands[0]).map((message) => message.data)).toEqual(['base', 'first'])
+    expect(DBState.db.characters[0].chats[0].message.map((message: any) => message.data)).toEqual(['base', 'first'])
+    expect(DBState.db.characters[0].chats[1].message.map((message: any) => message.data)).toEqual(['active sibling'])
+    expect(sendChatMock).toHaveBeenCalledTimes(1)
+    expect(sendChatMock).toHaveBeenCalledWith(-1)
+    expect(setDatabaseSpy.count).toBe(0)
+  })
+
   it('L32: /multisend clear resets before each segment and still sends each segment', async () => {
     seedDatabase([{ role: 'char', data: 'base', chatId: 'm-base' }])
     const calls = stubCommandFetch()
