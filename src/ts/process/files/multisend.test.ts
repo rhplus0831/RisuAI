@@ -78,6 +78,10 @@ vi.mock('src/ts/util', () => ({
   selectMultipleFile: testState.selectMultipleFileSpy,
 }))
 
+vi.mock('src/ts/activeChatGenerationSettings', () => ({
+  guardActiveChatGenerationSettingsForSend: vi.fn(() => ({ status: 'ok' })),
+}))
+
 vi.mock('./inlays', () => ({
   postInlayAsset: testState.postInlayAssetSpy,
 }))
@@ -140,7 +144,7 @@ function stubCommandFetch(): CapturedFetch[] {
 async function waitForMessageCommands(calls: CapturedFetch[], expected: number): Promise<CapturedFetch[]> {
   for (let attempt = 0; attempt < 60; attempt += 1) {
     const matches = calls.filter(
-      (call) => call.url === '/api/v1/commands/chats/chat-1/messages' && call.method === 'PUT',
+      (call) => call.url === '/api/v1/commands/chats/chat-1/messages' && call.method === 'POST',
     )
     if (matches.length >= expected) return matches
     await new Promise((resolve) => setTimeout(resolve, 0))
@@ -162,6 +166,7 @@ function resetChatState() {
   testState.DBState.db = {
     characters: [
       {
+        chaId: 'char-1',
         chatPage: 0,
         chats: [
           {
@@ -343,14 +348,40 @@ describe('postChatFile file-send handling', () => {
     expect(results).toEqual([{ type: 'void' }])
     expect(testState.sendChatSpy).toHaveBeenCalledTimes(2)
     const commands = await waitForMessageCommands(calls, 2)
-    expect(commands[0].body.messages.map((message: any) => message.data)).toEqual(['line 0'])
-    expect(commands[1].body.messages.map((message: any) => message.data)).toEqual([
-      'line 0',
-      'translated:line 0',
-      'line 1',
-    ])
+    expect(commands.map((command) => command.body.message.data)).toEqual(['line 0', 'line 1'])
     expect(testState.downloadFileSpy).toHaveBeenCalledTimes(1)
     expect(testState.downloadFileSpy.mock.calls[0][1]).toContain('"translated:line 1"')
+  })
+
+  it('L36: .po translation stops without a result when send switches the active chat', async () => {
+    testState.DBState.db.characters[0].chats.push({
+      id: 'chat-2',
+      message: [],
+    })
+    testState.sendChatSpy.mockImplementationOnce(async () => {
+      const currentChar = testState.DBState.db.characters[0]
+      const currentChat = currentChar.chats[currentChar.chatPage]
+      const latestMessage = currentChat.message.at(-1)
+      currentChat.message.push({
+        role: 'char',
+        data: `translated:${latestMessage?.data ?? ''}`,
+      })
+      currentChar.chatPage = 1
+    })
+
+    const results = await postChatFile({
+      name: 'dialogue.po',
+      data: textBytes(makePoFile(2)),
+    })
+
+    expect(results).toEqual([])
+    expect(testState.sendChatSpy).toHaveBeenCalledTimes(1)
+    expect(testState.DBState.db.characters[0].chats[0].message.map((message: any) => message.data)).toEqual([
+      'line 0',
+      'translated:line 0',
+    ])
+    expect(testState.DBState.db.characters[0].chats[1].message).toEqual([])
+    expect(testState.downloadFileSpy).not.toHaveBeenCalled()
   })
 
   it('L36: picker cancellation and picker errors resolve without uncaught rejection', async () => {

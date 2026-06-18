@@ -342,6 +342,14 @@ async function flushServerProjectionSync(): Promise<void> {
   }
 }
 
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((innerResolve) => {
+    resolve = innerResolve
+  })
+  return { promise, resolve }
+}
+
 type ProtocolDiagnosticsSnapshot = ReturnType<typeof getProtocolDiagnosticsSnapshot>
 
 function fullBootstrapReasonCount(snapshot: ProtocolDiagnosticsSnapshot, reason: string): number {
@@ -1044,6 +1052,206 @@ describe('web bootstrap startup source', () => {
     expect(hydrationSpies.resetChatHydration).not.toHaveBeenCalled()
     expect(hydrationSpies.hydrateActiveChat).toHaveBeenCalled()
     expect(hydrationSpies.hydrateActiveCharacterLorebook).toHaveBeenCalled()
+  })
+
+  it('does not apply an older character-selection event after delayed shell hydration loses freshness', async () => {
+    serverBootstrapState.response = {
+      status: 'ok',
+      projection: {
+        revision: 5,
+        database: {
+          characters: [
+            { chaId: 'char-a', name: 'Ada', chats: [{ id: 'chat-a', message: [] }], chatPage: 0 },
+            {
+              __serverCharacterShell: true,
+              chaId: 'char-b',
+              name: 'Babbage shell',
+              chats: [{ id: 'chat-b', name: 'Chat B', message: [] }],
+              chatPage: 0,
+              chatFolders: [],
+            },
+            { chaId: 'char-c', name: 'Curie', chats: [{ id: 'chat-c', message: [] }], chatPage: 0 },
+          ],
+          currentChar: 0,
+          modules: [],
+          personas: [],
+          language: 'en',
+        },
+      },
+    }
+    await loadWebInitialDatabase()
+    hydrationSpies.resetChatHydration.mockClear()
+    hydrationSpies.hydrateActiveChat.mockClear()
+    hydrationSpies.hydrateActiveCharacterLorebook.mockClear()
+
+    const rowResponse = deferred<{
+      status: 'ok'
+      revision: number
+      mode: 'character-row'
+      characterId: string
+      character: Record<string, unknown>
+    }>()
+    serverProjectionState.fetchResource.mockImplementation(async (resource: string) => {
+      if (resource === 'characterSelection') {
+        return {
+          status: 'ok' as const,
+          revision: 6,
+          mode: 'character-selection' as const,
+          characterId: 'char-b',
+          currentChar: 1,
+          lastInteraction: 222,
+        }
+      }
+      if (resource === 'characterRow') {
+        return rowResponse.promise
+      }
+      return { status: 'ok' as const, revision: 6, mode: 'full' as const }
+    })
+
+    const subscription = serverEventsState.subscriptions[0]
+    subscription.onCommandEvent({
+      type: 'character.selected',
+      revision: 6,
+      resource: 'characterSelection',
+      id: 'char-b',
+    })
+
+    await vi.waitFor(() => {
+      expect(serverProjectionState.fetchResource).toHaveBeenCalledWith('characterRow', { id: 'char-b' })
+    })
+    withTrustedServerProjectionWrite(() => {
+      ;(DBState.db as unknown as { currentChar?: number }).currentChar = 2
+      DBState.db.characters[2].lastInteraction = 333
+    })
+    selectedCharID.set(2)
+    setCachedServerCommandRevision(7)
+    rowResponse.resolve({
+      status: 'ok',
+      revision: 6,
+      mode: 'character-row',
+      characterId: 'char-b',
+      character: {
+        chaId: 'char-b',
+        name: 'Babbage full',
+        desc: 'Old hydration',
+        chats: [{ id: 'chat-b', name: 'Chat B', message: [] }],
+        chatPage: 0,
+        chatFolders: [],
+        globalLore: [],
+      },
+    })
+    await flushServerProjectionSync()
+
+    expect(get(selectedCharID)).toBe(2)
+    expect((DBState.db as unknown as { currentChar?: number }).currentChar).toBe(2)
+    expect(DBState.db.characters[1]).toMatchObject({
+      __serverCharacterShell: true,
+      chaId: 'char-b',
+      name: 'Babbage shell',
+    })
+    expect(DBState.db.characters[2].lastInteraction).toBe(333)
+    expect(peekCachedServerCommandRevision()).toBe(7)
+    expect(serverBootstrapState.fetchReadOnly).not.toHaveBeenCalled()
+  })
+
+  it('selects the live character index when shell hydration completes after a reorder', async () => {
+    serverBootstrapState.response = {
+      status: 'ok',
+      projection: {
+        revision: 5,
+        database: {
+          characters: [
+            { chaId: 'char-a', name: 'Ada', chats: [{ id: 'chat-a', message: [] }], chatPage: 0 },
+            {
+              __serverCharacterShell: true,
+              chaId: 'char-b',
+              name: 'Babbage shell',
+              chats: [{ id: 'chat-b', name: 'Chat B', message: [] }],
+              chatPage: 0,
+              chatFolders: [],
+            },
+          ],
+          currentChar: 0,
+          modules: [],
+          personas: [],
+          language: 'en',
+        },
+      },
+    }
+    await loadWebInitialDatabase()
+    hydrationSpies.resetChatHydration.mockClear()
+    hydrationSpies.hydrateActiveChat.mockClear()
+    hydrationSpies.hydrateActiveCharacterLorebook.mockClear()
+
+    const rowResponse = deferred<{
+      status: 'ok'
+      revision: number
+      mode: 'character-row'
+      characterId: string
+      character: Record<string, unknown>
+    }>()
+    serverProjectionState.fetchResource.mockImplementation(async (resource: string) => {
+      if (resource === 'characterSelection') {
+        return {
+          status: 'ok' as const,
+          revision: 6,
+          mode: 'character-selection' as const,
+          characterId: 'char-b',
+          currentChar: 1,
+          lastInteraction: 222,
+        }
+      }
+      if (resource === 'characterRow') {
+        return rowResponse.promise
+      }
+      return { status: 'ok' as const, revision: 6, mode: 'full' as const }
+    })
+
+    const subscription = serverEventsState.subscriptions[0]
+    subscription.onCommandEvent({
+      type: 'character.selected',
+      revision: 6,
+      resource: 'characterSelection',
+      id: 'char-b',
+    })
+
+    await vi.waitFor(() => {
+      expect(serverProjectionState.fetchResource).toHaveBeenCalledWith('characterRow', { id: 'char-b' })
+    })
+    withTrustedServerProjectionWrite(() => {
+      const characters = DBState.db.characters
+      DBState.db.characters = [characters[1], characters[0]]
+    })
+    rowResponse.resolve({
+      status: 'ok',
+      revision: 6,
+      mode: 'character-row',
+      characterId: 'char-b',
+      character: {
+        chaId: 'char-b',
+        name: 'Babbage full',
+        desc: 'Hydrated after reorder',
+        lastInteraction: 222,
+        chats: [{ id: 'chat-b', name: 'Chat B', message: [] }],
+        chatPage: 0,
+        chatFolders: [],
+        globalLore: [],
+      },
+    })
+
+    await vi.waitFor(() => {
+      expect(peekCachedServerCommandRevision()).toBe(6)
+    })
+    expect(get(selectedCharID)).toBe(0)
+    expect((DBState.db as unknown as { currentChar?: number }).currentChar).toBe(0)
+    expect(DBState.db.characters[0]).toMatchObject({
+      chaId: 'char-b',
+      name: 'Babbage full',
+      desc: 'Hydrated after reorder',
+      lastInteraction: 222,
+    })
+    expect(DBState.db.characters[1]).toMatchObject({ chaId: 'char-a', name: 'Ada' })
+    expect(serverBootstrapState.fetchReadOnly).not.toHaveBeenCalled()
   })
 
   it('advances empty targeted projection events without full bootstrap or hydration reset', async () => {

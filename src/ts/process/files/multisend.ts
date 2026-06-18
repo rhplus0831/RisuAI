@@ -5,7 +5,11 @@ import { downloadFile } from 'src/ts/globalApi.svelte'
 import { HypaProcesser } from '../memory/hypamemory'
 import { BufferToText as BufferToText, selectMultipleFile } from 'src/ts/util'
 import { postInlayAsset } from './inlays'
-import { mutateChatWithScopedCommandAsync } from 'src/ts/chatCommands'
+import {
+  appendCurrentChatUserMessageForSend,
+  captureActiveChatTarget,
+  isActiveChatTargetFresh,
+} from 'src/ts/chatCommands'
 
 type sendTextFileArg = {
   file: string
@@ -17,14 +21,14 @@ type sendPDFFileArg = {
   query: string
 }
 
-async function sendPofile(arg: sendTextFileArg) {
+async function sendPofile(arg: sendTextFileArg): Promise<boolean> {
   let result = ''
   let msgId = ''
   let note = ''
   let speaker = ''
   let parseMode = 0
-  let currentChar = DBState.db.characters[get(selectedCharID)]
-  let currentChat = currentChar.chats[currentChar.chatPage]
+  const target = captureActiveChatTarget()
+  if (!isActiveChatTargetFresh(target)) return false
   const lines = arg.file.split('\n')
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
@@ -40,18 +44,15 @@ async function sendPofile(arg: sendTextFileArg) {
       if (note !== '') {
         text = `Note: ${note}\n${text}`
       }
-      await mutateChatWithScopedCommandAsync(
-        (chat) => {
-          chat.message.push({
-            role: 'user',
-            data: text,
-          })
-        },
-        { selectedChar: get(selectedCharID), selectedChat: currentChar.chatPage },
-      )
+      if (!isActiveChatTargetFresh(target)) return false
+      const appendResult = await appendCurrentChatUserMessageForSend(text, { expectedTarget: target })
+      if (appendResult.status !== 'ok') return false
+      if (!isActiveChatTargetFresh(target)) return false
       await sendChat(-1)
-      currentChar = DBState.db.characters[get(selectedCharID)]
-      currentChat = currentChar.chats[currentChar.chatPage]
+      if (!isActiveChatTargetFresh(target)) return false
+      const currentChar = DBState.db.characters[get(selectedCharID)]
+      const currentChat = currentChar?.chats?.[currentChar.chatPage]
+      if (!currentChat) return false
       const res = currentChat.message[currentChat.message.length - 1]
       const msgStr = res.data
         .split('\n')
@@ -105,6 +106,7 @@ async function sendPofile(arg: sendTextFileArg) {
     result += line + '\n'
   }
   await downloadFile('translated.po', result)
+  return true
 }
 
 async function sendPDFFile(arg: sendPDFFileArg) {
@@ -238,13 +240,17 @@ export async function postChatFile(
 
     switch (extention) {
       case 'po': {
+        let translated = false
         try {
-          await sendPofile({
+          translated = await sendPofile({
             file: BufferToText(file.data),
             query: xquery,
           })
         } catch {
           continue
+        }
+        if (!translated) {
+          break
         }
         results.push({
           type: 'void',

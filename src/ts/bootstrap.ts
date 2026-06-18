@@ -384,12 +384,21 @@ async function processServerCommandEvent(
     })
     if (result.status === 'ok' && result.mode === 'character-selection') {
       await hydrateCharacterShell(result.characterId)
-      applyServerCharacterSelectionProjection({
+      if (isCommandEventOlderThanCachedRevision(event)) {
+        markReconciledCommandProjectionEvent(event, options)
+        return
+      }
+      const applied = applyServerCharacterSelectionProjection({
         characterId: result.characterId,
         currentChar: result.currentChar,
         lastInteraction: result.lastInteraction,
       })
-      markAppliedCommandProjectionEvent(event, options)
+      if (applied) {
+        markAppliedCommandProjectionEvent(event, options)
+        return
+      }
+      const resync = await forceServerProjectionResync('projection-error', { resource: event.resource })
+      if (resync.status === 'ok') markAppliedCommandProjectionEvent(event, options)
       return
     }
     if (result.status === 'ok' && result.mode === 'character-lorebook') {
@@ -478,11 +487,23 @@ function advanceCachedServerCommandRevision(revision: number): void {
   }
 }
 
-function markAppliedCommandProjectionEvent(event: CommandEvent, options: ProcessServerCommandEventOptions = {}): void {
-  advanceCachedServerCommandRevision(event.revision)
+function isCommandEventOlderThanCachedRevision(event: CommandEvent): boolean {
+  const cached = peekCachedServerCommandRevision()
+  return cached !== null && event.revision < cached
+}
+
+function markReconciledCommandProjectionEvent(
+  event: CommandEvent,
+  options: ProcessServerCommandEventOptions = {},
+): void {
   if (isOwnCommandEvent(event) || options.markReconciledRevision) {
     markCommandProjectionRevisionReconciled(event.revision)
   }
+}
+
+function markAppliedCommandProjectionEvent(event: CommandEvent, options: ProcessServerCommandEventOptions = {}): void {
+  advanceCachedServerCommandRevision(event.revision)
+  markReconciledCommandProjectionEvent(event, options)
 }
 
 function markCommandProjectionRevisionReconciled(revision: number): void {

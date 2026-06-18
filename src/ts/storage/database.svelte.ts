@@ -1479,14 +1479,20 @@ export function applyServerCharacterSelectionProjection(input: {
   characterId: string
   currentChar: number
   lastInteraction?: number
-}) {
+}): boolean {
   return withServerProjectionApply(() => {
-    ;(DBState.db as unknown as { currentChar?: number }).currentChar = input.currentChar
-    const character = DBState.db.characters?.find((candidate) => candidate?.chaId === input.characterId)
+    const characters = DBState.db.characters
+    const liveIndex = Array.isArray(characters)
+      ? characters.findIndex((candidate) => candidate?.chaId === input.characterId)
+      : -1
+    if (liveIndex < 0) return false
+    ;(DBState.db as unknown as { currentChar?: number }).currentChar = liveIndex
+    const character = characters[liveIndex]
     if (character && input.lastInteraction !== undefined) {
       character.lastInteraction = input.lastInteraction
     }
-    selectedCharID.set(input.currentChar)
+    selectedCharID.set(liveIndex)
+    return true
   })
 }
 

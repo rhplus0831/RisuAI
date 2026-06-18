@@ -97,19 +97,25 @@ stops the settings watcher, invalidates the run, and clears the pending timer.
 DevTool Autopilot and slash `/multisend` now share active-chat target helpers:
 loops capture the active character/chat id once, guarded appends reject stale
 expected targets before mutation/command dispatch, and later append/send
-iterations stop silently after an active-chat switch.
+iterations stop silently after an active-chat switch. The final Phase 6 closure
+slice has landed: command-event character-selection projections re-check cached
+revision freshness after delayed shell hydration, resolve the selected character
+by live `chaId` index instead of trusting stale `currentChar`, fall back to
+fenced full resync when a current target is missing, and the `.po` translation
+loop in `src/ts/process/files/multisend.ts` uses the shared active-chat target
+fence around prompt append plus `sendChat(-1)` so stale active-chat switches
+stop without partial `translated.po` downloads/results. Phase 6 is closed; the
+remaining workstream work moves to Phase 7 final verification and closeout.
 
 Next manager loop:
 
 1. Read `README.md`, `STRUCTURE.md`, `status.md`, `latest-verification.md`, and
-   `phases/phase-6-resync-memory-navigation.md`.
-2. Spawn an explorer agent for the next remaining Phase 6 resync,
-   restore/import, or navigation-fence slice.
-3. Spawn a worker agent for the selected Phase 6 slice, then a verification
-   agent after the worker completes.
-4. If verification succeeds, run Prettier, run the relevant validation commands,
-   commit, close finished agents, and move to the next task.
-5. If verification fails, close the failed verification agent and spawn or reuse
+   `phases/phase-7-verification.md`.
+2. Spawn a verification agent for Phase 7 final regression, browser smoke where
+   needed, and TypeScript proof.
+3. If verification succeeds, run Prettier/checks as needed, commit, close
+   finished agents, and close the workstream.
+4. If verification fails, close the failed verification agent and spawn or reuse
    a worker agent to fix the reported issues.
 
 Known path correction:
@@ -187,23 +193,22 @@ Explicit deferrals:
   selection freshness fencing has landed. Character/chat import refresh and
   post-import navigation freshness has landed. Welcome/onboarding delayed setup
   callback freshness has landed. DevTool Autopilot and slash `/multisend`
-  active-chat loop fencing has landed. The server command-event
-  character-selection hydration audit/navigation refresh fences and
+  active-chat loop fencing has landed. Server command-event character-selection
+  hydration/navigation freshness and the
   `src/ts/process/files/multisend.ts` `.po` translation loop active-chat fence
-  remain Phase 6 work.
+  have landed. Phase 6 is closed.
 - Projection-absent optional clean-field deletion remains outside Phase 2 because
   the shared merge helper refreshes fields present in the projection surface.
 
-No known code gap blocks Phase 1, Phase 2, Phase 3, Phase 4, or Phase 5
-completion.
+No known code gap blocks Phase 1, Phase 2, Phase 3, Phase 4, Phase 5, or Phase
+6 completion.
 
 ## Later Phase Order
 
 Proceed in this order unless a verification result proves a dependency needs to
 move earlier:
 
-1. Phase 6 resync, memory, restore/import, and navigation fences.
-2. Phase 7 final verification and closeout.
+1. Phase 7 final verification and closeout.
 
 Each phase should end with focused tests or an explicit residual gap recorded in
 `status.md` and latest proof recorded in `latest-verification.md`.

@@ -1,6 +1,6 @@
 # Phase 6: Resync, Memory & Navigation
 
-Status: in progress.
+Status: complete.
 
 Goal: fence full-state refreshes, memory job updates, and route/selection
 transitions so late refreshes cannot overwrite newer local work.
@@ -65,14 +65,22 @@ transitions so late refreshes cannot overwrite newer local work.
   active chat changes before append, before generation, or before the next row.
   Slash `/multisend` uses the same captured target to stop later append/send
   iterations after an active-chat switch.
+- Command-event character-selection closure: inbound server command-event
+  character-selection projections now re-check the cached/applied command
+  revision after delayed shell hydration before selecting. Stale older
+  selections do not regress `currentChar`/`selectedCharID`, live selection is
+  resolved by `chaId` instead of trusting stale projected indexes, and missing
+  current targets fall back to the fenced full-resync path.
+- `.po` translation loop closure: `src/ts/process/files/multisend.ts` now
+  captures the active chat target once for `.po` translation, uses
+  `appendCurrentChatUserMessageForSend()` with that expected target for each
+  prompt append, re-checks target freshness before and after `sendChat(-1)`,
+  stops on stale active-chat changes, and skips partial `translated.po`
+  downloads/results.
 
 ## Remaining Residuals
 
-- Server command-event character-selection hydration audit and related navigation
-  refresh fences.
-- `src/ts/process/files/multisend.ts` `.po` translation loop active-chat
-  fencing remains residual; this slice covered DevTool Autopilot and slash
-  `/multisend`.
+- None. Remaining work moves to Phase 7 final verification and closeout.
 
 ## Scope
 
@@ -83,8 +91,8 @@ transitions so late refreshes cannot overwrite newer local work.
 - Memory job cancel versus polling/SSE/list refresh ordering.
 - Route apply, shell hydration, chat selection, character open/select, and
   navigation generation guards.
-- Remaining long sequential loops that append/generate across active-chat
-  changes, including the `.po` translation loop if it remains live.
+- Long sequential loops that append/generate across active-chat changes,
+  including DevTool Autopilot, slash `/multisend`, and `.po` translation.
 
 ## Anchors
 

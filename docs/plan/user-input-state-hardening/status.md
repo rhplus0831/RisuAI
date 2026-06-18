@@ -6,8 +6,9 @@ This workstream is active. Phase 0 is complete as a docs/contract baseline,
 Phase 1 is complete as the shared-helper and first rollback-adopter slice,
 Phase 2 is complete as the dirty draft projection slice, Phase 3 is complete as
 the upload/import/fetch callback slice, Phase 4 is complete as the
-chat/message/generation freshness slice, and Phase 5 is complete as the
-collection-domain rollback slice. The plan consolidates the input persistence
+chat/message/generation freshness slice, Phase 5 is complete as the
+collection-domain rollback slice, and Phase 6 is complete as the resync, memory,
+restore/import, and navigation fence slice. The plan consolidates the input persistence
 inventory under
 `../../user-input-layer-audit/` and stale-state risk review under
 `../../user-stale-state-audit/`.
@@ -16,16 +17,18 @@ inventory under
 
 - Plan state: active, Phase 0 contract decisions complete, Phase 1 complete,
   Phase 2 dirty draft projection complete, Phase 3 upload/import/fetch callback
-  freshness complete, Phase 4 chat/message/generation freshness complete, and
-  Phase 5 collection-domain rollback complete. Phase 6 resync, memory,
-  restore/import, and navigation fences is in progress; the Phase 6 memory job
+  freshness complete, Phase 4 chat/message/generation freshness complete,
+  Phase 5 collection-domain rollback complete, and Phase 6 resync, memory,
+  restore/import, and navigation fences complete. The Phase 6 memory job
   terminal/cancel ordering slice, backup/local bundle full-resync
   latest-request fencing slice, and Realm import finish refresh/navigation guard
   slice have landed. The Phase 6 character route and shell-selection freshness
   slice, character/chat import refresh/navigation slice, and Welcome/onboarding
   delayed setup callback freshness slice have also landed. The Phase 6 long
   active-chat loop fencing slice for DevTool Autopilot and slash `/multisend`
-  has also landed. The first Phase 3 slice now guards custom background
+  has also landed, and the final Phase 6 command-event character-selection plus
+  `.po` translation loop closure slice has landed. Phase 7 final verification
+  and closeout is now the remaining work. The first Phase 3 slice now guards custom background
   upload/cancel/error callbacks so stale completions cannot restore or apply an
   old custom background after a newer choice. Composer
   paste/menu file actions now guard stale file callbacks by active transcript
@@ -494,8 +497,17 @@ inventory under
   captures one target for Autopilot runs and stops before append/generation/next
   iteration if the active chat changes. `src/ts/process/command.ts` applies the
   same target fence to slash `/multisend` loops.
-- Verification state: Phase 6 long active-chat loop fencing validation is
-  recorded in `latest-verification.md`.
+- `src/ts/bootstrap.ts` now fences command-event character selections after
+  delayed shell hydration by re-checking the cached command revision, and
+  `src/ts/storage/database.svelte.ts` resolves server character selections by
+  live `chaId` index before writing `currentChar`/`selectedCharID`.
+- `src/ts/process/files/multisend.ts` now applies the shared active-chat target
+  fence to `.po` translation loops, including guarded prompt append plus
+  pre/post `sendChat(-1)` freshness checks, and skips partial `translated.po`
+  downloads/results on stale active-chat changes.
+- Verification state: final Phase 6 closure validation is recorded in
+  `latest-verification.md`; Phase 7 owns final workstream verification and
+  closeout.
 - Highest issue density:
   - Character editor: 52 issue rows, mostly dirty projection and unguarded
     upload callbacks.
@@ -575,7 +587,7 @@ inventory under
   blocker in the Phase 5 domains; import collection flows and residual sidebar
   collection edges are closed by the existing scoped/keyed/attempted-value and
   accepted-sequence rollback coverage.
-- [Phase 6](phases/phase-6-resync-memory-navigation.md): in progress. Memory
+- [Phase 6](phases/phase-6-resync-memory-navigation.md): complete. Memory
   job terminal/cancel ordering has landed for list refreshes, cached
   `not-modified` refreshes, SSE job updates, and Hypa V3 progress side effects.
   Backup restore and local bundle import now share latest-request fenced full
@@ -593,11 +605,13 @@ inventory under
   setup now applies only from a fresh mounted setup run with matching captured
   choices and an incomplete `didFirstSetup` state. DevTool Autopilot and slash
   `/multisend` now capture the active character/chat id once and stop later
-  append/send iterations if that target is no longer active. The server
-  command-event character-selection hydration audit, related navigation refresh
-  fences, and the `src/ts/process/files/multisend.ts` `.po` translation loop
-  active-chat fence remain here.
-- [Phase 7](phases/phase-7-verification.md): pending. Closeout regression,
+  append/send iterations if that target is no longer active. Command-event
+  character-selection hydration now re-checks cached revision freshness after
+  shell hydration, resolves selection by live `chaId` index, and falls back to
+  fenced full resync if a current target is missing. The `.po` translation loop
+  now uses the same active-chat target fence and returns no partial result after
+  stale active-chat switches. No Phase 6 residual remains.
+- [Phase 7](phases/phase-7-verification.md): in progress. Closeout regression,
   browser smoke, and TypeScript proof.
 
 ## Implementation Notes
@@ -930,10 +944,13 @@ inventory under
     character route/shell-selection freshness fencing, and character/chat import
     refresh/navigation freshness have landed. Welcome/onboarding delayed setup
     callback freshness has also landed. DevTool Autopilot and slash
-    `/multisend` active-chat loop fencing has also landed. Remaining Phase 6
-    work includes the server command-event character-selection hydration audit,
-    related navigation refresh fences, and the `src/ts/process/files/multisend.ts`
-    `.po` translation loop active-chat fence.
+    `/multisend` active-chat loop fencing has also landed. The final Phase 6
+    closure slice has also landed: server command-event character-selection
+    hydration now re-checks cached revision freshness and resolves by live
+    `chaId` index, and the `src/ts/process/files/multisend.ts` `.po`
+    translation loop now uses the shared active-chat target fence. No Phase 6
+    residual remains; remaining work moves to Phase 7 final verification and
+    closeout.
 - Phase docs that mention `src/ts/process/rerollNavigation.ts` should be read
   as `src/ts/process/rerollNavigation.svelte.ts`.
 - First P0 fixture targets are dirty character projection merge,
