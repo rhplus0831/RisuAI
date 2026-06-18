@@ -4,10 +4,11 @@ Date: 2026-06-18
 
 This workstream is active. Phase 0 is complete as a docs/contract baseline,
 Phase 1 is complete as the shared-helper and first rollback-adopter slice,
-Phase 2 is complete as the dirty draft projection slice, and Phase 3 is complete
-as the upload/import/fetch callback slice. Phase 4 is complete as the
-chat/message/generation freshness slice. The plan consolidates the input
-persistence inventory under
+Phase 2 is complete as the dirty draft projection slice, Phase 3 is complete as
+the upload/import/fetch callback slice, Phase 4 is complete as the
+chat/message/generation freshness slice, and Phase 5 is complete as the
+collection-domain rollback slice. The plan consolidates the input persistence
+inventory under
 `../../user-input-layer-audit/` and stale-state risk review under
 `../../user-stale-state-audit/`.
 
@@ -15,9 +16,9 @@ persistence inventory under
 
 - Plan state: active, Phase 0 contract decisions complete, Phase 1 complete,
   Phase 2 dirty draft projection complete, Phase 3 upload/import/fetch callback
-  freshness complete, and Phase 4 chat/message/generation freshness complete.
-  The next active phase is Phase 5 collection-domain rollback and projection
-  hardening. The first Phase 3 slice
+  freshness complete, Phase 4 chat/message/generation freshness complete, and
+  Phase 5 collection-domain rollback complete. The next active phase is Phase 6
+  resync, memory, restore/import, and navigation fences. The first Phase 3 slice
   now guards custom background upload/cancel/error callbacks so stale completions
   cannot restore or apply an old custom background after a newer choice. Composer
   paste/menu file actions now guard stale file callbacks by active transcript
@@ -84,8 +85,8 @@ persistence inventory under
   Dynamic rendered chat buttons now capture active character/chat/message target
   identity, drop stale manual/Lua trigger results, apply accepted results to the
   captured chat row with scoped rollback, and keep guarded chat-var/note trigger
-  side effects on the returned chat while the target remains fresh. Phase 5 has
-  started with script/trigger replacement rollback: character/module script and
+  side effects on the returned chat while the target remains fresh. Phase 5
+  closed with script/trigger replacement rollback: character/module script and
   trigger replacements now compare the attempted payload before scoped rollback,
   preserve newer same-target edits, and avoid suppressing watcher dispatch on
   stale no-op rollback. Plugin custom storage PUT, DELETE, and bulk rollback now
@@ -196,7 +197,14 @@ persistence inventory under
   Multi-group plugin DB bridge settings failures now preserve earlier
   server-accepted settings groups, roll back failed or unaccepted attempted
   settings keys, and keep newer same-key edits plus unrelated plugin, provider,
-  storage, and module state.
+  storage, and module state. Phase 5 closeout returned PASS/CLOSEABLE: no
+  remaining live broad collection rollback blocker was found in the Phase 5
+  domains. Presets/personas/loadouts, lorebooks/scripts/modules/plugins, sidebar
+  chat/folder/character lists, and import collection flows are covered by
+  scoped/keyed/attempted-value/accepted-sequence rollback. Some broad helper
+  exports still exist, but no live Phase 5 collection rollback caller remains;
+  the old `ScriptDefinitionStateSnapshot` residual is stale because no live
+  caller of `currentScriptDefinitionStateSnapshot()` exists outside tests.
   Phase 2 landed character profile draft dirty top-level field protection;
   prompt-template item row dirty projection merging; whole-key dirty projection
   protection for
@@ -442,19 +450,20 @@ persistence inventory under
   copy, select, create, update, delete, reorder, and extraction rollback by
   attempted row, field, order, selection, generated split row, and scalar
   settings state.
-- Verification state: Phase 5 multi-group plugin settings rollback
-  validation is recorded in `latest-verification.md`.
+- Verification state: Phase 5 closeout validation is recorded in
+  `latest-verification.md`.
 - Highest issue density:
   - Character editor: 52 issue rows, mostly dirty projection and unguarded
     upload callbacks.
   - Chat/messages: composer, file-post, reroll, partial edit, dynamic trigger,
     suggestion, and generation paths are covered through Phase 4.
-  - Lorebooks/scripts/modules/plugins: broad rollback and replacement
-    collection paths.
-  - Presets/personas/loadouts/prompts: dirty projection plus broad collection
-    rollback.
-  - Sidebar/chat lists: selection, ordering, create/delete/import rollback, and
-    character open/select races.
+  - Lorebooks/scripts/modules/plugins: Phase 5 scoped rollback and replacement
+    collection paths are closed.
+  - Presets/personas/loadouts/prompts: dirty projection and collection rollback
+    paths are closed through Phase 5 coverage.
+  - Sidebar/chat lists: Phase 5 selection, ordering, create/delete/import, and
+    character list rollback paths are closed; refresh/navigation edges move to
+    Phase 6.
 - Healthier baseline:
   - Shared server command transport is revision-gated.
   - Settings bridge scalar writes generally use attempted-value rollback.
@@ -498,9 +507,8 @@ persistence inventory under
   freshness has landed. Dynamic rendered button trigger freshness has landed.
   Composer file and paste callbacks are already covered by Phase 3. No known
   code gap blocks Phase 4 completion.
-- [Phase 5](phases/phase-5-collection-domains.md): active. Sidebar/import
-  collection flows remain here. Script/trigger replacement rollback, plugin
-  custom storage plus
+- [Phase 5](phases/phase-5-collection-domains.md): complete. Script/trigger
+  replacement rollback, plugin custom storage plus
   non-storage and collection rollback slices, global module/MCP module-info,
   plugin DB bridge settings, persona collection, and translator preset
   collection rollback slices have landed. Prompt-template item collection
@@ -519,12 +527,15 @@ persistence inventory under
   reload ordering has also landed. Sidebar chat-folder creation optimism,
   loadout create/delete/favorite/apply rollback, and plugin compatibility bridge
   scoped rollback have also landed. Multi-group plugin settings rollback has
-  also landed.
-- [Phase 6](phases/phase-6-resync-memory-navigation.md): pending. Realm, backup,
-  and local bundle restore/import resyncs; character/chat import
-  refresh/navigation edges; memory job list/progress ordering; route/selection
-  hydration; welcome/onboarding delayed setup; and DevTool autopilot long-loop
-  chat targeting remain here.
+  also landed. Closeout exploration found no live broad collection rollback
+  blocker in the Phase 5 domains; import collection flows and residual sidebar
+  collection edges are closed by the existing scoped/keyed/attempted-value and
+  accepted-sequence rollback coverage.
+- [Phase 6](phases/phase-6-resync-memory-navigation.md): pending and next
+  active. Realm, backup, and local bundle restore/import resyncs; character/chat
+  import refresh/navigation edges; memory job list/progress ordering;
+  route/selection hydration; welcome/onboarding delayed setup; and DevTool
+  autopilot long-loop chat targeting remain here.
 - [Phase 7](phases/phase-7-verification.md): pending. Closeout regression,
   browser smoke, and TypeScript proof.
 
@@ -842,7 +853,12 @@ persistence inventory under
     dispatch now splits patches by settings group, preserves accepted earlier
     groups when a later group fails, and rolls back the failed or unaccepted
     attempted tail while keeping newer same-key edits and unrelated state.
-  - Phase 5: import collection flows and any residual sidebar collection edges.
+  - Phase 5 closeout: PASS/CLOSEABLE. Import collection flows and residual
+    sidebar collection edges are closed by the existing scoped/keyed,
+    attempted-value, and accepted-sequence rollback coverage. Broad helper
+    exports may still exist, but no live Phase 5 collection rollback caller
+    remains; the old `ScriptDefinitionStateSnapshot` residual is stale because
+    `currentScriptDefinitionStateSnapshot()` has no live caller outside tests.
   - Known pre-existing test gap: `pnpm exec vitest run
     src/ts/compatibilityAdapters.test.ts` fails in
     `routes MCP character lorebook writes through lorebook commands in

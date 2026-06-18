@@ -7,43 +7,38 @@ workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 5 multi-group plugin settings rollback.
-  Plugin DB bridge settings patches now dispatch by settings group with
-  per-group rollback tails, preserving earlier accepted provider settings when a
-  later advanced settings command fails and rolling back all unaccepted attempted
-  settings keys when the first group fails.
+- Runtime/code change under test: Phase 5 closeout validation. No source code
+  changed in this closeout pass; the run validates the completed Phase 5
+  collection-domain rollback matrix after the closeout explorer returned
+  PASS/CLOSEABLE.
 - Commands:
 
 ```bash
-pnpm exec vitest run src/ts/pluginCommands.test.ts src/ts/plugins/plugins.test.ts src/ts/server/commands.test.ts
+pnpm exec vitest run src/ts/chatCommands.test.ts src/ts/characters.importChat.test.ts src/ts/characterCommands.test.ts src/ts/storage/database.importPreset.test.ts src/ts/loadout.test.ts src/ts/persona.test.ts src/ts/pluginCommands.test.ts src/ts/plugins/plugins.test.ts src/ts/server/lorebookBridge.svelte.test.ts src/ts/process/modules.test.ts src/ts/process/mcp/risuaccess/tests/characters.setCharacterInfo.test.ts src/ts/process/mcp/risuaccess/tests/modules.optimisticProjection.test.ts
+
+pnpm exec vitest run src/lib/SideBars/SideChatList.svelte.test.ts src/lib/Others/ChatList.svelte.test.ts src/lib/Others/GridCatalog.svelte.test.ts src/ts/server/promptTemplateBridge.svelte.test.ts src/ts/storage/database.svelte.test.ts src/lib/Setting/Pages/Language/TranslatorPresetSettings.svelte.test.ts src/lib/Setting/Pages/PluginSettings.svelte.test.ts
+
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
-pnpm exec prettier --check src/ts/pluginCommands.ts src/ts/pluginCommands.test.ts src/ts/plugins/plugins.test.ts docs/plan/user-input-state-hardening/SOLVE-NOTE.md docs/plan/user-input-state-hardening/status.md docs/plan/user-input-state-hardening/latest-verification.md docs/plan/user-input-state-hardening/phases/phase-5-collection-domains.md
+pnpm exec prettier --write docs/plan/user-input-state-hardening/SOLVE-NOTE.md docs/plan/user-input-state-hardening/status.md docs/plan/user-input-state-hardening/latest-verification.md docs/plan/user-input-state-hardening/phases/phase-5-collection-domains.md
+pnpm exec prettier --check docs/plan/user-input-state-hardening/SOLVE-NOTE.md docs/plan/user-input-state-hardening/status.md docs/plan/user-input-state-hardening/latest-verification.md docs/plan/user-input-state-hardening/phases/phase-5-collection-domains.md
 git diff --check
 ```
 
-- Result: passed on 2026-06-18. Focused multi-group plugin settings rollback
-  coverage passed 104 tests across 3 files. Both TypeScript checks plus
-  Prettier and `git diff --check` passed.
-- Residual gaps: Full `ScriptDefinitionStateSnapshot` rollback remains broad
-  for rarer discrete callers. Regex delete uses the same scoped module script
-  dispatcher and has optimistic visibility coverage, but this slice does not add
-  a dedicated failing delete rollback/stale-skip test. Chat fork selection
-  preservation uses the shared created-chat rollback selection helper, but there
-  is no fork-only selection-change regression. Translator preset import
-  file-read/decode freshness does not have dedicated coverage, but its
-  command-dispatch failure path uses the now rollback-free create dispatcher.
-  Prompt-template item rollback coverage does not explicitly cover delete skip
-  when the row already exists or out-of-bounds insert-index clamping, though the
-  implementation guards both. Split preset array coverage is representative but
-  not exhaustive for every mirrored model/prompt operation pair; prompt import
-  is covered and no client-side model import caller was found. Hypa V3 rollback
-  targets the array shapes emitted by the current controls and does not model
-  arbitrary reorder or multi-row transforms. Loadout apply rollback now covers a
-  later failed settings command after accepted persona/preset/module steps, but
-  does not exhaustively test every split-preset failure position inside
-  `applyLoadout()`. Import collection flows and residual sidebar collection
-  edges remain Phase 5 work.
+- Result: passed on 2026-06-18. The first closeout Vitest set passed 358 tests
+  across 12 files. The second closeout Vitest set passed 101 tests across 7
+  files. Both TypeScript checks passed. Prettier write/check and
+  `git diff --check` passed.
+- Residual gaps: Phase 5 is PASS/CLOSEABLE. No remaining live broad collection
+  rollback blocker was found in the Phase 5 domains. Presets/personas/loadouts,
+  lorebooks/scripts/modules/plugins, sidebar chat/folder/character lists, and
+  import collection flows are covered by scoped/keyed/attempted-value or
+  accepted-sequence rollback. Some broad helper exports still exist, but no live
+  Phase 5 collection rollback caller remains. The old
+  `ScriptDefinitionStateSnapshot` residual is stale because no live caller of
+  `currentScriptDefinitionStateSnapshot()` exists outside tests. The known
+  pre-existing `src/ts/compatibilityAdapters.test.ts` failure at line 626
+  remains separate from Phase 5 closure.
 
 ## Remaining Proof
 
@@ -56,7 +51,7 @@ git diff --check
   fifth Phase 4 slice, durable generation finalization freshness is covered by
   the sixth Phase 4 slice, and dynamic rendered button trigger freshness is
   covered by the seventh Phase 4 slice.
-- Phase 5 is active. Script/trigger replacement rollback is covered by the first
+- Phase 5 is complete. Script/trigger replacement rollback is covered by the first
   Phase 5 slice, plugin custom storage rollback is covered by the second Phase 5
   slice, plugin non-storage field/delete/provider rollback is covered by the
   third Phase 5 slice, plugin collection/full-plugin rollback is covered by the
@@ -92,16 +87,17 @@ git diff --check
   slice. Loadout create/delete/favorite/apply rollback is covered by the
   thirty-first Phase 5 slice. Plugin compatibility bridge scoped rollback is
   covered by the thirty-second Phase 5 slice. Multi-group plugin settings
-  rollback is covered by the thirty-third Phase 5 slice. Remaining Phase 5 work
-  owns import/sidebar collection residuals.
-- Phase 6 owns Realm/backup/local bundle restore/import resyncs, character/chat
-  import refresh/navigation edges, memory job list/progress ordering,
-  route/selection hydration, welcome/onboarding delayed setup, and DevTool
-  autopilot long-loop chat targeting.
+  rollback is covered by the thirty-third Phase 5 slice. Closeout exploration
+  found no live broad collection rollback blocker remaining in the Phase 5
+  domains.
+- Phase 6 is pending and next active. It owns Realm/backup/local bundle
+  restore/import resyncs, character/chat import refresh/navigation edges, memory
+  job list/progress ordering, route/selection hydration, welcome/onboarding
+  delayed setup, and DevTool autopilot long-loop chat targeting.
 - Phase 7 owns final workstream regression, browser smoke where needed, and
   TypeScript proof.
 
 ## Validation Commands
 
-Use phase-specific focused subsets while developing. Phase 5 is now active;
+Use phase-specific focused subsets while developing. Phase 6 is next active;
 Phase 7 owns the final workstream command matrix.

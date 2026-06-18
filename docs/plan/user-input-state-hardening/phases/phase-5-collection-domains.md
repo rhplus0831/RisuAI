@@ -1,6 +1,6 @@
 # Phase 5: Collection Domains
 
-Status: active.
+Status: complete.
 
 Goal: finish stale-state hardening for broad collection domains where delayed
 commands or projections can restore old lists over newer edits.
@@ -246,6 +246,18 @@ groups preserve earlier server-accepted group effects, while failed first groups
 roll back all unaccepted attempted settings keys and still preserve newer
 same-key edits plus unrelated plugin, provider, storage, and module state.
 
+Closeout note: Phase 5 is PASS/CLOSEABLE. Closeout exploration found no
+remaining live broad collection rollback blocker in the Phase 5 domains.
+Presets/personas/loadouts, lorebooks/scripts/modules/plugins, sidebar
+chat/folder/character lists, and import collection flows are covered by
+scoped/keyed/attempted-value or accepted-sequence rollback. Some broad helper
+exports still exist, but no live Phase 5 collection rollback caller remains; the
+old `ScriptDefinitionStateSnapshot` residual is stale because no live caller of
+`currentScriptDefinitionStateSnapshot()` exists outside tests. Realm, backup,
+local bundle restore/import resyncs, character/chat import refresh/navigation
+edges, memory ordering, route/selection hydration, welcome/onboarding delayed
+setup, and DevTool autopilot long-loop chat targeting remain Phase 6 work.
+
 ## Anchors
 
 - `src/lib/Setting/botpreset.svelte`
@@ -277,8 +289,8 @@ same-key edits plus unrelated plugin, provider, storage, and module state.
 - Focused tests exist for each converted broad rollback family.
 - Preset/persona/loadout, lore/script/module/plugin, and sidebar/list domains
   each have at least one stale-failure regression covering edit-after-dispatch.
-- Any remaining broad rollback path is explicitly marked as intentionally
-  destructive or recorded as a residual gap.
+- Closeout exploration found no remaining live broad collection rollback blocker
+  in the Phase 5 domains.
 
 ## Validation
 
@@ -297,5 +309,5 @@ Add focused tests next to the changed domain helpers/components.
 
 - Reorder operations are easy to model as whole arrays. Use stable ids and
   compare the attempted order before rollback.
-- Plugin storage and module/lore replacements may need small domain-specific
-  patch helpers before broad rollback can be removed cleanly.
+- Plugin storage and module/lore replacement broad rollback risks were closed by
+  scoped domain-specific rollback helpers during Phase 5.
