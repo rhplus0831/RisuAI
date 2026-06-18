@@ -48,6 +48,7 @@ test('rerolled candidates survive a reload and stay swipe-recoverable (Phase 6c)
   page.on('console', (m) => diagnostics.push(`console.${m.type()}: ${m.text()}`))
   page.on('pageerror', (e) => diagnostics.push(`pageerror: ${e.message}`))
 
+  await page.addInitScript(() => localStorage.setItem('tos4', 'true'))
   await page.goto(harness.baseUrl)
   await expect
     .poll(() => page.evaluate(() => Boolean(window.__RISU_FASTIFY_BROWSER_SMOKE__)), {
@@ -59,7 +60,7 @@ test('rerolled candidates survive a reload and stay swipe-recoverable (Phase 6c)
   await markRerollChatGenerationSettingsReady(page)
 
   // Ensure the fixture character is open, then let the chat hydrate.
-  await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.selectCharacter(0))
+  await openFixtureChat(page)
   await expectVisibleChatRow(page, 0, 'greet me')
   await expectVisibleChatRow(page, 1, 'old reply')
 
@@ -105,7 +106,7 @@ test('rerolled candidates survive a reload and stay swipe-recoverable (Phase 6c)
   await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.waitForLoaded())
   await expectLoadedCharacterVisible(page)
   // Ensure the fixture character is open after the reload.
-  await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.selectCharacter(0))
+  await openFixtureChat(page)
   await expectVisibleChatRow(page, 0, 'greet me')
   await expectVisibleChatRow(page, 1, 'rerolled reply')
   await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.refreshActiveChatMessages())
@@ -151,6 +152,22 @@ async function expectLoadedCharacterVisible(page: Page): Promise<void> {
   await expect(page.locator('[data-char-id="char-1"]')).toBeVisible()
 }
 
+async function openFixtureChat(page: Page): Promise<void> {
+  await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.selectCharacter(0))
+  const fixtureEntry = page
+    .locator(
+      '.default-chat-screen .risu-chat[data-chat-index="0"], button[data-risu-chat-idx][data-risu-chat-id="chat-1"]',
+    )
+    .first()
+  await expect(fixtureEntry).toBeVisible({ timeout: 15_000 })
+  const needsOpen = await fixtureEntry.evaluate((node) =>
+    node.matches('button[data-risu-chat-idx][data-risu-chat-id="chat-1"]'),
+  )
+  if (needsOpen) {
+    await fixtureEntry.click()
+  }
+}
+
 async function expectVisibleChatRow(page: Page, index: number, text: string): Promise<void> {
   const row = page.locator(`.default-chat-screen .risu-chat[data-chat-index="${index}"]`)
   await expect(row).toBeVisible()
@@ -170,7 +187,8 @@ async function markRerollChatGenerationSettingsReady(page: Page): Promise<void> 
         generationSettings: {
           configured: true,
           personaId: 'persona-reroll-smoke',
-          presetId: 'preset-reroll-smoke',
+          modelPresetId: 'model-preset-reroll-smoke',
+          promptPresetId: 'preset-reroll-smoke',
           jailbreakToggle: false,
           sidebarToggles: {},
         },
@@ -224,7 +242,8 @@ function rerollFixtureDatabase(): Record<string, unknown> {
       sendName: false,
       utilOverride: false,
     },
-    botPresets: [{ id: 'preset-reroll-smoke', name: 'Reroll Smoke Preset' }],
+    modelPresets: [{ id: 'model-preset-reroll-smoke', name: 'Reroll Smoke Model Preset' }],
+    promptPresets: [{ id: 'preset-reroll-smoke', name: 'Reroll Smoke Prompt Preset' }],
     loadouts: [],
     modules: [],
     username: 'User',

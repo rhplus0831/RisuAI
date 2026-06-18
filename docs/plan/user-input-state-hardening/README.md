@@ -2,7 +2,7 @@
 
 Date: 2026-06-17
 
-This active workstream turns the persistence inventory in
+This closed workstream turned the persistence inventory in
 `../../user-input-layer-audit/` and the stale-state review in
 `../../user-stale-state-audit/` into one implementation plan. The input-layer
 audit says which user controls persist and through which route or command. The
@@ -14,12 +14,13 @@ one contract plan, status and verification records, and phase files under
 `phases/`.
 
 Start with [`status.md`](status.md), then read [`plan.md`](plan.md), then the
-phase files under [`phases/`](phases/). [`latest-verification.md`](latest-verification.md)
-records the latest validation proof once implementation begins.
+phase files under [`phases/`](phases/).
+[`latest-verification.md`](latest-verification.md) records the final validation
+proof.
 
 ## Read Order
 
-1. [`status.md`](status.md) - current phase router and open work.
+1. [`status.md`](status.md) - final phase router and closeout state.
 2. [`plan.md`](plan.md) - goal, contract, invariants, and non-goals.
 3. [`latest-verification.md`](latest-verification.md) - latest proof and known
    gaps.

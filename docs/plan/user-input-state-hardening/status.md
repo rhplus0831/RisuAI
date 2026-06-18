@@ -2,33 +2,40 @@
 
 Date: 2026-06-18
 
-This workstream is active. Phase 0 is complete as a docs/contract baseline,
+This workstream is complete. Phase 0 is complete as a docs/contract baseline,
 Phase 1 is complete as the shared-helper and first rollback-adopter slice,
 Phase 2 is complete as the dirty draft projection slice, Phase 3 is complete as
 the upload/import/fetch callback slice, Phase 4 is complete as the
 chat/message/generation freshness slice, Phase 5 is complete as the
 collection-domain rollback slice, and Phase 6 is complete as the resync, memory,
-restore/import, and navigation fence slice. The plan consolidates the input persistence
-inventory under
+restore/import, and navigation fence slice. Phase 7 is complete as the final
+regression, browser-smoke, and TypeScript proof. The plan consolidates the input
+persistence inventory under
 `../../user-input-layer-audit/` and stale-state risk review under
 `../../user-stale-state-audit/`.
 
 ## Snapshot
 
-- Plan state: active, Phase 0 contract decisions complete, Phase 1 complete,
+- Plan state: complete, Phase 0 contract decisions complete, Phase 1 complete,
   Phase 2 dirty draft projection complete, Phase 3 upload/import/fetch callback
   freshness complete, Phase 4 chat/message/generation freshness complete,
   Phase 5 collection-domain rollback complete, and Phase 6 resync, memory,
-  restore/import, and navigation fences complete. The Phase 6 memory job
-  terminal/cancel ordering slice, backup/local bundle full-resync
-  latest-request fencing slice, and Realm import finish refresh/navigation guard
-  slice have landed. The Phase 6 character route and shell-selection freshness
-  slice, character/chat import refresh/navigation slice, and Welcome/onboarding
-  delayed setup callback freshness slice have also landed. The Phase 6 long
-  active-chat loop fencing slice for DevTool Autopilot and slash `/multisend`
-  has also landed, and the final Phase 6 command-event character-selection plus
-  `.po` translation loop closure slice has landed. Phase 7 final verification
-  and closeout is now the remaining work. The first Phase 3 slice now guards custom background
+  restore/import, and navigation fences complete. Phase 7 final verification is
+  complete. The final matrix passed on 2026-06-18: five Vitest groups passed
+  1047 tests across 65 files, `pnpm smoke:fastify-browser` passed 5 Playwright
+  tests after stale smoke fixtures were updated to the current split-preset
+  contract and open-chat browser flow, and both TypeScript checks passed. The
+  known pre-existing `src/ts/compatibilityAdapters.test.ts` failure at line 626
+  remains excluded because it reproduced at baseline commit `30d4ad7ab`. The
+  Phase 6 memory job terminal/cancel ordering slice, backup/local bundle
+  full-resync latest-request fencing slice, and Realm import finish
+  refresh/navigation guard slice have landed. The Phase 6 character route and
+  shell-selection freshness slice, character/chat import refresh/navigation
+  slice, and Welcome/onboarding delayed setup callback freshness slice have also
+  landed. The Phase 6 long active-chat loop fencing slice for DevTool Autopilot
+  and slash `/multisend` has also landed, and the final Phase 6 command-event
+  character-selection plus `.po` translation loop closure slice has landed. The
+  first Phase 3 slice now guards custom background
   upload/cancel/error callbacks so stale completions cannot restore or apply an
   old custom background after a newer choice. Composer
   paste/menu file actions now guard stale file callbacks by active transcript
@@ -505,9 +512,8 @@ inventory under
   fence to `.po` translation loops, including guarded prompt append plus
   pre/post `sendChat(-1)` freshness checks, and skips partial `translated.po`
   downloads/results on stale active-chat changes.
-- Verification state: final Phase 6 closure validation is recorded in
-  `latest-verification.md`; Phase 7 owns final workstream verification and
-  closeout.
+- Verification state: final Phase 7 workstream validation is recorded in
+  `latest-verification.md`; the workstream is closed.
 - Highest issue density:
   - Character editor: 52 issue rows, mostly dirty projection and unguarded
     upload callbacks.
@@ -518,8 +524,8 @@ inventory under
   - Presets/personas/loadouts/prompts: dirty projection and collection rollback
     paths are closed through Phase 5 coverage.
   - Sidebar/chat lists: Phase 5 selection, ordering, create/delete/import, and
-    character list rollback paths are closed; refresh/navigation edges move to
-    Phase 6.
+    character list rollback paths are closed; refresh/navigation edges are
+    closed through Phase 6.
 - Healthier baseline:
   - Shared server command transport is revision-gated.
   - Settings bridge scalar writes generally use attempted-value rollback.
@@ -611,8 +617,8 @@ inventory under
   fenced full resync if a current target is missing. The `.po` translation loop
   now uses the same active-chat target fence and returns no partial result after
   stale active-chat switches. No Phase 6 residual remains.
-- [Phase 7](phases/phase-7-verification.md): in progress. Closeout regression,
-  browser smoke, and TypeScript proof.
+- [Phase 7](phases/phase-7-verification.md): complete. Final closeout
+  regression, browser smoke, and TypeScript proof passed on 2026-06-18.
 
 ## Implementation Notes
 
@@ -949,8 +955,7 @@ inventory under
     hydration now re-checks cached revision freshness and resolves by live
     `chaId` index, and the `src/ts/process/files/multisend.ts` `.po`
     translation loop now uses the shared active-chat target fence. No Phase 6
-    residual remains; remaining work moves to Phase 7 final verification and
-    closeout.
+    residual remains; Phase 7 final verification is complete.
 - Phase docs that mention `src/ts/process/rerollNavigation.ts` should be read
   as `src/ts/process/rerollNavigation.svelte.ts`.
 - First P0 fixture targets are dirty character projection merge,
@@ -960,6 +965,6 @@ inventory under
 - Prefer shared helpers for operation tokens, attempted rollback, and dirty
   projection merge. Use local component tokens only when the lifetime is truly
   local.
-- Complete each phase with focused tests or record the exact residual gap here
-  before moving on.
+- Each phase closed with focused tests or an explicit residual gap. No residual
+  gap remains for Phase 7.
 - Run Prettier before committing any implementation patch.

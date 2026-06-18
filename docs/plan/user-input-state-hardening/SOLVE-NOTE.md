@@ -37,7 +37,7 @@ pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 
 ## Current State
 
-Phases 0 through 5 are complete. Phase 0 locked the contract and baseline
+Phases 0 through 7 are complete. Phase 0 locked the contract and baseline
 documentation. Phase 1 added shared stale-state helpers with focused coverage
 and landed settings, character, and chat row metadata rollback adopters. Phase 2
 landed dirty projection protection for character profile drafts, prompt-template
@@ -104,19 +104,19 @@ by live `chaId` index instead of trusting stale `currentChar`, fall back to
 fenced full resync when a current target is missing, and the `.po` translation
 loop in `src/ts/process/files/multisend.ts` uses the shared active-chat target
 fence around prompt append plus `sendChat(-1)` so stale active-chat switches
-stop without partial `translated.po` downloads/results. Phase 6 is closed; the
-remaining workstream work moves to Phase 7 final verification and closeout.
+stop without partial `translated.po` downloads/results. Phase 6 is closed.
+Phase 7 final verification and closeout is complete: the focused Vitest matrix,
+Fastify route matrix, browser smoke, and both TypeScript checks passed on
+2026-06-18. The workstream is closed with no next phase.
 
 Next manager loop:
 
-1. Read `README.md`, `STRUCTURE.md`, `status.md`, `latest-verification.md`, and
-   `phases/phase-7-verification.md`.
-2. Spawn a verification agent for Phase 7 final regression, browser smoke where
-   needed, and TypeScript proof.
-3. If verification succeeds, run Prettier/checks as needed, commit, close
-   finished agents, and close the workstream.
-4. If verification fails, close the failed verification agent and spawn or reuse
-   a worker agent to fix the reported issues.
+1. No next phase remains. Keep this note as the closed workstream record.
+2. If future work reopens this area, start a new plan or explicitly reopen this
+   one before spawning agents.
+3. Do not gate future unrelated work on
+   `src/ts/compatibilityAdapters.test.ts`; its line 626 failure reproduced at
+   baseline commit `30d4ad7ab`.
 
 Known path correction:
 
@@ -197,18 +197,20 @@ Explicit deferrals:
   hydration/navigation freshness and the
   `src/ts/process/files/multisend.ts` `.po` translation loop active-chat fence
   have landed. Phase 6 is closed.
+- Phase 7 is complete. The final matrix passed 1047 Vitest tests across 65
+  files, 5 browser smoke tests, and both TypeScript checks. The browser smoke
+  specs were updated during closeout to match the current split preset contract
+  and current chat-opening behavior.
 - Projection-absent optional clean-field deletion remains outside Phase 2 because
   the shared merge helper refreshes fields present in the projection surface.
 
-No known code gap blocks Phase 1, Phase 2, Phase 3, Phase 4, Phase 5, or Phase
-6 completion.
+No known code gap blocks Phase 1, Phase 2, Phase 3, Phase 4, Phase 5, Phase 6,
+or Phase 7 completion.
 
 ## Later Phase Order
 
-Proceed in this order unless a verification result proves a dependency needs to
-move earlier:
+No later phases remain. The user-input state hardening workstream is closed.
 
-1. Phase 7 final verification and closeout.
-
-Each phase should end with focused tests or an explicit residual gap recorded in
-`status.md` and latest proof recorded in `latest-verification.md`.
+If this area is reopened, the next plan should end each new phase with focused
+tests or an explicit residual gap recorded in `status.md` and latest proof
+recorded in `latest-verification.md`.

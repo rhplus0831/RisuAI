@@ -12,7 +12,7 @@ import { setupBrowserSmokeAuth } from './auth.js'
 // getDatabaseSnapshot() only to classify.
 //
 //   - Journey 1: switch chats by clicking sidebar rows -> the generation picker
-//     repaints the newly active chat's preset id.
+//     repaints the newly active chat's prompt preset id.
 //   - Journey 2 (settle): toggle a sidebar checkbox -> the flip survives the
 //     command + projection refreeze (not just the optimistic paint).
 //   - Journey 3 (GATE): open the "character" sidebar tab, then save generation
@@ -72,7 +72,7 @@ test('Journey 1: switching chats repaints the active-chat generation picker', as
     const snap = window.__RISU_FASTIFY_BROWSER_SMOKE__!.getDatabaseSnapshot()
     const character = (snap.characters as Array<Record<string, any>>)[0]
     const chat = character.chats[character.chatPage]
-    return chat?.generationSettings?.presetId ?? null
+    return chat?.generationSettings?.promptPresetId ?? null
   })
   expect(storedPresetId, diagnostics()).toBe('preset-b')
 })
@@ -187,7 +187,7 @@ async function clickChatRow(page: Page, chatId: string): Promise<void> {
 
 function presetPickerSelectedId(page: Page): Promise<string | null> {
   return page
-    .locator('[data-risu-generation-picker-control][data-risu-picker-kind="preset"]')
+    .locator('[data-risu-generation-picker-control][data-risu-picker-kind="prompt"]')
     .first()
     .getAttribute('data-risu-picker-selected-id')
 }
@@ -247,7 +247,8 @@ function phase0FixtureDatabase(): Record<string, unknown> {
             generationSettings: {
               configured: true,
               personaId: 'persona-a',
-              presetId: 'preset-a',
+              modelPresetId: 'model-preset-a',
+              promptPresetId: 'preset-a',
               jailbreakToggle: false,
               sidebarToggles: { flag: '1' },
             },
@@ -261,7 +262,8 @@ function phase0FixtureDatabase(): Record<string, unknown> {
             generationSettings: {
               configured: true,
               personaId: 'persona-a',
-              presetId: 'preset-b',
+              modelPresetId: 'model-preset-a',
+              promptPresetId: 'preset-b',
               jailbreakToggle: false,
               sidebarToggles: { flag: '0' },
             },
@@ -270,7 +272,8 @@ function phase0FixtureDatabase(): Record<string, unknown> {
       },
     ],
     formatingOrder: ['main', 'description', 'chats'],
-    botPresets: [
+    modelPresets: [{ id: 'model-preset-a', name: 'Model Preset A' }],
+    promptPresets: [
       { id: 'preset-a', name: 'Preset A', customPromptTemplateToggle: sidebarToggleTemplate },
       { id: 'preset-b', name: 'Preset B', customPromptTemplateToggle: sidebarToggleTemplate },
     ],
