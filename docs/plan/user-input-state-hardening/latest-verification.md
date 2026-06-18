@@ -7,37 +7,37 @@ workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 6 character/chat import refresh and
-  post-import navigation freshness. The run validates that character import APIs
-  return stable imported `chaId`s, add-character post-import navigation
-  re-resolves the returned id and skips stale user-selection scopes, Realm
-  unsupported/local fallback navigation uses the returned id plus the Realm
-  operation token, and overlapping same-character chat imports are latest-wins
-  before unshift/chatPage selection.
+- Runtime/code change under test: Phase 6 Welcome/onboarding delayed setup
+  callback freshness. The run validates that `WelcomeRisu.svelte` schedules
+  final setup with a captured provider/chat-language/memory-choice snapshot,
+  applies exactly once after the 1000ms delay for a fresh final setup, and skips
+  stale callbacks after unmount or when `didFirstSetup` becomes true before the
+  timer fires.
 - Commands:
 
 ```bash
-pnpm exec vitest run src/ts/characters.importChat.test.ts src/ts/characters.changeChar.test.ts src/ts/characterCards.pngImport.test.ts src/ts/characterCards.realmImport.test.ts src/ts/characterCommands.test.ts
+pnpm exec vitest run src/lib/Others/WelcomeRisu.svelte.test.ts src/ts/server/settingsBridge.svelte.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
-pnpm exec prettier --write src/ts/characters.ts src/ts/characterCards.ts src/ts/characters.importChat.test.ts src/ts/characters.changeChar.test.ts src/ts/characterCards.pngImport.test.ts src/ts/characterCards.realmImport.test.ts docs/plan/user-input-state-hardening/SOLVE-NOTE.md docs/plan/user-input-state-hardening/status.md docs/plan/user-input-state-hardening/latest-verification.md docs/plan/user-input-state-hardening/phases/phase-6-resync-memory-navigation.md
-pnpm exec prettier --check src/ts/characters.ts src/ts/characterCards.ts src/ts/characters.importChat.test.ts src/ts/characters.changeChar.test.ts src/ts/characterCards.pngImport.test.ts src/ts/characterCards.realmImport.test.ts docs/plan/user-input-state-hardening/SOLVE-NOTE.md docs/plan/user-input-state-hardening/status.md docs/plan/user-input-state-hardening/latest-verification.md docs/plan/user-input-state-hardening/phases/phase-6-resync-memory-navigation.md
+pnpm exec prettier --write src/lib/Others/WelcomeRisu.svelte src/lib/Others/WelcomeRisu.svelte.test.ts docs/plan/user-input-state-hardening/SOLVE-NOTE.md docs/plan/user-input-state-hardening/status.md docs/plan/user-input-state-hardening/latest-verification.md docs/plan/user-input-state-hardening/phases/phase-6-resync-memory-navigation.md
+pnpm exec prettier --check src/lib/Others/WelcomeRisu.svelte src/lib/Others/WelcomeRisu.svelte.test.ts docs/plan/user-input-state-hardening/SOLVE-NOTE.md docs/plan/user-input-state-hardening/status.md docs/plan/user-input-state-hardening/latest-verification.md docs/plan/user-input-state-hardening/phases/phase-6-resync-memory-navigation.md
 git diff --check
 ```
 
-- Result: passed on 2026-06-18. The focused import/navigation Vitest set passed
-  84 tests across 5 files. Both TypeScript checks passed. Prettier write/check
-  and `git diff --check` passed.
+- Result: passed on 2026-06-18. The focused Welcome/settings bridge Vitest set
+  passed 29 tests across 2 files. Both TypeScript checks passed. Prettier
+  write/check and `git diff --check` passed.
 - Residual gaps: Phase 6 remains in progress. Memory job terminal/cancel
   ordering is covered for list refreshes, cached `not-modified` refreshes, SSE
   job updates, and Hypa V3 progress side effects. Backup restore and local
   bundle import now share latest-request fenced full projection resyncs. Realm
   import finish refresh now uses that helper with latest-operation UI guards.
-  Character route and `changeChar()` shell-selection freshness are covered, and
-  this slice covers character/chat import refresh/navigation edges. Remaining
-  Phase 6 work is welcome/onboarding delayed setup callbacks, DevTool
-  autopilot/other long active-chat loops, and the server command-event
-  character-selection hydration audit. The known pre-existing
+  Character route and `changeChar()` shell-selection freshness are covered,
+  character/chat import refresh/navigation edges are covered, and this slice
+  covers Welcome/onboarding delayed setup callbacks. Remaining Phase 6 work is
+  DevTool autopilot/other long active-chat loops and the server command-event
+  character-selection hydration audit/navigation refresh fences. The known
+  pre-existing
   `src/ts/compatibilityAdapters.test.ts` failure at line 626 remains separate.
 
 ## Remaining Proof
@@ -96,9 +96,10 @@ git diff --check
   plus latest-operation navigation/progress guards are covered by the third
   slice, and character route/`changeChar()` shell-selection freshness is covered
   by the fourth slice. Character/chat import refresh/navigation freshness is
-  covered by the fifth slice. Welcome/onboarding delayed setup callbacks,
-  DevTool autopilot/other long active-chat loops, and the server command-event
-  character-selection hydration audit remain open.
+  covered by the fifth slice. Welcome/onboarding delayed setup callback
+  freshness is covered by the sixth slice. DevTool autopilot/other long
+  active-chat loops and the server command-event character-selection hydration
+  audit/navigation refresh fences remain open.
 - Phase 7 owns final workstream regression, browser smoke where needed, and
   TypeScript proof.
 

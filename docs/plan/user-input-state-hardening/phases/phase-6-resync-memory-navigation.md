@@ -51,14 +51,20 @@ transitions so late refreshes cannot overwrite newer local work.
   existing Realm operation token. Chat import now keeps the originally captured
   character target, while same-character overlapping picker/import operations
   are latest-wins before unshifting chats or resetting `chatPage`.
+- Welcome/onboarding delayed setup callback freshness: `WelcomeRisu.svelte` now
+  schedules final setup through a local run-token helper that captures provider,
+  chat language, and memory choices. The callback applies onboarding settings
+  only while the component is still mounted, the run is latest, the step and
+  choices still match, and `didFirstSetup` has not already become true. Destroy
+  stops the settings watcher, invalidates the setup run, and clears the pending
+  timer.
 
 ## Remaining Residuals
 
-- Welcome/onboarding delayed setup callbacks and other one-shot setup flows.
 - DevTool autopilot and other long sequential loops that can outlive the active
   chat.
-- Server command-event character-selection hydration audit and related
-  navigation refresh fences.
+- Server command-event character-selection hydration audit and related navigation
+  refresh fences.
 
 ## Scope
 
@@ -69,8 +75,6 @@ transitions so late refreshes cannot overwrite newer local work.
 - Memory job cancel versus polling/SSE/list refresh ordering.
 - Route apply, shell hydration, chat selection, character open/select, and
   navigation generation guards.
-- Welcome/onboarding delayed setup callbacks and other one-shot setup flows
-  that can apply after choices or navigation changed.
 - DevTool autopilot and other long sequential loops that append/generate across
   active-chat changes.
 

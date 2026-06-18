@@ -32,7 +32,6 @@
     'didFirstSetup',
     'claudeCachingExperimental',
   ])
-  onDestroy(stopServerSettingsWatch)
 
   const airisuStyle = `background: url("${Airisu}");background-size: cover;`
   let step = $state(0)
@@ -41,6 +40,70 @@
   let chatLang = $state(0)
   let chatMemorySelection = $state(0)
   let setupApplied = false
+  let mounted = true
+  let setupRunId = 0
+  let pendingSetupTimer: ReturnType<typeof setTimeout> | undefined
+
+  type SetupChoicesSnapshot = {
+    chatLang: number
+    chatMemorySelection: number
+    provider: string
+    runId: number
+  }
+
+  function clearPendingSetupTimer(): void {
+    if (pendingSetupTimer !== undefined) {
+      clearTimeout(pendingSetupTimer)
+      pendingSetupTimer = undefined
+    }
+  }
+
+  function invalidatePendingSetupRun(): void {
+    setupRunId += 1
+    clearPendingSetupTimer()
+  }
+
+  function shouldApplySetupRun(snapshot: SetupChoicesSnapshot): boolean {
+    return (
+      mounted &&
+      snapshot.runId === setupRunId &&
+      step === 10 &&
+      provider === snapshot.provider &&
+      chatLang === snapshot.chatLang &&
+      chatMemorySelection === snapshot.chatMemorySelection &&
+      DBState.db.didFirstSetup !== true
+    )
+  }
+
+  function scheduleOnboardingSetupApplication(): void {
+    clearPendingSetupTimer()
+    const snapshot: SetupChoicesSnapshot = {
+      chatLang,
+      chatMemorySelection,
+      provider,
+      runId: setupRunId + 1,
+    }
+    setupRunId = snapshot.runId
+    pendingSetupTimer = setTimeout(() => {
+      pendingSetupTimer = undefined
+      if (!shouldApplySetupRun(snapshot)) {
+        return
+      }
+
+      applyOnboardingServerBackedSettings({
+        chatMemorySelection: snapshot.chatMemorySelection,
+        provider: snapshot.provider,
+        chatLang: snapshot.chatLang,
+      })
+      updateTextThemeAndCSS()
+    }, 1000)
+  }
+
+  onDestroy(() => {
+    mounted = false
+    stopServerSettingsWatch()
+    invalidatePendingSetupRun()
+  })
 
   function selectLanguage(lang: string): void {
     changeLanguage(lang)
@@ -103,14 +166,7 @@
   $effect.pre(() => {
     if (step === 10 && !setupApplied) {
       setupApplied = true
-      setTimeout(() => {
-        applyOnboardingServerBackedSettings({
-          chatMemorySelection,
-          provider,
-          chatLang,
-        })
-        updateTextThemeAndCSS()
-      }, 1000)
+      scheduleOnboardingSetupApplication()
     }
   })
 </script>

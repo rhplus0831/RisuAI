@@ -88,7 +88,12 @@ re-resolve live indexes before selection, guard add-character post-import
 navigation by latest import operation plus unchanged selection scope, guard
 Realm local fallback navigation by returned id plus Realm operation token, and
 make overlapping same-character chat imports latest-wins before mutating chats
-or `chatPage`.
+or `chatPage`. Welcome/onboarding delayed setup now schedules final setup with a
+local run-token helper that captures provider, chat language, and memory choices;
+the delayed callback delegates to `applyOnboardingServerBackedSettings()` only
+while the component is still mounted, the run is latest, step 10 and captured
+choices still match, and `didFirstSetup` has not already completed. Destroy
+stops the settings watcher, invalidates the run, and clears the pending timer.
 
 Next manager loop:
 
@@ -177,9 +182,9 @@ Explicit deferrals:
   projection resyncs where applicable. Character route and `changeChar()` shell
   selection freshness fencing has landed. Character/chat import refresh and
   post-import navigation freshness has landed. Welcome/onboarding delayed setup
-  callbacks, DevTool autopilot active-chat locking/other long active-chat loops,
-  and the server command-event character-selection hydration audit remain Phase
-  6 work.
+  callback freshness has landed. DevTool autopilot active-chat locking/other
+  long active-chat loops and the server command-event character-selection
+  hydration audit/navigation refresh fences remain Phase 6 work.
 - Projection-absent optional clean-field deletion remains outside Phase 2 because
   the shared merge helper refreshes fields present in the projection surface.
 

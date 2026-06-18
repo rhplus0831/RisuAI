@@ -22,8 +22,8 @@ inventory under
   terminal/cancel ordering slice, backup/local bundle full-resync
   latest-request fencing slice, and Realm import finish refresh/navigation guard
   slice have landed. The Phase 6 character route and shell-selection freshness
-  slice and character/chat import refresh/navigation slice have also landed. The
-  first Phase 3 slice
+  slice, character/chat import refresh/navigation slice, and Welcome/onboarding
+  delayed setup callback freshness slice have also landed. The first Phase 3 slice
   now guards custom background upload/cancel/error callbacks so stale completions
   cannot restore or apply an old custom background after a newer choice. Composer
   paste/menu file actions now guard stale file callbacks by active transcript
@@ -480,8 +480,14 @@ inventory under
   copy, select, create, update, delete, reorder, and extraction rollback by
   attempted row, field, order, selection, generated split row, and scalar
   settings state.
-- Verification state: Phase 6 character/chat import refresh and post-import
-  navigation freshness validation is recorded in `latest-verification.md`.
+- `src/lib/Others/WelcomeRisu.svelte` now schedules final onboarding setup with
+  a local run-token helper that captures provider, chat language, and memory
+  choices, re-checks mount/run/step/choice/`didFirstSetup` freshness before
+  delegating to `applyOnboardingServerBackedSettings()`, and clears the pending
+  timer during destroy. `src/lib/Others/WelcomeRisu.svelte.test.ts` covers the
+  valid delayed apply, unmount cancellation, and completed-setup stale skip.
+- Verification state: Phase 6 Welcome/onboarding delayed setup callback
+  freshness validation is recorded in `latest-verification.md`.
 - Highest issue density:
   - Character editor: 52 issue rows, mostly dirty projection and unguarded
     upload callbacks.
@@ -575,10 +581,11 @@ inventory under
   live indexes before selection, guards add-character post-import navigation by
   latest import operation plus unchanged selection scope, guards Realm local
   fallback navigation by the returned id and Realm operation token, and makes
-  overlapping same-character chat imports latest-wins. Welcome/onboarding
-  delayed setup, DevTool autopilot active-chat locking/other long active-chat
-  loops, and the server command-event character-selection hydration audit remain
-  here.
+  overlapping same-character chat imports latest-wins. Welcome/onboarding final
+  setup now applies only from a fresh mounted setup run with matching captured
+  choices and an incomplete `didFirstSetup` state. DevTool autopilot active-chat
+  locking/other long active-chat loops and the server command-event
+  character-selection hydration audit remain here.
 - [Phase 7](phases/phase-7-verification.md): pending. Closeout regression,
   browser smoke, and TypeScript proof.
 
@@ -910,10 +917,11 @@ inventory under
   - Phase 6: Memory job terminal/cancel ordering, backup/local bundle
     full-resync latest-request fencing, Realm import finish refresh fencing,
     character route/shell-selection freshness fencing, and character/chat import
-    refresh/navigation freshness have landed. Remaining Phase 6 work includes
-    welcome/onboarding delayed setup, DevTool autopilot active-chat
-    locking/other long active-chat loops, the server command-event
-    character-selection hydration audit, and related navigation refresh fences.
+    refresh/navigation freshness have landed. Welcome/onboarding delayed setup
+    callback freshness has also landed. Remaining Phase 6 work includes DevTool
+    autopilot active-chat locking/other long active-chat loops, the server
+    command-event character-selection hydration audit, and related navigation
+    refresh fences.
 - Phase docs that mention `src/ts/process/rerollNavigation.ts` should be read
   as `src/ts/process/rerollNavigation.svelte.ts`.
 - First P0 fixture targets are dirty character projection merge,
