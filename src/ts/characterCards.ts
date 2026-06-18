@@ -55,6 +55,7 @@ import { currentCharacterStateSnapshot, dispatchCreateCharacter } from './charac
 import { createGlobalModule } from './moduleCommands'
 import { importRealmCharacterFromServer, type ServerRealmImportProgress } from './server/realmImport'
 import { forceServerProjectionResync } from './server/projectionResync'
+import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
 
 export const hubURL = '/api/v1/hub'
 
@@ -64,24 +65,42 @@ export async function authenticatedHubFetch(input: RequestInfo | URL, init: Requ
   return fetch(input, { ...init, headers })
 }
 
-function appendImportedCharacter(character: character, previous: ReturnType<typeof currentCharacterStateSnapshot>) {
+function appendImportedCharacter(
+  character: character,
+  previous: ReturnType<typeof currentCharacterStateSnapshot>,
+): string | undefined {
+  const characterId = character.chaId
+  withTrustedServerProjectionWrite(() => {
+    const db = getDatabase()
+    db.characters ??= []
+    if (characterId && db.characters.some((candidate) => candidate?.chaId === characterId)) {
+      return
+    }
+    db.characters.push(character)
+  })
   dispatchCreateCharacter(character, previous)
+  return characterId
 }
 
-export async function importCharacter() {
+export async function importCharacter(): Promise<string | null | undefined> {
   try {
     const files = await selectFileByDom(['*'], 'multiple')
     if (!files) {
       return
     }
 
+    let importedCharacterId: string | undefined
     for (const f of files) {
-      await importCharacterProcess({
+      const importedId = await importCharacterProcess({
         name: f.name,
         data: f,
       })
+      if (importedId) {
+        importedCharacterId = importedId
+      }
       checkCharOrder()
     }
+    return importedCharacterId
   } catch (error) {
     alertError(error as Error)
     return null
@@ -91,30 +110,28 @@ export async function importCharacter() {
 export async function importCharacterProcess(f: {
   name: string
   data: Uint8Array | File | ReadableStream<Uint8Array>
-}) {
+}): Promise<string | null | undefined> {
   if (f.name.endsWith('json')) {
     if (f.data instanceof ReadableStream) {
       return null
     }
     const data = f.data instanceof Uint8Array ? f.data : new Uint8Array(await f.data.arrayBuffer())
     const da = JSON.parse(Buffer.from(data).toString('utf-8'))
-    if (await importCharacterCardSpec(da)) {
-      let db = getDatabase()
-      return db.characters.length - 1
+    const importedCharacterId = await importCharacterCardSpec(da)
+    if (importedCharacterId) {
+      return importedCharacterId
     }
     if ((da.char_name || da.name) && (da.char_persona || da.description) && (da.char_greeting || da.first_mes)) {
       const previous = currentCharacterStateSnapshot()
       const character = convertOffSpecCards(da)
-      appendImportedCharacter(character, previous)
+      const importedId = appendImportedCharacter(character, previous)
       alertNormal(language.importedCharacter)
-      return
+      return importedId
     } else {
       alertError(language.errors.noData)
       return
     }
   }
-  let db = getDatabase()
-
   if (f.name.endsWith('charx') || f.name.endsWith('jpg') || f.name.endsWith('jpeg')) {
     console.log('reading charx')
     alertStore.set({
@@ -147,9 +164,7 @@ export async function importCharacterProcess(f: {
       }
     }
     await importer.done()
-    await importCharacterCardSpec(card, undefined, 'normal', importer.assets, lorebook)
-    let db = getDatabase()
-    return db.characters.length - 1
+    return await importCharacterCardSpec(card, undefined, 'normal', importer.assets, lorebook)
   }
 
   if (!f.name.endsWith('png')) {
@@ -270,9 +285,9 @@ export async function importCharacterProcess(f: {
           try {
             const decrypted = await decryptBuffer(encrypted, password)
             const charaData: CharacterCardV2Risu = JSON.parse(Buffer.from(decrypted).toString('utf-8'))
-            if (await importCharacterCardSpec(charaData, img, 'normal', assets)) {
-              let db = getDatabase()
-              return db.characters.length - 1
+            const importedCharacterId = await importCharacterCardSpec(charaData, img, 'normal', assets)
+            if (importedCharacterId) {
+              return importedCharacterId
             } else {
               throw new Error('Error while importing')
             }
@@ -285,9 +300,9 @@ export async function importCharacterProcess(f: {
         const decrypted = await decryptBuffer(encrypted, 'RISU_NONE')
         try {
           const charaData: CharacterCardV2Risu = JSON.parse(Buffer.from(decrypted).toString('utf-8'))
-          if (await importCharacterCardSpec(charaData, img, 'normal', assets)) {
-            let db = getDatabase()
-            return db.characters.length - 1
+          const importedCharacterId = await importCharacterCardSpec(charaData, img, 'normal', assets)
+          if (importedCharacterId) {
+            return importedCharacterId
           }
         } catch (error) {
           alertError(language.errors.noData)
@@ -310,13 +325,11 @@ export async function importCharacterProcess(f: {
     const imgp = await saveAsset(img)
     const previous = currentCharacterStateSnapshot()
     const character = convertOffSpecCards(charaData, imgp)
-    appendImportedCharacter(character, previous)
+    const importedCharacterId = appendImportedCharacter(character, previous)
     alertNormal(language.importedCharacter)
-    return undefined
+    return importedCharacterId
   }
-  await importCharacterCardSpec(parsed, img, 'normal', assets)
-
-  return undefined
+  return await importCharacterCardSpec(parsed, img, 'normal', assets)
 }
 
 export const getRealmInfo = async (realmPath: string) => {
@@ -569,9 +582,9 @@ async function importCharacterCardSpec(
   mode: 'hub' | 'normal' = 'normal',
   assetDict: { [key: string]: string } = {},
   overrideLorebook: loreBook[] = [],
-): Promise<boolean> {
+): Promise<string | null> {
   if (!card || (card.spec !== 'chara_card_v2' && card.spec !== 'chara_card_v3')) {
-    return false
+    return null
   }
 
   console.log(`Importing ${card.spec}, mode is ${mode}`)
@@ -825,7 +838,7 @@ async function importCharacterCardSpec(
   if (risuext && risuext?.lowLevelAccess) {
     const conf = await alertConfirm(language.lowLevelAccessConfirm)
     if (!conf) {
-      return false
+      return null
     }
   }
   const charbook = data.character_book
@@ -936,7 +949,7 @@ async function importCharacterCardSpec(
 
   appendImportedCharacter(char, previous)
   alertNormal(language.importedCharacter)
-  return true
+  return char.chaId
 }
 
 function convertCharbook(arg: {
@@ -1756,26 +1769,34 @@ export async function downloadRisuHub(
       res.headers.get('content-type') === 'application/zip' ||
       res.headers.get('content-type') === 'application/charx'
     ) {
-      let db = getDatabase()
+      let importedCharacterId: string | null | undefined
       if (
         res.headers.get('content-type') === 'application/zip' ||
         res.headers.get('content-type') === 'application/charx'
       ) {
-        await importCharacterProcess({
+        importedCharacterId = await importCharacterProcess({
           name: 'realm.charx',
           data: new Uint8Array(await res.arrayBuffer()),
         })
       } else {
-        await importCharacterProcess({
+        importedCharacterId = await importCharacterProcess({
           name: 'realm.png',
           data: res.body!,
         })
       }
       checkCharOrder()
-      db = getDatabase()
-      if (db.characters[db.characters.length - 1] && (db.goCharacterOnImport || arg.forceRedirect)) {
-        const index = db.characters.length - 1
-        changeChar(index)
+      const db = getDatabase()
+      const index = importedCharacterId
+        ? db.characters.findIndex((character) => character.chaId === importedCharacterId)
+        : -1
+      if (
+        isLatestRealmImportOperation(realmImportOperationToken) &&
+        index !== -1 &&
+        shouldNavigateImportedCharacter(arg)
+      ) {
+        changeChar(index, {
+          isFresh: () => isLatestRealmImportOperation(realmImportOperationToken),
+        })
       }
       return
     }
@@ -1786,12 +1807,20 @@ export async function downloadRisuHub(
 
     data.data.extensions.risuRealmImportId = id
 
-    await importCharacterCardSpec(data, await getHubResources(img), 'hub')
+    const importedCharacterId = await importCharacterCardSpec(data, await getHubResources(img), 'hub')
     checkCharOrder()
-    let db = getDatabase()
-    if (db.characters[db.characters.length - 1] && (db.goCharacterOnImport || arg.forceRedirect)) {
-      const index = db.characters.length - 1
-      changeChar(index)
+    const db = getDatabase()
+    const index = importedCharacterId
+      ? db.characters.findIndex((character) => character.chaId === importedCharacterId)
+      : -1
+    if (
+      isLatestRealmImportOperation(realmImportOperationToken) &&
+      index !== -1 &&
+      shouldNavigateImportedCharacter(arg)
+    ) {
+      changeChar(index, {
+        isFresh: () => isLatestRealmImportOperation(realmImportOperationToken),
+      })
       alertStore.set({
         type: 'none',
         msg: '',
@@ -1844,7 +1873,9 @@ async function finishServerRealmImport(
   const db = getDatabase()
   const index = db.characters.findIndex((character) => character.chaId === characterId)
   if (index !== -1 && (db.goCharacterOnImport || arg.forceRedirect)) {
-    changeChar(index)
+    changeChar(index, {
+      isFresh: () => isLatestRealmImportOperation(operationToken),
+    })
     alertStore.set({
       type: 'none',
       msg: '',
@@ -1852,6 +1883,11 @@ async function finishServerRealmImport(
   } else {
     alertNormal(language.importedCharacter)
   }
+}
+
+function shouldNavigateImportedCharacter(arg: { forceRedirect?: boolean }): boolean {
+  const db = getDatabase()
+  return !!(db.goCharacterOnImport || arg.forceRedirect)
 }
 
 function showRealmImportProgress(progress: ServerRealmImportProgress) {

@@ -188,9 +188,7 @@ vi.mock('./characterCommands', () => ({
     characterOrder: [],
     selectedCharID: -1,
   })),
-  dispatchCreateCharacter: vi.fn((character: any) => {
-    dbState.db.characters.push(character)
-  }),
+  dispatchCreateCharacter: vi.fn(),
   dispatchUpdateCharacter: vi.fn(),
 }))
 
@@ -286,7 +284,7 @@ describe('PNG character card import', () => {
   it('L51: preserves multi-asset PNG import output and progress order', async () => {
     const fixture = await createPngCardFixture()
 
-    await importCharacterProcess({
+    const importedCharacterId = await importCharacterProcess({
       name: 'multi-asset.png',
       data: fixture.png,
     })
@@ -297,6 +295,7 @@ describe('PNG character card import', () => {
       fixture.assetPayloads.map((asset) => Array.from(asset)),
     )
     expect(dbState.db.characters).toHaveLength(1)
+    expect(importedCharacterId).toBe(dbState.db.characters[0].chaId)
     expect(dbState.db.characters[0]).toMatchObject({
       name: 'PNG Multi Asset',
       image: 'primary-image',

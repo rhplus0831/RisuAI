@@ -41,10 +41,19 @@ transitions so late refreshes cannot overwrite newer local work.
   the live id-located index. Failed character select command rollback now
   restores the previous selection only while the attempted selection/currentChar
   and attempted `lastInteraction` are still live.
+- Character/chat import refresh and post-import navigation freshness:
+  `importCharacter()`, `importCharacterProcess()`, and card-spec import helpers
+  now return the stable imported `chaId` instead of relying on the array tail.
+  Add-character post-import navigation uses a latest import operation token,
+  verifies the original selection/navigation scope, re-resolves the returned id
+  to a live index, and passes freshness through `changeChar()`. Realm
+  unsupported/local fallback navigation also uses the returned id plus the
+  existing Realm operation token. Chat import now keeps the originally captured
+  character target, while same-character overlapping picker/import operations
+  are latest-wins before unshifting chats or resetting `chatPage`.
 
 ## Remaining Residuals
 
-- Character/chat import refresh and post-import navigation edges.
 - Welcome/onboarding delayed setup callbacks and other one-shot setup flows.
 - DevTool autopilot and other long sequential loops that can outlive the active
   chat.
@@ -53,12 +62,10 @@ transitions so late refreshes cannot overwrite newer local work.
 
 ## Scope
 
-- Popup import flows and remaining Realm-adjacent local fallback edges not
-  covered by the server-backed Realm finish refresh fence.
+- Popup import flows and remaining restore/import refresh paths not already
+  covered by the fenced Realm and character/chat import slices.
 - Remaining full save import, route, and bootstrap-adjacent refresh paths not
   already covered by `forceServerProjectionResync()`.
-- Character/chat import helper refresh and rollback edges not closed by Phase
-  3 or Phase 5.
 - Memory job cancel versus polling/SSE/list refresh ordering.
 - Route apply, shell hydration, chat selection, character open/select, and
   navigation generation guards.

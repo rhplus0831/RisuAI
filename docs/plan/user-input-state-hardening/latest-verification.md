@@ -7,38 +7,38 @@ workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 6 character route and `changeChar()`
-  shell-selection freshness fencing. The run validates that overlapping route
-  applications use a latest route epoch, stale character routes cannot select an
-  old chat after a newer route wins, character routes re-resolve live indexes by
-  `chaId` after awaits, delayed shell hydration cannot overwrite newer
-  character selection, removed shell targets do not select, and failed older
-  character select command rollback preserves newer selection/currentChar.
+- Runtime/code change under test: Phase 6 character/chat import refresh and
+  post-import navigation freshness. The run validates that character import APIs
+  return stable imported `chaId`s, add-character post-import navigation
+  re-resolves the returned id and skips stale user-selection scopes, Realm
+  unsupported/local fallback navigation uses the returned id plus the Realm
+  operation token, and overlapping same-character chat imports are latest-wins
+  before unshift/chatPage selection.
 - Commands:
 
 ```bash
-pnpm exec vitest run src/ts/router.test.ts src/ts/characters.changeChar.test.ts src/ts/characterCommands.test.ts src/ts/server/characterShellHydration.test.ts
+pnpm exec vitest run src/ts/characters.importChat.test.ts src/ts/characters.changeChar.test.ts src/ts/characterCards.pngImport.test.ts src/ts/characterCards.realmImport.test.ts src/ts/characterCommands.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
-pnpm exec prettier --write src/ts/router.ts src/ts/router.test.ts src/ts/characters.ts src/ts/characters.changeChar.test.ts src/ts/characterCommands.ts src/ts/characterCommands.test.ts docs/plan/user-input-state-hardening/SOLVE-NOTE.md docs/plan/user-input-state-hardening/status.md docs/plan/user-input-state-hardening/latest-verification.md docs/plan/user-input-state-hardening/phases/phase-6-resync-memory-navigation.md
-pnpm exec prettier --check src/ts/router.ts src/ts/router.test.ts src/ts/characters.ts src/ts/characters.changeChar.test.ts src/ts/characterCommands.ts src/ts/characterCommands.test.ts docs/plan/user-input-state-hardening/SOLVE-NOTE.md docs/plan/user-input-state-hardening/status.md docs/plan/user-input-state-hardening/latest-verification.md docs/plan/user-input-state-hardening/phases/phase-6-resync-memory-navigation.md
+pnpm exec prettier --write src/ts/characters.ts src/ts/characterCards.ts src/ts/characters.importChat.test.ts src/ts/characters.changeChar.test.ts src/ts/characterCards.pngImport.test.ts src/ts/characterCards.realmImport.test.ts docs/plan/user-input-state-hardening/SOLVE-NOTE.md docs/plan/user-input-state-hardening/status.md docs/plan/user-input-state-hardening/latest-verification.md docs/plan/user-input-state-hardening/phases/phase-6-resync-memory-navigation.md
+pnpm exec prettier --check src/ts/characters.ts src/ts/characterCards.ts src/ts/characters.importChat.test.ts src/ts/characters.changeChar.test.ts src/ts/characterCards.pngImport.test.ts src/ts/characterCards.realmImport.test.ts docs/plan/user-input-state-hardening/SOLVE-NOTE.md docs/plan/user-input-state-hardening/status.md docs/plan/user-input-state-hardening/latest-verification.md docs/plan/user-input-state-hardening/phases/phase-6-resync-memory-navigation.md
 git diff --check
 ```
 
-- Result: passed on 2026-06-18. The focused route/selection/shell-hydration
-  Vitest set passed 67 tests across 4 files. Both TypeScript checks passed.
-  Prettier write/check and `git diff --check` passed.
+- Result: passed on 2026-06-18. The focused import/navigation Vitest set passed
+  84 tests across 5 files. Both TypeScript checks passed. Prettier write/check
+  and `git diff --check` passed.
 - Residual gaps: Phase 6 remains in progress. Memory job terminal/cancel
   ordering is covered for list refreshes, cached `not-modified` refreshes, SSE
   job updates, and Hypa V3 progress side effects. Backup restore and local
   bundle import now share latest-request fenced full projection resyncs. Realm
   import finish refresh now uses that helper with latest-operation UI guards.
-  Character route and `changeChar()` shell-selection freshness are covered by
-  this slice. Character/chat import refresh/navigation edges, welcome/onboarding
-  delayed setup, DevTool autopilot active-chat locking, and the server
-  command-event character-selection hydration audit remain Phase 6 work. The
-  known pre-existing `src/ts/compatibilityAdapters.test.ts` failure at line 626
-  remains separate.
+  Character route and `changeChar()` shell-selection freshness are covered, and
+  this slice covers character/chat import refresh/navigation edges. Remaining
+  Phase 6 work is welcome/onboarding delayed setup callbacks, DevTool
+  autopilot/other long active-chat loops, and the server command-event
+  character-selection hydration audit. The known pre-existing
+  `src/ts/compatibilityAdapters.test.ts` failure at line 626 remains separate.
 
 ## Remaining Proof
 
@@ -95,9 +95,10 @@ git diff --check
   fencing is covered by the second slice, Realm import finish refresh fencing
   plus latest-operation navigation/progress guards are covered by the third
   slice, and character route/`changeChar()` shell-selection freshness is covered
-  by the fourth slice. Character/chat import refresh/navigation edges,
-  welcome/onboarding delayed setup, DevTool autopilot active-chat locking, and
-  the server command-event character-selection hydration audit remain open.
+  by the fourth slice. Character/chat import refresh/navigation freshness is
+  covered by the fifth slice. Welcome/onboarding delayed setup callbacks,
+  DevTool autopilot/other long active-chat loops, and the server command-event
+  character-selection hydration audit remain open.
 - Phase 7 owns final workstream regression, browser smoke where needed, and
   TypeScript proof.
 

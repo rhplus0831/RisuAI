@@ -60,6 +60,9 @@ interface CharacterAvatarSnapshot {
 }
 
 const characterAvatarUploadGuard = createLatestOperationGuard<string>()
+const CHARACTER_IMPORT_NAVIGATION_TARGET = 'character-import-navigation' as const
+const characterImportNavigationGuard = createLatestOperationGuard<typeof CHARACTER_IMPORT_NAVIGATION_TARGET>()
+const chatImportGuard = createLatestOperationGuard<string>()
 let changeCharSelectionAttemptId = 0
 
 interface ChangeCharOptions {
@@ -593,6 +596,14 @@ interface ChatImportTarget {
   characterId: string
 }
 
+interface CharacterNavigationScope {
+  selectedCharID: number
+  selectedCharacterId: string | undefined
+  currentChar: number | undefined
+  currentCharacterId: string | undefined
+  selectionAttemptId: number
+}
+
 function captureCurrentChatImportTarget(): ChatImportTarget | null {
   const selectedIndex = get(selectedCharID)
   const characterId = DBState.db.characters?.[selectedIndex]?.chaId
@@ -611,18 +622,27 @@ function resolveChatImportTarget(target: ChatImportTarget): { selectedIndex: num
   return { selectedIndex, characterId: target.characterId }
 }
 
+function resolveFreshChatImportTarget(
+  target: ChatImportTarget,
+  token: LatestOperationToken<string>,
+): { selectedIndex: number; characterId: string } | null {
+  if (!chatImportGuard.isLatest(token)) return null
+  return resolveChatImportTarget(target)
+}
+
 export async function importChat() {
   const capturedTarget = captureCurrentChatImportTarget()
   if (!capturedTarget) {
     return
   }
 
-  const dat = await selectSingleFile(['json', 'jsonl', 'txt', 'html'])
-  if (!dat) {
-    return
-  }
+  const importToken = chatImportGuard.issue(capturedTarget.characterId)
   try {
-    const target = resolveChatImportTarget(capturedTarget)
+    const dat = await selectSingleFile(['json', 'jsonl', 'txt', 'html'])
+    if (!dat) {
+      return
+    }
+    const target = resolveFreshChatImportTarget(capturedTarget, importToken)
     if (!target) {
       return
     }
@@ -784,6 +804,8 @@ export async function importChat() {
     }
   } catch (error) {
     alertError(error)
+  } finally {
+    chatImportGuard.clear(importToken)
   }
 }
 
@@ -1162,11 +1184,24 @@ export async function addCharacter(
       createNewCharacter({ select: true })
       break
     case 'importCharacter':
-      await importCharacter()
       {
-        let db = getDatabase()
-        if (db.characters[db.characters.length - 1]) {
-          changeChar(db.characters.length - 1)
+        const navigationScope = captureCharacterNavigationScope()
+        const navigationToken = characterImportNavigationGuard.issue(CHARACTER_IMPORT_NAVIGATION_TARGET)
+        try {
+          const importedCharacterId = await importCharacter()
+          if (importedCharacterId && isFreshCharacterImportNavigation(navigationToken, navigationScope)) {
+            const index = findLiveCharacterIndex(importedCharacterId)
+            if (index !== -1) {
+              await changeChar(index, {
+                isFresh: () =>
+                  isFreshCharacterImportNavigation(navigationToken, navigationScope, {
+                    checkSelectionAttempt: false,
+                  }),
+              })
+            }
+          }
+        } finally {
+          characterImportNavigationGuard.clear(navigationToken)
         }
       }
       break
@@ -1175,6 +1210,45 @@ export async function addCharacter(
       return
   }
   MobileGUIStack.set(1)
+}
+
+function captureCharacterNavigationScope(): CharacterNavigationScope {
+  const selectedIndex = get(selectedCharID)
+  const currentChar = (DBState.db as unknown as { currentChar?: number }).currentChar
+  return {
+    selectedCharID: selectedIndex,
+    selectedCharacterId: characterIdAtIndex(selectedIndex),
+    currentChar,
+    currentCharacterId: characterIdAtIndex(currentChar),
+    selectionAttemptId: changeCharSelectionAttemptId,
+  }
+}
+
+function characterNavigationScopeMatches(scope: CharacterNavigationScope): boolean {
+  const selectedIndex = get(selectedCharID)
+  const currentChar = (DBState.db as unknown as { currentChar?: number }).currentChar
+  const selectedCharacterId = characterIdAtIndex(selectedIndex)
+  const currentCharacterId = characterIdAtIndex(currentChar)
+
+  return (
+    selectedCharacterId === scope.selectedCharacterId &&
+    currentCharacterId === scope.currentCharacterId &&
+    (scope.selectedCharacterId !== undefined || selectedIndex === scope.selectedCharID) &&
+    (scope.currentCharacterId !== undefined || currentChar === scope.currentChar)
+  )
+}
+
+function isFreshCharacterImportNavigation(
+  token: LatestOperationToken<typeof CHARACTER_IMPORT_NAVIGATION_TARGET>,
+  scope: CharacterNavigationScope,
+  options: { checkSelectionAttempt?: boolean } = {},
+): boolean {
+  const checkSelectionAttempt = options.checkSelectionAttempt ?? true
+  return (
+    characterImportNavigationGuard.isLatest(token) &&
+    (!checkSelectionAttempt || changeCharSelectionAttemptId === scope.selectionAttemptId) &&
+    characterNavigationScopeMatches(scope)
+  )
 }
 
 export async function changeChar(index: number, arg: ChangeCharOptions = {}) {
@@ -1218,4 +1292,9 @@ export async function changeChar(index: number, arg: ChangeCharOptions = {}) {
 
 function findLiveCharacterIndex(characterId: string): number {
   return DBState.db.characters?.findIndex((character) => character?.chaId === characterId) ?? -1
+}
+
+function characterIdAtIndex(index: number | undefined): string | undefined {
+  if (typeof index !== 'number' || index < 0) return undefined
+  return DBState.db.characters?.[index]?.chaId
 }

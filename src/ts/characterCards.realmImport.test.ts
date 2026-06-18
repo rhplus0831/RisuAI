@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const dbState = vi.hoisted(() => ({
   db: {
@@ -192,9 +192,7 @@ vi.mock('./characterCommands', () => ({
     characterOrder: [],
     selectedCharID: -1,
   })),
-  dispatchCreateCharacter: vi.fn((character: any) => {
-    dbState.db.characters.push(character)
-  }),
+  dispatchCreateCharacter: vi.fn(),
 }))
 
 vi.mock('./moduleCommands', () => ({
@@ -257,6 +255,31 @@ function okRealmImport(characterId: string, revision = 10) {
   }
 }
 
+function fallbackRealmCard(name: string) {
+  return {
+    spec: 'chara_card_v3',
+    data: {
+      name,
+      description: 'desc',
+      first_mes: 'hello',
+      mes_example: '',
+      personality: '',
+      scenario: '',
+      creator_notes: '',
+      system_prompt: '',
+      post_history_instructions: '',
+      alternate_greetings: [],
+      tags: [],
+      creator: '',
+      character_version: '1',
+      extensions: {
+        risuai: {},
+      },
+      assets: [],
+    },
+  }
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   dbState.db = {
@@ -266,8 +289,13 @@ beforeEach(() => {
   }
   alertState.alertConfirm.mockResolvedValue(true)
   alertState.alertTOS.mockResolvedValue(true)
+  globalApiState.checkCharOrder.mockImplementation(() => undefined)
   realmImportState.importRealmCharacterFromServer.mockResolvedValue(okRealmImport('char-imported'))
   projectionResyncState.forceServerProjectionResync.mockResolvedValue({ status: 'ok', revision: 20 })
+})
+
+afterEach(() => {
+  vi.unstubAllGlobals()
 })
 
 describe('Realm character import finish refresh', () => {
@@ -294,7 +322,9 @@ describe('Realm character import finish refresh', () => {
     expect(projectionResyncState.forceServerProjectionResync).toHaveBeenCalledTimes(1)
     expect(projectionResyncState.forceServerProjectionResync).toHaveBeenCalledWith('realm-import')
     expect(characterState.changeChar).toHaveBeenCalledTimes(1)
-    expect(characterState.changeChar).toHaveBeenCalledWith(1)
+    expect(characterState.changeChar.mock.calls[0][0]).toBe(1)
+    expect(characterState.changeChar.mock.calls[0][1]).toEqual({ isFresh: expect.any(Function) })
+    expect(characterState.changeChar.mock.calls[0][1].isFresh()).toBe(true)
     expect(alertState.alertStoreSet).toHaveBeenCalledWith({ type: 'none', msg: '' })
     expect(alertState.alertProgress).toHaveBeenCalledWith('Downloading Realm character', 25)
     expect(alertState.alertProgress).toHaveBeenCalledWith('Realm import complete', 100)
@@ -304,6 +334,51 @@ describe('Realm character import finish refresh', () => {
     expect(chatHydrationState.resetChatHydration).not.toHaveBeenCalled()
     expect(lorebookHydrationState.resetLorebookHydration).not.toHaveBeenCalled()
     expect(lorebookHydrationState.recordHydratedCharacterLorebooks).not.toHaveBeenCalled()
+  })
+
+  it('uses the returned character id for unsupported Realm fallback navigation after local reorder', async () => {
+    realmImportState.importRealmCharacterFromServer.mockResolvedValue({ status: 'unsupported' })
+    dbState.db = {
+      characters: [{ chaId: 'existing-char', name: 'Existing' }],
+      characterOrder: [],
+      goCharacterOnImport: true,
+    }
+    globalApiState.checkCharOrder.mockImplementation(() => {
+      const imported = dbState.db.characters.find((character) => character.name === 'Fallback Imported')
+      dbState.db.characters = [imported, { chaId: 'tail-char', name: 'Tail Character' }].filter(Boolean)
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.startsWith('https://realm.risuai.net/api/v1/download/dynamic/')) {
+          return new Response(
+            JSON.stringify({
+              card: fallbackRealmCard('Fallback Imported'),
+              img: 'fallback-img',
+            }),
+            {
+              status: 200,
+              headers: { 'content-type': 'application/json' },
+            },
+          )
+        }
+        if (url === '/api/v1/hub/resource/fallback-img') {
+          return new Response(new Uint8Array([1, 2, 3]), { status: 200 })
+        }
+        return new Response(`unexpected ${url}`, { status: 404 })
+      }) as unknown as typeof fetch,
+    )
+
+    await downloadRisuHub('realm-id', { forceRedirect: true })
+
+    expect(globalApiState.checkCharOrder).toHaveBeenCalledTimes(1)
+    expect(dbState.db.characters.map((character) => character.chaId)).toEqual([expect.any(String), 'tail-char'])
+    expect(dbState.db.characters[0].name).toBe('Fallback Imported')
+    expect(characterState.changeChar).toHaveBeenCalledTimes(1)
+    expect(characterState.changeChar.mock.calls[0][0]).toBe(0)
+    expect(characterState.changeChar.mock.calls[0][1]).toEqual({ isFresh: expect.any(Function) })
+    expect(alertState.alertStoreSet).toHaveBeenCalledWith({ type: 'none', msg: '' })
   })
 
   it('keeps stale Realm completions from overwriting newer progress, errors, or navigation', async () => {
@@ -357,7 +432,8 @@ describe('Realm character import finish refresh', () => {
 
     expect(projectionResyncState.forceServerProjectionResync).toHaveBeenCalledTimes(2)
     expect(characterState.changeChar).toHaveBeenCalledTimes(1)
-    expect(characterState.changeChar).toHaveBeenCalledWith(0)
+    expect(characterState.changeChar.mock.calls[0][0]).toBe(0)
+    expect(characterState.changeChar.mock.calls[0][1]).toEqual({ isFresh: expect.any(Function) })
     expect(alertState.alertError).not.toHaveBeenCalled()
     expect(alertState.alertNormal).not.toHaveBeenCalled()
     expect(alertState.alertStoreSet).toHaveBeenCalledTimes(1)

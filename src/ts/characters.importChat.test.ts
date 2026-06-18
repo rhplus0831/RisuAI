@@ -4,6 +4,7 @@ const platformState = vi.hoisted(() => ({ isFastifyServer: true }))
 const selectedFileState = vi.hoisted(() => ({
   file: null as null | { name: string; data: Uint8Array },
   beforeResolve: null as null | (() => void | Promise<void>),
+  queuedFiles: [] as Array<Promise<null | { name: string; data: Uint8Array }>>,
 }))
 
 vi.mock('./platform', async (importActual) => {
@@ -32,6 +33,10 @@ vi.mock('./util', () => ({
   selectFileByDom: vi.fn(),
   selectMultipleFile: vi.fn(),
   selectSingleFile: vi.fn(async () => {
+    const queuedFile = selectedFileState.queuedFiles.shift()
+    if (queuedFile) {
+      return await queuedFile
+    }
     await selectedFileState.beforeResolve?.()
     return selectedFileState.file
   }),
@@ -72,6 +77,14 @@ function jsonResponse(body: unknown, status = 200): Response {
     status,
     headers: { 'content-type': 'application/json' },
   })
+}
+
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((innerResolve) => {
+    resolve = innerResolve
+  })
+  return { promise, resolve }
 }
 
 function stubCommandFetch(options: StubCommandFetchOptions = {}): CapturedFetch[] {
@@ -160,6 +173,13 @@ function selectJsonlFile(lines: unknown[]): void {
   }
 }
 
+function jsonlFile(lines: unknown[]): { name: string; data: Uint8Array } {
+  return {
+    name: 'chat.jsonl',
+    data: Buffer.from(lines.map((line) => JSON.stringify(line)).join('\n')),
+  }
+}
+
 function selectHtmlChatFile(chat: Record<string, unknown>): void {
   selectedFileState.file = {
     name: 'chat.html',
@@ -188,6 +208,7 @@ beforeEach(() => {
   selectedCharID.set(0)
   selectedFileState.file = null
   selectedFileState.beforeResolve = null
+  selectedFileState.queuedFiles = []
   DBState.db = {
     personas: [
       { id: 'persona-a', name: 'Persona A', personaPrompt: '', icon: '', note: '' },
@@ -422,6 +443,60 @@ describe('chat import projection helpers', () => {
     const [createCall] = await waitForCreateChatCalls(calls)
     expect(createCall.url).toBe('/api/v1/commands/characters/char-a/chats')
     expect(createCall.body).toMatchObject({ select: true })
+  })
+
+  it('lets the newer same-character chat import win when an older picker resolves later', async () => {
+    const calls = stubCommandFetch()
+    DBState.db.characters[0].chatPage = 1
+    DBState.db.characters[0].chats.push({
+      id: 'chat-a-2',
+      name: 'Chat A2',
+      message: [],
+      localLore: [],
+      note: '',
+    } as any)
+    const olderFile = deferred<null | { name: string; data: Uint8Array }>()
+    const newerFile = deferred<null | { name: string; data: Uint8Array }>()
+    selectedFileState.queuedFiles = [olderFile.promise, newerFile.promise]
+
+    const olderImport = importChat()
+    const newerImport = importChat()
+
+    newerFile.resolve(
+      jsonlFile([
+        { name: 'User', is_user: true, mes: 'first line is skipped by Tavern import' },
+        { name: 'Bot', is_user: false, mes: 'newer import wins' },
+      ]),
+    )
+    await newerImport
+    DBState.db.characters[0].chatPage = 1
+
+    olderFile.resolve(
+      jsonlFile([
+        { name: 'User', is_user: true, mes: 'first line is skipped by Tavern import' },
+        { name: 'Bot', is_user: false, mes: 'older import should be stale' },
+      ]),
+    )
+    await olderImport
+
+    expect(DBState.db.characters[0].chats.map((chat) => chat.message?.[0]?.data ?? chat.name)).toEqual([
+      'newer import wins',
+      'Chat A',
+      'Chat A2',
+    ])
+    expect(DBState.db.characters[0].chatPage).toBe(1)
+    const [createCall] = await waitForCreateChatCalls(calls)
+    expect(createCall.body).toMatchObject({
+      select: true,
+      chat: {
+        message: [
+          {
+            data: 'newer import wins',
+          },
+        ],
+      },
+    })
+    expect(createChatCalls(calls)).toHaveLength(1)
   })
 
   it('sequences v1 all-chat multi-import create-chat commands with advancing revisions', async () => {

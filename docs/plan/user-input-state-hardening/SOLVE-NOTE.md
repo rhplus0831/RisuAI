@@ -82,7 +82,13 @@ and verify the selected character before selecting a routed chat. `changeChar()`
 now fences delayed shell hydration with a latest selection-attempt id and writes
 selection to the live id-located character index. Failed character select command
 rollback now restores the previous selection only while the attempted
-selection/currentChar and attempted `lastInteraction` are still live.
+selection/currentChar and attempted `lastInteraction` are still live. Character
+and chat import refresh/navigation now return and use stable imported `chaId`s,
+re-resolve live indexes before selection, guard add-character post-import
+navigation by latest import operation plus unchanged selection scope, guard
+Realm local fallback navigation by returned id plus Realm operation token, and
+make overlapping same-character chat imports latest-wins before mutating chats
+or `chatPage`.
 
 Next manager loop:
 
@@ -169,10 +175,11 @@ Explicit deferrals:
   `not-modified`, and Hypa V3 progress updates. Backup restore, local bundle
   import, and Realm import completion now use latest-request fenced full
   projection resyncs where applicable. Character route and `changeChar()` shell
-  selection freshness fencing has landed. Character/chat import
-  refresh/navigation edges, welcome/onboarding delayed setup, DevTool autopilot
-  active-chat locking, and the server command-event character-selection
-  hydration audit remain Phase 6 work.
+  selection freshness fencing has landed. Character/chat import refresh and
+  post-import navigation freshness has landed. Welcome/onboarding delayed setup
+  callbacks, DevTool autopilot active-chat locking/other long active-chat loops,
+  and the server command-event character-selection hydration audit remain Phase
+  6 work.
 - Projection-absent optional clean-field deletion remains outside Phase 2 because
   the shared merge helper refreshes fields present in the projection surface.
 

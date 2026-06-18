@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { get } from 'svelte/store'
 
+const characterCardsState = vi.hoisted(() => ({
+  importCharacter: vi.fn(),
+}))
+
 vi.mock('./storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'change-char-token',
 }))
@@ -22,12 +26,17 @@ vi.mock('./process/coldstorage.svelte', () => ({
   getColdStorageItem: vi.fn(),
 }))
 
+vi.mock('./characterCards', () => ({
+  importCharacter: characterCardsState.importCharacter,
+}))
+
+import { alertAddCharacter } from './alert'
 import { clearCachedServerCommandRevision } from './server/commands'
 import { stopSelectedCharacterShellHydration } from './server/characterShellHydration.svelte'
 import { setServerProjectionWriteGuardEnabled } from './server/projectionWriteGuard.svelte'
 import { DBState, selectedCharID } from './stores.svelte'
 import { isServerCharacterShell, type character } from './storage/database.svelte'
-import { changeChar } from './characters'
+import { addCharacter, changeChar } from './characters'
 
 interface CapturedFetch {
   url: string
@@ -98,6 +107,13 @@ function stubChangeCharFetch(characterRowResponse: Promise<Response>): CapturedF
       if (url.startsWith('/api/v1/projection/characterRow')) {
         return characterRowResponse
       }
+      if (url === '/api/v1/commands/characters') {
+        return jsonResponse({
+          revision: 11,
+          event: { type: 'character.created', revision: 11, resource: 'character' },
+          characterId: body?.character?.chaId,
+        })
+      }
       if (url === '/api/v1/commands/characters/select') {
         return jsonResponse({
           revision: 11,
@@ -130,6 +146,8 @@ async function flushAsyncWork(ticks = 4): Promise<void> {
 }
 
 beforeEach(() => {
+  vi.mocked(alertAddCharacter).mockReset()
+  characterCardsState.importCharacter.mockReset()
   clearCachedServerCommandRevision()
   stopSelectedCharacterShellHydration()
   setServerProjectionWriteGuardEnabled(false)
@@ -241,5 +259,84 @@ describe('changeChar shell selection freshness', () => {
     expect(get(selectedCharID)).toBe(0)
     expect((DBState.db as any).currentChar).toBe(0)
     expect(selectedCharacterCommandIds(calls)).not.toContain('char-a')
+  })
+})
+
+describe('addCharacter import navigation freshness', () => {
+  it('selects the production-imported optimistic character by returned chaId when projection reorders it away from the tail', async () => {
+    const calls = stubChangeCharFetch(Promise.resolve(jsonResponse({})))
+    let importedCharacterId: string | null | undefined
+    DBState.db = {
+      currentChar: 0,
+      characters: [fullCharacter('char-a', 'Character A'), fullCharacter('char-b', 'Character B')],
+      characterOrder: ['char-a', 'char-b'],
+    } as any
+    selectedCharID.set(0)
+    vi.mocked(alertAddCharacter).mockResolvedValue('importCharacter')
+    characterCardsState.importCharacter.mockImplementation(async () => {
+      const actualCharacterCards = await vi.importActual<typeof import('./characterCards')>('./characterCards')
+      importedCharacterId = await actualCharacterCards.importCharacterProcess({
+        name: 'imported-character.json',
+        data: Buffer.from(
+          JSON.stringify({
+            name: 'Imported',
+            description: 'Imported description',
+            first_mes: 'Hello from import',
+          }),
+        ),
+      })
+      const imported = DBState.db.characters.find((character) => character.chaId === importedCharacterId)
+      expect(imported).toBeTruthy()
+      DBState.db.characters = [
+        imported!,
+        fullCharacter('char-a', 'Character A'),
+        fullCharacter('tail-char', 'Tail Character'),
+      ]
+      ;(DBState.db as any).currentChar = 1
+      selectedCharID.set(1)
+      return importedCharacterId
+    })
+
+    await addCharacter()
+
+    expect(get(selectedCharID)).toBe(0)
+    expect((DBState.db as any).currentChar).toBe(0)
+    expect(importedCharacterId).toBeTruthy()
+    expect(DBState.db.characters[0].chaId).toBe(importedCharacterId)
+    await vi.waitFor(() => {
+      expect(calls.some((call) => call.url === '/api/v1/commands/characters')).toBe(true)
+    })
+    await vi.waitFor(() => {
+      expect(selectedCharacterCommandIds(calls)).toContain(importedCharacterId)
+    })
+    expect(selectedCharacterCommandIds(calls)).not.toContain('tail-char')
+  })
+
+  it('skips stale post-import navigation when the user selects another character before import finishes', async () => {
+    const calls = stubChangeCharFetch(Promise.resolve(jsonResponse({})))
+    const importResult = deferred<string | null | undefined>()
+    DBState.db = {
+      currentChar: 0,
+      characters: [fullCharacter('char-a', 'Character A'), fullCharacter('char-b', 'Character B')],
+      characterOrder: ['char-a', 'char-b'],
+    } as any
+    selectedCharID.set(0)
+    vi.mocked(alertAddCharacter).mockResolvedValue('importCharacter')
+    characterCardsState.importCharacter.mockReturnValue(importResult.promise)
+
+    const pendingAdd = addCharacter()
+    await vi.waitFor(() => {
+      expect(characterCardsState.importCharacter).toHaveBeenCalledTimes(1)
+    })
+
+    DBState.db.characters.push(fullCharacter('imported-char', 'Imported'))
+    ;(DBState.db as any).currentChar = 1
+    selectedCharID.set(1)
+    importResult.resolve('imported-char')
+    await pendingAdd
+
+    expect(get(selectedCharID)).toBe(1)
+    expect((DBState.db as any).currentChar).toBe(1)
+    expect(selectedCharacterCommandIds(calls)).not.toContain('imported-char')
   })
 })
