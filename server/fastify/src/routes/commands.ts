@@ -18,6 +18,11 @@ import {
 import { readActiveWriterSessionId } from '../activeWriter.js'
 import { resolveMaskedProviderSecretPlaceholders } from '../providerSecrets.js'
 import {
+  normalizeLegacyFallbackModels,
+  normalizeLegacySeperateModels,
+  normalizeModelRoleOverrides,
+} from '../../../../src/ts/model/modelRoles.js'
+import {
   createPromptItemRecord,
   ensurePromptTemplateCollection,
   readPromptItemId,
@@ -623,6 +628,7 @@ const SETTINGS_GROUP_KEYS: Record<SettingsGroup, readonly string[]> = {
     'additionalParams',
     'aiModel',
     'subModel',
+    'modelRoles',
     'textgenWebUIStreamURL',
     'textgenWebUIBlockingURL',
     'hordeConfig',
@@ -1259,6 +1265,7 @@ const OBJECT_SETTING_KEYS = new Set([
   'hypaCustomSettings',
   'hypaV3Settings',
   'fallbackModels',
+  'modelRoles',
   'NAIImgConfig',
   'NAIsettings',
   'novelai',
@@ -6363,8 +6370,33 @@ function applySettingsPatch(database: unknown, patch: Record<string, unknown>): 
   const target = database as Record<string, unknown>
   const resolvedPatch = resolveMaskedProviderSecretPlaceholders(database, patch)
   for (const [key, value] of Object.entries(resolvedPatch)) {
-    target[key] = value
+    target[key] = normalizeSettingsPatchValue(key, value)
   }
+}
+
+function normalizeSettingsPatchValue(key: string, value: unknown): unknown {
+  if (key === 'modelRoles') return normalizeModelRoleOverrides(value)
+  if (key === 'seperateModels') return normalizeLegacySeperateModels(value)
+  if (key === 'fallbackModels') return normalizeLegacyFallbackModels(value)
+  if (key === 'seperateParameters') return normalizeSeperateParametersValue(value)
+  return value
+}
+
+function normalizeSeperateParametersValue(value: unknown): Record<string, unknown> {
+  const source = value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {}
+  return {
+    memory: recordOrBlank(source.memory),
+    emotion: recordOrBlank(source.emotion),
+    translate: recordOrBlank(source.translate),
+    otherAx: recordOrBlank(source.otherAx),
+    scriptMain: recordOrBlank(source.scriptMain),
+    scriptAux: recordOrBlank(source.scriptAux),
+    overrides: recordOrBlank(source.overrides),
+  }
+}
+
+function recordOrBlank(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {}
 }
 
 function sendCommandError(reply: FastifyReply, err: unknown): { error: string; currentRevision?: number } {

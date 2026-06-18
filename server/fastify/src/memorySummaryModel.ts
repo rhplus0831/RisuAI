@@ -1,5 +1,6 @@
 import type { Database } from '../../../src/ts/storage/database.svelte'
 import { LLMFormat, type LLMFormat as LLMFormatValue } from '../../../src/ts/model/types'
+import { resolveModelForRole } from '../../../src/ts/model/modelRoles.js'
 import { type OpenAICompatibleOptions, type OpenAICompatibleProvider } from './generation/openaiCompatible.js'
 
 interface CustomModelEntry {
@@ -30,20 +31,20 @@ export type ResolveMemorySummaryModelResult =
   | { ok: false; error: string }
 
 export function resolveMemorySummaryModel(db: Database, requestedModel: string): ResolveMemorySummaryModelResult {
-  if (requestedModel !== 'subModel') {
+  if (requestedModel !== 'subModel' && requestedModel !== 'memory') {
     return {
       ok: false,
-      error: 'server-side memory summarization currently supports only the subModel API path',
+      error: 'server-side memory summarization currently supports only the memory/subModel API path',
     }
   }
 
-  const aiModel = resolveAxModel(db)
+  const aiModel = resolveModelForRole(db, 'memory')
   const info = resolveModelInfo(db, aiModel)
   const provider = resolveProvider(aiModel, info)
   if (provider !== 'openai' && provider !== 'nanogpt' && provider !== 'openrouter') {
     return {
       ok: false,
-      error: `summarization subModel provider is not API-backed OpenAI-compatible: ${provider ?? info.format}`,
+      error: `summarization memory provider is not API-backed OpenAI-compatible: ${provider ?? info.format}`,
     }
   }
 
@@ -54,14 +55,6 @@ export function resolveMemorySummaryModel(db: Database, requestedModel: string):
 
   const options = resolveProviderOptions(db, aiModel, info, provider)
   return { ok: true, request: { provider, model, options } }
-}
-
-function resolveAxModel(db: Database): string {
-  if (db.seperateModelsForAxModels === true) {
-    const separateMemoryModel = asString(db.seperateModels?.memory)
-    if (separateMemoryModel) return separateMemoryModel
-  }
-  return asString(db.subModel) ?? ''
 }
 
 function resolveModelInfo(db: Database, aiModel: string): ModelInfoLite {

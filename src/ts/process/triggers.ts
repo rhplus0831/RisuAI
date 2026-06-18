@@ -24,6 +24,7 @@ import { alertError, alertInput, alertNormal, alertSelect } from '../alert'
 import type { OpenAIChat } from './index.svelte'
 import { HypaProcesser } from './memory/hypamemory'
 import { requestChatData } from './request/request'
+import type { ModelModeExtended } from './request/shared'
 import { generateAIImage } from './stableDiff'
 import { writeInlayImage } from './files/inlays'
 import { runScripted } from './scriptings'
@@ -431,10 +432,16 @@ export type triggerV2RunLLM = {
   type: 'v2RunLLM'
   value: string
   valueType: 'var' | 'value'
-  model: 'model' | 'submodel'
+  model: 'model' | 'submodel' | 'otherAx' | 'scriptMain' | 'scriptAux'
   streaming?: boolean
   outputVar: string
   indent: number
+}
+
+function normalizeTriggerLLMMode(mode: triggerV2RunLLM['model']): ModelModeExtended {
+  if (mode === 'model') return 'scriptMain'
+  if (mode === 'submodel' || mode === 'otherAx') return 'scriptAux'
+  return mode
 }
 
 export type triggerV2ShowAlert = {
@@ -1881,7 +1888,7 @@ export async function runTrigger(
               useStreaming: false,
               noMultiGen: true,
             },
-            'model',
+            'scriptMain',
           )
 
           if (result.type === 'fail' || result.type === 'streaming' || result.type === 'multiline') {
@@ -2373,7 +2380,7 @@ export async function runTrigger(
               useStreaming: effect.streaming ?? false,
               noMultiGen: true,
             },
-            effect.model,
+            normalizeTriggerLLMMode(effect.model),
           )
 
           if (result.type === 'fail' || result.type === 'multiline') {

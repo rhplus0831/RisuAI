@@ -9,6 +9,7 @@
   import { RisuAccessClient } from 'src/ts/process/mcp/risuaccess'
   import localforage from 'localforage'
   import { getModelInfo, LLMFormat } from 'src/ts/model/modellist'
+  import { resolveModelForRole } from 'src/ts/model/modelRoles'
 
   interface DialogueLine {
     speaker: string
@@ -84,8 +85,7 @@
   let userInputEl = $state<HTMLInputElement | null>(null)
 
   let isUnsupportedModel = $derived.by(() => {
-    const currentModel =
-      (DBState.db.seperateModelsForAxModels ? DBState.db.seperateModels.otherAx : '') || DBState.db.subModel
+    const currentModel = resolveModelForRole(DBState.db, 'otherAx')
     const modelInfo = getModelInfo(currentModel)
     return !(
       modelInfo.format === LLMFormat.Anthropic ||

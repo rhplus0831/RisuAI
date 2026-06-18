@@ -21,7 +21,6 @@
   import ModelList from 'src/lib/UI/ModelList.svelte'
   import { onDestroy, onMount, untrack } from 'svelte'
   import { defaultAutoSuggestPrompt } from '../../../ts/storage/defaultPrompts'
-  import AuxModelSelectors from './Model/AuxModelSelectors.svelte'
   import { normalizePromptTemplateIds, promptTemplateIdsNeedNormalization } from 'src/ts/storage/database.svelte'
   import { watchServerBackedSettings } from 'src/ts/server/settingsBridge.svelte'
   import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
@@ -67,7 +66,7 @@
   let draggedIndex = $state(-1)
   let dragOverIndex = $state(-1)
   let openedItemIndices = $state(new Set<number>())
-  type FallbackModelKey = 'model' | 'memory' | 'translate' | 'emotion' | 'otherAx'
+  type FallbackModelKey = 'model' | 'memory' | 'translate' | 'emotion' | 'otherAx' | 'scriptMain' | 'scriptAux'
   type FallbackModelsDraft = Record<FallbackModelKey, string[]>
   interface Props {
     onGoBack?: () => void
@@ -123,6 +122,8 @@
     translate: [],
     emotion: [],
     otherAx: [],
+    scriptMain: [],
+    scriptAux: [],
   })
   const fallbackWhenBlankResponseDraft = createPromptSettingsDraft<boolean>('fallbackWhenBlankResponse', false)
   const doNotChangeFallbackModelsDraft = createPromptSettingsDraft<boolean>('doNotChangeFallbackModels', false)
@@ -656,10 +657,6 @@
     {/if}
   {/if}
 
-  {#if showPromptModelOverrideFields && !promptPresetModelOverrideMode && !DBState.db.auxModelUnderModelSettings}
-    <AuxModelSelectors />
-  {/if}
-
   {#snippet fallbackModelList(arg: FallbackModelKey)}
     {#each fallbackModelsDraft.value[arg] as model, i}
       <span class="text-textcolor mt-4">
@@ -711,6 +708,12 @@
       </Accordion>
       <Accordion name={'OtherAx'} styled>
         {@render fallbackModelList('otherAx')}
+      </Accordion>
+      <Accordion name={language.modelRoles.roles.scriptMain} styled>
+        {@render fallbackModelList('scriptMain')}
+      </Accordion>
+      <Accordion name={language.modelRoles.roles.scriptAux} styled>
+        {@render fallbackModelList('scriptAux')}
       </Accordion>
     </Accordion>
   {/if}

@@ -12,10 +12,12 @@
     emotion: SeparateParameters
     translate: SeparateParameters
     otherAx: SeparateParameters
+    scriptMain: SeparateParameters
+    scriptAux: SeparateParameters
     overrides: Record<string, SeparateParameters>
   }
 
-  type BaseSeparateParameterKey = Exclude<keyof SeparateParameterSettings, 'overrides'>
+  type BaseSeparateParameterKey = 'memory' | 'emotion' | 'translate' | 'otherAx' | 'scriptMain' | 'scriptAux'
 
   interface Props {
     promptPresetModelOverrideMode?: boolean
@@ -32,6 +34,8 @@
     emotion: {},
     translate: {},
     otherAx: {},
+    scriptMain: {},
+    scriptAux: {},
     overrides: {},
   })
   const promptSeperateParametersEnabledDraft = createPromptPresetModelOverrideDraft<boolean>(
@@ -45,6 +49,8 @@
       emotion: {},
       translate: {},
       otherAx: {},
+      scriptMain: {},
+      scriptAux: {},
       overrides: {},
     },
   )
@@ -56,12 +62,21 @@
     promptPresetModelOverrideMode ? promptSeperateParametersDraft : modelSeperateParametersDraft,
   )
 
-  const baseSeparateParameterKeys: BaseSeparateParameterKey[] = ['memory', 'emotion', 'translate', 'otherAx']
+  const baseSeparateParameterKeys: BaseSeparateParameterKey[] = [
+    'memory',
+    'emotion',
+    'translate',
+    'otherAx',
+    'scriptMain',
+    'scriptAux',
+  ]
   const paramLabels: Record<BaseSeparateParameterKey, string> = {
     memory: 'longTermMemory',
     emotion: 'emotionImage',
     translate: 'translator',
     otherAx: 'others',
+    scriptMain: 'modelRoles.roles.scriptMain',
+    scriptAux: 'modelRoles.roles.scriptAux',
   }
 </script>
 
@@ -69,7 +84,10 @@
   <CheckInput bind:check={seperateParametersEnabledDraft.value} name={language.seperateParametersEnabled} />
   {#if seperateParametersEnabledDraft.value}
     {#each baseSeparateParameterKeys as param}
-      <Accordion name={language[paramLabels[param]] ?? param} styled>
+      {@const labelKey = paramLabels[param]}
+      <Accordion
+        name={labelKey.includes('.') ? language.modelRoles.roles[param] : (language[labelKey] ?? param)}
+        styled>
         <AllSeperateParameters bind:value={seperateParametersDraft.value[param]} paramKey={param} />
       </Accordion>
     {/each}

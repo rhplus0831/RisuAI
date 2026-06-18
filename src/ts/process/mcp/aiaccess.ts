@@ -71,7 +71,7 @@ export class AIAccessClient extends MCPClientLike {
           })),
           bias: {},
         },
-        model === 'lite' ? 'otherAx' : 'model',
+        model === 'lite' ? 'scriptAux' : 'scriptMain',
       )
 
       return [

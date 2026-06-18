@@ -2,6 +2,11 @@ import { randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
 import { EntityNotFoundError, ValidationError } from '../repository.js'
 import { validateOptionalServerAssetRef } from './assets.js'
+import {
+  normalizeLegacyFallbackModels,
+  normalizeLegacySeperateModels,
+  normalizeModelRoleOverrides,
+} from '../../../../src/ts/model/modelRoles.js'
 
 type JsonRecord = Record<string, unknown>
 type AssetValidationOptions = { assetDb?: DatabaseSync }
@@ -28,6 +33,7 @@ const SNAPSHOT_KEYS: Array<[string, string]> = [
   ['formatingOrder', 'formatingOrder'],
   ['aiModel', 'aiModel'],
   ['subModel', 'subModel'],
+  ['modelRoles', 'modelRoles'],
   ['currentPluginProvider', 'currentPluginProvider'],
   ['textgenWebUIStreamURL', 'textgenWebUIStreamURL'],
   ['textgenWebUIBlockingURL', 'textgenWebUIBlockingURL'],
@@ -223,9 +229,34 @@ export function saveCurrentPresetSnapshot(database: JsonRecord, presets: PresetR
 export function applyPreset(database: JsonRecord, preset: PresetRecord): void {
   for (const [presetKey, databaseKey] of APPLY_KEYS) {
     if (Object.prototype.hasOwnProperty.call(preset, presetKey)) {
-      database[databaseKey] = cloneJson(preset[presetKey])
+      database[databaseKey] = normalizePresetAppliedValue(databaseKey, cloneJson(preset[presetKey]))
     }
   }
+}
+
+function normalizePresetAppliedValue(databaseKey: string, value: unknown): unknown {
+  if (databaseKey === 'modelRoles') return normalizeModelRoleOverrides(value)
+  if (databaseKey === 'seperateModels') return normalizeLegacySeperateModels(value)
+  if (databaseKey === 'fallbackModels') return normalizeLegacyFallbackModels(value)
+  if (databaseKey === 'seperateParameters') return normalizeSeperateParametersValue(value)
+  return value
+}
+
+function normalizeSeperateParametersValue(value: unknown): Record<string, unknown> {
+  const source = value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {}
+  return {
+    memory: recordOrBlank(source.memory),
+    emotion: recordOrBlank(source.emotion),
+    translate: recordOrBlank(source.translate),
+    otherAx: recordOrBlank(source.otherAx),
+    scriptMain: recordOrBlank(source.scriptMain),
+    scriptAux: recordOrBlank(source.scriptAux),
+    overrides: recordOrBlank(source.overrides),
+  }
+}
+
+function recordOrBlank(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {}
 }
 
 /** Whether `applyPreset` would overwrite the `promptTemplate` collection for this

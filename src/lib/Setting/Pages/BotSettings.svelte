@@ -7,7 +7,6 @@
   import { customProviderStore } from 'src/ts/plugins/plugins.svelte'
   import { downloadFile } from 'src/ts/globalApi.svelte'
   import { tokenizeAccurate, tokenizerList } from 'src/ts/tokenizer'
-  import ModelList from 'src/lib/UI/ModelList.svelte'
   import DropList from 'src/lib/SideBars/DropList.svelte'
   import { PlusIcon, TrashIcon, HardDriveUploadIcon, DownloadIcon, UploadIcon } from '@lucide/svelte'
   import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
@@ -36,11 +35,12 @@
   import { updatePromptPreset, type PromptPreset } from 'src/ts/storage/database.svelte'
   import { alertError } from 'src/ts/alert'
   import { getModelInfo, LLMFlags, LLMFormat, LLMProvider } from 'src/ts/model/modellist'
+  import { resolveModelRoles } from 'src/ts/model/modelRoles'
   import RegexList from 'src/lib/SideBars/Scripts/RegexList.svelte'
   import SettingRenderer from '../SettingRenderer.svelte'
   import { allBasicParameterItems } from 'src/ts/setting/botSettingsParamsData'
   import SeparateParametersSection from './SeparateParametersSection.svelte'
-  import AuxModelSelectors from './Model/AuxModelSelectors.svelte'
+  import ModelRoleList from './Model/ModelRoleList.svelte'
   import { onDestroy, onMount, untrack } from 'svelte'
   import { createServerBackedSettingDraft, watchServerBackedSettings } from 'src/ts/server/settingsBridge.svelte'
   import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
@@ -127,8 +127,6 @@
     'additionalParams',
     [],
   )
-  const aiModelDraft = createServerBackedSettingDraft<string>('aiModel', '')
-  const subModelDraft = createServerBackedSettingDraft<string>('subModel', '')
   const googleDraft = createServerBackedSettingDraft<Record<string, string>>('google', {
     accessToken: '',
     projectId: '',
@@ -722,6 +720,62 @@
 
   let modelInfo = $derived(getModelInfo(DBState.db.aiModel))
   let subModelInfo = $derived(getModelInfo(DBState.db.subModel))
+  let effectiveRoleModelIds = $derived.by(() =>
+    Object.values(
+      resolveModelRoles({
+        aiModel: DBState.db.aiModel,
+        subModel: DBState.db.subModel,
+        modelRoles: DBState.db.modelRoles,
+        seperateModelsForAxModels: DBState.db.seperateModelsForAxModels,
+        seperateModels: DBState.db.seperateModels,
+      }),
+    ).filter((model) => model.trim() !== ''),
+  )
+  let effectiveRoleModelInfos = $derived.by(() => effectiveRoleModelIds.map((model) => getModelInfo(model)))
+  let effectiveRoleApiKeyModels = $derived.by(() => {
+    const seen = new Set<string>()
+    const apiKeyModels: { keyIdentifier: string; name: string }[] = []
+
+    for (const info of effectiveRoleModelInfos) {
+      const keyIdentifier = info.keyIdentifier
+      if (!keyIdentifier || seen.has(keyIdentifier)) continue
+
+      seen.add(keyIdentifier)
+      apiKeyModels.push({ keyIdentifier, name: info.name })
+    }
+
+    return apiKeyModels
+  })
+  let usesGoogleCloudProvider = $derived(
+    effectiveRoleModelInfos.some((info) => info.provider === LLMProvider.GoogleCloud),
+  )
+  let usesVertexAIProvider = $derived(effectiveRoleModelInfos.some((info) => info.provider === LLMProvider.VertexAI))
+  let usesNovelListProvider = $derived(effectiveRoleModelInfos.some((info) => info.provider === LLMProvider.NovelList))
+  let usesAnthropicProvider = $derived(
+    effectiveRoleModelInfos.some(
+      (info) => info.provider === LLMProvider.Anthropic || info.provider === LLMProvider.AWS,
+    ),
+  )
+  let usesMistralProvider = $derived(effectiveRoleModelInfos.some((info) => info.provider === LLMProvider.Mistral))
+  let usesNovelAIProvider = $derived(effectiveRoleModelInfos.some((info) => info.provider === LLMProvider.NovelAI))
+  let usesCohereProvider = $derived(effectiveRoleModelInfos.some((info) => info.provider === LLMProvider.Cohere))
+  let usesOpenAIProvider = $derived(effectiveRoleModelInfos.some((info) => info.provider === LLMProvider.OpenAI))
+  let usesStreamingModel = $derived(effectiveRoleModelInfos.some((info) => info.flags.includes(LLMFlags.hasStreaming)))
+  let usesGeminiThinkingModel = $derived(
+    effectiveRoleModelInfos.some((info) => info.flags.includes(LLMFlags.geminiThinking)),
+  )
+  let usesMancerModel = $derived(effectiveRoleModelIds.some((model) => model.startsWith('mancer')))
+  let usesReverseProxyModel = $derived(effectiveRoleModelIds.includes('reverse_proxy'))
+  let usesOllamaLocal = $derived(effectiveRoleModelIds.includes('ollama-hosted'))
+  let usesOllamaCloud = $derived(effectiveRoleModelIds.includes('ollama-cloud'))
+  let usesNanoGPTModel = $derived(effectiveRoleModelIds.includes('nanogpt'))
+  let usesOpenRouterModel = $derived(effectiveRoleModelIds.includes('openrouter'))
+  let usesCustomModel = $derived(effectiveRoleModelIds.includes('custom'))
+  let usesKoboldModel = $derived(effectiveRoleModelIds.includes('kobold'))
+  let usesEchoModel = $derived(effectiveRoleModelIds.includes('echo_model'))
+  let usesHordeModel = $derived(effectiveRoleModelIds.some((model) => model.startsWith('horde')))
+  let usesTextgenWebUIModel = $derived(effectiveRoleModelIds.includes('textgen_webui'))
+  let usesOobaModel = $derived(effectiveRoleModelIds.includes('ooba'))
   let nanogptInputMode = $state<'list' | 'manual'>(
     DBState.db.nanogptRequestModel && !DBState.db.nanogptRequestModelName ? 'manual' : 'list',
   )
@@ -734,9 +788,6 @@
       prevNanogptInputMode = nanogptInputMode
     }
   })
-
-  let usesOllamaLocal = $derived(DBState.db.aiModel === 'ollama-hosted' || DBState.db.subModel === 'ollama-hosted')
-  let usesOllamaCloud = $derived(DBState.db.aiModel === 'ollama-cloud' || DBState.db.subModel === 'ollama-cloud')
 </script>
 
 <h2 class="mb-2 text-2xl font-bold mt-2">{pageTitle}</h2>
@@ -802,17 +853,13 @@
 {/if}
 
 {#if sectionVisible(0)}
-  <span class="text-textcolor mt-4">{language.model} <Help key="model" /></span>
-  <ModelList bind:value={aiModelDraft.value} />
+  <ModelRoleList />
 
-  <span class="text-textcolor mt-2">{language.submodel} <Help key="submodel" /></span>
-  <ModelList bind:value={subModelDraft.value} />
-
-  {#if modelInfo.provider === LLMProvider.GoogleCloud || subModelInfo.provider === LLMProvider.GoogleCloud}
+  {#if usesGoogleCloudProvider}
     <span class="text-textcolor">GoogleAI API Key</span>
     <TextInput marginBottom={true} size={'sm'} placeholder="..." hideText bind:value={googleDraft.value.accessToken} />
   {/if}
-  {#if modelInfo.provider === LLMProvider.VertexAI || subModelInfo.provider === LLMProvider.VertexAI}
+  {#if usesVertexAIProvider}
     <span class="text-textcolor">Project ID</span>
     <TextInput
       marginBottom={true}
@@ -847,27 +894,27 @@
       <OptionInput value={'us-west1'}>us-west1</OptionInput>
     </SelectInput>
   {/if}
-  {#if modelInfo.provider === LLMProvider.NovelList || subModelInfo.provider === LLMProvider.NovelList}
+  {#if usesNovelListProvider}
     <span class="text-textcolor">NovelList {language.apiKey}</span>
     <TextInput hideText marginBottom={true} size={'sm'} placeholder="..." bind:value={novellistAPIDraft.value} />
   {/if}
-  {#if DBState.db.aiModel.startsWith('mancer') || DBState.db.subModel.startsWith('mancer')}
+  {#if usesMancerModel}
     <span class="text-textcolor">Mancer {language.apiKey}</span>
     <TextInput hideText marginBottom={true} size={'sm'} placeholder="..." bind:value={mancerHeaderDraft.value} />
   {/if}
-  {#if modelInfo.provider === LLMProvider.Anthropic || subModelInfo.provider === LLMProvider.Anthropic || modelInfo.provider === LLMProvider.AWS || subModelInfo.provider === LLMProvider.AWS}
+  {#if usesAnthropicProvider}
     <span class="text-textcolor">Claude {language.apiKey}</span>
     <TextInput hideText marginBottom={true} size={'sm'} placeholder="..." bind:value={claudeAPIKeyDraft.value} />
   {/if}
-  {#if modelInfo.provider === LLMProvider.Mistral || subModelInfo.provider === LLMProvider.Mistral}
+  {#if usesMistralProvider}
     <span class="text-textcolor">Mistral {language.apiKey}</span>
     <TextInput hideText marginBottom={true} size={'sm'} placeholder="..." bind:value={mistralKeyDraft.value} />
   {/if}
-  {#if modelInfo.provider === LLMProvider.NovelAI || subModelInfo.provider === LLMProvider.NovelAI}
+  {#if usesNovelAIProvider}
     <span class="text-textcolor">NovelAI Bearer Token</span>
     <TextInput hideText bind:value={novelaiDraft.value.token} />
   {/if}
-  {#if DBState.db.aiModel === 'reverse_proxy' || DBState.db.subModel === 'reverse_proxy'}
+  {#if usesReverseProxyModel}
     <span class="text-textcolor mt-2">URL <Help key="forceUrl" /></span>
     <TextInput marginBottom={false} size={'sm'} bind:value={forceReplaceUrlDraft.value} placeholder="https//..." />
     <span class="text-textcolor mt-4"> {language.proxyAPIKey}</span>
@@ -893,7 +940,7 @@
       <OptionInput value={LLMFormat.Cohere.toString()}>Cohere</OptionInput>
     </SelectInput>
   {/if}
-  {#if modelInfo.provider === LLMProvider.Cohere || subModelInfo.provider === LLMProvider.Cohere}
+  {#if usesCohereProvider}
     <span class="text-textcolor mt-4">Cohere {language.apiKey}</span>
     <TextInput hideText marginBottom={false} size={'sm'} bind:value={cohereAPIKeyDraft.value} />
   {/if}
@@ -982,7 +1029,7 @@
       </SelectInput>
     {/if}
   {/if}
-  {#if DBState.db.aiModel === 'nanogpt' || DBState.db.subModel === 'nanogpt'}
+  {#if usesNanoGPTModel}
     <span class="text-textcolor mt-4">NanoGPT {language.apiKey}</span>
     <TextInput hideText marginBottom={false} size={'sm'} bind:value={nanogptKeyDraft.value} />
 
@@ -1037,7 +1084,7 @@
       {/await}
     {/if}
   {/if}
-  {#if DBState.db.aiModel === 'openrouter' || DBState.db.subModel === 'openrouter'}
+  {#if usesOpenRouterModel}
     <span class="text-textcolor mt-4">OpenRouter {language.apiKey}</span>
     <TextInput hideText marginBottom={false} size={'sm'} bind:value={openrouterKeyDraft.value} />
 
@@ -1051,7 +1098,7 @@
         pinnedItems={openrouterPinnedItems} />
     {/await}
   {/if}
-  {#if DBState.db.aiModel === 'openrouter' || DBState.db.aiModel === 'reverse_proxy'}
+  {#if usesOpenRouterModel || usesReverseProxyModel}
     <span class="text-textcolor">{language.tokenizer}</span>
     <SelectInput bind:value={customTokenizerDraft.value}>
       {#each tokenizerList as entry}
@@ -1059,7 +1106,7 @@
       {/each}
     </SelectInput>
   {/if}
-  {#if modelInfo.provider === LLMProvider.OpenAI || subModelInfo.provider === LLMProvider.OpenAI}
+  {#if usesOpenAIProvider}
     <span class="text-textcolor">OpenAI {language.apiKey} <Help key="oaiapikey" /></span>
     <TextInput
       hideText
@@ -1069,46 +1116,36 @@
       placeholder="sk-XXXXXXXXXXXXXXXXXXXX" />
   {/if}
 
-  {#if modelInfo.keyIdentifier}
-    <span class="text-textcolor">{modelInfo.name} {language.apiKey}</span>
+  {#each effectiveRoleApiKeyModels as apiKeyModel (apiKeyModel.keyIdentifier)}
+    <span class="text-textcolor">{apiKeyModel.name} {language.apiKey}</span>
     <TextInput
       hideText
       marginBottom={false}
       size={'sm'}
-      bind:value={OaiCompAPIKeysDraft.value[modelInfo.keyIdentifier]}
+      bind:value={OaiCompAPIKeysDraft.value[apiKeyModel.keyIdentifier]}
       placeholder="..." />
-  {/if}
-
-  {#if subModelInfo.keyIdentifier && subModelInfo.keyIdentifier !== modelInfo.keyIdentifier}
-    <span class="text-textcolor">{subModelInfo.name} {language.apiKey}</span>
-    <TextInput
-      hideText
-      marginBottom={false}
-      size={'sm'}
-      bind:value={OaiCompAPIKeysDraft.value[subModelInfo.keyIdentifier]}
-      placeholder="..." />
-  {/if}
+  {/each}
 
   <div class="py-2 flex flex-col gap-2 mb-4">
-    {#if !usesOllamaCloud && (modelInfo.flags.includes(LLMFlags.hasStreaming) || subModelInfo.flags.includes(LLMFlags.hasStreaming))}
+    {#if !usesOllamaCloud && usesStreamingModel}
       <Check bind:check={useStreamingDraft.value} name={`Response ${language.streaming}`} />
 
-      {#if useStreamingDraft.value && (modelInfo.flags.includes(LLMFlags.geminiThinking) || subModelInfo.flags.includes(LLMFlags.geminiThinking))}
+      {#if useStreamingDraft.value && usesGeminiThinkingModel}
         <Check bind:check={streamGeminiThoughtsDraft.value} name={`Stream Gemini Thoughts`} />
       {/if}
     {/if}
 
-    {#if DBState.db.aiModel === 'reverse_proxy' || DBState.db.subModel === 'reverse_proxy'}
+    {#if usesReverseProxyModel}
       <Check bind:check={reverseProxyOobaModeDraft.value} name={`${language.reverseProxyOobaMode}`} />
     {/if}
-    {#if modelInfo.provider === LLMProvider.NovelAI || subModelInfo.provider === LLMProvider.NovelAI}
+    {#if usesNovelAIProvider}
       <Check bind:check={NAIadventureDraft.value} name={language.textAdventureNAI} />
 
       <Check bind:check={NAIappendNameDraft.value} name={language.appendNameNAI} />
     {/if}
   </div>
 
-  {#if DBState.db.aiModel === 'custom' || DBState.db.subModel === 'custom'}
+  {#if usesCustomModel}
     <span class="text-textcolor mt-2">{language.plugin}</span>
     <SelectInput className="mt-2 mb-4" bind:value={currentPluginProviderDraft}>
       <OptionInput value="">None</OptionInput>
@@ -1118,12 +1155,12 @@
     </SelectInput>
   {/if}
 
-  {#if DBState.db.aiModel === 'kobold' || DBState.db.subModel === 'kobold'}
+  {#if usesKoboldModel}
     <span class="text-textcolor">Kobold URL</span>
     <TextInput marginBottom={true} bind:value={koboldURLDraft.value} />
   {/if}
 
-  {#if DBState.db.aiModel === 'echo_model' || DBState.db.subModel === 'echo_model'}
+  {#if usesEchoModel}
     <span class="text-textcolor mt-2">Echo Message</span>
     <TextAreaInput
       margin="bottom"
@@ -1133,11 +1170,11 @@
     <NumberInput marginBottom={true} bind:value={echoDelayDraft.value} min={0} />
   {/if}
 
-  {#if DBState.db.aiModel.startsWith('horde') || DBState.db.subModel.startsWith('horde')}
+  {#if usesHordeModel}
     <span class="text-textcolor">Horde {language.apiKey}</span>
     <TextInput hideText marginBottom={true} bind:value={hordeConfigDraft.value.apiKey} />
   {/if}
-  {#if DBState.db.aiModel === 'textgen_webui' || DBState.db.subModel === 'textgen_webui' || DBState.db.aiModel === 'mancer' || DBState.db.subModel === 'mancer'}
+  {#if usesTextgenWebUIModel || usesMancerModel}
     <span class="text-textcolor mt-2">Blocking {language.providerURL}</span>
     <TextInput marginBottom={true} bind:value={textgenWebUIBlockingURLDraft.value} placeholder="https://..." />
     <span class="text-draculared text-xs mb-2">You must use textgen webui with --public-api</span>
@@ -1149,16 +1186,12 @@
       >Warning: For Ooba version over 1.7, use "Ooba" as model, and use url like
       http://127.0.0.1:5000/v1/chat/completions</span>
   {/if}
-  {#if DBState.db.aiModel === 'ooba' || DBState.db.subModel === 'ooba'}
+  {#if usesOobaModel}
     <span class="text-textcolor mt-2">Ooba {language.providerURL}</span>
     <TextInput marginBottom={true} bind:value={textgenWebUIBlockingURLDraft.value} placeholder="https://..." />
   {/if}
-  {#if DBState.db.aiModel.startsWith('horde') || DBState.db.aiModel === 'kobold'}
+  {#if usesHordeModel || usesKoboldModel}
     <ChatFormatSettings />
-  {/if}
-
-  {#if DBState.db.auxModelUnderModelSettings}
-    <AuxModelSelectors />
   {/if}
 {/if}
 
@@ -1376,11 +1409,11 @@
     <!-- Standard parameters come from SettingRenderer. -->
   {/if}
 
-  {#if (DBState.db.reverseProxyOobaMode && DBState.db.aiModel === 'reverse_proxy') || DBState.db.aiModel === 'ooba'}
-    <OobaSettings instructionMode={DBState.db.aiModel === 'ooba'} />
+  {#if (DBState.db.reverseProxyOobaMode && usesReverseProxyModel) || usesOobaModel}
+    <OobaSettings instructionMode={usesOobaModel} />
   {/if}
 
-  {#if DBState.db.aiModel.startsWith('openrouter')}
+  {#if usesOpenRouterModel}
     <OpenrouterSettings />
   {/if}
 
@@ -1440,7 +1473,7 @@
     </Accordion>
   {/if}
 
-  {#if showModelOthersControls && DBState.db.aiModel === 'reverse_proxy'}
+  {#if showModelOthersControls && usesReverseProxyModel}
     <Accordion styled name="{language.additionalParams} " help="additionalParams">
       <table class="contain w-full max-w-full tabler">
         <tbody>

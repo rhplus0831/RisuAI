@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { Database } from '../../../../src/ts/storage/database.svelte'
 import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
+import { resolveModelForRole, type LegacyModelMode } from '../../../../src/ts/model/modelRoles.js'
 import type { AuthState } from '../auth.js'
 import { resolveAnthropicRequest, runAnthropic, runAnthropicStream } from '../generation/anthropic.js'
 import { resolveEchoRequest, runEcho, runEchoStream } from '../generation/echo.js'
@@ -69,17 +70,20 @@ interface CompletionRequestBody {
   currentCharName?: unknown
 }
 
-type CompletionModelMode = 'model' | 'submodel' | 'memory' | 'emotion' | 'otherAx' | 'translate'
-
 const SERVER_INTENT_KIND = 'server-intent'
-const COMPLETION_MODEL_MODES = new Set<CompletionModelMode>([
+const COMPLETION_MODEL_MODES = [
   'model',
   'submodel',
   'memory',
   'emotion',
   'otherAx',
   'translate',
-])
+  'scriptMain',
+  'scriptAux',
+] as const satisfies readonly LegacyModelMode[]
+type CompletionModelMode = (typeof COMPLETION_MODEL_MODES)[number]
+const COMPLETION_MODEL_MODE_SET = new Set<string>(COMPLETION_MODEL_MODES)
+const COMPLETION_MODEL_MODE_LIST = COMPLETION_MODEL_MODES.join(', ')
 
 interface EchoOptions {
   message?: unknown
@@ -291,7 +295,7 @@ function validateMessages(messages: unknown): ChatMessage[] | null {
 }
 
 function isCompletionModelMode(value: unknown): value is CompletionModelMode {
-  return typeof value === 'string' && COMPLETION_MODEL_MODES.has(value as CompletionModelMode)
+  return typeof value === 'string' && COMPLETION_MODEL_MODE_SET.has(value)
 }
 
 function finiteNumber(value: unknown): number | undefined {
@@ -303,13 +307,7 @@ function selectedCompletionModel(db: Database, body: CompletionRequestBody): str
     return body.staticModel
   }
   const mode = isCompletionModelMode(body.mode) ? body.mode : 'model'
-  let aiModel = mode === 'model' ? db.aiModel : db.subModel
-  if (db.seperateModelsForAxModels === true && db.seperateModels && typeof db.seperateModels === 'object') {
-    const selected = (db.seperateModels as Record<string, unknown>)[mode]
-    if (typeof selected === 'string' && selected.length > 0) {
-      aiModel = selected
-    }
-  }
+  const aiModel = resolveModelForRole(db, mode)
   return typeof aiModel === 'string' && aiModel.length > 0 ? aiModel : 'echo_model'
 }
 
@@ -1204,7 +1202,7 @@ async function handleServerIntentCompletion(
     return badRequest(reply, 'stream must be a boolean')
   }
   if (body.mode !== undefined && !isCompletionModelMode(body.mode)) {
-    return badRequest(reply, 'mode must be one of: model, submodel, memory, emotion, otherAx, translate')
+    return badRequest(reply, `mode must be one of: ${COMPLETION_MODEL_MODE_LIST}`)
   }
   if (body.staticModel !== undefined && typeof body.staticModel !== 'string') {
     return badRequest(reply, 'staticModel must be a string when provided')

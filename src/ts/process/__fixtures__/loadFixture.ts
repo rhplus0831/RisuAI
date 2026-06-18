@@ -30,6 +30,7 @@ const FIXTURE_PRESET_MIRROR_KEYS: Array<[string, string]> = [
   ['formatingOrder', 'formatingOrder'],
   ['aiModel', 'aiModel'],
   ['subModel', 'subModel'],
+  ['modelRoles', 'modelRoles'],
   ['currentPluginProvider', 'currentPluginProvider'],
   ['textgenWebUIStreamURL', 'textgenWebUIStreamURL'],
   ['textgenWebUIBlockingURL', 'textgenWebUIBlockingURL'],

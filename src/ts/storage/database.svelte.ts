@@ -11,6 +11,15 @@ import { prebuiltNAIpresets, prebuiltPresets } from '../process/templates/templa
 import { defaultColorScheme, type ColorScheme } from '../gui/colorscheme'
 import type { PromptItem, PromptSettings } from '../process/prompt'
 import type { OobaChatCompletionRequestParams } from '../model/ooba'
+import {
+  createDefaultModelRoleOverrides,
+  normalizeLegacyFallbackModels,
+  normalizeLegacySeperateModels,
+  normalizeModelRoleOverrides,
+  type LegacyFallbackModelMap,
+  type LegacySeperateModelMap,
+  type NormalizedModelRoleOverrides,
+} from '../model/modelRoles'
 import { type HypaV3Settings, type HypaV3Preset, createHypaV3Preset } from '../process/memory/hypav3'
 import { normalizeTranslatorPresetState, type TranslatorPreset } from '../translator/presets'
 import { safeStructuredClone } from '../polyfill'
@@ -107,6 +116,32 @@ export function promptTemplateIdsNeedNormalization(data: Pick<Database, 'promptT
   }
 
   return false
+}
+
+function normalizeModelRoleSettings(data: Partial<Pick<Database, 'modelRoles' | 'seperateModels'>>): void {
+  data.modelRoles = normalizeModelRoleOverrides(data.modelRoles)
+  data.seperateModels = normalizeLegacySeperateModels(data.seperateModels)
+}
+
+function normalizeSeperateParameters(data: Partial<Pick<Database, 'seperateParameters'>>): void {
+  const source: Record<string, unknown> = isPlainRecord(data.seperateParameters) ? data.seperateParameters : {}
+  data.seperateParameters = {
+    memory: normalizeSeperateParameterSlot(source.memory),
+    emotion: normalizeSeperateParameterSlot(source.emotion),
+    translate: normalizeSeperateParameterSlot(source.translate),
+    otherAx: normalizeSeperateParameterSlot(source.otherAx),
+    scriptMain: normalizeSeperateParameterSlot(source.scriptMain),
+    scriptAux: normalizeSeperateParameterSlot(source.scriptAux),
+    overrides: isPlainRecord(source.overrides) ? (source.overrides as Record<string, SeparateParameters>) : {},
+  }
+}
+
+function normalizeSeperateParameterSlot(value: unknown): SeparateParameters {
+  return isPlainRecord(value) ? (value as SeparateParameters) : {}
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function normalizeBotPresetIds(data: Pick<Database, 'botPresets' | 'botPresetsId'>) {
@@ -281,6 +316,7 @@ const SET_PRESET_ROLLBACK_KEYS = [
   'formatingOrder',
   'aiModel',
   'subModel',
+  'modelRoles',
   'currentPluginProvider',
   'textgenWebUIStreamURL',
   'textgenWebUIBlockingURL',
@@ -809,6 +845,7 @@ export function setDatabase(data: Database) {
   if (checkNullish(data.subModel)) {
     data.subModel = 'gemini-3-flash-preview'
   }
+  normalizeModelRoleSettings(data)
   if (checkNullish(data.waifuWidth)) {
     data.waifuWidth = 100
   }
@@ -1262,14 +1299,7 @@ export function setDatabase(data: Database) {
   data.vertexPrivateKey ??= ''
   data.vertexRegion ??= 'global'
   data.seperateParametersEnabled ??= false
-  data.seperateParameters ??= {
-    memory: {},
-    emotion: {},
-    translate: {},
-    otherAx: {},
-    overrides: {},
-  }
-  data.seperateParameters.overrides ??= {}
+  normalizeSeperateParameters(data)
   data.customFlags ??= []
   data.enableCustomFlags ??= false
   data.assetMaxDifference ??= 4
@@ -1312,6 +1342,8 @@ export function setDatabase(data: Database) {
     model: data.hypaCustomSettings?.model ?? '',
   }
   data.doNotChangeSeperateModels ??= false
+  data.seperateModelsForAxModels ??= false
+  normalizeModelRoleSettings(data)
   data.modelTools ??= []
   data.enableScrollToActiveChar ??= true
 
@@ -1331,20 +1363,7 @@ export function setDatabase(data: Database) {
     data.hotkeys = data.hotkeys.filter((h) => h.action !== 'scrollToActiveChar')
   }
 
-  data.fallbackModels ??= {
-    memory: [],
-    emotion: [],
-    translate: [],
-    otherAx: [],
-    model: [],
-  }
-  data.fallbackModels = {
-    model: data.fallbackModels.model.filter((v) => v !== ''),
-    memory: data.fallbackModels.memory.filter((v) => v !== ''),
-    emotion: data.fallbackModels.emotion.filter((v) => v !== ''),
-    translate: data.fallbackModels.translate.filter((v) => v !== ''),
-    otherAx: data.fallbackModels.otherAx.filter((v) => v !== ''),
-  }
+  data.fallbackModels = normalizeLegacyFallbackModels(data.fallbackModels)
   data.customModels ??= []
   data.authRefreshes ??= []
   data.rememberToolUsage ??= true
@@ -1708,6 +1727,7 @@ export interface Database {
   PresensePenalty: number
   formatingOrder: FormatingOrderItem[]
   aiModel: string
+  modelRoles: NormalizedModelRoleOverrides
   jailbreakToggle: boolean
   loreBookDepth: number
   loreBookToken: number
@@ -2003,6 +2023,8 @@ export interface Database {
     emotion: SeparateParameters
     translate: SeparateParameters
     otherAx: SeparateParameters
+    scriptMain: SeparateParameters
+    scriptAux: SeparateParameters
     overrides: Record<string, SeparateParameters>
   }
   translateBeforeHTMLFormatting: boolean
@@ -2057,22 +2079,11 @@ export interface Database {
   outputImageModal: boolean
   playMessageOnTranslateEnd: boolean
   seperateModelsForAxModels: boolean
-  seperateModels: {
-    memory: string
-    emotion: string
-    translate: string
-    otherAx: string
-  }
+  seperateModels: LegacySeperateModelMap
   doNotChangeSeperateModels: boolean
   modelTools: string[]
   hotkeys: Hotkey[]
-  fallbackModels: {
-    memory: string[]
-    emotion: string[]
-    translate: string[]
-    otherAx: string[]
-    model: string[]
-  }
+  fallbackModels: LegacyFallbackModelMap
   doNotChangeFallbackModels: boolean
   fallbackWhenBlankResponse: boolean
   customModels: {
@@ -2433,6 +2444,7 @@ export interface botPreset {
   formatingOrder: FormatingOrderItem[]
   aiModel?: string
   subModel?: string
+  modelRoles?: NormalizedModelRoleOverrides
   currentPluginProvider?: string
   textgenWebUIStreamURL?: string
   textgenWebUIBlockingURL?: string
@@ -2483,6 +2495,8 @@ export interface botPreset {
     emotion: SeparateParameters
     translate: SeparateParameters
     otherAx: SeparateParameters
+    scriptMain: SeparateParameters
+    scriptAux: SeparateParameters
     overrides: Record<string, SeparateParameters>
   }
   customAPIFormat?: LLMFormat
@@ -2500,20 +2514,9 @@ export interface botPreset {
   deepseekReasoningEffort?: 'high' | 'max'
   outputImageModal?: boolean
   seperateModelsForAxModels?: boolean
-  seperateModels?: {
-    memory: string
-    emotion: string
-    translate: string
-    otherAx: string
-  }
+  seperateModels?: LegacySeperateModelMap
   modelTools?: string[]
-  fallbackModels?: {
-    memory: string[]
-    emotion: string[]
-    translate: string[]
-    otherAx: string[]
-    model: string[]
-  }
+  fallbackModels?: LegacyFallbackModelMap
   fallbackWhenBlankResponse?: boolean
   verbosity?: number
   dynamicOutput?: DynamicOutput
@@ -2860,6 +2863,7 @@ export const presetTemplate: botPreset = {
   ],
   aiModel: 'gemini-3-flash-preview',
   subModel: 'gemini-3-flash-preview',
+  modelRoles: createDefaultModelRoleOverrides(),
   currentPluginProvider: '',
   textgenWebUIStreamURL: '',
   textgenWebUIBlockingURL: '',
@@ -2920,6 +2924,7 @@ function saveCurrentPresetLocal() {
     formatingOrder: db.formatingOrder,
     aiModel: db.aiModel,
     subModel: db.subModel,
+    modelRoles: safeStructuredClone(db.modelRoles),
     currentPluginProvider: db.currentPluginProvider,
     textgenWebUIStreamURL: db.textgenWebUIStreamURL,
     textgenWebUIBlockingURL: db.textgenWebUIBlockingURL,
@@ -3758,6 +3763,9 @@ const PROMPT_PRESET_DATABASE_KEY_OVERRIDES: Record<string, string> = {}
 export function applyModelPresetFieldsToDatabase(db: Database, preset: ModelPreset | undefined): void {
   applySplitPresetFieldsToDatabase(db, preset, MODEL_PRESET_FIELDS, MODEL_PRESET_DATABASE_KEY_OVERRIDES)
   applyPromptPresetFieldsToDatabase(db, db.promptPresets?.[db.promptPresetsId])
+  normalizeModelRoleSettings(db)
+  db.fallbackModels = normalizeLegacyFallbackModels(db.fallbackModels)
+  normalizeSeperateParameters(db)
 }
 
 export function applyPromptPresetFieldsToDatabase(db: Database, preset: PromptPreset | undefined): void {
@@ -3777,6 +3785,9 @@ export function applyPromptPresetFieldsToDatabase(db: Database, preset: PromptPr
     PROMPT_PRESET_MODEL_OTHERS_OVERRIDE_FIELDS,
     MODEL_PRESET_DATABASE_KEY_OVERRIDES,
   )
+  normalizeModelRoleSettings(db)
+  db.fallbackModels = normalizeLegacyFallbackModels(db.fallbackModels)
+  normalizeSeperateParameters(db)
 }
 
 function applyPromptPresetRegexFieldToDatabase(db: Database, preset: PromptPreset | undefined): void {
@@ -3817,6 +3828,7 @@ export function setPreset(db: Database, newPres: botPreset) {
   db.formatingOrder = newPres.formatingOrder ?? db.formatingOrder
   db.aiModel = newPres.aiModel ?? db.aiModel
   db.subModel = newPres.subModel ?? db.subModel
+  db.modelRoles = normalizeModelRoleOverrides(newPres.modelRoles ?? db.modelRoles)
   db.currentPluginProvider = newPres.currentPluginProvider ?? db.currentPluginProvider
   db.textgenWebUIStreamURL = newPres.textgenWebUIStreamURL ?? db.textgenWebUIStreamURL
   db.textgenWebUIBlockingURL = newPres.textgenWebUIBlockingURL ?? db.textgenWebUIBlockingURL
@@ -3885,36 +3897,18 @@ export function setPreset(db: Database, newPres: botPreset) {
   db.outputImageModal = newPres.outputImageModal ?? false
   if (!db.doNotChangeSeperateModels) {
     db.seperateModelsForAxModels = newPres.seperateModelsForAxModels ?? false
-    db.seperateModels = safeStructuredClone(newPres.seperateModels) ?? {
-      memory: '',
-      emotion: '',
-      translate: '',
-      otherAx: '',
-    }
+    db.seperateModels = normalizeLegacySeperateModels(newPres.seperateModels)
   }
   if (!db.doNotChangeFallbackModels) {
-    db.fallbackModels = safeStructuredClone(newPres.fallbackModels) ?? {
-      memory: [],
-      emotion: [],
-      translate: [],
-      otherAx: [],
-      model: [],
-    }
+    db.fallbackModels = normalizeLegacyFallbackModels(newPres.fallbackModels)
     db.fallbackWhenBlankResponse = newPres.fallbackWhenBlankResponse ?? false
   }
   if (db.disableSeperateParameterChangeOnPresetChange) {
     db.seperateParameters = safeStructuredClone(db.seperateParameters)
   } else {
-    db.seperateParameters = newPres.seperateParameters
-      ? safeStructuredClone(newPres.seperateParameters)
-      : {
-          memory: {},
-          emotion: {},
-          translate: {},
-          otherAx: {},
-          overrides: {},
-        }
+    db.seperateParameters = safeStructuredClone(newPres.seperateParameters)
   }
+  normalizeSeperateParameters(db)
   db.modelTools = safeStructuredClone(newPres.modelTools ?? [])
   db.verbosity = newPres.verbosity ?? 1
   db.dynamicOutput = newPres.dynamicOutput

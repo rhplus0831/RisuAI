@@ -1,17 +1,20 @@
 <script lang="ts">
   import { language } from 'src/lang'
-  import ClaudeThinkingSeparateParams from 'src/lib/Setting/Pages/ClaudeThinkingSeparateParams.svelte'
   import SegmentedControl from 'src/lib/UI/GUI/SegmentedControl.svelte'
-  import SliderInput from 'src/lib/UI/GUI/SliderInput.svelte'
   import ModelList from 'src/lib/UI/ModelList.svelte'
   import { easyPanelStore } from 'src/ts/stores.svelte'
-  import Help from '../Help.svelte'
   import Button from 'src/lib/UI/GUI/Button.svelte'
   import CheckInput from 'src/lib/UI/GUI/CheckInput.svelte'
   import AllSeperateParameters from '../AllSeperateParameters.svelte'
   import { XIcon } from '@lucide/svelte'
-  import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
   import CustomModelsSettings from 'src/lib/Setting/Pages/Advanced/CustomModelsSettings.svelte'
+  import {
+    createDefaultLegacySeperateModels,
+    createDefaultModelRoleOverrides,
+    type LegacySeperateModelMap,
+    type ModelRole,
+    type NormalizedModelRoleOverrides,
+  } from 'src/ts/model/modelRoles'
   import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
   import type { SeparateParameters } from 'src/ts/storage/database.svelte'
   import {
@@ -26,13 +29,8 @@
     type SeperateParametersImportTarget,
   } from 'src/ts/server/seperateParametersImport'
 
-  type AuxModelSettings = {
-    memory: string
-    translate: string
-    emotion: string
-    otherAx: string
-  }
-  type SeperateParametersBaseKey = keyof AuxModelSettings
+  type OptionalModelRole = Exclude<ModelRole, 'chatMain' | 'chatAux'>
+  type SeperateParametersBaseKey = OptionalModelRole
 
   interface GuardedSeperateParametersImport {
     captureTarget: () => SeperateParametersImportTarget | null
@@ -47,19 +45,24 @@
     emotion: SeparateParameters
     translate: SeparateParameters
     otherAx: SeparateParameters
+    scriptMain: SeparateParameters
+    scriptAux: SeparateParameters
     overrides: Record<string, SeparateParameters>
   }
 
-  const seperateParametersBaseKeys = ['memory', 'translate', 'emotion', 'otherAx'] as const
+  const optionalModelRoles = ['memory', 'translate', 'emotion', 'otherAx', 'scriptMain', 'scriptAux'] as const
+  const seperateParametersBaseKeys = optionalModelRoles
 
   const seperateParametersEnabledDraft = createServerBackedSettingDraft<boolean>('seperateParametersEnabled', false)
   const doNotChangeSeperateModelsDraft = createServerBackedSettingDraft<boolean>('doNotChangeSeperateModels', false)
-  const seperateModelsDraft = createServerBackedSettingDraft<AuxModelSettings>('seperateModels', {
-    memory: '',
-    translate: '',
-    emotion: '',
-    otherAx: '',
-  })
+  const modelRolesDraft = createServerBackedSettingDraft<NormalizedModelRoleOverrides>(
+    'modelRoles',
+    createDefaultModelRoleOverrides(),
+  )
+  const seperateModelsDraft = createServerBackedSettingDraft<LegacySeperateModelMap>(
+    'seperateModels',
+    createDefaultLegacySeperateModels(),
+  )
   const epEnabledDraft = createServerBackedSettingDraft<boolean>('epEnabled', false)
   const disableSeperateParameterChangeOnPresetChangeDraft = createServerBackedSettingDraft<boolean>(
     'disableSeperateParameterChangeOnPresetChange',
@@ -72,18 +75,21 @@
     emotion: {},
     translate: {},
     otherAx: {},
+    scriptMain: {},
+    scriptAux: {},
     overrides: {},
   })
   const seperateParametersByModelDraft = createServerBackedSettingDraft<boolean>('seperateParametersByModel', false)
 
   let selectedOption = $state('models')
-  let selectedParameterOption = $state('memory')
+  let selectedParameterOption = $state<SeperateParametersBaseKey>('memory')
   let parameterModelSelection = $state('')
 
   let hasEPRequirements = $derived.by(() => {
     return (
       seperateParametersEnabledDraft.value &&
       doNotChangeSeperateModelsDraft.value &&
+      modelRolesDraft.value &&
       seperateModelsDraft.value &&
       epEnabledDraft.value &&
       disableSeperateParameterChangeOnPresetChangeDraft.value
@@ -97,14 +103,38 @@
   function enableEasyPanelRequirements(): void {
     seperateParametersEnabledDraft.value = true
     doNotChangeSeperateModelsDraft.value = true
-    seperateModelsDraft.value = {
-      memory: '',
-      translate: '',
-      emotion: '',
-      otherAx: '',
-    }
+    modelRolesDraft.value = { ...createDefaultModelRoleOverrides(), ...(modelRolesDraft.value ?? {}) }
+    seperateModelsDraft.value = { ...createDefaultLegacySeperateModels(), ...(seperateModelsDraft.value ?? {}) }
     epEnabledDraft.value = true
     disableSeperateParameterChangeOnPresetChangeDraft.value = true
+  }
+
+  function labelForModelRole(role: OptionalModelRole): string {
+    return language.modelRoles.roles[role]
+  }
+
+  function canonicalModelRoleOverride(role: OptionalModelRole): string {
+    return modelRolesDraft.value[role]?.trim() ?? ''
+  }
+
+  function legacySeperateModelForRole(role: OptionalModelRole): string {
+    return seperateModelsDraft.value[role]?.trim() ?? ''
+  }
+
+  function modelRoleSelectionValue(role: OptionalModelRole): string {
+    return canonicalModelRoleOverride(role) || legacySeperateModelForRole(role)
+  }
+
+  function setOptionalRoleModel(role: OptionalModelRole, model: string): void {
+    const normalized = model.trim()
+    modelRolesDraft.value = {
+      ...modelRolesDraft.value,
+      [role]: normalized,
+    }
+    seperateModelsDraft.value = {
+      ...seperateModelsDraft.value,
+      [role]: normalized,
+    }
   }
 
   function ensureParameterOverride(model: string): void {
@@ -259,23 +289,18 @@
           <span class="text-textcolor">{language.submodel}</span>
           <ModelList bind:value={subModelDraft.value} blankable excludesPrefix="plugin" />
         </div>
-        <div class="col-span-1">
-          <span class="text-textcolor">{language.longTermMemory}</span>
-          <ModelList bind:value={seperateModelsDraft.value.memory} blankable excludesPrefix="plugin" />
-        </div>
-        <div class="col-span-1">
-          <span class="text-textcolor">{language.translator}</span>
-          <ModelList bind:value={seperateModelsDraft.value.translate} blankable excludesPrefix="plugin" />
-        </div>
-        <div class="col-span-1">
-          <span class="text-textcolor">{language.emotionImage}</span>
-          <ModelList bind:value={seperateModelsDraft.value.emotion} blankable excludesPrefix="plugin" />
-        </div>
-
-        <div class="col-span-1">
-          <span class="text-textcolor">{language.others}</span>
-          <ModelList bind:value={seperateModelsDraft.value.otherAx} blankable excludesPrefix="plugin" />
-        </div>
+        {#each optionalModelRoles as role}
+          <div class="col-span-1">
+            <span class="text-textcolor">{labelForModelRole(role)}</span>
+            <ModelList
+              value={modelRoleSelectionValue(role)}
+              blankable
+              excludesPrefix="plugin"
+              onChange={(model) => {
+                setOptionalRoleModel(role, model)
+              }} />
+          </div>
+        {/each}
       </div>
     {/if}
     {#if selectedOption === 'parameters'}
@@ -298,10 +323,12 @@
       {:else}
         <SegmentedControl
           options={[
-            { label: language.longTermMemory, value: 'memory' },
-            { label: language.translator, value: 'translate' },
-            { label: language.emotionImage, value: 'emotion' },
-            { label: language.others, value: 'otherAx' },
+            { label: labelForModelRole('memory'), value: 'memory' },
+            { label: labelForModelRole('translate'), value: 'translate' },
+            { label: labelForModelRole('emotion'), value: 'emotion' },
+            { label: labelForModelRole('otherAx'), value: 'otherAx' },
+            { label: labelForModelRole('scriptMain'), value: 'scriptMain' },
+            { label: labelForModelRole('scriptAux'), value: 'scriptAux' },
           ]}
           bind:value={selectedParameterOption}
           size="md" />
@@ -330,6 +357,18 @@
               withImportExport
               guardedImport={createBaseSeperateParametersImportGuards('otherAx')}
               paramKey="otherAx" />
+          {:else if selectedParameterOption === 'scriptMain'}
+            <AllSeperateParameters
+              bind:value={seperateParametersDraft.value.scriptMain}
+              withImportExport
+              guardedImport={createBaseSeperateParametersImportGuards('scriptMain')}
+              paramKey="scriptMain" />
+          {:else if selectedParameterOption === 'scriptAux'}
+            <AllSeperateParameters
+              bind:value={seperateParametersDraft.value.scriptAux}
+              withImportExport
+              guardedImport={createBaseSeperateParametersImportGuards('scriptAux')}
+              paramKey="scriptAux" />
           {/if}
         </div>
       {/if}

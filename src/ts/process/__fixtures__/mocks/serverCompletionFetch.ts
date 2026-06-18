@@ -7,6 +7,7 @@
  */
 
 import { isTokenizerUrl, serveTokenizerFetch } from './tokenizerFetch'
+import { resolveModelForRole, type LegacyModelMode } from '../../../model/modelRoles'
 import { getDatabase } from '../../../storage/database.svelte'
 
 interface ServerCompletionCallBase {
@@ -169,17 +170,8 @@ function selectedServerIntentModel(body: CompletionPayload): string {
   if (staticModel) return staticModel
 
   const mode = stringField(body.mode) ?? 'model'
-  let aiModel = mode === 'model' ? stringField(db.aiModel) : stringField(db.subModel)
-  if (
-    body.staticModel === undefined &&
-    db.seperateModelsForAxModels === true &&
-    db.seperateModels &&
-    typeof db.seperateModels === 'object'
-  ) {
-    const selected = (db.seperateModels as Record<string, unknown>)[mode]
-    aiModel = stringField(selected) ?? aiModel
-  }
-  return aiModel ?? 'echo_model'
+  const aiModel = resolveModelForRole(db, mode as LegacyModelMode)
+  return stringField(aiModel) ?? 'echo_model'
 }
 
 function serverIntentResult(body: CompletionPayload): { result: string; model?: string } {

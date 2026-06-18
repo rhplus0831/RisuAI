@@ -40,6 +40,25 @@ describe('EasyPanel separate parameters import wiring', () => {
     expect(source).toContain("guardedImport={createBaseSeperateParametersImportGuards('translate')}")
     expect(source).toContain("guardedImport={createBaseSeperateParametersImportGuards('emotion')}")
     expect(source).toContain("guardedImport={createBaseSeperateParametersImportGuards('otherAx')}")
+    expect(source).toContain("guardedImport={createBaseSeperateParametersImportGuards('scriptMain')}")
+    expect(source).toContain("guardedImport={createBaseSeperateParametersImportGuards('scriptAux')}")
+  })
+
+  it('edits optional model roles through canonical role overrides while mirroring legacy slots', () => {
+    const source = easyPanelSource()
+
+    expect(source).toContain('createServerBackedSettingDraft<NormalizedModelRoleOverrides>(')
+    expect(source).toContain("'modelRoles'")
+    expect(source).toContain(
+      "const optionalModelRoles = ['memory', 'translate', 'emotion', 'otherAx', 'scriptMain', 'scriptAux'] as const",
+    )
+    expect(source).toContain('value={modelRoleSelectionValue(role)}')
+    expect(source).toContain('setOptionalRoleModel(role, model)')
+
+    const setterBody = extractFunctionBody(source, 'function setOptionalRoleModel(')
+    expect(setterBody).toContain('modelRolesDraft.value = {')
+    expect(setterBody).toContain('seperateModelsDraft.value = {')
+    expect(setterBody.match(/\[role\]: normalized/g)?.length).toBe(2)
   })
 
   it('captures only the active target slot as freshness state', () => {

@@ -46,3 +46,22 @@ describe('BotSettings prompt edit persistence contracts', () => {
     expect(source).not.toContain('JSON.parse(utf8)')
   })
 })
+
+describe('BotSettings model-role provider visibility', () => {
+  it('uses effective model roles to reveal provider-specific settings', () => {
+    const source = botSettingsSource()
+
+    expect(source).toContain("import { resolveModelRoles } from 'src/ts/model/modelRoles'")
+    expect(source).toContain('let effectiveRoleModelIds = $derived.by(() =>')
+    expect(source).toContain('modelRoles: DBState.db.modelRoles')
+    expect(source).toContain('seperateModelsForAxModels: DBState.db.seperateModelsForAxModels')
+    expect(source).toContain('{#if usesNanoGPTModel}')
+    expect(source).toContain('{#if usesOpenRouterModel}')
+    expect(source).toContain('{#if usesOllamaLocal || usesOllamaCloud}')
+    expect(source).toContain('{#if !usesOllamaCloud && usesStreamingModel}')
+    expect(source).toContain('{#if usesOpenRouterModel || usesReverseProxyModel}')
+    expect(source).not.toContain('baseUsesOllamaCloud')
+    expect(source).not.toContain("{#if DBState.db.aiModel === 'nanogpt' || DBState.db.subModel === 'nanogpt'}")
+    expect(source).not.toContain("{#if DBState.db.aiModel === 'openrouter' || DBState.db.subModel === 'openrouter'}")
+  })
+})

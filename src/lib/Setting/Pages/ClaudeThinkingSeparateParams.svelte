@@ -2,13 +2,12 @@
   import { language } from 'src/lang'
   import { DBState } from 'src/ts/stores.svelte'
   import { getModelInfo } from 'src/ts/model/modellist'
+  import { normalizeModelRole, resolveModelForRole } from 'src/ts/model/modelRoles'
   import { LLMFlags } from 'src/ts/model/types'
   import SliderInput from 'src/lib/UI/GUI/SliderInput.svelte'
   import SelectInput from 'src/lib/UI/GUI/SelectInput.svelte'
   import OptionInput from 'src/lib/UI/GUI/OptionInput.svelte'
   import type { SeparateParameters } from 'src/ts/storage/database.svelte'
-
-  type AuxModelKey = keyof typeof DBState.db.seperateModels
 
   let {
     value = $bindable(),
@@ -18,15 +17,11 @@
     paramKey?: string
   } = $props()
 
-  const auxModelKeys: AuxModelKey[] = ['memory', 'emotion', 'translate', 'otherAx']
-
   let effectiveModel = $derived.by(() => {
     if (!paramKey) return DBState.db.subModel
-    if (auxModelKeys.includes(paramKey as AuxModelKey)) {
-      if (DBState.db.seperateModelsForAxModels) {
-        return DBState.db.seperateModels[paramKey as AuxModelKey] || DBState.db.subModel
-      }
-      return DBState.db.subModel
+    const role = normalizeModelRole(paramKey)
+    if (role) {
+      return resolveModelForRole(DBState.db, role)
     }
     return paramKey
   })

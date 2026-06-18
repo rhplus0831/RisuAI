@@ -476,13 +476,6 @@ export const advancedSettingsItems: SettingItem[] = [
     classes: 'mt-4',
   },
   {
-    id: 'adv.auxModelUnderModelSettings',
-    type: 'check',
-    labelKey: 'auxModelUnderModelSettings',
-    bindKey: 'auxModelUnderModelSettings',
-    classes: 'mt-4',
-  },
-  {
     id: 'adv.devMode',
     type: 'check',
     labelKey: 'pluginDevelopMode',

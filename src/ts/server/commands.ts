@@ -180,6 +180,7 @@ export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
   menuSideBar: 'display',
   min_p: 'runtime',
   mistralKey: 'providers',
+  modelRoles: 'providers',
   modelTools: 'providers',
   moduleIntergration: 'advanced',
   NAIadventure: 'providers',

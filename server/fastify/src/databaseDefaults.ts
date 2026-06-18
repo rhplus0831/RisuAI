@@ -4,6 +4,13 @@ import { defaultHotkeys } from '../../../src/ts/defaulthotkeys.js'
 import { LLMFormat } from '../../../src/ts/model/types.js'
 import { DEFAULT_CHAT_DISPLAY_TAIL_COUNT } from '../../../src/ts/chatDisplayTailCount.js'
 import { createExtractedModelPreset, createExtractedPromptPreset } from '../../../src/ts/presetSplit.js'
+import {
+  createDefaultLegacyFallbackModels,
+  createDefaultModelRoleOverrides,
+  normalizeLegacyFallbackModels,
+  normalizeLegacySeperateModels,
+  normalizeModelRoleOverrides,
+} from '../../../src/ts/model/modelRoles.js'
 
 type JsonRecord = Record<string, unknown>
 
@@ -106,13 +113,7 @@ const DEFAULT_COMFY_CONFIG = {
   timeout: 30,
 }
 
-const DEFAULT_FALLBACK_MODELS = {
-  memory: [],
-  emotion: [],
-  translate: [],
-  otherAx: [],
-  model: [],
-}
+const DEFAULT_FALLBACK_MODELS = createDefaultLegacyFallbackModels()
 
 const DEFAULT_PROMPT_SETTINGS = {
   assistantPrefill: '',
@@ -129,6 +130,8 @@ const DEFAULT_SEPERATE_PARAMETERS = {
   emotion: {},
   translate: {},
   otherAx: {},
+  scriptMain: {},
+  scriptAux: {},
   overrides: {},
 }
 
@@ -214,6 +217,8 @@ export function normalizeDatabaseDefaults(
   if (providerDefaults) {
     setDefault(database, 'subModel', 'gemini-3-flash-preview')
   }
+  setDefault(database, 'modelRoles', createDefaultModelRoleOverrides())
+  normalizeModelRoleSettings(database)
   setDefault(database, 'waifuWidth', 100)
   setDefault(database, 'waifuWidth2', 100)
   setDefault(database, 'emotionPrompt', '')
@@ -412,6 +417,9 @@ export function normalizeDatabaseDefaults(
   setDefault(database, 'deepseekReasoningEffort', 'high')
   normalizeHypaCustomSettings(database)
   setDefault(database, 'doNotChangeSeperateModels', false)
+  setDefault(database, 'seperateModelsForAxModels', false)
+  setDefault(database, 'seperateModels', normalizeLegacySeperateModels(undefined))
+  normalizeModelRoleSettings(database)
   setDefault(database, 'modelTools', [])
   setDefault(database, 'enableScrollToActiveChar', true)
   normalizeHotkeys(database)
@@ -569,6 +577,7 @@ function createDefaultPreset(): JsonRecord {
     formatingOrder: DEFAULT_FORMATING_ORDER,
     aiModel: 'gemini-3-flash-preview',
     subModel: 'gemini-3-flash-preview',
+    modelRoles: createDefaultModelRoleOverrides(),
     currentPluginProvider: '',
     textgenWebUIStreamURL: '',
     textgenWebUIBlockingURL: '',
@@ -721,11 +730,22 @@ function normalizePresetOpenrouterProviders(database: JsonRecord): void {
   }
 }
 
+function normalizeModelRoleSettings(database: JsonRecord): void {
+  database.modelRoles = normalizeModelRoleOverrides(database.modelRoles)
+  database.seperateModels = normalizeLegacySeperateModels(database.seperateModels)
+}
+
 function normalizeSeperateParameters(database: JsonRecord): void {
-  if (!isRecord(database.seperateParameters)) {
-    database.seperateParameters = cloneJson(DEFAULT_SEPERATE_PARAMETERS)
+  const source = isRecord(database.seperateParameters) ? database.seperateParameters : {}
+  database.seperateParameters = {
+    memory: isRecord(source.memory) ? source.memory : {},
+    emotion: isRecord(source.emotion) ? source.emotion : {},
+    translate: isRecord(source.translate) ? source.translate : {},
+    otherAx: isRecord(source.otherAx) ? source.otherAx : {},
+    scriptMain: isRecord(source.scriptMain) ? source.scriptMain : {},
+    scriptAux: isRecord(source.scriptAux) ? source.scriptAux : {},
+    overrides: isRecord(source.overrides) ? source.overrides : {},
   }
-  ;(database.seperateParameters as JsonRecord).overrides ??= {}
 }
 
 function normalizeHypaV3Presets(database: JsonRecord): void {
@@ -822,17 +842,7 @@ function normalizeHotkeys(database: JsonRecord): void {
 }
 
 function normalizeFallbackModels(database: JsonRecord): void {
-  if (!isRecord(database.fallbackModels)) {
-    database.fallbackModels = cloneJson(DEFAULT_FALLBACK_MODELS)
-  }
-  const fallbackModels = database.fallbackModels as JsonRecord
-  database.fallbackModels = {
-    model: stringArray(fallbackModels.model).filter((value) => value !== ''),
-    memory: stringArray(fallbackModels.memory).filter((value) => value !== ''),
-    emotion: stringArray(fallbackModels.emotion).filter((value) => value !== ''),
-    translate: stringArray(fallbackModels.translate).filter((value) => value !== ''),
-    otherAx: stringArray(fallbackModels.otherAx).filter((value) => value !== ''),
-  }
+  database.fallbackModels = normalizeLegacyFallbackModels(database.fallbackModels)
 }
 
 function normalizeFormatVersion(database: JsonRecord): void {
@@ -862,10 +872,6 @@ function isRecord(value: unknown): value is JsonRecord {
 
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value)
-}
-
-function stringArray(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
 }
 
 function cloneJson<T>(value: T): T {

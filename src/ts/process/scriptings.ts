@@ -595,7 +595,7 @@ export async function runScripted(
               forceStreaming: options.streaming === true,
               noMultiGen: true,
             },
-            'model',
+            'scriptMain',
           )
 
           if (result.type === 'fail') {
@@ -649,7 +649,7 @@ export async function runScripted(
             useStreaming: false,
             noMultiGen: true,
           },
-          'model',
+          'scriptMain',
         )
 
         if (result.type === 'fail') {
@@ -956,7 +956,7 @@ export async function runScripted(
               forceStreaming: options.streaming === true,
               noMultiGen: true,
             },
-            'otherAx',
+            'scriptAux',
           )
 
           if (result.type === 'fail') {

@@ -1,4 +1,5 @@
 import { getDatabase } from 'src/ts/storage/database.svelte'
+import type { LegacyModelMode } from '../../model/modelRoles'
 import { parseAdditionalParamJsonValue } from './additionalParams'
 
 export type LLMParameter =
@@ -14,7 +15,28 @@ export type LLMParameter =
   | 'thinking_tokens'
   | 'verbosity'
 
-export type ModelModeExtended = 'model' | 'submodel' | 'memory' | 'emotion' | 'otherAx' | 'translate'
+export type ModelModeExtended = LegacyModelMode
+
+type SeparateParameterMode = 'memory' | 'emotion' | 'translate' | 'otherAx' | 'scriptMain' | 'scriptAux'
+
+function separateParameterModeFor(
+  seperateParameters: Record<string, unknown> | undefined,
+  modelMode: ModelModeExtended,
+): SeparateParameterMode | null {
+  if (modelMode === 'model') return null
+  if (modelMode === 'submodel') return 'otherAx'
+  if (modelMode === 'scriptMain') {
+    return hasSeparateParameterValues(seperateParameters?.scriptMain) ? 'scriptMain' : null
+  }
+  if (modelMode === 'scriptAux') {
+    return hasSeparateParameterValues(seperateParameters?.scriptAux) ? 'scriptAux' : 'otherAx'
+  }
+  return modelMode
+}
+
+function hasSeparateParameterValues(value: unknown): boolean {
+  return typeof value === 'object' && value !== null && !Array.isArray(value) && Object.keys(value).length > 0
+}
 
 export function setObjectValue<T>(obj: T, key: string, value: any): T {
   const splitKey = key.split('.')
@@ -169,8 +191,9 @@ export function applyParameters(
     }
   }
 
-  if (db.seperateParametersEnabled && (modelMode !== 'model' || db.seperateParametersByModel)) {
-    let sepParams = db.seperateParameters[modelMode]
+  const separateParameterMode = separateParameterModeFor(db.seperateParameters, modelMode)
+  if (db.seperateParametersEnabled && (separateParameterMode !== null || db.seperateParametersByModel)) {
+    let sepParams = separateParameterMode === null ? undefined : db.seperateParameters[separateParameterMode]
     if (db.seperateParametersByModel) {
       sepParams = db.seperateParameters.overrides[arg.modelId]
 
@@ -180,10 +203,6 @@ export function applyParameters(
         )
       }
     }
-    if (modelMode === 'submodel') {
-      sepParams = db.seperateParameters['otherAx']
-    }
-
     for (const parameter of parameters) {
       let value: number | string = 0
       if (parameter === 'top_k' && arg.ignoreTopKIfZero && sepParams[parameter] === 0) {

@@ -1,6 +1,7 @@
 import { Ollama } from 'ollama/dist/browser.mjs'
 import { language } from '../../../lang'
 import { fetchNative, globalFetch } from '../../globalApi.svelte'
+import { resolveModelForRole, type LegacyFallbackModelKey } from '../../model/modelRoles'
 import { getModelInfo, LLMFlags, LLMFormat, type LLMModel } from '../../model/modellist'
 import { risuChatParser, risuEscape, risuUnescape } from '../../parser/parser.svelte'
 import { pluginProcess, pluginV2 } from '../../plugins/plugins.svelte'
@@ -99,6 +100,10 @@ export interface StreamResponseChunk {
 }
 
 type OllamaThinkMode = boolean | 'low' | 'medium' | 'high'
+
+function fallbackKeyForModelMode(model: ModelModeExtended): LegacyFallbackModelKey | null {
+  return model === 'submodel' ? null : model
+}
 
 function getOllamaThinkMode(mode: string): OllamaThinkMode | undefined {
   switch (mode) {
@@ -216,7 +221,10 @@ export async function requestChatData(
   abortSignal: AbortSignal = null,
 ): Promise<requestDataResponse> {
   const db = getDatabase()
-  const fallBackModels: string[] = safeStructuredClone(db?.fallbackModels?.[model] ?? [])
+  const fallbackKey = fallbackKeyForModelMode(model)
+  const fallBackModels: string[] = safeStructuredClone(
+    fallbackKey === null ? [] : (db?.fallbackModels?.[fallbackKey] ?? []),
+  )
   fallBackModels.push('')
   let da: requestDataResponse
 
@@ -450,14 +458,8 @@ export async function requestChatDataMain(
   const db = getDatabase()
   const targ: RequestDataArgumentExtended = arg
 
-  targ.aiModel = arg.staticModel ? arg.staticModel : model === 'model' ? db.aiModel : db.subModel
+  targ.aiModel = arg.staticModel ? arg.staticModel : resolveModelForRole(db, model)
   targ.modelInfo = getModelInfo(targ.aiModel)
-  if (db.seperateModelsForAxModels && !arg.staticModel) {
-    if (db.seperateModels[model]) {
-      targ.aiModel = db.seperateModels[model]
-      targ.modelInfo = getModelInfo(targ.aiModel)
-    }
-  }
 
   if (arg.blockPlugins && targ.modelInfo.id.startsWith('pluginmodel:::')) {
     return {

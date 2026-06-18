@@ -10,6 +10,8 @@
     translate: string
     emotion: string
     otherAx: string
+    scriptMain: string
+    scriptAux: string
   }
 
   const seperateModelsForAxModelsDraft = createServerBackedSettingDraft<boolean>('seperateModelsForAxModels', false)
@@ -19,6 +21,8 @@
     translate: '',
     emotion: '',
     otherAx: '',
+    scriptMain: '',
+    scriptAux: '',
   })
 </script>
 

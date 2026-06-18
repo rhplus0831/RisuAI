@@ -9,14 +9,12 @@
   import { FileDownIcon, FileUpIcon } from '@lucide/svelte'
   import { selectSingleFile } from 'src/ts/util'
   import { getModelInfo } from 'src/ts/model/modellist'
+  import { normalizeModelRole, resolveModelForRole } from 'src/ts/model/modelRoles'
   import {
     parseSeperateParametersImport,
     type SeperateParametersImportOperation,
     type SeperateParametersImportTarget,
   } from 'src/ts/server/seperateParametersImport'
-
-  type AuxModelKey = 'memory' | 'emotion' | 'translate' | 'otherAx'
-  const auxModelKeys: AuxModelKey[] = ['memory', 'emotion', 'translate', 'otherAx']
 
   interface GuardedSeperateParametersImport {
     captureTarget: () => SeperateParametersImportTarget | null
@@ -40,11 +38,9 @@
 
   let effectiveModel = $derived.by(() => {
     if (!paramKey) return DBState.db.subModel
-    if (auxModelKeys.includes(paramKey as AuxModelKey)) {
-      if (DBState.db.seperateModelsForAxModels) {
-        return DBState.db.seperateModels[paramKey as AuxModelKey] || DBState.db.subModel
-      }
-      return DBState.db.subModel
+    const role = normalizeModelRole(paramKey)
+    if (role) {
+      return resolveModelForRole(DBState.db, role)
     }
     return paramKey
   })

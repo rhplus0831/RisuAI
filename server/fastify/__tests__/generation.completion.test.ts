@@ -334,12 +334,16 @@ describe('Phase 6-1 POST /api/v1/generate/completion', () => {
       aiModel: 'gpt4o',
       subModel: 'gpt4om',
       openAIKey: 'sk-server-owned',
+      modelRoles: {
+        scriptMain: 'gpt-5',
+      },
       seperateModelsForAxModels: true,
       seperateModels: {
         memory: 'gpt41',
         emotion: 'gpt41-mini',
         otherAx: 'gpt41-nano',
         translate: 'gpt-5-mini',
+        scriptAux: 'gpt-5-nano',
       },
     })
     const sentBodies: Array<Record<string, unknown>> = []
@@ -359,6 +363,8 @@ describe('Phase 6-1 POST /api/v1/generate/completion', () => {
       ['emotion', 'gpt41-mini'],
       ['otherAx', 'gpt41-nano'],
       ['translate', 'gpt-5-mini'],
+      ['scriptMain', 'gpt-5'],
+      ['scriptAux', 'gpt-5-nano'],
     ] as const
     for (const [mode] of modes) {
       const res = await harness.app.inject({
