@@ -1,21 +1,28 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { get } from 'svelte/store'
 
-vi.mock('./characters', () => ({
+const routerMocks = vi.hoisted(() => ({
   changeChar: vi.fn(),
+  changeChatTo: vi.fn(),
+  findCharacterIndexbyId: vi.fn(() => -1),
+  openPlaygroundChat: vi.fn(),
+}))
+
+vi.mock('./characters', () => ({
+  changeChar: routerMocks.changeChar,
 }))
 
 vi.mock('./globalApi.svelte', () => ({
-  changeChatTo: vi.fn(),
+  changeChatTo: routerMocks.changeChatTo,
 }))
 
 vi.mock('./playground', () => ({
   PLAYGROUND_CHARACTER_ID: 'playground',
-  openPlaygroundChat: vi.fn(),
+  openPlaygroundChat: routerMocks.openPlaygroundChat,
 }))
 
 vi.mock('./util', () => ({
-  findCharacterIndexbyId: vi.fn(() => -1),
+  findCharacterIndexbyId: routerMocks.findCharacterIndexbyId,
 }))
 
 vi.mock('./stores.svelte', async () => {
@@ -33,11 +40,32 @@ vi.mock('./stores.svelte', async () => {
   }
 })
 
+function deferred<T = void>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((innerResolve) => {
+    resolve = innerResolve
+  })
+  return { promise, resolve }
+}
+
+async function flushMicrotasks(): Promise<void> {
+  await Promise.resolve()
+  await Promise.resolve()
+}
+
 async function importRouterAt(path: string) {
   vi.resetModules()
   window.history.replaceState(null, '', path)
   return await import('./router')
 }
+
+beforeEach(() => {
+  routerMocks.changeChar.mockReset()
+  routerMocks.changeChatTo.mockReset()
+  routerMocks.findCharacterIndexbyId.mockReset()
+  routerMocks.findCharacterIndexbyId.mockReturnValue(-1)
+  routerMocks.openPlaygroundChat.mockReset()
+})
 
 describe('router initial application', () => {
   it('does not treat initial root load as a pending home navigation', async () => {
@@ -56,5 +84,190 @@ describe('router initial application', () => {
       chatId: 'chat-a',
     })
     expect(router.hasPendingRouteApplication()).toBe(true)
+  })
+})
+
+describe('router character route freshness', () => {
+  it('does not let a stale character route clear a newer pending character route', async () => {
+    const router = await importRouterAt('/character/char-a/chat-a')
+    const stores = await import('./stores.svelte')
+    const { DBState, selectedCharID } = stores
+    DBState.db = {
+      characters: [
+        {
+          chaId: 'char-a',
+          chatPage: 0,
+          chats: [
+            { id: 'chat-old-a', name: 'Old A', message: [] },
+            { id: 'chat-a', name: 'Chat A', message: [] },
+          ],
+        },
+        {
+          chaId: 'char-b',
+          chatPage: 0,
+          chats: [
+            { id: 'chat-old-b', name: 'Old B', message: [] },
+            { id: 'chat-b', name: 'Chat B', message: [] },
+          ],
+        },
+      ],
+    } as any
+    selectedCharID.set(-1)
+    routerMocks.findCharacterIndexbyId.mockImplementation(
+      (characterId: string) =>
+        DBState.db.characters?.findIndex((character: any) => character?.chaId === characterId) ?? -1,
+    )
+    const staleSelection = deferred()
+    const latestSelection = deferred()
+    routerMocks.changeChar
+      .mockImplementationOnce(async () => {
+        await staleSelection.promise
+      })
+      .mockImplementationOnce(async () => {
+        await latestSelection.promise
+      })
+
+    const staleRoute = router.applyRouteToStores({
+      kind: 'character',
+      path: '/character/char-a/chat-a',
+      chaId: 'char-a',
+      chatId: 'chat-a',
+    })
+    await vi.waitFor(() => {
+      expect(routerMocks.changeChar).toHaveBeenCalledTimes(1)
+    })
+
+    router.navigate('/character/char-b/chat-b')
+    const latestRoute = router.applyRouteToStores({
+      kind: 'character',
+      path: '/character/char-b/chat-b',
+      chaId: 'char-b',
+      chatId: 'chat-b',
+    })
+    await vi.waitFor(() => {
+      expect(routerMocks.changeChar).toHaveBeenCalledTimes(2)
+    })
+
+    staleSelection.resolve()
+    await staleRoute
+    await flushMicrotasks()
+
+    expect(routerMocks.changeChatTo).not.toHaveBeenCalled()
+    expect(router.isApplyingRouteToStores()).toBe(true)
+    expect(router.hasPendingRouteApplication()).toBe(true)
+
+    selectedCharID.set(1)
+    latestSelection.resolve()
+    await latestRoute
+    await flushMicrotasks()
+
+    expect(routerMocks.changeChatTo).toHaveBeenCalledTimes(1)
+    expect(routerMocks.changeChatTo).toHaveBeenCalledWith('chat-b')
+    expect(router.isApplyingRouteToStores()).toBe(false)
+    expect(router.hasPendingRouteApplication()).toBe(false)
+  })
+
+  it('does not let a stale delayed character route select a chat after a newer settings route wins', async () => {
+    const router = await importRouterAt('/character/char-a/chat-target')
+    const stores = await import('./stores.svelte')
+    const { DBState, PlaygroundStore, SettingsMenuIndex, selectedCharID, settingsOpen } = stores
+    DBState.db = {
+      characters: [
+        {
+          chaId: 'char-a',
+          chatPage: 0,
+          chats: [
+            { id: 'chat-old', name: 'Old chat', message: [] },
+            { id: 'chat-target', name: 'Target chat', message: [] },
+          ],
+        },
+      ],
+    } as any
+    selectedCharID.set(-1)
+    routerMocks.findCharacterIndexbyId.mockImplementation(
+      (characterId: string) =>
+        DBState.db.characters?.findIndex((character: any) => character?.chaId === characterId) ?? -1,
+    )
+    const pendingSelection = deferred()
+    routerMocks.changeChar.mockImplementation(async () => {
+      await pendingSelection.promise
+    })
+
+    const staleRoute = router.applyRouteToStores({
+      kind: 'character',
+      path: '/character/char-a/chat-target',
+      chaId: 'char-a',
+      chatId: 'chat-target',
+    })
+    await vi.waitFor(() => {
+      expect(routerMocks.changeChar).toHaveBeenCalledWith(0, { isFresh: expect.any(Function) })
+    })
+
+    const latestRoute = router.applyRouteToStores({
+      kind: 'settings',
+      path: '/settings/model',
+      section: 'model',
+      index: 17,
+    })
+    await latestRoute
+    await flushMicrotasks()
+
+    expect(get(settingsOpen)).toBe(true)
+    expect(get(SettingsMenuIndex)).toBe(17)
+    expect(get(PlaygroundStore)).toBe(0)
+    expect(get(selectedCharID)).toBe(-1)
+    expect(router.isApplyingRouteToStores()).toBe(false)
+    expect(router.hasPendingRouteApplication()).toBe(false)
+
+    pendingSelection.resolve()
+    await staleRoute
+    await flushMicrotasks()
+
+    expect(routerMocks.changeChatTo).not.toHaveBeenCalled()
+    expect(get(settingsOpen)).toBe(true)
+    expect(get(selectedCharID)).toBe(-1)
+    expect(router.isApplyingRouteToStores()).toBe(false)
+    expect(router.hasPendingRouteApplication()).toBe(false)
+  })
+
+  it('re-resolves the live character index after character selection before selecting the routed chat', async () => {
+    const router = await importRouterAt('/')
+    const stores = await import('./stores.svelte')
+    const { DBState, selectedCharID } = stores
+    const charA = {
+      chaId: 'char-a',
+      chatPage: 0,
+      chats: [
+        { id: 'chat-old', name: 'Old chat', message: [] },
+        { id: 'chat-target', name: 'Target chat', message: [] },
+      ],
+    }
+    const charB = {
+      chaId: 'char-b',
+      chatPage: 0,
+      chats: [{ id: 'chat-b', name: 'B chat', message: [] }],
+    }
+    DBState.db = {
+      characters: [charA, charB],
+    } as any
+    selectedCharID.set(-1)
+    routerMocks.findCharacterIndexbyId.mockImplementation(
+      (characterId: string) =>
+        DBState.db.characters?.findIndex((character: any) => character?.chaId === characterId) ?? -1,
+    )
+    routerMocks.changeChar.mockImplementation(async (_index: number) => {
+      DBState.db.characters = [charB, charA]
+      selectedCharID.set(1)
+    })
+
+    await router.applyRouteToStores({
+      kind: 'character',
+      path: '/character/char-a/chat-target',
+      chaId: 'char-a',
+      chatId: 'chat-target',
+    })
+
+    expect(routerMocks.changeChar).toHaveBeenCalledWith(0, { isFresh: expect.any(Function) })
+    expect(routerMocks.changeChatTo).toHaveBeenCalledWith('chat-target')
   })
 })

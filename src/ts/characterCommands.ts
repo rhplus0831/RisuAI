@@ -39,6 +39,13 @@ export interface CharacterSelectionSnapshot {
   selectedCharID: number
 }
 
+interface CharacterSelectionAttempt {
+  characterId: string
+  lastInteraction: number | undefined
+  currentChar?: number
+  selectedCharID: number
+}
+
 export interface CharacterOrderDragPosition {
   index: number
   folder?: string
@@ -168,6 +175,46 @@ export function restoreCharacterSelection(snapshot: CharacterSelectionSnapshot):
     }
     ;(DBState.db as unknown as { currentChar?: number }).currentChar = snapshot.currentChar
     selectedCharID.set(snapshot.selectedCharID)
+  })
+}
+
+function currentCharacterSelectionAttempt(
+  characterId: string,
+  lastInteraction: number | undefined,
+): CharacterSelectionAttempt {
+  return {
+    characterId,
+    lastInteraction,
+    currentChar: (DBState.db as unknown as { currentChar?: number }).currentChar,
+    selectedCharID: get(selectedCharID),
+  }
+}
+
+function restoreCharacterSelectionAttempt(
+  previous: CharacterSelectionSnapshot,
+  attempted: CharacterSelectionAttempt,
+): void {
+  withTrustedServerProjectionWrite(() => {
+    const liveSelectedCharID = get(selectedCharID)
+    const liveCurrentChar = (DBState.db as unknown as { currentChar?: number }).currentChar
+    const liveSelectedCharacterId = selectedCharacterIdAt(liveSelectedCharID)
+    const attemptedCharacter = DBState.db.characters?.find((candidate) => candidate?.chaId === attempted.characterId)
+
+    if (
+      liveSelectedCharID !== attempted.selectedCharID ||
+      liveCurrentChar !== attempted.currentChar ||
+      liveSelectedCharacterId !== attempted.characterId ||
+      (attempted.lastInteraction !== undefined && attemptedCharacter?.lastInteraction !== attempted.lastInteraction)
+    ) {
+      return
+    }
+
+    const previousCharacter = DBState.db.characters?.find((candidate) => candidate.chaId === previous.characterId)
+    if (previousCharacter) {
+      previousCharacter.lastInteraction = previous.lastInteraction
+    }
+    ;(DBState.db as unknown as { currentChar?: number }).currentChar = previous.currentChar
+    selectedCharID.set(previous.selectedCharID)
   })
 }
 
@@ -818,6 +865,7 @@ export function dispatchSelectCharacter(
   previous: CharacterSelectionSnapshot,
   lastInteraction?: number,
 ): void {
+  const attempted = currentCharacterSelectionAttempt(characterId, lastInteraction)
   runCharacterCommand(
     (baseRevision) =>
       selectCharacterCommand({
@@ -825,7 +873,7 @@ export function dispatchSelectCharacter(
         characterId,
         lastInteraction,
       }),
-    () => restoreCharacterSelection(previous),
+    () => restoreCharacterSelectionAttempt(previous, attempted),
   )
 }
 

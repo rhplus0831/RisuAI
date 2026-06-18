@@ -151,6 +151,7 @@ let applyingRoute = false
 const initialRoute = parseRoute(typeof window === 'undefined' ? '/' : window.location.pathname)
 let routeApplicationPending = initialRoute.kind !== 'home'
 let skipNextRouteApplication = false
+let routeApplicationEpoch = 0
 
 export const currentRoute = writable<AppRoute>(initialRoute)
 
@@ -191,6 +192,8 @@ export function hasPendingRouteApplication(): boolean {
 }
 
 export async function applyRouteToStores(route: AppRoute): Promise<void> {
+  const applicationEpoch = ++routeApplicationEpoch
+  const isFreshRouteApplication = () => applicationEpoch === routeApplicationEpoch
   applyingRoute = true
   try {
     closeRouteBlockingViews()
@@ -229,6 +232,7 @@ export async function applyRouteToStores(route: AppRoute): Promise<void> {
         OpenRealmStore.set(false)
         if (route.index === 2) {
           await openPlaygroundChat()
+          if (!isFreshRouteApplication()) return
         } else {
           selectedCharID.set(-1)
           PlaygroundStore.set(route.index)
@@ -236,7 +240,7 @@ export async function applyRouteToStores(route: AppRoute): Promise<void> {
         break
       }
       case 'character': {
-        await openCharacterRoute(route.chaId, route.chatId)
+        await openCharacterRoute(route.chaId, route.chatId, isFreshRouteApplication)
         break
       }
       case 'not-found': {
@@ -249,6 +253,7 @@ export async function applyRouteToStores(route: AppRoute): Promise<void> {
     }
   } finally {
     queueMicrotask(() => {
+      if (!isFreshRouteApplication()) return
       applyingRoute = false
       routeApplicationPending = false
     })
@@ -344,7 +349,11 @@ function routePathFromState(input: StateRouteInput): string {
   return '/'
 }
 
-async function openCharacterRoute(characterId: string, chatId: string | undefined): Promise<void> {
+async function openCharacterRoute(
+  characterId: string,
+  chatId: string | undefined,
+  isFreshRouteApplication: () => boolean,
+): Promise<void> {
   const index = findCharacterIndexbyId(characterId)
   if (index < 0) {
     selectedCharID.set(-1)
@@ -358,13 +367,20 @@ async function openCharacterRoute(characterId: string, chatId: string | undefine
   OpenRealmStore.set(false)
 
   if (get(selectedCharID) !== index) {
-    await changeChar(index)
+    await changeChar(index, { isFresh: isFreshRouteApplication })
   }
 
+  if (!isFreshRouteApplication()) return
+  const liveIndex = findCharacterIndexbyId(characterId)
+  if (liveIndex < 0) return
+  const liveSelectedIndex = get(selectedCharID)
+  if (liveSelectedIndex !== liveIndex || DBState.db.characters?.[liveSelectedIndex]?.chaId !== characterId) return
+
   if (!chatId) return
-  const character = DBState.db.characters?.[index]
+  const character = DBState.db.characters?.[liveIndex]
   const chatIndex = character?.chats?.findIndex((chat) => chat.id === chatId) ?? -1
   if (!character || chatIndex < 0 || character.chatPage === chatIndex) return
+  if (!isFreshRouteApplication()) return
   changeChatTo(chatId)
 }
 

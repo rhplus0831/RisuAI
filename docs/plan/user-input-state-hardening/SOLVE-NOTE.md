@@ -74,7 +74,15 @@ return the final/latest request result so an older success cannot mask a newer
 failure. Server-backed Realm import completion now uses
 `forceServerProjectionResync('realm-import')`, always resyncs after successful
 server commits, and gates completion progress, post-refresh navigation, and
-completion/error alerts to the latest Realm operation.
+completion/error alerts to the latest Realm operation. Character route
+application now uses a route epoch so only the latest route can clear
+`applyingRoute`/`routeApplicationPending`; character routes pass freshness
+through `changeChar()`, re-resolve live character indexes by id after awaits,
+and verify the selected character before selecting a routed chat. `changeChar()`
+now fences delayed shell hydration with a latest selection-attempt id and writes
+selection to the live id-located character index. Failed character select command
+rollback now restores the previous selection only while the attempted
+selection/currentChar and attempted `lastInteraction` are still live.
 
 Next manager loop:
 
@@ -160,10 +168,11 @@ Explicit deferrals:
 - Memory job terminal/cancel ordering has landed for polling, SSE, cached
   `not-modified`, and Hypa V3 progress updates. Backup restore, local bundle
   import, and Realm import completion now use latest-request fenced full
-  projection resyncs where applicable. Character/chat import refresh/navigation
-  edges, route hydration races, the `changeChar()` shell hydration/selection
-  race, welcome/onboarding delayed setup, and DevTool autopilot active-chat
-  locking remain Phase 6 work.
+  projection resyncs where applicable. Character route and `changeChar()` shell
+  selection freshness fencing has landed. Character/chat import
+  refresh/navigation edges, welcome/onboarding delayed setup, DevTool autopilot
+  active-chat locking, and the server command-event character-selection
+  hydration audit remain Phase 6 work.
 - Projection-absent optional clean-field deletion remains outside Phase 2 because
   the shared merge helper refreshes fields present in the projection surface.
 

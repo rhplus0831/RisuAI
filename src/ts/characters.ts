@@ -60,6 +60,12 @@ interface CharacterAvatarSnapshot {
 }
 
 const characterAvatarUploadGuard = createLatestOperationGuard<string>()
+let changeCharSelectionAttemptId = 0
+
+interface ChangeCharOptions {
+  reseter?: () => any
+  isFresh?: () => boolean
+}
 
 function cloneJsonValue<T>(value: T): T {
   if (value === undefined) return value
@@ -1171,16 +1177,13 @@ export async function addCharacter(
   MobileGUIStack.set(1)
 }
 
-export async function changeChar(
-  index: number,
-  arg: {
-    reseter?: () => any
-  } = {},
-) {
+export async function changeChar(index: number, arg: ChangeCharOptions = {}) {
   const reseter = arg.reseter ?? (() => {})
   if (get(doingChat)) {
     return
   }
+  const selectionAttemptId = ++changeCharSelectionAttemptId
+  const isFreshSelectionAttempt = () => selectionAttemptId === changeCharSelectionAttemptId && (arg.isFresh?.() ?? true)
   reseter()
   botMakerMode.set(false)
   if (DBState.db.characters?.[index]?.coldstorage) {
@@ -1191,18 +1194,28 @@ export async function changeChar(
   if (!characterId) return
   if (isServerCharacterShell(DBState.db.characters?.[index])) {
     const hydrated = await hydrateCharacterShell(characterId)
-    if (!hydrated && isServerCharacterShell(DBState.db.characters?.[index])) return
+    if (!isFreshSelectionAttempt()) return
+    const hydratedIndex = findLiveCharacterIndex(characterId)
+    if (hydratedIndex < 0) return
+    if (!hydrated && isServerCharacterShell(DBState.db.characters?.[hydratedIndex])) return
   }
+  if (!isFreshSelectionAttempt()) return
+  const liveIndex = findLiveCharacterIndex(characterId)
+  if (liveIndex < 0 || isServerCharacterShell(DBState.db.characters?.[liveIndex])) return
   const previous = currentCharacterSelectionSnapshot(characterId)
   const lastInteraction = Date.now()
   withTrustedServerProjectionWrite(() => {
-    const character = DBState.db.characters?.[index]
+    const character = DBState.db.characters?.[liveIndex]
     if (character) {
       character.lastInteraction = lastInteraction
     }
-    ;(DBState.db as unknown as { currentChar?: number }).currentChar = index
-    selectedCharID.set(index)
+    ;(DBState.db as unknown as { currentChar?: number }).currentChar = liveIndex
+    selectedCharID.set(liveIndex)
   })
   dispatchSelectCharacter(characterId, previous, lastInteraction)
   await hydrateSelectedCharacterShell()
+}
+
+function findLiveCharacterIndex(characterId: string): number {
+  return DBState.db.characters?.findIndex((character) => character?.chaId === characterId) ?? -1
 }

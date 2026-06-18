@@ -44,6 +44,7 @@ import {
   dispatchCreateAndSelectCharacter,
   dispatchCreateCharacter,
   dispatchDeleteCharacter,
+  dispatchSelectCharacter,
   moveCharacterOrderItem,
   normalizeCharacterOrder,
   prepareCompatibleCharacterUpdate,
@@ -626,6 +627,104 @@ describe('character list create/delete rollback', () => {
     const charBRows = DBState.db.characters.filter((character: any) => character.chaId === 'char-b')
     expect(charBRows).toEqual([{ chaId: 'char-b', name: 'Replacement B', chats: [] }])
     expect(DBState.db.characterOrder).toEqual(['char-a', 'char-c', 'char-b'])
+  })
+})
+
+describe('character select command rollback', () => {
+  function stubDelayedSelectCommandFetch(selectResponse: Promise<Response>): CapturedFetch[] {
+    const calls: CapturedFetch[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const headers = init.headers as Record<string, string> | undefined
+        const url = String(input)
+        calls.push({
+          url,
+          method: init.method ?? 'GET',
+          authHeader: headers?.['risu-auth'] ?? null,
+          body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+        })
+
+        if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+        if (url === '/api/v1/commands/characters/select') return selectResponse
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+    return calls
+  }
+
+  beforeEach(() => {
+    DBState.db = {
+      characters: [
+        { chaId: 'char-a', name: 'A', chats: [], lastInteraction: 100 },
+        { chaId: 'char-b', name: 'B', chats: [], lastInteraction: 200 },
+        { chaId: 'char-c', name: 'C', chats: [], lastInteraction: 300 },
+      ],
+      characterOrder: ['char-a', 'char-b', 'char-c'],
+      currentChar: 0,
+    } as any
+    selectedCharID.set(0)
+    setServerProjectionWriteGuardEnabled(true)
+  })
+
+  it('restores the previous selection when the failed attempted selection is still live', async () => {
+    const selectResponse = deferredResponse()
+    const calls = stubDelayedSelectCommandFetch(selectResponse.promise)
+    const previous = currentCharacterSelectionSnapshot('char-b')
+
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.characters[1].lastInteraction = 2000
+      ;(DBState.db as any).currentChar = 1
+      selectedCharID.set(1)
+    })
+    dispatchSelectCharacter('char-b', previous, 2000)
+
+    await waitForCallCount(calls, 2)
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/characters/select',
+      method: 'POST',
+      authHeader: 'character-command-token',
+      body: {
+        baseRevision: 10,
+        characterId: 'char-b',
+        lastInteraction: 2000,
+      },
+    })
+
+    selectResponse.resolve(jsonResponse({ error: 'select failed' }, 500))
+
+    await vi.waitFor(() => {
+      expect(get(selectedCharID)).toBe(0)
+    })
+    expect((DBState.db as any).currentChar).toBe(0)
+    expect(DBState.db.characters[1].lastInteraction).toBe(200)
+  })
+
+  it('preserves a newer selection when an older failed select command resolves late', async () => {
+    const selectResponse = deferredResponse()
+    const calls = stubDelayedSelectCommandFetch(selectResponse.promise)
+    const previous = currentCharacterSelectionSnapshot('char-b')
+
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.characters[1].lastInteraction = 2000
+      ;(DBState.db as any).currentChar = 1
+      selectedCharID.set(1)
+    })
+    dispatchSelectCharacter('char-b', previous, 2000)
+    await waitForCallCount(calls, 2)
+
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.characters[2].lastInteraction = 3000
+      ;(DBState.db as any).currentChar = 2
+      selectedCharID.set(2)
+    })
+    selectResponse.resolve(jsonResponse({ error: 'select failed' }, 500))
+
+    await flushAsyncWork()
+    expect(get(selectedCharID)).toBe(2)
+    expect((DBState.db as any).currentChar).toBe(2)
+    expect(DBState.db.characters[1].lastInteraction).toBe(2000)
+    expect(DBState.db.characters[2].lastInteraction).toBe(3000)
   })
 })
 

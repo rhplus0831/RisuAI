@@ -21,7 +21,8 @@ inventory under
   restore/import, and navigation fences is in progress; the Phase 6 memory job
   terminal/cancel ordering slice, backup/local bundle full-resync
   latest-request fencing slice, and Realm import finish refresh/navigation guard
-  slice have landed. The first Phase 3 slice
+  slice have landed. The Phase 6 character route and shell-selection freshness
+  slice has also landed. The first Phase 3 slice
   now guards custom background upload/cancel/error callbacks so stale completions
   cannot restore or apply an old custom background after a newer choice. Composer
   paste/menu file actions now guard stale file callbacks by active transcript
@@ -240,6 +241,14 @@ inventory under
   skipped older success followed by newer success, skipped older success
   followed by newer failure, and the existing single-success apply path used by
   backup restore and local bundle import.
+  `src/ts/router.ts`, `src/ts/characters.ts`, and
+  `src/ts/characterCommands.ts` now fence character route application and shell
+  selection by route epoch, latest `changeChar()` selection attempt, live
+  `chaId` index re-resolution, and attempted select-command rollback. Focused
+  coverage in `src/ts/router.test.ts`, `src/ts/characters.changeChar.test.ts`,
+  and `src/ts/characterCommands.test.ts` covers stale route completion,
+  post-hydration live-index selection, removed shell targets, and stale failed
+  select rollback preserving newer selection/currentChar.
   `src/ts/server/characterBridge.svelte.ts` also now tracks dirty top-level
   character draft fields and merges same-character projection reseeds through
   `mergeProjectionIntoDirtyDraft`.
@@ -470,9 +479,8 @@ inventory under
   copy, select, create, update, delete, reorder, and extraction rollback by
   attempted row, field, order, selection, generated split row, and scalar
   settings state.
-- Verification state: Phase 6 Realm import finish refresh fencing and
-  latest-operation navigation/progress validation is recorded in
-  `latest-verification.md`.
+- Verification state: Phase 6 character route freshness and `changeChar()`
+  shell-selection hardening validation is recorded in `latest-verification.md`.
 - Highest issue density:
   - Character editor: 52 issue rows, mostly dirty projection and unguarded
     upload callbacks.
@@ -558,10 +566,13 @@ inventory under
   Backup restore and local bundle import now share latest-request fenced full
   projection resyncs. Realm import finish refresh now uses that fenced resync
   helper and only the latest Realm import operation may run completion progress,
-  navigation, or completion/error alerts after refresh. Character/chat import
-  refresh/navigation edges, route hydration races, the `changeChar()` shell
-  hydration/selection race, welcome/onboarding delayed setup, and DevTool
-  autopilot active-chat locking remain here.
+  navigation, or completion/error alerts after refresh. Character route
+  application, `changeChar()` shell hydration selection, and failed character
+  select rollback now use freshness/attempt guards so stale route or select
+  completions cannot overwrite newer character/chat selection. Character/chat
+  import refresh/navigation edges, welcome/onboarding delayed setup, DevTool
+  autopilot active-chat locking, and the server command-event
+  character-selection hydration audit remain here.
 - [Phase 7](phases/phase-7-verification.md): pending. Closeout regression,
   browser smoke, and TypeScript proof.
 
@@ -891,11 +902,12 @@ inventory under
     server-backed web mode` at `src/ts/compatibilityAdapters.test.ts:626`. The
     failure reproduced at baseline commit `30d4ad7ab`.
   - Phase 6: Memory job terminal/cancel ordering, backup/local bundle
-    full-resync latest-request fencing, and Realm import finish refresh fencing
-    have landed. Remaining Phase 6 work includes character/chat import
-    refresh/navigation edges, route hydration races, the `changeChar()` shell
-    hydration/selection race, welcome/onboarding delayed setup, DevTool autopilot
-    active-chat locking, and related navigation refresh fences.
+    full-resync latest-request fencing, Realm import finish refresh fencing, and
+    character route/shell-selection freshness fencing have landed. Remaining
+    Phase 6 work includes character/chat import refresh/navigation edges,
+    welcome/onboarding delayed setup, DevTool autopilot active-chat locking, the
+    server command-event character-selection hydration audit, and related
+    navigation refresh fences.
 - Phase docs that mention `src/ts/process/rerollNavigation.ts` should be read
   as `src/ts/process/rerollNavigation.svelte.ts`.
 - First P0 fixture targets are dirty character projection merge,

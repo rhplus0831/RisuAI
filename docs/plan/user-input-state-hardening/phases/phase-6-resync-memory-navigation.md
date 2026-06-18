@@ -30,6 +30,26 @@ transitions so late refreshes cannot overwrite newer local work.
   commits, and allows only the latest Realm operation to run completion
   progress, post-refresh `changeChar()` navigation, alert clearing, completion
   alerts, or refresh-failure alerts.
+- Character route and shell-selection freshness fencing: `applyRouteToStores()`
+  now assigns a route application epoch and only the latest application can clear
+  `applyingRoute`/`routeApplicationPending`. Character route application passes a
+  freshness guard through `changeChar()`, re-resolves the live character index by
+  `chaId` after awaits, and verifies the route still owns the selected character
+  before selecting a routed chat. `changeChar()` now fences delayed shell
+  hydration with a latest selection-attempt id, revalidates the captured
+  character id after hydration, and writes `currentChar`/`selectedCharID` using
+  the live id-located index. Failed character select command rollback now
+  restores the previous selection only while the attempted selection/currentChar
+  and attempted `lastInteraction` are still live.
+
+## Remaining Residuals
+
+- Character/chat import refresh and post-import navigation edges.
+- Welcome/onboarding delayed setup callbacks and other one-shot setup flows.
+- DevTool autopilot and other long sequential loops that can outlive the active
+  chat.
+- Server command-event character-selection hydration audit and related
+  navigation refresh fences.
 
 ## Scope
 
