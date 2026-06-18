@@ -18,6 +18,7 @@ export type ServerProjectionResyncResult =
 
 let serverProjectionRefreshPromise: Promise<ServerProjectionResyncResult> | null = null
 let serverProjectionRefreshPending = false
+let latestServerProjectionRefreshRequestId = 0
 
 /** Raw projection characters before format defaults hide lorebook stubs. */
 function rawProjectionCharacters(
@@ -44,6 +45,7 @@ export async function forceServerProjectionResync(
   reason: string,
   options: { resource?: string } = {},
 ): Promise<ServerProjectionResyncResult> {
+  latestServerProjectionRefreshRequestId += 1
   recordFullBootstrapResync(reason, options.resource)
   if (serverProjectionRefreshPromise) {
     serverProjectionRefreshPending = true
@@ -59,17 +61,20 @@ export async function forceServerProjectionResync(
 }
 
 async function runServerProjectionResync(): Promise<ServerProjectionResyncResult> {
-  let applied: ServerProjectionResyncResult | null = null
-  let lastFailure: ServerProjectionResyncResult | null = null
+  let latestResult: ServerProjectionResyncResult | null = null
 
   do {
     serverProjectionRefreshPending = false
+    const requestId = latestServerProjectionRefreshRequestId
     const bootstrap = await fetchServerBootstrapProjectionReadOnly(null, { cacheRevision: false })
+    if (requestId !== latestServerProjectionRefreshRequestId) {
+      continue
+    }
     if (bootstrap.status === 'ok') {
       if (bootstrap.projection.database == null) {
         const error = 'Server projection refresh returned an empty database'
         console.warn(error)
-        lastFailure = { status: 'error', error }
+        latestResult = { status: 'error', error }
         continue
       }
       applyServerProjectionDatabase(bootstrap.projection.database)
@@ -90,18 +95,17 @@ async function runServerProjectionResync(): Promise<ServerProjectionResyncResult
       void hydrateActiveChat({ force: true })
       void hydrateActiveCharacterLorebook({ force: true })
       startPromptTemplateHydration()
-      applied = { status: 'ok', revision: bootstrap.projection.revision }
+      latestResult = { status: 'ok', revision: bootstrap.projection.revision }
     } else if (bootstrap.status === 'error') {
       console.warn(`Server projection refresh failed: ${bootstrap.error}`)
-      lastFailure = { status: 'error', error: bootstrap.error }
+      latestResult = { status: 'error', error: bootstrap.error }
     } else {
-      lastFailure = { status: 'unavailable' }
+      latestResult = { status: 'unavailable' }
     }
   } while (serverProjectionRefreshPending)
 
   return (
-    applied ??
-    lastFailure ?? {
+    latestResult ?? {
       status: 'error',
       error: 'Server projection refresh did not complete',
     }

@@ -7,33 +7,34 @@ workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 6 memory job terminal/cancel ordering.
-  The run validates that local terminal job updates win over older polling,
-  cached `not-modified` results, SSE job updates, and Hypa V3 progress side
-  effects for the same chat/job id.
+- Runtime/code change under test: Phase 6 latest-request fencing for full server
+  projection resyncs used by backup restore and local bundle import. The run
+  validates that every coalesced `forceServerProjectionResync()` caller advances
+  the latest request id, older in-flight bootstrap responses skip all apply and
+  hydration side effects, newer success applies once, and newer failure is the
+  returned result instead of an older success.
 - Commands:
 
 ```bash
-pnpm exec vitest run src/ts/server/memoryJobRefresh.test.ts src/ts/server/memoryJobEvents.test.ts src/ts/bootstrap.test.ts src/ts/process/request/tests/serverMemory.test.ts
-pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/memoryJobsRoutes.test.ts
+pnpm exec vitest run src/ts/server/projectionResync.test.ts src/ts/server/backups.test.ts src/ts/bootstrap.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
-pnpm exec prettier --write src/ts/server/memoryJobRefresh.ts src/ts/server/memoryJobOrdering.ts src/ts/server/memoryJobRefresh.test.ts src/lib/Others/HypaV3Modal/server-memory-jobs.svelte src/ts/bootstrap.ts src/ts/bootstrap.test.ts docs/plan/user-input-state-hardening/SOLVE-NOTE.md docs/plan/user-input-state-hardening/status.md docs/plan/user-input-state-hardening/latest-verification.md docs/plan/user-input-state-hardening/phases/phase-6-resync-memory-navigation.md
-pnpm exec prettier --check src/ts/server/memoryJobRefresh.ts src/ts/server/memoryJobOrdering.ts src/ts/server/memoryJobRefresh.test.ts src/lib/Others/HypaV3Modal/server-memory-jobs.svelte src/ts/bootstrap.ts src/ts/bootstrap.test.ts docs/plan/user-input-state-hardening/SOLVE-NOTE.md docs/plan/user-input-state-hardening/status.md docs/plan/user-input-state-hardening/latest-verification.md docs/plan/user-input-state-hardening/phases/phase-6-resync-memory-navigation.md
+pnpm exec prettier --write src/ts/server/projectionResync.ts src/ts/server/projectionResync.test.ts src/ts/server/backups.test.ts docs/plan/user-input-state-hardening/SOLVE-NOTE.md docs/plan/user-input-state-hardening/status.md docs/plan/user-input-state-hardening/latest-verification.md docs/plan/user-input-state-hardening/phases/phase-6-resync-memory-navigation.md
+pnpm exec prettier --check src/ts/server/projectionResync.ts src/ts/server/projectionResync.test.ts src/ts/server/backups.test.ts docs/plan/user-input-state-hardening/SOLVE-NOTE.md docs/plan/user-input-state-hardening/status.md docs/plan/user-input-state-hardening/latest-verification.md docs/plan/user-input-state-hardening/phases/phase-6-resync-memory-navigation.md
 git diff --check
 ```
 
-- Result: passed on 2026-06-18. The client memory/bootstrap Vitest set passed 62
-  tests across 4 files. The Fastify memory jobs route Vitest set passed 8 tests
-  across 1 file. Both TypeScript checks passed. Prettier write/check and
-  `git diff --check` passed.
+- Result: passed on 2026-06-18. The projection/backup/bootstrap Vitest set
+  passed 55 tests across 3 files. Both TypeScript checks passed. Prettier
+  write/check and `git diff --check` passed.
 - Residual gaps: Phase 6 remains in progress. Memory job terminal/cancel
   ordering is covered for list refreshes, cached `not-modified` refreshes, SSE
-  job updates, and Hypa V3 progress side effects. Realm/backup/local bundle
-  restore/import resyncs, character/chat import refresh/navigation edges,
-  route/selection hydration, welcome/onboarding delayed setup, and DevTool
-  autopilot long-loop chat targeting remain Phase 6 work. The known
-  pre-existing `src/ts/compatibilityAdapters.test.ts` failure at line 626
+  job updates, and Hypa V3 progress side effects. Backup restore and local
+  bundle import now share latest-request fenced full projection resyncs. Realm
+  import direct refresh in `src/ts/characterCards.ts`, character/chat import
+  refresh/navigation edges, route hydration races, welcome/onboarding delayed
+  setup, and DevTool autopilot active-chat locking remain Phase 6 work. The
+  known pre-existing `src/ts/compatibilityAdapters.test.ts` failure at line 626
   remains separate.
 
 ## Remaining Proof
@@ -87,10 +88,11 @@ git diff --check
   found no live broad collection rollback blocker remaining in the Phase 5
   domains.
 - Phase 6 is in progress. Memory job terminal/cancel ordering is covered by the
-  first Phase 6 slice. Realm/backup/local bundle restore/import resyncs,
-  character/chat import refresh/navigation edges, route/selection hydration,
-  welcome/onboarding delayed setup, and DevTool autopilot long-loop chat
-  targeting remain open.
+  first Phase 6 slice, and backup/local bundle full projection resync
+  latest-request fencing is covered by the second slice. Realm import direct
+  refresh in `src/ts/characterCards.ts`, character/chat import
+  refresh/navigation edges, route hydration races, welcome/onboarding delayed
+  setup, and DevTool autopilot active-chat locking remain open.
 - Phase 7 owns final workstream regression, browser smoke where needed, and
   TypeScript proof.
 

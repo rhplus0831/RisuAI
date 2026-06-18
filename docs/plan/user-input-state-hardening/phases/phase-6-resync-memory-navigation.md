@@ -14,12 +14,21 @@ transitions so late refreshes cannot overwrite newer local work.
   ignores late old-chat cancel results, and uses a shared memory-job ordering
   fence so stale active SSE progress events cannot reopen Hypa V3 progress UI
   after a local terminal/cancel update.
+- Full projection resync latest-request fencing:
+  `forceServerProjectionResync()` now increments a latest request id for every
+  caller, including callers that join an active coalesced promise. Each
+  bootstrap fetch captures its request id, skips all projection apply, cached
+  revision, hydration reset, and generation reattach side effects when a newer
+  request exists, and returns the final/latest request result. This covers the
+  shared full-resync helper used by server backup restore and local bundle
+  import.
 
 ## Scope
 
-- Realm import finish refresh and popup import flows.
-- Server backup restore, local backup restore, full save import, and bootstrap
-  resync paths.
+- Realm import finish refresh, popup import flows, and the direct refresh path
+  in `src/ts/characterCards.ts`.
+- Remaining full save import, route, and bootstrap-adjacent refresh paths not
+  already covered by `forceServerProjectionResync()`.
 - Character/chat import helper refresh and rollback edges not closed by Phase
   3 or Phase 5.
 - Memory job cancel versus polling/SSE/list refresh ordering.
@@ -77,6 +86,8 @@ pnpm exec vitest run --config server/fastify/vitest.config.ts \
   server/fastify/__tests__/realmImport.test.ts
 pnpm exec vitest run src/ts/characters.importChat.test.ts \
   src/ts/process/request/tests/serverChat.test.ts
+pnpm exec vitest run src/ts/server/projectionResync.test.ts \
+  src/ts/server/backups.test.ts src/ts/bootstrap.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 ```
