@@ -63,14 +63,16 @@ found no remaining live broad collection rollback blocker in the Phase 5
 domains. Some broad helper exports still exist, but no live Phase 5 collection
 rollback caller remains; the old `ScriptDefinitionStateSnapshot` residual is
 stale because no live caller of `currentScriptDefinitionStateSnapshot()` exists
-outside tests.
+outside tests. The first Phase 6 slice has landed: memory job terminal/cancel
+ordering now lets local terminal job updates win over older polling, SSE, cached
+`not-modified`, and Hypa V3 progress updates for the same chat/job id.
 
 Next manager loop:
 
 1. Read `README.md`, `STRUCTURE.md`, `status.md`, `latest-verification.md`, and
    `phases/phase-6-resync-memory-navigation.md`.
-2. Spawn an explorer agent for the next Phase 6 resync, memory,
-   restore/import, and navigation-fence slice.
+2. Spawn an explorer agent for the next remaining Phase 6 resync,
+   restore/import, or navigation-fence slice.
 3. Spawn a worker agent for the selected Phase 6 slice, then a verification
    agent after the worker completes.
 4. If verification succeeds, run Prettier, run the relevant validation commands,
@@ -146,10 +148,11 @@ Explicit deferrals:
   `routes MCP character lorebook writes through lorebook commands in
   server-backed web mode` at line 626. It reproduced in a detached baseline
   worktree at commit `30d4ad7ab`, before the MCP module-info slice.
-- Realm/backup/local bundle restore/import resyncs, character/chat import
-  refresh/navigation edges, memory job list/progress ordering, route/selection
-  hydration, welcome/onboarding delayed setup, and DevTool autopilot long-loop
-  chat targeting remain Phase 6 work.
+- Memory job terminal/cancel ordering has landed for polling, SSE, cached
+  `not-modified`, and Hypa V3 progress updates. Realm/backup/local bundle
+  restore/import resyncs, character/chat import refresh/navigation edges,
+  route/selection hydration, welcome/onboarding delayed setup, and DevTool
+  autopilot long-loop chat targeting remain Phase 6 work.
 - Projection-absent optional clean-field deletion remains outside Phase 2 because
   the shared merge helper refreshes fields present in the projection surface.
 

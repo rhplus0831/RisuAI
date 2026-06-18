@@ -1,4 +1,5 @@
 import type { ServerMemoryJob, ServerMemoryResult } from '../process/request/serverMemory'
+import { isTerminalMemoryJobStatus, recordTerminalMemoryJobUpdate } from './memoryJobOrdering'
 
 const DEFAULT_REFRESH_INTERVAL_MS = 5000
 
@@ -6,6 +7,7 @@ type TimerHandle = ReturnType<typeof setInterval>
 
 export interface MemoryJobRefreshController {
   refresh(): Promise<void>
+  applyJobUpdate(job: ServerMemoryJob): boolean
   setChatId(chatId: string): void
   dispose(): void
 }
@@ -43,6 +45,7 @@ export function createMemoryJobRefreshController(
   let activeController: AbortController | null = null
   let lastEtag: string | undefined
   let lastJobs: ServerMemoryJob[] = []
+  const terminalJobIds = new Set<string>()
 
   function stopPolling(): void {
     if (!refreshTimer) return
@@ -61,13 +64,60 @@ export function createMemoryJobRefreshController(
     }, intervalMs)
   }
 
+  function recordTerminalJob(job: ServerMemoryJob): void {
+    terminalJobIds.add(job.id)
+    recordTerminalMemoryJobUpdate(job)
+  }
+
+  function normalizeJobs(jobs: readonly ServerMemoryJob[]): ServerMemoryJob[] {
+    const nextJobs: ServerMemoryJob[] = []
+    for (const job of jobs) {
+      if (job.chatId !== chatId) continue
+      if (isTerminalMemoryJobStatus(job.status)) {
+        recordTerminalJob(job)
+      } else if (!terminalJobIds.has(job.id)) {
+        nextJobs.push(job)
+      }
+    }
+    return nextJobs
+  }
+
+  function clearChatState(): void {
+    lastEtag = undefined
+    lastJobs = []
+    terminalJobIds.clear()
+  }
+
+  function publishJobs(nextJobs: ServerMemoryJob[]): void {
+    lastJobs = nextJobs
+    options.onJobs(nextJobs, now().toISOString())
+    syncPolling(nextJobs)
+  }
+
+  function applyJobUpdate(job: ServerMemoryJob): boolean {
+    if (disposed || !chatId || job.chatId !== chatId) return false
+
+    const terminal = isTerminalMemoryJobStatus(job.status)
+    if (terminal) {
+      recordTerminalJob(job)
+    } else if (terminalJobIds.has(job.id)) {
+      return false
+    }
+
+    const nextJobs = lastJobs.filter((current) => current.id !== job.id)
+    if (hasActiveMemoryJobs([job])) {
+      nextJobs.push(job)
+    }
+    publishJobs(nextJobs)
+    return true
+  }
+
   async function refresh(): Promise<void> {
     if (disposed) return
     if (!chatId) {
       requestSerial += 1
       queued = false
-      lastEtag = undefined
-      lastJobs = []
+      clearChatState()
       activeController?.abort()
       activeController = null
       inFlight = false
@@ -94,13 +144,10 @@ export function createMemoryJobRefreshController(
 
       if (result.status === 'ok') {
         lastEtag = result.etag
-        lastJobs = result.jobs
-        options.onJobs(result.jobs, now().toISOString())
-        syncPolling(result.jobs)
+        publishJobs(normalizeJobs(result.jobs))
       } else if (result.status === 'not-modified') {
         lastEtag = result.etag ?? lastEtag
-        options.onJobs(lastJobs, now().toISOString())
-        syncPolling(lastJobs)
+        publishJobs(normalizeJobs(lastJobs))
       } else {
         stopPolling()
         options.onError(result.status === 'unavailable' ? 'Server memory jobs are unavailable.' : result.error)
@@ -128,8 +175,7 @@ export function createMemoryJobRefreshController(
     chatId = nextChatId
     requestSerial += 1
     queued = false
-    lastEtag = undefined
-    lastJobs = []
+    clearChatState()
     activeController?.abort()
     activeController = null
     inFlight = false
@@ -147,6 +193,7 @@ export function createMemoryJobRefreshController(
 
   return {
     refresh,
+    applyJobUpdate,
     setChatId,
     dispose,
   }

@@ -1,13 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ServerMemoryJob, ServerMemoryResult } from '../process/request/serverMemory'
+import {
+  clearMemoryJobTerminalUpdateFence,
+  recordTerminalMemoryJobUpdate,
+  shouldAcceptMemoryJobUpdate,
+} from './memoryJobOrdering'
 import { createMemoryJobRefreshController, hasActiveMemoryJobs } from './memoryJobRefresh'
 
 const NOW = new Date('2026-06-01T00:00:00.000Z')
 
-function job(status: ServerMemoryJob['status'], id = `job-${status}`): ServerMemoryJob {
+function job(status: ServerMemoryJob['status'], id = `job-${status}`, chatId = 'chat-1'): ServerMemoryJob {
   return {
     id,
-    chatId: 'chat-1',
+    chatId,
     kind: 'summarize',
     status,
     attemptCount: 1,
@@ -32,9 +37,11 @@ function deferred<T>(): {
 describe('memory job refresh controller', () => {
   beforeEach(() => {
     vi.useFakeTimers()
+    clearMemoryJobTerminalUpdateFence()
   })
 
   afterEach(() => {
+    clearMemoryJobTerminalUpdateFence()
     vi.useRealTimers()
   })
 
@@ -129,6 +136,124 @@ describe('memory job refresh controller', () => {
     expect(listJobs).toHaveBeenNthCalledWith(1, 'chat-1', expect.any(AbortSignal), undefined)
     expect(listJobs).toHaveBeenNthCalledWith(2, 'chat-1', expect.any(AbortSignal), '"jobs-a"')
     expect(seenJobs.map((jobs) => jobs.map((entry) => entry.id))).toEqual([['job-1'], ['job-1']])
+    controller.dispose()
+  })
+
+  it('keeps a terminal update when an older list refresh returns the same job running', async () => {
+    const pendingList = deferred<ServerMemoryResult<{ jobs: ServerMemoryJob[] }>>()
+    const listJobs = vi.fn().mockReturnValueOnce(pendingList.promise)
+    const seenJobs: ServerMemoryJob[][] = []
+    const controller = createMemoryJobRefreshController({
+      chatId: 'chat-1',
+      listJobs,
+      onJobs: (jobs) => seenJobs.push(jobs),
+      onError: vi.fn(),
+      onClear: vi.fn(),
+      onLoading: vi.fn(),
+      now: () => NOW,
+    })
+
+    const refresh = controller.refresh()
+    expect(controller.applyJobUpdate(job('cancelled', 'job-1'))).toBe(true)
+
+    pendingList.resolve({ status: 'ok', jobs: [job('running', 'job-1')] })
+    await refresh
+
+    expect(seenJobs.map((jobs) => jobs.map((entry) => entry.id))).toEqual([[], []])
+    controller.dispose()
+  })
+
+  it('filters cached not-modified jobs after a terminal update', async () => {
+    const listJobs = vi
+      .fn()
+      .mockResolvedValueOnce({ status: 'ok', etag: '"jobs-a"', jobs: [job('running', 'job-1')] })
+      .mockResolvedValueOnce({ status: 'not-modified', etag: '"jobs-a"' })
+    const seenJobs: ServerMemoryJob[][] = []
+    const controller = createMemoryJobRefreshController({
+      chatId: 'chat-1',
+      listJobs,
+      onJobs: (jobs) => seenJobs.push(jobs),
+      onError: vi.fn(),
+      onClear: vi.fn(),
+      onLoading: vi.fn(),
+      now: () => NOW,
+    })
+
+    await controller.refresh()
+    expect(controller.applyJobUpdate(job('cancelled', 'job-1'))).toBe(true)
+    await controller.refresh()
+
+    expect(listJobs).toHaveBeenNthCalledWith(2, 'chat-1', expect.any(AbortSignal), '"jobs-a"')
+    expect(seenJobs.map((jobs) => jobs.map((entry) => entry.id))).toEqual([['job-1'], [], []])
+    controller.dispose()
+  })
+
+  it('ignores stale active job updates after a terminal update', () => {
+    const listJobs = vi.fn()
+    const seenJobs: ServerMemoryJob[][] = []
+    const controller = createMemoryJobRefreshController({
+      chatId: 'chat-1',
+      listJobs,
+      onJobs: (jobs) => seenJobs.push(jobs),
+      onError: vi.fn(),
+      onClear: vi.fn(),
+      onLoading: vi.fn(),
+      now: () => NOW,
+    })
+
+    expect(controller.applyJobUpdate(job('running', 'job-1'))).toBe(true)
+    expect(controller.applyJobUpdate(job('cancelled', 'job-1'))).toBe(true)
+    expect(controller.applyJobUpdate(job('running', 'job-1'))).toBe(false)
+
+    expect(seenJobs.map((jobs) => jobs.map((entry) => entry.id))).toEqual([['job-1'], []])
+    controller.dispose()
+  })
+
+  it('preserves shared terminal fences when creating and switching into a chat', () => {
+    const listJobs = vi.fn().mockResolvedValue({ status: 'ok', jobs: [] })
+    recordTerminalMemoryJobUpdate({
+      chatId: 'chat-2',
+      id: 'job-1',
+      status: 'cancelled',
+    })
+    const controller = createMemoryJobRefreshController({
+      chatId: 'chat-1',
+      listJobs,
+      onJobs: vi.fn(),
+      onError: vi.fn(),
+      onClear: vi.fn(),
+      onLoading: vi.fn(),
+      now: () => NOW,
+    })
+
+    expect(shouldAcceptMemoryJobUpdate({ chatId: 'chat-2', id: 'job-1', status: 'running' })).toBe(false)
+
+    controller.setChatId('chat-2')
+
+    expect(shouldAcceptMemoryJobUpdate({ chatId: 'chat-2', id: 'job-1', status: 'running' })).toBe(false)
+    controller.dispose()
+  })
+
+  it('resets local terminal state on chat id changes and ignores old-chat job updates', () => {
+    const listJobs = vi.fn().mockResolvedValue({ status: 'ok', jobs: [] })
+    const seenJobs: ServerMemoryJob[][] = []
+    const controller = createMemoryJobRefreshController({
+      chatId: 'chat-1',
+      listJobs,
+      onJobs: (jobs) => seenJobs.push(jobs),
+      onError: vi.fn(),
+      onClear: vi.fn(),
+      onLoading: vi.fn(),
+      now: () => NOW,
+    })
+
+    expect(controller.applyJobUpdate(job('cancelled', 'job-1', 'chat-1'))).toBe(true)
+    controller.setChatId('chat-2')
+
+    expect(controller.applyJobUpdate(job('running', 'job-1', 'chat-1'))).toBe(false)
+    expect(controller.applyJobUpdate(job('running', 'job-1', 'chat-2'))).toBe(true)
+
+    expect(seenJobs.map((jobs) => jobs.map((entry) => `${entry.chatId}:${entry.id}`))).toEqual([[], ['chat-2:job-1']])
     controller.dispose()
   })
 

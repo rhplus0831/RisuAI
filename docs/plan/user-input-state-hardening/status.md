@@ -17,8 +17,9 @@ inventory under
 - Plan state: active, Phase 0 contract decisions complete, Phase 1 complete,
   Phase 2 dirty draft projection complete, Phase 3 upload/import/fetch callback
   freshness complete, Phase 4 chat/message/generation freshness complete, and
-  Phase 5 collection-domain rollback complete. The next active phase is Phase 6
-  resync, memory, restore/import, and navigation fences. The first Phase 3 slice
+  Phase 5 collection-domain rollback complete. Phase 6 resync, memory,
+  restore/import, and navigation fences is in progress; the first Phase 6 memory
+  job terminal/cancel ordering slice has landed. The first Phase 3 slice
   now guards custom background upload/cancel/error callbacks so stale completions
   cannot restore or apply an old custom background after a newer choice. Composer
   paste/menu file actions now guard stale file callbacks by active transcript
@@ -220,6 +221,13 @@ inventory under
   `src/ts/server/characterBridge.svelte.ts`, `src/ts/characterCommands.ts`,
   and `src/ts/chatCommands.ts` now use `applyAttemptedFieldRollback` for
   attempted settings/profile/row/chat metadata rollback.
+  `src/ts/server/memoryJobRefresh.ts`,
+  `src/ts/server/memoryJobOrdering.ts`,
+  `src/lib/Others/HypaV3Modal/server-memory-jobs.svelte`, and
+  `src/ts/bootstrap.ts` now route memory job cancel, list, cached
+  `not-modified`, SSE, and Hypa V3 progress updates through terminal job fences
+  so local terminal/cancel state wins over older active updates for the same
+  chat/job id.
   `src/ts/server/characterBridge.svelte.ts` also now tracks dirty top-level
   character draft fields and merges same-character projection reseeds through
   `mergeProjectionIntoDirtyDraft`.
@@ -450,8 +458,8 @@ inventory under
   copy, select, create, update, delete, reorder, and extraction rollback by
   attempted row, field, order, selection, generated split row, and scalar
   settings state.
-- Verification state: Phase 5 closeout validation is recorded in
-  `latest-verification.md`.
+- Verification state: Phase 6 memory job terminal/cancel validation is recorded
+  in `latest-verification.md`.
 - Highest issue density:
   - Character editor: 52 issue rows, mostly dirty projection and unguarded
     upload callbacks.
@@ -531,11 +539,12 @@ inventory under
   blocker in the Phase 5 domains; import collection flows and residual sidebar
   collection edges are closed by the existing scoped/keyed/attempted-value and
   accepted-sequence rollback coverage.
-- [Phase 6](phases/phase-6-resync-memory-navigation.md): pending and next
-  active. Realm, backup, and local bundle restore/import resyncs; character/chat
-  import refresh/navigation edges; memory job list/progress ordering;
-  route/selection hydration; welcome/onboarding delayed setup; and DevTool
-  autopilot long-loop chat targeting remain here.
+- [Phase 6](phases/phase-6-resync-memory-navigation.md): in progress. Memory
+  job terminal/cancel ordering has landed for list refreshes, cached
+  `not-modified` refreshes, SSE job updates, and Hypa V3 progress side effects.
+  Realm, backup, and local bundle restore/import resyncs; character/chat import
+  refresh/navigation edges; route/selection hydration; welcome/onboarding
+  delayed setup; and DevTool autopilot long-loop chat targeting remain here.
 - [Phase 7](phases/phase-7-verification.md): pending. Closeout regression,
   browser smoke, and TypeScript proof.
 
@@ -864,10 +873,11 @@ inventory under
     `routes MCP character lorebook writes through lorebook commands in
     server-backed web mode` at `src/ts/compatibilityAdapters.test.ts:626`. The
     failure reproduced at baseline commit `30d4ad7ab`.
-  - Phase 6: Realm/backup/local bundle restore/import resyncs, character/chat
-    import refresh/navigation edges, memory job list/progress ordering,
-    route/selection hydration, welcome/onboarding delayed setup, DevTool
-    autopilot long-loop chat targeting, and related navigation refresh fences.
+  - Phase 6: Memory job terminal/cancel ordering has landed. Remaining Phase 6
+    work includes Realm/backup/local bundle restore/import resyncs,
+    character/chat import refresh/navigation edges, route/selection hydration,
+    welcome/onboarding delayed setup, DevTool autopilot long-loop chat
+    targeting, and related navigation refresh fences.
 - Phase docs that mention `src/ts/process/rerollNavigation.ts` should be read
   as `src/ts/process/rerollNavigation.svelte.ts`.
 - First P0 fixture targets are dirty character projection merge,

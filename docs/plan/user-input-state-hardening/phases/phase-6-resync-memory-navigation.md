@@ -1,9 +1,19 @@
 # Phase 6: Resync, Memory & Navigation
 
-Status: pending.
+Status: in progress.
 
 Goal: fence full-state refreshes, memory job updates, and route/selection
 transitions so late refreshes cannot overwrite newer local work.
+
+## Completed Slices
+
+- Memory job terminal/cancel ordering: `createMemoryJobRefreshController()` now
+  records terminal job ids for the current chat and filters those ids out of
+  older list responses and cached `not-modified` refreshes. The Hypa V3 server
+  jobs modal routes cancel success and SSE job updates through the controller,
+  ignores late old-chat cancel results, and uses a shared memory-job ordering
+  fence so stale active SSE progress events cannot reopen Hypa V3 progress UI
+  after a local terminal/cancel update.
 
 ## Scope
 

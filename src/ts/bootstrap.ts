@@ -61,6 +61,7 @@ import {
   triggerOpenChatGenerationReattach,
 } from './process/reattach'
 import { applyServerHypaV3Progress } from './process/request/serverMemory'
+import { shouldAcceptMemoryJobUpdate } from './server/memoryJobOrdering'
 import {
   markPromptTemplateProjectionApplied,
   resetPromptTemplateHydration,
@@ -320,6 +321,7 @@ export function calculateServerProjectionReconnectDelayMs(attempt: number, rando
 }
 
 function applyServerMemoryEvent(event: ServerMemoryEvent) {
+  if (!shouldAcceptMemoryJobUpdate({ chatId: event.chatId, ...event.job })) return
   if (event.sideEffect?.kind === 'hypav3_progress') {
     applyServerHypaV3Progress(event.sideEffect.payload)
   }

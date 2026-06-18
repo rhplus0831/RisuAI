@@ -7,38 +7,34 @@ workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 5 closeout validation. No source code
-  changed in this closeout pass; the run validates the completed Phase 5
-  collection-domain rollback matrix after the closeout explorer returned
-  PASS/CLOSEABLE.
+- Runtime/code change under test: Phase 6 memory job terminal/cancel ordering.
+  The run validates that local terminal job updates win over older polling,
+  cached `not-modified` results, SSE job updates, and Hypa V3 progress side
+  effects for the same chat/job id.
 - Commands:
 
 ```bash
-pnpm exec vitest run src/ts/chatCommands.test.ts src/ts/characters.importChat.test.ts src/ts/characterCommands.test.ts src/ts/storage/database.importPreset.test.ts src/ts/loadout.test.ts src/ts/persona.test.ts src/ts/pluginCommands.test.ts src/ts/plugins/plugins.test.ts src/ts/server/lorebookBridge.svelte.test.ts src/ts/process/modules.test.ts src/ts/process/mcp/risuaccess/tests/characters.setCharacterInfo.test.ts src/ts/process/mcp/risuaccess/tests/modules.optimisticProjection.test.ts
-
-pnpm exec vitest run src/lib/SideBars/SideChatList.svelte.test.ts src/lib/Others/ChatList.svelte.test.ts src/lib/Others/GridCatalog.svelte.test.ts src/ts/server/promptTemplateBridge.svelte.test.ts src/ts/storage/database.svelte.test.ts src/lib/Setting/Pages/Language/TranslatorPresetSettings.svelte.test.ts src/lib/Setting/Pages/PluginSettings.svelte.test.ts
-
+pnpm exec vitest run src/ts/server/memoryJobRefresh.test.ts src/ts/server/memoryJobEvents.test.ts src/ts/bootstrap.test.ts src/ts/process/request/tests/serverMemory.test.ts
+pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/memoryJobsRoutes.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
-pnpm exec prettier --write docs/plan/user-input-state-hardening/SOLVE-NOTE.md docs/plan/user-input-state-hardening/status.md docs/plan/user-input-state-hardening/latest-verification.md docs/plan/user-input-state-hardening/phases/phase-5-collection-domains.md
-pnpm exec prettier --check docs/plan/user-input-state-hardening/SOLVE-NOTE.md docs/plan/user-input-state-hardening/status.md docs/plan/user-input-state-hardening/latest-verification.md docs/plan/user-input-state-hardening/phases/phase-5-collection-domains.md
+pnpm exec prettier --write src/ts/server/memoryJobRefresh.ts src/ts/server/memoryJobOrdering.ts src/ts/server/memoryJobRefresh.test.ts src/lib/Others/HypaV3Modal/server-memory-jobs.svelte src/ts/bootstrap.ts src/ts/bootstrap.test.ts docs/plan/user-input-state-hardening/SOLVE-NOTE.md docs/plan/user-input-state-hardening/status.md docs/plan/user-input-state-hardening/latest-verification.md docs/plan/user-input-state-hardening/phases/phase-6-resync-memory-navigation.md
+pnpm exec prettier --check src/ts/server/memoryJobRefresh.ts src/ts/server/memoryJobOrdering.ts src/ts/server/memoryJobRefresh.test.ts src/lib/Others/HypaV3Modal/server-memory-jobs.svelte src/ts/bootstrap.ts src/ts/bootstrap.test.ts docs/plan/user-input-state-hardening/SOLVE-NOTE.md docs/plan/user-input-state-hardening/status.md docs/plan/user-input-state-hardening/latest-verification.md docs/plan/user-input-state-hardening/phases/phase-6-resync-memory-navigation.md
 git diff --check
 ```
 
-- Result: passed on 2026-06-18. The first closeout Vitest set passed 358 tests
-  across 12 files. The second closeout Vitest set passed 101 tests across 7
-  files. Both TypeScript checks passed. Prettier write/check and
+- Result: passed on 2026-06-18. The client memory/bootstrap Vitest set passed 62
+  tests across 4 files. The Fastify memory jobs route Vitest set passed 8 tests
+  across 1 file. Both TypeScript checks passed. Prettier write/check and
   `git diff --check` passed.
-- Residual gaps: Phase 5 is PASS/CLOSEABLE. No remaining live broad collection
-  rollback blocker was found in the Phase 5 domains. Presets/personas/loadouts,
-  lorebooks/scripts/modules/plugins, sidebar chat/folder/character lists, and
-  import collection flows are covered by scoped/keyed/attempted-value or
-  accepted-sequence rollback. Some broad helper exports still exist, but no live
-  Phase 5 collection rollback caller remains. The old
-  `ScriptDefinitionStateSnapshot` residual is stale because no live caller of
-  `currentScriptDefinitionStateSnapshot()` exists outside tests. The known
+- Residual gaps: Phase 6 remains in progress. Memory job terminal/cancel
+  ordering is covered for list refreshes, cached `not-modified` refreshes, SSE
+  job updates, and Hypa V3 progress side effects. Realm/backup/local bundle
+  restore/import resyncs, character/chat import refresh/navigation edges,
+  route/selection hydration, welcome/onboarding delayed setup, and DevTool
+  autopilot long-loop chat targeting remain Phase 6 work. The known
   pre-existing `src/ts/compatibilityAdapters.test.ts` failure at line 626
-  remains separate from Phase 5 closure.
+  remains separate.
 
 ## Remaining Proof
 
@@ -90,14 +86,15 @@ git diff --check
   rollback is covered by the thirty-third Phase 5 slice. Closeout exploration
   found no live broad collection rollback blocker remaining in the Phase 5
   domains.
-- Phase 6 is pending and next active. It owns Realm/backup/local bundle
-  restore/import resyncs, character/chat import refresh/navigation edges, memory
-  job list/progress ordering, route/selection hydration, welcome/onboarding
-  delayed setup, and DevTool autopilot long-loop chat targeting.
+- Phase 6 is in progress. Memory job terminal/cancel ordering is covered by the
+  first Phase 6 slice. Realm/backup/local bundle restore/import resyncs,
+  character/chat import refresh/navigation edges, route/selection hydration,
+  welcome/onboarding delayed setup, and DevTool autopilot long-loop chat
+  targeting remain open.
 - Phase 7 owns final workstream regression, browser smoke where needed, and
   TypeScript proof.
 
 ## Validation Commands
 
-Use phase-specific focused subsets while developing. Phase 6 is next active;
+Use phase-specific focused subsets while developing. Phase 6 is in progress;
 Phase 7 owns the final workstream command matrix.

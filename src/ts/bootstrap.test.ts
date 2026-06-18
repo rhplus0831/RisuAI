@@ -39,7 +39,18 @@ const serverEventsState = vi.hoisted(() => ({
       parentId?: string
       origin?: { writerSessionId: string }
     }) => void
-    onMemoryEvent?: (event: { type: 'memory.job'; sideEffect?: { kind: string; payload: unknown } }) => void
+    onMemoryEvent?: (event: {
+      type: 'memory.job'
+      chatId: string
+      job: {
+        id: string
+        kind: string
+        status: string
+        attemptCount: number
+        maxAttempts: number
+      }
+      sideEffect?: { kind: string; payload: unknown }
+    }) => void
     onError?: (error: string) => void
     onClose?: () => void
   }>,
@@ -55,7 +66,18 @@ const serverEventsState = vi.hoisted(() => ({
         parentId?: string
         origin?: { writerSessionId: string }
       }) => void
-      onMemoryEvent?: (event: { type: 'memory.job'; sideEffect?: { kind: string; payload: unknown } }) => void
+      onMemoryEvent?: (event: {
+        type: 'memory.job'
+        chatId: string
+        job: {
+          id: string
+          kind: string
+          status: string
+          attemptCount: number
+          maxAttempts: number
+        }
+        sideEffect?: { kind: string; payload: unknown }
+      }) => void
       onError?: (error: string) => void
       onClose?: () => void
     }) => {
@@ -215,6 +237,7 @@ import {
 } from './server/commands'
 import { getActiveWriterSessionId } from './server/activeWriterSession'
 import { getProtocolDiagnosticsSnapshot, type FullBootstrapResyncReason } from './server/protocolDiagnostics'
+import { clearMemoryJobTerminalUpdateFence, recordTerminalMemoryJobUpdate } from './server/memoryJobOrdering'
 import { DBState, LoadingStatusState, hypaV3ProgressStore, loadedStore, selectedCharID } from './stores.svelte'
 
 function serverDefaultDatabase() {
@@ -285,6 +308,7 @@ beforeEach(() => {
   activeGenerationReattachSpies.startActiveGenerationReattach.mockClear()
   activeGenerationReattachSpies.triggerOpenChatGenerationReattach.mockClear()
   memoryJobEventSpies.publishServerMemoryJobEvent.mockClear()
+  clearMemoryJobTerminalUpdateFence()
   clearCachedServerCommandRevision()
   forageSpies.Init.mockClear()
   forageSpies.getItem.mockClear()
@@ -1501,6 +1525,14 @@ describe('web bootstrap startup source', () => {
 
     subscription.onMemoryEvent?.({
       type: 'memory.job',
+      chatId: 'chat-1',
+      job: {
+        id: 'job-1',
+        kind: 'summarize',
+        status: 'running',
+        attemptCount: 1,
+        maxAttempts: 3,
+      },
       sideEffect: {
         kind: 'hypav3_progress',
         payload: {
@@ -1522,6 +1554,14 @@ describe('web bootstrap startup source', () => {
     })
     expect(memoryJobEventSpies.publishServerMemoryJobEvent).toHaveBeenCalledWith({
       type: 'memory.job',
+      chatId: 'chat-1',
+      job: {
+        id: 'job-1',
+        kind: 'summarize',
+        status: 'running',
+        attemptCount: 1,
+        maxAttempts: 3,
+      },
       sideEffect: {
         kind: 'hypav3_progress',
         payload: {
@@ -1536,6 +1576,48 @@ describe('web bootstrap startup source', () => {
     })
     expect(serverBootstrapState.fetch).toHaveBeenCalledTimes(1)
     expect(serverBootstrapState.fetchReadOnly).not.toHaveBeenCalled()
+  })
+
+  it('ignores stale active memory progress events after a terminal job update', async () => {
+    await loadWebInitialDatabase()
+    const subscription = serverEventsState.subscriptions[0]
+    memoryJobEventSpies.publishServerMemoryJobEvent.mockClear()
+    recordTerminalMemoryJobUpdate({
+      chatId: 'chat-1',
+      id: 'job-1',
+      status: 'cancelled',
+    })
+
+    subscription.onMemoryEvent?.({
+      type: 'memory.job',
+      chatId: 'chat-1',
+      job: {
+        id: 'job-1',
+        kind: 'summarize',
+        status: 'running',
+        attemptCount: 1,
+        maxAttempts: 3,
+      },
+      sideEffect: {
+        kind: 'hypav3_progress',
+        payload: {
+          open: true,
+          miniMsg: '1',
+          msg: '[Hypa V3] Summarizing...',
+          subMsg: '1 queued',
+          status: 'running',
+          queuedCount: 1,
+        },
+      },
+    })
+
+    expect(get(hypaV3ProgressStore)).toEqual({
+      open: false,
+      miniMsg: '',
+      msg: '',
+      subMsg: '',
+    })
+    expect(memoryJobEventSpies.publishServerMemoryJobEvent).not.toHaveBeenCalled()
   })
 
   it('blocks direct Fastify projection writes after the guard is enabled', async () => {
