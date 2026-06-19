@@ -387,7 +387,7 @@ export async function requestOpenAI(arg: RequestDataArgumentExtended): Promise<r
 
   console.log(formatedChat)
   if (arg.modelInfo.format === LLMFormat.Mistral) {
-    requestModel = aiModel
+    const mistralRequestModel = hasResolvedProfile ? (providerOptions?.requestModel ?? aiModel) : aiModel
 
     let reformatedChat: OpenAIChatExtra[] = []
 
@@ -433,27 +433,36 @@ export async function requestOpenAI(arg: RequestDataArgumentExtended): Promise<r
       }
     }
 
-    const requestURL = arg.customURL ?? 'https://api.mistral.ai/v1/chat/completions'
+    const requestURL = hasResolvedProfile
+      ? (resolveProfileChatCompletionsUrl(arg, aiModel) ?? 'https://api.mistral.ai/v1/chat/completions')
+      : (arg.customURL ?? 'https://api.mistral.ai/v1/chat/completions')
     const networkOptions = getLocalNetworkRequestOptions(requestURL, db, false)
 
-    const targs = {
-      body: applyParameters(
-        {
-          model: requestModel,
-          messages: reformatedChat,
-          safe_prompt: false,
-          max_tokens: arg.maxTokens,
-        },
-        ['temperature', 'presence_penalty', 'frequency_penalty', 'top_p'],
-        {},
-        arg.mode,
-        {
-          modelId: arg.modelInfo.id,
-        },
-      ),
-      headers: {
-        Authorization: 'Bearer ' + (arg.key ?? db.mistralKey),
+    let body = applyParameters(
+      {
+        model: mistralRequestModel,
+        messages: reformatedChat,
+        safe_prompt: false,
+        max_tokens: arg.maxTokens,
       },
+      ['temperature', 'presence_penalty', 'frequency_penalty', 'top_p'],
+      {},
+      arg.mode,
+      {
+        modelId: arg.modelInfo.id,
+      },
+    )
+    const headers: Record<string, string> = {
+      Authorization: 'Bearer ' + (hasResolvedProfile ? (providerOptions?.apiKey ?? '') : (arg.key ?? db.mistralKey)),
+    }
+    if (hasResolvedProfile) {
+      Object.assign(headers, providerOptions?.extraHeaders ?? {})
+      body = applyAdditionalParameters(body, headers, providerOptions?.additionalParams ?? [])
+    }
+
+    const targs = {
+      body,
+      headers,
       abortSignal: arg.abortSignal,
       chatId: arg.chatId,
       interceptor: 'mistral',

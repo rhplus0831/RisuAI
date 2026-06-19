@@ -68,14 +68,20 @@ endpoints, API keys, extra headers, and profile additional params when a
 resolved profile is present. Covered profile-backed variants include
 reverse-proxy Anthropic, Bedrock Claude, and `ollama-cloud` Anthropic; callers
 without a resolved profile keep their legacy URL/key/model/additional-parameter
-fallbacks.
+fallbacks. The browser-local Mistral provider-options slice is also complete:
+the `requestOpenAI()` Mistral branch now uses profile-owned request models,
+chat-completions URL resolution, API keys, extra headers, and profile
+additional params for profile-backed native, reverse-proxy, and `xcustom:::`
+Mistral requests. Callers without a resolved profile keep legacy
+`arg.customURL`, `arg.key ?? db.mistralKey`, body model `aiModel`, and no
+additional-parameter fallback.
 
 The current codebase still uses flat database fields as the compatibility
 source of truth. Durable reusable profile storage has not been introduced, and
 retained browser-local provider helper branches other than Gemini/Vertex and
 OpenAI-compatible chat completions plus OpenAI Responses/legacy instruct and
-Anthropic-family still reconstruct many provider credentials, URLs, request
-models, and additional params from flat fields. The
+Anthropic-family plus Mistral still reconstruct many provider credentials,
+URLs, request models, and additional params from flat fields. The
 main coupled surfaces remain:
 
 - `src/ts/model/modelRoles.ts` resolves roles to model ids only.
@@ -94,8 +100,9 @@ main coupled surfaces remain:
 
 1. Continue Phase 3 only on the remaining browser-local provider helper parity
    gaps after Gemini/Vertex, OpenAI-compatible chat completions, and OpenAI
-   Responses/legacy instruct, and Anthropic-family: adopt resolver-derived
-   provider options where equivalent without changing
+   Responses/legacy instruct, Anthropic-family, and Mistral. The remaining
+   named gaps are Cohere, native Ollama, Kobold, Horde, and Ooba legacy: adopt
+   resolver-derived provider options where equivalent without changing
    server-intent payload shape or reshaping provider secrets/storage.
 2. Keep UI writes targeting existing flat fields until the Phase 4 adapter work.
 3. Do not add durable profile storage until Phase 6. Earlier phases should use
@@ -114,6 +121,6 @@ main coupled surfaces remain:
 ## Completed Proof
 
 Latest proof is recorded in [`latest-verification.md`](latest-verification.md).
-It covers this browser-local Anthropic-family
-provider-options slice, focused browser request/provider tests, Prettier,
-client-lib TypeScript, strict server TypeScript, and `git diff --check`.
+It covers this browser-local Mistral provider-options slice, focused browser
+request/provider tests, Prettier, client-lib TypeScript, strict server
+TypeScript, and `git diff --check`.

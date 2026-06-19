@@ -212,6 +212,106 @@ describe('requestOpenAI profile provider options', () => {
     expect(payload.body.flat_param).toBeUndefined()
   })
 
+  it('uses reverse_proxy Mistral profile URL, key, request model, extra headers, and params over flat and arg conflicts', async () => {
+    const profile = resolveModelProfile({
+      database: db({
+        aiModel: 'reverse_proxy',
+        customAPIFormat: LLMFormat.Mistral,
+        forceReplaceUrl: 'risu::https://profile-mistral.example.com',
+        proxyKey: 'sk-profile-mistral',
+        customProxyRequestModel: 'profile-mistral-model',
+        additionalParams: [
+          ['profile_param', '"from-profile"'],
+          ['header::X-Mistral-Profile', 'profile-header'],
+        ],
+      } as Partial<Database>),
+    })
+    setDatabase(
+      db({
+        aiModel: 'reverse_proxy',
+        customAPIFormat: LLMFormat.Mistral,
+        forceReplaceUrl: 'risu::https://flat-mistral.example.com',
+        proxyKey: 'sk-flat-mistral',
+        customProxyRequestModel: 'flat-mistral-model',
+        additionalParams: [
+          ['flat_param', '"from-flat"'],
+          ['header::X-Mistral-Flat', 'flat-header'],
+        ],
+      } as Partial<Database>),
+    )
+
+    const payload = await preview(
+      makeArg(profile, {
+        customURL: 'https://arg-mistral.example.com/v1/chat/completions',
+        key: 'sk-arg-mistral',
+      }),
+    )
+
+    expect(payload.url).toBe('https://profile-mistral.example.com/v1/chat/completions')
+    expect(payload.headers.Authorization).toBe('Bearer sk-profile-mistral')
+    expect(payload.headers['X-Proxy-Risu']).toBe('RisuAI')
+    expect(payload.headers['X-Mistral-Profile']).toBe('profile-header')
+    expect(payload.headers['X-Mistral-Flat']).toBeUndefined()
+    expect(payload.body.model).toBe('profile-mistral-model')
+    expect(payload.body.profile_param).toBe('from-profile')
+    expect(payload.body.flat_param).toBeUndefined()
+  })
+
+  it('uses xcustom Mistral profile URL, key, internal id, and params over flat custom model conflicts', async () => {
+    const modelId = 'xcustom:::profile-mistral'
+    const profile = resolveModelProfile({
+      database: db({
+        aiModel: modelId,
+        customModels: [
+          customModel({
+            id: modelId,
+            internalId: 'profile-mistral-wire',
+            url: 'https://profile.custom-mistral.example/v1/chat/completions',
+            key: 'sk-profile-custom-mistral',
+            format: LLMFormat.Mistral,
+            tokenizer: LLMTokenizer.Mistral,
+            params: 'profile_param="custom-profile"\nheader::X-Mistral-Custom=profile-header',
+          }),
+        ] as Database['customModels'],
+      }),
+    })
+    setDatabase(
+      db({
+        aiModel: modelId,
+        customModels: [
+          customModel({
+            id: modelId,
+            internalId: 'flat-mistral-wire',
+            url: 'https://flat.custom-mistral.example/v1/chat/completions',
+            key: 'sk-flat-custom-mistral',
+            format: LLMFormat.Mistral,
+            tokenizer: LLMTokenizer.Mistral,
+            params: 'flat_param="custom-flat"\nheader::X-Mistral-Flat=flat-header',
+          }),
+        ] as Database['customModels'],
+      }),
+    )
+
+    const payload = await preview(
+      makeArg(profile, {
+        modelInfo: modelInfo({
+          id: modelId,
+          internalID: 'arg-mistral-wire',
+          provider: LLMProvider.AsIs,
+          format: LLMFormat.Mistral,
+        }),
+      }),
+    )
+
+    expect(payload.url).toBe('https://profile.custom-mistral.example/v1/chat/completions')
+    expect(payload.headers.Authorization).toBe('Bearer sk-profile-custom-mistral')
+    expect(payload.headers['X-Mistral-Custom']).toBe('profile-header')
+    expect(payload.headers['X-Mistral-Flat']).toBeUndefined()
+    expect(payload.body.model).toBe('profile-mistral-wire')
+    expect(payload.body.profile_param).toBe('custom-profile')
+    expect(payload.body.flat_param).toBeUndefined()
+  })
+
   it('uses OpenRouter profile key, request model, route, transforms, and provider filters over flat conflicts', async () => {
     const profile = resolveModelProfile({
       database: db({
@@ -407,5 +507,40 @@ describe('requestOpenAI profile provider options', () => {
     expect(payload.body.legacy_ooba_arg).toBe(3)
     expect(payload.body.n).toBe(6)
     expect(payload.body.messages.at(-1)).toMatchObject({ role: 'system', content: 'legacy system' })
+  })
+
+  it('keeps no-resolvedProfile native Mistral custom URL, key, and aiModel request model behavior', async () => {
+    setDatabase(
+      db({
+        aiModel: 'flat-mistral-conflict',
+        mistralKey: 'sk-flat-mistral',
+      } as Partial<Database>),
+    )
+
+    const payload = await preview({
+      formated: [
+        { role: 'system', content: 'legacy mistral system' },
+        { role: 'user', content: 'hello' },
+      ],
+      bias: {},
+      biasString: [],
+      aiModel: 'mistral-large-latest',
+      maxTokens: 64,
+      useStreaming: false,
+      previewBody: true,
+      mode: 'model',
+      customURL: 'https://legacy.mistral.example/v1/chat/completions',
+      key: 'sk-arg-mistral',
+      modelInfo: modelInfo({
+        id: 'mistral-large-latest',
+        internalID: 'arg-internal-mistral',
+        provider: LLMProvider.Mistral,
+        format: LLMFormat.Mistral,
+      }),
+    } as RequestDataArgumentExtended)
+
+    expect(payload.url).toBe('https://legacy.mistral.example/v1/chat/completions')
+    expect(payload.headers.Authorization).toBe('Bearer sk-arg-mistral')
+    expect(payload.body.model).toBe('mistral-large-latest')
   })
 })

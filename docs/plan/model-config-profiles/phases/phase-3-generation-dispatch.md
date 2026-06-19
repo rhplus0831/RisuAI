@@ -1,6 +1,6 @@
 # Phase 3: Generation Dispatch
 
-Status: in progress; Phase 3a server-owned profile selection/capability/request-model slice complete; Phase 3b Fastify OpenAI-compatible provider-options slice complete; Phase 3c Fastify Anthropic/Mistral/Cohere provider-options slice complete; Phase 3d Fastify native Ollama provider-options slice complete; Phase 3e Fastify Kobold provider-options slice complete; Phase 3f Fastify Horde provider-options slice complete; Phase 3g Fastify OobaLegacy provider-options slice complete; Phase 3h Fastify Bedrock provider-options slice complete; Phase 3i Fastify Gemini/Vertex provider-options slice complete; browser request helper role/static/fallback resolver adoption slice complete; browser-local Gemini/Vertex provider-options slice complete; browser-local OpenAI-compatible chat-completions provider-options slice complete; browser-local OpenAI Responses and legacy instruct provider-options slice complete; browser-local Anthropic-family provider-options slice complete.
+Status: in progress; Phase 3a server-owned profile selection/capability/request-model slice complete; Phase 3b Fastify OpenAI-compatible provider-options slice complete; Phase 3c Fastify Anthropic/Mistral/Cohere provider-options slice complete; Phase 3d Fastify native Ollama provider-options slice complete; Phase 3e Fastify Kobold provider-options slice complete; Phase 3f Fastify Horde provider-options slice complete; Phase 3g Fastify OobaLegacy provider-options slice complete; Phase 3h Fastify Bedrock provider-options slice complete; Phase 3i Fastify Gemini/Vertex provider-options slice complete; browser request helper role/static/fallback resolver adoption slice complete; browser-local Gemini/Vertex provider-options slice complete; browser-local OpenAI-compatible chat-completions provider-options slice complete; browser-local OpenAI Responses and legacy instruct provider-options slice complete; browser-local Anthropic-family provider-options slice complete; browser-local Mistral provider-options slice complete.
 
 Goal: move browser and Fastify generation dispatch from ad hoc flat database
 reads to the resolved profile runtime object.
@@ -303,6 +303,29 @@ reads to the resolved profile runtime object.
   and arg values, and pins a no-resolved-profile reverse-proxy Anthropic
   fallback.
 
+## Implemented Browser-Local Mistral Provider-Options Slice
+
+- Browser-local `requestOpenAI()` now uses
+  `resolvedProfile.providerOptions.requestModel` for profile-backed Mistral
+  request body `model`, including reverse-proxy Mistral and `xcustom:::`
+  Mistral calls. No-resolved-profile native Mistral callers keep the legacy
+  body model `aiModel`.
+- Profile-backed Mistral URLs now use the shared profile chat-completions URL
+  resolver, so profile `baseUrl`, exact `endpoint`, and custom-model URL
+  normalization win over conflicting flat DB and arg URLs. No-resolved-profile
+  Mistral callers keep `arg.customURL ?? "https://api.mistral.ai/v1/chat/completions"`.
+- Profile-backed API keys now come only from `providerOptions.apiKey`, so
+  conflicting `arg.key`, `db.proxyKey`, custom model keys, or `db.mistralKey`
+  values cannot override profile-backed Mistral requests.
+- Resolver-provided `extraHeaders`, including reverse-proxy `X-Proxy-Risu`, are
+  merged before profile `additionalParams`, and profile additional params drive
+  both body and header mutation. No-resolved-profile Mistral callers do not use
+  the legacy additional-parameter DSL fallback.
+- Focused coverage proves profile-generated reverse-proxy Mistral and
+  `xcustom:::` Mistral settings beat intentionally conflicting flat DB and arg
+  values, and pins no-resolved-profile native Mistral custom URL/key/model
+  behavior.
+
 ## Remaining Phase 3 Work
 
 - Broaden provider parity for retained browser-local request helpers before
@@ -311,9 +334,9 @@ reads to the resolved profile runtime object.
   adopted, and browser-local OpenAI-compatible chat-completions provider options
   are adopted, and browser-local OpenAI Responses/legacy instruct provider
   options are adopted, and browser-local Anthropic-family provider options are
-  adopted. Other local helper branches such as Mistral, Cohere, native Ollama,
-  Kobold, Horde, and Ooba legacy still read many provider-specific options
-  directly from flat database fields.
+  adopted, and browser-local Mistral provider options are adopted. Other local
+  helper branches such as Cohere, native Ollama, Kobold, Horde, and Ooba legacy
+  still read many provider-specific options directly from flat database fields.
 - Verify any future browser-local provider option adoption without changing the
   server-intent payload shape or editing Fastify generation routes unless a real
   regression is exposed.
@@ -363,11 +386,11 @@ pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 ```
 
-Latest browser-local OpenAI-compatible chat-completions provider-options run:
+Latest browser-local Mistral provider-options run:
 
 ```bash
 pnpm exec prettier --write --ignore-path /dev/null src/ts/process/request/openAI/requests.ts src/ts/process/request/tests/openaiProfileOptions.test.ts docs/plan/model-config-profiles/status.md docs/plan/model-config-profiles/latest-verification.md docs/plan/model-config-profiles/phases/phase-3-generation-dispatch.md docs/plan/model-config-profiles/SOLVE-NOTE.md
-pnpm exec vitest run src/ts/process/request/tests/openaiProfileOptions.test.ts src/ts/process/request/tests/modelRoleRouting.test.ts src/ts/process/request/tests/serverCompletion.test.ts src/ts/process/request/tests/providerCapability.test.ts
+pnpm exec vitest run src/ts/process/request/tests/openaiProfileOptions.test.ts src/ts/model/modelProfileResolver.test.ts src/ts/process/request/tests/modelRoleRouting.test.ts src/ts/process/request/tests/serverCompletion.test.ts src/ts/process/request/tests/providerCapability.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 git diff --check
@@ -376,7 +399,7 @@ git diff --check
 Results:
 
 - Prettier: passed.
-- Focused browser request/provider tests: passed, 4 files / 69 tests.
+- Focused browser request/provider tests: passed, 5 files / 92 tests.
 - Client-lib TypeScript: passed.
 - Server strict TypeScript: passed.
 - Whitespace check: passed.
