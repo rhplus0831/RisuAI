@@ -16,7 +16,7 @@ Required process:
 4. After implementation, spawn a verification agent to audit the changed slice.
 5. Run Prettier and the relevant focused validation commands before closing a
    phase.
-6. Close every sub-agent after its work is complete.
+6. Close agents when moving to next task.
 
 Repository reminders:
 
