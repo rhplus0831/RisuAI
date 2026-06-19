@@ -55,6 +55,13 @@ function okOllamaResponse(text = 'profile ok'): Response {
   })
 }
 
+function okKoboldResponse(text = 'profile ok'): Response {
+  return new Response(JSON.stringify({ results: [{ text }] }), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  })
+}
+
 function captureDispatchRequests(response: Response = okOpenAIResponse()): CapturedDispatchRequest[] {
   const captured: CapturedDispatchRequest[] = []
   vi.stubGlobal(
@@ -308,6 +315,25 @@ describe('dispatchChatProvider profile providerOptions', () => {
     expect(captured[0].body.model).toBe('profile-llama')
   })
 
+  it('uses Kobold profile URL over conflicting flat database fields', async () => {
+    const profile = resolveModelProfile({
+      database: db({
+        aiModel: 'kobold',
+        koboldURL: 'http://profile-kobold.example.com',
+      } as Partial<Database>),
+    })
+    const flatConflict = db({
+      aiModel: 'kobold',
+      koboldURL: 'http://flat-kobold.example.com',
+    } as Partial<Database>)
+    const captured = captureDispatchRequests(okKoboldResponse())
+
+    await dispatchWithProfile(profile, flatConflict)
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0].url).toBe('http://profile-kobold.example.com/api/v1/generate')
+  })
+
   it('preserves the native Ollama missing-URL error and does not fall back to flat DB URL', async () => {
     const profile = resolveModelProfile({
       database: db({
@@ -324,6 +350,23 @@ describe('dispatchChatProvider profile providerOptions', () => {
     vi.stubGlobal('fetch', fetchSpy as unknown as typeof fetch)
 
     await expect(dispatchWithProfile(profile, flatConflict)).rejects.toThrow('options.ollama.baseUrl is required')
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it('preserves the Kobold missing-URL error and does not fall back to flat DB URL', async () => {
+    const profile = resolveModelProfile({
+      database: db({
+        aiModel: 'kobold',
+      } as Partial<Database>),
+    })
+    const flatConflict = db({
+      aiModel: 'kobold',
+      koboldURL: 'http://flat-kobold.example.com',
+    } as Partial<Database>)
+    const fetchSpy = vi.fn()
+    vi.stubGlobal('fetch', fetchSpy as unknown as typeof fetch)
+
+    await expect(dispatchWithProfile(profile, flatConflict)).rejects.toThrow('options.kobold.baseUrl is required')
     expect(fetchSpy).not.toHaveBeenCalled()
   })
 

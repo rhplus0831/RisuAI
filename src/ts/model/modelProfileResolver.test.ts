@@ -316,6 +316,22 @@ describe('resolveModelProfile provider/runtime normalization', () => {
     })
   })
 
+  it('normalizes Kobold endpoint into provider options', () => {
+    const profile = resolveModelProfile({
+      database: db({
+        aiModel: 'kobold',
+        koboldURL: 'http://kobold.example.com',
+      } as Partial<Database>),
+    })
+
+    expect(profile.modelInfo.format).toBe(LLMFormat.Kobold)
+    expect(profile.providerCapability).toEqual({ routable: true, provider: 'kobold' })
+    expect(profile.providerOptions).toMatchObject({
+      baseUrl: 'http://kobold.example.com',
+      requestModel: 'kobold',
+    })
+  })
+
   it('normalizes OpenAI-compatible key identifier models', () => {
     const profile = resolveModelProfile({
       database: db({

@@ -946,9 +946,10 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
   }
 
   if (provider === 'kobold') {
+    const providerOptions = profile.providerOptions
     const request = resolveKoboldRequest({
       messages,
-      baseUrl: db.koboldURL,
+      baseUrl: asString(providerOptions.baseUrl),
       maxTokens,
       maxContextLength: db.maxContext,
       temperature,

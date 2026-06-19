@@ -1050,6 +1050,8 @@ function resolveProviderOptions(
       return { ...base, apiKey: nonBlankString(database.mistralKey) }
     case LLMFormat.Cohere:
       return { ...base, apiKey: nonBlankString(database.cohereAPIKey) }
+    case LLMFormat.Kobold:
+      return { ...base, baseUrl: nonBlankString(database.koboldURL) }
     case LLMFormat.GoogleCloud:
       return { ...base, apiKey: nonBlankString(database.google?.accessToken) }
     case LLMFormat.VertexAIGemini:
