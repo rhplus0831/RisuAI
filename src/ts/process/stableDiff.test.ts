@@ -54,7 +54,7 @@ vi.mock('lodash/random', () => ({
   default: () => 42,
 }))
 
-import { generateAIImage, loadStableDiffReferenceImageForTests } from './stableDiff'
+import { generateAIImage, loadStableDiffReferenceImageForTests, stableDiff } from './stableDiff'
 import type { character } from '../storage/database.svelte'
 
 function makeCharacter(): character {
@@ -107,6 +107,73 @@ beforeEach(() => {
 })
 
 describe('stableDiff image-generation hygiene', () => {
+  it('routes prompt generation through otherAx and forwards the stripped prompt to the image provider', async () => {
+    const char = {
+      ...makeCharacter(),
+      newGenData: {
+        instructions: 'Turn chat into a compact image prompt.',
+        negative: 'bad anatomy',
+        prompt: 'cinematic portrait of {{slot}}',
+      },
+    } as character
+    const abortController = new AbortController()
+
+    state.db = {
+      sdProvider: 'dalle',
+      openAIKey: 'openai-key',
+      dallEQuality: 'standard',
+    }
+    state.requestChatData.mockResolvedValueOnce({
+      type: 'success',
+      result: '<Thoughts>private chain</Thoughts>\nblue-haired mage with lantern',
+    })
+    state.globalFetch.mockResolvedValueOnce({
+      ok: true,
+      data: { data: [{ b64_json: 'dalle-image' }] },
+    })
+
+    await expect(
+      stableDiff(char, 'User asks for a moonlit character image.', { signal: abortController.signal }),
+    ).resolves.toBe('')
+
+    expect(state.requestChatData).toHaveBeenCalledTimes(1)
+    expect(state.requestChatData).toHaveBeenCalledWith(
+      {
+        formated: [
+          {
+            role: 'system',
+            content: 'Turn chat into a compact image prompt.',
+          },
+          {
+            role: 'user',
+            content: 'Chat:\nUser asks for a moonlit character image.',
+          },
+        ],
+        currentChar: char,
+        temperature: 0.2,
+        maxTokens: 300,
+        bias: {},
+        useStreaming: false,
+        noMultiGen: true,
+      },
+      'otherAx',
+      abortController.signal,
+    )
+    expect(state.globalFetch).toHaveBeenCalledWith(
+      'https://api.openai.com/v1/images/generations',
+      expect.objectContaining({
+        body: expect.objectContaining({
+          prompt: 'cinematic portrait of blue-haired mage with lantern',
+          model: 'dall-e-3',
+          response_format: 'b64_json',
+          style: 'natural',
+          quality: 'standard',
+        }),
+        abortSignal: abortController.signal,
+      }),
+    )
+  })
+
   it('L50: image generation providers do not console-log payloads or poll bodies', async () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
     const char = makeCharacter()

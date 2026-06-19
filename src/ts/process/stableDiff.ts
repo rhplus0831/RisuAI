@@ -118,7 +118,7 @@ export async function stableDiff(currentChar: character, prompt: string, options
       useStreaming: false,
       noMultiGen: true,
     },
-    'submodel',
+    'otherAx',
     options.signal,
   )
 
