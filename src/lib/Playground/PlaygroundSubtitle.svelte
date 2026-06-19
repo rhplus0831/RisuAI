@@ -5,6 +5,7 @@
   import Button from '../UI/GUI/Button.svelte'
   import { DBState } from 'src/ts/stores.svelte'
   import { getModelInfo, LLMFlags } from 'src/ts/model/modellist'
+  import { resolveModelForRole } from 'src/ts/model/modelRoles'
   import { requestChatData } from 'src/ts/process/request/request'
   import { asBuffer, selectFileByDom, selectSingleFile, sleep } from 'src/ts/util'
   import { alertError, alertSelect } from 'src/ts/alert'
@@ -22,7 +23,7 @@
 
   let selLang = $state(DBState.db.language)
   let prompt = $state(LLMModePrompt)
-  let modelInfo = $derived(getModelInfo(DBState.db.aiModel))
+  let modelInfo = $derived(getModelInfo(resolveModelForRole(DBState.db, 'translate')))
   let outputText = $state('')
   let fileB64 = $state('')
   let vttB64 = $state('')
@@ -90,7 +91,7 @@
         bias: {},
         useStreaming: true,
       },
-      'model',
+      'translate',
     )
 
     if (v.type === 'multiline') {
@@ -294,7 +295,7 @@
         bias: {},
         useStreaming: true,
       },
-      'model',
+      'translate',
     )
 
     if (v.type === 'multiline') {
