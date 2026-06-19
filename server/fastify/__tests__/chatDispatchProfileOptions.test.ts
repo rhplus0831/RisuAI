@@ -48,6 +48,13 @@ function okCohereResponse(text = 'profile ok'): Response {
   })
 }
 
+function okOllamaResponse(text = 'profile ok'): Response {
+  return new Response(JSON.stringify({ message: { role: 'assistant', content: text }, done: true }), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  })
+}
+
 function captureDispatchRequests(response: Response = okOpenAIResponse()): CapturedDispatchRequest[] {
   const captured: CapturedDispatchRequest[] = []
   vi.stubGlobal(
@@ -277,6 +284,47 @@ describe('dispatchChatProvider profile providerOptions', () => {
     expect(captured[0].body.model).toBe('profile-cohere-model')
     expect(captured[0].body.profileFlag).toBe(true)
     expect(captured[0].body.flatFlag).toBeUndefined()
+  })
+
+  it('uses native Ollama profile URL and model over conflicting flat database fields', async () => {
+    const profile = resolveModelProfile({
+      database: db({
+        aiModel: 'ollama-hosted',
+        ollamaURL: 'http://profile-ollama.example.com',
+        ollamaModel: 'profile-llama',
+      } as Partial<Database>),
+    })
+    const flatConflict = db({
+      aiModel: 'ollama-hosted',
+      ollamaURL: 'http://flat-ollama.example.com',
+      ollamaModel: 'flat-llama',
+    } as Partial<Database>)
+    const captured = captureDispatchRequests(okOllamaResponse())
+
+    await dispatchWithProfile(profile, flatConflict)
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0].url).toBe('http://profile-ollama.example.com/api/chat')
+    expect(captured[0].body.model).toBe('profile-llama')
+  })
+
+  it('preserves the native Ollama missing-URL error and does not fall back to flat DB URL', async () => {
+    const profile = resolveModelProfile({
+      database: db({
+        aiModel: 'ollama-hosted',
+        ollamaModel: 'profile-llama',
+      } as Partial<Database>),
+    })
+    const flatConflict = db({
+      aiModel: 'ollama-hosted',
+      ollamaURL: 'http://flat-ollama.example.com',
+      ollamaModel: 'flat-llama',
+    } as Partial<Database>)
+    const fetchSpy = vi.fn()
+    vi.stubGlobal('fetch', fetchSpy as unknown as typeof fetch)
+
+    await expect(dispatchWithProfile(profile, flatConflict)).rejects.toThrow('options.ollama.baseUrl is required')
+    expect(fetchSpy).not.toHaveBeenCalled()
   })
 
   it('derives Cohere safety mode from the profile model id instead of flat aiModel', async () => {

@@ -1,6 +1,6 @@
 # Phase 3: Generation Dispatch
 
-Status: in progress; Phase 3a server-owned profile selection/capability/request-model slice complete; Phase 3b Fastify OpenAI-compatible provider-options slice complete; Phase 3c Fastify Anthropic/Mistral/Cohere provider-options slice complete.
+Status: in progress; Phase 3a server-owned profile selection/capability/request-model slice complete; Phase 3b Fastify OpenAI-compatible provider-options slice complete; Phase 3c Fastify Anthropic/Mistral/Cohere provider-options slice complete; Phase 3d Fastify native Ollama provider-options slice complete.
 
 Goal: move browser and Fastify generation dispatch from ad hoc flat database
 reads to the resolved profile runtime object.
@@ -76,14 +76,28 @@ reads to the resolved profile runtime object.
 - Missing-key dispatch coverage proves profile-owned empty credentials do not
   fall back to conflicting flat Anthropic, Mistral, or Cohere keys.
 
+## Implemented Phase 3d Slice
+
+- Fastify chat dispatch now resolves native Ollama `baseUrl` from
+  `profile.providerOptions.ollama.url` or `profile.providerOptions.baseUrl`
+  instead of flat `db.ollamaURL`.
+- Native Ollama dispatch keeps using the already profile-derived request model,
+  so conflicting flat `db.ollamaModel` values cannot alter the wire `model`.
+- Missing-URL dispatch coverage proves profile-owned empty URLs do not fall back
+  to conflicting flat `db.ollamaURL` and preserve the
+  `options.ollama.baseUrl is required` error.
+- `ollama-cloud` routing is unchanged and remains on the existing
+  OpenAI-compatible chat, Responses, or Anthropic branches according to
+  `ollamaRequestFormat`.
+
 ## Remaining Phase 3 Work
 
 - Migrate the remaining browser completion/request helper paths to consume the
   resolver contract for role/static fallback selection.
 - Migrate remaining provider option branches outside OpenAI-compatible,
-  Anthropic, Mistral, and Cohere to `profile.providerOptions` where the target
-  adapters already expose equivalent request fields. Residual branches include
-  Gemini/Vertex, Bedrock, Horde, Kobold, Ooba, and native Ollama.
+  Anthropic, Mistral, Cohere, and native Ollama to `profile.providerOptions`
+  where the target adapters already expose equivalent request fields. Residual
+  branches include Gemini/Vertex, Bedrock, Horde, Kobold, and Ooba.
 - Broaden provider parity beyond the Phase 3a request-model surface before
   marking the full Phase 3 complete.
 
@@ -132,7 +146,7 @@ pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 ```
 
-Latest Phase 3c run:
+Latest Phase 3d run:
 
 ```bash
 pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/chatDispatchProfileOptions.test.ts server/fastify/__tests__/generation.completion.test.ts server/fastify/__tests__/generation.chat.test.ts
@@ -143,7 +157,7 @@ pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 
 Results:
 
-- Focused Fastify chat dispatch/completion/chat tests: passed, 3 files / 178
+- Focused Fastify chat dispatch/completion/chat tests: passed, 3 files / 180
   tests.
 - Focused browser server-completion/capability/model-role routing tests: passed,
   3 files / 61 tests.

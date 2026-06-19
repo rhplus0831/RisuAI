@@ -7,16 +7,16 @@ workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 3c Fastify Anthropic/Mistral/Cohere
+- Runtime/code change under test: Phase 3d Fastify native Ollama
   provider-options adoption. Fastify chat dispatch now uses
-  `profile.providerOptions` for Anthropic, Mistral, and Cohere `apiKey`,
-  `baseUrl`, and `additionalParams`, plus Mistral/Cohere `extraHeaders`, where
-  the target adapters already support those fields. Cohere safety-mode
-  derivation now reads the resolved profile model id instead of flat
-  `db.aiModel`. Phase 3 remains in progress.
+  `profile.providerOptions.ollama.url` or `profile.providerOptions.baseUrl`
+  for native Ollama `baseUrl`, keeps the already resolved profile request model,
+  and does not fall back to conflicting flat `db.ollamaURL` when the profile URL
+  is missing. `ollama-cloud` remains on its existing OpenAI/Responses/Anthropic
+  routes. Phase 3 remains in progress.
 - Latest passing commands:
   - `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/chatDispatchProfileOptions.test.ts server/fastify/__tests__/generation.completion.test.ts server/fastify/__tests__/generation.chat.test.ts`
-    - Result: passed. 3 test files passed; 178 tests passed.
+    - Result: passed. 3 test files passed; 180 tests passed.
   - `pnpm exec vitest run src/ts/process/request/tests/serverCompletion.test.ts src/ts/process/request/tests/providerCapability.test.ts src/ts/process/request/tests/modelRoleRouting.test.ts`
     - Result: passed. 3 test files passed; 61 tests passed.
   - `pnpm exec tsc -p tsconfig.client-lib.json`
@@ -25,19 +25,18 @@ workstream.
   - `pnpm exec tsc -p server/fastify/tsconfig.json --noEmit`
     - Result: passed. The command exited 0 under strict server TypeScript.
   - `pnpm exec prettier --write --ignore-path /dev/null server/fastify/src/prompt/chatDispatch.ts server/fastify/__tests__/chatDispatchProfileOptions.test.ts docs/plan/model-config-profiles/status.md docs/plan/model-config-profiles/latest-verification.md docs/plan/model-config-profiles/phases/phase-3-generation-dispatch.md`
-    - Result: passed. The command exited 0 and formatted the Phase 3c code,
+    - Result: passed. The command exited 0 and formatted the Phase 3d code,
       tests, and docs.
   - `git diff --check`
     - Result: passed. The command exited 0 with no whitespace errors.
 - Failed/intermediate commands during this slice: none.
 - Residual gaps: Full Phase 3 is not complete. Remaining browser
   completion/request helper migration, provider-option migration for
-  Gemini/Vertex, Bedrock, Horde, Kobold, Ooba, and native Ollama, durable
-  profile storage, UI writes, provider secret reshaping, and embedding behavior
-  remain deferred to later slices/phases. OpenRouter body knobs (`fallback`,
-  `middleOut`, and provider filters) are not wired into Fastify chat dispatch
-  because the existing OpenAI chat adapter does not expose those request-body
-  options.
+  Gemini/Vertex, Bedrock, Horde, Kobold, and Ooba, durable profile storage, UI
+  writes, provider secret reshaping, and embedding behavior remain deferred to
+  later slices/phases. OpenRouter body knobs (`fallback`, `middleOut`, and
+  provider filters) are not wired into Fastify chat dispatch because the
+  existing OpenAI chat adapter does not expose those request-body options.
 
 ## Remaining Proof
 

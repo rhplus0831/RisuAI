@@ -596,6 +596,11 @@ function resolveProfileOpenAIVariant(profile?: ResolvedModelProfile): OpenAIComp
   }
 }
 
+function resolveProfileOllamaBaseUrl(profile: ResolvedModelProfile): string | undefined {
+  const options = profile.providerOptions
+  return asString(options.ollama?.url) ?? asString(options.baseUrl)
+}
+
 function resolveOpenAIVariant(
   db: Database,
   info: ModelInfoLite,
@@ -724,6 +729,13 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
   const info = profile.modelInfo
   const route = resolveChatProviderRoute(db, profile)
   if (route.routable === false) {
+    if (
+      info.format === LLMFormat.Ollama &&
+      profile.modelId !== 'ollama-cloud' &&
+      !resolveProfileOllamaBaseUrl(profile)
+    ) {
+      throw new Error('options.ollama.baseUrl is required')
+    }
     throw new Error(route.reason)
   }
   const provider = route.provider
@@ -964,7 +976,7 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
     const request = resolveOllamaRequest({
       model,
       messages,
-      baseUrl: db.ollamaURL,
+      baseUrl: resolveProfileOllamaBaseUrl(profile),
       maxTokens,
       temperature,
       signal,
