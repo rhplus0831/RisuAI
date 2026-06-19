@@ -461,6 +461,60 @@ describe('Phase 6-1 POST /api/v1/generate/completion', () => {
     })
   })
 
+  it('server-intent completion resolves staticModel xcustom provider settings from the custom row', async () => {
+    writeDatabase({
+      aiModel: 'gpt4o',
+      openAIKey: 'sk-primary',
+      customModels: [
+        {
+          id: 'xcustom:::fallback-openai',
+          name: 'Fallback OpenAI',
+          internalId: 'fallback-internal-model',
+          url: 'https://fallback.example.com/custom/v1/chat/completions',
+          key: 'sk-fallback',
+          format: LLMFormat.OpenAICompatible,
+          params: 'extra.fallback=true\nheader::X-Fallback-Trace=fallback-static',
+          flags: [],
+          tokenizer: 0,
+        },
+      ],
+    })
+    const captured: Array<{ url: string; body: Record<string, unknown>; headers: Record<string, string> }> = []
+    globalThis.fetch = (async (url: string, init: RequestInit) => {
+      captured.push({
+        url,
+        body: JSON.parse(String(init.body ?? '{}')) as Record<string, unknown>,
+        headers: init.headers as Record<string, string>,
+      })
+      return openAIChatResponse('static fallback ok')
+    }) as unknown as typeof globalThis.fetch
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        kind: 'server-intent',
+        messages: [{ role: 'user', content: 'hi' }],
+        stream: false,
+        mode: 'memory',
+        staticModel: 'xcustom:::fallback-openai',
+      },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({ type: 'success', result: 'static fallback ok' })
+    expect(captured).toHaveLength(1)
+    const sent = captured[0]
+    expect(sent.url).toBe('https://fallback.example.com/custom/v1/chat/completions')
+    expect(sent.body.model).toBe('fallback-internal-model')
+    expect(sent.body.extra).toEqual({ fallback: true })
+    expect(sent.headers.authorization).toBe('Bearer sk-fallback')
+    expect(sent.headers.authorization).not.toBe('Bearer sk-primary')
+    expect(sent.headers['X-Fallback-Trace']).toBe('fallback-static')
+  })
+
   it('server-intent completion dispatches provider request models from the resolved profile', async () => {
     const captured: Array<{ url: string; body: Record<string, unknown>; headers: Record<string, string> }> = []
     globalThis.fetch = (async (url: string, init: RequestInit) => {
