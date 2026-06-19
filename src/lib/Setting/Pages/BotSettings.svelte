@@ -34,8 +34,8 @@
   import { selectSingleFile } from 'src/ts/util'
   import { updatePromptPreset, type PromptPreset } from 'src/ts/storage/database.svelte'
   import { alertError } from 'src/ts/alert'
-  import { getModelInfo, LLMFlags, LLMFormat, LLMProvider } from 'src/ts/model/modellist'
-  import { resolveModelRoles } from 'src/ts/model/modelRoles'
+  import { getModelInfo, LLMFlags, LLMFormat } from 'src/ts/model/modellist'
+  import { resolveModelProfileUiState } from 'src/ts/model/modelProfileUiState'
   import RegexList from 'src/lib/SideBars/Scripts/RegexList.svelte'
   import SettingRenderer from '../SettingRenderer.svelte'
   import { allBasicParameterItems } from 'src/ts/setting/botSettingsParamsData'
@@ -720,62 +720,35 @@
 
   let modelInfo = $derived(getModelInfo(DBState.db.aiModel))
   let subModelInfo = $derived(getModelInfo(DBState.db.subModel))
-  let effectiveRoleModelIds = $derived.by(() =>
-    Object.values(
-      resolveModelRoles({
-        aiModel: DBState.db.aiModel,
-        subModel: DBState.db.subModel,
-        modelRoles: DBState.db.modelRoles,
-        seperateModelsForAxModels: DBState.db.seperateModelsForAxModels,
-        seperateModels: DBState.db.seperateModels,
-      }),
-    ).filter((model) => model.trim() !== ''),
+  let modelProfileUiState = $derived.by(() =>
+    resolveModelProfileUiState({
+      database: DBState.db,
+      lookupModelInfo: (_database, id) => getModelInfo(id),
+    }),
   )
-  let effectiveRoleModelInfos = $derived.by(() => effectiveRoleModelIds.map((model) => getModelInfo(model)))
-  let effectiveRoleApiKeyModels = $derived.by(() => {
-    const seen = new Set<string>()
-    const apiKeyModels: { keyIdentifier: string; name: string }[] = []
-
-    for (const info of effectiveRoleModelInfos) {
-      const keyIdentifier = info.keyIdentifier
-      if (!keyIdentifier || seen.has(keyIdentifier)) continue
-
-      seen.add(keyIdentifier)
-      apiKeyModels.push({ keyIdentifier, name: info.name })
-    }
-
-    return apiKeyModels
-  })
-  let usesGoogleCloudProvider = $derived(
-    effectiveRoleModelInfos.some((info) => info.provider === LLMProvider.GoogleCloud),
-  )
-  let usesVertexAIProvider = $derived(effectiveRoleModelInfos.some((info) => info.provider === LLMProvider.VertexAI))
-  let usesNovelListProvider = $derived(effectiveRoleModelInfos.some((info) => info.provider === LLMProvider.NovelList))
-  let usesAnthropicProvider = $derived(
-    effectiveRoleModelInfos.some(
-      (info) => info.provider === LLMProvider.Anthropic || info.provider === LLMProvider.AWS,
-    ),
-  )
-  let usesMistralProvider = $derived(effectiveRoleModelInfos.some((info) => info.provider === LLMProvider.Mistral))
-  let usesNovelAIProvider = $derived(effectiveRoleModelInfos.some((info) => info.provider === LLMProvider.NovelAI))
-  let usesCohereProvider = $derived(effectiveRoleModelInfos.some((info) => info.provider === LLMProvider.Cohere))
-  let usesOpenAIProvider = $derived(effectiveRoleModelInfos.some((info) => info.provider === LLMProvider.OpenAI))
-  let usesStreamingModel = $derived(effectiveRoleModelInfos.some((info) => info.flags.includes(LLMFlags.hasStreaming)))
-  let usesGeminiThinkingModel = $derived(
-    effectiveRoleModelInfos.some((info) => info.flags.includes(LLMFlags.geminiThinking)),
-  )
-  let usesMancerModel = $derived(effectiveRoleModelIds.some((model) => model.startsWith('mancer')))
-  let usesReverseProxyModel = $derived(effectiveRoleModelIds.includes('reverse_proxy'))
-  let usesOllamaLocal = $derived(effectiveRoleModelIds.includes('ollama-hosted'))
-  let usesOllamaCloud = $derived(effectiveRoleModelIds.includes('ollama-cloud'))
-  let usesNanoGPTModel = $derived(effectiveRoleModelIds.includes('nanogpt'))
-  let usesOpenRouterModel = $derived(effectiveRoleModelIds.includes('openrouter'))
-  let usesCustomModel = $derived(effectiveRoleModelIds.includes('custom'))
-  let usesKoboldModel = $derived(effectiveRoleModelIds.includes('kobold'))
-  let usesEchoModel = $derived(effectiveRoleModelIds.includes('echo_model'))
-  let usesHordeModel = $derived(effectiveRoleModelIds.some((model) => model.startsWith('horde')))
-  let usesTextgenWebUIModel = $derived(effectiveRoleModelIds.includes('textgen_webui'))
-  let usesOobaModel = $derived(effectiveRoleModelIds.includes('ooba'))
+  let effectiveRoleApiKeyModels = $derived(modelProfileUiState.apiKeyModels)
+  let usesGoogleCloudProvider = $derived(modelProfileUiState.usesGoogleCloudProvider)
+  let usesVertexAIProvider = $derived(modelProfileUiState.usesVertexAIProvider)
+  let usesNovelListProvider = $derived(modelProfileUiState.usesNovelListProvider)
+  let usesAnthropicProvider = $derived(modelProfileUiState.usesAnthropicProvider)
+  let usesMistralProvider = $derived(modelProfileUiState.usesMistralProvider)
+  let usesNovelAIProvider = $derived(modelProfileUiState.usesNovelAIProvider)
+  let usesCohereProvider = $derived(modelProfileUiState.usesCohereProvider)
+  let usesOpenAIProvider = $derived(modelProfileUiState.usesOpenAIProvider)
+  let usesStreamingModel = $derived(modelProfileUiState.usesStreamingModel)
+  let usesGeminiThinkingModel = $derived(modelProfileUiState.usesGeminiThinkingModel)
+  let usesMancerModel = $derived(modelProfileUiState.usesMancerModel)
+  let usesReverseProxyModel = $derived(modelProfileUiState.usesReverseProxyModel)
+  let usesOllamaLocal = $derived(modelProfileUiState.usesOllamaLocal)
+  let usesOllamaCloud = $derived(modelProfileUiState.usesOllamaCloud)
+  let usesNanoGPTModel = $derived(modelProfileUiState.usesNanoGPTModel)
+  let usesOpenRouterModel = $derived(modelProfileUiState.usesOpenRouterModel)
+  let usesCustomModel = $derived(modelProfileUiState.usesCustomModel)
+  let usesKoboldModel = $derived(modelProfileUiState.usesKoboldModel)
+  let usesEchoModel = $derived(modelProfileUiState.usesEchoModel)
+  let usesHordeModel = $derived(modelProfileUiState.usesHordeModel)
+  let usesTextgenWebUIModel = $derived(modelProfileUiState.usesTextgenWebUIModel)
+  let usesOobaModel = $derived(modelProfileUiState.usesOobaModel)
   let nanogptInputMode = $state<'list' | 'manual'>(
     DBState.db.nanogptRequestModel && !DBState.db.nanogptRequestModelName ? 'manual' : 'list',
   )

@@ -1,0 +1,211 @@
+import { describe, expect, it } from 'vitest'
+import type { Database } from '../storage/database.svelte'
+import { LLMFlags, LLMFormat, LLMProvider, LLMTokenizer, OpenAIParameters, type LLMModel } from './types'
+import { MODEL_ROLES, type ModelRole } from './modelRoles'
+import { resolveModelProfileUiState } from './modelProfileUiState'
+
+function db(overrides: Partial<Database> = {}): Database {
+  return {
+    aiModel: 'main-model',
+    subModel: 'aux-model',
+    modelRoles: {},
+    seperateModelsForAxModels: false,
+    seperateModels: {},
+    fallbackModels: {},
+    customModels: [],
+    modelTools: [],
+    OaiCompAPIKeys: {},
+    openrouterProvider: { order: [], only: [], ignore: [] },
+    ...overrides,
+  } as unknown as Database
+}
+
+function modelInfo(id: string, overrides: Partial<LLMModel> = {}): LLMModel {
+  return {
+    id,
+    name: id,
+    internalID: id,
+    provider: LLMProvider.AsIs,
+    format: LLMFormat.OpenAICompatible,
+    flags: [],
+    parameters: OpenAIParameters,
+    tokenizer: LLMTokenizer.Unknown,
+    ...overrides,
+  }
+}
+
+describe('resolveModelProfileUiState', () => {
+  it('resolves every canonical model role through the profile resolver contract', () => {
+    const seenModelIds: string[] = []
+    const state = resolveModelProfileUiState({
+      database: db({
+        aiModel: 'chat-main',
+        subModel: 'chat-aux',
+        modelRoles: {
+          memory: 'memory-role',
+          emotion: 'emotion-role',
+          translate: 'translate-role',
+          otherAx: 'other-role',
+          scriptMain: 'script-main-role',
+          scriptAux: 'script-aux-role',
+        } as Database['modelRoles'],
+      }),
+      lookupModelInfo: (_database, modelId) => {
+        seenModelIds.push(modelId)
+        return modelInfo(modelId)
+      },
+    })
+
+    expect(Object.keys(state.resolvedProfiles)).toEqual([...MODEL_ROLES])
+    expect(MODEL_ROLES.every((role) => state.resolvedProfiles[role].role === role)).toBe(true)
+    expect(seenModelIds).toEqual([
+      'chat-main',
+      'chat-aux',
+      'memory-role',
+      'emotion-role',
+      'translate-role',
+      'other-role',
+      'script-main-role',
+      'script-aux-role',
+    ])
+  })
+
+  it('derives provider-family visibility from resolved profile model info', () => {
+    const state = resolveModelProfileUiState({
+      database: db({
+        aiModel: 'provider-inferred-google',
+        subModel: 'provider-inferred-claude',
+        modelRoles: {
+          memory: 'provider-inferred-vertex',
+          emotion: 'provider-inferred-mistral',
+          translate: 'provider-inferred-openai',
+          otherAx: 'provider-inferred-cohere',
+          scriptMain: 'provider-inferred-novelai',
+          scriptAux: 'provider-inferred-novellist',
+        } as Database['modelRoles'],
+      }),
+      lookupModelInfo: (_database, modelId) =>
+        modelInfo(modelId, {
+          provider:
+            {
+              'provider-inferred-google': LLMProvider.GoogleCloud,
+              'provider-inferred-claude': LLMProvider.Anthropic,
+              'provider-inferred-vertex': LLMProvider.VertexAI,
+              'provider-inferred-mistral': LLMProvider.Mistral,
+              'provider-inferred-openai': LLMProvider.OpenAI,
+              'provider-inferred-cohere': LLMProvider.Cohere,
+              'provider-inferred-novelai': LLMProvider.NovelAI,
+              'provider-inferred-novellist': LLMProvider.NovelList,
+            }[modelId] ?? LLMProvider.AsIs,
+        }),
+    })
+
+    expect(state).toMatchObject({
+      usesGoogleCloudProvider: true,
+      usesVertexAIProvider: true,
+      usesNovelListProvider: true,
+      usesAnthropicProvider: true,
+      usesMistralProvider: true,
+      usesNovelAIProvider: true,
+      usesCohereProvider: true,
+      usesOpenAIProvider: true,
+    })
+  })
+
+  it('keeps legacy special panels tied to resolved model ids instead of provider inference', () => {
+    const providerOnlyState = resolveModelProfileUiState({
+      database: db({
+        aiModel: 'provider-only-ollama',
+        subModel: 'provider-only-nanogpt',
+        modelRoles: {
+          memory: 'provider-only-horde',
+          emotion: 'provider-only-echo',
+        } as Database['modelRoles'],
+      }),
+      lookupModelInfo: (_database, modelId) =>
+        modelInfo(modelId, {
+          provider:
+            {
+              'provider-only-ollama': LLMProvider.Ollama,
+              'provider-only-nanogpt': LLMProvider.NanoGPT,
+              'provider-only-horde': LLMProvider.Horde,
+              'provider-only-echo': LLMProvider.Echo,
+            }[modelId] ?? LLMProvider.AsIs,
+        }),
+    })
+
+    expect(providerOnlyState).toMatchObject({
+      usesOllamaLocal: false,
+      usesOllamaCloud: false,
+      usesNanoGPTModel: false,
+      usesHordeModel: false,
+      usesEchoModel: false,
+    })
+
+    const legacyIdState = resolveModelProfileUiState({
+      database: db({
+        aiModel: 'reverse_proxy',
+        subModel: 'ollama-cloud',
+        modelRoles: {
+          memory: 'ollama-hosted',
+          emotion: 'kobold',
+          translate: 'ooba',
+          otherAx: 'horde:::stable',
+          scriptMain: 'nanogpt',
+          scriptAux: 'openrouter',
+        } as Database['modelRoles'],
+      }),
+      lookupModelInfo: (_database, modelId) => modelInfo(modelId),
+    })
+
+    expect(legacyIdState).toMatchObject({
+      usesReverseProxyModel: true,
+      usesOllamaCloud: true,
+      usesOllamaLocal: true,
+      usesKoboldModel: true,
+      usesOobaModel: true,
+      usesHordeModel: true,
+      usesNanoGPTModel: true,
+      usesOpenRouterModel: true,
+    })
+  })
+
+  it('deduplicates key-identifier API models while preserving first resolved names', () => {
+    const state = resolveModelProfileUiState({
+      database: db({
+        aiModel: 'deepseek-a',
+        subModel: 'deepseek-b',
+        modelRoles: {
+          memory: 'deepinfra-a',
+        } as Database['modelRoles'],
+      }),
+      lookupModelInfo: (_database, modelId) =>
+        modelInfo(modelId, {
+          name: `${modelId} name`,
+          keyIdentifier: modelId.startsWith('deepseek') ? 'deepseek' : 'deepinfra',
+          flags: modelId === 'deepseek-a' ? [LLMFlags.hasStreaming, LLMFlags.geminiThinking] : [],
+        }),
+    })
+
+    expect(state.apiKeyModels).toEqual([
+      { keyIdentifier: 'deepseek', name: 'deepseek-a name' },
+      { keyIdentifier: 'deepinfra', name: 'deepinfra-a name' },
+    ])
+    expect(state.usesStreamingModel).toBe(true)
+    expect(state.usesGeminiThinkingModel).toBe(true)
+  })
+
+  it.each([
+    ['custom' as const, 'usesCustomModel' as const],
+    ['pluginmodel:::test' as const, 'usesCustomModel' as const],
+    ['mancer-plus' as const, 'usesMancerModel' as const],
+    ['textgen_webui' as const, 'usesTextgenWebUIModel' as const],
+  ])('reveals %s legacy controls from the resolved model id', (modelId, key) => {
+    const state = resolveModelProfileUiState({
+      database: db({ aiModel: modelId, subModel: '' }),
+      lookupModelInfo: (_database, id) => modelInfo(id),
+    })
+
+    expect(state[key]).toBe(true)
+  })
+})

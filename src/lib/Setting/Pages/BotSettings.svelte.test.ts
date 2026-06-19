@@ -48,18 +48,25 @@ describe('BotSettings prompt edit persistence contracts', () => {
 })
 
 describe('BotSettings model-role provider visibility', () => {
-  it('uses effective model roles to reveal provider-specific settings', () => {
+  it('uses the profile UI adapter to reveal provider-specific settings', () => {
     const source = botSettingsSource()
 
-    expect(source).toContain("import { resolveModelRoles } from 'src/ts/model/modelRoles'")
-    expect(source).toContain('let effectiveRoleModelIds = $derived.by(() =>')
-    expect(source).toContain('modelRoles: DBState.db.modelRoles')
-    expect(source).toContain('seperateModelsForAxModels: DBState.db.seperateModelsForAxModels')
+    expect(source).toContain("import { resolveModelProfileUiState } from 'src/ts/model/modelProfileUiState'")
+    expect(source).toContain('let modelProfileUiState = $derived.by(() =>')
+    expect(source).toContain('resolveModelProfileUiState({')
+    expect(source).toContain('database: DBState.db')
+    expect(source).toContain('lookupModelInfo: (_database, id) => getModelInfo(id)')
+    expect(source).toContain('let effectiveRoleApiKeyModels = $derived(modelProfileUiState.apiKeyModels)')
+    expect(source).toContain('let usesGoogleCloudProvider = $derived(modelProfileUiState.usesGoogleCloudProvider)')
+    expect(source).toContain('let usesReverseProxyModel = $derived(modelProfileUiState.usesReverseProxyModel)')
     expect(source).toContain('{#if usesNanoGPTModel}')
     expect(source).toContain('{#if usesOpenRouterModel}')
     expect(source).toContain('{#if usesOllamaLocal || usesOllamaCloud}')
     expect(source).toContain('{#if !usesOllamaCloud && usesStreamingModel}')
     expect(source).toContain('{#if usesOpenRouterModel || usesReverseProxyModel}')
+    expect(source).not.toContain('resolveModelRoles')
+    expect(source).not.toContain('let effectiveRoleModelIds')
+    expect(source).not.toContain('let effectiveRoleModelInfos')
     expect(source).not.toContain('baseUsesOllamaCloud')
     expect(source).not.toContain("{#if DBState.db.aiModel === 'nanogpt' || DBState.db.subModel === 'nanogpt'}")
     expect(source).not.toContain("{#if DBState.db.aiModel === 'openrouter' || DBState.db.subModel === 'openrouter'}")
