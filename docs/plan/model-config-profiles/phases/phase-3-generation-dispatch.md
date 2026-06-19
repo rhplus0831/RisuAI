@@ -1,6 +1,6 @@
 # Phase 3: Generation Dispatch
 
-Status: in progress; Phase 3a server-owned profile selection/capability/request-model slice complete; Phase 3b Fastify OpenAI-compatible provider-options slice complete; Phase 3c Fastify Anthropic/Mistral/Cohere provider-options slice complete; Phase 3d Fastify native Ollama provider-options slice complete; Phase 3e Fastify Kobold provider-options slice complete; Phase 3f Fastify Horde provider-options slice complete; Phase 3g Fastify OobaLegacy provider-options slice complete; Phase 3h Fastify Bedrock provider-options slice complete.
+Status: in progress; Phase 3a server-owned profile selection/capability/request-model slice complete; Phase 3b Fastify OpenAI-compatible provider-options slice complete; Phase 3c Fastify Anthropic/Mistral/Cohere provider-options slice complete; Phase 3d Fastify native Ollama provider-options slice complete; Phase 3e Fastify Kobold provider-options slice complete; Phase 3f Fastify Horde provider-options slice complete; Phase 3g Fastify OobaLegacy provider-options slice complete; Phase 3h Fastify Bedrock provider-options slice complete; Phase 3i Fastify Gemini/Vertex provider-options slice complete.
 
 Goal: move browser and Fastify generation dispatch from ad hoc flat database
 reads to the resolved profile runtime object.
@@ -154,16 +154,33 @@ reads to the resolved profile runtime object.
 - Focused coverage keeps Bedrock system extraction and profile-derived
   `us.`/`global.` request-model behavior pinned.
 
+## Implemented Phase 3i Slice
+
+- `resolveModelProfile()` now exposes Google AI Studio API keys as
+  `profile.providerOptions.apiKey`, derived from
+  `database.google?.accessToken`, for Google Cloud Gemini profiles.
+- `resolveModelProfile()` now exposes Vertex service-account auth as
+  `profile.providerOptions.vertex`, derived from `database.google?.projectId`,
+  `database.vertexRegion`, `database.vertexClientEmail`, and
+  `database.vertexPrivateKey`, for Vertex Gemini profiles.
+- Vertex profile credentials intentionally do not use
+  `database.vertexAccessToken`, which remains cached/projection state rather
+  than a source credential.
+- Fastify Gemini chat dispatch now passes Google API keys and Vertex auth to
+  `resolveGeminiRequest()` only from `profile.providerOptions` instead of flat
+  `db.google` / `db.vertex*` fields.
+- Direct dispatch coverage proves profile-owned Google keys and Vertex
+  project/region/service-account auth win over conflicting flat DB fields, that
+  missing or partial profile credentials do not fall back to flat credentials or
+  call `fetch`, and that profile-derived Gemini request-model behavior,
+  including `models/` stripping, remains pinned.
+
 ## Remaining Phase 3 Work
 
 - Migrate the remaining browser completion/request helper paths to consume the
   resolver contract for role/static fallback selection.
-- Migrate remaining provider option branches outside OpenAI-compatible,
-  Anthropic, Mistral, Cohere, native Ollama, Kobold, Horde, OobaLegacy, and
-  Bedrock to `profile.providerOptions` where the target adapters already expose
-  equivalent request fields. Residual branches include Gemini/Vertex.
-- Broaden provider parity beyond the Phase 3a request-model surface before
-  marking the full Phase 3 complete.
+- Broaden provider parity for browser completion/request helpers before marking
+  the full Phase 3 complete.
 
 ## Anchors
 
@@ -210,20 +227,20 @@ pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 ```
 
-Latest Phase 3h run:
+Latest Phase 3i run:
 
 ```bash
 pnpm exec vitest run src/ts/model/modelProfileResolver.test.ts
-pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/chatDispatchProfileOptions.test.ts server/fastify/__tests__/bedrock.test.ts server/fastify/__tests__/generation.completion.test.ts server/fastify/__tests__/generation.chat.test.ts
+pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/chatDispatchProfileOptions.test.ts server/fastify/__tests__/gemini.test.ts server/fastify/__tests__/generation.chat.test.ts server/fastify/__tests__/generation.completion.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 ```
 
 Results:
 
-- Focused resolver tests: passed, 1 file / 17 tests.
-- Focused Fastify chat dispatch/Bedrock/chat/completion tests: passed, 4 files /
-  210 tests.
+- Focused resolver tests: passed, 1 file / 20 tests.
+- Focused Fastify chat dispatch/Gemini/chat/completion tests: passed, 4 files /
+  229 tests.
 - Client-lib TypeScript: passed.
 - Server strict TypeScript: passed.
 

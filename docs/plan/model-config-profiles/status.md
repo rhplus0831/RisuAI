@@ -12,6 +12,7 @@ complete. The Phase 3e Fastify Kobold provider-options slice is complete. The
 Phase 3f Fastify Horde provider-options slice is complete. The
 Phase 3g Fastify OobaLegacy provider-options slice is complete. The
 Phase 3h Fastify Bedrock provider-options slice is complete. The
+Phase 3i Fastify Gemini/Vertex provider-options slice is complete. The
 broader Phase 3 generation dispatch phase remains in progress; see
 [`latest-verification.md`](latest-verification.md).
 
@@ -24,7 +25,8 @@ broader Phase 3 generation dispatch phase remains in progress; see
   Fastify native Ollama provider-options slice complete; Phase 3e Fastify
   Kobold provider-options slice complete; Phase 3f Fastify Horde
   provider-options slice complete; Phase 3g Fastify OobaLegacy provider-options
-  slice complete; Phase 3h Fastify Bedrock provider-options slice complete.
+  slice complete; Phase 3h Fastify Bedrock provider-options slice complete;
+  Phase 3i Fastify Gemini/Vertex provider-options slice complete.
 - Current implementation state: existing flattened `Database` fields remain the
   source of truth. `src/ts/model/modelProfileResolver.ts` now derives a
   read-only legacy profile object from the flat shape, and
@@ -62,34 +64,44 @@ broader Phase 3 generation dispatch phase remains in progress; see
   Bedrock keys cannot override the profile key, missing or blank profile keys do
   not fall back to flat DB keys, malformed profile keys fail before `fetch`, and
   profile-derived `us.`/`global.` request-model behavior remains covered.
+  Fastify Gemini dispatch now uses `profile.providerOptions.apiKey`, derived
+  from `database.google?.accessToken`, for Google AI Studio profiles, and
+  `profile.providerOptions.vertex`, derived from `database.google?.projectId`,
+  `database.vertexRegion`, `database.vertexClientEmail`, and
+  `database.vertexPrivateKey`, for Vertex profiles. It intentionally does not
+  use `database.vertexAccessToken` as a profile credential. Conflicting flat
+  Google and Vertex fields cannot override the profile key/auth, missing or
+  partial profile credentials do not fall back to flat DB credentials, and
+  profile-derived Gemini request-model behavior, including `models/` stripping,
+  remains covered.
   Outside those dispatch slices, remaining provider credentials, base URLs,
   additional params, durable storage, and UI writes remain on the existing flat
   fields.
 - Current compatibility state: no profile data model exists yet.
-- Current verification state: Phase 3h focused resolver and Fastify chat
-  dispatch/Bedrock/chat/completion tests pass; client-lib TypeScript passes;
+- Current verification state: Phase 3i focused resolver and Fastify chat
+  dispatch/Gemini/chat/completion tests pass; client-lib TypeScript passes;
   full server strict TypeScript passes. See
   [`latest-verification.md`](latest-verification.md).
 
 ## Phase Router
 
-| Phase                                | Status      | Purpose                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| ------------------------------------ | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Phase 0: Current Contracts           | Complete    | Freeze current role, provider, preset, fallback, masking, static model, and memory behavior.                                                                                                                                                                                                                                                                                                                                                                                                 |
-| Phase 1: Read-Only Profile Resolver  | Complete    | Add a shared resolver and compatibility adapter while storage stays flat.                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| Phase 2: Preset Composition          | Complete    | Centralize base DB, selected model preset, and selected prompt preset composition.                                                                                                                                                                                                                                                                                                                                                                                                           |
-| Phase 3: Generation Dispatch         | In progress | Adopt resolved profiles in browser and Fastify generation paths. Phase 3a server-owned selection/capability/request-model, Phase 3b Fastify OpenAI-compatible provider-options, Phase 3c Fastify Anthropic/Mistral/Cohere provider-options, Phase 3d Fastify native Ollama provider-options, Phase 3e Fastify Kobold provider-options, Phase 3f Fastify Horde provider-options, Phase 3g Fastify OobaLegacy provider-options, and Phase 3h Fastify Bedrock provider-options slices complete. |
-| Phase 4: UI & Command Adapter        | Not started | Adapt role/profile UI and settings commands while writes target existing fields.                                                                                                                                                                                                                                                                                                                                                                                                             |
-| Phase 5: Custom, Secrets & Auxiliary | Not started | Harden custom models, masking, memory, translation, scripts, MCP, playground, fallbacks, and tools.                                                                                                                                                                                                                                                                                                                                                                                          |
-| Phase 6: Persisted Profiles          | Not started | Add durable profile records and role bindings after derived parity is proven.                                                                                                                                                                                                                                                                                                                                                                                                                |
-| Phase 7: Verification & Cleanup      | Not started | Run final regression, browser smoke, docs updates, compatibility cleanup, and TypeScript proof.                                                                                                                                                                                                                                                                                                                                                                                              |
+| Phase                                | Status      | Purpose                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ------------------------------------ | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Phase 0: Current Contracts           | Complete    | Freeze current role, provider, preset, fallback, masking, static model, and memory behavior.                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| Phase 1: Read-Only Profile Resolver  | Complete    | Add a shared resolver and compatibility adapter while storage stays flat.                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Phase 2: Preset Composition          | Complete    | Centralize base DB, selected model preset, and selected prompt preset composition.                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Phase 3: Generation Dispatch         | In progress | Adopt resolved profiles in browser and Fastify generation paths. Phase 3a server-owned selection/capability/request-model, Phase 3b Fastify OpenAI-compatible provider-options, Phase 3c Fastify Anthropic/Mistral/Cohere provider-options, Phase 3d Fastify native Ollama provider-options, Phase 3e Fastify Kobold provider-options, Phase 3f Fastify Horde provider-options, Phase 3g Fastify OobaLegacy provider-options, Phase 3h Fastify Bedrock provider-options, and Phase 3i Fastify Gemini/Vertex provider-options slices complete. |
+| Phase 4: UI & Command Adapter        | Not started | Adapt role/profile UI and settings commands while writes target existing fields.                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| Phase 5: Custom, Secrets & Auxiliary | Not started | Harden custom models, masking, memory, translation, scripts, MCP, playground, fallbacks, and tools.                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| Phase 6: Persisted Profiles          | Not started | Add durable profile records and role bindings after derived parity is proven.                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Phase 7: Verification & Cleanup      | Not started | Run final regression, browser smoke, docs updates, compatibility cleanup, and TypeScript proof.                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 
 ## Immediate Next Steps
 
 1. Continue Phase 3 by moving remaining browser completion/request helpers and
-   provider option branches outside OpenAI-compatible, Anthropic, Mistral,
-   Cohere, native Ollama, Kobold, Horde, OobaLegacy, and Bedrock to the resolver
-   contract without reshaping provider secrets or storage.
+   any residual generation callers to the resolver contract without reshaping
+   provider secrets or storage. Fastify chat provider-option slices are complete
+   through Gemini/Vertex for the adapter fields exposed today.
 2. Keep UI writes targeting existing fields until the profile editor behavior
    is proven.
 3. Update `status.md` at the end of each phase with proof or explicit gaps.

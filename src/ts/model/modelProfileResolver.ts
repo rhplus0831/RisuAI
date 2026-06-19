@@ -113,6 +113,12 @@ export interface ModelProfileProviderOptions {
     thinkingMode?: string
     cloud: boolean
   }
+  vertex?: {
+    projectId?: string
+    region?: string
+    clientEmail?: string
+    privateKey?: string
+  }
 }
 
 export interface ModelProfileRuntimeOptions {
@@ -769,6 +775,10 @@ export function buildProfileProviderCapabilityInput(
           ]
         : undefined,
       claudeAPIKey: modelInfo.format === LLMFormat.AWSBedrockClaude ? providerOptions?.apiKey : undefined,
+      googleProjectId: providerOptions?.vertex?.projectId,
+      vertexRegion: providerOptions?.vertex?.region,
+      vertexClientEmail: providerOptions?.vertex?.clientEmail,
+      vertexPrivateKey: providerOptions?.vertex?.privateKey,
       ollamaApiKey: providerOptions?.ollama?.apiKey,
       ollamaRequestFormat: providerOptions?.ollama?.requestFormat,
       ollamaURL: providerOptions?.ollama?.url,
@@ -1068,8 +1078,12 @@ function resolveProviderOptions(
     case LLMFormat.VertexAIGemini:
       return {
         ...base,
-        apiKey: nonBlankString(database.vertexAccessToken),
-        extraHeaders: undefined,
+        vertex: {
+          projectId: nonBlankString(database.google?.projectId),
+          region: nonBlankString(database.vertexRegion),
+          clientEmail: nonBlankString(database.vertexClientEmail),
+          privateKey: nonBlankString(database.vertexPrivateKey),
+        },
       }
     case LLMFormat.OpenAIResponseAPI:
       return {

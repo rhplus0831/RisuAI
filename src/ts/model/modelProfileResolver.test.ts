@@ -386,6 +386,100 @@ describe('resolveModelProfile provider/runtime normalization', () => {
     })
   })
 
+  it('normalizes Google AI Studio API key and strips models/ from the request model', () => {
+    const profile = resolveModelProfile({
+      database: db({
+        aiModel: 'gemini-2.5-flash',
+        google: { accessToken: 'google-profile-key', projectId: 'studio-project' },
+      } as Partial<Database>),
+      lookupModelInfo: (_database, id) =>
+        modelInfo({
+          id,
+          name: 'Gemini Profile',
+          internalID: 'models/gemini-profile-wire-model',
+          provider: LLMProvider.GoogleCloud,
+          format: LLMFormat.GoogleCloud,
+          flags: [LLMFlags.hasFirstSystemPrompt],
+          tokenizer: LLMTokenizer.GoogleCloud,
+        }),
+    })
+
+    expect(profile.modelInfo.format).toBe(LLMFormat.GoogleCloud)
+    expect(profile.providerCapability).toEqual({ routable: true, provider: 'gemini' })
+    expect(profile.requestModel).toBe('gemini-profile-wire-model')
+    expect(profile.providerOptions).toMatchObject({
+      apiKey: 'google-profile-key',
+      requestModel: 'gemini-profile-wire-model',
+    })
+    expect(profile.providerOptions.vertex).toBeUndefined()
+  })
+
+  it('normalizes Vertex service-account auth and strips models/ from the request model', () => {
+    const profile = resolveModelProfile({
+      database: db({
+        aiModel: 'gemini-2.5-pro-vertex',
+        google: { accessToken: 'studio-key-ignored-for-vertex', projectId: 'profile-project' },
+        vertexRegion: 'us-central1',
+        vertexClientEmail: 'svc@profile-project.iam.gserviceaccount.com',
+        vertexPrivateKey: 'profile-private-key',
+        vertexAccessToken: 'cached-token-not-a-profile-credential',
+      } as Partial<Database>),
+      lookupModelInfo: (_database, id) =>
+        modelInfo({
+          id,
+          name: 'Gemini Vertex Profile',
+          internalID: 'models/gemini-profile-vertex-wire-model',
+          provider: LLMProvider.VertexAI,
+          format: LLMFormat.VertexAIGemini,
+          flags: [LLMFlags.hasFirstSystemPrompt],
+          tokenizer: LLMTokenizer.GoogleCloud,
+        }),
+    })
+
+    expect(profile.modelInfo.format).toBe(LLMFormat.VertexAIGemini)
+    expect(profile.providerCapability).toEqual({ routable: true, provider: 'gemini' })
+    expect(profile.requestModel).toBe('gemini-profile-vertex-wire-model')
+    expect(profile.providerOptions.apiKey).toBeUndefined()
+    expect(profile.providerOptions.vertex).toEqual({
+      projectId: 'profile-project',
+      region: 'us-central1',
+      clientEmail: 'svc@profile-project.iam.gserviceaccount.com',
+      privateKey: 'profile-private-key',
+    })
+    expect(buildProfileProviderCapabilityInput(profile)).toEqual(profile.providerCapabilityInput)
+  })
+
+  it('does not treat a cached Vertex access token as a profile credential', () => {
+    const profile = resolveModelProfile({
+      database: db({
+        aiModel: 'gemini-2.5-pro-vertex',
+        google: { accessToken: 'studio-key-ignored-for-vertex', projectId: 'profile-project' },
+        vertexRegion: 'us-central1',
+        vertexClientEmail: 'svc@profile-project.iam.gserviceaccount.com',
+        vertexAccessToken: 'cached-token-not-a-profile-credential',
+      } as Partial<Database>),
+      lookupModelInfo: (_database, id) =>
+        modelInfo({
+          id,
+          name: 'Gemini Vertex Profile',
+          internalID: 'models/gemini-profile-vertex-wire-model',
+          provider: LLMProvider.VertexAI,
+          format: LLMFormat.VertexAIGemini,
+          flags: [LLMFlags.hasFirstSystemPrompt],
+          tokenizer: LLMTokenizer.GoogleCloud,
+        }),
+    })
+
+    expect(profile.providerOptions.apiKey).toBeUndefined()
+    expect(profile.providerOptions.vertex).toMatchObject({
+      projectId: 'profile-project',
+      region: 'us-central1',
+      clientEmail: 'svc@profile-project.iam.gserviceaccount.com',
+    })
+    expect(profile.providerOptions.vertex?.privateKey).toBeUndefined()
+    expect(profile.providerCapability).toEqual({ routable: false, reason: 'config-incomplete' })
+  })
+
   it('normalizes OpenAI-compatible key identifier models', () => {
     const profile = resolveModelProfile({
       database: db({

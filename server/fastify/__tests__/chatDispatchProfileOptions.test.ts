@@ -1,14 +1,24 @@
+import { generateKeyPairSync } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { LLMFormat } from '../../../src/ts/model/types'
+import {
+  LLMFlags,
+  LLMFormat,
+  LLMProvider,
+  LLMTokenizer,
+  OpenAIParameters,
+  type LLMModel,
+} from '../../../src/ts/model/types'
 import { resolveModelProfile, type ResolvedModelProfile } from '../../../src/ts/model/modelProfileResolver'
 import type { OpenAIChat } from '../../../src/ts/process/index.svelte'
 import type { Database } from '../../../src/ts/storage/database.svelte'
+import { _resetVertexTokenCacheForTesting } from '../src/generation/vertexAuth.js'
 import { dispatchChatProvider } from '../src/prompt/chatDispatch.js'
 
 interface CapturedDispatchRequest {
   url: string
   headers: Record<string, string>
   body: Record<string, unknown>
+  rawBody: string
 }
 
 function db(overrides: Partial<Database> = {}): Database {
@@ -25,6 +35,19 @@ function db(overrides: Partial<Database> = {}): Database {
     useStreaming: false,
     ...overrides,
   } as unknown as Database
+}
+
+function geminiModelInfo(overrides: Partial<LLMModel>): LLMModel {
+  return {
+    id: 'gemini-2.5-flash',
+    name: 'Gemini Test Model',
+    provider: LLMProvider.GoogleCloud,
+    format: LLMFormat.GoogleCloud,
+    flags: [LLMFlags.hasFirstSystemPrompt, LLMFlags.requiresAlternateRole, LLMFlags.mustStartWithUserInput],
+    parameters: OpenAIParameters,
+    tokenizer: LLMTokenizer.GoogleCloud,
+    ...overrides,
+  }
 }
 
 function okOpenAIResponse(text = 'profile ok'): Response {
@@ -76,16 +99,37 @@ function okBedrockResponse(text = 'profile ok'): Response {
   })
 }
 
+function okGeminiResponse(text = 'profile ok'): Response {
+  return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text }] }, finishReason: 'STOP' }] }), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  })
+}
+
+function parseCapturedBody(rawBody: string): Record<string, unknown> {
+  try {
+    return JSON.parse(rawBody) as Record<string, unknown>
+  } catch {
+    return {}
+  }
+}
+
+function captureRequest(url: string | URL | Request, init?: RequestInit): CapturedDispatchRequest {
+  const rawBody = String(init?.body ?? '{}')
+  return {
+    url: String(url),
+    headers: { ...((init?.headers as Record<string, string> | undefined) ?? {}) },
+    body: parseCapturedBody(rawBody),
+    rawBody,
+  }
+}
+
 function captureDispatchRequests(response: Response = okOpenAIResponse()): CapturedDispatchRequest[] {
   const captured: CapturedDispatchRequest[] = []
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
-      captured.push({
-        url: String(url),
-        headers: { ...((init?.headers as Record<string, string> | undefined) ?? {}) },
-        body: JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>,
-      })
+      captured.push(captureRequest(url, init))
       return response.clone()
     }) as unknown as typeof fetch,
   )
@@ -101,11 +145,7 @@ function captureHordeRequests(text = 'profile ok'): CapturedDispatchRequest[] {
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
-      captured.push({
-        url: String(url),
-        headers: { ...((init?.headers as Record<string, string> | undefined) ?? {}) },
-        body: JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>,
-      })
+      captured.push(captureRequest(url, init))
       if (String(url).endsWith('/generate/text/async')) {
         return new Response(JSON.stringify({ id: 'profile-horde-job' }), {
           status: 202,
@@ -122,6 +162,32 @@ function captureHordeRequests(text = 'profile ok'): CapturedDispatchRequest[] {
     }) as unknown as typeof fetch,
   )
   return captured
+}
+
+function captureVertexRequests(text = 'profile ok'): CapturedDispatchRequest[] {
+  const captured: CapturedDispatchRequest[] = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      captured.push(captureRequest(url, init))
+      if (String(url) === 'https://oauth2.googleapis.com/token') {
+        return new Response(JSON.stringify({ access_token: 'ya29.profile-token', expires_in: 3599 }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      }
+      return okGeminiResponse(text)
+    }) as unknown as typeof fetch,
+  )
+  return captured
+}
+
+function generatePrivateKey(): string {
+  return generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+    publicKeyEncoding: { type: 'spki', format: 'pem' },
+    privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+  }).privateKey
 }
 
 async function dispatchWithProfile(
@@ -480,6 +546,142 @@ describe('dispatchChatProvider profile providerOptions', () => {
     )
     expect(captured[0].headers.Authorization).toContain('/eu-central-1/bedrock/aws4_request')
     expect(captured[0].body.messages).toEqual([{ role: 'user', content: 'hello' }])
+  })
+
+  it('uses Google AI Studio profile API key and request model over conflicting flat database fields', async () => {
+    const profile = resolveModelProfile({
+      database: db({
+        aiModel: 'gemini-2.5-flash',
+        google: { accessToken: 'profile-google-key', projectId: 'profile-project' },
+      } as Partial<Database>),
+      lookupModelInfo: (_database, id) =>
+        geminiModelInfo({
+          id,
+          internalID: 'models/gemini-profile-wire-model',
+          provider: LLMProvider.GoogleCloud,
+          format: LLMFormat.GoogleCloud,
+        }),
+    })
+    const flatConflict = db({
+      aiModel: 'gemini-2.5-pro',
+      google: { accessToken: 'flat-google-key', projectId: 'flat-project' },
+    } as Partial<Database>)
+    const captured = captureDispatchRequests(okGeminiResponse())
+
+    await dispatchWithProfile(profile, flatConflict)
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0].url).toBe(
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-profile-wire-model:generateContent?key=profile-google-key',
+    )
+    expect(captured[0].url).not.toContain('flat-google-key')
+    expect(captured[0].body.contents).toEqual([{ role: 'user', parts: [{ text: 'hello' }] }])
+  })
+
+  it.each([
+    { label: 'missing', google: undefined },
+    { label: 'blank', google: { accessToken: '   ', projectId: 'profile-project' } },
+  ])('does not fall back to flat DB Google key when the profile key is $label', async (testCase) => {
+    const profile = resolveModelProfile({
+      database: db({
+        aiModel: 'gemini-2.5-flash',
+        ...(testCase.google === undefined ? {} : { google: testCase.google }),
+      } as Partial<Database>),
+    })
+    const flatConflict = db({
+      aiModel: 'gemini-2.5-flash',
+      google: { accessToken: 'flat-google-key', projectId: 'flat-project' },
+    } as Partial<Database>)
+    const fetchSpy = vi.fn()
+    vi.stubGlobal('fetch', fetchSpy as unknown as typeof fetch)
+
+    await expect(dispatchWithProfile(profile, flatConflict)).rejects.toThrow(
+      'options.gemini.apiKey or options.gemini.vertex is required',
+    )
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it('uses Vertex profile service-account auth and request model over conflicting flat database fields', async () => {
+    _resetVertexTokenCacheForTesting()
+    const profilePrivateKey = generatePrivateKey()
+    const profile = resolveModelProfile({
+      database: db({
+        aiModel: 'gemini-2.5-pro-vertex',
+        google: { accessToken: 'studio-key-ignored-for-vertex', projectId: 'profile-project' },
+        vertexRegion: 'us-central1',
+        vertexClientEmail: 'svc@profile-project.iam.gserviceaccount.com',
+        vertexPrivateKey: profilePrivateKey,
+        vertexAccessToken: 'cached-profile-token',
+      } as Partial<Database>),
+      lookupModelInfo: (_database, id) =>
+        geminiModelInfo({
+          id,
+          internalID: 'models/gemini-profile-vertex-wire-model',
+          provider: LLMProvider.VertexAI,
+          format: LLMFormat.VertexAIGemini,
+        }),
+    })
+    const flatConflict = db({
+      aiModel: 'gemini-2.5-flash-vertex',
+      google: { accessToken: 'flat-studio-key', projectId: 'flat-project' },
+      vertexRegion: 'europe-west1',
+      vertexClientEmail: 'svc@flat-project.iam.gserviceaccount.com',
+      vertexPrivateKey: 'not-a-valid-flat-private-key',
+      vertexAccessToken: 'flat-cached-token',
+    } as Partial<Database>)
+    const captured = captureVertexRequests()
+
+    await dispatchWithProfile(profile, flatConflict)
+
+    expect(captured).toHaveLength(2)
+    expect(captured[0].url).toBe('https://oauth2.googleapis.com/token')
+    expect(captured[1].url).toBe(
+      'https://us-central1-aiplatform.googleapis.com/v1/projects/profile-project/locations/us-central1/publishers/google/models/gemini-profile-vertex-wire-model:generateContent',
+    )
+    expect(captured[1].url).not.toContain('flat-project')
+    expect(captured[1].url).not.toContain('europe-west1')
+    expect(captured[1].headers.authorization).toBe('Bearer ya29.profile-token')
+
+    const assertion = new URLSearchParams(captured[0].rawBody).get('assertion')
+    expect(assertion).toBeTruthy()
+    const jwtPayload = JSON.parse(Buffer.from(assertion!.split('.')[1], 'base64url').toString('utf8')) as {
+      iss?: string
+    }
+    expect(jwtPayload.iss).toBe('svc@profile-project.iam.gserviceaccount.com')
+  })
+
+  it.each([
+    {
+      label: 'missing',
+      profileDatabase: {
+        aiModel: 'gemini-2.5-pro-vertex',
+      } as Partial<Database>,
+    },
+    {
+      label: 'partial',
+      profileDatabase: {
+        aiModel: 'gemini-2.5-pro-vertex',
+        google: { accessToken: 'studio-key-ignored-for-vertex', projectId: 'profile-project' },
+        vertexRegion: 'us-central1',
+        vertexClientEmail: 'svc@profile-project.iam.gserviceaccount.com',
+      } as Partial<Database>,
+    },
+  ])('does not fall back to flat DB Vertex auth when profile auth is $label', async (testCase) => {
+    _resetVertexTokenCacheForTesting()
+    const profile = resolveModelProfile({ database: db(testCase.profileDatabase) })
+    const flatConflict = db({
+      aiModel: 'gemini-2.5-pro-vertex',
+      google: { accessToken: 'flat-studio-key', projectId: 'flat-project' },
+      vertexRegion: 'us-central1',
+      vertexClientEmail: 'svc@flat-project.iam.gserviceaccount.com',
+      vertexPrivateKey: generatePrivateKey(),
+      vertexAccessToken: 'flat-cached-token',
+    } as Partial<Database>)
+    const fetchSpy = vi.fn()
+    vi.stubGlobal('fetch', fetchSpy as unknown as typeof fetch)
+
+    await expect(dispatchWithProfile(profile, flatConflict)).rejects.toThrow('configuration is incomplete')
+    expect(fetchSpy).not.toHaveBeenCalled()
   })
 
   it('uses Horde profile API key and request model over conflicting flat database fields', async () => {

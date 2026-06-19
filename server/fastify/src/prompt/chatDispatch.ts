@@ -8,7 +8,7 @@ import { resolveOpenAIRequest, runOpenAI, runOpenAIStream } from '../generation/
 import { resolveAnthropicRequest, runAnthropic, runAnthropicStream } from '../generation/anthropic.js'
 import { resolveMistralRequest, runMistral, runMistralStream } from '../generation/mistral.js'
 import { resolveCohereRequest, runCohere } from '../generation/cohere.js'
-import { resolveGeminiRequest, runGemini, runGeminiStream } from '../generation/gemini.js'
+import { resolveGeminiRequest, runGemini, runGeminiStream, type VertexAuthInput } from '../generation/gemini.js'
 import { resolveOpenAILegacyInstructRequest, runOpenAILegacyInstruct } from '../generation/openaiLegacyInstruct.js'
 import { resolveOpenAIResponsesRequest, runOpenAIResponses } from '../generation/openaiResponses.js'
 import { resolveKoboldRequest, runKobold } from '../generation/kobold.js'
@@ -614,6 +614,16 @@ function resolveProfileOllamaBaseUrl(profile: ResolvedModelProfile): string | un
   return asString(options.ollama?.url) ?? asString(options.baseUrl)
 }
 
+function resolveProfileVertexAuth(profile: ResolvedModelProfile): VertexAuthInput | undefined {
+  const vertex = profile.providerOptions.vertex
+  const projectId = asString(vertex?.projectId)
+  const region = asString(vertex?.region)
+  const clientEmail = asString(vertex?.clientEmail)
+  const privateKey = asString(vertex?.privateKey)
+  if (!projectId || !region || !clientEmail || !privateKey) return undefined
+  return { projectId, region, clientEmail, privateKey }
+}
+
 function resolveOpenAIVariant(
   db: Database,
   info: ModelInfoLite,
@@ -862,19 +872,12 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
   }
 
   if (provider === 'gemini') {
-    const vertex =
-      info.format === LLMFormat.VertexAIGemini
-        ? {
-            projectId: db.google?.projectId,
-            region: db.vertexRegion,
-            clientEmail: db.vertexClientEmail,
-            privateKey: db.vertexPrivateKey,
-          }
-        : undefined
+    const providerOptions = profile.providerOptions
+    const vertex = info.format === LLMFormat.VertexAIGemini ? resolveProfileVertexAuth(profile) : undefined
     const request = resolveGeminiRequest({
       model,
       messages,
-      apiKey: info.format === LLMFormat.VertexAIGemini ? undefined : db.google?.accessToken,
+      apiKey: info.format === LLMFormat.VertexAIGemini ? undefined : asString(providerOptions.apiKey),
       vertex,
       maxOutputTokens: maxTokens,
       temperature,
