@@ -960,10 +960,11 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
   }
 
   if (provider === 'ooba-legacy') {
+    const providerOptions = profile.providerOptions
     const request = resolveOobaLegacyRequest({
       messages,
-      baseUrl: db.textgenWebUIBlockingURL,
-      apiKey: asString(db.mancerHeader),
+      baseUrl: asString(providerOptions.baseUrl),
+      apiKey: asString(providerOptions.apiKey),
       maxTokens,
       truncationLength: db.maxContext,
       temperature,

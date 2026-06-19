@@ -332,6 +332,25 @@ describe('resolveModelProfile provider/runtime normalization', () => {
     })
   })
 
+  it('normalizes OobaLegacy endpoint and API key into provider options', () => {
+    const profile = resolveModelProfile({
+      database: db({
+        aiModel: 'mancer',
+        textgenWebUIBlockingURL: 'http://ooba.example.com/api/v1/blocking',
+        mancerHeader: 'mancer-profile-key',
+      } as Partial<Database>),
+    })
+
+    expect(profile.modelInfo.format).toBe(LLMFormat.OobaLegacy)
+    expect(profile.providerCapability).toEqual({ routable: true, provider: 'ooba-legacy' })
+    expect(profile.requestModel).toBe('mancer')
+    expect(profile.providerOptions).toMatchObject({
+      apiKey: 'mancer-profile-key',
+      baseUrl: 'http://ooba.example.com/api/v1/blocking',
+      requestModel: 'mancer',
+    })
+  })
+
   it('normalizes Horde API key and strips horde prefix from the request model', () => {
     const profile = resolveModelProfile({
       database: db({

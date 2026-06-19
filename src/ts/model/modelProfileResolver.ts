@@ -1052,6 +1052,12 @@ function resolveProviderOptions(
       return { ...base, apiKey: nonBlankString(database.cohereAPIKey) }
     case LLMFormat.Kobold:
       return { ...base, baseUrl: nonBlankString(database.koboldURL) }
+    case LLMFormat.OobaLegacy:
+      return {
+        ...base,
+        apiKey: nonBlankString(database.mancerHeader),
+        baseUrl: nonBlankString(database.textgenWebUIBlockingURL),
+      }
     case LLMFormat.Horde:
       return { ...base, apiKey: nonBlankString(database.hordeConfig?.apiKey) }
     case LLMFormat.GoogleCloud:

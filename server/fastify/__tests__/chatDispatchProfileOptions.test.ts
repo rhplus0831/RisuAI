@@ -62,6 +62,13 @@ function okKoboldResponse(text = 'profile ok'): Response {
   })
 }
 
+function okOobaLegacyResponse(text = 'profile ok'): Response {
+  return new Response(JSON.stringify({ results: [{ text }] }), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  })
+}
+
 function captureDispatchRequests(response: Response = okOpenAIResponse()): CapturedDispatchRequest[] {
   const captured: CapturedDispatchRequest[] = []
   vi.stubGlobal(
@@ -390,6 +397,28 @@ describe('dispatchChatProvider profile providerOptions', () => {
     expect(captured[0].url).toBe('http://profile-kobold.example.com/api/v1/generate')
   })
 
+  it('uses OobaLegacy profile URL and API key over conflicting flat database fields', async () => {
+    const profile = resolveModelProfile({
+      database: db({
+        aiModel: 'mancer',
+        textgenWebUIBlockingURL: 'http://profile-ooba.example.com/api/v1/blocking',
+        mancerHeader: 'profile-mancer-key',
+      } as Partial<Database>),
+    })
+    const flatConflict = db({
+      aiModel: 'mancer',
+      textgenWebUIBlockingURL: 'http://flat-ooba.example.com/api/v1/blocking',
+      mancerHeader: 'flat-mancer-key',
+    } as Partial<Database>)
+    const captured = captureDispatchRequests(okOobaLegacyResponse())
+
+    await dispatchWithProfile(profile, flatConflict)
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0].url).toBe('http://profile-ooba.example.com/api/v1/generate')
+    expect(captured[0].headers['X-API-KEY']).toBe('profile-mancer-key')
+  })
+
   it('uses Horde profile API key and request model over conflicting flat database fields', async () => {
     const profile = resolveModelProfile({
       database: db({
@@ -447,6 +476,28 @@ describe('dispatchChatProvider profile providerOptions', () => {
     ])
   })
 
+  it('omits the OobaLegacy API key when the profile key is blank despite a flat DB key', async () => {
+    const profile = resolveModelProfile({
+      database: db({
+        aiModel: 'mancer',
+        textgenWebUIBlockingURL: 'http://profile-ooba.example.com/api/v1/blocking',
+        mancerHeader: '   ',
+      } as Partial<Database>),
+    })
+    const flatConflict = db({
+      aiModel: 'mancer',
+      textgenWebUIBlockingURL: 'http://flat-ooba.example.com/api/v1/blocking',
+      mancerHeader: 'flat-mancer-key',
+    } as Partial<Database>)
+    const captured = captureDispatchRequests(okOobaLegacyResponse())
+
+    await dispatchWithProfile(profile, flatConflict)
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0].url).toBe('http://profile-ooba.example.com/api/v1/generate')
+    expect(captured[0].headers['X-API-KEY']).toBeUndefined()
+  })
+
   it('preserves the native Ollama missing-URL error and does not fall back to flat DB URL', async () => {
     const profile = resolveModelProfile({
       database: db({
@@ -480,6 +531,26 @@ describe('dispatchChatProvider profile providerOptions', () => {
     vi.stubGlobal('fetch', fetchSpy as unknown as typeof fetch)
 
     await expect(dispatchWithProfile(profile, flatConflict)).rejects.toThrow('options.kobold.baseUrl is required')
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it('preserves the OobaLegacy missing-URL error and does not fall back to flat DB URL', async () => {
+    const profile = resolveModelProfile({
+      database: db({
+        aiModel: 'mancer',
+      } as Partial<Database>),
+    })
+    const flatConflict = db({
+      aiModel: 'mancer',
+      textgenWebUIBlockingURL: 'http://flat-ooba.example.com/api/v1/blocking',
+      mancerHeader: 'flat-mancer-key',
+    } as Partial<Database>)
+    const fetchSpy = vi.fn()
+    vi.stubGlobal('fetch', fetchSpy as unknown as typeof fetch)
+
+    await expect(dispatchWithProfile(profile, flatConflict)).rejects.toThrow(
+      'options["ooba-legacy"].baseUrl is required',
+    )
     expect(fetchSpy).not.toHaveBeenCalled()
   })
 

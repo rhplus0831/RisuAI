@@ -1,6 +1,6 @@
 # Phase 3: Generation Dispatch
 
-Status: in progress; Phase 3a server-owned profile selection/capability/request-model slice complete; Phase 3b Fastify OpenAI-compatible provider-options slice complete; Phase 3c Fastify Anthropic/Mistral/Cohere provider-options slice complete; Phase 3d Fastify native Ollama provider-options slice complete; Phase 3e Fastify Kobold provider-options slice complete; Phase 3f Fastify Horde provider-options slice complete.
+Status: in progress; Phase 3a server-owned profile selection/capability/request-model slice complete; Phase 3b Fastify OpenAI-compatible provider-options slice complete; Phase 3c Fastify Anthropic/Mistral/Cohere provider-options slice complete; Phase 3d Fastify native Ollama provider-options slice complete; Phase 3e Fastify Kobold provider-options slice complete; Phase 3f Fastify Horde provider-options slice complete; Phase 3g Fastify OobaLegacy provider-options slice complete.
 
 Goal: move browser and Fastify generation dispatch from ad hoc flat database
 reads to the resolved profile runtime object.
@@ -119,14 +119,31 @@ reads to the resolved profile runtime object.
   a conflicting flat key and preserves the existing anonymous `0000000000` key
   behavior.
 
+## Implemented Phase 3g Slice
+
+- `resolveModelProfile()` now exposes OobaLegacy endpoints as
+  `profile.providerOptions.baseUrl`, derived from
+  `database.textgenWebUIBlockingURL`, and OobaLegacy/Mancer API keys as
+  `profile.providerOptions.apiKey`, derived from `database.mancerHeader`.
+- Fastify OobaLegacy chat dispatch now passes those resolved profile options to
+  `resolveOobaLegacyRequest()` instead of reading flat DB URL/key fields at
+  dispatch time.
+- Direct dispatch coverage proves a profile-owned OobaLegacy URL/key wins over
+  conflicting flat DB values, including URL normalization to `/api/v1/generate`
+  and forwarding `X-API-KEY` from the profile key.
+- Missing profile URL coverage preserves the existing
+  `options["ooba-legacy"].baseUrl is required` error and does not call `fetch`.
+- Blank profile-key coverage proves OobaLegacy dispatch does not fall back to a
+  conflicting flat DB key and omits `X-API-KEY`.
+
 ## Remaining Phase 3 Work
 
 - Migrate the remaining browser completion/request helper paths to consume the
   resolver contract for role/static fallback selection.
 - Migrate remaining provider option branches outside OpenAI-compatible,
-  Anthropic, Mistral, Cohere, native Ollama, Kobold, and Horde to
+  Anthropic, Mistral, Cohere, native Ollama, Kobold, Horde, and OobaLegacy to
   `profile.providerOptions` where the target adapters already expose equivalent
-  request fields. Residual branches include Gemini/Vertex, Bedrock, and Ooba.
+  request fields. Residual branches include Gemini/Vertex and Bedrock.
 - Broaden provider parity beyond the Phase 3a request-model surface before
   marking the full Phase 3 complete.
 
@@ -175,20 +192,20 @@ pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 ```
 
-Latest Phase 3f run:
+Latest Phase 3g run:
 
 ```bash
 pnpm exec vitest run src/ts/model/modelProfileResolver.test.ts
-pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/chatDispatchProfileOptions.test.ts server/fastify/__tests__/horde.test.ts server/fastify/__tests__/generation.chat.test.ts server/fastify/__tests__/generation.completion.test.ts
+pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/chatDispatchProfileOptions.test.ts server/fastify/__tests__/oobaLegacy.test.ts server/fastify/__tests__/generation.chat.test.ts server/fastify/__tests__/generation.completion.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 ```
 
 Results:
 
-- Focused resolver tests: passed, 1 file / 15 tests.
-- Focused Fastify chat dispatch/Horde/chat/completion tests: passed, 4 files /
-  201 tests.
+- Focused resolver tests: passed, 1 file / 16 tests.
+- Focused Fastify chat dispatch/OobaLegacy/chat/completion tests: passed, 4 files /
+  192 tests.
 - Client-lib TypeScript: passed.
 - Server strict TypeScript: passed.
 
