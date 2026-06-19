@@ -130,6 +130,18 @@ function resetDatabase() {
     translatorInputLanguage: 'ja',
     translatorType: 'google',
     aiModel: 'openai',
+    subModel: 'echo_model',
+    modelRoles: {},
+    seperateModelsForAxModels: false,
+    seperateModels: {
+      memory: '',
+      emotion: '',
+      translate: '',
+      otherAx: '',
+      scriptMain: '',
+      scriptAux: '',
+    },
+    customModels: [],
     useExperimentalGoogleTranslator: false,
     noWaitForTranslate: true,
     combineTranslation: false,
@@ -279,6 +291,69 @@ describe('auto-translate cache', () => {
     expect(second).toBe('<p>llm:fr</p>')
     expect(firstAgain).toBe(first)
     expect(testState.requestChatData).toHaveBeenCalledTimes(2)
+  })
+
+  it('phase5: keys LLM translation cache entries by the resolved translate profile', async () => {
+    testState.db.translatorType = 'llm'
+    let callCount = 0
+    testState.requestChatData.mockImplementation(async () => {
+      callCount += 1
+      return {
+        type: 'success',
+        result: `<p>llm-profile-${callCount}</p>`,
+      }
+    })
+
+    const first = await translateHTML('<p>same text and language</p>', false, '', 0)
+    __translatorTestHooks.clearTranslateHTMLMemo()
+    testState.db.modelRoles = { translate: 'openrouter' }
+    const roleOverride = await translateHTML('<p>same text and language</p>', false, '', 0)
+    __translatorTestHooks.clearTranslateHTMLMemo()
+    testState.db.modelRoles = {}
+    testState.db.seperateModelsForAxModels = true
+    testState.db.seperateModels = {
+      ...testState.db.seperateModels,
+      translate: 'nanogpt',
+    }
+    const separateOverride = await translateHTML('<p>same text and language</p>', false, '', 0)
+    __translatorTestHooks.clearTranslateHTMLMemo()
+    testState.db.seperateModelsForAxModels = false
+    testState.db.seperateModels = {
+      ...testState.db.seperateModels,
+      translate: '',
+    }
+    const firstAgain = await translateHTML('<p>same text and language</p>', false, '', 0)
+
+    expect(first).toBe('<p>llm-profile-1</p>')
+    expect(roleOverride).toBe('<p>llm-profile-2</p>')
+    expect(separateOverride).toBe('<p>llm-profile-3</p>')
+    expect(firstAgain).toBe(first)
+    expect(testState.requestChatData).toHaveBeenCalledTimes(3)
+  })
+
+  it('phase5: omits obvious provider secrets from the translate profile cache signature', () => {
+    Object.assign(testState.db, {
+      translatorType: 'llm',
+      subModel: 'reverse_proxy',
+      customProxyRequestModel: 'safe-visible-request-model',
+      forceReplaceUrl: 'https://secret-host.example/v1/chat/completions',
+      proxyKey: 'sk-secret-profile-key',
+      additionalParams: [['api_key', 'secret-param-value']],
+    })
+
+    const signature = __translatorTestHooks.getTranslateProfileCacheSignature()
+    const currentKey = __translatorTestHooks.getCurrentLLMTranslationCacheKey('<p>secret-safe body</p>')
+    const serializedSignature = JSON.stringify(signature)
+
+    expect(serializedSignature).toContain('reverse_proxy')
+    expect(serializedSignature).toContain('safe-visible-request-model')
+    expect(serializedSignature).not.toContain('sk-secret-profile-key')
+    expect(serializedSignature).not.toContain('secret-host.example')
+    expect(serializedSignature).not.toContain('secret-param-value')
+    expect(currentKey).toContain('reverse_proxy')
+    expect(currentKey).not.toContain('sk-secret-profile-key')
+    expect(currentKey).not.toContain('secret-host.example')
+    expect(currentKey).not.toContain('secret-param-value')
   })
 
   it('v4-L26: manual LLM cache edits update the active signature entry', async () => {

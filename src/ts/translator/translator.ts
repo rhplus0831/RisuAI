@@ -12,6 +12,7 @@ import { getModuleRegexScripts } from '../process/modules'
 import { getActivePromptPresetRegexScripts } from '../process/promptPresetRegex'
 import { getNodetextToSentence, sleep } from '../util'
 import { processScriptFull } from '../process/scripts'
+import { resolveModelProfile } from '../model/modelProfileResolver'
 import localforage from 'localforage'
 import sendSound from '../../etc/send.mp3'
 
@@ -137,6 +138,12 @@ export const __translatorTestHooks = {
   getLLMCacheWriteFailureKeys() {
     return Array.from(llmCacheWriteFailures)
   },
+  getTranslateProfileCacheSignature() {
+    return getTranslateProfileCacheSignature(getDatabase())
+  },
+  getCurrentLLMTranslationCacheKey(text: string) {
+    return getCurrentLLMTranslationCacheKey(text)
+  },
 }
 
 let bergamotTranslate: (text: string, from: string, to: string, html?: boolean) => Promise<string> | null = null
@@ -169,6 +176,7 @@ function getTranslatorSettingsSignature(db = getDatabase()) {
     translator: db.translator,
     translatorInputLanguage: db.translatorInputLanguage,
     aiModel: db.aiModel,
+    translateProfile: db.translatorType === 'llm' ? getTranslateProfileCacheSignature(db) : null,
     useExperimentalGoogleTranslator: db.useExperimentalGoogleTranslator,
     deeplOptions: {
       freeApi: db.deeplOptions?.freeApi,
@@ -178,6 +186,46 @@ function getTranslatorSettingsSignature(db = getDatabase()) {
       url: db.deeplXOptions?.url,
       token: db.deeplXOptions?.token,
     },
+  }
+}
+
+function getTranslateProfileCacheSignature(db = getDatabase()) {
+  const profile = resolveModelProfile({ database: db, role: 'translate' })
+  const customModel = profile.providerOptions.customModel
+
+  return {
+    profileId: profile.profileId,
+    source: {
+      kind: profile.source.kind,
+      field: profile.source.field ?? null,
+      role: profile.source.role,
+      legacyMode: profile.source.legacyMode,
+    },
+    modelId: profile.modelId,
+    requestModel: profile.requestModel,
+    model: {
+      id: profile.modelInfo.id,
+      internalID: profile.modelInfo.internalID,
+      provider: profile.modelInfo.provider,
+      format: profile.modelInfo.format,
+      tokenizer: profile.modelInfo.tokenizer,
+      keyIdentifier: profile.modelInfo.keyIdentifier,
+    },
+    provider: {
+      id:
+        profile.providerOptions.provider ??
+        (profile.providerCapability.routable ? profile.providerCapability.provider : null),
+      keyIdentifier: profile.providerOptions.keyIdentifier ?? profile.modelInfo.keyIdentifier,
+    },
+    customModel: customModel
+      ? {
+          id: customModel.id,
+          internalId: customModel.internalId,
+          format: customModel.format,
+          tokenizer: customModel.tokenizer,
+          flags: customModel.flags,
+        }
+      : null,
   }
 }
 
@@ -501,6 +549,7 @@ function getLLMTranslationCacheKey(
   preset: TranslatorPreset,
   translatorNote: string,
   currentChar: character | simpleCharacterArgument | undefined,
+  translateProfile: ReturnType<typeof getTranslateProfileCacheSignature>,
 ) {
   return safeStringify({
     version: 2,
@@ -518,6 +567,7 @@ function getLLMTranslationCacheKey(
       chaId: currentChar?.chaId ?? null,
       type: currentChar?.type ?? null,
     },
+    translateProfile,
   })
 }
 
@@ -530,6 +580,7 @@ function getCurrentLLMTranslationCacheKey(text: string): string | null {
   const currentChar = db.characters?.[get(selectedCharID)]
   const preset = getCurrentTranslatorPreset()
   const translatorNote = resolveTranslatorNote(undefined, currentChar)
+  const translateProfile = getTranslateProfileCacheSignature(db)
   return getLLMTranslationCacheKey(
     text,
     {
@@ -539,6 +590,7 @@ function getCurrentLLMTranslationCacheKey(text: string): string | null {
     preset,
     translatorNote,
     currentChar,
+    translateProfile,
   )
 }
 
@@ -1034,7 +1086,8 @@ async function translateLLM(
   const currentChar = db.characters[charIndex]
   const translatorNote = resolveTranslatorNote(arg.translatorNote, currentChar)
   const preset = getCurrentTranslatorPreset()
-  const cacheKey = getLLMTranslationCacheKey(originalText, arg, preset, translatorNote, currentChar)
+  const translateProfile = getTranslateProfileCacheSignature(db)
+  const cacheKey = getLLMTranslationCacheKey(originalText, arg, preset, translatorNote, currentChar, translateProfile)
   if (!arg.regenerate) {
     const cacheMatch = await readLLMCacheEntry(cacheKey)
     if (cacheMatch) {
