@@ -40,6 +40,36 @@ describe('memory embedding model resolver', () => {
     })
   })
 
+  it('keeps memory embeddings on Hypa fields despite memory role overrides', () => {
+    const result = resolveMemoryEmbeddingModel(
+      db({
+        hypaModel: 'openai3small',
+        hypaV3Key: ' embed-key ',
+        subModel: 'conflicting-submodel',
+        modelRoles: { memory: 'gpt41-mini' } as Database['modelRoles'],
+        seperateModelsForAxModels: true,
+        seperateModels: { memory: 'claude-3-5-sonnet-latest' } as Database['seperateModels'],
+      }),
+    )
+
+    expect(result).toEqual({
+      ok: true,
+      request: {
+        provider: 'openai-compatible',
+        model: 'text-embedding-3-small',
+        wireModel: 'text-embedding-3-small',
+        endpoint: 'https://api.openai.com/v1/embeddings',
+        apiKey: 'embed-key',
+        limits: {
+          source: 'provider',
+          maxInputTokens: OPENAI_EMBEDDING_MAX_INPUT_TOKENS,
+          maxInputBytes: OPENAI_EMBEDDING_MAX_INPUT_TOKENS * MEMORY_EMBEDDING_APPROX_CHARS_PER_TOKEN,
+          maxRequestTokens: OPENAI_EMBEDDING_MAX_REQUEST_TOKENS,
+        },
+      },
+    })
+  })
+
   it('uses the requested model instead of auto database selection', () => {
     const result = resolveMemoryEmbeddingModel(db({ hypaModel: 'MiniLM', hypaV3Key: 'sk-test' }), 'openai3large')
 
