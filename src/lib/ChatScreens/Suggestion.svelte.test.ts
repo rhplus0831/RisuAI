@@ -262,6 +262,46 @@ describe('runSuggestionTranslation', () => {
 })
 
 describe('Suggestion component persistence', () => {
+  it('routes generated suggestions through otherAx and shapes prompts from the resolved otherAx model', async () => {
+    seedSuggestionDatabase([])
+    DBState.db.autoSuggestPrompt = 'Suggest next lines for {{char}}'
+    DBState.db.subModel = 'openai_submodel'
+    DBState.db.seperateModelsForAxModels = true
+    DBState.db.seperateModels = {
+      otherAx: 'local_test',
+    } as Database['seperateModels']
+    suggestionMocks.requestChatData.mockResolvedValue({ type: 'success', result: '- Try the local branch' })
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    let component: MountedComponent | undefined
+    const send = vi.fn()
+    const messageInput = vi.fn()
+
+    try {
+      component = mount(Suggestion, {
+        target,
+        props: {
+          send,
+          messageInput,
+        },
+      })
+
+      await waitFor(() => {
+        expect(suggestionMocks.requestChatData).toHaveBeenCalled()
+      })
+
+      const [requestArg, requestMode] = suggestionMocks.requestChatData.mock.calls[0]
+      expect(requestMode).toBe('otherAx')
+      expect(requestArg.formated).toEqual([
+        { role: 'system', content: 'Suggest next lines for Character A' },
+        { role: 'assistant', content: 'Hello' },
+      ])
+    } finally {
+      if (component) unmount(component)
+      target.remove()
+    }
+  })
+
   it('persists suggestion clearing when a suggestion is sent', async () => {
     seedSuggestionDatabase()
     const target = document.createElement('div')

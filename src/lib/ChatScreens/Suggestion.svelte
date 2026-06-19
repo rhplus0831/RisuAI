@@ -78,6 +78,7 @@
   import { ParseMarkdown } from 'src/ts/parser/parser.svelte'
   import { defaultAutoSuggestPrompt } from '../../ts/storage/defaultPrompts.js'
   import { dispatchUpdateChatRow, type ChatRowMetadataSnapshot } from 'src/ts/chatCommands'
+  import { resolveModelForRole } from 'src/ts/model/modelRoles'
 
   interface Props {
     send: () => any
@@ -250,6 +251,7 @@
         DBState.db.autoSuggestPrompt && DBState.db.autoSuggestPrompt.length > 0
           ? DBState.db.autoSuggestPrompt
           : defaultAutoSuggestPrompt
+      const autoSuggestionModel = resolveModelForRole(DBState.db, 'otherAx')
       let promptbody: OpenAIChat[] = [
         {
           role: 'system',
@@ -264,9 +266,9 @@
       ]
 
       if (
-        DBState.db.subModel === 'textgen_webui' ||
-        DBState.db.subModel === 'mancer' ||
-        DBState.db.subModel.startsWith('local_')
+        autoSuggestionModel === 'textgen_webui' ||
+        autoSuggestionModel === 'mancer' ||
+        autoSuggestionModel.startsWith('local_')
       ) {
         promptbody = [
           {
@@ -290,7 +292,7 @@
           bias: {},
           currentChar: currentChar as character,
         },
-        'submodel',
+        'otherAx',
         abortController.signal,
       ).then((rq2) => {
         const liveChar = DBState.db.characters[$selectedCharID]
