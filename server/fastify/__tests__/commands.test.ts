@@ -915,7 +915,14 @@ describe('Phase 9-2a scalar settings groups', () => {
       payload: {
         baseRevision: revision,
         patch: {
-          modelProfiles: [{ id: ' profile-a ', name: ' Primary ', modelId: ' gpt-5 ' }],
+          modelProfiles: [
+            {
+              id: ' profile-a ',
+              name: ' Primary ',
+              modelId: ' gpt-5 ',
+              providerOptions: { requestModel: ' wire-model ' },
+            },
+          ],
           modelRoleProfiles: { memory: { mode: 'profile', profileId: ' profile-a ' } },
         },
       },
@@ -924,7 +931,9 @@ describe('Phase 9-2a scalar settings groups', () => {
     expect(res.statusCode, res.body).toBe(200)
     expect(loadPersistedFromDir(harness.dataDir).database).toMatchObject({
       aiModel: 'flat-main-model',
-      modelProfiles: [{ id: 'profile-a', name: 'Primary', modelId: 'gpt-5' }],
+      modelProfiles: [
+        { id: 'profile-a', name: 'Primary', modelId: 'gpt-5', providerOptions: { requestModel: 'wire-model' } },
+      ],
       modelRoleProfiles: {
         ...Object.fromEntries(MODEL_ROLES.map((role) => [role, { mode: 'legacy' }])),
         memory: { mode: 'profile', profileId: 'profile-a' },
@@ -952,7 +961,13 @@ describe('Phase 9-2a scalar settings groups', () => {
         patch: {
           modelProfiles: [{ id: 'profile-a', name: 'Primary', providerOptions: { apiKey: 'not-yet' } }],
         },
-        error: 'modelProfiles[0].providerOptions is not supported',
+        error: 'modelProfiles[0].providerOptions.apiKey is not supported',
+      },
+      {
+        patch: {
+          modelProfiles: [{ id: 'profile-a', name: 'Primary', providerOptions: { requestModel: 42 } }],
+        },
+        error: 'modelProfiles[0].providerOptions.requestModel must be a string when present',
       },
       {
         patch: {

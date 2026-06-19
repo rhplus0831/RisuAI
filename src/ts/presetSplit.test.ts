@@ -83,12 +83,16 @@ describe('preset split helpers', () => {
   it('keeps durable profiles on model presets and only role bindings on prompt presets', () => {
     const source = {
       ...legacyPreset,
-      modelProfiles: [{ id: 'profile-a', name: 'Profile A', modelId: 'gpt-5' }],
+      modelProfiles: [
+        { id: 'profile-a', name: 'Profile A', modelId: 'gpt-5', providerOptions: { requestModel: 'wire-model' } },
+      ],
       modelRoleProfiles: { memory: { mode: 'profile', profileId: 'profile-a' } },
     }
 
     expect(createExtractedModelPreset(source, { id: 'model-a', name: 'Model A' })).toMatchObject({
-      modelProfiles: [{ id: 'profile-a', name: 'Profile A', modelId: 'gpt-5' }],
+      modelProfiles: [
+        { id: 'profile-a', name: 'Profile A', modelId: 'gpt-5', providerOptions: { requestModel: 'wire-model' } },
+      ],
       modelRoleProfiles: { memory: { mode: 'profile', profileId: 'profile-a' } },
     })
 

@@ -98,16 +98,26 @@ describe('resolveModelProfile legacy role compatibility', () => {
   it('lets staticModel win over a durable profile binding', () => {
     const database = db({
       aiModel: 'flat-main-model',
-      modelProfiles: [{ id: 'durable-main', name: 'Durable Main', modelId: 'durable-selected-model' }],
+      openrouterKey: 'or-key',
+      openrouterRequestModel: 'flat-static-wire',
+      modelProfiles: [
+        {
+          id: 'durable-main',
+          name: 'Durable Main',
+          modelId: 'durable-selected-model',
+          providerOptions: { requestModel: 'durable-wire' },
+        },
+      ],
       modelRoleProfiles: {
         chatMain: { mode: 'profile', profileId: 'durable-main' },
       },
     } as Partial<Database>)
 
-    const profile = resolveModelProfile({ database, role: 'chatMain', staticModel: 'echo_model' })
+    const profile = resolveModelProfile({ database, role: 'chatMain', staticModel: 'openrouter' })
 
-    expect(profile.modelId).toBe('echo_model')
-    expect(profile.profileId).toBe('legacy:staticModel:echo_model')
+    expect(profile.modelId).toBe('openrouter')
+    expect(profile.requestModel).toBe('flat-static-wire')
+    expect(profile.profileId).toBe('legacy:staticModel:openrouter')
     expect(profile.source).toMatchObject({
       kind: 'staticModel',
       field: 'staticModel',
@@ -355,6 +365,160 @@ describe('resolveModelProfile provider/runtime normalization', () => {
         subscriptionState: 'active',
       },
     })
+  })
+
+  it('prefers durable providerOptions.requestModel over flat provider request model fields', () => {
+    const openrouter = resolveModelProfile({
+      database: db({
+        aiModel: 'flat-main-model',
+        openrouterKey: 'or-key',
+        openrouterRequestModel: 'flat/openrouter',
+        modelProfiles: [
+          {
+            id: 'openrouter-profile',
+            name: 'OpenRouter Profile',
+            modelId: 'openrouter',
+            providerOptions: { requestModel: ' profile/openrouter ' },
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'openrouter-profile' } },
+      } as Partial<Database>),
+    })
+
+    expect(openrouter.modelId).toBe('openrouter')
+    expect(openrouter.requestModel).toBe('profile/openrouter')
+    expect(openrouter.providerOptions).toMatchObject({
+      apiKey: 'or-key',
+      requestModel: 'profile/openrouter',
+    })
+
+    const nanogpt = resolveModelProfile({
+      database: db({
+        aiModel: 'flat-main-model',
+        nanogptKey: 'nano-key',
+        nanogptRequestModel: 'flat/nanogpt',
+        modelProfiles: [
+          {
+            id: 'nanogpt-profile',
+            name: 'NanoGPT Profile',
+            modelId: 'nanogpt',
+            providerOptions: { requestModel: 'profile/nanogpt' },
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'nanogpt-profile' } },
+      } as Partial<Database>),
+    })
+
+    expect(nanogpt.modelId).toBe('nanogpt')
+    expect(nanogpt.requestModel).toBe('profile/nanogpt')
+    expect(nanogpt.providerOptions).toMatchObject({
+      apiKey: 'nano-key',
+      requestModel: 'profile/nanogpt',
+    })
+
+    const reverseProxy = resolveModelProfile({
+      database: db({
+        aiModel: 'flat-main-model',
+        customProxyRequestModel: 'flat-proxy-model',
+        forceReplaceUrl: 'https://proxy.example.com/v1',
+        proxyKey: 'proxy-key',
+        modelProfiles: [
+          {
+            id: 'proxy-profile',
+            name: 'Proxy Profile',
+            modelId: 'reverse_proxy',
+            providerOptions: { requestModel: 'profile-proxy-model' },
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'proxy-profile' } },
+      } as Partial<Database>),
+    })
+
+    expect(reverseProxy.modelId).toBe('reverse_proxy')
+    expect(reverseProxy.requestModel).toBe('profile-proxy-model')
+    expect(reverseProxy.providerOptions).toMatchObject({
+      apiKey: 'proxy-key',
+      baseUrl: 'https://proxy.example.com/v1',
+      requestModel: 'profile-proxy-model',
+    })
+
+    const ollamaCloud = resolveModelProfile({
+      database: db({
+        aiModel: 'flat-main-model',
+        ollamaApiKey: 'ollama-cloud-key',
+        ollamaRequestFormat: LLMFormat.OpenAIResponseAPI,
+        ollamaCloudModel: 'flat-cloud-model',
+        modelProfiles: [
+          {
+            id: 'ollama-cloud-profile',
+            name: 'Ollama Cloud Profile',
+            modelId: 'ollama-cloud',
+            providerOptions: { requestModel: 'profile-cloud-model' },
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'ollama-cloud-profile' } },
+      } as Partial<Database>),
+    })
+
+    expect(ollamaCloud.modelId).toBe('ollama-cloud')
+    expect(ollamaCloud.requestModel).toBe('profile-cloud-model')
+    expect(ollamaCloud.providerOptions.requestModel).toBe('profile-cloud-model')
+    expect(ollamaCloud.providerOptions.ollama).toMatchObject({
+      apiKey: 'ollama-cloud-key',
+      cloud: true,
+      model: 'profile-cloud-model',
+    })
+
+    const localOllama = resolveModelProfile({
+      database: db({
+        aiModel: 'flat-main-model',
+        ollamaURL: 'http://localhost:11434',
+        ollamaModel: 'flat-local-model',
+        modelProfiles: [
+          {
+            id: 'ollama-local-profile',
+            name: 'Ollama Local Profile',
+            modelId: 'ollama-hosted',
+            providerOptions: { requestModel: 'profile-local-model' },
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'ollama-local-profile' } },
+      } as Partial<Database>),
+    })
+
+    expect(localOllama.modelId).toBe('ollama-hosted')
+    expect(localOllama.requestModel).toBe('profile-local-model')
+    expect(localOllama.providerOptions.requestModel).toBe('profile-local-model')
+    expect(localOllama.providerOptions.ollama).toMatchObject({
+      cloud: false,
+      model: 'profile-local-model',
+      url: 'http://localhost:11434',
+    })
+  })
+
+  it('falls back to flat request model fields when durable providerOptions.requestModel is missing or blank', () => {
+    for (const providerOptions of [undefined, { requestModel: '   ' }]) {
+      const profile = resolveModelProfile({
+        database: db({
+          aiModel: 'flat-main-model',
+          openrouterKey: 'or-key',
+          openrouterRequestModel: 'flat/openrouter',
+          modelProfiles: [
+            {
+              id: 'openrouter-profile',
+              name: 'OpenRouter Profile',
+              modelId: 'openrouter',
+              ...(providerOptions ? { providerOptions } : {}),
+            },
+          ],
+          modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'openrouter-profile' } },
+        } as Partial<Database>),
+      })
+
+      expect(profile.modelId).toBe('openrouter')
+      expect(profile.requestModel).toBe('flat/openrouter')
+      expect(profile.providerOptions.requestModel).toBe('flat/openrouter')
+    }
   })
 
   it('normalizes Ollama cloud remapping and native Ollama dispatch options', () => {

@@ -19,28 +19,35 @@ describe('model profile records', () => {
     expect(normalizeModelProfiles(undefined)).toEqual([])
     expect(
       normalizeModelProfiles([
-        { id: ' profile-a ', name: ' Primary ', modelId: ' gpt-5 ', providerOptions: { apiKey: 'must-drop' } },
+        {
+          id: ' profile-a ',
+          name: ' Primary ',
+          modelId: ' gpt-5 ',
+          providerOptions: { requestModel: ' wire-model ', apiKey: 'must-drop' },
+        },
         { id: 'profile-a', name: 'Duplicate' },
         { id: 'profile-b', name: 'Identity Only', modelId: '   ' },
         { id: 'profile-c' },
+        { id: 'profile-d', name: 'Blank Request Model', providerOptions: { requestModel: '   ' } },
         { name: 'Missing Id' },
         'bad-row',
       ]),
     ).toEqual([
-      { id: 'profile-a', name: 'Primary', modelId: 'gpt-5' },
+      { id: 'profile-a', name: 'Primary', modelId: 'gpt-5', providerOptions: { requestModel: 'wire-model' } },
       { id: 'profile-b', name: 'Identity Only' },
       { id: 'profile-c', name: 'profile-c' },
+      { id: 'profile-d', name: 'Blank Request Model' },
     ])
   })
 
   it('accepts strict selected-model profile rows and normalized profile role bindings', () => {
     expect(
       readModelProfiles([
-        { id: ' profile-a ', name: ' Primary ', modelId: ' gpt-5 ' },
-        { id: ' identity-only ', name: ' Identity Only ', modelId: '   ' },
+        { id: ' profile-a ', name: ' Primary ', modelId: ' gpt-5 ', providerOptions: { requestModel: ' wire ' } },
+        { id: ' identity-only ', name: ' Identity Only ', modelId: '   ', providerOptions: { requestModel: '   ' } },
       ]),
     ).toEqual([
-      { id: 'profile-a', name: 'Primary', modelId: 'gpt-5' },
+      { id: 'profile-a', name: 'Primary', modelId: 'gpt-5', providerOptions: { requestModel: 'wire' } },
       { id: 'identity-only', name: 'Identity Only' },
     ])
     expect(readModelRoleProfiles({ memory: { mode: 'profile', profileId: ' profile-a ' } })).toEqual({
@@ -59,7 +66,7 @@ describe('model profile records', () => {
 
     expect(() =>
       readModelProfiles([{ id: 'profile-a', name: 'Primary', providerOptions: { apiKey: 'secret' } }]),
-    ).toThrow('modelProfiles[0].providerOptions is not supported')
+    ).toThrow('modelProfiles[0].providerOptions.apiKey is not supported')
 
     expect(() => readModelProfiles([{ id: 'profile-a', name: '' }])).toThrow(
       'modelProfiles[0].name must be a non-empty string',
@@ -68,6 +75,10 @@ describe('model profile records', () => {
     expect(() => readModelProfiles([{ id: 'profile-a', name: 'Primary', modelId: 123 }])).toThrow(
       'modelProfiles[0].modelId must be a string when present',
     )
+
+    expect(() =>
+      readModelProfiles([{ id: 'profile-a', name: 'Primary', providerOptions: { requestModel: 123 } }]),
+    ).toThrow('modelProfiles[0].providerOptions.requestModel must be a string when present')
   })
 
   it('rejects unknown role keys and malformed binding shapes for settings commands', () => {

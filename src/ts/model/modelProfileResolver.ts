@@ -181,6 +181,13 @@ export interface ResolveModelProfileArgs {
   lookupModelInfo?: (database: Database, modelId: string) => LLMModel | null | undefined
 }
 
+interface ModelProfileSelection {
+  modelId: string
+  profileId?: string
+  profileRequestModel?: string
+  source: ModelProfileResolutionSource
+}
+
 const DEFAULT_OPENAI_FLAGS = [LLMFlags.hasFullSystemPrompt, LLMFlags.hasStreaming]
 const FIRST_SYSTEM_FLAGS = [LLMFlags.hasFirstSystemPrompt]
 const ALTERNATING_FLAGS = [
@@ -388,7 +395,7 @@ export function resolveModelProfile({
   const roleLike = role ?? 'model'
   const normalizedRole = normalizeModelRole(roleLike) ?? 'chatMain'
   const staticModelId = nonBlankString(staticModel)
-  const selection = staticModelId
+  const selection: ModelProfileSelection = staticModelId
     ? {
         modelId: staticModelId,
         profileId: undefined,
@@ -406,7 +413,12 @@ export function resolveModelProfile({
     database,
     cloneModelInfo(lookedUp ?? resolveServerSafeModelInfo(database, selection.modelId)),
   )
-  const requestModel = resolveProfileRequestModelFromParts(database, selection.modelId, modelInfo)
+  const requestModel = resolveProfileRequestModelFromParts(
+    database,
+    selection.modelId,
+    modelInfo,
+    selection.profileRequestModel,
+  )
   const providerOptions = resolveProviderOptions(database, selection.modelId, modelInfo, requestModel)
   const runtimeOptions = resolveRuntimeOptions(database, modelInfo)
   const profile: Omit<
@@ -798,20 +810,19 @@ export function resolveProfileRequestModel(profile: Pick<ResolvedModelProfile, '
   return profile.requestModel
 }
 
-function resolveDurableModelSelection(
-  database: Database,
-  role: ModelRole,
-): { modelId: string; profileId: string; source: ModelProfileResolutionSource } | null {
+function resolveDurableModelSelection(database: Database, role: ModelRole): ModelProfileSelection | null {
   const binding = normalizeModelRoleProfiles(database.modelRoleProfiles)[role]
   if (binding.mode !== 'profile') return null
 
   const profile = findDurableModelProfile(database.modelProfiles, binding.profileId)
   const modelId = nonBlankString(profile?.modelId)
   if (!profile || !modelId) return null
+  const profileRequestModel = nonBlankString(profile.providerOptions?.requestModel)
 
   return {
     modelId,
     profileId: profile.id,
+    ...(profileRequestModel ? { profileRequestModel } : {}),
     source: {
       kind: 'durable-profile',
       role,
@@ -824,10 +835,7 @@ function resolveDurableModelSelection(
   }
 }
 
-function resolveLegacyModelSelection(
-  database: Database,
-  role: ModelRole,
-): { modelId: string; source: ModelProfileResolutionSource } {
+function resolveLegacyModelSelection(database: Database, role: ModelRole): ModelProfileSelection {
   const legacyMode = modelRoleToLegacyModelMode(role)
   const roleOverride = nonBlankString(normalizeModelRoleOverrides(database.modelRoles)[role])
   if (role !== 'chatMain' && role !== 'chatAux' && roleOverride) {
@@ -986,7 +994,7 @@ function resolveProviderOptions(
       ollama: {
         apiKey: nonBlankString(database.ollamaApiKey),
         requestFormat: asFormat(database.ollamaRequestFormat, LLMFormat.OpenAICompatible),
-        model: nonBlankString(database.ollamaCloudModel),
+        model: nonBlankString(requestModel),
         modelSource: database.ollamaModelSource,
         thinkingMode: database.ollamaThinkingMode,
         cloud: true,
@@ -1000,7 +1008,7 @@ function resolveProviderOptions(
       ollama: {
         url: nonBlankString(database.ollamaURL),
         requestFormat: LLMFormat.Ollama,
-        model: nonBlankString(database.ollamaModel),
+        model: nonBlankString(requestModel),
         modelSource: database.ollamaModelSource,
         thinkingMode: database.ollamaThinkingMode,
         cloud: false,
@@ -1180,7 +1188,11 @@ function resolveProfileRequestModelFromParts(
   database: Database,
   modelId: string,
   modelInfo: ResolvedModelProfileModelInfo,
+  profileRequestModel?: string,
 ): string {
+  const durableRequestModel = nonBlankString(profileRequestModel)
+  if (durableRequestModel) return durableRequestModel
+
   const providerCapability = resolveProviderCapability(
     buildProfileProviderCapabilityInputForDatabase(database, modelId, modelInfo),
   )

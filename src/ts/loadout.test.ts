@@ -216,7 +216,12 @@ function seedSplitPresetLoadoutState(): Loadout {
         temperature: 0.9,
         maxResponse: 450,
         modelProfiles: [
-          { id: ' story-profile ', name: ' Story Profile ', modelId: ' story-model ' },
+          {
+            id: ' story-profile ',
+            name: ' Story Profile ',
+            modelId: ' story-model ',
+            providerOptions: { requestModel: ' story-wire ' },
+          },
           { id: 'story-profile', name: 'Duplicate' },
         ],
         modelRoleProfiles: {
@@ -540,7 +545,14 @@ describe('loadout projection command helpers', () => {
     expect(DBState.db.apiType).toBe('kobold')
     expect(DBState.db.temperature).toBe(0.9)
     expect(DBState.db.maxResponse).toBe(450)
-    expect(DBState.db.modelProfiles).toEqual([{ id: 'story-profile', name: 'Story Profile', modelId: 'story-model' }])
+    expect(DBState.db.modelProfiles).toEqual([
+      {
+        id: 'story-profile',
+        name: 'Story Profile',
+        modelId: 'story-model',
+        providerOptions: { requestModel: 'story-wire' },
+      },
+    ])
     expect(DBState.db.modelRoleProfiles).toEqual(
       normalizedModelRoleProfiles({
         memory: { mode: 'profile', profileId: 'prompt-profile' },
@@ -597,7 +609,14 @@ describe('loadout projection command helpers', () => {
 
     expect(DBState.db.modelPresetsId).toBe(1)
     expect(DBState.db.promptPresetsId).toBe(1)
-    expect(DBState.db.modelProfiles).toEqual([{ id: 'story-profile', name: 'Story Profile', modelId: 'story-model' }])
+    expect(DBState.db.modelProfiles).toEqual([
+      {
+        id: 'story-profile',
+        name: 'Story Profile',
+        modelId: 'story-model',
+        providerOptions: { requestModel: 'story-wire' },
+      },
+    ])
     expect(DBState.db.modelRoleProfiles).toEqual(
       normalizedModelRoleProfiles({
         memory: { mode: 'profile', profileId: 'prompt-profile' },
@@ -614,7 +633,14 @@ describe('loadout projection command helpers', () => {
     ])
     expect(DBState.db.modelPresetsId).toBe(1)
     expect(DBState.db.promptPresetsId).toBe(0)
-    expect(DBState.db.modelProfiles).toEqual([{ id: 'story-profile', name: 'Story Profile', modelId: 'story-model' }])
+    expect(DBState.db.modelProfiles).toEqual([
+      {
+        id: 'story-profile',
+        name: 'Story Profile',
+        modelId: 'story-model',
+        providerOptions: { requestModel: 'story-wire' },
+      },
+    ])
     expect(DBState.db.modelRoleProfiles).toEqual(
       normalizedModelRoleProfiles({
         memory: { mode: 'profile', profileId: 'story-profile' },

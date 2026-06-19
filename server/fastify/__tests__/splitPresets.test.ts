@@ -67,7 +67,12 @@ describe('split preset command normalization', () => {
       name: 'Model A',
       modelRoles: { chatMain: ' main-model ', memory: ' memory-model ', missing: 'ignored' },
       modelProfiles: [
-        { id: ' profile-a ', name: ' Primary ', modelId: ' gpt-5 ', providerOptions: { apiKey: 'drop' } },
+        {
+          id: ' profile-a ',
+          name: ' Primary ',
+          modelId: ' gpt-5 ',
+          providerOptions: { requestModel: ' wire-model ', apiKey: 'drop' },
+        },
         { id: 'profile-a', name: 'Duplicate' },
         { id: 'profile-b', name: 'Secondary', modelId: '   ' },
       ],
@@ -89,7 +94,7 @@ describe('split preset command normalization', () => {
     expect(preset).toMatchObject({
       modelRoles: normalizedModelRoles({ chatMain: 'main-model', memory: 'memory-model' }),
       modelProfiles: [
-        { id: 'profile-a', name: 'Primary', modelId: 'gpt-5' },
+        { id: 'profile-a', name: 'Primary', modelId: 'gpt-5', providerOptions: { requestModel: 'wire-model' } },
         { id: 'profile-b', name: 'Secondary' },
       ],
       modelRoleProfiles: normalizedModelRoleProfiles({
@@ -111,7 +116,14 @@ describe('split preset command normalization', () => {
     applyModelPreset(database, {
       id: 'dirty-model',
       modelRoles: { scriptMain: ' dirty-script ' },
-      modelProfiles: [{ id: ' dirty-profile ', name: ' Dirty Profile ', modelId: ' dirty-model ' }],
+      modelProfiles: [
+        {
+          id: ' dirty-profile ',
+          name: ' Dirty Profile ',
+          modelId: ' dirty-model ',
+          providerOptions: { requestModel: ' dirty-wire ' },
+        },
+      ],
       modelRoleProfiles: { scriptMain: { mode: 'profile', profileId: ' dirty-profile ' } },
       seperateModels: { otherAx: ' dirty-aux ' },
       fallbackModels: { memory: ['dirty-memory', ''] },
@@ -120,7 +132,14 @@ describe('split preset command normalization', () => {
 
     expect(database).toMatchObject({
       modelRoles: normalizedModelRoles({ scriptMain: 'dirty-script' }),
-      modelProfiles: [{ id: 'dirty-profile', name: 'Dirty Profile', modelId: 'dirty-model' }],
+      modelProfiles: [
+        {
+          id: 'dirty-profile',
+          name: 'Dirty Profile',
+          modelId: 'dirty-model',
+          providerOptions: { requestModel: 'dirty-wire' },
+        },
+      ],
       modelRoleProfiles: normalizedModelRoleProfiles({
         scriptMain: { mode: 'profile', profileId: 'dirty-profile' },
       }),

@@ -4,6 +4,11 @@ export interface ModelProfileRecord {
   id: string
   name: string
   modelId?: string
+  providerOptions?: ModelProfileRecordProviderOptions
+}
+
+export interface ModelProfileRecordProviderOptions {
+  requestModel?: string
 }
 
 export interface LegacyModelRoleProfileBinding {
@@ -25,7 +30,8 @@ export class ModelProfileRecordValidationError extends Error {
   }
 }
 
-const MODEL_PROFILE_RECORD_KEYS = new Set(['id', 'name', 'modelId'])
+const MODEL_PROFILE_RECORD_KEYS = new Set(['id', 'name', 'modelId', 'providerOptions'])
+const MODEL_PROFILE_PROVIDER_OPTIONS_KEYS = new Set(['requestModel'])
 const MODEL_ROLE_PROFILE_BINDING_KEYS = new Set(['mode', 'profileId'])
 const MODEL_ROLE_SET = new Set<string>(MODEL_ROLES)
 
@@ -44,7 +50,14 @@ export function normalizeModelProfiles(value: unknown): ModelProfileRecord[] {
     if (!id || seen.has(id)) continue
     const name = stringOrBlank(item.name) || id
     const modelId = stringOrBlank(item.modelId)
-    profiles.push(modelId ? { id, name, modelId } : { id, name })
+    profiles.push(
+      createModelProfileRecord({
+        id,
+        name,
+        modelId,
+        providerOptions: normalizeModelProfileProviderOptions(item.providerOptions),
+      }),
+    )
     seen.add(id)
   }
 
@@ -125,8 +138,46 @@ function readModelProfileRecord(value: unknown, path: string): ModelProfileRecor
     throw new ModelProfileRecordValidationError(`${path}.modelId must be a string when present`)
   }
   const modelId = stringOrBlank(value.modelId)
+  const providerOptions = Object.prototype.hasOwnProperty.call(value, 'providerOptions')
+    ? readModelProfileProviderOptions(value.providerOptions, `${path}.providerOptions`)
+    : undefined
 
-  return modelId ? { id, name, modelId } : { id, name }
+  return createModelProfileRecord({ id, name, modelId, providerOptions })
+}
+
+function createModelProfileRecord(input: {
+  id: string
+  name: string
+  modelId?: string
+  providerOptions?: ModelProfileRecordProviderOptions
+}): ModelProfileRecord {
+  return {
+    id: input.id,
+    name: input.name,
+    ...(input.modelId ? { modelId: input.modelId } : {}),
+    ...(input.providerOptions ? { providerOptions: input.providerOptions } : {}),
+  }
+}
+
+function normalizeModelProfileProviderOptions(value: unknown): ModelProfileRecordProviderOptions | undefined {
+  if (!isRecord(value)) return undefined
+  const requestModel = stringOrBlank(value.requestModel)
+  return requestModel ? { requestModel } : undefined
+}
+
+function readModelProfileProviderOptions(value: unknown, path: string): ModelProfileRecordProviderOptions | undefined {
+  if (!isRecord(value)) {
+    throw new ModelProfileRecordValidationError(`${path} must be an object when present`)
+  }
+  for (const key of Object.keys(value)) {
+    if (!MODEL_PROFILE_PROVIDER_OPTIONS_KEYS.has(key)) {
+      throw new ModelProfileRecordValidationError(`${path}.${key} is not supported`)
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(value, 'requestModel') && typeof value.requestModel !== 'string') {
+    throw new ModelProfileRecordValidationError(`${path}.requestModel must be a string when present`)
+  }
+  return normalizeModelProfileProviderOptions(value)
 }
 
 function readModelRoleProfileBinding(value: unknown, path: string): ModelRoleProfileBinding {

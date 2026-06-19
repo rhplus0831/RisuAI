@@ -246,7 +246,12 @@ describe('model profile database normalization', () => {
   it('normalizes durable profile scaffold fields through setDatabase', () => {
     seedPresetDatabase({
       modelProfiles: [
-        { id: ' profile-a ', name: ' Primary ', modelId: ' gpt-5 ', providerOptions: { apiKey: 'must-drop' } } as any,
+        {
+          id: ' profile-a ',
+          name: ' Primary ',
+          modelId: ' gpt-5 ',
+          providerOptions: { requestModel: ' wire-model ', apiKey: 'must-drop' },
+        } as any,
         { id: 'profile-a', name: 'Duplicate' },
         { id: 'profile-b', name: 'Identity Only', modelId: '   ' } as any,
         { id: 'profile-c' } as any,
@@ -261,7 +266,7 @@ describe('model profile database normalization', () => {
     setDatabase(data)
 
     expect(DBState.db.modelProfiles).toEqual([
-      { id: 'profile-a', name: 'Primary', modelId: 'gpt-5' },
+      { id: 'profile-a', name: 'Primary', modelId: 'gpt-5', providerOptions: { requestModel: 'wire-model' } },
       { id: 'profile-b', name: 'Identity Only' },
       { id: 'profile-c', name: 'profile-c' },
     ])
@@ -273,7 +278,9 @@ describe('model profile database normalization', () => {
 
   it('saves durable profile fields into legacy bot preset snapshots', async () => {
     seedPresetDatabase({
-      modelProfiles: [{ id: 'profile-a', name: 'Profile A', modelId: 'gpt-5' }],
+      modelProfiles: [
+        { id: 'profile-a', name: 'Profile A', modelId: 'gpt-5', providerOptions: { requestModel: 'wire-model' } },
+      ],
       modelRoleProfiles: normalizedModelRoleProfiles({
         memory: { mode: 'profile', profileId: 'profile-a' },
       }) as Database['modelRoleProfiles'],
@@ -285,7 +292,9 @@ describe('model profile database normalization', () => {
     const command = await waitForPresetCommand(calls, '/presets/preset-a')
     expect(command.body.patch).toMatchObject({
       id: 'preset-a',
-      modelProfiles: [{ id: 'profile-a', name: 'Profile A', modelId: 'gpt-5' }],
+      modelProfiles: [
+        { id: 'profile-a', name: 'Profile A', modelId: 'gpt-5', providerOptions: { requestModel: 'wire-model' } },
+      ],
       modelRoleProfiles: expect.objectContaining({
         memory: { mode: 'profile', profileId: 'profile-a' },
       }),
@@ -304,7 +313,12 @@ describe('model profile database normalization', () => {
       DBState.db,
       makePreset('preset-c', 'Gamma', {
         modelProfiles: [
-          { id: ' target-profile ', name: ' Target Profile ', modelId: ' target-model ' } as never,
+          {
+            id: ' target-profile ',
+            name: ' Target Profile ',
+            modelId: ' target-model ',
+            providerOptions: { requestModel: ' target-wire ' },
+          } as never,
           { id: 'target-profile', name: 'Duplicate' } as never,
         ],
         modelRoleProfiles: {
@@ -315,7 +329,12 @@ describe('model profile database normalization', () => {
     )
 
     expect(DBState.db.modelProfiles).toEqual([
-      { id: 'target-profile', name: 'Target Profile', modelId: 'target-model' },
+      {
+        id: 'target-profile',
+        name: 'Target Profile',
+        modelId: 'target-model',
+        providerOptions: { requestModel: 'target-wire' },
+      },
     ])
     expect(DBState.db.modelRoleProfiles).toEqual(
       normalizedModelRoleProfiles({
@@ -1049,7 +1068,12 @@ describe('preset command rollback (L21)', () => {
       temperature: 31,
       modelRoles: { memory: 'model-memory', scriptAux: 'model-script-aux' },
       modelProfiles: [
-        { id: ' model-profile ', name: ' Model Profile ', modelId: ' model-ai ', providerOptions: { apiKey: 'drop' } },
+        {
+          id: ' model-profile ',
+          name: ' Model Profile ',
+          modelId: ' model-ai ',
+          providerOptions: { requestModel: ' model-wire ', apiKey: 'drop' },
+        },
       ],
       modelRoleProfiles: {
         memory: { mode: 'profile', profileId: ' model-profile ' },
@@ -1147,7 +1171,14 @@ describe('preset command rollback (L21)', () => {
       memory: 'prompt-memory',
       scriptAux: 'prompt-script-aux',
     })
-    expect(DBState.db.modelProfiles).toEqual([{ id: 'model-profile', name: 'Model Profile', modelId: 'model-ai' }])
+    expect(DBState.db.modelProfiles).toEqual([
+      {
+        id: 'model-profile',
+        name: 'Model Profile',
+        modelId: 'model-ai',
+        providerOptions: { requestModel: 'model-wire' },
+      },
+    ])
     expect(DBState.db.modelRoleProfiles).toEqual(
       normalizedModelRoleProfiles({
         memory: { mode: 'profile', profileId: 'prompt-profile' },
