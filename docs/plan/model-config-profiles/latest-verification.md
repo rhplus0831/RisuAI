@@ -7,22 +7,21 @@ workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: browser-local Mistral provider-options parity
-  for the `requestOpenAI()` Mistral branch. Profile-backed Mistral calls now use
-  `resolvedProfile.providerOptions` for request model, chat-completions URL
-  resolution, API key, extra headers, and additional params. Reverse-proxy
-  Mistral keeps resolver-provided `X-Proxy-Risu` and profile additional params;
-  `xcustom:::` Mistral keeps profile custom-model URL/key/internal-id/params;
-  and no-resolved-profile native Mistral callers keep legacy `arg.customURL`,
-  `arg.key ?? db.mistralKey`, body model `aiModel`, and no additional-parameter
-  fallback.
+- Runtime/code change under test: browser-local Kobold provider-options parity
+  for `requestKobold()`. Profile-backed Kobold calls now use
+  `resolvedProfile.providerOptions.baseUrl` for request URLs and
+  `resolvedProfile.runtimeOptions.maxContext` for body `max_context_length`.
+  Callers without a resolved profile keep the legacy flat `db.koboldURL`
+  fallback, while profile-backed calls with missing or blank Kobold URLs fail
+  with `options.kobold.baseUrl is required` before fetch instead of falling back
+  to flat DB fields.
 - Latest passing commands:
-  - `pnpm exec prettier --write --ignore-path /dev/null src/ts/process/request/openAI/requests.ts src/ts/process/request/tests/openaiProfileOptions.test.ts docs/plan/model-config-profiles/status.md docs/plan/model-config-profiles/latest-verification.md docs/plan/model-config-profiles/phases/phase-3-generation-dispatch.md docs/plan/model-config-profiles/SOLVE-NOTE.md`
+  - `pnpm exec prettier --write --ignore-path /dev/null src/ts/process/request/request.ts src/ts/process/request/tests/koboldProfileOptions.test.ts docs/plan/model-config-profiles/status.md docs/plan/model-config-profiles/latest-verification.md docs/plan/model-config-profiles/phases/phase-3-generation-dispatch.md docs/plan/model-config-profiles/SOLVE-NOTE.md`
     - Result: passed. The command exited 0 and formatted the focused request
       file, updated test file, and model-config profile docs.
-  - `pnpm exec vitest run src/ts/process/request/tests/openaiProfileOptions.test.ts src/ts/model/modelProfileResolver.test.ts src/ts/process/request/tests/modelRoleRouting.test.ts src/ts/process/request/tests/serverCompletion.test.ts src/ts/process/request/tests/providerCapability.test.ts`
+  - `pnpm exec vitest run src/ts/process/request/tests/koboldProfileOptions.test.ts src/ts/model/modelProfileResolver.test.ts src/ts/process/request/tests/modelRoleRouting.test.ts src/ts/process/request/tests/serverCompletion.test.ts src/ts/process/request/tests/providerCapability.test.ts`
     - Result: passed. The requested focused browser request/provider tests
-      passed; 5 test files passed and 92 tests passed.
+      passed; 5 test files passed and 85 tests passed.
   - `pnpm exec tsc -p tsconfig.client-lib.json`
     - Result: passed. The command exited 0 and rebuilt client declaration
       output for server project references.
@@ -31,8 +30,12 @@ workstream.
   - `git diff --check`
     - Result: passed. The command exited 0 with no whitespace errors.
 - Failed/intermediate commands during this slice:
-  - No failed commands. `pnpm exec vitest run src/ts/process/request/tests/openaiProfileOptions.test.ts`
-    also passed before the broader requested focused test run.
+  - `pnpm exec vitest run src/ts/process/request/tests/koboldProfileOptions.test.ts`
+    failed twice while the new test fixture was being corrected: first the
+    active DB lacked a current character for `applyChatTemplate()`, then
+    `selectedCharID` still pointed at `-1`. After adding the fixture character
+    and setting `selectedCharID` to `0`, the same focused test command passed
+    with 1 test file and 3 tests passed.
 - Residual gaps: Full Phase 3 is not complete. Browser role/static/fallback
   selection now uses the resolver, Fastify provider-option slices are complete
   through Gemini/Vertex, browser-local Gemini/Vertex provider-options parity is
@@ -40,12 +43,13 @@ workstream.
   OpenAI-compatible provider-options parity is complete, and browser-local
   OpenAI Responses/legacy instruct provider-options parity is complete, and
   browser-local Anthropic-family provider-options parity is complete, and
-  browser-local Mistral provider-options parity is complete. Other retained
-  browser-local provider helpers, including Cohere, native Ollama, Kobold,
-  Horde, and Ooba legacy paths, still reconstruct provider-specific keys, base
-  URLs, request-model options, and additional params from flat database fields.
-  Durable profile storage, UI writes, provider secret reshaping, and embedding
-  behavior remain deferred to later phases.
+  browser-local Mistral provider-options parity is complete, and browser-local
+  Kobold provider-options parity is complete. Other retained browser-local
+  provider helpers, including Cohere, native Ollama, Horde, and Ooba legacy
+  paths, still reconstruct provider-specific keys, base URLs, request-model
+  options, and additional params from flat database fields. Durable profile
+  storage, UI writes, provider secret reshaping, and embedding behavior remain
+  deferred to later phases.
 
 ## Remaining Proof
 

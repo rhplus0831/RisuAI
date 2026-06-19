@@ -1,6 +1,6 @@
 # Phase 3: Generation Dispatch
 
-Status: in progress; Phase 3a server-owned profile selection/capability/request-model slice complete; Phase 3b Fastify OpenAI-compatible provider-options slice complete; Phase 3c Fastify Anthropic/Mistral/Cohere provider-options slice complete; Phase 3d Fastify native Ollama provider-options slice complete; Phase 3e Fastify Kobold provider-options slice complete; Phase 3f Fastify Horde provider-options slice complete; Phase 3g Fastify OobaLegacy provider-options slice complete; Phase 3h Fastify Bedrock provider-options slice complete; Phase 3i Fastify Gemini/Vertex provider-options slice complete; browser request helper role/static/fallback resolver adoption slice complete; browser-local Gemini/Vertex provider-options slice complete; browser-local OpenAI-compatible chat-completions provider-options slice complete; browser-local OpenAI Responses and legacy instruct provider-options slice complete; browser-local Anthropic-family provider-options slice complete; browser-local Mistral provider-options slice complete.
+Status: in progress; Phase 3a server-owned profile selection/capability/request-model slice complete; Phase 3b Fastify OpenAI-compatible provider-options slice complete; Phase 3c Fastify Anthropic/Mistral/Cohere provider-options slice complete; Phase 3d Fastify native Ollama provider-options slice complete; Phase 3e Fastify Kobold provider-options slice complete; Phase 3f Fastify Horde provider-options slice complete; Phase 3g Fastify OobaLegacy provider-options slice complete; Phase 3h Fastify Bedrock provider-options slice complete; Phase 3i Fastify Gemini/Vertex provider-options slice complete; browser request helper role/static/fallback resolver adoption slice complete; browser-local Gemini/Vertex provider-options slice complete; browser-local OpenAI-compatible chat-completions provider-options slice complete; browser-local OpenAI Responses and legacy instruct provider-options slice complete; browser-local Anthropic-family provider-options slice complete; browser-local Mistral provider-options slice complete; browser-local Kobold provider-options slice complete.
 
 Goal: move browser and Fastify generation dispatch from ad hoc flat database
 reads to the resolved profile runtime object.
@@ -326,6 +326,23 @@ reads to the resolved profile runtime object.
   values, and pins no-resolved-profile native Mistral custom URL/key/model
   behavior.
 
+## Implemented Browser-Local Kobold Provider-Options Slice
+
+- Browser-local `requestKobold()` now uses
+  `resolvedProfile.providerOptions.baseUrl` for profile-backed Kobold request
+  URLs when a resolved profile is present. No-resolved-profile callers keep the
+  legacy flat `db.koboldURL` fallback.
+- Profile-backed Kobold requests now use
+  `resolvedProfile.runtimeOptions.maxContext` for body `max_context_length`,
+  while keeping `arg.maxTokens` as the existing `max_length` source.
+- Missing or blank profile Kobold URLs fail with
+  `options.kobold.baseUrl is required` before URL construction/fetch and do not
+  fall back to a conflicting flat `db.koboldURL`.
+- Focused coverage drives the path through `requestChatDataMain()` with
+  browser-local preview dispatch, proving profile URL and max context beat
+  intentionally conflicting flat database values and that missing profile URLs
+  do not call fetch.
+
 ## Remaining Phase 3 Work
 
 - Broaden provider parity for retained browser-local request helpers before
@@ -334,9 +351,10 @@ reads to the resolved profile runtime object.
   adopted, and browser-local OpenAI-compatible chat-completions provider options
   are adopted, and browser-local OpenAI Responses/legacy instruct provider
   options are adopted, and browser-local Anthropic-family provider options are
-  adopted, and browser-local Mistral provider options are adopted. Other local
-  helper branches such as Cohere, native Ollama, Kobold, Horde, and Ooba legacy
-  still read many provider-specific options directly from flat database fields.
+  adopted, browser-local Mistral provider options are adopted, and browser-local
+  Kobold provider options are adopted. Other local helper branches such as
+  Cohere, native Ollama, Horde, and Ooba legacy still read many
+  provider-specific options directly from flat database fields.
 - Verify any future browser-local provider option adoption without changing the
   server-intent payload shape or editing Fastify generation routes unless a real
   regression is exposed.

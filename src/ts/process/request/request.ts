@@ -997,9 +997,21 @@ async function requestKobold(arg: RequestDataArgumentExtended): Promise<requestD
   const db = getDatabase()
   const maxTokens = arg.maxTokens
   const abortSignal = arg.abortSignal
+  const hasResolvedProfile = !!arg.resolvedProfile
+  const profileBaseUrl = arg.resolvedProfile?.providerOptions.baseUrl?.trim()
+  const baseUrl = hasResolvedProfile ? profileBaseUrl : db.koboldURL
+  const maxContext = arg.resolvedProfile?.runtimeOptions.maxContext ?? db.maxContext
+
+  if (hasResolvedProfile && !baseUrl) {
+    return {
+      type: 'fail',
+      result: 'options.kobold.baseUrl is required',
+      noRetry: true,
+    }
+  }
 
   const prompt = applyChatTemplate(formated)
-  const url = new URL(db.koboldURL)
+  const url = new URL(baseUrl)
   if (url.pathname.length < 3) {
     url.pathname = 'api/v1/generate'
   }
@@ -1008,7 +1020,7 @@ async function requestKobold(arg: RequestDataArgumentExtended): Promise<requestD
     {
       prompt: prompt,
       max_length: maxTokens,
-      max_context_length: db.maxContext,
+      max_context_length: maxContext,
       n: 1,
     },
     ['temperature', 'top_p', 'repetition_penalty', 'top_k', 'top_a'],
