@@ -37,7 +37,7 @@
   } = $props()
 
   let effectiveModel = $derived.by(() => {
-    if (!paramKey) return DBState.db.subModel
+    if (!paramKey) return resolveModelForRole(DBState.db, 'chatAux')
     const role = normalizeModelRole(paramKey)
     if (role) {
       return resolveModelForRole(DBState.db, role)

@@ -6,6 +6,10 @@ function allSeperateParametersSource(): string {
   return readFileSync(resolve(process.cwd(), 'src/lib/Others/AllSeperateParameters.svelte'), 'utf8')
 }
 
+function claudeThinkingSeparateParamsSource(): string {
+  return readFileSync(resolve(process.cwd(), 'src/lib/Setting/Pages/ClaudeThinkingSeparateParams.svelte'), 'utf8')
+}
+
 function extractFunctionBody(source: string, functionSignature: string): string {
   const functionStart = source.indexOf(functionSignature)
   expect(functionStart).toBeGreaterThanOrEqual(0)
@@ -60,5 +64,21 @@ describe('AllSeperateParameters import wiring', () => {
     expect(applyIndex).toBeGreaterThan(guardedIndex)
     expect(fallbackIndex).toBeGreaterThan(applyIndex)
     expect(importBody).not.toContain('JSON.parse')
+  })
+})
+
+describe('separate parameter model resolution', () => {
+  it('uses chatAux role resolution when AllSeperateParameters has no explicit parameter key', () => {
+    const source = allSeperateParametersSource()
+
+    expect(source).toContain("if (!paramKey) return resolveModelForRole(DBState.db, 'chatAux')")
+    expect(source).not.toContain('if (!paramKey) return DBState.db.subModel')
+  })
+
+  it('uses chatAux role resolution when Claude thinking parameters have no explicit parameter key', () => {
+    const source = claudeThinkingSeparateParamsSource()
+
+    expect(source).toContain("if (!paramKey) return resolveModelForRole(DBState.db, 'chatAux')")
+    expect(source).not.toContain('if (!paramKey) return DBState.db.subModel')
   })
 })
