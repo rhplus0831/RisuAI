@@ -19,16 +19,22 @@ describe('resolveMemorySummaryModel', () => {
   it('uses the memory role resolver while accepting legacy subModel requests', () => {
     const result = resolveMemorySummaryModel(
       database({
+        subModel: 'should-not-be-selected',
         modelRoles: { memory: 'gpt41-mini' } as Database['modelRoles'],
       }),
       'subModel',
     )
 
-    expect(result).toMatchObject({
+    expect(result).toEqual({
       ok: true,
       request: {
         provider: 'openai',
         model: 'gpt41-mini',
+        options: {
+          openai: {
+            apiKey: 'sk-test',
+          },
+        },
       },
     })
   })
@@ -48,6 +54,82 @@ describe('resolveMemorySummaryModel', () => {
         provider: 'openai',
         model: 'gpt41-nano',
       },
+    })
+  })
+
+  it('rejects non-memory model request aliases', () => {
+    const result = resolveMemorySummaryModel(database(), 'chatMain')
+
+    expect(result).toEqual({
+      ok: false,
+      error: 'server-side memory summarization currently supports only the memory/subModel API path',
+    })
+  })
+
+  it('builds OpenRouter memory requests from resolved profile provider options', () => {
+    const result = resolveMemorySummaryModel(
+      database({
+        modelRoles: { memory: 'openrouter' } as Database['modelRoles'],
+        openrouterKey: 'openrouter-secret',
+        openrouterRequestModel: 'anthropic/claude-3.5-sonnet',
+      }),
+      'memory',
+    )
+
+    expect(result).toEqual({
+      ok: true,
+      request: {
+        provider: 'openrouter',
+        model: 'anthropic/claude-3.5-sonnet',
+        options: {
+          openrouter: {
+            apiKey: 'openrouter-secret',
+          },
+        },
+      },
+    })
+  })
+
+  it('builds NanoGPT memory requests from resolved profile provider options', () => {
+    const result = resolveMemorySummaryModel(
+      database({
+        modelRoles: { memory: 'nanogpt' } as Database['modelRoles'],
+        nanogptKey: 'nanogpt-secret',
+        nanogptProvider: 'provider-a',
+        nanogptRequestModel: 'nano/summary-model',
+        nanogptUseSubscriptionEndpoint: true,
+      }),
+      'memory',
+    )
+
+    expect(result).toEqual({
+      ok: true,
+      request: {
+        provider: 'nanogpt',
+        model: 'nano/summary-model',
+        options: {
+          nanogpt: {
+            apiKey: 'nanogpt-secret',
+            providerHint: 'provider-a',
+            useSubscription: true,
+          },
+        },
+      },
+    })
+  })
+
+  it('rejects resolved non-OpenAI-compatible memory providers', () => {
+    const result = resolveMemorySummaryModel(
+      database({
+        modelRoles: { memory: 'claude-3-5-sonnet-latest' } as Database['modelRoles'],
+        claudeAPIKey: 'claude-secret',
+      }),
+      'memory',
+    )
+
+    expect(result).toEqual({
+      ok: false,
+      error: 'summarization memory provider is not API-backed OpenAI-compatible: anthropic',
     })
   })
 
