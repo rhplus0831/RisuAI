@@ -1,6 +1,6 @@
 # Phase 3: Generation Dispatch
 
-Status: in progress; Phase 3a server-owned profile selection/capability/request-model slice complete; Phase 3b Fastify OpenAI-compatible provider-options slice complete; Phase 3c Fastify Anthropic/Mistral/Cohere provider-options slice complete; Phase 3d Fastify native Ollama provider-options slice complete; Phase 3e Fastify Kobold provider-options slice complete; Phase 3f Fastify Horde provider-options slice complete; Phase 3g Fastify OobaLegacy provider-options slice complete; Phase 3h Fastify Bedrock provider-options slice complete; Phase 3i Fastify Gemini/Vertex provider-options slice complete; browser request helper role/static/fallback resolver adoption slice complete; browser-local Gemini/Vertex provider-options slice complete; browser-local OpenAI-compatible chat-completions provider-options slice complete; browser-local OpenAI Responses and legacy instruct provider-options slice complete.
+Status: in progress; Phase 3a server-owned profile selection/capability/request-model slice complete; Phase 3b Fastify OpenAI-compatible provider-options slice complete; Phase 3c Fastify Anthropic/Mistral/Cohere provider-options slice complete; Phase 3d Fastify native Ollama provider-options slice complete; Phase 3e Fastify Kobold provider-options slice complete; Phase 3f Fastify Horde provider-options slice complete; Phase 3g Fastify OobaLegacy provider-options slice complete; Phase 3h Fastify Bedrock provider-options slice complete; Phase 3i Fastify Gemini/Vertex provider-options slice complete; browser request helper role/static/fallback resolver adoption slice complete; browser-local Gemini/Vertex provider-options slice complete; browser-local OpenAI-compatible chat-completions provider-options slice complete; browser-local OpenAI Responses and legacy instruct provider-options slice complete; browser-local Anthropic-family provider-options slice complete.
 
 Goal: move browser and Fastify generation dispatch from ad hoc flat database
 reads to the resolved profile runtime object.
@@ -273,6 +273,36 @@ reads to the resolved profile runtime object.
   intentionally conflicting flat DB values, and pins the no-resolved-profile
   legacy instruct fallback.
 
+## Implemented Browser-Local Anthropic-Family Provider-Options Slice
+
+- Browser-local `requestClaude()` now uses
+  `resolvedProfile.providerOptions.requestModel` for profile-backed Anthropic
+  request body `model`, including reverse-proxy Anthropic and `ollama-cloud`
+  Anthropic calls. No-resolved-profile callers keep the legacy
+  `arg.modelInfo.internalID` request-model fallback.
+- Profile-backed Anthropic URLs now prefer exact `endpoint` values, otherwise
+  append `/messages` to profile `baseUrl` without double-appending. Legacy
+  `arg.customURL` defaults and reverse-proxy `db.autofillRequestUrl` mutation
+  remain limited to no-resolved-profile callers.
+- Profile-backed API keys now come only from `providerOptions.apiKey`, so
+  conflicting `arg.key`, `db.proxyKey`, `db.claudeAPIKey`, and `db.ollamaApiKey`
+  values cannot override profile Anthropic, Bedrock, or `ollama-cloud`
+  Anthropic requests.
+- Profile `providerOptions.additionalParams` now drives browser-local
+  Anthropic reverse-proxy additional-parameter application when a resolved
+  profile is present. Resolver-provided `extraHeaders`, including
+  `X-Proxy-Risu`, are merged before additional params. Bedrock profile
+  additional params are applied before AWS signing, matching the legacy signed
+  header/body order.
+- Bedrock profile-backed requests use the resolver-owned `requestModel`
+  directly as the AWS model segment, preserving the existing `us.`/`global.`
+  prefix chosen by the resolver without adding another prefix. Bedrock callers
+  without a resolved profile keep the legacy prefix calculation.
+- Focused coverage proves profile-generated reverse-proxy Anthropic, Bedrock,
+  and `ollama-cloud` Anthropic settings beat intentionally conflicting flat DB
+  and arg values, and pins a no-resolved-profile reverse-proxy Anthropic
+  fallback.
+
 ## Remaining Phase 3 Work
 
 - Broaden provider parity for retained browser-local request helpers before
@@ -280,9 +310,10 @@ reads to the resolved profile runtime object.
   now uses the resolver, browser-local Gemini/Vertex provider options are
   adopted, and browser-local OpenAI-compatible chat-completions provider options
   are adopted, and browser-local OpenAI Responses/legacy instruct provider
-  options are adopted. Other local helper branches such as Anthropic, Mistral,
-  Cohere, native Ollama, Kobold, Horde, and Ooba legacy still read many
-  provider-specific options directly from flat database fields.
+  options are adopted, and browser-local Anthropic-family provider options are
+  adopted. Other local helper branches such as Mistral, Cohere, native Ollama,
+  Kobold, Horde, and Ooba legacy still read many provider-specific options
+  directly from flat database fields.
 - Verify any future browser-local provider option adoption without changing the
   server-intent payload shape or editing Fastify generation routes unless a real
   regression is exposed.

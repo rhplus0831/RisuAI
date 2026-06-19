@@ -68,16 +68,57 @@ interface Claude3ExtendedChat {
   content: Claude3ContentBlock[] | string
 }
 
+const ANTHROPIC_MESSAGES_URL = 'https://api.anthropic.com/v1/messages'
+const ANTHROPIC_MESSAGES_SUFFIX = '/messages'
+
+function appendAnthropicMessagesPath(baseUrl: string): string {
+  const trimmed = baseUrl.replace(/\/+$/, '')
+  if (!trimmed || trimmed.endsWith(ANTHROPIC_MESSAGES_SUFFIX)) {
+    return trimmed
+  }
+
+  try {
+    const url = new URL(trimmed)
+    const pathSegments = url.pathname.split('/').filter(Boolean)
+    const suffixSegments = ANTHROPIC_MESSAGES_SUFFIX.split('/').filter(Boolean)
+    const hasSuffix =
+      pathSegments.length >= suffixSegments.length &&
+      suffixSegments.every(
+        (segment, index) => pathSegments[pathSegments.length - suffixSegments.length + index] === segment,
+      )
+
+    if (hasSuffix) {
+      return url.toString()
+    }
+
+    url.pathname = `${url.pathname.replace(/\/+$/, '')}/${suffixSegments.join('/')}`
+    return url.toString()
+  } catch {
+    return `${trimmed}${ANTHROPIC_MESSAGES_SUFFIX}`
+  }
+}
+
 export async function requestClaude(arg: RequestDataArgumentExtended): Promise<requestDataResponse> {
   const formated = arg.formated
   const db = getDatabase()
   const aiModel = arg.aiModel
+  const resolvedProfile = arg.resolvedProfile
+  const providerOptions = resolvedProfile?.providerOptions
+  const hasResolvedProfile = resolvedProfile !== undefined
   const useStreaming = arg.useStreaming
   const ollamaCloudAnthropic = aiModel === 'ollama-cloud'
-  let replacerURL = arg.customURL ?? 'https://api.anthropic.com/v1/messages'
-  let apiKey = arg.key || (aiModel === 'reverse_proxy' ? db.proxyKey : db.claudeAPIKey)
+  let replacerURL = hasResolvedProfile
+    ? providerOptions?.endpoint
+      ? providerOptions.endpoint
+      : providerOptions?.baseUrl
+        ? appendAnthropicMessagesPath(providerOptions.baseUrl)
+        : ANTHROPIC_MESSAGES_URL
+    : (arg.customURL ?? ANTHROPIC_MESSAGES_URL)
+  let apiKey = hasResolvedProfile
+    ? (providerOptions?.apiKey ?? '')
+    : arg.key || (aiModel === 'reverse_proxy' ? db.proxyKey : db.claudeAPIKey) || ''
   const maxTokens = arg.maxTokens
-  if (aiModel === 'reverse_proxy' && db.autofillRequestUrl) {
+  if (!hasResolvedProfile && aiModel === 'reverse_proxy' && db.autofillRequestUrl) {
     if (replacerURL.endsWith('v1')) {
       replacerURL += '/messages'
     } else if (replacerURL.endsWith('v1/')) {
@@ -359,9 +400,12 @@ export async function requestClaude(arg: RequestDataArgumentExtended): Promise<r
   }
 
   console.log(arg.modelInfo.parameters)
+  const requestModel = hasResolvedProfile
+    ? (providerOptions?.requestModel ?? arg.modelInfo.internalID)
+    : arg.modelInfo.internalID
   let body = applyParameters(
     {
-      model: arg.modelInfo.internalID,
+      model: requestModel,
       messages: finalChat,
       system: systemPrompt.trim(),
       max_tokens: maxTokens,
@@ -403,7 +447,9 @@ export async function requestClaude(arg: RequestDataArgumentExtended): Promise<r
   }
 
   const bedrock = arg.modelInfo.format === LLMFormat.AWSBedrockClaude
-  const additionalParams = getAdditionalParameters(aiModel)
+  const additionalParams = hasResolvedProfile
+    ? (providerOptions?.additionalParams ?? [])
+    : getAdditionalParameters(aiModel)
   const hasCustomAnthropicBeta = additionalParams.some(([key]) => {
     return key.startsWith('header::') && key.slice('header::'.length).toLocaleLowerCase() === 'anthropic-beta'
   })
@@ -438,7 +484,8 @@ export async function requestClaude(arg: RequestDataArgumentExtended): Promise<r
       useGlobal = majorVersion > 4 || (majorVersion === 4 && minorVersion >= 5)
     }
 
-    const awsModel = useGlobal ? 'global.' + arg.modelInfo.internalID : 'us.' + arg.modelInfo.internalID
+    const legacyAwsModel = useGlobal ? 'global.' + arg.modelInfo.internalID : 'us.' + arg.modelInfo.internalID
+    const awsModel = hasResolvedProfile ? (providerOptions?.requestModel ?? legacyAwsModel) : legacyAwsModel
 
     const url = `https://${host}/model/${awsModel}/invoke${stream ? '-with-response-stream' : ''}`
 
@@ -577,6 +624,13 @@ export async function requestClaude(arg: RequestDataArgumentExtended): Promise<r
 
   if (db.usePlainFetch) {
     headers['anthropic-dangerous-direct-browser-access'] = 'true'
+  }
+
+  if (hasResolvedProfile && providerOptions?.extraHeaders) {
+    headers = {
+      ...headers,
+      ...providerOptions.extraHeaders,
+    }
   }
 
   if (arg.tools && arg.tools.length > 0) {

@@ -7,25 +7,22 @@ workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: browser-local OpenAI Responses and legacy
-  instruct provider-options parity for `requestOpenAIResponseAPI()` and
-  `requestOpenAILegacyInstruct()`. Responses now uses
-  `resolvedProfile.providerOptions` for profile-backed request model, base URL
-  or exact endpoint, API key, extra headers, and reverse-proxy/`xcustom:::`
-  additional params. Responses `ollama-cloud` uses profile-owned
-  `ollamaApiKey`, `ollamaCloudModel`, and the Ollama Cloud base URL while
-  keeping existing `store` deletion. Legacy instruct now builds a preview
-  payload and uses profile-owned request model, base URL or exact endpoint, API
-  key, extra headers, and profile additional params for reverse-proxy/
-  `xcustom:::` callers. No-resolved-profile legacy instruct callers keep the
-  hard-coded `gpt-3.5-turbo-instruct` model and `arg.customURL`/`arg.key`/
-  `db.openAIKey` fallback behavior.
+- Runtime/code change under test: browser-local Anthropic-family
+  provider-options parity for `requestClaude()`. Profile-backed Anthropic calls
+  now use `resolvedProfile.providerOptions` for request model, exact endpoint
+  or `/messages` base URL, API key, extra headers, and additional params.
+  Reverse-proxy Anthropic keeps resolver-provided `X-Proxy-Risu` and profile
+  additional params; Bedrock uses the profile credential string and
+  resolver-prefixed AWS request model directly before signing; and
+  `ollama-cloud` Anthropic uses the Ollama Cloud base URL/API key/request
+  model. No-resolved-profile callers keep the legacy `arg.customURL`/`arg.key`,
+  flat DB key, reverse-proxy autofill, and additional-parameter fallbacks.
 - Latest passing commands:
-  - `pnpm exec prettier --write --ignore-path /dev/null src/ts/process/request/openAI/requests.ts src/ts/process/request/tests/openaiResponsesLegacyProfileOptions.test.ts docs/plan/model-config-profiles/status.md docs/plan/model-config-profiles/latest-verification.md docs/plan/model-config-profiles/phases/phase-3-generation-dispatch.md docs/plan/model-config-profiles/SOLVE-NOTE.md`
+  - `pnpm exec prettier --write --ignore-path /dev/null src/ts/process/request/anthropic.ts src/ts/process/request/tests/anthropicProfileOptions.test.ts docs/plan/model-config-profiles/status.md docs/plan/model-config-profiles/latest-verification.md docs/plan/model-config-profiles/phases/phase-3-generation-dispatch.md docs/plan/model-config-profiles/SOLVE-NOTE.md`
     - Result: passed. The command exited 0 and formatted the focused request
       file, new test file, and model-config profile docs.
-  - `pnpm exec vitest run src/ts/process/request/tests/openaiResponsesLegacyProfileOptions.test.ts src/ts/process/request/tests/openaiProfileOptions.test.ts src/ts/process/request/tests/modelRoleRouting.test.ts src/ts/process/request/tests/serverCompletion.test.ts src/ts/process/request/tests/providerCapability.test.ts`
-    - Result: passed. 5 test files passed; 73 tests passed.
+  - `pnpm exec vitest run src/ts/process/request/tests/anthropicProfileOptions.test.ts src/ts/model/modelProfileResolver.test.ts src/ts/process/request/tests/modelRoleRouting.test.ts src/ts/process/request/tests/serverCompletion.test.ts src/ts/process/request/tests/providerCapability.test.ts`
+    - Result: passed. 5 test files passed; 86 tests passed.
   - `pnpm exec tsc -p tsconfig.client-lib.json`
     - Result: passed. The command exited 0 and rebuilt client declaration
       output for server project references.
@@ -33,15 +30,21 @@ workstream.
     - Result: passed. The command exited 0 under strict server TypeScript.
   - `git diff --check`
     - Result: passed. The command exited 0 with no whitespace errors.
-- Failed/intermediate commands during this slice: none.
+- Failed/intermediate commands during this slice:
+  - `pnpm exec vitest run src/ts/process/request/tests/anthropicProfileOptions.test.ts`
+    initially reported an unhandled import-time module watcher error even
+    though all four assertions passed. Adding the standard `../../modules` mock
+    used by neighboring request tests resolved it; the same one-file command
+    then passed.
 - Residual gaps: Full Phase 3 is not complete. Browser role/static/fallback
   selection now uses the resolver, Fastify provider-option slices are complete
   through Gemini/Vertex, browser-local Gemini/Vertex provider-options parity is
   complete, and browser-local `requestOpenAI()` chat-completions
   OpenAI-compatible provider-options parity is complete, and browser-local
-  OpenAI Responses/legacy instruct provider-options parity is complete. Other
-  retained browser-local provider helpers, including Anthropic, Mistral, Cohere,
-  native Ollama, Kobold, Horde, and Ooba legacy paths, still reconstruct
+  OpenAI Responses/legacy instruct provider-options parity is complete, and
+  browser-local Anthropic-family provider-options parity is complete. Other
+  retained browser-local provider helpers, including Mistral, Cohere, native
+  Ollama, Kobold, Horde, and Ooba legacy paths, still reconstruct
   provider-specific keys, base URLs, request-model options, and additional
   params from flat database fields. Durable profile storage, UI writes,
   provider secret reshaping, and embedding behavior remain deferred to later
