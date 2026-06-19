@@ -5,6 +5,7 @@ import {
   type LegacyModelMode,
   type ModelRole,
   type ModelRoleLike,
+  modelRoleProfileInheritSource,
   modelRoleToLegacyModelMode,
   normalizeLegacyFallbackModels,
   normalizeModelRole,
@@ -905,7 +906,21 @@ export function resolveProfileRequestModel(profile: Pick<ResolvedModelProfile, '
 }
 
 function resolveDurableModelSelection(database: Database, role: ModelRole): ModelProfileSelection | null {
-  const binding = normalizeModelRoleProfiles(database.modelRoleProfiles)[role]
+  const bindings = normalizeModelRoleProfiles(database.modelRoleProfiles)
+  const binding = bindings[role]
+
+  if (binding.mode === 'inherit') {
+    const sourceRole = modelRoleProfileInheritSource(role)
+    if (!sourceRole) return null
+    const sourceBinding = bindings[sourceRole]
+    if (sourceBinding.mode !== 'profile') return null
+    return resolveDurableProfileSelection(database, role, sourceBinding.profileId, {
+      field: `modelRoleProfiles.${role} -> modelRoleProfiles.${sourceRole}`,
+      bypassesRoleResolution: false,
+      includeFallbacks: true,
+    })
+  }
+
   if (binding.mode !== 'profile') return null
 
   return resolveDurableProfileSelection(database, role, binding.profileId, {

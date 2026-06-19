@@ -1,4 +1,4 @@
-import { MODEL_ROLES, type ModelRole } from './modelRoles'
+import { MODEL_ROLES, modelRoleProfileInheritSource, type ModelRole } from './modelRoles'
 import { LLMFlags, LLMFormat, type LLMFlags as LLMFlagValue, type LLMFormat as LLMFormatValue } from './types'
 
 export interface ModelProfileRecord {
@@ -82,12 +82,19 @@ export interface LegacyModelRoleProfileBinding {
   mode: 'legacy'
 }
 
+export interface InheritModelRoleProfileBinding {
+  mode: 'inherit'
+}
+
 export interface DurableModelRoleProfileBinding {
   mode: 'profile'
   profileId: string
 }
 
-export type ModelRoleProfileBinding = LegacyModelRoleProfileBinding | DurableModelRoleProfileBinding
+export type ModelRoleProfileBinding =
+  | LegacyModelRoleProfileBinding
+  | InheritModelRoleProfileBinding
+  | DurableModelRoleProfileBinding
 export type ModelRoleProfileMap = Record<ModelRole, ModelRoleProfileBinding>
 
 export class ModelProfileRecordValidationError extends Error {
@@ -192,7 +199,7 @@ export function normalizeModelRoleProfiles(value: unknown): ModelRoleProfileMap 
   const source = isRecord(value) ? value : {}
   const profiles = createDefaultModelRoleProfiles()
   for (const role of MODEL_ROLES) {
-    const binding = normalizeModelRoleProfileBinding(source[role])
+    const binding = normalizeModelRoleProfileBinding(source[role], role)
     if (binding) profiles[role] = binding
   }
   return profiles
@@ -231,7 +238,7 @@ export function readModelRoleProfiles(value: unknown): ModelRoleProfileMap {
 
   for (const role of MODEL_ROLES) {
     if (Object.prototype.hasOwnProperty.call(value, role)) {
-      profiles[role] = readModelRoleProfileBinding(value[role], `modelRoleProfiles.${role}`)
+      profiles[role] = readModelRoleProfileBinding(value[role], role, `modelRoleProfiles.${role}`)
     }
   }
 
@@ -609,7 +616,7 @@ function readModelProfileRuntimeOptions(value: unknown, path: string): ModelProf
   return normalizeModelProfileRuntimeOptions(value)
 }
 
-function readModelRoleProfileBinding(value: unknown, path: string): ModelRoleProfileBinding {
+function readModelRoleProfileBinding(value: unknown, role: ModelRole, path: string): ModelRoleProfileBinding {
   if (!isRecord(value)) {
     throw new ModelProfileRecordValidationError(`${path} must be an object`)
   }
@@ -624,6 +631,15 @@ function readModelRoleProfileBinding(value: unknown, path: string): ModelRolePro
     }
     return { mode: 'legacy' }
   }
+  if (value.mode === 'inherit') {
+    if (Object.prototype.hasOwnProperty.call(value, 'profileId')) {
+      throw new ModelProfileRecordValidationError(`${path}.profileId is only supported for profile mode`)
+    }
+    if (!modelRoleProfileInheritSource(role)) {
+      throw new ModelProfileRecordValidationError(`${path}.mode does not support inherit`)
+    }
+    return { mode: 'inherit' }
+  }
   if (value.mode === 'profile') {
     const profileId = stringOrBlank(value.profileId)
     if (!profileId) {
@@ -632,12 +648,15 @@ function readModelRoleProfileBinding(value: unknown, path: string): ModelRolePro
     return { mode: 'profile', profileId }
   }
 
-  throw new ModelProfileRecordValidationError(`${path}.mode must be legacy or profile`)
+  throw new ModelProfileRecordValidationError(`${path}.mode must be legacy, inherit, or profile`)
 }
 
-function normalizeModelRoleProfileBinding(value: unknown): ModelRoleProfileBinding | null {
+function normalizeModelRoleProfileBinding(value: unknown, role: ModelRole): ModelRoleProfileBinding | null {
   if (!isRecord(value)) return null
   if (value.mode === 'legacy') return { mode: 'legacy' }
+  if (value.mode === 'inherit') {
+    return modelRoleProfileInheritSource(role) && Object.keys(value).length === 1 ? { mode: 'inherit' } : null
+  }
   if (value.mode !== 'profile') return null
   const profileId = stringOrBlank(value.profileId)
   return profileId ? { mode: 'profile', profileId } : null

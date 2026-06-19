@@ -939,7 +939,10 @@ describe('Phase 9-2a scalar settings groups', () => {
               fallbacks: [{ mode: 'profile', profileId: ' fallback-profile ' }],
             },
           ],
-          modelRoleProfiles: { memory: { mode: 'profile', profileId: ' profile-a ' } },
+          modelRoleProfiles: {
+            memory: { mode: 'profile', profileId: ' profile-a ' },
+            scriptMain: { mode: 'inherit' },
+          },
         },
       },
     })
@@ -973,6 +976,7 @@ describe('Phase 9-2a scalar settings groups', () => {
       modelRoleProfiles: {
         ...Object.fromEntries(MODEL_ROLES.map((role) => [role, { mode: 'legacy' }])),
         memory: { mode: 'profile', profileId: 'profile-a' },
+        scriptMain: { mode: 'inherit' },
       },
     })
   })
@@ -1068,6 +1072,18 @@ describe('Phase 9-2a scalar settings groups', () => {
           modelRoleProfiles: { memory: { mode: 'profile', profileId: 'profile-a', providerOptions: {} } },
         },
         error: 'modelRoleProfiles.memory.providerOptions is not supported',
+      },
+      {
+        patch: {
+          modelRoleProfiles: { chatMain: { mode: 'inherit' } },
+        },
+        error: 'modelRoleProfiles.chatMain.mode does not support inherit',
+      },
+      {
+        patch: {
+          modelRoleProfiles: { memory: { mode: 'inherit', profileId: 'profile-a' } },
+        },
+        error: 'modelRoleProfiles.memory.profileId is only supported for profile mode',
       },
     ]
 

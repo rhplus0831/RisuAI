@@ -276,9 +276,15 @@ describe('model profile records', () => {
       },
       { id: 'identity-only', name: 'Identity Only' },
     ])
-    expect(readModelRoleProfiles({ memory: { mode: 'profile', profileId: ' profile-a ' } })).toEqual({
+    expect(
+      readModelRoleProfiles({
+        memory: { mode: 'profile', profileId: ' profile-a ' },
+        scriptMain: { mode: 'inherit' },
+      }),
+    ).toEqual({
       ...Object.fromEntries(MODEL_ROLES.map((role) => [role, { mode: 'legacy' }])),
       memory: { mode: 'profile', profileId: 'profile-a' },
+      scriptMain: { mode: 'inherit' },
     })
   })
 
@@ -469,8 +475,14 @@ describe('model profile records', () => {
     expect(() => readModelRoleProfiles({ memory: { mode: 'legacy', profileId: 'profile-a' } })).toThrow(
       'modelRoleProfiles.memory.profileId is only supported for profile mode',
     )
-    expect(() => readModelRoleProfiles({ memory: { mode: 'inherit' } })).toThrow(
-      'modelRoleProfiles.memory.mode must be legacy or profile',
+    expect(() => readModelRoleProfiles({ memory: { mode: 'inherit', profileId: 'profile-a' } })).toThrow(
+      'modelRoleProfiles.memory.profileId is only supported for profile mode',
+    )
+    expect(() => readModelRoleProfiles({ chatMain: { mode: 'inherit' } })).toThrow(
+      'modelRoleProfiles.chatMain.mode does not support inherit',
+    )
+    expect(() => readModelRoleProfiles({ chatAux: { mode: 'inherit' } })).toThrow(
+      'modelRoleProfiles.chatAux.mode does not support inherit',
     )
   })
 
@@ -480,13 +492,20 @@ describe('model profile records', () => {
         memory: { mode: 'profile', profileId: ' profile-a ' },
         emotion: { mode: 'profile', profileId: '   ' },
         translate: { mode: 'legacy' },
+        otherAx: { mode: 'inherit' },
+        scriptAux: { mode: 'inherit', profileId: 'profile-a' },
+        chatMain: { mode: 'inherit' },
       }),
     ).toEqual({
       ...Object.fromEntries(MODEL_ROLES.map((role) => [role, { mode: 'legacy' }])),
       memory: { mode: 'profile', profileId: 'profile-a' },
+      otherAx: { mode: 'inherit' },
     })
     expect(normalizeModelRoleProfiles(null)).toEqual(
       Object.fromEntries(MODEL_ROLES.map((role) => [role, { mode: 'legacy' }])),
     )
+    expect(normalizeModelRoleProfiles({ memory: { mode: 'inherit', providerOptions: {} } }).memory).toEqual({
+      mode: 'legacy',
+    })
   })
 })

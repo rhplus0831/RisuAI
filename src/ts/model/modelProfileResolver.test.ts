@@ -97,6 +97,148 @@ describe('resolveModelProfile legacy role compatibility', () => {
     expect(profile.fallbacks).toEqual([])
   })
 
+  it('inherits durable profile bindings from fixed source roles while resolving as the child role', () => {
+    const database = db({
+      aiModel: 'flat-main-model',
+      subModel: 'flat-aux-model',
+      fallbackModels: { memory: ['legacy-memory-fallback'] } as unknown as Database['fallbackModels'],
+      modelProfiles: [
+        {
+          id: 'durable-aux',
+          name: 'Durable Aux',
+          modelId: 'openrouter',
+          providerOptions: {
+            requestModel: 'aux/wire',
+            apiKey: 'aux-profile-key',
+            openrouter: {
+              fallback: false,
+              middleOut: true,
+              provider: { order: ['ProfileProvider'], only: ['profile-only'], ignore: ['profile-ignore'] },
+            },
+          },
+          runtimeOptions: {
+            maxResponse: 256,
+            useStreaming: false,
+            modelTools: ['tool-a'],
+          },
+          fallbacks: [{ mode: 'profile', profileId: 'durable-fallback' }],
+        },
+        {
+          id: 'durable-main',
+          name: 'Durable Main',
+          modelId: 'gpt-5',
+          providerOptions: {
+            requestModel: 'main/wire',
+            apiKey: 'main-profile-key',
+          },
+        },
+        { id: 'durable-fallback', name: 'Durable Fallback', modelId: 'gpt-5-mini' },
+      ],
+      modelRoleProfiles: {
+        chatAux: { mode: 'profile', profileId: 'durable-aux' },
+        memory: { mode: 'inherit' },
+        chatMain: { mode: 'profile', profileId: 'durable-main' },
+        scriptMain: { mode: 'inherit' },
+      },
+    } as Partial<Database>)
+
+    const memory = resolveModelProfile({ database, role: 'memory' })
+
+    expect(memory.role).toBe('memory')
+    expect(memory.legacyMode).toBe('memory')
+    expect(memory.modelId).toBe('openrouter')
+    expect(memory.profileId).toBe('durable-aux')
+    expect(memory.requestModel).toBe('aux/wire')
+    expect(memory.providerOptions).toMatchObject({
+      apiKey: 'aux-profile-key',
+      openrouter: {
+        fallback: false,
+        middleOut: true,
+        provider: { order: ['ProfileProvider'], only: ['profile-only'], ignore: ['profile-ignore'] },
+      },
+    })
+    expect(memory.runtimeOptions).toMatchObject({
+      maxResponse: 256,
+      useStreaming: false,
+      modelTools: ['tool-a'],
+    })
+    expect(memory.fallbacks).toEqual([{ kind: 'profile-id', profileId: 'durable-fallback' }])
+    expect(memory.source).toMatchObject({
+      kind: 'durable-profile',
+      role: 'memory',
+      legacyMode: 'memory',
+      field: 'modelRoleProfiles.memory -> modelRoleProfiles.chatAux',
+      profileId: 'durable-aux',
+      profileName: 'Durable Aux',
+      bypassesRoleResolution: false,
+    })
+
+    const scriptMain = resolveModelProfile({ database, role: 'scriptMain' })
+
+    expect(scriptMain.role).toBe('scriptMain')
+    expect(scriptMain.legacyMode).toBe('scriptMain')
+    expect(scriptMain.modelId).toBe('gpt-5')
+    expect(scriptMain.profileId).toBe('durable-main')
+    expect(scriptMain.requestModel).toBe('main/wire')
+    expect(scriptMain.providerOptions.apiKey).toBe('main-profile-key')
+    expect(scriptMain.source).toMatchObject({
+      role: 'scriptMain',
+      legacyMode: 'scriptMain',
+      field: 'modelRoleProfiles.scriptMain -> modelRoleProfiles.chatMain',
+      profileId: 'durable-main',
+    })
+  })
+
+  it('falls back to child legacy resolution when inherited source bindings are absent or incomplete', () => {
+    const lookupModelInfo = (_database: Database, id: string) => modelInfo({ id, name: id, internalID: id })
+
+    for (const database of [
+      db({
+        subModel: 'flat-aux-model',
+        modelRoles: { memory: 'memory-role-model' } as Database['modelRoles'],
+        modelRoleProfiles: {
+          chatAux: { mode: 'legacy' },
+          memory: { mode: 'inherit' },
+        },
+      } as Partial<Database>),
+      db({
+        subModel: 'flat-aux-model',
+        modelRoles: { memory: 'memory-role-model' } as Database['modelRoles'],
+        modelRoleProfiles: {
+          chatAux: { mode: 'profile', profileId: 'missing-profile' },
+          memory: { mode: 'inherit' },
+        },
+      } as Partial<Database>),
+      db({
+        subModel: 'flat-aux-model',
+        modelRoles: { memory: 'memory-role-model' } as Database['modelRoles'],
+        modelProfiles: [{ id: 'durable-aux', name: 'Durable Aux' }],
+        modelRoleProfiles: {
+          chatAux: { mode: 'profile', profileId: 'durable-aux' },
+          memory: { mode: 'inherit' },
+        },
+      } as Partial<Database>),
+      db({
+        subModel: 'flat-aux-model',
+        modelRoles: { memory: 'memory-role-model' } as Database['modelRoles'],
+        modelRoleProfiles: {
+          chatAux: { mode: 'inherit' },
+          memory: { mode: 'inherit' },
+        },
+      } as Partial<Database>),
+    ]) {
+      const profile = resolveModelProfile({ database, role: 'memory', lookupModelInfo })
+
+      expect(profile.modelId).toBe('memory-role-model')
+      expect(profile.profileId).toBe('legacy:modelRoles.memory:memory-role-model')
+      expect(profile.source).toMatchObject({
+        kind: 'legacy-modelRoles',
+        role: 'memory',
+        field: 'modelRoles.memory',
+      })
+    }
+  })
+
   it('emits durable profile-id fallback refs from a selected durable profile', () => {
     const database = db({
       fallbackModels: { model: ['legacy-fallback'] } as unknown as Database['fallbackModels'],

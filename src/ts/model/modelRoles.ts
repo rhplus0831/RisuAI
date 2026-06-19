@@ -85,6 +85,15 @@ const LEGACY_MODEL_MODE_BY_ROLE: Record<ModelRole, LegacyModelMode> = {
   scriptAux: 'scriptAux',
 }
 
+const MODEL_ROLE_PROFILE_INHERIT_SOURCE: Partial<Record<ModelRole, ModelRole>> = {
+  memory: 'chatAux',
+  emotion: 'chatAux',
+  translate: 'chatAux',
+  otherAx: 'chatAux',
+  scriptMain: 'chatMain',
+  scriptAux: 'chatAux',
+}
+
 export function createDefaultModelRoleOverrides(): NormalizedModelRoleOverrides {
   return Object.fromEntries(MODEL_ROLES.map((role) => [role, ''])) as NormalizedModelRoleOverrides
 }
@@ -105,6 +114,10 @@ export function normalizeModelRole(role: unknown): ModelRole | null {
 
 export function modelRoleToLegacyModelMode(role: ModelRole): LegacyModelMode {
   return LEGACY_MODEL_MODE_BY_ROLE[role]
+}
+
+export function modelRoleProfileInheritSource(role: ModelRole): ModelRole | null {
+  return MODEL_ROLE_PROFILE_INHERIT_SOURCE[role] ?? null
 }
 
 export function normalizeModelRoleOverrides(value: unknown): NormalizedModelRoleOverrides {
