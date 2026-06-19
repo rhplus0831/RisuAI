@@ -373,7 +373,9 @@ export async function requestOpenAI(arg: RequestDataArgumentExtended): Promise<r
   let openrouterRequestModel = hasResolvedProfile ? (requestModel ?? '') : db.openrouterRequestModel
 
   if (aiModel === 'openrouter' && openrouterRequestModel === 'risu/free') {
-    openrouterRequestModel = await getFreeOpenRouterModels()
+    openrouterRequestModel = await (hasResolvedProfile
+      ? getFreeOpenRouterModels({ apiKey: providerOptions?.apiKey })
+      : getFreeOpenRouterModels())
   }
 
   if (arg.modelInfo.flags.includes(LLMFlags.DeveloperRole)) {
@@ -1168,6 +1170,7 @@ export async function requestOpenAIResponseAPI(arg: RequestDataArgumentExtended)
   const aiModel = arg.aiModel
   const resolvedProfile = arg.resolvedProfile
   const providerOptions = resolvedProfile?.providerOptions
+  const runtimeOptions = resolvedProfile?.runtimeOptions
   const hasResolvedProfile = resolvedProfile !== undefined
   const maxTokens = arg.maxTokens
 
@@ -1341,7 +1344,8 @@ export async function requestOpenAIResponseAPI(arg: RequestDataArgumentExtended)
     }
   }
 
-  if (db.modelTools.includes('search')) {
+  const modelTools = hasResolvedProfile ? (runtimeOptions?.modelTools ?? []) : db.modelTools
+  if (modelTools.includes('search')) {
     body.tools.push('web_search_preview')
   }
 

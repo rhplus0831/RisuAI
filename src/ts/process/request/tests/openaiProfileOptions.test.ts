@@ -358,6 +358,71 @@ describe('requestOpenAI profile provider options', () => {
     })
   })
 
+  it('uses the OpenRouter profile key for risu/free catalog lookup and sends the returned free model', async () => {
+    const profile = resolveModelProfile({
+      database: db({
+        aiModel: 'openrouter',
+        openrouterKey: 'sk-profile-openrouter-free',
+        openrouterRequestModel: 'risu/free',
+      } as Partial<Database>),
+    })
+    setDatabase(
+      db({
+        aiModel: 'openrouter',
+        openrouterKey: 'sk-flat-openrouter-free',
+        openrouterRequestModel: 'risu/free',
+      } as Partial<Database>),
+    )
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      const authorization = (init?.headers as Record<string, string> | undefined)?.Authorization
+      const data =
+        authorization === 'Bearer sk-profile-openrouter-free'
+          ? [
+              {
+                id: 'profile/free-small',
+                name: 'Profile Free Small',
+                context_length: 2048,
+                description: 'Profile small free model',
+                pricing: { prompt: '0', completion: '0' },
+              },
+              {
+                id: 'profile/free-large',
+                name: 'Profile Free Large',
+                context_length: 32768,
+                description: 'Profile large free model',
+                pricing: { prompt: '0', completion: '0' },
+              },
+            ]
+          : [
+              {
+                id: 'flat/free-large',
+                name: 'Flat Free Large',
+                context_length: 65536,
+                description: 'Flat free model',
+                pricing: { prompt: '0', completion: '0' },
+              },
+            ]
+
+      return new Response(JSON.stringify({ data }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const payload = await preview(makeArg(profile))
+
+    expect(fetchMock).toHaveBeenCalledWith('https://openrouter.ai/api/v1/models', {
+      headers: {
+        Authorization: 'Bearer sk-profile-openrouter-free',
+        'Content-Type': 'application/json',
+      },
+    })
+    expect(payload.headers.Authorization).toBe('Bearer sk-profile-openrouter-free')
+    expect(payload.body.model).toBe('profile/free-large')
+    expect(payload.body.model).not.toBe('flat/free-large')
+  })
+
   it('uses NanoGPT profile key, request model, provider header, and subscription endpoint over flat conflicts', async () => {
     const profile = resolveModelProfile({
       database: db({

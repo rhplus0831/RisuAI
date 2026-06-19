@@ -1,8 +1,68 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+const globalFetchMock = vi.hoisted(() => vi.fn())
+
+vi.mock('src/ts/globalApi.svelte', () => {
+  class AppendableBuffer {
+    buffer = new Uint8Array()
+    append = vi.fn()
+  }
+
+  return {
+    AppendableBuffer,
+    addFetchLog: vi.fn(),
+    downloadFile: vi.fn(),
+    fetchNative: vi.fn(),
+    forageStorage: {
+      getItem: vi.fn(),
+      keys: vi.fn(async () => []),
+      removeItem: vi.fn(),
+      setItem: vi.fn(),
+    },
+    globalFetch: globalFetchMock,
+    openURL: vi.fn(),
+    readImage: vi.fn(),
+    saveAsset: vi.fn(),
+    saveAssets: vi.fn(async () => []),
+    textifyReadableStream: vi.fn(),
+  }
+})
+
+vi.mock('../../../globalApi.svelte', () => {
+  class AppendableBuffer {
+    buffer = new Uint8Array()
+    append = vi.fn()
+  }
+
+  return {
+    AppendableBuffer,
+    addFetchLog: vi.fn(),
+    downloadFile: vi.fn(),
+    fetchNative: vi.fn(),
+    forageStorage: {
+      getItem: vi.fn(),
+      keys: vi.fn(async () => []),
+      removeItem: vi.fn(),
+      setItem: vi.fn(),
+    },
+    globalFetch: globalFetchMock,
+    openURL: vi.fn(),
+    readImage: vi.fn(),
+    saveAsset: vi.fn(),
+    saveAssets: vi.fn(async () => []),
+    textifyReadableStream: vi.fn(),
+  }
+})
+
 vi.mock('../../modules', async (importActual) => {
   const actual = await importActual<typeof import('../../modules')>()
-  return { ...actual, moduleUpdate: () => {}, getModuleToggles: () => '', getModuleTriggers: () => [] }
+  return {
+    ...actual,
+    getModuleMcps: () => [],
+    getModuleToggles: () => '',
+    getModuleTriggers: () => [],
+    moduleUpdate: () => {},
+  }
 })
 
 import { resolveModelProfile, type ResolvedModelProfile } from '../../../model/modelProfileResolver'
@@ -95,6 +155,7 @@ beforeEach(() => {
   vi.stubGlobal('safeStructuredClone', (value: unknown) =>
     value === undefined ? undefined : JSON.parse(JSON.stringify(value)),
   )
+  globalFetchMock.mockReset()
   vi.spyOn(console, 'log').mockImplementation(() => {})
 })
 
@@ -186,6 +247,47 @@ describe('requestOpenAIResponseAPI profile provider options', () => {
     expect(payload.headers.Authorization).toBe('Bearer sk-profile-ollama')
     expect(payload.body.model).toBe('profile-ollama-responses')
     expect(payload.body.store).toBeUndefined()
+  })
+
+  it('uses profile runtime modelTools for hosted search over conflicting flat DB tools', async () => {
+    const profile = resolveModelProfile({
+      database: db({
+        aiModel: 'gpt-5-response-api',
+        openAIKey: 'sk-profile-openai',
+        modelTools: ['search'],
+      } as Partial<Database>),
+    })
+    setDatabase(
+      db({
+        aiModel: 'gpt-5-response-api',
+        openAIKey: 'sk-flat-openai',
+        modelTools: [],
+      } as Partial<Database>),
+    )
+    globalFetchMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        output: [
+          {
+            type: 'message',
+            content: [{ type: 'output_text', text: 'searched with profile tools' }],
+          },
+        ],
+      },
+      headers: {},
+      status: 200,
+    })
+
+    const result = await requestOpenAIResponseAPI(makeArg(profile, { previewBody: false }))
+
+    expect(result).toEqual({ type: 'success', result: 'searched with profile tools' })
+    expect(globalFetchMock).toHaveBeenCalledTimes(1)
+    const [, requestOptions] = globalFetchMock.mock.calls[0] as [
+      string,
+      { body: Record<string, any>; headers: Record<string, string> },
+    ]
+    expect(requestOptions.headers.Authorization).toBe('Bearer sk-profile-openai')
+    expect(requestOptions.body.tools).toEqual(['web_search_preview'])
   })
 })
 
