@@ -15,6 +15,11 @@ import {
 } from '../../../../src/ts/presetSplit.js'
 import { MASKED_PROVIDER_SECRET } from '../providerSecrets.js'
 import { EntityNotFoundError, ValidationError } from '../repository.js'
+import {
+  normalizeLegacyFallbackModels,
+  normalizeLegacySeperateModels,
+  normalizeModelRoleOverrides,
+} from '../../../../src/ts/model/modelRoles.js'
 
 type JsonRecord = Record<string, unknown>
 type PresetKind = 'modelPreset' | 'promptPreset'
@@ -286,12 +291,14 @@ function createSplitPresetRecord(
     throw new ValidationError(`${label}.name must be a string`)
   }
   preset.name ??= fallbackName
+  normalizeSplitPresetRoleAdjacentFields(preset)
   validateJsonValue(label, preset)
   return preset
 }
 
 function readSplitPresetPatch(input: JsonRecord, label: PresetKind): JsonRecord {
   const patch = cloneJson(input) as JsonRecord
+  normalizeSplitPresetRoleAdjacentFields(patch)
   validateJsonValue(label, patch)
   return patch
 }
@@ -341,9 +348,42 @@ function validateFullSplitPresetIdList<T extends { id: string }>(
 function applySplitPreset(database: JsonRecord, preset: JsonRecord, keys: ReadonlyArray<[string, string]>): void {
   for (const [presetKey, databaseKey] of keys) {
     if (Object.prototype.hasOwnProperty.call(preset, presetKey)) {
-      database[databaseKey] = cloneJson(preset[presetKey])
+      database[databaseKey] = normalizeSplitPresetAppliedValue(databaseKey, cloneJson(preset[presetKey]))
     }
   }
+}
+
+function normalizeSplitPresetRoleAdjacentFields(record: JsonRecord): void {
+  for (const key of ['modelRoles', 'seperateModels', 'fallbackModels', 'seperateParameters']) {
+    if (Object.prototype.hasOwnProperty.call(record, key)) {
+      record[key] = normalizeSplitPresetAppliedValue(key, record[key])
+    }
+  }
+}
+
+function normalizeSplitPresetAppliedValue(databaseKey: string, value: unknown): unknown {
+  if (databaseKey === 'modelRoles') return normalizeModelRoleOverrides(value)
+  if (databaseKey === 'seperateModels') return normalizeLegacySeperateModels(value)
+  if (databaseKey === 'fallbackModels') return normalizeLegacyFallbackModels(value)
+  if (databaseKey === 'seperateParameters') return normalizeSeperateParametersValue(value)
+  return value
+}
+
+function normalizeSeperateParametersValue(value: unknown): Record<string, unknown> {
+  const source = isRecord(value) ? value : {}
+  return {
+    memory: recordOrBlank(source.memory),
+    emotion: recordOrBlank(source.emotion),
+    translate: recordOrBlank(source.translate),
+    otherAx: recordOrBlank(source.otherAx),
+    scriptMain: recordOrBlank(source.scriptMain),
+    scriptAux: recordOrBlank(source.scriptAux),
+    overrides: recordOrBlank(source.overrides),
+  }
+}
+
+function recordOrBlank(value: unknown): Record<string, unknown> {
+  return isRecord(value) ? value : {}
 }
 
 function normalizeSelectedIndex(count: number, selected: unknown): number {
