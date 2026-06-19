@@ -1,6 +1,6 @@
 # Phase 3: Generation Dispatch
 
-Status: in progress; Phase 3a server-owned profile selection/capability/request-model slice complete; Phase 3b Fastify OpenAI-compatible provider-options slice complete; Phase 3c Fastify Anthropic/Mistral/Cohere provider-options slice complete; Phase 3d Fastify native Ollama provider-options slice complete; Phase 3e Fastify Kobold provider-options slice complete; Phase 3f Fastify Horde provider-options slice complete; Phase 3g Fastify OobaLegacy provider-options slice complete; Phase 3h Fastify Bedrock provider-options slice complete; Phase 3i Fastify Gemini/Vertex provider-options slice complete; browser request helper role/static/fallback resolver adoption slice complete; browser-local Gemini/Vertex provider-options slice complete; browser-local OpenAI-compatible chat-completions provider-options slice complete; browser-local OpenAI Responses and legacy instruct provider-options slice complete; browser-local Anthropic-family provider-options slice complete; browser-local Mistral provider-options slice complete; browser-local Kobold provider-options slice complete; browser-local native Ollama provider-options slice complete.
+Status: complete; Phase 3a server-owned profile selection/capability/request-model slice complete; Phase 3b Fastify OpenAI-compatible provider-options slice complete; Phase 3c Fastify Anthropic/Mistral/Cohere provider-options slice complete; Phase 3d Fastify native Ollama provider-options slice complete; Phase 3e Fastify Kobold provider-options slice complete; Phase 3f Fastify Horde provider-options slice complete; Phase 3g Fastify OobaLegacy provider-options slice complete; Phase 3h Fastify Bedrock provider-options slice complete; Phase 3i Fastify Gemini/Vertex provider-options slice complete; browser request helper role/static/fallback resolver adoption slice complete; browser-local Gemini/Vertex provider-options slice complete; browser-local OpenAI-compatible chat-completions provider-options slice complete; browser-local OpenAI Responses and legacy instruct provider-options slice complete; browser-local Anthropic-family provider-options slice complete; browser-local Mistral provider-options slice complete; browser-local Kobold provider-options slice complete; browser-local native Ollama provider-options slice complete; browser-local Cohere/Horde/Ooba legacy provider-options slice complete.
 
 Goal: move browser and Fastify generation dispatch from ad hoc flat database
 reads to the resolved profile runtime object.
@@ -367,22 +367,50 @@ reads to the resolved profile runtime object.
   values beat intentionally conflicting flat database values and that missing
   profile local URLs do not call fetch.
 
-## Remaining Phase 3 Work
+## Implemented Browser-Local Cohere/Horde/Ooba Legacy Provider-Options Slice
 
-- Broaden provider parity for retained browser-local request helpers before
-  marking full Phase 3 complete. The browser role/static/fallback selection path
-  now uses the resolver, browser-local Gemini/Vertex provider options are
-  adopted, and browser-local OpenAI-compatible chat-completions provider options
-  are adopted, and browser-local OpenAI Responses/legacy instruct provider
-  options are adopted, and browser-local Anthropic-family provider options are
-  adopted, browser-local Mistral provider options are adopted, and browser-local
-  Kobold provider options are adopted, and browser-local native Ollama provider
-  options are adopted. Other local helper branches such as Cohere, Horde, and
-  Ooba legacy still read many provider-specific options directly from flat
-  database fields.
-- Verify any future browser-local provider option adoption without changing the
-  server-intent payload shape or editing Fastify generation routes unless a real
-  regression is exposed.
+- Browser-local `requestCohere()` now uses
+  `resolvedProfile.providerOptions.requestModel` for profile-backed Cohere body
+  `model`, profile Cohere URLs that prefer exact `endpoint` values and
+  otherwise append `/chat` to profile `baseUrl`, and profile API keys,
+  extra headers, and additional params. No-resolved-profile callers keep the
+  legacy `arg.customURL`/`arg.key`/`db.cohereAPIKey` behavior.
+- Profile-backed Cohere safety-mode derivation now uses the resolved profile
+  model id, preserving the newer Command R omission for
+  `cohere-command-r-03-2024` and `cohere-command-r-plus-04-2024` even if the
+  active flat DB later changes to a conflicting Cohere model.
+- Browser-local `requestHorde()` now uses
+  `resolvedProfile.providerOptions.requestModel` and profile API keys for
+  Stable Horde submission. Missing or blank profile keys preserve the anonymous
+  `0000000000` key behavior instead of falling back to a conflicting flat
+  `db.hordeConfig.apiKey`.
+- Profile-backed Horde request parameters now prefer profile/runtime max
+  context, `arg.maxTokens` or runtime max response, profile/runtime
+  temperature, top-k, and top-p where those fields match the existing Stable
+  Horde request body. Stable Horde submit/status URLs and polling behavior are
+  unchanged.
+- Browser-local `requestOobaLegacy()` now requires a profile base URL when a
+  resolved profile is present, normalizes that base to `/api/v1/generate`, and
+  derives `/api/v1/stream` from the same profile base. Missing profile URLs fail
+  with `options["ooba-legacy"].baseUrl is required` before fetch/WebSocket
+  instead of falling back to flat Ooba URLs.
+- Profile-backed OobaLegacy requests now use profile API keys for `X-API-KEY`
+  and omit that header for missing or blank profile keys instead of falling back
+  to `db.mancerHeader`. Profile runtime max response, max context/truncation,
+  and temperature values win over conflicting flat fields where they match the
+  existing body.
+- Focused coverage drives these paths through `requestChatDataMain()` with
+  browser-local dispatch, proving profile Cohere reverse-proxy options,
+  newer Command R safety behavior, OobaLegacy URL/key/runtime behavior, required
+  OobaLegacy URL failure, blank OobaLegacy key omission, Horde request
+  model/API-key behavior, and Horde anonymous-key behavior.
+
+## Phase 3 Closeout
+
+- Phase 3 dispatch parity is complete for the browser and Fastify generation
+  paths covered by this plan. Do not start Phase 4 from this slice.
+- Future work should move to Phase 4 UI and command adapter planning while
+  keeping existing flat-field writes until that adapter behavior is proven.
 
 ## Anchors
 
@@ -429,11 +457,11 @@ pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 ```
 
-Latest browser-local native Ollama provider-options run:
+Latest browser-local Cohere/Horde/Ooba legacy provider-options run:
 
 ```bash
-pnpm exec prettier --write --ignore-path /dev/null src/ts/process/request/request.ts src/ts/process/request/tests/ollamaProfileOptions.test.ts docs/plan/model-config-profiles/status.md docs/plan/model-config-profiles/latest-verification.md docs/plan/model-config-profiles/SOLVE-NOTE.md docs/plan/model-config-profiles/phases/phase-3-generation-dispatch.md
-pnpm exec vitest run src/ts/process/request/tests/ollamaProfileOptions.test.ts src/ts/model/modelProfileResolver.test.ts src/ts/process/request/tests/modelRoleRouting.test.ts src/ts/process/request/tests/serverCompletion.test.ts src/ts/process/request/tests/providerCapability.test.ts
+pnpm exec prettier --write --ignore-path /dev/null src/ts/process/request/request.ts src/ts/process/request/tests/cohereHordeOobaLegacyProfileOptions.test.ts docs/plan/model-config-profiles/status.md docs/plan/model-config-profiles/latest-verification.md docs/plan/model-config-profiles/SOLVE-NOTE.md docs/plan/model-config-profiles/phases/phase-3-generation-dispatch.md
+pnpm exec vitest run src/ts/process/request/tests/cohereHordeOobaLegacyProfileOptions.test.ts src/ts/model/modelProfileResolver.test.ts src/ts/process/request/tests/modelRoleRouting.test.ts src/ts/process/request/tests/serverCompletion.test.ts src/ts/process/request/tests/providerCapability.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 git diff --check
@@ -442,7 +470,7 @@ git diff --check
 Results:
 
 - Prettier: passed.
-- Focused browser request/provider tests: passed, 5 files / 85 tests.
+- Focused browser request/provider tests: passed, 5 files / 89 tests.
 - Client-lib TypeScript: passed.
 - Server strict TypeScript: passed.
 - Whitespace check: passed.

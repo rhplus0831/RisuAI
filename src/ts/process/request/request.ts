@@ -21,7 +21,7 @@ import { requestClaude } from './anthropic'
 import { requestGoogleCloudVertex } from './google'
 import { requestOpenAI, requestOpenAILegacyInstruct, requestOpenAIResponseAPI } from './openAI/requests'
 import { resolveServerCompletionRoute, requestServerCompletion } from './serverCompletion'
-import { applyParameters, type ModelModeExtended } from './shared'
+import { applyAdditionalParameters, applyParameters, type ModelModeExtended } from './shared'
 
 export type ToolCall = {
   name: string
@@ -132,6 +132,60 @@ function normalizeFetchHeaders(headers?: HeadersInit): { [key: string]: string }
     return Object.fromEntries(headers)
   }
   return headers as { [key: string]: string }
+}
+
+function appendOperationPath(baseUrl: string, suffix: string): string {
+  const trimmed = baseUrl.replace(/\/+$/, '')
+  if (!trimmed || trimmed.endsWith(suffix)) {
+    return trimmed
+  }
+
+  try {
+    const url = new URL(trimmed)
+    const pathSegments = url.pathname.split('/').filter(Boolean)
+    const suffixSegments = suffix.split('/').filter(Boolean)
+    const hasSuffix =
+      pathSegments.length >= suffixSegments.length &&
+      suffixSegments.every(
+        (segment, index) => pathSegments[pathSegments.length - suffixSegments.length + index] === segment,
+      )
+
+    if (hasSuffix) {
+      return url.toString()
+    }
+
+    url.pathname = `${url.pathname.replace(/\/+$/, '')}/${suffixSegments.join('/')}`
+    return url.toString()
+  } catch {
+    return `${trimmed}${suffix}`
+  }
+}
+
+function normalizeOobaLegacyUrl(baseUrl: string, suffix: '/api/v1/generate' | '/api/v1/stream'): string {
+  const trimmed = baseUrl.trim().replace(/\/+$/, '')
+  if (!trimmed) {
+    return trimmed
+  }
+
+  try {
+    const url = new URL(trimmed)
+    const apiIndex = url.pathname.indexOf('/api')
+    const basePath = apiIndex >= 0 ? url.pathname.slice(0, apiIndex) : url.pathname.replace(/\/+$/, '')
+    url.pathname = `${basePath}${suffix}`
+    return url.toString()
+  } catch {
+    return trimmed.includes('/api') ? trimmed.replace(/\/api.*/, suffix) : `${trimmed}${suffix}`
+  }
+}
+
+function toWebSocketUrl(url: string): string {
+  if (url.startsWith('https://')) {
+    return `wss://${url.slice('https://'.length)}`
+  }
+  if (url.startsWith('http://')) {
+    return `ws://${url.slice('http://'.length)}`
+  }
+  return url
 }
 
 async function ollamaCloudFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
@@ -683,11 +737,28 @@ async function requestOobaLegacy(arg: RequestDataArgumentExtended): Promise<requ
   const db = getDatabase()
   const aiModel = arg.aiModel
   const maxTokens = arg.maxTokens
+  const providerOptions = arg.resolvedProfile?.providerOptions
+  const runtimeOptions = arg.resolvedProfile?.runtimeOptions
+  const hasResolvedProfile = arg.resolvedProfile !== undefined
   const currentChar = getCurrentCharacter()
   const useStreaming = arg.useStreaming
   const abortSignal = arg.abortSignal
-  let streamUrl = db.textgenWebUIStreamURL.replace(/\/api.*/, '/api/v1/stream')
-  let blockingUrl = db.textgenWebUIBlockingURL.replace(/\/api.*/, '/api/v1/generate')
+  const profileBaseUrl = providerOptions?.baseUrl?.trim() ?? ''
+
+  if (hasResolvedProfile && !profileBaseUrl) {
+    return {
+      type: 'fail',
+      result: 'options["ooba-legacy"].baseUrl is required',
+      noRetry: true,
+    }
+  }
+
+  let streamUrl = hasResolvedProfile
+    ? toWebSocketUrl(normalizeOobaLegacyUrl(profileBaseUrl, '/api/v1/stream'))
+    : db.textgenWebUIStreamURL.replace(/\/api.*/, '/api/v1/stream')
+  let blockingUrl = hasResolvedProfile
+    ? normalizeOobaLegacyUrl(profileBaseUrl, '/api/v1/generate')
+    : db.textgenWebUIBlockingURL.replace(/\/api.*/, '/api/v1/generate')
   let bodyTemplate: { [key: string]: any } = {}
   const prompt = applyChatTemplate(formated)
   let stopStrings = getStopStrings(false)
@@ -698,9 +769,11 @@ async function requestOobaLegacy(arg: RequestDataArgumentExtended): Promise<requ
   }
 
   bodyTemplate = {
-    max_new_tokens: db.maxResponse,
+    max_new_tokens: hasResolvedProfile ? (runtimeOptions?.maxResponse ?? db.maxResponse) : db.maxResponse,
     do_sample: db.ooba.do_sample,
-    temperature: db.temperature / 100,
+    temperature: hasResolvedProfile
+      ? (arg.temperature ?? runtimeOptions?.temperature ?? db.temperature / 100)
+      : db.temperature / 100,
     top_p: db.ooba.top_p,
     typical_p: db.ooba.typical_p,
     repetition_penalty: db.ooba.repetition_penalty,
@@ -712,7 +785,7 @@ async function requestOobaLegacy(arg: RequestDataArgumentExtended): Promise<requ
     penalty_alpha: db.ooba.penalty_alpha,
     length_penalty: db.ooba.length_penalty,
     early_stopping: false,
-    truncation_length: maxTokens,
+    truncation_length: hasResolvedProfile ? (runtimeOptions?.maxContext ?? maxTokens) : maxTokens,
     ban_eos_token: db.ooba.ban_eos_token,
     stopping_strings: stopStrings,
     seed: -1,
@@ -721,8 +794,14 @@ async function requestOobaLegacy(arg: RequestDataArgumentExtended): Promise<requ
     prompt: prompt,
   }
 
-  const headers =
-    aiModel === 'textgen_webui'
+  const profileApiKey = providerOptions?.apiKey?.trim()
+  const headers = hasResolvedProfile
+    ? profileApiKey
+      ? {
+          'X-API-KEY': profileApiKey,
+        }
+      : {}
+    : aiModel === 'textgen_webui'
       ? {}
       : {
           'X-API-KEY': db.mancerHeader,
@@ -1279,6 +1358,12 @@ async function requestCohere(arg: RequestDataArgumentExtended): Promise<requestD
   const formated = arg.formated
   const db = getDatabase()
   const aiModel = arg.aiModel
+  const providerOptions = arg.resolvedProfile?.providerOptions
+  const hasResolvedProfile = arg.resolvedProfile !== undefined
+  const requestURL = hasResolvedProfile
+    ? (providerOptions?.endpoint ??
+      (providerOptions?.baseUrl ? appendOperationPath(providerOptions.baseUrl, '/chat') : undefined))
+    : undefined
 
   let lastChatPrompt = ''
   let preamble = ''
@@ -1349,7 +1434,12 @@ async function requestCohere(arg: RequestDataArgumentExtended): Promise<requestD
     },
   )
 
-  if (aiModel !== 'cohere-command-r-03-2024' && aiModel !== 'cohere-command-r-plus-04-2024') {
+  if (hasResolvedProfile) {
+    body.model = providerOptions?.requestModel ?? arg.resolvedProfile.requestModel
+  }
+
+  const safetyModelId = hasResolvedProfile ? arg.resolvedProfile.modelId : aiModel
+  if (safetyModelId !== 'cohere-command-r-03-2024' && safetyModelId !== 'cohere-command-r-plus-04-2024') {
     body.safety_mode = 'NONE'
   }
 
@@ -1363,26 +1453,32 @@ async function requestCohere(arg: RequestDataArgumentExtended): Promise<requestD
 
   console.log(body)
 
+  const headers: Record<string, string> = {
+    Authorization: 'Bearer ' + (hasResolvedProfile ? (providerOptions?.apiKey ?? '') : (arg.key ?? db.cohereAPIKey)),
+    'Content-Type': 'application/json',
+  }
+
+  if (hasResolvedProfile) {
+    Object.assign(headers, providerOptions?.extraHeaders ?? {})
+    body = applyAdditionalParameters(body, headers, providerOptions?.additionalParams ?? [])
+  }
+
+  const url = requestURL ?? arg.customURL ?? 'https://api.cohere.com/v1/chat'
+
   if (arg.previewBody) {
     return {
       type: 'success',
       result: JSON.stringify({
-        url: arg.customURL ?? 'https://api.cohere.com/v1/chat',
+        url: url,
         body: body,
-        headers: {
-          Authorization: 'Bearer ' + (arg.key ?? db.cohereAPIKey),
-          'Content-Type': 'application/json',
-        },
+        headers: headers,
       }),
     }
   }
 
-  const res = await globalFetch(arg.customURL ?? 'https://api.cohere.com/v1/chat', {
+  const res = await globalFetch(url, {
     method: 'POST',
-    headers: {
-      Authorization: 'Bearer ' + (arg.key ?? db.cohereAPIKey),
-      'Content-Type': 'application/json',
-    },
+    headers: headers,
     body: body,
     abortSignal: arg.abortSignal,
   })
@@ -1412,6 +1508,9 @@ async function requestHorde(arg: RequestDataArgumentExtended): Promise<requestDa
   const formated = arg.formated
   const db = getDatabase()
   const aiModel = arg.aiModel
+  const providerOptions = arg.resolvedProfile?.providerOptions
+  const runtimeOptions = arg.resolvedProfile?.runtimeOptions
+  const hasResolvedProfile = arg.resolvedProfile !== undefined
   const currentChar = getCurrentCharacter()
   const abortSignal = arg.abortSignal
 
@@ -1426,18 +1525,30 @@ async function requestHorde(arg: RequestDataArgumentExtended): Promise<requestDa
 
   const prompt = applyChatTemplate(formated)
 
-  const realModel = aiModel.split(':::')[1]
+  const realModel = hasResolvedProfile ? (providerOptions?.requestModel ?? '') : aiModel.split(':::')[1]
+  const maxContext = hasResolvedProfile ? (runtimeOptions?.maxContext ?? db.maxContext) : db.maxContext
+  const maxLength = hasResolvedProfile
+    ? (arg.maxTokens ?? runtimeOptions?.maxResponse ?? db.maxResponse)
+    : db.maxResponse
+  const temperature = hasResolvedProfile
+    ? (arg.temperature ??
+      runtimeOptions?.temperature ??
+      (runtimeOptions?.rawTemperature === undefined ? undefined : runtimeOptions.rawTemperature / 100) ??
+      db.temperature / 100)
+    : db.temperature / 100
+  const topK = hasResolvedProfile ? (runtimeOptions?.topK ?? db.top_k) : db.top_k
+  const topP = hasResolvedProfile ? (runtimeOptions?.topP ?? db.top_p) : db.top_p
 
   const argument = {
     prompt: prompt,
     params: {
       n: 1,
-      max_context_length: db.maxContext + 100,
-      max_length: db.maxResponse,
+      max_context_length: maxContext + 100,
+      max_length: maxLength,
       singleline: false,
-      temperature: db.temperature / 100,
-      top_k: db.top_k,
-      top_p: db.top_p,
+      temperature: temperature,
+      top_k: topK,
+      top_p: topP,
     },
     trusted_workers: false,
     workerslow_workers: true,
@@ -1451,7 +1562,12 @@ async function requestHorde(arg: RequestDataArgumentExtended): Promise<requestDa
   }
 
   let apiKey = '0000000000'
-  if (db.hordeConfig.apiKey.length > 2) {
+  const profileApiKey = providerOptions?.apiKey?.trim()
+  if (hasResolvedProfile) {
+    if (profileApiKey && profileApiKey.length > 2) {
+      apiKey = profileApiKey
+    }
+  } else if (db.hordeConfig.apiKey.length > 2) {
     apiKey = db.hordeConfig.apiKey
   }
 

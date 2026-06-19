@@ -34,7 +34,7 @@ pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 
 ## Current State
 
-The plan is open. Phase 0, Phase 1, Phase 2, and Phase 3a-3i are complete. The
+The plan is open. Phase 0, Phase 1, Phase 2, and Phase 3 are complete. The
 browser request helper role/static/fallback resolver adoption slice is complete:
 `requestChatData()` now builds fallback attempts from
 `resolveModelProfile(...).fallbacks`, `requestChatDataMain()` resolves the role
@@ -86,14 +86,21 @@ local/cloud Ollama preview and request paths when a resolved profile is present.
 Callers without a resolved profile keep the legacy flat fallbacks, and
 profile-backed local Ollama calls with no URL fail with
 `options.ollama.baseUrl is required` before SDK/fetch instead of falling back to
-flat `db.ollamaURL`.
+flat `db.ollamaURL`. The browser-local Cohere/Horde/Ooba legacy
+provider-options slice is also complete: `requestCohere()` now uses
+profile-owned request models, URLs, API keys, extra headers, additional params,
+and profile model-id safety-mode decisions when a resolved profile is present;
+`requestHorde()` now uses profile request models/API keys and profile/runtime
+request body values while preserving anonymous `0000000000` keys for missing or
+blank profile keys; and `requestOobaLegacy()` now uses profile base URLs/API
+keys/runtime fields, requires a profile base URL before fetch/WebSocket,
+normalizes profile URLs to `/api/v1/generate` and `/api/v1/stream`, and omits
+`X-API-KEY` for missing or blank profile keys instead of falling back to flat
+`db.mancerHeader`.
 
 The current codebase still uses flat database fields as the compatibility
-source of truth. Durable reusable profile storage has not been introduced, and
-the remaining retained browser-local provider helper gaps are Cohere, Horde, and
-Ooba legacy; those branches still reconstruct many provider credentials, URLs,
-request models, and additional params from flat fields. The main coupled
-surfaces remain:
+source of truth. Durable reusable profile storage has not been introduced. The
+main coupled surfaces remain:
 
 - `src/ts/model/modelRoles.ts` resolves roles to model ids only.
 - `src/lib/Setting/Pages/Model/ModelRoleList.svelte` edits role model ids,
@@ -101,20 +108,16 @@ surfaces remain:
 - `src/lib/Setting/Pages/BotSettings.svelte` owns the global provider/options
   panels and derives their visibility from all effective role models.
 - `src/ts/process/request/request.ts`, `server/fastify/src/routes/generation.ts`,
-  and `server/fastify/src/prompt/chatDispatch.ts` reconstruct provider runtime
-  configuration from flat database fields.
+  and `server/fastify/src/prompt/chatDispatch.ts` remain important dispatch
+  anchors for regression checks while later phases adapt writes and persistence.
 - `src/ts/presetSplit.ts`, `server/fastify/src/routes/commands.ts`, and
   `server/fastify/src/providerSecrets.ts` need explicit profile support before
   nested settings can be persisted safely.
 
 ## Next Manager Loop
 
-1. Continue Phase 3 only on the remaining browser-local provider helper parity
-   gaps after Gemini/Vertex, OpenAI-compatible chat completions, OpenAI
-   Responses/legacy instruct, Anthropic-family, Mistral, Kobold, and native
-   Ollama. The remaining named gaps are Cohere, Horde, and Ooba legacy:
-   adopt resolver-derived provider options where equivalent without changing
-   server-intent payload shape or reshaping provider secrets/storage.
+1. Treat Phase 3 generation dispatch as complete unless verification exposes a
+   regression. Do not start Phase 4 from this worker slice.
 2. Keep UI writes targeting existing flat fields until the Phase 4 adapter work.
 3. Do not add durable profile storage until Phase 6. Earlier phases should use
    a derived profile object built from the existing settings shape.
@@ -132,6 +135,6 @@ surfaces remain:
 ## Completed Proof
 
 Latest proof is recorded in [`latest-verification.md`](latest-verification.md).
-It covers this browser-local native Ollama provider-options slice, focused browser
-request/provider tests, Prettier, client-lib TypeScript, strict server
-TypeScript, and `git diff --check`.
+It covers this browser-local Cohere/Horde/Ooba legacy provider-options slice,
+focused browser request/provider tests, Prettier, client-lib TypeScript, strict
+server TypeScript, and `git diff --check`.

@@ -7,21 +7,24 @@ workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: browser-local native Ollama provider-options
-  parity for `requestOllama()`. Profile-backed native Ollama calls now use
-  `resolvedProfile.providerOptions.ollama` plus common provider options for
-  request format, request model, local base URL, cloud API key, model source,
-  and thinking mode. Callers without a resolved profile keep the legacy flat
-  fallbacks, while profile-backed local native Ollama calls with missing or
-  blank URLs fail with `options.ollama.baseUrl is required` before SDK/fetch
-  instead of falling back to flat `db.ollamaURL`.
+- Runtime/code change under test: browser-local Cohere/Horde/Ooba legacy
+  provider-options parity for `requestCohere()`, `requestHorde()`, and
+  `requestOobaLegacy()`. Profile-backed Cohere calls now use profile request
+  models, URLs, API keys, extra headers, additional params, and profile model-id
+  safety-mode decisions. Profile-backed Horde calls now use profile request
+  models/API keys and profile/runtime request body values while preserving
+  anonymous `0000000000` keys for missing or blank profile keys. Profile-backed
+  OobaLegacy calls now use profile base URLs/API keys/runtime fields, require a
+  profile base URL before network work, normalize profile URLs to
+  `/api/v1/generate` and `/api/v1/stream`, and omit `X-API-KEY` for blank
+  profile keys.
 - Latest passing commands:
-  - `pnpm exec prettier --write --ignore-path /dev/null src/ts/process/request/request.ts src/ts/process/request/tests/ollamaProfileOptions.test.ts docs/plan/model-config-profiles/status.md docs/plan/model-config-profiles/latest-verification.md docs/plan/model-config-profiles/SOLVE-NOTE.md docs/plan/model-config-profiles/phases/phase-3-generation-dispatch.md`
+  - `pnpm exec prettier --write --ignore-path /dev/null src/ts/process/request/request.ts src/ts/process/request/tests/cohereHordeOobaLegacyProfileOptions.test.ts docs/plan/model-config-profiles/status.md docs/plan/model-config-profiles/latest-verification.md docs/plan/model-config-profiles/SOLVE-NOTE.md docs/plan/model-config-profiles/phases/phase-3-generation-dispatch.md`
     - Result: passed. The command exited 0 and formatted the focused request
       file, new test file, and model-config profile docs.
-  - `pnpm exec vitest run src/ts/process/request/tests/ollamaProfileOptions.test.ts src/ts/model/modelProfileResolver.test.ts src/ts/process/request/tests/modelRoleRouting.test.ts src/ts/process/request/tests/serverCompletion.test.ts src/ts/process/request/tests/providerCapability.test.ts`
+  - `pnpm exec vitest run src/ts/process/request/tests/cohereHordeOobaLegacyProfileOptions.test.ts src/ts/model/modelProfileResolver.test.ts src/ts/process/request/tests/modelRoleRouting.test.ts src/ts/process/request/tests/serverCompletion.test.ts src/ts/process/request/tests/providerCapability.test.ts`
     - Result: passed. The requested focused browser request/provider tests
-      passed; 5 test files passed and 85 tests passed.
+      passed; 5 test files passed and 89 tests passed.
   - `pnpm exec tsc -p tsconfig.client-lib.json`
     - Result: passed. The command exited 0 and rebuilt client declaration
       output for server project references.
@@ -30,22 +33,15 @@ workstream.
   - `git diff --check`
     - Result: passed. The command exited 0 with no whitespace errors.
 - Failed/intermediate commands during this slice:
-  - None. The initial focused Ollama test command passed with 1 test file and 3
-    tests passed before the broader requested validation set was run.
-- Residual gaps: Full Phase 3 is not complete. Browser role/static/fallback
-  selection now uses the resolver, Fastify provider-option slices are complete
-  through Gemini/Vertex, browser-local Gemini/Vertex provider-options parity is
-  complete, and browser-local `requestOpenAI()` chat-completions
-  OpenAI-compatible provider-options parity is complete, and browser-local
-  OpenAI Responses/legacy instruct provider-options parity is complete, and
-  browser-local Anthropic-family provider-options parity is complete, and
-  browser-local Mistral provider-options parity is complete, and browser-local
-  Kobold provider-options parity is complete, and browser-local native Ollama
-  provider-options parity is complete. Other retained browser-local provider
-  helpers, including Cohere, Horde, and Ooba legacy paths, still reconstruct
-  provider-specific keys, base URLs, request-model options, and additional params
-  from flat database fields. Durable profile storage, UI writes, provider secret
-  reshaping, and embedding behavior remain deferred to later phases.
+  - `pnpm exec vitest run src/ts/process/request/tests/cohereHordeOobaLegacyProfileOptions.test.ts`
+    initially failed because the first Horde test still expected a mocked
+    `sleep()` call while the helper used the real timer. The test was switched
+    to fake timers around the Stable Horde polling loop.
+  - The focused Cohere/Horde/Ooba legacy test command then passed with 1 test
+    file and 7 tests passed before the broader requested validation set was run.
+- Residual gaps: Phase 3 generation dispatch is complete. Durable profile
+  storage, UI writes, provider secret reshaping, and embedding/auxiliary
+  behavior remain deferred to later phases.
 
 ## Remaining Proof
 
