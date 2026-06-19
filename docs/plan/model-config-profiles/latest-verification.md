@@ -1,52 +1,47 @@
 # Latest Verification
 
-Date: 2026-06-19
+Date: 2026-06-20
 
 This file records the latest validation proof for the model config profiles
 workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: browser-local Cohere/Horde/Ooba legacy
-  provider-options parity for `requestCohere()`, `requestHorde()`, and
-  `requestOobaLegacy()`. Profile-backed Cohere calls now use profile request
-  models, URLs, API keys, extra headers, additional params, and profile model-id
-  safety-mode decisions. Profile-backed Horde calls now use profile request
-  models/API keys and profile/runtime request body values while preserving
-  anonymous `0000000000` keys for missing or blank profile keys. Profile-backed
-  OobaLegacy calls now use profile base URLs/API keys/runtime fields, require a
-  profile base URL before network work, normalize profile URLs to
-  `/api/v1/generate` and `/api/v1/stream`, and omit `X-API-KEY` for blank
-  profile keys.
-- Latest passing commands:
-  - `pnpm exec prettier --write --ignore-path /dev/null src/ts/process/request/request.ts src/ts/process/request/tests/cohereHordeOobaLegacyProfileOptions.test.ts docs/plan/model-config-profiles/status.md docs/plan/model-config-profiles/latest-verification.md docs/plan/model-config-profiles/SOLVE-NOTE.md docs/plan/model-config-profiles/phases/phase-3-generation-dispatch.md`
-    - Result: passed. The command exited 0 and formatted the focused request
-      file, new test file, and model-config profile docs.
-  - `pnpm exec vitest run src/ts/process/request/tests/cohereHordeOobaLegacyProfileOptions.test.ts src/ts/model/modelProfileResolver.test.ts src/ts/process/request/tests/modelRoleRouting.test.ts src/ts/process/request/tests/serverCompletion.test.ts src/ts/process/request/tests/providerCapability.test.ts`
-    - Result: passed. The requested focused browser request/provider tests
-      passed; 5 test files passed and 89 tests passed.
-  - `pnpm exec tsc -p tsconfig.client-lib.json`
-    - Result: passed. The command exited 0 and rebuilt client declaration
-      output for server project references.
-  - `pnpm exec tsc -p server/fastify/tsconfig.json --noEmit`
-    - Result: passed. The command exited 0 under strict server TypeScript.
+- Runtime/code change under test: Phase 4 UI and command adapter closeout.
+  Phase 4 landed in these slices:
+  - `963585eb4` `feat: show resolved model profile summaries`:
+    `ModelRoleList.svelte` displays resolved profile summaries from flat drafts
+    plus `DBState`, with language/test coverage.
+  - `38d5f4cb2` `refactor: resolve profile-aware model settings visibility`:
+    `BotSettings.svelte` provider visibility consumes
+    `modelProfileUiState` resolved profiles. Browser OpenRouter smoke passed.
+  - `e1ff07bc2` `fix: normalize split preset role fields`: split-preset
+    create/patch/apply command paths normalize `modelRoles`, `seperateModels`,
+    `fallbackModels`, and `seperateParameters`.
+  - `ebbdb687f` `refactor: extract model role editor drawer`: the role editor
+    drawer is extracted to `ModelRoleEditor`. Touched ModelRole files had no
+    changed-file diagnostics.
+- Latest passing commands for this docs/bookkeeping closeout:
+  - `pnpm exec prettier --write --ignore-path /dev/null docs/plan/model-config-profiles/status.md docs/plan/model-config-profiles/latest-verification.md docs/plan/model-config-profiles/SOLVE-NOTE.md docs/plan/model-config-profiles/phases/phase-4-ui-and-command-adapter.md`
+    - Result: passed. The command exited 0 and formatted the Phase 4
+      bookkeeping docs.
   - `git diff --check`
     - Result: passed. The command exited 0 with no whitespace errors.
-- Failed/intermediate commands during this slice:
-  - `pnpm exec vitest run src/ts/process/request/tests/cohereHordeOobaLegacyProfileOptions.test.ts`
-    initially failed because the first Horde test still expected a mocked
-    `sleep()` call while the helper used the real timer. The test was switched
-    to fake timers around the Stable Horde polling loop.
-  - The focused Cohere/Horde/Ooba legacy test command then passed with 1 test
-    file and 7 tests passed before the broader requested validation set was run.
-- Residual gaps: Phase 3 generation dispatch is complete. Durable profile
-  storage, UI writes, provider secret reshaping, and embedding/auxiliary
-  behavior remain deferred to later phases.
+- Known caveat: repo-wide `pnpm check` is still known to fail with
+  pre-existing diagnostics. Do not record `pnpm check` as passing for Phase 4.
+  The Phase 4 drawer extraction slice specifically recorded no diagnostics in
+  the last-touched ModelRole files.
+- Residual gaps: Phase 4 UI/command adapter is complete. Provider option panels
+  remain global/flat for compatibility, and further move/mirror work is
+  deferred until safer Phase 5/6 boundaries. Durable `modelProfiles` and
+  `profileBindings` storage has not been added and remains deferred until
+  Phase 6.
 
 ## Remaining Proof
 
-Future implementation phases should run the smallest focused tests listed in
-each phase file, then update this file with exact commands and results.
+Phase 5 should add focused tests around auxiliary/custom/secrets surfaces as
+those slices land, then update this file with exact commands and results. Do
+not add persisted profile-storage proof before Phase 6.
 
 Final closeout should include:
 
@@ -61,5 +56,6 @@ pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 ```
 
-Add any new focused resolver, profile-storage, preset, secret masking, and UI
-commands as the implementation phases create or modify those fixtures.
+Add any new focused resolver, custom-model, auxiliary, secret masking, profile
+storage, preset, and UI commands as the implementation phases create or modify
+those fixtures.

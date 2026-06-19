@@ -1,6 +1,6 @@
 # Model Config Profiles Solve Note
 
-Date: 2026-06-19
+Date: 2026-06-20
 
 ## Manager Instruction
 
@@ -34,95 +34,58 @@ pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 
 ## Current State
 
-The plan is open. Phase 0, Phase 1, Phase 2, and Phase 3 are complete. The
-browser request helper role/static/fallback resolver adoption slice is complete:
-`requestChatData()` now builds fallback attempts from
-`resolveModelProfile(...).fallbacks`, `requestChatDataMain()` resolves the role
-or static model once through the profile resolver, and server-intent completion
-payloads remain thin. The browser-local Gemini/Vertex provider-options slice is
-also complete: `requestChatDataMain()` attaches the resolved profile to the
-retained local request argument, and `requestGoogleCloudVertex()` uses
-profile-owned Google AI Studio API keys, Vertex project/region/service-account
-credentials, and profile request models when a resolved profile is present.
-Conflicting flat Google/Vertex fields and cached flat `vertexAccessToken` no
-longer override profile-backed browser-local Gemini/Vertex requests. The
-browser-local OpenAI-compatible chat-completions provider-options slice is also
-complete: `requestOpenAI()` now uses profile-owned request models, base URLs,
-API keys, extra headers, OpenRouter route/transforms/provider filters, NanoGPT
-provider/subscription options, reverse-proxy Ooba options, `xcustom:::`
-additional params, key-identifier credentials/base URLs, `ollama-cloud`
-OpenAI-compatible options, and runtime `genTime` when a resolved profile is
-present. No-resolved-profile callers keep the legacy flat fallbacks. The
-browser-local OpenAI Responses and legacy instruct provider-options slice is
-also complete: `requestOpenAIResponseAPI()` now uses profile-owned request
-models, base URLs or exact endpoints, API keys, extra headers, and
-reverse-proxy/`xcustom:::` additional params when a resolved profile is present,
-while `requestOpenAILegacyInstruct()` now exposes a preview payload and uses
-profile-owned request models, base URLs or exact endpoints, API keys, extra
-headers, and profile additional params for reverse-proxy/`xcustom:::` callers.
-No-resolved-profile Responses and legacy instruct callers keep their legacy
-flat fallbacks, including the hard-coded legacy instruct model. The
-browser-local Anthropic-family provider-options slice is also complete:
-`requestClaude()` now uses profile-owned request models, base URLs or exact
-endpoints, API keys, extra headers, and profile additional params when a
-resolved profile is present. Covered profile-backed variants include
-reverse-proxy Anthropic, Bedrock Claude, and `ollama-cloud` Anthropic; callers
-without a resolved profile keep their legacy URL/key/model/additional-parameter
-fallbacks. The browser-local Mistral provider-options slice is also complete:
-the `requestOpenAI()` Mistral branch now uses profile-owned request models,
-chat-completions URL resolution, API keys, extra headers, and profile
-additional params for profile-backed native, reverse-proxy, and `xcustom:::`
-Mistral requests. Callers without a resolved profile keep legacy
-`arg.customURL`, `arg.key ?? db.mistralKey`, body model `aiModel`, and no
-additional-parameter fallback. The browser-local Kobold provider-options slice
-is also complete: `requestKobold()` now uses profile-owned `baseUrl` and
-runtime `maxContext` when a resolved profile is present, keeps the legacy flat
-`db.koboldURL` fallback only for no-resolved-profile callers, and fails with
-`options.kobold.baseUrl is required` before fetch when a resolved profile has no
-Kobold URL. The browser-local native Ollama provider-options slice is also
-complete: `requestOllama()` now uses profile-owned request format, request
-model, local base URL, cloud API key, model source, and thinking mode for native
-local/cloud Ollama preview and request paths when a resolved profile is present.
-Callers without a resolved profile keep the legacy flat fallbacks, and
-profile-backed local Ollama calls with no URL fail with
-`options.ollama.baseUrl is required` before SDK/fetch instead of falling back to
-flat `db.ollamaURL`. The browser-local Cohere/Horde/Ooba legacy
-provider-options slice is also complete: `requestCohere()` now uses
-profile-owned request models, URLs, API keys, extra headers, additional params,
-and profile model-id safety-mode decisions when a resolved profile is present;
-`requestHorde()` now uses profile request models/API keys and profile/runtime
-request body values while preserving anonymous `0000000000` keys for missing or
-blank profile keys; and `requestOobaLegacy()` now uses profile base URLs/API
-keys/runtime fields, requires a profile base URL before fetch/WebSocket,
-normalizes profile URLs to `/api/v1/generate` and `/api/v1/stream`, and omits
-`X-API-KEY` for missing or blank profile keys instead of falling back to flat
-`db.mancerHeader`.
+The plan is open. Phase 0, Phase 1, Phase 2, Phase 3, and Phase 4 are complete.
+Existing flat database fields remain the compatibility source of truth.
+`src/ts/model/modelProfileResolver.ts` derives read-only profiles from the flat
+settings shape, `src/ts/presetSplit.ts` centralizes effective model/prompt
+preset composition, and Phase 3 dispatch paths consume resolved profiles across
+Fastify and retained browser-local provider helpers.
 
-The current codebase still uses flat database fields as the compatibility
-source of truth. Durable reusable profile storage has not been introduced. The
-main coupled surfaces remain:
+Phase 4 adapted the settings-facing layer while preserving flat writes:
 
-- `src/ts/model/modelRoles.ts` resolves roles to model ids only.
-- `src/lib/Setting/Pages/Model/ModelRoleList.svelte` edits role model ids,
-  fallbacks, and separate parameters.
-- `src/lib/Setting/Pages/BotSettings.svelte` owns the global provider/options
-  panels and derives their visibility from all effective role models.
-- `src/ts/process/request/request.ts`, `server/fastify/src/routes/generation.ts`,
-  and `server/fastify/src/prompt/chatDispatch.ts` remain important dispatch
-  anchors for regression checks while later phases adapt writes and persistence.
-- `src/ts/presetSplit.ts`, `server/fastify/src/routes/commands.ts`, and
-  `server/fastify/src/providerSecrets.ts` need explicit profile support before
-  nested settings can be persisted safely.
+- `ModelRoleList.svelte` shows resolved profile summaries from flat drafts plus
+  `DBState`.
+- `BotSettings.svelte` provider visibility consumes `modelProfileUiState`
+  resolved profiles instead of only asking whether any effective role model uses
+  a provider.
+- Split-preset command create/patch/apply paths normalize `modelRoles`,
+  `seperateModels`, `fallbackModels`, and `seperateParameters`.
+- The model role editor drawer is extracted to `ModelRoleEditor`.
+
+Provider option panels intentionally remain global/flat for compatibility.
+Moving or mirroring those panels further is deferred until safer Phase 5/6
+boundaries. No durable `modelProfiles` or `profileBindings` storage exists, and
+none should be added before Phase 6.
+
+The next implementation phase is Phase 5:
+[`phases/phase-5-custom-secrets-and-auxiliary.md`](phases/phase-5-custom-secrets-and-auxiliary.md).
+Phase 5 should harden auxiliary/custom/secrets surfaces against the derived
+profile contract while preserving flat compatibility fields.
+
+The main coupled surfaces for Phase 5 are:
+
+- `src/lib/Setting/Pages/Advanced/CustomModelsSettings.svelte` and related
+  custom-model catalog flows.
+- `server/fastify/src/providerSecrets.ts` and masking/secret projection paths.
+- Memory summary and embedding model helpers, including
+  `server/fastify/src/memorySummaryModel.ts` and
+  `server/fastify/src/memoryEmbeddingModel.ts`.
+- Translation, scripts, MCP, playground, fallback, and tool request helpers
+  that still read flat provider/model fields directly.
+- `src/ts/presetSplit.ts`, `server/fastify/src/commands/splitPresets.ts`, and
+  `server/fastify/src/routes/commands.ts` for command compatibility checks.
 
 ## Next Manager Loop
 
-1. Treat Phase 3 generation dispatch as complete unless verification exposes a
-   regression. Do not start Phase 4 from this worker slice.
-2. Keep UI writes targeting existing flat fields until the Phase 4 adapter work.
-3. Do not add durable profile storage until Phase 6. Earlier phases should use
-   a derived profile object built from the existing settings shape.
-4. Record each slice's proof in `latest-verification.md` before updating this
-   note again.
+1. Start with Phase 5 auxiliary/custom/secrets surface exploration. Verify
+   which surfaces still bypass derived profiles or secret-masking compatibility.
+2. Keep all writes on existing flat fields unless a Phase 5 slice explicitly
+   adds an adapter around them. Do not add persisted profile records, profile
+   bindings, database schema, migrations, or durable storage before Phase 6.
+3. Keep provider panels global/flat until a targeted Phase 5/6 slice proves a
+   safe move or mirror path.
+4. Use focused tests for each hardened surface, then update
+   `latest-verification.md`, `status.md`, and this note with exact proof.
 
 ## Known Corrections
 
@@ -135,6 +98,5 @@ main coupled surfaces remain:
 ## Completed Proof
 
 Latest proof is recorded in [`latest-verification.md`](latest-verification.md).
-It covers this browser-local Cohere/Horde/Ooba legacy provider-options slice,
-focused browser request/provider tests, Prettier, client-lib TypeScript, strict
-server TypeScript, and `git diff --check`.
+It covers Phase 4 UI/command adapter slices, browser OpenRouter smoke, the
+known repo-wide `pnpm check` caveat, docs Prettier, and `git diff --check`.
