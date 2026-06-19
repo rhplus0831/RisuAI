@@ -7,6 +7,10 @@ describe('database defaults', () => {
     const database = createInitialDatabase()
 
     expect(Object.keys(database.modelRoles as Record<string, unknown>)).toEqual([...MODEL_ROLES])
+    expect(database.modelProfiles).toEqual([])
+    expect(database.modelRoleProfiles).toEqual(
+      Object.fromEntries(MODEL_ROLES.map((role) => [role, { mode: 'legacy' }])),
+    )
     expect(database.seperateModels).toMatchObject({
       memory: '',
       emotion: '',
@@ -59,6 +63,15 @@ describe('database defaults', () => {
           scriptAux: { top_p: 0.7 },
           overrides: { 'model-a': { top_k: 20 } },
         },
+        modelProfiles: [
+          { id: 'profile-a', name: 'Primary', providerOptions: { apiKey: 'must-drop' } },
+          { id: 'profile-a', name: 'Duplicate' },
+          { id: 'profile-b' },
+        ],
+        modelRoleProfiles: {
+          memory: { mode: 'profile', profileId: 'profile-a' },
+          translate: { mode: 'legacy' },
+        },
       },
       { providerDefaults: false },
     )
@@ -85,5 +98,12 @@ describe('database defaults', () => {
       scriptAux: { top_p: 0.7 },
       overrides: { 'model-a': { top_k: 20 } },
     })
+    expect(database.modelProfiles).toEqual([
+      { id: 'profile-a', name: 'Primary' },
+      { id: 'profile-b', name: 'profile-b' },
+    ])
+    expect(database.modelRoleProfiles).toEqual(
+      Object.fromEntries(MODEL_ROLES.map((role) => [role, { mode: 'legacy' }])),
+    )
   })
 })

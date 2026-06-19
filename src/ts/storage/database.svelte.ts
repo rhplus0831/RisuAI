@@ -20,6 +20,12 @@ import {
   type LegacySeperateModelMap,
   type NormalizedModelRoleOverrides,
 } from '../model/modelRoles'
+import {
+  normalizeModelProfiles,
+  normalizeModelRoleProfiles,
+  type ModelProfileRecord,
+  type ModelRoleProfileMap,
+} from '../model/modelProfileRecords'
 import { type HypaV3Settings, type HypaV3Preset, createHypaV3Preset } from '../process/memory/hypav3'
 import { normalizeTranslatorPresetState, type TranslatorPreset } from '../translator/presets'
 import { safeStructuredClone } from '../polyfill'
@@ -121,6 +127,11 @@ export function promptTemplateIdsNeedNormalization(data: Pick<Database, 'promptT
 function normalizeModelRoleSettings(data: Partial<Pick<Database, 'modelRoles' | 'seperateModels'>>): void {
   data.modelRoles = normalizeModelRoleOverrides(data.modelRoles)
   data.seperateModels = normalizeLegacySeperateModels(data.seperateModels)
+}
+
+function normalizeModelProfileSettings(data: Partial<Pick<Database, 'modelProfiles' | 'modelRoleProfiles'>>): void {
+  data.modelProfiles = normalizeModelProfiles(data.modelProfiles)
+  data.modelRoleProfiles = normalizeModelRoleProfiles(data.modelRoleProfiles)
 }
 
 function normalizeSeperateParameters(data: Partial<Pick<Database, 'seperateParameters'>>): void {
@@ -846,6 +857,7 @@ export function setDatabase(data: Database) {
     data.subModel = 'gemini-3-flash-preview'
   }
   normalizeModelRoleSettings(data)
+  normalizeModelProfileSettings(data)
   if (checkNullish(data.waifuWidth)) {
     data.waifuWidth = 100
   }
@@ -1344,6 +1356,7 @@ export function setDatabase(data: Database) {
   data.doNotChangeSeperateModels ??= false
   data.seperateModelsForAxModels ??= false
   normalizeModelRoleSettings(data)
+  normalizeModelProfileSettings(data)
   data.modelTools ??= []
   data.enableScrollToActiveChar ??= true
 
@@ -1728,6 +1741,8 @@ export interface Database {
   formatingOrder: FormatingOrderItem[]
   aiModel: string
   modelRoles: NormalizedModelRoleOverrides
+  modelProfiles: ModelProfileRecord[]
+  modelRoleProfiles: ModelRoleProfileMap
   jailbreakToggle: boolean
   loreBookDepth: number
   loreBookToken: number

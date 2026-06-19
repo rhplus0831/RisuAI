@@ -23,6 +23,13 @@ import {
   normalizeModelRoleOverrides,
 } from '../../../../src/ts/model/modelRoles.js'
 import {
+  ModelProfileRecordValidationError,
+  normalizeModelProfiles,
+  normalizeModelRoleProfiles,
+  readModelProfiles,
+  readModelRoleProfiles,
+} from '../../../../src/ts/model/modelProfileRecords.js'
+import {
   createPromptItemRecord,
   ensurePromptTemplateCollection,
   readPromptItemId,
@@ -629,6 +636,8 @@ const SETTINGS_GROUP_KEYS: Record<SettingsGroup, readonly string[]> = {
     'aiModel',
     'subModel',
     'modelRoles',
+    'modelProfiles',
+    'modelRoleProfiles',
     'textgenWebUIStreamURL',
     'textgenWebUIBlockingURL',
     'hordeConfig',
@@ -1243,6 +1252,7 @@ const ARRAY_SETTING_KEYS = new Set([
   'customSidebarItems',
   'globalscript',
   'hotkeys',
+  'modelProfiles',
   'modelTools',
   'hypaV3Presets',
 ])
@@ -1265,6 +1275,7 @@ const OBJECT_SETTING_KEYS = new Set([
   'hypaCustomSettings',
   'hypaV3Settings',
   'fallbackModels',
+  'modelRoleProfiles',
   'modelRoles',
   'NAIImgConfig',
   'NAIsettings',
@@ -6273,10 +6284,39 @@ function validateSettingValue(key: string, value: unknown): void {
 }
 
 function sanitizeSettingValue(key: string, value: unknown): unknown {
+  if (key === 'modelProfiles') {
+    return readSettingsModelProfiles(value)
+  }
+  if (key === 'modelRoleProfiles') {
+    return readSettingsModelRoleProfiles(value)
+  }
   if (key === 'customSidebarItems') {
     return readCustomSidebarItems(value)
   }
   return value
+}
+
+function readSettingsModelProfiles(value: unknown): unknown {
+  try {
+    return readModelProfiles(value)
+  } catch (error) {
+    throwModelProfileValidationError(error)
+  }
+}
+
+function readSettingsModelRoleProfiles(value: unknown): unknown {
+  try {
+    return readModelRoleProfiles(value)
+  } catch (error) {
+    throwModelProfileValidationError(error)
+  }
+}
+
+function throwModelProfileValidationError(error: unknown): never {
+  if (error instanceof ModelProfileRecordValidationError) {
+    throw new ValidationError(error.message)
+  }
+  throw error
 }
 
 const CUSTOM_SIDEBAR_ITEM_TYPES = new Set(['model', 'databaseKey', 'loadout', 'setting'])
@@ -6376,6 +6416,8 @@ function applySettingsPatch(database: unknown, patch: Record<string, unknown>): 
 
 function normalizeSettingsPatchValue(key: string, value: unknown): unknown {
   if (key === 'modelRoles') return normalizeModelRoleOverrides(value)
+  if (key === 'modelProfiles') return normalizeModelProfiles(value)
+  if (key === 'modelRoleProfiles') return normalizeModelRoleProfiles(value)
   if (key === 'seperateModels') return normalizeLegacySeperateModels(value)
   if (key === 'fallbackModels') return normalizeLegacyFallbackModels(value)
   if (key === 'seperateParameters') return normalizeSeperateParametersValue(value)

@@ -11,6 +11,11 @@ import {
   normalizeLegacySeperateModels,
   normalizeModelRoleOverrides,
 } from '../../../src/ts/model/modelRoles.js'
+import {
+  createDefaultModelRoleProfiles,
+  normalizeModelProfiles,
+  normalizeModelRoleProfiles,
+} from '../../../src/ts/model/modelProfileRecords.js'
 
 type JsonRecord = Record<string, unknown>
 
@@ -219,6 +224,9 @@ export function normalizeDatabaseDefaults(
   }
   setDefault(database, 'modelRoles', createDefaultModelRoleOverrides())
   normalizeModelRoleSettings(database)
+  setDefault(database, 'modelProfiles', [])
+  setDefault(database, 'modelRoleProfiles', createDefaultModelRoleProfiles())
+  normalizeModelProfileSettings(database)
   setDefault(database, 'waifuWidth', 100)
   setDefault(database, 'waifuWidth2', 100)
   setDefault(database, 'emotionPrompt', '')
@@ -420,6 +428,7 @@ export function normalizeDatabaseDefaults(
   setDefault(database, 'seperateModelsForAxModels', false)
   setDefault(database, 'seperateModels', normalizeLegacySeperateModels(undefined))
   normalizeModelRoleSettings(database)
+  normalizeModelProfileSettings(database)
   setDefault(database, 'modelTools', [])
   setDefault(database, 'enableScrollToActiveChar', true)
   normalizeHotkeys(database)
@@ -733,6 +742,11 @@ function normalizePresetOpenrouterProviders(database: JsonRecord): void {
 function normalizeModelRoleSettings(database: JsonRecord): void {
   database.modelRoles = normalizeModelRoleOverrides(database.modelRoles)
   database.seperateModels = normalizeLegacySeperateModels(database.seperateModels)
+}
+
+function normalizeModelProfileSettings(database: JsonRecord): void {
+  database.modelProfiles = normalizeModelProfiles(database.modelProfiles)
+  database.modelRoleProfiles = normalizeModelRoleProfiles(database.modelRoleProfiles)
 }
 
 function normalizeSeperateParameters(database: JsonRecord): void {

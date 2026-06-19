@@ -180,6 +180,8 @@ export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
   menuSideBar: 'display',
   min_p: 'runtime',
   mistralKey: 'providers',
+  modelProfiles: 'providers',
+  modelRoleProfiles: 'providers',
   modelRoles: 'providers',
   modelTools: 'providers',
   moduleIntergration: 'advanced',

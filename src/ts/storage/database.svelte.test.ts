@@ -30,6 +30,7 @@ import {
   reorderPromptPresets,
   reorderPresets,
   saveCurrentPreset,
+  setDatabase,
   setServerProjectionWriteGuardEnabled,
   selectModelPreset,
   selectPromptPreset,
@@ -41,6 +42,7 @@ import {
   type ModelPreset,
   type PromptPreset,
 } from './database.svelte'
+import { MODEL_ROLES } from '../model/modelRoles'
 
 interface CapturedFetch {
   url: string
@@ -229,6 +231,33 @@ describe('promptTemplateIdsNeedNormalization', () => {
 
     expect(promptTemplateIdsNeedNormalization(data)).toBe(false)
     expect(new Set(data.promptTemplate?.map((item) => item.id)).size).toBe(data.promptTemplate?.length ?? 0)
+  })
+})
+
+describe('model profile database normalization', () => {
+  it('normalizes durable profile scaffold fields through setDatabase', () => {
+    seedPresetDatabase({
+      modelProfiles: [
+        { id: ' profile-a ', name: ' Primary ', providerOptions: { apiKey: 'must-drop' } } as any,
+        { id: 'profile-a', name: 'Duplicate' },
+        { id: 'profile-b' } as any,
+      ],
+      modelRoleProfiles: {
+        memory: { mode: 'profile', profileId: 'profile-a' },
+        translate: { mode: 'legacy' },
+      } as any,
+    })
+    const data = clonePlain(DBState.db)
+
+    setDatabase(data)
+
+    expect(DBState.db.modelProfiles).toEqual([
+      { id: 'profile-a', name: 'Primary' },
+      { id: 'profile-b', name: 'profile-b' },
+    ])
+    expect(DBState.db.modelRoleProfiles).toEqual(
+      Object.fromEntries(MODEL_ROLES.map((role) => [role, { mode: 'legacy' }])),
+    )
   })
 })
 

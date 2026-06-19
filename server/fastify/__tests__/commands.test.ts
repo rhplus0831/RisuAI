@@ -12,6 +12,7 @@ import { getSchemaState, openDatabase } from '../src/db.js'
 import { MASKED_PROVIDER_SECRET } from '../src/providerSecrets.js'
 import { loadPersisted, writePersistedWithMessages, insertAssetMetadataBatch } from '../src/repository.js'
 import { activeMessageRowids, assertOnlyRowsWritten, tableRowidsById } from './helpers/rowStability.js'
+import { MODEL_ROLES } from '../../../src/ts/model/modelRoles.js'
 
 const subtle = webcrypto.subtle
 
@@ -899,6 +900,85 @@ describe('Phase 9-2a scalar settings groups', () => {
       openAIKey: MASKED_PROVIDER_SECRET,
       aiModel: 'openrouter',
     })
+  })
+
+  it('accepts identity-only durable model profile scaffold settings', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      aiModel: 'flat-main-model',
+    })
+
+    const res = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/providers',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: {
+          modelProfiles: [{ id: ' profile-a ', name: ' Primary ' }],
+          modelRoleProfiles: { memory: { mode: 'legacy' } },
+        },
+      },
+    })
+
+    expect(res.statusCode, res.body).toBe(200)
+    expect(loadPersistedFromDir(harness.dataDir).database).toMatchObject({
+      aiModel: 'flat-main-model',
+      modelProfiles: [{ id: 'profile-a', name: 'Primary' }],
+      modelRoleProfiles: Object.fromEntries(MODEL_ROLES.map((role) => [role, { mode: 'legacy' }])),
+    })
+  })
+
+  it('rejects malformed durable model profile scaffold settings', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      aiModel: 'flat-main-model',
+    })
+
+    const cases: Array<{ patch: Record<string, unknown>; error: string }> = [
+      {
+        patch: {
+          modelProfiles: [
+            { id: 'profile-a', name: 'Primary' },
+            { id: ' profile-a ', name: 'Duplicate' },
+          ],
+        },
+        error: 'Duplicate model profile id: profile-a',
+      },
+      {
+        patch: {
+          modelProfiles: [{ id: 'profile-a', name: 'Primary', providerOptions: { apiKey: 'not-yet' } }],
+        },
+        error: 'modelProfiles[0].providerOptions is not supported',
+      },
+      {
+        patch: {
+          modelRoleProfiles: { unknownRole: { mode: 'legacy' } },
+        },
+        error: 'Unknown model role profile binding: unknownRole',
+      },
+      {
+        patch: {
+          modelRoleProfiles: { memory: { mode: 'profile' } },
+        },
+        error: 'modelRoleProfiles.memory.mode must be legacy',
+      },
+    ]
+
+    for (const candidate of cases) {
+      const res = await harness.app.inject({
+        method: 'PATCH',
+        url: '/api/v1/commands/settings/providers',
+        headers: { 'risu-auth': assertion },
+        payload: {
+          baseRevision: revision,
+          patch: candidate.patch,
+        },
+      })
+
+      expect(res.statusCode).toBe(400)
+      expect(res.json().error).toBe(candidate.error)
+    }
   })
 
   it('applies chat format settings through the provider settings command', async () => {

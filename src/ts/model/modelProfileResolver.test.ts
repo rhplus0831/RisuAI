@@ -71,6 +71,31 @@ describe('resolveModelProfile legacy role compatibility', () => {
     })
   })
 
+  it('keeps durable profile scaffold fields inert while flat fields remain authoritative', () => {
+    const database = db({
+      aiModel: 'flat-main-model',
+      subModel: 'flat-aux-model',
+      modelProfiles: [{ id: 'durable-main', name: 'Durable Main' }],
+      modelRoleProfiles: {
+        chatMain: { mode: 'legacy' },
+        chatAux: { mode: 'legacy' },
+        memory: { mode: 'legacy' },
+        emotion: { mode: 'legacy' },
+        translate: { mode: 'legacy' },
+        otherAx: { mode: 'legacy' },
+        scriptMain: { mode: 'legacy' },
+        scriptAux: { mode: 'legacy' },
+      },
+    } as Partial<Database>)
+    const lookupModelInfo = (_database: Database, id: string) => modelInfo({ id, name: id, internalID: id })
+
+    const profile = resolveModelProfile({ database, role: 'chatMain', lookupModelInfo })
+
+    expect(profile.modelId).toBe('flat-main-model')
+    expect(profile.profileId).toBe('legacy:aiModel:flat-main-model')
+    expect(profile.source).toMatchObject({ kind: 'legacy-aiModel', field: 'aiModel' })
+  })
+
   it('preserves legacy seperateModels inheritance and scriptAux fallback chain', () => {
     const database = db({
       aiModel: 'main-model',
