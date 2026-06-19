@@ -1,11 +1,7 @@
 <script lang="ts">
-  import { PencilIcon, PlusIcon, TrashIcon, XIcon } from '@lucide/svelte'
+  import { PencilIcon } from '@lucide/svelte'
   import { language } from 'src/lang'
-  import AllSeperateParameters from 'src/lib/Others/AllSeperateParameters.svelte'
-  import Accordion from 'src/lib/UI/Accordion.svelte'
   import CheckInput from 'src/lib/UI/GUI/CheckInput.svelte'
-  import SegmentedControl from 'src/lib/UI/GUI/SegmentedControl.svelte'
-  import ModelList from 'src/lib/UI/ModelList.svelte'
   import { resolveModelProfile, type ResolvedModelProfile } from 'src/ts/model/modelProfileResolver'
   import { getModelInfo } from 'src/ts/model/modellist'
   import {
@@ -18,6 +14,7 @@
   import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
   import type { Database, SeparateParameters } from 'src/ts/storage/database.svelte'
   import { DBState } from 'src/ts/stores.svelte'
+  import ModelRoleEditor from './ModelRoleEditor.svelte'
 
   type OptionalModelRole = Exclude<ModelRole, 'chatMain' | 'chatAux'>
   type RoleModelMode = 'inherit' | 'override'
@@ -195,8 +192,9 @@
     if (profile.modelInfo.unsupportedReason) {
       return language.modelRoles.providerUnavailable(profile.modelInfo.unsupportedReason)
     }
-    if (profile.providerCapability.routable) return profile.providerCapability.provider
-    return language.modelRoles.providerUnavailable(profile.providerCapability.reason)
+    const capability = profile.providerCapability
+    if (capability.routable === true) return capability.provider
+    return language.modelRoles.providerUnavailable(capability.reason)
   }
 
   function requestModelForRole(role: ModelRole): string {
@@ -322,163 +320,30 @@
 </section>
 
 {#if selectedRole && selectedDefinition}
-  <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <div class="fixed inset-0 z-50 flex justify-end bg-black/50" role="button" tabindex="0" onclick={closeEditor}>
-    <div
-      class="flex h-full w-full max-w-2xl flex-col border-l border-darkborderc bg-bgcolor text-textcolor shadow-xl"
-      role="dialog"
-      aria-modal="true"
-      aria-label={language.modelRoles.editRole(labelForRole(selectedRole))}
-      tabindex="-1"
-      onclick={(event) => {
-        event.stopPropagation()
-      }}>
-      <div class="flex items-start justify-between gap-3 border-b border-darkborderc p-4">
-        <div class="min-w-0">
-          <h3 class="truncate text-xl font-semibold">{labelForRole(selectedRole)}</h3>
-          <span class="text-sm text-textcolor2">{descriptionForRole(selectedRole)}</span>
-        </div>
-        <button
-          type="button"
-          class="flex h-9 w-9 shrink-0 items-center justify-center rounded-md hover:bg-darkbutton"
-          aria-label={language.modelRoles.close}
-          onclick={closeEditor}>
-          <XIcon size={20} />
-        </button>
-      </div>
-
-      <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
-        <div class="rounded-md border border-darkborderc p-3">
-          <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <span class="font-medium">{language.modelRoles.resolvedProfile}</span>
-            <span class="text-xs text-textcolor2">{sourceLabelForRole(selectedDefinition)}</span>
-          </div>
-          <div class="grid gap-2 text-sm sm:grid-cols-3">
-            <div class="min-w-0">
-              <span class="block text-xs text-textcolor2">{language.modelRoles.provider}</span>
-              <span class="block truncate">{providerVerdictForRole(selectedRole)}</span>
-            </div>
-            <div class="min-w-0">
-              <span class="block text-xs text-textcolor2">{language.modelRoles.requestModel}</span>
-              <span class="block truncate">{requestModelForRole(selectedRole)}</span>
-            </div>
-            <div class="min-w-0">
-              <span class="block text-xs text-textcolor2">{language.modelRoles.fallbackModels}</span>
-              <span class="block truncate">{fallbackCountForRole(selectedRole)}</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="rounded-md border border-darkborderc p-3">
-          <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <span class="font-medium">{language.modelRoles.modelSelection}</span>
-            <span class="text-xs text-textcolor2">{sourceLabelForRole(selectedDefinition)}</span>
-          </div>
-
-          {#if selectedRole === 'chatMain' || selectedRole === 'chatAux'}
-            <ModelList
-              value={effectiveModelForRole(selectedRole)}
-              onChange={(model) => {
-                setBaseRoleModel(selectedRole, model)
-              }}
-              noMargin />
-          {:else if isOptionalRole(selectedRole)}
-            <SegmentedControl
-              bind:value={roleModelMode}
-              options={[
-                { value: 'inherit', label: language.modelRoles.inherit },
-                { value: 'override', label: language.modelRoles.override },
-              ]}
-              size="sm" />
-
-            {#if roleModelMode === 'override'}
-              <ModelList
-                value={modelRolesDraft.value[selectedRole]}
-                onChange={(model) => {
-                  setRoleOverride(selectedRole, model)
-                }}
-                noMargin />
-            {:else}
-              <div class="rounded-md bg-darkbg px-3 py-2 text-sm text-textcolor2">
-                {language.modelRoles.inheritedModel}: {modelName(effectiveModelForRole(selectedRole))}
-              </div>
-            {/if}
-          {/if}
-        </div>
-
-        {#if selectedSupportsParameters}
-          <Accordion name={language.modelRoles.roleParameters} styled>
-            <div class="flex flex-col gap-3">
-              <CheckInput bind:check={seperateParametersEnabledDraft.value} name={language.seperateParametersEnabled} />
-              {#if seperateParametersByModelDraft.value}
-                <span class="text-sm text-textcolor2">{language.modelRoles.parametersByModelNotice}</span>
-              {:else if !seperateParametersEnabledDraft.value}
-                <span class="text-sm text-textcolor2">{language.modelRoles.parametersDisabledNotice}</span>
-              {:else if selectedRole === 'memory'}
-                <AllSeperateParameters bind:value={seperateParametersDraft.value.memory} paramKey="memory" />
-              {:else if selectedRole === 'translate'}
-                <AllSeperateParameters bind:value={seperateParametersDraft.value.translate} paramKey="translate" />
-              {:else if selectedRole === 'emotion'}
-                <AllSeperateParameters bind:value={seperateParametersDraft.value.emotion} paramKey="emotion" />
-              {:else if selectedRole === 'otherAx'}
-                <AllSeperateParameters bind:value={seperateParametersDraft.value.otherAx} paramKey="otherAx" />
-              {:else if selectedRole === 'scriptMain'}
-                <AllSeperateParameters bind:value={seperateParametersDraft.value.scriptMain} paramKey="scriptMain" />
-              {:else if selectedRole === 'scriptAux'}
-                <AllSeperateParameters bind:value={seperateParametersDraft.value.scriptAux} paramKey="scriptAux" />
-              {/if}
-            </div>
-          </Accordion>
-        {/if}
-
-        <Accordion name={language.modelRoles.fallbackModels} styled>
-          {#if selectedFallbackKey}
-            <div class="flex flex-col gap-3">
-              <CheckInput bind:check={fallbackWhenBlankResponseDraft.value} name={language.fallbackWhenBlankResponse} />
-              <CheckInput bind:check={doNotChangeFallbackModelsDraft.value} name={language.doNotChangeFallbackModels} />
-
-              {#each fallbackModelsFor(selectedFallbackKey) as model, index}
-                <div class="flex items-center gap-2">
-                  <div class="min-w-0 flex-1">
-                    <ModelList
-                      value={model}
-                      blankable
-                      noMargin
-                      onChange={(nextModel) => {
-                        setFallbackModel(selectedFallbackKey, index, nextModel)
-                      }} />
-                  </div>
-                  <button
-                    type="button"
-                    class="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-red-500 text-white hover:bg-red-600"
-                    aria-label={language.remove}
-                    onclick={() => {
-                      removeFallbackModel(selectedFallbackKey, index)
-                    }}>
-                    <TrashIcon size={18} />
-                  </button>
-                </div>
-              {/each}
-
-              {#if fallbackModelsFor(selectedFallbackKey).length === 0}
-                <span class="text-sm text-textcolor2">{language.modelRoles.noFallbackModels}</span>
-              {/if}
-
-              <button
-                type="button"
-                class="flex h-9 w-9 items-center justify-center rounded-md bg-selected text-textcolor hover:bg-darkbutton"
-                aria-label={language.add}
-                onclick={() => {
-                  addFallbackModel(selectedFallbackKey)
-                }}>
-                <PlusIcon size={18} />
-              </button>
-            </div>
-          {:else}
-            <span class="text-sm text-textcolor2">{language.modelRoles.fallbackUnsupported}</span>
-          {/if}
-        </Accordion>
-      </div>
-    </div>
-  </div>
+  <ModelRoleEditor
+    role={selectedRole}
+    roleLabel={labelForRole(selectedRole)}
+    roleDescription={descriptionForRole(selectedRole)}
+    sourceLabel={sourceLabelForRole(selectedDefinition)}
+    providerVerdict={providerVerdictForRole(selectedRole)}
+    requestModel={requestModelForRole(selectedRole)}
+    fallbackCount={fallbackCountForRole(selectedRole)}
+    effectiveModel={effectiveModelForRole(selectedRole)}
+    supportsParameters={selectedSupportsParameters}
+    fallbackKey={selectedFallbackKey}
+    bind:roleModelMode
+    {modelRolesDraft}
+    {seperateParametersEnabledDraft}
+    {seperateParametersByModelDraft}
+    {seperateParametersDraft}
+    {fallbackModelsDraft}
+    {fallbackWhenBlankResponseDraft}
+    {doNotChangeFallbackModelsDraft}
+    {modelName}
+    {setBaseRoleModel}
+    {setRoleOverride}
+    {setFallbackModel}
+    {addFallbackModel}
+    {removeFallbackModel}
+    {closeEditor} />
 {/if}
