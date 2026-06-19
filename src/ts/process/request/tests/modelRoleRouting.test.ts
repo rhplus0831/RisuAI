@@ -161,6 +161,69 @@ describe('requestChatDataMain model-role routing', () => {
     })
   })
 
+  it('sends durable fallback profile refs as profile fallback attempts', async () => {
+    seedDb({
+      aiModel: 'gpt-5',
+      modelProfiles: [
+        {
+          id: 'primary-profile',
+          name: 'Primary Profile',
+          modelId: 'gpt-5',
+          fallbacks: [
+            { mode: 'profile', profileId: 'fallback-profile' },
+            { mode: 'profile', profileId: 'missing-profile' },
+          ],
+        },
+        {
+          id: 'fallback-profile',
+          name: 'Fallback Profile',
+          modelId: 'openrouter',
+          providerOptions: {
+            requestModel: 'fallback/provider-model',
+            apiKey: 'fallback-key',
+          },
+          runtimeOptions: {
+            maxResponse: 123,
+            temperature: 25,
+          },
+        },
+      ],
+      modelRoleProfiles: {
+        chatMain: { mode: 'profile', profileId: 'primary-profile' },
+      },
+      requestRetrys: 0,
+    } as Partial<Database>)
+    const payloads: Array<Record<string, unknown>> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: RequestInfo | URL, init: RequestInit = {}) => {
+        payloads.push(JSON.parse(init.body as string))
+        return new Response(JSON.stringify({ type: 'success', result: 'ok', model: 'openrouter' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      }),
+    )
+
+    const result = await requestChatData(
+      {
+        formated: [{ role: 'user', content: 'hi' }],
+        bias: {},
+      },
+      'model',
+    )
+
+    expect(result).toEqual({ type: 'success', result: 'ok', model: 'openrouter' })
+    expect(payloads).toHaveLength(1)
+    expect(payloads[0]).toMatchObject({
+      mode: 'model',
+      staticModel: '',
+      fallbackProfileId: 'fallback-profile',
+      maxTokens: 123,
+      temperature: 0.25,
+    })
+  })
+
   it('keeps the primary model as the final empty staticModel attempt after resolver fallbacks fail', async () => {
     seedDb({
       modelRoles: { memory: 'role-memory-model' } as Database['modelRoles'],

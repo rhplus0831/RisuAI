@@ -936,6 +936,7 @@ describe('Phase 9-2a scalar settings groups', () => {
                 customFlags: [LLMFlags.hasImageInput],
                 customTokenizer: ' custom-tokenizer ',
               },
+              fallbacks: [{ mode: 'profile', profileId: ' fallback-profile ' }],
             },
           ],
           modelRoleProfiles: { memory: { mode: 'profile', profileId: ' profile-a ' } },
@@ -966,6 +967,7 @@ describe('Phase 9-2a scalar settings groups', () => {
             customFlags: [LLMFlags.hasImageInput],
             customTokenizer: 'custom-tokenizer',
           },
+          fallbacks: [{ mode: 'profile', profileId: 'fallback-profile' }],
         },
       ],
       modelRoleProfiles: {
@@ -996,6 +998,27 @@ describe('Phase 9-2a scalar settings groups', () => {
           modelProfiles: [{ id: 'profile-a', name: 'Primary', providerOptions: { apiKey: 42 } }],
         },
         error: 'modelProfiles[0].providerOptions.apiKey must be a string when present',
+      },
+      {
+        patch: {
+          modelProfiles: [{ id: 'profile-a', name: 'Primary', fallbacks: [{ mode: 'legacy', profileId: 'x' }] }],
+        },
+        error: 'modelProfiles[0].fallbacks[0].mode must be profile',
+      },
+      {
+        patch: {
+          modelProfiles: [
+            {
+              id: 'profile-a',
+              name: 'Primary',
+              fallbacks: [
+                { mode: 'profile', profileId: 'fallback-a' },
+                { mode: 'profile', profileId: ' fallback-a ' },
+              ],
+            },
+          ],
+        },
+        error: 'modelProfiles[0].fallbacks[1].profileId must not duplicate fallback-a',
       },
       {
         patch: {

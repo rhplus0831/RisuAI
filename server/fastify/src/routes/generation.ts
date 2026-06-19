@@ -2,7 +2,11 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { Database } from '../../../../src/ts/storage/database.svelte'
 import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
 import type { LegacyModelMode } from '../../../../src/ts/model/modelRoles.js'
-import { resolveModelProfile, type ResolvedModelProfile } from '../../../../src/ts/model/modelProfileResolver.js'
+import {
+  resolveModelProfile,
+  resolveModelProfileByProfileId,
+  type ResolvedModelProfile,
+} from '../../../../src/ts/model/modelProfileResolver.js'
 import type { AuthState } from '../auth.js'
 import { resolveAnthropicRequest, runAnthropic, runAnthropicStream } from '../generation/anthropic.js'
 import { resolveEchoRequest, runEcho, runEchoStream } from '../generation/echo.js'
@@ -66,6 +70,7 @@ interface CompletionRequestBody {
   options?: unknown
   mode?: unknown
   staticModel?: unknown
+  fallbackProfileId?: unknown
   maxTokens?: unknown
   temperature?: unknown
   currentCharName?: unknown
@@ -305,6 +310,11 @@ function finiteNumber(value: unknown): number | undefined {
 
 function selectedCompletionProfile(db: Database, body: CompletionRequestBody): ResolvedModelProfile {
   const mode = isCompletionModelMode(body.mode) ? body.mode : 'model'
+  if (typeof body.fallbackProfileId === 'string' && body.fallbackProfileId.length > 0) {
+    const profile = resolveModelProfileByProfileId({ database: db, role: mode, profileId: body.fallbackProfileId })
+    if (profile) return profile
+    throw new Error(`fallbackProfileId profile not found: ${body.fallbackProfileId}`)
+  }
   const staticModel = typeof body.staticModel === 'string' && body.staticModel.length > 0 ? body.staticModel : undefined
   const profile = resolveModelProfile({ database: db, role: mode, staticModel })
   if (profile.modelId.length > 0) return profile
@@ -318,9 +328,17 @@ function buildCompletionDatabase(db: Database, body: CompletionRequestBody, prof
     useStreaming: body.stream === true,
   } as Database
   const maxTokens = finiteNumber(body.maxTokens)
-  if (maxTokens !== undefined) next.maxResponse = maxTokens
+  if (maxTokens !== undefined) {
+    next.maxResponse = maxTokens
+  } else if (profile.runtimeOptions.maxResponse !== undefined) {
+    next.maxResponse = profile.runtimeOptions.maxResponse
+  }
   const temperature = finiteNumber(body.temperature)
-  if (temperature !== undefined) next.temperature = temperature * 100
+  if (temperature !== undefined) {
+    next.temperature = temperature * 100
+  } else if (profile.runtimeOptions.rawTemperature !== undefined) {
+    next.temperature = profile.runtimeOptions.rawTemperature
+  }
   if (typeof body.currentCharName === 'string' && body.currentCharName.length > 0) {
     const first = Array.isArray(db.characters) ? db.characters[0] : undefined
     next.characters = [{ ...(first as object), name: body.currentCharName }] as Database['characters']
@@ -1206,6 +1224,9 @@ async function handleServerIntentCompletion(
   }
   if (body.staticModel !== undefined && typeof body.staticModel !== 'string') {
     return badRequest(reply, 'staticModel must be a string when provided')
+  }
+  if (body.fallbackProfileId !== undefined && typeof body.fallbackProfileId !== 'string') {
+    return badRequest(reply, 'fallbackProfileId must be a string when provided')
   }
   if (body.maxTokens !== undefined && finiteNumber(body.maxTokens) === undefined) {
     return badRequest(reply, 'maxTokens must be a finite number when provided')

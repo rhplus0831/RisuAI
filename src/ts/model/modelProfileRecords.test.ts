@@ -93,6 +93,14 @@ describe('model profile records', () => {
             customFlags: [LLMFlags.hasImageInput, 999, 'bad', LLMFlags.hasStreaming],
             unsupportedRuntimeField: 'must-drop',
           },
+          fallbacks: [
+            { mode: 'profile', profileId: ' fallback-a ' },
+            { mode: 'profile', profileId: 'fallback-a' },
+            { mode: 'legacy', profileId: 'must-drop' },
+            { mode: 'profile', profileId: '   ' },
+            { mode: 'profile', profileId: 42 },
+            { profileId: 'must-drop' },
+          ],
         },
         { id: 'profile-a', name: 'Duplicate' },
         { id: 'profile-b', name: 'Identity Only', modelId: '   ' },
@@ -167,6 +175,7 @@ describe('model profile records', () => {
           modelTools: ['tool-a', 'tool-b'],
           customFlags: [LLMFlags.hasImageInput, LLMFlags.hasStreaming],
         },
+        fallbacks: [{ mode: 'profile', profileId: 'fallback-a' }],
       },
       { id: 'profile-b', name: 'Identity Only' },
       { id: 'profile-c', name: 'profile-c' },
@@ -218,6 +227,7 @@ describe('model profile records', () => {
             customFlags: [LLMFlags.hasImageInput],
             customTokenizer: ' custom-tokenizer ',
           },
+          fallbacks: [{ mode: 'profile', profileId: ' fallback-profile ' }],
         },
         { id: ' identity-only ', name: ' Identity Only ', modelId: '   ', providerOptions: { requestModel: '   ' } },
       ]),
@@ -262,6 +272,7 @@ describe('model profile records', () => {
           customFlags: [LLMFlags.hasImageInput],
           customTokenizer: 'custom-tokenizer',
         },
+        fallbacks: [{ mode: 'profile', profileId: 'fallback-profile' }],
       },
       { id: 'identity-only', name: 'Identity Only' },
     ])
@@ -313,6 +324,39 @@ describe('model profile records', () => {
     expect(() => readModelProfiles([{ id: 'profile-a', name: 'Primary', modelId: 123 }])).toThrow(
       'modelProfiles[0].modelId must be a string when present',
     )
+
+    expect(() => readModelProfiles([{ id: 'profile-a', name: 'Primary', fallbacks: {} }])).toThrow(
+      'modelProfiles[0].fallbacks must be an array when present',
+    )
+
+    expect(() => readModelProfiles([{ id: 'profile-a', name: 'Primary', fallbacks: ['bad'] }])).toThrow(
+      'modelProfiles[0].fallbacks[0] must be an object',
+    )
+
+    expect(() =>
+      readModelProfiles([{ id: 'profile-a', name: 'Primary', fallbacks: [{ mode: 'profile', profileId: 'x', x: 1 }] }]),
+    ).toThrow('modelProfiles[0].fallbacks[0].x is not supported')
+
+    expect(() =>
+      readModelProfiles([{ id: 'profile-a', name: 'Primary', fallbacks: [{ mode: 'legacy', profileId: 'x' }] }]),
+    ).toThrow('modelProfiles[0].fallbacks[0].mode must be profile')
+
+    expect(() =>
+      readModelProfiles([{ id: 'profile-a', name: 'Primary', fallbacks: [{ mode: 'profile', profileId: '' }] }]),
+    ).toThrow('modelProfiles[0].fallbacks[0].profileId must be a non-empty string')
+
+    expect(() =>
+      readModelProfiles([
+        {
+          id: 'profile-a',
+          name: 'Primary',
+          fallbacks: [
+            { mode: 'profile', profileId: 'fallback-a' },
+            { mode: 'profile', profileId: ' fallback-a ' },
+          ],
+        },
+      ]),
+    ).toThrow('modelProfiles[0].fallbacks[1].profileId must not duplicate fallback-a')
 
     expect(() =>
       readModelProfiles([{ id: 'profile-a', name: 'Primary', providerOptions: { requestModel: 123 } }]),

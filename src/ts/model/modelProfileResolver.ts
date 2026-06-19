@@ -35,6 +35,7 @@ import {
   normalizeModelProfiles,
   normalizeModelRoleProfiles,
   type ModelProfileRecord,
+  type ModelProfileRecordFallbackRef,
   type ModelProfileRecordProviderOptions,
   type ModelProfileRecordRuntimeOptions,
 } from './modelProfileRecords'
@@ -193,6 +194,7 @@ interface ModelProfileSelection {
   profileRequestModel?: string
   profileProviderOptions?: ModelProfileRecordProviderOptions
   profileRuntimeOptions?: ModelProfileRecordRuntimeOptions
+  profileFallbacks?: ModelProfileRecordFallbackRef[]
   source: ModelProfileResolutionSource
 }
 
@@ -416,6 +418,45 @@ export function resolveModelProfile({
         },
       }
     : (resolveDurableModelSelection(database, normalizedRole) ?? resolveLegacyModelSelection(database, normalizedRole))
+  return resolveModelProfileSelection({ database, normalizedRole, selection, staticModelId, lookupModelInfo })
+}
+
+export function resolveModelProfileByProfileId({
+  database,
+  role,
+  profileId,
+  lookupModelInfo,
+}: ResolveModelProfileArgs & { profileId: string }): ResolvedModelProfile | null {
+  const roleLike = role ?? 'model'
+  const normalizedRole = normalizeModelRole(roleLike) ?? 'chatMain'
+  const selection = resolveDurableProfileSelection(database, normalizedRole, profileId, {
+    field: 'fallbackProfileId',
+    bypassesRoleResolution: true,
+    includeFallbacks: false,
+  })
+  if (!selection) return null
+  return resolveModelProfileSelection({
+    database,
+    normalizedRole,
+    selection,
+    staticModelId: undefined,
+    lookupModelInfo,
+  })
+}
+
+function resolveModelProfileSelection({
+  database,
+  normalizedRole,
+  selection,
+  staticModelId,
+  lookupModelInfo,
+}: {
+  database: Database
+  normalizedRole: ModelRole
+  selection: ModelProfileSelection
+  staticModelId?: string
+  lookupModelInfo?: (database: Database, modelId: string) => LLMModel | null | undefined
+}): ResolvedModelProfile {
   const lookedUp = lookupModelInfo?.(database, selection.modelId)
   const baseModelInfo = lookedUp
     ? withCustomFlags(database, cloneModelInfo(lookedUp), selection.profileRuntimeOptions)
@@ -468,7 +509,11 @@ export function resolveModelProfile({
     modelInfo,
     providerOptions,
     runtimeOptions,
-    fallbacks: staticModelId ? [] : resolveLegacyFallbackRefs(database, normalizedRole),
+    fallbacks: staticModelId
+      ? []
+      : selection.profileFallbacks
+        ? resolveDurableFallbackRefs(selection.profileFallbacks)
+        : resolveLegacyFallbackRefs(database, normalizedRole),
   }
 
   return {
@@ -480,6 +525,13 @@ export function resolveModelProfile({
     providerCapabilityInput,
     providerCapability,
   }
+}
+
+function resolveDurableFallbackRefs(fallbacks: ModelProfileRecordFallbackRef[]): ModelProfileFallbackRef[] {
+  return fallbacks.map((fallback) => ({
+    kind: 'profile-id',
+    profileId: fallback.profileId,
+  }))
 }
 
 export function resolveLegacyFallbackRefs(database: Database, roleLike: ModelRoleLike): ModelProfileFallbackRef[] {
@@ -856,7 +908,24 @@ function resolveDurableModelSelection(database: Database, role: ModelRole): Mode
   const binding = normalizeModelRoleProfiles(database.modelRoleProfiles)[role]
   if (binding.mode !== 'profile') return null
 
-  const profile = findDurableModelProfile(database.modelProfiles, binding.profileId)
+  return resolveDurableProfileSelection(database, role, binding.profileId, {
+    field: `modelRoleProfiles.${role}`,
+    bypassesRoleResolution: false,
+    includeFallbacks: true,
+  })
+}
+
+function resolveDurableProfileSelection(
+  database: Database,
+  role: ModelRole,
+  profileId: string,
+  options: {
+    field: string
+    bypassesRoleResolution: boolean
+    includeFallbacks: boolean
+  },
+): ModelProfileSelection | null {
+  const profile = findDurableModelProfile(database.modelProfiles, profileId)
   const modelId = nonBlankString(profile?.modelId)
   if (!profile || !modelId) return null
   const profileRequestModel = nonBlankString(profile.providerOptions?.requestModel)
@@ -867,14 +936,15 @@ function resolveDurableModelSelection(database: Database, role: ModelRole): Mode
     ...(profileRequestModel ? { profileRequestModel } : {}),
     ...(profile.providerOptions ? { profileProviderOptions: profile.providerOptions } : {}),
     ...(profile.runtimeOptions ? { profileRuntimeOptions: profile.runtimeOptions } : {}),
+    profileFallbacks: options.includeFallbacks ? (profile.fallbacks ?? []) : [],
     source: {
       kind: 'durable-profile',
       role,
       legacyMode: modelRoleToLegacyModelMode(role),
-      field: `modelRoleProfiles.${role}`,
+      field: options.field,
       profileId: profile.id,
       profileName: profile.name,
-      bypassesRoleResolution: false,
+      bypassesRoleResolution: options.bypassesRoleResolution,
     },
   }
 }

@@ -5,6 +5,7 @@ import {
   buildProfileProviderCapabilityInput,
   resolveLegacyFallbackRefs,
   resolveModelProfile,
+  resolveModelProfileByProfileId,
   resolveProfileRequestModel,
 } from './modelProfileResolver'
 
@@ -93,6 +94,36 @@ describe('resolveModelProfile legacy role compatibility', () => {
       profileName: 'Durable Main',
       bypassesRoleResolution: false,
     })
+    expect(profile.fallbacks).toEqual([])
+  })
+
+  it('emits durable profile-id fallback refs from a selected durable profile', () => {
+    const database = db({
+      fallbackModels: { model: ['legacy-fallback'] } as unknown as Database['fallbackModels'],
+      modelProfiles: [
+        {
+          id: 'durable-main',
+          name: 'Durable Main',
+          modelId: 'gpt-5',
+          fallbacks: [
+            { mode: 'profile', profileId: 'durable-fallback-a' },
+            { mode: 'profile', profileId: 'durable-fallback-b' },
+          ],
+        },
+        { id: 'durable-fallback-a', name: 'Durable Fallback A', modelId: 'gpt-5-mini' },
+        { id: 'durable-fallback-b', name: 'Durable Fallback B', modelId: 'gpt-5-nano' },
+      ],
+      modelRoleProfiles: {
+        chatMain: { mode: 'profile', profileId: 'durable-main' },
+      },
+    } as Partial<Database>)
+
+    const profile = resolveModelProfile({ database, role: 'chatMain' })
+
+    expect(profile.fallbacks).toEqual([
+      { kind: 'profile-id', profileId: 'durable-fallback-a' },
+      { kind: 'profile-id', profileId: 'durable-fallback-b' },
+    ])
   })
 
   it('lets staticModel win over a durable profile binding', () => {
@@ -216,6 +247,47 @@ describe('resolveModelProfile legacy role compatibility', () => {
       bypassesRoleResolution: true,
     })
     expect(profile.fallbacks).toEqual([])
+  })
+
+  it('resolves a direct durable fallback profile without recursive fallback refs', () => {
+    const database = db({
+      modelProfiles: [
+        {
+          id: 'fallback-profile',
+          name: 'Fallback Profile',
+          modelId: 'openrouter',
+          providerOptions: {
+            requestModel: 'fallback/wire',
+            apiKey: 'fallback-key',
+          },
+          runtimeOptions: {
+            maxResponse: 128,
+          },
+          fallbacks: [{ mode: 'profile', profileId: 'must-not-expand' }],
+        },
+      ],
+    } as Partial<Database>)
+
+    const profile = resolveModelProfileByProfileId({
+      database,
+      role: 'memory',
+      profileId: 'fallback-profile',
+    })
+
+    expect(profile).toMatchObject({
+      modelId: 'openrouter',
+      requestModel: 'fallback/wire',
+      providerOptions: { apiKey: 'fallback-key' },
+      runtimeOptions: { maxResponse: 128 },
+      source: {
+        kind: 'durable-profile',
+        field: 'fallbackProfileId',
+        profileId: 'fallback-profile',
+        bypassesRoleResolution: true,
+      },
+      fallbacks: [],
+    })
+    expect(resolveModelProfileByProfileId({ database, role: 'memory', profileId: 'missing' })).toBeNull()
   })
 
   it('resolves legacy fallback refs by role and skips the legacy submodel bucket', () => {

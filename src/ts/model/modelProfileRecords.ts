@@ -7,6 +7,12 @@ export interface ModelProfileRecord {
   modelId?: string
   providerOptions?: ModelProfileRecordProviderOptions
   runtimeOptions?: ModelProfileRecordRuntimeOptions
+  fallbacks?: ModelProfileRecordFallbackRef[]
+}
+
+export interface ModelProfileRecordFallbackRef {
+  mode: 'profile'
+  profileId: string
 }
 
 export interface ModelProfileRecordProviderOptions {
@@ -91,7 +97,8 @@ export class ModelProfileRecordValidationError extends Error {
   }
 }
 
-const MODEL_PROFILE_RECORD_KEYS = new Set(['id', 'name', 'modelId', 'providerOptions', 'runtimeOptions'])
+const MODEL_PROFILE_RECORD_KEYS = new Set(['id', 'name', 'modelId', 'providerOptions', 'runtimeOptions', 'fallbacks'])
+const MODEL_PROFILE_FALLBACK_REF_KEYS = new Set(['mode', 'profileId'])
 const MODEL_PROFILE_PROVIDER_OPTIONS_KEYS = new Set([
   'apiKey',
   'requestModel',
@@ -172,6 +179,7 @@ export function normalizeModelProfiles(value: unknown): ModelProfileRecord[] {
         modelId,
         providerOptions: normalizeModelProfileProviderOptions(item.providerOptions),
         runtimeOptions: normalizeModelProfileRuntimeOptions(item.runtimeOptions),
+        fallbacks: normalizeModelProfileFallbackRefs(item.fallbacks),
       }),
     )
     seen.add(id)
@@ -260,8 +268,11 @@ function readModelProfileRecord(value: unknown, path: string): ModelProfileRecor
   const runtimeOptions = Object.prototype.hasOwnProperty.call(value, 'runtimeOptions')
     ? readModelProfileRuntimeOptions(value.runtimeOptions, `${path}.runtimeOptions`)
     : undefined
+  const fallbacks = Object.prototype.hasOwnProperty.call(value, 'fallbacks')
+    ? readModelProfileFallbackRefs(value.fallbacks, `${path}.fallbacks`)
+    : undefined
 
-  return createModelProfileRecord({ id, name, modelId, providerOptions, runtimeOptions })
+  return createModelProfileRecord({ id, name, modelId, providerOptions, runtimeOptions, fallbacks })
 }
 
 function createModelProfileRecord(input: {
@@ -270,6 +281,7 @@ function createModelProfileRecord(input: {
   modelId?: string
   providerOptions?: ModelProfileRecordProviderOptions
   runtimeOptions?: ModelProfileRecordRuntimeOptions
+  fallbacks?: ModelProfileRecordFallbackRef[]
 }): ModelProfileRecord {
   return {
     id: input.id,
@@ -277,7 +289,54 @@ function createModelProfileRecord(input: {
     ...(input.modelId ? { modelId: input.modelId } : {}),
     ...(input.providerOptions ? { providerOptions: input.providerOptions } : {}),
     ...(input.runtimeOptions ? { runtimeOptions: input.runtimeOptions } : {}),
+    ...(input.fallbacks && input.fallbacks.length > 0 ? { fallbacks: input.fallbacks } : {}),
   }
+}
+
+function normalizeModelProfileFallbackRefs(value: unknown): ModelProfileRecordFallbackRef[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const fallbacks: ModelProfileRecordFallbackRef[] = []
+  const seen = new Set<string>()
+  for (const item of value) {
+    if (!isRecord(item) || item.mode !== 'profile') continue
+    const profileId = stringOrBlank(item.profileId)
+    if (!profileId || seen.has(profileId)) continue
+    fallbacks.push({ mode: 'profile', profileId })
+    seen.add(profileId)
+  }
+  return fallbacks.length > 0 ? fallbacks : undefined
+}
+
+function readModelProfileFallbackRefs(value: unknown, path: string): ModelProfileRecordFallbackRef[] | undefined {
+  if (!Array.isArray(value)) {
+    throw new ModelProfileRecordValidationError(`${path} must be an array when present`)
+  }
+  const fallbacks: ModelProfileRecordFallbackRef[] = []
+  const seen = new Set<string>()
+  value.forEach((item, index) => {
+    const rowPath = `${path}[${index}]`
+    if (!isRecord(item)) {
+      throw new ModelProfileRecordValidationError(`${rowPath} must be an object`)
+    }
+    for (const key of Object.keys(item)) {
+      if (!MODEL_PROFILE_FALLBACK_REF_KEYS.has(key)) {
+        throw new ModelProfileRecordValidationError(`${rowPath}.${key} is not supported`)
+      }
+    }
+    if (item.mode !== 'profile') {
+      throw new ModelProfileRecordValidationError(`${rowPath}.mode must be profile`)
+    }
+    const profileId = stringOrBlank(item.profileId)
+    if (!profileId) {
+      throw new ModelProfileRecordValidationError(`${rowPath}.profileId must be a non-empty string`)
+    }
+    if (seen.has(profileId)) {
+      throw new ModelProfileRecordValidationError(`${rowPath}.profileId must not duplicate ${profileId}`)
+    }
+    seen.add(profileId)
+    fallbacks.push({ mode: 'profile', profileId })
+  })
+  return fallbacks.length > 0 ? fallbacks : undefined
 }
 
 function normalizeModelProfileProviderOptions(value: unknown): ModelProfileRecordProviderOptions | undefined {

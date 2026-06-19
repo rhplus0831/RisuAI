@@ -1,7 +1,12 @@
 import { Ollama } from 'ollama/dist/browser.mjs'
 import { language } from '../../../lang'
 import { fetchNative, globalFetch } from '../../globalApi.svelte'
-import { resolveModelProfile, type ResolvedModelProfile } from '../../model/modelProfileResolver'
+import {
+  resolveModelProfile,
+  resolveModelProfileByProfileId,
+  type ModelProfileFallbackRef,
+  type ResolvedModelProfile,
+} from '../../model/modelProfileResolver'
 import { LLMFlags, LLMFormat, type LLMModel } from '../../model/modellist'
 import { risuChatParser, risuEscape, risuUnescape } from '../../parser/parser.svelte'
 import { pluginProcess, pluginV2 } from '../../plugins/plugins.svelte'
@@ -49,6 +54,7 @@ interface requestDataArgument {
   imageResponse?: boolean
   previewBody?: boolean
   staticModel?: string
+  fallbackProfileId?: string
   escape?: boolean
   tools?: MCPTool[]
   rememberToolUsage?: boolean
@@ -101,6 +107,12 @@ export interface StreamResponseChunk {
 }
 
 type OllamaThinkMode = boolean | 'low' | 'medium' | 'high'
+
+interface RequestFallbackAttempt {
+  staticModel: string
+  fallbackProfileId?: string
+  modelId?: string
+}
 
 function getOllamaThinkMode(mode: string): OllamaThinkMode | undefined {
   switch (mode) {
@@ -273,10 +285,8 @@ export async function requestChatData(
 ): Promise<requestDataResponse> {
   const db = getDatabase()
   const resolvedProfile = resolveModelProfile({ database: db, role: model })
-  const fallBackModels = resolvedProfile.fallbacks.flatMap((fallback) =>
-    fallback.kind === 'legacy-model-id' ? [fallback.modelId] : [],
-  )
-  fallBackModels.push('')
+  const fallbackAttempts = resolveRequestFallbackAttempts(db, model, resolvedProfile.fallbacks)
+  fallbackAttempts.push({ staticModel: '' })
   let da: requestDataResponse
 
   if (arg.escape) {
@@ -289,11 +299,12 @@ export async function requestChatData(
     return m
   })
 
-  for (let fallbackIndex = 0; fallbackIndex < fallBackModels.length; fallbackIndex++) {
+  for (let fallbackIndex = 0; fallbackIndex < fallbackAttempts.length; fallbackIndex++) {
+    const attempt = fallbackAttempts[fallbackIndex]
     let trys = 0
     arg.formated = safeStructuredClone(originalFormated)
 
-    if (fallbackIndex !== fallBackModels.length - 1 && !fallBackModels[fallbackIndex]) {
+    if (fallbackIndex !== fallbackAttempts.length - 1 && !attempt.staticModel && !attempt.fallbackProfileId) {
       continue
     }
 
@@ -335,7 +346,8 @@ export async function requestChatData(
       da = await requestChatDataMain(
         {
           ...arg,
-          staticModel: fallBackModels[fallbackIndex],
+          staticModel: attempt.staticModel,
+          fallbackProfileId: attempt.fallbackProfileId,
         },
         model,
         abortSignal,
@@ -376,14 +388,14 @@ export async function requestChatData(
         }
       }
 
-      if (da.type === 'success' && fallbackIndex !== fallBackModels.length - 1 && db.fallbackWhenBlankResponse) {
+      if (da.type === 'success' && fallbackIndex !== fallbackAttempts.length - 1 && db.fallbackWhenBlankResponse) {
         if (da.result.trim() === '') {
           break
         }
       }
 
       if (da.type !== 'fail' || da.noRetry) {
-        const usedModel = fallBackModels[fallbackIndex] || da.model
+        const usedModel = attempt.modelId || attempt.staticModel || da.model
         return usedModel
           ? {
               ...da,
@@ -401,7 +413,7 @@ export async function requestChatData(
 
       trys += 1
       if (trys > db.requestRetrys) {
-        if (fallbackIndex === fallBackModels.length - 1 || da.model === 'custom') {
+        if (fallbackIndex === fallbackAttempts.length - 1 || da.model === 'custom') {
           return da
         }
         break
@@ -415,6 +427,25 @@ export async function requestChatData(
       result: 'All models failed',
     }
   )
+}
+
+function resolveRequestFallbackAttempts(
+  database: ReturnType<typeof getDatabase>,
+  model: ModelModeExtended,
+  fallbacks: ModelProfileFallbackRef[],
+): RequestFallbackAttempt[] {
+  return fallbacks.flatMap((fallback) => {
+    if (fallback.kind === 'legacy-model-id') {
+      return [{ staticModel: fallback.modelId, modelId: fallback.modelId }]
+    }
+    const profile = resolveModelProfileByProfileId({
+      database,
+      role: model,
+      profileId: fallback.profileId,
+    })
+    if (!profile) return []
+    return [{ staticModel: '', fallbackProfileId: fallback.profileId, modelId: profile.modelId }]
+  })
 }
 
 export function reformater(formated: OpenAIChat[], modelInfo: LLMModel | LLMFlags[]) {
@@ -508,7 +539,19 @@ export async function requestChatDataMain(
 ): Promise<requestDataResponse> {
   const db = getDatabase()
   const targ: RequestDataArgumentExtended = arg
-  const resolvedProfile = resolveModelProfile({ database: db, role: model, staticModel: arg.staticModel })
+  const resolvedProfile = arg.fallbackProfileId
+    ? resolveModelProfileByProfileId({
+        database: db,
+        role: model,
+        profileId: arg.fallbackProfileId,
+      })
+    : resolveModelProfile({ database: db, role: model, staticModel: arg.staticModel })
+  if (!resolvedProfile) {
+    return {
+      type: 'fail',
+      result: `Fallback profile not found: ${arg.fallbackProfileId}`,
+    }
+  }
   const runtimeOptions = resolvedProfile.runtimeOptions
   const providerOptions = resolvedProfile.providerOptions
 

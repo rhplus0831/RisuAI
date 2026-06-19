@@ -143,6 +143,7 @@ export async function requestServerCompletion(
     stream: useStreaming,
     mode: targ.mode ?? 'model',
     staticModel: targ.staticModel,
+    fallbackProfileId: targ.fallbackProfileId,
     maxTokens: targ.maxTokens,
     temperature: targ.temperature,
     currentCharName: targ.currentChar?.name,

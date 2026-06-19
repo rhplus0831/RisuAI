@@ -515,6 +515,84 @@ describe('Phase 6-1 POST /api/v1/generate/completion', () => {
     expect(sent.headers['X-Fallback-Trace']).toBe('fallback-static')
   })
 
+  it('server-intent completion resolves fallbackProfileId from durable profile settings', async () => {
+    writeDatabase({
+      aiModel: 'echo_model',
+      modelProfiles: [
+        {
+          id: 'fallback-profile',
+          name: 'Fallback Profile',
+          modelId: 'reverse_proxy',
+          providerOptions: {
+            requestModel: 'fallback-wire-model',
+            baseUrl: 'https://fallback-profile.example.com/v1',
+            apiKey: 'sk-fallback-profile',
+          },
+          runtimeOptions: {
+            maxResponse: 77,
+            temperature: 33,
+          },
+        },
+      ],
+    })
+    const sent: Array<{ url: string; body: Record<string, unknown>; headers: Record<string, string> }> = []
+    globalThis.fetch = (async (url: string, init: RequestInit) => {
+      sent.push({
+        url,
+        body: JSON.parse(String(init.body ?? '{}')) as Record<string, unknown>,
+        headers: init.headers as Record<string, string>,
+      })
+      return openAIChatResponse('durable fallback ok')
+    }) as unknown as typeof globalThis.fetch
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        kind: 'server-intent',
+        messages: [{ role: 'user', content: 'hi' }],
+        stream: false,
+        mode: 'model',
+        fallbackProfileId: 'fallback-profile',
+      },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({ type: 'success', result: 'durable fallback ok' })
+    const sentRequest = sent[0]
+    if (!sentRequest) throw new Error('expected fallback profile request to be captured')
+    expect(sentRequest).toMatchObject({
+      url: 'https://fallback-profile.example.com/v1/chat/completions',
+      body: {
+        model: 'fallback-wire-model',
+        max_tokens: 77,
+        temperature: 0.33,
+      },
+    })
+    expect(sentRequest.headers.authorization).toBe('Bearer sk-fallback-profile')
+  })
+
+  it('server-intent completion rejects malformed fallbackProfileId', async () => {
+    writeDatabase({ aiModel: 'echo_model' })
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        kind: 'server-intent',
+        messages: [{ role: 'user', content: 'hi' }],
+        stream: false,
+        fallbackProfileId: 42,
+      },
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(res.json()).toEqual({ error: 'fallbackProfileId must be a string when provided' })
+  })
+
   it('server-intent completion dispatches provider request models from the resolved profile', async () => {
     const captured: Array<{ url: string; body: Record<string, unknown>; headers: Record<string, string> }> = []
     globalThis.fetch = (async (url: string, init: RequestInit) => {

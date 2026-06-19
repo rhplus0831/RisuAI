@@ -84,14 +84,26 @@ describe('preset split helpers', () => {
     const source = {
       ...legacyPreset,
       modelProfiles: [
-        { id: 'profile-a', name: 'Profile A', modelId: 'gpt-5', providerOptions: { requestModel: 'wire-model' } },
+        {
+          id: 'profile-a',
+          name: 'Profile A',
+          modelId: 'gpt-5',
+          providerOptions: { requestModel: 'wire-model' },
+          fallbacks: [{ mode: 'profile', profileId: 'fallback-profile' }],
+        },
       ],
       modelRoleProfiles: { memory: { mode: 'profile', profileId: 'profile-a' } },
     }
 
     expect(createExtractedModelPreset(source, { id: 'model-a', name: 'Model A' })).toMatchObject({
       modelProfiles: [
-        { id: 'profile-a', name: 'Profile A', modelId: 'gpt-5', providerOptions: { requestModel: 'wire-model' } },
+        {
+          id: 'profile-a',
+          name: 'Profile A',
+          modelId: 'gpt-5',
+          providerOptions: { requestModel: 'wire-model' },
+          fallbacks: [{ mode: 'profile', profileId: 'fallback-profile' }],
+        },
       ],
       modelRoleProfiles: { memory: { mode: 'profile', profileId: 'profile-a' } },
     })

@@ -221,6 +221,7 @@ function seedSplitPresetLoadoutState(): Loadout {
             name: ' Story Profile ',
             modelId: ' story-model ',
             providerOptions: { requestModel: ' story-wire ' },
+            fallbacks: [{ mode: 'profile', profileId: ' fallback-profile ' }],
           },
           { id: 'story-profile', name: 'Duplicate' },
         ],
@@ -551,6 +552,7 @@ describe('loadout projection command helpers', () => {
         name: 'Story Profile',
         modelId: 'story-model',
         providerOptions: { requestModel: 'story-wire' },
+        fallbacks: [{ mode: 'profile', profileId: 'fallback-profile' }],
       },
     ])
     expect(DBState.db.modelRoleProfiles).toEqual(
@@ -615,6 +617,7 @@ describe('loadout projection command helpers', () => {
         name: 'Story Profile',
         modelId: 'story-model',
         providerOptions: { requestModel: 'story-wire' },
+        fallbacks: [{ mode: 'profile', profileId: 'fallback-profile' }],
       },
     ])
     expect(DBState.db.modelRoleProfiles).toEqual(
@@ -639,6 +642,7 @@ describe('loadout projection command helpers', () => {
         name: 'Story Profile',
         modelId: 'story-model',
         providerOptions: { requestModel: 'story-wire' },
+        fallbacks: [{ mode: 'profile', profileId: 'fallback-profile' }],
       },
     ])
     expect(DBState.db.modelRoleProfiles).toEqual(
