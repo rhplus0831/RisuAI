@@ -5,14 +5,9 @@ import {
   type ChatGenerationSettingsIncompleteErrorBody,
   type ChatGenerationSettingsReadiness,
 } from '../../../../src/ts/chatGenerationSettings'
-import {
-  applyModelPreset,
-  applyPromptPreset,
-  type ModelPresetRecord,
-  type PromptPresetRecord,
-} from '../commands/splitPresets.js'
+import type { ModelPresetRecord, PromptPresetRecord } from '../commands/splitPresets.js'
 import { mirrorLegacyProfile, type PersonaRecord } from '../commands/personas.js'
-import { resolvePromptPresetRegexField } from '../../../../src/ts/presetSplit.js'
+import { applyEffectivePresetComposition, resolvePromptPresetRegexField } from '../../../../src/ts/presetSplit.js'
 
 type JsonRecord = Record<string, unknown>
 type EffectivePromptPresetRecord = PromptPresetRecord & { moduleIntergration?: unknown }
@@ -101,8 +96,11 @@ export function buildEffectiveGenerationConfig(input: EffectiveGenerationConfigI
 
   effectiveDatabase.modelPresetsId = effectiveModelPresetIndex
   effectiveDatabase.promptPresetsId = effectivePromptPresetIndex
-  applyModelPreset(effectiveDatabase as unknown as JsonRecord, effectiveModelPreset)
-  applyPromptPreset(effectiveDatabase as unknown as JsonRecord, effectivePromptPreset)
+  applyEffectivePresetComposition(effectiveDatabase as unknown as JsonRecord, {
+    modelPreset: effectiveModelPreset,
+    promptPreset: effectivePromptPreset,
+    scope: 'full-generation',
+  })
   effectiveDatabase.moduleIntergration =
     typeof effectivePromptPreset.moduleIntergration === 'string' ? effectivePromptPreset.moduleIntergration : ''
   const promptPresetRegex = resolvePromptPresetRegexField(effectivePromptPreset)

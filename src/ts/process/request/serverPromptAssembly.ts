@@ -9,13 +9,7 @@ import {
   type CustomModelEntryLike,
   type ProviderCapabilityInput,
 } from './providerCapability'
-import {
-  databaseKeyForModelPresetField,
-  MODEL_PRESET_FIELDS,
-  PROMPT_PRESET_MODEL_OTHERS_OVERRIDE_FIELDS,
-  PROMPT_PRESET_MODEL_PARAMETER_OVERRIDE_FIELDS,
-  promptPresetOverridesModelParameters,
-} from '../../presetSplit'
+import { composeEffectivePresetSettings } from '../../presetSplit'
 
 /**
  * Three-arm verdict for the `sendChat` prompt-assembly gate, mirroring
@@ -177,21 +171,15 @@ function buildCompletionTarg(db: Database): RequestDataArgumentExtended {
 
 function effectiveModelDatabaseForChat(currentChat: Chat): Database {
   const db = getDatabase()
-  const effective = { ...db } as Database & Record<string, unknown>
   const settings = currentChat.generationSettings
   const modelPreset = findPresetById(db.modelPresets, settings?.modelPresetId)
-  if (modelPreset) {
-    applyModelPresetFields(effective, modelPreset, MODEL_PRESET_FIELDS)
-  }
-
   const promptPreset = findPresetById(db.promptPresets, settings?.promptPresetId)
-  if (promptPreset) {
-    if (promptPresetOverridesModelParameters(promptPreset)) {
-      applyModelPresetFields(effective, promptPreset, PROMPT_PRESET_MODEL_PARAMETER_OVERRIDE_FIELDS)
-    }
-    applyModelPresetFields(effective, promptPreset, PROMPT_PRESET_MODEL_OTHERS_OVERRIDE_FIELDS)
-  }
-  return effective
+  return composeEffectivePresetSettings({
+    base: db as unknown as Record<string, unknown>,
+    modelPreset,
+    promptPreset,
+    scope: 'model-runtime',
+  }) as unknown as Database
 }
 
 function findPresetById(collection: unknown, id: string | undefined): Record<string, unknown> | undefined {
@@ -199,17 +187,6 @@ function findPresetById(collection: unknown, id: string | undefined): Record<str
   return collection.find((item): item is Record<string, unknown> => {
     return !!item && typeof item === 'object' && !Array.isArray(item) && (item as { id?: unknown }).id === id
   })
-}
-
-function applyModelPresetFields(
-  target: Record<string, unknown>,
-  preset: Record<string, unknown>,
-  fields: readonly string[],
-): void {
-  for (const field of fields) {
-    if (!Object.prototype.hasOwnProperty.call(preset, field)) continue
-    target[databaseKeyForModelPresetField(field)] = preset[field]
-  }
 }
 
 function getModelInfoForDatabase(aiModel: string | undefined, db: Database): ReturnType<typeof getModelInfo> {

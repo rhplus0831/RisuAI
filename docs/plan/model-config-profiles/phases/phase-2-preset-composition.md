@@ -1,6 +1,6 @@
 # Phase 2: Preset Composition
 
-Status: not started.
+Status: complete.
 
 Goal: centralize the effective model settings merge order so profiles, legacy
 fields, model presets, and prompt presets cannot apply in different orders on
@@ -19,6 +19,27 @@ client and server paths.
   application semantics.
 - Add tests that prove preset composition before Phase 3 dispatch migration,
   Phase 4 UI changes, and Phase 6 durable profile storage.
+
+## Implemented Slice
+
+- Added shared pure composition helpers in `src/ts/presetSplit.ts`:
+  - `composeEffectivePresetSettings({ base, modelPreset, promptPreset, scope })`
+  - `applyEffectivePresetComposition(target, { modelPreset, promptPreset, scope })`
+- Supported two scopes:
+  - `full-generation`: base database, selected model preset, prompt text fields
+    and regex aliases, prompt parameter overrides when
+    `overrideModelParameters === true`, and Prompt Others overrides.
+  - `model-runtime`: base database, selected model preset, prompt model
+    parameter overrides when enabled, and Prompt Others overrides, while
+    excluding prompt text and regex fields.
+- Replaced the duplicate browser server-prompt preflight model-runtime merge in
+  `src/ts/process/request/serverPromptAssembly.ts`.
+- Replaced Fastify effective-generation model/prompt preset application in
+  `server/fastify/src/prompt/effectiveGenerationConfig.ts` while preserving the
+  existing `moduleIntergration`, `presetRegex`, persona, and sidebar behavior.
+- Added focused pure composition tests for precedence, disabled/enabled prompt
+  parameter overrides, Prompt Others role/separate/fallback precedence, regex
+  alias handling, model-runtime exclusions, and clone isolation.
 
 ## Anchors
 
@@ -44,11 +65,14 @@ client and server paths.
 ## Exit Criteria
 
 - Browser preflight and server prompt assembly share one documented composition
-  order.
+  order: passed.
 - Existing split model/prompt preset tests cover role, fallback, provider, and
-  runtime option composition.
+  runtime option composition: passed through the new focused
+  `src/ts/presetSplit.test.ts` coverage plus retained server assembly and
+  generation chat coverage.
 - Later profile storage can plug into the same composition path without
-  rewriting dispatch code again.
+  rewriting dispatch code again: passed for the current flat-settings
+  compatibility path.
 
 ## Validation
 
@@ -58,6 +82,23 @@ pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__t
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 ```
+
+Latest Phase 2 run:
+
+```bash
+pnpm exec vitest run src/ts/presetSplit.test.ts src/ts/process/request/tests/serverPromptAssembly.test.ts
+pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/assemble.test.ts server/fastify/__tests__/generation.chat.test.ts
+pnpm exec tsc -p tsconfig.client-lib.json
+pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
+```
+
+Results:
+
+- Focused preset composition and browser server-prompt preflight tests: passed,
+  2 files / 35 tests.
+- Fastify assemble and generation chat tests: passed, 2 files / 183 tests.
+- Client-lib TypeScript: passed.
+- Server strict TypeScript: passed.
 
 ## Risks
 

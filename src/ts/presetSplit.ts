@@ -145,6 +145,17 @@ export type PromptPresetModelOthersOverrideField = (typeof PROMPT_PRESET_MODEL_O
 export type PromptPresetModelOverrideField = (typeof PROMPT_PRESET_MODEL_OVERRIDE_FIELDS)[number]
 export type ModelPresetRecord = JsonRecord & { id: string; name?: string }
 export type PromptPresetRecord = JsonRecord & { id: string; name?: string }
+export type EffectivePresetCompositionScope = 'full-generation' | 'model-runtime'
+
+export interface EffectivePresetCompositionOptions {
+  modelPreset?: unknown
+  promptPreset?: unknown
+  scope?: EffectivePresetCompositionScope
+}
+
+export interface ComposeEffectivePresetSettingsInput extends EffectivePresetCompositionOptions {
+  base: JsonRecord
+}
 
 const MODEL_PRESET_DATABASE_KEY_OVERRIDES: Partial<Record<ModelPresetField, string>> = {
   NAISettings: 'NAIsettings',
@@ -269,6 +280,60 @@ export function resolvePromptPresetRegexField(source: unknown): { present: boole
   if (isNonEmptyArray(legacyRegex)) return { present: true, value: legacyRegex }
   if (hasPresetRegex) return { present: true, value: presetRegex }
   return { present: true, value: legacyRegex }
+}
+
+export function composeEffectivePresetSettings(input: ComposeEffectivePresetSettingsInput): JsonRecord {
+  const effective = cloneRecord(input.base)
+  applyEffectivePresetComposition(effective, input)
+  return effective
+}
+
+export function applyEffectivePresetComposition(target: JsonRecord, options: EffectivePresetCompositionOptions): void {
+  const scope = options.scope ?? 'full-generation'
+  applyMappedPresetFields(target, options.modelPreset, MODEL_PRESET_FIELDS)
+
+  if (scope === 'full-generation') {
+    applyPromptPresetFields(target, options.promptPreset)
+  }
+
+  applyPromptPresetModelOverrides(target, options.promptPreset)
+}
+
+function applyPromptPresetFields(target: JsonRecord, promptPreset: unknown): void {
+  if (!isRecord(promptPreset)) return
+  for (const field of PROMPT_PRESET_FIELDS) {
+    if (field === 'regex' || field === 'presetRegex') continue
+    if (!Object.prototype.hasOwnProperty.call(promptPreset, field)) continue
+    target[field] = cloneJsonValue(promptPreset[field])
+  }
+
+  const regexField = resolvePromptPresetRegexField(promptPreset)
+  if (regexField.present) {
+    target.presetRegex = cloneJsonValue(regexField.value)
+  }
+}
+
+function applyPromptPresetModelOverrides(target: JsonRecord, promptPreset: unknown): void {
+  if (promptPresetOverridesModelParameters(promptPreset)) {
+    applyMappedPresetFields(target, promptPreset, PROMPT_PRESET_MODEL_PARAMETER_OVERRIDE_FIELDS)
+  }
+  applyMappedPresetFields(target, promptPreset, PROMPT_PRESET_MODEL_OTHERS_OVERRIDE_FIELDS)
+}
+
+function applyMappedPresetFields(target: JsonRecord, preset: unknown, fields: readonly string[]): void {
+  if (!isRecord(preset)) return
+  for (const field of fields) {
+    if (!Object.prototype.hasOwnProperty.call(preset, field)) continue
+    target[databaseKeyForModelPresetField(field)] = cloneJsonValue(preset[field])
+  }
+}
+
+function cloneRecord(source: JsonRecord): JsonRecord {
+  const cloned: JsonRecord = {}
+  for (const [key, value] of Object.entries(source)) {
+    cloned[key] = cloneJsonValue(value)
+  }
+  return cloned
 }
 
 function pickPresetFields(source: unknown, fields: readonly string[]): JsonRecord {
