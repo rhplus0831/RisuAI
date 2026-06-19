@@ -1,6 +1,6 @@
 # Phase 3: Generation Dispatch
 
-Status: in progress; Phase 3a server-owned profile selection/capability/request-model slice complete; Phase 3b Fastify OpenAI-compatible provider-options slice complete; Phase 3c Fastify Anthropic/Mistral/Cohere provider-options slice complete; Phase 3d Fastify native Ollama provider-options slice complete; Phase 3e Fastify Kobold provider-options slice complete; Phase 3f Fastify Horde provider-options slice complete; Phase 3g Fastify OobaLegacy provider-options slice complete.
+Status: in progress; Phase 3a server-owned profile selection/capability/request-model slice complete; Phase 3b Fastify OpenAI-compatible provider-options slice complete; Phase 3c Fastify Anthropic/Mistral/Cohere provider-options slice complete; Phase 3d Fastify native Ollama provider-options slice complete; Phase 3e Fastify Kobold provider-options slice complete; Phase 3f Fastify Horde provider-options slice complete; Phase 3g Fastify OobaLegacy provider-options slice complete; Phase 3h Fastify Bedrock provider-options slice complete.
 
 Goal: move browser and Fastify generation dispatch from ad hoc flat database
 reads to the resolved profile runtime object.
@@ -136,14 +136,32 @@ reads to the resolved profile runtime object.
 - Blank profile-key coverage proves OobaLegacy dispatch does not fall back to a
   conflicting flat DB key and omits `X-API-KEY`.
 
+## Implemented Phase 3h Slice
+
+- `resolveModelProfile()` now exposes Bedrock legacy credential strings as
+  `profile.providerOptions.apiKey`, derived from `database.claudeAPIKey`, for
+  AWS Bedrock Claude profiles.
+- Fastify Bedrock chat dispatch now parses only
+  `profile.providerOptions.apiKey` as the legacy
+  `accessKeyId:secretAccessKey:region` string instead of reading flat
+  `db.claudeAPIKey` at dispatch time.
+- Direct dispatch coverage proves profile-owned Bedrock credentials win over a
+  conflicting flat `db.claudeAPIKey`, including the signed URL/Auth region and
+  the profile-derived request model.
+- Missing or blank profile-key coverage proves Bedrock dispatch does not fall
+  back to a conflicting flat DB key and does not call `fetch`.
+- Malformed profile-key coverage proves chat dispatch errors before `fetch`.
+- Focused coverage keeps Bedrock system extraction and profile-derived
+  `us.`/`global.` request-model behavior pinned.
+
 ## Remaining Phase 3 Work
 
 - Migrate the remaining browser completion/request helper paths to consume the
   resolver contract for role/static fallback selection.
 - Migrate remaining provider option branches outside OpenAI-compatible,
-  Anthropic, Mistral, Cohere, native Ollama, Kobold, Horde, and OobaLegacy to
-  `profile.providerOptions` where the target adapters already expose equivalent
-  request fields. Residual branches include Gemini/Vertex and Bedrock.
+  Anthropic, Mistral, Cohere, native Ollama, Kobold, Horde, OobaLegacy, and
+  Bedrock to `profile.providerOptions` where the target adapters already expose
+  equivalent request fields. Residual branches include Gemini/Vertex.
 - Broaden provider parity beyond the Phase 3a request-model surface before
   marking the full Phase 3 complete.
 
@@ -192,20 +210,20 @@ pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 ```
 
-Latest Phase 3g run:
+Latest Phase 3h run:
 
 ```bash
 pnpm exec vitest run src/ts/model/modelProfileResolver.test.ts
-pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/chatDispatchProfileOptions.test.ts server/fastify/__tests__/oobaLegacy.test.ts server/fastify/__tests__/generation.chat.test.ts server/fastify/__tests__/generation.completion.test.ts
+pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/chatDispatchProfileOptions.test.ts server/fastify/__tests__/bedrock.test.ts server/fastify/__tests__/generation.completion.test.ts server/fastify/__tests__/generation.chat.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 ```
 
 Results:
 
-- Focused resolver tests: passed, 1 file / 16 tests.
-- Focused Fastify chat dispatch/OobaLegacy/chat/completion tests: passed, 4 files /
-  192 tests.
+- Focused resolver tests: passed, 1 file / 17 tests.
+- Focused Fastify chat dispatch/Bedrock/chat/completion tests: passed, 4 files /
+  210 tests.
 - Client-lib TypeScript: passed.
 - Server strict TypeScript: passed.
 

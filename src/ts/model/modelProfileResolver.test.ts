@@ -369,6 +369,23 @@ describe('resolveModelProfile provider/runtime normalization', () => {
     })
   })
 
+  it('normalizes Bedrock credential string and request model into provider options', () => {
+    const profile = resolveModelProfile({
+      database: db({
+        aiModel: 'anthropic.claude-sonnet-4-5-20250929-v1:0',
+        claudeAPIKey: 'bedrock-access:bedrock-secret:ap-southeast-2',
+      } as Partial<Database>),
+    })
+
+    expect(profile.modelInfo.format).toBe(LLMFormat.AWSBedrockClaude)
+    expect(profile.providerCapability).toEqual({ routable: true, provider: 'bedrock' })
+    expect(profile.requestModel).toBe('global.anthropic.claude-sonnet-4-5-20250929-v1:0')
+    expect(profile.providerOptions).toMatchObject({
+      apiKey: 'bedrock-access:bedrock-secret:ap-southeast-2',
+      requestModel: 'global.anthropic.claude-sonnet-4-5-20250929-v1:0',
+    })
+  })
+
   it('normalizes OpenAI-compatible key identifier models', () => {
     const profile = resolveModelProfile({
       database: db({

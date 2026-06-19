@@ -768,6 +768,7 @@ export function buildProfileProviderCapabilityInput(
             },
           ]
         : undefined,
+      claudeAPIKey: modelInfo.format === LLMFormat.AWSBedrockClaude ? providerOptions?.apiKey : undefined,
       ollamaApiKey: providerOptions?.ollama?.apiKey,
       ollamaRequestFormat: providerOptions?.ollama?.requestFormat,
       ollamaURL: providerOptions?.ollama?.url,
@@ -1043,6 +1044,8 @@ function resolveProviderOptions(
   }
 
   switch (modelInfo.format) {
+    case LLMFormat.AWSBedrockClaude:
+      return { ...base, apiKey: nonBlankString(database.claudeAPIKey) }
     case LLMFormat.Anthropic:
     case LLMFormat.AnthropicLegacy:
       return { ...base, apiKey: nonBlankString(database.claudeAPIKey) }

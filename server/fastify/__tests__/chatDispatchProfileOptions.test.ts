@@ -69,6 +69,13 @@ function okOobaLegacyResponse(text = 'profile ok'): Response {
   })
 }
 
+function okBedrockResponse(text = 'profile ok'): Response {
+  return new Response(JSON.stringify({ content: [{ type: 'text', text }], stop_reason: 'end_turn' }), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  })
+}
+
 function captureDispatchRequests(response: Response = okOpenAIResponse()): CapturedDispatchRequest[] {
   const captured: CapturedDispatchRequest[] = []
   vi.stubGlobal(
@@ -419,6 +426,62 @@ describe('dispatchChatProvider profile providerOptions', () => {
     expect(captured[0].headers['X-API-KEY']).toBe('profile-mancer-key')
   })
 
+  it('uses Bedrock profile credentials and request model over conflicting flat database fields', async () => {
+    const profile = resolveModelProfile({
+      database: db({
+        aiModel: 'anthropic.claude-3-5-sonnet-20241022-v2:0',
+        claudeAPIKey: 'PROFILEAKIA:profile-secret:ap-southeast-2',
+      } as Partial<Database>),
+    })
+    const flatConflict = db({
+      aiModel: 'anthropic.claude-sonnet-4-5-20250929-v1:0',
+      claudeAPIKey: 'FLATAKIA:flat-secret:us-east-1',
+    } as Partial<Database>)
+    const captured = captureDispatchRequests(okBedrockResponse())
+
+    await dispatchWithProfile(profile, flatConflict, [
+      { role: 'system', content: 'profile system 1' },
+      { role: 'system', content: 'profile system 2' },
+      { role: 'user', content: 'hello' },
+    ])
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0].url).toBe(
+      'https://bedrock-runtime.ap-southeast-2.amazonaws.com/model/us.anthropic.claude-3-5-sonnet-20241022-v2%3A0/invoke',
+    )
+    expect(captured[0].headers.Authorization).toContain('Credential=PROFILEAKIA/')
+    expect(captured[0].headers.Authorization).toContain('/ap-southeast-2/bedrock/aws4_request')
+    expect(captured[0].headers.Authorization).not.toContain('FLATAKIA')
+    expect(captured[0].headers.Authorization).not.toContain('/us-east-1/bedrock/aws4_request')
+    expect(captured[0].body.anthropic_version).toBe('bedrock-2023-05-31')
+    expect(captured[0].body.system).toBe('profile system 1\n\nprofile system 2')
+    expect(captured[0].body.messages).toEqual([{ role: 'user', content: 'hello' }])
+    expect(captured[0].body.model).toBeUndefined()
+  })
+
+  it('uses the global Bedrock request-model prefix for newer profile models', async () => {
+    const profile = resolveModelProfile({
+      database: db({
+        aiModel: 'anthropic.claude-sonnet-4-5-20250929-v1:0',
+        claudeAPIKey: 'PROFILEAKIA:profile-secret:eu-central-1',
+      } as Partial<Database>),
+    })
+    const flatConflict = db({
+      aiModel: 'anthropic.claude-3-5-sonnet-20241022-v2:0',
+      claudeAPIKey: 'FLATAKIA:flat-secret:us-west-2',
+    } as Partial<Database>)
+    const captured = captureDispatchRequests(okBedrockResponse())
+
+    await dispatchWithProfile(profile, flatConflict)
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0].url).toBe(
+      'https://bedrock-runtime.eu-central-1.amazonaws.com/model/global.anthropic.claude-sonnet-4-5-20250929-v1%3A0/invoke',
+    )
+    expect(captured[0].headers.Authorization).toContain('/eu-central-1/bedrock/aws4_request')
+    expect(captured[0].body.messages).toEqual([{ role: 'user', content: 'hello' }])
+  })
+
   it('uses Horde profile API key and request model over conflicting flat database fields', async () => {
     const profile = resolveModelProfile({
       database: db({
@@ -496,6 +559,48 @@ describe('dispatchChatProvider profile providerOptions', () => {
     expect(captured).toHaveLength(1)
     expect(captured[0].url).toBe('http://profile-ooba.example.com/api/v1/generate')
     expect(captured[0].headers['X-API-KEY']).toBeUndefined()
+  })
+
+  it.each([
+    { label: 'missing', claudeAPIKey: undefined },
+    { label: 'blank', claudeAPIKey: '   ' },
+  ])('does not fall back to flat DB Bedrock credentials when the profile key is $label', async (testCase) => {
+    const profileDatabase: Partial<Database> = {
+      aiModel: 'anthropic.claude-3-5-sonnet-20241022-v2:0',
+    }
+    if (testCase.claudeAPIKey !== undefined) {
+      profileDatabase.claudeAPIKey = testCase.claudeAPIKey
+    }
+    const profile = resolveModelProfile({ database: db(profileDatabase) })
+    const flatConflict = db({
+      aiModel: 'anthropic.claude-3-5-sonnet-20241022-v2:0',
+      claudeAPIKey: 'FLATAKIA:flat-secret:us-east-1',
+    } as Partial<Database>)
+    const fetchSpy = vi.fn()
+    vi.stubGlobal('fetch', fetchSpy as unknown as typeof fetch)
+
+    await expect(dispatchWithProfile(profile, flatConflict)).rejects.toThrow('configuration is incomplete')
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it('rejects malformed Bedrock profile credentials before fetch', async () => {
+    const profile = resolveModelProfile({
+      database: db({
+        aiModel: 'anthropic.claude-3-5-sonnet-20241022-v2:0',
+        claudeAPIKey: 'PROFILEAKIA:profile-secret:ap-southeast-2:extra',
+      } as Partial<Database>),
+    })
+    const flatConflict = db({
+      aiModel: 'anthropic.claude-3-5-sonnet-20241022-v2:0',
+      claudeAPIKey: 'FLATAKIA:flat-secret:us-east-1',
+    } as Partial<Database>)
+    const fetchSpy = vi.fn()
+    vi.stubGlobal('fetch', fetchSpy as unknown as typeof fetch)
+
+    await expect(dispatchWithProfile(profile, flatConflict)).rejects.toThrow(
+      'The key assigned to this request is invalid.',
+    )
+    expect(fetchSpy).not.toHaveBeenCalled()
   })
 
   it('preserves the native Ollama missing-URL error and does not fall back to flat DB URL', async () => {

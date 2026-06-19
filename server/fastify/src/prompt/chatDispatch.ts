@@ -13,7 +13,7 @@ import { resolveOpenAILegacyInstructRequest, runOpenAILegacyInstruct } from '../
 import { resolveOpenAIResponsesRequest, runOpenAIResponses } from '../generation/openaiResponses.js'
 import { resolveKoboldRequest, runKobold } from '../generation/kobold.js'
 import { resolveOllamaRequest, runOllama, runOllamaStream } from '../generation/ollama.js'
-import { coerceBedrockCredentials, resolveBedrockRequest, runBedrock } from '../generation/bedrock.js'
+import { resolveBedrockRequest, runBedrock, type BedrockCredentials } from '../generation/bedrock.js'
 import { resolveHordeRequest, runHorde } from '../generation/horde.js'
 import { resolveOobaLegacyRequest, runOobaLegacy } from '../generation/oobaLegacy.js'
 import {
@@ -546,6 +546,19 @@ function resolveBedrockWireModel(internalId: string): string {
   return (useGlobal ? 'global.' : 'us.') + internalId
 }
 
+function parseLegacyProfileBedrockCredentials(apiKey: string | undefined): BedrockCredentials | null {
+  if (!apiKey) return null
+  const parts = apiKey.split(':')
+  if (parts.length !== 3) {
+    throw new Error('The key assigned to this request is invalid.')
+  }
+  const [accessKeyId, secretAccessKey, region] = parts
+  if (!accessKeyId || !secretAccessKey || !region) {
+    throw new Error('The key assigned to this request is invalid.')
+  }
+  return { accessKeyId, secretAccessKey, region }
+}
+
 function resolveProviderModel(
   db: Database,
   info: ModelInfoLite,
@@ -988,13 +1001,13 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
   }
 
   if (provider === 'bedrock') {
-    const creds = coerceBedrockCredentials(db.claudeAPIKey)
-    if (creds === null || !creds.ok) throw new Error('options.bedrock.credentials is required')
+    const credentials = parseLegacyProfileBedrockCredentials(asString(profile.providerOptions.apiKey))
+    if (!credentials) throw new Error('options.bedrock.credentials is required')
     const extracted = extractSystem(messages)
     const request = resolveBedrockRequest({
       model,
       messages: extracted.messages,
-      credentials: creds.value,
+      credentials,
       system: extracted.system,
       maxTokens,
       temperature,
