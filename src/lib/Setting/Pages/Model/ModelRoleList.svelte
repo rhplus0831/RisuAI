@@ -6,9 +6,9 @@
   import CheckInput from 'src/lib/UI/GUI/CheckInput.svelte'
   import SegmentedControl from 'src/lib/UI/GUI/SegmentedControl.svelte'
   import ModelList from 'src/lib/UI/ModelList.svelte'
+  import { resolveModelProfile, type ResolvedModelProfile } from 'src/ts/model/modelProfileResolver'
   import { getModelInfo } from 'src/ts/model/modellist'
   import {
-    resolveModelForRole,
     type LegacyFallbackModelKey,
     type LegacyFallbackModelMap,
     type LegacySeperateModelMap,
@@ -16,7 +16,8 @@
     type NormalizedModelRoleOverrides,
   } from 'src/ts/model/modelRoles'
   import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
-  import type { SeparateParameters } from 'src/ts/storage/database.svelte'
+  import type { Database, SeparateParameters } from 'src/ts/storage/database.svelte'
+  import { DBState } from 'src/ts/stores.svelte'
 
   type OptionalModelRole = Exclude<ModelRole, 'chatMain' | 'chatAux'>
   type RoleModelMode = 'inherit' | 'override'
@@ -113,6 +114,21 @@
   let selectedDefinition = $derived(roleDefinitions.find((definition) => definition.role === selectedRole))
   let selectedFallbackKey = $derived(selectedRole ? fallbackKeyByRole[selectedRole] : undefined)
   let selectedSupportsParameters = $derived(selectedRole ? parameterRoles.has(selectedRole) : false)
+  const resolverCompatibilityDatabase = $derived.by<Database>(() => ({
+    ...DBState.db,
+    aiModel: aiModelDraft.value,
+    subModel: subModelDraft.value,
+    modelRoles: modelRolesDraft.value,
+    seperateModelsForAxModels: seperateModelsForAxModelsDraft.value,
+    doNotChangeSeperateModels: doNotChangeSeperateModelsDraft.value,
+    seperateModels: seperateModelsDraft.value,
+    fallbackModels: fallbackModelsDraft.value,
+    fallbackWhenBlankResponse: fallbackWhenBlankResponseDraft.value,
+    doNotChangeFallbackModels: doNotChangeFallbackModelsDraft.value,
+    seperateParametersEnabled: seperateParametersEnabledDraft.value,
+    seperateParametersByModel: seperateParametersByModelDraft.value,
+    seperateParameters: seperateParametersDraft.value,
+  }))
 
   $effect(() => {
     const role = selectedRole
@@ -158,22 +174,38 @@
     return isOptionalRole(role) && modelRolesDraft.value[role].trim() !== ''
   }
 
-  function roleResolutionSource() {
-    return {
-      aiModel: aiModelDraft.value,
-      subModel: subModelDraft.value,
-      modelRoles: modelRolesDraft.value,
-      seperateModelsForAxModels: seperateModelsForAxModelsDraft.value,
-      seperateModels: seperateModelsDraft.value,
-    }
+  function resolvedProfileForRole(role: ModelRole): ResolvedModelProfile {
+    return resolveModelProfile({
+      database: resolverCompatibilityDatabase,
+      role,
+      lookupModelInfo: (_database, id) => getModelInfo(id),
+    })
   }
 
   function effectiveModelForRole(role: ModelRole): string {
-    return resolveModelForRole(roleResolutionSource(), role)
+    return resolvedProfileForRole(role).modelId
   }
 
   function modelName(model: string): string {
     return getModelInfo(model)?.fullName || model || language.none
+  }
+
+  function providerVerdictForRole(role: ModelRole): string {
+    const profile = resolvedProfileForRole(role)
+    if (profile.modelInfo.unsupportedReason) {
+      return language.modelRoles.providerUnavailable(profile.modelInfo.unsupportedReason)
+    }
+    if (profile.providerCapability.routable) return profile.providerCapability.provider
+    return language.modelRoles.providerUnavailable(profile.providerCapability.reason)
+  }
+
+  function requestModelForRole(role: ModelRole): string {
+    const profile = resolvedProfileForRole(role)
+    return profile.requestModel.trim() || profile.modelId || language.none
+  }
+
+  function fallbackCountForRole(role: ModelRole): string {
+    return language.modelRoles.fallbackCount(resolvedProfileForRole(role).fallbacks.length)
   }
 
   function legacyModelForRole(role: ModelRole): string {
@@ -267,6 +299,11 @@
         <span class="min-w-0 text-right">
           <span class="block truncate text-sm">{modelName(effectiveModelForRole(definition.role))}</span>
           <span class="block truncate text-xs text-textcolor2">{sourceLabelForRole(definition)}</span>
+          <span class="mt-1 flex flex-wrap justify-end gap-x-2 gap-y-0.5 text-[11px] text-textcolor2">
+            <span class="truncate">{language.modelRoles.provider}: {providerVerdictForRole(definition.role)}</span>
+            <span class="truncate">{language.modelRoles.requestModel}: {requestModelForRole(definition.role)}</span>
+            <span class="truncate">{fallbackCountForRole(definition.role)}</span>
+          </span>
         </span>
         <span class="flex h-8 w-8 items-center justify-center rounded-md text-textcolor2">
           <PencilIcon size={18} />
@@ -311,6 +348,27 @@
       </div>
 
       <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
+        <div class="rounded-md border border-darkborderc p-3">
+          <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <span class="font-medium">{language.modelRoles.resolvedProfile}</span>
+            <span class="text-xs text-textcolor2">{sourceLabelForRole(selectedDefinition)}</span>
+          </div>
+          <div class="grid gap-2 text-sm sm:grid-cols-3">
+            <div class="min-w-0">
+              <span class="block text-xs text-textcolor2">{language.modelRoles.provider}</span>
+              <span class="block truncate">{providerVerdictForRole(selectedRole)}</span>
+            </div>
+            <div class="min-w-0">
+              <span class="block text-xs text-textcolor2">{language.modelRoles.requestModel}</span>
+              <span class="block truncate">{requestModelForRole(selectedRole)}</span>
+            </div>
+            <div class="min-w-0">
+              <span class="block text-xs text-textcolor2">{language.modelRoles.fallbackModels}</span>
+              <span class="block truncate">{fallbackCountForRole(selectedRole)}</span>
+            </div>
+          </div>
+        </div>
+
         <div class="rounded-md border border-darkborderc p-3">
           <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
             <span class="font-medium">{language.modelRoles.modelSelection}</span>

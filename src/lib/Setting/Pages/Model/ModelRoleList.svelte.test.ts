@@ -35,6 +35,70 @@ describe('ModelRoleList source contract', () => {
     expect(source).toContain('[role]: model.trim()')
   })
 
+  it('resolves read-only profile summaries from DBState plus legacy drafts', () => {
+    const source = readSource('src/lib/Setting/Pages/Model/ModelRoleList.svelte')
+
+    expect(source).toContain("import { DBState } from 'src/ts/stores.svelte'")
+    expect(source).toContain('import { resolveModelProfile, type ResolvedModelProfile }')
+    expect(source).toContain('const resolverCompatibilityDatabase = $derived.by<Database>(() => ({')
+    expect(source).toContain('...DBState.db')
+    for (const draftOverlay of [
+      'aiModel: aiModelDraft.value',
+      'subModel: subModelDraft.value',
+      'modelRoles: modelRolesDraft.value',
+      'seperateModelsForAxModels: seperateModelsForAxModelsDraft.value',
+      'seperateModels: seperateModelsDraft.value',
+      'fallbackModels: fallbackModelsDraft.value',
+      'seperateParametersEnabled: seperateParametersEnabledDraft.value',
+      'seperateParametersByModel: seperateParametersByModelDraft.value',
+      'seperateParameters: seperateParametersDraft.value',
+    ]) {
+      expect(source).toContain(draftOverlay)
+    }
+    expect(source).toContain('function resolvedProfileForRole(role: ModelRole): ResolvedModelProfile')
+    expect(source).toContain('return resolveModelProfile({')
+    expect(source).toContain('database: resolverCompatibilityDatabase')
+    expect(source).toContain('lookupModelInfo: (_database, id) => getModelInfo(id)')
+  })
+
+  it('backs effective role models with the resolved profile model id', () => {
+    const source = readSource('src/lib/Setting/Pages/Model/ModelRoleList.svelte')
+
+    expect(source).toContain('function effectiveModelForRole(role: ModelRole): string')
+    expect(source).toContain('return resolvedProfileForRole(role).modelId')
+    expect(source).not.toContain('return resolveModelForRole(')
+  })
+
+  it('keeps all role-related writes on legacy flat setting drafts', () => {
+    const source = readSource('src/lib/Setting/Pages/Model/ModelRoleList.svelte')
+
+    for (const draft of [
+      "createServerBackedSettingDraft<string>('aiModel'",
+      "createServerBackedSettingDraft<string>('subModel'",
+      "createServerBackedSettingDraft<NormalizedModelRoleOverrides>('modelRoles'",
+      "createServerBackedSettingDraft<boolean>('seperateModelsForAxModels'",
+      "createServerBackedSettingDraft<boolean>('doNotChangeSeperateModels'",
+      "createServerBackedSettingDraft<LegacySeperateModelMap>('seperateModels'",
+      "createServerBackedSettingDraft<LegacyFallbackModelMap>('fallbackModels'",
+      "createServerBackedSettingDraft<boolean>('fallbackWhenBlankResponse'",
+      "createServerBackedSettingDraft<boolean>('doNotChangeFallbackModels'",
+      "createServerBackedSettingDraft<boolean>('seperateParametersEnabled'",
+      "createServerBackedSettingDraft<boolean>('seperateParametersByModel'",
+      "createServerBackedSettingDraft<SeparateParameterSettings>('seperateParameters'",
+    ]) {
+      expect(source).toContain(draft)
+    }
+  })
+
+  it('does not introduce durable profile storage drafts', () => {
+    const source = readSource('src/lib/Setting/Pages/Model/ModelRoleList.svelte')
+
+    expect(source).not.toContain('modelProfiles')
+    expect(source).not.toContain('profileBindings')
+    expect(source).not.toContain("createServerBackedSettingDraft('modelProfiles")
+    expect(source).not.toContain("createServerBackedSettingDraft('profileBindings")
+  })
+
   it('keeps role fallback slots aligned with supported request fallback keys', () => {
     const source = readSource('src/lib/Setting/Pages/Model/ModelRoleList.svelte')
 
