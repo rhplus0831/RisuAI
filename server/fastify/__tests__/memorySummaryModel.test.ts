@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { LLMFormat } from '../../../src/ts/model/types'
+import { LLMFormat, LLMTokenizer } from '../../../src/ts/model/types'
 import type { Database } from '../../../src/ts/storage/database.svelte'
 import { resolveMemorySummaryModel } from '../src/memorySummaryModel.js'
 
@@ -90,11 +90,14 @@ describe('resolveMemorySummaryModel', () => {
         customModels: [
           {
             id: 'xcustom:::summary',
+            name: 'Custom Summary',
             internalId: 'custom-summary-model',
             url: 'https://custom.example/v1/chat/completions',
             key: 'custom-secret',
             format: LLMFormat.OpenAICompatible,
+            tokenizer: LLMTokenizer.Unknown,
             params: 'alpha=1\nbeta=two=2\nignored',
+            flags: [],
           },
         ],
       }),

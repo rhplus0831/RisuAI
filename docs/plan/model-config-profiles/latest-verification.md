@@ -7,44 +7,38 @@ workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 0 contract fixtures and documentation.
-- Final passing commands:
-  - `pnpm exec prettier --write docs/plan/model-config-profiles/phases/phase-0-current-contracts.md docs/plan/model-config-profiles/status.md docs/plan/model-config-profiles/latest-verification.md src/ts/process/request/tests/modelRoleRouting.test.ts src/ts/storage/database.svelte.test.ts server/fastify/__tests__/providerSecrets.test.ts server/fastify/__tests__/memorySummaryModel.test.ts`
-    - Result: passed. The command exited 0; Prettier reported the touched test
-      files unchanged.
-  - `pnpm exec prettier --check 'docs/plan/model-config-profiles/**/*.md'`
-    - Result: passed. All matched files use Prettier code style.
-  - `pnpm exec vitest run src/ts/process/request/tests/modelRoleRouting.test.ts src/ts/storage/database.svelte.test.ts`
-    - Result: passed. 2 test files passed; 39 tests passed.
-  - `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/providerSecrets.test.ts server/fastify/__tests__/memorySummaryModel.test.ts`
-    - Result: passed. 2 test files passed; 10 tests passed.
-  - `git diff --check`
-    - Result: passed. No whitespace errors reported.
-- Failed/intermediate commands while shaping the fallback fixture:
-  - `pnpm exec vitest run src/ts/process/request/tests/modelRoleRouting.test.ts src/ts/storage/database.svelte.test.ts`
-    - Result: failed. 1 test failed in
-      `modelRoleRouting.test.ts`:
-      `sends legacy fallback model ids as staticModel attempts before the resolved role model`
-      expected `{ type: 'success', result: 'ok', model: 'role-memory-model' }`
-      and received `{ type: 'fail', result: 'try another model' }`.
-  - `pnpm exec vitest run src/ts/process/request/tests/modelRoleRouting.test.ts src/ts/storage/database.svelte.test.ts`
-    - Result: failed. 1 test failed in
-      `modelRoleRouting.test.ts`:
-      `sends legacy fallback model ids as staticModel attempts before the resolved role model`
-      expected `{ type: 'success', result: 'ok', model: 'role-memory-model' }`
-      and received `{ type: 'success', result: '' }`.
-  - `pnpm exec vitest run src/ts/process/request/tests/modelRoleRouting.test.ts -t "sends legacy fallback" --reporter verbose`
-    - Result: failed during fixture refinement. One run expected
-      `['model', 'model']` and received `['model']`; a later run expected
-      `['fallback-main-model', '']` and received
-      `['fallback-main-model']`.
-  - `pnpm exec tsx -e "import { setDatabase, getDatabase, type Database } from './src/ts/storage/database.svelte.ts'; globalThis.safeStructuredClone=(v:any)=>v===undefined?undefined:JSON.parse(JSON.stringify(v)); setDatabase({aiModel:'echo_model',subModel:'echo_model',modelRoles:{},characters:[],customModels:[],maxResponse:64,temperature:50,useStreaming:false,genTime:1,extractJson:'',fallbackModels:{model:[],memory:['fallback-memory-model'],emotion:[],translate:[],otherAx:[],scriptMain:[],scriptAux:[]},fallbackWhenBlankResponse:true,requestRetrys:0} as unknown as Database); console.log(JSON.stringify({fallbackModels:getDatabase().fallbackModels,fallbackWhenBlankResponse:getDatabase().fallbackWhenBlankResponse,requestRetrys:getDatabase().requestRetrys}));"`
-    - Result: failed before reaching the check with
-      `ReferenceError: document is not defined` from
-      `src/ts/plugins/pluginSafeClass.ts:311`.
-- Residual gaps: no full TypeScript check, full provider matrix, browser smoke,
-  or Phase 1 resolver proof has run in this slice. Embedding behavior was not
-  migrated or reworked.
+- Runtime/code change under test: Phase 1 read-only profile resolver, focused
+  parity fixtures, and the `memorySummaryModel.test.ts` custom model fixture
+  type completion.
+- Latest follow-up passing commands:
+  - `pnpm exec prettier --write --ignore-path /dev/null server/fastify/__tests__/memorySummaryModel.test.ts docs/plan/model-config-profiles/status.md docs/plan/model-config-profiles/latest-verification.md docs/plan/model-config-profiles/phases/phase-1-read-only-profile-resolver.md`
+    - Result: passed. The command exited 0 and formatted the changed fixture
+      and docs.
+  - `pnpm exec tsc -p tsconfig.client-lib.json`
+    - Result: passed. The command exited 0 and rebuilt client declaration
+      output for server project references.
+  - `pnpm exec tsc -p server/fastify/tsconfig.json --noEmit`
+    - Result: passed. The command exited 0 after the memory summary custom
+      model fixture was completed with required metadata fields.
+  - `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/memorySummaryModel.test.ts`
+    - Result: passed. 1 test file passed; 4 tests passed.
+- Retained Phase 1 resolver proof:
+  - `pnpm exec vitest run src/ts/model/modelProfileResolver.test.ts`
+    - Result: passed. 1 test file passed; 12 tests passed.
+  - `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/modelProfileResolver.server.test.ts`
+    - Result: passed. 1 test file passed; 1 test passed.
+  - `pnpm exec vitest run src/ts/model/modelRoles.test.ts src/ts/process/request/tests/modelRoleRouting.test.ts src/ts/process/request/tests/providerCapability.test.ts src/ts/model/modelProfileResolver.test.ts`
+    - Result: passed. 4 test files passed; 74 tests passed.
+  - `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/providerCapabilityRoute.test.ts server/fastify/__tests__/modelProfileResolver.server.test.ts`
+    - Result: passed. 2 test files passed; 12 tests passed.
+  - `pnpm exec prettier --write src/ts/model/modelProfileResolver.ts src/ts/model/modelProfileResolver.test.ts server/fastify/__tests__/modelProfileResolver.server.test.ts docs/plan/model-config-profiles/status.md docs/plan/model-config-profiles/latest-verification.md docs/plan/model-config-profiles/phases/phase-1-read-only-profile-resolver.md`
+    - Result: passed. The command exited 0 and formatted the Phase 1 code,
+      tests, and docs.
+- Failed/intermediate commands: none in the latest follow-up run.
+- Residual gaps: Phase 1 runtime dispatch adoption has not started; broader
+  provider URL variants for `reverse_proxy` and DeepInfra key-identifier
+  behavior are implemented but not individually fixture-tested. Embedding
+  behavior was not migrated or reworked.
 
 ## Remaining Proof
 
