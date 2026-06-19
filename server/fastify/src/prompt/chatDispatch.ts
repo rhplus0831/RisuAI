@@ -178,34 +178,6 @@ function stripTrailingPath(rawUrl: string, path: string): string {
   return trimmed.endsWith(path) ? trimmed.slice(0, -path.length) : trimmed
 }
 
-function resolveReverseProxyLegacyInstructUrl(rawUrl: string, autofill: boolean): string {
-  let url = rawUrl
-  if (autofill) {
-    if (url.endsWith('v1')) {
-      url += '/completions'
-    } else if (url.endsWith('v1/')) {
-      url += 'completions'
-    } else if (!(url.endsWith('completions') || url.endsWith('completions/'))) {
-      url += url.endsWith('/') ? 'v1/completions' : '/v1/completions'
-    }
-  }
-  return stripTrailingPath(url, '/completions')
-}
-
-function resolveReverseProxyResponsesUrl(rawUrl: string, autofill: boolean): string {
-  let url = rawUrl
-  if (autofill) {
-    if (url.endsWith('v1')) {
-      url += '/responses'
-    } else if (url.endsWith('v1/')) {
-      url += 'responses'
-    } else if (!(url.endsWith('responses') || url.endsWith('responses/'))) {
-      url += url.endsWith('/') ? 'v1/responses' : '/v1/responses'
-    }
-  }
-  return stripTrailingPath(url, '/responses')
-}
-
 function resolveModelInfo(db: Database): ModelInfoLite {
   const aiModel = asString(db.aiModel) ?? ''
   if (aiModel === 'reverse_proxy') {
@@ -888,33 +860,17 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
   }
 
   if (provider === 'openai-legacy-instruct') {
-    const aiModel = asString(db.aiModel) ?? ''
-    let apiKey: string | undefined = info.format === LLMFormat.NanoGPTLegacy ? db.nanogptKey : db.openAIKey
-    let baseUrl = info.format === LLMFormat.NanoGPTLegacy ? NANOGPT_BASE_URL : undefined
-    let extraHeaders: Record<string, string> | undefined
-    let ap: Array<[string, string]> | undefined
-    if (info.format === LLMFormat.NanoGPTLegacy && asString(db.nanogptProvider)) {
-      extraHeaders = { 'X-Provider': db.nanogptProvider as string }
-    } else if (aiModel === 'reverse_proxy') {
-      apiKey = db.proxyKey
-      baseUrl = resolveReverseProxyLegacyInstructUrl(db.forceReplaceUrl ?? '', db.autofillRequestUrl !== false)
-      ap = additionalParams(db.additionalParams)
-    } else if (aiModel.startsWith('xcustom:::')) {
-      const entry = findXcustomEntry(db, aiModel)
-      apiKey = asString(entry?.key)
-      const url = asString(entry?.url)
-      baseUrl = url ? stripTrailingPath(url, '/completions') : undefined
-      ap = parseXcustomParams(entry?.params)
-    }
+    const variant = resolveProfileOpenAIVariant(profile)
+    if (!variant) throw new Error('options["openai-legacy-instruct"].apiKey is required')
     const request = resolveOpenAILegacyInstructRequest({
       model,
       messages,
-      apiKey,
-      baseUrl,
+      apiKey: variant.apiKey,
+      baseUrl: variant.baseUrl,
       maxTokens,
       temperature,
-      extraHeaders,
-      additionalParams: ap,
+      extraHeaders: variant.extraHeaders,
+      additionalParams: variant.additionalParams,
       signal,
     })
     if (!request) throw new Error('options["openai-legacy-instruct"].apiKey is required')
@@ -922,39 +878,18 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
   }
 
   if (provider === 'openai-responses') {
-    const aiModel = asString(db.aiModel) ?? ''
-    let apiKey: string | undefined = info.format === LLMFormat.NanoGPTResponses ? db.nanogptKey : db.openAIKey
-    let baseUrl = info.format === LLMFormat.NanoGPTResponses ? NANOGPT_BASE_URL : undefined
-    let extraHeaders: Record<string, string> | undefined
-    let ap: Array<[string, string]> | undefined
-    if (info.format === LLMFormat.NanoGPTResponses && asString(db.nanogptProvider)) {
-      extraHeaders = { 'X-Provider': db.nanogptProvider as string }
-    } else if (aiModel === 'ollama-cloud') {
-      apiKey = db.ollamaApiKey
-      baseUrl = 'https://ollama.com/v1'
-    } else if (aiModel === 'reverse_proxy') {
-      apiKey = db.proxyKey
-      baseUrl = resolveReverseProxyResponsesUrl(db.forceReplaceUrl ?? '', db.autofillRequestUrl !== false)
-      ap = additionalParams(db.additionalParams)
-    } else if (aiModel.startsWith('xcustom:::')) {
-      const entry = findXcustomEntry(db, aiModel)
-      apiKey = asString(entry?.key)
-      const url = asString(entry?.url)
-      baseUrl = url ? stripTrailingPath(url, '/responses') : undefined
-      ap = parseXcustomParams(entry?.params)
-    } else if (info.endpoint) {
-      baseUrl = stripTrailingPath(info.endpoint, '/responses')
-    }
+    const variant = resolveProfileOpenAIVariant(profile)
+    if (!variant) throw new Error('options["openai-responses"].apiKey is required')
     const request = resolveOpenAIResponsesRequest({
       model,
       messages,
-      apiKey,
-      baseUrl,
+      apiKey: variant.apiKey,
+      baseUrl: variant.baseUrl,
       maxOutputTokens: maxTokens,
       temperature,
-      store: aiModel === 'ollama-cloud' ? false : undefined,
-      extraHeaders,
-      additionalParams: ap,
+      store: profile.modelId === 'ollama-cloud' ? false : undefined,
+      extraHeaders: variant.extraHeaders,
+      additionalParams: variant.additionalParams,
       signal,
     })
     if (!request) throw new Error('options["openai-responses"].apiKey is required')

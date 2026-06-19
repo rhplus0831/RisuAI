@@ -57,6 +57,20 @@ function okOpenAIResponse(text = 'profile ok'): Response {
   })
 }
 
+function okOpenAILegacyInstructResponse(text = 'profile ok'): Response {
+  return new Response(JSON.stringify({ choices: [{ text }] }), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  })
+}
+
+function okOpenAIResponsesResponse(text = 'profile ok'): Response {
+  return new Response(JSON.stringify({ output: [{ type: 'message', content: [{ type: 'output_text', text }] }] }), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  })
+}
+
 function okAnthropicResponse(text = 'profile ok'): Response {
   return new Response(JSON.stringify({ content: [{ type: 'text', text }] }), {
     status: 200,
@@ -294,6 +308,113 @@ describe('dispatchChatProvider profile providerOptions', () => {
       { role: 'user', content: 'hello' },
       { role: 'system', content: 'profile system 1\nprofile system 2' },
     ])
+  })
+
+  it('uses OpenAI legacy instruct profile options over conflicting flat database fields', async () => {
+    const profile = resolveModelProfile({
+      database: db({
+        aiModel: 'reverse_proxy',
+        customProxyRequestModel: 'profile-legacy-model',
+        customAPIFormat: LLMFormat.OpenAILegacyInstruct,
+        forceReplaceUrl: 'risu::https://profile-legacy.example.com/v1',
+        proxyKey: 'sk-profile-legacy',
+        autofillRequestUrl: true,
+        additionalParams: [
+          ['header::X-Profile', 'profile'],
+          ['profileFlag', 'true'],
+        ],
+      } as Partial<Database>),
+    })
+    const flatConflict = db({
+      aiModel: 'reverse_proxy',
+      customProxyRequestModel: 'flat-legacy-model',
+      customAPIFormat: LLMFormat.OpenAILegacyInstruct,
+      forceReplaceUrl: 'https://flat-legacy.example.com/v1',
+      proxyKey: 'sk-flat-legacy',
+      autofillRequestUrl: true,
+      additionalParams: [
+        ['header::X-Flat', 'flat'],
+        ['flatFlag', 'true'],
+      ],
+    } as Partial<Database>)
+    const captured = captureDispatchRequests(okOpenAILegacyInstructResponse())
+
+    await dispatchWithProfile(profile, flatConflict)
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0].url).toBe('https://profile-legacy.example.com/v1/completions')
+    expect(captured[0].headers.authorization).toBe('Bearer sk-profile-legacy')
+    expect(captured[0].headers['X-Proxy-Risu']).toBe('RisuAI')
+    expect(captured[0].headers['X-Profile']).toBe('profile')
+    expect(captured[0].headers['X-Flat']).toBeUndefined()
+    expect(captured[0].body.model).toBe('profile-legacy-model')
+    expect(captured[0].body.profileFlag).toBe(true)
+    expect(captured[0].body.flatFlag).toBeUndefined()
+  })
+
+  it('uses OpenAI Responses profile options over conflicting flat database fields', async () => {
+    const profile = resolveModelProfile({
+      database: db({
+        aiModel: 'reverse_proxy',
+        customProxyRequestModel: 'profile-responses-model',
+        customAPIFormat: LLMFormat.OpenAIResponseAPI,
+        forceReplaceUrl: 'risu::https://profile-responses.example.com/v1',
+        proxyKey: 'sk-profile-responses',
+        autofillRequestUrl: true,
+        additionalParams: [
+          ['header::X-Profile', 'profile'],
+          ['profileFlag', 'true'],
+        ],
+      } as Partial<Database>),
+    })
+    const flatConflict = db({
+      aiModel: 'ollama-cloud',
+      ollamaApiKey: 'sk-flat-ollama',
+      ollamaRequestFormat: LLMFormat.OpenAIResponseAPI,
+      ollamaCloudModel: 'flat-ollama-responses',
+    } as Partial<Database>)
+    const captured = captureDispatchRequests(okOpenAIResponsesResponse())
+
+    await dispatchWithProfile(profile, flatConflict)
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0].url).toBe('https://profile-responses.example.com/v1/responses')
+    expect(captured[0].headers.authorization).toBe('Bearer sk-profile-responses')
+    expect(captured[0].headers['X-Proxy-Risu']).toBe('RisuAI')
+    expect(captured[0].headers['X-Profile']).toBe('profile')
+    expect(captured[0].body.model).toBe('profile-responses-model')
+    expect(captured[0].body.profileFlag).toBe(true)
+    expect(captured[0].body.store).toBeUndefined()
+  })
+
+  it('uses the profile model id for OpenAI Responses Ollama Cloud store ownership', async () => {
+    const profile = resolveModelProfile({
+      database: db({
+        aiModel: 'ollama-cloud',
+        ollamaApiKey: 'sk-profile-ollama',
+        ollamaRequestFormat: LLMFormat.OpenAIResponseAPI,
+        ollamaCloudModel: 'profile-ollama-responses',
+        ollamaModelSource: 'cloud',
+      } as Partial<Database>),
+    })
+    const flatConflict = db({
+      aiModel: 'reverse_proxy',
+      customProxyRequestModel: 'flat-responses-model',
+      customAPIFormat: LLMFormat.OpenAIResponseAPI,
+      forceReplaceUrl: 'https://flat-responses.example.com/v1',
+      proxyKey: 'sk-flat-responses',
+      additionalParams: [['header::X-Flat', 'flat']],
+    } as Partial<Database>)
+    const captured = captureDispatchRequests(okOpenAIResponsesResponse())
+
+    await dispatchWithProfile(profile, flatConflict)
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0].url).toBe('https://ollama.com/v1/responses')
+    expect(captured[0].headers.authorization).toBe('Bearer sk-profile-ollama')
+    expect(captured[0].headers['X-Flat']).toBeUndefined()
+    expect(captured[0].body.model).toBe('profile-ollama-responses')
+    expect(captured[0].body.store).toBe(false)
   })
 
   it('uses Anthropic xcustom profile options over conflicting flat database fields', async () => {
