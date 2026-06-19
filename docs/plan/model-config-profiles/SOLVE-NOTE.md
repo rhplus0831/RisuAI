@@ -34,12 +34,14 @@ pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 
 ## Current State
 
-The plan is open. Phase 0, Phase 1, Phase 2, Phase 3, and Phase 4 are complete.
+The plan is open. Phase 0, Phase 1, Phase 2, Phase 3, Phase 4, and Phase 5 are
+complete. Phase 6 persisted profiles is next and is not started.
+
 Existing flat database fields remain the compatibility source of truth.
 `src/ts/model/modelProfileResolver.ts` derives read-only profiles from the flat
 settings shape, `src/ts/presetSplit.ts` centralizes effective model/prompt
-preset composition, and Phase 3 dispatch paths consume resolved profiles across
-Fastify and retained browser-local provider helpers.
+preset composition, and dispatch paths consume resolved profiles across Fastify
+and retained browser-local provider helpers.
 
 Phase 4 adapted the settings-facing layer while preserving flat writes:
 
@@ -53,39 +55,34 @@ Phase 4 adapted the settings-facing layer while preserving flat writes:
 - The model role editor drawer is extracted to `ModelRoleEditor`.
 
 Provider option panels intentionally remain global/flat for compatibility.
-Moving or mirroring those panels further is deferred until safer Phase 5/6
-boundaries. No durable `modelProfiles` or `profileBindings` storage exists, and
-none should be added before Phase 6.
+Moving or mirroring those panels further is a Phase 6 compatibility decision.
 
-The next implementation phase is Phase 5:
-[`phases/phase-5-custom-secrets-and-auxiliary.md`](phases/phase-5-custom-secrets-and-auxiliary.md).
-Phase 5 should harden auxiliary/custom/secrets surfaces against the derived
-profile contract while preserving flat compatibility fields.
+Phase 5 closed the known auxiliary/custom gaps while preserving flat writes:
 
-The main coupled surfaces for Phase 5 are:
+- Memory summaries now resolve through the derived `memory` profile.
+- Memory embeddings remain separate on the Hypa/Voyage/custom embedding
+  contract, with regression proof.
+- Dynamic OpenRouter and NanoGPT catalog fetches receive explicit keys.
+- Fastify and browser OpenAI-family dispatch variants use profile-owned options.
+- Suggestions and image prompts route through the auxiliary role; subtitles
+  route through the translate role.
+- Translation cache entries are scoped to resolved profile identity.
+- `xcustom:::` static fallback options, MCP AI access role routing, and
+  auxiliary separate-parameter fallback ownership are pinned by tests.
 
-- `src/lib/Setting/Pages/Advanced/CustomModelsSettings.svelte` and related
-  custom-model catalog flows.
-- `server/fastify/src/providerSecrets.ts` and masking/secret projection paths.
-- Memory summary and embedding model helpers, including
-  `server/fastify/src/memorySummaryModel.ts` and
-  `server/fastify/src/memoryEmbeddingModel.ts`.
-- Translation, scripts, MCP, playground, fallback, and tool request helpers
-  that still read flat provider/model fields directly.
-- `src/ts/presetSplit.ts`, `server/fastify/src/commands/splitPresets.ts`, and
-  `server/fastify/src/routes/commands.ts` for command compatibility checks.
+No durable `modelProfiles`, `profileBindings`, database schema changes, or
+migrations exist yet. Flat compatibility fields remain the source of truth until
+Phase 6. Profile-local secret masking is deferred to Phase 6; current stable-row,
+custom-model, and provider masking remains flat and covered by existing tests.
 
 ## Next Manager Loop
 
-1. Start with Phase 5 auxiliary/custom/secrets surface exploration. Verify
-   which surfaces still bypass derived profiles or secret-masking compatibility.
-2. Keep all writes on existing flat fields unless a Phase 5 slice explicitly
-   adds an adapter around them. Do not add persisted profile records, profile
-   bindings, database schema, migrations, or durable storage before Phase 6.
-3. Keep provider panels global/flat until a targeted Phase 5/6 slice proves a
-   safe move or mirror path.
-4. Use focused tests for each hardened surface, then update
-   `latest-verification.md`, `status.md`, and this note with exact proof.
+1. Start Phase 6 persisted profiles from
+   [`phases/phase-6-persisted-profiles.md`](phases/phase-6-persisted-profiles.md).
+2. Add durable profile records, role bindings, schema, migrations, and
+   profile-local secret masking only inside Phase 6.
+3. Preserve flat compatibility fields during the Phase 6 rollout until the plan
+   explicitly retires or migrates each field.
 
 ## Known Corrections
 
@@ -98,5 +95,7 @@ The main coupled surfaces for Phase 5 are:
 ## Completed Proof
 
 Latest proof is recorded in [`latest-verification.md`](latest-verification.md).
-It covers Phase 4 UI/command adapter slices, browser OpenRouter smoke, the
-known repo-wide `pnpm check` caveat, docs Prettier, and `git diff --check`.
+It covers Phase 5 committed slices, docs closeout, final grouped Vitest
+validation, browser smoke, and TypeScript proof. The repo-wide `pnpm check`
+caveat remains: do not record it as passing unless it is rerun and verified
+separately.

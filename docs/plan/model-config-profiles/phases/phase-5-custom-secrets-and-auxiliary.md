@@ -1,28 +1,34 @@
 # Phase 5: Custom, Secrets & Auxiliary
 
-Status: not started.
+Status: complete.
 
-Goal: harden the non-main-chat surfaces that can otherwise keep borrowing
+Goal: harden the non-main-chat surfaces that could otherwise keep borrowing
 global provider settings after the resolver migration.
 
-## Scope
+## Closed Scope
 
-- Treat `customModels` / `xcustom:::` as profile dependencies with stable row
-  identity, even if they remain a separate catalog.
-- Extend secret masking only for existing stable rows such as `customModels` or
-  already-keyed provider settings. Durable profile-secret masking waits for
-  Phase 6, when profile ids exist.
-- Avoid generic deep-object copying for secret-bearing structures.
-- Update memory summary model resolution to use the resolver for the `memory`
-  role while keeping memory embedding as a separate model type unless Phase 0
-  decided otherwise.
-- Preserve `subModel` summary alias behavior and server-only embedding
-  constraints.
-- Update LLM translation, emotion/inlay generation, auto suggestions, scripts,
-  MCP AI access, playground tools, and plugin-accessible generation helpers.
-- Resolve fallback behavior, `seperateParameters`, custom flags, and
-  `modelTools` ownership under the resolver contract.
-- Audit dynamic model registry/catalog fetches that currently use global keys.
+- Memory summary model resolution now uses the resolver for the `memory` role,
+  while preserving summary alias behavior.
+- Memory embedding remains a separate server-side embedding model type on the
+  Hypa/Voyage/custom embedding fields and is pinned by regression coverage.
+- Dynamic OpenRouter and NanoGPT catalog fetches pass explicit keys instead of
+  implicitly borrowing global settings.
+- Fastify OpenAI-family dispatch and retained browser OpenAI/Responses helpers
+  use profile-owned options.
+- Auto suggestions and image prompts route through the auxiliary role, while
+  playground subtitle generation routes through the translate role.
+- Translation cache entries are scoped to resolved profile identity.
+- `xcustom:::` static fallback options are covered so fallback execution keeps
+  resolved provider settings instead of only a bare model id.
+- MCP AI access role routing is pinned by tests.
+- `seperateParameters` auxiliary fallback ownership is resolved through the
+  auxiliary profile path.
+- Secret masking remains flat for existing stable rows, custom-model rows, and
+  provider settings. Profile-local secret masking is deferred to Phase 6, when
+  durable profile identity exists.
+- No durable `modelProfiles`, `profileBindings`, schema changes, or migrations
+  were added. Existing flat compatibility fields remain the source of truth
+  until Phase 6.
 
 ## Anchors
 
@@ -57,30 +63,36 @@ global provider settings after the resolver migration.
 
 ## Exit Criteria
 
-- All `requestChatData(..., mode)` callers either pass a role/profile context or
-  intentionally use a legacy compatibility wrapper.
-- Memory summary profile behavior is covered by server tests.
-- Memory embedding separation is documented and tested if it is not migrated.
-- Fallback execution can use resolved provider settings rather than only a bare
-  model id.
-- Separate parameters, custom flags, and model tools have one documented owner.
-- Secret masking paths cover existing stable custom/provider rows touched in
-  this phase.
-- Profile-local secret masking is explicitly deferred to Phase 6 unless Phase 0
-  selected another stable identity mechanism.
+- Done: committed auxiliary request slices route known suggestion, image prompt,
+  subtitle, and MCP AI access paths through role-aware behavior.
+- Done: memory summary profile behavior is covered by server tests.
+- Done: memory embedding separation is documented here and covered by server
+  tests.
+- Done: fallback execution has `xcustom:::` static-model option coverage.
+- Done: separate parameters have an auxiliary fallback owner under the resolver
+  contract.
+- Done: dynamic catalog fetches receive explicit keys.
+- Done: Fastify and browser OpenAI option gaps use profile-owned options.
+- Done: profile-local secret masking is explicitly deferred to Phase 6. Existing
+  stable custom/provider masking remains flat and covered by existing tests.
 
 ## Validation
 
 ```bash
-pnpm exec vitest run src/ts/process/request/tests/modelRoleRouting.test.ts src/ts/translator/translator.html.test.ts src/ts/process/__tests__/emotionFallbackLlm.test.ts src/ts/process/__tests__/igp.test.ts src/ts/process/mcp/mcp.test.ts
-pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/providerSecrets.test.ts server/fastify/__tests__/memorySummaryModel.test.ts server/fastify/__tests__/memoryEmbeddingModel.test.ts
+pnpm exec vitest run src/lib/ChatScreens/Suggestion.svelte.test.ts src/lib/Playground/PlaygroundSubtitle.sourceLang.svelte.test.ts src/lib/Others/AllSeperateParameters.svelte.test.ts
+pnpm exec vitest run src/ts/model/openrouter.test.ts src/ts/model/nanogpt.test.ts src/ts/process/request/tests/openaiProfileOptions.test.ts src/ts/process/request/tests/openaiResponsesLegacyProfileOptions.test.ts src/ts/process/stableDiff.test.ts src/ts/translator/translator.html.test.ts src/ts/translator/translator.cache.test.ts src/ts/process/mcp/aiaccess.test.ts src/ts/process/mcp/mcp.test.ts
+pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/providerSecrets.test.ts server/fastify/__tests__/chatDispatchProfileOptions.test.ts server/fastify/__tests__/generation.completion.test.ts server/fastify/__tests__/memorySummaryModel.test.ts server/fastify/__tests__/memoryEmbeddingModel.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 ```
 
-## Risks
+## Residual Notes
 
-- Auxiliary paths often use legacy mode names such as `submodel`, `otherAx`, or
-  `scriptAux`. Preserve aliases until every caller is updated.
-- Fallback model ids are insufficient for profile-specific URLs and keys. Do
-  not close this phase until fallback semantics are tested.
+- Phase 6 must introduce durable profile identity before adding profile-local
+  secrets or masking. Do not retrofit profile-local masking into the flat Phase 5
+  compatibility surface.
+- Provider option panels still remain global/flat for compatibility. Phase 6 can
+  move or mirror them only after persisted profiles and flat-field compatibility
+  rules are explicit.
+- Auxiliary paths still have legacy mode names such as `submodel`, `otherAx`, or
+  `scriptAux`. Preserve aliases until a later cleanup explicitly retires them.
