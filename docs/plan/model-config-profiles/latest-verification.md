@@ -7,19 +7,19 @@ workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: browser-local Kobold provider-options parity
-  for `requestKobold()`. Profile-backed Kobold calls now use
-  `resolvedProfile.providerOptions.baseUrl` for request URLs and
-  `resolvedProfile.runtimeOptions.maxContext` for body `max_context_length`.
-  Callers without a resolved profile keep the legacy flat `db.koboldURL`
-  fallback, while profile-backed calls with missing or blank Kobold URLs fail
-  with `options.kobold.baseUrl is required` before fetch instead of falling back
-  to flat DB fields.
+- Runtime/code change under test: browser-local native Ollama provider-options
+  parity for `requestOllama()`. Profile-backed native Ollama calls now use
+  `resolvedProfile.providerOptions.ollama` plus common provider options for
+  request format, request model, local base URL, cloud API key, model source,
+  and thinking mode. Callers without a resolved profile keep the legacy flat
+  fallbacks, while profile-backed local native Ollama calls with missing or
+  blank URLs fail with `options.ollama.baseUrl is required` before SDK/fetch
+  instead of falling back to flat `db.ollamaURL`.
 - Latest passing commands:
-  - `pnpm exec prettier --write --ignore-path /dev/null src/ts/process/request/request.ts src/ts/process/request/tests/koboldProfileOptions.test.ts docs/plan/model-config-profiles/status.md docs/plan/model-config-profiles/latest-verification.md docs/plan/model-config-profiles/phases/phase-3-generation-dispatch.md docs/plan/model-config-profiles/SOLVE-NOTE.md`
+  - `pnpm exec prettier --write --ignore-path /dev/null src/ts/process/request/request.ts src/ts/process/request/tests/ollamaProfileOptions.test.ts docs/plan/model-config-profiles/status.md docs/plan/model-config-profiles/latest-verification.md docs/plan/model-config-profiles/SOLVE-NOTE.md docs/plan/model-config-profiles/phases/phase-3-generation-dispatch.md`
     - Result: passed. The command exited 0 and formatted the focused request
-      file, updated test file, and model-config profile docs.
-  - `pnpm exec vitest run src/ts/process/request/tests/koboldProfileOptions.test.ts src/ts/model/modelProfileResolver.test.ts src/ts/process/request/tests/modelRoleRouting.test.ts src/ts/process/request/tests/serverCompletion.test.ts src/ts/process/request/tests/providerCapability.test.ts`
+      file, new test file, and model-config profile docs.
+  - `pnpm exec vitest run src/ts/process/request/tests/ollamaProfileOptions.test.ts src/ts/model/modelProfileResolver.test.ts src/ts/process/request/tests/modelRoleRouting.test.ts src/ts/process/request/tests/serverCompletion.test.ts src/ts/process/request/tests/providerCapability.test.ts`
     - Result: passed. The requested focused browser request/provider tests
       passed; 5 test files passed and 85 tests passed.
   - `pnpm exec tsc -p tsconfig.client-lib.json`
@@ -30,12 +30,8 @@ workstream.
   - `git diff --check`
     - Result: passed. The command exited 0 with no whitespace errors.
 - Failed/intermediate commands during this slice:
-  - `pnpm exec vitest run src/ts/process/request/tests/koboldProfileOptions.test.ts`
-    failed twice while the new test fixture was being corrected: first the
-    active DB lacked a current character for `applyChatTemplate()`, then
-    `selectedCharID` still pointed at `-1`. After adding the fixture character
-    and setting `selectedCharID` to `0`, the same focused test command passed
-    with 1 test file and 3 tests passed.
+  - None. The initial focused Ollama test command passed with 1 test file and 3
+    tests passed before the broader requested validation set was run.
 - Residual gaps: Full Phase 3 is not complete. Browser role/static/fallback
   selection now uses the resolver, Fastify provider-option slices are complete
   through Gemini/Vertex, browser-local Gemini/Vertex provider-options parity is
@@ -44,12 +40,12 @@ workstream.
   OpenAI Responses/legacy instruct provider-options parity is complete, and
   browser-local Anthropic-family provider-options parity is complete, and
   browser-local Mistral provider-options parity is complete, and browser-local
-  Kobold provider-options parity is complete. Other retained browser-local
-  provider helpers, including Cohere, native Ollama, Horde, and Ooba legacy
-  paths, still reconstruct provider-specific keys, base URLs, request-model
-  options, and additional params from flat database fields. Durable profile
-  storage, UI writes, provider secret reshaping, and embedding behavior remain
-  deferred to later phases.
+  Kobold provider-options parity is complete, and browser-local native Ollama
+  provider-options parity is complete. Other retained browser-local provider
+  helpers, including Cohere, Horde, and Ooba legacy paths, still reconstruct
+  provider-specific keys, base URLs, request-model options, and additional params
+  from flat database fields. Durable profile storage, UI writes, provider secret
+  reshaping, and embedding behavior remain deferred to later phases.
 
 ## Remaining Proof
 

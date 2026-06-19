@@ -1,6 +1,6 @@
 # Phase 3: Generation Dispatch
 
-Status: in progress; Phase 3a server-owned profile selection/capability/request-model slice complete; Phase 3b Fastify OpenAI-compatible provider-options slice complete; Phase 3c Fastify Anthropic/Mistral/Cohere provider-options slice complete; Phase 3d Fastify native Ollama provider-options slice complete; Phase 3e Fastify Kobold provider-options slice complete; Phase 3f Fastify Horde provider-options slice complete; Phase 3g Fastify OobaLegacy provider-options slice complete; Phase 3h Fastify Bedrock provider-options slice complete; Phase 3i Fastify Gemini/Vertex provider-options slice complete; browser request helper role/static/fallback resolver adoption slice complete; browser-local Gemini/Vertex provider-options slice complete; browser-local OpenAI-compatible chat-completions provider-options slice complete; browser-local OpenAI Responses and legacy instruct provider-options slice complete; browser-local Anthropic-family provider-options slice complete; browser-local Mistral provider-options slice complete; browser-local Kobold provider-options slice complete.
+Status: in progress; Phase 3a server-owned profile selection/capability/request-model slice complete; Phase 3b Fastify OpenAI-compatible provider-options slice complete; Phase 3c Fastify Anthropic/Mistral/Cohere provider-options slice complete; Phase 3d Fastify native Ollama provider-options slice complete; Phase 3e Fastify Kobold provider-options slice complete; Phase 3f Fastify Horde provider-options slice complete; Phase 3g Fastify OobaLegacy provider-options slice complete; Phase 3h Fastify Bedrock provider-options slice complete; Phase 3i Fastify Gemini/Vertex provider-options slice complete; browser request helper role/static/fallback resolver adoption slice complete; browser-local Gemini/Vertex provider-options slice complete; browser-local OpenAI-compatible chat-completions provider-options slice complete; browser-local OpenAI Responses and legacy instruct provider-options slice complete; browser-local Anthropic-family provider-options slice complete; browser-local Mistral provider-options slice complete; browser-local Kobold provider-options slice complete; browser-local native Ollama provider-options slice complete.
 
 Goal: move browser and Fastify generation dispatch from ad hoc flat database
 reads to the resolved profile runtime object.
@@ -343,6 +343,30 @@ reads to the resolved profile runtime object.
   intentionally conflicting flat database values and that missing profile URLs
   do not call fetch.
 
+## Implemented Browser-Local Native Ollama Provider-Options Slice
+
+- Browser-local `requestOllama()` now uses
+  `resolvedProfile.providerOptions.ollama` plus common provider options for
+  profile-backed native Ollama request format, request model, local base URL,
+  cloud API key, model source, and thinking mode.
+- Local native Ollama callers without a resolved profile keep the legacy flat
+  `db.ollamaURL`, `db.ollamaModel`, `db.ollamaModelSource`, and
+  `db.ollamaThinkingMode` fallbacks.
+- Profile-backed local native Ollama calls with missing or blank URLs fail with
+  `options.ollama.baseUrl is required` before preview URL construction,
+  SDK/fetch, or fallback to a conflicting flat `db.ollamaURL`.
+- Native `ollama-cloud` callers with `ollamaRequestFormat === LLMFormat.Ollama`
+  now use profile-owned cloud model, API key, model source, and thinking mode
+  even when the active flat DB is later changed to conflicting values.
+- `ollama-cloud` OpenAI-compatible, OpenAI Responses, and Anthropic delegate
+  semantics remain unchanged; those helpers continue to own their converted
+  provider-option behavior while receiving profile-derived URL/key/model values
+  where applicable.
+- Focused coverage drives the path through `requestChatDataMain()` with
+  browser-local preview dispatch, proving profile URL/model/source/think/header
+  values beat intentionally conflicting flat database values and that missing
+  profile local URLs do not call fetch.
+
 ## Remaining Phase 3 Work
 
 - Broaden provider parity for retained browser-local request helpers before
@@ -352,9 +376,10 @@ reads to the resolved profile runtime object.
   are adopted, and browser-local OpenAI Responses/legacy instruct provider
   options are adopted, and browser-local Anthropic-family provider options are
   adopted, browser-local Mistral provider options are adopted, and browser-local
-  Kobold provider options are adopted. Other local helper branches such as
-  Cohere, native Ollama, Horde, and Ooba legacy still read many
-  provider-specific options directly from flat database fields.
+  Kobold provider options are adopted, and browser-local native Ollama provider
+  options are adopted. Other local helper branches such as Cohere, Horde, and
+  Ooba legacy still read many provider-specific options directly from flat
+  database fields.
 - Verify any future browser-local provider option adoption without changing the
   server-intent payload shape or editing Fastify generation routes unless a real
   regression is exposed.
@@ -404,11 +429,11 @@ pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 ```
 
-Latest browser-local Mistral provider-options run:
+Latest browser-local native Ollama provider-options run:
 
 ```bash
-pnpm exec prettier --write --ignore-path /dev/null src/ts/process/request/openAI/requests.ts src/ts/process/request/tests/openaiProfileOptions.test.ts docs/plan/model-config-profiles/status.md docs/plan/model-config-profiles/latest-verification.md docs/plan/model-config-profiles/phases/phase-3-generation-dispatch.md docs/plan/model-config-profiles/SOLVE-NOTE.md
-pnpm exec vitest run src/ts/process/request/tests/openaiProfileOptions.test.ts src/ts/model/modelProfileResolver.test.ts src/ts/process/request/tests/modelRoleRouting.test.ts src/ts/process/request/tests/serverCompletion.test.ts src/ts/process/request/tests/providerCapability.test.ts
+pnpm exec prettier --write --ignore-path /dev/null src/ts/process/request/request.ts src/ts/process/request/tests/ollamaProfileOptions.test.ts docs/plan/model-config-profiles/status.md docs/plan/model-config-profiles/latest-verification.md docs/plan/model-config-profiles/SOLVE-NOTE.md docs/plan/model-config-profiles/phases/phase-3-generation-dispatch.md
+pnpm exec vitest run src/ts/process/request/tests/ollamaProfileOptions.test.ts src/ts/model/modelProfileResolver.test.ts src/ts/process/request/tests/modelRoleRouting.test.ts src/ts/process/request/tests/serverCompletion.test.ts src/ts/process/request/tests/providerCapability.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 git diff --check
@@ -417,7 +442,7 @@ git diff --check
 Results:
 
 - Prettier: passed.
-- Focused browser request/provider tests: passed, 5 files / 92 tests.
+- Focused browser request/provider tests: passed, 5 files / 85 tests.
 - Client-lib TypeScript: passed.
 - Server strict TypeScript: passed.
 - Whitespace check: passed.

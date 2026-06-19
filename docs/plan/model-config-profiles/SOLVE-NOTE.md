@@ -79,15 +79,21 @@ is also complete: `requestKobold()` now uses profile-owned `baseUrl` and
 runtime `maxContext` when a resolved profile is present, keeps the legacy flat
 `db.koboldURL` fallback only for no-resolved-profile callers, and fails with
 `options.kobold.baseUrl is required` before fetch when a resolved profile has no
-Kobold URL.
+Kobold URL. The browser-local native Ollama provider-options slice is also
+complete: `requestOllama()` now uses profile-owned request format, request
+model, local base URL, cloud API key, model source, and thinking mode for native
+local/cloud Ollama preview and request paths when a resolved profile is present.
+Callers without a resolved profile keep the legacy flat fallbacks, and
+profile-backed local Ollama calls with no URL fail with
+`options.ollama.baseUrl is required` before SDK/fetch instead of falling back to
+flat `db.ollamaURL`.
 
 The current codebase still uses flat database fields as the compatibility
 source of truth. Durable reusable profile storage has not been introduced, and
-retained browser-local provider helper branches other than Gemini/Vertex,
-OpenAI-compatible chat completions, OpenAI Responses/legacy instruct,
-Anthropic-family, Mistral, and Kobold still reconstruct many provider
-credentials, URLs, request models, and additional params from flat fields. The
-main coupled surfaces remain:
+the remaining retained browser-local provider helper gaps are Cohere, Horde, and
+Ooba legacy; those branches still reconstruct many provider credentials, URLs,
+request models, and additional params from flat fields. The main coupled
+surfaces remain:
 
 - `src/ts/model/modelRoles.ts` resolves roles to model ids only.
 - `src/lib/Setting/Pages/Model/ModelRoleList.svelte` edits role model ids,
@@ -105,8 +111,8 @@ main coupled surfaces remain:
 
 1. Continue Phase 3 only on the remaining browser-local provider helper parity
    gaps after Gemini/Vertex, OpenAI-compatible chat completions, OpenAI
-   Responses/legacy instruct, Anthropic-family, Mistral, and Kobold. The
-   remaining named gaps are Cohere, native Ollama, Horde, and Ooba legacy:
+   Responses/legacy instruct, Anthropic-family, Mistral, Kobold, and native
+   Ollama. The remaining named gaps are Cohere, Horde, and Ooba legacy:
    adopt resolver-derived provider options where equivalent without changing
    server-intent payload shape or reshaping provider secrets/storage.
 2. Keep UI writes targeting existing flat fields until the Phase 4 adapter work.
@@ -126,6 +132,6 @@ main coupled surfaces remain:
 ## Completed Proof
 
 Latest proof is recorded in [`latest-verification.md`](latest-verification.md).
-It covers this browser-local Kobold provider-options slice, focused browser
+It covers this browser-local native Ollama provider-options slice, focused browser
 request/provider tests, Prettier, client-lib TypeScript, strict server
 TypeScript, and `git diff --check`.

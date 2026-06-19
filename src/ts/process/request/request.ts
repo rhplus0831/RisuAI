@@ -1152,28 +1152,38 @@ async function requestNovelList(arg: RequestDataArgumentExtended): Promise<reque
 async function requestOllama(arg: RequestDataArgumentExtended): Promise<requestDataResponse> {
   const formated = arg.formated
   const db = getDatabase()
-  const isCloud = arg.aiModel === 'ollama-cloud'
-  const requestFormat = isCloud ? db.ollamaRequestFormat : LLMFormat.Ollama
-  const ollamaModel = isCloud ? db.ollamaCloudModel : db.ollamaModel
-  const ollamaThinkMode = getOllamaThinkMode(db.ollamaThinkingMode)
+  const providerOptions = arg.resolvedProfile?.providerOptions
+  const ollamaOptions = providerOptions?.ollama
+  const hasResolvedProfile = arg.resolvedProfile !== undefined
+  const isCloud = ollamaOptions?.cloud ?? arg.aiModel === 'ollama-cloud'
+  const requestFormat = ollamaOptions?.requestFormat ?? (isCloud ? db.ollamaRequestFormat : LLMFormat.Ollama)
+  const ollamaModel = hasResolvedProfile
+    ? (ollamaOptions?.model ?? providerOptions?.requestModel ?? '')
+    : isCloud
+      ? db.ollamaCloudModel
+      : db.ollamaModel
+  const ollamaThinkMode = getOllamaThinkMode(ollamaOptions?.thinkingMode ?? db.ollamaThinkingMode)
+  const localBaseUrl = hasResolvedProfile ? (ollamaOptions?.url ?? providerOptions?.baseUrl)?.trim() : db.ollamaURL
+  const ollamaApiKey = hasResolvedProfile ? (ollamaOptions?.apiKey ?? providerOptions?.apiKey ?? '') : db.ollamaApiKey
+  const ollamaModelSource = ollamaOptions?.modelSource ?? db.ollamaModelSource
 
   if (isCloud && requestFormat === LLMFormat.OpenAICompatible) {
     arg.customURL = 'https://ollama.com/v1/chat/completions'
-    arg.key = db.ollamaApiKey
+    arg.key = ollamaApiKey
     arg.modelInfo.internalID = ollamaModel
     return requestOpenAI(arg)
   }
 
   if (isCloud && requestFormat === LLMFormat.OpenAIResponseAPI) {
     arg.customURL = 'https://ollama.com/v1/responses'
-    arg.key = db.ollamaApiKey
+    arg.key = ollamaApiKey
     arg.modelInfo.internalID = ollamaModel
     return requestOpenAIResponseAPI(arg)
   }
 
   if (isCloud && requestFormat === LLMFormat.Anthropic) {
     arg.customURL = 'https://ollama.com/v1/messages'
-    arg.key = db.ollamaApiKey
+    arg.key = ollamaApiKey
     arg.modelInfo = {
       ...arg.modelInfo,
       internalID: ollamaModel,
@@ -1182,23 +1192,31 @@ async function requestOllama(arg: RequestDataArgumentExtended): Promise<requestD
     return requestClaude(arg)
   }
 
+  if (hasResolvedProfile && !isCloud && !localBaseUrl) {
+    return {
+      type: 'fail',
+      result: 'options.ollama.baseUrl is required',
+      noRetry: true,
+    }
+  }
+
   if (arg.previewBody) {
     return {
       type: 'success',
       result: JSON.stringify({
-        url: isCloud ? 'https://ollama.com/api/chat' : `${db.ollamaURL}/api/chat`,
+        url: isCloud ? 'https://ollama.com/api/chat' : `${localBaseUrl}/api/chat`,
         model: ollamaModel,
-        source: db.ollamaModelSource,
+        source: ollamaModelSource,
         stream: arg.useStreaming,
         think: ollamaThinkMode,
-        headers: isCloud ? { Authorization: 'Bearer ' + db.ollamaApiKey } : {},
+        headers: isCloud ? { Authorization: 'Bearer ' + ollamaApiKey } : {},
       }),
     }
   }
 
   const ollama = new Ollama({
-    host: isCloud ? 'https://ollama.com' : db.ollamaURL,
-    headers: isCloud && db.ollamaApiKey ? { Authorization: 'Bearer ' + db.ollamaApiKey } : undefined,
+    host: isCloud ? 'https://ollama.com' : localBaseUrl,
+    headers: isCloud && ollamaApiKey ? { Authorization: 'Bearer ' + ollamaApiKey } : undefined,
     fetch: isCloud ? ollamaCloudFetch : undefined,
   })
 
