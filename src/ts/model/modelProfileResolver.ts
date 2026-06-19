@@ -31,7 +31,12 @@ import {
   type ProviderCapabilityInput,
   type ProviderCapabilityVerdict,
 } from '../process/request/providerCapability'
-import { normalizeModelProfiles, normalizeModelRoleProfiles, type ModelProfileRecord } from './modelProfileRecords'
+import {
+  normalizeModelProfiles,
+  normalizeModelRoleProfiles,
+  type ModelProfileRecord,
+  type ModelProfileRecordProviderOptions,
+} from './modelProfileRecords'
 
 export type ModelProfileSourceKind =
   | 'staticModel'
@@ -185,6 +190,7 @@ interface ModelProfileSelection {
   modelId: string
   profileId?: string
   profileRequestModel?: string
+  profileProviderOptions?: ModelProfileRecordProviderOptions
   source: ModelProfileResolutionSource
 }
 
@@ -409,9 +415,11 @@ export function resolveModelProfile({
       }
     : (resolveDurableModelSelection(database, normalizedRole) ?? resolveLegacyModelSelection(database, normalizedRole))
   const lookedUp = lookupModelInfo?.(database, selection.modelId)
-  const modelInfo = withCustomFlags(
+  const modelInfo = withDurableModelInfoOptions(
+    selection.modelId,
+    selection.profileProviderOptions,
     database,
-    cloneModelInfo(lookedUp ?? resolveServerSafeModelInfo(database, selection.modelId)),
+    withCustomFlags(database, cloneModelInfo(lookedUp ?? resolveServerSafeModelInfo(database, selection.modelId))),
   )
   const requestModel = resolveProfileRequestModelFromParts(
     database,
@@ -419,8 +427,22 @@ export function resolveModelProfile({
     modelInfo,
     selection.profileRequestModel,
   )
-  const providerOptions = resolveProviderOptions(database, selection.modelId, modelInfo, requestModel)
+  const providerOptions = resolveProviderOptions(
+    database,
+    selection.modelId,
+    modelInfo,
+    requestModel,
+    selection.profileProviderOptions,
+  )
   const runtimeOptions = resolveRuntimeOptions(database, modelInfo)
+  const providerCapabilityInput = buildProfileProviderCapabilityInputForDatabase(
+    database,
+    selection.modelId,
+    modelInfo,
+    providerOptions,
+    selection.profileProviderOptions,
+  )
+  const providerCapability = resolveProviderCapability(providerCapabilityInput)
   const profile: Omit<
     ResolvedModelProfile,
     'providerCapabilityInput' | 'providerCapability' | 'requestModel' | 'providerOptions'
@@ -443,8 +465,6 @@ export function resolveModelProfile({
     runtimeOptions,
     fallbacks: staticModelId ? [] : resolveLegacyFallbackRefs(database, normalizedRole),
   }
-  const providerCapabilityInput = buildProfileProviderCapabilityInputForDatabase(database, selection.modelId, modelInfo)
-  const providerCapability = resolveProviderCapability(providerCapabilityInput)
 
   return {
     ...profile,
@@ -823,6 +843,7 @@ function resolveDurableModelSelection(database: Database, role: ModelRole): Mode
     modelId,
     profileId: profile.id,
     ...(profileRequestModel ? { profileRequestModel } : {}),
+    ...(profile.providerOptions ? { profileProviderOptions: profile.providerOptions } : {}),
     source: {
       kind: 'durable-profile',
       role,
@@ -949,7 +970,15 @@ function buildProfileProviderCapabilityInputForDatabase(
   database: Database,
   modelId: string,
   modelInfo: ResolvedModelProfileModelInfo,
+  providerOptions?: ModelProfileProviderOptions,
+  durableProviderOptions?: ModelProfileRecordProviderOptions,
 ): ProviderCapabilityInput {
+  const durableReverseProxyUrl =
+    modelId === 'reverse_proxy' ? nonBlankString(durableProviderOptions?.baseUrl) : undefined
+  const durableOllamaUrl =
+    modelId !== 'ollama-cloud'
+      ? (nonBlankString(durableProviderOptions?.ollama?.url) ?? nonBlankString(durableProviderOptions?.baseUrl))
+      : undefined
   return {
     format: modelId === 'ollama-cloud' ? LLMFormat.Ollama : modelInfo.format,
     aiModel: modelId,
@@ -957,7 +986,7 @@ function buildProfileProviderCapabilityInputForDatabase(
     keyIdentifier: nonBlankString(modelInfo.keyIdentifier),
     internalID: nonBlankString(modelInfo.internalID),
     config: {
-      forceReplaceUrl: nonBlankString(database.forceReplaceUrl),
+      forceReplaceUrl: durableReverseProxyUrl ? providerOptions?.baseUrl : nonBlankString(database.forceReplaceUrl),
       proxyKey: nonBlankString(database.proxyKey),
       oaiCompApiKeys: database.OaiCompAPIKeys,
       customModels: database.customModels as CustomModelEntryLike[] | undefined,
@@ -969,8 +998,11 @@ function buildProfileProviderCapabilityInputForDatabase(
       instructChatTemplate: nonBlankString(database.instructChatTemplate),
       jinjaTemplate: nonBlankString(database.JinjaTemplate),
       ollamaApiKey: nonBlankString(database.ollamaApiKey),
-      ollamaRequestFormat: asFormat(database.ollamaRequestFormat, undefined),
-      ollamaURL: nonBlankString(database.ollamaURL),
+      ollamaRequestFormat:
+        durableProviderOptions?.ollama?.requestFormat ?? asFormat(database.ollamaRequestFormat, undefined),
+      ollamaURL: durableOllamaUrl
+        ? (providerOptions?.ollama?.url ?? providerOptions?.baseUrl)
+        : nonBlankString(database.ollamaURL),
     },
   }
 }
@@ -980,12 +1012,14 @@ function resolveProviderOptions(
   modelId: string,
   modelInfo: ResolvedModelProfileModelInfo,
   requestModel: string,
+  durableProviderOptions?: ModelProfileRecordProviderOptions,
 ): ModelProfileProviderOptions {
   const base: ModelProfileProviderOptions = {
     requestModel,
     endpoint: nonBlankString(modelInfo.endpoint),
     keyIdentifier: nonBlankString(modelInfo.keyIdentifier),
   }
+  const durableBaseUrl = nonBlankString(durableProviderOptions?.baseUrl)
   if (modelId === 'ollama-cloud') {
     return {
       ...base,
@@ -993,24 +1027,28 @@ function resolveProviderOptions(
       baseUrl: 'https://ollama.com/v1',
       ollama: {
         apiKey: nonBlankString(database.ollamaApiKey),
-        requestFormat: asFormat(database.ollamaRequestFormat, LLMFormat.OpenAICompatible),
+        requestFormat:
+          durableProviderOptions?.ollama?.requestFormat ??
+          asFormat(database.ollamaRequestFormat, LLMFormat.OpenAICompatible),
         model: nonBlankString(requestModel),
-        modelSource: database.ollamaModelSource,
-        thinkingMode: database.ollamaThinkingMode,
+        modelSource: nonBlankString(durableProviderOptions?.ollama?.modelSource) ?? database.ollamaModelSource,
+        thinkingMode: nonBlankString(durableProviderOptions?.ollama?.thinkingMode) ?? database.ollamaThinkingMode,
         cloud: true,
       },
     }
   }
   if (modelInfo.format === LLMFormat.Ollama || modelId.includes('ollama')) {
+    const ollamaUrl =
+      nonBlankString(durableProviderOptions?.ollama?.url) ?? durableBaseUrl ?? nonBlankString(database.ollamaURL)
     return {
       ...base,
-      baseUrl: nonBlankString(database.ollamaURL),
+      baseUrl: ollamaUrl,
       ollama: {
-        url: nonBlankString(database.ollamaURL),
-        requestFormat: LLMFormat.Ollama,
+        url: ollamaUrl,
+        requestFormat: durableProviderOptions?.ollama?.requestFormat ?? LLMFormat.Ollama,
         model: nonBlankString(requestModel),
-        modelSource: database.ollamaModelSource,
-        thinkingMode: database.ollamaThinkingMode,
+        modelSource: nonBlankString(durableProviderOptions?.ollama?.modelSource) ?? database.ollamaModelSource,
+        thinkingMode: nonBlankString(durableProviderOptions?.ollama?.thinkingMode) ?? database.ollamaThinkingMode,
         cloud: false,
       },
     }
@@ -1022,24 +1060,29 @@ function resolveProviderOptions(
       baseUrl: OPENROUTER_BASE_URL,
       extraHeaders: { 'X-Title': 'RisuAI', 'HTTP-Referer': 'https://risuai.xyz' },
       openrouter: {
-        fallback: database.openrouterFallback,
-        middleOut: database.openrouterMiddleOut,
-        provider: cloneOpenrouterProvider(database.openrouterProvider),
+        fallback: durableProviderOptions?.openrouter?.fallback ?? database.openrouterFallback,
+        middleOut: durableProviderOptions?.openrouter?.middleOut ?? database.openrouterMiddleOut,
+        provider: durableProviderOptions?.openrouter?.provider
+          ? cloneOpenrouterProvider(durableProviderOptions.openrouter.provider)
+          : cloneOpenrouterProvider(database.openrouterProvider),
       },
     }
   }
   if (modelId === 'nanogpt' || modelInfo.format === LLMFormat.NanoGPT) {
+    const providerHint =
+      nonBlankString(durableProviderOptions?.nanogpt?.providerHint) ?? nonBlankString(database.nanogptProvider)
+    const useSubscriptionEndpoint =
+      durableProviderOptions?.nanogpt?.useSubscriptionEndpoint ?? database.nanogptUseSubscriptionEndpoint
     return {
       ...base,
       apiKey: nonBlankString(database.nanogptKey),
-      baseUrl: database.nanogptUseSubscriptionEndpoint === true ? NANOGPT_SUBSCRIPTION_BASE_URL : NANOGPT_BASE_URL,
-      extraHeaders: nonBlankString(database.nanogptProvider)
-        ? { 'X-Provider': database.nanogptProvider as string }
-        : undefined,
+      baseUrl: useSubscriptionEndpoint === true ? NANOGPT_SUBSCRIPTION_BASE_URL : NANOGPT_BASE_URL,
+      extraHeaders: providerHint ? { 'X-Provider': providerHint } : undefined,
       nanogpt: {
-        providerHint: nonBlankString(database.nanogptProvider),
-        useSubscriptionEndpoint: database.nanogptUseSubscriptionEndpoint,
-        subscriptionState: database.nanogptSubscriptionState,
+        providerHint,
+        useSubscriptionEndpoint,
+        subscriptionState:
+          nonBlankString(durableProviderOptions?.nanogpt?.subscriptionState) ?? database.nanogptSubscriptionState,
       },
     }
   }
@@ -1048,27 +1091,27 @@ function resolveProviderOptions(
     modelInfo.format === LLMFormat.NanoGPTResponses ||
     modelInfo.format === LLMFormat.NanoGPTMessages
   ) {
+    const providerHint =
+      nonBlankString(durableProviderOptions?.nanogpt?.providerHint) ?? nonBlankString(database.nanogptProvider)
+    const useSubscriptionEndpoint = durableProviderOptions?.nanogpt?.useSubscriptionEndpoint
     return {
       ...base,
       apiKey: nonBlankString(database.nanogptKey),
-      baseUrl: NANOGPT_BASE_URL,
-      extraHeaders: nonBlankString(database.nanogptProvider)
-        ? { 'X-Provider': database.nanogptProvider as string }
-        : undefined,
+      baseUrl: useSubscriptionEndpoint === true ? NANOGPT_SUBSCRIPTION_BASE_URL : NANOGPT_BASE_URL,
+      extraHeaders: providerHint ? { 'X-Provider': providerHint } : undefined,
       nanogpt: {
-        providerHint: nonBlankString(database.nanogptProvider),
-        useSubscriptionEndpoint: database.nanogptUseSubscriptionEndpoint,
-        subscriptionState: database.nanogptSubscriptionState,
+        providerHint,
+        useSubscriptionEndpoint,
+        subscriptionState:
+          nonBlankString(durableProviderOptions?.nanogpt?.subscriptionState) ?? database.nanogptSubscriptionState,
       },
     }
   }
   if (modelId === 'reverse_proxy') {
-    const rawUrl = nonBlankString(database.forceReplaceUrl) ?? ''
-    const reverseProxyUrl = resolveReverseProxyUrlForFormat(
-      rawUrl,
-      database.autofillRequestUrl !== false,
-      modelInfo.format,
-    )
+    const rawUrl = durableBaseUrl ?? nonBlankString(database.forceReplaceUrl) ?? ''
+    const autofillRequestUrl =
+      durableProviderOptions?.reverseProxy?.autofillRequestUrl ?? database.autofillRequestUrl !== false
+    const reverseProxyUrl = resolveReverseProxyUrlForFormat(rawUrl, autofillRequestUrl, modelInfo.format)
     return {
       ...base,
       apiKey: nonBlankString(database.proxyKey),
@@ -1076,9 +1119,12 @@ function resolveProviderOptions(
       extraHeaders: reverseProxyUrl.risuIdentify ? { 'X-Proxy-Risu': 'RisuAI' } : undefined,
       additionalParams: additionalParams(database.additionalParams),
       reverseProxy: {
-        autofillRequestUrl: database.autofillRequestUrl !== false,
-        oobaSystemHoist: database.reverseProxyOobaMode === true,
-        oobaArgs: database.reverseProxyOobaArgs,
+        autofillRequestUrl,
+        oobaSystemHoist:
+          durableProviderOptions?.reverseProxy?.oobaSystemHoist ?? database.reverseProxyOobaMode === true,
+        oobaArgs: Object.prototype.hasOwnProperty.call(durableProviderOptions?.reverseProxy ?? {}, 'oobaArgs')
+          ? durableProviderOptions?.reverseProxy?.oobaArgs
+          : database.reverseProxyOobaArgs,
         risuIdentify: reverseProxyUrl.risuIdentify,
       },
     }
@@ -1112,12 +1158,12 @@ function resolveProviderOptions(
     case LLMFormat.Cohere:
       return { ...base, apiKey: nonBlankString(database.cohereAPIKey) }
     case LLMFormat.Kobold:
-      return { ...base, baseUrl: nonBlankString(database.koboldURL) }
+      return { ...base, baseUrl: durableBaseUrl ?? nonBlankString(database.koboldURL) }
     case LLMFormat.OobaLegacy:
       return {
         ...base,
         apiKey: nonBlankString(database.mancerHeader),
-        baseUrl: nonBlankString(database.textgenWebUIBlockingURL),
+        baseUrl: durableBaseUrl ?? nonBlankString(database.textgenWebUIBlockingURL),
       }
     case LLMFormat.Horde:
       return { ...base, apiKey: nonBlankString(database.hordeConfig?.apiKey) }
@@ -1198,6 +1244,7 @@ function resolveProfileRequestModelFromParts(
   )
   const provider = providerCapability.routable ? providerCapability.provider : undefined
   if (modelId === 'ollama-cloud') return database.ollamaCloudModel ?? ''
+  if (modelInfo.format === LLMFormat.Ollama || modelId.includes('ollama')) return database.ollamaModel ?? ''
   if (provider === 'ollama') return database.ollamaModel ?? ''
   if (modelId.startsWith('xcustom:::')) {
     const entry = findXcustomEntry(database, modelId)
@@ -1241,6 +1288,22 @@ function resolveBedrockWireModel(internalId: string): string {
     useGlobal = major > 4 || (major === 4 && minor >= 5)
   }
   return (useGlobal ? 'global.' : 'us.') + internalId
+}
+
+function withDurableModelInfoOptions(
+  modelId: string,
+  providerOptions: ModelProfileRecordProviderOptions | undefined,
+  database: Database,
+  modelInfo: ResolvedModelProfileModelInfo,
+): ResolvedModelProfileModelInfo {
+  if (modelId !== 'ollama-cloud' || providerOptions?.ollama?.requestFormat === undefined) return modelInfo
+  return {
+    ...modelInfo,
+    format: asFormat(
+      providerOptions.ollama.requestFormat,
+      asFormat(database.ollamaRequestFormat, LLMFormat.OpenAICompatible),
+    ),
+  }
 }
 
 function withCustomFlags(database: Database, modelInfo: ResolvedModelProfileModelInfo): ResolvedModelProfileModelInfo {
@@ -1316,9 +1379,11 @@ function cloneProviderCapabilityInput(input: ProviderCapabilityInput): ProviderC
   }
 }
 
-function cloneOpenrouterProvider(
-  value: Database['openrouterProvider'],
-): NonNullable<ModelProfileProviderOptions['openrouter']>['provider'] {
+function cloneOpenrouterProvider(value?: {
+  order?: string[]
+  only?: string[]
+  ignore?: string[]
+}): NonNullable<ModelProfileProviderOptions['openrouter']>['provider'] {
   if (!value) return undefined
   return {
     order: Array.isArray(value.order) ? [...value.order] : undefined,

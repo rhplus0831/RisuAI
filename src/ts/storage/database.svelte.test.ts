@@ -44,6 +44,7 @@ import {
   type PromptPreset,
 } from './database.svelte'
 import { MODEL_ROLES } from '../model/modelRoles'
+import { LLMFormat } from '../model/types'
 
 interface CapturedFetch {
   url: string
@@ -250,7 +251,18 @@ describe('model profile database normalization', () => {
           id: ' profile-a ',
           name: ' Primary ',
           modelId: ' gpt-5 ',
-          providerOptions: { requestModel: ' wire-model ', apiKey: 'must-drop' },
+          providerOptions: {
+            requestModel: ' wire-model ',
+            baseUrl: ' https://profile.example.com/v1 ',
+            openrouter: {
+              fallback: false,
+              middleOut: true,
+              provider: { order: [' ProfileProvider '], only: [' profile-only '], ignore: [''] },
+            },
+            nanogpt: { providerHint: ' profile-nano ', useSubscriptionEndpoint: true },
+            ollama: { url: ' http://localhost:11434 ', requestFormat: LLMFormat.OpenAIResponseAPI },
+            apiKey: 'must-drop',
+          },
         } as any,
         { id: 'profile-a', name: 'Duplicate' },
         { id: 'profile-b', name: 'Identity Only', modelId: '   ' } as any,
@@ -266,7 +278,22 @@ describe('model profile database normalization', () => {
     setDatabase(data)
 
     expect(DBState.db.modelProfiles).toEqual([
-      { id: 'profile-a', name: 'Primary', modelId: 'gpt-5', providerOptions: { requestModel: 'wire-model' } },
+      {
+        id: 'profile-a',
+        name: 'Primary',
+        modelId: 'gpt-5',
+        providerOptions: {
+          requestModel: 'wire-model',
+          baseUrl: 'https://profile.example.com/v1',
+          openrouter: {
+            fallback: false,
+            middleOut: true,
+            provider: { order: ['ProfileProvider'], only: ['profile-only'] },
+          },
+          nanogpt: { providerHint: 'profile-nano', useSubscriptionEndpoint: true },
+          ollama: { url: 'http://localhost:11434', requestFormat: LLMFormat.OpenAIResponseAPI },
+        },
+      },
       { id: 'profile-b', name: 'Identity Only' },
       { id: 'profile-c', name: 'profile-c' },
     ])

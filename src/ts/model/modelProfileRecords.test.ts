@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { MODEL_ROLES } from './modelRoles'
+import { LLMFormat } from './types'
 import {
   createDefaultModelRoleProfiles,
   normalizeModelProfiles,
@@ -23,7 +24,43 @@ describe('model profile records', () => {
           id: ' profile-a ',
           name: ' Primary ',
           modelId: ' gpt-5 ',
-          providerOptions: { requestModel: ' wire-model ', apiKey: 'must-drop' },
+          providerOptions: {
+            requestModel: ' wire-model ',
+            baseUrl: ' risu::https://proxy.example.com ',
+            reverseProxy: {
+              autofillRequestUrl: false,
+              oobaSystemHoist: true,
+              oobaArgs: { mode: 'chat' },
+              headers: { Authorization: 'must-drop' },
+            },
+            openrouter: {
+              fallback: false,
+              middleOut: true,
+              provider: {
+                order: [' Anthropic ', '', 7],
+                only: [' openrouter/only '],
+                ignore: ['   '],
+              },
+              route: 'must-drop',
+            },
+            nanogpt: {
+              providerHint: ' together ',
+              useSubscriptionEndpoint: true,
+              subscriptionState: ' active ',
+              nanogptKey: 'must-drop',
+            },
+            ollama: {
+              url: ' http://localhost:11434 ',
+              requestFormat: LLMFormat.OpenAIResponseAPI,
+              modelSource: ' cloud ',
+              thinkingMode: ' medium ',
+              ollamaApiKey: 'must-drop',
+            },
+            apiKey: 'must-drop',
+            headers: { Authorization: 'must-drop' },
+            extraHeaders: { 'X-Key': 'must-drop' },
+            additionalParams: [['header::Authorization', 'must-drop']],
+          },
         },
         { id: 'profile-a', name: 'Duplicate' },
         { id: 'profile-b', name: 'Identity Only', modelId: '   ' },
@@ -33,7 +70,39 @@ describe('model profile records', () => {
         'bad-row',
       ]),
     ).toEqual([
-      { id: 'profile-a', name: 'Primary', modelId: 'gpt-5', providerOptions: { requestModel: 'wire-model' } },
+      {
+        id: 'profile-a',
+        name: 'Primary',
+        modelId: 'gpt-5',
+        providerOptions: {
+          requestModel: 'wire-model',
+          baseUrl: 'risu::https://proxy.example.com',
+          reverseProxy: {
+            autofillRequestUrl: false,
+            oobaSystemHoist: true,
+            oobaArgs: { mode: 'chat' },
+          },
+          openrouter: {
+            fallback: false,
+            middleOut: true,
+            provider: {
+              order: ['Anthropic'],
+              only: ['openrouter/only'],
+            },
+          },
+          nanogpt: {
+            providerHint: 'together',
+            useSubscriptionEndpoint: true,
+            subscriptionState: 'active',
+          },
+          ollama: {
+            url: 'http://localhost:11434',
+            requestFormat: LLMFormat.OpenAIResponseAPI,
+            modelSource: 'cloud',
+            thinkingMode: 'medium',
+          },
+        },
+      },
       { id: 'profile-b', name: 'Identity Only' },
       { id: 'profile-c', name: 'profile-c' },
       { id: 'profile-d', name: 'Blank Request Model' },
@@ -43,11 +112,61 @@ describe('model profile records', () => {
   it('accepts strict selected-model profile rows and normalized profile role bindings', () => {
     expect(
       readModelProfiles([
-        { id: ' profile-a ', name: ' Primary ', modelId: ' gpt-5 ', providerOptions: { requestModel: ' wire ' } },
+        {
+          id: ' profile-a ',
+          name: ' Primary ',
+          modelId: ' gpt-5 ',
+          providerOptions: {
+            requestModel: ' wire ',
+            baseUrl: ' https://proxy.example.com/v1 ',
+            reverseProxy: { autofillRequestUrl: false, oobaSystemHoist: true, oobaArgs: { mode: 'chat' } },
+            openrouter: {
+              fallback: false,
+              middleOut: true,
+              provider: { order: [' Provider A '], only: [' profile-only '], ignore: [' profile-ignore '] },
+            },
+            nanogpt: {
+              providerHint: ' nano-provider ',
+              useSubscriptionEndpoint: true,
+              subscriptionState: ' active ',
+            },
+            ollama: {
+              url: ' http://localhost:11434 ',
+              requestFormat: LLMFormat.Anthropic,
+              modelSource: ' cloud ',
+              thinkingMode: ' high ',
+            },
+          },
+        },
         { id: ' identity-only ', name: ' Identity Only ', modelId: '   ', providerOptions: { requestModel: '   ' } },
       ]),
     ).toEqual([
-      { id: 'profile-a', name: 'Primary', modelId: 'gpt-5', providerOptions: { requestModel: 'wire' } },
+      {
+        id: 'profile-a',
+        name: 'Primary',
+        modelId: 'gpt-5',
+        providerOptions: {
+          requestModel: 'wire',
+          baseUrl: 'https://proxy.example.com/v1',
+          reverseProxy: { autofillRequestUrl: false, oobaSystemHoist: true, oobaArgs: { mode: 'chat' } },
+          openrouter: {
+            fallback: false,
+            middleOut: true,
+            provider: { order: ['Provider A'], only: ['profile-only'], ignore: ['profile-ignore'] },
+          },
+          nanogpt: {
+            providerHint: 'nano-provider',
+            useSubscriptionEndpoint: true,
+            subscriptionState: 'active',
+          },
+          ollama: {
+            url: 'http://localhost:11434',
+            requestFormat: LLMFormat.Anthropic,
+            modelSource: 'cloud',
+            thinkingMode: 'high',
+          },
+        },
+      },
       { id: 'identity-only', name: 'Identity Only' },
     ])
     expect(readModelRoleProfiles({ memory: { mode: 'profile', profileId: ' profile-a ' } })).toEqual({
@@ -64,9 +183,29 @@ describe('model profile records', () => {
       ]),
     ).toThrow('Duplicate model profile id: profile-a')
 
-    expect(() =>
-      readModelProfiles([{ id: 'profile-a', name: 'Primary', providerOptions: { apiKey: 'secret' } }]),
-    ).toThrow('modelProfiles[0].providerOptions.apiKey is not supported')
+    for (const field of [
+      'apiKey',
+      'openAIKey',
+      'proxyKey',
+      'openrouterKey',
+      'nanogptKey',
+      'ollamaApiKey',
+      'claudeAPIKey',
+      'mistralKey',
+      'cohereAPIKey',
+      'hordeConfig',
+      'google',
+      'vertexPrivateKey',
+      'OaiCompAPIKeys',
+      'customModels',
+      'headers',
+      'extraHeaders',
+      'additionalParams',
+    ]) {
+      expect(() =>
+        readModelProfiles([{ id: 'profile-a', name: 'Primary', providerOptions: { [field]: 'secret' } }]),
+      ).toThrow(`modelProfiles[0].providerOptions.${field} is not supported`)
+    }
 
     expect(() => readModelProfiles([{ id: 'profile-a', name: '' }])).toThrow(
       'modelProfiles[0].name must be a non-empty string',
@@ -79,6 +218,70 @@ describe('model profile records', () => {
     expect(() =>
       readModelProfiles([{ id: 'profile-a', name: 'Primary', providerOptions: { requestModel: 123 } }]),
     ).toThrow('modelProfiles[0].providerOptions.requestModel must be a string when present')
+
+    expect(() => readModelProfiles([{ id: 'profile-a', name: 'Primary', providerOptions: { baseUrl: 123 } }])).toThrow(
+      'modelProfiles[0].providerOptions.baseUrl must be a string when present',
+    )
+
+    expect(() =>
+      readModelProfiles([
+        {
+          id: 'profile-a',
+          name: 'Primary',
+          providerOptions: { reverseProxy: { autofillRequestUrl: 'yes' } },
+        },
+      ]),
+    ).toThrow('modelProfiles[0].providerOptions.reverseProxy.autofillRequestUrl must be a boolean when present')
+
+    expect(() =>
+      readModelProfiles([
+        {
+          id: 'profile-a',
+          name: 'Primary',
+          providerOptions: { openrouter: { provider: { order: ['ok', 42] } } },
+        },
+      ]),
+    ).toThrow('modelProfiles[0].providerOptions.openrouter.provider.order must be an array of strings when present')
+
+    expect(() =>
+      readModelProfiles([
+        {
+          id: 'profile-a',
+          name: 'Primary',
+          providerOptions: { openrouter: { provider: { unknown: ['ok'] } } },
+        },
+      ]),
+    ).toThrow('modelProfiles[0].providerOptions.openrouter.provider.unknown is not supported')
+
+    expect(() =>
+      readModelProfiles([
+        {
+          id: 'profile-a',
+          name: 'Primary',
+          providerOptions: { nanogpt: { useSubscriptionEndpoint: 'true' } },
+        },
+      ]),
+    ).toThrow('modelProfiles[0].providerOptions.nanogpt.useSubscriptionEndpoint must be a boolean when present')
+
+    expect(() =>
+      readModelProfiles([
+        {
+          id: 'profile-a',
+          name: 'Primary',
+          providerOptions: { ollama: { requestFormat: 'Ollama' } },
+        },
+      ]),
+    ).toThrow('modelProfiles[0].providerOptions.ollama.requestFormat must be a valid LLMFormat when present')
+
+    expect(() =>
+      readModelProfiles([
+        {
+          id: 'profile-a',
+          name: 'Primary',
+          providerOptions: { ollama: { requestFormat: 999 } },
+        },
+      ]),
+    ).toThrow('modelProfiles[0].providerOptions.ollama.requestFormat must be a valid LLMFormat when present')
   })
 
   it('rejects unknown role keys and malformed binding shapes for settings commands', () => {

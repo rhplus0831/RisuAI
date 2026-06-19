@@ -100,12 +100,22 @@ describe('resolveModelProfile legacy role compatibility', () => {
       aiModel: 'flat-main-model',
       openrouterKey: 'or-key',
       openrouterRequestModel: 'flat-static-wire',
+      openrouterFallback: false,
+      openrouterMiddleOut: false,
+      openrouterProvider: { order: ['FlatProvider'], only: ['flat-only'], ignore: ['flat-ignore'] },
       modelProfiles: [
         {
           id: 'durable-main',
           name: 'Durable Main',
           modelId: 'durable-selected-model',
-          providerOptions: { requestModel: 'durable-wire' },
+          providerOptions: {
+            requestModel: 'durable-wire',
+            openrouter: {
+              fallback: true,
+              middleOut: true,
+              provider: { order: ['ProfileProvider'], only: ['profile-only'], ignore: ['profile-ignore'] },
+            },
+          },
         },
       ],
       modelRoleProfiles: {
@@ -117,6 +127,11 @@ describe('resolveModelProfile legacy role compatibility', () => {
 
     expect(profile.modelId).toBe('openrouter')
     expect(profile.requestModel).toBe('flat-static-wire')
+    expect(profile.providerOptions.openrouter).toEqual({
+      fallback: false,
+      middleOut: false,
+      provider: { order: ['FlatProvider'], only: ['flat-only'], ignore: ['flat-ignore'] },
+    })
     expect(profile.profileId).toBe('legacy:staticModel:openrouter')
     expect(profile.source).toMatchObject({
       kind: 'staticModel',
@@ -367,6 +382,85 @@ describe('resolveModelProfile provider/runtime normalization', () => {
     })
   })
 
+  it.each([
+    ['legacy', LLMFormat.NanoGPTLegacy],
+    ['responses', LLMFormat.NanoGPTResponses],
+    ['messages', LLMFormat.NanoGPTMessages],
+  ])(
+    'keeps %s NanoGPT-compatible formats on the base endpoint when durable subscription options are missing',
+    (_label, format) => {
+      const profile = resolveModelProfile({
+        database: db({
+          aiModel: 'flat-main-model',
+          nanogptKey: 'nano-key',
+          nanogptProvider: 'flat-provider',
+          nanogptUseSubscriptionEndpoint: true,
+          nanogptSubscriptionState: 'active',
+          modelProfiles: [
+            {
+              id: 'nanogpt-compatible-profile',
+              name: 'NanoGPT Compatible Profile',
+              modelId: 'nanogpt-compatible-model',
+              providerOptions: {
+                nanogpt: {
+                  providerHint: 'profile-provider',
+                },
+              },
+            },
+          ],
+          modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'nanogpt-compatible-profile' } },
+        } as Partial<Database>),
+        lookupModelInfo: (_database, id) => modelInfo({ id, name: id, internalID: id, format }),
+      })
+
+      expect(profile.providerOptions).toMatchObject({
+        apiKey: 'nano-key',
+        baseUrl: 'https://nano-gpt.com/api/v1',
+        extraHeaders: { 'X-Provider': 'profile-provider' },
+        nanogpt: {
+          providerHint: 'profile-provider',
+          subscriptionState: 'active',
+        },
+      })
+      expect(profile.providerOptions.nanogpt?.useSubscriptionEndpoint).toBeUndefined()
+    },
+  )
+
+  it.each([
+    [true, 'https://nano-gpt.com/api/subscription/v1'],
+    [false, 'https://nano-gpt.com/api/v1'],
+  ])(
+    'applies explicit durable subscription endpoint %s for NanoGPT-compatible formats',
+    (useSubscriptionEndpoint, baseUrl) => {
+      const profile = resolveModelProfile({
+        database: db({
+          aiModel: 'flat-main-model',
+          nanogptKey: 'nano-key',
+          nanogptProvider: 'flat-provider',
+          nanogptUseSubscriptionEndpoint: !useSubscriptionEndpoint,
+          modelProfiles: [
+            {
+              id: 'nanogpt-compatible-profile',
+              name: 'NanoGPT Compatible Profile',
+              modelId: 'nanogpt-compatible-model',
+              providerOptions: {
+                nanogpt: {
+                  useSubscriptionEndpoint,
+                },
+              },
+            },
+          ],
+          modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'nanogpt-compatible-profile' } },
+        } as Partial<Database>),
+        lookupModelInfo: (_database, id) =>
+          modelInfo({ id, name: id, internalID: id, format: LLMFormat.NanoGPTResponses }),
+      })
+
+      expect(profile.providerOptions.baseUrl).toBe(baseUrl)
+      expect(profile.providerOptions.nanogpt?.useSubscriptionEndpoint).toBe(useSubscriptionEndpoint)
+    },
+  )
+
   it('prefers durable providerOptions.requestModel over flat provider request model fields', () => {
     const openrouter = resolveModelProfile({
       database: db({
@@ -496,6 +590,276 @@ describe('resolveModelProfile provider/runtime normalization', () => {
     })
   })
 
+  it('uses durable reverse_proxy endpoint and flags while keeping flat proxy key', () => {
+    const profile = resolveModelProfile({
+      database: db({
+        aiModel: 'flat-main-model',
+        customAPIFormat: LLMFormat.OpenAICompatible,
+        customProxyRequestModel: 'flat-proxy-model',
+        forceReplaceUrl: 'https://flat-proxy.example.com/v1',
+        proxyKey: 'flat-proxy-key',
+        autofillRequestUrl: true,
+        reverseProxyOobaMode: false,
+        reverseProxyOobaArgs: { flat: true },
+        modelProfiles: [
+          {
+            id: 'proxy-profile',
+            name: 'Proxy Profile',
+            modelId: 'reverse_proxy',
+            providerOptions: {
+              requestModel: 'profile-proxy-model',
+              baseUrl: 'risu::https://profile-proxy.example.com/v1/chat/completions',
+              reverseProxy: {
+                autofillRequestUrl: false,
+                oobaSystemHoist: true,
+                oobaArgs: { profile: true },
+              },
+            },
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'proxy-profile' } },
+      } as Partial<Database>),
+    })
+
+    expect(profile.modelId).toBe('reverse_proxy')
+    expect(profile.requestModel).toBe('profile-proxy-model')
+    expect(profile.providerCapability).toEqual({ routable: true, provider: 'openai' })
+    expect(profile.providerCapabilityInput).toMatchObject({
+      config: { forceReplaceUrl: 'https://profile-proxy.example.com/v1', proxyKey: 'flat-proxy-key' },
+    })
+    expect(profile.providerOptions).toMatchObject({
+      apiKey: 'flat-proxy-key',
+      baseUrl: 'https://profile-proxy.example.com/v1',
+      extraHeaders: { 'X-Proxy-Risu': 'RisuAI' },
+      reverseProxy: {
+        autofillRequestUrl: false,
+        oobaSystemHoist: true,
+        oobaArgs: { profile: true },
+      },
+    })
+  })
+
+  it('uses durable OpenRouter and NanoGPT options while keeping flat provider keys', () => {
+    const openrouter = resolveModelProfile({
+      database: db({
+        aiModel: 'flat-main-model',
+        openrouterKey: 'flat-openrouter-key',
+        openrouterRequestModel: 'flat/openrouter',
+        openrouterFallback: false,
+        openrouterMiddleOut: false,
+        openrouterProvider: { order: ['FlatProvider'], only: ['flat-only'], ignore: ['flat-ignore'] },
+        modelProfiles: [
+          {
+            id: 'openrouter-profile',
+            name: 'OpenRouter Profile',
+            modelId: 'openrouter',
+            providerOptions: {
+              requestModel: 'profile/openrouter',
+              openrouter: {
+                fallback: true,
+                middleOut: true,
+                provider: {
+                  order: ['ProfileProvider'],
+                  only: ['profile-only'],
+                  ignore: ['profile-ignore'],
+                },
+              },
+            },
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'openrouter-profile' } },
+      } as Partial<Database>),
+    })
+
+    expect(openrouter.providerOptions).toMatchObject({
+      apiKey: 'flat-openrouter-key',
+      requestModel: 'profile/openrouter',
+      openrouter: {
+        fallback: true,
+        middleOut: true,
+        provider: {
+          order: ['ProfileProvider'],
+          only: ['profile-only'],
+          ignore: ['profile-ignore'],
+        },
+      },
+    })
+
+    const nanogpt = resolveModelProfile({
+      database: db({
+        aiModel: 'flat-main-model',
+        nanogptKey: 'flat-nano-key',
+        nanogptRequestModel: 'flat/nano',
+        nanogptProvider: 'flat-provider',
+        nanogptUseSubscriptionEndpoint: false,
+        nanogptSubscriptionState: 'inactive',
+        modelProfiles: [
+          {
+            id: 'nanogpt-profile',
+            name: 'NanoGPT Profile',
+            modelId: 'nanogpt',
+            providerOptions: {
+              requestModel: 'profile/nano',
+              nanogpt: {
+                providerHint: 'profile-provider',
+                useSubscriptionEndpoint: true,
+                subscriptionState: 'active',
+              },
+            },
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'nanogpt-profile' } },
+      } as Partial<Database>),
+    })
+
+    expect(nanogpt.providerOptions).toMatchObject({
+      apiKey: 'flat-nano-key',
+      baseUrl: 'https://nano-gpt.com/api/subscription/v1',
+      extraHeaders: { 'X-Provider': 'profile-provider' },
+      requestModel: 'profile/nano',
+      nanogpt: {
+        providerHint: 'profile-provider',
+        useSubscriptionEndpoint: true,
+        subscriptionState: 'active',
+      },
+    })
+  })
+
+  it('uses durable Ollama options while keeping the flat Ollama API key', () => {
+    const local = resolveModelProfile({
+      database: db({
+        aiModel: 'flat-main-model',
+        ollamaApiKey: 'flat-ollama-key',
+        ollamaURL: 'http://flat-ollama.example.com',
+        ollamaModel: 'flat-local-model',
+        ollamaModelSource: 'cloud',
+        ollamaThinkingMode: 'off',
+        modelProfiles: [
+          {
+            id: 'ollama-local-profile',
+            name: 'Ollama Local Profile',
+            modelId: 'ollama-hosted',
+            providerOptions: {
+              requestModel: 'profile-local-model',
+              baseUrl: 'http://profile-base.example.com',
+              ollama: {
+                url: 'http://profile-ollama.example.com',
+                requestFormat: LLMFormat.OpenAIResponseAPI,
+                modelSource: 'local',
+                thinkingMode: 'high',
+              },
+            },
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'ollama-local-profile' } },
+      } as Partial<Database>),
+    })
+
+    expect(local.providerCapability).toEqual({ routable: true, provider: 'ollama' })
+    expect(local.providerOptions).toMatchObject({
+      baseUrl: 'http://profile-ollama.example.com',
+      requestModel: 'profile-local-model',
+      ollama: {
+        url: 'http://profile-ollama.example.com',
+        requestFormat: LLMFormat.OpenAIResponseAPI,
+        model: 'profile-local-model',
+        modelSource: 'local',
+        thinkingMode: 'high',
+        cloud: false,
+      },
+    })
+    expect(local.providerOptions.ollama?.apiKey).toBeUndefined()
+
+    const cloud = resolveModelProfile({
+      database: db({
+        aiModel: 'flat-main-model',
+        ollamaApiKey: 'flat-ollama-key',
+        ollamaRequestFormat: LLMFormat.OpenAICompatible,
+        ollamaCloudModel: 'flat-cloud-model',
+        ollamaModelSource: 'local',
+        ollamaThinkingMode: 'off',
+        modelProfiles: [
+          {
+            id: 'ollama-cloud-profile',
+            name: 'Ollama Cloud Profile',
+            modelId: 'ollama-cloud',
+            providerOptions: {
+              requestModel: 'profile-cloud-model',
+              ollama: {
+                requestFormat: LLMFormat.Anthropic,
+                modelSource: 'cloud',
+                thinkingMode: 'medium',
+              },
+            },
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'ollama-cloud-profile' } },
+      } as Partial<Database>),
+    })
+
+    expect(cloud.modelInfo.format).toBe(LLMFormat.Anthropic)
+    expect(cloud.providerCapability).toEqual({ routable: true, provider: 'anthropic' })
+    expect(cloud.providerOptions).toMatchObject({
+      apiKey: 'flat-ollama-key',
+      baseUrl: 'https://ollama.com/v1',
+      requestModel: 'profile-cloud-model',
+      ollama: {
+        apiKey: 'flat-ollama-key',
+        requestFormat: LLMFormat.Anthropic,
+        model: 'profile-cloud-model',
+        modelSource: 'cloud',
+        thinkingMode: 'medium',
+        cloud: true,
+      },
+    })
+  })
+
+  it('uses durable baseUrl for Kobold and OobaLegacy profile endpoints', () => {
+    const kobold = resolveModelProfile({
+      database: db({
+        aiModel: 'flat-main-model',
+        koboldURL: 'http://flat-kobold.example.com',
+        modelProfiles: [
+          {
+            id: 'kobold-profile',
+            name: 'Kobold Profile',
+            modelId: 'kobold',
+            providerOptions: { baseUrl: ' http://profile-kobold.example.com ' },
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'kobold-profile' } },
+      } as Partial<Database>),
+    })
+
+    expect(kobold.providerOptions).toMatchObject({
+      baseUrl: 'http://profile-kobold.example.com',
+      requestModel: 'kobold',
+    })
+
+    const oobaLegacy = resolveModelProfile({
+      database: db({
+        aiModel: 'flat-main-model',
+        textgenWebUIBlockingURL: 'http://flat-ooba.example.com/api/v1/blocking',
+        mancerHeader: 'flat-ooba-key',
+        modelProfiles: [
+          {
+            id: 'ooba-profile',
+            name: 'Ooba Profile',
+            modelId: 'mancer',
+            providerOptions: { baseUrl: ' http://profile-ooba.example.com/api/v1/blocking ' },
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'ooba-profile' } },
+      } as Partial<Database>),
+    })
+
+    expect(oobaLegacy.providerOptions).toMatchObject({
+      apiKey: 'flat-ooba-key',
+      baseUrl: 'http://profile-ooba.example.com/api/v1/blocking',
+      requestModel: 'mancer',
+    })
+  })
+
   it('falls back to flat request model fields when durable providerOptions.requestModel is missing or blank', () => {
     for (const providerOptions of [undefined, { requestModel: '   ' }]) {
       const profile = resolveModelProfile({
@@ -503,6 +867,9 @@ describe('resolveModelProfile provider/runtime normalization', () => {
           aiModel: 'flat-main-model',
           openrouterKey: 'or-key',
           openrouterRequestModel: 'flat/openrouter',
+          openrouterFallback: true,
+          openrouterMiddleOut: true,
+          openrouterProvider: { order: ['FlatProvider'], only: ['flat-only'], ignore: ['flat-ignore'] },
           modelProfiles: [
             {
               id: 'openrouter-profile',
@@ -518,6 +885,11 @@ describe('resolveModelProfile provider/runtime normalization', () => {
       expect(profile.modelId).toBe('openrouter')
       expect(profile.requestModel).toBe('flat/openrouter')
       expect(profile.providerOptions.requestModel).toBe('flat/openrouter')
+      expect(profile.providerOptions.openrouter).toEqual({
+        fallback: true,
+        middleOut: true,
+        provider: { order: ['FlatProvider'], only: ['flat-only'], ignore: ['flat-ignore'] },
+      })
     }
   })
 

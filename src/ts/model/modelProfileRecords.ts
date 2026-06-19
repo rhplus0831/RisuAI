@@ -1,4 +1,5 @@
 import { MODEL_ROLES, type ModelRole } from './modelRoles'
+import { LLMFormat, type LLMFormat as LLMFormatValue } from './types'
 
 export interface ModelProfileRecord {
   id: string
@@ -9,6 +10,32 @@ export interface ModelProfileRecord {
 
 export interface ModelProfileRecordProviderOptions {
   requestModel?: string
+  baseUrl?: string
+  reverseProxy?: {
+    autofillRequestUrl?: boolean
+    oobaSystemHoist?: boolean
+    oobaArgs?: unknown
+  }
+  openrouter?: {
+    fallback?: boolean
+    middleOut?: boolean
+    provider?: {
+      order?: string[]
+      only?: string[]
+      ignore?: string[]
+    }
+  }
+  nanogpt?: {
+    providerHint?: string
+    useSubscriptionEndpoint?: boolean
+    subscriptionState?: string
+  }
+  ollama?: {
+    url?: string
+    requestFormat?: LLMFormatValue
+    modelSource?: string
+    thinkingMode?: string
+  }
 }
 
 export interface LegacyModelRoleProfileBinding {
@@ -31,7 +58,19 @@ export class ModelProfileRecordValidationError extends Error {
 }
 
 const MODEL_PROFILE_RECORD_KEYS = new Set(['id', 'name', 'modelId', 'providerOptions'])
-const MODEL_PROFILE_PROVIDER_OPTIONS_KEYS = new Set(['requestModel'])
+const MODEL_PROFILE_PROVIDER_OPTIONS_KEYS = new Set([
+  'requestModel',
+  'baseUrl',
+  'reverseProxy',
+  'openrouter',
+  'nanogpt',
+  'ollama',
+])
+const MODEL_PROFILE_REVERSE_PROXY_KEYS = new Set(['autofillRequestUrl', 'oobaSystemHoist', 'oobaArgs'])
+const MODEL_PROFILE_OPENROUTER_KEYS = new Set(['fallback', 'middleOut', 'provider'])
+const MODEL_PROFILE_OPENROUTER_PROVIDER_KEYS = new Set(['order', 'only', 'ignore'])
+const MODEL_PROFILE_NANOGPT_KEYS = new Set(['providerHint', 'useSubscriptionEndpoint', 'subscriptionState'])
+const MODEL_PROFILE_OLLAMA_KEYS = new Set(['url', 'requestFormat', 'modelSource', 'thinkingMode'])
 const MODEL_ROLE_PROFILE_BINDING_KEYS = new Set(['mode', 'profileId'])
 const MODEL_ROLE_SET = new Set<string>(MODEL_ROLES)
 
@@ -161,8 +200,20 @@ function createModelProfileRecord(input: {
 
 function normalizeModelProfileProviderOptions(value: unknown): ModelProfileRecordProviderOptions | undefined {
   if (!isRecord(value)) return undefined
+  const options: ModelProfileRecordProviderOptions = {}
   const requestModel = stringOrBlank(value.requestModel)
-  return requestModel ? { requestModel } : undefined
+  const baseUrl = stringOrBlank(value.baseUrl)
+  const reverseProxy = normalizeReverseProxyOptions(value.reverseProxy)
+  const openrouter = normalizeOpenrouterOptions(value.openrouter)
+  const nanogpt = normalizeNanoGPTOptions(value.nanogpt)
+  const ollama = normalizeOllamaOptions(value.ollama)
+  if (requestModel) options.requestModel = requestModel
+  if (baseUrl) options.baseUrl = baseUrl
+  if (reverseProxy) options.reverseProxy = reverseProxy
+  if (openrouter) options.openrouter = openrouter
+  if (nanogpt) options.nanogpt = nanogpt
+  if (ollama) options.ollama = ollama
+  return objectHasKeys(options) ? options : undefined
 }
 
 function readModelProfileProviderOptions(value: unknown, path: string): ModelProfileRecordProviderOptions | undefined {
@@ -177,7 +228,184 @@ function readModelProfileProviderOptions(value: unknown, path: string): ModelPro
   if (Object.prototype.hasOwnProperty.call(value, 'requestModel') && typeof value.requestModel !== 'string') {
     throw new ModelProfileRecordValidationError(`${path}.requestModel must be a string when present`)
   }
+  if (Object.prototype.hasOwnProperty.call(value, 'baseUrl') && typeof value.baseUrl !== 'string') {
+    throw new ModelProfileRecordValidationError(`${path}.baseUrl must be a string when present`)
+  }
+  if (Object.prototype.hasOwnProperty.call(value, 'reverseProxy')) {
+    readReverseProxyOptions(value.reverseProxy, `${path}.reverseProxy`)
+  }
+  if (Object.prototype.hasOwnProperty.call(value, 'openrouter')) {
+    readOpenrouterOptions(value.openrouter, `${path}.openrouter`)
+  }
+  if (Object.prototype.hasOwnProperty.call(value, 'nanogpt')) {
+    readNanoGPTOptions(value.nanogpt, `${path}.nanogpt`)
+  }
+  if (Object.prototype.hasOwnProperty.call(value, 'ollama')) {
+    readOllamaOptions(value.ollama, `${path}.ollama`)
+  }
   return normalizeModelProfileProviderOptions(value)
+}
+
+function normalizeReverseProxyOptions(
+  value: unknown,
+): NonNullable<ModelProfileRecordProviderOptions['reverseProxy']> | undefined {
+  if (!isRecord(value)) return undefined
+  const options: NonNullable<ModelProfileRecordProviderOptions['reverseProxy']> = {}
+  if (typeof value.autofillRequestUrl === 'boolean') options.autofillRequestUrl = value.autofillRequestUrl
+  if (typeof value.oobaSystemHoist === 'boolean') options.oobaSystemHoist = value.oobaSystemHoist
+  if (Object.prototype.hasOwnProperty.call(value, 'oobaArgs') && value.oobaArgs !== undefined) {
+    options.oobaArgs = value.oobaArgs
+  }
+  return objectHasKeys(options) ? options : undefined
+}
+
+function readReverseProxyOptions(
+  value: unknown,
+  path: string,
+): NonNullable<ModelProfileRecordProviderOptions['reverseProxy']> | undefined {
+  if (!isRecord(value)) {
+    throw new ModelProfileRecordValidationError(`${path} must be an object when present`)
+  }
+  for (const key of Object.keys(value)) {
+    if (!MODEL_PROFILE_REVERSE_PROXY_KEYS.has(key)) {
+      throw new ModelProfileRecordValidationError(`${path}.${key} is not supported`)
+    }
+  }
+  readOptionalBoolean(value, 'autofillRequestUrl', `${path}.autofillRequestUrl`)
+  readOptionalBoolean(value, 'oobaSystemHoist', `${path}.oobaSystemHoist`)
+  return normalizeReverseProxyOptions(value)
+}
+
+function normalizeOpenrouterOptions(
+  value: unknown,
+): NonNullable<ModelProfileRecordProviderOptions['openrouter']> | undefined {
+  if (!isRecord(value)) return undefined
+  const options: NonNullable<ModelProfileRecordProviderOptions['openrouter']> = {}
+  if (typeof value.fallback === 'boolean') options.fallback = value.fallback
+  if (typeof value.middleOut === 'boolean') options.middleOut = value.middleOut
+  const provider = normalizeOpenrouterProviderOptions(value.provider)
+  if (provider) options.provider = provider
+  return objectHasKeys(options) ? options : undefined
+}
+
+function readOpenrouterOptions(
+  value: unknown,
+  path: string,
+): NonNullable<ModelProfileRecordProviderOptions['openrouter']> | undefined {
+  if (!isRecord(value)) {
+    throw new ModelProfileRecordValidationError(`${path} must be an object when present`)
+  }
+  for (const key of Object.keys(value)) {
+    if (!MODEL_PROFILE_OPENROUTER_KEYS.has(key)) {
+      throw new ModelProfileRecordValidationError(`${path}.${key} is not supported`)
+    }
+  }
+  readOptionalBoolean(value, 'fallback', `${path}.fallback`)
+  readOptionalBoolean(value, 'middleOut', `${path}.middleOut`)
+  if (Object.prototype.hasOwnProperty.call(value, 'provider')) {
+    readOpenrouterProviderOptions(value.provider, `${path}.provider`)
+  }
+  return normalizeOpenrouterOptions(value)
+}
+
+function normalizeOpenrouterProviderOptions(
+  value: unknown,
+): NonNullable<NonNullable<ModelProfileRecordProviderOptions['openrouter']>['provider']> | undefined {
+  if (!isRecord(value)) return undefined
+  const provider: NonNullable<NonNullable<ModelProfileRecordProviderOptions['openrouter']>['provider']> = {}
+  const order = normalizeStringArray(value.order)
+  const only = normalizeStringArray(value.only)
+  const ignore = normalizeStringArray(value.ignore)
+  if (order) provider.order = order
+  if (only) provider.only = only
+  if (ignore) provider.ignore = ignore
+  return objectHasKeys(provider) ? provider : undefined
+}
+
+function readOpenrouterProviderOptions(
+  value: unknown,
+  path: string,
+): NonNullable<NonNullable<ModelProfileRecordProviderOptions['openrouter']>['provider']> | undefined {
+  if (!isRecord(value)) {
+    throw new ModelProfileRecordValidationError(`${path} must be an object when present`)
+  }
+  for (const key of Object.keys(value)) {
+    if (!MODEL_PROFILE_OPENROUTER_PROVIDER_KEYS.has(key)) {
+      throw new ModelProfileRecordValidationError(`${path}.${key} is not supported`)
+    }
+  }
+  readOptionalStringArray(value, 'order', `${path}.order`)
+  readOptionalStringArray(value, 'only', `${path}.only`)
+  readOptionalStringArray(value, 'ignore', `${path}.ignore`)
+  return normalizeOpenrouterProviderOptions(value)
+}
+
+function normalizeNanoGPTOptions(
+  value: unknown,
+): NonNullable<ModelProfileRecordProviderOptions['nanogpt']> | undefined {
+  if (!isRecord(value)) return undefined
+  const options: NonNullable<ModelProfileRecordProviderOptions['nanogpt']> = {}
+  const providerHint = stringOrBlank(value.providerHint)
+  const subscriptionState = stringOrBlank(value.subscriptionState)
+  if (providerHint) options.providerHint = providerHint
+  if (typeof value.useSubscriptionEndpoint === 'boolean') {
+    options.useSubscriptionEndpoint = value.useSubscriptionEndpoint
+  }
+  if (subscriptionState) options.subscriptionState = subscriptionState
+  return objectHasKeys(options) ? options : undefined
+}
+
+function readNanoGPTOptions(
+  value: unknown,
+  path: string,
+): NonNullable<ModelProfileRecordProviderOptions['nanogpt']> | undefined {
+  if (!isRecord(value)) {
+    throw new ModelProfileRecordValidationError(`${path} must be an object when present`)
+  }
+  for (const key of Object.keys(value)) {
+    if (!MODEL_PROFILE_NANOGPT_KEYS.has(key)) {
+      throw new ModelProfileRecordValidationError(`${path}.${key} is not supported`)
+    }
+  }
+  readOptionalString(value, 'providerHint', `${path}.providerHint`)
+  readOptionalBoolean(value, 'useSubscriptionEndpoint', `${path}.useSubscriptionEndpoint`)
+  readOptionalString(value, 'subscriptionState', `${path}.subscriptionState`)
+  return normalizeNanoGPTOptions(value)
+}
+
+function normalizeOllamaOptions(value: unknown): NonNullable<ModelProfileRecordProviderOptions['ollama']> | undefined {
+  if (!isRecord(value)) return undefined
+  const options: NonNullable<ModelProfileRecordProviderOptions['ollama']> = {}
+  const url = stringOrBlank(value.url)
+  const modelSource = stringOrBlank(value.modelSource)
+  const thinkingMode = stringOrBlank(value.thinkingMode)
+  const requestFormat = asFormat(value.requestFormat)
+  if (url) options.url = url
+  if (requestFormat !== undefined) options.requestFormat = requestFormat
+  if (modelSource) options.modelSource = modelSource
+  if (thinkingMode) options.thinkingMode = thinkingMode
+  return objectHasKeys(options) ? options : undefined
+}
+
+function readOllamaOptions(
+  value: unknown,
+  path: string,
+): NonNullable<ModelProfileRecordProviderOptions['ollama']> | undefined {
+  if (!isRecord(value)) {
+    throw new ModelProfileRecordValidationError(`${path} must be an object when present`)
+  }
+  for (const key of Object.keys(value)) {
+    if (!MODEL_PROFILE_OLLAMA_KEYS.has(key)) {
+      throw new ModelProfileRecordValidationError(`${path}.${key} is not supported`)
+    }
+  }
+  readOptionalString(value, 'url', `${path}.url`)
+  if (Object.prototype.hasOwnProperty.call(value, 'requestFormat') && asFormat(value.requestFormat) === undefined) {
+    throw new ModelProfileRecordValidationError(`${path}.requestFormat must be a valid LLMFormat when present`)
+  }
+  readOptionalString(value, 'modelSource', `${path}.modelSource`)
+  readOptionalString(value, 'thinkingMode', `${path}.thinkingMode`)
+  return normalizeOllamaOptions(value)
 }
 
 function readModelRoleProfileBinding(value: unknown, path: string): ModelRoleProfileBinding {
@@ -212,6 +440,45 @@ function normalizeModelRoleProfileBinding(value: unknown): ModelRoleProfileBindi
   if (value.mode !== 'profile') return null
   const profileId = stringOrBlank(value.profileId)
   return profileId ? { mode: 'profile', profileId } : null
+}
+
+function readOptionalString(value: Record<string, unknown>, key: string, path: string): void {
+  if (Object.prototype.hasOwnProperty.call(value, key) && typeof value[key] !== 'string') {
+    throw new ModelProfileRecordValidationError(`${path} must be a string when present`)
+  }
+}
+
+function readOptionalBoolean(value: Record<string, unknown>, key: string, path: string): void {
+  if (Object.prototype.hasOwnProperty.call(value, key) && typeof value[key] !== 'boolean') {
+    throw new ModelProfileRecordValidationError(`${path} must be a boolean when present`)
+  }
+}
+
+function readOptionalStringArray(value: Record<string, unknown>, key: string, path: string): void {
+  if (!Object.prototype.hasOwnProperty.call(value, key)) return
+  const row = value[key]
+  if (!Array.isArray(row) || !row.every((item) => typeof item === 'string')) {
+    throw new ModelProfileRecordValidationError(`${path} must be an array of strings when present`)
+  }
+}
+
+function normalizeStringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const out = value.flatMap((item) => {
+    const normalized = stringOrBlank(item)
+    return normalized ? [normalized] : []
+  })
+  return out.length > 0 ? out : undefined
+}
+
+function asFormat(value: unknown): LLMFormatValue | undefined {
+  return typeof value === 'number' && Object.values(LLMFormat).includes(value as LLMFormatValue)
+    ? (value as LLMFormatValue)
+    : undefined
+}
+
+function objectHasKeys(value: object): boolean {
+  return Object.keys(value).length > 0
 }
 
 function stringOrBlank(value: unknown): string {
