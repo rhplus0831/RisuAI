@@ -7,6 +7,7 @@ import {
   normalizeLegacySeperateModels,
   normalizeModelRoleOverrides,
 } from '../../../../src/ts/model/modelRoles.js'
+import { normalizeModelProfiles, normalizeModelRoleProfiles } from '../../../../src/ts/model/modelProfileRecords.js'
 
 type JsonRecord = Record<string, unknown>
 type AssetValidationOptions = { assetDb?: DatabaseSync }
@@ -34,6 +35,8 @@ const SNAPSHOT_KEYS: Array<[string, string]> = [
   ['aiModel', 'aiModel'],
   ['subModel', 'subModel'],
   ['modelRoles', 'modelRoles'],
+  ['modelProfiles', 'modelProfiles'],
+  ['modelRoleProfiles', 'modelRoleProfiles'],
   ['currentPluginProvider', 'currentPluginProvider'],
   ['textgenWebUIStreamURL', 'textgenWebUIStreamURL'],
   ['textgenWebUIBlockingURL', 'textgenWebUIBlockingURL'],
@@ -179,6 +182,7 @@ export function createPresetRecord(
   if (preset.name !== undefined && typeof preset.name !== 'string') {
     throw new ValidationError('preset.name must be a string')
   }
+  normalizePresetProfileFields(preset)
   validatePresetAssetRefs(preset, 'preset', options)
   preset.name ??= fallbackName
   return preset
@@ -186,6 +190,7 @@ export function createPresetRecord(
 
 export function readPresetPatch(input: JsonRecord, options: AssetValidationOptions = {}): JsonRecord {
   const patch = cloneJson(input) as JsonRecord
+  normalizePresetProfileFields(patch)
   validatePresetAssetRefs(patch, 'patch', options)
   return patch
 }
@@ -236,10 +241,21 @@ export function applyPreset(database: JsonRecord, preset: PresetRecord): void {
 
 function normalizePresetAppliedValue(databaseKey: string, value: unknown): unknown {
   if (databaseKey === 'modelRoles') return normalizeModelRoleOverrides(value)
+  if (databaseKey === 'modelProfiles') return normalizeModelProfiles(value)
+  if (databaseKey === 'modelRoleProfiles') return normalizeModelRoleProfiles(value)
   if (databaseKey === 'seperateModels') return normalizeLegacySeperateModels(value)
   if (databaseKey === 'fallbackModels') return normalizeLegacyFallbackModels(value)
   if (databaseKey === 'seperateParameters') return normalizeSeperateParametersValue(value)
   return value
+}
+
+function normalizePresetProfileFields(record: JsonRecord): void {
+  if (Object.prototype.hasOwnProperty.call(record, 'modelProfiles')) {
+    record.modelProfiles = normalizeModelProfiles(record.modelProfiles)
+  }
+  if (Object.prototype.hasOwnProperty.call(record, 'modelRoleProfiles')) {
+    record.modelRoleProfiles = normalizeModelRoleProfiles(record.modelRoleProfiles)
+  }
 }
 
 function normalizeSeperateParametersValue(value: unknown): Record<string, unknown> {

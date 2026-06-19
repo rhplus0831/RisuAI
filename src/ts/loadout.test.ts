@@ -14,6 +14,7 @@ import {
 import { DBState, selectedCharID } from './stores.svelte'
 import { applyLoadout, deleteLoadout, saveCurrentLoadout, toggleLoadoutFavorite, type Loadout } from './loadout'
 import { currentPersonaStateSnapshot, isPersonaSettingsWatcherSuppressed, queueSelectedPersonaUpdate } from './persona'
+import { MODEL_ROLES } from './model/modelRoles'
 
 interface CapturedFetch {
   url: string
@@ -31,6 +32,13 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 function cloneJsonValue<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
+}
+
+function normalizedModelRoleProfiles(overrides: Record<string, Record<string, unknown>> = {}) {
+  return {
+    ...Object.fromEntries(MODEL_ROLES.map((role) => [role, { mode: 'legacy' }])),
+    ...overrides,
+  }
 }
 
 function makeLoadout(overrides: Partial<Loadout>): Loadout {
@@ -207,6 +215,13 @@ function seedSplitPresetLoadoutState(): Loadout {
         apiType: 'kobold',
         temperature: 0.9,
         maxResponse: 450,
+        modelProfiles: [
+          { id: ' story-profile ', name: ' Story Profile ', modelId: ' story-model ' },
+          { id: 'story-profile', name: 'Duplicate' },
+        ],
+        modelRoleProfiles: {
+          memory: { mode: 'profile', profileId: ' story-profile ' },
+        },
       },
     ],
     modelPresetsId: 0,
@@ -226,12 +241,20 @@ function seedSplitPresetLoadoutState(): Loadout {
         jailbreak: 'story jailbreak',
         globalNote: 'story global',
         formatingOrder: ['main'],
+        modelProfiles: [{ id: 'prompt-profile', name: 'Prompt Profile' }],
+        modelRoleProfiles: {
+          memory: { mode: 'profile', profileId: ' prompt-profile ' },
+        },
       },
     ],
     promptPresetsId: 0,
     apiType: 'openai',
     temperature: 0.4,
     maxResponse: 100,
+    modelProfiles: [{ id: 'base-profile', name: 'Base Profile', modelId: 'base-model' }],
+    modelRoleProfiles: normalizedModelRoleProfiles({
+      memory: { mode: 'profile', profileId: 'base-profile' },
+    }),
     mainPrompt: 'default main',
     jailbreak: 'default jailbreak',
     globalNote: 'default global',
@@ -517,6 +540,12 @@ describe('loadout projection command helpers', () => {
     expect(DBState.db.apiType).toBe('kobold')
     expect(DBState.db.temperature).toBe(0.9)
     expect(DBState.db.maxResponse).toBe(450)
+    expect(DBState.db.modelProfiles).toEqual([{ id: 'story-profile', name: 'Story Profile', modelId: 'story-model' }])
+    expect(DBState.db.modelRoleProfiles).toEqual(
+      normalizedModelRoleProfiles({
+        memory: { mode: 'profile', profileId: 'prompt-profile' },
+      }),
+    )
     expect(DBState.db.mainPrompt).toBe('story main')
     expect(DBState.db.jailbreak).toBe('story jailbreak')
     expect(DBState.db.globalNote).toBe('story global')
@@ -556,6 +585,42 @@ describe('loadout projection command helpers', () => {
         },
       },
     ])
+  })
+
+  it('restores durable profile state when a split prompt preset loadout command fails', async () => {
+    const loadout = seedSplitPresetLoadoutState()
+    const calls = stubApplyLoadoutFetch({ failCommandNumber: 2 })
+    vi.spyOn(Date, 'now').mockReturnValue(123456)
+    setServerProjectionWriteGuardEnabled(true)
+
+    applyLoadout(loadout, ['preset'])
+
+    expect(DBState.db.modelPresetsId).toBe(1)
+    expect(DBState.db.promptPresetsId).toBe(1)
+    expect(DBState.db.modelProfiles).toEqual([{ id: 'story-profile', name: 'Story Profile', modelId: 'story-model' }])
+    expect(DBState.db.modelRoleProfiles).toEqual(
+      normalizedModelRoleProfiles({
+        memory: { mode: 'profile', profileId: 'prompt-profile' },
+      }),
+    )
+
+    await waitForCallCount(calls, 3)
+    await flushCommandEffects()
+
+    expect(calls.map((call) => call.url)).toEqual([
+      '/api/v1/bootstrap',
+      '/api/v1/commands/model-presets/select',
+      '/api/v1/commands/prompt-presets/select',
+    ])
+    expect(DBState.db.modelPresetsId).toBe(1)
+    expect(DBState.db.promptPresetsId).toBe(0)
+    expect(DBState.db.modelProfiles).toEqual([{ id: 'story-profile', name: 'Story Profile', modelId: 'story-model' }])
+    expect(DBState.db.modelRoleProfiles).toEqual(
+      normalizedModelRoleProfiles({
+        memory: { mode: 'profile', profileId: 'story-profile' },
+      }),
+    )
+    expect(DBState.db.lastLoadedLoadoutName).toBe('Before Loadout')
   })
 
   it('keeps accepted loadout apply steps and rolls back only the failed settings/touch tail', async () => {

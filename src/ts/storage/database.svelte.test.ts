@@ -31,6 +31,7 @@ import {
   reorderPresets,
   saveCurrentPreset,
   setDatabase,
+  setPreset,
   setServerProjectionWriteGuardEnabled,
   selectModelPreset,
   selectPromptPreset,
@@ -61,6 +62,13 @@ function seedDatabase(characters: Array<Record<string, unknown>>) {
 
 function clonePlain<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
+}
+
+function normalizedModelRoleProfiles(overrides: Record<string, Record<string, unknown>> = {}) {
+  return {
+    ...Object.fromEntries(MODEL_ROLES.map((role) => [role, { mode: 'legacy' }])),
+    ...overrides,
+  }
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -261,6 +269,59 @@ describe('model profile database normalization', () => {
       ...Object.fromEntries(MODEL_ROLES.map((role) => [role, { mode: 'legacy' }])),
       memory: { mode: 'profile', profileId: 'profile-a' },
     })
+  })
+
+  it('saves durable profile fields into legacy bot preset snapshots', async () => {
+    seedPresetDatabase({
+      modelProfiles: [{ id: 'profile-a', name: 'Profile A', modelId: 'gpt-5' }],
+      modelRoleProfiles: normalizedModelRoleProfiles({
+        memory: { mode: 'profile', profileId: 'profile-a' },
+      }) as Database['modelRoleProfiles'],
+    })
+    const calls = stubFailedPresetCommand()
+
+    saveCurrentPreset()
+
+    const command = await waitForPresetCommand(calls, '/presets/preset-a')
+    expect(command.body.patch).toMatchObject({
+      id: 'preset-a',
+      modelProfiles: [{ id: 'profile-a', name: 'Profile A', modelId: 'gpt-5' }],
+      modelRoleProfiles: expect.objectContaining({
+        memory: { mode: 'profile', profileId: 'profile-a' },
+      }),
+    })
+  })
+
+  it('applies durable profile fields from legacy bot presets with normalization', () => {
+    seedPresetDatabase({
+      modelProfiles: [{ id: 'base-profile', name: 'Base Profile' }],
+      modelRoleProfiles: normalizedModelRoleProfiles({
+        memory: { mode: 'profile', profileId: 'base-profile' },
+      }) as Database['modelRoleProfiles'],
+    })
+
+    setPreset(
+      DBState.db,
+      makePreset('preset-c', 'Gamma', {
+        modelProfiles: [
+          { id: ' target-profile ', name: ' Target Profile ', modelId: ' target-model ' } as never,
+          { id: 'target-profile', name: 'Duplicate' } as never,
+        ],
+        modelRoleProfiles: {
+          memory: { mode: 'profile', profileId: ' target-profile ' },
+          translate: { mode: 'legacy' },
+        } as never,
+      }),
+    )
+
+    expect(DBState.db.modelProfiles).toEqual([
+      { id: 'target-profile', name: 'Target Profile', modelId: 'target-model' },
+    ])
+    expect(DBState.db.modelRoleProfiles).toEqual(
+      normalizedModelRoleProfiles({
+        memory: { mode: 'profile', profileId: 'target-profile' },
+      }),
+    )
   })
 })
 
@@ -987,6 +1048,12 @@ describe('preset command rollback (L21)', () => {
       subModel: 'model-sub',
       temperature: 31,
       modelRoles: { memory: 'model-memory', scriptAux: 'model-script-aux' },
+      modelProfiles: [
+        { id: ' model-profile ', name: ' Model Profile ', modelId: ' model-ai ', providerOptions: { apiKey: 'drop' } },
+      ],
+      modelRoleProfiles: {
+        memory: { mode: 'profile', profileId: ' model-profile ' },
+      },
       seperateModelsForAxModels: true,
       seperateModels: {
         memory: 'model-separate-memory',
@@ -1013,6 +1080,10 @@ describe('preset command rollback (L21)', () => {
       temperature: 88,
       overrideModelParameters: false,
       modelRoles: { memory: 'prompt-memory', scriptAux: 'prompt-script-aux' },
+      modelProfiles: [{ id: 'prompt-profile', name: 'Prompt Profile' }],
+      modelRoleProfiles: {
+        memory: { mode: 'profile', profileId: 'prompt-profile' },
+      },
       seperateModelsForAxModels: true,
       seperateModels: {
         memory: 'prompt-separate-memory',
@@ -1039,6 +1110,10 @@ describe('preset command rollback (L21)', () => {
       subModel: 'base-sub',
       temperature: 12,
       modelRoles: { memory: 'base-memory', scriptAux: 'base-script-aux' } as Database['modelRoles'],
+      modelProfiles: [{ id: 'base-profile', name: 'Base Profile', modelId: 'base-ai' }],
+      modelRoleProfiles: normalizedModelRoleProfiles({
+        memory: { mode: 'profile', profileId: 'base-profile' },
+      }) as Database['modelRoleProfiles'],
       seperateModelsForAxModels: false,
       seperateModels: {
         memory: 'base-separate-memory',
@@ -1072,6 +1147,12 @@ describe('preset command rollback (L21)', () => {
       memory: 'prompt-memory',
       scriptAux: 'prompt-script-aux',
     })
+    expect(DBState.db.modelProfiles).toEqual([{ id: 'model-profile', name: 'Model Profile', modelId: 'model-ai' }])
+    expect(DBState.db.modelRoleProfiles).toEqual(
+      normalizedModelRoleProfiles({
+        memory: { mode: 'profile', profileId: 'prompt-profile' },
+      }),
+    )
     expect(DBState.db.seperateModelsForAxModels).toBe(true)
     expect(DBState.db.seperateModels).toMatchObject({
       memory: 'prompt-separate-memory',

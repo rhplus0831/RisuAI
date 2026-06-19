@@ -328,6 +328,8 @@ const SET_PRESET_ROLLBACK_KEYS = [
   'aiModel',
   'subModel',
   'modelRoles',
+  'modelProfiles',
+  'modelRoleProfiles',
   'currentPluginProvider',
   'textgenWebUIStreamURL',
   'textgenWebUIBlockingURL',
@@ -2460,6 +2462,8 @@ export interface botPreset {
   aiModel?: string
   subModel?: string
   modelRoles?: NormalizedModelRoleOverrides
+  modelProfiles?: ModelProfileRecord[]
+  modelRoleProfiles?: ModelRoleProfileMap
   currentPluginProvider?: string
   textgenWebUIStreamURL?: string
   textgenWebUIBlockingURL?: string
@@ -2940,6 +2944,8 @@ function saveCurrentPresetLocal() {
     aiModel: db.aiModel,
     subModel: db.subModel,
     modelRoles: safeStructuredClone(db.modelRoles),
+    modelProfiles: safeStructuredClone(db.modelProfiles),
+    modelRoleProfiles: safeStructuredClone(db.modelRoleProfiles),
     currentPluginProvider: db.currentPluginProvider,
     textgenWebUIStreamURL: db.textgenWebUIStreamURL,
     textgenWebUIBlockingURL: db.textgenWebUIBlockingURL,
@@ -3779,6 +3785,7 @@ export function applyModelPresetFieldsToDatabase(db: Database, preset: ModelPres
   applySplitPresetFieldsToDatabase(db, preset, MODEL_PRESET_FIELDS, MODEL_PRESET_DATABASE_KEY_OVERRIDES)
   applyPromptPresetFieldsToDatabase(db, db.promptPresets?.[db.promptPresetsId])
   normalizeModelRoleSettings(db)
+  normalizeModelProfileSettings(db)
   db.fallbackModels = normalizeLegacyFallbackModels(db.fallbackModels)
   normalizeSeperateParameters(db)
 }
@@ -3801,6 +3808,7 @@ export function applyPromptPresetFieldsToDatabase(db: Database, preset: PromptPr
     MODEL_PRESET_DATABASE_KEY_OVERRIDES,
   )
   normalizeModelRoleSettings(db)
+  normalizeModelProfileSettings(db)
   db.fallbackModels = normalizeLegacyFallbackModels(db.fallbackModels)
   normalizeSeperateParameters(db)
 }
@@ -3823,8 +3831,14 @@ function applySplitPresetFieldsToDatabase(
   for (const field of fields) {
     if (!Object.prototype.hasOwnProperty.call(preset, field)) continue
     const databaseKey = databaseKeyOverrides[field] ?? field
-    target[databaseKey] = safeStructuredClone(preset[field])
+    target[databaseKey] = normalizeSplitPresetAppliedValue(databaseKey, safeStructuredClone(preset[field]))
   }
+}
+
+function normalizeSplitPresetAppliedValue(databaseKey: string, value: unknown): unknown {
+  if (databaseKey === 'modelProfiles') return normalizeModelProfiles(value)
+  if (databaseKey === 'modelRoleProfiles') return normalizeModelRoleProfiles(value)
+  return value
 }
 
 export function setPreset(db: Database, newPres: botPreset) {
@@ -3844,6 +3858,8 @@ export function setPreset(db: Database, newPres: botPreset) {
   db.aiModel = newPres.aiModel ?? db.aiModel
   db.subModel = newPres.subModel ?? db.subModel
   db.modelRoles = normalizeModelRoleOverrides(newPres.modelRoles ?? db.modelRoles)
+  db.modelProfiles = normalizeModelProfiles(newPres.modelProfiles ?? db.modelProfiles)
+  db.modelRoleProfiles = normalizeModelRoleProfiles(newPres.modelRoleProfiles ?? db.modelRoleProfiles)
   db.currentPluginProvider = newPres.currentPluginProvider ?? db.currentPluginProvider
   db.textgenWebUIStreamURL = newPres.textgenWebUIStreamURL ?? db.textgenWebUIStreamURL
   db.textgenWebUIBlockingURL = newPres.textgenWebUIBlockingURL ?? db.textgenWebUIBlockingURL

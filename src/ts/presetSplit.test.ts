@@ -80,6 +80,25 @@ describe('preset split helpers', () => {
     expect(findEquivalentModelPreset([first], second)).toBe(first)
   })
 
+  it('keeps durable profiles on model presets and only role bindings on prompt presets', () => {
+    const source = {
+      ...legacyPreset,
+      modelProfiles: [{ id: 'profile-a', name: 'Profile A', modelId: 'gpt-5' }],
+      modelRoleProfiles: { memory: { mode: 'profile', profileId: 'profile-a' } },
+    }
+
+    expect(createExtractedModelPreset(source, { id: 'model-a', name: 'Model A' })).toMatchObject({
+      modelProfiles: [{ id: 'profile-a', name: 'Profile A', modelId: 'gpt-5' }],
+      modelRoleProfiles: { memory: { mode: 'profile', profileId: 'profile-a' } },
+    })
+
+    const promptPreset = createExtractedPromptPreset(source, { id: 'prompt-a', name: 'Prompt A' })
+    expect(promptPreset).toMatchObject({
+      modelRoleProfiles: { memory: { mode: 'profile', profileId: 'profile-a' } },
+    })
+    expect(promptPreset).not.toHaveProperty('modelProfiles')
+  })
+
   it('exports prompt preset fields plus stored model override values', () => {
     expect(
       promptPresetExportPayload({
@@ -223,6 +242,8 @@ describe('effective preset composition', () => {
       base: {
         temperature: 10,
         modelRoles: { memory: 'base-memory' },
+        modelProfiles: [{ id: 'base-profile', name: 'Base Profile' }],
+        modelRoleProfiles: { memory: { mode: 'profile', profileId: 'base-profile' } },
         seperateModelsForAxModels: false,
         seperateModels: { memory: 'base-separate' },
         fallbackModels: { model: 'base-fallback' },
@@ -231,6 +252,8 @@ describe('effective preset composition', () => {
         id: 'model-a',
         temperature: 20,
         modelRoles: { memory: 'model-memory' },
+        modelProfiles: [{ id: 'model-profile', name: 'Model Profile' }],
+        modelRoleProfiles: { memory: { mode: 'profile', profileId: 'model-profile' } },
         seperateModelsForAxModels: false,
         seperateModels: { memory: 'model-separate' },
         fallbackModels: { model: 'model-fallback' },
@@ -240,6 +263,8 @@ describe('effective preset composition', () => {
         overrideModelParameters: false,
         temperature: 30,
         modelRoles: { memory: 'prompt-memory' },
+        modelProfiles: [{ id: 'prompt-profile', name: 'Prompt Profile' }],
+        modelRoleProfiles: { memory: { mode: 'profile', profileId: 'prompt-profile' } },
         seperateModelsForAxModels: true,
         seperateModels: { memory: 'prompt-separate' },
         fallbackModels: { model: 'prompt-fallback' },
@@ -250,6 +275,8 @@ describe('effective preset composition', () => {
     expect(effective).toMatchObject({
       temperature: 20,
       modelRoles: { memory: 'prompt-memory' },
+      modelProfiles: [{ id: 'model-profile', name: 'Model Profile' }],
+      modelRoleProfiles: { memory: { mode: 'profile', profileId: 'prompt-profile' } },
       seperateModelsForAxModels: true,
       seperateModels: { memory: 'prompt-separate' },
       fallbackModels: { model: 'prompt-fallback' },

@@ -2078,11 +2078,27 @@ describe('Phase 9-2b bot preset commands', () => {
     const revision = await importDatabase(harness.app, assertion, {
       botPresets: [
         { id: 'preset-a', name: 'A', mainPrompt: 'old saved', temperature: 50 },
-        { id: 'preset-b', name: 'B', mainPrompt: 'target prompt', temperature: 90 },
+        {
+          id: 'preset-b',
+          name: 'B',
+          mainPrompt: 'target prompt',
+          temperature: 90,
+          modelProfiles: [
+            { id: ' target-profile ', name: ' Target Profile ', modelId: ' target-model ' },
+            { id: 'target-profile', name: 'Duplicate' },
+          ],
+          modelRoleProfiles: {
+            memory: { mode: 'profile', profileId: ' target-profile ' },
+          },
+        },
       ],
       botPresetsId: 0,
       mainPrompt: 'current prompt',
       temperature: 72,
+      modelProfiles: [{ id: 'current-profile', name: 'Current Profile', modelId: 'current-model' }],
+      modelRoleProfiles: {
+        memory: { mode: 'profile', profileId: 'current-profile' },
+      },
     })
 
     const selected = await harness.app.inject({
@@ -2118,6 +2134,11 @@ describe('Phase 9-2b bot preset commands', () => {
       botPresetsId: 1,
       mainPrompt: 'target prompt',
       temperature: 90,
+      modelProfiles: [{ id: 'target-profile', name: 'Target Profile', modelId: 'target-model' }],
+      modelRoleProfiles: {
+        ...Object.fromEntries(MODEL_ROLES.map((role) => [role, { mode: 'legacy' }])),
+        memory: { mode: 'profile', profileId: 'target-profile' },
+      },
     })
     expect(bootstrap.json().database.botPresets[0]).toMatchObject({ id: 'preset-a', name: 'A', image: '' })
     const savedPreset = await harness.app.inject({
@@ -2131,6 +2152,10 @@ describe('Phase 9-2b bot preset commands', () => {
       name: 'A',
       mainPrompt: 'current prompt',
       temperature: 72,
+      modelProfiles: [{ id: 'current-profile', name: 'Current Profile', modelId: 'current-model' }],
+      modelRoleProfiles: expect.objectContaining({
+        memory: { mode: 'profile', profileId: 'current-profile' },
+      }),
     })
   })
 

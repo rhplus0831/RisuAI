@@ -20,6 +20,7 @@ import {
   normalizeLegacySeperateModels,
   normalizeModelRoleOverrides,
 } from '../../../../src/ts/model/modelRoles.js'
+import { normalizeModelProfiles, normalizeModelRoleProfiles } from '../../../../src/ts/model/modelProfileRecords.js'
 
 type JsonRecord = Record<string, unknown>
 type PresetKind = 'modelPreset' | 'promptPreset'
@@ -354,7 +355,14 @@ function applySplitPreset(database: JsonRecord, preset: JsonRecord, keys: Readon
 }
 
 function normalizeSplitPresetRoleAdjacentFields(record: JsonRecord): void {
-  for (const key of ['modelRoles', 'seperateModels', 'fallbackModels', 'seperateParameters']) {
+  for (const key of [
+    'modelRoles',
+    'modelProfiles',
+    'modelRoleProfiles',
+    'seperateModels',
+    'fallbackModels',
+    'seperateParameters',
+  ]) {
     if (Object.prototype.hasOwnProperty.call(record, key)) {
       record[key] = normalizeSplitPresetAppliedValue(key, record[key])
     }
@@ -363,6 +371,8 @@ function normalizeSplitPresetRoleAdjacentFields(record: JsonRecord): void {
 
 function normalizeSplitPresetAppliedValue(databaseKey: string, value: unknown): unknown {
   if (databaseKey === 'modelRoles') return normalizeModelRoleOverrides(value)
+  if (databaseKey === 'modelProfiles') return normalizeModelProfiles(value)
+  if (databaseKey === 'modelRoleProfiles') return normalizeModelRoleProfiles(value)
   if (databaseKey === 'seperateModels') return normalizeLegacySeperateModels(value)
   if (databaseKey === 'fallbackModels') return normalizeLegacyFallbackModels(value)
   if (databaseKey === 'seperateParameters') return normalizeSeperateParametersValue(value)
