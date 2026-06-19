@@ -610,11 +610,43 @@ function resolveProviderModel(
   return info.id
 }
 
-function resolveOpenAIVariant(db: Database, info: ModelInfoLite, provider: string): OpenAICompatibleVariant | null {
+function resolveProfileOpenAIVariant(profile?: ResolvedModelProfile): OpenAICompatibleVariant | null | undefined {
+  if (!profile) return undefined
+  const options = profile.providerOptions
+  const apiKey = asString(options.apiKey)
+  if (!apiKey) return null
+  return {
+    apiKey,
+    baseUrl: asString(options.baseUrl),
+    extraHeaders: options.extraHeaders,
+    additionalParams: options.additionalParams,
+    oobaSystemHoist: options.reverseProxy?.oobaSystemHoist === true,
+  }
+}
+
+function resolveOpenAIVariant(
+  db: Database,
+  info: ModelInfoLite,
+  provider: string,
+  profile?: ResolvedModelProfile,
+): OpenAICompatibleVariant | null {
+  const profileVariant = resolveProfileOpenAIVariant(profile)
+  if (profileVariant !== undefined) return profileVariant
+
   const aiModel = asString(db.aiModel) ?? ''
   if (aiModel === 'ollama-cloud') {
     const apiKey = asString(db.ollamaApiKey)
     return apiKey ? { apiKey, baseUrl: 'https://ollama.com/v1' } : null
+  }
+  if (provider === 'nanogpt') {
+    const apiKey = asString(db.nanogptKey)
+    return apiKey
+      ? {
+          apiKey,
+          baseUrl: db.nanogptUseSubscriptionEndpoint === true ? NANOGPT_SUBSCRIPTION_BASE_URL : NANOGPT_BASE_URL,
+          extraHeaders: asString(db.nanogptProvider) ? { 'X-Provider': db.nanogptProvider as string } : undefined,
+        }
+      : null
   }
   if (provider === 'openrouter') {
     const apiKey = asString(db.openrouterKey)
@@ -740,7 +772,7 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
   }
 
   if (provider === 'openai' || provider === 'openrouter') {
-    const variant = resolveOpenAIVariant(db, info, provider)
+    const variant = resolveOpenAIVariant(db, info, provider, profile)
     if (!variant) throw new Error('options.openai.apiKey is required')
     const request = resolveOpenAIRequest({
       model,
@@ -759,16 +791,18 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
   }
 
   if (provider === 'nanogpt') {
-    const apiKey = asString(db.nanogptKey)
-    if (!apiKey) throw new Error('options.nanogpt.apiKey is required')
+    const variant = resolveOpenAIVariant(db, info, provider, profile)
+    if (!variant) throw new Error('options.nanogpt.apiKey is required')
     const request = resolveOpenAIRequest({
       model,
       messages,
-      apiKey,
-      baseUrl: db.nanogptUseSubscriptionEndpoint === true ? NANOGPT_SUBSCRIPTION_BASE_URL : NANOGPT_BASE_URL,
+      apiKey: variant.apiKey,
+      baseUrl: variant.baseUrl,
       maxTokens,
       temperature,
-      extraHeaders: asString(db.nanogptProvider) ? { 'X-Provider': db.nanogptProvider as string } : undefined,
+      extraHeaders: variant.extraHeaders,
+      additionalParams: variant.additionalParams,
+      oobaSystemHoist: variant.oobaSystemHoist,
       signal,
     })
     if (!request) throw new Error('options.nanogpt.apiKey is required')

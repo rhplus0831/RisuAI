@@ -1,6 +1,6 @@
 # Phase 3: Generation Dispatch
 
-Status: in progress; Phase 3a server-owned profile selection/capability/request-model slice complete.
+Status: in progress; Phase 3a server-owned profile selection/capability/request-model slice complete; Phase 3b Fastify OpenAI-compatible provider-options slice complete.
 
 Goal: move browser and Fastify generation dispatch from ad hoc flat database
 reads to the resolved profile runtime object.
@@ -38,13 +38,33 @@ reads to the resolved profile runtime object.
   URLs, additional params, and provider-specific credentials still come from the
   existing flat database fields in this slice.
 
+## Implemented Phase 3b Slice
+
+- Fastify chat dispatch now resolves OpenAI-compatible request variants from
+  `profile.providerOptions` for provider branches `openai`, `openrouter`, and
+  `nanogpt`.
+- The profile-owned fields used by those branches are `apiKey`, `baseUrl`,
+  `extraHeaders`, `additionalParams`, and reverse-proxy `oobaSystemHoist`.
+- Covered OpenAI-wire variants include `reverse_proxy`, `xcustom:::`, OpenRouter,
+  NanoGPT, key-identifier models such as DeepSeek, and `ollama-cloud` when its
+  request format routes to OpenAI-compatible chat.
+- The old flat OpenAI-compatible option reader remains only as a legacy helper
+  fallback for callers that do not provide or derive a resolved profile.
+- Focused direct dispatch coverage now creates profiles from one settings shape
+  and dispatches with intentionally conflicting flat database values, proving the
+  profile wins for base URL, API key, headers, additional params, reverse-proxy
+  system hoist, and request model.
+- OpenRouter body knobs (`fallback`, `middleOut`, and provider filters) are not
+  wired in this slice because the existing Fastify OpenAI chat adapter does not
+  support those body options.
+
 ## Remaining Phase 3 Work
 
 - Migrate the remaining browser completion/request helper paths to consume the
   resolver contract for role/static fallback selection.
-- Decide and test the next provider-option migration step before moving API
-  keys, base URLs, additional params, or custom provider details into
-  `profile.providerOptions`.
+- Migrate remaining non-OpenAI-compatible provider option branches to
+  `profile.providerOptions` where the target adapters already expose equivalent
+  request fields.
 - Broaden provider parity beyond the Phase 3a request-model surface before
   marking the full Phase 3 complete.
 
@@ -93,21 +113,21 @@ pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 ```
 
-Latest Phase 3a run:
+Latest Phase 3b run:
 
 ```bash
-pnpm exec vitest run src/ts/model/modelProfileResolver.test.ts src/ts/process/request/tests/serverPromptAssembly.test.ts src/ts/process/request/tests/serverCompletion.test.ts src/ts/process/request/tests/modelRoleRouting.test.ts src/ts/process/request/tests/providerCapability.test.ts
-pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/modelProfileResolver.server.test.ts server/fastify/__tests__/providerCapabilityRoute.test.ts server/fastify/__tests__/generation.completion.test.ts server/fastify/__tests__/generation.chat.test.ts server/fastify/__tests__/providerTransport.test.ts
+pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/modelProfileResolver.server.test.ts server/fastify/__tests__/providerCapabilityRoute.test.ts server/fastify/__tests__/chatDispatchProfileOptions.test.ts server/fastify/__tests__/generation.completion.test.ts server/fastify/__tests__/generation.chat.test.ts
+pnpm exec vitest run src/ts/model/modelProfileResolver.test.ts src/ts/process/request/tests/providerCapability.test.ts src/ts/process/request/tests/serverCompletion.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 ```
 
 Results:
 
-- Focused browser resolver/preflight/completion/routing/capability tests:
-  passed, 5 files / 100 tests.
-- Focused Fastify resolver/capability/completion/chat/transport tests: passed,
-  5 files / 183 tests.
+- Focused Fastify resolver/capability/chat dispatch/completion/chat tests:
+  passed, 5 files / 185 tests.
+- Focused browser resolver/capability/server-completion tests: passed, 3 files /
+  69 tests.
 - Client-lib TypeScript: passed.
 - Server strict TypeScript: passed.
 
