@@ -258,6 +258,41 @@ afterEach(() => {
 })
 
 describe('dispatchChatProvider profile providerOptions', () => {
+  it('uses a selected durable profile API key for outbound OpenRouter authorization', async () => {
+    const profile = resolveModelProfile({
+      database: db({
+        aiModel: 'gpt-5',
+        openrouterKey: 'sk-flat-openrouter',
+        openrouterRequestModel: 'flat/openrouter',
+        modelProfiles: [
+          {
+            id: 'openrouter-profile',
+            name: 'OpenRouter Profile',
+            modelId: 'openrouter',
+            providerOptions: {
+              apiKey: 'sk-durable-openrouter',
+              requestModel: 'profile/openrouter',
+            },
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'openrouter-profile' } },
+      } as Partial<Database>),
+    })
+    const flatConflict = db({
+      aiModel: 'openrouter',
+      openrouterKey: 'sk-conflicting-openrouter',
+      openrouterRequestModel: 'conflict/openrouter',
+    } as Partial<Database>)
+    const captured = captureOpenAIRequests()
+
+    await dispatchWithProfile(profile, flatConflict)
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0].url).toBe('https://openrouter.ai/api/v1/chat/completions')
+    expect(captured[0].headers.authorization).toBe('Bearer sk-durable-openrouter')
+    expect(captured[0].body.model).toBe('profile/openrouter')
+  })
+
   it('uses reverse_proxy profile options over conflicting flat database fields', async () => {
     const profile = resolveModelProfile({
       database: db({

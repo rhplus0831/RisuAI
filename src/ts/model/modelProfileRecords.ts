@@ -9,6 +9,7 @@ export interface ModelProfileRecord {
 }
 
 export interface ModelProfileRecordProviderOptions {
+  apiKey?: string
   requestModel?: string
   baseUrl?: string
   reverseProxy?: {
@@ -59,6 +60,7 @@ export class ModelProfileRecordValidationError extends Error {
 
 const MODEL_PROFILE_RECORD_KEYS = new Set(['id', 'name', 'modelId', 'providerOptions'])
 const MODEL_PROFILE_PROVIDER_OPTIONS_KEYS = new Set([
+  'apiKey',
   'requestModel',
   'baseUrl',
   'reverseProxy',
@@ -201,12 +203,14 @@ function createModelProfileRecord(input: {
 function normalizeModelProfileProviderOptions(value: unknown): ModelProfileRecordProviderOptions | undefined {
   if (!isRecord(value)) return undefined
   const options: ModelProfileRecordProviderOptions = {}
+  const apiKey = stringOrBlank(value.apiKey)
   const requestModel = stringOrBlank(value.requestModel)
   const baseUrl = stringOrBlank(value.baseUrl)
   const reverseProxy = normalizeReverseProxyOptions(value.reverseProxy)
   const openrouter = normalizeOpenrouterOptions(value.openrouter)
   const nanogpt = normalizeNanoGPTOptions(value.nanogpt)
   const ollama = normalizeOllamaOptions(value.ollama)
+  if (apiKey) options.apiKey = apiKey
   if (requestModel) options.requestModel = requestModel
   if (baseUrl) options.baseUrl = baseUrl
   if (reverseProxy) options.reverseProxy = reverseProxy
@@ -227,6 +231,9 @@ function readModelProfileProviderOptions(value: unknown, path: string): ModelPro
   }
   if (Object.prototype.hasOwnProperty.call(value, 'requestModel') && typeof value.requestModel !== 'string') {
     throw new ModelProfileRecordValidationError(`${path}.requestModel must be a string when present`)
+  }
+  if (Object.prototype.hasOwnProperty.call(value, 'apiKey') && typeof value.apiKey !== 'string') {
+    throw new ModelProfileRecordValidationError(`${path}.apiKey must be a string when present`)
   }
   if (Object.prototype.hasOwnProperty.call(value, 'baseUrl') && typeof value.baseUrl !== 'string') {
     throw new ModelProfileRecordValidationError(`${path}.baseUrl must be a string when present`)

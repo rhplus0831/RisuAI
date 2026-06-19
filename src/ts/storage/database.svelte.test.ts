@@ -254,6 +254,8 @@ describe('model profile database normalization', () => {
           providerOptions: {
             requestModel: ' wire-model ',
             baseUrl: ' https://profile.example.com/v1 ',
+            apiKey: ' profile-secret ',
+            openAIKey: 'must-drop',
             openrouter: {
               fallback: false,
               middleOut: true,
@@ -261,7 +263,6 @@ describe('model profile database normalization', () => {
             },
             nanogpt: { providerHint: ' profile-nano ', useSubscriptionEndpoint: true },
             ollama: { url: ' http://localhost:11434 ', requestFormat: LLMFormat.OpenAIResponseAPI },
-            apiKey: 'must-drop',
           },
         } as any,
         { id: 'profile-a', name: 'Duplicate' },
@@ -285,6 +286,7 @@ describe('model profile database normalization', () => {
         providerOptions: {
           requestModel: 'wire-model',
           baseUrl: 'https://profile.example.com/v1',
+          apiKey: 'profile-secret',
           openrouter: {
             fallback: false,
             middleOut: true,
@@ -1099,7 +1101,7 @@ describe('preset command rollback (L21)', () => {
           id: ' model-profile ',
           name: ' Model Profile ',
           modelId: ' model-ai ',
-          providerOptions: { requestModel: ' model-wire ', apiKey: 'drop' },
+          providerOptions: { requestModel: ' model-wire ', apiKey: ' model-secret ', openAIKey: 'must-drop' },
         },
       ],
       modelRoleProfiles: {
@@ -1203,7 +1205,7 @@ describe('preset command rollback (L21)', () => {
         id: 'model-profile',
         name: 'Model Profile',
         modelId: 'model-ai',
-        providerOptions: { requestModel: 'model-wire' },
+        providerOptions: { requestModel: 'model-wire', apiKey: 'model-secret' },
       },
     ])
     expect(DBState.db.modelRoleProfiles).toEqual(

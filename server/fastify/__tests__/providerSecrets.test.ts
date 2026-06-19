@@ -117,6 +117,86 @@ describe('provider secret masking', () => {
       { chaId: 'char-a', name: 'A renamed', oaiTTSConfig: { apiKey: 'tts-a' } },
     ])
   })
+
+  it('masks and restores model profile API keys by profile id after reorder', () => {
+    const database = {
+      modelProfiles: [
+        { id: 'profile-a', name: 'A', providerOptions: { apiKey: 'profile-a-key', requestModel: 'a-wire' } },
+        { id: 'profile-b', name: 'B', providerOptions: { apiKey: 'profile-b-key', requestModel: 'b-wire' } },
+        { id: 'profile-c', name: 'C', providerOptions: { apiKey: '', requestModel: 'c-wire' } },
+      ],
+    }
+
+    expect(maskProviderSecrets(database)).toEqual({
+      modelProfiles: [
+        { id: 'profile-a', name: 'A', providerOptions: { apiKey: MASKED_PROVIDER_SECRET, requestModel: 'a-wire' } },
+        { id: 'profile-b', name: 'B', providerOptions: { apiKey: MASKED_PROVIDER_SECRET, requestModel: 'b-wire' } },
+        { id: 'profile-c', name: 'C', providerOptions: { apiKey: '', requestModel: 'c-wire' } },
+      ],
+    })
+
+    const resolved = resolveMaskedProviderSecretPlaceholders(database, {
+      modelProfiles: [
+        {
+          id: 'profile-b',
+          name: 'B renamed',
+          providerOptions: { apiKey: MASKED_PROVIDER_SECRET, requestModel: 'b-new-wire' },
+        },
+        {
+          id: 'profile-a',
+          name: 'A renamed',
+          providerOptions: { apiKey: MASKED_PROVIDER_SECRET, requestModel: 'a-new-wire' },
+        },
+      ],
+    })
+
+    expect(resolved.modelProfiles).toEqual([
+      { id: 'profile-b', name: 'B renamed', providerOptions: { apiKey: 'profile-b-key', requestModel: 'b-new-wire' } },
+      { id: 'profile-a', name: 'A renamed', providerOptions: { apiKey: 'profile-a-key', requestModel: 'a-new-wire' } },
+    ])
+  })
+
+  it('rejects model profile masked placeholders without a profile id', () => {
+    expect(() =>
+      resolveMaskedProviderSecretPlaceholders(
+        {
+          modelProfiles: [{ id: 'profile-a', name: 'A', providerOptions: { apiKey: 'profile-a-key' } }],
+        },
+        {
+          modelProfiles: [{ name: 'A without id', providerOptions: { apiKey: MASKED_PROVIDER_SECRET } }],
+        },
+      ),
+    ).toThrow('without id')
+  })
+
+  it('rejects model profile masked placeholders for duplicate or unknown profile ids', () => {
+    expect(() =>
+      resolveMaskedProviderSecretPlaceholders(
+        {
+          modelProfiles: [{ id: 'profile-a', name: 'A', providerOptions: { apiKey: 'profile-a-key' } }],
+        },
+        {
+          modelProfiles: [
+            { id: 'profile-a', name: 'A one', providerOptions: { apiKey: MASKED_PROVIDER_SECRET } },
+            { id: 'profile-a', name: 'A two', providerOptions: { apiKey: MASKED_PROVIDER_SECRET } },
+          ],
+        },
+      ),
+    ).toThrow('Duplicate modelProfiles row identity: profile-a')
+
+    expect(() =>
+      resolveMaskedProviderSecretPlaceholders(
+        {
+          modelProfiles: [{ id: 'profile-a', name: 'A', providerOptions: { apiKey: 'profile-a-key' } }],
+        },
+        {
+          modelProfiles: [
+            { id: 'profile-missing', name: 'Missing', providerOptions: { apiKey: MASKED_PROVIDER_SECRET } },
+          ],
+        },
+      ),
+    ).toThrow('Cannot resolve masked provider secret for unknown modelProfiles row: profile-missing')
+  })
 })
 
 describe('maskProviderSecretsInPlace (M4)', () => {
@@ -126,6 +206,7 @@ describe('maskProviderSecretsInPlace (M4)', () => {
     OaiCompAPIKeys: { deepseek: 'ds-key' },
     botPresets: [{ id: 'preset-a', openAIKey: 'sk-preset', proxyKey: 'proxy-key' }],
     modelPresets: [{ id: 'model-a', openAIKey: 'sk-model-preset', proxyKey: 'model-proxy-key' }],
+    modelProfiles: [{ id: 'profile-a', providerOptions: { apiKey: 'sk-profile' } }],
     customModels: [{ id: 'xcustom:::a', key: 'custom-key' }],
     characters: [{ chaId: 'char-a', name: 'Ada', oaiTTSConfig: { apiKey: 'tts-key' } }],
   })
@@ -139,6 +220,7 @@ describe('maskProviderSecretsInPlace (M4)', () => {
     expect(inPlace.botPresets[0].openAIKey).toBe(MASKED_PROVIDER_SECRET)
     expect(inPlace.modelPresets[0].openAIKey).toBe(MASKED_PROVIDER_SECRET)
     expect(inPlace.modelPresets[0].proxyKey).toBe(MASKED_PROVIDER_SECRET)
+    expect(inPlace.modelProfiles[0].providerOptions.apiKey).toBe(MASKED_PROVIDER_SECRET)
     expect(inPlace.customModels[0].key).toBe(MASKED_PROVIDER_SECRET)
     expect(inPlace.characters[0].oaiTTSConfig.apiKey).toBe(MASKED_PROVIDER_SECRET)
     expect(inPlace.aiModel).toBe('gpt4o-chatgpt')

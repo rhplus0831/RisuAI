@@ -979,25 +979,34 @@ function buildProfileProviderCapabilityInputForDatabase(
     modelId !== 'ollama-cloud'
       ? (nonBlankString(durableProviderOptions?.ollama?.url) ?? nonBlankString(durableProviderOptions?.baseUrl))
       : undefined
+  const profileApiKey = nonBlankString(providerOptions?.apiKey)
+  const keyIdentifier = nonBlankString(modelInfo.keyIdentifier)
   return {
     format: modelId === 'ollama-cloud' ? LLMFormat.Ollama : modelInfo.format,
     aiModel: modelId,
     endpoint: nonBlankString(modelInfo.endpoint),
-    keyIdentifier: nonBlankString(modelInfo.keyIdentifier),
+    keyIdentifier,
     internalID: nonBlankString(modelInfo.internalID),
     config: {
       forceReplaceUrl: durableReverseProxyUrl ? providerOptions?.baseUrl : nonBlankString(database.forceReplaceUrl),
-      proxyKey: nonBlankString(database.proxyKey),
-      oaiCompApiKeys: database.OaiCompAPIKeys,
-      customModels: database.customModels as CustomModelEntryLike[] | undefined,
+      proxyKey: modelId === 'reverse_proxy' ? profileApiKey : nonBlankString(database.proxyKey),
+      oaiCompApiKeys:
+        keyIdentifier && profileApiKey
+          ? { ...(database.OaiCompAPIKeys ?? {}), [keyIdentifier]: profileApiKey }
+          : database.OaiCompAPIKeys,
+      customModels: buildCapabilityCustomModels(database, modelId, profileApiKey),
       googleProjectId: database.google?.projectId,
       vertexRegion: database.vertexRegion,
       vertexClientEmail: database.vertexClientEmail,
       vertexPrivateKey: database.vertexPrivateKey,
-      claudeAPIKey: database.claudeAPIKey,
+      claudeAPIKey:
+        modelInfo.format === LLMFormat.AWSBedrockClaude
+          ? (profileApiKey ?? nonBlankString(database.claudeAPIKey))
+          : nonBlankString(database.claudeAPIKey),
       instructChatTemplate: nonBlankString(database.instructChatTemplate),
       jinjaTemplate: nonBlankString(database.JinjaTemplate),
-      ollamaApiKey: nonBlankString(database.ollamaApiKey),
+      ollamaApiKey:
+        modelId === 'ollama-cloud' ? providerOptions?.ollama?.apiKey : nonBlankString(database.ollamaApiKey),
       ollamaRequestFormat:
         durableProviderOptions?.ollama?.requestFormat ?? asFormat(database.ollamaRequestFormat, undefined),
       ollamaURL: durableOllamaUrl
@@ -1019,14 +1028,16 @@ function resolveProviderOptions(
     endpoint: nonBlankString(modelInfo.endpoint),
     keyIdentifier: nonBlankString(modelInfo.keyIdentifier),
   }
+  const durableApiKey = nonBlankString(durableProviderOptions?.apiKey)
   const durableBaseUrl = nonBlankString(durableProviderOptions?.baseUrl)
   if (modelId === 'ollama-cloud') {
+    const apiKey = durableApiKey ?? nonBlankString(database.ollamaApiKey)
     return {
       ...base,
-      apiKey: nonBlankString(database.ollamaApiKey),
+      apiKey,
       baseUrl: 'https://ollama.com/v1',
       ollama: {
-        apiKey: nonBlankString(database.ollamaApiKey),
+        apiKey,
         requestFormat:
           durableProviderOptions?.ollama?.requestFormat ??
           asFormat(database.ollamaRequestFormat, LLMFormat.OpenAICompatible),
@@ -1056,7 +1067,7 @@ function resolveProviderOptions(
   if (modelId === 'openrouter') {
     return {
       ...base,
-      apiKey: nonBlankString(database.openrouterKey),
+      apiKey: durableApiKey ?? nonBlankString(database.openrouterKey),
       baseUrl: OPENROUTER_BASE_URL,
       extraHeaders: { 'X-Title': 'RisuAI', 'HTTP-Referer': 'https://risuai.xyz' },
       openrouter: {
@@ -1075,7 +1086,7 @@ function resolveProviderOptions(
       durableProviderOptions?.nanogpt?.useSubscriptionEndpoint ?? database.nanogptUseSubscriptionEndpoint
     return {
       ...base,
-      apiKey: nonBlankString(database.nanogptKey),
+      apiKey: durableApiKey ?? nonBlankString(database.nanogptKey),
       baseUrl: useSubscriptionEndpoint === true ? NANOGPT_SUBSCRIPTION_BASE_URL : NANOGPT_BASE_URL,
       extraHeaders: providerHint ? { 'X-Provider': providerHint } : undefined,
       nanogpt: {
@@ -1096,7 +1107,7 @@ function resolveProviderOptions(
     const useSubscriptionEndpoint = durableProviderOptions?.nanogpt?.useSubscriptionEndpoint
     return {
       ...base,
-      apiKey: nonBlankString(database.nanogptKey),
+      apiKey: durableApiKey ?? nonBlankString(database.nanogptKey),
       baseUrl: useSubscriptionEndpoint === true ? NANOGPT_SUBSCRIPTION_BASE_URL : NANOGPT_BASE_URL,
       extraHeaders: providerHint ? { 'X-Provider': providerHint } : undefined,
       nanogpt: {
@@ -1114,7 +1125,7 @@ function resolveProviderOptions(
     const reverseProxyUrl = resolveReverseProxyUrlForFormat(rawUrl, autofillRequestUrl, modelInfo.format)
     return {
       ...base,
-      apiKey: nonBlankString(database.proxyKey),
+      apiKey: durableApiKey ?? nonBlankString(database.proxyKey),
       baseUrl: reverseProxyUrl.baseUrl,
       extraHeaders: reverseProxyUrl.risuIdentify ? { 'X-Proxy-Risu': 'RisuAI' } : undefined,
       additionalParams: additionalParams(database.additionalParams),
@@ -1131,44 +1142,45 @@ function resolveProviderOptions(
   }
   if (modelId.startsWith('xcustom:::')) {
     const entry = findXcustomEntry(database, modelId)
+    const apiKey = durableApiKey ?? nonBlankString(entry?.key)
     return {
       ...base,
-      apiKey: nonBlankString(entry?.key),
+      apiKey,
       baseUrl: xcustomBaseUrl(entry, modelInfo.format),
       additionalParams: parseXcustomParams(entry?.params),
-      customModel: entry ? cloneCustomModelDependency(entry, modelId) : undefined,
+      customModel: entry ? cloneCustomModelDependency(entry, modelId, apiKey) : undefined,
     }
   }
   if (modelInfo.keyIdentifier) {
     return {
       ...base,
-      apiKey: nonBlankString(database.OaiCompAPIKeys?.[modelInfo.keyIdentifier]),
+      apiKey: durableApiKey ?? nonBlankString(database.OaiCompAPIKeys?.[modelInfo.keyIdentifier]),
       baseUrl: modelInfo.endpoint ? deriveOpenAIBaseUrl(modelInfo.endpoint) : undefined,
     }
   }
 
   switch (modelInfo.format) {
     case LLMFormat.AWSBedrockClaude:
-      return { ...base, apiKey: nonBlankString(database.claudeAPIKey) }
+      return { ...base, apiKey: durableApiKey ?? nonBlankString(database.claudeAPIKey) }
     case LLMFormat.Anthropic:
     case LLMFormat.AnthropicLegacy:
-      return { ...base, apiKey: nonBlankString(database.claudeAPIKey) }
+      return { ...base, apiKey: durableApiKey ?? nonBlankString(database.claudeAPIKey) }
     case LLMFormat.Mistral:
-      return { ...base, apiKey: nonBlankString(database.mistralKey) }
+      return { ...base, apiKey: durableApiKey ?? nonBlankString(database.mistralKey) }
     case LLMFormat.Cohere:
-      return { ...base, apiKey: nonBlankString(database.cohereAPIKey) }
+      return { ...base, apiKey: durableApiKey ?? nonBlankString(database.cohereAPIKey) }
     case LLMFormat.Kobold:
       return { ...base, baseUrl: durableBaseUrl ?? nonBlankString(database.koboldURL) }
     case LLMFormat.OobaLegacy:
       return {
         ...base,
-        apiKey: nonBlankString(database.mancerHeader),
+        apiKey: durableApiKey ?? nonBlankString(database.mancerHeader),
         baseUrl: durableBaseUrl ?? nonBlankString(database.textgenWebUIBlockingURL),
       }
     case LLMFormat.Horde:
-      return { ...base, apiKey: nonBlankString(database.hordeConfig?.apiKey) }
+      return { ...base, apiKey: durableApiKey ?? nonBlankString(database.hordeConfig?.apiKey) }
     case LLMFormat.GoogleCloud:
-      return { ...base, apiKey: nonBlankString(database.google?.accessToken) }
+      return { ...base, apiKey: durableApiKey ?? nonBlankString(database.google?.accessToken) }
     case LLMFormat.VertexAIGemini:
       return {
         ...base,
@@ -1182,13 +1194,13 @@ function resolveProviderOptions(
     case LLMFormat.OpenAIResponseAPI:
       return {
         ...base,
-        apiKey: nonBlankString(database.openAIKey),
+        apiKey: durableApiKey ?? nonBlankString(database.openAIKey),
         baseUrl: modelInfo.endpoint ? stripTrailingPath(modelInfo.endpoint, '/responses') : undefined,
       }
     case LLMFormat.OpenAILegacyInstruct:
-      return { ...base, apiKey: nonBlankString(database.openAIKey) }
+      return { ...base, apiKey: durableApiKey ?? nonBlankString(database.openAIKey) }
     default:
-      return { ...base, apiKey: nonBlankString(database.openAIKey) }
+      return { ...base, apiKey: durableApiKey ?? nonBlankString(database.openAIKey) }
   }
 }
 
@@ -1355,12 +1367,16 @@ function cloneModelInfo(modelInfo: LLMModel): ResolvedModelProfileModelInfo {
   }
 }
 
-function cloneCustomModelDependency(entry: CustomModelEntry, fallbackId: string): CustomModelProfileDependency {
+function cloneCustomModelDependency(
+  entry: CustomModelEntry,
+  fallbackId: string,
+  apiKey = nonBlankString(entry.key),
+): CustomModelProfileDependency {
   return {
     id: nonBlankString(entry.id) ?? fallbackId,
     internalId: nonBlankString(entry.internalId),
     url: nonBlankString(entry.url),
-    key: nonBlankString(entry.key),
+    key: apiKey,
     format: asFormat(entry.format, undefined),
     tokenizer: asTokenizer(entry.tokenizer, undefined),
     params: typeof entry.params === 'string' ? entry.params : undefined,
@@ -1395,6 +1411,16 @@ function cloneOpenrouterProvider(value?: {
 function findXcustomEntry(database: Database, modelId: string): CustomModelEntry | null {
   const models = Array.isArray(database.customModels) ? (database.customModels as CustomModelEntry[]) : []
   return models.find((entry) => entry.id === modelId) ?? null
+}
+
+function buildCapabilityCustomModels(
+  database: Database,
+  modelId: string,
+  profileApiKey: string | undefined,
+): CustomModelEntryLike[] | undefined {
+  const models = Array.isArray(database.customModels) ? (database.customModels as CustomModelEntryLike[]) : undefined
+  if (!profileApiKey || !modelId.startsWith('xcustom:::') || !models) return models
+  return models.map((entry) => (entry.id === modelId ? { ...entry, key: profileApiKey } : entry))
 }
 
 interface CustomModelEntry extends CustomModelEntryLike {

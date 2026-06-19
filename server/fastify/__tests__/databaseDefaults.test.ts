@@ -64,7 +64,12 @@ describe('database defaults', () => {
           overrides: { 'model-a': { top_k: 20 } },
         },
         modelProfiles: [
-          { id: 'profile-a', name: 'Primary', modelId: 'gpt-5', providerOptions: { apiKey: 'must-drop' } },
+          {
+            id: 'profile-a',
+            name: 'Primary',
+            modelId: 'gpt-5',
+            providerOptions: { apiKey: ' profile-secret ', openAIKey: 'must-drop' },
+          },
           { id: 'profile-a', name: 'Duplicate' },
           { id: 'profile-b', name: 'Identity Only', modelId: '' },
           { id: 'profile-c' },
@@ -100,7 +105,7 @@ describe('database defaults', () => {
       overrides: { 'model-a': { top_k: 20 } },
     })
     expect(database.modelProfiles).toEqual([
-      { id: 'profile-a', name: 'Primary', modelId: 'gpt-5' },
+      { id: 'profile-a', name: 'Primary', modelId: 'gpt-5', providerOptions: { apiKey: 'profile-secret' } },
       { id: 'profile-b', name: 'Identity Only' },
       { id: 'profile-c', name: 'profile-c' },
     ])

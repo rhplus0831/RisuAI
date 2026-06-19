@@ -56,7 +56,7 @@ describe('model profile records', () => {
               thinkingMode: ' medium ',
               ollamaApiKey: 'must-drop',
             },
-            apiKey: 'must-drop',
+            apiKey: ' profile-api-key ',
             headers: { Authorization: 'must-drop' },
             extraHeaders: { 'X-Key': 'must-drop' },
             additionalParams: [['header::Authorization', 'must-drop']],
@@ -75,6 +75,7 @@ describe('model profile records', () => {
         name: 'Primary',
         modelId: 'gpt-5',
         providerOptions: {
+          apiKey: 'profile-api-key',
           requestModel: 'wire-model',
           baseUrl: 'risu::https://proxy.example.com',
           reverseProxy: {
@@ -118,6 +119,7 @@ describe('model profile records', () => {
           modelId: ' gpt-5 ',
           providerOptions: {
             requestModel: ' wire ',
+            apiKey: ' profile-api-key ',
             baseUrl: ' https://proxy.example.com/v1 ',
             reverseProxy: { autofillRequestUrl: false, oobaSystemHoist: true, oobaArgs: { mode: 'chat' } },
             openrouter: {
@@ -146,6 +148,7 @@ describe('model profile records', () => {
         name: 'Primary',
         modelId: 'gpt-5',
         providerOptions: {
+          apiKey: 'profile-api-key',
           requestModel: 'wire',
           baseUrl: 'https://proxy.example.com/v1',
           reverseProxy: { autofillRequestUrl: false, oobaSystemHoist: true, oobaArgs: { mode: 'chat' } },
@@ -184,7 +187,6 @@ describe('model profile records', () => {
     ).toThrow('Duplicate model profile id: profile-a')
 
     for (const field of [
-      'apiKey',
       'openAIKey',
       'proxyKey',
       'openrouterKey',
@@ -206,6 +208,10 @@ describe('model profile records', () => {
         readModelProfiles([{ id: 'profile-a', name: 'Primary', providerOptions: { [field]: 'secret' } }]),
       ).toThrow(`modelProfiles[0].providerOptions.${field} is not supported`)
     }
+
+    expect(() => readModelProfiles([{ id: 'profile-a', name: 'Primary', providerOptions: { apiKey: 123 } }])).toThrow(
+      'modelProfiles[0].providerOptions.apiKey must be a string when present',
+    )
 
     expect(() => readModelProfiles([{ id: 'profile-a', name: '' }])).toThrow(
       'modelProfiles[0].name must be a non-empty string',

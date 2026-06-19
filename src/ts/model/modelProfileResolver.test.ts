@@ -590,6 +590,147 @@ describe('resolveModelProfile provider/runtime normalization', () => {
     })
   })
 
+  it('prefers durable providerOptions.apiKey over flat keys only for the selected profile', () => {
+    const openrouter = resolveModelProfile({
+      database: db({
+        aiModel: 'flat-main-model',
+        openrouterKey: 'flat-openrouter-key',
+        openrouterRequestModel: 'flat/openrouter',
+        modelProfiles: [
+          {
+            id: 'openrouter-profile',
+            name: 'OpenRouter Profile',
+            modelId: 'openrouter',
+            providerOptions: {
+              apiKey: ' profile-openrouter-key ',
+              requestModel: 'profile/openrouter',
+            },
+          },
+          {
+            id: 'unused-profile',
+            name: 'Unused Profile',
+            modelId: 'openrouter',
+            providerOptions: {
+              apiKey: 'must-not-borrow',
+              requestModel: 'unused/openrouter',
+            },
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'openrouter-profile' } },
+      } as Partial<Database>),
+    })
+
+    expect(openrouter.providerOptions.apiKey).toBe('profile-openrouter-key')
+    expect(openrouter.providerCapability).toEqual({ routable: true, provider: 'openrouter' })
+
+    const reverseProxy = resolveModelProfile({
+      database: db({
+        aiModel: 'flat-main-model',
+        customProxyRequestModel: 'flat-proxy-model',
+        customAPIFormat: LLMFormat.OpenAICompatible,
+        forceReplaceUrl: 'https://proxy.example.com/v1',
+        proxyKey: 'flat-proxy-key',
+        modelProfiles: [
+          {
+            id: 'proxy-profile',
+            name: 'Proxy Profile',
+            modelId: 'reverse_proxy',
+            providerOptions: {
+              apiKey: 'profile-proxy-key',
+              requestModel: 'profile-proxy-model',
+              baseUrl: 'https://profile-proxy.example.com/v1',
+            },
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'proxy-profile' } },
+      } as Partial<Database>),
+    })
+
+    expect(reverseProxy.providerOptions.apiKey).toBe('profile-proxy-key')
+    expect(reverseProxy.providerCapabilityInput.config).toMatchObject({
+      forceReplaceUrl: 'https://profile-proxy.example.com/v1',
+      proxyKey: 'profile-proxy-key',
+    })
+    expect(reverseProxy.providerCapability).toEqual({ routable: true, provider: 'openai' })
+
+    const keyIdentifier = resolveModelProfile({
+      database: db({
+        aiModel: 'flat-main-model',
+        OaiCompAPIKeys: { deepseek: 'flat-deepseek-key' },
+        modelProfiles: [
+          {
+            id: 'deepseek-profile',
+            name: 'DeepSeek Profile',
+            modelId: 'deepseek-chat',
+            providerOptions: { apiKey: 'profile-deepseek-key' },
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'deepseek-profile' } },
+      } as Partial<Database>),
+    })
+
+    expect(keyIdentifier.providerOptions.apiKey).toBe('profile-deepseek-key')
+    expect(keyIdentifier.providerCapabilityInput.config.oaiCompApiKeys).toMatchObject({
+      deepseek: 'profile-deepseek-key',
+    })
+    expect(keyIdentifier.providerCapability).toEqual({ routable: true, provider: 'openai' })
+  })
+
+  it('falls back to flat provider keys when durable providerOptions.apiKey is blank or missing', () => {
+    for (const providerOptions of [undefined, { apiKey: '   ' }]) {
+      const profile = resolveModelProfile({
+        database: db({
+          aiModel: 'flat-main-model',
+          openrouterKey: 'flat-openrouter-key',
+          modelProfiles: [
+            {
+              id: 'openrouter-profile',
+              name: 'OpenRouter Profile',
+              modelId: 'openrouter',
+              ...(providerOptions ? { providerOptions } : {}),
+            },
+          ],
+          modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'openrouter-profile' } },
+        } as Partial<Database>),
+      })
+
+      expect(profile.providerOptions.apiKey).toBe('flat-openrouter-key')
+      expect(profile.providerCapability).toEqual({ routable: true, provider: 'openrouter' })
+    }
+  })
+
+  it('does not let staticModel or legacy fallback selections borrow a selected durable profile apiKey', () => {
+    const database = db({
+      aiModel: 'openrouter',
+      openrouterKey: 'flat-openrouter-key',
+      openrouterRequestModel: 'flat/openrouter',
+      modelProfiles: [
+        {
+          id: 'openrouter-profile',
+          name: 'OpenRouter Profile',
+          modelId: 'openrouter',
+          providerOptions: { apiKey: 'profile-openrouter-key', requestModel: 'profile/openrouter' },
+        },
+      ],
+      modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'openrouter-profile' } },
+    } as Partial<Database>)
+
+    const staticProfile = resolveModelProfile({ database, role: 'chatMain', staticModel: 'openrouter' })
+    expect(staticProfile.source.kind).toBe('staticModel')
+    expect(staticProfile.requestModel).toBe('flat/openrouter')
+    expect(staticProfile.providerOptions.apiKey).toBe('flat-openrouter-key')
+
+    const legacyProfile = resolveModelProfile({
+      database: {
+        ...database,
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'missing-profile' } },
+      } as Database,
+      role: 'chatMain',
+    })
+    expect(legacyProfile.source.kind).toBe('legacy-aiModel')
+    expect(legacyProfile.providerOptions.apiKey).toBe('flat-openrouter-key')
+  })
+
   it('uses durable reverse_proxy endpoint and flags while keeping flat proxy key', () => {
     const profile = resolveModelProfile({
       database: db({

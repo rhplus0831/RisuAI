@@ -920,7 +920,7 @@ describe('Phase 9-2a scalar settings groups', () => {
               id: ' profile-a ',
               name: ' Primary ',
               modelId: ' gpt-5 ',
-              providerOptions: { requestModel: ' wire-model ' },
+              providerOptions: { requestModel: ' wire-model ', apiKey: ' profile-api-key ' },
             },
           ],
           modelRoleProfiles: { memory: { mode: 'profile', profileId: ' profile-a ' } },
@@ -932,7 +932,12 @@ describe('Phase 9-2a scalar settings groups', () => {
     expect(loadPersistedFromDir(harness.dataDir).database).toMatchObject({
       aiModel: 'flat-main-model',
       modelProfiles: [
-        { id: 'profile-a', name: 'Primary', modelId: 'gpt-5', providerOptions: { requestModel: 'wire-model' } },
+        {
+          id: 'profile-a',
+          name: 'Primary',
+          modelId: 'gpt-5',
+          providerOptions: { requestModel: 'wire-model', apiKey: 'profile-api-key' },
+        },
       ],
       modelRoleProfiles: {
         ...Object.fromEntries(MODEL_ROLES.map((role) => [role, { mode: 'legacy' }])),
@@ -959,9 +964,15 @@ describe('Phase 9-2a scalar settings groups', () => {
       },
       {
         patch: {
-          modelProfiles: [{ id: 'profile-a', name: 'Primary', providerOptions: { apiKey: 'not-yet' } }],
+          modelProfiles: [{ id: 'profile-a', name: 'Primary', providerOptions: { apiKey: 42 } }],
         },
-        error: 'modelProfiles[0].providerOptions.apiKey is not supported',
+        error: 'modelProfiles[0].providerOptions.apiKey must be a string when present',
+      },
+      {
+        patch: {
+          modelProfiles: [{ id: 'profile-a', name: 'Primary', providerOptions: { openAIKey: 'not-allowed' } }],
+        },
+        error: 'modelProfiles[0].providerOptions.openAIKey is not supported',
       },
       {
         patch: {
@@ -1149,6 +1160,10 @@ describe('Phase 9-2a scalar settings groups', () => {
         { id: 'xcustom:::a', name: 'Custom A', key: 'custom-a', url: 'https://a.example.com' },
         { id: 'xcustom:::b', name: 'Custom B', key: 'custom-b', url: 'https://b.example.com' },
       ],
+      modelProfiles: [
+        { id: 'profile-a', name: 'Profile A', providerOptions: { apiKey: 'profile-a-key', requestModel: 'a-wire' } },
+        { id: 'profile-b', name: 'Profile B', providerOptions: { apiKey: 'profile-b-key', requestModel: 'b-wire' } },
+      ],
       authRefreshes: [
         {
           url: 'https://mcp-a.example.com',
@@ -1188,6 +1203,18 @@ describe('Phase 9-2a scalar settings groups', () => {
               url: 'https://a2.example.com',
             },
           ],
+          modelProfiles: [
+            {
+              id: 'profile-b',
+              name: 'Profile B renamed',
+              providerOptions: { apiKey: MASKED_PROVIDER_SECRET, requestModel: 'b-new-wire' },
+            },
+            {
+              id: 'profile-a',
+              name: 'Profile A renamed',
+              providerOptions: { apiKey: MASKED_PROVIDER_SECRET, requestModel: 'a-new-wire' },
+            },
+          ],
           authRefreshes: [
             {
               url: 'https://mcp-b.example.com',
@@ -1222,6 +1249,18 @@ describe('Phase 9-2a scalar settings groups', () => {
           name: 'Custom A renamed',
           key: 'custom-a',
           url: 'https://a2.example.com',
+        },
+      ],
+      modelProfiles: [
+        {
+          id: 'profile-b',
+          name: 'Profile B renamed',
+          providerOptions: { apiKey: 'profile-b-key', requestModel: 'b-new-wire' },
+        },
+        {
+          id: 'profile-a',
+          name: 'Profile A renamed',
+          providerOptions: { apiKey: 'profile-a-key', requestModel: 'a-new-wire' },
         },
       ],
       authRefreshes: [

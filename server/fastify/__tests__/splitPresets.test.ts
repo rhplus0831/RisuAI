@@ -71,7 +71,7 @@ describe('split preset command normalization', () => {
           id: ' profile-a ',
           name: ' Primary ',
           modelId: ' gpt-5 ',
-          providerOptions: { requestModel: ' wire-model ', apiKey: 'drop' },
+          providerOptions: { requestModel: ' wire-model ', apiKey: ' profile-secret ', openAIKey: 'must-drop' },
         },
         { id: 'profile-a', name: 'Duplicate' },
         { id: 'profile-b', name: 'Secondary', modelId: '   ' },
@@ -94,7 +94,12 @@ describe('split preset command normalization', () => {
     expect(preset).toMatchObject({
       modelRoles: normalizedModelRoles({ chatMain: 'main-model', memory: 'memory-model' }),
       modelProfiles: [
-        { id: 'profile-a', name: 'Primary', modelId: 'gpt-5', providerOptions: { requestModel: 'wire-model' } },
+        {
+          id: 'profile-a',
+          name: 'Primary',
+          modelId: 'gpt-5',
+          providerOptions: { requestModel: 'wire-model', apiKey: 'profile-secret' },
+        },
         { id: 'profile-b', name: 'Secondary' },
       ],
       modelRoleProfiles: normalizedModelRoleProfiles({
@@ -121,7 +126,7 @@ describe('split preset command normalization', () => {
           id: ' dirty-profile ',
           name: ' Dirty Profile ',
           modelId: ' dirty-model ',
-          providerOptions: { requestModel: ' dirty-wire ' },
+          providerOptions: { requestModel: ' dirty-wire ', apiKey: ' dirty-secret ', openAIKey: 'must-drop' },
         },
       ],
       modelRoleProfiles: { scriptMain: { mode: 'profile', profileId: ' dirty-profile ' } },
@@ -137,7 +142,7 @@ describe('split preset command normalization', () => {
           id: 'dirty-profile',
           name: 'Dirty Profile',
           modelId: 'dirty-model',
-          providerOptions: { requestModel: 'dirty-wire' },
+          providerOptions: { requestModel: 'dirty-wire', apiKey: 'dirty-secret' },
         },
       ],
       modelRoleProfiles: normalizedModelRoleProfiles({
