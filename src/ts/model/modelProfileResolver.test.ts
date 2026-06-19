@@ -71,29 +71,82 @@ describe('resolveModelProfile legacy role compatibility', () => {
     })
   })
 
-  it('keeps durable profile scaffold fields inert while flat fields remain authoritative', () => {
+  it('uses a durable profile binding with a selected model over flat aiModel', () => {
     const database = db({
       aiModel: 'flat-main-model',
-      subModel: 'flat-aux-model',
-      modelProfiles: [{ id: 'durable-main', name: 'Durable Main' }],
+      modelProfiles: [{ id: ' durable-main ', name: ' Durable Main ', modelId: ' durable-selected-model ' }],
       modelRoleProfiles: {
-        chatMain: { mode: 'legacy' },
-        chatAux: { mode: 'legacy' },
-        memory: { mode: 'legacy' },
-        emotion: { mode: 'legacy' },
-        translate: { mode: 'legacy' },
-        otherAx: { mode: 'legacy' },
-        scriptMain: { mode: 'legacy' },
-        scriptAux: { mode: 'legacy' },
+        chatMain: { mode: 'profile', profileId: ' durable-main ' },
       },
     } as Partial<Database>)
     const lookupModelInfo = (_database: Database, id: string) => modelInfo({ id, name: id, internalID: id })
 
     const profile = resolveModelProfile({ database, role: 'chatMain', lookupModelInfo })
 
-    expect(profile.modelId).toBe('flat-main-model')
-    expect(profile.profileId).toBe('legacy:aiModel:flat-main-model')
-    expect(profile.source).toMatchObject({ kind: 'legacy-aiModel', field: 'aiModel' })
+    expect(profile.modelId).toBe('durable-selected-model')
+    expect(profile.profileId).toBe('durable-main')
+    expect(profile.legacy).toBe(true)
+    expect(profile.source).toMatchObject({
+      kind: 'durable-profile',
+      field: 'modelRoleProfiles.chatMain',
+      profileId: 'durable-main',
+      profileName: 'Durable Main',
+      bypassesRoleResolution: false,
+    })
+  })
+
+  it('lets staticModel win over a durable profile binding', () => {
+    const database = db({
+      aiModel: 'flat-main-model',
+      modelProfiles: [{ id: 'durable-main', name: 'Durable Main', modelId: 'durable-selected-model' }],
+      modelRoleProfiles: {
+        chatMain: { mode: 'profile', profileId: 'durable-main' },
+      },
+    } as Partial<Database>)
+
+    const profile = resolveModelProfile({ database, role: 'chatMain', staticModel: 'echo_model' })
+
+    expect(profile.modelId).toBe('echo_model')
+    expect(profile.profileId).toBe('legacy:staticModel:echo_model')
+    expect(profile.source).toMatchObject({
+      kind: 'staticModel',
+      field: 'staticModel',
+      bypassesRoleResolution: true,
+    })
+  })
+
+  it('falls back to legacy flat resolution for missing or incomplete durable profiles', () => {
+    const lookupModelInfo = (_database: Database, id: string) => modelInfo({ id, name: id, internalID: id })
+
+    for (const database of [
+      db({
+        aiModel: 'flat-main-model',
+        modelProfiles: [{ id: 'durable-main', name: 'Durable Main', modelId: 'durable-selected-model' }],
+        modelRoleProfiles: {
+          chatMain: { mode: 'profile', profileId: 'missing-profile' },
+        },
+      } as Partial<Database>),
+      db({
+        aiModel: 'flat-main-model',
+        modelProfiles: [{ id: 'durable-main', name: 'Durable Main', modelId: '   ' }],
+        modelRoleProfiles: {
+          chatMain: { mode: 'profile', profileId: 'durable-main' },
+        },
+      } as Partial<Database>),
+      db({
+        aiModel: 'flat-main-model',
+        modelProfiles: [{ id: 'durable-main', name: 'Durable Main' }],
+        modelRoleProfiles: {
+          chatMain: { mode: 'profile', profileId: 'durable-main' },
+        },
+      } as Partial<Database>),
+    ]) {
+      const profile = resolveModelProfile({ database, role: 'chatMain', lookupModelInfo })
+
+      expect(profile.modelId).toBe('flat-main-model')
+      expect(profile.profileId).toBe('legacy:aiModel:flat-main-model')
+      expect(profile.source).toMatchObject({ kind: 'legacy-aiModel', field: 'aiModel' })
+    }
   })
 
   it('preserves legacy seperateModels inheritance and scriptAux fallback chain', () => {

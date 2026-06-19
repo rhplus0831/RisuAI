@@ -64,9 +64,10 @@ describe('database defaults', () => {
           overrides: { 'model-a': { top_k: 20 } },
         },
         modelProfiles: [
-          { id: 'profile-a', name: 'Primary', providerOptions: { apiKey: 'must-drop' } },
+          { id: 'profile-a', name: 'Primary', modelId: 'gpt-5', providerOptions: { apiKey: 'must-drop' } },
           { id: 'profile-a', name: 'Duplicate' },
-          { id: 'profile-b' },
+          { id: 'profile-b', name: 'Identity Only', modelId: '' },
+          { id: 'profile-c' },
         ],
         modelRoleProfiles: {
           memory: { mode: 'profile', profileId: 'profile-a' },
@@ -99,11 +100,13 @@ describe('database defaults', () => {
       overrides: { 'model-a': { top_k: 20 } },
     })
     expect(database.modelProfiles).toEqual([
-      { id: 'profile-a', name: 'Primary' },
-      { id: 'profile-b', name: 'profile-b' },
+      { id: 'profile-a', name: 'Primary', modelId: 'gpt-5' },
+      { id: 'profile-b', name: 'Identity Only' },
+      { id: 'profile-c', name: 'profile-c' },
     ])
-    expect(database.modelRoleProfiles).toEqual(
-      Object.fromEntries(MODEL_ROLES.map((role) => [role, { mode: 'legacy' }])),
-    )
+    expect(database.modelRoleProfiles).toEqual({
+      ...Object.fromEntries(MODEL_ROLES.map((role) => [role, { mode: 'legacy' }])),
+      memory: { mode: 'profile', profileId: 'profile-a' },
+    })
   })
 })

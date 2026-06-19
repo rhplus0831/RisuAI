@@ -902,7 +902,7 @@ describe('Phase 9-2a scalar settings groups', () => {
     })
   })
 
-  it('accepts identity-only durable model profile scaffold settings', async () => {
+  it('accepts durable model profile selected-model settings', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
       aiModel: 'flat-main-model',
@@ -915,8 +915,8 @@ describe('Phase 9-2a scalar settings groups', () => {
       payload: {
         baseRevision: revision,
         patch: {
-          modelProfiles: [{ id: ' profile-a ', name: ' Primary ' }],
-          modelRoleProfiles: { memory: { mode: 'legacy' } },
+          modelProfiles: [{ id: ' profile-a ', name: ' Primary ', modelId: ' gpt-5 ' }],
+          modelRoleProfiles: { memory: { mode: 'profile', profileId: ' profile-a ' } },
         },
       },
     })
@@ -924,8 +924,11 @@ describe('Phase 9-2a scalar settings groups', () => {
     expect(res.statusCode, res.body).toBe(200)
     expect(loadPersistedFromDir(harness.dataDir).database).toMatchObject({
       aiModel: 'flat-main-model',
-      modelProfiles: [{ id: 'profile-a', name: 'Primary' }],
-      modelRoleProfiles: Object.fromEntries(MODEL_ROLES.map((role) => [role, { mode: 'legacy' }])),
+      modelProfiles: [{ id: 'profile-a', name: 'Primary', modelId: 'gpt-5' }],
+      modelRoleProfiles: {
+        ...Object.fromEntries(MODEL_ROLES.map((role) => [role, { mode: 'legacy' }])),
+        memory: { mode: 'profile', profileId: 'profile-a' },
+      },
     })
   })
 
@@ -961,7 +964,19 @@ describe('Phase 9-2a scalar settings groups', () => {
         patch: {
           modelRoleProfiles: { memory: { mode: 'profile' } },
         },
-        error: 'modelRoleProfiles.memory.mode must be legacy',
+        error: 'modelRoleProfiles.memory.profileId must be a non-empty string',
+      },
+      {
+        patch: {
+          modelRoleProfiles: { memory: { mode: 'profile', profileId: '' } },
+        },
+        error: 'modelRoleProfiles.memory.profileId must be a non-empty string',
+      },
+      {
+        patch: {
+          modelRoleProfiles: { memory: { mode: 'profile', profileId: 'profile-a', providerOptions: {} } },
+        },
+        error: 'modelRoleProfiles.memory.providerOptions is not supported',
       },
     ]
 

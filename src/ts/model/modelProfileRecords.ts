@@ -3,13 +3,19 @@ import { MODEL_ROLES, type ModelRole } from './modelRoles'
 export interface ModelProfileRecord {
   id: string
   name: string
+  modelId?: string
 }
 
 export interface LegacyModelRoleProfileBinding {
   mode: 'legacy'
 }
 
-export type ModelRoleProfileBinding = LegacyModelRoleProfileBinding
+export interface DurableModelRoleProfileBinding {
+  mode: 'profile'
+  profileId: string
+}
+
+export type ModelRoleProfileBinding = LegacyModelRoleProfileBinding | DurableModelRoleProfileBinding
 export type ModelRoleProfileMap = Record<ModelRole, ModelRoleProfileBinding>
 
 export class ModelProfileRecordValidationError extends Error {
@@ -19,8 +25,8 @@ export class ModelProfileRecordValidationError extends Error {
   }
 }
 
-const MODEL_PROFILE_RECORD_KEYS = new Set(['id', 'name'])
-const MODEL_ROLE_PROFILE_BINDING_KEYS = new Set(['mode'])
+const MODEL_PROFILE_RECORD_KEYS = new Set(['id', 'name', 'modelId'])
+const MODEL_ROLE_PROFILE_BINDING_KEYS = new Set(['mode', 'profileId'])
 const MODEL_ROLE_SET = new Set<string>(MODEL_ROLES)
 
 export function createDefaultModelRoleProfiles(): ModelRoleProfileMap {
@@ -37,7 +43,8 @@ export function normalizeModelProfiles(value: unknown): ModelProfileRecord[] {
     const id = stringOrBlank(item.id)
     if (!id || seen.has(id)) continue
     const name = stringOrBlank(item.name) || id
-    profiles.push({ id, name })
+    const modelId = stringOrBlank(item.modelId)
+    profiles.push(modelId ? { id, name, modelId } : { id, name })
     seen.add(id)
   }
 
@@ -48,7 +55,8 @@ export function normalizeModelRoleProfiles(value: unknown): ModelRoleProfileMap 
   const source = isRecord(value) ? value : {}
   const profiles = createDefaultModelRoleProfiles()
   for (const role of MODEL_ROLES) {
-    if (isLegacyBinding(source[role])) profiles[role] = { mode: 'legacy' }
+    const binding = normalizeModelRoleProfileBinding(source[role])
+    if (binding) profiles[role] = binding
   }
   return profiles
 }
@@ -113,7 +121,12 @@ function readModelProfileRecord(value: unknown, path: string): ModelProfileRecor
     throw new ModelProfileRecordValidationError(`${path}.name must be a non-empty string`)
   }
 
-  return { id, name }
+  if (Object.prototype.hasOwnProperty.call(value, 'modelId') && typeof value.modelId !== 'string') {
+    throw new ModelProfileRecordValidationError(`${path}.modelId must be a string when present`)
+  }
+  const modelId = stringOrBlank(value.modelId)
+
+  return modelId ? { id, name, modelId } : { id, name }
 }
 
 function readModelRoleProfileBinding(value: unknown, path: string): ModelRoleProfileBinding {
@@ -125,14 +138,29 @@ function readModelRoleProfileBinding(value: unknown, path: string): ModelRolePro
       throw new ModelProfileRecordValidationError(`${path}.${key} is not supported`)
     }
   }
-  if (value.mode !== 'legacy') {
-    throw new ModelProfileRecordValidationError(`${path}.mode must be legacy`)
+  if (value.mode === 'legacy') {
+    if (Object.prototype.hasOwnProperty.call(value, 'profileId')) {
+      throw new ModelProfileRecordValidationError(`${path}.profileId is only supported for profile mode`)
+    }
+    return { mode: 'legacy' }
   }
-  return { mode: 'legacy' }
+  if (value.mode === 'profile') {
+    const profileId = stringOrBlank(value.profileId)
+    if (!profileId) {
+      throw new ModelProfileRecordValidationError(`${path}.profileId must be a non-empty string`)
+    }
+    return { mode: 'profile', profileId }
+  }
+
+  throw new ModelProfileRecordValidationError(`${path}.mode must be legacy or profile`)
 }
 
-function isLegacyBinding(value: unknown): value is ModelRoleProfileBinding {
-  return isRecord(value) && value.mode === 'legacy'
+function normalizeModelRoleProfileBinding(value: unknown): ModelRoleProfileBinding | null {
+  if (!isRecord(value)) return null
+  if (value.mode === 'legacy') return { mode: 'legacy' }
+  if (value.mode !== 'profile') return null
+  const profileId = stringOrBlank(value.profileId)
+  return profileId ? { mode: 'profile', profileId } : null
 }
 
 function stringOrBlank(value: unknown): string {

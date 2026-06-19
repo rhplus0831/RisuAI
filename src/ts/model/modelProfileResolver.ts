@@ -31,6 +31,7 @@ import {
   type ProviderCapabilityInput,
   type ProviderCapabilityVerdict,
 } from '../process/request/providerCapability'
+import { normalizeModelProfiles, normalizeModelRoleProfiles, type ModelProfileRecord } from './modelProfileRecords'
 
 export type ModelProfileSourceKind =
   | 'staticModel'
@@ -39,12 +40,15 @@ export type ModelProfileSourceKind =
   | 'legacy-modelRoles'
   | 'legacy-seperateModels'
   | 'legacy-inherit'
+  | 'durable-profile'
 
 export interface ModelProfileResolutionSource {
   kind: ModelProfileSourceKind
   role: ModelRole
   legacyMode: LegacyModelMode
   field?: string
+  profileId?: string
+  profileName?: string
   bypassesRoleResolution: boolean
 }
 
@@ -387,6 +391,7 @@ export function resolveModelProfile({
   const selection = staticModelId
     ? {
         modelId: staticModelId,
+        profileId: undefined,
         source: {
           kind: 'staticModel' as const,
           role: normalizedRole,
@@ -395,7 +400,7 @@ export function resolveModelProfile({
           bypassesRoleResolution: true,
         },
       }
-    : resolveLegacyModelSelection(database, normalizedRole)
+    : (resolveDurableModelSelection(database, normalizedRole) ?? resolveLegacyModelSelection(database, normalizedRole))
   const lookedUp = lookupModelInfo?.(database, selection.modelId)
   const modelInfo = withCustomFlags(
     database,
@@ -413,7 +418,10 @@ export function resolveModelProfile({
   } = {
     role: normalizedRole,
     legacyMode: selection.source.legacyMode,
-    profileId: `legacy:${selection.source.field ?? selection.source.kind}:${selection.modelId}`,
+    profileId:
+      'profileId' in selection && selection.profileId
+        ? selection.profileId
+        : `legacy:${selection.source.field ?? selection.source.kind}:${selection.modelId}`,
     legacy: true,
     source: selection.source,
     modelId: selection.modelId,
@@ -790,6 +798,32 @@ export function resolveProfileRequestModel(profile: Pick<ResolvedModelProfile, '
   return profile.requestModel
 }
 
+function resolveDurableModelSelection(
+  database: Database,
+  role: ModelRole,
+): { modelId: string; profileId: string; source: ModelProfileResolutionSource } | null {
+  const binding = normalizeModelRoleProfiles(database.modelRoleProfiles)[role]
+  if (binding.mode !== 'profile') return null
+
+  const profile = findDurableModelProfile(database.modelProfiles, binding.profileId)
+  const modelId = nonBlankString(profile?.modelId)
+  if (!profile || !modelId) return null
+
+  return {
+    modelId,
+    profileId: profile.id,
+    source: {
+      kind: 'durable-profile',
+      role,
+      legacyMode: modelRoleToLegacyModelMode(role),
+      field: `modelRoleProfiles.${role}`,
+      profileId: profile.id,
+      profileName: profile.name,
+      bypassesRoleResolution: false,
+    },
+  }
+}
+
 function resolveLegacyModelSelection(
   database: Database,
   role: ModelRole,
@@ -887,6 +921,12 @@ function resolveLegacyModelSelection(
       bypassesRoleResolution: false,
     },
   }
+}
+
+function findDurableModelProfile(value: unknown, profileId: string): ModelProfileRecord | null {
+  const id = nonBlankString(profileId)
+  if (!id) return null
+  return normalizeModelProfiles(value).find((profile) => profile.id === id) ?? null
 }
 
 function fallbackKeyForRole(role: ModelRole): LegacyFallbackModelKey | null {

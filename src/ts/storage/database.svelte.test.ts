@@ -238,9 +238,10 @@ describe('model profile database normalization', () => {
   it('normalizes durable profile scaffold fields through setDatabase', () => {
     seedPresetDatabase({
       modelProfiles: [
-        { id: ' profile-a ', name: ' Primary ', providerOptions: { apiKey: 'must-drop' } } as any,
+        { id: ' profile-a ', name: ' Primary ', modelId: ' gpt-5 ', providerOptions: { apiKey: 'must-drop' } } as any,
         { id: 'profile-a', name: 'Duplicate' },
-        { id: 'profile-b' } as any,
+        { id: 'profile-b', name: 'Identity Only', modelId: '   ' } as any,
+        { id: 'profile-c' } as any,
       ],
       modelRoleProfiles: {
         memory: { mode: 'profile', profileId: 'profile-a' },
@@ -252,12 +253,14 @@ describe('model profile database normalization', () => {
     setDatabase(data)
 
     expect(DBState.db.modelProfiles).toEqual([
-      { id: 'profile-a', name: 'Primary' },
-      { id: 'profile-b', name: 'profile-b' },
+      { id: 'profile-a', name: 'Primary', modelId: 'gpt-5' },
+      { id: 'profile-b', name: 'Identity Only' },
+      { id: 'profile-c', name: 'profile-c' },
     ])
-    expect(DBState.db.modelRoleProfiles).toEqual(
-      Object.fromEntries(MODEL_ROLES.map((role) => [role, { mode: 'legacy' }])),
-    )
+    expect(DBState.db.modelRoleProfiles).toEqual({
+      ...Object.fromEntries(MODEL_ROLES.map((role) => [role, { mode: 'legacy' }])),
+      memory: { mode: 'profile', profileId: 'profile-a' },
+    })
   })
 })
 
