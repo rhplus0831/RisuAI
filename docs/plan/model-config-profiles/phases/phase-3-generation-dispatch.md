@@ -1,6 +1,6 @@
 # Phase 3: Generation Dispatch
 
-Status: in progress; Phase 3a server-owned profile selection/capability/request-model slice complete; Phase 3b Fastify OpenAI-compatible provider-options slice complete.
+Status: in progress; Phase 3a server-owned profile selection/capability/request-model slice complete; Phase 3b Fastify OpenAI-compatible provider-options slice complete; Phase 3c Fastify Anthropic/Mistral/Cohere provider-options slice complete.
 
 Goal: move browser and Fastify generation dispatch from ad hoc flat database
 reads to the resolved profile runtime object.
@@ -58,13 +58,32 @@ reads to the resolved profile runtime object.
   wired in this slice because the existing Fastify OpenAI chat adapter does not
   support those body options.
 
+## Implemented Phase 3c Slice
+
+- Fastify chat dispatch now resolves Anthropic, Mistral, and Cohere request
+  options from `profile.providerOptions` where the target adapters already
+  expose equivalent fields.
+- The profile-owned fields used by those branches are `apiKey`, `baseUrl`, and
+  `additionalParams`; Mistral and Cohere also use profile-owned `extraHeaders`.
+- Covered direct-dispatch variants include Anthropic `xcustom:::`, Mistral
+  `reverse_proxy`, and Cohere `reverse_proxy`, including conflicting flat DB
+  fields, request-model selection, extra headers where supported, and
+  additional params.
+- Cohere `safetyMode` derivation now uses the resolved profile model id instead
+  of flat `db.aiModel`, so a conflicting flat DB cannot alter the safety-mode
+  omission for `cohere-command-r-03-2024` and
+  `cohere-command-r-plus-04-2024`.
+- Missing-key dispatch coverage proves profile-owned empty credentials do not
+  fall back to conflicting flat Anthropic, Mistral, or Cohere keys.
+
 ## Remaining Phase 3 Work
 
 - Migrate the remaining browser completion/request helper paths to consume the
   resolver contract for role/static fallback selection.
-- Migrate remaining non-OpenAI-compatible provider option branches to
-  `profile.providerOptions` where the target adapters already expose equivalent
-  request fields.
+- Migrate remaining provider option branches outside OpenAI-compatible,
+  Anthropic, Mistral, and Cohere to `profile.providerOptions` where the target
+  adapters already expose equivalent request fields. Residual branches include
+  Gemini/Vertex, Bedrock, Horde, Kobold, Ooba, and native Ollama.
 - Broaden provider parity beyond the Phase 3a request-model surface before
   marking the full Phase 3 complete.
 
@@ -113,21 +132,21 @@ pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 ```
 
-Latest Phase 3b run:
+Latest Phase 3c run:
 
 ```bash
-pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/modelProfileResolver.server.test.ts server/fastify/__tests__/providerCapabilityRoute.test.ts server/fastify/__tests__/chatDispatchProfileOptions.test.ts server/fastify/__tests__/generation.completion.test.ts server/fastify/__tests__/generation.chat.test.ts
-pnpm exec vitest run src/ts/model/modelProfileResolver.test.ts src/ts/process/request/tests/providerCapability.test.ts src/ts/process/request/tests/serverCompletion.test.ts
+pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/chatDispatchProfileOptions.test.ts server/fastify/__tests__/generation.completion.test.ts server/fastify/__tests__/generation.chat.test.ts
+pnpm exec vitest run src/ts/process/request/tests/serverCompletion.test.ts src/ts/process/request/tests/providerCapability.test.ts src/ts/process/request/tests/modelRoleRouting.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 ```
 
 Results:
 
-- Focused Fastify resolver/capability/chat dispatch/completion/chat tests:
-  passed, 5 files / 185 tests.
-- Focused browser resolver/capability/server-completion tests: passed, 3 files /
-  69 tests.
+- Focused Fastify chat dispatch/completion/chat tests: passed, 3 files / 178
+  tests.
+- Focused browser server-completion/capability/model-role routing tests: passed,
+  3 files / 61 tests.
 - Client-lib TypeScript: passed.
 - Server strict TypeScript: passed.
 

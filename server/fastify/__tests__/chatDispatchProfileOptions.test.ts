@@ -5,7 +5,7 @@ import type { OpenAIChat } from '../../../src/ts/process/index.svelte'
 import type { Database } from '../../../src/ts/storage/database.svelte'
 import { dispatchChatProvider } from '../src/prompt/chatDispatch.js'
 
-interface CapturedOpenAIRequest {
+interface CapturedDispatchRequest {
   url: string
   headers: Record<string, string>
   body: Record<string, unknown>
@@ -34,8 +34,22 @@ function okOpenAIResponse(text = 'profile ok'): Response {
   })
 }
 
-function captureOpenAIRequests(): CapturedOpenAIRequest[] {
-  const captured: CapturedOpenAIRequest[] = []
+function okAnthropicResponse(text = 'profile ok'): Response {
+  return new Response(JSON.stringify({ content: [{ type: 'text', text }] }), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  })
+}
+
+function okCohereResponse(text = 'profile ok'): Response {
+  return new Response(JSON.stringify({ text }), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  })
+}
+
+function captureDispatchRequests(response: Response = okOpenAIResponse()): CapturedDispatchRequest[] {
+  const captured: CapturedDispatchRequest[] = []
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
@@ -44,10 +58,14 @@ function captureOpenAIRequests(): CapturedOpenAIRequest[] {
         headers: { ...((init?.headers as Record<string, string> | undefined) ?? {}) },
         body: JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>,
       })
-      return okOpenAIResponse()
+      return response.clone()
     }) as unknown as typeof fetch,
   )
   return captured
+}
+
+function captureOpenAIRequests(): CapturedDispatchRequest[] {
+  return captureDispatchRequests(okOpenAIResponse())
 }
 
 async function dispatchWithProfile(
@@ -126,6 +144,160 @@ describe('dispatchChatProvider profile providerOptions', () => {
       { role: 'user', content: 'hello' },
       { role: 'system', content: 'profile system 1\nprofile system 2' },
     ])
+  })
+
+  it('uses Anthropic xcustom profile options over conflicting flat database fields', async () => {
+    const profile = resolveModelProfile({
+      database: db({
+        aiModel: 'xcustom:::profile-anthropic',
+        customModels: [
+          {
+            id: 'xcustom:::profile-anthropic',
+            name: 'Profile Anthropic',
+            internalId: 'profile-claude-model',
+            url: 'https://profile-anthropic.example.com/v1/messages',
+            key: 'sk-profile-anthropic',
+            format: LLMFormat.Anthropic,
+            tokenizer: 0,
+            flags: [],
+            params: 'header::anthropic-beta=profile-beta\nprofileFlag=true',
+          },
+        ] as Database['customModels'],
+      } as Partial<Database>),
+    })
+    const flatConflict = db({
+      aiModel: 'xcustom:::profile-anthropic',
+      customModels: [
+        {
+          id: 'xcustom:::profile-anthropic',
+          name: 'Flat Anthropic',
+          internalId: 'flat-claude-model',
+          url: 'https://flat-anthropic.example.com/v1/messages',
+          key: 'sk-flat-anthropic',
+          format: LLMFormat.Anthropic,
+          tokenizer: 0,
+          flags: [],
+          params: 'header::X-Flat=flat\nflatFlag=true',
+        },
+      ] as Database['customModels'],
+    } as Partial<Database>)
+    const captured = captureDispatchRequests(okAnthropicResponse())
+
+    await dispatchWithProfile(profile, flatConflict)
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0].url).toBe('https://profile-anthropic.example.com/v1/messages')
+    expect(captured[0].headers['x-api-key']).toBe('sk-profile-anthropic')
+    expect(captured[0].headers['anthropic-beta']).toBe('profile-beta')
+    expect(captured[0].headers['X-Flat']).toBeUndefined()
+    expect(captured[0].body.model).toBe('profile-claude-model')
+    expect(captured[0].body.profileFlag).toBe(true)
+    expect(captured[0].body.flatFlag).toBeUndefined()
+  })
+
+  it('uses Mistral reverse_proxy profile options over conflicting flat database fields', async () => {
+    const profile = resolveModelProfile({
+      database: db({
+        aiModel: 'reverse_proxy',
+        customProxyRequestModel: 'profile-mistral-model',
+        customAPIFormat: LLMFormat.Mistral,
+        forceReplaceUrl: 'risu::https://profile-mistral.example.com',
+        proxyKey: 'sk-profile-mistral',
+        autofillRequestUrl: true,
+        additionalParams: [
+          ['header::X-Profile', 'profile'],
+          ['profileFlag', 'true'],
+        ],
+      } as Partial<Database>),
+    })
+    const flatConflict = db({
+      aiModel: 'reverse_proxy',
+      customProxyRequestModel: 'flat-mistral-model',
+      customAPIFormat: LLMFormat.Mistral,
+      forceReplaceUrl: 'https://flat-mistral.example.com/v1',
+      proxyKey: 'sk-flat-mistral',
+      autofillRequestUrl: true,
+      additionalParams: [
+        ['header::X-Flat', 'flat'],
+        ['flatFlag', 'true'],
+      ],
+    } as Partial<Database>)
+    const captured = captureDispatchRequests(okOpenAIResponse())
+
+    await dispatchWithProfile(profile, flatConflict)
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0].url).toBe('https://profile-mistral.example.com/v1/chat/completions')
+    expect(captured[0].headers.authorization).toBe('Bearer sk-profile-mistral')
+    expect(captured[0].headers['X-Proxy-Risu']).toBe('RisuAI')
+    expect(captured[0].headers['X-Profile']).toBe('profile')
+    expect(captured[0].headers['X-Flat']).toBeUndefined()
+    expect(captured[0].body.model).toBe('profile-mistral-model')
+    expect(captured[0].body.profileFlag).toBe(true)
+    expect(captured[0].body.flatFlag).toBeUndefined()
+  })
+
+  it('uses Cohere reverse_proxy profile options over conflicting flat database fields', async () => {
+    const profile = resolveModelProfile({
+      database: db({
+        aiModel: 'reverse_proxy',
+        customProxyRequestModel: 'profile-cohere-model',
+        customAPIFormat: LLMFormat.Cohere,
+        forceReplaceUrl: 'risu::https://profile-cohere.example.com',
+        proxyKey: 'sk-profile-cohere',
+        autofillRequestUrl: true,
+        additionalParams: [
+          ['header::X-Profile', 'profile'],
+          ['profileFlag', 'true'],
+        ],
+      } as Partial<Database>),
+    })
+    const flatConflict = db({
+      aiModel: 'reverse_proxy',
+      customProxyRequestModel: 'flat-cohere-model',
+      customAPIFormat: LLMFormat.Cohere,
+      forceReplaceUrl: 'https://flat-cohere.example.com/v1',
+      proxyKey: 'sk-flat-cohere',
+      autofillRequestUrl: true,
+      additionalParams: [
+        ['header::X-Flat', 'flat'],
+        ['flatFlag', 'true'],
+      ],
+    } as Partial<Database>)
+    const captured = captureDispatchRequests(okCohereResponse())
+
+    await dispatchWithProfile(profile, flatConflict)
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0].url).toBe('https://profile-cohere.example.com/v1/chat')
+    expect(captured[0].headers.authorization).toBe('Bearer sk-profile-cohere')
+    expect(captured[0].headers['X-Proxy-Risu']).toBe('RisuAI')
+    expect(captured[0].headers['X-Profile']).toBe('profile')
+    expect(captured[0].headers['X-Flat']).toBeUndefined()
+    expect(captured[0].body.model).toBe('profile-cohere-model')
+    expect(captured[0].body.profileFlag).toBe(true)
+    expect(captured[0].body.flatFlag).toBeUndefined()
+  })
+
+  it('derives Cohere safety mode from the profile model id instead of flat aiModel', async () => {
+    const profile = resolveModelProfile({
+      database: db({
+        aiModel: 'cohere-command-r-03-2024',
+        cohereAPIKey: 'sk-profile-cohere',
+      } as Partial<Database>),
+    })
+    const flatConflict = db({
+      aiModel: 'cohere-command-r',
+      cohereAPIKey: 'sk-flat-cohere',
+    } as Partial<Database>)
+    const captured = captureDispatchRequests(okCohereResponse())
+
+    await dispatchWithProfile(profile, flatConflict)
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0].headers.authorization).toBe('Bearer sk-profile-cohere')
+    expect(captured[0].body.model).toBe('cohere-command-r-03-2024')
+    expect(captured[0].body.safety_mode).toBeUndefined()
   })
 
   it.each([
@@ -295,6 +467,49 @@ describe('dispatchChatProvider profile providerOptions', () => {
     vi.stubGlobal('fetch', fetchSpy as unknown as typeof fetch)
 
     await expect(dispatchWithProfile(profile, flatConflict)).rejects.toThrow('options.nanogpt.apiKey is required')
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    {
+      label: 'Anthropic',
+      profileDatabase: db({
+        aiModel: 'claude-3-5-sonnet-20241022',
+      } as Partial<Database>),
+      flatConflict: db({
+        aiModel: 'claude-3-5-sonnet-20241022',
+        claudeAPIKey: 'sk-flat-anthropic',
+      } as Partial<Database>),
+      error: 'options.anthropic.apiKey is required',
+    },
+    {
+      label: 'Mistral',
+      profileDatabase: db({
+        aiModel: 'mistral-large-latest',
+      } as Partial<Database>),
+      flatConflict: db({
+        aiModel: 'mistral-large-latest',
+        mistralKey: 'sk-flat-mistral',
+      } as Partial<Database>),
+      error: 'options.mistral.apiKey is required',
+    },
+    {
+      label: 'Cohere',
+      profileDatabase: db({
+        aiModel: 'cohere-command-r',
+      } as Partial<Database>),
+      flatConflict: db({
+        aiModel: 'cohere-command-r',
+        cohereAPIKey: 'sk-flat-cohere',
+      } as Partial<Database>),
+      error: 'options.cohere.apiKey is required',
+    },
+  ])('preserves the $label missing-key error and does not fall back to flat DB keys', async (testCase) => {
+    const profile = resolveModelProfile({ database: testCase.profileDatabase })
+    const fetchSpy = vi.fn()
+    vi.stubGlobal('fetch', fetchSpy as unknown as typeof fetch)
+
+    await expect(dispatchWithProfile(profile, testCase.flatConflict)).rejects.toThrow(testCase.error)
     expect(fetchSpy).not.toHaveBeenCalled()
   })
 })

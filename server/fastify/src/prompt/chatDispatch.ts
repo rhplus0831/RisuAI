@@ -206,34 +206,6 @@ function resolveReverseProxyResponsesUrl(rawUrl: string, autofill: boolean): str
   return stripTrailingPath(url, '/responses')
 }
 
-function resolveReverseProxyCohereUrl(rawUrl: string, autofill: boolean): string {
-  let url = rawUrl
-  if (autofill) {
-    if (url.endsWith('v1')) {
-      url += '/chat'
-    } else if (url.endsWith('v1/')) {
-      url += 'chat'
-    } else if (!(url.endsWith('chat') || url.endsWith('chat/'))) {
-      url += url.endsWith('/') ? 'v1/chat' : '/v1/chat'
-    }
-  }
-  return stripTrailingPath(url, '/chat')
-}
-
-function resolveReverseProxyAnthropicUrl(rawUrl: string, autofill: boolean): string {
-  let url = rawUrl
-  if (autofill) {
-    if (url.endsWith('v1')) {
-      url += '/messages'
-    } else if (url.endsWith('v1/')) {
-      url += 'messages'
-    } else if (!(url.endsWith('messages') || url.endsWith('messages/'))) {
-      url += url.endsWith('/') ? 'v1/messages' : '/v1/messages'
-    }
-  }
-  return stripTrailingPath(url, '/messages')
-}
-
 function resolveModelInfo(db: Database): ModelInfoLite {
   const aiModel = asString(db.aiModel) ?? ''
   if (aiModel === 'reverse_proxy') {
@@ -810,38 +782,17 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
   }
 
   if (provider === 'anthropic') {
-    const aiModel = asString(db.aiModel) ?? ''
-    const isNanoGPT = info.format === LLMFormat.NanoGPTMessages
     const extracted = extractSystem(messages)
-    let apiKey: string | undefined = db.claudeAPIKey
-    let baseUrl: string | undefined
-    let ap: Array<[string, string]> | undefined
-    if (aiModel === 'ollama-cloud') {
-      apiKey = db.ollamaApiKey
-      baseUrl = 'https://ollama.com/v1'
-    } else if (isNanoGPT) {
-      apiKey = db.nanogptKey
-      baseUrl = NANOGPT_BASE_URL
-    } else if (aiModel === 'reverse_proxy') {
-      apiKey = db.proxyKey
-      baseUrl = resolveReverseProxyAnthropicUrl(db.forceReplaceUrl ?? '', db.autofillRequestUrl !== false)
-      ap = additionalParams(db.additionalParams)
-    } else if (aiModel.startsWith('xcustom:::')) {
-      const entry = findXcustomEntry(db, aiModel)
-      apiKey = asString(entry?.key)
-      const url = asString(entry?.url)
-      baseUrl = url ? stripTrailingPath(url, '/messages') : undefined
-      ap = parseXcustomParams(entry?.params)
-    }
+    const providerOptions = profile.providerOptions
     const request = resolveAnthropicRequest({
       model,
       messages: extracted.messages,
-      apiKey,
-      baseUrl,
+      apiKey: asString(providerOptions.apiKey),
+      baseUrl: asString(providerOptions.baseUrl),
       system: extracted.system,
       maxTokens,
       temperature,
-      additionalParams: ap,
+      additionalParams: providerOptions.additionalParams,
       signal,
     })
     if (!request) throw new Error('options.anthropic.apiKey is required')
@@ -849,33 +800,16 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
   }
 
   if (provider === 'mistral') {
-    const aiModel = asString(db.aiModel) ?? ''
-    let apiKey: string | undefined = db.mistralKey
-    let baseUrl: string | undefined
-    let extraHeaders: Record<string, string> | undefined
-    let ap: Array<[string, string]> | undefined
-    if (aiModel === 'reverse_proxy') {
-      apiKey = db.proxyKey
-      const resolved = resolveReverseProxyUrl(db.forceReplaceUrl ?? '', db.autofillRequestUrl !== false)
-      baseUrl = resolved.baseUrl
-      extraHeaders = resolved.risuIdentify ? { 'X-Proxy-Risu': 'RisuAI' } : undefined
-      ap = additionalParams(db.additionalParams)
-    } else if (aiModel.startsWith('xcustom:::')) {
-      const entry = findXcustomEntry(db, aiModel)
-      apiKey = asString(entry?.key)
-      const url = asString(entry?.url)
-      baseUrl = url ? deriveOpenAIBaseUrl(url) : undefined
-      ap = parseXcustomParams(entry?.params)
-    }
+    const providerOptions = profile.providerOptions
     const request = resolveMistralRequest({
       model,
       messages,
-      apiKey,
-      baseUrl,
+      apiKey: asString(providerOptions.apiKey),
+      baseUrl: asString(providerOptions.baseUrl),
       maxTokens,
       temperature,
-      extraHeaders,
-      additionalParams: ap,
+      extraHeaders: providerOptions.extraHeaders,
+      additionalParams: providerOptions.additionalParams,
       signal,
     })
     if (!request) throw new Error('options.mistral.apiKey is required')
@@ -883,32 +817,19 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
   }
 
   if (provider === 'cohere') {
-    const aiModel = asString(db.aiModel) ?? ''
-    let apiKey: string | undefined = db.cohereAPIKey
-    let baseUrl: string | undefined
-    let ap: Array<[string, string]> | undefined
-    if (aiModel === 'reverse_proxy') {
-      apiKey = db.proxyKey
-      baseUrl = resolveReverseProxyCohereUrl(db.forceReplaceUrl ?? '', db.autofillRequestUrl !== false)
-      ap = additionalParams(db.additionalParams)
-    } else if (aiModel.startsWith('xcustom:::')) {
-      const entry = findXcustomEntry(db, aiModel)
-      apiKey = asString(entry?.key)
-      const url = asString(entry?.url)
-      baseUrl = url ? stripTrailingPath(url, '/chat') : undefined
-      ap = parseXcustomParams(entry?.params)
-    }
+    const providerOptions = profile.providerOptions
     const isNewerCommandR =
-      (asString(db.aiModel) ?? '') === 'cohere-command-r-03-2024' ||
-      (asString(db.aiModel) ?? '') === 'cohere-command-r-plus-04-2024'
+      profile.modelId === 'cohere-command-r-03-2024' || profile.modelId === 'cohere-command-r-plus-04-2024'
+    if (!asString(providerOptions.apiKey)) throw new Error('options.cohere.apiKey is required')
     const request = resolveCohereRequest({
       model,
       messages,
-      apiKey,
-      baseUrl,
+      apiKey: asString(providerOptions.apiKey),
+      baseUrl: asString(providerOptions.baseUrl),
       safetyMode: isNewerCommandR ? undefined : 'NONE',
       temperature,
-      additionalParams: ap,
+      extraHeaders: providerOptions.extraHeaders,
+      additionalParams: providerOptions.additionalParams,
       signal,
     })
     if (!request) throw new Error('cohere requires a user message to generate a response')

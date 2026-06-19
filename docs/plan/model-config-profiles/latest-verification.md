@@ -7,41 +7,37 @@ workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 3b Fastify OpenAI-compatible
+- Runtime/code change under test: Phase 3c Fastify Anthropic/Mistral/Cohere
   provider-options adoption. Fastify chat dispatch now uses
-  `profile.providerOptions` for OpenAI-wire `apiKey`, `baseUrl`,
-  `extraHeaders`, `additionalParams`, and reverse-proxy `oobaSystemHoist` on
-  provider branches `openai`, `openrouter`, and `nanogpt`. The covered
-  OpenAI-compatible variants are `reverse_proxy`, `xcustom:::`, OpenRouter,
-  NanoGPT, key-identifier models such as DeepSeek, and `ollama-cloud` when its
-  request format routes to OpenAI-compatible chat. Phase 3 remains in progress.
+  `profile.providerOptions` for Anthropic, Mistral, and Cohere `apiKey`,
+  `baseUrl`, and `additionalParams`, plus Mistral/Cohere `extraHeaders`, where
+  the target adapters already support those fields. Cohere safety-mode
+  derivation now reads the resolved profile model id instead of flat
+  `db.aiModel`. Phase 3 remains in progress.
 - Latest passing commands:
-  - `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/modelProfileResolver.server.test.ts server/fastify/__tests__/providerCapabilityRoute.test.ts server/fastify/__tests__/chatDispatchProfileOptions.test.ts server/fastify/__tests__/generation.completion.test.ts server/fastify/__tests__/generation.chat.test.ts`
-    - Result: passed. 5 test files passed; 185 tests passed.
-  - `pnpm exec vitest run src/ts/model/modelProfileResolver.test.ts src/ts/process/request/tests/providerCapability.test.ts src/ts/process/request/tests/serverCompletion.test.ts`
-    - Result: passed. 3 test files passed; 69 tests passed.
+  - `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/chatDispatchProfileOptions.test.ts server/fastify/__tests__/generation.completion.test.ts server/fastify/__tests__/generation.chat.test.ts`
+    - Result: passed. 3 test files passed; 178 tests passed.
+  - `pnpm exec vitest run src/ts/process/request/tests/serverCompletion.test.ts src/ts/process/request/tests/providerCapability.test.ts src/ts/process/request/tests/modelRoleRouting.test.ts`
+    - Result: passed. 3 test files passed; 61 tests passed.
   - `pnpm exec tsc -p tsconfig.client-lib.json`
     - Result: passed. The command exited 0 and rebuilt client declaration
       output for server project references.
   - `pnpm exec tsc -p server/fastify/tsconfig.json --noEmit`
     - Result: passed. The command exited 0 under strict server TypeScript.
   - `pnpm exec prettier --write --ignore-path /dev/null server/fastify/src/prompt/chatDispatch.ts server/fastify/__tests__/chatDispatchProfileOptions.test.ts docs/plan/model-config-profiles/status.md docs/plan/model-config-profiles/latest-verification.md docs/plan/model-config-profiles/phases/phase-3-generation-dispatch.md`
-    - Result: passed. The command exited 0 and formatted the Phase 3b code,
+    - Result: passed. The command exited 0 and formatted the Phase 3c code,
       tests, and docs.
   - `git diff --check`
     - Result: passed. The command exited 0 with no whitespace errors.
-- Failed/intermediate commands during this slice:
-  - The first strict server TypeScript run failed because the new direct dispatch
-    test helper inferred a default message `role` as plain `string`. The helper
-    now types the default rows as `OpenAIChat[]`, and the final strict server
-    TypeScript run passes.
+- Failed/intermediate commands during this slice: none.
 - Residual gaps: Full Phase 3 is not complete. Remaining browser
-  completion/request helper migration, non-OpenAI-compatible provider-option
-  migration, durable profile storage, UI writes, provider secret reshaping, and
-  embedding behavior remain deferred to later slices/phases. OpenRouter body
-  knobs (`fallback`, `middleOut`, and provider filters) are not wired into
-  Fastify chat dispatch because the existing OpenAI chat adapter does not expose
-  those request-body options.
+  completion/request helper migration, provider-option migration for
+  Gemini/Vertex, Bedrock, Horde, Kobold, Ooba, and native Ollama, durable
+  profile storage, UI writes, provider secret reshaping, and embedding behavior
+  remain deferred to later slices/phases. OpenRouter body knobs (`fallback`,
+  `middleOut`, and provider filters) are not wired into Fastify chat dispatch
+  because the existing OpenAI chat adapter does not expose those request-body
+  options.
 
 ## Remaining Proof
 
