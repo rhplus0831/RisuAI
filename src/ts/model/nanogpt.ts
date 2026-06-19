@@ -9,6 +9,10 @@ import {
 } from './providers/nanogpt'
 import type { ModelGridItem } from './modelGrid'
 
+export type NanoGPTCatalogFetchContext = {
+  apiKey?: string | null
+}
+
 export type NanoGPTModelInfo = {
   id: string
   name: string
@@ -159,10 +163,16 @@ export async function getNanoGPTSubscriptionModels(key: string): Promise<NanoGPT
   }
 }
 
-export async function getNanoGPTModels(): Promise<NanoGPTModelInfo[]> {
+function resolveNanoGPTCatalogKey(context?: NanoGPTCatalogFetchContext): string {
+  if (context !== undefined) {
+    return context.apiKey ?? ''
+  }
+  return getDatabase().nanogptKey
+}
+
+export async function getNanoGPTModels(context?: NanoGPTCatalogFetchContext): Promise<NanoGPTModelInfo[]> {
   try {
-    const db = getDatabase()
-    const key = db.nanogptKey
+    const key = resolveNanoGPTCatalogKey(context)
 
     const endpoint = (key ? NANOGPT_PERSONALIZED_MODELS_ENDPOINT : NANOGPT_MODELS_ENDPOINT) + '?detailed=true'
     const headers: Record<string, string> = { 'Content-Type': 'application/json' }

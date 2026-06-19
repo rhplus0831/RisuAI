@@ -23,6 +23,13 @@
     ignore: [],
   })
 
+  interface Props {
+    apiKey?: string | null
+  }
+
+  let { apiKey }: Props = $props()
+  let providerCatalogContext = $derived(apiKey === undefined ? undefined : { apiKey })
+
   function addProviderEntry(key: keyof OpenrouterProviderSettings): void {
     openrouterProviderDraft.value = {
       ...openrouterProviderDraft.value,
@@ -48,7 +55,7 @@
   <div class="flex items-center mb-4">
     <Check bind:check={useInstructPromptDraft.value} name={language.useInstructPrompt} />
   </div>
-  {#await getOpenRouterProviders()}
+  {#await getOpenRouterProviders(providerCatalogContext)}
     <Accordion name={language.openRouterProviderOrder} help="openRouterProviderOrder" styled>
       <p>{language.loading}...</p>
     </Accordion>

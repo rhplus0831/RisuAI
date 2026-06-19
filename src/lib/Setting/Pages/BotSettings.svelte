@@ -761,6 +761,10 @@
       prevNanogptInputMode = nanogptInputMode
     }
   })
+
+  function getNanoGPTModelCatalogs(apiKey: string) {
+    return Promise.all([getNanoGPTModels({ apiKey }), getNanoGPTSubscriptionModels(apiKey)])
+  }
 </script>
 
 <h2 class="mb-2 text-2xl font-bold mt-2">{pageTitle}</h2>
@@ -1033,7 +1037,7 @@
         placeholder={(language as any).nanoGPTManualModelSelect || 'Manual Model Select'}
         oninput={() => (nanogptRequestModelNameDraft.value = '')} />
     {:else}
-      {#await Promise.all([getNanoGPTModels(), getNanoGPTSubscriptionModels(nanogptKeyDraft.value)])}
+      {#await getNanoGPTModelCatalogs(nanogptKeyDraft.value)}
         <ModelGrid bind:value={nanogptRequestModelDraft.value} loading={true} />
       {:then [regular, sub]}
         <ModelGrid
@@ -1062,7 +1066,7 @@
     <TextInput hideText marginBottom={false} size={'sm'} bind:value={openrouterKeyDraft.value} />
 
     <span class="text-textcolor mt-4">OpenRouter {language.model}</span>
-    {#await getOpenRouterModels()}
+    {#await getOpenRouterModels({ apiKey: openrouterKeyDraft.value })}
       <ModelGrid bind:value={openrouterRequestModelDraft.value} pinnedItems={openrouterPinnedItems} loading={true} />
     {:then m}
       <ModelGrid
@@ -1387,7 +1391,7 @@
   {/if}
 
   {#if usesOpenRouterModel}
-    <OpenrouterSettings />
+    <OpenrouterSettings apiKey={openrouterKeyDraft.value} />
   {/if}
 
   <SeparateParametersSection promptPresetModelOverrideMode={promptParameterOverrideMode} />

@@ -1,6 +1,10 @@
 import { getDatabase } from '../storage/database.svelte'
 import type { ModelGridItem } from './modelGrid'
 
+export type OpenRouterCatalogFetchContext = {
+  apiKey?: string | null
+}
+
 /** Per-1M-token price entry. undefined means the field is not available for this model. */
 export type PriceEntry = number | undefined
 
@@ -30,11 +34,20 @@ export type OpenRouterModelInfo = {
   internalReasoningPrice1M: PriceEntry
 }
 
-export async function getOpenRouterProviders(): Promise<{ name: string; slug: string }[]> {
+function resolveOpenRouterCatalogKey(context?: OpenRouterCatalogFetchContext): string {
+  if (context !== undefined) {
+    return context.apiKey ?? ''
+  }
+  return getDatabase().openrouterKey
+}
+
+export async function getOpenRouterProviders(
+  context?: OpenRouterCatalogFetchContext,
+): Promise<{ name: string; slug: string }[]> {
   try {
-    const db = getDatabase()
+    const apiKey = resolveOpenRouterCatalogKey(context)
     const headers = {
-      Authorization: 'Bearer ' + db.openrouterKey,
+      Authorization: 'Bearer ' + apiKey,
       'Content-Type': 'application/json',
     }
 
@@ -51,11 +64,11 @@ export async function getOpenRouterProviders(): Promise<{ name: string; slug: st
   }
 }
 
-export async function getOpenRouterModels(): Promise<OpenRouterModelInfo[]> {
+export async function getOpenRouterModels(context?: OpenRouterCatalogFetchContext): Promise<OpenRouterModelInfo[]> {
   try {
-    const db = getDatabase()
+    const apiKey = resolveOpenRouterCatalogKey(context)
     const headers = {
-      Authorization: 'Bearer ' + db.openrouterKey,
+      Authorization: 'Bearer ' + apiKey,
       'Content-Type': 'application/json',
     }
 
@@ -136,8 +149,8 @@ export function toModelGridItem(m: OpenRouterModelInfo): ModelGridItem {
   }
 }
 
-export async function getFreeOpenRouterModels() {
-  const models = await getOpenRouterModels()
+export async function getFreeOpenRouterModels(context?: OpenRouterCatalogFetchContext) {
+  const models = await getOpenRouterModels(context)
   return (
     models
       .filter((model: any) => {

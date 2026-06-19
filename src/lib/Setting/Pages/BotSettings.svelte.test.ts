@@ -71,4 +71,14 @@ describe('BotSettings model-role provider visibility', () => {
     expect(source).not.toContain("{#if DBState.db.aiModel === 'nanogpt' || DBState.db.subModel === 'nanogpt'}")
     expect(source).not.toContain("{#if DBState.db.aiModel === 'openrouter' || DBState.db.subModel === 'openrouter'}")
   })
+
+  it('passes provider draft keys to dynamic model catalogs', () => {
+    const source = botSettingsSource()
+
+    expect(source).toContain('getNanoGPTModelCatalogs(nanogptKeyDraft.value)')
+    expect(source).toMatch(/getNanoGPTModels\(\s*\{\s*apiKey\s*\}\s*\)/)
+    expect(source).toContain('getNanoGPTSubscriptionModels(apiKey)')
+    expect(source).toMatch(/getOpenRouterModels\(\s*\{\s*apiKey:\s*openrouterKeyDraft\.value,?\s*\},?\s*\)/)
+    expect(source).toContain('<OpenrouterSettings apiKey={openrouterKeyDraft.value} />')
+  })
 })
