@@ -7,14 +7,44 @@ workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: none. This is an initial documentation plan.
-- Commands:
+- Runtime/code change under test: Phase 0 contract fixtures and documentation.
+- Final passing commands:
+  - `pnpm exec prettier --write docs/plan/model-config-profiles/phases/phase-0-current-contracts.md docs/plan/model-config-profiles/status.md docs/plan/model-config-profiles/latest-verification.md src/ts/process/request/tests/modelRoleRouting.test.ts src/ts/storage/database.svelte.test.ts server/fastify/__tests__/providerSecrets.test.ts server/fastify/__tests__/memorySummaryModel.test.ts`
+    - Result: passed. The command exited 0; Prettier reported the touched test
+      files unchanged.
   - `pnpm exec prettier --check 'docs/plan/model-config-profiles/**/*.md'`
-  - sub-agent audit/polish pass over `docs/plan/model-config-profiles`
-- Result: Prettier passed after audit corrections. Audit found phase ordering,
-  secret-boundary, dynamic-catalog-anchor, and verification-matrix issues; the
-  accepted corrections are incorporated in this plan.
-- Residual gaps: implementation has not started.
+    - Result: passed. All matched files use Prettier code style.
+  - `pnpm exec vitest run src/ts/process/request/tests/modelRoleRouting.test.ts src/ts/storage/database.svelte.test.ts`
+    - Result: passed. 2 test files passed; 39 tests passed.
+  - `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/providerSecrets.test.ts server/fastify/__tests__/memorySummaryModel.test.ts`
+    - Result: passed. 2 test files passed; 10 tests passed.
+  - `git diff --check`
+    - Result: passed. No whitespace errors reported.
+- Failed/intermediate commands while shaping the fallback fixture:
+  - `pnpm exec vitest run src/ts/process/request/tests/modelRoleRouting.test.ts src/ts/storage/database.svelte.test.ts`
+    - Result: failed. 1 test failed in
+      `modelRoleRouting.test.ts`:
+      `sends legacy fallback model ids as staticModel attempts before the resolved role model`
+      expected `{ type: 'success', result: 'ok', model: 'role-memory-model' }`
+      and received `{ type: 'fail', result: 'try another model' }`.
+  - `pnpm exec vitest run src/ts/process/request/tests/modelRoleRouting.test.ts src/ts/storage/database.svelte.test.ts`
+    - Result: failed. 1 test failed in
+      `modelRoleRouting.test.ts`:
+      `sends legacy fallback model ids as staticModel attempts before the resolved role model`
+      expected `{ type: 'success', result: 'ok', model: 'role-memory-model' }`
+      and received `{ type: 'success', result: '' }`.
+  - `pnpm exec vitest run src/ts/process/request/tests/modelRoleRouting.test.ts -t "sends legacy fallback" --reporter verbose`
+    - Result: failed during fixture refinement. One run expected
+      `['model', 'model']` and received `['model']`; a later run expected
+      `['fallback-main-model', '']` and received
+      `['fallback-main-model']`.
+  - `pnpm exec tsx -e "import { setDatabase, getDatabase, type Database } from './src/ts/storage/database.svelte.ts'; globalThis.safeStructuredClone=(v:any)=>v===undefined?undefined:JSON.parse(JSON.stringify(v)); setDatabase({aiModel:'echo_model',subModel:'echo_model',modelRoles:{},characters:[],customModels:[],maxResponse:64,temperature:50,useStreaming:false,genTime:1,extractJson:'',fallbackModels:{model:[],memory:['fallback-memory-model'],emotion:[],translate:[],otherAx:[],scriptMain:[],scriptAux:[]},fallbackWhenBlankResponse:true,requestRetrys:0} as unknown as Database); console.log(JSON.stringify({fallbackModels:getDatabase().fallbackModels,fallbackWhenBlankResponse:getDatabase().fallbackWhenBlankResponse,requestRetrys:getDatabase().requestRetrys}));"`
+    - Result: failed before reaching the check with
+      `ReferenceError: document is not defined` from
+      `src/ts/plugins/pluginSafeClass.ts:311`.
+- Residual gaps: no full TypeScript check, full provider matrix, browser smoke,
+  or Phase 1 resolver proof has run in this slice. Embedding behavior was not
+  migrated or reworked.
 
 ## Remaining Proof
 

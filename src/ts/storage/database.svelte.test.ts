@@ -12,6 +12,8 @@ vi.mock('../process/modules', async (importActual) => {
 import { DBState } from '../stores.svelte'
 import { clearCachedServerCommandRevision, setCachedServerCommandRevision } from '../server/commands'
 import {
+  applyModelPresetFieldsToDatabase,
+  applyPromptPresetFieldsToDatabase,
   botPresetIdsNeedNormalization,
   changeToPreset,
   copyPreset,
@@ -943,6 +945,121 @@ describe('preset command rollback (L21)', () => {
       expect(DBState.db.mainPrompt).toBe('live main')
       expect(DBState.db.globalNote).toBe('newer note after dispatch')
     })
+  })
+
+  it('applies split presets as base, selected model preset, then selected prompt preset overrides', () => {
+    const modelPreset = {
+      id: 'model-a',
+      name: 'Model A',
+      aiModel: 'model-ai',
+      subModel: 'model-sub',
+      temperature: 31,
+      modelRoles: { memory: 'model-memory', scriptAux: 'model-script-aux' },
+      seperateModelsForAxModels: true,
+      seperateModels: {
+        memory: 'model-separate-memory',
+        emotion: '',
+        translate: '',
+        otherAx: '',
+        scriptMain: '',
+        scriptAux: 'model-separate-script-aux',
+      },
+      fallbackModels: {
+        model: ['model-fallback-main'],
+        memory: ['model-fallback-memory'],
+        emotion: [],
+        translate: [],
+        otherAx: [],
+        scriptMain: [],
+        scriptAux: ['model-fallback-script-aux'],
+      },
+    } as unknown as ModelPreset
+    const promptPreset = {
+      id: 'prompt-a',
+      name: 'Prompt A',
+      mainPrompt: 'prompt main',
+      temperature: 88,
+      overrideModelParameters: false,
+      modelRoles: { memory: 'prompt-memory', scriptAux: 'prompt-script-aux' },
+      seperateModelsForAxModels: true,
+      seperateModels: {
+        memory: 'prompt-separate-memory',
+        emotion: '',
+        translate: '',
+        otherAx: '',
+        scriptMain: '',
+        scriptAux: 'prompt-separate-script-aux',
+      },
+      fallbackModels: {
+        model: ['prompt-fallback-main'],
+        memory: ['prompt-fallback-memory'],
+        emotion: [],
+        translate: [],
+        otherAx: [],
+        scriptMain: [],
+        scriptAux: ['prompt-fallback-script-aux'],
+      },
+      fallbackWhenBlankResponse: true,
+    } as unknown as PromptPreset
+
+    seedPresetDatabase({
+      aiModel: 'base-ai',
+      subModel: 'base-sub',
+      temperature: 12,
+      modelRoles: { memory: 'base-memory', scriptAux: 'base-script-aux' } as Database['modelRoles'],
+      seperateModelsForAxModels: false,
+      seperateModels: {
+        memory: 'base-separate-memory',
+        emotion: '',
+        translate: '',
+        otherAx: '',
+        scriptMain: '',
+        scriptAux: 'base-separate-script-aux',
+      },
+      fallbackModels: {
+        model: ['base-fallback-main'],
+        memory: ['base-fallback-memory'],
+        emotion: [],
+        translate: [],
+        otherAx: [],
+        scriptMain: [],
+        scriptAux: ['base-fallback-script-aux'],
+      },
+      modelPresets: [modelPreset],
+      modelPresetsId: 0,
+      promptPresets: [promptPreset],
+      promptPresetsId: 0,
+    })
+
+    applyModelPresetFieldsToDatabase(DBState.db, DBState.db.modelPresets[0])
+
+    expect(DBState.db.aiModel).toBe('model-ai')
+    expect(DBState.db.subModel).toBe('model-sub')
+    expect(DBState.db.temperature).toBe(31)
+    expect(DBState.db.modelRoles).toMatchObject({
+      memory: 'prompt-memory',
+      scriptAux: 'prompt-script-aux',
+    })
+    expect(DBState.db.seperateModelsForAxModels).toBe(true)
+    expect(DBState.db.seperateModels).toMatchObject({
+      memory: 'prompt-separate-memory',
+      scriptAux: 'prompt-separate-script-aux',
+    })
+    expect(DBState.db.fallbackModels).toMatchObject({
+      model: ['prompt-fallback-main'],
+      memory: ['prompt-fallback-memory'],
+      scriptAux: ['prompt-fallback-script-aux'],
+    })
+    expect(DBState.db.fallbackWhenBlankResponse).toBe(true)
+
+    DBState.db.promptPresets[0] = {
+      ...DBState.db.promptPresets[0],
+      overrideModelParameters: true,
+      temperature: 88,
+    }
+    applyPromptPresetFieldsToDatabase(DBState.db, DBState.db.promptPresets[0])
+
+    expect(DBState.db.temperature).toBe(88)
   })
 
   it('failed legacy copy removes only the generated copy and rolls back attempted source-save fields', async () => {

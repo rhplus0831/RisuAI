@@ -2,26 +2,26 @@
 
 Date: 2026-06-19
 
-This workstream is proposed and open. No runtime behavior changes have landed
-from this plan yet. The current task created the planning folder and initial
-phase router after local code exploration and sub-agent review.
+This workstream is open. Phase 0 is complete: current contracts are recorded,
+and focused parity fixtures now freeze the riskiest fallback/static-model,
+split-preset, masking, and memory-summary behavior before resolver work starts.
 
 ## Snapshot
 
 - Plan state: open.
-- Current phase: Phase 0, current contracts, not started.
+- Current phase: Phase 1, read-only profile resolver, ready to start.
 - Current implementation state: existing flattened `Database` fields remain the
   source of truth. `ModelRoleList.svelte` edits model ids and some role-adjacent
   settings; `BotSettings.svelte` still owns global provider and model options.
 - Current compatibility state: no profile data model exists yet.
-- Current verification state: documentation-only change. See
+- Current verification state: Phase 0 focused fixtures pass. See
   [`latest-verification.md`](latest-verification.md).
 
 ## Phase Router
 
 | Phase | Status | Purpose |
 | --- | --- | --- |
-| Phase 0: Current Contracts | Not started | Freeze current role, provider, preset, fallback, masking, static model, and memory behavior. |
+| Phase 0: Current Contracts | Complete | Freeze current role, provider, preset, fallback, masking, static model, and memory behavior. |
 | Phase 1: Read-Only Profile Resolver | Not started | Add a shared resolver and compatibility adapter while storage stays flat. |
 | Phase 2: Preset Composition | Not started | Centralize base DB, selected model preset, and selected prompt preset composition. |
 | Phase 3: Generation Dispatch | Not started | Adopt resolved profiles in browser and Fastify generation paths. |
@@ -32,15 +32,33 @@ phase router after local code exploration and sub-agent review.
 
 ## Immediate Next Steps
 
-1. Complete Phase 0 by freezing current behavior and adding the first parity
-   fixtures before any runtime consumer switches.
-2. Build the Phase 1 resolver as a read-only compatibility layer over existing
+1. Build the Phase 1 resolver as a read-only compatibility layer over existing
    settings, not as a persisted storage change.
-3. Move preset composition and then dispatch to the resolver contract before
+2. Move preset composition and then dispatch to the resolver contract before
    changing the database shape.
-4. Keep UI writes targeting existing fields until the profile editor behavior
+3. Keep UI writes targeting existing fields until the profile editor behavior
    is proven.
-5. Update `status.md` at the end of each phase with proof or explicit gaps.
+4. Update `status.md` at the end of each phase with proof or explicit gaps.
+
+## Phase 0 Contract Decisions
+
+- `staticModel` remains a raw model-id bypass. It skips role resolution and
+  does not require a stored profile.
+- Legacy fallback entries remain raw model ids. The request fallback path passes
+  each fallback id as `staticModel`; fallback static models borrow the current
+  global/provider settings. The legacy `submodel` mode has no fallback key.
+- Preset composition remains deterministic: base database -> selected model
+  preset -> selected prompt preset. Prompt preset "Others" overrides, including
+  `modelRoles`, `seperateModels`, and `fallbackModels`, apply over model
+  presets; prompt parameter overrides apply only when
+  `overrideModelParameters === true`.
+- `doNotChangeSeperateModels` and `doNotChangeFallbackModels` remain legacy
+  bot-preset application guards, not general split-preset or profile flags.
+- `customModels` remains a model catalog for now. Future derived profiles may
+  reference catalog rows by id, but durable migration is deferred.
+- Memory summary can later join the chat resolver because it already follows
+  memory-role resolution and OpenAI-compatible provider options. Memory
+  embeddings stay separate for now on Hypa/Voyage/custom embedding fields.
 
 ## Known Open Decisions
 
@@ -54,6 +72,6 @@ phase router after local code exploration and sub-agent review.
 - Whether prompt preset model overrides should bind roles to alternate profiles,
   patch selected profile fields, or remain as explicit legacy overrides during
   compatibility.
-- Whether memory embeddings eventually join the same profile model, since they
-  currently use `hypaModel`, `hypaCustomSettings`, `hypaV3Key`, and
-  `voyageApiKey`.
+- Whether memory embeddings eventually join any profile model after the chat
+  resolver is proven, since they currently use `hypaModel`,
+  `hypaCustomSettings`, `hypaV3Key`, and `voyageApiKey`.

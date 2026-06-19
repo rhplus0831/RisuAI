@@ -39,6 +39,50 @@ describe('provider secret masking', () => {
     ])
   })
 
+  it('restores model preset and custom model masked secrets by stable row id after reorder', () => {
+    const resolved = resolveMaskedProviderSecretPlaceholders(
+      {
+        modelPresets: [
+          { id: 'model-a', name: 'A', openAIKey: 'openai-a', proxyKey: 'proxy-a' },
+          { id: 'model-b', name: 'B', openAIKey: 'openai-b', proxyKey: 'proxy-b' },
+        ],
+        customModels: [
+          { id: 'xcustom:::a', name: 'Custom A', key: 'custom-a' },
+          { id: 'xcustom:::b', name: 'Custom B', key: 'custom-b' },
+        ],
+      },
+      {
+        modelPresets: [
+          {
+            id: 'model-b',
+            name: 'B renamed',
+            openAIKey: MASKED_PROVIDER_SECRET,
+            proxyKey: MASKED_PROVIDER_SECRET,
+          },
+          {
+            id: 'model-a',
+            name: 'A renamed',
+            openAIKey: MASKED_PROVIDER_SECRET,
+            proxyKey: MASKED_PROVIDER_SECRET,
+          },
+        ],
+        customModels: [
+          { id: 'xcustom:::b', name: 'Custom B renamed', key: MASKED_PROVIDER_SECRET },
+          { id: 'xcustom:::a', name: 'Custom A renamed', key: MASKED_PROVIDER_SECRET },
+        ],
+      },
+    )
+
+    expect(resolved.modelPresets).toEqual([
+      { id: 'model-b', name: 'B renamed', openAIKey: 'openai-b', proxyKey: 'proxy-b' },
+      { id: 'model-a', name: 'A renamed', openAIKey: 'openai-a', proxyKey: 'proxy-a' },
+    ])
+    expect(resolved.customModels).toEqual([
+      { id: 'xcustom:::b', name: 'Custom B renamed', key: 'custom-b' },
+      { id: 'xcustom:::a', name: 'Custom A renamed', key: 'custom-a' },
+    ])
+  })
+
   it('rejects bot preset masked placeholders when row identity is missing', () => {
     expect(() =>
       resolveMaskedProviderSecretPlaceholders(
@@ -81,6 +125,8 @@ describe('maskProviderSecretsInPlace (M4)', () => {
     aiModel: 'gpt4o-chatgpt',
     OaiCompAPIKeys: { deepseek: 'ds-key' },
     botPresets: [{ id: 'preset-a', openAIKey: 'sk-preset', proxyKey: 'proxy-key' }],
+    modelPresets: [{ id: 'model-a', openAIKey: 'sk-model-preset', proxyKey: 'model-proxy-key' }],
+    customModels: [{ id: 'xcustom:::a', key: 'custom-key' }],
     characters: [{ chaId: 'char-a', name: 'Ada', oaiTTSConfig: { apiKey: 'tts-key' } }],
   })
 
@@ -91,6 +137,9 @@ describe('maskProviderSecretsInPlace (M4)', () => {
     expect(inPlace.openAIKey).toBe(MASKED_PROVIDER_SECRET)
     expect(inPlace.OaiCompAPIKeys.deepseek).toBe(MASKED_PROVIDER_SECRET)
     expect(inPlace.botPresets[0].openAIKey).toBe(MASKED_PROVIDER_SECRET)
+    expect(inPlace.modelPresets[0].openAIKey).toBe(MASKED_PROVIDER_SECRET)
+    expect(inPlace.modelPresets[0].proxyKey).toBe(MASKED_PROVIDER_SECRET)
+    expect(inPlace.customModels[0].key).toBe(MASKED_PROVIDER_SECRET)
     expect(inPlace.characters[0].oaiTTSConfig.apiKey).toBe(MASKED_PROVIDER_SECRET)
     expect(inPlace.aiModel).toBe('gpt4o-chatgpt')
   })

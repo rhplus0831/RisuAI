@@ -10,7 +10,7 @@ vi.mock('../../modules', async (importActual) => {
 })
 
 import { setDatabase, type Database } from '../../../storage/database.svelte'
-import { requestChatDataMain } from '../request'
+import { requestChatData, requestChatDataMain } from '../request'
 import { applyParameters } from '../shared'
 
 function seedDb(overrides: Partial<Database> = {}): void {
@@ -91,6 +91,79 @@ describe('requestChatDataMain model-role routing', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(1)
     const payload = JSON.parse(fetchSpy.mock.calls[0][1].body as string)
     expect(payload).toMatchObject({ mode: 'scriptAux', staticModel: 'echo_model' })
+  })
+
+  it('sends legacy fallback model ids as staticModel attempts', async () => {
+    seedDb({
+      modelRoles: { memory: 'role-memory-model' } as Database['modelRoles'],
+      fallbackModels: {
+        model: [],
+        memory: ['fallback-memory-model'],
+        emotion: [],
+        translate: [],
+        otherAx: [],
+        scriptMain: [],
+        scriptAux: [],
+      } as Database['fallbackModels'],
+      requestRetrys: 0,
+    })
+    const payloads: Array<Record<string, unknown>> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: RequestInfo | URL, init: RequestInit = {}) => {
+        payloads.push(JSON.parse(init.body as string))
+        return new Response(JSON.stringify({ type: 'success', result: 'ok', model: 'role-memory-model' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      }),
+    )
+
+    const result = await requestChatData(
+      {
+        formated: [{ role: 'user', content: 'hi' }],
+        bias: {},
+      },
+      'memory',
+    )
+
+    expect(result).toEqual({ type: 'success', result: 'ok', model: 'fallback-memory-model' })
+    expect(payloads.map((payload) => payload.mode)).toEqual(['memory'])
+    expect(payloads.map((payload) => payload.staticModel)).toEqual(['fallback-memory-model'])
+  })
+
+  it('does not read a fallback bucket for the legacy submodel mode', async () => {
+    seedDb({
+      subModel: 'role-submodel',
+      fallbackModels: {
+        model: ['main-fallback-model'],
+        submodel: ['submodel-fallback-model'],
+      } as unknown as Database['fallbackModels'],
+      requestRetrys: 0,
+    })
+    const payloads: Array<Record<string, unknown>> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: RequestInfo | URL, init: RequestInit = {}) => {
+        payloads.push(JSON.parse(init.body as string))
+        return new Response(JSON.stringify({ type: 'success', result: 'ok', model: 'role-submodel' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      }),
+    )
+
+    const result = await requestChatData(
+      {
+        formated: [{ role: 'user', content: 'hi' }],
+        bias: {},
+      },
+      'submodel',
+    )
+
+    expect(result).toEqual({ type: 'success', result: 'ok', model: 'role-submodel' })
+    expect(payloads).toHaveLength(1)
+    expect(payloads[0]).toMatchObject({ mode: 'submodel', staticModel: '' })
   })
 
   it('inherits legacy script parameter buckets until script-specific parameters are configured', () => {
