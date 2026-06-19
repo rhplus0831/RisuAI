@@ -1,6 +1,6 @@
 # Svelte UI Guide
 
-Last audited: 2026-06-15.
+Last audited: 2026-06-20.
 
 The frontend is a Svelte 5 SPA. There is no SvelteKit `src/routes/` tree:
 navigation is URL parsing plus Svelte stores, and `src/App.svelte` chooses the
@@ -21,6 +21,7 @@ generation, assets, storage, Realm import, plugins, or MCP.
 | URL, back/forward, settings section, playground tool, or character route is wrong    | `src/ts/router.ts`, `src/App.svelte` route effects                                                              | `src/ts/router.test.ts`, `src/App.routeEffect*.test.ts`                                                                                  |
 | Theme, spacing, clipping, colors, font, UI scale, or custom CSS is wrong             | `src/styles.css`, `src/ts/gui/colorscheme.ts`, `src/ts/gui/guisize.ts`                                          | `src/lib/Setting/Pages/DisplaySettings.svelte`, `src/ts/setting/displaySettingsData.svelte.ts`                                           |
 | A settings page or left-nav item is wrong                                            | `src/lib/Setting/Settings.svelte`, `src/ts/router.ts` setting slug maps                                         | The concrete `src/lib/Setting/Pages/*.svelte` page                                                                                       |
+| A model role/profile summary, inherited role, or provider panel visibility is wrong  | `src/lib/Setting/Pages/Model/ModelRoleList.svelte`, `src/ts/model/modelProfileUiState.ts`                       | `src/ts/model/modelProfileResolver.ts`, `src/lib/Setting/Pages/BotSettings.svelte`, `docs/structure/providers-and-models.md`             |
 | A data-driven setting row is missing, hidden, stale, or not saving                   | `src/lib/Setting/SettingRenderer.svelte`, `src/ts/setting/*SettingsData*`, `src/ts/setting/utils.ts`            | `src/lib/Setting/Wrappers/*`, `src/ts/server/settingsBridge.svelte.ts`                                                                   |
 | A shared input/control is visually or behaviorally wrong                             | The primitive in `src/lib/UI/GUI/`                                                                              | The wrapper in `src/lib/Setting/Wrappers/` if it only breaks in settings                                                                 |
 | Chat transcript, composer, send buttons, scroll, or hydration state is wrong         | `src/lib/ChatScreens/DefaultChatScreen.svelte`, `src/lib/ChatScreens/Chats.svelte`                              | `src/ts/server/chatMessageHydration.svelte.ts`, `src/ts/chatCommands.ts`                                                                 |
@@ -223,6 +224,23 @@ The settings shell currently separates model and prompt work: settings index
 the legacy Chat Bot/bot-preset page appears only when legacy bot presets still
 exist. Keep router slug maps, `SettingsMenuIndex`, and page visibility
 conditions aligned when changing these sections.
+
+Model settings now have a durable-profile runtime underneath the visible
+compatibility UI:
+
+- `Database.modelProfiles` stores reusable profile records, and
+  `Database.modelRoleProfiles` stores role bindings.
+- `src/ts/model/modelProfileResolver.ts` prefers durable profile records and
+  role bindings, supports inherited role bindings where allowed, and falls back
+  to legacy flat fields.
+- `src/ts/model/modelProfileUiState.ts` feeds resolved summaries and provider
+  visibility into `ModelRoleList.svelte` and `BotSettings.svelte`.
+- Current role settings show resolved profile summaries and inherited role
+  state, but they are not a full durable profile authoring editor. The visible
+  settings controls still edit legacy flat compatibility fields.
+- Durable profile records can be created or updated through settings commands,
+  import, preset, and loadout paths. Do not use browser smoke as proof of
+  visible durable profile creation/editing until a profile editor exists.
 
 Value binding and persistence are centralized in `src/ts/setting/utils.ts`:
 

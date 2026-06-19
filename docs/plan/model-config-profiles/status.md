@@ -2,77 +2,95 @@
 
 Date: 2026-06-20
 
-This workstream is open. Phase 0 current-contract capture, Phase 1 read-only
-profile resolver, Phase 2 preset composition, Phase 3 generation dispatch,
-Phase 4 UI/command adapter, and Phase 5 custom, secrets, and auxiliary surface
-hardening are complete. Phase 6 persisted profiles is next and is not started.
-See [`latest-verification.md`](latest-verification.md).
+This workstream is closed after Phase 7 validation. Phase 0 current-contract
+capture, Phase 1 read-only profile resolver, Phase 2 preset composition,
+Phase 3 generation dispatch, Phase 4 UI/command adapter, Phase 5 custom,
+secrets, and auxiliary surface hardening, Phase 6 persisted profiles, and
+Phase 7 verification and cleanup are complete. See
+[`latest-verification.md`](latest-verification.md).
 
 ## Snapshot
 
-- Plan state: open.
-- Current phase: Phase 5 custom, secrets, and auxiliary surfaces complete;
-  Phase 6 persisted profiles next and not started.
-- Current implementation state: existing flattened `Database` fields remain the
-  compatibility source of truth. `src/ts/model/modelProfileResolver.ts` derives
-  read-only profiles from the flat shape, `src/ts/presetSplit.ts` centralizes
-  effective model/prompt preset composition, and Phase 3 dispatch paths consume
-  resolved profile selection, request models, runtime options, and provider
-  options across Fastify and retained browser-local providers. Phase 4 adapted
-  the settings-facing experience without adding durable profile storage:
-  `ModelRoleList.svelte` shows resolved profile summaries from flat drafts plus
-  `DBState`, `BotSettings.svelte` provider visibility consumes
-  `modelProfileUiState` resolved profiles, split-preset command create/patch/
-  apply paths normalize role and split-model fields, and the role editor drawer
-  is extracted into `ModelRoleEditor`. Provider option panels remain
-  global/flat for compatibility.
-- Phase 5 closed the known auxiliary/custom gaps without changing durable
-  storage: memory summaries now resolve through the `memory` profile, memory
-  embeddings remain a separate Hypa/Voyage/custom embedding path with regression
-  proof, dynamic OpenRouter/NanoGPT catalog fetches receive explicit keys,
-  Fastify and browser OpenAI dispatch variants use profile-owned options,
-  suggestions and image prompts route through the auxiliary role, subtitles route
-  through the translate role, the translation cache is scoped to the resolved
-  profile, `xcustom:::` static fallback options are covered, MCP AI access role
-  routing is pinned, and separate-parameter fallback ownership resolves through
-  the auxiliary profile path.
-- Current compatibility state: no durable `modelProfiles`, `profileBindings`,
-  schema changes, or migrations have been added. Flat compatibility fields
-  remain the source of truth until Phase 6 introduces persisted records.
-  Profile-local secret masking is deferred to Phase 6; current stable-row,
-  custom-model, and provider masking remains flat and covered by existing tests.
-- Current verification state: Phase 5 landed as focused committed slices with
-  targeted runtime tests, final grouped Vitest validation, browser smoke, and
-  TypeScript proof. See [`latest-verification.md`](latest-verification.md).
+- Plan state: closed.
+- Current phase: Phase 7 verification and cleanup complete.
+- Current implementation state: durable model profile records now exist in
+  `Database.modelProfiles`, and durable role bindings now exist in
+  `Database.modelRoleProfiles`. Defaults and normalization run on both the
+  client and Fastify server. Settings commands validate these profile fields,
+  preset/loadout paths preserve them, provider secrets mask profile-local
+  `apiKey` values by stable profile id, and generation dispatch resolves
+  durable profiles before falling back to legacy flat compatibility fields.
+- Phase 6 landed as focused committed slices:
+  - `fea509ef6` `feat: scaffold durable model profiles`
+  - `b7e21fdac` `feat: resolve durable model profile bindings`
+  - `a16e5b9f4` `feat: preserve model profiles in presets`
+  - `559553b21` `feat: support profile request models`
+  - `b42a3cb14` `feat: support profile provider options`
+  - `534b1918f` `feat: support profile api keys`
+  - `9235e5850` `feat: support profile runtime options`
+  - `a7cee559f` `feat: support profile fallback refs`
+  - `64acf9ab2` `feat: support inherited model profile roles`
+- Durable profile data flow: profile records own selected model ids,
+  provider/request options, runtime options, local API key values, and fallback
+  profile refs. Role bindings select profile mode, legacy mode, or inherit mode
+  where a role supports inheritance. The resolver prefers durable records and
+  role bindings when present, composes the profile-owned selected model/request
+  model/provider options/runtime options/api key/fallback refs into the request
+  profile, and then falls back through legacy flat fields for compatibility.
+- Settings and import compatibility: client and server defaults create empty
+  profile records plus default role bindings; command validators reject malformed
+  profile arrays/maps and unsupported nested provider/runtime keys; preset,
+  split-preset, loadout, bootstrap, projection, and selected generation settings
+  paths preserve the durable fields while still accepting older flat shapes.
+- UI state: `ModelRoleList.svelte` shows resolved profile summaries and role
+  binding state, including inherited role behavior, but it is not yet a full
+  durable profile authoring editor. The visible settings UI still edits legacy
+  flat compatibility fields. Durable profile records can be created or updated
+  through settings command, import, preset, and loadout paths.
+- Current compatibility state: flat fields remain the compatibility source and
+  fallback path for legacy imports, copied data, and settings surfaces that have
+  not moved to durable profile authoring. Static/legacy fallback model ids still
+  use flat settings. Memory embeddings remain outside chat model profiles on the
+  Hypa/Voyage/custom embedding contract. Durable profile authoring UI is
+  deferred.
+- Current verification state: Phase 7 final matrix passed, including focused
+  profile/resolver/UI tests, settings/preset/loadout tests, browser request
+  tests, Fastify generation/memory tests, Fastify browser smoke, and both
+  TypeScript checks. Browser smoke validates Fastify browser boot and basic
+  settings/projection flows, not durable profile creation/editing through a
+  visible editor. See [`latest-verification.md`](latest-verification.md).
 
 ## Phase Router
 
-| Phase                                | Status      | Purpose                                                                                                                                                                                                                                                                                                                                                                                                          |
-| ------------------------------------ | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Phase 0: Current Contracts           | Complete    | Freeze current role, provider, preset, fallback, masking, static model, and memory behavior.                                                                                                                                                                                                                                                                                                                     |
-| Phase 1: Read-Only Profile Resolver  | Complete    | Add a shared resolver and compatibility adapter while storage stays flat.                                                                                                                                                                                                                                                                                                                                        |
-| Phase 2: Preset Composition          | Complete    | Centralize base DB, selected model preset, and selected prompt preset composition.                                                                                                                                                                                                                                                                                                                               |
-| Phase 3: Generation Dispatch         | Complete    | Adopt resolved profiles in browser and Fastify generation paths. Phase 3 includes server-owned selection/capability/request-model adoption, provider-options parity across Fastify chat dispatch, and retained browser-local provider helper parity for Gemini/Vertex, OpenAI-compatible, Responses, legacy instruct, Anthropic-family, Mistral, Kobold, native Ollama, Cohere, Horde, and Ooba legacy dispatch. |
-| Phase 4: UI & Command Adapter        | Complete    | Adapt role/profile UI and settings commands while writes target existing fields. Resolved profile summaries now appear in role settings, provider visibility uses resolved profile UI state, split-preset role fields are normalized in command paths, and the model role editor drawer is extracted. Provider panels remain global/flat; deeper move/mirror work is deferred.                                   |
-| Phase 5: Custom, Secrets & Auxiliary | Complete    | Hardened custom models, masking boundaries, memory, translation, auxiliary roles, MCP, playground subtitles, fallbacks, dynamic catalogs, OpenAI options, and separate-parameter ownership while preserving flat compatibility fields.                                                                                                                                                                           |
-| Phase 6: Persisted Profiles          | Not started | Add durable profile records and role bindings after derived parity is proven.                                                                                                                                                                                                                                                                                                                                    |
-| Phase 7: Verification & Cleanup      | Not started | Run final regression, browser smoke, docs updates, compatibility cleanup, and TypeScript proof.                                                                                                                                                                                                                                                                                                                  |
+| Phase                                | Status   | Purpose                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ------------------------------------ | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Phase 0: Current Contracts           | Complete | Freeze current role, provider, preset, fallback, masking, static model, and memory behavior.                                                                                                                                                                                                                                                                                                                     |
+| Phase 1: Read-Only Profile Resolver  | Complete | Add a shared resolver and compatibility adapter while storage stays flat.                                                                                                                                                                                                                                                                                                                                        |
+| Phase 2: Preset Composition          | Complete | Centralize base DB, selected model preset, and selected prompt preset composition.                                                                                                                                                                                                                                                                                                                               |
+| Phase 3: Generation Dispatch         | Complete | Adopt resolved profiles in browser and Fastify generation paths. Phase 3 includes server-owned selection/capability/request-model adoption, provider-options parity across Fastify chat dispatch, and retained browser-local provider helper parity for Gemini/Vertex, OpenAI-compatible, Responses, legacy instruct, Anthropic-family, Mistral, Kobold, native Ollama, Cohere, Horde, and Ooba legacy dispatch. |
+| Phase 4: UI & Command Adapter        | Complete | Adapt role/profile UI and settings commands while writes target existing fields. Resolved profile summaries now appear in role settings, provider visibility uses resolved profile UI state, split-preset role fields are normalized in command paths, and the model role editor drawer is extracted. Provider panels remain global/flat; deeper move/mirror work is deferred.                                   |
+| Phase 5: Custom, Secrets & Auxiliary | Complete | Hardened custom models, masking boundaries, memory, translation, auxiliary roles, MCP, playground subtitles, fallbacks, dynamic catalogs, OpenAI options, and separate-parameter ownership while preserving flat compatibility fields.                                                                                                                                                                           |
+| Phase 6: Persisted Profiles          | Complete | Add durable profile records, role bindings, validation/defaults, profile-local masking, preset/loadout preservation, provider/request/runtime options, fallback profile refs, inherited role bindings, and flat-field compatibility fallbacks after derived parity is proven.                                                                                                                                    |
+| Phase 7: Verification & Cleanup      | Complete | Run final regression, Fastify browser smoke, docs updates, compatibility caveat capture, and TypeScript proof. Browser smoke covers boot/basic settings flows, not visible durable profile authoring UI.                                                                                                                                                                                                         |
 
-## Immediate Next Steps
+## Closeout Notes
 
-1. Start Phase 6 persisted profiles from
-   [`phases/phase-6-persisted-profiles.md`](phases/phase-6-persisted-profiles.md).
-2. Keep flat fields as the compatibility source of truth while adding durable
-   reusable profile records and role bindings.
-3. Add profile-local secret masking only after Phase 6 has stable profile
-   identity; do not treat the current flat masking path as profile-local.
+- Keep `modelProfiles` and `modelRoleProfiles` documented as the durable model
+  configuration path.
+- Keep legacy flat fields documented as compatibility fallbacks until the UI and
+  import/preset compatibility stories retire them deliberately.
+- Do not claim there is a complete visible durable profile editor yet. Current
+  role settings show resolved profile summaries and edit legacy flat fields.
+- Treat memory embeddings as explicitly out of scope for chat profiles until a
+  future plan moves Hypa/Voyage/custom embedding settings.
 
 ## Phase 0 Contract Decisions
 
 - `staticModel` remains a raw model-id bypass. It skips role resolution and
   does not require a stored profile.
-- Legacy fallback entries remain raw model ids. The request fallback path passes
-  each fallback id as `staticModel`; Phase 5 coverage pins `xcustom:::`
+- Legacy fallback entries remain raw model ids in flat compatibility paths. The
+  durable profile path can also carry fallback profile refs. Static/legacy
+  fallback model ids still pass as `staticModel`; coverage pins `xcustom:::`
   static-fallback option behavior under the active resolved provider settings.
   The legacy `submodel` mode has no fallback key.
 - Preset composition remains deterministic: base database -> selected model
@@ -84,22 +102,21 @@ See [`latest-verification.md`](latest-verification.md).
   bot-preset application guards, not general split-preset or profile flags.
 - `customModels` remains a model catalog for now. Future derived profiles may
   reference catalog rows by id, but durable migration is deferred.
-- Memory summary now follows memory-role resolution and OpenAI-compatible
-  provider options. Memory embeddings stay separate for now on
-  Hypa/Voyage/custom embedding fields.
+- Memory summary now follows memory-role profile resolution and profile-owned
+  provider options. Memory embeddings stay separate for now on Hypa/Voyage/
+  custom embedding fields.
 
-## Known Open Decisions
+## Deferred Work
 
-- Whether durable profiles eventually store provider secrets inline, in a nested
-  credentials block, or by reference to provider-account records.
-- Whether `customModels` should stay a model catalog consumed by profiles or
-  move into provider-specific profile records.
-- Which legacy fields become profile-local first when Phase 6 introduces
-  persisted records, especially OpenAI-compatible, OpenRouter, NanoGPT, Ollama,
-  and Custom API options.
-- Whether prompt preset model overrides should bind roles to alternate profiles,
-  patch selected profile fields, or remain as explicit legacy overrides during
-  compatibility.
-- Whether memory embeddings eventually join any profile model after the chat
-  resolver is proven, since they currently use `hypaModel`,
+- Build a visible durable profile authoring UI instead of only showing resolved
+  summaries in role settings.
+- Decide when each legacy flat provider/model field can be hidden, migrated, or
+  removed after import/preset compatibility is no longer needed.
+- Decide whether `customModels` should stay a model catalog consumed by profiles
+  or move into provider-specific profile records.
+- Decide whether prompt preset model overrides should bind roles to alternate
+  profiles, patch selected profile fields, or remain explicit legacy overrides
+  during compatibility.
+- Decide whether memory embeddings eventually join any profile model after the
+  chat resolver is proven, since they currently use `hypaModel`,
   `hypaCustomSettings`, `hypaV3Key`, and `voyageApiKey`.

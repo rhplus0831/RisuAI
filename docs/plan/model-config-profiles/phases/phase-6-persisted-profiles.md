@@ -1,23 +1,36 @@
 # Phase 6: Persisted Profiles
 
-Status: not started.
+Status: complete.
 
 Goal: introduce durable reusable model profile records and role bindings only
 after the derived resolver, dispatch, presets, UI adapter, and auxiliary paths
 are proven.
 
+## Completed Slices
+
+- `fea509ef6` `feat: scaffold durable model profiles`
+- `b7e21fdac` `feat: resolve durable model profile bindings`
+- `a16e5b9f4` `feat: preserve model profiles in presets`
+- `559553b21` `feat: support profile request models`
+- `b42a3cb14` `feat: support profile provider options`
+- `534b1918f` `feat: support profile api keys`
+- `9235e5850` `feat: support profile runtime options`
+- `a7cee559f` `feat: support profile fallback refs`
+- `64acf9ab2` `feat: support inherited model profile roles`
+
 ## Scope
 
-- Add TypeScript types for durable model profiles, role bindings, provider
-  option blocks, runtime option blocks, and fallback references.
-- Add defaults and normalization on both client and server.
-- Add settings command validation for profile arrays/maps and role bindings.
-- Add provider secret masking and masked-placeholder resolution for durable
-  profile secrets.
-- Add import/export, bootstrap projection, selected chat generation settings,
-  loadout, and split-preset support for new fields.
-- Add read-through compatibility from old flat fields and legacy preset files.
-- Keep copied `data` folder and old `.risu` shapes readable during the
+- Added TypeScript types and validators for durable model profiles, role
+  bindings, provider option blocks, runtime option blocks, and fallback profile
+  references.
+- Added defaults and normalization on both client and server.
+- Added settings command validation for profile arrays/maps and role bindings.
+- Added provider secret masking and masked-placeholder resolution for
+  profile-local `apiKey` values using stable profile ids.
+- Preserved durable fields through import/export, bootstrap/projection, selected
+  chat generation settings, loadout, and split-preset paths.
+- Added read-through compatibility from old flat fields and legacy preset files.
+- Kept copied `data` folder and old `.risu` shapes readable during the
   compatibility period.
 
 ## Anchors
@@ -36,27 +49,31 @@ are proven.
 
 ## Target Shape
 
-The exact shape is a Phase 0 decision. The durable implementation should
-support at least:
+The durable implementation supports:
 
-- `modelProfiles`: stable-id collection or keyed map of profile records.
-- `modelRoleProfiles`: canonical role bindings with inherit/profile modes.
-- Profile-local provider settings for `reverse_proxy`, OpenAI, OpenRouter,
-  NanoGPT, Ollama, key-identifier OpenAI-compatible models, Anthropic, Mistral,
-  Cohere, Gemini/Vertex, Horde, Kobold, and Ooba legacy where supported.
-- Profile-local runtime settings for fields that directly affect a request.
-- Compatibility metadata that lets the resolver distinguish profiles generated
-  from legacy flat fields from user-authored profiles.
+- `modelProfiles`: stable-id collection of profile records with names, selected
+  model ids, provider options, runtime options, and fallback profile refs.
+- `modelRoleProfiles`: canonical role bindings with legacy, profile, and
+  supported inherit modes.
+- Profile-local selected/request model data, provider options/endpoints,
+  local API key values, and runtime options that directly affect a request.
+- Compatibility fallbacks that let the resolver use legacy flat fields when
+  durable profile records or bindings are absent.
 
 ## Exit Criteria
 
-- New fields are defaulted and normalized in client and server defaults.
-- Settings commands accept and validate new fields.
-- Secret masking handles nested profile keys with stable row identity.
-- Split preset and loadout code can preserve and apply profile fields.
-- The resolver prefers durable profile records when present and falls back to
-  legacy flat fields when absent.
-- Existing flat-field import and legacy preset tests still pass.
+- Complete. New fields are defaulted and normalized in client and server
+  defaults.
+- Complete. Settings commands accept and validate new fields.
+- Complete. Secret masking handles nested profile API keys with stable profile
+  identity.
+- Complete. Split preset and loadout code can preserve and apply profile fields.
+- Complete. The resolver prefers durable profile records when present and falls
+  back to legacy flat fields when absent.
+- Complete. Existing flat-field import and legacy preset tests still pass.
+- Caveat: durable profile authoring UI is not part of this phase. Current role
+  settings show resolved profile summaries and edit legacy flat compatibility
+  fields.
 
 ## Validation
 
@@ -67,11 +84,15 @@ pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 ```
 
+Final Phase 7 validation broadened this matrix and passed. See
+[`../latest-verification.md`](../latest-verification.md).
+
 ## Risks
 
-- Nested secret masking will fail if profile rows lack stable ids.
-- Settings patch validation may accept malformed provider option blocks if the
-  first pass treats profiles as generic JSON. Prefer targeted validators for
-  fields that affect dispatch.
-- Introducing storage too early would hide dispatch gaps under migration code.
-  Keep this phase last among feature phases.
+- Stable profile ids are required for correct profile-local API key masking.
+- Settings patch validation should keep using targeted validators for
+  request-affecting provider/runtime fields.
+- Flat fields remain active compatibility fallbacks. Removing them too
+  aggressively can break legacy imports, copied `data` folders, static fallback
+  model ids, or settings surfaces that have not moved to durable profile
+  authoring.

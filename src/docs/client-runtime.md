@@ -1,6 +1,6 @@
 # Client Runtime Guide
 
-Last audited: 2026-06-15.
+Last audited: 2026-06-20.
 
 This file covers browser TypeScript areas that influence visible Svelte UI. For
 component ownership and UI triage, start with `src/docs/svelte-ui.md`.
@@ -18,7 +18,7 @@ on demand.
 | `src/ts/storage/`                                                                                                                                                              | Browser projection database, server-backed auth/storage compatibility, `.risu` helpers, backup helpers, and auto-storage selection.                                                                          |
 | `src/ts/process/`                                                                                                                                                              | `sendChat`, server-backed generation bridge, durable reattach, files/MCP/memory/embedding/post-generation helpers, retained parity helpers.                                                                  |
 | `src/ts/process/request/`                                                                                                                                                      | Provider/server-routing classifiers, chat/completion/memory request adapters, SSE parsing, message patch helpers.                                                                                            |
-| `src/ts/model/`, `src/ts/horde/`                                                                                                                                               | Browser model registry and provider catalog helpers used by settings and generation preflight.                                                                                                               |
+| `src/ts/model/`, `src/ts/horde/`                                                                                                                                               | Browser model registry, durable profile records/resolver/UI state, and provider catalog helpers used by settings and generation preflight.                                                                   |
 | `src/ts/plugins/`                                                                                                                                                              | Browser plugin loading/runtime and Plugin V3 API host. Fastify stores plugin records but does not execute plugins.                                                                                           |
 | `src/ts/process/mcp/`                                                                                                                                                          | Browser MCP clients, internal tools, Risu access tools, and plugin MCP clients.                                                                                                                              |
 | `src/ts/media/`, `src/ts/parser/`, `src/ts/gui/`, `src/ts/setting/`, `src/ts/translator/`, `src/ts/network/`, `src/ts/kei/`, `src/ts/util/`                                    | Focused helper domains that feed visible UI and tests.                                                                                                                                                       |
@@ -102,6 +102,21 @@ Detailed bootstrap, targeted projection, hydration, SSE reconcile, projection
 write guard, and bridge watcher rules live in
 `docs/structure/server-projection-and-bridges.md`.
 
+Model profile projection notes:
+
+- `DBState.db.modelProfiles` and `DBState.db.modelRoleProfiles` are durable
+  Fastify-backed fields. Client and server defaults normalize them, and command
+  patches validate their record, role-binding, provider option, runtime option,
+  and fallback-ref shapes.
+- Preset, split-preset, loadout, import, bootstrap, and projection paths
+  preserve these durable fields while still accepting legacy flat data.
+- Provider secret masking covers profile-local `apiKey` values by stable
+  profile id. Masked placeholders are resolved server-side during settings
+  writes.
+- The browser settings UI can show resolved profile summaries and inherited
+  role state, but a full durable profile authoring editor is deferred. Current
+  visible controls still edit legacy flat compatibility fields.
+
 ## Generation Client
 
 `sendChat` in `src/ts/process/index.svelte.ts` is the browser coordinator for
@@ -129,6 +144,16 @@ allowed. Disconnect detaches from durable jobs; abort/cancel uses the durable
 DELETE path when a job exists. Terminal `postGeneration` data can advance the
 revision cache. Generation results are persisted server-side, so the browser
 suppresses the old generation-result command in server-backed paths.
+
+Generation profile resolution happens before provider dispatch. Durable profile
+records can own selected model ids, request/wire model ids, provider
+options/endpoints, profile-local API keys, runtime options, and fallback profile
+refs. Role bindings can select profile mode, legacy mode, or supported inherit
+mode. When no durable profile context applies, the resolver falls back to
+legacy flat fields for compatibility. Static and legacy fallback model ids still
+use the flat `staticModel` path. Memory summaries use memory-role profile
+resolution, while memory embeddings remain outside chat profiles on the
+Hypa/Voyage/custom embedding contract.
 
 When generation UI is wrong, inspect both the Svelte surface
 `src/lib/ChatScreens/DefaultChatScreen.svelte` and the runtime files above.

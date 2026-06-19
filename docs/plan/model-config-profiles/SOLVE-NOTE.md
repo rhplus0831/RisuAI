@@ -34,19 +34,33 @@ pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 
 ## Current State
 
-The plan is open. Phase 0, Phase 1, Phase 2, Phase 3, Phase 4, and Phase 5 are
-complete. Phase 6 persisted profiles is next and is not started.
+The plan is closed. Phase 0, Phase 1, Phase 2, Phase 3, Phase 4, Phase 5,
+Phase 6, and Phase 7 are complete.
 
-Existing flat database fields remain the compatibility source of truth.
-`src/ts/model/modelProfileResolver.ts` derives read-only profiles from the flat
-settings shape, `src/ts/presetSplit.ts` centralizes effective model/prompt
-preset composition, and dispatch paths consume resolved profiles across Fastify
-and retained browser-local provider helpers.
+Durable model profile records now live in `Database.modelProfiles`, and durable
+role bindings live in `Database.modelRoleProfiles`. Client and server defaults
+normalize those fields, settings commands validate them, provider secret masking
+handles profile-local `apiKey` values by stable profile id, preset/split-preset
+and loadout paths preserve them, and `src/ts/model/modelProfileResolver.ts`
+prefers durable profiles before falling back to legacy flat fields.
+
+Phase 6 landed in these committed slices:
+
+- `fea509ef6` `feat: scaffold durable model profiles`
+- `b7e21fdac` `feat: resolve durable model profile bindings`
+- `a16e5b9f4` `feat: preserve model profiles in presets`
+- `559553b21` `feat: support profile request models`
+- `b42a3cb14` `feat: support profile provider options`
+- `534b1918f` `feat: support profile api keys`
+- `9235e5850` `feat: support profile runtime options`
+- `a7cee559f` `feat: support profile fallback refs`
+- `64acf9ab2` `feat: support inherited model profile roles`
 
 Phase 4 adapted the settings-facing layer while preserving flat writes:
 
 - `ModelRoleList.svelte` shows resolved profile summaries from flat drafts plus
-  `DBState`.
+  `DBState`. After Phase 6, it can also show durable profile role summaries and
+  inherited role state.
 - `BotSettings.svelte` provider visibility consumes `modelProfileUiState`
   resolved profiles instead of only asking whether any effective role model uses
   a provider.
@@ -55,7 +69,8 @@ Phase 4 adapted the settings-facing layer while preserving flat writes:
 - The model role editor drawer is extracted to `ModelRoleEditor`.
 
 Provider option panels intentionally remain global/flat for compatibility.
-Moving or mirroring those panels further is a Phase 6 compatibility decision.
+Moving or mirroring those panels further is deferred to a future visible profile
+authoring UI.
 
 Phase 5 closed the known auxiliary/custom gaps while preserving flat writes:
 
@@ -70,19 +85,24 @@ Phase 5 closed the known auxiliary/custom gaps while preserving flat writes:
 - `xcustom:::` static fallback options, MCP AI access role routing, and
   auxiliary separate-parameter fallback ownership are pinned by tests.
 
-No durable `modelProfiles`, `profileBindings`, database schema changes, or
-migrations exist yet. Flat compatibility fields remain the source of truth until
-Phase 6. Profile-local secret masking is deferred to Phase 6; current stable-row,
-custom-model, and provider masking remains flat and covered by existing tests.
+Durable profile authoring UI is not implemented. Current role settings UI shows
+resolved profile summaries and edits legacy flat compatibility fields. Durable
+profile records can be created or updated through settings commands, import,
+preset, and loadout paths, but not through a full visible profile editor yet.
 
-## Next Manager Loop
+Flat compatibility fields remain active fallbacks for legacy imports, copied
+data, static model bypasses, legacy fallback model ids, and settings surfaces
+that have not moved to profile authoring. Memory summaries use profile
+resolution; memory embeddings remain separate on Hypa/Voyage/custom embedding
+fields.
 
-1. Start Phase 6 persisted profiles from
-   [`phases/phase-6-persisted-profiles.md`](phases/phase-6-persisted-profiles.md).
-2. Add durable profile records, role bindings, schema, migrations, and
-   profile-local secret masking only inside Phase 6.
-3. Preserve flat compatibility fields during the Phase 6 rollout until the plan
-   explicitly retires or migrates each field.
+## Closeout Loop
+
+1. Treat the model-config-profiles workstream as closed after Phase 7 proof.
+2. Start a new plan for visible durable profile authoring UI if that work
+   resumes.
+3. Preserve flat compatibility fields until a future plan retires each field
+   deliberately.
 
 ## Known Corrections
 
@@ -95,7 +115,9 @@ custom-model, and provider masking remains flat and covered by existing tests.
 ## Completed Proof
 
 Latest proof is recorded in [`latest-verification.md`](latest-verification.md).
-It covers Phase 5 committed slices, docs closeout, final grouped Vitest
-validation, browser smoke, and TypeScript proof. The repo-wide `pnpm check`
-caveat remains: do not record it as passing unless it is rerun and verified
-separately.
+It covers Phase 6 committed slices, Phase 7 docs closeout, final grouped Vitest
+validation, Fastify browser smoke, and TypeScript proof. Browser smoke validates
+Fastify browser boot and basic settings/projection flows; it does not prove
+durable profile creation/editing through a visible profile authoring UI. The
+repo-wide `pnpm check` caveat remains: do not record it as passing unless it is
+rerun and verified separately.
