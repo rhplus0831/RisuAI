@@ -34,10 +34,18 @@ pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 
 ## Current State
 
-The plan is open and implementation has not started. The current codebase still
-uses flat database fields for model role selection, provider credentials,
-request models, and runtime options. The initial planning pass identified the
-main coupled surfaces:
+The plan is open. Phase 0, Phase 1, Phase 2, and Phase 3a-3i are complete. The
+current worker slice is browser request helper role/static/fallback resolver
+adoption: `requestChatData()` now builds fallback attempts from
+`resolveModelProfile(...).fallbacks`, `requestChatDataMain()` resolves the role
+or static model once through the profile resolver, and server-intent completion
+payloads remain thin.
+
+The current codebase still uses flat database fields as the compatibility
+source of truth. Durable reusable profile storage has not been introduced, and
+retained browser-local provider helper branches still reconstruct many provider
+credentials, URLs, request models, and additional params from flat fields. The
+main coupled surfaces remain:
 
 - `src/ts/model/modelRoles.ts` resolves roles to model ids only.
 - `src/lib/Setting/Pages/Model/ModelRoleList.svelte` edits role model ids,
@@ -53,18 +61,14 @@ main coupled surfaces:
 
 ## Next Manager Loop
 
-1. Start Phase 0 by adding parity fixtures for the current role, provider,
-   `staticModel`, fallback, preset, masking, and memory behavior.
-2. Use an explorer to validate fallback and preset semantics before expanding
-   the resolver contract.
-3. Do not begin Phase 3 dispatch work until Phase 1 resolver tests prove the
-   compatibility adapter can reproduce current behavior for `aiModel`,
-   `subModel`, optional roles, `reverse_proxy`, `xcustom:::`, OpenRouter,
-   NanoGPT, Ollama, and provider key identifiers.
-4. Keep Phase 2 preset composition ahead of dispatch so the resolver receives
-   the same effective settings on client and server paths.
-5. Do not add durable profile storage until Phase 6. Earlier phases should use
+1. Continue Phase 3 only on the remaining browser-local provider helper parity
+   gaps: adopt resolver-derived provider options where equivalent without
+   changing server-intent payload shape or reshaping provider secrets/storage.
+2. Keep UI writes targeting existing flat fields until the Phase 4 adapter work.
+3. Do not add durable profile storage until Phase 6. Earlier phases should use
    a derived profile object built from the existing settings shape.
+4. Record each slice's proof in `latest-verification.md` before updating this
+   note again.
 
 ## Known Corrections
 
@@ -76,5 +80,7 @@ main coupled surfaces:
 
 ## Completed Proof
 
-No implementation proof exists yet. Documentation formatting proof should be
-recorded in `latest-verification.md` after this folder is created.
+Latest proof is recorded in [`latest-verification.md`](latest-verification.md).
+It covers this browser request helper role/static/fallback resolver adoption
+slice, focused browser and Fastify generation tests, Prettier, client-lib
+TypeScript, strict server TypeScript, and `git diff --check`.

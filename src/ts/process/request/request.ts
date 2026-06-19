@@ -1,8 +1,8 @@
 import { Ollama } from 'ollama/dist/browser.mjs'
 import { language } from '../../../lang'
 import { fetchNative, globalFetch } from '../../globalApi.svelte'
-import { resolveModelForRole, type LegacyFallbackModelKey } from '../../model/modelRoles'
-import { getModelInfo, LLMFlags, LLMFormat, type LLMModel } from '../../model/modellist'
+import { resolveModelProfile } from '../../model/modelProfileResolver'
+import { LLMFlags, LLMFormat, type LLMModel } from '../../model/modellist'
 import { risuChatParser, risuEscape, risuUnescape } from '../../parser/parser.svelte'
 import { pluginProcess, pluginV2 } from '../../plugins/plugins.svelte'
 import { getCurrentCharacter, getCurrentChat, getDatabase, type character } from '../../storage/database.svelte'
@@ -100,10 +100,6 @@ export interface StreamResponseChunk {
 }
 
 type OllamaThinkMode = boolean | 'low' | 'medium' | 'high'
-
-function fallbackKeyForModelMode(model: ModelModeExtended): LegacyFallbackModelKey | null {
-  return model === 'submodel' ? null : model
-}
 
 function getOllamaThinkMode(mode: string): OllamaThinkMode | undefined {
   switch (mode) {
@@ -221,9 +217,9 @@ export async function requestChatData(
   abortSignal: AbortSignal = null,
 ): Promise<requestDataResponse> {
   const db = getDatabase()
-  const fallbackKey = fallbackKeyForModelMode(model)
-  const fallBackModels: string[] = safeStructuredClone(
-    fallbackKey === null ? [] : (db?.fallbackModels?.[fallbackKey] ?? []),
+  const resolvedProfile = resolveModelProfile({ database: db, role: model })
+  const fallBackModels = resolvedProfile.fallbacks.flatMap((fallback) =>
+    fallback.kind === 'legacy-model-id' ? [fallback.modelId] : [],
   )
   fallBackModels.push('')
   let da: requestDataResponse
@@ -242,7 +238,7 @@ export async function requestChatData(
     let trys = 0
     arg.formated = safeStructuredClone(originalFormated)
 
-    if (fallbackIndex !== 0 && !fallBackModels[fallbackIndex]) {
+    if (fallbackIndex !== fallBackModels.length - 1 && !fallBackModels[fallbackIndex]) {
       continue
     }
 
@@ -457,9 +453,12 @@ export async function requestChatDataMain(
 ): Promise<requestDataResponse> {
   const db = getDatabase()
   const targ: RequestDataArgumentExtended = arg
+  const resolvedProfile = resolveModelProfile({ database: db, role: model, staticModel: arg.staticModel })
+  const runtimeOptions = resolvedProfile.runtimeOptions
+  const providerOptions = resolvedProfile.providerOptions
 
-  targ.aiModel = arg.staticModel ? arg.staticModel : resolveModelForRole(db, model)
-  targ.modelInfo = getModelInfo(targ.aiModel)
+  targ.aiModel = resolvedProfile.modelId
+  targ.modelInfo = resolvedProfile.modelInfo
 
   if (arg.blockPlugins && targ.modelInfo.id.startsWith('pluginmodel:::')) {
     return {
@@ -469,27 +468,27 @@ export async function requestChatDataMain(
   }
 
   targ.formated = safeStructuredClone(arg.formated)
-  targ.maxTokens = arg.maxTokens ?? db.maxResponse
-  targ.temperature = arg.temperature ?? db.temperature / 100
+  targ.maxTokens = arg.maxTokens ?? runtimeOptions.maxResponse ?? db.maxResponse
+  targ.temperature = arg.temperature ?? runtimeOptions.temperature ?? db.temperature / 100
   targ.bias = arg.bias
   targ.currentChar = arg.currentChar
-  targ.useStreaming = arg.forceStreaming ? true : db.useStreaming && arg.useStreaming
+  targ.useStreaming = arg.forceStreaming ? true : (runtimeOptions.useStreaming ?? db.useStreaming) && arg.useStreaming
   targ.continue = arg.continue ?? false
   targ.biasString = arg.biasString ?? []
-  targ.multiGen = db.genTime > 1 && targ.aiModel.startsWith('gpt') && !arg.continue && !arg.noMultiGen
+  targ.multiGen =
+    (runtimeOptions.genTime ?? db.genTime) > 1 && targ.aiModel.startsWith('gpt') && !arg.continue && !arg.noMultiGen
   targ.abortSignal = abortSignal
   targ.mode = model
-  targ.extractJson = arg.extractJson ?? db.extractJson
+  targ.extractJson = arg.extractJson ?? runtimeOptions.extractJson ?? db.extractJson
   if (targ.aiModel === 'reverse_proxy') {
-    targ.modelInfo.internalID = db.customProxyRequestModel
-    targ.modelInfo.format = db.customAPIFormat
+    targ.modelInfo.internalID = providerOptions.requestModel
     targ.customURL = db.forceReplaceUrl
-    targ.key = db.proxyKey
+    targ.key = providerOptions.apiKey ?? db.proxyKey
   }
   if (targ.aiModel.startsWith('xcustom:::')) {
     const found = db.customModels.find((m) => m.id === targ.aiModel)
-    targ.customURL = found?.url
-    targ.key = found?.key
+    targ.customURL = providerOptions.customModel?.url ?? found?.url
+    targ.key = providerOptions.apiKey ?? found?.key
   }
 
   const serverRoute = resolveServerCompletionRoute(targ)

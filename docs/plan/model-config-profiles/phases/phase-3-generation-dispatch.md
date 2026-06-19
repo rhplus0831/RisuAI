@@ -1,6 +1,6 @@
 # Phase 3: Generation Dispatch
 
-Status: in progress; Phase 3a server-owned profile selection/capability/request-model slice complete; Phase 3b Fastify OpenAI-compatible provider-options slice complete; Phase 3c Fastify Anthropic/Mistral/Cohere provider-options slice complete; Phase 3d Fastify native Ollama provider-options slice complete; Phase 3e Fastify Kobold provider-options slice complete; Phase 3f Fastify Horde provider-options slice complete; Phase 3g Fastify OobaLegacy provider-options slice complete; Phase 3h Fastify Bedrock provider-options slice complete; Phase 3i Fastify Gemini/Vertex provider-options slice complete.
+Status: in progress; Phase 3a server-owned profile selection/capability/request-model slice complete; Phase 3b Fastify OpenAI-compatible provider-options slice complete; Phase 3c Fastify Anthropic/Mistral/Cohere provider-options slice complete; Phase 3d Fastify native Ollama provider-options slice complete; Phase 3e Fastify Kobold provider-options slice complete; Phase 3f Fastify Horde provider-options slice complete; Phase 3g Fastify OobaLegacy provider-options slice complete; Phase 3h Fastify Bedrock provider-options slice complete; Phase 3i Fastify Gemini/Vertex provider-options slice complete; browser request helper role/static/fallback resolver adoption slice complete.
 
 Goal: move browser and Fastify generation dispatch from ad hoc flat database
 reads to the resolved profile runtime object.
@@ -175,12 +175,38 @@ reads to the resolved profile runtime object.
   call `fetch`, and that profile-derived Gemini request-model behavior,
   including `models/` stripping, remains pinned.
 
+## Implemented Browser Request Helper Role/Static/Fallback Slice
+
+- Browser `requestChatData()` now derives fallback attempts from
+  `resolveModelProfile({ database, role }).fallbacks` instead of reconstructing
+  fallback buckets directly from `db.fallbackModels`.
+- Legacy fallback model ids are still sent to each attempt as `staticModel`
+  values, configured fallback ids are attempted before the final primary
+  `staticModel: ""` attempt, and `submodel` still has no fallback bucket.
+- Browser `requestChatDataMain()` now resolves once with
+  `resolveModelProfile({ database, role, staticModel })`, then populates
+  `targ.aiModel` and `targ.modelInfo` from the resolved profile.
+- Behavior-equivalent defaults for max tokens, temperature, streaming, multigen,
+  and JSON extraction now read from profile runtime options with the legacy flat
+  fields as fallback.
+- The `reverse_proxy` and `xcustom:::` local target shims now prefer
+  `profile.providerOptions` for equivalent key/custom-model data and keep the
+  legacy raw URL/key fallbacks needed by retained browser-local provider
+  helpers.
+- `requestServerCompletion()` payload shape is unchanged: server intent still
+  sends only `kind`, `messages`, `stream`, `mode`, `staticModel`, `maxTokens`,
+  `temperature`, and `currentCharName`.
+
 ## Remaining Phase 3 Work
 
-- Migrate the remaining browser completion/request helper paths to consume the
-  resolver contract for role/static fallback selection.
-- Broaden provider parity for browser completion/request helpers before marking
-  the full Phase 3 complete.
+- Broaden provider parity for retained browser-local request helpers before
+  marking full Phase 3 complete. The browser role/static/fallback selection path
+  now uses the resolver, but local helper branches such as OpenAI-compatible,
+  Anthropic, Gemini/Vertex, Mistral, Cohere, Ollama, Kobold, Horde, and Ooba
+  still read many provider-specific options directly from flat database fields.
+- Verify any future browser-local provider option adoption without changing the
+  server-intent payload shape or editing Fastify generation routes unless a real
+  regression is exposed.
 
 ## Anchors
 
@@ -227,22 +253,25 @@ pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 ```
 
-Latest Phase 3i run:
+Latest browser request helper role/static/fallback resolver adoption run:
 
 ```bash
-pnpm exec vitest run src/ts/model/modelProfileResolver.test.ts
-pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/chatDispatchProfileOptions.test.ts server/fastify/__tests__/gemini.test.ts server/fastify/__tests__/generation.chat.test.ts server/fastify/__tests__/generation.completion.test.ts
+pnpm exec prettier --write src/ts/process/request/request.ts src/ts/process/request/tests/modelRoleRouting.test.ts src/ts/process/request/tests/serverCompletion.test.ts docs/plan/model-config-profiles/status.md docs/plan/model-config-profiles/latest-verification.md docs/plan/model-config-profiles/phases/phase-3-generation-dispatch.md docs/plan/model-config-profiles/SOLVE-NOTE.md
+pnpm exec vitest run src/ts/process/request/tests/modelRoleRouting.test.ts src/ts/process/request/tests/serverCompletion.test.ts src/ts/process/request/tests/providerCapability.test.ts src/ts/process/request/tests/serverChat.test.ts
+pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/generation.completion.test.ts server/fastify/__tests__/generation.chat.test.ts server/fastify/__tests__/providerCapabilityRoute.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
+git diff --check
 ```
 
 Results:
 
-- Focused resolver tests: passed, 1 file / 20 tests.
-- Focused Fastify chat dispatch/Gemini/chat/completion tests: passed, 4 files /
-  229 tests.
+- Prettier: passed.
+- Focused browser request/provider tests: passed, 4 files / 90 tests.
+- Focused Fastify generation/provider tests: passed, 3 files / 177 tests.
 - Client-lib TypeScript: passed.
 - Server strict TypeScript: passed.
+- Whitespace check: passed.
 
 ## Risks
 
