@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { LLMFormat } from '../../../src/ts/model/types'
 import type { Database } from '../../../src/ts/storage/database.svelte'
+import { resolveModelProfile } from '../../../src/ts/model/modelProfileResolver'
 import { resolveChatProviderRoute } from '../src/prompt/chatDispatch.js'
 
 // Proves the server /chat dispatcher wires the shared capability table
@@ -75,6 +76,20 @@ describe('resolveChatProviderRoute — routable', () => {
       ),
     ).toEqual({ routable: true, provider: 'anthropic' })
   })
+
+  it('can route directly from a resolved profile capability verdict', () => {
+    const database = db({
+      aiModel: 'ollama-cloud',
+      ollamaApiKey: 'k',
+      ollamaRequestFormat: LLMFormat.OpenAIResponseAPI,
+    } as Partial<Database>)
+    const profile = resolveModelProfile({ database })
+    expect(profile.providerCapability).toEqual({ routable: true, provider: 'openai-responses' })
+    expect(resolveChatProviderRoute(database, profile)).toEqual({
+      routable: true,
+      provider: 'openai-responses',
+    })
+  })
 })
 
 describe('resolveChatProviderRoute — unsupported (specific messages preserved)', () => {
@@ -91,6 +106,16 @@ describe('resolveChatProviderRoute — unsupported (specific messages preserved)
   it('keeps the server-only unknown-OpenAI-compatible-id guard', () => {
     const route = resolveChatProviderRoute(db({ aiModel: 'unregistered-local-model' }))
     expect(route.routable).toBe(false)
+    expect(route).toEqual({
+      routable: false,
+      reason:
+        'unsupported /chat provider: unknown OpenAI-compatible model "unregistered-local-model" cannot be dispatched by the server',
+    })
+  })
+
+  it('keeps the unknown-id guard when the route helper receives a resolved profile', () => {
+    const database = db({ aiModel: 'unregistered-local-model', openAIKey: 'sk-server-owned' })
+    const route = resolveChatProviderRoute(database, resolveModelProfile({ database }))
     expect(route).toEqual({
       routable: false,
       reason:

@@ -336,6 +336,19 @@ describe('resolveModelProfile provider/runtime normalization', () => {
     })
   })
 
+  it('marks unknown OpenAI-compatible ids as server-unsupported while storage remains flat', () => {
+    const profile = resolveModelProfile({
+      database: db({
+        aiModel: 'unregistered-local-model',
+        openAIKey: 'sk-server-owned',
+      } as Partial<Database>),
+    })
+
+    expect(profile.modelInfo.unsupportedReason).toBe(
+      'unsupported /chat provider: unknown OpenAI-compatible model "unregistered-local-model" cannot be dispatched by the server',
+    )
+  })
+
   it('lets custom flags override lookup-provided model metadata and exposes runtime options', () => {
     const profile = resolveModelProfile({
       database: db({

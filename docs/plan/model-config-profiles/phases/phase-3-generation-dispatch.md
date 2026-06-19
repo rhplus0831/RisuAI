@@ -1,6 +1,6 @@
 # Phase 3: Generation Dispatch
 
-Status: not started.
+Status: in progress; Phase 3a server-owned profile selection/capability/request-model slice complete.
 
 Goal: move browser and Fastify generation dispatch from ad hoc flat database
 reads to the resolved profile runtime object.
@@ -19,6 +19,34 @@ reads to the resolved profile runtime object.
 - Preserve server-intent rejection of provider/model/options/secrets supplied
   directly by the client.
 - Keep old flat-field compatibility through the Phase 1 adapter.
+
+## Implemented Phase 3a Slice
+
+- Browser server-prompt preflight now resolves a profile from the Phase 2
+  effective model-runtime database. Provider capability and image-input checks
+  read the resolved profile instead of a hand-built completion target.
+- Fastify chat dispatch now accepts or derives a resolved profile and uses it
+  for provider routing, message reformat flags, and the provider request model.
+- Fastify server-intent completion now resolves the selected profile from the
+  unmasked server settings using `mode` plus optional `staticModel`, then passes
+  that profile to chat dispatch while preserving rejection of client-supplied
+  `provider`, `model`, and `options`.
+- The server-only unknown OpenAI-compatible id guard is also present on
+  `resolveServerSafeModelInfo`/resolved profiles, so arbitrary ids do not become
+  routable through the profile path.
+- Flat provider option branches remain intentionally in place. API keys, base
+  URLs, additional params, and provider-specific credentials still come from the
+  existing flat database fields in this slice.
+
+## Remaining Phase 3 Work
+
+- Migrate the remaining browser completion/request helper paths to consume the
+  resolver contract for role/static fallback selection.
+- Decide and test the next provider-option migration step before moving API
+  keys, base URLs, additional params, or custom provider details into
+  `profile.providerOptions`.
+- Broaden provider parity beyond the Phase 3a request-model surface before
+  marking the full Phase 3 complete.
 
 ## Anchors
 
@@ -64,6 +92,24 @@ pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__t
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 ```
+
+Latest Phase 3a run:
+
+```bash
+pnpm exec vitest run src/ts/model/modelProfileResolver.test.ts src/ts/process/request/tests/serverPromptAssembly.test.ts src/ts/process/request/tests/serverCompletion.test.ts src/ts/process/request/tests/modelRoleRouting.test.ts src/ts/process/request/tests/providerCapability.test.ts
+pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/modelProfileResolver.server.test.ts server/fastify/__tests__/providerCapabilityRoute.test.ts server/fastify/__tests__/generation.completion.test.ts server/fastify/__tests__/generation.chat.test.ts server/fastify/__tests__/providerTransport.test.ts
+pnpm exec tsc -p tsconfig.client-lib.json
+pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
+```
+
+Results:
+
+- Focused browser resolver/preflight/completion/routing/capability tests:
+  passed, 5 files / 100 tests.
+- Focused Fastify resolver/capability/completion/chat/transport tests: passed,
+  5 files / 183 tests.
+- Client-lib TypeScript: passed.
+- Server strict TypeScript: passed.
 
 ## Risks
 

@@ -11,6 +11,7 @@ import { writePersistedWithMessages } from '../src/repository.js'
 import { attachAbort } from '../src/requestAbort.js'
 import { pipeStream } from '../src/routes/generation.js'
 import type { CompletionStreamFrame } from '../src/generation/frames.js'
+import { LLMFormat } from '../../../src/ts/model/types'
 
 const subtle = webcrypto.subtle
 
@@ -126,6 +127,20 @@ function writeDatabase(database: Record<string, unknown>): void {
   } finally {
     db.close()
   }
+}
+
+function openAIChatResponse(text: string): Response {
+  return new Response(JSON.stringify({ choices: [{ message: { content: text }, finish_reason: 'stop' }] }), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  })
+}
+
+function ollamaChatResponse(text: string, model = 'ollama-model'): Response {
+  return new Response(JSON.stringify({ model, message: { role: 'assistant', content: text }, done: true }), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  })
 }
 
 interface FakeRawReply {
@@ -444,6 +459,158 @@ describe('Phase 6-1 POST /api/v1/generate/completion', () => {
       max_tokens: 11,
       temperature: 0.25,
     })
+  })
+
+  it('server-intent completion dispatches provider request models from the resolved profile', async () => {
+    const captured: Array<{ url: string; body: Record<string, unknown>; headers: Record<string, string> }> = []
+    globalThis.fetch = (async (url: string, init: RequestInit) => {
+      captured.push({
+        url,
+        body: JSON.parse(String(init.body ?? '{}')) as Record<string, unknown>,
+        headers: init.headers as Record<string, string>,
+      })
+      if (url.endsWith('/api/chat')) return ollamaChatResponse('profile request ok', 'llama3')
+      return openAIChatResponse('profile request ok')
+    }) as unknown as typeof globalThis.fetch
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const cases: Array<{
+      label: string
+      database: Record<string, unknown>
+      expectedUrl: string
+      expectedModel: string
+      expectedHeader?: [string, string]
+    }> = [
+      {
+        label: 'reverse_proxy',
+        database: {
+          aiModel: 'reverse_proxy',
+          customProxyRequestModel: 'proxy-wire-model',
+          customAPIFormat: LLMFormat.OpenAICompatible,
+          forceReplaceUrl: 'https://proxy.example.com/v1',
+          proxyKey: 'sk-proxy',
+        },
+        expectedUrl: 'https://proxy.example.com/v1/chat/completions',
+        expectedModel: 'proxy-wire-model',
+      },
+      {
+        label: 'xcustom internal id',
+        database: {
+          aiModel: 'xcustom:::profile-openai',
+          customModels: [
+            {
+              id: 'xcustom:::profile-openai',
+              name: 'Profile OpenAI',
+              internalId: 'xcustom-wire-model',
+              url: 'https://custom.example.com/v1/chat/completions',
+              key: 'sk-xcustom',
+              format: LLMFormat.OpenAICompatible,
+              flags: [],
+              tokenizer: 0,
+            },
+          ],
+        },
+        expectedUrl: 'https://custom.example.com/v1/chat/completions',
+        expectedModel: 'xcustom-wire-model',
+      },
+      {
+        label: 'OpenRouter request model',
+        database: {
+          aiModel: 'openrouter',
+          openrouterKey: 'sk-openrouter',
+          openrouterRequestModel: 'anthropic/claude-sonnet',
+        },
+        expectedUrl: 'https://openrouter.ai/api/v1/chat/completions',
+        expectedModel: 'anthropic/claude-sonnet',
+        expectedHeader: ['X-Title', 'RisuAI'],
+      },
+      {
+        label: 'NanoGPT request model and provider header',
+        database: {
+          aiModel: 'nanogpt',
+          nanogptKey: 'sk-nano',
+          nanogptRequestModel: 'nano/provider-model',
+          nanogptProvider: 'together',
+          nanogptUseSubscriptionEndpoint: true,
+        },
+        expectedUrl: 'https://nano-gpt.com/api/subscription/v1/chat/completions',
+        expectedModel: 'nano/provider-model',
+        expectedHeader: ['X-Provider', 'together'],
+      },
+      {
+        label: 'Ollama cloud request model',
+        database: {
+          aiModel: 'ollama-cloud',
+          ollamaApiKey: 'sk-ollama-cloud',
+          ollamaRequestFormat: LLMFormat.OpenAICompatible,
+          ollamaCloudModel: 'gpt-oss:20b',
+        },
+        expectedUrl: 'https://ollama.com/v1/chat/completions',
+        expectedModel: 'gpt-oss:20b',
+      },
+      {
+        label: 'native Ollama request model',
+        database: {
+          aiModel: 'ollama-hosted',
+          ollamaURL: 'http://localhost:11434',
+          ollamaModel: 'llama3',
+        },
+        expectedUrl: 'http://localhost:11434/api/chat',
+        expectedModel: 'llama3',
+      },
+    ]
+
+    for (const testCase of cases) {
+      writeDatabase(testCase.database)
+      const res = await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/generate/completion',
+        headers: { 'risu-auth': assertion },
+        payload: {
+          kind: 'server-intent',
+          messages: [{ role: 'user', content: `hi ${testCase.label}` }],
+          stream: false,
+        },
+      })
+      expect(res.statusCode).toBe(200)
+      expect(res.json()).toMatchObject({ type: 'success', result: 'profile request ok' })
+
+      const sent = captured.at(-1)
+      expect(sent?.url).toBe(testCase.expectedUrl)
+      expect(sent?.body.model).toBe(testCase.expectedModel)
+      if (testCase.expectedHeader) {
+        const [name, value] = testCase.expectedHeader
+        expect(sent?.headers[name]).toBe(value)
+      }
+    }
+  })
+
+  it('server-intent completion rejects unknown OpenAI-compatible ids before provider dispatch', async () => {
+    writeDatabase({
+      aiModel: 'unregistered-local-model',
+      openAIKey: 'sk-server-owned',
+    })
+    const fetchSpy = vi.fn()
+    globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        kind: 'server-intent',
+        messages: [{ role: 'user', content: 'hi' }],
+        stream: false,
+      },
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(res.json()).toEqual({
+      error:
+        'unsupported /chat provider: unknown OpenAI-compatible model "unregistered-local-model" cannot be dispatched by the server',
+    })
+    expect(fetchSpy).not.toHaveBeenCalled()
   })
 
   it('server-intent completion synthesizes the current character name for horde cleanup', async () => {

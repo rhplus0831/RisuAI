@@ -1,15 +1,10 @@
 import { getDatabase } from '../../storage/database.svelte'
 import type { character, Chat, Database, triggerscript } from '../../storage/database.svelte'
-import { getModelInfo, LLMFlags, LLMModels } from '../../model/modellist'
+import { LLMFlags } from '../../model/types'
 import { getModuleTriggers } from '../modules'
 import { pluginV2 } from '../../plugins/plugins.svelte'
-import type { RequestDataArgumentExtended } from './request'
-import {
-  resolveProviderCapability,
-  type CustomModelEntryLike,
-  type ProviderCapabilityInput,
-} from './providerCapability'
 import { composeEffectivePresetSettings } from '../../presetSplit'
+import { resolveModelProfile, type ResolvedModelProfile } from '../../model/modelProfileResolver'
 
 /**
  * Three-arm verdict for the `sendChat` prompt-assembly gate, mirroring
@@ -64,10 +59,9 @@ function sendHasMultimodalOrAsset(currentChat: Chat): boolean {
   return false
 }
 
-/** Whether the active model accepts inline image input (`getModelInfo().flags`). */
+/** Whether the active resolved profile accepts inline image input. */
 function modelAcceptsImageInput(input: ServerPromptAssemblyInput): boolean {
-  const db = effectiveModelDatabaseForChat(input.currentChat)
-  return getModelInfoForDatabase(db.aiModel, db).flags.includes(LLMFlags.hasImageInput)
+  return resolveProfileForChat(input.currentChat).modelInfo.flags.includes(LLMFlags.hasImageInput)
 }
 
 // Interactive Lua dialog APIs. A `triggerlua` script that calls one of these
@@ -151,24 +145,6 @@ function sendHasUnsupportedContent(input: ServerPromptAssemblyInput): string | n
   return null
 }
 
-/**
- * Build the minimal `RequestDataArgumentExtended` that `resolveServerCompletionRoute`
- * reads, mirroring `requestChatDataMain`'s model resolution for the main ('model')
- * send (`request.ts:477-511`). The dead `seperateModels` branch (its keys are
- * memory/emotion/translate/otherAx, never 'model') and the request-only fields
- * (formated/maxTokens/…) are omitted. `getModelInfo` returns a fresh clone, so the
- * reverse_proxy `format` mutation is local to this throwaway target.
- */
-function buildCompletionTarg(db: Database): RequestDataArgumentExtended {
-  const aiModel = db.aiModel
-  const modelInfo = getModelInfoForDatabase(aiModel, db)
-  if (aiModel === 'reverse_proxy') {
-    modelInfo.internalID = db.customProxyRequestModel
-    modelInfo.format = db.customAPIFormat
-  }
-  return { aiModel, modelInfo } as RequestDataArgumentExtended
-}
-
 function effectiveModelDatabaseForChat(currentChat: Chat): Database {
   const db = getDatabase()
   const settings = currentChat.generationSettings
@@ -189,64 +165,26 @@ function findPresetById(collection: unknown, id: string | undefined): Record<str
   })
 }
 
-function getModelInfoForDatabase(aiModel: string | undefined, db: Database): ReturnType<typeof getModelInfo> {
-  const modelInfo = getModelInfo(aiModel)
-  if (db.enableCustomFlags) {
-    modelInfo.flags = Array.isArray(db.customFlags) ? [...db.customFlags] : []
-  } else {
-    const baseModel = LLMModels.find((model) => model.id === aiModel)
-    if (baseModel) modelInfo.flags = [...baseModel.flags]
-  }
-  return modelInfo
+function resolveProfileForChat(currentChat: Chat): ResolvedModelProfile {
+  return resolveModelProfile({ database: effectiveModelDatabaseForChat(currentChat) })
 }
 
 function unsupportedServerGenerationReason(aiModel: string): string {
   return `Generation for ${aiModel} is not supported in Fastify server mode. Select a server-routed provider or change this model before retrying.`
 }
 
-function buildCapabilityInput(targ: RequestDataArgumentExtended, db: Database): ProviderCapabilityInput | null {
-  const modelInfo = targ.modelInfo
-  if (!modelInfo) return null
-  return {
-    format: modelInfo.format,
-    aiModel: targ.aiModel ?? modelInfo.id ?? '',
-    endpoint: typeof modelInfo.endpoint === 'string' ? modelInfo.endpoint : undefined,
-    keyIdentifier: typeof modelInfo.keyIdentifier === 'string' ? modelInfo.keyIdentifier : undefined,
-    internalID: typeof modelInfo.internalID === 'string' ? modelInfo.internalID : undefined,
-    config: {
-      forceReplaceUrl: db.forceReplaceUrl,
-      proxyKey: db.proxyKey,
-      oaiCompApiKeys: db.OaiCompAPIKeys,
-      customModels: db.customModels as CustomModelEntryLike[] | undefined,
-      googleProjectId: db.google?.projectId,
-      vertexRegion: db.vertexRegion,
-      vertexClientEmail: db.vertexClientEmail,
-      vertexPrivateKey: db.vertexPrivateKey,
-      claudeAPIKey: db.claudeAPIKey,
-      instructChatTemplate: db.instructChatTemplate,
-      jinjaTemplate: db.JinjaTemplate,
-      ollamaApiKey: db.ollamaApiKey,
-      ollamaRequestFormat: db.ollamaRequestFormat,
-      ollamaURL: db.ollamaURL,
-    },
-  }
-}
-
 function resolveServerProviderPreflight(currentChat: Chat): ServerPromptAssemblyRoute | null {
-  const db = effectiveModelDatabaseForChat(currentChat)
-  const targ = buildCompletionTarg(db)
-  const input = buildCapabilityInput(targ, db)
-  if (!input) {
+  const profile = resolveProfileForChat(currentChat)
+  if (profile.modelInfo.unsupportedReason) {
     return {
       type: 'unsupported',
-      reason: unsupportedServerGenerationReason(targ.aiModel ?? 'the selected model'),
+      reason: profile.modelInfo.unsupportedReason,
     }
   }
-  const verdict = resolveProviderCapability(input)
-  if (verdict.routable) return null
+  if (profile.providerCapability.routable) return null
   return {
     type: 'unsupported',
-    reason: unsupportedServerGenerationReason(targ.aiModel ?? input.aiModel),
+    reason: unsupportedServerGenerationReason(profile.modelId),
   }
 }
 

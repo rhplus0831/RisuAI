@@ -22,11 +22,17 @@ import {
   type ProviderCapabilityInput,
   type ProviderUnsupportedReason,
 } from '../../../../src/ts/process/request/providerCapability'
+import {
+  resolveModelProfile,
+  resolveProfileRequestModel,
+  type ResolvedModelProfile,
+} from '../../../../src/ts/model/modelProfileResolver.js'
 
 interface ChatDispatchArgs {
   database: Database
   formated: OpenAIChat[]
   outputTokens?: number
+  profile?: ResolvedModelProfile
   signal: AbortSignal
 }
 
@@ -518,20 +524,37 @@ function chatProviderUnsupportedReason(reason: ProviderUnsupportedReason, info: 
 }
 
 export type ChatProviderRoute = { routable: true; provider: string } | { routable: false; reason: string }
+type ChatProviderRouteTarget = ModelInfoLite | ResolvedModelProfile
+
+function isResolvedModelProfile(target: ChatProviderRouteTarget): target is ResolvedModelProfile {
+  return 'providerCapability' in target && 'modelInfo' in target
+}
 
 /**
- * The /chat counterpart to `resolveServerCompletionRoute`. The unknown-id guard
- * stays in `resolveModelInfo` (the server has no endpoint for an unrecognized
- * OpenAI-compatible id); then the shared `resolveProviderCapability` table owns
- * the routing decision, so /chat cannot drift from server-intent completion.
- * The stale `reverse_proxy` + `reverseProxyOobaMode` rejection is gone — the
- * openai adapter applies `oobaSystemHoist` itself.
+ * The /chat counterpart to `resolveServerCompletionRoute`. Profile-aware callers
+ * carry the server-only unknown-id guard through `modelInfo.unsupportedReason`;
+ * legacy callers still get the same guard from `resolveModelInfo`. The shared
+ * `resolveProviderCapability` table owns the routing decision, so /chat cannot
+ * drift from server-intent completion. The stale `reverse_proxy` +
+ * `reverseProxyOobaMode` rejection is gone — the openai adapter applies
+ * `oobaSystemHoist` itself.
  */
-export function resolveChatProviderRoute(db: Database, info: ModelInfoLite = resolveModelInfo(db)): ChatProviderRoute {
+export function resolveChatProviderRoute(
+  db: Database,
+  target: ChatProviderRouteTarget = resolveModelInfo(db),
+): ChatProviderRoute {
+  let profile: ResolvedModelProfile | undefined
+  let info: ModelInfoLite
+  if (isResolvedModelProfile(target)) {
+    profile = target
+    info = target.modelInfo
+  } else {
+    info = target
+  }
   if (info.unsupportedReason) {
     return { routable: false, reason: info.unsupportedReason }
   }
-  const verdict = resolveProviderCapability(buildChatCapabilityInput(db, info))
+  const verdict = profile?.providerCapability ?? resolveProviderCapability(buildChatCapabilityInput(db, info))
   if (verdict.routable === true) return { routable: true, provider: verdict.provider }
   return { routable: false, reason: chatProviderUnsupportedReason(verdict.reason, info) }
 }
@@ -551,7 +574,13 @@ function resolveBedrockWireModel(internalId: string): string {
   return (useGlobal ? 'global.' : 'us.') + internalId
 }
 
-function resolveProviderModel(db: Database, info: ModelInfoLite, provider: string): string {
+function resolveProviderModel(
+  db: Database,
+  info: ModelInfoLite,
+  provider: string,
+  profile?: ResolvedModelProfile,
+): string {
+  if (profile) return resolveProfileRequestModel(profile)
   const aiModel = asString(db.aiModel) ?? ''
   if (aiModel === 'ollama-cloud') return db.ollamaCloudModel ?? ''
   if (provider === 'ollama') return db.ollamaModel ?? ''
@@ -687,14 +716,15 @@ async function* resultFrames(resultPromise: Promise<CompletionResult>): AsyncGen
 
 export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<AsyncIterable<CompletionStreamFrame>> {
   const { database: db, outputTokens, signal } = args
-  const info = resolveModelInfo(db)
-  const route = resolveChatProviderRoute(db, info)
+  const profile = args.profile ?? resolveModelProfile({ database: db })
+  const info = profile.modelInfo
+  const route = resolveChatProviderRoute(db, profile)
   if (route.routable === false) {
     throw new Error(route.reason)
   }
   const provider = route.provider
 
-  const model = resolveProviderModel(db, info, provider)
+  const model = resolveProviderModel(db, info, provider, profile)
   const messages = reformatMessages(db, args.formated, info.flags)
   const maxTokens = outputTokens ?? db.maxResponse
   const temperature = normalizeDispatchSampler(db.temperature, { scale: 100 })

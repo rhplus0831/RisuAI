@@ -1,7 +1,8 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { Database } from '../../../../src/ts/storage/database.svelte'
 import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
-import { resolveModelForRole, type LegacyModelMode } from '../../../../src/ts/model/modelRoles.js'
+import type { LegacyModelMode } from '../../../../src/ts/model/modelRoles.js'
+import { resolveModelProfile, type ResolvedModelProfile } from '../../../../src/ts/model/modelProfileResolver.js'
 import type { AuthState } from '../auth.js'
 import { resolveAnthropicRequest, runAnthropic, runAnthropicStream } from '../generation/anthropic.js'
 import { resolveEchoRequest, runEcho, runEchoStream } from '../generation/echo.js'
@@ -302,19 +303,18 @@ function finiteNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined
 }
 
-function selectedCompletionModel(db: Database, body: CompletionRequestBody): string {
-  if (typeof body.staticModel === 'string' && body.staticModel.length > 0) {
-    return body.staticModel
-  }
+function selectedCompletionProfile(db: Database, body: CompletionRequestBody): ResolvedModelProfile {
   const mode = isCompletionModelMode(body.mode) ? body.mode : 'model'
-  const aiModel = resolveModelForRole(db, mode)
-  return typeof aiModel === 'string' && aiModel.length > 0 ? aiModel : 'echo_model'
+  const staticModel = typeof body.staticModel === 'string' && body.staticModel.length > 0 ? body.staticModel : undefined
+  const profile = resolveModelProfile({ database: db, role: mode, staticModel })
+  if (profile.modelId.length > 0) return profile
+  return resolveModelProfile({ database: db, role: mode, staticModel: 'echo_model' })
 }
 
-function buildCompletionDatabase(db: Database, body: CompletionRequestBody): Database {
+function buildCompletionDatabase(db: Database, body: CompletionRequestBody, profile: ResolvedModelProfile): Database {
   const next = {
     ...db,
-    aiModel: selectedCompletionModel(db, body),
+    aiModel: profile.modelId,
     useStreaming: body.stream === true,
   } as Database
   const maxTokens = finiteNumber(body.maxTokens)
@@ -1224,11 +1224,14 @@ async function handleServerIntentCompletion(
 
   const { signal, refresh, cleanup } = attachAbort(req)
   try {
-    const database = buildCompletionDatabase(settingsToCompletionDatabase(settings), body)
+    const baseDatabase = settingsToCompletionDatabase(settings)
+    const profile = selectedCompletionProfile(baseDatabase, body)
+    const database = buildCompletionDatabase(baseDatabase, body, profile)
     const frames = await dispatchChatProvider({
       database,
       formated: messages as OpenAIChat[],
       outputTokens: finiteNumber(body.maxTokens),
+      profile,
       signal,
     })
 

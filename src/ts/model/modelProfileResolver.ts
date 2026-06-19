@@ -1188,18 +1188,21 @@ function completeModel(modelInfo: Omit<LLMModel, 'shortName' | 'fullName'> & Par
 }
 
 function unknownModel(id: string): ResolvedModelProfileModelInfo {
-  return completeModel({
-    id,
-    name: id || 'Unknown',
-    shortName: id || 'Unknown',
-    fullName: id || 'Unknown',
-    internalID: id,
-    provider: LLMProvider.AsIs,
-    format: LLMFormat.OpenAICompatible,
-    flags: [],
-    parameters: OpenAIParameters,
-    tokenizer: LLMTokenizer.Unknown,
-  })
+  return {
+    ...completeModel({
+      id,
+      name: id || 'Unknown',
+      shortName: id || 'Unknown',
+      fullName: id || 'Unknown',
+      internalID: id,
+      provider: LLMProvider.AsIs,
+      format: LLMFormat.OpenAICompatible,
+      flags: [],
+      parameters: OpenAIParameters,
+      tokenizer: LLMTokenizer.Unknown,
+    }),
+    unsupportedReason: `unsupported /chat provider: unknown OpenAI-compatible model "${id}" cannot be dispatched by the server`,
+  }
 }
 
 function cloneModelInfo(modelInfo: LLMModel): ResolvedModelProfileModelInfo {

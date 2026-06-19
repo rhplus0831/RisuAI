@@ -45,6 +45,8 @@ function seedDb(overrides: Partial<Database> = {}): void {
     promptInfoInsideChat: false,
     echoMessage: 'Echo Message',
     echoDelay: 0,
+    koboldURL: '',
+    textgenWebUIBlockingURL: '',
     ...overrides,
   } as unknown as Database)
 }
@@ -295,6 +297,13 @@ describe('resolveServerPromptAssembly', () => {
       seedDb({ aiModel: 'novelai' })
       const reason = expectUnsupported(resolveServerPromptAssembly(makeInput()))
       expect(reason).toContain('novelai')
+    })
+
+    it('rejects an unknown OpenAI-compatible id before treating it as a server-routable provider', () => {
+      seedDb({ aiModel: 'unregistered-local-model', openAIKey: 'sk-server-owned' })
+      expect(expectUnsupported(resolveServerPromptAssembly(makeInput()))).toBe(
+        'unsupported /chat provider: unknown OpenAI-compatible model "unregistered-local-model" cannot be dispatched by the server',
+      )
     })
 
     // One case per unsupported content class.

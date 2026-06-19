@@ -3,45 +3,50 @@
 Date: 2026-06-19
 
 This workstream is open. Phase 0 is complete, the Phase 1 additive resolver
-slice is complete, and the Phase 2 preset composition slice is complete with
-focused composition validation, server assembly/generation validation,
-client-lib TypeScript, and strict server TypeScript passing. The workstream is
-ready for Phase 3 generation dispatch; see
+slice is complete, the Phase 2 preset composition slice is complete, and the
+Phase 3a server-owned profile selection/capability/request-model slice is
+complete with focused browser/Fastify validation, client-lib TypeScript, and
+strict server TypeScript passing. The broader Phase 3 generation dispatch phase
+remains in progress; see
 [`latest-verification.md`](latest-verification.md).
 
 ## Snapshot
 
 - Plan state: open.
-- Current phase: Phase 2 complete; ready for Phase 3 generation dispatch.
+- Current phase: Phase 3 generation dispatch in progress; Phase 3a complete.
 - Current implementation state: existing flattened `Database` fields remain the
   source of truth. `src/ts/model/modelProfileResolver.ts` now derives a
   read-only legacy profile object from the flat shape, and
   `src/ts/presetSplit.ts` now provides the shared effective preset composition
   helper used by browser server-prompt preflight and Fastify prompt assembly.
-  Runtime dispatch has not switched to the resolver yet.
+  Browser server-prompt preflight, Fastify server-intent completion selection,
+  and Fastify chat dispatch provider routing/message flags/request model now
+  use resolved profiles for the Phase 3a server-owned slice. Provider
+  credentials, base URLs, additional params, durable storage, and UI writes
+  remain on the existing flat fields.
 - Current compatibility state: no profile data model exists yet.
-- Current verification state: Phase 2 focused preset composition and prompt
-  assembly tests pass; Fastify assemble and generation chat tests pass;
-  client-lib TypeScript passes; full server strict TypeScript passes. See
+- Current verification state: Phase 3a focused browser request tests pass;
+  Phase 3a focused Fastify resolver/capability/completion/chat/transport tests
+  pass; client-lib TypeScript passes; full server strict TypeScript passes. See
   [`latest-verification.md`](latest-verification.md).
 
 ## Phase Router
 
-| Phase                                | Status      | Purpose                                                                                             |
-| ------------------------------------ | ----------- | --------------------------------------------------------------------------------------------------- |
-| Phase 0: Current Contracts           | Complete    | Freeze current role, provider, preset, fallback, masking, static model, and memory behavior.        |
-| Phase 1: Read-Only Profile Resolver  | Complete    | Add a shared resolver and compatibility adapter while storage stays flat.                           |
-| Phase 2: Preset Composition          | Complete    | Centralize base DB, selected model preset, and selected prompt preset composition.                  |
-| Phase 3: Generation Dispatch         | Not started | Adopt resolved profiles in browser and Fastify generation paths.                                    |
-| Phase 4: UI & Command Adapter        | Not started | Adapt role/profile UI and settings commands while writes target existing fields.                    |
-| Phase 5: Custom, Secrets & Auxiliary | Not started | Harden custom models, masking, memory, translation, scripts, MCP, playground, fallbacks, and tools. |
-| Phase 6: Persisted Profiles          | Not started | Add durable profile records and role bindings after derived parity is proven.                       |
-| Phase 7: Verification & Cleanup      | Not started | Run final regression, browser smoke, docs updates, compatibility cleanup, and TypeScript proof.     |
+| Phase                                | Status      | Purpose                                                                                                                                   |
+| ------------------------------------ | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Phase 0: Current Contracts           | Complete    | Freeze current role, provider, preset, fallback, masking, static model, and memory behavior.                                              |
+| Phase 1: Read-Only Profile Resolver  | Complete    | Add a shared resolver and compatibility adapter while storage stays flat.                                                                 |
+| Phase 2: Preset Composition          | Complete    | Centralize base DB, selected model preset, and selected prompt preset composition.                                                        |
+| Phase 3: Generation Dispatch         | In progress | Adopt resolved profiles in browser and Fastify generation paths. Phase 3a server-owned selection/capability/request-model slice complete. |
+| Phase 4: UI & Command Adapter        | Not started | Adapt role/profile UI and settings commands while writes target existing fields.                                                          |
+| Phase 5: Custom, Secrets & Auxiliary | Not started | Harden custom models, masking, memory, translation, scripts, MCP, playground, fallbacks, and tools.                                       |
+| Phase 6: Persisted Profiles          | Not started | Add durable profile records and role bindings after derived parity is proven.                                                             |
+| Phase 7: Verification & Cleanup      | Not started | Run final regression, browser smoke, docs updates, compatibility cleanup, and TypeScript proof.                                           |
 
 ## Immediate Next Steps
 
-1. Move generation dispatch to the resolver contract before changing the
-   database shape.
+1. Continue Phase 3 by moving the remaining browser completion/request helpers
+   to the resolver contract without reshaping provider secrets or storage.
 2. Keep UI writes targeting existing fields until the profile editor behavior
    is proven.
 3. Update `status.md` at the end of each phase with proof or explicit gaps.
