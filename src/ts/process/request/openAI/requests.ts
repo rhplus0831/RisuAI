@@ -31,13 +31,46 @@ interface LocalNetworkRequestOptions {
 }
 
 const CHAT_COMPLETIONS_SUFFIX = '/chat/completions'
+const RESPONSES_SUFFIX = '/responses'
+const COMPLETIONS_SUFFIX = '/completions'
 
-function appendChatCompletionsPath(baseUrl: string): string {
+function appendOperationPath(baseUrl: string, suffix: string): string {
   const trimmed = baseUrl.replace(/\/+$/, '')
-  if (!trimmed || trimmed.endsWith(CHAT_COMPLETIONS_SUFFIX)) {
+  if (!trimmed || trimmed.endsWith(suffix)) {
     return trimmed
   }
-  return `${trimmed}${CHAT_COMPLETIONS_SUFFIX}`
+
+  try {
+    const url = new URL(trimmed)
+    const pathSegments = url.pathname.split('/').filter(Boolean)
+    const suffixSegments = suffix.split('/').filter(Boolean)
+    const hasSuffix =
+      pathSegments.length >= suffixSegments.length &&
+      suffixSegments.every(
+        (segment, index) => pathSegments[pathSegments.length - suffixSegments.length + index] === segment,
+      )
+
+    if (hasSuffix) {
+      return url.toString()
+    }
+
+    url.pathname = `${url.pathname.replace(/\/+$/, '')}/${suffixSegments.join('/')}`
+    return url.toString()
+  } catch {
+    return `${trimmed}${suffix}`
+  }
+}
+
+function appendChatCompletionsPath(baseUrl: string): string {
+  return appendOperationPath(baseUrl, CHAT_COMPLETIONS_SUFFIX)
+}
+
+function appendResponsesPath(baseUrl: string): string {
+  return appendOperationPath(baseUrl, RESPONSES_SUFFIX)
+}
+
+function appendCompletionsPath(baseUrl: string): string {
+  return appendOperationPath(baseUrl, COMPLETIONS_SUFFIX)
 }
 
 function resolveProfileChatCompletionsUrl(arg: RequestDataArgumentExtended, aiModel: string): string | undefined {
@@ -1011,6 +1044,10 @@ export async function requestHTTPOpenAI(
 export async function requestOpenAILegacyInstruct(arg: RequestDataArgumentExtended): Promise<requestDataResponse> {
   const formated = arg.formated
   const db = getDatabase()
+  const aiModel = arg.aiModel ?? ''
+  const resolvedProfile = arg.resolvedProfile
+  const providerOptions = resolvedProfile?.providerOptions
+  const hasResolvedProfile = resolvedProfile !== undefined
   const maxTokens = arg.maxTokens
   const temperature = arg.temperature
   const prompt =
@@ -1044,30 +1081,61 @@ export async function requestOpenAILegacyInstruct(arg: RequestDataArgumentExtend
       })
       .join('') + `\n## Response\n`
 
+  let requestURL = arg.customURL ?? 'https://api.openai.com/v1/completions'
+  if (hasResolvedProfile) {
+    if (providerOptions?.endpoint) {
+      requestURL = providerOptions.endpoint
+    } else if (providerOptions?.baseUrl) {
+      requestURL = appendCompletionsPath(providerOptions.baseUrl)
+    }
+  }
+
+  let risuIdentify = false
+  if (hasResolvedProfile && requestURL.startsWith('risu::')) {
+    risuIdentify = true
+    requestURL = requestURL.replace('risu::', '')
+  }
+
+  let body = {
+    model: hasResolvedProfile ? (providerOptions?.requestModel ?? 'gpt-3.5-turbo-instruct') : 'gpt-3.5-turbo-instruct',
+    prompt: prompt,
+    max_tokens: maxTokens,
+    temperature: temperature,
+    top_p: 1,
+    stop: ['User:', ' User:', 'user:', ' user:'],
+    presence_penalty: arg.PresensePenalty || db.PresensePenalty / 100,
+    frequency_penalty: arg.frequencyPenalty || db.frequencyPenalty / 100,
+  }
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Authorization: 'Bearer ' + (hasResolvedProfile ? (providerOptions?.apiKey ?? '') : (arg.key ?? db.openAIKey)),
+  }
+
+  if (risuIdentify) {
+    headers['X-Proxy-Risu'] = 'RisuAI'
+  }
+  if (hasResolvedProfile) {
+    Object.assign(headers, providerOptions?.extraHeaders ?? {})
+  }
+
+  if (hasResolvedProfile && (aiModel === 'reverse_proxy' || aiModel.startsWith('xcustom:::'))) {
+    body = applyAdditionalParameters(body, headers, providerOptions?.additionalParams ?? [])
+  }
+
   if (arg.previewBody) {
     return {
       type: 'success',
       result: JSON.stringify({
-        error: 'This model is not supported in preview mode',
+        url: requestURL,
+        body: body,
+        headers: headers,
       }),
     }
   }
 
-  const response = await globalFetch(arg.customURL ?? 'https://api.openai.com/v1/completions', {
-    body: {
-      model: 'gpt-3.5-turbo-instruct',
-      prompt: prompt,
-      max_tokens: maxTokens,
-      temperature: temperature,
-      top_p: 1,
-      stop: ['User:', ' User:', 'user:', ' user:'],
-      presence_penalty: arg.PresensePenalty || db.PresensePenalty / 100,
-      frequency_penalty: arg.frequencyPenalty || db.frequencyPenalty / 100,
-    },
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: 'Bearer ' + (arg.key ?? db.openAIKey),
-    },
+  const response = await globalFetch(requestURL, {
+    body,
+    headers,
     chatId: arg.chatId,
     abortSignal: arg.abortSignal,
   })
@@ -1089,6 +1157,9 @@ export async function requestOpenAIResponseAPI(arg: RequestDataArgumentExtended)
   const formated = arg.formated
   const db = getDatabase()
   const aiModel = arg.aiModel
+  const resolvedProfile = arg.resolvedProfile
+  const providerOptions = resolvedProfile?.providerOptions
+  const hasResolvedProfile = resolvedProfile !== undefined
   const maxTokens = arg.maxTokens
 
   const items: ResponseItem[] = []
@@ -1153,9 +1224,11 @@ export async function requestOpenAIResponseAPI(arg: RequestDataArgumentExtended)
     ;(items[items.length - 1] as ResponseOutputItem).status = 'incomplete'
   }
 
-  const body = applyParameters(
+  let body = applyParameters(
     {
-      model: arg.modelInfo.internalID ?? aiModel,
+      model: hasResolvedProfile
+        ? (providerOptions?.requestModel ?? arg.modelInfo.internalID ?? aiModel)
+        : (arg.modelInfo.internalID ?? aiModel),
       input: items,
       max_output_tokens: maxTokens,
       tools: [],
@@ -1174,7 +1247,13 @@ export async function requestOpenAIResponseAPI(arg: RequestDataArgumentExtended)
   }
 
   let requestURL = arg.customURL ?? 'https://api.openai.com/v1/responses'
-  if (arg.modelInfo?.endpoint) {
+  if (hasResolvedProfile) {
+    if (providerOptions?.endpoint) {
+      requestURL = providerOptions.endpoint
+    } else if (providerOptions?.baseUrl) {
+      requestURL = appendResponsesPath(providerOptions.baseUrl)
+    }
+  } else if (arg.modelInfo?.endpoint) {
     requestURL = arg.modelInfo.endpoint
   }
 
@@ -1184,7 +1263,7 @@ export async function requestOpenAIResponseAPI(arg: RequestDataArgumentExtended)
     requestURL = requestURL.replace('risu::', '')
   }
 
-  if (aiModel === 'reverse_proxy' && db.autofillRequestUrl) {
+  if (aiModel === 'reverse_proxy' && !hasResolvedProfile && db.autofillRequestUrl) {
     try {
       const url = new URL(requestURL)
       const pathSegments = url.pathname.split('/').filter(Boolean)
@@ -1222,13 +1301,24 @@ export async function requestOpenAIResponseAPI(arg: RequestDataArgumentExtended)
     }
   }
 
-  const headers = {
-    Authorization: 'Bearer ' + (arg.key ?? db.openAIKey),
+  const headers: Record<string, string> = {
+    Authorization: 'Bearer ' + (hasResolvedProfile ? (providerOptions?.apiKey ?? '') : (arg.key ?? db.openAIKey)),
     'Content-Type': 'application/json',
   }
 
   if (risuIdentify) {
     headers['X-Proxy-Risu'] = 'RisuAI'
+  }
+  if (hasResolvedProfile) {
+    Object.assign(headers, providerOptions?.extraHeaders ?? {})
+  }
+
+  if (aiModel === 'reverse_proxy' || aiModel?.startsWith('xcustom:::')) {
+    body = applyAdditionalParameters(
+      body,
+      headers,
+      hasResolvedProfile ? (providerOptions?.additionalParams ?? []) : getAdditionalParameters(aiModel),
+    )
   }
 
   if (arg.previewBody) {

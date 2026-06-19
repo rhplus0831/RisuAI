@@ -1,6 +1,6 @@
 # Phase 3: Generation Dispatch
 
-Status: in progress; Phase 3a server-owned profile selection/capability/request-model slice complete; Phase 3b Fastify OpenAI-compatible provider-options slice complete; Phase 3c Fastify Anthropic/Mistral/Cohere provider-options slice complete; Phase 3d Fastify native Ollama provider-options slice complete; Phase 3e Fastify Kobold provider-options slice complete; Phase 3f Fastify Horde provider-options slice complete; Phase 3g Fastify OobaLegacy provider-options slice complete; Phase 3h Fastify Bedrock provider-options slice complete; Phase 3i Fastify Gemini/Vertex provider-options slice complete; browser request helper role/static/fallback resolver adoption slice complete; browser-local Gemini/Vertex provider-options slice complete; browser-local OpenAI-compatible chat-completions provider-options slice complete.
+Status: in progress; Phase 3a server-owned profile selection/capability/request-model slice complete; Phase 3b Fastify OpenAI-compatible provider-options slice complete; Phase 3c Fastify Anthropic/Mistral/Cohere provider-options slice complete; Phase 3d Fastify native Ollama provider-options slice complete; Phase 3e Fastify Kobold provider-options slice complete; Phase 3f Fastify Horde provider-options slice complete; Phase 3g Fastify OobaLegacy provider-options slice complete; Phase 3h Fastify Bedrock provider-options slice complete; Phase 3i Fastify Gemini/Vertex provider-options slice complete; browser request helper role/static/fallback resolver adoption slice complete; browser-local Gemini/Vertex provider-options slice complete; browser-local OpenAI-compatible chat-completions provider-options slice complete; browser-local OpenAI Responses and legacy instruct provider-options slice complete.
 
 Goal: move browser and Fastify generation dispatch from ad hoc flat database
 reads to the resolved profile runtime object.
@@ -243,15 +243,46 @@ reads to the resolved profile runtime object.
   `requestOpenAI()` calls, with flat `db.genTime` retained for no-profile
   callers.
 
+## Implemented Browser-Local OpenAI Responses And Legacy Instruct Provider-Options Slice
+
+- Browser-local `requestOpenAIResponseAPI()` now uses
+  `resolvedProfile.providerOptions.requestModel` for profile-backed Responses
+  request body `model`, including reverse-proxy, `xcustom:::`, NanoGPT
+  Responses, key-identifier, and `ollama-cloud` Responses calls.
+  No-resolved-profile callers keep the legacy model-info internal id, then
+  `aiModel`, request-model fallback.
+- Profile-backed Responses URL, API key, and extra-header options now win over
+  conflicting flat DB fields. Profile `baseUrl` values receive a `/responses`
+  suffix without double-appending; profile `endpoint` values are preserved as
+  exact URLs. Reverse-proxy `risu::` identification remains represented through
+  resolver-provided extra headers, while no-resolved-profile reverse-proxy
+  callers keep the existing URL autofill behavior.
+- Profile `providerOptions.additionalParams` now drives browser-local
+  Responses reverse-proxy and `xcustom:::` additional-parameter application
+  when a resolved profile is present. `getAdditionalParameters(aiModel)` remains
+  the no-profile Responses fallback. `ollama-cloud` Responses calls continue to
+  delete `store` from the body.
+- Browser-local `requestOpenAILegacyInstruct()` now builds preview payloads
+  after composing the prompt and uses profile-owned request models, base URLs or
+  exact endpoints, API keys, extra headers, and profile additional params for
+  reverse-proxy/`xcustom:::` callers. No-resolved-profile legacy instruct
+  callers keep the hard-coded `gpt-3.5-turbo-instruct` model and the existing
+  `arg.customURL`/`arg.key`/`db.openAIKey` fallback behavior.
+- Focused coverage proves profile-generated reverse-proxy Responses,
+  `ollama-cloud` Responses, and NanoGPTLegacy instruct settings beat
+  intentionally conflicting flat DB values, and pins the no-resolved-profile
+  legacy instruct fallback.
+
 ## Remaining Phase 3 Work
 
 - Broaden provider parity for retained browser-local request helpers before
   marking full Phase 3 complete. The browser role/static/fallback selection path
   now uses the resolver, browser-local Gemini/Vertex provider options are
   adopted, and browser-local OpenAI-compatible chat-completions provider options
-  are adopted. Other local helper branches such as Anthropic, Mistral, Cohere,
-  native Ollama, Kobold, Horde, Ooba legacy, Responses, and legacy instruct
-  still read many provider-specific options directly from flat database fields.
+  are adopted, and browser-local OpenAI Responses/legacy instruct provider
+  options are adopted. Other local helper branches such as Anthropic, Mistral,
+  Cohere, native Ollama, Kobold, Horde, and Ooba legacy still read many
+  provider-specific options directly from flat database fields.
 - Verify any future browser-local provider option adoption without changing the
   server-intent payload shape or editing Fastify generation routes unless a real
   regression is exposed.

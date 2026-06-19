@@ -52,13 +52,23 @@ API keys, extra headers, OpenRouter route/transforms/provider filters, NanoGPT
 provider/subscription options, reverse-proxy Ooba options, `xcustom:::`
 additional params, key-identifier credentials/base URLs, `ollama-cloud`
 OpenAI-compatible options, and runtime `genTime` when a resolved profile is
-present. No-resolved-profile callers keep the legacy flat fallbacks.
+present. No-resolved-profile callers keep the legacy flat fallbacks. The
+browser-local OpenAI Responses and legacy instruct provider-options slice is
+also complete: `requestOpenAIResponseAPI()` now uses profile-owned request
+models, base URLs or exact endpoints, API keys, extra headers, and
+reverse-proxy/`xcustom:::` additional params when a resolved profile is present,
+while `requestOpenAILegacyInstruct()` now exposes a preview payload and uses
+profile-owned request models, base URLs or exact endpoints, API keys, extra
+headers, and profile additional params for reverse-proxy/`xcustom:::` callers.
+No-resolved-profile Responses and legacy instruct callers keep their legacy
+flat fallbacks, including the hard-coded legacy instruct model.
 
 The current codebase still uses flat database fields as the compatibility
 source of truth. Durable reusable profile storage has not been introduced, and
 retained browser-local provider helper branches other than Gemini/Vertex and
-OpenAI-compatible chat completions still reconstruct many provider credentials,
-URLs, request models, and additional params from flat fields. The
+OpenAI-compatible chat completions plus OpenAI Responses/legacy instruct still
+reconstruct many provider credentials, URLs, request models, and additional
+params from flat fields. The
 main coupled surfaces remain:
 
 - `src/ts/model/modelRoles.ts` resolves roles to model ids only.
@@ -76,8 +86,9 @@ main coupled surfaces remain:
 ## Next Manager Loop
 
 1. Continue Phase 3 only on the remaining browser-local provider helper parity
-   gaps after Gemini/Vertex and OpenAI-compatible chat completions: adopt
-   resolver-derived provider options where equivalent without changing
+   gaps after Gemini/Vertex, OpenAI-compatible chat completions, and OpenAI
+   Responses/legacy instruct: adopt resolver-derived provider options where
+   equivalent without changing
    server-intent payload shape or reshaping provider secrets/storage.
 2. Keep UI writes targeting existing flat fields until the Phase 4 adapter work.
 3. Do not add durable profile storage until Phase 6. Earlier phases should use
@@ -96,6 +107,6 @@ main coupled surfaces remain:
 ## Completed Proof
 
 Latest proof is recorded in [`latest-verification.md`](latest-verification.md).
-It covers this browser-local OpenAI-compatible chat-completions
+It covers this browser-local OpenAI Responses and legacy instruct
 provider-options slice, focused browser request/provider tests, Prettier,
 client-lib TypeScript, strict server TypeScript, and `git diff --check`.
