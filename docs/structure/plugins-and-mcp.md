@@ -14,7 +14,9 @@ does not execute browser plugin code.
 | `src/ts/plugins/apiV3/transpiler.ts`, `developMode.ts`       | Plugin V3 transpilation and development-mode loading.                                         |
 | `src/ts/plugins/apiV3/risuai.d.ts`                           | Plugin V3 TypeScript declarations for plugin authors.                                         |
 | `src/ts/plugins/pluginSafeClass.ts`, `pluginSafety.ts`       | Safe wrappers, static safety rewrite/checks, device-local storage gates.                      |
+| `src/ts/plugins/unsupportedServerWriteGuard.ts`              | Blocks Plugin API direct writes to fields unsupported in server-backed mode.                  |
 | `src/ts/pluginCommands.ts`                                   | Browser command wrappers for plugin records, provider selection, plugin storage, and settings-adjacent compatibility writes. |
+| `src/ts/server/pluginImport.ts`                              | Server-backed plugin import/update helper with stale import guards.                           |
 | `server/fastify/src/commands/plugins.ts`, `pluginStorage.ts` | Server validation for plugin records and plugin key/value JSON storage.                       |
 
 Plugin records live in `Database.plugins` and use the plugin `name` as the
@@ -33,22 +35,51 @@ Server Lua scripting is separate from browser plugins.
 
 - Server-backed plugin custom storage is `Database.pluginCustomStorage`, mutated
   through `PUT /api/v1/commands/plugin-storage/:key`,
-  `DELETE /api/v1/commands/plugin-storage/:key`, or the bulk command route.
+  `DELETE /api/v1/commands/plugin-storage/:key`, or
+  `POST /api/v1/commands/plugin-storage/bulk`.
 - Device-local plugin storage wraps `localStorage`, IndexedDB, and localforage
   through safe prefixes. In Fastify mode it is disabled unless
   `pluginCompatibilityMode` is enabled, and remains plugin sandbox
   compatibility/cache storage rather than app database or backup persistence.
+
+Plugin storage persists in the SQLite `plugin_custom_storage` table. Plugin
+records can narrow targeted projection through the `plugin` resource, but
+`pluginStorage` is a known full-bootstrap projection resource. Heavy
+plugin/module bodies may be stubbed in bootstrap and filled from the
+bootstrap-body-cache path.
 
 Plugin API calls that patch settings, modules, characters, chats, lorebooks, or
 scripts should use command-backed helpers. Unsupported direct resource keys stay
 blocked in server-backed mode so plugin code cannot silently mutate projection
 state.
 
+## Fastify Command Routes
+
+Plugin command routes are part of the generic `/api/v1/commands/` manifest entry
+and use the same auth, active-writer, base-revision, and command-event contract
+as other command routes:
+
+- `POST /api/v1/commands/plugins`
+- `PATCH /api/v1/commands/plugins/:pluginId`
+- `DELETE /api/v1/commands/plugins/:pluginId`
+- `POST /api/v1/commands/plugins/:pluginId/enable`
+- `POST /api/v1/commands/plugins/provider`
+- `POST /api/v1/commands/plugins/reorder`
+- `PUT /api/v1/commands/plugin-storage/:key`
+- `DELETE /api/v1/commands/plugin-storage/:key`
+- `POST /api/v1/commands/plugin-storage/bulk`
+
+Client wrappers live in `src/ts/server/commands.ts`; server validation and
+mutation logic lives in `server/fastify/src/routes/commands.ts` plus
+`server/fastify/src/commands/plugins.ts` and `pluginStorage.ts`.
+
 ## MCP Runtime
 
 MCP and tool orchestration mostly lives under `src/ts/process/mcp/`. MCP
 initialization reads MCP URLs from currently active modules via
-`getModuleMcps()` in `src/ts/process/modules.ts`.
+`getModuleMcps()` in `src/ts/process/modules.ts`: global enabled modules,
+current chat modules, current character modules, and prompt-preset/global
+`moduleIntergration` entries.
 
 | Path                                                                                                       | Purpose                                                                                               |
 | ---------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
@@ -67,6 +98,11 @@ Supported MCP URL forms:
 - `http://` or `https://` for remote MCP servers.
 - `stdio:{...}` only when the JSON wrapper contains a URL. Command-based stdio
   MCPs are rejected in the browser runtime.
+
+Plugin V3 exposes `risuai.registerMCP` and `risuai.unregisterMCP`, which add or
+remove `plugin:` MCP clients in the browser registry. Registration alone does
+not create a persisted MCP module row; activation still depends on active module
+MCP URLs or additional runtime MCP lists.
 
 `internal:risuai` is always available as a call-only client. Risu access write
 tools ask for user confirmation and dispatch command-backed writes where

@@ -1,6 +1,6 @@
 # Structure Notes
 
-Last audited: 2026-06-15.
+Last audited: 2026-06-19.
 
 This is the first-stop map for the Fastify-only RisuAI codebase. Use it for
 orientation, then open the focused note under `docs/structure/` or `src/docs/`
@@ -34,19 +34,21 @@ past decisions; they are not the source of current behavior.
 | Path                                                                                                    | Purpose                                                                                              |
 | ------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`                                                 | Root-only pnpm package, scripts, lockfile, workspace metadata.                                       |
+| `STRUCTURE.md`                                                                                          | First-stop repo map, entrypoints, read order, and standing conventions.                              |
 | `index.html`, `vite.config.ts`, `src/`                                                                  | Svelte 5 SPA, Vite config, browser runtime.                                                          |
 | `src/docs/`                                                                                             | Current frontend/client docs for Svelte UI/UX and browser runtime touchpoints.                       |
 | `server/fastify/`                                                                                       | Fastify API, SQLite persistence, route tests, browser smoke tests.                                   |
 | `public/`, `resources/`                                                                                 | Vite-copied static assets and packaging icon/splash source images.                                   |
 | `util/`                                                                                                 | Tracked helper tools: full-stack dev runner, API flag runner, audits, database analyzer, tsserver wrapper, userscript bridge. |
-| `docs/plan/`                                                                                            | Active implementation plans and phase routers when present.                                          |
-| `docs/structure/`                                                                                       | Current structure notes for agents.                                                                  |
+| `docs/plan/`                                                                                            | Open and retained implementation plans and phase routers when present.                               |
+| `docs/user-input-layer/`, `docs/user-input-layer-audit/`, `docs/user-stale-state-audit/`                | Current user-input persistence inventory, verification audit, and stale-state risk audit.            |
+| `docs/structure/`                                                                                       | Current structure notes for agents; `frontend.md` is a compatibility pointer to `src/docs/`.         |
 | `.archived-docs/`                                                                                         | Closed workstreams and dated reports. Expect stale present tense; prefer code and `docs/structure/`. |
 | `tsconfig*.json`, `vitest*.ts`, `playwright*.ts`                                                        | TypeScript, Vitest, and Playwright config.                                                           |
 | `Dockerfile`, `docker-compose.yml`, `.dockerignore`                                                     | Container build/run path.                                                                            |
 | `.github/`, `.vscode/`, `.npmrc`, `.gitattributes`, `.gitignore`, `.prettierrc.json`, `.prettierignore` | Automation, editor, install, merge, ignore, and formatting policy.                                   |
 | `README.md`, `plugins.md`, `version.json`, `LICENSE`                                                    | Project docs, plugin API notes, version metadata, license.                                           |
-| `AGENTS.md`, `CLAUDE.md`, `HANDOVER.md` when present                                                    | Agent and handoff context. Read `AGENTS.md` first.                                                   |
+| `AGENTS.md`, `CLAUDE.md`, `HANDOVER.md` when present                                                    | Agent workflow and handoff context; use this file for structure before workflow-specific notes.      |
 | `dist/`, `data/`, `node_modules/`, `server/fastify/node_modules/`, `coverage/`, `test-results/`, `blobs-for-test/`, `scripts/` when present, `.idea/`, `.claude/` | Generated, runtime, ignored scratch, or local editor/agent state. Do not edit as source. |
 
 ## Primary Entrypoints
@@ -56,7 +58,7 @@ past decisions; they are not the source of current behavior.
 | `server/fastify/src/index.ts`                                                                                                               | API process entrypoint: load config, build app, listen.                                                                     |
 | `server/fastify/src/app.ts`                                                                                                                 | Fastify composition root: plugins, SQLite, auth, active writer, routes, workers, timers, optional static SPA.               |
 | `server/fastify/src/config.ts`, `server/fastify/src/routeRateLimits.ts`                                                                     | Runtime env parsing and per-route rate-limit presets.                                                                       |
-| `server/fastify/src/db.ts`                                                                                                                  | SQLite schema v17, migrations, schema version, global revision.                                                             |
+| `server/fastify/src/db.ts`                                                                                                                  | SQLite schema v18, migrations, schema version, global revision.                                                             |
 | `server/fastify/src/repository.ts`, `server/fastify/src/messageStore.ts`                                                                    | SQLite-backed domain repository, asset metadata, imports/exports/backups, chat message tables.                              |
 | `server/fastify/src/routeManifest.ts`                                                                                                       | Auth, active-writer, streaming, and route inventory used by tests/audits. Update it for route changes.                      |
 | `server/fastify/src/routes/`, `server/fastify/src/commands/`                                                                                | `/api/v1/*` route registrars and revision-checked mutation helpers.                                                         |

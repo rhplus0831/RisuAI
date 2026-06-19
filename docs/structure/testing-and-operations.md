@@ -23,7 +23,7 @@ is root-only; there is no `server/fastify/package.json`.
 | `pnpm smoke:fastify-browser`       | Build site, then run Playwright Fastify browser smoke.                                                        |
 | `pnpm client-thinning:audit`       | Run `util/client-thinning-audit.ts`.                                                                          |
 | `pnpm analyze:db <path>`           | Analyze `.risu`, `db.json`, raw database JSON, or legacy data dirs. Add `--json` for machine-readable output. |
-| `pnpm ts:agent <command>`          | Run the tsserver-backed agent debugging wrapper for hover, definitions, references, diagnostics, and renames. |
+| `pnpm ts:agent <command>`          | Run the tsserver-backed agent debugging wrapper for navigation, diagnostics, symbols, code actions, imports, and renames. |
 | `pnpm format`, `pnpm format:check` | Prettier write/check.                                                                                         |
 | `pnpm coverage:frontend`           | Run root/browser Vitest tests with broad frontend coverage under `coverage/frontend`.                          |
 | `pnpm coverage:backend`            | Run Fastify/server Vitest tests with broad backend coverage under `coverage/backend`.                          |
@@ -66,6 +66,10 @@ respect `RISU_AGENT_DEV_HOST` / `RISU_AGENT_DEV_PORT` /
 `RISU_AGENT_API_PORT`, set auth/TOS bypass defaults unless overridden, and
 proxy `/api` to the spawned API port.
 
+Stop `pnpm dev:agent` when done so frontend port `6418` and API port `6419`
+are released for the next agent. Do the same for `pnpm dev:human` when using
+the human trace ports.
+
 Request tracing writes API request traces under `data/trace/<mode>.jsonl`. Every
 response receives `X-Request-UID`, but only API requests are appended to JSONL;
 search that UID in the trace file to correlate a visible failure to one API call.
@@ -85,6 +89,10 @@ pnpm api:start
 `RISU_API_STATIC_ROOT` defaults to `<repo>/dist`; empty string, `none`, or `off`
 disables Fastify static serving.
 
+Tracked utilities that are not package-script-backed include
+`util/risuUserscript.user.js`, a manual browser/userscript bridge. Treat it as a
+source helper, not generated output.
+
 ## Tests And Checks
 
 | Area                        | Command/config                                                     | Environment | Locations                                                                                                                  |
@@ -99,6 +107,11 @@ disables Fastify static serving.
 
 Pick the smallest command that covers the changed area. On a fresh machine, run
 `pnpm exec playwright install chromium` before browser smoke.
+
+Config details: server Vitest uses Node, forks, a 15s test timeout, and sets
+`RISU_DIRECT_REALM_IMPORT_TEST` only when the Realm import test is directly
+selected. Playwright smoke is serial, one-worker Chromium with trace retained on
+failure.
 
 `pnpm coverage:frontend` and `pnpm coverage:backend` are broad coverage views for
 coverage analysis. `pnpm coverage:all` runs both sides and still executes backend
@@ -140,6 +153,9 @@ memo signatures, or render dependency keys.
   `tsconfig.client-lib.json`.
 - Prettier uses `prettier-plugin-svelte`, no semicolons, single quotes, and
   print width 120.
+- `.prettierignore` excludes Markdown docs, `docs/`, archived docs, and agent
+  handoff notes. `pnpm format` will not normalize these files, so keep docs
+  tables and wrapping tidy by inspection.
 
 Server TypeScript check workflow:
 
@@ -159,7 +175,11 @@ pnpm ts:agent definition server/fastify/src/index.ts:134:37
 pnpm ts:agent references server/fastify/src/app.ts:87:23 --include-declaration
 pnpm ts:agent diagnostics server/fastify/src/app.ts
 pnpm ts:agent diagnostics --project server/fastify/tsconfig.json
+pnpm ts:agent symbols server/fastify/src/app.ts
 pnpm ts:agent workspace-symbols buildApp --project server/fastify/tsconfig.json
+pnpm ts:agent code-actions server/fastify/src/app.ts:87:23
+pnpm ts:agent organize-imports server/fastify/src/app.ts
+pnpm ts:agent project-files --project server/fastify/tsconfig.json
 pnpm ts:agent rename-preview server/fastify/src/index.ts:45:17 nextSignalExitCode
 ```
 
@@ -167,7 +187,9 @@ Locations use 1-based `file:line:character` coordinates. The wrapper returns
 JSON so agents can chain the safer loop `references -> diagnostics ->
 rename-preview -> rename-apply -> diagnostics`. `rename-apply` and
 `organize-imports --write` modify files, so inspect `git diff` after using them.
-Set `RISU_TS_AGENT_TSSERVER_LOG=1` to capture a verbose tsserver log at
+Use `pnpm ts:agent --help` as the canonical command/flag list. Useful global
+flags include `--project`, `--absolute`, `--compact`, and `--timeout-ms`. Set
+`RISU_TS_AGENT_TSSERVER_LOG=1` to capture a verbose tsserver log at
 `data/trace/tsserver-agent.log` when debugging the wrapper itself.
 
 ## Environment Variables
@@ -200,6 +222,8 @@ Local/dev:
 | `RISU_AGENT_API_PORT`            | `6419`              | Fastify port for `pnpm dev:agent`; `pnpm dev:human` sets it to `6001`.                |
 | `RISU_AGENT_DEV_AUTH_BYPASS`     | `TRUE`              | Defaulted by full-stack dev runners; protected API routes ignore password auth.       |
 | `RISU_TS_AGENT_TSSERVER_LOG`     | unset               | Set to `1` or a path to capture verbose `pnpm ts:agent` tsserver logs.                |
+| `RISU_TS_AGENT_TIMEOUT_MS`       | `30000`             | Default tsserver request timeout for `pnpm ts:agent`; `--timeout-ms` overrides it.    |
+| `RISU_TS_AGENT_DEBUG`            | unset               | Echo tsserver stderr while debugging `pnpm ts:agent`.                                 |
 | `VITE_RISU_AGENT_DEV_IGNORE_TOS` | `TRUE`              | Set by `pnpm dev:agent`; `alertTOS()` returns accepted without showing the TOS modal. |
 
 Client/build:
@@ -209,7 +233,7 @@ Client/build:
 | `RISU_API_PROXY_TARGET`                                                          | Vite dev proxy target for `/api`.                                |
 | `VITE_RISU_LEGAL_CONFIGURED`                                                     | Controls legal/setup gating in builds and smoke.                 |
 | `VITE_FASTIFY_BROWSER_SMOKE`                                                     | Enables browser smoke hook and fixed smoke password setup/login. |
-| `VITE_RISU_LITE`                                                                 | Enables lite-mode consumers in settings/theme/legacy mobile code; does not mount the old mobile shell. |
+| `VITE_RISU_LITE`                                                                 | Enables lite-mode consumers in settings/theme/legacy mobile code; does not mount `LiteMain` or the legacy mobile shell. |
 | `VITE_AD_CLIENT`, `VITE_AD_CLIENT_MOBILE`, `VITE_AD_SLOT`, `VITE_AD_SLOT_MOBILE` | Ad UI configuration.                                             |
 
 Test/audit summary variables include `CLIENT_THINNING_AUDIT_CHECK_IDS`,

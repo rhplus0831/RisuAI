@@ -30,9 +30,10 @@ that reports missing ids.
 
 `runAssetGc()` walks known asset-reference fields across a minimal SQLite
 projection and scans `messages.data` for inlay references, then removes
-unreferenced metadata and stray files. A grace window protects
-upload-then-reference races. GC does not bump the revision or emit command
-events.
+unreferenced metadata and stray files. The minimal GC projection currently loads
+the active reference-bearing table slices it needs rather than a full repository
+projection. A grace window protects upload-then-reference races. GC does not
+bump the revision or emit command events.
 
 ## `.risu` And Bundle Routes
 
@@ -42,6 +43,7 @@ events.
 | `server/fastify/src/risuSave/importSnapshot.ts`                       | Multipart `.risu` decode and import normalization.                  |
 | `server/fastify/src/risuSave/exportSnapshot.ts`                       | Repository export into block or legacy envelopes.                   |
 | `server/fastify/src/risuSave/bundleExport.ts`                         | Zip bundle export with `.risu` bytes plus present asset files.      |
+| `server/fastify/src/risuSave/localBackupExport.ts`                    | Original Risu `.bin` local-backup export with asset records.        |
 | `server/fastify/src/risuSave/localBackupImport.ts`                    | Streaming device-backup decode for `.risu.zip` and legacy `.bin`.   |
 | `server/fastify/src/risuSave/importLimits.ts`                         | Expanded-payload guard shared by `.risu` and Realm import decoding. |
 | `server/fastify/src/risuSave/blockCodec.ts`, `legacyEnvelopeCodec.ts` | Current and legacy `.risu` envelope codecs.                         |
@@ -62,24 +64,35 @@ record.
 
 `POST /api/v1/import/bundle` handles the browser "Load Backup Locally" path. It
 streams upload bytes to disk, bounded by `RISU_API_IMPORT_MAX_BYTES` (unlimited
-by default), then decodes either a `.risu.zip` bundle containing
-`database.risu`, `manifest.json`, and asset entries, or the original app's
-legacy `.bin` local backup. Browser helpers live in
+by default), then decodes either a `.risu.zip` bundle or the original app's
+legacy `.bin` local backup. Bundle zip import requires `manifest.json` version
+`1`, accepts a `.risu` database entry, validates `assets/<sha>.<ext>` entries by
+extension and content hash, and ignores unrelated zip entries. Browser route
+adapters live in `src/ts/server/backups.ts`; UI-facing wrappers live in
 `src/ts/storage/backup.ts`.
 
 ## Realm Import
 
-`POST /api/v1/import/realm-character` accepts a Realm id, fetches dynamic Realm
-JSON cards plus referenced hub resources server-side, and also handles
-`charx`/zip packages with packaged assets. It stores resources as
+`POST /api/v1/import/realm-character` accepts JSON with a Realm id, fetches
+dynamic Realm JSON cards plus referenced hub resources server-side, and handles
+Realm-provided `charx`/zip packages with packaged assets. It stores resources as
 content-addressed assets and appends the converted character through the command
 mutation path.
 
 Server conversion and asset mapping live in `server/fastify/src/realmImport/`;
 browser progress/reconcile handling lives in `src/ts/server/realmImport.ts`.
 Server Realm import is primary but not exclusive: unsupported server Realm
-responses can fall back to the older browser path, and local `charx` file import
-still has a browser-native path.
+responses can fall back to the older browser path, and local direct `charx` file
+import still has a browser-native path.
+
+## Legacy Storage Compatibility
+
+`/api/v1/storage/*` remains live for compatibility and stores bytes under
+`data/save/<hex-key>` through `legacyStorage.ts` and
+`src/ts/storage/fastifyStorage.ts`. These writes are active-writer guarded but
+do not bump the domain revision. Server backup snapshots include `data/save/`;
+device `.risu`/bundle/local-backup exports do not include this compatibility
+store.
 
 ## Backups
 

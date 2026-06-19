@@ -13,7 +13,7 @@ generated, local-only, historical, vendored, or intentionally no-port.
 | `test-results/`                                 | Playwright/test output.                                                                                                                                |
 | `blobs-for-test/`                               | Ignored local binary/test scratch payloads.                                                                                                             |
 | `*.tsbuildinfo`                                 | TypeScript incremental build artifacts, including `tsconfig.client-lib.tsbuildinfo`.                                                                   |
-| `data/`                                         | Local runtime state: `risu.db`/WAL/SHM, assets, backups, auth, optional `data/dev`, legacy import artifacts. Useful for debugging, not source.         |
+| `data/`                                         | Local runtime state: `risu.db`/WAL/SHM, assets, backups, auth files, `data/save/`, traces under `data/trace/`, optional `data/dev`, legacy import artifacts. Useful for debugging, not source; see `data-and-events.md`. |
 | `scripts/` when present                         | Ignored local scratch/tooling directory.                                                                                                               |
 | `public/token/`                                 | Vendor/tokenizer data. Only touch when intentionally updating those assets.                                                                            |
 | `public/assets/`                                | Bundled Bergamot/browser translator workers. Only touch when intentionally updating vendor assets.                                                     |
@@ -27,6 +27,17 @@ generated, local-only, historical, vendored, or intentionally no-port.
 `.archived-docs/` files are source documentation, but they are historical. They
 may contain present-tense statements that were true at closeout and are now
 stale. Prefer `STRUCTURE.md`, `docs/structure/`, and code for current behavior.
+
+`docs/structure/frontend.md` is source documentation only as a compatibility
+pointer for older links. Add current frontend guidance to
+`src/docs/svelte-ui.md` or `src/docs/client-runtime.md`.
+
+Other ignored local/legacy paths include root `save/`, `dist-web/`, `dist-ssr`,
+`xplugin/`, `src-others/`, `src-tauri/target/`, `src-tauri/gen/`, `build/`,
+`.wrangler/`, `.qoder/`, `.tauri/`, `.env`, `.risu-api-restart`, `dist.zip`,
+`Cargo.lock`, and scratch files such as `memo.txt` or `test.ts`. Treat them as
+historical, local build/runtime, or agent scratch state unless a new plan
+explicitly reopens them.
 
 ## Static Assets
 
@@ -82,19 +93,26 @@ Do not remove these just because the name sounds old:
 imports it into SQLite and renames it to `db.json.migrated`; current runtime
 state is not written back to live `db.json`.
 
+Old UI strings may still mention `save/__password` or `save/__password.txt`.
+Fastify auth state actually lives under `data/__password`,
+`data/__known_public_key_hashes.json`, and
+`data/__known_session_token_hashes.json`.
+
 ## Stale Or No-Port Surfaces
 
 - `src/LiteMain.svelte` is unwired. Live lite mode is `VITE_RISU_LITE` driving
   `src/ts/lite.ts` plus consumers such as settings, color scheme, and legacy
-  mobile component branches; it does not re-enable `LiteMain.svelte` or the old
-  mobile shell.
+  mobile component branches; it does not re-enable `LiteMain.svelte`.
+- `src/lib/Mobile/MobileCharacters.svelte` is active through `GridCatalog`.
+  `MobileHeader.svelte`, `MobileBody.svelte`, and `MobileFooter.svelte` are the
+  unmounted legacy mobile shell.
 - `src/lib/UI/3DLoader.svelte` and `src/ts/3d/threeload.ts` are legacy and not
   imported by the current app shell.
 - Old worktrees may contain `src/lib/UI/NewGUI/` or `src/ts/sync/`; both are
   absent from the current tree and should not be reintroduced as active UI/sync
   surfaces without a new plan.
-- `src/lib/Others/WelcomeRisu.svelte` exists, but the current shell no longer
-  imports it.
+- `src/lib/Others/WelcomeRisu.svelte` is retained and tested onboarding/setup
+  UI, but the current shell no longer imports it.
 
 Removed or intentionally no-port concepts: group chat, peer sync, Google Drive
 sync, Risu Account Sync, browser-local durable persistence as the primary
