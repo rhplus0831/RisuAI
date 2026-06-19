@@ -36,6 +36,7 @@ import {
   normalizeModelRoleProfiles,
   type ModelProfileRecord,
   type ModelProfileRecordProviderOptions,
+  type ModelProfileRecordRuntimeOptions,
 } from './modelProfileRecords'
 
 export type ModelProfileSourceKind =
@@ -191,6 +192,7 @@ interface ModelProfileSelection {
   profileId?: string
   profileRequestModel?: string
   profileProviderOptions?: ModelProfileRecordProviderOptions
+  profileRuntimeOptions?: ModelProfileRecordRuntimeOptions
   source: ModelProfileResolutionSource
 }
 
@@ -415,11 +417,14 @@ export function resolveModelProfile({
       }
     : (resolveDurableModelSelection(database, normalizedRole) ?? resolveLegacyModelSelection(database, normalizedRole))
   const lookedUp = lookupModelInfo?.(database, selection.modelId)
+  const baseModelInfo = lookedUp
+    ? withCustomFlags(database, cloneModelInfo(lookedUp), selection.profileRuntimeOptions)
+    : resolveServerSafeModelInfo(database, selection.modelId, selection.profileRuntimeOptions)
   const modelInfo = withDurableModelInfoOptions(
     selection.modelId,
     selection.profileProviderOptions,
     database,
-    withCustomFlags(database, cloneModelInfo(lookedUp ?? resolveServerSafeModelInfo(database, selection.modelId))),
+    baseModelInfo,
   )
   const requestModel = resolveProfileRequestModelFromParts(
     database,
@@ -434,7 +439,7 @@ export function resolveModelProfile({
     requestModel,
     selection.profileProviderOptions,
   )
-  const runtimeOptions = resolveRuntimeOptions(database, modelInfo)
+  const runtimeOptions = resolveRuntimeOptions(database, modelInfo, selection.profileRuntimeOptions)
   const providerCapabilityInput = buildProfileProviderCapabilityInputForDatabase(
     database,
     selection.modelId,
@@ -490,7 +495,11 @@ export function resolveLegacyFallbackRefs(database: Database, roleLike: ModelRol
   }))
 }
 
-export function resolveServerSafeModelInfo(database: Database, modelId: string): ResolvedModelProfileModelInfo {
+export function resolveServerSafeModelInfo(
+  database: Database,
+  modelId: string,
+  durableRuntimeOptions?: ModelProfileRecordRuntimeOptions,
+): ResolvedModelProfileModelInfo {
   const id = nonBlankString(modelId) ?? ''
   if (!id) return unknownModel('')
 
@@ -507,6 +516,7 @@ export function resolveServerSafeModelInfo(database: Database, modelId: string):
         parameters: OPENAI_EXTENDED_PARAMETERS,
         tokenizer: LLMTokenizer.Unknown,
       }),
+      durableRuntimeOptions,
     )
   }
 
@@ -525,6 +535,7 @@ export function resolveServerSafeModelInfo(database: Database, modelId: string):
           parameters: OPENAI_EXTENDED_PARAMETERS,
           tokenizer: asTokenizer(entry.tokenizer, LLMTokenizer.Unknown),
         }),
+        durableRuntimeOptions,
       )
     }
   }
@@ -542,11 +553,12 @@ export function resolveServerSafeModelInfo(database: Database, modelId: string):
         parameters: OpenAIParameters,
         tokenizer: LLMTokenizer.Unknown,
       }),
+      durableRuntimeOptions,
     )
   }
 
   const staticModel = SERVER_SAFE_MODELS.find((candidate) => candidate.id === id)
-  if (staticModel) return withCustomFlags(database, cloneModelInfo(staticModel))
+  if (staticModel) return withCustomFlags(database, cloneModelInfo(staticModel), durableRuntimeOptions)
 
   if (id.startsWith('horde:::')) {
     const name = id.slice('horde:::'.length)
@@ -573,6 +585,7 @@ export function resolveServerSafeModelInfo(database: Database, modelId: string):
         parameters: OpenAIParameters,
         tokenizer: LLMTokenizer.Unknown,
       }),
+      durableRuntimeOptions,
     )
   }
   if (id.startsWith('deepseek-')) {
@@ -598,6 +611,7 @@ export function resolveServerSafeModelInfo(database: Database, modelId: string):
         endpoint: 'https://api.deepseek.com/beta/chat/completions',
         keyIdentifier: 'deepseek',
       }),
+      durableRuntimeOptions,
     )
   }
   if (id.startsWith('deepinfra_')) {
@@ -624,6 +638,7 @@ export function resolveServerSafeModelInfo(database: Database, modelId: string):
         keyIdentifier: 'deepinfra',
         recommended: true,
       }),
+      durableRuntimeOptions,
     )
   }
   if (id.startsWith('anthropic.')) {
@@ -639,6 +654,7 @@ export function resolveServerSafeModelInfo(database: Database, modelId: string):
         parameters: ClaudeParameters,
         tokenizer: LLMTokenizer.Claude,
       }),
+      durableRuntimeOptions,
     )
   }
   if (id.startsWith('claude-')) {
@@ -653,6 +669,7 @@ export function resolveServerSafeModelInfo(database: Database, modelId: string):
         parameters: ClaudeParameters,
         tokenizer: LLMTokenizer.Claude,
       }),
+      durableRuntimeOptions,
     )
   }
   if (id.startsWith('mistral') || id.startsWith('magistral')) {
@@ -667,6 +684,7 @@ export function resolveServerSafeModelInfo(database: Database, modelId: string):
         parameters: ['temperature', 'presence_penalty', 'frequency_penalty', 'top_p'],
         tokenizer: LLMTokenizer.Mistral,
       }),
+      durableRuntimeOptions,
     )
   }
   if (id.startsWith('cohere-')) {
@@ -681,6 +699,7 @@ export function resolveServerSafeModelInfo(database: Database, modelId: string):
         parameters: ['temperature', 'top_k', 'top_p', 'presence_penalty', 'frequency_penalty'],
         tokenizer: LLMTokenizer.Cohere,
       }),
+      durableRuntimeOptions,
     )
   }
   if (id.startsWith('gemini-')) {
@@ -697,6 +716,7 @@ export function resolveServerSafeModelInfo(database: Database, modelId: string):
         parameters: OpenAIParameters,
         tokenizer: LLMTokenizer.GoogleCloud,
       }),
+      durableRuntimeOptions,
     )
   }
   if (id.includes('instruct')) {
@@ -711,6 +731,7 @@ export function resolveServerSafeModelInfo(database: Database, modelId: string):
         parameters: OpenAIParameters,
         tokenizer: LLMTokenizer.Unknown,
       }),
+      durableRuntimeOptions,
     )
   }
   if (id.endsWith('-response-api')) {
@@ -726,6 +747,7 @@ export function resolveServerSafeModelInfo(database: Database, modelId: string):
         parameters: OpenAIParameters,
         tokenizer: LLMTokenizer.tiktokenO200Base,
       }),
+      durableRuntimeOptions,
     )
   }
   if (id.startsWith('hf:::')) {
@@ -777,7 +799,7 @@ export function resolveServerSafeModelInfo(database: Database, modelId: string):
     })
   }
 
-  return withCustomFlags(database, unknownModel(id))
+  return withCustomFlags(database, unknownModel(id), durableRuntimeOptions)
 }
 
 export function buildProfileProviderCapabilityInput(
@@ -844,6 +866,7 @@ function resolveDurableModelSelection(database: Database, role: ModelRole): Mode
     profileId: profile.id,
     ...(profileRequestModel ? { profileRequestModel } : {}),
     ...(profile.providerOptions ? { profileProviderOptions: profile.providerOptions } : {}),
+    ...(profile.runtimeOptions ? { profileRuntimeOptions: profile.runtimeOptions } : {}),
     source: {
       kind: 'durable-profile',
       role,
@@ -1207,38 +1230,54 @@ function resolveProviderOptions(
 function resolveRuntimeOptions(
   database: Database,
   modelInfo: ResolvedModelProfileModelInfo,
+  durableRuntimeOptions?: ModelProfileRecordRuntimeOptions,
 ): ModelProfileRuntimeOptions {
   return {
-    maxContext: finiteNumber(database.maxContext),
-    maxResponse: finiteNumber(database.maxResponse),
-    temperature: normalizeSampler(database.temperature, { scale: 100 }),
-    rawTemperature: finiteNumber(database.temperature),
-    topP: normalizeSampler(database.top_p),
-    topK: normalizeSampler(database.top_k),
-    minP: normalizeSampler(database.min_p),
-    topA: normalizeSampler(database.top_a),
-    repetitionPenalty: normalizeSampler(database.repetition_penalty),
-    frequencyPenalty: normalizeSampler(database.frequencyPenalty, { scale: 100 }),
-    presencePenalty: normalizeSampler(database.PresensePenalty, { scale: 100 }),
-    reasoningEffort: finiteNumber(database.reasoningEffort),
-    thinkingTokens: finiteNumber(database.thinkingTokens),
-    thinkingType: database.thinkingType,
-    deepseekThinkingType: database.deepseekThinkingType,
-    adaptiveThinkingEffort: database.adaptiveThinkingEffort,
-    deepseekReasoningEffort: database.deepseekReasoningEffort,
-    verbosity: finiteNumber(database.verbosity),
-    useStreaming: database.useStreaming,
-    genTime: finiteNumber(database.genTime),
-    extractJson: database.extractJson,
-    jsonSchemaEnabled: database.jsonSchemaEnabled,
-    jsonSchema: database.jsonSchema,
-    strictJsonSchema: database.strictJsonSchema,
-    outputImageModal: database.outputImageModal,
-    dynamicOutput: database.dynamicOutput,
-    modelTools: Array.isArray(database.modelTools) ? [...database.modelTools] : [],
-    enableCustomFlags: database.enableCustomFlags,
-    customFlags: Array.isArray(database.customFlags) ? [...database.customFlags] : undefined,
-    customTokenizer: database.customTokenizer || tokenizerName(modelInfo.tokenizer),
+    maxContext: finiteNumber(durableRuntimeOptions?.maxContext ?? database.maxContext),
+    maxResponse: finiteNumber(durableRuntimeOptions?.maxResponse ?? database.maxResponse),
+    temperature: normalizeSampler(durableRuntimeOptions?.temperature ?? database.temperature, { scale: 100 }),
+    rawTemperature: finiteNumber(durableRuntimeOptions?.temperature ?? database.temperature),
+    topP: normalizeSampler(durableRuntimeOptions?.topP ?? database.top_p),
+    topK: normalizeSampler(durableRuntimeOptions?.topK ?? database.top_k),
+    minP: normalizeSampler(durableRuntimeOptions?.minP ?? database.min_p),
+    topA: normalizeSampler(durableRuntimeOptions?.topA ?? database.top_a),
+    repetitionPenalty: normalizeSampler(durableRuntimeOptions?.repetitionPenalty ?? database.repetition_penalty),
+    frequencyPenalty: normalizeSampler(durableRuntimeOptions?.frequencyPenalty ?? database.frequencyPenalty, {
+      scale: 100,
+    }),
+    presencePenalty: normalizeSampler(durableRuntimeOptions?.presencePenalty ?? database.PresensePenalty, {
+      scale: 100,
+    }),
+    reasoningEffort: finiteNumber(durableRuntimeOptions?.reasoningEffort ?? database.reasoningEffort),
+    thinkingTokens: finiteNumber(durableRuntimeOptions?.thinkingTokens ?? database.thinkingTokens),
+    thinkingType: durableRuntimeOptions?.thinkingType ?? database.thinkingType,
+    deepseekThinkingType: durableRuntimeOptions?.deepseekThinkingType ?? database.deepseekThinkingType,
+    adaptiveThinkingEffort: durableRuntimeOptions?.adaptiveThinkingEffort ?? database.adaptiveThinkingEffort,
+    deepseekReasoningEffort: durableRuntimeOptions?.deepseekReasoningEffort ?? database.deepseekReasoningEffort,
+    verbosity: finiteNumber(durableRuntimeOptions?.verbosity ?? database.verbosity),
+    useStreaming: durableRuntimeOptions?.useStreaming ?? database.useStreaming,
+    genTime: finiteNumber(durableRuntimeOptions?.genTime ?? database.genTime),
+    extractJson: durableRuntimeOptions?.extractJson ?? database.extractJson,
+    jsonSchemaEnabled: durableRuntimeOptions?.jsonSchemaEnabled ?? database.jsonSchemaEnabled,
+    jsonSchema: durableRuntimeOptions?.jsonSchema ?? database.jsonSchema,
+    strictJsonSchema: durableRuntimeOptions?.strictJsonSchema ?? database.strictJsonSchema,
+    outputImageModal: durableRuntimeOptions?.outputImageModal ?? database.outputImageModal,
+    dynamicOutput: durableRuntimeOptions?.dynamicOutput ?? database.dynamicOutput,
+    modelTools:
+      durableRuntimeOptions?.modelTools !== undefined
+        ? [...durableRuntimeOptions.modelTools]
+        : Array.isArray(database.modelTools)
+          ? [...database.modelTools]
+          : [],
+    enableCustomFlags: durableRuntimeOptions?.enableCustomFlags ?? database.enableCustomFlags,
+    customFlags:
+      durableRuntimeOptions?.customFlags !== undefined
+        ? [...durableRuntimeOptions.customFlags]
+        : Array.isArray(database.customFlags)
+          ? [...database.customFlags]
+          : undefined,
+    customTokenizer:
+      durableRuntimeOptions?.customTokenizer ?? (database.customTokenizer || tokenizerName(modelInfo.tokenizer)),
   }
 }
 
@@ -1318,11 +1357,21 @@ function withDurableModelInfoOptions(
   }
 }
 
-function withCustomFlags(database: Database, modelInfo: ResolvedModelProfileModelInfo): ResolvedModelProfileModelInfo {
-  if (database.enableCustomFlags) {
+function withCustomFlags(
+  database: Database,
+  modelInfo: ResolvedModelProfileModelInfo,
+  durableRuntimeOptions?: ModelProfileRecordRuntimeOptions,
+): ResolvedModelProfileModelInfo {
+  const enableCustomFlags = durableRuntimeOptions?.enableCustomFlags ?? database.enableCustomFlags
+  if (enableCustomFlags) {
     return {
       ...modelInfo,
-      flags: Array.isArray(database.customFlags) ? [...database.customFlags] : [],
+      flags:
+        durableRuntimeOptions?.customFlags !== undefined
+          ? [...durableRuntimeOptions.customFlags]
+          : Array.isArray(database.customFlags)
+            ? [...database.customFlags]
+            : [],
     }
   }
   return modelInfo

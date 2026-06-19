@@ -13,6 +13,7 @@ import { MASKED_PROVIDER_SECRET } from '../src/providerSecrets.js'
 import { loadPersisted, writePersistedWithMessages, insertAssetMetadataBatch } from '../src/repository.js'
 import { activeMessageRowids, assertOnlyRowsWritten, tableRowidsById } from './helpers/rowStability.js'
 import { MODEL_ROLES } from '../../../src/ts/model/modelRoles.js'
+import { LLMFlags } from '../../../src/ts/model/types.js'
 
 const subtle = webcrypto.subtle
 
@@ -921,6 +922,20 @@ describe('Phase 9-2a scalar settings groups', () => {
               name: ' Primary ',
               modelId: ' gpt-5 ',
               providerOptions: { requestModel: ' wire-model ', apiKey: ' profile-api-key ' },
+              runtimeOptions: {
+                maxContext: 32768,
+                maxResponse: 2048,
+                temperature: 70,
+                topP: 0.9,
+                frequencyPenalty: -25,
+                useStreaming: false,
+                genTime: 3,
+                extractJson: ' object ',
+                jsonSchemaEnabled: true,
+                modelTools: [' tool-a ', ''],
+                customFlags: [LLMFlags.hasImageInput],
+                customTokenizer: ' custom-tokenizer ',
+              },
             },
           ],
           modelRoleProfiles: { memory: { mode: 'profile', profileId: ' profile-a ' } },
@@ -937,6 +952,20 @@ describe('Phase 9-2a scalar settings groups', () => {
           name: 'Primary',
           modelId: 'gpt-5',
           providerOptions: { requestModel: 'wire-model', apiKey: 'profile-api-key' },
+          runtimeOptions: {
+            maxContext: 32768,
+            maxResponse: 2048,
+            temperature: 70,
+            topP: 0.9,
+            frequencyPenalty: -25,
+            useStreaming: false,
+            genTime: 3,
+            extractJson: 'object',
+            jsonSchemaEnabled: true,
+            modelTools: ['tool-a'],
+            customFlags: [LLMFlags.hasImageInput],
+            customTokenizer: 'custom-tokenizer',
+          },
         },
       ],
       modelRoleProfiles: {
@@ -979,6 +1008,19 @@ describe('Phase 9-2a scalar settings groups', () => {
           modelProfiles: [{ id: 'profile-a', name: 'Primary', providerOptions: { requestModel: 42 } }],
         },
         error: 'modelProfiles[0].providerOptions.requestModel must be a string when present',
+      },
+      {
+        patch: {
+          modelProfiles: [{ id: 'profile-a', name: 'Primary', runtimeOptions: { notSupported: true } }],
+        },
+        error: 'modelProfiles[0].runtimeOptions.notSupported is not supported',
+      },
+      {
+        patch: {
+          modelProfiles: [{ id: 'profile-a', name: 'Primary', runtimeOptions: { customFlags: [999] } }],
+        },
+        error:
+          'modelProfiles[0].runtimeOptions.customFlags must be an array of valid LLMFlags numeric values when present',
       },
       {
         patch: {

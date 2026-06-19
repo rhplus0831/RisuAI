@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { MODEL_ROLES } from './modelRoles'
-import { LLMFormat } from './types'
+import { LLMFlags, LLMFormat } from './types'
 import {
   createDefaultModelRoleProfiles,
   normalizeModelProfiles,
@@ -61,11 +61,44 @@ describe('model profile records', () => {
             extraHeaders: { 'X-Key': 'must-drop' },
             additionalParams: [['header::Authorization', 'must-drop']],
           },
+          runtimeOptions: {
+            maxContext: 32768,
+            maxResponse: 2048,
+            temperature: 70,
+            topP: 0.9,
+            topK: 40,
+            minP: 0.1,
+            topA: 0.2,
+            repetitionPenalty: 1.05,
+            frequencyPenalty: -25,
+            presencePenalty: 30,
+            reasoningEffort: 2,
+            thinkingTokens: 512,
+            verbosity: 1,
+            genTime: 3,
+            thinkingType: ' enabled ',
+            deepseekThinkingType: ' deepseek ',
+            adaptiveThinkingEffort: ' medium ',
+            deepseekReasoningEffort: ' high ',
+            extractJson: ' object ',
+            jsonSchema: ' {"type":"object"} ',
+            customTokenizer: ' cl100k_base ',
+            useStreaming: false,
+            jsonSchemaEnabled: true,
+            strictJsonSchema: true,
+            outputImageModal: true,
+            enableCustomFlags: true,
+            dynamicOutput: { mode: 'json' },
+            modelTools: [' tool-a ', '', 7, 'tool-b'],
+            customFlags: [LLMFlags.hasImageInput, 999, 'bad', LLMFlags.hasStreaming],
+            unsupportedRuntimeField: 'must-drop',
+          },
         },
         { id: 'profile-a', name: 'Duplicate' },
         { id: 'profile-b', name: 'Identity Only', modelId: '   ' },
         { id: 'profile-c' },
         { id: 'profile-d', name: 'Blank Request Model', providerOptions: { requestModel: '   ' } },
+        { id: 'profile-e', name: 'Empty Runtime', runtimeOptions: { extractJson: '   ', modelTools: [''] } },
         { name: 'Missing Id' },
         'bad-row',
       ]),
@@ -103,10 +136,42 @@ describe('model profile records', () => {
             thinkingMode: 'medium',
           },
         },
+        runtimeOptions: {
+          maxContext: 32768,
+          maxResponse: 2048,
+          temperature: 70,
+          topP: 0.9,
+          topK: 40,
+          minP: 0.1,
+          topA: 0.2,
+          repetitionPenalty: 1.05,
+          frequencyPenalty: -25,
+          presencePenalty: 30,
+          reasoningEffort: 2,
+          thinkingTokens: 512,
+          verbosity: 1,
+          genTime: 3,
+          thinkingType: 'enabled',
+          deepseekThinkingType: 'deepseek',
+          adaptiveThinkingEffort: 'medium',
+          deepseekReasoningEffort: 'high',
+          extractJson: 'object',
+          jsonSchema: '{"type":"object"}',
+          customTokenizer: 'cl100k_base',
+          useStreaming: false,
+          jsonSchemaEnabled: true,
+          strictJsonSchema: true,
+          outputImageModal: true,
+          enableCustomFlags: true,
+          dynamicOutput: { mode: 'json' },
+          modelTools: ['tool-a', 'tool-b'],
+          customFlags: [LLMFlags.hasImageInput, LLMFlags.hasStreaming],
+        },
       },
       { id: 'profile-b', name: 'Identity Only' },
       { id: 'profile-c', name: 'profile-c' },
       { id: 'profile-d', name: 'Blank Request Model' },
+      { id: 'profile-e', name: 'Empty Runtime', runtimeOptions: { modelTools: [] } },
     ])
   })
 
@@ -139,6 +204,20 @@ describe('model profile records', () => {
               thinkingMode: ' high ',
             },
           },
+          runtimeOptions: {
+            maxContext: 65536,
+            maxResponse: 4096,
+            temperature: 65,
+            topP: 0.8,
+            frequencyPenalty: -10,
+            useStreaming: false,
+            genTime: 4,
+            extractJson: ' object ',
+            jsonSchemaEnabled: true,
+            modelTools: [' tool-a ', ''],
+            customFlags: [LLMFlags.hasImageInput],
+            customTokenizer: ' custom-tokenizer ',
+          },
         },
         { id: ' identity-only ', name: ' Identity Only ', modelId: '   ', providerOptions: { requestModel: '   ' } },
       ]),
@@ -168,6 +247,20 @@ describe('model profile records', () => {
             modelSource: 'cloud',
             thinkingMode: 'high',
           },
+        },
+        runtimeOptions: {
+          maxContext: 65536,
+          maxResponse: 4096,
+          temperature: 65,
+          topP: 0.8,
+          frequencyPenalty: -10,
+          useStreaming: false,
+          genTime: 4,
+          extractJson: 'object',
+          jsonSchemaEnabled: true,
+          modelTools: ['tool-a'],
+          customFlags: [LLMFlags.hasImageInput],
+          customTokenizer: 'custom-tokenizer',
         },
       },
       { id: 'identity-only', name: 'Identity Only' },
@@ -224,6 +317,32 @@ describe('model profile records', () => {
     expect(() =>
       readModelProfiles([{ id: 'profile-a', name: 'Primary', providerOptions: { requestModel: 123 } }]),
     ).toThrow('modelProfiles[0].providerOptions.requestModel must be a string when present')
+
+    expect(() => readModelProfiles([{ id: 'profile-a', name: 'Primary', runtimeOptions: { unknown: true } }])).toThrow(
+      'modelProfiles[0].runtimeOptions.unknown is not supported',
+    )
+
+    expect(() =>
+      readModelProfiles([{ id: 'profile-a', name: 'Primary', runtimeOptions: { temperature: Number.NaN } }]),
+    ).toThrow('modelProfiles[0].runtimeOptions.temperature must be a finite number when present')
+
+    expect(() =>
+      readModelProfiles([{ id: 'profile-a', name: 'Primary', runtimeOptions: { useStreaming: 'yes' } }]),
+    ).toThrow('modelProfiles[0].runtimeOptions.useStreaming must be a boolean when present')
+
+    expect(() =>
+      readModelProfiles([{ id: 'profile-a', name: 'Primary', runtimeOptions: { extractJson: 42 } }]),
+    ).toThrow('modelProfiles[0].runtimeOptions.extractJson must be a string when present')
+
+    expect(() =>
+      readModelProfiles([{ id: 'profile-a', name: 'Primary', runtimeOptions: { modelTools: ['tool-a', 42] } }]),
+    ).toThrow('modelProfiles[0].runtimeOptions.modelTools must be an array of strings when present')
+
+    expect(() =>
+      readModelProfiles([{ id: 'profile-a', name: 'Primary', runtimeOptions: { customFlags: [999] } }]),
+    ).toThrow(
+      'modelProfiles[0].runtimeOptions.customFlags must be an array of valid LLMFlags numeric values when present',
+    )
 
     expect(() => readModelProfiles([{ id: 'profile-a', name: 'Primary', providerOptions: { baseUrl: 123 } }])).toThrow(
       'modelProfiles[0].providerOptions.baseUrl must be a string when present',

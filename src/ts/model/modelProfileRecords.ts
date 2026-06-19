@@ -1,11 +1,12 @@
 import { MODEL_ROLES, type ModelRole } from './modelRoles'
-import { LLMFormat, type LLMFormat as LLMFormatValue } from './types'
+import { LLMFlags, LLMFormat, type LLMFlags as LLMFlagValue, type LLMFormat as LLMFormatValue } from './types'
 
 export interface ModelProfileRecord {
   id: string
   name: string
   modelId?: string
   providerOptions?: ModelProfileRecordProviderOptions
+  runtimeOptions?: ModelProfileRecordRuntimeOptions
 }
 
 export interface ModelProfileRecordProviderOptions {
@@ -39,6 +40,38 @@ export interface ModelProfileRecordProviderOptions {
   }
 }
 
+export interface ModelProfileRecordRuntimeOptions {
+  maxContext?: number
+  maxResponse?: number
+  temperature?: number
+  topP?: number
+  topK?: number
+  minP?: number
+  topA?: number
+  repetitionPenalty?: number
+  frequencyPenalty?: number
+  presencePenalty?: number
+  reasoningEffort?: number
+  thinkingTokens?: number
+  verbosity?: number
+  genTime?: number
+  thinkingType?: string
+  deepseekThinkingType?: string
+  adaptiveThinkingEffort?: string
+  deepseekReasoningEffort?: string
+  extractJson?: string
+  jsonSchema?: string
+  customTokenizer?: string
+  useStreaming?: boolean
+  jsonSchemaEnabled?: boolean
+  strictJsonSchema?: boolean
+  outputImageModal?: boolean
+  enableCustomFlags?: boolean
+  dynamicOutput?: unknown
+  modelTools?: string[]
+  customFlags?: LLMFlagValue[]
+}
+
 export interface LegacyModelRoleProfileBinding {
   mode: 'legacy'
 }
@@ -58,7 +91,7 @@ export class ModelProfileRecordValidationError extends Error {
   }
 }
 
-const MODEL_PROFILE_RECORD_KEYS = new Set(['id', 'name', 'modelId', 'providerOptions'])
+const MODEL_PROFILE_RECORD_KEYS = new Set(['id', 'name', 'modelId', 'providerOptions', 'runtimeOptions'])
 const MODEL_PROFILE_PROVIDER_OPTIONS_KEYS = new Set([
   'apiKey',
   'requestModel',
@@ -73,8 +106,49 @@ const MODEL_PROFILE_OPENROUTER_KEYS = new Set(['fallback', 'middleOut', 'provide
 const MODEL_PROFILE_OPENROUTER_PROVIDER_KEYS = new Set(['order', 'only', 'ignore'])
 const MODEL_PROFILE_NANOGPT_KEYS = new Set(['providerHint', 'useSubscriptionEndpoint', 'subscriptionState'])
 const MODEL_PROFILE_OLLAMA_KEYS = new Set(['url', 'requestFormat', 'modelSource', 'thinkingMode'])
+const MODEL_PROFILE_RUNTIME_NUMBER_KEYS = [
+  'maxContext',
+  'maxResponse',
+  'temperature',
+  'topP',
+  'topK',
+  'minP',
+  'topA',
+  'repetitionPenalty',
+  'frequencyPenalty',
+  'presencePenalty',
+  'reasoningEffort',
+  'thinkingTokens',
+  'verbosity',
+  'genTime',
+] as const
+const MODEL_PROFILE_RUNTIME_STRING_KEYS = [
+  'thinkingType',
+  'deepseekThinkingType',
+  'adaptiveThinkingEffort',
+  'deepseekReasoningEffort',
+  'extractJson',
+  'jsonSchema',
+  'customTokenizer',
+] as const
+const MODEL_PROFILE_RUNTIME_BOOLEAN_KEYS = [
+  'useStreaming',
+  'jsonSchemaEnabled',
+  'strictJsonSchema',
+  'outputImageModal',
+  'enableCustomFlags',
+] as const
+const MODEL_PROFILE_RUNTIME_KEYS = new Set([
+  ...MODEL_PROFILE_RUNTIME_NUMBER_KEYS,
+  ...MODEL_PROFILE_RUNTIME_STRING_KEYS,
+  ...MODEL_PROFILE_RUNTIME_BOOLEAN_KEYS,
+  'dynamicOutput',
+  'modelTools',
+  'customFlags',
+])
 const MODEL_ROLE_PROFILE_BINDING_KEYS = new Set(['mode', 'profileId'])
 const MODEL_ROLE_SET = new Set<string>(MODEL_ROLES)
+const LLM_FLAG_SET = new Set<number>(Object.values(LLMFlags))
 
 export function createDefaultModelRoleProfiles(): ModelRoleProfileMap {
   return Object.fromEntries(MODEL_ROLES.map((role) => [role, { mode: 'legacy' }])) as ModelRoleProfileMap
@@ -97,6 +171,7 @@ export function normalizeModelProfiles(value: unknown): ModelProfileRecord[] {
         name,
         modelId,
         providerOptions: normalizeModelProfileProviderOptions(item.providerOptions),
+        runtimeOptions: normalizeModelProfileRuntimeOptions(item.runtimeOptions),
       }),
     )
     seen.add(id)
@@ -182,8 +257,11 @@ function readModelProfileRecord(value: unknown, path: string): ModelProfileRecor
   const providerOptions = Object.prototype.hasOwnProperty.call(value, 'providerOptions')
     ? readModelProfileProviderOptions(value.providerOptions, `${path}.providerOptions`)
     : undefined
+  const runtimeOptions = Object.prototype.hasOwnProperty.call(value, 'runtimeOptions')
+    ? readModelProfileRuntimeOptions(value.runtimeOptions, `${path}.runtimeOptions`)
+    : undefined
 
-  return createModelProfileRecord({ id, name, modelId, providerOptions })
+  return createModelProfileRecord({ id, name, modelId, providerOptions, runtimeOptions })
 }
 
 function createModelProfileRecord(input: {
@@ -191,12 +269,14 @@ function createModelProfileRecord(input: {
   name: string
   modelId?: string
   providerOptions?: ModelProfileRecordProviderOptions
+  runtimeOptions?: ModelProfileRecordRuntimeOptions
 }): ModelProfileRecord {
   return {
     id: input.id,
     name: input.name,
     ...(input.modelId ? { modelId: input.modelId } : {}),
     ...(input.providerOptions ? { providerOptions: input.providerOptions } : {}),
+    ...(input.runtimeOptions ? { runtimeOptions: input.runtimeOptions } : {}),
   }
 }
 
@@ -415,6 +495,61 @@ function readOllamaOptions(
   return normalizeOllamaOptions(value)
 }
 
+function normalizeModelProfileRuntimeOptions(value: unknown): ModelProfileRecordRuntimeOptions | undefined {
+  if (!isRecord(value)) return undefined
+  const options: ModelProfileRecordRuntimeOptions = {}
+
+  for (const key of MODEL_PROFILE_RUNTIME_NUMBER_KEYS) {
+    const numeric = finiteNumber(value[key])
+    if (numeric !== undefined) options[key] = numeric
+  }
+  for (const key of MODEL_PROFILE_RUNTIME_STRING_KEYS) {
+    const normalized = stringOrBlank(value[key])
+    if (normalized) options[key] = normalized
+  }
+  for (const key of MODEL_PROFILE_RUNTIME_BOOLEAN_KEYS) {
+    if (typeof value[key] === 'boolean') options[key] = value[key]
+  }
+
+  if (Object.prototype.hasOwnProperty.call(value, 'dynamicOutput') && value.dynamicOutput !== undefined) {
+    options.dynamicOutput = value.dynamicOutput
+  }
+
+  const modelTools = normalizeRuntimeStringArray(value.modelTools)
+  if (modelTools) options.modelTools = modelTools
+
+  const customFlags = normalizeRuntimeCustomFlags(value.customFlags)
+  if (customFlags) options.customFlags = customFlags
+
+  return objectHasKeys(options) ? options : undefined
+}
+
+function readModelProfileRuntimeOptions(value: unknown, path: string): ModelProfileRecordRuntimeOptions | undefined {
+  if (!isRecord(value)) {
+    throw new ModelProfileRecordValidationError(`${path} must be an object when present`)
+  }
+
+  for (const key of Object.keys(value)) {
+    if (!MODEL_PROFILE_RUNTIME_KEYS.has(key)) {
+      throw new ModelProfileRecordValidationError(`${path}.${key} is not supported`)
+    }
+  }
+
+  for (const key of MODEL_PROFILE_RUNTIME_NUMBER_KEYS) {
+    readOptionalFiniteNumber(value, key, `${path}.${key}`)
+  }
+  for (const key of MODEL_PROFILE_RUNTIME_STRING_KEYS) {
+    readOptionalString(value, key, `${path}.${key}`)
+  }
+  for (const key of MODEL_PROFILE_RUNTIME_BOOLEAN_KEYS) {
+    readOptionalBoolean(value, key, `${path}.${key}`)
+  }
+  readOptionalStringArray(value, 'modelTools', `${path}.modelTools`)
+  readOptionalLLMFlagArray(value, 'customFlags', `${path}.customFlags`)
+
+  return normalizeModelProfileRuntimeOptions(value)
+}
+
 function readModelRoleProfileBinding(value: unknown, path: string): ModelRoleProfileBinding {
   if (!isRecord(value)) {
     throw new ModelProfileRecordValidationError(`${path} must be an object`)
@@ -461,11 +596,28 @@ function readOptionalBoolean(value: Record<string, unknown>, key: string, path: 
   }
 }
 
+function readOptionalFiniteNumber(value: Record<string, unknown>, key: string, path: string): void {
+  if (!Object.prototype.hasOwnProperty.call(value, key)) return
+  if (typeof value[key] !== 'number' || !Number.isFinite(value[key])) {
+    throw new ModelProfileRecordValidationError(`${path} must be a finite number when present`)
+  }
+}
+
 function readOptionalStringArray(value: Record<string, unknown>, key: string, path: string): void {
   if (!Object.prototype.hasOwnProperty.call(value, key)) return
   const row = value[key]
   if (!Array.isArray(row) || !row.every((item) => typeof item === 'string')) {
     throw new ModelProfileRecordValidationError(`${path} must be an array of strings when present`)
+  }
+}
+
+function readOptionalLLMFlagArray(value: Record<string, unknown>, key: string, path: string): void {
+  if (!Object.prototype.hasOwnProperty.call(value, key)) return
+  const row = value[key]
+  if (!Array.isArray(row) || !row.every((item) => typeof item === 'number' && LLM_FLAG_SET.has(item))) {
+    throw new ModelProfileRecordValidationError(
+      `${path} must be an array of valid LLMFlags numeric values when present`,
+    )
   }
 }
 
@@ -478,10 +630,27 @@ function normalizeStringArray(value: unknown): string[] | undefined {
   return out.length > 0 ? out : undefined
 }
 
+function normalizeRuntimeStringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  return value.flatMap((item) => {
+    const normalized = stringOrBlank(item)
+    return normalized ? [normalized] : []
+  })
+}
+
+function normalizeRuntimeCustomFlags(value: unknown): LLMFlagValue[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  return value.flatMap((item) => (typeof item === 'number' && LLM_FLAG_SET.has(item) ? [item as LLMFlagValue] : []))
+}
+
 function asFormat(value: unknown): LLMFormatValue | undefined {
   return typeof value === 'number' && Object.values(LLMFormat).includes(value as LLMFormatValue)
     ? (value as LLMFormatValue)
     : undefined
+}
+
+function finiteNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
 }
 
 function objectHasKeys(value: object): boolean {

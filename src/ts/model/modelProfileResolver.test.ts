@@ -1295,6 +1295,161 @@ describe('resolveModelProfile provider/runtime normalization', () => {
     })
   })
 
+  it('prefers selected durable runtime options field-by-field over flat runtime settings', () => {
+    const database = db({
+      aiModel: 'flat-main-model',
+      maxContext: 8192,
+      maxResponse: 512,
+      temperature: 40,
+      top_p: 0.95,
+      frequencyPenalty: -50,
+      useStreaming: true,
+      genTime: 1,
+      extractJson: 'flat-json',
+      jsonSchemaEnabled: false,
+      jsonSchema: 'flat-schema',
+      modelTools: ['flat-tool'],
+      customFlags: [LLMFlags.hasStreaming],
+      customTokenizer: 'flat-tokenizer',
+      modelProfiles: [
+        {
+          id: 'durable-main',
+          name: 'Durable Main',
+          modelId: 'durable-selected-model',
+          runtimeOptions: {
+            maxContext: 32768,
+            maxResponse: 2048,
+            temperature: 75,
+            topP: 0.8,
+            frequencyPenalty: 25,
+            useStreaming: false,
+            genTime: 3,
+            extractJson: ' profile-json ',
+            jsonSchema: '   ',
+            jsonSchemaEnabled: true,
+            modelTools: [' profile-tool ', ''],
+            customFlags: [LLMFlags.hasImageInput],
+            customTokenizer: ' profile-tokenizer ',
+          },
+        },
+        {
+          id: 'unused-profile',
+          name: 'Unused Profile',
+          modelId: 'durable-selected-model',
+          runtimeOptions: {
+            maxContext: 999,
+            modelTools: ['must-not-borrow'],
+          },
+        },
+      ],
+      modelRoleProfiles: {
+        chatMain: { mode: 'profile', profileId: 'durable-main' },
+      },
+    } as Partial<Database>)
+
+    const profile = resolveModelProfile({
+      database,
+      role: 'chatMain',
+      lookupModelInfo: (_database, id) => modelInfo({ id, name: id, internalID: id }),
+    })
+
+    expect(profile.runtimeOptions).toMatchObject({
+      maxContext: 32768,
+      maxResponse: 2048,
+      temperature: 0.75,
+      rawTemperature: 75,
+      topP: 0.8,
+      frequencyPenalty: 0.25,
+      useStreaming: false,
+      genTime: 3,
+      extractJson: 'profile-json',
+      jsonSchema: 'flat-schema',
+      jsonSchemaEnabled: true,
+      modelTools: ['profile-tool'],
+      customFlags: [LLMFlags.hasImageInput],
+      customTokenizer: 'profile-tokenizer',
+    })
+    expect(profile.runtimeOptions.modelTools).not.toBe(
+      (database.modelProfiles?.[0] as { runtimeOptions?: { modelTools?: string[] } }).runtimeOptions?.modelTools,
+    )
+    expect(profile.runtimeOptions.customFlags).not.toBe(
+      (database.modelProfiles?.[0] as { runtimeOptions?: { customFlags?: LLMFlags[] } }).runtimeOptions?.customFlags,
+    )
+  })
+
+  it('uses flat runtime settings for static models and missing durable profile fallbacks', () => {
+    const database = db({
+      aiModel: 'flat-main-model',
+      maxContext: 8192,
+      maxResponse: 512,
+      temperature: 55,
+      top_p: 0.91,
+      frequencyPenalty: 10,
+      useStreaming: true,
+      genTime: 2,
+      extractJson: 'flat-json',
+      jsonSchemaEnabled: false,
+      modelTools: ['flat-tool'],
+      customFlags: [LLMFlags.hasStreaming],
+      customTokenizer: 'flat-tokenizer',
+      modelProfiles: [
+        {
+          id: 'durable-main',
+          name: 'Durable Main',
+          modelId: 'openrouter',
+          runtimeOptions: {
+            maxContext: 32768,
+            temperature: 90,
+            modelTools: ['profile-tool'],
+            customFlags: [LLMFlags.hasImageInput],
+          },
+        },
+      ],
+      modelRoleProfiles: {
+        chatMain: { mode: 'profile', profileId: 'durable-main' },
+      },
+    } as Partial<Database>)
+
+    const staticProfile = resolveModelProfile({
+      database,
+      role: 'chatMain',
+      staticModel: 'openrouter',
+      lookupModelInfo: (_database, id) => modelInfo({ id, name: id, internalID: id }),
+    })
+    expect(staticProfile.source.kind).toBe('staticModel')
+    expect(staticProfile.runtimeOptions).toMatchObject({
+      maxContext: 8192,
+      maxResponse: 512,
+      temperature: 0.55,
+      rawTemperature: 55,
+      topP: 0.91,
+      frequencyPenalty: 0.1,
+      useStreaming: true,
+      genTime: 2,
+      extractJson: 'flat-json',
+      jsonSchemaEnabled: false,
+      modelTools: ['flat-tool'],
+      customFlags: [LLMFlags.hasStreaming],
+      customTokenizer: 'flat-tokenizer',
+    })
+
+    const missingProfile = resolveModelProfile({
+      database: {
+        ...database,
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'missing-profile' } },
+      } as Database,
+      role: 'chatMain',
+      lookupModelInfo: (_database, id) => modelInfo({ id, name: id, internalID: id }),
+    })
+    expect(missingProfile.source.kind).toBe('legacy-aiModel')
+    expect(missingProfile.runtimeOptions).toMatchObject({
+      maxContext: 8192,
+      temperature: 0.55,
+      modelTools: ['flat-tool'],
+      customFlags: [LLMFlags.hasStreaming],
+    })
+  })
+
   it('exports provider capability input and request model helpers for resolved profiles', () => {
     const profile = resolveModelProfile({
       database: db({
