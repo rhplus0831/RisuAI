@@ -45,13 +45,20 @@ retained local request argument, and `requestGoogleCloudVertex()` uses
 profile-owned Google AI Studio API keys, Vertex project/region/service-account
 credentials, and profile request models when a resolved profile is present.
 Conflicting flat Google/Vertex fields and cached flat `vertexAccessToken` no
-longer override profile-backed browser-local Gemini/Vertex requests.
+longer override profile-backed browser-local Gemini/Vertex requests. The
+browser-local OpenAI-compatible chat-completions provider-options slice is also
+complete: `requestOpenAI()` now uses profile-owned request models, base URLs,
+API keys, extra headers, OpenRouter route/transforms/provider filters, NanoGPT
+provider/subscription options, reverse-proxy Ooba options, `xcustom:::`
+additional params, key-identifier credentials/base URLs, `ollama-cloud`
+OpenAI-compatible options, and runtime `genTime` when a resolved profile is
+present. No-resolved-profile callers keep the legacy flat fallbacks.
 
 The current codebase still uses flat database fields as the compatibility
 source of truth. Durable reusable profile storage has not been introduced, and
-retained browser-local provider helper branches other than Gemini/Vertex still
-reconstruct many provider credentials, URLs, request models, and additional
-params from flat fields. The
+retained browser-local provider helper branches other than Gemini/Vertex and
+OpenAI-compatible chat completions still reconstruct many provider credentials,
+URLs, request models, and additional params from flat fields. The
 main coupled surfaces remain:
 
 - `src/ts/model/modelRoles.ts` resolves roles to model ids only.
@@ -69,9 +76,9 @@ main coupled surfaces remain:
 ## Next Manager Loop
 
 1. Continue Phase 3 only on the remaining browser-local provider helper parity
-   gaps after Gemini/Vertex: adopt resolver-derived provider options where
-   equivalent without changing server-intent payload shape or reshaping provider
-   secrets/storage.
+   gaps after Gemini/Vertex and OpenAI-compatible chat completions: adopt
+   resolver-derived provider options where equivalent without changing
+   server-intent payload shape or reshaping provider secrets/storage.
 2. Keep UI writes targeting existing flat fields until the Phase 4 adapter work.
 3. Do not add durable profile storage until Phase 6. Earlier phases should use
    a derived profile object built from the existing settings shape.
@@ -89,6 +96,6 @@ main coupled surfaces remain:
 ## Completed Proof
 
 Latest proof is recorded in [`latest-verification.md`](latest-verification.md).
-It covers this browser-local Gemini/Vertex provider-options slice, focused
-browser request/provider tests, Prettier, client-lib TypeScript, strict server
-TypeScript, and `git diff --check`.
+It covers this browser-local OpenAI-compatible chat-completions
+provider-options slice, focused browser request/provider tests, Prettier,
+client-lib TypeScript, strict server TypeScript, and `git diff --check`.

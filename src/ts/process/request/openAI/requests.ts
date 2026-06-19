@@ -30,6 +30,99 @@ interface LocalNetworkRequestOptions {
   requestTimeoutMs?: number
 }
 
+const CHAT_COMPLETIONS_SUFFIX = '/chat/completions'
+
+function appendChatCompletionsPath(baseUrl: string): string {
+  const trimmed = baseUrl.replace(/\/+$/, '')
+  if (!trimmed || trimmed.endsWith(CHAT_COMPLETIONS_SUFFIX)) {
+    return trimmed
+  }
+  return `${trimmed}${CHAT_COMPLETIONS_SUFFIX}`
+}
+
+function resolveProfileChatCompletionsUrl(arg: RequestDataArgumentExtended, aiModel: string): string | undefined {
+  const providerOptions = arg.resolvedProfile?.providerOptions
+  if (!providerOptions) {
+    return undefined
+  }
+  if (providerOptions.baseUrl) {
+    return appendChatCompletionsPath(providerOptions.baseUrl)
+  }
+  if (providerOptions.endpoint) {
+    return providerOptions.endpoint
+  }
+  if (aiModel.startsWith('xcustom:::') && providerOptions.customModel?.url) {
+    return providerOptions.customModel.url
+  }
+  return undefined
+}
+
+function resolveOpenAIWireModel(
+  requestModel: string | undefined,
+  internalID: string | undefined,
+  allowInternalFallback: boolean,
+): string {
+  return requestModel === 'gpt35'
+    ? 'gpt-3.5-turbo'
+    : requestModel === 'gpt35_0613'
+      ? 'gpt-3.5-turbo-0613'
+      : requestModel === 'gpt35_16k'
+        ? 'gpt-3.5-turbo-16k'
+        : requestModel === 'gpt35_16k_0613'
+          ? 'gpt-3.5-turbo-16k-0613'
+          : requestModel === 'gpt4'
+            ? 'gpt-4'
+            : requestModel === 'gpt45'
+              ? 'gpt-4.5-preview'
+              : requestModel === 'gpt4_32k'
+                ? 'gpt-4-32k'
+                : requestModel === 'gpt4_0613'
+                  ? 'gpt-4-0613'
+                  : requestModel === 'gpt4_32k_0613'
+                    ? 'gpt-4-32k-0613'
+                    : requestModel === 'gpt4_1106'
+                      ? 'gpt-4-1106-preview'
+                      : requestModel === 'gpt4_0125'
+                        ? 'gpt-4-0125-preview'
+                        : requestModel === 'gptvi4_1106'
+                          ? 'gpt-4-vision-preview'
+                          : requestModel === 'gpt35_0125'
+                            ? 'gpt-3.5-turbo-0125'
+                            : requestModel === 'gpt35_1106'
+                              ? 'gpt-3.5-turbo-1106'
+                              : requestModel === 'gpt35_0301'
+                                ? 'gpt-3.5-turbo-0301'
+                                : requestModel === 'gpt4_0314'
+                                  ? 'gpt-4-0314'
+                                  : requestModel === 'gpt4_turbo_20240409'
+                                    ? 'gpt-4-turbo-2024-04-09'
+                                    : requestModel === 'gpt4_turbo'
+                                      ? 'gpt-4-turbo'
+                                      : requestModel === 'gpt4o'
+                                        ? 'gpt-4o'
+                                        : requestModel === 'gpt4o-2024-05-13'
+                                          ? 'gpt-4o-2024-05-13'
+                                          : requestModel === 'gpt4om'
+                                            ? 'gpt-4o-mini'
+                                            : requestModel === 'gpt4om-2024-07-18'
+                                              ? 'gpt-4o-mini-2024-07-18'
+                                              : requestModel === 'gpt4o-2024-08-06'
+                                                ? 'gpt-4o-2024-08-06'
+                                                : requestModel === 'gpt4o-2024-11-20'
+                                                  ? 'gpt-4o-2024-11-20'
+                                                  : requestModel === 'gpt4o-chatgpt'
+                                                    ? 'chatgpt-4o-latest'
+                                                    : requestModel === 'gpt4o1-preview'
+                                                      ? 'o1-preview'
+                                                      : requestModel === 'gpt4o1-mini'
+                                                        ? 'o1-mini'
+                                                        : allowInternalFallback && internalID
+                                                          ? internalID
+                                                          : !requestModel
+                                                            ? 'gpt-3.5-turbo'
+                                                            : requestModel
+}
+
 function getLocalNetworkRequestOptions(
   url: string,
   db = getDatabase(),
@@ -52,7 +145,14 @@ export async function requestOpenAI(arg: RequestDataArgumentExtended): Promise<r
   let formatedChat: OpenAIChatExtra[] = []
   const formated = arg.formated
   const db = getDatabase()
-  const aiModel = arg.aiModel
+  const aiModel = arg.aiModel ?? ''
+  const resolvedProfile = arg.resolvedProfile
+  const providerOptions = resolvedProfile?.providerOptions
+  const runtimeOptions = resolvedProfile?.runtimeOptions
+  const hasResolvedProfile = resolvedProfile !== undefined
+  const reverseProxyOobaSystemHoist =
+    aiModel === 'reverse_proxy' &&
+    (hasResolvedProfile ? providerOptions?.reverseProxy?.oobaSystemHoist === true : db.reverseProxyOobaMode)
 
   const processToolCalls = async (text: string, originalMessage: any) => {
     // Split text by tool_call tags and process each segment
@@ -185,7 +285,7 @@ export async function requestOpenAI(arg: RequestDataArgumentExtended): Promise<r
       delete formatedChat[i].thoughts
       delete formatedChat[i].cachePoint
     }
-    if (aiModel === 'reverse_proxy' && db.reverseProxyOobaMode && formatedChat[i].role === 'system') {
+    if (reverseProxyOobaSystemHoist && formatedChat[i].role === 'system') {
       const cont = formatedChat[i].content
       if (typeof cont === 'string') {
         oobaSystemPrompts.push(cont)
@@ -226,16 +326,20 @@ export async function requestOpenAI(arg: RequestDataArgumentExtended): Promise<r
     }
   }
 
-  let requestModel = aiModel === 'reverse_proxy' || aiModel === 'openrouter' ? db.proxyRequestModel : aiModel
-  let openrouterRequestModel = db.openrouterRequestModel
-  if (aiModel === 'reverse_proxy') {
+  let requestModel = hasResolvedProfile
+    ? providerOptions?.requestModel
+    : aiModel === 'reverse_proxy' || aiModel === 'openrouter'
+      ? db.proxyRequestModel
+      : aiModel
+  if (!hasResolvedProfile && aiModel === 'reverse_proxy') {
     requestModel = db.customProxyRequestModel
   }
-  if (aiModel === 'nanogpt') {
+  if (!hasResolvedProfile && aiModel === 'nanogpt') {
     requestModel = db.nanogptRequestModel
   }
+  let openrouterRequestModel = hasResolvedProfile ? (requestModel ?? '') : db.openrouterRequestModel
 
-  if (aiModel === 'openrouter' && db.openrouterRequestModel === 'risu/free') {
+  if (aiModel === 'openrouter' && openrouterRequestModel === 'risu/free') {
     openrouterRequestModel = await getFreeOpenRouterModels()
   }
 
@@ -367,73 +471,15 @@ export async function requestOpenAI(arg: RequestDataArgumentExtended): Promise<r
   }
 
   db.cipherChat = false
+  const bodyModel = resolveOpenAIWireModel(
+    aiModel === 'openrouter' ? openrouterRequestModel : requestModel,
+    arg.modelInfo.internalID,
+    !hasResolvedProfile,
+  )
   let body: {
     [key: string]: any
   } = {
-    model:
-      aiModel === 'nanogpt'
-        ? db.nanogptRequestModel
-        : aiModel === 'openrouter'
-          ? openrouterRequestModel
-          : requestModel === 'gpt35'
-            ? 'gpt-3.5-turbo'
-            : requestModel === 'gpt35_0613'
-              ? 'gpt-3.5-turbo-0613'
-              : requestModel === 'gpt35_16k'
-                ? 'gpt-3.5-turbo-16k'
-                : requestModel === 'gpt35_16k_0613'
-                  ? 'gpt-3.5-turbo-16k-0613'
-                  : requestModel === 'gpt4'
-                    ? 'gpt-4'
-                    : requestModel === 'gpt45'
-                      ? 'gpt-4.5-preview'
-                      : requestModel === 'gpt4_32k'
-                        ? 'gpt-4-32k'
-                        : requestModel === 'gpt4_0613'
-                          ? 'gpt-4-0613'
-                          : requestModel === 'gpt4_32k_0613'
-                            ? 'gpt-4-32k-0613'
-                            : requestModel === 'gpt4_1106'
-                              ? 'gpt-4-1106-preview'
-                              : requestModel === 'gpt4_0125'
-                                ? 'gpt-4-0125-preview'
-                                : requestModel === 'gptvi4_1106'
-                                  ? 'gpt-4-vision-preview'
-                                  : requestModel === 'gpt35_0125'
-                                    ? 'gpt-3.5-turbo-0125'
-                                    : requestModel === 'gpt35_1106'
-                                      ? 'gpt-3.5-turbo-1106'
-                                      : requestModel === 'gpt35_0301'
-                                        ? 'gpt-3.5-turbo-0301'
-                                        : requestModel === 'gpt4_0314'
-                                          ? 'gpt-4-0314'
-                                          : requestModel === 'gpt4_turbo_20240409'
-                                            ? 'gpt-4-turbo-2024-04-09'
-                                            : requestModel === 'gpt4_turbo'
-                                              ? 'gpt-4-turbo'
-                                              : requestModel === 'gpt4o'
-                                                ? 'gpt-4o'
-                                                : requestModel === 'gpt4o-2024-05-13'
-                                                  ? 'gpt-4o-2024-05-13'
-                                                  : requestModel === 'gpt4om'
-                                                    ? 'gpt-4o-mini'
-                                                    : requestModel === 'gpt4om-2024-07-18'
-                                                      ? 'gpt-4o-mini-2024-07-18'
-                                                      : requestModel === 'gpt4o-2024-08-06'
-                                                        ? 'gpt-4o-2024-08-06'
-                                                        : requestModel === 'gpt4o-2024-11-20'
-                                                          ? 'gpt-4o-2024-11-20'
-                                                          : requestModel === 'gpt4o-chatgpt'
-                                                            ? 'chatgpt-4o-latest'
-                                                            : requestModel === 'gpt4o1-preview'
-                                                              ? 'o1-preview'
-                                                              : requestModel === 'gpt4o1-mini'
-                                                                ? 'o1-mini'
-                                                                : arg.modelInfo.internalID
-                                                                  ? arg.modelInfo.internalID
-                                                                  : !requestModel
-                                                                    ? 'gpt-3.5-turbo'
-                                                                    : requestModel,
+    model: bodyModel,
     messages: formatedChat,
     max_tokens: arg.maxTokens,
     logit_bias: arg.bias,
@@ -468,21 +514,25 @@ export async function requestOpenAI(arg: RequestDataArgumentExtended): Promise<r
   }
 
   if (aiModel === 'openrouter') {
-    if (db.openrouterFallback) {
+    const openrouterOptions = hasResolvedProfile ? providerOptions?.openrouter : undefined
+    const openrouterFallback = hasResolvedProfile ? openrouterOptions?.fallback === true : db.openrouterFallback
+    const openrouterMiddleOut = hasResolvedProfile ? openrouterOptions?.middleOut === true : db.openrouterMiddleOut
+    const openrouterProvider = hasResolvedProfile ? openrouterOptions?.provider : db.openrouterProvider
+    if (openrouterFallback) {
       body.route = 'fallback'
     }
-    body.transforms = db.openrouterMiddleOut ? ['middle-out'] : []
+    body.transforms = openrouterMiddleOut ? ['middle-out'] : []
 
-    if (db.openrouterProvider) {
+    if (openrouterProvider) {
       const provider: typeof db.openrouterProvider = {} as typeof db.openrouterProvider
-      if (db.openrouterProvider.order?.length) {
-        provider.order = db.openrouterProvider.order
+      if (openrouterProvider.order?.length) {
+        provider.order = openrouterProvider.order
       }
-      if (db.openrouterProvider.only?.length) {
-        provider.only = db.openrouterProvider.only
+      if (openrouterProvider.only?.length) {
+        provider.only = openrouterProvider.only
       }
-      if (db.openrouterProvider.ignore?.length) {
-        provider.ignore = db.openrouterProvider.ignore
+      if (openrouterProvider.ignore?.length) {
+        provider.ignore = openrouterProvider.ignore
       }
       if (Object.keys(provider).length) {
         body.provider = provider
@@ -528,13 +578,15 @@ export async function requestOpenAI(arg: RequestDataArgumentExtended): Promise<r
     })
   }
 
-  if (aiModel === 'reverse_proxy' && db.reverseProxyOobaMode) {
-    const OobaBodyTemplate = db.reverseProxyOobaArgs
+  if (reverseProxyOobaSystemHoist) {
+    const OobaBodyTemplate = hasResolvedProfile ? providerOptions?.reverseProxy?.oobaArgs : db.reverseProxyOobaArgs
 
-    const keys = Object.keys(OobaBodyTemplate)
-    for (const key of keys) {
-      if (OobaBodyTemplate[key] !== undefined && OobaBodyTemplate[key] !== null) {
-        body[key] = OobaBodyTemplate[key]
+    if (OobaBodyTemplate && typeof OobaBodyTemplate === 'object' && !Array.isArray(OobaBodyTemplate)) {
+      const keys = Object.keys(OobaBodyTemplate)
+      for (const key of keys) {
+        if (OobaBodyTemplate[key] !== undefined && OobaBodyTemplate[key] !== null) {
+          body[key] = OobaBodyTemplate[key]
+        }
       }
     }
   }
@@ -546,8 +598,10 @@ export async function requestOpenAI(arg: RequestDataArgumentExtended): Promise<r
       !(
         aiModel.startsWith('gpt') ||
         (aiModel == 'reverse_proxy' &&
-          (db.proxyRequestModel?.startsWith('gpt') ||
-            (db.proxyRequestModel === 'custom' && db.customProxyRequestModel.startsWith('gpt'))))
+          (hasResolvedProfile
+            ? (requestModel?.startsWith('gpt') ?? false)
+            : db.proxyRequestModel?.startsWith('gpt') ||
+              (db.proxyRequestModel === 'custom' && db.customProxyRequestModel.startsWith('gpt'))))
       )
     ) {
       delete body.logit_bias
@@ -563,7 +617,10 @@ export async function requestOpenAI(arg: RequestDataArgumentExtended): Promise<r
         ? 'https://openrouter.ai/api/v1/chat/completions'
         : (arg.customURL ?? 'https://api.openai.com/v1/chat/completions')
 
-  if (arg.modelInfo?.endpoint) {
+  const profileChatCompletionsUrl = resolveProfileChatCompletionsUrl(arg, aiModel)
+  if (profileChatCompletionsUrl !== undefined) {
+    replacerURL = profileChatCompletionsUrl
+  } else if (arg.modelInfo?.endpoint) {
     replacerURL = arg.modelInfo.endpoint
   }
 
@@ -573,7 +630,7 @@ export async function requestOpenAI(arg: RequestDataArgumentExtended): Promise<r
     replacerURL = replacerURL.replace('risu::', '')
   }
 
-  if (aiModel === 'reverse_proxy' && db.autofillRequestUrl) {
+  if (aiModel === 'reverse_proxy' && !hasResolvedProfile && db.autofillRequestUrl) {
     if (replacerURL.endsWith('v1')) {
       replacerURL += '/chat/completions'
     } else if (replacerURL.endsWith('v1/')) {
@@ -587,32 +644,38 @@ export async function requestOpenAI(arg: RequestDataArgumentExtended): Promise<r
     }
   }
 
-  let headers = {
+  let headers: Record<string, string> = {
     Authorization:
       'Bearer ' +
-      (arg.key ??
-        (aiModel === 'nanogpt'
-          ? db.nanogptKey
-          : aiModel === 'reverse_proxy'
-            ? db.proxyKey
-            : aiModel === 'openrouter'
-              ? db.openrouterKey
-              : db.openAIKey)),
+      (hasResolvedProfile
+        ? (providerOptions?.apiKey ?? '')
+        : (arg.key ??
+          (aiModel === 'nanogpt'
+            ? db.nanogptKey
+            : aiModel === 'reverse_proxy'
+              ? db.proxyKey
+              : aiModel === 'openrouter'
+                ? db.openrouterKey
+                : db.openAIKey))),
     'Content-Type': 'application/json',
   }
 
-  if (arg.modelInfo?.keyIdentifier) {
+  if (!hasResolvedProfile && arg.modelInfo?.keyIdentifier) {
     headers['Authorization'] = 'Bearer ' + db.OaiCompAPIKeys[arg.modelInfo.keyIdentifier]
   }
-  if (aiModel === 'openrouter') {
-    headers['X-Title'] = 'RisuAI'
-    headers['HTTP-Referer'] = 'https://risuai.xyz'
-  }
-  if (aiModel === 'nanogpt' && db.nanogptProvider) {
-    headers['X-Provider'] = db.nanogptProvider
-  }
-  if (risuIdentify) {
-    headers['X-Proxy-Risu'] = 'RisuAI'
+  if (hasResolvedProfile) {
+    Object.assign(headers, providerOptions?.extraHeaders ?? {})
+  } else {
+    if (aiModel === 'openrouter') {
+      headers['X-Title'] = 'RisuAI'
+      headers['HTTP-Referer'] = 'https://risuai.xyz'
+    }
+    if (aiModel === 'nanogpt' && db.nanogptProvider) {
+      headers['X-Provider'] = db.nanogptProvider
+    }
+    if (risuIdentify) {
+      headers['X-Proxy-Risu'] = 'RisuAI'
+    }
   }
   if (arg.multiGen) {
     // Check if tools are enabled - multiGen with tools is not supported
@@ -622,10 +685,14 @@ export async function requestOpenAI(arg: RequestDataArgumentExtended): Promise<r
         result: 'MultiGen mode cannot be used with tool calls. Please disable one of them.',
       }
     }
-    body.n = db.genTime
+    body.n = hasResolvedProfile ? (runtimeOptions?.genTime ?? db.genTime) : db.genTime
   }
   if (aiModel === 'reverse_proxy' || aiModel.startsWith('xcustom:::')) {
-    body = applyAdditionalParameters(body, headers, getAdditionalParameters(aiModel))
+    body = applyAdditionalParameters(
+      body,
+      headers,
+      hasResolvedProfile ? (providerOptions?.additionalParams ?? []) : getAdditionalParameters(aiModel),
+    )
   }
 
   // Some aux flows are intentionally non-streaming (e.g. memory/translate).

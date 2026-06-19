@@ -1,6 +1,6 @@
 # Phase 3: Generation Dispatch
 
-Status: in progress; Phase 3a server-owned profile selection/capability/request-model slice complete; Phase 3b Fastify OpenAI-compatible provider-options slice complete; Phase 3c Fastify Anthropic/Mistral/Cohere provider-options slice complete; Phase 3d Fastify native Ollama provider-options slice complete; Phase 3e Fastify Kobold provider-options slice complete; Phase 3f Fastify Horde provider-options slice complete; Phase 3g Fastify OobaLegacy provider-options slice complete; Phase 3h Fastify Bedrock provider-options slice complete; Phase 3i Fastify Gemini/Vertex provider-options slice complete; browser request helper role/static/fallback resolver adoption slice complete; browser-local Gemini/Vertex provider-options slice complete.
+Status: in progress; Phase 3a server-owned profile selection/capability/request-model slice complete; Phase 3b Fastify OpenAI-compatible provider-options slice complete; Phase 3c Fastify Anthropic/Mistral/Cohere provider-options slice complete; Phase 3d Fastify native Ollama provider-options slice complete; Phase 3e Fastify Kobold provider-options slice complete; Phase 3f Fastify Horde provider-options slice complete; Phase 3g Fastify OobaLegacy provider-options slice complete; Phase 3h Fastify Bedrock provider-options slice complete; Phase 3i Fastify Gemini/Vertex provider-options slice complete; browser request helper role/static/fallback resolver adoption slice complete; browser-local Gemini/Vertex provider-options slice complete; browser-local OpenAI-compatible chat-completions provider-options slice complete.
 
 Goal: move browser and Fastify generation dispatch from ad hoc flat database
 reads to the resolved profile runtime object.
@@ -217,13 +217,41 @@ reads to the resolved profile runtime object.
 - No-resolved-profile Gemini/Vertex callers keep the legacy flat field
   fallbacks, including cached `vertexAccessToken` behavior.
 
+## Implemented Browser-Local OpenAI-Compatible Chat-Completions Provider-Options Slice
+
+- Browser-local `requestOpenAI()` now uses
+  `resolvedProfile.providerOptions.requestModel` for profile-backed
+  chat-completions request body `model`, including reverse-proxy, `xcustom:::`,
+  OpenRouter, NanoGPT, key-identifier, and `ollama-cloud` OpenAI-compatible
+  calls. No-resolved-profile callers keep the legacy flat request-model
+  fallbacks.
+- Profile-backed URL, API key, and extra-header options now win over conflicting
+  flat DB fields for OpenAI, OpenRouter, NanoGPT, reverse-proxy, `xcustom:::`,
+  key-identifier models, and `ollama-cloud` routed through OpenAI-compatible
+  chat. Reverse-proxy `risu::` identification and URL autofill remain preserved
+  through resolver-normalized base URLs and profile extra headers.
+- Profile OpenRouter options now drive browser-local `route`, `transforms`, and
+  provider filters. Profile NanoGPT options now drive the provider hint header
+  and subscription endpoint. Profile reverse-proxy options now drive Ooba system
+  hoist and Ooba body args.
+- Profile `providerOptions.additionalParams` now drives browser-local
+  reverse-proxy and `xcustom:::` additional-parameter application when a
+  resolved profile is present. `getAdditionalParameters(aiModel)` remains the
+  no-profile legacy fallback, so the existing additional-parameter DSL semantics
+  are unchanged.
+- Profile runtime `genTime` now drives `body.n` for profile-backed multigen
+  `requestOpenAI()` calls, with flat `db.genTime` retained for no-profile
+  callers.
+
 ## Remaining Phase 3 Work
 
 - Broaden provider parity for retained browser-local request helpers before
   marking full Phase 3 complete. The browser role/static/fallback selection path
-  now uses the resolver, but local helper branches such as OpenAI-compatible,
-  Anthropic, Mistral, Cohere, Ollama, Kobold, Horde, and Ooba still read many
-  provider-specific options directly from flat database fields.
+  now uses the resolver, browser-local Gemini/Vertex provider options are
+  adopted, and browser-local OpenAI-compatible chat-completions provider options
+  are adopted. Other local helper branches such as Anthropic, Mistral, Cohere,
+  native Ollama, Kobold, Horde, Ooba legacy, Responses, and legacy instruct
+  still read many provider-specific options directly from flat database fields.
 - Verify any future browser-local provider option adoption without changing the
   server-intent payload shape or editing Fastify generation routes unless a real
   regression is exposed.
@@ -273,11 +301,11 @@ pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 ```
 
-Latest browser-local Gemini/Vertex provider-options run:
+Latest browser-local OpenAI-compatible chat-completions provider-options run:
 
 ```bash
-pnpm exec prettier --write --ignore-path /dev/null src/ts/process/request/request.ts src/ts/process/request/google.ts src/ts/process/request/tests/google.fastify.test.ts docs/plan/model-config-profiles/status.md docs/plan/model-config-profiles/latest-verification.md docs/plan/model-config-profiles/phases/phase-3-generation-dispatch.md docs/plan/model-config-profiles/SOLVE-NOTE.md
-pnpm exec vitest run src/ts/process/request/tests/google.fastify.test.ts src/ts/process/request/tests/modelRoleRouting.test.ts src/ts/process/request/tests/serverCompletion.test.ts src/ts/process/request/tests/providerCapability.test.ts
+pnpm exec prettier --write --ignore-path /dev/null src/ts/process/request/openAI/requests.ts src/ts/process/request/tests/openaiProfileOptions.test.ts docs/plan/model-config-profiles/status.md docs/plan/model-config-profiles/latest-verification.md docs/plan/model-config-profiles/phases/phase-3-generation-dispatch.md docs/plan/model-config-profiles/SOLVE-NOTE.md
+pnpm exec vitest run src/ts/process/request/tests/openaiProfileOptions.test.ts src/ts/process/request/tests/modelRoleRouting.test.ts src/ts/process/request/tests/serverCompletion.test.ts src/ts/process/request/tests/providerCapability.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 git diff --check
@@ -286,7 +314,7 @@ git diff --check
 Results:
 
 - Prettier: passed.
-- Focused browser request/provider tests: passed, 4 files / 65 tests.
+- Focused browser request/provider tests: passed, 4 files / 69 tests.
 - Client-lib TypeScript: passed.
 - Server strict TypeScript: passed.
 - Whitespace check: passed.
