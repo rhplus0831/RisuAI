@@ -45,6 +45,9 @@ export async function requestGoogleCloudVertex(arg: RequestDataArgumentExtended)
   const formated = arg.formated
   const db = getDatabase()
   const maxTokens = arg.maxTokens
+  const resolvedProfile = arg.resolvedProfile
+  const providerOptions = resolvedProfile?.providerOptions
+  const requestModel = resolvedProfile ? providerOptions.requestModel : arg.modelInfo.internalID
 
   let reformatedChat: GeminiChat[] = []
   let systemPrompt = ''
@@ -426,8 +429,10 @@ export async function requestGoogleCloudVertex(arg: RequestDataArgumentExtended)
     body.generation_config.mediaResolution = 'MEDIA_RESOLUTION_MEDIUM'
   }
 
-  const PROJECT_ID = db.google.projectId
-  const REGION = db.vertexRegion
+  const vertexProjectId = resolvedProfile ? providerOptions.vertex?.projectId : db.google.projectId
+  const vertexRegion = resolvedProfile ? providerOptions.vertex?.region : db.vertexRegion
+  const vertexClientEmail = resolvedProfile ? providerOptions.vertex?.clientEmail : db.vertexClientEmail
+  const vertexPrivateKey = resolvedProfile ? providerOptions.vertex?.privateKey : db.vertexPrivateKey
   console.log(arg.modelInfo)
 
   const isVertexGlobalOnlyModel = (modelId: string) => {
@@ -522,17 +527,28 @@ export async function requestGoogleCloudVertex(arg: RequestDataArgumentExtended)
   }
 
   if (arg.modelInfo.format === LLMFormat.VertexAIGemini) {
-    if (db.vertexAccessTokenExpires < Date.now()) {
-      if (!db.vertexClientEmail || !db.vertexPrivateKey) {
+    if (resolvedProfile) {
+      if (!vertexProjectId || !vertexRegion || !vertexClientEmail || !vertexPrivateKey) {
         alertError('Vertex AI authentication information is missing or incomplete. Please check your settings.')
         return {
           type: 'fail',
           result: 'Vertex AI authentication information is missing or incomplete. Please check your settings.',
         }
       }
-      headers['Authorization'] = 'Bearer ' + (await generateToken(db.vertexClientEmail, db.vertexPrivateKey))
+      headers['Authorization'] = 'Bearer ' + (await generateToken(vertexClientEmail, vertexPrivateKey))
     } else {
-      headers['Authorization'] = 'Bearer ' + db.vertexAccessToken
+      if (db.vertexAccessTokenExpires < Date.now()) {
+        if (!db.vertexClientEmail || !db.vertexPrivateKey) {
+          alertError('Vertex AI authentication information is missing or incomplete. Please check your settings.')
+          return {
+            type: 'fail',
+            result: 'Vertex AI authentication information is missing or incomplete. Please check your settings.',
+          }
+        }
+        headers['Authorization'] = 'Bearer ' + (await generateToken(db.vertexClientEmail, db.vertexPrivateKey))
+      } else {
+        headers['Authorization'] = 'Bearer ' + db.vertexAccessToken
+      }
     }
   }
 
@@ -543,7 +559,7 @@ export async function requestGoogleCloudVertex(arg: RequestDataArgumentExtended)
   }
 
   let url = ''
-  let apiKey = arg.key || db.google.accessToken
+  let apiKey = resolvedProfile ? providerOptions.apiKey : arg.key || db.google.accessToken
 
   if (arg.customURL) {
     let baseURL = arg.customURL
@@ -551,8 +567,8 @@ export async function requestGoogleCloudVertex(arg: RequestDataArgumentExtended)
       baseURL += '/'
     }
     const endpoint = arg.useStreaming ? 'streamGenerateContent' : 'generateContent'
-    const u = new URL(`models/${arg.modelInfo.internalID}:${endpoint}`, baseURL)
-    u.searchParams.set('key', apiKey)
+    const u = new URL(`models/${requestModel}:${endpoint}`, baseURL)
+    u.searchParams.set('key', apiKey ?? '')
     if (arg.useStreaming) {
       u.searchParams.set('alt', 'sse')
     }
@@ -561,16 +577,16 @@ export async function requestGoogleCloudVertex(arg: RequestDataArgumentExtended)
     const endpoint = arg.useStreaming ? 'streamGenerateContent?alt=sse' : 'generateContent'
 
     // Some models (e.g. Gemini 3 preview) are only available via the global endpoint.
-    const effectiveRegion = isVertexGlobalOnlyModel(arg.modelInfo.internalID) ? 'global' : REGION
+    const effectiveRegion = isVertexGlobalOnlyModel(requestModel) ? 'global' : vertexRegion
 
     url =
       effectiveRegion === 'global'
-        ? `https://aiplatform.googleapis.com/v1/projects/${PROJECT_ID}/locations/${effectiveRegion}/publishers/google/models/${arg.modelInfo.internalID}:${endpoint}`
-        : `https://${effectiveRegion}-aiplatform.googleapis.com/v1/projects/${PROJECT_ID}/locations/${effectiveRegion}/publishers/google/models/${arg.modelInfo.internalID}:${endpoint}`
+        ? `https://aiplatform.googleapis.com/v1/projects/${vertexProjectId}/locations/${effectiveRegion}/publishers/google/models/${requestModel}:${endpoint}`
+        : `https://${effectiveRegion}-aiplatform.googleapis.com/v1/projects/${vertexProjectId}/locations/${effectiveRegion}/publishers/google/models/${requestModel}:${endpoint}`
   } else if (arg.modelInfo.format === LLMFormat.GoogleCloud && arg.useStreaming) {
-    url = `https://generativelanguage.googleapis.com/v1beta/models/${arg.modelInfo.internalID}:streamGenerateContent?key=${apiKey}&alt=sse`
+    url = `https://generativelanguage.googleapis.com/v1beta/models/${requestModel}:streamGenerateContent?key=${apiKey ?? ''}&alt=sse`
   } else {
-    url = `https://generativelanguage.googleapis.com/v1beta/models/${arg.modelInfo.internalID}:generateContent?key=${apiKey}`
+    url = `https://generativelanguage.googleapis.com/v1beta/models/${requestModel}:generateContent?key=${apiKey ?? ''}`
   }
   // will return error if functionDeclarations is empty
   if (body.tools?.functionDeclarations?.length === 0) {

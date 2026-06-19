@@ -1,7 +1,7 @@
 import { Ollama } from 'ollama/dist/browser.mjs'
 import { language } from '../../../lang'
 import { fetchNative, globalFetch } from '../../globalApi.svelte'
-import { resolveModelProfile } from '../../model/modelProfileResolver'
+import { resolveModelProfile, type ResolvedModelProfile } from '../../model/modelProfileResolver'
 import { LLMFlags, LLMFormat, type LLMModel } from '../../model/modellist'
 import { risuChatParser, risuEscape, risuUnescape } from '../../parser/parser.svelte'
 import { pluginProcess, pluginV2 } from '../../plugins/plugins.svelte'
@@ -59,6 +59,7 @@ export interface RequestDataArgumentExtended extends requestDataArgument {
   aiModel?: string
   multiGen?: boolean
   abortSignal?: AbortSignal
+  resolvedProfile?: ResolvedModelProfile
   modelInfo?: LLMModel
   customURL?: string
   mode?: ModelModeExtended
@@ -459,6 +460,7 @@ export async function requestChatDataMain(
 
   targ.aiModel = resolvedProfile.modelId
   targ.modelInfo = resolvedProfile.modelInfo
+  targ.resolvedProfile = resolvedProfile
 
   if (arg.blockPlugins && targ.modelInfo.id.startsWith('pluginmodel:::')) {
     return {

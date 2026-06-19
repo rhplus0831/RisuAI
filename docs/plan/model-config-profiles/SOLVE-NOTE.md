@@ -35,16 +35,23 @@ pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 ## Current State
 
 The plan is open. Phase 0, Phase 1, Phase 2, and Phase 3a-3i are complete. The
-current worker slice is browser request helper role/static/fallback resolver
-adoption: `requestChatData()` now builds fallback attempts from
+browser request helper role/static/fallback resolver adoption slice is complete:
+`requestChatData()` now builds fallback attempts from
 `resolveModelProfile(...).fallbacks`, `requestChatDataMain()` resolves the role
 or static model once through the profile resolver, and server-intent completion
-payloads remain thin.
+payloads remain thin. The browser-local Gemini/Vertex provider-options slice is
+also complete: `requestChatDataMain()` attaches the resolved profile to the
+retained local request argument, and `requestGoogleCloudVertex()` uses
+profile-owned Google AI Studio API keys, Vertex project/region/service-account
+credentials, and profile request models when a resolved profile is present.
+Conflicting flat Google/Vertex fields and cached flat `vertexAccessToken` no
+longer override profile-backed browser-local Gemini/Vertex requests.
 
 The current codebase still uses flat database fields as the compatibility
 source of truth. Durable reusable profile storage has not been introduced, and
-retained browser-local provider helper branches still reconstruct many provider
-credentials, URLs, request models, and additional params from flat fields. The
+retained browser-local provider helper branches other than Gemini/Vertex still
+reconstruct many provider credentials, URLs, request models, and additional
+params from flat fields. The
 main coupled surfaces remain:
 
 - `src/ts/model/modelRoles.ts` resolves roles to model ids only.
@@ -62,8 +69,9 @@ main coupled surfaces remain:
 ## Next Manager Loop
 
 1. Continue Phase 3 only on the remaining browser-local provider helper parity
-   gaps: adopt resolver-derived provider options where equivalent without
-   changing server-intent payload shape or reshaping provider secrets/storage.
+   gaps after Gemini/Vertex: adopt resolver-derived provider options where
+   equivalent without changing server-intent payload shape or reshaping provider
+   secrets/storage.
 2. Keep UI writes targeting existing flat fields until the Phase 4 adapter work.
 3. Do not add durable profile storage until Phase 6. Earlier phases should use
    a derived profile object built from the existing settings shape.
@@ -81,6 +89,6 @@ main coupled surfaces remain:
 ## Completed Proof
 
 Latest proof is recorded in [`latest-verification.md`](latest-verification.md).
-It covers this browser request helper role/static/fallback resolver adoption
-slice, focused browser and Fastify generation tests, Prettier, client-lib
-TypeScript, strict server TypeScript, and `git diff --check`.
+It covers this browser-local Gemini/Vertex provider-options slice, focused
+browser request/provider tests, Prettier, client-lib TypeScript, strict server
+TypeScript, and `git diff --check`.

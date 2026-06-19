@@ -25,7 +25,8 @@ vi.mock('../../modules', async (importActual) => {
   return { ...actual, moduleUpdate: () => {}, getModuleToggles: () => '' }
 })
 
-import { LLMFormat } from '../../../model/types'
+import { resolveModelProfile, type ResolvedModelProfile } from '../../../model/modelProfileResolver'
+import { LLMFormat, LLMProvider, LLMTokenizer, type LLMModel } from '../../../model/types'
 import { getDatabase, setDatabase, type Database } from '../../../storage/database.svelte'
 import type { RequestDataArgumentExtended } from '../request'
 import { requestGoogleCloudVertex } from '../google'
@@ -54,8 +55,56 @@ function restoreWindowCrypto(): void {
   })
 }
 
-function seedDb(): void {
-  setDatabase({
+interface CapturedFetchCall {
+  url: string
+  init?: { headers?: Record<string, string>; body?: BodyInit }
+}
+
+function okTokenResponse(token: string): Response {
+  return new Response(JSON.stringify({ access_token: token }), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  })
+}
+
+function okGeminiResponse(text: string): Response {
+  return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text }] } }] }), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  })
+}
+
+function collectFetchCalls(): CapturedFetchCall[] {
+  return [...globalFetchMock.mock.calls, ...fetchNativeMock.mock.calls].map(([url, init]) => ({
+    url: String(url),
+    init: init as CapturedFetchCall['init'],
+  }))
+}
+
+function findFetchCall(pattern: string): CapturedFetchCall | undefined {
+  return collectFetchCalls().find((call) => call.url.includes(pattern))
+}
+
+function decodeJwtPayload(segment: string): { iss?: string } {
+  const base64 = segment.replace(/-/g, '+').replace(/_/g, '/')
+  const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, '=')
+  return JSON.parse(Buffer.from(padded, 'base64').toString('utf8')) as { iss?: string }
+}
+
+function mockGeminiFetches(text: string): void {
+  fetchNativeMock.mockImplementation(async () => okGeminiResponse(text))
+  globalFetchMock.mockImplementation(async () => okGeminiResponse(text))
+}
+
+function mockVertexFetches(token: string, text: string): void {
+  fetchNativeMock.mockImplementation(async () => okGeminiResponse(text))
+  globalFetchMock.mockImplementation(async (url: string | URL | Request) =>
+    String(url) === 'https://oauth2.googleapis.com/token' ? okTokenResponse(token) : okGeminiResponse(text),
+  )
+}
+
+function seedDb(overrides: Partial<Database> = {}): void {
+  const base = {
     aiModel: 'gemini-1.5-pro',
     subModel: 'gemini-1.5-pro',
     characters: [],
@@ -73,7 +122,30 @@ function seedDb(): void {
     vertexPrivateKey: '-----BEGIN PRIVATE KEY-----AQID-----END PRIVATE KEY-----',
     vertexAccessToken: 'old-projection-token',
     vertexAccessTokenExpires: 0,
+  } as unknown as Database
+  setDatabase({
+    ...base,
+    ...overrides,
+    google: {
+      ...(base.google ?? {}),
+      ...(overrides.google ?? {}),
+    },
   } as unknown as Database)
+}
+
+function geminiModelInfo(overrides: Partial<LLMModel> = {}): LLMModel {
+  return {
+    id: 'gemini-1.5-pro',
+    name: 'Gemini',
+    internalID: 'gemini-1.5-pro',
+    provider: LLMProvider.GoogleCloud,
+    format: LLMFormat.GoogleCloud,
+    flags: [],
+    parameters: [],
+    tokenizer: LLMTokenizer.GoogleCloud,
+    recommended: false,
+    ...overrides,
+  }
 }
 
 function makeVertexArg(): RequestDataArgumentExtended {
@@ -83,17 +155,22 @@ function makeVertexArg(): RequestDataArgumentExtended {
     aiModel: 'gemini-1.5-pro',
     maxTokens: 32,
     useStreaming: false,
-    modelInfo: {
-      id: 'gemini-1.5-pro',
-      name: 'Gemini',
-      internalID: 'gemini-1.5-pro',
-      provider: 0 as never,
+    modelInfo: geminiModelInfo({
+      provider: LLMProvider.VertexAI,
       format: LLMFormat.VertexAIGemini,
-      flags: [],
-      parameters: [],
-      tokenizer: 0 as never,
-      recommended: false,
-    } as unknown as RequestDataArgumentExtended['modelInfo'],
+    }) as RequestDataArgumentExtended['modelInfo'],
+  } as RequestDataArgumentExtended
+}
+
+function makeProfileArg(profile: ResolvedModelProfile, modelInfo: Partial<LLMModel> = {}): RequestDataArgumentExtended {
+  return {
+    bias: {},
+    formated: [{ role: 'user', content: 'hello' }],
+    aiModel: profile.modelId,
+    maxTokens: 32,
+    useStreaming: false,
+    modelInfo: geminiModelInfo(modelInfo) as RequestDataArgumentExtended['modelInfo'],
+    resolvedProfile: profile,
   } as RequestDataArgumentExtended
 }
 
@@ -102,17 +179,7 @@ beforeEach(() => {
   seedDb()
   fetchNativeMock.mockReset()
   globalFetchMock.mockReset()
-  globalFetchMock
-    .mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ access_token: 'fresh-token' }),
-    })
-    .mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        candidates: [{ content: { parts: [{ text: 'server vertex ok' }] } }],
-      }),
-    })
+  mockVertexFetches('fresh-token', 'server vertex ok')
   vi.stubGlobal('fetch', globalFetchMock)
 })
 
@@ -126,11 +193,114 @@ describe('requestGoogleCloudVertex in Fastify mode', () => {
     const result = await requestGoogleCloudVertex(makeVertexArg())
 
     expect(result).toMatchObject({ type: 'success', result: 'server vertex ok' })
-    expect(globalFetchMock).toHaveBeenCalledTimes(2)
-    expect(globalFetchMock.mock.calls[1][1].headers.Authorization).toBe('Bearer fresh-token')
+    expect(findFetchCall('https://oauth2.googleapis.com/token')).toBeTruthy()
+    expect(
+      findFetchCall('/publishers/google/models/gemini-1.5-pro:generateContent')?.init?.headers?.Authorization,
+    ).toBe('Bearer fresh-token')
 
     const db = getDatabase()
     expect(db.vertexAccessToken).toBe('old-projection-token')
     expect(db.vertexAccessTokenExpires).toBe(0)
+  })
+
+  it('uses Google AI Studio profile API key and stripped request model over conflicting flat values', async () => {
+    seedDb({
+      aiModel: 'gemini-flat-model',
+      google: { accessToken: 'flat-google-key', projectId: 'flat-project' },
+    } as Partial<Database>)
+    mockGeminiFetches('profile studio ok')
+
+    const profile = resolveModelProfile({
+      database: {
+        ...getDatabase(),
+        aiModel: 'gemini-profile-model',
+        google: { accessToken: 'profile-google-key', projectId: 'profile-project' },
+      } as Database,
+      lookupModelInfo: (_database, id) =>
+        geminiModelInfo({
+          id,
+          internalID: 'models/gemini-profile-wire-model',
+          provider: LLMProvider.GoogleCloud,
+          format: LLMFormat.GoogleCloud,
+        }),
+    })
+
+    const result = await requestGoogleCloudVertex(
+      makeProfileArg(profile, {
+        id: 'gemini-flat-model',
+        internalID: 'models/flat-wire-model',
+        provider: LLMProvider.GoogleCloud,
+        format: LLMFormat.GoogleCloud,
+      }),
+    )
+
+    expect(result).toMatchObject({ type: 'success', result: 'profile studio ok' })
+    const request = findFetchCall('/models/gemini-profile-wire-model:generateContent')
+    expect(request?.url).toBe(
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-profile-wire-model:generateContent?key=profile-google-key',
+    )
+    expect(request?.url).not.toContain('flat-google-key')
+    expect(request?.url).not.toContain('models/models')
+    expect(request?.url).not.toContain('flat-wire-model')
+  })
+
+  it('uses Vertex profile project, region, service account, private key, and stripped request model over flat values', async () => {
+    seedDb({
+      aiModel: 'gemini-flat-vertex',
+      google: { accessToken: 'flat-studio-key', projectId: 'flat-project' },
+      vertexRegion: 'europe-west1',
+      vertexClientEmail: 'svc@flat-project.iam.gserviceaccount.com',
+      vertexPrivateKey: 'not-a-valid-flat-private-key',
+      vertexAccessToken: 'flat-cached-token',
+      vertexAccessTokenExpires: Date.now() + 60_000,
+    } as Partial<Database>)
+    mockVertexFetches('profile-token', 'profile vertex ok')
+
+    const profile = resolveModelProfile({
+      database: {
+        ...getDatabase(),
+        aiModel: 'gemini-profile-vertex',
+        google: { accessToken: 'studio-key-ignored-for-vertex', projectId: 'profile-project' },
+        vertexRegion: 'us-central1',
+        vertexClientEmail: 'svc@profile-project.iam.gserviceaccount.com',
+        vertexPrivateKey: '-----BEGIN PRIVATE KEY-----AQID-----END PRIVATE KEY-----',
+        vertexAccessToken: 'profile-cached-token-not-a-credential',
+      } as Database,
+      lookupModelInfo: (_database, id) =>
+        geminiModelInfo({
+          id,
+          internalID: 'models/gemini-profile-vertex-wire-model',
+          provider: LLMProvider.VertexAI,
+          format: LLMFormat.VertexAIGemini,
+        }),
+    })
+
+    const result = await requestGoogleCloudVertex(
+      makeProfileArg(profile, {
+        id: 'gemini-flat-vertex',
+        internalID: 'models/flat-vertex-wire-model',
+        provider: LLMProvider.VertexAI,
+        format: LLMFormat.VertexAIGemini,
+      }),
+    )
+
+    expect(result).toMatchObject({ type: 'success', result: 'profile vertex ok' })
+    const tokenRequest = findFetchCall('https://oauth2.googleapis.com/token')
+    expect(tokenRequest).toBeTruthy()
+
+    const request = findFetchCall('/publishers/google/models/gemini-profile-vertex-wire-model:generateContent')
+    expect(request?.url).toBe(
+      'https://us-central1-aiplatform.googleapis.com/v1/projects/profile-project/locations/us-central1/publishers/google/models/gemini-profile-vertex-wire-model:generateContent',
+    )
+    expect(request?.url).not.toContain('flat-project')
+    expect(request?.url).not.toContain('europe-west1')
+    expect(request?.url).not.toContain('flat-vertex-wire-model')
+    expect(request?.init?.headers?.Authorization).toBe('Bearer profile-token')
+    expect(request?.init?.headers?.Authorization).not.toBe('Bearer flat-cached-token')
+
+    const assertion = new URLSearchParams(String(tokenRequest?.init?.body ?? '')).get('assertion')
+    expect(assertion).toBeTruthy()
+    const jwtPayload = decodeJwtPayload(assertion!.split('.')[1])
+    expect(jwtPayload.iss).toBe('svc@profile-project.iam.gserviceaccount.com')
   })
 })

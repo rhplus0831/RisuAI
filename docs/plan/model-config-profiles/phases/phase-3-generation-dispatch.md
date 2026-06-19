@@ -1,6 +1,6 @@
 # Phase 3: Generation Dispatch
 
-Status: in progress; Phase 3a server-owned profile selection/capability/request-model slice complete; Phase 3b Fastify OpenAI-compatible provider-options slice complete; Phase 3c Fastify Anthropic/Mistral/Cohere provider-options slice complete; Phase 3d Fastify native Ollama provider-options slice complete; Phase 3e Fastify Kobold provider-options slice complete; Phase 3f Fastify Horde provider-options slice complete; Phase 3g Fastify OobaLegacy provider-options slice complete; Phase 3h Fastify Bedrock provider-options slice complete; Phase 3i Fastify Gemini/Vertex provider-options slice complete; browser request helper role/static/fallback resolver adoption slice complete.
+Status: in progress; Phase 3a server-owned profile selection/capability/request-model slice complete; Phase 3b Fastify OpenAI-compatible provider-options slice complete; Phase 3c Fastify Anthropic/Mistral/Cohere provider-options slice complete; Phase 3d Fastify native Ollama provider-options slice complete; Phase 3e Fastify Kobold provider-options slice complete; Phase 3f Fastify Horde provider-options slice complete; Phase 3g Fastify OobaLegacy provider-options slice complete; Phase 3h Fastify Bedrock provider-options slice complete; Phase 3i Fastify Gemini/Vertex provider-options slice complete; browser request helper role/static/fallback resolver adoption slice complete; browser-local Gemini/Vertex provider-options slice complete.
 
 Goal: move browser and Fastify generation dispatch from ad hoc flat database
 reads to the resolved profile runtime object.
@@ -197,13 +197,33 @@ reads to the resolved profile runtime object.
   sends only `kind`, `messages`, `stream`, `mode`, `staticModel`, `maxTokens`,
   `temperature`, and `currentCharName`.
 
+## Implemented Browser-Local Gemini/Vertex Provider-Options Slice
+
+- `RequestDataArgumentExtended` now carries the resolved profile computed in
+  `requestChatDataMain()`, allowing retained local helpers to read
+  `profile.providerOptions` without changing the server-intent completion
+  payload.
+- Browser-local Google AI Studio dispatch now uses
+  `profile.providerOptions.apiKey` and `profile.providerOptions.requestModel`
+  when a resolved profile is present. This preserves resolver-owned `models/`
+  prefix stripping and prevents conflicting flat `db.google.accessToken` or
+  `arg.modelInfo.internalID` values from changing profile-backed URLs.
+- Browser-local Vertex dispatch now uses
+  `profile.providerOptions.vertex.projectId`, `region`, `clientEmail`, and
+  `privateKey`, plus `profile.providerOptions.requestModel`, when a resolved
+  profile is present. Conflicting flat `db.google.projectId`,
+  `db.vertexRegion`, `db.vertexClientEmail`, `db.vertexPrivateKey`, and cached
+  `db.vertexAccessToken` values cannot override the profile path.
+- No-resolved-profile Gemini/Vertex callers keep the legacy flat field
+  fallbacks, including cached `vertexAccessToken` behavior.
+
 ## Remaining Phase 3 Work
 
 - Broaden provider parity for retained browser-local request helpers before
   marking full Phase 3 complete. The browser role/static/fallback selection path
   now uses the resolver, but local helper branches such as OpenAI-compatible,
-  Anthropic, Gemini/Vertex, Mistral, Cohere, Ollama, Kobold, Horde, and Ooba
-  still read many provider-specific options directly from flat database fields.
+  Anthropic, Mistral, Cohere, Ollama, Kobold, Horde, and Ooba still read many
+  provider-specific options directly from flat database fields.
 - Verify any future browser-local provider option adoption without changing the
   server-intent payload shape or editing Fastify generation routes unless a real
   regression is exposed.
@@ -253,12 +273,11 @@ pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 ```
 
-Latest browser request helper role/static/fallback resolver adoption run:
+Latest browser-local Gemini/Vertex provider-options run:
 
 ```bash
-pnpm exec prettier --write src/ts/process/request/request.ts src/ts/process/request/tests/modelRoleRouting.test.ts src/ts/process/request/tests/serverCompletion.test.ts docs/plan/model-config-profiles/status.md docs/plan/model-config-profiles/latest-verification.md docs/plan/model-config-profiles/phases/phase-3-generation-dispatch.md docs/plan/model-config-profiles/SOLVE-NOTE.md
-pnpm exec vitest run src/ts/process/request/tests/modelRoleRouting.test.ts src/ts/process/request/tests/serverCompletion.test.ts src/ts/process/request/tests/providerCapability.test.ts src/ts/process/request/tests/serverChat.test.ts
-pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/generation.completion.test.ts server/fastify/__tests__/generation.chat.test.ts server/fastify/__tests__/providerCapabilityRoute.test.ts
+pnpm exec prettier --write --ignore-path /dev/null src/ts/process/request/request.ts src/ts/process/request/google.ts src/ts/process/request/tests/google.fastify.test.ts docs/plan/model-config-profiles/status.md docs/plan/model-config-profiles/latest-verification.md docs/plan/model-config-profiles/phases/phase-3-generation-dispatch.md docs/plan/model-config-profiles/SOLVE-NOTE.md
+pnpm exec vitest run src/ts/process/request/tests/google.fastify.test.ts src/ts/process/request/tests/modelRoleRouting.test.ts src/ts/process/request/tests/serverCompletion.test.ts src/ts/process/request/tests/providerCapability.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 git diff --check
@@ -267,8 +286,7 @@ git diff --check
 Results:
 
 - Prettier: passed.
-- Focused browser request/provider tests: passed, 4 files / 90 tests.
-- Focused Fastify generation/provider tests: passed, 3 files / 177 tests.
+- Focused browser request/provider tests: passed, 4 files / 65 tests.
 - Client-lib TypeScript: passed.
 - Server strict TypeScript: passed.
 - Whitespace check: passed.
