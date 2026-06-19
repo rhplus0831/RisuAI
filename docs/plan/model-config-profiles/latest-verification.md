@@ -7,33 +7,35 @@ workstream.
 
 ## Latest Run
 
-- Runtime/code change under test: Phase 3e Fastify Kobold provider-options
-  adoption. `resolveModelProfile()` now exposes Kobold endpoints as
-  `profile.providerOptions.baseUrl` from `database.koboldURL`, and Fastify
-  Kobold chat dispatch passes that profile-owned URL to
-  `resolveKoboldRequest()` instead of flat `db.koboldURL`. Dispatch coverage
-  proves a conflicting flat Kobold URL does not override the resolved profile
-  URL, and a missing profile URL does not fall back to flat `db.koboldURL`.
+- Runtime/code change under test: Phase 3f Fastify Horde provider-options
+  adoption. `resolveModelProfile()` now exposes Horde API keys as
+  `profile.providerOptions.apiKey` from `database.hordeConfig?.apiKey`, and
+  Fastify Horde chat dispatch passes that profile-owned key to
+  `resolveHordeRequest()` instead of flat `db.hordeConfig?.apiKey`. Dispatch
+  coverage proves a conflicting flat Horde key does not override the resolved
+  profile key, the Stable Horde `models` variants use the profile-derived
+  `horde:::`-stripped request model, and a blank profile key does not fall back
+  to flat `db.hordeConfig.apiKey`, preserving the anonymous `0000000000` key.
   Phase 3 remains in progress.
 - Latest passing commands:
   - `pnpm exec vitest run src/ts/model/modelProfileResolver.test.ts`
-    - Result: passed. 1 test file passed; 14 tests passed.
-  - `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/chatDispatchProfileOptions.test.ts server/fastify/__tests__/kobold.test.ts server/fastify/__tests__/generation.chat.test.ts`
-    - Result: passed. 3 test files passed; 110 tests passed.
+    - Result: passed. 1 test file passed; 15 tests passed.
+  - `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/chatDispatchProfileOptions.test.ts server/fastify/__tests__/horde.test.ts server/fastify/__tests__/generation.chat.test.ts server/fastify/__tests__/generation.completion.test.ts`
+    - Result: passed. 4 test files passed; 201 tests passed.
   - `pnpm exec tsc -p tsconfig.client-lib.json`
     - Result: passed. The command exited 0 and rebuilt client declaration
       output for server project references.
   - `pnpm exec tsc -p server/fastify/tsconfig.json --noEmit`
     - Result: passed. The command exited 0 under strict server TypeScript.
   - `pnpm exec prettier --write --ignore-path /dev/null src/ts/model/modelProfileResolver.ts src/ts/model/modelProfileResolver.test.ts server/fastify/src/prompt/chatDispatch.ts server/fastify/__tests__/chatDispatchProfileOptions.test.ts docs/plan/model-config-profiles/status.md docs/plan/model-config-profiles/latest-verification.md docs/plan/model-config-profiles/phases/phase-3-generation-dispatch.md`
-    - Result: passed. The command exited 0 and formatted the Phase 3e code,
+    - Result: passed. The command exited 0 and formatted the Phase 3f code,
       tests, and docs.
   - `git diff --check`
     - Result: passed. The command exited 0 with no whitespace errors.
 - Failed/intermediate commands during this slice: none.
 - Residual gaps: Full Phase 3 is not complete. Remaining browser
   completion/request helper migration, provider-option migration for
-  Gemini/Vertex, Bedrock, Horde, and Ooba, durable profile storage, UI writes,
+  Gemini/Vertex, Bedrock, and Ooba, durable profile storage, UI writes,
   provider secret reshaping, and embedding behavior remain deferred to later
   slices/phases. OpenRouter body knobs (`fallback`, `middleOut`, and provider
   filters) are not wired into Fastify chat dispatch because the existing OpenAI

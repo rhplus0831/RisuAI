@@ -1004,10 +1004,11 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
   }
 
   if (provider === 'horde') {
+    const providerOptions = profile.providerOptions
     const request = resolveHordeRequest({
       prompt: applyChatTemplate(db, messages),
       model,
-      apiKey: asString(db.hordeConfig?.apiKey),
+      apiKey: asString(providerOptions.apiKey),
       maxTokens,
       maxContextLength: typeof db.maxContext === 'number' ? db.maxContext + 100 : undefined,
       temperature,

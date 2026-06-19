@@ -332,6 +332,24 @@ describe('resolveModelProfile provider/runtime normalization', () => {
     })
   })
 
+  it('normalizes Horde API key and strips horde prefix from the request model', () => {
+    const profile = resolveModelProfile({
+      database: db({
+        aiModel: 'horde:::koboldcpp/Mistral-7B',
+        hordeConfig: { apiKey: 'horde-profile-key', model: '', softPrompt: '' },
+        instructChatTemplate: 'chatml',
+      } as Partial<Database>),
+    })
+
+    expect(profile.modelInfo.format).toBe(LLMFormat.Horde)
+    expect(profile.providerCapability).toEqual({ routable: true, provider: 'horde' })
+    expect(profile.requestModel).toBe('koboldcpp/Mistral-7B')
+    expect(profile.providerOptions).toMatchObject({
+      apiKey: 'horde-profile-key',
+      requestModel: 'koboldcpp/Mistral-7B',
+    })
+  })
+
   it('normalizes OpenAI-compatible key identifier models', () => {
     const profile = resolveModelProfile({
       database: db({

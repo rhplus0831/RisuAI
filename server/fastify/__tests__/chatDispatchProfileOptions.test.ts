@@ -82,6 +82,34 @@ function captureOpenAIRequests(): CapturedDispatchRequest[] {
   return captureDispatchRequests(okOpenAIResponse())
 }
 
+function captureHordeRequests(text = 'profile ok'): CapturedDispatchRequest[] {
+  const captured: CapturedDispatchRequest[] = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      captured.push({
+        url: String(url),
+        headers: { ...((init?.headers as Record<string, string> | undefined) ?? {}) },
+        body: JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>,
+      })
+      if (String(url).endsWith('/generate/text/async')) {
+        return new Response(JSON.stringify({ id: 'profile-horde-job' }), {
+          status: 202,
+          headers: { 'content-type': 'application/json' },
+        })
+      }
+      if (String(url).endsWith('/generate/text/status/profile-horde-job')) {
+        return new Response(JSON.stringify({ done: true, generations: [{ text }] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      }
+      throw new Error(`unexpected Horde URL: ${String(url)}`)
+    }) as unknown as typeof fetch,
+  )
+  return captured
+}
+
 async function dispatchWithProfile(
   profile: ResolvedModelProfile,
   database: Database,
@@ -103,8 +131,36 @@ async function dispatchWithProfile(
   ])
 }
 
+async function dispatchHordeWithProfile(
+  profile: ResolvedModelProfile,
+  database: Database,
+  formated: OpenAIChat[] = [{ role: 'user', content: 'hello' }],
+): Promise<void> {
+  vi.useFakeTimers()
+  const frames = await dispatchChatProvider({
+    database,
+    profile,
+    formated,
+    signal: new AbortController().signal,
+  })
+  const emittedPromise = (async () => {
+    const emitted = []
+    for await (const frame of frames) {
+      emitted.push(frame)
+    }
+    return emitted
+  })()
+  await vi.advanceTimersByTimeAsync(0)
+  await vi.advanceTimersByTimeAsync(2000)
+  await expect(emittedPromise).resolves.toEqual([
+    { kind: 'token', content: 'profile ok' },
+    { kind: 'done', finishReason: 'stop' },
+  ])
+}
+
 afterEach(() => {
   vi.unstubAllGlobals()
+  vi.useRealTimers()
 })
 
 describe('dispatchChatProvider profile providerOptions', () => {
@@ -332,6 +388,63 @@ describe('dispatchChatProvider profile providerOptions', () => {
 
     expect(captured).toHaveLength(1)
     expect(captured[0].url).toBe('http://profile-kobold.example.com/api/v1/generate')
+  })
+
+  it('uses Horde profile API key and request model over conflicting flat database fields', async () => {
+    const profile = resolveModelProfile({
+      database: db({
+        aiModel: 'horde:::profile-horde-model',
+        hordeConfig: { apiKey: 'profile-horde-key', model: '', softPrompt: '' },
+        instructChatTemplate: 'chatml',
+      } as Partial<Database>),
+    })
+    const flatConflict = db({
+      aiModel: 'horde:::flat-horde-model',
+      hordeConfig: { apiKey: 'flat-horde-key', model: '', softPrompt: '' },
+      instructChatTemplate: 'gpt2',
+    } as Partial<Database>)
+    const captured = captureHordeRequests()
+
+    await dispatchHordeWithProfile(profile, flatConflict)
+
+    expect(captured.length).toBeGreaterThanOrEqual(2)
+    expect(captured[0].url).toBe('https://stablehorde.net/api/v2/generate/text/async')
+    expect(captured[0].headers.apikey).toBe('profile-horde-key')
+    expect(captured[1].headers.apikey).toBe('profile-horde-key')
+    expect(captured[0].body.models).toEqual([
+      'profile-horde-model',
+      'profile-horde-model',
+      ' profile-horde-model',
+      'profile-horde-model ',
+    ])
+  })
+
+  it('uses the anonymous Horde key when the profile key is blank despite a flat DB key', async () => {
+    const profile = resolveModelProfile({
+      database: db({
+        aiModel: 'horde:::profile-horde-model',
+        hordeConfig: { apiKey: '   ', model: '', softPrompt: '' },
+        instructChatTemplate: 'chatml',
+      } as Partial<Database>),
+    })
+    const flatConflict = db({
+      aiModel: 'horde:::flat-horde-model',
+      hordeConfig: { apiKey: 'flat-horde-key', model: '', softPrompt: '' },
+      instructChatTemplate: 'gpt2',
+    } as Partial<Database>)
+    const captured = captureHordeRequests()
+
+    await dispatchHordeWithProfile(profile, flatConflict)
+
+    expect(captured.length).toBeGreaterThanOrEqual(2)
+    expect(captured[0].headers.apikey).toBe('0000000000')
+    expect(captured[1].headers.apikey).toBe('0000000000')
+    expect(captured[0].body.models).toEqual([
+      'profile-horde-model',
+      'profile-horde-model',
+      ' profile-horde-model',
+      'profile-horde-model ',
+    ])
   })
 
   it('preserves the native Ollama missing-URL error and does not fall back to flat DB URL', async () => {

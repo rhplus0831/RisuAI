@@ -1,6 +1,6 @@
 # Phase 3: Generation Dispatch
 
-Status: in progress; Phase 3a server-owned profile selection/capability/request-model slice complete; Phase 3b Fastify OpenAI-compatible provider-options slice complete; Phase 3c Fastify Anthropic/Mistral/Cohere provider-options slice complete; Phase 3d Fastify native Ollama provider-options slice complete; Phase 3e Fastify Kobold provider-options slice complete.
+Status: in progress; Phase 3a server-owned profile selection/capability/request-model slice complete; Phase 3b Fastify OpenAI-compatible provider-options slice complete; Phase 3c Fastify Anthropic/Mistral/Cohere provider-options slice complete; Phase 3d Fastify native Ollama provider-options slice complete; Phase 3e Fastify Kobold provider-options slice complete; Phase 3f Fastify Horde provider-options slice complete.
 
 Goal: move browser and Fastify generation dispatch from ad hoc flat database
 reads to the resolved profile runtime object.
@@ -104,15 +104,29 @@ reads to the resolved profile runtime object.
 - The missing-URL path preserves the existing `options.kobold.baseUrl is required`
   error and does not call `fetch`.
 
+## Implemented Phase 3f Slice
+
+- `resolveModelProfile()` now exposes Horde API keys as
+  `profile.providerOptions.apiKey`, derived from
+  `database.hordeConfig?.apiKey`, for Horde-format profiles.
+- Fastify Horde chat dispatch now passes `profile.providerOptions.apiKey` to
+  `resolveHordeRequest()` instead of reading flat `db.hordeConfig?.apiKey` at
+  dispatch time.
+- Direct dispatch coverage proves a profile-owned Horde key wins over a
+  conflicting flat `db.hordeConfig.apiKey`, and that the Stable Horde request
+  model still comes from the profile-derived `horde:::`-stripped request model.
+- Missing/blank profile-key coverage proves Horde dispatch does not fall back to
+  a conflicting flat key and preserves the existing anonymous `0000000000` key
+  behavior.
+
 ## Remaining Phase 3 Work
 
 - Migrate the remaining browser completion/request helper paths to consume the
   resolver contract for role/static fallback selection.
 - Migrate remaining provider option branches outside OpenAI-compatible,
-  Anthropic, Mistral, Cohere, native Ollama, and Kobold to
+  Anthropic, Mistral, Cohere, native Ollama, Kobold, and Horde to
   `profile.providerOptions` where the target adapters already expose equivalent
-  request fields. Residual branches include Gemini/Vertex, Bedrock, Horde, and
-  Ooba.
+  request fields. Residual branches include Gemini/Vertex, Bedrock, and Ooba.
 - Broaden provider parity beyond the Phase 3a request-model surface before
   marking the full Phase 3 complete.
 
@@ -161,19 +175,20 @@ pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 ```
 
-Latest Phase 3e run:
+Latest Phase 3f run:
 
 ```bash
 pnpm exec vitest run src/ts/model/modelProfileResolver.test.ts
-pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/chatDispatchProfileOptions.test.ts server/fastify/__tests__/kobold.test.ts server/fastify/__tests__/generation.chat.test.ts
+pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/chatDispatchProfileOptions.test.ts server/fastify/__tests__/horde.test.ts server/fastify/__tests__/generation.chat.test.ts server/fastify/__tests__/generation.completion.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 ```
 
 Results:
 
-- Focused resolver tests: passed, 1 file / 14 tests.
-- Focused Fastify chat dispatch/Kobold/chat tests: passed, 3 files / 110 tests.
+- Focused resolver tests: passed, 1 file / 15 tests.
+- Focused Fastify chat dispatch/Horde/chat/completion tests: passed, 4 files /
+  201 tests.
 - Client-lib TypeScript: passed.
 - Server strict TypeScript: passed.
 
