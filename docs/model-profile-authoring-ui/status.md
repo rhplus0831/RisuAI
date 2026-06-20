@@ -2,14 +2,16 @@
 
 Date: 2026-06-20
 
-This workstream is open and partially implemented. It is a planning follow-up
-to `.archived-docs/model-config-profiles/`, which completed durable profile
-runtime support but deferred the full visible authoring UI.
+This workstream is closed. It was a planning follow-up to
+`.archived-docs/model-config-profiles/`, which completed durable profile
+runtime support but deferred the full visible authoring UI. The deferred editor,
+conversion workflow, commands, guardrails, docs, and final smoke are now
+complete.
 
 ## Snapshot
 
-- Plan state: open.
-- Current phase: Phase 6 not started.
+- Plan state: complete.
+- Current phase: closed after Phase 6.
 - Current implementation state:
   - `Database.modelProfiles` and `Database.modelRoleProfiles` exist.
   - Durable records now include optional provider-first `providerId`, raw model
@@ -36,8 +38,11 @@ runtime support but deferred the full visible authoring UI.
     `/generate/chat` preflight, and final server chat dispatch.
   - Server chat prompt assembly now applies profile-bound model/runtime fields
     from the effective chat generation config before budgeting and dispatch.
-- Current verification state: Phase 0 through Phase 5 focused tests,
-  TypeScript checks, and Phase 3/Phase 4 browser smoke passed.
+  - Closeout structure/runtime docs now describe Settings -> Model as
+    profile-first and record compatibility caveats.
+- Current verification state: Phase 0 through Phase 6 focused tests,
+  TypeScript checks, `git diff --check`, and final `/settings/model` browser
+  smoke passed.
 
 ## Phase Router
 
@@ -49,12 +54,12 @@ runtime support but deferred the full visible authoring UI.
 | Phase 3: Settings Model Shell | Completed | Build Settings -> Model Roles/Profiles tabs, conversion prompt, and legacy compatibility panel. |
 | Phase 4: Profile Editor Providers | Completed | Implement full profile editor panels for OpenAI, Anthropic, Google, Vertex, and Custom API plus defaults/fallbacks. |
 | Phase 5: Generation Guardrails | Completed | Block incomplete/unsupported active profiles in browser and server generation paths. |
-| Phase 6: Verification And Cleanup | Not started | Run regression, browser smoke, docs updates, and compatibility cleanup notes. |
+| Phase 6: Verification And Cleanup | Completed | Run regression, browser smoke, docs updates, and compatibility cleanup notes. |
 
 ## Current Blockers
 
-- No implementation blockers yet.
-- Open questions are tracked in [`plan.md`](plan.md#remaining-open-questions).
+- None. The historical open questions are closed in
+  [`plan.md`](plan.md#closed-questions-and-outcomes).
 
 ## Latest Completed Slice
 
@@ -98,6 +103,26 @@ runtime support but deferred the full visible authoring UI.
   assembly.
 - Verification passed focused browser request/provider/preflight suites,
   Fastify generation chat/completion/dispatch suites, and TypeScript checks.
+- Phase 6 refreshed structure/runtime/workstream docs, recorded canonical
+  compatibility caveats, ran the full requested focused validation matrix, ran
+  client-lib and strict Fastify TypeScript checks, ran `git diff --check`, and
+  passed the required `/settings/model` browser smoke with `pnpm dev:agent`
+  using a temp data dir. The dev server was stopped after smoke.
+
+## Compatibility Caveats
+
+- Legacy flat fields remain: `aiModel`, `subModel`, `modelRoles`,
+  `seperateModels`, `fallbackModels`, separate parameters, and provider globals.
+  They are compatibility/conversion data behind Advanced Legacy Settings or
+  import/preset/loadout paths.
+- Compatibility profiles omit `providerId`. They may generate when routable,
+  but they are not first-class provider panels.
+- Unsupported `providerId` values are placeholders. They are shown unsupported
+  and blocked for active durable generation.
+- Memory summaries use memory-role profiles. Memory embeddings remain separate
+  Hypa/Voyage/custom embedding config.
+- Custom Models catalog entries (`customModels` / `xcustom:::`) remain separate
+  from first-class Custom API profiles.
 
 ## Latest Decisions Captured
 

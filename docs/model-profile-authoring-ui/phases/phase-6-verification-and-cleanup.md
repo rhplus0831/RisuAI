@@ -1,6 +1,6 @@
 # Phase 6: Verification And Cleanup
 
-Status: not started.
+Status: completed.
 
 Goal: close the workstream with focused regression, browser smoke, updated docs,
 and explicit compatibility caveats.
@@ -32,30 +32,49 @@ and explicit compatibility caveats.
 
 ## Validation
 
+Final commands run on 2026-06-20:
+
 ```bash
 pnpm exec vitest run src/ts/model/modelProfileRecords.test.ts src/ts/model/modelProfileResolver.test.ts src/ts/model/modelProfileUiState.test.ts
 pnpm exec vitest run src/ts/storage/database.svelte.test.ts src/ts/server/commands.test.ts src/ts/loadout.test.ts src/ts/presetSplit.test.ts
 pnpm exec vitest run src/lib/Setting/Pages/Model/ModelRoleList.svelte.test.ts src/lib/Setting/Pages/BotSettings.svelte.test.ts src/lang/index.test.ts
-pnpm exec vitest run src/ts/process/request/tests/modelRoleRouting.test.ts src/ts/process/request/tests/providerCapability.test.ts
-pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/commands.test.ts server/fastify/__tests__/providerSecrets.test.ts server/fastify/__tests__/generation.chat.test.ts server/fastify/__tests__/generation.completion.test.ts
+pnpm exec vitest run src/ts/process/request/tests/modelRoleRouting.test.ts src/ts/process/request/tests/providerCapability.test.ts src/ts/process/request/tests/serverPromptAssembly.test.ts
+pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/commands.test.ts server/fastify/__tests__/providerSecrets.test.ts server/fastify/__tests__/generation.chat.test.ts server/fastify/__tests__/generation.completion.test.ts server/fastify/__tests__/chatDispatchProfileOptions.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
+git diff --check
 ```
 
 Run browser smoke:
 
 ```bash
-pnpm dev:agent
+RISU_API_DATA_DIR="$(mktemp -d)" pnpm dev:agent
 ```
 
 Stop the dev server when done.
 
+## Closeout Results
+
+- Focused validation matrix passed. The final run used the complete command
+  matrix recorded in [`../latest-verification.md`](../latest-verification.md),
+  including `serverPromptAssembly.test.ts`,
+  `chatDispatchProfileOptions.test.ts`, both TypeScript checks, and
+  `git diff --check`.
+- Browser smoke passed against `http://localhost:6418/settings/model` using a
+  temp data dir. It covered the conversion prompt, Not Now flow, Advanced
+  Legacy Settings, Convert to Profiles, Runtime Defaults edit/save, Custom API
+  profile create/save with `/chat/completions` warning, Main Chat role binding
+  to the created profile, Apply/no-unsaved state, and reopening Advanced Legacy
+  Settings.
+- `pnpm dev:agent` was stopped after smoke; ports `6418` and `6419` were free.
+- Structure docs and workstream docs now describe Settings -> Model as
+  profile-first and record canonical compatibility caveats.
+
 ## Exit Criteria
 
-- Focused tests pass or exact gaps are recorded.
-- Browser smoke covers Settings -> Model Roles/Profiles, profile editing,
+- Focused tests passed.
+- Browser smoke covered Settings -> Model Roles/Profiles, profile editing,
   conversion prompt, runtime defaults, and legacy compatibility panel.
-- Docs describe the new profile-first model settings workflow.
-- `status.md` marks the workstream complete only when the editor, conversion,
-  commands, guardrails, and docs are all done.
-
+- Docs describe the profile-first model settings workflow.
+- `status.md` marks the workstream complete because the editor, conversion,
+  commands, guardrails, verification, smoke, and docs are done.

@@ -1,7 +1,8 @@
 # Solve Note
 
-This file is for future implementation agents working on the model profile
-authoring UI plan.
+This file is a historical closeout note for future agents reading the model
+profile authoring UI plan. The workstream is closed; use the structure docs and
+live source as the current behavior reference.
 
 ## Manager Instructions
 
@@ -9,15 +10,15 @@ authoring UI plan.
    choosing a phase.
 2. Re-check source symbols before editing. Paths in the plan are anchors, not a
    substitute for reading current code.
-3. Keep phase changes narrow. Do not jump straight into the UI before schema,
-   resolver, and command contracts can support it.
+3. For new follow-up work, keep changes narrow and re-check the existing schema,
+   resolver, command, UI, and generation contracts before editing.
 4. Prefer row-oriented profile commands for UI changes. Whole-array settings
    patches remain compatibility paths.
 5. Preserve legacy flat fields as compatibility data unless a phase explicitly
    retires one.
-6. Do not claim the full editor exists until Roles/Profiles tabs, profile
-   provider panels, runtime defaults, fallbacks, conversion, and generation
-   guardrails are all implemented and verified.
+6. The full editor now exists. Do not regress Roles/Profiles tabs, profile
+   provider panels, runtime defaults, fallbacks, conversion, or generation
+   guardrails without updating tests and docs.
 
 ## Important Current Facts
 
@@ -47,9 +48,11 @@ authoring UI plan.
 - Phase 5 is complete: active incomplete/unsupported durable profiles now fail
   early in browser and server generation paths, and server chat assembly applies
   profile-bound model/runtime fields from the effective generation config.
+- Phase 6 is complete: closeout docs were refreshed, compatibility caveats were
+  recorded, the full requested validation matrix passed, browser smoke passed,
+  and `pnpm dev:agent` was stopped after smoke.
 
 ## Recommended Next Slice
 
-Continue with Phase 6. It should run final regression and browser smoke where
-needed, refresh docs, and record compatibility cleanup notes before closing the
-workstream.
+No slice remains in this workstream. Open a new plan for future provider panels,
+profile import/export UI, legacy field retirement, or automated smoke expansion.

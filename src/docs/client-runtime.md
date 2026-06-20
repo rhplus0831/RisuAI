@@ -108,14 +108,18 @@ Model profile projection notes:
   Fastify-backed fields. Client and server defaults normalize them, and command
   patches validate their record, role-binding, provider option, runtime option,
   and fallback-ref shapes.
+- `DBState.db.modelRuntimeDefaults` is the profile-system runtime default
+  store. It uses the same runtime option schema as profile `runtimeOptions`.
 - Preset, split-preset, loadout, import, bootstrap, and projection paths
   preserve these durable fields while still accepting legacy flat data.
 - Provider secret masking covers profile-local `apiKey` values by stable
   profile id. Masked placeholders are resolved server-side during settings
   writes.
-- The browser settings UI can show resolved profile summaries and inherited
-  role state, but a full durable profile authoring editor is deferred. Current
-  visible controls still edit legacy flat compatibility fields.
+- Settings -> Model has a live command-backed authoring UI. The shell edits role
+  bindings, profile rows, runtime defaults, first-class provider fields,
+  fallbacks, and profile-local secret placeholders through dedicated model
+  profile commands. Legacy flat settings remain available behind Advanced
+  Legacy Settings and as compatibility/conversion data.
 
 ## Generation Client
 
@@ -154,6 +158,20 @@ legacy flat fields for compatibility. Static and legacy fallback model ids still
 use the flat `staticModel` path. Memory summaries use memory-role profile
 resolution, while memory embeddings remain outside chat profiles on the
 Hypa/Voyage/custom embedding contract.
+
+Active durable profiles with incomplete or unsupported status are generation
+guardrails. Browser preflight and request dispatch reject them before fetch, and
+Fastify generation routes reject them before accepting SSE/jobs or reaching a
+provider adapter. Compatibility profiles without `providerId` can still
+generate when routable, but unsupported `providerId` placeholders are preserved
+for editing and blocked for active durable generation.
+
+Server chat assembly is profile-bound. The browser sends raw chat inputs; the
+server resolves the effective model-runtime config, overlays the selected
+profile model/request model/provider options/runtime settings, then budgets and
+dispatches with that profile context. This keeps profile runtime defaults and
+profile overrides in the server path instead of borrowing stale `db.aiModel` or
+legacy flat parameter assumptions.
 
 When generation UI is wrong, inspect both the Svelte surface
 `src/lib/ChatScreens/DefaultChatScreen.svelte` and the runtime files above.

@@ -5,9 +5,11 @@ Date: 2026-06-20
 ## Goal
 
 Build the full visible Durable Profile editor and profile-first Settings ->
-Model experience. This is the direct follow-up to the closed model config
-profiles workstream: the runtime machinery exists, but the UI still mostly edits
-legacy flat compatibility fields.
+Model experience. This was the direct follow-up to the closed model config
+profiles workstream: the runtime machinery existed, but the UI still mostly
+edited legacy flat compatibility fields.
+
+Status: achieved in phases 0-6.
 
 End state:
 
@@ -51,24 +53,24 @@ Important contract points:
 - Raw model fallbacks use `{ mode: 'model', modelId }` and keep static-model
   compatibility behavior.
 
-## Current Problem Shape
+## Historical Starting Problem Shape
 
-The codebase has durable profile records, but the visible model settings surface
-still edits legacy fields:
+At the start of this workstream, the codebase had durable profile records, but
+the visible model settings surface still edited legacy fields:
 
-- `ModelRoleList.svelte` writes `aiModel`, `subModel`, `modelRoles`,
+- `ModelRoleList.svelte` wrote `aiModel`, `subModel`, `modelRoles`,
   `seperateModels`, `fallbackModels`, and separate parameter fields.
-- `BotSettings.svelte` shows model roles and then global provider panels based
+- `BotSettings.svelte` showed model roles and then global provider panels based
   on `modelProfileUiState` scanning.
-- `modelProfiles` rows do not yet have `providerId`, raw model fallbacks,
+- `modelProfiles` rows did not yet have `providerId`, raw model fallbacks,
   provider-first Custom API/Vertex shapes, or runtime defaults.
-- `resolveModelProfile()` falls back to legacy when a durable binding is missing
+- `resolveModelProfile()` fell back to legacy when a durable binding was missing
   or points to a profile without `modelId`.
-- Profile-bound provider options still borrow many legacy globals.
-- Whole-array settings patches exist, but row-oriented atomic profile commands
-  do not.
+- Profile-bound provider options borrowed many legacy globals.
+- Whole-array settings patches existed, but row-oriented atomic profile commands
+  did not.
 
-## Target Data Contract
+## Implemented Data Contract
 
 ### Profile Record
 
@@ -82,7 +84,7 @@ The durable profile record remains array-backed and stable-id keyed:
 - `runtimeOptions?`: profile-local runtime overrides.
 - `fallbacks?`: fallback profile refs or raw model fallback refs.
 
-Provider options should grow to support:
+Provider options now support:
 
 - `apiKey`
 - `requestModel`
@@ -94,14 +96,11 @@ Provider options should grow to support:
 - `vertex.privateKey`
 - `customApi.tokenizer`
 - `customApi.flags`
-- Custom API base URL, using the existing `baseUrl` field unless the
-  implementation finds a clearer compatible name.
+- Custom API base URL in the existing `baseUrl` field.
 
 ### Runtime Defaults
 
-Add:
-
-- `Database.modelRuntimeDefaults`
+`Database.modelRuntimeDefaults` stores runtime defaults.
 
 Use the same schema as `ModelProfileRecordRuntimeOptions`. New UI writes this
 field, not legacy flat parameter fields. Legacy flat and separate parameters
@@ -120,7 +119,7 @@ initializer creates generated profiles and bindings atomically.
 
 ## Command Contract
 
-Generic settings patches remain compatible, but profile-first UI should use
+Generic settings patches remain compatible, but profile-first UI uses
 row-oriented commands:
 
 - create profile
@@ -132,7 +131,7 @@ row-oriented commands:
 - convert legacy settings to profiles
 - update runtime defaults
 
-Multi-key operations must be one revision:
+Multi-key operations are one revision:
 
 - conversion writes `modelProfiles`, `modelRoleProfiles`, and
   `modelRuntimeDefaults`
@@ -141,7 +140,7 @@ Multi-key operations must be one revision:
 
 ## UI Contract
 
-Settings -> Model should be purpose-built for profiles:
+Settings -> Model is purpose-built for profiles:
 
 - Roles tab:
   - canonical `MODEL_ROLES` order
@@ -186,27 +185,49 @@ mapping, validation, resolver behavior, UI, and tests.
 - Raw resolved request/debug JSON UI.
 - Moving memory embeddings into chat profiles.
 
-## Remaining Open Questions
+## Closed Questions And Outcomes
 
-- Exact legacy-to-profile conversion algorithm for every legacy role and
-  separate-parameter edge case.
-- Exact command endpoint/request/response shapes.
-- Whether `mp_` ids are client-minted with server collision checks or
-  server-minted by centralized helpers.
-- Prompt assembly threading required to avoid stale `db.aiModel` assumptions.
-- Whether Custom API headers can ever be secret-bearing and need masking.
-- Exact component split after deciding whether to extract a dedicated
-  `ModelSettings.svelte`.
+- Legacy-to-profile conversion is command-backed and writes `modelProfiles`,
+  `modelRoleProfiles`, and `modelRuntimeDefaults` together.
+- Profile row, role binding, runtime defaults, duplicate, delete/reassign,
+  create-and-bind, and conversion commands are implemented with targeted
+  `modelProfile` projection refresh.
+- New profile ids use opaque `mp_` ids generated through the command helpers.
+- Prompt assembly and server chat dispatch resolve profile-bound model/runtime
+  config before budgeting and provider dispatch instead of assuming
+  `db.aiModel`.
+- Custom API extra headers remain plain profile provider options in this pass;
+  profile-local `apiKey` and Vertex private key handling use secret placeholder
+  behavior.
+- The component split is `ModelSettingsShell`, `ModelProfileRoleList`,
+  `ModelProfileList`, `ModelProfileEditorDrawer`, `ModelRuntimeDefaultsEditor`,
+  provider/runtime/fallback subeditors, and legacy `ModelRoleList` behind
+  Advanced Legacy Settings.
 
-## Risk Register
+Canonical compatibility caveats:
 
-| Risk | Impact | Mitigation |
+- Legacy flat fields remain: `aiModel`, `subModel`, `modelRoles`,
+  `seperateModels`, `fallbackModels`, separate parameters, and provider globals.
+- Compatibility profiles omit `providerId`; they may generate when routable but
+  are not first-class provider panels.
+- Unsupported `providerId` values are placeholders, shown unsupported and
+  blocked for active durable generation.
+- Memory summaries use memory-role profiles; memory embeddings remain separate
+  Hypa/Voyage/custom embedding config.
+- Custom Models catalog (`customModels` / `xcustom:::`) remains separate from
+  first-class Custom API profiles.
+
+## Historical Risk Register
+
+These were the risks tracked while the workstream was active; the listed
+mitigations were implemented or preserved as compatibility boundaries.
+
+| Risk | Impact | Implemented mitigation |
 | --- | --- | --- |
-| Broken explicit profile bindings currently fall back to legacy | Profile-first UI can hide real misconfiguration | Invert resolver behavior with tests before UI depends on it |
-| Provider-first profiles still pass through legacy `db.aiModel` prompt assembly assumptions | Prompt/tokenizer behavior can mismatch selected profile | Audit prompt assembly and thread resolved profile/model info where needed |
-| Generic settings patch loses updates for profile rows | Profile edits can overwrite concurrent changes | Use row-oriented atomic commands for UI |
-| Custom API optional auth conflicts with current OpenAI adapter | Local unauthenticated endpoints cannot work | Add narrow optional-auth path for `custom-api`, not official OpenAI |
-| Secret masking only covers profile `apiKey` | Vertex private key can leak or be overwritten | Extend masking paths and row-identity tests |
-| Existing autosave setting components do not match explicit Save/Cancel | Profile editor can persist partial edits unexpectedly | Use isolated drafts and avoid `SettingRenderer` unless it supports draft context |
-| Old global provider panels leak into profile-first UI | Users edit fields that active profiles ignore | Gate legacy panels behind compatibility section |
-
+| Broken explicit profile bindings fell back to legacy | Profile-first UI could hide real misconfiguration | Resolver now reports incomplete status for explicit broken durable bindings, with tests. |
+| Provider-first profiles passed through legacy `db.aiModel` prompt assembly assumptions | Prompt/tokenizer behavior could mismatch selected profile | Prompt assembly and server chat dispatch now thread resolved profile model/runtime config. |
+| Generic settings patches could lose updates for profile rows | Profile edits could overwrite concurrent changes | Row-oriented atomic commands drive the profile-first UI. |
+| Custom API optional auth conflicted with the existing OpenAI adapter | Local unauthenticated endpoints could not work | Custom API has a narrow optional-auth path separate from official OpenAI. |
+| Secret masking originally covered only profile `apiKey` | Vertex private key could leak or be overwritten | Masking paths and row-identity tests cover profile-local secrets. |
+| Existing autosave setting components did not match explicit Save/Cancel | Profile editor could persist partial edits unexpectedly | The editor uses isolated drafts and explicit Save/Cancel instead of `SettingRenderer` autosave. |
+| Old global provider panels could leak into profile-first UI | Users could edit fields that active profiles ignore | Global provider panels are behind Advanced Legacy Settings compatibility UI. |

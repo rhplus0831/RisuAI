@@ -2,14 +2,14 @@
 
 Date: 2026-06-20
 
-This open workstream plans the visible Durable Profile authoring UI and the
-supporting contract changes required to make that UI real. It follows the
-closed `.archived-docs/model-config-profiles/` workstream, which added durable
-profile storage, role bindings, resolver adoption, provider dispatch support,
+This closed workstream records the visible Durable Profile authoring UI and the
+supporting contract changes that made that UI real. It follows the closed
+`.archived-docs/model-config-profiles/` workstream, which added durable profile
+storage, role bindings, resolver adoption, provider dispatch support,
 compatibility preservation, and resolved-profile summaries, but intentionally
 deferred a full visible editor.
 
-The goal here is to make Settings -> Model profile-first:
+The completed result makes Settings -> Model profile-first:
 
 - Roles bind to reusable Durable Profiles or inherit from source roles.
 - Profiles own provider/model credentials, request model, runtime overrides,
@@ -20,15 +20,15 @@ The goal here is to make Settings -> Model profile-first:
 
 Start with [`status.md`](status.md), then read [`plan.md`](plan.md), then the
 phase files under [`phases/`](phases/). [`latest-verification.md`](latest-verification.md)
-records the current proof level as phases land. [`../model-profile-ui-ux-decisions.md`](../model-profile-ui-ux-decisions.md)
-is the design decision log this plan is based on.
+records the final proof level and Phase 6 closeout. [`../model-profile-ui-ux-decisions.md`](../model-profile-ui-ux-decisions.md)
+is the design decision log this plan was based on.
 
 ## Read Order
 
-1. [`status.md`](status.md) - current phase router and open workstream state.
-2. [`plan.md`](plan.md) - goal, target contract, invariants, non-goals, risks.
-3. [`latest-verification.md`](latest-verification.md) - current validation
-   proof and remaining proof.
+1. [`status.md`](status.md) - closed workstream state and compatibility caveats.
+2. [`plan.md`](plan.md) - historical goal, target contract, invariants,
+   non-goals, risks, and closed question outcomes.
+3. [`latest-verification.md`](latest-verification.md) - final validation proof.
 4. [`phases/README.md`](phases/README.md) - phase index and slice rules.
 5. [`phases/phase-0-contract-and-schema.md`](phases/phase-0-contract-and-schema.md)
    - expand durable profile records, defaults, secrets, and runtime defaults.
@@ -91,4 +91,3 @@ is the design decision log this plan is based on.
   - `server/fastify/src/routes/generationChat.ts`
   - `server/fastify/src/prompt/chatDispatch.ts`
   - `server/fastify/src/generation/openai.ts`
-

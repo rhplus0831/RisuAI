@@ -225,22 +225,40 @@ the legacy Chat Bot/bot-preset page appears only when legacy bot presets still
 exist. Keep router slug maps, `SettingsMenuIndex`, and page visibility
 conditions aligned when changing these sections.
 
-Model settings now have a durable-profile runtime underneath the visible
-compatibility UI:
+Model settings are profile-first:
 
-- `Database.modelProfiles` stores reusable profile records, and
-  `Database.modelRoleProfiles` stores role bindings.
-- `src/ts/model/modelProfileResolver.ts` prefers durable profile records and
-  role bindings, supports inherited role bindings where allowed, and falls back
-  to legacy flat fields.
-- `src/ts/model/modelProfileUiState.ts` feeds resolved summaries and provider
-  visibility into `ModelRoleList.svelte` and `BotSettings.svelte`.
-- Current role settings show resolved profile summaries and inherited role
-  state, but they are not a full durable profile authoring editor. The visible
-  settings controls still edit legacy flat compatibility fields.
-- Durable profile records can be created or updated through settings commands,
-  import, preset, and loadout paths. Do not use browser smoke as proof of
-  visible durable profile creation/editing until a profile editor exists.
+- `BotSettings.svelte` routes `settingsKind === 'model'` to
+  `Model/ModelSettingsShell.svelte`.
+- `ModelSettingsShell.svelte` owns the conversion prompt, Roles/Profiles
+  segmented tabs, and Advanced Legacy Settings.
+- The Roles tab uses `ModelProfileRoleList.svelte` to edit
+  `Database.modelRoleProfiles` with explicit Apply/Cancel. It shows binding
+  mode, inherited source, effective profile, provider/model/request-model
+  summary, status, and fallback count for each canonical role.
+- The Profiles tab uses `ModelProfileList.svelte` to show
+  `Database.modelProfiles`, role usage, status, create/edit/duplicate/delete
+  actions, and the runtime defaults panel.
+- `ModelProfileEditorDrawer.svelte` is the command-backed durable profile
+  editor. It covers first-class OpenAI, Anthropic, Google, Vertex, and Custom
+  API panels, profile runtime overrides, fallbacks, and secret
+  preserve/replace/clear behavior.
+- `ModelRuntimeDefaultsEditor.svelte` edits `Database.modelRuntimeDefaults`
+  with explicit Save/Cancel and a count summary.
+- Advanced Legacy Settings embeds the old `ModelRoleList.svelte` plus legacy
+  main/aux summaries. The legacy flat fields remain compatibility/conversion
+  data for imports, presets, loadouts, and provider families without
+  first-class panels.
+
+Model profile runtime state lives under `src/ts/model/`:
+
+- `modelProfileRecords.ts` normalizes durable profile records, role bindings,
+  runtime defaults, provider options, and fallback refs.
+- `modelProfileResolver.ts` prefers durable profiles/bindings, supports
+  inherited role bindings where allowed, reports ready/incomplete/
+  compatibility/unsupported status, and falls back to legacy flat fields only
+  for compatibility paths.
+- `modelProfileUiState.ts` feeds role/profile summaries and provider
+  visibility into the shell and legacy panel.
 
 Value binding and persistence are centralized in `src/ts/setting/utils.ts`:
 

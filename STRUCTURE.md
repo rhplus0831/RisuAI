@@ -97,5 +97,11 @@ past decisions; they are not the source of current behavior.
 - Server-side prompt assembly is the supported chat-send path. Browser preflight
   uses `resolveServerPromptAssembly()` plus `resolveProviderCapability()`;
   unsupported shapes hard-fail instead of falling back to browser-local assembly.
+- Settings -> Model is profile-first. Durable `modelProfiles`,
+  `modelRoleProfiles`, and `modelRuntimeDefaults` are the normal editing and
+  generation contract; legacy flat fields such as `aiModel`, `subModel`,
+  `modelRoles`, `seperateModels`, `fallbackModels`, separate parameters, and
+  provider globals remain compatibility/conversion data behind Advanced Legacy
+  Settings or import/preset/loadout paths.
 - Root TypeScript is intentionally loose for browser code. Server checking is
   strict and uses the project-reference workflow in `AGENTS.md`.

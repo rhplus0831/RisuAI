@@ -39,6 +39,41 @@ registry. `src/ts/model/providers/nanogpt.ts` contains static endpoint
 constants; dynamic NanoGPT account/model fetching lives in
 `src/ts/model/nanogpt.ts`.
 
+## Settings -> Model Profile Flow
+
+Settings -> Model is now profile-first. `BotSettings.svelte` routes model
+settings to `ModelSettingsShell.svelte`, which owns the visible workflow:
+
+| Surface | Role |
+| --- | --- |
+| `ModelProfileRoleList.svelte` | Roles tab. Edits `modelRoleProfiles` with explicit Apply/Cancel, binding modes (`profile`, supported `inherit`, `legacy`), effective profile summaries, provider/model/request-model summaries, status, and fallback counts. |
+| `ModelProfileList.svelte` | Profiles tab. Lists profile name/id, provider, model, request model, fallback count, status, role usage, and create/edit/duplicate/delete actions. |
+| `ModelProfileEditorDrawer.svelte` | Command-backed profile drawer for first-class provider fields, profile runtime overrides, fallbacks, and profile-local secret placeholder preserve/replace/clear behavior. |
+| `ModelRuntimeDefaultsEditor.svelte` | Edits `modelRuntimeDefaults` with explicit Save/Cancel and a compact count summary. |
+| `ModelRoleList.svelte` | Legacy role editor shown only inside Advanced Legacy Settings for compatibility data. |
+
+The shell prompts clearly legacy-only databases to Convert to Profiles through
+the atomic conversion command. Declining hides the prompt for the session while
+leaving the Convert to Profiles action visible. Advanced Legacy Settings still
+shows the current legacy main/aux fields and the old role/provider controls so
+older data, copied settings, and compatibility provider globals remain
+reachable.
+
+First-class profile provider panels are intentionally limited to:
+
+- `openai`
+- `anthropic`
+- `google`
+- `vertex`
+- `custom-api`
+
+The first-class panels write top-level `providerId`, selected `modelId`,
+`providerOptions` such as `apiKey`, `requestModel`, endpoint/base URL, extra
+headers, additional params, Vertex fields, and Custom API tokenizer/flag
+metadata. Custom API profiles represent OpenAI-compatible Chat Completions; the
+UI stores a base URL and warns when the user includes `/chat/completions`
+because dispatch appends that suffix.
+
 ## Durable Profile Data Flow
 
 Defaults and normalization run in `src/ts/storage/database.svelte.ts` and
@@ -54,11 +89,39 @@ profile-local `apiKey` values and resolves masked placeholders by stable profile
 id. This is separate from older flat provider/custom-model masking, which
 remains for compatibility.
 
-`ModelRoleList.svelte` shows resolved profile summaries and inherited role
-state, but it is not a full durable profile authoring editor. Current visible
-role settings still edit legacy flat compatibility fields. Durable profile
-records can be created or updated through settings commands, imports, presets,
-and loadouts; a full visible profile editor is deferred.
+`Database.modelRuntimeDefaults` uses the same runtime option schema as profile
+`runtimeOptions`. Profile-bound runtime precedence is hard defaults,
+`modelRuntimeDefaults`, then profile `runtimeOptions`. Legacy flat parameters
+and separate parameters are preserved for compatibility/conversion, but
+profile-bound generation does not silently borrow them as active profile
+runtime overrides.
+
+Durable profile commands live in the browser command wrappers and Fastify
+command handlers. The profile-first UI uses row-oriented commands for profile
+create/update/duplicate/delete, role binding updates, create-and-bind,
+legacy-to-profile conversion, and runtime defaults updates. Whole-array settings
+patches remain compatibility paths for imports, presets, loadouts, and older
+callers.
+
+## Compatibility Caveats
+
+Canonical compatibility surfaces:
+
+- Legacy flat fields remain: `aiModel`, `subModel`, `modelRoles`,
+  `seperateModels`, `fallbackModels`, separate parameters, and provider globals.
+  They are compatibility/conversion data, not the preferred Settings -> Model
+  workflow.
+- Compatibility profiles omit `providerId`. They can still generate when the
+  resolver and capability table can route the inferred provider/model, but they
+  are not first-class provider panels in the editor.
+- Unsupported `providerId` values are placeholders. The editor shows them as
+  unsupported, preserves compatible data, and active durable generation blocks
+  them until the user selects a supported profile/provider.
+- Memory summaries use memory-role profiles and profile-owned provider options.
+  Memory embeddings stay outside chat profiles on the separate
+  Hypa/Voyage/custom embedding config.
+- The Custom Models catalog (`customModels` / `xcustom:::`) remains separate
+  from first-class Custom API profiles.
 
 ## Server Provider Dispatch
 
@@ -99,12 +162,15 @@ needs, it returns either a server provider name (`routable: true`) or a stable
 unsupported reason category.
 
 Do not fork this table for chat/completion routing. Browser chat preflight and
-Fastify dispatch share it. Server-intent completion sends shaped messages to
-Fastify; provider/model routing is resolved server-side. Memory summaries use
-memory-role profile resolution and profile-owned provider options. Memory
-embeddings intentionally remain outside chat profiles on the separate
-Hypa/Voyage/custom embedding contract in `memoryEmbeddingModel.ts`; deadlines
-are bounded through `memoryProviderDeadline.ts`.
+Fastify dispatch share it. Active durable profiles with incomplete or
+unsupported status are blocked before browser request dispatch, server-intent
+completion, `/generate/chat` SSE/job acceptance, and final server chat dispatch.
+Server-intent completion sends shaped messages to Fastify; provider/model
+routing is resolved server-side. Memory summaries use memory-role profile
+resolution and profile-owned provider options. Memory embeddings intentionally
+remain outside chat profiles on the separate Hypa/Voyage/custom embedding
+contract in `memoryEmbeddingModel.ts`; deadlines are bounded through
+`memoryProviderDeadline.ts`.
 
 ## Generation Client Map
 
@@ -128,6 +194,12 @@ send/continue/regenerate jobs are process-local in `generationJobs.ts`, exposed
 through bootstrap `activeGenerationJobs`, reattached with
 `GET /api/v1/generate/chat/:id/stream`, and cancelled with
 `DELETE /api/v1/generate/chat/:id`.
+
+Server chat assembly applies the effective profile-bound model and runtime
+overlay before prompt budgeting and provider dispatch. Chat-scoped generation
+settings can select model/prompt presets; the model-runtime projection resolves
+the active profile, request model, provider options, fallbacks, and runtime
+options before the server builds dispatch config.
 
 `/api/v1/generate/completion` is lower-level. Normal browser traffic sends
 already-shaped messages and sampling intent as `kind: "server-intent"`; the
