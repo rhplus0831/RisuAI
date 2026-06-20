@@ -1853,6 +1853,7 @@ export const languageEnglish = {
     save: 'Save',
     saving: 'Saving...',
     edit: 'Edit',
+    reset: 'Reset',
     editProfile: 'Edit Profile',
     duplicate: 'Duplicate',
     delete: 'Delete',

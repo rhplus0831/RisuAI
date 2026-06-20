@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { PencilIcon, SaveIcon, XIcon } from '@lucide/svelte'
+  import { PencilIcon, RotateCcwIcon, SaveIcon, XIcon } from '@lucide/svelte'
   import { language } from 'src/lang'
   import Button from 'src/lib/UI/GUI/Button.svelte'
   import {
@@ -18,6 +18,7 @@
 
   let runtimeDefaults = $derived(normalizeModelRuntimeDefaults(DBState.db.modelRuntimeDefaults))
   let runtimeDefaultCount = $derived(Object.keys(runtimeDefaults).length)
+  let draftRuntimeDefaultCount = $derived(Object.keys(normalizeModelRuntimeDefaults(draft)).length)
   let draftChanged = $derived(snapshot(draft) !== snapshot(runtimeDefaults))
 
   $effect(() => {
@@ -49,6 +50,11 @@
     draft = cloneJsonValue(runtimeDefaults)
     commandError = ''
     editing = false
+  }
+
+  function resetDraft(): void {
+    draft = {}
+    commandError = ''
   }
 
   async function saveDefaults(): Promise<void> {
@@ -90,6 +96,9 @@
     </div>
     {#if editing}
       <div class="flex gap-2">
+        <Button size="sm" styled="outlined" disabled={saving || draftRuntimeDefaultCount === 0} onclick={resetDraft}>
+          <span class="inline-flex items-center gap-1"><RotateCcwIcon size={14} />{language.modelProfiles.reset}</span>
+        </Button>
         <Button size="sm" styled="outlined" disabled={saving} onclick={cancelEditing}>
           <span class="inline-flex items-center gap-1"><XIcon size={14} />{language.modelProfiles.cancel}</span>
         </Button>

@@ -311,6 +311,8 @@ describe('Model profile-first profiles tab source contract', () => {
     expect(runtime).toContain('runtimeFields.enableCustomFlags')
 
     expect(defaults).toContain('updateModelRuntimeDefaultsCommand({')
+    expect(defaults).toContain('function resetDraft()')
+    expect(defaults).toContain('language.modelProfiles.reset')
     expect(defaults).toContain('<ModelRuntimeOptionsEditor bind:value={draft} />')
   })
 })
