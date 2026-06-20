@@ -365,8 +365,9 @@
   let showPromptExtras = $derived(settingsKind !== 'model')
   let showModelOthersControls = $derived(settingsKind !== 'model')
   let showModelPresetButton = $derived(settingsKind !== 'prompt' && submenu !== -1)
-  let showPromptPresetButton = $derived(settingsKind === 'prompt' || (settingsKind === 'legacy' && submenu === -1))
+  let showPromptPresetButton = $derived(settingsKind === 'legacy' && submenu === -1)
   let showLegacyMigrationButton = $derived(settingsKind === 'legacy' && DBState.db.botPresets?.length > 0)
+  let selectedPromptPresetName = $derived(selectedPromptPreset?.name?.trim() || language.promptPresets)
   let parameterItems = $derived.by(() =>
     promptParameterOverrideMode
       ? allBasicParameterItems.filter((item) => {
@@ -388,6 +389,10 @@
 
   function isLastSubmenu(id: number): boolean {
     return availableSubmenus[availableSubmenus.length - 1] === id
+  }
+
+  function openPromptPresetList(): void {
+    openPresetListModal('global', 'prompt')
   }
 
   function sectionVisible(id: number): boolean {
@@ -781,6 +786,9 @@
         onChange={(enabled) => {
           setPromptPresetModelOverrideEnabled('parameters', enabled)
         }} />
+      <Button onclick={openPromptPresetList} className="w-full text-left">
+        <span class="block w-full truncate">{selectedPromptPresetName}</span>
+      </Button>
     </div>
   {/if}
 
@@ -1676,11 +1684,7 @@
     </div>
   {/if}
   {#if showPromptPresetButton}
-    <Button
-      onclick={() => {
-        openPresetListModal('global', 'prompt')
-      }}
-      className="mt-4">{language.promptPresets}</Button>
+    <Button onclick={openPromptPresetList} className="mt-4">{selectedPromptPresetName}</Button>
   {/if}
   {#if showLegacyMigrationButton}
     <Button

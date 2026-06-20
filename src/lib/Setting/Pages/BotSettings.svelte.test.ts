@@ -61,6 +61,30 @@ describe('BotSettings model settings shell routing', () => {
   })
 })
 
+describe('BotSettings prompt preset launcher layout', () => {
+  it('renders the prompt preset launcher with the selected preset name below the override toggle', () => {
+    const source = botSettingsSource()
+    const promptHeaderBlock = source.match(
+      /\{#if settingsKind === 'prompt'\}([\s\S]*?)\n  \{\/if\}\n\n  \{#if showSubmenuSwitcher\}/,
+    )?.[1]
+
+    expect(source).toContain(
+      'let selectedPromptPresetName = $derived(selectedPromptPreset?.name?.trim() || language.promptPresets)',
+    )
+    expect(promptHeaderBlock).toBeDefined()
+    expect(promptHeaderBlock ?? '').toContain('name={language.overrideModelParameters}')
+    expect(promptHeaderBlock ?? '').toContain('onclick={openPromptPresetList}')
+    expect(promptHeaderBlock ?? '').toContain('{selectedPromptPresetName}')
+  })
+
+  it('keeps the tab-body prompt preset launcher legacy-only', () => {
+    const source = botSettingsSource()
+
+    expect(source).toContain("let showPromptPresetButton = $derived(settingsKind === 'legacy' && submenu === -1)")
+    expect(source).not.toContain('className="mt-4">{language.promptPresets}</Button>')
+  })
+})
+
 describe('BotSettings model-role provider visibility', () => {
   it('uses the profile UI adapter to reveal provider-specific settings', () => {
     const source = botSettingsSource()
