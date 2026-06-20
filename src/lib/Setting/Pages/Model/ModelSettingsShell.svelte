@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { ListIcon } from '@lucide/svelte'
   import { language } from 'src/lang'
   import Accordion from 'src/lib/UI/Accordion.svelte'
   import Button from 'src/lib/UI/GUI/Button.svelte'
@@ -8,13 +9,12 @@
   import { normalizeModelRoleProfiles } from 'src/ts/model/modelProfileRecords'
   import { resolveModelProfileUiState } from 'src/ts/model/modelProfileUiState'
   import { convertLegacyModelProfilesCommand, runServerCommand } from 'src/ts/server/commands'
-  import { DBState } from 'src/ts/stores.svelte'
+  import { DBState, openPresetListModal } from 'src/ts/stores.svelte'
   import LegacyModelRoleList from './ModelRoleList.svelte'
-  import ModelPresetList from './ModelPresetList.svelte'
   import ModelProfileList from './ModelProfileList.svelte'
   import ModelProfileRoleList from './ModelProfileRoleList.svelte'
 
-  type ModelSettingsTab = 'roles' | 'profiles' | 'presets'
+  type ModelSettingsTab = 'roles' | 'profiles'
 
   let activeTab = $state<ModelSettingsTab>('roles')
   let conversionPromptDeclined = $state(false)
@@ -122,15 +122,23 @@
     options={[
       { value: 'roles', label: language.modelProfiles.rolesTab },
       { value: 'profiles', label: language.modelProfiles.profilesTab },
-      { value: 'presets', label: language.modelProfiles.presetsTab },
     ]} />
 
   {#if activeTab === 'roles'}
+    <div class="flex justify-end">
+      <Button
+        size="sm"
+        styled="outlined"
+        onclick={() => {
+          openPresetListModal('global', 'model')
+        }}
+        className="inline-flex items-center gap-2">
+        <ListIcon size={16} />{language.modelPresets}
+      </Button>
+    </div>
     <ModelProfileRoleList />
-  {:else if activeTab === 'profiles'}
-    <ModelProfileList />
   {:else}
-    <ModelPresetList />
+    <ModelProfileList />
   {/if}
 
   {#if showAdvancedLegacySettings}

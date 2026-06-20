@@ -1,20 +1,11 @@
 <script lang="ts">
-  import {
-    ArrowDownIcon,
-    ArrowUpIcon,
-    CheckIcon,
-    CopyIcon,
-    FilePlusIcon,
-    PlusIcon,
-    RefreshCwIcon,
-    TrashIcon,
-  } from '@lucide/svelte'
+  import { ArrowDownIcon, ArrowUpIcon, CopyIcon, FilePlusIcon, PlusIcon, TrashIcon } from '@lucide/svelte'
   import { language } from 'src/lang'
   import Button from 'src/lib/UI/GUI/Button.svelte'
   import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
   import { createModelRoleBindingPresetSnapshot } from 'src/ts/model/modelPresetSnapshots'
   import { normalizeModelRoleProfiles, type ModelRoleProfileBinding } from 'src/ts/model/modelProfileRecords'
-  import { MODEL_ROLES, type ModelRole } from 'src/ts/model/modelRoles'
+  import { MODEL_ROLES, modelRoleProfileInheritSource, type ModelRole } from 'src/ts/model/modelRoles'
   import {
     createModelPreset,
     deleteModelPreset,
@@ -25,6 +16,13 @@
     type PromptPreset,
   } from 'src/ts/storage/database.svelte'
   import { DBState } from 'src/ts/stores.svelte'
+
+  interface Props {
+    embedded?: boolean
+    afterApply?: () => void
+  }
+
+  let { embedded = false, afterApply = () => {} }: Props = $props()
 
   let newPresetName = $state('')
 
@@ -58,7 +56,20 @@
 
   function createEmptyPreset(): void {
     const name = consumeNewPresetName()
-    createModelPreset({ name })
+    createModelPreset({
+      name,
+      modelRoleProfiles: cloneJsonValue(createEmptyPresetRoleProfiles()),
+    })
+  }
+
+  function createEmptyPresetRoleProfiles() {
+    const bindings = normalizeModelRoleProfiles(undefined)
+    for (const role of MODEL_ROLES) {
+      if (modelRoleProfileInheritSource(role)) {
+        bindings[role] = { mode: 'inherit' }
+      }
+    }
+    return bindings
   }
 
   function renamePreset(index: number, name: string): void {
@@ -67,14 +78,6 @@
     const nextName = name.trim() || presetName(preset, index)
     if ((preset.name ?? '') === nextName) return
     updateModelPreset(index, { name: nextName })
-  }
-
-  function updatePresetFromCurrent(index: number): void {
-    const preset = presets[index]
-    if (!preset) return
-    if (!window.confirm(language.modelProfiles.updateModelPresetFromCurrentConfirm(presetName(preset, index)))) return
-    const snapshot = createModelRoleBindingPresetSnapshot(DBState.db, presetName(preset, index))
-    updateModelPreset(index, { modelRoleProfiles: snapshot.modelRoleProfiles })
   }
 
   function duplicatePreset(index: number): void {
@@ -94,8 +97,18 @@
   }
 
   function applyPreset(index: number): void {
-    if (index === selectedIndex) return
+    if (index === selectedIndex) {
+      afterApply()
+      return
+    }
     selectModelPreset(index)
+    afterApply()
+  }
+
+  function applyPresetFromKeyboard(event: KeyboardEvent, index: number): void {
+    if (event.key !== 'Enter' && event.key !== ' ') return
+    event.preventDefault()
+    applyPreset(index)
   }
 
   function movePresetUp(index: number): void {
@@ -180,10 +193,12 @@
 </script>
 
 <section class="flex flex-col gap-4">
-  <div class="flex flex-col gap-1">
-    <h3 class="text-lg font-semibold">{language.modelProfiles.presetsTabTitle}</h3>
-    <span class="text-sm text-textcolor2">{language.modelProfiles.presetsTabDescription}</span>
-  </div>
+  {#if !embedded}
+    <div class="flex flex-col gap-1">
+      <h3 class="text-lg font-semibold">{language.modelProfiles.presetsTabTitle}</h3>
+      <span class="text-sm text-textcolor2">{language.modelProfiles.presetsTabDescription}</span>
+    </div>
+  {/if}
 
   <div class="flex flex-col gap-2 rounded-md border border-darkborderc p-3 md:flex-row md:items-center">
     <TextInput
@@ -228,8 +243,14 @@
         </thead>
         <tbody>
           {#each presets as preset, index (preset.id ?? index)}
-            <tr class="border-t border-darkborderc align-top" class:bg-selected={index === selectedIndex}>
-              <td class="px-3 py-3">
+            <tr
+              class="cursor-pointer border-t border-darkborderc align-top hover:bg-darkbg"
+              class:bg-selected={index === selectedIndex}
+              role="button"
+              tabindex="0"
+              onclick={() => applyPreset(index)}
+              onkeydown={(event) => applyPresetFromKeyboard(event, index)}>
+              <td class="px-3 py-3" onclick={(event) => event.stopPropagation()}>
                 <TextInput
                   size="sm"
                   value={presetName(preset, index)}
@@ -248,22 +269,25 @@
               </td>
               <td class="px-3 py-3">
                 <div class="flex flex-wrap gap-2">
-                  <Button size="sm" disabled={index === selectedIndex} onclick={() => applyPreset(index)}>
-                    <span class="inline-flex items-center gap-1">
-                      <CheckIcon size={14} />{language.modelProfiles.apply}
-                    </span>
-                  </Button>
-                  <Button size="sm" styled="outlined" onclick={() => updatePresetFromCurrent(index)}>
-                    <span class="inline-flex items-center gap-1">
-                      <RefreshCwIcon size={14} />{language.modelProfiles.updateFromCurrentRoles}
-                    </span>
-                  </Button>
-                  <Button size="sm" styled="outlined" onclick={() => duplicatePreset(index)}>
+                  <Button
+                    size="sm"
+                    styled="outlined"
+                    onclick={(event) => {
+                      event.stopPropagation()
+                      duplicatePreset(index)
+                    }}>
                     <span class="inline-flex items-center gap-1">
                       <CopyIcon size={14} />{language.modelProfiles.duplicate}
                     </span>
                   </Button>
-                  <Button size="sm" styled="outlined" disabled={index === 0} onclick={() => movePresetUp(index)}>
+                  <Button
+                    size="sm"
+                    styled="outlined"
+                    disabled={index === 0}
+                    onclick={(event) => {
+                      event.stopPropagation()
+                      movePresetUp(index)
+                    }}>
                     <span class="inline-flex items-center gap-1">
                       <ArrowUpIcon size={14} />{language.modelProfiles.moveUp}
                     </span>
@@ -272,12 +296,22 @@
                     size="sm"
                     styled="outlined"
                     disabled={index >= presets.length - 1}
-                    onclick={() => movePresetDown(index)}>
+                    onclick={(event) => {
+                      event.stopPropagation()
+                      movePresetDown(index)
+                    }}>
                     <span class="inline-flex items-center gap-1">
                       <ArrowDownIcon size={14} />{language.modelProfiles.moveDown}
                     </span>
                   </Button>
-                  <Button size="sm" styled="danger" disabled={presets.length <= 1} onclick={() => removePreset(index)}>
+                  <Button
+                    size="sm"
+                    styled="danger"
+                    disabled={presets.length <= 1}
+                    onclick={(event) => {
+                      event.stopPropagation()
+                      removePreset(index)
+                    }}>
                     <span class="inline-flex items-center gap-1">
                       <TrashIcon size={14} />{language.modelProfiles.delete}
                     </span>

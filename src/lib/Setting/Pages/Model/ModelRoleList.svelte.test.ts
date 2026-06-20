@@ -316,13 +316,24 @@ describe('Model profile-first profiles tab source contract', () => {
 })
 
 describe('Model profile-first presets tab source contract', () => {
-  it('routes Settings -> Model through a dedicated model presets tab', () => {
+  it('opens model presets from the roles surface instead of a dedicated tab', () => {
     const shell = readSource('src/lib/Setting/Pages/Model/ModelSettingsShell.svelte')
 
-    expect(shell).toContain("import ModelPresetList from './ModelPresetList.svelte'")
-    expect(shell).toContain("type ModelSettingsTab = 'roles' | 'profiles' | 'presets'")
-    expect(shell).toContain("{ value: 'presets', label: language.modelProfiles.presetsTab }")
-    expect(shell).toContain('<ModelPresetList />')
+    expect(shell).toContain("import { DBState, openPresetListModal } from 'src/ts/stores.svelte'")
+    expect(shell).toContain("type ModelSettingsTab = 'roles' | 'profiles'")
+    expect(shell).toContain("openPresetListModal('global', 'model')")
+    expect(shell).toContain('{language.modelPresets}')
+    expect(shell).not.toContain("import ModelPresetList from './ModelPresetList.svelte'")
+    expect(shell).not.toContain("{ value: 'presets', label: language.modelProfiles.presetsTab }")
+    expect(shell).not.toContain('<ModelPresetList />')
+  })
+
+  it('hosts the model preset manager in the global model preset popup', () => {
+    const source = readSource('src/lib/Setting/botpreset.svelte')
+
+    expect(source).toContain("import ModelPresetList from './Pages/Model/ModelPresetList.svelte'")
+    expect(source).toContain("let useModelPresetManager = $derived(kind === 'model' && mode === 'global')")
+    expect(source).toContain('<ModelPresetList embedded afterApply={close} />')
   })
 
   it('creates profile-aware model presets from durable role bindings only', () => {
@@ -331,13 +342,32 @@ describe('Model profile-first presets tab source contract', () => {
     expect(source).toContain("import { createModelRoleBindingPresetSnapshot } from 'src/ts/model/modelPresetSnapshots'")
     expect(source).toContain('createModelPreset(createModelRoleBindingPresetSnapshot(DBState.db, name))')
     expect(source).toContain('function createEmptyPreset()')
-    expect(source).toContain('createModelPreset({ name })')
+    expect(source).toContain('createModelPreset({')
+    expect(source).toContain('modelRoleProfiles: cloneJsonValue(createEmptyPresetRoleProfiles())')
+    expect(source).toContain('function createEmptyPresetRoleProfiles()')
+    expect(source).toContain('if (modelRoleProfileInheritSource(role))')
+    expect(source).toContain("bindings[role] = { mode: 'inherit' }")
     expect(source).toContain('language.modelProfiles.createEmptyModelPreset')
-    expect(source).toContain('updateModelPreset(index, { modelRoleProfiles: snapshot.modelRoleProfiles })')
+    expect(source).toContain('afterApply?: () => void')
     expect(source).toContain('selectModelPreset(index)')
+    expect(source).toContain('afterApply()')
+    expect(source).toContain('function applyPresetFromKeyboard(event: KeyboardEvent, index: number): void')
     expect(source).toContain('reorderModelPresets(index, index + 2)')
     expect(source).toContain("hasPresetField(selectedPromptPreset, 'modelRoleProfiles')")
     expect(source).toContain('language.modelProfiles.promptPresetRoleOverrideNotice(selectedPromptPresetName())')
     expect(source).not.toContain('prebuiltPresets.OAI2')
+    expect(source).not.toContain('function updatePresetFromCurrent')
+    expect(source).not.toContain('language.modelProfiles.updateFromCurrentRoles')
+  })
+
+  it('updates the selected model preset when role bindings are applied', () => {
+    const source = readSource('src/lib/Setting/Pages/Model/ModelProfileRoleList.svelte')
+
+    expect(source).toContain('import { runServerCommand, updateModelPresetCommand, updateModelRoleProfilesCommand }')
+    expect(source).toContain('function selectedModelPresetId(): string | null')
+    expect(source).toContain('const nextRoleProfiles = cloneJsonValue(normalizeModelRoleProfiles(draftBindings))')
+    expect(source).toContain('updateModelPresetCommand({')
+    expect(source).toContain('modelPresetId,')
+    expect(source).toContain('modelRoleProfiles: nextRoleProfiles')
   })
 })

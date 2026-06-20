@@ -12,7 +12,7 @@
   import { MODEL_ROLES, modelRoleProfileInheritSource, type ModelRole } from 'src/ts/model/modelRoles'
   import { getModelInfo } from 'src/ts/model/modellist'
   import { ProviderNames } from 'src/ts/model/types'
-  import { runServerCommand, updateModelRoleProfilesCommand } from 'src/ts/server/commands'
+  import { runServerCommand, updateModelPresetCommand, updateModelRoleProfilesCommand } from 'src/ts/server/commands'
   import type { Database } from 'src/ts/storage/database.svelte'
   import { DBState } from 'src/ts/stores.svelte'
 
@@ -187,27 +187,59 @@
     commandError = ''
   }
 
+  function selectedModelPresetId(): string | null {
+    const preset = DBState.db.modelPresets?.[DBState.db.modelPresetsId]
+    return typeof preset?.id === 'string' && preset.id.trim() ? preset.id : null
+  }
+
+  function commandErrorMessage(result: Awaited<ReturnType<typeof runServerCommand>>): string {
+    return result.status === 'conflict'
+      ? language.modelProfiles.commandConflict
+      : result.status === 'error'
+        ? result.error
+        : language.modelProfiles.commandUnavailable
+  }
+
   async function applyDraft(): Promise<void> {
     if (!canApply) return
     applying = true
     commandError = ''
     const bindings = cloneJsonValue(changedBindings)
-    const result = await runServerCommand({
+    const nextRoleProfiles = cloneJsonValue(normalizeModelRoleProfiles(draftBindings))
+    const roleResult = await runServerCommand({
       command: (baseRevision) =>
         updateModelRoleProfilesCommand({
           baseRevision,
           bindings,
         }),
     })
+
+    if (roleResult.status !== 'ok') {
+      applying = false
+      commandError = commandErrorMessage(roleResult)
+      return
+    }
+
+    const modelPresetId = selectedModelPresetId()
+    if (!modelPresetId) {
+      applying = false
+      return
+    }
+
+    const presetResult = await runServerCommand({
+      command: (baseRevision) =>
+        updateModelPresetCommand({
+          baseRevision,
+          modelPresetId,
+          patch: {
+            modelRoleProfiles: nextRoleProfiles,
+          },
+        }),
+    })
     applying = false
 
-    if (result.status === 'ok') return
-    commandError =
-      result.status === 'conflict'
-        ? language.modelProfiles.commandConflict
-        : result.status === 'error'
-          ? result.error
-          : language.modelProfiles.commandUnavailable
+    if (presetResult.status === 'ok') return
+    commandError = commandErrorMessage(presetResult)
   }
 </script>
 

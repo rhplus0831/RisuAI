@@ -41,6 +41,7 @@
     saveActiveChatGenerationSettingsSelection,
   } from 'src/ts/activeChatGenerationSettings'
   import { onDestroy } from 'svelte'
+  import ModelPresetList from './Pages/Model/ModelPresetList.svelte'
 
   type ModernPreset = ModelPreset | PromptPreset
   type PendingRenameTarget = {
@@ -71,6 +72,7 @@
   )
   let modernPresets = $derived.by(() => (kind === 'prompt' ? DBState.db.promptPresets : DBState.db.modelPresets))
   let legacyPresets = $derived.by(() => (Array.isArray(DBState.db.botPresets) ? DBState.db.botPresets : []))
+  let useModelPresetManager = $derived(kind === 'model' && mode === 'global')
   let activeChatSettings = $derived.by(() =>
     resolveActiveChatGenerationSettings({
       selectedCharIndex: $selectedCharID,
@@ -235,7 +237,8 @@
 
 <div class="absolute w-full h-full z-40 bg-black/50 flex justify-center items-center">
   <div
-    class="bg-darkbg p-4 break-any rounded-md flex flex-col max-w-3xl w-124 max-h-full overflow-y-auto"
+    class="bg-darkbg p-4 break-any rounded-md flex flex-col max-h-full overflow-y-auto preset-modal"
+    class:modelPresetManager={useModelPresetManager}
     data-risu-generation-picker
     data-risu-picker-kind={kind}
     data-risu-picker-mode={mode}>
@@ -276,6 +279,8 @@
           </div>
         {/each}
       {/if}
+    {:else if useModelPresetManager}
+      <ModelPresetList embedded afterApply={close} />
     {:else}
       {#each modernPresets as preset, i}
         <div
@@ -420,6 +425,16 @@
   .break-any {
     word-break: normal;
     overflow-wrap: anywhere;
+  }
+
+  .preset-modal {
+    width: 31rem;
+    max-width: min(48rem, calc(100vw - 2rem));
+  }
+
+  .preset-modal.modelPresetManager {
+    width: min(72rem, calc(100vw - 2rem));
+    max-width: 72rem;
   }
 
   .draggable-preset:hover {
