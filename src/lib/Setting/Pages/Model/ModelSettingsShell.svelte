@@ -30,6 +30,14 @@
   let legacyOnly = $derived(isClearlyLegacyOnly())
   let showConversionPrompt = $derived(legacyOnly && !conversionPromptDeclined)
   let showAdvancedLegacySettings = $derived(!modelProfileUiState.allRolesUseDurableProfiles)
+  let selectedModelPresetButtonLabel = $derived.by(() => {
+    const index = DBState.db.modelPresetsId ?? -1
+    const preset = DBState.db.modelPresets?.[index]
+    if (!preset) return language.modelPresets
+
+    const name = typeof preset.name === 'string' ? preset.name.trim() : ''
+    return name || language.modelProfiles.defaultPresetName(index + 1)
+  })
 
   function nonBlank(value: unknown): boolean {
     return typeof value === 'string' && value.trim() !== ''
@@ -125,15 +133,16 @@
     ]} />
 
   {#if activeTab === 'roles'}
-    <div class="flex justify-end">
+    <div class="w-full">
       <Button
         size="sm"
         styled="outlined"
         onclick={() => {
           openPresetListModal('global', 'model')
         }}
-        className="inline-flex items-center gap-2">
-        <ListIcon size={16} />{language.modelPresets}
+        className="flex w-full min-w-0 items-center justify-start gap-2 text-left">
+        <ListIcon size={16} class="shrink-0" />
+        <span class="truncate">{selectedModelPresetButtonLabel}</span>
       </Button>
     </div>
     <ModelProfileRoleList />
