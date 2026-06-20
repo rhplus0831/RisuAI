@@ -236,6 +236,48 @@ describe('resolveModelProfileUiState', () => {
     )
   })
 
+  it('reports when every role resolves through durable profiles or profile inheritance', () => {
+    const state = resolveModelProfileUiState({
+      database: db({
+        aiModel: 'legacy-main-kept-for-compatibility',
+        subModel: 'legacy-aux-kept-for-compatibility',
+        modelProfiles: [{ id: 'durable-profile', name: 'Durable Profile', modelId: 'durable-model' }],
+        modelRoleProfiles: {
+          chatMain: { mode: 'profile', profileId: 'durable-profile' },
+          chatAux: { mode: 'profile', profileId: 'durable-profile' },
+          memory: { mode: 'inherit' },
+          emotion: { mode: 'inherit' },
+          translate: { mode: 'inherit' },
+          otherAx: { mode: 'inherit' },
+          scriptMain: { mode: 'inherit' },
+          scriptAux: { mode: 'inherit' },
+        },
+      } as Partial<Database>),
+      lookupModelInfo: (_database, id) => modelInfo(id),
+    })
+
+    expect(state.allRolesUseDurableProfiles).toBe(true)
+    expect(MODEL_ROLES.every((role) => state.resolvedProfiles[role].source.kind === 'durable-profile')).toBe(true)
+  })
+
+  it('keeps legacy settings visible when any role still falls back to legacy resolution', () => {
+    const state = resolveModelProfileUiState({
+      database: db({
+        modelProfiles: [{ id: 'main-profile', name: 'Main Profile', modelId: 'main-profile-model' }],
+        modelRoleProfiles: {
+          chatMain: { mode: 'profile', profileId: 'main-profile' },
+          chatAux: { mode: 'legacy' },
+          memory: { mode: 'inherit' },
+        },
+      } as Partial<Database>),
+      lookupModelInfo: (_database, id) => modelInfo(id),
+    })
+
+    expect(state.allRolesUseDurableProfiles).toBe(false)
+    expect(state.resolvedProfiles.chatAux.source.kind).not.toBe('durable-profile')
+    expect(state.resolvedProfiles.memory.source.kind).not.toBe('durable-profile')
+  })
+
   it.each([
     ['custom' as const, 'usesCustomModel' as const],
     ['pluginmodel:::test' as const, 'usesCustomModel' as const],

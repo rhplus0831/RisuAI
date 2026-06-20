@@ -178,6 +178,22 @@ describe('ModelRoleList source contract', () => {
 })
 
 describe('Model profile-first role shell source contract', () => {
+  it('hides Advanced Legacy Settings once every role resolves through durable profiles', () => {
+    const source = readSource('src/lib/Setting/Pages/Model/ModelSettingsShell.svelte')
+
+    expect(source).toContain("import { resolveModelProfileUiState } from 'src/ts/model/modelProfileUiState'")
+    expect(source).toContain("import { getModelInfo } from 'src/ts/model/modellist'")
+    expect(source).toContain('let modelProfileUiState = $derived.by(() =>')
+    expect(source).toContain('resolveModelProfileUiState({')
+    expect(source).toContain('database: DBState.db')
+    expect(source).toContain('lookupModelInfo: (_database, id) => getModelInfo(id)')
+    expect(source).toContain(
+      'let showAdvancedLegacySettings = $derived(!modelProfileUiState.allRolesUseDurableProfiles)',
+    )
+    expect(source).toContain('{#if showAdvancedLegacySettings}')
+    expect(source).toContain('name={language.modelProfiles.advancedLegacySettings}')
+  })
+
   it('uses the canonical MODEL_ROLES order for the profile-first roles tab', () => {
     const source = readSource('src/lib/Setting/Pages/Model/ModelProfileRoleList.svelte')
 

@@ -57,7 +57,9 @@ the atomic conversion command. Declining hides the prompt for the session while
 leaving the Convert to Profiles action visible. Advanced Legacy Settings still
 shows the current legacy main/aux fields and the old role/provider controls so
 older data, copied settings, and compatibility provider globals remain
-reachable.
+reachable when at least one role still resolves through legacy settings. The
+legacy accordion is hidden once all roles resolve through durable profiles or
+profile inheritance.
 
 First-class profile provider panels are intentionally limited to:
 

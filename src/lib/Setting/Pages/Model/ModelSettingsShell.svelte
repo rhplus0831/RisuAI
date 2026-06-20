@@ -3,8 +3,10 @@
   import Accordion from 'src/lib/UI/Accordion.svelte'
   import Button from 'src/lib/UI/GUI/Button.svelte'
   import SegmentedControl from 'src/lib/UI/GUI/SegmentedControl.svelte'
+  import { getModelInfo } from 'src/ts/model/modellist'
   import { normalizeLegacySeperateModels, normalizeModelRoleOverrides, MODEL_ROLES } from 'src/ts/model/modelRoles'
   import { normalizeModelRoleProfiles } from 'src/ts/model/modelProfileRecords'
+  import { resolveModelProfileUiState } from 'src/ts/model/modelProfileUiState'
   import { convertLegacyModelProfilesCommand, runServerCommand } from 'src/ts/server/commands'
   import { DBState } from 'src/ts/stores.svelte'
   import LegacyModelRoleList from './ModelRoleList.svelte'
@@ -19,8 +21,15 @@
   let converting = $state(false)
   let commandError = $state('')
 
+  let modelProfileUiState = $derived.by(() =>
+    resolveModelProfileUiState({
+      database: DBState.db,
+      lookupModelInfo: (_database, id) => getModelInfo(id),
+    }),
+  )
   let legacyOnly = $derived(isClearlyLegacyOnly())
   let showConversionPrompt = $derived(legacyOnly && !conversionPromptDeclined)
+  let showAdvancedLegacySettings = $derived(!modelProfileUiState.allRolesUseDurableProfiles)
 
   function nonBlank(value: unknown): boolean {
     return typeof value === 'string' && value.trim() !== ''
@@ -124,25 +133,27 @@
     <ModelPresetList />
   {/if}
 
-  <Accordion styled name={language.modelProfiles.advancedLegacySettings} className="gap-3">
-    <p class="text-sm text-textcolor2">{language.modelProfiles.advancedLegacyDescription}</p>
-    <div class="grid gap-2 text-sm md:grid-cols-2">
-      <div class="rounded-md border border-darkborderc p-3">
-        <span class="block text-xs uppercase text-textcolor2">{language.modelProfiles.legacyMainModel}</span>
-        <span>{DBState.db.aiModel || language.none}</span>
+  {#if showAdvancedLegacySettings}
+    <Accordion styled name={language.modelProfiles.advancedLegacySettings} className="gap-3">
+      <p class="text-sm text-textcolor2">{language.modelProfiles.advancedLegacyDescription}</p>
+      <div class="grid gap-2 text-sm md:grid-cols-2">
+        <div class="rounded-md border border-darkborderc p-3">
+          <span class="block text-xs uppercase text-textcolor2">{language.modelProfiles.legacyMainModel}</span>
+          <span>{DBState.db.aiModel || language.none}</span>
+        </div>
+        <div class="rounded-md border border-darkborderc p-3">
+          <span class="block text-xs uppercase text-textcolor2">{language.modelProfiles.legacyAuxModel}</span>
+          <span>{DBState.db.subModel || language.none}</span>
+        </div>
       </div>
-      <div class="rounded-md border border-darkborderc p-3">
-        <span class="block text-xs uppercase text-textcolor2">{language.modelProfiles.legacyAuxModel}</span>
-        <span>{DBState.db.subModel || language.none}</span>
-      </div>
-    </div>
-    {#if legacyOnly}
-      <div class="flex justify-end">
-        <Button size="sm" disabled={converting} onclick={convertLegacyProfiles}>
-          {converting ? language.modelProfiles.converting : language.modelProfiles.convertToProfiles}
-        </Button>
-      </div>
-    {/if}
-    <LegacyModelRoleList />
-  </Accordion>
+      {#if legacyOnly}
+        <div class="flex justify-end">
+          <Button size="sm" disabled={converting} onclick={convertLegacyProfiles}>
+            {converting ? language.modelProfiles.converting : language.modelProfiles.convertToProfiles}
+          </Button>
+        </div>
+      {/if}
+      <LegacyModelRoleList />
+    </Accordion>
+  {/if}
 </section>

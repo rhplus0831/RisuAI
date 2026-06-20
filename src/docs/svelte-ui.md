@@ -247,7 +247,8 @@ Model settings are profile-first:
 - Advanced Legacy Settings embeds the old `ModelRoleList.svelte` plus legacy
   main/aux summaries. The legacy flat fields remain compatibility/conversion
   data for imports, presets, loadouts, and provider families without
-  first-class panels.
+  first-class panels. The accordion is hidden once every role resolves through
+  durable profiles or profile inheritance.
 
 Model profile runtime state lives under `src/ts/model/`:
 

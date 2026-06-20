@@ -17,6 +17,7 @@ export interface ModelProfileUiState {
   resolvedProfiles: Record<ModelRole, ResolvedModelProfile>
   roleStatuses: Record<ModelRole, ModelProfileStatus>
   rolesByStatus: Record<ModelProfileStatusBucket, ModelRole[]>
+  allRolesUseDurableProfiles: boolean
   apiKeyModels: ModelProfileUiApiKeyModel[]
   usesGoogleCloudProvider: boolean
   usesVertexAIProvider: boolean
@@ -71,6 +72,7 @@ export function resolveModelProfileUiState({
     resolvedProfiles,
     roleStatuses,
     rolesByStatus,
+    allRolesUseDurableProfiles: profiles.every((profile) => profile.source.kind === 'durable-profile'),
     apiKeyModels: resolveApiKeyModels(modelInfos),
     usesGoogleCloudProvider: modelInfos.some((info) => info.provider === LLMProvider.GoogleCloud),
     usesVertexAIProvider: modelInfos.some((info) => info.provider === LLMProvider.VertexAI),
