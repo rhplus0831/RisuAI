@@ -8,10 +8,11 @@
   import { convertLegacyModelProfilesCommand, runServerCommand } from 'src/ts/server/commands'
   import { DBState } from 'src/ts/stores.svelte'
   import LegacyModelRoleList from './ModelRoleList.svelte'
+  import ModelPresetList from './ModelPresetList.svelte'
   import ModelProfileList from './ModelProfileList.svelte'
   import ModelProfileRoleList from './ModelProfileRoleList.svelte'
 
-  type ModelSettingsTab = 'roles' | 'profiles'
+  type ModelSettingsTab = 'roles' | 'profiles' | 'presets'
 
   let activeTab = $state<ModelSettingsTab>('roles')
   let conversionPromptDeclined = $state(false)
@@ -112,12 +113,15 @@
     options={[
       { value: 'roles', label: language.modelProfiles.rolesTab },
       { value: 'profiles', label: language.modelProfiles.profilesTab },
+      { value: 'presets', label: language.modelProfiles.presetsTab },
     ]} />
 
   {#if activeTab === 'roles'}
     <ModelProfileRoleList />
-  {:else}
+  {:else if activeTab === 'profiles'}
     <ModelProfileList />
+  {:else}
+    <ModelPresetList />
   {/if}
 
   <Accordion styled name={language.modelProfiles.advancedLegacySettings} className="gap-3">

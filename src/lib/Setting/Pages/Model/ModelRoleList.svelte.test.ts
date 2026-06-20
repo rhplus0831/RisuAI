@@ -298,3 +298,27 @@ describe('Model profile-first profiles tab source contract', () => {
     expect(defaults).toContain('<ModelRuntimeOptionsEditor bind:value={draft} />')
   })
 })
+
+describe('Model profile-first presets tab source contract', () => {
+  it('routes Settings -> Model through a dedicated model presets tab', () => {
+    const shell = readSource('src/lib/Setting/Pages/Model/ModelSettingsShell.svelte')
+
+    expect(shell).toContain("import ModelPresetList from './ModelPresetList.svelte'")
+    expect(shell).toContain("type ModelSettingsTab = 'roles' | 'profiles' | 'presets'")
+    expect(shell).toContain("{ value: 'presets', label: language.modelProfiles.presetsTab }")
+    expect(shell).toContain('<ModelPresetList />')
+  })
+
+  it('creates profile-aware model presets from durable role bindings only', () => {
+    const source = readSource('src/lib/Setting/Pages/Model/ModelPresetList.svelte')
+
+    expect(source).toContain("import { createModelRoleBindingPresetSnapshot } from 'src/ts/model/modelPresetSnapshots'")
+    expect(source).toContain('createModelPreset(createModelRoleBindingPresetSnapshot(DBState.db, name))')
+    expect(source).toContain('updateModelPreset(index, { modelRoleProfiles: snapshot.modelRoleProfiles })')
+    expect(source).toContain('selectModelPreset(index)')
+    expect(source).toContain('reorderModelPresets(index, index + 2)')
+    expect(source).toContain("hasPresetField(selectedPromptPreset, 'modelRoleProfiles')")
+    expect(source).toContain('language.modelProfiles.promptPresetRoleOverrideNotice(selectedPromptPresetName())')
+    expect(source).not.toContain('prebuiltPresets.OAI2')
+  })
+})
