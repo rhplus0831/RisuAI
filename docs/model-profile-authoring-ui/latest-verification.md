@@ -2,11 +2,12 @@
 
 Date: 2026-06-20
 
-Phase 3 has landed and passed focused verification. The current proof level is
+Phase 4 has landed and passed focused verification. The current proof level is
 schema/default/preservation/masking coverage, resolver runtime/status coverage,
 profile command/conversion coverage, projection refresh coverage, generation
 preflight regression coverage, Settings -> Model shell coverage, browser smoke,
-and TypeScript checks.
+profile editor provider/runtime/fallback coverage, Custom API optional-auth
+dispatch coverage, and TypeScript checks.
 
 ## Current Proof
 
@@ -14,6 +15,7 @@ and TypeScript checks.
 - Phase 1 resolver/runtime/status implementation completed.
 - Phase 2 profile command/conversion implementation completed.
 - Phase 3 Settings -> Model shell implementation completed.
+- Phase 4 profile editor providers implementation completed.
 - Focused schema, defaults, masking, settings command, preset, loadout, and
   resolver regression suites passed.
 - Focused resolver, UI-state, provider-capability, model role routing, server
@@ -22,9 +24,14 @@ and TypeScript checks.
   and route-protection suites passed.
 - Focused Settings -> Model shell, role/profile list source contracts, and
   language fallback suites passed.
+- Focused profile editor, provider panel, runtime defaults/overrides, fallback
+  editor, secret placeholder, OpenAI optional-auth, and dispatch suites passed.
 - Client-lib TypeScript and strict Fastify TypeScript checks passed.
 - Browser smoke passed for `/settings/model`, including Roles/Profiles tab
   rendering and the Profiles fallback count column.
+- Browser smoke passed for the profile editor drawer on desktop and mobile,
+  including provider panel switching, runtime defaults edit mode, Custom API
+  `/chat/completions` warning, and dirty-close confirmation.
 
 ## Commands To Run As Phases Land
 
@@ -46,6 +53,6 @@ finishing.
 
 ## Verification Gaps
 
-- Full provider editor panels have not been implemented.
-- Runtime defaults and fallback editors have not been implemented.
 - No generation guardrails have been implemented.
+- Browser smoke did not save every provider shape and re-read persisted rows;
+  focused source/server tests cover the save-shape contracts.

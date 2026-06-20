@@ -38,13 +38,17 @@ authoring UI plan.
   Roles and Profiles tabs, command-backed role binding drafts, profile list
   action shells, runtime defaults summary, a legacy conversion prompt, and
   Advanced Legacy Settings for old role controls.
-- Runtime Defaults storage and resolver precedence exist, but visible editing
-  does not exist yet.
-- Full provider editor panels, runtime defaults editing, fallback editing, and
-  generation guardrails do not exist yet.
+- Phase 4 is complete: Settings -> Model Profiles now has a full
+  command-backed editor drawer for first-class providers, runtime defaults,
+  profile runtime overrides, fallbacks, and profile-local secret placeholder
+  behavior.
+- Custom API profile dispatch supports optional API keys for local
+  unauthenticated OpenAI-compatible endpoints.
+- Generation guardrails do not exist yet.
 
 ## Recommended Next Slice
 
-Continue with Phase 4. It should replace the profile action shells with the full
-profile editor for first-class providers, runtime defaults, and fallbacks
-without implementing generation guardrails yet.
+Continue with Phase 5. It should block incomplete, unsupported, or broken
+profile-bound generation early in browser and server paths, audit prompt
+assembly for effective profile/model correctness, and keep the Phase 4 Custom
+API optional-auth behavior covered by regression tests.

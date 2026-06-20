@@ -1,20 +1,14 @@
 <script lang="ts">
-  import { CopyIcon, PencilIcon, PlusIcon, SaveIcon, TrashIcon, XIcon } from '@lucide/svelte'
+  import { CopyIcon, PencilIcon, PlusIcon, TrashIcon } from '@lucide/svelte'
   import { language } from 'src/lang'
   import Button from 'src/lib/UI/GUI/Button.svelte'
-  import OptionInput from 'src/lib/UI/GUI/OptionInput.svelte'
-  import SelectInput from 'src/lib/UI/GUI/SelectInput.svelte'
-  import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
   import {
-    FIRST_CLASS_MODEL_PROFILE_PROVIDER_IDS,
     resolveModelProfileByProfileId,
     type FirstClassModelProfileProviderId,
   } from 'src/ts/model/modelProfileResolver'
   import {
-    normalizeModelRuntimeDefaults,
     normalizeModelRoleProfiles,
     type ModelProfileRecord,
-    type ModelProfileRecordProviderOptions,
     type ModelRoleProfileBinding,
   } from 'src/ts/model/modelProfileRecords'
   import { MODEL_ROLES, modelRoleProfileInheritSource, type ModelRole } from 'src/ts/model/modelRoles'
@@ -28,25 +22,21 @@
     type ModelProfileSnapshot,
   } from 'src/ts/server/commands'
   import { DBState } from 'src/ts/stores.svelte'
+  import ModelProfileEditorDrawer from './ModelProfileEditorDrawer.svelte'
+  import ModelRuntimeDefaultsEditor from './ModelRuntimeDefaultsEditor.svelte'
 
   type EditorMode = 'create' | 'edit' | null
 
   let editorMode = $state<EditorMode>(null)
   let editingProfileId = $state<string | null>(null)
-  let draftName = $state('')
-  let draftProviderId = $state('')
-  let draftModelId = $state('')
-  let draftRequestModel = $state('')
+  let editorKey = $state(0)
   let busy = $state(false)
   let commandError = $state('')
 
   let profiles = $derived(DBState.db.modelProfiles ?? [])
-  let runtimeDefaults = $derived(normalizeModelRuntimeDefaults(DBState.db.modelRuntimeDefaults))
-  let runtimeDefaultCount = $derived(Object.keys(runtimeDefaults).length)
-
-  function cloneJsonValue<T>(value: T): T {
-    return JSON.parse(JSON.stringify(value)) as T
-  }
+  let editingProfile = $derived(
+    editingProfileId ? profiles.find((profile) => profile.id === editingProfileId) : undefined,
+  )
 
   function providerLabel(providerId: string | undefined): string {
     if (!providerId) return language.modelProfiles.compatibilityProvider
@@ -100,20 +90,14 @@
   function openCreateEditor(): void {
     editorMode = 'create'
     editingProfileId = null
-    draftName = language.modelProfiles.newProfileDefaultName
-    draftProviderId = ''
-    draftModelId = ''
-    draftRequestModel = ''
+    editorKey += 1
     commandError = ''
   }
 
   function openEditEditor(profile: ModelProfileRecord): void {
     editorMode = 'edit'
     editingProfileId = profile.id
-    draftName = profile.name
-    draftProviderId = profile.providerId ?? ''
-    draftModelId = profile.modelId ?? ''
-    draftRequestModel = profile.providerOptions?.requestModel ?? ''
+    editorKey += 1
     commandError = ''
   }
 
@@ -123,50 +107,11 @@
     commandError = ''
   }
 
-  function providerOptionsForSave(existing?: ModelProfileRecord): ModelProfileRecordProviderOptions | undefined {
-    const providerOptions = cloneJsonValue(existing?.providerOptions ?? {})
-    const requestModel = draftRequestModel.trim()
-    if (requestModel) {
-      providerOptions.requestModel = requestModel
-    } else {
-      delete providerOptions.requestModel
-    }
-    return Object.keys(providerOptions).length > 0 ? providerOptions : undefined
-  }
-
-  function profileSnapshotForSave(existing?: ModelProfileRecord): ModelProfileSnapshot {
-    const providerId = draftProviderId.trim()
-    const modelId = draftModelId.trim()
-    const profile: ModelProfileSnapshot = {
-      ...(existing ? cloneJsonValue(existing) : {}),
-      name: draftName.trim() || existing?.name || language.modelProfiles.newProfileDefaultName,
-    }
-    if (providerId) {
-      profile.providerId = providerId
-    } else {
-      delete profile.providerId
-    }
-    if (modelId) {
-      profile.modelId = modelId
-    } else {
-      delete profile.modelId
-    }
-
-    const providerOptions = providerOptionsForSave(existing)
-    if (providerOptions) {
-      profile.providerOptions = providerOptions
-    } else {
-      delete profile.providerOptions
-    }
-    return profile
-  }
-
-  async function saveEditor(): Promise<void> {
+  async function saveEditor(profile: ModelProfileSnapshot): Promise<void> {
     if (!editorMode || busy) return
     busy = true
     commandError = ''
-    const existing = editingProfileId ? profiles.find((profile) => profile.id === editingProfileId) : undefined
-    const profile = profileSnapshotForSave(existing)
+    const existing = editingProfileId ? profiles.find((candidate) => candidate.id === editingProfileId) : undefined
     const result =
       editorMode === 'edit' && existing
         ? await runServerCommand({
@@ -260,17 +205,7 @@
 </script>
 
 <section class="flex flex-col gap-4">
-  <div class="rounded-md border border-darkborderc p-3">
-    <div class="flex flex-col gap-1">
-      <h3 class="text-lg font-semibold">{language.modelProfiles.runtimeDefaultsTitle}</h3>
-      <span class="text-sm text-textcolor2">{language.modelProfiles.runtimeDefaultsPlaceholder}</span>
-    </div>
-    <div class="mt-3 text-sm text-textcolor2">
-      {runtimeDefaultCount === 0
-        ? language.modelProfiles.runtimeDefaultsEmpty
-        : language.modelProfiles.runtimeDefaultsSummary(runtimeDefaultCount)}
-    </div>
-  </div>
+  <ModelRuntimeDefaultsEditor />
 
   {#if commandError}
     <div class="rounded-md border border-draculared p-3 text-sm text-draculared">{commandError}</div>
@@ -343,54 +278,17 @@
   {/if}
 
   {#if editorMode}
-    <div class="rounded-md border border-selected p-3">
-      <div class="mb-3 flex items-center justify-between gap-2">
-        <h4 class="text-base font-semibold">
-          {editorMode === 'create' ? language.modelProfiles.createProfile : language.modelProfiles.editProfile}
-        </h4>
-        <Button size="sm" styled="outlined" disabled={busy} onclick={closeEditor}>
-          <span class="inline-flex items-center gap-1"><XIcon size={14} />{language.modelProfiles.cancel}</span>
-        </Button>
-      </div>
-
-      <div class="grid gap-3 md:grid-cols-2">
-        <label class="flex flex-col gap-1">
-          <span class="text-sm text-textcolor2">{language.modelProfiles.profileNameColumn}</span>
-          <TextInput size="sm" fullwidth bind:value={draftName} />
-        </label>
-        <label class="flex flex-col gap-1">
-          <span class="text-sm text-textcolor2">{language.modelProfiles.providerColumn}</span>
-          <SelectInput size="sm" className="w-full" bind:value={draftProviderId}>
-            <OptionInput value="">{language.modelProfiles.compatibilityProvider}</OptionInput>
-            {#each FIRST_CLASS_MODEL_PROFILE_PROVIDER_IDS as providerId (providerId)}
-              <OptionInput value={providerId}>{providerLabel(providerId)}</OptionInput>
-            {/each}
-          </SelectInput>
-        </label>
-        <label class="flex flex-col gap-1">
-          <span class="text-sm text-textcolor2">{language.modelProfiles.modelColumn}</span>
-          <TextInput
-            size="sm"
-            fullwidth
-            bind:value={draftModelId}
-            placeholder={language.modelProfiles.modelPlaceholder} />
-        </label>
-        <label class="flex flex-col gap-1">
-          <span class="text-sm text-textcolor2">{language.modelProfiles.requestModelColumn}</span>
-          <TextInput
-            size="sm"
-            fullwidth
-            bind:value={draftRequestModel}
-            placeholder={language.modelProfiles.requestModelPlaceholder} />
-        </label>
-      </div>
-
-      <div class="mt-3 flex justify-end">
-        <Button size="sm" disabled={busy} onclick={saveEditor}>
-          <span class="inline-flex items-center gap-2"
-            ><SaveIcon size={16} />{busy ? language.modelProfiles.saving : language.modelProfiles.save}</span>
-        </Button>
-      </div>
-    </div>
+    {#key editorKey}
+      <ModelProfileEditorDrawer
+        mode={editorMode}
+        profile={editingProfile}
+        {profiles}
+        usedByRoles={editingProfile ? rolesUsingProfile(editingProfile.id) : []}
+        statusText={editingProfile ? statusLabel(editingProfile) : language.modelProfiles.statusBuckets.incomplete}
+        {busy}
+        {commandError}
+        onSave={saveEditor}
+        onCancel={closeEditor} />
+    {/key}
   {/if}
 </section>

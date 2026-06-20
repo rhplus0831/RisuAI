@@ -11,7 +11,7 @@ import { readBoundedBodyJson, readBoundedBodyText } from './body.js'
 export interface OpenAIRequest {
   model: string
   messages: unknown[]
-  apiKey: string
+  apiKey?: string
   baseUrl: string
   maxTokens?: number
   temperature?: number
@@ -53,9 +53,9 @@ const DEFAULT_BASE_URL = 'https://api.openai.com/v1'
 export function resolveOpenAIRequest(input: OpenAIResolveInput): OpenAIRequest | null {
   if (typeof input.model !== 'string' || input.model.length === 0) return null
   if (!Array.isArray(input.messages)) return null
-  if (typeof input.apiKey !== 'string' || input.apiKey.length === 0) return null
 
   const baseUrl = typeof input.baseUrl === 'string' && input.baseUrl.length > 0 ? input.baseUrl : DEFAULT_BASE_URL
+  const apiKey = typeof input.apiKey === 'string' && input.apiKey.length > 0 ? input.apiKey : undefined
   const maxTokens =
     typeof input.maxTokens === 'number' && Number.isFinite(input.maxTokens) && input.maxTokens > 0
       ? input.maxTokens
@@ -66,7 +66,7 @@ export function resolveOpenAIRequest(input: OpenAIResolveInput): OpenAIRequest |
   return {
     model: input.model,
     messages: input.messages,
-    apiKey: input.apiKey,
+    apiKey,
     baseUrl,
     maxTokens,
     temperature,
@@ -124,7 +124,7 @@ function endpoint(req: OpenAIRequest): string {
 function buildHeaders(req: OpenAIRequest): Record<string, string> {
   return {
     'content-type': 'application/json',
-    authorization: `Bearer ${req.apiKey}`,
+    ...(req.apiKey ? { authorization: `Bearer ${req.apiKey}` } : {}),
     ...(req.extraHeaders ?? {}),
   }
 }

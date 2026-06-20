@@ -252,4 +252,49 @@ describe('Model profile-first profiles tab source contract', () => {
     expect(source).toContain('return language.modelRoles.fallbackCount(profile.fallbacks?.length ?? 0)')
     expect(source).toContain('{fallbackCount(profile)}')
   })
+
+  it('opens the full profile editor drawer and runtime defaults editor', () => {
+    const source = readSource('src/lib/Setting/Pages/Model/ModelProfileList.svelte')
+
+    expect(source).toContain("import ModelProfileEditorDrawer from './ModelProfileEditorDrawer.svelte'")
+    expect(source).toContain("import ModelRuntimeDefaultsEditor from './ModelRuntimeDefaultsEditor.svelte'")
+    expect(source).toContain('<ModelRuntimeDefaultsEditor />')
+    expect(source).toContain('<ModelProfileEditorDrawer')
+    expect(source).toContain('createModelProfileCommand({')
+    expect(source).toContain('updateModelProfileCommand({')
+    expect(source).toContain('duplicateModelProfileCommand({')
+    expect(source).toContain('deleteModelProfileCommand({')
+    expect(source).not.toContain("createServerBackedSettingDraft('modelProfiles")
+    expect(source).not.toContain('SettingRenderer')
+  })
+
+  it('keeps provider, runtime, and fallback editing in isolated drawer components', () => {
+    const drawer = readSource('src/lib/Setting/Pages/Model/ModelProfileEditorDrawer.svelte')
+    const provider = readSource('src/lib/Setting/Pages/Model/ModelProviderPanel.svelte')
+    const runtime = readSource('src/lib/Setting/Pages/Model/ModelRuntimeOptionsEditor.svelte')
+    const defaults = readSource('src/lib/Setting/Pages/Model/ModelRuntimeDefaultsEditor.svelte')
+
+    expect(drawer).toContain("import ModelProviderPanel from './ModelProviderPanel.svelte'")
+    expect(drawer).toContain("import ModelRuntimeOptionsEditor from './ModelRuntimeOptionsEditor.svelte'")
+    expect(drawer).toContain("import ModelFallbackEditor from './ModelFallbackEditor.svelte'")
+    expect(drawer).toContain('modelProfileSecretValueForSave')
+    expect(drawer).toContain("nextProviderId === 'custom-api' ? 'custom-api' : modelId.trim()")
+    expect(drawer).toContain('if (!canEditProviderFields || !providerIsFirstClass)')
+    expect(drawer).toContain('window.confirm(language.modelProfiles.discardProfileChangesConfirm)')
+
+    for (const providerId of ['openai', 'anthropic', 'google', 'vertex', 'custom-api']) {
+      expect(provider).toContain(`providerId === '${providerId}'`)
+    }
+    expect(provider).toContain("baseUrl.toLowerCase().includes('/chat/completions')")
+    expect(provider).toContain('<KeyValueRowsEditor')
+    expect(provider).not.toContain('<ModelList')
+
+    expect(runtime).toContain('normalizeModelProfileRuntimeOptions')
+    expect(runtime).toContain('delete next[key]')
+    expect(runtime).toContain('runtimeFields.maxContext')
+    expect(runtime).toContain('runtimeFields.enableCustomFlags')
+
+    expect(defaults).toContain('updateModelRuntimeDefaultsCommand({')
+    expect(defaults).toContain('<ModelRuntimeOptionsEditor bind:value={draft} />')
+  })
 })

@@ -1,6 +1,6 @@
 # Phase 4: Profile Editor Providers
 
-Status: not started.
+Status: completed.
 
 Goal: implement the full profile editor for first-class providers, runtime
 defaults, and fallbacks.
@@ -96,4 +96,3 @@ editor is wired.
 - Reusing data-driven settings renderers can accidentally autosave profile
   drafts. Prefer isolated editor drafts unless the renderer gains draft context.
 - Secret field UX must distinguish untouched masked values from empty-clears.
-

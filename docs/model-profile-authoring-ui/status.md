@@ -9,7 +9,7 @@ runtime support but deferred the full visible authoring UI.
 ## Snapshot
 
 - Plan state: open.
-- Current phase: Phase 4 not started.
+- Current phase: Phase 5 not started.
 - Current implementation state:
   - `Database.modelProfiles` and `Database.modelRoleProfiles` exist.
   - Durable records now include optional provider-first `providerId`, raw model
@@ -24,11 +24,16 @@ runtime support but deferred the full visible authoring UI.
   - Settings -> Model now routes to a profile-first shell with Roles and
     Profiles tabs, explicit role binding Apply/Cancel, profile list action
     shells, runtime defaults summary, and a legacy conversion prompt.
+  - Profiles tab now has a full command-backed editor drawer for first-class
+    OpenAI, Anthropic, Google, Vertex, and Custom API profiles, plus runtime
+    defaults editing, profile runtime overrides, fallback editing, and secret
+    preserve/replace/clear handling.
+  - Custom API profile dispatch supports optional API keys for local
+    unauthenticated OpenAI-compatible endpoints.
   - Old legacy role controls remain available behind Advanced Legacy Settings.
-  - Full provider editor panels, runtime defaults editing, fallback editing, and
-    generation guardrails are not implemented yet.
-- Current verification state: Phase 0 through Phase 3 focused tests, TypeScript
-  checks, and Phase 3 browser smoke passed.
+  - Generation guardrails are not implemented yet.
+- Current verification state: Phase 0 through Phase 4 focused tests, TypeScript
+  checks, and Phase 3/Phase 4 browser smoke passed.
 
 ## Phase Router
 
@@ -38,7 +43,7 @@ runtime support but deferred the full visible authoring UI.
 | Phase 1: Resolver Runtime Status | Completed | Add provider-first resolution, runtime default precedence, explicit broken-binding behavior, and status helpers. |
 | Phase 2: Profile Commands And Conversion | Completed | Add atomic profile row commands, role binding operations, and legacy-to-profile conversion. |
 | Phase 3: Settings Model Shell | Completed | Build Settings -> Model Roles/Profiles tabs, conversion prompt, and legacy compatibility panel. |
-| Phase 4: Profile Editor Providers | Not started | Implement full profile editor panels for OpenAI, Anthropic, Google, Vertex, and Custom API plus defaults/fallbacks. |
+| Phase 4: Profile Editor Providers | Completed | Implement full profile editor panels for OpenAI, Anthropic, Google, Vertex, and Custom API plus defaults/fallbacks. |
 | Phase 5: Generation Guardrails | Not started | Block incomplete/unsupported active profiles in browser and server generation paths. |
 | Phase 6: Verification And Cleanup | Not started | Run regression, browser smoke, docs updates, and compatibility cleanup notes. |
 
@@ -74,6 +79,14 @@ runtime support but deferred the full visible authoring UI.
 - Verification passed focused UI/lang suites, command/UI-state suites,
   client-lib TypeScript, `git diff --check`, and browser smoke for
   `/settings/model`.
+- Phase 4 added the full profile editor drawer, first-class provider panels,
+  runtime defaults editor, profile runtime overrides, fallback editor, shared
+  profile secret placeholder handling, and narrow Custom API optional-auth
+  dispatch support.
+- Verification passed focused UI/lang suites, client command wrapper suites,
+  model profile resolver/record/UI-state suites, Fastify command/OpenAI/
+  dispatch suites, client-lib and strict Fastify TypeScript, `git diff --check`,
+  and desktop/mobile `/settings/model` browser smoke.
 
 ## Latest Decisions Captured
 

@@ -1189,6 +1189,44 @@ describe('dispatchChatProvider profile providerOptions', () => {
     }
   })
 
+  it('allows first-class Custom API profiles without an API key', async () => {
+    const profile = resolveModelProfile({
+      database: db({
+        modelProfiles: [
+          {
+            id: 'custom-api-profile',
+            name: 'Custom API',
+            providerId: 'custom-api',
+            modelId: 'custom-api',
+            providerOptions: {
+              baseUrl: 'https://profile-custom.example.com/v1',
+              requestModel: 'profile-custom-model',
+              extraHeaders: { 'X-Profile': 'custom' },
+            },
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'custom-api-profile' } },
+      } as unknown as Partial<Database>),
+    })
+    const captured = captureOpenAIRequests()
+
+    await dispatchWithProfile(
+      profile,
+      db({
+        aiModel: 'reverse_proxy',
+        forceReplaceUrl: 'https://flat-custom.example.com/v1',
+        proxyKey: 'sk-flat-custom',
+        customProxyRequestModel: 'flat-custom-model',
+      } as Partial<Database>),
+    )
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0].url).toBe('https://profile-custom.example.com/v1/chat/completions')
+    expect(captured[0].headers.authorization).toBeUndefined()
+    expect(captured[0].headers['X-Profile']).toBe('custom')
+    expect(captured[0].body.model).toBe('profile-custom-model')
+  })
+
   it('preserves the NanoGPT missing-key error and does not fall back to flat DB keys', async () => {
     const profile = resolveModelProfile({
       database: db({

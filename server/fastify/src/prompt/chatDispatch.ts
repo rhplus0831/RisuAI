@@ -58,7 +58,7 @@ interface ModelInfoLite {
 }
 
 interface OpenAICompatibleVariant {
-  apiKey: string
+  apiKey?: string
   baseUrl?: string
   extraHeaders?: Record<string, string>
   additionalParams?: Array<[string, string]>
@@ -571,9 +571,9 @@ function resolveProfileOpenAIVariant(profile?: ResolvedModelProfile): OpenAIComp
   if (!profile) return undefined
   const options = profile.providerOptions
   const apiKey = asString(options.apiKey)
-  if (!apiKey) return null
+  if (!apiKey && profile.status.providerId !== 'custom-api') return null
   return {
-    apiKey,
+    ...(apiKey ? { apiKey } : {}),
     baseUrl: asString(options.baseUrl),
     extraHeaders: options.extraHeaders,
     additionalParams: options.additionalParams,

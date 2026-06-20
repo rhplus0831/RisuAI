@@ -41,14 +41,15 @@ describe('applyOobaSystemHoist', () => {
 })
 
 describe('resolveOpenAIRequest', () => {
-  it('returns null when apiKey is missing', () => {
+  it('allows missing apiKey for optional-auth compatible endpoints', () => {
     const r = resolveOpenAIRequest({
       model: 'gpt-4o',
       messages: [],
       apiKey: '',
       signal: new AbortController().signal,
     })
-    expect(r).toBeNull()
+    expect(r?.apiKey).toBeUndefined()
+    expect(r?.baseUrl).toBe('https://api.openai.com/v1')
   })
 
   it('returns null when messages is not an array', () => {

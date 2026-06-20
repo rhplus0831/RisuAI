@@ -128,5 +128,8 @@ describe('changeLanguage same-code cache', () => {
     expect(langModule.language.modelProfiles.statusReasons['profile-model-missing']).toBe(
       languageEnglish.modelProfiles.statusReasons['profile-model-missing'],
     )
+    expect(langModule.language.modelProfiles.runtimeFields.maxContext).toBe(
+      languageEnglish.modelProfiles.runtimeFields.maxContext,
+    )
   })
 })
