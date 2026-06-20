@@ -145,6 +145,14 @@ describe('resolveServerPromptAssembly', () => {
       })
     })
 
+    it('allows a durable compatibility profile', () => {
+      seedDb({
+        modelProfiles: [{ id: 'compat-profile', name: 'Compat Profile', modelId: 'echo_model' }],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'compat-profile' } },
+      } as never)
+      expect(resolveServerPromptAssembly(makeInput())).toEqual({ type: 'server' })
+    })
+
     // With an image-input model, the server assembler resolves inlay / asset /
     // runtime-multimodal bytes, so this routes to `server`. echo_model lacks
     // image input, so the vision flag is forced on via customFlags while keeping
@@ -304,6 +312,59 @@ describe('resolveServerPromptAssembly', () => {
       expect(expectUnsupported(resolveServerPromptAssembly(makeInput()))).toBe(
         'unsupported /chat provider: unknown OpenAI-compatible model "unregistered-local-model" cannot be dispatched by the server',
       )
+    })
+
+    it.each([
+      {
+        label: 'missing durable profile',
+        database: {
+          modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'missing-profile' } },
+        },
+        reason: 'profile-not-found',
+      },
+      {
+        label: 'model-less durable profile',
+        database: {
+          modelProfiles: [{ id: 'empty-profile', name: 'Empty Profile' }],
+          modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'empty-profile' } },
+        },
+        reason: 'profile-model-missing',
+      },
+      {
+        label: 'unsupported first-class provider id',
+        database: {
+          modelProfiles: [
+            {
+              id: 'unsupported-profile',
+              name: 'Unsupported Profile',
+              providerId: 'not-a-provider',
+              modelId: 'gpt-5',
+            },
+          ],
+          modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'unsupported-profile' } },
+        },
+        reason: 'unsupported-provider-id',
+      },
+      {
+        label: 'incomplete first-class provider',
+        database: {
+          modelProfiles: [
+            {
+              id: 'incomplete-profile',
+              name: 'Incomplete Profile',
+              providerId: 'openai',
+              modelId: 'gpt-5',
+            },
+          ],
+          modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'incomplete-profile' } },
+        },
+        reason: 'api-key-missing',
+      },
+    ])('rejects $label before provider capability routing', ({ database, reason }) => {
+      seedDb(database as Partial<Database>)
+      const message = expectUnsupported(resolveServerPromptAssembly(makeInput()))
+      expect(message).toContain(reason)
+      expect(message).toContain('Model profile')
     })
 
     // One case per unsupported content class.

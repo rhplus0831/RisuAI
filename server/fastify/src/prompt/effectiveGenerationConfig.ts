@@ -8,6 +8,11 @@ import {
 import type { ModelPresetRecord, PromptPresetRecord } from '../commands/splitPresets.js'
 import { mirrorLegacyProfile, type PersonaRecord } from '../commands/personas.js'
 import { applyEffectivePresetComposition, resolvePromptPresetRegexField } from '../../../../src/ts/presetSplit.js'
+import {
+  modelProfileGenerationBlockReason,
+  resolveModelProfile,
+  type ResolvedModelProfile,
+} from '../../../../src/ts/model/modelProfileResolver.js'
 
 type JsonRecord = Record<string, unknown>
 type EffectivePromptPresetRecord = PromptPresetRecord & { moduleIntergration?: unknown }
@@ -28,6 +33,23 @@ export function isChatGenerationSettingsIncompleteAssemblyError(
   error: unknown,
 ): error is ChatGenerationSettingsIncompleteAssemblyError {
   return error instanceof ChatGenerationSettingsIncompleteAssemblyError
+}
+
+export class ModelProfileGenerationGuardAssemblyError extends Error {
+  readonly statusCode = 400
+  readonly body: { error: string }
+
+  constructor(message: string) {
+    super(message)
+    this.name = 'ModelProfileGenerationGuardAssemblyError'
+    this.body = { error: message }
+  }
+}
+
+export function isModelProfileGenerationGuardAssemblyError(
+  error: unknown,
+): error is ModelProfileGenerationGuardAssemblyError {
+  return error instanceof ModelProfileGenerationGuardAssemblyError
 }
 
 export interface EffectiveGenerationConfigInput {
@@ -121,6 +143,13 @@ export function buildEffectiveGenerationConfig(input: EffectiveGenerationConfigI
   }
   effectiveDatabase.jailbreakToggle = settings?.jailbreakToggle === true
 
+  const profile = resolveModelProfile({ database: effectiveDatabase })
+  const profileBlockReason = modelProfileGenerationBlockReason(profile)
+  if (profileBlockReason) {
+    throw new ModelProfileGenerationGuardAssemblyError(profileBlockReason)
+  }
+  applyProfileBoundGenerationFields(effectiveDatabase, profile)
+
   const effectiveCurrentChar = effectiveDatabase.characters[input.selectedCharID]
   const effectiveStoredChat = effectiveCurrentChar?.chats?.[input.chatPage]
   if (!effectiveCurrentChar || !effectiveStoredChat) {
@@ -132,6 +161,64 @@ export function buildEffectiveGenerationConfig(input: EffectiveGenerationConfigI
     currentChar: effectiveCurrentChar,
     currentChat: structuredClone(effectiveStoredChat) as Chat,
   }
+}
+
+function applyProfileBoundGenerationFields(database: Database, profile: ResolvedModelProfile): void {
+  if (profile.source.kind !== 'durable-profile') return
+
+  database.aiModel = profile.modelId
+  const runtime = profile.runtimeOptions
+  assignIfDefined(database, 'maxContext', runtime.maxContext)
+  assignIfDefined(database, 'maxResponse', runtime.maxResponse)
+  assignIfDefined(database, 'temperature', runtime.rawTemperature)
+  assignIfDefined(database, 'top_p', runtime.topP)
+  assignIfDefined(database, 'top_k', runtime.topK)
+  assignIfDefined(database, 'min_p', runtime.minP)
+  assignIfDefined(database, 'top_a', runtime.topA)
+  assignIfDefined(database, 'repetition_penalty', runtime.repetitionPenalty)
+  assignIfDefined(database, 'frequencyPenalty', scaleSamplerForDatabase(runtime.frequencyPenalty))
+  assignIfDefined(database, 'PresensePenalty', scaleSamplerForDatabase(runtime.presencePenalty))
+  assignIfDefined(database, 'reasoningEffort', runtime.reasoningEffort)
+  assignIfDefined(database, 'thinkingTokens', runtime.thinkingTokens)
+  assignIfDefined(database, 'thinkingType', runtime.thinkingType as Database['thinkingType'] | undefined)
+  assignIfDefined(
+    database,
+    'deepseekThinkingType',
+    runtime.deepseekThinkingType as Database['deepseekThinkingType'] | undefined,
+  )
+  assignIfDefined(
+    database,
+    'adaptiveThinkingEffort',
+    runtime.adaptiveThinkingEffort as Database['adaptiveThinkingEffort'] | undefined,
+  )
+  assignIfDefined(
+    database,
+    'deepseekReasoningEffort',
+    runtime.deepseekReasoningEffort as Database['deepseekReasoningEffort'] | undefined,
+  )
+  assignIfDefined(database, 'verbosity', runtime.verbosity)
+  assignIfDefined(database, 'useStreaming', runtime.useStreaming)
+  assignIfDefined(database, 'genTime', runtime.genTime)
+  assignIfDefined(database, 'extractJson', runtime.extractJson)
+  assignIfDefined(database, 'jsonSchemaEnabled', runtime.jsonSchemaEnabled)
+  assignIfDefined(database, 'jsonSchema', runtime.jsonSchema)
+  assignIfDefined(database, 'strictJsonSchema', runtime.strictJsonSchema)
+  assignIfDefined(database, 'outputImageModal', runtime.outputImageModal)
+  assignIfDefined(database, 'dynamicOutput', runtime.dynamicOutput as Database['dynamicOutput'])
+  database.modelTools = [...runtime.modelTools]
+  assignIfDefined(database, 'enableCustomFlags', runtime.enableCustomFlags)
+  if (runtime.customFlags !== undefined) database.customFlags = [...runtime.customFlags]
+  assignIfDefined(database, 'customTokenizer', runtime.customTokenizer)
+}
+
+function assignIfDefined<K extends keyof Database>(database: Database, key: K, value: Database[K] | undefined): void {
+  if (value !== undefined) {
+    database[key] = value
+  }
+}
+
+function scaleSamplerForDatabase(value: number | undefined): number | undefined {
+  return value === undefined ? undefined : value * 100
 }
 
 function findById<T extends { id?: string | null }>(collection: readonly T[], id: string | undefined): T | undefined {

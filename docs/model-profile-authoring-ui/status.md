@@ -9,7 +9,7 @@ runtime support but deferred the full visible authoring UI.
 ## Snapshot
 
 - Plan state: open.
-- Current phase: Phase 5 not started.
+- Current phase: Phase 6 not started.
 - Current implementation state:
   - `Database.modelProfiles` and `Database.modelRoleProfiles` exist.
   - Durable records now include optional provider-first `providerId`, raw model
@@ -31,9 +31,13 @@ runtime support but deferred the full visible authoring UI.
   - Custom API profile dispatch supports optional API keys for local
     unauthenticated OpenAI-compatible endpoints.
   - Old legacy role controls remain available behind Advanced Legacy Settings.
-  - Generation guardrails are not implemented yet.
-- Current verification state: Phase 0 through Phase 4 focused tests, TypeScript
-  checks, and Phase 3/Phase 4 browser smoke passed.
+  - Generation now rejects active incomplete/unsupported durable profiles in
+    browser preflight, browser request dispatch, server-intent completion,
+    `/generate/chat` preflight, and final server chat dispatch.
+  - Server chat prompt assembly now applies profile-bound model/runtime fields
+    from the effective chat generation config before budgeting and dispatch.
+- Current verification state: Phase 0 through Phase 5 focused tests,
+  TypeScript checks, and Phase 3/Phase 4 browser smoke passed.
 
 ## Phase Router
 
@@ -44,7 +48,7 @@ runtime support but deferred the full visible authoring UI.
 | Phase 2: Profile Commands And Conversion | Completed | Add atomic profile row commands, role binding operations, and legacy-to-profile conversion. |
 | Phase 3: Settings Model Shell | Completed | Build Settings -> Model Roles/Profiles tabs, conversion prompt, and legacy compatibility panel. |
 | Phase 4: Profile Editor Providers | Completed | Implement full profile editor panels for OpenAI, Anthropic, Google, Vertex, and Custom API plus defaults/fallbacks. |
-| Phase 5: Generation Guardrails | Not started | Block incomplete/unsupported active profiles in browser and server generation paths. |
+| Phase 5: Generation Guardrails | Completed | Block incomplete/unsupported active profiles in browser and server generation paths. |
 | Phase 6: Verification And Cleanup | Not started | Run regression, browser smoke, docs updates, and compatibility cleanup notes. |
 
 ## Current Blockers
@@ -87,6 +91,13 @@ runtime support but deferred the full visible authoring UI.
   model profile resolver/record/UI-state suites, Fastify command/OpenAI/
   dispatch suites, client-lib and strict Fastify TypeScript, `git diff --check`,
   and desktop/mobile `/settings/model` browser smoke.
+- Phase 5 added shared active durable-profile generation guardrails, browser
+  preflight/request rejection, server-intent and `/generate/chat` rejection
+  before provider dispatch/SSE/job acceptance, server chat dispatch
+  defense-in-depth, and effective profile-bound runtime overlay for server chat
+  assembly.
+- Verification passed focused browser request/provider/preflight suites,
+  Fastify generation chat/completion/dispatch suites, and TypeScript checks.
 
 ## Latest Decisions Captured
 

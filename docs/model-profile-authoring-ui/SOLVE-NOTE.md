@@ -44,11 +44,12 @@ authoring UI plan.
   behavior.
 - Custom API profile dispatch supports optional API keys for local
   unauthenticated OpenAI-compatible endpoints.
-- Generation guardrails do not exist yet.
+- Phase 5 is complete: active incomplete/unsupported durable profiles now fail
+  early in browser and server generation paths, and server chat assembly applies
+  profile-bound model/runtime fields from the effective generation config.
 
 ## Recommended Next Slice
 
-Continue with Phase 5. It should block incomplete, unsupported, or broken
-profile-bound generation early in browser and server paths, audit prompt
-assembly for effective profile/model correctness, and keep the Phase 4 Custom
-API optional-auth behavior covered by regression tests.
+Continue with Phase 6. It should run final regression and browser smoke where
+needed, refresh docs, and record compatibility cleanup notes before closing the
+workstream.

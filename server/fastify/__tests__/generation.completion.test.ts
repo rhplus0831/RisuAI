@@ -593,6 +593,81 @@ describe('Phase 6-1 POST /api/v1/generate/completion', () => {
     expect(res.json()).toEqual({ error: 'fallbackProfileId must be a string when provided' })
   })
 
+  it.each([
+    {
+      label: 'missing active durable profile',
+      database: {
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'missing-profile' } },
+      },
+      stream: true,
+      reason: 'profile-not-found',
+    },
+    {
+      label: 'model-less active durable profile',
+      database: {
+        modelProfiles: [{ id: 'empty-profile', name: 'Empty Profile' }],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'empty-profile' } },
+      },
+      stream: false,
+      reason: 'profile-model-missing',
+    },
+    {
+      label: 'unsupported active durable profile',
+      database: {
+        modelProfiles: [
+          {
+            id: 'unsupported-profile',
+            name: 'Unsupported Profile',
+            providerId: 'not-a-provider',
+            modelId: 'gpt-5',
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'unsupported-profile' } },
+      },
+      stream: false,
+      reason: 'unsupported-provider-id',
+    },
+    {
+      label: 'incomplete active first-class durable profile',
+      database: {
+        modelProfiles: [
+          {
+            id: 'incomplete-profile',
+            name: 'Incomplete Profile',
+            providerId: 'openai',
+            modelId: 'gpt-5',
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'incomplete-profile' } },
+      },
+      stream: false,
+      reason: 'api-key-missing',
+    },
+  ])('server-intent completion rejects $label before provider dispatch', async (testCase) => {
+    writeDatabase(testCase.database)
+    const fetchSpy = vi.fn()
+    globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        kind: 'server-intent',
+        messages: [{ role: 'user', content: 'hi' }],
+        stream: testCase.stream,
+      },
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(res.headers['content-type']).toMatch(/application\/json/)
+    expect(res.headers['content-type']).not.toBe('text/event-stream')
+    expect(res.json().error).toContain(testCase.reason)
+    expect(res.json().error).toContain('Model profile')
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
   it('server-intent completion dispatches provider request models from the resolved profile', async () => {
     const captured: Array<{ url: string; body: Record<string, unknown>; headers: Record<string, string> }> = []
     globalThis.fetch = (async (url: string, init: RequestInit) => {

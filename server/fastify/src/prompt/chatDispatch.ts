@@ -23,6 +23,7 @@ import {
   type ProviderUnsupportedReason,
 } from '../../../../src/ts/process/request/providerCapability'
 import {
+  assertModelProfileGenerationReady,
   resolveModelProfile,
   resolveProfileRequestModel,
   type ResolvedModelProfile,
@@ -721,6 +722,7 @@ async function* resultFrames(resultPromise: Promise<CompletionResult>): AsyncGen
 export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<AsyncIterable<CompletionStreamFrame>> {
   const { database: db, outputTokens, signal } = args
   const profile = args.profile ?? resolveModelProfile({ database: db })
+  assertModelProfileGenerationReady(profile)
   const info = profile.modelInfo
   const route = resolveChatProviderRoute(db, profile)
   if (route.routable === false) {

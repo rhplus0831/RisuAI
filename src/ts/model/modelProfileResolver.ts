@@ -530,6 +530,33 @@ export function resolveModelProfileByProfileId({
   })
 }
 
+export function modelProfileGenerationBlockReason(profile: ResolvedModelProfile): string | null {
+  if (profile.source.kind !== 'durable-profile') return null
+  if (profile.status.bucket !== 'incomplete' && profile.status.bucket !== 'unsupported') return null
+
+  const profileLabel = profile.source.profileName
+    ? `"${profile.source.profileName}"`
+    : profile.source.profileId
+      ? `id "${profile.source.profileId}"`
+      : 'the selected durable profile'
+  const reasons =
+    profile.status.reasons.length > 0 ? profile.status.reasons.join(', ') : `status-${profile.status.bucket}`
+  const details = [`reasons: ${reasons}`]
+  if (profile.status.providerId) details.push(`provider: ${profile.status.providerId}`)
+  if (profile.status.unsupportedProviderId)
+    details.push(`unsupported provider: ${profile.status.unsupportedProviderId}`)
+  if (profile.status.providerCapabilityReason) {
+    details.push(`provider capability: ${profile.status.providerCapabilityReason}`)
+  }
+
+  return `Model profile ${profileLabel} is ${profile.status.bucket} and cannot be used for generation (${details.join('; ')}). Complete the profile configuration or select a supported profile before retrying.`
+}
+
+export function assertModelProfileGenerationReady(profile: ResolvedModelProfile): void {
+  const reason = modelProfileGenerationBlockReason(profile)
+  if (reason) throw new Error(reason)
+}
+
 function resolveModelProfileSelection({
   database,
   normalizedRole,

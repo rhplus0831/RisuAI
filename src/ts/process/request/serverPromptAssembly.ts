@@ -4,7 +4,11 @@ import { LLMFlags } from '../../model/types'
 import { getModuleTriggers } from '../modules'
 import { pluginV2 } from '../../plugins/plugins.svelte'
 import { composeEffectivePresetSettings } from '../../presetSplit'
-import { resolveModelProfile, type ResolvedModelProfile } from '../../model/modelProfileResolver'
+import {
+  modelProfileGenerationBlockReason,
+  resolveModelProfile,
+  type ResolvedModelProfile,
+} from '../../model/modelProfileResolver'
 
 /**
  * Three-arm verdict for the `sendChat` prompt-assembly gate, mirroring
@@ -175,6 +179,13 @@ function unsupportedServerGenerationReason(aiModel: string): string {
 
 function resolveServerProviderPreflight(currentChat: Chat): ServerPromptAssemblyRoute | null {
   const profile = resolveProfileForChat(currentChat)
+  const profileBlockReason = modelProfileGenerationBlockReason(profile)
+  if (profileBlockReason) {
+    return {
+      type: 'unsupported',
+      reason: profileBlockReason,
+    }
+  }
   if (profile.modelInfo.unsupportedReason) {
     return {
       type: 'unsupported',

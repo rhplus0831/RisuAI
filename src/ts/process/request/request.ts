@@ -2,6 +2,7 @@ import { Ollama } from 'ollama/dist/browser.mjs'
 import { language } from '../../../lang'
 import { fetchNative, globalFetch } from '../../globalApi.svelte'
 import {
+  modelProfileGenerationBlockReason,
   resolveModelProfile,
   resolveModelProfileByProfileId,
   type ModelProfileFallbackRef,
@@ -550,6 +551,13 @@ export async function requestChatDataMain(
     return {
       type: 'fail',
       result: `Fallback profile not found: ${arg.fallbackProfileId}`,
+    }
+  }
+  const profileBlockReason = modelProfileGenerationBlockReason(resolvedProfile)
+  if (profileBlockReason) {
+    return {
+      type: 'fail',
+      result: profileBlockReason,
     }
   }
   const runtimeOptions = resolvedProfile.runtimeOptions

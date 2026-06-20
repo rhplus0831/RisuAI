@@ -1227,6 +1227,46 @@ describe('dispatchChatProvider profile providerOptions', () => {
     expect(captured[0].body.model).toBe('profile-custom-model')
   })
 
+  it.each([
+    {
+      label: 'incomplete official OpenAI profile',
+      database: db({
+        modelProfiles: [
+          {
+            id: 'openai-missing-key',
+            name: 'OpenAI Missing Key',
+            providerId: 'openai',
+            modelId: 'gpt-5',
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'openai-missing-key' } },
+      } as unknown as Partial<Database>),
+      reason: 'api-key-missing',
+    },
+    {
+      label: 'unsupported provider id profile',
+      database: db({
+        modelProfiles: [
+          {
+            id: 'unsupported-provider',
+            name: 'Unsupported Provider',
+            providerId: 'not-a-provider',
+            modelId: 'gpt-5',
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'unsupported-provider' } },
+      } as unknown as Partial<Database>),
+      reason: 'unsupported-provider-id',
+    },
+  ])('rejects $label before provider fetch', async (testCase) => {
+    const profile = resolveModelProfile({ database: testCase.database })
+    const fetchSpy = vi.fn()
+    vi.stubGlobal('fetch', fetchSpy as unknown as typeof fetch)
+
+    await expect(dispatchWithProfile(profile, testCase.database)).rejects.toThrow(testCase.reason)
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
   it('preserves the NanoGPT missing-key error and does not fall back to flat DB keys', async () => {
     const profile = resolveModelProfile({
       database: db({

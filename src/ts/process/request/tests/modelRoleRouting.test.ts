@@ -113,6 +113,48 @@ describe('requestChatDataMain model-role routing', () => {
     })
   })
 
+  it('rejects a bad active durable profile before fetch', async () => {
+    seedDb({
+      modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'missing-profile' } },
+    } as Partial<Database>)
+    const fetchSpy = installSuccessFetch()
+
+    const result = await requestChatDataMain(
+      {
+        formated: [{ role: 'user', content: 'hi' }],
+        bias: {},
+      },
+      'model',
+    )
+
+    expect(result).toMatchObject({ type: 'fail' })
+    expect(result.result).toContain('profile-not-found')
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it('lets a staticModel compatibility attempt bypass a bad active durable profile', async () => {
+    seedDb({
+      modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'missing-profile' } },
+    } as Partial<Database>)
+    const fetchSpy = installSuccessFetch()
+
+    const result = await requestChatDataMain(
+      {
+        formated: [{ role: 'user', content: 'hi' }],
+        bias: {},
+        staticModel: 'echo_model',
+      },
+      'model',
+    )
+
+    expect(result).toEqual({ type: 'success', result: 'ok' })
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    expect(JSON.parse(fetchSpy.mock.calls[0][1].body as string)).toMatchObject({
+      mode: 'model',
+      staticModel: 'echo_model',
+    })
+  })
+
   it('sends legacy fallback model ids as staticModel attempts', async () => {
     seedDb({
       modelRoles: { memory: 'role-memory-model' } as Database['modelRoles'],
@@ -221,6 +263,39 @@ describe('requestChatDataMain model-role routing', () => {
       fallbackProfileId: 'fallback-profile',
       maxTokens: 123,
       temperature: 0.25,
+    })
+  })
+
+  it('continues to raw model fallbacks when the active durable profile config is incomplete', async () => {
+    seedDb({
+      modelProfiles: [
+        {
+          id: 'primary-profile',
+          name: 'Primary Profile',
+          providerId: 'openai',
+          modelId: 'gpt-5',
+          fallbacks: [{ mode: 'model', modelId: 'echo_model' }],
+        },
+      ],
+      modelRoleProfiles: {
+        chatMain: { mode: 'profile', profileId: 'primary-profile' },
+      },
+      requestRetrys: 0,
+    } as Partial<Database>)
+    const fetchSpy = installSuccessFetch()
+
+    const result = await requestChatData(
+      {
+        formated: [{ role: 'user', content: 'hi' }],
+        bias: {},
+      },
+      'model',
+    )
+
+    expect(result).toEqual({ type: 'success', result: 'ok', model: 'echo_model' })
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    expect(JSON.parse(fetchSpy.mock.calls[0][1].body as string)).toMatchObject({
+      staticModel: 'echo_model',
     })
   })
 

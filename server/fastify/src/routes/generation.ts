@@ -3,6 +3,7 @@ import type { Database } from '../../../../src/ts/storage/database.svelte'
 import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
 import type { LegacyModelMode } from '../../../../src/ts/model/modelRoles.js'
 import {
+  assertModelProfileGenerationReady,
   resolveModelProfile,
   resolveModelProfileByProfileId,
   type ResolvedModelProfile,
@@ -317,6 +318,7 @@ function selectedCompletionProfile(db: Database, body: CompletionRequestBody): R
   }
   const staticModel = typeof body.staticModel === 'string' && body.staticModel.length > 0 ? body.staticModel : undefined
   const profile = resolveModelProfile({ database: db, role: mode, staticModel })
+  assertModelProfileGenerationReady(profile)
   if (profile.modelId.length > 0) return profile
   return resolveModelProfile({ database: db, role: mode, staticModel: 'echo_model' })
 }
@@ -1247,6 +1249,7 @@ async function handleServerIntentCompletion(
   try {
     const baseDatabase = settingsToCompletionDatabase(settings)
     const profile = selectedCompletionProfile(baseDatabase, body)
+    assertModelProfileGenerationReady(profile)
     const database = buildCompletionDatabase(baseDatabase, body, profile)
     const frames = await dispatchChatProvider({
       database,

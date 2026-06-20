@@ -1,6 +1,6 @@
 # Phase 5: Generation Guardrails
 
-Status: not started.
+Status: completed.
 
 Goal: ensure active incomplete, unsupported, or broken profile-bound generation
 fails early and clearly in both browser and server paths.

@@ -17,7 +17,7 @@ import {
 } from '../src/routes/generationChat.js'
 import { normalizeRisuSaveSnapshotDatabase } from '../src/risuSave/importSnapshot.js'
 import { saveSelectedPersonaSnapshot } from '../src/commands/personas.js'
-import { LLMFormat } from '../../../src/ts/model/types'
+import { LLMFlags, LLMFormat } from '../../../src/ts/model/types'
 import {
   BROAD_WRITE_TABLES,
   assertCommandMetricGate,
@@ -3468,6 +3468,135 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
     expect(bootstrap.json().activeGenerationJobs).toEqual([])
   })
 
+  it.each([
+    {
+      label: 'missing active durable profile',
+      database: {
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'missing-profile' } },
+      },
+      reason: 'profile-not-found',
+    },
+    {
+      label: 'model-less active durable profile',
+      database: {
+        modelProfiles: [{ id: 'empty-profile', name: 'Empty Profile' }],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'empty-profile' } },
+      },
+      reason: 'profile-model-missing',
+    },
+    {
+      label: 'unsupported active durable profile',
+      database: {
+        modelProfiles: [
+          {
+            id: 'unsupported-profile',
+            name: 'Unsupported Profile',
+            providerId: 'not-a-provider',
+            modelId: 'gpt-5',
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'unsupported-profile' } },
+      },
+      reason: 'unsupported-provider-id',
+    },
+    {
+      label: 'incomplete first-class active durable profile',
+      database: {
+        modelProfiles: [
+          {
+            id: 'incomplete-profile',
+            name: 'Incomplete Profile',
+            providerId: 'openai',
+            modelId: 'gpt-5',
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'incomplete-profile' } },
+      },
+      reason: 'api-key-missing',
+    },
+  ])('returns JSON before SSE/provider dispatch for $label', async (testCase) => {
+    const dispatchProvider = vi.fn()
+    await restartHarness({ dispatchProvider })
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, {
+      ...fixtureDatabase,
+      ...testCase.database,
+    })
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(res.headers['content-type']).toMatch(/application\/json/)
+    expect(res.body).not.toContain('event:')
+    expect(res.json().error).toContain(testCase.reason)
+    expect(res.json().error).toContain('Model profile')
+    expect(dispatchProvider).not.toHaveBeenCalled()
+  })
+
+  it('rejects a bad active durable profile before durable job acceptance', async () => {
+    const dispatchProvider = vi.fn()
+    await restartHarness({ dispatchProvider })
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, {
+      ...fixtureDatabase,
+      modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'missing-profile' } },
+    })
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: { ...basePayload, durable: true },
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(res.headers['content-type']).toMatch(/application\/json/)
+    expect(res.body).not.toContain('job_accepted')
+    expect(res.json().error).toContain('profile-not-found')
+    expect(dispatchProvider).not.toHaveBeenCalled()
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.statusCode).toBe(200)
+    expect(bootstrap.json().activeGenerationJobs).toEqual([])
+  })
+
+  it('allows durable compatibility profiles through chat generation', async () => {
+    const dispatchProvider = vi.fn(() =>
+      (async function* (): AsyncGenerator<CompletionStreamFrame> {
+        yield { kind: 'token', content: 'compat ok' }
+        yield { kind: 'done', finishReason: 'stop' }
+      })(),
+    )
+    await restartHarness({ dispatchProvider })
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, {
+      ...fixtureDatabase,
+      modelProfiles: [{ id: 'compat-profile', name: 'Compat Profile', modelId: 'echo_model' }],
+      modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'compat-profile' } },
+    })
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.headers['content-type']).toBe('text/event-stream')
+    expect(dispatchProvider).toHaveBeenCalledTimes(1)
+    expect(parseEvents(res.body).at(-1)?.data).toMatchObject({ result: 'compat ok' })
+  })
+
   it("dispatches with the active chat's preset overlay instead of request or global preset", async () => {
     let providerBody: Record<string, unknown> | undefined
     let authorization: string | undefined
@@ -3640,6 +3769,111 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
       temperature: 0.44,
       max_tokens: 44,
       top_p: 0.5,
+    })
+  })
+
+  it('applies profile-bound runtime fields from the active chat model preset before assembly dispatch', async () => {
+    let dispatchedDatabase: Record<string, unknown> | undefined
+    const dispatchProvider = vi.fn(({ database }) => {
+      dispatchedDatabase = structuredClone(database) as Record<string, unknown>
+      return (async function* (): AsyncGenerator<CompletionStreamFrame> {
+        yield { kind: 'token', content: 'profile runtime reply' }
+        yield { kind: 'done', finishReason: 'stop' }
+      })()
+    })
+    await restartHarness({ dispatchProvider })
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, {
+      ...fixtureDatabase,
+      aiModel: 'echo_model',
+      maxContext: 1111,
+      maxResponse: 11,
+      temperature: 11,
+      top_p: 0.9,
+      useStreaming: true,
+      modelPresets: [
+        {
+          id: 'model-profile-runtime',
+          name: 'Profile Runtime Model',
+          modelProfiles: [
+            {
+              id: 'profile-runtime',
+              name: 'Profile Runtime',
+              providerId: 'custom-api',
+              modelId: 'custom-api',
+              providerOptions: {
+                baseUrl: 'https://profile-runtime.example.com/v1',
+                requestModel: 'profile-runtime-wire-model',
+              },
+              runtimeOptions: {
+                maxContext: 2222,
+                maxResponse: 22,
+                temperature: 66,
+                topP: 0.42,
+                useStreaming: false,
+                extractJson: 'json',
+                jsonSchemaEnabled: true,
+                jsonSchema: '{"type":"object"}',
+                strictJsonSchema: true,
+                modelTools: ['search'],
+                enableCustomFlags: true,
+                customFlags: [LLMFlags.hasImageInput],
+              },
+            },
+          ],
+          modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'profile-runtime' } },
+        },
+      ],
+      promptPresets: [{ id: 'prompt-chat', name: 'Chat Prompt' }],
+      characters: [
+        {
+          ...fixtureDatabase.characters[0],
+          chats: [
+            {
+              ...fixtureDatabase.characters[0].chats[0],
+              generationSettings: {
+                configured: true,
+                personaId: DEFAULT_TEST_PERSONA_ID,
+                modelPresetId: 'model-profile-runtime',
+                promptPresetId: 'prompt-chat',
+                jailbreakToggle: false,
+                sidebarToggles: {},
+              },
+            },
+          ],
+        },
+      ],
+    })
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(dispatchProvider).toHaveBeenCalledTimes(1)
+    expect(dispatchedDatabase).toMatchObject({
+      aiModel: 'custom-api',
+      maxContext: 2222,
+      maxResponse: 22,
+      temperature: 66,
+      top_p: 0.42,
+      useStreaming: false,
+      extractJson: 'json',
+      jsonSchemaEnabled: true,
+      jsonSchema: '{"type":"object"}',
+      strictJsonSchema: true,
+      modelTools: ['search'],
+      enableCustomFlags: true,
+      customFlags: [LLMFlags.hasImageInput],
+    })
+    const info = parseEvents(res.body).find((event) => event.type === 'info')
+    expect(info?.data.generationInfo).toMatchObject({
+      model: 'custom-api',
+      outputTokens: 22,
+      maxContext: 2222,
     })
   })
 

@@ -30,6 +30,7 @@ import {
 import {
   buildEffectiveGenerationConfig,
   isChatGenerationSettingsIncompleteAssemblyError,
+  isModelProfileGenerationGuardAssemblyError,
 } from '../prompt/effectiveGenerationConfig.js'
 import type { ResolveStoredAsset, StoredAssetPurpose } from '../prompt/assetLookup.js'
 import { normalizeAllCharacterChats, requireChatLocation } from '../commands/chats.js'
@@ -568,12 +569,20 @@ function preflightChatGenerationSettings(
       reply.code(err.statusCode).send(err.body)
       return { status: 'handled' }
     }
+    if (isModelProfileGenerationGuardAssemblyError(err)) {
+      reply.code(err.statusCode).send(err.body)
+      return { status: 'handled' }
+    }
     return { status: 'defer', failure: { error: err } }
   }
 }
 
 function sendAssemblyHttpError(reply: FastifyReply, err: unknown): boolean {
   if (isChatGenerationSettingsIncompleteAssemblyError(err)) {
+    reply.code(err.statusCode).send(err.body)
+    return true
+  }
+  if (isModelProfileGenerationGuardAssemblyError(err)) {
     reply.code(err.statusCode).send(err.body)
     return true
   }
