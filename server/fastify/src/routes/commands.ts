@@ -216,6 +216,16 @@ import {
   validateNormalModuleLinks,
 } from '../commands/modules.js'
 import {
+  convertLegacyModelProfilesCommand,
+  createAndBindModelProfileCommand,
+  createModelProfileCommand,
+  deleteModelProfileCommand,
+  duplicateModelProfileCommand,
+  updateModelProfileCommand,
+  updateModelRoleProfilesCommand,
+  updateModelRuntimeDefaultsCommand,
+} from '../commands/modelProfiles.js'
+import {
   createPluginRecord,
   ensurePluginCommandDatabase,
   ensurePluginRecords,
@@ -1376,6 +1386,193 @@ export function registerCommandRoutes(
       return {
         revision: result.revision,
         event: result.event,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/model-profiles', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = req.body ?? {}
+      const baseRevision = readBaseRevision(body)
+      const result = createModelProfileCommand({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        body,
+      })
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/model-profiles/create-and-bind', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = req.body ?? {}
+      const baseRevision = readBaseRevision(body)
+      const result = createAndBindModelProfileCommand({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        body,
+      })
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/model-profiles/convert-legacy', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = req.body ?? {}
+      const baseRevision = readBaseRevision(body)
+      const result = convertLegacyModelProfilesCommand({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        body,
+      })
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.patch('/api/v1/commands/model-profiles/:profileId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = req.body ?? {}
+      const baseRevision = readBaseRevision(body)
+      const result = updateModelProfileCommand({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        body,
+        profileId: (req.params as { profileId?: unknown }).profileId as string,
+      })
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/model-profiles/:profileId/duplicate', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = req.body ?? {}
+      const baseRevision = readBaseRevision(body)
+      const result = duplicateModelProfileCommand({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        body,
+        profileId: (req.params as { profileId?: unknown }).profileId as string,
+      })
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.delete('/api/v1/commands/model-profiles/:profileId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = req.body ?? {}
+      const baseRevision = readBaseRevision(body)
+      const result = deleteModelProfileCommand({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        body,
+        profileId: (req.params as { profileId?: unknown }).profileId as string,
+      })
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.put('/api/v1/commands/model-role-profiles', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = req.body ?? {}
+      const baseRevision = readBaseRevision(body)
+      const result = updateModelRoleProfilesCommand({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        body,
+      })
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.put('/api/v1/commands/model-runtime-defaults', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = req.body ?? {}
+      const baseRevision = readBaseRevision(body)
+      const result = updateModelRuntimeDefaultsCommand({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        body,
+      })
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
       }
     } catch (err) {
       return sendCommandError(reply, err)

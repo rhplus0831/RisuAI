@@ -318,6 +318,34 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     expect(body.fields).not.toHaveProperty('language')
   })
 
+  it('includes model profile fields and masks profile secrets for a modelProfile refresh', async () => {
+    await importDatabase({
+      modelProfiles: [
+        {
+          id: 'profile-a',
+          name: 'Profile A',
+          providerOptions: {
+            apiKey: 'profile-key',
+            vertex: { privateKey: 'vertex-private', region: 'us-central1' },
+          },
+        },
+      ],
+      modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'profile-a' } },
+      modelRuntimeDefaults: { temperature: 55 },
+      language: 'en',
+    })
+
+    const res = await getProjection('modelProfile')
+    const body = res.json()
+    expect(body.mode).toBe('fields')
+    expect(Object.keys(body.fields).sort()).toEqual(['modelProfiles', 'modelRoleProfiles', 'modelRuntimeDefaults'])
+    expect(body.fields.modelProfiles[0].providerOptions.apiKey).toBe(MASKED_PROVIDER_SECRET)
+    expect(body.fields.modelProfiles[0].providerOptions.vertex.privateKey).toBe(MASKED_PROVIDER_SECRET)
+    expect(body.fields.modelRoleProfiles.chatMain).toEqual({ mode: 'profile', profileId: 'profile-a' })
+    expect(body.fields.modelRuntimeDefaults).toEqual({ temperature: 55 })
+    expect(body.fields).not.toHaveProperty('language')
+  })
+
   it('falls back to full for a prompt-settings refresh (not botPresets)', async () => {
     // Projection field-bug fix: prompt-settings writes ~21 scattered settings
     // scalars, so a foreign refresh must full-bootstrap. The prior
@@ -391,6 +419,11 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     expect(resourceProjectionFields('asset')).toEqual([])
     expect(resourceProjectionFields('preset')).toEqual(['botPresets', 'botPresetsId'])
     expect(resourceProjectionFields('promptItem')).toEqual(['promptTemplate'])
+    expect(resourceProjectionFields('modelProfile')).toEqual([
+      'modelProfiles',
+      'modelRoleProfiles',
+      'modelRuntimeDefaults',
+    ])
     expect(resourceProjectionFields('persona')).toEqual([
       'personas',
       'selectedPersona',

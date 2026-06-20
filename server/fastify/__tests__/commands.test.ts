@@ -13,7 +13,7 @@ import { MASKED_PROVIDER_SECRET } from '../src/providerSecrets.js'
 import { loadPersisted, writePersistedWithMessages, insertAssetMetadataBatch } from '../src/repository.js'
 import { activeMessageRowids, assertOnlyRowsWritten, tableRowidsById } from './helpers/rowStability.js'
 import { MODEL_ROLES } from '../../../src/ts/model/modelRoles.js'
-import { LLMFlags } from '../../../src/ts/model/types.js'
+import { LLMFlags, LLMFormat } from '../../../src/ts/model/types.js'
 
 const subtle = webcrypto.subtle
 
@@ -1153,6 +1153,457 @@ describe('Phase 9-2a scalar settings groups', () => {
       expect(res.statusCode).toBe(400)
       expect(res.json().error).toBe(candidate.error)
     }
+  })
+
+  it('creates and binds a model profile in one revision', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      modelProfiles: [],
+    })
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/model-profiles/create-and-bind',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        role: 'memory',
+        profile: {
+          name: 'Memory Profile',
+          providerId: 'openai',
+          modelId: 'gpt-5',
+          providerOptions: { apiKey: 'memory-key' },
+        },
+      },
+    })
+
+    expect(res.statusCode, res.body).toBe(200)
+    const body = res.json() as { revision: number; profileId: string; role: string; event: Record<string, unknown> }
+    expect(body.revision).toBe(revision + 1)
+    expect(body.profileId).toMatch(/^mp_/)
+    expect(body.role).toBe('memory')
+    expect(body.event).toMatchObject({
+      type: 'modelProfile.createdAndBound',
+      resource: 'modelProfile',
+      id: body.profileId,
+      revision: revision + 1,
+    })
+
+    expect(loadPersistedFromDir(harness.dataDir).database).toMatchObject({
+      modelProfiles: [
+        {
+          id: body.profileId,
+          name: 'Memory Profile',
+          providerId: 'openai',
+          modelId: 'gpt-5',
+          providerOptions: { apiKey: 'memory-key' },
+        },
+      ],
+      modelRoleProfiles: {
+        memory: { mode: 'profile', profileId: body.profileId },
+      },
+    })
+  })
+
+  it('preserves masked profile secrets on update and clears omitted secrets on full-row save', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      modelProfiles: [
+        {
+          id: 'profile-a',
+          name: 'Profile A',
+          providerId: 'vertex',
+          modelId: 'gemini-2.5-pro-vertex',
+          providerOptions: {
+            apiKey: 'profile-key',
+            requestModel: 'old-wire',
+            vertex: {
+              projectId: 'project-a',
+              region: 'us-central1',
+              clientEmail: 'svc@example.com',
+              privateKey: 'vertex-private',
+            },
+          },
+        },
+      ],
+    })
+
+    const preserved = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/model-profiles/profile-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        profile: {
+          id: 'profile-a',
+          name: 'Profile A renamed',
+          providerId: 'vertex',
+          modelId: 'gemini-2.5-pro-vertex',
+          providerOptions: {
+            apiKey: MASKED_PROVIDER_SECRET,
+            requestModel: 'new-wire',
+            vertex: {
+              projectId: 'project-a',
+              region: 'europe-west1',
+              clientEmail: 'svc@example.com',
+              privateKey: MASKED_PROVIDER_SECRET,
+            },
+          },
+        },
+      },
+    })
+    expect(preserved.statusCode, preserved.body).toBe(200)
+    expect(loadPersistedFromDir(harness.dataDir).database).toMatchObject({
+      modelProfiles: [
+        {
+          id: 'profile-a',
+          name: 'Profile A renamed',
+          providerOptions: {
+            apiKey: 'profile-key',
+            requestModel: 'new-wire',
+            vertex: {
+              privateKey: 'vertex-private',
+              region: 'europe-west1',
+            },
+          },
+        },
+      ],
+    })
+
+    const cleared = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/model-profiles/profile-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: preserved.json().revision,
+        profile: {
+          name: 'Profile A cleared',
+          providerId: 'vertex',
+          modelId: 'gemini-2.5-pro-vertex',
+          providerOptions: {
+            requestModel: 'new-wire',
+            vertex: {
+              projectId: 'project-a',
+              region: 'europe-west1',
+              clientEmail: 'svc@example.com',
+            },
+          },
+        },
+      },
+    })
+    expect(cleared.statusCode, cleared.body).toBe(200)
+    const profile = (
+      loadPersistedFromDir(harness.dataDir).database as { modelProfiles: Array<Record<string, unknown>> }
+    ).modelProfiles[0]
+    expect(profile.providerOptions).toEqual({
+      requestModel: 'new-wire',
+      vertex: {
+        projectId: 'project-a',
+        region: 'europe-west1',
+        clientEmail: 'svc@example.com',
+      },
+    })
+  })
+
+  it('duplicates model profiles without secrets by default and includes them when requested', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      modelProfiles: [
+        {
+          id: 'profile-a',
+          name: 'Profile A',
+          providerId: 'vertex',
+          modelId: 'gemini-2.5-pro-vertex',
+          providerOptions: {
+            apiKey: 'profile-key',
+            requestModel: 'wire-model',
+            vertex: {
+              projectId: 'project-a',
+              region: 'us-central1',
+              clientEmail: 'svc@example.com',
+              privateKey: 'vertex-private',
+            },
+          },
+        },
+      ],
+    })
+
+    const withoutSecrets = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/model-profiles/profile-a/duplicate',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, name: 'No Secrets' },
+    })
+    expect(withoutSecrets.statusCode, withoutSecrets.body).toBe(200)
+    const withoutSecretsId = withoutSecrets.json().profileId as string
+
+    const withSecrets = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/model-profiles/profile-a/duplicate',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: withoutSecrets.json().revision, name: 'With Secrets', includeSecrets: true },
+    })
+    expect(withSecrets.statusCode, withSecrets.body).toBe(200)
+    const withSecretsId = withSecrets.json().profileId as string
+
+    const profiles = (loadPersistedFromDir(harness.dataDir).database as { modelProfiles: Array<Record<string, any>> })
+      .modelProfiles
+    const copiedWithoutSecrets = profiles.find((profile) => profile.id === withoutSecretsId)
+    const copiedWithSecrets = profiles.find((profile) => profile.id === withSecretsId)
+    expect(copiedWithoutSecrets).toMatchObject({
+      id: withoutSecretsId,
+      name: 'No Secrets',
+      providerOptions: {
+        requestModel: 'wire-model',
+        vertex: {
+          projectId: 'project-a',
+          region: 'us-central1',
+          clientEmail: 'svc@example.com',
+        },
+      },
+    })
+    expect(copiedWithoutSecrets?.providerOptions).not.toHaveProperty('apiKey')
+    expect(copiedWithoutSecrets?.providerOptions.vertex).not.toHaveProperty('privateKey')
+    expect(copiedWithSecrets).toMatchObject({
+      id: withSecretsId,
+      name: 'With Secrets',
+      providerOptions: {
+        apiKey: 'profile-key',
+        vertex: { privateKey: 'vertex-private' },
+      },
+    })
+  })
+
+  it('validates model profile delete reassignments and applies direct role updates atomically', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      modelProfiles: [
+        { id: 'profile-main', name: 'Main', modelId: 'gpt-5' },
+        { id: 'profile-alt', name: 'Alt', modelId: 'gpt-4o' },
+      ],
+      modelRoleProfiles: {
+        chatMain: { mode: 'profile', profileId: 'profile-main' },
+        memory: { mode: 'profile', profileId: 'profile-main' },
+      },
+    })
+
+    const missingMain = await harness.app.inject({
+      method: 'DELETE',
+      url: '/api/v1/commands/model-profiles/profile-main',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, reassignments: { memory: { mode: 'inherit' } } },
+    })
+    expect(missingMain.statusCode).toBe(400)
+    expect(missingMain.json().error).toBe('reassignments.chatMain is required')
+
+    const badInherit = await harness.app.inject({
+      method: 'DELETE',
+      url: '/api/v1/commands/model-profiles/profile-main',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        reassignments: {
+          chatMain: { mode: 'inherit' },
+          memory: { mode: 'inherit' },
+        },
+      },
+    })
+    expect(badInherit.statusCode).toBe(400)
+    expect(badInherit.json().error).toBe('modelRoleProfiles.chatMain.mode does not support inherit')
+
+    const badTarget = await harness.app.inject({
+      method: 'DELETE',
+      url: '/api/v1/commands/model-profiles/profile-main',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        reassignments: {
+          chatMain: { mode: 'profile', profileId: 'missing-profile' },
+          memory: { mode: 'inherit' },
+        },
+      },
+    })
+    expect(badTarget.statusCode).toBe(400)
+    expect(badTarget.json().error).toBe('reassignments.chatMain.profileId must reference an existing profile')
+
+    const deleted = await harness.app.inject({
+      method: 'DELETE',
+      url: '/api/v1/commands/model-profiles/profile-main',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        reassignments: {
+          chatMain: { mode: 'legacy' },
+          memory: { mode: 'inherit' },
+        },
+      },
+    })
+    expect(deleted.statusCode, deleted.body).toBe(200)
+    expect(deleted.json()).toMatchObject({
+      revision: revision + 1,
+      profileId: 'profile-main',
+      reassignedRoles: ['chatMain', 'memory'],
+    })
+    expect(loadPersistedFromDir(harness.dataDir).database).toMatchObject({
+      modelProfiles: [{ id: 'profile-alt' }],
+      modelRoleProfiles: {
+        chatMain: { mode: 'legacy' },
+        memory: { mode: 'inherit' },
+      },
+    })
+  })
+
+  it('rolls back stale legacy conversion without bumping the revision', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await importDatabase(harness.app, assertion, {
+      aiModel: 'gpt-5',
+      subModel: 'claude-sonnet-4-5',
+      modelProfiles: [],
+    })
+
+    const stale = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/model-profiles/convert-legacy',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: 0 },
+    })
+    expect(stale.statusCode).toBe(409)
+    expect(stale.json()).toEqual({ error: 'revision_conflict', currentRevision: 1 })
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json()).toMatchObject({
+      revision: 1,
+      database: { modelProfiles: [] },
+    })
+  })
+
+  it('converts legacy model settings into profiles, role bindings, and runtime defaults', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      aiModel: 'gpt-5',
+      subModel: 'claude-sonnet-4-5',
+      openAIKey: 'openai-key',
+      claudeAPIKey: 'claude-key',
+      google: { accessToken: 'google-key', projectId: 'vertex-project' },
+      forceReplaceUrl: 'https://proxy.example.com/v1/chat/completions',
+      proxyKey: 'proxy-key',
+      customProxyRequestModel: 'local-model',
+      customAPIFormat: LLMFormat.OpenAICompatible,
+      maxContext: 12345,
+      maxResponse: 777,
+      temperature: 66,
+      top_p: 0.82,
+      frequencyPenalty: 51,
+      PresensePenalty: 61,
+      modelRoles: {
+        memory: 'gpt-5',
+      },
+      seperateModelsForAxModels: true,
+      seperateModels: {
+        translate: 'gemini-2.5-pro',
+        scriptAux: 'reverse_proxy',
+      },
+      seperateParametersEnabled: true,
+      seperateParameters: {
+        memory: { temperature: 22, top_p: 0.5 },
+        otherAx: { temperature: 44 },
+        scriptAux: { top_k: 5 },
+      },
+      fallbackModels: {
+        model: ['fallback-main'],
+        memory: ['fallback-memory'],
+      },
+      modelProfiles: [],
+    })
+
+    const converted = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/model-profiles/convert-legacy',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision },
+    })
+
+    expect(converted.statusCode, converted.body).toBe(200)
+    const body = converted.json() as {
+      profileIdsByRole: Record<string, string>
+      convertedRoles: string[]
+    }
+    expect(body.convertedRoles).toEqual(MODEL_ROLES)
+    for (const role of MODEL_ROLES) {
+      expect(body.profileIdsByRole[role]).toMatch(/^mp_/)
+    }
+
+    const database = loadPersistedFromDir(harness.dataDir).database as {
+      modelProfiles: Array<Record<string, any>>
+      modelRoleProfiles: Record<string, any>
+      modelRuntimeDefaults: Record<string, unknown>
+    }
+    const profileById = new Map(database.modelProfiles.map((profile) => [profile.id, profile]))
+    const main = profileById.get(body.profileIdsByRole.chatMain)
+    const aux = profileById.get(body.profileIdsByRole.chatAux)
+    const memory = profileById.get(body.profileIdsByRole.memory)
+    const translate = profileById.get(body.profileIdsByRole.translate)
+    const scriptAux = profileById.get(body.profileIdsByRole.scriptAux)
+
+    expect(database.modelRuntimeDefaults).toMatchObject({
+      maxContext: 12345,
+      maxResponse: 777,
+      temperature: 66,
+      topP: 0.82,
+      frequencyPenalty: 51,
+      presencePenalty: 61,
+    })
+    expect(main).toMatchObject({
+      name: 'Main Chat',
+      providerId: 'openai',
+      modelId: 'gpt-5',
+      providerOptions: { apiKey: 'openai-key' },
+      fallbacks: [{ mode: 'model', modelId: 'fallback-main' }],
+    })
+    expect(aux).toMatchObject({
+      name: 'Auxiliary',
+      providerId: 'anthropic',
+      modelId: 'claude-sonnet-4-5',
+      providerOptions: { apiKey: 'claude-key' },
+      runtimeOptions: { temperature: 44 },
+    })
+    expect(memory).toMatchObject({
+      name: 'Memory',
+      providerId: 'openai',
+      modelId: 'gpt-5',
+      runtimeOptions: { temperature: 22, topP: 0.5 },
+      fallbacks: [{ mode: 'model', modelId: 'fallback-memory' }],
+    })
+    expect(translate).toMatchObject({
+      name: 'Translate',
+      providerId: 'google',
+      modelId: 'gemini-2.5-pro',
+      providerOptions: { apiKey: 'google-key' },
+    })
+    expect(scriptAux).toMatchObject({
+      name: 'Script Auxiliary',
+      providerId: 'custom-api',
+      modelId: 'custom-api',
+      providerOptions: {
+        apiKey: 'proxy-key',
+        baseUrl: 'https://proxy.example.com/v1',
+        requestModel: 'local-model',
+      },
+      runtimeOptions: { topK: 5 },
+    })
+    expect(database.modelRoleProfiles).toMatchObject({
+      chatMain: { mode: 'profile', profileId: body.profileIdsByRole.chatMain },
+      chatAux: { mode: 'profile', profileId: body.profileIdsByRole.chatAux },
+      memory: { mode: 'profile', profileId: body.profileIdsByRole.memory },
+      emotion: { mode: 'profile', profileId: body.profileIdsByRole.emotion },
+      otherAx: { mode: 'inherit' },
+      translate: { mode: 'profile', profileId: body.profileIdsByRole.translate },
+      scriptAux: { mode: 'profile', profileId: body.profileIdsByRole.scriptAux },
+    })
   })
 
   it('applies chat format settings through the provider settings command', async () => {

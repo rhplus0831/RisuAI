@@ -295,6 +295,38 @@ export const COMMAND_EVENT_CATALOG = {
     type: 'prompt.item.enabled',
     resource: 'promptItem',
   },
+  modelProfileCreated: {
+    type: 'modelProfile.created',
+    resource: 'modelProfile',
+  },
+  modelProfileUpdated: {
+    type: 'modelProfile.updated',
+    resource: 'modelProfile',
+  },
+  modelProfileDuplicated: {
+    type: 'modelProfile.duplicated',
+    resource: 'modelProfile',
+  },
+  modelProfileDeleted: {
+    type: 'modelProfile.deleted',
+    resource: 'modelProfile',
+  },
+  modelRoleProfilesUpdated: {
+    type: 'modelProfile.roles.updated',
+    resource: 'modelProfile',
+  },
+  modelProfileCreatedAndBound: {
+    type: 'modelProfile.createdAndBound',
+    resource: 'modelProfile',
+  },
+  modelRuntimeDefaultsUpdated: {
+    type: 'modelProfile.runtimeDefaults.updated',
+    resource: 'modelProfile',
+  },
+  modelProfilesLegacyConverted: {
+    type: 'modelProfile.legacyConverted',
+    resource: 'modelProfile',
+  },
   personaCreated: {
     type: 'persona.created',
     resource: 'persona',

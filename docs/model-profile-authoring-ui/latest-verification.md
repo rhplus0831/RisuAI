@@ -2,20 +2,24 @@
 
 Date: 2026-06-20
 
-Phase 1 has landed and passed focused verification. The current proof level is
+Phase 2 has landed and passed focused verification. The current proof level is
 schema/default/preservation/masking coverage, resolver runtime/status coverage,
-generation preflight regression coverage, and TypeScript checks.
+profile command/conversion coverage, projection refresh coverage, generation
+preflight regression coverage, and TypeScript checks.
 
 ## Current Proof
 
 - Phase 0 contract/schema implementation completed.
 - Phase 1 resolver/runtime/status implementation completed.
+- Phase 2 profile command/conversion implementation completed.
 - A verification agent inspected scope and confirmed no material UI,
-  row-command, conversion, or server route guardrail changes landed in Phase 1.
+  Settings editor, or generation guardrail changes landed in Phase 2.
 - Focused schema, defaults, masking, settings command, preset, loadout, and
   resolver regression suites passed.
 - Focused resolver, UI-state, provider-capability, model role routing, server
   prompt assembly, and durable generation regression suites passed.
+- Focused client command wrapper, Fastify command, provider-secret, projection,
+  and route-protection suites passed.
 - Client-lib TypeScript and strict Fastify TypeScript checks passed.
 
 ## Commands To Run As Phases Land
@@ -38,8 +42,7 @@ before finishing.
 
 ## Verification Gaps
 
-- No profile row commands have been implemented.
 - No UI changes have been implemented.
 - No generation guardrails have been implemented.
 - No browser smoke has been run for this workstream because Phase 0 did not
-  change the live Settings -> Model UI.
+  through Phase 2 did not change the live Settings -> Model UI.

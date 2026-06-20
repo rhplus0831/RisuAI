@@ -30,6 +30,10 @@ authoring UI plan.
   compatibility/unsupported status, explicit broken durable bindings stay
   incomplete, and profile-bound runtime precedence uses `modelRuntimeDefaults`
   before profile overrides.
+- Phase 2 is complete: atomic profile row commands, role binding updates,
+  runtime defaults updates, create-and-bind, delete reassignment, duplication,
+  legacy conversion, client wrappers, and `modelProfile` targeted projection now
+  exist.
 - Current visible model UI still edits legacy flat compatibility fields.
 - `modelProfileUiState` currently drives global provider panel visibility; this
   is not the future profile-first UI behavior.
@@ -38,6 +42,6 @@ authoring UI plan.
 
 ## Recommended Next Slice
 
-Continue with Phase 2. It should add atomic profile row commands, role binding
-operations, runtime defaults update support, and legacy-to-profile conversion
-before the Svelte editor starts depending on writable profile workflows.
+Continue with Phase 3. It should build the Settings -> Model Roles/Profiles
+shell, conversion prompt/compatibility panel, and command-backed role/profile
+surfaces without implementing the full provider editor panels yet.

@@ -65,6 +65,7 @@ const RESOURCE_PROJECTION_FIELDS: Record<string, string[]> = {
   modelPreset: ['modelPresets', 'modelPresetsId'],
   promptPreset: ['promptPresets', 'promptPresetsId'],
   legacyBotPreset: ['botPresets', 'botPresetsId', 'modelPresets', 'modelPresetsId', 'promptPresets', 'promptPresetsId'],
+  modelProfile: ['modelProfiles', 'modelRoleProfiles', 'modelRuntimeDefaults'],
   // `prompt` (prompt-settings) writes ~21 scattered settings scalars, not a
   // single owned field, so it falls back to a full bootstrap (listed in
   // SPRAWLING_FULL_PROJECTION_RESOURCES). The old `['botPresets']` mapping was a

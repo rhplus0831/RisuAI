@@ -1,6 +1,6 @@
 # Phase 2: Profile Commands And Conversion
 
-Status: not started.
+Status: completed.
 
 Goal: add atomic command support for profile authoring, role binding, runtime
 defaults, and legacy-to-profile conversion.
@@ -82,4 +82,3 @@ pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
   conversion/create-bind/delete-reassign through generic grouped patches.
 - Generated id ownership must be consistent. Decide whether ids are client
   minted with server collision checks or server minted by centralized helpers.
-

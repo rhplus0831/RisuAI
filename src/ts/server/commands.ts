@@ -1,5 +1,11 @@
 import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
 import type { ChatGenerationSettings } from '../chatGenerationSettings'
+import type { ModelRole } from '../model/modelRoles'
+import type {
+  ModelProfileRecord,
+  ModelProfileRecordRuntimeOptions,
+  ModelRoleProfileBinding,
+} from '../model/modelProfileRecords'
 import { activeWriterSessionHeader, handleActiveWriterStaleResponse } from './activeWriterSession'
 
 const COMMAND_ENDPOINT = '/api/v1/commands'
@@ -639,6 +645,51 @@ export interface ImportPromptPresetCommandInput extends PromptPresetCommandInput
 export interface ReorderPromptPresetsCommandInput extends PromptPresetCommandInput {
   promptPresetIds: string[]
 }
+
+export type ModelProfileSnapshot = Omit<ModelProfileRecord, 'id'> & {
+  id?: string
+}
+
+export type ModelRuntimeDefaultsSnapshot = ModelProfileRecordRuntimeOptions
+
+export interface ModelProfileCommandInput {
+  baseRevision: number
+}
+
+export interface CreateModelProfileCommandInput extends ModelProfileCommandInput {
+  profile: ModelProfileSnapshot
+}
+
+export interface UpdateModelProfileCommandInput extends ModelProfileCommandInput {
+  profileId: string
+  profile: ModelProfileSnapshot
+}
+
+export interface DuplicateModelProfileCommandInput extends ModelProfileCommandInput {
+  profileId: string
+  name?: string
+  includeSecrets?: boolean
+}
+
+export interface DeleteModelProfileCommandInput extends ModelProfileCommandInput {
+  profileId: string
+  reassignments: Partial<Record<ModelRole, ModelRoleProfileBinding>>
+}
+
+export interface UpdateModelRoleProfilesCommandInput extends ModelProfileCommandInput {
+  bindings: Partial<Record<ModelRole, ModelRoleProfileBinding>>
+}
+
+export interface CreateAndBindModelProfileCommandInput extends ModelProfileCommandInput {
+  role: ModelRole
+  profile: ModelProfileSnapshot
+}
+
+export interface UpdateModelRuntimeDefaultsCommandInput extends ModelProfileCommandInput {
+  runtimeDefaults: ModelRuntimeDefaultsSnapshot
+}
+
+export interface ConvertLegacyModelProfilesCommandInput extends ModelProfileCommandInput {}
 
 export interface ExtractLegacyBotPresetCommandInput {
   baseRevision: number
@@ -1530,6 +1581,119 @@ export async function reorderPromptPresetsCommand(
     body: {
       baseRevision: input.baseRevision,
       promptPresetIds: input.promptPresetIds,
+    },
+    signal,
+  })
+}
+
+export async function createModelProfileCommand(
+  input: CreateModelProfileCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ profileId: string }>> {
+  return requestCommandJson('/model-profiles', {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      profile: input.profile,
+    },
+    signal,
+  })
+}
+
+export async function updateModelProfileCommand(
+  input: UpdateModelProfileCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ profileId: string }>> {
+  return requestCommandJson(`/model-profiles/${encodeURIComponent(input.profileId)}`, {
+    method: 'PATCH',
+    body: {
+      baseRevision: input.baseRevision,
+      profile: input.profile,
+    },
+    signal,
+  })
+}
+
+export async function duplicateModelProfileCommand(
+  input: DuplicateModelProfileCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ profileId: string; sourceProfileId: string }>> {
+  return requestCommandJson(`/model-profiles/${encodeURIComponent(input.profileId)}/duplicate`, {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      name: input.name,
+      includeSecrets: input.includeSecrets,
+    },
+    signal,
+  })
+}
+
+export async function deleteModelProfileCommand(
+  input: DeleteModelProfileCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ profileId: string; reassignedRoles: ModelRole[] }>> {
+  return requestCommandJson(`/model-profiles/${encodeURIComponent(input.profileId)}`, {
+    method: 'DELETE',
+    body: {
+      baseRevision: input.baseRevision,
+      reassignments: input.reassignments,
+    },
+    signal,
+  })
+}
+
+export async function updateModelRoleProfilesCommand(
+  input: UpdateModelRoleProfilesCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ roles: ModelRole[] }>> {
+  return requestCommandJson('/model-role-profiles', {
+    method: 'PUT',
+    body: {
+      baseRevision: input.baseRevision,
+      bindings: input.bindings,
+    },
+    signal,
+  })
+}
+
+export async function createAndBindModelProfileCommand(
+  input: CreateAndBindModelProfileCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ profileId: string; role: ModelRole }>> {
+  return requestCommandJson('/model-profiles/create-and-bind', {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      role: input.role,
+      profile: input.profile,
+    },
+    signal,
+  })
+}
+
+export async function updateModelRuntimeDefaultsCommand(
+  input: UpdateModelRuntimeDefaultsCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult> {
+  return requestCommandJson('/model-runtime-defaults', {
+    method: 'PUT',
+    body: {
+      baseRevision: input.baseRevision,
+      runtimeDefaults: input.runtimeDefaults,
+    },
+    signal,
+  })
+}
+
+export async function convertLegacyModelProfilesCommand(
+  input: ConvertLegacyModelProfilesCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ profileIdsByRole: Record<ModelRole, string>; convertedRoles: ModelRole[] }>> {
+  return requestCommandJson('/model-profiles/convert-legacy', {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
     },
     signal,
   })
