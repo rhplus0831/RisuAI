@@ -59,9 +59,9 @@ is the design decision log this plan was based on.
 
 - Structure and docs:
   - [`../../STRUCTURE.md`](../../STRUCTURE.md)
-  - [`../structure/providers-and-models.md`](../structure/providers-and-models.md)
+  - [`../structure/providers-and-models.md`](../../docs/structure/providers-and-models.md)
   - [`../../src/docs/svelte-ui.md`](../../src/docs/svelte-ui.md)
-  - [`../structure/server-projection-and-bridges.md`](../structure/server-projection-and-bridges.md)
+  - [`../structure/server-projection-and-bridges.md`](../../docs/structure/server-projection-and-bridges.md)
 - Durable profile data and resolver:
   - `src/ts/model/modelProfileRecords.ts`
   - `src/ts/model/modelProfileResolver.ts`
