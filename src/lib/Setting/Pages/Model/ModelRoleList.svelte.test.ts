@@ -314,6 +314,9 @@ describe('Model profile-first presets tab source contract', () => {
 
     expect(source).toContain("import { createModelRoleBindingPresetSnapshot } from 'src/ts/model/modelPresetSnapshots'")
     expect(source).toContain('createModelPreset(createModelRoleBindingPresetSnapshot(DBState.db, name))')
+    expect(source).toContain('function createEmptyPreset()')
+    expect(source).toContain('createModelPreset({ name })')
+    expect(source).toContain('language.modelProfiles.createEmptyModelPreset')
     expect(source).toContain('updateModelPreset(index, { modelRoleProfiles: snapshot.modelRoleProfiles })')
     expect(source).toContain('selectModelPreset(index)')
     expect(source).toContain('reorderModelPresets(index, index + 2)')

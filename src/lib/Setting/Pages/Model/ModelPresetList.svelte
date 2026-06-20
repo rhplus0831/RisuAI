@@ -1,5 +1,14 @@
 <script lang="ts">
-  import { ArrowDownIcon, ArrowUpIcon, CheckIcon, CopyIcon, PlusIcon, RefreshCwIcon, TrashIcon } from '@lucide/svelte'
+  import {
+    ArrowDownIcon,
+    ArrowUpIcon,
+    CheckIcon,
+    CopyIcon,
+    FilePlusIcon,
+    PlusIcon,
+    RefreshCwIcon,
+    TrashIcon,
+  } from '@lucide/svelte'
   import { language } from 'src/lang'
   import Button from 'src/lib/UI/GUI/Button.svelte'
   import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
@@ -36,10 +45,20 @@
     return language.modelProfiles.defaultPresetName(presets.length + 1)
   }
 
-  function createPresetFromCurrent(): void {
+  function consumeNewPresetName(): string {
     const name = newPresetName.trim() || newPresetFallbackName()
-    createModelPreset(createModelRoleBindingPresetSnapshot(DBState.db, name))
     newPresetName = ''
+    return name
+  }
+
+  function createPresetFromCurrent(): void {
+    const name = consumeNewPresetName()
+    createModelPreset(createModelRoleBindingPresetSnapshot(DBState.db, name))
+  }
+
+  function createEmptyPreset(): void {
+    const name = consumeNewPresetName()
+    createModelPreset({ name })
   }
 
   function renamePreset(index: number, name: string): void {
@@ -176,6 +195,11 @@
     <Button size="sm" onclick={createPresetFromCurrent}>
       <span class="inline-flex items-center gap-2">
         <PlusIcon size={16} />{language.modelProfiles.saveCurrentRolesAsPreset}
+      </span>
+    </Button>
+    <Button size="sm" styled="outlined" onclick={createEmptyPreset}>
+      <span class="inline-flex items-center gap-2">
+        <FilePlusIcon size={16} />{language.modelProfiles.createEmptyModelPreset}
       </span>
     </Button>
   </div>

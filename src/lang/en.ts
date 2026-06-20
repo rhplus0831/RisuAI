@@ -1801,6 +1801,7 @@ export const languageEnglish = {
     presetsTabDescription:
       'Save and apply role binding sets that decide which durable profiles each generation role uses.',
     saveCurrentRolesAsPreset: 'Save Current Roles',
+    createEmptyModelPreset: 'Create Empty Preset',
     updateFromCurrentRoles: 'Update Roles',
     defaultPresetName: (index: number) => `Model Preset ${index}`,
     noModelPresets: 'No model presets yet.',
