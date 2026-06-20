@@ -31,8 +31,10 @@ import {
   type CustomModelEntryLike,
   type ProviderCapabilityInput,
   type ProviderCapabilityVerdict,
+  type ProviderUnsupportedReason,
 } from '../process/request/providerCapability'
 import {
+  normalizeModelRuntimeDefaults,
   normalizeModelProfiles,
   normalizeModelRoleProfiles,
   type ModelProfileRecord,
@@ -58,6 +60,40 @@ export interface ModelProfileResolutionSource {
   profileId?: string
   profileName?: string
   bypassesRoleResolution: boolean
+}
+
+export const FIRST_CLASS_MODEL_PROFILE_PROVIDER_IDS = ['openai', 'anthropic', 'google', 'vertex', 'custom-api'] as const
+
+export type FirstClassModelProfileProviderId = (typeof FIRST_CLASS_MODEL_PROFILE_PROVIDER_IDS)[number]
+
+export type ModelProfileStatusBucket = 'ready' | 'incomplete' | 'compatibility' | 'unsupported'
+
+export type ModelProfileStatusReason =
+  | 'legacy-mode'
+  | 'static-model'
+  | 'missing-provider-id'
+  | 'inferred-provider-id'
+  | 'profile-not-found'
+  | 'profile-model-missing'
+  | 'api-key-missing'
+  | 'base-url-missing'
+  | 'request-model-missing'
+  | 'vertex-project-id-missing'
+  | 'vertex-region-missing'
+  | 'vertex-client-email-missing'
+  | 'vertex-private-key-missing'
+  | 'unsupported-provider-id'
+  | 'unsupported-model'
+  | 'provider-capability-incomplete'
+  | 'provider-capability-unsupported'
+
+export interface ModelProfileStatus {
+  bucket: ModelProfileStatusBucket
+  reasons: ModelProfileStatusReason[]
+  providerId?: FirstClassModelProfileProviderId
+  providerIdSource?: 'explicit' | 'inferred'
+  unsupportedProviderId?: string
+  providerCapabilityReason?: ProviderUnsupportedReason
 }
 
 export interface ResolvedModelProfileModelInfo extends LLMModel {
@@ -179,6 +215,7 @@ export interface ResolvedModelProfile {
   runtimeOptions: ModelProfileRuntimeOptions
   providerCapabilityInput: ProviderCapabilityInput
   providerCapability: ProviderCapabilityVerdict
+  status: ModelProfileStatus
   fallbacks: ModelProfileFallbackRef[]
 }
 
@@ -196,6 +233,8 @@ interface ModelProfileSelection {
   profileProviderOptions?: ModelProfileRecordProviderOptions
   profileRuntimeOptions?: ModelProfileRecordRuntimeOptions
   profileFallbacks?: ModelProfileRecordFallbackRef[]
+  profileProviderId?: string
+  profileStatusReasons?: ModelProfileStatusReason[]
   source: ModelProfileResolutionSource
 }
 
@@ -221,6 +260,51 @@ const OPENAI_EXTENDED_PARAMETERS = [
 const NANOGPT_BASE_URL = 'https://nano-gpt.com/api/v1'
 const NANOGPT_SUBSCRIPTION_BASE_URL = 'https://nano-gpt.com/api/subscription/v1'
 const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1'
+const FIRST_CLASS_MODEL_PROFILE_PROVIDER_ID_SET = new Set<string>(FIRST_CLASS_MODEL_PROFILE_PROVIDER_IDS)
+const OPENAI_MODEL_IDS = new Set(
+  OpenAIModels.flatMap((model) => [model.id, model.internalID]).filter(
+    (id): id is string => typeof id === 'string' && id.length > 0,
+  ),
+)
+const ANTHROPIC_MODEL_IDS = new Set(
+  AnthropicModels.flatMap((model) => [model.id, model.internalID]).filter(
+    (id): id is string => typeof id === 'string' && id.length > 0,
+  ),
+)
+const GOOGLE_MODEL_IDS = new Set(
+  GoogleModels.flatMap((model) => [model.id, model.internalID]).filter(
+    (id): id is string => typeof id === 'string' && id.length > 0,
+  ),
+)
+const HARD_RUNTIME_DEFAULTS: ModelProfileRecordRuntimeOptions = {
+  maxContext: 4000,
+  maxResponse: 500,
+  temperature: 80,
+  topP: 1,
+  topK: 0,
+  minP: 0,
+  topA: 0,
+  repetitionPenalty: 1,
+  frequencyPenalty: 70,
+  presencePenalty: 70,
+  reasoningEffort: 0,
+  thinkingType: 'budget',
+  deepseekThinkingType: 'off',
+  adaptiveThinkingEffort: 'high',
+  deepseekReasoningEffort: 'high',
+  verbosity: 1,
+  useStreaming: false,
+  genTime: 1,
+  extractJson: '',
+  jsonSchemaEnabled: false,
+  jsonSchema: '',
+  strictJsonSchema: true,
+  outputImageModal: false,
+  modelTools: [],
+  enableCustomFlags: false,
+  customFlags: [],
+  customTokenizer: 'tik',
+}
 
 const SERVER_SAFE_MODELS: LLMModel[] = [
   ...OpenAIModels,
@@ -434,6 +518,7 @@ export function resolveModelProfileByProfileId({
     field: 'fallbackProfileId',
     bypassesRoleResolution: true,
     includeFallbacks: false,
+    allowBroken: false,
   })
   if (!selection) return null
   return resolveModelProfileSelection({
@@ -458,41 +543,65 @@ function resolveModelProfileSelection({
   staticModelId?: string
   lookupModelInfo?: (database: Database, modelId: string) => LLMModel | null | undefined
 }): ResolvedModelProfile {
-  const lookedUp = lookupModelInfo?.(database, selection.modelId)
+  const profileBound = selection.source.kind === 'durable-profile'
+  const runtimeSource = profileBound
+    ? resolveProfileBoundRuntimeSource(database, selection.profileRuntimeOptions)
+    : selection.profileRuntimeOptions
+  const effectiveProvider = profileBound ? resolveEffectiveFirstClassProvider(selection) : null
+  const lookedUp = effectiveProvider ? undefined : lookupModelInfo?.(database, selection.modelId)
   const baseModelInfo = lookedUp
-    ? withCustomFlags(database, cloneModelInfo(lookedUp), selection.profileRuntimeOptions)
-    : resolveServerSafeModelInfo(database, selection.modelId, selection.profileRuntimeOptions)
-  const modelInfo = withDurableModelInfoOptions(
-    selection.modelId,
-    selection.profileProviderOptions,
-    database,
-    baseModelInfo,
-  )
+    ? withCustomFlags(database, cloneModelInfo(lookedUp), runtimeSource, { useLegacyFallback: !profileBound })
+    : effectiveProvider
+      ? resolveFirstClassModelInfo(effectiveProvider.providerId, selection.modelId, selection.profileProviderOptions)
+      : resolveServerSafeModelInfo(database, selection.modelId, runtimeSource, {
+          useLegacyFallback: !profileBound,
+        })
+  const modelInfo = effectiveProvider
+    ? withCustomFlags(database, baseModelInfo, runtimeSource, { useLegacyFallback: false })
+    : withDurableModelInfoOptions(selection.modelId, selection.profileProviderOptions, database, baseModelInfo)
   const requestModel = resolveProfileRequestModelFromParts(
     database,
     selection.modelId,
     modelInfo,
     selection.profileRequestModel,
+    effectiveProvider?.providerId,
   )
-  const providerOptions = resolveProviderOptions(
-    database,
-    selection.modelId,
-    modelInfo,
-    requestModel,
-    selection.profileProviderOptions,
-  )
-  const runtimeOptions = resolveRuntimeOptions(database, modelInfo, selection.profileRuntimeOptions)
-  const providerCapabilityInput = buildProfileProviderCapabilityInputForDatabase(
-    database,
-    selection.modelId,
+  const providerOptions = effectiveProvider
+    ? resolveFirstClassProviderOptions(
+        effectiveProvider.providerId,
+        modelInfo,
+        requestModel,
+        selection.profileProviderOptions,
+      )
+    : resolveProviderOptions(database, selection.modelId, modelInfo, requestModel, selection.profileProviderOptions)
+  const runtimeOptions = resolveRuntimeOptions(database, modelInfo, runtimeSource, {
+    useLegacyFallback: !profileBound,
+  })
+  const providerCapabilityInput = effectiveProvider
+    ? buildFirstClassProviderCapabilityInput(
+        effectiveProvider.providerId,
+        selection.modelId,
+        modelInfo,
+        providerOptions,
+      )
+    : buildProfileProviderCapabilityInputForDatabase(
+        database,
+        selection.modelId,
+        modelInfo,
+        providerOptions,
+        selection.profileProviderOptions,
+      )
+  const providerCapability = resolveProviderCapability(providerCapabilityInput)
+  const status = resolveModelProfileStatus({
+    selection,
     modelInfo,
     providerOptions,
-    selection.profileProviderOptions,
-  )
-  const providerCapability = resolveProviderCapability(providerCapabilityInput)
+    providerCapability,
+    effectiveProvider,
+  })
   const profile: Omit<
     ResolvedModelProfile,
-    'providerCapabilityInput' | 'providerCapability' | 'requestModel' | 'providerOptions'
+    'providerCapabilityInput' | 'providerCapability' | 'requestModel' | 'providerOptions' | 'status'
   > & {
     requestModel: string
     providerOptions: ModelProfileProviderOptions
@@ -525,6 +634,7 @@ function resolveModelProfileSelection({
     },
     providerCapabilityInput,
     providerCapability,
+    status,
   }
 }
 
@@ -565,9 +675,11 @@ export function resolveServerSafeModelInfo(
   database: Database,
   modelId: string,
   durableRuntimeOptions?: ModelProfileRecordRuntimeOptions,
+  options: { useLegacyFallback?: boolean } = {},
 ): ResolvedModelProfileModelInfo {
   const id = nonBlankString(modelId) ?? ''
   if (!id) return unknownModel('')
+  const useLegacyFallback = options.useLegacyFallback !== false
 
   if (id === 'reverse_proxy') {
     return withCustomFlags(
@@ -769,7 +881,8 @@ export function resolveServerSafeModelInfo(
     )
   }
   if (id.startsWith('gemini-')) {
-    const isVertex = id.endsWith('-vertex') || nonBlankString(database.vertexClientEmail) !== undefined
+    const isVertex =
+      id.endsWith('-vertex') || (useLegacyFallback && nonBlankString(database.vertexClientEmail) !== undefined)
     return withCustomFlags(
       database,
       completeModel({
@@ -918,6 +1031,366 @@ export function resolveProfileRequestModel(profile: Pick<ResolvedModelProfile, '
   return profile.requestModel
 }
 
+interface EffectiveFirstClassProvider {
+  providerId: FirstClassModelProfileProviderId
+  source: 'explicit' | 'inferred'
+}
+
+function resolveEffectiveFirstClassProvider(selection: ModelProfileSelection): EffectiveFirstClassProvider | null {
+  const explicitProviderId = nonBlankString(selection.profileProviderId)
+  if (explicitProviderId) {
+    return isFirstClassProviderId(explicitProviderId) ? { providerId: explicitProviderId, source: 'explicit' } : null
+  }
+
+  const inferredProviderId = inferFirstClassProviderId(selection)
+  return inferredProviderId ? { providerId: inferredProviderId, source: 'inferred' } : null
+}
+
+function inferFirstClassProviderId(selection: ModelProfileSelection): FirstClassModelProfileProviderId | null {
+  const modelId = nonBlankString(selection.modelId)
+  const options = selection.profileProviderOptions
+  if (!modelId) return null
+
+  if (modelId === 'custom-api' && (nonBlankString(options?.baseUrl) || nonBlankString(options?.requestModel))) {
+    return 'custom-api'
+  }
+  if (modelId.endsWith('-vertex') || options?.vertex !== undefined) return 'vertex'
+  if (!nonBlankString(options?.apiKey)) return null
+  if (isOpenAIModelId(modelId)) return 'openai'
+  if (isAnthropicModelId(modelId)) return 'anthropic'
+  if (isGoogleModelId(modelId)) return 'google'
+  return null
+}
+
+function resolveFirstClassModelInfo(
+  providerId: FirstClassModelProfileProviderId,
+  modelId: string,
+  providerOptions?: ModelProfileRecordProviderOptions,
+): ResolvedModelProfileModelInfo {
+  const id = nonBlankString(modelId) ?? ''
+  if (!id) return unknownModel('')
+
+  switch (providerId) {
+    case 'openai': {
+      const known = SERVER_SAFE_MODELS.find(
+        (candidate) => candidate.id === id && candidate.provider === LLMProvider.OpenAI,
+      )
+      if (known) return cloneModelInfo(known)
+      if (id.endsWith('-response-api')) {
+        return completeModel({
+          id,
+          name: id,
+          internalID: id.slice(0, -'-response-api'.length),
+          provider: LLMProvider.OpenAI,
+          format: LLMFormat.OpenAIResponseAPI,
+          flags: [...DEFAULT_OPENAI_FLAGS, LLMFlags.hasPrefill],
+          parameters: OpenAIParameters,
+          tokenizer: LLMTokenizer.tiktokenO200Base,
+        })
+      }
+      return completeModel({
+        id,
+        name: id,
+        internalID: id,
+        provider: LLMProvider.OpenAI,
+        format: LLMFormat.OpenAICompatible,
+        flags: DEFAULT_OPENAI_FLAGS,
+        parameters: OpenAIParameters,
+        tokenizer: LLMTokenizer.tiktokenO200Base,
+      })
+    }
+    case 'anthropic': {
+      const known = AnthropicModels.find((candidate) => candidate.id === id || candidate.internalID === id)
+      if (known) return cloneModelInfo(known)
+      return completeModel({
+        id,
+        name: id,
+        internalID: id,
+        provider: LLMProvider.Anthropic,
+        format: LLMFormat.Anthropic,
+        flags: FIRST_SYSTEM_FLAGS,
+        parameters: ClaudeParameters,
+        tokenizer: LLMTokenizer.Claude,
+      })
+    }
+    case 'google': {
+      const known = GoogleModels.find((candidate) => candidate.id === id || candidate.internalID === id)
+      if (known) return cloneModelInfo(known)
+      return completeModel({
+        id,
+        name: id,
+        internalID: id.startsWith('models/') ? id : `models/${id}`,
+        provider: LLMProvider.GoogleCloud,
+        format: LLMFormat.GoogleCloud,
+        flags: ALTERNATING_FLAGS,
+        parameters: OpenAIParameters,
+        tokenizer: LLMTokenizer.GoogleCloud,
+      })
+    }
+    case 'vertex': {
+      const known = SERVER_SAFE_MODELS.find(
+        (candidate) => candidate.id === id && candidate.provider === LLMProvider.VertexAI,
+      )
+      if (known) return cloneModelInfo(known)
+      const internalID = id.replace(/-vertex$/, '')
+      return completeModel({
+        id,
+        name: id,
+        internalID,
+        provider: LLMProvider.VertexAI,
+        format: LLMFormat.VertexAIGemini,
+        flags: ALTERNATING_FLAGS,
+        parameters: OpenAIParameters,
+        tokenizer: LLMTokenizer.GoogleCloud,
+      })
+    }
+    case 'custom-api':
+      return completeModel({
+        id,
+        name: 'Custom API',
+        internalID: nonBlankString(providerOptions?.requestModel) ?? id,
+        provider: LLMProvider.AsIs,
+        format: LLMFormat.OpenAICompatible,
+        flags: providerOptions?.customApi?.flags ? [...providerOptions.customApi.flags] : DEFAULT_OPENAI_FLAGS,
+        parameters: OPENAI_EXTENDED_PARAMETERS,
+        tokenizer: providerOptions?.customApi?.tokenizer ?? LLMTokenizer.Unknown,
+      })
+  }
+}
+
+function resolveFirstClassProviderOptions(
+  providerId: FirstClassModelProfileProviderId,
+  modelInfo: ResolvedModelProfileModelInfo,
+  requestModel: string,
+  durableProviderOptions?: ModelProfileRecordProviderOptions,
+): ModelProfileProviderOptions {
+  const base: ModelProfileProviderOptions = {
+    requestModel,
+    endpoint: nonBlankString(modelInfo.endpoint),
+    keyIdentifier: nonBlankString(modelInfo.keyIdentifier),
+  }
+  const apiKey = nonBlankString(durableProviderOptions?.apiKey)
+  const baseUrl = nonBlankString(durableProviderOptions?.baseUrl)
+  const shared = {
+    extraHeaders: cloneStringRecord(durableProviderOptions?.extraHeaders),
+    additionalParams: cloneAdditionalParams(durableProviderOptions?.additionalParams),
+  }
+
+  switch (providerId) {
+    case 'openai':
+      return {
+        ...base,
+        apiKey,
+        baseUrl: modelInfo.endpoint ? deriveOpenAIBaseUrl(modelInfo.endpoint) : undefined,
+      }
+    case 'anthropic':
+    case 'google':
+      return { ...base, apiKey }
+    case 'vertex':
+      return {
+        ...base,
+        vertex: {
+          projectId: nonBlankString(durableProviderOptions?.vertex?.projectId),
+          region: nonBlankString(durableProviderOptions?.vertex?.region),
+          clientEmail: nonBlankString(durableProviderOptions?.vertex?.clientEmail),
+          privateKey: nonBlankString(durableProviderOptions?.vertex?.privateKey),
+        },
+      }
+    case 'custom-api':
+      return {
+        ...base,
+        apiKey,
+        baseUrl,
+        ...shared,
+      }
+  }
+}
+
+function buildFirstClassProviderCapabilityInput(
+  providerId: FirstClassModelProfileProviderId,
+  modelId: string,
+  modelInfo: ResolvedModelProfileModelInfo,
+  providerOptions: ModelProfileProviderOptions,
+): ProviderCapabilityInput {
+  return {
+    format: modelInfo.format,
+    aiModel: modelId,
+    endpoint: nonBlankString(modelInfo.endpoint),
+    keyIdentifier: nonBlankString(modelInfo.keyIdentifier),
+    internalID: nonBlankString(modelInfo.internalID),
+    config: {
+      oaiCompApiKeys:
+        modelInfo.keyIdentifier && providerOptions.apiKey
+          ? { [modelInfo.keyIdentifier]: providerOptions.apiKey }
+          : undefined,
+      googleProjectId: providerOptions.vertex?.projectId,
+      vertexRegion: providerOptions.vertex?.region,
+      vertexClientEmail: providerOptions.vertex?.clientEmail,
+      vertexPrivateKey: providerOptions.vertex?.privateKey,
+      claudeAPIKey: modelInfo.format === LLMFormat.AWSBedrockClaude ? providerOptions.apiKey : undefined,
+    },
+  }
+}
+
+function resolveModelProfileStatus({
+  selection,
+  modelInfo,
+  providerOptions,
+  providerCapability,
+  effectiveProvider,
+}: {
+  selection: ModelProfileSelection
+  modelInfo: ResolvedModelProfileModelInfo
+  providerOptions: ModelProfileProviderOptions
+  providerCapability: ProviderCapabilityVerdict
+  effectiveProvider: EffectiveFirstClassProvider | null
+}): ModelProfileStatus {
+  if (selection.source.kind === 'staticModel') {
+    return { bucket: 'compatibility', reasons: ['static-model'] }
+  }
+  if (selection.source.kind !== 'durable-profile') {
+    return { bucket: 'compatibility', reasons: ['legacy-mode'] }
+  }
+
+  const brokenReasons = selection.profileStatusReasons ?? []
+  if (brokenReasons.length > 0) {
+    return { bucket: 'incomplete', reasons: uniqueReasons(brokenReasons) }
+  }
+
+  const rawProviderId = nonBlankString(selection.profileProviderId)
+  if (rawProviderId && !isFirstClassProviderId(rawProviderId)) {
+    return {
+      bucket: 'unsupported',
+      reasons: ['unsupported-provider-id'],
+      unsupportedProviderId: rawProviderId,
+    }
+  }
+
+  if (!effectiveProvider) {
+    return { bucket: 'compatibility', reasons: ['missing-provider-id'] }
+  }
+
+  const incompleteReasons = firstClassIncompleteReasons(
+    effectiveProvider.providerId,
+    selection.modelId,
+    providerOptions,
+  )
+  if (effectiveProvider.source === 'inferred') incompleteReasons.push('inferred-provider-id')
+  if (incompleteReasons.some((reason) => reason !== 'inferred-provider-id')) {
+    return {
+      bucket: 'incomplete',
+      reasons: uniqueReasons(incompleteReasons),
+      providerId: effectiveProvider.providerId,
+      providerIdSource: effectiveProvider.source,
+    }
+  }
+
+  if (modelInfo.unsupportedReason) {
+    return {
+      bucket: 'unsupported',
+      reasons:
+        effectiveProvider.source === 'inferred' ? ['inferred-provider-id', 'unsupported-model'] : ['unsupported-model'],
+      providerId: effectiveProvider.providerId,
+      providerIdSource: effectiveProvider.source,
+    }
+  }
+
+  if (providerCapability.routable === false) {
+    return {
+      bucket: providerCapability.reason === 'config-incomplete' ? 'incomplete' : 'unsupported',
+      reasons: uniqueReasons([
+        ...(effectiveProvider.source === 'inferred' ? (['inferred-provider-id'] as const) : []),
+        providerCapability.reason === 'config-incomplete'
+          ? 'provider-capability-incomplete'
+          : 'provider-capability-unsupported',
+      ]),
+      providerId: effectiveProvider.providerId,
+      providerIdSource: effectiveProvider.source,
+      providerCapabilityReason: providerCapability.reason,
+    }
+  }
+
+  return {
+    bucket: 'ready',
+    reasons: effectiveProvider.source === 'inferred' ? ['inferred-provider-id'] : [],
+    providerId: effectiveProvider.providerId,
+    providerIdSource: effectiveProvider.source,
+  }
+}
+
+function firstClassIncompleteReasons(
+  providerId: FirstClassModelProfileProviderId,
+  modelId: string,
+  providerOptions: ModelProfileProviderOptions,
+): ModelProfileStatusReason[] {
+  const reasons: ModelProfileStatusReason[] = []
+  if (!nonBlankString(modelId)) reasons.push('profile-model-missing')
+
+  switch (providerId) {
+    case 'openai':
+    case 'anthropic':
+    case 'google':
+      if (!nonBlankString(providerOptions.apiKey)) reasons.push('api-key-missing')
+      break
+    case 'vertex':
+      if (!nonBlankString(providerOptions.vertex?.projectId)) reasons.push('vertex-project-id-missing')
+      if (!nonBlankString(providerOptions.vertex?.region)) reasons.push('vertex-region-missing')
+      if (!nonBlankString(providerOptions.vertex?.clientEmail)) reasons.push('vertex-client-email-missing')
+      if (!nonBlankString(providerOptions.vertex?.privateKey)) reasons.push('vertex-private-key-missing')
+      break
+    case 'custom-api':
+      if (!nonBlankString(providerOptions.baseUrl)) reasons.push('base-url-missing')
+      if (!nonBlankString(providerOptions.requestModel)) reasons.push('request-model-missing')
+      break
+  }
+
+  return reasons
+}
+
+function resolveProfileBoundRuntimeSource(
+  database: Database,
+  profileRuntimeOptions?: ModelProfileRecordRuntimeOptions,
+): ModelProfileRecordRuntimeOptions {
+  return mergeRuntimeOptionRecords(
+    HARD_RUNTIME_DEFAULTS,
+    normalizeModelRuntimeDefaults(database.modelRuntimeDefaults),
+    profileRuntimeOptions,
+  )
+}
+
+function mergeRuntimeOptionRecords(
+  ...records: Array<ModelProfileRecordRuntimeOptions | undefined>
+): ModelProfileRecordRuntimeOptions {
+  const merged: ModelProfileRecordRuntimeOptions = {}
+  for (const record of records) {
+    if (!record) continue
+    Object.assign(merged, record)
+    if (record.modelTools !== undefined) merged.modelTools = [...record.modelTools]
+    if (record.customFlags !== undefined) merged.customFlags = [...record.customFlags]
+  }
+  return merged
+}
+
+function isFirstClassProviderId(value: string): value is FirstClassModelProfileProviderId {
+  return FIRST_CLASS_MODEL_PROFILE_PROVIDER_ID_SET.has(value)
+}
+
+function isOpenAIModelId(modelId: string): boolean {
+  return OPENAI_MODEL_IDS.has(modelId) || modelId.startsWith('gpt-') || modelId.endsWith('-response-api')
+}
+
+function isAnthropicModelId(modelId: string): boolean {
+  return ANTHROPIC_MODEL_IDS.has(modelId) || modelId.startsWith('claude-')
+}
+
+function isGoogleModelId(modelId: string): boolean {
+  return GOOGLE_MODEL_IDS.has(modelId) || modelId.startsWith('gemini-')
+}
+
+function uniqueReasons(reasons: readonly ModelProfileStatusReason[]): ModelProfileStatusReason[] {
+  return [...new Set(reasons)]
+}
+
 function resolveDurableModelSelection(database: Database, role: ModelRole): ModelProfileSelection | null {
   const bindings = normalizeModelRoleProfiles(database.modelRoleProfiles)
   const binding = bindings[role]
@@ -931,6 +1404,7 @@ function resolveDurableModelSelection(database: Database, role: ModelRole): Mode
       field: `modelRoleProfiles.${role} -> modelRoleProfiles.${sourceRole}`,
       bypassesRoleResolution: false,
       includeFallbacks: true,
+      allowBroken: true,
     })
   }
 
@@ -940,6 +1414,7 @@ function resolveDurableModelSelection(database: Database, role: ModelRole): Mode
     field: `modelRoleProfiles.${role}`,
     bypassesRoleResolution: false,
     includeFallbacks: true,
+    allowBroken: true,
   })
 }
 
@@ -951,17 +1426,40 @@ function resolveDurableProfileSelection(
     field: string
     bypassesRoleResolution: boolean
     includeFallbacks: boolean
+    allowBroken: boolean
   },
 ): ModelProfileSelection | null {
+  const requestedProfileId = nonBlankString(profileId) ?? profileId.trim()
   const profile = findDurableModelProfile(database.modelProfiles, profileId)
   const modelId = nonBlankString(profile?.modelId)
-  if (!profile || !modelId) return null
+  if (!profile || !modelId) {
+    if (!options.allowBroken) return null
+    return {
+      modelId: '',
+      profileId: profile?.id ?? requestedProfileId,
+      ...(profile?.providerId ? { profileProviderId: profile.providerId } : {}),
+      ...(profile?.providerOptions ? { profileProviderOptions: profile.providerOptions } : {}),
+      ...(profile?.runtimeOptions ? { profileRuntimeOptions: profile.runtimeOptions } : {}),
+      profileFallbacks: [],
+      profileStatusReasons: [profile ? 'profile-model-missing' : 'profile-not-found'],
+      source: {
+        kind: 'durable-profile',
+        role,
+        legacyMode: modelRoleToLegacyModelMode(role),
+        field: options.field,
+        profileId: profile?.id ?? requestedProfileId,
+        profileName: profile?.name,
+        bypassesRoleResolution: options.bypassesRoleResolution,
+      },
+    }
+  }
   const profileRequestModel = nonBlankString(profile.providerOptions?.requestModel)
 
   return {
     modelId,
     profileId: profile.id,
     ...(profileRequestModel ? { profileRequestModel } : {}),
+    ...(profile.providerId ? { profileProviderId: profile.providerId } : {}),
     ...(profile.providerOptions ? { profileProviderOptions: profile.providerOptions } : {}),
     ...(profile.runtimeOptions ? { profileRuntimeOptions: profile.runtimeOptions } : {}),
     profileFallbacks: options.includeFallbacks ? (profile.fallbacks ?? []) : [],
@@ -1329,53 +1827,59 @@ function resolveRuntimeOptions(
   database: Database,
   modelInfo: ResolvedModelProfileModelInfo,
   durableRuntimeOptions?: ModelProfileRecordRuntimeOptions,
+  options: { useLegacyFallback?: boolean } = {},
 ): ModelProfileRuntimeOptions {
+  const useLegacyFallback = options.useLegacyFallback !== false
+  const value = <T>(runtimeValue: T | undefined, legacyValue: T | undefined): T | undefined =>
+    runtimeValue ?? (useLegacyFallback ? legacyValue : undefined)
   return {
-    maxContext: finiteNumber(durableRuntimeOptions?.maxContext ?? database.maxContext),
-    maxResponse: finiteNumber(durableRuntimeOptions?.maxResponse ?? database.maxResponse),
-    temperature: normalizeSampler(durableRuntimeOptions?.temperature ?? database.temperature, { scale: 100 }),
-    rawTemperature: finiteNumber(durableRuntimeOptions?.temperature ?? database.temperature),
-    topP: normalizeSampler(durableRuntimeOptions?.topP ?? database.top_p),
-    topK: normalizeSampler(durableRuntimeOptions?.topK ?? database.top_k),
-    minP: normalizeSampler(durableRuntimeOptions?.minP ?? database.min_p),
-    topA: normalizeSampler(durableRuntimeOptions?.topA ?? database.top_a),
-    repetitionPenalty: normalizeSampler(durableRuntimeOptions?.repetitionPenalty ?? database.repetition_penalty),
-    frequencyPenalty: normalizeSampler(durableRuntimeOptions?.frequencyPenalty ?? database.frequencyPenalty, {
+    maxContext: finiteNumber(value(durableRuntimeOptions?.maxContext, database.maxContext)),
+    maxResponse: finiteNumber(value(durableRuntimeOptions?.maxResponse, database.maxResponse)),
+    temperature: normalizeSampler(value(durableRuntimeOptions?.temperature, database.temperature), { scale: 100 }),
+    rawTemperature: finiteNumber(value(durableRuntimeOptions?.temperature, database.temperature)),
+    topP: normalizeSampler(value(durableRuntimeOptions?.topP, database.top_p)),
+    topK: normalizeSampler(value(durableRuntimeOptions?.topK, database.top_k)),
+    minP: normalizeSampler(value(durableRuntimeOptions?.minP, database.min_p)),
+    topA: normalizeSampler(value(durableRuntimeOptions?.topA, database.top_a)),
+    repetitionPenalty: normalizeSampler(value(durableRuntimeOptions?.repetitionPenalty, database.repetition_penalty)),
+    frequencyPenalty: normalizeSampler(value(durableRuntimeOptions?.frequencyPenalty, database.frequencyPenalty), {
       scale: 100,
     }),
-    presencePenalty: normalizeSampler(durableRuntimeOptions?.presencePenalty ?? database.PresensePenalty, {
+    presencePenalty: normalizeSampler(value(durableRuntimeOptions?.presencePenalty, database.PresensePenalty), {
       scale: 100,
     }),
-    reasoningEffort: finiteNumber(durableRuntimeOptions?.reasoningEffort ?? database.reasoningEffort),
-    thinkingTokens: finiteNumber(durableRuntimeOptions?.thinkingTokens ?? database.thinkingTokens),
-    thinkingType: durableRuntimeOptions?.thinkingType ?? database.thinkingType,
-    deepseekThinkingType: durableRuntimeOptions?.deepseekThinkingType ?? database.deepseekThinkingType,
-    adaptiveThinkingEffort: durableRuntimeOptions?.adaptiveThinkingEffort ?? database.adaptiveThinkingEffort,
-    deepseekReasoningEffort: durableRuntimeOptions?.deepseekReasoningEffort ?? database.deepseekReasoningEffort,
-    verbosity: finiteNumber(durableRuntimeOptions?.verbosity ?? database.verbosity),
-    useStreaming: durableRuntimeOptions?.useStreaming ?? database.useStreaming,
-    genTime: finiteNumber(durableRuntimeOptions?.genTime ?? database.genTime),
-    extractJson: durableRuntimeOptions?.extractJson ?? database.extractJson,
-    jsonSchemaEnabled: durableRuntimeOptions?.jsonSchemaEnabled ?? database.jsonSchemaEnabled,
-    jsonSchema: durableRuntimeOptions?.jsonSchema ?? database.jsonSchema,
-    strictJsonSchema: durableRuntimeOptions?.strictJsonSchema ?? database.strictJsonSchema,
-    outputImageModal: durableRuntimeOptions?.outputImageModal ?? database.outputImageModal,
-    dynamicOutput: durableRuntimeOptions?.dynamicOutput ?? database.dynamicOutput,
+    reasoningEffort: finiteNumber(value(durableRuntimeOptions?.reasoningEffort, database.reasoningEffort)),
+    thinkingTokens: finiteNumber(value(durableRuntimeOptions?.thinkingTokens, database.thinkingTokens)),
+    thinkingType: value(durableRuntimeOptions?.thinkingType, database.thinkingType),
+    deepseekThinkingType: value(durableRuntimeOptions?.deepseekThinkingType, database.deepseekThinkingType),
+    adaptiveThinkingEffort: value(durableRuntimeOptions?.adaptiveThinkingEffort, database.adaptiveThinkingEffort),
+    deepseekReasoningEffort: value(durableRuntimeOptions?.deepseekReasoningEffort, database.deepseekReasoningEffort),
+    verbosity: finiteNumber(value(durableRuntimeOptions?.verbosity, database.verbosity)),
+    useStreaming: value(durableRuntimeOptions?.useStreaming, database.useStreaming),
+    genTime: finiteNumber(value(durableRuntimeOptions?.genTime, database.genTime)),
+    extractJson: value(durableRuntimeOptions?.extractJson, database.extractJson),
+    jsonSchemaEnabled: value(durableRuntimeOptions?.jsonSchemaEnabled, database.jsonSchemaEnabled),
+    jsonSchema: value(durableRuntimeOptions?.jsonSchema, database.jsonSchema),
+    strictJsonSchema: value(durableRuntimeOptions?.strictJsonSchema, database.strictJsonSchema),
+    outputImageModal: value(durableRuntimeOptions?.outputImageModal, database.outputImageModal),
+    dynamicOutput: value(durableRuntimeOptions?.dynamicOutput, database.dynamicOutput),
     modelTools:
       durableRuntimeOptions?.modelTools !== undefined
         ? [...durableRuntimeOptions.modelTools]
-        : Array.isArray(database.modelTools)
+        : useLegacyFallback && Array.isArray(database.modelTools)
           ? [...database.modelTools]
           : [],
-    enableCustomFlags: durableRuntimeOptions?.enableCustomFlags ?? database.enableCustomFlags,
+    enableCustomFlags: value(durableRuntimeOptions?.enableCustomFlags, database.enableCustomFlags),
     customFlags:
       durableRuntimeOptions?.customFlags !== undefined
         ? [...durableRuntimeOptions.customFlags]
-        : Array.isArray(database.customFlags)
+        : useLegacyFallback && Array.isArray(database.customFlags)
           ? [...database.customFlags]
           : undefined,
-    customTokenizer:
-      durableRuntimeOptions?.customTokenizer ?? (database.customTokenizer || tokenizerName(modelInfo.tokenizer)),
+    customTokenizer: value(
+      durableRuntimeOptions?.customTokenizer,
+      database.customTokenizer || tokenizerName(modelInfo.tokenizer),
+    ),
   }
 }
 
@@ -1384,9 +1888,18 @@ function resolveProfileRequestModelFromParts(
   modelId: string,
   modelInfo: ResolvedModelProfileModelInfo,
   profileRequestModel?: string,
+  firstClassProviderId?: FirstClassModelProfileProviderId,
 ): string {
   const durableRequestModel = nonBlankString(profileRequestModel)
   if (durableRequestModel) return durableRequestModel
+  if (firstClassProviderId) {
+    if (firstClassProviderId === 'custom-api') return ''
+    if (firstClassProviderId === 'google' || firstClassProviderId === 'vertex') {
+      const raw = modelInfo.internalID ?? modelInfo.id
+      return raw.startsWith('models/') ? raw.slice('models/'.length) : raw
+    }
+    return modelInfo.internalID ?? modelInfo.id
+  }
 
   const providerCapability = resolveProviderCapability(
     buildProfileProviderCapabilityInputForDatabase(database, modelId, modelInfo),
@@ -1459,15 +1972,18 @@ function withCustomFlags(
   database: Database,
   modelInfo: ResolvedModelProfileModelInfo,
   durableRuntimeOptions?: ModelProfileRecordRuntimeOptions,
+  options: { useLegacyFallback?: boolean } = {},
 ): ResolvedModelProfileModelInfo {
-  const enableCustomFlags = durableRuntimeOptions?.enableCustomFlags ?? database.enableCustomFlags
+  const useLegacyFallback = options.useLegacyFallback ?? durableRuntimeOptions === undefined
+  const enableCustomFlags =
+    durableRuntimeOptions?.enableCustomFlags ?? (useLegacyFallback ? database.enableCustomFlags : false)
   if (enableCustomFlags) {
     return {
       ...modelInfo,
       flags:
         durableRuntimeOptions?.customFlags !== undefined
           ? [...durableRuntimeOptions.customFlags]
-          : Array.isArray(database.customFlags)
+          : useLegacyFallback && Array.isArray(database.customFlags)
             ? [...database.customFlags]
             : [],
     }
@@ -1553,6 +2069,14 @@ function cloneOpenrouterProvider(value?: {
     only: Array.isArray(value.only) ? [...value.only] : undefined,
     ignore: Array.isArray(value.ignore) ? [...value.ignore] : undefined,
   }
+}
+
+function cloneStringRecord(value: Record<string, string> | undefined): Record<string, string> | undefined {
+  return value ? { ...value } : undefined
+}
+
+function cloneAdditionalParams(value: Array<[string, string]> | undefined): Array<[string, string]> | undefined {
+  return value?.map(([key, val]) => [key, val])
 }
 
 function findXcustomEntry(database: Database, modelId: string): CustomModelEntry | null {

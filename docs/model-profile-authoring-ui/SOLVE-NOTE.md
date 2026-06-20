@@ -26,17 +26,18 @@ authoring UI plan.
 - Phase 0 is complete: records now support optional `providerId`, expanded
   provider options, raw model fallback rows, `modelRuntimeDefaults`, and
   Vertex private key masking.
+- Phase 1 is complete: resolved profiles now expose ready/incomplete/
+  compatibility/unsupported status, explicit broken durable bindings stay
+  incomplete, and profile-bound runtime precedence uses `modelRuntimeDefaults`
+  before profile overrides.
 - Current visible model UI still edits legacy flat compatibility fields.
 - `modelProfileUiState` currently drives global provider panel visibility; this
   is not the future profile-first UI behavior.
-- `resolveModelProfile()` currently tolerates broken durable selections by
-  falling back to legacy; the new design intentionally changes that for explicit
-  profile bindings.
-- Runtime Defaults storage exists, but resolver/default precedence behavior is a
-  Phase 1 concern.
+- Runtime Defaults storage and resolver precedence exist, but visible editing
+  does not exist yet.
 
 ## Recommended Next Slice
 
-Continue with Phase 1. It should make provider-first resolution,
-`modelRuntimeDefaults` precedence, explicit broken-binding errors, and profile
-status helpers real before the Svelte editor starts depending on them.
+Continue with Phase 2. It should add atomic profile row commands, role binding
+operations, runtime defaults update support, and legacy-to-profile conversion
+before the Svelte editor starts depending on writable profile workflows.

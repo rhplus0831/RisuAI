@@ -189,7 +189,7 @@ describe('resolveModelProfile legacy role compatibility', () => {
     })
   })
 
-  it('falls back to child legacy resolution when inherited source bindings are absent or incomplete', () => {
+  it('falls back to child legacy resolution when inherited source bindings are legacy or absent', () => {
     const lookupModelInfo = (_database: Database, id: string) => modelInfo({ id, name: id, internalID: id })
 
     for (const database of [
@@ -198,23 +198,6 @@ describe('resolveModelProfile legacy role compatibility', () => {
         modelRoles: { memory: 'memory-role-model' } as Database['modelRoles'],
         modelRoleProfiles: {
           chatAux: { mode: 'legacy' },
-          memory: { mode: 'inherit' },
-        },
-      } as Partial<Database>),
-      db({
-        subModel: 'flat-aux-model',
-        modelRoles: { memory: 'memory-role-model' } as Database['modelRoles'],
-        modelRoleProfiles: {
-          chatAux: { mode: 'profile', profileId: 'missing-profile' },
-          memory: { mode: 'inherit' },
-        },
-      } as Partial<Database>),
-      db({
-        subModel: 'flat-aux-model',
-        modelRoles: { memory: 'memory-role-model' } as Database['modelRoles'],
-        modelProfiles: [{ id: 'durable-aux', name: 'Durable Aux' }],
-        modelRoleProfiles: {
-          chatAux: { mode: 'profile', profileId: 'durable-aux' },
           memory: { mode: 'inherit' },
         },
       } as Partial<Database>),
@@ -237,6 +220,57 @@ describe('resolveModelProfile legacy role compatibility', () => {
         field: 'modelRoles.memory',
       })
     }
+  })
+
+  it('surfaces incomplete state when an inherited source profile binding is broken', () => {
+    const lookupModelInfo = (_database: Database, id: string) => modelInfo({ id, name: id, internalID: id })
+
+    const missing = resolveModelProfile({
+      database: db({
+        subModel: 'flat-aux-model',
+        modelRoles: { memory: 'memory-role-model' } as Database['modelRoles'],
+        modelRoleProfiles: {
+          chatAux: { mode: 'profile', profileId: 'missing-profile' },
+          memory: { mode: 'inherit' },
+        },
+      } as Partial<Database>),
+      role: 'memory',
+      lookupModelInfo,
+    })
+
+    expect(missing.modelId).toBe('')
+    expect(missing.profileId).toBe('missing-profile')
+    expect(missing.status).toMatchObject({
+      bucket: 'incomplete',
+      reasons: ['profile-not-found'],
+    })
+    expect(missing.source).toMatchObject({
+      kind: 'durable-profile',
+      role: 'memory',
+      field: 'modelRoleProfiles.memory -> modelRoleProfiles.chatAux',
+      profileId: 'missing-profile',
+    })
+
+    const modelMissing = resolveModelProfile({
+      database: db({
+        subModel: 'flat-aux-model',
+        modelRoles: { memory: 'memory-role-model' } as Database['modelRoles'],
+        modelProfiles: [{ id: 'durable-aux', name: 'Durable Aux' }],
+        modelRoleProfiles: {
+          chatAux: { mode: 'profile', profileId: 'durable-aux' },
+          memory: { mode: 'inherit' },
+        },
+      } as Partial<Database>),
+      role: 'memory',
+      lookupModelInfo,
+    })
+
+    expect(modelMissing.modelId).toBe('')
+    expect(modelMissing.profileId).toBe('durable-aux')
+    expect(modelMissing.status).toMatchObject({
+      bucket: 'incomplete',
+      reasons: ['profile-model-missing'],
+    })
   })
 
   it('emits durable profile-id fallback refs from a selected durable profile', () => {
@@ -313,37 +347,46 @@ describe('resolveModelProfile legacy role compatibility', () => {
     })
   })
 
-  it('falls back to legacy flat resolution for missing or incomplete durable profiles', () => {
+  it('marks missing or model-less explicit durable profiles incomplete', () => {
     const lookupModelInfo = (_database: Database, id: string) => modelInfo({ id, name: id, internalID: id })
 
-    for (const database of [
-      db({
+    const missing = resolveModelProfile({
+      database: db({
         aiModel: 'flat-main-model',
         modelProfiles: [{ id: 'durable-main', name: 'Durable Main', modelId: 'durable-selected-model' }],
         modelRoleProfiles: {
           chatMain: { mode: 'profile', profileId: 'missing-profile' },
         },
       } as Partial<Database>),
-      db({
-        aiModel: 'flat-main-model',
-        modelProfiles: [{ id: 'durable-main', name: 'Durable Main', modelId: '   ' }],
-        modelRoleProfiles: {
-          chatMain: { mode: 'profile', profileId: 'durable-main' },
-        },
-      } as Partial<Database>),
-      db({
-        aiModel: 'flat-main-model',
-        modelProfiles: [{ id: 'durable-main', name: 'Durable Main' }],
-        modelRoleProfiles: {
-          chatMain: { mode: 'profile', profileId: 'durable-main' },
-        },
-      } as Partial<Database>),
-    ]) {
-      const profile = resolveModelProfile({ database, role: 'chatMain', lookupModelInfo })
+      role: 'chatMain',
+      lookupModelInfo,
+    })
 
-      expect(profile.modelId).toBe('flat-main-model')
-      expect(profile.profileId).toBe('legacy:aiModel:flat-main-model')
-      expect(profile.source).toMatchObject({ kind: 'legacy-aiModel', field: 'aiModel' })
+    expect(missing.modelId).toBe('')
+    expect(missing.profileId).toBe('missing-profile')
+    expect(missing.source).toMatchObject({ kind: 'durable-profile', field: 'modelRoleProfiles.chatMain' })
+    expect(missing.status).toMatchObject({ bucket: 'incomplete', reasons: ['profile-not-found'] })
+
+    for (const modelProfiles of [
+      [{ id: 'durable-main', name: 'Durable Main', modelId: '   ' }],
+      [{ id: 'durable-main', name: 'Durable Main' }],
+    ]) {
+      const profile = resolveModelProfile({
+        database: db({
+          aiModel: 'flat-main-model',
+          modelProfiles,
+          modelRoleProfiles: {
+            chatMain: { mode: 'profile', profileId: 'durable-main' },
+          },
+        } as Partial<Database>),
+        role: 'chatMain',
+        lookupModelInfo,
+      })
+
+      expect(profile.modelId).toBe('')
+      expect(profile.profileId).toBe('durable-main')
+      expect(profile.source).toMatchObject({ kind: 'durable-profile', field: 'modelRoleProfiles.chatMain' })
+      expect(profile.status).toMatchObject({ bucket: 'incomplete', reasons: ['profile-model-missing'] })
     }
   })
 
@@ -913,7 +956,7 @@ describe('resolveModelProfile provider/runtime normalization', () => {
     }
   })
 
-  it('does not let staticModel or legacy fallback selections borrow a selected durable profile apiKey', () => {
+  it('does not let staticModel or broken durable selections borrow a selected durable profile apiKey', () => {
     const database = db({
       aiModel: 'openrouter',
       openrouterKey: 'flat-openrouter-key',
@@ -934,15 +977,16 @@ describe('resolveModelProfile provider/runtime normalization', () => {
     expect(staticProfile.requestModel).toBe('flat/openrouter')
     expect(staticProfile.providerOptions.apiKey).toBe('flat-openrouter-key')
 
-    const legacyProfile = resolveModelProfile({
+    const brokenProfile = resolveModelProfile({
       database: {
         ...database,
         modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'missing-profile' } },
       } as Database,
       role: 'chatMain',
     })
-    expect(legacyProfile.source.kind).toBe('legacy-aiModel')
-    expect(legacyProfile.providerOptions.apiKey).toBe('flat-openrouter-key')
+    expect(brokenProfile.source.kind).toBe('durable-profile')
+    expect(brokenProfile.status).toMatchObject({ bucket: 'incomplete', reasons: ['profile-not-found'] })
+    expect(brokenProfile.providerOptions.apiKey).toBeUndefined()
   })
 
   it('uses durable reverse_proxy endpoint and flags while keeping flat proxy key', () => {
@@ -1577,7 +1621,7 @@ describe('resolveModelProfile provider/runtime normalization', () => {
       useStreaming: false,
       genTime: 3,
       extractJson: 'profile-json',
-      jsonSchema: 'flat-schema',
+      jsonSchema: '',
       jsonSchemaEnabled: true,
       modelTools: ['profile-tool'],
       customFlags: [LLMFlags.hasImageInput],
@@ -1591,7 +1635,7 @@ describe('resolveModelProfile provider/runtime normalization', () => {
     )
   })
 
-  it('uses flat runtime settings for static models and missing durable profile fallbacks', () => {
+  it('uses flat runtime settings for static models and profile defaults for broken durable selections', () => {
     const database = db({
       aiModel: 'flat-main-model',
       maxContext: 8192,
@@ -1647,7 +1691,7 @@ describe('resolveModelProfile provider/runtime normalization', () => {
       customTokenizer: 'flat-tokenizer',
     })
 
-    const missingProfile = resolveModelProfile({
+    const brokenProfile = resolveModelProfile({
       database: {
         ...database,
         modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'missing-profile' } },
@@ -1655,13 +1699,251 @@ describe('resolveModelProfile provider/runtime normalization', () => {
       role: 'chatMain',
       lookupModelInfo: (_database, id) => modelInfo({ id, name: id, internalID: id }),
     })
-    expect(missingProfile.source.kind).toBe('legacy-aiModel')
-    expect(missingProfile.runtimeOptions).toMatchObject({
-      maxContext: 8192,
-      temperature: 0.55,
-      modelTools: ['flat-tool'],
-      customFlags: [LLMFlags.hasStreaming],
+    expect(brokenProfile.source.kind).toBe('durable-profile')
+    expect(brokenProfile.status).toMatchObject({ bucket: 'incomplete', reasons: ['profile-not-found'] })
+    expect(brokenProfile.runtimeOptions).toMatchObject({
+      maxContext: 4000,
+      maxResponse: 500,
+      temperature: 0.8,
+      rawTemperature: 80,
+      topP: 1,
+      topK: 0,
+      frequencyPenalty: 0.7,
+      presencePenalty: 0.7,
+      useStreaming: false,
+      genTime: 1,
+      modelTools: [],
+      customFlags: [],
     })
+  })
+
+  it('applies profile runtime precedence as hard defaults, modelRuntimeDefaults, then profile runtimeOptions', () => {
+    const profile = resolveModelProfile({
+      database: db({
+        maxContext: 999,
+        maxResponse: 888,
+        temperature: 10,
+        modelTools: ['flat-tool'],
+        modelRuntimeDefaults: {
+          maxContext: 12000,
+          maxResponse: 700,
+          temperature: 35,
+          topP: 0.7,
+          useStreaming: true,
+          modelTools: ['default-tool'],
+        },
+        modelProfiles: [
+          {
+            id: 'durable-main',
+            name: 'Durable Main',
+            modelId: 'gpt-5',
+            runtimeOptions: {
+              maxResponse: 2048,
+              topP: 0.5,
+              modelTools: ['profile-tool'],
+            },
+          },
+        ],
+        modelRoleProfiles: {
+          chatMain: { mode: 'profile', profileId: 'durable-main' },
+        },
+      } as Partial<Database>),
+      role: 'chatMain',
+    })
+
+    expect(profile.runtimeOptions).toMatchObject({
+      maxContext: 12000,
+      maxResponse: 2048,
+      temperature: 0.35,
+      rawTemperature: 35,
+      topP: 0.5,
+      useStreaming: true,
+      modelTools: ['profile-tool'],
+    })
+  })
+
+  it('classifies first-class OpenAI profiles from profile-local fields without borrowing global keys', () => {
+    const ready = resolveModelProfile({
+      database: db({
+        openAIKey: 'flat-openai-key',
+        modelProfiles: [
+          {
+            id: 'openai-profile',
+            name: 'OpenAI Profile',
+            providerId: 'openai',
+            modelId: 'gpt-5',
+            providerOptions: { apiKey: 'profile-openai-key' },
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'openai-profile' } },
+      } as Partial<Database>),
+      role: 'chatMain',
+    })
+
+    expect(ready.status).toMatchObject({
+      bucket: 'ready',
+      providerId: 'openai',
+      providerIdSource: 'explicit',
+    })
+    expect(ready.providerOptions.apiKey).toBe('profile-openai-key')
+    expect(ready.modelInfo.unsupportedReason).toBeUndefined()
+
+    const missingKey = resolveModelProfile({
+      database: db({
+        openAIKey: 'flat-openai-key',
+        modelProfiles: [
+          {
+            id: 'openai-profile',
+            name: 'OpenAI Profile',
+            providerId: 'openai',
+            modelId: 'gpt-5',
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'openai-profile' } },
+      } as Partial<Database>),
+      role: 'chatMain',
+    })
+
+    expect(missingKey.providerOptions.apiKey).toBeUndefined()
+    expect(missingKey.status).toMatchObject({
+      bucket: 'incomplete',
+      providerId: 'openai',
+      reasons: ['api-key-missing'],
+    })
+  })
+
+  it('classifies inferred, compatibility, unsupported, Vertex, and Custom API profile statuses', () => {
+    const inferredOpenAI = resolveModelProfile({
+      database: db({
+        modelProfiles: [
+          {
+            id: 'inferred-openai',
+            name: 'Inferred OpenAI',
+            modelId: 'gpt-5',
+            providerOptions: { apiKey: 'profile-openai-key' },
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'inferred-openai' } },
+      } as Partial<Database>),
+      role: 'chatMain',
+    })
+
+    expect(inferredOpenAI.status).toMatchObject({
+      bucket: 'ready',
+      providerId: 'openai',
+      providerIdSource: 'inferred',
+      reasons: ['inferred-provider-id'],
+    })
+
+    const compatibility = resolveModelProfile({
+      database: db({
+        openrouterKey: 'openrouter-key',
+        modelProfiles: [
+          {
+            id: 'compat-profile',
+            name: 'Compatibility Profile',
+            modelId: 'openrouter',
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'compat-profile' } },
+      } as Partial<Database>),
+      role: 'chatMain',
+    })
+
+    expect(compatibility.providerCapability).toEqual({ routable: true, provider: 'openrouter' })
+    expect(compatibility.status).toMatchObject({
+      bucket: 'compatibility',
+      reasons: ['missing-provider-id'],
+    })
+
+    const unsupported = resolveModelProfile({
+      database: db({
+        modelProfiles: [
+          {
+            id: 'unsupported-profile',
+            name: 'Unsupported Profile',
+            providerId: 'mistral',
+            modelId: 'mistral-large',
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'unsupported-profile' } },
+      } as Partial<Database>),
+      role: 'chatMain',
+    })
+
+    expect(unsupported.status).toMatchObject({
+      bucket: 'unsupported',
+      reasons: ['unsupported-provider-id'],
+      unsupportedProviderId: 'mistral',
+    })
+
+    const vertex = resolveModelProfile({
+      database: db({
+        google: { accessToken: 'flat-google-key', projectId: 'flat-project' },
+        vertexRegion: 'global-region',
+        vertexClientEmail: 'global-client@example.com',
+        vertexPrivateKey: 'global-private-key',
+        modelProfiles: [
+          {
+            id: 'vertex-profile',
+            name: 'Vertex Profile',
+            providerId: 'vertex',
+            modelId: 'gemini-2.5-pro-vertex',
+            providerOptions: {
+              vertex: {
+                projectId: 'profile-project',
+                region: 'profile-region',
+                clientEmail: 'profile-client@example.com',
+              },
+            },
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'vertex-profile' } },
+      } as Partial<Database>),
+      role: 'chatMain',
+    })
+
+    expect(vertex.providerOptions.vertex).toEqual({
+      projectId: 'profile-project',
+      region: 'profile-region',
+      clientEmail: 'profile-client@example.com',
+      privateKey: undefined,
+    })
+    expect(vertex.status).toMatchObject({
+      bucket: 'incomplete',
+      providerId: 'vertex',
+      reasons: ['vertex-private-key-missing'],
+    })
+
+    const customApi = resolveModelProfile({
+      database: db({
+        proxyKey: 'flat-proxy-key',
+        modelProfiles: [
+          {
+            id: 'custom-api-profile',
+            name: 'Custom API Profile',
+            providerId: 'custom-api',
+            modelId: 'custom-api',
+            providerOptions: {
+              baseUrl: 'http://localhost:1234/v1',
+              requestModel: 'local-model',
+            },
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'custom-api-profile' } },
+      } as Partial<Database>),
+      role: 'chatMain',
+    })
+
+    expect(customApi.status).toMatchObject({
+      bucket: 'ready',
+      providerId: 'custom-api',
+    })
+    expect(customApi.providerOptions).toMatchObject({
+      baseUrl: 'http://localhost:1234/v1',
+      requestModel: 'local-model',
+    })
+    expect(customApi.providerOptions.apiKey).toBeUndefined()
   })
 
   it('exports provider capability input and request model helpers for resolved profiles', () => {

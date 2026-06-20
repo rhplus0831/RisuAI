@@ -1,6 +1,6 @@
 # Phase 1: Resolver Runtime Status
 
-Status: not started.
+Status: completed.
 
 Goal: teach profile resolution about provider-first profiles, runtime defaults,
 and explicit profile status before commands or UI depend on those semantics.
@@ -67,4 +67,3 @@ pnpm exec tsc -p tsconfig.client-lib.json
   profiles; those tests must be updated deliberately.
 - Prompt assembly may still use `db.aiModel` assumptions. Record exact follow-up
   needs for Phase 5 if this phase exposes mismatches.
-

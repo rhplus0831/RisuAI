@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest'
 import type { Database } from '../storage/database.svelte'
 import { LLMFlags, LLMFormat, LLMProvider, LLMTokenizer, OpenAIParameters, type LLMModel } from './types'
 import { MODEL_ROLES, type ModelRole } from './modelRoles'
-import { resolveModelProfileUiState } from './modelProfileUiState'
+import {
+  getModelProfileRoleStatus,
+  getModelProfileRolesByStatus,
+  modelProfileRoleHasStatus,
+  resolveModelProfileUiState,
+} from './modelProfileUiState'
 
 function db(overrides: Partial<Database> = {}): Database {
   return {
@@ -193,6 +198,42 @@ describe('resolveModelProfileUiState', () => {
     ])
     expect(state.usesStreamingModel).toBe(true)
     expect(state.usesGeminiThinkingModel).toBe(true)
+  })
+
+  it('exposes role status maps and helpers without changing resolved profile access', () => {
+    const state = resolveModelProfileUiState({
+      database: db({
+        modelProfiles: [
+          {
+            id: 'ready-openai',
+            name: 'Ready OpenAI',
+            providerId: 'openai',
+            modelId: 'gpt-5',
+            providerOptions: { apiKey: 'profile-key' },
+          },
+          {
+            id: 'broken-profile',
+            name: 'Broken Profile',
+          },
+        ],
+        modelRoleProfiles: {
+          chatMain: { mode: 'profile', profileId: 'ready-openai' },
+          chatAux: { mode: 'profile', profileId: 'broken-profile' },
+        },
+      } as Partial<Database>),
+    })
+
+    expect(state.resolvedProfiles.chatMain.status.bucket).toBe('ready')
+    expect(getModelProfileRoleStatus(state, 'chatMain').bucket).toBe('ready')
+    expect(modelProfileRoleHasStatus(state, 'chatAux', 'incomplete')).toBe(true)
+    expect(getModelProfileRolesByStatus(state, 'ready')).toContain('chatMain')
+    expect(state.roleStatuses.chatAux).toMatchObject({
+      bucket: 'incomplete',
+      reasons: ['profile-model-missing'],
+    })
+    expect(state.rolesByStatus.compatibility).toEqual(
+      MODEL_ROLES.filter((role) => role !== 'chatMain' && role !== 'chatAux'),
+    )
   })
 
   it.each([

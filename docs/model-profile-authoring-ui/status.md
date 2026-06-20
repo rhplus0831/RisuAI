@@ -9,7 +9,7 @@ runtime support but deferred the full visible authoring UI.
 ## Snapshot
 
 - Plan state: open.
-- Current phase: Phase 1 not started.
+- Current phase: Phase 2 not started.
 - Current implementation state:
   - `Database.modelProfiles` and `Database.modelRoleProfiles` exist.
   - Visible role settings show resolved summaries, but still edit legacy flat
@@ -17,12 +17,14 @@ runtime support but deferred the full visible authoring UI.
   - Durable records now include optional provider-first `providerId`, raw model
     fallback rows, first-class Custom API/Vertex provider shape support, and
     `modelRuntimeDefaults`.
-  - Profile-bound resolution can still fall back to legacy when durable
-    selection fails.
+  - Explicit broken durable profile bindings now surface incomplete status
+    instead of silently falling back to legacy.
+  - Profile-bound runtime resolution uses hard defaults, `modelRuntimeDefaults`,
+    then profile overrides without borrowing legacy flat parameter fields.
   - Profile row commands and conversion commands do not exist.
   - `BotSettings.svelte` still owns the model settings surface, parameter
     submenu, and global provider panels.
-- Current verification state: Phase 0 focused tests and TypeScript checks
+- Current verification state: Phase 0 and Phase 1 focused tests and TypeScript checks
   passed.
 
 ## Phase Router
@@ -30,7 +32,7 @@ runtime support but deferred the full visible authoring UI.
 | Phase | Status | Purpose |
 | --- | --- | --- |
 | Phase 0: Contract And Schema | Completed | Expand profile record/runtime-default schema, defaulting, storage, and secret masking. |
-| Phase 1: Resolver Runtime Status | Not started | Add provider-first resolution, runtime default precedence, explicit broken-binding behavior, and status helpers. |
+| Phase 1: Resolver Runtime Status | Completed | Add provider-first resolution, runtime default precedence, explicit broken-binding behavior, and status helpers. |
 | Phase 2: Profile Commands And Conversion | Not started | Add atomic profile row commands, role binding operations, and legacy-to-profile conversion. |
 | Phase 3: Settings Model Shell | Not started | Build Settings -> Model Roles/Profiles tabs, conversion prompt, and legacy compatibility panel. |
 | Phase 4: Profile Editor Providers | Not started | Implement full profile editor panels for OpenAI, Anthropic, Google, Vertex, and Custom API plus defaults/fallbacks. |
@@ -50,6 +52,12 @@ runtime support but deferred the full visible authoring UI.
 - Verification passed focused client/server Vitest suites, client-lib
   TypeScript, strict Fastify TypeScript, resolver regression coverage, and
   `git diff --check`.
+- Phase 1 added resolved profile status buckets, profile-local first-class
+  provider handling, broken-binding incomplete states, and profile-bound runtime
+  default precedence.
+- Verification passed resolver/UI-state/provider-capability suites, model role
+  routing, server prompt/durable generation preflight checks, client-lib
+  TypeScript, strict Fastify TypeScript, and `git diff --check`.
 
 ## Latest Decisions Captured
 

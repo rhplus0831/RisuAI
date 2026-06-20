@@ -2,17 +2,20 @@
 
 Date: 2026-06-20
 
-Phase 0 has landed and passed focused verification. The current proof level is
-schema/default/preservation/masking coverage plus TypeScript checks.
+Phase 1 has landed and passed focused verification. The current proof level is
+schema/default/preservation/masking coverage, resolver runtime/status coverage,
+generation preflight regression coverage, and TypeScript checks.
 
 ## Current Proof
 
 - Phase 0 contract/schema implementation completed.
+- Phase 1 resolver/runtime/status implementation completed.
 - A verification agent inspected scope and confirmed no material UI,
-  row-command, conversion, generation guardrail, or provider-first resolver
-  behavior changes landed in Phase 0.
+  row-command, conversion, or server route guardrail changes landed in Phase 1.
 - Focused schema, defaults, masking, settings command, preset, loadout, and
   resolver regression suites passed.
+- Focused resolver, UI-state, provider-capability, model role routing, server
+  prompt assembly, and durable generation regression suites passed.
 - Client-lib TypeScript and strict Fastify TypeScript checks passed.
 
 ## Commands To Run As Phases Land
