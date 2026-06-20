@@ -176,3 +176,80 @@ describe('ModelRoleList source contract', () => {
     expect(source).toContain('language.modelRoles.legacySeparateModels')
   })
 })
+
+describe('Model profile-first role shell source contract', () => {
+  it('uses the canonical MODEL_ROLES order for the profile-first roles tab', () => {
+    const source = readSource('src/lib/Setting/Pages/Model/ModelProfileRoleList.svelte')
+
+    expect(source).toContain('import { MODEL_ROLES, modelRoleProfileInheritSource, type ModelRole }')
+    expect(source).toContain('{#each MODEL_ROLES as role (role)}')
+    expect(source).not.toContain("role: 'chatMain'")
+    expect(source).not.toContain("role: 'chatAux'")
+  })
+
+  it('applies role binding drafts through the Phase 2 command wrapper', () => {
+    const source = readSource('src/lib/Setting/Pages/Model/ModelProfileRoleList.svelte')
+
+    expect(source).toContain('let draftBindings = $state<ModelRoleProfileMap>')
+    expect(source).toContain('let changedBindings = $derived.by(() => collectChangedBindings())')
+    expect(source).toContain('function resetDraft()')
+    expect(source).toContain('async function applyDraft()')
+    expect(source).toContain('runServerCommand({')
+    expect(source).toContain('command: (baseRevision) =>')
+    expect(source).toContain('updateModelRoleProfilesCommand({')
+    expect(source).toContain('baseRevision,')
+    expect(source).toContain('bindings,')
+    expect(source).toContain('{language.modelProfiles.cancel}')
+    expect(source).toContain('{applying ? language.modelProfiles.applying : language.modelProfiles.apply}')
+  })
+
+  it('does not write legacy flat fields in the profile-first roles tab', () => {
+    const source = readSource('src/lib/Setting/Pages/Model/ModelProfileRoleList.svelte')
+
+    for (const legacyWrite of [
+      "createServerBackedSettingDraft<string>('aiModel'",
+      "createServerBackedSettingDraft<string>('subModel'",
+      "createServerBackedSettingDraft<NormalizedModelRoleOverrides>('modelRoles'",
+      "createServerBackedSettingDraft<boolean>('seperateModelsForAxModels'",
+      'aiModelDraft.value = model',
+      'subModelDraft.value = model',
+      '[role]: model.trim()',
+      'setRoleOverride(',
+      'setBaseRoleModel(',
+    ]) {
+      expect(source).not.toContain(legacyWrite)
+    }
+  })
+
+  it('renders the required profile-first role summary columns', () => {
+    const source = readSource('src/lib/Setting/Pages/Model/ModelProfileRoleList.svelte')
+
+    for (const column of [
+      'language.modelProfiles.roleColumn',
+      'language.modelProfiles.bindingModeColumn',
+      'language.modelProfiles.inheritedSourceColumn',
+      'language.modelProfiles.effectiveProfileColumn',
+      'language.modelProfiles.providerModelColumn',
+      'language.modelProfiles.statusColumn',
+      'language.modelProfiles.fallbackColumn',
+    ]) {
+      expect(source).toContain(column)
+    }
+
+    expect(source).toContain('function effectiveProfileName(role: ModelRole): string')
+    expect(source).toContain('function providerModelSummary(role: ModelRole): string')
+    expect(source).toContain('function statusLabel(role: ModelRole): string')
+    expect(source).toContain('function fallbackCount(role: ModelRole): string')
+  })
+})
+
+describe('Model profile-first profiles tab source contract', () => {
+  it('renders fallback counts from each durable profile record', () => {
+    const source = readSource('src/lib/Setting/Pages/Model/ModelProfileList.svelte')
+
+    expect(source).toContain('language.modelProfiles.fallbackColumn')
+    expect(source).toContain('function fallbackCount(profile: ModelProfileRecord): string')
+    expect(source).toContain('return language.modelRoles.fallbackCount(profile.fallbacks?.length ?? 0)')
+    expect(source).toContain('{fallbackCount(profile)}')
+  })
+})

@@ -1,6 +1,6 @@
 # Phase 3: Settings Model Shell
 
-Status: not started.
+Status: completed.
 
 Goal: replace the normal Settings -> Model workflow with profile-first Roles and
 Profiles tabs while keeping legacy compatibility available but deemphasized.
@@ -73,4 +73,3 @@ Use `pnpm dev:agent` for browser smoke when the shell is interactive.
   must not break prompt parameter override behavior.
 - Existing setting components autosave. The profile shell should use explicit
   drafts for role binding changes.
-

@@ -111,4 +111,22 @@ describe('changeLanguage same-code cache', () => {
     expect(langModule.language).toBe(fallbackAfterSwitch)
     expect(cloneSpy).toHaveBeenCalledTimes(1)
   })
+
+  it('L37: non-English languages inherit model profile shell strings from English', async () => {
+    const { langModule, languageEnglish } = await loadLanguageModule()
+
+    langModule.changeLanguage('ko')
+
+    expect(langModule.language.modelProfiles.settingsTitle).toBe(languageEnglish.modelProfiles.settingsTitle)
+    expect(langModule.language.modelProfiles.rolesTab).toBe(languageEnglish.modelProfiles.rolesTab)
+    expect(langModule.language.modelProfiles.bindingModes.profile).toBe(
+      languageEnglish.modelProfiles.bindingModes.profile,
+    )
+    expect(langModule.language.modelProfiles.providerNames['custom-api']).toBe(
+      languageEnglish.modelProfiles.providerNames['custom-api'],
+    )
+    expect(langModule.language.modelProfiles.statusReasons['profile-model-missing']).toBe(
+      languageEnglish.modelProfiles.statusReasons['profile-model-missing'],
+    )
+  })
 })

@@ -34,14 +34,17 @@ authoring UI plan.
   runtime defaults updates, create-and-bind, delete reassignment, duplication,
   legacy conversion, client wrappers, and `modelProfile` targeted projection now
   exist.
-- Current visible model UI still edits legacy flat compatibility fields.
-- `modelProfileUiState` currently drives global provider panel visibility; this
-  is not the future profile-first UI behavior.
+- Phase 3 is complete: Settings -> Model now uses a profile-first shell with
+  Roles and Profiles tabs, command-backed role binding drafts, profile list
+  action shells, runtime defaults summary, a legacy conversion prompt, and
+  Advanced Legacy Settings for old role controls.
 - Runtime Defaults storage and resolver precedence exist, but visible editing
   does not exist yet.
+- Full provider editor panels, runtime defaults editing, fallback editing, and
+  generation guardrails do not exist yet.
 
 ## Recommended Next Slice
 
-Continue with Phase 3. It should build the Settings -> Model Roles/Profiles
-shell, conversion prompt/compatibility panel, and command-backed role/profile
-surfaces without implementing the full provider editor panels yet.
+Continue with Phase 4. It should replace the profile action shells with the full
+profile editor for first-class providers, runtime defaults, and fallbacks
+without implementing generation guardrails yet.

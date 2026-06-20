@@ -47,6 +47,20 @@ describe('BotSettings prompt edit persistence contracts', () => {
   })
 })
 
+describe('BotSettings model settings shell routing', () => {
+  it('routes Settings -> Model to the profile-first shell while preserving prompt controls', () => {
+    const source = botSettingsSource()
+
+    expect(source).toContain("import ModelSettingsShell from './Model/ModelSettingsShell.svelte'")
+    expect(source).toMatch(/\{#if settingsKind === 'model'\}\s*<ModelSettingsShell \/>/)
+    expect(source).toContain('{:else}\n  <h2')
+    expect(source).toContain("{#if settingsKind === 'prompt'}")
+    expect(source).toContain("setPromptPresetModelOverrideEnabled('parameters', enabled)")
+    expect(source).toContain('<SettingRenderer')
+    expect(source).toContain("presetMirrorTarget={promptParameterOverrideMode ? 'promptModelOverrides' : 'auto'}")
+  })
+})
+
 describe('BotSettings model-role provider visibility', () => {
   it('uses the profile UI adapter to reveal provider-specific settings', () => {
     const source = botSettingsSource()
