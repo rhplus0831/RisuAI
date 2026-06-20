@@ -21,9 +21,11 @@ import {
   type NormalizedModelRoleOverrides,
 } from '../model/modelRoles'
 import {
+  normalizeModelRuntimeDefaults,
   normalizeModelProfiles,
   normalizeModelRoleProfiles,
   type ModelProfileRecord,
+  type ModelProfileRecordRuntimeOptions,
   type ModelRoleProfileMap,
 } from '../model/modelProfileRecords'
 import { type HypaV3Settings, type HypaV3Preset, createHypaV3Preset } from '../process/memory/hypav3'
@@ -129,9 +131,12 @@ function normalizeModelRoleSettings(data: Partial<Pick<Database, 'modelRoles' | 
   data.seperateModels = normalizeLegacySeperateModels(data.seperateModels)
 }
 
-function normalizeModelProfileSettings(data: Partial<Pick<Database, 'modelProfiles' | 'modelRoleProfiles'>>): void {
+function normalizeModelProfileSettings(
+  data: Partial<Pick<Database, 'modelProfiles' | 'modelRoleProfiles' | 'modelRuntimeDefaults'>>,
+): void {
   data.modelProfiles = normalizeModelProfiles(data.modelProfiles)
   data.modelRoleProfiles = normalizeModelRoleProfiles(data.modelRoleProfiles)
+  data.modelRuntimeDefaults = normalizeModelRuntimeDefaults(data.modelRuntimeDefaults)
 }
 
 function normalizeSeperateParameters(data: Partial<Pick<Database, 'seperateParameters'>>): void {
@@ -330,6 +335,7 @@ const SET_PRESET_ROLLBACK_KEYS = [
   'modelRoles',
   'modelProfiles',
   'modelRoleProfiles',
+  'modelRuntimeDefaults',
   'currentPluginProvider',
   'textgenWebUIStreamURL',
   'textgenWebUIBlockingURL',
@@ -1745,6 +1751,7 @@ export interface Database {
   modelRoles: NormalizedModelRoleOverrides
   modelProfiles: ModelProfileRecord[]
   modelRoleProfiles: ModelRoleProfileMap
+  modelRuntimeDefaults: ModelProfileRecordRuntimeOptions
   jailbreakToggle: boolean
   loreBookDepth: number
   loreBookToken: number
@@ -2464,6 +2471,7 @@ export interface botPreset {
   modelRoles?: NormalizedModelRoleOverrides
   modelProfiles?: ModelProfileRecord[]
   modelRoleProfiles?: ModelRoleProfileMap
+  modelRuntimeDefaults?: ModelProfileRecordRuntimeOptions
   currentPluginProvider?: string
   textgenWebUIStreamURL?: string
   textgenWebUIBlockingURL?: string
@@ -2946,6 +2954,7 @@ function saveCurrentPresetLocal() {
     modelRoles: safeStructuredClone(db.modelRoles),
     modelProfiles: safeStructuredClone(db.modelProfiles),
     modelRoleProfiles: safeStructuredClone(db.modelRoleProfiles),
+    modelRuntimeDefaults: safeStructuredClone(normalizeModelRuntimeDefaults(db.modelRuntimeDefaults)),
     currentPluginProvider: db.currentPluginProvider,
     textgenWebUIStreamURL: db.textgenWebUIStreamURL,
     textgenWebUIBlockingURL: db.textgenWebUIBlockingURL,
@@ -3838,6 +3847,7 @@ function applySplitPresetFieldsToDatabase(
 function normalizeSplitPresetAppliedValue(databaseKey: string, value: unknown): unknown {
   if (databaseKey === 'modelProfiles') return normalizeModelProfiles(value)
   if (databaseKey === 'modelRoleProfiles') return normalizeModelRoleProfiles(value)
+  if (databaseKey === 'modelRuntimeDefaults') return normalizeModelRuntimeDefaults(value)
   return value
 }
 
@@ -3860,6 +3870,7 @@ export function setPreset(db: Database, newPres: botPreset) {
   db.modelRoles = normalizeModelRoleOverrides(newPres.modelRoles ?? db.modelRoles)
   db.modelProfiles = normalizeModelProfiles(newPres.modelProfiles ?? db.modelProfiles)
   db.modelRoleProfiles = normalizeModelRoleProfiles(newPres.modelRoleProfiles ?? db.modelRoleProfiles)
+  db.modelRuntimeDefaults = normalizeModelRuntimeDefaults(newPres.modelRuntimeDefaults ?? db.modelRuntimeDefaults)
   db.currentPluginProvider = newPres.currentPluginProvider ?? db.currentPluginProvider
   db.textgenWebUIStreamURL = newPres.textgenWebUIStreamURL ?? db.textgenWebUIStreamURL
   db.textgenWebUIBlockingURL = newPres.textgenWebUIBlockingURL ?? db.textgenWebUIBlockingURL

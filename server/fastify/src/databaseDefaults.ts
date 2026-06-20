@@ -13,6 +13,7 @@ import {
 } from '../../../src/ts/model/modelRoles.js'
 import {
   createDefaultModelRoleProfiles,
+  normalizeModelRuntimeDefaults,
   normalizeModelProfiles,
   normalizeModelRoleProfiles,
 } from '../../../src/ts/model/modelProfileRecords.js'
@@ -226,6 +227,7 @@ export function normalizeDatabaseDefaults(
   normalizeModelRoleSettings(database)
   setDefault(database, 'modelProfiles', [])
   setDefault(database, 'modelRoleProfiles', createDefaultModelRoleProfiles())
+  setDefault(database, 'modelRuntimeDefaults', {})
   normalizeModelProfileSettings(database)
   setDefault(database, 'waifuWidth', 100)
   setDefault(database, 'waifuWidth2', 100)
@@ -747,6 +749,7 @@ function normalizeModelRoleSettings(database: JsonRecord): void {
 function normalizeModelProfileSettings(database: JsonRecord): void {
   database.modelProfiles = normalizeModelProfiles(database.modelProfiles)
   database.modelRoleProfiles = normalizeModelRoleProfiles(database.modelRoleProfiles)
+  database.modelRuntimeDefaults = normalizeModelRuntimeDefaults(database.modelRuntimeDefaults)
 }
 
 function normalizeSeperateParameters(database: JsonRecord): void {

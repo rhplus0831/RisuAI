@@ -122,7 +122,15 @@ describe('provider secret masking', () => {
     const database = {
       modelProfiles: [
         { id: 'profile-a', name: 'A', providerOptions: { apiKey: 'profile-a-key', requestModel: 'a-wire' } },
-        { id: 'profile-b', name: 'B', providerOptions: { apiKey: 'profile-b-key', requestModel: 'b-wire' } },
+        {
+          id: 'profile-b',
+          name: 'B',
+          providerOptions: {
+            apiKey: 'profile-b-key',
+            requestModel: 'b-wire',
+            vertex: { privateKey: 'profile-b-vertex-key', region: 'us-central1' },
+          },
+        },
         { id: 'profile-c', name: 'C', providerOptions: { apiKey: '', requestModel: 'c-wire' } },
       ],
     }
@@ -130,7 +138,15 @@ describe('provider secret masking', () => {
     expect(maskProviderSecrets(database)).toEqual({
       modelProfiles: [
         { id: 'profile-a', name: 'A', providerOptions: { apiKey: MASKED_PROVIDER_SECRET, requestModel: 'a-wire' } },
-        { id: 'profile-b', name: 'B', providerOptions: { apiKey: MASKED_PROVIDER_SECRET, requestModel: 'b-wire' } },
+        {
+          id: 'profile-b',
+          name: 'B',
+          providerOptions: {
+            apiKey: MASKED_PROVIDER_SECRET,
+            requestModel: 'b-wire',
+            vertex: { privateKey: MASKED_PROVIDER_SECRET, region: 'us-central1' },
+          },
+        },
         { id: 'profile-c', name: 'C', providerOptions: { apiKey: '', requestModel: 'c-wire' } },
       ],
     })
@@ -140,7 +156,11 @@ describe('provider secret masking', () => {
         {
           id: 'profile-b',
           name: 'B renamed',
-          providerOptions: { apiKey: MASKED_PROVIDER_SECRET, requestModel: 'b-new-wire' },
+          providerOptions: {
+            apiKey: MASKED_PROVIDER_SECRET,
+            requestModel: 'b-new-wire',
+            vertex: { privateKey: MASKED_PROVIDER_SECRET, region: 'europe-west1' },
+          },
         },
         {
           id: 'profile-a',
@@ -151,7 +171,15 @@ describe('provider secret masking', () => {
     })
 
     expect(resolved.modelProfiles).toEqual([
-      { id: 'profile-b', name: 'B renamed', providerOptions: { apiKey: 'profile-b-key', requestModel: 'b-new-wire' } },
+      {
+        id: 'profile-b',
+        name: 'B renamed',
+        providerOptions: {
+          apiKey: 'profile-b-key',
+          requestModel: 'b-new-wire',
+          vertex: { privateKey: 'profile-b-vertex-key', region: 'europe-west1' },
+        },
+      },
       { id: 'profile-a', name: 'A renamed', providerOptions: { apiKey: 'profile-a-key', requestModel: 'a-new-wire' } },
     ])
   })
@@ -206,7 +234,9 @@ describe('maskProviderSecretsInPlace (M4)', () => {
     OaiCompAPIKeys: { deepseek: 'ds-key' },
     botPresets: [{ id: 'preset-a', openAIKey: 'sk-preset', proxyKey: 'proxy-key' }],
     modelPresets: [{ id: 'model-a', openAIKey: 'sk-model-preset', proxyKey: 'model-proxy-key' }],
-    modelProfiles: [{ id: 'profile-a', providerOptions: { apiKey: 'sk-profile' } }],
+    modelProfiles: [
+      { id: 'profile-a', providerOptions: { apiKey: 'sk-profile', vertex: { privateKey: 'vertex-key' } } },
+    ],
     customModels: [{ id: 'xcustom:::a', key: 'custom-key' }],
     characters: [{ chaId: 'char-a', name: 'Ada', oaiTTSConfig: { apiKey: 'tts-key' } }],
   })
@@ -221,6 +251,7 @@ describe('maskProviderSecretsInPlace (M4)', () => {
     expect(inPlace.modelPresets[0].openAIKey).toBe(MASKED_PROVIDER_SECRET)
     expect(inPlace.modelPresets[0].proxyKey).toBe(MASKED_PROVIDER_SECRET)
     expect(inPlace.modelProfiles[0].providerOptions.apiKey).toBe(MASKED_PROVIDER_SECRET)
+    expect(inPlace.modelProfiles[0].providerOptions.vertex.privateKey).toBe(MASKED_PROVIDER_SECRET)
     expect(inPlace.customModels[0].key).toBe(MASKED_PROVIDER_SECRET)
     expect(inPlace.characters[0].oaiTTSConfig.apiKey).toBe(MASKED_PROVIDER_SECRET)
     expect(inPlace.aiModel).toBe('gpt4o-chatgpt')

@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { MODEL_ROLES } from './modelRoles'
-import { LLMFlags, LLMFormat } from './types'
+import { LLMFlags, LLMFormat, LLMTokenizer } from './types'
 import {
   createDefaultModelRoleProfiles,
+  normalizeModelRuntimeDefaults,
   normalizeModelProfiles,
   normalizeModelRoleProfiles,
+  readModelRuntimeDefaults,
   readModelProfiles,
   readModelRoleProfiles,
 } from './modelProfileRecords'
@@ -23,10 +25,19 @@ describe('model profile records', () => {
         {
           id: ' profile-a ',
           name: ' Primary ',
+          providerId: ' openai ',
           modelId: ' gpt-5 ',
           providerOptions: {
             requestModel: ' wire-model ',
             baseUrl: ' risu::https://proxy.example.com ',
+            extraHeaders: { ' X-Key ': ' value ', '   ': 'drop', 'X-Bad': 7 },
+            additionalParams: [
+              [' header::Authorization ', ' bearer '],
+              ['   ', 'drop'],
+              ['body::trace', ' enabled '],
+              ['bad'],
+              [7, 'drop'],
+            ],
             reverseProxy: {
               autofillRequestUrl: false,
               oobaSystemHoist: true,
@@ -56,10 +67,20 @@ describe('model profile records', () => {
               thinkingMode: ' medium ',
               ollamaApiKey: 'must-drop',
             },
+            vertex: {
+              projectId: ' project-a ',
+              region: ' us-central1 ',
+              clientEmail: ' svc@example.iam.gserviceaccount.com ',
+              privateKey: ' -----BEGIN PRIVATE KEY-----\\nabc\\n-----END PRIVATE KEY----- ',
+              accessToken: 'must-drop',
+            },
+            customApi: {
+              tokenizer: LLMTokenizer.Mistral,
+              flags: [LLMFlags.hasStreaming, 999, 'bad', LLMFlags.hasFirstSystemPrompt],
+              url: 'must-drop',
+            },
             apiKey: ' profile-api-key ',
             headers: { Authorization: 'must-drop' },
-            extraHeaders: { 'X-Key': 'must-drop' },
-            additionalParams: [['header::Authorization', 'must-drop']],
           },
           runtimeOptions: {
             maxContext: 32768,
@@ -96,8 +117,11 @@ describe('model profile records', () => {
           fallbacks: [
             { mode: 'profile', profileId: ' fallback-a ' },
             { mode: 'profile', profileId: 'fallback-a' },
+            { mode: 'model', modelId: ' fallback-model ' },
+            { mode: 'model', modelId: 'fallback-model' },
             { mode: 'legacy', profileId: 'must-drop' },
             { mode: 'profile', profileId: '   ' },
+            { mode: 'model', modelId: '   ' },
             { mode: 'profile', profileId: 42 },
             { profileId: 'must-drop' },
           ],
@@ -114,11 +138,17 @@ describe('model profile records', () => {
       {
         id: 'profile-a',
         name: 'Primary',
+        providerId: 'openai',
         modelId: 'gpt-5',
         providerOptions: {
           apiKey: 'profile-api-key',
           requestModel: 'wire-model',
           baseUrl: 'risu::https://proxy.example.com',
+          extraHeaders: { 'X-Key': 'value' },
+          additionalParams: [
+            ['header::Authorization', 'bearer'],
+            ['body::trace', 'enabled'],
+          ],
           reverseProxy: {
             autofillRequestUrl: false,
             oobaSystemHoist: true,
@@ -142,6 +172,16 @@ describe('model profile records', () => {
             requestFormat: LLMFormat.OpenAIResponseAPI,
             modelSource: 'cloud',
             thinkingMode: 'medium',
+          },
+          vertex: {
+            projectId: 'project-a',
+            region: 'us-central1',
+            clientEmail: 'svc@example.iam.gserviceaccount.com',
+            privateKey: '-----BEGIN PRIVATE KEY-----\\nabc\\n-----END PRIVATE KEY-----',
+          },
+          customApi: {
+            tokenizer: LLMTokenizer.Mistral,
+            flags: [LLMFlags.hasStreaming, LLMFlags.hasFirstSystemPrompt],
           },
         },
         runtimeOptions: {
@@ -175,7 +215,10 @@ describe('model profile records', () => {
           modelTools: ['tool-a', 'tool-b'],
           customFlags: [LLMFlags.hasImageInput, LLMFlags.hasStreaming],
         },
-        fallbacks: [{ mode: 'profile', profileId: 'fallback-a' }],
+        fallbacks: [
+          { mode: 'profile', profileId: 'fallback-a' },
+          { mode: 'model', modelId: 'fallback-model' },
+        ],
       },
       { id: 'profile-b', name: 'Identity Only' },
       { id: 'profile-c', name: 'profile-c' },
@@ -190,11 +233,14 @@ describe('model profile records', () => {
         {
           id: ' profile-a ',
           name: ' Primary ',
+          providerId: ' vertex ',
           modelId: ' gpt-5 ',
           providerOptions: {
             requestModel: ' wire ',
             apiKey: ' profile-api-key ',
             baseUrl: ' https://proxy.example.com/v1 ',
+            extraHeaders: { 'X-Test': ' yes ' },
+            additionalParams: [[' header::X-Test ', ' true ']],
             reverseProxy: { autofillRequestUrl: false, oobaSystemHoist: true, oobaArgs: { mode: 'chat' } },
             openrouter: {
               fallback: false,
@@ -212,6 +258,16 @@ describe('model profile records', () => {
               modelSource: ' cloud ',
               thinkingMode: ' high ',
             },
+            vertex: {
+              projectId: ' project-a ',
+              region: ' us-central1 ',
+              clientEmail: ' svc@example.iam.gserviceaccount.com ',
+              privateKey: ' private-key ',
+            },
+            customApi: {
+              tokenizer: LLMTokenizer.Cohere,
+              flags: [LLMFlags.hasFirstSystemPrompt],
+            },
           },
           runtimeOptions: {
             maxContext: 65536,
@@ -227,7 +283,10 @@ describe('model profile records', () => {
             customFlags: [LLMFlags.hasImageInput],
             customTokenizer: ' custom-tokenizer ',
           },
-          fallbacks: [{ mode: 'profile', profileId: ' fallback-profile ' }],
+          fallbacks: [
+            { mode: 'profile', profileId: ' fallback-profile ' },
+            { mode: 'model', modelId: ' fallback-model ' },
+          ],
         },
         { id: ' identity-only ', name: ' Identity Only ', modelId: '   ', providerOptions: { requestModel: '   ' } },
       ]),
@@ -235,11 +294,14 @@ describe('model profile records', () => {
       {
         id: 'profile-a',
         name: 'Primary',
+        providerId: 'vertex',
         modelId: 'gpt-5',
         providerOptions: {
           apiKey: 'profile-api-key',
           requestModel: 'wire',
           baseUrl: 'https://proxy.example.com/v1',
+          extraHeaders: { 'X-Test': 'yes' },
+          additionalParams: [['header::X-Test', 'true']],
           reverseProxy: { autofillRequestUrl: false, oobaSystemHoist: true, oobaArgs: { mode: 'chat' } },
           openrouter: {
             fallback: false,
@@ -257,6 +319,16 @@ describe('model profile records', () => {
             modelSource: 'cloud',
             thinkingMode: 'high',
           },
+          vertex: {
+            projectId: 'project-a',
+            region: 'us-central1',
+            clientEmail: 'svc@example.iam.gserviceaccount.com',
+            privateKey: 'private-key',
+          },
+          customApi: {
+            tokenizer: LLMTokenizer.Cohere,
+            flags: [LLMFlags.hasFirstSystemPrompt],
+          },
         },
         runtimeOptions: {
           maxContext: 65536,
@@ -272,7 +344,10 @@ describe('model profile records', () => {
           customFlags: [LLMFlags.hasImageInput],
           customTokenizer: 'custom-tokenizer',
         },
-        fallbacks: [{ mode: 'profile', profileId: 'fallback-profile' }],
+        fallbacks: [
+          { mode: 'profile', profileId: 'fallback-profile' },
+          { mode: 'model', modelId: 'fallback-model' },
+        ],
       },
       { id: 'identity-only', name: 'Identity Only' },
     ])
@@ -311,8 +386,6 @@ describe('model profile records', () => {
       'OaiCompAPIKeys',
       'customModels',
       'headers',
-      'extraHeaders',
-      'additionalParams',
     ]) {
       expect(() =>
         readModelProfiles([{ id: 'profile-a', name: 'Primary', providerOptions: { [field]: 'secret' } }]),
@@ -331,6 +404,10 @@ describe('model profile records', () => {
       'modelProfiles[0].modelId must be a string when present',
     )
 
+    expect(() => readModelProfiles([{ id: 'profile-a', name: 'Primary', providerId: 123 }])).toThrow(
+      'modelProfiles[0].providerId must be a string when present',
+    )
+
     expect(() => readModelProfiles([{ id: 'profile-a', name: 'Primary', fallbacks: {} }])).toThrow(
       'modelProfiles[0].fallbacks must be an array when present',
     )
@@ -345,11 +422,27 @@ describe('model profile records', () => {
 
     expect(() =>
       readModelProfiles([{ id: 'profile-a', name: 'Primary', fallbacks: [{ mode: 'legacy', profileId: 'x' }] }]),
-    ).toThrow('modelProfiles[0].fallbacks[0].mode must be profile')
+    ).toThrow('modelProfiles[0].fallbacks[0].mode must be profile or model')
 
     expect(() =>
       readModelProfiles([{ id: 'profile-a', name: 'Primary', fallbacks: [{ mode: 'profile', profileId: '' }] }]),
     ).toThrow('modelProfiles[0].fallbacks[0].profileId must be a non-empty string')
+
+    expect(() =>
+      readModelProfiles([{ id: 'profile-a', name: 'Primary', fallbacks: [{ mode: 'model', modelId: '' }] }]),
+    ).toThrow('modelProfiles[0].fallbacks[0].modelId must be a non-empty string')
+
+    expect(() =>
+      readModelProfiles([
+        { id: 'profile-a', name: 'Primary', fallbacks: [{ mode: 'profile', profileId: 'x', modelId: 'y' }] },
+      ]),
+    ).toThrow('modelProfiles[0].fallbacks[0].modelId is only supported for model mode')
+
+    expect(() =>
+      readModelProfiles([
+        { id: 'profile-a', name: 'Primary', fallbacks: [{ mode: 'model', modelId: 'x', profileId: 'y' }] },
+      ]),
+    ).toThrow('modelProfiles[0].fallbacks[0].profileId is only supported for profile mode')
 
     expect(() =>
       readModelProfiles([
@@ -363,6 +456,19 @@ describe('model profile records', () => {
         },
       ]),
     ).toThrow('modelProfiles[0].fallbacks[1].profileId must not duplicate fallback-a')
+
+    expect(() =>
+      readModelProfiles([
+        {
+          id: 'profile-a',
+          name: 'Primary',
+          fallbacks: [
+            { mode: 'model', modelId: 'fallback-a' },
+            { mode: 'model', modelId: ' fallback-a ' },
+          ],
+        },
+      ]),
+    ).toThrow('modelProfiles[0].fallbacks[1].modelId must not duplicate fallback-a')
 
     expect(() =>
       readModelProfiles([{ id: 'profile-a', name: 'Primary', providerOptions: { requestModel: 123 } }]),
@@ -396,6 +502,20 @@ describe('model profile records', () => {
 
     expect(() => readModelProfiles([{ id: 'profile-a', name: 'Primary', providerOptions: { baseUrl: 123 } }])).toThrow(
       'modelProfiles[0].providerOptions.baseUrl must be a string when present',
+    )
+
+    expect(() =>
+      readModelProfiles([{ id: 'profile-a', name: 'Primary', providerOptions: { extraHeaders: [] } }]),
+    ).toThrow('modelProfiles[0].providerOptions.extraHeaders must be an object with string values when present')
+
+    expect(() =>
+      readModelProfiles([{ id: 'profile-a', name: 'Primary', providerOptions: { extraHeaders: { 'X-Test': 42 } } }]),
+    ).toThrow('modelProfiles[0].providerOptions.extraHeaders must be an object with string values when present')
+
+    expect(() =>
+      readModelProfiles([{ id: 'profile-a', name: 'Primary', providerOptions: { additionalParams: ['bad'] } }]),
+    ).toThrow(
+      'modelProfiles[0].providerOptions.additionalParams must be an array of [string, string] pairs when present',
     )
 
     expect(() =>
@@ -457,6 +577,89 @@ describe('model profile records', () => {
         },
       ]),
     ).toThrow('modelProfiles[0].providerOptions.ollama.requestFormat must be a valid LLMFormat when present')
+
+    expect(() =>
+      readModelProfiles([
+        {
+          id: 'profile-a',
+          name: 'Primary',
+          providerOptions: { vertex: { privateKey: 42 } },
+        },
+      ]),
+    ).toThrow('modelProfiles[0].providerOptions.vertex.privateKey must be a string when present')
+
+    expect(() =>
+      readModelProfiles([
+        {
+          id: 'profile-a',
+          name: 'Primary',
+          providerOptions: { vertex: { accessToken: 'not-supported' } },
+        },
+      ]),
+    ).toThrow('modelProfiles[0].providerOptions.vertex.accessToken is not supported')
+
+    expect(() =>
+      readModelProfiles([
+        {
+          id: 'profile-a',
+          name: 'Primary',
+          providerOptions: { customApi: { tokenizer: 999 } },
+        },
+      ]),
+    ).toThrow('modelProfiles[0].providerOptions.customApi.tokenizer must be a valid LLMTokenizer when present')
+
+    expect(() =>
+      readModelProfiles([
+        {
+          id: 'profile-a',
+          name: 'Primary',
+          providerOptions: { customApi: { flags: [999] } },
+        },
+      ]),
+    ).toThrow(
+      'modelProfiles[0].providerOptions.customApi.flags must be an array of valid LLMFlags numeric values when present',
+    )
+  })
+
+  it('normalizes and reads model runtime defaults with the profile runtime schema', () => {
+    expect(normalizeModelRuntimeDefaults(undefined)).toEqual({})
+    expect(
+      normalizeModelRuntimeDefaults({
+        maxContext: 8192,
+        temperature: 55,
+        extractJson: ' object ',
+        useStreaming: false,
+        modelTools: [' tool-a ', '', 7],
+        customFlags: [LLMFlags.hasStreaming, 999, 'bad'],
+        unsupportedRuntimeField: true,
+      }),
+    ).toEqual({
+      maxContext: 8192,
+      temperature: 55,
+      extractJson: 'object',
+      useStreaming: false,
+      modelTools: ['tool-a'],
+      customFlags: [LLMFlags.hasStreaming],
+    })
+
+    expect(
+      readModelRuntimeDefaults({
+        topP: 0.8,
+        customTokenizer: ' cl100k_base ',
+        enableCustomFlags: true,
+        customFlags: [LLMFlags.hasImageInput],
+      }),
+    ).toEqual({
+      topP: 0.8,
+      customTokenizer: 'cl100k_base',
+      enableCustomFlags: true,
+      customFlags: [LLMFlags.hasImageInput],
+    })
+
+    expect(() => readModelRuntimeDefaults({ unknown: true })).toThrow('modelRuntimeDefaults.unknown is not supported')
+    expect(() => readModelRuntimeDefaults({ customFlags: [999] })).toThrow(
+      'modelRuntimeDefaults.customFlags must be an array of valid LLMFlags numeric values when present',
+    )
   })
 
   it('rejects unknown role keys and malformed binding shapes for settings commands', () => {

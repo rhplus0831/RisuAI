@@ -20,7 +20,11 @@ import {
   normalizeLegacySeperateModels,
   normalizeModelRoleOverrides,
 } from '../../../../src/ts/model/modelRoles.js'
-import { normalizeModelProfiles, normalizeModelRoleProfiles } from '../../../../src/ts/model/modelProfileRecords.js'
+import {
+  normalizeModelRuntimeDefaults,
+  normalizeModelProfiles,
+  normalizeModelRoleProfiles,
+} from '../../../../src/ts/model/modelProfileRecords.js'
 
 type JsonRecord = Record<string, unknown>
 type PresetKind = 'modelPreset' | 'promptPreset'
@@ -359,6 +363,7 @@ function normalizeSplitPresetRoleAdjacentFields(record: JsonRecord): void {
     'modelRoles',
     'modelProfiles',
     'modelRoleProfiles',
+    'modelRuntimeDefaults',
     'seperateModels',
     'fallbackModels',
     'seperateParameters',
@@ -373,6 +378,7 @@ function normalizeSplitPresetAppliedValue(databaseKey: string, value: unknown): 
   if (databaseKey === 'modelRoles') return normalizeModelRoleOverrides(value)
   if (databaseKey === 'modelProfiles') return normalizeModelProfiles(value)
   if (databaseKey === 'modelRoleProfiles') return normalizeModelRoleProfiles(value)
+  if (databaseKey === 'modelRuntimeDefaults') return normalizeModelRuntimeDefaults(value)
   if (databaseKey === 'seperateModels') return normalizeLegacySeperateModels(value)
   if (databaseKey === 'fallbackModels') return normalizeLegacyFallbackModels(value)
   if (databaseKey === 'seperateParameters') return normalizeSeperateParametersValue(value)

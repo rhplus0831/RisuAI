@@ -44,7 +44,7 @@ import {
   type PromptPreset,
 } from './database.svelte'
 import { MODEL_ROLES } from '../model/modelRoles'
-import { LLMFormat } from '../model/types'
+import { LLMFlags, LLMFormat, LLMTokenizer } from '../model/types'
 
 interface CapturedFetch {
   url: string
@@ -250,11 +250,14 @@ describe('model profile database normalization', () => {
         {
           id: ' profile-a ',
           name: ' Primary ',
+          providerId: ' openai ',
           modelId: ' gpt-5 ',
           providerOptions: {
             requestModel: ' wire-model ',
             baseUrl: ' https://profile.example.com/v1 ',
             apiKey: ' profile-secret ',
+            extraHeaders: { 'X-Test': ' yes ' },
+            additionalParams: [[' header::X-Test ', ' true ']],
             openAIKey: 'must-drop',
             openrouter: {
               fallback: false,
@@ -263,6 +266,13 @@ describe('model profile database normalization', () => {
             },
             nanogpt: { providerHint: ' profile-nano ', useSubscriptionEndpoint: true },
             ollama: { url: ' http://localhost:11434 ', requestFormat: LLMFormat.OpenAIResponseAPI },
+            vertex: {
+              projectId: ' project-a ',
+              region: ' us-central1 ',
+              clientEmail: ' svc@example.iam.gserviceaccount.com ',
+              privateKey: ' private-key ',
+            },
+            customApi: { tokenizer: LLMTokenizer.Mistral, flags: [LLMFlags.hasStreaming] },
           },
         } as any,
         { id: 'profile-a', name: 'Duplicate' },
@@ -273,6 +283,13 @@ describe('model profile database normalization', () => {
         memory: { mode: 'profile', profileId: 'profile-a' },
         translate: { mode: 'legacy' },
       } as any,
+      modelRuntimeDefaults: {
+        maxContext: 8192,
+        temperature: 55,
+        modelTools: [' tool-a ', ''],
+        customFlags: [LLMFlags.hasImageInput],
+        unsupportedRuntimeField: true,
+      } as any,
     })
     const data = clonePlain(DBState.db)
 
@@ -282,11 +299,14 @@ describe('model profile database normalization', () => {
       {
         id: 'profile-a',
         name: 'Primary',
+        providerId: 'openai',
         modelId: 'gpt-5',
         providerOptions: {
           requestModel: 'wire-model',
           baseUrl: 'https://profile.example.com/v1',
           apiKey: 'profile-secret',
+          extraHeaders: { 'X-Test': 'yes' },
+          additionalParams: [['header::X-Test', 'true']],
           openrouter: {
             fallback: false,
             middleOut: true,
@@ -294,6 +314,13 @@ describe('model profile database normalization', () => {
           },
           nanogpt: { providerHint: 'profile-nano', useSubscriptionEndpoint: true },
           ollama: { url: 'http://localhost:11434', requestFormat: LLMFormat.OpenAIResponseAPI },
+          vertex: {
+            projectId: 'project-a',
+            region: 'us-central1',
+            clientEmail: 'svc@example.iam.gserviceaccount.com',
+            privateKey: 'private-key',
+          },
+          customApi: { tokenizer: LLMTokenizer.Mistral, flags: [LLMFlags.hasStreaming] },
         },
       },
       { id: 'profile-b', name: 'Identity Only' },
@@ -302,6 +329,12 @@ describe('model profile database normalization', () => {
     expect(DBState.db.modelRoleProfiles).toEqual({
       ...Object.fromEntries(MODEL_ROLES.map((role) => [role, { mode: 'legacy' }])),
       memory: { mode: 'profile', profileId: 'profile-a' },
+    })
+    expect(DBState.db.modelRuntimeDefaults).toEqual({
+      maxContext: 8192,
+      temperature: 55,
+      modelTools: ['tool-a'],
+      customFlags: [LLMFlags.hasImageInput],
     })
   })
 
@@ -313,6 +346,7 @@ describe('model profile database normalization', () => {
       modelRoleProfiles: normalizedModelRoleProfiles({
         memory: { mode: 'profile', profileId: 'profile-a' },
       }) as Database['modelRoleProfiles'],
+      modelRuntimeDefaults: { maxContext: 8192, temperature: 55 },
     })
     const calls = stubFailedPresetCommand()
 
@@ -327,6 +361,7 @@ describe('model profile database normalization', () => {
       modelRoleProfiles: expect.objectContaining({
         memory: { mode: 'profile', profileId: 'profile-a' },
       }),
+      modelRuntimeDefaults: { maxContext: 8192, temperature: 55 },
     })
   })
 
@@ -336,6 +371,7 @@ describe('model profile database normalization', () => {
       modelRoleProfiles: normalizedModelRoleProfiles({
         memory: { mode: 'profile', profileId: 'base-profile' },
       }) as Database['modelRoleProfiles'],
+      modelRuntimeDefaults: { maxContext: 4096 },
     })
 
     setPreset(
@@ -354,6 +390,10 @@ describe('model profile database normalization', () => {
           memory: { mode: 'profile', profileId: ' target-profile ' },
           translate: { mode: 'legacy' },
         } as never,
+        modelRuntimeDefaults: {
+          temperature: 66,
+          modelTools: [' preset-tool ', ''],
+        } as never,
       }),
     )
 
@@ -370,6 +410,10 @@ describe('model profile database normalization', () => {
         memory: { mode: 'profile', profileId: 'target-profile' },
       }),
     )
+    expect(DBState.db.modelRuntimeDefaults).toEqual({
+      temperature: 66,
+      modelTools: ['preset-tool'],
+    })
   })
 })
 
@@ -1107,6 +1151,10 @@ describe('preset command rollback (L21)', () => {
       modelRoleProfiles: {
         memory: { mode: 'profile', profileId: ' model-profile ' },
       },
+      modelRuntimeDefaults: {
+        maxContext: 7777,
+        modelTools: [' model-tool ', ''],
+      },
       seperateModelsForAxModels: true,
       seperateModels: {
         memory: 'model-separate-memory',
@@ -1136,6 +1184,9 @@ describe('preset command rollback (L21)', () => {
       modelProfiles: [{ id: 'prompt-profile', name: 'Prompt Profile' }],
       modelRoleProfiles: {
         memory: { mode: 'profile', profileId: 'prompt-profile' },
+      },
+      modelRuntimeDefaults: {
+        maxContext: 9999,
       },
       seperateModelsForAxModels: true,
       seperateModels: {
@@ -1167,6 +1218,7 @@ describe('preset command rollback (L21)', () => {
       modelRoleProfiles: normalizedModelRoleProfiles({
         memory: { mode: 'profile', profileId: 'base-profile' },
       }) as Database['modelRoleProfiles'],
+      modelRuntimeDefaults: { maxContext: 1111 },
       seperateModelsForAxModels: false,
       seperateModels: {
         memory: 'base-separate-memory',
@@ -1213,6 +1265,10 @@ describe('preset command rollback (L21)', () => {
         memory: { mode: 'profile', profileId: 'prompt-profile' },
       }),
     )
+    expect(DBState.db.modelRuntimeDefaults).toEqual({
+      maxContext: 7777,
+      modelTools: ['model-tool'],
+    })
     expect(DBState.db.seperateModelsForAxModels).toBe(true)
     expect(DBState.db.seperateModels).toMatchObject({
       memory: 'prompt-separate-memory',

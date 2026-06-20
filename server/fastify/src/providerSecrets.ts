@@ -43,6 +43,7 @@ const SECRET_PATHS: PathSegment[][] = [
   ['modelPresets', WILDCARD, 'openAIKey'],
   ['modelPresets', WILDCARD, 'proxyKey'],
   ['modelProfiles', WILDCARD, 'providerOptions', 'apiKey'],
+  ['modelProfiles', WILDCARD, 'providerOptions', 'vertex', 'privateKey'],
   ['nanogptKey'],
   ['NAIApiKey'],
   ['novelai', 'token'],

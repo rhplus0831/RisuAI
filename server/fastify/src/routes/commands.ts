@@ -24,9 +24,11 @@ import {
 } from '../../../../src/ts/model/modelRoles.js'
 import {
   ModelProfileRecordValidationError,
+  normalizeModelRuntimeDefaults,
   normalizeModelProfiles,
   normalizeModelRoleProfiles,
   readModelProfiles,
+  readModelRuntimeDefaults,
   readModelRoleProfiles,
 } from '../../../../src/ts/model/modelProfileRecords.js'
 import {
@@ -638,6 +640,7 @@ const SETTINGS_GROUP_KEYS: Record<SettingsGroup, readonly string[]> = {
     'modelRoles',
     'modelProfiles',
     'modelRoleProfiles',
+    'modelRuntimeDefaults',
     'textgenWebUIStreamURL',
     'textgenWebUIBlockingURL',
     'hordeConfig',
@@ -1275,6 +1278,7 @@ const OBJECT_SETTING_KEYS = new Set([
   'hypaCustomSettings',
   'hypaV3Settings',
   'fallbackModels',
+  'modelRuntimeDefaults',
   'modelRoleProfiles',
   'modelRoles',
   'NAIImgConfig',
@@ -6290,6 +6294,9 @@ function sanitizeSettingValue(key: string, value: unknown): unknown {
   if (key === 'modelRoleProfiles') {
     return readSettingsModelRoleProfiles(value)
   }
+  if (key === 'modelRuntimeDefaults') {
+    return readSettingsModelRuntimeDefaults(value)
+  }
   if (key === 'customSidebarItems') {
     return readCustomSidebarItems(value)
   }
@@ -6307,6 +6314,14 @@ function readSettingsModelProfiles(value: unknown): unknown {
 function readSettingsModelRoleProfiles(value: unknown): unknown {
   try {
     return readModelRoleProfiles(value)
+  } catch (error) {
+    throwModelProfileValidationError(error)
+  }
+}
+
+function readSettingsModelRuntimeDefaults(value: unknown): unknown {
+  try {
+    return readModelRuntimeDefaults(value)
   } catch (error) {
     throwModelProfileValidationError(error)
   }
@@ -6418,6 +6433,7 @@ function normalizeSettingsPatchValue(key: string, value: unknown): unknown {
   if (key === 'modelRoles') return normalizeModelRoleOverrides(value)
   if (key === 'modelProfiles') return normalizeModelProfiles(value)
   if (key === 'modelRoleProfiles') return normalizeModelRoleProfiles(value)
+  if (key === 'modelRuntimeDefaults') return normalizeModelRuntimeDefaults(value)
   if (key === 'seperateModels') return normalizeLegacySeperateModels(value)
   if (key === 'fallbackModels') return normalizeLegacyFallbackModels(value)
   if (key === 'seperateParameters') return normalizeSeperateParametersValue(value)

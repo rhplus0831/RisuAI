@@ -16,6 +16,7 @@ export const MODEL_PRESET_FIELDS = [
   'modelRoles',
   'modelProfiles',
   'modelRoleProfiles',
+  'modelRuntimeDefaults',
   'currentPluginProvider',
   'textgenWebUIStreamURL',
   'textgenWebUIBlockingURL',

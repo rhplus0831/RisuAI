@@ -2,20 +2,18 @@
 
 Date: 2026-06-20
 
-No implementation verification has been run for this workstream yet. The current
-proof level is planning and read-only exploration only.
+Phase 0 has landed and passed focused verification. The current proof level is
+schema/default/preservation/masking coverage plus TypeScript checks.
 
 ## Current Proof
 
-- Read `STRUCTURE.md`.
-- Read `.archived-docs/model-config-profiles/` root and phase docs.
-- Read [`../model-profile-ui-ux-decisions.md`](../model-profile-ui-ux-decisions.md).
-- Ran read-only exploration across:
-  - durable profile data/resolver surfaces
-  - command/persistence/masking surfaces
-  - Settings -> Model Svelte UI surfaces
-  - provider dispatch/preflight surfaces
-- Created this plan folder from those findings.
+- Phase 0 contract/schema implementation completed.
+- A verification agent inspected scope and confirmed no material UI,
+  row-command, conversion, generation guardrail, or provider-first resolver
+  behavior changes landed in Phase 0.
+- Focused schema, defaults, masking, settings command, preset, loadout, and
+  resolver regression suites passed.
+- Client-lib TypeScript and strict Fastify TypeScript checks passed.
 
 ## Commands To Run As Phases Land
 
@@ -37,9 +35,8 @@ before finishing.
 
 ## Verification Gaps
 
-- No schema changes have been implemented.
 - No profile row commands have been implemented.
 - No UI changes have been implemented.
 - No generation guardrails have been implemented.
-- No tests have been run for this workstream.
-
+- No browser smoke has been run for this workstream because Phase 0 did not
+  change the live Settings -> Model UI.

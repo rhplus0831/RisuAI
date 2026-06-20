@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createInitialDatabase, normalizeDatabaseDefaults } from '../src/databaseDefaults.js'
 import { MODEL_ROLES } from '../../../src/ts/model/modelRoles.js'
+import { LLMFlags } from '../../../src/ts/model/types.js'
 
 describe('database defaults', () => {
   it('creates canonical model roles and script compatibility keys', () => {
@@ -11,6 +12,7 @@ describe('database defaults', () => {
     expect(database.modelRoleProfiles).toEqual(
       Object.fromEntries(MODEL_ROLES.map((role) => [role, { mode: 'legacy' }])),
     )
+    expect(database.modelRuntimeDefaults).toEqual({})
     expect(database.seperateModels).toMatchObject({
       memory: '',
       emotion: '',
@@ -78,6 +80,13 @@ describe('database defaults', () => {
           memory: { mode: 'profile', profileId: 'profile-a' },
           translate: { mode: 'legacy' },
         },
+        modelRuntimeDefaults: {
+          maxContext: 8192,
+          temperature: 55,
+          modelTools: [' tool-a ', ''],
+          customFlags: [LLMFlags.hasImageInput, 999],
+          unsupportedRuntimeField: true,
+        },
       },
       { providerDefaults: false },
     )
@@ -112,6 +121,12 @@ describe('database defaults', () => {
     expect(database.modelRoleProfiles).toEqual({
       ...Object.fromEntries(MODEL_ROLES.map((role) => [role, { mode: 'legacy' }])),
       memory: { mode: 'profile', profileId: 'profile-a' },
+    })
+    expect(database.modelRuntimeDefaults).toEqual({
+      maxContext: 8192,
+      temperature: 55,
+      modelTools: ['tool-a'],
+      customFlags: [LLMFlags.hasImageInput],
     })
   })
 })

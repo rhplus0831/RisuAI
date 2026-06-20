@@ -513,7 +513,7 @@ function resolveModelProfileSelection({
     fallbacks: staticModelId
       ? []
       : selection.profileFallbacks
-        ? resolveDurableFallbackRefs(selection.profileFallbacks)
+        ? resolveDurableFallbackRefs(selection.profileFallbacks, normalizedRole)
         : resolveLegacyFallbackRefs(database, normalizedRole),
   }
 
@@ -528,11 +528,24 @@ function resolveModelProfileSelection({
   }
 }
 
-function resolveDurableFallbackRefs(fallbacks: ModelProfileRecordFallbackRef[]): ModelProfileFallbackRef[] {
-  return fallbacks.map((fallback) => ({
-    kind: 'profile-id',
-    profileId: fallback.profileId,
-  }))
+function resolveDurableFallbackRefs(
+  fallbacks: ModelProfileRecordFallbackRef[],
+  role: ModelRole,
+): ModelProfileFallbackRef[] {
+  const fallbackKey = fallbackKeyForRole(role) ?? 'model'
+  return fallbacks.map((fallback) => {
+    if (fallback.mode === 'model') {
+      return {
+        kind: 'legacy-model-id',
+        fallbackKey,
+        modelId: fallback.modelId,
+      }
+    }
+    return {
+      kind: 'profile-id',
+      profileId: fallback.profileId,
+    }
+  })
 }
 
 export function resolveLegacyFallbackRefs(database: Database, roleLike: ModelRoleLike): ModelProfileFallbackRef[] {

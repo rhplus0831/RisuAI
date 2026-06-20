@@ -10,6 +10,7 @@ import {
 } from '../src/commands/splitPresets.js'
 import { MASKED_PROVIDER_SECRET } from '../src/providerSecrets.js'
 import { MODEL_ROLES } from '../../../src/ts/model/modelRoles.js'
+import { LLMFlags } from '../../../src/ts/model/types.js'
 
 const normalizedModelRoles = (overrides: Record<string, string> = {}) => ({
   chatMain: '',
@@ -81,6 +82,11 @@ describe('split preset command normalization', () => {
         translate: { mode: 'legacy' },
         unknown: { mode: 'profile', profileId: 'ignored' },
       },
+      modelRuntimeDefaults: {
+        maxContext: 8192,
+        modelTools: [' tool-a ', ''],
+        customFlags: [LLMFlags.hasImageInput, 999],
+      },
       seperateModels: { memory: ' memory-aux ', translate: 42, scriptAux: ' script-aux ' },
       fallbackModels: { model: ['primary-fallback', '', 7], scriptMain: ['script-fallback'] },
       seperateParameters: {
@@ -105,6 +111,11 @@ describe('split preset command normalization', () => {
       modelRoleProfiles: normalizedModelRoleProfiles({
         memory: { mode: 'profile', profileId: 'profile-a' },
       }),
+      modelRuntimeDefaults: {
+        maxContext: 8192,
+        modelTools: ['tool-a'],
+        customFlags: [LLMFlags.hasImageInput],
+      },
       seperateModels: normalizedSeperateModels({ memory: 'memory-aux', scriptAux: 'script-aux' }),
       fallbackModels: normalizedFallbackModels({
         model: ['primary-fallback'],
@@ -130,6 +141,10 @@ describe('split preset command normalization', () => {
         },
       ],
       modelRoleProfiles: { scriptMain: { mode: 'profile', profileId: ' dirty-profile ' } },
+      modelRuntimeDefaults: {
+        temperature: 66,
+        modelTools: [' dirty-tool ', ''],
+      },
       seperateModels: { otherAx: ' dirty-aux ' },
       fallbackModels: { memory: ['dirty-memory', ''] },
       seperateParameters: { scriptAux: { min_p: 0.2 } },
@@ -148,6 +163,10 @@ describe('split preset command normalization', () => {
       modelRoleProfiles: normalizedModelRoleProfiles({
         scriptMain: { mode: 'profile', profileId: 'dirty-profile' },
       }),
+      modelRuntimeDefaults: {
+        temperature: 66,
+        modelTools: ['dirty-tool'],
+      },
       seperateModels: normalizedSeperateModels({ otherAx: 'dirty-aux' }),
       fallbackModels: normalizedFallbackModels({ memory: ['dirty-memory'] }),
       seperateParameters: normalizedSeperateParameters({ scriptAux: { min_p: 0.2 } }),
@@ -159,6 +178,10 @@ describe('split preset command normalization', () => {
       openAIKey: MASKED_PROVIDER_SECRET,
       proxyKey: MASKED_PROVIDER_SECRET,
       modelRoles: { translate: ' translate-model ' },
+      modelRuntimeDefaults: {
+        maxResponse: 1024,
+        modelTools: [' patch-tool ', ''],
+      },
       seperateModels: null,
       fallbackModels: { otherAx: ['other-fallback', ''] },
       seperateParameters: { otherAx: { frequencyPenalty: 0.1 }, overrides: null },
@@ -178,6 +201,10 @@ describe('split preset command normalization', () => {
       openAIKey: 'openai-secret',
       proxyKey: 'proxy-secret',
       modelRoles: normalizedModelRoles({ translate: 'translate-model' }),
+      modelRuntimeDefaults: {
+        maxResponse: 1024,
+        modelTools: ['patch-tool'],
+      },
       seperateModels: normalizedSeperateModels(),
       fallbackModels: normalizedFallbackModels({ otherAx: ['other-fallback'] }),
       seperateParameters: normalizedSeperateParameters({ otherAx: { frequencyPenalty: 0.1 } }),
@@ -191,6 +218,7 @@ describe('split preset command normalization', () => {
       modelRoles: { emotion: ' emotion-model ' },
       modelProfiles: [{ id: ' prompt-profile ', name: ' Prompt Profile ' }],
       modelRoleProfiles: { emotion: { mode: 'profile', profileId: ' prompt-profile ' } },
+      modelRuntimeDefaults: { maxContext: 9999 },
       seperateModels: { scriptMain: ' script-main ' },
       fallbackModels: { translate: ['translate-fallback', ''] },
       seperateParameters: { translate: { temperature: 0.4 } },
@@ -202,6 +230,7 @@ describe('split preset command normalization', () => {
       modelRoleProfiles: normalizedModelRoleProfiles({
         emotion: { mode: 'profile', profileId: 'prompt-profile' },
       }),
+      modelRuntimeDefaults: { maxContext: 9999 },
       seperateModels: normalizedSeperateModels({ scriptMain: 'script-main' }),
       fallbackModels: normalizedFallbackModels({ translate: ['translate-fallback'] }),
       seperateParameters: normalizedSeperateParameters({ translate: { temperature: 0.4 } }),
@@ -213,6 +242,7 @@ describe('split preset command normalization', () => {
       modelRoles: { scriptAux: ' script-aux ' },
       modelProfiles: [{ id: ' patch-profile ', name: ' Patch Profile ' }],
       modelRoleProfiles: { scriptAux: { mode: 'profile', profileId: ' patch-profile ' } },
+      modelRuntimeDefaults: { temperature: 44 },
       seperateModels: { emotion: ' emotion-aux ' },
       fallbackModels: { scriptAux: ['script-fallback', ''] },
       seperateParameters: { scriptAux: { top_p: 0.8 }, memory: [] },
@@ -226,6 +256,7 @@ describe('split preset command normalization', () => {
       modelRoleProfiles: normalizedModelRoleProfiles({
         scriptAux: { mode: 'profile', profileId: 'patch-profile' },
       }),
+      modelRuntimeDefaults: { temperature: 44 },
       seperateModels: normalizedSeperateModels({ emotion: 'emotion-aux' }),
       fallbackModels: normalizedFallbackModels({ scriptAux: ['script-fallback'] }),
       seperateParameters: normalizedSeperateParameters({ scriptAux: { top_p: 0.8 } }),
@@ -233,6 +264,7 @@ describe('split preset command normalization', () => {
 
     const database: Record<string, unknown> = {
       modelProfiles: [{ id: 'base-profile', name: 'Base Profile' }],
+      modelRuntimeDefaults: { maxContext: 1111 },
     }
     applyPromptPreset(database, {
       id: 'dirty-prompt',
@@ -240,6 +272,7 @@ describe('split preset command normalization', () => {
       modelRoles: { memory: ' dirty-memory ' },
       modelProfiles: [{ id: 'ignored-profile', name: 'Ignored Profile' }],
       modelRoleProfiles: { memory: { mode: 'profile', profileId: ' dirty-profile ' } },
+      modelRuntimeDefaults: { maxContext: 2222 },
       seperateModels: { memory: ' dirty-memory-aux ' },
       fallbackModels: { model: ['dirty-fallback', ''] },
       seperateParameters: { memory: { temperature: 0.3 } },
@@ -253,6 +286,7 @@ describe('split preset command normalization', () => {
       modelRoleProfiles: normalizedModelRoleProfiles({
         memory: { mode: 'profile', profileId: 'dirty-profile' },
       }),
+      modelRuntimeDefaults: { maxContext: 1111 },
       seperateModels: normalizedSeperateModels({ memory: 'dirty-memory-aux' }),
       fallbackModels: normalizedFallbackModels({ model: ['dirty-fallback'] }),
       seperateParameters: normalizedSeperateParameters({ memory: { temperature: 0.3 } }),

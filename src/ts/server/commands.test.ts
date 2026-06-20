@@ -291,6 +291,7 @@ describe('server command API adapter', () => {
     expect(settingsGroupForKey('JinjaTemplate')).toBe('providers')
     expect(settingsGroupForKey('modelProfiles')).toBe('providers')
     expect(settingsGroupForKey('modelRoleProfiles')).toBe('providers')
+    expect(settingsGroupForKey('modelRuntimeDefaults')).toBe('providers')
     expect(settingsGroupForKey('modelRoles')).toBe('providers')
     expect(settingsGroupForKey('seperateModels')).toBe('runtime')
     expect(settingsGroupForKey('seperateModelsForAxModels')).toBe('runtime')

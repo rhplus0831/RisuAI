@@ -920,8 +920,20 @@ describe('Phase 9-2a scalar settings groups', () => {
             {
               id: ' profile-a ',
               name: ' Primary ',
+              providerId: ' vertex ',
               modelId: ' gpt-5 ',
-              providerOptions: { requestModel: ' wire-model ', apiKey: ' profile-api-key ' },
+              providerOptions: {
+                requestModel: ' wire-model ',
+                apiKey: ' profile-api-key ',
+                extraHeaders: { 'X-Test': ' yes ' },
+                additionalParams: [[' header::X-Test ', ' true ']],
+                vertex: {
+                  projectId: ' project-a ',
+                  region: ' us-central1 ',
+                  clientEmail: ' svc@example.iam.gserviceaccount.com ',
+                  privateKey: ' private-key ',
+                },
+              },
               runtimeOptions: {
                 maxContext: 32768,
                 maxResponse: 2048,
@@ -936,12 +948,20 @@ describe('Phase 9-2a scalar settings groups', () => {
                 customFlags: [LLMFlags.hasImageInput],
                 customTokenizer: ' custom-tokenizer ',
               },
-              fallbacks: [{ mode: 'profile', profileId: ' fallback-profile ' }],
+              fallbacks: [
+                { mode: 'profile', profileId: ' fallback-profile ' },
+                { mode: 'model', modelId: ' fallback-model ' },
+              ],
             },
           ],
           modelRoleProfiles: {
             memory: { mode: 'profile', profileId: ' profile-a ' },
             scriptMain: { mode: 'inherit' },
+          },
+          modelRuntimeDefaults: {
+            maxContext: 8192,
+            temperature: 55,
+            modelTools: [' tool-a ', ''],
           },
         },
       },
@@ -954,8 +974,20 @@ describe('Phase 9-2a scalar settings groups', () => {
         {
           id: 'profile-a',
           name: 'Primary',
+          providerId: 'vertex',
           modelId: 'gpt-5',
-          providerOptions: { requestModel: 'wire-model', apiKey: 'profile-api-key' },
+          providerOptions: {
+            requestModel: 'wire-model',
+            apiKey: 'profile-api-key',
+            extraHeaders: { 'X-Test': 'yes' },
+            additionalParams: [['header::X-Test', 'true']],
+            vertex: {
+              projectId: 'project-a',
+              region: 'us-central1',
+              clientEmail: 'svc@example.iam.gserviceaccount.com',
+              privateKey: 'private-key',
+            },
+          },
           runtimeOptions: {
             maxContext: 32768,
             maxResponse: 2048,
@@ -970,13 +1002,21 @@ describe('Phase 9-2a scalar settings groups', () => {
             customFlags: [LLMFlags.hasImageInput],
             customTokenizer: 'custom-tokenizer',
           },
-          fallbacks: [{ mode: 'profile', profileId: 'fallback-profile' }],
+          fallbacks: [
+            { mode: 'profile', profileId: 'fallback-profile' },
+            { mode: 'model', modelId: 'fallback-model' },
+          ],
         },
       ],
       modelRoleProfiles: {
         ...Object.fromEntries(MODEL_ROLES.map((role) => [role, { mode: 'legacy' }])),
         memory: { mode: 'profile', profileId: 'profile-a' },
         scriptMain: { mode: 'inherit' },
+      },
+      modelRuntimeDefaults: {
+        maxContext: 8192,
+        temperature: 55,
+        modelTools: ['tool-a'],
       },
     })
   })
@@ -1007,7 +1047,7 @@ describe('Phase 9-2a scalar settings groups', () => {
         patch: {
           modelProfiles: [{ id: 'profile-a', name: 'Primary', fallbacks: [{ mode: 'legacy', profileId: 'x' }] }],
         },
-        error: 'modelProfiles[0].fallbacks[0].mode must be profile',
+        error: 'modelProfiles[0].fallbacks[0].mode must be profile or model',
       },
       {
         patch: {
@@ -1048,6 +1088,18 @@ describe('Phase 9-2a scalar settings groups', () => {
         },
         error:
           'modelProfiles[0].runtimeOptions.customFlags must be an array of valid LLMFlags numeric values when present',
+      },
+      {
+        patch: {
+          modelRuntimeDefaults: { notSupported: true },
+        },
+        error: 'modelRuntimeDefaults.notSupported is not supported',
+      },
+      {
+        patch: {
+          modelRuntimeDefaults: { customFlags: [999] },
+        },
+        error: 'modelRuntimeDefaults.customFlags must be an array of valid LLMFlags numeric values when present',
       },
       {
         patch: {
@@ -1243,7 +1295,15 @@ describe('Phase 9-2a scalar settings groups', () => {
       ],
       modelProfiles: [
         { id: 'profile-a', name: 'Profile A', providerOptions: { apiKey: 'profile-a-key', requestModel: 'a-wire' } },
-        { id: 'profile-b', name: 'Profile B', providerOptions: { apiKey: 'profile-b-key', requestModel: 'b-wire' } },
+        {
+          id: 'profile-b',
+          name: 'Profile B',
+          providerOptions: {
+            apiKey: 'profile-b-key',
+            requestModel: 'b-wire',
+            vertex: { privateKey: 'profile-b-vertex-key', region: 'us-central1' },
+          },
+        },
       ],
       authRefreshes: [
         {
@@ -1288,7 +1348,11 @@ describe('Phase 9-2a scalar settings groups', () => {
             {
               id: 'profile-b',
               name: 'Profile B renamed',
-              providerOptions: { apiKey: MASKED_PROVIDER_SECRET, requestModel: 'b-new-wire' },
+              providerOptions: {
+                apiKey: MASKED_PROVIDER_SECRET,
+                requestModel: 'b-new-wire',
+                vertex: { privateKey: MASKED_PROVIDER_SECRET, region: 'europe-west1' },
+              },
             },
             {
               id: 'profile-a',
@@ -1336,7 +1400,11 @@ describe('Phase 9-2a scalar settings groups', () => {
         {
           id: 'profile-b',
           name: 'Profile B renamed',
-          providerOptions: { apiKey: 'profile-b-key', requestModel: 'b-new-wire' },
+          providerOptions: {
+            apiKey: 'profile-b-key',
+            requestModel: 'b-new-wire',
+            vertex: { privateKey: 'profile-b-vertex-key', region: 'europe-west1' },
+          },
         },
         {
           id: 'profile-a',
@@ -2218,6 +2286,7 @@ describe('Phase 9-2b bot preset commands', () => {
           name: 'B',
           mainPrompt: 'target prompt',
           temperature: 90,
+          modelRuntimeDefaults: { maxContext: 9000, modelTools: ['target-tool'] },
           modelProfiles: [
             { id: ' target-profile ', name: ' Target Profile ', modelId: ' target-model ' },
             { id: 'target-profile', name: 'Duplicate' },
@@ -2230,6 +2299,7 @@ describe('Phase 9-2b bot preset commands', () => {
       botPresetsId: 0,
       mainPrompt: 'current prompt',
       temperature: 72,
+      modelRuntimeDefaults: { maxContext: 7200, modelTools: ['current-tool'] },
       modelProfiles: [{ id: 'current-profile', name: 'Current Profile', modelId: 'current-model' }],
       modelRoleProfiles: {
         memory: { mode: 'profile', profileId: 'current-profile' },
@@ -2269,6 +2339,7 @@ describe('Phase 9-2b bot preset commands', () => {
       botPresetsId: 1,
       mainPrompt: 'target prompt',
       temperature: 90,
+      modelRuntimeDefaults: { maxContext: 9000, modelTools: ['target-tool'] },
       modelProfiles: [{ id: 'target-profile', name: 'Target Profile', modelId: 'target-model' }],
       modelRoleProfiles: {
         ...Object.fromEntries(MODEL_ROLES.map((role) => [role, { mode: 'legacy' }])),
@@ -2287,6 +2358,7 @@ describe('Phase 9-2b bot preset commands', () => {
       name: 'A',
       mainPrompt: 'current prompt',
       temperature: 72,
+      modelRuntimeDefaults: { maxContext: 7200, modelTools: ['current-tool'] },
       modelProfiles: [{ id: 'current-profile', name: 'Current Profile', modelId: 'current-model' }],
       modelRoleProfiles: expect.objectContaining({
         memory: { mode: 'profile', profileId: 'current-profile' },

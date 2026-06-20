@@ -18,6 +18,7 @@ describe('preset split helpers', () => {
     apiType: 'openai',
     temperature: 0.7,
     maxContext: 16000,
+    modelRuntimeDefaults: { maxContext: 12000, temperature: 45 },
     additionalParams: [['temperature', '{{none}}']],
     enableCustomFlags: true,
     customFlags: [8],
@@ -39,6 +40,7 @@ describe('preset split helpers', () => {
       apiType: 'openai',
       temperature: 0.7,
       maxContext: 16000,
+      modelRuntimeDefaults: { maxContext: 12000, temperature: 45 },
       additionalParams: [['temperature', '{{none}}']],
       enableCustomFlags: true,
       customFlags: [8],
@@ -62,6 +64,7 @@ describe('preset split helpers', () => {
     })
     expect(promptPreset).not.toHaveProperty('aiModel')
     expect(promptPreset).not.toHaveProperty('proxyKey')
+    expect(promptPreset).not.toHaveProperty('modelRuntimeDefaults')
   })
 
   it('dedupes model presets by model fields rather than identity', () => {
@@ -93,6 +96,7 @@ describe('preset split helpers', () => {
         },
       ],
       modelRoleProfiles: { memory: { mode: 'profile', profileId: 'profile-a' } },
+      modelRuntimeDefaults: { maxContext: 9000, modelTools: ['tool-a'] },
     }
 
     expect(createExtractedModelPreset(source, { id: 'model-a', name: 'Model A' })).toMatchObject({
@@ -106,6 +110,7 @@ describe('preset split helpers', () => {
         },
       ],
       modelRoleProfiles: { memory: { mode: 'profile', profileId: 'profile-a' } },
+      modelRuntimeDefaults: { maxContext: 9000, modelTools: ['tool-a'] },
     })
 
     const promptPreset = createExtractedPromptPreset(source, { id: 'prompt-a', name: 'Prompt A' })
@@ -113,6 +118,7 @@ describe('preset split helpers', () => {
       modelRoleProfiles: { memory: { mode: 'profile', profileId: 'profile-a' } },
     })
     expect(promptPreset).not.toHaveProperty('modelProfiles')
+    expect(promptPreset).not.toHaveProperty('modelRuntimeDefaults')
   })
 
   it('exports prompt preset fields plus stored model override values', () => {
@@ -260,6 +266,7 @@ describe('effective preset composition', () => {
         modelRoles: { memory: 'base-memory' },
         modelProfiles: [{ id: 'base-profile', name: 'Base Profile' }],
         modelRoleProfiles: { memory: { mode: 'profile', profileId: 'base-profile' } },
+        modelRuntimeDefaults: { maxContext: 1000 },
         seperateModelsForAxModels: false,
         seperateModels: { memory: 'base-separate' },
         fallbackModels: { model: 'base-fallback' },
@@ -270,6 +277,7 @@ describe('effective preset composition', () => {
         modelRoles: { memory: 'model-memory' },
         modelProfiles: [{ id: 'model-profile', name: 'Model Profile' }],
         modelRoleProfiles: { memory: { mode: 'profile', profileId: 'model-profile' } },
+        modelRuntimeDefaults: { maxContext: 2000, modelTools: ['model-tool'] },
         seperateModelsForAxModels: false,
         seperateModels: { memory: 'model-separate' },
         fallbackModels: { model: 'model-fallback' },
@@ -281,6 +289,7 @@ describe('effective preset composition', () => {
         modelRoles: { memory: 'prompt-memory' },
         modelProfiles: [{ id: 'prompt-profile', name: 'Prompt Profile' }],
         modelRoleProfiles: { memory: { mode: 'profile', profileId: 'prompt-profile' } },
+        modelRuntimeDefaults: { maxContext: 3000 },
         seperateModelsForAxModels: true,
         seperateModels: { memory: 'prompt-separate' },
         fallbackModels: { model: 'prompt-fallback' },
@@ -293,6 +302,7 @@ describe('effective preset composition', () => {
       modelRoles: { memory: 'prompt-memory' },
       modelProfiles: [{ id: 'model-profile', name: 'Model Profile' }],
       modelRoleProfiles: { memory: { mode: 'profile', profileId: 'prompt-profile' } },
+      modelRuntimeDefaults: { maxContext: 2000, modelTools: ['model-tool'] },
       seperateModelsForAxModels: true,
       seperateModels: { memory: 'prompt-separate' },
       fallbackModels: { model: 'prompt-fallback' },

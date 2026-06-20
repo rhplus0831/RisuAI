@@ -1,24 +1,39 @@
 import { MODEL_ROLES, modelRoleProfileInheritSource, type ModelRole } from './modelRoles'
-import { LLMFlags, LLMFormat, type LLMFlags as LLMFlagValue, type LLMFormat as LLMFormatValue } from './types'
+import {
+  LLMFlags,
+  LLMFormat,
+  LLMTokenizer,
+  type LLMFlags as LLMFlagValue,
+  type LLMFormat as LLMFormatValue,
+  type LLMTokenizer as LLMTokenizerValue,
+} from './types'
 
 export interface ModelProfileRecord {
   id: string
   name: string
+  providerId?: string
   modelId?: string
   providerOptions?: ModelProfileRecordProviderOptions
   runtimeOptions?: ModelProfileRecordRuntimeOptions
   fallbacks?: ModelProfileRecordFallbackRef[]
 }
 
-export interface ModelProfileRecordFallbackRef {
-  mode: 'profile'
-  profileId: string
-}
+export type ModelProfileRecordFallbackRef =
+  | {
+      mode: 'profile'
+      profileId: string
+    }
+  | {
+      mode: 'model'
+      modelId: string
+    }
 
 export interface ModelProfileRecordProviderOptions {
   apiKey?: string
   requestModel?: string
   baseUrl?: string
+  extraHeaders?: Record<string, string>
+  additionalParams?: Array<[string, string]>
   reverseProxy?: {
     autofillRequestUrl?: boolean
     oobaSystemHoist?: boolean
@@ -43,6 +58,16 @@ export interface ModelProfileRecordProviderOptions {
     requestFormat?: LLMFormatValue
     modelSource?: string
     thinkingMode?: string
+  }
+  vertex?: {
+    projectId?: string
+    region?: string
+    clientEmail?: string
+    privateKey?: string
+  }
+  customApi?: {
+    tokenizer?: LLMTokenizerValue
+    flags?: LLMFlagValue[]
   }
 }
 
@@ -78,6 +103,8 @@ export interface ModelProfileRecordRuntimeOptions {
   customFlags?: LLMFlagValue[]
 }
 
+export type ModelRuntimeDefaults = ModelProfileRecordRuntimeOptions
+
 export interface LegacyModelRoleProfileBinding {
   mode: 'legacy'
 }
@@ -104,22 +131,36 @@ export class ModelProfileRecordValidationError extends Error {
   }
 }
 
-const MODEL_PROFILE_RECORD_KEYS = new Set(['id', 'name', 'modelId', 'providerOptions', 'runtimeOptions', 'fallbacks'])
-const MODEL_PROFILE_FALLBACK_REF_KEYS = new Set(['mode', 'profileId'])
+const MODEL_PROFILE_RECORD_KEYS = new Set([
+  'id',
+  'name',
+  'providerId',
+  'modelId',
+  'providerOptions',
+  'runtimeOptions',
+  'fallbacks',
+])
+const MODEL_PROFILE_FALLBACK_REF_KEYS = new Set(['mode', 'profileId', 'modelId'])
 const MODEL_PROFILE_PROVIDER_OPTIONS_KEYS = new Set([
   'apiKey',
   'requestModel',
   'baseUrl',
+  'extraHeaders',
+  'additionalParams',
   'reverseProxy',
   'openrouter',
   'nanogpt',
   'ollama',
+  'vertex',
+  'customApi',
 ])
 const MODEL_PROFILE_REVERSE_PROXY_KEYS = new Set(['autofillRequestUrl', 'oobaSystemHoist', 'oobaArgs'])
 const MODEL_PROFILE_OPENROUTER_KEYS = new Set(['fallback', 'middleOut', 'provider'])
 const MODEL_PROFILE_OPENROUTER_PROVIDER_KEYS = new Set(['order', 'only', 'ignore'])
 const MODEL_PROFILE_NANOGPT_KEYS = new Set(['providerHint', 'useSubscriptionEndpoint', 'subscriptionState'])
 const MODEL_PROFILE_OLLAMA_KEYS = new Set(['url', 'requestFormat', 'modelSource', 'thinkingMode'])
+const MODEL_PROFILE_VERTEX_KEYS = new Set(['projectId', 'region', 'clientEmail', 'privateKey'])
+const MODEL_PROFILE_CUSTOM_API_KEYS = new Set(['tokenizer', 'flags'])
 const MODEL_PROFILE_RUNTIME_NUMBER_KEYS = [
   'maxContext',
   'maxResponse',
@@ -163,6 +204,7 @@ const MODEL_PROFILE_RUNTIME_KEYS = new Set([
 const MODEL_ROLE_PROFILE_BINDING_KEYS = new Set(['mode', 'profileId'])
 const MODEL_ROLE_SET = new Set<string>(MODEL_ROLES)
 const LLM_FLAG_SET = new Set<number>(Object.values(LLMFlags))
+const LLM_TOKENIZER_SET = new Set<number>(Object.values(LLMTokenizer))
 
 export function createDefaultModelRoleProfiles(): ModelRoleProfileMap {
   return Object.fromEntries(MODEL_ROLES.map((role) => [role, { mode: 'legacy' }])) as ModelRoleProfileMap
@@ -178,11 +220,13 @@ export function normalizeModelProfiles(value: unknown): ModelProfileRecord[] {
     const id = stringOrBlank(item.id)
     if (!id || seen.has(id)) continue
     const name = stringOrBlank(item.name) || id
+    const providerId = stringOrBlank(item.providerId)
     const modelId = stringOrBlank(item.modelId)
     profiles.push(
       createModelProfileRecord({
         id,
         name,
+        providerId,
         modelId,
         providerOptions: normalizeModelProfileProviderOptions(item.providerOptions),
         runtimeOptions: normalizeModelProfileRuntimeOptions(item.runtimeOptions),
@@ -265,9 +309,13 @@ function readModelProfileRecord(value: unknown, path: string): ModelProfileRecor
     throw new ModelProfileRecordValidationError(`${path}.name must be a non-empty string`)
   }
 
+  if (Object.prototype.hasOwnProperty.call(value, 'providerId') && typeof value.providerId !== 'string') {
+    throw new ModelProfileRecordValidationError(`${path}.providerId must be a string when present`)
+  }
   if (Object.prototype.hasOwnProperty.call(value, 'modelId') && typeof value.modelId !== 'string') {
     throw new ModelProfileRecordValidationError(`${path}.modelId must be a string when present`)
   }
+  const providerId = stringOrBlank(value.providerId)
   const modelId = stringOrBlank(value.modelId)
   const providerOptions = Object.prototype.hasOwnProperty.call(value, 'providerOptions')
     ? readModelProfileProviderOptions(value.providerOptions, `${path}.providerOptions`)
@@ -279,12 +327,13 @@ function readModelProfileRecord(value: unknown, path: string): ModelProfileRecor
     ? readModelProfileFallbackRefs(value.fallbacks, `${path}.fallbacks`)
     : undefined
 
-  return createModelProfileRecord({ id, name, modelId, providerOptions, runtimeOptions, fallbacks })
+  return createModelProfileRecord({ id, name, providerId, modelId, providerOptions, runtimeOptions, fallbacks })
 }
 
 function createModelProfileRecord(input: {
   id: string
   name: string
+  providerId?: string
   modelId?: string
   providerOptions?: ModelProfileRecordProviderOptions
   runtimeOptions?: ModelProfileRecordRuntimeOptions
@@ -293,6 +342,7 @@ function createModelProfileRecord(input: {
   return {
     id: input.id,
     name: input.name,
+    ...(input.providerId ? { providerId: input.providerId } : {}),
     ...(input.modelId ? { modelId: input.modelId } : {}),
     ...(input.providerOptions ? { providerOptions: input.providerOptions } : {}),
     ...(input.runtimeOptions ? { runtimeOptions: input.runtimeOptions } : {}),
@@ -305,11 +355,22 @@ function normalizeModelProfileFallbackRefs(value: unknown): ModelProfileRecordFa
   const fallbacks: ModelProfileRecordFallbackRef[] = []
   const seen = new Set<string>()
   for (const item of value) {
-    if (!isRecord(item) || item.mode !== 'profile') continue
-    const profileId = stringOrBlank(item.profileId)
-    if (!profileId || seen.has(profileId)) continue
-    fallbacks.push({ mode: 'profile', profileId })
-    seen.add(profileId)
+    if (!isRecord(item)) continue
+    if (item.mode === 'profile') {
+      const profileId = stringOrBlank(item.profileId)
+      const key = `profile:${profileId}`
+      if (!profileId || seen.has(key)) continue
+      fallbacks.push({ mode: 'profile', profileId })
+      seen.add(key)
+      continue
+    }
+    if (item.mode === 'model') {
+      const modelId = stringOrBlank(item.modelId)
+      const key = `model:${modelId}`
+      if (!modelId || seen.has(key)) continue
+      fallbacks.push({ mode: 'model', modelId })
+      seen.add(key)
+    }
   }
   return fallbacks.length > 0 ? fallbacks : undefined
 }
@@ -330,18 +391,39 @@ function readModelProfileFallbackRefs(value: unknown, path: string): ModelProfil
         throw new ModelProfileRecordValidationError(`${rowPath}.${key} is not supported`)
       }
     }
-    if (item.mode !== 'profile') {
-      throw new ModelProfileRecordValidationError(`${rowPath}.mode must be profile`)
+    if (item.mode === 'profile') {
+      if (Object.prototype.hasOwnProperty.call(item, 'modelId')) {
+        throw new ModelProfileRecordValidationError(`${rowPath}.modelId is only supported for model mode`)
+      }
+      const profileId = stringOrBlank(item.profileId)
+      if (!profileId) {
+        throw new ModelProfileRecordValidationError(`${rowPath}.profileId must be a non-empty string`)
+      }
+      const key = `profile:${profileId}`
+      if (seen.has(key)) {
+        throw new ModelProfileRecordValidationError(`${rowPath}.profileId must not duplicate ${profileId}`)
+      }
+      seen.add(key)
+      fallbacks.push({ mode: 'profile', profileId })
+      return
     }
-    const profileId = stringOrBlank(item.profileId)
-    if (!profileId) {
-      throw new ModelProfileRecordValidationError(`${rowPath}.profileId must be a non-empty string`)
+    if (item.mode === 'model') {
+      if (Object.prototype.hasOwnProperty.call(item, 'profileId')) {
+        throw new ModelProfileRecordValidationError(`${rowPath}.profileId is only supported for profile mode`)
+      }
+      const modelId = stringOrBlank(item.modelId)
+      if (!modelId) {
+        throw new ModelProfileRecordValidationError(`${rowPath}.modelId must be a non-empty string`)
+      }
+      const key = `model:${modelId}`
+      if (seen.has(key)) {
+        throw new ModelProfileRecordValidationError(`${rowPath}.modelId must not duplicate ${modelId}`)
+      }
+      seen.add(key)
+      fallbacks.push({ mode: 'model', modelId })
+      return
     }
-    if (seen.has(profileId)) {
-      throw new ModelProfileRecordValidationError(`${rowPath}.profileId must not duplicate ${profileId}`)
-    }
-    seen.add(profileId)
-    fallbacks.push({ mode: 'profile', profileId })
+    throw new ModelProfileRecordValidationError(`${rowPath}.mode must be profile or model`)
   })
   return fallbacks.length > 0 ? fallbacks : undefined
 }
@@ -352,17 +434,25 @@ function normalizeModelProfileProviderOptions(value: unknown): ModelProfileRecor
   const apiKey = stringOrBlank(value.apiKey)
   const requestModel = stringOrBlank(value.requestModel)
   const baseUrl = stringOrBlank(value.baseUrl)
+  const extraHeaders = normalizeStringRecord(value.extraHeaders)
+  const additionalParams = normalizeAdditionalParams(value.additionalParams)
   const reverseProxy = normalizeReverseProxyOptions(value.reverseProxy)
   const openrouter = normalizeOpenrouterOptions(value.openrouter)
   const nanogpt = normalizeNanoGPTOptions(value.nanogpt)
   const ollama = normalizeOllamaOptions(value.ollama)
+  const vertex = normalizeVertexOptions(value.vertex)
+  const customApi = normalizeCustomApiOptions(value.customApi)
   if (apiKey) options.apiKey = apiKey
   if (requestModel) options.requestModel = requestModel
   if (baseUrl) options.baseUrl = baseUrl
+  if (extraHeaders) options.extraHeaders = extraHeaders
+  if (additionalParams) options.additionalParams = additionalParams
   if (reverseProxy) options.reverseProxy = reverseProxy
   if (openrouter) options.openrouter = openrouter
   if (nanogpt) options.nanogpt = nanogpt
   if (ollama) options.ollama = ollama
+  if (vertex) options.vertex = vertex
+  if (customApi) options.customApi = customApi
   return objectHasKeys(options) ? options : undefined
 }
 
@@ -384,6 +474,8 @@ function readModelProfileProviderOptions(value: unknown, path: string): ModelPro
   if (Object.prototype.hasOwnProperty.call(value, 'baseUrl') && typeof value.baseUrl !== 'string') {
     throw new ModelProfileRecordValidationError(`${path}.baseUrl must be a string when present`)
   }
+  readOptionalStringRecord(value, 'extraHeaders', `${path}.extraHeaders`)
+  readOptionalAdditionalParams(value, 'additionalParams', `${path}.additionalParams`)
   if (Object.prototype.hasOwnProperty.call(value, 'reverseProxy')) {
     readReverseProxyOptions(value.reverseProxy, `${path}.reverseProxy`)
   }
@@ -395,6 +487,12 @@ function readModelProfileProviderOptions(value: unknown, path: string): ModelPro
   }
   if (Object.prototype.hasOwnProperty.call(value, 'ollama')) {
     readOllamaOptions(value.ollama, `${path}.ollama`)
+  }
+  if (Object.prototype.hasOwnProperty.call(value, 'vertex')) {
+    readVertexOptions(value.vertex, `${path}.vertex`)
+  }
+  if (Object.prototype.hasOwnProperty.call(value, 'customApi')) {
+    readCustomApiOptions(value.customApi, `${path}.customApi`)
   }
   return normalizeModelProfileProviderOptions(value)
 }
@@ -561,7 +659,71 @@ function readOllamaOptions(
   return normalizeOllamaOptions(value)
 }
 
-function normalizeModelProfileRuntimeOptions(value: unknown): ModelProfileRecordRuntimeOptions | undefined {
+function normalizeVertexOptions(value: unknown): NonNullable<ModelProfileRecordProviderOptions['vertex']> | undefined {
+  if (!isRecord(value)) return undefined
+  const options: NonNullable<ModelProfileRecordProviderOptions['vertex']> = {}
+  const projectId = stringOrBlank(value.projectId)
+  const region = stringOrBlank(value.region)
+  const clientEmail = stringOrBlank(value.clientEmail)
+  const privateKey = stringOrBlank(value.privateKey)
+  if (projectId) options.projectId = projectId
+  if (region) options.region = region
+  if (clientEmail) options.clientEmail = clientEmail
+  if (privateKey) options.privateKey = privateKey
+  return objectHasKeys(options) ? options : undefined
+}
+
+function readVertexOptions(
+  value: unknown,
+  path: string,
+): NonNullable<ModelProfileRecordProviderOptions['vertex']> | undefined {
+  if (!isRecord(value)) {
+    throw new ModelProfileRecordValidationError(`${path} must be an object when present`)
+  }
+  for (const key of Object.keys(value)) {
+    if (!MODEL_PROFILE_VERTEX_KEYS.has(key)) {
+      throw new ModelProfileRecordValidationError(`${path}.${key} is not supported`)
+    }
+  }
+  readOptionalString(value, 'projectId', `${path}.projectId`)
+  readOptionalString(value, 'region', `${path}.region`)
+  readOptionalString(value, 'clientEmail', `${path}.clientEmail`)
+  readOptionalString(value, 'privateKey', `${path}.privateKey`)
+  return normalizeVertexOptions(value)
+}
+
+function normalizeCustomApiOptions(
+  value: unknown,
+): NonNullable<ModelProfileRecordProviderOptions['customApi']> | undefined {
+  if (!isRecord(value)) return undefined
+  const options: NonNullable<ModelProfileRecordProviderOptions['customApi']> = {}
+  const tokenizer = asTokenizer(value.tokenizer)
+  const flags = normalizeRuntimeCustomFlags(value.flags)
+  if (tokenizer !== undefined) options.tokenizer = tokenizer
+  if (flags) options.flags = flags
+  return objectHasKeys(options) ? options : undefined
+}
+
+function readCustomApiOptions(
+  value: unknown,
+  path: string,
+): NonNullable<ModelProfileRecordProviderOptions['customApi']> | undefined {
+  if (!isRecord(value)) {
+    throw new ModelProfileRecordValidationError(`${path} must be an object when present`)
+  }
+  for (const key of Object.keys(value)) {
+    if (!MODEL_PROFILE_CUSTOM_API_KEYS.has(key)) {
+      throw new ModelProfileRecordValidationError(`${path}.${key} is not supported`)
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(value, 'tokenizer') && asTokenizer(value.tokenizer) === undefined) {
+    throw new ModelProfileRecordValidationError(`${path}.tokenizer must be a valid LLMTokenizer when present`)
+  }
+  readOptionalLLMFlagArray(value, 'flags', `${path}.flags`)
+  return normalizeCustomApiOptions(value)
+}
+
+export function normalizeModelProfileRuntimeOptions(value: unknown): ModelProfileRecordRuntimeOptions | undefined {
   if (!isRecord(value)) return undefined
   const options: ModelProfileRecordRuntimeOptions = {}
 
@@ -614,6 +776,14 @@ function readModelProfileRuntimeOptions(value: unknown, path: string): ModelProf
   readOptionalLLMFlagArray(value, 'customFlags', `${path}.customFlags`)
 
   return normalizeModelProfileRuntimeOptions(value)
+}
+
+export function normalizeModelRuntimeDefaults(value: unknown): ModelRuntimeDefaults {
+  return normalizeModelProfileRuntimeOptions(value) ?? {}
+}
+
+export function readModelRuntimeDefaults(value: unknown): ModelRuntimeDefaults {
+  return readModelProfileRuntimeOptions(value, 'modelRuntimeDefaults') ?? {}
 }
 
 function readModelRoleProfileBinding(value: unknown, role: ModelRole, path: string): ModelRoleProfileBinding {
@@ -689,6 +859,27 @@ function readOptionalStringArray(value: Record<string, unknown>, key: string, pa
   }
 }
 
+function readOptionalStringRecord(value: Record<string, unknown>, key: string, path: string): void {
+  if (!Object.prototype.hasOwnProperty.call(value, key)) return
+  const row = value[key]
+  if (!isRecord(row) || !Object.values(row).every((item) => typeof item === 'string')) {
+    throw new ModelProfileRecordValidationError(`${path} must be an object with string values when present`)
+  }
+}
+
+function readOptionalAdditionalParams(value: Record<string, unknown>, key: string, path: string): void {
+  if (!Object.prototype.hasOwnProperty.call(value, key)) return
+  const row = value[key]
+  if (
+    !Array.isArray(row) ||
+    !row.every(
+      (item) => Array.isArray(item) && item.length === 2 && typeof item[0] === 'string' && typeof item[1] === 'string',
+    )
+  ) {
+    throw new ModelProfileRecordValidationError(`${path} must be an array of [string, string] pairs when present`)
+  }
+}
+
 function readOptionalLLMFlagArray(value: Record<string, unknown>, key: string, path: string): void {
   if (!Object.prototype.hasOwnProperty.call(value, key)) return
   const row = value[key]
@@ -697,6 +888,30 @@ function readOptionalLLMFlagArray(value: Record<string, unknown>, key: string, p
       `${path} must be an array of valid LLMFlags numeric values when present`,
     )
   }
+}
+
+function normalizeStringRecord(value: unknown): Record<string, string> | undefined {
+  if (!isRecord(value)) return undefined
+  const out: Record<string, string> = {}
+  for (const [rawKey, rawValue] of Object.entries(value)) {
+    if (typeof rawValue !== 'string') continue
+    const key = rawKey.trim()
+    if (!key) continue
+    out[key] = rawValue.trim()
+  }
+  return objectHasKeys(out) ? out : undefined
+}
+
+function normalizeAdditionalParams(value: unknown): Array<[string, string]> | undefined {
+  if (!Array.isArray(value)) return undefined
+  const out: Array<[string, string]> = []
+  for (const row of value) {
+    if (!Array.isArray(row) || typeof row[0] !== 'string' || typeof row[1] !== 'string') continue
+    const key = row[0].trim()
+    if (!key) continue
+    out.push([key, row[1].trim()])
+  }
+  return out.length > 0 ? out : undefined
 }
 
 function normalizeStringArray(value: unknown): string[] | undefined {
@@ -725,6 +940,10 @@ function asFormat(value: unknown): LLMFormatValue | undefined {
   return typeof value === 'number' && Object.values(LLMFormat).includes(value as LLMFormatValue)
     ? (value as LLMFormatValue)
     : undefined
+}
+
+function asTokenizer(value: unknown): LLMTokenizerValue | undefined {
+  return typeof value === 'number' && LLM_TOKENIZER_SET.has(value) ? (value as LLMTokenizerValue) : undefined
 }
 
 function finiteNumber(value: unknown): number | undefined {

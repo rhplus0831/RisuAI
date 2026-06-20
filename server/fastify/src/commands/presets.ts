@@ -7,7 +7,11 @@ import {
   normalizeLegacySeperateModels,
   normalizeModelRoleOverrides,
 } from '../../../../src/ts/model/modelRoles.js'
-import { normalizeModelProfiles, normalizeModelRoleProfiles } from '../../../../src/ts/model/modelProfileRecords.js'
+import {
+  normalizeModelRuntimeDefaults,
+  normalizeModelProfiles,
+  normalizeModelRoleProfiles,
+} from '../../../../src/ts/model/modelProfileRecords.js'
 
 type JsonRecord = Record<string, unknown>
 type AssetValidationOptions = { assetDb?: DatabaseSync }
@@ -37,6 +41,7 @@ const SNAPSHOT_KEYS: Array<[string, string]> = [
   ['modelRoles', 'modelRoles'],
   ['modelProfiles', 'modelProfiles'],
   ['modelRoleProfiles', 'modelRoleProfiles'],
+  ['modelRuntimeDefaults', 'modelRuntimeDefaults'],
   ['currentPluginProvider', 'currentPluginProvider'],
   ['textgenWebUIStreamURL', 'textgenWebUIStreamURL'],
   ['textgenWebUIBlockingURL', 'textgenWebUIBlockingURL'],
@@ -243,6 +248,7 @@ function normalizePresetAppliedValue(databaseKey: string, value: unknown): unkno
   if (databaseKey === 'modelRoles') return normalizeModelRoleOverrides(value)
   if (databaseKey === 'modelProfiles') return normalizeModelProfiles(value)
   if (databaseKey === 'modelRoleProfiles') return normalizeModelRoleProfiles(value)
+  if (databaseKey === 'modelRuntimeDefaults') return normalizeModelRuntimeDefaults(value)
   if (databaseKey === 'seperateModels') return normalizeLegacySeperateModels(value)
   if (databaseKey === 'fallbackModels') return normalizeLegacyFallbackModels(value)
   if (databaseKey === 'seperateParameters') return normalizeSeperateParametersValue(value)
@@ -255,6 +261,9 @@ function normalizePresetProfileFields(record: JsonRecord): void {
   }
   if (Object.prototype.hasOwnProperty.call(record, 'modelRoleProfiles')) {
     record.modelRoleProfiles = normalizeModelRoleProfiles(record.modelRoleProfiles)
+  }
+  if (Object.prototype.hasOwnProperty.call(record, 'modelRuntimeDefaults')) {
+    record.modelRuntimeDefaults = normalizeModelRuntimeDefaults(record.modelRuntimeDefaults)
   }
 }
 

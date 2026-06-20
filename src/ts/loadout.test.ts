@@ -228,6 +228,10 @@ function seedSplitPresetLoadoutState(): Loadout {
         modelRoleProfiles: {
           memory: { mode: 'profile', profileId: ' story-profile ' },
         },
+        modelRuntimeDefaults: {
+          maxContext: 7777,
+          modelTools: [' story-tool ', ''],
+        },
       },
     ],
     modelPresetsId: 0,
@@ -251,6 +255,9 @@ function seedSplitPresetLoadoutState(): Loadout {
         modelRoleProfiles: {
           memory: { mode: 'profile', profileId: ' prompt-profile ' },
         },
+        modelRuntimeDefaults: {
+          maxContext: 9999,
+        },
       },
     ],
     promptPresetsId: 0,
@@ -261,6 +268,7 @@ function seedSplitPresetLoadoutState(): Loadout {
     modelRoleProfiles: normalizedModelRoleProfiles({
       memory: { mode: 'profile', profileId: 'base-profile' },
     }),
+    modelRuntimeDefaults: { maxContext: 1111 },
     mainPrompt: 'default main',
     jailbreak: 'default jailbreak',
     globalNote: 'default global',
@@ -560,6 +568,10 @@ describe('loadout projection command helpers', () => {
         memory: { mode: 'profile', profileId: 'prompt-profile' },
       }),
     )
+    expect(DBState.db.modelRuntimeDefaults).toEqual({
+      maxContext: 7777,
+      modelTools: ['story-tool'],
+    })
     expect(DBState.db.mainPrompt).toBe('story main')
     expect(DBState.db.jailbreak).toBe('story jailbreak')
     expect(DBState.db.globalNote).toBe('story global')
@@ -625,6 +637,10 @@ describe('loadout projection command helpers', () => {
         memory: { mode: 'profile', profileId: 'prompt-profile' },
       }),
     )
+    expect(DBState.db.modelRuntimeDefaults).toEqual({
+      maxContext: 7777,
+      modelTools: ['story-tool'],
+    })
 
     await waitForCallCount(calls, 3)
     await flushCommandEffects()
@@ -650,6 +666,10 @@ describe('loadout projection command helpers', () => {
         memory: { mode: 'profile', profileId: 'story-profile' },
       }),
     )
+    expect(DBState.db.modelRuntimeDefaults).toEqual({
+      maxContext: 7777,
+      modelTools: ['story-tool'],
+    })
     expect(DBState.db.lastLoadedLoadoutName).toBe('Before Loadout')
   })
 

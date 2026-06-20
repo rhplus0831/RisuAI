@@ -1,6 +1,6 @@
 # Phase 0: Contract And Schema
 
-Status: not started.
+Status: completed.
 
 Goal: expand the durable profile data contract so provider-first UI and runtime
 defaults can be represented without impersonating legacy flat fields.
@@ -74,4 +74,3 @@ pnpm exec tsc -p tsconfig.client-lib.json
   required for editor-authored rows but optional for compatibility rows.
 - Runtime-default preservation touches many import/preset/loadout paths.
 - Nested secret masking must preserve array row identity by profile `id`.
-
