@@ -90,6 +90,7 @@ vi.mock('../storage/database.svelte', () => ({
 }))
 
 import { DBState } from '../stores.svelte'
+import type { HypaV3Preset } from '../process/memory/hypav3'
 import {
   applyOnboardingServerBackedSettings,
   applyServerBackedSettingsPatch,
@@ -105,7 +106,7 @@ function setupSettings(settings: Record<string, unknown>): void {
   ;(DBState as { db: unknown }).db = { ...settings }
 }
 
-function hypaPreset(name: string, settings: Record<string, unknown> = {}): Record<string, unknown> {
+function hypaPreset(name: string, settings: Record<string, unknown> = {}): HypaV3Preset {
   return {
     name,
     settings: {
@@ -113,7 +114,7 @@ function hypaPreset(name: string, settings: Record<string, unknown> = {}): Recor
       alwaysToggleOn: false,
       ...settings,
     },
-  }
+  } as unknown as HypaV3Preset
 }
 
 async function createSettingDraft<T>(
@@ -139,7 +140,7 @@ async function flushAndSettle(): Promise<void> {
 
 async function applyProjectionSetting(key: string, value: unknown): Promise<void> {
   projectionGuardState.epoch += 1
-  ;(DBState.db as Record<string, unknown>)[key] = value
+  ;(DBState.db as unknown as Record<string, unknown>)[key] = value
   await flushAndSettle()
 }
 

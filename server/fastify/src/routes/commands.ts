@@ -4460,7 +4460,7 @@ export function registerCommandRoutes(
         mutate(database, targetDb) {
           const characters = normalizeAllCharacterChats(database)
           const resolved = resolveActiveMessageLocationById(targetDb, messageId)
-          if (!resolved.ok) {
+          if (resolved.ok === false) {
             if (resolved.reason === 'ambiguous') {
               throw new ValidationError(`Ambiguous message id: ${messageId}`)
             }
@@ -4469,7 +4469,7 @@ export function registerCommandRoutes(
           const { location } = resolved
           requireChatLocation(characters, location.chatId)
           const updated = updateActiveMessageById(targetDb, messageId, patch)
-          if (!updated.ok) {
+          if (updated.ok === false) {
             if (updated.reason === 'ambiguous') {
               throw new ValidationError(`Ambiguous message id: ${messageId}`)
             }
@@ -4514,7 +4514,7 @@ export function registerCommandRoutes(
         mutate(database, targetDb) {
           const characters = normalizeAllCharacterChats(database)
           const resolved = resolveActiveMessageLocationById(targetDb, messageId)
-          if (!resolved.ok) {
+          if (resolved.ok === false) {
             if (resolved.reason === 'ambiguous') {
               throw new ValidationError(`Ambiguous message id: ${messageId}`)
             }
@@ -4523,7 +4523,7 @@ export function registerCommandRoutes(
           const { location } = resolved
           requireChatLocation(characters, location.chatId)
           const deleted = deleteActiveMessageById(targetDb, messageId)
-          if (!deleted.ok) {
+          if (deleted.ok === false) {
             if (deleted.reason === 'ambiguous') {
               throw new ValidationError(`Ambiguous message id: ${messageId}`)
             }

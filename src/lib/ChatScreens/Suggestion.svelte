@@ -134,7 +134,7 @@
     messages: readonly string[] | undefined,
     target: SuggestionTargetSnapshot | undefined = activeSuggestionTarget(messages),
   ) {
-    suggestMessages = messages ? copySuggestionMessages(messages) : messages
+    suggestMessages = messages === undefined ? undefined : copySuggestionMessages(messages)
     suggestionTarget = target
       ? {
           selectedCharID: target.selectedCharID,

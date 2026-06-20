@@ -57,6 +57,14 @@
   const translatorPresetDirtyFieldNames: readonly TranslatorPresetDirtyField[] = ['name', 'prompt', 'maxResponse']
   const pendingTranslatorPresetUpdates = new Map<string, PendingTranslatorPresetUpdate>()
   const translatorPresetDirtyFieldsById = new Map<string, Map<TranslatorPresetDirtyField, unknown>>()
+
+  function translatorPresetRecord(preset: TranslatorPreset): Record<string, unknown> {
+    return preset as unknown as Record<string, unknown>
+  }
+
+  function translatorPresetFromRecord(preset: Record<string, unknown>): TranslatorPreset {
+    return preset as unknown as TranslatorPreset
+  }
   let translatorPresetUpdateDispatchChain: Promise<ServerCommandResult> = Promise.resolve({ status: 'unavailable' })
   let previousProjectionApplyEpoch = getServerProjectionApplyEpoch()
 
@@ -187,16 +195,18 @@
 
       const projectionPreset = presets[presetIndex]
       const dirtyFieldSet = new Set(dirtyFields.keys())
-      const dirtyDraft = cloneJsonValue(projectionPreset) as Record<string, unknown>
+      const dirtyDraft = cloneJsonValue(projectionPreset) as unknown as Record<string, unknown>
       for (const [field, value] of dirtyFields) {
         dirtyDraft[field] = cloneJsonValue(value)
       }
 
-      presets[presetIndex] = mergeProjectionIntoDirtyDraft({
-        draft: dirtyDraft,
-        projection: projectionPreset as Record<string, unknown>,
-        dirtyFields: dirtyFieldSet,
-      }) as TranslatorPreset
+      presets[presetIndex] = translatorPresetFromRecord(
+        mergeProjectionIntoDirtyDraft({
+          draft: dirtyDraft,
+          projection: translatorPresetRecord(projectionPreset),
+          dirtyFields: dirtyFieldSet,
+        }),
+      )
 
       if (DBState.db.translatorPresetId === presetIndex) {
         syncCurrentTranslatorPreset()
@@ -247,16 +257,16 @@
       if (presetIndex === -1) return
 
       const nextPresets = [...DBState.db.translatorPresets]
-      const nextPreset = cloneJsonValue(nextPresets[presetIndex]) as Record<string, unknown>
+      const nextPreset = cloneJsonValue(nextPresets[presetIndex]) as unknown as Record<string, unknown>
       const rolledBackFields = applyAttemptedFieldRollback({
         target: nextPreset,
-        previous: previousPreset as Record<string, unknown>,
-        attempted: attemptedPreset as Record<string, unknown>,
+        previous: translatorPresetRecord(previousPreset),
+        attempted: translatorPresetRecord(attemptedPreset),
         keys: rollbackFields,
       }) as TranslatorPresetDirtyField[]
       if (rolledBackFields.length === 0) return
 
-      nextPresets[presetIndex] = nextPreset as TranslatorPreset
+      nextPresets[presetIndex] = translatorPresetFromRecord(nextPreset)
       DBState.db.translatorPresets = nextPresets
 
       if (DBState.db.translatorPresetId === presetIndex) {
@@ -265,7 +275,7 @@
 
       clearTranslatorPresetDirtyFieldsMatchingValues(
         presetId,
-        attemptedPreset as Record<string, unknown>,
+        translatorPresetRecord(attemptedPreset),
         rolledBackFields,
       )
     })

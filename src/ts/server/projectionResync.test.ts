@@ -89,7 +89,7 @@ function okBootstrap(
     status: 'ok',
     projection: {
       revision,
-      database: database as Database,
+      database: database as unknown as Database,
       activeGenerationJobs,
     },
   }

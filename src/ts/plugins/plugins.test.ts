@@ -129,7 +129,8 @@ function createPicker() {
     select(value: SelectedFile | null) {
       selected = value
       if (value) {
-        options?.onFileSelected?.(new File([value.data], value.name))
+        const data = value.data.buffer.slice(value.data.byteOffset, value.data.byteOffset + value.data.byteLength)
+        options?.onFileSelected?.(new File([data as ArrayBuffer], value.name))
       }
     },
     resolve(value: SelectedFile | null = selected) {
@@ -974,7 +975,7 @@ describe('plugin database command bridge', () => {
       }) as unknown as typeof fetch,
     )
     setServerProjectionWriteGuardEnabled(true)
-    const oldCustomModels = [{ id: 'old-model', name: 'Old Model' }]
+    const oldCustomModels = [{ id: 'old-model', name: 'Old Model' }] as unknown as typeof DBState.db.customModels
     const attemptedCustomModels = [{ id: 'attempted-model', name: 'Attempted Model' }]
     withTrustedServerProjectionWrite(() => {
       DBState.db.customModels = oldCustomModels

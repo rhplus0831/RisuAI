@@ -4,7 +4,7 @@ vi.mock('./storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'plugin-command-token',
 }))
 
-import { clearCachedServerCommandRevision } from './server/commands'
+import { clearCachedServerCommandRevision, type PluginSnapshot } from './server/commands'
 import {
   setServerProjectionWriteGuardEnabled,
   withTrustedServerProjectionWrite,
@@ -45,6 +45,14 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 function cloneJsonValue<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
+}
+
+function customModelRows(rows: Array<{ id: string; name: string }>): typeof DBState.db.customModels {
+  return rows as unknown as typeof DBState.db.customModels
+}
+
+function dbRecord(): Record<string, unknown> {
+  return DBState.db as unknown as Record<string, unknown>
 }
 
 function seedPlugin(name: string, overrides: Partial<RisuPlugin> = {}): RisuPlugin {
@@ -661,7 +669,7 @@ describe('plugin projection command helpers', () => {
     withTrustedServerProjectionWrite(() => {
       DBState.db.plugins[0] = attemptedPlugin
     })
-    dispatchUpdatePlugin('plugin-a', attemptedPlugin, previous)
+    dispatchUpdatePlugin('plugin-a', attemptedPlugin as unknown as PluginSnapshot, previous)
     withTrustedServerProjectionWrite(() => {
       DBState.db.plugins[0] = {
         ...DBState.db.plugins[0],
@@ -907,8 +915,8 @@ describe('plugin projection command helpers', () => {
   it('failed later settings group preserves an accepted earlier settings group', async () => {
     const calls = stubCommandFetch({ failCommandUrls: ['/api/v1/commands/settings/advanced'] })
     setServerProjectionWriteGuardEnabled(true)
-    const oldCustomModels = [{ id: 'old-model', name: 'Old Model' }]
-    const attemptedCustomModels = [{ id: 'attempted-model', name: 'Attempted Model' }]
+    const oldCustomModels = customModelRows([{ id: 'old-model', name: 'Old Model' }])
+    const attemptedCustomModels = customModelRows([{ id: 'attempted-model', name: 'Attempted Model' }])
     withTrustedServerProjectionWrite(() => {
       DBState.db.customModels = oldCustomModels
       DBState.db.moduleIntergration = 'old-modules'
@@ -955,8 +963,8 @@ describe('plugin projection command helpers', () => {
   it('failed first settings group rolls back later unaccepted attempted settings keys', async () => {
     const calls = stubCommandFetch({ failCommandUrls: ['/api/v1/commands/settings/providers'] })
     setServerProjectionWriteGuardEnabled(true)
-    const oldCustomModels = [{ id: 'old-model', name: 'Old Model' }]
-    const attemptedCustomModels = [{ id: 'attempted-model', name: 'Attempted Model' }]
+    const oldCustomModels = customModelRows([{ id: 'old-model', name: 'Old Model' }])
+    const attemptedCustomModels = customModelRows([{ id: 'attempted-model', name: 'Attempted Model' }])
     withTrustedServerProjectionWrite(() => {
       DBState.db.customModels = oldCustomModels
       DBState.db.moduleIntergration = 'old-modules'
@@ -1021,8 +1029,8 @@ describe('plugin projection command helpers', () => {
     setServerProjectionWriteGuardEnabled(true)
     withTrustedServerProjectionWrite(() => {
       DBState.db.moduleIntergration = 'old-modules'
-      ;(DBState.db as Record<string, unknown>).notServerBackedSetting = 'old-unsupported'
-      ;(DBState.db as Record<string, unknown>).maxContext = 4096
+      dbRecord().notServerBackedSetting = 'old-unsupported'
+      dbRecord().maxContext = 4096
     })
     const patch = {
       moduleIntergration: 'attempted-modules',
@@ -1033,8 +1041,8 @@ describe('plugin projection command helpers', () => {
 
     withTrustedServerProjectionWrite(() => {
       DBState.db.moduleIntergration = patch.moduleIntergration
-      ;(DBState.db as Record<string, unknown>).notServerBackedSetting = patch.notServerBackedSetting
-      ;(DBState.db as Record<string, unknown>).maxContext = undefined
+      dbRecord().notServerBackedSetting = patch.notServerBackedSetting
+      dbRecord().maxContext = undefined
     })
     dispatchPluginSettingsPatch(patch, rollbackSnapshot)
 
@@ -1052,8 +1060,8 @@ describe('plugin projection command helpers', () => {
       },
     })
     expect(DBState.db.moduleIntergration).toBe('old-modules')
-    expect((DBState.db as Record<string, unknown>).notServerBackedSetting).toBe('attempted-unsupported')
-    expect((DBState.db as Record<string, unknown>).maxContext).toBeUndefined()
+    expect(dbRecord().notServerBackedSetting).toBe('attempted-unsupported')
+    expect(dbRecord().maxContext).toBeUndefined()
   })
 
   it('failed PUT restores only the attempted key and preserves newer sibling keys', async () => {

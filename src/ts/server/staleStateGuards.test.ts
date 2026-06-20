@@ -246,7 +246,7 @@ describe('dirty draft projection merge', () => {
     const merged = mergeProjectionIntoDirtyDraft({
       draft,
       projection,
-      dirtyFields: new Set(['name']),
+      dirtyFields: new Set<keyof typeof draft & string>(['name']),
     })
 
     expect(merged).toBe(draft)

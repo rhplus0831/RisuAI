@@ -984,6 +984,8 @@ describe('chat command projection helpers', () => {
             name: 'Newer appended chat',
             folderId: null,
             message: [],
+            note: '',
+            localLore: [],
           })
         })
       },
@@ -1189,6 +1191,8 @@ describe('chat command projection helpers', () => {
             name: 'Newer appended chat',
             folderId: null,
             message: [],
+            note: '',
+            localLore: [],
           })
         })
       },
@@ -2656,7 +2660,7 @@ describe('Phase 2 chat-scoped message dispatch', () => {
     previousChat.message = [{ role: 'user', data: 'before', chatId: 'm-before' }]
     DBState.db.characters[0].chats[0] = jsonClone(previousChat)
     const previous = currentChatScopedSnapshot()
-    const nextChat = {
+    const nextChat: Chat = {
       ...jsonClone(previousChat),
       name: 'Accepted name',
       message: [{ role: 'char', data: 'attempted', chatId: 'm-attempted' }],

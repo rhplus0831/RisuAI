@@ -2,9 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { get } from 'svelte/store'
 
 const routerMocks = vi.hoisted(() => ({
-  changeChar: vi.fn(),
+  changeChar: vi.fn<(...args: any[]) => Promise<void> | void>(),
   changeChatTo: vi.fn(),
-  findCharacterIndexbyId: vi.fn(() => -1),
+  findCharacterIndexbyId: vi.fn<(characterId: string) => number>(() => -1),
   openPlaygroundChat: vi.fn(),
 }))
 
@@ -256,7 +256,7 @@ describe('router character route freshness', () => {
         DBState.db.characters?.findIndex((character: any) => character?.chaId === characterId) ?? -1,
     )
     routerMocks.changeChar.mockImplementation(async (_index: number) => {
-      DBState.db.characters = [charB, charA]
+      DBState.db.characters = [charB, charA] as any
       selectedCharID.set(1)
     })
 

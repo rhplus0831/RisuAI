@@ -47,8 +47,8 @@ const customHtmlMocks = vi.hoisted(() => {
     ),
     clearManualTriggerAbortController: vi.fn(),
     createManualTriggerAbortController: vi.fn(() => new AbortController()),
-    runLuaButtonTrigger: vi.fn(async () => undefined),
-    runTrigger: vi.fn(async () => undefined),
+    runLuaButtonTrigger: vi.fn<(...args: any[]) => Promise<any>>(async () => undefined),
+    runTrigger: vi.fn<(...args: any[]) => Promise<any>>(async () => undefined),
     sayTTS: vi.fn(),
     setLLMCache: vi.fn(async () => undefined),
   }

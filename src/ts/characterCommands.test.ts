@@ -57,7 +57,7 @@ import {
   setCharacterSupaMemory,
   updateCharacterOrderFolder,
 } from './characterCommands'
-import { setCharacterByIndex } from './storage/database.svelte'
+import { setCharacterByIndex, type folder } from './storage/database.svelte'
 import { clearCachedServerCommandRevision } from './server/commands'
 import {
   setServerProjectionWriteGuardEnabled,
@@ -1041,7 +1041,9 @@ describe('character order command helpers', () => {
       failReorder: true,
       onReorder: () => {
         withTrustedServerProjectionWrite(() => {
-          const folder = DBState.db.characterOrder.find((entry) => typeof entry !== 'string' && entry.id === 'folder-1')
+          const folder = DBState.db.characterOrder.find(
+            (entry): entry is folder => typeof entry !== 'string' && entry.id === 'folder-1',
+          )
           if (folder) {
             folder.name = 'Newer Folder'
             folder.color = 'green'
@@ -1230,7 +1232,9 @@ describe('character order command helpers', () => {
       failReorder: true,
       onReorder: () => {
         withTrustedServerProjectionWrite(() => {
-          const folder = DBState.db.characterOrder.find((entry) => typeof entry !== 'string' && entry.id === 'folder-b')
+          const folder = DBState.db.characterOrder.find(
+            (entry): entry is folder => typeof entry !== 'string' && entry.id === 'folder-b',
+          )
           if (folder) folder.name = 'Newer Folder B'
         })
       },

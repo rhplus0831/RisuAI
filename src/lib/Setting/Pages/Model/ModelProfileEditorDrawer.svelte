@@ -236,7 +236,7 @@
   }
 
   function snapshotForSave(): ModelProfileSnapshot {
-    const next: ModelProfileSnapshot = initialProfile ? cloneJsonValue(initialProfile) : {}
+    const next: ModelProfileSnapshot = initialProfile ? cloneJsonValue(initialProfile) : { name: '' }
     next.name = draftName.trim() || initialProfile?.name || language.modelProfiles.newProfileDefaultName
 
     if (!canEditProviderFields || !providerIsFirstClass) {

@@ -3,17 +3,15 @@ import { createModelRoleBindingPresetSnapshot } from './modelPresetSnapshots'
 
 describe('model preset snapshots', () => {
   it('captures durable role bindings without cloning profile records or runtime defaults', () => {
-    const snapshot = createModelRoleBindingPresetSnapshot(
-      {
-        modelProfiles: [{ id: 'profile-a', name: 'Profile A', modelId: 'gpt-5' }],
-        modelRoleProfiles: {
-          chatMain: { mode: 'profile', profileId: 'profile-a' },
-          memory: { mode: 'inherit' },
-        },
-        modelRuntimeDefaults: { maxContext: 8192 },
+    const source = {
+      modelProfiles: [{ id: 'profile-a', name: 'Profile A', modelId: 'gpt-5' }],
+      modelRoleProfiles: {
+        chatMain: { mode: 'profile', profileId: 'profile-a' },
+        memory: { mode: 'inherit' },
       },
-      'Story Models',
-    )
+      modelRuntimeDefaults: { maxContext: 8192 },
+    }
+    const snapshot = createModelRoleBindingPresetSnapshot(source, 'Story Models')
 
     expect(snapshot).toMatchObject({
       name: 'Story Models',

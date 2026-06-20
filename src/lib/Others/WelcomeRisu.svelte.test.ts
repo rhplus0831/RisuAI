@@ -168,7 +168,7 @@ beforeEach(() => {
   welcomeMocks.watchServerBackedSettings.mockClear()
   welcomeMocks.watchServerBackedSettings.mockReturnValue(welcomeMocks.stopServerSettingsWatch)
   welcomeMocks.applyServerBackedSetting.mockImplementation((key: string, value: unknown) => {
-    ;(DBState.db as Record<string, unknown>)[key] = value
+    ;(DBState.db as unknown as Record<string, unknown>)[key] = value
   })
   target = document.createElement('div')
   document.body.appendChild(target)

@@ -274,7 +274,7 @@ export function updateActiveMessageById(
   patch: JsonRecord,
 ): { ok: true; chatId: string } | { ok: false; reason: 'missing' | 'ambiguous' } {
   const resolved = resolveActiveMessageLocationById(db, messageId)
-  if (!resolved.ok) return { ok: false, reason: resolved.reason }
+  if (resolved.ok === false) return { ok: false, reason: resolved.reason }
   const { location } = resolved
 
   const next = { ...location.message, ...patch, chatId: messageId }
@@ -291,7 +291,7 @@ export function deleteActiveMessageById(
   messageId: string,
 ): { ok: true; chatId: string } | { ok: false; reason: 'missing' | 'ambiguous' } {
   const resolved = resolveActiveMessageLocationById(db, messageId)
-  if (!resolved.ok) return { ok: false, reason: resolved.reason }
+  if (resolved.ok === false) return { ok: false, reason: resolved.reason }
   const { location } = resolved
 
   const base = getChatMessages(db, location.chatId)

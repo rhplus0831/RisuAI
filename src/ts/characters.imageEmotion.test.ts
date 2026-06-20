@@ -74,6 +74,7 @@ import { clearCachedServerCommandRevision } from './server/commands'
 import { setServerProjectionWriteGuardEnabled } from './server/projectionWriteGuard.svelte'
 import { DBState, selectedCharID } from './stores.svelte'
 import { seedCloneCostDb, withCloneInstrumentation } from './__tests__/cloneCostHarness'
+import type { character } from './storage/database.svelte'
 // Import the heavy `./characters` module last so its circular dependency on
 // `stores`/`database` finishes initializing before the reactive `moduleUpdate`
 // effect can run (matches the working characters.importChat test ordering).
@@ -182,7 +183,7 @@ function avatarFile(name: string, chunks: Record<string, string> = {}) {
   return { name, data: minimalPng(chunks) }
 }
 
-function baseCharacter(overrides: Record<string, unknown> = {}) {
+function baseCharacter(overrides: Partial<character> = {}): character {
   return {
     chaId: 'char-a',
     type: 'character',
@@ -216,7 +217,7 @@ function baseCharacter(overrides: Record<string, unknown> = {}) {
     triggerscript: [],
     additionalText: '',
     ...overrides,
-  }
+  } as character
 }
 
 beforeEach(() => {

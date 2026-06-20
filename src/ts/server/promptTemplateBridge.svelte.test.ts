@@ -130,6 +130,10 @@ function item(id: string, text: string): PromptItem {
   return { id, type: 'plain', type2: 'normal', role: 'system', text } as PromptItem
 }
 
+function promptItemFixture(value: Record<string, unknown>): PromptItem {
+  return value as unknown as PromptItem
+}
+
 // `text` lives on the plain/jailbreak/cot/chatML PromptItem variants; the seed
 // uses plain items, so read it through a narrow cast in assertions.
 function textOf(value: PromptItem | undefined): string | undefined {
@@ -592,10 +596,10 @@ describe('reconcilePromptTemplateDraft', () => {
 
   it('refreshes clean fields on the dirty row', async () => {
     ;(DBState as { db: unknown }).db = {
-      promptTemplate: [{ ...item('dirty-row', 'server old'), name: 'old name', role: 'system' }],
+      promptTemplate: [promptItemFixture({ ...item('dirty-row', 'server old'), name: 'old name', role: 'system' })],
     }
     let draftItems = draftCopy()
-    draftItems[0] = { ...item('dirty-row', 'local dirty'), name: 'old name', role: 'system' }
+    draftItems[0] = promptItemFixture({ ...item('dirty-row', 'local dirty'), name: 'old name', role: 'system' })
     const binding: PromptTemplateDraftBinding = {
       getItems: () => draftItems,
       setItems: (items) => {
@@ -606,10 +610,12 @@ describe('reconcilePromptTemplateDraft', () => {
     queuePromptItemProjectionUpdate(
       binding,
       'dirty-row',
-      { ...item('dirty-row', 'server old'), name: 'old name', role: 'system' },
+      promptItemFixture({ ...item('dirty-row', 'server old'), name: 'old name', role: 'system' }),
       500,
     )
-    DBState.db.promptTemplate = [{ ...item('dirty-row', 'server old'), name: 'server name', role: 'user' }]
+    DBState.db.promptTemplate = [
+      promptItemFixture({ ...item('dirty-row', 'server old'), name: 'server name', role: 'user' }),
+    ]
     commandState.revision = 6
 
     const result = reconcilePromptTemplateDraft(draftItems, 5)

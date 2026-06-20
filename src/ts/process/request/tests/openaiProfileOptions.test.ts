@@ -97,6 +97,7 @@ function makeArg(
 async function preview(arg: RequestDataArgumentExtended): Promise<PreviewPayload> {
   const result = await requestOpenAI(arg)
   expect(result.type).toBe('success')
+  if (typeof result.result !== 'string') throw new Error('Expected preview body string')
   return JSON.parse(result.result) as PreviewPayload
 }
 
@@ -127,7 +128,7 @@ describe('requestOpenAI profile provider options', () => {
         reverseProxyOobaMode: true,
         reverseProxyOobaArgs: { profile_ooba_arg: 7 },
         genTime: 4,
-      } as Partial<Database>),
+      } as unknown as Partial<Database>),
     })
     setDatabase(
       db({
@@ -143,7 +144,7 @@ describe('requestOpenAI profile provider options', () => {
         reverseProxyOobaMode: false,
         reverseProxyOobaArgs: { flat_ooba_arg: 9 },
         genTime: 9,
-      } as Partial<Database>),
+      } as unknown as Partial<Database>),
     )
 
     const payload = await preview(makeArg(profile, { multiGen: true }))
@@ -543,7 +544,7 @@ describe('requestOpenAI profile provider options', () => {
         reverseProxyOobaMode: true,
         reverseProxyOobaArgs: { legacy_ooba_arg: 3 },
         genTime: 6,
-      } as Partial<Database>),
+      } as unknown as Partial<Database>),
     )
 
     const payload = await preview({

@@ -74,7 +74,7 @@
   let draftTargetKey = lorebookEntryDraftTargetKey(value)
   const dirtyDraftFields = new Set<LorebookEntryDirtyField>()
   let previousValueSnapshot = snapshotJson(value)
-  let lastDraftDispatchSnapshot = snapshotJson(draft)
+  let lastDraftDispatchSnapshot = snapshotJson(value)
   let tokenPromise = $state<Promise<number> | null>(null)
 
   $effect(() => {

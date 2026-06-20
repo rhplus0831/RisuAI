@@ -154,7 +154,7 @@ function snapshotJson(value: unknown): string {
 }
 
 function characterById(characterId: string): Record<string, unknown> | undefined {
-  return (DBState.db.characters as Array<Record<string, unknown>> | undefined)?.find(
+  return (DBState.db.characters as unknown as Array<Record<string, unknown>> | undefined)?.find(
     (candidate) => candidate.chaId === characterId,
   )
 }
@@ -201,6 +201,7 @@ function installAttemptAwareRollbackMocks(): void {
       const character = characterById(rollback.characterId)
       if (!character || rollback.kind !== attempted.kind || rollback.characterId !== attempted.characterId) return
       if (rollback.kind === 'characterScripts') {
+        if (attempted.kind !== 'characterScripts') return
         if (snapshotJson(character.customscript) !== snapshotJson(attempted.scripts)) return
         if (rollback.hadScriptsField === false) {
           delete character.customscript
@@ -209,6 +210,7 @@ function installAttemptAwareRollbackMocks(): void {
         }
         return
       }
+      if (attempted.kind !== 'characterTriggers') return
       if (snapshotJson(character.triggerscript) !== snapshotJson(attempted.triggers)) return
       if (rollback.hadTriggersField === false) {
         delete character.triggerscript
@@ -222,7 +224,7 @@ function installAttemptAwareRollbackMocks(): void {
 describe('module imports', () => {
   beforeEach(() => {
     selectedFileState.file = null
-    ;(DBState as { db: Record<string, unknown> }).db = { modules: [], characters: [] }
+    ;(DBState as unknown as { db: Record<string, unknown> }).db = { modules: [], characters: [] }
     alertError.mockClear()
     saveAsset.mockClear()
     createGlobalModule.mockClear()
@@ -394,7 +396,7 @@ describe('module imports', () => {
     ]
     await factories[0](10)
     replaceCharacterScriptsCommand.mockResolvedValueOnce({ status: 'conflict', revision: 2, data: {} })
-    character.customscript = [{ comment: 'Newer regex', in: 'newer', out: 'newer' }]
+    character.customscript = [{ comment: 'Newer regex', in: 'newer', out: 'newer', type: 'regex' }]
 
     await factories[1](11)
     rollback()
@@ -434,10 +436,14 @@ describe('module imports', () => {
     DBState.db.modules = [
       {
         id: 'unrelated-module',
-        regex: [{ comment: 'Unrelated module regex', in: 'module', out: 'module' }],
+        name: 'Unrelated module',
+        description: '',
+        regex: [{ comment: 'Unrelated module regex', in: 'module', out: 'module', type: 'regex' }],
       },
     ]
-    DBState.db.loreBook = [{ id: 'global-lore', name: 'Global lore', data: [{ comment: 'Global', content: 'g' }] }]
+    DBState.db.loreBook = [
+      { id: 'global-lore', name: 'Global lore', data: [{ comment: 'Global', content: 'g' }] },
+    ] as never
     getCurrentCharacter.mockReturnValue(target)
     getDatabase.mockReturnValue({
       modules: [
@@ -459,9 +465,9 @@ describe('module imports', () => {
       () => void,
     ]
     replaceCharacterLorebooksCommand.mockResolvedValueOnce({ status: 'conflict', revision: 1, data: {} })
-    sibling.customscript = [{ comment: 'Sibling newer regex', in: 'new-sib', out: 'new-sib' }]
-    ;(DBState.db.modules as Array<Record<string, unknown>>)[0].regex = [
-      { comment: 'Unrelated module newer regex', in: 'new-module', out: 'new-module' },
+    sibling.customscript = [{ comment: 'Sibling newer regex', in: 'new-sib', out: 'new-sib', type: 'regex' }]
+    ;(DBState.db.modules as unknown as Array<Record<string, unknown>>)[0].regex = [
+      { comment: 'Unrelated module newer regex', in: 'new-module', out: 'new-module', type: 'regex' },
     ]
     ;(DBState.db.loreBook as Array<Record<string, unknown>>)[0].name = 'Global lore newer'
 

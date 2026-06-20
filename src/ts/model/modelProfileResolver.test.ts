@@ -200,7 +200,7 @@ describe('resolveModelProfile legacy role compatibility', () => {
           chatAux: { mode: 'legacy' },
           memory: { mode: 'inherit' },
         },
-      } as Partial<Database>),
+      } as unknown as Partial<Database>),
       db({
         subModel: 'flat-aux-model',
         modelRoles: { memory: 'memory-role-model' } as Database['modelRoles'],
@@ -208,7 +208,7 @@ describe('resolveModelProfile legacy role compatibility', () => {
           chatAux: { mode: 'inherit' },
           memory: { mode: 'inherit' },
         },
-      } as Partial<Database>),
+      } as unknown as Partial<Database>),
     ]) {
       const profile = resolveModelProfile({ database, role: 'memory', lookupModelInfo })
 
@@ -923,7 +923,7 @@ describe('resolveModelProfile provider/runtime normalization', () => {
           },
         ],
         modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'deepseek-profile' } },
-      } as Partial<Database>),
+      } as unknown as Partial<Database>),
     })
 
     expect(keyIdentifier.providerOptions.apiKey).toBe('profile-deepseek-key')
@@ -1017,7 +1017,7 @@ describe('resolveModelProfile provider/runtime normalization', () => {
           },
         ],
         modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'proxy-profile' } },
-      } as Partial<Database>),
+      } as unknown as Partial<Database>),
     })
 
     expect(profile.modelId).toBe('reverse_proxy')

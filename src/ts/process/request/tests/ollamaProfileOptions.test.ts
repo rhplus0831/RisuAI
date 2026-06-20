@@ -105,6 +105,7 @@ function switchActiveDbDuringRoute(overrides: Partial<Database>): void {
 async function preview(): Promise<PreviewPayload> {
   const result = await requestChatDataMain(makeRequest(), 'model')
   expect(result.type).toBe('success')
+  if (typeof result.result !== 'string') throw new Error('Expected preview body string')
   return JSON.parse(result.result) as PreviewPayload
 }
 

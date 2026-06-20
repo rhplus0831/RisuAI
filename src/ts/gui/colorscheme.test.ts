@@ -104,7 +104,8 @@ function createPicker() {
     }),
     resolve(value: SelectedFile | null) {
       if (value) {
-        options?.onFileSelected?.(new File([value.data], value.name))
+        const data = value.data.buffer.slice(value.data.byteOffset, value.data.byteOffset + value.data.byteLength)
+        options?.onFileSelected?.(new File([data as ArrayBuffer], value.name))
       }
       resolve(value)
     },

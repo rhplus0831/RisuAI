@@ -761,8 +761,8 @@ describe('loadout projection command helpers', () => {
         formatingOrder: [],
         promptPreprocess: false,
         bias: [],
-        ooba: {},
-        ainconfig: {},
+        ooba: {} as never,
+        ainconfig: {} as never,
         promptTemplate: [],
       })
       DBState.db.enabledModules = ['module-later']

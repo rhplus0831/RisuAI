@@ -41,10 +41,6 @@ export type ChatButtonTriggerFreshnessResult =
   | { ok: true }
   | { ok: false; reason: ChatButtonTriggerFreshnessRejectReason }
 
-export interface ChatButtonTriggerSignatureChat {
-  [key: string]: unknown
-}
-
 export function createChatButtonTriggerOperationTracker(): ChatButtonTriggerOperationTracker {
   return { latestToken: 0 }
 }
@@ -113,7 +109,7 @@ export function resolveChatButtonTriggerFreshness(
   return { ok: true }
 }
 
-export function chatButtonTriggerChatSignature(chat: ChatButtonTriggerSignatureChat | undefined | null): string {
+export function chatButtonTriggerChatSignature(chat: unknown): string {
   return JSON.stringify(chat ?? null)
 }
 
