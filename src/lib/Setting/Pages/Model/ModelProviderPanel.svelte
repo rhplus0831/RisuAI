@@ -54,6 +54,7 @@
   }: Props = $props()
 
   const firstClassProviderIds = new Set<string>(FIRST_CLASS_MODEL_PROFILE_PROVIDER_IDS)
+  const fixedModelProviderIds = new Set<string>(['custom-api', 'debug-echo'])
   const openAIModelOptions = modelOptions(OpenAIModels)
   const anthropicModelOptions = modelOptions(AnthropicModels)
   const googleModelOptions = modelOptions(GoogleModels)
@@ -77,8 +78,8 @@
   let baseUrlIncludesSuffix = $derived(baseUrl.toLowerCase().includes('/chat/completions'))
 
   $effect(() => {
-    if (providerId === 'custom-api' && modelId !== 'custom-api') {
-      modelId = 'custom-api'
+    if (fixedModelProviderIds.has(providerId) && modelId !== providerId) {
+      modelId = providerId
     }
   })
 
@@ -334,6 +335,21 @@
             {/each}
           </div>
         </div>
+      </div>
+    {:else if providerId === 'debug-echo'}
+      <div class="grid gap-3 md:grid-cols-2">
+        <label class="flex flex-col gap-1">
+          <span class="text-sm text-textcolor2">{language.modelProfiles.baseUrlLabel}</span>
+          <TextInput size="sm" fullwidth bind:value={baseUrl} placeholder={language.modelProfiles.baseUrlPlaceholder} />
+        </label>
+        <label class="flex flex-col gap-1">
+          <span class="text-sm text-textcolor2">{language.modelProfiles.requestModelColumn}</span>
+          <TextInput
+            size="sm"
+            fullwidth
+            bind:value={requestModel}
+            placeholder={language.modelProfiles.requestModelPlaceholder} />
+        </label>
       </div>
     {/if}
   </div>

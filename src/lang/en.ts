@@ -1975,6 +1975,7 @@ export const languageEnglish = {
       google: 'Google',
       vertex: 'Vertex AI',
       'custom-api': 'Custom API',
+      'debug-echo': 'Debug Echo',
     },
     statusBuckets: {
       ready: 'Ready',

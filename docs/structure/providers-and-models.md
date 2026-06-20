@@ -66,6 +66,7 @@ First-class profile provider panels are intentionally limited to:
 - `google`
 - `vertex`
 - `custom-api`
+- `debug-echo`
 
 The first-class panels write top-level `providerId`, selected `modelId`,
 `providerOptions` such as `apiKey`, `requestModel`, endpoint/base URL, extra
@@ -73,6 +74,9 @@ headers, additional params, Vertex fields, and Custom API tokenizer/flag
 metadata. Custom API profiles represent OpenAI-compatible Chat Completions; the
 UI stores a base URL and warns when the user includes `/chat/completions`
 because dispatch appends that suffix.
+Debug Echo profiles use the existing Echo dispatcher and return a small JSON
+payload containing the profile-local Base URL and Request Model for provider
+debugging.
 
 ## Durable Profile Data Flow
 

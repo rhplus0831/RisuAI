@@ -62,7 +62,14 @@ export interface ModelProfileResolutionSource {
   bypassesRoleResolution: boolean
 }
 
-export const FIRST_CLASS_MODEL_PROFILE_PROVIDER_IDS = ['openai', 'anthropic', 'google', 'vertex', 'custom-api'] as const
+export const FIRST_CLASS_MODEL_PROFILE_PROVIDER_IDS = [
+  'openai',
+  'anthropic',
+  'google',
+  'vertex',
+  'custom-api',
+  'debug-echo',
+] as const
 
 export type FirstClassModelProfileProviderId = (typeof FIRST_CLASS_MODEL_PROFILE_PROVIDER_IDS)[number]
 
@@ -1081,6 +1088,7 @@ function inferFirstClassProviderId(selection: ModelProfileSelection): FirstClass
   if (modelId === 'custom-api' && (nonBlankString(options?.baseUrl) || nonBlankString(options?.requestModel))) {
     return 'custom-api'
   }
+  if (modelId === 'debug-echo') return 'debug-echo'
   if (modelId.endsWith('-vertex') || options?.vertex !== undefined) return 'vertex'
   if (!nonBlankString(options?.apiKey)) return null
   if (isOpenAIModelId(modelId)) return 'openai'
@@ -1182,6 +1190,17 @@ function resolveFirstClassModelInfo(
         parameters: OPENAI_EXTENDED_PARAMETERS,
         tokenizer: providerOptions?.customApi?.tokenizer ?? LLMTokenizer.Unknown,
       })
+    case 'debug-echo':
+      return completeModel({
+        id,
+        name: 'Debug Echo',
+        internalID: id,
+        provider: LLMProvider.Echo,
+        format: LLMFormat.Echo,
+        flags: [LLMFlags.hasFullSystemPrompt],
+        parameters: [],
+        tokenizer: LLMTokenizer.Unknown,
+      })
   }
 }
 
@@ -1229,6 +1248,11 @@ function resolveFirstClassProviderOptions(
         apiKey,
         baseUrl,
         ...shared,
+      }
+    case 'debug-echo':
+      return {
+        ...base,
+        baseUrl,
       }
   }
 }
@@ -1368,6 +1392,8 @@ function firstClassIncompleteReasons(
     case 'custom-api':
       if (!nonBlankString(providerOptions.baseUrl)) reasons.push('base-url-missing')
       if (!nonBlankString(providerOptions.requestModel)) reasons.push('request-model-missing')
+      break
+    case 'debug-echo':
       break
   }
 

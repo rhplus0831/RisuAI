@@ -59,6 +59,7 @@
   }: Props = $props()
 
   const firstClassProviderIds = new Set<string>(FIRST_CLASS_MODEL_PROFILE_PROVIDER_IDS)
+  const fixedModelProviderIds = new Set<string>(['custom-api', 'debug-echo'])
   // svelte-ignore state_referenced_locally
   const initialProfile = profile
 
@@ -161,9 +162,9 @@
 
   function setProviderId(nextProviderId: string): void {
     providerId = nextProviderId
-    if (nextProviderId === 'custom-api') {
-      modelId = 'custom-api'
-    } else if (modelId === 'custom-api') {
+    if (fixedModelProviderIds.has(nextProviderId)) {
+      modelId = nextProviderId
+    } else if (fixedModelProviderIds.has(modelId)) {
       modelId = ''
     }
   }
@@ -207,6 +208,13 @@
       return removeEmptyProviderOptions(options)
     }
 
+    if (nextProviderId === 'debug-echo') {
+      const options: ModelProfileRecordProviderOptions = {}
+      if (baseUrl.trim()) options.baseUrl = baseUrl.trim()
+      if (requestModel.trim()) options.requestModel = requestModel.trim()
+      return removeEmptyProviderOptions(options)
+    }
+
     const options: ModelProfileRecordProviderOptions = {}
     const apiKey = secretValue(apiKeyDraft)
     if (apiKey) options.apiKey = apiKey
@@ -245,7 +253,7 @@
 
     const nextProviderId = providerId as FirstClassModelProfileProviderId
     next.providerId = nextProviderId
-    next.modelId = nextProviderId === 'custom-api' ? 'custom-api' : modelId.trim()
+    next.modelId = fixedModelProviderIds.has(nextProviderId) ? nextProviderId : modelId.trim()
     if (!next.modelId) delete next.modelId
 
     const providerOptions = firstClassProviderOptionsForSave(nextProviderId)

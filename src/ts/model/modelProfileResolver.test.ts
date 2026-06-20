@@ -1944,6 +1944,35 @@ describe('resolveModelProfile provider/runtime normalization', () => {
       requestModel: 'local-model',
     })
     expect(customApi.providerOptions.apiKey).toBeUndefined()
+
+    const debugEcho = resolveModelProfile({
+      database: db({
+        modelProfiles: [
+          {
+            id: 'debug-echo-profile',
+            name: 'Debug Echo Profile',
+            providerId: 'debug-echo',
+            modelId: 'debug-echo',
+            providerOptions: {
+              baseUrl: 'debug://base',
+              requestModel: 'debug-wire-model',
+            },
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'debug-echo-profile' } },
+      } as Partial<Database>),
+      role: 'chatMain',
+    })
+
+    expect(debugEcho.status).toMatchObject({
+      bucket: 'ready',
+      providerId: 'debug-echo',
+    })
+    expect(debugEcho.providerCapability).toEqual({ routable: true, provider: 'echo' })
+    expect(debugEcho.providerOptions).toMatchObject({
+      baseUrl: 'debug://base',
+      requestModel: 'debug-wire-model',
+    })
   })
 
   it('exports provider capability input and request model helpers for resolved profiles', () => {

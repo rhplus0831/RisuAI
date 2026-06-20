@@ -278,11 +278,11 @@ describe('Model profile-first profiles tab source contract', () => {
     expect(drawer).toContain("import ModelRuntimeOptionsEditor from './ModelRuntimeOptionsEditor.svelte'")
     expect(drawer).toContain("import ModelFallbackEditor from './ModelFallbackEditor.svelte'")
     expect(drawer).toContain('modelProfileSecretValueForSave')
-    expect(drawer).toContain("nextProviderId === 'custom-api' ? 'custom-api' : modelId.trim()")
+    expect(drawer).toContain('fixedModelProviderIds.has(nextProviderId) ? nextProviderId : modelId.trim()')
     expect(drawer).toContain('if (!canEditProviderFields || !providerIsFirstClass)')
     expect(drawer).toContain('window.confirm(language.modelProfiles.discardProfileChangesConfirm)')
 
-    for (const providerId of ['openai', 'anthropic', 'google', 'vertex', 'custom-api']) {
+    for (const providerId of ['openai', 'anthropic', 'google', 'vertex', 'custom-api', 'debug-echo']) {
       expect(provider).toContain(`providerId === '${providerId}'`)
     }
     expect(provider).toContain("baseUrl.toLowerCase().includes('/chat/completions')")

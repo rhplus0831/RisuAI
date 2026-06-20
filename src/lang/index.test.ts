@@ -125,6 +125,9 @@ describe('changeLanguage same-code cache', () => {
     expect(langModule.language.modelProfiles.providerNames['custom-api']).toBe(
       languageEnglish.modelProfiles.providerNames['custom-api'],
     )
+    expect(langModule.language.modelProfiles.providerNames['debug-echo']).toBe(
+      languageEnglish.modelProfiles.providerNames['debug-echo'],
+    )
     expect(langModule.language.modelProfiles.statusReasons['profile-model-missing']).toBe(
       languageEnglish.modelProfiles.statusReasons['profile-model-missing'],
     )

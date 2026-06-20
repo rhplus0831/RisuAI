@@ -1227,6 +1227,67 @@ describe('dispatchChatProvider profile providerOptions', () => {
     expect(captured[0].body.model).toBe('profile-custom-model')
   })
 
+  it('uses first-class Debug Echo provider options as the echo payload', async () => {
+    const profile = resolveModelProfile({
+      database: db({
+        modelProfiles: [
+          {
+            id: 'debug-echo-profile',
+            name: 'Debug Echo',
+            providerId: 'debug-echo',
+            modelId: 'debug-echo',
+            providerOptions: {
+              baseUrl: 'debug://profile-base',
+              requestModel: 'profile-debug-model',
+            },
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'debug-echo-profile' } },
+      } as unknown as Partial<Database>),
+    })
+    const expectedContent = JSON.stringify(
+      {
+        provider: 'debug-echo',
+        baseUrl: 'debug://profile-base',
+        requestModel: 'profile-debug-model',
+      },
+      null,
+      2,
+    )
+    const controller = new AbortController()
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout')
+
+    try {
+      const frames = await dispatchChatProvider({
+        database: db({
+          aiModel: 'echo_model',
+          echoMessage: 'flat echo should not leak',
+          echoDelay: 60,
+        } as Partial<Database>),
+        profile,
+        formated: [{ role: 'user', content: 'hello' }],
+        signal: controller.signal,
+      })
+      expect(setTimeoutSpy).not.toHaveBeenCalled()
+
+      const emitted = []
+      for await (const frame of frames) {
+        emitted.push(frame)
+      }
+
+      expect(emitted).toEqual([
+        {
+          kind: 'token',
+          content: expectedContent,
+        },
+        { kind: 'done', finishReason: 'stop' },
+      ])
+    } finally {
+      controller.abort()
+      setTimeoutSpy.mockRestore()
+    }
+  })
+
   it.each([
     {
       label: 'incomplete official OpenAI profile',

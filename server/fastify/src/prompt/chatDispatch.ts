@@ -587,6 +587,18 @@ function resolveProfileOllamaBaseUrl(profile: ResolvedModelProfile): string | un
   return asString(options.ollama?.url) ?? asString(options.baseUrl)
 }
 
+function resolveDebugEchoMessage(profile: ResolvedModelProfile): string {
+  return JSON.stringify(
+    {
+      provider: 'debug-echo',
+      baseUrl: profile.providerOptions.baseUrl ?? '',
+      requestModel: profile.providerOptions.requestModel ?? '',
+    },
+    null,
+    2,
+  )
+}
+
 function resolveProfileVertexAuth(profile: ResolvedModelProfile): VertexAuthInput | undefined {
   const vertex = profile.providerOptions.vertex
   const projectId = asString(vertex?.projectId)
@@ -744,9 +756,10 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
   const stream = db.useStreaming === true
 
   if (provider === 'echo') {
+    const isDebugEchoProfile = profile.status.providerId === 'debug-echo'
     const request = resolveEchoRequest({
-      message: db.echoMessage,
-      delayMs: (db.echoDelay ?? 0) * 1000,
+      message: isDebugEchoProfile ? resolveDebugEchoMessage(profile) : db.echoMessage,
+      delayMs: isDebugEchoProfile ? 0 : (db.echoDelay ?? 0) * 1000,
       signal,
     })
     return stream ? runEchoStream(request) : resultFrames(runEcho(request))
