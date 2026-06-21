@@ -11,6 +11,7 @@
     GitBranch,
     HamburgerIcon,
     LanguagesIcon,
+    LoaderCircleIcon,
     PencilIcon,
     RefreshCcwIcon,
     SplitIcon,
@@ -230,6 +231,7 @@
   }
 
   async function requestServerRawTranslation() {
+    if (translating) return
     const liveMessage = currentLiveMessage()
     const messageId = liveMessage?.chatId || messageRowId
     if (!messageId) {
@@ -237,6 +239,7 @@
       return
     }
     translating = true
+    editTranslationMode = false
     try {
       const result = await runServerCommand({
         command: (baseRevision) => translateMessageCommand({ baseRevision, messageId }),
@@ -841,7 +844,7 @@
         </span>
       </button>
     {/if}
-    {#if supportsServerRawTranslation() && translated}
+    {#if supportsServerRawTranslation() && translated && !translating}
       <button
         class="text-sm p-1 text-textcolor2 border-darkborderc float-end mr-2 my-1
                             hover:ring-darkbutton hover:ring-3 rounded-md hover:text-textcolor transition-all flex justify-center items-center"
@@ -868,7 +871,7 @@
           {editTranslationMode ? language.editTranslationSave : language.editTranslation}
         </span>
       </button>
-    {:else if DBState.db.translatorType === 'llm' && translated}
+    {:else if DBState.db.translatorType === 'llm' && translated && !translating}
       <button
         class="text-sm p-1 text-textcolor2 border-darkborderc float-end mr-2 my-1
                             hover:ring-darkbutton hover:ring-3 rounded-md hover:text-textcolor transition-all flex justify-center items-center"
@@ -1332,9 +1335,14 @@
   {#if DBState.db.translator !== '' && DBState.db.translatorType !== 'bergamot' && !blankMessage}
     <button
       class={'flex items-center cursor-pointer hover:text-blue-500 transition-colors button-icon-translate ' +
-        (translated ? 'text-blue-400' : '')}
+        (translated && !translating ? 'text-blue-400' : '') +
+        (translating ? ' cursor-wait opacity-70' : '')}
       class:translating
+      disabled={translating}
+      aria-busy={translating}
+      aria-label={translating ? language.translating : language.translate}
       onclick={async () => {
+        if (translating) return
         if (!supportsServerRawTranslation()) {
           translated = !translated
           return
@@ -1344,14 +1352,19 @@
           editTranslationMode = false
           return
         }
-        translated = true
-        if (!activeRawTranslation()) {
-          await requestServerRawTranslation()
+        if (activeRawTranslation()) {
+          translated = true
+          return
         }
+        await requestServerRawTranslation()
       }}>
-      <LanguagesIcon />
+      {#if translating}
+        <LoaderCircleIcon class="animate-spin" />
+      {:else}
+        <LanguagesIcon />
+      {/if}
       {#if showNames}
-        <span class="ml-1">{language.translate}</span>
+        <span class="ml-1">{translating ? language.translating : language.translate}</span>
       {/if}
     </button>
   {/if}

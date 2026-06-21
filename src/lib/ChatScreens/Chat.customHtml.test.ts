@@ -21,6 +21,39 @@ const customHtmlMocks = vi.hoisted(() => {
     alertRequestData: vi.fn(),
     alertWait: vi.fn(),
     canUseServerCommands: vi.fn(() => false),
+    runServerCommand: vi.fn(async (input: { command: (baseRevision: number) => Promise<unknown> }) => input.command(1)),
+    translateMessageCommand: vi.fn(async () => ({
+      status: 'ok',
+      revision: 2,
+      event: {
+        type: 'message.updated',
+        revision: 2,
+        resource: 'message',
+        id: 'message-0',
+      },
+      chatId: 'custom-html-chat',
+      messageId: 'message-0',
+      translation: {
+        source: 'raw',
+        text: 'translated raw',
+        sourceHash: 'a'.repeat(64),
+        targetLanguage: 'ko',
+        inputLanguage: 'en',
+        translatorType: 'llm',
+        settingsHash: 'b'.repeat(64),
+        updatedAt: 123,
+      },
+    })),
+    updateMessageCommand: vi.fn(async () => ({
+      status: 'ok',
+      revision: 3,
+      event: {
+        type: 'message.updated',
+        revision: 3,
+        resource: 'message',
+        id: 'message-0',
+      },
+    })),
     getLLMCache: vi.fn(async () => null),
     ParseMarkdown: vi.fn(async (html: string) => html),
     risuChatParser: vi.fn(
@@ -169,6 +202,9 @@ vi.mock('src/ts/chatCommands', () => ({
 
 vi.mock('src/ts/server/commands', () => ({
   canUseServerCommands: customHtmlMocks.canUseServerCommands,
+  runServerCommand: customHtmlMocks.runServerCommand,
+  translateMessageCommand: customHtmlMocks.translateMessageCommand,
+  updateMessageCommand: customHtmlMocks.updateMessageCommand,
 }))
 
 vi.mock('src/ts/util', () => ({
@@ -337,6 +373,42 @@ beforeEach(() => {
   NativeDOMParser = globalThis.DOMParser
   vi.stubGlobal('DOMParser', CountingDOMParser)
   vi.clearAllMocks()
+  customHtmlMocks.canUseServerCommands.mockReturnValue(false)
+  customHtmlMocks.runServerCommand.mockImplementation(
+    async (input: { command: (baseRevision: number) => Promise<unknown> }) => input.command(1),
+  )
+  customHtmlMocks.translateMessageCommand.mockResolvedValue({
+    status: 'ok',
+    revision: 2,
+    event: {
+      type: 'message.updated',
+      revision: 2,
+      resource: 'message',
+      id: 'message-0',
+    },
+    chatId: 'custom-html-chat',
+    messageId: 'message-0',
+    translation: {
+      source: 'raw',
+      text: 'translated raw',
+      sourceHash: 'a'.repeat(64),
+      targetLanguage: 'ko',
+      inputLanguage: 'en',
+      translatorType: 'llm',
+      settingsHash: 'b'.repeat(64),
+      updatedAt: 123,
+    },
+  })
+  customHtmlMocks.updateMessageCommand.mockResolvedValue({
+    status: 'ok',
+    revision: 3,
+    event: {
+      type: 'message.updated',
+      revision: 3,
+      resource: 'message',
+      id: 'message-0',
+    },
+  })
   clearCustomHtmlTemplateMemo()
   vi.mocked(getCurrentCharacter).mockImplementation(() => DBState.db.characters?.[selIdState.selId] ?? null)
   vi.mocked(getCurrentChat).mockImplementation(() => {
@@ -482,5 +554,82 @@ describe('customHTML rendered button trigger freshness', () => {
     expect(DBState.db.characters[0].chats[0].message[0].data).toBe('visible message 0')
     expect(DBState.db.characters[0].chats[1].message[0].data).toBe('other chat message')
     expect(dispatchCompatibleChatUpdateScoped).not.toHaveBeenCalled()
+  })
+})
+
+describe('server raw translation controls', () => {
+  it('keeps translate pending state separate from completed translation UI', async () => {
+    const translation = {
+      source: 'raw',
+      text: 'translated raw',
+      sourceHash: 'a'.repeat(64),
+      targetLanguage: 'ko',
+      inputLanguage: 'en',
+      translatorType: 'llm',
+      settingsHash: 'b'.repeat(64),
+      updatedAt: 123,
+    }
+    const pendingTranslation = deferred<{
+      status: 'ok'
+      revision: number
+      event: {
+        type: string
+        revision: number
+        resource: string
+        id: string
+      }
+      chatId: string
+      messageId: string
+      translation: typeof translation
+    }>()
+    customHtmlMocks.canUseServerCommands.mockReturnValue(true)
+    customHtmlMocks.translateMessageCommand.mockReturnValue(pendingTranslation.promise)
+    seedDatabase(1, null as unknown as string)
+    DBState.db.translator = 'configured'
+    DBState.db.translatorType = 'llm'
+    mountCustomHtmlRows(1)
+    await settle()
+
+    let translateButton = target.querySelector<HTMLButtonElement>('.button-icon-translate')
+    expect(translateButton).not.toBeNull()
+    translateButton?.click()
+    await settle()
+
+    translateButton = target.querySelector<HTMLButtonElement>('.button-icon-translate')
+    expect(customHtmlMocks.translateMessageCommand).toHaveBeenCalledWith({
+      baseRevision: 1,
+      messageId: 'message-0',
+    })
+    expect(translateButton?.disabled).toBe(true)
+    expect(translateButton?.getAttribute('aria-busy')).toBe('true')
+    expect(translateButton?.className).not.toContain('text-blue-400')
+    expect(target.textContent).toContain('visible message 0')
+    expect(target.textContent).not.toContain('translated raw')
+    expect(target.textContent).not.toContain('retranslate')
+    expect(target.textContent).not.toContain('editTranslation')
+
+    pendingTranslation.resolve({
+      status: 'ok',
+      revision: 2,
+      event: {
+        type: 'message.updated',
+        revision: 2,
+        resource: 'message',
+        id: 'message-0',
+      },
+      chatId: 'custom-html-chat',
+      messageId: 'message-0',
+      translation,
+    })
+    await settle()
+
+    translateButton = target.querySelector<HTMLButtonElement>('.button-icon-translate')
+    expect(translateButton?.disabled).toBe(false)
+    expect(translateButton?.getAttribute('aria-busy')).toBe('false')
+    expect(translateButton?.className).toContain('text-blue-400')
+    expect(DBState.db.characters[0].chats[0].message[0].translation).toEqual(translation)
+    expect(target.textContent).toContain('translated raw')
+    expect(target.textContent).toContain('retranslate')
+    expect(target.textContent).toContain('editTranslation')
   })
 })
