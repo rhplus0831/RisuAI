@@ -2,6 +2,7 @@
   import { RotateCcwIcon } from '@lucide/svelte'
   import { openPersonaListModal, openPresetListModal, selectedCharID } from 'src/ts/stores.svelte'
   import { language } from 'src/lang'
+  import { alertConfirm } from 'src/ts/alert'
   import {
     resolveActiveChatGenerationSettings,
     saveActiveChatGenerationSettingsDefaultValues,
@@ -42,7 +43,8 @@
     return typeof note === 'string' && note.trim().length > 0 ? note : ''
   })
 
-  function resetDefaultValues(): void {
+  async function resetDefaultValues(): Promise<void> {
+    if (!(await alertConfirm(language.chatGenerationResetDefaultsConfirm))) return
     saveActiveChatGenerationSettingsDefaultValues()
   }
 </script>

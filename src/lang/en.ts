@@ -758,6 +758,7 @@ export const languageEnglish = {
   chatGenerationPromptPresetUnconfigured: 'Select prompt preset',
   chatGenerationPersonaUnconfigured: 'Select chat persona',
   chatGenerationResetDefaults: 'Reset toggle defaults',
+  chatGenerationResetDefaultsConfirm: 'Are you sure you want to reset toggle defaults?',
   charIcon: 'Character Icon',
   characterDisplay: 'Character Display',
   viewScreen: 'Additional Character Screen',

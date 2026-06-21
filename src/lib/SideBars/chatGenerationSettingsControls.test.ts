@@ -2,6 +2,18 @@ import { get } from 'svelte/store'
 import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+const alertSpies = vi.hoisted(() => ({
+  alertConfirm: vi.fn(async () => false),
+}))
+
+vi.mock('src/ts/alert', async (importActual) => {
+  const actual = await importActual<typeof import('src/ts/alert')>()
+  return {
+    ...actual,
+    alertConfirm: alertSpies.alertConfirm,
+  }
+})
+
 vi.mock('src/ts/storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'sidebar-generation-settings-token',
 }))
@@ -361,6 +373,8 @@ function activeChat() {
 beforeEach(() => {
   target = document.createElement('div')
   document.body.appendChild(target)
+  alertSpies.alertConfirm.mockReset()
+  alertSpies.alertConfirm.mockResolvedValue(false)
   clearCachedServerCommandRevision()
   seedDb()
 })
@@ -967,7 +981,7 @@ describe('sidebar chat generation settings controls', () => {
     })
   })
 
-  it('resets chat toggle controls to their defaults', async () => {
+  it('asks before resetting chat toggle controls to their defaults', async () => {
     const calls = stubCommandFetch()
     activeChat().generationSettings = {
       configured: true,
@@ -992,6 +1006,30 @@ describe('sidebar chat generation settings controls', () => {
     expect(textToggleInput('note').value).toBe('legacy-note')
     expect(jailbreakControl().dataset.risuSelected).toBe('true')
 
+    resetDefaultsButton().click()
+    await tick()
+
+    expect(alertSpies.alertConfirm).toHaveBeenCalledWith('Are you sure you want to reset toggle defaults?')
+    expect(calls).toHaveLength(0)
+    expect(activeChat().generationSettings).toMatchObject({
+      configured: true,
+      promptPresetId: 'preset-a',
+      personaId: 'persona-a',
+      jailbreakToggle: true,
+      sidebarToggles: {
+        mood: '',
+        flag: '1',
+        note: 'legacy-note',
+        moduleFlag: '1',
+        stale: '1',
+      },
+    })
+    expect(selectToggleInput('mood').value).toBe('')
+    expect(toggleCheckbox('flag').checked).toBe(true)
+    expect(textToggleInput('note').value).toBe('legacy-note')
+    expect(jailbreakControl().dataset.risuSelected).toBe('true')
+
+    alertSpies.alertConfirm.mockResolvedValueOnce(true)
     resetDefaultsButton().click()
     await tick()
     await waitForFetchCount(calls, 2)
