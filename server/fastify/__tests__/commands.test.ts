@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
+import http from 'node:http'
+import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { webcrypto } from 'node:crypto'
@@ -275,6 +277,71 @@ function seedAssetMetadata(dataDir: string, assetId = 'a'.repeat(64)): string {
     seedDb.close()
   }
   return assetId
+}
+
+function appBaseUrl(app: FastifyInstance): string {
+  const address = app.server.address() as AddressInfo | null
+  expect(address).toBeTruthy()
+  return `http://127.0.0.1:${address!.port}`
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+async function waitForPersistedTranslation(
+  app: FastifyInstance,
+  assertion: string,
+  chatId: string,
+  expectedText: string,
+  timeoutMs = 2_000,
+): Promise<Record<string, unknown>> {
+  const deadline = Date.now() + timeoutMs
+  let lastMessage: Record<string, unknown> | undefined
+  while (Date.now() < deadline) {
+    const messages = await persistedChatMessages(app, assertion, chatId)
+    lastMessage = messages[0]
+    const translation = lastMessage?.translation as Record<string, unknown> | null | undefined
+    if (translation?.text === expectedText) {
+      return lastMessage
+    }
+    await sleep(25)
+  }
+  throw new Error(`Timed out waiting for persisted translation. Last message: ${JSON.stringify(lastMessage)}`)
+}
+
+async function postAndDisconnect(url: string, assertion: string, payload: Record<string, unknown>): Promise<void> {
+  const body = JSON.stringify(payload)
+  await new Promise<void>((resolve, reject) => {
+    let finished = false
+    const req = http.request(
+      url,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'content-length': Buffer.byteLength(body),
+          'risu-auth': assertion,
+        },
+      },
+      (res) => {
+        res.resume()
+      },
+    )
+    req.on('error', (err) => {
+      if (!finished) reject(err)
+    })
+    req.on('finish', () => {
+      finished = true
+      setTimeout(() => {
+        req.destroy()
+        resolve()
+      }, 25)
+    })
+    req.on('timeout', () => reject(new Error('Timed out writing disconnect test request')))
+    req.setTimeout(1_000)
+    req.end(body)
+  })
 }
 
 let harness: Harness
@@ -6869,6 +6936,52 @@ describe('Phase 9-3c message history commands', () => {
         translation: null,
       },
     ])
+  })
+
+  it('continues server raw translation after the requesting client disconnects', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      translator: 'ko',
+      translatorInputLanguage: 'en',
+      translatorType: 'llm',
+      aiModel: 'echo_model',
+      echoMessage: 'translated after disconnect',
+      echoDelay: 0.15,
+      translatorPrompt: 'Translate {{slot::content}} to {{slot}}',
+      translatorMaxResponse: 128,
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [
+            {
+              id: 'chat-a',
+              name: 'A chat',
+              note: '',
+              message: [{ role: 'user', data: 'hello raw', chatId: 'msg-a' }],
+              localLore: [],
+            },
+          ],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+
+    await harness.app.listen({ host: '127.0.0.1', port: 0 })
+    await postAndDisconnect(`${appBaseUrl(harness.app)}/api/v1/commands/messages/msg-a/translate`, assertion, {
+      baseRevision: revision,
+    })
+
+    const message = await waitForPersistedTranslation(harness.app, assertion, 'chat-a', 'translated after disconnect')
+    expect(message.translation).toMatchObject({
+      text: 'translated after disconnect',
+      source: 'raw',
+      targetLanguage: 'ko',
+      inputLanguage: 'en',
+      translatorType: 'llm',
+    })
   })
 
   it('normalizes missing message ids and rejects malformed message commands without bumping revision', async () => {

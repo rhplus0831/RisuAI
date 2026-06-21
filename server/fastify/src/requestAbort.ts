@@ -26,11 +26,9 @@ interface CloseEmitter {
   off(event: 'close', listener: () => void): unknown
 }
 
-export function attachAbort(req: { raw: CloseEmitter }, opts: { deadlineMs?: number } = {}): RequestAbort {
+function createDeadlineAbort(opts: { deadlineMs?: number } = {}): RequestAbort {
   const deadlineMs = normalizeStreamTimeoutMs(opts.deadlineMs ?? NON_DURABLE_REQUEST_DEADLINE_MS)
   const controller = new AbortController()
-  const onClose = (): void => controller.abort()
-  req.raw.on('close', onClose)
   const armDeadline = (): ReturnType<typeof setTimeout> => {
     const deadline = setTimeout(() => controller.abort(), deadlineMs)
     // The backstop must not hold the process open on shutdown.
@@ -48,8 +46,24 @@ export function attachAbort(req: { raw: CloseEmitter }, opts: { deadlineMs?: num
     refresh,
     abort: () => controller.abort(),
     cleanup: () => {
-      req.raw.off('close', onClose)
       clearTimeout(deadline)
+    },
+  }
+}
+
+export function createDetachedAbort(opts: { deadlineMs?: number } = {}): RequestAbort {
+  return createDeadlineAbort(opts)
+}
+
+export function attachAbort(req: { raw: CloseEmitter }, opts: { deadlineMs?: number } = {}): RequestAbort {
+  const requestAbort = createDeadlineAbort(opts)
+  const onClose = (): void => requestAbort.abort()
+  req.raw.on('close', onClose)
+  return {
+    ...requestAbort,
+    cleanup: () => {
+      req.raw.off('close', onClose)
+      requestAbort.cleanup()
     },
   }
 }

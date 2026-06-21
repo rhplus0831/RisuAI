@@ -1,13 +1,13 @@
 import { EventEmitter } from 'node:events'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { NON_DURABLE_REQUEST_DEADLINE_MS, attachAbort } from '../src/requestAbort.js'
+import { NON_DURABLE_REQUEST_DEADLINE_MS, attachAbort, createDetachedAbort } from '../src/requestAbort.js'
 import { PROXY_STREAM_DEFAULT_TIMEOUT_MS, PROXY_STREAM_MAX_TIMEOUT_MS } from '../src/streamJobs.js'
 
 /**
- * Non-durable request abort plumbing (audit M8). The signal handed to every
- * provider adapter fires on client disconnect AND at a generous wall-clock
- * deadline mirroring the durable path's 600s `deadlineAt`, so buffered and
- * streaming provider work is bounded at the source instead of per adapter.
+ * Non-durable request abort plumbing (audit M8). Request-attached signals fire
+ * on client disconnect AND at a generous wall-clock deadline mirroring the
+ * durable path's 600s `deadlineAt`, so buffered and streaming provider work is
+ * bounded at the source instead of per adapter.
  */
 
 function fakeReq(): { raw: EventEmitter & { on: EventEmitter['on']; off: EventEmitter['off'] } } {
@@ -101,5 +101,28 @@ describe('attachAbort (M8 non-durable deadline)', () => {
     expect(signal.aborted).toBe(false)
     vi.advanceTimersByTime(60)
     expect(signal.aborted).toBe(false)
+  })
+})
+
+describe('createDetachedAbort', () => {
+  it('keeps server-owned work alive when an unrelated request closes', () => {
+    const req = fakeReq()
+    const { signal, cleanup } = createDetachedAbort()
+
+    req.raw.emit('close')
+
+    expect(signal.aborted).toBe(false)
+    cleanup()
+  })
+
+  it('still aborts detached work at the configured deadline', () => {
+    vi.useFakeTimers()
+    const { signal, cleanup } = createDetachedAbort({ deadlineMs: 20 })
+
+    expect(signal.aborted).toBe(false)
+    vi.advanceTimersByTime(20)
+    expect(signal.aborted).toBe(true)
+
+    cleanup()
   })
 })

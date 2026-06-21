@@ -288,7 +288,7 @@ import {
   writeSingleCollectionRow,
   writeSingleCollectionTable,
 } from '../repository.js'
-import { attachAbort } from '../requestAbort.js'
+import { createDetachedAbort } from '../requestAbort.js'
 import { translateRawMessageData, type RawMessageTranslation } from '../translation/rawMessageTranslation.js'
 
 function commandEventOrigin(req: FastifyRequest): CommandEventOrigin | undefined {
@@ -4541,7 +4541,9 @@ export function registerCommandRoutes(
   app.post('/api/v1/commands/messages/:messageId/translate', async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
 
-    const { signal, cleanup } = attachAbort(req)
+    // Translation is a server-side command mutation and should finish even if
+    // the browser tab that started it disconnects before the provider returns.
+    const { signal, cleanup } = createDetachedAbort()
     try {
       const messageId = readMessageId((req.params as { messageId?: unknown }).messageId)
       const body = (req.body ?? {}) as MessageCommandBody
