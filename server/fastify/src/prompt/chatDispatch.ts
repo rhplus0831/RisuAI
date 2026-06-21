@@ -765,7 +765,16 @@ function unstringlizeChat(text: string, formated: OpenAIChat[], char: string, us
 async function* resultFrames(resultPromise: Promise<CompletionResult>): AsyncGenerator<CompletionStreamFrame> {
   const result = await resultPromise
   if (result.aborted === true) return
-  if (result.type === 'fail') throw new Error(result.result)
+  if (result.type === 'fail') {
+    yield {
+      kind: 'error',
+      error: result.result,
+      ...(typeof result.status === 'number' ? { status: result.status } : {}),
+      ...(result.statusText ? { statusText: result.statusText } : {}),
+      ...(result.code ? { code: result.code } : {}),
+    }
+    return
+  }
   yield { kind: 'token', content: result.result }
   yield { kind: 'done', finishReason: 'stop' }
 }

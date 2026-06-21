@@ -507,6 +507,35 @@ describe('requestServerChat', () => {
     })
   })
 
+  it('adds provider status and code details to terminal dispatch errors', async () => {
+    const restoration = {
+      chatId: 'chat-1',
+      characterId: 'char-1',
+      selectedCharID: 0,
+      chatPage: 0,
+      messages: [{ role: 'user' as const, data: 'Hi there' }],
+      scriptstate: { $mood: 'calm' },
+    }
+    setServerChatPrompt([{ role: 'user', content: 'hello there' }], { promptText: 'hello there' })
+    setServerChatDispatchError(
+      'Not Found',
+      { model: 'echo_model', inputTokens: 7, outputTokens: 50 },
+      restoration,
+      'uuid-error',
+      { status: 404, statusText: 'Not Found', code: 'upstream_404' },
+    )
+    vi.stubGlobal('fetch', serverChatFetch)
+
+    const res = await requestServerChatGeneration(baseInput, null)
+    expect(res.status).toBe('ok')
+    if (res.status !== 'ok') return
+    await expect(res.terminal).resolves.toMatchObject({
+      status: 'error',
+      error: 'Not Found (HTTP 404 Not Found, code upstream_404)',
+      restoration,
+    })
+  })
+
   it('surfaces pre-error patches and restoration before dispatch is ready', async () => {
     const patch: ServerChatMessagePatch = {
       chatId: 'chat-1',

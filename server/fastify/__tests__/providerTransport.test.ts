@@ -68,14 +68,21 @@ describe('emitProviderChunks', () => {
     const result = await emitProviderChunks(
       frames([
         { kind: 'token', content: 'partial' },
-        { kind: 'error', error: 'upstream refused', status: 500 },
+        { kind: 'error', error: 'upstream refused', status: 500, statusText: 'Bad Gateway', code: 'upstream_500' },
       ]),
       (event) => events.push(event),
     )
 
     expect(events).toEqual([
       { type: 'token', content: 'partial' },
-      { type: 'error', error: 'upstream refused', reason: 'provider_stream_error_frame' },
+      {
+        type: 'error',
+        error: 'upstream refused',
+        reason: 'provider_stream_error_frame',
+        status: 500,
+        statusText: 'Bad Gateway',
+        code: 'upstream_500',
+      },
       { type: 'done' },
     ])
     expect(result).toEqual({ status: 'error', result: 'partial' })

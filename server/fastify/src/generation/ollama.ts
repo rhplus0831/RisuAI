@@ -1,6 +1,7 @@
 import type { CompletionResult, CompletionStreamFrame } from './frames.js'
 import { STREAM_BUFFER_OVERFLOW_ERROR, streamBufferExceedsCap } from './sse.js'
 import { readBoundedBodyText } from './body.js'
+import { formatUpstreamFetchError, formatUpstreamHttpError, upstreamStatusText } from './upstreamError.js'
 
 export interface OllamaRequest {
   model: string
@@ -124,26 +125,32 @@ interface OllamaChunk {
   error?: unknown
 }
 
-async function readOllamaStreamError(response: Response): Promise<CompletionStreamFrame> {
-  let error = `HTTP ${response.status}`
+async function readOllamaStreamError(response: Response, url: string): Promise<CompletionStreamFrame> {
+  let message: string | undefined
   try {
     const text = await readBoundedBodyText(response)
     if (text.length > 0) {
       try {
         const parsed = JSON.parse(text) as OllamaChunk
         if (typeof parsed.error === 'string' && parsed.error.length > 0) {
-          error = parsed.error
+          message = parsed.error
         } else {
-          error = text
+          message = text
         }
       } catch {
-        error = text
+        message = text
       }
     }
   } catch {
     // Keep the HTTP status fallback.
   }
-  return { kind: 'error', error, status: response.status }
+  const statusText = upstreamStatusText(response)
+  return {
+    kind: 'error',
+    error: formatUpstreamHttpError(response, url, { message }),
+    status: response.status,
+    ...(statusText ? { statusText } : {}),
+  }
 }
 
 function mapDoneReason(raw: unknown): CompletionStreamFrame['finishReason'] {
@@ -214,9 +221,10 @@ export async function runOllama(req: OllamaRequest): Promise<CompletionResult> {
 export async function* runOllamaStream(req: OllamaRequest): AsyncGenerator<CompletionStreamFrame, void, void> {
   if (req.signal.aborted) return
 
+  const url = endpoint(req)
   let response: Response
   try {
-    response = await fetch(endpoint(req), {
+    response = await fetch(url, {
       method: 'POST',
       headers: headers(req),
       body: JSON.stringify(buildPayload(req, true)),
@@ -225,17 +233,23 @@ export async function* runOllamaStream(req: OllamaRequest): AsyncGenerator<Compl
   } catch (err) {
     if (req.signal.aborted) return
     const msg = err instanceof Error ? err.message : String(err)
-    yield { kind: 'error', error: `upstream fetch failed: ${msg}`, code: 'fetch_failed' }
+    yield { kind: 'error', error: formatUpstreamFetchError(url, msg), code: 'fetch_failed' }
     return
   }
 
   if (!response.ok) {
-    yield await readOllamaStreamError(response)
+    yield await readOllamaStreamError(response, url)
     return
   }
 
   if (!response.body) {
-    yield { kind: 'error', error: 'upstream returned no stream body', status: response.status }
+    const statusText = upstreamStatusText(response)
+    yield {
+      kind: 'error',
+      error: formatUpstreamHttpError(response, url, { message: 'upstream returned no stream body' }),
+      status: response.status,
+      ...(statusText ? { statusText } : {}),
+    }
     return
   }
 

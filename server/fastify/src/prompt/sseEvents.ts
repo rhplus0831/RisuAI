@@ -93,6 +93,9 @@ export interface ErrorEvent {
   type: 'error'
   error: string
   reason?: string
+  status?: number
+  statusText?: string
+  code?: string
   restoration?: unknown
 }
 

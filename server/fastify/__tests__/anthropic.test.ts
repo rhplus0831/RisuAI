@@ -381,7 +381,15 @@ describe('runAnthropicStream', () => {
     })) {
       frames.push(f)
     }
-    expect(frames).toEqual([{ kind: 'error', error: 'overloaded', status: 529, code: 'overloaded_error' }])
+    expect(frames).toEqual([
+      {
+        kind: 'error',
+        error:
+          'Provider request failed: HTTP 529 from https://api.anthropic.com/v1/messages (overloaded_error): overloaded',
+        status: 529,
+        code: 'overloaded_error',
+      },
+    ])
   })
 
   it('surfaces a missing upstream stream body as an error frame', async () => {
@@ -398,7 +406,14 @@ describe('runAnthropicStream', () => {
     })) {
       frames.push(f)
     }
-    expect(frames).toEqual([{ kind: 'error', error: 'upstream returned no stream body', status: 200 }])
+    expect(frames).toEqual([
+      {
+        kind: 'error',
+        error:
+          'Provider request failed: HTTP 200 from https://api.anthropic.com/v1/messages: upstream returned no stream body',
+        status: 200,
+      },
+    ])
   })
 
   it('surfaces invalid upstream stream JSON as an error frame', async () => {

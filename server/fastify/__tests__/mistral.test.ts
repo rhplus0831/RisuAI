@@ -481,7 +481,15 @@ describe('runMistralStream', () => {
     })!
     const frames: unknown[] = []
     for await (const f of runMistralStream(resolved)) frames.push(f)
-    expect(frames).toEqual([{ kind: 'error', error: 'rate limited', status: 429, code: 'quota' }])
+    expect(frames).toEqual([
+      {
+        kind: 'error',
+        error:
+          'Provider request failed: HTTP 429 from https://api.mistral.ai/v1/chat/completions (quota): rate limited',
+        status: 429,
+        code: 'quota',
+      },
+    ])
   })
 
   it('surfaces a missing upstream stream body as an error frame', async () => {
@@ -494,7 +502,14 @@ describe('runMistralStream', () => {
     })!
     const frames: unknown[] = []
     for await (const f of runMistralStream(resolved)) frames.push(f)
-    expect(frames).toEqual([{ kind: 'error', error: 'upstream returned no stream body', status: 200 }])
+    expect(frames).toEqual([
+      {
+        kind: 'error',
+        error:
+          'Provider request failed: HTTP 200 from https://api.mistral.ai/v1/chat/completions: upstream returned no stream body',
+        status: 200,
+      },
+    ])
   })
 
   it('surfaces invalid upstream stream JSON as an error frame', async () => {

@@ -7,6 +7,7 @@ import {
 } from './sse.js'
 import { resolveVertexBearer } from './vertexAuth.js'
 import { readBoundedBodyText } from './body.js'
+import { formatUpstreamFetchError, formatUpstreamHttpError, upstreamStatusText } from './upstreamError.js'
 
 export interface VertexAuthInput {
   projectId: string
@@ -251,8 +252,8 @@ function mapFinishReason(raw: unknown): CompletionStreamFrame['finishReason'] {
   return raw.toLowerCase()
 }
 
-async function readGeminiStreamError(response: Response): Promise<CompletionStreamFrame> {
-  let error = `HTTP ${response.status}`
+async function readGeminiStreamError(response: Response, url: string): Promise<CompletionStreamFrame> {
+  let message: string | undefined
   let code: string | undefined
   try {
     const text = await readBoundedBodyText(response)
@@ -260,21 +261,28 @@ async function readGeminiStreamError(response: Response): Promise<CompletionStre
       try {
         const parsed = JSON.parse(text) as GeminiErrorResponse
         if (typeof parsed.error?.message === 'string' && parsed.error.message.length > 0) {
-          error = parsed.error.message
+          message = parsed.error.message
         } else {
-          error = text
+          message = text
         }
         if (typeof parsed.error?.status === 'string' && parsed.error.status.length > 0) {
           code = parsed.error.status
         }
       } catch {
-        error = text
+        message = text
       }
     }
   } catch {
     // Keep the HTTP status fallback.
   }
-  return { kind: 'error', error, status: response.status, code }
+  const statusText = upstreamStatusText(response)
+  return {
+    kind: 'error',
+    error: formatUpstreamHttpError(response, url, { message, code }),
+    status: response.status,
+    ...(statusText ? { statusText } : {}),
+    ...(code ? { code } : {}),
+  }
 }
 
 export async function runGemini(req: GeminiRequest): Promise<CompletionResult> {
@@ -356,9 +364,10 @@ export async function* runGeminiStream(req: GeminiRequest): AsyncGenerator<Compl
     return
   }
 
+  const url = endpoint(req, true)
   let response: Response
   try {
-    response = await fetch(endpoint(req, true), {
+    response = await fetch(url, {
       method: 'POST',
       headers: h.headers,
       body: JSON.stringify(buildPayload(req)),
@@ -367,17 +376,23 @@ export async function* runGeminiStream(req: GeminiRequest): AsyncGenerator<Compl
   } catch (err) {
     if (req.signal.aborted) return
     const msg = err instanceof Error ? err.message : String(err)
-    yield { kind: 'error', error: `upstream fetch failed: ${msg}`, code: 'fetch_failed' }
+    yield { kind: 'error', error: formatUpstreamFetchError(url, msg), code: 'fetch_failed' }
     return
   }
 
   if (!response.ok) {
-    yield await readGeminiStreamError(response)
+    yield await readGeminiStreamError(response, url)
     return
   }
 
   if (!response.body) {
-    yield { kind: 'error', error: 'upstream returned no stream body', status: response.status }
+    const statusText = upstreamStatusText(response)
+    yield {
+      kind: 'error',
+      error: formatUpstreamHttpError(response, url, { message: 'upstream returned no stream body' }),
+      status: response.status,
+      ...(statusText ? { statusText } : {}),
+    }
     return
   }
 

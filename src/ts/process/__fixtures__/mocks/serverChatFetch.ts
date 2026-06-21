@@ -57,6 +57,7 @@ interface State {
   emitTtsSideEffect: boolean
   sideEffects: ServerChatSideEffect[]
   restoration: ServerChatRestoration | null
+  errorDetails: { status?: number; statusText?: string; code?: string }
   generationId: string
   generationInfo: Record<string, unknown> | null
   postGeneration: ServerChatPostGeneration | null
@@ -84,6 +85,7 @@ function defaultState(): Omit<State, 'calls'> {
     emitTtsSideEffect: false,
     sideEffects: [],
     restoration: null,
+    errorDetails: {},
     generationId: 'uuid-0',
     generationInfo: null,
     postGeneration: null,
@@ -116,11 +118,22 @@ export function setServerChatPrompt(
 
 export function setServerChatError(
   message: string,
-  opts: { messagePatch?: ServerChatMessagePatch; restoration?: ServerChatRestoration } = {},
+  opts: {
+    messagePatch?: ServerChatMessagePatch
+    restoration?: ServerChatRestoration
+    status?: number
+    statusText?: string
+    code?: string
+  } = {},
 ): void {
   state.errorMessage = message
   state.messagePatch = opts.messagePatch ?? null
   state.restoration = opts.restoration ?? null
+  state.errorDetails = {
+    ...(opts.status !== undefined ? { status: opts.status } : {}),
+    ...(opts.statusText ? { statusText: opts.statusText } : {}),
+    ...(opts.code ? { code: opts.code } : {}),
+  }
 }
 
 export function setServerChatMessagePatch(patch: ServerChatMessagePatch): void {
@@ -156,12 +169,18 @@ export function setServerChatDispatchError(
   generationInfo: Record<string, unknown>,
   restoration: ServerChatRestoration,
   generationId = 'uuid-0',
+  opts: { status?: number; statusText?: string; code?: string } = {},
 ): void {
   state.dispatchResult = null
   state.dispatchError = message
   state.generationId = generationId
   state.generationInfo = { ...generationInfo, generationId }
   state.restoration = restoration
+  state.errorDetails = {
+    ...(opts.status !== undefined ? { status: opts.status } : {}),
+    ...(opts.statusText ? { statusText: opts.statusText } : {}),
+    ...(opts.code ? { code: opts.code } : {}),
+  }
 }
 
 export function setServerChatSideEffects(sideEffects: ServerChatSideEffect[]): void {
@@ -186,7 +205,7 @@ function sseChatResponse(): Response {
         if (state.messagePatch) {
           push('message_patch', { patch: state.messagePatch })
         }
-        push('error', { error: state.errorMessage, restoration: state.restoration ?? undefined })
+        push('error', { error: state.errorMessage, ...state.errorDetails, restoration: state.restoration ?? undefined })
         push('done', {})
         controller.close()
         return
@@ -229,7 +248,7 @@ function sseChatResponse(): Response {
         })
       } else if (state.dispatchError !== null) {
         push('token', { content: 'partial' })
-        push('error', { error: state.dispatchError, restoration: state.restoration })
+        push('error', { error: state.dispatchError, ...state.errorDetails, restoration: state.restoration })
         push('done', {
           generationId: state.generationId,
           generationInfo: state.generationInfo,

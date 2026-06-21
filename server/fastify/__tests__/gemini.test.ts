@@ -349,7 +349,16 @@ describe('runGeminiStream', () => {
     })!
     const frames: unknown[] = []
     for await (const f of runGeminiStream(resolved)) frames.push(f)
-    expect(frames).toEqual([{ kind: 'error', error: 'permission denied', status: 403, code: 'PERMISSION_DENIED' }])
+    expect(frames).toEqual([
+      {
+        kind: 'error',
+        error:
+          'Provider request failed: HTTP 403 from https://generativelanguage.googleapis.com/v1beta/models/m:streamGenerateContent (PERMISSION_DENIED): permission denied',
+        status: 403,
+        code: 'PERMISSION_DENIED',
+      },
+    ])
+    expect((frames[0] as { error: string }).error).not.toContain('key=')
   })
 
   it('surfaces a missing upstream stream body as an error frame', async () => {
@@ -362,7 +371,14 @@ describe('runGeminiStream', () => {
     })!
     const frames: unknown[] = []
     for await (const f of runGeminiStream(resolved)) frames.push(f)
-    expect(frames).toEqual([{ kind: 'error', error: 'upstream returned no stream body', status: 200 }])
+    expect(frames).toEqual([
+      {
+        kind: 'error',
+        error:
+          'Provider request failed: HTTP 200 from https://generativelanguage.googleapis.com/v1beta/models/m:streamGenerateContent: upstream returned no stream body',
+        status: 200,
+      },
+    ])
   })
 
   it('surfaces invalid upstream stream JSON as an error frame', async () => {

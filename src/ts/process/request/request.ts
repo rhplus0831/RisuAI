@@ -85,6 +85,9 @@ export type requestDataResponse =
       }
       failByServerError?: boolean
       model?: string
+      status?: number
+      statusText?: string
+      code?: string
     }
   | {
       type: 'streaming'

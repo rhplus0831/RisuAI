@@ -978,7 +978,11 @@ describe('Phase 6-4 POST /api/v1/generate/completion (openai)', () => {
       payload: openaiPayload,
     })
     expect(res.statusCode).toBe(200)
-    expect(res.json()).toEqual({ type: 'fail', result: 'rate limit hit' })
+    expect(res.json()).toEqual({
+      type: 'fail',
+      result: 'Provider request failed: HTTP 429 from https://upstream.example.com/v1/chat/completions: rate limit hit',
+      status: 429,
+    })
   })
 
   it('streaming relays upstream SSE deltas through the normalized envelope', async () => {
@@ -1153,7 +1157,8 @@ describe('Phase 6-4 POST /api/v1/generate/completion (openai)', () => {
     expect(res.body).toBe(
       `event: error\ndata: ${JSON.stringify({
         type: 'provider_error',
-        error: 'upstream broke',
+        error:
+          'Provider request failed: HTTP 500 from https://upstream.example.com/v1/chat/completions (boom): upstream broke',
         status: 500,
         code: 'boom',
       })}\n\n`,
@@ -1174,7 +1179,8 @@ describe('Phase 6-4 POST /api/v1/generate/completion (openai)', () => {
     expect(res.body).toBe(
       `event: error\ndata: ${JSON.stringify({
         type: 'provider_error',
-        error: 'upstream returned no stream body',
+        error:
+          'Provider request failed: HTTP 200 from https://upstream.example.com/v1/chat/completions: upstream returned no stream body',
         status: 200,
       })}\n\n`,
     )
@@ -2764,7 +2770,7 @@ describe('Phase 6-16 POST /api/v1/generate/completion (ollama)', () => {
     expect(res.body).toBe(
       `event: error\ndata: ${JSON.stringify({
         type: 'provider_error',
-        error: 'ollama failed',
+        error: 'Provider request failed: HTTP 500 from http://localhost:11434/api/chat: ollama failed',
         status: 500,
       })}\n\n`,
     )
@@ -2784,7 +2790,8 @@ describe('Phase 6-16 POST /api/v1/generate/completion (ollama)', () => {
     expect(res.body).toBe(
       `event: error\ndata: ${JSON.stringify({
         type: 'provider_error',
-        error: 'upstream returned no stream body',
+        error:
+          'Provider request failed: HTTP 200 from http://localhost:11434/api/chat: upstream returned no stream body',
         status: 200,
       })}\n\n`,
     )

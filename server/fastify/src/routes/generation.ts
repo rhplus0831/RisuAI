@@ -11,7 +11,7 @@ import {
 import type { AuthState } from '../auth.js'
 import { resolveAnthropicRequest, runAnthropic, runAnthropicStream } from '../generation/anthropic.js'
 import { resolveEchoRequest, runEcho, runEchoStream } from '../generation/echo.js'
-import type { CompletionStreamFrame } from '../generation/frames.js'
+import type { CompletionResult, CompletionStreamFrame } from '../generation/frames.js'
 import { coerceBedrockCredentials, resolveBedrockRequest, runBedrock } from '../generation/bedrock.js'
 import { resolveCohereRequest, runCohere } from '../generation/cohere.js'
 import { resolveHordeRequest, runHorde } from '../generation/horde.js'
@@ -356,6 +356,26 @@ function badRequest(reply: FastifyReply, error: string): void {
   reply.code(400).send({ error })
 }
 
+interface CompletionResponsePayload {
+  type: CompletionResult['type']
+  result: string
+  model?: string
+  status?: number
+  statusText?: string
+  code?: string
+}
+
+function completionPayload(result: CompletionResult): CompletionResponsePayload {
+  return {
+    type: result.type,
+    result: result.result,
+    ...(result.model !== undefined ? { model: result.model } : {}),
+    ...(typeof result.status === 'number' ? { status: result.status } : {}),
+    ...(result.statusText ? { statusText: result.statusText } : {}),
+    ...(result.code ? { code: result.code } : {}),
+  }
+}
+
 function writeSseChunk(reply: FastifyReply, frame: CompletionStreamFrame): void {
   const event = frame.kind === 'done' ? 'done' : frame.kind === 'error' ? 'error' : 'chunk'
   const data =
@@ -366,6 +386,7 @@ function writeSseChunk(reply: FastifyReply, frame: CompletionStreamFrame): void 
             type: 'provider_error',
             error: frame.error ?? 'provider stream failed',
             status: frame.status,
+            statusText: frame.statusText,
             code: frame.code,
           })
         : JSON.stringify({ type: 'token', content: frame.content ?? '' })
@@ -404,7 +425,7 @@ export async function pipeStream(
 
 async function collectCompletionFrames(
   frames: AsyncIterable<CompletionStreamFrame>,
-): Promise<{ type: 'success' | 'fail'; result: string; model?: string }> {
+): Promise<CompletionResponsePayload> {
   let result = ''
   for await (const frame of frames) {
     if (frame.kind === 'token') {
@@ -412,7 +433,13 @@ async function collectCompletionFrames(
       continue
     }
     if (frame.kind === 'error') {
-      return { type: 'fail', result: frame.error ?? 'provider dispatch failed' }
+      return completionPayload({
+        type: 'fail',
+        result: frame.error ?? 'provider dispatch failed',
+        ...(typeof frame.status === 'number' ? { status: frame.status } : {}),
+        ...(frame.statusText ? { statusText: frame.statusText } : {}),
+        ...(frame.code ? { code: frame.code } : {}),
+      })
     }
     if (frame.kind === 'done') {
       return { type: 'success', result }
@@ -445,7 +472,7 @@ async function handleEchoBuffered(req: FastifyRequest, reply: FastifyReply, opti
     })
     const result = await runEcho(echo)
     if (result.aborted === true) return
-    reply.code(200).send({ type: result.type, result: result.result })
+    reply.code(200).send(completionPayload(result))
   } finally {
     cleanup()
   }
@@ -589,12 +616,7 @@ async function handleAnthropicBuffered(
     }
     const result = await runAnthropic(resolved)
     if (result.aborted === true) return
-    const payload: { type: string; result: string; model?: string } = {
-      type: result.type,
-      result: result.result,
-    }
-    if (result.model !== undefined) payload.model = result.model
-    reply.code(200).send(payload)
+    reply.code(200).send(completionPayload(result))
   } finally {
     cleanup()
   }
@@ -626,7 +648,7 @@ async function handleKoboldBuffered(
     }
     const result = await runKobold(resolved)
     if (result.aborted === true) return
-    reply.code(200).send({ type: result.type, result: result.result })
+    reply.code(200).send(completionPayload(result))
   } finally {
     cleanup()
   }
@@ -660,7 +682,7 @@ async function handleOobaLegacyBuffered(
     }
     const result = await runOobaLegacy(resolved)
     if (result.aborted === true) return
-    reply.code(200).send({ type: result.type, result: result.result })
+    reply.code(200).send(completionPayload(result))
   } finally {
     cleanup()
   }
@@ -724,12 +746,7 @@ async function handleOllamaBuffered(
     }
     const result = await runOllama(resolved)
     if (result.aborted === true) return
-    const payload: { type: string; result: string; model?: string } = {
-      type: result.type,
-      result: result.result,
-    }
-    if (result.model !== undefined) payload.model = result.model
-    reply.code(200).send(payload)
+    reply.code(200).send(completionPayload(result))
   } finally {
     cleanup()
   }
@@ -762,7 +779,7 @@ async function handleHordeBuffered(
     }
     const result = await runHorde(resolved)
     if (result.aborted === true) return
-    reply.code(200).send({ type: result.type, result: result.result })
+    reply.code(200).send(completionPayload(result))
   } finally {
     cleanup()
   }
@@ -813,12 +830,7 @@ async function handleBedrockBuffered(
     }
     const result = await runBedrock(resolved)
     if (result.aborted === true) return
-    const payload: { type: string; result: string; model?: string } = {
-      type: result.type,
-      result: result.result,
-    }
-    if (result.model !== undefined) payload.model = result.model
-    reply.code(200).send(payload)
+    reply.code(200).send(completionPayload(result))
   } finally {
     cleanup()
   }
@@ -857,12 +869,7 @@ async function handleResponsesBuffered(
     }
     const result = await runOpenAIResponses(resolved)
     if (result.aborted === true) return
-    const payload: { type: string; result: string; model?: string } = {
-      type: result.type,
-      result: result.result,
-    }
-    if (result.model !== undefined) payload.model = result.model
-    reply.code(200).send(payload)
+    reply.code(200).send(completionPayload(result))
   } finally {
     cleanup()
   }
@@ -903,12 +910,7 @@ async function handleLegacyInstructBuffered(
     }
     const result = await runOpenAILegacyInstruct(resolved)
     if (result.aborted === true) return
-    const payload: { type: string; result: string; model?: string } = {
-      type: result.type,
-      result: result.result,
-    }
-    if (result.model !== undefined) payload.model = result.model
-    reply.code(200).send(payload)
+    reply.code(200).send(completionPayload(result))
   } finally {
     cleanup()
   }
@@ -990,12 +992,7 @@ async function handleGeminiBuffered(
     }
     const result = await runGemini(resolved)
     if (result.aborted === true) return
-    const payload: { type: string; result: string; model?: string } = {
-      type: result.type,
-      result: result.result,
-    }
-    if (result.model !== undefined) payload.model = result.model
-    reply.code(200).send(payload)
+    reply.code(200).send(completionPayload(result))
   } finally {
     cleanup()
   }
@@ -1040,12 +1037,7 @@ async function handleCohereBuffered(
     }
     const result = await runCohere(resolved)
     if (result.aborted === true) return
-    const payload: { type: string; result: string; model?: string } = {
-      type: result.type,
-      result: result.result,
-    }
-    if (result.model !== undefined) payload.model = result.model
-    reply.code(200).send(payload)
+    reply.code(200).send(completionPayload(result))
   } finally {
     cleanup()
   }
@@ -1125,12 +1117,7 @@ async function handleMistralBuffered(
     }
     const result = await runMistral(resolved)
     if (result.aborted === true) return
-    const payload: { type: string; result: string; model?: string } = {
-      type: result.type,
-      result: result.result,
-    }
-    if (result.model !== undefined) payload.model = result.model
-    reply.code(200).send(payload)
+    reply.code(200).send(completionPayload(result))
   } finally {
     cleanup()
   }
@@ -1194,12 +1181,7 @@ async function handleOpenAICompatibleBuffered(
     }
     const result = await runOpenAI(resolved)
     if (result.aborted === true) return
-    const payload: { type: string; result: string; model?: string } = {
-      type: result.type,
-      result: result.result,
-    }
-    if (result.model !== undefined) payload.model = result.model
-    reply.code(200).send(payload)
+    reply.code(200).send(completionPayload(result))
   } finally {
     cleanup()
   }

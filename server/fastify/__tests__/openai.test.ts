@@ -275,9 +275,9 @@ describe('runOpenAI (non-streaming)', () => {
     expect(capturedUrl).toBe('https://api.openai.com/v1/chat/completions')
   })
 
-  it('returns fail with upstream error.message on non-2xx', async () => {
+  it('returns fail with upstream error context on non-2xx', async () => {
     vi.stubGlobal('fetch', async () => {
-      return new Response(JSON.stringify({ error: { message: 'invalid model' } }), {
+      return new Response(JSON.stringify({ error: { message: 'invalid model', code: 'model_not_found' } }), {
         status: 400,
       })
     })
@@ -288,10 +288,16 @@ describe('runOpenAI (non-streaming)', () => {
       baseUrl: 'https://api.openai.com/v1',
       signal: new AbortController().signal,
     })
-    expect(r).toEqual({ type: 'fail', result: 'invalid model' })
+    expect(r).toEqual({
+      type: 'fail',
+      result:
+        'Provider request failed: HTTP 400 from https://api.openai.com/v1/chat/completions (model_not_found): invalid model',
+      status: 400,
+      code: 'model_not_found',
+    })
   })
 
-  it('falls back to HTTP <status> when error.message is absent', async () => {
+  it('adds endpoint context when error.message is absent', async () => {
     vi.stubGlobal('fetch', async () => new Response('{}', { status: 500 }))
     const r = await runOpenAI({
       model: 'm',
@@ -300,7 +306,12 @@ describe('runOpenAI (non-streaming)', () => {
       baseUrl: 'https://api.openai.com/v1',
       signal: new AbortController().signal,
     })
-    expect(r).toEqual({ type: 'fail', result: 'HTTP 500' })
+    expect(r).toEqual({
+      type: 'fail',
+      result:
+        'Provider request failed: HTTP 500 from https://api.openai.com/v1/chat/completions: upstream returned an empty error body',
+      status: 500,
+    })
   })
 
   it('returns fail when upstream returns no content', async () => {
@@ -496,7 +507,37 @@ describe('runOpenAIStream', () => {
     })) {
       frames.push(f)
     }
-    expect(frames).toEqual([{ kind: 'error', error: 'rate limited', status: 500, code: 'rate_limit' }])
+    expect(frames).toEqual([
+      {
+        kind: 'error',
+        error:
+          'Provider request failed: HTTP 500 from https://api.openai.com/v1/chat/completions (rate_limit): rate limited',
+        status: 500,
+        code: 'rate_limit',
+      },
+    ])
+  })
+
+  it('surfaces empty upstream non-OK responses with endpoint context', async () => {
+    vi.stubGlobal('fetch', async () => new Response(null, { status: 404 }))
+    const frames: unknown[] = []
+    for await (const f of runOpenAIStream({
+      model: 'gpt-4o',
+      messages: [],
+      apiKey: 'k',
+      baseUrl: 'https://proxy.example.test/v1',
+      signal: new AbortController().signal,
+    })) {
+      frames.push(f)
+    }
+    expect(frames).toEqual([
+      {
+        kind: 'error',
+        error:
+          'Provider request failed: HTTP 404 from https://proxy.example.test/v1/chat/completions: upstream returned an empty error body',
+        status: 404,
+      },
+    ])
   })
 
   it('surfaces a missing upstream stream body as an error frame', async () => {
@@ -511,7 +552,14 @@ describe('runOpenAIStream', () => {
     })) {
       frames.push(f)
     }
-    expect(frames).toEqual([{ kind: 'error', error: 'upstream returned no stream body', status: 200 }])
+    expect(frames).toEqual([
+      {
+        kind: 'error',
+        error:
+          'Provider request failed: HTTP 200 from https://api.openai.com/v1/chat/completions: upstream returned no stream body',
+        status: 200,
+      },
+    ])
   })
 
   it('surfaces invalid upstream stream JSON as an error frame', async () => {

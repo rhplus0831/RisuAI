@@ -52,6 +52,40 @@ interface CompletionJsonResponse {
   type?: unknown
   result?: unknown
   model?: unknown
+  status?: unknown
+  statusText?: unknown
+  code?: unknown
+}
+
+function nonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0
+}
+
+function errorMessageFromPayload(payload: {
+  error?: unknown
+  message?: unknown
+  status?: unknown
+  statusText?: unknown
+  code?: unknown
+}): string {
+  const error = nonEmptyString(payload.error)
+    ? payload.error
+    : nonEmptyString(payload.message)
+      ? payload.message
+      : 'provider stream failed'
+  const details: string[] = []
+  if (
+    typeof payload.status === 'number' &&
+    Number.isFinite(payload.status) &&
+    !error.includes(`HTTP ${payload.status}`)
+  ) {
+    const statusText = nonEmptyString(payload.statusText) ? ` ${payload.statusText}` : ''
+    details.push(`HTTP ${payload.status}${statusText}`)
+  }
+  if (nonEmptyString(payload.code) && !error.includes(payload.code)) {
+    details.push(`code ${payload.code}`)
+  }
+  return details.length > 0 ? `${error} (${details.join(', ')})` : error
 }
 
 async function readSseStream(
@@ -97,12 +131,14 @@ async function readSseStream(
         if (evt.event === 'error') {
           let reason = 'provider stream failed'
           try {
-            const payload = JSON.parse(evt.data) as { error?: unknown; message?: unknown }
-            if (typeof payload.error === 'string' && payload.error.length > 0) {
-              reason = payload.error
-            } else if (typeof payload.message === 'string' && payload.message.length > 0) {
-              reason = payload.message
+            const payload = JSON.parse(evt.data) as {
+              error?: unknown
+              message?: unknown
+              status?: unknown
+              statusText?: unknown
+              code?: unknown
             }
+            reason = errorMessageFromPayload(payload)
           } catch {
             if (evt.data.length > 0) reason = evt.data
           }
@@ -198,8 +234,15 @@ export async function requestServerCompletion(
   }
   const type = json.type === 'fail' ? 'fail' : 'success'
   const result = typeof json.result === 'string' ? json.result : ''
-  if (typeof json.model === 'string') {
-    return { type, result, model: json.model }
+  const status = typeof json.status === 'number' && Number.isFinite(json.status) ? json.status : undefined
+  const statusText = nonEmptyString(json.statusText) ? json.statusText : undefined
+  const code = nonEmptyString(json.code) ? json.code : undefined
+  return {
+    type,
+    result,
+    ...(typeof json.model === 'string' ? { model: json.model } : {}),
+    ...(status !== undefined ? { status } : {}),
+    ...(statusText ? { statusText } : {}),
+    ...(code ? { code } : {}),
   }
-  return { type, result }
 }

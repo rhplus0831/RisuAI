@@ -383,7 +383,13 @@ describe('runOllamaStream', () => {
     })!
     const frames: unknown[] = []
     for await (const f of runOllamaStream(resolved)) frames.push(f)
-    expect(frames).toEqual([{ kind: 'error', error: 'model unavailable', status: 500 }])
+    expect(frames).toEqual([
+      {
+        kind: 'error',
+        error: 'Provider request failed: HTTP 500 from http://localhost:11434/api/chat: model unavailable',
+        status: 500,
+      },
+    ])
   })
 
   it('emits an error frame with raw text when upstream non-2xx is not JSON', async () => {
@@ -396,7 +402,13 @@ describe('runOllamaStream', () => {
     })!
     const frames: unknown[] = []
     for await (const f of runOllamaStream(resolved)) frames.push(f)
-    expect(frames).toEqual([{ kind: 'error', error: 'bad gateway', status: 502 }])
+    expect(frames).toEqual([
+      {
+        kind: 'error',
+        error: 'Provider request failed: HTTP 502 from http://localhost:11434/api/chat: bad gateway',
+        status: 502,
+      },
+    ])
   })
 
   it('emits an error frame when upstream has no stream body', async () => {
@@ -409,7 +421,14 @@ describe('runOllamaStream', () => {
     })!
     const frames: unknown[] = []
     for await (const f of runOllamaStream(resolved)) frames.push(f)
-    expect(frames).toEqual([{ kind: 'error', error: 'upstream returned no stream body', status: 200 }])
+    expect(frames).toEqual([
+      {
+        kind: 'error',
+        error:
+          'Provider request failed: HTTP 200 from http://localhost:11434/api/chat: upstream returned no stream body',
+        status: 200,
+      },
+    ])
   })
 
   it('emits an error frame when fetch fails', async () => {
@@ -427,7 +446,7 @@ describe('runOllamaStream', () => {
     expect(frames).toEqual([
       {
         kind: 'error',
-        error: 'upstream fetch failed: connection refused',
+        error: 'upstream fetch failed for http://localhost:11434/api/chat: connection refused',
         code: 'fetch_failed',
       },
     ])

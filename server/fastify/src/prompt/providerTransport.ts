@@ -84,10 +84,16 @@ export async function emitProviderChunks(
       }
       if (frame.kind === 'error') {
         const providerError = nonEmptyString(frame.error) ? frame.error : undefined
+        const status = typeof frame.status === 'number' ? frame.status : undefined
+        const statusText = nonEmptyString(frame.statusText) ? frame.statusText : undefined
+        const code = nonEmptyString(frame.code) ? frame.code : undefined
         emit({
           type: 'error',
           error: providerError ?? 'Provider stream failed without an error message.',
           reason: providerError ? 'provider_stream_error_frame' : 'provider_stream_error_frame_empty',
+          ...(status !== undefined ? { status } : {}),
+          ...(statusText ? { statusText } : {}),
+          ...(code ? { code } : {}),
           restoration: normalizedOptions.errorRestoration?.(),
         })
         emit({ type: 'done', ...(normalizedOptions.doneMetadata?.(result) ?? {}) })

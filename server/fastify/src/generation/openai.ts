@@ -6,7 +6,8 @@ import {
   popSseEventBlock,
   streamBufferExceedsCap,
 } from './sse.js'
-import { readBoundedBodyJson, readBoundedBodyText } from './body.js'
+import { readBoundedBodyText } from './body.js'
+import { formatUpstreamFetchError, formatUpstreamHttpError, upstreamStatusText } from './upstreamError.js'
 
 export interface OpenAIRequest {
   model: string
@@ -165,9 +166,10 @@ export async function runOpenAI(req: OpenAIRequest): Promise<CompletionResult> {
   }
 
   const init = buildRequestInit(req, false)
+  const url = endpoint(req)
   let response: Response
   try {
-    response = await fetch(endpoint(req), {
+    response = await fetch(url, {
       method: 'POST',
       headers: init.headers,
       body: init.body,
@@ -178,20 +180,47 @@ export async function runOpenAI(req: OpenAIRequest): Promise<CompletionResult> {
       return { type: 'fail', result: 'aborted', aborted: true }
     }
     const msg = err instanceof Error ? err.message : String(err)
-    return { type: 'fail', result: `upstream fetch failed: ${msg}` }
+    return { type: 'fail', result: formatUpstreamFetchError(url, msg), code: 'fetch_failed' }
+  }
+
+  let raw: string
+  try {
+    raw = await readBoundedBodyText(response)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return { type: 'fail', result: `invalid upstream body: ${msg}` }
+  }
+
+  if (!response.ok) {
+    let message: string | undefined
+    let code: string | undefined
+    try {
+      const body = JSON.parse(raw) as OpenAINonStreamResponse & { error?: { code?: unknown } }
+      if (typeof body.error?.message === 'string' && body.error.message.length > 0) {
+        message = body.error.message
+      }
+      if (typeof body.error?.code === 'string' && body.error.code.length > 0) {
+        code = body.error.code
+      }
+    } catch {
+      if (raw.trim().length > 0) message = raw
+    }
+    const statusText = upstreamStatusText(response)
+    return {
+      type: 'fail',
+      result: formatUpstreamHttpError(response, url, { message, code }),
+      status: response.status,
+      ...(statusText ? { statusText } : {}),
+      ...(code ? { code } : {}),
+    }
   }
 
   let body: OpenAINonStreamResponse
   try {
-    body = (await readBoundedBodyJson(response)) as OpenAINonStreamResponse
+    body = JSON.parse(raw) as OpenAINonStreamResponse
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     return { type: 'fail', result: `invalid upstream JSON: ${msg}` }
-  }
-
-  if (!response.ok) {
-    const upstreamMsg = typeof body.error?.message === 'string' ? body.error.message : `HTTP ${response.status}`
-    return { type: 'fail', result: upstreamMsg }
   }
 
   const choice = Array.isArray(body.choices) ? body.choices[0] : undefined
@@ -241,8 +270,8 @@ export function parseOpenAIStyleSseData(block: string): string | null {
   return data.length > 0 ? data : null
 }
 
-async function readOpenAIStreamError(response: Response): Promise<CompletionStreamFrame> {
-  let error = `HTTP ${response.status}`
+async function readOpenAIStreamError(response: Response, url: string): Promise<CompletionStreamFrame> {
+  let message: string | undefined
   let code: string | undefined
   try {
     const text = await readBoundedBodyText(response)
@@ -250,28 +279,36 @@ async function readOpenAIStreamError(response: Response): Promise<CompletionStre
       try {
         const parsed = JSON.parse(text) as OpenAIErrorResponse
         if (typeof parsed.error?.message === 'string' && parsed.error.message.length > 0) {
-          error = parsed.error.message
+          message = parsed.error.message
         }
         if (typeof parsed.error?.code === 'string' && parsed.error.code.length > 0) {
           code = parsed.error.code
         }
       } catch {
-        error = text
+        message = text
       }
     }
   } catch {
     // Keep the HTTP status fallback.
   }
-  return { kind: 'error', error, status: response.status, code }
+  const statusText = upstreamStatusText(response)
+  return {
+    kind: 'error',
+    error: formatUpstreamHttpError(response, url, { message, code }),
+    status: response.status,
+    ...(statusText ? { statusText } : {}),
+    ...(code ? { code } : {}),
+  }
 }
 
 export async function* runOpenAIStream(req: OpenAIRequest): AsyncGenerator<CompletionStreamFrame, void, void> {
   if (req.signal.aborted) return
 
   const init = buildRequestInit(req, true)
+  const url = endpoint(req)
   let response: Response
   try {
-    response = await fetch(endpoint(req), {
+    response = await fetch(url, {
       method: 'POST',
       headers: init.headers,
       body: init.body,
@@ -280,17 +317,23 @@ export async function* runOpenAIStream(req: OpenAIRequest): AsyncGenerator<Compl
   } catch (err) {
     if (req.signal.aborted) return
     const msg = err instanceof Error ? err.message : String(err)
-    yield { kind: 'error', error: `upstream fetch failed: ${msg}`, code: 'fetch_failed' }
+    yield { kind: 'error', error: formatUpstreamFetchError(url, msg), code: 'fetch_failed' }
     return
   }
 
   if (!response.ok) {
-    yield await readOpenAIStreamError(response)
+    yield await readOpenAIStreamError(response, url)
     return
   }
 
   if (!response.body) {
-    yield { kind: 'error', error: 'upstream returned no stream body', status: response.status }
+    const statusText = upstreamStatusText(response)
+    yield {
+      kind: 'error',
+      error: formatUpstreamHttpError(response, url, { message: 'upstream returned no stream body' }),
+      status: response.status,
+      ...(statusText ? { statusText } : {}),
+    }
     return
   }
 

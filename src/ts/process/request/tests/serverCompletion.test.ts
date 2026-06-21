@@ -139,6 +139,36 @@ describe('requestServerCompletion', () => {
     })
   })
 
+  it('preserves provider status and code fields from non-streaming JSON failures', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              type: 'fail',
+              result: 'Provider request failed: HTTP 404 from https://proxy.test/v1/chat/completions: missing',
+              status: 404,
+              statusText: 'Not Found',
+              code: 'upstream_404',
+            }),
+            {
+              status: 200,
+              headers: { 'content-type': 'application/json' },
+            },
+          ),
+      ),
+    )
+
+    await expect(requestServerCompletion(makeTarg(), null)).resolves.toEqual({
+      type: 'fail',
+      result: 'Provider request failed: HTTP 404 from https://proxy.test/v1/chat/completions: missing',
+      status: 404,
+      statusText: 'Not Found',
+      code: 'upstream_404',
+    })
+  })
+
   it('reads server completion SSE streams', async () => {
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {
@@ -161,6 +191,35 @@ describe('requestServerCompletion', () => {
     await expect(requestServerCompletion(makeTarg({ useStreaming: true }), null)).resolves.toEqual({
       type: 'success',
       result: 'hello',
+    })
+  })
+
+  it('adds provider status and code details to streamed completion errors', async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        const encoder = new TextEncoder()
+        controller.enqueue(
+          encoder.encode(
+            `event: error\ndata: ${JSON.stringify({
+              type: 'provider_error',
+              error: 'Not Found',
+              status: 404,
+              statusText: 'Not Found',
+              code: 'upstream_404',
+            })}\n\n`,
+          ),
+        )
+        controller.close()
+      },
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(stream, { status: 200 })),
+    )
+
+    await expect(requestServerCompletion(makeTarg({ useStreaming: true }), null)).resolves.toEqual({
+      type: 'fail',
+      result: 'Not Found (HTTP 404 Not Found, code upstream_404)',
     })
   })
 })

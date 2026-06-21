@@ -127,6 +127,19 @@ function httpErrorReason(body: { error?: unknown; message?: unknown; reason?: un
   return null
 }
 
+function errorMessageFromEvent(data: Record<string, unknown>, fallback: string): string {
+  const error = nonEmptyString(data.error) ? data.error : fallback
+  const details: string[] = []
+  if (typeof data.status === 'number' && Number.isFinite(data.status) && !error.includes(`HTTP ${data.status}`)) {
+    const statusText = nonEmptyString(data.statusText) ? ` ${data.statusText}` : ''
+    details.push(`HTTP ${data.status}${statusText}`)
+  }
+  if (nonEmptyString(data.code) && !error.includes(data.code)) {
+    details.push(`code ${data.code}`)
+  }
+  return details.length > 0 ? `${error} (${details.join(', ')})` : error
+}
+
 /**
  * When `/generate/chat` persists an assembly-time chat-var delta, it returns the
  * bumped revision on the `info` frame. Sync the command layer's cached revision
@@ -201,7 +214,8 @@ async function openChatResponse(
   }
 
   if (!response.ok) {
-    let reason = `HTTP ${response.status}`
+    const statusText = response.statusText.trim()
+    let reason = `HTTP ${response.status}${statusText ? ` ${statusText}` : ''}`
     try {
       const body = (await response.json()) as {
         error?: unknown
@@ -259,9 +273,7 @@ export async function requestServerChat(input: ServerChatInput, signal: AbortSig
         }
         break
       case 'error':
-        error = nonEmptyString(data.error)
-          ? data.error
-          : 'Server returned an error without details during prompt assembly.'
+        error = errorMessageFromEvent(data, 'Server returned an error without details during prompt assembly.')
         done = true
         break
       case 'done':
@@ -463,9 +475,7 @@ export async function requestServerChatGeneration(
                 break
               }
               case 'error': {
-                const error = nonEmptyString(data.error)
-                  ? data.error
-                  : 'Server returned an error without details during generation.'
+                const error = errorMessageFromEvent(data, 'Server returned an error without details during generation.')
                 const restoration =
                   data.restoration && typeof data.restoration === 'object'
                     ? (data.restoration as unknown as ServerChatRestoration)
