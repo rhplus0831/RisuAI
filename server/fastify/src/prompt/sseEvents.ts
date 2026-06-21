@@ -92,6 +92,7 @@ export interface WarningEvent {
 export interface ErrorEvent {
   type: 'error'
   error: string
+  reason?: string
   restoration?: unknown
 }
 

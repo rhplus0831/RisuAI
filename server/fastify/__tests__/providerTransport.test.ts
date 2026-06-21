@@ -56,7 +56,7 @@ describe('emitProviderChunks', () => {
 
     expect(events).toEqual([
       { type: 'token', content: 'partial' },
-      { type: 'error', error: 'provider exploded' },
+      { type: 'error', error: 'provider exploded', reason: 'provider_stream_exception' },
       { type: 'done' },
     ])
     expect(result).toEqual({ status: 'error', result: 'partial' })
@@ -75,11 +75,30 @@ describe('emitProviderChunks', () => {
 
     expect(events).toEqual([
       { type: 'token', content: 'partial' },
-      { type: 'error', error: 'upstream refused' },
+      { type: 'error', error: 'upstream refused', reason: 'provider_stream_error_frame' },
       { type: 'done' },
     ])
     expect(result).toEqual({ status: 'error', result: 'partial' })
   })
+
+  it.each([{ kind: 'error' } as const, { kind: 'error', error: '   ' } as const])(
+    'uses a clear provider-stream fallback when the provider frame has no message',
+    async (frame) => {
+      const events: PromptChatEvent[] = []
+
+      const result = await emitProviderChunks(frames([frame]), (event) => events.push(event))
+
+      expect(events).toEqual([
+        {
+          type: 'error',
+          error: 'Provider stream failed without an error message.',
+          reason: 'provider_stream_error_frame_empty',
+        },
+        { type: 'done' },
+      ])
+      expect(result).toEqual({ status: 'error', result: '' })
+    },
+  )
 
   it('does not emit after the request signal is already aborted', async () => {
     const controller = new AbortController()

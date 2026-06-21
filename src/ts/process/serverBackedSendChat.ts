@@ -396,7 +396,7 @@ export async function applyServerBackedTerminal(args: {
     }
     return {
       status: 'failed',
-      error: args.terminal.error ?? 'provider dispatch failed',
+      error: args.terminal.error ?? 'Server returned an error without details during generation.',
       currentChat: DBState.db.characters[args.selectedChar].chats[args.selectedChat],
       resendChat: false,
     }

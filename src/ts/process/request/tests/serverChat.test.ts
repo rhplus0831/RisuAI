@@ -199,6 +199,17 @@ describe('requestServerChat', () => {
     expect(res).toEqual({ status: 'error', error: 'character not found' })
   })
 
+  it('uses a fallback when a prompt error event has an empty message', async () => {
+    setServerChatError('')
+    vi.stubGlobal('fetch', serverChatFetch)
+
+    const res = await requestServerChat(baseInput, null)
+    expect(res).toEqual({
+      status: 'error',
+      error: 'Server returned an error without details during prompt assembly.',
+    })
+  })
+
   it('keeps pre-error message patches visible for stop-trigger aborts', async () => {
     const patch: ServerChatMessagePatch = {
       chatId: 'chat-1',
@@ -221,13 +232,13 @@ describe('requestServerChat', () => {
       chatVarMutations: [{ key: '$score', before: '1', after: '9' }],
       additionalSystemPrompt: [],
     }
-    setServerChatError('prompt assembly was stopped by a trigger', { messagePatch: patch })
+    setServerChatError('Generation was stopped by a start trigger.', { messagePatch: patch })
     vi.stubGlobal('fetch', serverChatFetch)
 
     const res = await requestServerChat(baseInput, null)
     expect(res).toEqual({
       status: 'error',
-      error: 'prompt assembly was stopped by a trigger',
+      error: 'Generation was stopped by a start trigger.',
       messagePatches: [patch],
     })
   })
@@ -260,6 +271,29 @@ describe('requestServerChat', () => {
     expect(res).toEqual({
       status: 'error',
       error: 'Chat generation settings are incomplete',
+    })
+  })
+
+  it('uses the human reason for generation-in-progress 409s', async () => {
+    vi.stubGlobal(
+      'fetch',
+      async () =>
+        new Response(
+          JSON.stringify({
+            error: 'generation_in_progress',
+            reason: 'A generation is already running for this chat.',
+          }),
+          {
+            status: 409,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+    )
+
+    const res = await requestServerChat(baseInput, null)
+    expect(res).toEqual({
+      status: 'error',
+      error: 'A generation is already running for this chat.',
     })
   })
 
@@ -492,7 +526,7 @@ describe('requestServerChat', () => {
       messages: [{ role: 'user' as const, data: 'Hi there' }],
       scriptstate: { $score: '1' },
     }
-    setServerChatError('prompt assembly was stopped by a trigger', {
+    setServerChatError('Generation was stopped by a start trigger.', {
       messagePatch: patch,
       restoration,
     })
@@ -501,7 +535,7 @@ describe('requestServerChat', () => {
     const res = await requestServerChatGeneration(baseInput, null)
     expect(res).toEqual({
       status: 'error',
-      error: 'prompt assembly was stopped by a trigger',
+      error: 'Generation was stopped by a start trigger.',
       messagePatches: [patch],
       restoration,
     })
@@ -521,6 +555,52 @@ describe('requestServerChat', () => {
     expect(res).toEqual({
       status: 'error',
       error: 'Chat generation settings are incomplete',
+    })
+  })
+
+  it('uses the human reason for generation-in-progress generation 409s', async () => {
+    vi.stubGlobal(
+      'fetch',
+      async () =>
+        new Response(
+          JSON.stringify({
+            error: 'generation_in_progress',
+            reason: 'A generation is already running for this chat.',
+          }),
+          {
+            status: 409,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+    )
+
+    const res = await requestServerChatGeneration(baseInput, null)
+    expect(res).toEqual({
+      status: 'error',
+      error: 'A generation is already running for this chat.',
+    })
+  })
+
+  it('uses the human reason for missing durable generation jobs', async () => {
+    vi.stubGlobal(
+      'fetch',
+      async () =>
+        new Response(
+          JSON.stringify({
+            error: 'generation_job_not_found',
+            reason: 'Generation job not found or already expired.',
+          }),
+          {
+            status: 404,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+    )
+
+    const res = await requestServerChatGeneration(baseInput, null, 'missing-job')
+    expect(res).toEqual({
+      status: 'error',
+      error: 'Generation job not found or already expired.',
     })
   })
 })

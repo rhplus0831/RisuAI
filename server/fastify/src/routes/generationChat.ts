@@ -21,6 +21,7 @@ import {
   getMessageMutationFirstChangedIndex,
   runServerPostGeneration,
   type AssembleDeps,
+  type AssembleAbortReason,
   type AssembleInput,
   type AssembleMutationPayload,
   type AssembleResult,
@@ -74,6 +75,7 @@ import { generationSubmitRateLimit } from '../routeRateLimits.js'
 
 const ALLOWED_MODES = new Set(['send', 'continue', 'preview', 'preview_prompt', 'regenerate'])
 const SERVER_INLAY_SIGNATURE_CONTENT_TYPE = 'application/x-risu-inlay-signature+json'
+const PROVIDER_DISPATCH_FALLBACK = 'Provider dispatch failed before returning an error message.'
 
 interface ChatRequestBody {
   chatId?: unknown
@@ -625,6 +627,48 @@ function createGenerationInfo(
       stage3: 0,
       stage4: 0,
     },
+  }
+}
+
+type AssemblyStopReason = AssembleAbortReason | 'unknown_stop'
+
+function formatContextBudgetDetail(inputTokens: number | undefined, maxContext: number | undefined): string {
+  const parts: string[] = []
+  if (typeof inputTokens === 'number' && Number.isFinite(inputTokens)) {
+    parts.push(`estimated ${Math.round(inputTokens).toLocaleString('en-US')} tokens needed`)
+  }
+  if (typeof maxContext === 'number' && Number.isFinite(maxContext) && maxContext > 0) {
+    parts.push(`context limit ${Math.round(maxContext).toLocaleString('en-US')}`)
+  }
+  return parts.length > 0 ? ` (${parts.join(', ')}).` : '.'
+}
+
+function assemblyStopError(
+  result: Pick<AssembleResult, 'abortReason' | 'inputTokens'>,
+  database: Database | null | undefined,
+): { error: string; reason: AssemblyStopReason } {
+  const detail = formatContextBudgetDetail(result.inputTokens, database?.maxContext)
+  switch (result.abortReason) {
+    case 'trigger_stop':
+      return {
+        reason: 'trigger_stop',
+        error: 'Generation was stopped by a start trigger.',
+      }
+    case 'history_context_overflow':
+      return {
+        reason: 'history_context_overflow',
+        error: `Chat history could not fit within the model context window after trimming older messages${detail}`,
+      }
+    case 'overflow':
+      return {
+        reason: 'overflow',
+        error: `Prompt is too large for the model context window after trimming removable history${detail}`,
+      }
+    default:
+      return {
+        reason: 'unknown_stop',
+        error: `Prompt assembly stopped before generation. Check active triggers and context budget settings${detail}`,
+      }
   }
 }
 
@@ -1229,7 +1273,8 @@ async function streamAssembly(
           } catch (err) {
             emit({
               type: 'error',
-              error: errorMessage(err, 'provider dispatch failed'),
+              error: errorMessage(err, PROVIDER_DISPATCH_FALLBACK),
+              reason: 'provider_dispatch_exception',
               restoration: successfulResult.restoration,
             })
             emit({ type: 'done', generationId, generationInfo })
@@ -1278,12 +1323,11 @@ async function streamAssembly(
         if (result.mutations) {
           emit({ type: 'message_patch', patch: messagePatchForClient(result.mutations, clientCapabilities) })
         }
+        const stopError = assemblyStopError(result, database)
         emit({
           type: 'error',
-          error:
-            result.abortReason === 'overflow'
-              ? 'prompt exceeds the context budget'
-              : 'prompt assembly was stopped by a trigger',
+          error: stopError.error,
+          reason: stopError.reason,
           restoration: result.restoration,
         })
       }
@@ -2096,7 +2140,8 @@ async function runGenerationJob(args: {
           } catch (err) {
             emit({
               type: 'error',
-              error: errorMessage(err, 'provider dispatch failed'),
+              error: errorMessage(err, PROVIDER_DISPATCH_FALLBACK),
+              reason: 'provider_dispatch_exception',
               restoration: successfulResult.restoration,
             })
             emit({ type: 'done', generationId, generationInfo })
@@ -2172,12 +2217,11 @@ async function runGenerationJob(args: {
         if (result.mutations) {
           emit({ type: 'message_patch', patch: messagePatchForClient(result.mutations, clientCapabilities) })
         }
+        const stopError = assemblyStopError(result, database)
         emit({
           type: 'error',
-          error:
-            result.abortReason === 'overflow'
-              ? 'prompt exceeds the context budget'
-              : 'prompt assembly was stopped by a trigger',
+          error: stopError.error,
+          reason: stopError.reason,
           restoration: result.restoration,
         })
       }
@@ -2342,7 +2386,10 @@ export function registerGenerationChatRoutes(
       if (!(await requireAuth(authState, req, reply))) return
       const job = generationJobs.registry.get(req.params.id)
       if (!job) {
-        reply.code(404).send({ error: 'Job not found' })
+        reply.code(404).send({
+          error: 'generation_job_not_found',
+          reason: 'Generation job not found or already expired.',
+        })
         return
       }
       attachGenerationViewer(req, reply, generationJobs, job, options.viewerHeartbeatMs)
@@ -2356,7 +2403,10 @@ export function registerGenerationChatRoutes(
     if (!(await requireAuth(authState, req, reply))) return
     const job = generationJobs.registry.get(req.params.id)
     if (!job) {
-      reply.code(404).send({ error: 'Job not found' })
+      reply.code(404).send({
+        error: 'generation_job_not_found',
+        reason: 'Generation job not found or already expired.',
+      })
       return
     }
     // Abort only — the runner's finally persists the streaming-so-far text and THEN
@@ -2385,9 +2435,13 @@ export function registerGenerationChatRoutes(
       const clientCapabilities = readClientCapabilities(body)
       const { signal, cleanup } = attachAbort(req)
       try {
-        const { result } = await assemblePromptWithMetrics(input, dataDir, db, signal)
+        const { result, deps } = await assemblePromptWithMetrics(input, dataDir, db, signal)
         if (result.stopSending) {
-          return { stopSending: true, abortReason: result.abortReason }
+          return {
+            stopSending: true,
+            abortReason: result.abortReason,
+            message: assemblyStopError(result, deps.getDatabase()).error,
+          }
         }
         return result.prompt ? promptEventForClient(result.prompt, clientCapabilities, input.mode) : result.prompt
       } catch (err) {

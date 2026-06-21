@@ -155,6 +155,7 @@ export type ServerChatWarning = Omit<WarningEvent, 'type'>
 export interface ErrorEvent {
   type: 'error'
   error: string
+  reason?: string
   restoration?: ServerChatRestoration
 }
 

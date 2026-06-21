@@ -29,7 +29,11 @@ export interface ProviderChunkTransportOptions {
 function errorMessage(err: unknown): string {
   if (err instanceof Error && err.message.length > 0) return err.message
   if (typeof err === 'string' && err.length > 0) return err
-  return 'provider dispatch failed'
+  return 'Provider stream failed before returning an error message.'
+}
+
+function nonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0
 }
 
 /**
@@ -79,9 +83,11 @@ export async function emitProviderChunks(
         continue
       }
       if (frame.kind === 'error') {
+        const providerError = nonEmptyString(frame.error) ? frame.error : undefined
         emit({
           type: 'error',
-          error: frame.error ?? 'provider stream failed',
+          error: providerError ?? 'Provider stream failed without an error message.',
+          reason: providerError ? 'provider_stream_error_frame' : 'provider_stream_error_frame_empty',
           restoration: normalizedOptions.errorRestoration?.(),
         })
         emit({ type: 'done', ...(normalizedOptions.doneMetadata?.(result) ?? {}) })
@@ -106,6 +112,7 @@ export async function emitProviderChunks(
     emit({
       type: 'error',
       error: errorMessage(err),
+      reason: 'provider_stream_exception',
       restoration: normalizedOptions.errorRestoration?.(),
     })
     emit({ type: 'done', ...(normalizedOptions.doneMetadata?.(result) ?? {}) })

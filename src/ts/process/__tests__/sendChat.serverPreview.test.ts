@@ -516,7 +516,7 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
 
   it('applies stop-trigger patches before surfacing the server assembly error', async () => {
     await seedEcho()
-    setServerChatError('prompt assembly was stopped by a trigger', {
+    setServerChatError('Generation was stopped by a start trigger.', {
       messagePatch: {
         chatId: '',
         characterId: 'char-tess',

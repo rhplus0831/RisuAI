@@ -300,6 +300,8 @@ export interface AssembleRestorationPayload {
   scriptstate?: Record<string, string | number | boolean>
 }
 
+export type AssembleAbortReason = 'trigger_stop' | 'history_context_overflow' | 'overflow'
+
 /**
  * The full assembler output. `prompt` is the `prompt` SSE event payload; the
  * remaining fields carry dispatch-only data. On an abort (`stopSending`) the
@@ -307,10 +309,10 @@ export interface AssembleRestorationPayload {
  * made before the abort.
  */
 export interface AssembleResult {
-  /** A start trigger or the budget overflow aborted the send. */
+  /** A start trigger or context-budget failure aborted the send. */
   stopSending: boolean
   /** Why the send aborted, when `stopSending` is true. */
-  abortReason?: 'stopSending' | 'overflow'
+  abortReason?: AssembleAbortReason
   /** The `prompt` SSE event payload (messages + promptInfo + lore report). */
   prompt?: Omit<PromptEvent, 'type'>
   /** The budgeted flat prompt (full `OpenAIChat` rows) for dispatch. */
@@ -447,8 +449,8 @@ export interface AssemblyState {
   inputTokens?: number
   /** Clamped response budget from `finalizeRequestBudget`. */
   outputTokens?: number
-  /** Set to `'overflow'` when the budget recheck cannot fit the pinned rows. */
-  abortReason?: 'stopSending' | 'overflow'
+  /** Why the send aborted, when `stopSending` is true. */
+  abortReason?: AssembleAbortReason
   // --- Typed mutation handoff (set while assembling) ---
   initialMessages?: Message[]
   messageMutationCheckpoint?: Message[]
@@ -1233,6 +1235,7 @@ export async function fillHistoryAndBias(state: AssemblyState): Promise<void> {
 
   if (history.stopSending === true) {
     state.stopSending = true
+    state.abortReason = 'trigger_stop'
     captureMessageReplacement(state, 'start_trigger')
     return
   }
@@ -1285,6 +1288,8 @@ export function fillMemoryAndPostHistory(state: AssemblyState): void {
 
   if (mem.stopSending === true) {
     state.stopSending = true
+    state.abortReason = 'history_context_overflow'
+    state.inputTokens = state.currentTokens
     return
   }
 
@@ -1748,7 +1753,8 @@ export async function assemblePrompt(input: AssembleInput, deps: AssembleDeps): 
   if (state.stopSending) {
     return {
       stopSending: true,
-      abortReason: state.abortReason ?? 'stopSending',
+      abortReason: state.abortReason ?? 'trigger_stop',
+      inputTokens: state.inputTokens,
       mutations: buildMutationPayload(state),
       restoration: buildRestorationPayload(state),
       submitMessages: state.submitMessages,

@@ -2211,7 +2211,8 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(events[4]).toEqual({
       type: 'error',
       data: {
-        error: 'prompt assembly was stopped by a trigger',
+        error: 'Generation was stopped by a start trigger.',
+        reason: 'trigger_stop',
         restoration: {
           chatId: 'chat-1',
           characterId: 'char-1',
@@ -2222,6 +2223,67 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
         },
       },
     })
+  })
+
+  it('emits a context-window error when history cannot fit after trimming', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, {
+      ...fixtureDatabase,
+      maxContext: 1,
+      maxResponse: 50,
+    })
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: { ...basePayload, clientCapabilities: { compactPromptEvent: true } },
+    })
+    expect(res.statusCode).toBe(200)
+
+    const error = parseEvents(res.body).find((event) => event.type === 'error')
+    expect(error?.data).toMatchObject({
+      reason: 'history_context_overflow',
+      error: expect.stringContaining(
+        'Chat history could not fit within the model context window after trimming older messages',
+      ),
+    })
+    expect(String(error?.data.error)).toContain('context limit 1')
+  })
+
+  it('emits a final prompt overflow error when pinned rows exceed the context window', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const db = dbWithEditRequestLua(`
+      listenEdit('editRequest', function(id, data, meta)
+        for i = 1, #data do
+          if data[i].role == 'system' then
+            data[i].content = data[i].content .. string.rep(' overflow', 2000)
+            break
+          end
+        end
+        return data
+      end)
+    `) as typeof fixtureDatabase & { maxContext: number; maxResponse: number }
+    db.maxContext = 200
+    db.maxResponse = 1
+    await seedDatabase(harness.app, assertion, db)
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: { ...basePayload, clientCapabilities: { compactPromptEvent: true } },
+    })
+    expect(res.statusCode).toBe(200)
+
+    const error = parseEvents(res.body).find((event) => event.type === 'error')
+    expect(error?.data).toMatchObject({
+      reason: 'overflow',
+      error: expect.stringContaining(
+        'Prompt is too large for the model context window after trimming removable history',
+      ),
+    })
+    expect(String(error?.data.error)).toContain('context limit 200')
   })
 
   it('keeps preview-mode assembly read-only even when triggers set variables', async () => {
@@ -3228,6 +3290,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       type: 'error',
       data: {
         error,
+        reason: 'provider_dispatch_exception',
         restoration: {
           chatId: 'chat-1',
           characterId: 'char-1',
@@ -3324,6 +3387,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       type: 'error',
       data: {
         error: 'provider exploded',
+        reason: 'provider_stream_exception',
         restoration: {
           chatId: 'chat-1',
           characterId: 'char-1',

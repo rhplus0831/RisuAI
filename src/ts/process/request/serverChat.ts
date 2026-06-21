@@ -30,6 +30,7 @@ import type { requestDataResponse, StreamResponseChunk } from './request'
 
 const CHAT_ENDPOINT = '/api/v1/generate/chat'
 const INCOMPLETE_CHAT_GENERATION_SETTINGS_ERROR = 'chat_generation_settings_incomplete'
+const HUMAN_REASON_ERROR_CODES = new Set(['generation_in_progress', 'generation_job_not_found'])
 const SERVER_CHAT_CLIENT_CAPABILITIES = {
   compactPromptEvent: true,
 } as const
@@ -109,12 +110,20 @@ function parseData(data: string): Record<string, unknown> | null {
   }
 }
 
+function nonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0
+}
+
 function httpErrorReason(body: { error?: unknown; message?: unknown; reason?: unknown }): string | null {
-  if (body.error === INCOMPLETE_CHAT_GENERATION_SETTINGS_ERROR && typeof body.message === 'string') {
+  if (body.error === INCOMPLETE_CHAT_GENERATION_SETTINGS_ERROR && nonEmptyString(body.message)) {
     return body.message
   }
-  if (typeof body.error === 'string') return body.error
-  if (typeof body.reason === 'string') return body.reason
+  if (nonEmptyString(body.message)) return body.message
+  if (typeof body.error === 'string' && HUMAN_REASON_ERROR_CODES.has(body.error) && nonEmptyString(body.reason)) {
+    return body.reason
+  }
+  if (nonEmptyString(body.error)) return body.error
+  if (nonEmptyString(body.reason)) return body.reason
   return null
 }
 
@@ -208,7 +217,7 @@ async function openChatResponse(
   }
 
   if (!response.body) {
-    return { status: 'error', error: 'No streaming body returned' }
+    return { status: 'error', error: 'Server did not return a streaming response body.' }
   }
 
   return { status: 'ok', response }
@@ -250,7 +259,9 @@ export async function requestServerChat(input: ServerChatInput, signal: AbortSig
         }
         break
       case 'error':
-        error = typeof data.error === 'string' ? data.error : 'prompt assembly failed'
+        error = nonEmptyString(data.error)
+          ? data.error
+          : 'Server returned an error without details during prompt assembly.'
         done = true
         break
       case 'done':
@@ -452,7 +463,9 @@ export async function requestServerChatGeneration(
                 break
               }
               case 'error': {
-                const error = typeof data.error === 'string' ? data.error : 'provider dispatch failed'
+                const error = nonEmptyString(data.error)
+                  ? data.error
+                  : 'Server returned an error without details during generation.'
                 const restoration =
                   data.restoration && typeof data.restoration === 'object'
                     ? (data.restoration as unknown as ServerChatRestoration)

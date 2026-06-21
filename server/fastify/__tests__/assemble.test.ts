@@ -1337,6 +1337,7 @@ describe('Phase 7-11d fillHistoryAndBias', () => {
 
     const state = await run(db)
     expect(state.stopSending).toBe(true)
+    expect(state.abortReason).toBe('trigger_stop')
     // Incomplete history is not captured on abort.
     expect(state.historyMessages).toBeUndefined()
     expect('biases' in state).toBe(false)
@@ -2241,6 +2242,8 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
 
     const state = await runAll(db)
     expect(state.stopSending).toBe(true)
+    expect(state.abortReason).toBe('history_context_overflow')
+    expect(state.inputTokens).toBeGreaterThan(1)
     // The slots are left for the root to discard on abort.
     expect(state.unformated.chats).toEqual([])
   })
@@ -2535,7 +2538,7 @@ describe('Phase 7-11f renderAndBudget + assemblePrompt', () => {
     } as Partial<Database>)
     const result = await assemblePrompt(baseInput(), depsFor(db))
 
-    expect(result).toMatchObject({ stopSending: true, abortReason: 'stopSending' })
+    expect(result).toMatchObject({ stopSending: true, abortReason: 'trigger_stop' })
     expect(result.mutations?.messageMutations[0]).toMatchObject({
       type: 'append',
       source: 'user_message',
