@@ -63,6 +63,17 @@
       supporterConfirmOpen = false
     }
   }
+
+  function navButtonClass(active: boolean): Record<string, boolean> {
+    return {
+      'flex min-h-9 w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:text-textcolor': true,
+      'hover:bg-bgcolor': !$MobileGUI,
+      'hover:bg-darkbg': $MobileGUI,
+      'bg-bgcolor text-textcolor': active && !$MobileGUI,
+      'bg-darkbg text-textcolor': active && $MobileGUI,
+      'text-textcolor2': !active,
+    }
+  }
 </script>
 
 <div
@@ -72,187 +83,174 @@
   <div class="h-full max-w-(--breakpoint-lg) w-full flex relative rs-setting-cont-2">
     {#if (window.innerWidth >= 700 && !$MobileGUI) || $SettingsMenuIndex === -1}
       <div
-        class="flex h-full flex-col p-4 pt-8 gap-2 overflow-y-auto relative rs-setting-cont-3 shrink-0"
+        class="flex h-full flex-col gap-4 overflow-y-auto relative rs-setting-cont-3 shrink-0 px-3 py-4 pt-8"
         class:w-full={window.innerWidth < 700 || $MobileGUI}
         class:bg-darkbg={!$MobileGUI}
         class:bg-bgcolor={$MobileGUI}>
         {#if !$isLite}
-          <button
-            class="flex gap-2 items-center hover:text-textcolor"
-            class:text-textcolor={$SettingsMenuIndex === 17}
-            class:text-textcolor2={$SettingsMenuIndex !== 17}
-            onclick={() => {
-              navigate('/settings/model')
-            }}>
-            <ActivityIcon />
-            <span>{language.model}</span>
-          </button>
-          <button
-            class="flex gap-2 items-center hover:text-textcolor"
-            class:text-textcolor={$SettingsMenuIndex === 18 || $SettingsMenuIndex === 13}
-            class:text-textcolor2={$SettingsMenuIndex !== 18 && $SettingsMenuIndex !== 13}
-            onclick={() => {
-              navigate('/settings/prompt-settings')
-            }}>
-            <SparkleIcon />
-            <span>{language.prompt}</span>
-          </button>
-          {#if DBState.db.botPresets?.length > 0}
+          <div class="flex flex-col gap-1">
+            <span class="px-2 text-xs font-semibold uppercase text-textcolor2">{language.settingsGroupChatSetup}</span>
             <button
-              class="flex gap-2 items-center hover:text-textcolor"
-              class:text-textcolor={$SettingsMenuIndex === 1}
-              class:text-textcolor2={$SettingsMenuIndex !== 1}
+              class={navButtonClass($SettingsMenuIndex === 17)}
               onclick={() => {
-                navigate('/settings/bot-preset')
+                navigate('/settings/model')
               }}>
-              <BotIcon />
-              <span>{language.chatBot}</span>
+              <ActivityIcon size={20} />
+              <span>{language.settingsNavModelProfiles}</span>
             </button>
-          {/if}
-          <button
-            class="flex gap-2 items-center hover:text-textcolor"
-            class:text-textcolor={$SettingsMenuIndex === 12}
-            class:text-textcolor2={$SettingsMenuIndex !== 12}
-            onclick={() => {
-              navigate('/settings/persona')
-            }}>
-            <ContactIcon />
-            <span>{language.persona}</span>
-          </button>
-          <button
-            class="flex gap-2 items-center hover:text-textcolor"
-            class:text-textcolor={$SettingsMenuIndex === 2}
-            class:text-textcolor2={$SettingsMenuIndex !== 2}
-            onclick={() => {
-              navigate('/settings/other-bots')
-            }}>
-            <Sailboat />
-            <span>{language.otherBots}</span>
-          </button>
-          <button
-            class="flex gap-2 items-center hover:text-textcolor"
-            class:text-textcolor={$SettingsMenuIndex === 3}
-            class:text-textcolor2={$SettingsMenuIndex !== 3}
-            onclick={() => {
-              navigate('/settings/display')
-            }}>
-            <MonitorIcon />
-            <span>{language.display}</span>
-          </button>
-        {/if}
-        <button
-          class="flex gap-2 items-center hover:text-textcolor"
-          class:text-textcolor={$SettingsMenuIndex === 10}
-          class:text-textcolor2={$SettingsMenuIndex !== 10}
-          onclick={() => {
-            navigate('/settings/language')
-          }}>
-          <LanguagesIcon />
-          <span>{language.language}</span>
-        </button>
-        {#if !$isLite}
-          <button
-            class="flex gap-2 items-center hover:text-textcolor"
-            class:text-textcolor={$SettingsMenuIndex === 11}
-            class:text-textcolor2={$SettingsMenuIndex !== 11}
-            onclick={() => {
-              navigate('/settings/accessibility')
-            }}>
-            <AccessibilityIcon />
-            <span>{language.accessibility}</span>
-          </button>
-          <button
-            class="flex gap-2 items-center hover:text-textcolor"
-            class:text-textcolor={$SettingsMenuIndex === 14}
-            class:text-textcolor2={$SettingsMenuIndex !== 14}
-            onclick={() => {
-              navigate('/settings/modules')
-            }}>
-            <PackageIcon />
-            <span>{language.modules}</span>
-          </button>
-          <button
-            class="flex gap-2 items-center hover:text-textcolor"
-            class:text-textcolor={$SettingsMenuIndex === 4}
-            class:text-textcolor2={$SettingsMenuIndex !== 4}
-            onclick={() => {
-              navigate('/settings/plugins')
-            }}>
-            <CodeIcon />
-            <span>{language.plugin}</span>
-          </button>
-        {/if}
-        <button
-          class="flex gap-2 items-center hover:text-textcolor"
-          class:text-textcolor={$SettingsMenuIndex === 0}
-          class:text-textcolor2={$SettingsMenuIndex !== 0}
-          onclick={() => {
-            navigate('/settings/backup')
-          }}>
-          <HardDrive />
-          <span>{language.backupRestore}</span>
-        </button>
-        <button
-          class="flex gap-2 items-center hover:text-textcolor"
-          class:text-textcolor={$SettingsMenuIndex === 15}
-          class:text-textcolor2={$SettingsMenuIndex !== 15}
-          onclick={() => {
-            navigate('/settings/hotkeys')
-          }}>
-          <KeyboardIcon />
-          <span>{language.hotkey}</span>
-        </button>
-        {#if !$isLite}
-          <button
-            class="flex gap-2 items-center hover:text-textcolor"
-            class:text-textcolor={$SettingsMenuIndex === 6}
-            class:text-textcolor2={$SettingsMenuIndex !== 6}
-            onclick={() => {
-              navigate('/settings/advanced')
-            }}>
-            <ActivityIcon />
-            <span>{language.advancedSettings}</span>
-          </button>
-          <button
-            class="flex gap-2 items-center hover:text-textcolor"
-            class:text-textcolor={$SettingsMenuIndex === 77}
-            class:text-textcolor2={$SettingsMenuIndex !== 77}
-            onclick={openSupporterThanks}>
-            <BoxIcon />
-            <span>{language.supporterThanks}</span>
-          </button>
-          {#each additionalSettingsMenu as menu}
             <button
-              class="flex gap-2 items-center hover:text-textcolor text-textcolor2"
+              class={navButtonClass($SettingsMenuIndex === 18 || $SettingsMenuIndex === 13)}
               onclick={() => {
-                menu.callback()
+                navigate('/settings/prompt-settings')
               }}>
-              <PluginDefinedIcon ico={menu} />
-              <span>{menu.name}</span>
+              <SparkleIcon size={20} />
+              <span>{language.settingsNavPromptPresets}</span>
             </button>
-          {/each}
+            {#if DBState.db.botPresets?.length > 0}
+              <button
+                class={navButtonClass($SettingsMenuIndex === 1)}
+                onclick={() => {
+                  navigate('/settings/bot-preset')
+                }}>
+                <BotIcon size={20} />
+                <span>{language.settingsNavLegacyBotPresets}</span>
+              </button>
+            {/if}
+            <button
+              class={navButtonClass($SettingsMenuIndex === 12)}
+              onclick={() => {
+                navigate('/settings/persona')
+              }}>
+              <ContactIcon size={20} />
+              <span>{language.settingsNavUserPersona}</span>
+            </button>
+          </div>
 
-          {#if DBState.db.enableRisuaiProTools}
+          <div class="flex flex-col gap-1">
+            <span class="px-2 text-xs font-semibold uppercase text-textcolor2"
+              >{language.settingsGroupCapabilities}</span>
             <button
-              class="flex gap-2 items-center hover:text-textcolor"
-              class:text-textcolor={$SettingsMenuIndex === 16}
-              class:text-textcolor2={$SettingsMenuIndex !== 16}
+              class={navButtonClass($SettingsMenuIndex === 2)}
               onclick={() => {
-                easyPanelStore.open = true
+                navigate('/settings/other-bots')
               }}>
-              <!-- From Lucide Icons, licensed under MIT/ISC License, modified to fit the design. see license from bundled lucide icons. -->
-              <svg width={24} height={24}>
-                <defs>
-                  <linearGradient id={`grad1`} x1="0" y1="0" x2="1" y2="0">
-                    <stop offset="0%" style="stop-color:#587bff" />
-                    <stop offset="100%" style="stop-color:#00a1ad" />
-                  </linearGradient>
-                </defs>
-                <SparkleIcon color="url(#grad1)" />
-              </svg>
-              <span>{language.easyPanel}</span>
+              <Sailboat size={20} />
+              <span>{language.settingsNavMediaMemory}</span>
+            </button>
+            <button
+              class={navButtonClass($SettingsMenuIndex === 14)}
+              onclick={() => {
+                navigate('/settings/modules')
+              }}>
+              <PackageIcon size={20} />
+              <span>{language.settingsNavModules}</span>
+            </button>
+            <button
+              class={navButtonClass($SettingsMenuIndex === 4)}
+              onclick={() => {
+                navigate('/settings/plugins')
+              }}>
+              <CodeIcon size={20} />
+              <span>{language.settingsNavPlugins}</span>
+            </button>
+          </div>
+        {/if}
+
+        <div class="flex flex-col gap-1">
+          <span class="px-2 text-xs font-semibold uppercase text-textcolor2">{language.settingsGroupInterface}</span>
+          {#if !$isLite}
+            <button
+              class={navButtonClass($SettingsMenuIndex === 3)}
+              onclick={() => {
+                navigate('/settings/display')
+              }}>
+              <MonitorIcon size={20} />
+              <span>{language.settingsNavDisplayAudio}</span>
             </button>
           {/if}
+          <button
+            class={navButtonClass($SettingsMenuIndex === 10)}
+            onclick={() => {
+              navigate('/settings/language')
+            }}>
+            <LanguagesIcon size={20} />
+            <span>{language.settingsNavLanguage}</span>
+          </button>
+          {#if !$isLite}
+            <button
+              class={navButtonClass($SettingsMenuIndex === 11)}
+              onclick={() => {
+                navigate('/settings/accessibility')
+              }}>
+              <AccessibilityIcon size={20} />
+              <span>{language.settingsNavAccessibility}</span>
+            </button>
+          {/if}
+          <button
+            class={navButtonClass($SettingsMenuIndex === 15)}
+            onclick={() => {
+              navigate('/settings/hotkeys')
+            }}>
+            <KeyboardIcon size={20} />
+            <span>{language.settingsNavKeyboardShortcuts}</span>
+          </button>
+        </div>
+
+        <div class="flex flex-col gap-1">
+          <span class="px-2 text-xs font-semibold uppercase text-textcolor2">{language.settingsGroupData}</span>
+          <button
+            class={navButtonClass($SettingsMenuIndex === 0)}
+            onclick={() => {
+              navigate('/settings/backup')
+            }}>
+            <HardDrive size={20} />
+            <span>{language.settingsNavBackups}</span>
+          </button>
+        </div>
+
+        {#if !$isLite}
+          <div class="flex flex-col gap-1">
+            <span class="px-2 text-xs font-semibold uppercase text-textcolor2"
+              >{language.settingsGroupAboutAdvanced}</span>
+            <button
+              class={navButtonClass($SettingsMenuIndex === 6)}
+              onclick={() => {
+                navigate('/settings/advanced')
+              }}>
+              <ActivityIcon size={20} />
+              <span>{language.settingsNavAdvanced}</span>
+            </button>
+            <button class={navButtonClass($SettingsMenuIndex === 77)} onclick={openSupporterThanks}>
+              <BoxIcon size={20} />
+              <span>{language.settingsNavSupporters}</span>
+            </button>
+            {#each additionalSettingsMenu as menu}
+              <button class={navButtonClass(false)} onclick={menu.callback}>
+                <PluginDefinedIcon ico={menu} />
+                <span>{menu.name}</span>
+              </button>
+            {/each}
+
+            {#if DBState.db.enableRisuaiProTools}
+              <button
+                class={navButtonClass($SettingsMenuIndex === 16)}
+                onclick={() => {
+                  easyPanelStore.open = true
+                }}>
+                <!-- From Lucide Icons, licensed under MIT/ISC License, modified to fit the design. see license from bundled lucide icons. -->
+                <svg width={20} height={20}>
+                  <defs>
+                    <linearGradient id={`grad1`} x1="0" y1="0" x2="1" y2="0">
+                      <stop offset="0%" style="stop-color:#587bff" />
+                      <stop offset="100%" style="stop-color:#00a1ad" />
+                    </linearGradient>
+                  </defs>
+                  <SparkleIcon color="url(#grad1)" size={20} />
+                </svg>
+                <span>{language.settingsNavEasyPanel}</span>
+              </button>
+            {/if}
+          </div>
         {/if}
         {#if window.innerWidth < 700 && !$MobileGUI}
           <button

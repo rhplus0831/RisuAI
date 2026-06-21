@@ -510,7 +510,7 @@
   // End wavespeed
 </script>
 
-<h2 class="mb-2 text-2xl font-bold mt-2">{language.otherBots}</h2>
+<h2 class="mb-2 text-2xl font-bold mt-2">{language.settingsNavMediaMemory}</h2>
 
 {#if submenu !== -1}
   <div class="flex w-full rounded-md border border-darkborderc mb-4">

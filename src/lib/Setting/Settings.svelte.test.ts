@@ -58,7 +58,7 @@ let component: MountedComponent | undefined
 
 function supporterButton() {
   const button = Array.from(target.querySelectorAll('button')).find((candidate) =>
-    candidate.textContent?.includes(language.supporterThanks),
+    candidate.textContent?.includes(language.settingsNavSupporters),
   )
   expect(button).toBeTruthy()
   return button!
@@ -171,14 +171,15 @@ describe('Settings supporter tab', () => {
     expect(fetch).toHaveBeenCalledWith(SUPPORTER_ENDPOINT)
   })
 
-  it('shows split model and prompt settings items without the legacy Chat Bot item by default', () => {
-    expect(settingsButton(language.model)).toBeTruthy()
-    expect(settingsButton(language.prompt)).toBeTruthy()
-    expect(settingsButton(language.chatBot)).toBeUndefined()
+  it('groups model and prompt setup without the legacy bot presets item by default', () => {
+    expect(target.textContent).toContain(language.settingsGroupChatSetup)
+    expect(settingsButton(language.settingsNavModelProfiles)).toBeTruthy()
+    expect(settingsButton(language.settingsNavPromptPresets)).toBeTruthy()
+    expect(settingsButton(language.settingsNavLegacyBotPresets)).toBeUndefined()
   })
 
-  it('shows the legacy Chat Bot settings item only when legacy bot presets remain', async () => {
-    expect(settingsButton(language.chatBot)).toBeUndefined()
+  it('shows the legacy bot presets settings item only when legacy bot presets remain', async () => {
+    expect(settingsButton(language.settingsNavLegacyBotPresets)).toBeUndefined()
 
     if (component) {
       unmount(component)
@@ -193,8 +194,8 @@ describe('Settings supporter tab', () => {
     component = mount(Settings, { target })
     await tick()
 
-    expect(settingsButton(language.model)).toBeTruthy()
-    expect(settingsButton(language.prompt)).toBeTruthy()
-    expect(settingsButton(language.chatBot)).toBeTruthy()
+    expect(settingsButton(language.settingsNavModelProfiles)).toBeTruthy()
+    expect(settingsButton(language.settingsNavPromptPresets)).toBeTruthy()
+    expect(settingsButton(language.settingsNavLegacyBotPresets)).toBeTruthy()
   })
 })
