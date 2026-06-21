@@ -760,6 +760,18 @@ describe('Phase 9-2a scalar settings groups', () => {
         patch: {
           globalChatVariables: { toggle_mood: '1' },
           jailbreakToggle: true,
+          chatGenerationTogglePresets: [
+            {
+              id: 'toggle-preset-a',
+              name: 'Toggle Preset A',
+              createdAt: 1,
+              updatedAt: 2,
+              jailbreakToggle: true,
+              sidebarToggles: {
+                mood: '1',
+              },
+            },
+          ],
           customSidebarItems: [
             {
               id: 'sidebar-loadout',
@@ -791,6 +803,18 @@ describe('Phase 9-2a scalar settings groups', () => {
       auxModelUnderModelSettings: true,
       globalChatVariables: { toggle_mood: '1' },
       jailbreakToggle: true,
+      chatGenerationTogglePresets: [
+        {
+          id: 'toggle-preset-a',
+          name: 'Toggle Preset A',
+          createdAt: 1,
+          updatedAt: 2,
+          jailbreakToggle: true,
+          sidebarToggles: {
+            mood: '1',
+          },
+        },
+      ],
       customSidebarItems: [
         {
           id: 'sidebar-loadout',

@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const alertSpies = vi.hoisted(() => ({
   alertConfirm: vi.fn(async () => false),
+  alertInput: vi.fn(async () => ''),
 }))
 
 vi.mock('src/ts/alert', async (importActual) => {
@@ -11,6 +12,7 @@ vi.mock('src/ts/alert', async (importActual) => {
   return {
     ...actual,
     alertConfirm: alertSpies.alertConfirm,
+    alertInput: alertSpies.alertInput,
   }
 })
 
@@ -97,6 +99,18 @@ function stubCommandFetch(): CapturedFetch[] {
       })
 
       if (url === '/api/v1/bootstrap') return jsonResponse({ revision })
+      if (url === '/api/v1/commands/settings/sidebar') {
+        revision += 1
+        return jsonResponse({
+          status: 'ok',
+          revision,
+          event: {
+            type: 'settings.updated',
+            revision,
+            resource: 'settings',
+          },
+        } satisfies ServerCommandResult & Record<string, unknown>)
+      }
       if (url.endsWith('/generation-settings')) {
         revision += 1
         return jsonResponse({
@@ -178,6 +192,7 @@ function seedDb(): void {
     },
     customPromptTemplateToggle: 'legacy=Legacy Toggle',
     customSidebarItems: [],
+    chatGenerationTogglePresets: [],
     lastLoadedLoadoutName: '',
     hypaV3: false,
     personas: [
@@ -306,6 +321,22 @@ function resetDefaultsButton(): HTMLButtonElement {
   return elementBySelector<HTMLButtonElement>('[data-risu-generation-reset-defaults] button', 'reset defaults button')
 }
 
+function togglePresetRoot(): HTMLElement {
+  return elementBySelector<HTMLElement>('[data-risu-generation-toggle-presets]', 'toggle preset controls')
+}
+
+function togglePresetSelect(): HTMLSelectElement {
+  const select = togglePresetRoot().querySelector<HTMLSelectElement>('select')
+  expect(select, 'toggle preset select').toBeTruthy()
+  return select!
+}
+
+function togglePresetButton(index: number): HTMLButtonElement {
+  const button = togglePresetRoot().querySelectorAll<HTMLButtonElement>('button')[index]
+  expect(button, `toggle preset button ${index}`).toBeTruthy()
+  return button!
+}
+
 function pickerRoot(kind: 'model' | 'prompt' | 'persona', mode: GenerationSettingsPickerMode): HTMLElement {
   return elementBySelector<HTMLElement>(
     `[data-risu-generation-picker][data-risu-picker-kind="${kind}"][data-risu-picker-mode="${mode}"]`,
@@ -375,6 +406,8 @@ beforeEach(() => {
   document.body.appendChild(target)
   alertSpies.alertConfirm.mockReset()
   alertSpies.alertConfirm.mockResolvedValue(false)
+  alertSpies.alertInput.mockReset()
+  alertSpies.alertInput.mockResolvedValue('')
   clearCachedServerCommandRevision()
   seedDb()
 })
@@ -1083,6 +1116,130 @@ describe('sidebar chat generation settings controls', () => {
     const resetDefaults = elementBySelector<HTMLElement>('[data-risu-generation-reset-defaults]', 'reset defaults')
 
     expect(hypaMemoryToggle.compareDocumentPosition(resetDefaults) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('saves, applies, and deletes reusable chat toggle presets', async () => {
+    const calls = stubCommandFetch()
+    DBState.db.promptPresets[1].customPromptTemplateToggle =
+      'mood=Mood=select=Calm,Spicy\nflag=Flag\nnote=Note=text\nmoduleFlag=Module Flag\nextra=Extra'
+    DBState.db.characters[0].chats[1].generationSettings = {
+      configured: true,
+      personaId: 'persona-b',
+      modelPresetId: 'model-preset-a',
+      promptPresetId: 'preset-b',
+      jailbreakToggle: false,
+      sidebarToggles: {
+        mood: '0',
+        flag: '0',
+        note: 'beta-note',
+        moduleFlag: '0',
+        extra: '1',
+      },
+    }
+    alertSpies.alertInput.mockResolvedValueOnce('Spicy toggles')
+
+    mountToggles()
+    await tick()
+
+    expect(togglePresetSelect().value).toBe('')
+
+    togglePresetButton(0).click()
+    await tick()
+    await waitForFetchCount(calls, 2)
+
+    const preset = DBState.db.chatGenerationTogglePresets[0]
+    expect(preset).toMatchObject({
+      name: 'Spicy toggles',
+      jailbreakToggle: true,
+      sidebarToggles: {
+        mood: '1',
+        flag: '1',
+        note: 'alpha-note',
+        moduleFlag: '1',
+      },
+    })
+    expect(togglePresetSelect().value).toBe(preset.id)
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/settings/sidebar',
+      method: 'PATCH',
+      authHeader: 'sidebar-generation-settings-token',
+      body: {
+        baseRevision: 300,
+        patch: {
+          chatGenerationTogglePresets: expect.arrayContaining([
+            expect.objectContaining({
+              id: preset.id,
+              name: 'Spicy toggles',
+            }),
+          ]),
+        },
+      },
+    })
+
+    DBState.db.characters[0].chatPage = 1
+    await tick()
+
+    expect(jailbreakControl().dataset.risuSelected).toBe('false')
+    expect(toggleCheckbox('extra').checked).toBe(true)
+
+    togglePresetButton(1).click()
+    await tick()
+    await waitForFetchCount(calls, 3)
+
+    expect(activeChat().generationSettings).toMatchObject({
+      configured: true,
+      personaId: 'persona-b',
+      modelPresetId: 'model-preset-a',
+      promptPresetId: 'preset-b',
+      jailbreakToggle: true,
+      sidebarToggles: {
+        mood: '1',
+        flag: '1',
+        note: 'alpha-note',
+        moduleFlag: '1',
+        extra: '0',
+      },
+    })
+    expect(jailbreakControl().dataset.risuSelected).toBe('true')
+    expect(toggleCheckbox('extra').checked).toBe(false)
+    expect(calls[2]).toMatchObject({
+      url: '/api/v1/commands/chats/chat-b/generation-settings',
+      method: 'PUT',
+      authHeader: 'sidebar-generation-settings-token',
+      body: {
+        baseRevision: 301,
+        generationSettings: expect.objectContaining({
+          jailbreakToggle: true,
+          sidebarToggles: {
+            mood: '1',
+            flag: '1',
+            note: 'alpha-note',
+            moduleFlag: '1',
+            extra: '0',
+          },
+        }),
+      },
+    })
+
+    alertSpies.alertConfirm.mockResolvedValueOnce(true)
+    togglePresetButton(2).click()
+    await tick()
+    await waitForFetchCount(calls, 4)
+
+    expect(alertSpies.alertConfirm).toHaveBeenCalledWith('Delete "Spicy toggles"?')
+    expect(DBState.db.chatGenerationTogglePresets).toEqual([])
+    expect(togglePresetSelect().value).toBe('')
+    expect(calls[3]).toMatchObject({
+      url: '/api/v1/commands/settings/sidebar',
+      method: 'PATCH',
+      authHeader: 'sidebar-generation-settings-token',
+      body: {
+        baseRevision: 302,
+        patch: {
+          chatGenerationTogglePresets: [],
+        },
+      },
+    })
   })
 
   it('writes jailbreak and sidebar toggles to active chat settings without touching global state', async () => {

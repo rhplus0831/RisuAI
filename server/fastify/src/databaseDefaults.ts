@@ -473,6 +473,7 @@ export function normalizeDatabaseDefaults(
   setDefault(database, 'saveSignatures', false)
   setDefault(database, 'enableRisuaiProTools', Array.isArray(database.plugins) && database.plugins.length > 0)
   setDefault(database, 'keepSessionAlive', 'off')
+  setDefault(database, 'chatGenerationTogglePresets', [])
   setDefault(database, 'loadouts', [])
   setDefault(database, 'longPressToPopupEditor', false)
   setDefault(database, 'disableAutoPopupMessageEditor', false)

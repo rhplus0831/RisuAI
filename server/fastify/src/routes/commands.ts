@@ -32,6 +32,7 @@ import {
   readModelRuntimeDefaults,
   readModelRoleProfiles,
 } from '../../../../src/ts/model/modelProfileRecords.js'
+import { normalizeChatGenerationTogglePresets } from '../../../../src/ts/chatGenerationTogglePresetRecords.js'
 import {
   createPromptItemRecord,
   ensurePromptTemplateCollection,
@@ -1011,6 +1012,7 @@ const SETTINGS_GROUP_KEYS: Record<SettingsGroup, readonly string[]> = {
     'enableRisuaiProTools',
     'globalChatVariables',
     'jailbreakToggle',
+    'chatGenerationTogglePresets',
     'customSidebarItems',
   ],
   account: ['account', 'didFirstSetup', 'username', 'localNetworkMode', 'localNetworkTimeoutSec'],
@@ -1298,6 +1300,7 @@ const ARRAY_SETTING_KEYS = new Set([
   'customFlags',
   'customQuotesData',
   'customModels',
+  'chatGenerationTogglePresets',
   'customSidebarItems',
   'globalscript',
   'hotkeys',
@@ -6622,6 +6625,9 @@ function sanitizeSettingValue(key: string, value: unknown): unknown {
   }
   if (key === 'customSidebarItems') {
     return readCustomSidebarItems(value)
+  }
+  if (key === 'chatGenerationTogglePresets') {
+    return normalizeChatGenerationTogglePresets(value)
   }
   return value
 }

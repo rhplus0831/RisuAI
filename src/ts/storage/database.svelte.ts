@@ -73,6 +73,10 @@ import { applyAttemptedFieldRollback, applyAttemptedKeyedListRollback } from '..
 import { isServerChatMessagePlaceholder, SERVER_UNLOADED_CHAT_MESSAGE_MARKER } from '../server/chatMessagePlaceholders'
 import { DEFAULT_CHAT_DISPLAY_TAIL_COUNT, normalizeChatDisplayTailCount } from '../chatDisplayTailCount'
 import type { ChatGenerationSettings } from '../chatGenerationSettings'
+import {
+  normalizeChatGenerationTogglePresets,
+  type ChatGenerationTogglePreset,
+} from '../chatGenerationTogglePresetRecords'
 import { canUseServerProjection, fetchServerPresetProjection } from '../server/projection'
 import {
   createExtractedModelPreset,
@@ -1424,6 +1428,7 @@ export function setDatabase(data: Database) {
   // Because its likely they are power users who would benefit from the features
   data.enableRisuaiProTools ??= data.plugins.length > 0
   data.keepSessionAlive ??= 'off'
+  data.chatGenerationTogglePresets = normalizeChatGenerationTogglePresets(data.chatGenerationTogglePresets)
   data.loadouts ??= []
   data.longPressToPopupEditor ??= false
   data.disableAutoPopupMessageEditor ??= false
@@ -1435,6 +1440,7 @@ export function setDatabase(data: Database) {
 export function applyServerProjectionDatabase(data: Database) {
   return withServerProjectionApply(() => {
     data.customSidebarItems = normalizeCustomSidebarItems(data.customSidebarItems)
+    data.chatGenerationTogglePresets = normalizeChatGenerationTogglePresets(data.chatGenerationTogglePresets)
     changeLanguage(data.language)
     setDatabaseLite(data)
   })
@@ -1451,7 +1457,12 @@ export function mergeServerProjectionFields(fields: Partial<Database>) {
   return withServerProjectionApply(() => {
     const db = DBState.db as unknown as Record<string, unknown>
     for (const [key, value] of Object.entries(fields)) {
-      db[key] = key === 'customSidebarItems' ? normalizeCustomSidebarItems(value) : value
+      db[key] =
+        key === 'customSidebarItems'
+          ? normalizeCustomSidebarItems(value)
+          : key === 'chatGenerationTogglePresets'
+            ? normalizeChatGenerationTogglePresets(value)
+            : value
     }
   })
 }
@@ -2191,6 +2202,7 @@ export interface Database {
   saveSignatures?: boolean
   keepSessionAlive: 'off' | 'pip' | 'sound'
   longPressToPopupEditor?: boolean
+  chatGenerationTogglePresets: ChatGenerationTogglePreset[]
   loadouts: Loadout[]
   disableAprilFools?: boolean
   customSidebarItems: CustomSideBarItem[]

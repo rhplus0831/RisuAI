@@ -10,6 +10,7 @@
   import Accordion from '../UI/Accordion.svelte'
   import ChatGenerationSettingsControls from './ChatGenerationSettingsControls.svelte'
   import ChatGenerationResetDefaultsButton from './ChatGenerationResetDefaultsButton.svelte'
+  import ChatGenerationTogglePresets from './ChatGenerationTogglePresets.svelte'
   import CustomSideBar from './CustomSidebar.svelte'
   import { setCharacterSupaMemory } from 'src/ts/characterCommands'
   import {
@@ -228,6 +229,7 @@
       </div>
     {/if}
     <ChatGenerationResetDefaultsButton />
+    <ChatGenerationTogglePresets />
   </div>
 {:else}
   <ChatGenerationSettingsControls />
@@ -253,4 +255,5 @@
     </div>
   {/if}
   <ChatGenerationResetDefaultsButton />
+  <ChatGenerationTogglePresets />
 {/if}
