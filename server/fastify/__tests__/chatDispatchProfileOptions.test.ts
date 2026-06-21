@@ -345,6 +345,39 @@ describe('dispatchChatProvider profile providerOptions', () => {
     ])
   })
 
+  it('preserves legacy reverse_proxy autofill for converted custom-api profile mirrors', async () => {
+    const database = db({
+      aiModel: 'reverse_proxy',
+      customAPIFormat: LLMFormat.OpenAICompatible,
+      forceReplaceUrl: 'https://util.node.mephistopheles.moe/chat/risu',
+      proxyKey: 'sk-flat-proxy',
+      autofillRequestUrl: true,
+      modelProfiles: [
+        {
+          id: 'converted-custom-api',
+          name: 'Converted Custom API',
+          providerId: 'custom-api',
+          modelId: 'custom-api',
+          providerOptions: {
+            apiKey: 'sk-profile-proxy',
+            baseUrl: 'https://util.node.mephistopheles.moe/chat/risu',
+            requestModel: 'extension',
+          },
+        },
+      ],
+      modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'converted-custom-api' } },
+    } as Partial<Database>)
+    const profile = resolveModelProfile({ database, role: 'chatMain' })
+    const captured = captureOpenAIRequests()
+
+    await dispatchWithProfile(profile, database)
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0].url).toBe('https://util.node.mephistopheles.moe/chat/risu/v1/chat/completions')
+    expect(captured[0].headers.authorization).toBe('Bearer sk-profile-proxy')
+    expect(captured[0].body.model).toBe('extension')
+  })
+
   it('uses OpenAI legacy instruct profile options over conflicting flat database fields', async () => {
     const profile = resolveModelProfile({
       database: db({

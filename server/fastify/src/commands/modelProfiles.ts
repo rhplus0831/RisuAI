@@ -553,7 +553,11 @@ function legacyProviderMapping(
       providerId: 'custom-api',
       providerOptions: removeEmptyProviderOptions({
         apiKey: nonBlankString(database.proxyKey),
-        baseUrl: stripTrailingPath(nonBlankString(database.forceReplaceUrl), '/chat/completions'),
+        baseUrl: legacyReverseProxyBaseUrl(
+          nonBlankString(database.forceReplaceUrl),
+          database.autofillRequestUrl !== false,
+          LLMFormat.OpenAICompatible,
+        ),
         requestModel: nonBlankString(database.customProxyRequestModel),
         additionalParams: readAdditionalParams(database.additionalParams),
       }),
@@ -782,6 +786,32 @@ function removeEmptyRecord(value: Record<string, unknown>): Record<string, unkno
 function stripTrailingPath(value: string | undefined, path: string): string | undefined {
   if (!value) return undefined
   return value.endsWith(path) ? value.slice(0, -path.length) : value
+}
+
+function legacyReverseProxyBaseUrl(
+  rawUrl: string | undefined,
+  autofill: boolean,
+  format: LLMFormat,
+): string | undefined {
+  if (!rawUrl) return undefined
+  const suffix =
+    format === LLMFormat.OpenAILegacyInstruct || format === LLMFormat.NanoGPTLegacy
+      ? 'completions'
+      : format === LLMFormat.OpenAIResponseAPI || format === LLMFormat.NanoGPTResponses
+        ? 'responses'
+        : 'chat/completions'
+  let url = rawUrl
+  if (url.startsWith('risu::')) url = url.slice('risu::'.length)
+  if (autofill) {
+    if (url.endsWith('v1')) {
+      url += `/${suffix}`
+    } else if (url.endsWith('v1/')) {
+      url += suffix
+    } else if (!(url.endsWith(suffix) || url.endsWith(`${suffix}/`))) {
+      url += url.endsWith('/') ? `v1/${suffix}` : `/v1/${suffix}`
+    }
+  }
+  return stripTrailingPath(url, `/${suffix}`)
 }
 
 function fallbackRefsEqual(

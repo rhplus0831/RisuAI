@@ -1489,7 +1489,7 @@ describe('Phase 9-2a scalar settings groups', () => {
       openAIKey: 'openai-key',
       claudeAPIKey: 'claude-key',
       google: { accessToken: 'google-key', projectId: 'vertex-project' },
-      forceReplaceUrl: 'https://proxy.example.com/v1/chat/completions',
+      forceReplaceUrl: 'https://proxy.example.com/chat/risu',
       proxyKey: 'proxy-key',
       customProxyRequestModel: 'local-model',
       customAPIFormat: LLMFormat.OpenAICompatible,
@@ -1590,7 +1590,7 @@ describe('Phase 9-2a scalar settings groups', () => {
       modelId: 'custom-api',
       providerOptions: {
         apiKey: 'proxy-key',
-        baseUrl: 'https://proxy.example.com/v1',
+        baseUrl: 'https://proxy.example.com/chat/risu/v1',
         requestModel: 'local-model',
       },
       runtimeOptions: { topK: 5 },

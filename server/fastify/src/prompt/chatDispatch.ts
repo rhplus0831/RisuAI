@@ -568,15 +568,54 @@ function resolveProviderModel(
   return info.id
 }
 
-function resolveProfileOpenAIVariant(profile?: ResolvedModelProfile): OpenAICompatibleVariant | null | undefined {
+function resolveLegacyMirrorCustomApiBaseUrl(
+  db: Database,
+  profile: ResolvedModelProfile,
+  baseUrl: string | undefined,
+): { baseUrl: string | undefined; extraHeaders?: Record<string, string> } {
+  const legacyUrl = asString(db.forceReplaceUrl)
+  if (
+    !baseUrl ||
+    !legacyUrl ||
+    asString(db.aiModel) !== 'reverse_proxy' ||
+    profile.source.kind !== 'durable-profile' ||
+    profile.status.providerId !== 'custom-api'
+  ) {
+    return { baseUrl }
+  }
+
+  const legacyStrippedBaseUrl = stripTrailingPath(legacyUrl, '/chat/completions')
+  if (baseUrl !== legacyUrl && baseUrl !== legacyStrippedBaseUrl) {
+    return { baseUrl }
+  }
+
+  const resolved = resolveReverseProxyUrl(legacyUrl, db.autofillRequestUrl !== false)
+  return {
+    baseUrl: resolved.baseUrl,
+    ...(resolved.risuIdentify ? { extraHeaders: { 'X-Proxy-Risu': 'RisuAI' } } : {}),
+  }
+}
+
+function resolveProfileOpenAIVariant(
+  db: Database,
+  profile?: ResolvedModelProfile,
+): OpenAICompatibleVariant | null | undefined {
   if (!profile) return undefined
   const options = profile.providerOptions
   const apiKey = asString(options.apiKey)
   if (!apiKey && profile.status.providerId !== 'custom-api') return null
+  const legacyMirror = resolveLegacyMirrorCustomApiBaseUrl(db, profile, asString(options.baseUrl))
+  const extraHeaders =
+    legacyMirror.extraHeaders || options.extraHeaders
+      ? {
+          ...(options.extraHeaders ?? {}),
+          ...(legacyMirror.extraHeaders ?? {}),
+        }
+      : undefined
   return {
     ...(apiKey ? { apiKey } : {}),
-    baseUrl: asString(options.baseUrl),
-    extraHeaders: options.extraHeaders,
+    baseUrl: legacyMirror.baseUrl,
+    extraHeaders,
     additionalParams: options.additionalParams,
     oobaSystemHoist: options.reverseProxy?.oobaSystemHoist === true,
   }
@@ -615,7 +654,7 @@ function resolveOpenAIVariant(
   provider: string,
   profile?: ResolvedModelProfile,
 ): OpenAICompatibleVariant | null {
-  const profileVariant = resolveProfileOpenAIVariant(profile)
+  const profileVariant = resolveProfileOpenAIVariant(db, profile)
   if (profileVariant !== undefined) return profileVariant
 
   const aiModel = asString(db.aiModel) ?? ''
@@ -875,7 +914,7 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
   }
 
   if (provider === 'openai-legacy-instruct') {
-    const variant = resolveProfileOpenAIVariant(profile)
+    const variant = resolveProfileOpenAIVariant(db, profile)
     if (!variant) throw new Error('options["openai-legacy-instruct"].apiKey is required')
     const request = resolveOpenAILegacyInstructRequest({
       model,
@@ -893,7 +932,7 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
   }
 
   if (provider === 'openai-responses') {
-    const variant = resolveProfileOpenAIVariant(profile)
+    const variant = resolveProfileOpenAIVariant(db, profile)
     if (!variant) throw new Error('options["openai-responses"].apiKey is required')
     const request = resolveOpenAIResponsesRequest({
       model,
