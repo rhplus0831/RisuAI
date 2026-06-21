@@ -22,13 +22,17 @@ through command helpers or explicit server-owned mutation routes.
   `/api/v1/events` subscribes.
 - Full recovery uses `fetchServerBootstrapProjectionReadOnly()` so passive
   resync does not steal writer ownership from another browser session.
+- Startup also installs `setServerCommandSuccessReconciler()`, so successful
+  local command responses can reconcile their command event immediately; later
+  SSE own echoes or already-reconciled revisions are skipped.
 
 `projectionResync.ts` coalesces concurrent full-resync requests, reads bootstrap
-with `cacheRevision: false`, applies the fresh database, resets prompt/chat/
-lorebook hydration, syncs selected character state, seeds active generation
-reattach state, starts selected/open-resource hydration, then caches the new
-revision. Newer resync requests during an in-flight pass cause another pass
-after the first settles.
+with `cacheRevision: false`, applies the fresh database, caches the new
+revision before stale hydration checks, syncs selected character state, seeds
+active generation reattach state, resets chat/lorebook hydration, records
+already-hydrated lorebooks, force-hydrates the active chat/lorebook and selected
+character shell, then restarts prompt-template hydration. Newer resync requests
+during an in-flight pass cause another pass after the first settles.
 
 | Path                                             | Role                                                                                                       |
 | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
@@ -46,15 +50,23 @@ after the first settles.
 revision as `sinceRevision` / `Last-Event-ID`. `src/ts/bootstrap.ts` processes
 command events serially:
 
-- Own echoes and already-applied revisions are skipped.
+- Own echoes are skipped once their revision is already reconciled or applied;
+  an own-origin event that arrives before the command response can still
+  reconcile immediately.
 - Contiguous foreign events fetch `GET /api/v1/projection/:resource`.
 - Narrow resources are defined by `RESOURCE_PROJECTION_FIELDS` in
   `server/fastify/src/routes/projection.ts`. Notable special cases:
-  `message` events hydrate one chat and return projection mode `chat-messages`,
-  `generation.persisted` events are keyed by chat id and may return
-  `generation-chat`, and `characterLorebook` uses the lorebook hydration branch.
-  Known sprawling resources such as `settings`, `state`, `pluginStorage`, and
-  `prompt` intentionally return full-bootstrap mode.
+  `characterSelection` is a narrow fields refresh, `characterRow` hydrates one
+  character shell, `message` events hydrate one chat and return projection mode
+  `chat-messages`, `preset?id=...` hydrates one bot preset body, `asset`
+  advances revision without projected fields, `generation.persisted` events are
+  keyed by chat id and may return `generation-chat`, and `characterLorebook`
+  uses the lorebook hydration branch. Field-map resources also include examples
+  such as `globalLorebook`, `moduleUpdated`, `moduleEnabled`, and
+  `moduleReordered`. Known sprawling resources such as `settings`, `state`,
+  `pluginStorage`, and `prompt` intentionally return full-bootstrap mode.
+  Applying `fields.characters` re-stubs chat/lorebook-heavy character rows and
+  forces relevant hydration state to reset.
 - Gaps, replay-unavailable responses, projection failures, unknown resources, or
   server-requested full mode fall back to read-only full bootstrap.
 - Memory events bypass projection refresh and update Hypa V3 job/progress UI
@@ -81,7 +93,8 @@ can be delivered through bootstrap body cache.
 | Active character lorebook                 | `GET /api/v1/projection/characterLorebook?id=...`               | `hydrateActiveCharacterLorebook()`                        |
 | Read-many lorebooks                       | `POST /api/v1/projection/characterLorebooks/bulk`               | `ensureAllCharacterLorebooksHydrated()`                   |
 | Inactive/selected character shell         | `GET /api/v1/projection/characterRow?id=...`                    | `hydrateSelectedCharacterShell()`                         |
-| Prompt-template item / active preset body | `GET /api/v1/projection/promptItem?id=...`, `preset` projection | `promptTemplateHydration.ts`                              |
+| Prompt-template collection fields         | `GET /api/v1/projection/promptItem`                             | `promptTemplateHydration.ts`                              |
+| Active preset body                        | `GET /api/v1/projection/preset?id=...`                          | `ensureBotPresetHydrated()` / `fetchServerPresetProjection()` |
 | Module/plugin heavy body cache            | `/api/v1/bootstrap` body-cache manifest                         | `bootstrapBodyCache.ts`                                   |
 
 Stale-response drops, hydration-generation resets, and reroll alternate seeding
@@ -98,7 +111,9 @@ state after Fastify bootstrap. Ordinary UI code should not mutate durable
 Trusted write scopes are for bootstrap/targeted projection application,
 chat-message and character-lorebook hydration, command helpers that
 intentionally perform optimistic writes, and bridge/draft helpers that can
-restore snapshots after failure.
+restore snapshots after failure. The guard swaps server-owned projection state
+into a writable working proxy for trusted writes, then refreezes it as a fresh
+read-only proxy.
 
 The guard also advances a projection-apply epoch. Settings, character, chat,
 lorebook, and script-definition bridge watchers use that epoch to refresh
@@ -115,12 +130,12 @@ rendered state should follow the visible-state policy in
 | File                               | Role                                                                               |
 | ---------------------------------- | ---------------------------------------------------------------------------------- |
 | `bridgeFlush.ts`                   | Flushes pending bridge patches on `pagehide` / hidden visibility with `keepalive`. |
-| `settingsBridge.svelte.ts`         | Debounced settings groups, equality-noop suppression, rollback-aware patches.      |
-| `characterBridge.svelte.ts`        | Character profile and compatible-character command bridging.                       |
-| `chatBridge.svelte.ts`             | Chat metadata and chat-folder command bridging.                                    |
-| `lorebookBridge.svelte.ts`         | Global/character/chat/module lorebook replacement, hydrated-lorebook guards.       |
-| `promptTemplateBridge.svelte.ts`   | Prompt-template optimistic writes, rollback, hydration-aware and revision-gated reconciliation. |
-| `scriptDefinitionBridge.svelte.ts` | Character/module script and trigger replacement commands.                          |
+| `settingsBridge.svelte.ts`         | Debounced settings groups through `PATCH /commands/settings/:group`, equality-noop suppression, rollback-aware patches. |
+| `characterBridge.svelte.ts`        | Character profile/draft bridging through `PATCH /commands/characters/:id`.         |
+| `chatBridge.svelte.ts`             | Chat metadata and chat-folder bridging through `PATCH /commands/chats/:id` and chat-folder routes. |
+| `lorebookBridge.svelte.ts`         | Global/character/chat/module lorebook replacement routes, hydrated-lorebook guards. |
+| `promptTemplateBridge.svelte.ts`   | Prompt item/settings routes, optimistic writes, rollback, hydration-aware and revision-gated reconciliation. |
+| `scriptDefinitionBridge.svelte.ts` | Character/module script and trigger `PUT` routes.                                  |
 
 Common requirements: capture snapshots, suppress no-op updates, respect the
 appropriate projection epoch or revision gate, debounce noisy edits, roll back

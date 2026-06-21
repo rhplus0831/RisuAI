@@ -31,7 +31,7 @@ is root-only; there is no `server/fastify/package.json`.
 | `pnpm api:test`                    | Compatibility alias for `pnpm test:server`.                                                                  |
 | `pnpm smoke:fastify-browser`       | Build site, then run Playwright Fastify browser smoke.                                                        |
 | `pnpm client-thinning:audit`       | Run `util/client-thinning-audit.ts`.                                                                          |
-| `pnpm analyze:db <path>`           | Analyze `.risu`, `db.json`, raw database JSON, or legacy data dirs. Add `--json` for machine-readable output. |
+| `pnpm analyze:db <path>`           | Analyze `.risu`, JSON, raw database JSON, or data dirs containing `db.json`; SQLite sidecars are copied when present. Add `--json` for machine-readable output. |
 | `pnpm ts:agent <command>`          | Run the tsserver-backed agent debugging wrapper for navigation, diagnostics, symbols, code actions, imports, and renames. |
 | `pnpm format`, `pnpm format:check` | Prettier write/check.                                                                                         |
 | `pnpm coverage:frontend`           | Run root/browser Vitest tests with broad frontend coverage under `coverage/frontend`.                          |
@@ -61,9 +61,10 @@ The flag runner removes stale flags on startup and deletes the flag after
 consuming a restart request. `RISU_API_RESTART_FLAG=/path/to/file` changes the
 sentinel path.
 
-`pnpm analyze:db` does not read current SQLite-only `data/` dirs unless they
-also contain legacy `db.json`; use it for imported/exported JSON or `.risu`
-inputs.
+`pnpm analyze:db` accepts `.risu`, JSON/database JSON, and data directories
+that contain `db.json`; when matching SQLite sidecars are present it copies
+those too. It does not inspect a current SQLite-only `data/` directory without a
+legacy JSON payload.
 
 Vite proxies `/api` to `RISU_API_PROXY_TARGET` or `http://localhost:6002`.
 Fastify defaults to `0.0.0.0:6002`. Vite dev changes only how the SPA bundle is
@@ -72,8 +73,11 @@ served; `src/ts/platform.ts` still makes the browser Fastify-backed.
 `pnpm dev:agent` and `pnpm dev:human` run both Fastify and Vite through
 `util/agent-dev.ts`; they set `RISU_API_TRACE_MODE` to `agent` or `human`,
 respect `RISU_AGENT_DEV_HOST` / `RISU_AGENT_DEV_PORT` /
-`RISU_AGENT_API_PORT`, set auth/TOS bypass defaults unless overridden, and
-proxy `/api` to the spawned API port.
+`RISU_AGENT_API_PORT`, set auth/TOS bypass defaults unless overridden, default
+`RISU_API_STATIC_ROOT=none`, default `VITE_RISU_LEGAL_CONFIGURED=TRUE` and
+`VITE_RISU_AGENT_DEV_IGNORE_TOS=TRUE`, and proxy `/api` to the spawned API
+port. The spawned API uses `tsx watch`, so API source edits restart it; use
+`pnpm api:dev:flag` when you need edit-triggered restarts to be manual.
 
 Stop `pnpm dev:agent` when done so frontend port `6418` and API port `6419`
 are released for the next agent. Do the same for `pnpm dev:human` when using
@@ -82,11 +86,12 @@ the human trace ports.
 Request tracing writes API request traces under `data/trace/<mode>.jsonl`. Every
 response receives `X-Request-UID`, but only API requests are appended to JSONL;
 search that UID in the trace file to correlate a visible failure to one API call.
-Small text request/response bodies are inlined in the entry, while larger
-captured text bodies are written as `.gz` sidecars under
-`data/trace/bodies/<mode>/` when the compressed sidecar is at most 10 MiB.
-Oversized compressed bodies, multipart, binary, SSE, and stream bodies are
-recorded as omitted metadata.
+Entries include route pattern, caller hints, redacted headers/query/body fields,
+and process/send timing. Text request/response bodies up to 4 KiB are inlined;
+larger captured text bodies are written as `.gz` sidecars under
+`data/trace/bodies/<mode>/` with a preview when the compressed sidecar is at
+most 10 MiB. Oversized compressed bodies, multipart, binary, SSE, and stream
+bodies are recorded as omitted metadata.
 
 To serve a built SPA through Fastify:
 
@@ -119,13 +124,16 @@ source helper, not generated output.
 Pick the smallest command that covers the changed area. On a fresh machine, run
 `pnpm exec playwright install chromium` before browser smoke.
 
-Config details: root Vitest excludes explicit gate/audit tests unless
-`RISU_TEST_INCLUDE_GATES=true` is set. `pnpm test:gates`, the `pnpm test:gates:*`
-sub-lanes, `pnpm test:frontend:all`, and `pnpm coverage:frontend` set that
-variable for the lanes that intentionally include those files. Server Vitest uses
-Node, forks, a 15s test timeout, and sets `RISU_DIRECT_REALM_IMPORT_TEST` only
-when the Realm import test is directly selected. Playwright smoke is serial,
-one-worker Chromium with trace retained on failure.
+Config details: root Vitest uses `happy-dom`, browser resolve conditions, the
+`src` alias, and `vitest.setup.ts` to mock `katex` and define
+`safeStructuredClone`. It excludes explicit gate/audit tests unless
+`RISU_TEST_INCLUDE_GATES=true` is set. `pnpm test:gates`, the
+`pnpm test:gates:*` sub-lanes, `pnpm test:frontend:all`, and
+`pnpm coverage:frontend` set that variable for the lanes that intentionally
+include those files. Server Vitest uses Node, forks, a 15s test timeout, and
+sets `RISU_DIRECT_REALM_IMPORT_TEST` only when the Realm import test is directly
+selected. Playwright smoke is serial, one-worker Chromium with trace retained on
+failure.
 
 `pnpm coverage:frontend` and `pnpm coverage:backend` are broad coverage views for
 coverage analysis. `pnpm coverage:all` runs both sides and still executes backend
@@ -165,7 +173,10 @@ memo signatures, or render dependency keys.
 
 - Root `tsconfig.json` is browser-oriented, `strict: false`, allows JS, and uses
   bundler resolution.
-- `server/fastify/tsconfig.json` is strict and references
+- `tsconfig.client-lib.json` emits declarations only into `dist/client-types`
+  for server imports from client code; `tsconfig.node.json` covers
+  `vite.config.ts`.
+- `server/fastify/tsconfig.json` is strict, `noEmit: true`, and references
   `tsconfig.client-lib.json`.
 - Prettier uses `prettier-plugin-svelte`, no semicolons, single quotes, and
   print width 120.
@@ -264,8 +275,10 @@ Test/audit summary variables include `CLIENT_THINNING_AUDIT_CHECK_IDS`,
 issue/comment moderation. It does not run the local check/test matrix.
 
 `Dockerfile` uses Node 24 slim, installs pnpm through Corepack, builds the web
-client with `pnpm build`, copies `server/` and `dist/`, sets production data and
-static-root env vars, exposes `6002`, and persists `/app/data`.
+client with plain `pnpm build` rather than `build:site`, copies `server/` and
+`dist/`, sets production data and static-root env vars, exposes `6002`, and
+persists `/app/data`. It does not bake in
+`VITE_RISU_LEGAL_CONFIGURED=TRUE` unless the build environment supplies it.
 
 `docker-compose.yml` uses `ghcr.io/kwaroran/risuai:latest`, maps `6002:6002`,
 and creates a `risuai-data` volume.

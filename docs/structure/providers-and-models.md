@@ -10,7 +10,7 @@ request shape can run on the server.
 | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
 | `src/ts/model/types.ts`                                                                         | `LLMProvider`, `LLMFormat`, `LLMTokenizer`, `LLMFlags`, `LLMModel`.                                |
 | `src/ts/model/modellist.ts`                                                                     | Static/dynamic/custom model registry and `getModelInfo()`.                                         |
-| `src/ts/model/modelRoles.ts`                                                                    | Legacy model role helpers for main, auxiliary, memory, fallback, and tool flows.                   |
+| `src/ts/model/modelRoles.ts`                                                                    | Model role helpers for `chatMain`, `chatAux`, `memory`, `emotion`, `translate`, `otherAx`, `scriptMain`, and `scriptAux`; fallback refs are separate. |
 | `src/ts/model/modelProfileRecords.ts`, `modelProfileResolver.ts`, `modelProfileUiState.ts`      | Durable model profile records, role bindings, compatibility resolution, and settings UI summaries. |
 | `src/ts/model/modelGrid.ts`                                                                     | Model-grid normalization and filtering helpers for picker UI.                                      |
 | `src/ts/model/providers/`                                                                       | Provider-specific static model lists.                                                              |
@@ -28,16 +28,20 @@ data, older presets, static model bypasses, and settings surfaces that still
 write compatibility fields.
 
 Legacy `Database.aiModel` and related flat fields still select model strings for
-main, auxiliary, fallback, translator, memory, and tool flows when no durable
+main, auxiliary, translator, memory, emotion, and script flows when no durable
 profile binding owns that role. Static/legacy fallback model ids still use flat
 settings and pass through the `staticModel` path. Dynamic registry additions are
-browser-side; persisted `xcustom:::` custom models are server-routable when
-their stored URL/key/format pass the capability table. The server reconstructs
-narrow dispatch metadata from persisted settings, profile-owned options, string
-prefixes, and the OpenAI model allowlist; it does not import the full browser UI
-registry. `src/ts/model/providers/nanogpt.ts` contains static endpoint
-constants; dynamic NanoGPT account/model fetching lives in
-`src/ts/model/nanogpt.ts`.
+browser-side; `modellist.ts` merges custom model records, Plugin V3 provider
+metadata, dynamic Google/Anthropic model registration, and prefixed ids such as
+`xcustom:::`, `horde:::`, `hf:::`, and `pluginmodel:::`. Persisted
+`xcustom:::` custom models are server-routable when their stored URL/key/format
+pass the capability table. The server reconstructs narrow dispatch metadata from
+persisted settings, profile-owned options, string prefixes, and the OpenAI model
+allowlist; it does not import the full browser UI registry.
+`src/ts/model/providers/nanogpt.ts` contains static endpoint constants; dynamic
+NanoGPT account/model fetching lives in `src/ts/model/nanogpt.ts`. OpenRouter,
+NanoGPT, Ollama, and Horde helpers carry richer browser catalog metadata for
+picker/filter UI than the server needs for dispatch.
 
 ## Settings -> Model Profile Flow
 
@@ -72,10 +76,13 @@ First-class profile provider panels are intentionally limited to:
 
 The first-class panels write top-level `providerId`, selected `modelId`,
 `providerOptions` such as `apiKey`, `requestModel`, endpoint/base URL, extra
-headers, additional params, Vertex fields, and Custom API tokenizer/flag
-metadata. Custom API profiles represent OpenAI-compatible Chat Completions; the
-UI stores a base URL and warns when the user includes `/chat/completions`
-because dispatch appends that suffix.
+headers, additional params, and nested shapes for reverse proxy, OpenRouter,
+NanoGPT, Ollama, Vertex, and Custom API metadata. `ModelProviderPanel.svelte`,
+`ModelRuntimeOptionsEditor.svelte`, `ModelFallbackEditor.svelte`, and
+`modelProfileSecrets.ts` own most of the editor/provider-option plumbing.
+Custom API profiles represent OpenAI-compatible Chat Completions; the UI stores
+a base URL and warns when the user includes `/chat/completions` because dispatch
+appends that suffix.
 Debug Echo profiles use the existing Echo dispatcher and return a small JSON
 payload containing the profile-local Base URL and Request Model for provider
 debugging.
@@ -123,8 +130,10 @@ Canonical compatibility surfaces:
 - Unsupported `providerId` values are placeholders. The editor shows them as
   unsupported, preserves compatible data, and active durable generation blocks
   them until the user selects a supported profile/provider.
-- Memory summaries use memory-role profiles and profile-owned provider options.
-  Memory embeddings stay outside chat profiles on the separate
+- Memory summaries use memory-role profiles and profile-owned provider options,
+  but server-side summarization currently accepts only the memory/subModel API
+  path and OpenAI-compatible summary providers (`openai`, `openrouter`, or
+  `nanogpt`). Memory embeddings stay outside chat profiles on the separate
   Hypa/Voyage/custom embedding config.
 - The Custom Models catalog (`customModels` / `xcustom:::`) remains separate
   from first-class Custom API profiles.
@@ -159,6 +168,7 @@ Routing notes that matter when debugging provider drift:
 | Bedrock                  | Uses Bedrock/SigV4 model metadata and wire-model prefix handling.                                                                         |
 | Horde                    | Requires an instruct chat template in the shared capability table; dispatch is buffered, not incremental.                                 |
 | Logit bias               | Server chat dispatch does not currently carry browser-only logit-bias behavior.                                                           |
+| Completion streaming     | Direct `/generate/completion` rejects streaming for buffered providers such as Cohere, legacy instruct, Responses, Kobold, Ooba legacy, Bedrock, and Horde; `/generate/chat` wraps buffered provider output as token/done frames. |
 
 ## Capability Table
 
@@ -172,7 +182,12 @@ Fastify dispatch share it. Active durable profiles with incomplete or
 unsupported status are blocked before browser request dispatch, server-intent
 completion, `/generate/chat` SSE/job acceptance, and final server chat dispatch.
 Server-intent completion sends shaped messages to Fastify; provider/model
-routing is resolved server-side. Memory summaries use memory-role profile
+routing is resolved server-side. `effectiveGenerationConfig.ts` applies the
+full profile runtime overlay to the effective database before prompt assembly,
+but `chatDispatch.ts` forwards only the supported subset to provider adapters.
+`modelTools` are copied into the effective DB; Fastify OpenAI Responses
+dispatch currently sends no hosted tool list, so hosted search/model tool
+behavior is not server-dispatched. Memory summaries use memory-role profile
 resolution and profile-owned provider options. Memory embeddings intentionally
 remain outside chat profiles on the separate Hypa/Voyage/custom embedding
 contract in `memoryEmbeddingModel.ts`; deadlines are bounded through
@@ -189,6 +204,9 @@ contract in `memoryEmbeddingModel.ts`; deadlines are bounded through
 | `src/ts/process/request/serverChatEvents.ts`     | Client-side chat SSE frame/message-patch contract types.       |
 | `src/ts/process/request/durableGeneration.ts`    | Durable send/continue/regenerate request helpers.              |
 | `src/ts/process/reattach.ts`                     | Bootstrap-driven reattach for active durable generation jobs.  |
+| `server/fastify/src/routes/generation.ts`        | Completion and preview-prompt route boundary.                  |
+| `server/fastify/src/routes/generationChat.ts`    | Server-assembled chat generation, durable job lifecycle, and chat-settings/profile guards. |
+| `server/fastify/src/prompt/effectiveGenerationConfig.ts` | Chat-scoped model/prompt preset and runtime overlay application. |
 | `server/fastify/src/prompt/sseEvents.ts`         | Server-side chat SSE frame contract helpers.                   |
 
 ## Generation Surfaces
@@ -205,7 +223,12 @@ Server chat assembly applies the effective profile-bound model and runtime
 overlay before prompt budgeting and provider dispatch. Chat-scoped generation
 settings can select model/prompt presets; the model-runtime projection resolves
 the active profile, request model, provider options, fallbacks, and runtime
-options before the server builds dispatch config.
+options before the server builds dispatch config. Route preflight rejects stale
+legacy `presetId` usage in favor of chat `generationSettings`.
+
+`/api/v1/generate/preview-prompt` is a one-shot JSON assembly route. It applies
+the same server prompt assembly and generation-settings/profile guards but does
+not dispatch a provider.
 
 `/api/v1/generate/completion` is lower-level. Normal browser traffic sends
 already-shaped messages and sampling intent as `kind: "server-intent"`; the

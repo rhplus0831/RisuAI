@@ -8,21 +8,28 @@ imports/exports/backups, and the `/api/v1/*` route surface.
 
 | Path                                                                          | Role                                                                                                     |
 | ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `server/fastify/src/index.ts`                                                 | Process entrypoint: load config, call `buildApp()`, listen.                                              |
+| `server/fastify/src/index.ts`                                                 | Process entrypoint: load config, call `buildApp()`, listen, handle shutdown signals.                     |
 | `server/fastify/src/app.ts`                                                   | Composition root for plugins, SQLite, auth, active writer, routes, workers, timers, optional static SPA. |
 | `server/fastify/src/config.ts`                                                | Parses `RISU_API_*`, `TRUST_PROXY`, hub/Realm URLs, static root, trace mode, and agent auth bypass.      |
 | `server/fastify/src/db.ts`                                                    | SQLite schema v18, migrations, `schema_version`, global revision.                                        |
-| `server/fastify/src/repository.ts`                                            | Domain repository, legacy import, projections, assets, imports/exports/backups.                          |
+| `server/fastify/src/repository.ts`                                            | Domain load/write, projections/body cache, legacy `db.json` import, `applyImport`, assets, backups.      |
 | `server/fastify/src/messageStore.ts`                                          | Chat `messages`, reroll alternates, and per-chat `chat_hypa_v3` rows.                                    |
 | `server/fastify/src/chatGenerationSettingsStorage.ts`                         | Normalizes persisted chat-scoped generation settings on import/load.                                      |
 | `server/fastify/src/databaseDefaults.ts`                                      | Server-owned first-run defaults and import normalization defaults.                                       |
+| `server/fastify/src/auth.ts`, `http.ts`, `activeWriter.ts`, `providerSecrets.ts` | Single-user auth/session helpers, route auth assertion, active-writer guard, secret masking/resolution. |
 | `server/fastify/src/routeManifest.ts`                                         | Source of truth for route auth, active-writer, streaming, and exceptions.                                |
 | `server/fastify/src/routeRateLimits.ts`                                       | Per-route rate-limit presets.                                                                            |
 | `server/fastify/src/protocolMetrics.ts`, `requestTrace.ts`                    | Opt-in protocol metrics, command table-write capture, and API request traces.                            |
-| `server/fastify/src/requestAbort.ts`, `server/fastify/src/requestTimeouts.ts` | Shared abort/deadline helpers for generation and proxy lifetimes.                                        |
+| `server/fastify/src/generationJobs.ts`, `generationFinalizationRetry.ts`      | Process-local durable chat jobs, replay/reattach state, and SQLite-backed finalization retry rows.        |
+| `server/fastify/src/assetGc.ts`                                               | Periodic reference-counted asset garbage collection.                                                     |
+| `server/fastify/src/streamJobs.ts`, `streamBackpressure.ts`                   | Process-local proxy stream jobs and bounded stream writes for slow clients.                              |
+| `server/fastify/src/requestAbort.ts`, `server/fastify/src/requestTimeouts.ts` | Generation abort propagation and proxy/stream-job timeout constants.                                      |
+| `server/fastify/src/risuSave/`                                                | `.risu`, bundle, local-backup, bounded-inflate, and asset-report codecs wired by save routes.            |
 
 `buildApp()` is test-friendly. `BuildAppOptions` can inject generation behavior,
-memory worker behavior, command/memory event sinks, and asset-GC behavior.
+Realm import limits, memory worker behavior, command/memory event sinks,
+generation finalization retry options through the generation-chat options, and
+asset-GC behavior.
 
 ## App Wiring
 
@@ -57,13 +64,13 @@ and generation submit `60/min`.
 
 | Family                | Registrars                                                | Notes                                                                                                                                                                                |
 | --------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Health/auth/bootstrap | `health.ts`, `auth.ts`, `bootstrap.ts`                    | Health/status/setup/login plus authenticated bootstrap; writer-intent bootstrap latches active writer.                                                                               |
+| Health/auth/bootstrap | `health.ts`, `auth.ts`, `bootstrap.ts`                    | Health/status/setup/login plus authenticated bootstrap; writer-intent bootstrap latches active writer and returns body-cache and active generation job metadata.                     |
 | Projection/events     | `projection.ts`, `events.ts`                              | Targeted projection, chat/lorebook hydration, bulk hydration, command/memory SSE.                                                                                                    |
-| Commands              | `commands.ts` plus `commands/`                            | Revision-checked domain mutations for settings, bot/model/prompt/translator presets, prompts, personas, loadouts, characters/chats/messages, chat folders, chat generation settings, lorebooks, modules, plugins/plugin storage, scripts, triggers, generation results, compact lorebook entries, and message tails. |
-| Assets/saves/backups  | `assets.ts`, `save.ts`, `realmImport.ts`, `backups.ts`    | Content-addressed assets, `.risu` and bundle import/export, Realm import, snapshots.                                                                                                 |
-| Proxy/hub/storage     | `proxy.ts`, `streamJobs.ts`, `hub.ts`, `legacyStorage.ts` | Authenticated proxy/fetch and stream jobs, retained hub passthrough, `/api/v1/storage/*` compatibility byte store.                                                                   |
-| Generation            | `generation.ts`, `generationChat.ts`                      | Completion route, server-assembled chat generation, preview prompt, durable reattach/cancel.                                                                                         |
-| Memory                | `memoryJobs.ts`, `memoryReads.ts`                         | Queue/cancel/list jobs plus read chunks/summaries.                                                                                                                                   |
+| Commands              | `commands.ts` plus `commands/`                            | Revision-checked domain mutations for settings, model profiles/runtime defaults, bot/model/prompt/translator presets, prompt settings/items, personas, loadouts, characters/chats/messages, chat folders, chat generation settings, chat script state, lorebooks, modules, plugins/plugin storage/provider choice, scripts/triggers, generation results, compact lorebook entries, and message tails. |
+| Assets/saves/backups  | `assets.ts`, `save.ts`, `realmImport.ts`, `backups.ts`    | Content-addressed assets, `.risu`/bundle/local-backup import/export, Realm import, snapshots.                                                                                        |
+| Proxy/hub/storage     | `proxy.ts`, `streamJobs.ts`, `hub.ts`, `legacyStorage.ts` | Authenticated proxy/fetch and stream jobs, retained hub passthrough, `/api/v1/storage/*` compatibility byte store, public `/api/v1/auth/crypto` helper.                              |
+| Generation            | `generation.ts`, `generationChat.ts`                      | Completion route, server-assembled chat generation, preview prompt, chat generation settings/profile preflight, durable reattach/cancel.                                             |
+| Memory                | `memoryJobs.ts`, `memoryReads.ts`                         | Queue/cancel/list jobs plus read chunk/summary routes.                                                                                                                               |
 
 Handlers call `requireAuth()` unless intentionally public. Public exceptions are
 health, auth status/setup/login, `/api/v1/auth/crypto`, immutable asset reads,
@@ -76,9 +83,11 @@ Normal domain writes go through `server/fastify/src/commands/mutations.ts`:
 check `baseRevision`, load the needed domain shape, validate/mutate through
 `server/fastify/src/commands/`, write changed SQLite table families in one
 transaction, bump the revision once, persist one command event, then emit it.
-Mutation helpers include broad, targeted, collection-scoped, single-row, and
-message-aware SQLite paths; new commands should use the narrowest path that
-matches their write set.
+Mutation helpers include broad, targeted, settings-scoped,
+collection-scoped, chat/character-scoped, single-row, skip-load, and
+message-aware SQLite paths. New commands should use the narrowest path that
+matches their write set. Protocol metrics can capture table-write summaries for
+command mutation budget tests and debugging.
 
 Server-owned exceptions still need explicit auth/active-writer decisions but are
 not browser `/commands/*` resource endpoints. Some still reuse command mutation

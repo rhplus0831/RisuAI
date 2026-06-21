@@ -7,18 +7,21 @@ revision-checked commands or explicit server-owned mutation requests.
 
 | Store            | Path                                                                                               | Contents                                                                                                                                                                                                             |
 | ---------------- | -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| SQLite           | `data/risu.db`                                                                                     | `schema_version.version` plus domain `revision`; settings; characters/chats; split collection tables including model/prompt presets; plugin storage; asset metadata; messages/rerolls; projection body-cache state; memory tables/jobs; command-event replay; generation finalization retries and target snapshots. |
+| SQLite           | `data/risu.db`                                                                                     | `schema_version.version` plus domain `revision`; settings; characters/chats; split tables such as `model_presets`, `prompt_presets`, `plugins`, `plugin_custom_storage`, `messages`, `chat_hypa_v3`, `assets`, `projection_body_cache_state`, `collection_body_revisions`, `command_events`, memory tables/jobs, and `generation_finalization_retries`. |
 | Asset bytes      | `data/assets/<sha256>.<ext>`                                                                       | Content-addressed images, audio, video, fonts, CSS, ONNX, inlay signatures, and other supported asset types. Metadata is in SQLite `assets`.                                                                         |
-| Backups          | `data/backups/<id>/`                                                                               | Snapshot `risu.db`, `manifest.json`, assets when present, and legacy `save/` when present. Creation copies `risu.db` after a WAL checkpoint; restore uses `ATTACH` and restores an allowlist of repository tables.    |
+| Backups          | `data/backups/<id>/`                                                                               | Snapshot `risu.db`, `manifest.json`, assets when present, and legacy `save/` when present. Creation copies `risu.db` after a WAL checkpoint; restore uses `ATTACH` and swaps only the `SQLITE_BACKUP_TABLES` allowlist. |
 | Legacy `db.json` | `data/db.json`                                                                                     | Import-only compatibility input. Boot imports it into SQLite and renames it to `db.json.migrated`.                                                                                                                   |
 | Legacy storage   | `data/save/<hex-key>`                                                                              | Compatibility byte store for `/api/v1/storage/*`; active-writer guarded writes do not bump the domain revision.                                                                                                      |
 | Auth files       | `data/__password`, `data/__known_public_key_hashes.json`, `data/__known_session_token_hashes.json` | Single-user password data, registered browser public-key hashes, and optional session-token hashes.                                                                                                                  |
 
 Primary boundaries: `db.ts` owns schema/migrations/revision, `repository.ts`
-owns domain load/write/projection/import/export/assets/backups, `messageStore.ts`
-owns message tables, and `commands/mutations.ts` owns command transactions.
-Messages live in `messages`; reroll alternates are stored there with
-`alternate = 1` and negative sequence positions; per-chat `hypaV3Data` lives in
+owns domain load/write/projection/import/applyImport/assets/backups,
+`messageStore.ts` owns message tables, and `commands/mutations.ts` owns command
+transactions. Messages live in `messages` with `(chat_id, seq)` ordering and
+`uid` as the message id. Active chat reads filter `alternate = 0`; reroll
+alternates use `alternate = 1` plus negative sequence positions. Regenerate
+preserves displaced/new candidates as alternates, while send/continue clears the
+reroll buffer for the appended path. Per-chat `hypaV3Data` lives in
 `chat_hypa_v3`.
 
 ## Revision Contract
@@ -44,15 +47,19 @@ command transaction.
 
 Command-event resources should be as narrow as practical and are defined by
 `COMMAND_EVENT_CATALOG` plus the projection route's `RESOURCE_PROJECTION_FIELDS`.
-Examples include `characterSelection`, `characterRow`, `chat`, `chatFolder`,
-`message`, `globalLorebook`, `characterLorebook`, `moduleUpdated`,
-`moduleEnabled`, `moduleReordered`, `moduleScriptDefinition`,
-`moduleTriggerDefinition`, collection slices such as `preset`/`promptItem`/
-`modelPreset`/`promptPreset`/`translatorPreset`/`loadout`, `plugin`, `asset`,
-and `generation`. Known sprawling resources such as `settings`, `state`,
-`pluginStorage`, and `prompt` are still command-event resources but
-intentionally fall back to a full bootstrap. `generation.persisted` events are
-keyed by `parentId` = chat id and may return projection mode `generation-chat`.
+Examples include `characterSelection`, `characterRow`, `character`, `chat`,
+`chatFolder`, `message`, `globalLorebook`, `characterLorebook`, legacy
+`lorebook`, `module`, `moduleUpdated`, `moduleEnabled`, `moduleReordered`,
+`moduleScriptDefinition`, `moduleTriggerDefinition`, `scriptDefinition`,
+`triggerDefinition`, collection slices such as `preset`/`promptItem`/
+`modelPreset`/`promptPreset`/`translatorPreset`/`loadout`, `modelProfile`,
+`persona`, `legacyBotPreset`, `plugin`, `asset`, and `generation`. Known
+sprawling resources such as `settings`, `state`, `pluginStorage`, and `prompt`
+are still command-event resources but intentionally fall back to a full
+bootstrap. `asset` is a no-op targeted projection that advances the cached
+revision because asset metadata lives outside the projected `Database`.
+`generation.persisted` events are keyed by `parentId` = chat id and may return
+projection mode `generation-chat`.
 
 ## Server-Owned Exceptions
 
@@ -77,7 +84,8 @@ not ordinary browser `/commands/*` resource endpoints:
   events without a domain revision.
 - Backup create/delete mutate backup files without a domain revision; restore
   replaces repository state and emits `state.restored`. Restore swaps only the
-  SQLite table allowlist in `repository.ts`; operational rows such as
+  SQLite table allowlist in `repository.ts`; keep `SQLITE_BACKUP_TABLES` in sync
+  with durable tables. Operational rows such as
   `generation_finalization_retries` are not restored unless added to that list.
 
 ## Auth And Active Writer
@@ -85,17 +93,18 @@ not ordinary browser `/commands/*` resource endpoints:
 Auth is single-user and route-local. `server/fastify/src/auth.ts` stores
 password/public-key/session-token state, `server/fastify/src/http.ts` exposes
 `requireAuth()`, and route handlers call it manually unless intentionally public.
-Browser auth assertions are sent in `risu-auth`; `session.*` fallback tokens are
-also accepted and stored in an LRU-capped known-token file. `routes/auth.ts`
-owns status/setup/login, while `/api/v1/auth/crypto` is registered with legacy
-storage routes as a public compatibility hashing helper.
+Browser auth assertions are sent in `risu-auth`; setup/login also issue a
+`session.*` fallback token. Public-key hashes and fallback session-token hashes
+are both LRU-capped on disk. `routes/auth.ts` owns status/setup/login, while
+`/api/v1/auth/crypto` is registered with legacy storage routes as a public
+compatibility hashing helper.
 `RISU_AGENT_DEV_AUTH_BYPASS` is an agent/dev escape hatch used by the full-stack
 dev runner.
 
-The active-writer guard is separate. Writer-intent bootstrap latches the latest
-`risu-writer-session`; guarded mutations from stale sessions receive
-`423 active_writer_stale`. Read-only bootstrap/projection/event routes do not
-need writer ownership.
+The active-writer guard is separate. Any authenticated bootstrap carrying
+`risu-writer-session` latches the latest writer; routes whose manifest decision
+is `active-writer` reject stale sessions with `423 active_writer_stale`.
+Read-only bootstrap/projection/event routes do not need writer ownership.
 
 `server/fastify/src/routeManifest.ts` is the source of truth for auth,
 active-writer, streaming, public exceptions, and read-only POST decisions.
@@ -123,8 +132,8 @@ bodies can arrive via body cache. Heavy fields hydrate on demand:
 | Character lorebook when `enableLorebookStubs` is on | `GET /api/v1/projection/characterLorebook?id=...`               |
 | Many character lorebooks                            | `POST /api/v1/projection/characterLorebooks/bulk`               |
 | Inactive/selected character shell                   | `GET /api/v1/projection/characterRow?id=...`                    |
-| Prompt template item                                | `GET /api/v1/projection/promptItem?id=...`                      |
-| Bot preset / split preset body                      | `GET /api/v1/projection/preset?id=...` and collection resources |
+| Prompt template collection fields                   | `GET /api/v1/projection/promptItem`                             |
+| Bot preset body / split preset collection fields    | `GET /api/v1/projection/preset?id=...` and collection resources |
 
 Browser wrappers live in `src/ts/server/projection.ts`; hydration/cache logic
 lives in `src/ts/server/chatMessageHydration.svelte.ts`,
@@ -142,17 +151,22 @@ and persists `origin_writer_session_id` for own-echo suppression. The live
 command sink can also carry non-replay notifications such as export events at
 the current revision. Memory events are never replayed.
 
-Browser reconcile rules: skip own echoes and already-applied revisions, fetch a
-targeted projection for contiguous foreign events, and fall back to full
-bootstrap for gaps, unknown resources, replay misses, or projection errors.
-Memory events update Hypa V3 job/progress UI directly.
+Browser reconcile rules: process events serially, skip already-reconciled
+own-origin revisions through a 256-entry cache, skip already-applied foreign
+revisions, fetch a targeted projection for contiguous foreign events, and fall
+back to full bootstrap for gaps, unknown resources, replay misses, or projection
+errors. An own-origin event that arrives before the command response advances the
+cached revision may still reconcile so local state does not wait for another
+event. Memory events update Hypa V3 job/progress UI directly.
 
-Chat generation SSE includes job acceptance for durable requests, compact prompt
-events, stage/info/warning/side-effect frames, token/patch frames, and terminal
-`done.postGeneration` data. `info.revision` or
-`done.postGeneration.revision` can advance the browser revision cache after
-server-owned persistence. Bootstrap `activeGenerationJobs` exposes running
-durable jobs, including mode and regenerate message id when relevant.
+Chat generation SSE frame types are `stage`, `job_accepted`, `prompt`, `info`,
+`message_patch`, `token`, `side_effect`, `warning`, `error`, and `done`.
+`info.revision` or `done.postGeneration.revision` can advance the browser
+revision cache after server-owned persistence. Durable jobs buffer protected
+replay events with 512-event and 2 MiB caps, emit viewer heartbeat comments, and
+can persist streamed-so-far text through raw cancel/finalization retry paths.
+Bootstrap `activeGenerationJobs` exposes running durable jobs, including mode
+and regenerate message id when relevant.
 
 Other streaming/binary surfaces include optional completion SSE, optional Realm
 progress SSE, proxy stream WebSocket attachment, asset bytes, `.risu`/bundle

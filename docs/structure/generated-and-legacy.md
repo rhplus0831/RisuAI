@@ -13,7 +13,7 @@ generated, local-only, historical, vendored, or intentionally no-port.
 | `test-results/`                                 | Playwright/test output.                                                                                                                                |
 | `blobs-for-test/`                               | Ignored local binary/test scratch payloads.                                                                                                             |
 | `*.tsbuildinfo`                                 | TypeScript incremental build artifacts, including `tsconfig.client-lib.tsbuildinfo`.                                                                   |
-| `data/`                                         | Local runtime state: `risu.db`/WAL/SHM, assets, backups, auth files, `data/save/`, traces under `data/trace/`, optional `data/dev`, legacy import artifacts. Useful for debugging, not source; see `data-and-events.md`. |
+| `data/`                                         | Local runtime state: `risu.db`/WAL/SHM, assets, backups, auth files, `data/save/`, traces under `data/trace/` including bodies/screenshots, optional `data/dev`, legacy import artifacts. Useful for debugging, not source; see `data-and-events.md`. |
 | `scripts/` when present                         | Ignored local scratch/tooling directory.                                                                                                               |
 | `public/token/`                                 | Vendor/tokenizer data. Only touch when intentionally updating those assets.                                                                            |
 | `public/assets/`                                | Bundled Bergamot/browser translator workers. Only touch when intentionally updating vendor assets.                                                     |
@@ -35,9 +35,17 @@ pointer for older links. Add current frontend guidance to
 Other ignored local/legacy paths include root `save/`, `dist-web/`, `dist-ssr`,
 `xplugin/`, `src-others/`, `src-tauri/target/`, `src-tauri/gen/`, `build/`,
 `.wrangler/`, `.qoder/`, `.tauri/`, `.env`, `.risu-api-restart`, `dist.zip`,
-`Cargo.lock`, and scratch files such as `memo.txt` or `test.ts`. Treat them as
-historical, local build/runtime, or agent scratch state unless a new plan
-explicitly reopens them.
+`Cargo.lock`, logs/debug logs, `package-lock.json`, `*.local`, editor temp
+files, Python caches, Vite timestamp files, `raise.code-workspace`, `recc.md`,
+`server/node/ssl/certificate`, and scratch files such as `memo.txt`,
+`test/test.ts`, or `test.ts`. Treat them as historical, local build/runtime, or
+agent scratch state unless a new plan explicitly reopens them. This paragraph is
+an orientation summary, not a replacement for `.gitignore`.
+
+Prettier also skips Markdown/docs/handoff docs, `pnpm-lock.yaml`,
+tracked static/vendor payloads, media/binary assets, and generated/local
+directories listed in `.prettierignore` or `.gitignore`. `pnpm format` will not
+tidy structure docs, so preserve table wrapping manually.
 
 ## Static Assets
 

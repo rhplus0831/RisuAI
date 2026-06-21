@@ -26,10 +26,11 @@ chat/completion does not execute plugin provider code.
 
 Plugin V3 code runs through an iframe RPC boundary. API functions must accept
 and return serializable data, callback functions, marked remote class instances,
-or abort signals. Plugin V2 records can still load for browser-side
-compatibility warnings, but Plugin V2 edit/replacer hooks make server prompt
-assembly return `unsupported`; Fastify never executes browser plugin code.
-Server Lua scripting is separate from browser plugins.
+or abort signals. API `2.1` compatibility records can still load with warnings;
+API `2.0` import is blocked and older existing records only warn as removed/not
+supported. Plugin V2 edit/replacer hooks make server prompt assembly return
+`unsupported`; Fastify never executes browser plugin code. Server Lua scripting
+is separate from browser plugins.
 
 ## Plugin Storage
 
@@ -84,7 +85,7 @@ current chat modules, current character modules, and prompt-preset/global
 | Path                                                                                                       | Purpose                                                                                               |
 | ---------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
 | `src/ts/process/mcp/mcp.ts`                                                                                | Runtime registry, URL parsing, tool discovery/calls, OAuth refresh persistence, module import helper. |
-| `src/ts/process/mcp/mcplib.ts`                                                                             | Remote HTTP/SSE JSON-RPC MCP client.                                                                  |
+| `src/ts/process/mcp/mcplib.ts`                                                                             | Remote Streamable HTTP MCP client with legacy SSE fallback.                                           |
 | `src/ts/process/mcp/internalmcp.ts`                                                                        | Base class for internal MCP-like clients.                                                             |
 | `src/ts/process/mcp/pluginmcp.ts`                                                                          | Plugin-registered MCP modules using `plugin:` identifiers.                                            |
 | `src/ts/process/mcp/risuaccess/`                                                                           | Internal Risu access tools for characters, chats, and modules.                                        |
@@ -95,7 +96,8 @@ Supported MCP URL forms:
 - `internal:*` for bundled clients such as Risu access, AI access, filesystem,
   Google search, graph memory, and dice.
 - `plugin:*` for MCP modules registered by Plugin V3 code.
-- `http://` or `https://` for remote MCP servers.
+- `http://` or `https://` for remote MCP servers using Streamable HTTP first
+  and legacy SSE fallback.
 - `stdio:{...}` only when the JSON wrapper contains a URL. Command-based stdio
   MCPs are rejected in the browser runtime.
 
