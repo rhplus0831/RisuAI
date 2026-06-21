@@ -1,6 +1,13 @@
 import { svelte } from '@sveltejs/vite-plugin-svelte'
 import { defineConfig } from 'vitest/config'
 
+const explicitGateTests = [
+  'src/ts/__tests__/**/*.test.ts',
+  'src/lib/_audit/**/*.test.ts',
+  'util/client-thinning-audit.test.ts',
+]
+const includeExplicitGates = process.env.RISU_TEST_INCLUDE_GATES === 'true'
+
 export default defineConfig({
   plugins: [svelte()],
   resolve: {
@@ -12,6 +19,6 @@ export default defineConfig({
   test: {
     environment: 'happy-dom',
     setupFiles: ['vitest.setup.ts'],
-    exclude: ['**/node_modules/**', 'server/**'],
+    exclude: ['**/node_modules/**', 'server/**', ...(includeExplicitGates ? [] : explicitGateTests)],
   },
 })

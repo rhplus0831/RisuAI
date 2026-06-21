@@ -237,6 +237,7 @@ Use the smallest command that covers the touched area:
 ```sh
 pnpm check
 pnpm test
+pnpm test:gates
 pnpm coverage:ui-map
 pnpm smoke:fastify-browser
 ```
