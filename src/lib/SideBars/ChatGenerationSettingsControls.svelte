@@ -1,12 +1,7 @@
 <script lang="ts">
-  import { RotateCcwIcon } from '@lucide/svelte'
   import { openPersonaListModal, openPresetListModal, selectedCharID } from 'src/ts/stores.svelte'
   import { language } from 'src/lang'
-  import { alertConfirm } from 'src/ts/alert'
-  import {
-    resolveActiveChatGenerationSettings,
-    saveActiveChatGenerationSettingsDefaultValues,
-  } from 'src/ts/activeChatGenerationSettings'
+  import { resolveActiveChatGenerationSettings } from 'src/ts/activeChatGenerationSettings'
   import Button from '../UI/GUI/Button.svelte'
 
   type NamedGenerationReference = {
@@ -42,11 +37,6 @@
     const note = (activeGenerationSettings.persona as NamedGenerationReference | undefined)?.note
     return typeof note === 'string' && note.trim().length > 0 ? note : ''
   })
-
-  async function resetDefaultValues(): Promise<void> {
-    if (!(await alertConfirm(language.chatGenerationResetDefaultsConfirm))) return
-    saveActiveChatGenerationSettingsDefaultValues()
-  }
 </script>
 
 <div
@@ -103,17 +93,5 @@
       <span class="mt-1 text-sm opacity-75 whitespace-pre-wrap break-words" data-risu-generation-picker-persona-note
         >{personaNote}</span>
     {/if}
-  </div>
-
-  <div data-risu-generation-reset-defaults data-risu-picker-mode="active-chat-generation-settings">
-    <Button
-      className="flex w-full min-w-0 justify-start text-left"
-      onclick={resetDefaultValues}
-      disabled={!activeGenerationSettings.identity.chatId}>
-      <div class="flex items-center gap-2 min-w-0">
-        <RotateCcwIcon size={16} />
-        <span class="truncate">{language.chatGenerationResetDefaults}</span>
-      </div>
-    </Button>
   </div>
 </div>

@@ -9,6 +9,7 @@
   import TextInput from '../UI/GUI/TextInput.svelte'
   import Accordion from '../UI/Accordion.svelte'
   import ChatGenerationSettingsControls from './ChatGenerationSettingsControls.svelte'
+  import ChatGenerationResetDefaultsButton from './ChatGenerationResetDefaultsButton.svelte'
   import CustomSideBar from './CustomSidebar.svelte'
   import { setCharacterSupaMemory } from 'src/ts/characterCommands'
   import {
@@ -222,10 +223,11 @@
 
     {@render toggles(displayedSidebarToggles, true)}
     {#if chara && DBState.db.hypaV3}
-      <div class="flex mt-2 items-center w-full" class:justify-end={$MobileGUI}>
+      <div class="flex mt-2 items-center w-full" class:justify-end={$MobileGUI} data-risu-hypa-memory-toggle>
         <CheckInput check={chara.supaMemory} reverse name={language.ToggleHypaMemory} onChange={setSupaMemoryValue} />
       </div>
     {/if}
+    <ChatGenerationResetDefaultsButton />
   </div>
 {:else}
   <ChatGenerationSettingsControls />
@@ -246,8 +248,9 @@
   {/if}
   {@render toggles(displayedSidebarToggles)}
   {#if chara && DBState.db.hypaV3}
-    <div class="flex mt-2 items-center">
+    <div class="flex mt-2 items-center" data-risu-hypa-memory-toggle>
       <CheckInput check={chara.supaMemory} name={language.ToggleHypaMemory} onChange={setSupaMemoryValue} />
     </div>
   {/if}
+  <ChatGenerationResetDefaultsButton />
 {/if}

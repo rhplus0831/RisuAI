@@ -1073,6 +1073,18 @@ describe('sidebar chat generation settings controls', () => {
     })
   })
 
+  it('renders reset toggle defaults below Toggle HypaMemory in the chat sidebar controls', async () => {
+    DBState.db.hypaV3 = true
+
+    mountGenerationSettingsPickerHost()
+    await tick()
+
+    const hypaMemoryToggle = elementBySelector<HTMLElement>('[data-risu-hypa-memory-toggle]', 'hypa memory toggle')
+    const resetDefaults = elementBySelector<HTMLElement>('[data-risu-generation-reset-defaults]', 'reset defaults')
+
+    expect(hypaMemoryToggle.compareDocumentPosition(resetDefaults) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
   it('writes jailbreak and sidebar toggles to active chat settings without touching global state', async () => {
     const calls = stubCommandFetch()
     mountToggles()
