@@ -46,6 +46,7 @@ interface NameReadCounter {
 interface CharacterFixtureOptions {
   chaId?: string
   name: string
+  displayName?: string
   image?: string
   creatorNotes?: string
   trashTime?: number
@@ -81,6 +82,9 @@ function makeCharacter(options: CharacterFixtureOptions) {
       currentName = value
     },
   })
+  if (options.displayName !== undefined) {
+    char.displayName = options.displayName
+  }
   return char
 }
 
@@ -286,15 +290,27 @@ describe('GridCatalog derived lists', () => {
         characters: [
           makeCharacter({ chaId: 'one', name: 'First Match' }),
           makeCharacter({ chaId: 'trash', name: 'First Trash Match', trashTime: 1 }),
-          makeCharacter({ chaId: 'two', name: 'SecondMatch' }),
+          makeCharacter({ chaId: 'two', name: 'SecondMatch', displayName: '두번째' }),
           makeCharacter({ chaId: 'miss', name: 'Unrelated' }),
         ],
       } as any,
       normalizeGridCatalogSearch('second match'),
     )
 
-    expect(lists.active.map((char) => char.name)).toEqual(['SecondMatch'])
+    expect(lists.active.map((char) => char.name)).toEqual(['두번째'])
     expect(lists.trash.map((char) => char.name)).toEqual([])
+
+    const localizedLists = formatGridCatalogCharacterLists(
+      {
+        characters: [
+          makeCharacter({ chaId: 'one', name: 'First Match' }),
+          makeCharacter({ chaId: 'two', name: 'SecondMatch', displayName: '두번째' }),
+        ],
+      } as any,
+      normalizeGridCatalogSearch('두 번째'),
+    )
+
+    expect(localizedLists.active.map((char) => char.name)).toEqual(['두번째'])
 
     const trashLists = formatGridCatalogCharacterLists(
       {
@@ -327,6 +343,7 @@ describe('GridCatalog derived lists', () => {
         makeCharacter({
           chaId: 'beta',
           name: 'Beta Tie',
+          displayName: '베타',
           lastInteraction: now - 600_000,
         }),
         makeCharacter({
@@ -349,7 +366,7 @@ describe('GridCatalog derived lists', () => {
       { hideTrash: true, agoFormatter, now },
     )
 
-    expect(rows.map((char) => char.name)).toEqual(['Alpha Tie', 'Beta Tie', 'Zeta', 'Unnamed'])
+    expect(rows.map((char) => char.name)).toEqual(['Alpha Tie', '베타', 'Zeta', 'Unnamed'])
     expect(rows.map((char) => char.sortedIndex)).toEqual([0, 1, 2, 3])
     expect(rows.find((char) => char.name === 'Zeta')).toMatchObject({
       chats: 2,
@@ -360,6 +377,9 @@ describe('GridCatalog derived lists', () => {
     expect(mobileCharacterRowKey(rows[3])).toBe('legacy-4')
     expect(filterMobileCharacterRows(rows, normalizeMobileCharacterSearch('AL PHA')).map((char) => char.name)).toEqual([
       'Alpha Tie',
+    ])
+    expect(filterMobileCharacterRows(rows, normalizeMobileCharacterSearch('beta')).map((char) => char.name)).toEqual([
+      '베타',
     ])
 
     const rowsWithTrash = formatMobileCharacterRows(

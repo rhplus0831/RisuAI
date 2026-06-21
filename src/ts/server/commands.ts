@@ -434,6 +434,7 @@ export type LoadoutSnapshot = Record<string, unknown> & {
 export type CharacterSnapshot = Record<string, unknown> & {
   chaId?: string
   name?: string
+  displayName?: string
   trashTime?: number | null
 }
 

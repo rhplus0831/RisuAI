@@ -16,6 +16,7 @@ const SERVER_ASSET_ID_RE = /^[0-9a-fA-F]{64}$/
 export interface CharacterRecord extends JsonRecord {
   chaId: string
   name?: string
+  displayName?: string
   trashTime?: number
 }
 
@@ -124,6 +125,7 @@ export function repairCharacterRecord(input: unknown, options: { assetDb?: Datab
 function characterCollectionRowDefaults(index: number): JsonRecord {
   return {
     name: `Character ${index + 1}`,
+    displayName: '',
     firstMessage: '',
     desc: '',
     notes: '',
@@ -352,6 +354,9 @@ function validateCharacterRecord(record: JsonRecord, label: string, options: { a
   }
   if ('name' in record && typeof record.name !== 'string') {
     throw new ValidationError(`${label}.name must be a string`)
+  }
+  if ('displayName' in record && typeof record.displayName !== 'string') {
+    throw new ValidationError(`${label}.displayName must be a string`)
   }
   if (
     'trashTime' in record &&

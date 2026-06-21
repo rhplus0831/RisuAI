@@ -750,6 +750,7 @@ export const languageEnglish = {
   formatingOrder: 'Formatting Order',
   authorNote: "Author's Note",
   firstMessage: 'First Message',
+  displayName: 'Display Name',
   description: 'Description',
   note: 'Note',
   jailbreakToggle: 'Toggle Jailbreak',

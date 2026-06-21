@@ -1,4 +1,5 @@
 <script lang="ts" module>
+  import { getCharacterDisplayInfo } from 'src/ts/characterDisplayName'
   import { type character } from 'src/ts/storage/database.svelte'
 
   export interface MobileCharacterRow {
@@ -8,6 +9,7 @@
     index: number
     interaction: number
     name: string
+    searchText: string
     agoText: string
     sortedIndex: number
   }
@@ -66,9 +68,11 @@
       })
       .map(({ c, i }) => {
         const interaction = c.lastInteraction || 0
+        const displayInfo = getCharacterDisplayInfo(c)
         return {
           chaId: c.chaId,
-          name: c.name || 'Unnamed',
+          name: displayInfo.name,
+          searchText: displayInfo.searchText,
           image: c.image,
           chats: c.chats.length,
           index: i,
@@ -92,7 +96,7 @@
   }
 
   export function filterMobileCharacterRows(rows: readonly MobileCharacterRow[], normalizedSearch: string) {
-    return rows.filter((char) => normalizeMobileCharacterSearch(char.name).includes(normalizedSearch))
+    return rows.filter((char) => normalizeMobileCharacterSearch(char.searchText).includes(normalizedSearch))
   }
 
   export function mobileCharacterRowKey(char: MobileCharacterRow) {

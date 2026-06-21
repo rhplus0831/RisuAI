@@ -1,5 +1,6 @@
 import { language } from 'src/lang'
 import { alertConfirm } from 'src/ts/alert'
+import { getCharacterDisplayName } from 'src/ts/characterDisplayName'
 import {
   currentCharacterRowSnapshot,
   dispatchUpdateCharacterScoped,
@@ -42,6 +43,7 @@ export class CharacterHandler extends MCPToolHandler {
                   'alternateGreetings',
                   'backgroundEmbedding',
                   'description',
+                  'displayName',
                   'greeting',
                   'id',
                   'name',
@@ -116,6 +118,7 @@ export class CharacterHandler extends MCPToolHandler {
                 },
                 backgroundEmbedding: { type: 'string' },
                 description: { type: 'string' },
+                displayName: { type: 'string' },
                 greeting: { type: 'string' },
                 name: { type: 'string' },
                 replaceGlobalNote: { type: 'string' },
@@ -413,6 +416,7 @@ export class CharacterHandler extends MCPToolHandler {
 
     const fieldRemap = {
       name: 'name',
+      displayName: 'displayName',
       greeting: 'firstMessage',
       description: 'desc',
       id: 'chaId',
@@ -526,7 +530,8 @@ export class CharacterHandler extends MCPToolHandler {
       ]
     }
 
-    if (!(await this.promptAccess('risu-set-character-info', `modify character (${char.name}) information`))) {
+    const displayName = characterAccessName(char)
+    if (!(await this.promptAccess('risu-set-character-info', `modify character (${displayName}) information`))) {
       return [
         {
           type: 'text',
@@ -537,6 +542,7 @@ export class CharacterHandler extends MCPToolHandler {
 
     const fieldRemap = {
       name: 'name',
+      displayName: 'displayName',
       greeting: 'firstMessage',
       description: 'desc',
       replaceGlobalNote: 'replaceGlobalNote',
@@ -578,7 +584,7 @@ export class CharacterHandler extends MCPToolHandler {
     return [
       {
         type: 'text',
-        text: `Successfully updated character ${char.name || char.chaId}`,
+        text: `Successfully updated character ${characterAccessName(char)}`,
       },
     ]
   }
@@ -603,7 +609,7 @@ export class CharacterHandler extends MCPToolHandler {
     if (
       !(await this.promptAccess(
         'risu-set-character-lorebook',
-        `add/modify character (${char.name}) global lorebook (${name})`,
+        `add/modify character (${characterAccessName(char)}) global lorebook (${name})`,
       ))
     ) {
       return [
@@ -642,7 +648,7 @@ export class CharacterHandler extends MCPToolHandler {
       return [
         {
           type: 'text',
-          text: `Successfully added lorebook entry "${newName || name}" to character ${char.name || char.chaId}`,
+          text: `Successfully added lorebook entry "${newName || name}" to character ${characterAccessName(char)}`,
         },
       ]
     }
@@ -676,7 +682,7 @@ export class CharacterHandler extends MCPToolHandler {
     return [
       {
         type: 'text',
-        text: `Successfully updated lorebook entry "${name}" for character ${char.name || char.chaId}`,
+        text: `Successfully updated lorebook entry "${name}" for character ${characterAccessName(char)}`,
       },
     ]
   }
@@ -694,7 +700,7 @@ export class CharacterHandler extends MCPToolHandler {
     if (
       !(await this.promptAccess(
         'risu-delete-character-lorebook',
-        `delete character (${char.name}) global lorebook (${name})`,
+        `delete character (${characterAccessName(char)}) global lorebook (${name})`,
       ))
     ) {
       return [
@@ -731,7 +737,7 @@ export class CharacterHandler extends MCPToolHandler {
     return [
       {
         type: 'text',
-        text: `Successfully deleted lorebook entry "${name}" from character ${char.name || char.chaId}`,
+        text: `Successfully deleted lorebook entry "${name}" from character ${characterAccessName(char)}`,
       },
     ]
   }
@@ -789,7 +795,7 @@ export class CharacterHandler extends MCPToolHandler {
     if (
       !(await this.promptAccess(
         'risu-set-character-regex-scripts',
-        `add/modify character (${char.name}) regex script (${name})`,
+        `add/modify character (${characterAccessName(char)}) regex script (${name})`,
       ))
     ) {
       return [
@@ -837,7 +843,7 @@ export class CharacterHandler extends MCPToolHandler {
       return [
         {
           type: 'text',
-          text: `Successfully added regex script "${newName || name}" to character ${char.name || char.chaId}`,
+          text: `Successfully added regex script "${newName || name}" to character ${characterAccessName(char)}`,
         },
       ]
     }
@@ -861,7 +867,7 @@ export class CharacterHandler extends MCPToolHandler {
     return [
       {
         type: 'text',
-        text: `Successfully updated regex script "${name}" for character ${char.name || char.chaId}`,
+        text: `Successfully updated regex script "${name}" for character ${characterAccessName(char)}`,
       },
     ]
   }
@@ -880,7 +886,7 @@ export class CharacterHandler extends MCPToolHandler {
     if (
       !(await this.promptAccess(
         'risu-delete-character-regex-scripts',
-        `delete character (${char.name}) regex script (${name})`,
+        `delete character (${characterAccessName(char)}) regex script (${name})`,
       ))
     ) {
       return [
@@ -928,7 +934,7 @@ export class CharacterHandler extends MCPToolHandler {
     return [
       {
         type: 'text',
-        text: `Successfully deleted regex script "${name}" from character ${char.name || char.chaId}`,
+        text: `Successfully deleted regex script "${name}" from character ${characterAccessName(char)}`,
       },
     ]
   }
@@ -973,7 +979,7 @@ export class CharacterHandler extends MCPToolHandler {
     if (
       !(await this.promptAccess(
         'risu-delete-character-additional-assets',
-        `delete character (${char.name}) additional asset (${assetName})`,
+        `delete character (${characterAccessName(char)}) additional asset (${assetName})`,
       ))
     ) {
       return [
@@ -1006,7 +1012,7 @@ export class CharacterHandler extends MCPToolHandler {
     return [
       {
         type: 'text',
-        text: `Successfully deleted additional asset "${assetName}" from character ${char.name || char.chaId}`,
+        text: `Successfully deleted additional asset "${assetName}" from character ${characterAccessName(char)}`,
       },
     ]
   }
@@ -1051,7 +1057,12 @@ export class CharacterHandler extends MCPToolHandler {
       ]
     }
 
-    if (!(await this.promptAccess('risu-set-character-lua-script', `modify character (${char.name}) lua script`))) {
+    if (
+      !(await this.promptAccess(
+        'risu-set-character-lua-script',
+        `modify character (${characterAccessName(char)}) lua script`,
+      ))
+    ) {
       return [
         {
           type: 'text',
@@ -1084,7 +1095,7 @@ export class CharacterHandler extends MCPToolHandler {
       return [
         {
           type: 'text',
-          text: `Successfully updated Lua script for character ${char.name || char.chaId}`,
+          text: `Successfully updated Lua script for character ${characterAccessName(char)}`,
         },
       ]
     }
@@ -1105,6 +1116,7 @@ export class CharacterHandler extends MCPToolHandler {
     const characters = DBState.db.characters.slice(offset, offset + count).map((char) => ({
       id: char.chaId,
       name: char.name || 'Unnamed',
+      displayName: getCharacterDisplayName(char, char.name || char.chaId || 'Unnamed'),
       type: char.type,
     }))
 
@@ -1141,9 +1153,13 @@ function characterLorebookNotReadyResponse(char: character): RPCToolCallContent[
   return [
     {
       type: 'text',
-      text: `Error: Character lorebooks for ${char.name || char.chaId} are not hydrated yet; open or hydrate this character's lorebook before editing it.`,
+      text: `Error: Character lorebooks for ${characterAccessName(char)} are not hydrated yet; open or hydrate this character's lorebook before editing it.`,
     },
   ]
+}
+
+function characterAccessName(char: character): string {
+  return getCharacterDisplayName(char, char.chaId || 'Unnamed')
 }
 
 function applyCharacterInfoPatchOptimistically(characterId: string, patch: Record<string, unknown>): void {

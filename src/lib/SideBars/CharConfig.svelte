@@ -99,6 +99,7 @@
   } from 'src/ts/server/scriptDefinitionBridge.svelte'
   import { getServerProjectionApplyEpoch } from 'src/ts/server/projectionWriteGuard.svelte'
   import { setCurrentChatGreetingIndex } from 'src/ts/chatCommands'
+  import { getCharacterDisplayName } from 'src/ts/characterDisplayName'
 
   let iconRemoveMode = $state(false)
   let viewSubMenu = $state(0)
@@ -128,6 +129,7 @@
   })
   const characterDraft = createServerBackedCharacterDraft([
     'name',
+    'displayName',
     'desc',
     'firstMessage',
     'image',
@@ -824,6 +826,11 @@
 {#if $CharConfigSubMenu === 0}
   {#if licensed !== 'private'}
     <TextInput size="xl" marginBottom placeholder="Character Name" bind:value={characterDraft.value.name} />
+    <TextInput
+      size="lg"
+      marginBottom
+      placeholder={language.displayName}
+      bind:value={characterDraft.value.displayName} />
     <span class="text-textcolor">{language.description} <Help key="charDesc" /></span>
     <TextAreaInput highlight margin="both" autocomplete="off" bind:value={characterDraft.value.desc}></TextAreaInput>
     <span class="text-textcolor2 mb-6 text-sm">{tokens.desc} {language.tokens}</span>
@@ -1219,7 +1226,7 @@
 
   <Button
     onclick={async () => {
-      removeChar($selectedCharID, DBState.db.characters[$selectedCharID].name)
+      removeChar($selectedCharID, getCharacterDisplayName(DBState.db.characters[$selectedCharID]))
     }}
     className="mt-2"
     size="sm">{language.removeCharacter}</Button>

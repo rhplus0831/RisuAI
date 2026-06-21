@@ -4294,6 +4294,7 @@ describe('Phase 9-3a character commands', () => {
         baseRevision: created.json().revision,
         patch: {
           name: 'B renamed',
+          displayName: 'Localized B',
           desc: 'new desc',
           systemPrompt: 'new system prompt',
           ttsMode: 'openai',
@@ -4316,6 +4317,7 @@ describe('Phase 9-3a character commands', () => {
       ),
     ).toMatchObject({
       name: 'B renamed',
+      displayName: 'Localized B',
       systemPrompt: 'new system prompt',
       ttsMode: 'openai',
       oaiTTSConfig: { enabled: true, voice: 'alloy', model: 'tts-1', format: 'mp3' },
@@ -4524,6 +4526,18 @@ describe('Phase 9-3a character commands', () => {
     })
     expect(update.statusCode).toBe(400)
     expect(update.json().error).toBe('patch.chats is owned by a later command slice')
+
+    const invalidDisplayName = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/characters/char-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: { displayName: 123 },
+      },
+    })
+    expect(invalidDisplayName.statusCode).toBe(400)
+    expect(invalidDisplayName.json().error).toBe('patch.displayName must be a string')
 
     const reorder = await harness.app.inject({
       method: 'POST',

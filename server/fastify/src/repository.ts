@@ -1859,6 +1859,7 @@ const SERVER_CHARACTER_SHELL_MARKER = '__serverCharacterShell'
 const BOOTSTRAP_CHARACTER_SHELL_FIELDS = [
   'chaId',
   'name',
+  'displayName',
   'type',
   'image',
   'icon',

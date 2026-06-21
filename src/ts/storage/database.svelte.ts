@@ -2290,6 +2290,7 @@ export interface loreBook {
 export interface character {
   type?: 'character'
   name: string
+  displayName?: string
   image?: string
   firstMessage: string
   desc: string

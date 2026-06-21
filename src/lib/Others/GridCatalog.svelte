@@ -1,4 +1,5 @@
 <script lang="ts" module>
+  import { getCharacterDisplayInfo } from 'src/ts/characterDisplayName'
   import { type Database } from '../../ts/storage/database.svelte'
 
   export interface GridCatalogCharacter {
@@ -24,8 +25,8 @@
 
     for (let i = 0; i < db.characters.length; i++) {
       const c = db.characters[i]
-      const name = c.name
-      if (!normalizeGridCatalogSearch(name).includes(normalizedSearch)) {
+      const displayInfo = getCharacterDisplayInfo(c)
+      if (!normalizeGridCatalogSearch(displayInfo.searchText).includes(normalizedSearch)) {
         continue
       }
 
@@ -33,7 +34,7 @@
         chaId: c.chaId,
         image: c.image,
         index: i,
-        name,
+        name: displayInfo.name,
         desc: c.creatorNotes ?? 'No description',
       }
 

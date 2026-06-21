@@ -963,6 +963,7 @@ export function characterFormatUpdate(
   if (!cha.chaId) {
     cha.chaId = uuidv4()
   }
+  cha.displayName ??= ''
   if (checkNullish(cha.sdData)) {
     cha.sdData = defaultSdDataFunc()
   }
@@ -1062,6 +1063,7 @@ export function updateLorebooks(book: loreBook[]) {
 export function createBlankChar(): character {
   return {
     name: '',
+    displayName: '',
     firstMessage: '',
     desc: '',
     notes: '',

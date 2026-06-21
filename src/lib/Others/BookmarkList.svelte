@@ -15,6 +15,7 @@
   import { alertInput } from 'src/ts/alert'
   import { currentChatStateSnapshot, dispatchUpdateChat } from 'src/ts/chatCommands'
   import { canUseServerCommands } from 'src/ts/server/commands'
+  import { getCharacterDisplayName } from 'src/ts/characterDisplayName'
 
   const close = () => ($bookmarkListOpen = false)
   let chara = $derived(DBState.db.characters[$selectedCharID])
@@ -232,7 +233,7 @@
                 <Chat
                   idx={msg.originalIndex}
                   message={msg.data}
-                  name={msg.role === 'user' ? getUserName() : chara.name}
+                  name={msg.role === 'user' ? getUserName() : getCharacterDisplayName(chara)}
                   img={msg.role === 'user' ? getCharImage(getUserIcon(), 'css') : getCharImage(chara.image, 'css')}
                   role={msg.role}
                   messageGenerationInfo={msg.generationInfo}

@@ -1,3 +1,4 @@
+import { getCharacterDisplayName } from 'src/ts/characterDisplayName'
 import type { character, folder } from 'src/ts/storage/database.svelte'
 
 export interface SidebarCharacterListNormal {
@@ -18,7 +19,7 @@ export type SidebarCharacterListItem =
       img?: string
     }
 
-export type SidebarCharacterListCharacter = Pick<character, 'chaId' | 'name' | 'image'>
+export type SidebarCharacterListCharacter = Pick<character, 'chaId' | 'name' | 'displayName' | 'image'>
 
 export type SidebarCharacterOrderFolder = Omit<Pick<folder, 'name' | 'color' | 'id' | 'imgFile'>, 'imgFile'> & {
   data: readonly string[]
@@ -78,7 +79,7 @@ function appendCharacterSignature(
 
   const character = characters[index]
   appendString(parts, character.chaId)
-  appendString(parts, character.name)
+  appendString(parts, getCharacterDisplayName(character, ''))
   appendString(parts, character.image)
 }
 
@@ -129,7 +130,7 @@ function buildSidebarCharacterListItemsWithIndex(
       img: character.image ?? '',
       index,
       type: 'normal',
-      name: character.name,
+      name: getCharacterDisplayName(character),
     }
   }
 

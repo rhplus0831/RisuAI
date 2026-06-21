@@ -208,7 +208,7 @@ function currentCharacterDraftSeed(
 ): { serverSnapshot: string; serverValue: CharacterDraftValue } {
   const character = DBState.db.characters?.[selected]
   if (!character || isServerCharacterShell(character)) {
-    const serverValue = normalizeCharacterDraft({})
+    const serverValue = normalizeCharacterDraft(pickCharacterFields({}, keys))
     return {
       serverSnapshot: snapshotJson({ characterId: null, value: serverValue }),
       serverValue,
@@ -379,6 +379,9 @@ function pickCharacterFields(character: CharacterSnapshot, keys: readonly string
 
 function normalizeCharacterDraft(value: CharacterSnapshot): CharacterDraftValue {
   value.name ??= ''
+  if (Object.prototype.hasOwnProperty.call(value, 'displayName')) {
+    value.displayName ??= ''
+  }
   value.desc ??= ''
   value.firstMessage ??= ''
   value.image ??= ''

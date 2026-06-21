@@ -60,6 +60,7 @@
   import MainMenu from '../UI/MainMenu.svelte'
   import AssetInput from './AssetInput.svelte'
   import { aiLawApplies, chatFoldedState, chatFoldedStateMessageIndex, downloadFile } from 'src/ts/globalApi.svelte'
+  import { getCharacterDisplayName } from 'src/ts/characterDisplayName'
   import { v4 } from 'uuid'
   import {
     reroll as rerollNav,
@@ -1015,7 +1016,7 @@
     {/if}
   {:else if !activeChatOpen}
     <div class="h-full w-full flex flex-col items-center justify-center text-center px-6" data-risu-chat-empty-state>
-      <h2 class="text-2xl font-bold mb-2">{DBState.db.characters[$selectedCharID]?.name}</h2>
+      <h2 class="text-2xl font-bold mb-2">{getCharacterDisplayName(DBState.db.characters[$selectedCharID])}</h2>
       <p class="text-textcolor2">{language.selectChatToOpen}</p>
       {#if mostRecentChat}
         <Button className="mt-4 flex flex-col gap-2" onclick={openMostRecentChat}>
@@ -1282,7 +1283,7 @@
         {#if !isServerCharacterShell(currentCharacter) && DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message.length <= loadPages}
           <Chat
             character={createSimpleCharacter(DBState.db.characters[$selectedCharID])}
-            name={DBState.db.characters[$selectedCharID].name}
+            name={getCharacterDisplayName(DBState.db.characters[$selectedCharID])}
             message={DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage]
               .fmIndex === -1
               ? DBState.db.characters[$selectedCharID].firstMessage

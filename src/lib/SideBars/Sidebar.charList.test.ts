@@ -26,6 +26,7 @@ function baseCharacters(): TestCharacter[] {
     {
       chaId: 'beta',
       name: 'Beta',
+      displayName: '베타',
       image: 'beta.webp',
       lastInteraction: 1,
     },
@@ -76,7 +77,7 @@ describe('sidebar character list signature memo', () => {
             type: 'normal',
             img: 'beta.webp',
             index: 1,
-            name: 'Beta',
+            name: '베타',
           },
         ],
         id: 'folder-1',
@@ -108,7 +109,7 @@ describe('sidebar character list signature memo', () => {
     expect(second.items).toBe(first.items)
   })
 
-  it('L44: character name image index and order changes rebuild the sidebar list', () => {
+  it('L44: character display name image index and order changes rebuild the sidebar list', () => {
     const cases: Array<{
       name: string
       order: SidebarCharacterOrderEntry[]
@@ -116,13 +117,23 @@ describe('sidebar character list signature memo', () => {
       assert: (items: SidebarCharacterListItem[]) => void
     }> = [
       {
-        name: 'character name',
+        name: 'character display name',
         order: baseOrder(),
         characters: baseCharacters().map((character) =>
-          character.chaId === 'beta' ? { ...character, name: 'Beta Renamed' } : character,
+          character.chaId === 'beta' ? { ...character, displayName: '베타 변경' } : character,
         ),
         assert: (items) => {
-          expect(folderItem(items)?.folder[0]?.name).toBe('Beta Renamed')
+          expect(folderItem(items)?.folder[0]?.name).toBe('베타 변경')
+        },
+      },
+      {
+        name: 'character fallback name',
+        order: baseOrder(),
+        characters: baseCharacters().map((character) =>
+          character.chaId === 'alpha' ? { ...character, name: 'Alpha Renamed' } : character,
+        ),
+        assert: (items) => {
+          expect(items[0]).toMatchObject({ type: 'normal', name: 'Alpha Renamed' })
         },
       },
       {
@@ -197,7 +208,7 @@ describe('sidebar character list signature memo', () => {
         name: 'folder data',
         folder: { ...baseFolder(), data: ['beta', 'alpha'] },
         assert: (items) => {
-          expect(folderItem(items)?.folder.map((character) => character.name)).toEqual(['Beta', 'Alpha'])
+          expect(folderItem(items)?.folder.map((character) => character.name)).toEqual(['베타', 'Alpha'])
         },
       },
     ]

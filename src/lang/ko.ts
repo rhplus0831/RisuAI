@@ -658,6 +658,7 @@ export const languageKorean = {
   formatingOrder: '포맷 순서',
   authorNote: '작가의 노트',
   firstMessage: '첫 메시지',
+  displayName: '표시 이름',
   description: '설명',
   note: '메모',
   jailbreakToggle: '탈옥 토글',

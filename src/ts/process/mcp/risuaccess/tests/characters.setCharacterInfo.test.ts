@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // MCP character writes apply an immediate trusted projection and keep rollback.
 
+const alertConfirmSpy = vi.hoisted(() => vi.fn(async () => true))
+
 vi.mock('src/ts/platform', async (importActual) => {
   const actual = await importActual<typeof import('src/ts/platform')>()
   return { ...actual, isFastifyServer: true }
@@ -13,7 +15,7 @@ vi.mock('src/ts/storage/fastifyStorage', () => ({
 
 vi.mock('src/ts/alert', async (importActual) => {
   const actual = await importActual<typeof import('src/ts/alert')>()
-  return { ...actual, alertConfirm: vi.fn(async () => true) }
+  return { ...actual, alertConfirm: alertConfirmSpy }
 })
 
 import { clearCachedServerCommandRevision } from 'src/ts/server/commands'
@@ -176,6 +178,7 @@ async function waitForSettledCommands(): Promise<void> {
 }
 
 beforeEach(() => {
+  alertConfirmSpy.mockClear()
   clearCachedServerCommandRevision()
   resetLorebookHydration()
   setServerProjectionWriteGuardEnabled(false)
@@ -217,6 +220,40 @@ describe('MCP character writes optimistic projection', () => {
       url: '/api/v1/commands/characters/char-1',
       method: 'PATCH',
       body: { baseRevision: 10, patch: { name: 'Renamed via MCP' } },
+    })
+  })
+
+  it('setCharacterInfo patches displayName and uses it for visible MCP text', async () => {
+    DBState.db.characters[1].displayName = '표시 캐릭터'
+    setServerProjectionWriteGuardEnabled(true)
+    const { calls } = stubCommandFetch()
+    const handler = new CharacterHandler()
+
+    const result = await handler.handle('risu-set-character-info', {
+      id: 'char-1',
+      data: { displayName: '새 표시 이름' },
+    })
+
+    expect(alertConfirmSpy).toHaveBeenCalledWith(expect.stringContaining('표시 캐릭터'))
+    expect(toolText(result)).toContain('새 표시 이름')
+    expect(DBState.db.characters[1]).toMatchObject({
+      name: 'Character 1',
+      displayName: '새 표시 이름',
+    })
+    expect(
+      parseToolJson<{ name: string; displayName: string }>(
+        await handler.handle('risu-get-character-info', {
+          id: 'char-1',
+          fields: ['name', 'displayName'],
+        }),
+      ),
+    ).toEqual({ name: 'Character 1', displayName: '새 표시 이름' })
+
+    await waitForCallCount(calls, 2)
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/characters/char-1',
+      method: 'PATCH',
+      body: { baseRevision: 10, patch: { displayName: '새 표시 이름' } },
     })
   })
 

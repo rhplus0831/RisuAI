@@ -4,6 +4,7 @@
 
   import { DBState } from 'src/ts/stores.svelte'
   import { MobileGUIStack, MobileSearch, selectedCharID, SettingsMenuIndex, MobileSideBar } from 'src/ts/stores.svelte'
+  import { getCharacterDisplayName } from 'src/ts/characterDisplayName'
 </script>
 
 <div class="w-full px-4 h-16 border-b border-b-darkborderc bg-darkbg flex justify-start items-center gap-2">
@@ -22,7 +23,8 @@
       }}>
       <ArrowLeft />
     </button>
-    <span class="font-bold text-lg w-2/3 truncate">{DBState.db.characters[$selectedCharID].name}</span>
+    <span class="font-bold text-lg w-2/3 truncate"
+      >{getCharacterDisplayName(DBState.db.characters[$selectedCharID])}</span>
     <div class="flex-1 flex justify-end">
       <button
         onclick={() => {

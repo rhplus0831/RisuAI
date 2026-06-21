@@ -6,6 +6,7 @@
   import { chatFoldedStateMessageIndex } from 'src/ts/globalApi.svelte'
   import { get } from 'svelte/store'
   import { getTranscriptWindowRange } from './DefaultChatScreen.loadPages'
+  import { getCharacterDisplayName } from 'src/ts/characterDisplayName'
 
   const getCurrentChatRoomId = () => {
     const charId = get(selectedCharID)
@@ -76,7 +77,7 @@
         idx: i,
         img: message.role === 'user' ? userImage : charImage,
         largePortrait: messageLargePortrait,
-        name: message.role === 'user' ? currentUsername : currentCharacter.name,
+        name: message.role === 'user' ? currentUsername : getCharacterDisplayName(currentCharacter),
         character: simpleChar,
       })
     }
