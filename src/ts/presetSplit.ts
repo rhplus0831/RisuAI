@@ -317,7 +317,7 @@ function applyPromptPresetFields(target: JsonRecord, promptPreset: unknown): voi
   }
 }
 
-function applyPromptPresetModelOverrides(target: JsonRecord, promptPreset: unknown): void {
+export function applyPromptPresetModelOverrides(target: JsonRecord, promptPreset: unknown): void {
   if (promptPresetOverridesModelParameters(promptPreset)) {
     applyMappedPresetFields(target, promptPreset, PROMPT_PRESET_MODEL_PARAMETER_OVERRIDE_FIELDS)
   }

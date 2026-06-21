@@ -7,7 +7,11 @@ import {
 } from '../../../../src/ts/chatGenerationSettings'
 import type { ModelPresetRecord, PromptPresetRecord } from '../commands/splitPresets.js'
 import { mirrorLegacyProfile, type PersonaRecord } from '../commands/personas.js'
-import { applyEffectivePresetComposition, resolvePromptPresetRegexField } from '../../../../src/ts/presetSplit.js'
+import {
+  applyEffectivePresetComposition,
+  applyPromptPresetModelOverrides,
+  resolvePromptPresetRegexField,
+} from '../../../../src/ts/presetSplit.js'
 import {
   modelProfileGenerationBlockReason,
   resolveModelProfile,
@@ -149,6 +153,10 @@ export function buildEffectiveGenerationConfig(input: EffectiveGenerationConfigI
     throw new ModelProfileGenerationGuardAssemblyError(profileBlockReason)
   }
   applyProfileBoundGenerationFields(effectiveDatabase, profile)
+  // Durable profile runtime fields materialize onto the flat request settings.
+  // Prompt preset model overrides are the final user-facing layer for a chat, so
+  // reapply them after profile runtime defaults/profile-local options.
+  applyPromptPresetModelOverrides(effectiveDatabase as unknown as JsonRecord, effectivePromptPreset)
 
   const effectiveCurrentChar = effectiveDatabase.characters[input.selectedCharID]
   const effectiveStoredChat = effectiveCurrentChar?.chats?.[input.chatPage]

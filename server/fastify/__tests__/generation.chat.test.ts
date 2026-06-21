@@ -3941,6 +3941,105 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
     })
   })
 
+  it('lets prompt parameter overrides win over profile-bound runtime fields', async () => {
+    let dispatchedDatabase: Record<string, unknown> | undefined
+    const dispatchProvider = vi.fn(({ database }) => {
+      dispatchedDatabase = structuredClone(database) as Record<string, unknown>
+      return (async function* (): AsyncGenerator<CompletionStreamFrame> {
+        yield { kind: 'token', content: 'prompt profile override reply' }
+        yield { kind: 'done', finishReason: 'stop' }
+      })()
+    })
+    await restartHarness({ dispatchProvider })
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, {
+      ...fixtureDatabase,
+      maxContext: 1111,
+      maxResponse: 11,
+      temperature: 11,
+      top_p: 0.9,
+      modelPresets: [
+        {
+          id: 'model-profile-runtime',
+          name: 'Profile Runtime Model',
+          modelProfiles: [
+            {
+              id: 'profile-runtime',
+              name: 'Profile Runtime',
+              providerId: 'custom-api',
+              modelId: 'custom-api',
+              providerOptions: {
+                baseUrl: 'https://profile-runtime.example.com/v1',
+                requestModel: 'profile-runtime-wire-model',
+              },
+              runtimeOptions: {
+                maxContext: 2222,
+                maxResponse: 22,
+                temperature: 66,
+                topP: 0.42,
+                useStreaming: false,
+              },
+            },
+          ],
+          modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'profile-runtime' } },
+        },
+      ],
+      promptPresets: [
+        {
+          id: 'prompt-chat',
+          name: 'Chat Prompt',
+          overrideModelParameters: true,
+          maxContext: 4444,
+          maxResponse: 44,
+          temperature: 33,
+          top_p: 0.24,
+        },
+      ],
+      characters: [
+        {
+          ...fixtureDatabase.characters[0],
+          chats: [
+            {
+              ...fixtureDatabase.characters[0].chats[0],
+              generationSettings: {
+                configured: true,
+                personaId: DEFAULT_TEST_PERSONA_ID,
+                modelPresetId: 'model-profile-runtime',
+                promptPresetId: 'prompt-chat',
+                jailbreakToggle: false,
+                sidebarToggles: {},
+              },
+            },
+          ],
+        },
+      ],
+    })
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(dispatchProvider).toHaveBeenCalledTimes(1)
+    expect(dispatchedDatabase).toMatchObject({
+      aiModel: 'custom-api',
+      maxContext: 4444,
+      maxResponse: 44,
+      temperature: 33,
+      top_p: 0.24,
+      useStreaming: false,
+    })
+    const info = parseEvents(res.body).find((event) => event.type === 'info')
+    expect(info?.data.generationInfo).toMatchObject({
+      model: 'custom-api',
+      outputTokens: 44,
+      maxContext: 4444,
+    })
+  })
+
   it('omits disabled temperature and unsupported bias fields from default OpenAI dispatch', async () => {
     const captured: Array<{ url: string; body: Record<string, unknown> }> = []
     vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
