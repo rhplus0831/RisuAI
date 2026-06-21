@@ -1,5 +1,6 @@
 import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
 import type { ChatGenerationSettings } from '../chatGenerationSettings'
+import type { MessageTranslation } from '../storage/database.svelte'
 import type { ModelRole } from '../model/modelRoles'
 import type {
   ModelProfileRecord,
@@ -541,6 +542,7 @@ export type MessageSnapshot = Record<string, unknown> & {
   role?: 'user' | 'char'
   data?: string
   chatId?: string
+  translation?: MessageTranslation | null
 }
 
 export interface PresetCommandInput {
@@ -1125,6 +1127,10 @@ export interface AppendMessageCommandInput extends ChatCommandInput {
 export interface UpdateMessageCommandInput extends ChatCommandInput {
   messageId: string
   patch: MessageSnapshot
+}
+
+export interface TranslateMessageCommandInput extends ChatCommandInput {
+  messageId: string
 }
 
 export interface DeleteMessageCommandInput extends ChatCommandInput {
@@ -2912,6 +2918,19 @@ export async function updateMessageCommand(
     body: {
       baseRevision: input.baseRevision,
       patch: input.patch,
+    },
+    signal,
+  })
+}
+
+export async function translateMessageCommand(
+  input: TranslateMessageCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ chatId: string; messageId: string; translation: MessageTranslation }>> {
+  return requestCommandJson(`/messages/${encodeURIComponent(input.messageId)}/translate`, {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
     },
     signal,
   })

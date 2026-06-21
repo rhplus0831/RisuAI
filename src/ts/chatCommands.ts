@@ -73,6 +73,7 @@ export const CHAT_PATCH_ALLOWED_KEYS = new Set([
 export const MESSAGE_PATCH_ALLOWED_KEYS = new Set([
   'role',
   'data',
+  'translation',
   'saying',
   'time',
   'promptInfo',

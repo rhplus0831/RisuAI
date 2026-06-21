@@ -94,6 +94,7 @@ import {
   selectTranslatorPresetCommand,
   touchLoadoutCommand,
   truncateMessagesCommand,
+  translateMessageCommand,
   updateCharacterCommand,
   updateChatCommand,
   updateChatFolderCommand,
@@ -2045,6 +2046,49 @@ describe('server command API adapter', () => {
           baseRevision: 8,
           folderIds: ['folder-a'],
           selectedChatId: 'chat-a',
+        },
+      },
+    ])
+  })
+
+  it('dispatches message translation commands through the typed helper', async () => {
+    const translation = {
+      text: 'translated raw',
+      source: 'raw',
+      sourceHash: 'a'.repeat(64),
+      targetLanguage: 'ko',
+      inputLanguage: 'en',
+      translatorType: 'llm',
+      settingsHash: 'b'.repeat(64),
+      updatedAt: 123,
+    }
+    const commandFetch = makeCommandFetch(() => ({
+      revision: 2,
+      event: {
+        type: 'message.updated',
+        revision: 2,
+        resource: 'message',
+        id: 'msg-a',
+      },
+      chatId: 'chat-a',
+      messageId: 'msg-a',
+      translation,
+    }))
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    await expect(
+      translateMessageCommand({
+        baseRevision: 1,
+        messageId: 'msg-a',
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 2, messageId: 'msg-a', translation })
+
+    expect(commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body }))).toEqual([
+      {
+        url: '/api/v1/commands/messages/msg-a/translate',
+        method: 'POST',
+        body: {
+          baseRevision: 1,
         },
       },
     ])

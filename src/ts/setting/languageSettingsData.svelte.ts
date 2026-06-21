@@ -133,7 +133,6 @@ export const languageSettingsItems: SettingItem[] = [
         { value: 'deepl', label: 'DeepL' },
         { value: 'llm', label: 'Ax. Model' },
         { value: 'deeplX', label: 'DeepL X' },
-        { value: 'bergamot', label: 'Firefox' },
       ],
     },
   },
@@ -212,15 +211,6 @@ export const languageSettingsItems: SettingItem[] = [
         { value: 'ru', label: 'Russian' },
       ],
     },
-  },
-
-  {
-    id: 'lang.bergamotHtml',
-    type: 'check',
-    labelKey: 'htmlTranslation',
-    bindKey: 'htmlTranslation',
-    classes: 'mt-4',
-    condition: (ctx) => !!ctx.db.translator && ctx.db.translatorType === 'bergamot',
   },
 
   // General Translation Options

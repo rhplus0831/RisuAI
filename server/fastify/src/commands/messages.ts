@@ -11,6 +11,18 @@ export interface MessageRecord extends JsonRecord {
   role: 'user' | 'char'
   data: string
   chatId: string
+  translation?: MessageTranslationRecord | null
+}
+
+export interface MessageTranslationRecord extends JsonRecord {
+  text: string
+  source: 'raw'
+  sourceHash: string
+  targetLanguage: string
+  inputLanguage: string
+  translatorType: 'google' | 'deepl' | 'deeplX' | 'llm'
+  settingsHash: string
+  updatedAt: number
 }
 
 export interface MessageLocation {
@@ -28,6 +40,7 @@ export interface GenerationResultRecord extends JsonRecord {
 const ALLOWED_MESSAGE_PATCH_KEYS = new Set([
   'role',
   'data',
+  'translation',
   'saying',
   'time',
   'promptInfo',
@@ -245,6 +258,9 @@ function validateMessageRecord(record: JsonRecord, label: string, options: { par
       throw new ValidationError(`${label}.data must be a string`)
     }
   }
+  if ('translation' in record) {
+    validateMessageTranslationRecord(record.translation, `${label}.translation`)
+  }
   if ('saying' in record && record.saying !== undefined && typeof record.saying !== 'string') {
     throw new ValidationError(`${label}.saying must be a string`)
   }
@@ -285,5 +301,36 @@ function validateJsonRecord(value: unknown, label: string): void {
   if (value === undefined) return
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new ValidationError(`${label} must be an object`)
+  }
+}
+
+function validateMessageTranslationRecord(value: unknown, label: string): void {
+  if (value === undefined || value === null) return
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    throw new ValidationError(`${label} must be an object, null, or undefined`)
+  }
+
+  const record = value as Record<string, unknown>
+  if (typeof record.text !== 'string') {
+    throw new ValidationError(`${label}.text must be a string`)
+  }
+  if (record.source !== 'raw') {
+    throw new ValidationError(`${label}.source must be raw`)
+  }
+  for (const key of ['sourceHash', 'targetLanguage', 'inputLanguage', 'settingsHash'] as const) {
+    if (typeof record[key] !== 'string' || record[key].trim() === '') {
+      throw new ValidationError(`${label}.${key} must be a non-empty string`)
+    }
+  }
+  if (
+    record.translatorType !== 'google' &&
+    record.translatorType !== 'deepl' &&
+    record.translatorType !== 'deeplX' &&
+    record.translatorType !== 'llm'
+  ) {
+    throw new ValidationError(`${label}.translatorType must be google, deepl, deeplX, or llm`)
+  }
+  if (typeof record.updatedAt !== 'number' || !Number.isFinite(record.updatedAt)) {
+    throw new ValidationError(`${label}.updatedAt must be a finite number`)
   }
 }

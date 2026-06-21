@@ -2730,6 +2730,7 @@ export interface ChatFolder {
 export interface Message {
   role: 'user' | 'char'
   data: string
+  translation?: MessageTranslation | null
   saying?: string
   chatId?: string
   time?: number
@@ -2739,6 +2740,17 @@ export interface Message {
   otherUser?: boolean
   disabled?: false | true | 'allBefore'
   isComment?: boolean
+}
+
+export interface MessageTranslation {
+  text: string
+  source: 'raw'
+  sourceHash: string
+  targetLanguage: string
+  inputLanguage: string
+  translatorType: 'google' | 'deepl' | 'deeplX' | 'llm'
+  settingsHash: string
+  updatedAt: number
 }
 
 export interface MessageGenerationInfo {

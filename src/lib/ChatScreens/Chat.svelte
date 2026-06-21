@@ -49,6 +49,7 @@
     type Chat,
     type Message,
     type MessageGenerationInfo,
+    type MessageTranslation,
   } from '../../ts/storage/database.svelte'
   import { selectedCharID } from '../../ts/stores.svelte'
   import { HideIconStore, ReloadGUIPointer, selIdState } from '../../ts/stores.svelte'
@@ -58,7 +59,6 @@
   import RerollList from './RerollList.svelte'
   import PartialEditController from './PartialEditController.svelte'
   import { resolveFreshPartialEditSave, type PartialEditSaveDetail } from './partialEditFreshness'
-  import { getLLMCache, setLLMCache } from '../../ts/translator/translator'
   import { renderCustomHtmlTemplate } from './ChatCustomHtmlTemplate'
   import {
     currentChatScopedSnapshot,
@@ -73,7 +73,12 @@
     dispatchUpdateMessageScoped,
     ensureMessageId,
   } from 'src/ts/chatCommands'
-  import { canUseServerCommands } from 'src/ts/server/commands'
+  import {
+    canUseServerCommands,
+    runServerCommand,
+    translateMessageCommand,
+    updateMessageCommand,
+  } from 'src/ts/server/commands'
   import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
   import {
     captureChatButtonTriggerFreshness,
@@ -94,6 +99,7 @@
   let bodyRoot: HTMLElement | null = $state(null)
   interface Props {
     message?: string
+    translation?: MessageTranslation | null
     name?: string
     largePortrait?: boolean
     isLastMemory: boolean
@@ -123,6 +129,7 @@
 
   let {
     message = $bindable(''),
+    translation = null,
     name = '',
     largePortrait = false,
     isLastMemory,
@@ -184,6 +191,99 @@
     if (!canUseServerCommands()) {
       callback()
     }
+  }
+
+  function supportsServerRawTranslation() {
+    return (
+      canUseServerCommands() &&
+      idx >= 0 &&
+      DBState.db.translator !== '' &&
+      (DBState.db.translatorType === 'google' ||
+        DBState.db.translatorType === 'deepl' ||
+        DBState.db.translatorType === 'deeplX' ||
+        DBState.db.translatorType === 'llm')
+    )
+  }
+
+  function currentLiveMessage(): Message | null {
+    const character = DBState.db.characters?.[selIdState.selId]
+    const chatPage = character?.chatPage
+    if (chatPage === undefined || chatPage === null || idx < 0) return null
+    return character.chats?.[chatPage]?.message?.[idx] ?? null
+  }
+
+  function applyLocalTranslation(nextTranslation: MessageTranslation | null) {
+    withTrustedServerProjectionWrite(() => {
+      const liveMessage = currentLiveMessage()
+      if (liveMessage && (!messageRowId || liveMessage.chatId === messageRowId)) {
+        liveMessage.translation = nextTranslation
+      }
+    })
+  }
+
+  function activeRawTranslation(): MessageTranslation | null {
+    if (!supportsServerRawTranslation()) return null
+    const currentTranslation = translation ?? currentLiveMessage()?.translation
+    return currentTranslation?.source === 'raw' && typeof currentTranslation.text === 'string'
+      ? currentTranslation
+      : null
+  }
+
+  async function requestServerRawTranslation() {
+    const liveMessage = currentLiveMessage()
+    const messageId = liveMessage?.chatId || messageRowId
+    if (!messageId) {
+      setStatusMessage('Message is not ready to translate yet.', 2500)
+      return
+    }
+    translating = true
+    try {
+      const result = await runServerCommand({
+        command: (baseRevision) => translateMessageCommand({ baseRevision, messageId }),
+      })
+      if (result.status === 'ok') {
+        applyLocalTranslation(result.translation)
+        translated = true
+        editTranslationMode = false
+        return
+      }
+      translated = false
+      if (result.status === 'conflict') {
+        setStatusMessage(`Translation conflict (${result.currentRevision}).`, 3000)
+      } else if (result.status === 'unavailable') {
+        setStatusMessage('Server commands are unavailable.', 3000)
+      } else {
+        setStatusMessage(result.error, 3000)
+      }
+    } finally {
+      translating = false
+    }
+  }
+
+  async function saveServerTranslationEdit() {
+    const existing = activeRawTranslation()
+    const liveMessage = currentLiveMessage()
+    const messageId = liveMessage?.chatId || messageRowId
+    if (!existing || !messageId) return
+    const nextTranslation: MessageTranslation = {
+      ...existing,
+      text: editTranslationText,
+      updatedAt: Date.now(),
+    }
+    applyLocalTranslation(nextTranslation)
+    editTranslationMode = false
+    await runServerCommand({
+      command: (baseRevision) =>
+        updateMessageCommand({
+          baseRevision,
+          messageId,
+          patch: { translation: nextTranslation },
+        }),
+      rollback: () => {
+        applyLocalTranslation(existing)
+        editTranslationMode = true
+      },
+    })
   }
 
   async function rm(e: MouseEvent, rec?: boolean) {
@@ -348,27 +448,13 @@
     }
   }
 
-  async function getTranslationCacheKey(): Promise<string> {
-    if (DBState.db.translateBeforeHTMLFormatting) {
-      return msgDisplay
-    }
-    if (!DBState.db.legacyTranslation) {
-      return await ParseMarkdown(msgDisplay, character, 'pretranslate', idx, getCbsCondition())
-    }
-    return await ParseMarkdown(msgDisplay, character, 'notrim', idx, getCbsCondition())
-  }
-
   async function loadTranslationForEdit() {
-    const key = await getTranslationCacheKey()
-    const cached = await getLLMCache(key)
-    editTranslationText = cached ?? ''
+    editTranslationText = activeRawTranslation()?.text ?? ''
     editTranslationMode = true
   }
 
   async function saveTranslationEdit() {
-    const key = await getTranslationCacheKey()
-    await setLLMCache(key, editTranslationText)
-    editTranslationMode = false
+    await saveServerTranslationEdit()
   }
 
   function displaya(message: string) {
@@ -413,10 +499,14 @@
     }
     return character.chats?.[chatPage]?.id ?? ''
   })
+  let displayMessage = $derived.by(() => {
+    const rawTranslation = activeRawTranslation()
+    return translated && rawTranslation ? rawTranslation.text : message
+  })
 
   $effect.pre(() => {
     void $ReloadGUIPointer
-    displaya(message)
+    displaya(displayMessage)
   })
 
   function RenderGUIHtml(html: string) {
@@ -751,12 +841,12 @@
         </span>
       </button>
     {/if}
-    {#if DBState.db.translatorType === 'llm' && translated}
+    {#if supportsServerRawTranslation() && translated}
       <button
         class="text-sm p-1 text-textcolor2 border-darkborderc float-end mr-2 my-1
                             hover:ring-darkbutton hover:ring-3 rounded-md hover:text-textcolor transition-all flex justify-center items-center"
-        onclick={() => {
-          retranslate = true
+        onclick={async () => {
+          await requestServerRawTranslation()
         }}>
         <RefreshCcwIcon size={20} />
         <span class="ml-1">
@@ -776,6 +866,18 @@
         <PencilIcon size={20} />
         <span class="ml-1">
           {editTranslationMode ? language.editTranslationSave : language.editTranslation}
+        </span>
+      </button>
+    {:else if DBState.db.translatorType === 'llm' && translated}
+      <button
+        class="text-sm p-1 text-textcolor2 border-darkborderc float-end mr-2 my-1
+                            hover:ring-darkbutton hover:ring-3 rounded-md hover:text-textcolor transition-all flex justify-center items-center"
+        onclick={() => {
+          retranslate = true
+        }}>
+        <RefreshCcwIcon size={20} />
+        <span class="ml-1">
+          {language.retranslate}
         </span>
       </button>
     {/if}
@@ -838,18 +940,34 @@
       style:font-size="{0.875 * (DBState.db.zoomsize / 100)}rem"
       style:line-height="{(DBState.db.lineHeight ?? 1.25) * (DBState.db.zoomsize / 100)}rem">
       {#key `${totalLengthPointer}|${chatReloadPointer}`}
-        <ChatBody
-          {character}
-          {firstMessage}
-          {idx}
-          {msgDisplay}
-          {name}
-          {bodyRoot}
-          modelShortName={messageGenerationInfo ? getModelInfo(messageGenerationInfo?.model).shortName : ''}
-          role={role ?? null}
-          bind:translated
-          bind:translating
-          bind:retranslate />
+        {#if supportsServerRawTranslation()}
+          <ChatBody
+            {character}
+            {firstMessage}
+            {idx}
+            {msgDisplay}
+            {name}
+            {bodyRoot}
+            modelShortName={messageGenerationInfo ? getModelInfo(messageGenerationInfo?.model).shortName : ''}
+            role={role ?? null}
+            translated={false}
+            bind:translating
+            retranslate={false}
+            allowClientTranslation={false} />
+        {:else}
+          <ChatBody
+            {character}
+            {firstMessage}
+            {idx}
+            {msgDisplay}
+            {name}
+            {bodyRoot}
+            modelShortName={messageGenerationInfo ? getModelInfo(messageGenerationInfo?.model).shortName : ''}
+            role={role ?? null}
+            bind:translated
+            bind:translating
+            bind:retranslate />
+        {/if}
       {/key}
       {#if idx >= 0 && !editMode && partialEditEnabled && (DBState.db.enableBlockPartialEdit || DBState.db.enableDragPartialEdit)}
         <PartialEditController
@@ -1211,13 +1329,25 @@
 {/snippet}
 
 {#snippet translationButton(showNames = false)}
-  {#if DBState.db.translator !== '' && !blankMessage}
+  {#if DBState.db.translator !== '' && DBState.db.translatorType !== 'bergamot' && !blankMessage}
     <button
       class={'flex items-center cursor-pointer hover:text-blue-500 transition-colors button-icon-translate ' +
         (translated ? 'text-blue-400' : '')}
       class:translating
       onclick={async () => {
-        translated = !translated
+        if (!supportsServerRawTranslation()) {
+          translated = !translated
+          return
+        }
+        if (translated) {
+          translated = false
+          editTranslationMode = false
+          return
+        }
+        translated = true
+        if (!activeRawTranslation()) {
+          await requestServerRawTranslation()
+        }
       }}>
       <LanguagesIcon />
       {#if showNames}

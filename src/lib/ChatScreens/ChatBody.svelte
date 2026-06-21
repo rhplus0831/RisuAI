@@ -32,6 +32,7 @@
     translated: boolean
     translating: boolean
     retranslate: boolean
+    allowClientTranslation?: boolean
     bodyRoot?: HTMLElement | null
     modelShortName: string
   }
@@ -45,6 +46,7 @@
     translated = $bindable(false),
     translating = $bindable(false),
     retranslate = $bindable(false),
+    allowClientTranslation = true,
     bodyRoot,
     modelShortName = '',
   }: Props = $props()
@@ -151,7 +153,7 @@
         fallbackMode: mode,
         cachedOnlyParseKey,
       })
-      if (!retranslate && detectionKey !== lastTranslationDetectionKey) {
+      if (allowClientTranslation && !retranslate && detectionKey !== lastTranslationDetectionKey) {
         lastParsedQueue = ''
         lastTranslationDetectionKey = detectionKey
         let translateText = false
@@ -190,7 +192,7 @@
         }
       }
 
-      if (retranslate || translated) {
+      if (allowClientTranslation && (retranslate || translated)) {
         if (DBState.db.showTranslationLoading) {
           lastParsed = `<div style="display:flex;justify-content:center;align-items:center;height:48px;"><div style="animation: spin 1s linear infinite; border-radius: 50%; height: 32px; width: 32px; border: 2px solid #3b82f6; border-top: 2px solid transparent;"></div></div><style>@keyframes spin { to { transform: rotate(360deg); } }</style>`
         }

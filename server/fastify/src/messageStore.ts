@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
 import { recordTableWrite } from './protocolMetrics.js'
 
@@ -186,16 +186,37 @@ function disabledColumn(message: JsonRecord): string | null {
   return value ? 'true' : 'false'
 }
 
+function sha256(value: string): string {
+  return createHash('sha256').update(value).digest('hex')
+}
+
+function normalizeMessageTranslationForData(message: JsonRecord, data: string): JsonRecord {
+  const translation = message.translation
+  if (!translation || typeof translation !== 'object' || Array.isArray(translation)) {
+    return message
+  }
+  if ((translation as Record<string, unknown>).source !== 'raw') {
+    return message
+  }
+  if ((translation as Record<string, unknown>).sourceHash === sha256(data)) {
+    return message
+  }
+  return { ...message, translation: null }
+}
+
 function toRow(message: JsonRecord): MessageRow {
   const uid = uidOf(message)
+  const data = typeof message.data === 'string' ? message.data : String(message.data ?? '')
   // Persist the uid we keyed on into the stored record so the column and the
   // round-tripped json never disagree (defensive — they already match for
   // normalized data).
-  const stored = message.chatId === uid ? message : { ...message, chatId: uid }
+  const withStableTranslation = normalizeMessageTranslationForData(message, data)
+  const stored =
+    withStableTranslation.chatId === uid ? withStableTranslation : { ...withStableTranslation, chatId: uid }
   return {
     uid,
     role: typeof message.role === 'string' ? message.role : 'char',
-    data: typeof message.data === 'string' ? message.data : String(message.data ?? ''),
+    data,
     disabled: disabledColumn(message),
     json: JSON.stringify(stored),
   }

@@ -6732,6 +6732,121 @@ describe('Phase 9-3c message history commands', () => {
     ])
   })
 
+  it('translates raw message data on the server and stores the result on the message', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      translator: 'ko',
+      translatorInputLanguage: 'en',
+      translatorType: 'llm',
+      aiModel: 'echo_model',
+      echoMessage: 'translated raw text',
+      translatorPrompt: 'Translate {{slot::content}} to {{slot}}',
+      translatorMaxResponse: 128,
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [
+            {
+              id: 'chat-a',
+              name: 'A chat',
+              note: '',
+              message: [{ role: 'user', data: 'hello raw', chatId: 'msg-a' }],
+              localLore: [],
+            },
+          ],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+
+    const translated = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/messages/msg-a/translate',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision },
+    })
+    expect(translated.statusCode).toBe(200)
+    expect(translated.json()).toMatchObject({
+      revision: 2,
+      event: {
+        type: 'message.updated',
+        revision: 2,
+        resource: 'message',
+        id: 'msg-a',
+        parentId: 'chat-a',
+      },
+      chatId: 'chat-a',
+      messageId: 'msg-a',
+      translation: {
+        text: 'translated raw text',
+        source: 'raw',
+        targetLanguage: 'ko',
+        inputLanguage: 'en',
+        translatorType: 'llm',
+      },
+    })
+    expect(translated.json().translation.sourceHash).toMatch(/^[a-f0-9]{64}$/)
+    expect(translated.json().translation.settingsHash).toMatch(/^[a-f0-9]{64}$/)
+    expect(typeof translated.json().translation.updatedAt).toBe('number')
+
+    expect(await persistedChatMessages(harness.app, assertion, 'chat-a')).toEqual([
+      {
+        role: 'user',
+        data: 'hello raw',
+        chatId: 'msg-a',
+        translation: translated.json().translation,
+      },
+    ])
+
+    const edited = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/messages/msg-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: translated.json().revision,
+        patch: { data: 'changed raw' },
+      },
+    })
+    expect(edited.statusCode).toBe(200)
+    expect(await persistedChatMessages(harness.app, assertion, 'chat-a')).toEqual([
+      {
+        role: 'user',
+        data: 'changed raw',
+        chatId: 'msg-a',
+        translation: null,
+      },
+    ])
+
+    const replacedWithStaleTranslation = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/chats/chat-a/messages',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: edited.json().revision,
+        messages: [
+          {
+            role: 'user',
+            data: 'changed by replacement',
+            chatId: 'msg-a',
+            translation: translated.json().translation,
+          },
+        ],
+      },
+    })
+    expect(replacedWithStaleTranslation.statusCode).toBe(200)
+    expect(await persistedChatMessages(harness.app, assertion, 'chat-a')).toEqual([
+      {
+        role: 'user',
+        data: 'changed by replacement',
+        chatId: 'msg-a',
+        translation: null,
+      },
+    ])
+  })
+
   it('normalizes missing message ids and rejects malformed message commands without bumping revision', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
@@ -6809,6 +6924,18 @@ describe('Phase 9-3c message history commands', () => {
     })
     expect(badPatch.statusCode).toBe(400)
     expect(badPatch.json().error).toBe('patch.generationInfo is not supported for message commands')
+
+    const badTranslationPatch = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/messages/dup',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: { translation: { text: 1 } },
+      },
+    })
+    expect(badTranslationPatch.statusCode).toBe(400)
+    expect(badTranslationPatch.json().error).toBe('patch.translation.text must be a string')
 
     const bootstrap = await harness.app.inject({
       method: 'GET',

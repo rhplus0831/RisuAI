@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { DatabaseSync } from 'node:sqlite'
 import type { AuthState } from '../auth.js'
+import { getSchemaState } from '../db.js'
 import {
   COMMAND_EVENT_CATALOG,
   type CommandEvent,
@@ -271,6 +272,8 @@ import {
   extractSettings,
   initializeDefaultDatabase,
   insertCharacterChatRow,
+  loadPersistedForChatMutation,
+  loadSettingsFromSqlite,
   replacePluginStorage,
   RevisionMismatchError,
   ValidationError,
@@ -284,6 +287,8 @@ import {
   writeSingleCollectionRow,
   writeSingleCollectionTable,
 } from '../repository.js'
+import { attachAbort } from '../requestAbort.js'
+import { translateRawMessageData, type RawMessageTranslation } from '../translation/rawMessageTranslation.js'
 
 function commandEventOrigin(req: FastifyRequest): CommandEventOrigin | undefined {
   const writerSessionId = readActiveWriterSessionId(req)
@@ -298,6 +303,35 @@ function commandMutationContext(req: FastifyRequest, eventSink: CommandEventSink
 function emitCommandEventForRequest(req: FastifyRequest, eventSink: CommandEventSink, event: CommandEvent): void {
   const origin = commandEventOrigin(req)
   eventSink.emit(origin ? { ...event, origin } : event)
+}
+
+function readRevisionMatchedMessageSource(
+  db: DatabaseSync,
+  messageId: string,
+  baseRevision: number,
+): {
+  chatId: string
+  data: string
+} {
+  const { revision: currentRevision } = getSchemaState(db)
+  if (baseRevision !== currentRevision) {
+    throw new RevisionMismatchError(currentRevision)
+  }
+  const resolved = resolveActiveMessageLocationById(db, messageId)
+  if (resolved.ok === false) {
+    if (resolved.reason === 'ambiguous') {
+      throw new ValidationError(`Ambiguous message id: ${messageId}`)
+    }
+    throw new EntityNotFoundError(`Message not found: ${messageId}`)
+  }
+  const data = resolved.location.message.data
+  if (typeof data !== 'string') {
+    throw new ValidationError(`Message data for ${messageId} must be a string`)
+  }
+  return {
+    chatId: resolved.location.chatId,
+    data,
+  }
 }
 
 /** Coerce a value to an array for a collection-table write (mirrors the broad
@@ -4448,6 +4482,9 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as MessageCommandBody
       const baseRevision = readBaseRevision(body)
       const patch = readMessagePatch(body.patch)
+      if (typeof patch.data === 'string' && !Object.prototype.hasOwnProperty.call(patch, 'translation')) {
+        patch.translation = null
+      }
       const result = applyTargetedCommandMutation<{ chatId: string; messageId: string }>({
         db,
         dataDir,
@@ -4493,6 +4530,93 @@ export function registerCommandRoutes(
       }
     } catch (err) {
       return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/messages/:messageId/translate', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    const { signal, cleanup } = attachAbort(req)
+    try {
+      const messageId = readMessageId((req.params as { messageId?: unknown }).messageId)
+      const body = (req.body ?? {}) as MessageCommandBody
+      const baseRevision = readBaseRevision(body)
+      const source = readRevisionMatchedMessageSource(db, messageId, baseRevision)
+      const settings = loadSettingsFromSqlite(db)
+      if (settings === null) {
+        throw new ValidationError('database is not initialized')
+      }
+
+      const persisted = loadPersistedForChatMutation(db, dataDir, { messageId })
+      const characters = normalizeAllCharacterChats(persisted.database)
+      const { character } = requireChatLocation(characters, source.chatId)
+      const translation = await translateRawMessageData({
+        settings,
+        character,
+        text: source.data,
+        signal,
+      })
+
+      const result = applyTargetedCommandMutation<{
+        chatId: string
+        messageId: string
+        translation: RawMessageTranslation
+      }>({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: 'targeted-message',
+        chatScopedRead: { messageId },
+        mutate(database, targetDb) {
+          const characters = normalizeAllCharacterChats(database)
+          const resolved = resolveActiveMessageLocationById(targetDb, messageId)
+          if (resolved.ok === false) {
+            if (resolved.reason === 'ambiguous') {
+              throw new ValidationError(`Ambiguous message id: ${messageId}`)
+            }
+            throw new EntityNotFoundError(`Message not found: ${messageId}`)
+          }
+          const { location } = resolved
+          requireChatLocation(characters, location.chatId)
+          if (location.message.data !== source.data) {
+            throw new ValidationError(`Message changed before translation could be saved: ${messageId}`)
+          }
+          const updated = updateActiveMessageById(targetDb, messageId, { translation })
+          if (updated.ok === false) {
+            if (updated.reason === 'ambiguous') {
+              throw new ValidationError(`Ambiguous message id: ${messageId}`)
+            }
+            throw new EntityNotFoundError(`Message not found: ${messageId}`)
+          }
+          return {
+            event: {
+              ...COMMAND_EVENT_CATALOG.messageUpdated,
+              id: messageId,
+              parentId: updated.chatId,
+            },
+            extra: { chatId: updated.chatId, messageId, translation },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      if (
+        err instanceof RevisionMismatchError ||
+        err instanceof ValidationError ||
+        err instanceof EntityNotFoundError
+      ) {
+        return sendCommandError(reply, err)
+      }
+      const message = err instanceof Error && err.message.length > 0 ? err.message : String(err)
+      return sendCommandError(reply, new ValidationError(message || 'Message translation failed'))
+    } finally {
+      cleanup()
     }
   })
 

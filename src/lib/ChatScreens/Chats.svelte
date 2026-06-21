@@ -144,6 +144,7 @@
     <div class="chat-message-container">
       <Chat
         message={row.message.data}
+        translation={row.message.translation ?? null}
         isLastMemory={false}
         idx={row.idx}
         totalLength={messages.length}
