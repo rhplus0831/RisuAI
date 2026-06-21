@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Maximize2Icon } from '@lucide/svelte'
   import { textAreaSize, textAreaTextSize } from 'src/ts/gui/guisize'
   import { highlighter, getNewHighlightId, removeHighlight, AllCBS } from 'src/ts/gui/highlight'
   import { sleep } from 'src/ts/util'
@@ -6,6 +7,10 @@
   import { DBState, disableHighlight, popUpEditorStore } from 'src/ts/stores.svelte'
   import { isMobile } from 'src/ts/platform'
   import { hotkeyMatches } from 'src/ts/hotkey'
+  import { language } from 'src/lang'
+
+  type PopupEditorAvailability = boolean | 'auto'
+
   interface Props {
     size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl' | 'default'
     autocomplete?: 'on' | 'off'
@@ -22,6 +27,7 @@
     highlight?: boolean
     onchange?: () => void
     popupLanguage?: string
+    popupEditor?: PopupEditorAvailability
   }
 
   let {
@@ -40,6 +46,7 @@
     highlight = false,
     onchange = () => {},
     popupLanguage = 'markdown',
+    popupEditor = 'auto',
   }: Props = $props()
   let selectingAutoComplete = $state(0)
   // highlight is captured once when the input is created.
@@ -51,6 +58,31 @@
   let autocompleteContents: string[] = $state([])
   let inputDom: HTMLDivElement = $state()
   let highlightTimer: ReturnType<typeof setTimeout> | null = null
+
+  const isPopupEditorEnabled = () =>
+    popupEditor === true ||
+    (popupEditor === 'auto' && (['32', '36', 'full'].includes(height) || (height === 'default' && $textAreaSize >= -2)))
+
+  const openPopupEditor = async () => {
+    if (!isPopupEditorEnabled()) {
+      return
+    }
+
+    hideAutoComplete()
+    popUpEditorStore.value = value
+    popUpEditorStore.mode = 'default'
+    popUpEditorStore.language = popupLanguage
+    popUpEditorStore.open = true
+
+    while (popUpEditorStore.open) {
+      await sleep(100)
+    }
+
+    value = popUpEditorStore.value
+    onInput()
+    onchange()
+    scheduleHighlight(value)
+  }
 
   const getSelectionInInput = () => {
     if (!inputDom) {
@@ -329,6 +361,7 @@
       class="w-full h-full bg-transparent focus-within:outline-hidden resize-none absolute top-0 left-0 z-50 overflow-y-auto"
       class:px-4={padding}
       class:py-2={padding}
+      class:pr-10={isPopupEditorEnabled()}
       {autocomplete}
       {placeholder}
       {id}
@@ -351,6 +384,7 @@
       }}
       onkeydown={async (e) => {
         if (
+          isPopupEditorEnabled() &&
           (e.ctrlKey || e.shiftKey || e.altKey) &&
           hotkeyMatches(
             DBState.db.hotkeys.find((hk) => hk.action === 'popupEditor'),
@@ -358,43 +392,19 @@
           )
         ) {
           e.preventDefault()
-          popUpEditorStore.value = value
-          popUpEditorStore.mode = 'default'
-          popUpEditorStore.language = popupLanguage
-          popUpEditorStore.open = true
-
-          //lazy wait
-          while (popUpEditorStore.open) {
-            await sleep(100)
-          }
-
-          value = popUpEditorStore.value
-          onInput()
-          onchange()
+          await openPopupEditor()
         }
       }}
       oncontextmenu={(e) => {
-        if (DBState.db.longPressToPopupEditor) {
+        if (isPopupEditorEnabled() && DBState.db.longPressToPopupEditor) {
           e.preventDefault()
-          popUpEditorStore.value = value
-          popUpEditorStore.mode = 'default'
-          popUpEditorStore.language = popupLanguage
-          popUpEditorStore.open = true
-
-          //lazy wait
-          const checkInterval = setInterval(() => {
-            if (!popUpEditorStore.open) {
-              value = popUpEditorStore.value
-              onInput()
-              onchange()
-              clearInterval(checkInterval)
-            }
-          }, 100)
+          void openPopupEditor()
         }
       }}></textarea>
   {:else}
     <div
       class="w-full h-full bg-transparent focus-within:outline-hidden resize-none absolute top-0 left-0 z-50 overflow-y-auto px-4 py-2 wrap-break-word whitespace-pre-wrap"
+      class:pr-10={isPopupEditorEnabled()}
       contenteditable="true"
       bind:textContent={value}
       onkeydown={(e) => {
@@ -414,6 +424,18 @@
       translate="no">
       {value ?? ''}
     </div>
+  {/if}
+  {#if isPopupEditorEnabled()}
+    <button
+      type="button"
+      class="absolute right-1 top-1 z-60 flex h-7 w-7 items-center justify-center rounded-md text-textcolor2 transition-colors hover:bg-darkbutton hover:text-textcolor focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-borderc"
+      aria-label={language.hotkeyDesc.popupEditor}
+      title={language.hotkeyDesc.popupEditor}
+      onclick={() => {
+        void openPopupEditor()
+      }}>
+      <Maximize2Icon size={16} />
+    </button>
   {/if}
   <div class="hidden absolute z-100 bg-bgcolor border border-darkborderc p-2 flex-col" bind:this={autoCompleteDom}>
     {#each autocompleteContents as content, i}

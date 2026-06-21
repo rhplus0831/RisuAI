@@ -38,7 +38,14 @@
     runTrigger,
   } from 'src/ts/process/triggers'
   import { sayTTS } from 'src/ts/process/tts'
-  import { DBState, ReloadChatPointer, CurrentTriggerIdStore, popupStore, SizeStore } from 'src/ts/stores.svelte'
+  import {
+    DBState,
+    ReloadChatPointer,
+    CurrentTriggerIdStore,
+    popupStore,
+    SizeStore,
+    popUpEditorStore,
+  } from 'src/ts/stores.svelte'
   import { capitalize, getUserIcon, getUserName, sleep } from 'src/ts/util'
   import { v4 as uuidv4, v4 } from 'uuid'
   import { language } from '../../lang'
@@ -60,6 +67,11 @@
   import RerollList from './RerollList.svelte'
   import PartialEditController from './PartialEditController.svelte'
   import { resolveFreshPartialEditSave, type PartialEditSaveDetail } from './partialEditFreshness'
+  import {
+    shouldAutoPopupMessageEditor,
+    shouldAutoPopupTranslationEditor,
+    shouldUseStableMessageEditor,
+  } from './messageEditPopup'
   import { renderCustomHtmlTemplate } from './ChatCustomHtmlTemplate'
   import {
     currentChatScopedSnapshot,
@@ -152,6 +164,40 @@
     isComment = false,
     disabled = false,
   }: Props = $props()
+  let autoPopupMessageEditorOpen = $state(false)
+  let autoPopupTranslationEditorOpen = $state(false)
+  let suppressAutoPopupTranslationEditor = $state(false)
+  const autoPopupMessageEditor = $derived(
+    shouldAutoPopupMessageEditor({
+      editMode,
+      index: idx,
+      disableAutoPopupMessageEditor: DBState.db.disableAutoPopupMessageEditor,
+    }),
+  )
+  const autoPopupTranslationEditor = $derived(
+    shouldAutoPopupTranslationEditor({
+      editTranslationMode,
+      index: idx,
+      disableAutoPopupMessageEditor: DBState.db.disableAutoPopupMessageEditor,
+      suppressAutoPopupTranslationEditor,
+    }),
+  )
+  const useStableMessageEditor = $derived(
+    shouldUseStableMessageEditor({
+      editMode,
+      index: idx,
+      message,
+      theme: DBState.db.theme,
+    }),
+  )
+  const useStableTranslationEditor = $derived(
+    shouldUseStableMessageEditor({
+      editMode: editTranslationMode,
+      index: idx,
+      message: editTranslationText,
+      theme: DBState.db.theme,
+    }),
+  )
 
   let msgDisplay = $state('')
   let translated = $state(false)
@@ -169,6 +215,68 @@
     popupStore.children = children
     popupStore.openId = rerollMenuButtonId
   }
+
+  async function openAutoPopupMessageEditor() {
+    if (autoPopupMessageEditorOpen || popUpEditorStore.open) return
+
+    autoPopupMessageEditorOpen = true
+    const messageIndex = idx
+    popUpEditorStore.value = message
+    popUpEditorStore.mode = 'default'
+    popUpEditorStore.language = 'markdown'
+    popUpEditorStore.open = true
+
+    try {
+      while (popUpEditorStore.open) {
+        await sleep(100)
+      }
+
+      if (idx !== messageIndex || !editMode) return
+
+      message = popUpEditorStore.value
+      editMode = false
+      await edit()
+    } finally {
+      autoPopupMessageEditorOpen = false
+    }
+  }
+
+  async function openAutoPopupTranslationEditor() {
+    if (autoPopupTranslationEditorOpen || popUpEditorStore.open) return
+
+    autoPopupTranslationEditorOpen = true
+    const messageIndex = idx
+    popUpEditorStore.value = editTranslationText
+    popUpEditorStore.mode = 'default'
+    popUpEditorStore.language = 'markdown'
+    popUpEditorStore.open = true
+
+    try {
+      while (popUpEditorStore.open) {
+        await sleep(100)
+      }
+
+      if (idx !== messageIndex || !editTranslationMode) return
+
+      suppressAutoPopupTranslationEditor = true
+      editTranslationText = popUpEditorStore.value
+      await saveTranslationEdit()
+    } finally {
+      autoPopupTranslationEditorOpen = false
+    }
+  }
+
+  $effect(() => {
+    if (autoPopupMessageEditor) {
+      void openAutoPopupMessageEditor()
+    }
+  })
+
+  $effect(() => {
+    if (autoPopupTranslationEditor) {
+      void openAutoPopupTranslationEditor()
+    }
+  })
 
   function cloneMessagesWithIds(chat: Chat): Message[] {
     const messages = cloneJsonValue(chat.message ?? [])
@@ -452,6 +560,7 @@
   }
 
   async function loadTranslationForEdit() {
+    suppressAutoPopupTranslationEditor = false
     editTranslationText = activeRawTranslation()?.text ?? ''
     editTranslationMode = true
   }
@@ -891,12 +1000,16 @@
   {#if editTranslationMode}
     <AutoresizeArea
       bind:value={editTranslationText}
+      popupEditor
+      stableHeight={useStableTranslationEditor}
       handleLongPress={() => {
         saveTranslationEdit()
       }} />
   {:else if editMode}
     <AutoresizeArea
       bind:value={message}
+      popupEditor
+      stableHeight={useStableMessageEditor}
       handleLongPress={() => {
         editMode = false
       }} />

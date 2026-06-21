@@ -779,6 +779,7 @@ export const languageChinese = {
   sendWithEnter: '使用 Enter 键发送（取消检查时Shift + Enter更改为消息传送。）',
   fixedChatTextarea: '固定聊天窗口底部',
   clickToEdit: '点击文字进行编辑',
+  disableAutoPopupMessageEditor: '编辑消息时禁用自动弹出编辑器',
   setNodePassword: '设置密码以提升安全性',
   inputNodePassword: '输入密码。如果忘记密码，请删除服务器文档中的 save/__password.txt 并重启服务器。',
   simple: '基本',

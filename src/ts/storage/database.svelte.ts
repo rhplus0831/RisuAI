@@ -1426,6 +1426,7 @@ export function setDatabase(data: Database) {
   data.keepSessionAlive ??= 'off'
   data.loadouts ??= []
   data.longPressToPopupEditor ??= false
+  data.disableAutoPopupMessageEditor ??= false
   data.customSidebarItems = normalizeCustomSidebarItems(data.customSidebarItems)
   changeLanguage(data.language)
   setDatabaseLite(data)
@@ -1854,6 +1855,7 @@ export interface Database {
   sendWithEnter: boolean
   fixedChatTextarea: boolean
   clickToEdit: boolean
+  disableAutoPopupMessageEditor: boolean
   enableBlockPartialEdit: boolean
   enableDragPartialEdit: boolean
   koboldURL: string

@@ -11,6 +11,7 @@ vi.mock('src/ts/process/modules', () => ({
 
 import TextAreaInput from './TextAreaInput.svelte'
 import { DBState, popUpEditorStore } from 'src/ts/stores.svelte'
+import { textAreaSize } from 'src/ts/gui/guisize'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -34,6 +35,7 @@ beforeEach(() => {
   popUpEditorStore.open = false
   popUpEditorStore.value = ''
   popUpEditorStore.language = 'markdown'
+  textAreaSize.set(0)
 })
 
 afterEach(() => {
@@ -45,6 +47,7 @@ afterEach(() => {
   DBState.db = {} as any
   popUpEditorStore.open = false
   popUpEditorStore.value = ''
+  textAreaSize.set(0)
   vi.useRealTimers()
 })
 
@@ -88,6 +91,86 @@ describe('TextAreaInput popup editor finalization', () => {
     })
 
     textarea().dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+    await tick()
+
+    expect(popUpEditorStore.open).toBe(true)
+    popUpEditorStore.value = 'after'
+    popUpEditorStore.open = false
+    await vi.advanceTimersByTimeAsync(100)
+    await tick()
+
+    expect(onInput).toHaveBeenCalledOnce()
+    expect(onchange).toHaveBeenCalledOnce()
+  })
+
+  it('keeps compact fixed-height textareas out of the popup editor by default', async () => {
+    const onInput = vi.fn()
+    const onchange = vi.fn()
+    DBState.db.longPressToPopupEditor = true
+    component = mount(TextAreaInput, {
+      target,
+      props: {
+        value: 'before',
+        height: '20',
+        onInput,
+        onchange,
+      },
+    })
+
+    expect(target.querySelector('button[aria-label]')).toBeNull()
+
+    textarea().dispatchEvent(new KeyboardEvent('keydown', { key: 'e', ctrlKey: true, bubbles: true }))
+    await tick()
+    expect(popUpEditorStore.open).toBe(false)
+
+    textarea().dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+    await tick()
+    expect(popUpEditorStore.open).toBe(false)
+    expect(onInput).not.toHaveBeenCalled()
+    expect(onchange).not.toHaveBeenCalled()
+  })
+
+  it('keeps default-height textareas out of the popup editor when the global size is compact', async () => {
+    const onInput = vi.fn()
+    const onchange = vi.fn()
+    DBState.db.longPressToPopupEditor = true
+    textAreaSize.set(-3)
+    component = mount(TextAreaInput, {
+      target,
+      props: {
+        value: 'before',
+        onInput,
+        onchange,
+      },
+    })
+
+    expect(target.querySelector('button[aria-label]')).toBeNull()
+
+    textarea().dispatchEvent(new KeyboardEvent('keydown', { key: 'e', ctrlKey: true, bubbles: true }))
+    await tick()
+    expect(popUpEditorStore.open).toBe(false)
+
+    textarea().dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+    await tick()
+    expect(popUpEditorStore.open).toBe(false)
+    expect(onInput).not.toHaveBeenCalled()
+    expect(onchange).not.toHaveBeenCalled()
+  })
+
+  it('allows explicit large fixed-height textareas to use the popup editor', async () => {
+    const onInput = vi.fn()
+    const onchange = vi.fn()
+    component = mount(TextAreaInput, {
+      target,
+      props: {
+        value: 'before',
+        height: '32',
+        onInput,
+        onchange,
+      },
+    })
+
+    target.querySelector<HTMLButtonElement>('button[aria-label]')?.click()
     await tick()
 
     expect(popUpEditorStore.open).toBe(true)

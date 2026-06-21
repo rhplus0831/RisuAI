@@ -475,6 +475,7 @@ export function normalizeDatabaseDefaults(
   setDefault(database, 'keepSessionAlive', 'off')
   setDefault(database, 'loadouts', [])
   setDefault(database, 'longPressToPopupEditor', false)
+  setDefault(database, 'disableAutoPopupMessageEditor', false)
   setDefault(database, 'customSidebarItems', [])
   normalizeFormatVersion(database)
 

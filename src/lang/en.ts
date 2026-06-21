@@ -943,6 +943,7 @@ export const languageEnglish = {
   sendWithEnter: 'Send with Enter Key',
   fixedChatTextarea: 'Fixed at the bottom of the chat window(When unchecked, Shift + Enter changes to send a message.)',
   clickToEdit: 'Click Text to Edit',
+  disableAutoPopupMessageEditor: 'Disable Auto Popup Editor When Editing Messages',
   enableBlockPartialEdit: 'Enable Block Partial Edit (Hover to edit individual blocks)',
   enableDragPartialEdit: 'Enable Drag Partial Edit (Select text to edit)',
   setNodePassword: 'Set your password to security',

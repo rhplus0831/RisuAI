@@ -93,6 +93,7 @@ export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
   deepseekThinkingType: 'runtime',
   descriptionPrefix: 'advanced',
   didFirstSetup: 'account',
+  disableAutoPopupMessageEditor: 'sidebar',
   disableSeperateParameterChangeOnPresetChange: 'runtime',
   doNotChangeFallbackModels: 'runtime',
   doNotChangeSeperateModels: 'runtime',

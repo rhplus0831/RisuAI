@@ -60,6 +60,13 @@ export const accessibilitySettingsItems: SettingItem[] = [
     keywords: ['click', 'edit', 'message'],
   },
   {
+    id: 'acc.disableAutoPopupMessageEditor',
+    type: 'check',
+    labelKey: 'disableAutoPopupMessageEditor',
+    bindKey: 'disableAutoPopupMessageEditor',
+    keywords: ['disable', 'auto', 'popup', 'editor', 'message', 'edit'],
+  },
+  {
     id: 'acc.enableBlockPartialEdit',
     type: 'check',
     labelKey: 'enableBlockPartialEdit',
