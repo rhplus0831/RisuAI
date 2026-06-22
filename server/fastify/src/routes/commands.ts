@@ -4487,9 +4487,6 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as MessageCommandBody
       const baseRevision = readBaseRevision(body)
       const patch = readMessagePatch(body.patch)
-      if (typeof patch.data === 'string' && !Object.prototype.hasOwnProperty.call(patch, 'translation')) {
-        patch.translation = null
-      }
       const result = applyTargetedCommandMutation<{ chatId: string; messageId: string }>({
         db,
         dataDir,

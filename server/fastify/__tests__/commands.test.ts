@@ -6892,12 +6892,31 @@ describe('Phase 9-3c message history commands', () => {
       },
     ])
 
-    const edited = await harness.app.inject({
+    const unchanged = await harness.app.inject({
       method: 'PATCH',
       url: '/api/v1/commands/messages/msg-a',
       headers: { 'risu-auth': assertion },
       payload: {
         baseRevision: translated.json().revision,
+        patch: { data: 'hello raw' },
+      },
+    })
+    expect(unchanged.statusCode).toBe(200)
+    expect(await persistedChatMessages(harness.app, assertion, 'chat-a')).toEqual([
+      {
+        role: 'user',
+        data: 'hello raw',
+        chatId: 'msg-a',
+        translation: translated.json().translation,
+      },
+    ])
+
+    const edited = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/messages/msg-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: unchanged.json().revision,
         patch: { data: 'changed raw' },
       },
     })

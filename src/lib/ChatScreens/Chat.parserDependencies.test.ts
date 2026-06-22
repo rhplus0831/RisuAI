@@ -309,6 +309,7 @@ function seedDatabase(rows: ParserDependencyRow[]) {
     ],
     clickToEdit: false,
     createFolderOnBranch: false,
+    disableAutoPopupMessageEditor: true,
     enableBlockPartialEdit: false,
     enableBookmark: false,
     enableDragPartialEdit: false,
@@ -442,6 +443,51 @@ describe('Chat parser dependencies', () => {
       'visible message 2 changed',
       'visible message 3',
     ])
+  })
+
+  it('does not dispatch a message update when edit mode closes without changes', async () => {
+    const rows = makeRows(1)
+    seedDatabase(rows)
+    chatParserMocks.canUseServerCommands.mockReturnValue(true)
+    mountHarness(rows)
+    await settle()
+
+    target.querySelector<HTMLButtonElement>('.button-icon-edit')?.click()
+    await settle()
+
+    const textarea = target.querySelector<HTMLTextAreaElement>('.message-edit-area')
+    expect(textarea?.value).toBe('visible message 0')
+
+    vi.mocked(dispatchUpdateMessageScoped).mockClear()
+    target.querySelector<HTMLButtonElement>('.button-icon-edit')?.click()
+    await settle()
+
+    expect(dispatchUpdateMessageScoped).not.toHaveBeenCalled()
+    expect(DBState.db.characters[0].chats[0].message[0].data).toBe('visible message 0')
+  })
+
+  it('dispatches a message update when edited text actually changes', async () => {
+    const rows = makeRows(1)
+    seedDatabase(rows)
+    chatParserMocks.canUseServerCommands.mockReturnValue(true)
+    mountHarness(rows)
+    await settle()
+
+    target.querySelector<HTMLButtonElement>('.button-icon-edit')?.click()
+    await settle()
+
+    const textarea = target.querySelector<HTMLTextAreaElement>('.message-edit-area')
+    expect(textarea).not.toBeNull()
+    textarea!.value = 'changed message'
+    textarea!.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    vi.mocked(dispatchUpdateMessageScoped).mockClear()
+    target.querySelector<HTMLButtonElement>('.button-icon-edit')?.click()
+    await settle()
+
+    expect(dispatchUpdateMessageScoped).toHaveBeenCalledWith('row-0', { data: 'changed message' }, {})
+    expect(DBState.db.characters[0].chats[0].message[0].data).toBe('visible message 0')
   })
 
   it('drops partial edit saves when the live source data changed while the modal was open', async () => {

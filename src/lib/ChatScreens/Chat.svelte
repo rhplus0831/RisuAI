@@ -203,6 +203,19 @@
   let translated = $state(false)
   let partialEditEnabled = $state(true)
   let rerollMenuButtonId = Math.random()
+  let messageEditOriginalText: string | null = $state(null)
+
+  function beginMessageEdit() {
+    if (editMode) return
+    messageEditOriginalText = message
+    editMode = true
+  }
+
+  async function saveMessageEdit() {
+    if (!editMode) return
+    editMode = false
+    await edit()
+  }
 
   function openRerollMenu(e: MouseEvent, children: import('svelte').Snippet): void {
     if (popupStore.openId === rerollMenuButtonId && popupStore.children) {
@@ -221,6 +234,7 @@
 
     autoPopupMessageEditorOpen = true
     const messageIndex = idx
+    messageEditOriginalText ??= message
     popUpEditorStore.value = message
     popUpEditorStore.mode = 'default'
     popUpEditorStore.language = 'markdown'
@@ -234,8 +248,7 @@
       if (idx !== messageIndex || !editMode) return
 
       message = popUpEditorStore.value
-      editMode = false
-      await edit()
+      await saveMessageEdit()
     } finally {
       autoPopupMessageEditorOpen = false
     }
@@ -376,6 +389,10 @@
     const liveMessage = currentLiveMessage()
     const messageId = liveMessage?.chatId || messageRowId
     if (!existing || !messageId) return
+    if (editTranslationText === existing.text) {
+      editTranslationMode = false
+      return
+    }
     const nextTranslation: MessageTranslation = {
       ...existing,
       text: editTranslationText,
@@ -480,9 +497,16 @@
   }
 
   async function edit() {
+    const originalText = messageEditOriginalText
+    messageEditOriginalText = null
+    if (originalText !== null && message === originalText) return
+
     const previous = currentChatScopedSnapshot()
     const chat = DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage]
-    const messageId = chat.message[idx]?.chatId
+    const liveMessage = chat.message[idx]
+    if (!liveMessage || liveMessage.data === message) return
+
+    const messageId = liveMessage.chatId
     if (canUseServerCommands()) {
       if (messageId) {
         dispatchUpdateMessageScoped(messageId, { data: message }, previous)
@@ -1050,7 +1074,7 @@
       bind:this={bodyRoot}
       onclick={() => {
         if (DBState.db.clickToEdit && idx > -1) {
-          editMode = true
+          beginMessageEdit()
         }
       }}
       style:font-size="{0.875 * (DBState.db.zoomsize / 100)}rem"
@@ -1485,12 +1509,11 @@
     <button
       class={'flex items-center hover:text-blue-500 transition-colors button-icon-edit ' +
         (editMode ? 'text-blue-400' : '')}
-      onclick={() => {
+      onclick={async () => {
         if (!editMode) {
-          editMode = true
+          beginMessageEdit()
         } else {
-          editMode = false
-          edit()
+          await saveMessageEdit()
         }
       }}>
       <PencilIcon size={20} />
