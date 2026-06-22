@@ -13,6 +13,7 @@ import {
 } from '../repository.js'
 import { maskProviderSecretsInPlace } from '../providerSecrets.js'
 import { emitProtocolMetric, jsonPayloadBytes } from '../protocolMetrics.js'
+import type { MessageTranslationJobRegistry } from '../messageTranslationJobs.js'
 
 export const ASSET_BASE_URL = '/api/v1/assets'
 export const BODY_CACHE_MANIFEST_HEADER = 'x-risu-body-cache-manifest'
@@ -24,6 +25,7 @@ export function registerBootstrapRoutes(
   dataDir: string,
   activeWriterState?: ActiveWriterState,
   generationJobs?: GenerationJobRegistry,
+  messageTranslationJobs?: MessageTranslationJobRegistry,
 ): void {
   app.get('/api/v1/bootstrap', { exposeHeadRoute: false }, async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
@@ -50,6 +52,9 @@ export function registerBootstrapRoutes(
       // Transient running generations so a returning client, even after a full
       // reload, can discover and reattach. Server-memory only.
       activeGenerationJobs: generationJobs?.activeJobs() ?? [],
+      // Detached message translations still running server-side. Server-memory
+      // only, used by the client to preserve row-level busy controls after reload.
+      activeMessageTranslations: messageTranslationJobs?.activeTranslations() ?? [],
       bodyCache,
     }
     // Thunk `jsonPayloadBytes` re-serializes the whole bootstrap
@@ -60,6 +65,7 @@ export function registerBootstrapRoutes(
         revision,
         payloadBytes: jsonPayloadBytes(response),
         activeGenerationJobCount: response.activeGenerationJobs.length,
+        activeMessageTranslationCount: response.activeMessageTranslations.length,
       }),
       req.log,
     )

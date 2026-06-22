@@ -25,6 +25,11 @@ export interface ActiveGenerationJob {
   regenerateMessageId?: string
 }
 
+export interface ActiveMessageTranslation {
+  chatId: string
+  messageId: string
+}
+
 export interface ServerBootstrapProjection {
   revision: number
   schemaVersion?: number
@@ -36,6 +41,12 @@ export interface ServerBootstrapProjection {
    * lands. Empty when none.
    */
   activeGenerationJobs?: ActiveGenerationJob[]
+  /**
+   * Message translations still running server-side after a detached request.
+   * Used to keep row-level translation spinners and mutation controls stable
+   * after reload.
+   */
+  activeMessageTranslations?: ActiveMessageTranslation[]
   bodyCache?: ServerBootstrapBodyCachePayload
 }
 
@@ -136,6 +147,7 @@ async function fetchServerBootstrapProjectionWithMode(input: {
     database: mergedDatabase,
     assetBaseUrl: typeof record.assetBaseUrl === 'string' ? record.assetBaseUrl : undefined,
     activeGenerationJobs: parseActiveGenerationJobs(record.activeGenerationJobs),
+    activeMessageTranslations: parseActiveMessageTranslations(record.activeMessageTranslations),
   }
   if (bodyCache) projection.bodyCache = bodyCache
 
@@ -143,6 +155,19 @@ async function fetchServerBootstrapProjectionWithMode(input: {
     status: 'ok',
     projection,
   }
+}
+
+function parseActiveMessageTranslations(value: unknown): ActiveMessageTranslation[] {
+  if (!Array.isArray(value)) return []
+  const jobs: ActiveMessageTranslation[] = []
+  for (const entry of value) {
+    if (!entry || typeof entry !== 'object') continue
+    const record = entry as Record<string, unknown>
+    if (typeof record.chatId === 'string' && typeof record.messageId === 'string') {
+      jobs.push({ chatId: record.chatId, messageId: record.messageId })
+    }
+  }
+  return jobs
 }
 
 function parseActiveGenerationJobs(value: unknown): ActiveGenerationJob[] {

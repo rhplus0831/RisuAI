@@ -92,6 +92,7 @@
     translateMessageCommand,
     updateMessageCommand,
   } from 'src/ts/server/commands'
+  import { activeMessageTranslations } from 'src/ts/server/messageTranslationJobs'
   import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
   import {
     captureChatButtonTriggerFreshness,
@@ -206,12 +207,14 @@
   let messageEditOriginalText: string | null = $state(null)
 
   function beginMessageEdit() {
+    if (translationInProgress) return
     if (editMode) return
     messageEditOriginalText = message
     editMode = true
   }
 
   async function saveMessageEdit() {
+    if (translationInProgress) return
     if (!editMode) return
     editMode = false
     await edit()
@@ -352,7 +355,7 @@
   }
 
   async function requestServerRawTranslation() {
-    if (translating) return
+    if (translationInProgress) return
     const liveMessage = currentLiveMessage()
     const messageId = liveMessage?.chatId || messageRowId
     if (!messageId) {
@@ -415,6 +418,7 @@
   }
 
   async function rm(e: MouseEvent, rec?: boolean) {
+    if (translationInProgress) return
     const previous = currentChatScopedSnapshot()
     const chat = DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage]
     if (e.shiftKey) {
@@ -635,9 +639,26 @@
     }
     return character.chats?.[chatPage]?.id ?? ''
   })
+  let serverTranslationInProgress = $derived.by(() => {
+    if (!messageRowId) return false
+    return $activeMessageTranslations.some((job) => job.messageId === messageRowId)
+  })
+  let translationInProgress = $derived(translating || serverTranslationInProgress)
+  let sawServerTranslationInProgress = $state(false)
   let displayMessage = $derived.by(() => {
     const rawTranslation = activeRawTranslation()
     return translated && rawTranslation ? rawTranslation.text : message
+  })
+
+  $effect(() => {
+    if (serverTranslationInProgress) {
+      sawServerTranslationInProgress = true
+      return
+    }
+    if (sawServerTranslationInProgress && activeRawTranslation()) {
+      translated = true
+    }
+    sawServerTranslationInProgress = false
   })
 
   $effect.pre(() => {
@@ -977,7 +998,7 @@
         </span>
       </button>
     {/if}
-    {#if supportsServerRawTranslation() && translated && !translating}
+    {#if supportsServerRawTranslation() && translated && !translationInProgress}
       <button
         class="text-sm p-1 text-textcolor2 border-darkborderc float-end mr-2 my-1
                             hover:ring-darkbutton hover:ring-3 rounded-md hover:text-textcolor transition-all flex justify-center items-center"
@@ -1004,7 +1025,7 @@
           {editTranslationMode ? language.editTranslationSave : language.editTranslation}
         </span>
       </button>
-    {:else if DBState.db.translatorType === 'llm' && translated && !translating}
+    {:else if DBState.db.translatorType === 'llm' && translated && !translationInProgress}
       <button
         class="text-sm p-1 text-textcolor2 border-darkborderc float-end mr-2 my-1
                             hover:ring-darkbutton hover:ring-3 rounded-md hover:text-textcolor transition-all flex justify-center items-center"
@@ -1109,7 +1130,7 @@
             bind:retranslate />
         {/if}
       {/key}
-      {#if idx >= 0 && !editMode && partialEditEnabled && (DBState.db.enableBlockPartialEdit || DBState.db.enableDragPartialEdit)}
+      {#if idx >= 0 && !editMode && !translationInProgress && partialEditEnabled && (DBState.db.enableBlockPartialEdit || DBState.db.enableDragPartialEdit)}
         <PartialEditController
           messageData={message}
           chatIndex={idx}
@@ -1128,8 +1149,11 @@
   <div class="grow flex items-center justify-end" class:text-textcolor2={options?.applyTextColors !== false}>
     {#if isComment}
       <button
-        class="flex items-center hover:text-blue-500 transition-colors button-icon-remove"
+        class={'flex items-center hover:text-blue-500 transition-colors button-icon-remove ' +
+          (translationInProgress ? ' cursor-not-allowed opacity-50' : '')}
+        disabled={translationInProgress}
         onclick={async (e) => {
+          if (translationInProgress) return
           await rm(e, true)
         }}>
         <TrashIcon size={20} />
@@ -1456,9 +1480,17 @@
       </button>
     {/if}
     <button
-      class="flex items-center hover:text-blue-500 transition-colors button-icon-remove"
-      onclick={(e) => rm(e, false)}
-      use:longpress={(e) => rm(e, true)}>
+      class={'flex items-center hover:text-blue-500 transition-colors button-icon-remove ' +
+        (translationInProgress ? ' cursor-not-allowed opacity-50' : '')}
+      disabled={translationInProgress}
+      onclick={(e) => {
+        if (translationInProgress) return
+        rm(e, false)
+      }}
+      use:longpress={(e) => {
+        if (translationInProgress) return
+        rm(e, true)
+      }}>
       <TrashIcon size={20} />
 
       {#if showNames}
@@ -1472,14 +1504,14 @@
   {#if DBState.db.translator !== '' && DBState.db.translatorType !== 'bergamot' && !blankMessage}
     <button
       class={'flex items-center cursor-pointer hover:text-blue-500 transition-colors button-icon-translate ' +
-        (translated && !translating ? 'text-blue-400' : '') +
-        (translating ? ' cursor-wait opacity-70' : '')}
-      class:translating
-      disabled={translating}
-      aria-busy={translating}
-      aria-label={translating ? language.translating : language.translate}
+        (translated && !translationInProgress ? 'text-blue-400' : '') +
+        (translationInProgress ? ' cursor-wait opacity-70' : '')}
+      class:translating={translationInProgress}
+      disabled={translationInProgress}
+      aria-busy={translationInProgress}
+      aria-label={translationInProgress ? language.translating : language.translate}
       onclick={async () => {
-        if (translating) return
+        if (translationInProgress) return
         if (!supportsServerRawTranslation()) {
           translated = !translated
           return
@@ -1495,21 +1527,24 @@
         }
         await requestServerRawTranslation()
       }}>
-      {#if translating}
+      {#if translationInProgress}
         <LoaderCircleIcon class="animate-spin" />
       {:else}
         <LanguagesIcon />
       {/if}
       {#if showNames}
-        <span class="ml-1">{translating ? language.translating : language.translate}</span>
+        <span class="ml-1">{translationInProgress ? language.translating : language.translate}</span>
       {/if}
     </button>
   {/if}
   {#if idx > -1}
     <button
       class={'flex items-center hover:text-blue-500 transition-colors button-icon-edit ' +
-        (editMode ? 'text-blue-400' : '')}
+        (editMode ? 'text-blue-400' : '') +
+        (translationInProgress ? ' cursor-not-allowed opacity-50' : '')}
+      disabled={translationInProgress}
       onclick={async () => {
+        if (translationInProgress) return
         if (!editMode) {
           beginMessageEdit()
         } else {
@@ -1529,32 +1564,52 @@
   {#if rerollIcon || altGreeting}
     {#if altGreeting}
       <button
-        class="flex items-center hover:text-blue-500 transition-colors button-icon-unreroll"
+        class={'flex items-center hover:text-blue-500 transition-colors button-icon-unreroll ' +
+          (translationInProgress ? ' cursor-not-allowed opacity-50' : '')}
         class:dyna-icon={rerollIcon === 'dynamic'}
-        onclick={unReroll}>
+        disabled={translationInProgress}
+        onclick={() => {
+          if (translationInProgress) return
+          unReroll()
+        }}>
         <ArrowLeft size={22} />
       </button>
       {#if firstMessage && DBState.db.swipe && DBState.db.showFirstMessagePages}
         <span class="flex items-center text-xs text-textcolor2">{currentPage}/{totalPages}</span>
       {/if}
       <button
-        class="flex items-center hover:text-blue-500 transition-colors button-icon-reroll"
+        class={'flex items-center hover:text-blue-500 transition-colors button-icon-reroll ' +
+          (translationInProgress ? ' cursor-not-allowed opacity-50' : '')}
         class:dyna-icon={rerollIcon === 'dynamic'}
-        onclick={onReroll}>
+        disabled={translationInProgress}
+        onclick={() => {
+          if (translationInProgress) return
+          onReroll()
+        }}>
         <ArrowRight size={22} />
       </button>
     {:else if DBState.db.swipe}
       <button
-        class="flex items-center hover:text-blue-500 transition-colors button-icon-reroll"
+        class={'flex items-center hover:text-blue-500 transition-colors button-icon-reroll ' +
+          (translationInProgress ? ' cursor-not-allowed opacity-50' : '')}
         class:dyna-icon={rerollIcon === 'dynamic'}
-        onclick={(e) => openRerollMenu(e, rerollMenu)}>
+        disabled={translationInProgress}
+        onclick={(e) => {
+          if (translationInProgress) return
+          openRerollMenu(e, rerollMenu)
+        }}>
         <RefreshCcwIcon size={20} />
       </button>
     {:else}
       <button
-        class="flex items-center hover:text-blue-500 transition-colors button-icon-reroll"
+        class={'flex items-center hover:text-blue-500 transition-colors button-icon-reroll ' +
+          (translationInProgress ? ' cursor-not-allowed opacity-50' : '')}
         class:dyna-icon={rerollIcon === 'dynamic'}
-        onclick={onReroll}>
+        disabled={translationInProgress}
+        onclick={() => {
+          if (translationInProgress) return
+          onReroll()
+        }}>
         <RefreshCcwIcon size={20} />
       </button>
     {/if}
@@ -1562,7 +1617,7 @@
 {/snippet}
 
 {#snippet rerollMenu()}
-  <RerollList currentMessage={message} {onNewReroll} {onSelectRerollCandidate} />
+  <RerollList currentMessage={message} disabled={translationInProgress} {onNewReroll} {onSelectRerollCandidate} />
 {/snippet}
 
 {#snippet minorIconButtonsBody(showNames: boolean)}

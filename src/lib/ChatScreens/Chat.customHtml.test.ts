@@ -231,6 +231,7 @@ import {
 } from '../../ts/stores.svelte'
 import { getCurrentCharacter, getCurrentChat } from '../../ts/storage/database.svelte'
 import { dispatchCompatibleChatUpdateScoped } from 'src/ts/chatCommands'
+import { setActiveMessageTranslations } from 'src/ts/server/messageTranslationJobs'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -327,7 +328,17 @@ function seedDatabase(messageCount: number, guiHTML = customHtmlMocks.templates.
   } as unknown as Database
 }
 
-function mountCustomHtmlRows(count: number, role = 'char') {
+function mountCustomHtmlRows(
+  count: number,
+  role = 'char',
+  props: Partial<{
+    rerollIcon: boolean | 'dynamic'
+    onReroll: () => void
+    unReroll: () => void
+    onNewReroll: () => void
+    onSelectRerollCandidate: (index: number) => void
+  }> = {},
+) {
   for (let index = 0; index < count; index += 1) {
     components.push(
       mount(Chat, {
@@ -343,6 +354,7 @@ function mountCustomHtmlRows(count: number, role = 'char') {
           img: '',
           rerollIcon: false,
           disabled: false,
+          ...props,
         },
       }) as MountedComponent,
     )
@@ -394,7 +406,7 @@ beforeEach(() => {
       sourceHash: 'a'.repeat(64),
       targetLanguage: 'ko',
       inputLanguage: 'en',
-      translatorType: 'llm',
+      translatorType: 'llm' as const,
       settingsHash: 'b'.repeat(64),
       updatedAt: 123,
     },
@@ -409,6 +421,7 @@ beforeEach(() => {
       id: 'message-0',
     },
   })
+  setActiveMessageTranslations([])
   clearCustomHtmlTemplateMemo()
   vi.mocked(getCurrentCharacter).mockImplementation(() => DBState.db.characters?.[selIdState.selId] ?? null)
   vi.mocked(getCurrentChat).mockImplementation(() => {
@@ -429,6 +442,7 @@ afterEach(() => {
   selIdState.selId = previousSelectedChar
   ReloadGUIPointer.set(previousReloadGui)
   ReloadChatPointer.set(previousReloadChat)
+  setActiveMessageTranslations([])
   target.remove()
   document.body.innerHTML = ''
 })
@@ -565,7 +579,7 @@ describe('server raw translation controls', () => {
       sourceHash: 'a'.repeat(64),
       targetLanguage: 'ko',
       inputLanguage: 'en',
-      translatorType: 'llm',
+      translatorType: 'llm' as const,
       settingsHash: 'b'.repeat(64),
       updatedAt: 123,
     }
@@ -587,21 +601,31 @@ describe('server raw translation controls', () => {
     seedDatabase(1, null as unknown as string)
     DBState.db.translator = 'configured'
     DBState.db.translatorType = 'llm'
-    mountCustomHtmlRows(1)
+    const onReroll = vi.fn()
+    mountCustomHtmlRows(1, 'char', { rerollIcon: true, onReroll })
     await settle()
 
     let translateButton = target.querySelector<HTMLButtonElement>('.button-icon-translate')
+    let editButton = target.querySelector<HTMLButtonElement>('.button-icon-edit')
+    let deleteButton = target.querySelector<HTMLButtonElement>('.button-icon-remove')
+    let rerollButton = target.querySelector<HTMLButtonElement>('.button-icon-reroll')
     expect(translateButton).not.toBeNull()
     translateButton?.click()
     await settle()
 
     translateButton = target.querySelector<HTMLButtonElement>('.button-icon-translate')
+    editButton = target.querySelector<HTMLButtonElement>('.button-icon-edit')
+    deleteButton = target.querySelector<HTMLButtonElement>('.button-icon-remove')
+    rerollButton = target.querySelector<HTMLButtonElement>('.button-icon-reroll')
     expect(customHtmlMocks.translateMessageCommand).toHaveBeenCalledWith({
       baseRevision: 1,
       messageId: 'message-0',
     })
     expect(translateButton?.disabled).toBe(true)
     expect(translateButton?.getAttribute('aria-busy')).toBe('true')
+    expect(editButton?.disabled).toBe(true)
+    expect(deleteButton?.disabled).toBe(true)
+    expect(rerollButton?.disabled).toBe(true)
     expect(translateButton?.className).not.toContain('text-blue-400')
     expect(target.textContent).toContain('visible message 0')
     expect(target.textContent).not.toContain('translated raw')
@@ -624,12 +648,63 @@ describe('server raw translation controls', () => {
     await settle()
 
     translateButton = target.querySelector<HTMLButtonElement>('.button-icon-translate')
+    editButton = target.querySelector<HTMLButtonElement>('.button-icon-edit')
+    deleteButton = target.querySelector<HTMLButtonElement>('.button-icon-remove')
+    rerollButton = target.querySelector<HTMLButtonElement>('.button-icon-reroll')
     expect(translateButton?.disabled).toBe(false)
     expect(translateButton?.getAttribute('aria-busy')).toBe('false')
+    expect(editButton?.disabled).toBe(false)
+    expect(deleteButton?.disabled).toBe(false)
+    expect(rerollButton?.disabled).toBe(false)
     expect(translateButton?.className).toContain('text-blue-400')
     expect(DBState.db.characters[0].chats[0].message[0].translation).toEqual(translation)
     expect(target.textContent).toContain('translated raw')
     expect(target.textContent).toContain('retranslate')
     expect(target.textContent).toContain('editTranslation')
+  })
+
+  it('preserves server-active translation busy state across refresh and displays the completed translation', async () => {
+    const translation = {
+      source: 'raw' as const,
+      text: 'translated after refresh',
+      sourceHash: 'a'.repeat(64),
+      targetLanguage: 'ko',
+      inputLanguage: 'en',
+      translatorType: 'llm' as const,
+      settingsHash: 'b'.repeat(64),
+      updatedAt: 456,
+    }
+    customHtmlMocks.canUseServerCommands.mockReturnValue(true)
+    seedDatabase(1, null as unknown as string)
+    DBState.db.translator = 'configured'
+    DBState.db.translatorType = 'llm'
+    setActiveMessageTranslations([{ chatId: 'custom-html-chat', messageId: 'message-0' }])
+    mountCustomHtmlRows(1, 'char', { rerollIcon: true })
+    await settle()
+
+    let translateButton = target.querySelector<HTMLButtonElement>('.button-icon-translate')
+    let editButton = target.querySelector<HTMLButtonElement>('.button-icon-edit')
+    let deleteButton = target.querySelector<HTMLButtonElement>('.button-icon-remove')
+    let rerollButton = target.querySelector<HTMLButtonElement>('.button-icon-reroll')
+    expect(translateButton?.disabled).toBe(true)
+    expect(translateButton?.getAttribute('aria-busy')).toBe('true')
+    expect(editButton?.disabled).toBe(true)
+    expect(deleteButton?.disabled).toBe(true)
+    expect(rerollButton?.disabled).toBe(true)
+
+    DBState.db.characters[0].chats[0].message[0].translation = translation
+    setActiveMessageTranslations([])
+    await settle()
+
+    translateButton = target.querySelector<HTMLButtonElement>('.button-icon-translate')
+    editButton = target.querySelector<HTMLButtonElement>('.button-icon-edit')
+    deleteButton = target.querySelector<HTMLButtonElement>('.button-icon-remove')
+    rerollButton = target.querySelector<HTMLButtonElement>('.button-icon-reroll')
+    expect(translateButton?.disabled).toBe(false)
+    expect(translateButton?.getAttribute('aria-busy')).toBe('false')
+    expect(editButton?.disabled).toBe(false)
+    expect(deleteButton?.disabled).toBe(false)
+    expect(rerollButton?.disabled).toBe(false)
+    expect(target.textContent).toContain('translated after refresh')
   })
 })

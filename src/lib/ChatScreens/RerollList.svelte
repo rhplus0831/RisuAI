@@ -6,10 +6,12 @@
 
   let {
     currentMessage = '',
+    disabled = false,
     onSelectRerollCandidate = async () => {},
     onNewReroll = async () => {},
   }: {
     currentMessage?: string
+    disabled?: boolean
     onSelectRerollCandidate?: (index: number) => void | Promise<void>
     onNewReroll?: () => void | Promise<void>
   } = $props()
@@ -45,7 +47,11 @@
           class:bg-darkbutton={!candidate.active}
           class:text-textcolor={candidate.active}
           class:text-textcolor2={!candidate.active}
+          class:cursor-not-allowed={disabled}
+          class:opacity-50={disabled}
+          {disabled}
           onclick={async () => {
+            if (disabled) return
             await onSelectRerollCandidate(candidate.index)
           }}>
           <span class="mt-0.5 shrink-0 text-xs tabular-nums text-textcolor2">{candidate.index + 1}</span>
@@ -71,7 +77,11 @@
 
   <button
     class="button-icon-new-reroll flex w-full items-center justify-center gap-2 rounded-md border border-darkborderc bg-darkbutton px-3 py-2 text-sm text-textcolor transition-colors hover:bg-selected hover:text-blue-400"
+    class:cursor-not-allowed={disabled}
+    class:opacity-50={disabled}
+    {disabled}
     onclick={async () => {
+      if (disabled) return
       await onNewReroll()
     }}>
     <RefreshCcwIcon size={18} />

@@ -6965,7 +6965,7 @@ describe('Phase 9-3c message history commands', () => {
       translatorType: 'llm',
       aiModel: 'echo_model',
       echoMessage: 'translated after disconnect',
-      echoDelay: 0.15,
+      echoDelay: 0.5,
       translatorPrompt: 'Translate {{slot::content}} to {{slot}}',
       translatorMaxResponse: 128,
       characters: [
@@ -6993,6 +6993,17 @@ describe('Phase 9-3c message history commands', () => {
       baseRevision: revision,
     })
 
+    const during = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(during.statusCode).toBe(200)
+    expect(during.json().activeMessageTranslations).toContainEqual({
+      chatId: 'chat-a',
+      messageId: 'msg-a',
+    })
+
     const message = await waitForPersistedTranslation(harness.app, assertion, 'chat-a', 'translated after disconnect')
     expect(message.translation).toMatchObject({
       text: 'translated after disconnect',
@@ -7001,6 +7012,14 @@ describe('Phase 9-3c message history commands', () => {
       inputLanguage: 'en',
       translatorType: 'llm',
     })
+
+    const after = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(after.statusCode).toBe(200)
+    expect(after.json().activeMessageTranslations).toEqual([])
   })
 
   it('normalizes missing message ids and rejects malformed message commands without bumping revision', async () => {

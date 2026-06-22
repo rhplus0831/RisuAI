@@ -86,6 +86,7 @@ describe('server bootstrap projection helper', () => {
         database,
         assetBaseUrl: '/api/v1/assets',
         activeGenerationJobs: [],
+        activeMessageTranslations: [],
       },
     })
     await expect(getServerCommandBaseRevision()).resolves.toBe(12)
@@ -173,6 +174,29 @@ describe('server bootstrap projection helper', () => {
       expect(result.projection.activeGenerationJobs).toEqual([
         { chatId: 'chat-a', jobId: 'job-a' },
         { chatId: 'chat-d', jobId: 'job-d' },
+      ])
+    }
+  })
+
+  it('parses activeMessageTranslations and drops malformed entries', async () => {
+    stubBootstrapFetch(() => ({
+      revision: 4,
+      database: {},
+      activeMessageTranslations: [
+        { chatId: 'chat-a', messageId: 'msg-a' },
+        { chatId: 'chat-b' },
+        { messageId: 'msg-c' },
+        null,
+        { chatId: 'chat-d', messageId: 'msg-d' },
+      ],
+    }))
+
+    const result = await fetchServerBootstrapProjection()
+    expect(result.status).toBe('ok')
+    if (result.status === 'ok') {
+      expect(result.projection.activeMessageTranslations).toEqual([
+        { chatId: 'chat-a', messageId: 'msg-a' },
+        { chatId: 'chat-d', messageId: 'msg-d' },
       ])
     }
   })

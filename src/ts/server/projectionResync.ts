@@ -1,6 +1,7 @@
 import type { Database } from '../storage/database.svelte'
 import { applyServerProjectionDatabase } from '../storage/database.svelte'
 import { setActiveGenerationJobs, triggerOpenChatGenerationReattach } from '../process/reattach'
+import { setActiveMessageTranslations } from './messageTranslationJobs'
 import { get } from 'svelte/store'
 import { selectedCharID } from '../stores.svelte'
 import { fetchServerBootstrapProjectionReadOnly } from './bootstrap'
@@ -82,6 +83,7 @@ async function runServerProjectionResync(): Promise<ServerProjectionResyncResult
       syncSelectedCharacterAfterResync(bootstrap.projection.database)
       setCachedServerCommandRevision(bootstrap.projection.revision)
       setActiveGenerationJobs(bootstrap.projection.activeGenerationJobs ?? [])
+      setActiveMessageTranslations(bootstrap.projection.activeMessageTranslations ?? [])
       triggerOpenChatGenerationReattach()
       // The full re-apply re-stubbed every chat; forget cached hydration and
       // re-hydrate the open chat.

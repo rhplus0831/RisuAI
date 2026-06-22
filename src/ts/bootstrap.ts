@@ -60,6 +60,11 @@ import {
   startActiveGenerationReattach,
   triggerOpenChatGenerationReattach,
 } from './process/reattach'
+import {
+  clearActiveMessageTranslation,
+  setActiveMessageTranslations,
+  startActiveMessageTranslationRefresh,
+} from './server/messageTranslationJobs'
 import { applyServerHypaV3Progress } from './process/request/serverMemory'
 import { shouldAcceptMemoryJobUpdate } from './server/memoryJobOrdering'
 import {
@@ -170,6 +175,8 @@ export async function loadWebInitialDatabase() {
   // Surface any in-flight server generations so opening their chat re-attaches
   // to the live stream.
   setActiveGenerationJobs(projection.activeGenerationJobs ?? [])
+  setActiveMessageTranslations(projection.activeMessageTranslations ?? [])
+  startActiveMessageTranslationRefresh()
   startActiveGenerationReattach()
   // Inactive characters can arrive as lightweight shells; hydrate the selected
   // row before chat/lorebook-specific hydration tries to use heavyweight fields.
@@ -195,6 +202,7 @@ async function initializeFreshServerDatabase(): Promise<{
   revision: number
   database: Database
   activeGenerationJobs?: Array<{ chatId: string; jobId: string }>
+  activeMessageTranslations?: Array<{ chatId: string; messageId: string }>
 }> {
   if (!canUseServerCommands()) {
     throw new Error('Initial server database seed failed: server commands unavailable')
@@ -214,6 +222,7 @@ async function initializeFreshServerDatabase(): Promise<{
       revision: bootstrap.projection.revision,
       database: bootstrap.projection.database,
       activeGenerationJobs: bootstrap.projection.activeGenerationJobs,
+      activeMessageTranslations: bootstrap.projection.activeMessageTranslations,
     }
   }
 
@@ -433,6 +442,9 @@ async function processServerCommandEvent(
           : undefined
       applyServerChatMessagesProjection(result.chatId, result.message, result.hypaV3Data, result.alternates, range)
       triggerOpenChatGenerationReattach()
+      if (event.resource === 'message' && event.id) {
+        clearActiveMessageTranslation(event.id)
+      }
       markAppliedCommandProjectionEvent(event, options)
       return
     }

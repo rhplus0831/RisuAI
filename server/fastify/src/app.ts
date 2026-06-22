@@ -39,6 +39,7 @@ import { SUPPORTED_ASSET_CONTENT_TYPES, ensureDbJsonImported, loadPersistedWithM
 import { ASSET_GC_INTERVAL_MS, type AssetGcOptions, runAssetGc } from './assetGc.js'
 import { JobRegistry, PROXY_STREAM_GC_INTERVAL_MS } from './streamJobs.js'
 import { GenerationJobRegistry } from './generationJobs.js'
+import { MessageTranslationJobRegistry } from './messageTranslationJobs.js'
 import { createMemoryEventBus, emitMemoryEventSafely, type MemoryEventSink } from './memoryEvents.js'
 import { backfillLegacyHypaV3MemoryRows } from './memoryLegacyImport.js'
 import { MemoryWorker, type MemoryWorkerOptions } from './memoryWorker.js'
@@ -190,6 +191,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   // Separately GC-ticked registry for detached chat generations and their
   // transient chatId→jobId submission lock.
   const generationJobRegistry = new GenerationJobRegistry()
+  const messageTranslationJobRegistry = new MessageTranslationJobRegistry()
   const gcTimer = setInterval(() => {
     streamJobRegistry.tickGc()
     generationJobRegistry.tickGc()
@@ -233,7 +235,15 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
 
   registerHealthRoutes(app, db)
   registerAuthRoutes(app, authState)
-  registerBootstrapRoutes(app, db, authState, config.dataDir, activeWriterState, generationJobRegistry)
+  registerBootstrapRoutes(
+    app,
+    db,
+    authState,
+    config.dataDir,
+    activeWriterState,
+    generationJobRegistry,
+    messageTranslationJobRegistry,
+  )
   registerActiveWriterGuard(app, activeWriterState)
   registerProjectionRoutes(app, db, authState, config.dataDir)
   registerSaveRoutes(app, db, authState, config.dataDir, commandEventSink, {
@@ -246,7 +256,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
     maxExpandedImportBytes: config.bodyLimit,
     ...opts.realmImport,
   })
-  registerCommandRoutes(app, db, authState, config.dataDir, commandEventSink)
+  registerCommandRoutes(app, db, authState, config.dataDir, commandEventSink, messageTranslationJobRegistry)
   registerEventsRoutes(app, db, authState, commandEventSink, memoryEventBus)
   registerAssetsRoutes(app, db, authState, config.dataDir, commandEventSink, activeWriterState)
   registerBackupRoutes(app, db, authState, config.dataDir, commandEventSink)
