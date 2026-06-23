@@ -145,6 +145,7 @@ function seedApplyLoadoutState(): Loadout {
     mainPrompt: 'live main',
     jailbreak: 'live jailbreak',
     globalNote: 'live global',
+    promptTemplate: [{ id: 'live-prompt', type: 'plain', text: 'live prompt row' }],
     temperature: 20,
     maxContext: 200,
     maxResponse: 300,
@@ -464,6 +465,8 @@ describe('loadout projection command helpers', () => {
     })
     expect(DBState.db.botPresetsId).toBe(1)
     expect(DBState.db.mainPrompt).toBe('preset-b main')
+    expect(DBState.db.promptTemplate).toEqual([{ id: 'live-prompt', type: 'plain', text: 'live prompt row' }])
+    expect(DBState.db.botPresets[0]).not.toHaveProperty('promptTemplate')
     expect(DBState.db.enabledModules).toEqual(['module-a', 'module-stay'])
     expect(DBState.db.globalChatVariables).toEqual({ mood: 'focused', scene: 'night' })
     expect(DBState.db.loadouts[0]).toMatchObject({
@@ -724,6 +727,8 @@ describe('loadout projection command helpers', () => {
     expect(DBState.db.botPresetsId).toBe(1)
     expect(DBState.db.mainPrompt).toBe('preset-b main')
     expect(DBState.db.temperature).toBe(66)
+    expect(DBState.db.promptTemplate).toEqual([{ id: 'live-prompt', type: 'plain', text: 'live prompt row' }])
+    expect(DBState.db.botPresets[0]).not.toHaveProperty('promptTemplate')
     expect(DBState.db.enabledModules).toEqual(['module-a', 'module-stay'])
     expect(DBState.db.globalChatVariables).toEqual(previousGlobalVariables)
   })
@@ -745,6 +750,7 @@ describe('loadout projection command helpers', () => {
     expect(previousPresetId).not.toBe(attemptedPresetId)
     expect(DBState.db.botPresetsId).toBe(1)
     expect(DBState.db.mainPrompt).toBe('preset-b main')
+    expect(DBState.db.promptTemplate).toEqual([{ id: 'live-prompt', type: 'plain', text: 'live prompt row' }])
 
     withTrustedServerProjectionWrite(() => {
       DBState.db.botPresets.push({
@@ -879,6 +885,7 @@ describe('loadout projection command helpers', () => {
     expect(calls.map((call) => call.url)).toContain('/api/v1/commands/presets/select')
     expect(calls.map((call) => call.url)).toContain('/api/v1/commands/loadouts/loadout-a/touch')
     expect(DBState.db.mainPrompt).toBe('hydrated preset-b main')
+    expect(DBState.db.promptTemplate).toEqual([{ id: 'live-prompt', type: 'plain', text: 'live prompt row' }])
   })
 
   it('suppresses PersonaSettings watcher echo for loadout-driven persona selection', async () => {

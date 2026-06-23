@@ -1,6 +1,6 @@
 # Phase 4: Legacy BotPreset Compatibility
 
-Status: pending.
+Status: implemented.
 
 Goal: retire silent legacy bot-preset prompt-template copy semantics while
 preserving compatibility with old saves and exports.
@@ -19,6 +19,25 @@ preserving compatibility with old saves and exports.
 - Preserve imported/exported legacy fields where compatibility requires it.
 - Update tests that currently expect `bot_presets + prompt_templates +
   settings` writes on legacy preset selection.
+
+## Implementation Notes
+
+- `server/fastify/src/commands/presets.ts` no longer includes
+  `promptTemplate` in legacy bot-preset apply/snapshot keys.
+- Legacy preset select/delete/copy routes read only `bot_presets` for the
+  legacy collection path and no longer write `prompt_templates` as a side
+  effect of legacy apply.
+- `src/ts/storage/database.svelte.ts` no longer snapshots top-level
+  `DBState.db.promptTemplate` into legacy bot presets and `setPreset()` no
+  longer assigns a legacy preset template to the top-level prompt template.
+- `src/ts/loadout.ts` no longer snapshots top-level prompt template data into
+  the outgoing legacy preset during loadout apply; loadout legacy apply uses the
+  updated `setPreset()` behavior.
+- Legacy bot-preset hydration now treats non-template settings fields as loaded
+  data sentinels too, so modern saved presets without `promptTemplate` do not
+  loop as unloaded stubs.
+- Explicit extraction remains intact and still copies
+  `botPresets[].promptTemplate` into a generated modern prompt preset.
 
 ## Out Of Scope
 
@@ -57,6 +76,21 @@ pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 git diff --check
 ```
+
+Run on 2026-06-23:
+
+- `pnpm exec vitest run src/ts/storage/database.svelte.test.ts src/ts/loadout.test.ts src/ts/presetSplit.test.ts`
+  passed.
+- `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/commandCollectionRange.test.ts server/fastify/__tests__/commandMutationReadNarrowing.test.ts`
+  passed.
+- `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/risuSaveImportRoute.test.ts server/fastify/__tests__/risuSaveExportRoute.test.ts`
+  passed.
+- `pnpm exec tsc -p tsconfig.client-lib.json` passed.
+- `pnpm exec tsc -p server/fastify/tsconfig.json --noEmit` passed.
+- `pnpm exec prettier --check ...touched files...` passed after formatting.
+- `git diff --check` passed.
+
+No known Phase 4 verification gap remains.
 
 ## Risks
 

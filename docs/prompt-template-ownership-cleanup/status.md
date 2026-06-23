@@ -3,14 +3,14 @@
 Date: 2026-06-23
 
 This workstream has completed the runtime resolver slice, the prompt
-preset-owner-aware prompt item command/projection/hydration slice, and the
-Settings UI ownership slice. Legacy apply and loadout cleanup phases are still
-pending.
+preset-owner-aware prompt item command/projection/hydration slice, the Settings
+UI ownership slice, and the legacy bot-preset compatibility cleanup slice.
+Generation/import-export cleanup phases are still pending.
 
 ## Snapshot
 
 - Plan state: drafted; Phase 0 decisions recorded.
-- Current phase: Phase 3 implemented, with focused Settings UI ownership tests
+- Current phase: Phase 4 implemented, with focused legacy compatibility tests
   passing locally.
 - Current implementation state:
   - Browser/server prompt assembly now resolves an effective prompt template
@@ -25,8 +25,9 @@ pending.
   - Top-level `promptTemplate` remains the legacy command path when
     `promptPresetId` is omitted and a compatibility projection/cache for the
     selected prompt preset.
-  - Legacy `botPresets` can carry `promptTemplate` and copy it into the active
-    top-level collection when selected/applied.
+  - Legacy `botPresets` can carry `promptTemplate` for import/export and prompt
+    diff/extraction compatibility, but selecting/applying a legacy bot preset no
+    longer copies that data into the active top-level collection.
   - Modern `promptPresets` can carry `promptTemplate` and also apply it into the
     active top-level collection.
   - Prompt Settings edits a local draft sourced from the selected modern prompt
@@ -43,8 +44,14 @@ pending.
   - Prompt Settings and Bot Settings kick owner-scoped prompt-template
     hydration when selected prompt presets change, so the editor gate does not
     stay on a stale owner after preset switching.
+  - Legacy bot-preset save-current snapshots no longer copy top-level
+    `promptTemplate` back into `botPresets[]`.
+  - Legacy bot-preset hydration no longer uses `promptTemplate` as the sole
+    loaded-data sentinel, so saved legacy presets without that field are not
+    treated as unloaded forever.
 - Current verification state: Focused Phase 3 Settings UI ownership checks
-  passed; see `latest-verification.md`.
+  and Phase 4 legacy compatibility checks passed; see
+  `latest-verification.md`.
 
 ## Phase Router
 
@@ -54,7 +61,7 @@ pending.
 | Phase 1: Effective Template Resolver | Implemented | Add shared browser/server resolver and use it in runtime read paths. |
 | Phase 2: Prompt Preset Commands And Projection | Implemented | Move prompt-item edits and hydration toward prompt-preset ownership. |
 | Phase 3: Settings UI And Bridge | Implemented | Make Prompt Settings and Bot Settings edit selected prompt presets directly. |
-| Phase 4: Legacy BotPreset Compatibility | Pending | Retire legacy bot-preset prompt-template apply/copy semantics. |
+| Phase 4: Legacy BotPreset Compatibility | Implemented | Retire legacy bot-preset prompt-template apply/copy semantics. |
 | Phase 5: Generation Loadout And Cleanup | Pending | Align generation, loadouts, imports/exports, and remaining compatibility paths. |
 | Phase 6: Verification And Docs | Pending | Run regression, browser smoke, docs, and closeout. |
 
@@ -63,6 +70,7 @@ pending.
 - No Phase 1 blocker is known.
 - No Phase 2 blocker is known.
 - No Phase 3 blocker is known.
+- No Phase 4 blocker is known.
 
 ## Latest Completed Slice
 
@@ -84,14 +92,18 @@ pending.
   for template edits while keeping row edits on scoped prompt-item commands, and
   changed Bot Settings template gates/toggles to selected prompt preset
   ownership.
+- Phase 4 worker removed legacy bot-preset prompt-template apply/snapshot
+  behavior on the server, browser storage helpers, and loadout apply snapshots;
+  preserved explicit extraction into modern prompt presets; and narrowed legacy
+  preset select/delete reads and writes away from `prompt_templates`.
 
 ## Compatibility Caveats
 
 - Legacy `botPresets` remain present in storage and UI.
-- Legacy `.risu` import/export may still need to preserve
+- Legacy `.risu` import/export and prompt diff tooling still preserve/read
   `botPresets[].promptTemplate`.
 - During transition, `DBState.db.promptTemplate` may remain visible as a
   compatibility/effective projection even after ownership moves to
   `promptPresets`.
-- Existing tests expect `prompt_templates` writes on some preset apply/select
-  operations; those expectations must change phase by phase.
+- Modern prompt-preset apply may still write top-level `promptTemplate` as a
+  compatibility projection.

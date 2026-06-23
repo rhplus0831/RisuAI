@@ -59,7 +59,7 @@ function seedDatabase(): Record<string, unknown> {
     currentPluginProvider: 'plugin-a',
     enabledModules: [],
     botPresetsId: 0,
-    // A "current" settings scalar + prompt items that `applyPreset` overwrites.
+    // A "current" settings scalar + prompt items that legacy `applyPreset` must leave alone.
     temperature: 0.5,
     selectedPersona: 0,
     // Legacy profile mirror scalars (settings) that select/delete/patch refresh.
@@ -511,12 +511,13 @@ describe('Phase 4 presets collection range', () => {
     expect(promptItems[0].text).toBe('current')
   })
 
-  it('DELETE presets/:id with apply=true also writes prompt_templates + settings', async () => {
+  it('DELETE presets/:id with apply=true writes settings without changing prompt_templates', async () => {
     const revision = await importDatabase(seedDatabase())
     const before = rowidSnapshot()
 
-    // Delete preset-1, re-select + apply preset-0 (carries its promptTemplate +
-    // settings scalars). This is the documented two-table + settings case.
+    // Delete preset-1, re-select + apply preset-0. Phase 4 keeps legacy
+    // bot-preset apply scoped to settings/bot_presets and leaves prompt items
+    // owned by prompt presets/top-level compatibility paths untouched.
     const { metric } = await runCommand({
       method: 'DELETE',
       url: '/api/v1/commands/presets/preset-1',
@@ -524,21 +525,22 @@ describe('Phase 4 presets collection range', () => {
     })
 
     expect(metric.mutationPath).toBe('targeted-collection')
-    expect(metric.writtenTables).toEqual(['bot_presets', 'prompt_templates', 'settings'])
+    expect(metric.writtenTables).toEqual(['bot_presets', 'settings'])
     assertCommandMetricGate(metric)
     expectNoCharacterOrChatChurn(before)
     expect(readCollection('bot_presets').map((p) => (p as { id: string }).id)).toEqual(['preset-0'])
-    // applyPreset copied preset-0's promptTemplate + temperature scalar.
-    expect(readCollection('prompt_templates')).toEqual([{ type: 'plain', text: 'pt-0' }])
+    expect((readCollection('prompt_templates') as Array<{ text: string }>).map((item) => item.text)).toEqual([
+      'current',
+    ])
     expect(readSettings().temperature).toBe(0.1)
   })
 
-  it('POST presets/select writes bot_presets + prompt_templates + settings (apply)', async () => {
+  it('POST presets/select writes bot_presets + settings without changing prompt_templates', async () => {
     const revision = await importDatabase(seedDatabase())
     const before = rowidSnapshot()
 
     // Default saveCurrent + apply: snapshot the outgoing preset into bot_presets,
-    // move the pointer, and apply preset-1's promptTemplate + scalars.
+    // move the pointer, and apply preset-1's settings scalars.
     const { metric } = await runCommand({
       method: 'POST',
       url: '/api/v1/commands/presets/select',
@@ -546,12 +548,14 @@ describe('Phase 4 presets collection range', () => {
     })
 
     expect(metric.mutationPath).toBe('targeted-collection')
-    expect(metric.writtenTables).toEqual(['bot_presets', 'prompt_templates', 'settings'])
+    expect(metric.writtenTables).toEqual(['bot_presets', 'settings'])
     assertCommandMetricGate(metric)
     expectNoCharacterOrChatChurn(before)
     expect(readSettings().botPresetsId).toBe(1)
     expect(readSettings().temperature).toBe(0.9)
-    expect(readCollection('prompt_templates')).toEqual([{ type: 'plain', text: 'pt-1' }])
+    expect((readCollection('prompt_templates') as Array<{ text: string }>).map((item) => item.text)).toEqual([
+      'current',
+    ])
   })
 
   it('POST prompt-presets/select persists applied promptTemplate + settings', async () => {

@@ -55,7 +55,6 @@ const SNAPSHOT_KEYS: Array<[string, string]> = [
   ['proxyRequestModel', 'proxyRequestModel'],
   ['openrouterRequestModel', 'openrouterRequestModel'],
   ['NAISettings', 'NAIsettings'],
-  ['promptTemplate', 'promptTemplate'],
   ['NAIadventure', 'NAIadventure'],
   ['NAIappendName', 'NAIappendName'],
   ['localStopStrings', 'localStopStrings'],
@@ -282,13 +281,6 @@ function normalizeSeperateParametersValue(value: unknown): Record<string, unknow
 
 function recordOrBlank(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {}
-}
-
-/** Whether `applyPreset` would overwrite the `promptTemplate` collection for this
- *  preset — i.e. the preset carries a `promptTemplate`. The only collection field
- *  `applyPreset` writes; the apply path co-writes the prompt-items table only then. */
-export function presetAppliesPromptTemplate(preset: PresetRecord): boolean {
-  return Object.prototype.hasOwnProperty.call(preset, 'promptTemplate')
 }
 
 export function validateFullPresetIdList(presets: readonly PresetRecord[], presetIds: readonly string[]): void {

@@ -415,6 +415,21 @@ describe('model profile database normalization', () => {
       modelTools: ['preset-tool'],
     })
   })
+
+  it('does not apply legacy bot preset promptTemplate into top-level promptTemplate', () => {
+    seedPresetDatabase()
+    const beforePromptTemplate = clonePlain(DBState.db.promptTemplate)
+
+    setPreset(
+      DBState.db,
+      makePreset('preset-c', 'Gamma', {
+        promptTemplate: [{ id: 'gamma-prompt', type: 'plain', text: 'gamma prompt item' }] as any,
+      }),
+    )
+
+    expect(DBState.db.mainPrompt).toBe('Gamma prompt')
+    expect(DBState.db.promptTemplate).toEqual(beforePromptTemplate)
+  })
 })
 
 function seedPresetDatabase(patch: Partial<Database> = {}): void {
@@ -727,8 +742,10 @@ describe('preset command rollback (L21)', () => {
   })
 
   it('skips projection refreeze when hydrated bot preset ids are already normalized', async () => {
+    const preset = makePreset('preset-a', 'Alpha')
+    delete preset.promptTemplate
     seedPresetDatabase({
-      botPresets: [makePreset('preset-a', 'Alpha')],
+      botPresets: [preset],
       botPresetsId: 0,
     })
     setServerProjectionWriteGuardEnabled(true)
@@ -850,6 +867,21 @@ describe('preset command rollback (L21)', () => {
       mainPrompt: 'live main',
     })
     expect(command.body.patch).not.toHaveProperty('promptTemplate')
+  })
+
+  it('does not snapshot top-level promptTemplate into legacy bot presets', async () => {
+    seedPresetDatabase({
+      promptTemplate: [{ id: 'live-only-prompt', type: 'plain', text: 'live only prompt row' }] as any,
+    })
+    const beforePresetTemplate = clonePlain(DBState.db.botPresets[0].promptTemplate)
+    setServerProjectionWriteGuardEnabled(true)
+    const calls = stubFailedPresetCommand()
+
+    saveCurrentPreset()
+
+    const command = await waitForPresetCommand(calls, '/presets/preset-a')
+    expect(command.body.patch).not.toHaveProperty('promptTemplate')
+    expect(DBState.db.botPresets[0].promptTemplate).toEqual(beforePresetTemplate)
   })
 
   it('ignores stale preset hydration responses older than the applied revision', async () => {
@@ -1418,6 +1450,19 @@ describe('preset command rollback (L21)', () => {
     })
   })
 
+  it('legacy delete with apply does not change top-level promptTemplate', async () => {
+    seedPresetDatabase()
+    const beforePromptTemplate = clonePlain(DBState.db.promptTemplate)
+    const calls = stubFailedPresetCommand()
+
+    deletePreset(0, 1, true)
+
+    expect(DBState.db.botPresetsId).toBe(0)
+    expect(DBState.db.mainPrompt).toBe('Beta prompt')
+    expect(DBState.db.promptTemplate).toEqual(beforePromptTemplate)
+    await waitForPresetCommand(calls, '/presets/preset-a')
+  })
+
   it('failed legacy reorder restores the prior id order and preserves row edits', async () => {
     seedPresetDatabase({
       botPresets: [makePreset('preset-a', 'Alpha'), makePreset('preset-b', 'Beta'), makePreset('preset-c', 'Gamma')],
@@ -1489,6 +1534,19 @@ describe('preset command rollback (L21)', () => {
     })
   })
 
+  it('legacy select does not change top-level promptTemplate', async () => {
+    seedPresetDatabase()
+    const beforePromptTemplate = clonePlain(DBState.db.promptTemplate)
+    const calls = stubFailedPresetCommand()
+
+    changeToPreset(1, false)
+
+    expect(DBState.db.botPresetsId).toBe(1)
+    expect(DBState.db.mainPrompt).toBe('Beta prompt')
+    expect(DBState.db.promptTemplate).toEqual(beforePromptTemplate)
+    await waitForPresetCommand(calls, '/presets/select')
+  })
+
   it('failed legacy extract preserves split preset edits while removing unchanged generated rows', async () => {
     seedPresetDatabase({
       botPresets: [makePreset('preset-a', 'Alpha'), makePreset('preset-b', 'Beta')],
@@ -1521,6 +1579,9 @@ describe('preset command rollback (L21)', () => {
     expect(DBState.db.botPresets.map((preset) => preset.id)).toEqual(['preset-b'])
     expect(DBState.db.modelPresets.some((preset) => preset.name === 'Alpha Model')).toBe(true)
     expect(DBState.db.promptPresets.some((preset) => preset.name === 'Alpha Prompt')).toBe(true)
+    expect(DBState.db.promptPresets.find((preset) => preset.name === 'Alpha Prompt')?.promptTemplate).toEqual([
+      { id: 'preset-a-prompt', type: 'plain', text: 'Alpha prompt item' },
+    ])
     await waitForPresetCommand(calls, '/legacy-bot-presets/preset-a/extract')
     await waitForState(() => {
       expect(DBState.db.botPresets.map((preset) => preset.id)).toEqual(['preset-a', 'preset-b'])

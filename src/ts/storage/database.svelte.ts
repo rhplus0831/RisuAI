@@ -257,8 +257,25 @@ function presetIdAt(index: number): string | null {
   return presets[index]?.id ?? null
 }
 
+const BOT_PRESET_HYDRATION_SENTINEL_KEYS = [
+  'apiType',
+  'mainPrompt',
+  'jailbreak',
+  'globalNote',
+  'temperature',
+  'modelProfiles',
+  'modelRoleProfiles',
+  'modelRuntimeDefaults',
+  'promptTemplate',
+] as const
+
+export function botPresetHasHydratedSettings(preset: botPreset | undefined): preset is botPreset {
+  if (!preset?.id) return false
+  return BOT_PRESET_HYDRATION_SENTINEL_KEYS.some((key) => Object.prototype.hasOwnProperty.call(preset, key))
+}
+
 function presetNeedsHydration(preset: botPreset | undefined): boolean {
-  return !!preset?.id && !Object.prototype.hasOwnProperty.call(preset, 'promptTemplate')
+  return !!preset?.id && !botPresetHasHydratedSettings(preset)
 }
 
 const presetHydrationInFlight = new Map<string, Promise<boolean>>()
@@ -3071,10 +3088,6 @@ function saveCurrentPresetLocal() {
     verbosity: db.verbosity ?? 1,
     dynamicOutput: db.dynamicOutput ?? null,
   }
-  if (Object.prototype.hasOwnProperty.call(db, 'promptTemplate')) {
-    savedPreset.promptTemplate = db.promptTemplate ?? null
-  }
-
   if (!Array.isArray(pres)) {
     pres = []
   }
@@ -3934,7 +3947,6 @@ export function setPreset(db: Database, newPres: botPreset) {
   db.autoSuggestPrompt = newPres.autoSuggestPrompt ?? db.autoSuggestPrompt
   db.autoSuggestPrefix = newPres.autoSuggestPrefix ?? db.autoSuggestPrefix
   db.autoSuggestClean = newPres.autoSuggestClean ?? db.autoSuggestClean
-  db.promptTemplate = newPres.promptTemplate
   db.NAIadventure = newPres.NAIadventure
   db.NAIappendName = newPres.NAIappendName
   db.NAIsettings.cfg_scale ??= 1

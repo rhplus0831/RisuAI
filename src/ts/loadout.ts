@@ -23,6 +23,7 @@ import { applyAttemptedFieldRollback, applyAttemptedKeyedListRollback } from './
 import {
   applyModelPresetFieldsToDatabase,
   applyPromptPresetFieldsToDatabase,
+  botPresetHasHydratedSettings,
   ensureBotPresetHydrated,
   getCurrentCharacter,
   setPreset,
@@ -278,7 +279,6 @@ const PRESET_SNAPSHOT_KEY_PAIRS: Array<[string, string]> = [
   ['proxyRequestModel', 'proxyRequestModel'],
   ['openrouterRequestModel', 'openrouterRequestModel'],
   ['NAISettings', 'NAIsettings'],
-  ['promptTemplate', 'promptTemplate'],
   ['NAIadventure', 'NAIadventure'],
   ['NAIappendName', 'NAIappendName'],
   ['localStopStrings', 'localStopStrings'],
@@ -848,7 +848,7 @@ function saveCurrentPresetSnapshotLocal(): PresetFieldRollback | null {
 }
 
 function presetHasHydratedSettings(preset: botPreset | undefined): preset is botPreset {
-  return !!preset?.id && Object.prototype.hasOwnProperty.call(preset, 'promptTemplate')
+  return botPresetHasHydratedSettings(preset)
 }
 
 function changedModuleSteps(previousModules: string[], nextModules: string[]): LoadoutApplyStep[] {

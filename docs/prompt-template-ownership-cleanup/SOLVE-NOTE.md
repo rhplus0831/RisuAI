@@ -48,9 +48,9 @@ completed agents open.
    prompt-template editor and Bot Settings gate now trigger owner-scoped
    hydration on selected prompt preset changes before adopting the selected
    preset template.
-6. Continue through Phase 4 after the editor uses modern ownership: remove or
-   gate silent legacy bot-preset prompt-template copy behavior and add/keep an
-   explicit extraction/conversion path.
+6. Phase 4 legacy bot-preset compatibility cleanup is implemented: silent
+   legacy bot-preset prompt-template apply/snapshot behavior has been removed
+   while explicit extraction/conversion remains available.
 7. Continue through Phase 5: align generation, loadouts, imports/exports, and
    remaining compatibility mirrors so stale top-level template data cannot win.
 8. Finish with Phase 6: run the focused client/server suites, TypeScript checks,
@@ -92,8 +92,13 @@ completed agents open.
 - Server prompt item commands write `prompt_presets` rows when
   `promptPresetId` is supplied, and preserve `prompt_templates` writes only for
   omitted-id legacy commands.
-- Legacy bot preset apply currently copies preset template data into the active
-  top-level prompt template.
+- Legacy bot preset apply/save-current no longer copies prompt-template data
+  between `botPresets[]` and the active top-level `promptTemplate`.
+- Legacy `botPresets[].promptTemplate` is still preserved for import/export,
+  prompt diff reads, and explicit extraction into modern prompt presets.
+- Legacy bot-preset hydration uses non-template settings fields as loaded-data
+  sentinels too, so presets saved without `promptTemplate` are not considered
+  unloaded forever.
 - Server and browser prompt assembly now resolve effective prompt template reads
   from chat/global prompt presets before top-level compatibility fallback.
 - The Fastify variation is unreleased, so source-level storage reshaping is
@@ -101,7 +106,7 @@ completed agents open.
 
 ## Recommended Next Slice
 
-Phase 3 has been implemented and focused Settings UI ownership checks have
-passed locally. The next recommended slice is Phase 4: retire or gate silent
-legacy bot-preset prompt-template copy behavior while preserving an explicit
-compatibility extraction/conversion path.
+Phase 4 has been implemented and focused legacy compatibility checks have
+passed locally. The next recommended slice is Phase 5: align generation,
+imports/exports, and any remaining compatibility mirrors so stale top-level
+template data cannot win.

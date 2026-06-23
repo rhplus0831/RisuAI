@@ -2,10 +2,10 @@
 
 Date: 2026-06-23
 
-Phase 3 Settings UI ownership has focused automated coverage plus a browser
-smoke. Prompt Settings and Bot Settings now treat the selected prompt preset as
-the visible prompt-template owner while preserving top-level `promptTemplate` as
-a compatibility projection.
+Phase 4 legacy bot-preset compatibility cleanup has focused automated coverage.
+Legacy bot preset selection/save-current/loadout apply no longer silently copies
+prompt-template data, while explicit extraction and import/export compatibility
+remain intact.
 
 ## Current Proof
 
@@ -50,20 +50,42 @@ a compatibility projection.
   stuck on a stale owner.
 - Bot Settings enable/disable creates/removes selected prompt preset
   `promptTemplate` ownership and dispatches scoped `enablePromptItemsCommand`.
+- Server legacy bot-preset apply/snapshot keys exclude `promptTemplate`.
+- Legacy preset select/delete apply routes no longer write `prompt_templates`
+  and use legacy-only collection reads when prompt-template data is not needed.
+- Browser `setPreset()` no longer assigns `DBState.db.promptTemplate` from a
+  legacy bot preset.
+- Browser `saveCurrentPresetLocal()` and loadout legacy preset snapshots no
+  longer copy top-level `promptTemplate` into `botPresets[]`.
+- Legacy bot-preset hydration no longer depends on `promptTemplate` as the sole
+  loaded-data sentinel.
+- Explicit legacy extraction still creates modern prompt presets with copied
+  `promptTemplate` data.
 
-## Phase 3 Validation
+## Phase 4 Validation
 
 Run on 2026-06-23:
 
 ```bash
-pnpm exec vitest run src/lib/Setting/Pages/BotSettings.svelte.test.ts src/lib/Setting/Settings.svelte.test.ts src/lib/Setting/pickerGenerationSettings.test.ts --reporter=dot
-pnpm exec vitest run src/ts/server/promptTemplateBridge.svelte.test.ts src/ts/server/promptTemplateHydration.test.ts src/ts/storage/database.svelte.test.ts --reporter=dot
+pnpm exec vitest run src/ts/storage/database.svelte.test.ts src/ts/loadout.test.ts src/ts/presetSplit.test.ts
+pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/commandCollectionRange.test.ts server/fastify/__tests__/commandMutationReadNarrowing.test.ts
+pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/risuSaveImportRoute.test.ts server/fastify/__tests__/risuSaveExportRoute.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
+pnpm exec prettier --check server/fastify/src/commands/presets.ts server/fastify/src/routes/commands.ts src/ts/storage/database.svelte.ts src/ts/loadout.ts server/fastify/__tests__/commandCollectionRange.test.ts server/fastify/__tests__/commandMutationReadNarrowing.test.ts src/ts/storage/database.svelte.test.ts src/ts/loadout.test.ts
 git diff --check
 ```
 
 All commands passed.
+
+Additional run:
+
+```bash
+pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/risuSaveCodec.test.ts server/fastify/__tests__/commandCollectionRange.test.ts
+```
+
+This passed after updating the decoded loadout fixture expectation for
+normalized split-preset fields.
 
 ## Browser Smoke
 
@@ -82,5 +104,5 @@ failure.
 
 ## Verification Gaps
 
-- No new browser smoke was run for the preset-switch hydration fix; the latest
-  recorded browser smoke remains the Phase 3 Settings page smoke above.
+- No new browser smoke was run for Phase 4 because the slice did not change UI
+  components.

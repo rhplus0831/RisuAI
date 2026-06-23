@@ -61,7 +61,6 @@ import {
   ensureDatabaseObject,
   ensurePresetCollection,
   findPresetIndex,
-  presetAppliesPromptTemplate,
   readJsonObject,
   readOptionalBoolean,
   readOptionalString,
@@ -516,7 +515,6 @@ const COLLECTION_SCOPED_READS = {
   promptPresets: ['promptPresets'],
   legacyBotPresetExtraction: ['botPresets', 'modelPresets', 'promptPresets'],
   presets: ['botPresets'],
-  presetsWithPromptTemplate: ['botPresets', 'promptTemplate'],
   personas: ['personas'],
   translatorPresets: ['translatorPresets'],
   loadouts: ['loadouts'],
@@ -1753,7 +1751,7 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
-        collectionScopedRead: COLLECTION_SCOPED_READS.presetsWithPromptTemplate,
+        collectionScopedRead: COLLECTION_SCOPED_READS.presets,
         mutate(database, innerDb) {
           const target = ensureDatabaseObject(database)
           const presets = ensurePresetCollection(target)
@@ -1786,12 +1784,6 @@ export function registerCommandRoutes(
 
           // The splice shifts positions, so the preset table is always rewritten.
           writeSingleCollectionTable(innerDb, 'botPresets', presets)
-          // apply=true copies the selected preset's `promptTemplate` collection
-          // (the only collection field `applyPreset` writes) plus its settings
-          // scalars; persist those exactly.
-          if (applied && presetAppliesPromptTemplate(presets[selectedIndex])) {
-            writePromptTemplatesTable(innerDb, asArray(target.promptTemplate))
-          }
           if (applied || target.botPresetsId !== beforeSelected) {
             writeSettingsOnly(innerDb, extractSettings(target))
           }
@@ -1832,7 +1824,7 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
-        collectionScopedRead: COLLECTION_SCOPED_READS.presetsWithPromptTemplate,
+        collectionScopedRead: COLLECTION_SCOPED_READS.presets,
         mutate(database, innerDb) {
           const target = ensureDatabaseObject(database)
           const presets = ensurePresetCollection(target)
@@ -1884,7 +1876,7 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
-        collectionScopedRead: COLLECTION_SCOPED_READS.presetsWithPromptTemplate,
+        collectionScopedRead: COLLECTION_SCOPED_READS.presets,
         mutate(database, innerDb) {
           const target = ensureDatabaseObject(database)
           const presets = ensurePresetCollection(target)
@@ -1903,9 +1895,6 @@ export function registerCommandRoutes(
           // outgoing preset into it; the pointer + applied scalars live in settings.
           if (saveCurrent) {
             writeSingleCollectionTable(innerDb, 'botPresets', presets)
-          }
-          if (applied && presetAppliesPromptTemplate(presets[index])) {
-            writePromptTemplatesTable(innerDb, asArray(target.promptTemplate))
           }
           if (applied || target.botPresetsId !== beforeSelected) {
             writeSettingsOnly(innerDb, extractSettings(target))

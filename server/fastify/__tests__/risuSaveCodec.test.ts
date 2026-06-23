@@ -294,6 +294,10 @@ describe('server .risu fixture harness', () => {
         modules: [],
         globalVariables: {},
         presetName: '',
+        modelPresetId: '',
+        modelPresetName: '',
+        promptPresetId: '',
+        promptPresetName: '',
         personaId: '',
       },
     ])

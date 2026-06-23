@@ -602,7 +602,7 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
       'POST',
       '/api/v1/commands/presets/select',
       { baseRevision: revision, presetId: 'l11-preset' },
-      ['bot_presets', 'prompt_templates'],
+      ['bot_presets'],
     )
 
     await runScopedCollectionCommand(
