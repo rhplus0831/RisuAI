@@ -31,6 +31,13 @@ describe('BotSettings prompt edit persistence contracts', () => {
     expect(source).toContain('if (snapshotJson(value) === snapshotJson(pendingPromptFieldPatch.previous[key]))')
   })
 
+  it('does not mirror root promptTemplate projection churn into the selected prompt preset', () => {
+    const source = botSettingsSource()
+
+    expect(source).not.toContain('promptTemplatePresetSyncInitialized')
+    expect(source).not.toContain("writeSelectedPromptPresetField('promptTemplate'")
+  })
+
   it('routes prompt preset icon uploads through the freshness guard helper', () => {
     const source = botSettingsSource()
 

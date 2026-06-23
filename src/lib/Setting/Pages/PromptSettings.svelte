@@ -29,6 +29,7 @@
     queuePromptItemProjectionUpdate,
     queuePromptSettingsProjectionPatch,
     reconcilePromptTemplateDraft,
+    resetPromptTemplateSelectionDirtyState,
     rollbackFailedPromptTemplateItemCreate,
     rollbackFailedPromptTemplateItemDelete,
     rollbackFailedPromptTemplateItemReorder,
@@ -94,6 +95,7 @@
   const promptTemplateDraft = $state<{ value: PromptItem[] }>({
     value: isPromptTemplateHydrated() ? cloneJsonValue(DBState.db.promptTemplate ?? []) : [],
   })
+  let promptTemplateDraftRenderEpoch = $state(0)
   const promptTemplateDraftBinding: PromptTemplateDraftBinding = {
     getItems: () => promptTemplateDraft.value,
     setItems: (items) => {
@@ -101,6 +103,7 @@
     },
   }
   let previousPromptTemplateRevision = peekCachedServerCommandRevision()
+  let previousPromptTemplatePresetSelection = promptTemplatePresetSelectionSignature()
   let promptTemplateHydrated = $derived(
     $promptTemplateHydratedStore || Object.prototype.hasOwnProperty.call(DBState.db ?? {}, 'promptTemplate'),
   )
@@ -151,6 +154,20 @@
       promptItemId(item)
     }
     return cloneJsonValue(promptTemplateDraft.value ?? [])
+  }
+
+  function promptTemplatePresetSelectionSignature(): string {
+    const selectedIndex = DBState.db.promptPresetsId
+    const selectedId =
+      Number.isInteger(selectedIndex) && selectedIndex >= 0 ? DBState.db.promptPresets?.[selectedIndex]?.id : null
+    return `${selectedIndex}:${selectedId ?? ''}`
+  }
+
+  function resetPromptTemplateDraftFromProjection(): void {
+    resetPromptTemplateSelectionDirtyState()
+    promptTemplateDraft.value = cloneJsonValue(DBState.db.promptTemplate ?? [])
+    promptTemplateDraftRenderEpoch += 1
+    previousPromptTemplateRevision = peekCachedServerCommandRevision()
   }
 
   function createPromptItem(): PromptItem {
@@ -368,6 +385,13 @@
   })
   $effect(() => {
     if (!promptTemplateHydrated) return
+    const selection = promptTemplatePresetSelectionSignature()
+    if (selection === previousPromptTemplatePresetSelection) return
+    previousPromptTemplatePresetSelection = selection
+    untrack(resetPromptTemplateDraftFromProjection)
+  })
+  $effect(() => {
+    if (!promptTemplateHydrated) return
     // Reconcile the draft from the projection only when the cached server command
     // revision advances (a real server push / command response), not on every
     // keystroke. `reconcilePromptTemplateDraft` reads `DBState.db.promptTemplate`
@@ -380,6 +404,7 @@
     previousPromptTemplateRevision = revision
     if (nextDraft) {
       promptTemplateDraft.value = nextDraft
+      promptTemplateDraftRenderEpoch += 1
     }
   })
   $effect(() => {
@@ -469,6 +494,7 @@
     void ensurePromptTemplateHydrated().then((hydrated) => {
       if (cancelled || !hydrated) return
       promptTemplateDraft.value = cloneJsonValue(DBState.db.promptTemplate ?? [])
+      promptTemplateDraftRenderEpoch += 1
       previousPromptTemplateRevision = peekCachedServerCommandRevision()
     })
     return () => {
@@ -529,7 +555,7 @@
         <div class="text-textcolor2">No Format</div>
       {/if}
       {#key sorted}
-        {#each getReorderedTemplate() as { item: prompt, originalIndex, displayIndex }}
+        {#each getReorderedTemplate() as { item: prompt, originalIndex, displayIndex } (`${promptTemplateDraftRenderEpoch}:${prompt.id ?? originalIndex}`)}
           <PromptDataItem
             bind:promptItem={promptTemplateDraft.value[originalIndex]}
             isDragging={draggedIndex === originalIndex}

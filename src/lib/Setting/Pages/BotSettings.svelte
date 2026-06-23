@@ -210,21 +210,8 @@
     $promptTemplateHydratedStore || Object.prototype.hasOwnProperty.call(DBState.db ?? {}, 'promptTemplate'),
   )
   let selectedPromptPreset = $derived(DBState.db.promptPresets?.[DBState.db.promptPresetsId])
-  let promptTemplatePresetSyncInitialized = false
   const PROMPT_PRESET_ICON_SIZE = 48
   type SelectedPromptPresetIconFile = NonNullable<Awaited<ReturnType<typeof selectSingleFile>>>
-
-  $effect(() => {
-    const promptTemplate = DBState.db.promptTemplate
-    const selectedIndex = DBState.db.promptPresetsId
-    snapshotJson(promptTemplate)
-    if (!promptTemplatePresetSyncInitialized) {
-      promptTemplatePresetSyncInitialized = true
-      return
-    }
-    if (selectedIndex < 0 || promptTemplate === undefined) return
-    untrack(() => writeSelectedPromptPresetField('promptTemplate', promptTemplate))
-  })
 
   let initializedPluginProviderWatch = false
   let previousPluginProvider = ''

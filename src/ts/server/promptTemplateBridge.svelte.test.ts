@@ -110,6 +110,7 @@ import {
   queuePromptItemProjectionUpdate,
   queuePromptSettingsProjectionPatch,
   reconcilePromptTemplateDraft,
+  resetPromptTemplateSelectionDirtyState,
   restorePromptItemProjectionWrite,
   rollbackFailedPromptTemplateItemCreate,
   rollbackFailedPromptTemplateItemDelete,
@@ -526,6 +527,58 @@ describe('flushPendingPromptTemplatePatches', () => {
     expect(DBState.db).not.toHaveProperty('promptTemplate')
   })
 
+  it('PromptSettings immediately adopts a newly selected preset template before revision reconcile', async () => {
+    commandState.revision = 5
+    ;(DBState as { db: unknown }).db = {
+      promptSettings: { ...minimalPromptSettings },
+      promptTemplate: [promptItemFixture({ ...item('old-row', 'old text'), name: 'Old preset row' })],
+      promptPresetsId: 0,
+      promptPresets: [
+        {
+          id: 'preset-a',
+          name: 'Preset A',
+          promptTemplate: [promptItemFixture({ ...item('old-row', 'old text'), name: 'Old preset row' })],
+        },
+        {
+          id: 'preset-b',
+          name: 'Preset B',
+          promptTemplate: [promptItemFixture({ ...item('new-row', 'new text'), name: 'New preset row' })],
+        },
+      ],
+    }
+
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    let component: MountedComponent | null = null
+    try {
+      component = mount(PromptSettings, {
+        target,
+        props: { mode: 'inline', subMenu: 0 },
+      })
+      await tick()
+      await Promise.resolve()
+      await tick()
+
+      expect(target.textContent).toContain('Old preset row')
+
+      DBState.db.promptPresetsId = 1
+      DBState.db.promptTemplate = [promptItemFixture({ ...item('new-row', 'new text'), name: 'New preset row' })]
+      await tick()
+      await Promise.resolve()
+      await tick()
+
+      expect(commandState.revision).toBe(5)
+      expect(target.textContent).toContain('New preset row')
+      expect(target.textContent).not.toContain('Old preset row')
+
+      await vi.advanceTimersByTimeAsync(300)
+      expect(commandState.commands).toHaveLength(0)
+    } finally {
+      if (component) await unmount(component)
+      target.remove()
+    }
+  })
+
   it('M8: flushes pending prompt settings patches with keepalive and clears debounce', async () => {
     ;(DBState as { db: unknown }).db = { jsonSchemaEnabled: true }
 
@@ -694,6 +747,48 @@ describe('reconcilePromptTemplateDraft', () => {
     expect(textOf(later.nextDraft?.[0])).toBe('server later')
 
     await flushPromptItemDirtyTestState(draftItems)
+  })
+
+  it('selection reset clears dirty row merges and cancels pending item patches from the previous preset', async () => {
+    ;(DBState as { db: unknown }).db = {
+      promptTemplate: [item('shared-row', 'old preset server')],
+    }
+    let draftItems = [item('shared-row', 'old preset local dirty')]
+    const binding: PromptTemplateDraftBinding = {
+      getItems: () => draftItems,
+      setItems: (items) => {
+        draftItems = items
+      },
+    }
+
+    queuePromptItemProjectionUpdate(binding, 'shared-row', item('shared-row', 'old preset server'), 500)
+    resetPromptTemplateSelectionDirtyState()
+
+    DBState.db.promptTemplate = [item('shared-row', 'new preset projection')]
+    commandState.revision = 6
+
+    const result = reconcilePromptTemplateDraft(draftItems, 5)
+    if (result.nextDraft) draftItems = result.nextDraft
+
+    expect(textOf(draftItems[0])).toBe('new preset projection')
+
+    await vi.advanceTimersByTimeAsync(500)
+    expect(commandState.commands).toHaveLength(0)
+  })
+
+  it('selection reset preserves pending prompt settings patches', async () => {
+    ;(DBState as { db: unknown }).db = { jsonSchemaEnabled: true }
+
+    queuePromptSettingsProjectionPatch({ jsonSchemaEnabled: false }, { jsonSchemaEnabled: true }, 500)
+    resetPromptTemplateSelectionDirtyState()
+    await vi.advanceTimersByTimeAsync(500)
+
+    expect(commandState.commands).toHaveLength(1)
+    expect(commandState.commands[0].built).toEqual({
+      kind: 'patchPromptSettings',
+      baseRevision: 1,
+      patch: { jsonSchemaEnabled: false },
+    })
   })
 
   it('does not reconcile when the revision advances but content already matches', () => {

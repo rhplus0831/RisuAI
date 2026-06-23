@@ -231,6 +231,14 @@ export function flushPendingPromptTemplatePatches(options: ServerCommandTranspor
   runPendingPromptSettingsPatch(options)
 }
 
+export function resetPromptTemplateSelectionDirtyState(): void {
+  for (const pending of pendingPromptItemUpdates.values()) {
+    if (pending.timer) clearTimeout(pending.timer)
+  }
+  pendingPromptItemUpdates.clear()
+  promptItemDirtyFieldsById.clear()
+}
+
 function runPendingPromptItemUpdate(itemId: string, options: ServerCommandTransportOptions = {}): void {
   const pending = pendingPromptItemUpdates.get(itemId)
   if (!pending) return
