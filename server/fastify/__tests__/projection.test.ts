@@ -256,7 +256,15 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     // unrelated botPresets the resource used to point at.
     await importDatabase({
       characters: [{ chaId: 'char-a', name: 'Ada' }],
-      promptTemplate: [{ type: 'plain', text: 'item-0' }],
+      promptTemplate: [{ type: 'plain', text: 'stale top-level' }],
+      promptPresetsId: 0,
+      promptPresets: [
+        {
+          id: 'prompt-a',
+          name: 'Prompt A',
+          promptTemplate: [{ type: 'plain', text: 'item-0' }],
+        },
+      ],
       botPresets: [{ id: 'p1', name: 'P1' }],
       language: 'en',
     })
@@ -267,6 +275,58 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     expect(Object.keys(body.fields)).toEqual(['promptTemplate'])
     expect(body.fields.promptTemplate[0]).toMatchObject({ type: 'plain', text: 'item-0' })
     expect(body.fields).not.toHaveProperty('botPresets')
+  })
+
+  it('derives promptItem projection from the selected prompt preset template', async () => {
+    await importDatabase({
+      characters: [{ chaId: 'char-a', name: 'Ada' }],
+      promptTemplate: [{ id: 'top-level-stale', type: 'plain', text: 'stale top-level' }],
+      promptPresetsId: 1,
+      promptPresets: [
+        { id: 'prompt-a', name: 'Prompt A', promptTemplate: [{ id: 'prompt-a-row', text: 'A' }] },
+        { id: 'prompt-b', name: 'Prompt B', promptTemplate: [{ id: 'prompt-b-row', text: 'B' }] },
+      ],
+      language: 'en',
+    })
+
+    const res = await getProjection('promptItem')
+    const body = res.json()
+    expect(body.mode).toBe('fields')
+    expect(Object.keys(body.fields)).toEqual(['promptTemplate'])
+    expect(body.fields.promptTemplate).toEqual([{ id: 'prompt-b-row', text: 'B' }])
+  })
+
+  it('derives promptItem projection from a requested prompt preset owner', async () => {
+    await importDatabase({
+      characters: [{ chaId: 'char-a', name: 'Ada' }],
+      promptPresetsId: 1,
+      promptPresets: [
+        { id: 'prompt-a', name: 'Prompt A', promptTemplate: [{ id: 'prompt-a-row', text: 'A' }] },
+        { id: 'prompt-b', name: 'Prompt B', promptTemplate: [{ id: 'prompt-b-row', text: 'B' }] },
+      ],
+      language: 'en',
+    })
+
+    const res = await getProjection('promptItem', '?parentId=prompt-a')
+    const body = res.json()
+    expect(body.mode).toBe('fields')
+    expect(body.fields.promptTemplate).toEqual([{ id: 'prompt-a-row', text: 'A' }])
+  })
+
+  it('clears promptItem compatibility projection when the selected prompt preset has no template', async () => {
+    await importDatabase({
+      characters: [{ chaId: 'char-a', name: 'Ada' }],
+      promptTemplate: [{ id: 'top-level-stale', type: 'plain', text: 'stale top-level' }],
+      promptPresetsId: 0,
+      promptPresets: [{ id: 'prompt-a', name: 'Prompt A' }],
+      language: 'en',
+    })
+
+    const res = await getProjection('promptItem')
+    const body = res.json()
+    expect(body.mode).toBe('fields')
+    expect(Object.keys(body.fields)).toEqual(['promptTemplate'])
+    expect(body.fields.promptTemplate).toBeNull()
   })
 
   it('reships the applied prompt fields for a promptPreset refresh', async () => {

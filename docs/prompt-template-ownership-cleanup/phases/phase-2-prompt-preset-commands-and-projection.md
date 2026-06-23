@@ -1,6 +1,6 @@
 # Phase 2: Prompt Preset Commands And Projection
 
-Status: pending.
+Status: implemented.
 
 Goal: make prompt-template write paths owner-aware, with modern prompt presets
 as the normal owner.
@@ -48,6 +48,24 @@ as the normal owner.
   depending on top-level durable ownership.
 - Existing bridge performance protections are retained or replaced with
   equivalent row-level behavior.
+
+## Implementation Notes
+
+- Existing prompt item endpoints now accept optional `promptPresetId`; no new
+  endpoint names were added.
+- Scoped prompt item edits validate that `promptPresetId` exists and still
+  matches the selected `database.promptPresetsId`, then mutate
+  `promptPresets[index].promptTemplate` and persist the owning
+  `prompt_presets` row.
+- Legacy top-level `prompt_templates` writes remain available when
+  `promptPresetId` is omitted.
+- `promptItem` projection derives the selected/requested prompt preset template
+  and sends a null template sentinel when the owner has no template, allowing
+  clients to clear stale compatibility projection.
+- Browser hydration keys in-flight/completed state by prompt preset owner.
+- The prompt-template bridge keys pending row edits by owner plus item id,
+  sends the captured owner id, and drops stale owner edits if selection changes
+  before debounce flush.
 
 ## Validation
 

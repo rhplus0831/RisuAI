@@ -10,14 +10,15 @@ const commandState = vi.hoisted(() => ({
     rollback?: () => void
     keepalive?: boolean
   }>,
+  beforeBuild: null as (() => void) | null,
 }))
 
 const commandMocks = vi.hoisted(() => ({
   canUseServerCommands: () => true,
-  patchPromptSettingsCommand: async (args: Record<string, unknown>) => ({
+  patchPromptSettingsCommand: vi.fn(async (args: Record<string, unknown>) => ({
     kind: 'patchPromptSettings',
     ...args,
-  }),
+  })),
   peekCachedServerCommandRevision: () => commandState.revision,
   runServerCommand: vi.fn(
     async (args: {
@@ -25,7 +26,14 @@ const commandMocks = vi.hoisted(() => ({
       rollback?: () => void
       keepalive?: boolean
     }) => {
+      const beforeBuild = commandState.beforeBuild
+      commandState.beforeBuild = null
+      beforeBuild?.()
       const built = await args.command(1)
+      if (built.status && built.status !== 'ok') {
+        args.rollback?.()
+        return built
+      }
       commandState.commands.push({
         built,
         rollback: args.rollback,
@@ -34,30 +42,39 @@ const commandMocks = vi.hoisted(() => ({
       return { status: 'ok', revision: 1 }
     },
   ),
-  updatePromptItemCommand: async (args: Record<string, unknown>) => ({
+  updatePromptItemCommand: vi.fn(async (args: Record<string, unknown>) => ({
     kind: 'updatePromptItem',
     ...args,
-  }),
-  createPromptItemCommand: async (args: Record<string, unknown>) => ({
+  })),
+  createPromptItemCommand: vi.fn(async (args: Record<string, unknown>) => ({
     kind: 'createPromptItem',
     ...args,
-  }),
-  deletePromptItemCommand: async (args: Record<string, unknown>) => ({
+  })),
+  deletePromptItemCommand: vi.fn(async (args: Record<string, unknown>) => ({
     kind: 'deletePromptItem',
     ...args,
-  }),
-  reorderPromptItemsCommand: async (args: Record<string, unknown>) => ({
+  })),
+  reorderPromptItemsCommand: vi.fn(async (args: Record<string, unknown>) => ({
     kind: 'reorderPromptItems',
     ...args,
-  }),
+  })),
+  enablePromptItemsCommand: vi.fn(async (args: Record<string, unknown>) => ({
+    kind: 'enablePromptItems',
+    ...args,
+  })),
 }))
 
 const hydrationState = vi.hoisted(() => {
   let hydrated = true
+  let ownerId: string | null = null
   const subscribers = new Set<(value: boolean) => void>()
   return {
     ensure: vi.fn(async () => hydrated),
     isHydrated: () => hydrated,
+    currentOwner: () => ownerId,
+    setOwner: (value: string | null) => {
+      ownerId = value
+    },
     setHydrated: (value: boolean) => {
       hydrated = value
       for (const subscriber of subscribers) subscriber(value)
@@ -88,11 +105,13 @@ vi.mock('src/ts/server/settingsBridge.svelte', () => ({
 }))
 
 vi.mock('./promptTemplateHydration', () => ({
+  currentPromptTemplateOwnerId: hydrationState.currentOwner,
   ensurePromptTemplateHydrated: hydrationState.ensure,
   isPromptTemplateHydrated: hydrationState.isHydrated,
   promptTemplateHydratedStore: hydrationState.store,
 }))
 vi.mock('src/ts/server/promptTemplateHydration', () => ({
+  currentPromptTemplateOwnerId: hydrationState.currentOwner,
   ensurePromptTemplateHydrated: hydrationState.ensure,
   isPromptTemplateHydrated: hydrationState.isHydrated,
   promptTemplateHydratedStore: hydrationState.store,
@@ -102,6 +121,12 @@ import type { PromptItem, PromptSettings as PromptSettingsFixture } from '../pro
 import { DBState } from '../stores.svelte'
 import { withCloneInstrumentation } from '../__tests__/cloneCostHarness'
 import PromptSettings from 'src/lib/Setting/Pages/PromptSettings.svelte'
+import {
+  createPromptItemCommand,
+  deletePromptItemCommand,
+  enablePromptItemsCommand,
+  reorderPromptItemsCommand,
+} from './commands'
 import { queuePromptItemProjectionUpdate as queuePromptItemProjectionUpdateForPromptSettings } from 'src/ts/server/promptTemplateBridge.svelte'
 import {
   applyPromptItemProjectionWrite,
@@ -111,10 +136,13 @@ import {
   queuePromptSettingsProjectionPatch,
   reconcilePromptTemplateDraft,
   resetPromptTemplateSelectionDirtyState,
+  promptTemplateOwnerCommandId,
   restorePromptItemProjectionWrite,
   rollbackFailedPromptTemplateItemCreate,
   rollbackFailedPromptTemplateItemDelete,
   rollbackFailedPromptTemplateItemReorder,
+  runPromptTemplateOwnerCommand,
+  runPromptTemplateOwnerRollback,
   type PromptTemplateDraftBinding,
 } from './promptTemplateBridge.svelte'
 
@@ -180,7 +208,16 @@ beforeEach(() => {
   vi.useFakeTimers()
   commandState.revision = 1
   commandState.commands.length = 0
+  commandState.beforeBuild = null
+  commandMocks.patchPromptSettingsCommand.mockClear()
+  commandMocks.updatePromptItemCommand.mockClear()
+  commandMocks.createPromptItemCommand.mockClear()
+  commandMocks.deletePromptItemCommand.mockClear()
+  commandMocks.reorderPromptItemsCommand.mockClear()
+  commandMocks.enablePromptItemsCommand.mockClear()
+  commandMocks.runServerCommand.mockClear()
   hydrationState.setHydrated(true)
+  hydrationState.setOwner(null)
   hydrationState.ensure.mockClear()
 })
 
@@ -250,6 +287,222 @@ describe('restorePromptItemProjectionWrite', () => {
 })
 
 describe('prompt template collection rollback guards', () => {
+  it.each([
+    [
+      'create',
+      async (ownerId: string | null) =>
+        createPromptItemCommand({
+          baseRevision: 7,
+          promptPresetId: promptTemplateOwnerCommandId(ownerId),
+          promptItem: item('created', 'new'),
+        }),
+      commandMocks.createPromptItemCommand,
+    ],
+    [
+      'delete',
+      async (ownerId: string | null) =>
+        deletePromptItemCommand({
+          baseRevision: 7,
+          promptPresetId: promptTemplateOwnerCommandId(ownerId),
+          itemId: 'deleted',
+        }),
+      commandMocks.deletePromptItemCommand,
+    ],
+    [
+      'reorder',
+      async (ownerId: string | null) =>
+        reorderPromptItemsCommand({
+          baseRevision: 7,
+          promptPresetId: promptTemplateOwnerCommandId(ownerId),
+          itemIds: ['p-1', 'p-0'],
+        }),
+      commandMocks.reorderPromptItemsCommand,
+    ],
+    [
+      'enable',
+      async (ownerId: string | null) =>
+        enablePromptItemsCommand({
+          baseRevision: 7,
+          promptPresetId: promptTemplateOwnerCommandId(ownerId),
+          enabled: true,
+        }),
+      commandMocks.enablePromptItemsCommand,
+    ],
+  ])(
+    'drops stale %s command construction after the selected owner changes',
+    async (_name, buildCommand, commandMock) => {
+      hydrationState.setOwner('preset-a')
+      const ownerId = hydrationState.currentOwner()
+      hydrationState.setOwner('preset-b')
+
+      const result = await runPromptTemplateOwnerCommand(ownerId, () => buildCommand(ownerId))
+
+      expect(result).toEqual({ status: 'unavailable' })
+      expect(commandMock).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each([
+    [
+      'create',
+      async (ownerId: string | null) =>
+        createPromptItemCommand({
+          baseRevision: 7,
+          promptPresetId: promptTemplateOwnerCommandId(ownerId),
+          promptItem: item('created', 'new'),
+        }),
+      commandMocks.createPromptItemCommand,
+      {
+        kind: 'createPromptItem',
+        baseRevision: 7,
+        promptPresetId: 'preset-a',
+        promptItem: item('created', 'new'),
+      },
+    ],
+    [
+      'delete',
+      async (ownerId: string | null) =>
+        deletePromptItemCommand({
+          baseRevision: 7,
+          promptPresetId: promptTemplateOwnerCommandId(ownerId),
+          itemId: 'deleted',
+        }),
+      commandMocks.deletePromptItemCommand,
+      {
+        kind: 'deletePromptItem',
+        baseRevision: 7,
+        promptPresetId: 'preset-a',
+        itemId: 'deleted',
+      },
+    ],
+    [
+      'reorder',
+      async (ownerId: string | null) =>
+        reorderPromptItemsCommand({
+          baseRevision: 7,
+          promptPresetId: promptTemplateOwnerCommandId(ownerId),
+          itemIds: ['p-1', 'p-0'],
+        }),
+      commandMocks.reorderPromptItemsCommand,
+      {
+        kind: 'reorderPromptItems',
+        baseRevision: 7,
+        promptPresetId: 'preset-a',
+        itemIds: ['p-1', 'p-0'],
+      },
+    ],
+    [
+      'enable',
+      async (ownerId: string | null) =>
+        enablePromptItemsCommand({
+          baseRevision: 7,
+          promptPresetId: promptTemplateOwnerCommandId(ownerId),
+          enabled: true,
+        }),
+      commandMocks.enablePromptItemsCommand,
+      {
+        kind: 'enablePromptItems',
+        baseRevision: 7,
+        promptPresetId: 'preset-a',
+        enabled: true,
+      },
+    ],
+  ])('uses the captured owner when constructing %s commands', async (_name, buildCommand, commandMock, expected) => {
+    hydrationState.setOwner('preset-a')
+    const ownerId = hydrationState.currentOwner()
+
+    const result = await runPromptTemplateOwnerCommand(ownerId, () => buildCommand(ownerId))
+
+    expect(result).toEqual(expected)
+    expect(commandMock).toHaveBeenCalledWith(expect.objectContaining({ promptPresetId: 'preset-a' }))
+  })
+
+  it('skips collection rollback after the selected owner changes', () => {
+    hydrationState.setOwner('preset-a')
+    const ownerId = hydrationState.currentOwner()
+    let draftItems = [item('p-0', 'first'), item('created', 'new')]
+    ;(DBState as { db: unknown }).db = { promptTemplate: cloneJsonValue(draftItems) }
+    const binding = draftBindingFor(
+      () => draftItems,
+      (items) => {
+        draftItems = items
+      },
+    )
+
+    hydrationState.setOwner('preset-b')
+    rollbackFailedPromptTemplateItemCreate({
+      ownerId,
+      binding,
+      itemId: 'created',
+      attemptedItem: item('created', 'new'),
+    })
+
+    expect(draftItems.map((promptItem) => promptItem.id)).toEqual(['p-0', 'created'])
+    expect((DBState.db.promptTemplate as PromptItem[]).map((promptItem) => promptItem.id)).toEqual(['p-0', 'created'])
+  })
+
+  it('skips delete rollback after the selected owner changes', () => {
+    hydrationState.setOwner('preset-a')
+    const ownerId = hydrationState.currentOwner()
+    let draftItems = [item('p-0', 'first'), item('p-1', 'second')]
+    ;(DBState as { db: unknown }).db = { promptTemplate: cloneJsonValue(draftItems) }
+    const binding = draftBindingFor(
+      () => draftItems,
+      (items) => {
+        draftItems = items
+      },
+    )
+
+    hydrationState.setOwner('preset-b')
+    rollbackFailedPromptTemplateItemDelete({
+      ownerId,
+      binding,
+      itemId: 'deleted',
+      previousIndex: 1,
+      previousItem: item('deleted', 'deleted original'),
+    })
+
+    expect(draftItems.map((promptItem) => promptItem.id)).toEqual(['p-0', 'p-1'])
+    expect((DBState.db.promptTemplate as PromptItem[]).map((promptItem) => promptItem.id)).toEqual(['p-0', 'p-1'])
+  })
+
+  it('skips reorder rollback after the selected owner changes', () => {
+    hydrationState.setOwner('preset-a')
+    const ownerId = hydrationState.currentOwner()
+    let draftItems = [item('p-1', 'second'), item('p-0', 'first')]
+    ;(DBState as { db: unknown }).db = { promptTemplate: cloneJsonValue(draftItems) }
+    const binding = draftBindingFor(
+      () => draftItems,
+      (items) => {
+        draftItems = items
+      },
+    )
+
+    hydrationState.setOwner('preset-b')
+    rollbackFailedPromptTemplateItemReorder({
+      ownerId,
+      binding,
+      previousItemIds: ['p-0', 'p-1'],
+      attemptedItemIds: ['p-1', 'p-0'],
+    })
+
+    expect(draftItems.map((promptItem) => promptItem.id)).toEqual(['p-1', 'p-0'])
+    expect((DBState.db.promptTemplate as PromptItem[]).map((promptItem) => promptItem.id)).toEqual(['p-1', 'p-0'])
+  })
+
+  it('skips enable rollback after the selected owner changes', () => {
+    hydrationState.setOwner('preset-a')
+    const ownerId = hydrationState.currentOwner()
+    ;(DBState as { db: unknown }).db = { promptTemplate: [] }
+
+    hydrationState.setOwner('preset-b')
+    runPromptTemplateOwnerRollback(ownerId, () => {
+      DBState.db.promptTemplate = undefined
+    })
+
+    expect(DBState.db.promptTemplate).toEqual([])
+  })
+
   it('failed create removes unchanged attempted item and preserves newer sibling and appended rows', () => {
     let draftItems = [item('p-0', 'first'), item('p-1', 'second'), item('created', 'new')]
     ;(DBState as { db: unknown }).db = { promptTemplate: cloneJsonValue(draftItems) }
@@ -264,6 +517,7 @@ describe('prompt template collection rollback guards', () => {
     DBState.db.promptTemplate = cloneJsonValue(draftItems)
 
     rollbackFailedPromptTemplateItemCreate({
+      ownerId: null,
       binding,
       itemId: 'created',
       attemptedItem: item('created', 'new'),
@@ -290,6 +544,7 @@ describe('prompt template collection rollback guards', () => {
     )
 
     rollbackFailedPromptTemplateItemCreate({
+      ownerId: null,
       binding,
       itemId: 'created',
       attemptedItem: item('created', 'new'),
@@ -312,6 +567,7 @@ describe('prompt template collection rollback guards', () => {
     )
 
     rollbackFailedPromptTemplateItemDelete({
+      ownerId: null,
       binding,
       itemId: 'deleted',
       previousIndex: 1,
@@ -341,6 +597,7 @@ describe('prompt template collection rollback guards', () => {
     )
 
     rollbackFailedPromptTemplateItemReorder({
+      ownerId: null,
       binding,
       previousItemIds: ['p-0', 'p-1', 'p-2'],
       attemptedItemIds: ['p-1', 'p-0', 'p-2'],
@@ -367,6 +624,7 @@ describe('prompt template collection rollback guards', () => {
     )
 
     rollbackFailedPromptTemplateItemReorder({
+      ownerId: null,
       binding,
       previousItemIds: ['p-0', 'p-1', 'p-2'],
       attemptedItemIds: ['p-1', 'p-0', 'p-2'],
@@ -402,6 +660,7 @@ describe('flushPendingPromptTemplatePatches', () => {
 
   it('M8: flushes pending prompt item updates with keepalive and clears debounce', async () => {
     seedTemplate()
+    hydrationState.setOwner('prompt-a')
     let draftItems = draftCopy()
     draftItems[0] = item('p-0', 'unload item')
     const binding: PromptTemplateDraftBinding = {
@@ -420,12 +679,33 @@ describe('flushPendingPromptTemplatePatches', () => {
     expect(commandState.commands[0].built).toEqual({
       kind: 'updatePromptItem',
       baseRevision: 1,
+      promptPresetId: 'prompt-a',
       itemId: 'p-0',
       patch: item('p-0', 'unload item'),
     })
 
     await vi.advanceTimersByTimeAsync(500)
     expect(commandState.commands).toHaveLength(1)
+  })
+
+  it('drops a debounced prompt item update when the selected prompt preset owner changes', async () => {
+    seedTemplate()
+    hydrationState.setOwner('prompt-a')
+    let draftItems = draftCopy()
+    draftItems[0] = item('p-0', 'stale owner edit')
+    const binding: PromptTemplateDraftBinding = {
+      getItems: () => draftItems,
+      setItems: (items) => {
+        draftItems = items
+      },
+    }
+
+    queuePromptItemProjectionUpdate(binding, 'p-0', item('p-0', 'small'), 500, 'prompt-a')
+    hydrationState.setOwner('prompt-b')
+    await vi.advanceTimersByTimeAsync(500)
+
+    expect(commandState.commands).toHaveLength(0)
+    expect(textOf(draftItems[0])).toBe('stale owner edit')
   })
 
   it('L25: coalesced prompt item rollback restores the first pre-edit item', async () => {
@@ -624,6 +904,12 @@ describe('prompt settings draft dispatch contracts', () => {
     expect(source).toContain('let previousDraftDispatchSnapshot = snapshotJson(initialValue)')
     expect(source).toContain('previousDraftDispatchSnapshot = serverSnapshot')
     expect(source).toContain('if (snapshot === previousDraftDispatchSnapshot) return')
+  })
+
+  it('does not mirror prompt item row edits through whole prompt preset update commands', () => {
+    const source = readSource('src/ts/server/promptTemplateBridge.svelte.ts')
+
+    expect(source).not.toContain("mirrorTopLevelPresetField('promptTemplate'")
   })
 })
 

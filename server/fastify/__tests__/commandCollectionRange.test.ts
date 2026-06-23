@@ -655,6 +655,37 @@ describe('Phase 4 prompt-items collection range', () => {
     return importDatabase(seed)
   }
 
+  async function importWithScopedPromptItems(selectedIndex = 0): Promise<number> {
+    const seed = seedDatabase()
+    seed.promptPresetsId = selectedIndex
+    seed.promptPresets = [
+      {
+        id: 'prompt-a',
+        name: 'Prompt A',
+        promptTemplate: [
+          { id: 'item-0', type: 'plain', text: 'a0' },
+          { id: 'item-1', type: 'plain', text: 'a1' },
+          { id: 'item-2', type: 'plain', text: 'a2' },
+        ],
+      },
+      {
+        id: 'prompt-b',
+        name: 'Prompt B',
+        promptTemplate: [{ id: 'item-b', type: 'plain', text: 'b0' }],
+      },
+    ]
+    seed.promptTemplate = [{ id: 'legacy-item', type: 'plain', text: 'legacy' }]
+    return importDatabase(seed)
+  }
+
+  function promptPresetTemplate(presetId: string): Array<{ id: string; text?: string }> {
+    const presets = readCollection('prompt_presets') as Array<{
+      id: string
+      promptTemplate?: Array<{ id: string; text?: string }>
+    }>
+    return presets.find((preset) => preset.id === presetId)?.promptTemplate ?? []
+  }
+
   it('POST prompt-items rewrites only the prompt_templates table', async () => {
     const revision = await importWithPromptItems()
     const before = rowidSnapshot()
@@ -752,6 +783,118 @@ describe('Phase 4 prompt-items collection range', () => {
       'item-0',
       'item-1',
     ])
+  })
+
+  it('POST prompt-items with promptPresetId updates only the selected prompt_presets row', async () => {
+    const revision = await importWithScopedPromptItems()
+    const before = rowidSnapshot()
+
+    const { metric } = await runCommand({
+      method: 'POST',
+      url: '/api/v1/commands/prompt-items',
+      payload: {
+        baseRevision: revision,
+        promptPresetId: 'prompt-a',
+        promptItem: { id: 'item-3', type: 'plain', text: 'a3' },
+      },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-collection')
+    expect(metric.writtenTables).toEqual(['prompt_presets'])
+    assertCommandMetricGate(metric)
+    expectNoCharacterOrChatChurn(before)
+    expect(promptPresetTemplate('prompt-a').map((i) => i.id)).toEqual(['item-0', 'item-1', 'item-2', 'item-3'])
+    expect(readCollection('prompt_templates')).toEqual([{ id: 'legacy-item', type: 'plain', text: 'legacy' }])
+  })
+
+  it('PATCH prompt-items/:id with promptPresetId updates only the selected prompt_presets row', async () => {
+    const revision = await importWithScopedPromptItems()
+    const before = rowidSnapshot()
+    const beforeRowids = collectionRowidsByPosition('prompt_presets')
+
+    const { metric } = await runCommand({
+      method: 'PATCH',
+      url: '/api/v1/commands/prompt-items/item-1',
+      payload: { baseRevision: revision, promptPresetId: 'prompt-a', patch: { text: 'patched scoped' } },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-collection')
+    expect(metric.writtenTables).toEqual(['prompt_presets'])
+    assertCommandMetricGate(metric)
+    expectNoCharacterOrChatChurn(before)
+    expect(collectionRowidsByPosition('prompt_presets')).toEqual(beforeRowids)
+    expect(promptPresetTemplate('prompt-a')[1]).toMatchObject({ id: 'item-1', text: 'patched scoped' })
+    expect(readCollection('prompt_templates')).toEqual([{ id: 'legacy-item', type: 'plain', text: 'legacy' }])
+  })
+
+  it('DELETE prompt-items/:id with promptPresetId updates only the selected prompt_presets row', async () => {
+    const revision = await importWithScopedPromptItems()
+    const before = rowidSnapshot()
+
+    const { metric } = await runCommand({
+      method: 'DELETE',
+      url: '/api/v1/commands/prompt-items/item-1',
+      payload: { baseRevision: revision, promptPresetId: 'prompt-a' },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-collection')
+    expect(metric.writtenTables).toEqual(['prompt_presets'])
+    assertCommandMetricGate(metric)
+    expectNoCharacterOrChatChurn(before)
+    expect(promptPresetTemplate('prompt-a').map((i) => i.id)).toEqual(['item-0', 'item-2'])
+    expect(readCollection('prompt_templates')).toEqual([{ id: 'legacy-item', type: 'plain', text: 'legacy' }])
+  })
+
+  it('POST prompt-items/reorder with promptPresetId updates only the selected prompt_presets row', async () => {
+    const revision = await importWithScopedPromptItems()
+    const before = rowidSnapshot()
+
+    const { metric } = await runCommand({
+      method: 'POST',
+      url: '/api/v1/commands/prompt-items/reorder',
+      payload: { baseRevision: revision, promptPresetId: 'prompt-a', itemIds: ['item-2', 'item-0', 'item-1'] },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-collection')
+    expect(metric.writtenTables).toEqual(['prompt_presets'])
+    assertCommandMetricGate(metric)
+    expectNoCharacterOrChatChurn(before)
+    expect(promptPresetTemplate('prompt-a').map((i) => i.id)).toEqual(['item-2', 'item-0', 'item-1'])
+    expect(readCollection('prompt_templates')).toEqual([{ id: 'legacy-item', type: 'plain', text: 'legacy' }])
+  })
+
+  it('POST prompt-items/enable=false with promptPresetId clears only the selected prompt preset template', async () => {
+    const revision = await importWithScopedPromptItems()
+    const before = rowidSnapshot()
+
+    const { metric } = await runCommand({
+      method: 'POST',
+      url: '/api/v1/commands/prompt-items/enable',
+      payload: { baseRevision: revision, promptPresetId: 'prompt-a', enabled: false },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-collection')
+    expect(metric.writtenTables).toEqual(['prompt_presets'])
+    assertCommandMetricGate(metric)
+    expectNoCharacterOrChatChurn(before)
+    expect(promptPresetTemplate('prompt-a')).toEqual([])
+    expect(promptPresetTemplate('prompt-b')).toEqual([{ id: 'item-b', type: 'plain', text: 'b0' }])
+    expect(readCollection('prompt_templates')).toEqual([{ id: 'legacy-item', type: 'plain', text: 'legacy' }])
+  })
+
+  it('rejects scoped prompt item commands when the prompt preset selection is stale', async () => {
+    const revision = await importWithScopedPromptItems(1)
+
+    const result = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/prompt-items/item-1',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, promptPresetId: 'prompt-a', patch: { text: 'stale' } },
+    })
+
+    expect(result.statusCode).toBe(400)
+    expect(promptPresetTemplate('prompt-a')[1]).toMatchObject({ id: 'item-1', text: 'a1' })
+    expect(readCollection('prompt_templates')).toEqual([{ id: 'legacy-item', type: 'plain', text: 'legacy' }])
   })
 })
 

@@ -30,12 +30,15 @@
     queuePromptSettingsProjectionPatch,
     reconcilePromptTemplateDraft,
     resetPromptTemplateSelectionDirtyState,
+    promptTemplateOwnerCommandId,
     rollbackFailedPromptTemplateItemCreate,
     rollbackFailedPromptTemplateItemDelete,
     rollbackFailedPromptTemplateItemReorder,
+    runPromptTemplateOwnerCommand,
     type PromptTemplateDraftBinding,
   } from 'src/ts/server/promptTemplateBridge.svelte'
   import {
+    currentPromptTemplateOwnerId,
     ensurePromptTemplateHydrated,
     isPromptTemplateHydrated,
     promptTemplateHydratedStore,
@@ -104,9 +107,7 @@
   }
   let previousPromptTemplateRevision = peekCachedServerCommandRevision()
   let previousPromptTemplatePresetSelection = promptTemplatePresetSelectionSignature()
-  let promptTemplateHydrated = $derived(
-    $promptTemplateHydratedStore || Object.prototype.hasOwnProperty.call(DBState.db ?? {}, 'promptTemplate'),
-  )
+  let promptTemplateHydrated = $derived($promptTemplateHydratedStore && isPromptTemplateHydrated())
   const promptSettingsDraft = createPromptSettingsDraft<Record<string, any>>('promptSettings', {})
   const jsonSchemaEnabledDraft = createPromptSettingsDraft<boolean>('jsonSchemaEnabled', false)
   const outputImageModalDraft = createPromptSettingsDraft<boolean>('outputImageModal', false)
@@ -194,19 +195,23 @@
     return itemIds
   }
 
-  function dispatchCreatePromptItem(promptItem: PromptItem): void {
+  function dispatchCreatePromptItem(ownerId: string | null, promptItem: PromptItem): void {
     if (!promptTemplateHydrated) return
     if (!canUseServerCommands()) return
     const itemId = promptItemId(promptItem)
     const attemptedItem = cloneJsonValue(promptItem)
     void runServerCommand({
       command: (baseRevision) =>
-        createPromptItemCommand({
-          baseRevision,
-          promptItem: cloneJsonValue(attemptedItem) as PromptItemSnapshot,
-        }),
+        runPromptTemplateOwnerCommand(ownerId, () =>
+          createPromptItemCommand({
+            baseRevision,
+            promptPresetId: promptTemplateOwnerCommandId(ownerId),
+            promptItem: cloneJsonValue(attemptedItem) as PromptItemSnapshot,
+          }),
+        ),
       rollback: () =>
         rollbackFailedPromptTemplateItemCreate({
+          ownerId,
           binding: promptTemplateDraftBinding,
           itemId,
           attemptedItem,
@@ -214,7 +219,7 @@
     })
   }
 
-  function dispatchDeletePromptItem(promptItem: PromptItem, previous: PromptItem[]): void {
+  function dispatchDeletePromptItem(ownerId: string | null, promptItem: PromptItem, previous: PromptItem[]): void {
     if (!promptTemplateHydrated) return
     if (!canUseServerCommands()) return
     const itemId = promptItemId(promptItem)
@@ -222,12 +227,16 @@
     const previousItem = previousIndex === -1 ? cloneJsonValue(promptItem) : previous[previousIndex]
     void runServerCommand({
       command: (baseRevision) =>
-        deletePromptItemCommand({
-          baseRevision,
-          itemId,
-        }),
+        runPromptTemplateOwnerCommand(ownerId, () =>
+          deletePromptItemCommand({
+            baseRevision,
+            promptPresetId: promptTemplateOwnerCommandId(ownerId),
+            itemId,
+          }),
+        ),
       rollback: () =>
         rollbackFailedPromptTemplateItemDelete({
+          ownerId,
           binding: promptTemplateDraftBinding,
           itemId,
           previousIndex,
@@ -236,7 +245,7 @@
     })
   }
 
-  function dispatchReorderPromptItems(previous: PromptItem[]): void {
+  function dispatchReorderPromptItems(ownerId: string | null, previous: PromptItem[]): void {
     if (!promptTemplateHydrated) return
     if (!canUseServerCommands()) return
     withTrustedServerProjectionWrite(() => {
@@ -251,12 +260,16 @@
     const attemptedItemIds = [...itemIds]
     void runServerCommand({
       command: (baseRevision) =>
-        reorderPromptItemsCommand({
-          baseRevision,
-          itemIds,
-        }),
+        runPromptTemplateOwnerCommand(ownerId, () =>
+          reorderPromptItemsCommand({
+            baseRevision,
+            promptPresetId: promptTemplateOwnerCommandId(ownerId),
+            itemIds,
+          }),
+        ),
       rollback: () =>
         rollbackFailedPromptTemplateItemReorder({
+          ownerId,
           binding: promptTemplateDraftBinding,
           previousItemIds,
           attemptedItemIds,
@@ -267,7 +280,13 @@
   function queuePromptItemUpdate(promptItem: PromptItem, previousItem: PromptItem): void {
     if (!promptTemplateHydrated) return
     const itemId = promptItemId(promptItem)
-    queuePromptItemProjectionUpdate(promptTemplateDraftBinding, itemId, previousItem)
+    queuePromptItemProjectionUpdate(
+      promptTemplateDraftBinding,
+      itemId,
+      previousItem,
+      250,
+      currentPromptTemplateOwnerId(),
+    )
   }
 
   function movePromptItem(originalIndex: number, nextIndex: number): void {
@@ -278,21 +297,22 @@
     const temp = templates[originalIndex]
     templates[originalIndex] = templates[nextIndex]
     templates[nextIndex] = temp
+    const ownerId = currentPromptTemplateOwnerId()
     promptTemplateDraft.value = templates
     withTrustedServerProjectionWrite(() => {
       DBState.db.promptTemplate = cloneJsonValue(templates)
     })
-    mirrorTopLevelPresetField('promptTemplate', templates)
-    dispatchReorderPromptItems(previous)
+    dispatchReorderPromptItems(ownerId, previous)
   }
 
-  function applyPromptTemplateDraft(templates: PromptItem[]): void {
-    if (!promptTemplateHydrated) return
+  function applyPromptTemplateDraft(templates: PromptItem[]): string | null {
+    if (!promptTemplateHydrated) return null
+    const ownerId = currentPromptTemplateOwnerId()
     promptTemplateDraft.value = cloneJsonValue(templates)
     withTrustedServerProjectionWrite(() => {
       DBState.db.promptTemplate = cloneJsonValue(templates)
     })
-    mirrorTopLevelPresetField('promptTemplate', templates)
+    return ownerId
   }
 
   function queuePromptSettingsPatch(patch: SettingsPatch, previous: SettingsPatch): void {
@@ -472,8 +492,8 @@
     })
     openedItemIndices = newOpenedIndices
 
-    applyPromptTemplateDraft(templates)
-    dispatchReorderPromptItems(previous)
+    const ownerId = applyPromptTemplateDraft(templates)
+    dispatchReorderPromptItems(ownerId, previous)
     draggedIndex = -1
     dragOverIndex = -1
   }
@@ -491,7 +511,7 @@
   onMount(() => {
     document.addEventListener('keydown', handleKeyDown)
     let cancelled = false
-    void ensurePromptTemplateHydrated().then((hydrated) => {
+    void ensurePromptTemplateHydrated({ promptPresetId: currentPromptTemplateOwnerId() }).then((hydrated) => {
       if (cancelled || !hydrated) return
       promptTemplateDraft.value = cloneJsonValue(DBState.db.promptTemplate ?? [])
       promptTemplateDraftRenderEpoch += 1
@@ -572,7 +592,7 @@
               const removed = promptTemplateDraft.value[originalIndex]
               let templates = [...promptTemplateDraft.value]
               templates.splice(originalIndex, 1)
-              applyPromptTemplateDraft(templates)
+              const ownerId = applyPromptTemplateDraft(templates)
 
               const newOpenedIndices = new Set<number>()
               openedItemIndices.forEach((index) => {
@@ -588,7 +608,7 @@
 
               draggedIndex = -1
               dragOverIndex = -1
-              dispatchDeletePromptItem(removed, previous)
+              dispatchDeletePromptItem(ownerId, removed, previous)
             }}
             moveDown={() => {
               if (originalIndex === promptTemplateDraft.value.length - 1) {
@@ -634,8 +654,8 @@
       class="font-medium cursor-pointer hover:text-green-500"
       onclick={() => {
         const promptItem = createPromptItem()
-        applyPromptTemplateDraft([...(promptTemplateDraft.value ?? []), promptItem])
-        dispatchCreatePromptItem(promptItem)
+        const ownerId = applyPromptTemplateDraft([...(promptTemplateDraft.value ?? []), promptItem])
+        dispatchCreatePromptItem(ownerId, promptItem)
       }}><PlusIcon /></button>
 
     <span class="text-textcolor2 text-sm mt-2">{tokens} {language.fixedTokens}</span>

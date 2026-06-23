@@ -1,5 +1,4 @@
 import type { PromptItem } from '../process/prompt'
-import { mirrorTopLevelPresetField } from '../presetFieldMirror'
 import { DBState } from '../stores.svelte'
 import {
   canUseServerCommands,
@@ -8,11 +7,12 @@ import {
   runServerCommand,
   updatePromptItemCommand,
   type PromptItemSnapshot,
+  type ServerCommandResult,
   type ServerCommandTransportOptions,
   type SettingsPatch,
 } from './commands'
 import { withTrustedServerProjectionWrite } from './projectionWriteGuard.svelte'
-import { isPromptTemplateHydrated } from './promptTemplateHydration'
+import { currentPromptTemplateOwnerId, isPromptTemplateHydrated } from './promptTemplateHydration'
 import { mergeProjectionIntoDirtyDraft } from './staleStateGuards'
 
 /**
@@ -49,12 +49,14 @@ export interface PromptTemplateDraftBinding {
 }
 
 export interface FailedPromptTemplateItemCreateRollback {
+  ownerId: string | null
   binding: PromptTemplateDraftBinding
   itemId: string
   attemptedItem: PromptItem
 }
 
 export interface FailedPromptTemplateItemDeleteRollback {
+  ownerId: string | null
   binding: PromptTemplateDraftBinding
   itemId: string
   previousIndex: number
@@ -62,12 +64,14 @@ export interface FailedPromptTemplateItemDeleteRollback {
 }
 
 export interface FailedPromptTemplateItemReorderRollback {
+  ownerId: string | null
   binding: PromptTemplateDraftBinding
   previousItemIds: string[]
   attemptedItemIds: string[]
 }
 
 interface PendingPromptItemUpdate {
+  ownerId: string | null
   itemId: string
   previousItem: PromptItem
   attemptedItem: PromptItem
@@ -89,7 +93,7 @@ const pendingPromptSettingsPatch: PendingPromptSettingsPatch = {
   attempted: {},
   timer: null,
 }
-const promptItemDirtyFieldsById = new Map<string, Set<string>>()
+const promptItemDirtyFieldsByOwnerAndId = new Map<string, Set<string>>()
 
 /**
  * Mirror one edited prompt item into the read-only projection in place, without
@@ -136,7 +140,29 @@ export function restorePromptItemProjectionWrite(itemId: string, previousItem: P
   })
 }
 
+export function promptTemplateOwnerCommandId(ownerId: string | null): string | undefined {
+  return ownerId ?? undefined
+}
+
+export function isCurrentPromptTemplateOwner(ownerId: string | null): boolean {
+  return currentPromptTemplateOwnerId() === ownerId
+}
+
+export async function runPromptTemplateOwnerCommand<T extends Record<string, unknown> = {}>(
+  ownerId: string | null,
+  command: () => Promise<ServerCommandResult<T>>,
+): Promise<ServerCommandResult<T>> {
+  if (!isCurrentPromptTemplateOwner(ownerId)) return { status: 'unavailable' }
+  return command()
+}
+
+export function runPromptTemplateOwnerRollback(ownerId: string | null, rollback: () => void): void {
+  if (!isCurrentPromptTemplateOwner(ownerId)) return
+  rollback()
+}
+
 export function rollbackFailedPromptTemplateItemCreate(input: FailedPromptTemplateItemCreateRollback): void {
+  if (!isCurrentPromptTemplateOwner(input.ownerId)) return
   const liveItems = input.binding.getItems() ?? []
   const liveIndex = findPromptItemIndexById(liveItems, input.itemId)
   if (liveIndex === -1) return
@@ -145,10 +171,11 @@ export function rollbackFailedPromptTemplateItemCreate(input: FailedPromptTempla
   const nextItems = [...liveItems]
   nextItems.splice(liveIndex, 1)
   applyPromptTemplateCollectionRollback(input.binding, nextItems)
-  promptItemDirtyFieldsById.delete(input.itemId)
+  promptItemDirtyFieldsByOwnerAndId.delete(promptItemStateKey(input.ownerId, input.itemId))
 }
 
 export function rollbackFailedPromptTemplateItemDelete(input: FailedPromptTemplateItemDeleteRollback): void {
+  if (!isCurrentPromptTemplateOwner(input.ownerId)) return
   const liveItems = input.binding.getItems() ?? []
   if (findPromptItemIndexById(liveItems, input.itemId) !== -1) return
 
@@ -159,6 +186,7 @@ export function rollbackFailedPromptTemplateItemDelete(input: FailedPromptTempla
 }
 
 export function rollbackFailedPromptTemplateItemReorder(input: FailedPromptTemplateItemReorderRollback): void {
+  if (!isCurrentPromptTemplateOwner(input.ownerId)) return
   const liveItems = input.binding.getItems() ?? []
   const liveItemIds = promptItemIdList(liveItems)
   if (!stringArraysEqual(liveItemIds, input.attemptedItemIds)) return
@@ -177,25 +205,27 @@ export function queuePromptItemProjectionUpdate(
   itemId: string,
   previousItem: PromptItem,
   delayMs = 250,
+  promptPresetId: string | null = currentPromptTemplateOwnerId(),
 ): void {
-  if (!isPromptTemplateHydrated()) return
+  if (!isPromptTemplateHydrated(promptPresetId)) return
   const attemptedItem = applyPromptItemProjectionWrite(binding.getItems(), itemId)
   if (!attemptedItem) return
-  markDirtyPromptItemFields(itemId, previousItem, attemptedItem)
-  mirrorTopLevelPresetField('promptTemplate', binding.getItems())
+  markDirtyPromptItemFields(promptPresetId, itemId, previousItem, attemptedItem)
   if (!canUseServerCommands()) return
 
-  const existing = pendingPromptItemUpdates.get(itemId)
+  const pendingKey = promptItemStateKey(promptPresetId, itemId)
+  const existing = pendingPromptItemUpdates.get(pendingKey)
   if (existing?.timer) clearTimeout(existing.timer)
   const pending: PendingPromptItemUpdate = {
+    ownerId: promptPresetId,
     itemId,
     previousItem: cloneJsonValue(existing?.previousItem ?? previousItem),
     attemptedItem,
     binding,
     timer: null,
   }
-  pending.timer = setTimeout(() => runPendingPromptItemUpdate(itemId), delayMs)
-  pendingPromptItemUpdates.set(itemId, pending)
+  pending.timer = setTimeout(() => runPendingPromptItemUpdate(pendingKey), delayMs)
+  pendingPromptItemUpdates.set(pendingKey, pending)
 }
 
 export function queuePromptSettingsProjectionPatch(patch: SettingsPatch, previous: SettingsPatch, delayMs = 250): void {
@@ -225,8 +255,8 @@ export function queuePromptSettingsProjectionPatch(patch: SettingsPatch, previou
 }
 
 export function flushPendingPromptTemplatePatches(options: ServerCommandTransportOptions = {}): void {
-  for (const itemId of Array.from(pendingPromptItemUpdates.keys())) {
-    runPendingPromptItemUpdate(itemId, options)
+  for (const pendingKey of Array.from(pendingPromptItemUpdates.keys())) {
+    runPendingPromptItemUpdate(pendingKey, options)
   }
   runPendingPromptSettingsPatch(options)
 }
@@ -236,33 +266,51 @@ export function resetPromptTemplateSelectionDirtyState(): void {
     if (pending.timer) clearTimeout(pending.timer)
   }
   pendingPromptItemUpdates.clear()
-  promptItemDirtyFieldsById.clear()
+  promptItemDirtyFieldsByOwnerAndId.clear()
 }
 
-function runPendingPromptItemUpdate(itemId: string, options: ServerCommandTransportOptions = {}): void {
-  const pending = pendingPromptItemUpdates.get(itemId)
+function runPendingPromptItemUpdate(pendingKey: string, options: ServerCommandTransportOptions = {}): void {
+  const pending = pendingPromptItemUpdates.get(pendingKey)
   if (!pending) return
   if (pending.timer) clearTimeout(pending.timer)
-  pendingPromptItemUpdates.delete(itemId)
+  pendingPromptItemUpdates.delete(pendingKey)
+
+  if (!isCurrentPromptTemplateOwner(pending.ownerId)) {
+    promptItemDirtyFieldsByOwnerAndId.delete(pendingKey)
+    return
+  }
 
   void runServerCommand({
     command: (baseRevision) =>
       updatePromptItemCommand(
         {
           baseRevision,
+          ...(pending.ownerId ? { promptPresetId: pending.ownerId } : {}),
           itemId: pending.itemId,
           patch: cloneJsonValue(pending.attemptedItem) as PromptItemSnapshot,
         },
         options.signal,
         options.keepalive,
       ),
-    rollback: () =>
-      rollbackPendingPromptItemUpdate(pending.binding, pending.itemId, pending.previousItem, pending.attemptedItem),
+    rollback: () => {
+      if (!isCurrentPromptTemplateOwner(pending.ownerId)) {
+        promptItemDirtyFieldsByOwnerAndId.delete(pendingKey)
+        return
+      }
+      rollbackPendingPromptItemUpdate(
+        pending.binding,
+        pending.ownerId,
+        pending.itemId,
+        pending.previousItem,
+        pending.attemptedItem,
+      )
+    },
     signal: options.signal,
     keepalive: options.keepalive,
   }).then((result) => {
     if (result.status !== 'ok') return
     clearDirtyPromptItemFieldsMatchingProjection(
+      pending.ownerId,
       pending.binding.getItems(),
       (DBState.db.promptTemplate ?? []) as PromptItem[],
     )
@@ -301,6 +349,7 @@ function runPendingPromptSettingsPatch(options: ServerCommandTransportOptions = 
 
 function rollbackPendingPromptItemUpdate(
   binding: PromptTemplateDraftBinding,
+  ownerId: string | null,
   itemId: string,
   previousItem: PromptItem,
   attemptedItem: PromptItem,
@@ -313,7 +362,7 @@ function rollbackPendingPromptItemUpdate(
   nextItems[index] = cloneJsonValue(previousItem)
   binding.setItems(nextItems)
   restorePromptItemProjectionWrite(itemId, previousItem)
-  clearPromptItemDirtyFields(itemId, changedPromptItemFields(previousItem, attemptedItem))
+  clearPromptItemDirtyFields(ownerId, itemId, changedPromptItemFields(previousItem, attemptedItem))
 }
 
 function rollbackPromptSettingsPatch(previous: SettingsPatch, attempted: SettingsPatch): void {
@@ -349,29 +398,34 @@ export function reconcilePromptTemplateDraft(
   draftItems: PromptItem[],
   previousRevision: number | null,
 ): PromptTemplateReconcileResult {
-  if (!isPromptTemplateHydrated()) {
+  const ownerId = currentPromptTemplateOwnerId()
+  if (!isPromptTemplateHydrated(ownerId)) {
     return { revision: previousRevision, nextDraft: null }
   }
   const serverValue = (DBState.db.promptTemplate ?? []) as PromptItem[]
   const revision = peekCachedServerCommandRevision()
   if (revision === previousRevision) return { revision, nextDraft: null }
-  if (promptItemDirtyFieldsById.size > 0) {
-    clearDirtyPromptItemFieldsMatchingProjection(draftItems ?? [], serverValue)
+  if (ownerDirtyFieldCount(ownerId) > 0) {
+    clearDirtyPromptItemFieldsMatchingProjection(ownerId, draftItems ?? [], serverValue)
   }
   if (snapshotJson(serverValue) === snapshotJson(draftItems ?? [])) {
     return { revision, nextDraft: null }
   }
-  if (promptItemDirtyFieldsById.size > 0) {
-    const mergedDraft = mergePromptTemplateProjectionRows(draftItems ?? [], serverValue)
+  if (ownerDirtyFieldCount(ownerId) > 0) {
+    const mergedDraft = mergePromptTemplateProjectionRows(ownerId, draftItems ?? [], serverValue)
     if (mergedDraft) {
       if (snapshotJson(mergedDraft) === snapshotJson(draftItems ?? [])) {
         return { revision, nextDraft: null }
       }
       return { revision, nextDraft: mergedDraft }
     }
-    promptItemDirtyFieldsById.clear()
+    clearOwnerDirtyFields(ownerId)
   }
   return { revision, nextDraft: cloneJsonValue(serverValue) }
+}
+
+function promptItemStateKey(ownerId: string | null, itemId: string): string {
+  return `${ownerId ?? '__legacy__'}:${itemId}`
 }
 
 type PromptItemRecord = Record<string, unknown> & { id?: string }
@@ -401,14 +455,20 @@ function changedPromptItemFields(previousItem: PromptItem, attemptedItem: Prompt
   return changed
 }
 
-function markDirtyPromptItemFields(itemId: string, previousItem: PromptItem, attemptedItem: PromptItem): void {
+function markDirtyPromptItemFields(
+  ownerId: string | null,
+  itemId: string,
+  previousItem: PromptItem,
+  attemptedItem: PromptItem,
+): void {
   const changedFields = changedPromptItemFields(previousItem, attemptedItem)
   if (changedFields.length === 0) return
 
-  let dirtyFields = promptItemDirtyFieldsById.get(itemId)
+  const dirtyKey = promptItemStateKey(ownerId, itemId)
+  let dirtyFields = promptItemDirtyFieldsByOwnerAndId.get(dirtyKey)
   if (!dirtyFields) {
     dirtyFields = new Set()
-    promptItemDirtyFieldsById.set(itemId, dirtyFields)
+    promptItemDirtyFieldsByOwnerAndId.set(dirtyKey, dirtyFields)
   }
 
   for (const field of changedFields) {
@@ -416,8 +476,9 @@ function markDirtyPromptItemFields(itemId: string, previousItem: PromptItem, att
   }
 }
 
-function clearPromptItemDirtyFields(itemId: string, fields: Iterable<string>): void {
-  const dirtyFields = promptItemDirtyFieldsById.get(itemId)
+function clearPromptItemDirtyFields(ownerId: string | null, itemId: string, fields: Iterable<string>): void {
+  const dirtyKey = promptItemStateKey(ownerId, itemId)
+  const dirtyFields = promptItemDirtyFieldsByOwnerAndId.get(dirtyKey)
   if (!dirtyFields) return
 
   for (const field of fields) {
@@ -425,20 +486,26 @@ function clearPromptItemDirtyFields(itemId: string, fields: Iterable<string>): v
   }
 
   if (dirtyFields.size === 0) {
-    promptItemDirtyFieldsById.delete(itemId)
+    promptItemDirtyFieldsByOwnerAndId.delete(dirtyKey)
   }
 }
 
-function clearDirtyPromptItemFieldsMatchingProjection(draftItems: PromptItem[], serverItems: PromptItem[]): void {
+function clearDirtyPromptItemFieldsMatchingProjection(
+  ownerId: string | null,
+  draftItems: PromptItem[],
+  serverItems: PromptItem[],
+): void {
   const draftItemsById = promptItemsById(draftItems)
   const serverItemsById = promptItemsById(serverItems)
 
-  for (const [itemId, dirtyFields] of Array.from(promptItemDirtyFieldsById.entries())) {
+  for (const [dirtyKey, dirtyFields] of Array.from(promptItemDirtyFieldsByOwnerAndId.entries())) {
+    const itemId = itemIdFromPromptItemStateKey(ownerId, dirtyKey)
+    if (!itemId) continue
     const draftItem = draftItemsById.get(itemId)
     const serverItem = serverItemsById.get(itemId)
 
     if (!draftItem || !serverItem) {
-      promptItemDirtyFieldsById.delete(itemId)
+      promptItemDirtyFieldsByOwnerAndId.delete(dirtyKey)
       continue
     }
 
@@ -451,18 +518,22 @@ function clearDirtyPromptItemFieldsMatchingProjection(draftItems: PromptItem[], 
     }
 
     if (dirtyFields.size === 0) {
-      promptItemDirtyFieldsById.delete(itemId)
+      promptItemDirtyFieldsByOwnerAndId.delete(dirtyKey)
     }
   }
 }
 
-function mergePromptTemplateProjectionRows(draftItems: PromptItem[], serverItems: PromptItem[]): PromptItem[] | null {
+function mergePromptTemplateProjectionRows(
+  ownerId: string | null,
+  draftItems: PromptItem[],
+  serverItems: PromptItem[],
+): PromptItem[] | null {
   if (!samePromptItemIdSequence(draftItems, serverItems)) return null
 
   const draftItemsById = promptItemsById(draftItems)
   return serverItems.map((serverItem) => {
     const itemId = promptItemIdValue(serverItem)
-    const dirtyFields = itemId ? promptItemDirtyFieldsById.get(itemId) : undefined
+    const dirtyFields = itemId ? promptItemDirtyFieldsByOwnerAndId.get(promptItemStateKey(ownerId, itemId)) : undefined
     const draftItem = itemId ? draftItemsById.get(itemId) : undefined
 
     if (!itemId || !dirtyFields || dirtyFields.size === 0 || !draftItem) {
@@ -475,6 +546,27 @@ function mergePromptTemplateProjectionRows(draftItems: PromptItem[], serverItems
       dirtyFields,
     }) as unknown as PromptItem
   })
+}
+
+function itemIdFromPromptItemStateKey(ownerId: string | null, dirtyKey: string): string | null {
+  const prefix = `${ownerId ?? '__legacy__'}:`
+  return dirtyKey.startsWith(prefix) ? dirtyKey.slice(prefix.length) : null
+}
+
+function ownerDirtyFieldCount(ownerId: string | null): number {
+  const prefix = `${ownerId ?? '__legacy__'}:`
+  let count = 0
+  for (const [dirtyKey, dirtyFields] of promptItemDirtyFieldsByOwnerAndId.entries()) {
+    if (dirtyKey.startsWith(prefix)) count += dirtyFields.size
+  }
+  return count
+}
+
+function clearOwnerDirtyFields(ownerId: string | null): void {
+  const prefix = `${ownerId ?? '__legacy__'}:`
+  for (const dirtyKey of Array.from(promptItemDirtyFieldsByOwnerAndId.keys())) {
+    if (dirtyKey.startsWith(prefix)) promptItemDirtyFieldsByOwnerAndId.delete(dirtyKey)
+  }
 }
 
 function samePromptItemIdSequence(leftItems: PromptItem[], rightItems: PromptItem[]): boolean {

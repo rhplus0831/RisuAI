@@ -938,6 +938,7 @@ describe('server command API adapter', () => {
     await expect(
       createPromptItemCommand({
         baseRevision: 2,
+        promptPresetId: 'prompt-preset-a',
         promptItem: { id: 'item-b', type: 'memory' },
       }),
     ).resolves.toMatchObject({ status: 'ok', revision: 3, itemId: 'item-b' })
@@ -945,6 +946,7 @@ describe('server command API adapter', () => {
     await expect(
       updatePromptItemCommand({
         baseRevision: 3,
+        promptPresetId: 'prompt-preset-a',
         itemId: 'item-b',
         patch: { type: 'description' },
       }),
@@ -953,6 +955,7 @@ describe('server command API adapter', () => {
     await expect(
       deletePromptItemCommand({
         baseRevision: 4,
+        promptPresetId: 'prompt-preset-a',
         itemId: 'item-a',
       }),
     ).resolves.toMatchObject({ status: 'ok', revision: 5, itemId: 'item-a' })
@@ -960,6 +963,7 @@ describe('server command API adapter', () => {
     await expect(
       reorderPromptItemsCommand({
         baseRevision: 5,
+        promptPresetId: 'prompt-preset-a',
         itemIds: ['item-b'],
       }),
     ).resolves.toMatchObject({ status: 'ok', revision: 6 })
@@ -967,6 +971,7 @@ describe('server command API adapter', () => {
     await expect(
       enablePromptItemsCommand({
         baseRevision: 6,
+        promptPresetId: 'prompt-preset-a',
         enabled: true,
       }),
     ).resolves.toMatchObject({ status: 'ok', revision: 7, enabled: true })
@@ -991,27 +996,27 @@ describe('server command API adapter', () => {
       {
         url: '/api/v1/commands/prompt-items',
         method: 'POST',
-        body: { baseRevision: 2, promptItem: { id: 'item-b', type: 'memory' } },
+        body: { baseRevision: 2, promptPresetId: 'prompt-preset-a', promptItem: { id: 'item-b', type: 'memory' } },
       },
       {
         url: '/api/v1/commands/prompt-items/item-b',
         method: 'PATCH',
-        body: { baseRevision: 3, patch: { type: 'description' } },
+        body: { baseRevision: 3, promptPresetId: 'prompt-preset-a', patch: { type: 'description' } },
       },
       {
         url: '/api/v1/commands/prompt-items/item-a',
         method: 'DELETE',
-        body: { baseRevision: 4 },
+        body: { baseRevision: 4, promptPresetId: 'prompt-preset-a' },
       },
       {
         url: '/api/v1/commands/prompt-items/reorder',
         method: 'POST',
-        body: { baseRevision: 5, itemIds: ['item-b'] },
+        body: { baseRevision: 5, promptPresetId: 'prompt-preset-a', itemIds: ['item-b'] },
       },
       {
         url: '/api/v1/commands/prompt-items/enable',
         method: 'POST',
-        body: { baseRevision: 6, enabled: true },
+        body: { baseRevision: 6, promptPresetId: 'prompt-preset-a', enabled: true },
       },
     ])
   })

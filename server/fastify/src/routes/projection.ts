@@ -525,6 +525,43 @@ export function registerProjectionRoutes(
       }
     }
 
+    if (resource === 'promptItem') {
+      const fields = loadPersistedDatabaseFields(db, dataDir, ['promptPresets', 'promptPresetsId', 'promptTemplate'])
+      const ownerId =
+        typeof req.query.parentId === 'string' && req.query.parentId.trim() !== '' ? req.query.parentId : null
+      const promptPresets = Array.isArray(fields.promptPresets) ? fields.promptPresets : []
+      const selectedIndex = Number.isInteger(fields.promptPresetsId) ? (fields.promptPresetsId as number) : -1
+      const selectedPreset = selectedIndex >= 0 ? promptPresets[selectedIndex] : undefined
+      const requestedPreset = ownerId
+        ? promptPresets.find((preset) => isRecord(preset) && preset.id === ownerId)
+        : selectedPreset
+
+      if (ownerId && !requestedPreset) {
+        reply.code(404).send({
+          error: 'prompt_preset_not_found',
+          reason: `Prompt preset not found: ${ownerId}`,
+        })
+        return
+      }
+
+      const promptItemFields: Record<string, unknown> = {}
+      if (isRecord(requestedPreset)) {
+        promptItemFields.promptTemplate = Object.prototype.hasOwnProperty.call(requestedPreset, 'promptTemplate')
+          ? requestedPreset.promptTemplate
+          : null
+      } else if (Object.prototype.hasOwnProperty.call(fields, 'promptTemplate')) {
+        promptItemFields.promptTemplate = fields.promptTemplate
+      }
+
+      const response = { revision, resource, mode: 'fields' as const, fields: maskProviderSecrets(promptItemFields) }
+      emitProjectionMetric(req.log, resource, revision, response, {
+        fieldCount: Object.keys(promptItemFields).length,
+        fieldKeys: ['promptTemplate'],
+        ...(ownerId ? { parentId: ownerId } : {}),
+      })
+      return response
+    }
+
     const fieldKeys = resourceProjectionFields(resource)
 
     if (fieldKeys === null) {

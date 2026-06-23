@@ -37,9 +37,10 @@ completed agents open.
    effective prompt template resolution is used by prompt assembly and helper
    reads, with top-level fallback only when no modern prompt preset owner is
    resolved.
-4. Continue through Phase 2 only after independent Phase 1 verification: make
-   prompt item command/projection/hydration paths owner-aware and
-   prompt-preset-scoped.
+4. Phase 2 command/projection/hydration slice is implemented: prompt item
+   commands accept optional `promptPresetId`, scoped edits write the owning
+   prompt preset row, hydration/projection are owner-aware, and debounced bridge
+   edits drop stale selected-preset owners before send.
 5. Continue through Phase 3 after command ownership is stable: update Prompt
    Settings and related bridge/UI controls to edit the selected prompt preset,
    with hydration and stale-selection protections.
@@ -75,11 +76,14 @@ completed agents open.
 
 - `promptPresets` already exist and include `promptTemplate` in their field
   contract.
-- Prompt Settings currently edits `DBState.db.promptTemplate`, not a prompt
-  preset row directly.
-- The prompt-template bridge currently optimizes row-level edits against the
-  top-level prompt-template collection.
-- Server prompt item commands currently write `prompt_templates`.
+- Prompt Settings currently edits a local draft projected through
+  `DBState.db.promptTemplate`; prompt item commands carry the selected
+  `promptPresetId` but broader visual/editor ownership remains Phase 3.
+- The prompt-template bridge optimizes row-level edits and now keys pending
+  item updates by prompt preset owner plus item id.
+- Server prompt item commands write `prompt_presets` rows when
+  `promptPresetId` is supplied, and preserve `prompt_templates` writes only for
+  omitted-id legacy commands.
 - Legacy bot preset apply currently copies preset template data into the active
   top-level prompt template.
 - Server and browser prompt assembly now resolve effective prompt template reads
@@ -89,7 +93,7 @@ completed agents open.
 
 ## Recommended Next Slice
 
-Phase 1 has been implemented and the focused resolver parity fix has passed
-local validation. The next recommended slice is Phase 2: make prompt item
-commands, projection, hydration, and bridge rollback prompt-preset-owner-aware
-without changing the Settings UI in the same patch.
+Phase 2 has been implemented and focused command/projection/hydration checks
+have passed locally. The next recommended slice is Phase 3: make the Prompt
+Settings and related editor surfaces visibly/directly own the selected modern
+prompt preset, while keeping the Phase 2 command owner contract intact.

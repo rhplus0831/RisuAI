@@ -709,27 +709,32 @@ export interface PatchPromptSettingsCommandInput {
 
 export interface CreatePromptItemCommandInput {
   baseRevision: number
+  promptPresetId?: string
   promptItem: PromptItemSnapshot
 }
 
 export interface UpdatePromptItemCommandInput {
   baseRevision: number
+  promptPresetId?: string
   itemId: string
   patch: PromptItemSnapshot
 }
 
 export interface DeletePromptItemCommandInput {
   baseRevision: number
+  promptPresetId?: string
   itemId: string
 }
 
 export interface ReorderPromptItemsCommandInput {
   baseRevision: number
+  promptPresetId?: string
   itemIds: string[]
 }
 
 export interface EnablePromptItemsCommandInput {
   baseRevision: number
+  promptPresetId?: string
   enabled: boolean
 }
 
@@ -1753,6 +1758,7 @@ export async function createPromptItemCommand(
     method: 'POST',
     body: {
       baseRevision: input.baseRevision,
+      ...(input.promptPresetId ? { promptPresetId: input.promptPresetId } : {}),
       promptItem: input.promptItem,
     },
     signal,
@@ -1768,6 +1774,7 @@ export async function updatePromptItemCommand(
     method: 'PATCH',
     body: {
       baseRevision: input.baseRevision,
+      ...(input.promptPresetId ? { promptPresetId: input.promptPresetId } : {}),
       patch: input.patch,
     },
     signal,
@@ -1783,6 +1790,7 @@ export async function deletePromptItemCommand(
     method: 'DELETE',
     body: {
       baseRevision: input.baseRevision,
+      ...(input.promptPresetId ? { promptPresetId: input.promptPresetId } : {}),
     },
     signal,
   })
@@ -1796,6 +1804,7 @@ export async function reorderPromptItemsCommand(
     method: 'POST',
     body: {
       baseRevision: input.baseRevision,
+      ...(input.promptPresetId ? { promptPresetId: input.promptPresetId } : {}),
       itemIds: input.itemIds,
     },
     signal,
@@ -1810,6 +1819,7 @@ export async function enablePromptItemsCommand(
     method: 'POST',
     body: {
       baseRevision: input.baseRevision,
+      ...(input.promptPresetId ? { promptPresetId: input.promptPresetId } : {}),
       enabled: input.enabled,
     },
     signal,

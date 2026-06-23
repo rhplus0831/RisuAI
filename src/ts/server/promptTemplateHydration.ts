@@ -6,20 +6,33 @@ import { canUseServerProjection, fetchServerProjectionResource } from './project
 
 export const promptTemplateHydratedStore = writable(false)
 
-let promptTemplateHydrationInFlight: Promise<boolean> | null = null
+let promptTemplateHydrationInFlight = new Map<string, Promise<boolean>>()
 let promptTemplateHydrationGeneration = 0
+let promptTemplateHydratedOwnerId: string | null = null
 
-export function isPromptTemplateHydrated(): boolean {
-  return get(promptTemplateHydratedStore) || Object.prototype.hasOwnProperty.call(DBState.db ?? {}, 'promptTemplate')
+export function currentPromptTemplateOwnerId(): string | null {
+  const selectedIndex = DBState.db?.promptPresetsId
+  if (!Number.isInteger(selectedIndex) || selectedIndex < 0) return null
+  const preset = DBState.db?.promptPresets?.[selectedIndex]
+  return typeof preset?.id === 'string' && preset.id.trim() !== '' ? preset.id : null
+}
+
+export function isPromptTemplateHydrated(promptPresetId: string | null = currentPromptTemplateOwnerId()): boolean {
+  if (get(promptTemplateHydratedStore) && promptTemplateHydratedOwnerId === promptPresetId) return true
+  return promptPresetId === null && Object.prototype.hasOwnProperty.call(DBState.db ?? {}, 'promptTemplate')
 }
 
 export function resetPromptTemplateHydration(): void {
   promptTemplateHydrationGeneration += 1
-  promptTemplateHydrationInFlight = null
+  promptTemplateHydrationInFlight = new Map()
+  promptTemplateHydratedOwnerId = null
   promptTemplateHydratedStore.set(false)
 }
 
-export function markPromptTemplateProjectionApplied(): void {
+export function markPromptTemplateProjectionApplied(
+  promptPresetId: string | null = currentPromptTemplateOwnerId(),
+): void {
+  promptTemplateHydratedOwnerId = promptPresetId
   promptTemplateHydratedStore.set(true)
 }
 
@@ -27,17 +40,23 @@ export function startPromptTemplateHydration(): void {
   void ensurePromptTemplateHydrated()
 }
 
-export async function ensurePromptTemplateHydrated(options: { force?: boolean } = {}): Promise<boolean> {
+export async function ensurePromptTemplateHydrated(
+  options: { force?: boolean; promptPresetId?: string | null } = {},
+): Promise<boolean> {
   if (!canUseServerProjection()) return false
-  if (!options.force && isPromptTemplateHydrated()) return true
-  if (promptTemplateHydrationInFlight) return promptTemplateHydrationInFlight
+  const ownerId = options.promptPresetId === undefined ? currentPromptTemplateOwnerId() : options.promptPresetId
+  if (!options.force && isPromptTemplateHydrated(ownerId)) return true
+  const ownerKey = ownerId ?? '__legacy__'
+  const inFlight = promptTemplateHydrationInFlight.get(ownerKey)
+  if (inFlight) return inFlight
 
   const generation = promptTemplateHydrationGeneration
   const baselineRevision = peekCachedServerCommandRevision()
   if (baselineRevision === null && !options.force) return false
   const request = (async () => {
-    const result = await fetchServerProjectionResource('promptItem')
+    const result = await fetchServerProjectionResource('promptItem', ownerId ? { parentId: ownerId } : {})
     if (generation !== promptTemplateHydrationGeneration) return false
+    if (ownerId !== currentPromptTemplateOwnerId()) return false
     if (result.status !== 'ok') {
       promptTemplateHydrationWarning(result.status === 'error' ? result.error : 'server projection unavailable')
       return false
@@ -54,15 +73,18 @@ export async function ensurePromptTemplateHydrated(options: { force?: boolean } 
     }
 
     mergeServerProjectionFields(result.fields as Partial<Database>)
-    markPromptTemplateProjectionApplied()
+    if ((result.fields as Record<string, unknown>).promptTemplate === null) {
+      delete (DBState.db as unknown as Record<string, unknown>).promptTemplate
+    }
+    markPromptTemplateProjectionApplied(ownerId)
     return true
   })().finally(() => {
-    if (promptTemplateHydrationInFlight === request) {
-      promptTemplateHydrationInFlight = null
+    if (promptTemplateHydrationInFlight.get(ownerKey) === request) {
+      promptTemplateHydrationInFlight.delete(ownerKey)
     }
   })
 
-  promptTemplateHydrationInFlight = request
+  promptTemplateHydrationInFlight.set(ownerKey, request)
   return request
 }
 

@@ -487,6 +487,30 @@ function cloneChatGenerationSettings(settings: ChatGenerationSettings | undefine
   }
 }
 
+function readOptionalPromptPresetIdFromBody(body: PromptCommandBody): string | undefined {
+  return body.promptPresetId === undefined ? undefined : readPromptPresetId(body.promptPresetId, 'promptPresetId')
+}
+
+function requireSelectedPromptPresetCommandTarget(
+  database: unknown,
+  promptPresetId: string,
+): {
+  preset: ReturnType<typeof ensurePromptPresetCollection>[number]
+  index: number
+  items: ReturnType<typeof ensurePromptTemplateCollection>
+} {
+  const target = ensureSplitPresetDatabaseObject(database)
+  const presets = ensurePromptPresetCollection(target)
+  const index = requirePromptPresetIndex(presets, promptPresetId)
+  const selectedId = selectedPromptPresetId(target, presets)
+  if (selectedId !== promptPresetId) {
+    throw new ValidationError(`Selected prompt preset changed before command reached the server: ${promptPresetId}`)
+  }
+  const preset = presets[index]
+  const items = ensurePromptTemplateCollection(preset)
+  return { preset, index, items }
+}
+
 const COLLECTION_SCOPED_READS = {
   modelPresets: ['modelPresets'],
   promptPresets: ['promptPresets'],
@@ -546,6 +570,7 @@ interface PromptCommandBody {
   patch?: unknown
   itemIds?: unknown
   enabled?: unknown
+  promptPresetId?: unknown
 }
 
 interface PersonaCommandBody {
@@ -2654,6 +2679,7 @@ export function registerCommandRoutes(
     try {
       const body = (req.body ?? {}) as PromptCommandBody
       const baseRevision = readBaseRevision(body)
+      const promptPresetId = readOptionalPromptPresetIdFromBody(body)
       const promptItem = createPromptItemRecord(body.promptItem)
       const result = applyTargetedCommandMutation<{ itemId: string }>({
         db,
@@ -2661,16 +2687,25 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: promptPresetId ? COLLECTION_SCOPED_READS.promptPresets : undefined,
         mutate(database, innerDb) {
-          const target = ensureDatabaseObject(database)
-          const items = ensurePromptTemplateCollection(target)
+          const scoped = promptPresetId ? requireSelectedPromptPresetCommandTarget(database, promptPresetId) : undefined
+          const items = scoped ? scoped.items : ensurePromptTemplateCollection(ensureDatabaseObject(database))
           if (items.some((item) => item.id === promptItem.id)) {
             throw new ValidationError(`Duplicate prompt item id: ${promptItem.id}`)
           }
           items.push(promptItem)
-          writePromptTemplatesTable(innerDb, items)
+          if (scoped) {
+            writeSingleCollectionRow(innerDb, 'promptPresets', scoped.index, scoped.preset)
+          } else {
+            writePromptTemplatesTable(innerDb, items)
+          }
           return {
-            event: { ...COMMAND_EVENT_CATALOG.promptItemCreated, id: promptItem.id },
+            event: {
+              ...COMMAND_EVENT_CATALOG.promptItemCreated,
+              id: promptItem.id,
+              ...(promptPresetId ? { parentId: promptPresetId } : {}),
+            },
             extra: { itemId: promptItem.id },
           }
         },
@@ -2693,6 +2728,7 @@ export function registerCommandRoutes(
       const itemId = readPromptItemId((req.params as { itemId?: unknown }).itemId)
       const body = (req.body ?? {}) as PromptCommandBody
       const baseRevision = readBaseRevision(body)
+      const promptPresetId = readOptionalPromptPresetIdFromBody(body)
       const patch = createPromptItemRecord({ ...readJsonObject(body.patch, 'patch'), id: itemId })
       const result = applyTargetedCommandMutation<{ itemId: string }>({
         db,
@@ -2700,18 +2736,27 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: promptPresetId ? COLLECTION_SCOPED_READS.promptPresets : undefined,
         mutate(database, innerDb) {
-          const target = ensureDatabaseObject(database)
-          const items = ensurePromptTemplateCollection(target)
+          const scoped = promptPresetId ? requireSelectedPromptPresetCommandTarget(database, promptPresetId) : undefined
+          const items = scoped ? scoped.items : ensurePromptTemplateCollection(ensureDatabaseObject(database))
           const index = requirePromptItemIndex(items, itemId)
           items[index] = {
             ...items[index],
             ...patch,
             id: itemId,
           }
-          writePromptTemplateRow(innerDb, index, items[index])
+          if (scoped) {
+            writeSingleCollectionRow(innerDb, 'promptPresets', scoped.index, scoped.preset)
+          } else {
+            writePromptTemplateRow(innerDb, index, items[index])
+          }
           return {
-            event: { ...COMMAND_EVENT_CATALOG.promptItemUpdated, id: itemId },
+            event: {
+              ...COMMAND_EVENT_CATALOG.promptItemUpdated,
+              id: itemId,
+              ...(promptPresetId ? { parentId: promptPresetId } : {}),
+            },
             extra: { itemId },
           }
         },
@@ -2734,20 +2779,30 @@ export function registerCommandRoutes(
       const itemId = readPromptItemId((req.params as { itemId?: unknown }).itemId)
       const body = (req.body ?? {}) as PromptCommandBody
       const baseRevision = readBaseRevision(body)
+      const promptPresetId = readOptionalPromptPresetIdFromBody(body)
       const result = applyTargetedCommandMutation<{ itemId: string }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: promptPresetId ? COLLECTION_SCOPED_READS.promptPresets : undefined,
         mutate(database, innerDb) {
-          const target = ensureDatabaseObject(database)
-          const items = ensurePromptTemplateCollection(target)
+          const scoped = promptPresetId ? requireSelectedPromptPresetCommandTarget(database, promptPresetId) : undefined
+          const items = scoped ? scoped.items : ensurePromptTemplateCollection(ensureDatabaseObject(database))
           const index = requirePromptItemIndex(items, itemId)
           items.splice(index, 1)
-          writePromptTemplatesTable(innerDb, items)
+          if (scoped) {
+            writeSingleCollectionRow(innerDb, 'promptPresets', scoped.index, scoped.preset)
+          } else {
+            writePromptTemplatesTable(innerDb, items)
+          }
           return {
-            event: { ...COMMAND_EVENT_CATALOG.promptItemDeleted, id: itemId },
+            event: {
+              ...COMMAND_EVENT_CATALOG.promptItemDeleted,
+              id: itemId,
+              ...(promptPresetId ? { parentId: promptPresetId } : {}),
+            },
             extra: { itemId },
           }
         },
@@ -2773,26 +2828,41 @@ export function registerCommandRoutes(
         throw new ValidationError('enabled must be a boolean')
       }
       const enabled = body.enabled
+      const promptPresetId = readOptionalPromptPresetIdFromBody(body)
       const result = applyTargetedCommandMutation<{ enabled: boolean }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: promptPresetId ? COLLECTION_SCOPED_READS.promptPresets : undefined,
         mutate(database, innerDb) {
-          const target = ensureDatabaseObject(database)
-          // enable toggles whether the prompt-items collection exists at all:
-          // enabling ensures the array, disabling clears it. Either way it is a
-          // single-table write — the `prompt_templates` rows, never another table.
-          if (enabled) {
-            const items = ensurePromptTemplateCollection(target)
-            writePromptTemplatesTable(innerDb, items)
+          const scoped = promptPresetId ? requireSelectedPromptPresetCommandTarget(database, promptPresetId) : undefined
+          if (scoped) {
+            if (enabled) {
+              ensurePromptTemplateCollection(scoped.preset)
+            } else {
+              delete scoped.preset.promptTemplate
+            }
+            writeSingleCollectionRow(innerDb, 'promptPresets', scoped.index, scoped.preset)
           } else {
-            delete target.promptTemplate
-            writePromptTemplatesTable(innerDb, [])
+            const target = ensureDatabaseObject(database)
+            // enable toggles whether the prompt-items collection exists at all:
+            // enabling ensures the array, disabling clears it. Either way it is a
+            // single-table write — the `prompt_templates` rows, never another table.
+            if (enabled) {
+              const items = ensurePromptTemplateCollection(target)
+              writePromptTemplatesTable(innerDb, items)
+            } else {
+              delete target.promptTemplate
+              writePromptTemplatesTable(innerDb, [])
+            }
           }
           return {
-            event: COMMAND_EVENT_CATALOG.promptItemsEnabled,
+            event: {
+              ...COMMAND_EVENT_CATALOG.promptItemsEnabled,
+              ...(promptPresetId ? { parentId: promptPresetId } : {}),
+            },
             extra: { enabled },
           }
         },
@@ -2818,22 +2888,33 @@ export function registerCommandRoutes(
         throw new ValidationError('itemIds must be an array')
       }
       const itemIds = body.itemIds
+      const promptPresetId = readOptionalPromptPresetIdFromBody(body)
       const result = applyTargetedCommandMutation({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: promptPresetId ? COLLECTION_SCOPED_READS.promptPresets : undefined,
         mutate(database, innerDb) {
+          const scoped = promptPresetId ? requireSelectedPromptPresetCommandTarget(database, promptPresetId) : undefined
           const target = ensureDatabaseObject(database)
-          const items = ensurePromptTemplateCollection(target)
+          const items = scoped ? scoped.items : ensurePromptTemplateCollection(target)
           validateFullPromptItemIdList(items, itemIds)
           const byId = new Map(items.map((item) => [item.id, item]))
           const reordered = itemIds.map((id) => byId.get(id)!)
-          target.promptTemplate = reordered
-          writePromptTemplatesTable(innerDb, reordered)
+          if (scoped) {
+            scoped.preset.promptTemplate = reordered
+            writeSingleCollectionRow(innerDb, 'promptPresets', scoped.index, scoped.preset)
+          } else {
+            target.promptTemplate = reordered
+            writePromptTemplatesTable(innerDb, reordered)
+          }
           return {
-            event: COMMAND_EVENT_CATALOG.promptItemReordered,
+            event: {
+              ...COMMAND_EVENT_CATALOG.promptItemReordered,
+              ...(promptPresetId ? { parentId: promptPresetId } : {}),
+            },
           }
         },
       })

@@ -57,7 +57,7 @@ describe('promptTemplate hydration', () => {
 
     await expect(ensurePromptTemplateHydrated()).resolves.toBe(true)
 
-    expect(projectionState.fetchResource).toHaveBeenCalledWith('promptItem')
+    expect(projectionState.fetchResource).toHaveBeenCalledWith('promptItem', {})
     expect(DBState.db.promptTemplate).toEqual([item('p-1', 'hydrated template')])
     expect(isPromptTemplateHydrated()).toBe(true)
     expect(peekCachedServerCommandRevision()).toBe(7)
@@ -74,7 +74,7 @@ describe('promptTemplate hydration', () => {
 
     await expect(ensurePromptTemplateHydrated()).resolves.toBe(true)
 
-    expect(DBState.db).not.toHaveProperty('promptTemplate')
+    expect(DBState.db.promptTemplate).toBeUndefined()
     expect(isPromptTemplateHydrated()).toBe(true)
   })
 
@@ -126,5 +126,74 @@ describe('promptTemplate hydration', () => {
 
     expect(DBState.db).not.toHaveProperty('promptTemplate')
     expect(isPromptTemplateHydrated()).toBe(false)
+  })
+
+  it('fetches promptItem for the selected prompt preset owner', async () => {
+    setCachedServerCommandRevision(7)
+    ;(DBState as { db: unknown }).db = {
+      promptPresetsId: 0,
+      promptPresets: [{ id: 'preset-a', name: 'Preset A' }],
+    }
+    projectionState.fetchResource.mockResolvedValue({
+      status: 'ok',
+      revision: 7,
+      mode: 'fields',
+      fields: { promptTemplate: [item('preset-row', 'preset body')] },
+    })
+
+    await expect(ensurePromptTemplateHydrated()).resolves.toBe(true)
+
+    expect(projectionState.fetchResource).toHaveBeenCalledWith('promptItem', { parentId: 'preset-a' })
+    expect(DBState.db.promptTemplate).toEqual([item('preset-row', 'preset body')])
+  })
+
+  it('ignores a selected-owner hydration response after the selection changes', async () => {
+    setCachedServerCommandRevision(7)
+    ;(DBState as { db: unknown }).db = {
+      promptPresetsId: 0,
+      promptPresets: [
+        { id: 'preset-a', name: 'Preset A' },
+        { id: 'preset-b', name: 'Preset B' },
+      ],
+    }
+    const response = deferred<{
+      status: 'ok'
+      revision: number
+      mode: 'fields'
+      fields: { promptTemplate: PromptItem[] }
+    }>()
+    projectionState.fetchResource.mockReturnValue(response.promise)
+
+    const pending = ensurePromptTemplateHydrated()
+    DBState.db.promptPresetsId = 1
+    response.resolve({
+      status: 'ok',
+      revision: 7,
+      mode: 'fields',
+      fields: { promptTemplate: [item('preset-a-row', 'stale owner')] },
+    })
+
+    await expect(pending).resolves.toBe(false)
+    expect(DBState.db).not.toHaveProperty('promptTemplate')
+  })
+
+  it('clears stale compatibility promptTemplate when the selected preset has no promptTemplate', async () => {
+    setCachedServerCommandRevision(7)
+    ;(DBState as { db: unknown }).db = {
+      promptTemplate: [item('stale', 'stale compatibility body')],
+      promptPresetsId: 0,
+      promptPresets: [{ id: 'preset-a', name: 'Preset A' }],
+    }
+    projectionState.fetchResource.mockResolvedValue({
+      status: 'ok',
+      revision: 7,
+      mode: 'fields',
+      fields: { promptTemplate: null },
+    })
+
+    await expect(ensurePromptTemplateHydrated({ force: true })).resolves.toBe(true)
+
+    expect(DBState.db.promptTemplate).toBeUndefined()
+    expect(isPromptTemplateHydrated()).toBe(true)
   })
 })

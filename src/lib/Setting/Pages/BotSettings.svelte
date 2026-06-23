@@ -57,7 +57,12 @@
     currentPluginStateSnapshot,
     dispatchSelectPluginProvider,
   } from 'src/ts/pluginCommands'
-  import { ensurePromptTemplateHydrated, promptTemplateHydratedStore } from 'src/ts/server/promptTemplateHydration'
+  import {
+    currentPromptTemplateOwnerId,
+    ensurePromptTemplateHydrated,
+    isPromptTemplateHydrated,
+    promptTemplateHydratedStore,
+  } from 'src/ts/server/promptTemplateHydration'
   import { mirrorTopLevelPresetField } from 'src/ts/presetFieldMirror'
   import {
     createPromptPresetModelOverrideDraft,
@@ -65,6 +70,11 @@
     setPromptPresetModelOverrideEnabled,
   } from 'src/ts/promptPresetModelOverrides.svelte'
   import { promptPresetModelOverrideFieldForDatabaseKey, resolvePromptPresetRegexField } from 'src/ts/presetSplit'
+  import {
+    promptTemplateOwnerCommandId,
+    runPromptTemplateOwnerCommand,
+    runPromptTemplateOwnerRollback,
+  } from 'src/ts/server/promptTemplateBridge.svelte'
   import {
     beginPromptPresetIconUpload,
     capturePromptPresetIconUploadTarget,
@@ -206,9 +216,7 @@
   const formatingOrderDraft = createPromptFieldDraft<string[]>('formatingOrder', [])
   const promptPreprocessDraft = createPromptFieldDraft<boolean>('promptPreprocess', false)
   let currentPluginProviderDraft = $state(DBState.db.currentPluginProvider ?? '')
-  let promptTemplateHydrated = $derived(
-    $promptTemplateHydratedStore || Object.prototype.hasOwnProperty.call(DBState.db ?? {}, 'promptTemplate'),
-  )
+  let promptTemplateHydrated = $derived($promptTemplateHydratedStore && isPromptTemplateHydrated())
   let selectedPromptPreset = $derived(DBState.db.promptPresets?.[DBState.db.promptPresetsId])
   const PROMPT_PRESET_ICON_SIZE = 48
   type SelectedPromptPresetIconFile = NonNullable<Awaited<ReturnType<typeof selectSingleFile>>>
@@ -1540,23 +1548,28 @@
             name={language.usePromptTemplate}
             onChange={async () => {
               if (!(await ensurePromptTemplateHydrated())) return
+              const ownerId = currentPromptTemplateOwnerId()
               withTrustedServerProjectionWrite(() => {
                 DBState.db.promptTemplate = []
               })
               if (canUseServerCommands()) {
                 void runServerCommand({
                   command: (baseRevision) =>
-                    enablePromptItemsCommand({
-                      baseRevision,
-                      enabled: true,
+                    runPromptTemplateOwnerCommand(ownerId, () =>
+                      enablePromptItemsCommand({
+                        baseRevision,
+                        promptPresetId: promptTemplateOwnerCommandId(ownerId),
+                        enabled: true,
+                      }),
+                    ),
+                  rollback: () =>
+                    runPromptTemplateOwnerRollback(ownerId, () => {
+                      withTrustedServerProjectionWrite(() => {
+                        if (Array.isArray(DBState.db.promptTemplate) && DBState.db.promptTemplate.length === 0) {
+                          DBState.db.promptTemplate = undefined
+                        }
+                      })
                     }),
-                  rollback: () => {
-                    withTrustedServerProjectionWrite(() => {
-                      if (Array.isArray(DBState.db.promptTemplate) && DBState.db.promptTemplate.length === 0) {
-                        DBState.db.promptTemplate = undefined
-                      }
-                    })
-                  },
                 })
               }
             }} />

@@ -578,13 +578,14 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
       url: string,
       payload: Record<string, unknown>,
       expectedTables: readonly string[],
+      expectedLoadTables: readonly string[] = expectedTables,
     ): Promise<Record<string, unknown>> {
       const { result: loadRun, readCountByTable } = await withSqliteSelectReadInstrumentation(() =>
         withServerLoadInstrumentation(() => command(method, url, payload)),
       )
       expect(loadRun.result.statusCode).toBe(200)
       expectCollectionCommandReadOnlyTables(readCountByTable, expectedTables)
-      expectCollectionLoadOnlyTables(loadRun.loadCountByTable, expectedTables)
+      expectCollectionLoadOnlyTables(loadRun.loadCountByTable, expectedLoadTables)
       const body = loadRun.result.json() as Record<string, unknown>
       revision = body.revision as number
       return body
@@ -602,6 +603,18 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
       '/api/v1/commands/presets/select',
       { baseRevision: revision, presetId: 'l11-preset' },
       ['bot_presets', 'prompt_templates'],
+    )
+
+    await runScopedCollectionCommand(
+      'POST',
+      '/api/v1/commands/prompt-items',
+      {
+        baseRevision: revision,
+        promptPresetId: 'corpus-prompt-preset-0',
+        promptItem: { id: 'l11-prompt-item', type: 'plain', text: 'L11 prompt item' },
+      },
+      ['prompt_presets'],
+      [],
     )
 
     await runScopedCollectionCommand(
