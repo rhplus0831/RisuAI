@@ -204,11 +204,21 @@ export function queuePromptSettingsProjectionPatch(patch: SettingsPatch, previou
     if (!(key in pendingPromptSettingsPatch.previous)) {
       pendingPromptSettingsPatch.previous[key] = previous[key]
     }
+    if (snapshotJson(value) === snapshotJson(pendingPromptSettingsPatch.previous[key])) {
+      delete pendingPromptSettingsPatch.patch[key]
+      delete pendingPromptSettingsPatch.previous[key]
+      delete pendingPromptSettingsPatch.attempted[key]
+      continue
+    }
     pendingPromptSettingsPatch.patch[key] = value
     pendingPromptSettingsPatch.attempted[key] = value
   }
 
   if (pendingPromptSettingsPatch.timer) clearTimeout(pendingPromptSettingsPatch.timer)
+  if (Object.keys(pendingPromptSettingsPatch.patch).length === 0) {
+    pendingPromptSettingsPatch.timer = null
+    return
+  }
   pendingPromptSettingsPatch.timer = setTimeout(() => {
     runPendingPromptSettingsPatch()
   }, delayMs)

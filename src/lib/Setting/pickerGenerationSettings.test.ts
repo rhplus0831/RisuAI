@@ -75,6 +75,10 @@ interface CapturedFetch {
   body: unknown
 }
 
+interface StubCommandFetchOptions {
+  promptSelectConflictOnce?: boolean
+}
+
 let target: HTMLElement
 let component: MountedComponent | undefined
 
@@ -85,8 +89,9 @@ function jsonResponse(body: unknown, status = 200): Response {
   })
 }
 
-function stubCommandFetch(): CapturedFetch[] {
+function stubCommandFetch(options: StubCommandFetchOptions = {}): CapturedFetch[] {
   const calls: CapturedFetch[] = []
+  let promptSelectAttempts = 0
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
@@ -101,12 +106,16 @@ function stubCommandFetch(): CapturedFetch[] {
 
       if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 200 })
       if (url.endsWith('/prompt-presets/select')) {
+        promptSelectAttempts += 1
+        if (options.promptSelectConflictOnce && promptSelectAttempts === 1) {
+          return jsonResponse({ error: 'revision_conflict', currentRevision: 201 }, 409)
+        }
         return jsonResponse({
           status: 'ok',
-          revision: 201,
+          revision: options.promptSelectConflictOnce ? 202 : 201,
           event: {
             type: 'promptPreset.selected',
-            revision: 201,
+            revision: options.promptSelectConflictOnce ? 202 : 201,
             resource: 'promptPreset',
             id: 'preset-b',
           },
@@ -132,11 +141,15 @@ function stubCommandFetch(): CapturedFetch[] {
   return calls
 }
 
-async function waitForCommandFetches(calls: CapturedFetch[]): Promise<void> {
-  for (let attempt = 0; attempt < 20 && calls.length < 2; attempt += 1) {
+async function waitForFetchCount(calls: CapturedFetch[], count: number): Promise<void> {
+  for (let attempt = 0; attempt < 20 && calls.length < count; attempt += 1) {
     await new Promise((resolve) => setTimeout(resolve, 0))
   }
-  expect(calls).toHaveLength(2)
+  expect(calls).toHaveLength(count)
+}
+
+async function waitForCommandFetches(calls: CapturedFetch[]): Promise<void> {
+  await waitForFetchCount(calls, 2)
 }
 
 function seedDb(): void {
@@ -358,6 +371,110 @@ describe('generation settings picker mode', () => {
         promptPresetId: 'preset-b',
       },
     })
+  })
+
+  it('retries global prompt preset selection once after a revision conflict', async () => {
+    const calls = stubCommandFetch({ promptSelectConflictOnce: true })
+    const close = mountPresetPicker('global')
+
+    pickerRow('prompt', 'preset-b').click()
+    await tick()
+    await waitForFetchCount(calls, 3)
+
+    expect(close).toHaveBeenCalledOnce()
+    expect(DBState.db.promptPresetsId).toBe(1)
+    const selectCalls = calls.filter((call) => call.url.endsWith('/prompt-presets/select'))
+    expect(selectCalls).toHaveLength(2)
+    expect(selectCalls[0].body).toMatchObject({
+      baseRevision: 200,
+      promptPresetId: 'preset-b',
+    })
+    expect(selectCalls[1].body).toMatchObject({
+      baseRevision: 201,
+      promptPresetId: 'preset-b',
+    })
+  })
+
+  it('does not retry a stale prompt preset selection after a newer selection wins', async () => {
+    DBState.db.promptPresets.push({
+      id: 'preset-c',
+      name: 'Preset C',
+      mainPrompt: '',
+      jailbreak: '',
+      globalNote: '',
+      temperature: 0,
+      maxContext: 0,
+      maxResponse: 0,
+      frequencyPenalty: 0,
+      PresensePenalty: 0,
+      formatingOrder: [],
+      promptPreprocess: false,
+      bias: [],
+      ooba: {},
+      ainconfig: {},
+      customPromptTemplateToggle: '',
+    } as any)
+
+    const calls: CapturedFetch[] = []
+    let resolvePresetBConflict: (response: Response) => void = () => {}
+    const presetBConflict = new Promise<Response>((resolve) => {
+      resolvePresetBConflict = resolve
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const headers = init.headers as Record<string, string> | undefined
+        const url = String(input)
+        const body = typeof init.body === 'string' ? JSON.parse(init.body) : null
+        calls.push({
+          url,
+          method: init.method ?? 'GET',
+          authHeader: headers?.['risu-auth'] ?? null,
+          body,
+        })
+
+        if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 200 })
+        if (url.endsWith('/prompt-presets/select') && body?.promptPresetId === 'preset-b') {
+          return presetBConflict
+        }
+        if (url.endsWith('/prompt-presets/select') && body?.promptPresetId === 'preset-c') {
+          return jsonResponse({
+            status: 'ok',
+            revision: 201,
+            event: {
+              type: 'promptPreset.selected',
+              revision: 201,
+              resource: 'promptPreset',
+              id: 'preset-c',
+            },
+            promptPresetId: 'preset-c',
+          })
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    mountPresetPicker('global')
+    pickerRow('prompt', 'preset-b').click()
+    await tick()
+    await waitForFetchCount(calls, 2)
+
+    pickerRow('prompt', 'preset-c').click()
+    await tick()
+    await waitForFetchCount(calls, 3)
+    expect(DBState.db.promptPresetsId).toBe(2)
+
+    resolvePresetBConflict(jsonResponse({ error: 'revision_conflict', currentRevision: 201 }, 409))
+    await Promise.resolve()
+    await Promise.resolve()
+    await tick()
+
+    const selectCalls = calls.filter((call) => call.url.endsWith('/prompt-presets/select'))
+    expect(selectCalls.map((call) => (call.body as { promptPresetId?: string }).promptPresetId)).toEqual([
+      'preset-b',
+      'preset-c',
+    ])
+    expect(DBState.db.promptPresetsId).toBe(2)
   })
 
   it('saves persona rows to the active chat without calling global persona selection', async () => {

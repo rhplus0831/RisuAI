@@ -288,6 +288,7 @@
     let initialized = false
     let suppressDraftDispatch = false
     let previousServerSnapshot = snapshotJson(initialValue)
+    let previousDraftDispatchSnapshot = snapshotJson(initialValue)
 
     $effect(() => {
       const serverValue = currentPromptSettingValue(key, fallback)
@@ -296,6 +297,7 @@
 
       if (serverSnapshot !== previousServerSnapshot && serverSnapshot !== draftSnapshot) {
         suppressDraftDispatch = true
+        previousDraftDispatchSnapshot = serverSnapshot
         draft.value = cloneJsonValue(serverValue)
         queueMicrotask(() => {
           suppressDraftDispatch = false
@@ -309,9 +311,15 @@
       const snapshot = snapshotJson(draft.value)
       if (!initialized) {
         initialized = true
+        previousDraftDispatchSnapshot = snapshot
         return
       }
-      if (suppressDraftDispatch) return
+      if (suppressDraftDispatch) {
+        previousDraftDispatchSnapshot = snapshot
+        return
+      }
+      if (snapshot === previousDraftDispatchSnapshot) return
+      previousDraftDispatchSnapshot = snapshot
 
       untrack(() => {
         const attempted = cloneJsonValue(draft.value)

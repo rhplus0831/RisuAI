@@ -269,6 +269,170 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     expect(body.fields).not.toHaveProperty('botPresets')
   })
 
+  it('reships the applied prompt fields for a promptPreset refresh', async () => {
+    const revision = await importDatabase({
+      characters: [{ chaId: 'char-a', name: 'Ada' }],
+      modelPresets: [{ id: 'model-a', name: 'Model A' }],
+      promptPresetsId: 0,
+      promptPresets: [
+        {
+          id: 'prompt-a',
+          name: 'Prompt A',
+          mainPrompt: 'main a',
+          presetRegex: [{ id: 'regex-a' }],
+          promptTemplate: [{ id: 'prompt-item-a', type: 'plain', text: 'template a' }],
+        },
+        {
+          id: 'prompt-b',
+          name: 'Prompt B',
+          mainPrompt: 'main b',
+          customPromptTemplateToggle: 'tone=Tone',
+          presetRegex: [{ id: 'regex-b' }],
+          promptTemplate: [{ id: 'prompt-item-b', type: 'plain', text: 'template b' }],
+        },
+      ],
+      promptTemplate: [{ id: 'current-item', type: 'plain', text: 'current template' }],
+      language: 'en',
+    })
+
+    const selected = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/prompt-presets/select',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, promptPresetId: 'prompt-b' },
+    })
+    expect(selected.statusCode).toBe(200)
+
+    const res = await getProjection('promptPreset')
+    const body = res.json()
+    expect(body.mode).toBe('fields')
+    expect(resourceProjectionFields('promptPreset')).toEqual(
+      expect.arrayContaining([
+        'promptPresets',
+        'promptPresetsId',
+        'mainPrompt',
+        'customPromptTemplateToggle',
+        'presetRegex',
+        'promptTemplate',
+      ]),
+    )
+    expect(body.fields.promptPresetsId).toBe(1)
+    expect(body.fields.mainPrompt).toBe('main b')
+    expect(body.fields.customPromptTemplateToggle).toBe('tone=Tone')
+    expect(body.fields.presetRegex).toEqual([{ id: 'regex-b' }])
+    expect(body.fields.promptTemplate).toEqual([{ id: 'prompt-item-b', type: 'plain', text: 'template b' }])
+    expect(body.fields).not.toHaveProperty('characters')
+  })
+
+  it('projects an empty applied promptTemplate for a promptPreset refresh', async () => {
+    const revision = await importDatabase({
+      characters: [{ chaId: 'char-a', name: 'Ada' }],
+      modelPresets: [{ id: 'model-a', name: 'Model A' }],
+      promptPresetsId: 0,
+      promptPresets: [
+        {
+          id: 'prompt-a',
+          name: 'Prompt A',
+          mainPrompt: 'main a',
+          promptTemplate: [{ id: 'prompt-item-a', type: 'plain', text: 'template a' }],
+        },
+        {
+          id: 'prompt-b',
+          name: 'Prompt B',
+          mainPrompt: 'main b',
+          promptTemplate: [],
+        },
+      ],
+      promptTemplate: [{ id: 'current-item', type: 'plain', text: 'current template' }],
+      language: 'en',
+    })
+
+    const selected = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/prompt-presets/select',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, promptPresetId: 'prompt-b' },
+    })
+    expect(selected.statusCode).toBe(200)
+
+    const res = await getProjection('promptPreset')
+    const body = res.json()
+    expect(body.mode).toBe('fields')
+    expect(body.fields.promptPresetsId).toBe(1)
+    expect(body.fields.mainPrompt).toBe('main b')
+    expect(body.fields.promptTemplate).toEqual([])
+  })
+
+  it('projects an empty applied promptTemplate after updating the selected promptPreset', async () => {
+    const revision = await importDatabase({
+      characters: [{ chaId: 'char-a', name: 'Ada' }],
+      modelPresets: [{ id: 'model-a', name: 'Model A' }],
+      promptPresetsId: 0,
+      promptPresets: [
+        {
+          id: 'prompt-a',
+          name: 'Prompt A',
+          mainPrompt: 'main a',
+          promptTemplate: [{ id: 'prompt-item-a', type: 'plain', text: 'template a' }],
+        },
+      ],
+      promptTemplate: [{ id: 'prompt-item-a', type: 'plain', text: 'template a' }],
+      language: 'en',
+    })
+
+    const updated = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/prompt-presets/prompt-a',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, patch: { promptTemplate: [] } },
+    })
+    expect(updated.statusCode).toBe(200)
+
+    const res = await getProjection('promptPreset')
+    const body = res.json()
+    expect(body.mode).toBe('fields')
+    expect(body.fields.promptPresetsId).toBe(0)
+    expect(body.fields.promptTemplate).toEqual([])
+  })
+
+  it('projects an empty applied promptTemplate after deleting the selected promptPreset', async () => {
+    const revision = await importDatabase({
+      characters: [{ chaId: 'char-a', name: 'Ada' }],
+      modelPresets: [{ id: 'model-a', name: 'Model A' }],
+      promptPresetsId: 1,
+      promptPresets: [
+        {
+          id: 'prompt-a',
+          name: 'Prompt A',
+          mainPrompt: 'main a',
+          promptTemplate: [],
+        },
+        {
+          id: 'prompt-b',
+          name: 'Prompt B',
+          mainPrompt: 'main b',
+          promptTemplate: [{ id: 'prompt-item-b', type: 'plain', text: 'template b' }],
+        },
+      ],
+      promptTemplate: [{ id: 'prompt-item-b', type: 'plain', text: 'template b' }],
+      language: 'en',
+    })
+
+    const deleted = await harness.app.inject({
+      method: 'DELETE',
+      url: '/api/v1/commands/prompt-presets/prompt-b',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, promptPresetId: 'prompt-a' },
+    })
+    expect(deleted.statusCode).toBe(200)
+
+    const res = await getProjection('promptPreset')
+    const body = res.json()
+    expect(body.mode).toBe('fields')
+    expect(body.fields.promptPresetsId).toBe(0)
+    expect(body.fields.promptTemplate).toEqual([])
+  })
+
   it('includes the legacy mirror scalars for a persona refresh', async () => {
     // Phase 4 personas slice co-fix: select/delete mirror the profile into the
     // username/userIcon/personaPrompt/userNote settings scalars, so a foreign

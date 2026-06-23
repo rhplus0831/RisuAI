@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, tick, unmount } from 'svelte'
 
@@ -146,6 +148,10 @@ function seedTemplate(): void {
   ;(DBState as { db: unknown }).db = {
     promptTemplate: [item('p-0', 'small'), item('p-1', BIG), item('p-2', BIG), item('p-3', BIG)],
   }
+}
+
+function readSource(path: string): string {
+  return readFileSync(resolve(process.cwd(), path), 'utf8')
 }
 
 function draftCopy(): PromptItem[] {
@@ -537,6 +543,34 @@ describe('flushPendingPromptTemplatePatches', () => {
 
     await vi.advanceTimersByTimeAsync(500)
     expect(commandState.commands).toHaveLength(1)
+  })
+
+  it('drops a pending prompt settings patch when the value returns to its original snapshot', async () => {
+    ;(DBState as { db: unknown }).db = { jsonSchemaEnabled: true }
+
+    queuePromptSettingsProjectionPatch({ jsonSchemaEnabled: false }, { jsonSchemaEnabled: true }, 500)
+    queuePromptSettingsProjectionPatch({ jsonSchemaEnabled: true }, { jsonSchemaEnabled: false }, 500)
+    await vi.advanceTimersByTimeAsync(500)
+
+    expect(commandState.commands).toHaveLength(0)
+  })
+})
+
+describe('prompt settings draft dispatch contracts', () => {
+  it('does not redispatch PromptSettings drafts after accepting selected-preset projection changes', () => {
+    const source = readSource('src/lib/Setting/Pages/PromptSettings.svelte')
+
+    expect(source).toContain('let previousDraftDispatchSnapshot = snapshotJson(initialValue)')
+    expect(source).toContain('previousDraftDispatchSnapshot = serverSnapshot')
+    expect(source).toContain('if (snapshot === previousDraftDispatchSnapshot) return')
+  })
+
+  it('does not redispatch prompt preset model override drafts after accepting projection changes', () => {
+    const source = readSource('src/ts/promptPresetModelOverrides.svelte.ts')
+
+    expect(source).toContain('let previousDraftDispatchSnapshot = snapshotJson(initialValue)')
+    expect(source).toContain('previousDraftDispatchSnapshot = serverSnapshot')
+    expect(source).toContain('if (snapshot === previousDraftDispatchSnapshot) return')
   })
 })
 

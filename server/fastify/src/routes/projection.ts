@@ -4,6 +4,16 @@ import type { AuthState } from '../auth.js'
 import { requireAuth } from '../http.js'
 import { getSchemaState } from '../db.js'
 import {
+  PROMPT_PRESET_FIELDS,
+  PROMPT_PRESET_MODEL_OTHERS_OVERRIDE_FIELDS,
+  PROMPT_PRESET_MODEL_PARAMETER_OVERRIDE_FIELDS,
+  databaseKeyForModelPresetField,
+  type PromptPresetField,
+  type PromptPresetModelOverrideField,
+  type PromptPresetModelParameterOverrideField,
+  type PromptPresetModelOthersOverrideField,
+} from '../../../../src/ts/presetSplit.js'
+import {
   loadCharacterSelectionProjection,
   loadCharacterLorebookHydration,
   loadCharacterLorebookHydrations,
@@ -18,6 +28,36 @@ import {
 } from '../repository.js'
 import { maskProviderSecrets, maskProviderSecretsInPlace } from '../providerSecrets.js'
 import { emitProtocolMetric, jsonPayloadBytes } from '../protocolMetrics.js'
+
+function promptPresetProjectionField(field: PromptPresetField): string {
+  if (field === 'regex' || field === 'presetRegex') return 'presetRegex'
+  return field
+}
+
+function modelOverrideProjectionField(
+  field:
+    | PromptPresetModelOverrideField
+    | PromptPresetModelParameterOverrideField
+    | PromptPresetModelOthersOverrideField,
+): string {
+  return databaseKeyForModelPresetField(field)
+}
+
+function uniqueProjectionFields(fields: readonly string[]): string[] {
+  return Array.from(new Set(fields))
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+const PROMPT_PRESET_PROJECTION_FIELDS = uniqueProjectionFields([
+  'promptPresets',
+  'promptPresetsId',
+  ...PROMPT_PRESET_FIELDS.map(promptPresetProjectionField),
+  ...PROMPT_PRESET_MODEL_PARAMETER_OVERRIDE_FIELDS.map(modelOverrideProjectionField),
+  ...PROMPT_PRESET_MODEL_OTHERS_OVERRIDE_FIELDS.map(modelOverrideProjectionField),
+])
 
 // Targeted per-resource projection.
 //
@@ -63,7 +103,10 @@ const RESOURCE_PROJECTION_FIELDS: Record<string, string[]> = {
   lorebook: ['characters', 'modules', 'loreBook', 'loreBookPage'],
   preset: ['botPresets', 'botPresetsId'],
   modelPreset: ['modelPresets', 'modelPresetsId'],
-  promptPreset: ['promptPresets', 'promptPresetsId'],
+  // Prompt-preset select/update commands apply the selected preset onto root
+  // prompt/model-adjacent settings, and may also replace the promptTemplate
+  // collection. Refresh the applied surface, not just the preset pointer.
+  promptPreset: PROMPT_PRESET_PROJECTION_FIELDS,
   legacyBotPreset: ['botPresets', 'botPresetsId', 'modelPresets', 'modelPresetsId', 'promptPresets', 'promptPresetsId'],
   modelProfile: ['modelProfiles', 'modelRoleProfiles', 'modelRuntimeDefaults'],
   // `prompt` (prompt-settings) writes ~21 scattered settings scalars, not a
@@ -512,6 +555,9 @@ export function registerProjectionRoutes(
       const projected = loadStubbedProjectionFields(db, dataDir, fieldKeys)
       fields.botPresets = projected.botPresets
     }
+    if (resource === 'promptPreset') {
+      projectEmptyAppliedPromptTemplate(fields)
+    }
 
     const response = { revision, resource, mode: 'fields' as const, fields }
     emitProjectionMetric(req.log, resource, revision, response, {
@@ -562,6 +608,18 @@ function readBulkIds(body: { ids?: unknown } | undefined): string[] | null {
     seen.add(id)
   }
   return ids
+}
+
+function projectEmptyAppliedPromptTemplate(fields: Record<string, unknown>): void {
+  if (Object.prototype.hasOwnProperty.call(fields, 'promptTemplate')) return
+  const presets = fields.promptPresets
+  const selectedIndex = fields.promptPresetsId
+  if (!Array.isArray(presets) || !Number.isInteger(selectedIndex)) return
+
+  const selectedPreset = presets[selectedIndex as number]
+  if (isRecord(selectedPreset) && Object.prototype.hasOwnProperty.call(selectedPreset, 'promptTemplate')) {
+    fields.promptTemplate = []
+  }
 }
 
 function readPositiveInteger(value: string | undefined): number | null {

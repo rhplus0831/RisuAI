@@ -83,6 +83,7 @@ import {
   extractLegacyBotPreset,
   findModelPresetIndex,
   findPromptPresetIndex,
+  promptPresetAppliesPromptTemplate,
   readModelPresetId,
   readModelPresetPatch,
   readPromptPresetId,
@@ -2350,6 +2351,9 @@ export function registerCommandRoutes(
           writeSingleCollectionRow(innerDb, 'promptPresets', index, presets[index])
           if (target.promptPresetsId === index) {
             applyPromptPreset(target, presets[index])
+            if (promptPresetAppliesPromptTemplate(presets[index])) {
+              writePromptTemplatesTable(innerDb, asArray(target.promptTemplate))
+            }
             writeSettingsOnly(innerDb, extractSettings(target))
           }
           return {
@@ -2405,6 +2409,9 @@ export function registerCommandRoutes(
           target.promptPresetsId = nextSelectedIndex
           if (nextSelectedIndex >= 0) {
             applyPromptPreset(target, presets[nextSelectedIndex])
+            if (promptPresetAppliesPromptTemplate(presets[nextSelectedIndex])) {
+              writePromptTemplatesTable(innerDb, asArray(target.promptTemplate))
+            }
           }
           writeSingleCollectionTable(innerDb, 'promptPresets', presets)
           if (target.promptPresetsId !== beforeSelected || deletedWasSelected) {
@@ -2451,6 +2458,9 @@ export function registerCommandRoutes(
           const nextSelectedIndex = requirePromptPresetIndex(presets, promptPresetId)
           target.promptPresetsId = nextSelectedIndex
           applyPromptPreset(target, presets[nextSelectedIndex])
+          if (promptPresetAppliesPromptTemplate(presets[nextSelectedIndex])) {
+            writePromptTemplatesTable(innerDb, asArray(target.promptTemplate))
+          }
           if (target.promptPresetsId !== beforeSelected) {
             writeSettingsOnly(innerDb, extractSettings(target))
           }

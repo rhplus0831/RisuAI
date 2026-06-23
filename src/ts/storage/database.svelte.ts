@@ -45,6 +45,7 @@ import {
   reorderModelPresetsCommand,
   reorderPromptPresetsCommand,
   reorderPresetsCommand,
+  runServerCommand,
   selectModelPresetCommand,
   selectPromptPresetCommand,
   selectPresetCommand,
@@ -733,6 +734,30 @@ function rollbackSplitPresetSelection(rollback: SplitPresetSelectionRollback): v
     })
     restoreSplitPresetSelectionToId(rollback.kind, rollback.previousSelectedId)
   })
+}
+
+function runPromptPresetSelectionCommand(promptPresetId: string, rollback: () => void): void {
+  if (!canUseServerCommands()) return
+  void (async () => {
+    const stillAttemptedSelection = () => currentSplitPresetSelectedId('prompt') === promptPresetId
+    const command = (baseRevision: number) =>
+      selectPromptPresetCommand({
+        baseRevision,
+        promptPresetId,
+      })
+
+    try {
+      const result = await runServerCommand({ command })
+      if (result.status === 'ok') return
+      if (result.status === 'conflict' && stillAttemptedSelection()) {
+        const retry = await runServerCommand({ command })
+        if (retry.status === 'ok') return
+      }
+    } catch (error) {
+      console.error('Prompt preset selection command rejected:', error)
+    }
+    rollback()
+  })()
 }
 
 function stringArraysEqual(left: string[], right: string[]): boolean {
@@ -3691,16 +3716,7 @@ export function selectPromptPreset(id: number) {
       previousSettings,
       attemptedSettings: snapshotSetPresetSettings(db),
     }
-    runOptimisticCommandSequence(
-      [
-        (baseRevision) =>
-          selectPromptPresetCommand({
-            baseRevision,
-            promptPresetId,
-          }),
-      ],
-      () => rollbackSplitPresetSelection(selectionRollback),
-    )
+    runPromptPresetSelectionCommand(promptPresetId, () => rollbackSplitPresetSelection(selectionRollback))
   })
 }
 

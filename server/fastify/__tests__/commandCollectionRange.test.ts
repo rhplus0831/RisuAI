@@ -553,6 +553,94 @@ describe('Phase 4 presets collection range', () => {
     expect(readSettings().temperature).toBe(0.9)
     expect(readCollection('prompt_templates')).toEqual([{ type: 'plain', text: 'pt-1' }])
   })
+
+  it('POST prompt-presets/select persists applied promptTemplate + settings', async () => {
+    const seed = seedDatabase()
+    seed.modelPresets = [{ id: 'model-0', name: 'Model 0' }]
+    seed.promptPresetsId = 0
+    seed.promptPresets = [
+      { id: 'prompt-0', name: 'Prompt 0', mainPrompt: 'prompt 0', promptTemplate: [{ type: 'plain', text: 'sp-0' }] },
+      { id: 'prompt-1', name: 'Prompt 1', mainPrompt: 'prompt 1', promptTemplate: [{ type: 'plain', text: 'sp-1' }] },
+    ]
+    const revision = await importDatabase(seed)
+    const before = rowidSnapshot()
+
+    const { metric } = await runCommand({
+      method: 'POST',
+      url: '/api/v1/commands/prompt-presets/select',
+      payload: { baseRevision: revision, promptPresetId: 'prompt-1' },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-collection')
+    expect(metric.writtenTables).toEqual(['prompt_templates', 'settings'])
+    assertCommandMetricGate(metric)
+    expectNoCharacterOrChatChurn(before)
+    expect(readSettings().promptPresetsId).toBe(1)
+    expect(readSettings().mainPrompt).toBe('prompt 1')
+    expect(readCollection('prompt_templates')).toEqual([{ type: 'plain', text: 'sp-1' }])
+  })
+
+  it('PATCH selected prompt-presets/:id persists applied promptTemplate + settings', async () => {
+    const seed = seedDatabase()
+    seed.modelPresets = [{ id: 'model-0', name: 'Model 0' }]
+    seed.promptPresetsId = 0
+    seed.promptPresets = [
+      { id: 'prompt-0', name: 'Prompt 0', mainPrompt: 'prompt 0', promptTemplate: [{ type: 'plain', text: 'sp-0' }] },
+      { id: 'prompt-1', name: 'Prompt 1', mainPrompt: 'prompt 1', promptTemplate: [{ type: 'plain', text: 'sp-1' }] },
+    ]
+    const revision = await importDatabase(seed)
+    const before = rowidSnapshot()
+    const beforeRowids = collectionRowidsByPosition('prompt_presets')
+
+    const { metric } = await runCommand({
+      method: 'PATCH',
+      url: '/api/v1/commands/prompt-presets/prompt-0',
+      payload: {
+        baseRevision: revision,
+        patch: {
+          mainPrompt: 'prompt 0 patched',
+          promptTemplate: [{ type: 'plain', text: 'sp-0 patched' }],
+        },
+      },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-collection')
+    expect(metric.writtenTables).toEqual(['prompt_presets', 'prompt_templates', 'settings'])
+    assertCommandMetricGate(metric)
+    expectNoCharacterOrChatChurn(before)
+    expect(collectionRowidsByPosition('prompt_presets')).toEqual(beforeRowids)
+    expect(readSettings().mainPrompt).toBe('prompt 0 patched')
+    expect(readCollection('prompt_templates')).toEqual([{ type: 'plain', text: 'sp-0 patched' }])
+  })
+
+  it('DELETE selected prompt-presets/:id persists the next selected promptTemplate + settings', async () => {
+    const seed = seedDatabase()
+    seed.modelPresets = [{ id: 'model-0', name: 'Model 0' }]
+    seed.promptPresetsId = 1
+    seed.promptPresets = [
+      { id: 'prompt-0', name: 'Prompt 0', mainPrompt: 'prompt 0', promptTemplate: [{ type: 'plain', text: 'sp-0' }] },
+      { id: 'prompt-1', name: 'Prompt 1', mainPrompt: 'prompt 1', promptTemplate: [{ type: 'plain', text: 'sp-1' }] },
+    ]
+    seed.promptTemplate = [{ type: 'plain', text: 'sp-1' }]
+    const revision = await importDatabase(seed)
+    const before = rowidSnapshot()
+
+    const { metric, body } = await runCommand({
+      method: 'DELETE',
+      url: '/api/v1/commands/prompt-presets/prompt-1',
+      payload: { baseRevision: revision, promptPresetId: 'prompt-0' },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-collection')
+    expect(metric.writtenTables).toEqual(['prompt_presets', 'prompt_templates', 'settings'])
+    assertCommandMetricGate(metric)
+    expectNoCharacterOrChatChurn(before)
+    expect(readCollection('prompt_presets').map((p) => (p as { id: string }).id)).toEqual(['prompt-0'])
+    expect(readSettings().promptPresetsId).toBe(0)
+    expect(body.selectedPromptPresetId).toBe('prompt-0')
+    expect(readSettings().mainPrompt).toBe('prompt 0')
+    expect(readCollection('prompt_templates')).toEqual([{ type: 'plain', text: 'sp-0' }])
+  })
 })
 
 describe('Phase 4 prompt-items collection range', () => {

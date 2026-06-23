@@ -22,6 +22,15 @@ describe('BotSettings prompt edit persistence contracts', () => {
     expect(source).toContain('const regexField = resolvePromptPresetRegexField(preset)')
   })
 
+  it('does not dispatch prompt-field drafts after accepting selected-preset projection changes', () => {
+    const source = botSettingsSource()
+
+    expect(source).toContain('let previousDraftDispatchSnapshot = snapshotJson(initialValue)')
+    expect(source).toContain('previousDraftDispatchSnapshot = serverSnapshot')
+    expect(source).toContain('if (snapshot === previousDraftDispatchSnapshot) return')
+    expect(source).toContain('if (snapshotJson(value) === snapshotJson(pendingPromptFieldPatch.previous[key]))')
+  })
+
   it('routes prompt preset icon uploads through the freshness guard helper', () => {
     const source = botSettingsSource()
 

@@ -161,6 +161,10 @@ export function applyPromptPreset(database: JsonRecord, preset: PromptPresetReco
   applySplitPreset(database, preset, PROMPT_PRESET_OTHERS_OVERRIDE_APPLY_KEYS)
 }
 
+export function promptPresetAppliesPromptTemplate(preset: PromptPresetRecord | undefined): boolean {
+  return !!preset && Object.prototype.hasOwnProperty.call(preset, 'promptTemplate')
+}
+
 function applyPromptPresetRegexField(database: JsonRecord, preset: PromptPresetRecord): void {
   const regexField = resolvePromptPresetRegexField(preset)
   if (!regexField.present) return

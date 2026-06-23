@@ -430,6 +430,7 @@
     let initialized = false
     let suppressDraftDispatch = false
     let previousServerSnapshot = snapshotJson(initialValue)
+    let previousDraftDispatchSnapshot = snapshotJson(initialValue)
 
     $effect(() => {
       const serverValue = currentPromptFieldValue(key, fallback)
@@ -438,6 +439,7 @@
 
       if (serverSnapshot !== previousServerSnapshot && serverSnapshot !== draftSnapshot) {
         suppressDraftDispatch = true
+        previousDraftDispatchSnapshot = serverSnapshot
         draft.value = cloneJsonValue(serverValue)
         queueMicrotask(() => {
           suppressDraftDispatch = false
@@ -451,9 +453,15 @@
       const snapshot = snapshotJson(draft.value)
       if (!initialized) {
         initialized = true
+        previousDraftDispatchSnapshot = snapshot
         return
       }
-      if (suppressDraftDispatch) return
+      if (suppressDraftDispatch) {
+        previousDraftDispatchSnapshot = snapshot
+        return
+      }
+      if (snapshot === previousDraftDispatchSnapshot) return
+      previousDraftDispatchSnapshot = snapshot
 
       untrack(() => {
         const attempted = cloneJsonValue(draft.value)
@@ -480,11 +488,21 @@
       if (!(key in pendingPromptFieldPatch.previous)) {
         pendingPromptFieldPatch.previous[key] = previous[key]
       }
+      if (snapshotJson(value) === snapshotJson(pendingPromptFieldPatch.previous[key])) {
+        delete pendingPromptFieldPatch.patch[key]
+        delete pendingPromptFieldPatch.previous[key]
+        delete pendingPromptFieldPatch.attempted[key]
+        continue
+      }
       pendingPromptFieldPatch.patch[key] = value
       pendingPromptFieldPatch.attempted[key] = value
     }
 
     if (pendingPromptFieldPatch.timer) clearTimeout(pendingPromptFieldPatch.timer)
+    if (Object.keys(pendingPromptFieldPatch.patch).length === 0) {
+      pendingPromptFieldPatch.timer = null
+      return
+    }
     pendingPromptFieldPatch.timer = setTimeout(() => {
       dispatchPendingPromptFieldPatch()
     }, 250)
