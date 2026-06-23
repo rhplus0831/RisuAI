@@ -16,7 +16,9 @@ export function buildAuthorNote(currentChar: character, currentChat: Chat): Open
       },
     ]
   }
-  const defaultText = getAuthorNoteDefaultText()
+  const defaultText = getAuthorNoteDefaultText({
+    chatPromptPresetId: currentChat.generationSettings?.promptPresetId,
+  })
   if (defaultText !== '') {
     return [
       {

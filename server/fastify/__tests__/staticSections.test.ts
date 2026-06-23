@@ -158,6 +158,55 @@ describe('Phase 7-3 buildAuthorNote', () => {
     expect(out).toEqual([{ role: 'system', content: 'Default note for Tess' }])
   })
 
+  it('uses the chat-scoped prompt preset author note instead of stale top-level or global defaults', () => {
+    const db = makeDatabase({
+      promptTemplate: [{ type: 'authornote', defaultText: 'Stale top-level note' }],
+      promptPresets: [
+        {
+          id: 'global-prompt',
+          name: 'Global Prompt',
+          promptTemplate: [{ type: 'authornote', defaultText: 'Stale global note' }],
+        },
+        {
+          id: 'chat-prompt',
+          name: 'Chat Prompt',
+          promptTemplate: [{ type: 'authornote', defaultText: 'Chat note for {{char}}' }],
+        },
+      ],
+      promptPresetsId: 0,
+    } as unknown as Partial<Database>)
+    const chat = makeChat({
+      note: '',
+      generationSettings: { promptPresetId: 'chat-prompt' } as Chat['generationSettings'],
+    })
+
+    expect(buildAuthorNote(ctxFor(db), chat)).toEqual([{ role: 'system', content: 'Chat note for Tess' }])
+  })
+
+  it('returns [] when the chat-scoped prompt preset has no promptTemplate instead of stale defaults', () => {
+    const db = makeDatabase({
+      promptTemplate: [{ type: 'authornote', defaultText: 'Stale top-level note' }],
+      promptPresets: [
+        {
+          id: 'global-prompt',
+          name: 'Global Prompt',
+          promptTemplate: [{ type: 'authornote', defaultText: 'Stale global note' }],
+        },
+        {
+          id: 'chat-prompt',
+          name: 'Chat Prompt',
+        },
+      ],
+      promptPresetsId: 0,
+    } as unknown as Partial<Database>)
+    const chat = makeChat({
+      note: '',
+      generationSettings: { promptPresetId: 'chat-prompt' } as Chat['generationSettings'],
+    })
+
+    expect(buildAuthorNote(ctxFor(db), chat)).toEqual([])
+  })
+
   it('returns [] when both chat.note and authornote.defaultText are empty', () => {
     const db = makeDatabase({
       promptTemplate: [{ type: 'authornote', defaultText: '' }] as unknown as Database['promptTemplate'],

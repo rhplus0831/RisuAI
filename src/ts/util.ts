@@ -3,6 +3,10 @@ import type { Database, Message } from './storage/database.svelte'
 import { getDatabase } from './storage/database.svelte'
 import { DBState, selectedCharID } from './stores.svelte'
 import { createBlankChar, getCharImage } from './characters'
+import {
+  resolveEffectivePromptTemplate,
+  type EffectivePromptTemplateOptions,
+} from './process/promptAssembly/effectivePromptTemplate'
 import { isIOS } from 'src/ts/platform'
 import type { Attachment } from 'svelte/attachments'
 import { mount, unmount, type Snippet } from 'svelte'
@@ -281,9 +285,9 @@ export async function getEmotion(
   return datas
 }
 
-export function getAuthorNoteDefaultText() {
+export function getAuthorNoteDefaultText(options: EffectivePromptTemplateOptions = {}) {
   const db = getDatabase()
-  const template = db.promptTemplate
+  const template = resolveEffectivePromptTemplate(db, options).promptTemplate
   if (!template) {
     return ''
   }

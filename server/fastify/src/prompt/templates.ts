@@ -1,6 +1,10 @@
 import type { Database, character } from '../../../../src/ts/storage/database.svelte'
 import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
 import type { PromptItem } from '../../../../src/ts/process/prompt'
+import {
+  resolveEffectivePromptTemplate,
+  type EffectivePromptTemplateOptions,
+} from '../../../../src/ts/process/promptAssembly/effectivePromptTemplate.js'
 import { expandVariables, type ExpandContext } from './variables.js'
 
 /**
@@ -73,8 +77,13 @@ export interface NormalizedTemplate {
  *   - swap in the utility-bot forced template unless the user template
  *     opts in via `promptSettings.utilOverride`.
  */
-export function normalizeTemplate(db: Database, currentChar: character): NormalizedTemplate {
-  let promptTemplate = db.promptTemplate ? structuredClone(db.promptTemplate) : null
+export function normalizeTemplate(
+  db: Database,
+  currentChar: character,
+  options: EffectivePromptTemplateOptions = {},
+): NormalizedTemplate {
+  const resolved = resolveEffectivePromptTemplate(db, options)
+  let promptTemplate = resolved.promptTemplate ? structuredClone(resolved.promptTemplate) : null
   const usingPromptTemplate = !!promptTemplate
 
   if (promptTemplate) {

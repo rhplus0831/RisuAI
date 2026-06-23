@@ -147,6 +147,109 @@ describe('Phase 7-10a normalizeTemplate', () => {
     const result = normalizeTemplate(db, makeCharacter({ utilityBot: true }))
     expect(result.promptTemplate?.map((c) => c.type)).toEqual(['description', 'postEverything'])
   })
+
+  it('uses the selected global prompt preset instead of stale top-level or legacy bot preset templates', () => {
+    const db = makeDatabase({
+      promptTemplate: [{ type: 'plain', text: 'stale top-level', role: 'system', type2: 'main' }],
+      promptPresets: [
+        {
+          id: 'modern-prompt',
+          name: 'Modern Prompt',
+          promptTemplate: [{ type: 'description' }],
+        },
+      ],
+      promptPresetsId: 0,
+      botPresets: [
+        {
+          id: 'legacy-bot',
+          name: 'Legacy Bot',
+          promptTemplate: [{ type: 'lorebook' }],
+        },
+      ],
+      botPresetsId: 0,
+    } as Partial<Database>)
+
+    const result = normalizeTemplate(db, makeCharacter())
+
+    expect(result.usingPromptTemplate).toBe(true)
+    expect(result.promptTemplate?.map((c) => c.type)).toEqual(['description', 'postEverything'])
+  })
+
+  it('treats a selected global prompt preset without promptTemplate as disabled instead of falling back', () => {
+    const db = makeDatabase({
+      promptTemplate: [{ type: 'description' }],
+      promptPresets: [{ id: 'plain-prompt', name: 'Plain Prompt' }],
+      promptPresetsId: 0,
+    } as Partial<Database>)
+
+    const result = normalizeTemplate(db, makeCharacter())
+
+    expect(result.promptTemplate).toBeNull()
+    expect(result.usingPromptTemplate).toBe(false)
+  })
+
+  it('uses the chat-scoped prompt preset before global prompt preset and stale top-level templates', () => {
+    const db = makeDatabase({
+      promptTemplate: [{ type: 'plain', text: 'stale top-level', role: 'system', type2: 'main' }],
+      promptPresets: [
+        {
+          id: 'global-prompt',
+          name: 'Global Prompt',
+          promptTemplate: [{ type: 'description' }],
+        },
+        {
+          id: 'chat-prompt',
+          name: 'Chat Prompt',
+          promptTemplate: [{ type: 'lorebook' }],
+        },
+      ],
+      promptPresetsId: 0,
+    } as Partial<Database>)
+
+    const result = normalizeTemplate(db, makeCharacter(), { chatPromptPresetId: 'chat-prompt' })
+
+    expect(result.usingPromptTemplate).toBe(true)
+    expect(result.promptTemplate?.map((c) => c.type)).toEqual(['lorebook', 'postEverything'])
+  })
+
+  it('does not fall back when a chat-scoped prompt preset resolves without promptTemplate', () => {
+    const db = makeDatabase({
+      promptTemplate: [{ type: 'description' }],
+      promptPresets: [
+        {
+          id: 'global-prompt',
+          name: 'Global Prompt',
+          promptTemplate: [{ type: 'lorebook' }],
+        },
+        { id: 'chat-prompt', name: 'Chat Prompt' },
+      ],
+      promptPresetsId: 0,
+    } as Partial<Database>)
+
+    const result = normalizeTemplate(db, makeCharacter(), { chatPromptPresetId: 'chat-prompt' })
+
+    expect(result.promptTemplate).toBeNull()
+    expect(result.usingPromptTemplate).toBe(false)
+  })
+
+  it('does not mutate preset-owned promptTemplate when adding implicit postEverything', () => {
+    const presetTemplate: PromptItem[] = [{ type: 'description' }]
+    const db = makeDatabase({
+      promptPresets: [
+        {
+          id: 'modern-prompt',
+          name: 'Modern Prompt',
+          promptTemplate: presetTemplate,
+        },
+      ],
+      promptPresetsId: 0,
+    } as Partial<Database>)
+
+    const result = normalizeTemplate(db, makeCharacter())
+
+    expect(result.promptTemplate?.map((c) => c.type)).toEqual(['description', 'postEverything'])
+    expect(db.promptPresets[0].promptTemplate).toEqual([{ type: 'description' }])
+  })
 })
 
 describe('Phase 7-10a buildFormatOrder', () => {

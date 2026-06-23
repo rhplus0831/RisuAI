@@ -103,7 +103,9 @@ export async function assembleLocalSendChatPrompt(args: {
     args.throwError(language.errors.promptTemplateUnavailable)
     return { status: 'stopped' }
   }
-  const { promptTemplate, usingPromptTemplate } = normalizeTemplate(args.currentChar)
+  const { promptTemplate, usingPromptTemplate } = normalizeTemplate(args.currentChar, {
+    chatPromptPresetId: currentChat.generationSettings?.promptPresetId,
+  })
 
   if (!args.currentChar.utilityBot && !promptTemplate) {
     const sections = buildPlainPromptSections(args.currentChar)

@@ -1,14 +1,21 @@
-import type { character } from '../../storage/database.svelte'
+import type { Database, character } from '../../storage/database.svelte'
 import { DBState } from '../../stores.svelte'
 import type { PromptItem } from '../prompt'
+import { resolveEffectivePromptTemplate, type EffectivePromptTemplateOptions } from './effectivePromptTemplate'
 
 export interface NormalizedTemplate {
   promptTemplate: PromptItem[] | null
   usingPromptTemplate: boolean
 }
 
-export function normalizeTemplate(currentChar: character): NormalizedTemplate {
-  let promptTemplate = safeStructuredClone(DBState.db.promptTemplate) ?? null
+export interface NormalizeTemplateOptions extends EffectivePromptTemplateOptions {
+  db?: Database
+}
+
+export function normalizeTemplate(currentChar: character, options: NormalizeTemplateOptions = {}): NormalizedTemplate {
+  const db = options.db ?? DBState.db
+  const resolved = resolveEffectivePromptTemplate(db, options)
+  let promptTemplate = safeStructuredClone(resolved.promptTemplate) ?? null
   const usingPromptTemplate = !!promptTemplate
 
   if (promptTemplate) {
@@ -25,7 +32,7 @@ export function normalizeTemplate(currentChar: character): NormalizedTemplate {
     }
   }
 
-  if (currentChar.utilityBot && !(usingPromptTemplate && DBState.db.promptSettings.utilOverride)) {
+  if (currentChar.utilityBot && !(usingPromptTemplate && db.promptSettings.utilOverride)) {
     promptTemplate = [
       { type: 'plain', text: '', role: 'system', type2: 'main' },
       { type: 'description' },

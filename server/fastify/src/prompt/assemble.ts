@@ -562,7 +562,9 @@ export function beginAssembly(input: AssembleInput, deps: AssembleDeps): Assembl
   }
   const unformated = createEmptyUnformatedSlots()
 
-  const { promptTemplate, usingPromptTemplate } = normalizeTemplate(database, currentChar)
+  const { promptTemplate, usingPromptTemplate } = normalizeTemplate(database, currentChar, {
+    chatPromptPresetId: currentChat.generationSettings?.promptPresetId,
+  })
   const formatOrder = buildFormatOrder(database)
   const stableCardCache = createStableCardRenderCache()
   const initialMessages = cloneMessages(currentChat.message ?? [], 'initialMessages')

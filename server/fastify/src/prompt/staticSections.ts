@@ -1,5 +1,6 @@
 import type { Chat, Database, character } from '../../../../src/ts/storage/database.svelte'
 import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
+import { resolveEffectivePromptTemplate } from '../../../../src/ts/process/promptAssembly/effectivePromptTemplate.js'
 import { expandVariables, type ExpandContext } from './variables.js'
 
 /**
@@ -21,11 +22,13 @@ const COT_INSTRUCTION =
   '<instruction> - before respond everything, Think step by step as a ai assistant how would you respond inside <Thoughts> xml tag. this must be less than 5 paragraphs.</instruction>'
 
 /**
- * Walks `db.promptTemplate` for an `authornote` card and returns its
+ * Walks the effective prompt template for an `authornote` card and returns its
  * `defaultText`. Mirrors `src/ts/util.ts:335 getAuthorNoteDefaultText`.
  */
-function authorNoteDefaultText(db: Database): string {
-  const template = db.promptTemplate
+function authorNoteDefaultText(db: Database, currentChat: Chat): string {
+  const template = resolveEffectivePromptTemplate(db, {
+    chatPromptPresetId: currentChat.generationSettings?.promptPresetId,
+  }).promptTemplate
   if (!template) return ''
   for (const v of template as Array<{ type?: string; defaultText?: string }>) {
     if (v && v.type === 'authornote') return v.defaultText ?? ''
@@ -57,7 +60,7 @@ export function buildAuthorNote(ctx: ExpandContext, currentChat: Chat): OpenAICh
   if (currentChat.note) {
     return [{ role: 'system', content: expandWith(ctx, currentChat.note) }]
   }
-  const defaultText = authorNoteDefaultText(ctx.database)
+  const defaultText = authorNoteDefaultText(ctx.database, currentChat)
   if (defaultText !== '') {
     return [{ role: 'system', content: expandWith(ctx, defaultText) }]
   }

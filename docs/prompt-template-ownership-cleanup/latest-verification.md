@@ -2,27 +2,38 @@
 
 Date: 2026-06-23
 
-This workstream is currently planning-only. No implementation changes have been
-made and no focused validation commands have been run for it yet.
+Phase 1 effective prompt template resolver implementation has focused automated
+coverage after the author-note resolver parity fix. No UI smoke was run because
+this slice did not change live editor workflows.
 
 ## Current Proof
 
 - Source exploration completed.
 - Plan folder created under `docs/prompt-template-ownership-cleanup`.
-- No runtime, command, projection, UI, or test changes have landed.
+- Runtime prompt template reads now resolve through the effective
+  prompt-preset owner before top-level fallback.
+- Focused browser/server precedence tests landed for prompt preset ownership,
+  chat-scoped override, no-template disabling, legacy bot preset non-ownership,
+  and no mutation during normalization.
+- Server author-note defaults now use the chat-scoped prompt preset ID before
+  considering global or top-level templates.
+- Prompt Settings warnings still validate the editable top-level draft template;
+  owner-aware UI validation remains deferred to Phase 3.
 
-## Recommended Phase 0 Validation
+## Phase 1 Resolver Fix Validation
 
-Phase 0 is mostly contract/test-prep work. If source docs or tests are touched,
-run the narrow checks relevant to those files plus formatting checks:
+Run on 2026-06-23:
 
 ```bash
-pnpm exec vitest run src/ts/presetSplit.test.ts src/ts/storage/database.svelte.test.ts src/ts/loadout.test.ts
-pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/commandCollectionRange.test.ts server/fastify/__tests__/bootstrap.test.ts server/fastify/__tests__/projection.test.ts
+pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/staticSections.test.ts
+pnpm exec vitest run src/ts/process/__tests__/normalizeTemplate.test.ts
+pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/templates.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 git diff --check
 ```
+
+All commands passed.
 
 ## Future Browser Smoke
 
@@ -38,6 +49,6 @@ Smoke targets:
 
 ## Verification Gaps
 
-- No implementation verification yet.
-- No browser smoke yet.
-- No test suite has been updated for the new ownership contract.
+- No browser smoke yet; defer until a phase changes the live settings workflow.
+- Prompt item command/projection/editor ownership remains unverified because it
+  is out of scope for Phase 1.
