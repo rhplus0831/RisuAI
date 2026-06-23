@@ -1,20 +1,88 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { OpenAIChat } from '../index.svelte'
 
-const hydrationState = vi.hoisted(() => ({
-  ensurePromptTemplateHydrated: vi.fn(async () => false),
-  isPromptTemplateHydrated: vi.fn(() => false),
+const projectionState = vi.hoisted(() => ({
+  fetchResource: vi.fn(),
+  canUse: true,
 }))
 
-vi.mock('../../server/promptTemplateHydration', () => hydrationState)
+const assemblyState = vi.hoisted(() => ({
+  renderFinalPrompt: vi.fn(async () => ({
+    formated: [{ role: 'system', content: 'assembled' }],
+  })),
+  finalizeRequestBudget: vi.fn(async (formated: OpenAIChat[]) => ({
+    ok: true,
+    formated,
+    inputTokens: 12,
+    outputTokens: 200,
+  })),
+}))
+
+vi.mock('../../server/projection', () => ({
+  canUseServerProjection: () => projectionState.canUse,
+  fetchServerProjectionResource: projectionState.fetchResource,
+}))
 
 vi.mock('../scripts', () => ({
   risuChatParser: (text: string) => text,
 }))
 
+vi.mock('../promptAssembly/buildDescription', () => ({
+  buildDescription: async () => [],
+}))
+
+vi.mock('../promptAssembly/buildLorebookContext', () => ({
+  buildLorebookContext: async () => ({
+    resolvePosition: (text: string) => text,
+    positionParser: (text: string) => text,
+    depthPrompts: [],
+  }),
+}))
+
+vi.mock('../promptBudget/preflightTemplateTokens', () => ({
+  preflightTemplateTokens: async () => ({
+    addedTokens: 0,
+    memoryCardUsed: false,
+    hasCachePoint: false,
+  }),
+}))
+
+vi.mock('../promptAssembly/buildHistoryWindow', () => ({
+  buildHistoryWindow: async (args: { currentChat: Chat }) => ({
+    stopSending: false,
+    chats: [],
+    addedTokens: 0,
+    currentChat: args.currentChat,
+    triggerResult: undefined,
+  }),
+}))
+
+vi.mock('../promptAssembly/buildMemoryWindow', () => ({
+  buildMemoryWindow: async (args: { currentChat: Chat; chats: OpenAIChat[] }) => ({
+    stopSending: false,
+    chats: args.chats,
+    currentTokens: 0,
+    currentChat: args.currentChat,
+    memories: [],
+  }),
+}))
+
+vi.mock('../promptAssembly/renderFinalPrompt', () => ({
+  renderFinalPrompt: assemblyState.renderFinalPrompt,
+}))
+
+vi.mock('../promptBudget/finalizeRequestBudget', () => ({
+  finalizeRequestBudget: assemblyState.finalizeRequestBudget,
+}))
+
 import { language } from 'src/lang'
 import { DBState } from '../../stores.svelte'
+import { setServerProjectionWriteGuardEnabled } from '../../storage/database.svelte'
 import type { Chat, character } from '../../storage/database.svelte'
 import { assembleLocalSendChatPrompt, type SendChatPromptStageTimings } from '../sendChatPromptAssembly'
+import { clearCachedServerCommandRevision, setCachedServerCommandRevision } from '../../server/commands'
+import { resetPromptTemplateHydration } from '../../server/promptTemplateHydration'
+import type { PromptItem } from '../prompt'
 
 function makeChat(): Chat {
   return {
@@ -57,10 +125,14 @@ function stageTimings(): SendChatPromptStageTimings {
 
 describe('assembleLocalSendChatPrompt promptTemplate hydration', () => {
   beforeEach(() => {
-    hydrationState.ensurePromptTemplateHydrated.mockClear()
-    hydrationState.isPromptTemplateHydrated.mockClear()
-    hydrationState.ensurePromptTemplateHydrated.mockResolvedValue(false)
-    hydrationState.isPromptTemplateHydrated.mockReturnValue(false)
+    setServerProjectionWriteGuardEnabled(false)
+    ;(DBState as { db: unknown }).db = {}
+    clearCachedServerCommandRevision()
+    resetPromptTemplateHydration()
+    projectionState.canUse = true
+    projectionState.fetchResource.mockReset()
+    assemblyState.renderFinalPrompt.mockClear()
+    assemblyState.finalizeRequestBudget.mockClear()
   })
 
   it('stops clearly instead of falling back when promptTemplate is still unloaded', async () => {
@@ -68,9 +140,12 @@ describe('assembleLocalSendChatPrompt promptTemplate hydration', () => {
     const currentChar = makeCharacter(chat)
     ;(DBState as { db: unknown }).db = {
       characters: [currentChar],
+      promptPresetsId: -1,
       maxResponse: 200,
       bias: [],
     }
+    setCachedServerCommandRevision(1)
+    projectionState.fetchResource.mockResolvedValue({ status: 'unavailable' })
     const throwError = vi.fn()
 
     const result = await assembleLocalSendChatPrompt({
@@ -90,8 +165,85 @@ describe('assembleLocalSendChatPrompt promptTemplate hydration', () => {
     })
 
     expect(result).toEqual({ status: 'stopped' })
-    expect(hydrationState.ensurePromptTemplateHydrated).toHaveBeenCalledTimes(1)
-    expect(hydrationState.isPromptTemplateHydrated).toHaveBeenCalledTimes(1)
+    expect(projectionState.fetchResource).toHaveBeenCalledTimes(1)
+    expect(projectionState.fetchResource).toHaveBeenCalledWith('promptItem', {})
     expect(throwError).toHaveBeenCalledWith(language.errors.promptTemplateUnavailable)
+  })
+
+  it('hydrates the chat-scoped prompt preset without overwriting the visible global projection', async () => {
+    const globalTemplate = [{ id: 'global-row', type: 'description' }] as PromptItem[]
+    const chatTemplate = [
+      { id: 'chat-row', type: 'plain', role: 'system', type2: 'main', text: 'chat template' },
+    ] as PromptItem[]
+    const chat = {
+      ...makeChat(),
+      generationSettings: { promptPresetId: 'prompt-chat' },
+    } as Chat
+    const currentChar = makeCharacter(chat)
+    ;(DBState as { db: unknown }).db = {
+      characters: [currentChar],
+      promptPresetsId: 0,
+      promptTemplate: globalTemplate,
+      promptPresets: [
+        { id: 'prompt-global', name: 'Global Prompt', promptTemplate: globalTemplate },
+        { id: 'prompt-chat', name: 'Chat Prompt' },
+      ],
+      promptSettings: {
+        assistantPrefill: '',
+        postEndInnerFormat: '',
+        sendChatAsSystem: false,
+        sendName: false,
+        utilOverride: false,
+        customChainOfThought: false,
+        maxThoughtTagDepth: -1,
+      },
+      formatingOrder: [],
+      aiModel: 'gpt-4',
+      chainOfThought: false,
+      personaPrompt: false,
+      jailbreakToggle: false,
+      maxResponse: 200,
+      bias: [],
+    }
+    setCachedServerCommandRevision(9)
+    projectionState.fetchResource.mockResolvedValue({
+      status: 'ok',
+      revision: 9,
+      mode: 'fields',
+      fields: { promptTemplate: chatTemplate },
+    })
+    const throwError = vi.fn()
+
+    const result = await assembleLocalSendChatPrompt({
+      currentChar,
+      currentChat: chat,
+      nowChatroom: currentChar,
+      selectedChar: 0,
+      selectedChat: 0,
+      tokenizer: {} as never,
+      promptInfo: {} as never,
+      maxContextTokens: 4000,
+      stageTimings: stageTimings(),
+      isContinue: false,
+      findCharacterbyIdwithCache: () => currentChar,
+      throwError,
+      setProcessStage: vi.fn(),
+    })
+
+    expect(result).toMatchObject({
+      status: 'assembled',
+      inputTokens: 12,
+      outputTokens: 200,
+    })
+    expect(projectionState.fetchResource).toHaveBeenCalledWith('promptItem', { parentId: 'prompt-chat' })
+    expect(DBState.db.promptPresets[1].promptTemplate).toEqual(chatTemplate)
+    expect(DBState.db.promptTemplate).toEqual(globalTemplate)
+    expect(assemblyState.renderFinalPrompt).toHaveBeenCalledWith(
+      expect.objectContaining({
+        promptTemplate: [...chatTemplate, { type: 'postEverything' }],
+        usingPromptTemplate: true,
+      }),
+    )
+    expect(throwError).not.toHaveBeenCalled()
   })
 })

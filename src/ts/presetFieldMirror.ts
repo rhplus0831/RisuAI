@@ -33,6 +33,7 @@ function modelPresetKeyForDatabaseKey(key: string): string | null {
 }
 
 function promptPresetKeyForDatabaseKey(key: string): string | null {
+  if (key === 'promptTemplate') return null
   if (key in PROMPT_DATABASE_KEY_TO_PRESET_KEY) return PROMPT_DATABASE_KEY_TO_PRESET_KEY[key]
   return PROMPT_PRESET_FIELD_SET.has(key) ? key : null
 }

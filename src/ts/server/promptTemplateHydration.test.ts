@@ -145,6 +145,35 @@ describe('promptTemplate hydration', () => {
 
     expect(projectionState.fetchResource).toHaveBeenCalledWith('promptItem', { parentId: 'preset-a' })
     expect(DBState.db.promptTemplate).toEqual([item('preset-row', 'preset body')])
+    expect(DBState.db.promptPresets[0].promptTemplate).toEqual([item('preset-row', 'preset body')])
+  })
+
+  it('hydrates an explicit non-current prompt preset owner without overwriting the visible projection', async () => {
+    setCachedServerCommandRevision(7)
+    ;(DBState as { db: unknown }).db = {
+      promptTemplate: [item('global-row', 'global visible body')],
+      promptPresetsId: 0,
+      promptPresets: [
+        { id: 'preset-global', name: 'Global Preset', promptTemplate: [item('global-row', 'global visible body')] },
+        { id: 'preset-chat', name: 'Chat Preset' },
+      ],
+    }
+    projectionState.fetchResource.mockResolvedValue({
+      status: 'ok',
+      revision: 7,
+      mode: 'fields',
+      fields: { promptTemplate: [item('chat-row', 'chat body')] },
+    })
+
+    await expect(ensurePromptTemplateHydrated({ promptPresetId: 'preset-chat', applyProjection: false })).resolves.toBe(
+      true,
+    )
+
+    expect(projectionState.fetchResource).toHaveBeenCalledWith('promptItem', { parentId: 'preset-chat' })
+    expect(DBState.db.promptPresets[1].promptTemplate).toEqual([item('chat-row', 'chat body')])
+    expect(DBState.db.promptTemplate).toEqual([item('global-row', 'global visible body')])
+    expect(isPromptTemplateHydrated('preset-chat')).toBe(true)
+    expect(isPromptTemplateHydrated('preset-global')).toBe(false)
   })
 
   it('ignores a selected-owner hydration response after the selection changes', async () => {

@@ -4,14 +4,15 @@ Date: 2026-06-23
 
 This workstream has completed the runtime resolver slice, the prompt
 preset-owner-aware prompt item command/projection/hydration slice, the Settings
-UI ownership slice, and the legacy bot-preset compatibility cleanup slice.
-Generation/import-export cleanup phases are still pending.
+UI ownership slice, the legacy bot-preset compatibility cleanup slice, and the
+narrow generation/loadout cleanup slice. Final closeout verification is still
+pending.
 
 ## Snapshot
 
 - Plan state: drafted; Phase 0 decisions recorded.
-- Current phase: Phase 4 implemented, with focused legacy compatibility tests
-  passing locally.
+- Current phase: Phase 5 implemented, with focused generation/mirror cleanup
+  tests passing locally.
 - Current implementation state:
   - Browser/server prompt assembly now resolves an effective prompt template
     through modern `promptPresets` before falling back to top-level
@@ -49,9 +50,19 @@ Generation/import-export cleanup phases are still pending.
   - Legacy bot-preset hydration no longer uses `promptTemplate` as the sole
     loaded-data sentinel, so saved legacy presets without that field are not
     treated as unloaded forever.
+  - Browser local/parity generation hydrates and checks the effective prompt
+    template owner used by normalization: chat-scoped prompt preset first,
+    selected/global prompt preset next, and legacy top-level ownership last.
+    Non-current chat prompt preset hydration populates that prompt preset row
+    without replacing the visible selected/global compatibility projection.
+  - Generic top-level preset-field mirroring now skips `promptTemplate`, so
+    prompt-template ownership moves through explicit owner-aware prompt-preset
+    paths instead of accidental top-level writes.
+  - Server prompt-preset select/update/delete writes to `prompt_templates`
+    remain quarantined as a compatibility mirror for this phase.
 - Current verification state: Focused Phase 3 Settings UI ownership checks
-  and Phase 4 legacy compatibility checks passed; see
-  `latest-verification.md`.
+  and Phase 4 legacy compatibility checks passed; Phase 5 focused checks passed
+  locally; see `latest-verification.md`.
 
 ## Phase Router
 
@@ -62,7 +73,7 @@ Generation/import-export cleanup phases are still pending.
 | Phase 2: Prompt Preset Commands And Projection | Implemented | Move prompt-item edits and hydration toward prompt-preset ownership. |
 | Phase 3: Settings UI And Bridge | Implemented | Make Prompt Settings and Bot Settings edit selected prompt presets directly. |
 | Phase 4: Legacy BotPreset Compatibility | Implemented | Retire legacy bot-preset prompt-template apply/copy semantics. |
-| Phase 5: Generation Loadout And Cleanup | Pending | Align generation, loadouts, imports/exports, and remaining compatibility paths. |
+| Phase 5: Generation Loadout And Cleanup | Implemented | Align generation, loadouts, imports/exports, and remaining compatibility paths. |
 | Phase 6: Verification And Docs | Pending | Run regression, browser smoke, docs, and closeout. |
 
 ## Current Blockers
@@ -71,6 +82,7 @@ Generation/import-export cleanup phases are still pending.
 - No Phase 2 blocker is known.
 - No Phase 3 blocker is known.
 - No Phase 4 blocker is known.
+- No Phase 5 blocker is known.
 
 ## Latest Completed Slice
 
@@ -96,6 +108,12 @@ Generation/import-export cleanup phases are still pending.
   behavior on the server, browser storage helpers, and loadout apply snapshots;
   preserved explicit extraction into modern prompt presets; and narrowed legacy
   preset select/delete reads and writes away from `prompt_templates`.
+- Phase 5 worker aligned browser local/parity prompt-template hydration with the
+  chat-scoped effective prompt preset owner and blocked generic
+  `promptTemplate` top-level-to-prompt-preset mirroring while preserving other
+  prompt preset mirrors. A follow-up fix retained explicit non-current
+  chat-owner hydration in `promptTemplateHydration` for local assembly without
+  poisoning the visible selected/global prompt-template projection.
 
 ## Compatibility Caveats
 
@@ -107,3 +125,6 @@ Generation/import-export cleanup phases are still pending.
   `promptPresets`.
 - Modern prompt-preset apply may still write top-level `promptTemplate` as a
   compatibility projection.
+- Server prompt-preset select/update/delete paths may still write
+  `prompt_templates`; this is retained as a compatibility mirror until a later
+  phase explicitly removes or permanently documents it.

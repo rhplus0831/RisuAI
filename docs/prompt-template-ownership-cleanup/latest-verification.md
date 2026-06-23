@@ -2,10 +2,17 @@
 
 Date: 2026-06-23
 
-Phase 4 legacy bot-preset compatibility cleanup has focused automated coverage.
-Legacy bot preset selection/save-current/loadout apply no longer silently copies
-prompt-template data, while explicit extraction and import/export compatibility
-remain intact.
+Phase 5 generation/loadout cleanup has focused automated coverage. Browser
+local/parity generation now hydrates the same prompt-preset owner used by
+template normalization, and generic top-level preset-field mirroring no longer
+copies `promptTemplate` into the selected prompt preset.
+
+Follow-up fix: verifier review found that owner-scoped generation hydration was
+still discarded by `promptTemplateHydration` when the chat prompt preset differed
+from the selected/global prompt preset. Hydration now writes the requested
+owner's `promptPresets[].promptTemplate` row for generation/local assembly while
+leaving the visible top-level compatibility projection on the current selected
+owner.
 
 ## Current Proof
 
@@ -61,6 +68,48 @@ remain intact.
   loaded-data sentinel.
 - Explicit legacy extraction still creates modern prompt presets with copied
   `promptTemplate` data.
+- Browser local/parity prompt assembly hydrates/checks chat-scoped
+  `generationSettings.promptPresetId` before the selected/global prompt-preset
+  owner, and non-current chat-owner hydration is retained for local assembly
+  without overwriting the selected/global top-level compatibility projection.
+- Generic `mirrorTopLevelPresetField()` skips `promptTemplate`, while other
+  prompt preset fields still mirror through the existing compatibility path.
+- Bootstrap lazy prompt-item projection expectations now match the current
+  contract: a selected modern prompt preset without `promptTemplate` returns
+  `null` instead of falling back to stale top-level compatibility data.
+- Server prompt-preset select/update/delete writes to `prompt_templates` remain
+  quarantined as a compatibility mirror for this phase.
+
+## Phase 5 Validation
+
+Run on 2026-06-23:
+
+```bash
+pnpm exec vitest run src/ts/process/__tests__/sendChatPromptAssembly.lazyPromptTemplate.test.ts src/ts/process/__tests__/normalizeTemplate.test.ts src/ts/process/request/tests/serverPromptAssembly.test.ts src/ts/loadout.test.ts src/ts/presetFieldMirror.test.ts
+pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/assemble.test.ts server/fastify/__tests__/templates.test.ts server/fastify/__tests__/generation.chat.test.ts server/fastify/__tests__/bootstrap.test.ts server/fastify/__tests__/projection.test.ts server/fastify/__tests__/commandCollectionRange.test.ts
+pnpm exec tsc -p tsconfig.client-lib.json
+pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
+pnpm exec prettier --write src/ts/process/sendChatPromptAssembly.ts src/ts/process/__tests__/sendChatPromptAssembly.lazyPromptTemplate.test.ts src/ts/presetFieldMirror.ts src/ts/presetFieldMirror.test.ts server/fastify/__tests__/bootstrap.test.ts docs/prompt-template-ownership-cleanup/SOLVE-NOTE.md docs/prompt-template-ownership-cleanup/status.md docs/prompt-template-ownership-cleanup/phases/phase-5-generation-loadout-and-cleanup.md
+pnpm exec prettier --write docs/prompt-template-ownership-cleanup/latest-verification.md
+git diff --check
+```
+
+All commands passed. The first server validation run exposed a stale bootstrap
+test expectation for prompt-item lazy projection; the expectation was updated
+to the selected prompt-preset ownership contract and the suite passed on rerun.
+
+Additional Phase 5 fix validation run on 2026-06-23:
+
+```bash
+pnpm exec vitest run src/ts/process/__tests__/sendChatPromptAssembly.lazyPromptTemplate.test.ts src/ts/server/promptTemplateHydration.test.ts src/ts/presetFieldMirror.test.ts
+pnpm exec vitest run src/ts/process/__tests__/normalizeTemplate.test.ts src/ts/process/request/tests/serverPromptAssembly.test.ts src/ts/loadout.test.ts
+pnpm exec tsc -p tsconfig.client-lib.json
+```
+
+All commands passed. The new regression covers a chat-scoped prompt preset that
+differs from the selected/global owner: hydration succeeds, local assembly
+continues, the chat owner row is populated, and the visible top-level/global
+projection is not overwritten.
 
 ## Phase 4 Validation
 
@@ -104,5 +153,5 @@ failure.
 
 ## Verification Gaps
 
-- No new browser smoke was run for Phase 4 because the slice did not change UI
+- No new browser smoke was run for Phase 5 because the slice did not change UI
   components.

@@ -1,6 +1,6 @@
 # Phase 5: Generation Loadout And Cleanup
 
-Status: pending.
+Status: implemented.
 
 Goal: align generation, loadouts, and remaining compatibility paths with prompt
 preset ownership, then remove stale top-level ownership assumptions.
@@ -48,6 +48,20 @@ preset ownership, then remove stale top-level ownership assumptions.
 - Top-level prompt-template persistence is either removed or explicitly
   compatibility-only.
 - Structure docs describe prompt preset ownership accurately.
+
+## Implementation Notes
+
+- Browser local/parity send now hydrates and checks the effective prompt
+  template owner used by normalization: chat-scoped
+  `generationSettings.promptPresetId` when present, otherwise the selected
+  global prompt preset owner or legacy top-level owner.
+- Generic top-level preset-field mirroring now skips `promptTemplate`.
+  `PROMPT_PRESET_FIELDS` still includes `promptTemplate` for import/export and
+  explicit prompt-preset ownership paths.
+- Server prompt-preset select/update/delete writes to `prompt_templates` were
+  intentionally not removed in this phase. They remain quarantined as a
+  compatibility mirror until Phase 6 or a later cleanup decides their final
+  fate.
 
 ## Validation
 

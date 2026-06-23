@@ -239,7 +239,7 @@ describe('Phase 2A bootstrap + import', () => {
       resource: 'promptItem',
       mode: 'fields',
       fields: {
-        promptTemplate: [{ id: 'prompt-a', type: 'plain', text: 'lazy prompt', role: 'system' }],
+        promptTemplate: null,
       },
     })
 

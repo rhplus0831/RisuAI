@@ -51,8 +51,10 @@ completed agents open.
 6. Phase 4 legacy bot-preset compatibility cleanup is implemented: silent
    legacy bot-preset prompt-template apply/snapshot behavior has been removed
    while explicit extraction/conversion remains available.
-7. Continue through Phase 5: align generation, loadouts, imports/exports, and
-   remaining compatibility mirrors so stale top-level template data cannot win.
+7. Phase 5 generation/loadout cleanup is implemented: browser local/parity
+   assembly hydrates/checks the effective chat prompt-preset owner, and generic
+   top-level preset mirroring no longer treats `promptTemplate` as a normal
+   prompt-preset field.
 8. Finish with Phase 6: run the focused client/server suites, TypeScript checks,
    `git diff --check`, Prettier, and browser smoke with `pnpm dev:agent` when UI
    workflows changed. Stop the dev server before finishing.
@@ -101,12 +103,22 @@ completed agents open.
   unloaded forever.
 - Server and browser prompt assembly now resolve effective prompt template reads
   from chat/global prompt presets before top-level compatibility fallback.
+- Browser local/parity send hydration now uses the same effective owner as
+  normalization: chat-scoped `generationSettings.promptPresetId` first, then the
+  selected/global prompt preset owner, then legacy top-level ownership.
+- Generic top-level-to-prompt-preset mirroring intentionally skips
+  `promptTemplate`; prompt-template ownership should move through explicit
+  owner-aware prompt-preset paths.
+- Server prompt-preset select/update/delete writes to `prompt_templates` remain
+  as a compatibility mirror for this phase. Do not remove them until a later
+  cleanup explicitly retires that mirror.
 - The Fastify variation is unreleased, so source-level storage reshaping is
   allowed without a formal user-data migration promise.
 
 ## Recommended Next Slice
 
-Phase 4 has been implemented and focused legacy compatibility checks have
-passed locally. The next recommended slice is Phase 5: align generation,
-imports/exports, and any remaining compatibility mirrors so stale top-level
-template data cannot win.
+Phase 5 has been implemented as a narrow generation/loadout cleanup slice with
+focused tests. The next recommended slice is Phase 6: run the full closeout
+verification, update final docs, and decide whether any remaining
+`prompt_templates` compatibility mirror writes should be retired or kept
+documented.
