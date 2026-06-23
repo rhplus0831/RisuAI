@@ -1,6 +1,6 @@
 # Phase 3: Settings UI And Bridge
 
-Status: pending.
+Status: implemented.
 
 Goal: make the visible prompt-template editor and related settings controls edit
 the selected modern prompt preset directly.
@@ -46,22 +46,43 @@ the selected modern prompt preset directly.
   durable prompt template owner.
 - UI tests cover selected-prompt-preset ownership.
 
+## Implementation Notes
+
+- `PromptSettings.svelte` now clones the selected
+  `promptPresets[promptPresetsId].promptTemplate` first for initialization,
+  reset, mount, and revision reconciliation. Top-level `DBState.db.promptTemplate`
+  is used only when no modern selected prompt preset exists.
+- Explicit whole-template edits sync the selected prompt preset projection and
+  the top-level compatibility projection locally. Per-row edits still dispatch
+  owner-scoped prompt-item commands with `promptPresetId`; they do not go
+  through whole prompt-preset update commands.
+- `BotSettings.svelte` prompt-template visibility and enable/disable controls
+  now check selected prompt preset ownership. Enabling creates
+  `promptPresets[selected].promptTemplate = []` and dispatches scoped
+  `enablePromptItemsCommand`; disabling removes that selected preset field and
+  clears top-level compatibility projection.
+
 ## Validation
 
 ```bash
 pnpm exec vitest run src/lib/Setting/Pages/BotSettings.svelte.test.ts src/lib/Setting/Settings.svelte.test.ts src/lib/Setting/pickerGenerationSettings.test.ts
-pnpm exec vitest run src/ts/server/promptTemplateBridge.svelte.test.ts src/ts/storage/database.svelte.test.ts
+pnpm exec vitest run src/ts/server/promptTemplateBridge.svelte.test.ts src/ts/server/promptTemplateHydration.test.ts src/ts/storage/database.svelte.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 git diff --check
 ```
 
-If UI behavior changes materially, run browser smoke:
+Run on 2026-06-23: all commands above passed.
+
+Browser smoke run on 2026-06-23 with `pnpm dev:agent`:
 
 ```bash
 pnpm dev:agent
 ```
 
-Smoke target: `http://localhost:6418/settings`.
+Smoke target `http://localhost:6418/settings` loaded in Chromium without page
+errors. The initial `networkidle` wait timed out because the app keeps an event
+stream open; retrying with `domcontentloaded` passed. The dev server was stopped
+after smoke and ports `6418`/`6419` were clear.
 
 ## Risks
 

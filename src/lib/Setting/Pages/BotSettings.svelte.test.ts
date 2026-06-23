@@ -38,6 +38,53 @@ describe('BotSettings prompt edit persistence contracts', () => {
     expect(source).not.toContain("writeSelectedPromptPresetField('promptTemplate'")
   })
 
+  it('gates prompt template UI on selected prompt preset ownership instead of stale top-level projection', () => {
+    const source = botSettingsSource()
+
+    expect(source).toContain(
+      'let selectedPromptPresetOwnsPromptTemplate = $derived(selectedPromptPresetHasOwnPromptTemplate())',
+    )
+    expect(source).toContain('{:else if selectedPromptPresetOwnsPromptTemplate}')
+    expect(source).toContain('{:else if !selectedPromptPresetOwnsPromptTemplate}')
+    expect(source).toContain('{#if promptTemplateHydrated && selectedPromptPresetOwnsPromptTemplate && submenu === -1}')
+    expect(source).not.toContain('{:else if DBState.db.promptTemplate}')
+    expect(source).not.toContain('{:else if !DBState.db.promptTemplate}')
+  })
+
+  it('enables prompt templates on the selected prompt preset with a scoped command', () => {
+    const source = botSettingsSource()
+
+    expect(source).toContain('async function setSelectedPromptTemplateEnabled(enabled: boolean)')
+    expect(source).toContain('ensurePromptTemplateHydrated({ promptPresetId: ownerId })')
+    expect(source).toContain('preset.promptTemplate = cloneJsonValue(Array.isArray(template) ? template : [])')
+    expect(source).toContain('DBState.db.promptTemplate = cloneJsonValue(Array.isArray(template) ? template : [])')
+    expect(source).toContain('enablePromptItemsCommand({')
+    expect(source).toContain('promptPresetId: promptTemplateOwnerCommandId(ownerId)')
+    expect(source).toContain('enabled,')
+  })
+
+  it('hydrates prompt-template ownership when the selected prompt preset changes', () => {
+    const source = botSettingsSource()
+
+    expect(source).toContain(
+      'let previousPromptTemplateOwnerHydrationSelection = promptTemplatePresetSelectionSignature()',
+    )
+    expect(source).toContain('function promptTemplatePresetSelectionSignature(): string')
+    expect(source).toContain('const ownerId = currentPromptTemplateOwnerId()')
+    expect(source).toContain('void ensurePromptTemplateHydrated({ promptPresetId: ownerId })')
+    expect(source).toContain('void ensurePromptTemplateHydrated({ promptPresetId: currentPromptTemplateOwnerId() })')
+  })
+
+  it('disables prompt templates by removing selected preset ownership and clearing compatibility projection', () => {
+    const source = botSettingsSource()
+
+    expect(source).toContain('delete preset.promptTemplate')
+    expect(source).toContain('delete (DBState.db as unknown as Record<string, unknown>).promptTemplate')
+    expect(source).toContain('rollback: () =>')
+    expect(source).toContain('runPromptTemplateOwnerRollback(ownerId, () =>')
+    expect(source).toContain('restoreSelectedPromptPresetTemplateProjection(previous)')
+  })
+
   it('routes prompt preset icon uploads through the freshness guard helper', () => {
     const source = botSettingsSource()
 

@@ -67,16 +67,24 @@ const commandMocks = vi.hoisted(() => ({
 const hydrationState = vi.hoisted(() => {
   let hydrated = true
   let ownerId: string | null = null
+  let hydratedOwnerId: string | null | undefined = undefined
   const subscribers = new Set<(value: boolean) => void>()
   return {
-    ensure: vi.fn(async () => hydrated),
-    isHydrated: () => hydrated,
+    ensure: vi.fn(
+      async (options?: { promptPresetId?: string | null }) =>
+        hydrated &&
+        (hydratedOwnerId === undefined ||
+          hydratedOwnerId === (options?.promptPresetId === undefined ? ownerId : options.promptPresetId)),
+    ),
+    isHydrated: (promptPresetId: string | null = ownerId) =>
+      hydrated && (hydratedOwnerId === undefined || hydratedOwnerId === promptPresetId),
     currentOwner: () => ownerId,
     setOwner: (value: string | null) => {
       ownerId = value
     },
-    setHydrated: (value: boolean) => {
+    setHydrated: (value: boolean, owner?: string | null) => {
       hydrated = value
+      hydratedOwnerId = owner
       for (const subscriber of subscribers) subscriber(value)
     },
     store: {
@@ -219,6 +227,11 @@ beforeEach(() => {
   hydrationState.setHydrated(true)
   hydrationState.setOwner(null)
   hydrationState.ensure.mockClear()
+  hydrationState.ensure.mockImplementation(async (options?: { promptPresetId?: string | null }) =>
+    hydrationState.isHydrated(
+      options?.promptPresetId === undefined ? hydrationState.currentOwner() : options.promptPresetId,
+    ),
+  )
 })
 
 afterEach(() => {
@@ -807,7 +820,7 @@ describe('flushPendingPromptTemplatePatches', () => {
     expect(DBState.db).not.toHaveProperty('promptTemplate')
   })
 
-  it('PromptSettings immediately adopts a newly selected preset template before revision reconcile', async () => {
+  it('PromptSettings immediately adopts a newly selected preset template even when the top-level projection is stale', async () => {
     commandState.revision = 5
     ;(DBState as { db: unknown }).db = {
       promptSettings: { ...minimalPromptSettings },
@@ -842,7 +855,9 @@ describe('flushPendingPromptTemplatePatches', () => {
       expect(target.textContent).toContain('Old preset row')
 
       DBState.db.promptPresetsId = 1
-      DBState.db.promptTemplate = [promptItemFixture({ ...item('new-row', 'new text'), name: 'New preset row' })]
+      DBState.db.promptTemplate = [
+        promptItemFixture({ ...item('stale-row', 'stale text'), name: 'Stale top-level row' }),
+      ]
       await tick()
       await Promise.resolve()
       await tick()
@@ -850,6 +865,82 @@ describe('flushPendingPromptTemplatePatches', () => {
       expect(commandState.revision).toBe(5)
       expect(target.textContent).toContain('New preset row')
       expect(target.textContent).not.toContain('Old preset row')
+      expect(target.textContent).not.toContain('Stale top-level row')
+      expect(DBState.db.promptTemplate).toEqual([
+        promptItemFixture({ ...item('new-row', 'new text'), name: 'New preset row' }),
+      ])
+
+      await vi.advanceTimersByTimeAsync(300)
+      expect(commandState.commands).toHaveLength(0)
+    } finally {
+      if (component) await unmount(component)
+      target.remove()
+    }
+  })
+
+  it('PromptSettings hydrates the newly selected owner before adopting its preset template', async () => {
+    commandState.revision = 5
+    hydrationState.setOwner('preset-a')
+    hydrationState.setHydrated(true, 'preset-a')
+    ;(DBState as { db: unknown }).db = {
+      promptSettings: { ...minimalPromptSettings },
+      promptTemplate: [promptItemFixture({ ...item('old-row', 'old text'), name: 'Old preset row' })],
+      promptPresetsId: 0,
+      promptPresets: [
+        {
+          id: 'preset-a',
+          name: 'Preset A',
+          promptTemplate: [promptItemFixture({ ...item('old-row', 'old text'), name: 'Old preset row' })],
+        },
+        {
+          id: 'preset-b',
+          name: 'Preset B',
+        },
+      ],
+    }
+    hydrationState.ensure.mockImplementation(async (options?: { promptPresetId?: string | null }) => {
+      const requestedOwnerId =
+        options?.promptPresetId === undefined ? hydrationState.currentOwner() : options.promptPresetId
+      if (requestedOwnerId !== 'preset-b') return hydrationState.isHydrated(requestedOwnerId)
+      const preset = DBState.db.promptPresets?.[1] as Record<string, unknown> | undefined
+      const hydratedTemplate = [promptItemFixture({ ...item('new-row', 'new text'), name: 'Hydrated preset row' })]
+      if (preset) preset.promptTemplate = cloneJsonValue(hydratedTemplate)
+      DBState.db.promptTemplate = cloneJsonValue(hydratedTemplate)
+      hydrationState.setHydrated(true, 'preset-b')
+      return true
+    })
+
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    let component: MountedComponent | null = null
+    try {
+      component = mount(PromptSettings, {
+        target,
+        props: { mode: 'inline', subMenu: 0 },
+      })
+      await tick()
+      await Promise.resolve()
+      await tick()
+
+      expect(target.textContent).toContain('Old preset row')
+
+      hydrationState.setOwner('preset-b')
+      hydrationState.setHydrated(false, 'preset-b')
+      DBState.db.promptPresetsId = 1
+      DBState.db.promptTemplate = [
+        promptItemFixture({ ...item('stale-row', 'stale text'), name: 'Stale top-level row' }),
+      ]
+      await tick()
+      await Promise.resolve()
+      await tick()
+
+      expect(hydrationState.ensure).toHaveBeenCalledWith({ promptPresetId: 'preset-b' })
+      expect(target.textContent).toContain('Hydrated preset row')
+      expect(target.textContent).not.toContain('Old preset row')
+      expect(target.textContent).not.toContain('Stale top-level row')
+      expect(DBState.db.promptTemplate).toEqual([
+        promptItemFixture({ ...item('new-row', 'new text'), name: 'Hydrated preset row' }),
+      ])
 
       await vi.advanceTimersByTimeAsync(300)
       expect(commandState.commands).toHaveLength(0)
@@ -910,6 +1001,16 @@ describe('prompt settings draft dispatch contracts', () => {
     const source = readSource('src/ts/server/promptTemplateBridge.svelte.ts')
 
     expect(source).not.toContain("mirrorTopLevelPresetField('promptTemplate'")
+  })
+
+  it('keeps PromptSettings row edits on prompt item commands while whole-template edits sync selected ownership locally', () => {
+    const source = readSource('src/lib/Setting/Pages/PromptSettings.svelte')
+
+    expect(source).not.toContain('updatePromptPreset')
+    expect(source).toContain('syncSelectedPromptPresetItemProjection(itemId, promptItem)')
+    expect(source).toContain('queuePromptItemProjectionUpdate(')
+    expect(source).toContain('syncSelectedPromptPresetTemplateProjection(templates)')
+    expect(source).toContain('promptPresetId: promptTemplateOwnerCommandId(ownerId)')
   })
 })
 

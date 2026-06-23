@@ -2,8 +2,10 @@
 
 Date: 2026-06-23
 
-Phase 2 prompt-preset-owner-aware prompt item commands/projection/hydration has
-focused automated coverage. No browser smoke has been run yet in this slice.
+Phase 3 Settings UI ownership has focused automated coverage plus a browser
+smoke. Prompt Settings and Bot Settings now treat the selected prompt preset as
+the visible prompt-template owner while preserving top-level `promptTemplate` as
+a compatibility projection.
 
 ## Current Proof
 
@@ -29,16 +31,33 @@ focused automated coverage. No browser smoke has been run yet in this slice.
   and no mutation during normalization.
 - Server author-note defaults now use the chat-scoped prompt preset ID before
   considering global or top-level templates.
-- Prompt Settings warnings still validate the editable draft projection; broader
-  visual/editor ownership remains deferred to Phase 3.
+- Prompt Settings draft initialization, reset, mount, and reconciliation now
+  adopt the selected prompt preset template before any top-level compatibility
+  projection.
+- Prompt Settings switches selected prompt presets without adopting stale
+  top-level `DBState.db.promptTemplate`.
+- Prompt Settings triggers owner-scoped hydration on selected prompt preset
+  changes even when the new owner is not hydrated yet, then adopts the hydrated
+  selected-preset template only if that owner is still current.
+- Prompt Settings keeps row edits on owner-scoped prompt-item commands with
+  `promptPresetId`; whole-template local optimistic updates sync selected prompt
+  preset ownership and compatibility projection.
+- Bot Settings gates template editor visibility on selected prompt preset
+  ownership, so stale top-level compatibility data does not show the editor for
+  a selected preset that lacks `promptTemplate`.
+- Bot Settings also kicks owner-scoped prompt-template hydration when selected
+  prompt presets change, preventing the prompt template gate from staying
+  stuck on a stale owner.
+- Bot Settings enable/disable creates/removes selected prompt preset
+  `promptTemplate` ownership and dispatches scoped `enablePromptItemsCommand`.
 
-## Phase 2 Validation
+## Phase 3 Validation
 
 Run on 2026-06-23:
 
 ```bash
-pnpm exec vitest run src/ts/server/commands.test.ts src/ts/server/promptTemplateBridge.svelte.test.ts src/ts/server/promptTemplateHydration.test.ts
-pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/commandCollectionRange.test.ts server/fastify/__tests__/projection.test.ts server/fastify/__tests__/commandMutationReadNarrowing.test.ts
+pnpm exec vitest run src/lib/Setting/Pages/BotSettings.svelte.test.ts src/lib/Setting/Settings.svelte.test.ts src/lib/Setting/pickerGenerationSettings.test.ts --reporter=dot
+pnpm exec vitest run src/ts/server/promptTemplateBridge.svelte.test.ts src/ts/server/promptTemplateHydration.test.ts src/ts/storage/database.svelte.test.ts --reporter=dot
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 git diff --check
@@ -46,20 +65,22 @@ git diff --check
 
 All commands passed.
 
-## Future Browser Smoke
+## Browser Smoke
 
-Use `pnpm dev:agent` when a phase changes the live settings workflow. Stop the
-dev server after smoke so ports `6418` and `6419` are released.
+Run on 2026-06-23:
 
-Smoke targets:
+- Started `pnpm dev:agent`.
+- Loaded `http://localhost:6418/settings` in Chromium with `domcontentloaded`
+  wait and a Settings/Prompt/Model text sanity check.
+- No page errors or console errors were captured.
+- Stopped the dev server and confirmed no listeners remained on ports `6418`
+  or `6419`.
 
-- `http://localhost:6418/settings`
-- Settings -> Prompt template editor
-- Settings -> Bot/Prompt preset picker flows
-- Loadout apply path that changes prompt preset selection
+Note: a first smoke attempt using Playwright `networkidle` timed out because
+the app keeps the events request open; this was not treated as an application
+failure.
 
 ## Verification Gaps
 
-- No browser smoke yet; Phase 2 changed live editor plumbing but not the visual
-  workflow. Run `pnpm dev:agent` smoke during Phase 3 UI ownership work or
-  final Phase 6 closeout.
+- No new browser smoke was run for the preset-switch hydration fix; the latest
+  recorded browser smoke remains the Phase 3 Settings page smoke above.

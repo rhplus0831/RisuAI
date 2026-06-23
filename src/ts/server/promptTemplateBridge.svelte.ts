@@ -397,12 +397,13 @@ export interface PromptTemplateReconcileResult {
 export function reconcilePromptTemplateDraft(
   draftItems: PromptItem[],
   previousRevision: number | null,
+  projectedItems: PromptItem[] = (DBState.db.promptTemplate ?? []) as PromptItem[],
 ): PromptTemplateReconcileResult {
   const ownerId = currentPromptTemplateOwnerId()
   if (!isPromptTemplateHydrated(ownerId)) {
     return { revision: previousRevision, nextDraft: null }
   }
-  const serverValue = (DBState.db.promptTemplate ?? []) as PromptItem[]
+  const serverValue = projectedItems
   const revision = peekCachedServerCommandRevision()
   if (revision === previousRevision) return { revision, nextDraft: null }
   if (ownerDirtyFieldCount(ownerId) > 0) {

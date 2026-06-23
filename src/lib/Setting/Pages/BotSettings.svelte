@@ -218,6 +218,7 @@
   let currentPluginProviderDraft = $state(DBState.db.currentPluginProvider ?? '')
   let promptTemplateHydrated = $derived($promptTemplateHydratedStore && isPromptTemplateHydrated())
   let selectedPromptPreset = $derived(DBState.db.promptPresets?.[DBState.db.promptPresetsId])
+  let selectedPromptPresetOwnsPromptTemplate = $derived(selectedPromptPresetHasOwnPromptTemplate())
   const PROMPT_PRESET_ICON_SIZE = 48
   type SelectedPromptPresetIconFile = NonNullable<Awaited<ReturnType<typeof selectSingleFile>>>
 
@@ -371,6 +372,7 @@
         })
       : allBasicParameterItems,
   )
+  let previousPromptTemplateOwnerHydrationSelection = promptTemplatePresetSelectionSignature()
 
   $effect(() => {
     if (!availableSubmenus.includes(submenu)) {
@@ -568,6 +570,71 @@
     return true
   }
 
+  function selectedPromptPresetHasOwnPromptTemplate(): boolean {
+    const preset = DBState.db.promptPresets?.[DBState.db.promptPresetsId] as Record<string, unknown> | undefined
+    return !!preset && Object.prototype.hasOwnProperty.call(preset, 'promptTemplate')
+  }
+
+  function promptTemplatePresetSelectionSignature(): string {
+    const selectedIndex = DBState.db.promptPresetsId
+    const selectedId =
+      Number.isInteger(selectedIndex) && selectedIndex >= 0 ? DBState.db.promptPresets?.[selectedIndex]?.id : null
+    return `${selectedIndex}:${selectedId ?? ''}`
+  }
+
+  function snapshotSelectedPromptPresetTemplate(): { hasTemplate: boolean; template: unknown } {
+    const preset = DBState.db.promptPresets?.[DBState.db.promptPresetsId] as Record<string, unknown> | undefined
+    if (!preset || !Object.prototype.hasOwnProperty.call(preset, 'promptTemplate')) {
+      return { hasTemplate: false, template: undefined }
+    }
+    return { hasTemplate: true, template: cloneJsonValue(preset.promptTemplate) }
+  }
+
+  function setSelectedPromptPresetTemplateProjection(enabled: boolean, template: unknown = []): void {
+    withTrustedServerProjectionWrite(() => {
+      const preset = DBState.db.promptPresets?.[DBState.db.promptPresetsId] as Record<string, unknown> | undefined
+      if (preset) {
+        if (enabled) {
+          preset.promptTemplate = cloneJsonValue(Array.isArray(template) ? template : [])
+        } else {
+          delete preset.promptTemplate
+        }
+      }
+      if (enabled) {
+        DBState.db.promptTemplate = cloneJsonValue(Array.isArray(template) ? template : [])
+      } else {
+        delete (DBState.db as unknown as Record<string, unknown>).promptTemplate
+      }
+    })
+  }
+
+  function restoreSelectedPromptPresetTemplateProjection(snapshot: { hasTemplate: boolean; template: unknown }): void {
+    setSelectedPromptPresetTemplateProjection(snapshot.hasTemplate, snapshot.template)
+  }
+
+  async function setSelectedPromptTemplateEnabled(enabled: boolean): Promise<void> {
+    const ownerId = currentPromptTemplateOwnerId()
+    if (!(await ensurePromptTemplateHydrated({ promptPresetId: ownerId }))) return
+    if (ownerId !== currentPromptTemplateOwnerId()) return
+
+    const previous = snapshotSelectedPromptPresetTemplate()
+    setSelectedPromptPresetTemplateProjection(enabled)
+    if (!canUseServerCommands()) return
+
+    void runServerCommand({
+      command: (baseRevision) =>
+        runPromptTemplateOwnerCommand(ownerId, () =>
+          enablePromptItemsCommand({
+            baseRevision,
+            promptPresetId: promptTemplateOwnerCommandId(ownerId),
+            enabled,
+          }),
+        ),
+      rollback: () =>
+        runPromptTemplateOwnerRollback(ownerId, () => restoreSelectedPromptPresetTemplateProjection(previous)),
+    })
+  }
+
   function currentPromptPresetIconUploadTarget() {
     const selectedIndex = DBState.db.promptPresetsId
     return capturePromptPresetIconUploadTarget({
@@ -723,6 +790,16 @@
     }
   })
 
+  $effect(() => {
+    const selection = promptTemplatePresetSelectionSignature()
+    if (selection === previousPromptTemplateOwnerHydrationSelection) return
+    previousPromptTemplateOwnerHydrationSelection = selection
+    untrack(() => {
+      const ownerId = currentPromptTemplateOwnerId()
+      void ensurePromptTemplateHydrated({ promptPresetId: ownerId })
+    })
+  })
+
   function clearVertexToken() {
     vertexAccessTokenDraft.value = ''
     vertexAccessTokenExpiresDraft.value = 0
@@ -730,7 +807,7 @@
   }
 
   onMount(() => {
-    void ensurePromptTemplateHydrated()
+    void ensurePromptTemplateHydrated({ promptPresetId: currentPromptTemplateOwnerId() })
   })
 
   onDestroy(() => {
@@ -1534,7 +1611,8 @@
       <Accordion styled name={language.promptTemplate}>
         {#if !promptTemplateHydrated}
           <span class="text-textcolor2">{language.loading}</span>
-        {:else if DBState.db.promptTemplate}
+        {:else if selectedPromptPresetOwnsPromptTemplate}
+          <Check check={true} name={language.usePromptTemplate} onChange={setSelectedPromptTemplateEnabled} />
           {#if submenu !== -1}
             <PromptSettings
               mode="inline"
@@ -1543,36 +1621,7 @@
               showPromptModelOverrideFields={true} />
           {/if}
         {:else}
-          <Check
-            check={false}
-            name={language.usePromptTemplate}
-            onChange={async () => {
-              if (!(await ensurePromptTemplateHydrated())) return
-              const ownerId = currentPromptTemplateOwnerId()
-              withTrustedServerProjectionWrite(() => {
-                DBState.db.promptTemplate = []
-              })
-              if (canUseServerCommands()) {
-                void runServerCommand({
-                  command: (baseRevision) =>
-                    runPromptTemplateOwnerCommand(ownerId, () =>
-                      enablePromptItemsCommand({
-                        baseRevision,
-                        promptPresetId: promptTemplateOwnerCommandId(ownerId),
-                        enabled: true,
-                      }),
-                    ),
-                  rollback: () =>
-                    runPromptTemplateOwnerRollback(ownerId, () => {
-                      withTrustedServerProjectionWrite(() => {
-                        if (Array.isArray(DBState.db.promptTemplate) && DBState.db.promptTemplate.length === 0) {
-                          DBState.db.promptTemplate = undefined
-                        }
-                      })
-                    }),
-                })
-              }
-            }} />
+          <Check check={false} name={language.usePromptTemplate} onChange={setSelectedPromptTemplateEnabled} />
         {/if}
       </Accordion>
     {/if}
@@ -1676,7 +1725,7 @@
   {#if sectionVisible(2)}
     {#if !promptTemplateHydrated}
       <span class="text-textcolor2">{language.loading}</span>
-    {:else if !DBState.db.promptTemplate}
+    {:else if !selectedPromptPresetOwnsPromptTemplate}
       <span class="text-textcolor">{language.mainPrompt} <Help key="mainprompt" /></span>
       <TextAreaInput fullwidth autocomplete="off" height={'32'} bind:value={mainPromptDraft.value}></TextAreaInput>
       <span class="text-textcolor2 mb-6 text-sm mt-2">{tokens.mainPrompt} {language.tokens}</span>
@@ -1696,7 +1745,7 @@
     {/if}
   {/if}
 
-  {#if promptTemplateHydrated && DBState.db.promptTemplate && submenu === -1}
+  {#if promptTemplateHydrated && selectedPromptPresetOwnsPromptTemplate && submenu === -1}
     <div class="mt-2">
       <Button onclick={goPromptTemplate} size="sm">{language.promptTemplate}</Button>
     </div>

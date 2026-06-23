@@ -96,7 +96,7 @@
     },
   })
   const promptTemplateDraft = $state<{ value: PromptItem[] }>({
-    value: isPromptTemplateHydrated() ? cloneJsonValue(DBState.db.promptTemplate ?? []) : [],
+    value: isPromptTemplateHydrated() ? cloneSelectedPromptPresetTemplate() : [],
   })
   let promptTemplateDraftRenderEpoch = $state(0)
   const promptTemplateDraftBinding: PromptTemplateDraftBinding = {
@@ -150,6 +150,71 @@
     return snapshot === undefined ? '__undefined__' : snapshot
   }
 
+  function selectedPromptPresetIndex(): number {
+    const selectedIndex = DBState.db.promptPresetsId
+    return Number.isInteger(selectedIndex) && selectedIndex >= 0 ? selectedIndex : -1
+  }
+
+  function selectedPromptPreset(): Record<string, unknown> | undefined {
+    const selectedIndex = selectedPromptPresetIndex()
+    return selectedIndex >= 0
+      ? (DBState.db.promptPresets?.[selectedIndex] as Record<string, unknown> | undefined)
+      : undefined
+  }
+
+  function selectedPromptPresetHasOwnPromptTemplate(): boolean {
+    const preset = selectedPromptPreset()
+    return !!preset && Object.prototype.hasOwnProperty.call(preset, 'promptTemplate')
+  }
+
+  function cloneSelectedPromptPresetTemplate(): PromptItem[] {
+    const preset = selectedPromptPreset()
+    if (preset) {
+      return cloneJsonValue(Array.isArray(preset.promptTemplate) ? (preset.promptTemplate as PromptItem[]) : [])
+    }
+    return cloneJsonValue(DBState.db.promptTemplate ?? [])
+  }
+
+  function syncSelectedPromptPresetTemplateProjection(templates: PromptItem[]): void {
+    const nextTemplate = cloneJsonValue(templates)
+    withTrustedServerProjectionWrite(() => {
+      const selectedIndex = selectedPromptPresetIndex()
+      const preset = selectedIndex >= 0 ? (DBState.db.promptPresets?.[selectedIndex] as Record<string, unknown>) : null
+      if (preset) {
+        preset.promptTemplate = cloneJsonValue(nextTemplate)
+      }
+      DBState.db.promptTemplate = cloneJsonValue(nextTemplate)
+    })
+  }
+
+  function syncSelectedPromptPresetItemProjection(itemId: string, promptItem: PromptItem): void {
+    withTrustedServerProjectionWrite(() => {
+      const preset = selectedPromptPreset()
+      if (!preset || !Array.isArray(preset.promptTemplate)) return
+      const template = preset.promptTemplate as PromptItem[]
+      const index = template.findIndex((item) => item.id === itemId)
+      if (index === -1) {
+        preset.promptTemplate = cloneJsonValue(promptTemplateDraft.value ?? [])
+        return
+      }
+      template[index] = cloneJsonValue(promptItem)
+    })
+  }
+
+  function alignCompatibilityProjectionFromSelectedPromptPreset(): void {
+    const preset = selectedPromptPreset()
+    if (!preset) return
+    withTrustedServerProjectionWrite(() => {
+      if (Object.prototype.hasOwnProperty.call(preset, 'promptTemplate')) {
+        DBState.db.promptTemplate = cloneJsonValue(
+          Array.isArray(preset.promptTemplate) ? (preset.promptTemplate as PromptItem[]) : [],
+        )
+      } else {
+        delete (DBState.db as unknown as Record<string, unknown>).promptTemplate
+      }
+    })
+  }
+
   function currentPromptTemplateSnapshot(): PromptItem[] {
     for (const item of promptTemplateDraft.value ?? []) {
       promptItemId(item)
@@ -166,9 +231,21 @@
 
   function resetPromptTemplateDraftFromProjection(): void {
     resetPromptTemplateSelectionDirtyState()
-    promptTemplateDraft.value = cloneJsonValue(DBState.db.promptTemplate ?? [])
+    adoptPromptTemplateDraftFromProjection()
+  }
+
+  function adoptPromptTemplateDraftFromProjection(): void {
+    promptTemplateDraft.value = cloneSelectedPromptPresetTemplate()
+    alignCompatibilityProjectionFromSelectedPromptPreset()
     promptTemplateDraftRenderEpoch += 1
     previousPromptTemplateRevision = peekCachedServerCommandRevision()
+  }
+
+  async function hydrateCurrentPromptTemplateOwnerAndReset(): Promise<void> {
+    const ownerId = currentPromptTemplateOwnerId()
+    if (!(await ensurePromptTemplateHydrated({ promptPresetId: ownerId }))) return
+    if (ownerId !== currentPromptTemplateOwnerId()) return
+    resetPromptTemplateDraftFromProjection()
   }
 
   function createPromptItem(): PromptItem {
@@ -280,6 +357,7 @@
   function queuePromptItemUpdate(promptItem: PromptItem, previousItem: PromptItem): void {
     if (!promptTemplateHydrated) return
     const itemId = promptItemId(promptItem)
+    syncSelectedPromptPresetItemProjection(itemId, promptItem)
     queuePromptItemProjectionUpdate(
       promptTemplateDraftBinding,
       itemId,
@@ -299,9 +377,7 @@
     templates[nextIndex] = temp
     const ownerId = currentPromptTemplateOwnerId()
     promptTemplateDraft.value = templates
-    withTrustedServerProjectionWrite(() => {
-      DBState.db.promptTemplate = cloneJsonValue(templates)
-    })
+    syncSelectedPromptPresetTemplateProjection(templates)
     dispatchReorderPromptItems(ownerId, previous)
   }
 
@@ -309,9 +385,7 @@
     if (!promptTemplateHydrated) return null
     const ownerId = currentPromptTemplateOwnerId()
     promptTemplateDraft.value = cloneJsonValue(templates)
-    withTrustedServerProjectionWrite(() => {
-      DBState.db.promptTemplate = cloneJsonValue(templates)
-    })
+    syncSelectedPromptPresetTemplateProjection(templates)
     return ownerId
   }
 
@@ -404,11 +478,12 @@
     })
   })
   $effect(() => {
-    if (!promptTemplateHydrated) return
     const selection = promptTemplatePresetSelectionSignature()
     if (selection === previousPromptTemplatePresetSelection) return
     previousPromptTemplatePresetSelection = selection
-    untrack(resetPromptTemplateDraftFromProjection)
+    untrack(() => {
+      void hydrateCurrentPromptTemplateOwnerAndReset()
+    })
   })
   $effect(() => {
     if (!promptTemplateHydrated) return
@@ -420,10 +495,12 @@
     const { revision, nextDraft } = reconcilePromptTemplateDraft(
       promptTemplateDraft.value,
       previousPromptTemplateRevision,
+      cloneSelectedPromptPresetTemplate(),
     )
     previousPromptTemplateRevision = revision
     if (nextDraft) {
       promptTemplateDraft.value = nextDraft
+      syncSelectedPromptPresetTemplateProjection(nextDraft)
       promptTemplateDraftRenderEpoch += 1
     }
   })
@@ -511,11 +588,11 @@
   onMount(() => {
     document.addEventListener('keydown', handleKeyDown)
     let cancelled = false
-    void ensurePromptTemplateHydrated({ promptPresetId: currentPromptTemplateOwnerId() }).then((hydrated) => {
+    const ownerId = currentPromptTemplateOwnerId()
+    void ensurePromptTemplateHydrated({ promptPresetId: ownerId }).then((hydrated) => {
       if (cancelled || !hydrated) return
-      promptTemplateDraft.value = cloneJsonValue(DBState.db.promptTemplate ?? [])
-      promptTemplateDraftRenderEpoch += 1
-      previousPromptTemplateRevision = peekCachedServerCommandRevision()
+      if (ownerId !== currentPromptTemplateOwnerId()) return
+      adoptPromptTemplateDraftFromProjection()
     })
     return () => {
       cancelled = true

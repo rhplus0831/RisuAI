@@ -2,15 +2,16 @@
 
 Date: 2026-06-23
 
-This workstream has completed the runtime resolver slice and the prompt
-preset-owner-aware prompt item command/projection/hydration slice. Editor
-visual ownership, legacy apply, and loadout cleanup phases are still pending.
+This workstream has completed the runtime resolver slice, the prompt
+preset-owner-aware prompt item command/projection/hydration slice, and the
+Settings UI ownership slice. Legacy apply and loadout cleanup phases are still
+pending.
 
 ## Snapshot
 
 - Plan state: drafted; Phase 0 decisions recorded.
-- Current phase: Phase 2 implemented, with focused command/projection/hydration
-  tests passing locally.
+- Current phase: Phase 3 implemented, with focused Settings UI ownership tests
+  passing locally.
 - Current implementation state:
   - Browser/server prompt assembly now resolves an effective prompt template
     through modern `promptPresets` before falling back to top-level
@@ -28,15 +29,22 @@ visual ownership, legacy apply, and loadout cleanup phases are still pending.
     top-level collection when selected/applied.
   - Modern `promptPresets` can carry `promptTemplate` and also apply it into the
     active top-level collection.
-  - Prompt Settings edits a local draft backed by `DBState.db.promptTemplate`
-    and mirrors relevant fields to selected modern prompt presets.
+  - Prompt Settings edits a local draft sourced from the selected modern prompt
+    preset's `promptTemplate`, falling back to top-level `promptTemplate` only
+    when no modern selected owner exists.
+  - Prompt Settings keeps top-level `DBState.db.promptTemplate` aligned as a
+    compatibility projection after explicit selected-preset template edits.
+  - Bot Settings gates prompt-template editor visibility and enable/disable
+    controls on selected prompt preset ownership, not stale top-level
+    compatibility data.
   - Prompt item projection/hydration derives the selected/requested prompt
     preset body and clears stale compatibility template data when the selected
     prompt preset has no template.
-  - Prompt Settings still uses the existing UI layout and local draft; Phase 3
-    remains responsible for broader visual/editor ownership cleanup.
-- Current verification state: Focused Phase 2 command/projection/hydration
-  checks passed; see `latest-verification.md`.
+  - Prompt Settings and Bot Settings kick owner-scoped prompt-template
+    hydration when selected prompt presets change, so the editor gate does not
+    stay on a stale owner after preset switching.
+- Current verification state: Focused Phase 3 Settings UI ownership checks
+  passed; see `latest-verification.md`.
 
 ## Phase Router
 
@@ -45,7 +53,7 @@ visual ownership, legacy apply, and loadout cleanup phases are still pending.
 | Phase 0: Contract And Decision | Decided | Lock source-of-truth, precedence, compatibility, and migration behavior. |
 | Phase 1: Effective Template Resolver | Implemented | Add shared browser/server resolver and use it in runtime read paths. |
 | Phase 2: Prompt Preset Commands And Projection | Implemented | Move prompt-item edits and hydration toward prompt-preset ownership. |
-| Phase 3: Settings UI And Bridge | Pending | Make Prompt Settings and Bot Settings edit selected prompt presets directly. |
+| Phase 3: Settings UI And Bridge | Implemented | Make Prompt Settings and Bot Settings edit selected prompt presets directly. |
 | Phase 4: Legacy BotPreset Compatibility | Pending | Retire legacy bot-preset prompt-template apply/copy semantics. |
 | Phase 5: Generation Loadout And Cleanup | Pending | Align generation, loadouts, imports/exports, and remaining compatibility paths. |
 | Phase 6: Verification And Docs | Pending | Run regression, browser smoke, docs, and closeout. |
@@ -54,6 +62,7 @@ visual ownership, legacy apply, and loadout cleanup phases are still pending.
 
 - No Phase 1 blocker is known.
 - No Phase 2 blocker is known.
+- No Phase 3 blocker is known.
 
 ## Latest Completed Slice
 
@@ -65,12 +74,16 @@ visual ownership, legacy apply, and loadout cleanup phases are still pending.
 - Phase 1 worker implementation added shared effective prompt template
   resolution for browser/server runtime reads and focused precedence tests.
 - Focused resolver parity fix threads chat-scoped prompt preset IDs into server
-  author-note defaults and keeps Prompt Settings warnings pointed at the
-  editable top-level draft template until Phase 3.
+  author-note defaults.
 - Phase 2 worker extended prompt item commands with optional `promptPresetId`,
   scoped durable writes to `prompt_presets`, owner-aware projection/hydration,
   bridge stale-owner dropping for debounced row edits, and captured-owner guards
   for create/delete/reorder/enable command construction plus rollback.
+- Phase 3 worker moved Prompt Settings draft/reset/mount/reconcile sources to
+  selected prompt presets first, locally syncs selected prompt-preset ownership
+  for template edits while keeping row edits on scoped prompt-item commands, and
+  changed Bot Settings template gates/toggles to selected prompt preset
+  ownership.
 
 ## Compatibility Caveats
 

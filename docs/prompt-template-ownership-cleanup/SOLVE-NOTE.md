@@ -41,9 +41,13 @@ completed agents open.
    commands accept optional `promptPresetId`, scoped edits write the owning
    prompt preset row, hydration/projection are owner-aware, and debounced bridge
    edits drop stale selected-preset owners before send.
-5. Continue through Phase 3 after command ownership is stable: update Prompt
-   Settings and related bridge/UI controls to edit the selected prompt preset,
-   with hydration and stale-selection protections.
+5. Phase 3 Settings UI ownership is implemented: Prompt Settings now sources
+   its template draft from the selected prompt preset first, Bot Settings gates
+   and toggles prompt-template ownership on the selected prompt preset, and
+   top-level `promptTemplate` remains a compatibility projection. The
+   prompt-template editor and Bot Settings gate now trigger owner-scoped
+   hydration on selected prompt preset changes before adopting the selected
+   preset template.
 6. Continue through Phase 4 after the editor uses modern ownership: remove or
    gate silent legacy bot-preset prompt-template copy behavior and add/keep an
    explicit extraction/conversion path.
@@ -76,9 +80,13 @@ completed agents open.
 
 - `promptPresets` already exist and include `promptTemplate` in their field
   contract.
-- Prompt Settings currently edits a local draft projected through
-  `DBState.db.promptTemplate`; prompt item commands carry the selected
-  `promptPresetId` but broader visual/editor ownership remains Phase 3.
+- Prompt Settings now edits a local draft sourced from
+  `promptPresets[promptPresetsId].promptTemplate` first and keeps
+  `DBState.db.promptTemplate` aligned as a compatibility projection for bridge
+  and reconcile flows.
+- Prompt preset switches are owner-hydrated even while the newly selected owner
+  is not yet marked hydrated; stale owner completions are ignored before the
+  draft is reset.
 - The prompt-template bridge optimizes row-level edits and now keys pending
   item updates by prompt preset owner plus item id.
 - Server prompt item commands write `prompt_presets` rows when
@@ -93,7 +101,7 @@ completed agents open.
 
 ## Recommended Next Slice
 
-Phase 2 has been implemented and focused command/projection/hydration checks
-have passed locally. The next recommended slice is Phase 3: make the Prompt
-Settings and related editor surfaces visibly/directly own the selected modern
-prompt preset, while keeping the Phase 2 command owner contract intact.
+Phase 3 has been implemented and focused Settings UI ownership checks have
+passed locally. The next recommended slice is Phase 4: retire or gate silent
+legacy bot-preset prompt-template copy behavior while preserving an explicit
+compatibility extraction/conversion path.
