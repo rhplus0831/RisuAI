@@ -1,6 +1,6 @@
 # Phase 1: Effective Template Resolver
 
-Status: pending.
+Status: implemented.
 
 Goal: introduce shared browser/server resolution for the effective prompt
 template while keeping rendering behavior stable.
@@ -46,6 +46,17 @@ template while keeping rendering behavior stable.
 - Server and browser resolution agree for the same database/preset inputs.
 - Existing prompt-template rendering tests still pass.
 - New resolver tests cover precedence and fallback.
+
+## Implementation Notes
+
+- Browser and server prompt assembly resolve the effective template from modern
+  prompt preset ownership before using the top-level compatibility fallback.
+- Chat-scoped `generationSettings.promptPresetId` wins over the selected/global
+  prompt preset for generation reads.
+- A resolved modern prompt preset without `promptTemplate` disables template
+  rendering instead of borrowing stale top-level compatibility data.
+- Resolver coverage includes prompt preset precedence, top-level fallback,
+  legacy bot-preset non-ownership, and no mutation during normalization.
 
 ## Validation
 

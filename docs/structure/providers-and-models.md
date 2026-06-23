@@ -97,6 +97,11 @@ fallback-ref shapes. Preset and loadout paths in `src/ts/presetSplit.ts`,
 `server/fastify/src/commands/splitPresets.ts`, and `src/ts/loadout.ts` preserve
 durable profile fields while still accepting legacy flat data.
 
+Loadouts follow the same split-preset boundary for prompt templates: they apply
+prompt preset ids and let the selected modern prompt preset own
+`promptPresets[].promptTemplate`. They should not resurrect stale top-level
+`promptTemplate` data as the active template when a prompt preset id resolves.
+
 Provider secret masking in `server/fastify/src/providerSecrets.ts` includes
 profile-local `apiKey` values and resolves masked placeholders by stable profile
 id. This is separate from older flat provider/custom-model masking, which
@@ -225,6 +230,13 @@ settings can select model/prompt presets; the model-runtime projection resolves
 the active profile, request model, provider options, fallbacks, and runtime
 options before the server builds dispatch config. Route preflight rejects stale
 legacy `presetId` usage in favor of chat `generationSettings`.
+
+Prompt-template generation precedence is owner-based. A chat-scoped
+`generationSettings.promptPresetId` wins when present; otherwise generation uses
+the selected/global modern prompt preset. The top-level `promptTemplate` is only
+a compatibility fallback when no modern prompt-preset owner resolves. A resolved
+modern prompt preset without a template disables template rendering instead of
+borrowing stale top-level data.
 
 `/api/v1/generate/preview-prompt` is a one-shot JSON assembly route. It applies
 the same server prompt assembly and generation-settings/profile guards but does

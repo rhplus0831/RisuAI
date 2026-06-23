@@ -41,7 +41,7 @@ during an in-flight pass cause another pass after the first settles.
 | `src/ts/server/projection.ts`                    | Targeted projection, chat/lorebook hydration, character-selection and collection projections.              |
 | `src/ts/server/projectionResync.ts`              | Full-bootstrap recovery for event replay misses, projection gaps, backup restore, partial-success repairs. |
 | `src/ts/server/characterShellHydration.svelte.ts` | Hydrates inactive/selected character shell rows through `characterRow`.                                    |
-| `src/ts/server/promptTemplateHydration.ts`       | Hydrates stripped prompt-template and preset prompt bodies.                                                |
+| `src/ts/server/promptTemplateHydration.ts`       | Hydrates stripped prompt-template bodies for selected/requested prompt-preset owners and the compatibility projection. |
 | `src/ts/process/reattach.ts`                     | Reattaches active durable generation jobs from bootstrap.                                                  |
 
 ## Event Reconcile
@@ -85,6 +85,14 @@ demand; inactive character rows can be shells; prompt templates and active prese
 prompt templates can be stripped; bot presets can be stubs; module/plugin bodies
 can be delivered through bootstrap body cache.
 
+Modern `promptPresets[].promptTemplate` is the normal prompt-template owner.
+`GET /api/v1/projection/promptItem` can hydrate/project the selected prompt
+preset or an explicitly requested prompt-preset owner, and the browser keeps the
+top-level `DBState.db.promptTemplate` aligned only as a compatibility
+projection/mirror for legacy callers and bridge reconciliation. A selected
+modern prompt preset with no `promptTemplate` owns that disabled/missing state;
+it should not fall through to stale top-level data.
+
 | Flow                                      | Endpoint                                                        | Browser code                                              |
 | ----------------------------------------- | --------------------------------------------------------------- | --------------------------------------------------------- |
 | Active chat tail/range windows            | `GET /api/v1/projection/chatMessages?id=...&tail=...` or `start`/`limit` | `hydrateActiveChatWindow()` via `hydrateActiveChat()`     |
@@ -93,7 +101,7 @@ can be delivered through bootstrap body cache.
 | Active character lorebook                 | `GET /api/v1/projection/characterLorebook?id=...`               | `hydrateActiveCharacterLorebook()`                        |
 | Read-many lorebooks                       | `POST /api/v1/projection/characterLorebooks/bulk`               | `ensureAllCharacterLorebooksHydrated()`                   |
 | Inactive/selected character shell         | `GET /api/v1/projection/characterRow?id=...`                    | `hydrateSelectedCharacterShell()`                         |
-| Prompt-template collection fields         | `GET /api/v1/projection/promptItem`                             | `promptTemplateHydration.ts`                              |
+| Prompt-template collection fields         | `GET /api/v1/projection/promptItem`                             | `promptTemplateHydration.ts`, owner-keyed by selected/requested prompt preset when present |
 | Active preset body                        | `GET /api/v1/projection/preset?id=...`                          | `ensureBotPresetHydrated()` / `fetchServerPresetProjection()` |
 | Module/plugin heavy body cache            | `/api/v1/bootstrap` body-cache manifest                         | `bootstrapBodyCache.ts`                                   |
 
@@ -134,7 +142,7 @@ rendered state should follow the visible-state policy in
 | `characterBridge.svelte.ts`        | Character profile/draft bridging through `PATCH /commands/characters/:id`.         |
 | `chatBridge.svelte.ts`             | Chat metadata and chat-folder bridging through `PATCH /commands/chats/:id` and chat-folder routes. |
 | `lorebookBridge.svelte.ts`         | Global/character/chat/module lorebook replacement routes, hydrated-lorebook guards. |
-| `promptTemplateBridge.svelte.ts`   | Prompt item/settings routes, optimistic writes, rollback, hydration-aware and revision-gated reconciliation. |
+| `promptTemplateBridge.svelte.ts`   | Prompt item/settings routes, selected-prompt-preset ownership, optimistic writes, rollback, hydration-aware and revision-gated reconciliation. |
 | `scriptDefinitionBridge.svelte.ts` | Character/module script and trigger `PUT` routes.                                  |
 
 Common requirements: capture snapshots, suppress no-op updates, respect the

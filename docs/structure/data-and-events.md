@@ -7,7 +7,7 @@ revision-checked commands or explicit server-owned mutation requests.
 
 | Store            | Path                                                                                               | Contents                                                                                                                                                                                                             |
 | ---------------- | -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| SQLite           | `data/risu.db`                                                                                     | `schema_version.version` plus domain `revision`; settings; characters/chats; split tables such as `model_presets`, `prompt_presets`, `plugins`, `plugin_custom_storage`, `messages`, `chat_hypa_v3`, `assets`, `projection_body_cache_state`, `collection_body_revisions`, `command_events`, memory tables/jobs, and `generation_finalization_retries`. |
+| SQLite           | `data/risu.db`                                                                                     | `schema_version.version` plus domain `revision`; settings; characters/chats; split tables such as `model_presets`, `prompt_presets`, `plugins`, `plugin_custom_storage`, `messages`, `chat_hypa_v3`, `assets`, `projection_body_cache_state`, `collection_body_revisions`, `command_events`, memory tables/jobs, and `generation_finalization_retries`. Prompt templates are normally owned by `prompt_presets` rows; `prompt_templates` is retained as a compatibility mirror/projection. |
 | Asset bytes      | `data/assets/<sha256>.<ext>`                                                                       | Content-addressed images, audio, video, fonts, CSS, ONNX, inlay signatures, and other supported asset types. Metadata is in SQLite `assets`.                                                                         |
 | Backups          | `data/backups/<id>/`                                                                               | Snapshot `risu.db`, `manifest.json`, assets when present, and legacy `save/` when present. Creation copies `risu.db` after a WAL checkpoint; restore uses `ATTACH` and swaps only the `SQLITE_BACKUP_TABLES` allowlist. |
 | Legacy `db.json` | `data/db.json`                                                                                     | Import-only compatibility input. Boot imports it into SQLite and renames it to `db.json.migrated`.                                                                                                                   |
@@ -23,6 +23,16 @@ alternates use `alternate = 1` plus negative sequence positions. Regenerate
 preserves displaced/new candidates as alternates, while send/continue clears the
 reroll buffer for the appended path. Per-chat `hypaV3Data` lives in
 `chat_hypa_v3`.
+
+Prompt-template ownership follows the split-preset contract:
+`prompt_presets.prompt_template` is the durable owner for modern prompt preset
+templates. The legacy/top-level `prompt_templates` table remains as a
+compatibility projection/mirror for older command shapes, selected-owner
+bridges, import/export, and code that still expects `Database.promptTemplate`.
+Legacy `botPresets[].promptTemplate` is preserved for old save import/export,
+prompt diff reads, and explicit extraction into modern prompt presets, but
+normal preset selection/apply does not copy legacy bot-preset templates into the
+active top-level collection.
 
 ## Revision Contract
 
@@ -121,9 +131,10 @@ cache instead of retransmitted.
 
 Bootstrap and broad targeted projections are lean. Chat metadata ships with empty
 `message[]`, per-chat `hypaV3Data` and reroll alternates hydrate on demand,
-inactive characters can be shell rows, prompt-template fields and active preset
-prompt templates can be stripped, bot presets can be stubs, and module/plugin
-bodies can arrive via body cache. Heavy fields hydrate on demand:
+inactive characters can be shell rows, selected/requested prompt-preset
+`promptTemplate` bodies and the top-level compatibility projection can be
+stripped, bot presets can be stubs, and module/plugin bodies can arrive via body
+cache. Heavy fields hydrate on demand:
 
 | Data                                                | Endpoint                                                        |
 | --------------------------------------------------- | --------------------------------------------------------------- |
@@ -132,7 +143,7 @@ bodies can arrive via body cache. Heavy fields hydrate on demand:
 | Character lorebook when `enableLorebookStubs` is on | `GET /api/v1/projection/characterLorebook?id=...`               |
 | Many character lorebooks                            | `POST /api/v1/projection/characterLorebooks/bulk`               |
 | Inactive/selected character shell                   | `GET /api/v1/projection/characterRow?id=...`                    |
-| Prompt template collection fields                   | `GET /api/v1/projection/promptItem`                             |
+| Prompt template collection fields                   | `GET /api/v1/projection/promptItem`, owner-keyed by selected/requested prompt preset when present |
 | Bot preset body / split preset collection fields    | `GET /api/v1/projection/preset?id=...` and collection resources |
 
 Browser wrappers live in `src/ts/server/projection.ts`; hydration/cache logic

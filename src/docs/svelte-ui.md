@@ -225,6 +225,10 @@ the legacy Chat Bot/bot-preset page appears only when legacy bot presets still
 exist. Keep router slug maps, `SettingsMenuIndex`, and page visibility
 conditions aligned when changing these sections.
 
+Prompt template editing and enable/disable controls belong to the selected
+modern prompt preset; legacy bot-preset prompt templates remain compatibility UI
+for old saves and explicit extraction paths.
+
 Model settings are profile-first:
 
 - `BotSettings.svelte` routes `settingsKind === 'model'` to

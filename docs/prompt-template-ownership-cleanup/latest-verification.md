@@ -2,8 +2,12 @@
 
 Date: 2026-06-23
 
-Phase 5 generation/loadout cleanup has focused automated coverage. Browser
-local/parity generation now hydrates the same prompt-preset owner used by
+Phase 6 final verification passed. The focused client/server regression matrix,
+client-lib and strict Fastify TypeScript checks, Prettier, `git diff --check`,
+and `pnpm dev:agent` browser smoke all completed locally.
+
+Phase 5 generation/loadout cleanup remains covered by focused automated tests.
+Browser local/parity generation hydrates the same prompt-preset owner used by
 template normalization, and generic top-level preset-field mirroring no longer
 copies `promptTemplate` into the selected prompt preset.
 
@@ -13,6 +17,10 @@ from the selected/global prompt preset. Hydration now writes the requested
 owner's `promptPresets[].promptTemplate` row for generation/local assembly while
 leaving the visible top-level compatibility projection on the current selected
 owner.
+
+Phase 6 docs closeout updated structure/client docs to record the final
+ownership contract, compatibility projection, generation precedence, and legacy
+bot-preset compatibility behavior.
 
 ## Current Proof
 
@@ -79,6 +87,59 @@ owner.
   `null` instead of falling back to stale top-level compatibility data.
 - Server prompt-preset select/update/delete writes to `prompt_templates` remain
   quarantined as a compatibility mirror for this phase.
+- Structure docs and client runtime/UI docs now record modern prompt-preset
+  ownership, top-level compatibility projection behavior, legacy bot-preset
+  preservation without active apply/copy ownership, generation precedence, and
+  loadout prompt-preset behavior.
+
+## Phase 6 Final Validation
+
+Run on 2026-06-23:
+
+```bash
+pnpm exec vitest run src/ts/server/promptTemplateBridge.svelte.test.ts src/ts/server/promptTemplateHydration.test.ts src/ts/storage/database.svelte.test.ts src/ts/loadout.test.ts src/ts/presetSplit.test.ts src/ts/presetFieldMirror.test.ts
+pnpm exec vitest run src/lib/Setting/Pages/BotSettings.svelte.test.ts src/lib/Setting/Settings.svelte.test.ts src/lib/Setting/pickerGenerationSettings.test.ts
+pnpm exec vitest run src/ts/process/request/tests/serverPromptAssembly.test.ts src/ts/process/__tests__/sendChatPromptAssembly.lazyPromptTemplate.test.ts src/ts/process/__tests__/renderFinalPrompt.test.ts src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts
+pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/commandCollectionRange.test.ts server/fastify/__tests__/commandMutationReadNarrowing.test.ts server/fastify/__tests__/bootstrap.test.ts server/fastify/__tests__/projection.test.ts server/fastify/__tests__/assemble.test.ts server/fastify/__tests__/templates.test.ts server/fastify/__tests__/generation.chat.test.ts server/fastify/__tests__/risuSaveCodec.test.ts server/fastify/__tests__/risuSaveImportRoute.test.ts server/fastify/__tests__/risuSaveExportRoute.test.ts
+pnpm exec tsc -p tsconfig.client-lib.json
+pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
+pnpm exec prettier --write docs/prompt-template-ownership-cleanup/SOLVE-NOTE.md docs/prompt-template-ownership-cleanup/latest-verification.md docs/prompt-template-ownership-cleanup/phases/phase-6-verification-and-docs.md docs/prompt-template-ownership-cleanup/status.md docs/structure/data-and-events.md docs/structure/providers-and-models.md docs/structure/server-projection-and-bridges.md src/docs/client-runtime.md src/docs/svelte-ui.md
+git diff --check
+```
+
+All commands passed:
+
+- Client/runtime focused suite: 6 files, 121 tests.
+- Settings UI focused suite: 3 files, 26 tests.
+- Prompt assembly focused suite: 4 files, 69 tests.
+- Fastify focused suite: 10 files, 447 tests.
+- Client-lib TypeScript and strict Fastify TypeScript checks passed.
+- Prettier and `git diff --check` passed.
+
+## Phase 6 Browser Smoke
+
+Run on 2026-06-23:
+
+- Started `pnpm dev:agent`.
+- Loaded `http://localhost:6418/settings`; Settings navigation rendered with no
+  page errors or console errors.
+- Loaded `http://localhost:6418/settings/prompt-settings`; the prompt editor
+  rendered the selected prompt preset and prompt items with no errors.
+- Switched the visible prompt preset to
+  `🎴 초코이코이! [딥식 비추론] 2인칭 코이코이 시험버전`; the prompt editor
+  updated to that owner with no errors.
+- Verified the prompt overview/gate showed the selected prompt preset's inline
+  template editor without stale top-level ownership errors.
+- Loaded `http://localhost:6418/`; the home/chat surface rendered with no page
+  errors or console errors.
+- Legacy Bot Presets UI was not visible in the current dev data, and the direct
+  `/settings/bot-preset` route fell back to model settings. Legacy behavior is
+  covered by the automated extraction/import/export and loadout tests above.
+- Stopped the dev server and confirmed no listeners remained on ports `6418`
+  or `6419`.
+
+Only one non-blocking existing Svelte warning was observed during smoke:
+`binding_property_non_reactive` in `src/lib/SideBars/Sidebar.svelte`.
 
 ## Phase 5 Validation
 
@@ -136,22 +197,9 @@ pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__t
 This passed after updating the decoded loadout fixture expectation for
 normalized split-preset fields.
 
-## Browser Smoke
-
-Run on 2026-06-23:
-
-- Started `pnpm dev:agent`.
-- Loaded `http://localhost:6418/settings` in Chromium with `domcontentloaded`
-  wait and a Settings/Prompt/Model text sanity check.
-- No page errors or console errors were captured.
-- Stopped the dev server and confirmed no listeners remained on ports `6418`
-  or `6419`.
-
-Note: a first smoke attempt using Playwright `networkidle` timed out because
-the app keeps the events request open; this was not treated as an application
-failure.
-
 ## Verification Gaps
 
-- No new browser smoke was run for Phase 5 because the slice did not change UI
-  components.
+- No active verification gaps remain for this workstream.
+- Server prompt-preset select/update/delete writes to `prompt_templates` remain
+  intentionally documented as a compatibility mirror for a possible later
+  cleanup.

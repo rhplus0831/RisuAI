@@ -4,15 +4,14 @@ Date: 2026-06-23
 
 This workstream has completed the runtime resolver slice, the prompt
 preset-owner-aware prompt item command/projection/hydration slice, the Settings
-UI ownership slice, the legacy bot-preset compatibility cleanup slice, and the
-narrow generation/loadout cleanup slice. Final closeout verification is still
-pending.
+UI ownership slice, the legacy bot-preset compatibility cleanup slice, the
+narrow generation/loadout cleanup slice, and the final docs/verification
+closeout.
 
 ## Snapshot
 
-- Plan state: drafted; Phase 0 decisions recorded.
-- Current phase: Phase 5 implemented, with focused generation/mirror cleanup
-  tests passing locally.
+- Plan state: complete; Phase 0 decisions recorded and Phases 1-6 implemented.
+- Current phase: workstream complete.
 - Current implementation state:
   - Browser/server prompt assembly now resolves an effective prompt template
     through modern `promptPresets` before falling back to top-level
@@ -60,9 +59,9 @@ pending.
     paths instead of accidental top-level writes.
   - Server prompt-preset select/update/delete writes to `prompt_templates`
     remain quarantined as a compatibility mirror for this phase.
-- Current verification state: Focused Phase 3 Settings UI ownership checks
-  and Phase 4 legacy compatibility checks passed; Phase 5 focused checks passed
-  locally; see `latest-verification.md`.
+- Current verification state: final Phase 6 regression matrix, TypeScript
+  checks, Prettier, `git diff --check`, and browser smoke passed locally; see
+  `latest-verification.md`.
 
 ## Phase Router
 
@@ -74,7 +73,7 @@ pending.
 | Phase 3: Settings UI And Bridge | Implemented | Make Prompt Settings and Bot Settings edit selected prompt presets directly. |
 | Phase 4: Legacy BotPreset Compatibility | Implemented | Retire legacy bot-preset prompt-template apply/copy semantics. |
 | Phase 5: Generation Loadout And Cleanup | Implemented | Align generation, loadouts, imports/exports, and remaining compatibility paths. |
-| Phase 6: Verification And Docs | Pending | Run regression, browser smoke, docs, and closeout. |
+| Phase 6: Verification And Docs | Complete | Run regression, browser smoke, docs, and closeout. |
 
 ## Current Blockers
 
@@ -83,6 +82,7 @@ pending.
 - No Phase 3 blocker is known.
 - No Phase 4 blocker is known.
 - No Phase 5 blocker is known.
+- No Phase 6 blocker is known.
 
 ## Latest Completed Slice
 
@@ -114,6 +114,12 @@ pending.
   prompt preset mirrors. A follow-up fix retained explicit non-current
   chat-owner hydration in `promptTemplateHydration` for local assembly without
   poisoning the visible selected/global prompt-template projection.
+- Phase 6 docs closeout updated structure/client documentation to describe
+  modern prompt-preset ownership, top-level compatibility projection, legacy
+  bot-preset compatibility, generation precedence, and loadout behavior. The
+  final focused client/server regression matrix, TypeScript checks, Prettier,
+  `git diff --check`, and browser smoke passed; the dev server was stopped and
+  ports `6418`/`6419` were confirmed clear.
 
 ## Compatibility Caveats
 

@@ -82,7 +82,8 @@ Important files:
 - `src/ts/server/characterShellHydration.svelte.ts` hydrates selected inactive
   character shell rows.
 - `src/ts/server/promptTemplateHydration.ts` hydrates stripped prompt-template
-  and preset prompt bodies.
+  and preset prompt bodies with owner-keyed state for selected/requested prompt
+  presets.
 - `src/ts/server/lorebookBridge.svelte.ts`, `chatBridge.svelte.ts`,
   `characterBridge.svelte.ts`, `promptTemplateBridge.svelte.ts`,
   `scriptDefinitionBridge.svelte.ts`, and `settingsBridge.svelte.ts` bridge
@@ -101,6 +102,22 @@ If a component shows stale or missing data, confirm whether the data is:
 Detailed bootstrap, targeted projection, hydration, SSE reconcile, projection
 write guard, and bridge watcher rules live in
 `docs/structure/server-projection-and-bridges.md`.
+
+Prompt template projection notes:
+
+- Modern `DBState.db.promptPresets[].promptTemplate` is the normal owner for
+  prompt-template data. Prompt Settings reads and edits the selected modern
+  prompt preset first.
+- `promptTemplateHydration.ts` can hydrate the selected/global owner or an
+  explicitly requested prompt preset, such as a chat-scoped
+  `generationSettings.promptPresetId`.
+- `DBState.db.promptTemplate` is retained as a compatibility projection/mirror
+  for legacy callers and bridge reconciliation. It should not be treated as the
+  normal editing or generation owner when a modern prompt preset resolves.
+- Legacy `botPresets[].promptTemplate` remains compatibility data for import,
+  export, prompt diff, and explicit extraction into prompt presets; legacy bot
+  preset selection does not normally apply it into the active top-level
+  collection.
 
 Model profile projection notes:
 
@@ -172,6 +189,11 @@ profile model/request model/provider options/runtime settings, then budgets and
 dispatches with that profile context. This keeps profile runtime defaults and
 profile overrides in the server path instead of borrowing stale `db.aiModel` or
 legacy flat parameter assumptions.
+
+Prompt-template assembly uses the same modern-owner precedence on browser
+preflight/parity paths and server generation: chat
+`generationSettings.promptPresetId`, then selected/global prompt preset, then
+top-level compatibility fallback only when no modern owner resolves.
 
 When generation UI is wrong, inspect both the Svelte surface
 `src/lib/ChatScreens/DefaultChatScreen.svelte` and the runtime files above.

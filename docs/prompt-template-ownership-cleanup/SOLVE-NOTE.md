@@ -55,11 +55,14 @@ completed agents open.
    assembly hydrates/checks the effective chat prompt-preset owner, and generic
    top-level preset mirroring no longer treats `promptTemplate` as a normal
    prompt-preset field.
-8. Finish with Phase 6: run the focused client/server suites, TypeScript checks,
-   `git diff --check`, Prettier, and browser smoke with `pnpm dev:agent` when UI
-   workflows changed. Stop the dev server before finishing.
-9. Update `status.md`, `latest-verification.md`, and relevant structure docs as
-   phases complete or if exact gaps remain.
+8. Phase 6 docs closeout is implemented: structure/client docs record the final
+   prompt-template owner contract and compatibility caveats.
+9. Phase 6 validation is complete: focused client/server suites, TypeScript
+   checks, Prettier, `git diff --check`, and browser smoke with
+   `pnpm dev:agent` passed. The dev server was stopped and ports `6418`/`6419`
+   were confirmed clear.
+10. Keep `status.md`, `latest-verification.md`, and relevant structure docs
+    accurate if a later cleanup changes the compatibility mirror contract.
 
 ## Manager Instructions
 
@@ -114,11 +117,13 @@ completed agents open.
   cleanup explicitly retires that mirror.
 - The Fastify variation is unreleased, so source-level storage reshaping is
   allowed without a formal user-data migration promise.
+- Final Phase 6 regression, TypeScript, formatting, `git diff --check`, and
+  browser smoke passed on 2026-06-23. The only retained caveat is the documented
+  `prompt_templates` compatibility mirror.
 
 ## Recommended Next Slice
 
-Phase 5 has been implemented as a narrow generation/loadout cleanup slice with
-focused tests. The next recommended slice is Phase 6: run the full closeout
-verification, update final docs, and decide whether any remaining
-`prompt_templates` compatibility mirror writes should be retired or kept
-documented.
+The prompt template ownership cleanup workstream is complete. A future optional
+slice may retire or permanently document the remaining server
+`prompt_templates` compatibility mirror, but that is outside this completed
+plan.

@@ -1,9 +1,15 @@
 # Phase 6: Verification And Docs
 
-Status: pending.
+Status: complete.
 
 Goal: close the workstream with regression coverage, browser smoke, and updated
 structure documentation.
+
+## Completion
+
+Completed on 2026-06-23. The focused final matrix, TypeScript checks,
+Prettier, `git diff --check`, and `pnpm dev:agent` browser smoke passed. The
+dev server was stopped and ports `6418`/`6419` were confirmed clear.
 
 ## Scope
 
@@ -46,13 +52,13 @@ structure documentation.
 
 ## Validation
 
-Suggested final matrix:
+Final matrix run:
 
 ```bash
-pnpm exec vitest run src/ts/server/promptTemplateBridge.svelte.test.ts src/ts/server/promptTemplateHydration.test.ts src/ts/storage/database.svelte.test.ts src/ts/loadout.test.ts src/ts/presetSplit.test.ts
+pnpm exec vitest run src/ts/server/promptTemplateBridge.svelte.test.ts src/ts/server/promptTemplateHydration.test.ts src/ts/storage/database.svelte.test.ts src/ts/loadout.test.ts src/ts/presetSplit.test.ts src/ts/presetFieldMirror.test.ts
 pnpm exec vitest run src/lib/Setting/Pages/BotSettings.svelte.test.ts src/lib/Setting/Settings.svelte.test.ts src/lib/Setting/pickerGenerationSettings.test.ts
-pnpm exec vitest run src/ts/process/request/tests/serverPromptAssembly.test.ts src/ts/process/__tests__/sendChatPromptAssembly.lazyPromptTemplate.test.ts src/ts/process/__tests__/renderFinalPrompt.test.ts
-pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/commandCollectionRange.test.ts server/fastify/__tests__/bootstrap.test.ts server/fastify/__tests__/projection.test.ts server/fastify/__tests__/assemble.test.ts server/fastify/__tests__/templates.test.ts server/fastify/__tests__/generation.chat.test.ts
+pnpm exec vitest run src/ts/process/request/tests/serverPromptAssembly.test.ts src/ts/process/__tests__/sendChatPromptAssembly.lazyPromptTemplate.test.ts src/ts/process/__tests__/renderFinalPrompt.test.ts src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts
+pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/commandCollectionRange.test.ts server/fastify/__tests__/commandMutationReadNarrowing.test.ts server/fastify/__tests__/bootstrap.test.ts server/fastify/__tests__/projection.test.ts server/fastify/__tests__/assemble.test.ts server/fastify/__tests__/templates.test.ts server/fastify/__tests__/generation.chat.test.ts server/fastify/__tests__/risuSaveCodec.test.ts server/fastify/__tests__/risuSaveImportRoute.test.ts server/fastify/__tests__/risuSaveExportRoute.test.ts
 pnpm exec tsc -p tsconfig.client-lib.json
 pnpm exec tsc -p server/fastify/tsconfig.json --noEmit
 git diff --check
@@ -65,6 +71,11 @@ pnpm dev:agent
 ```
 
 Target: `http://localhost:6418`.
+
+Smoke covered Settings, Prompt Settings, prompt preset switching, the prompt
+template editor gate, and the home/chat surface. The current dev data did not
+expose a visible legacy Bot Presets UI, so legacy compatibility remains covered
+by automated extraction/import/export and loadout tests.
 
 ## Risks
 
