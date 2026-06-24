@@ -19,8 +19,8 @@ This document tracks remediation of the Confirmed Issues and Risks To Harden in
 
 | ID | Area | Status | Explorer | Implementation | Verification | Commit | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| I-01 | Chat send | Fixed | complete | complete | passed | `fix: carry chat send target through async flow` | Captured active chat target through append/send; verifier passed focused DOM and sendChat tests. |
-| I-02 | Message translation | Pending |  |  |  |  | Apply and rollback translation by captured message id. |
+| I-01 | Chat send | Fixed | complete | complete | passed | `8e1d112d5 fix: carry chat send target through async flow` | Captured active chat target through append/send; verifier passed focused DOM and sendChat tests. |
+| I-02 | Message translation | Fixed | complete | complete | passed | `fix: target message translation updates by id` | Applied/rolled back translation by captured message id; verifier passed focused rendered stale-switch test. |
 | I-03 | Projection/SSE | Pending |  |  |  |  | Do not mark failed surgical apply as applied before resync succeeds. |
 | I-04 | Character editor | Pending |  |  |  |  | Real-character actions gated by draft `type` silently no-op. |
 | I-05 | Character/media uploads | Pending |  |  |  |  | Issue upload freshness tokens before file bytes are read. |

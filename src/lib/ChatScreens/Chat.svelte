@@ -110,6 +110,7 @@
   let retranslate = $state(false)
   let editTranslationMode = $state(false)
   let editTranslationText = $state('')
+  let editTranslationTarget: TranslationMessageTarget | null = $state(null)
   let bodyRoot: HTMLElement | null = $state(null)
   interface Props {
     message?: string
@@ -139,6 +140,11 @@
   interface CapturedChatButtonTriggerTarget {
     snapshot: ChatButtonTriggerFreshnessSnapshot
     previous: ReturnType<typeof currentChatScopedSnapshot>
+  }
+
+  interface TranslationMessageTarget {
+    messageId: string
+    chatId?: string
   }
 
   let {
@@ -337,13 +343,83 @@
     return character.chats?.[chatPage]?.message?.[idx] ?? null
   }
 
-  function applyLocalTranslation(nextTranslation: MessageTranslation | null) {
-    withTrustedServerProjectionWrite(() => {
-      const liveMessage = currentLiveMessage()
-      if (liveMessage && (!messageRowId || liveMessage.chatId === messageRowId)) {
-        liveMessage.translation = nextTranslation
+  function captureTranslationMessageTarget(): TranslationMessageTarget | null {
+    const liveMessage = currentLiveMessage()
+    const messageId = liveMessage?.chatId || messageRowId
+    if (!messageId) return null
+    return {
+      messageId,
+      chatId: currentChatId || undefined,
+    }
+  }
+
+  function isRenderingTranslationMessageTarget(target: TranslationMessageTarget): boolean {
+    return messageRowId === target.messageId && (!target.chatId || currentChatId === target.chatId)
+  }
+
+  function resultTranslationMessageTarget(
+    capturedTarget: TranslationMessageTarget,
+    result: { chatId?: string; messageId?: string },
+  ): TranslationMessageTarget | null {
+    const resultMessageId = result.messageId || capturedTarget.messageId
+    if (resultMessageId !== capturedTarget.messageId) return null
+    return {
+      messageId: resultMessageId,
+      chatId: result.chatId || capturedTarget.chatId,
+    }
+  }
+
+  function findLiveMessageByTarget(target: TranslationMessageTarget): Message | null {
+    const matches: Message[] = []
+
+    for (const character of DBState.db.characters ?? []) {
+      for (const chat of character.chats ?? []) {
+        if (target.chatId && chat.id !== target.chatId) continue
+
+        for (const candidate of chat.message ?? []) {
+          if (candidate.chatId === target.messageId) {
+            matches.push(candidate)
+          }
+        }
       }
+    }
+
+    return matches.length === 1 ? matches[0] : null
+  }
+
+  function isSameTranslation(left: MessageTranslation | null | undefined, right: MessageTranslation | null): boolean {
+    if (!left || !right) return left == null && right === null
+    return (
+      left.source === right.source &&
+      left.text === right.text &&
+      left.sourceHash === right.sourceHash &&
+      left.targetLanguage === right.targetLanguage &&
+      left.inputLanguage === right.inputLanguage &&
+      left.translatorType === right.translatorType &&
+      left.settingsHash === right.settingsHash &&
+      left.updatedAt === right.updatedAt
+    )
+  }
+
+  function applyLocalTranslation(
+    target: TranslationMessageTarget,
+    nextTranslation: MessageTranslation | null,
+    options: { expectedCurrentTranslation?: MessageTranslation | null } = {},
+  ): boolean {
+    let applied = false
+    withTrustedServerProjectionWrite(() => {
+      const liveMessage = findLiveMessageByTarget(target)
+      if (!liveMessage) return
+      if (
+        'expectedCurrentTranslation' in options &&
+        !isSameTranslation(liveMessage.translation, options.expectedCurrentTranslation ?? null)
+      ) {
+        return
+      }
+      liveMessage.translation = nextTranslation
+      applied = true
     })
+    return applied
   }
 
   function activeRawTranslation(): MessageTranslation | null {
@@ -354,27 +430,41 @@
       : null
   }
 
+  function liveRawTranslationForTarget(target: TranslationMessageTarget): MessageTranslation | null {
+    const currentTranslation = findLiveMessageByTarget(target)?.translation
+    return currentTranslation?.source === 'raw' && typeof currentTranslation.text === 'string'
+      ? currentTranslation
+      : null
+  }
+
   async function requestServerRawTranslation() {
     if (translationInProgress) return
-    const liveMessage = currentLiveMessage()
-    const messageId = liveMessage?.chatId || messageRowId
-    if (!messageId) {
+    const target = captureTranslationMessageTarget()
+    if (!target) {
       setStatusMessage('Message is not ready to translate yet.', 2500)
       return
     }
     translating = true
     editTranslationMode = false
+    editTranslationTarget = null
     try {
       const result = await runServerCommand({
-        command: (baseRevision) => translateMessageCommand({ baseRevision, messageId }),
+        command: (baseRevision) => translateMessageCommand({ baseRevision, messageId: target.messageId }),
       })
       if (result.status === 'ok') {
-        applyLocalTranslation(result.translation)
-        translated = true
-        editTranslationMode = false
+        const resultTarget = resultTranslationMessageTarget(target, result)
+        if (resultTarget) {
+          applyLocalTranslation(resultTarget, result.translation)
+        }
+        if (isRenderingTranslationMessageTarget(target)) {
+          translated = true
+          editTranslationMode = false
+        }
         return
       }
-      translated = false
+      if (isRenderingTranslationMessageTarget(target)) {
+        translated = false
+      }
       if (result.status === 'conflict') {
         setStatusMessage(`Translation conflict (${result.currentRevision}).`, 3000)
       } else if (result.status === 'unavailable') {
@@ -388,12 +478,15 @@
   }
 
   async function saveServerTranslationEdit() {
-    const existing = activeRawTranslation()
-    const liveMessage = currentLiveMessage()
-    const messageId = liveMessage?.chatId || messageRowId
-    if (!existing || !messageId) return
+    const target = editTranslationTarget ?? captureTranslationMessageTarget()
+    const existing = target
+      ? (liveRawTranslationForTarget(target) ??
+        (isRenderingTranslationMessageTarget(target) ? activeRawTranslation() : null))
+      : null
+    if (!existing || !target) return
     if (editTranslationText === existing.text) {
       editTranslationMode = false
+      editTranslationTarget = null
       return
     }
     const nextTranslation: MessageTranslation = {
@@ -401,18 +494,24 @@
       text: editTranslationText,
       updatedAt: Date.now(),
     }
-    applyLocalTranslation(nextTranslation)
+    applyLocalTranslation(target, nextTranslation)
     editTranslationMode = false
+    editTranslationTarget = null
     await runServerCommand({
       command: (baseRevision) =>
         updateMessageCommand({
           baseRevision,
-          messageId,
+          messageId: target.messageId,
           patch: { translation: nextTranslation },
         }),
       rollback: () => {
-        applyLocalTranslation(existing)
-        editTranslationMode = true
+        applyLocalTranslation(target, existing, {
+          expectedCurrentTranslation: nextTranslation,
+        })
+        if (isRenderingTranslationMessageTarget(target)) {
+          editTranslationMode = true
+          editTranslationTarget = target
+        }
       },
     })
   }
@@ -588,8 +687,11 @@
   }
 
   async function loadTranslationForEdit() {
+    const target = captureTranslationMessageTarget()
+    if (!target) return
     suppressAutoPopupTranslationEditor = false
-    editTranslationText = activeRawTranslation()?.text ?? ''
+    editTranslationTarget = target
+    editTranslationText = liveRawTranslationForTarget(target)?.text ?? activeRawTranslation()?.text ?? ''
     editTranslationMode = true
   }
 

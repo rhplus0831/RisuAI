@@ -21,7 +21,23 @@ const customHtmlMocks = vi.hoisted(() => {
     alertRequestData: vi.fn(),
     alertWait: vi.fn(),
     canUseServerCommands: vi.fn(() => false),
-    runServerCommand: vi.fn(async (input: { command: (baseRevision: number) => Promise<unknown> }) => input.command(1)),
+    runServerCommand: vi.fn(
+      async (input: { command: (baseRevision: number) => Promise<unknown>; rollback?: () => void }) => {
+        try {
+          const result = await input.command(1)
+          if ((result as { status?: string } | undefined)?.status !== 'ok') {
+            input.rollback?.()
+          }
+          return result
+        } catch (error) {
+          input.rollback?.()
+          return {
+            status: 'error',
+            error: error instanceof Error ? error.message : String(error),
+          }
+        }
+      },
+    ),
     translateMessageCommand: vi.fn(async () => ({
       status: 'ok',
       revision: 2,
@@ -308,6 +324,7 @@ function seedDatabase(messageCount: number, guiHTML = customHtmlMocks.templates.
     ],
     clickToEdit: false,
     createFolderOnBranch: false,
+    disableAutoPopupMessageEditor: true,
     enableBlockPartialEdit: false,
     enableBookmark: false,
     enableDragPartialEdit: false,
@@ -371,10 +388,18 @@ async function settle() {
 
 function deferred<T>() {
   let resolve!: (value: T) => void
-  const promise = new Promise<T>((res) => {
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
     resolve = res
+    reject = rej
   })
-  return { promise, resolve }
+  return { promise, resolve, reject }
+}
+
+function buttonByText(text: string) {
+  return Array.from(target.querySelectorAll<HTMLButtonElement>('button')).find((button) =>
+    button.textContent?.includes(text),
+  )
 }
 
 beforeEach(() => {
@@ -387,7 +412,21 @@ beforeEach(() => {
   vi.clearAllMocks()
   customHtmlMocks.canUseServerCommands.mockReturnValue(false)
   customHtmlMocks.runServerCommand.mockImplementation(
-    async (input: { command: (baseRevision: number) => Promise<unknown> }) => input.command(1),
+    async (input: { command: (baseRevision: number) => Promise<unknown>; rollback?: () => void }) => {
+      try {
+        const result = await input.command(1)
+        if ((result as { status?: string } | undefined)?.status !== 'ok') {
+          input.rollback?.()
+        }
+        return result
+      } catch (error) {
+        input.rollback?.()
+        return {
+          status: 'error',
+          error: error instanceof Error ? error.message : String(error),
+        }
+      }
+    },
   )
   customHtmlMocks.translateMessageCommand.mockResolvedValue({
     status: 'ok',
@@ -661,6 +700,127 @@ describe('server raw translation controls', () => {
     expect(target.textContent).toContain('translated raw')
     expect(target.textContent).toContain('retranslate')
     expect(target.textContent).toContain('editTranslation')
+  })
+
+  it('applies delayed translate success to the captured message after the active chat switches', async () => {
+    const translation = {
+      source: 'raw' as const,
+      text: 'translated original chat',
+      sourceHash: 'a'.repeat(64),
+      targetLanguage: 'ko',
+      inputLanguage: 'en',
+      translatorType: 'llm' as const,
+      settingsHash: 'b'.repeat(64),
+      updatedAt: 321,
+    }
+    const pendingTranslation = deferred<{
+      status: 'ok'
+      revision: number
+      event: {
+        type: string
+        revision: number
+        resource: string
+        id: string
+      }
+      chatId: string
+      messageId: string
+      translation: typeof translation
+    }>()
+    customHtmlMocks.canUseServerCommands.mockReturnValue(true)
+    customHtmlMocks.translateMessageCommand.mockReturnValue(pendingTranslation.promise)
+    seedDatabase(1, null as unknown as string)
+    DBState.db.translator = 'configured'
+    DBState.db.translatorType = 'llm'
+    mountCustomHtmlRows(1)
+    await settle()
+
+    target.querySelector<HTMLButtonElement>('.button-icon-translate')?.click()
+    await settle()
+    DBState.db.characters[0].chatPage = 1
+
+    pendingTranslation.resolve({
+      status: 'ok',
+      revision: 2,
+      event: {
+        type: 'message.updated',
+        revision: 2,
+        resource: 'message',
+        id: 'message-0',
+      },
+      chatId: 'custom-html-chat',
+      messageId: 'message-0',
+      translation,
+    })
+    await settle()
+
+    expect(customHtmlMocks.translateMessageCommand).toHaveBeenCalledWith({
+      baseRevision: 1,
+      messageId: 'message-0',
+    })
+    expect(DBState.db.characters[0].chats[0].message[0].translation).toEqual(translation)
+    expect(DBState.db.characters[0].chats[1].message[0].translation).toBeUndefined()
+    expect(target.textContent).toContain('visible message 0')
+    expect(target.textContent).not.toContain('translated original chat')
+  })
+
+  it('rolls back a failed translation edit on the captured message after the active chat switches', async () => {
+    const existingTranslation = {
+      source: 'raw' as const,
+      text: 'original raw translation',
+      sourceHash: 'a'.repeat(64),
+      targetLanguage: 'ko',
+      inputLanguage: 'en',
+      translatorType: 'llm' as const,
+      settingsHash: 'b'.repeat(64),
+      updatedAt: 123,
+    }
+    const otherTranslation = {
+      ...existingTranslation,
+      text: 'other chat raw translation',
+      updatedAt: 456,
+    }
+    const pendingUpdate = deferred<never>()
+    customHtmlMocks.canUseServerCommands.mockReturnValue(true)
+    customHtmlMocks.updateMessageCommand.mockReturnValue(pendingUpdate.promise)
+    seedDatabase(1, null as unknown as string)
+    DBState.db.translator = 'configured'
+    DBState.db.translatorType = 'llm'
+    DBState.db.characters[0].chats[0].message[0].translation = existingTranslation
+    DBState.db.characters[0].chats[1].message[0].translation = otherTranslation
+    mountCustomHtmlRows(1)
+    await settle()
+
+    target.querySelector<HTMLButtonElement>('.button-icon-translate')?.click()
+    await settle()
+    buttonByText('editTranslation')?.click()
+    await settle()
+
+    const textarea = target.querySelector<HTMLTextAreaElement>('.message-edit-area')
+    expect(textarea?.value).toBe('original raw translation')
+    textarea!.value = 'attempted raw translation'
+    textarea!.dispatchEvent(new Event('input', { bubbles: true }))
+    await settle()
+
+    buttonByText('editTranslationSave')?.click()
+    await settle()
+    expect(customHtmlMocks.updateMessageCommand).toHaveBeenCalledWith({
+      baseRevision: 1,
+      messageId: 'message-0',
+      patch: {
+        translation: expect.objectContaining({
+          text: 'attempted raw translation',
+        }),
+      },
+    })
+    expect(DBState.db.characters[0].chats[0].message[0].translation?.text).toBe('attempted raw translation')
+
+    DBState.db.characters[0].chatPage = 1
+    pendingUpdate.reject(new Error('update failed'))
+    await settle()
+
+    expect(DBState.db.characters[0].chats[0].message[0].translation).toEqual(existingTranslation)
+    expect(DBState.db.characters[0].chats[1].message[0].translation).toEqual(otherTranslation)
+    expect(target.querySelector('.message-edit-area')).toBeNull()
   })
 
   it('preserves server-active translation busy state across refresh and displays the completed translation', async () => {
