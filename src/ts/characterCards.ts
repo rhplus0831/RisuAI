@@ -50,9 +50,14 @@ import { reencodeImage } from './process/files/inlays'
 import { PngChunk } from './pngChunk'
 import type { OnnxModelFiles } from './process/transformers'
 import { CharXImporter, CharXWriter } from './process/processzip'
-import { exportModule, readModule, type RisuModule } from './process/modules'
+import {
+  exportModule,
+  importRisuModuleData,
+  importRisuModuleObject,
+  readModule,
+  type RisuModule,
+} from './process/modules'
 import { currentCharacterStateSnapshot, dispatchCreateCharacter } from './characterCommands'
-import { createGlobalModule } from './moduleCommands'
 import { importRealmCharacterFromServer, type ServerRealmImportProgress } from './server/realmImport'
 import { forceServerProjectionResync } from './server/projectionResync'
 import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
@@ -155,6 +160,10 @@ export async function importCharacterProcess(f: {
     let lorebook: loreBook[] = []
     if (importer.moduleData) {
       const md = await readModule(Buffer.from(importer.moduleData))
+      if (!md) {
+        await importer.done()
+        return null
+      }
       card.data.extensions ??= {}
       card.data.extensions.risuai ??= {}
       card.data.extensions.risuai.triggerscript = md.trigger ?? []
@@ -403,18 +412,11 @@ export async function characterURLImport() {
   if (hash.startsWith('#import_module=')) {
     const data = hash.replace('#import_module=', '')
     const importData = JSON.parse(Buffer.from(decodeURIComponent(data), 'base64').toString('utf-8'))
-    importData.id = v4()
-
-    if (importData.lowLevelAccess) {
-      const conf = await alertConfirm(language.lowLevelAccessConfirm)
-      if (!conf) {
-        return false
-      }
+    const importedModule = await importRisuModuleObject(importData, { alertSuccess: true })
+    if (importedModule) {
+      SettingsMenuIndex.set(14)
+      settingsOpen.set(true)
     }
-    createGlobalModule(importData)
-    alertNormal(language.successImport)
-    SettingsMenuIndex.set(14)
-    settingsOpen.set(true)
     return
   }
   if (hash.startsWith('#import_preset=')) {
@@ -447,7 +449,11 @@ export async function characterURLImport() {
       return
     }
     if (name.endsWith('risum')) {
-      alertError('Module file import is not supported in server-backed web mode yet')
+      const importedModule = await importRisuModuleData(data)
+      if (importedModule) {
+        SettingsMenuIndex.set(14)
+        settingsOpen.set(true)
+      }
       return
     }
   }

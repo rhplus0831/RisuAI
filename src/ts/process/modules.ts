@@ -61,6 +61,85 @@ export interface RisuModule {
   mcp?: MCPModule
 }
 
+const MCP_MODULE_IMPORT_UNSUPPORTED = 'MCP module import is not supported in Fastify server-backed mode yet'
+
+export interface ReadModuleOptions {
+  beforeSaveAssets?: (module: RisuModule) => boolean | void | Promise<boolean | void>
+}
+
+interface ImportRisuModuleOptions {
+  alertSuccess?: boolean
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function normalizeModuleAssetMetadata(value: unknown): [string, string, string][] | null | undefined {
+  if (value === undefined || value === null) {
+    return undefined
+  }
+  if (!Array.isArray(value)) {
+    return null
+  }
+  const assets: [string, string, string][] = []
+  for (const entry of value) {
+    if (!Array.isArray(entry) || entry.length < 2) {
+      return null
+    }
+    if (typeof entry[0] !== 'string' || typeof entry[1] !== 'string') {
+      return null
+    }
+    const fileName = entry[2]
+    if (fileName !== undefined && fileName !== null && typeof fileName !== 'string') {
+      return null
+    }
+    assets.push([entry[0], entry[1], fileName ?? ''])
+  }
+  return assets
+}
+
+function normalizeRisuModuleMetadata(module: unknown): RisuModule | null {
+  if (!isRecord(module)) {
+    return null
+  }
+  if (typeof module.name !== 'string' || module.name.trim() === '') {
+    return null
+  }
+  if (typeof module.id !== 'string' || module.id.trim() === '') {
+    return null
+  }
+  const assets = normalizeModuleAssetMetadata(module.assets)
+  if (assets === null) {
+    return null
+  }
+  const normalized = module as unknown as RisuModule
+  if (assets) {
+    normalized.assets = assets
+  } else {
+    delete normalized.assets
+  }
+  return normalized
+}
+
+function hasMcpModuleMetadata(module: RisuModule): boolean {
+  return Object.prototype.hasOwnProperty.call(module, 'mcp')
+}
+
+async function guardImportableRisuModule(module: RisuModule): Promise<boolean> {
+  if (hasMcpModuleMetadata(module)) {
+    alertError(MCP_MODULE_IMPORT_UNSUPPORTED)
+    return false
+  }
+  if (module.lowLevelAccess) {
+    const conf = await alertConfirm(language.lowLevelAccessConfirm)
+    if (!conf) {
+      return false
+    }
+  }
+  return true
+}
+
 export async function exportModule(
   module: RisuModule,
   arg: {
@@ -137,143 +216,204 @@ export async function exportModule(
   return apb.buffer
 }
 
-export async function readModule(buf: Buffer): Promise<RisuModule> {
+export async function readModule(
+  data: Uint8Array | Buffer,
+  options: ReadModuleOptions = {},
+): Promise<RisuModule | undefined> {
+  const buf = Buffer.isBuffer(data) ? data : Buffer.from(data)
   let pos = 0
 
   const readLength = () => {
+    if (pos + 4 > buf.length) {
+      throw new Error('Unexpected end of module file')
+    }
     const len = buf.readUInt32LE(pos)
     pos += 4
     return len
   }
   const readByte = () => {
+    if (pos + 1 > buf.length) {
+      throw new Error('Unexpected end of module file')
+    }
     const byte = buf.readUInt8(pos)
     pos += 1
     return byte
   }
   const readData = (len: number) => {
+    if (len < 0 || pos + len > buf.length) {
+      throw new Error('Unexpected end of module file')
+    }
     const data = buf.subarray(pos, pos + len)
     pos += len
     return data
   }
 
-  if (readByte() !== 111) {
-    console.error('Invalid magic number')
-    alertError(language.errors.noData)
-    return
-  }
-  if (readByte() !== 0) {
-    //Version check
-    console.error('Invalid version')
-    alertError(language.errors.noData)
-    return
-  }
-
-  const mainLen = readLength()
-  const mainData = readData(mainLen)
-  const main: {
-    type: 'risuModule'
-    module: RisuModule
-  } = JSON.parse(Buffer.from(await decodeRPack(mainData)).toString())
-
-  if (main.type !== 'risuModule') {
-    console.error('Invalid module type')
-    alertError(language.errors.noData)
-    return
-  }
-
-  let module = main.module
-
-  const retryDelayMs = 5000
-  const maxRetries = 3
-  const totalAssets = module.assets?.length ?? 0
-  let completed = 0
-
-  type AssetTask = {
-    index: number
-    data: Uint8Array
-  }
-
-  const runAssetTasks = async (tasks: AssetTask[]) => {
-    if (tasks.length === 0) {
-      return []
+  try {
+    if (readByte() !== 111) {
+      throw new Error('Invalid magic number')
     }
-    const failed: AssetTask[] = []
-    const decodedTasks: { task: AssetTask; decoded: Uint8Array; fileName: string }[] = []
-    for (const task of tasks) {
-      try {
-        const decoded = await decodeRPack(task.data)
-        if (!module.assets?.[task.index]) {
-          throw new Error(`Missing asset metadata for index ${task.index}`)
+    if (readByte() !== 0) {
+      //Version check
+      throw new Error('Invalid version')
+    }
+
+    const mainLen = readLength()
+    const mainData = readData(mainLen)
+    const main: {
+      type?: unknown
+      module?: unknown
+    } = JSON.parse(Buffer.from(await decodeRPack(mainData)).toString())
+
+    const parsedModule = normalizeRisuModuleMetadata(main.module)
+    if (main.type !== 'risuModule' || !parsedModule) {
+      throw new Error('Invalid module data')
+    }
+
+    let module = parsedModule
+
+    const shouldReadAssets = await options.beforeSaveAssets?.(module)
+    if (shouldReadAssets === false) {
+      return
+    }
+
+    const retryDelayMs = 5000
+    const maxRetries = 3
+    const totalAssets = module.assets?.length ?? 0
+    let completed = 0
+
+    type AssetTask = {
+      index: number
+      data: Uint8Array
+    }
+
+    const runAssetTasks = async (tasks: AssetTask[]) => {
+      if (tasks.length === 0) {
+        return []
+      }
+      const failed: AssetTask[] = []
+      const decodedTasks: { task: AssetTask; decoded: Uint8Array; fileName: string }[] = []
+      for (const task of tasks) {
+        try {
+          const decoded = await decodeRPack(task.data)
+          if (!module.assets?.[task.index]) {
+            throw new Error(`Missing asset metadata for index ${task.index}`)
+          }
+          decodedTasks.push({
+            task,
+            decoded,
+            fileName: module.assets[task.index][2] ?? '',
+          })
+        } catch (error) {
+          failed.push(task)
         }
-        decodedTasks.push({
-          task,
-          decoded,
-          fileName: module.assets[task.index][2] ?? '',
-        })
+        alertWait(`Loading... (Adding Assets ${completed} / ${totalAssets})`)
+      }
+
+      try {
+        const savedAssetIds = await saveAssets(
+          decodedTasks.map((task) => ({
+            data: task.decoded,
+            fileName: task.fileName,
+          })),
+        )
+        for (let i = 0; i < decodedTasks.length; i++) {
+          // Preserve the module asset's declared filename (the [2] slot of
+          // the [name, asset_id, filename] tuple) so persisted metadata
+          // matches the source extension.
+          module.assets[decodedTasks[i].task.index][1] = savedAssetIds[i]
+          completed += 1
+        }
       } catch (error) {
-        failed.push(task)
+        failed.push(...decodedTasks.map((task) => task.task))
       }
       alertWait(`Loading... (Adding Assets ${completed} / ${totalAssets})`)
+      return failed
+    }
+
+    const tasks: AssetTask[] = []
+    let i = 0
+    while (true) {
+      const mark = readByte()
+      if (mark === 0) {
+        break
+      }
+      if (mark !== 1) {
+        throw new Error('Invalid module asset marker')
+      }
+      const len = readLength()
+      const data = readData(len)
+      tasks.push({
+        index: i,
+        data,
+      })
+      i++
+    }
+
+    if (tasks.length !== totalAssets) {
+      throw new Error('Module asset payload count does not match metadata')
     }
 
     try {
-      const savedAssetIds = await saveAssets(
-        decodedTasks.map((task) => ({
-          data: task.decoded,
-          fileName: task.fileName,
-        })),
-      )
-      for (let i = 0; i < decodedTasks.length; i++) {
-        // Preserve the module asset's declared filename (the [2] slot of
-        // the [name, asset_id, filename] tuple) so persisted metadata
-        // matches the source extension.
-        module.assets[decodedTasks[i].task.index][1] = savedAssetIds[i]
-        completed += 1
+      let failed = await runAssetTasks(tasks)
+      let retryCount = 0
+      while (failed.length > 0 && retryCount < maxRetries) {
+        await sleep(retryDelayMs)
+        retryCount += 1
+        failed = await runAssetTasks(failed)
       }
-    } catch (error) {
-      failed.push(...decodedTasks.map((task) => task.task))
+      if (failed.length > 0) {
+        throw new Error(`Failed to save ${failed.length} assets`)
+      }
+    } finally {
+      alertClear()
     }
-    alertWait(`Loading... (Adding Assets ${completed} / ${totalAssets})`)
-    return failed
-  }
 
-  const tasks: AssetTask[] = []
-  let i = 0
-  while (true) {
-    const mark = readByte()
-    if (mark === 0) {
-      break
-    }
-    if (mark !== 1) {
-      alertError(language.errors.noData)
-      return
-    }
-    const len = readLength()
-    const data = readData(len)
-    tasks.push({
-      index: i,
-      data,
-    })
-    i++
+    module.id = v4()
+    return module
+  } catch (error) {
+    console.error(error)
+    alertError(language.errors.noData)
+    return
   }
+}
 
-  try {
-    let failed = await runAssetTasks(tasks)
-    let retryCount = 0
-    while (failed.length > 0 && retryCount < maxRetries) {
-      await sleep(retryDelayMs)
-      retryCount += 1
-      failed = await runAssetTasks(failed)
-    }
-    if (failed.length > 0) {
-      throw new Error(`Failed to save ${failed.length} assets`)
-    }
-  } finally {
-    alertClear()
+export async function importRisuModuleData(
+  data: Uint8Array | Buffer,
+  options: ImportRisuModuleOptions = {},
+): Promise<RisuModule | undefined> {
+  const alertSuccess = options.alertSuccess ?? true
+  const module = await readModule(data, {
+    beforeSaveAssets: guardImportableRisuModule,
+  })
+  if (!module) {
+    return
   }
-
-  module.id = v4()
+  createGlobalModule(module)
+  if (alertSuccess) {
+    alertNormal(language.successImport)
+  }
   return module
+}
+
+export async function importRisuModuleObject(
+  importData: RisuModule,
+  options: ImportRisuModuleOptions = {},
+): Promise<RisuModule | false | undefined> {
+  const alertSuccess = options.alertSuccess ?? false
+  const normalizedImportData = normalizeRisuModuleMetadata(importData)
+  if (!normalizedImportData) {
+    alertError(language.errors.noData)
+    return
+  }
+  if (!(await guardImportableRisuModule(normalizedImportData))) {
+    return false
+  }
+  normalizedImportData.id = v4()
+  createGlobalModule(normalizedImportData)
+  if (alertSuccess) {
+    alertNormal(language.successImport)
+  }
+  return normalizedImportData
 }
 
 export async function importModule() {
@@ -283,25 +423,13 @@ export async function importModule() {
   }
   let fileData = f.data
   if (f.name.endsWith('.risum')) {
-    alertError('Module file import is not supported in server-backed web mode yet')
+    await importRisuModuleData(fileData)
     return
   }
   try {
     const importData = JSON.parse(Buffer.from(fileData).toString())
     if (importData.type === 'risuModule') {
-      if (!importData.name || !importData.id) {
-        alertError(language.errors.noData)
-        return
-      }
-      importData.id = v4()
-
-      if (importData.lowLevelAccess) {
-        const conf = await alertConfirm(language.lowLevelAccessConfirm)
-        if (!conf) {
-          return false
-        }
-      }
-      createGlobalModule(importData)
+      await importRisuModuleObject(importData)
       return
     }
     // importData.type === 'risu' in conflict with HypaV3 preset exports

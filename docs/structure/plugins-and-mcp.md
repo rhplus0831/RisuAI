@@ -112,11 +112,14 @@ Fastify mode supports them.
 
 ## Fastify-Mode Limits
 
-MCP module import is currently blocked in Fastify server-backed mode after the
-client validates module metadata. Generic module commands exist, but server
-validators intentionally disallow `mcp` records there; adding MCP import/update
-back needs a dedicated command-backed module route rather than a direct browser
-mutation.
+MCP module import is currently blocked in Fastify server-backed mode. This does
+not block ordinary `.risum` module import: non-MCP `.risum` files are decoded in
+the browser, have embedded assets uploaded through server asset helpers, and are
+created through command-backed module helpers. The `.risum` path rejects module
+metadata containing `mcp` before asset upload or optimistic module creation, and
+server validators still intentionally disallow `mcp` records in generic module
+commands. Adding MCP import/update back needs a dedicated command-backed module
+route rather than a direct browser mutation.
 
 OAuth refresh token persistence for remote MCP servers writes
 `Database.authRefreshes` through server-backed settings patches in Fastify mode.

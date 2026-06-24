@@ -35,7 +35,7 @@
   import Settings from './lib/Setting/Settings.svelte'
   import { showRealmInfoStore, importCharacterProcess } from './ts/characterCards'
   import { importPreset, getDatabase, setDatabase } from './ts/storage/database.svelte'
-  import { alertError, alertNormal } from './ts/alert'
+  import { alertNormal } from './ts/alert'
   import { language } from './lang'
   import SavePopupIconComp from './lib/Others/SavePopupIcon.svelte'
   import Botpreset from './lib/Setting/botpreset.svelte'
@@ -55,6 +55,7 @@
   import IrisModal from './lib/Others/IrisModal.svelte'
   import Legal from './lib/Others/Legal.svelte'
   import CustomSidebarConfig from './lib/Others/CustomSidebarConfig.svelte'
+  import { importRisuModuleData } from './ts/process/modules'
   import {
     applyRouteToStores,
     characterRoutePath,
@@ -127,7 +128,8 @@
         await importPreset({ name: file.name, data })
         alertNormal(language.successImport)
       } else if (name.endsWith('.risum')) {
-        alertError('Module file import is not supported in server-backed web mode yet')
+        const data = new Uint8Array(await file.arrayBuffer())
+        await importRisuModuleData(data)
         return
       } else {
         await importCharacterProcess({

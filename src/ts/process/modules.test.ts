@@ -7,7 +7,9 @@ const selectedFileState = vi.hoisted(() => ({
 const alertModuleSelect = vi.hoisted(() => vi.fn())
 const alertNormal = vi.hoisted(() => vi.fn())
 const alertError = vi.hoisted(() => vi.fn())
+const alertConfirm = vi.hoisted(() => vi.fn())
 const saveAsset = vi.hoisted(() => vi.fn())
+const saveAssets = vi.hoisted(() => vi.fn())
 const createGlobalModule = vi.hoisted(() => vi.fn())
 const getCurrentCharacter = vi.hoisted(() => vi.fn())
 const getCurrentChatMock = vi.hoisted(() => vi.fn())
@@ -41,7 +43,7 @@ vi.mock('../platform', () => ({
 
 vi.mock('../alert', () => ({
   alertClear: vi.fn(),
-  alertConfirm: vi.fn(),
+  alertConfirm,
   alertError,
   alertModuleSelect,
   alertNormal,
@@ -66,6 +68,7 @@ vi.mock('../globalApi.svelte', () => ({
   forageStorage: {},
   readImage: vi.fn(),
   saveAsset,
+  saveAssets,
 }))
 
 vi.mock('../util', () => ({
@@ -142,6 +145,28 @@ import {
 } from './modules'
 import { DBState, moduleBackgroundEmbedding } from '../stores.svelte'
 import type { character } from '../storage/database.svelte'
+import { language } from 'src/lang'
+
+function buildRisum(module: Record<string, unknown>, assets: readonly Uint8Array[] = []): Uint8Array {
+  const main = Buffer.from(
+    JSON.stringify({
+      type: 'risuModule',
+      module,
+    }),
+  )
+  const header = Buffer.alloc(6)
+  header.writeUInt8(111, 0)
+  header.writeUInt8(0, 1)
+  header.writeUInt32LE(main.length, 2)
+  const chunks = [header, main]
+  for (const asset of assets) {
+    const assetLength = Buffer.alloc(4)
+    assetLength.writeUInt32LE(asset.length, 0)
+    chunks.push(Buffer.from([1]), assetLength, Buffer.from(asset))
+  }
+  chunks.push(Buffer.from([0]))
+  return Buffer.concat(chunks)
+}
 
 function cloneJsonValue<T>(value: T): T {
   if (value === undefined) return value
@@ -227,7 +252,11 @@ describe('module imports', () => {
     ;(DBState as unknown as { db: Record<string, unknown> }).db = { modules: [], characters: [] }
     alertError.mockClear()
     saveAsset.mockClear()
+    saveAssets.mockReset()
+    saveAssets.mockImplementation(async (assets: readonly unknown[]) => assets.map((_, index) => `asset-${index}`))
     createGlobalModule.mockClear()
+    alertConfirm.mockReset()
+    alertConfirm.mockResolvedValue(true)
     alertModuleSelect.mockReset()
     alertNormal.mockClear()
     getCurrentCharacter.mockReset()
@@ -260,7 +289,110 @@ describe('module imports', () => {
     refreshModules()
   })
 
-  it('rejects .risum import before client-side asset decoding in Fastify mode', async () => {
+  it('imports ordinary .risum modules through asset upload and module command helpers', async () => {
+    const assetData = new Uint8Array([7, 8, 9])
+    selectedFileState.file = {
+      name: 'module.risum',
+      data: buildRisum(
+        {
+          id: 'old-id',
+          name: 'Imported module',
+          description: 'Imported',
+          assets: [['portrait', '', 'portrait.webp']],
+        },
+        [assetData],
+      ),
+    }
+
+    await importModule()
+
+    expect(saveAssets).toHaveBeenCalledWith([{ data: Buffer.from(assetData), fileName: 'portrait.webp' }])
+    expect(createGlobalModule).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: expect.not.stringMatching(/^old-id$/),
+        name: 'Imported module',
+        description: 'Imported',
+        assets: [['portrait', 'asset-0', 'portrait.webp']],
+      }),
+    )
+    expect(alertNormal).toHaveBeenCalled()
+  })
+
+  it('imports .risum asset tuples with a null filename slot using empty filename fallback', async () => {
+    const assetData = new Uint8Array([1, 2, 3])
+    selectedFileState.file = {
+      name: 'module.risum',
+      data: buildRisum(
+        {
+          id: 'old-id',
+          name: 'Imported module',
+          description: 'Imported',
+          assets: [['portrait', '', null]],
+        },
+        [assetData],
+      ),
+    }
+
+    await importModule()
+
+    expect(saveAssets).toHaveBeenCalledWith([{ data: Buffer.from(assetData), fileName: '' }])
+    expect(createGlobalModule).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'Imported module',
+        assets: [['portrait', 'asset-0', '']],
+      }),
+    )
+  })
+
+  it('cancels low-level .risum import before asset upload or module creation', async () => {
+    alertConfirm.mockResolvedValue(false)
+    selectedFileState.file = {
+      name: 'module.risum',
+      data: buildRisum(
+        {
+          id: 'old-id',
+          name: 'Low level module',
+          description: 'Imported',
+          lowLevelAccess: true,
+          assets: [['portrait', '', 'portrait.webp']],
+        },
+        [new Uint8Array([7, 8, 9])],
+      ),
+    }
+
+    await importModule()
+
+    expect(alertConfirm).toHaveBeenCalled()
+    expect(saveAssets).not.toHaveBeenCalled()
+    expect(createGlobalModule).not.toHaveBeenCalled()
+    expect(alertNormal).not.toHaveBeenCalled()
+  })
+
+  it('rejects MCP .risum modules before asset upload or module creation', async () => {
+    selectedFileState.file = {
+      name: 'module.risum',
+      data: buildRisum(
+        {
+          id: 'old-id',
+          name: 'MCP module',
+          description: 'Imported',
+          lowLevelAccess: true,
+          mcp: { url: 'https://example.test/mcp' },
+          assets: [['portrait', '', 'portrait.webp']],
+        },
+        [new Uint8Array([7, 8, 9])],
+      ),
+    }
+
+    await importModule()
+
+    expect(alertError).toHaveBeenCalledWith('MCP module import is not supported in Fastify server-backed mode yet')
+    expect(alertConfirm).not.toHaveBeenCalled()
+    expect(saveAssets).not.toHaveBeenCalled()
+    expect(createGlobalModule).not.toHaveBeenCalled()
+  })
+
+  it('reports no-data for invalid .risum files without asset upload or module creation', async () => {
     selectedFileState.file = {
       name: 'module.risum',
       data: new Uint8Array([111, 0, 0, 0]),
@@ -268,8 +400,8 @@ describe('module imports', () => {
 
     await importModule()
 
-    expect(alertError).toHaveBeenCalledWith('Module file import is not supported in server-backed web mode yet')
-    expect(saveAsset).not.toHaveBeenCalled()
+    expect(alertError).toHaveBeenCalledWith(language.errors.noData)
+    expect(saveAssets).not.toHaveBeenCalled()
     expect(createGlobalModule).not.toHaveBeenCalled()
   })
 
@@ -412,7 +544,7 @@ describe('module imports', () => {
       { comment: 'Existing lore', content: 'old' },
       { comment: 'Module lore', content: 'lore' },
     ])
-    expect(character.customscript).toEqual([{ comment: 'Newer regex', in: 'newer', out: 'newer' }])
+    expect(character.customscript).toEqual([{ comment: 'Newer regex', in: 'newer', out: 'newer', type: 'regex' }])
     expect(character.triggerscript).toEqual([
       { comment: 'Existing trigger', type: 'manual', conditions: [], effect: [] },
     ])
@@ -479,11 +611,15 @@ describe('module imports', () => {
     expect(target.globalLore).toEqual([{ comment: 'Existing lore', content: 'old' }])
     expect(target.customscript).toEqual([{ comment: 'Existing regex', in: 'old', out: 'old' }])
     expect(target.triggerscript).toEqual([{ comment: 'Existing trigger', type: 'manual', conditions: [], effect: [] }])
-    expect(sibling.customscript).toEqual([{ comment: 'Sibling newer regex', in: 'new-sib', out: 'new-sib' }])
+    expect(sibling.customscript).toEqual([
+      { comment: 'Sibling newer regex', in: 'new-sib', out: 'new-sib', type: 'regex' },
+    ])
     expect(DBState.db.modules).toEqual([
       {
         id: 'unrelated-module',
-        regex: [{ comment: 'Unrelated module newer regex', in: 'new-module', out: 'new-module' }],
+        name: 'Unrelated module',
+        description: '',
+        regex: [{ comment: 'Unrelated module newer regex', in: 'new-module', out: 'new-module', type: 'regex' }],
       },
     ])
     expect(DBState.db.loreBook).toEqual([

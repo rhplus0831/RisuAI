@@ -130,5 +130,10 @@ in sync when adding durable tables; operational rows are intentionally excluded
 unless explicitly added. Older backups containing `db.json` are restored by
 copying the file into the data dir and running `ensureDbJsonImported()`.
 
-Module `.risum` import remains unsupported in Fastify-backed browser mode. If it
-returns, implement it as a server import/command route.
+Ordinary module `.risum` import is supported in Fastify-backed browser mode
+through the browser codec in `src/ts/process/modules.ts`: the client decodes the
+module envelope, rejects MCP module metadata, asks for low-level-access
+confirmation before asset writes, uploads embedded assets through the server
+asset adapter, and creates the global module through command-backed module
+helpers. Embedded asset filenames are preserved during upload so server content
+type detection can use the source extension.
