@@ -25,6 +25,7 @@ import {
   normalizeModelProfiles,
   normalizeModelRoleProfiles,
 } from '../../../../src/ts/model/modelProfileRecords.js'
+import { normalizePromptTemplateValue } from './prompts.js'
 
 type JsonRecord = Record<string, unknown>
 type PresetKind = 'modelPreset' | 'promptPreset'
@@ -261,6 +262,7 @@ function ensureSplitPresetCollection(
     const id = requestedId && !seen.has(requestedId) ? requestedId : fallbackId
     preset.id = seen.has(id) ? `${id}-${index + 1}` : id
     preset.name = typeof preset.name === 'string' ? preset.name : `Preset ${index + 1}`
+    normalizePromptPresetPromptTemplate(collectionKey, preset)
     seen.add(preset.id as string)
     return preset as ModelPresetRecord | PromptPresetRecord
   })
@@ -301,6 +303,7 @@ function createSplitPresetRecord(
   }
   preset.name ??= fallbackName
   normalizeSplitPresetRoleAdjacentFields(preset)
+  normalizePromptPresetPromptTemplate(label, preset)
   validateJsonValue(label, preset)
   return preset
 }
@@ -308,8 +311,18 @@ function createSplitPresetRecord(
 function readSplitPresetPatch(input: JsonRecord, label: PresetKind): JsonRecord {
   const patch = cloneJson(input) as JsonRecord
   normalizeSplitPresetRoleAdjacentFields(patch)
+  normalizePromptPresetPromptTemplate(label, patch)
   validateJsonValue(label, patch)
   return patch
+}
+
+function normalizePromptPresetPromptTemplate(
+  label: PresetKind | 'modelPresets' | 'promptPresets',
+  record: JsonRecord,
+): void {
+  if (label !== 'promptPreset' && label !== 'promptPresets') return
+  if (!Object.prototype.hasOwnProperty.call(record, 'promptTemplate')) return
+  record.promptTemplate = normalizePromptTemplateValue(record.promptTemplate)
 }
 
 function normalizePromptPresetPatchAliases(patch: JsonRecord): void {
@@ -386,6 +399,7 @@ function normalizeSplitPresetAppliedValue(databaseKey: string, value: unknown): 
   if (databaseKey === 'seperateModels') return normalizeLegacySeperateModels(value)
   if (databaseKey === 'fallbackModels') return normalizeLegacyFallbackModels(value)
   if (databaseKey === 'seperateParameters') return normalizeSeperateParametersValue(value)
+  if (databaseKey === 'promptTemplate') return normalizePromptTemplateValue(value)
   return value
 }
 

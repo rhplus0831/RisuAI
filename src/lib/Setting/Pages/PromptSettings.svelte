@@ -56,7 +56,9 @@
     peekCachedServerCommandRevision,
     reorderPromptItemsCommand,
     runServerCommand,
+    updatePromptPresetCommand,
     type PromptItemSnapshot,
+    type PromptPresetSnapshot,
     type SettingsPatch,
   } from 'src/ts/server/commands'
   import { mirrorTopLevelPresetField } from 'src/ts/presetFieldMirror'
@@ -100,6 +102,8 @@
   }
 
   const promptPresetFieldSet = new Set<string>(PROMPT_PRESET_FIELDS)
+  const promptPresetTemplateIdsPendingServerSync = new Set<string>()
+  const promptPresetTemplateIdSyncInFlight = new Map<string, Promise<boolean>>()
 
   let {
     onGoBack = () => {},
@@ -153,11 +157,11 @@
   const fallbackWhenBlankResponseDraft = createPromptSettingsDraft<boolean>('fallbackWhenBlankResponse', false)
   const doNotChangeFallbackModelsDraft = createPromptSettingsDraft<boolean>('doNotChangeFallbackModels', false)
 
-  function promptItemId(item: PromptItem): string {
-    withTrustedServerProjectionWrite(() => {
-      normalizePromptTemplateIds(DBState.db)
-    })
-    item.id ??= crypto.randomUUID()
+  function promptItemId(item: PromptItem, ownerId: string | null = currentPromptTemplateOwnerId()): string {
+    if (typeof item.id !== 'string' || item.id.length === 0) {
+      item.id = crypto.randomUUID()
+      markPromptPresetTemplateIdsPendingServerSync(ownerId)
+    }
     return item.id
   }
 
@@ -258,9 +262,7 @@
   }
 
   function currentPromptTemplateSnapshot(): PromptItem[] {
-    for (const item of promptTemplateDraft.value ?? []) {
-      promptItemId(item)
-    }
+    ensurePromptTemplateDraftIds(currentPromptTemplateOwnerId())
     return cloneJsonValue(promptTemplateDraft.value ?? [])
   }
 
@@ -367,12 +369,7 @@
   function dispatchReorderPromptItems(ownerId: string | null, previous: PromptItem[]): void {
     if (!promptTemplateHydrated) return
     if (!canUseServerCommands()) return
-    withTrustedServerProjectionWrite(() => {
-      normalizePromptTemplateIds(DBState.db)
-    })
-    for (const item of promptTemplateDraft.value) {
-      promptItemId(item)
-    }
+    ensurePromptTemplateDraftIds(ownerId)
     const itemIds = promptTemplateItemIds(promptTemplateDraft.value)
     const previousItemIds = promptTemplateItemIds(previous)
     if (!itemIds || !previousItemIds) return
@@ -396,17 +393,98 @@
     })
   }
 
-  function queuePromptItemUpdate(promptItem: PromptItem, previousItem: PromptItem): void {
+  function queuePromptItemUpdate(promptItem: PromptItem, previousItem: PromptItem, originalIndex: number): void {
     if (!promptTemplateHydrated) return
-    const itemId = promptItemId(promptItem)
+    const ownerId = currentPromptTemplateOwnerId()
+    const itemId = ensurePromptItemDraftId(promptItem, previousItem, originalIndex, ownerId)
     syncSelectedPromptPresetItemProjection(itemId, promptItem)
-    queuePromptItemProjectionUpdate(
-      promptTemplateDraftBinding,
-      itemId,
-      previousItem,
-      250,
-      currentPromptTemplateOwnerId(),
-    )
+    const queueRowPatch = () =>
+      queuePromptItemProjectionUpdate(promptTemplateDraftBinding, itemId, previousItem, 250, ownerId)
+    const templateIdSync = queuePromptPresetTemplateIdServerSync(ownerId)
+    if (!templateIdSync) {
+      queueRowPatch()
+      return
+    }
+    void templateIdSync.then((synced) => {
+      if (synced) queueRowPatch()
+    })
+  }
+
+  function ensurePromptItemDraftId(
+    promptItem: PromptItem,
+    previousItem: PromptItem,
+    originalIndex: number,
+    ownerId: string | null,
+  ): string {
+    ensurePromptTemplateDraftIds(ownerId)
+    const draftItem = promptTemplateDraft.value[originalIndex]
+    if (draftItem && (typeof draftItem.id !== 'string' || draftItem.id.length === 0)) {
+      draftItem.id = crypto.randomUUID()
+      markPromptPresetTemplateIdsPendingServerSync(ownerId)
+    }
+    const itemId = draftItem?.id ?? promptItemId(promptItem, ownerId)
+    promptItem.id = itemId
+    previousItem.id ??= itemId
+    if (draftItem && draftItem.id !== itemId) {
+      draftItem.id = itemId
+      markPromptPresetTemplateIdsPendingServerSync(ownerId)
+    }
+    syncSelectedPromptPresetTemplateProjection(promptTemplateDraft.value)
+    return itemId
+  }
+
+  function ensurePromptTemplateDraftIds(ownerId: string | null): void {
+    const seen = new Set<string>()
+    let changed = false
+
+    for (const item of promptTemplateDraft.value ?? []) {
+      const id = typeof item.id === 'string' && item.id.length > 0 ? item.id : ''
+      if (!id || seen.has(id)) {
+        item.id = crypto.randomUUID()
+        changed = true
+      }
+      seen.add(item.id)
+    }
+
+    if (!changed) return
+    markPromptPresetTemplateIdsPendingServerSync(ownerId)
+    syncSelectedPromptPresetTemplateProjection(promptTemplateDraft.value)
+  }
+
+  function markPromptPresetTemplateIdsPendingServerSync(ownerId: string | null): void {
+    if (ownerId) promptPresetTemplateIdsPendingServerSync.add(ownerId)
+  }
+
+  function queuePromptPresetTemplateIdServerSync(ownerId: string | null): Promise<boolean> | null {
+    if (!ownerId || !promptPresetTemplateIdsPendingServerSync.has(ownerId) || !canUseServerCommands()) return null
+    const existing = promptPresetTemplateIdSyncInFlight.get(ownerId)
+    if (existing) return existing
+
+    const promptPresetId = ownerId
+    const patch = { promptTemplate: cloneJsonValue(promptTemplateDraft.value ?? []) }
+    const sync = runServerCommand({
+      command: (baseRevision) =>
+        runPromptTemplateOwnerCommand(ownerId, () =>
+          updatePromptPresetCommand({
+            baseRevision,
+            promptPresetId,
+            patch: cloneJsonValue({ ...patch, id: promptPresetId }) as PromptPresetSnapshot,
+          }),
+        ),
+    })
+      .then((result) => {
+        if (result.status === 'ok') {
+          promptPresetTemplateIdsPendingServerSync.delete(ownerId)
+          return true
+        }
+        return false
+      })
+      .finally(() => {
+        promptPresetTemplateIdSyncInFlight.delete(ownerId)
+      })
+
+    promptPresetTemplateIdSyncInFlight.set(ownerId, sync)
+    return sync
   }
 
   function movePromptItem(originalIndex: number, nextIndex: number): void {
@@ -911,7 +989,7 @@
             bind:openedItemIndices
             currentIndex={originalIndex}
             {displayIndex}
-            onUpdate={queuePromptItemUpdate}
+            onUpdate={(promptItem, previousItem) => queuePromptItemUpdate(promptItem, previousItem, originalIndex)}
             onDrop={handlePromptDrop}
             onRemove={() => {
               const previous = currentPromptTemplateSnapshot()

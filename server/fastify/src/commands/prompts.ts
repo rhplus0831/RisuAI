@@ -39,8 +39,16 @@ export function ensurePromptTemplateCollection(database: JsonRecord): PromptItem
     database.promptTemplate = []
   }
 
+  const promptTemplate = normalizePromptTemplateValue(database.promptTemplate)
+  database.promptTemplate = promptTemplate
+  return promptTemplate
+}
+
+export function normalizePromptTemplateValue(value: unknown): PromptItemRecord[] {
+  if (!Array.isArray(value)) return []
+
   const seen = new Set<string>()
-  const promptTemplate = (database.promptTemplate as unknown[]).map((raw) => {
+  return value.map((raw) => {
     const item = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as JsonRecord) : {}
     const rawId = typeof item.id === 'string' && item.id.trim() ? item.id : randomUUID()
     const id = seen.has(rawId) ? randomUUID() : rawId
@@ -48,8 +56,6 @@ export function ensurePromptTemplateCollection(database: JsonRecord): PromptItem
     item.id = id
     return item as PromptItemRecord
   })
-  database.promptTemplate = promptTemplate
-  return promptTemplate
 }
 
 export function normalizePromptTemplateCollection(database: unknown): void {

@@ -292,4 +292,34 @@ describe('split preset command normalization', () => {
       seperateParameters: normalizedSeperateParameters({ memory: { temperature: 0.3 } }),
     })
   })
+
+  it('normalizes nested prompt preset template item ids on create, patch, and apply', () => {
+    const preset = createPromptPresetRecord({
+      id: 'prompt-template-a',
+      name: 'Prompt Template A',
+      promptTemplate: [
+        { type: 'plain', text: 'missing id' },
+        { id: 'duplicate-row', type: 'plain', text: 'first duplicate' },
+        { id: 'duplicate-row', type: 'plain', text: 'second duplicate' },
+      ],
+    })
+
+    const presetIds = (preset.promptTemplate as Array<{ id?: string }>).map((item) => item.id)
+    expect(presetIds[0]).toEqual(expect.any(String))
+    expect(presetIds[1]).toBe('duplicate-row')
+    expect(presetIds[2]).toEqual(expect.any(String))
+    expect(new Set(presetIds).size).toBe(3)
+
+    const patch = readPromptPresetPatch({
+      promptTemplate: [{ type: 'plain', text: 'patched missing id' }],
+    })
+    expect((patch.promptTemplate as Array<{ id?: string }>)[0].id).toEqual(expect.any(String))
+
+    const database: Record<string, unknown> = {}
+    applyPromptPreset(database, {
+      id: 'dirty-prompt-template',
+      promptTemplate: [{ type: 'plain', text: 'applied missing id' }],
+    })
+    expect((database.promptTemplate as Array<{ id?: string }>)[0].id).toEqual(expect.any(String))
+  })
 })

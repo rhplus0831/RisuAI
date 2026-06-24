@@ -581,7 +581,7 @@ describe('Phase 4 presets collection range', () => {
     expectNoCharacterOrChatChurn(before)
     expect(readSettings().promptPresetsId).toBe(1)
     expect(readSettings().mainPrompt).toBe('prompt 1')
-    expect(readCollection('prompt_templates')).toEqual([{ type: 'plain', text: 'sp-1' }])
+    expect(readCollection('prompt_templates')).toEqual([{ id: expect.any(String), type: 'plain', text: 'sp-1' }])
   })
 
   it('PATCH selected prompt-presets/:id persists applied promptTemplate + settings', async () => {
@@ -614,7 +614,9 @@ describe('Phase 4 presets collection range', () => {
     expectNoCharacterOrChatChurn(before)
     expect(collectionRowidsByPosition('prompt_presets')).toEqual(beforeRowids)
     expect(readSettings().mainPrompt).toBe('prompt 0 patched')
-    expect(readCollection('prompt_templates')).toEqual([{ type: 'plain', text: 'sp-0 patched' }])
+    expect(readCollection('prompt_templates')).toEqual([
+      { id: expect.any(String), type: 'plain', text: 'sp-0 patched' },
+    ])
   })
 
   it('DELETE selected prompt-presets/:id persists the next selected promptTemplate + settings', async () => {
@@ -643,7 +645,7 @@ describe('Phase 4 presets collection range', () => {
     expect(readSettings().promptPresetsId).toBe(0)
     expect(body.selectedPromptPresetId).toBe('prompt-0')
     expect(readSettings().mainPrompt).toBe('prompt 0')
-    expect(readCollection('prompt_templates')).toEqual([{ type: 'plain', text: 'sp-0' }])
+    expect(readCollection('prompt_templates')).toEqual([{ id: expect.any(String), type: 'plain', text: 'sp-0' }])
   })
 })
 
@@ -828,6 +830,35 @@ describe('Phase 4 prompt-items collection range', () => {
     expectNoCharacterOrChatChurn(before)
     expect(collectionRowidsByPosition('prompt_presets')).toEqual(beforeRowids)
     expect(promptPresetTemplate('prompt-a')[1]).toMatchObject({ id: 'item-1', text: 'patched scoped' })
+    expect(readCollection('prompt_templates')).toEqual([{ id: 'legacy-item', type: 'plain', text: 'legacy' }])
+  })
+
+  it('normalizes id-less selected prompt preset rows before scoped prompt item patches', async () => {
+    const seed = seedDatabase()
+    seed.promptPresetsId = 0
+    seed.promptPresets = [
+      {
+        id: 'prompt-a',
+        name: 'Prompt A',
+        promptTemplate: [{ type: 'plain', text: 'a0' }],
+      },
+    ]
+    seed.promptTemplate = [{ id: 'legacy-item', type: 'plain', text: 'legacy' }]
+    const revision = await importDatabase(seed)
+    const [normalizedRow] = promptPresetTemplate('prompt-a')
+
+    expect(normalizedRow.id).toEqual(expect.any(String))
+
+    await runCommand({
+      method: 'PATCH',
+      url: `/api/v1/commands/prompt-items/${normalizedRow.id}`,
+      payload: { baseRevision: revision, promptPresetId: 'prompt-a', patch: { text: 'patched normalized scoped' } },
+    })
+
+    expect(promptPresetTemplate('prompt-a')[0]).toMatchObject({
+      id: normalizedRow.id,
+      text: 'patched normalized scoped',
+    })
     expect(readCollection('prompt_templates')).toEqual([{ id: 'legacy-item', type: 'plain', text: 'legacy' }])
   })
 

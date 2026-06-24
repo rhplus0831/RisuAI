@@ -17,6 +17,7 @@ import {
   normalizeModelProfiles,
   normalizeModelRoleProfiles,
 } from '../../../src/ts/model/modelProfileRecords.js'
+import { normalizePromptTemplateValue } from './commands/prompts.js'
 
 type JsonRecord = Record<string, unknown>
 
@@ -559,6 +560,9 @@ function normalizePresetCollection(
     const id = requestedId && !seen.has(requestedId) ? requestedId : fallbackId
     rawPreset.id = seen.has(id) ? `${id}-${index + 1}` : id
     if (typeof rawPreset.name !== 'string') rawPreset.name = `Preset ${index + 1}`
+    if (collectionKey === 'promptPresets' && Object.prototype.hasOwnProperty.call(rawPreset, 'promptTemplate')) {
+      rawPreset.promptTemplate = normalizePromptTemplateValue(rawPreset.promptTemplate)
+    }
     seen.add(rawPreset.id as string)
   }
 

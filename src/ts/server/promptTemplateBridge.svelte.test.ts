@@ -936,6 +936,185 @@ describe('flushPendingPromptTemplatePatches', () => {
     expect(DBState.db).not.toHaveProperty('promptTemplate')
   })
 
+  it('PromptSettings syncs id-less selected preset template ids before row patches', async () => {
+    hydrationState.setOwner('preset-a')
+    ;(DBState as { db: unknown }).db = {
+      promptSettings: { ...minimalPromptSettings },
+      promptPresetsId: 0,
+      promptPresets: [
+        {
+          id: 'preset-a',
+          name: 'Preset A',
+          promptTemplate: [
+            promptItemFixture({
+              type: 'plain',
+              type2: 'normal',
+              role: 'system',
+              text: 'server old',
+              name: 'Preset row',
+            }),
+          ],
+        },
+      ],
+      promptTemplate: [
+        promptItemFixture({ type: 'plain', type2: 'normal', role: 'system', text: 'server old', name: 'Preset row' }),
+      ],
+    }
+
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    let component: MountedComponent | null = null
+    try {
+      component = mount(PromptSettings, {
+        target,
+        props: { mode: 'inline', subMenu: 0 },
+      })
+      await tick()
+      await flushMicrotasks()
+      await tick()
+
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'o', ctrlKey: true, altKey: true }))
+      await tick()
+      await flushMicrotasks()
+      await tick()
+
+      await editPromptSettingsTextarea(target, 'local dirty')
+      await flushMicrotasks()
+
+      expect(commandState.commands[0].built).toMatchObject({
+        kind: 'updatePromptPreset',
+        baseRevision: 1,
+        promptPresetId: 'preset-a',
+      })
+      const presetPatch = commandState.commands[0].built.patch as {
+        promptTemplate: Array<{ id?: string; text?: string }>
+      }
+      expect(presetPatch.promptTemplate[0]).toMatchObject({ id: expect.any(String), text: 'local dirty' })
+
+      await vi.advanceTimersByTimeAsync(250)
+      await flushMicrotasks()
+
+      expect(commandState.commands[1].built).toEqual({
+        kind: 'updatePromptItem',
+        baseRevision: 1,
+        promptPresetId: 'preset-a',
+        itemId: presetPatch.promptTemplate[0].id,
+        patch: presetPatch.promptTemplate[0],
+      })
+    } finally {
+      if (component) await unmount(component)
+      target.remove()
+    }
+  })
+
+  it('PromptSettings includes sibling id-less rows in an in-flight selected preset id sync', async () => {
+    hydrationState.setOwner('preset-a')
+    let resolvePresetSync: ((value: Record<string, unknown>) => void) | null = null
+    commandMocks.updatePromptPresetCommand.mockImplementationOnce(
+      (args: Record<string, unknown>) =>
+        new Promise<Record<string, unknown>>((resolve) => {
+          resolvePresetSync = () => resolve({ kind: 'updatePromptPreset', ...args })
+        }),
+    )
+    ;(DBState as { db: unknown }).db = {
+      promptSettings: { ...minimalPromptSettings },
+      promptPresetsId: 0,
+      promptPresets: [
+        {
+          id: 'preset-a',
+          name: 'Preset A',
+          promptTemplate: [
+            promptItemFixture({
+              type: 'plain',
+              type2: 'normal',
+              role: 'system',
+              text: 'row A old',
+              name: 'Preset row A',
+            }),
+            promptItemFixture({
+              type: 'plain',
+              type2: 'normal',
+              role: 'system',
+              text: 'row B old',
+              name: 'Preset row B',
+            }),
+          ],
+        },
+      ],
+      promptTemplate: [
+        promptItemFixture({
+          type: 'plain',
+          type2: 'normal',
+          role: 'system',
+          text: 'row A old',
+          name: 'Preset row A',
+        }),
+        promptItemFixture({
+          type: 'plain',
+          type2: 'normal',
+          role: 'system',
+          text: 'row B old',
+          name: 'Preset row B',
+        }),
+      ],
+    }
+
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    let component: MountedComponent | null = null
+    try {
+      component = mount(PromptSettings, {
+        target,
+        props: { mode: 'inline', subMenu: 0 },
+      })
+      await tick()
+      await flushMicrotasks()
+      await tick()
+
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'o', ctrlKey: true, altKey: true }))
+      await tick()
+      await flushMicrotasks()
+      await tick()
+
+      await editPromptSettingsTextarea(target, 'row A dirty', 0)
+      await flushMicrotasks()
+
+      expect(commandMocks.updatePromptPresetCommand).toHaveBeenCalledTimes(1)
+      const presetSyncArgs = commandMocks.updatePromptPresetCommand.mock.calls[0][0] as {
+        patch: { promptTemplate: Array<{ id?: string; text?: string }> }
+      }
+      expect(presetSyncArgs.patch.promptTemplate).toEqual([
+        expect.objectContaining({ id: expect.any(String), text: 'row A dirty' }),
+        expect.objectContaining({ id: expect.any(String), text: 'row B old' }),
+      ])
+      expect(commandState.commands).toHaveLength(0)
+
+      await editPromptSettingsTextarea(target, 'row B dirty', 1)
+      await flushMicrotasks()
+
+      expect(commandMocks.updatePromptPresetCommand).toHaveBeenCalledTimes(1)
+      expect(commandMocks.updatePromptItemCommand).not.toHaveBeenCalled()
+
+      resolvePresetSync?.({ kind: 'updatePromptPreset', ...presetSyncArgs })
+      await flushMicrotasks()
+      await vi.advanceTimersByTimeAsync(250)
+      await flushMicrotasks()
+
+      const syncedIds = presetSyncArgs.patch.promptTemplate.map((item) => item.id)
+      expect(
+        commandMocks.updatePromptItemCommand.mock.calls.map(([args]) => (args as { itemId: string }).itemId),
+      ).toEqual(syncedIds)
+      expect(
+        commandMocks.updatePromptItemCommand.mock.calls.map(
+          ([args]) => (args as { patch: { text?: string } }).patch.text,
+        ),
+      ).toEqual(['row A dirty', 'row B dirty'])
+    } finally {
+      if (component) await unmount(component)
+      target.remove()
+    }
+  })
+
   it('PromptSettings immediately adopts a newly selected preset template even when the top-level projection is stale', async () => {
     commandState.revision = 5
     ;(DBState as { db: unknown }).db = {
@@ -1277,10 +1456,10 @@ describe('prompt settings draft dispatch contracts', () => {
     expect(source).not.toContain("mirrorTopLevelPresetField('promptTemplate'")
   })
 
-  it('keeps PromptSettings row edits on prompt item commands while whole-template edits sync selected ownership locally', () => {
+  it('keeps PromptSettings row edits on prompt item commands after selected-template id repair', () => {
     const source = readSource('src/lib/Setting/Pages/PromptSettings.svelte')
 
-    expect(source).not.toContain('updatePromptPreset')
+    expect(source).toContain('queuePromptPresetTemplateIdServerSync(ownerId)')
     expect(source).toContain('syncSelectedPromptPresetItemProjection(itemId, promptItem)')
     expect(source).toContain('queuePromptItemProjectionUpdate(')
     expect(source).toContain('syncSelectedPromptPresetTemplateProjection(templates)')
