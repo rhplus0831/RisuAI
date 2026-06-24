@@ -254,7 +254,7 @@ describe('createServerBackedCharacterDraft seed gating', () => {
     stop()
   })
 
-  it('preserves a dirty nested object as a top-level field through a stale projection', async () => {
+  it('treats a dirty nested object as a top-level conflict boundary through a stale projection', async () => {
     setupCharacter()
     const { draft, stop } = await createDraft(['desc', 'newGenData'])
 
@@ -275,9 +275,12 @@ describe('createServerBackedCharacterDraft seed gating', () => {
     await flushAndSettle()
 
     expect(draft.value.newGenData.prompt).toBe('Local prompt')
+    // Dirty tracking is intentionally top-level: editing newGenData.prompt keeps
+    // the whole newGenData object local, including otherwise clean siblings.
     expect(draft.value.newGenData.instructions).toBe('')
     expect(draft.value.desc).toBe('Fresh server description')
     expect(DBState.db.characters[0].newGenData.prompt).toBe('Local prompt')
+    expect(DBState.db.characters[0].newGenData.instructions).toBe('')
     expect(DBState.db.characters[0].desc).toBe('Fresh server description')
     stop()
   })
