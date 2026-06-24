@@ -580,72 +580,152 @@ class SafeMutationObserver {
   }
 }
 
-const pluginUnloadCallbacks: Map<string, Function[]> = new Map()
+type V3PluginInstance = {
+  name: string
+  host?: SandboxHost
+  lifecycle: PluginLifecycleCleanup
+  generation: number
+  active: boolean
+}
 
-const addPluginUnloadCallback = (pluginName: string, callback: Function) => {
+type PluginUnloadCallback = {
+  generation: number
+  callback: Function
+}
+
+const v3PluginInstances: V3PluginInstance[] = []
+let v3GenerationCounter = 0
+let activeV3Generation = 0
+
+function ensureV3Generation() {
+  if (activeV3Generation === 0) {
+    activeV3Generation = ++v3GenerationCounter
+  }
+  return activeV3Generation
+}
+
+function beginV3Generation() {
+  activeV3Generation = ++v3GenerationCounter
+  for (const instance of v3PluginInstances) {
+    instance.active = false
+  }
+  syncV3ProviderRegistrations()
+  return activeV3Generation
+}
+
+function isV3InstanceCurrent(instance: V3PluginInstance) {
+  return instance.active && instance.generation === activeV3Generation
+}
+
+function assertV3InstanceCurrent(instance: V3PluginInstance) {
+  if (!isV3InstanceCurrent(instance)) {
+    throw new Error(`[RisuAI Plugin: ${instance.name}] Plugin instance is no longer active.`)
+  }
+}
+
+const pluginUnloadCallbacks: Map<string, PluginUnloadCallback[]> = new Map()
+
+const addPluginUnloadCallback = (pluginName: string, callback: Function, generation = activeV3Generation) => {
   if (!pluginUnloadCallbacks.has(pluginName)) {
     pluginUnloadCallbacks.set(pluginName, [])
   }
-  pluginUnloadCallbacks.get(pluginName)?.push(callback)
+  pluginUnloadCallbacks.get(pluginName)?.push({ generation, callback })
 }
 
-const makeMenuUnloadCallback = (menuId: string, menuStore: MenuDef[]) => {
+type V3OwnedMenuDef = MenuDef & {
+  __v3OwnerToken: string
+}
+
+const ownMenuDef = (menuDef: MenuDef): V3OwnedMenuDef => {
+  return {
+    ...menuDef,
+    __v3OwnerToken: v4(),
+  }
+}
+
+const makeMenuUnloadCallback = (menuDef: V3OwnedMenuDef, menuStore: MenuDef[]) => {
   return () => {
-    const index = menuStore.findIndex((item) => item.id === menuId)
+    const index = menuStore.findIndex(
+      (item) => item.id === menuDef.id && (item as V3OwnedMenuDef).__v3OwnerToken === menuDef.__v3OwnerToken,
+    )
     if (index !== -1) {
       menuStore.splice(index, 1)
     }
   }
 }
 
-const unloadV3Plugin = async (pluginName: string) => {
-  const callbacks = pluginUnloadCallbacks.get(pluginName)
-  const instance = v3PluginInstances.find((p) => p.name === pluginName)
-  if (instance) {
-    const index = v3PluginInstances.findIndex((p) => p.name === pluginName)
-    if (index !== -1) {
-      v3PluginInstances.splice(index, 1)
-    }
-  }
-  if (callbacks) {
-    pluginUnloadCallbacks.delete(pluginName)
-    let promises: Promise<void>[] = []
-    for (const callback of callbacks) {
-      try {
-        const result = callback()
-        if (result instanceof Promise) {
-          promises.push(
-            result.catch((error) => {
-              console.error(`Error running unload callback for plugin ${pluginName}:`, error)
-            }),
-          )
-        }
-      } catch (error) {
-        console.error(`Error running unload callback for plugin ${pluginName}:`, error)
-      }
-    }
+const takePluginUnloadCallbacks = (pluginName: string, generation: number): Function[] => {
+  const records = pluginUnloadCallbacks.get(pluginName)
+  if (!records) return []
 
-    try {
-      await Promise.any([
-        Promise.all(promises),
-        sleep(1000), //timeout after 1 second
-      ])
-    } finally {
-      try {
-        instance?.lifecycle.cleanupAll()
-        instance?.host?.terminate()
-      } catch (error) {
-        console.error(`Error terminating plugin ${pluginName}:`, error)
-      }
-    }
-  } else {
-    try {
-      instance?.lifecycle.cleanupAll()
-      instance?.host?.terminate()
-    } catch (error) {
-      console.error(`Error terminating plugin ${pluginName}:`, error)
+  const callbacks: Function[] = []
+  const remaining: PluginUnloadCallback[] = []
+  for (const record of records) {
+    if (record.generation === generation) {
+      callbacks.push(record.callback)
+    } else {
+      remaining.push(record)
     }
   }
+
+  if (remaining.length === 0) {
+    pluginUnloadCallbacks.delete(pluginName)
+  } else {
+    pluginUnloadCallbacks.set(pluginName, remaining)
+  }
+  return callbacks
+}
+
+const runPluginUnloadCallbacks = async (pluginName: string, callbacks: Function[]) => {
+  let promises: Promise<void>[] = []
+  for (const callback of callbacks) {
+    try {
+      const result = callback()
+      if (result instanceof Promise) {
+        promises.push(
+          result.catch((error) => {
+            console.error(`Error running unload callback for plugin ${pluginName}:`, error)
+          }),
+        )
+      }
+    } catch (error) {
+      console.error(`Error running unload callback for plugin ${pluginName}:`, error)
+    }
+  }
+
+  await Promise.any([
+    Promise.all(promises),
+    sleep(1000), //timeout after 1 second
+  ])
+}
+
+const unloadV3PluginInstance = async (instance: V3PluginInstance) => {
+  instance.active = false
+  const index = v3PluginInstances.indexOf(instance)
+  if (index !== -1) {
+    v3PluginInstances.splice(index, 1)
+  }
+
+  const callbacks = takePluginUnloadCallbacks(instance.name, instance.generation)
+  try {
+    await runPluginUnloadCallbacks(instance.name, callbacks)
+  } finally {
+    try {
+      instance.lifecycle.cleanupAll()
+      instance.host?.terminate()
+    } catch (error) {
+      console.error(`Error terminating plugin ${instance.name}:`, error)
+    }
+  }
+}
+
+const unloadV3Plugin = async (pluginName: string) => {
+  const instance = v3PluginInstances.find((p) => p.name === pluginName)
+  if (!instance) {
+    await runPluginUnloadCallbacks(pluginName, takePluginUnloadCallbacks(pluginName, activeV3Generation))
+    return
+  }
+  await unloadV3PluginInstance(instance)
 }
 
 const permissionGivenPlugins: Set<string> = new Set()
@@ -663,6 +743,7 @@ export const customV3ProviderMetaStore: LLMModel[] = []
 
 type V3ProviderRegistration = {
   pluginName: string
+  generation: number
   name: string
   handler: (
     arg: PluginV2ProviderArgument,
@@ -683,6 +764,9 @@ function syncCustomProviderStoreFromMap() {
 function getActiveV3ProviderRegistrations() {
   const active = new Map<string, V3ProviderRegistration>()
   for (const registration of v3ProviderRegistrations) {
+    if (registration.generation !== activeV3Generation) {
+      continue
+    }
     active.set(registration.name, registration)
   }
   return active
@@ -716,28 +800,53 @@ function syncV3ProviderRegistrations() {
   syncCustomProviderStoreFromMap()
 }
 
-function unregisterV3ProvidersForPlugin(pluginName: string) {
+function unregisterV3ProvidersForPlugin(pluginName: string, generation?: number) {
   for (let i = v3ProviderRegistrations.length - 1; i >= 0; i--) {
-    if (v3ProviderRegistrations[i].pluginName === pluginName) {
+    const registration = v3ProviderRegistrations[i]
+    if (
+      registration.pluginName === pluginName &&
+      (generation === undefined || registration.generation === generation)
+    ) {
       v3ProviderRegistrations.splice(i, 1)
     }
   }
-  registeredV3ProviderUnloadCallbacks.delete(pluginName)
+  if (generation === undefined) {
+    for (const key of Array.from(registeredV3ProviderUnloadCallbacks)) {
+      if (key.endsWith(`:${pluginName}`)) {
+        registeredV3ProviderUnloadCallbacks.delete(key)
+      }
+    }
+  } else {
+    registeredV3ProviderUnloadCallbacks.delete(`${generation}:${pluginName}`)
+  }
   syncV3ProviderRegistrations()
 }
 
 function registerV3Provider(registration: V3ProviderRegistration) {
+  if (registration.generation !== activeV3Generation) {
+    return
+  }
+
   for (let i = v3ProviderRegistrations.length - 1; i >= 0; i--) {
     const existing = v3ProviderRegistrations[i]
-    if (existing.pluginName === registration.pluginName && existing.name === registration.name) {
+    if (
+      existing.pluginName === registration.pluginName &&
+      existing.generation === registration.generation &&
+      existing.name === registration.name
+    ) {
       v3ProviderRegistrations.splice(i, 1)
     }
   }
 
   v3ProviderRegistrations.push(registration)
-  if (!registeredV3ProviderUnloadCallbacks.has(registration.pluginName)) {
-    registeredV3ProviderUnloadCallbacks.add(registration.pluginName)
-    addPluginUnloadCallback(registration.pluginName, () => unregisterV3ProvidersForPlugin(registration.pluginName))
+  const unloadKey = `${registration.generation}:${registration.pluginName}`
+  if (!registeredV3ProviderUnloadCallbacks.has(unloadKey)) {
+    registeredV3ProviderUnloadCallbacks.add(unloadKey)
+    addPluginUnloadCallback(
+      registration.pluginName,
+      () => unregisterV3ProvidersForPlugin(registration.pluginName, registration.generation),
+      registration.generation,
+    )
   }
   syncV3ProviderRegistrations()
 }
@@ -812,9 +921,29 @@ const urlBlacklist = ['risuai.xyz', 'risuai.net', 'sionyw.com']
 
 const authorizationHeaders = ['x-api-key', 'authorization', 'proxy-authorization']
 
-const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin, lifecycle: PluginLifecycleCleanup) => {
+const guardV3Api = (api: Record<string, unknown>, instance: V3PluginInstance): Record<string, unknown> => {
+  return new Proxy(api, {
+    get(target, prop, receiver) {
+      const value = Reflect.get(target, prop, receiver)
+      if (typeof value !== 'function') {
+        return value
+      }
+      return (...args: unknown[]) => {
+        assertV3InstanceCurrent(instance)
+        return value.apply(target, args)
+      }
+    },
+  })
+}
+
+const makeRisuaiAPIV3 = (
+  iframe: HTMLIFrameElement,
+  plugin: RisuPlugin,
+  lifecycle: PluginLifecycleCleanup,
+  instance: V3PluginInstance,
+) => {
   const oldApis = getV2PluginAPIs()
-  return {
+  const api = {
     //Old APIs from v2.1
     risuFetch: (url, options) => {
       console.error(
@@ -869,7 +998,9 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin, lifecycl
         `[WARN] addProvider is a powerful API that can potentially be unsafe if used incorrectly. addProvider's functionality might be limited or changed in future updates to ensure security. please use other APIs if possible.`,
       )
       const handler = async (arg: PluginV2ProviderArgument, abortSignal?: AbortSignal) => {
+        assertV3InstanceCurrent(instance)
         await getPluginPermission(plugin.name, 'provider', 'periodically')
+        assertV3InstanceCurrent(instance)
         // Force v3 mode for plugin provider isolation.
         arg.mode = 'v3'
         return await func(arg, abortSignal)
@@ -899,6 +1030,7 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin, lifecycl
       }
       registerV3Provider({
         pluginName: plugin.name,
+        generation: instance.generation,
         name,
         handler,
         options: options ?? {},
@@ -918,6 +1050,7 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin, lifecycl
     addRisuReplacer: async (name: string, func: Function) => {
       //permission check for replacer
       const conf = await getPluginPermission(plugin.name, 'replacer', 'periodically')
+      assertV3InstanceCurrent(instance)
       if (!conf) {
         return
       }
@@ -1223,6 +1356,7 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin, lifecycl
     },
     getRootDocument: async () => {
       const conf = await getPluginPermission(plugin.name, 'mainDom')
+      assertV3InstanceCurrent(instance)
       if (!conf) {
         return null
       }
@@ -1242,27 +1376,32 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin, lifecycl
         throw new Error('name must be a non-empty string')
       }
       const menuId = id || v4()
-      const menuDef: MenuDef = {
+      const menuDef = ownMenuDef({
         id: menuId,
         name,
         icon,
         iconType,
         callback,
-      }
+      })
       const existingIndex = additionalSettingsMenu.findIndex((item) => item.id === menuId)
       if (existingIndex !== -1) {
         additionalSettingsMenu[existingIndex] = menuDef
-        addPluginUnloadCallback(plugin.name, makeMenuUnloadCallback(menuId, additionalSettingsMenu))
+        addPluginUnloadCallback(
+          plugin.name,
+          makeMenuUnloadCallback(menuDef, additionalSettingsMenu),
+          instance.generation,
+        )
         return { id: menuId }
       }
       additionalSettingsMenu.push(menuDef)
-      addPluginUnloadCallback(plugin.name, makeMenuUnloadCallback(menuId, additionalSettingsMenu))
+      addPluginUnloadCallback(plugin.name, makeMenuUnloadCallback(menuDef, additionalSettingsMenu), instance.generation)
       return { id: menuId }
     },
     registerBodyIntercepter: async (callback: (body: any, type: string) => any) => {
       if ((await getPluginPermission(plugin.name, 'replacer')) === false) {
         return null
       }
+      assertV3InstanceCurrent(instance)
 
       const id = v4()
       bodyIntercepterStore.push({
@@ -1307,20 +1446,20 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin, lifecycl
         throw new Error('icon must be a string')
       }
       const id = providedId || v4()
-      const menuDef: MenuDef = {
+      const menuDef = ownMenuDef({
         name,
         icon,
         iconType,
         callback,
         id,
-      }
+      })
 
       const buttonStores = [additionalFloatingActionButtons, additionalHamburgerMenu, additionalChatMenu]
       for (const store of buttonStores) {
         const existingIndex = store.findIndex((item) => item.id === id)
         if (existingIndex !== -1) {
           store[existingIndex] = menuDef
-          addPluginUnloadCallback(plugin.name, makeMenuUnloadCallback(id, store))
+          addPluginUnloadCallback(plugin.name, makeMenuUnloadCallback(menuDef, store), instance.generation)
           return { id }
         }
       }
@@ -1328,17 +1467,25 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin, lifecycl
       switch (location) {
         case 'action': {
           additionalFloatingActionButtons.push(menuDef)
-          addPluginUnloadCallback(plugin.name, makeMenuUnloadCallback(menuDef.id, additionalFloatingActionButtons))
+          addPluginUnloadCallback(
+            plugin.name,
+            makeMenuUnloadCallback(menuDef, additionalFloatingActionButtons),
+            instance.generation,
+          )
           break
         }
         case 'hamburger': {
           additionalHamburgerMenu.push(menuDef)
-          addPluginUnloadCallback(plugin.name, makeMenuUnloadCallback(menuDef.id, additionalHamburgerMenu))
+          addPluginUnloadCallback(
+            plugin.name,
+            makeMenuUnloadCallback(menuDef, additionalHamburgerMenu),
+            instance.generation,
+          )
           break
         }
         case 'chat': {
           additionalChatMenu.push(menuDef)
-          addPluginUnloadCallback(plugin.name, makeMenuUnloadCallback(menuDef.id, additionalChatMenu))
+          addPluginUnloadCallback(plugin.name, makeMenuUnloadCallback(menuDef, additionalChatMenu), instance.generation)
           break
         }
         default: {
@@ -1374,6 +1521,7 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin, lifecycl
     getFetchLogs: async () => {
       const unsafeFetchLog = getFetchLogs()
       const conf = await getPluginPermission(plugin.name, 'fetchLogs')
+      assertV3InstanceCurrent(instance)
       if (!conf) {
         return null
       }
@@ -1493,6 +1641,7 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin, lifecycl
     },
     sendChat: async (message: string) => {
       const conf = await getPluginPermission(plugin.name, 'sendChat')
+      assertV3InstanceCurrent(instance)
       if (!conf) {
         return false
       }
@@ -1580,28 +1729,33 @@ const makeRisuaiAPIV3 = (iframe: HTMLIFrameElement, plugin: RisuPlugin, lifecycl
       )
     },
   }
+  return guardV3Api(api, instance)
 }
-
-type V3PluginInstance = {
-  name: string
-  host: SandboxHost
-  lifecycle: PluginLifecycleCleanup
-}
-
-const v3PluginInstances: V3PluginInstance[] = []
 
 export async function loadV3Plugins(plugins: RisuPlugin[]) {
+  const generation = beginV3Generation()
   await Promise.all(
     [...v3PluginInstances].map(async (instance) => {
-      await unloadV3Plugin(instance.name)
+      await unloadV3PluginInstance(instance)
     }),
   )
-  const loadPromises = plugins.map((plugin) => executePluginV3(plugin))
+
+  if (generation !== activeV3Generation) {
+    return
+  }
+
+  const loadPromises = plugins.map((plugin) => executePluginV3(plugin, generation))
   await Promise.all(loadPromises)
 }
 
-export async function executePluginV3(plugin: RisuPlugin) {
-  const alreadyRunning = v3PluginInstances.find((p) => p.name === plugin.name)
+export async function executePluginV3(plugin: RisuPlugin, generation = ensureV3Generation()) {
+  if (generation !== activeV3Generation) {
+    return
+  }
+
+  const alreadyRunning = v3PluginInstances.find(
+    (p) => p.name === plugin.name && p.active && p.generation === generation,
+  )
   if (alreadyRunning) {
     console.log(`[RisuAI Plugin: ${plugin.name}] Plugin is already running. Skipping load.`)
     return
@@ -1611,37 +1765,46 @@ export async function executePluginV3(plugin: RisuPlugin) {
   iframe.style.display = 'none'
   document.body.appendChild(iframe)
   const lifecycle = new PluginLifecycleCleanup()
-  const host = new SandboxHost(makeRisuaiAPIV3(iframe, plugin, lifecycle))
-  const instance = {
+  const instance: V3PluginInstance = {
     name: plugin.name,
-    host,
     lifecycle,
+    generation,
+    active: true,
   }
+  const host = new SandboxHost(makeRisuaiAPIV3(iframe, plugin, lifecycle, instance))
+  instance.host = host
   v3PluginInstances.push(instance)
   try {
+    assertV3InstanceCurrent(instance)
     host.run(iframe, plugin.script)
   } catch (error) {
-    await unloadV3Plugin(plugin.name)
+    await unloadV3PluginInstance(instance)
     throw error
   }
   console.log(`[RisuAI Plugin: ${plugin.name}] Loaded API V3 plugin.`)
 }
 
 export function getV3PluginInstance(name: string) {
-  return v3PluginInstances.find((p) => p.name === name)
+  return v3PluginInstances.find((p) => p.name === name && p.active)
 }
 
 export const __v3PluginLifecycleTestHooks = {
   async reset() {
     for (const instance of [...v3PluginInstances]) {
-      await unloadV3Plugin(instance.name)
+      await unloadV3PluginInstance(instance)
     }
+    activeV3Generation = 0
     pluginUnloadCallbacks.clear()
     pluginChannel.clear()
     v3ProviderRegistrations.splice(0, v3ProviderRegistrations.length)
     v3SyncedProviderRegistrations.clear()
     registeredV3ProviderUnloadCallbacks.clear()
     customV3ProviderMetaStore.splice(0, customV3ProviderMetaStore.length)
+    additionalSettingsMenu.splice(0, additionalSettingsMenu.length)
+    additionalFloatingActionButtons.splice(0, additionalFloatingActionButtons.length)
+    additionalHamburgerMenu.splice(0, additionalHamburgerMenu.length)
+    additionalChatMenu.splice(0, additionalChatMenu.length)
+    bodyIntercepterStore.splice(0, bodyIntercepterStore.length)
     pluginV2.providers.clear()
     pluginV2.providerOptions.clear()
     syncCustomProviderStoreFromMap()
@@ -1658,7 +1821,36 @@ export const __v3PluginLifecycleTestHooks = {
   createApi(plugin: RisuPlugin): Record<string, unknown> {
     const iframe = document.createElement('iframe')
     const lifecycle = new PluginLifecycleCleanup()
-    return makeRisuaiAPIV3(iframe, plugin, lifecycle) as Record<string, unknown>
+    const instance: V3PluginInstance = {
+      name: plugin.name,
+      lifecycle,
+      generation: ensureV3Generation(),
+      active: true,
+    }
+    return makeRisuaiAPIV3(iframe, plugin, lifecycle, instance) as Record<string, unknown>
+  },
+  createTrackedApi(plugin: RisuPlugin): { api: Record<string, unknown>; instance: V3PluginInstance } {
+    const iframe = document.createElement('iframe')
+    const lifecycle = new PluginLifecycleCleanup()
+    const instance: V3PluginInstance = {
+      name: plugin.name,
+      lifecycle,
+      generation: ensureV3Generation(),
+      active: true,
+    }
+    const api = makeRisuaiAPIV3(iframe, plugin, lifecycle, instance) as Record<string, unknown>
+    v3PluginInstances.push(instance)
+    return { api, instance }
+  },
+  createApiForInstance(plugin: RisuPlugin, instance: V3PluginInstance): Record<string, unknown> {
+    const iframe = document.createElement('iframe')
+    return makeRisuaiAPIV3(iframe, plugin, instance.lifecycle, instance) as Record<string, unknown>
+  },
+  beginGeneration() {
+    return beginV3Generation()
+  },
+  unloadInstance(instance: V3PluginInstance) {
+    return unloadV3PluginInstance(instance)
   },
   registerProvider(
     pluginName: string,
@@ -1671,6 +1863,7 @@ export const __v3PluginLifecycleTestHooks = {
   ) {
     registerV3Provider({
       pluginName,
+      generation: activeV3Generation,
       name,
       handler,
       options,
@@ -1701,10 +1894,14 @@ globalThis.__debugV3Plugin = (code: string | Function, pluginName: string = '') 
     code = `(${code.toString()})()`
   }
   if (pluginName === '') {
-    return v3PluginInstances[0].host.executeInIframe(code)
+    const instance = v3PluginInstances[0]
+    if (!instance?.host) {
+      throw new Error('No V3 plugin is loaded.')
+    }
+    return instance.host.executeInIframe(code)
   }
   const instance = v3PluginInstances.find((p) => p.name === pluginName)
-  if (!instance) {
+  if (!instance?.host) {
     throw new Error(`Plugin ${pluginName} not found.`)
   }
   return instance.host.executeInIframe(code)

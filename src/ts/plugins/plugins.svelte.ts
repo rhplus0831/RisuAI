@@ -577,16 +577,30 @@ export async function importPlugin(
 
 let pluginTranslator = false
 
-export async function loadPlugins() {
-  console.log('Loading plugins...')
-  let db = getDatabase()
+let pluginLoadQueue: Promise<void> | null = null
+let pluginLoadQueued = false
 
-  const enabledPlugins = safeStructuredClone(db.plugins).filter((p: RisuPlugin) => p.enabled)
-  const pluginV2 = enabledPlugins.filter((a: RisuPlugin) => a.version === 2 || a.version === '2.1')
-  const pluginV3 = enabledPlugins.filter((a: RisuPlugin) => a.version === '3.0')
+async function runQueuedPluginLoads() {
+  while (pluginLoadQueued) {
+    pluginLoadQueued = false
+    console.log('Loading plugins...')
+    const db = getDatabase()
 
-  await loadV2Plugin(pluginV2)
-  await loadV3Plugins(pluginV3)
+    const enabledPlugins = safeStructuredClone(db.plugins ?? []).filter((p: RisuPlugin) => p.enabled)
+    const pluginV2 = enabledPlugins.filter((a: RisuPlugin) => a.version === 2 || a.version === '2.1')
+    const pluginV3 = enabledPlugins.filter((a: RisuPlugin) => a.version === '3.0')
+
+    await loadV2Plugin(pluginV2)
+    await loadV3Plugins(pluginV3)
+  }
+}
+
+export function loadPlugins(): Promise<void> {
+  pluginLoadQueued = true
+  pluginLoadQueue ??= runQueuedPluginLoads().finally(() => {
+    pluginLoadQueue = null
+  })
+  return pluginLoadQueue
 }
 
 export type PluginV2ProviderArgument = {

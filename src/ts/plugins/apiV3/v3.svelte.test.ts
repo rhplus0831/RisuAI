@@ -257,6 +257,7 @@ vi.mock('src/ts/server/projectionWriteGuard.svelte', () => ({
 
 import { customProviderStore, pluginV2 } from '../plugins.svelte'
 import { prepareCompatibleCharacterUpdateScoped } from 'src/ts/characterCommands'
+import { additionalFloatingActionButtons } from 'src/ts/stores.svelte'
 import {
   appendCurrentChatUserMessageForSend,
   prepareCompatibleChatUpdateScoped,
@@ -616,6 +617,95 @@ describe('V3 plugin lifecycle cleanup', () => {
     expect(pluginV2.providers.get('shared')).toBe(v2ReloadedHandler)
     expect(get(customProviderStore)).toEqual(['shared'])
     expect(customV3ProviderMetaStore).toHaveLength(0)
+  })
+
+  it('I-11: ignores stale provider registration after a newer V3 load', async () => {
+    const oldPlugin = seedV3Plugin('plugin-old')
+    const newPlugin = seedV3Plugin('plugin-new')
+
+    await loadV3Plugins([oldPlugin])
+    const oldInstance = getV3PluginInstance('plugin-old')
+    expect(oldInstance).toBeTruthy()
+    const oldApi = __v3PluginLifecycleTestHooks.createApiForInstance(oldPlugin, oldInstance as any) as any
+
+    await loadV3Plugins([newPlugin])
+    const newInstance = getV3PluginInstance('plugin-new')
+    expect(newInstance).toBeTruthy()
+    const newApi = __v3PluginLifecycleTestHooks.createApiForInstance(newPlugin, newInstance as any) as any
+    const newHandler = vi.fn(async () => ({ success: true, content: 'new' }))
+
+    newApi.addProvider('provider-new', newHandler)
+
+    expect(() =>
+      oldApi.addProvider(
+        'provider-old',
+        vi.fn(async () => ({ success: true, content: 'old' })),
+      ),
+    ).toThrow(/no longer active/)
+    expect(pluginV2.providers.has('provider-old')).toBe(false)
+    expect(pluginV2.providers.has('provider-new')).toBe(true)
+    expect(get(customProviderStore)).toEqual(['provider-new'])
+    expect(customV3ProviderMetaStore.map((model) => model.id)).toEqual(['pluginmodel:::provider-new'])
+  })
+
+  it('I-11: ignores stale custom UI registration after a newer V3 load', async () => {
+    const oldPlugin = seedV3Plugin('plugin-old')
+    const newPlugin = seedV3Plugin('plugin-new')
+
+    await loadV3Plugins([oldPlugin])
+    const oldInstance = getV3PluginInstance('plugin-old')
+    expect(oldInstance).toBeTruthy()
+    const oldApi = __v3PluginLifecycleTestHooks.createApiForInstance(oldPlugin, oldInstance as any) as any
+
+    await loadV3Plugins([newPlugin])
+    const newInstance = getV3PluginInstance('plugin-new')
+    expect(newInstance).toBeTruthy()
+    const newApi = __v3PluginLifecycleTestHooks.createApiForInstance(newPlugin, newInstance as any) as any
+
+    newApi.registerButton(
+      { name: 'New button', icon: '', iconType: 'none', location: 'action', id: 'shared-button' },
+      vi.fn(),
+    )
+
+    expect(() =>
+      oldApi.registerButton(
+        { name: 'Old late button', icon: '', iconType: 'none', location: 'action', id: 'old-late-button' },
+        vi.fn(),
+      ),
+    ).toThrow(/no longer active/)
+    expect(additionalFloatingActionButtons.map((button) => ({ id: button.id, name: button.name }))).toEqual([
+      { id: 'shared-button', name: 'New button' },
+    ])
+  })
+
+  it('I-11: delayed old menu cleanup does not remove a newer same-id button', async () => {
+    const oldPlugin = seedV3Plugin('plugin-shared')
+    const oldRuntime = __v3PluginLifecycleTestHooks.createTrackedApi(oldPlugin)
+    const oldApi = oldRuntime.api as any
+
+    oldApi.registerButton(
+      { name: 'Old button', icon: '', iconType: 'none', location: 'action', id: 'shared-button' },
+      vi.fn(),
+    )
+    expect(additionalFloatingActionButtons.map((button) => button.name)).toEqual(['Old button'])
+
+    __v3PluginLifecycleTestHooks.beginGeneration()
+    const newRuntime = __v3PluginLifecycleTestHooks.createTrackedApi(seedV3Plugin('plugin-shared'))
+    const newApi = newRuntime.api as any
+    newApi.registerButton(
+      { name: 'New button', icon: '', iconType: 'none', location: 'action', id: 'shared-button' },
+      vi.fn(),
+    )
+
+    await __v3PluginLifecycleTestHooks.unloadInstance(oldRuntime.instance)
+
+    expect(additionalFloatingActionButtons.map((button) => ({ id: button.id, name: button.name }))).toEqual([
+      { id: 'shared-button', name: 'New button' },
+    ])
+
+    await __v3PluginLifecycleTestHooks.unloadInstance(newRuntime.instance)
+
+    expect(additionalFloatingActionButtons).toHaveLength(0)
   })
 
   it('v4-L37: unload cleanup removes SafeElement document listeners exactly once', async () => {
