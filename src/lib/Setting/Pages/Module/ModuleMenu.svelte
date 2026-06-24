@@ -1,9 +1,101 @@
+<script lang="ts" module>
+  import type {
+    customscript as ModuleCustomScript,
+    loreBook as ModuleLoreBook,
+    triggerscript as ModuleTriggerScript,
+  } from 'src/ts/storage/database.svelte'
+  import {
+    type CCLorebook as ModuleCCLorebook,
+    convertExternalLorebook as convertExternalModuleLorebook,
+  } from 'src/ts/process/lorebook.svelte'
+  import type { RisuModule as ImportTargetRisuModule } from 'src/ts/process/modules'
+  import { DBState as ModuleImportDBState } from 'src/ts/stores.svelte'
+  import { replaceModuleLorebookCollectionDraft as replaceModuleLorebookImportDraft } from 'src/ts/server/lorebookBridge.svelte'
+  import { applyModuleScriptDefinitionDraft as applyModuleScriptDefinitionImportDraft } from 'src/ts/server/scriptDefinitionBridge.svelte'
+
+  export interface SelectedModuleImportFile {
+    data: Uint8Array
+  }
+
+  export function latestModuleForImport(
+    moduleId: string,
+    currentModule: ImportTargetRisuModule | null | undefined,
+  ): ImportTargetRisuModule | null {
+    return (
+      ModuleImportDBState.db.modules?.find((module) => module.id === moduleId) ??
+      (currentModule?.id === moduleId ? currentModule : null)
+    )
+  }
+
+  function latestModuleLorebook(
+    moduleId: string,
+    currentModule: ImportTargetRisuModule | null | undefined,
+  ): ModuleLoreBook[] {
+    const module = latestModuleForImport(moduleId, currentModule)
+    return Array.isArray(module?.lorebook) ? module.lorebook : []
+  }
+
+  function latestModuleRegex(
+    moduleId: string,
+    currentModule: ImportTargetRisuModule | null | undefined,
+  ): ModuleCustomScript[] {
+    const module = latestModuleForImport(moduleId, currentModule)
+    return Array.isArray(module?.regex) ? module.regex : []
+  }
+
+  function latestModuleTriggers(
+    moduleId: string,
+    currentModule: ImportTargetRisuModule | null | undefined,
+  ): ModuleTriggerScript[] {
+    const module = latestModuleForImport(moduleId, currentModule)
+    return Array.isArray(module?.trigger) ? module.trigger : []
+  }
+
+  export function parseImportedLorebookRows(files: readonly SelectedModuleImportFile[]): ModuleLoreBook[] {
+    const importedRows: ModuleLoreBook[] = []
+
+    for (const file of files) {
+      const importedLore = JSON.parse(Buffer.from(file.data).toString('utf-8'))
+      if (importedLore.type === 'risu' && Array.isArray(importedLore.data)) {
+        importedRows.push(...(importedLore.data as ModuleLoreBook[]))
+      } else if (importedLore.entries) {
+        const entries: { [key: string]: ModuleCCLorebook } = importedLore.entries
+        importedRows.push(...convertExternalModuleLorebook(entries))
+      }
+    }
+
+    return importedRows
+  }
+
+  export function applyImportedModuleLorebookRows(
+    moduleId: string | null | undefined,
+    currentModule: ImportTargetRisuModule | null | undefined,
+    importedRows: ModuleLoreBook[] | null | undefined,
+  ): boolean {
+    if (!moduleId || currentModule?.id !== moduleId || !importedRows || importedRows.length === 0) return false
+
+    const latestLorebook = latestModuleLorebook(moduleId, currentModule)
+    return replaceModuleLorebookImportDraft(moduleId, currentModule, [...latestLorebook, ...importedRows])
+  }
+
+  export function applyImportedModuleRegexRows(
+    moduleId: string | null | undefined,
+    currentModule: ImportTargetRisuModule | null | undefined,
+    importedRows: ModuleCustomScript[] | null | undefined,
+  ): boolean {
+    if (!moduleId || currentModule?.id !== moduleId || !importedRows || importedRows.length === 0) return false
+
+    const regex = [...latestModuleRegex(moduleId, currentModule), ...importedRows]
+    const trigger = latestModuleTriggers(moduleId, currentModule)
+    return applyModuleScriptDefinitionImportDraft(moduleId, currentModule, regex, trigger)
+  }
+</script>
+
 <script lang="ts">
   import { language } from 'src/lang'
   import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
   import type { customscript, loreBook, triggerscript } from 'src/ts/storage/database.svelte'
   import LoreBookList from 'src/lib/SideBars/LoreBook/LoreBookList.svelte'
-  import { type CCLorebook, convertExternalLorebook } from 'src/ts/process/lorebook.svelte'
   import type { RisuModule } from 'src/ts/process/modules'
   import { DownloadIcon, FolderPlusIcon, HardDriveUploadIcon, PlusIcon, TrashIcon } from '@lucide/svelte'
   import RegexList from 'src/lib/SideBars/Scripts/RegexList.svelte'
@@ -13,7 +105,7 @@
   import TextAreaInput from 'src/lib/UI/GUI/TextAreaInput.svelte'
   import { getFileSrc, saveAsset, downloadFile } from 'src/ts/globalApi.svelte'
   import { alertNormal, alertError } from 'src/ts/alert'
-  import { exportRegex, importRegex } from 'src/ts/process/scripts'
+  import { exportRegex, importRegexRows } from 'src/ts/process/scripts'
   import { selectMultipleFile } from 'src/ts/util'
 
   import { DBState } from 'src/ts/stores.svelte'
@@ -310,27 +402,32 @@
   }
 
   async function importLoreBook() {
-    let lore = [...(currentModule.lorebook ?? [])]
+    const moduleId = currentModule?.id
+    if (!moduleId) return
+
     const lorebook = await selectMultipleFile(['json', 'lorebook'])
-    if (!lorebook) {
-      return
-    }
+    if (currentModule?.id !== moduleId || !lorebook || lorebook.length === 0) return
+
     try {
-      for (const f of lorebook) {
-        const importedlore = JSON.parse(Buffer.from(f.data).toString('utf-8'))
-        if (importedlore.type === 'risu' && importedlore.data) {
-          const datas: loreBook[] = importedlore.data
-          for (const data of datas) {
-            lore.push(data)
-          }
-        } else if (importedlore.entries) {
-          const entries: { [key: string]: CCLorebook } = importedlore.entries
-          lore.push(...convertExternalLorebook(entries))
-        }
-      }
-      updateModuleLorebookCollection(lore)
+      const importedRows = parseImportedLorebookRows(lorebook)
+      if (currentModule?.id !== moduleId || importedRows.length === 0) return
+
+      applyImportedModuleLorebookRows(moduleId, currentModule, importedRows)
     } catch (error) {
       alertError(`${error}`)
+    }
+  }
+
+  async function importModuleRegex() {
+    const moduleId = currentModule?.id
+    if (!moduleId) return
+
+    const importedRows = await importRegexRows()
+    if (currentModule?.id !== moduleId || !importedRows || importedRows.length === 0) return
+
+    const applied = applyImportedModuleRegexRows(moduleId, currentModule, importedRows)
+    if (applied) {
+      moduleScriptDraftSnapshot = snapshotModuleScriptDraft(moduleId)
     }
   }
 
@@ -486,6 +583,7 @@
       <FolderPlusIcon />
     </button>
     <button
+      data-risu-module-action="import-lorebook"
       onclick={() => {
         importLoreBook()
       }}
@@ -514,11 +612,9 @@
         exportRegex(currentModule.regex)
       }}><DownloadIcon /></button>
     <button
+      data-risu-module-action="import-regex"
       class="font-medium cursor-pointer hover:text-green-500"
-      onclick={async () => {
-        const regex = await importRegex(currentModule.regex)
-        if (!updateModuleScriptDefinitions(regex, currentModule.trigger ?? [])) currentModule.regex = regex
-      }}><HardDriveUploadIcon /></button>
+      onclick={importModuleRegex}><HardDriveUploadIcon /></button>
   </div>
 {/if}
 

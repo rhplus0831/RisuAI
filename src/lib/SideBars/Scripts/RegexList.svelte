@@ -5,7 +5,7 @@
   import { sleep, sortableOptions } from 'src/ts/util'
   import { onDestroy, onMount } from 'svelte'
   import { DownloadIcon, HardDriveUploadIcon, PlusIcon } from '@lucide/svelte'
-  import { exportRegex, importRegex } from 'src/ts/process/scripts'
+  import { exportRegex, importRegexRows } from 'src/ts/process/scripts'
   interface Props {
     value?: customscript[]
     buttons?: boolean
@@ -108,7 +108,9 @@
     <button
       class="rounded-md text-textcolor2 hover:text-textcolor focus-within:text-textcolor"
       onclick={async () => {
-        value = await importRegex(value)
+        const importedRows = await importRegexRows()
+        if (!importedRows || importedRows.length === 0) return
+        value = [...value, ...importedRows]
       }}><HardDriveUploadIcon /></button>
   </div>
 {/if}

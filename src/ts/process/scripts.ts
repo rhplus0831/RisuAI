@@ -10,7 +10,7 @@ import {
 import { downloadFile } from '../globalApi.svelte'
 import { alertError, alertNormal } from '../alert'
 import { language } from 'src/lang'
-import { selectSingleFile } from '../util'
+import { selectSingleFile } from 'src/ts/util'
 import {
   assetRegex,
   type CbsConditions,
@@ -76,29 +76,48 @@ export function exportRegex(s?: customscript[]) {
   alertNormal(language.successExport)
 }
 
-export async function importRegex(o?: customscript[]): Promise<customscript[]> {
-  o = o ?? []
-  const filedata = (await selectSingleFile(['json'])).data
-  if (!filedata) {
-    return o
-  }
-  let db = getDatabase()
+type RegexImportFilePicker = typeof selectSingleFile
+
+export async function importRegexRows(
+  selectFile: RegexImportFilePicker = selectSingleFile,
+): Promise<customscript[] | null> {
+  let selected: Awaited<ReturnType<typeof selectSingleFile>>
   try {
+    selected = await selectFile(['json'])
+  } catch (error) {
+    alertError(error)
+    return null
+  }
+
+  if (!selected?.data) {
+    return null
+  }
+
+  try {
+    const filedata = selected.data
     const imported = JSON.parse(Buffer.from(filedata).toString('utf-8'))
-    if (imported.type === 'regex' && imported.data) {
-      const datas: customscript[] = imported.data
-      const script = o
-      for (const data of datas) {
-        script.push(data)
-      }
-      return o
-    } else {
-      alertError('File invaid or corrupted')
+    if (imported.type === 'regex' && Array.isArray(imported.data)) {
+      return imported.data as customscript[]
     }
+
+    alertError('File invaid or corrupted')
   } catch (error) {
     alertError(error)
   }
-  return o
+
+  return null
+}
+
+export async function importRegex(
+  o?: customscript[],
+  selectFile: RegexImportFilePicker = selectSingleFile,
+): Promise<customscript[]> {
+  const rows = await importRegexRows(selectFile)
+  if (!rows || rows.length === 0) {
+    return o ?? []
+  }
+
+  return [...(o ?? []), ...rows]
 }
 
 const BEST_MATCH_CACHE_LIMIT = 1000
