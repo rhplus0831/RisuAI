@@ -1728,9 +1728,8 @@
       class="flex items-center hover:text-blue-500 transition-colors button-icon-bookmark {isBookmarked
         ? 'text-yellow-400'
         : ''}"
-      onclick={async () => {
-        await sleep(1)
-        toggleBookmark()
+      onclick={() => {
+        void toggleBookmark()
       }}>
       <BookmarkIcon size={20} />
       {#if showNames}
@@ -1741,8 +1740,7 @@
 
   <button
     class="flex items-center hover:text-blue-500 transition-colors"
-    onclick={async () => {
-      await sleep(1)
+    onclick={() => {
       const previous = currentChatStateSnapshot()
       const currentChat =
         DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage]
@@ -1815,8 +1813,7 @@
 
   <button
     class="flex items-center hover:text-blue-500 transition-colors"
-    onclick={async () => {
-      await sleep(1)
+    onclick={() => {
       const currentMessage =
         DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message[idx]
       const previous = currentChatScopedSnapshot()
@@ -1849,8 +1846,7 @@
 
   <button
     class="flex items-center hover:text-blue-500 transition-colors"
-    onclick={async () => {
-      await sleep(1)
+    onclick={() => {
       const currentMessage =
         DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message[idx]
       const previous = currentChatScopedSnapshot()

@@ -231,6 +231,7 @@ vi.mock('src/ts/util', () => ({
 }))
 
 import Chat from './Chat.svelte'
+import PopupList from '../UI/PopupList.svelte'
 import {
   clearCustomHtmlTemplateMemo,
   getCustomHtmlTemplateMemoSize,
@@ -242,11 +243,17 @@ import {
   ReloadChatPointer,
   ReloadGUIPointer,
   SizeStore,
+  popupStore,
   selIdState,
   selectedCharID,
 } from '../../ts/stores.svelte'
 import { getCurrentCharacter, getCurrentChat } from '../../ts/storage/database.svelte'
-import { dispatchCompatibleChatUpdateScoped } from 'src/ts/chatCommands'
+import {
+  dispatchCompatibleChatUpdateScoped,
+  dispatchForkChat,
+  dispatchUpdateChatScoped,
+  dispatchUpdateMessageScoped,
+} from 'src/ts/chatCommands'
 import { setActiveMessageTranslations } from 'src/ts/server/messageTranslationJobs'
 
 type MountedComponent = Parameters<typeof unmount>[0]
@@ -277,6 +284,10 @@ function seedDatabase(messageCount: number, guiHTML = customHtmlMocks.templates.
   selIdState.selId = 0
   ReloadGUIPointer.set(0)
   ReloadChatPointer.set({})
+  popupStore.children = null
+  popupStore.openId = 0
+  popupStore.mouseX = 0
+  popupStore.mouseY = 0
   HideIconStore.set(false)
   SizeStore.set({ w: 900, h: 700 })
   DBState.db = {
@@ -378,6 +389,10 @@ function mountCustomHtmlRows(
   }
 }
 
+function mountPopupList() {
+  components.push(mount(PopupList, { target }) as MountedComponent)
+}
+
 async function settle() {
   flushSync()
   for (let i = 0; i < 6; i += 1) {
@@ -400,6 +415,11 @@ function buttonByText(text: string) {
   return Array.from(target.querySelectorAll<HTMLButtonElement>('button')).find((button) =>
     button.textContent?.includes(text),
   )
+}
+
+async function openMessageActions() {
+  target.querySelector<HTMLButtonElement>('.button-icon-menu')?.click()
+  await settle()
 }
 
 beforeEach(() => {
@@ -481,6 +501,10 @@ afterEach(() => {
   selIdState.selId = previousSelectedChar
   ReloadGUIPointer.set(previousReloadGui)
   ReloadChatPointer.set(previousReloadChat)
+  popupStore.children = null
+  popupStore.openId = 0
+  popupStore.mouseX = 0
+  popupStore.mouseY = 0
   setActiveMessageTranslations([])
   target.remove()
   document.body.innerHTML = ''
@@ -607,6 +631,119 @@ describe('customHTML rendered button trigger freshness', () => {
     expect(DBState.db.characters[0].chats[0].message[0].data).toBe('visible message 0')
     expect(DBState.db.characters[0].chats[1].message[0].data).toBe('other chat message')
     expect(dispatchCompatibleChatUpdateScoped).not.toHaveBeenCalled()
+  })
+})
+
+describe('message action target freshness', () => {
+  it('bookmarks the clicked message when the active chat switches before the prompt resolves', async () => {
+    const pendingName = deferred<string>()
+    customHtmlMocks.alertInput.mockReturnValueOnce(pendingName.promise)
+    seedDatabase(1, null as unknown as string)
+    DBState.db.enableBookmark = true
+    mountPopupList()
+    mountCustomHtmlRows(1)
+    await settle()
+
+    await openMessageActions()
+    target.querySelector<HTMLButtonElement>('.button-icon-bookmark')?.click()
+    DBState.db.characters[0].chatPage = 1
+    pendingName.resolve('Pinned original')
+    await settle()
+
+    expect(DBState.db.characters[0].chats[0].bookmarks).toEqual(['message-0'])
+    expect(DBState.db.characters[0].chats[0].bookmarkNames).toEqual({
+      'message-0': 'Pinned original',
+    })
+    expect(DBState.db.characters[0].chats[1].bookmarks).toEqual([])
+    expect(dispatchUpdateChatScoped).toHaveBeenCalledWith(
+      'custom-html-chat',
+      expect.objectContaining({
+        bookmarks: ['message-0'],
+        bookmarkNames: {
+          'message-0': 'Pinned original',
+        },
+      }),
+      expect.anything(),
+    )
+  })
+
+  it('branches from the clicked chat when the active chat switches immediately after the click', async () => {
+    seedDatabase(1, null as unknown as string)
+    mountPopupList()
+    mountCustomHtmlRows(1)
+    await settle()
+
+    await openMessageActions()
+    buttonByText('branch')?.click()
+    const otherChatIndex = DBState.db.characters[0].chats.findIndex((chat) => chat.id === 'custom-html-other-chat')
+    DBState.db.characters[0].chatPage = otherChatIndex
+    await settle()
+
+    const branchedChat = DBState.db.characters[0].chats.find((chat) =>
+      chat.message.some((message) => message.data.includes('{{specialcomment::branchedfrom::')),
+    )
+    expect(branchedChat?.name).toBe('Custom HTML Chat Branch')
+    expect(branchedChat?.message.at(-1)?.data).toContain(
+      '{{specialcomment::branchedfrom::custom-html-chat::Custom HTML Chat::message-0::}}',
+    )
+    expect(DBState.db.characters[0].chats.find((chat) => chat.id === 'custom-html-other-chat')?.message[0]).toEqual({
+      chatId: 'other-message-0',
+      data: 'other chat message',
+      role: 'char',
+    })
+    expect(dispatchForkChat).toHaveBeenCalledWith(
+      'custom-html-chat',
+      expect.anything(),
+      expect.objectContaining({
+        chat: expect.objectContaining({
+          name: 'Custom HTML Chat Branch',
+        }),
+      }),
+    )
+  })
+
+  it('disables the clicked message when the active chat switches immediately after the click', async () => {
+    seedDatabase(1, null as unknown as string)
+    mountPopupList()
+    mountCustomHtmlRows(1)
+    await settle()
+
+    await openMessageActions()
+    buttonByText('disableMessage')?.click()
+    DBState.db.characters[0].chatPage = 1
+    await settle()
+
+    expect(DBState.db.characters[0].chats[0].message[0].disabled).toBe(true)
+    expect(DBState.db.characters[0].chats[1].message[0].disabled).toBeUndefined()
+    expect(dispatchUpdateMessageScoped).toHaveBeenCalledWith(
+      'message-0',
+      {
+        disabled: true,
+      },
+      expect.anything(),
+    )
+  })
+
+  it('disables messages above the clicked message when the active chat switches immediately after the click', async () => {
+    seedDatabase(1, null as unknown as string)
+    mountPopupList()
+    mountCustomHtmlRows(1)
+    await settle()
+
+    await openMessageActions()
+    buttonByText('disableAbove')?.click()
+    DBState.db.characters[0].chatPage = 1
+    await settle()
+
+    expect(DBState.db.characters[0].chats[0].message[0].disabled).toBe('allBefore')
+    expect(DBState.db.characters[0].chats[1].message[0].disabled).toBeUndefined()
+    expect(dispatchUpdateMessageScoped).toHaveBeenCalledWith(
+      'message-0',
+      {
+        disabled: 'allBefore',
+      },
+      expect.anything(),
+    )
   })
 })
 
