@@ -13,6 +13,10 @@ const commandState = vi.hoisted(() => ({
   beforeBuild: null as (() => void) | null,
 }))
 
+const projectionGuardState = vi.hoisted(() => ({
+  epoch: 0,
+}))
+
 const commandMocks = vi.hoisted(() => ({
   canUseServerCommands: () => true,
   patchPromptSettingsCommand: vi.fn(async (args: Record<string, unknown>) => ({
@@ -58,6 +62,14 @@ const commandMocks = vi.hoisted(() => ({
     kind: 'reorderPromptItems',
     ...args,
   })),
+  updatePromptPresetCommand: vi.fn(async (args: Record<string, unknown>) => ({
+    kind: 'updatePromptPreset',
+    ...args,
+  })),
+  updateModelPresetCommand: vi.fn(async (args: Record<string, unknown>) => ({
+    kind: 'updateModelPreset',
+    ...args,
+  })),
   enablePromptItemsCommand: vi.fn(async (args: Record<string, unknown>) => ({
     kind: 'enablePromptItems',
     ...args,
@@ -101,9 +113,21 @@ vi.mock('./commands', () => commandMocks)
 vi.mock('src/ts/server/commands', () => commandMocks)
 
 vi.mock('./projectionWriteGuard.svelte', () => ({
+  getServerProjectionApplyEpoch: () => projectionGuardState.epoch,
+  withServerProjectionApply: (fn: () => unknown) => {
+    const result = fn()
+    projectionGuardState.epoch += 1
+    return result
+  },
   withTrustedServerProjectionWrite: (fn: () => unknown) => fn(),
 }))
 vi.mock('src/ts/server/projectionWriteGuard.svelte', () => ({
+  getServerProjectionApplyEpoch: () => projectionGuardState.epoch,
+  withServerProjectionApply: (fn: () => unknown) => {
+    const result = fn()
+    projectionGuardState.epoch += 1
+    return result
+  },
   withTrustedServerProjectionWrite: (fn: () => unknown) => fn(),
 }))
 
@@ -212,8 +236,93 @@ async function flushPromptItemDirtyTestState(draftItems: PromptItem[]): Promise<
   await Promise.resolve()
 }
 
+async function flushMicrotasks(): Promise<void> {
+  await Promise.resolve()
+  await Promise.resolve()
+  await Promise.resolve()
+}
+
+function seedPromptSettings(overrides: Record<string, unknown> = {}): void {
+  ;(DBState as { db: unknown }).db = {
+    promptTemplate: [],
+    promptSettings: { ...minimalPromptSettings },
+    customPromptTemplateToggle: 'server old',
+    templateDefaultVariables: '',
+    OAIPrediction: '',
+    autoSuggestPrompt: '',
+    systemContentReplacement: '',
+    systemRoleReplacement: 'user',
+    jsonSchemaEnabled: false,
+    outputImageModal: false,
+    strictJsonSchema: false,
+    fallbackModels: {
+      model: [],
+      memory: [],
+      translate: [],
+      emotion: [],
+      otherAx: [],
+      scriptMain: [],
+      scriptAux: [],
+    },
+    fallbackWhenBlankResponse: false,
+    doNotChangeFallbackModels: false,
+    ...overrides,
+  }
+}
+
+async function mountPromptSettingsComponent(target: HTMLElement): Promise<MountedComponent> {
+  const component = mount(PromptSettings, {
+    target,
+    props: { mode: 'inline', subMenu: 1 },
+  })
+  await tick()
+  await flushMicrotasks()
+  await tick()
+  return component
+}
+
+function promptSettingsTextarea(target: HTMLElement, index = 0): HTMLTextAreaElement {
+  const textarea = target.querySelectorAll<HTMLTextAreaElement>('textarea').item(index)
+  expect(textarea).toBeTruthy()
+  return textarea!
+}
+
+function promptSettingsTextInput(target: HTMLElement, index = 0): HTMLInputElement {
+  const input = target.querySelectorAll<HTMLInputElement>('input[type="text"]').item(index)
+  expect(input).toBeTruthy()
+  return input!
+}
+
+async function editPromptSettingsTextarea(target: HTMLElement, value: string, index = 0): Promise<void> {
+  const textarea = promptSettingsTextarea(target, index)
+  textarea.value = value
+  textarea.dispatchEvent(new Event('input', { bubbles: true }))
+  await tick()
+  await flushMicrotasks()
+  await tick()
+}
+
+async function editPromptSettingsTextInput(target: HTMLElement, value: string, index = 0): Promise<void> {
+  const input = promptSettingsTextInput(target, index)
+  input.value = value
+  input.dispatchEvent(new Event('input', { bubbles: true }))
+  await tick()
+  await flushMicrotasks()
+  await tick()
+}
+
+async function applyPromptSettingsProjection(apply: () => void): Promise<void> {
+  apply()
+  ;(DBState as { db: unknown }).db = { ...(DBState.db as unknown as Record<string, unknown>) }
+  projectionGuardState.epoch += 1
+  await tick()
+  await flushMicrotasks()
+  await tick()
+}
+
 beforeEach(() => {
   vi.useFakeTimers()
+  projectionGuardState.epoch = 0
   commandState.revision = 1
   commandState.commands.length = 0
   commandState.beforeBuild = null
@@ -223,6 +332,8 @@ beforeEach(() => {
   commandMocks.deletePromptItemCommand.mockClear()
   commandMocks.reorderPromptItemsCommand.mockClear()
   commandMocks.enablePromptItemsCommand.mockClear()
+  commandMocks.updatePromptPresetCommand.mockClear()
+  commandMocks.updateModelPresetCommand.mockClear()
   commandMocks.runServerCommand.mockClear()
   hydrationState.setHydrated(true)
   hydrationState.setOwner(null)
@@ -944,6 +1055,164 @@ describe('flushPendingPromptTemplatePatches', () => {
 
       await vi.advanceTimersByTimeAsync(300)
       expect(commandState.commands).toHaveLength(0)
+    } finally {
+      if (component) await unmount(component)
+      target.remove()
+    }
+  })
+
+  it('PromptSettings keeps a dirty prompt setting through a stale projection before debounce flush', async () => {
+    seedPromptSettings({ customPromptTemplateToggle: 'server old' })
+
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    let component: MountedComponent | null = null
+    try {
+      component = await mountPromptSettingsComponent(target)
+
+      await editPromptSettingsTextarea(target, 'local dirty')
+      expect(DBState.db.customPromptTemplateToggle).toBe('local dirty')
+
+      await applyPromptSettingsProjection(() => {
+        ;(DBState.db as unknown as Record<string, unknown>).customPromptTemplateToggle = 'stale server'
+      })
+
+      expect(promptSettingsTextarea(target).value).toBe('local dirty')
+      expect(DBState.db.customPromptTemplateToggle).toBe('local dirty')
+
+      await vi.advanceTimersByTimeAsync(250)
+      await flushMicrotasks()
+
+      expect(commandState.commands).toHaveLength(1)
+      expect(commandState.commands[0].built).toEqual({
+        kind: 'patchPromptSettings',
+        baseRevision: 1,
+        patch: { customPromptTemplateToggle: 'local dirty' },
+      })
+    } finally {
+      if (component) await unmount(component)
+      target.remove()
+    }
+  })
+
+  it('PromptSettings merges clean object subfields while preserving a dirty prompt setting field', async () => {
+    seedPromptSettings({
+      promptSettings: {
+        ...minimalPromptSettings,
+        postEndInnerFormat: 'server old',
+        sendName: false,
+      },
+    })
+
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    let component: MountedComponent | null = null
+    try {
+      component = await mountPromptSettingsComponent(target)
+
+      await editPromptSettingsTextInput(target, 'local format')
+
+      await applyPromptSettingsProjection(() => {
+        DBState.db.promptSettings = {
+          ...minimalPromptSettings,
+          postEndInnerFormat: 'stale format',
+          sendName: true,
+        }
+      })
+
+      expect(DBState.db.promptSettings).toMatchObject({
+        postEndInnerFormat: 'local format',
+        sendName: true,
+      })
+
+      await vi.advanceTimersByTimeAsync(250)
+      await flushMicrotasks()
+
+      expect(commandState.commands).toHaveLength(1)
+      expect(commandState.commands[0].built).toMatchObject({
+        kind: 'patchPromptSettings',
+        baseRevision: 1,
+        patch: {
+          promptSettings: {
+            postEndInnerFormat: 'local format',
+            sendName: true,
+          },
+        },
+      })
+    } finally {
+      if (component) await unmount(component)
+      target.remove()
+    }
+  })
+
+  it('PromptSettings clears dirty prompt setting state when projection catches up', async () => {
+    seedPromptSettings({ customPromptTemplateToggle: 'server old' })
+
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    let component: MountedComponent | null = null
+    try {
+      component = await mountPromptSettingsComponent(target)
+
+      await editPromptSettingsTextarea(target, 'local accepted')
+      expect(DBState.db.customPromptTemplateToggle).toBe('local accepted')
+
+      await applyPromptSettingsProjection(() => {
+        ;(DBState.db as unknown as Record<string, unknown>).customPromptTemplateToggle = 'local accepted'
+      })
+      await applyPromptSettingsProjection(() => {
+        ;(DBState.db as unknown as Record<string, unknown>).customPromptTemplateToggle = 'server later'
+      })
+
+      expect(promptSettingsTextarea(target).value).toBe('server later')
+      expect(DBState.db.customPromptTemplateToggle).toBe('server later')
+
+      await vi.advanceTimersByTimeAsync(250)
+      await flushMicrotasks()
+      expect(commandState.commands).toHaveLength(0)
+    } finally {
+      if (component) await unmount(component)
+      target.remove()
+    }
+  })
+
+  it('PromptSettings reasserts a stale projection only into the captured prompt preset owner', async () => {
+    seedPromptSettings({
+      customPromptTemplateToggle: 'server A',
+      promptPresetsId: 0,
+      promptPresets: [
+        { id: 'preset-a', name: 'Preset A', customPromptTemplateToggle: 'server A' },
+        { id: 'preset-b', name: 'Preset B', customPromptTemplateToggle: 'server B' },
+      ],
+    })
+
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    let component: MountedComponent | null = null
+    try {
+      component = await mountPromptSettingsComponent(target)
+
+      await editPromptSettingsTextarea(target, 'dirty A')
+      await flushMicrotasks()
+
+      expect(DBState.db.customPromptTemplateToggle).toBe('dirty A')
+      expect(DBState.db.promptPresets[0].customPromptTemplateToggle).toBe('dirty A')
+      expect(commandMocks.updatePromptPresetCommand).toHaveBeenCalledTimes(1)
+
+      await applyPromptSettingsProjection(() => {
+        DBState.db.promptPresetsId = 1
+        DBState.db.promptPresets = [
+          { id: 'preset-a', name: 'Preset A', customPromptTemplateToggle: 'stale A' },
+          { id: 'preset-b', name: 'Preset B', customPromptTemplateToggle: 'server B' },
+        ]
+        DBState.db.customPromptTemplateToggle = 'server B'
+      })
+
+      expect(DBState.db.promptPresets[0].customPromptTemplateToggle).toBe('dirty A')
+      expect(DBState.db.promptPresets[1].customPromptTemplateToggle).toBe('server B')
+      expect(DBState.db.customPromptTemplateToggle).toBe('server B')
+      expect(promptSettingsTextarea(target).value).toBe('server B')
+      expect(commandMocks.updatePromptPresetCommand).toHaveBeenCalledTimes(1)
     } finally {
       if (component) await unmount(component)
       target.remove()

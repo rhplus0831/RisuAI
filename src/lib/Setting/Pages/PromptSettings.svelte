@@ -23,20 +23,26 @@
   import { defaultAutoSuggestPrompt } from '../../../ts/storage/defaultPrompts'
   import { normalizePromptTemplateIds, promptTemplateIdsNeedNormalization } from 'src/ts/storage/database.svelte'
   import { watchServerBackedSettings } from 'src/ts/server/settingsBridge.svelte'
-  import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
   import {
+    getServerProjectionApplyEpoch,
+    withTrustedServerProjectionWrite,
+  } from 'src/ts/server/projectionWriteGuard.svelte'
+  import {
+    dropPendingPromptSettingsProjectionPatchKeys,
     flushPendingPromptTemplatePatches,
     queuePromptItemProjectionUpdate,
     queuePromptSettingsProjectionPatch,
     reconcilePromptTemplateDraft,
     resetPromptTemplateSelectionDirtyState,
     promptTemplateOwnerCommandId,
+    replacePendingPromptSettingsProjectionPatchValue,
     rollbackFailedPromptTemplateItemCreate,
     rollbackFailedPromptTemplateItemDelete,
     rollbackFailedPromptTemplateItemReorder,
     runPromptTemplateOwnerCommand,
     type PromptTemplateDraftBinding,
   } from 'src/ts/server/promptTemplateBridge.svelte'
+  import { mergeProjectionIntoDirtyDraft } from 'src/ts/server/staleStateGuards'
   import {
     currentPromptTemplateOwnerId,
     ensurePromptTemplateHydrated,
@@ -58,7 +64,11 @@
     currentPromptPresetModelOverrideValue,
     mirrorPromptPresetModelOverrideField,
   } from 'src/ts/promptPresetModelOverrides.svelte'
-  import { promptPresetModelOverrideFieldForDatabaseKey } from 'src/ts/presetSplit'
+  import {
+    modelPresetFieldForDatabaseKey,
+    PROMPT_PRESET_FIELDS,
+    promptPresetModelOverrideFieldForDatabaseKey,
+  } from 'src/ts/presetSplit'
 
   const stopServerSettingsWatch = watchServerBackedSettings(['showUnrecommended'])
   onDestroy(stopServerSettingsWatch)
@@ -72,6 +82,15 @@
   let openedItemIndices = $state(new Set<number>())
   type FallbackModelKey = 'model' | 'memory' | 'translate' | 'emotion' | 'otherAx' | 'scriptMain' | 'scriptAux'
   type FallbackModelsDraft = Record<FallbackModelKey, string[]>
+  type PromptSettingOwnerContext =
+    | { kind: 'top-level'; key: string }
+    | { kind: 'prompt-preset'; key: string; presetField: string; presetId: string }
+    | { kind: 'model-preset'; key: string; presetField: string; presetId: string }
+  interface PromptSettingDirtyState<T> {
+    owner: PromptSettingOwnerContext
+    attempted: T
+    dirtyFields: Set<string> | null
+  }
   interface Props {
     onGoBack?: () => void
     mode?: 'independent' | 'inline'
@@ -79,6 +98,8 @@
     promptPresetModelOverrideMode?: boolean
     showPromptModelOverrideFields?: boolean
   }
+
+  const promptPresetFieldSet = new Set<string>(PROMPT_PRESET_FIELDS)
 
   let {
     onGoBack = () => {},
@@ -150,9 +171,30 @@
     return snapshot === undefined ? '__undefined__' : snapshot
   }
 
+  function isJsonRecord(value: unknown): value is Record<string, unknown> {
+    return !!value && typeof value === 'object' && !Array.isArray(value)
+  }
+
   function selectedPromptPresetIndex(): number {
     const selectedIndex = DBState.db.promptPresetsId
     return Number.isInteger(selectedIndex) && selectedIndex >= 0 ? selectedIndex : -1
+  }
+
+  function selectedModelPresetIndex(): number {
+    const selectedIndex = DBState.db.modelPresetsId
+    return Number.isInteger(selectedIndex) && selectedIndex >= 0 ? selectedIndex : -1
+  }
+
+  function selectedPromptPresetId(): string | null {
+    const selectedIndex = selectedPromptPresetIndex()
+    const selectedId = selectedIndex >= 0 ? (DBState.db.promptPresets?.[selectedIndex]?.id as unknown) : undefined
+    return typeof selectedId === 'string' && selectedId.length > 0 ? selectedId : null
+  }
+
+  function selectedModelPresetId(): string | null {
+    const selectedIndex = selectedModelPresetIndex()
+    const selectedId = selectedIndex >= 0 ? (DBState.db.modelPresets?.[selectedIndex]?.id as unknown) : undefined
+    return typeof selectedId === 'string' && selectedId.length > 0 ? selectedId : null
   }
 
   function selectedPromptPreset(): Record<string, unknown> | undefined {
@@ -399,15 +441,43 @@
     let initialized = false
     let suppressDraftDispatch = false
     let previousServerSnapshot = snapshotJson(initialValue)
+    let previousProjectionApplyEpoch = getServerProjectionApplyEpoch()
     let previousDraftDispatchSnapshot = snapshotJson(initialValue)
+    const dirtyStates = new Map<string, PromptSettingDirtyState<T>>()
 
     $effect(() => {
-      const serverValue = currentPromptSettingValue(key, fallback)
-      const serverSnapshot = snapshotJson(serverValue)
+      const projectionApplyEpoch = getServerProjectionApplyEpoch()
+      const projectionApplyChanged = projectionApplyEpoch !== previousProjectionApplyEpoch
+      let serverValue = currentPromptSettingValue(key, fallback)
+      let serverSnapshot = snapshotJson(serverValue)
       const draftSnapshot = snapshotJson(draft.value)
+      const currentOwnerKey = promptSettingOwnerStateKey(resolvePromptSettingOwnerForEdit(key))
+
+      if (projectionApplyChanged && dirtyStates.size > 0) {
+        suppressDraftDispatch = true
+        reconcileDirtyPromptSettingProjection(key, fallback, dirtyStates)
+
+        serverValue = currentPromptSettingValue(key, fallback)
+        serverSnapshot = snapshotJson(serverValue)
+
+        const currentDirty = dirtyStates.get(currentOwnerKey)
+        const nextDraft = currentDirty ? cloneJsonValue(currentDirty.attempted) : cloneJsonValue(serverValue)
+        const nextDraftSnapshot = snapshotJson(nextDraft)
+        previousDraftDispatchSnapshot = nextDraftSnapshot
+        if (nextDraftSnapshot !== draftSnapshot) {
+          draft.value = nextDraft
+        }
+        queueMicrotask(() => {
+          suppressDraftDispatch = false
+        })
+        previousProjectionApplyEpoch = projectionApplyEpoch
+        previousServerSnapshot = currentDirty ? snapshotJson(currentDirty.attempted) : serverSnapshot
+        return
+      }
 
       if (serverSnapshot !== previousServerSnapshot && serverSnapshot !== draftSnapshot) {
         suppressDraftDispatch = true
+        dirtyStates.delete(currentOwnerKey)
         previousDraftDispatchSnapshot = serverSnapshot
         draft.value = cloneJsonValue(serverValue)
         queueMicrotask(() => {
@@ -415,6 +485,7 @@
         })
       }
 
+      previousProjectionApplyEpoch = projectionApplyEpoch
       previousServerSnapshot = serverSnapshot
     })
 
@@ -434,7 +505,14 @@
 
       untrack(() => {
         const attempted = cloneJsonValue(draft.value)
-        const previous = cloneJsonValue((DBState.db as unknown as Record<string, unknown>)[key])
+        const previousSetting = cloneJsonValue(currentPromptSettingValue(key, fallback))
+        const previousProjection = cloneJsonValue((DBState.db as unknown as Record<string, unknown>)[key])
+        const owner = resolvePromptSettingOwnerForEdit(key)
+        dirtyStates.set(promptSettingOwnerStateKey(owner), {
+          owner,
+          attempted,
+          dirtyFields: dirtyPromptSettingObjectFields(previousSetting, attempted),
+        })
         withTrustedServerProjectionWrite(() => {
           // Re-read inside the trusted write to get the mutable projection.
           const target = DBState.db as unknown as Record<string, unknown>
@@ -444,13 +522,184 @@
           ? mirrorPromptPresetModelOverrideField(key, attempted)
           : mirrorTopLevelPresetField(key, attempted)
         if (!mirroredToPreset) {
-          queuePromptSettingsPatch({ [key]: attempted }, { [key]: previous })
+          queuePromptSettingsPatch({ [key]: attempted }, { [key]: previousProjection })
         }
         previousServerSnapshot = snapshot
       })
     })
 
     return draft
+  }
+
+  function reconcileDirtyPromptSettingProjection<T>(
+    key: string,
+    fallback: T,
+    dirtyStates: Map<string, PromptSettingDirtyState<T>>,
+  ): void {
+    for (const [dirtyKey, dirtyState] of Array.from(dirtyStates.entries())) {
+      const ownerProjection = readPromptSettingOwnerValue<T>(dirtyState.owner, key, fallback)
+      if (!ownerProjection.exists) {
+        dirtyStates.delete(dirtyKey)
+        continue
+      }
+
+      if (snapshotJson(ownerProjection.value) === snapshotJson(dirtyState.attempted)) {
+        dirtyStates.delete(dirtyKey)
+        if (dirtyState.owner.kind === 'top-level') {
+          dropPendingPromptSettingsProjectionPatchKeys([key])
+        }
+        continue
+      }
+
+      dirtyState.attempted = mergePromptSettingProjectionValue(ownerProjection.value, dirtyState)
+      if (!reassertPromptSettingOwnerValue(key, dirtyState.attempted, dirtyState.owner)) {
+        dirtyStates.delete(dirtyKey)
+      } else if (dirtyState.owner.kind === 'top-level') {
+        replacePendingPromptSettingsProjectionPatchValue(key, dirtyState.attempted)
+      }
+    }
+  }
+
+  function mergePromptSettingProjectionValue<T>(projectionValue: T, dirtyState: PromptSettingDirtyState<T>): T {
+    if (dirtyState.dirtyFields && isJsonRecord(dirtyState.attempted) && isJsonRecord(projectionValue)) {
+      return mergeProjectionIntoDirtyDraft({
+        draft: cloneJsonValue(dirtyState.attempted),
+        projection: projectionValue,
+        dirtyFields: dirtyState.dirtyFields,
+      }) as T
+    }
+    return cloneJsonValue(dirtyState.attempted)
+  }
+
+  function dirtyPromptSettingObjectFields(previous: unknown, attempted: unknown): Set<string> | null {
+    if (!isJsonRecord(previous) || !isJsonRecord(attempted)) return null
+
+    const dirtyFields = new Set<string>()
+    const keys = new Set([...Object.keys(previous), ...Object.keys(attempted)])
+    for (const field of keys) {
+      if (snapshotJson(previous[field]) !== snapshotJson(attempted[field])) {
+        dirtyFields.add(field)
+      }
+    }
+
+    return dirtyFields
+  }
+
+  function promptSettingOwnerStateKey(owner: PromptSettingOwnerContext): string {
+    if (owner.kind === 'top-level') return `top-level:${owner.key}`
+    return `${owner.kind}:${owner.presetId}:${owner.presetField}:${owner.key}`
+  }
+
+  function resolvePromptSettingOwnerForEdit(key: string): PromptSettingOwnerContext {
+    const promptPresetField = promptPresetOwnerFieldForKey(key)
+    if (promptPresetField) {
+      const presetId = selectedPromptPresetId()
+      if (presetId) {
+        return {
+          kind: 'prompt-preset',
+          key,
+          presetField: promptPresetField,
+          presetId,
+        }
+      }
+      return { kind: 'top-level', key }
+    }
+
+    if (!usePromptPresetModelOverrideForKey(key)) {
+      const modelPresetField = modelPresetFieldForDatabaseKey(key)
+      const presetId = modelPresetField ? selectedModelPresetId() : null
+      if (modelPresetField && presetId) {
+        return {
+          kind: 'model-preset',
+          key,
+          presetField: modelPresetField,
+          presetId,
+        }
+      }
+    }
+
+    return { kind: 'top-level', key }
+  }
+
+  function promptPresetOwnerFieldForKey(key: string): string | null {
+    if (usePromptPresetModelOverrideForKey(key)) {
+      return promptPresetModelOverrideFieldForDatabaseKey(key)
+    }
+    if (key === 'promptTemplate') return null
+    return promptPresetFieldSet.has(key) ? key : null
+  }
+
+  function readPromptSettingOwnerValue<T>(
+    owner: PromptSettingOwnerContext,
+    key: string,
+    fallback: T,
+  ): { exists: boolean; value: T } {
+    if (owner.kind === 'top-level') {
+      const target = DBState.db as unknown as Record<string, unknown> | undefined
+      const value = target?.[key]
+      return { exists: true, value: value === undefined ? fallback : (value as T) }
+    }
+
+    const ownerRecord =
+      owner.kind === 'prompt-preset' ? promptPresetById(owner.presetId) : modelPresetById(owner.presetId)
+    if (!ownerRecord) return { exists: false, value: fallback }
+
+    const value = ownerRecord[owner.presetField]
+    return { exists: true, value: value === undefined ? fallback : (value as T) }
+  }
+
+  function reassertPromptSettingOwnerValue<T>(key: string, value: T, owner: PromptSettingOwnerContext): boolean {
+    let reasserted = false
+    withTrustedServerProjectionWrite(() => {
+      const target = DBState.db as unknown as Record<string, unknown>
+      if (owner.kind === 'top-level') {
+        target[key] = cloneJsonValue(value)
+        reasserted = true
+        return
+      }
+
+      if (owner.kind === 'prompt-preset') {
+        const presetIndex = promptPresetIndexById(owner.presetId)
+        const preset = presetIndex >= 0 ? (DBState.db.promptPresets?.[presetIndex] as Record<string, unknown>) : null
+        if (!preset) return
+
+        preset[owner.presetField] = cloneJsonValue(value)
+        if (DBState.db.promptPresetsId === presetIndex) {
+          target[key] = cloneJsonValue(value)
+        }
+        reasserted = true
+        return
+      }
+
+      const presetIndex = modelPresetIndexById(owner.presetId)
+      const preset = presetIndex >= 0 ? (DBState.db.modelPresets?.[presetIndex] as Record<string, unknown>) : null
+      if (!preset) return
+
+      preset[owner.presetField] = cloneJsonValue(value)
+      if (DBState.db.modelPresetsId === presetIndex) {
+        target[key] = cloneJsonValue(value)
+      }
+      reasserted = true
+    })
+    return reasserted
+  }
+
+  function promptPresetById(presetId: string): Record<string, unknown> | null {
+    const index = promptPresetIndexById(presetId)
+    return index >= 0 ? ((DBState.db.promptPresets?.[index] as Record<string, unknown> | undefined) ?? null) : null
+  }
+
+  function modelPresetById(presetId: string): Record<string, unknown> | null {
+    const index = modelPresetIndexById(presetId)
+    return index >= 0 ? ((DBState.db.modelPresets?.[index] as Record<string, unknown> | undefined) ?? null) : null
+  }
+
+  function promptPresetIndexById(presetId: string): number {
+    return DBState.db.promptPresets?.findIndex((preset) => preset?.id === presetId) ?? -1
+  }
+
+  function modelPresetIndexById(presetId: string): number {
+    return DBState.db.modelPresets?.findIndex((preset) => preset?.id === presetId) ?? -1
   }
 
   function currentPromptSettingValue<T>(key: string, fallback: T): T {

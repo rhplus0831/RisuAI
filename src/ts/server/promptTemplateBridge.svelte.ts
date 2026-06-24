@@ -254,6 +254,39 @@ export function queuePromptSettingsProjectionPatch(patch: SettingsPatch, previou
   }, delayMs)
 }
 
+export function dropPendingPromptSettingsProjectionPatchKeys(keys: readonly string[]): void {
+  let dropped = false
+  for (const key of keys) {
+    if (
+      key in pendingPromptSettingsPatch.patch ||
+      key in pendingPromptSettingsPatch.previous ||
+      key in pendingPromptSettingsPatch.attempted
+    ) {
+      dropped = true
+    }
+    delete pendingPromptSettingsPatch.patch[key]
+    delete pendingPromptSettingsPatch.previous[key]
+    delete pendingPromptSettingsPatch.attempted[key]
+  }
+
+  if (dropped && pendingPromptSettingsPatch.timer && Object.keys(pendingPromptSettingsPatch.patch).length === 0) {
+    clearTimeout(pendingPromptSettingsPatch.timer)
+    pendingPromptSettingsPatch.timer = null
+  }
+}
+
+export function replacePendingPromptSettingsProjectionPatchValue(key: string, value: unknown): void {
+  if (!(key in pendingPromptSettingsPatch.patch)) return
+
+  if (snapshotJson(value) === snapshotJson(pendingPromptSettingsPatch.previous[key])) {
+    dropPendingPromptSettingsProjectionPatchKeys([key])
+    return
+  }
+
+  pendingPromptSettingsPatch.patch[key] = value
+  pendingPromptSettingsPatch.attempted[key] = value
+}
+
 export function flushPendingPromptTemplatePatches(options: ServerCommandTransportOptions = {}): void {
   for (const pendingKey of Array.from(pendingPromptItemUpdates.keys())) {
     runPendingPromptItemUpdate(pendingKey, options)
