@@ -1,7 +1,7 @@
 <script lang="ts">
   import { type loreBook } from 'src/ts/storage/database.svelte'
   import { DBState } from 'src/ts/stores.svelte'
-  import LoreBookData from './LoreBookData.svelte'
+  import LoreBookData, { type LorebookDeletionTarget } from './LoreBookData.svelte'
   import { selectedCharID } from 'src/ts/stores.svelte'
   import Sortable from 'sortablejs/modular/sortable.core.esm.js'
   import { onDestroy, onMount, tick } from 'svelte'
@@ -62,6 +62,94 @@
 
   function updateExternalLoreValue(index: number, value: loreBook): void {
     onEntryChange(index, value)
+  }
+
+  interface LorebookDeletionResolution {
+    nextEntries: loreBook[]
+    removedEntries: loreBook[]
+  }
+
+  function stableEntryId(entry: { id?: string } | undefined): string | null {
+    return typeof entry?.id === 'string' && entry.id.trim() ? entry.id : null
+  }
+
+  function snapshotJson(value: unknown): string {
+    const snapshot = JSON.stringify(value)
+    return snapshot === undefined ? '__undefined__' : snapshot
+  }
+
+  function snapshotsMatch(entry: loreBook | undefined, snapshot: loreBook): boolean {
+    return Boolean(entry) && snapshotJson(entry) === snapshotJson(snapshot)
+  }
+
+  function resolveLorebookDeletionIndex(entries: loreBook[], target: LorebookDeletionTarget): number {
+    const targetId = stableEntryId(target)
+    if (targetId) {
+      return entries.findIndex((entry) => stableEntryId(entry) === targetId)
+    }
+
+    if (target.mode === 'folder') {
+      const folderKey = target.folderKey ?? ''
+      const matchingFolderIndexes = entries.reduce<number[]>((matches, entry, index) => {
+        if (entry.mode === 'folder' && entry.key === folderKey) {
+          matches.push(index)
+        }
+        return matches
+      }, [])
+      if (matchingFolderIndexes.length === 1) {
+        return matchingFolderIndexes[0]
+      }
+    }
+
+    return snapshotsMatch(entries[target.index], target.snapshot) ? target.index : -1
+  }
+
+  function resolveLorebookDeletion(
+    latestEntries: loreBook[] | undefined,
+    target: LorebookDeletionTarget,
+  ): LorebookDeletionResolution | null {
+    const entries = latestEntries ?? []
+    const resolvedIndex = resolveLorebookDeletionIndex(entries, target)
+    if (resolvedIndex < 0) return null
+
+    const resolvedEntry = entries[resolvedIndex]
+    if (!resolvedEntry) return null
+    if (target.mode === 'folder' && resolvedEntry.mode !== 'folder') return null
+    if (target.mode !== 'folder' && resolvedEntry.mode === 'folder') return null
+
+    if (target.mode === 'folder') {
+      const resolvedFolderKey = resolvedEntry.key ?? ''
+      const removedEntries = entries.filter(
+        (entry, index) => index === resolvedIndex || entry.folder === resolvedFolderKey,
+      )
+      const nextEntries = entries.filter(
+        (entry, index) => index !== resolvedIndex && entry.folder !== resolvedFolderKey,
+      )
+      return { nextEntries, removedEntries }
+    }
+
+    const nextEntries = [...entries]
+    const removedEntries = nextEntries.splice(resolvedIndex, 1)
+    return { nextEntries, removedEntries }
+  }
+
+  function closeRemovedLorebookRefs(removedEntries: loreBook[]): void {
+    for (const entry of removedEntries) {
+      if (!openedRefs.has(entry)) continue
+      onClose(entry.mode !== 'folder', entry)
+    }
+  }
+
+  function removeLorebookTarget(
+    latestEntries: loreBook[] | undefined,
+    target: LorebookDeletionTarget,
+    updateCollection: (entries: loreBook[]) => void,
+  ): void {
+    const resolution = resolveLorebookDeletion(latestEntries, target)
+    if (!resolution) return
+
+    closeRemovedLorebookRefs(resolution.removedEntries)
+    updateCollection(resolution.nextEntries)
   }
 
   function updateCharacterGlobalLoreValue(index: number, value: loreBook): void {
@@ -393,33 +481,7 @@
               isOpen={openedRefs.has(book)}
               openFolders={openFolders()}
               isLastInContainer={book === lastVisibleItem}
-              onRemove={() => {
-                if (openedRefs.has(book) && !book.folder) {
-                  onClose(true, book)
-                } else if (openedRefs.has(book) && book.folder) {
-                  onClose(false, book)
-                }
-
-                let lore = [...externalLoreBooks]
-
-                // When deleting a folder, also delete all items that belong to that folder
-                if (book.mode === 'folder') {
-                  // Close items belonging to the folder if they are open
-                  lore.forEach((item) => {
-                    if (item.folder === book.key && openedRefs.has(item)) {
-                      onClose(true, item)
-                    }
-                  })
-
-                  // Filter out the folder and all items belonging to it
-                  lore = lore.filter((item) => item !== book && item.folder !== book.key)
-                } else {
-                  // Delete regular item
-                  lore.splice(i, 1)
-                }
-
-                updateExternalCollection(lore)
-              }}
+              onRemove={(target) => removeLorebookTarget(externalLoreBooks, target, updateExternalCollection)}
               onOpen={(isDetail = true) => onOpen(isDetail, book)}
               onClose={(isDetail = true) => onClose(isDetail, book)}
               {externalLoreBooks}
@@ -451,33 +513,12 @@
               isOpen={openedRefs.has(book)}
               openFolders={openFolders()}
               isLastInContainer={book === lastVisibleItem}
-              onRemove={() => {
-                if (openedRefs.has(book) && !book.folder) {
-                  onClose(true, book)
-                } else if (openedRefs.has(book) && book.folder) {
-                  onClose(false, book)
-                }
-
-                let lore = [...DBState.db.characters[$selectedCharID].globalLore]
-
-                // When deleting a folder, also delete all items that belong to that folder
-                if (book.mode === 'folder') {
-                  // Close items belonging to the folder if they are open
-                  lore.forEach((item) => {
-                    if (item.folder === book.key && openedRefs.has(item)) {
-                      onClose(true, item)
-                    }
-                  })
-
-                  // Filter out the folder and all items belonging to it
-                  lore = lore.filter((item) => item !== book && item.folder !== book.key)
-                } else {
-                  // Delete regular item
-                  lore.splice(i, 1)
-                }
-
-                updateCharacterGlobalLoreCollection(lore)
-              }}
+              onRemove={(target) =>
+                removeLorebookTarget(
+                  DBState.db.characters[$selectedCharID].globalLore,
+                  target,
+                  updateCharacterGlobalLoreCollection,
+                )}
               onOpen={(isDetail = true) => onOpen(isDetail, book)}
               onClose={(isDetail = true) => onClose(isDetail, book)}
               {lorePlus}
@@ -511,36 +552,13 @@
               isOpen={openedRefs.has(book)}
               openFolders={openFolders()}
               isLastInContainer={book === lastVisibleItem}
-              onRemove={() => {
-                if (openedRefs.has(book) && !book.folder) {
-                  onClose(true, book)
-                } else if (openedRefs.has(book) && book.folder) {
-                  onClose(false, book)
-                }
-
-                let lore = [
-                  ...DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage]
+              onRemove={(target) =>
+                removeLorebookTarget(
+                  DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage]
                     .localLore,
-                ]
-
-                // When deleting a folder, also delete all items that belong to that folder
-                if (book.mode === 'folder') {
-                  // Close items belonging to the folder if they are open
-                  lore.forEach((item) => {
-                    if (item.folder === book.key && openedRefs.has(item)) {
-                      onClose(true, item)
-                    }
-                  })
-
-                  // Filter out the folder and all items belonging to it
-                  lore = lore.filter((item) => item !== book && item.folder !== book.key)
-                } else {
-                  // Delete regular item
-                  lore.splice(i, 1)
-                }
-
-                updateChatLoreCollection(lore)
-              }}
+                  target,
+                  updateChatLoreCollection,
+                )}
               onOpen={(isDetail = true) => onOpen(isDetail, book)}
               onClose={(isDetail = true) => onClose(isDetail, book)}
               {lorePlus}

@@ -26,8 +26,8 @@ This document tracks remediation of the Confirmed Issues and Risks To Harden in
 | I-05 | Character/media uploads | Fixed | complete | complete | passed | `b93095edd fix: issue upload tokens before file reads` | Upload tokens now start in picker callbacks; verifier fixed read-rejection cleanup and passed focused race tests. |
 | I-06 | Prompt settings | Fixed | complete | complete | passed | `5f02a8d59 fix: preserve dirty prompt settings across projection` | Dirty/owner-aware prompt settings drafts now reassert stale projections before debounce flush; verifier passed focused tests/typecheck. |
 | I-07 | Active chat generation settings | Fixed | complete | complete | passed | `f1f998f03 fix: guard chat generation modals by target` | Captured active-chat targets through reset/input/picker flows; verifier passed focused stale-target tests. |
-| I-08 | Bundle/local-backup import | Fixed | complete | complete | passed | `fix: stage bundle assets until import commit` | Bundle assets are staged until DB decode/import succeeds; verifier passed route tests and strict server typecheck. |
-| I-09 | Lorebook UI | Pending |  |  |  |  | Delete latest row by stable id/key after delayed confirmation. |
+| I-08 | Bundle/local-backup import | Fixed | complete | complete | passed | `019cd24eb fix: stage bundle assets until import commit` | Bundle assets are staged until DB decode/import succeeds; verifier passed route tests and strict server typecheck. |
+| I-09 | Lorebook UI | Fixed | complete | complete | passed | `fix: resolve lorebook deletes after confirmation` | Delete confirmations now resolve latest row by stable target; verifier passed focused tests and `pnpm check`. |
 | I-10 | Module imports | Pending |  |  |  |  | Merge imports into latest target after delayed picker and handle cancel. |
 | I-11 | Plugins/custom UI | Pending |  |  |  |  | Generation-guard overlapping plugin V3/custom UI loads. |
 | I-12 | Plugin/MCP rollback | Pending |  |  |  |  | Make rollback attempted-value aware. |

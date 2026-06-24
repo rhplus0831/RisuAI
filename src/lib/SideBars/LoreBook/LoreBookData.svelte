@@ -1,3 +1,15 @@
+<script lang="ts" module>
+  import type { loreBook as LoreBookEntry } from '../../../ts/storage/database.svelte'
+
+  export interface LorebookDeletionTarget {
+    id?: string
+    mode: LoreBookEntry['mode']
+    folderKey?: string
+    index: number
+    snapshot: LoreBookEntry
+  }
+</script>
+
 <script lang="ts">
   import { XIcon, LinkIcon, SunIcon, BookCopyIcon, FolderIcon, FolderOpen, PlusIcon } from '@lucide/svelte'
   import { language } from '../../../lang'
@@ -25,7 +37,7 @@
 
   interface Props {
     value: loreBook
-    onRemove?: () => void
+    onRemove?: (target: LorebookDeletionTarget) => void
     onClose?: (isDetail?: boolean) => void
     onOpen?: (isDetail?: boolean) => void
     lorePlus?: boolean
@@ -186,6 +198,18 @@
     return JSON.parse(JSON.stringify(value)) as T
   }
 
+  function captureDeletionTarget(): LorebookDeletionTarget {
+    const snapshot = cloneJsonValue(draft)
+    const id = typeof snapshot.id === 'string' && snapshot.id.trim() ? snapshot.id : undefined
+    return {
+      id,
+      mode: snapshot.mode,
+      folderKey: snapshot.mode === 'folder' ? (snapshot.key ?? '') : undefined,
+      index: idx,
+      snapshot,
+    }
+  }
+
   async function getTokens(data: string, cacheId: string) {
     const cacheKey = `${cacheId}:${data}`
     const cached = tokenCountCache.get(cacheKey)
@@ -235,6 +259,11 @@
       : 'pb-2 mb-2 border-b border-b-selected last:pb-0 last:mb-0 last:border-0')}
   class:no-sort={draft.mode === 'folder' && openFolders > 0}
   data-risu-idx={idx}
+  data-risu-lorebook-row="true"
+  data-risu-lorebook-id={draft.id ?? ''}
+  data-risu-lorebook-mode={draft.mode}
+  data-risu-lorebook-folder={draft.folder ?? ''}
+  data-risu-lorebook-key={draft.key ?? ''}
   data-risu-idgroup={idgroup}>
   <div class="flex items-center transition-colors w-full p-1">
     {#if draft.mode !== 'child'}
@@ -287,8 +316,9 @@
       <button
         class="valuer"
         onclick={async () => {
+          const target = captureDeletionTarget()
           let shouldRemove = true
-          if (draft.mode === 'folder' && (externalLoreBooks ?? []).some((e) => e.folder === draft.key)) {
+          if (target.mode === 'folder' && (externalLoreBooks ?? []).some((e) => e.folder === target.folderKey)) {
             const firstConfirm = await alertConfirm(language.folderRemoveConfirm)
             if (!firstConfirm) {
               shouldRemove = false
@@ -296,16 +326,19 @@
           }
 
           if (shouldRemove) {
-            const secondConfirm = await alertConfirm(language.removeConfirm + (draft.comment || 'Unnamed Folder'))
+            const secondConfirm = await alertConfirm(
+              language.removeConfirm + (target.snapshot.comment || 'Unnamed Folder'),
+            )
             if (secondConfirm) {
               if (!open) {
                 onClose()
               }
-              deactivateLocally(draft)
-              onRemove()
+              deactivateLocally(target.snapshot)
+              onRemove(target)
             }
           }
-        }}>
+        }}
+        data-risu-lorebook-action="delete">
         <XIcon size={20} />
       </button>
     {:else}
@@ -316,14 +349,16 @@
       <button
         class="valuer"
         onclick={async () => {
-          const d = await alertConfirm(language.removeConfirm + getParentLoreName(draft))
+          const target = captureDeletionTarget()
+          const d = await alertConfirm(language.removeConfirm + getParentLoreName(target.snapshot))
           if (d) {
             if (!open) {
               onClose()
             }
-            onRemove()
+            onRemove(target)
           }
-        }}>
+        }}
+        data-risu-lorebook-action="delete">
         <XIcon size={20} />
       </button>
     {/if}
