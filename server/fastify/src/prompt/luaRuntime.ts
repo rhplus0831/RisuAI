@@ -10,9 +10,13 @@ import type { Chat, Database, character } from '../../../../src/ts/storage/datab
 import type { triggerscript } from '../../../../src/ts/process/triggers'
 import type { simpleCharacterArgument } from '../../../../src/ts/parser/parser.svelte'
 import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
+import type { ModelRole } from '../../../../src/ts/model/modelRoles.js'
+import { resolveModelProfile } from '../../../../src/ts/model/modelProfileResolver.js'
 import type { TriggerVarEngine } from './triggerVars.js'
 import { expandVariables } from './variables.js'
 import { tokenize, encodingForModel } from './tokens.js'
+import { dispatchChatProvider } from './chatDispatch.js'
+import type { CompletionStreamFrame } from '../generation/frames.js'
 
 /**
  * Server-side Lua runtime under the single-user self-host security model.
@@ -752,6 +756,116 @@ class InteractiveApiError extends Error {}
 /** Error thrown by every host fn once the request signal has fired. */
 class LuaAbortError extends Error {}
 
+type LuaLlmResult = { success: true; result: string } | { success: false; result: string }
+
+function luaLlmFailure(message: string): LuaLlmResult {
+  return { success: false, result: message.startsWith('Error: ') ? message : `Error: ${message}` }
+}
+
+function normalizeLuaLlmRole(role: unknown): OpenAIChat['role'] {
+  if (role === 'system' || role === 'sys') return 'system'
+  if (role === 'user') return 'user'
+  return 'assistant'
+}
+
+function parseLuaLlmPrompt(promptStr: string, useMultimodal: boolean): OpenAIChat[] | LuaLlmResult {
+  if (useMultimodal) {
+    return luaLlmFailure('Multimodal Lua LLM input is not supported by server prompt assembly')
+  }
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(String(promptStr ?? '[]'))
+  } catch (error) {
+    return luaLlmFailure(error instanceof Error ? error.message : String(error))
+  }
+
+  if (!Array.isArray(parsed)) {
+    return luaLlmFailure('Lua LLM prompt must be an array')
+  }
+
+  const rows: OpenAIChat[] = []
+  for (const item of parsed) {
+    if (typeof item !== 'object' || item === null || Array.isArray(item)) {
+      return luaLlmFailure('Lua LLM prompt entries must be objects')
+    }
+    const row = item as Record<string, unknown>
+    if (row.content !== undefined && typeof row.content !== 'string') {
+      return luaLlmFailure('Lua LLM prompt content must be text')
+    }
+    rows.push({
+      role: normalizeLuaLlmRole(row.role),
+      content: row.content ?? '',
+    } as OpenAIChat)
+  }
+
+  return rows
+}
+
+function parseLuaLlmOptions(optionsStr: string): { streaming?: boolean } {
+  if (!optionsStr) return {}
+  try {
+    const parsed = JSON.parse(optionsStr) as unknown
+    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed) ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+async function collectLuaLlmFrames(frames: AsyncIterable<CompletionStreamFrame>): Promise<LuaLlmResult> {
+  let result = ''
+  for await (const frame of frames) {
+    if (frame.kind === 'token') {
+      result += frame.content ?? ''
+      continue
+    }
+    if (frame.kind === 'error') {
+      return luaLlmFailure(frame.error ?? 'provider dispatch failed')
+    }
+  }
+  return { success: true, result }
+}
+
+async function runLuaLlm(
+  state: RuntimeState,
+  role: ModelRole,
+  prompt: OpenAIChat[],
+  options: { streaming?: boolean } = {},
+): Promise<LuaLlmResult> {
+  try {
+    const profile = resolveModelProfile({ database: state.ctx.database, role })
+    const database = {
+      ...state.ctx.database,
+      aiModel: profile.modelId,
+      useStreaming: options.streaming === true,
+    } as Database
+    if (profile.runtimeOptions.maxResponse !== undefined) database.maxResponse = profile.runtimeOptions.maxResponse
+    if (profile.runtimeOptions.rawTemperature !== undefined)
+      database.temperature = profile.runtimeOptions.rawTemperature
+    const frames = await dispatchChatProvider({
+      database,
+      formated: prompt,
+      profile,
+      signal: state.ctx.signal ?? new AbortController().signal,
+    })
+    return collectLuaLlmFrames(frames)
+  } catch (error) {
+    return luaLlmFailure(error instanceof Error ? error.message : String(error))
+  }
+}
+
+async function runLuaLlmMain(
+  state: RuntimeState,
+  role: ModelRole,
+  promptStr: string,
+  useMultimodal = false,
+  optionsStr = '',
+): Promise<string | undefined> {
+  const prompt = parseLuaLlmPrompt(promptStr, useMultimodal)
+  if (!Array.isArray(prompt)) return JSON.stringify(prompt)
+  return JSON.stringify(await runLuaLlm(state, role, prompt, parseLuaLlmOptions(optionsStr)))
+}
+
 // ── Host functions ─
 
 /**
@@ -1066,21 +1180,17 @@ function declareHostFunctions(engine: LuaEngine): (next: RuntimeState) => void {
   })
   declare('getCharacterImageMain', async (_id: string) => '')
   declare('getPersonaImageMain', async (_id: string) => '')
-  const deferredLLM = async (id: string) => {
+  declare('LLMMain', async (id: string, promptStr: string, useMultimodal = false, optionsStr = '') => {
     if (!canLowLevel(id)) return
-    return JSON.stringify({
-      success: false,
-      result: 'Error: LLM access is not available in server prompt assembly (deferred)',
-    })
-  }
-  declare('LLMMain', deferredLLM)
-  declare('axLLMMain', deferredLLM)
-  declare('simpleLLM', async (id: string) => {
+    return runLuaLlmMain(state, 'scriptMain', promptStr, useMultimodal, optionsStr)
+  })
+  declare('axLLMMain', async (id: string, promptStr: string, useMultimodal = false, optionsStr = '') => {
     if (!canLowLevel(id)) return
-    return {
-      success: false,
-      result: 'Error: LLM access is not available in server prompt assembly (deferred)',
-    }
+    return runLuaLlmMain(state, 'scriptAux', promptStr, useMultimodal, optionsStr)
+  })
+  declare('simpleLLM', async (id: string, prompt: string) => {
+    if (!canLowLevel(id)) return
+    return runLuaLlm(state, 'scriptMain', [{ role: 'user', content: String(prompt ?? '') } as OpenAIChat])
   })
 
   return (next) => {

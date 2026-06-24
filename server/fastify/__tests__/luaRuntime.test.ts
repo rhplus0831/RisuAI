@@ -59,6 +59,13 @@ function makeDb(overrides: Partial<Database> = {}): Database {
     currentChar: 0,
     username: 'Operator',
     globalChatVariables: {},
+    aiModel: 'echo_model',
+    subModel: 'echo_model',
+    echoMessage: 'echo',
+    echoDelay: 0,
+    maxResponse: 200,
+    temperature: 50,
+    useStreaming: false,
     ...overrides,
   } as unknown as Database
 }
@@ -73,6 +80,7 @@ function makeRuntime(
     chat?: Chat
     char?: character
     model?: string
+    database?: Partial<Database>
     egress?: EgressDeps
     rateState?: RequestRateState
     scriptstate?: Record<string, string | number | boolean>
@@ -80,7 +88,7 @@ function makeRuntime(
 ): { ctx: ServerLuaRuntimeContext; engine: TriggerVarEngine } {
   const chat = opts.chat ?? makeChat({ scriptstate: { ...(opts.scriptstate ?? {}) } })
   const char = opts.char ?? makeChar({ chats: [chat] })
-  const database = makeDb({ characters: [char] })
+  const database = makeDb({ characters: [char], ...opts.database })
   const engine = createTriggerVarEngine({
     chat,
     database,
@@ -350,6 +358,105 @@ describe('server Lua runtime — request() binding + low-level gate', () => {
       denied.ctx,
     )
     expect((blocked.res as OpenAIChat[])[0].content).toBe('BLOCKED')
+  })
+})
+
+describe('server Lua runtime — low-level LLM bindings', () => {
+  function debugEchoDatabase(): Partial<Database> {
+    return {
+      aiModel: 'echo_model',
+      subModel: 'echo_model',
+      modelProfiles: [
+        {
+          id: 'script-main-debug',
+          name: 'Script Main Debug',
+          providerId: 'debug-echo',
+          modelId: 'debug-echo',
+          providerOptions: {
+            baseUrl: 'debug://script-main',
+            requestModel: 'script-main-model',
+          },
+        },
+        {
+          id: 'script-aux-debug',
+          name: 'Script Aux Debug',
+          providerId: 'debug-echo',
+          modelId: 'debug-echo',
+          providerOptions: {
+            baseUrl: 'debug://script-aux',
+            requestModel: 'script-aux-model',
+          },
+        },
+      ],
+      modelRoleProfiles: {
+        scriptMain: { mode: 'profile', profileId: 'script-main-debug' },
+        scriptAux: { mode: 'profile', profileId: 'script-aux-debug' },
+      },
+    } as unknown as Partial<Database>
+  }
+
+  it('routes axLLM through the scriptAux model role when low-level access is granted', async () => {
+    const { ctx } = makeRuntime({ database: debugEchoDatabase() })
+    const code = `
+      listenEdit('editRequest', function(id, data, meta)
+        local res = axLLM(id, {{ role = 'user', content = 'translate this' }})
+        data[1].content = res.result
+        return data
+      end)
+    `
+
+    const result = await runServerLua({ code, mode: 'editRequest', data: rows('orig'), lowLevelAccess: true }, ctx)
+
+    expect(result.error).toBeUndefined()
+    const payload = JSON.parse((result.res as OpenAIChat[])[0].content)
+    expect(payload).toMatchObject({
+      provider: 'debug-echo',
+      baseUrl: 'debug://script-aux',
+      requestModel: 'script-aux-model',
+    })
+  })
+
+  it('keeps axLLMMain denied without low-level access', async () => {
+    const { ctx } = makeRuntime()
+    const code = `
+      listenEdit('editRequest', function(id, data, meta)
+        local raw = axLLMMain(id, json.encode({{ role = 'user', content = 'blocked' }})):await()
+        data[1].content = raw == nil and 'DENIED' or raw
+        return data
+      end)
+    `
+
+    const result = await runServerLua({ code, mode: 'editRequest', data: rows('orig'), lowLevelAccess: false }, ctx)
+
+    expect(result.error).toBeUndefined()
+    expect((result.res as OpenAIChat[])[0].content).toBe('DENIED')
+  })
+
+  it('routes LLM and simpleLLM through the scriptMain model role', async () => {
+    const { ctx } = makeRuntime({ database: debugEchoDatabase() })
+    const code = `
+      listenEdit('editRequest', function(id, data, meta)
+        local full = LLM(id, {{ role = 'user', content = 'main full' }})
+        local simple = simpleLLM(id, 'main simple'):await()
+        data[1].content = full.result .. '\\n---\\n' .. simple.result
+        return data
+      end)
+    `
+
+    const result = await runServerLua({ code, mode: 'editRequest', data: rows('orig'), lowLevelAccess: true }, ctx)
+
+    expect(result.error).toBeUndefined()
+    const [full, simple] = (result.res as OpenAIChat[])[0].content.split('\n---\n').map((part) => JSON.parse(part))
+    expect(full).toMatchObject({
+      provider: 'debug-echo',
+      baseUrl: 'debug://script-main',
+      requestModel: 'script-main-model',
+    })
+    expect(simple).toMatchObject({
+      provider: 'debug-echo',
+      baseUrl: 'debug://script-main',
+      requestModel: 'script-main-model',
+    })
   })
 })
 
