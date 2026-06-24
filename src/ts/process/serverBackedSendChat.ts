@@ -89,6 +89,60 @@ function serverChatMode(args: {
   return 'send'
 }
 
+interface ServerBackedStableChatTarget {
+  characterId?: string
+  chatId?: string
+}
+
+interface ServerBackedLiveChatTarget extends ServerBackedStableChatTarget {
+  selectedChar: number
+  selectedChat: number
+}
+
+interface ServerBackedLiveChatResolution {
+  character: character
+  chat: Chat
+}
+
+function nonEmptyTargetId(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0
+}
+
+function hasStableChatTarget(target: ServerBackedStableChatTarget | undefined): boolean {
+  return nonEmptyTargetId(target?.characterId) && nonEmptyTargetId(target?.chatId)
+}
+
+function targetFromPayloadOrContext(
+  payload: ServerBackedStableChatTarget | undefined,
+  context: ServerBackedStableChatTarget,
+): ServerBackedStableChatTarget {
+  if (hasStableChatTarget(payload)) return payload ?? {}
+  return hasStableChatTarget(context) ? context : {}
+}
+
+function resolveServerBackedLiveChat(target: ServerBackedLiveChatTarget): ServerBackedLiveChatResolution | undefined {
+  const characters = DBState.db.characters
+  if (!Array.isArray(characters)) return undefined
+
+  if (hasStableChatTarget(target)) {
+    const character = characters.find((candidate) => candidate?.chaId === target.characterId)
+    const chat = character?.chats?.find((candidate) => candidate?.id === target.chatId)
+    return character && chat ? { character, chat } : undefined
+  }
+
+  const character = characters[target.selectedChar]
+  const chat = character?.chats?.[target.selectedChat]
+  return character && chat ? { character, chat } : undefined
+}
+
+function unresolvedServerBackedChat(): Chat {
+  return { message: [], note: '', name: '', localLore: [] } as Chat
+}
+
+function resolveServerBackedCurrentChat(target: ServerBackedLiveChatTarget & { currentChat?: Chat }): Chat {
+  return resolveServerBackedLiveChat(target)?.chat ?? target.currentChat ?? unresolvedServerBackedChat()
+}
+
 // Apply the server's `message_patch` to the local projection only. `/generate/chat`
 // persists assembly-time chat-var deltas itself, so the browser no longer replays
 // them as `PATCH .../scriptstate` commands. `applyServerMessagePatch` still writes
@@ -98,15 +152,32 @@ function applyServerMessagePatches(args: {
   patches: ServerChatMessagePatch[]
   selectedChar: number
   selectedChat: number
+  targetCharacterId?: string
+  targetChatId?: string
+  currentChat: Chat
 }): Chat {
   const { patches, selectedChar, selectedChat } = args
+  const contextTarget = { characterId: args.targetCharacterId, chatId: args.targetChatId }
   for (const patch of patches) {
+    const target = targetFromPayloadOrContext(patch, contextTarget)
     withTrustedServerProjectionWrite(() => {
-      const liveChat = DBState.db.characters[selectedChar].chats[selectedChat]
-      applyServerMessagePatch(liveChat, patch)
+      const resolution = resolveServerBackedLiveChat({
+        selectedChar,
+        selectedChat,
+        characterId: target.characterId,
+        chatId: target.chatId,
+      })
+      if (!resolution) return
+      applyServerMessagePatch(resolution.chat, patch)
     })
   }
-  return DBState.db.characters[selectedChar].chats[selectedChat]
+  return resolveServerBackedCurrentChat({
+    selectedChar,
+    selectedChat,
+    characterId: args.targetCharacterId,
+    chatId: args.targetChatId,
+    currentChat: args.currentChat,
+  })
 }
 
 /** Legacy browser-local inlay id mapped to a server-owned asset id. */
@@ -220,6 +291,9 @@ export async function assembleServerBackedSendChat(args: {
       patches: served.messagePatches ?? [],
       selectedChar: args.selectedChar,
       selectedChat: args.selectedChat,
+      targetCharacterId: args.currentChar.chaId,
+      targetChatId: args.currentChat.id,
+      currentChat: args.currentChat,
     })
     return { status: 'failed', error: served.error, currentChat }
   }
@@ -242,6 +316,9 @@ export async function assembleServerBackedSendChat(args: {
     patches: served.messagePatches,
     selectedChar: args.selectedChar,
     selectedChat: args.selectedChat,
+    targetCharacterId: args.currentChar.chaId,
+    targetChatId: args.currentChat.id,
+    currentChat: args.currentChat,
   })
 
   if (!served.prompt.formated) {
@@ -324,6 +401,9 @@ export async function reattachServerBackedSendChat(args: {
       patches: served.messagePatches ?? [],
       selectedChar: args.selectedChar,
       selectedChat: args.selectedChat,
+      targetCharacterId: args.currentChar.chaId,
+      targetChatId: args.currentChat.id,
+      currentChat: args.currentChat,
     })
     return { status: 'failed', error: served.error, currentChat }
   }
@@ -335,6 +415,9 @@ export async function reattachServerBackedSendChat(args: {
     patches: served.messagePatches,
     selectedChar: args.selectedChar,
     selectedChat: args.selectedChat,
+    targetCharacterId: args.currentChar.chaId,
+    targetChatId: args.currentChat.id,
+    currentChat: args.currentChat,
   })
 
   if (!served.prompt.formated) {
@@ -376,8 +459,11 @@ export async function reattachServerBackedSendChat(args: {
 export async function applyServerBackedTerminal(args: {
   terminal: ServerChatTerminal
   currentChar: character
+  currentChat: Chat
   selectedChar: number
   selectedChat: number
+  targetCharacterId?: string
+  targetChatId?: string
   generationInfo: MessageGenerationInfo
   /** Continue/regenerate target message id, so the post-gen final text + inlay land
    * on the right row when it is not keyed by `generationId` (the continue case). */
@@ -387,17 +473,32 @@ export async function applyServerBackedTerminal(args: {
   if (terminalInfo && typeof terminalInfo === 'object') {
     Object.assign(args.generationInfo, terminalInfo)
   }
+  const contextTarget = { characterId: args.targetCharacterId, chatId: args.targetChatId }
   if (args.terminal.status === 'error') {
+    const target = targetFromPayloadOrContext(args.terminal.restoration, contextTarget)
     if (args.terminal.restoration) {
       withTrustedServerProjectionWrite(() => {
-        const liveChat = DBState.db.characters[args.selectedChar].chats[args.selectedChat]
-        applyServerChatRestoration(liveChat, args.terminal.restoration!)
+        const resolution = resolveServerBackedLiveChat({
+          selectedChar: args.selectedChar,
+          selectedChat: args.selectedChat,
+          characterId: target.characterId,
+          chatId: target.chatId,
+        })
+        if (resolution) {
+          applyServerChatRestoration(resolution.chat, args.terminal.restoration!)
+        }
       })
     }
     return {
       status: 'failed',
       error: args.terminal.error ?? 'Server returned an error without details during generation.',
-      currentChat: DBState.db.characters[args.selectedChar].chats[args.selectedChat],
+      currentChat: resolveServerBackedCurrentChat({
+        selectedChar: args.selectedChar,
+        selectedChat: args.selectedChat,
+        characterId: target.characterId,
+        chatId: target.chatId,
+        currentChat: args.currentChat,
+      }),
       resendChat: false,
     }
   }
@@ -428,36 +529,63 @@ export async function applyServerBackedTerminal(args: {
   const postGen = args.terminal.done?.postGeneration
   const resendChat = !!postGen?.resendChat
   const generationId = args.generationInfo.generationId ?? ''
+  const terminalTarget = targetFromPayloadOrContext(postGen?.messagePatch, contextTarget)
   let inlayPromise: Promise<string> | undefined
-  let assistant: Message | undefined
   withTrustedServerProjectionWrite(() => {
-    const liveChat = DBState.db.characters[args.selectedChar].chats[args.selectedChat]
+    const resolution = resolveServerBackedLiveChat({
+      selectedChar: args.selectedChar,
+      selectedChat: args.selectedChat,
+      characterId: terminalTarget.characterId,
+      chatId: terminalTarget.chatId,
+    })
+    if (!resolution) return
+    const liveChat = resolution.chat
     if (postGen?.messagePatch) {
       applyServerMessagePatch(liveChat, postGen.messagePatch)
     }
-    assistant =
+    const assistant =
       findGeneratedAssistantMessage(liveChat, generationId) ??
       (args.targetMessageId
         ? liveChat.message.find((message) => message.chatId === args.targetMessageId && message.role === 'char')
         : undefined)
     if (assistant) {
       const baseText = typeof postGen?.finalText === 'string' ? postGen.finalText : assistant.data
-      const inlay = runInlayScreen(args.currentChar, baseText)
+      const inlay = runInlayScreen(resolution.character, baseText)
       assistant.data = inlay.text
       inlayPromise = inlay.promise ?? undefined
     }
   })
-  if (inlayPromise && assistant) {
+  if (inlayPromise) {
     const resolved = await inlayPromise
-    const ref = assistant
     withTrustedServerProjectionWrite(() => {
-      ref.data = resolved
+      const resolution = resolveServerBackedLiveChat({
+        selectedChar: args.selectedChar,
+        selectedChat: args.selectedChat,
+        characterId: terminalTarget.characterId,
+        chatId: terminalTarget.chatId,
+      })
+      const liveChat = resolution?.chat
+      const assistant = liveChat
+        ? (findGeneratedAssistantMessage(liveChat, generationId) ??
+          (args.targetMessageId
+            ? liveChat.message.find((message) => message.chatId === args.targetMessageId && message.role === 'char')
+            : undefined))
+        : undefined
+      if (assistant) {
+        assistant.data = resolved
+      }
     })
   }
 
   return {
     status: 'ok',
-    currentChat: DBState.db.characters[args.selectedChar].chats[args.selectedChat],
+    currentChat: resolveServerBackedCurrentChat({
+      selectedChar: args.selectedChar,
+      selectedChat: args.selectedChat,
+      characterId: terminalTarget.characterId,
+      chatId: terminalTarget.chatId,
+      currentChat: args.currentChat,
+    }),
     resendChat,
   }
 }

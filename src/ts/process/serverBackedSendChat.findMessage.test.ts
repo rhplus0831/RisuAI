@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // Terminal assistant lookup scans newest-to-oldest without copying the transcript.
 
@@ -11,8 +11,10 @@ vi.mock('../storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'findmessage-token',
 }))
 
-import { findGeneratedAssistantMessage } from './serverBackedSendChat'
-import type { Chat, Message } from '../storage/database.svelte'
+import { applyServerBackedTerminal, findGeneratedAssistantMessage } from './serverBackedSendChat'
+import { DBState } from '../stores.svelte'
+import type { character, Chat, Message, MessageGenerationInfo } from '../storage/database.svelte'
+import type { ServerChatMessagePatch, ServerChatRestoration } from './request/serverChatEvents'
 
 function chatWith(messages: Partial<Message>[]): Chat {
   return { id: 'chat-1', message: messages as Message[] } as unknown as Chat
@@ -60,5 +62,225 @@ describe('terminal assistant-message lookup (L39)', () => {
     trapIterator(chat)
 
     expect(findGeneratedAssistantMessage(chat, 'missing')).toBeUndefined()
+  })
+})
+
+function terminalMessage(data: string, generationId = 'gen-stable'): Message {
+  return {
+    role: 'char',
+    data,
+    chatId: generationId,
+    generationInfo: { generationId },
+  }
+}
+
+function makeTerminalChat(id: string, message: Message[] = [terminalMessage(`${id} original`)]): Chat {
+  return {
+    id,
+    name: id,
+    note: '',
+    localLore: [],
+    message,
+  } as Chat
+}
+
+function makeTerminalCharacter(chats: Chat[]): character {
+  return {
+    type: 'character',
+    chaId: 'char-stable',
+    name: 'Stable Character',
+    firstMessage: '',
+    desc: '',
+    notes: '',
+    chats,
+    chatFolders: [],
+    chatPage: 0,
+    viewScreen: 'none',
+    bias: [],
+    emotionImages: [],
+    globalLore: [],
+    sdData: [],
+    customscript: [],
+    triggerscript: [],
+    utilityBot: false,
+    exampleMessage: '',
+    creatorNotes: '',
+    systemPrompt: '',
+    postHistoryInstructions: '',
+    alternateGreetings: [],
+    tags: [],
+    creator: '',
+    characterVersion: '',
+    personality: '',
+    scenario: '',
+    firstMsgIndex: 0,
+    replaceGlobalNote: '',
+    additionalText: '',
+  } as character
+}
+
+function makePostGenerationPatch(chatId: string, data: string): ServerChatMessagePatch {
+  return {
+    chatId,
+    characterId: 'char-stable',
+    selectedCharID: 0,
+    chatPage: 0,
+    varChanged: true,
+    messageMutations: [
+      {
+        type: 'replace_all',
+        source: 'output_trigger',
+        beforeLength: 1,
+        afterLength: 1,
+        firstChangedIndex: 0,
+        messages: [terminalMessage(data)],
+      },
+    ],
+    chatVarMutations: [{ key: '$mood', before: null, after: 'steady' }],
+    additionalSystemPrompt: [],
+  }
+}
+
+function makeRestoration(chatId: string): ServerChatRestoration {
+  return {
+    chatId,
+    characterId: 'char-stable',
+    selectedCharID: 0,
+    chatPage: 0,
+    messages: [{ role: 'user', data: 'restored user', chatId: 'restored-user' }],
+    scriptstate: { $restored: 'yes' },
+  }
+}
+
+function seedReorderedTerminalChats(): { char: character; target: Chat; staleIndexChat: Chat } {
+  const target = makeTerminalChat('chat-target', [terminalMessage('target original')])
+  const staleIndexChat = makeTerminalChat('chat-stale-index', [terminalMessage('stale original', 'gen-other')])
+  const char = makeTerminalCharacter([staleIndexChat, target])
+  DBState.db = { characters: [char] } as typeof DBState.db
+  const liveChar = DBState.db.characters[0]
+  return { char: liveChar, target: liveChar.chats[1], staleIndexChat: liveChar.chats[0] }
+}
+
+describe('server-backed terminal stable chat target (R-02)', () => {
+  let originalDb: typeof DBState.db
+
+  beforeEach(() => {
+    originalDb = DBState.db
+  })
+
+  afterEach(() => {
+    DBState.db = originalDb
+  })
+
+  it('applies terminal final text without a nested patch to the stable chat id after chat reorder', async () => {
+    const { char, target, staleIndexChat } = seedReorderedTerminalChats()
+    const generationInfo: MessageGenerationInfo = { generationId: 'gen-stable' }
+
+    const result = await applyServerBackedTerminal({
+      terminal: {
+        status: 'done',
+        done: { postGeneration: { finalText: 'stable final text' } },
+      },
+      currentChar: char,
+      currentChat: target,
+      selectedChar: 0,
+      selectedChat: 0,
+      targetCharacterId: 'char-stable',
+      targetChatId: 'chat-target',
+      generationInfo,
+    })
+
+    expect(result.status).toBe('ok')
+    expect(result.currentChat.id).toBe('chat-target')
+    expect(target.message[0].data).toBe('stable final text')
+    expect(staleIndexChat.message[0].data).toBe('stale original')
+  })
+
+  it('applies terminal post-generation patches to the stable chat id after chat reorder', async () => {
+    const { char, target, staleIndexChat } = seedReorderedTerminalChats()
+    const generationInfo: MessageGenerationInfo = { generationId: 'gen-stable' }
+
+    const result = await applyServerBackedTerminal({
+      terminal: {
+        status: 'done',
+        done: {
+          postGeneration: {
+            finalText: 'patched then finalized',
+            messagePatch: makePostGenerationPatch('chat-target', 'patched text'),
+          },
+        },
+      },
+      currentChar: char,
+      currentChat: target,
+      selectedChar: 0,
+      selectedChat: 0,
+      targetCharacterId: 'char-stable',
+      targetChatId: 'chat-target',
+      generationInfo,
+    })
+
+    expect(result.status).toBe('ok')
+    expect(result.currentChat.id).toBe('chat-target')
+    expect(target.message).toHaveLength(1)
+    expect(target.message[0].data).toBe('patched then finalized')
+    expect(target.scriptstate).toEqual({ $mood: 'steady' })
+    expect(staleIndexChat.message[0].data).toBe('stale original')
+    expect(staleIndexChat.scriptstate).toBeUndefined()
+  })
+
+  it('skips terminal mirroring when stable patch ids are present but no live chat matches', async () => {
+    const { char, target, staleIndexChat } = seedReorderedTerminalChats()
+
+    const result = await applyServerBackedTerminal({
+      terminal: {
+        status: 'done',
+        done: {
+          postGeneration: {
+            finalText: 'should not land anywhere',
+            messagePatch: makePostGenerationPatch('missing-chat', 'missing patch text'),
+          },
+        },
+      },
+      currentChar: char,
+      currentChat: target,
+      selectedChar: 0,
+      selectedChat: 0,
+      targetCharacterId: 'char-stable',
+      targetChatId: 'chat-target',
+      generationInfo: { generationId: 'gen-stable' },
+    })
+
+    expect(result.status).toBe('ok')
+    expect(result.currentChat.id).toBe('chat-target')
+    expect(target.message[0].data).toBe('target original')
+    expect(staleIndexChat.message[0].data).toBe('stale original')
+    expect(staleIndexChat.scriptstate).toBeUndefined()
+  })
+
+  it('restores terminal errors to the stable chat id instead of a stale selectedChat index', async () => {
+    const { char, target, staleIndexChat } = seedReorderedTerminalChats()
+
+    const result = await applyServerBackedTerminal({
+      terminal: {
+        status: 'error',
+        error: 'provider failed',
+        restoration: makeRestoration('chat-target'),
+      },
+      currentChar: char,
+      currentChat: target,
+      selectedChar: 0,
+      selectedChat: 0,
+      targetCharacterId: 'char-stable',
+      targetChatId: 'chat-target',
+      generationInfo: { generationId: 'gen-stable' },
+    })
+
+    expect(result.status).toBe('failed')
+    expect(result.currentChat.id).toBe('chat-target')
+    expect(target.message).toEqual([{ role: 'user', data: 'restored user', chatId: 'restored-user' }])
+    expect(target.scriptstate).toEqual({ $restored: 'yes' })
+    expect(target.isStreaming).toBe(false)
+    expect(staleIndexChat.message[0].data).toBe('stale original')
+    expect(staleIndexChat.scriptstate).toBeUndefined()
   })
 })

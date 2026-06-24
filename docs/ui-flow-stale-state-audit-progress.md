@@ -36,8 +36,8 @@ This document tracks remediation of the Confirmed Issues and Risks To Harden in
 
 | ID | Area | Status | Explorer | Implementation | Verification | Commit | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| R-01 | Generation settings rollback | Fixed | complete | complete | passed | `fix: guard generation settings rollback attempts` | Failed older saves now roll back only when live generation settings still match the attempted value. |
-| R-02 | Generation local mirror | Pending |  |  |  |  | Resolve chat by stable id before SSE patch/terminal/post-gen mirror. |
+| R-01 | Generation settings rollback | Fixed | complete | complete | passed | `19262caeb fix: guard generation settings rollback attempts` | Failed older saves now roll back only when live generation settings still match the attempted value. |
+| R-02 | Generation local mirror | Fixed | complete | complete | complete | fix: resolve server-backed generation mirrors by id | Server-backed mirror resolves chat by stable ids with index fallback only for legacy payloads. |
 | R-03 | Message icon actions | Pending |  |  |  |  | Capture chat/message target before async icon-action delay. |
 | R-04 | Model role apply | Pending |  |  |  |  | Capture selected preset before awaited role update. |
 | R-05 | Model profile drawer | Pending |  |  |  |  | Existing-profile edit should not create if projection deletes profile. |

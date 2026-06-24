@@ -397,6 +397,8 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
     let req: DispatchSuccessReq
     let generationId: string
     let serverTerminal: ServerBackedDispatch['terminal'] | undefined
+    const serverGenerationTargetCharacterId = serverDispatch ? currentChar.chaId : undefined
+    const serverGenerationTargetChatId = serverDispatch ? currentChat.id : undefined
     const serverGenerationTargetMessageId =
       serverDispatch && arg.continue ? currentChat.message.at(-1)?.chatId : undefined
     if (serverDispatch) {
@@ -482,8 +484,11 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
       const terminalResult = await applyServerBackedTerminal({
         terminal,
         currentChar,
+        currentChat,
         selectedChar,
         selectedChat,
+        targetCharacterId: serverGenerationTargetCharacterId,
+        targetChatId: serverGenerationTargetChatId,
         generationInfo,
         targetMessageId: serverGenerationTargetMessageId,
       })
