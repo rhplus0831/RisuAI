@@ -209,6 +209,7 @@ describe('promptTemplate hydration', () => {
   it('clears stale compatibility promptTemplate when the selected preset has no promptTemplate', async () => {
     setCachedServerCommandRevision(7)
     ;(DBState as { db: unknown }).db = {
+      characters: [],
       promptTemplate: [item('stale', 'stale compatibility body')],
       promptPresetsId: 0,
       promptPresets: [{ id: 'preset-a', name: 'Preset A' }],
@@ -220,9 +221,20 @@ describe('promptTemplate hydration', () => {
       fields: { promptTemplate: null },
     })
 
-    await expect(ensurePromptTemplateHydrated({ force: true })).resolves.toBe(true)
+    setServerProjectionWriteGuardEnabled(true)
+    try {
+      await expect(ensurePromptTemplateHydrated({ force: true })).resolves.toBe(true)
 
-    expect(DBState.db.promptTemplate).toBeUndefined()
-    expect(isPromptTemplateHydrated()).toBe(true)
+      expect(DBState.db.promptTemplate).toBeUndefined()
+      expect(isPromptTemplateHydrated()).toBe(true)
+      expect(() => {
+        DBState.db.promptTemplate = []
+      }).toThrow('Cannot mutate read-only server projection')
+      expect(() => {
+        delete DBState.db.promptTemplate
+      }).toThrow('Cannot mutate read-only server projection')
+    } finally {
+      setServerProjectionWriteGuardEnabled(false)
+    }
   })
 })

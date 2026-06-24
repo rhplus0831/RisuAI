@@ -82,9 +82,6 @@ export async function ensurePromptTemplateHydrated(
     }
     if (ownerIsCurrent || ownerId === null) {
       mergeServerProjectionFields(fields)
-      if ((fields as Record<string, unknown>).promptTemplate === null) {
-        delete (DBState.db as unknown as Record<string, unknown>).promptTemplate
-      }
     }
     markPromptTemplateProjectionApplied(ownerId)
     return true
