@@ -158,6 +158,7 @@ import {
   deletePromptItemCommand,
   enablePromptItemsCommand,
   reorderPromptItemsCommand,
+  type PromptItemSnapshot,
 } from './commands'
 import { queuePromptItemProjectionUpdate as queuePromptItemProjectionUpdateForPromptSettings } from 'src/ts/server/promptTemplateBridge.svelte'
 import {
@@ -191,6 +192,10 @@ const minimalPromptSettings: PromptSettingsFixture = {
 
 function item(id: string, text: string): PromptItem {
   return { id, type: 'plain', type2: 'normal', role: 'system', text } as PromptItem
+}
+
+function promptItemSnapshot(id: string, text: string): PromptItemSnapshot {
+  return { id, type: 'plain', type2: 'normal', role: 'system', text }
 }
 
 function promptItemFixture(value: Record<string, unknown>): PromptItem {
@@ -418,7 +423,7 @@ describe('prompt template collection rollback guards', () => {
         createPromptItemCommand({
           baseRevision: 7,
           promptPresetId: promptTemplateOwnerCommandId(ownerId),
-          promptItem: item('created', 'new'),
+          promptItem: promptItemSnapshot('created', 'new'),
         }),
       commandMocks.createPromptItemCommand,
     ],
@@ -473,14 +478,14 @@ describe('prompt template collection rollback guards', () => {
         createPromptItemCommand({
           baseRevision: 7,
           promptPresetId: promptTemplateOwnerCommandId(ownerId),
-          promptItem: item('created', 'new'),
+          promptItem: promptItemSnapshot('created', 'new'),
         }),
       commandMocks.createPromptItemCommand,
       {
         kind: 'createPromptItem',
         baseRevision: 7,
         promptPresetId: 'preset-a',
-        promptItem: item('created', 'new'),
+        promptItem: promptItemSnapshot('created', 'new'),
       },
     ],
     [

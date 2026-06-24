@@ -124,7 +124,7 @@ vi.mock('../../ts/util', async (importActual) => {
         }
 
         const selected = queued ? await queued : queued
-        if (selected && selected.length > 0) {
+        if (Array.isArray(selected) && selected.length > 0) {
           options.onFilesSelected?.(selected as unknown as File[])
         }
         return selected
