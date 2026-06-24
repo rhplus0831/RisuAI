@@ -18,6 +18,7 @@ import {
   type ChatSnapshot,
   type ServerCommandResult,
 } from './server/commands'
+import { SERVER_UNLOADED_CHAT_MESSAGE_MARKER } from './server/chatMessagePlaceholders'
 import {
   setServerProjectionWriteGuardEnabled,
   withTrustedServerProjectionWrite,
@@ -288,6 +289,64 @@ function stubCombinedReorderCommandFetch(input: {
   return calls
 }
 
+function stubMessagePersistenceFetch(): CapturedFetch[] {
+  const calls: CapturedFetch[] = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (requestInput: RequestInfo | URL, init: RequestInit = {}) => {
+      const headers = init.headers as Record<string, string> | undefined
+      const url = String(requestInput)
+      const body = typeof init.body === 'string' ? JSON.parse(init.body) : null
+      calls.push({
+        url,
+        method: init.method ?? 'GET',
+        authHeader: headers?.['risu-auth'] ?? null,
+        body,
+      })
+
+      if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+      if (url === '/api/v1/commands/chats/chat-a/messages' && init.method === 'POST') {
+        return jsonResponse({
+          revision: 11,
+          event: {
+            type: 'message.appended',
+            revision: 11,
+            resource: 'message',
+            id: body?.message?.chatId,
+            parentId: 'chat-a',
+          },
+          chatId: 'chat-a',
+          messageId: body?.message?.chatId,
+        })
+      }
+      if (url === '/api/v1/commands/chats/chat-a/messages/tail' && init.method === 'POST') {
+        return jsonResponse({
+          revision: 11,
+          event: {
+            type: 'messages.tailReplaced',
+            revision: 11,
+            resource: 'message',
+            parentId: 'chat-a',
+          },
+          chatId: 'chat-a',
+          afterMessageId: body?.afterMessageId ?? null,
+          messageIds: Array.isArray(body?.messages) ? body.messages.map((message: Message) => message.chatId) : [],
+          replacedCount: Array.isArray(body?.messages) ? body.messages.length : 0,
+        })
+      }
+      if (url === '/api/v1/commands/chats/chat-a/messages' && init.method === 'PUT') {
+        return jsonResponse({
+          revision: 11,
+          event: { type: 'messages.replaced', revision: 11, resource: 'message', parentId: 'chat-a' },
+          chatId: 'chat-a',
+        })
+      }
+      return jsonResponse({ error: `unexpected ${url}` }, 404)
+    }) as unknown as typeof fetch,
+  )
+  return calls
+}
+
 async function waitForCallCount(calls: CapturedFetch[], expected: number): Promise<void> {
   for (let attempt = 0; attempt < 20 && calls.length < expected; attempt += 1) {
     await new Promise((resolve) => setTimeout(resolve, 0))
@@ -303,6 +362,16 @@ function jsonClone<T>(value: T): T {
 function jsonSnapshot(value: unknown): string {
   const snapshot = JSON.stringify(value)
   return snapshot === undefined ? '__undefined__' : snapshot
+}
+
+function serverMessagePlaceholder(): Message {
+  return {
+    role: 'char',
+    data: '',
+    isComment: true,
+    disabled: true,
+    [SERVER_UNLOADED_CHAT_MESSAGE_MARKER]: true,
+  } as Message
 }
 
 function legacyChangedChatMetadata(previous: Chat, current: Chat): ChatSnapshot {
@@ -2626,6 +2695,122 @@ describe('Phase 2 chat-scoped message dispatch', () => {
       },
     ])
     expect(DBState.db.characters[1].chats[0].note).toBe('sibling concurrent')
+  })
+
+  it('persists a placeholder-prefix AOS-style user append with appendMessageCommand', async () => {
+    const calls = stubMessagePersistenceFetch()
+    const previousChat: Chat = {
+      ...jsonClone(DBState.db.characters[0].chats[0]),
+      message: [
+        serverMessagePlaceholder(),
+        serverMessagePlaceholder(),
+        { role: 'user', data: 'known user tail', chatId: 'm-tail-user' },
+        { role: 'char', data: 'known char tail', chatId: 'm-tail-char' },
+      ],
+    }
+    DBState.db.characters[0].chats[0] = jsonClone(previousChat)
+    const previous = currentChatScopedSnapshot()
+    const nextChat = jsonClone(previousChat)
+    nextChat.message.push({
+      role: 'user',
+      data: 'Selected AOS choice',
+      time: 123,
+    })
+    DBState.db.characters[0].chats[0] = nextChat
+
+    const prepared = prepareCompatibleChatUpdateScoped(previousChat, nextChat, previous)
+    expect(prepared.factories).toHaveLength(1)
+    runOptimisticCommandSequence(prepared.factories, prepared.rollback)
+
+    await waitForCallCount(calls, 2)
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/chats/chat-a/messages',
+      method: 'POST',
+      body: {
+        baseRevision: 10,
+        message: {
+          role: 'user',
+          data: 'Selected AOS choice',
+          time: 123,
+          chatId: expect.any(String),
+        },
+      },
+    })
+    expect(calls.some((call) => call.url === '/api/v1/commands/chats/chat-a/messages' && call.method === 'PUT')).toBe(
+      false,
+    )
+  })
+
+  it('persists a placeholder-prefix tail suffix replacement after a known message anchor', async () => {
+    const calls = stubMessagePersistenceFetch()
+    const previousChat: Chat = {
+      ...jsonClone(DBState.db.characters[0].chats[0]),
+      message: [
+        serverMessagePlaceholder(),
+        serverMessagePlaceholder(),
+        { role: 'user', data: 'known anchor', chatId: 'm-anchor' },
+        { role: 'char', data: 'old tail', chatId: 'm-old-tail' },
+      ],
+    }
+    DBState.db.characters[0].chats[0] = jsonClone(previousChat)
+    const previous = currentChatScopedSnapshot()
+    const nextChat: Chat = {
+      ...jsonClone(previousChat),
+      message: [
+        serverMessagePlaceholder(),
+        serverMessagePlaceholder(),
+        { role: 'user', data: 'known anchor', chatId: 'm-anchor' },
+        { role: 'char', data: 'replacement tail' },
+      ],
+    }
+    DBState.db.characters[0].chats[0] = nextChat
+
+    const prepared = prepareCompatibleChatUpdateScoped(previousChat, nextChat, previous)
+    expect(prepared.factories).toHaveLength(1)
+    runOptimisticCommandSequence(prepared.factories, prepared.rollback)
+
+    await waitForCallCount(calls, 2)
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/chats/chat-a/messages/tail',
+      method: 'POST',
+      body: {
+        baseRevision: 10,
+        afterMessageId: 'm-anchor',
+        messages: [
+          {
+            role: 'char',
+            data: 'replacement tail',
+            chatId: expect.any(String),
+          },
+        ],
+      },
+    })
+    expect(calls.some((call) => call.url === '/api/v1/commands/chats/chat-a/messages' && call.method === 'PUT')).toBe(
+      false,
+    )
+  })
+
+  it('skips unsafe placeholder-containing message edits instead of full replacing the list', () => {
+    const previousChat: Chat = {
+      ...jsonClone(DBState.db.characters[0].chats[0]),
+      message: [
+        serverMessagePlaceholder(),
+        { role: 'user', data: 'known anchor', chatId: 'm-anchor' },
+        { role: 'char', data: 'known tail', chatId: 'm-tail' },
+      ],
+    }
+    DBState.db.characters[0].chats[0] = jsonClone(previousChat)
+    const previous = currentChatScopedSnapshot()
+    const nextChat = jsonClone(previousChat)
+    nextChat.message[0] = {
+      ...serverMessagePlaceholder(),
+      data: 'unsafe local placeholder edit',
+    }
+    DBState.db.characters[0].chats[0] = nextChat
+
+    const prepared = prepareCompatibleChatUpdateScoped(previousChat, nextChat, previous)
+
+    expect(prepared.factories).toHaveLength(0)
   })
 
   it('P5: scoped compatible chat preparation preserves accepted metadata when message persistence fails', async () => {

@@ -1540,6 +1540,11 @@ interface CompatibleChatUpdateStep {
   rollback: () => void
 }
 
+interface CompatibleMessageListUpdate {
+  factory: (baseRevision: number) => Promise<ServerCommandResult>
+  attemptedMessages: Message[]
+}
+
 export function mutateChatWithScopedCommand(
   mutate: (chat: Chat, character: character) => void,
   options: MutateChatScopedOptions = {},
@@ -1671,21 +1676,9 @@ function buildCompatibleChatUpdateFactories(
       )
     }
 
-    if (
-      snapshotJson(previousChat.message ?? []) !== snapshotJson(nextChat.message ?? []) &&
-      !hasServerChatMessagePlaceholders(nextChat.message ?? [])
-    ) {
-      for (const message of nextChat.message ?? []) {
-        ensureMessageId(message)
-      }
-      const messages = (nextChat.message ?? []).map(toMessageSnapshot)
-      factories.push((baseRevision) =>
-        replaceMessagesCommand({
-          baseRevision,
-          chatId,
-          messages,
-        }),
-      )
+    const messageUpdate = buildCompatibleMessageListUpdate(chatId, previousChat.message ?? [], nextChat.message ?? [])
+    if (messageUpdate) {
+      factories.push(messageUpdate.factory)
     }
 
     const scriptstatePatch = changedScriptstatePatch(previousChat.scriptstate, nextChat.scriptstate)
@@ -1730,24 +1723,12 @@ function buildCompatibleChatUpdateScopedSteps(
     })
   }
 
-  if (
-    snapshotJson(previousChat.message ?? []) !== snapshotJson(nextChat.message ?? []) &&
-    !hasServerChatMessagePlaceholders(nextChat.message ?? [])
-  ) {
-    for (const message of nextChat.message ?? []) {
-      ensureMessageId(message)
-    }
-    const attemptedMessages = cloneJsonValue(nextChat.message ?? [])
-    const messages = attemptedMessages.map(toMessageSnapshot)
+  const messageUpdate = buildCompatibleMessageListUpdate(chatId, previousChat.message ?? [], nextChat.message ?? [])
+  if (messageUpdate) {
     steps.push({
       accepted: false,
-      factory: (baseRevision) =>
-        replaceMessagesCommand({
-          baseRevision,
-          chatId,
-          messages,
-        }),
-      rollback: () => restoreScopedMessageListAttempt(previous, attemptedMessages),
+      factory: messageUpdate.factory,
+      rollback: () => restoreScopedMessageListAttempt(previous, messageUpdate.attemptedMessages),
     })
   }
 
@@ -1770,6 +1751,131 @@ function buildCompatibleChatUpdateScopedSteps(
   }
 
   return steps
+}
+
+function buildCompatibleMessageListUpdate(
+  chatId: string,
+  previousMessages: Message[],
+  nextMessages: Message[],
+): CompatibleMessageListUpdate | null {
+  if (snapshotJson(previousMessages) === snapshotJson(nextMessages)) return null
+
+  const placeholderSafeUpdate = buildPlaceholderSafeMessageListUpdate(chatId, previousMessages, nextMessages)
+  if (placeholderSafeUpdate) return placeholderSafeUpdate
+  if (hasServerChatMessagePlaceholders(nextMessages)) return null
+
+  for (const message of nextMessages) {
+    ensureMessageId(message)
+  }
+  const attemptedMessages = cloneJsonValue(nextMessages)
+  const messages = attemptedMessages.map(toMessageSnapshot)
+  return {
+    factory: (baseRevision) =>
+      replaceMessagesCommand({
+        baseRevision,
+        chatId,
+        messages,
+      }),
+    attemptedMessages,
+  }
+}
+
+function buildPlaceholderSafeMessageListUpdate(
+  chatId: string,
+  previousMessages: Message[],
+  nextMessages: Message[],
+): CompatibleMessageListUpdate | null {
+  if (!hasServerChatMessagePlaceholders(nextMessages)) return null
+
+  const appendedMessage = singleMessageAppendAfterKnownTail(previousMessages, nextMessages)
+  if (appendedMessage) {
+    ensureMessageId(appendedMessage)
+    const message = toMessageSnapshot(appendedMessage)
+    return {
+      factory: (baseRevision) =>
+        appendMessageCommand({
+          baseRevision,
+          chatId,
+          message,
+        }),
+      attemptedMessages: cloneJsonValue(nextMessages),
+    }
+  }
+
+  const replacement = tailReplacementAfterKnownAnchor(previousMessages, nextMessages)
+  if (!replacement) return null
+
+  for (const message of replacement.messages) {
+    ensureMessageId(message)
+  }
+  const messages = replacement.messages.map(toMessageSnapshot)
+  return {
+    factory: (baseRevision) =>
+      replaceTailMessagesCommand({
+        baseRevision,
+        chatId,
+        afterMessageId: replacement.afterMessageId,
+        messages,
+      }),
+    attemptedMessages: cloneJsonValue(nextMessages),
+  }
+}
+
+function singleMessageAppendAfterKnownTail(previousMessages: Message[], nextMessages: Message[]): Message | null {
+  if (nextMessages.length !== previousMessages.length + 1) return null
+  if (!endsWithKnownPersistedMessage(previousMessages)) return null
+  if (!messagePrefixMatches(previousMessages, nextMessages, previousMessages.length)) return null
+
+  const appendedMessage = nextMessages[nextMessages.length - 1]
+  return isServerChatMessagePlaceholder(appendedMessage) ? null : appendedMessage
+}
+
+function tailReplacementAfterKnownAnchor(
+  previousMessages: Message[],
+  nextMessages: Message[],
+): { afterMessageId: string; messages: Message[] } | null {
+  const commonPrefixLength = unchangedMessagePrefixLength(previousMessages, nextMessages)
+  let anchorIndex = commonPrefixLength - 1
+  while (anchorIndex >= 0 && !knownPersistedMessageId(previousMessages[anchorIndex])) {
+    anchorIndex -= 1
+  }
+  if (anchorIndex < 0) return null
+
+  const previousTail = previousMessages.slice(anchorIndex + 1)
+  const nextTail = nextMessages.slice(anchorIndex + 1)
+  if (previousTail.some(isServerChatMessagePlaceholder) || nextTail.some(isServerChatMessagePlaceholder)) {
+    return null
+  }
+  if (snapshotJson(previousTail) === snapshotJson(nextTail)) return null
+
+  const afterMessageId = knownPersistedMessageId(previousMessages[anchorIndex])
+  if (!afterMessageId) return null
+  return {
+    afterMessageId,
+    messages: nextTail,
+  }
+}
+
+function endsWithKnownPersistedMessage(messages: Message[]): boolean {
+  return !!knownPersistedMessageId(messages[messages.length - 1])
+}
+
+function knownPersistedMessageId(message: Message | undefined): string | null {
+  if (!message || isServerChatMessagePlaceholder(message)) return null
+  return typeof message.chatId === 'string' && message.chatId.length > 0 ? message.chatId : null
+}
+
+function unchangedMessagePrefixLength(previousMessages: Message[], nextMessages: Message[]): number {
+  const length = Math.min(previousMessages.length, nextMessages.length)
+  let index = 0
+  while (index < length && snapshotJson(previousMessages[index]) === snapshotJson(nextMessages[index])) {
+    index += 1
+  }
+  return index
+}
+
+function messagePrefixMatches(previousMessages: Message[], nextMessages: Message[], length: number): boolean {
+  return unchangedMessagePrefixLength(previousMessages, nextMessages) >= length
 }
 
 function chatMetadataRollbackFromScopedPatch(
