@@ -1841,6 +1841,9 @@ async function finishServerRealmImport(
   operationToken: number,
   reportProgress?: (progress: ServerRealmImportProgress) => void,
 ) {
+  if (!isLatestRealmImportOperation(operationToken)) {
+    return
+  }
   reportProgress?.({
     phase: 'refresh',
     message: 'Refreshing imported character',

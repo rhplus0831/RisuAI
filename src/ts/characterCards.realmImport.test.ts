@@ -430,7 +430,8 @@ describe('Realm character import finish refresh', () => {
     imports[0].result.resolve(okRealmImport('old-char', 30))
     await older
 
-    expect(projectionResyncState.forceServerProjectionResync).toHaveBeenCalledTimes(2)
+    expect(projectionResyncState.forceServerProjectionResync).toHaveBeenCalledTimes(1)
+    expect(dbState.db.characters.map((character) => character.chaId)).toEqual(['new-char'])
     expect(characterState.changeChar).toHaveBeenCalledTimes(1)
     expect(characterState.changeChar.mock.calls[0][0]).toBe(0)
     expect(characterState.changeChar.mock.calls[0][1]).toEqual({ isFresh: expect.any(Function) })
