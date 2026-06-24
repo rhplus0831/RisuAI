@@ -414,8 +414,14 @@ async function processServerCommandEvent(
       // A foreign character-globalLore edit: surgically replace just that
       // character's globalLore instead of re-shipping every character. Works
       // whether or not lorebook stubs are on (the field is set resident).
-      applyServerCharacterLorebookProjection(result.characterId, result.globalLore)
-      markAppliedCommandProjectionEvent(event, options)
+      const applied = applyServerCharacterLorebookProjection(result.characterId, result.globalLore)
+      if (applied) {
+        markAppliedCommandProjectionEvent(event, options)
+        return
+      }
+      // Unknown character locally → reconcile from scratch.
+      const resync = await forceServerProjectionResync('projection-error', { resource: event.resource })
+      if (resync.status === 'ok') markAppliedCommandProjectionEvent(event, options)
       return
     }
     if (result.status === 'ok' && result.mode === 'character-row') {
@@ -440,7 +446,18 @@ async function processServerCommandEvent(
         typeof result.messageStart === 'number' && typeof result.messageTotal === 'number'
           ? { start: result.messageStart, total: result.messageTotal }
           : undefined
-      applyServerChatMessagesProjection(result.chatId, result.message, result.hypaV3Data, result.alternates, range)
+      const applied = applyServerChatMessagesProjection(
+        result.chatId,
+        result.message,
+        result.hypaV3Data,
+        result.alternates,
+        range,
+      )
+      if (!applied) {
+        const resync = await forceServerProjectionResync('projection-error', { resource: event.resource })
+        if (resync.status === 'ok') markAppliedCommandProjectionEvent(event, options)
+        return
+      }
       triggerOpenChatGenerationReattach()
       if (event.resource === 'message' && event.id) {
         clearActiveMessageTranslation(event.id)

@@ -102,6 +102,9 @@ const activeGenerationReattachSpies = vi.hoisted(() => ({
   startActiveGenerationReattach: vi.fn(),
   triggerOpenChatGenerationReattach: vi.fn(),
 }))
+const messageTranslationJobSpies = vi.hoisted(() => ({
+  clearActiveMessageTranslation: vi.fn(),
+}))
 const memoryJobEventSpies = vi.hoisted(() => ({
   publishServerMemoryJobEvent: vi.fn(),
 }))
@@ -141,6 +144,14 @@ vi.mock('./server/projection', () => ({
 }))
 
 vi.mock('./server/promptTemplateHydration', () => promptTemplateHydrationSpies)
+
+vi.mock('./server/messageTranslationJobs', async (importActual) => {
+  const actual = await importActual<typeof import('./server/messageTranslationJobs')>()
+  return {
+    ...actual,
+    clearActiveMessageTranslation: messageTranslationJobSpies.clearActiveMessageTranslation,
+  }
+})
 
 vi.mock('./server/commands', async (importActual) => {
   const actual = await importActual<typeof import('./server/commands')>()
@@ -302,6 +313,7 @@ beforeEach(() => {
     event: { type: 'state.initialized', revision: 1, resource: 'state' },
   })
   activeGenerationReattachSpies.setActiveGenerationJobs.mockClear()
+  messageTranslationJobSpies.clearActiveMessageTranslation.mockClear()
   promptTemplateHydrationSpies.resetPromptTemplateHydration.mockClear()
   promptTemplateHydrationSpies.startPromptTemplateHydration.mockClear()
   promptTemplateHydrationSpies.markPromptTemplateProjectionApplied.mockClear()
@@ -708,6 +720,66 @@ describe('web bootstrap startup source', () => {
     expect(serverBootstrapState.fetchReadOnly).not.toHaveBeenCalled()
   })
 
+  it('full-bootstraps a character-lorebook projection when the local character is missing', async () => {
+    serverBootstrapState.response = {
+      status: 'ok',
+      projection: {
+        revision: 5,
+        database: {
+          characters: [{ chaId: 'char-a', name: 'Ada', globalLore: [], chats: [{ id: 'chat-a' }] }],
+          currentChar: 0,
+          modules: [],
+          personas: [],
+          language: 'en',
+        },
+      },
+    }
+    await loadWebInitialDatabase()
+    serverBootstrapState.fetchReadOnly.mockClear()
+    hydrationSpies.resetChatHydration.mockClear()
+    hydrationSpies.hydrateActiveChat.mockClear()
+
+    serverProjectionState.fetchResource.mockImplementation(async () => ({
+      status: 'ok' as const,
+      revision: 99,
+      mode: 'character-lorebook' as const,
+      characterId: 'missing-char',
+      globalLore: [{ key: 'new', content: 'new lore' }],
+    }))
+    serverBootstrapState.response = {
+      status: 'ok',
+      projection: {
+        revision: 6,
+        database: {
+          characters: [{ chaId: 'missing-char', name: 'Server Char', globalLore: [], chats: [] }],
+          modules: [],
+          personas: [],
+          language: 'ko',
+        },
+      },
+    }
+
+    const subscription = serverEventsState.subscriptions[0]
+    const diagnosticsBefore = getProtocolDiagnosticsSnapshot()
+    subscription.onCommandEvent({
+      type: 'lorebook.entries.replaced',
+      revision: 6,
+      resource: 'characterLorebook',
+      id: 'missing-char',
+    })
+
+    await vi.waitFor(() => {
+      expect(DBState.db.language).toBe('ko')
+    })
+    expect(serverProjectionState.fetchResource).toHaveBeenCalledWith('characterLorebook', {
+      id: 'missing-char',
+      parentId: undefined,
+    })
+    expect(serverBootstrapState.fetchReadOnly).toHaveBeenCalledTimes(1)
+    expect(peekCachedServerCommandRevision()).toBe(6)
+    expectFullBootstrapResyncDelta(diagnosticsBefore, 'projection-error', 'characterLorebook')
+  })
+
   it('applies a character-row projection to one character, preserving hydrated chats', async () => {
     const initialGenerationSettings = {
       configured: true,
@@ -868,6 +940,93 @@ describe('web bootstrap startup source', () => {
     expect(serverBootstrapState.fetchReadOnly).not.toHaveBeenCalled()
   })
 
+  it('full-bootstraps a generation-chat projection when local message apply fails', async () => {
+    serverBootstrapState.response = {
+      status: 'ok',
+      projection: {
+        revision: 5,
+        database: {
+          characters: [
+            {
+              chaId: 'char-a',
+              name: 'Ada',
+              chats: [{ id: 'chat-a', message: [{ role: 'user', data: 'hi', chatId: 'm1' }] }],
+              chatPage: 0,
+            },
+          ],
+          currentChar: 0,
+          modules: [],
+          personas: [],
+          language: 'en',
+        },
+      },
+    }
+    await loadWebInitialDatabase()
+    serverBootstrapState.fetchReadOnly.mockClear()
+    hydrationSpies.resetChatHydration.mockClear()
+    hydrationSpies.hydrateActiveChat.mockClear()
+    hydrationSpies.applyServerChatMessagesProjection.mockClear()
+    hydrationSpies.applyServerChatMessagesProjection.mockReturnValueOnce(false)
+    activeGenerationReattachSpies.triggerOpenChatGenerationReattach.mockClear()
+
+    const generatedTail = [{ role: 'char', data: 'fresh answer', chatId: 'gen-1' }]
+    serverProjectionState.fetchResource.mockImplementation(async () => ({
+      status: 'ok' as const,
+      revision: 99,
+      mode: 'generation-chat' as const,
+      chatId: 'missing-chat',
+      message: generatedTail,
+      messageStart: 1,
+      messageTotal: 2,
+      alternates: [],
+    }))
+    serverBootstrapState.response = {
+      status: 'ok',
+      projection: {
+        revision: 6,
+        database: {
+          characters: [
+            {
+              chaId: 'char-a',
+              name: 'Ada',
+              chats: [{ id: 'chat-a', message: [{ role: 'user', data: 'hi', chatId: 'm1' }] }],
+              chatPage: 0,
+            },
+          ],
+          currentChar: 0,
+          modules: [],
+          personas: [],
+          language: 'ko',
+        },
+      },
+    }
+
+    const subscription = serverEventsState.subscriptions[0]
+    const diagnosticsBefore = getProtocolDiagnosticsSnapshot()
+    subscription.onCommandEvent({
+      type: 'generation.persisted',
+      revision: 6,
+      resource: 'generation',
+      id: 'gen-1',
+      parentId: 'missing-chat',
+    })
+
+    await vi.waitFor(() => {
+      expect(DBState.db.language).toBe('ko')
+    })
+    expect(hydrationSpies.applyServerChatMessagesProjection).toHaveBeenCalledWith(
+      'missing-chat',
+      generatedTail,
+      undefined,
+      [],
+      { start: 1, total: 2 },
+    )
+    expect(serverBootstrapState.fetchReadOnly).toHaveBeenCalledTimes(1)
+    expect(peekCachedServerCommandRevision()).toBe(6)
+    expect(activeGenerationReattachSpies.triggerOpenChatGenerationReattach).toHaveBeenCalledTimes(1)
+    expectFullBootstrapResyncDelta(diagnosticsBefore, 'projection-error', 'generation')
+  })
+
   it('applies an ordinary chat-messages projection to the changed chat', async () => {
     await loadWebInitialDatabase()
     hydrationSpies.applyServerChatMessagesProjection.mockClear()
@@ -909,7 +1068,111 @@ describe('web bootstrap startup source', () => {
       { start: 1, total: 2 },
     )
     expect(activeGenerationReattachSpies.triggerOpenChatGenerationReattach).toHaveBeenCalledTimes(1)
+    expect(messageTranslationJobSpies.clearActiveMessageTranslation).toHaveBeenCalledWith('msg-2')
     expect(serverBootstrapState.fetchReadOnly).not.toHaveBeenCalled()
+  })
+
+  it('full-bootstraps a chat-messages projection when local message apply fails', async () => {
+    await loadWebInitialDatabase()
+    serverBootstrapState.fetchReadOnly.mockClear()
+    hydrationSpies.applyServerChatMessagesProjection.mockClear()
+    hydrationSpies.applyServerChatMessagesProjection.mockReturnValueOnce(false)
+    activeGenerationReattachSpies.triggerOpenChatGenerationReattach.mockClear()
+
+    const messageWindow = [{ role: 'char', data: 'edited', chatId: 'msg-2' }]
+    serverProjectionState.fetchResource.mockImplementation(async () => ({
+      status: 'ok' as const,
+      revision: 99,
+      mode: 'chat-messages' as const,
+      chatId: '',
+      message: messageWindow,
+      messageStart: 1,
+      messageTotal: 2,
+      alternates: [],
+    }))
+    serverBootstrapState.response = {
+      status: 'ok',
+      projection: {
+        revision: 6,
+        database: {
+          characters: [{ chaId: 'char-a', name: 'Ada', chats: [] }],
+          modules: [],
+          personas: [],
+          language: 'ko',
+        },
+      },
+    }
+
+    const subscription = serverEventsState.subscriptions[0]
+    const diagnosticsBefore = getProtocolDiagnosticsSnapshot()
+    subscription.onCommandEvent({
+      type: 'message.updated',
+      revision: 6,
+      resource: 'message',
+      id: 'msg-2',
+      parentId: 'chat-a',
+    })
+
+    await vi.waitFor(() => {
+      expect(DBState.db.language).toBe('ko')
+    })
+    expect(hydrationSpies.applyServerChatMessagesProjection).toHaveBeenCalledWith('', messageWindow, undefined, [], {
+      start: 1,
+      total: 2,
+    })
+    expect(serverBootstrapState.fetchReadOnly).toHaveBeenCalledTimes(1)
+    expect(peekCachedServerCommandRevision()).toBe(6)
+    expect(activeGenerationReattachSpies.triggerOpenChatGenerationReattach).toHaveBeenCalledTimes(1)
+    expect(messageTranslationJobSpies.clearActiveMessageTranslation).not.toHaveBeenCalled()
+    expectFullBootstrapResyncDelta(diagnosticsBefore, 'projection-error', 'message')
+  })
+
+  it('keeps the command cursor at the old baseline when chat-messages fallback resync fails', async () => {
+    await loadWebInitialDatabase()
+    expect(peekCachedServerCommandRevision()).toBe(5)
+    serverBootstrapState.fetchReadOnly.mockClear()
+    hydrationSpies.applyServerChatMessagesProjection.mockClear()
+    hydrationSpies.applyServerChatMessagesProjection.mockReturnValueOnce(false)
+    activeGenerationReattachSpies.triggerOpenChatGenerationReattach.mockClear()
+
+    const messageWindow = [{ role: 'char', data: 'edited', chatId: 'msg-2' }]
+    serverProjectionState.fetchResource.mockImplementation(async () => ({
+      status: 'ok' as const,
+      revision: 99,
+      mode: 'chat-messages' as const,
+      chatId: '',
+      message: messageWindow,
+      messageStart: 1,
+      messageTotal: 2,
+      alternates: [],
+    }))
+    serverBootstrapState.response = {
+      status: 'error',
+      error: 'refresh failed',
+    }
+
+    const subscription = serverEventsState.subscriptions[0]
+    const diagnosticsBefore = getProtocolDiagnosticsSnapshot()
+    subscription.onCommandEvent({
+      type: 'message.updated',
+      revision: 6,
+      resource: 'message',
+      id: 'msg-2',
+      parentId: 'chat-a',
+    })
+
+    await vi.waitFor(() => {
+      expect(serverBootstrapState.fetchReadOnly).toHaveBeenCalledTimes(1)
+    })
+    await flushServerProjectionSync()
+    expect(hydrationSpies.applyServerChatMessagesProjection).toHaveBeenCalledWith('', messageWindow, undefined, [], {
+      start: 1,
+      total: 2,
+    })
+    expect(peekCachedServerCommandRevision()).toBe(5)
+    expect(activeGenerationReattachSpies.triggerOpenChatGenerationReattach).not.toHaveBeenCalled()
+    expect(messageTranslationJobSpies.clearActiveMessageTranslation).not.toHaveBeenCalled()
+    expectFullBootstrapResyncDelta(diagnosticsBefore, 'projection-error', 'message')
   })
 
   it('applies character selection projections without replacing characters or rehydrating chats', async () => {
