@@ -3,8 +3,31 @@ import { resolve } from 'node:path'
 import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+type MockSelectedFile = { name: string; data: Uint8Array }
+type MockSingleFileRead = {
+  selected: MockSelectedFile | null
+  result: Promise<MockSelectedFile | null> | MockSelectedFile | null
+}
+type MockMultipleFileRead = {
+  selected: MockSelectedFile[]
+  result: Promise<MockSelectedFile[] | null> | MockSelectedFile[] | null
+}
+
 const chatCommandMocks = vi.hoisted(() => ({
   setCurrentChatGreetingIndex: vi.fn(),
+}))
+
+const selectedFileState = vi.hoisted(() => ({
+  singleQueue: [] as Array<Promise<MockSelectedFile | null> | MockSingleFileRead | MockSelectedFile | null>,
+  multipleQueue: [] as Array<Promise<MockSelectedFile[] | null> | MockMultipleFileRead | MockSelectedFile[] | null>,
+}))
+
+const transformerMocks = vi.hoisted(() => ({
+  registerOnnxModelFromFileCalls: [] as Array<{
+    file: MockSelectedFile
+    options: { shouldContinue?: () => boolean } | undefined
+  }>,
+  registerOnnxModelFromFileQueue: [] as Array<Promise<unknown> | unknown>,
 }))
 
 vi.mock('src/ts/server/commands', () => {
@@ -77,10 +100,51 @@ vi.mock('../../ts/characters', async () => {
     addCharEmotion: vi.fn(),
     addingEmotion: writable(false),
     changeCharImage: vi.fn(),
+    createBlankChar: vi.fn(() => ({ name: 'Blank' })),
     getCharImage: vi.fn(async () => ''),
     removeChar: vi.fn(),
     rmCharEmotion: vi.fn(),
     selectCharImg: vi.fn(),
+  }
+})
+
+vi.mock('../../ts/util', async (importActual) => {
+  const actual = await importActual<typeof import('../../ts/util')>()
+
+  return {
+    ...actual,
+    selectMultipleFile: vi.fn(
+      async (_extensions: string[], options: { onFilesSelected?: (files: File[]) => void } = {}) => {
+        const queued = selectedFileState.multipleQueue.shift()
+        if (queued && typeof queued === 'object' && 'selected' in queued && 'result' in queued) {
+          if (queued.selected.length > 0) {
+            options.onFilesSelected?.(queued.selected as unknown as File[])
+          }
+          return queued.result ? await queued.result : queued.result
+        }
+
+        const selected = queued ? await queued : queued
+        if (selected && selected.length > 0) {
+          options.onFilesSelected?.(selected as unknown as File[])
+        }
+        return selected
+      },
+    ),
+    selectSingleFile: vi.fn(async (_extensions: string[], options: { onFileSelected?: (file: File) => void } = {}) => {
+      const queued = selectedFileState.singleQueue.shift()
+      if (queued && typeof queued === 'object' && 'selected' in queued && 'result' in queued) {
+        if (queued.selected) {
+          options.onFileSelected?.(queued.selected as unknown as File)
+        }
+        return queued.result ? await queued.result : queued.result
+      }
+
+      const selected = queued ? await queued : queued
+      if (selected) {
+        options.onFileSelected?.(selected as unknown as File)
+      }
+      return selected
+    }),
   }
 })
 
@@ -116,7 +180,11 @@ vi.mock('src/ts/process/scripts', () => ({
 }))
 
 vi.mock('src/ts/process/transformers', () => ({
-  registerOnnxModelFromFile: vi.fn(async () => null),
+  registerOnnxModelFromFile: vi.fn(async (file, options) => {
+    transformerMocks.registerOnnxModelFromFileCalls.push({ file, options })
+    const next = transformerMocks.registerOnnxModelFromFileQueue.shift()
+    return next ? await next : null
+  }),
 }))
 
 vi.mock('src/ts/process/tts', () => ({
@@ -271,9 +339,33 @@ function buttons(): HTMLButtonElement[] {
   return Array.from(target.querySelectorAll('button'))
 }
 
+function buttonByText(text: string): HTMLButtonElement {
+  const button = buttons().find((candidate) => candidate.textContent?.trim() === text)
+  expect(button).toBeTruthy()
+  return button as HTMLButtonElement
+}
+
+function selectedFile(name: string, data = new Uint8Array([1, 2, 3])): MockSelectedFile {
+  return { name, data }
+}
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (error?: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
+}
+
 beforeEach(() => {
   vi.useFakeTimers()
   chatCommandMocks.setCurrentChatGreetingIndex.mockClear()
+  selectedFileState.singleQueue.length = 0
+  selectedFileState.multipleQueue.length = 0
+  transformerMocks.registerOnnxModelFromFileCalls.length = 0
+  transformerMocks.registerOnnxModelFromFileQueue.length = 0
   Object.defineProperty(window, 'innerWidth', { configurable: true, value: 800 })
   Object.defineProperty(window, 'innerHeight', { configurable: true, value: 600 })
   vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
@@ -311,7 +403,24 @@ describe('CharConfig character TTS media callback freshness contracts', () => {
     expect(source).not.toContain("import { registerOnnxModel } from 'src/ts/process/transformers'")
   })
 
-  it('selects VITS files before issuing a token and guards registration before final apply', () => {
+  it('issues additional asset upload tokens from the multi-file picker callback', () => {
+    const source = charConfigSource()
+    const body = sourceBetween(
+      source,
+      'async function uploadCharacterAdditionalAssetsFromEditor()',
+      'function currentEditorTtsAssetUploadTarget(',
+    )
+
+    expect(body).toContain('const files = await selectMultipleFile(CHARACTER_ADDITIONAL_ASSET_EXTENSIONS, {')
+    expect(body).toContain('onFilesSelected: () => {')
+    expect(body).toContain('operation = beginCharacterAdditionalAssetUpload(target)')
+    expect(body.indexOf('operation = beginCharacterAdditionalAssetUpload(target)')).toBeLessThan(
+      body.indexOf('if (!files || files.length === 0 || !operation) return'),
+    )
+    expect(body).toContain('clearCharacterAdditionalAssetUpload(operation)')
+  })
+
+  it('issues VITS tokens from the single-file picker callback and guards registration before final apply', () => {
     const source = charConfigSource()
     const body = sourceBetween(
       source,
@@ -319,20 +428,22 @@ describe('CharConfig character TTS media callback freshness contracts', () => {
       'async function uploadGptSoVitsReferenceAudioFromEditor()',
     )
 
-    expect(body.indexOf("const selected = (await selectSingleFile(['zip']))")).toBeLessThan(
-      body.indexOf('const operation = beginCharacterTtsAssetUpload(target)'),
+    expect(body).toContain("const selected = (await selectSingleFile(['zip'], {")
+    expect(body).toContain('onFileSelected: () => {')
+    expect(body).toContain('operation = beginCharacterTtsAssetUpload(target)')
+    expect(body.indexOf('operation = beginCharacterTtsAssetUpload(target)')).toBeLessThan(
+      body.indexOf('if (!selected || !operation) return'),
     )
-    expect(body).toContain('if (!selected) return')
-    expect(body).toContain('if (!isCurrentEditorTtsAssetUpload(operation)) return')
+    expect(body).toContain('if (!isCurrentEditorTtsAssetUpload(activeOperation)) return')
     expect(body).toContain('const model = await registerOnnxModelFromFile(selected, {')
-    expect(body).toContain('shouldContinue: () => isCurrentEditorTtsAssetUpload(operation)')
+    expect(body).toContain('shouldContinue: () => isCurrentEditorTtsAssetUpload(activeOperation)')
     expect(body).toContain('applyFreshCharacterVitsModelRegistration({')
     expect(body).toContain('character.vits = nextModel')
     expect(body).toContain('clearCharacterTtsAssetUpload(operation)')
     expect(body).not.toContain('character.vits = model')
   })
 
-  it('selects GPT-SoVITS audio before issuing a token and guards saveAsset before final apply', () => {
+  it('issues GPT-SoVITS audio tokens from the single-file picker callback and guards saveAsset before final apply', () => {
     const source = charConfigSource()
     const body = sourceBetween(
       source,
@@ -340,16 +451,58 @@ describe('CharConfig character TTS media callback freshness contracts', () => {
       'function clearOrRotateCharacterImage()',
     )
 
-    expect(body.indexOf("const audio = (await selectSingleFile(['wav', 'ogg', 'aac', 'mp3']))")).toBeLessThan(
-      body.indexOf('const operation = beginCharacterTtsAssetUpload(target)'),
+    expect(body).toContain("const audio = (await selectSingleFile(['wav', 'ogg', 'aac', 'mp3'], {")
+    expect(body).toContain('onFileSelected: () => {')
+    expect(body).toContain('operation = beginCharacterTtsAssetUpload(target)')
+    expect(body.indexOf('operation = beginCharacterTtsAssetUpload(target)')).toBeLessThan(
+      body.indexOf('if (!audio || !operation) return'),
     )
-    expect(body).toContain('if (!audio) return')
-    expect(body).toContain('if (!isCurrentEditorTtsAssetUpload(operation)) return')
+    expect(body).toContain('if (!isCurrentEditorTtsAssetUpload(activeOperation)) return')
     expect(body).toContain('const saveId = await saveAsset(audio.data)')
     expect(body).toContain('applyFreshCharacterGptSoVitsReferenceAudioUpload({')
     expect(body).toContain('character.gptSoVitsConfig.ref_audio_data = nextRefAudioData')
     expect(body).toContain('clearCharacterTtsAssetUpload(operation)')
     expect(body).not.toContain('character.gptSoVitsConfig.ref_audio_data = {\n              fileName: audio.name')
+  })
+
+  it('keeps an older delayed VITS picker read from superseding a newer selection', async () => {
+    const olderFile = selectedFile('older.zip', new Uint8Array([1]))
+    const newerFile = selectedFile('newer.zip', new Uint8Array([2]))
+    const olderRead = deferred<MockSelectedFile | null>()
+    const newerRegistration = deferred<unknown>()
+    selectedFileState.singleQueue.push({ selected: olderFile, result: olderRead.promise }, newerFile)
+    transformerMocks.registerOnnxModelFromFileQueue.push(newerRegistration.promise)
+
+    await mountCharConfig(5, {
+      ttsMode: 'vits',
+      vits: undefined,
+    })
+
+    buttonByText('Select Model').click()
+    await settleComponent()
+    expect(transformerMocks.registerOnnxModelFromFileCalls).toHaveLength(0)
+
+    buttonByText('Select Model').click()
+    await settleComponent()
+    expect(transformerMocks.registerOnnxModelFromFileCalls).toHaveLength(1)
+    expect(transformerMocks.registerOnnxModelFromFileCalls[0].file.name).toBe('newer.zip')
+
+    olderRead.resolve(olderFile)
+    await settleComponent()
+    expect(transformerMocks.registerOnnxModelFromFileCalls).toHaveLength(1)
+
+    newerRegistration.resolve({
+      files: { 'model.onnx': 'newer-model-asset' },
+      id: 'newer-model-id',
+      name: 'newer-model',
+    })
+    await settleComponent()
+
+    expect(DBState.db.characters[0].vits).toEqual({
+      files: { 'model.onnx': 'newer-model-asset' },
+      id: 'newer-model-id',
+      name: 'newer-model',
+    })
   })
 })
 

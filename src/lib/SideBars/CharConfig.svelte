@@ -615,24 +615,35 @@
     const target = currentEditorAdditionalAssetUploadTarget()
     if (!target) return
 
-    const files = await selectMultipleFile(CHARACTER_ADDITIONAL_ASSET_EXTENSIONS)
-    if (!files || files.length === 0) return
-
-    const operation = beginCharacterAdditionalAssetUpload(target)
+    let operation: CharacterAdditionalAssetUploadOperation | null = null
     try {
-      const uploadedEntries = await uploadAdditionalAssetEntries(files, operation, isCurrentEditorAdditionalAssetUpload)
+      const files = await selectMultipleFile(CHARACTER_ADDITIONAL_ASSET_EXTENSIONS, {
+        onFilesSelected: () => {
+          operation = beginCharacterAdditionalAssetUpload(target)
+        },
+      })
+      if (!files || files.length === 0 || !operation) return
+
+      const activeOperation = operation
+      const uploadedEntries = await uploadAdditionalAssetEntries(
+        files,
+        activeOperation,
+        isCurrentEditorAdditionalAssetUpload,
+      )
       if (!uploadedEntries || uploadedEntries.length === 0) return
 
       const nextAdditionalAssets = appendFreshCharacterAdditionalAssets({
-        operation,
-        freshness: editorAdditionalAssetUploadFreshness(operation),
+        operation: activeOperation,
+        freshness: editorAdditionalAssetUploadFreshness(activeOperation),
         entries: uploadedEntries,
       })
       if (!nextAdditionalAssets) return
       ;(characterDraft.value as unknown as character).additionalAssets = nextAdditionalAssets
       characterDraft.value = { ...characterDraft.value }
     } finally {
-      clearCharacterAdditionalAssetUpload(operation)
+      if (operation) {
+        clearCharacterAdditionalAssetUpload(operation)
+      }
     }
   }
 
@@ -678,21 +689,26 @@
     const target = currentEditorTtsAssetUploadTarget('vits-model')
     if (!target) return
 
-    const selected = (await selectSingleFile(['zip'])) as SelectedSingleFile | null | undefined
-    if (!selected) return
-
-    const operation = beginCharacterTtsAssetUpload(target)
+    let operation: CharacterTtsAssetUploadOperation | null = null
     try {
-      if (!isCurrentEditorTtsAssetUpload(operation)) return
+      const selected = (await selectSingleFile(['zip'], {
+        onFileSelected: () => {
+          operation = beginCharacterTtsAssetUpload(target)
+        },
+      })) as SelectedSingleFile | null | undefined
+      if (!selected || !operation) return
+
+      const activeOperation = operation
+      if (!isCurrentEditorTtsAssetUpload(activeOperation)) return
 
       const model = await registerOnnxModelFromFile(selected, {
-        shouldContinue: () => isCurrentEditorTtsAssetUpload(operation),
+        shouldContinue: () => isCurrentEditorTtsAssetUpload(activeOperation),
       })
       if (!model) return
 
       const nextModel = applyFreshCharacterVitsModelRegistration({
-        operation,
-        freshness: editorTtsAssetUploadFreshness(operation),
+        operation: activeOperation,
+        freshness: editorTtsAssetUploadFreshness(activeOperation),
         model,
       })
       if (!nextModel) return
@@ -701,7 +717,9 @@
         character.vits = nextModel
       })
     } finally {
-      clearCharacterTtsAssetUpload(operation)
+      if (operation) {
+        clearCharacterTtsAssetUpload(operation)
+      }
     }
   }
 
@@ -709,19 +727,24 @@
     const target = currentEditorTtsAssetUploadTarget('gptsovits-ref-audio')
     if (!target) return
 
-    const audio = (await selectSingleFile(['wav', 'ogg', 'aac', 'mp3'])) as SelectedSingleFile | null | undefined
-    if (!audio) return
-
-    const operation = beginCharacterTtsAssetUpload(target)
+    let operation: CharacterTtsAssetUploadOperation | null = null
     try {
-      if (!isCurrentEditorTtsAssetUpload(operation)) return
+      const audio = (await selectSingleFile(['wav', 'ogg', 'aac', 'mp3'], {
+        onFileSelected: () => {
+          operation = beginCharacterTtsAssetUpload(target)
+        },
+      })) as SelectedSingleFile | null | undefined
+      if (!audio || !operation) return
+
+      const activeOperation = operation
+      if (!isCurrentEditorTtsAssetUpload(activeOperation)) return
 
       const saveId = await saveAsset(audio.data)
-      if (!isCurrentEditorTtsAssetUpload(operation)) return
+      if (!isCurrentEditorTtsAssetUpload(activeOperation)) return
 
       const nextRefAudioData = applyFreshCharacterGptSoVitsReferenceAudioUpload({
-        operation,
-        freshness: editorTtsAssetUploadFreshness(operation),
+        operation: activeOperation,
+        freshness: editorTtsAssetUploadFreshness(activeOperation),
         refAudioData: {
           fileName: audio.name,
           assetId: saveId,
@@ -734,7 +757,9 @@
         character.gptSoVitsConfig.ref_audio_data = nextRefAudioData
       })
     } finally {
-      clearCharacterTtsAssetUpload(operation)
+      if (operation) {
+        clearCharacterTtsAssetUpload(operation)
+      }
     }
   }
 

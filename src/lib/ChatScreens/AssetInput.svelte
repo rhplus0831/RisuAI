@@ -118,17 +118,24 @@
     const target = currentQuickAddAdditionalAssetUploadTarget()
     if (!target) return
 
-    const files = await selectMultipleFile(QUICK_ADD_ADDITIONAL_ASSET_EXTENSIONS)
-    if (!files || files.length === 0) return
-
-    const operation = beginCharacterAdditionalAssetUpload(target)
+    let operation: CharacterAdditionalAssetUploadOperation | null = null
     try {
-      const entries = await uploadAdditionalAssetEntries(files, operation)
+      const files = await selectMultipleFile(QUICK_ADD_ADDITIONAL_ASSET_EXTENSIONS, {
+        onFilesSelected: () => {
+          operation = beginCharacterAdditionalAssetUpload(target)
+        },
+      })
+      if (!files || files.length === 0 || !operation) return
+
+      const activeOperation = operation
+      const entries = await uploadAdditionalAssetEntries(files, activeOperation)
       if (!entries || entries.length === 0) return
 
-      applyQuickAddAdditionalAssetEntries(operation, entries)
+      applyQuickAddAdditionalAssetEntries(activeOperation, entries)
     } finally {
-      clearCharacterAdditionalAssetUpload(operation)
+      if (operation) {
+        clearCharacterAdditionalAssetUpload(operation)
+      }
     }
   }
 

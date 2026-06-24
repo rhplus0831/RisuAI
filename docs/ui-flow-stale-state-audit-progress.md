@@ -22,8 +22,8 @@ This document tracks remediation of the Confirmed Issues and Risks To Harden in
 | I-01 | Chat send | Fixed | complete | complete | passed | `8e1d112d5 fix: carry chat send target through async flow` | Captured active chat target through append/send; verifier passed focused DOM and sendChat tests. |
 | I-02 | Message translation | Fixed | complete | complete | passed | `977737ff2 fix: target message translation updates by id` | Applied/rolled back translation by captured message id; verifier passed focused rendered stale-switch test. |
 | I-03 | Projection/SSE | Fixed | complete | complete | passed | `fad8fec93 fix: resync failed projection applies before cursor advance` | Lorebook/chat-message surgical apply failures now await full resync before marking events applied. |
-| I-04 | Character editor | Fixed | complete | complete | passed | `fix: guard character draft actions by live row` | Replaced draft `type` gates with live selected-row/draft-id guards; verifier passed focused CharConfig and bridge tests. |
-| I-05 | Character/media uploads | Pending |  |  |  |  | Issue upload freshness tokens before file bytes are read. |
+| I-04 | Character editor | Fixed | complete | complete | passed | `fa1f78e4e fix: guard character draft actions by live row` | Replaced draft `type` gates with live selected-row/draft-id guards; verifier passed focused CharConfig and bridge tests. |
+| I-05 | Character/media uploads | Fixed | complete | complete | passed | `fix: issue upload tokens before file reads` | Upload tokens now start in picker callbacks; verifier fixed read-rejection cleanup and passed focused race tests. |
 | I-06 | Prompt settings | Pending |  |  |  |  | Protect dirty prompt settings against stale projection before debounce flush. |
 | I-07 | Active chat generation settings | Pending |  |  |  |  | Capture chat target across confirm/input/modal flows. |
 | I-08 | Bundle/local-backup import | Pending |  |  |  |  | Avoid persisting assets when DB import later fails. |

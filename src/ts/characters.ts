@@ -53,6 +53,9 @@ import {
   type CharacterEmotionUploadOperation,
 } from './server/characterEmotionUpload'
 
+type SelectedSingleFile = NonNullable<Awaited<ReturnType<typeof selectSingleFile>>>
+type SelectedMultipleFile = NonNullable<Awaited<ReturnType<typeof selectMultipleFile>>>
+
 interface CharacterAvatarSnapshot {
   image: string | undefined
   ccAssets: character['ccAssets'] | undefined
@@ -167,13 +170,17 @@ export async function selectCharImg(charIndex: number) {
   }
   const avatarSnapshot = characterAvatarSnapshot(previousCharacter)
 
-  const selected = await selectSingleFile(['png', 'webp', 'gif', 'jpg', 'jpeg'])
-  if (!selected) {
-    return
-  }
-
-  const token = characterAvatarUploadGuard.issue(characterId)
+  let token: LatestOperationToken<string> | null = null
   try {
+    const selected = (await selectSingleFile(['png', 'webp', 'gif', 'jpg', 'jpeg'], {
+      onFileSelected: () => {
+        token = characterAvatarUploadGuard.issue(characterId)
+      },
+    })) as SelectedSingleFile | null
+    if (!selected || !token) {
+      return
+    }
+
     if (!isCurrentCharacterAvatarUpload({ token, charIndex, characterId, avatarSnapshot })) {
       return
     }
@@ -255,7 +262,9 @@ export async function selectCharImg(charIndex: number) {
       dispatchCompatibleCharacterUpdateScoped(previousCharacter, DBState.db.characters[charIndex], previous)
     }
   } finally {
-    characterAvatarUploadGuard.clear(token)
+    if (token) {
+      characterAvatarUploadGuard.clear(token)
+    }
   }
 }
 
@@ -328,22 +337,27 @@ export async function addCharEmotion(charId: number) {
   }
 
   try {
-    const selected = await selectMultipleFile(['png', 'webp', 'gif'])
-    if (!selected || selected.length === 0) {
-      return
-    }
-
-    const operation = beginCharacterEmotionUpload(target)
+    let operation: CharacterEmotionUploadOperation | null = null
     try {
+      const selected = (await selectMultipleFile(['png', 'webp', 'gif'], {
+        onFilesSelected: () => {
+          operation = beginCharacterEmotionUpload(target)
+        },
+      })) as SelectedMultipleFile | null
+      if (!selected || selected.length === 0 || !operation) {
+        return
+      }
+
+      const activeOperation = operation
       const uploadedEntries: CharacterEmotionImageEntry[] = []
 
       for (const f of selected) {
-        if (!isCurrentCharacterEmotionUpload(operation, charId)) {
+        if (!isCurrentCharacterEmotionUpload(activeOperation, charId)) {
           return
         }
 
         const imgp = await saveImage(f.data)
-        if (!isCurrentCharacterEmotionUpload(operation, charId)) {
+        if (!isCurrentCharacterEmotionUpload(activeOperation, charId)) {
           return
         }
 
@@ -355,7 +369,7 @@ export async function addCharEmotion(charId: number) {
       withTrustedServerProjectionWrite(() => {
         const dbChar = DBState.db.characters[charId]
         const emotionImages = appendFreshCharacterEmotionImages({
-          operation,
+          operation: activeOperation,
           freshness: currentCharacterEmotionUploadFreshness(charId),
           entries: uploadedEntries,
         })
@@ -372,7 +386,9 @@ export async function addCharEmotion(charId: number) {
         dispatchCompatibleCharacterUpdateScoped(previousCharacter, DBState.db.characters[charId], previous)
       }
     } finally {
-      clearCharacterEmotionUpload(operation)
+      if (operation) {
+        clearCharacterEmotionUpload(operation)
+      }
     }
   } finally {
     addingEmotion.set(false)

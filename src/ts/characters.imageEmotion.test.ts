@@ -1,17 +1,28 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+type MockSelectedFile = { name: string; data: Uint8Array }
+type MockSingleFileRead = {
+  selected: MockSelectedFile | null
+  result: Promise<MockSelectedFile | null> | MockSelectedFile | null
+}
+type MockMultipleFileRead = {
+  selected: MockSelectedFile[]
+  result: Promise<MockSelectedFile[] | null> | MockSelectedFile[] | null
+}
+
 const selectedFileState = vi.hoisted(() => ({
-  singleQueue: [] as Array<
-    Promise<null | { name: string; data: Uint8Array }> | null | { name: string; data: Uint8Array }
-  >,
-  multipleQueue: [] as Array<
-    Promise<null | { name: string; data: Uint8Array }[]> | null | { name: string; data: Uint8Array }[]
-  >,
+  singleQueue: [] as Array<Promise<MockSelectedFile | null> | MockSingleFileRead | MockSelectedFile | null>,
+  multipleQueue: [] as Array<Promise<MockSelectedFile[] | null> | MockMultipleFileRead | MockSelectedFile[] | null>,
 }))
 
 const saveImageState = vi.hoisted(() => ({
   calls: [] as Uint8Array[],
   queue: [] as Array<Promise<string> | string>,
+}))
+
+const emotionUploadState = vi.hoisted(() => ({
+  beginCalls: [] as import('./server/characterEmotionUpload').CharacterEmotionUploadOperation[],
+  clearCalls: [] as import('./server/characterEmotionUpload').CharacterEmotionUploadOperation[],
 }))
 
 vi.mock('./platform', async (importActual) => {
@@ -25,6 +36,23 @@ vi.mock('./platform', async (importActual) => {
 vi.mock('./storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'image-emotion-token',
 }))
+
+vi.mock('./server/characterEmotionUpload', async (importActual) => {
+  const actual = await importActual<typeof import('./server/characterEmotionUpload')>()
+
+  return {
+    ...actual,
+    beginCharacterEmotionUpload: vi.fn((target: Parameters<typeof actual.beginCharacterEmotionUpload>[0]) => {
+      const operation = actual.beginCharacterEmotionUpload(target)
+      emotionUploadState.beginCalls.push(operation)
+      return operation
+    }),
+    clearCharacterEmotionUpload: vi.fn((operation: Parameters<typeof actual.clearCharacterEmotionUpload>[0]) => {
+      emotionUploadState.clearCalls.push(operation)
+      return actual.clearCharacterEmotionUpload(operation)
+    }),
+  }
+})
 
 vi.mock('./util', () => {
   return {
@@ -54,13 +82,37 @@ vi.mock('./util', () => {
     prebuiltAssetCommand: vi.fn(() => false),
     replaceAsync: vi.fn(async (data: string) => data),
     selectFileByDom: vi.fn(),
-    selectMultipleFile: vi.fn(async () => {
-      const selected = selectedFileState.multipleQueue.shift()
-      return selected ? await selected : selected
-    }),
-    selectSingleFile: vi.fn(async () => {
-      const selected = selectedFileState.singleQueue.shift()
-      return selected ? await selected : selected
+    selectMultipleFile: vi.fn(
+      async (_extensions: string[], options: { onFilesSelected?: (files: File[]) => void } = {}) => {
+        const queued = selectedFileState.multipleQueue.shift()
+        if (queued && typeof queued === 'object' && 'selected' in queued && 'result' in queued) {
+          if (queued.selected.length > 0) {
+            options.onFilesSelected?.(queued.selected as unknown as File[])
+          }
+          return queued.result ? await queued.result : queued.result
+        }
+
+        const selected = queued ? await queued : queued
+        if (selected && selected.length > 0) {
+          options.onFilesSelected?.(selected as unknown as File[])
+        }
+        return selected
+      },
+    ),
+    selectSingleFile: vi.fn(async (_extensions: string[], options: { onFileSelected?: (file: File) => void } = {}) => {
+      const queued = selectedFileState.singleQueue.shift()
+      if (queued && typeof queued === 'object' && 'selected' in queued && 'result' in queued) {
+        if (queued.selected) {
+          options.onFileSelected?.(queued.selected as unknown as File)
+        }
+        return queued.result ? await queued.result : queued.result
+      }
+
+      const selected = queued ? await queued : queued
+      if (selected) {
+        options.onFileSelected?.(selected as unknown as File)
+      }
+      return selected
     }),
     simplifySchema: vi.fn((data: unknown) => data),
     sleep: vi.fn(async () => {}),
@@ -228,6 +280,8 @@ beforeEach(() => {
   selectedFileState.multipleQueue.length = 0
   saveImageState.calls.length = 0
   saveImageState.queue.length = 0
+  emotionUploadState.beginCalls.length = 0
+  emotionUploadState.clearCalls.length = 0
 })
 
 afterEach(() => {
@@ -507,6 +561,64 @@ describe('Phase 3 character emotion image upload freshness', () => {
 
     expect(DBState.db.characters[0].emotionImages).toEqual([['newer', 'newer-upload-asset']])
     expect(commandCalls(calls)).toHaveLength(1)
+  })
+
+  it('drops an older emotion picker read after a newer selection starts first', async () => {
+    const calls = stubCommandFetch()
+    const olderFile = avatarFile('older.png')
+    const newerFile = avatarFile('newer.webp')
+    const olderRead = deferred<MockSelectedFile[] | null>()
+    const newerUpload = deferred<string>()
+    selectedFileState.multipleQueue.push({ selected: [olderFile], result: olderRead.promise }, [newerFile])
+    saveImageState.queue.push(newerUpload.promise)
+    DBState.db = {
+      characters: [baseCharacter({ chaId: 'char-a', emotionImages: [] })],
+    } as any
+    selectedCharID.set(0)
+
+    const olderOperation = addCharEmotion(0)
+    await tick()
+    expect(saveImageState.calls).toHaveLength(0)
+
+    const newerOperation = addCharEmotion(0)
+    await vi.waitFor(() => {
+      expect(saveImageState.calls).toHaveLength(1)
+    })
+    expect(saveImageState.calls[0]).toEqual(newerFile.data)
+
+    olderRead.resolve([olderFile])
+    await olderOperation
+    await tick()
+    expect(saveImageState.calls).toHaveLength(1)
+
+    newerUpload.resolve('newer-upload-asset')
+    await newerOperation
+    await vi.waitFor(() => {
+      expect(commandCalls(calls)).toHaveLength(1)
+    })
+
+    expect(DBState.db.characters[0].emotionImages).toEqual([['newer', 'newer-upload-asset']])
+  })
+
+  it('clears an emotion upload operation when a picker read rejects after selection', async () => {
+    const failingRead = deferred<MockSelectedFile[] | null>()
+    selectedFileState.multipleQueue.push({ selected: [avatarFile('broken.png')], result: failingRead.promise })
+    DBState.db = {
+      characters: [baseCharacter({ chaId: 'char-a', emotionImages: [] })],
+    } as any
+    selectedCharID.set(0)
+
+    const operation = addCharEmotion(0)
+    await tick()
+    expect(emotionUploadState.beginCalls).toHaveLength(1)
+    expect(emotionUploadState.clearCalls).toHaveLength(0)
+
+    const rejection = expect(operation).rejects.toThrow('read failed')
+    failingRead.reject(new Error('read failed'))
+    await rejection
+
+    expect(emotionUploadState.clearCalls).toEqual([emotionUploadState.beginCalls[0]])
+    expect(saveImageState.calls).toHaveLength(0)
   })
 
   it('keeps an older pending emotion upload current when a newer picker is canceled', async () => {

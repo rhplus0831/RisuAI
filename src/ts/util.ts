@@ -47,6 +47,10 @@ export interface SelectSingleFileOptions {
   onFileSelected?: (file: File) => void
 }
 
+export interface SelectMultipleFileOptions {
+  onFilesSelected?: (files: File[]) => void
+}
+
 export async function selectSingleFile(ext: string[], options: SelectSingleFileOptions = {}) {
   const v = await selectFileByDom(ext, 'single')
   const file = v?.[0]
@@ -57,10 +61,14 @@ export async function selectSingleFile(ext: string[], options: SelectSingleFileO
   return { name: file.name, data: await readFileAsUint8Array(file) }
 }
 
-export async function selectMultipleFile(ext: string[]) {
+export async function selectMultipleFile(ext: string[], options: SelectMultipleFileOptions = {}) {
   const v = await selectFileByDom(ext, 'multiple')
+  const files = v ?? []
+  if (files.length > 0) {
+    options.onFilesSelected?.(files)
+  }
   let arr: { name: string; data: Uint8Array }[] = []
-  for (const file of v) {
+  for (const file of files) {
     arr.push({ name: file.name, data: await readFileAsUint8Array(file) })
   }
   return arr
