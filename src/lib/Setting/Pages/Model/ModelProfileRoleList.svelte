@@ -206,6 +206,7 @@
     commandError = ''
     const bindings = cloneJsonValue(changedBindings)
     const nextRoleProfiles = cloneJsonValue(normalizeModelRoleProfiles(draftBindings))
+    const modelPresetId = selectedModelPresetId()
     const roleResult = await runServerCommand({
       command: (baseRevision) =>
         updateModelRoleProfilesCommand({
@@ -220,7 +221,6 @@
       return
     }
 
-    const modelPresetId = selectedModelPresetId()
     if (!modelPresetId) {
       applying = false
       return

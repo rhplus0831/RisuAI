@@ -38,8 +38,8 @@ This document tracks remediation of the Confirmed Issues and Risks To Harden in
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | R-01 | Generation settings rollback | Fixed | complete | complete | passed | `19262caeb fix: guard generation settings rollback attempts` | Failed older saves now roll back only when live generation settings still match the attempted value. |
 | R-02 | Generation local mirror | Fixed | complete | complete | complete | 7827ba602 fix: resolve server-backed generation mirrors by id | Server-backed mirror resolves chat by stable ids with index fallback only for legacy payloads. |
-| R-03 | Message icon actions | Fixed | complete | complete | complete | fix: remove stale delay from message icon actions | Removed stale async delay before bookmark, branch, disable, and disable-above action resolution. |
-| R-04 | Model role apply | Pending |  |  |  |  | Capture selected preset before awaited role update. |
+| R-03 | Message icon actions | Fixed | complete | complete | complete | e43829ac7 fix: remove stale delay from message icon actions | Removed stale async delay before bookmark, branch, disable, and disable-above action resolution. |
+| R-04 | Model role apply | Fixed | complete | complete | complete | fix: target model role preset patches by captured id | Captured selected model preset id before awaited role-profile command. |
 | R-05 | Model profile drawer | Pending |  |  |  |  | Existing-profile edit should not create if projection deletes profile. |
 | R-06 | Modal chat delete | Pending |  |  |  |  | Capture originating character id before confirm. |
 | R-07 | Sortable chat reorder | Pending |  |  |  |  | Validate DOM chat ids still belong to same character during drag. |
