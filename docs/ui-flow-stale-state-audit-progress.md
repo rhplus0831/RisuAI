@@ -41,8 +41,8 @@ This document tracks remediation of the Confirmed Issues and Risks To Harden in
 | R-03 | Message icon actions | Fixed | complete | complete | complete | e43829ac7 fix: remove stale delay from message icon actions | Removed stale async delay before bookmark, branch, disable, and disable-above action resolution. |
 | R-04 | Model role apply | Fixed | complete | complete | complete | 9fba627dd fix: target model role preset patches by captured id | Captured selected model preset id before awaited role-profile command. |
 | R-05 | Model profile drawer | Fixed | complete | complete | complete | 5d007f207 fix: guard stale model profile edit saves | Edit saves now guard missing profile targets and show a stale-target error instead of creating. |
-| R-06 | Modal chat delete | Fixed | complete | complete | complete | fix: resolve modal chat deletes by origin target | Modal delete resolves the captured origin character/chat after confirmation before deleting. |
-| R-07 | Sortable chat reorder | Pending |  |  |  |  | Validate DOM chat ids still belong to same character during drag. |
+| R-06 | Modal chat delete | Fixed | complete | complete | complete | ecd22ad5b fix: resolve modal chat deletes by origin target | Modal delete resolves the captured origin character/chat after confirmation before deleting. |
+| R-07 | Sortable chat reorder | Fixed | complete | complete | complete | fix: validate sortable chat reorder by ids | Sortable reorder builds payloads from DOM ids and fails closed on stale/missing ids. |
 | R-08 | Destructive refresh | Pending |  |  |  |  | Skip optimistic rollback after destructive refresh epoch changes. |
 | R-09 | Realm import | Pending |  |  |  |  | Decide and encode freshness-before-resync behavior. |
 | R-10 | Avatar upload | Pending |  |  |  |  | Decide whether navigation should cancel avatar upload. |

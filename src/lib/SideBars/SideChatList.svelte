@@ -221,6 +221,137 @@
     dispatchDeleteChat(chat.id, previous)
   }
 
+  type ChatDomOrder = {
+    chatIds: string[]
+    chatsById: Map<string, Chat>
+    folderByChatId: Record<string, string | null>
+  }
+
+  type FolderDomOrder = ChatDomOrder & {
+    folderIds: string[]
+    foldersById: Map<string, ChatFolder>
+  }
+
+  function rejectStaleReorder(reason: string): null {
+    console.warn(`Ignoring stale sidebar chat reorder: ${reason}`)
+    return null
+  }
+
+  function buildCurrentChatIdMap(): Map<string, Chat> | null {
+    const chatsById = new Map<string, Chat>()
+    for (const chat of chara.chats) {
+      if (!chat.id) return rejectStaleReorder('current chat is missing an id')
+      if (chatsById.has(chat.id)) return rejectStaleReorder(`duplicate current chat id "${chat.id}"`)
+      chatsById.set(chat.id, chat)
+    }
+    return chatsById
+  }
+
+  function buildCurrentFolderIdMap(): Map<string, ChatFolder> | null {
+    const foldersById = new Map<string, ChatFolder>()
+    for (const folder of chara.chatFolders) {
+      if (!folder.id) return rejectStaleReorder('current folder is missing an id')
+      if (foldersById.has(folder.id)) return rejectStaleReorder(`duplicate current folder id "${folder.id}"`)
+      foldersById.set(folder.id, folder)
+    }
+    return foldersById
+  }
+
+  function folderIdForChatElement(chatEle: HTMLElement, foldersById: Map<string, ChatFolder>): string | null {
+    const folderPanel = chatEle.closest<HTMLElement>('[data-risu-chat-folder-panel-id]')
+    if (!folderPanel) return null
+
+    const folderId = folderPanel.dataset.risuChatFolderPanelId
+    if (!folderId) {
+      throw new Error('folder panel is missing an id')
+    }
+    if (!foldersById.has(folderId)) {
+      throw new Error(`unknown folder id "${folderId}"`)
+    }
+    return folderId
+  }
+
+  function buildChatDomOrder(): ChatDomOrder | null {
+    if (!listEle) return rejectStaleReorder('chat list is not mounted')
+
+    const chatsById = buildCurrentChatIdMap()
+    const foldersById = buildCurrentFolderIdMap()
+    if (!chatsById || !foldersById) return null
+
+    const chatIds: string[] = []
+    const seenChatIds = new Set<string>()
+    const folderByChatId: Record<string, string | null> = {}
+
+    try {
+      listEle.querySelectorAll<HTMLElement>('[data-risu-chat-id]').forEach((chatEle) => {
+        const chatId = chatEle.dataset.risuChatId
+        if (!chatId) {
+          throw new Error('DOM chat row is missing an id')
+        }
+        if (seenChatIds.has(chatId)) {
+          throw new Error(`duplicate DOM chat id "${chatId}"`)
+        }
+        if (!chatsById.has(chatId)) {
+          throw new Error(`unknown DOM chat id "${chatId}"`)
+        }
+        seenChatIds.add(chatId)
+        chatIds.push(chatId)
+        folderByChatId[chatId] = folderIdForChatElement(chatEle, foldersById)
+      })
+    } catch (error) {
+      return rejectStaleReorder(error instanceof Error ? error.message : String(error))
+    }
+
+    for (const chatId of chatsById.keys()) {
+      if (!seenChatIds.has(chatId)) {
+        return rejectStaleReorder(`current chat id "${chatId}" is missing from the DOM`)
+      }
+    }
+
+    return { chatIds, chatsById, folderByChatId }
+  }
+
+  function buildFolderDomOrder(folderContainer: HTMLElement): FolderDomOrder | null {
+    const chatOrder = buildChatDomOrder()
+    const foldersById = buildCurrentFolderIdMap()
+    if (!chatOrder || !foldersById) return null
+
+    const folderIds: string[] = []
+    const seenFolderIds = new Set<string>()
+
+    for (const folderEle of Array.from(folderContainer.children)) {
+      if (!(folderEle instanceof HTMLElement)) return rejectStaleReorder('DOM folder row is not an element')
+      const folderId = folderEle.dataset.risuChatFolderId
+      if (!folderId) return rejectStaleReorder('DOM folder row is missing an id')
+      if (seenFolderIds.has(folderId)) return rejectStaleReorder(`duplicate DOM folder id "${folderId}"`)
+      if (!foldersById.has(folderId)) return rejectStaleReorder(`unknown DOM folder id "${folderId}"`)
+      seenFolderIds.add(folderId)
+      folderIds.push(folderId)
+    }
+
+    for (const folderId of foldersById.keys()) {
+      if (!seenFolderIds.has(folderId)) {
+        return rejectStaleReorder(`current folder id "${folderId}" is missing from the DOM`)
+      }
+    }
+
+    return { ...chatOrder, folderIds, foldersById }
+  }
+
+  function selectedChatIdFromDom(chatsById: Map<string, Chat>, fallbackChatId?: string): string | undefined {
+    const selectedRow = listEle?.querySelector<HTMLElement>('[data-risu-chat-selected="true"][data-risu-chat-id]')
+    const selectedChatId = selectedRow?.dataset.risuChatId
+    if (selectedChatId && chatsById.has(selectedChatId)) return selectedChatId
+    return fallbackChatId
+  }
+
+  async function resetSortableProjection(): Promise<void> {
+    destroyStb()
+    sorted += 1
+    await sleep(1)
+    createStb()
+  }
+
   function destroyStb(): void {
     if (folderStb) {
       try {
@@ -242,56 +373,38 @@
       chatsStb.push(
         new Sortable(chat, {
           group: 'chats',
-          onEnd: async (event) => {
+          onEnd: async () => {
             const previous = currentChatStateSnapshot()
             const currentChatPage = chara.chatPage
-            const newChats: Chat[] = []
-            const chatIds: string[] = []
-            const folderByChatId: Record<string, string | null> = {}
+            const usingServerCommands = canUseServerCommands()
+            const chatOrder = buildChatDomOrder()
 
-            listEle.querySelectorAll('[data-risu-chat-folder-idx]').forEach((folder) => {
-              const folderIdx = parseInt(folder.getAttribute('data-risu-chat-folder-idx'))
-              folder.querySelectorAll('[data-risu-chat-idx]').forEach((chatInFolder) => {
-                const chatIdx = parseInt(chatInFolder.getAttribute('data-risu-chat-idx'))
-                const newChat = chara.chats[chatIdx]
-                const folderId = chara.chatFolders[folderIdx].id
-                if (newChat.id) {
-                  chatIds.push(newChat.id)
-                  folderByChatId[newChat.id] = folderId
-                }
-                if (!canUseServerCommands()) newChat.folderId = folderId
-                newChats.push(newChat)
-              })
-            })
+            if (!chatOrder || (usingServerCommands && !chara.chaId)) {
+              if (!chara.chaId && usingServerCommands) rejectStaleReorder('character is missing an id')
+              await resetSortableProjection()
+              return
+            }
 
-            listEle.querySelectorAll('[data-risu-chat-idx]').forEach((chatEle) => {
-              const idx = parseInt(chatEle.getAttribute('data-risu-chat-idx'))
-              const newChat = chara.chats[idx]
-              if (newChats.includes(newChat) == false) {
-                if (newChat.id) {
-                  chatIds.push(newChat.id)
-                  folderByChatId[newChat.id] = null
-                }
-                if (!canUseServerCommands() && newChat.folderId != null) newChat.folderId = null
-                newChats.push(newChat)
-              }
-            })
-
-            const selectedChatId = chara.chats[currentChatPage]?.id
-            if (canUseServerCommands()) {
-              dispatchReorderChatsByIds(chara.chaId, chatIds, folderByChatId, previous, selectedChatId)
+            const selectedChatId = selectedChatIdFromDom(chatOrder.chatsById, chara.chats[currentChatPage]?.id)
+            if (usingServerCommands) {
+              dispatchReorderChatsByIds(
+                chara.chaId,
+                chatOrder.chatIds,
+                chatOrder.folderByChatId,
+                previous,
+                selectedChatId,
+              )
             } else {
+              const newChats = chatOrder.chatIds.map((chatId) => chatOrder.chatsById.get(chatId) as Chat)
+              for (const chat of newChats) {
+                chat.folderId = chatOrder.folderByChatId[chat.id] ?? null
+              }
               changeChatTo(newChats.indexOf(chara.chats[currentChatPage]))
               chara.chats = newChats
               dispatchReorderChats(chara.chaId, previous, chara.chats[chara.chatPage]?.id)
             }
 
-            try {
-              this.destroy()
-            } catch (e) {}
-            sorted += 1
-            await sleep(1)
-            createStb()
+            await resetSortableProjection()
           },
           ...sortableOptions,
         }),
@@ -301,65 +414,39 @@
       group: 'folders',
       onEnd: async (event) => {
         const previous = currentChatStateSnapshot()
-        const newFolders: ChatFolder[] = []
-        const newChats: Chat[] = []
-        const folderIds: string[] = []
-        const chatIds: string[] = []
-        const folderByChatId: Record<string, string | null> = {}
-        const folders: HTMLElement[] = Array.from<HTMLElement>(event.to.children)
-
         const currentChatPage = chara.chatPage
+        const usingServerCommands = canUseServerCommands()
+        const folderOrder = buildFolderDomOrder(event.to)
 
-        folders.forEach((folder) => {
-          const folderIdx = parseInt(folder.getAttribute('data-risu-chat-folder-idx'))
-          const nextFolder = chara.chatFolders[folderIdx]
-          newFolders.push(nextFolder)
-          if (nextFolder?.id) folderIds.push(nextFolder.id)
+        if (!folderOrder || (usingServerCommands && !chara.chaId)) {
+          if (!chara.chaId && usingServerCommands) rejectStaleReorder('character is missing an id')
+          await resetSortableProjection()
+          return
+        }
 
-          folder.querySelectorAll('[data-risu-chat-idx]').forEach((chatEle) => {
-            const idx = parseInt(chatEle.getAttribute('data-risu-chat-idx'))
-            const chat = chara.chats[idx]
-            newChats.push(chat)
-            if (chat?.id) {
-              chatIds.push(chat.id)
-              folderByChatId[chat.id] = chat.folderId ?? null
-            }
-          })
-        })
-
-        listEle.querySelectorAll('[data-risu-chat-idx]').forEach((chatEle) => {
-          const idx = parseInt(chatEle.getAttribute('data-risu-chat-idx'))
-          if (newChats.includes(chara.chats[idx]) == false) {
-            const chat = chara.chats[idx]
-            newChats.push(chat)
-            if (chat?.id) {
-              chatIds.push(chat.id)
-              folderByChatId[chat.id] = chat.folderId ?? null
-            }
-          }
-        })
-
-        const selectedChatId = chara.chats[currentChatPage]?.id
-        if (canUseServerCommands()) {
+        const selectedChatId = selectedChatIdFromDom(folderOrder.chatsById, chara.chats[currentChatPage]?.id)
+        if (usingServerCommands) {
           dispatchReorderChatFoldersAndChatsByIds(
             chara.chaId,
-            folderIds,
-            chatIds,
-            folderByChatId,
+            folderOrder.folderIds,
+            folderOrder.chatIds,
+            folderOrder.folderByChatId,
             previous,
             selectedChatId,
           )
         } else {
+          const newFolders = folderOrder.folderIds.map(
+            (folderId) => folderOrder.foldersById.get(folderId) as ChatFolder,
+          )
+          const newChats = folderOrder.chatIds.map((chatId) => folderOrder.chatsById.get(chatId) as Chat)
+          for (const chat of newChats) {
+            chat.folderId = folderOrder.folderByChatId[chat.id] ?? null
+          }
           chara.chatFolders = newFolders
           changeChatTo(newChats.indexOf(chara.chats[currentChatPage]))
           chara.chats = newChats
         }
-        try {
-          folderStb.destroy()
-        } catch (e) {}
-        sorted += 1
-        await sleep(1)
-        createStb()
+        await resetSortableProjection()
       },
       ...sortableOptions,
     })
