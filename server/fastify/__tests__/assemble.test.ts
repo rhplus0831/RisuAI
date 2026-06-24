@@ -565,6 +565,81 @@ describe('Phase 7-11a resolveScope (via beginAssembly)', () => {
     expect(state.currentChat.id).toBe('b1')
   })
 
+  it('keeps CBS chat-history helpers aligned with the working send transcript', async () => {
+    const db = makeDatabase({
+      maxContext: 100_000,
+      maxResponse: 50,
+      promptTemplate: [
+        {
+          type: 'plain',
+          type2: 'main',
+          role: 'system',
+          text: 'last={{lastmessage}}\nprev={{previous_chat_log::{{lastmessageid}}}}',
+        },
+      ],
+      characters: [
+        makeCharacter({
+          chats: [
+            makeChat({
+              id: 'chat-1',
+              message: [
+                { role: 'user', data: 'older user', chatId: 'msg-old-user' },
+                { role: 'char', data: 'older assistant', chatId: 'msg-old-assistant' },
+              ] as Message[],
+            }),
+          ],
+        }),
+      ],
+    } as unknown as Partial<Database>)
+
+    const result = await assemblePrompt(baseInput({ userMessage: 'latest user turn' }), depsFor(db))
+
+    expect(result.stopSending).toBe(false)
+    if (result.stopSending) return
+    const rendered = (result.formated ?? []).map((row) => row.content).join('\n')
+    expect(rendered).toContain('last=latest user turn')
+    expect(rendered).toContain('prev=latest user turn')
+    expect(rendered).not.toContain('last=older assistant')
+  })
+
+  it('uses the requested chat as the active CBS history scope even when chatPage points elsewhere', async () => {
+    const db = makeDatabase({
+      maxContext: 100_000,
+      maxResponse: 50,
+      promptTemplate: [
+        {
+          type: 'plain',
+          type2: 'main',
+          role: 'system',
+          text: 'last={{lastmessage}}',
+        },
+      ],
+      characters: [
+        makeCharacter({
+          chatPage: 0,
+          chats: [
+            makeChat({
+              id: 'chat-a',
+              message: [{ role: 'user', data: 'wrong active chat', chatId: 'msg-a' }] as Message[],
+            }),
+            makeChat({
+              id: 'chat-b',
+              message: [{ role: 'user', data: 'target chat prior', chatId: 'msg-b' }] as Message[],
+            }),
+          ],
+        }),
+      ],
+    } as unknown as Partial<Database>)
+
+    const result = await assemblePrompt(baseInput({ chatId: 'chat-b', userMessage: 'target chat latest' }), depsFor(db))
+
+    expect(result.stopSending).toBe(false)
+    if (result.stopSending) return
+    const rendered = (result.formated ?? []).map((row) => row.content).join('\n')
+    expect(rendered).toContain('last=target chat latest')
+    expect(rendered).not.toContain('wrong active chat')
+  })
+
   it('throws a structured incomplete-chat error before assembly work', () => {
     const db = makeDatabase({
       characters: [
@@ -2340,6 +2415,22 @@ describe('Phase 7-11f renderAndBudget + assemblePrompt', () => {
 
     expect(result.stopSending).toBe(false)
     expect(result.prompt?.promptInfo?.promptText).toBeDefined()
+  })
+
+  it('renders the submitted user turn after a Current Input prefix template card', async () => {
+    const db = fullDb({
+      promptTemplate: [
+        { type: 'chat', rangeStart: -2, rangeEnd: -1 },
+        { type: 'plain', text: '<Current Input>', role: 'user', type2: 'main' },
+        { type: 'chat', rangeStart: -1, rangeEnd: 'end' },
+      ],
+    } as Partial<Database>)
+    const result = await assemblePrompt(baseInput({ userMessage: 'latest submitted turn' }), depsFor(db))
+    const contents = result.formated?.map((row) => row.content) ?? []
+
+    expect(result.stopSending).toBe(false)
+    expect(contents).toEqual(expect.arrayContaining(['hi there', '<Current Input>', 'latest submitted turn']))
+    expect(contents.indexOf('<Current Input>')).toBeLessThan(contents.indexOf('latest submitted turn'))
   })
 
   it('captures prompt-info text from the chat-scoped preset, persona, and toggles', async () => {

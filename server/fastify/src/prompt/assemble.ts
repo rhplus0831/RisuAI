@@ -533,6 +533,7 @@ function resolveScope(input: AssembleInput, deps: AssembleDeps): ResolvedScope {
     selectedCharID,
     chatPage,
   })
+  effective.currentChar.chatPage = chatPage
 
   return {
     database: effective.database,
@@ -675,6 +676,14 @@ function syncWorkingScriptstate(state: AssemblyState): void {
   }
 }
 
+function syncWorkingTranscript(state: AssemblyState): void {
+  const persisted = currentPersistedChat(state)
+  if (persisted) {
+    persisted.message = state.currentChat.message ?? []
+  }
+  state.currentChar.chatPage = state.chatPage
+}
+
 function foldStableCardCacheVars(state: AssemblyState): void {
   if (!state.stableCardCache.dirty) return
   state.varChanged = true
@@ -744,6 +753,7 @@ function appendUserMessageRow(state: AssemblyState): void {
       message: checkpointMessage,
     })
     setMessageMutationCheckpointRow(state, lastIndex, checkpointMessage)
+    syncWorkingTranscript(state)
     bumpHistoryCallbackMemo(state)
     return
   }
@@ -765,6 +775,7 @@ function appendUserMessageRow(state: AssemblyState): void {
     message: checkpointMessage,
   })
   setMessageMutationCheckpointRow(state, index, checkpointMessage)
+  syncWorkingTranscript(state)
   bumpHistoryCallbackMemo(state)
 }
 
@@ -848,6 +859,7 @@ async function runInputTrigger(state: AssemblyState): Promise<void> {
   if (firstChangedMessageIndex(priorMessages, rewritten) !== undefined) {
     state.currentChat = result.chat
     state.inputTriggerRewroteTranscript = true
+    syncWorkingTranscript(state)
     captureMessageReplacement(state, 'input_trigger')
   }
 }
@@ -892,6 +904,7 @@ async function applyEditInput(state: AssemblyState): Promise<void> {
   if (text === rawUserMessage) return
   lastMessage.data = text
   state.editInputTransformed = true
+  syncWorkingTranscript(state)
   captureMessageReplacement(state, 'editinput')
 }
 
@@ -933,6 +946,7 @@ function prepareRegenerateTranscript(state: AssemblyState): void {
     }
     messages.pop()
   }
+  syncWorkingTranscript(state)
   captureMessageReplacement(state, 'regenerate')
 }
 
@@ -1231,6 +1245,7 @@ export async function fillHistoryAndBias(state: AssemblyState): Promise<void> {
   // The start trigger may have mutated the chat and chat-vars even when
   // it asks to abort, so thread these out before the `stopSending` gate.
   state.currentChat = history.currentChat
+  syncWorkingTranscript(state)
   state.triggerResult = history.triggerResult
   state.varChanged = !!state.varChanged || history.varChanged
   syncWorkingScriptstate(state)
@@ -1296,6 +1311,7 @@ export function fillMemoryAndPostHistory(state: AssemblyState): void {
   }
 
   state.currentChat = mem.currentChat
+  syncWorkingTranscript(state)
   state.memories = mem.memories
   // The SPA root re-tokenizes the rendered prompt, but the post-trim estimate is
   // the honest value for `info` telemetry, so keep it on the state.
