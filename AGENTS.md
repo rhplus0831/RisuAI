@@ -58,22 +58,3 @@ pnpm exec tsc -p server/fastify/tsconfig.json --noEmit  # check server (strict, 
 # Language File
 
 When adding strings that appear in the frontend UI, create an appropriate key for them under `src/lang`.
-
-# Using Sub-Agents
-
-- If the user gives specific instructions on how to use sub-agents, follow those instructions.
-- If the user only refers to the default rules, follow the default rules.
-- If the user does not mention sub-agents, or if you do not have access to sub-agent tools, ignore these rules.
-
-## Default Rules
-
-- You act as a manager responsible for coordinating the different sub-agents.
-- Use `STRUCTURE.md` and a brief investigation with `rg` to roughly identify which areas need deeper inspection.
-- Call an explorer agent (`explorer-type`) to examine the identified areas in detail.
-- Based on the exploration results, provide the findings discovered by the explorer agent to an implementation agent (`worker-type`).
-
-  - When doing this, summon the sub-agent with a fresh context.
-- Once the task is complete, call a verification agent (`worker-type`) to validate the result.
-
-  - If verification fails, call the implementation agent again to fix the bug.
-- After all work is complete, report the result.
