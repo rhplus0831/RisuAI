@@ -95,10 +95,13 @@ function isCurrentCharacterAvatarUpload(input: {
   charIndex: number
   characterId: string
   avatarSnapshot: CharacterAvatarSnapshot
+  editorScope: CharacterNavigationScope
 }): boolean {
   const character = DBState.db.characters?.[input.charIndex]
   return (
     characterAvatarUploadGuard.isLatest(input.token) &&
+    changeCharSelectionAttemptId === input.editorScope.selectionAttemptId &&
+    characterNavigationScopeMatches(input.editorScope) &&
     character?.chaId === input.characterId &&
     characterAvatarSnapshotMatches(character, input.avatarSnapshot)
   )
@@ -169,6 +172,9 @@ export async function selectCharImg(charIndex: number) {
     return
   }
   const avatarSnapshot = characterAvatarSnapshot(previousCharacter)
+  const editorScope = captureCharacterNavigationScope()
+  const isFreshAvatarUpload = (token: LatestOperationToken<string>) =>
+    isCurrentCharacterAvatarUpload({ token, charIndex, characterId, avatarSnapshot, editorScope })
 
   let token: LatestOperationToken<string> | null = null
   try {
@@ -181,7 +187,7 @@ export async function selectCharImg(charIndex: number) {
       return
     }
 
-    if (!isCurrentCharacterAvatarUpload({ token, charIndex, characterId, avatarSnapshot })) {
+    if (!isFreshAvatarUpload(token)) {
       return
     }
 
@@ -206,7 +212,7 @@ export async function selectCharImg(charIndex: number) {
           'Copyright',
         ]
         for await (const chunk of gen) {
-          if (!isCurrentCharacterAvatarUpload({ token, charIndex, characterId, avatarSnapshot })) {
+          if (!isFreshAvatarUpload(token)) {
             return
           }
           if (chunk instanceof AppendableBuffer) {
@@ -229,18 +235,18 @@ export async function selectCharImg(charIndex: number) {
       console.error(error)
     }
 
-    if (!isCurrentCharacterAvatarUpload({ token, charIndex, characterId, avatarSnapshot })) {
+    if (!isFreshAvatarUpload(token)) {
       return
     }
 
     const imgp = await saveImage(img)
-    if (!isCurrentCharacterAvatarUpload({ token, charIndex, characterId, avatarSnapshot })) {
+    if (!isFreshAvatarUpload(token)) {
       return
     }
 
     let applied = false
     withTrustedServerProjectionWrite(() => {
-      if (!isCurrentCharacterAvatarUpload({ token, charIndex, characterId, avatarSnapshot })) {
+      if (!isFreshAvatarUpload(token)) {
         return
       }
 

@@ -44,8 +44,8 @@ This document tracks remediation of the Confirmed Issues and Risks To Harden in
 | R-06 | Modal chat delete | Fixed | complete | complete | complete | ecd22ad5b fix: resolve modal chat deletes by origin target | Modal delete resolves the captured origin character/chat after confirmation before deleting. |
 | R-07 | Sortable chat reorder | Fixed | complete | complete | complete | ee8616157 fix: validate sortable chat reorder by ids | Sortable reorder builds payloads from DOM ids and fails closed on stale/missing ids. |
 | R-08 | Destructive refresh | Fixed | complete | complete | complete | 4e1a45290 fix: skip optimistic rollback after destructive refresh | Optimistic rollback runners skip rollback if a full projection replacement advanced the destructive refresh epoch. |
-| R-09 | Realm import | Fixed | complete | complete | complete | fix: skip stale realm import resyncs | Stale Realm import completions return before refresh progress or destructive projection resync. |
-| R-10 | Avatar upload | Pending |  |  |  |  | Decide whether navigation should cancel avatar upload. |
+| R-09 | Realm import | Fixed | complete | complete | complete | d82e96dd7 fix: skip stale realm import resyncs | Stale Realm import completions return before refresh progress or destructive projection resync. |
+| R-10 | Avatar upload | Fixed | complete | complete | complete | fix: cancel stale avatar uploads after navigation | Avatar upload freshness now includes current selected/editor scope and selection-attempt id. |
 | R-11 | Dirty merge granularity | Pending |  |  |  |  | Document or refine top-level conflict granularity. |
 | R-12 | Script draft reorder | Pending |  |  |  |  | Preserve dirty row fields across stable-id reorder. |
 | R-13 | MCP risuaccess | Pending |  |  |  |  | Revalidate targets after deferred access prompt. |

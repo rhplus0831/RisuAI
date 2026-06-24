@@ -130,7 +130,7 @@ import type { character } from './storage/database.svelte'
 // Import the heavy `./characters` module last so its circular dependency on
 // `stores`/`database` finishes initializing before the reactive `moduleUpdate`
 // effect can run (matches the working characters.importChat test ordering).
-import { addCharEmotion, rmCharEmotion, selectCharImg } from './characters'
+import { addCharEmotion, changeChar, rmCharEmotion, selectCharImg } from './characters'
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -199,6 +199,10 @@ function stubCommandFetch(): CapturedFetch[] {
 
 function commandCalls(calls: CapturedFetch[]): CapturedFetch[] {
   return calls.filter((call) => call.url.startsWith('/api/v1/commands/'))
+}
+
+function characterUpdateCommandCalls(calls: CapturedFetch[]): CapturedFetch[] {
+  return commandCalls(calls).filter((call) => call.method === 'PATCH')
 }
 
 function textChunk(key: string, value: string): Uint8Array {
@@ -489,6 +493,54 @@ describe('Phase 3 character avatar upload freshness', () => {
     })
     expect(DBState.db.characters[0].extentions?.pngExif).toBeUndefined()
     expect(commandCalls(calls)).toHaveLength(0)
+  })
+
+  it('drops a stale upload when selection navigates away before upload resolution', async () => {
+    const calls = stubCommandFetch()
+    const upload = deferred<string>()
+    selectedFileState.singleQueue.push(avatarFile('stale-navigation.png', { Title: 'stale navigation metadata' }))
+    saveImageState.queue.push(upload.promise)
+    DBState.db = {
+      currentChar: 0,
+      characters: [
+        baseCharacter({
+          chaId: 'char-a',
+          name: 'Character A',
+          image: 'char-a-avatar',
+          ccAssets: [{ type: 'icon', name: 'a-prior', uri: 'char-a-prior-asset', ext: 'png' }],
+        }),
+        baseCharacter({
+          chaId: 'char-b',
+          name: 'Character B',
+          image: 'char-b-avatar',
+          ccAssets: [{ type: 'icon', name: 'b-prior', uri: 'char-b-prior-asset', ext: 'png' }],
+        }),
+      ],
+    } as any
+    selectedCharID.set(0)
+
+    const operation = selectCharImg(0)
+    await vi.waitFor(() => {
+      expect(saveImageState.calls).toHaveLength(1)
+    })
+
+    await changeChar(1)
+    upload.resolve('stale-navigation-upload-asset')
+    await operation
+    await tick()
+
+    expect(DBState.db.characters[0]).toMatchObject({
+      chaId: 'char-a',
+      image: 'char-a-avatar',
+      ccAssets: [{ type: 'icon', name: 'a-prior', uri: 'char-a-prior-asset', ext: 'png' }],
+    })
+    expect(DBState.db.characters[0].extentions?.pngExif).toBeUndefined()
+    expect(DBState.db.characters[1]).toMatchObject({
+      chaId: 'char-b',
+      image: 'char-b-avatar',
+      ccAssets: [{ type: 'icon', name: 'b-prior', uri: 'char-b-prior-asset', ext: 'png' }],
+    })
+    expect(characterUpdateCommandCalls(calls)).toHaveLength(0)
   })
 })
 
