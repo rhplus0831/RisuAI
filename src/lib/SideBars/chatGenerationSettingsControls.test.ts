@@ -73,6 +73,11 @@ interface CapturedFetch {
   body: unknown
 }
 
+interface Deferred<T> {
+  promise: Promise<T>
+  resolve: (value: T) => void
+}
+
 let target: HTMLElement
 let component: MountedComponent | undefined
 
@@ -81,6 +86,11 @@ function jsonResponse(body: unknown, status = 200): Response {
     status,
     headers: { 'content-type': 'application/json' },
   })
+}
+
+function clonePlain<T>(value: T): T {
+  if (value === undefined) return value
+  return JSON.parse(JSON.stringify(value)) as T
 }
 
 function stubCommandFetch(): CapturedFetch[] {
@@ -129,6 +139,22 @@ function stubCommandFetch(): CapturedFetch[] {
     }) as unknown as typeof fetch,
   )
   return calls
+}
+
+function deferred<T>(): Deferred<T> {
+  let resolve: (value: T) => void = () => {
+    throw new Error('deferred promise resolved before initialization')
+  }
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise
+  })
+  return { promise, resolve }
+}
+
+async function flushAsyncWork(): Promise<void> {
+  await Promise.resolve()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  await tick()
 }
 
 function stubDeferredFailedGenerationSettingsFetch(): {
@@ -836,15 +862,24 @@ describe('sidebar chat generation settings controls', () => {
 
     expect(get(openPresetList)).toBe(true)
     expect(presetListModalStore.mode).toBe('active-chat-generation-settings')
+    expect(presetListModalStore.target?.chatId).toBe('chat-a')
+    expect(presetListModalStore.target?.characterId).toBe('char-a')
 
     closePresetListModal()
     await tick()
+    expect(presetListModalStore.target).toBeNull()
 
     pickerButton('persona').click()
     await tick()
 
     expect(get(openPersonaList)).toBe(true)
     expect(personaListModalStore.mode).toBe('active-chat-generation-settings')
+    expect(personaListModalStore.target?.chatId).toBe('chat-a')
+    expect(personaListModalStore.target?.characterId).toBe('char-a')
+
+    closePersonaListModal()
+    await tick()
+    expect(personaListModalStore.target).toBeNull()
   })
 
   it('selects preset and persona through composed sidebar pickers without retargeting globals', async () => {
@@ -952,6 +987,57 @@ describe('sidebar chat generation settings controls', () => {
         }),
       },
     })
+  })
+
+  it('does not save preset or persona picker choices after the picker target goes stale', async () => {
+    const calls = stubCommandFetch()
+    const originalChatASettings = clonePlain(DBState.db.characters[0].chats[0].generationSettings)
+    const originalChatBSettings = clonePlain(DBState.db.characters[0].chats[1].generationSettings)
+
+    mountGenerationSettingsPickerHost()
+    await tick()
+
+    pickerButton('prompt').click()
+    await tick()
+
+    expect(get(openPresetList)).toBe(true)
+    expect(presetListModalStore.target?.chatId).toBe('chat-a')
+    expect(pickerRoot('prompt', 'active-chat-generation-settings')).toBeTruthy()
+
+    DBState.db.characters[0].chatPage = 1
+    await tick()
+
+    pickerRow('prompt', 'preset-a').click()
+    await flushAsyncWork()
+
+    expect(get(openPresetList)).toBe(true)
+    expect(calls.filter((call) => call.url.endsWith('/generation-settings'))).toEqual([])
+    expect(DBState.db.characters[0].chats[0].generationSettings).toEqual(originalChatASettings)
+    expect(DBState.db.characters[0].chats[1].generationSettings).toEqual(originalChatBSettings)
+    expect(DBState.db.characters[0].chats[1].generationSettings?.promptPresetId).toBe('preset-b')
+
+    closePresetListModal()
+    DBState.db.characters[0].chatPage = 0
+    await tick()
+
+    pickerButton('persona').click()
+    await tick()
+
+    expect(get(openPersonaList)).toBe(true)
+    expect(personaListModalStore.target?.chatId).toBe('chat-a')
+    expect(pickerRoot('persona', 'active-chat-generation-settings')).toBeTruthy()
+
+    DBState.db.characters[0].chatPage = 1
+    await tick()
+
+    pickerRow('persona', 'persona-a').click()
+    await flushAsyncWork()
+
+    expect(get(openPersonaList)).toBe(true)
+    expect(calls.filter((call) => call.url.endsWith('/generation-settings'))).toEqual([])
+    expect(DBState.db.characters[0].chats[0].generationSettings).toEqual(originalChatASettings)
+    expect(DBState.db.characters[0].chats[1].generationSettings).toEqual(originalChatBSettings)
+    expect(DBState.db.characters[0].chats[1].generationSettings?.personaId).toBe('persona-b')
   })
 
   it('prefills preset toggle defaults after selecting a chat preset', async () => {
@@ -1106,6 +1192,47 @@ describe('sidebar chat generation settings controls', () => {
     })
   })
 
+  it('does not reset chat toggle defaults after confirmation resolves for a stale active chat', async () => {
+    const calls = stubCommandFetch()
+    activeChat().generationSettings = {
+      configured: true,
+      personaId: 'persona-a',
+      promptPresetId: 'preset-a',
+      jailbreakToggle: true,
+      sidebarToggles: {
+        mood: '',
+        flag: '1',
+        note: 'legacy-note',
+        moduleFlag: '1',
+        stale: '1',
+      },
+    }
+    const chatASettings = clonePlain(DBState.db.characters[0].chats[0].generationSettings)
+    const chatBSettings = clonePlain(DBState.db.characters[0].chats[1].generationSettings)
+    const confirmation = deferred<boolean>()
+    alertSpies.alertConfirm.mockReturnValueOnce(confirmation.promise)
+
+    mountGenerationSettingsPickerHost()
+    await tick()
+
+    resetDefaultsButton().click()
+    await tick()
+    expect(alertSpies.alertConfirm).toHaveBeenCalledWith('Are you sure you want to reset toggle defaults?')
+
+    DBState.db.characters[0].chatPage = 1
+    await tick()
+
+    confirmation.resolve(true)
+    await flushAsyncWork()
+
+    expect(calls).toEqual([])
+    expect(DBState.db.characters[0].chats[0].generationSettings).toEqual(chatASettings)
+    expect(DBState.db.characters[0].chats[1].generationSettings).toEqual(chatBSettings)
+    expect(activeChat().id).toBe('chat-b')
+    expect(activeChat().generationSettings?.jailbreakToggle).toBe(false)
+    expect(activeChat().generationSettings?.sidebarToggles?.note).toBe('beta-note')
+  })
+
   it('renders reset toggle defaults below Toggle HypaMemory in the chat sidebar controls', async () => {
     DBState.db.hypaV3 = true
 
@@ -1240,6 +1367,33 @@ describe('sidebar chat generation settings controls', () => {
         },
       },
     })
+  })
+
+  it('does not save a reusable toggle preset after the name prompt resolves for a stale active chat', async () => {
+    const calls = stubCommandFetch()
+    const chatASettings = clonePlain(DBState.db.characters[0].chats[0].generationSettings)
+    const chatBSettings = clonePlain(DBState.db.characters[0].chats[1].generationSettings)
+    const input = deferred<string>()
+    alertSpies.alertInput.mockReturnValueOnce(input.promise)
+
+    mountToggles()
+    await tick()
+
+    togglePresetButton(0).click()
+    await tick()
+    expect(alertSpies.alertInput).toHaveBeenCalledWith('Name this toggle preset')
+
+    DBState.db.characters[0].chatPage = 1
+    await tick()
+
+    input.resolve('Late toggles')
+    await flushAsyncWork()
+
+    expect(calls).toEqual([])
+    expect(DBState.db.chatGenerationTogglePresets).toEqual([])
+    expect(DBState.db.characters[0].chats[0].generationSettings).toEqual(chatASettings)
+    expect(DBState.db.characters[0].chats[1].generationSettings).toEqual(chatBSettings)
+    expect(togglePresetSelect().value).toBe('')
   })
 
   it('writes jailbreak and sidebar toggles to active chat settings without touching global state', async () => {

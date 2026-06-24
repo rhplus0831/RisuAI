@@ -40,6 +40,7 @@
     resolveActiveChatGenerationSettings,
     saveActiveChatGenerationSettingsSelection,
   } from 'src/ts/activeChatGenerationSettings'
+  import type { ActiveChatTarget } from 'src/ts/chatCommands'
   import { onDestroy } from 'svelte'
   import ModelPresetList from './Pages/Model/ModelPresetList.svelte'
 
@@ -62,9 +63,10 @@
     close?: () => void
     mode?: GenerationSettingsPickerMode
     kind?: PresetPickerKind
+    target?: ActiveChatTarget | null
   }
 
-  let { close = () => {}, mode = 'global', kind = 'model' }: Props = $props()
+  let { close = () => {}, mode = 'global', kind = 'model', target = null }: Props = $props()
 
   let isChatGenerationSelectionMode = $derived(mode === 'active-chat-generation-settings')
   let title = $derived(
@@ -173,7 +175,7 @@
       const presetId = nonEmptyId(preset?.id)
       if (!presetId) return
       const patch = kind === 'prompt' ? { promptPresetId: presetId } : { modelPresetId: presetId }
-      if (saveActiveChatGenerationSettingsSelection(patch)) close()
+      if (saveActiveChatGenerationSettingsSelection(patch, { expectedTarget: target })) close()
       return
     }
 

@@ -6,6 +6,7 @@
     resolveActiveChatGenerationSettings,
     saveActiveChatGenerationSettingsDefaultValues,
   } from 'src/ts/activeChatGenerationSettings'
+  import { captureActiveChatTarget } from 'src/ts/chatCommands'
   import { selectedCharID } from 'src/ts/stores.svelte'
   import Button from '../UI/GUI/Button.svelte'
 
@@ -16,8 +17,9 @@
   )
 
   async function resetDefaultValues(): Promise<void> {
+    const target = captureActiveChatTarget()
     if (!(await alertConfirm(language.chatGenerationResetDefaultsConfirm))) return
-    saveActiveChatGenerationSettingsDefaultValues()
+    saveActiveChatGenerationSettingsDefaultValues({ expectedTarget: target })
   }
 </script>
 

@@ -8,13 +8,15 @@
     resolveActiveChatGenerationSettings,
     saveActiveChatGenerationSettingsSelection,
   } from 'src/ts/activeChatGenerationSettings'
+  import type { ActiveChatTarget } from 'src/ts/chatCommands'
 
   interface Props {
     close?: any
     mode?: GenerationSettingsPickerMode
+    target?: ActiveChatTarget | null
   }
 
-  let { close = () => {}, mode = 'global' }: Props = $props()
+  let { close = () => {}, mode = 'global', target = null }: Props = $props()
   let isChatGenerationSelectionMode = $derived(mode === 'active-chat-generation-settings')
   let activeChatPersonaId = $derived.by(() => {
     if (!isChatGenerationSelectionMode) return null
@@ -33,7 +35,7 @@
     if (isChatGenerationSelectionMode) {
       const personaId = validUniquePersonaIdAt(index)
       if (!personaId) return
-      if (saveActiveChatGenerationSettingsSelection({ personaId })) {
+      if (saveActiveChatGenerationSettingsSelection({ personaId }, { expectedTarget: target })) {
         close()
       }
       return

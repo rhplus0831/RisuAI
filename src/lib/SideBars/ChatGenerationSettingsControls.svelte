@@ -2,6 +2,7 @@
   import { openPersonaListModal, openPresetListModal, selectedCharID } from 'src/ts/stores.svelte'
   import { language } from 'src/lang'
   import { resolveActiveChatGenerationSettings } from 'src/ts/activeChatGenerationSettings'
+  import { captureActiveChatTarget } from 'src/ts/chatCommands'
   import Button from '../UI/GUI/Button.svelte'
 
   type NamedGenerationReference = {
@@ -51,7 +52,7 @@
     <Button
       className="flex w-full min-w-0 justify-start text-left"
       onclick={() => {
-        openPresetListModal('active-chat-generation-settings', 'model')
+        openPresetListModal('active-chat-generation-settings', 'model', captureActiveChatTarget())
       }}>
       <div class="flex-1 flex-col flex text-left min-w-0">
         <span class="truncate">{modelPresetName}</span>
@@ -67,7 +68,7 @@
     <Button
       className="flex w-full min-w-0 justify-start text-left"
       onclick={() => {
-        openPresetListModal('active-chat-generation-settings', 'prompt')
+        openPresetListModal('active-chat-generation-settings', 'prompt', captureActiveChatTarget())
       }}>
       <div class="flex-1 flex-col flex text-left min-w-0">
         <span class="truncate">{promptPresetName}</span>
@@ -83,7 +84,7 @@
     <Button
       className="flex w-full min-w-0 justify-start text-left"
       onclick={() => {
-        openPersonaListModal('active-chat-generation-settings')
+        openPersonaListModal('active-chat-generation-settings', captureActiveChatTarget())
       }}>
       <div class="flex-1 flex-col flex text-left min-w-0">
         <span class="truncate">{personaName}</span>

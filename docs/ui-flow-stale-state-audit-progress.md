@@ -24,8 +24,8 @@ This document tracks remediation of the Confirmed Issues and Risks To Harden in
 | I-03 | Projection/SSE | Fixed | complete | complete | passed | `fad8fec93 fix: resync failed projection applies before cursor advance` | Lorebook/chat-message surgical apply failures now await full resync before marking events applied. |
 | I-04 | Character editor | Fixed | complete | complete | passed | `fa1f78e4e fix: guard character draft actions by live row` | Replaced draft `type` gates with live selected-row/draft-id guards; verifier passed focused CharConfig and bridge tests. |
 | I-05 | Character/media uploads | Fixed | complete | complete | passed | `b93095edd fix: issue upload tokens before file reads` | Upload tokens now start in picker callbacks; verifier fixed read-rejection cleanup and passed focused race tests. |
-| I-06 | Prompt settings | Fixed | complete | complete | passed | `fix: preserve dirty prompt settings across projection` | Dirty/owner-aware prompt settings drafts now reassert stale projections before debounce flush; verifier passed focused tests/typecheck. |
-| I-07 | Active chat generation settings | Pending |  |  |  |  | Capture chat target across confirm/input/modal flows. |
+| I-06 | Prompt settings | Fixed | complete | complete | passed | `5f02a8d59 fix: preserve dirty prompt settings across projection` | Dirty/owner-aware prompt settings drafts now reassert stale projections before debounce flush; verifier passed focused tests/typecheck. |
+| I-07 | Active chat generation settings | Fixed | complete | complete | passed | `fix: guard chat generation modals by target` | Captured active-chat targets through reset/input/picker flows; verifier passed focused stale-target tests. |
 | I-08 | Bundle/local-backup import | Pending |  |  |  |  | Avoid persisting assets when DB import later fails. |
 | I-09 | Lorebook UI | Pending |  |  |  |  | Delete latest row by stable id/key after delayed confirmation. |
 | I-10 | Module imports | Pending |  |  |  |  | Merge imports into latest target after delayed picker and handle cancel. |

@@ -6,6 +6,7 @@ import { moduleUpdate } from './process/modules'
 import { resetScriptCache } from './process/scripts'
 import type { hubType } from './characterCards'
 import type { PluginSafetyErrors } from './plugins/pluginSafety'
+import type { ActiveChatTarget } from './chatCommands'
 
 function updateSize() {
   SizeStore.set({
@@ -38,9 +39,11 @@ export type PresetPickerKind = 'model' | 'prompt' | 'legacy'
 export const presetListModalStore = $state({
   mode: 'global' as GenerationSettingsPickerMode,
   kind: 'model' as PresetPickerKind,
+  target: null as ActiveChatTarget | null,
 })
 export const personaListModalStore = $state({
   mode: 'global' as GenerationSettingsPickerMode,
+  target: null as ActiveChatTarget | null,
 })
 export const bookmarkListOpen = writable(false)
 export const MobileGUI = writable(false)
@@ -116,18 +119,25 @@ openPresetList.subscribe((open) => {
   if (!open) {
     presetListModalStore.mode = 'global'
     presetListModalStore.kind = 'model'
+    presetListModalStore.target = null
   }
 })
 
 openPersonaList.subscribe((open) => {
   if (!open) {
     personaListModalStore.mode = 'global'
+    personaListModalStore.target = null
   }
 })
 
-export function openPresetListModal(mode: GenerationSettingsPickerMode = 'global', kind: PresetPickerKind = 'model') {
+export function openPresetListModal(
+  mode: GenerationSettingsPickerMode = 'global',
+  kind: PresetPickerKind = 'model',
+  target: ActiveChatTarget | null = null,
+) {
   presetListModalStore.mode = mode
   presetListModalStore.kind = kind
+  presetListModalStore.target = mode === 'active-chat-generation-settings' ? target : null
   openPresetList.set(true)
 }
 
@@ -135,8 +145,12 @@ export function closePresetListModal() {
   openPresetList.set(false)
 }
 
-export function openPersonaListModal(mode: GenerationSettingsPickerMode = 'global') {
+export function openPersonaListModal(
+  mode: GenerationSettingsPickerMode = 'global',
+  target: ActiveChatTarget | null = null,
+) {
   personaListModalStore.mode = mode
+  personaListModalStore.target = mode === 'active-chat-generation-settings' ? target : null
   openPersonaList.set(true)
 }
 

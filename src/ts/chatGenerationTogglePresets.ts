@@ -2,6 +2,7 @@ import {
   createActiveChatGenerationSettingsPatch,
   resolveActiveChatGenerationSettings,
   saveActiveChatGenerationSettings,
+  type ActiveChatGenerationSettingsSaveOptions,
   type ActiveChatGenerationSettingsState,
 } from './activeChatGenerationSettings'
 import type { ChatGenerationRequiredSidebarToggle, ChatGenerationSettings } from './chatGenerationSettings'
@@ -12,6 +13,7 @@ import {
 } from './chatGenerationTogglePresetRecords'
 import { applyServerBackedSettingsPatch } from './server/settingsBridge.svelte'
 import { DBState } from './stores.svelte'
+import { isActiveChatTargetFresh } from './chatCommands'
 
 const CHAT_GENERATION_TOGGLE_PRESETS_FIELD = 'chatGenerationTogglePresets' as const
 
@@ -21,9 +23,14 @@ export function getChatGenerationTogglePresets(): ChatGenerationTogglePreset[] {
   return normalizeChatGenerationTogglePresets(DBState.db.chatGenerationTogglePresets)
 }
 
-export function saveCurrentChatGenerationTogglePreset(name: string): ChatGenerationTogglePreset | null {
+export function saveCurrentChatGenerationTogglePreset(
+  name: string,
+  options: Pick<ActiveChatGenerationSettingsSaveOptions, 'expectedTarget'> = {},
+): ChatGenerationTogglePreset | null {
   const trimmedName = name.trim()
   if (!trimmedName) return null
+
+  if (options.expectedTarget !== undefined && !isActiveChatTargetFresh(options.expectedTarget)) return null
 
   const state = resolveActiveChatGenerationSettings()
   if (!state.identity.chatId) return null

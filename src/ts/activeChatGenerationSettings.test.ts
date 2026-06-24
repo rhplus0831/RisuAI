@@ -26,6 +26,7 @@ import {
   saveActiveChatGenerationSettingsPatch,
   saveActiveChatGenerationSettingsSelection,
 } from './activeChatGenerationSettings'
+import { captureActiveChatTarget } from './chatCommands'
 
 interface CapturedFetch {
   url: string
@@ -39,6 +40,11 @@ function jsonResponse(body: unknown, status = 200): Response {
     status,
     headers: { 'content-type': 'application/json' },
   })
+}
+
+function clonePlain<T>(value: T): T {
+  if (value === undefined) return value
+  return JSON.parse(JSON.stringify(value)) as T
 }
 
 function stubCommandFetch(): CapturedFetch[] {
@@ -729,5 +735,61 @@ describe('active chat generation settings helper', () => {
 
     expect(calls).toEqual([])
     expect(DBState.db.characters[0].chats[0].generationSettings).toBeUndefined()
+  })
+
+  it('returns false without resolving, mutating, or fetching when expected target is stale', () => {
+    DBState.db.characters[0].chats[0].generationSettings = {
+      configured: true,
+      personaId: 'persona-a',
+      modelPresetId: 'model-preset-a',
+      promptPresetId: 'preset-a',
+      jailbreakToggle: true,
+      sidebarToggles: {
+        mode: 'warm',
+        global: '1',
+        chat: '1',
+        character: '1',
+        integrated: '1',
+      },
+    }
+    const target = captureActiveChatTarget()
+    const chatASettings = clonePlain(DBState.db.characters[0].chats[0].generationSettings)
+    const chatBSettings = clonePlain(DBState.db.characters[0].chats[1].generationSettings)
+    const calls = stubCommandFetch()
+
+    DBState.db.characters[0].chatPage = 1
+    setServerProjectionWriteGuardEnabled(true)
+
+    expect(
+      saveActiveChatGenerationSettingsSelection(
+        {
+          personaId: 'persona-b',
+        },
+        { expectedTarget: target },
+      ),
+    ).toBe(false)
+    expect(
+      saveActiveChatGenerationSettingsPatch(
+        {
+          jailbreakToggle: false,
+        },
+        { expectedTarget: target },
+      ),
+    ).toBe(false)
+    expect(
+      saveActiveChatGenerationSettings(
+        {
+          personaId: 'persona-b',
+          modelPresetId: 'model-preset-a',
+          promptPresetId: 'preset-b',
+        },
+        { expectedTarget: target },
+      ),
+    ).toBe(false)
+    expect(saveActiveChatGenerationSettingsDefaultValues({ expectedTarget: target })).toBe(false)
+
+    expect(calls).toEqual([])
+    expect(DBState.db.characters[0].chats[0].generationSettings).toEqual(chatASettings)
+    expect(DBState.db.characters[0].chats[1].generationSettings).toEqual(chatBSettings)
   })
 })

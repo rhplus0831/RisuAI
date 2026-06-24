@@ -19,9 +19,16 @@
 {/if}
 
 {#if $openPresetList}
-  <Botpreset mode={presetListModalStore.mode} kind={presetListModalStore.kind} close={closePresetListModal} />
+  <Botpreset
+    mode={presetListModalStore.mode}
+    kind={presetListModalStore.kind}
+    target={presetListModalStore.target}
+    close={closePresetListModal} />
 {/if}
 
 {#if $openPersonaList}
-  <ListedPersona mode={personaListModalStore.mode} close={closePersonaListModal} />
+  <ListedPersona
+    mode={personaListModalStore.mode}
+    target={personaListModalStore.target}
+    close={closePersonaListModal} />
 {/if}

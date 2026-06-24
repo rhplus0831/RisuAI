@@ -13,7 +13,7 @@ import {
   type ChatGenerationSettingsMissingReason,
   type ChatGenerationSettingsReadiness,
 } from './chatGenerationSettings'
-import { dispatchSaveChatGenerationSettings } from './chatCommands'
+import { dispatchSaveChatGenerationSettings, isActiveChatTargetFresh, type ActiveChatTarget } from './chatCommands'
 import { language } from '../lang'
 import type { ServerCommandTransportOptions } from './server/commands'
 import { DBState, selectedCharID } from './stores.svelte'
@@ -60,6 +60,10 @@ export type ActiveChatGenerationSettingsPatch = Partial<
   Omit<ChatGenerationSettings, 'sidebarToggles' | 'configured'>
 > & {
   sidebarToggles?: Record<string, string | undefined>
+}
+
+export type ActiveChatGenerationSettingsSaveOptions = ServerCommandTransportOptions & {
+  expectedTarget?: ActiveChatTarget | null
 }
 
 export function resolveActiveChatGenerationSettings(
@@ -250,49 +254,58 @@ export function createActiveChatSidebarToggleGenerationSettingsPatch(
 
 export function saveActiveChatGenerationSettingsPatch(
   patch: ActiveChatGenerationSettingsPatch,
-  options: ServerCommandTransportOptions = {},
+  options: ActiveChatGenerationSettingsSaveOptions = {},
 ): boolean {
+  if (hasStaleExpectedTarget(options)) return false
   const state = resolveActiveChatGenerationSettings()
   const chatId = state.identity.chatId
   if (!chatId) return false
-  return dispatchSaveChatGenerationSettings(chatId, createActiveChatGenerationSettingsPatch(patch, state), options)
+  return dispatchSaveChatGenerationSettings(
+    chatId,
+    createActiveChatGenerationSettingsPatch(patch, state),
+    transportOptions(options),
+  )
 }
 
 export function saveActiveChatGenerationSettings(
   generationSettings: ChatGenerationSettings,
-  options: ServerCommandTransportOptions = {},
+  options: ActiveChatGenerationSettingsSaveOptions = {},
 ): boolean {
+  if (hasStaleExpectedTarget(options)) return false
   const state = resolveActiveChatGenerationSettings()
   const chatId = state.identity.chatId
   if (!chatId) return false
   return dispatchSaveChatGenerationSettings(
     chatId,
     normalizeActiveChatGenerationSettingsForSave(state, generationSettings),
-    options,
+    transportOptions(options),
   )
 }
 
 export function saveActiveChatGenerationSettingsSelection(
   selection: Pick<ActiveChatGenerationSettingsPatch, 'personaId' | 'modelPresetId' | 'promptPresetId'>,
-  options: ServerCommandTransportOptions = {},
+  options: ActiveChatGenerationSettingsSaveOptions = {},
 ): boolean {
   return saveActiveChatGenerationSettingsPatch(selection, options)
 }
 
-export function saveActiveChatGenerationSettingsDefaultValues(options: ServerCommandTransportOptions = {}): boolean {
+export function saveActiveChatGenerationSettingsDefaultValues(
+  options: ActiveChatGenerationSettingsSaveOptions = {},
+): boolean {
+  if (hasStaleExpectedTarget(options)) return false
   const state = resolveActiveChatGenerationSettings()
   const chatId = state.identity.chatId
   if (!chatId) return false
   return dispatchSaveChatGenerationSettings(
     chatId,
     createActiveChatGenerationSettingsDefaultValuesPatch(state),
-    options,
+    transportOptions(options),
   )
 }
 
 export function saveActiveChatJailbreakToggleGenerationSettings(
   jailbreakToggle: boolean,
-  options: ServerCommandTransportOptions = {},
+  options: ActiveChatGenerationSettingsSaveOptions = {},
 ): boolean {
   return saveActiveChatGenerationSettingsPatch({ jailbreakToggle }, options)
 }
@@ -300,9 +313,18 @@ export function saveActiveChatJailbreakToggleGenerationSettings(
 export function saveActiveChatSidebarToggleGenerationSettings(
   key: string,
   value: string,
-  options: ServerCommandTransportOptions = {},
+  options: ActiveChatGenerationSettingsSaveOptions = {},
 ): boolean {
   return saveActiveChatGenerationSettingsPatch({ sidebarToggles: { [key]: value } }, options)
+}
+
+function hasStaleExpectedTarget(options: ActiveChatGenerationSettingsSaveOptions): boolean {
+  return options.expectedTarget !== undefined && !isActiveChatTargetFresh(options.expectedTarget)
+}
+
+function transportOptions(options: ActiveChatGenerationSettingsSaveOptions): ServerCommandTransportOptions {
+  const { expectedTarget: _expectedTarget, ...transport } = options
+  return transport
 }
 
 function resolveReadiness(

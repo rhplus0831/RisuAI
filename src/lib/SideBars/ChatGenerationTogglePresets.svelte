@@ -9,6 +9,7 @@
     getChatGenerationTogglePresets,
     saveCurrentChatGenerationTogglePreset,
   } from 'src/ts/chatGenerationTogglePresets'
+  import { captureActiveChatTarget } from 'src/ts/chatCommands'
   import { selectedCharID } from 'src/ts/stores.svelte'
   import Button from '../UI/GUI/Button.svelte'
   import OptionInput from '../UI/GUI/OptionInput.svelte'
@@ -30,9 +31,10 @@
   })
 
   async function savePreset(): Promise<void> {
+    const target = captureActiveChatTarget()
     const name = await alertInput(language.chatGenerationTogglePresetNamePrompt)
     if (typeof name !== 'string' || name.trim().length === 0) return
-    const preset = saveCurrentChatGenerationTogglePreset(name)
+    const preset = saveCurrentChatGenerationTogglePreset(name, { expectedTarget: target })
     if (preset) {
       selectedPresetId = preset.id
     }
