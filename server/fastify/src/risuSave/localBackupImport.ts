@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import { createHash } from 'node:crypto'
+import path from 'node:path'
 import * as fflate from 'fflate'
 import { CONTENT_TYPE_EXTENSIONS, ValidationError, isValidAssetId } from '../repository.js'
 
@@ -8,33 +9,34 @@ const MANIFEST_PATH = 'manifest.json'
 const ASSET_PREFIX = 'assets/'
 const RISU_SUFFIX = '.risu'
 const LEGACY_DATABASE_RECORD = 'database.risudat'
-const DEFAULT_ASSET_BATCH_BYTES = 48 * 1024 * 1024
 
 export type LocalBackupFormat = 'risu-bundle-zip' | 'legacy-local-backup'
 
-export interface LocalBackupAssetUpload {
+interface LocalBackupAssetUpload {
   contentType: string
   bytes: Buffer
+  id?: string
 }
 
 export interface DecodeLocalBackupOptions {
   /** Reject once the cumulative expanded (uncompressed) payload exceeds this. */
   maxExpandedBytes?: number
-  /** Flush registered assets once a batch reaches this many raw bytes. */
-  assetBatchBytes?: number
-  /**
-   * Persist a batch of decoded assets. Invoked synchronously as the archive
-   * streams so peak memory stays bounded to roughly one batch plus the largest
-   * single entry. SQLite writes are synchronous, so this can register directly.
-   */
-  registerAssets: (assets: LocalBackupAssetUpload[]) => void
+}
+
+export interface LocalBackupStagedAsset {
+  id: string
+  ext: string
+  size: number
+  contentType: string
+  filePath: string
 }
 
 export interface DecodedLocalBackup {
   format: LocalBackupFormat
   /** The embedded database bytes (`database.risu` / `database.risudat`). */
   databaseBytes: Uint8Array
-  registeredAssetCount: number
+  includedAssetCount: number
+  stagedAssets: LocalBackupStagedAsset[]
 }
 
 // Extension -> content-type, derived from the canonical content-type table. Used
@@ -77,8 +79,9 @@ export function sniffLocalBackupFormat(head: Uint8Array): LocalBackupFormat {
 
 /**
  * Decode a device backup file (a `.risu.zip` bundle or a legacy `.bin`) with
- * bounded memory. Assets are registered through `registerAssets` as they
- * stream; the database bytes are returned for the caller to decode and apply.
+ * bounded memory. Assets are staged into sibling temp files as they stream; the
+ * database bytes are returned for the caller to decode before anything touches
+ * live repository assets.
  */
 export async function decodeLocalBackup(
   filePath: string,
@@ -99,33 +102,6 @@ function readHead(filePath: string, length: number): Uint8Array {
   }
 }
 
-/** Accumulates assets and flushes them to `registerAssets` at a byte budget. */
-class AssetBatcher {
-  private pending: LocalBackupAssetUpload[] = []
-  private pendingBytes = 0
-  count = 0
-
-  constructor(
-    private readonly register: (assets: LocalBackupAssetUpload[]) => void,
-    private readonly batchBytes: number,
-  ) {}
-
-  add(asset: LocalBackupAssetUpload): void {
-    this.pending.push(asset)
-    this.pendingBytes += asset.bytes.length
-    this.count += 1
-    if (this.pendingBytes >= this.batchBytes) this.flush()
-  }
-
-  flush(): void {
-    if (this.pending.length === 0) return
-    const batch = this.pending
-    this.pending = []
-    this.pendingBytes = 0
-    this.register(batch)
-  }
-}
-
 class ExpandedSizeTracker {
   private total = 0
   constructor(private readonly max: number | undefined) {}
@@ -137,8 +113,56 @@ class ExpandedSizeTracker {
   }
 }
 
+class AssetStager {
+  private stageDir: string | null = null
+  readonly assets: LocalBackupStagedAsset[] = []
+
+  constructor(private readonly uploadPath: string) {}
+
+  get count(): number {
+    return this.assets.length
+  }
+
+  add(asset: LocalBackupAssetUpload): void {
+    const ext = CONTENT_TYPE_EXTENSIONS[asset.contentType]
+    if (!ext) {
+      throw new ValidationError(`Unsupported content-type: ${asset.contentType}`)
+    }
+    const id = createHash('sha256').update(asset.bytes).digest('hex')
+    if (asset.id !== undefined && asset.id !== id) {
+      throw new ValidationError(`.risu bundle asset ${asset.id} failed its content hash check`)
+    }
+    if (!isValidAssetId(id)) {
+      throw new ValidationError('Local backup asset id is not a sha256 hex string')
+    }
+    const filePath = path.join(this.dir(), `${this.assets.length}-${id}.${ext}`)
+    fs.writeFileSync(filePath, asset.bytes)
+    this.assets.push({
+      id,
+      ext,
+      size: asset.bytes.length,
+      contentType: asset.contentType,
+      filePath,
+    })
+  }
+
+  cleanup(): void {
+    if (this.stageDir) {
+      fs.rmSync(this.stageDir, { recursive: true, force: true })
+      this.stageDir = null
+    }
+  }
+
+  private dir(): string {
+    if (!this.stageDir) {
+      this.stageDir = fs.mkdtempSync(path.join(path.dirname(this.uploadPath), 'assets-stage-'))
+    }
+    return this.stageDir
+  }
+}
+
 function decodeBundleZip(filePath: string, options: DecodeLocalBackupOptions): Promise<DecodedLocalBackup> {
-  const batcher = new AssetBatcher(options.registerAssets, options.assetBatchBytes ?? DEFAULT_ASSET_BATCH_BYTES)
+  const stager = new AssetStager(filePath)
   const sizeTracker = new ExpandedSizeTracker(options.maxExpandedBytes)
   let databaseBytes: Uint8Array | undefined
   let manifestBytes: Uint8Array | undefined
@@ -150,6 +174,7 @@ function decodeBundleZip(filePath: string, options: DecodeLocalBackupOptions): P
       if (settled) return
       settled = true
       stream.destroy()
+      stager.cleanup()
       reject(asValidationError(err, 'Malformed .risu bundle archive'))
     }
 
@@ -159,7 +184,7 @@ function decodeBundleZip(filePath: string, options: DecodeLocalBackupOptions): P
         return
       }
       if (name.startsWith(ASSET_PREFIX)) {
-        batcher.add(decodeBundleAsset(name, bytes))
+        stager.add(decodeBundleAsset(name, bytes))
         return
       }
       if (name.endsWith(RISU_SUFFIX)) {
@@ -212,12 +237,12 @@ function decodeBundleZip(filePath: string, options: DecodeLocalBackupOptions): P
         if (!databaseBytes) {
           throw new ValidationError('.risu bundle is missing its database.risu file')
         }
-        batcher.flush()
         settled = true
         resolve({
           format: 'risu-bundle-zip',
           databaseBytes,
-          registeredAssetCount: batcher.count,
+          includedAssetCount: stager.count,
+          stagedAssets: stager.assets,
         })
       } catch (err) {
         fail(err)
@@ -239,11 +264,7 @@ function decodeBundleAsset(name: string, bytes: Uint8Array): LocalBackupAssetUpl
     throw new ValidationError(`.risu bundle asset id is not a sha256 hex string: ${name}`)
   }
   const buffer = Buffer.from(bytes)
-  const digest = createHash('sha256').update(buffer).digest('hex')
-  if (digest !== id) {
-    throw new ValidationError(`.risu bundle asset ${name} failed its content hash check`)
-  }
-  return { contentType, bytes: buffer }
+  return { contentType, bytes: buffer, id }
 }
 
 function assertValidBundleManifest(manifestBytes: Uint8Array | undefined): void {
@@ -268,7 +289,7 @@ function assertValidBundleManifest(manifestBytes: Uint8Array | undefined): void 
  * Decode the original app's `LocalWriter` `.bin` blob: a sequence of
  * `[u32-LE nameLen][name][u32-LE dataLen][data]` records. The database record is
  * `database.risudat` (a legacy compressed `.risu`); media records are
- * content-addressed by the same sha256 scheme Fastify uses, so they register
+ * content-addressed by the same sha256 scheme Fastify uses, so they stage
  * without any reference remapping. Cold-storage and other non-media records are
  * skipped (they are browser-local concepts with no server equivalent).
  */
@@ -276,7 +297,7 @@ async function decodeLegacyLocalBackup(
   filePath: string,
   options: DecodeLocalBackupOptions,
 ): Promise<DecodedLocalBackup> {
-  const batcher = new AssetBatcher(options.registerAssets, options.assetBatchBytes ?? DEFAULT_ASSET_BATCH_BYTES)
+  const stager = new AssetStager(filePath)
   const sizeTracker = new ExpandedSizeTracker(options.maxExpandedBytes)
   let databaseBytes: Uint8Array | undefined
 
@@ -313,19 +334,27 @@ async function decodeLegacyLocalBackup(
       const ext = name.includes('.') ? (name.split('.').pop() ?? '').toLowerCase() : ''
       const contentType = extensionContentType.get(ext)
       if (contentType && isMediaContentType(contentType)) {
-        batcher.add({ contentType, bytes: data })
+        stager.add({ contentType, bytes: data })
       }
       // Non-media records (e.g. cold-storage `*.json`) have no server analogue.
     }
+  } catch (err) {
+    stager.cleanup()
+    throw err
   } finally {
     fs.closeSync(fd)
   }
 
   if (!databaseBytes) {
+    stager.cleanup()
     throw new ValidationError('Legacy backup is missing its database.risudat record')
   }
-  batcher.flush()
-  return { format: 'legacy-local-backup', databaseBytes, registeredAssetCount: batcher.count }
+  return {
+    format: 'legacy-local-backup',
+    databaseBytes,
+    includedAssetCount: stager.count,
+    stagedAssets: stager.assets,
+  }
 }
 
 function concatChunks(chunks: readonly Uint8Array[]): Uint8Array {

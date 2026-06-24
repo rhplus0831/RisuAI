@@ -11,12 +11,14 @@ import { getSchemaState } from '../db.js'
 import { requireAuth } from '../http.js'
 import {
   ValidationError,
-  addAssets,
   applyImport,
   assetPath,
+  cleanupCopiedStagedAssetFiles,
   getAllAssetMetadata,
   loadPersistedWithMessages,
+  persistStagedAssetsInTransaction,
   type Persisted,
+  type StagedAssetLiveFileCopy,
 } from '../repository.js'
 import { replaceLegacyHypaV3MemoryRowsInTransaction } from '../memoryLegacyImport.js'
 import { decodeRisuSaveImportSnapshot, normalizeRisuSaveImportDatabase } from '../risuSave/importSnapshot.js'
@@ -131,31 +133,26 @@ export function registerSaveRoutes(
     let uploadPath: string | null = null
     try {
       // Stream the (potentially very large) upload to a temp file instead of
-      // buffering it in memory, then stream-decode it; assets register in
-      // bounded batches as they are read.
+      // buffering it in memory, then stream-decode it; assets stage into temp
+      // files first so malformed embedded DB bytes cannot leak live side effects.
       uploadPath = await streamUploadToTempFile(req, importMaxBytes)
 
-      let assetCreated = false
       const decoded = await decodeLocalBackup(uploadPath, {
         maxExpandedBytes: importMaxBytes,
-        registerAssets: (assets) => {
-          // Asset ids are content-addressed; `applyImport` (below) preserves
-          // the asset metadata it sees, so registering before the database
-          // makes the imported references resolve immediately. Re-registering
-          // bytes that already exist is idempotent.
-          const results = addAssets(db, dataDir, assets)
-          const event = results.find((result) => result.event)?.event
-          if (event) {
-            eventSink.emit(event)
-            assetCreated = true
-          }
-        },
       })
 
       const snapshot = decodeRisuSaveImportSnapshot(decoded.databaseBytes, {
         maxExpandedBytes: bundleInnerRisuMaxExpandedBytes,
       })
-      const { revision, event, assetReport } = applyImportedDatabase(db, dataDir, snapshot.database)
+      let assetsCreated = false
+      const copiedAssetFiles: StagedAssetLiveFileCopy[] = []
+      const { revision, event, assetReport } = applyImportedDatabase(db, dataDir, snapshot.database, {
+        beforeRevision: () => {
+          const assetResults = persistStagedAssetsInTransaction(db, dataDir, decoded.stagedAssets, copiedAssetFiles)
+          assetsCreated = assetResults.some((result) => result.created)
+        },
+        onImportRollback: () => cleanupCopiedStagedAssetFiles(copiedAssetFiles),
+      })
       eventSink.emit(event)
       return {
         revision,
@@ -166,8 +163,8 @@ export function registerSaveRoutes(
         },
         assetReport,
         bundleReport: {
-          includedAssetCount: decoded.registeredAssetCount,
-          assetsCreated: assetCreated,
+          includedAssetCount: decoded.includedAssetCount,
+          assetsCreated,
         },
       }
     } catch (err) {
@@ -462,16 +459,29 @@ function applyImportedDatabase(
   db: DatabaseSync,
   dataDir: string,
   database: unknown,
-  options: { cloneBeforeMessageSplit?: boolean } = {},
+  options: {
+    cloneBeforeMessageSplit?: boolean
+    beforeRevision?: (db: DatabaseSync) => void
+    onImportRollback?: () => void
+  } = {},
 ): {
   revision: number
   event: ReturnType<typeof applyImport>['event']
   assetReport: ReturnType<typeof summarizeRisuSaveAssetReport>
 } {
-  const result = applyImport(db, dataDir, database, {
-    cloneBeforeMessageSplit: options.cloneBeforeMessageSplit,
-    beforeRevision: () => replaceLegacyHypaV3MemoryRowsInTransaction(db, database),
-  })
+  let result: ReturnType<typeof applyImport>
+  try {
+    result = applyImport(db, dataDir, database, {
+      cloneBeforeMessageSplit: options.cloneBeforeMessageSplit,
+      beforeRevision: () => {
+        replaceLegacyHypaV3MemoryRowsInTransaction(db, database)
+        options.beforeRevision?.(db)
+      },
+    })
+  } catch (err) {
+    options.onImportRollback?.()
+    throw err
+  }
   return {
     ...result,
     assetReport: summarizeRisuSaveAssetReport(buildRepositoryRisuSaveAssetReport(dataDir, db)),

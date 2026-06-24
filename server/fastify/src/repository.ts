@@ -2381,6 +2381,23 @@ interface AddAssetInput {
   contentType: string
 }
 
+export interface StagedAssetInput {
+  id: string
+  size: number
+  contentType: string
+  filePath: string
+}
+
+export interface StagedAssetLiveFileCopy {
+  file: string
+  existedBefore: boolean
+}
+
+export interface StagedAssetPersistResult {
+  entry: PersistedAsset
+  created: boolean
+}
+
 export function addAsset(db: DatabaseSync, dataDir: string, args: AddAssetInput): AddAssetResult {
   return addAssets(db, dataDir, [args])[0]
 }
@@ -2455,6 +2472,67 @@ export function addAssets(db: DatabaseSync, dataDir: string, assets: readonly Ad
       }
     }
     throw err
+  }
+}
+
+export function persistStagedAssetsInTransaction(
+  db: DatabaseSync,
+  dataDir: string,
+  assets: readonly StagedAssetInput[],
+  copiedFiles: StagedAssetLiveFileCopy[],
+): StagedAssetPersistResult[] {
+  if (assets.length === 0) return []
+  for (const asset of assets) {
+    if (!isValidAssetId(asset.id)) {
+      throw new ValidationError('Local backup asset id is not a sha256 hex string')
+    }
+    if (!CONTENT_TYPE_EXTENSIONS[asset.contentType]) {
+      throw new ValidationError(`Unsupported content-type: ${asset.contentType}`)
+    }
+    if (!Number.isSafeInteger(asset.size) || asset.size < 0) {
+      throw new ValidationError('Local backup asset size is invalid')
+    }
+  }
+
+  const createdAssets: PersistedAsset[] = []
+  const results: StagedAssetPersistResult[] = []
+  fs.mkdirSync(assetsDir(dataDir), { recursive: true })
+
+  for (const asset of assets) {
+    const existing = getAssetMetadataById(db, asset.id)
+    if (existing) {
+      const file = assetPath(dataDir, existing)
+      if (!fs.existsSync(file)) {
+        copiedFiles.push({ file, existedBefore: false })
+        fs.copyFileSync(asset.filePath, file)
+      }
+      results.push({ entry: existing, created: false })
+      continue
+    }
+
+    const entry: PersistedAsset = {
+      id: asset.id,
+      ext: CONTENT_TYPE_EXTENSIONS[asset.contentType],
+      size: asset.size,
+      contentType: asset.contentType,
+    }
+    const file = assetPath(dataDir, entry)
+    const existedBefore = fs.existsSync(file)
+    copiedFiles.push({ file, existedBefore })
+    fs.copyFileSync(asset.filePath, file)
+    createdAssets.push(entry)
+    results.push({ entry, created: true })
+  }
+
+  insertAssetMetadataBatch(db, createdAssets)
+  return results
+}
+
+export function cleanupCopiedStagedAssetFiles(copiedFiles: readonly StagedAssetLiveFileCopy[]): void {
+  for (const { file, existedBefore } of copiedFiles) {
+    if (!existedBefore) {
+      fs.rmSync(file, { force: true })
+    }
   }
 }
 

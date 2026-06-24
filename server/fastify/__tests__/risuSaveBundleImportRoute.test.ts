@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createHash } from 'node:crypto'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import * as fflate from 'fflate'
@@ -8,8 +8,12 @@ import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { createCommandEventSink, type CommandEventSink } from '../src/commands/events.js'
 import { ACTIVE_WRITER_SESSION_HEADER } from '../src/activeWriter.js'
-import { DatabaseSync } from 'node:sqlite'
-import { writePersistedWithMessages, assetsDir, insertAssetMetadataBatch } from '../src/repository.js'
+import {
+  writePersistedWithMessages,
+  assetsDir,
+  insertAssetMetadataBatch,
+  getAssetMetadataById,
+} from '../src/repository.js'
 import { openDatabase } from '../src/db.js'
 import { setupAuthedClient } from './helpers/auth.js'
 
@@ -163,6 +167,28 @@ async function exportBundleZip(): Promise<Buffer> {
   return exported.rawPayload
 }
 
+async function expectNoImportedAssetSideEffects(h: Harness): Promise<void> {
+  const asset = await h.app.inject({ method: 'GET', url: `/api/v1/assets/${ASSET_ID}` })
+  expect(asset.statusCode).toBe(404)
+  expect(existsSync(path.join(assetsDir(h.dataDir), `${ASSET_ID}.png`))).toBe(false)
+  expect(h.commandEvents.list().map((event) => event.type)).not.toEqual(
+    expect.arrayContaining(['asset.created', 'state.imported']),
+  )
+
+  const db = openDatabase(h.dataDir)
+  try {
+    expect(getAssetMetadataById(db, ASSET_ID)).toBeNull()
+    const commandEvents = db
+      .prepare('SELECT type FROM command_events ORDER BY revision ASC')
+      .all() as unknown as Array<{ type: string }>
+    expect(commandEvents.map((event) => event.type)).not.toEqual(
+      expect.arrayContaining(['asset.created', 'state.imported']),
+    )
+  } finally {
+    db.close()
+  }
+}
+
 describe('repository .risu bundle import route', () => {
   it('restores the database and bundled assets into a fresh instance', async () => {
     persistDatabaseWithAsset(harness.dataDir)
@@ -226,8 +252,10 @@ describe('repository .risu bundle import route', () => {
       })
       expect(exported.statusCode).toBe(200)
 
-      // state.imported is emitted so subscribers resync.
+      // state.imported is the bundle-import success signal; per-asset events
+      // are intentionally not emitted for staged backup assets.
       expect(fresh.commandEvents.list().some((event) => event.type === 'state.imported')).toBe(true)
+      expect(fresh.commandEvents.list().some((event) => event.type === 'asset.created')).toBe(false)
     } finally {
       await stopHarness(fresh)
     }
@@ -280,6 +308,54 @@ describe('repository .risu bundle import route', () => {
       const asset = await fresh.app.inject({ method: 'GET', url: `/api/v1/assets/${ASSET_ID}` })
       expect(asset.statusCode).toBe(200)
       expect(Buffer.from(asset.rawPayload).equals(ASSET_BYTES)).toBe(true)
+    } finally {
+      await stopHarness(fresh)
+    }
+  })
+
+  it('rejects a zip backup with assets and malformed database.risu without persisting asset side effects', async () => {
+    persistDatabaseWithAsset(harness.dataDir)
+    const files = fflate.unzipSync(new Uint8Array(await exportBundleZip()))
+    files['database.risu'] = new TextEncoder().encode('not a valid risu database')
+    const tampered = fflate.zipSync(files)
+
+    const fresh = await startHarness()
+    try {
+      const { assertion: freshAssertion } = await setupAuthedClient(fresh.app)
+      const upload = multipartBundle(tampered)
+      const imported = await fresh.app.inject({
+        method: 'POST',
+        url: '/api/v1/import/bundle',
+        headers: { 'risu-auth': freshAssertion, 'content-type': upload.contentType },
+        payload: upload.payload,
+      })
+
+      expect(imported.statusCode).toBe(400)
+      await expectNoImportedAssetSideEffects(fresh)
+    } finally {
+      await stopHarness(fresh)
+    }
+  })
+
+  it('rejects a legacy .bin backup with assets and malformed database.risudat without persisting asset side effects', async () => {
+    const bin = buildLegacyBin([
+      { name: 'database.risudat', data: new TextEncoder().encode('not a valid risu database') },
+      { name: `${ASSET_ID}.png`, data: ASSET_BYTES },
+    ])
+
+    const fresh = await startHarness()
+    try {
+      const { assertion: freshAssertion } = await setupAuthedClient(fresh.app)
+      const upload = multipartBundle(bin, 'backup.bin')
+      const imported = await fresh.app.inject({
+        method: 'POST',
+        url: '/api/v1/import/bundle',
+        headers: { 'risu-auth': freshAssertion, 'content-type': upload.contentType },
+        payload: upload.payload,
+      })
+
+      expect(imported.statusCode).toBe(400)
+      await expectNoImportedAssetSideEffects(fresh)
     } finally {
       await stopHarness(fresh)
     }
