@@ -60,6 +60,67 @@
     changeChatTo(index)
     close()
   }
+
+  function resolveOriginCharacter(originCharacterId, originSelectedCharIndex) {
+    if (originCharacterId) {
+      const byId = DBState.db.characters?.find((candidate) => candidate.chaId === originCharacterId)
+      if (byId) return byId
+    }
+
+    const byIndex = DBState.db.characters?.[originSelectedCharIndex]
+    if (originCharacterId && byIndex?.chaId && byIndex.chaId !== originCharacterId) return undefined
+    return byIndex
+  }
+
+  function isOriginCharacterSelected(originCharacter, originCharacterId) {
+    const selectedCharacter = DBState.db.characters?.[$selectedCharID]
+    return (
+      selectedCharacter === originCharacter || (originCharacterId && selectedCharacter?.chaId === originCharacterId)
+    )
+  }
+
+  async function deleteModalChat(chat) {
+    const originSelectedCharIndex = $selectedCharID
+    const originCharacter = DBState.db.characters?.[originSelectedCharIndex]
+    const originCharacterId = originCharacter?.chaId
+    const targetChatId = chat?.id
+    const targetChatName = chat?.name ?? ''
+
+    if (originCharacter?.chats?.length === 1) {
+      alertError(language.errors.onlyOneChat)
+      return
+    }
+
+    const confirmed = await alertConfirm(`${language.removeConfirm}${targetChatName}`)
+    if (!confirmed || !targetChatId) return
+
+    const resolvedOriginCharacter = resolveOriginCharacter(originCharacterId, originSelectedCharIndex)
+    const liveChatIndex = resolvedOriginCharacter?.chats?.findIndex((candidate) => candidate.id === targetChatId) ?? -1
+    if (!resolvedOriginCharacter || liveChatIndex < 0 || resolvedOriginCharacter.chats.length <= 1) return
+
+    const previous = currentChatStateSnapshot()
+    previous.selectedCharID = originSelectedCharIndex
+    const originStillSelected = isOriginCharacterSelected(resolvedOriginCharacter, originCharacterId)
+
+    if (canUseServerCommands()) {
+      const result = applyOptimisticDeletedChat(originCharacterId, targetChatId, previous)
+      if (originStillSelected && result.applied && resolvedOriginCharacter.chaId && result.selectedChatId) {
+        navigate(characterRoutePath(resolvedOriginCharacter.chaId, result.selectedChatId), {
+          replace: true,
+        })
+      }
+    } else {
+      if (originStillSelected) {
+        changeChatTo(0)
+      } else {
+        resolvedOriginCharacter.chatPage = 0
+      }
+      const chats = resolvedOriginCharacter.chats
+      chats.splice(liveChatIndex, 1)
+      resolvedOriginCharacter.chats = chats
+    }
+    dispatchDeleteChat(targetChatId, previous)
+  }
 </script>
 
 <div data-risu-chat-list="modal" class="absolute w-full h-full z-40 bg-black/50 flex justify-center items-center">
@@ -117,30 +178,7 @@
             tabindex="0"
             onclick={async (e) => {
               e.stopPropagation()
-              if (DBState.db.characters[$selectedCharID].chats.length === 1) {
-                alertError(language.errors.onlyOneChat)
-                return
-              }
-              const d = await alertConfirm(`${language.removeConfirm}${chat.name}`)
-              if (d) {
-                if (!chat.id) return
-                const previous = currentChatStateSnapshot()
-                const cha = DBState.db.characters[$selectedCharID]
-                if (canUseServerCommands()) {
-                  const result = applyOptimisticDeletedChat(cha.chaId, chat.id, previous)
-                  if (result.applied && cha.chaId && result.selectedChatId) {
-                    navigate(characterRoutePath(cha.chaId, result.selectedChatId), {
-                      replace: true,
-                    })
-                  }
-                } else {
-                  changeChatTo(0)
-                  let chats = DBState.db.characters[$selectedCharID].chats
-                  chats.splice(i, 1)
-                  DBState.db.characters[$selectedCharID].chats = chats
-                }
-                dispatchDeleteChat(chat.id, previous)
-              }
+              await deleteModalChat(chat)
             }}
             onkeydown={() => {}}>
             <TrashIcon size={18} />

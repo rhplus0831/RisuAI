@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { mount, tick, unmount } from 'svelte'
+import { get } from 'svelte/store'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const chatListMocks = vi.hoisted(() => {
@@ -589,6 +590,51 @@ describe('ChatList DOM contract harness', () => {
     expect(selectedCharacter().chatPage).toBe(1)
     expect(chatRows().map((row) => row.dataset.risuChatId)).toEqual(['chat-a', 'chat-b', 'chat-c'])
     expectRowSelected('chat-b', true)
+  })
+
+  it('deletes the originally targeted modal chat when selection changes during confirm', async () => {
+    const charA = seedModalDatabase()
+    const charB = {
+      ...charA,
+      chaId: 'char-b',
+      name: 'Other Character',
+      chatPage: 0,
+      chats: [makeChat('other-chat-a', 'Other Chat A'), makeChat('other-chat-b', 'Other Chat B')],
+      chatFolders: [],
+    } as character
+    DBState.db.characters.push(charB)
+    chatListMocks.setServerCommandsEnabled(true)
+    let resolveConfirm!: (confirmed: boolean) => void
+    chatListMocks.alertConfirm.mockReturnValueOnce(
+      new Promise<boolean>((resolve) => {
+        resolveConfirm = resolve
+      }),
+    )
+    const command = chatListMocks.createDeferredDeleteCommand()
+
+    component = mount(ChatList, { target, props: { close: vi.fn() } })
+    await tick()
+
+    deleteButtonForRow(rowByChatId('chat-b')).click()
+    await tick()
+
+    selectedCharID.set(1)
+    await tick()
+    expect(chatRows().map((row) => row.dataset.risuChatId)).toEqual(['other-chat-a', 'other-chat-b'])
+
+    resolveConfirm(true)
+    await flushCommandWork()
+
+    expect(command.settled).toBe(false)
+    expect(command.input).toMatchObject({ chatId: 'chat-b' })
+    expect(charA.chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-c'])
+    expect(charB.chats.map((chat) => chat.id)).toEqual(['other-chat-a', 'other-chat-b'])
+    expect(get(selectedCharID)).toBe(1)
+    expect(chatListMocks.navigate).not.toHaveBeenCalled()
+    expect(chatListMocks.changeChatTo).not.toHaveBeenCalled()
+
+    command.resolve({ revision: 11, status: 'ok' })
+    await flushCommandWork()
   })
 
   it('reports the one-chat modal delete guard and leaves the row unchanged', async () => {
