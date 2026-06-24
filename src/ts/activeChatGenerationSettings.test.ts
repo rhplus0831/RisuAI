@@ -19,6 +19,7 @@ import {
   createActiveChatGenerationSettingsPatch,
   createActiveChatGenerationSettingsDefaultValuesPatch,
   createActiveChatGenerationSettingsSelectionPatch,
+  fillMissingActiveChatSidebarToggleDefaults,
   guardActiveChatGenerationSettingsForSend,
   resolveActiveChatGenerationSettings,
   saveActiveChatGenerationSettings,
@@ -465,6 +466,70 @@ describe('active chat generation settings helper', () => {
         generationSettings: nextSettings,
       },
     })
+  })
+
+  it('fills missing active sidebar toggle defaults without resetting existing values', () => {
+    DBState.db.modules.push({
+      id: 'new-chat-module',
+      customModuleToggle: [
+        'newFlag=New flag',
+        'newMode=New mode=select=alpha,beta',
+        'newNote=New note=text',
+        'newMemo=New memo=textarea',
+      ].join('\n'),
+    } as any)
+    DBState.db.characters[0].chats[0].modules = ['chat-module', 'new-chat-module']
+    DBState.db.characters[0].chats[0].generationSettings = {
+      configured: true,
+      personaId: 'persona-a',
+      modelPresetId: 'model-preset-a',
+      promptPresetId: 'preset-b',
+      jailbreakToggle: false,
+      sidebarToggles: {
+        global: '1',
+        chat: 'custom-chat-value',
+        character: '1',
+        newMode: '1',
+      },
+    }
+
+    const nextSettings = fillMissingActiveChatSidebarToggleDefaults()
+
+    expect(nextSettings).toEqual({
+      configured: true,
+      personaId: 'persona-a',
+      modelPresetId: 'model-preset-a',
+      promptPresetId: 'preset-b',
+      jailbreakToggle: false,
+      sidebarToggles: {
+        global: '1',
+        chat: 'custom-chat-value',
+        character: '1',
+        newMode: '1',
+        newFlag: '0',
+        newNote: '',
+        newMemo: '',
+      },
+    })
+
+    const state = resolveActiveChatGenerationSettings({
+      db: {
+        ...DBState.db,
+        characters: [
+          {
+            ...DBState.db.characters[0],
+            chats: [
+              {
+                ...DBState.db.characters[0].chats[0],
+                generationSettings: nextSettings,
+              },
+            ],
+          },
+        ],
+      } as any,
+      selectedCharIndex: 0,
+    })
+    expect(state.readiness.missing.map((reason) => reason.code)).not.toContain('sidebar_toggle_missing')
   })
 
   it('resets active-chat toggle values to defaults', async () => {

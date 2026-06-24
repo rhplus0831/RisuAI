@@ -237,6 +237,16 @@ export function createActiveChatGenerationSettingsDefaultValuesPatch(
   )
 }
 
+export function fillMissingActiveChatSidebarToggleDefaults(
+  state: ActiveChatGenerationSettingsState = resolveActiveChatGenerationSettings(),
+): ChatGenerationSettings | undefined {
+  if (!state.settings) return undefined
+  return fillMissingDefaultSidebarToggles(
+    state,
+    pruneStaleSidebarToggleKeys(state, cloneGenerationSettings(state.settings)),
+  )
+}
+
 export function createActiveChatJailbreakToggleGenerationSettingsPatch(
   jailbreakToggle: boolean,
   state: ActiveChatGenerationSettingsState = resolveActiveChatGenerationSettings(),

@@ -1,4 +1,12 @@
-import { currentChatScopedSnapshot, dispatchUpdateChatScoped } from './chatCommands'
+import {
+  currentChatGenerationSettingsSnapshot,
+  currentChatScopedSnapshot,
+  dispatchUpdateChatScoped,
+  restoreChatGenerationSettings,
+  restoreChatScopedState,
+  runOptimisticCommandSequence,
+  type ChatGenerationSettingsSnapshot,
+} from './chatCommands'
 import {
   canUseServerCommands,
   createModuleCommand,
@@ -7,6 +15,8 @@ import {
   reorderCharacterModulesCommand,
   reorderModulesCommand,
   runServerCommand,
+  saveChatGenerationSettingsCommand,
+  updateChatCommand,
   updateModuleCommand,
   type ModuleSnapshot,
   type ServerCommandResult,
@@ -16,6 +26,11 @@ import { DBState, reloadGuiAfterDefinitionChange, selectedCharID } from './store
 import type { RisuModule } from './process/modules'
 import type { character } from './storage/database.svelte'
 import { get } from 'svelte/store'
+import {
+  fillMissingActiveChatSidebarToggleDefaults,
+  resolveActiveChatGenerationSettings,
+} from './activeChatGenerationSettings'
+import type { ChatGenerationSettings } from './chatGenerationSettings'
 
 export interface GlobalModuleStateSnapshot {
   modules: RisuModule[]
@@ -1121,6 +1136,126 @@ function boundedInsertIndex(index: number, length: number): number {
   return index
 }
 
+interface ActiveChatSidebarToggleDefaultUpdate {
+  chatId: string
+  generationSettings: ChatGenerationSettings
+  rollback: ChatGenerationSettingsSnapshot
+}
+
+function applyMissingActiveChatSidebarToggleDefaults(): ActiveChatSidebarToggleDefaultUpdate | null {
+  const state = resolveActiveChatGenerationSettings()
+  const chatId = state.identity.chatId
+  const generationSettings = fillMissingActiveChatSidebarToggleDefaults(state)
+  if (!chatId || !generationSettings || isJsonValueEqual(generationSettings, state.settings)) return null
+  if (hasBlockingGenerationSettingsSaveReason(state)) return null
+
+  const rollbackSnapshot = currentChatGenerationSettingsSnapshot(chatId)
+  if (!rollbackSnapshot) return null
+
+  const commandSettings = cloneJsonValue(generationSettings)
+  let applied = false
+  withTrustedServerProjectionWrite(() => {
+    const character = DBState.db.characters?.[state.identity.selectedCharIndex]
+    const chat =
+      state.identity.chatIndex >= 0 && Number.isInteger(state.identity.chatIndex)
+        ? character?.chats?.[state.identity.chatIndex]
+        : undefined
+    if (!chat || chat.id !== chatId) return
+    chat.generationSettings = cloneJsonValue(commandSettings)
+    applied = true
+  })
+
+  if (!applied) return null
+  return {
+    chatId,
+    generationSettings: commandSettings,
+    rollback: {
+      ...rollbackSnapshot,
+      attemptedGenerationSettings: commandSettings,
+    },
+  }
+}
+
+function hasBlockingGenerationSettingsSaveReason(
+  state: ReturnType<typeof resolveActiveChatGenerationSettings>,
+): boolean {
+  return state.readiness.missing.some((reason) => {
+    switch (reason.code) {
+      case 'persona_missing':
+      case 'model_preset_missing':
+      case 'prompt_preset_missing':
+      case 'jailbreak_toggle_missing':
+      case 'jailbreak_toggle_invalid':
+        return true
+      default:
+        return false
+    }
+  })
+}
+
+function dispatchUpdateChatScopedWithGenerationSettings(
+  chatId: string,
+  nextModules: string[],
+  generationUpdate: ActiveChatSidebarToggleDefaultUpdate,
+  previous: ReturnType<typeof currentChatScopedSnapshot>,
+): void {
+  const commandModules = cloneJsonValue(nextModules)
+  const commandSettings = cloneJsonValue(generationUpdate.generationSettings)
+  runOptimisticCommandSequence(
+    [
+      (baseRevision) =>
+        updateChatCommand({
+          baseRevision,
+          chatId,
+          patch: { modules: commandModules },
+          select: false,
+        }),
+      (baseRevision) =>
+        saveChatGenerationSettingsCommand({
+          baseRevision,
+          chatId,
+          generationSettings: commandSettings,
+        }),
+    ],
+    () => restoreChatScopedState(previous),
+  )
+}
+
+function dispatchReorderCharacterModulesWithGenerationSettings(
+  characterId: string,
+  nextModules: string[],
+  previous: CharacterModuleStateSnapshot,
+  generationUpdate: ActiveChatSidebarToggleDefaultUpdate,
+): void {
+  const commandModules = cloneJsonValue(nextModules)
+  const commandSettings = cloneJsonValue(generationUpdate.generationSettings)
+  const rollback: ChatGenerationSettingsSnapshot = {
+    ...generationUpdate.rollback,
+    attemptedGenerationSettings: commandSettings,
+  }
+
+  runOptimisticCommandSequence(
+    [
+      (baseRevision) =>
+        reorderCharacterModulesCommand({
+          baseRevision,
+          characterId,
+          moduleIds: commandModules,
+        }),
+      (baseRevision) =>
+        saveChatGenerationSettingsCommand({
+          baseRevision,
+          chatId: generationUpdate.chatId,
+          generationSettings: commandSettings,
+        }),
+    ],
+    () => {
+      restoreCharacterModuleState(previous)
+      restoreChatGenerationSettings(rollback)
+    },
+  )
+}
+
 export function dispatchReorderCharacterModules(characterId: string, previous: CharacterModuleStateSnapshot): void {
   const character = findCharacterById(characterId)
   if (!character) return
@@ -1146,6 +1281,7 @@ export function toggleSelectedChatModule(moduleId: string): void {
   // rollback needs just that one chat — not a deep clone of every character
   // with every hydrated history.
   const previous = currentChatScopedSnapshot()
+  const enabling = !(chat.modules ?? []).includes(moduleId)
   const nextModules = toggledModuleIds(chat.modules, moduleId)
 
   withTrustedServerProjectionWrite(() => {
@@ -1155,7 +1291,12 @@ export function toggleSelectedChatModule(moduleId: string): void {
     targetChat.modules = cloneJsonValue(nextModules)
   })
 
-  dispatchUpdateChatScoped(chat.id, { modules: nextModules }, previous)
+  const generationUpdate = enabling ? applyMissingActiveChatSidebarToggleDefaults() : null
+  if (generationUpdate) {
+    dispatchUpdateChatScopedWithGenerationSettings(chat.id, nextModules, generationUpdate, previous)
+  } else {
+    dispatchUpdateChatScoped(chat.id, { modules: nextModules }, previous)
+  }
   reloadGuiAfterDefinitionChange()
 }
 
@@ -1166,6 +1307,7 @@ export function toggleSelectedCharacterModule(moduleId: string): void {
 
   const previous = currentCharacterModuleStateSnapshot(character.chaId)
   if (!previous) return
+  const enabling = !(character.modules ?? []).includes(moduleId)
   const nextModules = toggledModuleIds(character.modules, moduleId)
 
   withTrustedServerProjectionWrite(() => {
@@ -1174,7 +1316,12 @@ export function toggleSelectedCharacterModule(moduleId: string): void {
     targetCharacter.modules = cloneJsonValue(nextModules)
   })
 
-  dispatchReorderCharacterModules(character.chaId, previous)
+  const generationUpdate = enabling ? applyMissingActiveChatSidebarToggleDefaults() : null
+  if (generationUpdate) {
+    dispatchReorderCharacterModulesWithGenerationSettings(character.chaId, nextModules, previous, generationUpdate)
+  } else {
+    dispatchReorderCharacterModules(character.chaId, previous)
+  }
   reloadGuiAfterDefinitionChange()
 }
 

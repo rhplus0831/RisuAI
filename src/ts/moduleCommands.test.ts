@@ -77,6 +77,13 @@ function stubCommandFetch(): CapturedFetch[] {
           event: { type: 'chat.updated', revision: 11, resource: 'chat' },
         })
       }
+      if (url === '/api/v1/commands/chats/chat-a/generation-settings') {
+        return jsonResponse({
+          revision: 12,
+          event: { type: 'chat.generationSettings.updated', revision: 12, resource: 'chat' },
+          chatId: 'chat-a',
+        })
+      }
       if (url === '/api/v1/commands/characters/char-a/modules/reorder') {
         return jsonResponse({
           revision: 11,
@@ -221,6 +228,81 @@ describe('module command projection helpers', () => {
     ])
   })
 
+  it('prefills active sidebar toggle defaults when enabling a chat-scoped module', async () => {
+    const calls = stubCommandFetch()
+    DBState.db.personas = [{ id: 'persona-a', name: 'Persona A', personaPrompt: '', icon: '', note: '' }] as any
+    DBState.db.modelPresets = [{ id: 'model-a', name: 'Model A' }] as any
+    DBState.db.promptPresets = [{ id: 'preset-a', name: 'Preset A', customPromptTemplateToggle: '' }] as any
+    DBState.db.modules = [
+      { id: 'mod-a', name: 'Module A', customModuleToggle: 'existing=Existing' },
+      {
+        id: 'mod-b',
+        name: 'Module B',
+        customModuleToggle: 'flag=Flag\nmode=Mode=select=alpha,beta\nnote=Note=text\nmemo=Memo=textarea',
+      },
+    ] as any
+    DBState.db.characters[0].chats[0].generationSettings = {
+      configured: true,
+      personaId: 'persona-a',
+      modelPresetId: 'model-a',
+      promptPresetId: 'preset-a',
+      jailbreakToggle: false,
+      sidebarToggles: {
+        existing: '1',
+        mode: '1',
+      },
+    }
+    setServerProjectionWriteGuardEnabled(true)
+
+    toggleSelectedChatModule('mod-b')
+
+    const expectedSettings = {
+      configured: true,
+      personaId: 'persona-a',
+      modelPresetId: 'model-a',
+      promptPresetId: 'preset-a',
+      jailbreakToggle: false,
+      sidebarToggles: {
+        existing: '1',
+        mode: '1',
+        flag: '0',
+        note: '',
+        memo: '',
+      },
+    }
+    expect(DBState.db.characters[0].chats[0].modules).toEqual(['mod-a', 'mod-b'])
+    expect(DBState.db.characters[0].chats[0].generationSettings).toEqual(expectedSettings)
+
+    await waitForCallCount(calls, 3)
+    expect(calls).toEqual([
+      {
+        url: '/api/v1/bootstrap',
+        method: 'GET',
+        authHeader: 'module-command-token',
+        body: null,
+      },
+      {
+        url: '/api/v1/commands/chats/chat-a',
+        method: 'PATCH',
+        authHeader: 'module-command-token',
+        body: {
+          baseRevision: 10,
+          patch: { modules: ['mod-a', 'mod-b'] },
+          select: false,
+        },
+      },
+      {
+        url: '/api/v1/commands/chats/chat-a/generation-settings',
+        method: 'PUT',
+        authHeader: 'module-command-token',
+        body: {
+          baseRevision: 11,
+          generationSettings: expectedSettings,
+        },
+      },
+    ])
+  })
+
   it('routes selected-character module toggles through the character-module command', async () => {
     const calls = stubCommandFetch()
     setServerProjectionWriteGuardEnabled(true)
@@ -251,6 +333,81 @@ describe('module command projection helpers', () => {
         body: {
           baseRevision: 10,
           moduleIds: ['mod-a', 'mod-b'],
+        },
+      },
+    ])
+  })
+
+  it('prefills active sidebar toggle defaults when enabling a character-scoped module', async () => {
+    const calls = stubCommandFetch()
+    DBState.db.personas = [{ id: 'persona-a', name: 'Persona A', personaPrompt: '', icon: '', note: '' }] as any
+    DBState.db.modelPresets = [{ id: 'model-a', name: 'Model A' }] as any
+    DBState.db.promptPresets = [{ id: 'preset-a', name: 'Preset A', customPromptTemplateToggle: '' }] as any
+    DBState.db.modules = [
+      { id: 'mod-a', name: 'Module A', customModuleToggle: 'existing=Existing' },
+      {
+        id: 'mod-b',
+        name: 'Module B',
+        customModuleToggle: 'flag=Flag\nmode=Mode=select=alpha,beta\nnote=Note=text\nmemo=Memo=textarea',
+      },
+    ] as any
+    DBState.db.characters[0].chats[0].modules = []
+    DBState.db.characters[0].chats[0].generationSettings = {
+      configured: true,
+      personaId: 'persona-a',
+      modelPresetId: 'model-a',
+      promptPresetId: 'preset-a',
+      jailbreakToggle: false,
+      sidebarToggles: {
+        existing: '1',
+        mode: '1',
+      },
+    }
+    setServerProjectionWriteGuardEnabled(true)
+
+    toggleSelectedCharacterModule('mod-b')
+
+    const expectedSettings = {
+      configured: true,
+      personaId: 'persona-a',
+      modelPresetId: 'model-a',
+      promptPresetId: 'preset-a',
+      jailbreakToggle: false,
+      sidebarToggles: {
+        existing: '1',
+        mode: '1',
+        flag: '0',
+        note: '',
+        memo: '',
+      },
+    }
+    expect(DBState.db.characters[0].modules).toEqual(['mod-a', 'mod-b'])
+    expect(DBState.db.characters[0].chats[0].generationSettings).toEqual(expectedSettings)
+
+    await waitForCallCount(calls, 3)
+    expect(calls).toEqual([
+      {
+        url: '/api/v1/bootstrap',
+        method: 'GET',
+        authHeader: 'module-command-token',
+        body: null,
+      },
+      {
+        url: '/api/v1/commands/characters/char-a/modules/reorder',
+        method: 'POST',
+        authHeader: 'module-command-token',
+        body: {
+          baseRevision: 10,
+          moduleIds: ['mod-a', 'mod-b'],
+        },
+      },
+      {
+        url: '/api/v1/commands/chats/chat-a/generation-settings',
+        method: 'PUT',
+        authHeader: 'module-command-token',
+        body: {
+          baseRevision: 11,
+          generationSettings: expectedSettings,
         },
       },
     ])
