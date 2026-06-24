@@ -42,8 +42,8 @@ This document tracks remediation of the Confirmed Issues and Risks To Harden in
 | R-04 | Model role apply | Fixed | complete | complete | complete | 9fba627dd fix: target model role preset patches by captured id | Captured selected model preset id before awaited role-profile command. |
 | R-05 | Model profile drawer | Fixed | complete | complete | complete | 5d007f207 fix: guard stale model profile edit saves | Edit saves now guard missing profile targets and show a stale-target error instead of creating. |
 | R-06 | Modal chat delete | Fixed | complete | complete | complete | ecd22ad5b fix: resolve modal chat deletes by origin target | Modal delete resolves the captured origin character/chat after confirmation before deleting. |
-| R-07 | Sortable chat reorder | Fixed | complete | complete | complete | fix: validate sortable chat reorder by ids | Sortable reorder builds payloads from DOM ids and fails closed on stale/missing ids. |
-| R-08 | Destructive refresh | Pending |  |  |  |  | Skip optimistic rollback after destructive refresh epoch changes. |
+| R-07 | Sortable chat reorder | Fixed | complete | complete | complete | ee8616157 fix: validate sortable chat reorder by ids | Sortable reorder builds payloads from DOM ids and fails closed on stale/missing ids. |
+| R-08 | Destructive refresh | Fixed | complete | complete | complete | fix: skip optimistic rollback after destructive refresh | Optimistic rollback runners skip rollback if a full projection replacement advanced the destructive refresh epoch. |
 | R-09 | Realm import | Pending |  |  |  |  | Decide and encode freshness-before-resync behavior. |
 | R-10 | Avatar upload | Pending |  |  |  |  | Decide whether navigation should cancel avatar upload. |
 | R-11 | Dirty merge granularity | Pending |  |  |  |  | Document or refine top-level conflict granularity. |

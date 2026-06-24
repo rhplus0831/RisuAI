@@ -8,6 +8,7 @@ import type {
   ModelRoleProfileBinding,
 } from '../model/modelProfileRecords'
 import { activeWriterSessionHeader, handleActiveWriterStaleResponse } from './activeWriterSession'
+import { captureDestructiveRefreshEpoch, runRollbackUnlessDestructiveRefreshChanged } from './staleStateGuards'
 
 const COMMAND_ENDPOINT = '/api/v1/commands'
 const BOOTSTRAP_ENDPOINT = '/api/v1/bootstrap'
@@ -1308,18 +1309,19 @@ export async function patchServerBackedSettings(input: PatchServerBackedSettings
   const grouped = groupSettingsPatch(input.patch)
   if (grouped.length === 0) return { status: 'unavailable' }
 
+  const rollbackEpoch = captureDestructiveRefreshEpoch()
   let lastResult: ServerCommandResult = { status: 'unavailable' }
   for (const [group, patch] of grouped) {
     const baseRevision = await getServerCommandBaseRevision(input.signal, input.keepalive)
     if (baseRevision === null) {
-      input.rollback?.()
+      runRollbackUnlessDestructiveRefreshChanged(input.rollback, rollbackEpoch)
       return { status: 'error', error: 'Unable to read server command revision' }
     }
 
     const result = await patchSettingsGroup({ group, baseRevision, patch }, input.signal, input.keepalive)
 
     if (result.status !== 'ok') {
-      input.rollback?.()
+      runRollbackUnlessDestructiveRefreshChanged(input.rollback, rollbackEpoch)
       return result
     }
     lastResult = result
@@ -3032,11 +3034,12 @@ export async function runServerCommand<T extends Record<string, unknown> = {}>(
 ): Promise<ServerCommandResult<T>> {
   if (!canUseServerCommands()) return { status: 'unavailable' }
 
+  const rollbackEpoch = captureDestructiveRefreshEpoch()
   let result: ServerCommandResult<T>
   try {
     const baseRevision = await getServerCommandBaseRevision(input.signal, input.keepalive)
     if (baseRevision === null) {
-      input.rollback?.()
+      runRollbackUnlessDestructiveRefreshChanged(input.rollback, rollbackEpoch)
       return { status: 'error', error: 'Unable to read server command revision' }
     }
 
@@ -3047,13 +3050,13 @@ export async function runServerCommand<T extends Record<string, unknown> = {}>(
     // swallowed the rejection and the optimistic write silently diverged from
     // the server.
     console.error('Server command factory rejected:', error)
-    input.rollback?.()
+    runRollbackUnlessDestructiveRefreshChanged(input.rollback, rollbackEpoch)
     const message = error instanceof Error ? error.message : String(error)
     return { status: 'error', error: `Command factory rejected: ${message}` }
   }
 
   if (result.status !== 'ok') {
-    input.rollback?.()
+    runRollbackUnlessDestructiveRefreshChanged(input.rollback, rollbackEpoch)
   } else {
     await notifyServerCommandSuccessReconciler(result.event)
   }

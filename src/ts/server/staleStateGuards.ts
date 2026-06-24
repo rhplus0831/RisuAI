@@ -17,6 +17,8 @@ export interface DestructiveRefreshToken {
   readonly reason: string
 }
 
+export type DestructiveRefreshEpoch = number
+
 let nextOperationSequence = 0
 let nextDestructiveRefreshId = 0
 
@@ -164,4 +166,21 @@ export function createDestructiveRefreshToken(reason: string): DestructiveRefres
     id: ++nextDestructiveRefreshId,
     reason,
   }
+}
+
+export function captureDestructiveRefreshEpoch(): DestructiveRefreshEpoch {
+  return nextDestructiveRefreshId
+}
+
+export function hasDestructiveRefreshEpochChanged(epoch: DestructiveRefreshEpoch): boolean {
+  return nextDestructiveRefreshId !== epoch
+}
+
+export function runRollbackUnlessDestructiveRefreshChanged(
+  rollback: (() => void) | null | undefined,
+  epoch: DestructiveRefreshEpoch,
+): boolean {
+  if (!rollback || hasDestructiveRefreshEpochChanged(epoch)) return false
+  rollback()
+  return true
 }

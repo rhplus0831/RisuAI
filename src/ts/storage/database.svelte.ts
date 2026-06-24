@@ -70,7 +70,11 @@ import {
   withServerProjectionApply,
   withTrustedServerProjectionWrite,
 } from '../server/projectionWriteGuard.svelte'
-import { applyAttemptedFieldRollback, applyAttemptedKeyedListRollback } from '../server/staleStateGuards'
+import {
+  applyAttemptedFieldRollback,
+  applyAttemptedKeyedListRollback,
+  createDestructiveRefreshToken,
+} from '../server/staleStateGuards'
 import { isServerChatMessagePlaceholder, SERVER_UNLOADED_CHAT_MESSAGE_MARKER } from '../server/chatMessagePlaceholders'
 import { DEFAULT_CHAT_DISPLAY_TAIL_COUNT, normalizeChatDisplayTailCount } from '../chatDisplayTailCount'
 import type { ChatGenerationSettings } from '../chatGenerationSettings'
@@ -1480,12 +1484,14 @@ export function setDatabase(data: Database) {
 }
 
 export function applyServerProjectionDatabase(data: Database) {
-  return withServerProjectionApply(() => {
+  const result = withServerProjectionApply(() => {
     data.customSidebarItems = normalizeCustomSidebarItems(data.customSidebarItems)
     data.chatGenerationTogglePresets = normalizeChatGenerationTogglePresets(data.chatGenerationTogglePresets)
     changeLanguage(data.language)
     setDatabaseLite(data)
   })
+  createDestructiveRefreshToken('server-projection-database-replace')
+  return result
 }
 
 /**

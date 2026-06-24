@@ -11,9 +11,11 @@ vi.mock('../process/modules', async (importActual) => {
 
 import { DBState } from '../stores.svelte'
 import { clearCachedServerCommandRevision, setCachedServerCommandRevision } from '../server/commands'
+import { captureDestructiveRefreshEpoch, hasDestructiveRefreshEpochChanged } from '../server/staleStateGuards'
 import {
   applyModelPresetFieldsToDatabase,
   applyPromptPresetFieldsToDatabase,
+  applyServerProjectionDatabase,
   botPresetIdsNeedNormalization,
   changeToPreset,
   copyPreset,
@@ -24,6 +26,7 @@ import {
   ensureBotPresetHydrated,
   extractLegacyBotPresetByIndex,
   mergeServerProjectionCharacterRow,
+  mergeServerProjectionFields,
   normalizePromptTemplateIds,
   presetTemplate,
   promptTemplateIdsNeedNormalization,
@@ -560,6 +563,7 @@ function seedPresetDatabase(patch: Partial<Database> = {}): void {
 }
 
 beforeEach(() => {
+  vi.stubGlobal('safeStructuredClone', (value: unknown) => JSON.parse(JSON.stringify(value)))
   clearCachedServerCommandRevision()
   setServerProjectionWriteGuardEnabled(false)
 })
@@ -576,6 +580,27 @@ afterEach(() => {
 })
 
 describe('mergeServerProjectionCharacterRow', () => {
+  it('advances destructive refresh epoch for full database replacement but not partial merges', () => {
+    seedDatabase([])
+    const beforeFullReplace = captureDestructiveRefreshEpoch()
+
+    applyServerProjectionDatabase({
+      characters: [],
+      modules: [],
+      personas: [],
+      language: 'ko',
+    } as unknown as Database)
+
+    expect(hasDestructiveRefreshEpochChanged(beforeFullReplace)).toBe(true)
+    expect(DBState.db.language).toBe('ko')
+
+    const afterFullReplace = captureDestructiveRefreshEpoch()
+    mergeServerProjectionFields({ language: 'en' } as Partial<Database>)
+
+    expect(DBState.db.language).toBe('en')
+    expect(captureDestructiveRefreshEpoch()).toBe(afterFullReplace)
+  })
+
   it('L35: preserves hydrated hypaV3Data on message-empty chat stubs', () => {
     const hypaV3Data = {
       memories: [{ id: 'memory-1', text: 'remember this' }],

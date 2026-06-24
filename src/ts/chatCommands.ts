@@ -29,7 +29,12 @@ import {
 } from './server/commands'
 import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
 import { isServerChatMessagePlaceholder } from './server/chatMessagePlaceholders'
-import { applyAttemptedFieldRollback, applyAttemptedKeyedListRollback } from './server/staleStateGuards'
+import {
+  applyAttemptedFieldRollback,
+  applyAttemptedKeyedListRollback,
+  captureDestructiveRefreshEpoch,
+  runRollbackUnlessDestructiveRefreshChanged,
+} from './server/staleStateGuards'
 import { DBState, reloadGuiDisplay, selectedCharID } from './stores.svelte'
 import type { Chat, ChatFolder, Message, character } from './storage/database.svelte'
 import type { ChatGenerationSettings } from './chatGenerationSettings'
@@ -1230,6 +1235,7 @@ export function runOptimisticCommandSequence(
   rollback: () => void,
 ): void {
   if (!canUseServerCommands() || commands.length === 0) return
+  const rollbackEpoch = captureDestructiveRefreshEpoch()
   void (async () => {
     let failed = false
     try {
@@ -1244,7 +1250,7 @@ export function runOptimisticCommandSequence(
       console.error('Optimistic command sequence rejected:', error)
       failed = true
     }
-    if (failed) rollback()
+    if (failed) runRollbackUnlessDestructiveRefreshChanged(rollback, rollbackEpoch)
   })()
 }
 
@@ -1253,10 +1259,11 @@ export async function runOptimisticCommandSequenceAsync(
   rollback: () => void,
 ): Promise<ServerCommandResult | null> {
   if (!canUseServerCommands() || commands.length === 0) return null
+  const rollbackEpoch = captureDestructiveRefreshEpoch()
   for (const command of commands) {
     const result = await runServerCommand({ command })
     if (result.status !== 'ok') {
-      rollback()
+      runRollbackUnlessDestructiveRefreshChanged(rollback, rollbackEpoch)
       return result
     }
   }

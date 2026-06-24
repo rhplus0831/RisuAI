@@ -19,6 +19,7 @@ import {
   type ServerCommandResult,
 } from './server/commands'
 import { SERVER_UNLOADED_CHAT_MESSAGE_MARKER } from './server/chatMessagePlaceholders'
+import { createDestructiveRefreshToken } from './server/staleStateGuards'
 import {
   setServerProjectionWriteGuardEnabled,
   withTrustedServerProjectionWrite,
@@ -70,6 +71,7 @@ import {
   restoreChatScriptstate,
   restoreChatSelection,
   runOptimisticCommandSequence,
+  runOptimisticCommandSequenceAsync,
   sanitizeChatPatch,
   setChatNoteValue,
   setChatScriptstateValue,
@@ -3389,6 +3391,42 @@ describe('Phase 2 scriptstate-scoped var dispatch', () => {
 })
 
 describe('Phase 3 runner rejection rollback (L36)', () => {
+  it('skips sequence rollback when a destructive refresh lands before failure', async () => {
+    stubCommandFetch()
+    const rollback = vi.fn()
+    const command = vi.fn(async () => {
+      createDestructiveRefreshToken('test-sequence-full-resync')
+      return { status: 'error' as const, error: 'forced failure' }
+    })
+
+    runOptimisticCommandSequence([command], rollback)
+
+    await vi.waitFor(() => {
+      expect(command).toHaveBeenCalledTimes(1)
+    })
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(rollback).not.toHaveBeenCalled()
+  })
+
+  it('skips async sequence rollback when a destructive refresh lands before failure', async () => {
+    stubCommandFetch()
+    const rollback = vi.fn()
+
+    const result = await runOptimisticCommandSequenceAsync(
+      [
+        async () => {
+          createDestructiveRefreshToken('test-async-sequence-full-resync')
+          return { status: 'error' as const, error: 'forced failure' }
+        },
+      ],
+      rollback,
+    )
+
+    expect(result).toEqual({ status: 'error', error: 'forced failure' })
+    expect(rollback).not.toHaveBeenCalled()
+  })
+
   it('L36: a rejecting factory in runOptimisticCommandSequence rolls back instead of silently diverging', async () => {
     stubCommandFetch()
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})

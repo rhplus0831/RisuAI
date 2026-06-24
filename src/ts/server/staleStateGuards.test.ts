@@ -1,12 +1,15 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import {
   applyAttemptedFieldRollback,
   applyAttemptedKeyedListRollback,
+  captureDestructiveRefreshEpoch,
   createDestructiveRefreshToken,
   createLatestOperationGuard,
+  hasDestructiveRefreshEpochChanged,
   isLatestOperation,
   mergeProjectionIntoDirtyDraft,
+  runRollbackUnlessDestructiveRefreshChanged,
 } from './staleStateGuards'
 
 type Row = {
@@ -273,5 +276,31 @@ describe('destructive refresh tokens', () => {
       reason: 'full-resync',
     })
     expect(second.id).not.toBe(first.id)
+  })
+
+  it('captures the current epoch and reports later destructive refreshes', () => {
+    const before = captureDestructiveRefreshEpoch()
+
+    expect(hasDestructiveRefreshEpochChanged(before)).toBe(false)
+
+    createDestructiveRefreshToken('restore-backup')
+
+    expect(hasDestructiveRefreshEpochChanged(before)).toBe(true)
+    expect(hasDestructiveRefreshEpochChanged(captureDestructiveRefreshEpoch())).toBe(false)
+  })
+
+  it('runs rollback only when the destructive refresh epoch is unchanged', () => {
+    const currentRollback = vi.fn()
+    const staleRollback = vi.fn()
+    const currentEpoch = captureDestructiveRefreshEpoch()
+
+    expect(runRollbackUnlessDestructiveRefreshChanged(currentRollback, currentEpoch)).toBe(true)
+    expect(currentRollback).toHaveBeenCalledTimes(1)
+
+    const staleEpoch = captureDestructiveRefreshEpoch()
+    createDestructiveRefreshToken('full-resync')
+
+    expect(runRollbackUnlessDestructiveRefreshChanged(staleRollback, staleEpoch)).toBe(false)
+    expect(staleRollback).not.toHaveBeenCalled()
   })
 })

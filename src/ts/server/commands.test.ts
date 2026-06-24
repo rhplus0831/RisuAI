@@ -117,6 +117,7 @@ import {
   setServerCommandSuccessReconciler,
   updatePromptItemCommand,
 } from './commands'
+import { createDestructiveRefreshToken } from './staleStateGuards'
 
 interface CapturedFetch {
   url: string
@@ -586,6 +587,29 @@ describe('server command API adapter', () => {
 
     expect(result).toEqual({ status: 'error', error: 'aiModel must be a string' })
     expect(rollback).toHaveBeenCalledTimes(1)
+  })
+
+  it('skips settings rollback when a destructive refresh lands before patch failure', async () => {
+    const liveSettings = { aiModel: 'attempted' }
+    const rollback = vi.fn(() => {
+      if (liveSettings.aiModel === 'attempted') liveSettings.aiModel = 'before'
+    })
+    const commandFetch = makeCommandFetch((url) => {
+      if (url === '/api/v1/bootstrap') return { revision: 1 }
+      createDestructiveRefreshToken('test-full-settings-restore')
+      liveSettings.aiModel = 'attempted'
+      return jsonResponse({ error: 'aiModel must be a string' }, 400)
+    })
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    const result = await patchServerBackedSettings({
+      patch: { aiModel: 1 },
+      rollback,
+    })
+
+    expect(result).toEqual({ status: 'error', error: 'aiModel must be a string' })
+    expect(rollback).not.toHaveBeenCalled()
+    expect(liveSettings.aiModel).toBe('attempted')
   })
 
   it('creates presets through the typed command helper', async () => {
@@ -2936,6 +2960,49 @@ describe('server command API adapter', () => {
 })
 
 describe('L36 runner rejection rollback (stability/perf plan, Phase 3)', () => {
+  it('rolls back a failed command result when no destructive refresh occurred', async () => {
+    setCachedServerCommandRevision(12)
+    const rollback = vi.fn()
+
+    const result = await runServerCommand({
+      command: async () => ({ status: 'error' as const, error: 'forced failure' }),
+      rollback,
+    })
+
+    expect(result).toEqual({ status: 'error', error: 'forced failure' })
+    expect(rollback).toHaveBeenCalledTimes(1)
+  })
+
+  it('skips command-result rollback when the destructive refresh epoch changed after dispatch', async () => {
+    setCachedServerCommandRevision(12)
+    const rollback = vi.fn()
+
+    const result = await runServerCommand({
+      command: async () => {
+        createDestructiveRefreshToken('test-full-resync')
+        return { status: 'error' as const, error: 'forced failure' }
+      },
+      rollback,
+    })
+
+    expect(result).toEqual({ status: 'error', error: 'forced failure' })
+    expect(rollback).not.toHaveBeenCalled()
+  })
+
+  it('captures a fresh epoch for commands dispatched after a destructive refresh', async () => {
+    setCachedServerCommandRevision(12)
+    createDestructiveRefreshToken('test-refresh-before-dispatch')
+    const rollback = vi.fn()
+
+    const result = await runServerCommand({
+      command: async () => ({ status: 'error' as const, error: 'forced failure' }),
+      rollback,
+    })
+
+    expect(result).toEqual({ status: 'error', error: 'forced failure' })
+    expect(rollback).toHaveBeenCalledTimes(1)
+  })
+
   it('L36: a rejected command factory rolls back once and resolves to an error result', async () => {
     const commandFetch = makeCommandFetch((url) => {
       if (url === '/api/v1/bootstrap') return { revision: 7 }
