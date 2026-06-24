@@ -629,7 +629,7 @@ export function mergeScriptDefinitionProjectionRows<T extends ScriptDefinitionRo
   projectionRows: T[],
   dirtyFieldsById: ScriptDefinitionDirtyFieldsById,
 ): T[] | null {
-  if (!sameScriptDefinitionRowIdSequence(draftRows, projectionRows)) return null
+  if (!sameUniqueScriptDefinitionRowIdSet(draftRows, projectionRows)) return null
 
   const draftRowsById = scriptDefinitionRowsById(draftRows)
   return projectionRows.map((projectionRow) => {
@@ -665,16 +665,31 @@ function changedScriptDefinitionRowFields<T extends ScriptDefinitionRow>(previou
   return changedFields
 }
 
-function sameScriptDefinitionRowIdSequence<T extends ScriptDefinitionRow>(leftRows: T[], rightRows: T[]): boolean {
+function sameUniqueScriptDefinitionRowIdSet<T extends ScriptDefinitionRow>(leftRows: T[], rightRows: T[]): boolean {
   if (leftRows.length !== rightRows.length) return false
 
-  for (let index = 0; index < leftRows.length; index += 1) {
-    const leftId = scriptDefinitionRowId(leftRows[index])
-    const rightId = scriptDefinitionRowId(rightRows[index])
-    if (!leftId || !rightId || leftId !== rightId) return false
+  const leftIds = uniqueScriptDefinitionRowIdSet(leftRows)
+  const rightIds = uniqueScriptDefinitionRowIdSet(rightRows)
+  if (!leftIds || !rightIds || leftIds.size !== rightIds.size) return false
+
+  for (const leftId of leftIds) {
+    if (!rightIds.has(leftId)) return false
   }
 
   return true
+}
+
+function uniqueScriptDefinitionRowIdSet<T extends ScriptDefinitionRow>(rows: T[]): Set<string> | null {
+  const rowIds = new Set<string>()
+  for (const row of rows) {
+    const rowId = scriptDefinitionRowId(row)
+    if (!rowId || rowIds.has(rowId)) {
+      return null
+    }
+    rowIds.add(rowId)
+  }
+
+  return rowIds
 }
 
 function scriptDefinitionRowsById<T extends ScriptDefinitionRow>(rows: T[]): Map<string, T> {

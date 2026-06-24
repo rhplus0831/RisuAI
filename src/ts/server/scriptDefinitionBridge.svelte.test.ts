@@ -237,12 +237,105 @@ describe('Phase 2 script definition dirty projection merge', () => {
     expect(laterMerged?.[0].comment).toBe('server later trigger')
   })
 
-  it('falls back to full reseed semantics when dirty row order changes', () => {
+  it('merges reordered script projection rows by stable id while preserving dirty fields', () => {
+    const dirtyFieldsById = new Map([['script-1', new Set(['out'])]])
+    const draftScripts = [
+      { ...script('script-1', 'local'), comment: 'local clean script 1' },
+      { ...script('script-2', 'sibling'), comment: 'local clean sibling' },
+    ]
+    const reorderedProjection = [
+      { ...script('script-2', 'server sibling'), comment: 'server clean sibling' },
+      { ...script('script-1', 'server'), comment: 'server clean script 1' },
+    ]
+
+    expect(mergeScriptDefinitionProjectionRows(draftScripts, reorderedProjection, dirtyFieldsById)).toEqual([
+      reorderedProjection[0],
+      {
+        ...reorderedProjection[1],
+        out: 'local',
+      },
+    ])
+  })
+
+  it('merges reordered trigger projection rows by stable id while preserving dirty fields', () => {
+    const dirtyFieldsById = new Map([['trigger-1', new Set(['comment'])]])
+    const draftTriggers = [trigger('trigger-1', 'local trigger'), trigger('trigger-2', 'local sibling')]
+    const reorderedProjection = [trigger('trigger-2', 'server sibling'), trigger('trigger-1', 'server trigger')]
+
+    expect(mergeScriptDefinitionProjectionRows(draftTriggers, reorderedProjection, dirtyFieldsById)).toEqual([
+      reorderedProjection[0],
+      {
+        ...reorderedProjection[1],
+        comment: 'local trigger',
+      },
+    ])
+  })
+
+  it('falls back to full reseed semantics when script row ids are missing or duplicated', () => {
     const dirtyFieldsById = new Map([['script-1', new Set(['out'])]])
     const draftScripts = [script('script-1', 'local'), script('script-2', 'sibling')]
-    const reorderedProjection = [script('script-2', 'server sibling'), script('script-1', 'server')]
 
-    expect(mergeScriptDefinitionProjectionRows(draftScripts, reorderedProjection, dirtyFieldsById)).toBeNull()
+    expect(
+      mergeScriptDefinitionProjectionRows(
+        draftScripts,
+        [{ ...script('script-1', 'server'), id: '' }, script('script-2', 'server sibling')],
+        dirtyFieldsById,
+      ),
+    ).toBeNull()
+
+    expect(
+      mergeScriptDefinitionProjectionRows(
+        draftScripts,
+        [script('script-1', 'server'), script('script-1', 'server duplicate')],
+        dirtyFieldsById,
+      ),
+    ).toBeNull()
+  })
+
+  it('falls back to full reseed semantics when trigger row ids are missing or duplicated', () => {
+    const dirtyFieldsById = new Map([['trigger-1', new Set(['comment'])]])
+    const draftTriggers = [trigger('trigger-1', 'local'), trigger('trigger-2', 'sibling')]
+
+    expect(
+      mergeScriptDefinitionProjectionRows(
+        [{ ...trigger('trigger-1', 'local'), id: '' }, trigger('trigger-2', 'sibling')],
+        [trigger('trigger-1', 'server'), trigger('trigger-2', 'server sibling')],
+        dirtyFieldsById,
+      ),
+    ).toBeNull()
+
+    expect(
+      mergeScriptDefinitionProjectionRows(
+        draftTriggers,
+        [trigger('trigger-1', 'server'), trigger('trigger-1', 'server duplicate')],
+        dirtyFieldsById,
+      ),
+    ).toBeNull()
+  })
+
+  it('falls back to full reseed semantics when row id sets are added, deleted, or mismatched', () => {
+    const dirtyFieldsById = new Map([['script-1', new Set(['out'])]])
+    const draftScripts = [script('script-1', 'local'), script('script-2', 'sibling')]
+
+    expect(
+      mergeScriptDefinitionProjectionRows(
+        draftScripts,
+        [script('script-2', 'server sibling'), script('script-1', 'server'), script('script-3', 'server added')],
+        dirtyFieldsById,
+      ),
+    ).toBeNull()
+
+    expect(
+      mergeScriptDefinitionProjectionRows(draftScripts, [script('script-1', 'server')], dirtyFieldsById),
+    ).toBeNull()
+
+    expect(
+      mergeScriptDefinitionProjectionRows(
+        draftScripts,
+        [script('script-1', 'server'), script('script-3', 'server replacement')],
+        dirtyFieldsById,
+      ),
+    ).toBeNull()
   })
 })
 

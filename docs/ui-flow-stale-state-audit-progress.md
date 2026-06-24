@@ -46,6 +46,6 @@ This document tracks remediation of the Confirmed Issues and Risks To Harden in
 | R-08 | Destructive refresh | Fixed | complete | complete | complete | 4e1a45290 fix: skip optimistic rollback after destructive refresh | Optimistic rollback runners skip rollback if a full projection replacement advanced the destructive refresh epoch. |
 | R-09 | Realm import | Fixed | complete | complete | complete | d82e96dd7 fix: skip stale realm import resyncs | Stale Realm import completions return before refresh progress or destructive projection resync. |
 | R-10 | Avatar upload | Fixed | complete | complete | complete | d75894529 fix: cancel stale avatar uploads after navigation | Avatar upload freshness now includes current selected/editor scope and selection-attempt id. |
-| R-11 | Dirty merge granularity | Fixed | complete | complete | complete | test: document top-level character draft merge granularity | Existing test now explicitly encodes top-level character draft conflict granularity. |
-| R-12 | Script draft reorder | Pending |  |  |  |  | Preserve dirty row fields across stable-id reorder. |
+| R-11 | Dirty merge granularity | Fixed | complete | complete | complete | b4c1cc553 test: document top-level character draft merge granularity | Existing test now explicitly encodes top-level character draft conflict granularity. |
+| R-12 | Script draft reorder | Fixed | complete | complete | complete | fix: preserve dirty script draft rows across reorder | Script definition projection merge now preserves dirty row fields across stable-id reorders. |
 | R-13 | MCP risuaccess | Pending |  |  |  |  | Revalidate targets after deferred access prompt. |
