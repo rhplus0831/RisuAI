@@ -10,6 +10,7 @@ import type { MCPClientLike } from './internalmcp'
 import localforage from 'localforage'
 import { sleep } from 'src/ts/util'
 import { registeredCustomPluginMCPs } from './pluginmcp'
+import { applyAttemptedFieldRollback } from '../../server/staleStateGuards'
 
 export type MCPToolWithURL = MCPTool & {
   mcpURL: string
@@ -313,24 +314,38 @@ async function buildMCPToolClientIndex(): Promise<Map<string, MCPToolDispatchTar
 
 export function persistMCPRefreshToken(mcp: string, arg: MCPRefreshToken): void {
   const previous = cloneJsonValue(DBState.db.authRefreshes ?? [])
+  const attemptedToken = cloneJsonValue({
+    url: mcp,
+    ...arg,
+  })
+  let attemptedIndex = previous.length
   // The optimistic local write must run inside a trusted write scope so it
   // does not throw against the read-only server projection in Fastify mode.
   withTrustedServerProjectionWrite(() => {
     DBState.db.authRefreshes ??= []
-    DBState.db.authRefreshes.push({
-      url: mcp,
-      ...arg,
-    })
+    attemptedIndex = DBState.db.authRefreshes.length
+    DBState.db.authRefreshes.push(cloneJsonValue(attemptedToken))
   })
 
   if (!canUseServerCommands()) return
 
-  const next = cloneJsonValue(DBState.db.authRefreshes as StoredMCPRefreshToken[])
+  const attemptedNext = cloneJsonValue(DBState.db.authRefreshes as StoredMCPRefreshToken[])
   void patchServerBackedSettings({
-    patch: { authRefreshes: next },
+    patch: { authRefreshes: attemptedNext },
     rollback: () => {
       withTrustedServerProjectionWrite(() => {
-        DBState.db.authRefreshes = previous
+        const rolledBack = applyAttemptedFieldRollback({
+          target: DBState.db as unknown as Record<string, unknown>,
+          previous: { authRefreshes: previous },
+          attempted: { authRefreshes: attemptedNext },
+        })
+        if (rolledBack.includes('authRefreshes')) return
+
+        const liveAuthRefreshes = DBState.db.authRefreshes
+        if (!Array.isArray(liveAuthRefreshes)) return
+        if (JSON.stringify(liveAuthRefreshes[attemptedIndex]) !== JSON.stringify(attemptedToken)) return
+
+        liveAuthRefreshes.splice(attemptedIndex, 1)
       })
     },
   })

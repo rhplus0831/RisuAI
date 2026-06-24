@@ -132,6 +132,47 @@ function stubCommandFetch(commandStatus = 200): CapturedFetch[] {
   return calls
 }
 
+function stubDeferredProviderSettingsFailure(): {
+  calls: CapturedFetch[]
+  failProviderSettings: () => void
+} {
+  const calls: CapturedFetch[] = []
+  const providerSettingsResponse = createDeferred<Response>()
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const url = String(input)
+      const body = typeof init.body === 'string' ? JSON.parse(init.body) : null
+      const headers = init.headers as Record<string, string> | undefined
+      calls.push({
+        url,
+        method: init.method ?? 'GET',
+        body,
+        authHeader: headers?.['risu-auth'] ?? null,
+      })
+      if (url === '/api/v1/bootstrap') {
+        return jsonResponse({ revision: 7 })
+      }
+      if (url === '/api/v1/commands/settings/providers') {
+        return providerSettingsResponse.promise
+      }
+      const event: CommandEvent = {
+        type: 'settings.updated',
+        revision: 8,
+        resource: 'settings',
+      }
+      return jsonResponse({ revision: 8, event })
+    }) as unknown as typeof fetch,
+  )
+
+  return {
+    calls,
+    failProviderSettings: () => {
+      providerSettingsResponse.resolve(jsonResponse({ error: 'settings failed' }, 500))
+    },
+  }
+}
+
 function clearMCPRuntimeState() {
   for (const registry of [MCPs, callOnlyMCPs]) {
     for (const key of Object.keys(registry)) {
@@ -383,6 +424,50 @@ describe('MCP runtime persistence', () => {
           clientSecret: 'old-secret',
           refreshToken: 'old-refresh',
           tokenUrl: 'https://existing.example/token',
+        },
+      ])
+    })
+  })
+
+  it('I-12: failed refresh-token rollback removes only the unchanged appended token after newer edits', async () => {
+    const { calls, failProviderSettings } = stubDeferredProviderSettingsFailure()
+    const existingToken = {
+      url: 'https://existing.example',
+      clientId: 'old-client',
+      clientSecret: 'old-secret',
+      refreshToken: 'old-refresh',
+      tokenUrl: 'https://existing.example/token',
+    }
+    const newerToken = {
+      url: 'https://newer.example',
+      clientId: 'newer-client',
+      clientSecret: 'newer-secret',
+      refreshToken: 'newer-refresh',
+      tokenUrl: 'https://newer.example/token',
+    }
+    DBState.db.authRefreshes = [existingToken]
+
+    persistMCPRefreshToken('https://mcp.example', {
+      clientId: 'client-a',
+      clientSecret: 'secret-a',
+      refreshToken: 'refresh-a',
+      tokenUrl: 'https://mcp.example/token',
+    })
+
+    await vi.waitFor(() => {
+      expect(calls.some((call) => call.url === '/api/v1/commands/settings/providers')).toBe(true)
+    })
+    DBState.db.authRefreshes.push(newerToken)
+    DBState.db.authRefreshes[2].refreshToken = 'newer-refresh-mutated'
+
+    failProviderSettings()
+
+    await vi.waitFor(() => {
+      expect(DBState.db.authRefreshes).toEqual([
+        existingToken,
+        {
+          ...newerToken,
+          refreshToken: 'newer-refresh-mutated',
         },
       ])
     })

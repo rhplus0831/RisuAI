@@ -29,8 +29,8 @@ This document tracks remediation of the Confirmed Issues and Risks To Harden in
 | I-08 | Bundle/local-backup import | Fixed | complete | complete | passed | `019cd24eb fix: stage bundle assets until import commit` | Bundle assets are staged until DB decode/import succeeds; verifier passed route tests and strict server typecheck. |
 | I-09 | Lorebook UI | Fixed | complete | complete | passed | `c91ce1d89 fix: resolve lorebook deletes after confirmation` | Delete confirmations now resolve latest row by stable target; verifier passed focused tests and `pnpm check`. |
 | I-10 | Module imports | Fixed | complete | complete | passed | `fa0c7a1f4 fix: merge module imports into latest draft` | Module lorebook/regex imports now return rows and merge by stable module id; verifier passed focused tests and `pnpm check`. |
-| I-11 | Plugins/custom UI | Fixed | complete | complete | passed | `fix: guard plugin v3 reload generations` | Plugin loads are coalesced and V3 providers/custom UI reject stale generations; verifier passed focused tests and `pnpm check`. |
-| I-12 | Plugin/MCP rollback | Pending |  |  |  |  | Make rollback attempted-value aware. |
+| I-11 | Plugins/custom UI | Fixed | complete | complete | passed | `dc344ff92 fix: guard plugin v3 reload generations` | Plugin loads are coalesced and V3 providers/custom UI reject stale generations; verifier passed focused tests and `pnpm check`. |
+| I-12 | Plugin/MCP rollback | Fixed | complete | complete | passed | `fix: make plugin and mcp rollbacks attempted-aware` | Theme and MCP token rollbacks now preserve newer edits; verifier passed focused tests and `pnpm check`. |
 
 ## Risks To Harden
 

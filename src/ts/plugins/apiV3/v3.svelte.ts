@@ -64,6 +64,7 @@ import {
 } from 'src/ts/process/ttsHooks'
 import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
 import { assertNoUnsupportedCharacterChanges, assertNoUnsupportedChatChanges } from '../unsupportedServerWriteGuard'
+import { applyAttemptedFieldRollback } from 'src/ts/server/staleStateGuards'
 
 function cloneJsonValue<T>(value: T): T {
   if (value === undefined) return value
@@ -72,13 +73,23 @@ function cloneJsonValue<T>(value: T): T {
 
 function dispatchPluginApiSettingsPatch(patch: Record<string, unknown>, previous: Record<string, unknown>): void {
   if (!canUseServerCommands()) return
+  const attempted = cloneJsonValue(patch)
+  const rollbackPrevious = cloneJsonValue(previous)
   void patchServerBackedSettings({
-    patch,
+    patch: attempted,
     rollback: () => {
       withTrustedServerProjectionWrite(() => {
-        Object.assign(DBState.db as unknown as Record<string, unknown>, cloneJsonValue(previous))
-        updateColorScheme()
-        updateTextThemeAndCSS()
+        const rolledBack = applyAttemptedFieldRollback({
+          target: DBState.db as unknown as Record<string, unknown>,
+          previous: rollbackPrevious,
+          attempted,
+        })
+        if (rolledBack.some((key) => key === 'colorScheme' || key === 'colorSchemeName')) {
+          updateColorScheme()
+        }
+        if (rolledBack.some((key) => key === 'textTheme' || key === 'customTextTheme')) {
+          updateTextThemeAndCSS()
+        }
       })
     },
   })

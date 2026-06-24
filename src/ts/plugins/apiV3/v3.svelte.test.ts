@@ -258,6 +258,8 @@ vi.mock('src/ts/server/projectionWriteGuard.svelte', () => ({
 import { customProviderStore, pluginV2 } from '../plugins.svelte'
 import { prepareCompatibleCharacterUpdateScoped } from 'src/ts/characterCommands'
 import { additionalFloatingActionButtons } from 'src/ts/stores.svelte'
+import { patchServerBackedSettings } from 'src/ts/server/commands'
+import { updateColorScheme, updateTextThemeAndCSS } from 'src/ts/gui/colorscheme'
 import {
   appendCurrentChatUserMessageForSend,
   prepareCompatibleChatUpdateScoped,
@@ -289,6 +291,12 @@ function messageCalls(spy: { mock: { calls: unknown[][] } }) {
   return spy.mock.calls.filter((call) => call[0] === 'message')
 }
 
+function capturedSettingsRollback(): () => void {
+  const rollback = vi.mocked(patchServerBackedSettings).mock.calls.at(-1)?.[0].rollback
+  expect(rollback).toEqual(expect.any(Function))
+  return rollback as () => void
+}
+
 beforeEach(async () => {
   document.body.innerHTML = ''
   mockServerCommands.canUse = false
@@ -304,6 +312,9 @@ beforeEach(async () => {
   vi.mocked(runOptimisticCommandSequence).mockClear()
   vi.mocked(appendCurrentChatUserMessageForSend).mockReset()
   vi.mocked(processSendChat).mockReset()
+  vi.mocked(patchServerBackedSettings).mockReset()
+  vi.mocked(updateColorScheme).mockReset()
+  vi.mocked(updateTextThemeAndCSS).mockReset()
   await __v3PluginLifecycleTestHooks.reset()
 })
 
@@ -535,6 +546,45 @@ describe('V3 chat command bridge', () => {
       chat: existingChat,
     })
     expect(runOptimisticCommandSequence).toHaveBeenCalledWith(factories, rollback)
+  })
+})
+
+describe('V3 plugin settings rollback', () => {
+  it('I-12: keeps a newer theme value when a failed plugin settings rollback is stale', () => {
+    mockServerCommands.canUse = true
+    ;(mockDbState.db as any).textTheme = 'standard'
+    const api = __v3PluginLifecycleTestHooks.createApi(seedV3Plugin('plugin-a')) as any
+
+    api.changeTextTheme('highcontrast')
+    const rollback = capturedSettingsRollback()
+
+    expect((mockDbState.db as any).textTheme).toBe('highcontrast')
+    ;(mockDbState.db as any).textTheme = 'newer-local-theme'
+    vi.mocked(updateColorScheme).mockClear()
+    vi.mocked(updateTextThemeAndCSS).mockClear()
+
+    rollback()
+
+    expect((mockDbState.db as any).textTheme).toBe('newer-local-theme')
+    expect(updateColorScheme).not.toHaveBeenCalled()
+    expect(updateTextThemeAndCSS).not.toHaveBeenCalled()
+  })
+
+  it('I-12: restores the previous theme value when live state still equals the attempted patch', () => {
+    mockServerCommands.canUse = true
+    ;(mockDbState.db as any).textTheme = 'standard'
+    const api = __v3PluginLifecycleTestHooks.createApi(seedV3Plugin('plugin-a')) as any
+
+    api.changeTextTheme('highcontrast')
+    const rollback = capturedSettingsRollback()
+    vi.mocked(updateColorScheme).mockClear()
+    vi.mocked(updateTextThemeAndCSS).mockClear()
+
+    rollback()
+
+    expect((mockDbState.db as any).textTheme).toBe('standard')
+    expect(updateColorScheme).not.toHaveBeenCalled()
+    expect(updateTextThemeAndCSS).toHaveBeenCalledTimes(1)
   })
 })
 
