@@ -441,12 +441,27 @@ export class ModuleHandler extends MCPToolHandler {
         },
       ]
     }
+    const moduleId = module.id
+    const moduleRef = module
 
     if (!(await this.promptAccess('risu-set-module-info', `modify module (${module.name}) information`))) {
       return [
         {
           type: 'text',
           text: 'Access denied by user.',
+        },
+      ]
+    }
+
+    const liveModule = DBState.db.modules.find((m) => m.id === moduleId)
+    if (!liveModule || liveModule.mcp) {
+      return moduleNotFound(id)
+    }
+    if (liveModule !== moduleRef) {
+      return [
+        {
+          type: 'text',
+          text: `Error: Module with ID ${id} changed before access was accepted. Please retry.`,
         },
       ]
     }
@@ -476,25 +491,25 @@ export class ModuleHandler extends MCPToolHandler {
 
     const acceptedPatch = sanitizeModulePatch(patch)
     if (previous) {
-      applyModuleInfoOptimistically(id, acceptedPatch, enabled)
-      dispatchModuleInfoPatch(id, acceptedPatch, enabled, previous)
+      applyModuleInfoOptimistically(moduleId, acceptedPatch, enabled)
+      dispatchModuleInfoPatch(moduleId, acceptedPatch, enabled, previous)
     } else {
       if (enabled !== null) {
         const enabledModules = new Set(DBState.db.enabledModules || [])
         if (enabled) {
-          enabledModules.add(id)
+          enabledModules.add(moduleId)
         } else {
-          enabledModules.delete(id)
+          enabledModules.delete(moduleId)
         }
         DBState.db.enabledModules = Array.from(enabledModules)
       }
       for (const [key, value] of Object.entries(acceptedPatch)) {
         // @ts-ignore
-        module[key] = value
+        liveModule[key] = value
       }
     }
 
-    const updatedModuleName = DBState.db.modules.find((m) => m.id === id)?.name || module.name || id
+    const updatedModuleName = DBState.db.modules.find((m) => m.id === moduleId)?.name || liveModule.name || moduleId
     return [
       {
         type: 'text',

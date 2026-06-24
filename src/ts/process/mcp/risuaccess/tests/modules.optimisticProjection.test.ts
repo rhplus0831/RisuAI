@@ -4,6 +4,8 @@ import type { customscript, loreBook, triggerscript } from 'src/ts/storage/datab
 
 // MCP module writes apply an immediate trusted projection and sequence multi-command info writes.
 
+const alertConfirmSpy = vi.hoisted(() => vi.fn(async () => true))
+
 vi.mock('src/ts/platform', async (importActual) => {
   const actual = await importActual<typeof import('src/ts/platform')>()
   return { ...actual, isFastifyServer: true }
@@ -15,7 +17,7 @@ vi.mock('src/ts/storage/fastifyStorage', () => ({
 
 vi.mock('src/ts/alert', async (importActual) => {
   const actual = await importActual<typeof import('src/ts/alert')>()
-  return { ...actual, alertConfirm: vi.fn(async () => true) }
+  return { ...actual, alertConfirm: alertConfirmSpy }
 })
 
 import { clearCachedServerCommandRevision } from 'src/ts/server/commands'
@@ -193,6 +195,8 @@ async function waitForSettledCommands(): Promise<void> {
 }
 
 beforeEach(() => {
+  alertConfirmSpy.mockReset()
+  alertConfirmSpy.mockResolvedValue(true)
   clearCachedServerCommandRevision()
   setServerProjectionWriteGuardEnabled(true)
   DBState.db = {
@@ -213,6 +217,64 @@ afterEach(() => {
 })
 
 describe('MCP module writes optimistic projection', () => {
+  it('rejects setModuleInfo when the module is deleted while access is pending', async () => {
+    const { calls } = stubCommandFetch()
+    const handler = new ModuleHandler()
+    let acceptPrompt!: (accepted: boolean) => void
+    alertConfirmSpy.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          acceptPrompt = resolve
+        }),
+    )
+
+    const pending = handler.handle('risu-set-module-info', {
+      id: 'module-a',
+      data: { name: 'Deleted target', enabled: true },
+    })
+
+    expect(alertConfirmSpy).toHaveBeenCalledTimes(1)
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.modules = []
+    })
+    acceptPrompt(true)
+
+    expect(toolText(await pending)).toBe('Error: Module with ID module-a not found.')
+    expect(DBState.db.enabledModules).toEqual([])
+    expect(calls).toEqual([])
+  })
+
+  it('rejects setModuleInfo when the module object is replaced while access is pending', async () => {
+    const { calls } = stubCommandFetch()
+    const handler = new ModuleHandler()
+    const replacement = makeModule({ id: 'module-a', name: 'Replacement module' })
+    let acceptPrompt!: (accepted: boolean) => void
+    alertConfirmSpy.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          acceptPrompt = resolve
+        }),
+    )
+
+    const pending = handler.handle('risu-set-module-info', {
+      id: 'module-a',
+      data: { name: 'Stale patch', enabled: true },
+    })
+
+    expect(alertConfirmSpy).toHaveBeenCalledTimes(1)
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.modules[0] = replacement
+    })
+    acceptPrompt(true)
+
+    expect(toolText(await pending)).toBe(
+      'Error: Module with ID module-a changed before access was accepted. Please retry.',
+    )
+    expect(DBState.db.modules[0].name).toBe('Replacement module')
+    expect(DBState.db.enabledModules).toEqual([])
+    expect(calls).toEqual([])
+  })
+
   it('setModuleInfo patches DBState and read-tool output before sequenced commands resolve', async () => {
     const { calls, releaseHeldResponses } = stubCommandFetch({
       holdUrls: ['/api/v1/commands/modules/module-a'],

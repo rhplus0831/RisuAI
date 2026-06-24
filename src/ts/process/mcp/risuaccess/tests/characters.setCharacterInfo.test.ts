@@ -178,7 +178,8 @@ async function waitForSettledCommands(): Promise<void> {
 }
 
 beforeEach(() => {
-  alertConfirmSpy.mockClear()
+  alertConfirmSpy.mockReset()
+  alertConfirmSpy.mockResolvedValue(true)
   clearCachedServerCommandRevision()
   resetLorebookHydration()
   setServerProjectionWriteGuardEnabled(false)
@@ -194,6 +195,65 @@ afterEach(() => {
 })
 
 describe('MCP character writes optimistic projection', () => {
+  it('rejects setCharacterInfo when the character is deleted while access is pending', async () => {
+    setServerProjectionWriteGuardEnabled(true)
+    const { calls } = stubCommandFetch()
+    const handler = new CharacterHandler()
+    let acceptPrompt!: (accepted: boolean) => void
+    alertConfirmSpy.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          acceptPrompt = resolve
+        }),
+    )
+
+    const pending = handler.handle('risu-set-character-info', {
+      id: 'char-1',
+      data: { name: 'Deleted target' },
+    })
+
+    expect(alertConfirmSpy).toHaveBeenCalledTimes(1)
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.characters = DBState.db.characters.filter((candidate) => candidate.chaId !== 'char-1')
+    })
+    acceptPrompt(true)
+
+    expect(toolText(await pending)).toBe('Error: Character with ID char-1 not found.')
+    expect(DBState.db.characters.map((candidate) => candidate.chaId)).toEqual(['char-0', 'char-2'])
+    expect(calls).toEqual([])
+  })
+
+  it('rejects setCharacterInfo when the character row is replaced while access is pending', async () => {
+    setServerProjectionWriteGuardEnabled(true)
+    const { calls } = stubCommandFetch()
+    const handler = new CharacterHandler()
+    const replacement = { ...DBState.db.characters[1], name: 'Replacement character' }
+    let acceptPrompt!: (accepted: boolean) => void
+    alertConfirmSpy.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          acceptPrompt = resolve
+        }),
+    )
+
+    const pending = handler.handle('risu-set-character-info', {
+      id: 'char-1',
+      data: { name: 'Stale patch' },
+    })
+
+    expect(alertConfirmSpy).toHaveBeenCalledTimes(1)
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.characters[1] = replacement
+    })
+    acceptPrompt(true)
+
+    expect(toolText(await pending)).toBe(
+      'Error: Character with ID char-1 changed before access was accepted. Please retry.',
+    )
+    expect(DBState.db.characters[1].name).toBe('Replacement character')
+    expect(calls).toEqual([])
+  })
+
   it('setCharacterInfo patches DBState and read-tool output before the command resolves', async () => {
     setServerProjectionWriteGuardEnabled(true)
     const { calls } = stubCommandFetch()

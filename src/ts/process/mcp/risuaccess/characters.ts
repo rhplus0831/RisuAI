@@ -529,6 +529,8 @@ export class CharacterHandler extends MCPToolHandler {
         },
       ]
     }
+    const characterId = char.chaId
+    const characterRef = char
 
     const displayName = characterAccessName(char)
     if (!(await this.promptAccess('risu-set-character-info', `modify character (${displayName}) information`))) {
@@ -536,6 +538,24 @@ export class CharacterHandler extends MCPToolHandler {
         {
           type: 'text',
           text: 'Access denied by user.',
+        },
+      ]
+    }
+
+    const liveChar = DBState.db.characters?.find((candidate) => candidate.chaId === characterId)
+    if (!liveChar) {
+      return [
+        {
+          type: 'text',
+          text: `Error: Character with ID ${id} not found.`,
+        },
+      ]
+    }
+    if (liveChar !== characterRef) {
+      return [
+        {
+          type: 'text',
+          text: `Error: Character with ID ${id} changed before access was accepted. Please retry.`,
         },
       ]
     }
@@ -559,7 +579,7 @@ export class CharacterHandler extends MCPToolHandler {
         return [
           {
             type: 'text',
-            text: `Error: Field ${field} does not exist on character ${char.chaId} or it isn't allowed to be modified.`,
+            text: `Error: Field ${field} does not exist on character ${liveChar.chaId} or it isn't allowed to be modified.`,
           },
         ]
       }
@@ -567,24 +587,24 @@ export class CharacterHandler extends MCPToolHandler {
     if (canUseServerCommands()) {
       // A field patch touches one character row, so its rollback needs only
       // that row, not a deep clone of the whole characters array.
-      const index = DBState.db.characters?.findIndex((candidate) => candidate.chaId === char.chaId) ?? -1
+      const index = DBState.db.characters?.findIndex((candidate) => candidate.chaId === characterId) ?? -1
       const acceptedPatch = sanitizeCharacterPatch(patch)
       if (index >= 0) {
         const previous = currentCharacterRowSnapshot(index)
-        applyCharacterInfoPatchOptimistically(char.chaId, acceptedPatch)
-        dispatchUpdateCharacterScoped(char.chaId, acceptedPatch, previous)
+        applyCharacterInfoPatchOptimistically(characterId, acceptedPatch)
+        dispatchUpdateCharacterScoped(characterId, acceptedPatch, previous)
       }
     } else {
       for (const [field, value] of Object.entries(patch)) {
         // @ts-ignore
-        char[field] = value
+        liveChar[field] = value
       }
     }
 
     return [
       {
         type: 'text',
-        text: `Successfully updated character ${characterAccessName(char)}`,
+        text: `Successfully updated character ${characterAccessName(liveChar)}`,
       },
     ]
   }
