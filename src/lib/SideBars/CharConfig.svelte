@@ -474,28 +474,37 @@
     }
   }
 
+  function currentRealCharacterDraftTarget(): { selectedIndex: number; character: character } | null {
+    const selectedIndex = $selectedCharID
+    const selectedCharacter = DBState.db.characters?.[selectedIndex]
+    if (selectedCharacter?.type !== 'character' || !selectedCharacter.chaId) return null
+    if (characterDraft.characterId !== selectedCharacter.chaId) return null
+
+    return { selectedIndex, character: selectedCharacter as character }
+  }
+
   function moveAlternateGreetingUp(index: number) {
     if (index === 0) return
-    if (characterDraft.value.type === 'character') {
-      let alternateGreetings = characterDraft.value.alternateGreetings
-      let temp = alternateGreetings[index]
-      alternateGreetings[index] = alternateGreetings[index - 1]
-      alternateGreetings[index - 1] = temp
-      characterDraft.value.alternateGreetings = alternateGreetings
-      characterDraft.value = { ...characterDraft.value }
-    }
+    if (!currentRealCharacterDraftTarget()) return
+
+    let alternateGreetings = characterDraft.value.alternateGreetings
+    let temp = alternateGreetings[index]
+    alternateGreetings[index] = alternateGreetings[index - 1]
+    alternateGreetings[index - 1] = temp
+    characterDraft.value.alternateGreetings = alternateGreetings
+    characterDraft.value = { ...characterDraft.value }
   }
 
   function moveAlternateGreetingDown(index: number) {
     if (index === characterDraft.value.alternateGreetings.length - 1) return
-    if (characterDraft.value.type === 'character') {
-      let alternateGreetings = characterDraft.value.alternateGreetings
-      let temp = alternateGreetings[index]
-      alternateGreetings[index] = alternateGreetings[index + 1]
-      alternateGreetings[index + 1] = temp
-      characterDraft.value.alternateGreetings = alternateGreetings
-      characterDraft.value = { ...characterDraft.value }
-    }
+    if (!currentRealCharacterDraftTarget()) return
+
+    let alternateGreetings = characterDraft.value.alternateGreetings
+    let temp = alternateGreetings[index]
+    alternateGreetings[index] = alternateGreetings[index + 1]
+    alternateGreetings[index + 1] = temp
+    characterDraft.value.alternateGreetings = alternateGreetings
+    characterDraft.value = { ...characterDraft.value }
   }
 
   function cloneJsonValue<T>(value: T): T {
@@ -1180,7 +1189,8 @@
       <button
         class="font-medium cursor-pointer hover:text-green-500"
         onclick={() => {
-          if (characterDraft.value.type === 'character') {
+          const target = currentRealCharacterDraftTarget()
+          if (target && scriptDraftCharacterId === target.character.chaId) {
             characterScriptsDraft = [
               ...characterScriptsDraft,
               {
@@ -1240,7 +1250,7 @@
       className="mb-4 mt-2"
       bind:value={characterDraft.value.ttsMode}
       onchange={(e) => {
-        if (characterDraft.value.type === 'character') {
+        if (currentRealCharacterDraftTarget()) {
           updateCharacterDraft((character) => {
             character.ttsSpeech = ''
           })
@@ -1541,7 +1551,7 @@
             <button
               class="font-medium cursor-pointer hover:text-green-500"
               onclick={() => {
-                if (characterDraft.value.type === 'character') {
+                if (currentRealCharacterDraftTarget()) {
                   characterDraft.value.bias.push(['', 0])
                   characterDraft.value = { ...characterDraft.value }
                 }
@@ -1565,7 +1575,7 @@
               <button
                 class="font-medium flex justify-center items-center w-full h-full cursor-pointer hover:text-green-500"
                 onclick={() => {
-                  if (characterDraft.value.type === 'character') {
+                  if (currentRealCharacterDraftTarget()) {
                     characterDraft.value.bias.splice(i, 1)
                     characterDraft.value = { ...characterDraft.value }
                   }
@@ -1645,7 +1655,7 @@
             <button
               class="hover:text-green-500"
               onclick={() => {
-                if (characterDraft.value.type === 'character') {
+                if (currentRealCharacterDraftTarget()) {
                   let alternateGreetings = characterDraft.value.alternateGreetings
                   alternateGreetings.push('')
                   characterDraft.value.alternateGreetings = alternateGreetings
@@ -1684,9 +1694,10 @@
                 <button
                   class="hover:text-red-500 p-1"
                   onclick={() => {
-                    if (characterDraft.value.type === 'character') {
+                    const target = currentRealCharacterDraftTarget()
+                    if (target) {
                       setCurrentChatGreetingIndex(-1, {
-                        selectedChar: $selectedCharID,
+                        selectedChar: target.selectedIndex,
                         dispatch: false,
                       })
                       let alternateGreetings = characterDraft.value.alternateGreetings

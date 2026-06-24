@@ -1,6 +1,160 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { mount, tick, unmount } from 'svelte'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+const chatCommandMocks = vi.hoisted(() => ({
+  setCurrentChatGreetingIndex: vi.fn(),
+}))
+
+vi.mock('src/ts/server/commands', () => {
+  const command =
+    (kind: string) =>
+    async (args: Record<string, unknown> = {}) => ({
+      kind,
+      ...args,
+    })
+
+  return {
+    appendMessageCommand: command('appendMessage'),
+    canUseServerCommands: () => false,
+    createAndSelectCharacterCommand: command('createAndSelectCharacter'),
+    createCharacterCommand: command('createCharacter'),
+    createChatCommand: command('createChat'),
+    createChatFolderCommand: command('createChatFolder'),
+    deleteCharacterCommand: command('deleteCharacter'),
+    deleteChatCommand: command('deleteChat'),
+    deleteChatFolderCommand: command('deleteChatFolder'),
+    deleteMessageCommand: command('deleteMessage'),
+    forkChatCommand: command('forkChat'),
+    patchChatScriptstateCommand: command('patchChatScriptstate'),
+    reorderCharacterFoldersCommand: command('reorderCharacterFolders'),
+    reorderCharactersCommand: command('reorderCharacters'),
+    reorderChatFoldersCommand: command('reorderChatFolders'),
+    reorderChatsCommand: command('reorderChats'),
+    replaceCharacterScriptsCommand: command('replaceCharacterScripts'),
+    replaceCharacterTriggersCommand: command('replaceCharacterTriggers'),
+    replaceMessagesCommand: command('replaceMessages'),
+    replaceModuleScriptsCommand: command('replaceModuleScripts'),
+    replaceModuleTriggersCommand: command('replaceModuleTriggers'),
+    replaceTailMessagesCommand: command('replaceTailMessages'),
+    runServerCommand: vi.fn(async ({ command: buildCommand }: { command?: (baseRevision: number) => unknown }) => {
+      if (buildCommand) await buildCommand(1)
+      return { status: 'ok', revision: 1 }
+    }),
+    saveChatGenerationSettingsCommand: command('saveChatGenerationSettings'),
+    selectCharacterCommand: command('selectCharacter'),
+    truncateMessagesCommand: command('truncateMessages'),
+    updateCharacterCommand: command('updateCharacter'),
+    updateChatCommand: command('updateChat'),
+    updateChatFolderCommand: command('updateChatFolder'),
+    updateMessageCommand: command('updateMessage'),
+  }
+})
+
+vi.mock('src/ts/chatCommands', async (importActual) => {
+  const actual = await importActual<typeof import('src/ts/chatCommands')>()
+
+  return {
+    ...actual,
+    setCurrentChatGreetingIndex: (
+      ...args: Parameters<typeof actual.setCurrentChatGreetingIndex>
+    ): ReturnType<typeof actual.setCurrentChatGreetingIndex> => {
+      chatCommandMocks.setCurrentChatGreetingIndex(...args)
+      return actual.setCurrentChatGreetingIndex(...args)
+    },
+  }
+})
+
+vi.mock('src/ts/tokenizer', () => ({
+  tokenizeAccurate: vi.fn(async () => 0),
+}))
+
+vi.mock('../../ts/characters', async () => {
+  const { writable } = await import('svelte/store')
+
+  return {
+    addCharEmotion: vi.fn(),
+    addingEmotion: writable(false),
+    changeCharImage: vi.fn(),
+    getCharImage: vi.fn(async () => ''),
+    removeChar: vi.fn(),
+    rmCharEmotion: vi.fn(),
+    selectCharImg: vi.fn(),
+  }
+})
+
+vi.mock('src/ts/characterCards', () => ({
+  exportChar: vi.fn(),
+  hubURL: 'https://example.test',
+}))
+
+vi.mock('src/ts/globalApi.svelte', () => ({
+  aiWatermarkingLawApplies: false,
+  downloadFile: vi.fn(),
+  getFileSrc: vi.fn(async () => ''),
+  globalFetch: vi.fn(async () => new Response('{}')),
+  saveAsset: vi.fn(async () => 'asset-id'),
+}))
+
+vi.mock('src/ts/process/inlayScreen', () => ({
+  updateInlayScreen: vi.fn((character: unknown) => character),
+}))
+
+vi.mock('src/ts/process/modules', () => ({
+  applyModule: vi.fn(),
+  getModuleAssets: vi.fn(() => []),
+  getModuleLorebooks: vi.fn(() => []),
+  getModules: vi.fn(() => []),
+  moduleUpdate: vi.fn(),
+}))
+
+vi.mock('src/ts/process/scripts', () => ({
+  exportRegex: vi.fn(),
+  importRegex: vi.fn(async (scripts) => scripts),
+  resetScriptCache: vi.fn(),
+}))
+
+vi.mock('src/ts/process/transformers', () => ({
+  registerOnnxModelFromFile: vi.fn(async () => null),
+}))
+
+vi.mock('src/ts/process/tts', () => ({
+  getElevenTTSVoices: vi.fn(() => []),
+  getNovelAIVoices: vi.fn(() => []),
+  getVOICEVOXVoices: vi.fn(() => []),
+  getWebSpeechTTSVoices: vi.fn(() => []),
+  oaiVoices: [],
+}))
+
+vi.mock('../Others/Help.svelte', async () => {
+  const mock = await import('./CharConfig.testHelp.svelte')
+  return { default: mock.default }
+})
+
+vi.mock('../UI/GUI/TextAreaInput.svelte', async () => {
+  const mock = await import('./CharConfig.testTextAreaInput.svelte')
+  return { default: mock.default }
+})
+
+vi.mock('../UI/GUI/MultiLangInput.svelte', async () => {
+  const mock = await import('./CharConfig.testMultiLangInput.svelte')
+  return { default: mock.default }
+})
+
+vi.mock('./Scripts/RegexList.svelte', async () => {
+  const mock = await import('./CharConfig.testRegexList.svelte')
+  return { default: mock.default }
+})
+
+vi.mock('./Scripts/TriggerList.svelte', async () => {
+  const mock = await import('./CharConfig.testTriggerList.svelte')
+  return { default: mock.default }
+})
+
+import CharConfig from './CharConfig.svelte'
+import { CharConfigSubMenu, DBState, MobileGUI, selectedCharID } from 'src/ts/stores.svelte'
+import type { character } from 'src/ts/storage/database.svelte'
 
 function charConfigSource(): string {
   return readFileSync(resolve(process.cwd(), 'src/lib/SideBars/CharConfig.svelte'), 'utf8')
@@ -15,6 +169,133 @@ function sourceBetween(source: string, startNeedle: string, endNeedle: string): 
 
   return source.slice(start, end)
 }
+
+type MountedComponent = Parameters<typeof unmount>[0]
+
+let target: HTMLElement
+let component: MountedComponent | undefined
+
+function makeCharacter(fields: Partial<character> = {}): character {
+  return {
+    type: 'character',
+    chaId: 'char-1',
+    name: 'Character A',
+    displayName: '',
+    image: '',
+    firstMessage: 'Hello',
+    desc: 'Description',
+    notes: '',
+    chats: [
+      {
+        id: 'chat-1',
+        name: 'Chat',
+        message: [],
+        fmIndex: 2,
+      },
+    ],
+    chatFolders: [],
+    chatPage: 0,
+    viewScreen: 'none',
+    bias: [],
+    emotionImages: [],
+    globalLore: [],
+    sdData: [],
+    newGenData: {
+      prompt: '',
+      negative: '',
+      instructions: '',
+      emotionInstructions: '',
+    },
+    customscript: [],
+    triggerscript: [],
+    utilityBot: false,
+    exampleMessage: '',
+    creatorNotes: '',
+    systemPrompt: '',
+    postHistoryInstructions: '',
+    alternateGreetings: [],
+    tags: [],
+    creator: '',
+    characterVersion: '',
+    personality: '',
+    scenario: '',
+    firstMsgIndex: 0,
+    replaceGlobalNote: '',
+    additionalText: '',
+    additionalData: {
+      creator: '',
+      character_version: '',
+    },
+    depth_prompt: {
+      depth: 4,
+      prompt: '',
+    },
+    defaultVariables: '',
+    translatorNote: '',
+    lowLevelAccess: false,
+    ...fields,
+  } as character
+}
+
+async function settleComponent(): Promise<void> {
+  await tick()
+  await Promise.resolve()
+  await tick()
+}
+
+async function mountCharConfig(subMenu: number, characterFields: Partial<character> = {}): Promise<void> {
+  DBState.db = {
+    characters: [makeCharacter(characterFields)],
+    currentChar: 0,
+    fishSpeechKey: '',
+    hypaV3: false,
+    newImageHandlingBeta: false,
+    showDeprecatedTriggerV1: false,
+    showUnrecommended: false,
+    useAdditionalAssetsPreview: false,
+  } as never
+  selectedCharID.set(0)
+  CharConfigSubMenu.set(0)
+  MobileGUI.set(true)
+
+  target = document.createElement('div')
+  document.body.appendChild(target)
+  component = mount(CharConfig, { target })
+  await settleComponent()
+
+  CharConfigSubMenu.set(subMenu)
+  await settleComponent()
+}
+
+function buttons(): HTMLButtonElement[] {
+  return Array.from(target.querySelectorAll('button'))
+}
+
+beforeEach(() => {
+  vi.useFakeTimers()
+  chatCommandMocks.setCurrentChatGreetingIndex.mockClear()
+  Object.defineProperty(window, 'innerWidth', { configurable: true, value: 800 })
+  Object.defineProperty(window, 'innerHeight', { configurable: true, value: 600 })
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+    return window.setTimeout(() => callback(performance.now()), 0)
+  })
+})
+
+afterEach(() => {
+  if (component) {
+    unmount(component)
+    component = undefined
+  }
+  target?.remove()
+  document.body.innerHTML = ''
+  selectedCharID.set(-1)
+  CharConfigSubMenu.set(0)
+  MobileGUI.set(false)
+  DBState.db = {} as never
+  vi.unstubAllGlobals()
+  vi.clearAllTimers()
+  vi.useRealTimers()
+})
 
 describe('CharConfig character TTS media callback freshness contracts', () => {
   it('routes VITS and GPT-SoVITS media buttons through guarded helper functions', () => {
@@ -69,5 +350,88 @@ describe('CharConfig character TTS media callback freshness contracts', () => {
     expect(body).toContain('character.gptSoVitsConfig.ref_audio_data = nextRefAudioData')
     expect(body).toContain('clearCharacterTtsAssetUpload(operation)')
     expect(body).not.toContain('character.gptSoVitsConfig.ref_audio_data = {\n              fileName: audio.name')
+  })
+})
+
+describe('CharConfig character draft target guards', () => {
+  it('does not gate persistent character actions on the profile draft type field', () => {
+    const source = charConfigSource()
+
+    expect(source).not.toContain('characterDraft.value.type')
+    expect(source).toContain('function currentRealCharacterDraftTarget()')
+    expect(source).toContain("selectedCharacter?.type !== 'character'")
+    expect(source).toContain('characterDraft.characterId !== selectedCharacter.chaId')
+  })
+
+  it('keeps script definitions out of the profile draft and validates the script draft target before adding', () => {
+    const source = charConfigSource()
+    const draftSeed = sourceBetween(
+      source,
+      'const characterDraft = createServerBackedCharacterDraft([',
+      '  let characterScriptsDraft = $state<customscript[]>([])',
+    )
+    const scriptAddHandler = sourceBetween(
+      source,
+      '<span class="text-textcolor mt-4">{language.regexScript}',
+      '<span class="text-textcolor mt-4">{language.triggerScript}',
+    )
+
+    expect(draftSeed).not.toContain("'type'")
+    expect(draftSeed).not.toContain("'customscript'")
+    expect(draftSeed).not.toContain("'triggerscript'")
+    expect(scriptAddHandler).toContain('const target = currentRealCharacterDraftTarget()')
+    expect(scriptAddHandler).toContain('scriptDraftCharacterId === target.character.chaId')
+  })
+})
+
+describe('CharConfig draft-type-less character actions', () => {
+  it('adds a bias row when the live selected row is a real character', async () => {
+    await mountCharConfig(2)
+
+    expect(DBState.db.characters[0].bias).toEqual([])
+
+    buttons()[0].click()
+    await settleComponent()
+
+    expect(DBState.db.characters[0].bias).toEqual([['', 0]])
+  })
+
+  it('adds and deletes alternate greetings using the validated selected index', async () => {
+    await mountCharConfig(2, {
+      alternateGreetings: ['Hello again'],
+    })
+
+    buttons()[1].click()
+    await settleComponent()
+
+    expect(DBState.db.characters[0].alternateGreetings).toEqual(['Hello again', ''])
+
+    buttons()[4].click()
+    await settleComponent()
+
+    expect(chatCommandMocks.setCurrentChatGreetingIndex).toHaveBeenCalledWith(-1, {
+      selectedChar: 0,
+      dispatch: false,
+    })
+    expect(DBState.db.characters[0].chats[0].fmIndex).toBe(-1)
+    expect(DBState.db.characters[0].alternateGreetings).toEqual([''])
+  })
+
+  it('adds a regex script row when the script draft still targets the selected character', async () => {
+    await mountCharConfig(4)
+
+    expect(target.querySelector('[data-testid="regex-count"]')?.textContent).toBe('0')
+
+    buttons()[0].click()
+    await settleComponent()
+
+    expect(target.querySelector('[data-testid="regex-count"]')?.textContent).toBe('1')
+    expect(DBState.db.characters[0].customscript).toHaveLength(1)
+    expect(DBState.db.characters[0].customscript[0]).toMatchObject({
+      comment: '',
+      in: '',
+      out: '',
+      type: 'editinput',
+    })
   })
 })
