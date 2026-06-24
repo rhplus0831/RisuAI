@@ -1970,6 +1970,8 @@ export const languageEnglish = {
     },
     commandConflict: 'The server has newer settings. Refresh and try again.',
     commandUnavailable: 'Server commands are unavailable.',
+    editTargetMissing:
+      'The profile you were editing no longer exists. Review your draft before closing or creating a new profile.',
     unsavedRoleChanges: 'Role binding changes are not applied yet.',
     noUnsavedRoleChanges: 'Role bindings are up to date.',
     roleColumn: 'Role',

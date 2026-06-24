@@ -108,24 +108,35 @@
   }
 
   async function saveEditor(profile: ModelProfileSnapshot): Promise<void> {
-    if (!editorMode || busy) return
-    busy = true
+    const modeAtSave = editorMode
+    const profileIdAtSave = editingProfileId
+    if (!modeAtSave || busy) return
     commandError = ''
-    const existing = editingProfileId ? profiles.find((candidate) => candidate.id === editingProfileId) : undefined
+    let profileIdForUpdate = ''
+    if (modeAtSave === 'edit') {
+      const existing = profileIdAtSave ? profiles.find((candidate) => candidate.id === profileIdAtSave) : undefined
+      if (!existing) {
+        commandError = language.modelProfiles.editTargetMissing
+        return
+      }
+      profileIdForUpdate = profileIdAtSave
+    }
+
+    busy = true
     const result =
-      editorMode === 'edit' && existing
+      modeAtSave === 'create'
         ? await runServerCommand({
             command: (baseRevision) =>
-              updateModelProfileCommand({
+              createModelProfileCommand({
                 baseRevision,
-                profileId: existing.id,
                 profile,
               }),
           })
         : await runServerCommand({
             command: (baseRevision) =>
-              createModelProfileCommand({
+              updateModelProfileCommand({
                 baseRevision,
+                profileId: profileIdForUpdate,
                 profile,
               }),
           })
