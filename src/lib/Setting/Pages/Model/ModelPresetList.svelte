@@ -105,8 +105,17 @@
     afterApply()
   }
 
+  function isInteractiveKeyboardTarget(target: EventTarget | null): boolean {
+    if (!(target instanceof Element)) return false
+    const interactive = target.closest('input, textarea, select, button, [contenteditable]')
+    if (!interactive) return false
+    if (interactive.matches('input, textarea, select, button')) return true
+    return interactive.getAttribute('contenteditable')?.toLowerCase() !== 'false'
+  }
+
   function applyPresetFromKeyboard(event: KeyboardEvent, index: number): void {
     if (event.key !== 'Enter' && event.key !== ' ') return
+    if (isInteractiveKeyboardTarget(event.target)) return
     event.preventDefault()
     applyPreset(index)
   }
