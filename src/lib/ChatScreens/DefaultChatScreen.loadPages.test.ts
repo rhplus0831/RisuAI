@@ -1,6 +1,7 @@
 import { mount, tick, unmount } from 'svelte'
+import { get } from 'svelte/store'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AppendCurrentChatUserMessageResult } from 'src/ts/chatCommands'
+import type { ActiveChatTarget, AppendCurrentChatUserMessageResult } from 'src/ts/chatCommands'
 
 const loadPageMocks = vi.hoisted(() => ({
   abortActiveGeneration: vi.fn(),
@@ -12,6 +13,7 @@ const loadPageMocks = vi.hoisted(() => ({
     async (): Promise<AppendCurrentChatUserMessageResult> => ({ status: 'ok', messageId: 'message-a' }),
   ),
   applySuccessfulSendChatEffects: vi.fn(() => true),
+  captureActiveChatTarget: vi.fn((): ActiveChatTarget | null => null),
   chatFoldedState: { data: null as null | Record<string, string> },
   chatFoldedStateMessageIndex: { index: -1 },
   clearActiveGenerationAbortController: vi.fn(),
@@ -26,6 +28,7 @@ const loadPageMocks = vi.hoisted(() => ({
   guardActiveChatGenerationSettingsForSend: vi.fn(() => ({ status: 'ok' })),
   hydrateActiveChatFully: vi.fn(async () => undefined),
   hydrateActiveChatWindow: vi.fn(async () => undefined),
+  isActiveChatTargetFresh: vi.fn((_target: ActiveChatTarget | null | undefined) => false),
   currentRouteSubscribers: new Set<(value: unknown) => void>(),
   currentRouteValue: {
     kind: 'character',
@@ -158,12 +161,14 @@ vi.mock('src/ts/process/tts', () => ({
 vi.mock('src/ts/chatCommands', () => ({
   appendCurrentChatEmptyCharMessage: loadPageMocks.appendCurrentChatEmptyCharMessage,
   appendCurrentChatUserMessageForSend: loadPageMocks.appendCurrentChatUserMessageForSend,
+  captureActiveChatTarget: loadPageMocks.captureActiveChatTarget,
   cloneJsonValue: <T>(value: T) => JSON.parse(JSON.stringify(value)) as T,
   currentChatScopedSnapshot: vi.fn(() => ({ before: 'chat-scoped' })),
   currentChatStateSnapshot: vi.fn(() => ({ before: 'chat-state' })),
   dispatchReplaceMessagesScoped: vi.fn(),
   dispatchSaveChatGenerationSettings: vi.fn(() => true),
   dispatchUpdateChat: vi.fn(),
+  isActiveChatTargetFresh: loadPageMocks.isActiveChatTargetFresh,
 }))
 
 vi.mock('src/ts/activeChatGenerationSettings', async (importActual) => {
@@ -272,6 +277,43 @@ function makeCharacter(index: number, messageCount: number) {
   }
 }
 
+function captureActiveChatTargetForTest(): ActiveChatTarget | null {
+  const selectedChar = get(selectedCharID)
+  const character = DBState.db.characters?.[selectedChar]
+  const chatPage = character?.chatPage ?? 0
+  const chat = character?.chats?.[chatPage]
+  if (!character || !chat) return null
+
+  return {
+    selectedCharID: selectedChar,
+    chatPage,
+    characterId: character.chaId,
+    chatId: chat.id,
+  }
+}
+
+function isActiveChatTargetFreshForTest(target: ActiveChatTarget | null | undefined): boolean {
+  if (!target) return false
+
+  const selectedChar = get(selectedCharID)
+  const character = DBState.db.characters?.[selectedChar]
+  const chatPage = character?.chatPage ?? 0
+  const chat = character?.chats?.[chatPage]
+  if (!character || !chat) return false
+
+  if (target.characterId !== undefined || character.chaId !== undefined) {
+    if (target.characterId !== character.chaId) return false
+  } else if (target.selectedCharID !== selectedChar) {
+    return false
+  }
+
+  if (target.chatId !== undefined || chat.id !== undefined) {
+    return target.chatId === chat.id
+  }
+
+  return target.chatPage === chatPage
+}
+
 function seedDatabase(messageCounts: number[]) {
   selectedCharID.set(0)
   loadPageMocks.setCurrentRoute({
@@ -362,6 +404,25 @@ function createDeferred<T>() {
   return { promise, resolve, reject }
 }
 
+function expectedActiveTarget(characterIndex: number) {
+  return expect.objectContaining({
+    selectedCharID: characterIndex,
+    chatPage: 0,
+    characterId: `character-${characterIndex}`,
+    chatId: `chat-${characterIndex}`,
+  })
+}
+
+function switchToCharacterChat(characterIndex: number) {
+  selectedCharID.set(characterIndex)
+  loadPageMocks.setCurrentRoute({
+    kind: 'character',
+    path: `/character/character-${characterIndex}/chat-${characterIndex}`,
+    chaId: `character-${characterIndex}`,
+    chatId: `chat-${characterIndex}`,
+  })
+}
+
 async function clickScreenshotMenuItem() {
   const menuButton = target.querySelector<HTMLElement>('[data-testid="default-chat-menu-button"]')
   expect(menuButton).toBeTruthy()
@@ -421,6 +482,8 @@ beforeEach(() => {
   vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue('data:image/png;base64,AA==')
   consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
   vi.clearAllMocks()
+  loadPageMocks.captureActiveChatTarget.mockImplementation(captureActiveChatTargetForTest)
+  loadPageMocks.isActiveChatTargetFresh.mockImplementation(isActiveChatTargetFreshForTest)
   vi.mocked(translate).mockImplementation(async (message: string) => message)
   loadPageMocks.toCanvas.mockReset()
   loadPageMocks.toCanvas.mockImplementation(async () => createCanvas())
@@ -684,6 +747,9 @@ describe('DefaultChatScreen transcript window state', () => {
         role: 'user',
         data: 'Retry with file{{inlayed::asset-a}}',
       }),
+      expect.objectContaining({
+        expectedTarget: expectedActiveTarget(0),
+      }),
     )
     expect(textarea.value).toBe('Retry with file')
     expect(target.textContent).toContain('Missing file')
@@ -714,6 +780,9 @@ describe('DefaultChatScreen transcript window state', () => {
         role: 'user',
         data: 'Send the captured draft',
       }),
+      expect.objectContaining({
+        expectedTarget: expectedActiveTarget(0),
+      }),
     )
 
     textarea.value = 'Newer draft typed while append waits'
@@ -723,6 +792,50 @@ describe('DefaultChatScreen transcript window state', () => {
 
     await waitFor(() => expect(loadPageMocks.sendChat).toHaveBeenCalledTimes(1))
     expect(textarea.value).toBe('Newer draft typed while append waits')
+  })
+
+  it('silently aborts a delayed append result after the active chat changes', async () => {
+    seedDatabase([1, 1])
+    const append = createDeferred<AppendCurrentChatUserMessageResult>()
+    loadPageMocks.appendCurrentChatUserMessageForSend.mockReturnValueOnce(append.promise)
+    mountScreen()
+
+    await waitFor(() => {
+      expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy()
+    })
+    const firstTextarea = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+    firstTextarea.value = 'First chat message'
+    firstTextarea.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    const sendButton = target.querySelector<HTMLButtonElement>('[data-testid="default-chat-send-button"]')
+    expect(sendButton).toBeTruthy()
+    sendButton!.click()
+
+    await waitFor(() => expect(loadPageMocks.appendCurrentChatUserMessageForSend).toHaveBeenCalledTimes(1))
+    expect(loadPageMocks.appendCurrentChatUserMessageForSend).toHaveBeenCalledWith(
+      expect.objectContaining({
+        role: 'user',
+        data: 'First chat message',
+      }),
+      expect.objectContaining({
+        expectedTarget: expectedActiveTarget(0),
+      }),
+    )
+
+    switchToCharacterChat(1)
+    await settle()
+    const secondTextarea = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+    secondTextarea.value = 'Second chat draft'
+    secondTextarea.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    append.resolve({ status: 'ok', messageId: 'delayed-message' })
+    await settle()
+
+    expect(loadPageMocks.sendChat).not.toHaveBeenCalled()
+    expect(loadPageMocks.alertError).not.toHaveBeenCalled()
+    expect(secondTextarea.value).toBe('Second chat draft')
   })
 
   it('does not restore old text or files over a newer draft when a delayed append fails', async () => {
@@ -756,6 +869,9 @@ describe('DefaultChatScreen transcript window state', () => {
         role: 'user',
         data: 'Old draft with file{{inlayed::asset-a}}',
       }),
+      expect.objectContaining({
+        expectedTarget: expectedActiveTarget(0),
+      }),
     )
 
     const removeFileButton = target.querySelector<HTMLButtonElement>('.relative > button')
@@ -774,6 +890,56 @@ describe('DefaultChatScreen transcript window state', () => {
     expect(textarea.value).toBe('Newer draft after removing file')
     expect(target.textContent).not.toContain('Missing file')
     expect(loadPageMocks.sendChat).not.toHaveBeenCalled()
+  })
+
+  it('skips successful send effects when send resolves after the active chat changes', async () => {
+    seedDatabase([1, 1])
+    const send = createDeferred<boolean>()
+    loadPageMocks.sendChat.mockReturnValueOnce(send.promise)
+    mountScreen()
+
+    await waitFor(() => {
+      expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy()
+    })
+    const firstTextarea = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+    firstTextarea.value = 'Generate from first chat'
+    firstTextarea.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    const sendButton = target.querySelector<HTMLButtonElement>('[data-testid="default-chat-send-button"]')
+    expect(sendButton).toBeTruthy()
+    sendButton!.click()
+
+    await waitFor(() => expect(loadPageMocks.sendChat).toHaveBeenCalledTimes(1))
+    expect(loadPageMocks.appendCurrentChatUserMessageForSend).toHaveBeenCalledWith(
+      expect.objectContaining({
+        role: 'user',
+        data: 'Generate from first chat',
+      }),
+      expect.objectContaining({
+        expectedTarget: expectedActiveTarget(0),
+      }),
+    )
+    expect(loadPageMocks.sendChat).toHaveBeenCalledWith(
+      -1,
+      expect.objectContaining({
+        expectedTarget: expectedActiveTarget(0),
+      }),
+    )
+
+    switchToCharacterChat(1)
+    await settle()
+    const secondTextarea = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+    secondTextarea.value = 'Visible second chat draft'
+    secondTextarea.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    send.resolve(true)
+    await settle()
+
+    expect(loadPageMocks.applySuccessfulSendChatEffects).not.toHaveBeenCalled()
+    expect(loadPageMocks.alertError).not.toHaveBeenCalled()
+    expect(secondTextarea.value).toBe('Visible second chat draft')
   })
 
   it('does not clear newer typed text when continue waits for hydration', async () => {
@@ -800,6 +966,7 @@ describe('DefaultChatScreen transcript window state', () => {
       -1,
       expect.objectContaining({
         continue: true,
+        expectedTarget: expectedActiveTarget(0),
       }),
     )
     expect(textarea.value).toBe('Newer draft typed during continue')

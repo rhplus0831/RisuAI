@@ -83,7 +83,10 @@
   import {
     appendCurrentChatEmptyCharMessage,
     appendCurrentChatUserMessageForSend,
+    captureActiveChatTarget,
+    isActiveChatTargetFresh,
     setCurrentChatGreetingIndex,
+    type ActiveChatTarget,
   } from 'src/ts/chatCommands'
   import { applyServerBackedSetting } from 'src/ts/server/settingsBridge.svelte'
   import {
@@ -541,10 +544,14 @@
   }
 
   async function sendMain(continueResponse: boolean) {
-    let selectedChar = $selectedCharID
     if ($doingChat || preparingSend) {
       return
     }
+    const activeTarget = captureActiveChatTarget()
+    if (!activeTarget || !isActiveChatTargetFresh(activeTarget)) {
+      return
+    }
+    const selectedChar = activeTarget.selectedCharID
     preparingSend = true
     const composerOperation = beginComposerOperation(continueResponse ? 'continue' : 'send')
     try {
@@ -561,7 +568,10 @@
 
       resetRerollOnCharChange()
       await hydrateActiveChatFully()
-      if (composerOperation.targetIdentity !== getActiveTranscriptWindowIdentity()) {
+      if (
+        composerOperation.targetIdentity !== getActiveTranscriptWindowIdentity() ||
+        !isActiveChatTargetFresh(activeTarget)
+      ) {
         return
       }
 
@@ -611,7 +621,10 @@
         }
       }
       if (userMessage) {
-        const appended = await appendCurrentChatUserMessageForSend(userMessage)
+        const appended = await appendCurrentChatUserMessageForSend(userMessage, { expectedTarget: activeTarget })
+        if (!isActiveChatTargetFresh(activeTarget)) {
+          return
+        }
         if (appended.status !== 'ok') {
           restoreComposerForCurrentOperation({
             ...composerOperation,
@@ -624,10 +637,16 @@
           return
         }
       }
+      if (!isActiveChatTargetFresh(activeTarget)) {
+        return
+      }
       clearComposerForCurrentOperation(composerOperation)
       await sleep(10)
+      if (!isActiveChatTargetFresh(activeTarget)) {
+        return
+      }
       // Clear the reroll buffer only after send/continue succeeds.
-      await sendChatMain(continueResponse, undefined, true, composerOperation)
+      await sendChatMain(continueResponse, undefined, true, composerOperation, activeTarget)
     } finally {
       if (composerOperation) {
         composerOperationGuard.clear(composerOperation.token)
@@ -688,9 +707,17 @@
     regenerateMessageId?: string,
     confirmBoundary: boolean = false,
     composerOperation?: ComposerOperation,
+    expectedTarget?: ActiveChatTarget | null,
   ) {
-    let previousLength =
-      DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message.length
+    if (expectedTarget !== undefined && !isActiveChatTargetFresh(expectedTarget)) {
+      return
+    }
+    const currentCharacter = DBState.db.characters[$selectedCharID]
+    const currentChatRecord = currentCharacter?.chats[currentCharacter.chatPage]
+    if (!currentChatRecord) {
+      return
+    }
+    let previousLength = currentChatRecord.message.length
     clearMessageInputForCurrentOperation(composerOperation)
     const abortController = createActiveGenerationAbortController()
     try {
@@ -698,7 +725,11 @@
         signal: abortController.signal,
         continue: continued,
         regenerateMessageId,
+        ...(expectedTarget !== undefined ? { expectedTarget } : {}),
       })
+      if (expectedTarget !== undefined && !isActiveChatTargetFresh(expectedTarget)) {
+        return
+      }
       if (
         !applySuccessfulSendChatEffects(
           { sendSucceeded: ok, previousLength, confirmBoundary },

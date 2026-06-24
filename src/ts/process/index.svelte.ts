@@ -22,7 +22,11 @@ import {
 } from './sendChatPromptAssembly'
 import { guardActiveChatGenerationSettingsForSend } from '../activeChatGenerationSettings'
 import { alertError } from '../alert'
-import { waitForPendingChatGenerationSettingsSave } from '../chatCommands'
+import {
+  isActiveChatTargetFresh,
+  waitForPendingChatGenerationSettingsSave,
+  type ActiveChatTarget,
+} from '../chatCommands'
 import { flushPendingSelectedPersonaUpdate } from '../persona'
 
 export interface OpenAIChat {
@@ -63,6 +67,24 @@ const CHAT_GENERATION_SETTINGS_SAVE_ERROR =
   'Chat generation settings could not be saved before generation. Please retry.'
 const SELECTED_PERSONA_SAVE_ERROR = 'Persona settings could not be saved before generation. Please retry.'
 
+export interface SendChatArgs {
+  chatAdditonalTokens?: number
+  signal?: AbortSignal
+  continue?: boolean
+  preview?: boolean
+  previewPrompt?: boolean
+  regenerateMessageId?: string
+  expectedTarget?: ActiveChatTarget | null
+  /** Internal circuit-breaker depth for server-owned postGeneration resends. */
+  serverResendDepth?: number
+  /**
+   * Re-attach to this live durable generation (server job id) instead of
+   * starting a fresh send. Skips assembly + the provider POST; the server
+   * replays the in-flight stream.
+   */
+  reattachJobId?: string
+}
+
 function chatGenerationSettingsSaveError(
   result: NonNullable<Awaited<ReturnType<typeof waitForPendingChatGenerationSettingsSave>>>,
 ): string {
@@ -77,6 +99,10 @@ function selectedPersonaSaveError(
   if (result.status === 'error') return result.error
   if (result.status === 'conflict') return SELECTED_PERSONA_SAVE_ERROR
   return SELECTED_PERSONA_SAVE_ERROR
+}
+
+function isExpectedTargetFresh(target: ActiveChatTarget | null | undefined): boolean {
+  return target === undefined || isActiveChatTargetFresh(target)
 }
 
 export function createActiveGenerationAbortController(): AbortController {
@@ -97,25 +123,7 @@ export function abortActiveGeneration(): void {
   activeGenerationAbortController?.abort()
 }
 
-export async function sendChat(
-  chatProcessIndex = -1,
-  arg: {
-    chatAdditonalTokens?: number
-    signal?: AbortSignal
-    continue?: boolean
-    preview?: boolean
-    previewPrompt?: boolean
-    regenerateMessageId?: string
-    /** Internal circuit-breaker depth for server-owned postGeneration resends. */
-    serverResendDepth?: number
-    /**
-     * Re-attach to this live durable generation (server job id) instead of
-     * starting a fresh send. Skips assembly + the provider POST; the server
-     * replays the in-flight stream.
-     */
-    reattachJobId?: string
-  } = {},
-): Promise<boolean> {
+export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): Promise<boolean> {
   chatProcessStage.set(0)
   const abortSignal = arg.signal ?? new AbortController().signal
 
@@ -159,6 +167,10 @@ export async function sendChat(
 
   let isDoing = get(doingChat)
 
+  if (!isExpectedTargetFresh(arg.expectedTarget)) {
+    return false
+  }
+
   if (isDoing) {
     if (chatProcessIndex === -1) {
       return false
@@ -192,6 +204,9 @@ export async function sendChat(
 
   try {
     const setProcessStage = (stage: number) => chatProcessStage.set(stage)
+    if (!isExpectedTargetFresh(arg.expectedTarget)) {
+      return false
+    }
     const ctx = setupSendChatContext({
       chatProcessIndex,
       chatAdditonalTokens: arg.chatAdditonalTokens,
@@ -208,11 +223,17 @@ export async function sendChat(
 
     if (!arg.reattachJobId) {
       const settingsSaveResult = await waitForPendingChatGenerationSettingsSave(currentChat.id)
+      if (!isExpectedTargetFresh(arg.expectedTarget)) {
+        return false
+      }
       if (settingsSaveResult && settingsSaveResult.status !== 'ok') {
         throwError(chatGenerationSettingsSaveError(settingsSaveResult))
         return false
       }
       const personaSaveResult = await flushPendingSelectedPersonaUpdate()
+      if (!isExpectedTargetFresh(arg.expectedTarget)) {
+        return false
+      }
       if (personaSaveResult && personaSaveResult.status !== 'ok') {
         throwError(selectedPersonaSaveError(personaSaveResult))
         return false
@@ -502,6 +523,7 @@ export async function sendChat(
       return await sendChat(chatProcessIndex, {
         signal: abortSignal,
         continue: serverRequestedResend ? true : undefined,
+        ...(arg.expectedTarget !== undefined ? { expectedTarget: arg.expectedTarget } : {}),
         serverResendDepth: serverRequestedResend ? (arg.serverResendDepth ?? 0) + 1 : 0,
       })
     }
