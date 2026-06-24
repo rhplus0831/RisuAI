@@ -248,6 +248,7 @@ export interface ChatGenerationSettingsSnapshot {
   chatId: string
   hadGenerationSettings: boolean
   generationSettings?: ChatGenerationSettings
+  attemptedGenerationSettings?: ChatGenerationSettings
 }
 
 const pendingChatGenerationSettingsSaves = new Map<string, Promise<ServerCommandResult | null>>()
@@ -347,11 +348,22 @@ export function restoreChatGenerationSettings(snapshot: ChatGenerationSettingsSn
     const location = locateChatById(snapshot.chatId, snapshot.characterId)
     if (!location) return
     const row = location.chat as unknown as Record<string, unknown>
+    if (!Object.prototype.hasOwnProperty.call(snapshot, 'attemptedGenerationSettings')) return
+
+    const previous: Record<string, unknown> = {}
     if (snapshot.hadGenerationSettings) {
-      row.generationSettings = cloneJsonValue(snapshot.generationSettings)
-    } else {
-      delete row.generationSettings
+      previous.generationSettings = cloneJsonValue(snapshot.generationSettings)
     }
+
+    applyAttemptedFieldRollback({
+      target: row,
+      previous,
+      attempted: {
+        generationSettings: cloneJsonValue(snapshot.attemptedGenerationSettings),
+      },
+      keys: ['generationSettings'],
+      deleteMissingPrevious: true,
+    })
   })
 }
 
@@ -1447,9 +1459,13 @@ export function dispatchSaveChatGenerationSettings(
   generationSettings: ChatGenerationSettings,
   options: ServerCommandTransportOptions = {},
 ): boolean {
-  const rollback = currentChatGenerationSettingsSnapshot(chatId)
-  if (!rollback) return false
   const commandSettings = cloneJsonValue(generationSettings)
+  const rollbackSnapshot = currentChatGenerationSettingsSnapshot(chatId)
+  if (!rollbackSnapshot) return false
+  const rollback: ChatGenerationSettingsSnapshot = {
+    ...rollbackSnapshot,
+    attemptedGenerationSettings: commandSettings,
+  }
 
   let applied = false
   withTrustedServerProjectionWrite(() => {

@@ -30,13 +30,13 @@ This document tracks remediation of the Confirmed Issues and Risks To Harden in
 | I-09 | Lorebook UI | Fixed | complete | complete | passed | `c91ce1d89 fix: resolve lorebook deletes after confirmation` | Delete confirmations now resolve latest row by stable target; verifier passed focused tests and `pnpm check`. |
 | I-10 | Module imports | Fixed | complete | complete | passed | `fa0c7a1f4 fix: merge module imports into latest draft` | Module lorebook/regex imports now return rows and merge by stable module id; verifier passed focused tests and `pnpm check`. |
 | I-11 | Plugins/custom UI | Fixed | complete | complete | passed | `dc344ff92 fix: guard plugin v3 reload generations` | Plugin loads are coalesced and V3 providers/custom UI reject stale generations; verifier passed focused tests and `pnpm check`. |
-| I-12 | Plugin/MCP rollback | Fixed | complete | complete | passed | `fix: make plugin and mcp rollbacks attempted-aware` | Theme and MCP token rollbacks now preserve newer edits; verifier passed focused tests and `pnpm check`. |
+| I-12 | Plugin/MCP rollback | Fixed | complete | complete | passed | `cd8ffddce fix: make plugin and mcp rollbacks attempted-aware` | Theme and MCP token rollbacks now preserve newer edits; verifier passed focused tests and `pnpm check`. |
 
 ## Risks To Harden
 
 | ID | Area | Status | Explorer | Implementation | Verification | Commit | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| R-01 | Generation settings rollback | Pending |  |  |  |  | Failed older save should not restore over newer optimistic values. |
+| R-01 | Generation settings rollback | Fixed | complete | complete | passed | `fix: guard generation settings rollback attempts` | Failed older saves now roll back only when live generation settings still match the attempted value. |
 | R-02 | Generation local mirror | Pending |  |  |  |  | Resolve chat by stable id before SSE patch/terminal/post-gen mirror. |
 | R-03 | Message icon actions | Pending |  |  |  |  | Capture chat/message target before async icon-action delay. |
 | R-04 | Model role apply | Pending |  |  |  |  | Capture selected preset before awaited role update. |

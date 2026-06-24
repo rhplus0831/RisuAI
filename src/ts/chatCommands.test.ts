@@ -73,6 +73,7 @@ import {
   sanitizeChatPatch,
   setChatNoteValue,
   setChatScriptstateValue,
+  waitForPendingChatGenerationSettingsSave,
 } from './chatCommands'
 import {
   assertRollbackRestoresOnly,
@@ -94,6 +95,22 @@ function jsonResponse(body: unknown, status = 200): Response {
     status,
     headers: { 'content-type': 'application/json' },
   })
+}
+
+interface Deferred<T> {
+  promise: Promise<T>
+  resolve: (value: T | PromiseLike<T>) => void
+  reject: (reason?: unknown) => void
+}
+
+function createDeferred<T>(): Deferred<T> {
+  let resolve!: Deferred<T>['resolve']
+  let reject!: Deferred<T>['reject']
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve
+    reject = promiseReject
+  })
+  return { promise, resolve, reject }
 }
 
 function stubCommandFetch(): CapturedFetch[] {
@@ -244,6 +261,52 @@ function stubFailingCommandFetch(input: {
     }) as unknown as typeof fetch,
   )
   return calls
+}
+
+function stubControlledChatGenerationSettingsFetch(): {
+  calls: CapturedFetch[]
+  firstResponse: Deferred<Response>
+  secondResponse: Deferred<Response>
+} {
+  const calls: CapturedFetch[] = []
+  const firstResponse = createDeferred<Response>()
+  const secondResponse = createDeferred<Response>()
+  let generationSettingsCallCount = 0
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (requestInput: RequestInfo | URL, init: RequestInit = {}) => {
+      const headers = init.headers as Record<string, string> | undefined
+      const url = String(requestInput)
+      calls.push({
+        url,
+        method: init.method ?? 'GET',
+        authHeader: headers?.['risu-auth'] ?? null,
+        body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+      })
+
+      if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+      if (url === '/api/v1/commands/chats/chat-a/generation-settings') {
+        generationSettingsCallCount += 1
+        if (generationSettingsCallCount === 1) return firstResponse.promise
+        if (generationSettingsCallCount === 2) return secondResponse.promise
+      }
+      return jsonResponse({ error: `unexpected ${url}` }, 404)
+    }) as unknown as typeof fetch,
+  )
+  return { calls, firstResponse, secondResponse }
+}
+
+function successfulChatGenerationSettingsResponse(revision: number): Response {
+  return jsonResponse({
+    revision,
+    event: {
+      type: 'chat.updated',
+      revision,
+      resource: 'characterRow',
+      id: 'chat-a',
+    },
+    chatId: 'chat-a',
+  })
 }
 
 function stubCombinedReorderCommandFetch(input: {
@@ -1547,6 +1610,125 @@ describe('chat command projection helpers', () => {
       },
     ])
     expect(DBState.db.characters[0].chats[1].name).toBe('Concurrent sibling edit')
+  })
+
+  it('preserves a newer generation settings save when an older save fails from no initial settings', async () => {
+    const { calls, firstResponse, secondResponse } = stubControlledChatGenerationSettingsFetch()
+    setServerProjectionWriteGuardEnabled(true)
+    const generationSettingsA = {
+      configured: true,
+      personaId: 'persona-a',
+      modelPresetId: 'model-preset-a',
+      promptPresetId: 'preset-a',
+      jailbreakToggle: false,
+      sidebarToggles: {
+        mode: 'a',
+      },
+    }
+    const generationSettingsB = {
+      configured: true,
+      personaId: 'persona-b',
+      modelPresetId: 'model-preset-b',
+      promptPresetId: 'preset-b',
+      jailbreakToggle: true,
+      sidebarToggles: {
+        mode: 'b',
+      },
+    }
+
+    expect(DBState.db.characters[0].chats[0]).not.toHaveProperty('generationSettings')
+    expect(dispatchSaveChatGenerationSettings('chat-a', generationSettingsA)).toBe(true)
+    expect(DBState.db.characters[0].chats[0].generationSettings).toEqual(generationSettingsA)
+    await waitForCallCount(calls, 2)
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/chats/chat-a/generation-settings',
+      method: 'PUT',
+      body: {
+        baseRevision: 10,
+        generationSettings: generationSettingsA,
+      },
+    })
+
+    expect(dispatchSaveChatGenerationSettings('chat-a', generationSettingsB)).toBe(true)
+    expect(DBState.db.characters[0].chats[0].generationSettings).toEqual(generationSettingsB)
+    expect(calls).toHaveLength(2)
+
+    firstResponse.resolve(jsonResponse({ error: 'nope' }, 500))
+    await waitForCallCount(calls, 3)
+    expect(DBState.db.characters[0].chats[0].generationSettings).toEqual(generationSettingsB)
+    expect(calls[2]).toMatchObject({
+      url: '/api/v1/commands/chats/chat-a/generation-settings',
+      method: 'PUT',
+      body: {
+        baseRevision: 10,
+        generationSettings: generationSettingsB,
+      },
+    })
+
+    secondResponse.resolve(successfulChatGenerationSettingsResponse(11))
+    await waitForPendingChatGenerationSettingsSave('chat-a')
+    expect(DBState.db.characters[0].chats[0].generationSettings).toEqual(generationSettingsB)
+  })
+
+  it('preserves a newer generation settings save when an older save fails from configured settings', async () => {
+    const { calls, firstResponse, secondResponse } = stubControlledChatGenerationSettingsFetch()
+    setServerProjectionWriteGuardEnabled(true)
+    const initialGenerationSettings = {
+      configured: true,
+      personaId: 'persona-initial',
+      modelPresetId: 'model-preset-initial',
+      promptPresetId: 'preset-initial',
+      jailbreakToggle: false,
+      sidebarToggles: {
+        mode: 'initial',
+      },
+    }
+    const generationSettingsA = {
+      configured: true,
+      personaId: 'persona-a',
+      modelPresetId: 'model-preset-a',
+      promptPresetId: 'preset-a',
+      jailbreakToggle: true,
+      sidebarToggles: {
+        mode: 'a',
+      },
+    }
+    const generationSettingsB = {
+      configured: true,
+      personaId: 'persona-b',
+      modelPresetId: 'model-preset-b',
+      promptPresetId: 'preset-b',
+      jailbreakToggle: false,
+      sidebarToggles: {
+        mode: 'b',
+      },
+    }
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.characters[0].chats[0].generationSettings = jsonClone(initialGenerationSettings)
+    })
+
+    expect(dispatchSaveChatGenerationSettings('chat-a', generationSettingsA)).toBe(true)
+    expect(DBState.db.characters[0].chats[0].generationSettings).toEqual(generationSettingsA)
+    await waitForCallCount(calls, 2)
+    expect(dispatchSaveChatGenerationSettings('chat-a', generationSettingsB)).toBe(true)
+    expect(DBState.db.characters[0].chats[0].generationSettings).toEqual(generationSettingsB)
+    expect(calls).toHaveLength(2)
+
+    firstResponse.resolve(jsonResponse({ error: 'nope' }, 500))
+    await waitForCallCount(calls, 3)
+    expect(calls[2]).toMatchObject({
+      url: '/api/v1/commands/chats/chat-a/generation-settings',
+      method: 'PUT',
+      body: {
+        baseRevision: 10,
+        generationSettings: generationSettingsB,
+      },
+    })
+    secondResponse.resolve(successfulChatGenerationSettingsResponse(11))
+    await waitForPendingChatGenerationSettingsSave('chat-a')
+
+    expect(DBState.db.characters[0].chats[0].generationSettings).toEqual(generationSettingsB)
+    expect(DBState.db.characters[0].chats[0].generationSettings).not.toEqual(initialGenerationSettings)
   })
 
   it('sets DevTool-style scriptstate values through the chat scriptstate command helper', async () => {
