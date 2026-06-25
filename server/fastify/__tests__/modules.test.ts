@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import type { Chat, Database, character, customscript } from '../../../src/ts/storage/database.svelte'
+import type { Chat, Database, character, customscript, loreBook } from '../../../src/ts/storage/database.svelte'
 import type { RisuModule } from '../../../src/ts/process/modules'
-import { getActiveModules, getModuleRegexScripts } from '../src/prompt/modules.js'
+import { getActiveModules, getModuleLorebooks, getModuleRegexScripts } from '../src/prompt/modules.js'
 
 function makeModule(overrides: Partial<RisuModule> = {}): RisuModule {
   return {
@@ -14,6 +14,20 @@ function makeModule(overrides: Partial<RisuModule> = {}): RisuModule {
 
 function regex(inPat: string, out: string, type: string): customscript {
   return { comment: '', in: inPat, out, type, ableFlag: false }
+}
+
+function lore(overrides: Partial<loreBook> = {}): loreBook {
+  return {
+    key: '',
+    secondkey: '',
+    insertorder: 100,
+    comment: 'preset',
+    content: '',
+    mode: 'normal',
+    alwaysActive: false,
+    selective: false,
+    ...overrides,
+  }
 }
 
 function makeDb(overrides: Partial<Database> = {}): Database {
@@ -120,5 +134,17 @@ describe('Phase 7-6d getModuleRegexScripts', () => {
     const m1 = makeModule({ id: 'm1', regex: [r1] })
     const m2 = makeModule({ id: 'm2', regex: [r2, r3] })
     expect(getModuleRegexScripts([m1, m2])).toEqual([r1, r2, r3])
+  })
+})
+
+describe('getModuleLorebooks', () => {
+  it('concatenates lorebooks from every passed module in order', () => {
+    const l1 = lore({ id: 'l1', content: 'one' })
+    const l2 = lore({ id: 'l2', content: 'two' })
+    const l3 = lore({ id: 'l3', content: 'three' })
+    const m1 = makeModule({ id: 'm1', lorebook: [l1] })
+    const m2 = makeModule({ id: 'm2', lorebook: [l2, l3] })
+
+    expect(getModuleLorebooks([m1, m2])).toEqual([l1, l2, l3])
   })
 })

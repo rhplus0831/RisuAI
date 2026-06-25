@@ -16,6 +16,7 @@ import type { TriggerVarEngine } from './triggerVars.js'
 import { expandVariables } from './variables.js'
 import { tokenize, encodingForModel } from './tokens.js'
 import { dispatchChatProvider } from './chatDispatch.js'
+import { getActiveModules, getModuleLorebooks } from './modules.js'
 import type { CompletionStreamFrame } from '../generation/frames.js'
 import { emitProtocolMetric } from '../protocolMetrics.js'
 import {
@@ -1234,7 +1235,7 @@ function declareHostFunctions(engine: LuaEngine): (next: RuntimeState) => void {
     return true
   })
 
-  // ── Lore books: pure write (upsert) + empty reads ──
+  // ── Lore books: pure write (upsert) + exact-comment reads ──
   declare(
     'upsertLocalLoreBook',
     (
@@ -1268,9 +1269,34 @@ function declareHostFunctions(engine: LuaEngine): (next: RuntimeState) => void {
       } as never)
     },
   )
-  // getLoreBooks/loadLoreBooks read activation state the runtime does not own;
-  // return empty so callers degrade rather than crash.
-  declare('getLoreBooksMain', (_id: string, _search: string) => JSON.stringify([]))
+  declare('getLoreBooksMain', (_id: string, search: string) => {
+    const char = asCharacter(state.ctx)
+    if (!char) return
+
+    const loreSources = [
+      state.ctx.chat.localLore ?? [],
+      char.globalLore ?? [],
+      getModuleLorebooks(getActiveModules(state.ctx.database, char, state.ctx.chat)),
+    ]
+    const found = []
+    for (const source of loreSources) {
+      for (const book of source) {
+        if (book.comment !== search) continue
+        found.push({
+          ...book,
+          content: expandVariables(String(book.content ?? ''), {
+            database: state.ctx.database,
+            selectedCharID: state.ctx.selectedCharID,
+            chatPage: state.ctx.chatPage,
+            chara: char,
+          }).text,
+        })
+      }
+    }
+    return JSON.stringify(found)
+  })
+  // loadLoreBooks reads activation state the runtime does not own; return empty
+  // so callers degrade rather than crash.
   declare('loadLoreBooksMain', async (id: string) => {
     if (!canLowLevel(id)) return
     return JSON.stringify([])

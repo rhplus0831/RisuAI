@@ -1,4 +1,4 @@
-import type { Chat, Database, character, customscript } from '../../../../src/ts/storage/database.svelte'
+import type { Chat, Database, character, customscript, loreBook } from '../../../../src/ts/storage/database.svelte'
 import type { RisuModule } from '../../../../src/ts/process/modules'
 import type { triggerscript } from '../../../../src/ts/process/triggers'
 import { attachTriggerSource } from './triggerSource.js'
@@ -21,7 +21,8 @@ import { attachTriggerSource } from './triggerSource.js'
  * `modules` replacement invalidates the entry.
  *
  * Module fields not resolved here:
- *   - `module.lorebook` — handled by lorebook activation
+ *   - `module.lorebook` — handled by lorebook activation and exposed through
+ *     `getModuleLorebooks` for Lua's exact-comment preset lookup
  *   - `module.cjs`      — browser-only plugin execution
  *
  * `module.regex`, `module.assets`, and `module.trigger` are resolved by the
@@ -92,6 +93,15 @@ export function getModuleRegexScripts(modules: RisuModule[]): customscript[] {
   for (const m of modules) {
     if (!m?.regex) continue
     for (const r of m.regex) out.push(r)
+  }
+  return out
+}
+
+export function getModuleLorebooks(modules: RisuModule[]): loreBook[] {
+  const out: loreBook[] = []
+  for (const m of modules) {
+    if (!m?.lorebook) continue
+    for (const entry of m.lorebook) out.push(entry)
   }
   return out
 }

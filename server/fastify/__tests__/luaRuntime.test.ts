@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest'
-import type { Chat, Database, character } from '../../../src/ts/storage/database.svelte'
+import type { Chat, Database, character, loreBook } from '../../../src/ts/storage/database.svelte'
 import type { OpenAIChat } from '../../../src/ts/process/index.svelte'
+import type { RisuModule } from '../../../src/ts/process/modules'
 import { createTriggerVarEngine, type TriggerVarEngine } from '../src/prompt/triggerVars.js'
 import { bootPromptVariables } from '../src/prompt/promptVariablesBoot.js'
 import {
@@ -50,6 +51,29 @@ function makeChar(overrides: Partial<character> = {}): character {
     chatPage: 0,
     ...overrides,
   } as unknown as character
+}
+
+function lore(overrides: Partial<loreBook> = {}): loreBook {
+  return {
+    key: '',
+    secondkey: '',
+    insertorder: 100,
+    comment: 'preset',
+    content: '',
+    mode: 'normal',
+    alwaysActive: false,
+    selective: false,
+    ...overrides,
+  } as loreBook
+}
+
+function makeModule(overrides: Partial<RisuModule> = {}): RisuModule {
+  return {
+    name: 'mod',
+    description: '',
+    id: 'mod-1',
+    ...overrides,
+  } as RisuModule
 }
 
 function makeDb(overrides: Partial<Database> = {}): Database {
@@ -460,6 +484,81 @@ describe('server Lua runtime — low-level LLM bindings', () => {
   })
 })
 
+describe('server Lua runtime — getLoreBooksMain', () => {
+  it('returns exact-comment local, global, and module lorebooks in source order with parsed content', async () => {
+    const chat = makeChat({
+      localLore: [
+        lore({ id: 'local-1', comment: 'preset', content: 'local {{char}}' }),
+        lore({ id: 'local-nomatch', comment: 'Preset', content: 'wrong case' }),
+        lore({ id: 'local-2', comment: 'preset', content: 'local duplicate {{user}}' }),
+      ],
+    })
+    const moduleA = makeModule({
+      id: 'module-a',
+      lorebook: [lore({ id: 'module-a-1', comment: 'preset', content: 'module {{char}}' })],
+    })
+    const moduleB = makeModule({
+      id: 'module-b',
+      lorebook: [lore({ id: 'module-b-1', comment: 'other', content: 'not included' })],
+    })
+    const char = makeChar({
+      chats: [chat],
+      globalLore: [lore({ id: 'global-1', comment: 'preset', content: 'global {{user}}' })],
+    })
+    const { ctx } = makeRuntime({
+      chat,
+      char,
+      database: {
+        modules: [moduleA, moduleB],
+        enabledModules: ['module-a', 'module-b'],
+      } as Partial<Database>,
+    })
+    const code = `
+      listenEdit('editRequest', function(id, data, meta)
+        data[1].content = json.encode(getLoreBooks(id, 'preset'))
+        return data
+      end)
+    `
+
+    const result = await runServerLua({ code, mode: 'editRequest', data: rows('orig') }, ctx)
+
+    expect(result.error).toBeUndefined()
+    const books = JSON.parse((result.res as OpenAIChat[])[0].content) as loreBook[]
+    expect(books.map((book) => book.id)).toEqual(['local-1', 'local-2', 'global-1', 'module-a-1'])
+    expect(books.map((book) => book.content)).toEqual([
+      'local Tess',
+      'local duplicate Operator',
+      'global Operator',
+      'module Tess',
+    ])
+  })
+
+  it('sees upsertLocalLoreBook entries through ctx.chat.localLore in the same Lua run', async () => {
+    const chat = makeChat()
+    const char = makeChar({ chats: [chat], globalLore: [] })
+    const { ctx } = makeRuntime({ chat, char })
+    const code = `
+      listenEdit('editRequest', function(id, data, meta)
+        upsertLocalLoreBook(id, 'preset', 'added for {{user}}', { insertOrder = 7, key = 'preset-key' })
+        data[1].content = json.encode(getLoreBooks(id, 'preset'))
+        return data
+      end)
+    `
+
+    const result = await runServerLua({ code, mode: 'editRequest', data: rows('orig') }, ctx)
+
+    expect(result.error).toBeUndefined()
+    const books = JSON.parse((result.res as OpenAIChat[])[0].content) as loreBook[]
+    expect(books).toHaveLength(1)
+    expect(books[0]).toMatchObject({
+      comment: 'preset',
+      content: 'added for Operator',
+      insertorder: 7,
+      key: 'preset-key',
+    })
+  })
+})
+
 describe('server Lua runtime — execution limit', () => {
   it('interrupts a top-level runaway loop within the limit', async () => {
     const { ctx } = makeRuntime()
@@ -684,7 +783,13 @@ describe('server Lua runtime — pre-warmed engines (L21)', () => {
     expect(after.pooledAcquires).toBe(before.pooledAcquires + 1)
     expect(after.freshAcquires).toBe(before.freshAcquires)
     // Pooled and fresh-boot runs produce identical results.
-    expect(pooled).toEqual(fresh)
+    const withoutDuration = (result: typeof fresh) => ({
+      ...result,
+      runtimeMetricFields: result.runtimeMetricFields
+        ? { ...result.runtimeMetricFields, durationMs: 0 }
+        : result.runtimeMetricFields,
+    })
+    expect(withoutDuration(pooled)).toEqual(withoutDuration(fresh))
     expect((pooled.res as OpenAIChat[])[1].content).toBe('omega [EDIT]')
   })
 
