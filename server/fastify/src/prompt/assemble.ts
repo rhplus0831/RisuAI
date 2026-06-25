@@ -827,9 +827,9 @@ async function runInputTrigger(state: AssemblyState): Promise<void> {
     selectedCharID: state.selectedCharID,
     chatPage: state.chatPage,
     signal: state.signal,
-    runLua: async ({ code, mode, lowLevelAccess, chat, varEngine }) => {
+    runLua: async ({ code, mode, lowLevelAccess, chat, varEngine, source }) => {
       const result = await runServerLua(
-        { code, mode, lowLevelAccess },
+        { code, mode, lowLevelAccess, source },
         {
           chat,
           database: db,
@@ -1932,9 +1932,9 @@ async function runOutputTrigger(state: AssemblyState): Promise<boolean> {
     selectedCharID: state.selectedCharID,
     chatPage: state.chatPage,
     signal: state.signal,
-    runLua: async ({ code, mode, lowLevelAccess, chat, varEngine }) => {
+    runLua: async ({ code, mode, lowLevelAccess, chat, varEngine, source }) => {
       const result = await runServerLua(
-        { code, mode, lowLevelAccess },
+        { code, mode, lowLevelAccess, source },
         {
           chat,
           database: db,

@@ -19,6 +19,7 @@ import { applyV2DataEffect } from '../src/prompt/triggerDataEffects.js'
 import { createTriggerRunCache } from '../src/prompt/triggerRunCache.js'
 import { BOUNDED_REGEX_LIMITS } from '../src/prompt/boundedRegex.js'
 import { bootPromptVariables } from '../src/prompt/promptVariablesBoot.js'
+import { getTriggerSource } from '../src/prompt/triggerSource.js'
 
 beforeAll(() => {
   bootPromptVariables()
@@ -109,8 +110,20 @@ describe('Phase 7-9a getModuleTriggers', () => {
     expect(out).toHaveLength(1)
     expect(out[0].lowLevelAccess).toBe(true)
     expect(out[0]).not.toBe(trigger)
+    expect(getTriggerSource(out[0])).toMatchObject({
+      ownerType: 'module',
+      ownerId: 'mod-1',
+      ownerName: 'mod',
+      triggerIndex: 0,
+      triggerComment: 'm',
+      triggerType: 'start',
+      lowLevelAccess: true,
+    })
+    expect(Object.keys(out[0])).not.toContain('ownerType')
+    expect(JSON.stringify(out[0])).not.toContain('mod-1')
     // source trigger object stays untouched
     expect(trigger.lowLevelAccess).toBeUndefined()
+    expect(getTriggerSource(trigger)).toBeUndefined()
   })
 
   it('flattens triggers across multiple modules in order', () => {
@@ -142,7 +155,19 @@ describe('Phase 7-9a collectTriggers', () => {
     expect(out).toHaveLength(1)
     expect(out[0].lowLevelAccess).toBe(true)
     expect(out[0]).not.toBe(own)
+    expect(getTriggerSource(out[0])).toMatchObject({
+      ownerType: 'character',
+      ownerId: 'char-tess',
+      ownerName: 'Tess',
+      triggerIndex: 0,
+      triggerComment: 'own',
+      triggerType: 'output',
+      lowLevelAccess: true,
+    })
+    expect(Object.keys(out[0])).not.toContain('ownerType')
+    expect(JSON.stringify(out[0])).not.toContain('char-tess')
     expect(own.lowLevelAccess).toBeUndefined()
+    expect(getTriggerSource(own)).toBeUndefined()
   })
 
   it('appends module triggers after the character triggers', () => {
@@ -376,6 +401,40 @@ describe('Phase 7 L8 trigger clone narrowing', () => {
     expect(result?.chat.message[0].data).toBe('lua edit')
     expect(chat.message[0].data).toBe('original')
     expect(getTriggerCloneInstrumentation().fullTranscriptClones.output).toBe(1)
+  })
+
+  it('passes module triggerlua source metadata to the Lua runner', async () => {
+    const trigger = triggerWithEffects([eff({ type: 'triggerlua', code: 'mutate()' })])
+    const char = makeChar({ triggerscript: [] })
+    const chat = makeChat()
+    const runLua = vi.fn(async (_args: { source?: unknown }) => ({ chat, stopSending: false }))
+    const luaCtx = makeCtx({
+      modules: [
+        makeModule({
+          id: 'mod-lua',
+          name: 'Lua Mod',
+          lowLevelAccess: true,
+          trigger: [trigger],
+        }),
+      ],
+      runLua,
+    })
+
+    await runTrigger(luaCtx, char, 'output', { chat })
+
+    expect(runLua).toHaveBeenCalledTimes(1)
+    const firstLuaCall = runLua.mock.calls[0]?.[0]
+    expect(firstLuaCall?.source).toMatchObject({
+      ownerType: 'module',
+      ownerId: 'mod-lua',
+      ownerName: 'Lua Mod',
+      triggerIndex: 0,
+      triggerComment: trigger.comment,
+      triggerType: trigger.type,
+      effectIndex: 0,
+      effectType: 'triggerlua',
+      lowLevelAccess: true,
+    })
   })
 
   it('L8: displayMode keeps the legacy caller-chat no-clone path', async () => {

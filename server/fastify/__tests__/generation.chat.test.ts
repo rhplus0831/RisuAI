@@ -3582,6 +3582,109 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     })
   })
 
+  it('attributes module onOutput Lua fallback metrics without logging code or completion text', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const leakedCompletion = 'server echo reply'
+    await seedDatabase(harness.app, assertion, {
+      ...(dbWithServerDispatch({}) as Record<string, unknown>),
+      enabledModules: ['mod-output-lua'],
+      modules: [
+        {
+          id: 'mod-output-lua',
+          name: 'Output Lua Module',
+          description: '',
+          lowLevelAccess: true,
+          trigger: [
+            {
+              comment: 'module output hook',
+              type: 'output',
+              conditions: [],
+              effect: [
+                {
+                  type: 'triggerlua',
+                  code: `
+                    function onOutput(triggerId)
+                      local lastMessage = getChat(triggerId, -1)
+                      error(lastMessage.data)
+                    end
+                  `,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    })
+
+    await withProtocolMetrics(async (metrics, rawMetricLines) => {
+      const res = await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/generate/chat',
+        headers: { 'risu-auth': assertion },
+        payload: basePayload,
+      })
+      expect(res.statusCode).toBe(200)
+      const events = parseEvents(res.body)
+      expect(events.find((event) => event.type === 'warning')?.data).toMatchObject({
+        message: 'server post-generation derivation failed; persisted the raw provider text.',
+      })
+
+      const fallback = metrics.find((entry) => entry.metric === 'generation_post_generation_fallback')
+      const fallbackFields = fallback as Record<string, unknown> | undefined
+      expect(fallback).toMatchObject({
+        fallbackType: 'raw_provider_text',
+        chatId: 'chat-1',
+        characterId: 'char-1',
+        mode: 'send',
+        source: 'lua_output_trigger',
+        ownerType: 'module',
+        ownerId: 'mod-output-lua',
+        ownerName: 'Output Lua Module',
+        triggerIndex: 0,
+        triggerComment: 'module output hook',
+        triggerType: 'output',
+        effectIndex: 0,
+        effectType: 'triggerlua',
+        luaMode: 'output',
+        luaLowLevelAccess: true,
+      })
+      expect(typeof fallbackFields?.luaCodeSha256).toBe('string')
+      expect(fallbackFields?.luaCodeBytes).toBeGreaterThan(0)
+      expect(String(fallback?.error)).toContain('Lua output trigger failed')
+      expect(fallbackFields?.luaErrorKind).toBe('lua_error')
+      expect(Object.hasOwn(fallback ?? {}, 'luaError')).toBe(false)
+      expect(JSON.stringify(fallback)).not.toContain(leakedCompletion)
+      expect(Object.hasOwn(fallback ?? {}, 'completionText')).toBe(false)
+      expect(Object.hasOwn(fallback ?? {}, 'code')).toBe(false)
+      expect(Object.hasOwn(fallback ?? {}, 'promptInfo')).toBe(false)
+
+      const rawMetrics = rawMetricLines.join('\n')
+      expect(rawMetrics).not.toContain(leakedCompletion)
+      expect(rawMetrics).not.toContain('function onOutput')
+      expect(rawMetrics).not.toContain('lastMessage.data')
+
+      const runtime = metrics.find((entry) => entry.metric === 'generation_lua_runtime')
+      expect(runtime).toMatchObject({
+        mode: 'output',
+        ownerType: 'module',
+        ownerId: 'mod-output-lua',
+        ownerName: 'Output Lua Module',
+        triggerIndex: 0,
+        triggerComment: 'module output hook',
+        triggerType: 'output',
+        effectIndex: 0,
+        effectType: 'triggerlua',
+        lowLevelAccess: true,
+        errorKind: 'lua_error',
+      })
+      expect(Object.hasOwn(runtime ?? {}, 'error')).toBe(false)
+      expect(JSON.stringify(runtime)).not.toContain(leakedCompletion)
+
+      const persisted = await persistedMessages(assertion)
+      expect(persisted.at(-1)).toMatchObject({ role: 'char', data: leakedCompletion })
+    })
+  })
+
   it.each([
     {
       label: 'NovelAI text',

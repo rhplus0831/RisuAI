@@ -50,8 +50,10 @@ import {
   writeGenerationChatMessage,
 } from '../messageStore.js'
 import { dispatchChatProvider, getServerGenerationModelString } from '../prompt/chatDispatch.js'
+import { ServerLuaFailureError } from '../prompt/luaRuntime.js'
 import { emitProviderChunks } from '../prompt/providerTransport.js'
 import { promptSummaryMetricFields, summarizePromptRows, type PromptRowsSummary } from '../prompt/promptSummary.js'
+import { triggerSourceMetricFields } from '../prompt/triggerSource.js'
 import {
   formatPromptChatFrame,
   type PostGenerationFrame,
@@ -1164,6 +1166,11 @@ function captureGenerationFinalizationTargetSnapshot(
 }
 
 function classifyPostGenerationFallbackSource(err: unknown): string {
+  if (err instanceof ServerLuaFailureError) {
+    const mode = err.runtimeMetricFields?.mode
+    if (mode === 'output') return 'lua_output_trigger'
+    if (mode === 'editOutput') return 'lua_edit_output'
+  }
   const message = errorMessage(err, '').toLowerCase()
   if (message.includes('lua output trigger failed')) return 'lua_output_trigger'
   if (message.includes('lua editoutput edit trigger failed') || message.includes('editoutput')) {
@@ -1171,6 +1178,49 @@ function classifyPostGenerationFallbackSource(err: unknown): string {
   }
   if (message.includes('bounded regex') || message.includes('customscript')) return 'regex_edit_output'
   return 'unknown_post_generation'
+}
+
+function luaFailureFallbackMetricFields(err: unknown): Record<string, unknown> {
+  if (!(err instanceof ServerLuaFailureError)) return {}
+  const runtime = err.runtimeMetricFields
+  return {
+    ...(runtime
+      ? {
+          luaMode: runtime.mode,
+          luaCodeSha256: runtime.codeSha256,
+          luaCodeBytes: runtime.codeBytes,
+          luaLowLevelAccess: runtime.lowLevelAccess,
+          luaDurationMs: runtime.durationMs,
+          luaExecTimeoutMs: runtime.execTimeoutMs,
+          luaEffectiveTimeoutMs: runtime.effectiveTimeoutMs,
+          luaTimedOut: runtime.timedOut,
+          luaInteractiveInvoked: runtime.interactiveInvoked,
+          luaAborted: runtime.aborted,
+          ...(runtime.errorKind ? { luaErrorKind: runtime.errorKind } : {}),
+          ...(runtime.budgetTotalMs !== undefined ? { luaBudgetTotalMs: runtime.budgetTotalMs } : {}),
+          ...(runtime.budgetUsedMsBefore !== undefined ? { luaBudgetUsedMsBefore: runtime.budgetUsedMsBefore } : {}),
+          ...(runtime.budgetUsedMsAfter !== undefined ? { luaBudgetUsedMsAfter: runtime.budgetUsedMsAfter } : {}),
+          ...(runtime.budgetRemainingMsBefore !== undefined
+            ? { luaBudgetRemainingMsBefore: runtime.budgetRemainingMsBefore }
+            : {}),
+          ...(runtime.budgetRemainingMsAfter !== undefined
+            ? { luaBudgetRemainingMsAfter: runtime.budgetRemainingMsAfter }
+            : {}),
+        }
+      : {}),
+    ...triggerSourceMetricFields(err.source),
+  }
+}
+
+function safePostGenerationFallbackMetricError(err: unknown, fallback: string): string {
+  if (err instanceof ServerLuaFailureError) {
+    const mode = err.runtimeMetricFields?.mode
+    const kind = err.runtimeMetricFields?.errorKind ?? 'lua_failure'
+    if (mode === 'output') return `Lua output trigger failed (${kind})`
+    if (mode === 'editOutput') return `Lua editOutput edit trigger failed (${kind})`
+    return `Lua runtime failed (${kind})`
+  }
+  return errorMessage(err, fallback)
 }
 
 function completionSha256(text: string): string {
@@ -1199,6 +1249,7 @@ async function resolvePostGenerationResult(args: {
   targetMessageId?: string
   chatVarMutations: AssembleMutationPayload['chatVarMutations']
   targetSnapshot?: GenerationFinalizationTargetSnapshot
+  postGenMetricError?: string
 }> {
   const targetSnapshot = captureGenerationFinalizationTargetSnapshot(args.input, args.state)
   // Capture the continue target BEFORE post-gen mutates the row in place.
@@ -1237,6 +1288,7 @@ async function resolvePostGenerationResult(args: {
       promptInfo: args.promptInfo,
     })
     const error = errorMessage(err, 'server post-generation derivation failed')
+    const metricError = safePostGenerationFallbackMetricError(err, 'server post-generation derivation failed')
     emitProtocolMetric('generation_post_generation_fallback', {
       fallbackType: 'raw_provider_text',
       generationId: args.generationId,
@@ -1249,8 +1301,9 @@ async function resolvePostGenerationResult(args: {
       completionLength: args.completionText.length,
       completionBytes: Buffer.byteLength(args.completionText, 'utf8'),
       completionSha256: completionSha256(args.completionText),
-      error,
+      error: metricError,
       source: classifyPostGenerationFallbackSource(err),
+      ...luaFailureFallbackMetricFields(err),
     })
     return {
       postGenError: error,
@@ -1258,6 +1311,7 @@ async function resolvePostGenerationResult(args: {
       targetMessageId: raw.targetMessageId,
       chatVarMutations: [],
       targetSnapshot,
+      postGenMetricError: metricError,
     }
   }
 }
@@ -1299,7 +1353,7 @@ async function buildPostGenerationFrame(args: {
   promptInfo?: Record<string, unknown>
   emit?: (event: PromptChatEvent) => void
 }): Promise<PostGenerationFrame | undefined> {
-  const { postGen, postGenError, message, targetMessageId, chatVarMutations, targetSnapshot } =
+  const { postGen, postGenError, postGenMetricError, message, targetMessageId, chatVarMutations, targetSnapshot } =
     await resolvePostGenerationResult({
       state: args.state,
       input: args.input,
@@ -1342,7 +1396,7 @@ async function buildPostGenerationFrame(args: {
     chatId: args.input.chatId,
     revision,
     durationMs: protocolDurationMs(persistStartedAt),
-    ...(postGenError ? { error: postGenError } : {}),
+    ...(postGenMetricError ? { error: postGenMetricError } : {}),
   })
   if (!postGen) {
     args.emit?.({
@@ -2130,7 +2184,7 @@ async function buildDurablePostGeneration(args: {
   generationInfo: Record<string, unknown>
   promptInfo?: Record<string, unknown>
 }): Promise<PostGenerationFrame | undefined> {
-  const { postGen, postGenError, message, targetMessageId, chatVarMutations, targetSnapshot } =
+  const { postGen, postGenError, postGenMetricError, message, targetMessageId, chatVarMutations, targetSnapshot } =
     await resolvePostGenerationResult({
       state: args.state,
       input: args.input,
@@ -2181,7 +2235,7 @@ async function buildDurablePostGeneration(args: {
       chatId: args.input.chatId,
       revision,
       durationMs: protocolDurationMs(persistStartedAt),
-      ...(postGenError ? { error: postGenError } : {}),
+      ...(postGenMetricError ? { error: postGenMetricError } : {}),
     })
     args.emit({
       type: 'warning',

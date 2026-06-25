@@ -16,6 +16,12 @@ import { applyV2DataEffectAsync } from './triggerDataEffects.js'
 import { expandVariables, type ExpandContext } from './variables.js'
 import { runServerLua, throwServerLuaFailure } from './luaRuntime.js'
 import {
+  attachTriggerSource,
+  getTriggerSource,
+  withTriggerEffectSource,
+  type TriggerSourceAttribution,
+} from './triggerSource.js'
+import {
   createTriggerRunCache,
   getCachedTriggerRegex,
   getRecentTranscriptLower,
@@ -83,6 +89,7 @@ export interface TriggerLuaRunArgs {
   lowLevelAccess: boolean
   chat: Chat
   varEngine: TriggerVarEngine
+  source?: TriggerSourceAttribution
 }
 
 /** Result of a {@link TriggerRunContext.runLua} call: the (in-place mutated)
@@ -530,10 +537,24 @@ function chargeTriggerLoopBack(ctx: TriggerRunContext, budget: TriggerExecutionB
  */
 export function collectTriggers(char: character, modules: RisuModule[]): triggerscript[] {
   const characterLowLevelAccess = char.lowLevelAccess ?? false
-  const own: triggerscript[] = (char.triggerscript ?? []).map((v) => ({
-    ...v,
-    lowLevelAccess: characterLowLevelAccess,
-  }))
+  const own: triggerscript[] = (char.triggerscript ?? []).map((v, index) =>
+    attachTriggerSource(
+      {
+        ...v,
+        lowLevelAccess: characterLowLevelAccess,
+      },
+      {
+        ownerType: 'character',
+        ownerId: char.chaId,
+        ownerName: char.name,
+        triggerId: (v as { id?: string }).id,
+        triggerIndex: index,
+        triggerComment: v.comment,
+        triggerType: v.type,
+        lowLevelAccess: characterLowLevelAccess,
+      },
+    ),
+  )
   return own.concat(getModuleTriggers(modules))
 }
 
@@ -1282,6 +1303,7 @@ export async function runTrigger(
               lowLevelAccess: trigger.lowLevelAccess ?? false,
               chat,
               varEngine: engine,
+              source: withTriggerEffectSource(getTriggerSource(trigger), index, effect.type),
             })
             chat = r.chat
             engine.setChat(chat)
@@ -1351,9 +1373,9 @@ export async function runStartTrigger(
     selectedCharID,
     chatPage,
     signal: ctx.signal,
-    runLua: async ({ code, mode, lowLevelAccess, chat: luaChat, varEngine }) => {
+    runLua: async ({ code, mode, lowLevelAccess, chat: luaChat, varEngine, source }) => {
       const result = await runServerLua(
-        { code, mode, lowLevelAccess },
+        { code, mode, lowLevelAccess, source },
         {
           chat: luaChat,
           database: db,

@@ -17,6 +17,14 @@ import { expandVariables } from './variables.js'
 import { tokenize, encodingForModel } from './tokens.js'
 import { dispatchChatProvider } from './chatDispatch.js'
 import type { CompletionStreamFrame } from '../generation/frames.js'
+import { emitProtocolMetric } from '../protocolMetrics.js'
+import {
+  attachTriggerSource,
+  getTriggerSource,
+  triggerSourceMetricFields,
+  withTriggerEffectSource,
+  type TriggerSourceAttribution,
+} from './triggerSource.js'
 
 /**
  * Server-side Lua runtime under the single-user self-host security model.
@@ -683,6 +691,8 @@ export interface RunServerLuaOptions {
   lowLevelAccess?: boolean
   /** Per-run execution deadline (ms). Defaults to {@link DEFAULT_EXEC_TIMEOUT_MS}. */
   execTimeoutMs?: number
+  /** Hidden trigger/effect owner metadata for diagnostics. */
+  source?: TriggerSourceAttribution
 }
 
 export interface ServerLuaResult {
@@ -698,6 +708,43 @@ export interface ServerLuaResult {
   aborted?: boolean
   /** Captured load/dispatch error message, if any (the browser swallows these). */
   error?: string
+  /** Metadata-only runtime fields safe for protocol metrics and fallback errors. */
+  runtimeMetricFields?: LuaRuntimeMetricFields
+  /** Trigger/effect owner metadata, when this run came from a trigger. */
+  source?: TriggerSourceAttribution
+}
+
+export interface LuaRuntimeMetricFields {
+  mode: string
+  codeSha256: string
+  codeBytes: number
+  lowLevelAccess: boolean
+  durationMs: number
+  execTimeoutMs: number
+  effectiveTimeoutMs: number
+  timedOut: boolean
+  interactiveInvoked: boolean
+  aborted: boolean
+  errorKind?: string
+  budgetTotalMs?: number
+  budgetUsedMsBefore?: number
+  budgetUsedMsAfter?: number
+  budgetRemainingMsBefore?: number
+  budgetRemainingMsAfter?: number
+}
+
+export class ServerLuaFailureError extends Error {
+  readonly result: ServerLuaResult
+  readonly runtimeMetricFields?: LuaRuntimeMetricFields
+  readonly source?: TriggerSourceAttribution
+
+  constructor(message: string, result: ServerLuaResult) {
+    super(message)
+    this.name = 'ServerLuaFailureError'
+    this.result = result
+    this.runtimeMetricFields = result.runtimeMetricFields
+    this.source = result.source
+  }
 }
 
 export function serverLuaFailureMessage(result: ServerLuaResult, context: string): string | null {
@@ -712,7 +759,7 @@ export function serverLuaFailureMessage(result: ServerLuaResult, context: string
 
 export function throwServerLuaFailure(result: ServerLuaResult, context: string): void {
   const message = serverLuaFailureMessage(result, context)
-  if (message) throw new Error(message)
+  if (message) throw new ServerLuaFailureError(message, result)
 }
 
 function asCharacter(ctx: ServerLuaRuntimeContext): character | undefined {
@@ -748,6 +795,87 @@ function delay(ms: number, signal?: AbortSignal): Promise<void> {
 function isTimeoutError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error)
   return /timeout/i.test(message)
+}
+
+function sha256Hex(text: string): string {
+  return createHash('sha256').update(text, 'utf8').digest('hex')
+}
+
+function roundDurationMs(ms: number): number {
+  return Math.round(ms * 100) / 100
+}
+
+function classifyLuaRuntimeError(result: ServerLuaResult): string | undefined {
+  if (result.aborted === true) return 'request_aborted'
+  if (result.interactiveInvoked) return 'interactive_api'
+  if (result.timedOut) {
+    if (result.error === 'aggregate Lua execution budget exhausted') return 'aggregate_budget_exhausted'
+    return 'timeout'
+  }
+  if (result.error) return 'lua_error'
+  return undefined
+}
+
+function buildLuaRuntimeMetricFields(input: {
+  opts: RunServerLuaOptions
+  lowLevelAccess: boolean
+  execTimeoutMs: number
+  effectiveTimeoutMs: number
+  durationMs: number
+  result: ServerLuaResult
+  budget?: LuaExecBudget
+  budgetUsedMsBefore?: number
+}): LuaRuntimeMetricFields {
+  const budgetUsedMsAfter = input.budget?.usedMs
+  const budgetRemainingMsBefore =
+    input.budget && input.budgetUsedMsBefore !== undefined
+      ? Math.max(0, input.budget.totalMs - input.budgetUsedMsBefore)
+      : undefined
+  const budgetRemainingMsAfter =
+    input.budget && budgetUsedMsAfter !== undefined ? Math.max(0, input.budget.totalMs - budgetUsedMsAfter) : undefined
+  const errorKind = classifyLuaRuntimeError(input.result)
+  return {
+    mode: input.opts.mode,
+    codeSha256: sha256Hex(input.opts.code),
+    codeBytes: Buffer.byteLength(input.opts.code, 'utf8'),
+    lowLevelAccess: input.lowLevelAccess,
+    durationMs: roundDurationMs(input.durationMs),
+    execTimeoutMs: input.execTimeoutMs,
+    effectiveTimeoutMs: input.effectiveTimeoutMs,
+    timedOut: input.result.timedOut,
+    interactiveInvoked: input.result.interactiveInvoked,
+    aborted: input.result.aborted === true,
+    ...(errorKind ? { errorKind } : {}),
+    ...(input.budget
+      ? {
+          budgetTotalMs: input.budget.totalMs,
+          budgetUsedMsBefore: input.budgetUsedMsBefore ?? input.budget.usedMs,
+          budgetUsedMsAfter: budgetUsedMsAfter ?? input.budget.usedMs,
+          budgetRemainingMsBefore,
+          budgetRemainingMsAfter,
+        }
+      : {}),
+  }
+}
+
+function shouldEmitLuaRuntimeMetric(result: ServerLuaResult): boolean {
+  return !!result.error || result.timedOut || result.interactiveInvoked || result.aborted === true
+}
+
+function finalizeLuaRuntimeResult(
+  opts: RunServerLuaOptions,
+  result: ServerLuaResult,
+  fields: LuaRuntimeMetricFields,
+): ServerLuaResult {
+  result.source = opts.source
+  result.runtimeMetricFields = fields
+  if (shouldEmitLuaRuntimeMetric(result)) {
+    emitProtocolMetric('generation_lua_runtime', {
+      ...fields,
+      ...triggerSourceMetricFields(opts.source),
+    })
+  }
+  return result
 }
 
 /** Error thrown by interactive host fns so the dispatch can tag the result. */
@@ -1412,10 +1540,13 @@ export async function runServerLua(opts: RunServerLuaOptions, ctx: ServerLuaRunt
   const meta = opts.meta ?? {}
   const lowLevelAccess = opts.lowLevelAccess ?? false
   const signal = ctx.signal
+  const runStartedAt = Date.now()
+  const budget = ctx.execBudget
+  const budgetUsedMsBefore = budget?.usedMs
 
   // An already-cancelled request never boots an engine.
   if (signal?.aborted) {
-    return {
+    const result: ServerLuaResult = {
       stopSending: false,
       res: undefined,
       timedOut: false,
@@ -1423,19 +1554,46 @@ export async function runServerLua(opts: RunServerLuaOptions, ctx: ServerLuaRunt
       aborted: true,
       error: 'request aborted',
     }
+    return finalizeLuaRuntimeResult(
+      opts,
+      result,
+      buildLuaRuntimeMetricFields({
+        opts,
+        lowLevelAccess,
+        execTimeoutMs,
+        effectiveTimeoutMs: 0,
+        durationMs: Date.now() - runStartedAt,
+        result,
+        budget,
+        budgetUsedMsBefore,
+      }),
+    )
   }
 
   // An exhausted aggregate budget never boots an engine either; the
   // caller's hook loop degrades to identity instead of stalling assembly.
-  const budget = ctx.execBudget
   if (budget && budget.usedMs >= budget.totalMs) {
-    return {
+    const result: ServerLuaResult = {
       stopSending: false,
       res: undefined,
       timedOut: true,
       interactiveInvoked: false,
       error: 'aggregate Lua execution budget exhausted',
     }
+    return finalizeLuaRuntimeResult(
+      opts,
+      result,
+      buildLuaRuntimeMetricFields({
+        opts,
+        lowLevelAccess,
+        execTimeoutMs,
+        effectiveTimeoutMs: 0,
+        durationMs: Date.now() - runStartedAt,
+        result,
+        budget,
+        budgetUsedMsBefore,
+      }),
+    )
   }
   // A constrained run gets only what is left of the budget. The dispatch's
   // engine-level `functionTimeout` stays at its creation value, so the worst
@@ -1443,7 +1601,6 @@ export async function runServerLua(opts: RunServerLuaOptions, ctx: ServerLuaRunt
   const effectiveTimeoutMs = budget
     ? Math.max(1, Math.min(execTimeoutMs, budget.totalMs - budget.usedMs))
     : execTimeoutMs
-  const runStartedAt = Date.now()
 
   const state: RuntimeState = {
     ctx,
@@ -1550,6 +1707,20 @@ export async function runServerLua(opts: RunServerLuaOptions, ctx: ServerLuaRunt
     if (signal?.aborted) result.aborted = true
     // Charge the aggregate budget with this run's wall clock.
     if (budget) budget.usedMs += Date.now() - runStartedAt
+    finalizeLuaRuntimeResult(
+      opts,
+      result,
+      buildLuaRuntimeMetricFields({
+        opts,
+        lowLevelAccess,
+        execTimeoutMs,
+        effectiveTimeoutMs,
+        durationMs: Date.now() - runStartedAt,
+        result,
+        budget,
+        budgetUsedMsBefore,
+      }),
+    )
     // One call per engine: closing here (never returning to the pool) is what
     // preserves per-call isolation.
     engine.global.close()
@@ -1604,18 +1775,39 @@ export async function runLuaEditTrigger<T extends string | OpenAIChat[]>(
   try {
     let data: T = content
 
-    const ownTriggers = (char as { type?: string }).type === 'simple' ? [] : ((char as character).triggerscript ?? [])
+    const ownTriggers: triggerscript[] =
+      (char as { type?: string }).type === 'simple'
+        ? []
+        : ((char as character).triggerscript ?? []).map((trigger, index) => {
+            const owner = char as character
+            const lowLevelAccess = owner.lowLevelAccess ?? false
+            return attachTriggerSource(
+              { ...trigger, lowLevelAccess },
+              {
+                ownerType: 'character',
+                ownerId: owner.chaId,
+                ownerName: owner.name,
+                triggerId: (trigger as { id?: string }).id,
+                triggerIndex: index,
+                triggerComment: trigger.comment,
+                triggerType: trigger.type,
+                lowLevelAccess,
+              },
+            )
+          })
     const triggers = ownTriggers.concat(ctx.moduleTriggers ?? [])
 
     for (const trigger of triggers) {
       if (trigger?.effect?.[0]?.type === 'triggerlua') {
+        const effect = trigger.effect[0] as { code: string; type: string }
         const runResult = await runServerLua(
           {
-            code: (trigger.effect[0] as { code: string }).code,
+            code: effect.code,
             mode,
             data,
             meta,
             lowLevelAccess: false,
+            source: withTriggerEffectSource(getTriggerSource(trigger), 0, effect.type),
           },
           { ...ctx, char },
         )

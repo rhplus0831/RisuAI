@@ -1,6 +1,7 @@
 import type { Chat, Database, character, customscript } from '../../../../src/ts/storage/database.svelte'
 import type { RisuModule } from '../../../../src/ts/process/modules'
 import type { triggerscript } from '../../../../src/ts/process/triggers'
+import { attachTriggerSource } from './triggerSource.js'
 
 /**
  * Server-side module helpers ported from `src/ts/process/modules.ts`. Resolves
@@ -125,7 +126,23 @@ export function getModuleTriggers(modules: RisuModule[]): triggerscript[] {
   const out: triggerscript[] = []
   for (const m of modules) {
     if (!m?.trigger) continue
-    for (const t of m.trigger) out.push({ ...t, lowLevelAccess: m.lowLevelAccess })
+    for (let index = 0; index < m.trigger.length; index++) {
+      const t = m.trigger[index]
+      const lowLevelAccess = m.lowLevelAccess ?? false
+      const clone = { ...t, lowLevelAccess }
+      out.push(
+        attachTriggerSource(clone, {
+          ownerType: 'module',
+          ownerId: m.id,
+          ownerName: m.name,
+          triggerId: (t as { id?: string }).id,
+          triggerIndex: index,
+          triggerComment: t.comment,
+          triggerType: t.type,
+          lowLevelAccess,
+        }),
+      )
+    }
   }
   return out
 }
