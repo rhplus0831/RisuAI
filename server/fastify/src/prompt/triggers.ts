@@ -52,11 +52,12 @@ import {
  *
  * Browser-only and persistent-resource effects fall through the `switch` as
  * no-ops: `command` and the
- * `lowLevelAccess`-gated `showAlert` / `sendAIprompt` / `runLLM` /
- * `checkSimilarity` / `extractRegex` / `runImgGen` arms, plus browser
- * plugin trigger code (`triggercode`). These bypass the mode filter in
- * the SPA (`triggers.ts:1343`) so they are still *selected* here for
- * parity, but no code runs for them.
+ * `lowLevelAccess`-gated `showAlert` / `runLLM` / `checkSimilarity` /
+ * `extractRegex` / `runImgGen` arms, plus browser plugin trigger code
+ * (`triggercode`). These bypass the mode filter in the SPA
+ * (`triggers.ts:1343`) so they are still *selected* here for parity, but
+ * no code runs for them. The `sendAIprompt` / `v2SendAIprompt` effects are
+ * supported by setting the result flag; the client/browser owns the resend.
  *
  * `triggerlua` runs the server Lua VM via the injected
  * {@link TriggerRunContext.runLua} seam. Input, output, and start-trigger
@@ -273,6 +274,7 @@ const directMessageMutatingEffectTypes = new Set<string>([
 
 const knownNonMessageMutatingEffectTypes = new Set<string>([
   'setvar',
+  'sendAIprompt',
   'systemprompt',
   'stop',
   'v2Header',
@@ -289,6 +291,7 @@ const knownNonMessageMutatingEffectTypes = new Set<string>([
   'v2BreakLoop',
   'v2StopTrigger',
   'v2StopPromptSending',
+  'v2SendAIprompt',
   'v2SystemPrompt',
   'v2GetLastMessage',
   'v2GetMessageAtIndex',
@@ -796,7 +799,7 @@ export async function runTrigger(
   const workingChar = arg.displayMode ? char : cloneTriggerCharacterEnvelope(char)
   const sourceChat = arg.chat ?? workingChar.chats[workingChar.chatPage]
   let stopSending = arg.stopSending ?? false
-  const sendAIprompt = false
+  let sendAIprompt = false
   let additonalSysPrompt = arg.additonalSysPrompt ?? emptySysPrompt()
   let chat = arg.displayMode
     ? sourceChat
@@ -941,6 +944,13 @@ export async function runTrigger(
         case 'stop':
         case 'v2StopPromptSending': {
           stopSending = true
+          break
+        }
+        case 'sendAIprompt':
+        case 'v2SendAIprompt': {
+          if (trigger.lowLevelAccess) {
+            sendAIprompt = true
+          }
           break
         }
         case 'cutchat': {

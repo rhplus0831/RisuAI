@@ -37,7 +37,7 @@ This document tracks remediation and decisions for the items catalogued in
 | A-13 | Logit bias | Pending | complete | pending | pending | - | Server chat assembly does not emit provider-level logit-bias rows. |
 | A-14 | Token and budget accuracy | Pending | complete | pending | pending | - | Server token/preflight budgeting is text-only and omits provider-specific and multimodal accounting. |
 | A-15 | CBS server adapter parity | Pending | complete | pending | pending | - | Server CBS avoids browser-only callbacks today; module/lorebook callbacks and model metadata are placeholders. |
-| A-16 | Trigger/Lua parity | Pending | complete | pending | pending | - | Browser UI/persistent-resource effects no-op; interactive Lua and multimodal Lua LLM inputs are unsupported. |
+| A-16 | Trigger/Lua parity | Verifying | complete | complete | complete | - | Server resend parity for `sendAIprompt`/`v2SendAIprompt` is implemented and verified; browser UI/persistent-resource effects, interactive Lua, and multimodal Lua LLM inputs remain unsupported. Awaiting commit before marking Fixed. |
 | A-17 | Cold storage | Needs decision | complete | pending | pending | - | Legacy cold-storage creation/hydration is stubbed or blocked in server-backed web mode. |
 | A-18 | Lorebook stubs validation | Pending | complete | pending | pending | - | Experimental setting warns that the full reader surface is not validated against stubs. |
 | A-19 | Preset export parity | Pending | complete | pending | pending | - | Presets with images or regexes cannot be exported yet. |

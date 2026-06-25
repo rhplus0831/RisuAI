@@ -936,6 +936,56 @@ describe('Phase 7-9d-i V2 control flow', () => {
   })
 })
 
+describe('A-16 sendAIprompt trigger parity', () => {
+  it.each([
+    ['sendAIprompt', eff({ type: 'sendAIprompt' })],
+    ['v2SendAIprompt', eff({ type: 'v2SendAIprompt', indent: 0 })],
+  ])('%s sets the resend flag when low-level access is enabled', async (_label, effect) => {
+    const char = makeChar({
+      lowLevelAccess: true,
+      triggerscript: [triggerWithEffects([effect])],
+    })
+    const chat = makeChat({
+      message: [{ role: 'user', data: 'original' }] as never,
+      scriptstate: { $kept: 'yes' },
+    })
+    const chatSnapshot = structuredClone(chat)
+
+    const result = await runTrigger(ctx, char, 'output', { chat })
+
+    expect(result?.sendAIprompt).toBe(true)
+    expect(result?.varChanged).toBe(false)
+    expect(result?.chat.message).toBe(chat.message)
+    expect(result?.chat.message).toEqual(chatSnapshot.message)
+    expect(result?.chat.scriptstate).toEqual(chatSnapshot.scriptstate)
+    expect(chat).toEqual(chatSnapshot)
+  })
+
+  it.each([
+    ['sendAIprompt', eff({ type: 'sendAIprompt' })],
+    ['v2SendAIprompt', eff({ type: 'v2SendAIprompt', indent: 0 })],
+  ])('%s leaves the resend flag false without low-level access', async (_label, effect) => {
+    const char = makeChar({
+      lowLevelAccess: false,
+      triggerscript: [triggerWithEffects([effect])],
+    })
+    const chat = makeChat({
+      message: [{ role: 'char', data: 'unchanged' }] as never,
+      scriptstate: { $kept: 'yes' },
+    })
+    const chatSnapshot = structuredClone(chat)
+
+    const result = await runTrigger(ctx, char, 'output', { chat })
+
+    expect(result?.sendAIprompt).toBe(false)
+    expect(result?.varChanged).toBe(false)
+    expect(result?.chat.message).toBe(chat.message)
+    expect(result?.chat.message).toEqual(chatSnapshot.message)
+    expect(result?.chat.scriptstate).toEqual(chatSnapshot.scriptstate)
+    expect(chat).toEqual(chatSnapshot)
+  })
+})
+
 describe('H1 trigger budget and abort', () => {
   it('H1: stops a never-breaking v2Loop at the shared loop-back ceiling', async () => {
     const debug = vi.spyOn(console, 'debug').mockImplementation(() => {})

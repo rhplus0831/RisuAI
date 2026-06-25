@@ -2753,6 +2753,40 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toEqual({ $mood: 'happy' })
   })
 
+  it('surfaces low-level output-trigger resend on done without a post-generation patch (A-16)', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(
+      harness.app,
+      assertion,
+      dbWithServerDispatch({
+        lowLevelAccess: true,
+        triggerscript: [
+          {
+            comment: '',
+            type: 'output',
+            conditions: [],
+            effect: [{ type: 'sendAIprompt' }],
+          },
+        ],
+      }),
+    )
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+    expect(res.statusCode).toBe(200)
+    const events = parseEvents(res.body)
+    const done = doneFrame(events)
+
+    expect(done.postGeneration?.resendChat).toBe(true)
+    expect(done.postGeneration?.messagePatch).toBeUndefined()
+    expect(done.postGeneration?.finalText).toBeUndefined()
+    expect(done.postGeneration?.revision).toBe(2)
+  })
+
   it('H1: durable DELETE cancel uses abort terminal path without post-generation', async () => {
     let providerSawAbort = false
     await restartHarness({
