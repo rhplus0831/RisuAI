@@ -1,4 +1,6 @@
 import type { CompletionResult, CompletionStreamFrame } from './frames.js'
+import { emitProtocolMetric } from '../protocolMetrics.js'
+import { providerBodyMetricFields, summarizeGeminiProviderBody } from './providerBodySummary.js'
 import {
   STREAM_BUFFER_OVERFLOW_ERROR,
   hasNonIgnorableSseTail,
@@ -198,6 +200,26 @@ function headers(): Record<string, string> {
   return { 'content-type': 'application/json' }
 }
 
+function emitGeminiProviderBodyMetric(args: {
+  url: string
+  body: Record<string, unknown>
+  bodyText: string
+  model: string
+  stream: boolean
+}): void {
+  emitProtocolMetric('generation_provider_request_body', () => ({
+    ...providerBodyMetricFields({
+      provider: 'gemini',
+      stream: args.stream,
+      url: args.url,
+      body: args.body,
+      bodyText: args.bodyText,
+      requestModel: args.model,
+    }),
+    ...summarizeGeminiProviderBody(args.body),
+  }))
+}
+
 /**
  * For Vertex requests, fetch a fresh (or cached) Bearer and set
  * `Authorization: Bearer ...`. Returns `null` if the token exchange
@@ -298,12 +320,16 @@ export async function runGemini(req: GeminiRequest): Promise<CompletionResult> {
     return { type: 'fail', result: h.error }
   }
 
+  const url = endpoint(req, false)
+  const requestBody = buildPayload(req)
+  const bodyText = JSON.stringify(requestBody)
   let response: Response
   try {
-    response = await fetch(endpoint(req, false), {
+    emitGeminiProviderBodyMetric({ url, body: requestBody, bodyText, model: req.model, stream: false })
+    response = await fetch(url, {
       method: 'POST',
       headers: h.headers,
-      body: JSON.stringify(buildPayload(req)),
+      body: bodyText,
       signal: req.signal,
     })
   } catch (err) {
@@ -365,12 +391,15 @@ export async function* runGeminiStream(req: GeminiRequest): AsyncGenerator<Compl
   }
 
   const url = endpoint(req, true)
+  const requestBody = buildPayload(req)
+  const bodyText = JSON.stringify(requestBody)
   let response: Response
   try {
+    emitGeminiProviderBodyMetric({ url, body: requestBody, bodyText, model: req.model, stream: true })
     response = await fetch(url, {
       method: 'POST',
       headers: h.headers,
-      body: JSON.stringify(buildPayload(req)),
+      body: bodyText,
       signal: req.signal,
     })
   } catch (err) {

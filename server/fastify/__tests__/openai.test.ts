@@ -2,6 +2,58 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { applyOobaSystemHoist, resolveOpenAIRequest, runOpenAI, runOpenAIStream } from '../src/generation/openai.js'
 import { MAX_STREAM_BUFFER_CHARS, STREAM_BUFFER_OVERFLOW_ERROR } from '../src/generation/sse.js'
 
+interface ProtocolMetric {
+  metric: string
+  provider?: string
+  stream?: boolean
+  endpointHost?: string
+  endpointPath?: string
+  requestBodyBytes?: number
+  requestBodySha256?: string
+  requestModel?: string
+  messageCount?: number
+  messageRoleCounts?: Record<string, number>
+  systemMessageCount?: number
+  systemContentBytes?: number
+  messageContentBytes?: number
+  messageContentSha256?: string
+  contentPartCount?: number
+  textPartCount?: number
+  imagePartCount?: number
+  audioPartCount?: number
+  mediaPartCount?: number
+  toolCount?: number
+  functionCount?: number
+}
+
+async function withProtocolMetrics<T>(
+  run: (metrics: ProtocolMetric[], rawMetricLines: string[]) => Promise<T>,
+): Promise<T> {
+  const previous = process.env.RISU_PROTOCOL_METRICS
+  const metrics: ProtocolMetric[] = []
+  const rawMetricLines: string[] = []
+  process.env.RISU_PROTOCOL_METRICS = '1'
+  const infoSpy = vi.spyOn(console, 'info').mockImplementation((message: unknown) => {
+    if (typeof message !== 'string' || !message.startsWith('[protocol-metric] ')) return
+    rawMetricLines.push(message)
+    metrics.push(JSON.parse(message.slice('[protocol-metric] '.length)) as ProtocolMetric)
+  })
+  try {
+    return await run(metrics, rawMetricLines)
+  } finally {
+    infoSpy.mockRestore()
+    if (previous === undefined) {
+      delete process.env.RISU_PROTOCOL_METRICS
+    } else {
+      process.env.RISU_PROTOCOL_METRICS = previous
+    }
+  }
+}
+
+function providerBodyMetrics(metrics: ProtocolMetric[]): ProtocolMetric[] {
+  return metrics.filter((metric) => metric.metric === 'generation_provider_request_body')
+}
+
 afterEach(() => {
   vi.unstubAllGlobals()
 })
@@ -344,6 +396,106 @@ describe('runOpenAI (non-streaming)', () => {
     expect(r.aborted).toBe(true)
     expect(called).toBe(false)
   })
+
+  it('emits provider request body metadata without leaking prompt text or API keys', async () => {
+    const prompt = 'OPENAI_PROMPT_MUST_NOT_LEAK'
+    const bodySecret = 'sk-body-secret-must-not-leak'
+    let capturedBody = ''
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      capturedBody = String(init.body)
+      return ok({ choices: [{ message: { content: 'x' } }] })
+    })
+
+    await withProtocolMetrics(async (metrics, rawMetricLines) => {
+      await runOpenAI({
+        model: 'gpt-4o',
+        messages: [
+          { role: 'system', content: 'be brief' },
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: prompt },
+              { type: 'image_url', image_url: { url: 'data:image/png;base64,abc123' } },
+            ],
+          },
+        ],
+        apiKey: 'sk-header-secret-must-not-leak',
+        baseUrl: 'https://api.openai.com/v1',
+        additionalParams: [['apiKey', bodySecret]],
+        signal: new AbortController().signal,
+      })
+
+      const metric = providerBodyMetrics(metrics)[0]
+      expect(metric).toMatchObject({
+        provider: 'openai',
+        stream: false,
+        endpointHost: 'api.openai.com',
+        endpointPath: '/v1/chat/completions',
+        requestModel: 'gpt-4o',
+        messageCount: 2,
+        messageRoleCounts: { system: 1, user: 1 },
+        systemMessageCount: 1,
+        systemContentBytes: Buffer.byteLength('be brief', 'utf8'),
+        messageContentBytes: Buffer.byteLength(`be brief${prompt}`, 'utf8'),
+        contentPartCount: 3,
+        textPartCount: 2,
+        imagePartCount: 1,
+        audioPartCount: 0,
+        mediaPartCount: 1,
+        toolCount: 0,
+        functionCount: 0,
+      })
+      expect(metric.requestBodyBytes).toBe(Buffer.byteLength(capturedBody, 'utf8'))
+      expect(metric.requestBodySha256).toMatch(/^[a-f0-9]{64}$/)
+      expect(metric.messageContentSha256).toMatch(/^[a-f0-9]{64}$/)
+      expect(rawMetricLines.join('\n')).not.toContain(prompt)
+      expect(rawMetricLines.join('\n')).not.toContain(bodySecret)
+      expect(rawMetricLines.join('\n')).not.toContain('sk-header-secret-must-not-leak')
+    })
+  })
+
+  it('buckets unusual provider body roles without leaking role text in metrics', async () => {
+    const unusualRole = 'ROLE_SECRET_MUST_NOT_LEAK'
+    vi.stubGlobal('fetch', async () => ok({ choices: [{ message: { content: 'x' } }] }))
+
+    await withProtocolMetrics(async (metrics, rawMetricLines) => {
+      await runOpenAI({
+        model: 'gpt-4o',
+        messages: [
+          { role: unusualRole, content: 'hi' },
+          { role: 'user', content: 'normal' },
+        ],
+        apiKey: 'sk-test',
+        baseUrl: 'https://api.openai.com/v1',
+        signal: new AbortController().signal,
+      })
+
+      const metric = providerBodyMetrics(metrics)[0]
+      expect(metric.messageRoleCounts).toEqual({ other: 1, user: 1 })
+      expect(rawMetricLines.join('\n')).not.toContain(unusualRole)
+    })
+  })
+
+  it('keeps provider body hashes and counts stable for identical requests', async () => {
+    vi.stubGlobal('fetch', async () => ok({ choices: [{ message: { content: 'x' } }] }))
+
+    await withProtocolMetrics(async (metrics) => {
+      const request = {
+        model: 'gpt-4o',
+        messages: [{ role: 'user', content: 'same prompt' }],
+        apiKey: 'sk-test',
+        baseUrl: 'https://api.openai.com/v1',
+      }
+      await runOpenAI({ ...request, signal: new AbortController().signal })
+      await runOpenAI({ ...request, signal: new AbortController().signal })
+
+      const [first, second] = providerBodyMetrics(metrics)
+      expect(second.requestBodySha256).toBe(first.requestBodySha256)
+      expect(second.messageContentSha256).toBe(first.messageContentSha256)
+      expect(second.messageCount).toBe(first.messageCount)
+      expect(second.messageRoleCounts).toEqual(first.messageRoleCounts)
+    })
+  })
 })
 
 function sseUpstream(chunks: string[]): Response {
@@ -614,5 +766,32 @@ describe('runOpenAIStream', () => {
       frames.push(f)
     }
     expect(frames).toEqual([{ kind: 'error', error: STREAM_BUFFER_OVERFLOW_ERROR }])
+  })
+
+  it('emits provider request body metadata with stream:true', async () => {
+    vi.stubGlobal('fetch', async () => sseUpstream([tokenFrame('hello'), `data: [DONE]\n\n`]))
+
+    await withProtocolMetrics(async (metrics) => {
+      const frames: unknown[] = []
+      for await (const f of runOpenAIStream({
+        model: 'gpt-4o',
+        messages: [{ role: 'user', content: 'stream prompt' }],
+        apiKey: 'k',
+        baseUrl: 'https://api.openai.com/v1',
+        signal: new AbortController().signal,
+      })) {
+        frames.push(f)
+      }
+
+      expect(frames.at(-1)).toEqual({ kind: 'done', finishReason: 'stop' })
+      const metric = providerBodyMetrics(metrics)[0]
+      expect(metric).toMatchObject({
+        provider: 'openai',
+        stream: true,
+        endpointPath: '/v1/chat/completions',
+        requestModel: 'gpt-4o',
+        messageCount: 1,
+      })
+    })
   })
 })

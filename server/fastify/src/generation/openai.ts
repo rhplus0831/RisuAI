@@ -1,5 +1,7 @@
 import { applyAdditionalParameters } from './additionalParams.js'
+import { emitProtocolMetric } from '../protocolMetrics.js'
 import type { CompletionResult, CompletionStreamFrame } from './frames.js'
+import { providerBodyMetricFields, summarizeOpenAIProviderBody } from './providerBodySummary.js'
 import {
   STREAM_BUFFER_OVERFLOW_ERROR,
   hasNonIgnorableSseTail,
@@ -138,6 +140,7 @@ function buildRequestInit(
   req: OpenAIRequest,
   stream: boolean,
 ): {
+  payload: Record<string, unknown>
   body: string
   headers: Record<string, string>
 } {
@@ -146,7 +149,24 @@ function buildRequestInit(
   if (req.additionalParams !== undefined && req.additionalParams.length > 0) {
     applyAdditionalParameters(body, headers, req.additionalParams)
   }
-  return { body: JSON.stringify(body), headers }
+  return { payload: body, body: JSON.stringify(body), headers }
+}
+
+function emitOpenAIProviderBodyMetric(
+  url: string,
+  init: { payload: Record<string, unknown>; body: string },
+  stream: boolean,
+): void {
+  emitProtocolMetric('generation_provider_request_body', () => ({
+    ...providerBodyMetricFields({
+      provider: 'openai',
+      stream,
+      url,
+      body: init.payload,
+      bodyText: init.body,
+    }),
+    ...summarizeOpenAIProviderBody(init.payload),
+  }))
 }
 
 interface OpenAINonStreamChoice {
@@ -169,6 +189,7 @@ export async function runOpenAI(req: OpenAIRequest): Promise<CompletionResult> {
   const url = endpoint(req)
   let response: Response
   try {
+    emitOpenAIProviderBodyMetric(url, init, false)
     response = await fetch(url, {
       method: 'POST',
       headers: init.headers,
@@ -308,6 +329,7 @@ export async function* runOpenAIStream(req: OpenAIRequest): AsyncGenerator<Compl
   const url = endpoint(req)
   let response: Response
   try {
+    emitOpenAIProviderBodyMetric(url, init, true)
     response = await fetch(url, {
       method: 'POST',
       headers: init.headers,

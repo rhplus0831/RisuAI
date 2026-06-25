@@ -1,6 +1,71 @@
+import { generateKeyPairSync } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { reformatForGemini, resolveGeminiRequest, runGemini, runGeminiStream } from '../src/generation/gemini.js'
 import { MAX_STREAM_BUFFER_CHARS, STREAM_BUFFER_OVERFLOW_ERROR } from '../src/generation/sse.js'
+
+interface ProtocolMetric {
+  metric: string
+  provider?: string
+  stream?: boolean
+  endpointHost?: string
+  endpointPath?: string
+  requestBodyBytes?: number
+  requestBodySha256?: string
+  requestModel?: string
+  contentsCount?: number
+  contentRoleCounts?: Record<string, number>
+  partCount?: number
+  textPartCount?: number
+  textPartBytes?: number
+  textPartSha256?: string
+  systemInstructionCount?: number
+  systemInstructionBytes?: number
+  systemInstructionSha256?: string
+  inlineDataPartCount?: number
+  fileDataPartCount?: number
+  imagePartCount?: number
+  audioPartCount?: number
+  videoPartCount?: number
+  toolCount?: number
+  safetySettingCount?: number
+  generationConfigKeyCount?: number
+}
+
+async function withProtocolMetrics<T>(
+  run: (metrics: ProtocolMetric[], rawMetricLines: string[]) => Promise<T>,
+): Promise<T> {
+  const previous = process.env.RISU_PROTOCOL_METRICS
+  const metrics: ProtocolMetric[] = []
+  const rawMetricLines: string[] = []
+  process.env.RISU_PROTOCOL_METRICS = '1'
+  const infoSpy = vi.spyOn(console, 'info').mockImplementation((message: unknown) => {
+    if (typeof message !== 'string' || !message.startsWith('[protocol-metric] ')) return
+    rawMetricLines.push(message)
+    metrics.push(JSON.parse(message.slice('[protocol-metric] '.length)) as ProtocolMetric)
+  })
+  try {
+    return await run(metrics, rawMetricLines)
+  } finally {
+    infoSpy.mockRestore()
+    if (previous === undefined) {
+      delete process.env.RISU_PROTOCOL_METRICS
+    } else {
+      process.env.RISU_PROTOCOL_METRICS = previous
+    }
+  }
+}
+
+function providerBodyMetrics(metrics: ProtocolMetric[]): ProtocolMetric[] {
+  return metrics.filter((metric) => metric.metric === 'generation_provider_request_body')
+}
+
+function testPrivateKey(): string {
+  return generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+    publicKeyEncoding: { type: 'spki', format: 'pem' },
+    privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+  }).privateKey
+}
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -234,6 +299,108 @@ describe('runGemini', () => {
     expect(r.aborted).toBe(true)
     expect(called).toBe(false)
   })
+
+  it('emits Studio provider request body metadata without leaking key query or prompt text', async () => {
+    const prompt = 'GEMINI_PROMPT_MUST_NOT_LEAK'
+    let capturedBody = ''
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      capturedBody = String(init.body)
+      return ok({ candidates: [{ content: { parts: [{ text: 'x' }] } }] })
+    })
+    const resolved = resolveGeminiRequest({
+      model: 'gemini-2.5-flash',
+      messages: [
+        { role: 'system', content: 'be brief' },
+        { role: 'user', content: prompt },
+        { role: 'assistant', content: 'ack' },
+      ],
+      apiKey: 'goog-secret-must-not-leak',
+      maxOutputTokens: 128,
+      temperature: 0.4,
+      signal: new AbortController().signal,
+    })!
+
+    await withProtocolMetrics(async (metrics, rawMetricLines) => {
+      await runGemini(resolved)
+
+      const metric = providerBodyMetrics(metrics)[0]
+      expect(metric).toMatchObject({
+        provider: 'gemini',
+        stream: false,
+        endpointHost: 'generativelanguage.googleapis.com',
+        endpointPath: '/v1beta/models/gemini-2.5-flash:generateContent',
+        requestModel: 'gemini-2.5-flash',
+        contentsCount: 2,
+        contentRoleCounts: { model: 1, user: 1 },
+        partCount: 2,
+        textPartCount: 2,
+        textPartBytes: Buffer.byteLength(`${prompt}ack`, 'utf8'),
+        systemInstructionCount: 1,
+        systemInstructionBytes: Buffer.byteLength('be brief', 'utf8'),
+        inlineDataPartCount: 0,
+        fileDataPartCount: 0,
+        imagePartCount: 0,
+        audioPartCount: 0,
+        videoPartCount: 0,
+        toolCount: 0,
+        safetySettingCount: 0,
+        generationConfigKeyCount: 2,
+      })
+      expect(metric.requestBodyBytes).toBe(Buffer.byteLength(capturedBody, 'utf8'))
+      expect(metric.requestBodySha256).toMatch(/^[a-f0-9]{64}$/)
+      expect(metric.textPartSha256).toMatch(/^[a-f0-9]{64}$/)
+      expect(metric.systemInstructionSha256).toMatch(/^[a-f0-9]{64}$/)
+      expect(rawMetricLines.join('\n')).not.toContain('key=')
+      expect(rawMetricLines.join('\n')).not.toContain('goog-secret-must-not-leak')
+      expect(rawMetricLines.join('\n')).not.toContain(prompt)
+    })
+  })
+
+  it('buckets unusual provider body roles without leaking role text in metrics', async () => {
+    const unusualRole = 'ROLE_SECRET_MUST_NOT_LEAK'
+    vi.stubGlobal('fetch', async () => ok({ candidates: [{ content: { parts: [{ text: 'x' }] } }] }))
+
+    await withProtocolMetrics(async (metrics, rawMetricLines) => {
+      await runGemini({
+        model: 'gemini-2.5-flash',
+        contents: [
+          { role: unusualRole, parts: [{ text: 'hi' }] },
+          { role: 'user', parts: [{ text: 'normal' }] },
+        ] as never,
+        apiKey: 'goog-test',
+        baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+        signal: new AbortController().signal,
+      })
+
+      const metric = providerBodyMetrics(metrics)[0]
+      expect(metric.contentRoleCounts).toEqual({ other: 1, user: 1 })
+      expect(rawMetricLines.join('\n')).not.toContain(unusualRole)
+    })
+  })
+
+  it('keeps Gemini body hashes and counts stable for identical requests', async () => {
+    vi.stubGlobal('fetch', async () => ok({ candidates: [{ content: { parts: [{ text: 'x' }] } }] }))
+    const request = {
+      model: 'gemini-2.5-flash',
+      messages: [
+        { role: 'system', content: 'stable system' },
+        { role: 'user', content: 'stable user' },
+      ],
+      apiKey: 'goog-test',
+    }
+
+    await withProtocolMetrics(async (metrics) => {
+      await runGemini(resolveGeminiRequest({ ...request, signal: new AbortController().signal })!)
+      await runGemini(resolveGeminiRequest({ ...request, signal: new AbortController().signal })!)
+
+      const [first, second] = providerBodyMetrics(metrics)
+      expect(second.requestBodySha256).toBe(first.requestBodySha256)
+      expect(second.textPartSha256).toBe(first.textPartSha256)
+      expect(second.systemInstructionSha256).toBe(first.systemInstructionSha256)
+      expect(second.contentsCount).toBe(first.contentsCount)
+      expect(second.contentRoleCounts).toEqual(first.contentRoleCounts)
+    })
+  })
 })
 
 function sseUpstream(chunks: string[]): Response {
@@ -448,6 +615,34 @@ describe('runGeminiStream', () => {
     for await (const f of runGeminiStream(resolved)) frames.push(f)
     expect(frames).toEqual([{ kind: 'error', error: STREAM_BUFFER_OVERFLOW_ERROR }])
   })
+
+  it('emits stream metadata with a sanitized endpoint path', async () => {
+    vi.stubGlobal('fetch', async () => sseUpstream([geminiFrame('hi', 'STOP')]))
+    const resolved = resolveGeminiRequest({
+      model: 'gemini-2.5-flash',
+      messages: [{ role: 'user', content: 'stream prompt' }],
+      apiKey: 'goog-stream-secret',
+      signal: new AbortController().signal,
+    })!
+
+    await withProtocolMetrics(async (metrics, rawMetricLines) => {
+      const frames: unknown[] = []
+      for await (const f of runGeminiStream(resolved)) frames.push(f)
+
+      expect(frames.at(-1)).toEqual({ kind: 'done', finishReason: 'stop' })
+      const metric = providerBodyMetrics(metrics)[0]
+      expect(metric).toMatchObject({
+        provider: 'gemini',
+        stream: true,
+        endpointHost: 'generativelanguage.googleapis.com',
+        endpointPath: '/v1beta/models/gemini-2.5-flash:streamGenerateContent',
+        requestModel: 'gemini-2.5-flash',
+        contentsCount: 1,
+      })
+      expect(rawMetricLines.join('\n')).not.toContain('key=')
+      expect(rawMetricLines.join('\n')).not.toContain('goog-stream-secret')
+    })
+  })
 })
 
 describe('Vertex AI Gemini routing', () => {
@@ -632,5 +827,53 @@ describe('Vertex AI Gemini routing', () => {
       signal: new AbortController().signal,
     })
     expect(r).toBeNull()
+  })
+
+  it('emits Vertex provider body metadata without leaking bearer or private key material', async () => {
+    const privateKey = testPrivateKey()
+    const calls: Array<{ url: string; init: RequestInit }> = []
+    vi.stubGlobal('fetch', async (url: string, init: RequestInit) => {
+      calls.push({ url, init })
+      if (url === 'https://oauth2.googleapis.com/token') {
+        return new Response(JSON.stringify({ access_token: 'ya29.vertex-secret-token', expires_in: 3599 }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      }
+      return ok({ candidates: [{ content: { parts: [{ text: 'vertex ok' }] } }] })
+    })
+    const { _resetVertexTokenCacheForTesting } = await import('../src/generation/vertexAuth.js')
+    _resetVertexTokenCacheForTesting()
+
+    const resolved = resolveGeminiRequest({
+      model: 'gemini-2.5-pro',
+      messages: [{ role: 'user', content: 'vertex prompt' }],
+      vertex: {
+        projectId: 'my-project',
+        region: 'us-central1',
+        clientEmail: 'svc@my-project.iam.gserviceaccount.com',
+        privateKey,
+      },
+      signal: new AbortController().signal,
+    })!
+
+    await withProtocolMetrics(async (metrics, rawMetricLines) => {
+      await runGemini(resolved)
+
+      expect(calls).toHaveLength(2)
+      const metric = providerBodyMetrics(metrics)[0]
+      expect(metric).toMatchObject({
+        provider: 'gemini',
+        stream: false,
+        endpointHost: 'us-central1-aiplatform.googleapis.com',
+        endpointPath:
+          '/v1/projects/my-project/locations/us-central1/publishers/google/models/gemini-2.5-pro:generateContent',
+        requestModel: 'gemini-2.5-pro',
+        contentsCount: 1,
+      })
+      expect(rawMetricLines.join('\n')).not.toContain(privateKey)
+      expect(rawMetricLines.join('\n')).not.toContain('ya29.vertex-secret-token')
+      expect(rawMetricLines.join('\n')).not.toContain('authorization')
+    })
   })
 })
