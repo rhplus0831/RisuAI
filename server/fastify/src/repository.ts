@@ -1448,6 +1448,7 @@ export function loadPersistedForChatMutation(db: DatabaseSync, dataDir: string, 
  */
 export function loadPersistedForAssembly(db: DatabaseSync, dataDir: string, chatId: string): Persisted {
   const persisted = loadPersisted(db, dataDir)
+  hydrateAssemblyModuleBodies(db, persisted.database)
   const rows = getChatMessagesGroupedByIds(db, [chatId]).get(chatId)
   const hypaGrouped = getChatHypaV3GroupedByIds(db, [chatId])
   eachChat(persisted.database, (chat) => {
@@ -1466,6 +1467,19 @@ export function loadPersistedForAssembly(db: DatabaseSync, dataDir: string, chat
     }
   })
   return persisted
+}
+
+/**
+ * Prompt assembly and post-generation module runtime need executable module
+ * children (`trigger`, `regex`, `lorebook`, `assets`, ...). Bootstrap can replace
+ * `database.modules` with body stubs for wire-size reasons, so keep generation
+ * pinned to the authoritative server collection table whenever it exists.
+ */
+export function hydrateAssemblyModuleBodies(db: DatabaseSync, database: unknown): void {
+  if (!isRecord(database)) return
+  const modules = loadCollectionFieldFromSqlite(db, 'modules')
+  if (modules === null) return
+  database.modules = modules
 }
 
 /**

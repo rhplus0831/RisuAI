@@ -10,7 +10,7 @@ import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { listPersistedCommandEventHistory } from '../src/commands/events.js'
 import { openDatabase } from '../src/db.js'
-import { applyImport } from '../src/repository.js'
+import { applyImport, hydrateAssemblyModuleBodies } from '../src/repository.js'
 import type { CompletionStreamFrame } from '../src/generation/frames.js'
 import {
   createRequestScopedStoredAssetResolver,
@@ -3262,6 +3262,98 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
 
     const persisted = await persistedMessages(assertion)
     expect(persisted.at(-1)).toMatchObject({ role: 'char', data: 'server echo REPLY' })
+  })
+
+  it('hydrates projected module stubs from the server module table before assembly runtime', async () => {
+    await seedDatabase(harness.app, 'unused', {
+      ...fixtureDatabase,
+      modules: [
+        {
+          id: 'gigatrans-lite',
+          name: 'GigaTrans Lite',
+          description: '',
+          trigger: [{ id: 'module-output', type: 'output', conditions: [], effect: [] }],
+          regex: [{ id: 'module-regex', comment: '', in: 'foo', out: 'bar', type: 'editoutput' }],
+          lorebook: [{ id: 'module-lore', key: 'foo', comment: 'Module Lore', content: 'body' }],
+          assets: [['label', 'asset-id', 'png']],
+        },
+      ],
+    })
+
+    const db = openDatabase(harness.dataDir)
+    try {
+      const projected = {
+        modules: [{ id: 'gigatrans-lite', name: 'GigaTrans Lite', description: '' }],
+      }
+      hydrateAssemblyModuleBodies(db, projected)
+
+      expect(projected.modules[0]).toMatchObject({
+        id: 'gigatrans-lite',
+        trigger: [{ id: 'module-output' }],
+        regex: [{ id: 'module-regex' }],
+        lorebook: [{ id: 'module-lore' }],
+        assets: [['label', 'asset-id', 'png']],
+      })
+    } finally {
+      db.close()
+    }
+  })
+
+  it('runs a chat-attached module output triggerlua over the generated assistant row', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, {
+      ...(dbWithServerDispatch({
+        chats: [
+          {
+            ...fixtureDatabase.characters[0].chats[0],
+            modules: ['gigatrans-lite'],
+          },
+        ],
+      }) as Record<string, unknown>),
+      modules: [
+        {
+          id: 'gigatrans-lite',
+          name: 'GigaTrans Lite',
+          description: '',
+          trigger: [
+            {
+              id: 'module-output',
+              comment: '',
+              type: 'output',
+              conditions: [],
+              effect: [
+                {
+                  type: 'triggerlua',
+                  code: `
+                    function onOutput(id)
+                      local index = getChatLength(id) - 1
+                      local last = getChat(id, index)
+                      setChat(id, index, last.data .. ' [GT]')
+                    end
+                  `,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    })
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+    expect(res.statusCode).toBe(200)
+    const done = doneFrame(parseEvents(res.body))
+
+    expect(done.result).toBe('server echo reply')
+    expect(done.postGeneration?.finalText).toBe('server echo reply [GT]')
+    expect(done.postGeneration?.revision).toBe(2)
+
+    const persisted = await persistedMessages(assertion)
+    expect(persisted.at(-1)).toMatchObject({ role: 'char', data: 'server echo reply [GT]' })
   })
 
   // The inline continue / regenerate paths are server-persisted too; the browser
