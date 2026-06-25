@@ -78,7 +78,8 @@ the original app's legacy `.bin` local backup. Bundle zip import reads
 `manifest.json` version `1`, accepts a `.risu` database payload entry, validates
 `assets/<sha>.<ext>` entries by extension and content hash, ignores unrelated
 zip entries, and still caps inner `.risu` expansion even when the outer upload
-limit is unlimited. Legacy `.bin` import skips non-media/cold-storage records.
+limit is unlimited. Legacy `.bin` import keeps image, audio, video, and font
+asset records and skips unrelated/cold-storage records.
 `src/ts/server/backups.ts` uses the `x-risu-estimated-backup-bytes` progress
 header when present; UI-facing wrappers live in `src/ts/storage/backup.ts`.
 
@@ -127,8 +128,11 @@ Restore swaps asset/save directories and restores SQLite tables through the
 `SQLITE_BACKUP_TABLES` allowlist in `repository.ts`, then emits
 `state.restored` and triggers browser projection recovery. Keep that allowlist
 in sync when adding durable tables; operational rows are intentionally excluded
-unless explicitly added. Older backups containing `db.json` are restored by
-copying the file into the data dir and running `ensureDbJsonImported()`.
+unless explicitly added. As of this audit, split model/prompt preset tables are
+durable but not restored by that allowlist, so verify the list before relying on
+restore coverage for newly split table families. Older backups containing
+`db.json` are restored by copying the file into the data dir and running
+`ensureDbJsonImported()`.
 
 Ordinary module `.risum` import is supported in Fastify-backed browser mode
 through the browser codec in `src/ts/process/modules.ts`: the client decodes the

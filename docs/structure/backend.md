@@ -17,10 +17,11 @@ imports/exports/backups, and the `/api/v1/*` route surface.
 | `server/fastify/src/chatGenerationSettingsStorage.ts`                         | Normalizes persisted chat-scoped generation settings on import/load.                                      |
 | `server/fastify/src/databaseDefaults.ts`                                      | Server-owned first-run defaults and import normalization defaults.                                       |
 | `server/fastify/src/auth.ts`, `http.ts`, `activeWriter.ts`, `providerSecrets.ts` | Single-user auth/session helpers, route auth assertion, active-writer guard, secret masking/resolution. |
-| `server/fastify/src/routeManifest.ts`                                         | Source of truth for route auth, active-writer, streaming, and exceptions.                                |
+| `server/fastify/src/routeManifest.ts`                                         | Source of truth for route auth, active-writer, streaming, and exception classifications.                  |
 | `server/fastify/src/routeRateLimits.ts`                                       | Per-route rate-limit presets.                                                                            |
 | `server/fastify/src/protocolMetrics.ts`, `requestTrace.ts`                    | Opt-in protocol metrics, command table-write capture, and API request traces.                            |
 | `server/fastify/src/generationJobs.ts`, `generationFinalizationRetry.ts`      | Process-local durable chat jobs, replay/reattach state, and SQLite-backed finalization retry rows.        |
+| `server/fastify/src/messageTranslationJobs.ts`                                | Process-local active raw-message translation registry projected through bootstrap.                        |
 | `server/fastify/src/assetGc.ts`                                               | Periodic reference-counted asset garbage collection.                                                     |
 | `server/fastify/src/streamJobs.ts`, `streamBackpressure.ts`                   | Process-local proxy stream jobs and bounded stream writes for slow clients.                              |
 | `server/fastify/src/requestAbort.ts`, `server/fastify/src/requestTimeouts.ts` | Generation abort propagation and proxy/stream-job timeout constants.                                      |
@@ -29,7 +30,8 @@ imports/exports/backups, and the `/api/v1/*` route surface.
 `buildApp()` is test-friendly. `BuildAppOptions` can inject generation behavior,
 Realm import limits, memory worker behavior, command/memory event sinks,
 generation finalization retry options through the generation-chat options, and
-asset-GC behavior.
+asset-GC behavior. Config parsing also includes streamed device-backup import
+limits and generation trace sidecar controls.
 
 ## App Wiring
 
@@ -41,19 +43,30 @@ quiet logs.
 
 Startup opens SQLite, runs legacy Hypa V3 backfill, imports legacy
 `data/db.json` when present, starts the memory worker, creates command/memory
-event buses, creates proxy and durable generation job registries, and starts
-GC/finalization retry timers. It also calls `bootPromptVariables()` so
-server-side CBS/chat-var parsing is wired before prompt assembly. When
-`RISU_API_TRACE_MODE` is `agent` or `human`, request tracing adds
-`X-Request-UID` and writes API traces under `data/trace/<mode>.jsonl`. `onClose`
-stops workers/timers/jobs and settles generation runners before closing SQLite.
+event buses, creates proxy, durable generation, and message-translation
+registries, and starts GC/finalization retry timers. The proxy stream and
+durable-generation registries share a GC tick, asset GC is optional, and the
+generation finalization retry sweep runs once on startup then on a default 5s
+interval while also pruning retained terminal retry rows. Startup also calls
+`bootPromptVariables()` so server-side CBS/chat-var parsing is wired before
+prompt assembly. When `RISU_API_TRACE_MODE` is `agent` or `human`, request
+tracing adds `X-Request-UID` and writes API traces under
+`data/trace/<mode>.jsonl`. Optional generation trace sidecars write redacted
+prompt payloads under `data/trace/generation/` only when protocol metrics and
+`RISU_GENERATION_TRACE_FULL_PROMPT=1` are enabled. `onClose` stops
+workers/timers/jobs and settles generation runners before closing SQLite.
 
 The active-writer guard is registered after health/auth/bootstrap and before
 guarded routes, with route decisions driven by `routeManifest.ts`. Asset upload
 routes also perform early auth/writer checks before body parsing. New routes
 should be registered from `app.ts` and mirrored in `routeManifest.ts`.
-Route protection is test-backed by `routeProtection.test.ts`, and runtime
-active-writer enforcement uses `activeWriter.ts`.
+Route protection is test-backed by
+`server/fastify/__tests__/routeProtection.test.ts`, which derives live routes
+from `app.printRoutes()` and checks every `/api/v1/*` route has a manifest
+decision. Runtime active-writer enforcement uses `activeWriter.ts`: before any
+writer is latched, guarded mutations are allowed; after a writer-intent
+bootstrap latches ownership, stale or missing writer sessions receive
+`423 active_writer_stale`.
 
 Rate limits are opt-in per route. Current presets are setup `5/min`, login
 `10/min`, auth crypto `60/min`, proxy fetch `120/min`, proxy stream-job create
@@ -64,13 +77,19 @@ and generation submit `60/min`.
 
 | Family                | Registrars                                                | Notes                                                                                                                                                                                |
 | --------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Health/auth/bootstrap | `health.ts`, `auth.ts`, `bootstrap.ts`                    | Health/status/setup/login plus authenticated bootstrap; writer-intent bootstrap latches active writer and returns body-cache and active generation job metadata.                     |
+| Health/auth/bootstrap | `health.ts`, `auth.ts`, `bootstrap.ts`                    | Health/status/setup/login plus authenticated bootstrap; writer-intent bootstrap latches active writer and returns body-cache, active generation job metadata, and active message translation metadata. |
 | Projection/events     | `projection.ts`, `events.ts`                              | Targeted projection, chat/lorebook hydration, bulk hydration, command/memory SSE.                                                                                                    |
-| Commands              | `commands.ts` plus `commands/`                            | Revision-checked domain mutations for settings, model profiles/runtime defaults, bot/model/prompt/translator presets, prompt settings/items, personas, loadouts, characters/chats/messages, chat folders, chat generation settings, chat script state, lorebooks, modules, plugins/plugin storage/provider choice, scripts/triggers, generation results, compact lorebook entries, and message tails. |
+| Commands              | `commands.ts` plus `commands/`                            | Revision-checked domain mutations for settings, model profiles/runtime defaults, split model/prompt presets, legacy bot preset extraction, bot/translator presets, prompt settings/items, personas, loadouts, characters/chats/messages, chat folders, chat generation settings, chat script state, lorebooks, modules, plugin records/storage/provider choice, script/trigger definitions, generation results, compact lorebook entries, message tails, and raw message translation. |
 | Assets/saves/backups  | `assets.ts`, `save.ts`, `realmImport.ts`, `backups.ts`    | Content-addressed assets, `.risu`/bundle/local-backup import/export, Realm import, snapshots.                                                                                        |
 | Proxy/hub/storage     | `proxy.ts`, `streamJobs.ts`, `hub.ts`, `legacyStorage.ts` | Authenticated proxy/fetch and stream jobs, retained hub passthrough, `/api/v1/storage/*` compatibility byte store, public `/api/v1/auth/crypto` helper.                              |
 | Generation            | `generation.ts`, `generationChat.ts`                      | Completion route, server-assembled chat generation, preview prompt, chat generation settings/profile preflight, durable reattach/cancel.                                             |
 | Memory                | `memoryJobs.ts`, `memoryReads.ts`                         | Queue/cancel/list jobs plus read chunk/summary routes.                                                                                                                               |
+
+`routeManifest.ts` classifies auth, active-writer, and streaming decisions;
+it is not a literal endpoint inventory because command and hub routes are
+classified by prefixes. Some registrars use plugin-local `instance.*` methods,
+so use `app.printRoutes()` for route inventory audits. Manifest streaming types
+include `sse`, `sse-optional`, `binary`, `websocket`, and `proxy`.
 
 Handlers call `requireAuth()` unless intentionally public. Public exceptions are
 health, auth status/setup/login, `/api/v1/auth/crypto`, immutable asset reads,
@@ -98,8 +117,8 @@ and emits `generation.persisted`. The detailed persistence contract lives in
 ## Generation And Memory
 
 The live chat path is server-owned. Browser `sendChat` preflights with
-`resolveServerPromptAssembly()` and provider capabilities, then posts raw inputs
-to `/api/v1/generate/chat`. Server prompt assembly runs supported
+`resolveServerPromptAssembly()` and resolved model-profile provider capability,
+then posts raw inputs to `/api/v1/generate/chat`. Server prompt assembly runs supported
 non-interactive Lua hooks, plans and selects memory, dispatches through
 `generation/`, maps provider frames to chat SSE frames, and persists
 post-generation results. Chat-scoped generation settings are preflighted and
@@ -116,8 +135,9 @@ client path and an inline non-durable SSE mode for tools/tests. Durable chat job
 are in-memory in `generationJobs.ts`, emit `job_accepted`, detach on browser
 disconnect, reattach at `GET /api/v1/generate/chat/:id/stream`, and cancel with
 `DELETE /api/v1/generate/chat/:id`. Finalization retry attempts are queued in
-SQLite, include target snapshots for stale-target protection, and are swept by
-the generation finalization retry timer. Preview-prompt is a one-shot JSON
+SQLite with pending/terminal status, include target snapshots for stale-target
+protection and idempotency, and are swept by the generation finalization retry
+timer. Preview-prompt is a one-shot JSON
 assembly route and does not dispatch a provider.
 
 Only Hypa V3 is maintained. Legacy backfill lives in `memoryLegacyImport.ts`.
@@ -141,9 +161,10 @@ chunk/summary read routes currently return full text for a chat.
 
 ## Static SPA
 
-If `RISU_API_STATIC_ROOT` points to an existing directory, Fastify serves `/`
-and non-API GET fallback from that built SPA. Built `/assets/*` files get
-immutable cache headers; other static files revalidate. Empty string, `none`, or
-`off` disable static serving. Non-API `GET` misses fall back to `index.html`;
-`/api/*` and non-GET misses return JSON 404. Vite dev serves the SPA separately
-while still running the same Fastify-backed browser runtime.
+`RISU_API_STATIC_ROOT` defaults to `<repo>/dist`. If it points to an existing
+directory, Fastify serves `/` and non-API GET fallback from that built SPA.
+Built `/assets/*` files get immutable cache headers; other static files
+revalidate. Empty string, `none`, or `off` disable static serving. Non-API
+`GET` misses fall back to `index.html`; `/api/*` and non-GET misses return JSON
+404. Vite dev serves the SPA separately while still running the same
+Fastify-backed browser runtime.

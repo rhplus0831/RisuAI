@@ -17,9 +17,10 @@ through command helpers or explicit server-owned mutation routes.
   `POST /api/v1/commands/state/initialize`, then a read-only bootstrap refetch.
 - The projection is merged with any bootstrap body-cache entries, applied through
   trusted write scopes, revision cache is seeded, projection write guard is
-  enabled, active generation jobs are handed to reattach logic, character shell
-  and prompt-template hydration start, chat hydration starts, and
-  `/api/v1/events` subscribes.
+  enabled, active generation jobs are handed to reattach logic, active message
+  translations are recorded for row-level busy state and refresh polling,
+  character shell and prompt-template hydration start, chat hydration starts,
+  and `/api/v1/events` subscribes.
 - Full recovery uses `fetchServerBootstrapProjectionReadOnly()` so passive
   resync does not steal writer ownership from another browser session.
 - Startup also installs `setServerCommandSuccessReconciler()`, so successful
@@ -29,10 +30,11 @@ through command helpers or explicit server-owned mutation routes.
 `projectionResync.ts` coalesces concurrent full-resync requests, reads bootstrap
 with `cacheRevision: false`, applies the fresh database, caches the new
 revision before stale hydration checks, syncs selected character state, seeds
-active generation reattach state, resets chat/lorebook hydration, records
-already-hydrated lorebooks, force-hydrates the active chat/lorebook and selected
-character shell, then restarts prompt-template hydration. Newer resync requests
-during an in-flight pass cause another pass after the first settles.
+active generation reattach state, refreshes active message translations, resets
+chat/lorebook hydration, records already-hydrated lorebooks, force-hydrates the
+active chat/lorebook and selected character shell, then restarts prompt-template
+hydration. Newer resync requests during an in-flight pass cause another pass
+after the first settles.
 
 | Path                                             | Role                                                                                                       |
 | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
@@ -47,24 +49,27 @@ during an in-flight pass cause another pass after the first settles.
 ## Event Reconcile
 
 `src/ts/server/events.ts` subscribes to `/api/v1/events` with the cached
-revision as `sinceRevision` / `Last-Event-ID`. `src/ts/bootstrap.ts` processes
-command events serially:
+revision as `sinceRevision` / `Last-Event-ID`. Clean closes and stream errors
+schedule reconnects with exponential backoff and jitter capped at 30s; malformed
+command frames force a read-only full resync before reconnect. `src/ts/bootstrap.ts`
+processes command events serially:
 
 - Own echoes are skipped once their revision is already reconciled or applied;
   an own-origin event that arrives before the command response can still
   reconcile immediately.
 - Contiguous foreign events fetch `GET /api/v1/projection/:resource`.
-- Narrow resources are defined by `RESOURCE_PROJECTION_FIELDS` in
-  `server/fastify/src/routes/projection.ts`. Notable special cases:
-  `characterSelection` is a narrow fields refresh, `characterRow` hydrates one
-  character shell, `message` events hydrate one chat and return projection mode
-  `chat-messages`, `preset?id=...` hydrates one bot preset body, `asset`
-  advances revision without projected fields, `generation.persisted` events are
-  keyed by chat id and may return `generation-chat`, and `characterLorebook`
-  uses the lorebook hydration branch. Field-map resources also include examples
-  such as `globalLorebook`, `moduleUpdated`, `moduleEnabled`, and
-  `moduleReordered`. Known sprawling resources such as `settings`, `state`,
-  `pluginStorage`, and `prompt` intentionally return full-bootstrap mode.
+- Narrow resources are defined by `RESOURCE_PROJECTION_FIELDS` plus route
+  special cases in `server/fastify/src/routes/projection.ts`. Notable special
+  cases: `characterSelection` is a narrow fields refresh, `characterRow`
+  hydrates one character shell, `message` events hydrate one chat and return
+  projection mode `chat-messages`, `preset?id=...` hydrates one bot preset body,
+  `asset` advances revision without projected fields, `generation.persisted`
+  events are keyed by chat id and may return `generation-chat`, and
+  `characterLorebook` uses the lorebook hydration branch. Field-map resources
+  also include examples such as `globalLorebook`, `moduleUpdated`,
+  `moduleEnabled`, and `moduleReordered`. Known sprawling resources such as
+  `settings`, `state`, `pluginStorage`, and `prompt` intentionally return
+  full-bootstrap mode.
   Applying `fields.characters` re-stubs chat/lorebook-heavy character rows and
   forces relevant hydration state to reset.
 - Gaps, replay-unavailable responses, projection failures, unknown resources, or
@@ -74,8 +79,11 @@ command events serially:
   modal when needed.
 
 Server replay is backed by SQLite `command_events` and retained for
-`COMMAND_EVENT_HISTORY_LIMIT` revisions. Memory events are live progress
-notifications and are not replayed.
+`COMMAND_EVENT_HISTORY_LIMIT` revisions. The server subscribes to live command
+events before replay, queues any live events that arrive during the replay
+flush, then switches to live delivery; heartbeat and memory-event fanout are
+armed only after replay succeeds, and slow-consumer overflow tears down the
+stream. Memory events are live progress notifications and are not replayed.
 
 ## Hydration
 
@@ -101,7 +109,7 @@ it should not fall through to stale top-level data.
 | Active character lorebook                 | `GET /api/v1/projection/characterLorebook?id=...`               | `hydrateActiveCharacterLorebook()`                        |
 | Read-many lorebooks                       | `POST /api/v1/projection/characterLorebooks/bulk`               | `ensureAllCharacterLorebooksHydrated()`                   |
 | Inactive/selected character shell         | `GET /api/v1/projection/characterRow?id=...`                    | `hydrateSelectedCharacterShell()`                         |
-| Prompt-template collection fields         | `GET /api/v1/projection/promptItem`                             | `promptTemplateHydration.ts`, owner-keyed by selected/requested prompt preset when present |
+| Prompt-template collection fields         | `GET /api/v1/projection/promptItem`, with `parentId` for explicit prompt-preset owner hydration | `promptTemplateHydration.ts`, owner-keyed by selected/requested prompt preset when present |
 | Active preset body                        | `GET /api/v1/projection/preset?id=...`                          | `ensureBotPresetHydrated()` / `fetchServerPresetProjection()` |
 | Module/plugin heavy body cache            | `/api/v1/bootstrap` body-cache manifest                         | `bootstrapBodyCache.ts`                                   |
 
@@ -162,7 +170,12 @@ writer-session handling lives in `src/ts/server/activeWriterSession.ts`.
 
 Server protocol metrics are opt-in with `RISU_PROTOCOL_METRICS=1` (also accepts
 `true`, `yes`, or `on`). Browser protocol debug logs are opt-in with
-`localStorage.setItem('risu:protocol-debug', '1')`. Relevant files:
+`localStorage.setItem('risu:protocol-debug', '1')`. Browser diagnostics include
+full-bootstrap resync reasons/resources, hydration concurrency and stale-drop
+counters, and asset byte-read fanout counters. Memory job SSE and refresh paths
+gate updates through ordering checks, record terminal jobs, and suppress stale
+or non-active terminal refresh updates. Relevant files:
 `server/fastify/src/protocolMetrics.ts`,
-`src/ts/server/protocolDiagnostics.ts`, `chatMessageHydration.svelte.ts`, and
+`src/ts/server/protocolDiagnostics.ts`, `src/ts/server/assets.ts`,
+`chatMessageHydration.svelte.ts`, `memoryJobRefresh.ts`, and
 `projectionResync.ts`.

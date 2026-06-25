@@ -93,6 +93,11 @@ larger captured text bodies are written as `.gz` sidecars under
 most 10 MiB. Oversized compressed bodies, multipart, binary, SSE, and stream
 bodies are recorded as omitted metadata.
 
+Generation trace sidecars are separate and opt in only when protocol metrics are
+enabled and `RISU_GENERATION_TRACE_FULL_PROMPT=1`. They write redacted prompt
+payloads under `data/trace/generation/`, capped by
+`RISU_GENERATION_TRACE_FULL_PROMPT_MAX_GZIP_BYTES`.
+
 To serve a built SPA through Fastify:
 
 ```sh
@@ -231,6 +236,8 @@ Server:
 | `RISU_API_BODY_LIMIT`        | `104857600`                | JSON/body and multipart file limit.                                                                        |
 | `RISU_API_IMPORT_MAX_BYTES`  | unlimited                  | Streamed device-backup import limit; positive byte count caps, `0`/`unlimited`/`none`/`infinity` opts out. |
 | `RISU_API_TRACE_MODE`        | unset                      | Enables API request tracing when `agent` or `human`; `0`/`false`/`off`/`none` disable it.                  |
+| `RISU_GENERATION_TRACE_FULL_PROMPT` | unset              | Set to `1` with protocol metrics enabled to write redacted generation prompt sidecars under `data/trace/generation/`. |
+| `RISU_GENERATION_TRACE_FULL_PROMPT_MAX_GZIP_BYTES` | `10485760` | Maximum compressed sidecar size for full-prompt generation traces.                                         |
 | `TRUST_PROXY`                | `false`                    | Fastify trust proxy setting; accepts boolean, integer, or string.                                          |
 | `RISU_API_STATIC_ROOT`       | `<repo>/dist`              | Static SPA root; empty, `none`, or `off` disables.                                                         |
 | `RISU_HUB_URL`               | `https://sv.risuai.xyz`    | Hub passthrough target.                                                                                    |
@@ -251,7 +258,7 @@ Local/dev:
 | `RISU_TS_AGENT_TSSERVER_LOG`     | unset               | Set to `1` or a path to capture verbose `pnpm ts:agent` tsserver logs.                |
 | `RISU_TS_AGENT_TIMEOUT_MS`       | `30000`             | Default tsserver request timeout for `pnpm ts:agent`; `--timeout-ms` overrides it.    |
 | `RISU_TS_AGENT_DEBUG`            | unset               | Echo tsserver stderr while debugging `pnpm ts:agent`.                                 |
-| `VITE_RISU_AGENT_DEV_IGNORE_TOS` | `TRUE`              | Set by `pnpm dev:agent`; `alertTOS()` returns accepted without showing the TOS modal. |
+| `VITE_RISU_AGENT_DEV_IGNORE_TOS` | `TRUE`              | Set by `pnpm dev:agent` / `pnpm dev:human`; `alertTOS()` returns accepted without showing the TOS modal. |
 
 Client/build:
 

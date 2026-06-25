@@ -87,9 +87,15 @@ not ordinary browser `/commands/*` resource endpoints:
 - Server generation can persist assembly-time scriptstate/input-trigger changes
   before provider dispatch. Final generation writes through targeted command
   mutation and emits `generation.persisted`; durable finalization attempts are
-  queued in SQLite for retry with target snapshots, while active durable jobs
-  themselves are process-local reattach state. Cancel can persist
+  queued in SQLite for retry with target snapshots, pending/terminal status, and
+  retained terminal errors that the app prunes on later sweeps. Active durable
+  jobs themselves are process-local reattach state. Cancel can persist
   streamed-so-far text through the raw cancel path.
+- Raw message translation uses
+  `POST /api/v1/commands/messages/:messageId/translate`: the server detaches the
+  provider work from the browser request, projects active rows through
+  `activeMessageTranslations`, then persists the translated text through a
+  targeted message command event if the source row is still unchanged.
 - Memory job create/cancel writes durable memory-job state and emits memory
   events without a domain revision.
 - Backup create/delete mutate backup files without a domain revision; restore
@@ -97,6 +103,9 @@ not ordinary browser `/commands/*` resource endpoints:
   SQLite table allowlist in `repository.ts`; keep `SQLITE_BACKUP_TABLES` in sync
   with durable tables. Operational rows such as
   `generation_finalization_retries` are not restored unless added to that list.
+  As of this audit, split `model_presets` and `prompt_presets` rows are durable
+  tables but are not in the restore allowlist, so check that list before relying
+  on backup restore for newly split table families.
 
 ## Auth And Active Writer
 
@@ -122,9 +131,9 @@ active-writer, streaming, public exceptions, and read-only POST decisions.
 ## Projection And Hydration
 
 `GET /api/v1/bootstrap` returns revision, schema version, asset base URL,
-`activeGenerationJobs`, optional `bodyCache`, and a lean database projection. If
-no database exists, the browser calls `commands/state/initialize` and refetches
-bootstrap read-only. Module/plugin body cache uses
+`activeGenerationJobs`, `activeMessageTranslations`, optional `bodyCache`, and
+a lean database projection. If no database exists, the browser calls
+`commands/state/initialize` and refetches bootstrap read-only. Module/plugin body cache uses
 `x-risu-body-cache-manifest`, `projection_body_cache_state`, and
 `collection_body_revisions` so unchanged heavy bodies can be merged from browser
 cache instead of retransmitted.
@@ -143,7 +152,7 @@ cache. Heavy fields hydrate on demand:
 | Character lorebook when `enableLorebookStubs` is on | `GET /api/v1/projection/characterLorebook?id=...`               |
 | Many character lorebooks                            | `POST /api/v1/projection/characterLorebooks/bulk`               |
 | Inactive/selected character shell                   | `GET /api/v1/projection/characterRow?id=...`                    |
-| Prompt template collection fields                   | `GET /api/v1/projection/promptItem`, owner-keyed by selected/requested prompt preset when present |
+| Prompt template collection fields                   | `GET /api/v1/projection/promptItem`, with `parentId` for explicit prompt-preset owner hydration |
 | Bot preset body / split preset collection fields    | `GET /api/v1/projection/preset?id=...` and collection resources |
 
 Browser wrappers live in `src/ts/server/projection.ts`; hydration/cache logic
@@ -174,10 +183,14 @@ Chat generation SSE frame types are `stage`, `job_accepted`, `prompt`, `info`,
 `message_patch`, `token`, `side_effect`, `warning`, `error`, and `done`.
 `info.revision` or `done.postGeneration.revision` can advance the browser
 revision cache after server-owned persistence. Durable jobs buffer protected
-replay events with 512-event and 2 MiB caps, emit viewer heartbeat comments, and
-can persist streamed-so-far text through raw cancel/finalization retry paths.
-Bootstrap `activeGenerationJobs` exposes running durable jobs, including mode
-and regenerate message id when relevant.
+replay events (`prompt`, de-duplicated `info`, `message_patch`, `side_effect`,
+`warning`, `error`, and `done`) with 512-event and 2 MiB caps; trimming drops
+unprotected frames and stops once only protected frames remain. They emit viewer
+heartbeat comments and can persist streamed-so-far text through raw
+cancel/finalization retry paths. Bootstrap `activeGenerationJobs` exposes
+running durable jobs, including mode and regenerate message id when relevant,
+while `activeMessageTranslations` exposes in-flight detached raw-message
+translation rows.
 
 Other streaming/binary surfaces include optional completion SSE, optional Realm
 progress SSE, proxy stream WebSocket attachment, asset bytes, `.risu`/bundle

@@ -228,8 +228,11 @@ Plugins:
 - Fastify stores plugin records/storage but does not execute plugin code.
 - Plugin UI can register extra settings/menu/chat/floating controls through
   stores in `src/ts/stores.svelte.ts`.
-- Module `.risum` import is unsupported in Fastify-backed browser mode. Add a
-  server import/command route if it returns.
+- Ordinary non-MCP module `.risum` import is supported in Fastify-backed browser
+  mode: the browser decodes the module envelope, uploads embedded assets through
+  server asset helpers, and creates the module through command helpers. `.risum`
+  files containing MCP metadata are rejected; MCP module import/update remains
+  blocked until it has a dedicated command-backed route.
 
 MCP:
 

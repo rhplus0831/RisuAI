@@ -5,7 +5,7 @@ Last audited: 2026-06-25.
 This inventory was built from three read-only exploration agents plus a follow-up
 source sweep. The scan covered maintained source and current docs first
 (`STRUCTURE.md`, `src/`, `server/fastify/`, `docs/`, `src/docs/`, `util/`,
-`README.md`, and `plugins.md`) and excluded generated/runtime folders such as
+and `README.md`) and excluded generated/runtime folders such as
 `node_modules`, `dist`, `data`, `coverage`, and `test-results`.
 
 The codebase has very few literal `TODO`/`FIXME` markers. Most unfinished work is

@@ -34,7 +34,8 @@ pointer for older links. Add current frontend guidance to
 
 Other ignored local/legacy paths include root `save/`, `dist-web/`, `dist-ssr`,
 `xplugin/`, `src-others/`, `src-tauri/target/`, `src-tauri/gen/`, `build/`,
-`.wrangler/`, `.qoder/`, `.tauri/`, `.env`, `.risu-api-restart`, `dist.zip`,
+`.wrangler/`, `.qoder/`, `.tauri/`, `.codex-note/`, `.env`,
+`.risu-api-restart`, `dist.zip`,
 `Cargo.lock`, logs/debug logs, `package-lock.json`, `*.local`, editor temp
 files, Python caches, Vite timestamp files, `raise.code-workspace`, `recc.md`,
 `server/node/ssl/certificate`, and scratch files such as `memo.txt`,

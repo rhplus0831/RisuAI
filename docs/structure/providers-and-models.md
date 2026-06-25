@@ -183,9 +183,11 @@ needs, it returns either a server provider name (`routable: true`) or a stable
 unsupported reason category.
 
 Do not fork this table for chat/completion routing. Browser chat preflight and
-Fastify dispatch share it. Active durable profiles with incomplete or
-unsupported status are blocked before browser request dispatch, server-intent
-completion, `/generate/chat` SSE/job acceptance, and final server chat dispatch.
+Fastify dispatch share it; the chat preflight reaches the table through resolved
+model-profile selection and the profile's `providerCapability`. Active durable
+profiles with incomplete or unsupported status are blocked before browser
+request dispatch, server-intent completion, `/generate/chat` SSE/job
+acceptance, and final server chat dispatch.
 Server-intent completion sends shaped messages to Fastify; provider/model
 routing is resolved server-side. `effectiveGenerationConfig.ts` applies the
 full profile runtime overlay to the effective database before prompt assembly,
@@ -209,8 +211,8 @@ contract in `memoryEmbeddingModel.ts`; deadlines are bounded through
 | `src/ts/process/request/serverChatEvents.ts`     | Client-side chat SSE frame/message-patch contract types.       |
 | `src/ts/process/request/durableGeneration.ts`    | Durable send/continue/regenerate request helpers.              |
 | `src/ts/process/reattach.ts`                     | Bootstrap-driven reattach for active durable generation jobs.  |
-| `server/fastify/src/routes/generation.ts`        | Completion and preview-prompt route boundary.                  |
-| `server/fastify/src/routes/generationChat.ts`    | Server-assembled chat generation, durable job lifecycle, and chat-settings/profile guards. |
+| `server/fastify/src/routes/generation.ts`        | Completion route boundary.                                     |
+| `server/fastify/src/routes/generationChat.ts`    | Server-assembled chat generation, preview prompt, durable job lifecycle, and chat-settings/profile guards. |
 | `server/fastify/src/prompt/effectiveGenerationConfig.ts` | Chat-scoped model/prompt preset and runtime overlay application. |
 | `server/fastify/src/prompt/sseEvents.ts`         | Server-side chat SSE frame contract helpers.                   |
 
@@ -223,6 +225,12 @@ send/continue/regenerate jobs are process-local in `generationJobs.ts`, exposed
 through bootstrap `activeGenerationJobs`, reattached with
 `GET /api/v1/generate/chat/:id/stream`, and cancelled with
 `DELETE /api/v1/generate/chat/:id`.
+
+Generation finalization retries are SQLite-backed operational rows with
+target snapshots. Persistence is idempotent when the target already has the
+final output and rejects stale chat/message/scriptstate targets; retry rows move
+through pending/terminal states, and app startup runs an immediate sweep plus a
+default 5s interval that also prunes retained terminal rows.
 
 Server chat assembly applies the effective profile-bound model and runtime
 overlay before prompt budgeting and provider dispatch. Chat-scoped generation

@@ -512,7 +512,7 @@ await risuai.addTTSPostprocessor(async (ctx) => {
 })
 ```
 
-Sequential pipeline with error isolation, no enforced timeout (same trust model as `addRisuScriptHandler`), no permission prompt, auto-unregister on plugin unload. See `plugins.md` (Advanced Features → TTS Hooks) for the full reference.
+Sequential pipeline with error isolation, no enforced timeout (same trust model as `addRisuScriptHandler`), no permission prompt, auto-unregister on plugin unload. The API declarations in `src/ts/plugins/apiV3/risuai.d.ts` are the current reference.
 
 ### Security Model
 

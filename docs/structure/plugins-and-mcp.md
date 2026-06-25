@@ -108,13 +108,18 @@ MCP URLs or additional runtime MCP lists.
 
 `internal:risuai` is always available as a call-only client. Risu access write
 tools ask for user confirmation and dispatch command-backed writes where
-Fastify mode supports them.
+Fastify mode supports them. Current Fastify-backed writes cover character info,
+character lorebooks, character regex scripts, character Lua triggers, module
+info, module lorebooks, module regex scripts, and module Lua triggers; character
+additional asset reference edits still return an unsupported Fastify-mode
+response.
 
 ## Fastify-Mode Limits
 
-MCP module import is currently blocked in Fastify server-backed mode. This does
-not block ordinary `.risum` module import: non-MCP `.risum` files are decoded in
-the browser, have embedded assets uploaded through server asset helpers, and are
+MCP module import is currently blocked in Fastify server-backed mode, and
+command-based stdio MCPs are not supported in the browser runtime. This does not
+block ordinary `.risum` module import: non-MCP `.risum` files are decoded in the
+browser, have embedded assets uploaded through server asset helpers, and are
 created through command-backed module helpers. The `.risum` path rejects module
 metadata containing `mcp` before asset upload or optimistic module creation, and
 server validators still intentionally disallow `mcp` records in generic module
