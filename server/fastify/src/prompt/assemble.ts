@@ -92,6 +92,7 @@ import { tokenizerOptionsFromDb } from './tokenizerConfig.js'
 import { isRisuChatParserFixedPoint } from './parserFixedPoint.js'
 import { bumpAssemblyCbsHistoryGeneration, createAssemblyCbsCallbackMemo } from './cbsCallbackMemo.js'
 import { buildEffectiveGenerationConfig } from './effectiveGenerationConfig.js'
+import { summarizePromptRows, type PromptRowsSummary } from './promptSummary.js'
 
 /**
  * Root prompt assembly entry point.
@@ -317,6 +318,8 @@ export interface AssembleResult {
   prompt?: Omit<PromptEvent, 'type'>
   /** The budgeted flat prompt (full `OpenAIChat` rows) for dispatch. */
   formated?: OpenAIChat[]
+  /** Metadata-only deterministic summary/hash of the budgeted dispatch rows. */
+  promptSummary?: PromptRowsSummary
   /** Final input token count from `finalizeRequestBudget`. */
   inputTokens?: number
   /** Clamped response budget from `finalizeRequestBudget`. */
@@ -388,6 +391,7 @@ export interface AssemblyState {
   modelPresetId?: string
   promptPresetId?: string
   loadoutId?: string
+  activeModuleIds?: string[]
   // --- Lorebook placement + token preflight (set by `fillLorebookSlots`) ---
   /** The lorebook activation report (entries that fired + why). */
   report?: LorebookActivationReport
@@ -443,6 +447,8 @@ export interface AssemblyState {
   // --- Final render + budget (set by `renderAndBudget`) ---
   /** The budgeted flat prompt for dispatch. */
   formated?: OpenAIChat[]
+  /** Metadata-only deterministic summary/hash of the budgeted dispatch rows. */
+  promptSummary?: PromptRowsSummary
   /** Template-path prompt-info rows (`renderFinalPrompt.promptText`). */
   promptText?: OpenAIChat[]
   /** Final input token count from `finalizeRequestBudget`. */
@@ -569,6 +575,7 @@ export function beginAssembly(input: AssembleInput, deps: AssembleDeps): Assembl
   const formatOrder = buildFormatOrder(database)
   const stableCardCache = createStableCardRenderCache()
   const initialMessages = cloneMessages(currentChat.message ?? [], 'initialMessages')
+  const activeModuleIds = getActiveModules(database, currentChar, currentChat).map((module) => module.id)
 
   return {
     input,
@@ -590,6 +597,7 @@ export function beginAssembly(input: AssembleInput, deps: AssembleDeps): Assembl
     modelPresetId: currentChat.generationSettings?.modelPresetId,
     promptPresetId: currentChat.generationSettings?.promptPresetId,
     loadoutId: input.loadoutId,
+    activeModuleIds,
     initialMessages,
     messageMutationCheckpoint: initialMessages,
     initialScriptstate: cloneScriptstate(currentChat.scriptstate),
@@ -1691,6 +1699,7 @@ export async function renderAndBudget(state: AssemblyState): Promise<void> {
   }
 
   state.formated = budget.formated
+  state.promptSummary = summarizePromptRows(budget.formated)
   state.inputTokens = budget.inputTokens
   state.outputTokens = budget.outputTokens
 }
@@ -1773,6 +1782,7 @@ export async function assemblePrompt(input: AssembleInput, deps: AssembleDeps): 
       stopSending: true,
       abortReason: state.abortReason ?? 'trigger_stop',
       inputTokens: state.inputTokens,
+      promptSummary: state.promptSummary,
       mutations: buildMutationPayload(state),
       restoration: buildRestorationPayload(state),
       submitMessages: state.submitMessages,
@@ -1781,6 +1791,7 @@ export async function assemblePrompt(input: AssembleInput, deps: AssembleDeps): 
   }
 
   const formated = state.formated ?? []
+  const promptSummary = state.promptSummary ?? summarizePromptRows(formated)
   return {
     stopSending: false,
     prompt: {
@@ -1796,6 +1807,7 @@ export async function assemblePrompt(input: AssembleInput, deps: AssembleDeps): 
       formated,
     },
     formated,
+    promptSummary,
     inputTokens: state.inputTokens,
     outputTokens: state.outputTokens,
     mutations: buildMutationPayload(state),

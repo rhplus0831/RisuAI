@@ -3,7 +3,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { createHash, randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
 import type { Database, Message } from '../../../../src/ts/storage/database.svelte'
-import type { MultiModal } from '../../../../src/ts/process/index.svelte'
+import type { MultiModal, OpenAIChat } from '../../../../src/ts/process/index.svelte'
 import type { CompletionStreamFrame } from '../generation/frames.js'
 import type { AuthState } from '../auth.js'
 import { getSchemaState } from '../db.js'
@@ -51,6 +51,7 @@ import {
 } from '../messageStore.js'
 import { dispatchChatProvider, getServerGenerationModelString } from '../prompt/chatDispatch.js'
 import { emitProviderChunks } from '../prompt/providerTransport.js'
+import { promptSummaryMetricFields, summarizePromptRows, type PromptRowsSummary } from '../prompt/promptSummary.js'
 import {
   formatPromptChatFrame,
   type PostGenerationFrame,
@@ -503,6 +504,7 @@ async function assemblePromptWithMetrics(
       databaseLoadCount: measurement?.databaseLoadCount ?? 0,
       databaseLoadMs: Math.round((measurement?.databaseLoadMs ?? 0) * 100) / 100,
       stageTimingsMs: measurement?.stageTimingsMs ?? {},
+      ...assemblyDiagnosticMetricFields(result),
       ...(result.stopSending ? { stopReason: result.abortReason ?? 'unknown' } : {}),
     })
     return { result, deps, promptMs }
@@ -690,6 +692,83 @@ function readStringHeader(req: FastifyRequest, headerName: string): string | und
   const raw = req.headers[headerName.toLowerCase()]
   const value = Array.isArray(raw) ? raw[0] : raw
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined
+}
+
+function hashStrings(values: readonly string[]): string | undefined {
+  if (values.length === 0) return undefined
+  return createHash('sha256').update(JSON.stringify(values), 'utf8').digest('hex')
+}
+
+function assemblyDiagnosticMetricFields(result: AssembleResult): Record<string, unknown> {
+  const mutations = result.mutations
+  const loreSources = result.state?.report?.actives?.map((entry) => entry.source) ?? []
+  const activeModuleIds = result.state?.activeModuleIds ?? []
+  return {
+    ...promptSummaryMetricFields(result.promptSummary),
+    inputTokens: result.inputTokens,
+    outputTokens: result.outputTokens,
+    modelPresetId: result.state?.modelPresetId,
+    promptPresetId: result.state?.promptPresetId,
+    loadoutId: result.state?.loadoutId ?? result.state?.input.loadoutId,
+    activeModuleCount: activeModuleIds.length,
+    activeModuleIds,
+    lorebookActivationCount: result.state?.report?.actives?.length ?? 0,
+    lorebookActivationSourceCount: loreSources.length,
+    lorebookActivationSourceHashes: loreSources.map((source) =>
+      createHash('sha256').update(source, 'utf8').digest('hex'),
+    ),
+    lorebookActivationSourcesSha256: hashStrings(loreSources),
+    messageMutationCount: mutations?.messageMutations.length ?? 0,
+    chatVarMutationCount: mutations?.chatVarMutations.length ?? 0,
+    additionalSystemPromptMutationCount: mutations?.additionalSystemPrompt.length ?? 0,
+    varChanged: mutations?.varChanged ?? false,
+    submitTranscriptChanged: result.submitTranscriptChanged ?? false,
+  }
+}
+
+function promptEventBooleanFields(promptEvent: Omit<PromptEvent, 'type'>): Record<string, boolean> {
+  const event = promptEvent as Omit<PromptEvent, 'type'> & Record<string, unknown>
+  return {
+    promptEventHasFormated: Array.isArray(event.formated),
+    promptEventHasMessages: Array.isArray(event.messages),
+    promptEventHasLorebookActivation: event.lorebookActivation !== undefined,
+    promptEventHasPromptInfo: event.promptInfo !== undefined,
+  }
+}
+
+function emitGenerationPromptEmissionMetric(args: {
+  metricContext: PromptAssemblyMetricContext
+  input: AssembleInput
+  promptEvent: Omit<PromptEvent, 'type'>
+  promptSummary?: PromptRowsSummary
+  generationId: string
+  durableJobId?: string
+  durable: boolean
+  compactPromptEvent: boolean
+  shouldDispatch: boolean
+  revision?: number
+}): void {
+  const eventSummary =
+    args.promptSummary ??
+    (Array.isArray((args.promptEvent as Record<string, unknown>).formated)
+      ? summarizePromptRows((args.promptEvent as { formated: OpenAIChat[] }).formated)
+      : undefined)
+  emitProtocolMetric('generation_prompt_emission', {
+    status: 'ok',
+    ...args.metricContext,
+    chatId: args.input.chatId,
+    characterId: args.input.characterId,
+    mode: args.input.mode,
+    generationId: args.generationId,
+    durableJobId: args.durableJobId,
+    durable: args.durable,
+    compactPromptEvent: args.compactPromptEvent,
+    shouldDispatch: args.shouldDispatch,
+    revision: args.revision,
+    persistedRevision: args.revision,
+    ...promptSummaryMetricFields(eventSummary),
+    ...promptEventBooleanFields(args.promptEvent),
+  })
 }
 
 function createPromptAssemblyMetricContext(args: {
@@ -1301,7 +1380,19 @@ async function streamAssembly(
           shouldDispatch && database
             ? createGenerationInfo(database, generationId, successfulResult, promptMs)
             : undefined
-        emit({ type: 'prompt', ...promptEventForClient(result.prompt, clientCapabilities, input.mode) })
+        const promptEvent = promptEventForClient(result.prompt, clientCapabilities, input.mode)
+        emitGenerationPromptEmissionMetric({
+          metricContext,
+          input,
+          promptEvent,
+          promptSummary: result.promptSummary,
+          generationId,
+          durable: false,
+          compactPromptEvent: clientCapabilities.compactPromptEvent,
+          shouldDispatch,
+          revision: persistedRevision,
+        })
+        emit({ type: 'prompt', ...promptEvent })
         if (result.mutations) {
           emit({ type: 'message_patch', patch: messagePatchForClient(result.mutations, clientCapabilities) })
         }
@@ -2174,7 +2265,20 @@ async function runGenerationJob(args: {
           shouldDispatch && database
             ? createGenerationInfo(database, generationId, successfulResult, promptMs)
             : undefined
-        emit({ type: 'prompt', ...promptEventForClient(result.prompt, clientCapabilities, input.mode) })
+        const promptEvent = promptEventForClient(result.prompt, clientCapabilities, input.mode)
+        emitGenerationPromptEmissionMetric({
+          metricContext,
+          input,
+          promptEvent,
+          promptSummary: result.promptSummary,
+          generationId,
+          durableJobId: job.id,
+          durable: true,
+          compactPromptEvent: clientCapabilities.compactPromptEvent,
+          shouldDispatch,
+          revision: persistedRevision,
+        })
+        emit({ type: 'prompt', ...promptEvent })
         if (result.mutations) {
           emit({ type: 'message_patch', patch: messagePatchForClient(result.mutations, clientCapabilities) })
         }

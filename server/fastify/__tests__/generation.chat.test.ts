@@ -26,6 +26,7 @@ import {
 import { expectNoSuccessDoneAfterAbort, parseEvents, type PromptChatFrame } from './helpers/terminalFrameAssertions.js'
 import { getChatMessageDiffInstrumentation, resetChatMessageDiffInstrumentation } from '../src/messageStore.js'
 import { emitProviderChunks } from '../src/prompt/providerTransport.js'
+import { summarizePromptRows, type PromptRowSummary } from '../src/prompt/promptSummary.js'
 import type { PromptChatEvent } from '../src/prompt/sseEvents.js'
 
 const subtle = webcrypto.subtle
@@ -317,6 +318,32 @@ interface ProtocolMetric {
   completionSha256?: string
   error?: string
   source?: string
+  promptHash?: string
+  promptRowCount?: number
+  promptRoleSequence?: string
+  promptRows?: PromptRowSummary[]
+  promptContentBytes?: number
+  promptContentChars?: number
+  promptMultimodalCount?: number
+  promptMultimodalBase64Bytes?: number
+  inputTokens?: number
+  outputTokens?: number
+  modelPresetId?: string
+  promptPresetId?: string
+  activeModuleCount?: number
+  activeModuleIds?: string[]
+  lorebookActivationCount?: number
+  lorebookActivationSourceCount?: number
+  messageMutationCount?: number
+  additionalSystemPromptMutationCount?: number
+  varChanged?: boolean
+  submitTranscriptChanged?: boolean
+  persistedRevision?: number
+  shouldDispatch?: boolean
+  promptEventHasFormated?: boolean
+  promptEventHasMessages?: boolean
+  promptEventHasLorebookActivation?: boolean
+  promptEventHasPromptInfo?: boolean
 }
 
 const EXPECTED_PROMPT_ASSEMBLY_STAGES = [
@@ -1118,11 +1145,12 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     await seedDatabase(harness.app, assertion, db)
 
     await withProtocolMetrics(async (metrics) => {
+      const sentinel = 'slice-2-secret-route-prompt'
       const res = await harness.app.inject({
         method: 'POST',
         url: '/api/v1/generate/chat',
         headers: { 'risu-auth': assertion, 'x-risu-caller': 'chat-generate' },
-        payload: { ...basePayload, expectedRevision: 1, inlayAssets: [], inlayAssetRefs: [] },
+        payload: { ...basePayload, userMessage: sentinel, expectedRevision: 1, inlayAssets: [], inlayAssetRefs: [] },
       })
       expect(res.statusCode).toBe(200)
 
@@ -1139,12 +1167,57 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
         durable: false,
         compactPromptEvent: false,
         databaseLoadCount: 1,
+        promptRowCount: expect.any(Number),
+        promptRows: expect.any(Array),
+        promptHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+        inputTokens: expect.any(Number),
+        outputTokens: 50,
+        modelPresetId: DEFAULT_TEST_MODEL_PRESET_ID,
+        promptPresetId: DEFAULT_TEST_PROMPT_PRESET_ID,
+        activeModuleCount: 0,
+        lorebookActivationCount: 0,
+        messageMutationCount: 1,
+        chatVarMutationCount: 1,
+        additionalSystemPromptMutationCount: 0,
+        varChanged: true,
       })
       expect(typeof assembly?.requestId).toBe('string')
       expect(assembly?.durationMs).toBeGreaterThanOrEqual(0)
       expect(assembly?.promptMs).toBeGreaterThanOrEqual(0)
       expect(assembly?.databaseLoadMs).toBeGreaterThanOrEqual(0)
       expectPromptAssemblyStageTimings(assembly)
+
+      const emission = metrics.find((entry) => entry.metric === 'generation_prompt_emission')
+      expect(emission).toMatchObject({
+        status: 'ok',
+        chatId: 'chat-1',
+        characterId: 'char-1',
+        mode: 'send',
+        durable: false,
+        compactPromptEvent: false,
+        shouldDispatch: true,
+        revision: 2,
+        persistedRevision: 2,
+        promptHash: assembly?.promptHash,
+        promptRowCount: assembly?.promptRowCount,
+        promptRoleSequence: assembly?.promptRoleSequence,
+        promptRows: assembly?.promptRows,
+        promptEventHasFormated: true,
+        promptEventHasMessages: true,
+        promptEventHasLorebookActivation: true,
+        promptEventHasPromptInfo: true,
+      })
+
+      const prompt = parseEvents(res.body).find((event) => event.type === 'prompt')
+      expect(Array.isArray(prompt?.data.formated)).toBe(true)
+      const emittedSummary = summarizePromptRows(prompt!.data.formated as never)
+      expect(emittedSummary.promptHash).toBe(assembly?.promptHash)
+      expect(emittedSummary.promptHash).toBe(emission?.promptHash)
+      expect(emittedSummary.rows).toEqual(assembly?.promptRows)
+      expect(emittedSummary.rows).toEqual(emission?.promptRows)
+
+      const metricsJson = JSON.stringify(metrics)
+      expect(metricsJson).not.toContain(sentinel)
 
       const persistence = metrics.find((entry) => entry.metric === 'generation_assembly_persistence')
       expect(persistence).toMatchObject({
@@ -1350,10 +1423,28 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
         xRisuCaller: 'chat-generate',
         durable: true,
         databaseLoadCount: 1,
+        promptHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+        promptRows: expect.any(Array),
       })
       expect(typeof durableAssembly?.generationId).toBe('string')
       expect(durableAssembly?.durableJobId).toBe(durableAssembly?.generationId)
       expectPromptAssemblyStageTimings(durableAssembly)
+      const durableEmission = durable.find((entry) => entry.metric === 'generation_prompt_emission')
+      expect(durableEmission).toMatchObject({
+        status: 'ok',
+        chatId: 'chat-1',
+        characterId: 'char-1',
+        mode: 'send',
+        xRisuCaller: 'chat-generate',
+        durable: true,
+        durableJobId: durableAssembly?.durableJobId,
+        generationId: durableAssembly?.generationId,
+        promptHash: durableAssembly?.promptHash,
+        promptRowCount: durableAssembly?.promptRowCount,
+        promptRoleSequence: durableAssembly?.promptRoleSequence,
+        promptRows: durableAssembly?.promptRows,
+        shouldDispatch: true,
+      })
       expect(durable.find((entry) => entry.metric === 'generation_assembly_persistence')).toMatchObject({
         status: 'skipped',
         mode: 'send',

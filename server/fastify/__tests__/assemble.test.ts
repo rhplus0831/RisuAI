@@ -54,6 +54,7 @@ import {
   resetHypaV3PrefixTokenMemoForTests,
 } from '../src/prompt/prefixTokenMemo.js'
 import { getPromptAssetTableInstrumentation, resetPromptAssetTableInstrumentation } from '../src/prompt/promptAssets.js'
+import { promptSummaryMetricFields, summarizePromptRows } from '../src/prompt/promptSummary.js'
 import { getTriggerCloneInstrumentation, resetTriggerCloneInstrumentation } from '../src/prompt/triggers.js'
 import { LLMFlags } from '../../../src/ts/model/types'
 
@@ -231,6 +232,99 @@ function expectIncompleteAssembly(
   }
   throw new Error('Expected ChatGenerationSettingsIncompleteAssemblyError')
 }
+
+describe('prompt summary hashes', () => {
+  it('produces a stable metadata-only summary without raw prompt strings', () => {
+    const rows: OpenAIChat[] = [
+      {
+        role: 'system',
+        content: 'slice-2-secret-content',
+        name: 'slice-2-secret-name',
+        memo: 'slice-2-secret-memo',
+        attr: ['slice-2-secret-attr'],
+        thoughts: ['slice-2-secret-thought'],
+        removable: true,
+        cachePoint: true,
+        multimodals: [
+          {
+            type: 'image',
+            width: 64,
+            height: 32,
+            base64: 'slice-2-secret-base64',
+          },
+        ],
+      },
+      { role: 'user', content: { nested: 'slice-2-secret-object' } as unknown as string },
+    ]
+
+    const first = summarizePromptRows(rows)
+    const second = summarizePromptRows(structuredClone(rows))
+
+    expect(second).toEqual(first)
+    expect(first.promptHash).toMatch(/^[a-f0-9]{64}$/)
+    const metricFields = promptSummaryMetricFields(first)
+    expect(metricFields).toMatchObject({
+      promptHash: first.promptHash,
+      promptRowCount: first.rowCount,
+      promptRows: first.rows,
+    })
+    const json = JSON.stringify({ first, metricFields })
+    for (const sentinel of [
+      'slice-2-secret-content',
+      'slice-2-secret-name',
+      'slice-2-secret-memo',
+      'slice-2-secret-attr',
+      'slice-2-secret-thought',
+      'slice-2-secret-base64',
+      'slice-2-secret-object',
+    ]) {
+      expect(json).not.toContain(sentinel)
+    }
+  })
+
+  it('changes the hash for content, name, memo, cachePoint, and multimodal metadata changes', () => {
+    const base: OpenAIChat[] = [
+      {
+        role: 'user',
+        content: 'base prompt',
+        name: 'base-name',
+        memo: 'base-memo',
+        cachePoint: true,
+        multimodals: [{ type: 'image', width: 4, height: 5, base64: 'base64-a' }],
+      },
+    ]
+    const baseHash = summarizePromptRows(base).promptHash
+    const cases: Array<[string, OpenAIChat[]]> = [
+      ['content', [{ ...base[0], content: 'changed prompt' }]],
+      ['name', [{ ...base[0], name: 'changed-name' }]],
+      ['memo', [{ ...base[0], memo: 'changed-memo' }]],
+      ['cachePoint', [{ ...base[0], cachePoint: false }]],
+      ['multimodal', [{ ...base[0], multimodals: [{ type: 'image', width: 6, height: 5, base64: 'base64-b' }] }]],
+    ]
+
+    for (const [label, rows] of cases) {
+      expect(summarizePromptRows(rows).promptHash, label).not.toBe(baseHash)
+    }
+  })
+
+  it('attaches the final budgeted prompt summary to assembly results', async () => {
+    const db = makeDatabase({
+      maxContext: 100_000,
+      maxResponse: 50,
+      mainPrompt: 'assembly summary main',
+      characters: [
+        makeCharacter({
+          chats: [makeChat({ id: 'chat-1', message: [{ role: 'user', data: 'history row' }] as Message[] })],
+        }),
+      ],
+    })
+
+    const result = await assemblePrompt(baseInput({ userMessage: 'assembly summary user' }), depsFor(db))
+
+    expect(result.stopSending).toBe(false)
+    expect(result.promptSummary).toEqual(summarizePromptRows(result.formated ?? []))
+  })
+})
 
 describe('Phase 7 L1 async asset reads', () => {
   it('L1: repeated asset prompt refs share one async stored-asset read during assembly', async () => {

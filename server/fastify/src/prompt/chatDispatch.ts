@@ -28,6 +28,8 @@ import {
   resolveProfileRequestModel,
   type ResolvedModelProfile,
 } from '../../../../src/ts/model/modelProfileResolver.js'
+import { emitProtocolMetric } from '../protocolMetrics.js'
+import { promptSummaryMetricFields, summarizePromptRows } from './promptSummary.js'
 
 interface ChatDispatchArgs {
   database: Database
@@ -798,7 +800,30 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
   const provider = route.provider
 
   const model = resolveProviderModel(db, info, provider, profile)
+  const preSummary = summarizePromptRows(args.formated)
   const messages = reformatMessages(db, args.formated, info.flags)
+  const postSummary = summarizePromptRows(messages)
+  emitProtocolMetric('generation_prompt_dispatch_reformat', {
+    provider,
+    modelId: profile.modelId,
+    wireModel: model,
+    profileId: profile.profileId,
+    profileSourceKind: profile.source.kind,
+    profileSourceField: profile.source.field,
+    profileSourceProfileId: profile.source.profileId,
+    profileProviderId: profile.status.providerId,
+    profileProviderIdSource: profile.status.providerIdSource,
+    modelInfoId: info.id,
+    modelInfoInternalId: info.internalID,
+    modelInfoFormat: info.format,
+    modelInfoFlags: info.flags,
+    ...promptSummaryMetricFields(preSummary, 'prePrompt'),
+    ...promptSummaryMetricFields(postSummary, 'postPrompt'),
+    promptReformatted: preSummary.promptHash !== postSummary.promptHash,
+    promptRowCountChanged: preSummary.rowCount !== postSummary.rowCount,
+    promptRoleSequenceChanged: preSummary.roleSequence.join(',') !== postSummary.roleSequence.join(','),
+    promptReferenceChanged: messages !== args.formated,
+  })
   const maxTokens = outputTokens ?? db.maxResponse
   const temperature = normalizeDispatchSampler(db.temperature, { scale: 100 })
   const stream = db.useStreaming === true

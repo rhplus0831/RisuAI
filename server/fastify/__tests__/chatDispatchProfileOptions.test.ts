@@ -13,12 +13,37 @@ import type { OpenAIChat } from '../../../src/ts/process/index.svelte'
 import type { Database } from '../../../src/ts/storage/database.svelte'
 import { _resetVertexTokenCacheForTesting } from '../src/generation/vertexAuth.js'
 import { dispatchChatProvider } from '../src/prompt/chatDispatch.js'
+import type { PromptRowSummary } from '../src/prompt/promptSummary.js'
 
 interface CapturedDispatchRequest {
   url: string
   headers: Record<string, string>
   body: Record<string, unknown>
   rawBody: string
+}
+
+interface ProtocolMetric {
+  metric: string
+  provider?: string
+  modelId?: string
+  wireModel?: string
+  profileId?: string
+  profileSourceKind?: string
+  profileProviderId?: string
+  modelInfoFormat?: number
+  modelInfoFlags?: number[]
+  prePromptHash?: string
+  prePromptRowCount?: number
+  prePromptRoleSequence?: string
+  prePromptRows?: PromptRowSummary[]
+  postPromptHash?: string
+  postPromptRowCount?: number
+  postPromptRoleSequence?: string
+  postPromptRows?: PromptRowSummary[]
+  promptReformatted?: boolean
+  promptRowCountChanged?: boolean
+  promptRoleSequenceChanged?: boolean
+  promptReferenceChanged?: boolean
 }
 
 function db(overrides: Partial<Database> = {}): Database {
@@ -154,6 +179,26 @@ function captureOpenAIRequests(): CapturedDispatchRequest[] {
   return captureDispatchRequests(okOpenAIResponse())
 }
 
+async function withProtocolMetrics<T>(run: (metrics: ProtocolMetric[]) => Promise<T>): Promise<T> {
+  const previous = process.env.RISU_PROTOCOL_METRICS
+  const metrics: ProtocolMetric[] = []
+  process.env.RISU_PROTOCOL_METRICS = '1'
+  const infoSpy = vi.spyOn(console, 'info').mockImplementation((message: unknown) => {
+    if (typeof message !== 'string' || !message.startsWith('[protocol-metric] ')) return
+    metrics.push(JSON.parse(message.slice('[protocol-metric] '.length)) as ProtocolMetric)
+  })
+  try {
+    return await run(metrics)
+  } finally {
+    infoSpy.mockRestore()
+    if (previous === undefined) {
+      delete process.env.RISU_PROTOCOL_METRICS
+    } else {
+      process.env.RISU_PROTOCOL_METRICS = previous
+    }
+  }
+}
+
 function captureHordeRequests(text = 'profile ok'): CapturedDispatchRequest[] {
   const captured: CapturedDispatchRequest[] = []
   vi.stubGlobal(
@@ -258,6 +303,62 @@ afterEach(() => {
 })
 
 describe('dispatchChatProvider profile providerOptions', () => {
+  it('emits metadata-only prompt reformat metrics when provider flags change rows', async () => {
+    const profile = resolveModelProfile({
+      database: db({
+        aiModel: 'gemini-2.5-flash',
+        google: { accessToken: 'profile-google-key', projectId: 'profile-project' },
+      } as Partial<Database>),
+      lookupModelInfo: (_database, id) =>
+        geminiModelInfo({
+          id,
+          internalID: 'models/gemini-profile-wire-model',
+          provider: LLMProvider.GoogleCloud,
+          format: LLMFormat.GoogleCloud,
+        }),
+    })
+    const database = db({
+      aiModel: 'gemini-2.5-flash',
+      google: { accessToken: 'profile-google-key', projectId: 'profile-project' },
+    } as Partial<Database>)
+    const formated: OpenAIChat[] = [
+      { role: 'system', content: 'slice-2-secret-dispatch-system' },
+      { role: 'user', content: 'slice-2-secret-dispatch-user-a' },
+      { role: 'user', content: 'slice-2-secret-dispatch-user-b' },
+    ]
+    captureDispatchRequests(okGeminiResponse())
+
+    await withProtocolMetrics(async (metrics) => {
+      await dispatchWithProfile(profile, database, formated)
+
+      const metric = metrics.find((entry) => entry.metric === 'generation_prompt_dispatch_reformat')
+      expect(metric).toMatchObject({
+        provider: 'gemini',
+        modelId: 'gemini-2.5-flash',
+        wireModel: 'gemini-profile-wire-model',
+        profileId: expect.any(String),
+        profileSourceKind: 'legacy-aiModel',
+        modelInfoFormat: LLMFormat.GoogleCloud,
+        prePromptRowCount: 3,
+        prePromptRoleSequence: 'system,user,user',
+        prePromptRows: expect.any(Array),
+        postPromptRowCount: 2,
+        postPromptRoleSequence: 'system,user',
+        postPromptRows: expect.any(Array),
+        promptReformatted: true,
+        promptRowCountChanged: true,
+        promptRoleSequenceChanged: true,
+        promptReferenceChanged: true,
+      })
+      expect(metric?.prePromptHash).toMatch(/^[a-f0-9]{64}$/)
+      expect(metric?.postPromptHash).toMatch(/^[a-f0-9]{64}$/)
+      expect(metric?.prePromptHash).not.toBe(metric?.postPromptHash)
+      expect(metric?.prePromptRows).toHaveLength(3)
+      expect(metric?.postPromptRows).toHaveLength(2)
+      expect(JSON.stringify(metrics)).not.toContain('slice-2-secret-dispatch')
+    })
+  })
+
   it('uses a selected durable profile API key for outbound OpenRouter authorization', async () => {
     const profile = resolveModelProfile({
       database: db({
