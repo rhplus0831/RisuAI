@@ -31,6 +31,7 @@ import type { requestDataResponse, StreamResponseChunk } from './request'
 const CHAT_ENDPOINT = '/api/v1/generate/chat'
 const INCOMPLETE_CHAT_GENERATION_SETTINGS_ERROR = 'chat_generation_settings_incomplete'
 const HUMAN_REASON_ERROR_CODES = new Set(['generation_in_progress', 'generation_job_not_found'])
+const REQUEST_UID_HEADER = 'X-Request-UID'
 const SERVER_CHAT_CLIENT_CAPABILITIES = {
   compactPromptEvent: true,
 } as const
@@ -127,6 +128,26 @@ function httpErrorReason(body: { error?: unknown; message?: unknown; reason?: un
   return null
 }
 
+function serverChatCaller(input: ServerChatInput): 'chat-generate' | 'preview-prompt' {
+  return input.mode === 'preview_prompt' ? 'preview-prompt' : 'chat-generate'
+}
+
+function protocolDebugEnabled(): boolean {
+  try {
+    return (
+      typeof localStorage !== 'undefined' &&
+      (localStorage.getItem('risu:protocol-debug') === '1' || localStorage.getItem('risu:protocol-debug') === 'true')
+    )
+  } catch {
+    return false
+  }
+}
+
+function debugServerChat(event: string, details: Record<string, unknown>): void {
+  if (!protocolDebugEnabled()) return
+  console.debug('[risu:protocol]', event, details)
+}
+
 function errorMessageFromEvent(data: Record<string, unknown>, fallback: string): string {
   const error = nonEmptyString(data.error) ? data.error : fallback
   const details: string[] = []
@@ -162,12 +183,19 @@ export async function cancelServerChatGeneration(generationId: string): Promise<
   if (!generationId) return
   const auth = await getNodeServerProxyAuth()
   try {
-    await fetch(`${CHAT_ENDPOINT}/${encodeURIComponent(generationId)}`, {
+    const response = await fetch(`${CHAT_ENDPOINT}/${encodeURIComponent(generationId)}`, {
       method: 'DELETE',
       headers: {
         'risu-auth': auth,
+        'x-risu-caller': 'chat-cancel',
         ...activeWriterSessionHeader(),
       },
+    })
+    const requestUid = response.headers.get(REQUEST_UID_HEADER) || undefined
+    debugServerChat('server-chat-cancel-response', {
+      requestUid,
+      status: response.status,
+      ok: response.ok,
     })
   } catch {
     // best-effort cancel
@@ -178,7 +206,11 @@ async function openChatResponse(
   input: ServerChatInput,
   signal: AbortSignal | null,
   reattachJobId?: string,
-): Promise<{ status: 'ok'; response: Response } | { status: 'error'; error: string } | { status: 'aborted' }> {
+): Promise<
+  | { status: 'ok'; response: Response; requestUid?: string }
+  | { status: 'error'; error: string; requestUid?: string }
+  | { status: 'aborted' }
+> {
   const auth = await getNodeServerProxyAuth()
 
   let response: Response
@@ -190,6 +222,7 @@ async function openChatResponse(
           method: 'GET',
           headers: {
             'risu-auth': auth,
+            'x-risu-caller': 'chat-reattach',
             ...activeWriterSessionHeader(),
           },
           signal: signal ?? undefined,
@@ -199,6 +232,7 @@ async function openChatResponse(
           headers: {
             'content-type': 'application/json',
             'risu-auth': auth,
+            'x-risu-caller': serverChatCaller(input),
             ...activeWriterSessionHeader(),
           },
           body: JSON.stringify({
@@ -212,6 +246,13 @@ async function openChatResponse(
     const msg = err instanceof Error ? err.message : String(err)
     return { status: 'error', error: `Network error: ${msg}` }
   }
+  const requestUid = response.headers.get(REQUEST_UID_HEADER) || undefined
+  debugServerChat('server-chat-response-opened', {
+    requestUid,
+    caller: reattachJobId ? 'chat-reattach' : serverChatCaller(input),
+    status: response.status,
+    ok: response.ok,
+  })
 
   if (!response.ok) {
     const statusText = response.statusText.trim()
@@ -227,14 +268,17 @@ async function openChatResponse(
       // ignore parse failure
     }
     handleActiveWriterStaleResponse(response)
-    return { status: 'error', error: reason }
+    debugServerChat('server-chat-response-error', { requestUid, status: response.status, error: reason })
+    return { status: 'error', error: reason, requestUid }
   }
 
   if (!response.body) {
-    return { status: 'error', error: 'Server did not return a streaming response body.' }
+    const error = 'Server did not return a streaming response body.'
+    debugServerChat('server-chat-response-error', { requestUid, status: response.status, error })
+    return { status: 'error', error, requestUid }
   }
 
-  return { status: 'ok', response }
+  return { status: 'ok', response, requestUid }
 }
 
 /**
@@ -441,6 +485,10 @@ export async function requestServerChatGeneration(
             switch (frame.event) {
               case 'job_accepted':
                 if (typeof data.jobId === 'string') durableJobId = data.jobId
+                debugServerChat('server-chat-job-accepted', {
+                  requestUid: opened.requestUid,
+                  jobId: durableJobId,
+                })
                 break
               case 'prompt':
                 prompt = data as unknown as ServerChatPrompt
@@ -465,6 +513,11 @@ export async function requestServerChatGeneration(
                 if (typeof data.message === 'string') {
                   const warning = data as unknown as ServerChatWarning
                   warnings.push(warning)
+                  debugServerChat('server-chat-warning', {
+                    requestUid: opened.requestUid,
+                    message: warning.message,
+                    context: warning.context,
+                  })
                   console.warn(`Server chat warning: ${warning.message}`, warning.context ?? '')
                 }
                 break

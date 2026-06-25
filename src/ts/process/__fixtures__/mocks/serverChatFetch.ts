@@ -19,6 +19,7 @@ export interface ServerChatCall {
   method: string
   authHeader: string | null
   writerHeader: string | null
+  callerHeader: string | null
   chatId: string
   characterId: string
   mode: string
@@ -103,6 +104,16 @@ export function resetServerChatState(): void {
 
 export function getServerChatCalls(): ServerChatCall[] {
   return state.calls
+}
+
+function readHeader(headers: HeadersInit | undefined, name: string): string | null {
+  if (!headers) return null
+  if (headers instanceof Headers) return headers.get(name)
+  if (Array.isArray(headers)) {
+    const found = headers.find(([key]) => key.toLowerCase() === name.toLowerCase())
+    return found?.[1] ?? null
+  }
+  return headers[name] ?? headers[name.toLowerCase()] ?? null
 }
 
 export function setServerChatPrompt(
@@ -292,22 +303,25 @@ export async function serverChatFetch(input: RequestInfo | URL, init?: RequestIn
       },
     )
   }
-  if (!url.endsWith('/api/v1/generate/chat')) {
+  const isChatPost = url.endsWith('/api/v1/generate/chat')
+  const isChatJobRoute = /\/api\/v1\/generate\/chat\/[^/]+(?:\/stream)?$/.test(url)
+  if (!isChatPost && !isChatJobRoute) {
     throw new Error(`unexpected fetch in dual-mode assembly fixture: ${url}`)
   }
 
   const method = init?.method ?? 'POST'
-  const headers = init?.headers as Record<string, string> | undefined
-  const auth = headers?.['risu-auth'] ?? null
-  const writer = headers?.['risu-writer-session'] ?? null
+  const auth = readHeader(init?.headers, 'risu-auth')
+  const writer = readHeader(init?.headers, 'risu-writer-session')
+  const caller = readHeader(init?.headers, 'x-risu-caller')
   const rawBody = typeof init?.body === 'string' ? init.body : ''
-  const body = JSON.parse(rawBody) as ChatPayload
+  const body = rawBody ? (JSON.parse(rawBody) as ChatPayload) : {}
 
   state.calls.push({
     url,
     method,
     authHeader: auth,
     writerHeader: writer,
+    callerHeader: caller,
     chatId: typeof body.chatId === 'string' ? body.chatId : '',
     characterId: typeof body.characterId === 'string' ? body.characterId : '',
     mode: typeof body.mode === 'string' ? body.mode : '',
@@ -318,6 +332,13 @@ export async function serverChatFetch(input: RequestInfo | URL, init?: RequestIn
         ? (body.clientCapabilities as Record<string, unknown>)
         : null,
   })
+
+  if (method === 'DELETE') {
+    return new Response(JSON.stringify({ success: true }), {
+      status: 200,
+      headers: { 'content-type': 'application/json', 'X-Request-UID': 'fixture-cancel-request-uid' },
+    })
+  }
 
   return sseChatResponse()
 }

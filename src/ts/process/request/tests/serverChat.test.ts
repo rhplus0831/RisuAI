@@ -56,6 +56,7 @@ describe('server chat SSE taxonomy', () => {
 
 beforeEach(() => {
   resetServerChatState()
+  localStorage.removeItem('risu:protocol-debug')
   vi.mocked(handleActiveWriterStaleResponse).mockClear()
 })
 
@@ -134,10 +135,24 @@ describe('requestServerChat', () => {
       method: 'POST',
       authHeader: 'test-auth-token',
       writerHeader: 'writer-session-1',
+      callerHeader: 'chat-generate',
       chatId: 'chat-1',
       characterId: 'char-1',
       mode: 'send',
       clientCapabilities: { compactPromptEvent: true },
+    })
+  })
+
+  it('labels preview prompt requests with x-risu-caller: preview-prompt', async () => {
+    vi.stubGlobal('fetch', serverChatFetch)
+    await requestServerChat({ ...baseInput, mode: 'preview_prompt', userMessage: undefined }, null)
+
+    const calls = getServerChatCalls()
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toMatchObject({
+      method: 'POST',
+      callerHeader: 'preview-prompt',
+      mode: 'preview_prompt',
     })
   })
 
@@ -404,6 +419,57 @@ describe('requestServerChat', () => {
     })
   })
 
+  it('labels generation POST requests with x-risu-caller: chat-generate', async () => {
+    setServerChatDispatchResult('server reply', {
+      model: 'echo_model',
+      inputTokens: 7,
+      outputTokens: 50,
+    })
+    vi.stubGlobal('fetch', serverChatFetch)
+
+    const res = await requestServerChatGeneration(baseInput, null)
+    expect(res.status).toBe('ok')
+    const calls = getServerChatCalls()
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toMatchObject({
+      method: 'POST',
+      callerHeader: 'chat-generate',
+    })
+  })
+
+  it('does not emit X-Request-UID debug logging for cancel by default', async () => {
+    const debug = vi.spyOn(console, 'debug').mockImplementation(() => {})
+    try {
+      vi.stubGlobal('fetch', serverChatFetch)
+
+      await cancelServerChatGeneration('uuid-cancel')
+
+      expect(debug).not.toHaveBeenCalled()
+      expect(getServerChatCalls()).toHaveLength(1)
+    } finally {
+      debug.mockRestore()
+    }
+  })
+
+  it('emits cancel X-Request-UID debug logging when protocol debug is opt-in', async () => {
+    localStorage.setItem('risu:protocol-debug', '1')
+    const debug = vi.spyOn(console, 'debug').mockImplementation(() => {})
+    try {
+      vi.stubGlobal('fetch', serverChatFetch)
+
+      await cancelServerChatGeneration('uuid-cancel')
+
+      expect(debug).toHaveBeenCalledTimes(1)
+      expect(debug).toHaveBeenCalledWith('[risu:protocol]', 'server-chat-cancel-response', {
+        requestUid: 'fixture-cancel-request-uid',
+        status: 200,
+        ok: true,
+      })
+    } finally {
+      debug.mockRestore()
+    }
+  })
+
   it('collects side_effect events on the terminal dispatch result', async () => {
     setServerChatPrompt([{ role: 'user', content: 'hello there' }], { promptText: 'hello there' })
     setServerChatDispatchResult(
@@ -652,6 +718,20 @@ describe('cancelServerChatGeneration', () => {
     expect(calls[0].method).toBe('DELETE')
     expect(calls[0].headers['risu-auth']).toBe('test-auth-token')
     expect(calls[0].headers['risu-writer-session']).toBe('writer-session-1')
+    expect(calls[0].headers['x-risu-caller']).toBe('chat-cancel')
+  })
+
+  it('labels cancel requests with x-risu-caller: chat-cancel', async () => {
+    vi.stubGlobal('fetch', serverChatFetch)
+
+    await cancelServerChatGeneration('gen-123')
+
+    const calls = getServerChatCalls()
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toMatchObject({
+      method: 'DELETE',
+      callerHeader: 'chat-cancel',
+    })
   })
 
   it('is a no-op for an empty generationId and swallows fetch failures', async () => {
@@ -809,6 +889,20 @@ describe('requestServerChatGeneration reattach mode (Phase 7)', () => {
     expect(calls[0]).toEqual({
       url: '/api/v1/generate/chat/job-reattach/stream',
       method: 'GET',
+    })
+  })
+
+  it('labels reattach stream requests with x-risu-caller: chat-reattach', async () => {
+    vi.stubGlobal('fetch', serverChatFetch)
+
+    await requestServerChatGeneration(baseInput, null, 'job-reattach')
+
+    const calls = getServerChatCalls()
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toMatchObject({
+      url: '/api/v1/generate/chat/job-reattach/stream',
+      method: 'GET',
+      callerHeader: 'chat-reattach',
     })
   })
 

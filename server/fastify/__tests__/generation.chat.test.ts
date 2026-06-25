@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import type { AddressInfo } from 'node:net'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { webcrypto } from 'node:crypto'
+import { createHash, webcrypto } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { listPersistedCommandEventHistory } from '../src/commands/events.js'
@@ -280,7 +280,19 @@ interface ProtocolMetric {
   type?: string
   status?: string
   chatId?: string
+  characterId?: string
   mode?: string
+  requestId?: string
+  requestUid?: string
+  xRisuCaller?: string
+  loadoutId?: string
+  expectedRevision?: number
+  inlayAssetsCount?: number
+  inlayAssetRefsCount?: number
+  durable?: boolean
+  compactPromptEvent?: boolean
+  generationId?: string
+  durableJobId?: string
   revision?: number
   durationMs?: number
   promptMs?: number
@@ -296,6 +308,15 @@ interface ProtocolMetric {
   loadMs?: number
   totalMs?: number
   writtenTables?: string[]
+  fallbackType?: string
+  targetMessageId?: string
+  targetSnapshotKind?: string
+  targetSnapshotTranscriptLength?: number
+  completionLength?: number
+  completionBytes?: number
+  completionSha256?: string
+  error?: string
+  source?: string
 }
 
 const EXPECTED_PROMPT_ASSEMBLY_STAGES = [
@@ -1100,8 +1121,8 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       const res = await harness.app.inject({
         method: 'POST',
         url: '/api/v1/generate/chat',
-        headers: { 'risu-auth': assertion },
-        payload: basePayload,
+        headers: { 'risu-auth': assertion, 'x-risu-caller': 'chat-generate' },
+        payload: { ...basePayload, expectedRevision: 1, inlayAssets: [], inlayAssetRefs: [] },
       })
       expect(res.statusCode).toBe(200)
 
@@ -1109,9 +1130,17 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       expect(assembly).toMatchObject({
         status: 'ok',
         chatId: 'chat-1',
+        characterId: 'char-1',
         mode: 'send',
+        xRisuCaller: 'chat-generate',
+        expectedRevision: 1,
+        inlayAssetsCount: 0,
+        inlayAssetRefsCount: 0,
+        durable: false,
+        compactPromptEvent: false,
         databaseLoadCount: 1,
       })
+      expect(typeof assembly?.requestId).toBe('string')
       expect(assembly?.durationMs).toBeGreaterThanOrEqual(0)
       expect(assembly?.promptMs).toBeGreaterThanOrEqual(0)
       expect(assembly?.databaseLoadMs).toBeGreaterThanOrEqual(0)
@@ -1269,15 +1298,24 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       const preview = await harness.app.inject({
         method: 'POST',
         url: '/api/v1/generate/preview-prompt',
-        headers: { 'risu-auth': auth.assertion },
-        payload: { chatId: 'chat-1', characterId: 'char-1' },
+        headers: { 'risu-auth': auth.assertion, 'x-risu-caller': 'preview-prompt' },
+        payload: {
+          chatId: 'chat-1',
+          characterId: 'char-1',
+          clientCapabilities: { compactPromptEvent: true },
+        },
       })
       expect(preview.statusCode).toBe(200)
       const previewMetrics = collect('preview-prompt', before)
       const previewAssembly = previewMetrics.find((entry) => entry.metric === 'generation_prompt_assembly')
       expect(previewAssembly).toMatchObject({
         status: 'ok',
+        chatId: 'chat-1',
+        characterId: 'char-1',
         mode: 'preview_prompt',
+        xRisuCaller: 'preview-prompt',
+        durable: false,
+        compactPromptEvent: true,
         databaseLoadCount: 1,
       })
       expectPromptAssemblyStageTimings(previewAssembly)
@@ -1295,14 +1333,26 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       auth = await setupAuthedClient(harness.app)
       await seedDatabase(harness.app, auth.assertion, fixtureDatabase)
       before = metrics.length
-      await postChat(auth.assertion, { ...basePayload, durable: true })
+      const durableRes = await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/generate/chat',
+        headers: { 'risu-auth': auth.assertion, 'x-risu-caller': 'chat-generate' },
+        payload: { ...basePayload, durable: true },
+      })
+      expect(durableRes.statusCode).toBe(200)
       const durable = collect('durable-generation', before)
       const durableAssembly = durable.find((entry) => entry.metric === 'generation_prompt_assembly')
       expect(durableAssembly).toMatchObject({
         status: 'ok',
+        chatId: 'chat-1',
+        characterId: 'char-1',
         mode: 'send',
+        xRisuCaller: 'chat-generate',
+        durable: true,
         databaseLoadCount: 1,
       })
+      expect(typeof durableAssembly?.generationId).toBe('string')
+      expect(durableAssembly?.durableJobId).toBe(durableAssembly?.generationId)
       expectPromptAssemblyStageTimings(durableAssembly)
       expect(durable.find((entry) => entry.metric === 'generation_assembly_persistence')).toMatchObject({
         status: 'skipped',
@@ -3258,6 +3308,67 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
 
     const persisted = await persistedMessages(assertion)
     expect(persisted.at(-1)).toMatchObject({ role: 'char', data: 'server echo reply' })
+  })
+
+  it('emits a metadata-only raw fallback metric when Lua onOutput fails', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(
+      harness.app,
+      assertion,
+      dbWithServerDispatch({
+        triggerscript: [
+          {
+            comment: '',
+            type: 'output',
+            conditions: [],
+            effect: [
+              {
+                type: 'triggerlua',
+                code: `
+                  function onOutput(triggerId)
+                    error('lua output trigger failed hard')
+                  end
+                `,
+              },
+            ],
+          },
+        ],
+      }),
+    )
+
+    await withProtocolMetrics(async (metrics) => {
+      const res = await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/generate/chat',
+        headers: { 'risu-auth': assertion },
+        payload: basePayload,
+      })
+      expect(res.statusCode).toBe(200)
+      const events = parseEvents(res.body)
+      expect(events.find((event) => event.type === 'warning')?.data).toMatchObject({
+        message: 'server post-generation derivation failed; persisted the raw provider text.',
+      })
+
+      const fallback = metrics.find((entry) => entry.metric === 'generation_post_generation_fallback')
+      expect(fallback).toMatchObject({
+        fallbackType: 'raw_provider_text',
+        chatId: 'chat-1',
+        characterId: 'char-1',
+        mode: 'send',
+        targetSnapshotKind: 'tail',
+        targetSnapshotTranscriptLength: 0,
+        completionLength: 'server echo reply'.length,
+        completionBytes: Buffer.byteLength('server echo reply', 'utf8'),
+        completionSha256: createHash('sha256').update('server echo reply', 'utf8').digest('hex'),
+        source: 'lua_output_trigger',
+      })
+      expect(typeof fallback?.generationId).toBe('string')
+      expect(String(fallback?.error)).toContain('Lua output trigger failed')
+      expect(JSON.stringify(fallback)).not.toContain('server echo reply')
+      expect(Object.hasOwn(fallback ?? {}, 'completionText')).toBe(false)
+      expect(Object.hasOwn(fallback ?? {}, 'promptInfo')).toBe(false)
+      expect(Object.hasOwn(fallback ?? {}, 'userMessage')).toBe(false)
+    })
   })
 
   it.each([

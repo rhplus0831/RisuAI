@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
 import type { Database, Message } from '../../../../src/ts/storage/database.svelte'
 import type { MultiModal } from '../../../../src/ts/process/index.svelte'
@@ -72,6 +72,7 @@ import {
   type GenerationFinalizationMode,
 } from '../generationFinalizationRetry.js'
 import { generationSubmitRateLimit } from '../routeRateLimits.js'
+import { REQUEST_UID_HEADER } from '../requestTrace.js'
 
 const ALLOWED_MODES = new Set(['send', 'continue', 'preview', 'preview_prompt', 'regenerate'])
 const SERVER_INLAY_SIGNATURE_CONTENT_TYPE = 'application/x-risu-inlay-signature+json'
@@ -102,6 +103,8 @@ interface GenerationClientCapabilities {
 }
 
 type PromptAssemblyRun = Awaited<ReturnType<typeof assemblePromptWithMetrics>>
+type MetricPrimitive = string | number | boolean | null | undefined
+type PromptAssemblyMetricContext = Record<string, MetricPrimitive>
 
 type AssemblyPreflightResult =
   | { status: 'ready' }
@@ -478,6 +481,7 @@ async function assemblePromptWithMetrics(
   dataDir: string,
   db: DatabaseSync,
   signal?: AbortSignal,
+  context: PromptAssemblyMetricContext = {},
 ): Promise<{ result: AssembleResult; deps: RouteAssembleDeps; promptMs: number }> {
   const measurement: PromptAssemblyMeasurement | undefined = protocolMetricsEnabled()
     ? { databaseLoadCount: 0, databaseLoadMs: 0, stageTimingsMs: {} }
@@ -490,7 +494,9 @@ async function assemblePromptWithMetrics(
     const promptMs = Date.now() - startedAt
     emitProtocolMetric('generation_prompt_assembly', {
       status: result.stopSending ? 'stopped' : 'ok',
+      ...context,
       chatId: input.chatId,
+      characterId: input.characterId,
       mode: input.mode,
       durationMs: protocolDurationMs(metricStartedAt),
       promptMs,
@@ -503,7 +509,9 @@ async function assemblePromptWithMetrics(
   } catch (err) {
     emitProtocolMetric('generation_prompt_assembly', {
       status: 'error',
+      ...context,
       chatId: input.chatId,
+      characterId: input.characterId,
       mode: input.mode,
       durationMs: protocolDurationMs(metricStartedAt),
       promptMs: Date.now() - startedAt,
@@ -676,6 +684,37 @@ function errorMessage(err: unknown, fallback: string): string {
   if (err instanceof Error && err.message.length > 0) return err.message
   if (typeof err === 'string' && err.length > 0) return err
   return fallback
+}
+
+function readStringHeader(req: FastifyRequest, headerName: string): string | undefined {
+  const raw = req.headers[headerName.toLowerCase()]
+  const value = Array.isArray(raw) ? raw[0] : raw
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined
+}
+
+function createPromptAssemblyMetricContext(args: {
+  req: FastifyRequest
+  input: AssembleInput
+  durable: boolean
+  clientCapabilities: GenerationClientCapabilities
+  generationId?: string
+}): PromptAssemblyMetricContext {
+  return {
+    requestId: String(args.req.id),
+    requestUid: readStringHeader(args.req, REQUEST_UID_HEADER),
+    xRisuCaller: readStringHeader(args.req, 'x-risu-caller'),
+    chatId: args.input.chatId,
+    characterId: args.input.characterId,
+    mode: args.input.mode,
+    loadoutId: args.input.loadoutId,
+    expectedRevision: args.input.expectedRevision,
+    inlayAssetsCount: args.input.inlayAssets?.length,
+    inlayAssetRefsCount: args.input.inlayAssetRefs?.length,
+    durable: args.durable,
+    compactPromptEvent: args.clientCapabilities.compactPromptEvent,
+    generationId: args.generationId,
+    durableJobId: args.durable ? args.generationId : undefined,
+  }
 }
 
 /** Modes that persist their assembly delta; preview / preview_prompt stay read-only. */
@@ -999,6 +1038,20 @@ function captureGenerationFinalizationTargetSnapshot(
   }
 }
 
+function classifyPostGenerationFallbackSource(err: unknown): string {
+  const message = errorMessage(err, '').toLowerCase()
+  if (message.includes('lua output trigger failed')) return 'lua_output_trigger'
+  if (message.includes('lua editoutput edit trigger failed') || message.includes('editoutput')) {
+    return 'lua_edit_output'
+  }
+  if (message.includes('bounded regex') || message.includes('customscript')) return 'regex_edit_output'
+  return 'unknown_post_generation'
+}
+
+function completionSha256(text: string): string {
+  return createHash('sha256').update(text, 'utf8').digest('hex')
+}
+
 /**
  * Run the A2 post-gen pass and resolve the mode-aware assistant message + replace
  * target, with a mode-correct raw-text fallback when the derivation throws. Shared
@@ -1058,8 +1111,24 @@ async function resolvePostGenerationResult(args: {
       generationInfo: args.generationInfo,
       promptInfo: args.promptInfo,
     })
+    const error = errorMessage(err, 'server post-generation derivation failed')
+    emitProtocolMetric('generation_post_generation_fallback', {
+      fallbackType: 'raw_provider_text',
+      generationId: args.generationId,
+      chatId: args.input.chatId,
+      characterId: args.input.characterId,
+      mode: args.input.mode,
+      targetMessageId: raw.targetMessageId,
+      targetSnapshotKind: targetSnapshot?.kind,
+      targetSnapshotTranscriptLength: targetSnapshot?.transcriptLength,
+      completionLength: args.completionText.length,
+      completionBytes: Buffer.byteLength(args.completionText, 'utf8'),
+      completionSha256: completionSha256(args.completionText),
+      error,
+      source: classifyPostGenerationFallbackSource(err),
+    })
     return {
-      postGenError: errorMessage(err, 'server post-generation derivation failed'),
+      postGenError: error,
       message: raw.message,
       targetMessageId: raw.targetMessageId,
       chatVarMutations: [],
@@ -1179,6 +1248,7 @@ async function streamAssembly(
   options: GenerationChatRouteOptions = {},
   preparedAssembly?: PromptAssemblyRun,
   deferredFailure?: AssemblyDeferredFailure,
+  metricContext: PromptAssemblyMetricContext = {},
   requestAbort = attachAbort(req),
 ): Promise<void> {
   const { signal, refresh, abort, cleanup } = requestAbort
@@ -1202,7 +1272,7 @@ async function streamAssembly(
     try {
       if (deferredFailure) throw deferredFailure.error
       const { result, deps, promptMs } =
-        preparedAssembly ?? (await assemblePromptWithMetrics(input, dataDir, db, signal))
+        preparedAssembly ?? (await assemblePromptWithMetrics(input, dataDir, db, signal, metricContext))
       const database = result.state?.database ?? deps.getDatabase()
       // The route owns assembly-time chat-var writes and post-`editinput`
       // submit-transcript writes for persisting modes. This runs for both success
@@ -2051,6 +2121,7 @@ async function runGenerationJob(args: {
   options: GenerationChatRouteOptions
   preparedAssembly?: PromptAssemblyRun
   deferredFailure?: AssemblyDeferredFailure
+  metricContext?: PromptAssemblyMetricContext
 }): Promise<void> {
   const {
     registry,
@@ -2063,6 +2134,7 @@ async function runGenerationJob(args: {
     options,
     preparedAssembly,
     deferredFailure,
+    metricContext = {},
   } = args
   const emit = (event: PromptChatEvent): void => registry.registry.pushRaw(job, formatPromptChatFrame(event))
   const signal = job.abortController.signal
@@ -2077,7 +2149,7 @@ async function runGenerationJob(args: {
       if (deferredFailure) throw deferredFailure.error
       if (preparedAssembly) retargetAssemblySignal(preparedAssembly, signal)
       const { result, deps, promptMs } =
-        preparedAssembly ?? (await assemblePromptWithMetrics(input, dataDir, db, signal))
+        preparedAssembly ?? (await assemblePromptWithMetrics(input, dataDir, db, signal, metricContext))
       const database = result.state?.database ?? deps.getDatabase()
       const persistedRevision =
         isPersistingMode(input.mode) && result.mutations
@@ -2273,6 +2345,7 @@ function startDurableGeneration(args: {
   generationJobs: GenerationJobRegistry
   preparedAssembly?: PromptAssemblyRun
   deferredFailure?: AssemblyDeferredFailure
+  metricContext: PromptAssemblyMetricContext
 }): void {
   const { req, reply, input, generationJobs } = args
   if (generationJobs.hasRunningJob(input.chatId)) {
@@ -2310,6 +2383,11 @@ function startDurableGeneration(args: {
       options: args.options,
       preparedAssembly: args.preparedAssembly,
       deferredFailure: args.deferredFailure,
+      metricContext: {
+        ...args.metricContext,
+        generationId: job.id,
+        durableJobId: job.id,
+      },
     }),
   )
 }
@@ -2334,6 +2412,13 @@ export function registerGenerationChatRoutes(
 
     const input = toAssembleInput(body)
     const clientCapabilities = readClientCapabilities(body)
+    const durable = body.durable === true && isPersistingMode(input.mode)
+    const metricContext = createPromptAssemblyMetricContext({
+      req,
+      input,
+      durable,
+      clientCapabilities,
+    })
     const requestAbort = attachAbort(req)
     const preflight = preflightChatGenerationSettings(reply, input, dataDir, db)
     if (preflight.status === 'handled') {
@@ -2344,7 +2429,7 @@ export function registerGenerationChatRoutes(
     // Durable path for persisting generation modes. The active-writer submission
     // gate ran in the global preHandler; here we add the one-job-per-chat rule
     // and hand off to the detached runner.
-    if (body.durable === true && isPersistingMode(input.mode)) {
+    if (durable) {
       startDurableGeneration({
         req,
         reply,
@@ -2356,6 +2441,7 @@ export function registerGenerationChatRoutes(
         options,
         generationJobs,
         deferredFailure: preflight.status === 'defer' ? preflight.failure : undefined,
+        metricContext,
       })
       requestAbort.cleanup()
       return
@@ -2372,6 +2458,7 @@ export function registerGenerationChatRoutes(
       options,
       undefined,
       preflight.status === 'defer' ? preflight.failure : undefined,
+      metricContext,
       requestAbort,
     )
   })
@@ -2433,9 +2520,15 @@ export function registerGenerationChatRoutes(
 
       const input = toAssembleInput({ ...body, mode: 'preview_prompt' })
       const clientCapabilities = readClientCapabilities(body)
+      const metricContext = createPromptAssemblyMetricContext({
+        req,
+        input,
+        durable: false,
+        clientCapabilities,
+      })
       const { signal, cleanup } = attachAbort(req)
       try {
-        const { result, deps } = await assemblePromptWithMetrics(input, dataDir, db, signal)
+        const { result, deps } = await assemblePromptWithMetrics(input, dataDir, db, signal, metricContext)
         if (result.stopSending) {
           return {
             stopSending: true,
