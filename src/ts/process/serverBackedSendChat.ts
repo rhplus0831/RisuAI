@@ -195,10 +195,10 @@ const INLAY_MARKER_RE = /{{(inlay|inlayed|inlayeddata)::(.+?)}}/g
  * upload the bytes once through the asset route and send only an id mapping so
  * the server resolves all prompt-time bytes from its own asset store.
  *
- * Id-collection mirrors `formatHistoryMessage.ts:73-91`: `char`-role messages
- * surface only `inlayeddata` ids (the SPA quirk where `inlay`/`inlayed` tags are
- * stripped from a bot turn without surfacing their assets); every other role
- * surfaces all three tag types.
+ * Id-collection mirrors the local history formatter: `char`-role messages surface
+ * only `inlayeddata` ids (the SPA quirk where `inlay`/`inlayed` tags are stripped
+ * from a bot turn without surfacing their assets); every other role surfaces all
+ * three tag types.
  */
 async function collectServerInlayAssetRefs(chat: Chat): Promise<ServerInlayAssetRefPayload[]> {
   const ids = new Set<string>()

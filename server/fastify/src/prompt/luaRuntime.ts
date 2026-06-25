@@ -62,13 +62,13 @@ import {
  *    `listenEdit` anyway. Access-control sets (`safeIds`/`lowLevelIds`/
  *    `editDisplayIds`) remain per-call closures rather than the browser's
  *    module-level sets.
- * 5. **Aggregate exec budget.** Callers may hand every run of one
+ * 4. **Aggregate exec budget.** Callers may hand every run of one
  *    request the same {@link LuaExecBudget}; each run's wall clock is charged
  *    against it, a constrained run gets `min(execTimeoutMs, remaining)`, and an
  *    exhausted budget short-circuits before any engine boots — so a card stacking
  *    many runaway hooks is bounded by ~`totalMs` (+ at most one per-run limit for
  *    a dispatch already in flight), not `hooks × execTimeoutMs`.
- * 4. **`OpenAIChat` round-trip** is byte-faithful for the text-send subset (proven by
+ * 5. **`OpenAIChat` round-trip** is byte-faithful for the text-send subset (proven by
  *    the editRequest unit test).
  */
 
@@ -1028,8 +1028,9 @@ const UNBOUND_RUNTIME_STATE: RuntimeState = (() => {
  * Declare the full browser host-fn surface on `engine`:
  *   - **Pure** fns operate on the server's in-memory chat / vars / char / db;
  *   - **Gated** fns (`request`) run behind the SSRF guard + low-level access;
- *   - **Unsupported** privileged fns (`LLM`/`similarity`/`generateImage`/image
- *     getters/lorebook loaders) return an explicit error/empty so callers do not crash;
+ *   - **Unsupported** privileged fns (`similarity`/`generateImage`/image
+ *     getters/lorebook loaders) return an explicit error/empty so callers do
+ *     not crash;
  *   - **Interactive** fns (`alert*Input/Select/Confirm`) throw and flag the run;
  *   - **Browser-only** fns (`alertError`/`alertNormal`/`reloadDisplay`/`reloadChat`)
  *     are no-ops.
@@ -1297,7 +1298,7 @@ function declareHostFunctions(engine: LuaEngine): (next: RuntimeState) => void {
     return true
   })
 
-  // ── Unsupported privileged fns: explicit error / empty result ──
+  // Unsupported privileged fns: explicit error / empty result.
   declare('similarity', async (id: string) => {
     if (!canLowLevel(id)) return
     return [] // similarity is unavailable in server prompt assembly
@@ -1308,6 +1309,8 @@ function declareHostFunctions(engine: LuaEngine): (next: RuntimeState) => void {
   })
   declare('getCharacterImageMain', async (_id: string) => '')
   declare('getPersonaImageMain', async (_id: string) => '')
+
+  // Supported low-level LLM host fns.
   declare('LLMMain', async (id: string, promptStr: string, useMultimodal = false, optionsStr = '') => {
     if (!canLowLevel(id)) return
     return runLuaLlmMain(state, 'scriptMain', promptStr, useMultimodal, optionsStr)

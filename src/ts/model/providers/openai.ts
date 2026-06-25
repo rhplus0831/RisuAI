@@ -257,7 +257,6 @@ export const OpenAIModels: LLMModel[] = [
       LLMFlags.hasImageInput,
       LLMFlags.DeveloperRole,
     ],
-    //Note: this is special case
     parameters: OpenAIParameters,
     tokenizer: LLMTokenizer.tiktokenO200Base,
   },

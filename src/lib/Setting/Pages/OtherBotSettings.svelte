@@ -223,7 +223,7 @@
         return
       }
 
-      // Filter, transform, and sort models by name
+      // Filter, transform, and keep a deterministic selector order.
       const filteredModels: WavespeedModel[] = responseData.data
         .filter((model: any) => model.type === 'text-to-image' || model.type === 'image-to-image')
         .map((model: any) => {
@@ -253,9 +253,6 @@
     }
   }
 
-  /**
-   * Handle model selection change
-   */
   function getSelectedWavespeedModel(): WavespeedModel | undefined {
     return wavespeedModels.find((m) => m.model_id === wavespeedImageDraft.value.model)
   }
@@ -286,9 +283,7 @@
     return `${model.name} (price: ${model.base_price}) [${imageInputIcon} Image] [${loraIcon} LoRA]`
   }
 
-  /**
-   * Filter and sort models based on search query
-   */
+  /** Filter models based on the search query. */
   function getFilteredModels(): WavespeedModel[] {
     if (wavespeedSearchQuery === '') return wavespeedModels
 

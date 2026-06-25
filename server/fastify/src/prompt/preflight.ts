@@ -29,12 +29,10 @@ import {
  * chains, card normalization / alias resolution, cache-marker emission as actual
  * prompt rows, and route-layer wiring.
  *
- * `positionParser`: the SPA injects `inject_lore` location-targeted
- * lorebooks here too, but lorebook activation already filters those entries out of
- * `report.actives` (`lorebook.ts:603-619`), so the SPA's
- * `injectionLorebooks` branch is dead at this layer. The shim just
- * delegates to `resolvePosition`; the `loc` argument is kept for
- * SPA parity.
+ * `positionParser`: the SPA injects `inject_lore` location-targeted lorebooks
+ * here too, but lorebook activation filters those entries out of `report.actives`,
+ * so the SPA's `injectionLorebooks` branch is dead at this layer. The shim just
+ * delegates to `resolvePosition`; the `loc` argument is kept for SPA parity.
  */
 
 /**

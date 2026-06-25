@@ -196,7 +196,6 @@
     if (isMobile) {
       return
     }
-    //autocomplete
     selectingAutoComplete = 0
     const selection = getSelectionInInput()
     if (!selection || !highlightDom || !autoCompleteDom || !inputDom) {

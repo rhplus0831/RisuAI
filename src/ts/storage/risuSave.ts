@@ -245,7 +245,6 @@ export class RisuSaveEncoder {
     }
     if (toSave.character.length > 0) {
       console.log(`Deleting character data: ${toSave.character.join(', ')}`)
-      //probably deleted characters
       for (const chaId of toSave.character) {
         if (!savedId.has(chaId)) {
           delete this.blocks[chaId]
@@ -497,7 +496,6 @@ export class RisuSaveDecoder {
             break
           }
           case RisuSaveType.CONFIG: {
-            //ignore for now
             break
           }
           case RisuSaveType.PLUGINS: {
@@ -529,7 +527,6 @@ export class RisuSaveDecoder {
             }
             const decoded = new TextDecoder().decode(remoteData)
 
-            //add to blocks for further processing
             this.blocks.push({
               name: remoteInfo.name,
               type: remoteInfo.type,
@@ -558,7 +555,7 @@ export class RisuSaveDecoder {
         }
       }
     }
-    //to fix botpreset bugs
+    // Decoded saves must always have at least one bot preset.
     if (!Array.isArray(db.botPresets) || db.botPresets.length === 0) {
       db.botPresets = [presetTemplate]
       db.botPresetsId = 0

@@ -8,7 +8,7 @@ import { ModuleHandler } from '../modules'
 
 //#region module mocks
 
-// Suppress consoles
+// Mock browser/UI modules used by module handlers.
 vi.mock(import('katex'), () => ({}))
 vi.mock(import('src/ts/lite'), () => ({}))
 

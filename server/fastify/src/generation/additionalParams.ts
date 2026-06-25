@@ -2,9 +2,9 @@
  * Server-side port of the SPA's `additionalParams` DSL. The local code lives
  * in `src/ts/process/request/shared.ts` (applyAdditionalParameters,
  * setObjectValue) and `src/ts/process/request/additionalParams.ts`
- * (parseAdditionalParamJsonValue). Semantics are preserved verbatim so that
- * server-routed xcustom and reverse_proxy paths behave identically to the
- * local browser path.
+ * (parseAdditionalParamJsonValue). Semantics mirror the browser path except for
+ * server-only prototype-pollution guards, so server-routed xcustom and
+ * reverse_proxy paths stay aligned with the local browser path.
  *
  * Each entry is a `[key, value]` pair drawn from the per-model `params`
  * string (or `db.additionalParams` for reverse_proxy). Both come from

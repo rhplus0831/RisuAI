@@ -50,8 +50,8 @@ const DEFAULT_STOP = ['User:', ' User:', 'user:', ' user:']
 
 /**
  * Flatten an OpenAI-shaped messages array into a single prompt string with
- * `## Author` section headers. Mirrors the local browser path in
- * `src/ts/process/request/openAI/requests.ts:996-1032`.
+ * `## Author` section headers. Mirrors the local browser
+ * `requestOpenAILegacyInstruct` path.
  */
 export function flattenForLegacyInstruct(messages: RawChatMessage[]): string {
   const lines: string[] = []

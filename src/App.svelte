@@ -166,10 +166,10 @@
   {:else if aprilFools}
     <div class="bg-[#212121] w-full h-screen min-h-screen text-black flex relative">
       <div class="w-full max-w-3xl mx-auto py-8 px-4 flex justify-center items-center">
-        <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div class="flex flex-col w-full items-center text-[#bbbbbb]">
           {#if aprilFoolsPage === 0}
             <h1 class="text-3xl text-white font-bold mb-6">What can I help you?</h1>
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div
               class="resize-none relative w-full bg-[#303030] rounded-3xl h-[110px] mb-6 text-[#bbbbbb]"
               placeholder="Ask me"
@@ -195,7 +195,7 @@
                 </button>
               </div>
             </div>
-            <!-- svelte-ignore a11y_click_events_have_key_events -->
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div
               class="flex gap-1.5"
               onclick={() => {
@@ -219,7 +219,7 @@
             <h1 class="text-3xl text-white font-bold mb-6">We do not have search results.</h1>
             <p class="text-[#bbbbbb] mb-6">
               <!-- svelte-ignore a11y_missing_attribute -->
-              <!-- svelte-ignore a11y_click_events_have_key_events -->
+              <!-- svelte-ignore a11y_no_static_element_interactions -->
               <a
                 class="text-blue-500 cursor-pointer"
                 onclick={() => {
@@ -268,7 +268,6 @@
         class="top-0 w-full h-full left-0 z-30 flex flex-row items-center"
         class:fixed={$sideBarStore}
         class:hidden={!$sideBarStore}>
-        <!-- svelte-ignore a11y_click_events_have_key_events -->
         <Sidebar
           openGrid={() => {
             navigate('/grid')

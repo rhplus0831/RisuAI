@@ -54,8 +54,8 @@ export async function emitProviderChunks(
       emit(event)
     }
   }
-  // Run the post-generation pass before the terminal `done`. Error and abort
-  // paths emit a bare `done`; post-gen failures degrade to a plain `done`.
+  // Run the post-generation pass before the terminal `done`; thrown errors are
+  // handled by the streaming route's provider-error path.
   const emitSuccessDone = async (): Promise<void> => {
     emitSideEffects()
     const postGeneration = normalizedOptions.postGeneration ? await normalizedOptions.postGeneration(result) : undefined

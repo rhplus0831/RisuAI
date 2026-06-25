@@ -6,10 +6,9 @@ import { buildApp } from '../src/app.js'
 import type { FastifyInstance } from 'fastify'
 import { setupBrowserSmokeAuth } from './auth.js'
 
-// Phase 0 Tier-2 DOM-oracle journeys for the UI/UX behavioral audit
-// (docs/AUDIT-PLAN.md §6). These drive real clicks in the real Fastify-served
-// browser, assert on rendered DOM (page.locator), and cross-check the store via
-// getDatabaseSnapshot() only to classify.
+// DOM-oracle journeys for visible state. These drive real clicks in the real
+// Fastify-served browser, assert on rendered DOM (page.locator), and cross-check
+// the store via getDatabaseSnapshot() only to classify.
 //
 //   - Journey 1: switch chats by clicking sidebar rows -> the generation picker
 //     repaints the newly active chat's prompt preset id.

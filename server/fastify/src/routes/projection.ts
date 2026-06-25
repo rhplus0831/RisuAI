@@ -109,22 +109,17 @@ const RESOURCE_PROJECTION_FIELDS: Record<string, string[]> = {
   promptPreset: PROMPT_PRESET_PROJECTION_FIELDS,
   legacyBotPreset: ['botPresets', 'botPresetsId', 'modelPresets', 'modelPresetsId', 'promptPresets', 'promptPresetsId'],
   modelProfile: ['modelProfiles', 'modelRoleProfiles', 'modelRuntimeDefaults'],
-  // `prompt` (prompt-settings) writes ~21 scattered settings scalars, not a
-  // single owned field, so it falls back to a full bootstrap (listed in
-  // SPRAWLING_FULL_PROJECTION_RESOURCES). The old `['botPresets']` mapping was a
-  // bug: it pointed at an unrelated field, so a foreign refresh never reflected
-  // the changed prompt settings.
-  // Prompt-item commands edit the `promptTemplate` collection, so a foreign
-  // refresh must reship that field — not `botPresets` (the prior bug never
-  // reflected the changed prompt items).
+  // `prompt` writes scattered settings scalars, so it full-bootstraps via
+  // SPRAWLING_FULL_PROJECTION_RESOURCES. Prompt-item commands edit the
+  // `promptTemplate` collection, so foreign refreshes reship that field.
   promptItem: ['promptTemplate'],
   // persona select/delete also mirror the legacy profile scalars into settings
   // (when mirrorLegacyProfile is on), so a foreign refresh must reship them too.
   persona: ['personas', 'selectedPersona', 'username', 'userIcon', 'personaPrompt', 'userNote'],
   // `module` (create/delete) stays broad: create can normalize sibling arrays
   // and delete cross-writes characters/chats/loadouts via removeModuleReferences.
-  // The narrower update/enable/reorder commands emit the module-scoped resources
-  // below so a one-row edit no longer re-ships every character + loadout.
+  // Update/enable/reorder commands emit module-scoped resources below, so
+  // one-row edits stay narrow.
   module: ['modules', 'enabledModules', 'loadouts', 'characters'],
   moduleUpdated: ['modules'],
   moduleReordered: ['modules'],

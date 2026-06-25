@@ -116,9 +116,9 @@ export function createServerBackedSettingDraft<T>(
       const attempted = cloneJsonValue(draft.value)
       const previous = cloneJsonValue((DBState.db as unknown as Record<string, unknown>)[key])
       withTrustedServerProjectionWrite(() => {
-        // Re-read DBState.db inside the callback: the trusted write swaps it to
-        // a mutable clone, so an alias captured earlier still points at the
-        // read-only projection and would throw on write.
+        // Re-read DBState.db inside the callback: the trusted write swaps in a
+        // copy-on-write working proxy, so an alias captured earlier still points
+        // at the read-only projection and would throw on write.
         const target = DBState.db as unknown as Record<string, unknown>
         target[key] = attempted
       })

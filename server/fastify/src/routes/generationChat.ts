@@ -890,9 +890,8 @@ function canAppendAssemblyReplacement(
  * and returns the new revision over SSE so the browser can reconcile its cached
  * command revision.
  *
- * The transcript is persisted **only** when `submitTranscriptChanged` is set, so a
- * plain send (no input trigger / editinput) leaves the user-message write to the
- * browser exactly as before — keeping trigger-less sends byte-for-byte unchanged.
+ * The transcript is persisted only when `submitTranscriptChanged` is set; plain
+ * sends leave user-message persistence to the browser.
  * When both the transcript and chat vars change, they ride one command (one
  * revision); the event is `messages.replaced` (the transcript write dominates).
  * Returns the bumped revision, or `undefined` when there is nothing to write.
@@ -1228,12 +1227,11 @@ function completionSha256(text: string): string {
 }
 
 /**
- * Run the A2 post-gen pass and resolve the mode-aware assistant message + replace
- * target, with a mode-correct raw-text fallback when the derivation throws. Shared
- * by the inline (`buildPostGenerationFrame`) and durable (`buildDurablePostGeneration`)
- * finalization paths — they differ only in how they SURFACE a derivation/persist
- * failure, not in WHAT they persist. A `postGen` of `undefined` signals the
- * derivation threw (the raw fallback is in use).
+ * Run server post-generation derivation and resolve the mode-aware assistant
+ * message plus replace target, with a raw-text fallback when derivation throws.
+ * Shared by inline and durable finalization; they differ only in error surfacing.
+ * A `postGen` of `undefined` signals the derivation threw (the raw fallback is in
+ * use).
  */
 async function resolvePostGenerationResult(args: {
   state: AssemblyState
@@ -1881,13 +1879,9 @@ function validateGenerationChatVarMutationsFresh(args: {
 }
 
 /**
- * Step 3 (A2 / EC-D1 persistence half): write the durable generation result. In a
- * single targeted command mutation (one revision bump, one event, rollback on
- * failure) against the **freshly read current chat** (gotcha C — composes with any
- * intervening edits): apply the post-gen scriptstate delta, then append/replace the
- * assistant message row. The message write is **idempotent on `generationId`**
- * (gotcha B): an existing row with the same `chatId` is replaced in place, never
- * appended twice.
+ * Persist a durable generation result in one targeted command mutation against a
+ * freshly read chat: apply post-gen scriptstate changes, append/replace the
+ * assistant row, and avoid duplicate rows for the same generation.
  * Matches the shape + `generation.persisted` event the browser command path
  * (`dispatchPersistGenerationResult` → the `/generation-result` route) produces, so
  * the result is byte-identical whether server- or (legacy) browser-written.
@@ -1986,8 +1980,7 @@ function persistServerGenerationResult(args: {
         //    full candidate set of the turn survives a reload and swipe-navigation is
         //    durable for free (flipping the active tail never touches the buffer — the
         //    active is just whichever candidate is positioned, matched by `uid` on
-        //    hydration). This realizes the design doc's "insert the new candidate as an
-        //    alternate row and flip the active tail". Dedup by `uid` keeps it
+        //    hydration). Dedup by `uid` keeps it
         //    replay-idempotent and free of duplicates as candidates accumulate.
         //  - send / continue is the confirm boundary — drop the chat's reroll buffer.
         // Both run inside this mutation's transaction (atomic with the message write).
@@ -2305,13 +2298,13 @@ function persistRawCancelledResult(args: {
 }
 
 /**
- * Step 2: the detached generation runner. Mirrors `streamAssembly`'s assemble →
- * dispatch → done flow but (1) pushes the identical SSE frames into the job's
- * `JobRegistry` buffer (`pushRaw`) instead of a request reply, (2) runs on the
- * job's own `AbortController` (deadline / explicit cancel only — never the request
- * connection), and (3) at completion runs the A2 pass + persists the result
- * server-side (Step 3). Launched fire-and-forget (`void`); the request connection
- * is just a viewer.
+ * Detached generation runner. Mirrors `streamAssembly`'s assemble -> dispatch ->
+ * done flow but (1) pushes the identical SSE frames into the job's `JobRegistry`
+ * buffer (`pushRaw`) instead of a request reply, (2) runs on the job's own
+ * `AbortController` (deadline / explicit cancel only, never the request
+ * connection), and (3) finalizes post-generation output and persists the result
+ * server-side. Launched fire-and-forget (`void`); the request connection is just a
+ * viewer.
  */
 async function runGenerationJob(args: {
   registry: GenerationJobRegistry
@@ -2556,9 +2549,9 @@ async function runGenerationJob(args: {
 }
 
 /**
- * Step 2: accept a durable generating request. Enforce one-running-job-per-chat
- * (the active-writer submission gate is already enforced by the global guard
- * preHandler), create the job + claim the submission lock + capture the writer
+ * Accept a durable generation request. Enforce one-running-job-per-chat (the
+ * active-writer submission gate is already enforced by the global guard
+ * preHandler), create the job, claim the submission lock, capture the writer
  * identity, attach this connection as the first viewer, then launch the detached
  * runner.
  */

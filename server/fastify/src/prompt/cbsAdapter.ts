@@ -7,17 +7,16 @@ import { getChatVar, getGlobalChatVar, setChatVar } from '../../../../src/ts/par
 import { getActiveDatabase, getActiveSelectedCharID } from './promptScope.js'
 
 /**
- * Server-side `CBSRegisterArg` factory. Wires the 24 DI fields the
- * `registerCBS` infrastructure expects, reading dynamic context
+ * Server-side `CBSRegisterArg` factory. Wires the DI fields the `registerCBS`
+ * infrastructure expects, reading dynamic context
  * (`database`, `selectedCharID`, `userName`, `personaPrompt`) from the
  * active `promptScope` singleton rather than from `DBState` /
  * Svelte stores.
  *
- * Browser-only callbacks like `{{screenwidth}}`, `{{metadata::browserlanguage}}`,
- * and the HTML emitters (`{{button}}`, `{{tex}}`, `{{ruby}}`, `{{codeblock}}`)
- * register with their original `cbs.ts` bodies, which reference `window`
- * / `navigator` / DOM globals and will throw at invocation on the
- * server. Prompt-assembly paths do not invoke them.
+ * Browser-context callbacks like `{{screenwidth}}` and
+ * `{{metadata::browserlanguage}}` register with their original `cbs.ts` bodies,
+ * which reference `window` / `navigator` globals and will throw at invocation on
+ * the server.
  *
  * `getCurrentTriggerId` returns `'null'` because manual triggers are a
  * browser UI concept.
@@ -113,7 +112,8 @@ export function buildServerCBSArg(): Omit<CBSRegisterArg, 'registerFunction'> {
     getGlobalChatVar,
     calcString: (str: string) => calcString(str) ?? 0,
     dateTimeFormat,
-    // Module + lorebook callbacks are not available in this server adapter yet.
+    // Module + lorebook callbacks intentionally resolve to empty lists in server
+    // prompt assembly.
     getModules: () => [],
     getModuleLorebooks: () => [],
     pickHashRand,

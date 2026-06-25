@@ -1,9 +1,6 @@
 <script lang="ts">
-  // Faithful Chat.svelte stub for the BOOT-1 probe: it reads the same greeting
-  // props the real Chat.svelte reads (altGreeting at Chat.svelte:1070-1071,
-  // totalPages/currentPage at :1079). Reading them forces evaluation of the
-  // parent's *lazy* prop expressions — which is exactly what triggers the
-  // unguarded `alternateGreetings.length` read in DefaultChatScreen.svelte:1066/1090.
+  // Reads the greeting props the real Chat component consumes, forcing evaluation
+  // of the parent's lazy prop expressions in the shell-greeting regression test.
   let {
     idx = -1,
     message = '',

@@ -246,8 +246,8 @@ export function validateFullLorebookOrder(
   }
 }
 
-// Import/bootstrap-only repair-permissive mapper. Mints replacement ids for
-// degraded persisted state, so command-path route handlers must not reach it.
+// Persisted-state repair mapper. It may mint replacement ids while normalizing
+// loaded lorebooks; request payloads must use `validateLorebookEntries`.
 export function repairLorebookEntries(input: unknown, label: string): LorebookEntryRecord[] {
   if (!Array.isArray(input)) {
     throw new ValidationError(`${label} must be an array`)
@@ -385,9 +385,8 @@ export function validateFullLorebookEntryOrder(
   }
 }
 
-// Import/bootstrap-only repair-permissive constructor. Mints `randomUUID()`
-// for missing entry ids; only called from `repair*` callers and never from
-// command-path routes.
+// Persisted-state repair helper. Mints `randomUUID()` for missing entry ids;
+// request payloads must use `validateLorebookEntry`.
 function repairLorebookEntry(input: unknown, label: string): LorebookEntryRecord {
   const entry = lorebookEntryFromInput(input, label, { repair: true })
   if (typeof entry.id !== 'string' || entry.id.trim() === '') {

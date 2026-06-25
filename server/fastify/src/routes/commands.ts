@@ -4149,8 +4149,7 @@ export function registerCommandRoutes(
             throw new ValidationError(`Duplicate chat id: ${nextChat.id}`)
           }
           // Message-id uniqueness is checked directly against the message store
-          // (a targeted query) instead of a corpus-wide `chat.message[]` scan, so
-          // this no longer needs the all-message hydrate.
+          // with a targeted query; the fork path does not hydrate unrelated messages.
           for (const message of forkedMessages) {
             if (activeMessageIdExists(innerDb, message.chatId as string)) {
               throw new ValidationError(`Duplicate message id: ${message.chatId}`)
@@ -4484,9 +4483,8 @@ export function registerCommandRoutes(
         mutate(database, innerDb) {
           const characters = normalizeAllCharacterChats(database)
           const { character, chat } = requireChatLocation(characters, chatId)
-          // `scriptstate` lives in the chat row. This hot generation/script path
-          // no longer hydrates every message or rewrites every character; sibling
-          // chat normalization is validate-only.
+          // This path updates only the chat row's `scriptstate`; sibling chat
+          // normalization is validate-only.
           chat.scriptstate ??= {}
           for (const key of deleteKeys) {
             delete chat.scriptstate[key]
@@ -6558,8 +6556,8 @@ export function registerCommandRoutes(
           const target = readScriptDefinitionCommandTarget(database)
           const module = readModuleScriptParent(target, moduleId)
           module.regex = scripts
-          // Preserve the existing module-table rewrite shape, but skip the
-          // discarded corpus-wide script-definition repair.
+          // Module script updates rewrite only the `modules` table; corpus-wide
+          // character repairs are validate-only.
           writeSingleCollectionTable(innerDb, 'modules', asArray(target.modules))
           return {
             // Only the `modules` table is rewritten, so emit a module-scoped
@@ -6602,8 +6600,8 @@ export function registerCommandRoutes(
           const target = readScriptDefinitionCommandTarget(database)
           const module = readModuleScriptParent(target, moduleId)
           module.trigger = triggers
-          // Preserve the existing module-table rewrite shape, but skip the
-          // discarded corpus-wide trigger-definition repair.
+          // Module trigger updates rewrite only the `modules` table; corpus-wide
+          // character repairs are validate-only.
           writeSingleCollectionTable(innerDb, 'modules', asArray(target.modules))
           return {
             // Only the `modules` table is rewritten, so emit a module-scoped

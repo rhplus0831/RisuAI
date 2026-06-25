@@ -1293,8 +1293,8 @@ export async function runTrigger(
           // (`src/ts/process/triggers.ts:1695-1710`). The runner binds the host
           // fns to `chat` + `engine`, so message/var writes thread through this
           // run's state; it returns the (in-place mutated) chat + stopSending.
-          // When no runner is injected (the start-trigger path), this stays a
-          // no-op, preserving the fall-through behavior.
+          // Callers/tests that omit a runner get a no-op, preserving the
+          // fall-through behavior.
           if (ctx.runLua) {
             const luaMode = mode === 'manual' ? (arg.manualName ?? 'manual') : mode
             const r = await ctx.runLua({

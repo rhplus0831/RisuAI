@@ -285,10 +285,8 @@ describe('command protocol metrics', () => {
     }
     expect(generation.metric.mutationPath).toBe('targeted-generation')
 
-    // Written-table ranges. Phases 2-3 narrowed these single-sub-row commands
-    // off the over-broad 13-table floor onto their own tables: settings/plugin
-    // storage to their tables, and `chat.updated` (PATCH chats/:chatId, no
-    // `select`) to one `UPDATE chats`.
+    // Written-table ranges: settings/plugin storage write their own tables, and
+    // `chat.updated` (PATCH chats/:chatId, no `select`) writes one `UPDATE chats`.
     expect(chat.metric.writtenTables, 'chat.writtenTables').toEqual(['chats'])
     expect(settings.metric.writtenTables, 'settings.writtenTables').toEqual(['settings'])
     expect(pluginStorage.metric.writtenTables, 'pluginStorage.writtenTables').toEqual(['plugin_custom_storage'])

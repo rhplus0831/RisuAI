@@ -9,12 +9,12 @@ import { setupAuthedClient } from './helpers/auth.js'
 import { assertCommandMetricGate, type CommandMutationMetric } from './helpers/commandMetricGates.js'
 import { assertOnlyRowsWritten, tableRowidsById } from './helpers/rowStability.js'
 
-// Phase 2 (settings + plugin-storage paths) regression. Each of the six Tier-1
-// settings-scalar routes and the three Tier-2 plugin-storage routes now writes
-// only its own table instead of the broad 13-table set. These tests prove the
-// narrowing two ways: the `command_mutation` metric reports the targeted path
-// and an exact `writtenTables`, and `tableRowidsById` shows every unrelated
-// character / chat row keeps its rowid (no DELETE+reINSERT churn).
+// Settings + plugin-storage regression. Each settings-scalar route and
+// plugin-storage route writes only its own table instead of the broad rewrite
+// set. These tests prove the narrowing two ways: the `command_mutation` metric
+// reports the targeted path and an exact `writtenTables`, and `tableRowidsById`
+// shows every unrelated character / chat row keeps its rowid (no DELETE+reINSERT
+// churn).
 
 interface Harness {
   app: FastifyInstance
@@ -244,9 +244,8 @@ describe('Phase 2 settings-scalar mutation range', () => {
     assertCommandMetricGate(metric)
     expectNoCharacterOrChatChurn(before)
     expect(readSettings().theme).toBe('light')
-    // `writtenTables` is the complete set of tables written, so the nine
-    // collection tables were provably left untouched (the broad path would have
-    // DELETE+reINSERTed all of them); the collection still has its two rows.
+    // `writtenTables` is the complete set of tables written, so collection
+    // tables were provably left untouched; the collection still has its two rows.
     expect(readCollection('bot_presets')).toHaveLength(2)
   })
 
@@ -270,7 +269,7 @@ describe('Phase 2 settings-scalar mutation range', () => {
     expect(readCollection('hypa_v3_presets')).toEqual([{ name: 'hypa-0' }, { name: 'hypa-1' }])
     // The presets array lives in its table, not the settings row.
     expect(readSettings().hypaV3Presets).toBeUndefined()
-    // The other eight collection tables are untouched.
+    // Other collection tables are untouched.
     expect(readCollection('bot_presets')).toHaveLength(2)
   })
 

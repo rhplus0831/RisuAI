@@ -1,5 +1,3 @@
-// Only 20 lines, lol
-
 import fileBufferUrl from './rpack_map.bin?url';
 
 let mapData;

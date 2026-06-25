@@ -230,7 +230,7 @@ describe('Phase 7-6b @@move_top / @@move_bottom', () => {
     expect(out).toBe('TAG\npre  post')
   })
 
-  it('@@move_top defangs `g` to non-global (SPA scripts.ts:191-193 "temperary fix")', () => {
+  it('@@move_top defangs `g` to non-global for the SPA move-action quirk', () => {
     const db = makeDatabase({
       // Even with ableFlag + flag='g', move_top strips 'g' before compile.
       presetRegex: [regex('TAG', '@@move_top $&', 'editprocess', 'g', true)],

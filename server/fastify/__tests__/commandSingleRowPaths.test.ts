@@ -9,11 +9,11 @@ import { setupAuthedClient } from './helpers/auth.js'
 import { assertCommandMetricGate, type CommandMutationMetric } from './helpers/commandMetricGates.js'
 import { assertOnlyRowsWritten, tableRowidsById } from './helpers/rowStability.js'
 
-// Phase 3 (single character-row / single chat-row paths) regression. The Tier-3
-// character/chat metadata edits now write only their target row (plus the
-// documented conditional co-writes) instead of the broad 13-table set. Each test
-// proves the narrowing via the `command_mutation` metric (targeted path + exact
-// `writtenTables`) and `tableRowidsById` (no unrelated character/chat row churn).
+// Single character-row / single chat-row regression. Character/chat metadata
+// edits write only their target row plus documented conditional co-writes instead
+// of the broad rewrite set. Each test proves the narrowing via the
+// `command_mutation` metric (targeted path + exact `writtenTables`) and
+// `tableRowidsById` (no unrelated character/chat row churn).
 
 interface Harness {
   app: FastifyInstance

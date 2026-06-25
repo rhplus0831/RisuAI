@@ -272,11 +272,11 @@
         onclick={() => {
           if (!open) {
             open = true
-            onOpen(draft.mode !== 'folder') // If not a folder, pass true
+            onOpen(draft.mode !== 'folder')
           } else {
             settleDraftSoon()
             open = false
-            onClose(draft.mode !== 'folder') // If not a folder, pass true
+            onClose(draft.mode !== 'folder')
           }
         }}>
         {#if draft.mode === 'folder'}

@@ -2102,7 +2102,6 @@
         e.preventDefault()
       }
       if (e.key === 'v' && e.ctrlKey) {
-        //paste
         pasteEffect()
         e.preventDefault()
       }
@@ -2941,7 +2940,6 @@
               <button
                 class="p-2 w-full text-start hover:bg-selected"
                 onclick={() => {
-                  //add effect
                   if (lastClickTime + 500 > Date.now()) {
                     selectedEffectIndex = -1
                     if (selectedIndex > 0) {

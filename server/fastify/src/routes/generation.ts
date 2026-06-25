@@ -1343,8 +1343,7 @@ export function registerGenerationRoutes(
 
     if (provider === 'cohere') {
       if (body.stream === true) {
-        // Cohere's local browser path is non-streaming-only. The server
-        // mirrors that until streaming is justified by a fixture.
+        // Server Cohere dispatch currently supports buffered responses only.
         reply.code(400).send({
           error: 'cohere streaming is not yet supported; set stream: false',
         })
@@ -1367,8 +1366,8 @@ export function registerGenerationRoutes(
 
     if (provider === 'openai-legacy-instruct') {
       if (body.stream === true) {
-        // The local browser path doesn't stream the legacy /v1/completions
-        // endpoint either. Defer until justified by a fixture.
+        // The legacy `/v1/completions` adapter currently supports buffered
+        // responses only.
         reply.code(400).send({
           error: 'openai-legacy-instruct streaming is not yet supported; set stream: false',
         })

@@ -16,10 +16,9 @@ import { clearActivePromptScope, isActivePromptScopeDirty, setActivePromptScope 
  * the caller can check `expandVariables.returns.dirty` to decide
  * whether to persist `ctx.database` via `applyImport`.
  *
- * Browser-only cbs callbacks (`{{screenwidth}}`, `{{metadata::browserlanguage}}`,
- * HTML emitters) register but will throw at invocation on the server.
- * Prompt-assembly paths do not invoke them; revisit per fixture if any preset
- * reaches them.
+ * Browser-context cbs callbacks (`{{screenwidth}}`,
+ * `{{metadata::browserlanguage}}`) register but will throw at invocation on the
+ * server.
  *
  * `bootPromptVariables()` must have been called before the first
  * `expandVariables` invocation; the boot wires the chatVar backend and

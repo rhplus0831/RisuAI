@@ -144,14 +144,9 @@ export function selectPersistedCommandEventReplay(
 }
 
 /**
- * Bounded keep-window prune. Retention is the `historyLimit`-wide
- * revision window ending at the just-persisted revision: everything at or
- * below `latestRevision - historyLimit` is deleted with one primary-key range
- * DELETE. The former implementation walked the newest `historyLimit` rows
- * with `ORDER BY revision DESC LIMIT 1 OFFSET 999` on every command write to
- * find the same threshold. Revisions bump once per persisted event
- * (`bumpRevision` callers all persist inside the same transaction), so the
- * revision window equals the former keep-latest-N-rows retention.
+ * Deletes revisions outside the keep window. Because revisions bump once per
+ * persisted event, `latestRevision - historyLimit` preserves the latest
+ * `historyLimit` events with one range delete.
  */
 function pruneCommandEventHistory(db: DatabaseSync, historyLimit: number, latestRevision: number): void {
   if (!Number.isSafeInteger(historyLimit) || historyLimit < 1) {
@@ -393,8 +388,9 @@ export const COMMAND_EVENT_CATALOG = {
   },
   characterUpdated: {
     type: 'character.updated',
-    // A field edit writes one character row, so a foreign refresh ships just
-    // that character (per-character `characterRow` branch), not every character.
+    // Ordinary field edits write one character row, so a foreign refresh ships
+    // just that character. `trashTime` patches also update settings-level
+    // characterOrder.
     resource: 'characterRow',
   },
   characterDeleted: {
@@ -415,8 +411,9 @@ export const COMMAND_EVENT_CATALOG = {
   },
   chatUpdated: {
     type: 'chat.updated',
-    // Chat metadata lives in one character row; a foreign refresh ships just
-    // the containing character (per-character `characterRow` branch).
+    // Chat metadata is stored in chat rows; the `characterRow` projection
+    // reloads the parent character with its chat rows, so a foreign refresh
+    // ships only that character.
     resource: 'characterRow',
   },
   chatDeleted: {

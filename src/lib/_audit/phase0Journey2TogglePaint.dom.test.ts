@@ -1,5 +1,5 @@
-// Phase 0 / Journey 2 — paint half (docs/AUDIT-PLAN.md §6): "Click a
-// sidebar/jailbreak toggle -> toggle visual flips" (the optimistic paint).
+// Paint-half coverage: click a sidebar/jailbreak toggle and assert the visual
+// toggle flips optimistically.
 // The settle half (flip survives command + refreeze) is the Tier-2 journey in
 // server/fastify/browser-smoke/phase0VisibleState.spec.ts.
 //

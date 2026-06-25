@@ -6,10 +6,9 @@ vi.mock('../../alert', async (importActual) => {
   return { ...actual, alertError: alertErrorSpy }
 })
 
-// Break a circular-init chain that fires off setDatabase/selectedCharID writes:
-// stores.svelte.ts:199 $effect -> moduleUpdate -> getModules -> getDatabase, which
-// hits a vitest SSR TDZ before all DB imports are initialized in this test file's
-// dependency graph. The tests do not exercise modules; a noop is safe.
+// Break a circular-init chain where stores.svelte imports trigger moduleUpdate,
+// then getModules/getDatabase before all DB imports are initialized in this test
+// file's dependency graph. The tests do not exercise modules; a noop is safe.
 vi.mock('../modules', async (importActual) => {
   const actual = await importActual<typeof import('../modules')>()
   return { ...actual, moduleUpdate: () => {} }

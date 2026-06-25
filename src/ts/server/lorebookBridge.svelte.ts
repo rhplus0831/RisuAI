@@ -863,9 +863,9 @@ export function deleteGlobalLorebook(index: number): boolean {
 }
 
 // Global-lorebook list operations roll back only the attempted row/order/page
-// state. The broad snapshot exports remain for direct callers and Phase 0 clone
-// cost checks, but command failures must not restore an old full list over newer
-// sibling rows or selection changes.
+// state. The broad snapshot exports remain for direct callers, but command
+// failures must not restore an old full list over newer sibling rows or
+// selection changes.
 export function dispatchCreateGlobalLorebook(lorebook: GlobalLorebook, previous: GlobalLorebookStateSnapshot): void {
   if (!canUseServerCommands()) return
   lorebook.id = typeof lorebook.id === 'string' && lorebook.id.trim() ? lorebook.id : v4()

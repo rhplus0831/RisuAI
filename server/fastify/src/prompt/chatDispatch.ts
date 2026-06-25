@@ -484,9 +484,8 @@ function isResolvedModelProfile(target: ChatProviderRouteTarget): target is Reso
  * carry the server-only unknown-id guard through `modelInfo.unsupportedReason`;
  * legacy callers still get the same guard from `resolveModelInfo`. The shared
  * `resolveProviderCapability` table owns the routing decision, so /chat cannot
- * drift from server-intent completion. The stale `reverse_proxy` +
- * `reverseProxyOobaMode` rejection is gone — the openai adapter applies
- * `oobaSystemHoist` itself.
+ * drift from server-intent completion. The openai adapter applies
+ * `oobaSystemHoist` for reverse-proxy Ooba mode.
  */
 export function resolveChatProviderRoute(
   db: Database,

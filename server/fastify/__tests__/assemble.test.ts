@@ -1554,7 +1554,7 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
     expect(state.unformated.lastChat.length).toBe(1)
     // Non-memory rows are flagged removable for the 7-11f budget pass.
     expect(state.unformated.chats.every((r) => r.removable === true)).toBe(true)
-    // No Hypa on the server yet, so no memory cards are split out.
+    // This fixture has no server memory rows, so no memory cards are split out.
     expect(state.memories).toEqual([])
   })
 

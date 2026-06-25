@@ -13,14 +13,11 @@ import { setupAuthedClient } from './helpers/auth.js'
 import { assertScopedLoadOnHotPath, withServerLoadInstrumentation } from './helpers/loadCostHarness.js'
 import { buildLargeCorpusFixture } from '../../../src/ts/__tests__/largeCorpusFixture.js'
 
-// Phase 2 command-mutation read narrowing (audit M3, L5, L6): the targeted
-// message/scriptstate/generation command routes only locate one chat row and
-// mutate it (or write the message store through the kit writers), yet every
-// mutation paid `loadPersisted` — all 9 collection tables + plugin storage
-// (M3), the assets metadata scan (L5), and the whole characters+chats payload
-// parse (L6). The opt-in `chatScopedRead` loads exactly the target chat row +
-// its parent character, with a broad `loadPersisted` fallback for unknown ids
-// and the pre-extraction embedded state so error behavior and the global
+// Command-mutation read narrowing: targeted message/scriptstate/generation
+// command routes locate one chat row and mutate it (or write the message store
+// through kit writers). The opt-in `chatScopedRead` loads exactly the target chat
+// row plus its parent character, with a broad `loadPersisted` fallback for
+// unknown ids and pre-extraction embedded state so error behavior and the global
 // dedup edge stay byte-identical.
 
 interface Harness {

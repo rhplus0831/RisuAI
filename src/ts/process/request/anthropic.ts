@@ -284,7 +284,6 @@ export async function requestClaude(arg: RequestDataArgumentExtended): Promise<r
         break
       }
       case 'function': {
-        //ignore function for now
         break
       }
     }
@@ -932,7 +931,6 @@ async function requestClaudeHTTP(
             if (parsedData?.type === 'error') {
               const errormsg: string = parsedData?.error?.message
               if (errormsg && errormsg.toLocaleLowerCase().includes('overload') && db.antiServerOverloads) {
-                // console.log('Overload detected, retrying...')
                 controller.enqueue({
                   '0': 'Overload detected, retrying...',
                 })

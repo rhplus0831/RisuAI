@@ -17,9 +17,9 @@ import {
   writeSingleCollectionTable,
 } from '../src/repository.js'
 
-// Phase 0 targeted writer kit: each writer must touch exactly its rows and leave
-// every unrelated character / chat / collection rowid stable. A SQLite rowid
-// only changes on DELETE+reINSERT, so snapshotting id→rowid (or position→rowid)
+// Targeted writer kit: each writer must touch exactly its rows and leave every
+// unrelated character / chat / collection rowid stable. A SQLite rowid only
+// changes on DELETE+reINSERT, so snapshotting id-to-rowid (or position-to-rowid)
 // before and after is the proof the broad rewrite was avoided.
 
 let dataDir: string
@@ -98,7 +98,7 @@ const COLLECTION_TABLES = [
   'hypa_v3_presets',
 ] as const
 
-/** Every collection table's position→rowid snapshot, keyed by table. */
+/** Tracked collection table position-to-rowid snapshots, keyed by table. */
 function allCollectionRowids(): Record<string, Record<string, number>> {
   return Object.fromEntries(COLLECTION_TABLES.map((table) => [table, rowids(table, 'position')]))
 }
@@ -216,7 +216,7 @@ describe('targeted writer kit', () => {
     ])
 
     expect(readCollection('modules')).toHaveLength(3)
-    // Only `modules` was touched; the other eight tables keep their rowids.
+    // Only `modules` was touched; other tracked tables keep their rowids.
     for (const table of COLLECTION_TABLES) {
       if (table === 'modules') continue
       expect(rowids(table, 'position'), table).toEqual(collectionsBefore[table])

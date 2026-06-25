@@ -62,10 +62,9 @@ const SQLITE_EXPORT_ESTIMATE_FILE = 'risu.db'
 // batches, so size is constrained by disk, not memory. A finite ceiling is opt-in
 // via RISU_API_IMPORT_MAX_BYTES (see config.ts).
 const DEFAULT_IMPORT_MAX_BYTES = Number.POSITIVE_INFINITY
-// Backstop for the bundle's inner `database.risu` when neither the import
-// ceiling nor the expanded-import cap is finite unlike the asset
-// entries, the inner `.risu` inflates fully in memory before decoding, so it
-// always needs a finite expanded-size cap.
+// Backstop for a bundle's inner `database.risu`: unlike asset entries, it
+// inflates fully in memory before decoding, so it needs a finite expanded-size
+// cap when no import ceiling is configured.
 const DEFAULT_BUNDLE_INNER_RISU_MAX_EXPANDED_BYTES = 1024 * 1024 * 1024
 
 export function registerSaveRoutes(
@@ -77,10 +76,8 @@ export function registerSaveRoutes(
   options: { maxExpandedImportBytes?: number; importMaxBytes?: number } = {},
 ): void {
   const importMaxBytes = options.importMaxBytes ?? DEFAULT_IMPORT_MAX_BYTES
-  // The bundle's embedded `database.risu` gets a finite expanded-size cap even
-  // when the bundle import as a whole is unlimited the explicit
-  // import ceiling when set, else the same expanded cap the ordinary
-  // `/import/risusave` route enforces, else a 1 GiB backstop.
+  // Use the explicit import ceiling when set; otherwise use the ordinary
+  // expanded import cap, falling back to 1 GiB for the embedded `database.risu`.
   const bundleInnerRisuMaxExpandedBytes = Number.isFinite(importMaxBytes)
     ? importMaxBytes
     : (options.maxExpandedImportBytes ?? DEFAULT_BUNDLE_INNER_RISU_MAX_EXPANDED_BYTES)
@@ -184,9 +181,8 @@ export function registerSaveRoutes(
     if (!(await requireAuth(authState, req, reply))) return
     try {
       const exportOptions = parseExportQuery(req.query)
-      // Split the snapshot hydration from the encode/output-buffer step so the
-      // opt-in metric can attribute ordinary `.risu` materialization cost. The
-      // snapshot→encode path is byte-identical to the prior combined call.
+      // Measure snapshot hydration separately from encode/output buffering; emitted
+      // bytes still come from the same snapshot-to-encode path.
       const measure = protocolMetricsEnabled()
       const snapshotStart = measure ? protocolNowMs() : 0
       const snapshot = buildRepositoryRisuSaveExportSnapshot(db, dataDir)
@@ -222,10 +218,8 @@ export function registerSaveRoutes(
     if (!(await requireAuth(authState, req, reply))) return
     try {
       const exportOptions = parseExportQuery(req.query)
-      // Bundle export still materializes the embedded `.risu` bytes before
-      // streaming the asset entries; measure that materialization the same way
-      // as ordinary export. Asset streaming and the shared snapshot are
-      // unchanged.
+      // Bundle export materializes the embedded `.risu` before streaming asset
+      // entries, so record the same materialization metric as ordinary export.
       const measure = protocolMetricsEnabled()
       const snapshotStart = measure ? protocolNowMs() : 0
       const persisted = loadPersistedWithMessages(db, dataDir)

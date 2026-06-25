@@ -38,8 +38,7 @@ import { expandVariables, type ExpandContext } from './variables.js'
  *     `keep_activate_after_match`, `dont_activate_after_match`.
  *   - `recursive`, `unrecursive`, `no_recursive_search`.
  *
- * `instruct_*` and `is_user_icon` stay on the `default: return false`
- * path until their use cases come up.
+ * `instruct_*` and `is_user_icon` stay on the `default: return false` path.
  *
  * Note on `CCardLib.decorator.parse`: every leading `@@`-line is
  * stripped from the body regardless of the hook's return value. The
@@ -1328,8 +1327,9 @@ export interface LorebookContext {
   /**
    * `{{position::}}` resolver for the template / render walkers. The
    * SPA's injection-lore branch is dead server-side because filtering removes
-   * location-targeted injection entries out of `report.actives`), so
-   * this just delegates to `resolvePosition` and ignores `loc` —
+   * lore-targeted injection entries from `report.actives`; non-lore injection
+   * entries can still survive. This just delegates to `resolvePosition` and
+   * ignores `loc`,
    * matching `preflight.ts`'s `positionParserFor` so preflight and the
    * final render agree.
    */

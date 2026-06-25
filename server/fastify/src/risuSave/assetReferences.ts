@@ -183,11 +183,9 @@ function collectRisuSaveAssetReferences(
 }
 
 /**
- * Merge the table-scanned message inlay references. Like the
- * hydrated `addChatInlayReferences` walk these relocate, message `data` is
- * free text scanned by regex — deliberately outside the EC6 validator-owned
- * asset-field collectors; each candidate still passes `addReference`'s id
- * validation.
+ * Merge table-scanned message inlay references from message `data`. These are
+ * free-text regex candidates, so each one still passes `addReference` id
+ * validation before it is included.
  */
 function addMessageInlayReferenceSources(
   found: Map<string, Set<string>>,

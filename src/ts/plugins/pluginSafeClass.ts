@@ -299,7 +299,6 @@ export const tagWhitelist = [
 ]
 
 const restrictElement = <T extends Node>(element: T): T => {
-  //since we already trimed out, just return the element
   return element
 }
 
@@ -391,7 +390,7 @@ export const SafeDocument = {
     }) as HTMLAnchorElement
   },
 
-  //add safe methods as needed
+  // TODO: Add safe methods as plugin API use cases require them.
   createRange: (): Range => {
     return document.createRange()
   },

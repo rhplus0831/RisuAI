@@ -57,8 +57,8 @@
     if (snapshot === previousPromptSnapshot) return
     const before = previousPromptItem
     previousPromptSnapshot = snapshot
-    // One clone serves both the next-change baseline and the dispatched value
-    // (neither side mutates it); the former code cloned twice per keystroke.
+    // One clone serves both the next-change baseline and the dispatched value;
+    // neither side mutates it.
     const currentClone = clonePromptItem(promptItem)
     previousPromptItem = currentClone
     onUpdate(currentClone, before)

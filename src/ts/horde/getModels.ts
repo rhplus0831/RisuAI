@@ -12,9 +12,6 @@ interface HordeModel {
 
 let modelList: HordeModel[] | 'loading' = null
 
-//until horde is ready
-// modelList = []
-
 export async function getHordeModels(): Promise<HordeModel[]> {
   if (modelList === null) {
     try {

@@ -138,11 +138,12 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   const db = openDatabase(config.dataDir)
   const activeWriterState = createActiveWriterState()
   // Legacy memory backfill reads chat.message[]; hydrate from the table (or the
-  // still-embedded db.json on a first v3→v4 boot) so it sees the real history.
+  // still-embedded legacy db.json before boot import retires it) so it sees the
+  // real history.
   backfillLegacyHypaV3MemoryRows(db, loadPersistedWithMessages(db, config.dataDir).database)
   // Proactively import any legacy db.json into SQLite and retire the file.
   // No-op once converged. Must run after the backfill above, which needs the
-  // embedded messages on the first upgrade boot.
+  // embedded messages before boot import retires a legacy db.json.
   ensureDbJsonImported(db, config.dataDir)
   const memoryEventBus = createMemoryEventBus()
   const emitMemoryEvent: MemoryEventSink = (event) => {

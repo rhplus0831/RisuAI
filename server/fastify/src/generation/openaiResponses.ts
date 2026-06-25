@@ -69,9 +69,8 @@ const DEFAULT_BASE_URL = 'https://api.openai.com/v1'
  * user/system rows become input_text wrappers; assistant rows become
  * output_text wrappers (with `status: complete` except for a trailing
  * assistant which is marked `incomplete` so the model continues from there).
- * Mirrors the local browser path in
- * `src/ts/process/request/openAI/requests.ts:1075-1143`. Multimodal and
- * function rows are omitted.
+ * Derived from `requestOpenAIResponseAPI`; this server adapter currently keeps
+ * text user/system/assistant rows and omits multimodal/function/tool rows.
  */
 export function buildResponseInput(messages: RawChatMessage[]): ResponseItem[] {
   const items: ResponseItem[] = []
@@ -90,7 +89,6 @@ export function buildResponseInput(messages: RawChatMessage[]): ResponseItem[] {
         content: [{ type: 'input_text', text }],
       })
     }
-    // function / tool rows are dropped — out of scope.
   }
   // If the trailing row is an assistant message, mark it incomplete so the
   // model continues that turn.

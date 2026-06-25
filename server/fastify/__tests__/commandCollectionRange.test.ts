@@ -9,11 +9,10 @@ import { setupAuthedClient } from './helpers/auth.js'
 import { assertCommandMetricGate, type CommandMutationMetric } from './helpers/commandMetricGates.js'
 import { assertOnlyRowsWritten, tableRowidsById } from './helpers/rowStability.js'
 
-// Phase 4 (collection-table paths) regression. Each Tier-4 collection family
-// route now writes only the one collection table it changed (single-row UPDATE
-// for pure field edits; full one-table rewrite for create/delete/reorder) plus
-// its pointer scalar in settings only when it moved — instead of the broad
-// 13-table rewrite. These tests prove the narrowing three ways: the
+// Collection-table regression. Each collection family route writes only the one
+// collection table it changed (single-row UPDATE for pure field edits; full
+// one-table rewrite for create/delete/reorder) plus its pointer scalar in
+// settings only when it moved. These tests prove the narrowing three ways: the
 // `command_mutation` metric reports `targeted-collection` with an exact
 // `writtenTables`; `tableRowidsById` shows every character / chat row keeps its
 // rowid; and collection rowid snapshots show single-row edits do not churn the
@@ -271,7 +270,7 @@ describe('Phase 4 plugins collection range', () => {
       'plugin-c',
       'plugin-d',
     ])
-    // The other eight collection tables are provably untouched (not in writtenTables).
+    // Other collection tables are provably untouched (not in writtenTables).
     expect(readCollection('bot_presets')).toHaveLength(2)
   })
 

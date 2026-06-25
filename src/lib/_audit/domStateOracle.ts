@@ -1,8 +1,7 @@
-// Reusable state-vs-DOM differential oracle for the UI/UX behavioral audit
-// (docs/AUDIT-PLAN.md). The audit measures *rendered-state divergence*: a
-// user-driven transition leaves the painted DOM disagreeing with a correct
-// store value. The store is only ever the differential oracle, never the
-// success oracle.
+// Reusable state-vs-DOM differential oracle for rendered-state divergence: a
+// user-driven transition leaves the painted DOM disagreeing with a correct store
+// value. The store is only ever the differential oracle, never the success
+// oracle.
 //
 // Tier 1 (happy-dom) and Tier 2 (Playwright) share one classifier; only the
 // readers differ (querySelector vs page.locator). This module is intentionally

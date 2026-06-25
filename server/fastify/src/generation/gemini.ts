@@ -174,10 +174,9 @@ function buildPayload(req: GeminiRequest): Record<string, unknown> {
 }
 
 /**
- * Some Gemini 3 preview models (as of 2025-12) are only available on the
- * `global` Vertex endpoint regardless of the user's configured region.
- * Mirror the SPA check at
- * `src/ts/process/request/google.ts:457-460`.
+ * Some Gemini 3 preview models are only available on the `global` Vertex
+ * endpoint regardless of the user's configured region. Mirror the SPA's
+ * `isVertexGlobalOnlyModel` check in `src/ts/process/request/google.ts`.
  */
 const VERTEX_GLOBAL_ONLY = /^gemini-3-.*-preview$/
 

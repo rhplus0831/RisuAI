@@ -1769,7 +1769,7 @@ const countriesWithAiLaw = new Set<string>([
 
   //TW isn't under mainland china jurisdiction
   //de facto, de jure in TW law, unlike HK and MO,
-  //So we don't include it for now
+  // So it is excluded.
   //"TW",
 
   // Republic of Korea

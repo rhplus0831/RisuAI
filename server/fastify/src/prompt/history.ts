@@ -96,9 +96,8 @@ type MaybePromise<T> = T | Promise<T>
  *
  * Each first-message / per-message body additionally flows through the
  * injectable `editProcess` seam between `expandVariables` and `processScript`.
- * Lua `editprocess` is a browser no-op, so the default seam is identity; the
- * assembler supplies the VM-backed hook so the no-op stays faithful through the
- * runtime.
+ * Lua `editprocess` is currently a browser no-op, so the default seam is
+ * identity.
  */
 
 export interface AssetLookup {
@@ -121,8 +120,7 @@ export const NO_ASSETS: AssetLookup = {}
  * `runLuaEditTrigger(char, 'editprocess', data, { index })` inside the SPA's
  * `processScriptFull` (`scripts.ts:130`). `index` is the per-row index the SPA
  * threads as `{ index: chatID }` meta (`-1` for the first message). Lua
- * `editprocess` is a browser no-op, so the default is identity; `assemble.ts`
- * supplies the VM-backed hook so the no-op routes through the runtime.
+ * `editprocess` is currently a browser no-op, so the default is identity.
  */
 export type EditProcessHook = (content: string, index: number) => string | Promise<string>
 
@@ -296,8 +294,8 @@ async function formatHistoryMessage(
         role: msg.role,
       }).text
 
-  // Lua `editprocess` runs through the runtime before regex `processScript`.
-  // A browser no-op, so identity unless the assembler supplies the VM hook.
+  // Lua `editprocess` stays at the browser call position before regex
+  // `processScript`; it is currently an identity hook.
   const luaProcessed = await editProcess(preExpanded, index)
 
   let formatted = await processScriptAsync(

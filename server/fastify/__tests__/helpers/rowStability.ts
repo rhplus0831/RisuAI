@@ -2,12 +2,11 @@ import { expect } from 'vitest'
 import { DatabaseSync } from 'node:sqlite'
 import path from 'node:path'
 
-// Rowid-stability primitives for the mutation-range review gate (Phase 0). A
-// SQLite rowid only changes when a row is DELETE+reINSERTed, so snapshotting
-// id→rowid before and after a command proves whether unrelated rows were
-// rewritten (the broad `replaceAll*` path rewrites everything; a narrowed write
-// leaves unrelated rowids stable). `b57df5cd` (`characters/select`) is the
-// reference fix this template generalizes.
+// Rowid-stability primitives for the mutation-range review gate. A SQLite rowid
+// only changes when a row is DELETE+reINSERTed, so snapshotting id-to-rowid
+// before and after a command proves whether unrelated rows were rewritten (the
+// broad `replaceAll*` path rewrites everything; a narrowed write leaves
+// unrelated rowids stable).
 
 /** Snapshot of every row's stable rowid in `characters` / `chats`, keyed by id. */
 export function tableRowidsById(dataDir: string, table: 'characters' | 'chats'): Record<string, number> {

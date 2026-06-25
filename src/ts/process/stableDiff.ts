@@ -283,13 +283,11 @@ export async function generateAIImage(
           image: undefined,
           strength: undefined,
           noise: undefined,
-          //add additional parameters
           seed: random(0, 2 ** 32 - 1),
           extra_noise_seed: random(0, 2 ** 32 - 1),
           prefer_brownian: true,
           deliberate_euler_ancestral_bug: false,
           skip_cfg_above_sigma: null,
-          //add character reference
           director_reference_images: [],
           director_reference_descriptions: [],
           director_reference_information_extracted: [],

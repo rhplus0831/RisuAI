@@ -1175,8 +1175,8 @@ describe('plugin database command bridge', () => {
     expect(captured[0].url).toBe('/api/v1/commands/modules/mod-a')
     expect(captured[0].body?.baseRevision).toBe(100)
     expect(captured[1].url).toBe('/api/v1/commands/modules')
-    // Pre-fix: 100 (parallel race on shared cache). Post-fix: 101 (read
-    // from cache after the first command returns).
+    // The second command reads the revision from cache after the first command
+    // returns.
     expect(captured[1].body?.baseRevision).toBe(101)
   })
 

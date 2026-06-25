@@ -100,9 +100,7 @@ export interface ErrorEvent {
 }
 
 /**
- * Server post-generation derivation surfaced on the terminal `done` frame. Present
- * only when the post-gen pass produced something; trigger-less / script-less sends
- * omit it entirely.
+ * Server post-generation derivation surfaced on the terminal `done` frame.
  */
 export interface PostGenerationFrame {
   /**
@@ -120,14 +118,13 @@ export interface PostGenerationFrame {
   messagePatch?: AssembleMutationPayload
   /**
    * The `'output'` trigger requested a resend (`sendAIprompt`). The browser
-   * re-issues `sendChat` — the resend control flow stays browser-side (B2).
+   * re-issues `sendChat`; the resend control flow stays browser-side.
    */
   resendChat?: boolean
   /**
    * The chat revision after the route persisted the post-gen scriptstate delta.
    * The browser reconciles its cached command revision to it so the follow-up
-   * generation-result command does not revision-conflict. Mirrors C-A1's
-   * `info.revision`, but for the post-gen write.
+   * generation-result command does not revision-conflict.
    */
   revision?: number
 }

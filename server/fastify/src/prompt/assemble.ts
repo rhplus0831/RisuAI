@@ -1229,12 +1229,8 @@ export async function fillHistoryAndBias(state: AssemblyState): Promise<void> {
     assetTable: promptAssetTable,
   })
 
-  // Lua `editprocess` wires each first-message / per-message body through the
-  // runtime, mirroring the SPA's leading `runLuaEditTrigger`. It is a browser
-  // no-op, so this is identity at parity; routing it through the runtime keeps the
-  // server faithful if the browser's behavior ever changes. No `varChanged` fold
-  // is needed (unlike `buildLuaEditRequest`) precisely because the no-op never
-  // writes vars.
+  // Lua `editprocess` is currently a browser no-op; this hook stays identity
+  // while preserving the same call position before regex `processScript`.
   const { editCtx } = buildLuaEditTriggerContext(state)
   const editProcess: EditProcessHook = (content, index) =>
     runLuaEditTrigger(state.currentChar, 'editprocess', content, { index }, editCtx)
@@ -1827,10 +1823,9 @@ export async function assemblePrompt(input: AssembleInput, deps: AssembleDeps): 
 // `chat.scriptstate` delta and final assistant text, and reports whether the
 // output trigger requested a resend.
 //
-// The route persists the scriptstate delta through `persistAssemblyMutations`;
-// the final text rides back on the `done` frame. This pass derives against the
-// post-assembly scriptstate baseline and never emits a transcript write for the
-// appended assistant row.
+// Generation result finalization persists the scriptstate delta and assistant
+// text. This pass derives against the post-assembly scriptstate baseline and
+// never emits a transcript write for the appended assistant row.
 
 /** Route inputs for {@link runServerPostGeneration}. */
 export interface ServerPostGenerationInput {
@@ -1885,9 +1880,10 @@ async function applyEditOutput(state: AssemblyState, text: string, msgIndex: num
 /**
  * Append (send / regenerate) or extend (continue) the assistant row carrying the
  * `editoutput`'d text, mirroring `consumeStreamResponse` / `applyNonStreamResponse`.
- * For `continue` the trailing assistant row is rewritten in place (keeping its
- * id/metadata so B2's `targetMessageId` replace lands); otherwise a fresh row is
- * pushed with the generation metadata so B2 finds it by `chatId === generationId`.
+ * For `continue` the trailing assistant row is rewritten in place, keeping its
+ * id/metadata for target-message replacement; otherwise a fresh row is pushed
+ * with the generation metadata so the result can be found by
+ * `chatId === generationId`.
  */
 function appendAssistantRow(
   state: AssemblyState,

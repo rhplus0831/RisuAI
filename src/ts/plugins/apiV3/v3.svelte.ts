@@ -225,11 +225,9 @@ class SafeElement {
     this.#element.setAttribute('style', value)
   }
   public addClass(className: string) {
-    //
     this.#element.classList.add(className)
   }
   public removeClass(className: string) {
-    //
     this.#element.classList.remove(className)
   }
   public setClassName(className: string) {
@@ -1666,7 +1664,8 @@ const makeRisuaiAPIV3 = (
       }
 
       if (getModelInfo(DBState.db.aiModel).id.startsWith('pluginmodel:::')) {
-        // Executing plugin provider is block because it can be used for loopholes for ipc right now.
+        // Plugin-provided models are blocked from chat sends to keep plugin IPC
+        // outside provider execution.
         throw new Error('Sending chat with plugin-based model is currently blocked')
       }
 
@@ -1734,7 +1733,8 @@ const makeRisuaiAPIV3 = (
       }
     },
     saveSecretHeader: async (key: string, value: string | string[]) => {
-      // Secret header storage is intentionally unavailable until write-only storage exists.
+      // Secret header storage is intentionally unavailable without write-only
+      // plugin storage.
       console.warn(
         `[RisuAI Plugin: ${plugin.name}] saveServerSecret is not implemented yet. This API is intended for securely storing sensitive information like API keys with write-only access for plugins. Please avoid using this API until it is implemented.`,
       )

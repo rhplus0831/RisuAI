@@ -347,8 +347,7 @@ describe('setupSendChatContext - DB side effects', () => {
     expect(captured[0].url).toBe('/api/v1/commands/characters/cha-1')
     expect(captured[0].body?.baseRevision).toBe(21)
     expect(captured[1].url).toBe('/api/v1/commands/chats/chat-1/messages')
-    // Pre-fix: 21 (raced on the cached baseline). Post-fix: 22 (read from
-    // the first command's response by runOptimisticCommandSequence).
+    // The second command reads the revision from the first command's response.
     expect(captured[1].body?.baseRevision).toBe(22)
   })
 })

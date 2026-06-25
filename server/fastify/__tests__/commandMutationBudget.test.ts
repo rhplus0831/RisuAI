@@ -9,13 +9,13 @@ import {
   type CommandMetricGate,
 } from './helpers/commandMetricGates.js'
 
-// Phase 7 verification budget: the gate map is the single budget surface for
-// every command write path, so it must stay in lock-step with the runtime and
-// no narrow path may quietly lose its `dbJsonWriteMs: 0` floor or its
-// written-table budget. These are pure static invariants (no app harness): they
-// scan the server source for the `mutationPath` labels the runtime can emit and
-// cross-check them against `COMMAND_METRIC_REVIEW_GATES`. A new route, a renamed
-// label, or a loosened gate fails here before it can silently widen a write.
+// Verification budget: the gate map is the single budget surface for every
+// command write path, so it must stay in lock-step with the runtime and no narrow
+// path may quietly lose its `dbJsonWriteMs: 0` floor or its written-table budget.
+// These are pure static invariants (no app harness): they scan the server source
+// for the `mutationPath` labels the runtime can emit and cross-check them against
+// `COMMAND_METRIC_REVIEW_GATES`. A new route, a renamed label, or a loosened gate
+// fails here before it can silently widen a write.
 
 const SRC_DIR = path.resolve(fileURLToPath(new URL('../src', import.meta.url)))
 

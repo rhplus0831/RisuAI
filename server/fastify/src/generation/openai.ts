@@ -35,8 +35,7 @@ export interface OpenAIRequest {
    * When true, every `role: 'system'` message is removed from the wire
    * payload and their contents are joined with `\n` into a single trailing
    * `role: 'system'` message. Mirrors the local SPA's
-   * `db.reverseProxyOobaMode` behavior (see
-   * `src/ts/process/request/openAI/requests.ts:204-222`). Only used by the
+   * `db.reverseProxyOobaMode` handling in `requestOpenAI`. Only used by the
    * reverse_proxy route today.
    */
   oobaSystemHoist?: boolean
@@ -96,8 +95,7 @@ interface ChatMessage {
 /**
  * Remove every `role: 'system'` row and append a single trailing system
  * row whose content is the joined original system contents. Mirrors
- * `db.reverseProxyOobaMode` in the SPA's
- * `src/ts/process/request/openAI/requests.ts:204-222`, with the empty-stub
+ * `db.reverseProxyOobaMode` in the SPA's `requestOpenAI`, with the empty-stub
  * cleanup (`db.newOAIHandle === true` default) folded in.
  */
 export function applyOobaSystemHoist(messages: unknown[]): unknown[] {

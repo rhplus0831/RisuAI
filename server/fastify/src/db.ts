@@ -46,8 +46,9 @@ export const MIGRATIONS: readonly MigrationStep[] = [
     version: 4,
     name: 'chat-messages-table',
     up: (db) => {
-      // The migration only creates the table; embedded `db.json` messages are
-      // lossless-migrated on first read and persisted to SQLite on the next write.
+      // The migration only creates the table; boot-time `ensureDbJsonImported`
+      // splits legacy `db.json` messages into SQLite after memory backfill has
+      // read them.
       createMessageTable(db)
     },
   },

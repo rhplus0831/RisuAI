@@ -48,7 +48,7 @@
   let stb: Sortable = null
   let ele: HTMLDivElement = $state()
   let sorted = $state(0)
-  let idgroup = 'a' + v4() //make should it starts with alphabetic character
+  let idgroup = 'a' + v4()
 
   function cloneLoreBooks(entries: loreBook[]): loreBook[] {
     return JSON.parse(JSON.stringify(entries ?? []))

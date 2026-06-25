@@ -725,7 +725,7 @@ export async function registerModelDynamic() {
   }
 }
 
-//testing purpose only, not used in production
+// Expose registration for tests that need dynamic model rows.
 globalThis.registerModelDynamic = registerModelDynamic
 
 export function getModelInfo(id?: string | null): LLMModel {

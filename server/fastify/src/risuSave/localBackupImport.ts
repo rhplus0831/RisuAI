@@ -190,7 +190,8 @@ function decodeBundleZip(filePath: string, options: DecodeLocalBackupOptions): P
       if (name.endsWith(RISU_SUFFIX)) {
         databaseBytes = bytes
       }
-      // Any other entry (directories, unexpected files) is ignored.
+      // Non-asset, non-manifest, non-.risu entries are ignored; malformed asset
+      // entries are rejected by `decodeBundleAsset`.
     }
 
     const unzip = new fflate.Unzip()

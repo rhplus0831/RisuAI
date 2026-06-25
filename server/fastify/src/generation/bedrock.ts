@@ -4,8 +4,8 @@ import { encodePathSegment, signSigV4 } from './sigv4.js'
 import { readBoundedBodyText } from './body.js'
 
 /**
- * AWS Bedrock Claude (Anthropic Messages) dispatcher. Mirrors the local
- * SPA path at `src/ts/process/request/anthropic.ts:418-582`:
+ * AWS Bedrock Claude (Anthropic Messages) dispatcher. Mirrors the local SPA's
+ * `requestClaude` Bedrock branch:
  *
  *  - POST `https://bedrock-runtime.${region}.amazonaws.com/model/${modelId}/invoke`
  *  - Body is the Anthropic Messages payload with `anthropic_version:

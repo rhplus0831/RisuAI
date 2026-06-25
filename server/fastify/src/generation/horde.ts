@@ -2,8 +2,7 @@ import type { CompletionResult } from './frames.js'
 import { readBoundedBodyJson, readBoundedBodyText } from './body.js'
 
 /**
- * Stable Horde text dispatcher. Mirrors the local SPA path at
- * `src/ts/process/request/request.ts:1418-1523`:
+ * Stable Horde text dispatcher. Mirrors the local SPA's `requestHorde` path:
  *
  *   1. `POST /api/v2/generate/text/async` with the flattened prompt +
  *      sampler params → `{id, kudos?, message?}`. Returns 202 on accept.
@@ -114,8 +113,8 @@ function buildAsyncPayload(req: HordeRequest): Record<string, unknown> {
     dry_run: false,
   }
   if (req.model !== 'auto') {
-    // Mirror the SPA quirk that adds whitespace variants to widen worker
-    // matching: see request.ts:1453.
+    // Mirror the SPA's `requestHorde` model list expansion, which adds
+    // whitespace variants to widen worker matching.
     payload.models = [req.model, req.model.trim(), ' ' + req.model, req.model + ' ']
   }
   return payload

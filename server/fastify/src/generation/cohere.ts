@@ -65,7 +65,7 @@ const VALID_SAFETY_MODES = new Set(['NONE', 'CONTEXTUAL', 'STRICT'])
  * Cohere splits a conversation into three parts: a single trailing `message`
  * (the latest user turn), prior turns under `chat_history`, and an optional
  * `preamble` lifted from a leading system message. Mirrors the local browser
- * path in `src/ts/process/request/request.ts:1281-1369`.
+ * `requestCohere` path.
  */
 export interface CohereReformatResult {
   message: string

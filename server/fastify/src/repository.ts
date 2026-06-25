@@ -2580,10 +2580,12 @@ export function backupDir(dataDir: string, id: string): string {
 //
 // Implementation notes per entry:
 //   - 'assets'   : content-addressed asset bytes. Copied as a directory.
-//   - 'risu.db'  : SQLite database (schema_version + hypa-v3 memory tables +
-//                  chat-history tables). Backed up after a WAL checkpoint; restored
-//                  via ATTACH so the live `DatabaseSync` handle stays valid. Every
-//                  table that must survive restore is listed in SQLITE_BACKUP_TABLES.
+//   - 'risu.db'  : SQLite database containing schema/revision state, domain tables,
+//                  asset metadata, command events, projection cache, chat-history
+//                  tables, and Hypa V3 memory tables. Backed up after a WAL
+//                  checkpoint; restored via ATTACH so the live `DatabaseSync` handle
+//                  stays valid. Every table that must survive restore is listed in
+//                  SQLITE_BACKUP_TABLES.
 //   - 'save'     : legacy storage directory written by /api/v1/storage/*.
 export const KNOWN_DATA_DIR_CHILDREN = ['assets', 'risu.db', 'save'] as const
 
@@ -2595,12 +2597,11 @@ function sqliteDbPath(dataDir: string): string {
   return path.join(dataDir, 'risu.db')
 }
 
-// Tables that must survive a backup/restore round-trip. Kept in sync with
-// `createMemoryTables`, the chat-history tables (`createMessageTable` /
-// `createChatBlobTable`), command event replay history, and `schema_version` in `db.ts`. `createBackup`
-// file-copies all of risu.db, but `restoreBackup` swaps tables one-by-one via
-// ATTACH. A table absent here would not be restored, leaving live rows desynced
-// from the restored SQLite snapshot.
+// Tables that must survive a backup/restore round-trip. Kept in sync with every
+// SQLite table created by the server DDL; `createBackup` file-copies all of
+// risu.db, but `restoreBackup` swaps tables one-by-one via ATTACH. A table
+// absent here would not be restored, leaving live rows desynced from the restored
+// SQLite snapshot.
 const SQLITE_BACKUP_TABLES = [
   'schema_version',
   'command_events',
@@ -2701,8 +2702,9 @@ function restoreSqliteFromBackup(db: DatabaseSync, backupDbPath: string, beforeC
   // active route holding the same handle). The transaction is atomic with
   // respect to other queries on this connection.
   if (!fs.existsSync(backupDbPath)) {
-    // No SQLite backup payload: clear live memory rows so the restore is
-    // consistent with a snapshot taken without SQLite backup state.
+    // No SQLite backup payload: clear live SQLite-backed state before importing
+    // any legacy db.json, so rows absent from the snapshot do not survive
+    // restore.
     db.exec('BEGIN')
     try {
       for (const table of SQLITE_BACKUP_TABLES) {

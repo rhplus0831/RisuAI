@@ -60,9 +60,8 @@ export interface TriggerVarEngine {
   /** Sets the effect loop's current indent (drives local-scope writes). */
   setIndent(indent: number): void
   /**
-   * Repoints the engine at a new working chat. The `runtrigger` effect
-   * Repoints the engine after `runtrigger` recursion so later `setVar`s in
-   * the same effect list write to the latest chat clone.
+   * Repoints the engine after `runtrigger` recursion so later `setVar`s in the
+   * same effect list write to the latest chat clone.
    */
   setChat(next: Chat): void
   /** True once a non-local, non-display `setVar` wrote chat state. */

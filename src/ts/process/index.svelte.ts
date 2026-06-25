@@ -261,7 +261,7 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
     // consume the `/chat` provider stream; preview modes only read the assembled
     // prompt payload. In Fastify mode, supported text sends are server-mandatory
     // and out-of-subset sends hard-fail instead of silently falling through to
-    // local assembly. The local branch remains for legacy web/dev/tests.
+    // local assembly. The local branch remains for compatibility tests.
     if (arg.reattachJobId) {
       // Re-attach to a live durable generation instead of assembling and
       // dispatching a fresh send. The job is server-persisted, so the browser only

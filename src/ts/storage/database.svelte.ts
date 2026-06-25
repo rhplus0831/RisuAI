@@ -1074,7 +1074,6 @@ export function setDatabase(data: Database) {
       image: '',
       base64image: '',
       InfoExtracted: 1,
-      //add 4
       autoSmea: false,
       legacy_uc: false,
       use_coords: false,
@@ -1101,7 +1100,7 @@ export function setDatabase(data: Database) {
       style_aware: false,
     }
   }
-  //add NAI v4 (사용중인 사람용 추가 DB Init)
+  // Backfill NAI v4 image config defaults for older databases.
   if (checkNullish(data.NAIImgConfig.v4_prompt)) {
     data.NAIImgConfig.autoSmea = false
     data.NAIImgConfig.use_coords = false
@@ -1601,9 +1600,9 @@ export function applyServerCharacterSelectionProjection(input: {
 }
 
 /**
- * Fill a stubbed chat's `message[]` with messages hydrated from the server on
- * chat-open. Targets the chat by id across all characters; a trusted projection
- * write so it passes the read-only guard. Returns true if found and hydrated.
+ * Apply full, tail, or ranged server message hydration to the target chat across
+ * all characters. Runs as a trusted projection write so it passes the read-only
+ * guard. Returns true if found and hydrated.
  */
 export interface ServerChatMessagesHydrationRange {
   start: number
@@ -2668,44 +2667,36 @@ export interface NAIImgConfig {
   image: string
   base64image: string
   InfoExtracted: number
-  //add 4
   autoSmea: boolean
   use_coords: boolean
   legacy_uc: boolean
   v4_prompt: NAIImgConfigV4Prompt
   v4_negative_prompt: NAIImgConfigV4NegativePrompt
-  //add vibe
   reference_image_multiple?: string[]
   reference_strength_multiple?: number[]
   vibe_data?: NAIVibeData
   vibe_model_selection?: string
-  //add variety+ and decrisp options
   variety_plus: boolean
   decrisp: boolean
-  //add character reference
   reference_mode: string
   character_image: string
   character_base64image: string
   style_aware: boolean
 }
 
-//add 4
 interface NAIImgConfigV4Prompt {
   caption: NAIImgConfigV4Caption
   use_coords: boolean
   use_order: boolean
 }
-//add 4
 interface NAIImgConfigV4NegativePrompt {
   caption: NAIImgConfigV4Caption
   legacy_uc: boolean
 }
-//add 4
 interface NAIImgConfigV4Caption {
   base_caption: string
   char_captions: NAIImgConfigV4CharCaption[]
 }
-//add 4
 interface NAIImgConfigV4CharCaption {
   char_caption: string
   centers: {

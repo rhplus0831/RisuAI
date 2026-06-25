@@ -5,8 +5,8 @@ import { language } from 'src/lang'
 import { ensureAllCharacterLorebooksHydrated, ensureAllChatsHydrated } from '../server/chatMessageHydration.svelte'
 
 export async function exportAsDataset() {
-  // Chats and stubbed character globalLore hydrate on open; this walks every
-  // character, so load all of both first.
+  // Dataset export walks every character/chat, so bulk-hydrate chat messages and
+  // stubbed character globalLore first.
   await ensureAllChatsHydrated({ strict: true })
   await ensureAllCharacterLorebooksHydrated({ strict: true })
   const db = getDatabase()

@@ -9,13 +9,12 @@ import { setupAuthedClient } from './helpers/auth.js'
 import { assertCommandMetricGate, type CommandMutationMetric } from './helpers/commandMetricGates.js'
 import { assertOnlyRowsWritten, tableRowidsById } from './helpers/rowStability.js'
 
-// Phase 8 (scoped Tier-5 floor unblocks) regression. The high-value Tier-5 routes
-// now write only the target character's row(s) instead of the broad floor:
-//   8a: PUT characters/:id/scripts + /triggers — off the `message-free` 13-table
-//       rewrite onto one `characters` row (normalization is validate-only via
-//       discard).
-//   8b: DELETE chats/:id — off the `hydrated` corpus-wide message load onto the
-//       parent character's rows + a targeted message/hypa delete.
+// Scoped floor-unblock regression. The high-value routes write only the target
+// character's row(s) instead of the broad floor:
+//   - PUT characters/:id/scripts + /triggers write one `characters` row
+//     (normalization is validate-only via discard).
+//   - DELETE chats/:id writes the parent character's rows plus a targeted
+//     message/hypa delete.
 // Each test proves the narrowing via the `command_mutation` metric (targeted path
 // + `writtenTables`) and `tableRowidsById` (no unrelated row churn).
 

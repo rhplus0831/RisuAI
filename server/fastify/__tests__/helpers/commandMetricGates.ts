@@ -1,24 +1,22 @@
 import { expect } from 'vitest'
 
-// Reusable mutation-range review-gate template (Phase 0). A command's
-// `command_mutation` metric is checked against the gate for its `mutationPath`:
-// every timing section is present, db.json is never rewritten on a targeted
-// path, and — the discriminator this workstream turns on — the set of physical
-// tables the command wrote (`writtenTables`) matches what a narrowed write is
-// allowed to touch. Import this from any command/metric test instead of
-// re-deriving the gates inline.
+// Reusable mutation-range review-gate template. A command's `command_mutation`
+// metric is checked against the gate for its `mutationPath`: every timing
+// section is present, db.json is never rewritten on a targeted path, and the set
+// of physical tables the command wrote (`writtenTables`) matches what a
+// narrowed write is allowed to touch. Import this from any command/metric test
+// instead of re-deriving the gates inline.
 
 export const COMMAND_METRIC_SECTIONS = ['loadMs', 'cloneMutateMs', 'sqliteSyncMs', 'dbJsonWriteMs', 'totalMs'] as const
 
 export type CommandMetricSection = (typeof COMMAND_METRIC_SECTIONS)[number]
 
 /**
- * The 13 physical tables the broad `replaceAll*` writers rewrite for any single
- * sub-row change — the over-broad baseline every Tier write narrows away from.
- * Sorted to match `takeTableWrites()` output. A `message-free` mutation rewrites
- * exactly this set; a `hydrated` mutation additionally loads every chat's
- * messages and writes the message store (`messages` / `chat_hypa_v3`) only when
- * a message actually changed.
+ * The physical tables the broad `replaceAll*` writers rewrite for any single
+ * sub-row change. Sorted to match `takeTableWrites()` output. A `message-free`
+ * mutation rewrites exactly this set; a `hydrated` mutation additionally loads
+ * every chat's messages and writes the message store (`messages` /
+ * `chat_hypa_v3`) only when a message actually changed.
  */
 export const BROAD_WRITE_TABLES = [
   'bot_presets',
@@ -92,9 +90,7 @@ export const COMMAND_METRIC_REVIEW_GATES = {
     dbJsonWriteMs: 0,
     expectedTables: ['characters', 'settings'],
   },
-  // Phase 0 targeted vehicles (Phases 2-5 route the over-broad commands onto
-  // these). Defined here so the metric and review gates can target the new
-  // `mutationPath` labels before any route is narrowed.
+  // Targeted mutation vehicles used by narrowed command routes.
   'targeted-settings': {
     reviewGate:
       'settings-scalar commands should issue one UPDATE settings (plus hypa_v3_presets only for a memory-group hypaV3Presets patch) and never touch characters, chats, or the other collections',

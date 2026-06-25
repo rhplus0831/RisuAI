@@ -1,22 +1,7 @@
-// UI/UX behavioral audit (docs/AUDIT-PLAN.md) — Finding UIA-001 / BOOT-1.
-// Family: hydration shell rendered as complete (§5).
-//
-// An inactive character arrives from the server as a *bootstrap shell*: the
-// projection strips alternateGreetings/firstMessage/desc/etc. (see
-// BOOTSTRAP_CHARACTER_SHELL_FIELDS in server/fastify/src/repository.ts) and marks
-// the row with __serverCharacterShell. That is a CORRECT lazy-shell intermediate
-// state. If such a shell becomes the selected + routed character before async
-// hydration lands, DefaultChatScreen paints its greeting bubble — and
-// DefaultChatScreen.svelte:1066/1090 read `alternateGreetings.length` with no
-// optional chaining and no shell guard, so the render throws on the correct shell
-// state and the greeting never paints.
-//
-// This is a rendered-state divergence (not a logic bug): the store is correct
-// (the shell is the intended lazy state), and the SAME DOM-driven render goes
-// green once hydration completes the row. The control case below proves that.
-//
-// This file reuses the proven mock harness from DefaultChatScreen.loadPages.test.ts
-// (same directory => identical relative mock paths).
+// Regression coverage for lazy bootstrap character shells. A shell is a valid
+// intermediate projection state, so the chat screen must render it without
+// evaluating greeting fields until the selected character is hydrated. The
+// hydrated control case proves the greeting still paints after hydration.
 
 import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -324,12 +309,8 @@ describe('UIA-001 / BOOT-1: bootstrap shell greeting render (DOM oracle, Tier 1)
     expect(bubble!.textContent).toContain('Greeting from a hydrated character')
   })
 
-  // FIXED FINDING UIA-001 (was a red repro; now a green guarantee). Before the
-  // fix this render threw a TypeError on `alternateGreetings.length` (the reads at
-  // DefaultChatScreen.svelte:1060-1090 had no shell guard). The fix gates the
-  // greeting block on `!isServerCharacterShell(currentCharacter)`, so a correct
-  // bootstrap shell renders no greeting (the load state covers it) instead of
-  // crashing, and paints the greeting only once the row hydrates (control above).
+  // A correct bootstrap shell renders no greeting until hydration fills the
+  // greeting fields, and it must not crash while those fields are absent.
   it('renders a bootstrap shell without crashing on alternateGreetings.length', async () => {
     seedDatabase(makeBootstrapShellCharacter())
 

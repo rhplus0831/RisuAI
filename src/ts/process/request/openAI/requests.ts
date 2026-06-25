@@ -1088,7 +1088,6 @@ export async function requestOpenAILegacyInstruct(arg: RequestDataArgumentExtend
         }
 
         return `\n## ${author}\n${m.content.trim()}`
-        //return `\n\n${author}: ${m.content.trim()}`;
       })
       .join('') + `\n## Response\n`
 

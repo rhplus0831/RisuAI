@@ -1,5 +1,5 @@
-// Phase 0 / Journey 4 (docs/AUDIT-PLAN.md §6): "Change state driving toggle
-// grouping -> group containers and children render grouped in DOM."
+// Toggle-grouping coverage: change state driving toggle grouping, then assert
+// group containers and children render grouped in DOM.
 //
 // Family: grouping/structural derivation (taxonomy §5). Tier 1.
 //
@@ -8,12 +8,8 @@
 // Classify against resolveActiveChatGenerationSettings().displayedSidebarToggles
 // (the store side) only after a DOM assertion fails.
 //
-// This is also the Tier-1 acceptance-gate probe. It is GREEN on the current
-// tree (grouped rendering restored by c5fd08f33). Reverting only the
-// Toggles.svelte grouping hunk turns this test RED, while the pure helper test
-// `src/ts/chatGenerationSettings.test.ts` ("preserves layout-only rows for
-// display") stays GREEN — proving the helper-layer apparatus cannot see the
-// render regression. See docs/audit-result/phase0-acceptance-gate.md.
+// This probe guards the rendered grouping behavior that helper-layer tests cannot
+// see on their own.
 
 import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'

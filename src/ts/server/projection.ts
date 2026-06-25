@@ -282,10 +282,7 @@ export type ServerBulkChatMessagesResult =
   | { status: 'error'; error: string }
   | { status: 'unavailable' }
 
-/**
- * Per-chat message hydration. The bootstrap ships chat stubs (empty `message[]`);
- * this fetches one chat's messages on open.
- */
+/** Fetch full, tail, or ranged chat-message hydration from the server. */
 export async function fetchServerChatMessages(
   chatId: string,
   options: { signal?: AbortSignal | null; start?: number; limit?: number; tail?: number } = {},

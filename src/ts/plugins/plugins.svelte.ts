@@ -426,7 +426,7 @@ export async function importPlugin(
         pluginAlertModalStore.errors = safety.errors
         pluginAlertModalStore.open = true
 
-        //I can use event but lazy
+        // Poll while the modal owns the user's accept/reject decision.
         while (pluginAlertModalStore.open) {
           await sleep(100)
           if (!isFreshImport()) {
@@ -684,8 +684,7 @@ export const allowedDbKeys = [
 // keys instead of doing a dangling projection write that no command persists,
 // or shadowing the real resource inside `pluginCustomStorage`. Plugins must use
 // the dedicated module/plugin/storage APIs or settings for these in server
-// mode. The legacy local mode is unaffected and still writes them through
-// `setDatabase`.
+// mode.
 export const unsupportedServerBridgeKeys = new Set<string>([
   'characters',
   'characterOrder',
@@ -771,8 +770,7 @@ function applyPluginDatabasePatch(newDb: Record<string, unknown>, options: { ful
 
     // Recognized resource families without a bridge command: block in server
     // mode rather than writing a projection change no command will persist, or
-    // shadowing the real resource in plugin storage. Local mode keeps writing
-    // them (persisted by the trailing setDatabase below).
+    // shadowing the real resource in plugin storage.
     if (serverMode && unsupportedServerBridgeKeys.has(key)) {
       blockedKeys.push(key)
       continue
@@ -934,7 +932,6 @@ export const getV2PluginAPIs = () => {
       if (Object.keys(globalThis.__pluginApis__.safeGlobalThis).length > 0) {
         return globalThis.__pluginApis__.safeGlobalThis
       }
-      //safeGlobalThis
       const keys = Object.keys(globalThis)
       const safeGlobal: any = {}
       const allowedKeys = ['console', 'TextEncoder', 'TextDecoder', 'URL', 'URLSearchParams']
@@ -1136,8 +1133,6 @@ export const getV2PluginAPIs = () => {
           return globalThis.__pluginApis__.getSafeGlobalThis()
         }
       },
-
-      //call too
       apply(target, thisArg, args) {
         return function () {
           return globalThis.__pluginApis__.getSafeGlobalThis()

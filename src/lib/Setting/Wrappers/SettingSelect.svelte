@@ -32,7 +32,7 @@
     })
   })
 
-  // Process options to support labelKey translation and conditional rendering
+  // Filter out conditionally hidden options.
   let processedOptions = $derived(
     (item.options?.selectOptions ?? []).filter((opt) => !opt.condition || opt.condition(ctx)),
   )

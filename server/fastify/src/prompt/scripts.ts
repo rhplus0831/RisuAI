@@ -46,7 +46,7 @@ import { getActiveModules, getModuleRegexScripts } from './modules.js'
  *     `script.ableFlag === true` (SPA quirk; without `ableFlag` the
  *     declared flag is silently ignored).
  *   - `@@move_top` / `@@move_bottom` and the `move_top` / `move_bottom`
- *     actions force the `'g'` flag off (SPA "temperary fix").
+ *     actions force the `'g'` flag off to avoid double-counting move matches.
  *   - Sanitize to `[dgimsuvy]`, dedupe, fall back to `'u'` when empty.
  *
  * `cbs` action (`scripts.ts:211-213`): pre-expand `script.in` through
@@ -77,8 +77,7 @@ import { getActiveModules, getModuleRegexScripts } from './modules.js'
  *   - `runLuaEditTrigger` — `processScript` stays regex-only; Lua edit hooks
  *     are wired alongside it by callers at final render, history call sites,
  *     and submit-time `editinput`.
- *   - `runTrigger('display', …)` (orthogonal: `editdisplay` mode only,
- *     blocked on trigger support)
+ *   - display/request trigger effects; the trigger runner owns those.
  *   - `pluginV2[mode]` browser plugin V2 hooks
  *
  * Errors from a single bad regex are swallowed (mirrors the SPA's
@@ -289,8 +288,7 @@ function prepareOne(parsed: ParsedScript, options?: BoundedRegexCompatibilityOpt
   const isMoveBottom = outScript.startsWith('@@move_bottom') || actions.includes('move_bottom')
 
   if (isMoveTop || isMoveBottom) {
-    // SPA "temperary fix" at scripts.ts:191-193 — force non-global so
-    // matchAll doesn't double-count.
+    // Force non-global so move actions do not double-count matches.
     flag = flag.replace('g', '')
   }
 

@@ -267,10 +267,7 @@ describe('#when', () => {
     })
 
     test.skip('Lower precedence than other operators', () => {
-      // Known behavior: left/right operands are not evaluated before `or`.
-      // Given #when::a::tis::3::or::b::tis::7
-      //   AS-IS: a::tis::3 -> 1, 1::or::7 -> 1, 1::tis::7 -> 0
-      //   TO-BE: a::tis::3 -> 1, b::tis::7 -> 1, 1::or::1 -> 1
+      // TODO: Define operator precedence for nested condition operands.
       expect(quickParse('#when::3::tis::3::or::7::tis::7', 'CBS')).toBe(`0 CBS 9`)
     })
   })

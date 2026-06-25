@@ -75,8 +75,6 @@ test('br', () => {
 
 test('cbr', () => {
   expect(parse('{{cbr}}')).toBe('\\n')
-  // Known behavior: cbr::3 expands as cbr::3cbr::3cbr::3.
-  // expect(parse('{{cbr::3}}')).toBe('\\n\\n\\n')
 })
 
 test('decbo, decbc', () => {

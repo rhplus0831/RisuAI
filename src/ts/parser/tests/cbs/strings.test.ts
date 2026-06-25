@@ -175,7 +175,7 @@ test('capitalize, lower, upper', () => {
   )
 })
 
-// Known behavior: {{reverse::ABC}} expands as CBA::esrever.
+// TODO: Define and implement the intended argument parsing for reverse.
 test.skip('reverse', () => {
   const splitByPoints = (str: string) => [...str].reverse().join('')
 

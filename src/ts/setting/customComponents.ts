@@ -5,9 +5,6 @@
  * This enables the data-driven settings structure to reference
  * complex components without circular import issues.
  *
- * Usage in settings data:
- *   { type: 'custom', componentId: 'ModelSelector' }
- *
  * The SettingRenderer will look up the component from this registry
  * and render it dynamically.
  */

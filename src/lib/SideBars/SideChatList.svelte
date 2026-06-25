@@ -497,16 +497,13 @@
 
     {#key sorted}
       <div class="flex flex-col mt-2 overflow-y-auto grow" bind:this={listEle}>
-        <!-- folder div -->
         <div class="flex flex-col" bind:this={folderEles}>
-          <!-- chat folder -->
           {#each chara.chatFolders as folder, i}
             <div
               data-risu-chat-folder-idx={i}
               data-risu-chat-folder-id={folder.id}
               data-risu-chat-folder-folded={folder.folded ? 'true' : 'false'}
               class="flex flex-col mb-2 border-solid border-1 border-darkborderc cursor-pointer rounded-md">
-              <!-- folder header -->
               <button
                 data-risu-chat-action="toggle-folder"
                 onclick={() => {
@@ -614,7 +611,6 @@
                   </div>
                 </div>
               </button>
-              <!-- chats in folder -->
               <div
                 data-risu-chat-folder-panel-id={folder.id}
                 hidden={folder.folded}
@@ -755,7 +751,6 @@
             </div>
           {/each}
         </div>
-        <!-- chat without folder div -->
         <div class="risu-chat flex flex-col">
           {#each chara.chats as chat, i}
             {#if chat.folderId == null}

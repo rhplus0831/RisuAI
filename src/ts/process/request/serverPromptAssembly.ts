@@ -29,7 +29,7 @@ export interface ServerPromptAssemblyInput {
 
 type ServerPromptAssemblyMode = 'send' | 'continue' | 'preview' | 'preview_prompt' | 'regenerate'
 
-/** Mirrors `serverChatMode` (`serverBackedSendChat.ts:84-95`). */
+/** Mirrors `serverChatMode` in `serverBackedSendChat.ts`. */
 function deriveMode(input: ServerPromptAssemblyInput): ServerPromptAssemblyMode {
   if (input.previewPrompt) return 'preview_prompt'
   if (input.preview) return 'preview'
@@ -38,8 +38,8 @@ function deriveMode(input: ServerPromptAssemblyInput): ServerPromptAssemblyMode 
   return 'send'
 }
 
-// Inlay / asset markers the local converter resolves into image/asset bytes
-// (`formatHistoryMessage.ts:76,85,154`). The server assembler resolves them too:
+// Inlay / asset markers the local converter resolves into image/asset bytes.
+// The server assembler resolves them too:
 // inlay and asset bytes come from the server store. Legacy inlay ids can ride
 // the request as id aliases, but never as base64 bytes. Only the non-vision
 // caption case below remains unsupported.
@@ -48,8 +48,8 @@ const ASSET_MARKER = /\{\{asset_?prompt::/i
 
 /**
  * Multimodal / asset content: any message carrying a runtime `multimodals` array
- * (set by scripting at `scriptings.ts:563,938`) or an inlay/asset marker in its
- * `.data`. Used to detect the non-vision caption fallback case.
+ * (set by scripting) or an inlay/asset marker in its `.data`. Used to detect the
+ * non-vision caption fallback case.
  */
 function sendHasMultimodalOrAsset(currentChat: Chat): boolean {
   for (const message of currentChat.message ?? []) {
@@ -73,8 +73,8 @@ function modelAcceptsImageInput(input: ServerPromptAssemblyInput): boolean {
 // throws an InteractiveApiError, `luaRuntime.ts`). Handlers register at runtime
 // via `listenEdit`, so the mode a script hooks is not statically knowable — but a
 // script that never names these tokens cannot invoke them, so a source scan is a
-// sound conservative gate (false positives keep a send in the browser; never a
-// hard fail).
+// sound conservative gate. Matches hard-fail semantics by returning `unsupported`
+// before the send mutates chat state.
 const INTERACTIVE_LUA_API_RE = /\b(?:alertInput|alertSelect|alertConfirm)\b/
 
 /** Whether any `triggerlua` effect's source references an interactive dialog API. */
@@ -127,9 +127,8 @@ function luaUsesInteractiveApi(currentChar: character): boolean {
  */
 function sendHasUnsupportedContent(input: ServerPromptAssemblyInput): string | null {
   // When the model lacks image input, the local assembler replaces an image with
-  // a `runImageEmbedding` caption
-  // (`formatHistoryMessage.ts:111-114`) — a browser-only ML pipeline with no
-  // server equivalent. Rather than emit a silently captionless prompt, any
+  // a `runImageEmbedding` caption, a browser-only ML pipeline with no server
+  // equivalent. Rather than emit a silently captionless prompt, any
   // image/asset/inlay content on a non-vision model is `unsupported`.
   if (sendHasMultimodalOrAsset(input.currentChat) && !modelAcceptsImageInput(input)) {
     return 'This model has no image input, so image/asset content would need the browser caption fallback, which server prompt assembly cannot reproduce. Select a vision-capable server-routed model before retrying.'
@@ -200,14 +199,13 @@ function resolveServerProviderPreflight(currentChat: Chat): ServerPromptAssembly
 }
 
 /**
- * Decide whether `sendChat` must assemble its prompt on the server, hard-fail, or
- * fall back to the in-browser assembler. The completion adapter no longer builds
- * provider wire payloads, but prompt assembly still performs this provider
- * preflight so unsupported Fastify sends fail before mutating chat state.
+ * Decide whether `sendChat` must assemble its prompt on the server or hard-fail.
+ * The completion adapter no longer builds provider wire payloads, but prompt
+ * assembly still performs this provider preflight so unsupported Fastify sends
+ * fail before mutating chat state.
  *
  * Decision order:
- *   1. mode / user-message structural check (subsumes the old, silently-falling
- *      `canUseServerAssembly` at `serverBackedSendChat.ts:142`).
+ *   1. mode / user-message structural check.
  *   2. single, non-group character.
  *   3. server-routable provider (shared provider-capability table).
  *   4. no interactive-Lua / pluginV2 content, and no image/asset/inlay content

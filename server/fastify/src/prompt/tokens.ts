@@ -11,9 +11,8 @@ import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
 
 export type TokenEncoding = 'cl100k_base' | 'o200k_base'
 
-// Prefixes the SPA tags with `LLMTokenizer.tiktokenO200Base`. The omitted
-// `chatgpt-4o-latest` and `gpt-4.5-preview*` rows intentionally use the
-// conservative `cl100k_base` fallback until a fixture needs exact parity.
+// Server-side o200k routing uses broad model-family prefixes; everything else
+// falls back to the conservative `cl100k_base` encoder.
 const O200K_PREFIXES: readonly string[] = ['gpt-4o', 'gpt-4.1', 'gpt-5', 'gpt-oss', 'o1', 'o3', 'o4']
 
 const encoders: Partial<Record<TokenEncoding, Tiktoken>> = {}
@@ -28,11 +27,9 @@ function getEncoder(encoding: TokenEncoding): Tiktoken {
 }
 
 /**
- * Route an explicit model id to the tiktoken encoding the SPA's
- * `tokenizer.ts` would pick. Matches the prefix list assigned
- * `LLMTokenizer.tiktokenO200Base` in
- * `src/ts/model/providers/openai.ts`; everything else falls back to
- * `cl100k_base`.
+ * Route an explicit model id to the server tokenizer's tiktoken encoding.
+ * Known OpenAI o-series/GPT families use `o200k_base`; everything else falls
+ * back to `cl100k_base`.
  */
 export function encodingForModel(model: string | undefined | null): TokenEncoding {
   if (!model) return 'cl100k_base'

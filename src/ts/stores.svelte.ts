@@ -220,7 +220,7 @@ export const customSideBarConfigDialogStore = $state({
   open: false,
 })
 
-//Set might be more ideal, however since Svelte doesn't support reactive Sets, using array for now
+// Svelte does not make Set mutations reactive, so this uses an array.
 export const hotReloading = $state<string[]>([])
 
 export function reloadGuiAfterDefinitionChange() {

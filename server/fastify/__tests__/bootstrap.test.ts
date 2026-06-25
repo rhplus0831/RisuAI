@@ -172,7 +172,7 @@ describe('Phase 2A bootstrap + import', () => {
       assetReport: { referencedCount: 0, missingCount: 0, orphanedCount: 0 },
     })
 
-    // After Phase 5, db.json is removed; all state lives in SQLite.
+    // Imported state is persisted in SQLite; db.json is retired after import.
     const db = openDatabase(harness.dataDir)
     try {
       const onDisk = loadPersisted(db, harness.dataDir)
@@ -464,8 +464,8 @@ describe('Phase 2A bootstrap + import', () => {
     })
     expect(imported.statusCode).toBe(200)
 
-    // After Phase 5, db.json is removed; verify via loadPersisted that the
-    // chat metadata is present but messages are not embedded (they live in the
+    // Imported state is persisted in SQLite; verify via loadPersisted that chat
+    // metadata is present but messages are not embedded (they live in the
     // messages table).
     const verifyDb = openDatabase(harness.dataDir)
     try {

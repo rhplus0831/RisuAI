@@ -2,9 +2,9 @@ import { createHash, createSign } from 'node:crypto'
 import { readBoundedBodyJson, readBoundedBodyText } from './body.js'
 
 /**
- * Vertex AI service-account auth helper. The SPA's local path
- * (`src/ts/process/request/google.ts:462-557`) signs a JWT with Web
- * Crypto, exchanges it for a Bearer at oauth2.googleapis.com, and
+ * Vertex AI service-account auth helper. The SPA's `generateToken` helper in
+ * `src/ts/process/request/google.ts` signs a JWT with Web Crypto, exchanges it
+ * for a Bearer at oauth2.googleapis.com, and
  * caches the result in `db.vertexAccessToken` /
  * `db.vertexAccessTokenExpires`. The server mirrors the flow with Node
  * `crypto.createSign('RSA-SHA256')` and an in-process Map keyed by

@@ -52,14 +52,12 @@ import {
 import type { GenerationChatRouteOptions } from '../src/routes/generationChat.js'
 import { buildLargeCorpusFixture, type LargeCorpusFixture } from '../../../src/ts/__tests__/largeCorpusFixture.js'
 
-// Phase 0 (measurement-baseline-harness): prove the server load-count harness
-// can (a) pass a genuinely scoped hot path and (b) FAIL a path that performs a
-// whole-corpus payload load — on the shared large-corpus fixture both suites
-// seed from. The Phase 1 H1 guard (`loadChatHydration` early-return on
-// `message.length > 0`) has landed, so missing-hypa hydration is asserted
+// Prove the server load-count harness can pass a genuinely scoped hot path and
+// fail a path that performs a whole-corpus payload load on the shared
+// large-corpus fixture both suites seed from. Missing-hypa hydration is asserted
 // scoped below; the zero-row not-yet-extracted fallback keeps its documented
-// breadth. Phase 2 also flipped the former U1 bulk-hydration breadth control to
-// scoped gates while keeping explicit broad-fallback controls for legacy
+// breadth. Bulk-hydration breadth uses scoped gates while keeping explicit
+// broad-fallback controls for legacy
 // pre-extraction states.
 
 interface Harness {

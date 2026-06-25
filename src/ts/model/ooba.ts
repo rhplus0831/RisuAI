@@ -10,7 +10,7 @@ export interface OobaChatCompletionRequestParams {
   context?: string
   greeting?: string
   chat_instruct_command?: string
-  preset?: string // The '?' denotes that the property is optional
+  preset?: string
   tokenizer?: string
   min_p?: number
   top_k?: number

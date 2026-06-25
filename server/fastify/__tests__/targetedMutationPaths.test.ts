@@ -21,11 +21,10 @@ import {
 } from '../src/repository.js'
 import { assertCommandMetricGate, type CommandMutationMetric } from './helpers/commandMetricGates.js'
 
-// Phase 0 targeted-mutation-paths slice. Each new `mutationPath` label is
-// reachable through `applyTargetedCommandMutation` + the writer kit, reports its
-// label and narrow `writtenTables` to the metric, and produces the same single
-// revision bump / single persisted event / narrow return shape as the generic
-// helpers. These are the vehicles Phases 2-5 route the over-broad commands onto.
+// Targeted-mutation-path regression. Each `mutationPath` label is reachable
+// through `applyTargetedCommandMutation` + the writer kit, reports its label and
+// narrow `writtenTables` to the metric, and produces the same single revision
+// bump / single persisted event / narrow return shape as the generic helpers.
 
 const PREVIOUS_PROTOCOL_METRICS = process.env.RISU_PROTOCOL_METRICS
 

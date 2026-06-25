@@ -828,7 +828,7 @@ export class MCPClient {
     if (this.debug) {
       console.log('MCP Handshake', this.url, this.mcpClientObjectId)
     }
-    this.protocolVersion = '2025-03-26' //default to latest version
+    this.protocolVersion = '2025-03-26'
     let { rpc: d, http } = await this.request(
       'initialize',
       {
@@ -1019,7 +1019,7 @@ export class MCPClient {
       discoveryURLS = await oauthResponse.json()
     }
 
-    const redirectURL = 'https://account.sionyw.com/oauthhelper' //Just a placeholder, should be replaced with actual redirect URL
+    const redirectURL = 'https://account.sionyw.com/oauthhelper'
 
     const registerResponse = await fetchNative(discoveryURLS.registration_endpoint, {
       method: 'POST',

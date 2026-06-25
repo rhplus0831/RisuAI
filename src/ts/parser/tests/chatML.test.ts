@@ -129,8 +129,7 @@ test('extracts thoughts', () => {
   )
 })
 
-// Greedy thoughts matcher:
-//        => Matches with the whole bulk of <Thoughts>Thought 1</Thoughts> Middle <Thoughts>Thought 2</Thoughts>
+// TODO: Make the thoughts matcher non-greedy across multiple tags.
 test.skip('extracts multiple thoughts', () => {
   const input = `<|im_start|>assistant<|im_sep|>Start <Thoughts>Thought 1</Thoughts> Middle <Thoughts>Thought 2</Thoughts> End<|im_end|>`
   const result = parseChatML(input)

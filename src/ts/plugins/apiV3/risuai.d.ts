@@ -951,7 +951,7 @@ interface SafeMutationObserver {
 // ============================================================================
 
 /**
- * Plugin-specific storage that syncs with save files
+ * Plugin-specific storage persisted by the host.
  *
  * **All methods return Promises** due to iframe message passing.
  *
@@ -1018,7 +1018,8 @@ interface PluginStorage {
 }
 
 /**
- * Device-local storage that persists outside of save files.
+ * Device-local storage compatibility API. In Fastify-backed sessions this is
+ * disabled unless compatibility mode is enabled.
  * Uses generic types for flexible value storage.
  * Storage is shared between all plugins under a common prefix.
  *
@@ -1315,7 +1316,7 @@ interface RisuaiPluginAPI {
 
   // ========== Storage APIs ==========
 
-  /** Plugin-specific storage (syncs with save files) */
+  /** Plugin-specific storage persisted by the host. */
   pluginStorage: PluginStorage
 
   /** Device-specific storage (shared between plugins) */
@@ -1390,13 +1391,13 @@ interface RisuaiPluginAPI {
   getDatabase(includeOnly: string[] | 'all' = 'all'): Promise<DatabaseSubset | null>
 
   /**
-   * Sets the database (lightweight save)
+   * Patches database fields through the host.
    * @param db - DatabaseSubset object to save
    */
   setDatabaseLite(db: DatabaseSubset): Promise<void>
 
   /**
-   * Sets the database (full save with sync)
+   * Patches database fields through the host.
    * @param db - DatabaseSubset object to save
    */
   setDatabase(db: DatabaseSubset): Promise<void>
@@ -1453,9 +1454,8 @@ interface RisuaiPluginAPI {
   nativeFetch(url: string, options?: RequestInit): Promise<Response>
 
   /**
-   * Saves a secret header for network requests, for protected Headers (like Authorization) that are stripped by Risuai for security.
-   * To use saved secret headers, use an object `{ secretHeader: 'Header-Name' }` in the `headers` field of `nativeFetch` options,
-   * Like `{ headers: {"Authorization":{ secretHeader: 'Authorization' }} }`
+   * Secret-header storage API placeholder. The current implementation warns and
+   * does not persist the header.
    * @m Experimental API; breaking changes may occur.
    * @param key - Header key (e.g., 'Authorization')
    * @param value - Header value.

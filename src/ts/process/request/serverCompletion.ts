@@ -12,8 +12,8 @@ export type ServerCompletionRoute = { type: 'local' } | { type: 'server' } | { t
 /**
  * Decide whether an already-assembled completion should go through Fastify.
  *
- * Provider policy is intentionally not resolved here. The browser owns only the
- * local-vs-server transport decision; Fastify resolves the selected provider,
+ * Provider policy is intentionally not resolved here. The browser can reject
+ * unsupported preview bodies; otherwise Fastify resolves the selected provider,
  * model, endpoint, keys, and provider options from the unmasked server database.
  */
 export function resolveServerCompletionRoute(targ: RequestDataArgumentExtended): ServerCompletionRoute {

@@ -292,9 +292,8 @@ export function registerAssetsRoutes(
       reply.code(404).send({ error: 'not found' })
       return
     }
-    // Measurement-only: every single-asset byte read (JS-driven or a browser
-    // `<img src>` fetch) lands here, so the opt-in metric counts per-id byte
-    // read fanout at the actual byte boundary. Route behavior is unchanged.
+    // Measurement-only: count every single-asset byte read at the response
+    // boundary, including JS-driven and `<img src>` fetches.
     emitAssetByteReadMetric(req.log, req.params.id, true, entry.contentType, entry.size)
     applyAssetHeaders(reply, entry.contentType, entry.size)
     return reply.send(fs.createReadStream(file))

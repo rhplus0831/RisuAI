@@ -324,7 +324,7 @@ export async function processScriptFull(
         pscript.actions.includes('move_top') ||
         pscript.actions.includes('move_bottom')
       ) {
-        flag = flag.replace('g', '') //temperary fix
+        flag = flag.replace('g', '')
       }
       if (outScript.endsWith('>') && !pscript.actions.includes('no_end_nl')) {
         outScript += '\n'

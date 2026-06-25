@@ -1,10 +1,10 @@
 import { LLMFormat } from '../../model/types'
 
 /**
- * Single source of truth for the server provider-routing **decision** (closeout
- * decision #5). Given a resolved model (`format` + the config fields the gates
- * read), it answers "which server provider dispatches this, or is it unsupported
- * and in which category." The server `/chat` dispatcher
+ * Single source of truth for the server provider-routing decision. Given a
+ * resolved model (`format` + the config fields the gates read), it answers
+ * "which server provider dispatches this, or is it unsupported and in which
+ * category." The server `/chat` dispatcher
  * (`dispatchChatProvider`, `server/fastify/src/prompt/chatDispatch.ts`) calls it;
  * browser server completion now sends only a server-owned intent and reaches this
  * table through Fastify.

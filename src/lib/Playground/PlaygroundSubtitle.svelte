@@ -148,7 +148,6 @@
 
     const ext = file.name.split('.').pop()
     if (videos.includes(ext)) {
-      //check duration
       let duration = 0
       const d = await probeVideoDuration(file)
       if (isNaN(d)) {

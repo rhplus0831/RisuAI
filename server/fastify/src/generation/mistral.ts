@@ -70,8 +70,8 @@ const DEFAULT_BASE_URL = 'https://api.mistral.ai/v1'
  * alternate, the first message cannot be assistant, and the only valid roles
  * are system / user / assistant. Coalesce consecutive same-role messages,
  * inline `system` content into the surrounding user turn, and demote
- * `function` rows to user. Mirrors the local browser path in
- * src/ts/process/request/openAI/requests.ts:281-323.
+ * `function` rows to user. Mirrors the Mistral branch of the local browser
+ * `requestOpenAI` path.
  */
 export function reformatForMistral(messages: RawChatMessage[]): MistralChatMessage[] {
   const out: MistralChatMessage[] = []

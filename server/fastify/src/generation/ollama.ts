@@ -40,10 +40,10 @@ interface RawChatMessage {
 }
 
 /**
- * Filter to the role + content shape Ollama accepts. The local browser path in
- * `src/ts/process/request/request.ts:1227-1234` only forwards user / assistant
- * / system rows; tool / function rows are dropped. Content is coerced to
- * string; this dispatcher omits multimodal `parts` arrays.
+ * Filter to the role + content shape Ollama accepts. The local browser
+ * `requestOllama` path only forwards user / assistant / system rows; tool /
+ * function rows are dropped. Content is coerced to string; this dispatcher omits
+ * multimodal `parts` arrays.
  */
 export function reformatForOllama(messages: RawChatMessage[]): OllamaMessage[] {
   const out: OllamaMessage[] = []
@@ -100,9 +100,8 @@ function headers(req: OllamaRequest): Record<string, string> {
 }
 
 function buildPayload(req: OllamaRequest, stream: boolean): Record<string, unknown> {
-  // Ollama's `options` block carries the sampler knobs. The local code passes
-  // these through `db.ollamaThinkingMode` etc.; we forward only the subset the
-  // adapter validates today (temperature/top_p/top_k/num_predict).
+  // Ollama's `options` block carries sampler knobs; this adapter currently
+  // forwards temperature/top_p/top_k/num_predict.
   const options: Record<string, unknown> = {}
   if (req.maxTokens !== undefined) options.num_predict = req.maxTokens
   if (req.temperature !== undefined) options.temperature = req.temperature
