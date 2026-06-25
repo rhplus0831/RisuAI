@@ -11,6 +11,7 @@ This document tracks remediation and decisions for the items catalogued in
 - `Needs decision`: product/owner decision is needed before implementation.
 - `Exploring`: explorer agent is examining the area.
 - `Ready`: explorer findings are available for implementation.
+- `Deferred`: owner decided not to change this now; revisit later if priorities change.
 - `Implementing`: implementation worker is applying the fix.
 - `Verifying`: verification worker is validating the result.
 - `Fixed`: verification passed and the fix was committed.
@@ -22,36 +23,36 @@ This document tracks remediation and decisions for the items catalogued in
 
 | ID | Area | Status | Explorer | Implementation | Verification | Commit | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| A-01 | Playground coming-soon tile | Needs decision | complete | pending | pending | - | UI stub exists, but the target feature is unnamed. |
-| A-02 | MCP module import/update | Pending | complete | pending | pending | - | Needs a command-backed Fastify route for MCP-bearing modules; ordinary non-MCP `.risum` import is not blocked. |
-| A-03 | Google Search MCP credentials | Pending | complete | pending | pending | - | Server-backed credential model is missing. |
-| A-04 | MCP risuaccess asset writes | Pending | complete | pending | pending | - | Character asset reference edit/delete is unsupported in server-backed mode. |
-| A-05 | MCP result persistence | Pending | complete | pending | pending | - | Remote MCP tool result payloads are not server-persisted. |
-| A-06 | Plugin V3 write-only secrets | Pending | complete | pending | pending | - | `saveSecretHeader` is intentionally unavailable until write-only plugin secret storage exists. |
-| A-07 | Slash/STScript command parity | Pending | complete | pending | pending | - | `/setinput` is not implemented; `/sendas` ignores sender name. |
-| A-08 | Provider preview bodies | Needs decision | complete | pending | pending | - | Fastify mode disables browser-side provider dispatch, so preview-body support needs an owner decision. |
-| A-09 | Completion provider coverage | Pending | complete | pending | pending | - | Add server adapters when new providers should be accepted by `/api/v1/generate/completion`. |
-| A-10 | Completion streaming | Pending | complete | pending | pending | - | Streaming is rejected for buffered providers; some may remain buffered by design. |
-| A-11 | Provider request-shape parity | Pending | complete | pending | pending | - | Server adapters omit richer request shapes such as tools/functions, multimodal parts, Gemini thinking config, and response schema. |
-| A-12 | Hosted model tools | Pending | complete | pending | pending | - | `modelTools` reach the effective DB, but Fastify OpenAI Responses dispatch sends no hosted tool list. |
-| A-13 | Logit bias | Pending | complete | pending | pending | - | Server chat assembly does not emit provider-level logit-bias rows. |
-| A-14 | Token and budget accuracy | Pending | complete | pending | pending | - | Server token/preflight budgeting is text-only and omits provider-specific and multimodal accounting. |
-| A-15 | CBS server adapter parity | Pending | complete | pending | pending | - | Server CBS avoids browser-only callbacks today; module/lorebook callbacks and model metadata are placeholders. |
-| A-16 | Trigger/Lua parity | Verifying | complete | complete | complete | - | Server resend parity for `sendAIprompt`/`v2SendAIprompt` is implemented and verified; browser UI/persistent-resource effects, interactive Lua, and multimodal Lua LLM inputs remain unsupported. Awaiting commit before marking Fixed. |
-| A-17 | Cold storage | Needs decision | complete | pending | pending | - | Legacy cold-storage creation/hydration is stubbed or blocked in server-backed web mode. |
-| A-18 | Lorebook stubs validation | Pending | complete | pending | pending | - | Experimental setting warns that the full reader surface is not validated against stubs. |
-| A-19 | Preset export parity | Pending | complete | pending | pending | - | Presets with images or regexes cannot be exported yet. |
-| A-20 | Popup CBS mode | Needs decision | complete | pending | pending | - | CBS option is visible but disabled in Popup Editor. |
+| A-01 | Playground coming-soon tile | Ready | complete | pending | pending | - | Owner decision: remove the unnamed coming-soon tile from Playground. |
+| A-02 | MCP module import/update | Deferred | complete | pending | pending | - | Owner decision: defer MCP-bearing module import/update; ordinary non-MCP `.risum` import is not blocked. |
+| A-03 | Google Search MCP credentials | Deferred | complete | pending | pending | - | Owner decision: defer server-backed Google Search MCP credential storage. |
+| A-04 | MCP risuaccess asset writes | Deferred | complete | pending | pending | - | Owner decision: defer MCP Risu-access asset reference edit/delete support. |
+| A-05 | MCP result persistence | Deferred | complete | pending | pending | - | Owner decision: defer durable persistence for remote MCP tool result payloads. |
+| A-06 | Plugin V3 write-only secrets | Ready | complete | pending | pending | - | Owner decision: implement write-only Plugin V3 secret header storage now. |
+| A-07 | Slash/STScript command parity | Deferred | complete | pending | pending | - | Owner decision: defer `/setinput` and `/sendas` compatibility parity. |
+| A-08 | Provider preview bodies | Ready | complete | pending | pending | - | Owner decision: implement server-side provider request-body preview now because the app is still in development. |
+| A-09 | Completion provider coverage | Deferred | complete | pending | pending | - | Owner decision: defer additional completion providers until basic app usage is more stable. |
+| A-10 | Completion streaming | Deferred | complete | pending | pending | - | Owner decision: defer direct completion streaming for buffered providers. |
+| A-11 | Provider request-shape parity | Deferred | complete | pending | pending | - | Owner decision: defer for now while basic usage stabilizes, but keep high priority for advanced provider parity. |
+| A-12 | Hosted model tools | Ready | complete | pending | pending | - | Owner decision: implement now; narrow OpenAI Responses hosted-tool plumbing, especially `search` -> `web_search_preview`. |
+| A-13 | Logit bias | Deferred | complete | pending | pending | - | Owner decision: defer server-side support for Prompt Settings -> Others -> Bias / provider logit-bias payloads. |
+| A-14 | Token and budget accuracy | Deferred | complete | pending | pending | - | Owner decision: defer for now, but keep high priority because inaccurate budgeting can affect large or multimodal prompts. |
+| A-15 | CBS server adapter parity | Deferred | complete | pending | pending | - | Owner decision: defer for now, but keep high priority before expanding server-side CBS behavior. |
+| A-16 | Trigger/Lua parity | Fixed | complete | complete | complete | 22f279590 | Server resend parity for `sendAIprompt`/`v2SendAIprompt` is implemented and verified; browser UI/persistent-resource effects, interactive Lua, and multimodal Lua LLM inputs remain unsupported. |
+| A-17 | Cold storage | Deferred | complete | pending | pending | - | Owner decision: defer full cold storage; before production, implement import-only legacy support for existing users. |
+| A-18 | Lorebook stubs validation | Deferred | complete | pending | pending | - | Owner decision: defer validation of the experimental lorebook stubs setting. |
+| A-19 | Preset export parity | Deferred | complete | pending | pending | - | Owner decision: defer for now, but implement preset export for images/regexes before production. |
+| A-20 | Popup CBS mode | Deferred | complete | pending | pending | - | Owner decision: defer for now, but keep high priority with broader CBS support work. |
 
 ## Conditional Or Metric-Gated Items
 
 | ID | Area | Status | Explorer | Implementation | Verification | Commit | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| C-01 | Durable generation restart survival | Pending | complete | pending | pending | - | Persist job state/result only if restart survival becomes a release requirement. |
-| C-02 | Projection narrowing | Pending | complete | pending | pending | - | Add targeted resource contracts only after diagnostics show costly full-bootstrap fallbacks. |
-| C-03 | Backup/export memory profile | Pending | complete | pending | pending | - | Streaming `.risu` writer or File System Access API path needs evidence of large-export memory pressure. |
-| C-04 | `.risu` remote/cache references | Pending | complete | pending | pending | - | Implement only if remote/cache reference hydration becomes a supported import target. |
-| C-05 | Local GGUF tokenization | Needs decision | complete | pending | pending | - | Mostly relevant only if local model support returns to Fastify-backed web. |
+| C-01 | Durable generation restart survival | Retired | complete | not planned | not needed | - | Owner decision: do not support generation job survival across server restarts, including before production. |
+| C-02 | Projection narrowing | Deferred | complete | pending | pending | - | Owner decision: defer until metrics show costly full-bootstrap fallbacks; medium priority optimization. |
+| C-03 | Backup/export memory profile | Deferred | complete | pending | pending | - | Owner decision: defer until large-export memory pressure is observed; medium priority optimization. |
+| C-04 | `.risu` remote/cache references | Deferred | complete | pending | pending | - | Owner decision: defer remote/cache reference hydration; low priority unless imports require it later. |
+| C-05 | Local GGUF tokenization | Deferred | complete | pending | pending | - | Owner decision: defer with the same high priority as broader token/budget accuracy work if local model support returns. |
 
 ## Compatibility And No-Port Constraints
 
@@ -69,7 +70,7 @@ This document tracks remediation and decisions for the items catalogued in
 
 | ID | Area | Status | Explorer | Implementation | Verification | Commit | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| D-01 | `.risum` import wording conflict | Pending | complete | pending | pending | - | Narrow `src/docs/client-runtime.md` wording to MCP-bearing `.risum` modules. |
+| D-01 | `.risum` import wording conflict | Deferred | complete | pending | pending | - | Owner decision: defer MCP-related `.risum` wording cleanup. |
 | D-02 | UI stale-state audit findings | Documented | complete | not planned | not needed | - | Audit findings are historical because `docs/ui-flow-stale-state-audit-progress.md` marks all confirmed issues and risks fixed. |
 | D-03 | Prompt-template phase TODOs | Documented | complete | not planned | not needed | - | Phase notes are historical; the current optional mirror cleanup is tracked separately as D-04. |
 | D-04 | Prompt-template compatibility mirror | Pending | complete | pending | pending | - | Decide whether to remove or permanently document remaining `prompt_templates` compatibility writes. |
