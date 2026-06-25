@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { loadConfig } from '../src/config.js'
+import { DEFAULT_GENERATION_TRACE_MAX_GZIP_BYTES } from '../src/generation/generationTraceSidecar.js'
 
 const BASE_ENV = { RISU_API_DATA_DIR: '/tmp/risu-config-test' }
 
@@ -45,5 +46,39 @@ describe('loadConfig request trace', () => {
 
   it('rejects unknown request trace modes', () => {
     expect(() => loadConfig({ ...BASE_ENV, RISU_API_TRACE_MODE: 'debug' })).toThrow(/Invalid RISU_API_TRACE_MODE/)
+  })
+})
+
+describe('loadConfig generation trace', () => {
+  it('leaves full prompt sidecars disabled by default with the default cap', () => {
+    expect(loadConfig({ ...BASE_ENV }).generationTrace).toEqual({
+      fullPrompt: false,
+      maxGzipBytes: DEFAULT_GENERATION_TRACE_MAX_GZIP_BYTES,
+    })
+  })
+
+  it('enables full prompt sidecars only with the explicit flag', () => {
+    expect(loadConfig({ ...BASE_ENV, RISU_GENERATION_TRACE_FULL_PROMPT: '1' }).generationTrace).toEqual({
+      fullPrompt: true,
+      maxGzipBytes: DEFAULT_GENERATION_TRACE_MAX_GZIP_BYTES,
+    })
+  })
+
+  it('accepts a custom gzip cap', () => {
+    expect(
+      loadConfig({
+        ...BASE_ENV,
+        RISU_GENERATION_TRACE_FULL_PROMPT: '1',
+        RISU_GENERATION_TRACE_FULL_PROMPT_MAX_GZIP_BYTES: '4096',
+      }).generationTrace,
+    ).toEqual({ fullPrompt: true, maxGzipBytes: 4096 })
+  })
+
+  it('rejects invalid gzip caps', () => {
+    for (const raw of ['0', '-1', '1.5', 'abc']) {
+      expect(() => loadConfig({ ...BASE_ENV, RISU_GENERATION_TRACE_FULL_PROMPT_MAX_GZIP_BYTES: raw })).toThrow(
+        /Invalid RISU_GENERATION_TRACE_FULL_PROMPT_MAX_GZIP_BYTES/,
+      )
+    }
   })
 })

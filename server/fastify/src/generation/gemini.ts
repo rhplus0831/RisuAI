@@ -10,6 +10,11 @@ import {
 import { resolveVertexBearer } from './vertexAuth.js'
 import { readBoundedBodyText } from './body.js'
 import { formatUpstreamFetchError, formatUpstreamHttpError, upstreamStatusText } from './upstreamError.js'
+import {
+  generationTraceSidecarMetricField,
+  writeGenerationTraceSidecar,
+  type GenerationTraceContext,
+} from './generationTraceSidecar.js'
 
 export interface VertexAuthInput {
   projectId: string
@@ -38,6 +43,7 @@ export interface GeminiRequest {
   temperature?: number
   topP?: number
   topK?: number
+  trace?: GenerationTraceContext
   signal: AbortSignal
 }
 
@@ -56,6 +62,7 @@ interface GeminiResolveInput {
   temperature?: unknown
   topP?: unknown
   topK?: unknown
+  trace?: GenerationTraceContext
   signal: AbortSignal
 }
 
@@ -145,6 +152,7 @@ export function resolveGeminiRequest(input: GeminiResolveInput): GeminiRequest |
     temperature,
     topP,
     topK,
+    trace: input.trace,
     signal: input.signal,
   }
 }
@@ -200,13 +208,26 @@ function headers(): Record<string, string> {
   return { 'content-type': 'application/json' }
 }
 
-function emitGeminiProviderBodyMetric(args: {
+async function emitGeminiProviderBodyMetric(args: {
   url: string
+  headers: Record<string, string>
   body: Record<string, unknown>
   bodyText: string
   model: string
   stream: boolean
-}): void {
+  trace?: GenerationTraceContext
+}): Promise<void> {
+  const providerBodySidecar = await writeGenerationTraceSidecar({
+    context: args.trace,
+    kind: args.stream ? 'gemini-stream-body' : 'gemini-body',
+    value: {
+      provider: 'gemini',
+      stream: args.stream,
+      url: args.url,
+      headers: args.headers,
+      body: args.body,
+    },
+  })
   emitProtocolMetric('generation_provider_request_body', () => ({
     ...providerBodyMetricFields({
       provider: 'gemini',
@@ -217,6 +238,7 @@ function emitGeminiProviderBodyMetric(args: {
       requestModel: args.model,
     }),
     ...summarizeGeminiProviderBody(args.body),
+    ...generationTraceSidecarMetricField('providerBodySidecar', providerBodySidecar),
   }))
 }
 
@@ -325,7 +347,15 @@ export async function runGemini(req: GeminiRequest): Promise<CompletionResult> {
   const bodyText = JSON.stringify(requestBody)
   let response: Response
   try {
-    emitGeminiProviderBodyMetric({ url, body: requestBody, bodyText, model: req.model, stream: false })
+    await emitGeminiProviderBodyMetric({
+      url,
+      headers: h.headers,
+      body: requestBody,
+      bodyText,
+      model: req.model,
+      stream: false,
+      trace: req.trace,
+    })
     response = await fetch(url, {
       method: 'POST',
       headers: h.headers,
@@ -395,7 +425,15 @@ export async function* runGeminiStream(req: GeminiRequest): AsyncGenerator<Compl
   const bodyText = JSON.stringify(requestBody)
   let response: Response
   try {
-    emitGeminiProviderBodyMetric({ url, body: requestBody, bodyText, model: req.model, stream: true })
+    await emitGeminiProviderBodyMetric({
+      url,
+      headers: h.headers,
+      body: requestBody,
+      bodyText,
+      model: req.model,
+      stream: true,
+      trace: req.trace,
+    })
     response = await fetch(url, {
       method: 'POST',
       headers: h.headers,

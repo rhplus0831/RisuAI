@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
+import { gunzipSync } from 'node:zlib'
 import { applyOobaSystemHoist, resolveOpenAIRequest, runOpenAI, runOpenAIStream } from '../src/generation/openai.js'
 import { MAX_STREAM_BUFFER_CHARS, STREAM_BUFFER_OVERFLOW_ERROR } from '../src/generation/sse.js'
+import type { GenerationTraceContext, GenerationTraceSidecarEntry } from '../src/generation/generationTraceSidecar.js'
 
 interface ProtocolMetric {
   metric: string
@@ -24,6 +29,7 @@ interface ProtocolMetric {
   mediaPartCount?: number
   toolCount?: number
   functionCount?: number
+  providerBodySidecar?: GenerationTraceSidecarEntry
 }
 
 async function withProtocolMetrics<T>(
@@ -52,6 +58,20 @@ async function withProtocolMetrics<T>(
 
 function providerBodyMetrics(metrics: ProtocolMetric[]): ProtocolMetric[] {
   return metrics.filter((metric) => metric.metric === 'generation_provider_request_body')
+}
+
+function traceContext(dataDir: string, maxGzipBytes = 10 * 1024 * 1024): GenerationTraceContext {
+  return {
+    dataDir,
+    options: { fullPrompt: true, maxGzipBytes },
+    generationId: 'openai-test-generation',
+  }
+}
+
+function readSidecar(dataDir: string, entry: GenerationTraceSidecarEntry | undefined): string {
+  expect(entry).toMatchObject({ status: 'written', path: expect.stringMatching(/^trace\/generation\/.+\.json\.gz$/) })
+  const written = entry as Extract<GenerationTraceSidecarEntry, { status: 'written' }>
+  return gunzipSync(readFileSync(path.join(dataDir, written.path))).toString('utf8')
 }
 
 afterEach(() => {
@@ -448,10 +468,74 @@ describe('runOpenAI (non-streaming)', () => {
       expect(metric.requestBodyBytes).toBe(Buffer.byteLength(capturedBody, 'utf8'))
       expect(metric.requestBodySha256).toMatch(/^[a-f0-9]{64}$/)
       expect(metric.messageContentSha256).toMatch(/^[a-f0-9]{64}$/)
+      expect(metric.providerBodySidecar).toBeUndefined()
       expect(rawMetricLines.join('\n')).not.toContain(prompt)
       expect(rawMetricLines.join('\n')).not.toContain(bodySecret)
       expect(rawMetricLines.join('\n')).not.toContain('sk-header-secret-must-not-leak')
     })
+  })
+
+  it('writes opt-in provider body sidecars with redacted OpenAI secrets', async () => {
+    const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-openai-sidecar-'))
+    vi.stubGlobal('fetch', async () => ok({ choices: [{ message: { content: 'x' } }] }))
+
+    try {
+      await withProtocolMetrics(async (metrics) => {
+        await runOpenAI({
+          model: 'gpt-4o',
+          messages: [{ role: 'user', content: 'OPENAI_PROVIDER_PROMPT_VISIBLE_IN_SIDECAR' }],
+          apiKey: 'sk-header-secret-sidecar',
+          baseUrl: 'https://api.openai.com/v1',
+          extraHeaders: {
+            'X-Api-Key': 'extra-header-secret',
+            Referer: 'https://example.test/path?token=query-secret',
+          },
+          additionalParams: [
+            ['apiKey', 'body-api-secret'],
+            ['image_url.url', 'data:image/png;base64,abc123'],
+          ],
+          signal: new AbortController().signal,
+          trace: traceContext(dataDir),
+        })
+
+        const metric = providerBodyMetrics(metrics)[0]
+        const sidecarText = readSidecar(dataDir, metric.providerBodySidecar)
+        expect(sidecarText).toContain('OPENAI_PROVIDER_PROMPT_VISIBLE_IN_SIDECAR')
+        expect(sidecarText).not.toContain('sk-header-secret-sidecar')
+        expect(sidecarText).not.toContain('extra-header-secret')
+        expect(sidecarText).not.toContain('body-api-secret')
+        expect(sidecarText).not.toContain('query-secret')
+        expect(sidecarText).not.toContain('abc123')
+      })
+    } finally {
+      rmSync(dataDir, { recursive: true, force: true })
+    }
+  })
+
+  it('omits OpenAI provider body sidecars over the gzip cap', async () => {
+    const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-openai-sidecar-cap-'))
+    vi.stubGlobal('fetch', async () => ok({ choices: [{ message: { content: 'x' } }] }))
+
+    try {
+      await withProtocolMetrics(async (metrics) => {
+        await runOpenAI({
+          model: 'gpt-4o',
+          messages: [{ role: 'user', content: 'cap overflow' }],
+          apiKey: 'sk-test',
+          baseUrl: 'https://api.openai.com/v1',
+          signal: new AbortController().signal,
+          trace: traceContext(dataDir, 1),
+        })
+
+        expect(providerBodyMetrics(metrics)[0].providerBodySidecar).toMatchObject({
+          status: 'omitted',
+          reason: 'max_gzip_bytes_exceeded',
+          maxGzipBytes: 1,
+        })
+      })
+    } finally {
+      rmSync(dataDir, { recursive: true, force: true })
+    }
   })
 
   it('buckets unusual provider body roles without leaking role text in metrics', async () => {

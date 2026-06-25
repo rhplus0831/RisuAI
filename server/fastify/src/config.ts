@@ -1,5 +1,6 @@
 import path from 'node:path'
 import process from 'node:process'
+import { DEFAULT_GENERATION_TRACE_MAX_GZIP_BYTES } from './generation/generationTraceSidecar.js'
 
 export interface AppConfig {
   host: string
@@ -36,6 +37,10 @@ export interface AppConfig {
     mode: RequestTraceMode
     bodySidecarMaxGzipBytes?: number
   }
+  generationTrace?: {
+    fullPrompt: boolean
+    maxGzipBytes: number
+  }
 }
 
 export type RequestTraceMode = 'agent' | 'human'
@@ -60,6 +65,15 @@ function parseBodyLimit(raw: string | undefined, fallback: number): number {
     throw new Error(`Invalid RISU_API_BODY_LIMIT: ${raw}`)
   }
   return Math.floor(n)
+}
+
+function parsePositiveIntegerBytes(raw: string | undefined, fallback: number, envName: string): number {
+  if (!raw) return fallback
+  const n = Number(raw)
+  if (!Number.isInteger(n) || n <= 0) {
+    throw new Error(`Invalid ${envName}: ${raw}`)
+  }
+  return n
 }
 
 function parseImportMaxBytes(raw: string | undefined, fallback: number): number {
@@ -128,6 +142,12 @@ function parseRequestTraceMode(raw: string | undefined): RequestTraceMode | unde
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const dataDir = env.RISU_API_DATA_DIR ? path.resolve(env.RISU_API_DATA_DIR) : path.join(repoRoot(), 'data')
   const requestTraceMode = parseRequestTraceMode(env.RISU_API_TRACE_MODE)
+  const generationTraceFullPrompt = env.RISU_GENERATION_TRACE_FULL_PROMPT === '1'
+  const generationTraceMaxGzipBytes = parsePositiveIntegerBytes(
+    env.RISU_GENERATION_TRACE_FULL_PROMPT_MAX_GZIP_BYTES,
+    DEFAULT_GENERATION_TRACE_MAX_GZIP_BYTES,
+    'RISU_GENERATION_TRACE_FULL_PROMPT_MAX_GZIP_BYTES',
+  )
 
   return {
     host: env.RISU_API_HOST ?? '0.0.0.0',
@@ -141,5 +161,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     realmUrl: parseHubUrl(env.RISU_REALM_URL, 'https://realm.risuai.net'),
     agentDevAuthBypass: parseBoolean(env.RISU_AGENT_DEV_AUTH_BYPASS),
     requestTrace: requestTraceMode ? { mode: requestTraceMode } : undefined,
+    generationTrace: {
+      fullPrompt: generationTraceFullPrompt,
+      maxGzipBytes: generationTraceMaxGzipBytes,
+    },
   }
 }

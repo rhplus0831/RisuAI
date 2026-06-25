@@ -273,6 +273,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
     commandEventSink,
     generationJobRegistry,
     opts.generationChat,
+    config.generationTrace,
   )
   const finalizationRetryRaw = opts.generationChat?.finalizationRetry
   const finalizationRetryOptions = finalizationRetryRaw === false ? false : (finalizationRetryRaw ?? {})

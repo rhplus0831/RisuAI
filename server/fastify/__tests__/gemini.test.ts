@@ -1,7 +1,12 @@
 import { generateKeyPairSync } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
+import { gunzipSync } from 'node:zlib'
 import { reformatForGemini, resolveGeminiRequest, runGemini, runGeminiStream } from '../src/generation/gemini.js'
 import { MAX_STREAM_BUFFER_CHARS, STREAM_BUFFER_OVERFLOW_ERROR } from '../src/generation/sse.js'
+import type { GenerationTraceContext, GenerationTraceSidecarEntry } from '../src/generation/generationTraceSidecar.js'
 
 interface ProtocolMetric {
   metric: string
@@ -29,6 +34,7 @@ interface ProtocolMetric {
   toolCount?: number
   safetySettingCount?: number
   generationConfigKeyCount?: number
+  providerBodySidecar?: GenerationTraceSidecarEntry
 }
 
 async function withProtocolMetrics<T>(
@@ -57,6 +63,20 @@ async function withProtocolMetrics<T>(
 
 function providerBodyMetrics(metrics: ProtocolMetric[]): ProtocolMetric[] {
   return metrics.filter((metric) => metric.metric === 'generation_provider_request_body')
+}
+
+function traceContext(dataDir: string, maxGzipBytes = 10 * 1024 * 1024): GenerationTraceContext {
+  return {
+    dataDir,
+    options: { fullPrompt: true, maxGzipBytes },
+    generationId: 'gemini-test-generation',
+  }
+}
+
+function readSidecar(dataDir: string, entry: GenerationTraceSidecarEntry | undefined): string {
+  expect(entry).toMatchObject({ status: 'written', path: expect.stringMatching(/^trace\/generation\/.+\.json\.gz$/) })
+  const written = entry as Extract<GenerationTraceSidecarEntry, { status: 'written' }>
+  return gunzipSync(readFileSync(path.join(dataDir, written.path))).toString('utf8')
 }
 
 function testPrivateKey(): string {
@@ -350,10 +370,72 @@ describe('runGemini', () => {
       expect(metric.requestBodySha256).toMatch(/^[a-f0-9]{64}$/)
       expect(metric.textPartSha256).toMatch(/^[a-f0-9]{64}$/)
       expect(metric.systemInstructionSha256).toMatch(/^[a-f0-9]{64}$/)
+      expect(metric.providerBodySidecar).toBeUndefined()
       expect(rawMetricLines.join('\n')).not.toContain('key=')
       expect(rawMetricLines.join('\n')).not.toContain('goog-secret-must-not-leak')
       expect(rawMetricLines.join('\n')).not.toContain(prompt)
     })
+  })
+
+  it('writes opt-in provider body sidecars with redacted Gemini secrets and media', async () => {
+    const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-gemini-sidecar-'))
+    vi.stubGlobal('fetch', async () => ok({ candidates: [{ content: { parts: [{ text: 'x' }] } }] }))
+
+    try {
+      await withProtocolMetrics(async (metrics) => {
+        await runGemini({
+          model: 'gemini-2.5-flash',
+          contents: [
+            {
+              role: 'user',
+              parts: [
+                { text: 'GEMINI_PROVIDER_PROMPT_VISIBLE_IN_SIDECAR' },
+                { inlineData: { mimeType: 'image/png', data: 'abc123-media-secret' } },
+              ],
+            },
+          ] as never,
+          apiKey: 'goog-sidecar-secret',
+          baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+          signal: new AbortController().signal,
+          trace: traceContext(dataDir),
+        })
+
+        const metric = providerBodyMetrics(metrics)[0]
+        const sidecarText = readSidecar(dataDir, metric.providerBodySidecar)
+        expect(sidecarText).toContain('GEMINI_PROVIDER_PROMPT_VISIBLE_IN_SIDECAR')
+        expect(sidecarText).not.toContain('goog-sidecar-secret')
+        expect(sidecarText).not.toContain('key=')
+        expect(sidecarText).not.toContain('abc123-media-secret')
+      })
+    } finally {
+      rmSync(dataDir, { recursive: true, force: true })
+    }
+  })
+
+  it('omits Gemini provider body sidecars over the gzip cap', async () => {
+    const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-gemini-sidecar-cap-'))
+    vi.stubGlobal('fetch', async () => ok({ candidates: [{ content: { parts: [{ text: 'x' }] } }] }))
+
+    try {
+      await withProtocolMetrics(async (metrics) => {
+        await runGemini({
+          model: 'gemini-2.5-flash',
+          contents: [{ role: 'user', parts: [{ text: 'cap overflow' }] }],
+          apiKey: 'goog-test',
+          baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+          signal: new AbortController().signal,
+          trace: traceContext(dataDir, 1),
+        })
+
+        expect(providerBodyMetrics(metrics)[0].providerBodySidecar).toMatchObject({
+          status: 'omitted',
+          reason: 'max_gzip_bytes_exceeded',
+          maxGzipBytes: 1,
+        })
+      })
+    } finally {
+      rmSync(dataDir, { recursive: true, force: true })
+    }
   })
 
   it('buckets unusual provider body roles without leaking role text in metrics', async () => {

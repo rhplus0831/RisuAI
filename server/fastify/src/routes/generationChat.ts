@@ -65,6 +65,12 @@ import { isStreamDeadlineActivityFrame, type JobClient, type StreamJob } from '.
 import { getWritableBufferedBytes, writeBoundedRaw } from '../streamBackpressure.js'
 import { emitProtocolMetric, protocolDurationMs, protocolMetricsEnabled, protocolNowMs } from '../protocolMetrics.js'
 import {
+  generationTraceSidecarMetricField,
+  writeGenerationTraceSidecar,
+  type GenerationTraceContext,
+  type GenerationTraceOptions,
+} from '../generation/generationTraceSidecar.js'
+import {
   deleteGenerationFinalizationRetry,
   enqueueGenerationFinalizationRetry,
   listPendingGenerationFinalizationRetries,
@@ -123,6 +129,7 @@ export interface ChatProviderDispatchContext {
   generationId: string
   generationInfo: Record<string, unknown>
   signal: AbortSignal
+  trace?: GenerationTraceContext
 }
 
 export type ChatProviderDispatcher = (
@@ -736,10 +743,11 @@ function promptEventBooleanFields(promptEvent: Omit<PromptEvent, 'type'>): Recor
   }
 }
 
-function emitGenerationPromptEmissionMetric(args: {
+async function emitGenerationPromptEmissionMetric(args: {
   metricContext: PromptAssemblyMetricContext
   input: AssembleInput
   promptEvent: Omit<PromptEvent, 'type'>
+  formated: OpenAIChat[]
   promptSummary?: PromptRowsSummary
   generationId: string
   durableJobId?: string
@@ -747,12 +755,29 @@ function emitGenerationPromptEmissionMetric(args: {
   compactPromptEvent: boolean
   shouldDispatch: boolean
   revision?: number
-}): void {
+  trace?: GenerationTraceContext
+}): Promise<void> {
   const eventSummary =
     args.promptSummary ??
     (Array.isArray((args.promptEvent as Record<string, unknown>).formated)
       ? summarizePromptRows((args.promptEvent as { formated: OpenAIChat[] }).formated)
       : undefined)
+  const fullPromptSidecar = protocolMetricsEnabled()
+    ? await writeGenerationTraceSidecar({
+        context: args.trace,
+        kind: 'prompt',
+        value: {
+          kind: 'generation_prompt_emission',
+          chatId: args.input.chatId,
+          characterId: args.input.characterId,
+          mode: args.input.mode,
+          generationId: args.generationId,
+          durableJobId: args.durableJobId,
+          durable: args.durable,
+          formated: args.formated,
+        },
+      })
+    : undefined
   emitProtocolMetric('generation_prompt_emission', {
     status: 'ok',
     ...args.metricContext,
@@ -768,7 +793,28 @@ function emitGenerationPromptEmissionMetric(args: {
     persistedRevision: args.revision,
     ...promptSummaryMetricFields(eventSummary),
     ...promptEventBooleanFields(args.promptEvent),
+    ...generationTraceSidecarMetricField('fullPromptSidecar', fullPromptSidecar),
   })
+}
+
+function createGenerationTraceContext(args: {
+  dataDir: string
+  generationTrace?: GenerationTraceOptions
+  metricContext: PromptAssemblyMetricContext
+  generationId: string
+  durableJobId?: string
+  req?: FastifyRequest
+}): GenerationTraceContext | undefined {
+  if (!protocolMetricsEnabled() || args.generationTrace?.fullPrompt !== true) return undefined
+  return {
+    dataDir: args.dataDir,
+    options: args.generationTrace,
+    requestId: typeof args.metricContext.requestId === 'string' ? args.metricContext.requestId : undefined,
+    requestUid: typeof args.metricContext.requestUid === 'string' ? args.metricContext.requestUid : undefined,
+    generationId: args.generationId,
+    durableJobId: args.durableJobId,
+    logger: args.req?.log,
+  }
 }
 
 function createPromptAssemblyMetricContext(args: {
@@ -1325,6 +1371,7 @@ async function streamAssembly(
   eventSink: CommandEventSink,
   clientCapabilities: GenerationClientCapabilities,
   options: GenerationChatRouteOptions = {},
+  generationTrace?: GenerationTraceOptions,
   preparedAssembly?: PromptAssemblyRun,
   deferredFailure?: AssemblyDeferredFailure,
   metricContext: PromptAssemblyMetricContext = {},
@@ -1381,16 +1428,25 @@ async function streamAssembly(
             ? createGenerationInfo(database, generationId, successfulResult, promptMs)
             : undefined
         const promptEvent = promptEventForClient(result.prompt, clientCapabilities, input.mode)
-        emitGenerationPromptEmissionMetric({
+        const trace = createGenerationTraceContext({
+          dataDir,
+          generationTrace,
+          metricContext,
+          generationId,
+          req,
+        })
+        await emitGenerationPromptEmissionMetric({
           metricContext,
           input,
           promptEvent,
+          formated: successfulResult.formated ?? successfulResult.prompt.formated ?? [],
           promptSummary: result.promptSummary,
           generationId,
           durable: false,
           compactPromptEvent: clientCapabilities.compactPromptEvent,
           shouldDispatch,
           revision: persistedRevision,
+          trace,
         })
         emit({ type: 'prompt', ...promptEvent })
         if (result.mutations) {
@@ -1419,6 +1475,7 @@ async function streamAssembly(
                 formated: context.result.formated ?? context.result.prompt.formated ?? [],
                 outputTokens: context.result.outputTokens,
                 signal: context.signal,
+                trace: context.trace,
               }))
           const providerStartedAt = Date.now()
           let frames: AsyncIterable<CompletionStreamFrame> | null | undefined
@@ -1430,6 +1487,7 @@ async function streamAssembly(
               generationId,
               generationInfo,
               signal,
+              trace,
             })
           } catch (err) {
             emit({
@@ -2210,6 +2268,7 @@ async function runGenerationJob(args: {
   eventSink: CommandEventSink
   clientCapabilities: GenerationClientCapabilities
   options: GenerationChatRouteOptions
+  generationTrace?: GenerationTraceOptions
   preparedAssembly?: PromptAssemblyRun
   deferredFailure?: AssemblyDeferredFailure
   metricContext?: PromptAssemblyMetricContext
@@ -2223,6 +2282,7 @@ async function runGenerationJob(args: {
     eventSink,
     clientCapabilities,
     options,
+    generationTrace,
     preparedAssembly,
     deferredFailure,
     metricContext = {},
@@ -2266,10 +2326,18 @@ async function runGenerationJob(args: {
             ? createGenerationInfo(database, generationId, successfulResult, promptMs)
             : undefined
         const promptEvent = promptEventForClient(result.prompt, clientCapabilities, input.mode)
-        emitGenerationPromptEmissionMetric({
+        const trace = createGenerationTraceContext({
+          dataDir,
+          generationTrace,
+          metricContext,
+          generationId,
+          durableJobId: job.id,
+        })
+        await emitGenerationPromptEmissionMetric({
           metricContext,
           input,
           promptEvent,
+          formated: successfulResult.formated ?? successfulResult.prompt.formated ?? [],
           promptSummary: result.promptSummary,
           generationId,
           durableJobId: job.id,
@@ -2277,6 +2345,7 @@ async function runGenerationJob(args: {
           compactPromptEvent: clientCapabilities.compactPromptEvent,
           shouldDispatch,
           revision: persistedRevision,
+          trace,
         })
         emit({ type: 'prompt', ...promptEvent })
         if (result.mutations) {
@@ -2301,6 +2370,7 @@ async function runGenerationJob(args: {
                 formated: context.result.formated ?? context.result.prompt.formated ?? [],
                 outputTokens: context.result.outputTokens,
                 signal: context.signal,
+                trace: context.trace,
               }))
           const providerStartedAt = Date.now()
           let frames: AsyncIterable<CompletionStreamFrame> | null | undefined
@@ -2312,6 +2382,7 @@ async function runGenerationJob(args: {
               generationId,
               generationInfo,
               signal,
+              trace,
             })
           } catch (err) {
             emit({
@@ -2446,6 +2517,7 @@ function startDurableGeneration(args: {
   eventSink: CommandEventSink
   clientCapabilities: GenerationClientCapabilities
   options: GenerationChatRouteOptions
+  generationTrace?: GenerationTraceOptions
   generationJobs: GenerationJobRegistry
   preparedAssembly?: PromptAssemblyRun
   deferredFailure?: AssemblyDeferredFailure
@@ -2485,6 +2557,7 @@ function startDurableGeneration(args: {
       eventSink: args.eventSink,
       clientCapabilities: args.clientCapabilities,
       options: args.options,
+      generationTrace: args.generationTrace,
       preparedAssembly: args.preparedAssembly,
       deferredFailure: args.deferredFailure,
       metricContext: {
@@ -2504,6 +2577,7 @@ export function registerGenerationChatRoutes(
   eventSink: CommandEventSink,
   generationJobs: GenerationJobRegistry,
   options: GenerationChatRouteOptions = {},
+  generationTrace?: GenerationTraceOptions,
 ): void {
   app.post('/api/v1/generate/chat', { config: { rateLimit: generationSubmitRateLimit } }, async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
@@ -2543,6 +2617,7 @@ export function registerGenerationChatRoutes(
         eventSink,
         clientCapabilities,
         options,
+        generationTrace,
         generationJobs,
         deferredFailure: preflight.status === 'defer' ? preflight.failure : undefined,
         metricContext,
@@ -2560,6 +2635,7 @@ export function registerGenerationChatRoutes(
       eventSink,
       clientCapabilities,
       options,
+      generationTrace,
       undefined,
       preflight.status === 'defer' ? preflight.failure : undefined,
       metricContext,

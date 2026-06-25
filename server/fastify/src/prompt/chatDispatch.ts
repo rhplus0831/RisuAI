@@ -30,6 +30,7 @@ import {
 } from '../../../../src/ts/model/modelProfileResolver.js'
 import { emitProtocolMetric } from '../protocolMetrics.js'
 import { promptSummaryMetricFields, summarizePromptRows } from './promptSummary.js'
+import type { GenerationTraceContext } from '../generation/generationTraceSidecar.js'
 
 interface ChatDispatchArgs {
   database: Database
@@ -37,6 +38,7 @@ interface ChatDispatchArgs {
   outputTokens?: number
   profile?: ResolvedModelProfile
   signal: AbortSignal
+  trace?: GenerationTraceContext
 }
 
 interface CustomModelEntry {
@@ -782,7 +784,7 @@ async function* resultFrames(resultPromise: Promise<CompletionResult>): AsyncGen
 }
 
 export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<AsyncIterable<CompletionStreamFrame>> {
-  const { database: db, outputTokens, signal } = args
+  const { database: db, outputTokens, signal, trace } = args
   const profile = args.profile ?? resolveModelProfile({ database: db })
   assertModelProfileGenerationReady(profile)
   const info = profile.modelInfo
@@ -852,6 +854,7 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
       additionalParams: variant.additionalParams,
       oobaSystemHoist: variant.oobaSystemHoist,
       signal,
+      trace,
     })
     if (!request) throw new Error('apiKey is required')
     return stream ? runOpenAIStream(request) : resultFrames(runOpenAI(request))
@@ -871,6 +874,7 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
       additionalParams: variant.additionalParams,
       oobaSystemHoist: variant.oobaSystemHoist,
       signal,
+      trace,
     })
     if (!request) throw new Error('options.nanogpt.apiKey is required')
     return stream ? runOpenAIStream(request) : resultFrames(runOpenAI(request))
@@ -942,6 +946,7 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
       maxOutputTokens: maxTokens,
       temperature,
       signal,
+      trace,
     })
     if (!request) throw new Error('options.gemini.apiKey or options.gemini.vertex is required')
     return stream ? runGeminiStream(request) : resultFrames(runGemini(request))

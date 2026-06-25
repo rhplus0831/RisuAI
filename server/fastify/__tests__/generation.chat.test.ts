@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import type { AddressInfo } from 'node:net'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createHash, webcrypto } from 'node:crypto'
+import { gunzipSync } from 'node:zlib'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { listPersistedCommandEventHistory } from '../src/commands/events.js'
@@ -28,6 +29,7 @@ import { getChatMessageDiffInstrumentation, resetChatMessageDiffInstrumentation 
 import { emitProviderChunks } from '../src/prompt/providerTransport.js'
 import { summarizePromptRows, type PromptRowSummary } from '../src/prompt/promptSummary.js'
 import type { PromptChatEvent } from '../src/prompt/sseEvents.js'
+import type { GenerationTraceOptions, GenerationTraceSidecarEntry } from '../src/generation/generationTraceSidecar.js'
 
 const subtle = webcrypto.subtle
 
@@ -36,7 +38,10 @@ interface Harness {
   dataDir: string
 }
 
-async function startHarness(generationChat?: GenerationChatRouteOptions): Promise<Harness> {
+async function startHarness(
+  generationChat?: GenerationChatRouteOptions,
+  generationTrace?: GenerationTraceOptions,
+): Promise<Harness> {
   process.env.LOG_LEVEL = 'silent'
   const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-fastify-'))
   const { app } = await buildApp({
@@ -48,6 +53,7 @@ async function startHarness(generationChat?: GenerationChatRouteOptions): Promis
       importMaxBytes: Infinity,
       trustProxy: false,
       hubUrl: 'https://sv.risuai.xyz',
+      generationTrace,
     },
     generationChat,
   })
@@ -59,9 +65,12 @@ async function stopHarness(h: Harness): Promise<void> {
   rmSync(h.dataDir, { recursive: true, force: true })
 }
 
-async function restartHarness(generationChat: GenerationChatRouteOptions): Promise<void> {
+async function restartHarness(
+  generationChat: GenerationChatRouteOptions,
+  generationTrace?: GenerationTraceOptions,
+): Promise<void> {
   await stopHarness(harness)
-  harness = await startHarness(generationChat)
+  harness = await startHarness(generationChat, generationTrace)
 }
 
 async function signAssertion(privateKey: CryptoKey, publicJwk: JsonWebKey, ttlSec = 60): Promise<string> {
@@ -344,6 +353,7 @@ interface ProtocolMetric {
   promptEventHasMessages?: boolean
   promptEventHasLorebookActivation?: boolean
   promptEventHasPromptInfo?: boolean
+  fullPromptSidecar?: GenerationTraceSidecarEntry
 }
 
 const EXPECTED_PROMPT_ASSEMBLY_STAGES = [
@@ -364,16 +374,20 @@ function expectPromptAssemblyStageTimings(metric: ProtocolMetric | undefined): v
   }
 }
 
-async function withProtocolMetrics<T>(run: (metrics: ProtocolMetric[]) => Promise<T>): Promise<T> {
+async function withProtocolMetrics<T>(
+  run: (metrics: ProtocolMetric[], rawMetricLines: string[]) => Promise<T>,
+): Promise<T> {
   const previous = process.env.RISU_PROTOCOL_METRICS
   const metrics: ProtocolMetric[] = []
+  const rawMetricLines: string[] = []
   process.env.RISU_PROTOCOL_METRICS = '1'
   const infoSpy = vi.spyOn(console, 'info').mockImplementation((message: unknown) => {
     if (typeof message !== 'string' || !message.startsWith('[protocol-metric] ')) return
+    rawMetricLines.push(message)
     metrics.push(JSON.parse(message.slice('[protocol-metric] '.length)) as ProtocolMetric)
   })
   try {
-    return await run(metrics)
+    return await run(metrics, rawMetricLines)
   } finally {
     infoSpy.mockRestore()
     if (previous === undefined) {
@@ -382,6 +396,12 @@ async function withProtocolMetrics<T>(run: (metrics: ProtocolMetric[]) => Promis
       process.env.RISU_PROTOCOL_METRICS = previous
     }
   }
+}
+
+function readGenerationSidecar(dataDir: string, entry: GenerationTraceSidecarEntry | undefined): unknown {
+  expect(entry).toMatchObject({ status: 'written', path: expect.stringMatching(/^trace\/generation\/.+\.json\.gz$/) })
+  const sidecar = entry as Extract<GenerationTraceSidecarEntry, { status: 'written' }>
+  return JSON.parse(gunzipSync(readFileSync(path.join(dataDir, sidecar.path))).toString('utf8'))
 }
 
 function metricSummary(metric: ProtocolMetric | undefined): Record<string, unknown> | undefined {
@@ -1231,6 +1251,106 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
         hasVarWrite: true,
       })
       expect(persistence?.durationMs).toBeGreaterThanOrEqual(0)
+    })
+  })
+
+  it('does not write full prompt sidecars when only protocol metrics are enabled', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, fixtureDatabase)
+
+    await withProtocolMetrics(async (metrics) => {
+      const res = await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/generate/chat',
+        headers: { 'risu-auth': assertion },
+        payload: { ...basePayload, userMessage: 'SIDEcar disabled sentinel' },
+      })
+      expect(res.statusCode).toBe(200)
+
+      const emission = metrics.find((entry) => entry.metric === 'generation_prompt_emission')
+      expect(emission?.fullPromptSidecar).toBeUndefined()
+      expect(existsSync(path.join(harness.dataDir, 'trace', 'generation'))).toBe(false)
+    })
+  })
+
+  it('writes opt-in full prompt sidecars without putting prompt text in metrics', async () => {
+    await restartHarness({}, { fullPrompt: true, maxGzipBytes: 10 * 1024 * 1024 })
+    const { assertion } = await setupAuthedClient(harness.app)
+    const sentinel = 'FULL_PROMPT_SIDECAR_SENTINEL'
+    await seedDatabase(harness.app, assertion, { ...fixtureDatabase, mainPrompt: `MAIN ${sentinel}` })
+
+    await withProtocolMetrics(async (metrics, rawMetricLines) => {
+      const res = await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/generate/chat',
+        headers: { 'risu-auth': assertion },
+        payload: { ...basePayload, userMessage: 'hi' },
+      })
+      expect(res.statusCode).toBe(200)
+
+      const emission = metrics.find((entry) => entry.metric === 'generation_prompt_emission')
+      expect(emission?.fullPromptSidecar).toMatchObject({
+        status: 'written',
+        path: expect.stringMatching(/^trace\/generation\/prompt-.+\.json\.gz$/),
+        bytes: expect.any(Number),
+        gzipBytes: expect.any(Number),
+        sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+      })
+      const sidecar = readGenerationSidecar(harness.dataDir, emission?.fullPromptSidecar)
+      expect(JSON.stringify(sidecar)).toContain(sentinel)
+      expect(rawMetricLines.join('\n')).not.toContain(sentinel)
+    })
+  })
+
+  it('omits full prompt sidecars over the gzip cap without writing a file', async () => {
+    await restartHarness({}, { fullPrompt: true, maxGzipBytes: 1 })
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, fixtureDatabase)
+
+    await withProtocolMetrics(async (metrics) => {
+      const res = await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/generate/chat',
+        headers: { 'risu-auth': assertion },
+        payload: { ...basePayload, userMessage: 'cap overflow sentinel' },
+      })
+      expect(res.statusCode).toBe(200)
+
+      const emission = metrics.find((entry) => entry.metric === 'generation_prompt_emission')
+      expect(emission?.fullPromptSidecar).toMatchObject({
+        status: 'omitted',
+        reason: 'max_gzip_bytes_exceeded',
+        maxGzipBytes: 1,
+      })
+      expect(existsSync(path.join(harness.dataDir, 'trace', 'generation'))).toBe(false)
+    })
+  })
+
+  it('uses authoritative prompt rows for sidecars when compact prompt events are requested', async () => {
+    await restartHarness({}, { fullPrompt: true, maxGzipBytes: 10 * 1024 * 1024 })
+    const { assertion } = await setupAuthedClient(harness.app)
+    const sentinel = 'COMPACT_PROMPT_AUTH_ROWS_SENTINEL'
+    await seedDatabase(harness.app, assertion, { ...fixtureDatabase, mainPrompt: `MAIN ${sentinel}` })
+
+    await withProtocolMetrics(async (metrics) => {
+      const res = await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/generate/chat',
+        headers: { 'risu-auth': assertion },
+        payload: {
+          ...basePayload,
+          userMessage: 'hi',
+          clientCapabilities: { compactPromptEvent: true },
+        },
+      })
+      expect(res.statusCode).toBe(200)
+      const prompt = parseEvents(res.body).find((event) => event.type === 'prompt')
+      expect(prompt?.data.messages).toBeUndefined()
+
+      const emission = metrics.find((entry) => entry.metric === 'generation_prompt_emission')
+      expect(emission?.compactPromptEvent).toBe(true)
+      const sidecar = readGenerationSidecar(harness.dataDir, emission?.fullPromptSidecar)
+      expect(JSON.stringify(sidecar)).toContain(sentinel)
     })
   })
 

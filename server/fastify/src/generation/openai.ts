@@ -10,6 +10,11 @@ import {
 } from './sse.js'
 import { readBoundedBodyText } from './body.js'
 import { formatUpstreamFetchError, formatUpstreamHttpError, upstreamStatusText } from './upstreamError.js'
+import {
+  generationTraceSidecarMetricField,
+  writeGenerationTraceSidecar,
+  type GenerationTraceContext,
+} from './generationTraceSidecar.js'
 
 export interface OpenAIRequest {
   model: string
@@ -35,6 +40,7 @@ export interface OpenAIRequest {
    * reverse_proxy route today.
    */
   oobaSystemHoist?: boolean
+  trace?: GenerationTraceContext
   signal: AbortSignal
 }
 
@@ -48,6 +54,7 @@ interface OpenAIResolveInput {
   extraHeaders?: Record<string, string>
   additionalParams?: Array<[string, string]>
   oobaSystemHoist?: boolean
+  trace?: GenerationTraceContext
   signal: AbortSignal
 }
 
@@ -76,6 +83,7 @@ export function resolveOpenAIRequest(input: OpenAIResolveInput): OpenAIRequest |
     extraHeaders: input.extraHeaders,
     additionalParams: input.additionalParams,
     oobaSystemHoist: input.oobaSystemHoist === true ? true : undefined,
+    trace: input.trace,
     signal: input.signal,
   }
 }
@@ -152,11 +160,23 @@ function buildRequestInit(
   return { payload: body, body: JSON.stringify(body), headers }
 }
 
-function emitOpenAIProviderBodyMetric(
+async function emitOpenAIProviderBodyMetric(
   url: string,
-  init: { payload: Record<string, unknown>; body: string },
+  init: { payload: Record<string, unknown>; body: string; headers: Record<string, string> },
   stream: boolean,
-): void {
+  trace?: GenerationTraceContext,
+): Promise<void> {
+  const providerBodySidecar = await writeGenerationTraceSidecar({
+    context: trace,
+    kind: stream ? 'openai-stream-body' : 'openai-body',
+    value: {
+      provider: 'openai',
+      stream,
+      url,
+      headers: init.headers,
+      body: init.payload,
+    },
+  })
   emitProtocolMetric('generation_provider_request_body', () => ({
     ...providerBodyMetricFields({
       provider: 'openai',
@@ -166,6 +186,7 @@ function emitOpenAIProviderBodyMetric(
       bodyText: init.body,
     }),
     ...summarizeOpenAIProviderBody(init.payload),
+    ...generationTraceSidecarMetricField('providerBodySidecar', providerBodySidecar),
   }))
 }
 
@@ -189,7 +210,7 @@ export async function runOpenAI(req: OpenAIRequest): Promise<CompletionResult> {
   const url = endpoint(req)
   let response: Response
   try {
-    emitOpenAIProviderBodyMetric(url, init, false)
+    await emitOpenAIProviderBodyMetric(url, init, false, req.trace)
     response = await fetch(url, {
       method: 'POST',
       headers: init.headers,
@@ -329,7 +350,7 @@ export async function* runOpenAIStream(req: OpenAIRequest): AsyncGenerator<Compl
   const url = endpoint(req)
   let response: Response
   try {
-    emitOpenAIProviderBodyMetric(url, init, true)
+    await emitOpenAIProviderBodyMetric(url, init, true, req.trace)
     response = await fetch(url, {
       method: 'POST',
       headers: init.headers,
