@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const alertSpies = vi.hoisted(() => ({
   alertConfirm: vi.fn(async () => false),
   alertInput: vi.fn(async () => ''),
+  alertSelect: vi.fn(async () => '2'),
 }))
 
 vi.mock('src/ts/alert', async (importActual) => {
@@ -13,6 +14,7 @@ vi.mock('src/ts/alert', async (importActual) => {
     ...actual,
     alertConfirm: alertSpies.alertConfirm,
     alertInput: alertSpies.alertInput,
+    alertSelect: alertSpies.alertSelect,
   }
 })
 
@@ -363,6 +365,18 @@ function togglePresetButton(index: number): HTMLButtonElement {
   return button!
 }
 
+function togglePresetWarning(): HTMLElement | null {
+  return togglePresetRoot().querySelector<HTMLElement>('[data-risu-generation-toggle-preset-warning]')
+}
+
+async function chooseTogglePreset(id: string): Promise<void> {
+  const select = togglePresetSelect()
+  select.value = id
+  select.dispatchEvent(new Event('input', { bubbles: true }))
+  select.dispatchEvent(new Event('change', { bubbles: true }))
+  await tick()
+}
+
 function pickerRoot(kind: 'model' | 'prompt' | 'persona', mode: GenerationSettingsPickerMode): HTMLElement {
   return elementBySelector<HTMLElement>(
     `[data-risu-generation-picker][data-risu-picker-kind="${kind}"][data-risu-picker-mode="${mode}"]`,
@@ -434,6 +448,8 @@ beforeEach(() => {
   alertSpies.alertConfirm.mockResolvedValue(false)
   alertSpies.alertInput.mockReset()
   alertSpies.alertInput.mockResolvedValue('')
+  alertSpies.alertSelect.mockReset()
+  alertSpies.alertSelect.mockResolvedValue('2')
   clearCachedServerCommandRevision()
   seedDb()
 })
@@ -1247,22 +1263,6 @@ describe('sidebar chat generation settings controls', () => {
 
   it('saves, applies, and deletes reusable chat toggle presets', async () => {
     const calls = stubCommandFetch()
-    DBState.db.promptPresets[1].customPromptTemplateToggle =
-      'mood=Mood=select=Calm,Spicy\nflag=Flag\nnote=Note=text\nmoduleFlag=Module Flag\nextra=Extra'
-    DBState.db.characters[0].chats[1].generationSettings = {
-      configured: true,
-      personaId: 'persona-b',
-      modelPresetId: 'model-preset-a',
-      promptPresetId: 'preset-b',
-      jailbreakToggle: false,
-      sidebarToggles: {
-        mood: '0',
-        flag: '0',
-        note: 'beta-note',
-        moduleFlag: '0',
-        extra: '1',
-      },
-    }
     alertSpies.alertInput.mockResolvedValueOnce('Spicy toggles')
 
     mountToggles()
@@ -1284,8 +1284,16 @@ describe('sidebar chat generation settings controls', () => {
         note: 'alpha-note',
         moduleFlag: '1',
       },
+      sidebarToggleKinds: {
+        mood: 'select',
+        flag: 'boolean',
+        note: 'text',
+        moduleFlag: 'boolean',
+      },
     })
     expect(togglePresetSelect().value).toBe(preset.id)
+    expect(togglePresetButton(0).disabled).toBe(true)
+    expect(togglePresetButton(1).disabled).toBe(true)
     expect(calls[1]).toMatchObject({
       url: '/api/v1/commands/settings/sidebar',
       method: 'PATCH',
@@ -1307,12 +1315,21 @@ describe('sidebar chat generation settings controls', () => {
     await tick()
 
     expect(jailbreakControl().dataset.risuSelected).toBe('false')
-    expect(toggleCheckbox('extra').checked).toBe(true)
+    expect(jailbreakControl().dataset.risuTogglePresetDifferent).toBe('true')
+    expect(toggleControl('mood').dataset.risuTogglePresetDifferent).toBe('true')
+    expect(toggleControl('flag').dataset.risuTogglePresetDifferent).toBe('true')
+    expect(toggleControl('note').dataset.risuTogglePresetDifferent).toBe('true')
+    expect(toggleControl('moduleFlag').dataset.risuTogglePresetDifferent).toBe('true')
+    expect(togglePresetButton(0).disabled).toBe(false)
+    expect(togglePresetButton(1).disabled).toBe(false)
+    expect(togglePresetWarning()).toBeNull()
 
+    alertSpies.alertConfirm.mockResolvedValueOnce(true)
     togglePresetButton(1).click()
     await tick()
     await waitForFetchCount(calls, 3)
 
+    expect(alertSpies.alertConfirm).toHaveBeenCalledWith('Apply these saved toggles to the current chat?')
     expect(activeChat().generationSettings).toMatchObject({
       configured: true,
       personaId: 'persona-b',
@@ -1324,11 +1341,13 @@ describe('sidebar chat generation settings controls', () => {
         flag: '1',
         note: 'alpha-note',
         moduleFlag: '1',
-        extra: '0',
       },
     })
     expect(jailbreakControl().dataset.risuSelected).toBe('true')
-    expect(toggleCheckbox('extra').checked).toBe(false)
+    expect(jailbreakControl().dataset.risuTogglePresetDifferent).toBe('false')
+    expect(toggleControl('mood').dataset.risuTogglePresetDifferent).toBe('false')
+    expect(togglePresetButton(0).disabled).toBe(true)
+    expect(togglePresetButton(1).disabled).toBe(true)
     expect(calls[2]).toMatchObject({
       url: '/api/v1/commands/chats/chat-b/generation-settings',
       method: 'PUT',
@@ -1342,7 +1361,6 @@ describe('sidebar chat generation settings controls', () => {
             flag: '1',
             note: 'alpha-note',
             moduleFlag: '1',
-            extra: '0',
           },
         }),
       },
@@ -1353,7 +1371,7 @@ describe('sidebar chat generation settings controls', () => {
     await tick()
     await waitForFetchCount(calls, 4)
 
-    expect(alertSpies.alertConfirm).toHaveBeenCalledWith('Delete "Spicy toggles"?')
+    expect(alertSpies.alertConfirm).toHaveBeenLastCalledWith('Delete "Spicy toggles"?')
     expect(DBState.db.chatGenerationTogglePresets).toEqual([])
     expect(togglePresetSelect().value).toBe('')
     expect(calls[3]).toMatchObject({
@@ -1367,6 +1385,129 @@ describe('sidebar chat generation settings controls', () => {
         },
       },
     })
+  })
+
+  it('disables saving and applying a selected toggle preset when the active chat has different toggle types', async () => {
+    DBState.db.promptPresets[0].customPromptTemplateToggle =
+      'mood=Mood=select=Calm,Spicy\nflag=Flag\nnote=Note=text\ncodex=Codex\nmoduleFlag=Module Flag'
+    DBState.db.chatGenerationTogglePresets = [
+      {
+        id: 'saved-alpha',
+        name: 'Saved Alpha',
+        createdAt: 1,
+        updatedAt: 1,
+        jailbreakToggle: true,
+        sidebarToggles: {
+          mood: '1',
+          flag: '1',
+          note: 'alpha-note',
+          moduleFlag: '1',
+        },
+        sidebarToggleKinds: {
+          mood: 'select',
+          flag: 'boolean',
+          note: 'text',
+          moduleFlag: 'boolean',
+        },
+      },
+    ]
+
+    mountToggles()
+    await tick()
+
+    await chooseTogglePreset('saved-alpha')
+
+    expect(togglePresetButton(0).disabled).toBe(true)
+    expect(togglePresetButton(1).disabled).toBe(true)
+    expect(togglePresetWarning()?.textContent).toContain(
+      'The selected saved toggles do not match the toggles available in this chat.',
+    )
+    expect(toggleControl('codex').dataset.risuTogglePresetDifferent).toBe('true')
+    expect(toggleControl('mood').dataset.risuTogglePresetDifferent).toBe('false')
+    expect(jailbreakControl().dataset.risuTogglePresetDifferent).toBe('false')
+  })
+
+  it('asks whether to overwrite, create, or cancel when saving with a selected toggle preset', async () => {
+    const calls = stubCommandFetch()
+    DBState.db.chatGenerationTogglePresets = [
+      {
+        id: 'saved-alpha',
+        name: 'Saved Alpha',
+        createdAt: 1,
+        updatedAt: 1,
+        jailbreakToggle: false,
+        sidebarToggles: {
+          mood: '0',
+          flag: '0',
+          note: 'old-note',
+          moduleFlag: '0',
+        },
+        sidebarToggleKinds: {
+          mood: 'select',
+          flag: 'boolean',
+          note: 'text',
+          moduleFlag: 'boolean',
+        },
+      },
+    ]
+
+    mountToggles()
+    await tick()
+
+    await chooseTogglePreset('saved-alpha')
+
+    togglePresetButton(0).click()
+    await flushAsyncWork()
+
+    expect(alertSpies.alertSelect).toHaveBeenCalledWith(
+      ['Overwrite it', 'Create new Saved Toggle', 'Cancel'],
+      'Save changes to "Saved Alpha"?',
+    )
+    expect(alertSpies.alertInput).not.toHaveBeenCalled()
+    expect(calls).toEqual([])
+    expect(DBState.db.chatGenerationTogglePresets).toHaveLength(1)
+
+    alertSpies.alertSelect.mockResolvedValueOnce('1')
+    alertSpies.alertInput.mockResolvedValueOnce('Fresh copy')
+    togglePresetButton(0).click()
+    await tick()
+    await waitForFetchCount(calls, 2)
+
+    expect(DBState.db.chatGenerationTogglePresets).toHaveLength(2)
+    const createdPreset = DBState.db.chatGenerationTogglePresets[1]
+    expect(createdPreset).toMatchObject({
+      name: 'Fresh copy',
+      jailbreakToggle: true,
+      sidebarToggles: {
+        mood: '1',
+        flag: '1',
+        note: 'alpha-note',
+        moduleFlag: '1',
+      },
+    })
+    expect(togglePresetSelect().value).toBe(createdPreset.id)
+
+    await chooseTogglePreset('saved-alpha')
+
+    alertSpies.alertSelect.mockResolvedValueOnce('0')
+    togglePresetButton(0).click()
+    await tick()
+    await waitForFetchCount(calls, 3)
+
+    expect(DBState.db.chatGenerationTogglePresets).toHaveLength(2)
+    expect(DBState.db.chatGenerationTogglePresets[0]).toMatchObject({
+      id: 'saved-alpha',
+      name: 'Saved Alpha',
+      createdAt: 1,
+      jailbreakToggle: true,
+      sidebarToggles: {
+        mood: '1',
+        flag: '1',
+        note: 'alpha-note',
+        moduleFlag: '1',
+      },
+    })
+    expect(togglePresetSelect().value).toBe('saved-alpha')
   })
 
   it('does not save a reusable toggle preset after the name prompt resolves for a stale active chat', async () => {

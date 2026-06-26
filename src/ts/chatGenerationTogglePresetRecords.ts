@@ -1,3 +1,5 @@
+import type { ChatGenerationSidebarToggleKind } from './chatGenerationSettings'
+
 export interface ChatGenerationTogglePreset {
   id: string
   name: string
@@ -5,7 +7,10 @@ export interface ChatGenerationTogglePreset {
   updatedAt: number
   jailbreakToggle: boolean
   sidebarToggles: Record<string, string>
+  sidebarToggleKinds: Record<string, ChatGenerationSidebarToggleKind>
 }
+
+const SIDEBAR_TOGGLE_KINDS = new Set(['boolean', 'select', 'text', 'textarea'])
 
 export function normalizeChatGenerationTogglePresets(value: unknown): ChatGenerationTogglePreset[] {
   if (!Array.isArray(value)) return []
@@ -25,6 +30,7 @@ export function normalizeChatGenerationTogglePresets(value: unknown): ChatGenera
       updatedAt: finiteNumber(item.updatedAt) ?? finiteNumber(item.createdAt) ?? 0,
       jailbreakToggle: item.jailbreakToggle === true,
       sidebarToggles: stringRecord(item.sidebarToggles),
+      sidebarToggleKinds: sidebarToggleKindRecord(item.sidebarToggleKinds),
     })
   }
 
@@ -35,6 +41,7 @@ export function cloneChatGenerationTogglePreset(preset: ChatGenerationTogglePres
   return {
     ...preset,
     sidebarToggles: { ...preset.sidebarToggles },
+    sidebarToggleKinds: { ...preset.sidebarToggleKinds },
   }
 }
 
@@ -47,6 +54,15 @@ export function cloneChatGenerationTogglePresetList(
 function stringRecord(value: unknown): Record<string, string> {
   if (!isRecord(value)) return {}
   const entries = Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === 'string')
+  return Object.fromEntries(entries)
+}
+
+function sidebarToggleKindRecord(value: unknown): Record<string, ChatGenerationSidebarToggleKind> {
+  if (!isRecord(value)) return {}
+  const entries = Object.entries(value).filter(
+    (entry): entry is [string, ChatGenerationSidebarToggleKind] =>
+      typeof entry[1] === 'string' && SIDEBAR_TOGGLE_KINDS.has(entry[1]),
+  )
   return Object.fromEntries(entries)
 }
 

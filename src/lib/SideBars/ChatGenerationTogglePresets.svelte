@@ -1,12 +1,14 @@
 <script lang="ts">
   import { SaveIcon, TrashIcon, UploadIcon } from '@lucide/svelte'
   import { language } from 'src/lang'
-  import { alertConfirm, alertInput } from 'src/ts/alert'
+  import { alertConfirm, alertInput, alertSelect } from 'src/ts/alert'
   import { resolveActiveChatGenerationSettings } from 'src/ts/activeChatGenerationSettings'
   import {
     applyChatGenerationTogglePreset,
+    compareChatGenerationTogglePresetToActiveState,
     deleteChatGenerationTogglePreset,
     getChatGenerationTogglePresets,
+    overwriteCurrentChatGenerationTogglePreset,
     saveCurrentChatGenerationTogglePreset,
   } from 'src/ts/chatGenerationTogglePresets'
   import { captureActiveChatTarget } from 'src/ts/chatCommands'
@@ -15,7 +17,11 @@
   import OptionInput from '../UI/GUI/OptionInput.svelte'
   import SelectInput from '../UI/GUI/SelectInput.svelte'
 
-  let selectedPresetId = $state('')
+  interface Props {
+    selectedPresetId?: string
+  }
+
+  let { selectedPresetId = $bindable('') }: Props = $props()
 
   let activeGenerationSettings = $derived.by(() =>
     resolveActiveChatGenerationSettings({
@@ -24,6 +30,26 @@
   )
   let presets = $derived.by(() => getChatGenerationTogglePresets())
   let selectedPreset = $derived.by(() => presets.find((preset) => preset.id === selectedPresetId))
+  let selectedPresetComparison = $derived.by(() =>
+    selectedPreset ? compareChatGenerationTogglePresetToActiveState(selectedPreset, activeGenerationSettings) : null,
+  )
+  let saveDisabled = $derived.by(() => {
+    if (!activeGenerationSettings.identity.chatId) return true
+    if (!selectedPreset) return false
+    return (
+      selectedPresetComparison?.hasToggleTypeMismatch === true || selectedPresetComparison?.hasAnyDifference !== true
+    )
+  })
+  let applyDisabled = $derived.by(
+    () =>
+      !activeGenerationSettings.identity.chatId ||
+      !selectedPreset ||
+      selectedPresetComparison?.hasToggleTypeMismatch === true ||
+      selectedPresetComparison?.hasAnyDifference !== true,
+  )
+  let showToggleTypeWarning = $derived.by(
+    () => !!selectedPreset && selectedPresetComparison?.hasToggleTypeMismatch === true,
+  )
 
   $effect(() => {
     if (!selectedPresetId || presets.some((preset) => preset.id === selectedPresetId)) return
@@ -31,7 +57,27 @@
   })
 
   async function savePreset(): Promise<void> {
+    const existingPreset = selectedPreset
     const target = captureActiveChatTarget()
+    if (existingPreset) {
+      const selection = parseInt(
+        await alertSelect(
+          [language.chatGenerationTogglePresetOverwrite, language.chatGenerationTogglePresetCreateNew, language.cancel],
+          language.chatGenerationTogglePresetSaveChoice(existingPreset.name),
+        ),
+      )
+      if (selection === 0) {
+        const overwrittenPreset = overwriteCurrentChatGenerationTogglePreset(existingPreset.id, {
+          expectedTarget: target,
+        })
+        if (overwrittenPreset) {
+          selectedPresetId = overwrittenPreset.id
+        }
+        return
+      }
+      if (selection !== 1) return
+    }
+
     const name = await alertInput(language.chatGenerationTogglePresetNamePrompt)
     if (typeof name !== 'string' || name.trim().length === 0) return
     const preset = saveCurrentChatGenerationTogglePreset(name, { expectedTarget: target })
@@ -40,8 +86,9 @@
     }
   }
 
-  function applyPreset(): void {
+  async function applyPreset(): Promise<void> {
     if (!selectedPresetId) return
+    if (!(await alertConfirm(language.chatGenerationTogglePresetApplyConfirm))) return
     applyChatGenerationTogglePreset(selectedPresetId)
   }
 
@@ -68,17 +115,13 @@
   </SelectInput>
 
   <div class="grid grid-cols-3 gap-1">
-    <Button size="sm" className="min-w-0" onclick={savePreset} disabled={!activeGenerationSettings.identity.chatId}>
+    <Button size="sm" className="min-w-0" onclick={savePreset} disabled={saveDisabled}>
       <span class="flex items-center justify-center gap-1 min-w-0">
         <SaveIcon size={14} />
         <span class="truncate">{language.chatGenerationTogglePresetSave}</span>
       </span>
     </Button>
-    <Button
-      size="sm"
-      className="min-w-0"
-      onclick={applyPreset}
-      disabled={!activeGenerationSettings.identity.chatId || !selectedPresetId}>
+    <Button size="sm" className="min-w-0" onclick={applyPreset} disabled={applyDisabled}>
       <span class="flex items-center justify-center gap-1 min-w-0">
         <UploadIcon size={14} />
         <span class="truncate">{language.chatGenerationTogglePresetApply}</span>
@@ -91,4 +134,9 @@
       </span>
     </Button>
   </div>
+  {#if showToggleTypeWarning}
+    <div class="text-draculared text-xs" data-risu-generation-toggle-preset-warning>
+      {language.chatGenerationTogglePresetTypeMismatchWarning}
+    </div>
+  {/if}
 </div>

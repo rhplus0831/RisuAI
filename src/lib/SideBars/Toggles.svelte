@@ -12,6 +12,10 @@
   import ChatGenerationResetDefaultsButton from './ChatGenerationResetDefaultsButton.svelte'
   import ChatGenerationTogglePresets from './ChatGenerationTogglePresets.svelte'
   import CustomSideBar from './CustomSidebar.svelte'
+  import {
+    compareChatGenerationTogglePresetToActiveState,
+    getChatGenerationTogglePresets,
+  } from 'src/ts/chatGenerationTogglePresets'
   import { setCharacterSupaMemory } from 'src/ts/characterCommands'
   import {
     resolveActiveChatGenerationSettings,
@@ -45,6 +49,8 @@
 
   let { chara = $bindable(), noContainer }: Props = $props()
 
+  let selectedTogglePresetId = $state('')
+
   let activeGenerationSettings = $derived.by(() =>
     resolveActiveChatGenerationSettings({
       selectedCharIndex: $selectedCharID,
@@ -54,6 +60,13 @@
   let hasJailbreakPrompt = $derived.by(() => activeGenerationSettings.readiness.requirements.jailbreakToggle.displayed)
 
   let displayedSidebarToggles = $derived.by(() => groupSidebarToggles(activeGenerationSettings.displayedSidebarToggles))
+  let togglePresets = $derived.by(() => getChatGenerationTogglePresets())
+  let selectedTogglePreset = $derived.by(() => togglePresets.find((preset) => preset.id === selectedTogglePresetId))
+  let selectedTogglePresetComparison = $derived.by(() =>
+    selectedTogglePreset
+      ? compareChatGenerationTogglePresetToActiveState(selectedTogglePreset, activeGenerationSettings)
+      : null,
+  )
 
   function getJailbreakToggleValue(): boolean {
     return activeGenerationSettings.settings?.jailbreakToggle === true
@@ -74,6 +87,14 @@
   function setSupaMemoryValue(value: boolean): void {
     if (!chara?.chaId) return
     setCharacterSupaMemory(chara.chaId, value)
+  }
+
+  function isSidebarTogglePresetDifferent(key: string): boolean {
+    return selectedTogglePresetComparison?.differingSidebarToggleKeys.has(key) === true
+  }
+
+  function isJailbreakTogglePresetDifferent(): boolean {
+    return selectedTogglePresetComparison?.jailbreakToggleDiffers === true
   }
 
   function groupSidebarToggles(items: ChatGenerationDisplayedSidebarToggle[]): GroupedSidebarToggle[] {
@@ -143,7 +164,10 @@
         data-risu-generation-toggle-control
         data-risu-toggle-key={toggle.key}
         data-risu-toggle-kind={toggle.kind}
-        data-risu-input-kind="select">
+        data-risu-input-kind="select"
+        data-risu-toggle-preset-different={isSidebarTogglePresetDifferent(toggle.key) ? 'true' : 'false'}
+        class:bg-red-900={isSidebarTogglePresetDifferent(toggle.key)}
+        class:rounded-sm={isSidebarTogglePresetDifferent(toggle.key)}>
         <span>{toggle.label}</span>
         <SelectInput
           className="w-32"
@@ -160,7 +184,10 @@
         data-risu-generation-toggle-control
         data-risu-toggle-key={toggle.key}
         data-risu-toggle-kind={toggle.kind}
-        data-risu-input-kind="text">
+        data-risu-input-kind="text"
+        data-risu-toggle-preset-different={isSidebarTogglePresetDifferent(toggle.key) ? 'true' : 'false'}
+        class:bg-red-900={isSidebarTogglePresetDifferent(toggle.key)}
+        class:rounded-sm={isSidebarTogglePresetDifferent(toggle.key)}>
         <span>{toggle.label}</span>
         <TextInput
           className="w-32"
@@ -173,7 +200,10 @@
         data-risu-generation-toggle-control
         data-risu-toggle-key={toggle.key}
         data-risu-toggle-kind={toggle.kind}
-        data-risu-input-kind="textarea">
+        data-risu-input-kind="textarea"
+        data-risu-toggle-preset-different={isSidebarTogglePresetDifferent(toggle.key) ? 'true' : 'false'}
+        class:bg-red-900={isSidebarTogglePresetDifferent(toggle.key)}
+        class:rounded-sm={isSidebarTogglePresetDifferent(toggle.key)}>
         <span class="mt-1.5">{toggle.label}</span>
         <TextAreaInput
           className="w-32"
@@ -188,7 +218,10 @@
         data-risu-toggle-key={toggle.key}
         data-risu-toggle-kind={toggle.kind}
         data-risu-input-kind="checkbox"
-        data-risu-selected={getToggleValue(toggle.key) === '1' ? 'true' : 'false'}>
+        data-risu-selected={getToggleValue(toggle.key) === '1' ? 'true' : 'false'}
+        data-risu-toggle-preset-different={isSidebarTogglePresetDifferent(toggle.key) ? 'true' : 'false'}
+        class:bg-red-900={isSidebarTogglePresetDifferent(toggle.key)}
+        class:rounded-sm={isSidebarTogglePresetDifferent(toggle.key)}>
         <CheckInput
           check={getToggleValue(toggle.key) === '1'}
           {reverse}
@@ -214,7 +247,10 @@
         data-risu-toggle-key="jailbreakToggle"
         data-risu-toggle-kind="jailbreak"
         data-risu-input-kind="checkbox"
-        data-risu-selected={getJailbreakToggleValue() ? 'true' : 'false'}>
+        data-risu-selected={getJailbreakToggleValue() ? 'true' : 'false'}
+        data-risu-toggle-preset-different={isJailbreakTogglePresetDifferent() ? 'true' : 'false'}
+        class:bg-red-900={isJailbreakTogglePresetDifferent()}
+        class:rounded-sm={isJailbreakTogglePresetDifferent()}>
         <CheckInput
           bind:check={() => getJailbreakToggleValue(), setJailbreakToggleValue}
           name={language.jailbreakToggle}
@@ -229,7 +265,7 @@
       </div>
     {/if}
     <ChatGenerationResetDefaultsButton />
-    <ChatGenerationTogglePresets />
+    <ChatGenerationTogglePresets bind:selectedPresetId={selectedTogglePresetId} />
   </div>
 {:else}
   <ChatGenerationSettingsControls />
@@ -242,7 +278,10 @@
       data-risu-toggle-key="jailbreakToggle"
       data-risu-toggle-kind="jailbreak"
       data-risu-input-kind="checkbox"
-      data-risu-selected={getJailbreakToggleValue() ? 'true' : 'false'}>
+      data-risu-selected={getJailbreakToggleValue() ? 'true' : 'false'}
+      data-risu-toggle-preset-different={isJailbreakTogglePresetDifferent() ? 'true' : 'false'}
+      class:bg-red-900={isJailbreakTogglePresetDifferent()}
+      class:rounded-sm={isJailbreakTogglePresetDifferent()}>
       <CheckInput
         bind:check={() => getJailbreakToggleValue(), setJailbreakToggleValue}
         name={language.jailbreakToggle} />
@@ -255,5 +294,5 @@
     </div>
   {/if}
   <ChatGenerationResetDefaultsButton />
-  <ChatGenerationTogglePresets />
+  <ChatGenerationTogglePresets bind:selectedPresetId={selectedTogglePresetId} />
 {/if}
