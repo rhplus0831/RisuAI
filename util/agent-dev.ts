@@ -4,6 +4,8 @@ const repoRoot = process.cwd()
 const frontendPort = parsePort(process.env.RISU_AGENT_DEV_PORT, 6418, 'RISU_AGENT_DEV_PORT')
 const apiPort = parsePort(process.env.RISU_AGENT_API_PORT, 6419, 'RISU_AGENT_API_PORT')
 const host = process.env.RISU_AGENT_DEV_HOST ?? '0.0.0.0'
+const traceMode = process.env.RISU_API_TRACE_MODE?.trim().toLowerCase()
+const defaultAuthBypass = traceMode === 'human' ? 'FALSE' : 'TRUE'
 const shutdownGraceMs = 5_000
 
 type ManagedProcess = {
@@ -86,7 +88,7 @@ spawnManaged('api', 'pnpm', ['exec', 'tsx', 'watch', 'server/fastify/src/index.t
   RISU_API_HOST: host,
   RISU_API_PORT: String(apiPort),
   RISU_API_STATIC_ROOT: process.env.RISU_API_STATIC_ROOT ?? 'none',
-  RISU_AGENT_DEV_AUTH_BYPASS: process.env.RISU_AGENT_DEV_AUTH_BYPASS ?? 'TRUE',
+  RISU_AGENT_DEV_AUTH_BYPASS: process.env.RISU_AGENT_DEV_AUTH_BYPASS ?? defaultAuthBypass,
 })
 
 spawnManaged('vite', 'pnpm', ['exec', 'vite', '--host', host, '--port', String(frontendPort), '--strictPort'], {

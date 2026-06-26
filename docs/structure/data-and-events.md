@@ -118,7 +118,8 @@ are both LRU-capped on disk. `routes/auth.ts` owns status/setup/login, while
 `/api/v1/auth/crypto` is registered with legacy storage routes as a public
 compatibility hashing helper.
 `RISU_AGENT_DEV_AUTH_BYPASS` is an agent/dev escape hatch used by the full-stack
-dev runner.
+dev runner; `pnpm dev:agent` enables it by default, while `pnpm dev:human`
+leaves password auth enabled by default.
 
 The active-writer guard is separate. Any authenticated bootstrap carrying
 `risu-writer-session` latches the latest writer; routes whose manifest decision

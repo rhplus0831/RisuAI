@@ -9,7 +9,7 @@ is root-only; there is no `server/fastify/package.json`.
 | ---------------------------------- | ------------------------------------------------------------------------------------------------------------- |
 | `pnpm dev`                         | Start Vite client dev server on `0.0.0.0:5174`.                                                               |
 | `pnpm dev:agent`                   | Start full-stack agent dev server: frontend `6418`, Fastify `6419`, trace mode `agent`, auth/TOS bypass defaults. |
-| `pnpm dev:human`                   | Start full-stack human trace server: frontend `6002`, Fastify `6001`, trace mode `human`, auth/TOS bypass defaults unless overridden. |
+| `pnpm dev:human`                   | Start full-stack human trace server: frontend `6002`, Fastify `6001`, trace mode `human`, password auth enabled and TOS bypassed by default unless overridden. |
 | `pnpm api:dev`                     | Start Fastify with `tsx watch server/fastify/src/index.ts`.                                                   |
 | `pnpm api:dev:flag`                | Start Fastify through `util/api-flag-dev.ts`; restarts only when `.risu-api-restart` is touched/created.      |
 | `pnpm api:start`                   | Start Fastify once with `tsx server/fastify/src/index.ts`.                                                    |
@@ -73,10 +73,11 @@ served; `src/ts/platform.ts` still makes the browser Fastify-backed.
 `pnpm dev:agent` and `pnpm dev:human` run both Fastify and Vite through
 `util/agent-dev.ts`; they set `RISU_API_TRACE_MODE` to `agent` or `human`,
 respect `RISU_AGENT_DEV_HOST` / `RISU_AGENT_DEV_PORT` /
-`RISU_AGENT_API_PORT`, set auth/TOS bypass defaults unless overridden, default
+`RISU_AGENT_API_PORT`, default `RISU_AGENT_DEV_AUTH_BYPASS=TRUE` for
+`dev:agent` and `FALSE` for `dev:human` unless overridden, default
 `RISU_API_STATIC_ROOT=none`, default `VITE_RISU_LEGAL_CONFIGURED=TRUE` and
-`VITE_RISU_AGENT_DEV_IGNORE_TOS=TRUE`, and proxy `/api` to the spawned API
-port. The spawned API uses `tsx watch`, so API source edits restart it; use
+`VITE_RISU_AGENT_DEV_IGNORE_TOS=TRUE`, and proxy `/api` to the spawned API port.
+The spawned API uses `tsx watch`, so API source edits restart it; use
 `pnpm api:dev:flag` when you need edit-triggered restarts to be manual.
 
 Stop `pnpm dev:agent` when done so frontend port `6418` and API port `6419`
@@ -242,7 +243,7 @@ Server:
 | `RISU_API_STATIC_ROOT`       | `<repo>/dist`              | Static SPA root; empty, `none`, or `off` disables.                                                         |
 | `RISU_HUB_URL`               | `https://sv.risuai.xyz`    | Hub passthrough target.                                                                                    |
 | `RISU_REALM_URL`             | `https://realm.risuai.net` | Realm character import target.                                                                             |
-| `RISU_AGENT_DEV_AUTH_BYPASS` | unset                      | Dev escape hatch; full-stack dev runners default it to `TRUE` so protected routes bypass password auth.    |
+| `RISU_AGENT_DEV_AUTH_BYPASS` | unset                      | Dev escape hatch; `dev:agent` defaults it to `TRUE`, while `dev:human` defaults it to `FALSE`.             |
 | `LOG_LEVEL`                  | `info`                     | Use `silent` to disable Fastify logger.                                                                    |
 | `RISU_PROTOCOL_METRICS`      | unset                      | Enables structured protocol metrics when `1`, `true`, `yes`, or `on`.                                      |
 
@@ -254,7 +255,7 @@ Local/dev:
 | `RISU_AGENT_DEV_HOST`            | `0.0.0.0`           | Host used by `pnpm dev:agent` / `pnpm dev:human` for both spawned processes.          |
 | `RISU_AGENT_DEV_PORT`            | `6418`              | Frontend port for `pnpm dev:agent`; `pnpm dev:human` sets it to `6002`.               |
 | `RISU_AGENT_API_PORT`            | `6419`              | Fastify port for `pnpm dev:agent`; `pnpm dev:human` sets it to `6001`.                |
-| `RISU_AGENT_DEV_AUTH_BYPASS`     | `TRUE`              | Defaulted by full-stack dev runners; protected API routes ignore password auth.       |
+| `RISU_AGENT_DEV_AUTH_BYPASS`     | `TRUE` for `dev:agent`, `FALSE` for `dev:human` | Protected API routes ignore password auth when enabled. |
 | `RISU_TS_AGENT_TSSERVER_LOG`     | unset               | Set to `1` or a path to capture verbose `pnpm ts:agent` tsserver logs.                |
 | `RISU_TS_AGENT_TIMEOUT_MS`       | `30000`             | Default tsserver request timeout for `pnpm ts:agent`; `--timeout-ms` overrides it.    |
 | `RISU_TS_AGENT_DEBUG`            | unset               | Echo tsserver stderr while debugging `pnpm ts:agent`.                                 |
