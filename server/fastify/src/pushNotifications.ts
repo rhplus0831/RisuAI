@@ -147,14 +147,19 @@ export function normalizePushSubscription(value: unknown): PushSubscription | nu
   if (typeof keyRecord.auth !== 'string' || keyRecord.auth.length === 0) return null
 
   const expirationTime = record.expirationTime
-  return {
+  const subscription: PushSubscription = {
     endpoint,
     keys: {
       p256dh: keyRecord.p256dh,
       auth: keyRecord.auth,
     },
-    ...(typeof expirationTime === 'number' || expirationTime === null ? { expirationTime } : {}),
   }
+
+  if (typeof expirationTime === 'number') {
+    subscription.expirationTime = expirationTime
+  }
+
+  return subscription
 }
 
 export function normalizePushEndpoint(value: unknown): string | null {

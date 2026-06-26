@@ -72,6 +72,7 @@ import {
   resetPromptTemplateHydration,
   startPromptTemplateHydration,
 } from './server/promptTemplateHydration'
+import { enableChatCompletionPushNotifications } from './server/pushNotifications'
 
 const SERVER_PROJECTION_RECONNECT_BASE_DELAY_MS = 1000
 const SERVER_PROJECTION_RECONNECT_MAX_DELAY_MS = 30_000
@@ -106,6 +107,7 @@ export async function loadData() {
   if (!loaded) {
     try {
       await loadWebInitialDatabase()
+      void enableChatCompletionPushNotifications()
       LoadingStatusState.text = 'Loading Plugins...'
       try {
         await loadPlugins()

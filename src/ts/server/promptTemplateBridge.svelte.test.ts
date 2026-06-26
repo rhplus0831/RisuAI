@@ -1009,10 +1009,10 @@ describe('flushPendingPromptTemplatePatches', () => {
 
   it('PromptSettings includes sibling id-less rows in an in-flight selected preset id sync', async () => {
     hydrationState.setOwner('preset-a')
-    let resolvePresetSync: ((value: Record<string, unknown>) => void) | null = null
+    let resolvePresetSync: ((value: { kind: string } & Record<string, unknown>) => void) | null = null
     commandMocks.updatePromptPresetCommand.mockImplementationOnce(
       (args: Record<string, unknown>) =>
-        new Promise<Record<string, unknown>>((resolve) => {
+        new Promise<{ kind: string } & Record<string, unknown>>((resolve) => {
           resolvePresetSync = () => resolve({ kind: 'updatePromptPreset', ...args })
         }),
     )

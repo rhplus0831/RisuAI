@@ -108,6 +108,9 @@ const messageTranslationJobSpies = vi.hoisted(() => ({
 const memoryJobEventSpies = vi.hoisted(() => ({
   publishServerMemoryJobEvent: vi.fn(),
 }))
+const pushNotificationSpies = vi.hoisted(() => ({
+  enableChatCompletionPushNotifications: vi.fn(async () => ({ status: 'enabled', endpoint: 'startup-endpoint' })),
+}))
 const forageSpies = vi.hoisted(() => ({
   Init: vi.fn(async () => undefined),
   getItem: vi.fn(async () => undefined),
@@ -136,6 +139,8 @@ vi.mock('./server/events', () => ({
 }))
 
 vi.mock('./server/memoryJobEvents', () => memoryJobEventSpies)
+
+vi.mock('./server/pushNotifications', () => pushNotificationSpies)
 
 vi.mock('./server/projection', () => ({
   fetchServerProjectionResource: serverProjectionState.fetchResource,
@@ -320,6 +325,7 @@ beforeEach(() => {
   activeGenerationReattachSpies.startActiveGenerationReattach.mockClear()
   activeGenerationReattachSpies.triggerOpenChatGenerationReattach.mockClear()
   memoryJobEventSpies.publishServerMemoryJobEvent.mockClear()
+  pushNotificationSpies.enableChatCompletionPushNotifications.mockClear()
   clearMemoryJobTerminalUpdateFence()
   clearCachedServerCommandRevision()
   forageSpies.Init.mockClear()
@@ -2199,6 +2205,29 @@ describe('web bootstrap startup source', () => {
     expect(persistenceSpies.makeColdData).not.toHaveBeenCalled()
     expect(persistenceSpies.saveDb).not.toHaveBeenCalled()
     expect(serverEventsState.subscribe).toHaveBeenCalledTimes(1)
+  })
+
+  it('requests push notification permission during Fastify-served startup', async () => {
+    serverBootstrapState.response = {
+      status: 'ok',
+      projection: {
+        revision: 5,
+        database: {
+          characters: [],
+          modules: [],
+          personas: [],
+          language: 'en',
+          formatversion: 5,
+          characterOrder: [],
+          mainPrompt: '',
+          loreBookToken: 8000,
+        } as any,
+      },
+    }
+
+    await loadData()
+
+    expect(pushNotificationSpies.enableChatCompletionPushNotifications).toHaveBeenCalledTimes(1)
   })
 
   it('preserves the selected server character during Fastify-served startup', async () => {

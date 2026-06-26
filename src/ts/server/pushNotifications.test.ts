@@ -149,7 +149,7 @@ describe('push notification browser helper', () => {
   })
 
   it('falls back without subscribing when the server has no VAPID public key', async () => {
-    setupNotification('granted')
+    const NotificationMock = setupNotification('granted')
     const subscribe = vi.fn()
     const getSubscription = vi.fn()
     setupServiceWorker({
@@ -165,6 +165,7 @@ describe('push notification browser helper', () => {
       reason: 'vapid-unavailable',
     })
 
+    expect(NotificationMock.requestPermission).toHaveBeenCalledTimes(1)
     expect(getSubscription).not.toHaveBeenCalled()
     expect(subscribe).not.toHaveBeenCalled()
   })

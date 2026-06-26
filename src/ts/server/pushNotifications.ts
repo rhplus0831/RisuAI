@@ -79,9 +79,6 @@ async function requestNotificationPermission(): Promise<NotificationPermission |
     return 'unavailable'
   }
 
-  const currentPermission = Notification.permission
-  if (currentPermission === 'granted' || currentPermission === 'denied') return currentPermission
-
   try {
     return await Notification.requestPermission()
   } catch (error) {
