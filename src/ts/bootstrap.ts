@@ -107,13 +107,15 @@ export async function loadData() {
   if (!loaded) {
     try {
       await loadWebInitialDatabase()
-      void enableChatCompletionPushNotifications()
+      const db = getDatabase()
+      if (db.notification === true) {
+        void enableChatCompletionPushNotifications()
+      }
       LoadingStatusState.text = 'Loading Plugins...'
       try {
         await loadPlugins()
       } catch (error) {}
       LoadingStatusState.text = 'Checking For Format Update...'
-      const db = getDatabase()
 
       LoadingStatusState.text = 'Updating States...'
       updateColorScheme()

@@ -2207,7 +2207,7 @@ describe('web bootstrap startup source', () => {
     expect(serverEventsState.subscribe).toHaveBeenCalledTimes(1)
   })
 
-  it('requests push notification permission during Fastify-served startup', async () => {
+  it('does not request push notification permission during startup when notifications are disabled', async () => {
     serverBootstrapState.response = {
       status: 'ok',
       projection: {
@@ -2221,6 +2221,31 @@ describe('web bootstrap startup source', () => {
           characterOrder: [],
           mainPrompt: '',
           loreBookToken: 8000,
+          notification: false,
+        } as any,
+      },
+    }
+
+    await loadData()
+
+    expect(pushNotificationSpies.enableChatCompletionPushNotifications).not.toHaveBeenCalled()
+  })
+
+  it('refreshes push subscription during Fastify-served startup when notifications are enabled', async () => {
+    serverBootstrapState.response = {
+      status: 'ok',
+      projection: {
+        revision: 5,
+        database: {
+          characters: [],
+          modules: [],
+          personas: [],
+          language: 'en',
+          formatversion: 5,
+          characterOrder: [],
+          mainPrompt: '',
+          loreBookToken: 8000,
+          notification: true,
         } as any,
       },
     }
