@@ -765,7 +765,13 @@ export function throwServerLuaFailure(result: ServerLuaResult, context: string):
 
 function asCharacter(ctx: ServerLuaRuntimeContext): character | undefined {
   const char = ctx.char
-  return char && (char as { type?: string }).type === 'character' ? (char as character) : undefined
+  if (!char) return undefined
+  const type = (char as { type?: unknown }).type
+  if (type === 'character') return char as character
+  if ((type === undefined || type === null) && typeof (char as { chaId?: unknown }).chaId === 'string') {
+    return char as character
+  }
+  return undefined
 }
 
 /** Sleep that wakes early when `signal` fires, so an aborted request never

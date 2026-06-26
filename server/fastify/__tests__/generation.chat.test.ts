@@ -3356,6 +3356,91 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(persisted.at(-1)).toMatchObject({ role: 'char', data: 'server echo reply [GT]' })
   })
 
+  it('lets chat-attached module output Lua read module lorebooks before axLLM translation', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const legacyCharacter = {
+      ...fixtureDatabase.characters[0],
+      chats: [
+        {
+          ...fixtureDatabase.characters[0].chats[0],
+          modules: ['gigatrans-lite'],
+        },
+      ],
+    } as Record<string, unknown>
+    delete legacyCharacter.type
+
+    await seedDatabase(harness.app, assertion, {
+      ...(dbWithServerDispatch({}) as Record<string, unknown>),
+      characters: [legacyCharacter],
+      modelRoles: { scriptAux: 'echo_model' },
+      modules: [
+        {
+          id: 'gigatrans-lite',
+          name: 'GigaTrans Lite',
+          description: '',
+          lowLevelAccess: true,
+          lorebook: [
+            {
+              comment: 'translation-preset',
+              key: '',
+              secondkey: '',
+              mode: 'normal',
+              insertorder: 100,
+              alwaysActive: false,
+              selective: false,
+              content: 'preset body',
+            },
+          ],
+          trigger: [
+            {
+              id: 'module-output',
+              comment: '',
+              type: 'output',
+              conditions: [],
+              effect: [
+                {
+                  type: 'triggerlua',
+                  code: `
+                    onOutput = async(function(id)
+                      local index = getChatLength(id) - 1
+                      local books = getLoreBooks(id, 'translation-preset')
+                      if not books or #books == 0 then
+                        setChat(id, index, 'missing preset')
+                        return
+                      end
+                      local result = axLLM(id, {{ role = 'user', content = books[1].content }}, false)
+                      if not result or not result.success then
+                        setChat(id, index, 'llm failed: ' .. tostring(result and result.result))
+                        return
+                      end
+                      setChat(id, index, books[1].content .. ' -> ' .. result.result)
+                    end)
+                  `,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    })
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+    expect(res.statusCode).toBe(200)
+    const done = doneFrame(parseEvents(res.body))
+
+    expect(done.result).toBe('server echo reply')
+    expect(done.postGeneration?.finalText).toBe('preset body -> server echo reply')
+    expect(done.postGeneration?.revision).toBe(2)
+
+    const persisted = await persistedMessages(assertion)
+    expect(persisted.at(-1)).toMatchObject({ role: 'char', data: 'preset body -> server echo reply' })
+  })
+
   // The inline continue / regenerate paths are server-persisted too; the browser
   // issues zero generation-result commands.
   function seedChatWithMessages(
