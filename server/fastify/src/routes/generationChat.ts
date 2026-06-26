@@ -82,7 +82,7 @@ import {
 } from '../generationFinalizationRetry.js'
 import { generationSubmitRateLimit } from '../routeRateLimits.js'
 import { REQUEST_UID_HEADER } from '../requestTrace.js'
-import type { PushNotificationService } from '../pushNotifications.js'
+import type { ChatCompletionNotificationContext, PushNotificationService } from '../pushNotifications.js'
 
 const ALLOWED_MODES = new Set(['send', 'continue', 'preview', 'preview_prompt', 'regenerate'])
 const SERVER_INLAY_SIGNATURE_CONTENT_TYPE = 'application/x-risu-inlay-signature+json'
@@ -1332,9 +1332,12 @@ function buildPostGenerationFrameBody(
   return frame
 }
 
-function notifyChatCompletion(pushNotifications: false | PushNotificationService | undefined): void {
+function notifyChatCompletion(
+  pushNotifications: false | PushNotificationService | undefined,
+  context?: ChatCompletionNotificationContext,
+): void {
   if (!pushNotifications) return
-  void pushNotifications.sendChatCompletionNotification().catch(() => {
+  void pushNotifications.sendChatCompletionNotification(context).catch(() => {
     // Best-effort: failed push delivery must not affect generation completion.
   })
 }
@@ -1413,7 +1416,7 @@ async function buildPostGenerationFrame(args: {
       ...(postGenError ? { context: { error: postGenError } } : {}),
     })
   }
-  notifyChatCompletion(args.pushNotifications)
+  notifyChatCompletion(args.pushNotifications, { characterId: args.input.characterId, chatId: args.input.chatId })
   return buildPostGenerationFrameBody(revision, postGen)
 }
 
@@ -2115,7 +2118,7 @@ export function retryQueuedGenerationFinalizations(args: {
       })
       deleteGenerationFinalizationRetry(args.db, attempt.generationId)
       persisted += 1
-      notifyChatCompletion(args.pushNotifications)
+      notifyChatCompletion(args.pushNotifications, { chatId: attempt.chatId })
       emitProtocolMetric('generation_persistence_retry', {
         status: 'ok',
         generationId: attempt.generationId,
@@ -2250,7 +2253,7 @@ async function buildDurablePostGeneration(args: {
       message: 'server post-generation derivation failed; persisted the raw provider text.',
       ...(postGenError ? { context: { error: postGenError } } : {}),
     })
-    notifyChatCompletion(args.pushNotifications)
+    notifyChatCompletion(args.pushNotifications, { characterId: args.input.characterId, chatId: args.input.chatId })
     return { revision }
   }
 
@@ -2261,7 +2264,7 @@ async function buildDurablePostGeneration(args: {
     revision,
     durationMs: protocolDurationMs(persistStartedAt),
   })
-  notifyChatCompletion(args.pushNotifications)
+  notifyChatCompletion(args.pushNotifications, { characterId: args.input.characterId, chatId: args.input.chatId })
   return buildPostGenerationFrameBody(revision, postGen)
 }
 

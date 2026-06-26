@@ -546,6 +546,36 @@ describe('SideChatList DOM contract harness', () => {
     expect(sidebarMocks.watchServerBackedChatMetadata).toHaveBeenCalledOnce()
   })
 
+  it('remints copied message ids before dispatching a server-backed chat copy', async () => {
+    const chara = seedSidebarDatabase()
+    chara.chats[0].message = [
+      { chatId: 'root-message-0', data: 'first root message', role: 'user' },
+      { chatId: 'root-message-1', data: 'second root message', role: 'char' },
+    ]
+    sidebarMocks.setServerCommandsEnabled(true)
+    sidebarMocks.alertChatOptions.mockResolvedValueOnce(0)
+
+    component = mount(SideChatListHarness, { target })
+    await tick()
+
+    rowActionButton(rowByChatId('chat-root-a'), 'options').click()
+    await flushCommandWork()
+
+    expect(sidebarMocks.dispatchForkChat).toHaveBeenCalledOnce()
+    const [sourceChatId, , payload] = sidebarMocks.dispatchForkChat.mock.calls[0] as [string, unknown, { chat: Chat }]
+    expect(sourceChatId).toBe('chat-root-a')
+    expect(payload.chat.name).toBe('Root Chat A Copy')
+    expect(payload.chat.id).not.toBe('chat-root-a')
+    expect(payload.chat.message.map((message) => ({ data: message.data, role: message.role }))).toEqual([
+      { data: 'first root message', role: 'user' },
+      { data: 'second root message', role: 'char' },
+    ])
+    expect(payload.chat.message.map((message) => message.chatId)).not.toContain('root-message-0')
+    expect(payload.chat.message.map((message) => message.chatId)).not.toContain('root-message-1')
+    expect(new Set(payload.chat.message.map((message) => message.chatId)).size).toBe(payload.chat.message.length)
+    expect(chara.chats[0].message.map((message) => message.chatId)).toEqual(['root-message-0', 'root-message-1'])
+  })
+
   it('shows active-chat controls instead of the chat list on a chat route', async () => {
     seedSidebarDatabase()
     sidebarMocks.setCurrentRoute({

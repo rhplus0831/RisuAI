@@ -5,16 +5,14 @@ import webPush, { type PushSubscription } from 'web-push'
 
 const VAPID_KEYS_FILE = '__web_push_vapid_keys.json'
 const DEFAULT_VAPID_SUBJECT = 'mailto:risuai@example.invalid'
-const CHAT_COMPLETION_NOTIFICATION_PAYLOAD = JSON.stringify({
-  type: 'chat_completion',
-  title: 'Risuai',
-  body: 'Chat processing complete.',
-  url: '/',
-})
-
 export interface StoredPushSubscription {
   endpoint: string
   subscription: PushSubscription
+}
+
+export interface ChatCompletionNotificationContext {
+  characterId?: string
+  chatId?: string
 }
 
 export interface PushNotificationTransport {
@@ -29,7 +27,7 @@ export interface PushNotificationService {
   publicKey(): string | null
   upsertSubscription(subscription: PushSubscription): void
   deleteSubscription(endpoint: string): void
-  sendChatCompletionNotification(): Promise<void>
+  sendChatCompletionNotification(context?: ChatCompletionNotificationContext): Promise<void>
 }
 
 export interface PushNotificationServiceOptions {
@@ -89,9 +87,13 @@ export function createPushNotificationService(
     deleteSubscription(endpoint) {
       deletePushSubscription(db, endpoint)
     },
-    async sendChatCompletionNotification() {
+    async sendChatCompletionNotification(context) {
       if (!notificationSettingEnabled(db)) return
-      await sendPushNotificationToAll(db, transport, CHAT_COMPLETION_NOTIFICATION_PAYLOAD)
+      await sendPushNotificationToAll(
+        db,
+        transport,
+        buildChatCompletionNotificationPayload(resolveContext(db, context)),
+      )
     },
   }
 }
@@ -167,6 +169,47 @@ export function normalizePushEndpoint(value: unknown): string | null {
   const endpoint = value.trim()
   if (endpoint.length === 0 || endpoint.length > 4096) return null
   return endpoint
+}
+
+export function buildChatCompletionNotificationPayload(context: ChatCompletionNotificationContext = {}): string {
+  return JSON.stringify({
+    type: 'chat_completion',
+    title: 'Risuai',
+    body: 'Chat processing complete.',
+    url: chatCompletionNotificationUrl(context),
+  })
+}
+
+function chatCompletionNotificationUrl(context: ChatCompletionNotificationContext): string {
+  if (!isNonEmptyString(context.characterId) || !isNonEmptyString(context.chatId)) return '/'
+  return `/character/${encodeURIComponent(context.characterId)}/${encodeURIComponent(context.chatId)}`
+}
+
+function resolveContext(
+  db: DatabaseSync,
+  context: ChatCompletionNotificationContext | undefined,
+): ChatCompletionNotificationContext {
+  if (isNonEmptyString(context?.characterId) || !isNonEmptyString(context?.chatId)) {
+    return context ?? {}
+  }
+
+  const characterId = findCharacterIdForChat(db, context.chatId)
+  return characterId ? { ...context, characterId } : context
+}
+
+function findCharacterIdForChat(db: DatabaseSync, chatId: string): string | null {
+  try {
+    const row = db.prepare('SELECT character_id AS characterId FROM chats WHERE id = ? LIMIT 1').get(chatId) as
+      | { characterId?: unknown }
+      | undefined
+    return typeof row?.characterId === 'string' && row.characterId.length > 0 ? row.characterId : null
+  } catch {
+    return null
+  }
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0
 }
 
 export function upsertPushSubscription(db: DatabaseSync, subscription: PushSubscription): void {

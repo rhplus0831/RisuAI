@@ -3035,7 +3035,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     })
     expect(res.statusCode).toBe(200)
     expect(doneFrame(parseEvents(res.body)).postGeneration?.revision).toBe(2)
-    expect(sendChatCompletionNotification).toHaveBeenCalledTimes(1)
+    expect(sendChatCompletionNotification).toHaveBeenCalledWith({ characterId: 'char-1', chatId: 'chat-1' })
   })
 
   it('surfaces low-level output-trigger resend on done without a post-generation patch (A-16)', async () => {

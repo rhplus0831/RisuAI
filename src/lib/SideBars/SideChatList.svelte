@@ -139,6 +139,9 @@
     const newChat = $state.snapshot(sourceChat)
     newChat.name = createChatCopyName(newChat.name, 'Copy')
     newChat.id = v4()
+    for (const message of newChat.message ?? []) {
+      message.chatId = v4()
+    }
     if (canUseServerCommands()) {
       dispatchForkChat(sourceChat.id, previous, { chat: newChat })
       return

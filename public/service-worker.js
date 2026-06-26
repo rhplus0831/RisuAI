@@ -24,12 +24,21 @@ async function focusOrOpenApp(path) {
 
   for (const client of windowClients) {
     if (new URL(client.url).origin === self.location.origin && 'focus' in client) {
-      return client.focus()
+      const navigatedClient = 'navigate' in client ? await navigateClient(client, targetUrl) : client
+      return (navigatedClient ?? client).focus()
     }
   }
 
   if (self.clients.openWindow) {
     return self.clients.openWindow(targetUrl)
+  }
+}
+
+async function navigateClient(client, targetUrl) {
+  try {
+    return await client.navigate(targetUrl)
+  } catch {
+    return client
   }
 }
 

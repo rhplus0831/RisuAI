@@ -1796,7 +1796,7 @@
       newChat.id = v4()
       newChat.message = newChat.message.slice(0, idx + 1)
       for (const item of newChat.message) {
-        item.chatId ||= uuidv4()
+        item.chatId = uuidv4()
       }
       newChat.message.push({
         role: 'char',

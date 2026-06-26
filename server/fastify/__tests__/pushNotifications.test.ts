@@ -58,15 +58,55 @@ describe('push notification service', () => {
       const service = createPushNotificationService(db, makeDataDir('risu-fastify-push-keys-'), { transport })
 
       service.upsertSubscription(sampleSubscription())
-      await service.sendChatCompletionNotification()
+      await service.sendChatCompletionNotification({ characterId: 'character/id', chatId: 'chat id' })
 
       expect(sent).toEqual([
         {
           endpoint: 'https://push.example.test/subscription',
-          payload: expect.stringContaining('Chat processing complete.'),
+          payload: expect.any(String),
           topic: 'chat-completion',
         },
       ])
+      expect(sent).toHaveLength(1)
+      expect(JSON.parse(sent[0].payload as string)).toEqual({
+        type: 'chat_completion',
+        title: 'Risuai',
+        body: 'Chat processing complete.',
+        url: '/character/character%2Fid/chat%20id',
+      })
+    } finally {
+      db.close()
+    }
+  })
+
+  it('resolves the completion notification route from a chat id when the character id is omitted', async () => {
+    const db = openDatabase(makeDataDir())
+    const sent: Array<{ payload?: string | Buffer | null }> = []
+    const transport: PushNotificationTransport = {
+      sendNotification: vi.fn(async (_subscription, payload) => {
+        sent.push({ payload })
+      }),
+    }
+    try {
+      setNotificationSetting(db, true)
+      db.prepare('INSERT INTO characters (id, position, data_json) VALUES (?, ?, ?)').run(
+        'char-a',
+        0,
+        JSON.stringify({ chaId: 'char-a', name: 'Character A' }),
+      )
+      db.prepare('INSERT INTO chats (id, character_id, position, data_json) VALUES (?, ?, ?, ?)').run(
+        'chat-a',
+        'char-a',
+        0,
+        JSON.stringify({ id: 'chat-a', name: 'Chat A' }),
+      )
+      const service = createPushNotificationService(db, makeDataDir('risu-fastify-push-keys-'), { transport })
+
+      service.upsertSubscription(sampleSubscription())
+      await service.sendChatCompletionNotification({ chatId: 'chat-a' })
+
+      expect(sent).toHaveLength(1)
+      expect(JSON.parse(sent[0].payload as string).url).toBe('/character/char-a/chat-a')
     } finally {
       db.close()
     }

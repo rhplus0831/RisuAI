@@ -683,6 +683,8 @@ describe('message action target freshness', () => {
       chat.message.some((message) => message.data.includes('{{specialcomment::branchedfrom::')),
     )
     expect(branchedChat?.name).toBe('Custom HTML Chat Branch')
+    expect(branchedChat?.message[0].chatId).toBeTruthy()
+    expect(branchedChat?.message[0].chatId).not.toBe('message-0')
     expect(branchedChat?.message.at(-1)?.data).toContain(
       '{{specialcomment::branchedfrom::custom-html-chat::Custom HTML Chat::message-0::}}',
     )
@@ -699,6 +701,16 @@ describe('message action target freshness', () => {
           name: 'Custom HTML Chat Branch',
         }),
       }),
+    )
+    const forkPayload = vi.mocked(dispatchForkChat).mock.calls.at(-1)?.[2] as
+      | { chat: { message: Array<{ chatId?: string; data: string }> } }
+      | undefined
+    const forkedMessageIds = forkPayload?.chat.message.map((message) => message.chatId)
+    expect(forkedMessageIds?.[0]).toBeTruthy()
+    expect(forkedMessageIds).not.toContain('message-0')
+    expect(new Set(forkedMessageIds).size).toBe(forkedMessageIds?.length)
+    expect(forkPayload?.chat.message.at(-1)?.data).toContain(
+      '{{specialcomment::branchedfrom::custom-html-chat::Custom HTML Chat::message-0::}}',
     )
   })
 
