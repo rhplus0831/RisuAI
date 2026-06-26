@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { createChatBlobTable, createMessageTable } from './messageStore.js'
 import { createGenerationFinalizationRetryTable } from './generationFinalizationRetry.js'
+import { createPushSubscriptionsTable } from './pushNotifications.js'
 import {
   createAssetMetadataTable,
   createCharacterTables,
@@ -12,7 +13,7 @@ import {
   seedProjectionBodyCacheRevisions,
 } from './repository.js'
 
-export const CURRENT_SCHEMA_VERSION = 18
+export const CURRENT_SCHEMA_VERSION = 19
 
 export interface MigrationStep {
   version: number
@@ -176,6 +177,13 @@ export const MIGRATIONS: readonly MigrationStep[] = [
       )
     },
   },
+  {
+    version: 19,
+    name: 'push-subscriptions',
+    up: (db) => {
+      createPushSubscriptionsTable(db)
+    },
+  },
 ]
 
 /** Whether `table` already has a column named `column` (PRAGMA table_info). */
@@ -218,6 +226,7 @@ export function openDatabase(dataDir: string): DatabaseSync {
       createCollectionTables(db)
       createProjectionBodyCacheTables(db)
       createSettingsTable(db)
+      createPushSubscriptionsTable(db)
     }
     applyMigrations(db, schemaState.version)
   } catch (error) {

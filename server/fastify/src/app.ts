@@ -32,6 +32,7 @@ import { registerLegacyStorageRoutes } from './routes/legacyStorage.js'
 import { registerMemoryJobRoutes } from './routes/memoryJobs.js'
 import { registerMemoryReadRoutes } from './routes/memoryReads.js'
 import { registerProxyRoutes } from './routes/proxy.js'
+import { registerPushNotificationRoutes } from './routes/pushNotifications.js'
 import { registerRealmImportRoutes } from './routes/realmImport.js'
 import { registerSaveRoutes } from './routes/save.js'
 import { registerStreamJobRoutes } from './routes/streamJobs.js'
@@ -46,6 +47,7 @@ import { MemoryWorker, type MemoryWorkerOptions } from './memoryWorker.js'
 import { createEmbedMemoryJobBatchHandler, createEmbedMemoryJobHandler } from './memoryEmbedJobHandler.js'
 import { createSummarizeMemoryJobBatchHandler, createSummarizeMemoryJobHandler } from './memorySummarizeJobHandler.js'
 import { registerRequestTrace } from './requestTrace.js'
+import { createPushNotificationService } from './pushNotifications.js'
 
 /**
  * Node `server.requestTimeout` backstop the wall-clock bound for
@@ -187,6 +189,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   const authState = createAuthState(config.dataDir, {
     agentDevAuthBypass: config.agentDevAuthBypass === true,
   })
+  const pushNotifications = createPushNotificationService(db, config.dataDir)
   const commandEventSink = opts.commandEvents ?? createCommandEventSink()
   const streamJobRegistry = new JobRegistry()
   // Separately GC-ticked registry for detached chat generations and their
@@ -261,6 +264,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   registerEventsRoutes(app, db, authState, commandEventSink, memoryEventBus)
   registerAssetsRoutes(app, db, authState, config.dataDir, commandEventSink, activeWriterState)
   registerBackupRoutes(app, db, authState, config.dataDir, commandEventSink)
+  registerPushNotificationRoutes(app, authState, pushNotifications)
   registerProxyRoutes(app, authState)
   registerStreamJobRoutes(app, authState, streamJobRegistry)
   registerHubRoutes(app, authState, config.hubUrl)
@@ -273,7 +277,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
     config.dataDir,
     commandEventSink,
     generationJobRegistry,
-    opts.generationChat,
+    { ...opts.generationChat, pushNotifications: opts.generationChat?.pushNotifications ?? pushNotifications },
     config.generationTrace,
   )
   const finalizationRetryRaw = opts.generationChat?.finalizationRetry
@@ -286,6 +290,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
         eventSink: commandEventSink,
         logger: app.log,
         maxPerSweep: finalizationRetryOptions !== false ? finalizationRetryOptions.maxPerSweep : undefined,
+        pushNotifications,
       })
     } catch (err) {
       app.log.error({ err }, 'generation finalization retry sweep failed')

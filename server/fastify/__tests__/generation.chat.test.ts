@@ -3014,6 +3014,30 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toEqual({ $mood: 'happy' })
   })
 
+  it('notifies the push service after durable post-generation persistence', async () => {
+    const sendChatCompletionNotification = vi.fn(async () => {})
+    await restartHarness({
+      pushNotifications: {
+        publicKey: () => 'test-public-key',
+        upsertSubscription: vi.fn(),
+        deleteSubscription: vi.fn(),
+        sendChatCompletionNotification,
+      },
+    })
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, dbWithServerDispatch({}))
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: { ...basePayload, durable: true },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(doneFrame(parseEvents(res.body)).postGeneration?.revision).toBe(2)
+    expect(sendChatCompletionNotification).toHaveBeenCalledTimes(1)
+  })
+
   it('surfaces low-level output-trigger resend on done without a post-generation patch (A-16)', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await seedDatabase(

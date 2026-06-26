@@ -82,6 +82,7 @@ import {
 } from '../generationFinalizationRetry.js'
 import { generationSubmitRateLimit } from '../routeRateLimits.js'
 import { REQUEST_UID_HEADER } from '../requestTrace.js'
+import type { PushNotificationService } from '../pushNotifications.js'
 
 const ALLOWED_MODES = new Set(['send', 'continue', 'preview', 'preview_prompt', 'regenerate'])
 const SERVER_INLAY_SIGNATURE_CONTENT_TYPE = 'application/x-risu-inlay-signature+json'
@@ -144,6 +145,7 @@ export type ChatProviderDispatcher = (
 
 export interface GenerationChatRouteOptions {
   dispatchProvider?: ChatProviderDispatcher
+  pushNotifications?: false | PushNotificationService
   finalizationRetry?:
     | false
     | {
@@ -1330,6 +1332,13 @@ function buildPostGenerationFrameBody(
   return frame
 }
 
+function notifyChatCompletion(pushNotifications: false | PushNotificationService | undefined): void {
+  if (!pushNotifications) return
+  void pushNotifications.sendChatCompletionNotification().catch(() => {
+    // Best-effort: failed push delivery must not affect generation completion.
+  })
+}
+
 /**
  * Run the server post-generation pass over the provider's completion text,
  * persist the result server-side, and build the `done.postGeneration` frame.
@@ -1350,6 +1359,7 @@ async function buildPostGenerationFrame(args: {
   generationInfo: Record<string, unknown>
   promptInfo?: Record<string, unknown>
   emit?: (event: PromptChatEvent) => void
+  pushNotifications?: false | PushNotificationService
 }): Promise<PostGenerationFrame | undefined> {
   const { postGen, postGenError, postGenMetricError, message, targetMessageId, chatVarMutations, targetSnapshot } =
     await resolvePostGenerationResult({
@@ -1403,6 +1413,7 @@ async function buildPostGenerationFrame(args: {
       ...(postGenError ? { context: { error: postGenError } } : {}),
     })
   }
+  notifyChatCompletion(args.pushNotifications)
   return buildPostGenerationFrameBody(revision, postGen)
 }
 
@@ -1584,6 +1595,7 @@ async function streamAssembly(
                       generationInfo,
                       promptInfo: successfulResult.prompt.promptInfo,
                       emit,
+                      pushNotifications: options.pushNotifications,
                     })
                   : Promise.resolve(undefined),
             })
@@ -2081,6 +2093,7 @@ export function retryQueuedGenerationFinalizations(args: {
   eventSink: CommandEventSink
   logger?: GenerationFinalizationRetryLogger
   maxPerSweep?: number
+  pushNotifications?: false | PushNotificationService
 }): { attempted: number; persisted: number; terminal: number; retryable: number } {
   // Shutdown guard a sweep that fires while `onClose` is tearing
   // down must not touch the closed handle.
@@ -2102,6 +2115,7 @@ export function retryQueuedGenerationFinalizations(args: {
       })
       deleteGenerationFinalizationRetry(args.db, attempt.generationId)
       persisted += 1
+      notifyChatCompletion(args.pushNotifications)
       emitProtocolMetric('generation_persistence_retry', {
         status: 'ok',
         generationId: attempt.generationId,
@@ -2176,6 +2190,7 @@ async function buildDurablePostGeneration(args: {
   generationId: string
   generationInfo: Record<string, unknown>
   promptInfo?: Record<string, unknown>
+  pushNotifications?: false | PushNotificationService
 }): Promise<PostGenerationFrame | undefined> {
   const { postGen, postGenError, postGenMetricError, message, targetMessageId, chatVarMutations, targetSnapshot } =
     await resolvePostGenerationResult({
@@ -2235,6 +2250,7 @@ async function buildDurablePostGeneration(args: {
       message: 'server post-generation derivation failed; persisted the raw provider text.',
       ...(postGenError ? { context: { error: postGenError } } : {}),
     })
+    notifyChatCompletion(args.pushNotifications)
     return { revision }
   }
 
@@ -2245,6 +2261,7 @@ async function buildDurablePostGeneration(args: {
     revision,
     durationMs: protocolDurationMs(persistStartedAt),
   })
+  notifyChatCompletion(args.pushNotifications)
   return buildPostGenerationFrameBody(revision, postGen)
 }
 
@@ -2479,6 +2496,7 @@ async function runGenerationJob(args: {
                   generationId,
                   generationInfo,
                   promptInfo: successfulResult.prompt.promptInfo,
+                  pushNotifications: options.pushNotifications,
                 })
               },
             })

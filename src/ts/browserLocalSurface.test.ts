@@ -12,10 +12,13 @@ describe('Fastify-only browser local surface policy', () => {
   it('does not ship service-worker share or file-handler entry points', () => {
     const manifest = JSON.parse(readWorkspaceFile('public/manifest.json')) as Record<string, unknown>
 
+    // The removed legacy share/file-handler worker stays gone. The remaining
+    // service worker is scoped to Web Push notification delivery.
     expect(existsSync(path.join(root, 'public/sw.js'))).toBe(false)
+    expect(existsSync(path.join(root, 'public/service-worker.js'))).toBe(true)
     expect(manifest).not.toHaveProperty('share_target')
     expect(manifest).not.toHaveProperty('file_handlers')
-    expect(manifest.display).toBe('browser')
+    expect(manifest.display).toBe('standalone')
     expect(existsSync(path.join(root, 'src/preload.ts'))).toBe(false)
   })
 

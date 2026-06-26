@@ -375,6 +375,48 @@ export const PROTOCOL_ROUTE_MANIFEST = [
     streaming: 'none',
   },
   {
+    id: 'push-vapid-public-key',
+    methods: READ_METHODS,
+    path: '/api/v1/push/vapid-public-key',
+    auth: {
+      decision: 'public',
+      reason: 'The VAPID public key is intentionally public browser subscription metadata.',
+    },
+    activeWriter: {
+      decision: 'not-applicable',
+      reason: 'Read-only push configuration route.',
+    },
+    streaming: 'none',
+  },
+  {
+    id: 'push-subscription-create',
+    methods: ['POST'],
+    path: '/api/v1/push/subscriptions',
+    auth: {
+      decision: 'required',
+      reason: 'Push subscriptions register an authenticated browser device.',
+    },
+    activeWriter: {
+      decision: 'auth-session',
+      reason: 'Writes browser notification credentials, not revision-tracked user state.',
+    },
+    streaming: 'none',
+  },
+  {
+    id: 'push-subscription-delete',
+    methods: ['DELETE'],
+    path: '/api/v1/push/subscriptions',
+    auth: {
+      decision: 'required',
+      reason: 'Push subscription removal unregisters an authenticated browser device.',
+    },
+    activeWriter: {
+      decision: 'auth-session',
+      reason: 'Writes browser notification credentials, not revision-tracked user state.',
+    },
+    streaming: 'none',
+  },
+  {
     id: 'proxy-fetch',
     methods: ['POST'],
     path: '/api/v1/proxy/fetch',

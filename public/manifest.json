@@ -1,5 +1,6 @@
 {
   "name": "Risuai",
+  "short_name": "Risuai",
   "icons": [
     {
       "src": "logo_512.png",
@@ -28,6 +29,7 @@
     }
   ],
   "start_url": "/",
-  "display": "browser",
+  "scope": "/",
+  "display": "standalone",
   "theme_color": "#4682B4"
 }
