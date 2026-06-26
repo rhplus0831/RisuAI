@@ -802,6 +802,7 @@ export const languageChineseTraditional = {
   clickToEdit: '點擊文字進行編輯',
   disableAutoPopupMessageEditor: '編輯訊息時停用自動彈出編輯器',
   enableBlockPartialEdit: '啟用區塊局部編輯（懸停以編輯特定區塊）',
+  longPressToPopupEditor: '長按開啟彈出式編輯器',
   enableDragPartialEdit: '啟用拖曳局部編輯（選取文字以編輯）',
   setNodePassword: '設定密碼以提升安全性',
   inputNodePassword: '輸入密碼。如果忘記密碼，請刪除伺服器文件中的 save/__password.txt 並重啟伺服器。',

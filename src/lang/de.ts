@@ -851,6 +851,7 @@ export const languageGerman = {
   fixedChatTextarea: 'Unten im Chatfenster fixieren',
   clickToEdit: 'Text zum Bearbeiten anklicken',
   disableAutoPopupMessageEditor: 'Automatischen Popup-Editor beim Bearbeiten von Nachrichten deaktivieren',
+  longPressToPopupEditor: 'Lange drücken, um den Popup-Editor zu öffnen',
   setNodePassword: 'Legen Sie Ihr Passwort für die Sicherheit fest',
   inputNodePassword:
     'Geben Sie Ihr Passwort ein. Wenn Sie sich nicht erinnern können, entfernen Sie save/__password.txt in Ihren Serverdateien und starten Sie den Server neu',

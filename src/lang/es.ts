@@ -836,6 +836,7 @@ export const languageSpanish = {
   fixedChatTextarea: 'Fijación en la parte inferior de la ventana de chat',
   clickToEdit: 'Haz Clic en el Texto para Editar',
   disableAutoPopupMessageEditor: 'Desactivar el editor emergente automático al editar mensajes',
+  longPressToPopupEditor: 'Mantener pulsado para abrir el editor emergente',
   setNodePassword: 'Establece tu contraseña para la seguridad',
   inputNodePassword:
     'Ingresa tu contraseña. si no la recuerdas, elimina save/__password.txt en tus archivos de servidor y reinicia el servidor.',

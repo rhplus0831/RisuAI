@@ -977,6 +977,7 @@ export const languageEnglish = {
   clickToEdit: 'Click Text to Edit',
   disableAutoPopupMessageEditor: 'Disable Auto Popup Editor When Editing Messages',
   enableBlockPartialEdit: 'Enable Block Partial Edit (Hover to edit individual blocks)',
+  longPressToPopupEditor: 'Long Press to Open Popup Editor',
   enableDragPartialEdit: 'Enable Drag Partial Edit (Select text to edit)',
   setNodePassword: 'Set your password to security',
   inputNodePassword:

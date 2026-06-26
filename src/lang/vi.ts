@@ -829,6 +829,7 @@ export const languageVietnamese = {
   fixedChatTextarea: 'Cố định ở dưới khung chat',
   clickToEdit: 'Bấm vào văn bản để chỉnh sửa',
   disableAutoPopupMessageEditor: 'Tắt trình chỉnh sửa bật lên tự động khi sửa tin nhắn',
+  longPressToPopupEditor: 'Nhấn giữ để mở trình chỉnh sửa bật lên',
   setNodePassword: 'Đặt mật khẩu của bạn để bảo mật',
   inputNodePassword:
     'Nhập mật khẩu của bạn. nếu bạn không nhớ, hãy xóa save/__password.txt trong tệp máy chủ của bạn và khởi động lại máy chủ.',
