@@ -7,6 +7,7 @@
   import { get } from 'svelte/store'
   import { getTranscriptWindowRange } from './DefaultChatScreen.loadPages'
   import { getCharacterDisplayName } from 'src/ts/characterDisplayName'
+  import { chatProcessStage, doingChat } from 'src/ts/process/index.svelte'
 
   const getCurrentChatRoomId = () => {
     const charId = get(selectedCharID)
@@ -160,6 +161,11 @@
         role={row.message.role}
         name={row.name}
         isComment={row.message.isComment ?? false}
+        isGenerationLoading={$doingChat &&
+          row.idx === messages.length - 1 &&
+          row.message.role === 'char' &&
+          row.message.data === ''}
+        generationStage={$chatProcessStage}
         disabled={row.message.disabled ?? false} />
     </div>
   {/each}

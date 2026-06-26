@@ -68,6 +68,11 @@
   import PartialEditController from './PartialEditController.svelte'
   import { resolveFreshPartialEditSave, type PartialEditSaveDetail } from './partialEditFreshness'
   import {
+    getChatGenerationLoadingLanguageKey,
+    getChatGenerationLoadingProgress,
+    normalizeChatGenerationLoadingStage,
+  } from './chatGenerationLoading'
+  import {
     shouldAutoPopupMessageEditor,
     shouldAutoPopupTranslationEditor,
     shouldUseStableMessageEditor,
@@ -134,6 +139,8 @@
     currentPage?: number
     totalPages?: number
     isComment?: boolean
+    isGenerationLoading?: boolean
+    generationStage?: number
     disabled?: boolean | 'allBefore'
   }
 
@@ -169,6 +176,8 @@
     currentPage = 1,
     totalPages = 1,
     isComment = false,
+    isGenerationLoading = false,
+    generationStage = 0,
     disabled = false,
   }: Props = $props()
   let autoPopupMessageEditorOpen = $state(false)
@@ -751,6 +760,9 @@
     const rawTranslation = activeRawTranslation()
     return translated && rawTranslation ? rawTranslation.text : message
   })
+  let normalizedGenerationStage = $derived(normalizeChatGenerationLoadingStage(generationStage))
+  let generationLoadingText = $derived(language[getChatGenerationLoadingLanguageKey(normalizedGenerationStage)])
+  let generationLoadingProgress = $derived(getChatGenerationLoadingProgress(normalizedGenerationStage))
 
   $effect(() => {
     if (serverTranslationInProgress) {
@@ -1182,6 +1194,19 @@
         {msgDisplay}
       {/if}
     </div>
+  {:else if isGenerationLoading}
+    <div class="chat-generation-loading" role="status" aria-live="polite" aria-busy="true">
+      <div class="chat-generation-loading-header">
+        <LoaderCircleIcon size={16} class="animate-spin shrink-0" />
+        <span>{generationLoadingText}</span>
+      </div>
+      <div class="chat-generation-loading-track">
+        <div
+          class={`chat-generation-loading-fill chat-generation-loading-stage-${normalizedGenerationStage}`}
+          style:width={`${generationLoadingProgress}%`}>
+        </div>
+      </div>
+    </div>
   {:else if blankMessage}
     <div class="w-full flex justify-center text-textcolor2 italic mb-12">
       {language.noMessage}
@@ -1260,7 +1285,7 @@
         }}>
         <TrashIcon size={20} />
       </button>
-    {:else}
+    {:else if !isGenerationLoading}
       <span class="text-xs">{statusMessage}</span>
       <div class="flex items-center ml-2 gap-2">
         {@render translationButton()}
@@ -2213,3 +2238,82 @@
     }}>
   </div>
 {/if}
+
+<style>
+  .chat-generation-loading {
+    width: min(34rem, 100%);
+    color: var(--risu-theme-textcolor2);
+  }
+
+  .chat-generation-loading-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 1.5rem;
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+  }
+
+  .chat-generation-loading-track {
+    position: relative;
+    height: 0.5rem;
+    margin-top: 0.5rem;
+    overflow: hidden;
+    border: 1px solid var(--risu-theme-darkborderc);
+    border-radius: 9999px;
+    background: color-mix(in srgb, var(--risu-theme-darkbg) 82%, transparent);
+  }
+
+  .chat-generation-loading-fill {
+    position: relative;
+    height: 100%;
+    min-width: 2rem;
+    border-radius: inherit;
+    background: var(--risu-theme-borderc);
+    transition:
+      width 0.35s ease,
+      background-color 0.35s ease;
+  }
+
+  .chat-generation-loading-fill::after {
+    position: absolute;
+    inset: 0;
+    content: '';
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55), transparent);
+    animation: chat-generation-loading-shine 1.25s ease-in-out infinite;
+  }
+
+  .chat-generation-loading-stage-1 {
+    background: #60a5fa;
+  }
+
+  .chat-generation-loading-stage-2 {
+    background: #db2777;
+  }
+
+  .chat-generation-loading-stage-3 {
+    background: #34d399;
+  }
+
+  .chat-generation-loading-stage-4 {
+    background: #8b5cf6;
+  }
+
+  @keyframes chat-generation-loading-shine {
+    0% {
+      transform: translateX(-100%);
+    }
+
+    100% {
+      transform: translateX(100%);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .chat-generation-loading-fill,
+    .chat-generation-loading-fill::after {
+      animation: none;
+      transition: none;
+    }
+  }
+</style>
