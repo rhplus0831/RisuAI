@@ -72,6 +72,8 @@ describe('push notification service', () => {
         type: 'chat_completion',
         title: 'Risuai',
         body: 'Chat processing complete.',
+        icon: '/logo_192.png',
+        badge: '/logo_192.png',
         url: '/character/character%2Fid/chat%20id',
       })
     } finally {
@@ -89,10 +91,16 @@ describe('push notification service', () => {
     }
     try {
       setNotificationSetting(db, true)
+      const imageAssetId = 'a'.repeat(64)
       db.prepare('INSERT INTO characters (id, position, data_json) VALUES (?, ?, ?)').run(
         'char-a',
         0,
-        JSON.stringify({ chaId: 'char-a', name: 'Character A' }),
+        JSON.stringify({
+          chaId: 'char-a',
+          name: 'Character A',
+          image: imageAssetId,
+          customNotificationMessage: 'A reply is waiting.',
+        }),
       )
       db.prepare('INSERT INTO chats (id, character_id, position, data_json) VALUES (?, ?, ?, ?)').run(
         'chat-a',
@@ -106,7 +114,54 @@ describe('push notification service', () => {
       await service.sendChatCompletionNotification({ chatId: 'chat-a' })
 
       expect(sent).toHaveLength(1)
-      expect(JSON.parse(sent[0].payload as string).url).toBe('/character/char-a/chat-a')
+      expect(JSON.parse(sent[0].payload as string)).toMatchObject({
+        body: 'A reply is waiting.',
+        icon: `/api/v1/assets/${imageAssetId}`,
+        badge: '/logo_192.png',
+        url: '/character/char-a/chat-a',
+      })
+    } finally {
+      db.close()
+    }
+  })
+
+  it('keeps oversized custom notification messages within a safe push payload size', async () => {
+    const db = openDatabase(makeDataDir())
+    const sent: Array<{ payload?: string | Buffer | null }> = []
+    const transport: PushNotificationTransport = {
+      sendNotification: vi.fn(async (_subscription, payload) => {
+        if (new TextEncoder().encode(String(payload)).byteLength > 1800) {
+          throw new Error('payload too large')
+        }
+        sent.push({ payload })
+      }),
+    }
+    try {
+      setNotificationSetting(db, true)
+      db.prepare('INSERT INTO characters (id, position, data_json) VALUES (?, ?, ?)').run(
+        'char-long',
+        0,
+        JSON.stringify({
+          chaId: 'char-long',
+          name: 'Character Long',
+          customNotificationMessage: 'Long custom message '.repeat(400),
+        }),
+      )
+      db.prepare('INSERT INTO chats (id, character_id, position, data_json) VALUES (?, ?, ?, ?)').run(
+        'chat-long',
+        'char-long',
+        0,
+        JSON.stringify({ id: 'chat-long', name: 'Chat Long' }),
+      )
+      const service = createPushNotificationService(db, makeDataDir('risu-fastify-push-keys-'), { transport })
+
+      service.upsertSubscription(sampleSubscription())
+      await service.sendChatCompletionNotification({ chatId: 'chat-long' })
+
+      expect(sent).toHaveLength(1)
+      const payload = JSON.parse(sent[0].payload as string) as { body: string }
+      expect(payload.body.endsWith('...')).toBe(true)
+      expect(new TextEncoder().encode(payload.body).byteLength).toBeLessThanOrEqual(1024)
     } finally {
       db.close()
     }

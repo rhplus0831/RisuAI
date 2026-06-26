@@ -127,6 +127,7 @@ function characterCollectionRowDefaults(index: number): JsonRecord {
     name: `Character ${index + 1}`,
     displayName: '',
     firstMessage: '',
+    customNotificationMessage: '',
     desc: '',
     notes: '',
     chats: [],
@@ -357,6 +358,9 @@ function validateCharacterRecord(record: JsonRecord, label: string, options: { a
   }
   if ('displayName' in record && typeof record.displayName !== 'string') {
     throw new ValidationError(`${label}.displayName must be a string`)
+  }
+  if ('customNotificationMessage' in record && typeof record.customNotificationMessage !== 'string') {
+    throw new ValidationError(`${label}.customNotificationMessage must be a string`)
   }
   if (
     'trashTime' in record &&

@@ -384,6 +384,7 @@ function normalizeCharacterDraft(value: CharacterSnapshot): CharacterDraftValue 
   }
   value.desc ??= ''
   value.firstMessage ??= ''
+  value.customNotificationMessage ??= ''
   value.image ??= ''
   value.ccAssets ??= []
   value.largePortrait ??= false

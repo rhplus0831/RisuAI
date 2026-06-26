@@ -53,13 +53,28 @@ async function showChatCompletionNotification(event) {
     return
   }
 
-  return self.registration.showNotification(payload.title, {
+  try {
+    return await self.registration.showNotification(payload.title, notificationOptions(payload))
+  } catch {
+    return self.registration.showNotification(
+      payload.title,
+      notificationOptions({
+        ...payload,
+        icon: '/logo_192.png',
+        badge: '/logo_192.png',
+      }),
+    )
+  }
+}
+
+function notificationOptions(payload) {
+  return {
     body: payload.body,
-    icon: '/logo_192.png',
-    badge: '/logo_192.png',
+    icon: payload.icon,
+    badge: payload.badge,
     tag: 'risuai-chat-completion',
     data: { url: payload.url },
-  })
+  }
 }
 
 function readPushPayload(event) {
@@ -69,6 +84,8 @@ function readPushPayload(event) {
       return {
         title: typeof data.title === 'string' ? data.title : 'Risuai',
         body: typeof data.body === 'string' ? data.body : 'Chat processing complete.',
+        icon: typeof data.icon === 'string' ? data.icon : '/logo_192.png',
+        badge: typeof data.badge === 'string' ? data.badge : '/logo_192.png',
         url: typeof data.url === 'string' ? data.url : '/',
       }
     } catch {
@@ -79,6 +96,8 @@ function readPushPayload(event) {
   return {
     title: 'Risuai',
     body: 'Chat processing complete.',
+    icon: '/logo_192.png',
+    badge: '/logo_192.png',
     url: '/',
   }
 }

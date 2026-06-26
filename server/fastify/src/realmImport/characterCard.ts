@@ -198,6 +198,7 @@ export async function convertRealmCharacterCard(
     license: risuExt?.license,
     triggerscript: readArray(risuExt?.triggerscript),
     private: risuExt?.private === true,
+    customNotificationMessage: readString(risuExt?.customNotificationMessage),
     additionalText: readString(risuExt?.additionalText),
     virtualscript: '',
     extentions: passthroughExtensions,

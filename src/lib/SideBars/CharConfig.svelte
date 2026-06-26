@@ -132,6 +132,7 @@
     'displayName',
     'desc',
     'firstMessage',
+    'customNotificationMessage',
     'image',
     'ccAssets',
     'largePortrait',
@@ -872,6 +873,12 @@
     <TextAreaInput highlight margin="both" autocomplete="off" bind:value={characterDraft.value.firstMessage}
     ></TextAreaInput>
     <span class="text-textcolor2 mb-6 text-sm">{tokens.firstMsg} {language.tokens}</span>
+    <span class="text-textcolor">{language.customNotificationMessage} <Help key="customNotificationMessage" /></span>
+    <TextAreaInput
+      highlight
+      margin="both"
+      autocomplete="off"
+      bind:value={characterDraft.value.customNotificationMessage}></TextAreaInput>
   {/if}
 {:else if licensed === 'private'}
   <span>You are not allowed</span>

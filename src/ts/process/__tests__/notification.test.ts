@@ -3,7 +3,7 @@ import { fireDesktopNotification } from '../postGeneration/notification'
 
 interface NotificationCall {
   title: string
-  options?: { body?: string }
+  options?: { body?: string; icon?: string; badge?: string }
 }
 
 function setupNotification(opts: {
@@ -43,10 +43,37 @@ describe('fireDesktopNotification', () => {
   it('fires a Notification when permission is granted and wires onclick to window.focus', async () => {
     const { calls, instances } = setupNotification({ permission: 'granted' })
     await fireDesktopNotification('hello')
-    expect(calls).toEqual([{ title: 'Risuai', options: { body: 'hello' } }])
+    expect(calls).toEqual([
+      { title: 'Risuai', options: { body: 'hello', icon: '/logo_192.png', badge: '/logo_192.png' } },
+    ])
     expect(instances).toHaveLength(1)
     instances[0].onclick?.()
     expect(focusSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('uses the provided character asset as the notification icon', async () => {
+    const assetId = 'a'.repeat(64)
+    const { calls } = setupNotification({ permission: 'granted' })
+
+    await fireDesktopNotification({ body: 'hello', icon: assetId })
+
+    expect(calls).toEqual([
+      {
+        title: 'Risuai',
+        options: { body: 'hello', icon: `/api/v1/assets/${assetId}`, badge: '/logo_192.png' },
+      },
+    ])
+  })
+
+  it('truncates long notification bodies before constructing the Notification', async () => {
+    const { calls } = setupNotification({ permission: 'granted' })
+
+    await fireDesktopNotification({ body: 'Long custom message '.repeat(400), icon: null })
+
+    expect(calls).toHaveLength(1)
+    const body = calls[0].options?.body ?? ''
+    expect(body.endsWith('...')).toBe(true)
+    expect(new TextEncoder().encode(body).byteLength).toBeLessThanOrEqual(1024)
   })
 
   it('does not construct a Notification when permission is denied', async () => {

@@ -4,6 +4,7 @@ import vm from 'node:vm'
 import { describe, expect, it, vi } from 'vitest'
 
 type ServiceWorkerListener = (event: {
+  data?: { json: () => unknown }
   notification?: { close: () => void; data?: { url?: string } }
   waitUntil: (promise: Promise<unknown>) => void
 }) => void
@@ -35,7 +36,20 @@ function loadServiceWorker() {
     filename: 'public/service-worker.js',
   })
 
-  return { clients, listeners }
+  return { clients, listeners, registration: self.registration }
+}
+
+function pushNotification(listener: ServiceWorkerListener, payload: unknown): Promise<unknown[]> {
+  const pending: Promise<unknown>[] = []
+  listener({
+    data: {
+      json: () => payload,
+    },
+    waitUntil: (promise) => {
+      pending.push(promise)
+    },
+  })
+  return Promise.all(pending)
 }
 
 function clickNotification(listener: ServiceWorkerListener, url: string): Promise<unknown[]> {
@@ -53,6 +67,50 @@ function clickNotification(listener: ServiceWorkerListener, url: string): Promis
 }
 
 describe('notification service worker', () => {
+  it('shows push notifications with a Risu badge and character icon from the payload', async () => {
+    const { clients, listeners, registration } = loadServiceWorker()
+    clients.matchAll.mockResolvedValueOnce([])
+
+    await pushNotification(listeners.push, {
+      title: 'Risuai',
+      body: 'A reply is waiting.',
+      icon: '/api/v1/assets/character-image',
+      badge: '/logo_192.png',
+      url: '/character/char-a/chat-a',
+    })
+
+    expect(registration.showNotification).toHaveBeenCalledWith('Risuai', {
+      body: 'A reply is waiting.',
+      icon: '/api/v1/assets/character-image',
+      badge: '/logo_192.png',
+      tag: 'risuai-chat-completion',
+      data: { url: '/character/char-a/chat-a' },
+    })
+  })
+
+  it('retries with the Risu icon when showing with the character icon fails', async () => {
+    const { clients, listeners, registration } = loadServiceWorker()
+    clients.matchAll.mockResolvedValueOnce([])
+    registration.showNotification.mockRejectedValueOnce(new Error('bad icon'))
+
+    await pushNotification(listeners.push, {
+      title: 'Risuai',
+      body: 'A reply is waiting.',
+      icon: '/api/v1/assets/character-image',
+      badge: '/logo_192.png',
+      url: '/character/char-a/chat-a',
+    })
+
+    expect(registration.showNotification).toHaveBeenCalledTimes(2)
+    expect(registration.showNotification).toHaveBeenLastCalledWith('Risuai', {
+      body: 'A reply is waiting.',
+      icon: '/logo_192.png',
+      badge: '/logo_192.png',
+      tag: 'risuai-chat-completion',
+      data: { url: '/character/char-a/chat-a' },
+    })
+  })
+
   it('navigates an existing same-origin window to the notification route before focusing it', async () => {
     const { clients, listeners } = loadServiceWorker()
     const navigatedClient = {

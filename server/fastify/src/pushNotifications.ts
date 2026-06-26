@@ -5,6 +5,13 @@ import webPush, { type PushSubscription } from 'web-push'
 
 const VAPID_KEYS_FILE = '__web_push_vapid_keys.json'
 const DEFAULT_VAPID_SUBJECT = 'mailto:risuai@example.invalid'
+const DEFAULT_NOTIFICATION_BODY = 'Chat processing complete.'
+const RISU_NOTIFICATION_ICON = '/logo_192.png'
+const MAX_NOTIFICATION_BODY_BYTES = 1024
+const NOTIFICATION_BODY_TRUNCATION_MARKER = '...'
+const SERVER_ASSET_ID_RE = /^[0-9a-fA-F]{64}$/
+const LOCAL_ASSET_PATH_RE = /^assets\/([0-9a-fA-F]{64})\.[a-z0-9]+$/i
+
 export interface StoredPushSubscription {
   endpoint: string
   subscription: PushSubscription
@@ -13,6 +20,11 @@ export interface StoredPushSubscription {
 export interface ChatCompletionNotificationContext {
   characterId?: string
   chatId?: string
+}
+
+interface ResolvedChatCompletionNotificationContext extends ChatCompletionNotificationContext {
+  body?: string
+  icon?: string
 }
 
 export interface PushNotificationTransport {
@@ -89,10 +101,14 @@ export function createPushNotificationService(
     },
     async sendChatCompletionNotification(context) {
       if (!notificationSettingEnabled(db)) return
+      const resolvedContext = resolveContext(db, context)
       await sendPushNotificationToAll(
         db,
         transport,
-        buildChatCompletionNotificationPayload(resolveContext(db, context)),
+        buildChatCompletionNotificationPayload({
+          ...resolvedContext,
+          ...resolveCharacterNotificationDetails(db, resolvedContext.characterId),
+        }),
       )
     },
   }
@@ -171,11 +187,15 @@ export function normalizePushEndpoint(value: unknown): string | null {
   return endpoint
 }
 
-export function buildChatCompletionNotificationPayload(context: ChatCompletionNotificationContext = {}): string {
+export function buildChatCompletionNotificationPayload(
+  context: ResolvedChatCompletionNotificationContext = {},
+): string {
   return JSON.stringify({
     type: 'chat_completion',
     title: 'Risuai',
-    body: 'Chat processing complete.',
+    body: notificationBodyFromContext(context),
+    icon: notificationIconFromContext(context),
+    badge: RISU_NOTIFICATION_ICON,
     url: chatCompletionNotificationUrl(context),
   })
 }
@@ -206,6 +226,72 @@ function findCharacterIdForChat(db: DatabaseSync, chatId: string): string | null
   } catch {
     return null
   }
+}
+
+function resolveCharacterNotificationDetails(
+  db: DatabaseSync,
+  characterId: string | undefined,
+): Partial<ResolvedChatCompletionNotificationContext> {
+  if (!isNonEmptyString(characterId)) return {}
+  const character = readCharacterNotificationRecord(db, characterId)
+  if (!character) return {}
+
+  const customMessage =
+    typeof character.customNotificationMessage === 'string' ? character.customNotificationMessage.trim() : ''
+  const icon = typeof character.image === 'string' ? notificationIconUrl(character.image) : undefined
+  return {
+    ...(customMessage ? { body: customMessage } : {}),
+    ...(icon ? { icon } : {}),
+  }
+}
+
+function readCharacterNotificationRecord(db: DatabaseSync, characterId: string): Record<string, unknown> | null {
+  try {
+    const row = db.prepare('SELECT data_json FROM characters WHERE id = ? LIMIT 1').get(characterId) as
+      | { data_json?: unknown }
+      | undefined
+    if (typeof row?.data_json !== 'string') return null
+    const parsed = JSON.parse(row.data_json) as unknown
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : null
+  } catch {
+    return null
+  }
+}
+
+function notificationBodyFromContext(context: ChatCompletionNotificationContext & { body?: unknown }): string {
+  const body = typeof context.body === 'string' && context.body.trim() ? context.body.trim() : DEFAULT_NOTIFICATION_BODY
+  return truncateNotificationBody(body)
+}
+
+function notificationIconFromContext(context: ChatCompletionNotificationContext & { icon?: unknown }): string {
+  return typeof context.icon === 'string' && context.icon.trim() ? context.icon.trim() : RISU_NOTIFICATION_ICON
+}
+
+function notificationIconUrl(reference: string): string | undefined {
+  const trimmed = reference.trim()
+  if (!trimmed) return undefined
+  if (trimmed.startsWith('/api/v1/assets/')) return trimmed
+  if (trimmed.startsWith('/')) return trimmed
+  if (SERVER_ASSET_ID_RE.test(trimmed)) return `/api/v1/assets/${encodeURIComponent(trimmed)}`
+  const localAssetMatch = LOCAL_ASSET_PATH_RE.exec(trimmed)
+  if (localAssetMatch) return `/api/v1/assets/${encodeURIComponent(localAssetMatch[1])}`
+  return undefined
+}
+
+function truncateNotificationBody(body: string): string {
+  if (notificationBodyBytes(body) <= MAX_NOTIFICATION_BODY_BYTES) return body
+
+  let truncated = ''
+  for (const char of body) {
+    const candidate = `${truncated}${char}${NOTIFICATION_BODY_TRUNCATION_MARKER}`
+    if (notificationBodyBytes(candidate) > MAX_NOTIFICATION_BODY_BYTES) break
+    truncated += char
+  }
+  return `${truncated.trimEnd()}${NOTIFICATION_BODY_TRUNCATION_MARKER}`
+}
+
+function notificationBodyBytes(body: string): number {
+  return new TextEncoder().encode(body).byteLength
 }
 
 function isNonEmptyString(value: unknown): value is string {

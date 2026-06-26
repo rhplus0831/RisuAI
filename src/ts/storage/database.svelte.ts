@@ -2358,6 +2358,7 @@ export interface character {
   displayName?: string
   image?: string
   firstMessage: string
+  customNotificationMessage?: string
   desc: string
   notes: string
   chats: Chat[]

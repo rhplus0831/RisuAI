@@ -995,6 +995,7 @@ export function characterFormatUpdate(
   cha.triggerscript = cha.triggerscript ?? []
   cha.alternateGreetings = cha.alternateGreetings ?? []
   cha.exampleMessage = cha.exampleMessage ?? ''
+  cha.customNotificationMessage ??= ''
   cha.creatorNotes = cha.creatorNotes ?? ''
   cha.systemPrompt = cha.systemPrompt ?? ''
   cha.tags = cha.tags ?? []
@@ -1087,6 +1088,7 @@ export function createBlankChar(): character {
     name: '',
     displayName: '',
     firstMessage: '',
+    customNotificationMessage: '',
     desc: '',
     notes: '',
     chats: [

@@ -544,6 +544,7 @@ function convertOffSpecCards(
     firstMsgIndex: -1,
     replaceGlobalNote: '',
     triggerscript: [],
+    customNotificationMessage: '',
     additionalText: '',
     loreExt: loreExt,
     loreSettings: loresettings,
@@ -925,6 +926,7 @@ async function importCharacterCardSpec(
     license: data?.extensions?.risuai?.license,
     triggerscript: data?.extensions?.risuai?.triggerscript ?? [],
     private: data?.extensions?.risuai?.private ?? false,
+    customNotificationMessage: data?.extensions?.risuai?.customNotificationMessage ?? '',
     additionalText: data?.extensions?.risuai?.additionalText ?? '',
     virtualscript: '', //removed dude to security issue
     extentions: ext ?? {},
@@ -1139,6 +1141,7 @@ function createBaseV2(char: character) {
           backgroundHTML: char.backgroundHTML,
           license: char.license,
           triggerscript: char.triggerscript,
+          customNotificationMessage: char.customNotificationMessage ?? '',
           additionalText: char.additionalText,
           virtualscript: '', //removed dude to security issue
           largePortrait: char.largePortrait,
@@ -1591,6 +1594,7 @@ export function createBaseV3(char: character) {
           backgroundHTML: char.backgroundHTML,
           license: char.license,
           triggerscript: char.triggerscript,
+          customNotificationMessage: char.customNotificationMessage ?? '',
           additionalText: char.additionalText,
           virtualscript: '', //removed dude to security issue
           largePortrait: char.largePortrait,
@@ -1958,6 +1962,7 @@ type CharacterCardV2Risu = {
         license?: string
         triggerscript?: triggerscript[]
         private?: boolean
+        customNotificationMessage?: string
         additionalText?: string
         virtualscript?: string
         largePortrait?: boolean

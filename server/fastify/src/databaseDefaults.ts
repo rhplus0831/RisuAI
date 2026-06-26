@@ -487,6 +487,11 @@ export function normalizeDatabaseDefaults(
 function normalizeCharacters(database: JsonRecord): void {
   const characters = Array.isArray(database.characters) ? database.characters : []
   database.characters = characters.filter((character) => isRecord(character) && character.type !== 'group')
+  for (const character of database.characters as JsonRecord[]) {
+    if (typeof character.customNotificationMessage !== 'string') {
+      character.customNotificationMessage = ''
+    }
+  }
 }
 
 function normalizeBotPresets(database: JsonRecord): void {

@@ -58,6 +58,8 @@ export const languageEnglish = {
     msgSound: 'Plays *ding* sound when character responses',
     charDesc: 'Brief description of the character. This affects characters response.',
     charFirstMessage: 'First message of the character. This highly affects characters response.',
+    customNotificationMessage:
+      'When set, completion notifications for this character use this message instead of the default notification text.',
     charNote: 'A note that strongly affects model behavior. Embbedded to current character, also known as UJB.',
     toggleNsfw: 'Toggles jailbreak prompt on and off.',
     lorebook:
@@ -750,6 +752,7 @@ export const languageEnglish = {
   formatingOrder: 'Formatting Order',
   authorNote: "Author's Note",
   firstMessage: 'First Message',
+  customNotificationMessage: 'Custom Notification Message',
   displayName: 'Display Name',
   description: 'Description',
   note: 'Note',

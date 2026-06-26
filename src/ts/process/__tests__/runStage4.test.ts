@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 // tests stage return values without re-testing each helper's internals
 // (covered by their own test files).
 const fakes = vi.hoisted(() => ({
-  notification: { calls: [] as string[] },
+  notification: { calls: [] as unknown[] },
   applyEmotion: { next: false, calls: 0 },
   loadEmotion: {
     next: { tempEmotion: [] as unknown[], charemotions: {} as Record<string, unknown> },
@@ -17,14 +17,14 @@ const fakes = vi.hoisted(() => ({
 }))
 
 vi.mock('../../postGeneration/notification', () => ({
-  fireDesktopNotification: async (body: string) => {
-    fakes.notification.calls.push(body)
+  fireDesktopNotification: async (input: unknown) => {
+    fakes.notification.calls.push(input)
   },
 }))
 
 vi.mock('../postGeneration/notification', () => ({
-  fireDesktopNotification: async (body: string) => {
-    fakes.notification.calls.push(body)
+  fireDesktopNotification: async (input: unknown) => {
+    fakes.notification.calls.push(input)
   },
 }))
 
@@ -219,7 +219,22 @@ describe('runStage4 - notification', () => {
 
     await runStage4(args)
 
-    expect(fakes.notification.calls).toEqual(['hello'])
+    expect(fakes.notification.calls).toEqual([{ body: 'hello' }])
+  })
+
+  it('uses the character custom notification message and image when set', async () => {
+    seedDb({ notification: true })
+    const { args } = baseArgs({
+      result: 'hello',
+      currentChar: makeChar({
+        customNotificationMessage: 'Custom completion text',
+        image: 'asset-id',
+      }),
+    })
+
+    await runStage4(args)
+
+    expect(fakes.notification.calls).toEqual([{ body: 'Custom completion text', icon: 'asset-id' }])
   })
 
   it('skips fireDesktopNotification when db.notification=false', async () => {
