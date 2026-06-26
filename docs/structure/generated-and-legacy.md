@@ -45,8 +45,10 @@ an orientation summary, not a replacement for `.gitignore`.
 
 Prettier also skips Markdown/docs/handoff docs, `pnpm-lock.yaml`,
 tracked static/vendor payloads, media/binary assets, and generated/local
-directories listed in `.prettierignore` or `.gitignore`. `pnpm format` will not
-tidy structure docs, so preserve table wrapping manually.
+directories listed in `.prettierignore` or `.gitignore`. Broad file/text
+searches also skip tracked static/vendor payloads listed in `.ignore`; use
+`--no-ignore` only when intentionally inspecting those assets. `pnpm format` will
+not tidy structure docs, so preserve table wrapping manually.
 
 ## Static Assets
 

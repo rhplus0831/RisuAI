@@ -22,6 +22,16 @@
 - `jq`
 - `yq`
 
+# Search Hygiene
+
+- The root `.ignore` file excludes tracked static/vendor payloads from broad
+  file and text searches.
+- For initial file-name searches, prefer `rg --files | rg "<name>"` or
+  `fd <name>` so `.ignore` is honored. Use `--no-ignore` or a targeted path
+  only when intentionally inspecting ignored payloads.
+- Avoid broad `rg --files -g "*<name>*"` searches because explicit include globs
+  can re-include ignored payloads.
+
 # Project Structure Grounding
 
 Start by reading `STRUCTURE.md` to understand the project structure.
