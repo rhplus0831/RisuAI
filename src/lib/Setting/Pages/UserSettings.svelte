@@ -14,7 +14,6 @@
   } from 'src/ts/storage/backup'
   import Button from 'src/lib/UI/GUI/Button.svelte'
   import { exportAsDataset } from 'src/ts/storage/exportAsDataset'
-  import { cleanColdStorage } from 'src/ts/process/coldstorage.svelte'
   import type { ServerBackupProgress } from 'src/ts/server/backups'
 
   type BackupProgressKind = 'serverSave' | 'serverRestore' | 'localSave' | 'localZipSave' | 'localRestore'
@@ -138,16 +137,6 @@
   className="mt-2"
   disabled={activeBackupOperation !== null}>
   {language.loadBackupLocal}
-</Button>
-
-<Button
-  onclick={async () => {
-    if (await alertConfirm(language.cleanColdStorageConfirm)) {
-      cleanColdStorage()
-    }
-  }}
-  className="mt-2">
-  {language.cleanColdStorage}
 </Button>
 
 <Button onclick={exportAsDataset} className="mt-2">
