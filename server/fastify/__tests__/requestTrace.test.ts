@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { Readable } from 'node:stream'
@@ -67,7 +67,7 @@ const uidHeaderName = REQUEST_UID_HEADER.toLowerCase()
 
 async function startHarness(
   mode?: RequestTraceMode,
-  options: { bodySidecarMaxGzipBytes?: number } = {},
+  options: { bodySidecarMaxGzipBytes?: number; entryLimit?: number } = {},
 ): Promise<Harness> {
   process.env.LOG_LEVEL = 'silent'
   const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-fastify-trace-'))
@@ -77,6 +77,7 @@ async function startHarness(
         ...(options.bodySidecarMaxGzipBytes !== undefined
           ? { bodySidecarMaxGzipBytes: options.bodySidecarMaxGzipBytes }
           : {}),
+        ...(options.entryLimit !== undefined ? { entryLimit: options.entryLimit } : {}),
       }
     : undefined
   const { app } = await buildApp({
@@ -377,5 +378,46 @@ describe('request trace', () => {
 
     expect(existsSync(tracePath(harness, 'human'))).toBe(true)
     expect(existsSync(tracePath(harness, 'agent'))).toBe(false)
+  })
+
+  it('keeps only the newest trace entries and deletes trimmed body sidecars', async () => {
+    harness = await startHarness('agent', { entryLimit: 2 })
+    const note = 'x'.repeat(5 * 1024)
+
+    for (const seq of [1, 2, 3]) {
+      await harness.app.inject({
+        method: 'POST',
+        url: `/api/v1/assets/exists?seq=${seq}`,
+        headers: {
+          'content-type': 'application/json',
+        },
+        payload: JSON.stringify({
+          ids: [],
+          note,
+        }),
+      })
+    }
+
+    const entries = await waitForTraceEntries(harness, 'agent', 2)
+    expect(entries.map((entry) => entry.Url)).toEqual(['/api/v1/assets/exists?seq=2', '/api/v1/assets/exists?seq=3'])
+
+    const bodyPaths = entries.map((entry) => {
+      const requestBody = requireTraceBody(entry, 'Request-Body')
+      expect(requestBody.storage).toBe('gzip')
+      return requestBody.storage === 'gzip' ? requestBody.path : ''
+    })
+    for (const bodyPath of bodyPaths) {
+      expect(existsSync(path.join(harness.dataDir, bodyPath))).toBe(true)
+    }
+
+    const bodiesDir = path.join(harness.dataDir, 'trace', 'bodies', 'agent')
+    const traceContents = readFileSync(tracePath(harness, 'agent'), 'utf8')
+    expect(traceContents).not.toContain('seq=1')
+    expect(existsSync(bodiesDir)).toBe(true)
+    expect(readdirSync(bodiesDir).sort()).toEqual(
+      Array.from(new Set(bodyPaths))
+        .map((bodyPath) => path.basename(bodyPath))
+        .sort(),
+    )
   })
 })

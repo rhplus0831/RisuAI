@@ -51,8 +51,9 @@ interval while also pruning retained terminal retry rows. Startup also calls
 `bootPromptVariables()` so server-side CBS/chat-var parsing is wired before
 prompt assembly. When `RISU_API_TRACE_MODE` is `agent` or `human`, request
 tracing adds `X-Request-UID` and writes API traces under
-`data/trace/<mode>.jsonl`. Optional generation trace sidecars write redacted
-prompt payloads under `data/trace/generation/` only when protocol metrics and
+`data/trace/<mode>.jsonl` while keeping the newest 5,000 entries per mode.
+Optional generation trace sidecars write redacted prompt payloads under
+`data/trace/generation/` only when protocol metrics and
 `RISU_GENERATION_TRACE_FULL_PROMPT=1` are enabled. `onClose` stops
 workers/timers/jobs and settles generation runners before closing SQLite.
 

@@ -87,12 +87,13 @@ the human trace ports.
 Request tracing writes API request traces under `data/trace/<mode>.jsonl`. Every
 response receives `X-Request-UID`, but only API requests are appended to JSONL;
 search that UID in the trace file to correlate a visible failure to one API call.
-Entries include route pattern, caller hints, redacted headers/query/body fields,
-and process/send timing. Text request/response bodies up to 4 KiB are inlined;
-larger captured text bodies are written as `.gz` sidecars under
-`data/trace/bodies/<mode>/` with a preview when the compressed sidecar is at
-most 10 MiB. Oversized compressed bodies, multipart, binary, SSE, and stream
-bodies are recorded as omitted metadata.
+Each mode keeps the newest 5,000 entries and trims older entries, including
+their gzip body sidecars. Entries include route pattern, caller hints, redacted
+headers/query/body fields, and process/send timing. Text request/response bodies
+up to 4 KiB are inlined; larger captured text bodies are written as `.gz`
+sidecars under `data/trace/bodies/<mode>/` with a preview when the compressed
+sidecar is at most 10 MiB. Oversized compressed bodies, multipart, binary, SSE,
+and stream bodies are recorded as omitted metadata.
 
 Generation trace sidecars are separate and opt in only when protocol metrics are
 enabled and `RISU_GENERATION_TRACE_FULL_PROMPT=1`. They write redacted prompt

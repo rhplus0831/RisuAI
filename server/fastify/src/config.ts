@@ -36,6 +36,7 @@ export interface AppConfig {
   requestTrace?: {
     mode: RequestTraceMode
     bodySidecarMaxGzipBytes?: number
+    entryLimit?: number
   }
   generationTrace?: {
     fullPrompt: boolean

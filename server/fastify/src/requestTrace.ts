@@ -15,12 +15,14 @@ const CALLER_HEADER = 'x-risu-caller'
 const INLINE_BODY_MAX_BYTES = 4 * 1024
 const GZIP_BODY_PREVIEW_MAX_BYTES = 4 * 1024
 const TRACE_BODY_MAX_GZIP_BYTES = 10 * 1024 * 1024
+const TRACE_ENTRY_LIMIT = 5_000
 const gzipAsync = promisify(gzip)
 
 interface RegisterRequestTraceOptions {
   dataDir: string
   mode: RequestTraceMode
   bodySidecarMaxGzipBytes?: number
+  entryLimit?: number
 }
 
 interface RequestTraceState {
@@ -160,8 +162,10 @@ const SENSITIVE_BODY_FIELD_NAMES = new Set([
 
 export function registerRequestTrace(app: FastifyInstance, opts: RegisterRequestTraceOptions): void {
   const traceFilePath = path.join(opts.dataDir, 'trace', `${opts.mode}.jsonl`)
+  const entryLimit = normalizeTraceEntryLimit(opts.entryLimit)
   const traceStates = new WeakMap<FastifyRequest, RequestTraceState>()
   const pendingWrites = new Set<Promise<void>>()
+  let writeQueue = Promise.resolve()
 
   app.addHook('onRequest', async (request, reply) => {
     const state: RequestTraceState = {
@@ -219,30 +223,40 @@ export function registerRequestTrace(app: FastifyInstance, opts: RegisterRequest
       },
     }
 
-    const [requestBody, responseBody] = await Promise.all([
-      createTraceBodyEntry({
-        dataDir: opts.dataDir,
-        mode: opts.mode,
-        bodySidecarMaxGzipBytes: opts.bodySidecarMaxGzipBytes,
-        uid: state.uid,
-        direction: 'request',
-        source: captureRequestBodySource(request),
-        request,
-      }),
-      createTraceBodyEntry({
-        dataDir: opts.dataDir,
-        mode: opts.mode,
-        bodySidecarMaxGzipBytes: opts.bodySidecarMaxGzipBytes,
-        uid: state.uid,
-        direction: 'response',
-        source: state.responseBody ?? captureRawResponseBodySource(request, responseHeaders),
-        request,
-      }),
-    ])
-    if (requestBody) entry['Request-Body'] = requestBody
-    if (responseBody) entry['Response-Body'] = responseBody
+    const write = writeQueue.then(async () => {
+      const [requestBody, responseBody] = await Promise.all([
+        createTraceBodyEntry({
+          dataDir: opts.dataDir,
+          mode: opts.mode,
+          bodySidecarMaxGzipBytes: opts.bodySidecarMaxGzipBytes,
+          uid: state.uid,
+          direction: 'request',
+          source: captureRequestBodySource(request),
+          request,
+        }),
+        createTraceBodyEntry({
+          dataDir: opts.dataDir,
+          mode: opts.mode,
+          bodySidecarMaxGzipBytes: opts.bodySidecarMaxGzipBytes,
+          uid: state.uid,
+          direction: 'response',
+          source: state.responseBody ?? captureRawResponseBodySource(request, responseHeaders),
+          request,
+        }),
+      ])
+      if (requestBody) entry['Request-Body'] = requestBody
+      if (responseBody) entry['Response-Body'] = responseBody
 
-    const write = appendTraceEntry(traceFilePath, entry, request)
+      await appendTraceEntry({
+        traceFilePath,
+        dataDir: opts.dataDir,
+        mode: opts.mode,
+        entry,
+        entryLimit,
+        request,
+      })
+    })
+    writeQueue = write.catch(() => undefined)
     pendingWrites.add(write)
     try {
       await write
@@ -668,6 +682,10 @@ function normalizeBodySidecarMaxGzipBytes(raw: number | undefined): number {
   return typeof raw === 'number' && Number.isSafeInteger(raw) && raw > 0 ? raw : TRACE_BODY_MAX_GZIP_BYTES
 }
 
+function normalizeTraceEntryLimit(raw: number | undefined): number {
+  return typeof raw === 'number' && Number.isSafeInteger(raw) && raw > 0 ? raw : TRACE_ENTRY_LIMIT
+}
+
 function readHeader(headers: HeaderRecord, name: string): string | number | string[] | undefined {
   const normalized = name.toLowerCase()
   for (const [headerName, value] of Object.entries(headers)) {
@@ -865,17 +883,117 @@ function hasHeader(headers: HeaderRecord, name: string): boolean {
   return Object.keys(headers).some((headerName) => headerName.toLowerCase() === normalizedName)
 }
 
-async function appendTraceEntry(
-  traceFilePath: string,
-  entry: RequestTraceEntry,
-  request: FastifyRequest,
-): Promise<void> {
+async function appendTraceEntry(opts: {
+  traceFilePath: string
+  dataDir: string
+  mode: RequestTraceMode
+  entry: RequestTraceEntry
+  entryLimit: number
+  request: FastifyRequest
+}): Promise<void> {
   try {
-    await fs.mkdir(path.dirname(traceFilePath), { recursive: true })
-    await fs.appendFile(traceFilePath, `${JSON.stringify(entry)}\n`, 'utf8')
+    await fs.mkdir(path.dirname(opts.traceFilePath), { recursive: true })
+    await fs.appendFile(opts.traceFilePath, `${JSON.stringify(opts.entry)}\n`, 'utf8')
+    await trimTraceEntries(opts)
   } catch (err) {
-    request.log.warn({ err, traceFilePath }, 'failed to append request trace entry')
+    opts.request.log.warn({ err, traceFilePath: opts.traceFilePath }, 'failed to append request trace entry')
   }
+}
+
+async function trimTraceEntries(opts: {
+  traceFilePath: string
+  dataDir: string
+  mode: RequestTraceMode
+  entryLimit: number
+  request: FastifyRequest
+}): Promise<void> {
+  const contents = await fs.readFile(opts.traceFilePath, 'utf8')
+  const lines = contents.split('\n').filter((line) => line.length > 0)
+  if (lines.length <= opts.entryLimit) return
+
+  const removeCount = lines.length - opts.entryLimit
+  const removedLines = lines.slice(0, removeCount)
+  const keptLines = lines.slice(removeCount)
+  await fs.writeFile(opts.traceFilePath, `${keptLines.join('\n')}\n`, 'utf8')
+  await deleteTraceBodySidecars({
+    dataDir: opts.dataDir,
+    mode: opts.mode,
+    lines: removedLines,
+    request: opts.request,
+  })
+}
+
+async function deleteTraceBodySidecars(opts: {
+  dataDir: string
+  mode: RequestTraceMode
+  lines: string[]
+  request: FastifyRequest
+}): Promise<void> {
+  const sidecarPaths = new Set<string>()
+  for (const line of opts.lines) {
+    for (const relativePath of extractTraceBodySidecarPaths(line)) {
+      const fullPath = resolveTraceBodySidecarPath(opts.dataDir, opts.mode, relativePath)
+      if (fullPath) sidecarPaths.add(fullPath)
+    }
+  }
+
+  await Promise.all(
+    Array.from(sidecarPaths).map(async (sidecarPath) => {
+      try {
+        await fs.rm(sidecarPath, { force: true })
+      } catch (err) {
+        opts.request.log.warn({ err, sidecarPath }, 'failed to delete trimmed request trace body')
+      }
+    }),
+  )
+}
+
+function extractTraceBodySidecarPaths(line: string): string[] {
+  let entry: unknown
+  try {
+    entry = JSON.parse(line)
+  } catch {
+    return []
+  }
+  if (!entry || typeof entry !== 'object') return []
+
+  const paths: string[] = []
+  collectTraceBodySidecarPath((entry as Record<string, unknown>)['Request-Body'], paths)
+  collectTraceBodySidecarPath((entry as Record<string, unknown>)['Response-Body'], paths)
+  return paths
+}
+
+function collectTraceBodySidecarPath(body: unknown, paths: string[]): void {
+  if (!body || typeof body !== 'object') return
+  const record = body as Record<string, unknown>
+  if (record.storage === 'gzip' && typeof record.path === 'string') {
+    paths.push(record.path)
+  }
+}
+
+function resolveTraceBodySidecarPath(
+  dataDir: string,
+  mode: RequestTraceMode,
+  relativePath: string,
+): string | undefined {
+  const normalized = path.posix.normalize(relativePath)
+  const expectedPrefix = path.posix.join('trace', 'bodies', mode)
+  if (
+    path.posix.isAbsolute(relativePath) ||
+    normalized !== relativePath ||
+    normalized === expectedPrefix ||
+    !normalized.startsWith(`${expectedPrefix}/`)
+  ) {
+    return undefined
+  }
+
+  const fullPath = path.resolve(dataDir, ...normalized.split('/'))
+  const sidecarRoot = path.resolve(dataDir, 'trace', 'bodies', mode)
+  const relativeToRoot = path.relative(sidecarRoot, fullPath)
+  if (relativeToRoot.startsWith('..') || path.isAbsolute(relativeToRoot)) {
+    return undefined
+  }
+  return fullPath
 }
 
 function roundMs(value: number): number {
