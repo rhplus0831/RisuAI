@@ -491,6 +491,9 @@ function normalizeCharacters(database: JsonRecord): void {
     if (typeof character.customNotificationMessage !== 'string') {
       character.customNotificationMessage = ''
     }
+    if (typeof character.notificationImage !== 'string') {
+      character.notificationImage = ''
+    }
   }
 }
 

@@ -60,6 +60,8 @@ export const languageEnglish = {
     charFirstMessage: 'First message of the character. This highly affects characters response.',
     customNotificationMessage:
       'When set, completion notifications for this character use this message instead of the default notification text.',
+    notificationImage:
+      'When set, completion notifications for this character use this image instead of the character icon.',
     charNote: 'A note that strongly affects model behavior. Embbedded to current character, also known as UJB.',
     toggleNsfw: 'Toggles jailbreak prompt on and off.',
     lorebook:
@@ -753,6 +755,7 @@ export const languageEnglish = {
   authorNote: "Author's Note",
   firstMessage: 'First Message',
   customNotificationMessage: 'Custom Notification Message',
+  notificationImage: 'Notification Image',
   displayName: 'Display Name',
   description: 'Description',
   note: 'Note',

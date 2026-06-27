@@ -92,6 +92,7 @@ describe('push notification service', () => {
     try {
       setNotificationSetting(db, true)
       const imageAssetId = 'a'.repeat(64)
+      const notificationImageAssetId = 'b'.repeat(64)
       db.prepare('INSERT INTO characters (id, position, data_json) VALUES (?, ?, ?)').run(
         'char-a',
         0,
@@ -99,6 +100,7 @@ describe('push notification service', () => {
           chaId: 'char-a',
           name: 'Character A',
           image: imageAssetId,
+          notificationImage: notificationImageAssetId,
           customNotificationMessage: 'A reply is waiting.',
         }),
       )
@@ -116,9 +118,43 @@ describe('push notification service', () => {
       expect(sent).toHaveLength(1)
       expect(JSON.parse(sent[0].payload as string)).toMatchObject({
         body: 'A reply is waiting.',
-        icon: `/api/v1/assets/${imageAssetId}`,
+        icon: `/api/v1/assets/${notificationImageAssetId}`,
         badge: '/logo_192.png',
         url: '/character/char-a/chat-a',
+      })
+    } finally {
+      db.close()
+    }
+  })
+
+  it('falls back to the character image when no notification image is set', async () => {
+    const db = openDatabase(makeDataDir())
+    const sent: Array<{ payload?: string | Buffer | null }> = []
+    const transport: PushNotificationTransport = {
+      sendNotification: vi.fn(async (_subscription, payload) => {
+        sent.push({ payload })
+      }),
+    }
+    try {
+      setNotificationSetting(db, true)
+      const imageAssetId = 'c'.repeat(64)
+      db.prepare('INSERT INTO characters (id, position, data_json) VALUES (?, ?, ?)').run(
+        'char-fallback',
+        0,
+        JSON.stringify({
+          chaId: 'char-fallback',
+          name: 'Character Fallback',
+          image: imageAssetId,
+        }),
+      )
+      const service = createPushNotificationService(db, makeDataDir('risu-fastify-push-keys-'), { transport })
+
+      service.upsertSubscription(sampleSubscription())
+      await service.sendChatCompletionNotification({ characterId: 'char-fallback' })
+
+      expect(sent).toHaveLength(1)
+      expect(JSON.parse(sent[0].payload as string)).toMatchObject({
+        icon: `/api/v1/assets/${imageAssetId}`,
       })
     } finally {
       db.close()

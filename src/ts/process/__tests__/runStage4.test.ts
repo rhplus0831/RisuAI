@@ -222,19 +222,34 @@ describe('runStage4 - notification', () => {
     expect(fakes.notification.calls).toEqual([{ body: 'hello' }])
   })
 
-  it('uses the character custom notification message and image when set', async () => {
+  it('uses the character custom notification message and notification image when set', async () => {
     seedDb({ notification: true })
     const { args } = baseArgs({
       result: 'hello',
       currentChar: makeChar({
         customNotificationMessage: 'Custom completion text',
         image: 'asset-id',
+        notificationImage: 'notification-asset-id',
       }),
     })
 
     await runStage4(args)
 
-    expect(fakes.notification.calls).toEqual([{ body: 'Custom completion text', icon: 'asset-id' }])
+    expect(fakes.notification.calls).toEqual([{ body: 'Custom completion text', icon: 'notification-asset-id' }])
+  })
+
+  it('uses the character image as the notification fallback', async () => {
+    seedDb({ notification: true })
+    const { args } = baseArgs({
+      result: 'hello',
+      currentChar: makeChar({
+        image: 'asset-id',
+      }),
+    })
+
+    await runStage4(args)
+
+    expect(fakes.notification.calls).toEqual([{ body: 'hello', icon: 'asset-id' }])
   })
 
   it('skips fireDesktopNotification when db.notification=false', async () => {

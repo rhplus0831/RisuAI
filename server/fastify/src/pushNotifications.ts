@@ -238,7 +238,9 @@ function resolveCharacterNotificationDetails(
 
   const customMessage =
     typeof character.customNotificationMessage === 'string' ? character.customNotificationMessage.trim() : ''
-  const icon = typeof character.image === 'string' ? notificationIconUrl(character.image) : undefined
+  const customIcon = typeof character.notificationImage === 'string' ? character.notificationImage.trim() : ''
+  const fallbackIcon = typeof character.image === 'string' ? character.image : ''
+  const icon = notificationIconUrl(customIcon || fallbackIcon)
   return {
     ...(customMessage ? { body: customMessage } : {}),
     ...(icon ? { icon } : {}),

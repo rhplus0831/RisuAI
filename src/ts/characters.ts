@@ -986,6 +986,7 @@ export function characterFormatUpdate(
     cha.chaId = uuidv4()
   }
   cha.displayName ??= ''
+  cha.notificationImage ??= ''
   if (checkNullish(cha.sdData)) {
     cha.sdData = defaultSdDataFunc()
   }
@@ -1087,6 +1088,7 @@ export function createBlankChar(): character {
   return {
     name: '',
     displayName: '',
+    notificationImage: '',
     firstMessage: '',
     customNotificationMessage: '',
     desc: '',

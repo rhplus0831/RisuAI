@@ -114,8 +114,9 @@ export async function runStage4(args: RunStage4Args): Promise<RunStage4Result> {
 
 function chatCompletionNotificationInput(currentChar: character, defaultBody: string): DesktopNotificationInput {
   const customBody = currentChar.customNotificationMessage?.trim()
+  const customIcon = currentChar.notificationImage?.trim()
   return {
     body: customBody || defaultBody,
-    ...(currentChar.image ? { icon: currentChar.image } : {}),
+    ...(customIcon || currentChar.image ? { icon: customIcon || currentChar.image } : {}),
   }
 }

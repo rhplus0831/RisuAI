@@ -53,6 +53,7 @@ export async function convertRealmCharacterCard(
   }
 
   let image = options.mainImageId
+  let notificationImage = ''
   const emotions: [string, string][] = []
   const additionalAssets: [string, string, string][] = []
   const ccAssets: Array<{ type: string; uri: string; name: string; ext: string }> = []
@@ -85,6 +86,13 @@ export async function convertRealmCharacterCard(
         }),
         fileName,
       ])
+    }
+
+    if (typeof risuExt.notificationImage === 'string' && risuExt.notificationImage) {
+      notificationImage = await storeRisuV2Asset(risuExt.notificationImage, options.storeAsset, {
+        assetDict: options.assetDict,
+        defaultFileName: 'notification.png',
+      })
     }
 
     const vitsFiles = readOptionalRecord(risuExt.vits)
@@ -136,6 +144,8 @@ export async function convertRealmCharacterCard(
         emotions.push([fileName, assetId])
       } else if (type === 'x-risu-asset') {
         additionalAssets.push([fileName, assetId, ext])
+      } else if (type === 'x-risu-notification-image') {
+        notificationImage = assetId
       } else if (type === 'icon' && fileName === 'main') {
         image = assetId
       } else {
@@ -165,6 +175,7 @@ export async function convertRealmCharacterCard(
     ],
     chatPage: 0,
     image,
+    notificationImage: notificationImage || readString(risuExt?.notificationImage),
     emotionImages: emotions,
     bias: readTupleArray(risuExt?.bias),
     globalLore: converted.lorebook,

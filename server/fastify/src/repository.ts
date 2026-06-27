@@ -1876,6 +1876,7 @@ const BOOTSTRAP_CHARACTER_SHELL_FIELDS = [
   'displayName',
   'type',
   'image',
+  'notificationImage',
   'icon',
   'avatar',
   'lastInteraction',

@@ -2357,6 +2357,7 @@ export interface character {
   name: string
   displayName?: string
   image?: string
+  notificationImage?: string
   firstMessage: string
   customNotificationMessage?: string
   desc: string

@@ -523,6 +523,7 @@ function convertOffSpecCards(
     ],
     chatPage: 0,
     image: imgp,
+    notificationImage: '',
     emotionImages: [],
     bias: [],
     globalLore: lorebook,
@@ -609,6 +610,7 @@ async function importCharacterCardSpec(
   let utilityBot = false
   let sdData = defaultSdDataFunc()
   let extAssets: [string, string, string][] = []
+  let notificationImage = ''
   let ccAssets: {
     type: string
     uri: string
@@ -706,6 +708,26 @@ async function importCharacterCardSpec(
         ]
       }
       extAssets.push(...importedAdditionalAssets.filter((entry): entry is [string, string, string] => !!entry))
+    }
+    if (typeof risuext.notificationImage === 'string' && risuext.notificationImage) {
+      if (risuext.notificationImage.startsWith('__asset:')) {
+        const key = risuext.notificationImage.replace('__asset:', '')
+        const imgp = assetDict[key]
+        if (!imgp) {
+          throw new Error('Error while importing, asset ' + key + ' not found')
+        }
+        notificationImage = imgp
+      } else {
+        const [savedNotificationImage] = await saveAssets([
+          {
+            data:
+              mode === 'hub'
+                ? await getHubResources(risuext.notificationImage)
+                : Buffer.from(risuext.notificationImage, 'base64'),
+          },
+        ])
+        notificationImage = savedNotificationImage ?? ''
+      }
     }
     if (risuext.vits) {
       const keys = Object.keys(risuext.vits)
@@ -820,6 +842,8 @@ async function importCharacterCardSpec(
           emotions.push([fileName, imgp])
         } else if (data.assets[i].type === 'x-risu-asset') {
           extAssets.push([fileName, imgp, data.assets[i].ext ?? 'unknown'])
+        } else if (data.assets[i].type === 'x-risu-notification-image') {
+          notificationImage = imgp
         } else if (data.assets[i].type === 'icon' && data.assets[i].name === 'main') {
           im = imgp
         } else {
@@ -927,6 +951,7 @@ async function importCharacterCardSpec(
     triggerscript: data?.extensions?.risuai?.triggerscript ?? [],
     private: data?.extensions?.risuai?.private ?? false,
     customNotificationMessage: data?.extensions?.risuai?.customNotificationMessage ?? '',
+    notificationImage: notificationImage || data?.extensions?.risuai?.notificationImage || '',
     additionalText: data?.extensions?.risuai?.additionalText ?? '',
     virtualscript: '', //removed dude to security issue
     extentions: ext ?? {},
@@ -1142,6 +1167,7 @@ function createBaseV2(char: character) {
           license: char.license,
           triggerscript: char.triggerscript,
           customNotificationMessage: char.customNotificationMessage ?? '',
+          notificationImage: char.notificationImage ?? '',
           additionalText: char.additionalText,
           virtualscript: '', //removed dude to security issue
           largePortrait: char.largePortrait,
@@ -1242,6 +1268,22 @@ export async function exportCharacterCard(
             risuai.additionalAssets[i][1] = `__asset:${assetIndex}`
             await writer.write('chara-ext-asset_:' + assetIndex, b64encoded)
           }
+        }
+      }
+
+      if (risuai.notificationImage) {
+        alertStore.set({
+          type: 'progress',
+          msg: 'Loading... (Adding Notification Image)',
+        })
+        const rData = await readImage(risuai.notificationImage)
+        const b64encoded = Buffer.from(await compressImage(rData)).toString('base64')
+        if (type === 'json') {
+          risuai.notificationImage = b64encoded
+        } else {
+          assetIndex++
+          risuai.notificationImage = `__asset:${assetIndex}`
+          await writer.write('chara-ext-asset_:' + assetIndex, b64encoded)
         }
       }
 
@@ -1505,6 +1547,15 @@ export function createBaseV3(char: character) {
     }
   }
 
+  if (char.notificationImage) {
+    assets.push({
+      type: 'x-risu-notification-image',
+      uri: char.notificationImage,
+      name: 'notification',
+      ext: 'png',
+    })
+  }
+
   if (char.emotionImages) {
     for (const asset of char.emotionImages) {
       assets.push({
@@ -1595,6 +1646,7 @@ export function createBaseV3(char: character) {
           license: char.license,
           triggerscript: char.triggerscript,
           customNotificationMessage: char.customNotificationMessage ?? '',
+          notificationImage: char.notificationImage ?? '',
           additionalText: char.additionalText,
           virtualscript: '', //removed dude to security issue
           largePortrait: char.largePortrait,
@@ -1963,6 +2015,7 @@ type CharacterCardV2Risu = {
         triggerscript?: triggerscript[]
         private?: boolean
         customNotificationMessage?: string
+        notificationImage?: string
         additionalText?: string
         virtualscript?: string
         largePortrait?: boolean

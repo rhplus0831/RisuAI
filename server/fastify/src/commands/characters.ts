@@ -128,6 +128,7 @@ function characterCollectionRowDefaults(index: number): JsonRecord {
     displayName: '',
     firstMessage: '',
     customNotificationMessage: '',
+    notificationImage: '',
     desc: '',
     notes: '',
     chats: [],
@@ -362,6 +363,9 @@ function validateCharacterRecord(record: JsonRecord, label: string, options: { a
   if ('customNotificationMessage' in record && typeof record.customNotificationMessage !== 'string') {
     throw new ValidationError(`${label}.customNotificationMessage must be a string`)
   }
+  if ('notificationImage' in record && typeof record.notificationImage !== 'string') {
+    throw new ValidationError(`${label}.notificationImage must be a string`)
+  }
   if (
     'trashTime' in record &&
     record.trashTime !== undefined &&
@@ -397,6 +401,9 @@ function validateCharacterPatch(record: JsonRecord, label: string, options: { as
 function validateCharacterAssetRefs(db: DatabaseSync, record: JsonRecord, label: string): void {
   if ('image' in record) {
     validateOptionalServerAssetRef(db, record.image, `${label}.image`)
+  }
+  if ('notificationImage' in record) {
+    validateOptionalServerAssetRef(db, record.notificationImage, `${label}.notificationImage`)
   }
   if ('emotionImages' in record) {
     validateEmotionImageRefs(db, record.emotionImages, `${label}.emotionImages`)

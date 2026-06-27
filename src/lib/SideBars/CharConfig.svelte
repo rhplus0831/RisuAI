@@ -97,9 +97,13 @@
     mergeScriptDefinitionProjectionRows,
     watchServerBackedScriptDefinitions,
   } from 'src/ts/server/scriptDefinitionBridge.svelte'
-  import { getServerProjectionApplyEpoch } from 'src/ts/server/projectionWriteGuard.svelte'
+  import {
+    getServerProjectionApplyEpoch,
+    withTrustedServerProjectionWrite,
+  } from 'src/ts/server/projectionWriteGuard.svelte'
   import { setCurrentChatGreetingIndex } from 'src/ts/chatCommands'
   import { getCharacterDisplayName } from 'src/ts/characterDisplayName'
+  import { currentCharacterRowSnapshot, dispatchCompatibleCharacterUpdateScoped } from 'src/ts/characterCommands'
 
   let iconRemoveMode = $state(false)
   let viewSubMenu = $state(0)
@@ -121,6 +125,7 @@
     'svg',
     'avif',
   ]
+  const NOTIFICATION_IMAGE_EXTENSIONS = ['png', 'webp', 'gif', 'jpg', 'jpeg']
   type SelectedSingleFile = NonNullable<Awaited<ReturnType<typeof selectSingleFile>>>
   type SelectedAdditionalAssetFile = NonNullable<Awaited<ReturnType<typeof selectMultipleFile>>>[number]
   let tokens = $state({
@@ -133,6 +138,7 @@
     'desc',
     'firstMessage',
     'customNotificationMessage',
+    'notificationImage',
     'image',
     'ccAssets',
     'largePortrait',
@@ -475,13 +481,32 @@
     }
   }
 
-  function currentRealCharacterDraftTarget(): { selectedIndex: number; character: character } | null {
+  function currentEditableCharacterTarget(): { selectedIndex: number; character: character } | null {
     const selectedIndex = $selectedCharID
     const selectedCharacter = DBState.db.characters?.[selectedIndex]
-    if (selectedCharacter?.type !== 'character' || !selectedCharacter.chaId) return null
-    if (characterDraft.characterId !== selectedCharacter.chaId) return null
+    if (!selectedCharacter?.chaId) return null
+    if (selectedCharacter.type && selectedCharacter.type !== 'character') return null
 
     return { selectedIndex, character: selectedCharacter as character }
+  }
+
+  function currentRealCharacterDraftTarget(): { selectedIndex: number; character: character } | null {
+    const target = currentEditableCharacterTarget()
+    if (!target) return null
+    const selectedCharacter = target.character
+    if (characterDraft.characterId !== selectedCharacter.chaId) return null
+
+    return target
+  }
+
+  function isCurrentEditableCharacterTarget(characterId: string, selectedIndex: number): boolean {
+    const target = currentEditableCharacterTarget()
+    return target?.selectedIndex === selectedIndex && target.character.chaId === characterId
+  }
+
+  function isCurrentRealCharacterDraftTarget(characterId: string, selectedIndex: number): boolean {
+    const target = currentRealCharacterDraftTarget()
+    return target?.selectedIndex === selectedIndex && target.character.chaId === characterId
   }
 
   function moveAlternateGreetingUp(index: number) {
@@ -648,6 +673,39 @@
     }
   }
 
+  async function uploadNotificationImageFromEditor(): Promise<void> {
+    const target = currentEditableCharacterTarget()
+    if (!target) return
+
+    const characterId = target.character.chaId
+    const selectedIndex = target.selectedIndex
+    const selected = (await selectSingleFile(NOTIFICATION_IMAGE_EXTENSIONS)) as SelectedSingleFile | null
+    if (!selected || !isCurrentEditableCharacterTarget(characterId, selectedIndex)) return
+
+    const image = await saveAsset(selected.data, '', selected.name)
+    if (!isCurrentEditableCharacterTarget(characterId, selectedIndex)) return
+
+    if (isCurrentRealCharacterDraftTarget(characterId, selectedIndex)) {
+      updateCharacterDraft((character) => {
+        character.notificationImage = image
+      })
+      return
+    }
+
+    const previous = currentCharacterRowSnapshot(selectedIndex)
+    let applied = false
+    withTrustedServerProjectionWrite(() => {
+      const character = DBState.db.characters?.[selectedIndex]
+      if (!character || character.chaId !== characterId) return
+      character.notificationImage = image
+      applied = true
+    })
+
+    if (applied) {
+      dispatchCompatibleCharacterUpdateScoped(previous.character, DBState.db.characters?.[selectedIndex], previous)
+    }
+  }
+
   function currentEditorTtsAssetUploadTarget(kind: CharacterTtsAssetUploadKind) {
     const selectedIndex = $selectedCharID
     const selectedCharacter = DBState.db.characters?.[selectedIndex]
@@ -773,6 +831,12 @@
       } else {
         character.image = ''
       }
+    })
+  }
+
+  function clearNotificationImage(): void {
+    updateCharacterDraft((character) => {
+      character.notificationImage = ''
     })
   }
 
@@ -1000,6 +1064,48 @@
         <Check bind:check={characterDraft.value.largePortrait} name={language.largePortrait} />
       </div>
     {/if}
+
+    <div class="p-2 border-darkborderc border rounded-md mt-4">
+      <div class="flex items-center justify-between gap-2 mb-2">
+        <span class="text-textcolor">{language.notificationImage} <Help key="notificationImage" /></span>
+        {#if characterDraft.value.notificationImage}
+          <button
+            class="text-textcolor2 hover:text-red-500"
+            onclick={() => {
+              clearNotificationImage()
+            }}>
+            <TrashIcon size="18" />
+          </button>
+        {/if}
+      </div>
+      <div class="flex flex-wrap gap-2">
+        {#if characterDraft.value.notificationImage}
+          <button
+            onclick={async () => {
+              await uploadNotificationImageFromEditor()
+            }}>
+            {#await getCharImage(characterDraft.value.notificationImage, 'css')}
+              <div class="rounded-md h-20 w-20 shadow-lg bg-textcolor2 cursor-pointer hover:ring-3 transition-shadow">
+              </div>
+            {:then im}
+              <div
+                class="rounded-md h-20 w-20 shadow-lg bg-textcolor2 cursor-pointer hover:ring-3 transition-shadow"
+                style={im}>
+              </div>
+            {/await}
+          </button>
+        {/if}
+        <button
+          onclick={async () => {
+            await uploadNotificationImageFromEditor()
+          }}>
+          <div
+            class="rounded-md h-20 w-20 cursor-pointer border-darkborderc border border-dashed flex justify-center items-center hover:border-blue-500">
+            <PlusIcon />
+          </div>
+        </button>
+      </div>
+    </div>
   {:else if viewSubMenu === 1}
     <SelectInput
       className="mb-2"
