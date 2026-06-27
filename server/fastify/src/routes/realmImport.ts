@@ -50,6 +50,7 @@ type JsonRecord = Record<string, unknown>
 const REALM_DYNAMIC_PATH = '/api/v1/download/dynamic/'
 const CHARX_CONTENT_TYPES = new Set(['application/charx', 'application/zip'])
 const MAX_CHARX_ASSET_SIZE_BYTES = 50 * 1024 * 1024
+const MAX_CHARX_MODULE_SIZE_BYTES = 50 * 1024 * 1024
 const DEFAULT_REALM_CHARX_EXPANDED_IMPORT_BYTES = 310 * 1024 * 1024
 const DEFAULT_REALM_DYNAMIC_JSON_BYTES = 100 * 1024 * 1024
 const REALM_CHARX_DOWNLOAD_CAP_MULTIPLIER = 3
@@ -57,6 +58,12 @@ const DEFAULT_REALM_IMPORT_DEADLINE_MS = 600_000
 const DEFAULT_PENDING_REALM_CHARX_IMPORT_TTL_MS = 10 * 60_000
 const CHARX_STREAM_CHUNK_BYTES = 64 * 1024
 const FETCHED_ASSET_STAGE_PREFIX = 'risu-realm-json-assets-'
+const RISU_MODULE_MAGIC_BYTE = 111
+const RISU_MODULE_VERSION = 0
+const RPACK_DECODE_MAP = Buffer.from(
+  'LPeEi8ll+7afrrMDLQFpdB/ko+zuXDQhk0oPauJiAp4inP08/HHHxq1ZZwVwbYpEEvokhl+v0XpHzv5QY91RBm8Y4FKoCZ1Wc0y4U2zDoA4Zzz4NfgcyaEbqSPmZLqukSSBeVTU4DLzTsVgWeSgKGuHyzcQ526K6YHJ2fZXvf8jA3jeUv7UUgZIlRazn9WanKzZawRPjSzrojYMbfCewmkLrh6rcVI54JtJXKdS3+C+PiXXwQXfCHv/YFRHlBJcX8zHQmwDXyrRPKjvZsmvaXaE/MGG9kT1O5t++TYKMHSMQmGT0hTN7kEO7qYjx1qUc9sxuuVsLlu3V6cXLCKaAQA==',
+  'base64',
+)
 const EXTENSION_CONTENT_TYPES = Object.fromEntries(
   Object.entries(CONTENT_TYPE_EXTENSIONS).map(([contentType, ext]) => [ext, contentType]),
 ) as Record<string, string>
@@ -112,6 +119,12 @@ interface PendingRealmCharxImport {
 }
 
 type PendingRealmCharxImports = Map<string, PendingRealmCharxImport>
+
+interface RealmCharxModuleMetadata {
+  regex?: unknown[]
+  trigger?: unknown[]
+  lorebook?: unknown[]
+}
 
 type RealmDynamicPayload =
   | {
@@ -872,6 +885,12 @@ async function importRealmCharx(args: {
     throw new LowLevelAccessImportError()
   }
 
+  const moduleBytes = await readCharxModule(args.filePath, args.maxExpandedImportBytes)
+  const moduleMetadata = moduleBytes ? readRealmCharxModuleMetadata(moduleBytes) : null
+  if (moduleMetadata) {
+    mergeRealmCharxModuleMetadata(data, moduleMetadata)
+  }
+
   args.reportProgress?.({ phase: 'extract', message: 'Extracting package assets', percent: 38 })
   const assetTotal = countEmbeddedCardAssets(card)
   const extractProgress = createStepProgress({
@@ -925,6 +944,9 @@ async function importRealmCharx(args: {
         signal: args.signal,
       }),
   })
+  if (moduleMetadata?.lorebook) {
+    character.globalLore = cloneJson(moduleMetadata.lorebook)
+  }
 
   args.reportProgress?.({ phase: 'commit', message: 'Saving character', percent: 92 })
   return appendRealmCharacter({
@@ -1023,6 +1045,114 @@ async function readCharxCard(filePath: string, maxExpandedBytes: number | undefi
     throw new ValidationError('Realm charx must include card.json')
   }
   return cardBytes
+}
+
+async function readCharxModule(filePath: string, maxExpandedBytes: number | undefined): Promise<Uint8Array | null> {
+  let moduleBytes: Uint8Array | null = null
+
+  await streamCharxFile(filePath, (file, setError) => {
+    const chunks: Uint8Array[] = []
+    let totalBytes = 0
+    const shouldCollect = file.name === 'module.risum'
+
+    file.ondata = (err, data, final) => {
+      if (err) {
+        setError(err)
+        return
+      }
+      if (shouldCollect && data.byteLength > 0) {
+        totalBytes += data.byteLength
+        if (totalBytes > MAX_CHARX_MODULE_SIZE_BYTES || exceedsFiniteLimit(totalBytes, maxExpandedBytes)) {
+          setError(new ValidationError('Realm charx module payload exceeds size limit'))
+          return
+        }
+        chunks.push(data)
+      }
+      if (shouldCollect && final) {
+        moduleBytes = concatBytes(chunks, totalBytes)
+      }
+    }
+    file.start()
+  })
+
+  return moduleBytes
+}
+
+function readRealmCharxModuleMetadata(bytes: Uint8Array): RealmCharxModuleMetadata {
+  let pos = 0
+  const buf = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes)
+
+  const readByte = (): number => {
+    if (pos + 1 > buf.length) {
+      throw new ValidationError('Malformed Realm charx module: unexpected end of file')
+    }
+    const byte = buf.readUInt8(pos)
+    pos += 1
+    return byte
+  }
+  const readLength = (): number => {
+    if (pos + 4 > buf.length) {
+      throw new ValidationError('Malformed Realm charx module: unexpected end of file')
+    }
+    const length = buf.readUInt32LE(pos)
+    pos += 4
+    return length
+  }
+  const readData = (length: number): Uint8Array => {
+    if (length < 0 || pos + length > buf.length) {
+      throw new ValidationError('Malformed Realm charx module: unexpected end of file')
+    }
+    const data = buf.subarray(pos, pos + length)
+    pos += length
+    return data
+  }
+
+  if (readByte() !== RISU_MODULE_MAGIC_BYTE) {
+    throw new ValidationError('Malformed Realm charx module: invalid magic number')
+  }
+  if (readByte() !== RISU_MODULE_VERSION) {
+    throw new ValidationError('Malformed Realm charx module: invalid version')
+  }
+
+  const headerLength = readLength()
+  const header = parseJsonBytes(decodeRpack(readData(headerLength)), 'module.risum header')
+  const headerRecord = readRecord(header, 'module.risum header')
+  if (headerRecord.type !== 'risuModule') {
+    throw new ValidationError('Malformed Realm charx module: invalid module type')
+  }
+
+  const module = readRecord(headerRecord.module, 'module.risum header.module')
+  if (typeof module.name !== 'string' || module.name.trim() === '') {
+    throw new ValidationError('Malformed Realm charx module: invalid module name')
+  }
+  if (typeof module.id !== 'string' || module.id.trim() === '') {
+    throw new ValidationError('Malformed Realm charx module: invalid module id')
+  }
+
+  return {
+    ...(Array.isArray(module.regex) ? { regex: cloneJson(module.regex) } : {}),
+    ...(Array.isArray(module.trigger) ? { trigger: cloneJson(module.trigger) } : {}),
+    ...(Array.isArray(module.lorebook) ? { lorebook: cloneJson(module.lorebook) } : {}),
+  }
+}
+
+function mergeRealmCharxModuleMetadata(data: JsonRecord, module: RealmCharxModuleMetadata): void {
+  const extensions = ensureRecordField(data, 'extensions')
+  const risuai = ensureRecordField(extensions, 'risuai')
+  if (module.regex) {
+    risuai.customScripts = cloneJson(module.regex)
+  }
+  if (module.trigger) {
+    risuai.triggerscript = cloneJson(module.trigger)
+  }
+}
+
+function decodeRpack(data: Uint8Array): Uint8Array {
+  const result = Buffer.alloc(data.byteLength)
+  for (let i = 0; i < data.byteLength; i += 1) {
+    result[i] = RPACK_DECODE_MAP[data[i]]
+  }
+  return result
 }
 
 async function stageCharxAssets(
@@ -1748,4 +1878,8 @@ function ensureRecordField(record: JsonRecord, key: string): JsonRecord {
   const next: JsonRecord = {}
   record[key] = next
   return next
+}
+
+function cloneJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T
 }

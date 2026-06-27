@@ -90,6 +90,88 @@ function assetIdFor(bytes: string): string {
   return createHash('sha256').update(bytes).digest('hex')
 }
 
+const rpackMap = readFileSync(path.join(process.cwd(), 'src/ts/rpack/rpack_map.bin'))
+const rpackEncodeMap = rpackMap.subarray(0, 256)
+
+function encodeRpackForTest(data: Uint8Array): Uint8Array {
+  const encoded = Buffer.alloc(data.byteLength)
+  for (let i = 0; i < data.byteLength; i += 1) {
+    encoded[i] = rpackEncodeMap[data[i]]
+  }
+  return encoded
+}
+
+function risuModuleForTest(module: Record<string, unknown>): Uint8Array {
+  const header = encodeRpackForTest(
+    Buffer.from(
+      JSON.stringify(
+        {
+          module: {
+            name: 'Realm CharX Module',
+            description: 'Module for Realm CharX',
+            id: 'module-a',
+            ...module,
+          },
+          type: 'risuModule',
+        },
+        null,
+        2,
+      ),
+      'utf-8',
+    ),
+  )
+  const output = Buffer.alloc(1 + 1 + 4 + header.byteLength + 1)
+  let offset = 0
+  output.writeUInt8(111, offset)
+  offset += 1
+  output.writeUInt8(0, offset)
+  offset += 1
+  output.writeUInt32LE(header.byteLength, offset)
+  offset += 4
+  output.set(header, offset)
+  offset += header.byteLength
+  output.writeUInt8(0, offset)
+  return output
+}
+
+function regexScript(id = 'regex-a') {
+  return {
+    id,
+    comment: 'Realm regex',
+    in: 'seed',
+    out: 'sprout',
+    type: 'editinput',
+    flag: '',
+    ableFlag: false,
+  }
+}
+
+function luaTrigger(id = 'trigger-a') {
+  return {
+    id,
+    comment: 'Realm Lua trigger',
+    type: 'input',
+    conditions: [],
+    effect: [{ type: 'triggerlua', code: 'setChatVar(id, "realmScript", "present")' }],
+  }
+}
+
+function moduleLorebookEntry(id = 'lore-a') {
+  return {
+    id,
+    key: 'seed',
+    secondkey: '',
+    insertorder: 10,
+    comment: 'Realm module lore',
+    content: 'Module lore survived import.',
+    mode: 'normal',
+    alwaysActive: false,
+    selective: false,
+    extentions: { risu_case_sensitive: false },
+    useRegex: false,
+  }
+}
+
 function assetFileNames(dataDir: string): string[] {
   const dir = path.join(dataDir, 'assets')
   return existsSync(dir) ? readdirSync(dir).sort() : []
@@ -271,7 +353,13 @@ async function importEmptyDatabase(app: FastifyInstance, assertion: string): Pro
   return res.json().revision as number
 }
 
-function realmCard(options: { lowLevelAccess?: boolean } = {}) {
+function realmCard(
+  options: {
+    lowLevelAccess?: boolean
+    regex?: unknown[]
+    trigger?: unknown[]
+  } = {},
+) {
   return {
     spec: 'chara_card_v2',
     spec_version: '2.0',
@@ -295,6 +383,8 @@ function realmCard(options: { lowLevelAccess?: boolean } = {}) {
           additionalAssets: [['theme', 'theme-css', 'theme.css']],
           vits: { 'voice.wav': 'voice-wav' },
           lowLevelAccess: options.lowLevelAccess,
+          customScripts: options.regex,
+          triggerscript: options.trigger,
         },
       },
       character_book: {
@@ -318,11 +408,16 @@ function realmJsonAssetPayloads(suffix = '') {
   }
 }
 
-function respondRealmJsonCard(req: http.IncomingMessage, res: http.ServerResponse, suffix = ''): boolean {
+function respondRealmJsonCard(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  suffix = '',
+  card: unknown = realmCard(),
+): boolean {
   const payloads = realmJsonAssetPayloads(suffix)
   if (req.url?.startsWith('/api/v1/download/dynamic/realm-id')) {
     res.writeHead(200, { 'content-type': 'application/json' })
-    res.end(JSON.stringify({ card: realmCard(), img: 'main-img' }))
+    res.end(JSON.stringify({ card, img: 'main-img' }))
     return true
   }
   if (req.url === '/resource/main-img') {
@@ -348,7 +443,7 @@ function respondRealmJsonCard(req: http.IncomingMessage, res: http.ServerRespons
   return false
 }
 
-function realmCharx(options: { lowLevelAccess?: boolean } = {}): Uint8Array {
+function realmCharx(options: { lowLevelAccess?: boolean; moduleData?: Uint8Array } = {}): Uint8Array {
   const card = {
     spec: 'chara_card_v3',
     spec_version: '3.0',
@@ -374,15 +469,16 @@ function realmCharx(options: { lowLevelAccess?: boolean } = {}): Uint8Array {
       ],
     },
   }
-  return fflate.zipSync(
-    {
-      'card.json': new TextEncoder().encode(JSON.stringify(card)),
-      'assets/main.png': new TextEncoder().encode('main image'),
-      'assets/happy.png': new TextEncoder().encode('happy image'),
-      'assets/theme.css': new TextEncoder().encode('body { color: red; }'),
-    },
-    { level: 0 },
-  )
+  const files: Record<string, Uint8Array> = {
+    'card.json': new TextEncoder().encode(JSON.stringify(card)),
+    'assets/main.png': new TextEncoder().encode('main image'),
+    'assets/happy.png': new TextEncoder().encode('happy image'),
+    'assets/theme.css': new TextEncoder().encode('body { color: red; }'),
+  }
+  if (options.moduleData) {
+    files['module.risum'] = options.moduleData
+  }
+  return fflate.zipSync(files, { level: 0 })
 }
 
 function oversizedExpandedRealmCharx(): Uint8Array {
@@ -647,6 +743,44 @@ describe('Realm character import route', () => {
     expect(frames.at(-1)).toMatchObject({ event: 'done' })
   })
 
+  it('preserves scripts stored in Realm charx module metadata', async () => {
+    const regex = regexScript('charx-regex')
+    const trigger = luaTrigger('charx-trigger')
+    const lorebook = moduleLorebookEntry('charx-lore')
+    const moduleData = risuModuleForTest({
+      regex: [regex],
+      trigger: [trigger],
+      lorebook: [lorebook],
+    })
+
+    echo.setResponder((req, res) => {
+      if (req.url?.startsWith('/api/v1/download/dynamic/realm-id')) {
+        res.writeHead(200, { 'content-type': 'application/charx' })
+        res.end(Buffer.from(realmCharx({ moduleData })))
+        return
+      }
+      res.writeHead(404)
+      res.end()
+    })
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const baseRevision = await importEmptyDatabase(harness.app, assertion)
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/import/realm-character',
+      headers: { 'risu-auth': assertion, 'risu-writer-session': 'writer-a' },
+      payload: { id: 'realm-id', baseRevision },
+    })
+
+    expect(res.statusCode).toBe(200)
+    const persisted = loadPersistedFromDir(harness.dataDir)
+    const character = (persisted.database as { characters: Array<Record<string, unknown>> }).characters[0]
+    expect(character.customscript).toEqual([regex])
+    expect(character.triggerscript).toEqual([trigger])
+    expect(character.globalLore).toEqual([lorebook])
+  })
+
   it('fetches Realm assets server-side and creates the character in one client request', async () => {
     echo.setResponder((req, res) => {
       if (req.url?.startsWith('/api/v1/download/dynamic/realm-id')) {
@@ -711,6 +845,33 @@ describe('Realm character import route', () => {
     expect(character.vits).toMatchObject({
       files: { 'voice.wav': expect.stringMatching(/^[a-f0-9]{64}$/) },
     })
+  })
+
+  it('preserves inline JSON Realm card scripts', async () => {
+    const regex = regexScript('json-regex')
+    const trigger = luaTrigger('json-trigger')
+
+    echo.setResponder((req, res) => {
+      if (respondRealmJsonCard(req, res, '', realmCard({ regex: [regex], trigger: [trigger] }))) return
+      res.writeHead(404)
+      res.end()
+    })
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const baseRevision = await importEmptyDatabase(harness.app, assertion)
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/import/realm-character',
+      headers: { 'risu-auth': assertion, 'risu-writer-session': 'writer-a' },
+      payload: { id: 'realm-id', baseRevision },
+    })
+
+    expect(res.statusCode).toBe(200)
+    const persisted = loadPersistedFromDir(harness.dataDir)
+    const character = (persisted.database as { characters: Array<Record<string, unknown>> }).characters[0]
+    expect(character.customscript).toEqual([regex])
+    expect(character.triggerscript).toEqual([trigger])
   })
 
   it('creates Realm starter chats without generation settings', async () => {
