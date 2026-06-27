@@ -97,13 +97,10 @@
     mergeScriptDefinitionProjectionRows,
     watchServerBackedScriptDefinitions,
   } from 'src/ts/server/scriptDefinitionBridge.svelte'
-  import {
-    getServerProjectionApplyEpoch,
-    withTrustedServerProjectionWrite,
-  } from 'src/ts/server/projectionWriteGuard.svelte'
+  import { getServerProjectionApplyEpoch } from 'src/ts/server/projectionWriteGuard.svelte'
   import { setCurrentChatGreetingIndex } from 'src/ts/chatCommands'
   import { getCharacterDisplayName } from 'src/ts/characterDisplayName'
-  import { currentCharacterRowSnapshot, dispatchCompatibleCharacterUpdateScoped } from 'src/ts/characterCommands'
+  import { applyCharacterRowMutationScoped } from 'src/ts/characterCommands'
 
   let iconRemoveMode = $state(false)
   let viewSubMenu = $state(0)
@@ -692,18 +689,9 @@
       return
     }
 
-    const previous = currentCharacterRowSnapshot(selectedIndex)
-    let applied = false
-    withTrustedServerProjectionWrite(() => {
-      const character = DBState.db.characters?.[selectedIndex]
-      if (!character || character.chaId !== characterId) return
+    applyCharacterRowMutationScoped(selectedIndex, characterId, (character) => {
       character.notificationImage = image
-      applied = true
     })
-
-    if (applied) {
-      dispatchCompatibleCharacterUpdateScoped(previous.character, DBState.db.characters?.[selectedIndex], previous)
-    }
   }
 
   function currentEditorTtsAssetUploadTarget(kind: CharacterTtsAssetUploadKind) {

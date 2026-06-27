@@ -521,15 +521,23 @@ export function registerProjectionRoutes(
     }
 
     if (resource === 'promptItem') {
-      const fields = loadPersistedDatabaseFields(db, dataDir, ['promptPresets', 'promptPresetsId', 'promptTemplate'])
+      const fields = loadPersistedDatabaseFields(db, dataDir, [
+        'botPresets',
+        'promptPresets',
+        'promptPresetsId',
+        'promptTemplate',
+      ])
       const ownerId =
         typeof req.query.parentId === 'string' && req.query.parentId.trim() !== '' ? req.query.parentId : null
       const promptPresets = Array.isArray(fields.promptPresets) ? fields.promptPresets : []
-      const selectedIndex = Number.isInteger(fields.promptPresetsId) ? (fields.promptPresetsId as number) : -1
-      const selectedPreset = selectedIndex >= 0 ? promptPresets[selectedIndex] : undefined
       const requestedPreset = ownerId
         ? promptPresets.find((preset) => isRecord(preset) && preset.id === ownerId)
-        : selectedPreset
+        : undefined
+      const selectedPreset =
+        ownerId === null && Number.isInteger(fields.promptPresetsId)
+          ? promptPresets[fields.promptPresetsId as number]
+          : undefined
+      const targetPreset = ownerId ? requestedPreset : selectedPreset
 
       if (ownerId && !requestedPreset) {
         reply.code(404).send({
@@ -540,10 +548,18 @@ export function registerProjectionRoutes(
       }
 
       const promptItemFields: Record<string, unknown> = {}
-      if (isRecord(requestedPreset)) {
-        promptItemFields.promptTemplate = Object.prototype.hasOwnProperty.call(requestedPreset, 'promptTemplate')
-          ? requestedPreset.promptTemplate
-          : null
+      if (isRecord(targetPreset)) {
+        if (
+          ownerId === null &&
+          isDefaultPromptPresetScaffold(targetPreset) &&
+          Object.prototype.hasOwnProperty.call(fields, 'promptTemplate')
+        ) {
+          promptItemFields.promptTemplate = hasLegacyBotPresetTemplates(fields) ? null : fields.promptTemplate
+        } else if (ownerId !== null || !isDefaultPromptPresetScaffold(targetPreset)) {
+          promptItemFields.promptTemplate = Object.prototype.hasOwnProperty.call(targetPreset, 'promptTemplate')
+            ? targetPreset.promptTemplate
+            : null
+        }
       } else if (Object.prototype.hasOwnProperty.call(fields, 'promptTemplate')) {
         promptItemFields.promptTemplate = fields.promptTemplate
       }
@@ -652,6 +668,18 @@ function projectEmptyAppliedPromptTemplate(fields: Record<string, unknown>): voi
   if (isRecord(selectedPreset) && Object.prototype.hasOwnProperty.call(selectedPreset, 'promptTemplate')) {
     fields.promptTemplate = []
   }
+}
+
+function isDefaultPromptPresetScaffold(preset: Record<string, unknown>): boolean {
+  return preset.id === 'default-prompt-preset' && preset.name === 'Default Prompt'
+}
+
+function hasLegacyBotPresetTemplates(fields: Record<string, unknown>): boolean {
+  const botPresets = fields.botPresets
+  return (
+    Array.isArray(botPresets) &&
+    botPresets.some((preset) => isRecord(preset) && Object.prototype.hasOwnProperty.call(preset, 'promptTemplate'))
+  )
 }
 
 function readPositiveInteger(value: string | undefined): number | null {

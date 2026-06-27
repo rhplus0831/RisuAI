@@ -82,14 +82,25 @@ export function createPushNotificationService(
 ): PushNotificationService {
   createPushSubscriptionsTable(db)
   const env = options.env ?? process.env
-  const vapidKeys = loadOrCreateVapidKeys(dataDir, env)
+  let vapidKeys: VapidKeyPair | null
+  try {
+    vapidKeys = loadOrCreateVapidKeys(dataDir, env)
+  } catch (error) {
+    console.warn('Web push notifications disabled because VAPID keys could not be loaded:', error)
+    return createDisabledPushNotificationService()
+  }
   if (!vapidKeys) {
     return createDisabledPushNotificationService()
   }
 
   const subject = options.vapidSubject ?? env.RISU_WEB_PUSH_CONTACT ?? DEFAULT_VAPID_SUBJECT
   const transport = options.transport ?? webPush
-  webPush.setVapidDetails(subject, vapidKeys.publicKey, vapidKeys.privateKey)
+  try {
+    webPush.setVapidDetails(subject, vapidKeys.publicKey, vapidKeys.privateKey)
+  } catch (error) {
+    console.warn('Web push notifications disabled because VAPID setup failed:', error)
+    return createDisabledPushNotificationService()
+  }
 
   return {
     publicKey: () => vapidKeys.publicKey,

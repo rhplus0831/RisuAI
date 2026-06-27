@@ -317,7 +317,8 @@ describe('MCP character writes optimistic projection', () => {
     })
   })
 
-  it('a failed setCharacterInfo command rolls back only the target row, preserving sibling edits', async () => {
+  it('L35: a failed patch rolls back only the target row, preserving sibling edits', async () => {
+    // Regression target: CharacterHandler setCharacterInfo routes through dispatchUpdateCharacterScoped.
     setServerProjectionWriteGuardEnabled(true)
     const { calls, releaseHeldResponses } = stubCommandFetch({
       failureStatusByUrl: { '/api/v1/commands/characters/char-1': 500 },

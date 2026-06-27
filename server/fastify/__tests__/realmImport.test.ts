@@ -1351,7 +1351,7 @@ describe('Realm character import route', () => {
   })
 
   it('L29: aborts unknown-length Realm charx downloads as soon as the staging cap is crossed', async () => {
-    const chunks = Array.from({ length: 10 }, () => Buffer.alloc(400 * 1024, 0x61))
+    const chunks = Array.from({ length: 50 }, () => Buffer.alloc(400 * 1024, 0x61))
     let chunksAttempted = 0
     echo.setResponder((req, res) => {
       if (req.url?.startsWith('/api/v1/download/dynamic/realm-id')) {

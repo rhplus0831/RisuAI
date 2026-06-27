@@ -62,7 +62,7 @@ export interface LorebookEntryStateSnapshot {
 }
 
 type LorebookReplacementSnapshot = LorebookStateSnapshot | LorebookEntryStateSnapshot
-type LorebookReplacementSource = 'collection' | 'entry' | 'watchedCollection'
+type LorebookReplacementSource = 'collection' | 'entry' | 'watchedCollection' | 'fullCollection'
 
 interface PendingCollectionReplacement {
   key: string
@@ -516,6 +516,15 @@ export function replaceCharacterLorebookCollection(characterId: string, entries:
   return replaceLorebookCollection({ kind: 'character', characterId }, entries, delayMs)
 }
 
+export function replaceCharacterLorebookCollectionFull(
+  characterId: string,
+  entries: loreBook[],
+  delayMs = 250,
+): boolean {
+  if (!characterId) return false
+  return replaceLorebookCollection({ kind: 'character', characterId }, entries, delayMs, 'fullCollection')
+}
+
 export function replaceChatLorebookCollection(chatId: string, entries: loreBook[], delayMs = 250): boolean {
   if (!chatId) return false
   return replaceLorebookCollection({ kind: 'chat', chatId }, entries, delayMs)
@@ -611,6 +620,7 @@ function replaceLorebookCollection(
   scope: ReplaceableLorebookCollectionScope,
   entries: loreBook[],
   delayMs: number,
+  source: LorebookReplacementSource = 'collection',
 ): boolean {
   const previous = currentLorebookCollectionScopedSnapshot(scope)
   const cloned = cloneJsonValue(entries ?? [])
@@ -619,7 +629,7 @@ function replaceLorebookCollection(
 
   switch (scope.kind) {
     case 'character':
-      dispatchReplaceCharacterLorebooks(scope.characterId, cloned, previous, delayMs)
+      dispatchReplaceCharacterLorebooks(scope.characterId, cloned, previous, delayMs, source)
       return true
     case 'chat':
       dispatchReplaceChatLorebooks(scope.chatId, cloned, previous, delayMs)
@@ -970,7 +980,7 @@ export function dispatchReplaceGlobalLorebookEntries(
   source: LorebookReplacementSource = 'collection',
 ): void {
   if (!canUseServerCommands()) return
-  if (source === 'collection') ensureClientLorebookEntryIds(entries)
+  if (source === 'collection' || source === 'fullCollection') ensureClientLorebookEntryIds(entries)
   queueScopedLorebookReplacement({ kind: 'global', lorebookId }, entries, previous, delayMs, source)
 }
 

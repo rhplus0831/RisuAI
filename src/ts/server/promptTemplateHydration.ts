@@ -53,7 +53,7 @@ export async function ensurePromptTemplateHydrated(
 
   const generation = promptTemplateHydrationGeneration
   const baselineRevision = peekCachedServerCommandRevision()
-  if (baselineRevision === null && !options.force) return false
+  if (baselineRevision === null && !options.force) return localPromptTemplateOwnerIsResolved(ownerId)
   const applyProjection = options.applyProjection ?? true
   const request = (async () => {
     const result = await fetchServerProjectionResource('promptItem', ownerId ? { parentId: ownerId } : {})
@@ -113,6 +113,14 @@ function applyPromptPresetHydratedTemplate(ownerId: string, promptTemplate: unkn
       preset.promptTemplate = promptTemplate as PromptPreset['promptTemplate']
     }
   })
+}
+
+function localPromptTemplateOwnerIsResolved(promptPresetId: string | null): boolean {
+  if (promptPresetId === null) return Object.prototype.hasOwnProperty.call(DBState.db ?? {}, 'promptTemplate')
+  const presets = DBState.db?.promptPresets
+  if (!Array.isArray(presets)) return false
+  const preset = presets.find((candidate) => candidate?.id === promptPresetId)
+  return !!preset && Object.prototype.hasOwnProperty.call(preset, 'promptTemplate')
 }
 
 function promptTemplateHydrationWarning(message: string): void {

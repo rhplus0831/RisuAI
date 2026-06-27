@@ -33,7 +33,11 @@ export function resolveEffectivePromptTemplate(
 
   const globalPreset = resolveGlobalPromptPreset(db)
   if (globalPreset) {
-    return resolvePresetTemplate(globalPreset, 'global-prompt-preset', globalPreset.id)
+    const resolved = resolvePresetTemplate(globalPreset, 'global-prompt-preset', globalPreset.id)
+    if (resolved.promptTemplate || Object.prototype.hasOwnProperty.call(globalPreset, 'promptTemplate')) {
+      return resolved
+    }
+    if (!isDefaultPromptPresetScaffold(globalPreset)) return resolved
   }
 
   if (Array.isArray(db.promptTemplate)) {
@@ -59,6 +63,10 @@ function resolveGlobalPromptPreset(db: Pick<Database, 'promptPresets' | 'promptP
   const index = db.promptPresetsId
   if (!Number.isInteger(index) || index < 0) return undefined
   return promptPresets(db)[index]
+}
+
+function isDefaultPromptPresetScaffold(preset: PromptPreset): boolean {
+  return preset.id === 'default-prompt-preset' && preset.name === 'Default Prompt'
 }
 
 function promptPresets(db: Pick<Database, 'promptPresets'>): PromptPreset[] {

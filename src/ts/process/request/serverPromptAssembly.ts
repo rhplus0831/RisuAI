@@ -3,7 +3,7 @@ import type { character, Chat, Database, triggerscript } from '../../storage/dat
 import { LLMFlags } from '../../model/types'
 import { getModuleTriggers } from '../modules'
 import { pluginV2 } from '../../plugins/plugins.svelte'
-import { composeEffectivePresetSettings } from '../../presetSplit'
+import { applyEffectivePresetComposition, databaseKeyForModelPresetField, MODEL_PRESET_FIELDS } from '../../presetSplit'
 import {
   modelProfileGenerationBlockReason,
   resolveModelProfile,
@@ -120,6 +120,65 @@ function luaUsesInteractiveApi(currentChar: character): boolean {
   return triggersUseInteractiveLua(currentChar.triggerscript) || triggersUseInteractiveLua(getModuleTriggers())
 }
 
+const MODEL_RUNTIME_DATABASE_EXTRA_FIELDS = [
+  'OaiCompAPIKeys',
+  'google',
+  'vertexRegion',
+  'vertexClientEmail',
+  'vertexPrivateKey',
+  'claudeAPIKey',
+  'ollamaApiKey',
+  'ollamaRequestFormat',
+  'ollamaURL',
+  'ollamaModelSource',
+  'ollamaThinkingMode',
+  'openrouterKey',
+  'openrouterFallback',
+  'openrouterMiddleOut',
+  'nanogptProvider',
+  'nanogptUseSubscriptionEndpoint',
+  'nanogptKey',
+  'nanogptSubscriptionState',
+  'autofillRequestUrl',
+  'reverseProxyOobaMode',
+  'mistralKey',
+  'cohereAPIKey',
+  'mancerHeader',
+  'hordeConfig',
+  'useStreaming',
+  'genTime',
+  'customTokenizer',
+  'ollamaCloudModel',
+  'ollamaModel',
+  'nanogptRequestModel',
+  'customModels',
+] as const
+
+function shouldCopyModelRuntimeBaseValue(value: unknown): boolean {
+  if (value === undefined) return false
+  if (Array.isArray(value)) return value.length > 0
+  if (value && typeof value === 'object') return Object.keys(value).length > 0
+  return true
+}
+
+function pickModelRuntimeDatabaseBase(database: Database): Record<string, unknown> {
+  const source = database as unknown as Record<string, unknown>
+  const base: Record<string, unknown> = {}
+  const pick = (key: string): void => {
+    if (!Object.prototype.hasOwnProperty.call(source, key)) return
+    const value = source[key]
+    if (shouldCopyModelRuntimeBaseValue(value)) base[key] = value
+  }
+
+  for (const field of MODEL_PRESET_FIELDS) {
+    pick(databaseKeyForModelPresetField(field))
+  }
+  for (const field of MODEL_RUNTIME_DATABASE_EXTRA_FIELDS) {
+    pick(field)
+  }
+  return base
+}
+
 /**
  * True if the send carries content the server `/chat` assembler cannot reproduce.
  * Coarse presence detection: on doubt, report content as `unsupported`, never
@@ -153,12 +212,13 @@ function effectiveModelDatabaseForChat(currentChat: Chat): Database {
   const settings = currentChat.generationSettings
   const modelPreset = findPresetById(db.modelPresets, settings?.modelPresetId)
   const promptPreset = findPresetById(db.promptPresets, settings?.promptPresetId)
-  return composeEffectivePresetSettings({
-    base: db as unknown as Record<string, unknown>,
+  const effective = pickModelRuntimeDatabaseBase(db)
+  applyEffectivePresetComposition(effective, {
     modelPreset,
     promptPreset,
     scope: 'model-runtime',
-  }) as unknown as Database
+  })
+  return effective as unknown as Database
 }
 
 function findPresetById(collection: unknown, id: string | undefined): Record<string, unknown> | undefined {

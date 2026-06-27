@@ -56,14 +56,13 @@ interface CacheProofBefore {
 
 const REGEX_CACHE_PROOF_SOURCE = 'render-cost-regex-cache-proof-(\\d+)'
 const SCRIPT_CACHE_PROOF_INPUT = 'prefix render-cost-script-cache-proof-token suffix'
-const SCRIPT_CACHE_WARM_SENTINEL = 'script-cache-warm-before-bump'
-const SCRIPT_CACHE_AFTER_SENTINEL = 'script-cache-after-bump'
+const SCRIPT_CACHE_PROOF_OUTPUT = 'render-cost-script-cache-proof-output'
 
 const SCRIPT_CACHE_PROOF_SCRIPT: customscript = {
   id: 'render-cost-script-cache-proof',
   comment: 'render cost harness script cache proof',
   in: 'render-cost-script-cache-proof-token',
-  out: '@@inject',
+  out: SCRIPT_CACHE_PROOF_OUTPUT,
   type: 'editdisplay',
   flag: 'g',
   ableFlag: true,
@@ -206,16 +205,19 @@ async function warmCachesBeforeBump(
 ): Promise<CacheProofBefore> {
   const regexBefore = scriptsModule.getCompiledRegex(REGEX_CACHE_PROOF_SOURCE, 'g')
   const regexBeforeAgain = scriptsModule.getCompiledRegex(REGEX_CACHE_PROOF_SOURCE, 'g')
-  const proofMessage = DBState.db.characters[0].chats[0].message[0]
+  const proofScripts = proofCharacter.customscript ?? []
 
-  await scriptsModule.processScriptFull(proofCharacter, SCRIPT_CACHE_PROOF_INPUT, 'editdisplay', 0)
-  proofMessage.data = SCRIPT_CACHE_WARM_SENTINEL
   await scriptsModule.processScriptFull(proofCharacter, SCRIPT_CACHE_PROOF_INPUT, 'editdisplay', 0)
 
   return {
     regexBefore,
     regexCacheWarmBeforeBump: regexBefore === regexBeforeAgain,
-    scriptCacheWarmBeforeBump: proofMessage.data === SCRIPT_CACHE_WARM_SENTINEL,
+    scriptCacheWarmBeforeBump: scriptsModule.hasProcessScriptCacheEntryForTesting(
+      proofScripts,
+      SCRIPT_CACHE_PROOF_INPUT,
+      'editdisplay',
+      0,
+    ),
   }
 }
 
@@ -224,17 +226,19 @@ async function finishCacheProofAfterBump(
   proofCharacter: character,
   before: CacheProofBefore,
 ): Promise<RenderCacheProof> {
-  const proofMessage = DBState.db.characters[0].chats[0].message[0]
   const regexAfter = scriptsModule.getCompiledRegex(REGEX_CACHE_PROOF_SOURCE, 'g')
-
-  proofMessage.data = SCRIPT_CACHE_AFTER_SENTINEL
-  await scriptsModule.processScriptFull(proofCharacter, SCRIPT_CACHE_PROOF_INPUT, 'editdisplay', 0)
+  const proofScripts = proofCharacter.customscript ?? []
 
   return {
     regexCacheWarmBeforeBump: before.regexCacheWarmBeforeBump,
     regexCacheWipedAfterBump: regexAfter !== before.regexBefore,
     scriptCacheWarmBeforeBump: before.scriptCacheWarmBeforeBump,
-    scriptCacheWipedAfterBump: proofMessage.data === SCRIPT_CACHE_PROOF_INPUT,
+    scriptCacheWipedAfterBump: !scriptsModule.hasProcessScriptCacheEntryForTesting(
+      proofScripts,
+      SCRIPT_CACHE_PROOF_INPUT,
+      'editdisplay',
+      0,
+    ),
   }
 }
 

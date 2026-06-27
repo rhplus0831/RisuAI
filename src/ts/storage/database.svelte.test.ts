@@ -937,7 +937,7 @@ describe('preset command rollback (L21)', () => {
     expect(DBState.db.botPresets[0]).toEqual({ id: 'preset-stub', name: 'Stub', image: 'img' })
   })
 
-  it('failed legacy save restores only attempted preset fields', async () => {
+  it('L21: failed save restores the saved preset collection and selected index', async () => {
     seedPresetDatabase({ temperature: 91 })
     const calls = stubFailedPresetCommand(() => {
       DBState.db.botPresets[0].name = 'Alpha edited after dispatch'
@@ -1348,7 +1348,7 @@ describe('preset command rollback (L21)', () => {
     expect(DBState.db.temperature).toBe(88)
   })
 
-  it('failed legacy copy removes only the generated copy and rolls back attempted source-save fields', async () => {
+  it('L21: failed copy restores the original collection after save-current and generated copy id', async () => {
     seedPresetDatabase({ temperature: 88 })
     let generatedCopyId: string | undefined
     const calls = stubFailedPresetCommand(() => {
@@ -1403,7 +1403,7 @@ describe('preset command rollback (L21)', () => {
     expect(presetCommands[0].body.newPresetId).toBeTruthy()
   })
 
-  it('failed legacy create removes only the unchanged optimistic row and preserves newer siblings', async () => {
+  it('L21: failed create removes the optimistic preset and generated id', async () => {
     seedPresetDatabase()
     let optimisticPresetId: string | undefined
     const calls = stubFailedPresetCommand(() => {
@@ -1430,7 +1430,7 @@ describe('preset command rollback (L21)', () => {
     })
   })
 
-  it('failed legacy update restores only attempted fields and preserves newer same-row edits', async () => {
+  it('L21: failed update restores the patched preset row', async () => {
     seedPresetDatabase()
     const calls = stubFailedPresetCommand(() => {
       DBState.db.botPresets[1].name = 'Newer Beta edit after dispatch'
@@ -1452,7 +1452,7 @@ describe('preset command rollback (L21)', () => {
     })
   })
 
-  it('failed legacy delete reinserts only the missing row and preserves newer rows and selection', async () => {
+  it('L21: failed delete restores collection, selection, and setPreset scalars', async () => {
     seedPresetDatabase()
     const calls = stubFailedPresetCommand(() => {
       DBState.db.botPresets.push(makePreset('preset-c', 'Gamma appended after dispatch'))
@@ -1488,7 +1488,7 @@ describe('preset command rollback (L21)', () => {
     await waitForPresetCommand(calls, '/presets/preset-a')
   })
 
-  it('failed legacy reorder restores the prior id order and preserves row edits', async () => {
+  it('L21: failed reorder restores collection order and selected index', async () => {
     seedPresetDatabase({
       botPresets: [makePreset('preset-a', 'Alpha'), makePreset('preset-b', 'Beta'), makePreset('preset-c', 'Gamma')],
       botPresetsId: 1,
@@ -1531,7 +1531,7 @@ describe('preset command rollback (L21)', () => {
     })
   })
 
-  it('failed legacy select restores only attempted-matching preset-applied settings', async () => {
+  it('L21: failed select restores setPreset scalars without overwriting unrelated fields', async () => {
     seedPresetDatabase()
     const beforePresets = clonePlain(DBState.db.botPresets)
     const beforePrompt = DBState.db.mainPrompt

@@ -204,7 +204,7 @@ describe('importPreset warm-path logging (L37)', () => {
     }
   })
 
-  it('L21: a failed preset import removes only the unchanged imported row', async () => {
+  it('L21: a failed preset import rolls back the optimistic imported row', async () => {
     DBState.db.promptPresets = [
       {
         ...clonePlain(presetTemplate),

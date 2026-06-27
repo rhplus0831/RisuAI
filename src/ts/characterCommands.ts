@@ -765,6 +765,26 @@ export function dispatchCompatibleCharacterUpdateScoped(
   dispatchUpdateCharacterWith(characterId, attempted, () => restoreCharacterRow({ ...previous, attempted }))
 }
 
+export function applyCharacterRowMutationScoped(
+  index: number,
+  characterId: string,
+  mutate: (character: character) => void,
+): boolean {
+  const previous = currentCharacterRowSnapshot(index)
+  let applied = false
+  withTrustedServerProjectionWrite(() => {
+    const target = DBState.db.characters?.[index]
+    if (!target || target.chaId !== characterId) return
+    mutate(target)
+    applied = true
+  })
+
+  if (applied) {
+    dispatchCompatibleCharacterUpdateScoped(previous.character, DBState.db.characters?.[index], previous)
+  }
+  return applied
+}
+
 // Factory-list form of dispatchCompatibleCharacterUpdate so the V3 plugin API
 // can route through runOptimisticCommandSequence instead of a fire-and-forget
 // dispatch. Returns the factories array and a rollback closure.

@@ -555,7 +555,7 @@ describe('watchServerBackedLorebooks — no-data-loss invariant', () => {
     }
   })
 
-  it('L24: global lorebook direct rollback parity routes every dispatcher through attempted helpers', () => {
+  it('L24: global lorebook direct rollback parity routes every dispatcher through suppressed helpers', () => {
     const source = readFileSync(path.join(process.cwd(), 'src/ts/server/lorebookBridge.svelte.ts'), 'utf8')
 
     expect(exportedFunctionSource(source, 'dispatchCreateGlobalLorebook')).toContain(
@@ -2338,7 +2338,7 @@ describe('watchServerBackedLorebooks — scoped change detection (Phase 6)', () 
     stop()
   })
 
-  it('P1: a character-scoped watcher first run does not assign ids or initialize other collections', () => {
+  it('L32: a character-scoped watcher first-run id ensure touches only the selected character collections', () => {
     setupMultiCollectionDb()
     stripIdsForScopedEnsureRegression()
     markCharacterLorebookHydrated('c0')

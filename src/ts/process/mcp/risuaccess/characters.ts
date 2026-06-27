@@ -11,7 +11,7 @@ import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteG
 import {
   ensureClientLorebookEntryIds,
   isCharacterLorebookHydrated,
-  replaceCharacterLorebookCollection,
+  replaceCharacterLorebookCollectionFull,
 } from 'src/ts/server/lorebookBridge.svelte'
 import {
   dispatchReplaceCharacterScripts,
@@ -1166,7 +1166,7 @@ function cloneJsonValue<T>(value: T): T {
 function replaceCharacterLorebooksThroughServerBridge(characterId: string, entries: loreBook[]): boolean {
   if (DBState.db?.enableLorebookStubs && !isCharacterLorebookHydrated(characterId)) return false
   ensureClientLorebookEntryIds(entries)
-  return replaceCharacterLorebookCollection(characterId, entries, 0)
+  return replaceCharacterLorebookCollectionFull(characterId, entries, 0)
 }
 
 function characterLorebookNotReadyResponse(char: character): RPCToolCallContent[] {

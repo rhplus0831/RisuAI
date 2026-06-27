@@ -366,7 +366,7 @@ function sortJsonValue(value: unknown): unknown {
 }
 
 function cloneJsonValue<T>(value: T): T {
-  if (value === undefined) return value
+  if (value === undefined || value === null || typeof value !== 'object') return value
   return JSON.parse(JSON.stringify(value)) as T
 }
 

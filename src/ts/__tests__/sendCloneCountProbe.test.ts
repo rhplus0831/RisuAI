@@ -86,9 +86,9 @@ describe('send clone-count probe', () => {
     expect(result).toEqual({
       ok: true,
       jsonCloneCount: 1,
-      structuredCloneCount: 2,
-      totalCloneCount: 3,
-      maxClonedSize: 198,
+      structuredCloneCount: 0,
+      totalCloneCount: 1,
+      maxClonedSize: 98,
       fixture: {
         characterCount: 3,
         messageCountBeforeSend: 40,

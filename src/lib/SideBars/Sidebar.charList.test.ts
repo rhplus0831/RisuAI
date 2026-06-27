@@ -109,7 +109,7 @@ describe('sidebar character list signature memo', () => {
     expect(second.items).toBe(first.items)
   })
 
-  it('L44: character display name image index and order changes rebuild the sidebar list', () => {
+  it('L44: character name image index and order changes rebuild the sidebar list', () => {
     const cases: Array<{
       name: string
       order: SidebarCharacterOrderEntry[]

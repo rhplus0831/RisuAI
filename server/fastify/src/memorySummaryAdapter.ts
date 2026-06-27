@@ -42,11 +42,16 @@ export async function summarizeOnce(
 
   const result = await runOpenAI(request)
   if (result.aborted === true) return { error: 'aborted' }
-  if (result.type === 'fail') return { error: result.result }
+  if (result.type === 'fail') return { error: normalizeSummaryAdapterError(result.result) }
 
   const text = scrubSummaryText(result.result)
   if ('error' in text) return text
   return { text: text.text, tokens: 0 }
+}
+
+function normalizeSummaryAdapterError(error: string): string {
+  const match = /^Provider request failed: HTTP \d+(?: [^:]+)?(?: from \S+)?(?: \([^)]+\))?: (.*)$/.exec(error)
+  return match?.[1] ?? error
 }
 
 function scrubSummaryText(content: string): { text: string } | { error: string } {

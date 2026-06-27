@@ -329,7 +329,7 @@ export function saveActiveChatSidebarToggleGenerationSettings(
 }
 
 function hasStaleExpectedTarget(options: ActiveChatGenerationSettingsSaveOptions): boolean {
-  return options.expectedTarget !== undefined && !isActiveChatTargetFresh(options.expectedTarget)
+  return options.expectedTarget != null && !isActiveChatTargetFresh(options.expectedTarget)
 }
 
 function transportOptions(options: ActiveChatGenerationSettingsSaveOptions): ServerCommandTransportOptions {

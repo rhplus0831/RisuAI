@@ -154,6 +154,17 @@ function getScriptCache(hash: string) {
   return processScriptCache.get(hash)
 }
 
+// Exported for render-cache regression tests; not part of the public API.
+export function hasProcessScriptCacheEntryForTesting(
+  scripts: customscript[],
+  data: string,
+  mode: ScriptMode,
+  chatID = -1,
+  cbsConditions: CbsConditions = {},
+) {
+  return processScriptCache.has(generateScriptCacheKey(scripts, data, mode, chatID, cbsConditions))
+}
+
 function cacheBestMatch(cacheKey: string, bestMatch: string) {
   bestMatchCache.delete(cacheKey)
   bestMatchCache.set(cacheKey, bestMatch)

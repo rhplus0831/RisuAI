@@ -113,13 +113,18 @@ function readTraceEntries(h: Harness, mode: RequestTraceMode): TraceEntry[] {
   return contents.split('\n').map((line) => JSON.parse(line) as TraceEntry)
 }
 
-async function waitForTraceEntries(h: Harness, mode: RequestTraceMode, count: number): Promise<TraceEntry[]> {
+async function waitForTraceEntries(
+  h: Harness,
+  mode: RequestTraceMode,
+  count: number,
+  predicate: (entries: TraceEntry[]) => boolean = () => true,
+): Promise<TraceEntry[]> {
   const deadline = Date.now() + 1000
   let lastEntries: TraceEntry[] = []
   while (Date.now() < deadline) {
     if (existsSync(tracePath(h, mode))) {
       lastEntries = readTraceEntries(h, mode)
-      if (lastEntries.length === count) return lastEntries
+      if (lastEntries.length === count && predicate(lastEntries)) return lastEntries
     }
     await new Promise((resolve) => setTimeout(resolve, 10))
   }
@@ -398,8 +403,11 @@ describe('request trace', () => {
       })
     }
 
-    const entries = await waitForTraceEntries(harness, 'agent', 2)
-    expect(entries.map((entry) => entry.Url)).toEqual(['/api/v1/assets/exists?seq=2', '/api/v1/assets/exists?seq=3'])
+    const expectedUrls = ['/api/v1/assets/exists?seq=2', '/api/v1/assets/exists?seq=3']
+    const entries = await waitForTraceEntries(harness, 'agent', 2, (rows) => {
+      return rows.map((entry) => entry.Url).join('\n') === expectedUrls.join('\n')
+    })
+    expect(entries.map((entry) => entry.Url)).toEqual(expectedUrls)
 
     const bodyPaths = entries.map((entry) => {
       const requestBody = requireTraceBody(entry, 'Request-Body')

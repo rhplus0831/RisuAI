@@ -26,6 +26,8 @@ export function registerRoutes(app: RouteApp): void {
   app.delete('/api/v1/generate/chat/:id', noop)
   app.post('/api/v1/memory/jobs', noop)
   app.delete('/api/v1/memory/jobs/:id', noop)
+  app.post('/api/v1/push/subscriptions', noop)
+  app.delete('/api/v1/push/subscriptions', noop)
   app.post('/api/v1/storage/write', noop)
   app.post('/api/v1/storage/remove', noop)
   // Auth/session writes (auth-session) + stateless helper.
