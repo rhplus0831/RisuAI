@@ -7,7 +7,7 @@ import rateLimit from '@fastify/rate-limit'
 import fastifyStatic from '@fastify/static'
 import fastifyWebsocket from '@fastify/websocket'
 import { createActiveWriterState, registerActiveWriterGuard } from './activeWriter.js'
-import { type AppConfig, loadConfig } from './config.js'
+import { DEFAULT_REALM_IMPORT_MAX_EXPANDED_BYTES, type AppConfig, loadConfig } from './config.js'
 import { createAuthState } from './auth.js'
 import { createCommandEventSink, type CommandEventSink } from './commands/events.js'
 import { openDatabase } from './db.js'
@@ -63,6 +63,7 @@ export interface BuildAppOptions {
   generationChat?: GenerationChatRouteOptions
   realmImport?: {
     deadlineMs?: number
+    maxExpandedImportBytes?: number
     maxDynamicJsonBytes?: number
     maxFetchedAssetBytes?: number
     maxFetchedAssetTotalBytes?: number
@@ -257,7 +258,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   registerRealmImportRoutes(app, db, authState, config.dataDir, commandEventSink, {
     hubUrl: config.hubUrl,
     realmUrl: config.realmUrl,
-    maxExpandedImportBytes: config.bodyLimit,
+    maxExpandedImportBytes: config.realmImportMaxExpandedBytes ?? DEFAULT_REALM_IMPORT_MAX_EXPANDED_BYTES,
     ...opts.realmImport,
   })
   registerCommandRoutes(app, db, authState, config.dataDir, commandEventSink, messageTranslationJobRegistry)

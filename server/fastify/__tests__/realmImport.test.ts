@@ -216,7 +216,7 @@ async function startHarness(upstreamUrl: string, realmImport?: BuildAppOptions['
       realmUrl: upstreamUrl,
     },
     assetGc: false,
-    realmImport,
+    realmImport: { maxExpandedImportBytes: 1024 * 1024, ...realmImport },
   })
   return { app, dataDir }
 }
@@ -348,7 +348,7 @@ function respondRealmJsonCard(req: http.IncomingMessage, res: http.ServerRespons
   return false
 }
 
-function realmCharx(): Uint8Array {
+function realmCharx(options: { lowLevelAccess?: boolean } = {}): Uint8Array {
   const card = {
     spec: 'chara_card_v3',
     spec_version: '3.0',
@@ -366,7 +366,7 @@ function realmCharx(): Uint8Array {
       tags: [],
       creator: '',
       character_version: '1',
-      extensions: { risuai: {} },
+      extensions: { risuai: { lowLevelAccess: options.lowLevelAccess } },
       assets: [
         { type: 'icon', uri: 'embeded://assets/main.png', name: 'main', ext: 'png' },
         { type: 'emotion', uri: 'embeded://assets/happy.png', name: 'happy', ext: 'png' },
@@ -1267,6 +1267,55 @@ describe('Realm character import route', () => {
     expect(res.json()).toMatchObject({ code: 'low_level_access_confirmation_required' })
     expect(queryAssets(harness.dataDir)).toHaveLength(0)
     expect(echo.requests.map((req) => req.url)).toEqual(['/api/v1/download/dynamic/realm-id?cors=true'])
+  })
+
+  it('reuses a downloaded low-level Realm charx package after confirmation', async () => {
+    echo.setResponder((req, res) => {
+      if (req.url?.startsWith('/api/v1/download/dynamic/realm-id')) {
+        res.writeHead(200, { 'content-type': 'application/charx' })
+        res.end(Buffer.from(realmCharx({ lowLevelAccess: true })))
+        return
+      }
+      res.writeHead(404)
+      res.end()
+    })
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const baseRevision = await importEmptyDatabase(harness.app, assertion)
+
+    const first = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/import/realm-character',
+      headers: { 'risu-auth': assertion, 'risu-writer-session': 'writer-a' },
+      payload: { id: 'realm-id', baseRevision },
+    })
+
+    expect(first.statusCode).toBe(409)
+    expect(first.json()).toMatchObject({
+      code: 'low_level_access_confirmation_required',
+      pendingImportToken: expect.any(String),
+    })
+    expect(queryAssets(harness.dataDir)).toHaveLength(0)
+
+    const second = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/import/realm-character',
+      headers: { 'risu-auth': assertion, 'risu-writer-session': 'writer-a' },
+      payload: {
+        id: 'realm-id',
+        baseRevision,
+        allowLowLevelAccess: true,
+        pendingImportToken: first.json().pendingImportToken,
+      },
+    })
+
+    expect(second.statusCode).toBe(200)
+    expect(echo.requests.map((req) => req.url)).toEqual(['/api/v1/download/dynamic/realm-id?cors=true'])
+    expect(queryAssets(harness.dataDir)).toHaveLength(3)
+    const persisted = loadPersistedFromDir(harness.dataDir)
+    const character = (persisted.database as { characters: Array<Record<string, unknown>> }).characters[0]
+    expect(character.name).toBe('Realm CharX')
+    expect(character.lowLevelAccess).toBe(true)
   })
 
   it('imports Realm charx packages server-side without falling back to client asset uploads', async () => {

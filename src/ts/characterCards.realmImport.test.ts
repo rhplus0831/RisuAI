@@ -299,6 +299,25 @@ afterEach(() => {
 })
 
 describe('Realm character import finish refresh', () => {
+  it('passes the pending charx token when retrying after low-level confirmation', async () => {
+    realmImportState.importRealmCharacterFromServer
+      .mockResolvedValueOnce({ status: 'low-level-access', pendingImportToken: 'pending-token' })
+      .mockResolvedValueOnce(okRealmImport('char-imported', 21))
+
+    await downloadRisuHub('realm-id', { forceRedirect: true })
+
+    expect(alertState.alertConfirm).toHaveBeenCalledWith('Low-level access?')
+    expect(realmImportState.importRealmCharacterFromServer).toHaveBeenCalledTimes(2)
+    expect(realmImportState.importRealmCharacterFromServer.mock.calls[1]).toEqual([
+      'realm-id',
+      {
+        allowLowLevelAccess: true,
+        pendingImportToken: 'pending-token',
+        onProgress: expect.any(Function),
+      },
+    ])
+  })
+
   it('uses the fenced full projection resync and navigates by imported character id', async () => {
     realmImportState.importRealmCharacterFromServer.mockImplementation(async (_id, options) => {
       options.onProgress?.({

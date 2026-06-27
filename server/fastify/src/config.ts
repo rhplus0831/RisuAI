@@ -19,6 +19,7 @@ export interface AppConfig {
    * `RISU_API_IMPORT_MAX_BYTES` to a positive byte count to impose a ceiling.
    */
   importMaxBytes: number
+  realmImportMaxExpandedBytes?: number
   trustProxy: boolean | number | string
   staticRoot?: string | null
   hubUrl: string
@@ -45,6 +46,8 @@ export interface AppConfig {
 }
 
 export type RequestTraceMode = 'agent' | 'human'
+
+export const DEFAULT_REALM_IMPORT_MAX_EXPANDED_BYTES = 310 * 1024 * 1024
 
 function repoRoot(): string {
   return process.cwd()
@@ -156,6 +159,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     dataDir,
     bodyLimit: parseBodyLimit(env.RISU_API_BODY_LIMIT, 100 * 1024 * 1024),
     importMaxBytes: parseImportMaxBytes(env.RISU_API_IMPORT_MAX_BYTES, Number.POSITIVE_INFINITY),
+    realmImportMaxExpandedBytes: parsePositiveIntegerBytes(
+      env.RISU_REALM_IMPORT_MAX_EXPANDED_BYTES,
+      DEFAULT_REALM_IMPORT_MAX_EXPANDED_BYTES,
+      'RISU_REALM_IMPORT_MAX_EXPANDED_BYTES',
+    ),
     trustProxy: parseTrustProxy(env.TRUST_PROXY),
     staticRoot: parseStaticRoot(env.RISU_API_STATIC_ROOT, path.join(repoRoot(), 'dist')),
     hubUrl: parseHubUrl(env.RISU_HUB_URL, 'https://sv.risuai.xyz'),

@@ -137,6 +137,29 @@ describe('Realm import server adapter', () => {
     expect(commandState.cachedRevision).toBe(11)
   })
 
+  it('sends a pending import token with confirmed low-level retries', async () => {
+    const calls = stubRealmFetch(
+      jsonResponse({
+        revision: 12,
+        event: { type: 'character.created', resource: 'character', revision: 12 },
+        characterId: 'char-confirmed',
+      }),
+    )
+
+    const result = await importRealmCharacterFromServer('realm-id', {
+      allowLowLevelAccess: true,
+      pendingImportToken: 'pending-token',
+    })
+
+    expect(result).toMatchObject({ status: 'ok', revision: 12, characterId: 'char-confirmed' })
+    expect(calls[0].body).toMatchObject({
+      id: 'realm-id',
+      baseRevision: 7,
+      allowLowLevelAccess: true,
+      pendingImportToken: 'pending-token',
+    })
+  })
+
   it('maps progress stream low-level-access and conflicts', async () => {
     stubRealmFetch(
       new Response(
@@ -152,14 +175,22 @@ describe('Realm import server adapter', () => {
     expect(commandState.cachedRevision).toBe(15)
 
     stubRealmFetch(
-      new Response(streamOf(['event: low_level_access', 'data: {"error":"confirm"}', '', ''].join('\n')), {
-        status: 200,
-        headers: { 'content-type': 'text/event-stream' },
-      }),
+      new Response(
+        streamOf(
+          ['event: low_level_access', 'data: {"error":"confirm","pendingImportToken":"pending-token"}', '', ''].join(
+            '\n',
+          ),
+        ),
+        {
+          status: 200,
+          headers: { 'content-type': 'text/event-stream' },
+        },
+      ),
     )
 
     await expect(importRealmCharacterFromServer('realm-id', { onProgress: vi.fn() })).resolves.toEqual({
       status: 'low-level-access',
+      pendingImportToken: 'pending-token',
     })
   })
 })

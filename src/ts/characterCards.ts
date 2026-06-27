@@ -1797,6 +1797,7 @@ export async function downloadRisuHub(
       onProgress = createRealmImportProgressReporter(realmImportOperationToken)
       const retry = await importRealmCharacterFromServer(id, {
         allowLowLevelAccess: true,
+        pendingImportToken: imported.pendingImportToken,
         onProgress,
       })
       if (retry.status !== 'ok') {

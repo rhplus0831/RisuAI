@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { loadConfig } from '../src/config.js'
+import { DEFAULT_REALM_IMPORT_MAX_EXPANDED_BYTES, loadConfig } from '../src/config.js'
 import { DEFAULT_GENERATION_TRACE_MAX_GZIP_BYTES } from '../src/generation/generationTraceSidecar.js'
 
 const BASE_ENV = { RISU_API_DATA_DIR: '/tmp/risu-config-test' }
@@ -23,6 +23,29 @@ describe('loadConfig importMaxBytes', () => {
     for (const raw of ['abc', '-1']) {
       expect(() => loadConfig({ ...BASE_ENV, RISU_API_IMPORT_MAX_BYTES: raw })).toThrow(
         /Invalid RISU_API_IMPORT_MAX_BYTES/,
+      )
+    }
+  })
+})
+
+describe('loadConfig Realm import max expanded bytes', () => {
+  it('defaults above the JSON body limit for streamed Realm charx packages', () => {
+    expect(loadConfig({ ...BASE_ENV }).realmImportMaxExpandedBytes).toBe(DEFAULT_REALM_IMPORT_MAX_EXPANDED_BYTES)
+    expect(loadConfig({ ...BASE_ENV }).realmImportMaxExpandedBytes).toBeGreaterThan(
+      loadConfig({ ...BASE_ENV }).bodyLimit,
+    )
+  })
+
+  it('accepts a finite positive byte ceiling', () => {
+    expect(
+      loadConfig({ ...BASE_ENV, RISU_REALM_IMPORT_MAX_EXPANDED_BYTES: '536870912' }).realmImportMaxExpandedBytes,
+    ).toBe(536870912)
+  })
+
+  it('rejects invalid ceilings', () => {
+    for (const raw of ['0', '-1', '1.5', 'abc']) {
+      expect(() => loadConfig({ ...BASE_ENV, RISU_REALM_IMPORT_MAX_EXPANDED_BYTES: raw })).toThrow(
+        /Invalid RISU_REALM_IMPORT_MAX_EXPANDED_BYTES/,
       )
     }
   })

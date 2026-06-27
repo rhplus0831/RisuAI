@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { DatabaseSync } from 'node:sqlite'
-import { createHash } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import fs from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -50,9 +50,11 @@ type JsonRecord = Record<string, unknown>
 const REALM_DYNAMIC_PATH = '/api/v1/download/dynamic/'
 const CHARX_CONTENT_TYPES = new Set(['application/charx', 'application/zip'])
 const MAX_CHARX_ASSET_SIZE_BYTES = 50 * 1024 * 1024
-const DEFAULT_REALM_CHARX_EXPANDED_IMPORT_BYTES = 100 * 1024 * 1024
+const DEFAULT_REALM_CHARX_EXPANDED_IMPORT_BYTES = 310 * 1024 * 1024
+const DEFAULT_REALM_DYNAMIC_JSON_BYTES = 100 * 1024 * 1024
 const REALM_CHARX_DOWNLOAD_CAP_MULTIPLIER = 3
 const DEFAULT_REALM_IMPORT_DEADLINE_MS = 600_000
+const DEFAULT_PENDING_REALM_CHARX_IMPORT_TTL_MS = 10 * 60_000
 const CHARX_STREAM_CHUNK_BYTES = 64 * 1024
 const FETCHED_ASSET_STAGE_PREFIX = 'risu-realm-json-assets-'
 const EXTENSION_CONTENT_TYPES = Object.fromEntries(
@@ -64,6 +66,7 @@ interface RealmImportBody {
   id?: unknown
   baseRevision?: unknown
   allowLowLevelAccess?: unknown
+  pendingImportToken?: unknown
 }
 
 export type RealmImportProgressPhase = 'validate' | 'download' | 'extract' | 'assets' | 'convert' | 'commit'
@@ -100,6 +103,16 @@ interface RealmImportAbort {
   cleanup(): void
 }
 
+interface PendingRealmCharxImport {
+  id: string
+  filePath: string
+  tempDir: string
+  expiresAt: number
+  timer: ReturnType<typeof setTimeout>
+}
+
+type PendingRealmCharxImports = Map<string, PendingRealmCharxImport>
+
 type RealmDynamicPayload =
   | {
       contentType: 'application/json'
@@ -134,6 +147,13 @@ class UnsupportedRealmDownloadError extends Error {
   }
 }
 
+class PendingLowLevelAccessImportError extends LowLevelAccessImportError {
+  constructor(readonly pendingImportToken: string) {
+    super()
+    this.name = 'PendingLowLevelAccessImportError'
+  }
+}
+
 export function registerRealmImportRoutes(
   app: FastifyInstance,
   db: DatabaseSync,
@@ -153,6 +173,11 @@ export function registerRealmImportRoutes(
   const hubUrl = options.hubUrl.replace(/\/+$/, '')
   const realmUrl = (options.realmUrl ?? 'https://realm.risuai.net').replace(/\/+$/, '')
   const deadlineMs = normalizePositiveInteger(options.deadlineMs, DEFAULT_REALM_IMPORT_DEADLINE_MS)
+  const pendingCharxImports: PendingRealmCharxImports = new Map()
+
+  app.addHook('onClose', async () => {
+    await cleanupPendingRealmCharxImports(pendingCharxImports)
+  })
 
   app.post('/api/v1/import/realm-character', { config: { rateLimit: importRateLimit } }, async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
@@ -173,6 +198,7 @@ export function registerRealmImportRoutes(
             maxDynamicJsonBytes: options.maxDynamicJsonBytes,
             maxFetchedAssetBytes: options.maxFetchedAssetBytes,
             maxFetchedAssetTotalBytes: options.maxFetchedAssetTotalBytes,
+            pendingCharxImports,
             signal: abort.signal,
             reportProgress,
           }),
@@ -190,6 +216,7 @@ export function registerRealmImportRoutes(
         maxDynamicJsonBytes: options.maxDynamicJsonBytes,
         maxFetchedAssetBytes: options.maxFetchedAssetBytes,
         maxFetchedAssetTotalBytes: options.maxFetchedAssetTotalBytes,
+        pendingCharxImports,
         signal: abort.signal,
       })
     } catch (err) {
@@ -199,7 +226,7 @@ export function registerRealmImportRoutes(
       }
       if (err instanceof LowLevelAccessImportError) {
         reply.code(409)
-        return { error: err.message, code: 'low_level_access_confirmation_required' }
+        return lowLevelAccessResponseBody(err)
       }
       if (err instanceof UnsupportedRealmDownloadError) {
         reply.code(415)
@@ -270,6 +297,7 @@ async function runRealmImport(args: {
   maxDynamicJsonBytes?: number
   maxFetchedAssetBytes?: number
   maxFetchedAssetTotalBytes?: number
+  pendingCharxImports: PendingRealmCharxImports
   signal: AbortSignal
   reportProgress?: RealmImportProgressReporter
 }): Promise<{ revision: number; event: unknown; characterId: string }> {
@@ -286,6 +314,47 @@ async function runRealmImport(args: {
   }
 
   const id = readRealmId(args.body.id)
+  const pendingImportToken = readOptionalToken(args.body.pendingImportToken)
+  if (pendingImportToken) {
+    const pendingImport = getPendingRealmCharxImport(args.pendingCharxImports, pendingImportToken, id)
+    if (!pendingImport) {
+      throw new ValidationError('Realm import confirmation expired; please retry the import')
+    }
+    if (args.body.allowLowLevelAccess !== true) {
+      throw new PendingLowLevelAccessImportError(pendingImportToken)
+    }
+
+    const claimedImport = takePendingRealmCharxImport(args.pendingCharxImports, pendingImportToken)
+    if (!claimedImport) {
+      throw new ValidationError('Realm import confirmation expired; please retry the import')
+    }
+    try {
+      reportProgress({ phase: 'download', message: 'Using downloaded Realm character', percent: 30 })
+      const result = await importRealmCharx({
+        db: args.db,
+        dataDir: args.dataDir,
+        eventSink: args.eventSink,
+        filePath: claimedImport.filePath,
+        tempDir: claimedImport.tempDir,
+        allowLowLevelAccess: true,
+        maxExpandedImportBytes: args.maxExpandedImportBytes,
+        maxFetchedAssetBytes: args.maxFetchedAssetBytes,
+        maxFetchedAssetTotalBytes: args.maxFetchedAssetTotalBytes,
+        signal: args.signal,
+        reportProgress,
+      })
+
+      reportProgress({ phase: 'commit', message: 'Realm import complete', percent: 100 })
+      return {
+        revision: result.revision,
+        event: result.event,
+        characterId: result.extra.characterId,
+      }
+    } finally {
+      await cleanupPendingRealmCharxImport(claimedImport)
+    }
+  }
+
   reportProgress({ phase: 'download', message: 'Downloading Realm character', percent: 5 })
   const dynamic = await fetchRealmDynamicPayload(
     args.realmUrl,
@@ -301,6 +370,7 @@ async function runRealmImport(args: {
       })
     },
   )
+  let shouldCleanupDynamicPayload = true
   try {
     reportProgress({ phase: 'download', message: 'Realm character downloaded', percent: 30 })
     if (dynamic.contentType === 'application/json') {
@@ -321,31 +391,46 @@ async function runRealmImport(args: {
     }
 
     if (CHARX_CONTENT_TYPES.has(dynamic.contentType) && dynamic.filePath && dynamic.tempDir) {
-      const result = await importRealmCharx({
-        db: args.db,
-        dataDir: args.dataDir,
-        eventSink: args.eventSink,
-        filePath: dynamic.filePath,
-        tempDir: dynamic.tempDir,
-        allowLowLevelAccess: args.body.allowLowLevelAccess === true,
-        maxExpandedImportBytes: args.maxExpandedImportBytes,
-        maxFetchedAssetBytes: args.maxFetchedAssetBytes,
-        maxFetchedAssetTotalBytes: args.maxFetchedAssetTotalBytes,
-        signal: args.signal,
-        reportProgress,
-      })
+      try {
+        const result = await importRealmCharx({
+          db: args.db,
+          dataDir: args.dataDir,
+          eventSink: args.eventSink,
+          filePath: dynamic.filePath,
+          tempDir: dynamic.tempDir,
+          allowLowLevelAccess: args.body.allowLowLevelAccess === true,
+          maxExpandedImportBytes: args.maxExpandedImportBytes,
+          maxFetchedAssetBytes: args.maxFetchedAssetBytes,
+          maxFetchedAssetTotalBytes: args.maxFetchedAssetTotalBytes,
+          signal: args.signal,
+          reportProgress,
+        })
 
-      reportProgress({ phase: 'commit', message: 'Realm import complete', percent: 100 })
-      return {
-        revision: result.revision,
-        event: result.event,
-        characterId: result.extra.characterId,
+        reportProgress({ phase: 'commit', message: 'Realm import complete', percent: 100 })
+        return {
+          revision: result.revision,
+          event: result.event,
+          characterId: result.extra.characterId,
+        }
+      } catch (err) {
+        if (err instanceof LowLevelAccessImportError && args.body.allowLowLevelAccess !== true) {
+          const pendingImportToken = createPendingRealmCharxImport(args.pendingCharxImports, {
+            id,
+            filePath: dynamic.filePath,
+            tempDir: dynamic.tempDir,
+          })
+          shouldCleanupDynamicPayload = false
+          throw new PendingLowLevelAccessImportError(pendingImportToken)
+        }
+        throw err
       }
     }
 
     throw new UnsupportedRealmDownloadError(dynamic.contentType)
   } finally {
-    await cleanupRealmDynamicPayload(dynamic)
+    if (shouldCleanupDynamicPayload) {
+      await cleanupRealmDynamicPayload(dynamic)
+    }
   }
 }
 
@@ -485,10 +570,7 @@ async function streamRealmImport(
     if (err instanceof RevisionConflictError) {
       write('conflict', { error: err.message, currentRevision: err.currentRevision })
     } else if (err instanceof LowLevelAccessImportError) {
-      write('low_level_access', {
-        error: err.message,
-        code: 'low_level_access_confirmation_required',
-      })
+      write('low_level_access', lowLevelAccessResponseBody(err))
     } else if (err instanceof UnsupportedRealmDownloadError) {
       write('unsupported', { error: err.message, code: 'unsupported_realm_download' })
     } else if (err instanceof ValidationError || err instanceof UpstreamError) {
@@ -503,6 +585,14 @@ async function streamRealmImport(
 
 function acceptsProgressStream(accept: unknown): boolean {
   return typeof accept === 'string' && accept.includes('text/event-stream')
+}
+
+function lowLevelAccessResponseBody(err: LowLevelAccessImportError): JsonRecord {
+  return {
+    error: err.message,
+    code: 'low_level_access_confirmation_required',
+    ...(err instanceof PendingLowLevelAccessImportError ? { pendingImportToken: err.pendingImportToken } : {}),
+  }
 }
 
 async function fetchRealmDynamicPayload(
@@ -542,7 +632,7 @@ async function fetchRealmDynamicPayload(
     }
   }
   const body = await readRealmDynamicJsonBody(res, {
-    maxBytes: realmDynamicJsonLimit(maxExpandedImportBytes, maxDynamicJsonBytes),
+    maxBytes: realmDynamicJsonLimit(maxDynamicJsonBytes),
     signal,
   })
   return { contentType, body }
@@ -672,14 +762,8 @@ function realmCharxDownloadLimit(maxExpandedImportBytes: number | undefined): nu
   return expandedLimit * REALM_CHARX_DOWNLOAD_CAP_MULTIPLIER
 }
 
-function realmDynamicJsonLimit(
-  maxExpandedImportBytes: number | undefined,
-  maxDynamicJsonBytes: number | undefined,
-): number {
-  return normalizePositiveInteger(
-    maxDynamicJsonBytes,
-    normalizePositiveInteger(maxExpandedImportBytes, DEFAULT_REALM_CHARX_EXPANDED_IMPORT_BYTES),
-  )
+function realmDynamicJsonLimit(maxDynamicJsonBytes: number | undefined): number {
+  return normalizePositiveInteger(maxDynamicJsonBytes, DEFAULT_REALM_DYNAMIC_JSON_BYTES)
 }
 
 function createRealmCharxDownloadLimitError(): UpstreamError {
@@ -702,6 +786,67 @@ async function cancelResponseBody(res: Response): Promise<void> {
 async function cleanupRealmDynamicPayload(dynamic: RealmDynamicPayload): Promise<void> {
   if (!dynamic.tempDir) return
   await fs.promises.rm(dynamic.tempDir, { recursive: true, force: true })
+}
+
+function createPendingRealmCharxImport(
+  pendingImports: PendingRealmCharxImports,
+  input: { id: string; filePath: string; tempDir: string },
+): string {
+  let token = randomBytes(16).toString('hex')
+  while (pendingImports.has(token)) {
+    token = randomBytes(16).toString('hex')
+  }
+
+  const entry: PendingRealmCharxImport = {
+    ...input,
+    expiresAt: Date.now() + DEFAULT_PENDING_REALM_CHARX_IMPORT_TTL_MS,
+    timer: setTimeout(() => {
+      const pending = pendingImports.get(token)
+      if (!pending) return
+      pendingImports.delete(token)
+      void cleanupPendingRealmCharxImport(pending)
+    }, DEFAULT_PENDING_REALM_CHARX_IMPORT_TTL_MS),
+  }
+  entry.timer.unref?.()
+  pendingImports.set(token, entry)
+  return token
+}
+
+function getPendingRealmCharxImport(
+  pendingImports: PendingRealmCharxImports,
+  token: string,
+  id: string,
+): PendingRealmCharxImport | null {
+  const pending = pendingImports.get(token)
+  if (!pending || pending.id !== id) return null
+  if (pending.expiresAt < Date.now()) {
+    pendingImports.delete(token)
+    void cleanupPendingRealmCharxImport(pending)
+    return null
+  }
+  return pending
+}
+
+function takePendingRealmCharxImport(
+  pendingImports: PendingRealmCharxImports,
+  token: string,
+): PendingRealmCharxImport | null {
+  const pending = pendingImports.get(token)
+  if (!pending) return null
+  pendingImports.delete(token)
+  clearTimeout(pending.timer)
+  return pending
+}
+
+async function cleanupPendingRealmCharxImport(pending: PendingRealmCharxImport): Promise<void> {
+  clearTimeout(pending.timer)
+  await fs.promises.rm(pending.tempDir, { recursive: true, force: true })
+}
+
+async function cleanupPendingRealmCharxImports(pendingImports: PendingRealmCharxImports): Promise<void> {
+  const pending = [...pendingImports.values()]
+  pendingImports.clear()
+  await Promise.all(pending.map((entry) => cleanupPendingRealmCharxImport(entry)))
 }
 
 async function importRealmCharx(args: {
@@ -1570,6 +1715,10 @@ function arrayValue(value: unknown): unknown[] {
 
 function readRealmId(value: unknown): string {
   return readNonEmptyString(value, 'id')
+}
+
+function readOptionalToken(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() !== '' ? value : null
 }
 
 function readNonEmptyString(value: unknown, label: string): string {

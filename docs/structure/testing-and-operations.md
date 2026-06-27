@@ -237,6 +237,7 @@ Server:
 | `RISU_API_DATA_DIR`          | `<repo>/data`              | SQLite, asset bytes, backups, auth files, legacy import artifacts.                                         |
 | `RISU_API_BODY_LIMIT`        | `104857600`                | JSON/body and multipart file limit.                                                                        |
 | `RISU_API_IMPORT_MAX_BYTES`  | unlimited                  | Streamed device-backup import limit; positive byte count caps, `0`/`unlimited`/`none`/`infinity` opts out. |
+| `RISU_REALM_IMPORT_MAX_EXPANDED_BYTES` | `325058560`       | Expanded payload cap for streamed Realm `charx` imports and Realm-fetched asset totals.                    |
 | `RISU_API_TRACE_MODE`        | unset                      | Enables API request tracing when `agent` or `human`; `0`/`false`/`off`/`none` disable it.                  |
 | `RISU_GENERATION_TRACE_FULL_PROMPT` | unset              | Set to `1` with protocol metrics enabled to write redacted generation prompt sidecars under `data/trace/generation/`. |
 | `RISU_GENERATION_TRACE_FULL_PROMPT_MAX_GZIP_BYTES` | `10485760` | Maximum compressed sidecar size for full-prompt generation traces.                                         |

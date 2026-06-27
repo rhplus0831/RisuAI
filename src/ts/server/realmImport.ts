@@ -22,7 +22,7 @@ export interface ServerRealmImportProgress {
 
 export type ServerRealmImportResult =
   | { status: 'ok'; revision: number; event: CommandEvent; characterId: string }
-  | { status: 'low-level-access' }
+  | { status: 'low-level-access'; pendingImportToken?: string }
   | { status: 'unsupported'; error: string }
   | { status: 'conflict'; currentRevision: number }
   | { status: 'error'; error: string }
@@ -32,6 +32,7 @@ export async function importRealmCharacterFromServer(
   id: string,
   options: {
     allowLowLevelAccess?: boolean
+    pendingImportToken?: string
     signal?: AbortSignal | null
     onProgress?: (progress: ServerRealmImportProgress) => void
   } = {},
@@ -57,6 +58,7 @@ export async function importRealmCharacterFromServer(
         id,
         baseRevision,
         allowLowLevelAccess: options.allowLowLevelAccess === true,
+        ...(options.pendingImportToken ? { pendingImportToken: options.pendingImportToken } : {}),
       }),
     })
   } catch (err) {
@@ -93,7 +95,7 @@ async function readRealmImportProgressStream(
         return readRealmImportSuccessBody(parseJsonFrame(frame.data))
       }
       if (frame.event === 'low_level_access') {
-        return { status: 'low-level-access' }
+        return lowLevelAccessResult(parseJsonFrame(frame.data))
       }
       if (frame.event === 'unsupported') {
         return {
@@ -134,7 +136,7 @@ async function readRealmImportJsonResponse(response: Response): Promise<ServerRe
 
   if (response.status === 409) {
     if (readBodyCode(body) === 'low_level_access_confirmation_required') {
-      return { status: 'low-level-access' }
+      return lowLevelAccessResult(body)
     }
     const currentRevision = readCurrentRevision(body)
     if (currentRevision !== null) setCachedServerCommandRevision(currentRevision)
@@ -218,6 +220,16 @@ function readBodyCode(body: unknown): string | null {
   if (!body || typeof body !== 'object') return null
   const code = (body as { code?: unknown }).code
   return typeof code === 'string' ? code : null
+}
+
+function lowLevelAccessResult(body: unknown): ServerRealmImportResult {
+  const pendingImportToken =
+    body &&
+    typeof body === 'object' &&
+    typeof (body as { pendingImportToken?: unknown }).pendingImportToken === 'string'
+      ? (body as { pendingImportToken: string }).pendingImportToken
+      : undefined
+  return pendingImportToken ? { status: 'low-level-access', pendingImportToken } : { status: 'low-level-access' }
 }
 
 function errorMessageFromBody(body: unknown, fallback: string): string {
