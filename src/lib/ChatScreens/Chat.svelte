@@ -60,7 +60,7 @@
     type MessageTranslation,
   } from '../../ts/storage/database.svelte'
   import { selectedCharID } from '../../ts/stores.svelte'
-  import { HideIconStore, ReloadGUIPointer, selIdState } from '../../ts/stores.svelte'
+  import { HideIconStore, ReloadGUIPointer, VariableReloadGUIPointer, selIdState } from '../../ts/stores.svelte'
   import AutoresizeArea from '../UI/GUI/TextAreaResizable.svelte'
   import ChatBody from './ChatBody.svelte'
   import PopupButton from '../UI/PopupButton.svelte'
@@ -218,6 +218,7 @@
   let msgDisplay = $state('')
   let translated = $state(false)
   let partialEditEnabled = $state(true)
+  let lastDisplayParseKey = ''
   let rerollMenuButtonId = Math.random()
   let messageEditOriginalText: string | null = $state(null)
 
@@ -776,8 +777,23 @@
   })
 
   $effect.pre(() => {
-    void $ReloadGUIPointer
-    displaya(displayMessage)
+    const reloadEpoch = $ReloadGUIPointer
+    const chatReloadEpoch = $ReloadChatPointer[idx] ?? 0
+    const variableReloadEpoch = idx < 0 ? $VariableReloadGUIPointer : 0
+    const displayParseKey = JSON.stringify([
+      displayMessage,
+      name,
+      idx,
+      role,
+      firstMessage,
+      reloadEpoch,
+      chatReloadEpoch,
+      variableReloadEpoch,
+    ])
+    if (displayParseKey !== lastDisplayParseKey) {
+      lastDisplayParseKey = displayParseKey
+      displaya(displayMessage)
+    }
   })
 
   function RenderGUIHtml(html: string) {
@@ -1212,7 +1228,8 @@
       {language.noMessage}
     </div>
   {:else}
-    {@const chatReloadPointer = $ReloadGUIPointer + ($ReloadChatPointer[idx] ?? 0)}
+    {@const variableReloadPointer = idx < 0 ? $VariableReloadGUIPointer : 0}
+    {@const chatReloadPointer = $ReloadGUIPointer + ($ReloadChatPointer[idx] ?? 0) + variableReloadPointer}
     {@const totalLengthPointer = idx > totalLength - 6 ? totalLength : 0}
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->

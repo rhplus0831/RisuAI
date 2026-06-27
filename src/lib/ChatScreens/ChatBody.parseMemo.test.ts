@@ -412,6 +412,17 @@ describe('ChatBody content-keyed parse memo', () => {
       moduleSignatureBuilds: 5,
       settingsSignatureBuilds: 6,
     })
+
+    VariableReloadGUIPointer.update((value) => value + 1)
+    const variableReloadInvalidatedKey = memoModule.getChatBodyParseMemoKey(secondInput)
+    expect(variableReloadInvalidatedKey).not.toBe(reloadInvalidatedKey)
+    expect(memoModule.getChatBodyParseMemoDebugStats()).toMatchObject({
+      parseKeyBuilds: 12,
+      characterSignatureBuilds: 5,
+      activeChatSignatureBuilds: 2,
+      moduleSignatureBuilds: 5,
+      settingsSignatureBuilds: 6,
+    })
   })
 
   it('keys parser settings from the active chat selected prompt regex', async () => {

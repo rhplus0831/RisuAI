@@ -3,7 +3,13 @@ import { ParseMarkdown, type CbsConditions, type simpleCharacterArgument } from 
 import { getModules } from '../../ts/process/modules'
 import type { customscript, triggerscript, character, Database } from '../../ts/storage/database.svelte'
 import { getCurrentChat } from '../../ts/storage/database.svelte'
-import { DBState, CurrentTriggerIdStore, ReloadGUIPointer, selectedCharID } from '../../ts/stores.svelte'
+import {
+  DBState,
+  CurrentTriggerIdStore,
+  ReloadGUIPointer,
+  VariableReloadGUIPointer,
+  selectedCharID,
+} from '../../ts/stores.svelte'
 import { getLLMCache, getLLMCacheMutationEpoch } from '../../ts/translator/translator'
 import { getActivePromptPresetRegexScripts } from '../../ts/process/promptPresetRegex'
 
@@ -388,7 +394,9 @@ export function getChatBodyParseMemoKey(input: ChatBodyParseMemoInput): string {
     input.chatID,
   )},"data":${stableFragment(input.data ?? '')},"kind":"chat-body-parse","mode":${stableFragment(
     input.mode,
-  )},"modules":${serializedModuleSignature(modules)},"settings":${serializedSettingsSignature(modules)}}`
+  )},"modules":${serializedModuleSignature(modules)},"settings":${serializedSettingsSignature(
+    modules,
+  )},"variableReloadEpoch":${stableFragment(get(VariableReloadGUIPointer))}}`
 }
 
 function getTranslateSettingsSignature() {

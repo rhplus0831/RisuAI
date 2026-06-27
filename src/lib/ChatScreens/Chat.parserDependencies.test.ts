@@ -185,6 +185,7 @@ import {
   ReloadChatPointer,
   ReloadGUIPointer,
   SizeStore,
+  VariableReloadGUIPointer,
   selIdState,
   selectedCharID,
 } from '../../ts/stores.svelte'
@@ -206,6 +207,7 @@ const previousDb = DBState.db
 const previousSelectedChar = get(selectedCharID)
 const previousReloadGui = get(ReloadGUIPointer)
 const previousReloadChat = get(ReloadChatPointer)
+const previousVariableReloadGui = get(VariableReloadGUIPointer)
 
 let target: HTMLElement
 let component: ChatHarnessApi | undefined
@@ -277,6 +279,7 @@ function seedDatabase(rows: ParserDependencyRow[]) {
   selIdState.selId = 0
   ReloadGUIPointer.set(0)
   ReloadChatPointer.set({})
+  VariableReloadGUIPointer.set(0)
   HideIconStore.set(false)
   SizeStore.set({ w: 900, h: 700 })
   DBState.db = {
@@ -368,6 +371,7 @@ afterEach(() => {
   selIdState.selId = previousSelectedChar
   ReloadGUIPointer.set(previousReloadGui)
   ReloadChatPointer.set(previousReloadChat)
+  VariableReloadGUIPointer.set(previousVariableReloadGui)
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
   target.remove()
@@ -443,6 +447,46 @@ describe('Chat parser dependencies', () => {
       'visible message 2 changed',
       'visible message 3',
     ])
+  })
+
+  it('re-runs only synthetic greeting display parsing on variable-only reload', async () => {
+    const rows = makeRows(4)
+    seedDatabase(rows)
+    mountHarness(rows)
+    await settle()
+
+    component?.updateParserIndex(0, -1)
+    await settle()
+    chatParserMocks.risuChatParser.mockClear()
+
+    VariableReloadGUIPointer.update((value) => value + 1)
+    await settle()
+
+    expect(chatParserMocks.risuChatParser.mock.calls.map((call) => call[0])).toEqual(['visible message 0'])
+    expect(chatParserMocks.risuChatParser.mock.calls[0][1]?.cbsConditions).toEqual({
+      firstmsg: true,
+      chatRole: 'char',
+    })
+  })
+
+  it('re-runs display parsing for the targeted reload chat index', async () => {
+    const rows = makeRows(4)
+    seedDatabase(rows)
+    mountHarness(rows)
+    await settle()
+
+    component?.updateParserIndex(0, -1)
+    await settle()
+    chatParserMocks.risuChatParser.mockClear()
+
+    ReloadChatPointer.update((value) => ({
+      ...value,
+      [-1]: (value[-1] ?? 0) + 1,
+    }))
+    await settle()
+
+    expect(chatParserMocks.risuChatParser.mock.calls.map((call) => call[0])).toEqual(['visible message 0'])
+    expect(chatParserMocks.risuChatParser.mock.calls[0][1]?.chatID).toBe(-1)
   })
 
   it('does not dispatch a message update when edit mode closes without changes', async () => {
