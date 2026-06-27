@@ -469,6 +469,36 @@ describe('Chat parser dependencies', () => {
     })
   })
 
+  it('re-runs only synthetic greeting display parsing when the active chat changes', async () => {
+    const rows = makeRows(4)
+    seedDatabase(rows)
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.characters[0].chats.push({
+        id: 'parser-dependency-other-chat',
+        name: 'Other Parser Dependency Chat',
+        message: [],
+        note: '',
+        bookmarks: [],
+        bookmarkNames: {},
+        localLore: [],
+      })
+    })
+    mountHarness(rows)
+    await settle()
+
+    component?.updateParserIndex(0, -1)
+    await settle()
+    chatParserMocks.risuChatParser.mockClear()
+
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.characters[0].chatPage = 1
+    })
+    await settle()
+
+    expect(chatParserMocks.risuChatParser.mock.calls.map((call) => call[0])).toEqual(['visible message 0'])
+    expect(chatParserMocks.risuChatParser.mock.calls[0][1]?.chatID).toBe(-1)
+  })
+
   it('re-runs display parsing for the targeted reload chat index', async () => {
     const rows = makeRows(4)
     seedDatabase(rows)

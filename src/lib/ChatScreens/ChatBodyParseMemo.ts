@@ -273,13 +273,17 @@ function activeChatSignature() {
   const char = DBState.db?.characters?.[selectedChar]
   let chatId: string | undefined
   let chatModules: unknown
+  let scriptstate: unknown
   try {
     const currentChat = getCurrentChat()
     chatId = currentChat?.id
     chatModules = currentChat?.modules
+    scriptstate = currentChat?.scriptstate
   } catch {
-    chatId = char?.chats?.[char?.chatPage]?.id
-    chatModules = char?.chats?.[char?.chatPage]?.modules
+    const fallbackChat = char?.chats?.[char?.chatPage]
+    chatId = fallbackChat?.id
+    chatModules = fallbackChat?.modules
+    scriptstate = fallbackChat?.scriptstate
   }
 
   return {
@@ -288,6 +292,7 @@ function activeChatSignature() {
     chatPage: char?.chatPage,
     chatId,
     chatModules,
+    scriptstate: normalizeForSignature(scriptstate ?? null),
   }
 }
 
@@ -296,13 +301,17 @@ function activeChatSignatureToken() {
   const char = DBState.db?.characters?.[selectedChar]
   let chatId: string | undefined
   let chatModules: unknown
+  let scriptstate: unknown
   try {
     const currentChat = getCurrentChat()
     chatId = currentChat?.id
     chatModules = currentChat?.modules
+    scriptstate = currentChat?.scriptstate
   } catch {
-    chatId = char?.chats?.[char?.chatPage]?.id
-    chatModules = char?.chats?.[char?.chatPage]?.modules
+    const fallbackChat = char?.chats?.[char?.chatPage]
+    chatId = fallbackChat?.id
+    chatModules = fallbackChat?.modules
+    scriptstate = fallbackChat?.scriptstate
   }
 
   return {
@@ -312,6 +321,7 @@ function activeChatSignatureToken() {
     chatPage: char?.chatPage,
     chatId,
     chatModules: scalarListSignature(chatModules),
+    scriptstate: normalizeForSignature(scriptstate ?? null),
   }
 }
 

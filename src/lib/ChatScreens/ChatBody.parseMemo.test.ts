@@ -464,6 +464,42 @@ describe('ChatBody content-keyed parse memo', () => {
     expect(memoModule.getChatBodyParseMemoKey(input)).not.toBe(selectedPromptKey)
   })
 
+  it('keys parser output by active chat scriptstate for synthetic greeting variables', async () => {
+    const char = seedDb()
+    char.chats.push({
+      id: 'chat-body-parse-memo-empty-chat',
+      name: 'Empty Variables Chat',
+      message: [],
+      note: '',
+      localLore: [],
+      fmIndex: -1,
+      bookmarks: [],
+      bookmarkNames: {},
+    } as any)
+    DBState.db.characters[0].chats[0].scriptstate = { $choice: 'applied' }
+
+    const memoModule = await import('./ChatBodyParseMemo')
+    memoModule.clearChatBodyParseMemo()
+    const input = {
+      data: 'synthetic greeting body',
+      charArg: char.chaId,
+      mode: 'notrim' as const,
+      chatID: -1,
+      cbsConditions: { firstmsg: true, chatRole: 'char' },
+    }
+
+    const populatedChatKey = memoModule.getChatBodyParseMemoKey(input)
+    DBState.db.characters[0].chatPage = 1
+    const emptyChatKey = memoModule.getChatBodyParseMemoKey(input)
+    expect(emptyChatKey).not.toBe(populatedChatKey)
+
+    DBState.db.characters[0].chatPage = 0
+    DBState.db.characters[0].chats[0].scriptstate = { $choice: 'changed' }
+    const changedVariableKey = memoModule.getChatBodyParseMemoKey(input)
+    expect(changedVariableKey).not.toBe(populatedChatKey)
+    expect(changedVariableKey).not.toBe(emptyChatKey)
+  })
+
   it('L30: cached-only LLM detection reuses a prebuilt parse key without rebuilding it', async () => {
     const char = seedDb({
       autoTranslate: true,

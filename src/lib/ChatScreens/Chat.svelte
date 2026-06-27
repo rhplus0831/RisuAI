@@ -43,6 +43,7 @@
     ReloadChatPointer,
     CurrentTriggerIdStore,
     popupStore,
+    refreshVariableOnlyGui,
     SizeStore,
     popUpEditorStore,
   } from 'src/ts/stores.svelte'
@@ -724,6 +725,10 @@
     })
   }
 
+  function chatScriptstateSignature(chat: Chat | undefined): string {
+    return JSON.stringify(chat?.scriptstate ?? null)
+  }
+
   const setStatusMessage = (message: string, timeout: number = 0) => {
     statusMessage = message
     if (timeout === 0) return
@@ -780,12 +785,14 @@
     const reloadEpoch = $ReloadGUIPointer
     const chatReloadEpoch = $ReloadChatPointer[idx] ?? 0
     const variableReloadEpoch = idx < 0 ? $VariableReloadGUIPointer : 0
+    const chatScopeKey = idx < 0 ? currentChatId : ''
     const displayParseKey = JSON.stringify([
       displayMessage,
       name,
       idx,
       role,
       firstMessage,
+      chatScopeKey,
       reloadEpoch,
       chatReloadEpoch,
       variableReloadEpoch,
@@ -796,8 +803,8 @@
     }
   })
 
-  function RenderGUIHtml(html: string) {
-    return renderCustomHtmlTemplate(html, getCbsCondition())
+  function RenderGUIHtml(html: string, cacheScopeKey: string) {
+    return renderCustomHtmlTemplate(html, getCbsCondition(), cacheScopeKey)
   }
 
   function hasCustomHtmlTemplate(html: unknown): html is string {
@@ -970,7 +977,10 @@
       })
     }
 
-    if (triggerResult && applyFreshChatButtonTriggerResult(triggerTarget, triggerResult.chat)) {
+    if (triggerResult?.chat && applyFreshChatButtonTriggerResult(triggerTarget, triggerResult.chat)) {
+      if (chatScriptstateSignature(triggerTarget.previous.chat) !== chatScriptstateSignature(triggerResult.chat)) {
+        refreshVariableOnlyGui()
+      }
       ReloadChatPointer.update((v) => {
         v[idx] = (v[idx] ?? 0) + 1
         return v
@@ -1230,6 +1240,7 @@
   {:else}
     {@const variableReloadPointer = idx < 0 ? $VariableReloadGUIPointer : 0}
     {@const chatReloadPointer = $ReloadGUIPointer + ($ReloadChatPointer[idx] ?? 0) + variableReloadPointer}
+    {@const chatScopePointer = idx < 0 ? currentChatId : ''}
     {@const totalLengthPointer = idx > totalLength - 6 ? totalLength : 0}
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -1244,7 +1255,7 @@
       }}
       style:font-size="{0.875 * (DBState.db.zoomsize / 100)}rem"
       style:line-height="{(DBState.db.lineHeight ?? 1.25) * (DBState.db.zoomsize / 100)}rem">
-      {#key `${totalLengthPointer}|${chatReloadPointer}`}
+      {#key `${totalLengthPointer}|${chatReloadPointer}|${chatScopePointer}`}
         {#if supportsServerRawTranslation()}
           <ChatBody
             {character}
@@ -2191,7 +2202,8 @@
         </div>
       </div>
     {:else if DBState.db.theme === 'customHTML' && !blankMessage && hasCustomHtmlTemplate(DBState.db.guiHTML)}
-      {@render renderGuiHtmlPart(RenderGUIHtml(DBState.db.guiHTML))}
+      {@const customHtmlCacheScopeKey = `${currentChatId}|${$VariableReloadGUIPointer}`}
+      {@render renderGuiHtmlPart(RenderGUIHtml(DBState.db.guiHTML, customHtmlCacheScopeKey))}
     {:else}
       {@render senderIcon({ rounded: DBState.db.roundIcons })}
       <span class="flex flex-col ml-4 w-full max-w-full min-w-0 text-black">

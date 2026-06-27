@@ -12,10 +12,11 @@ function normalizedCbsConditions(cbsConditions: CbsConditions = {}) {
   }
 }
 
-function customHtmlTemplateKey(html: string, cbsConditions: CbsConditions) {
+function customHtmlTemplateKey(html: string, cbsConditions: CbsConditions, cacheScopeKey = '') {
   return JSON.stringify({
     html,
     cbsConditions: normalizedCbsConditions(cbsConditions),
+    cacheScopeKey,
   })
 }
 
@@ -35,9 +36,13 @@ function refreshCustomHtmlTemplate(key: string, body: HTMLElement) {
   return body
 }
 
-export function renderCustomHtmlTemplate(html: string | null | undefined, cbsConditions: CbsConditions) {
+export function renderCustomHtmlTemplate(
+  html: string | null | undefined,
+  cbsConditions: CbsConditions,
+  cacheScopeKey = '',
+) {
   const templateHtml = html ?? ''
-  const key = customHtmlTemplateKey(templateHtml, cbsConditions)
+  const key = customHtmlTemplateKey(templateHtml, cbsConditions, cacheScopeKey)
   const cached = customHtmlTemplateMemo.get(key)
   if (cached) {
     return refreshCustomHtmlTemplate(key, cached)

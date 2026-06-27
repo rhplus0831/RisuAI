@@ -243,6 +243,7 @@ import {
   ReloadChatPointer,
   ReloadGUIPointer,
   SizeStore,
+  VariableReloadGUIPointer,
   popupStore,
   selIdState,
   selectedCharID,
@@ -262,6 +263,7 @@ const previousDb = DBState.db
 const previousSelectedChar = get(selectedCharID)
 const previousReloadGui = get(ReloadGUIPointer)
 const previousReloadChat = get(ReloadChatPointer)
+const previousVariableReloadGui = get(VariableReloadGUIPointer)
 
 let target: HTMLElement
 let components: MountedComponent[] = []
@@ -284,6 +286,7 @@ function seedDatabase(messageCount: number, guiHTML = customHtmlMocks.templates.
   selIdState.selId = 0
   ReloadGUIPointer.set(0)
   ReloadChatPointer.set({})
+  VariableReloadGUIPointer.set(0)
   popupStore.children = null
   popupStore.openId = 0
   popupStore.mouseX = 0
@@ -501,6 +504,7 @@ afterEach(() => {
   selIdState.selId = previousSelectedChar
   ReloadGUIPointer.set(previousReloadGui)
   ReloadChatPointer.set(previousReloadChat)
+  VariableReloadGUIPointer.set(previousVariableReloadGui)
   popupStore.children = null
   popupStore.openId = 0
   popupStore.mouseX = 0
@@ -552,6 +556,28 @@ describe('customHTML template memo', () => {
     expect(templateCalls(customHtmlMocks.templates.changed)).toHaveLength(1)
     expect(parserCalls).toHaveLength(1)
     expect(target.textContent).toContain('changed-template|first=false|role=user')
+  })
+
+  it('re-parses the customHTML template when variable or active-chat scope changes', async () => {
+    seedDatabase(2)
+    mountCustomHtmlRows(2)
+    await settle()
+    customHtmlMocks.risuChatParser.mockClear()
+    parserCalls = []
+
+    VariableReloadGUIPointer.update((value) => value + 1)
+    await settle()
+
+    expect(templateCalls(customHtmlMocks.templates.base)).toHaveLength(1)
+    expect(parserCalls).toHaveLength(1)
+
+    customHtmlMocks.risuChatParser.mockClear()
+    parserCalls = []
+    DBState.db.characters[0].chatPage = 1
+    await settle()
+
+    expect(templateCalls(customHtmlMocks.templates.base)).toHaveLength(1)
+    expect(parserCalls).toHaveLength(1)
   })
 
   it('falls back to the standard message layout when customHTML has no template', async () => {
@@ -631,6 +657,30 @@ describe('customHTML rendered button trigger freshness', () => {
     expect(DBState.db.characters[0].chats[0].message[0].data).toBe('visible message 0')
     expect(DBState.db.characters[0].chats[1].message[0].data).toBe('other chat message')
     expect(dispatchCompatibleChatUpdateScoped).not.toHaveBeenCalled()
+  })
+
+  it('bumps the variable-only reload epoch after an applied risu-btn scriptstate change', async () => {
+    seedDatabase(1, customHtmlMocks.templates.luaButton)
+    mountCustomHtmlRows(1)
+    await settle()
+
+    customHtmlMocks.runLuaButtonTrigger.mockImplementation(async (_char, _event, options) => ({
+      chat: {
+        ...options.chat,
+        scriptstate: {
+          ...(options.chat.scriptstate ?? {}),
+          $choice: 'applied',
+        },
+      },
+    }))
+    const previousVariableEpoch = get(VariableReloadGUIPointer)
+
+    target.querySelector<HTMLButtonElement>('.lua-trigger-button')?.click()
+    await settle()
+
+    expect(DBState.db.characters[0].chats[0].scriptstate?.$choice).toBe('applied')
+    expect(get(VariableReloadGUIPointer)).toBe(previousVariableEpoch + 1)
+    expect(dispatchCompatibleChatUpdateScoped).toHaveBeenCalled()
   })
 })
 

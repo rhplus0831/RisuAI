@@ -182,6 +182,26 @@ describe('editdisplay render path logging (L38)', () => {
     expect(DBState.db.characters[0].chats[0].message[0].data).toBe('rendered body')
   })
 
+  it('does not reuse editdisplay script cache across chat variable changes', async () => {
+    const char = seedDb()
+    const chat = DBState.db.characters[0].chats[0]
+    chat.scriptstate = { $choice: 'first' }
+    char.customscript = [
+      {
+        comment: 'variable-display',
+        type: 'editdisplay',
+        in: 'CHOICE',
+        out: '{{getvar::choice}}',
+        flag: 'g',
+        ableFlag: true,
+      },
+    ] as any
+
+    await expect(processScriptFull(char, 'CHOICE', 'editdisplay', -1)).resolves.toMatchObject({ data: 'first' })
+    chat.scriptstate = { $choice: 'second' }
+    await expect(processScriptFull(char, 'CHOICE', 'editdisplay', -1)).resolves.toMatchObject({ data: 'second' })
+  })
+
   it('server-mode non-display @@inject optimistically updates and dispatches a message patch', async () => {
     const calls = stubCommandFetch()
     const char = seedDb()

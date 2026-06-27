@@ -1,5 +1,5 @@
 import { get } from 'svelte/store'
-import { CharEmotion, selectedCharID } from '../stores.svelte'
+import { CharEmotion, selectedCharID, VariableReloadGUIPointer } from '../stores.svelte'
 import {
   type character,
   type customscript,
@@ -131,8 +131,9 @@ function generateScriptCacheKey(
   mode: ScriptMode,
   chatID = -1,
   cbsConditions: CbsConditions = {},
+  cacheScope = '',
 ) {
-  let hash = data + '|||' + mode + '|||'
+  let hash = data + '|||' + mode + '|||' + cacheScope + '|||'
   for (const script of scripts) {
     if (script.type !== mode) {
       continue
@@ -162,7 +163,29 @@ export function hasProcessScriptCacheEntryForTesting(
   chatID = -1,
   cbsConditions: CbsConditions = {},
 ) {
-  return processScriptCache.has(generateScriptCacheKey(scripts, data, mode, chatID, cbsConditions))
+  return processScriptCache.has(
+    generateScriptCacheKey(scripts, data, mode, chatID, cbsConditions, currentScriptCacheScope(mode)),
+  )
+}
+
+function currentScriptCacheScope(mode: ScriptMode) {
+  if (mode !== 'editdisplay') return ''
+  try {
+    const chat = getCurrentChat()
+    return JSON.stringify({
+      selectedChar: get(selectedCharID),
+      chatId: chat?.id,
+      scriptstate: chat?.scriptstate ?? null,
+      variableReloadEpoch: get(VariableReloadGUIPointer),
+    })
+  } catch {
+    return JSON.stringify({
+      selectedChar: get(selectedCharID),
+      chatId: null,
+      scriptstate: null,
+      variableReloadEpoch: get(VariableReloadGUIPointer),
+    })
+  }
 }
 
 function cacheBestMatch(cacheKey: string, bestMatch: string) {
@@ -305,7 +328,7 @@ export async function processScriptFull(
   const scripts = getProcessableCustomScripts(getActivePromptPresetRegexScripts(db))
     .concat(getProcessableCustomScripts((char as { customscript?: unknown }).customscript))
     .concat(getProcessableCustomScripts(getModuleRegexScripts()))
-  const hash = generateScriptCacheKey(scripts, data, mode, chatID, cbsConditions)
+  const hash = generateScriptCacheKey(scripts, data, mode, chatID, cbsConditions, currentScriptCacheScope(mode))
   const cached = getScriptCache(hash)
   if (cached) {
     return { data: cached, emoChanged: false }
