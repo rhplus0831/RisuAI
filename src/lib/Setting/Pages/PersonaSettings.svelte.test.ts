@@ -18,6 +18,14 @@ describe('PersonaSettings persistence contracts', () => {
     expect(source).toMatch(/<TextAreaInput[\s\S]*bind:value=\{\(\) => DBState\.db\.userNote,/)
   })
 
+  it('exposes display name as a persona row field', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/lib/Setting/Pages/PersonaSettings.svelte'), 'utf8')
+
+    expect(source).toContain('{language.displayName}')
+    expect(source).toContain('updateSelectedPersonaDisplayName')
+    expect(source).toContain('DBState.db.personas[DBState.db.selectedPersona]?.displayName')
+  })
+
   it('reconciles projection epoch changes before queuing normal selected-persona edits', () => {
     const source = readFileSync(resolve(process.cwd(), 'src/lib/Setting/Pages/PersonaSettings.svelte'), 'utf8')
     const projectionBranch = source.match(/if \(projectionApplyChanged\) \{[\s\S]*?\n    \}/)?.[0] ?? ''

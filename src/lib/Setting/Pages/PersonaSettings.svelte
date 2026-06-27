@@ -23,6 +23,7 @@
     reorderUserPersonasByIndices,
     selectUserImg,
     snapshotPersonaJson,
+    updateSelectedPersonaDisplayName,
     updateSelectedPersonaField,
     updateSelectedPersonaLargePortrait,
     type PersonaStateSnapshot,
@@ -32,6 +33,7 @@
   import { sleep, sortableOptions } from 'src/ts/util'
   import { DBState } from 'src/ts/stores.svelte'
   import { getServerProjectionApplyEpoch } from 'src/ts/server/projectionWriteGuard.svelte'
+  import { getPersonaDisplayName } from 'src/ts/personaDisplayName'
 
   let stb: Sortable = null
   let ele: HTMLDivElement = $state()
@@ -193,6 +195,14 @@
       size="lg"
       placeholder="User"
       bind:value={() => DBState.db.username, (value) => updateSelectedPersonaField('username', value)} />
+    <span class="text-sm text-textcolor2">{language.displayName}</span>
+    <TextInput
+      marginBottom
+      size="lg"
+      placeholder={language.displayName}
+      bind:value={
+        () => DBState.db.personas[DBState.db.selectedPersona]?.displayName ?? '', updateSelectedPersonaDisplayName
+      } />
     <span class="text-sm text-textcolor2">{language.personaNote}</span>
     <TextAreaInput
       height="20"
@@ -215,7 +225,7 @@
             return
           }
           const d = await alertConfirm(
-            `${language.removeConfirm}${DBState.db.personas[DBState.db.selectedPersona].name}`,
+            `${language.removeConfirm}${getPersonaDisplayName(DBState.db.personas[DBState.db.selectedPersona])}`,
           )
           if (d) {
             deleteSelectedUserPersona()

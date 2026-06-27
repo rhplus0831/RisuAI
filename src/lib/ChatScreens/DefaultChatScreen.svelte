@@ -49,7 +49,7 @@
     doingChat,
     sendChat,
   } from '../../ts/process/index.svelte'
-  import { getUserIcon, getUserIconProtrait, getUserName, sleep } from '../../ts/util'
+  import { getUserDisplayName, getUserIcon, getUserIconProtrait, sleep } from '../../ts/util'
   import { language } from '../../lang'
   import { isExpTranslator, translate } from '../../ts/translator/translator'
   import { alertError, alertNormal, alertWait } from '../../ts/alert'
@@ -757,7 +757,7 @@
 
   let { userIconPortrait, currentUsername, userIcon } = $derived.by(() => {
     return {
-      currentUsername: getUserName(),
+      currentUsername: getUserDisplayName(),
       userIconPortrait: getUserIconProtrait(),
       userIcon: getUserIcon(),
     }

@@ -1,6 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { DBState, selectedCharID } from './stores.svelte'
-import { checkPersonaBinded, getPersonaPrompt, getUserIcon, getUserIconProtrait, getUserName } from './util'
+import {
+  checkPersonaBinded,
+  getPersonaPrompt,
+  getUserDisplayName,
+  getUserIcon,
+  getUserIconProtrait,
+  getUserName,
+} from './util'
 
 function seedPersonaDisplayState(chatPatch: Record<string, unknown>): void {
   selectedCharID.set(0)
@@ -13,6 +20,7 @@ function seedPersonaDisplayState(chatPatch: Record<string, unknown>): void {
       {
         id: 'chat-persona',
         name: 'Chat Persona',
+        displayName: 'Visible Chat Persona',
         icon: 'chat.png',
         personaPrompt: 'chat prompt',
         note: '',
@@ -21,6 +29,7 @@ function seedPersonaDisplayState(chatPatch: Record<string, unknown>): void {
       {
         id: 'global-persona',
         name: 'Global Persona',
+        displayName: 'Visible Global Persona',
         icon: 'global.png',
         personaPrompt: 'global prompt',
         note: '',
@@ -78,6 +87,7 @@ describe('active chat persona display helpers', () => {
 
     expect(checkPersonaBinded()?.id).toBe('chat-persona')
     expect(getUserName()).toBe('Chat Persona')
+    expect(getUserDisplayName()).toBe('Visible Chat Persona')
     expect(getUserIcon()).toBe('chat.png')
     expect(getPersonaPrompt()).toBe('chat prompt')
     expect(getUserIconProtrait()).toBe(true)
@@ -90,8 +100,14 @@ describe('active chat persona display helpers', () => {
 
     expect(checkPersonaBinded()?.id).toBe('legacy-persona')
     expect(getUserName()).toBe('Legacy Persona')
+    expect(getUserDisplayName()).toBe('Legacy Persona')
     expect(getUserIcon()).toBe('legacy.png')
     expect(getPersonaPrompt()).toBe('legacy prompt')
     expect(getUserIconProtrait()).toBe(false)
+  })
+
+  it('uses the selected persona display name only for visible labels', () => {
+    expect(getUserName()).toBe('Global Persona')
+    expect(getUserDisplayName()).toBe('Visible Global Persona')
   })
 })

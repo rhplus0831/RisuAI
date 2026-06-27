@@ -320,6 +320,8 @@ interface Persona {
   personaPrompt: string
   /** Persona name */
   name: string
+  /** User-friendly display name */
+  displayName?: string
   /** Persona icon */
   icon: string
   /** Use large portrait */

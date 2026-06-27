@@ -8,6 +8,7 @@ type JsonRecord = Record<string, unknown>
 export interface PersonaRecord extends JsonRecord {
   id: string
   name?: string
+  displayName?: string
   icon?: string
   personaPrompt?: string
   note?: string
@@ -165,7 +166,7 @@ function validatePersonaRecord(record: JsonRecord, label: string, options: { ass
   if ('id' in record && (typeof record.id !== 'string' || record.id.trim() === '')) {
     throw new ValidationError(`${label}.id must be a non-empty string`)
   }
-  for (const key of ['name', 'icon', 'personaPrompt', 'note']) {
+  for (const key of ['name', 'displayName', 'icon', 'personaPrompt', 'note']) {
     if (key in record && typeof record[key] !== 'string') {
       throw new ValidationError(`${label}.${key} must be a string`)
     }

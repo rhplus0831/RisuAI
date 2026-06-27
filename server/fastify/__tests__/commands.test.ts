@@ -3433,6 +3433,7 @@ describe('Phase 9-2d persona commands', () => {
         persona: {
           id: 'persona-b',
           name: 'B',
+          displayName: 'Bee',
           icon: personaIconId,
           personaPrompt: 'b prompt',
           note: 'b note',
@@ -3457,7 +3458,7 @@ describe('Phase 9-2d persona commands', () => {
       headers: { 'risu-auth': assertion },
       payload: {
         baseRevision: created.json().revision,
-        patch: { name: 'B renamed', largePortrait: true },
+        patch: { name: 'B renamed', displayName: 'Localized B', largePortrait: true },
       },
     })
     expect(updated.statusCode).toBe(200)
@@ -3526,6 +3527,7 @@ describe('Phase 9-2d persona commands', () => {
       {
         id: 'persona-b',
         name: 'B renamed',
+        displayName: 'Localized B',
         icon: personaIconId,
         personaPrompt: 'b prompt',
         note: 'b note',
@@ -3621,6 +3623,18 @@ describe('Phase 9-2d persona commands', () => {
     })
     expect(update.statusCode).toBe(400)
     expect(update.json().error).toBe('patch.largePortrait must be a boolean')
+
+    const invalidDisplayName = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/personas/persona-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: { displayName: 123 },
+      },
+    })
+    expect(invalidDisplayName.statusCode).toBe(400)
+    expect(invalidDisplayName.json().error).toBe('patch.displayName must be a string')
 
     const reorder = await harness.app.inject({
       method: 'POST',

@@ -45,14 +45,15 @@ export interface SelectedPersonaProjectionSnapshot {
   userIcon: string
   personaPrompt: string
   userNote: string
+  displayName: string
   largePortrait: boolean
 }
 
 export type SelectedPersonaProfileField = 'username' | 'userNote' | 'personaPrompt'
-export type SelectedPersonaDirtyField = SelectedPersonaProfileField | 'largePortrait'
+export type SelectedPersonaDirtyField = SelectedPersonaProfileField | 'displayName' | 'largePortrait'
 type PersonaProfileMirrorField = 'username' | 'userIcon' | 'personaPrompt' | 'userNote'
 type PersonaRowProfileField = 'name' | 'icon' | 'personaPrompt' | 'note'
-type PersonaRowRollbackField = PersonaRowProfileField | 'largePortrait'
+type PersonaRowRollbackField = PersonaRowProfileField | 'displayName' | 'largePortrait'
 
 interface PersonaProfileMirrorRollbackSnapshot {
   selectedPersona: number
@@ -93,6 +94,7 @@ const personaRowRollbackFields = new Set<PersonaRowRollbackField>([
   'icon',
   'personaPrompt',
   'note',
+  'displayName',
   'largePortrait',
 ])
 
@@ -118,13 +120,15 @@ export function currentPersonaStateSnapshot(): PersonaStateSnapshot {
 }
 
 export function currentSelectedPersonaProjectionSnapshot(): SelectedPersonaProjectionSnapshot {
+  const selectedPersona = DBState.db.personas[DBState.db.selectedPersona]
   return {
     selectedPersona: DBState.db.selectedPersona,
     username: DBState.db.username,
     userIcon: DBState.db.userIcon,
     personaPrompt: DBState.db.personaPrompt,
     userNote: DBState.db.userNote,
-    largePortrait: DBState.db.personas[DBState.db.selectedPersona]?.largePortrait ?? false,
+    displayName: selectedPersona?.displayName ?? '',
+    largePortrait: selectedPersona?.largePortrait ?? false,
   }
 }
 
@@ -534,8 +538,10 @@ function applyImportPersonaRollback(input: { createdPersonaId: string; attempted
 }
 
 function personaPatchFromLegacyProfile(): PersonaSnapshot {
+  const selectedPersona = DBState.db.personas[DBState.db.selectedPersona]
   return {
     name: DBState.db.username,
+    displayName: selectedPersona?.displayName ?? '',
     icon: DBState.db.userIcon,
     personaPrompt: DBState.db.personaPrompt,
     note: DBState.db.userNote,
@@ -555,12 +561,19 @@ function selectedPersonaProfileRowField(field: SelectedPersonaProfileField): 'na
   return 'personaPrompt'
 }
 
+function isSelectedPersonaProfileField(field: SelectedPersonaDirtyField): field is SelectedPersonaProfileField {
+  return field === 'username' || field === 'userNote' || field === 'personaPrompt'
+}
+
 function selectedPersonaFieldProjectionValue(
   persona: Persona | undefined,
   field: SelectedPersonaDirtyField,
 ): string | boolean | undefined {
   if (field === 'largePortrait') {
     return persona?.largePortrait ?? false
+  }
+  if (field === 'displayName') {
+    return persona?.displayName ?? ''
   }
   const rowField = selectedPersonaProfileRowField(field)
   return persona?.[rowField] ?? ''
@@ -590,7 +603,9 @@ function clearDirtySelectedPersonaFieldsMatchingProjection(
     const projectionMatchesDirtyValue =
       field === 'largePortrait'
         ? rowValue === value
-        : rowValue === value && selectedPersonaLegacyProjectionValue(field) === value
+        : field === 'displayName'
+          ? rowValue === value
+          : rowValue === value && selectedPersonaLegacyProjectionValue(field) === value
     if (projectionMatchesDirtyValue) {
       dirtyFields.delete(field)
     }
@@ -624,6 +639,11 @@ export function reconcileSelectedPersonaProjectionEpoch(): void {
           persona.largePortrait = value === true
           continue
         }
+        if (field === 'displayName') {
+          persona.displayName = String(value)
+          continue
+        }
+        if (!isSelectedPersonaProfileField(field)) continue
 
         const stringValue = String(value)
         DBState.db[field] = stringValue
@@ -837,11 +857,21 @@ export function updateSelectedPersonaLargePortrait(value: boolean): void {
   })
 }
 
+export function updateSelectedPersonaDisplayName(value: string): void {
+  const persona = DBState.db.personas[DBState.db.selectedPersona]
+  if (!persona) return
+  markSelectedPersonaFieldDirty('displayName', value)
+  withTrustedServerProjectionWrite(() => {
+    DBState.db.personas[DBState.db.selectedPersona].displayName = value
+  })
+}
+
 export function createNewUserPersona(): Persona {
   const previous = currentPersonaStateSnapshot()
   const persona = {
     id: v4(),
     name: 'New Persona',
+    displayName: '',
     icon: '',
     personaPrompt: '',
     note: '',
@@ -1126,6 +1156,7 @@ export function changeUserPersona(id: number, save: 'save' | 'noSave' = 'save') 
 
 interface PersonaCard {
   name: string
+  displayName?: string
   personaPrompt: string
   note?: string
 }
@@ -1154,6 +1185,7 @@ export async function exportUserPersona() {
 
   let card: PersonaCard = safeStructuredClone({
     name: db.username,
+    displayName: db.personas[db.selectedPersona]?.displayName ?? '',
     personaPrompt: db.personaPrompt,
     note: db.userNote,
   })
@@ -1204,6 +1236,7 @@ export async function importUserPersona() {
     if (data.name && data.personaPrompt) {
       const persona = {
         name: data.name,
+        displayName: data.displayName ?? '',
         icon: await saveImage(await reencodeImage(v.data)),
         personaPrompt: data.personaPrompt,
         note: data.note,

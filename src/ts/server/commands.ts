@@ -406,6 +406,7 @@ export type PromptItemSnapshot = Record<string, unknown> & {
 export type PersonaSnapshot = Record<string, unknown> & {
   id?: string
   name?: string
+  displayName?: string
   icon?: string
   personaPrompt?: string
   note?: string

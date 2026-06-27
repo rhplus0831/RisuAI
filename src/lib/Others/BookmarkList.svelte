@@ -3,7 +3,7 @@
   import { XIcon, TrashIcon, PencilIcon, BookOpenCheckIcon, BookLockIcon, ArrowRightIcon } from '@lucide/svelte'
   import Chat from '../ChatScreens/Chat.svelte'
   import { getCharImage } from 'src/ts/characters'
-  import { getUserName, getUserIcon } from 'src/ts/util'
+  import { getUserDisplayName, getUserIcon } from 'src/ts/util'
   import {
     createSimpleCharacter,
     bookmarkListOpen,
@@ -233,7 +233,7 @@
                 <Chat
                   idx={msg.originalIndex}
                   message={msg.data}
-                  name={msg.role === 'user' ? getUserName() : getCharacterDisplayName(chara)}
+                  name={msg.role === 'user' ? getUserDisplayName() : getCharacterDisplayName(chara)}
                   img={msg.role === 'user' ? getCharImage(getUserIcon(), 'css') : getCharImage(chara.image, 'css')}
                   role={msg.role}
                   messageGenerationInfo={msg.generationInfo}

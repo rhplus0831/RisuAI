@@ -4,6 +4,7 @@
 
   import { DBState, selectedCharID, type GenerationSettingsPickerMode } from 'src/ts/stores.svelte'
   import { changeUserPersona, validUniquePersonaIdAt } from 'src/ts/persona'
+  import { getPersonaDisplayName } from 'src/ts/personaDisplayName'
   import {
     resolveActiveChatGenerationSettings,
     saveActiveChatGenerationSettingsSelection,
@@ -83,7 +84,7 @@
         data-risu-selected={isPersonaSelected(i) ? 'true' : 'false'}
         aria-current={isPersonaSelected(i) ? 'true' : undefined}>
         <span class="overflow-x-auto whitespace-nowrap w-full text-left">
-          <span class="font-medium">{persona.name}</span>
+          <span class="font-medium">{getPersonaDisplayName(persona)}</span>
           {#if persona.note}
             <span class="opacity-75"> / {persona.note}</span>
           {/if}

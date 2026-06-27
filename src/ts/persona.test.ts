@@ -20,6 +20,7 @@ import {
   saveUserPersona,
   selectedPersonaId,
   setSelectedPersonaPromptFromTrigger,
+  updateSelectedPersonaDisplayName,
   updateSelectedPersonaField,
   updateSelectedPersonaLargePortrait,
 } from './persona'
@@ -166,6 +167,31 @@ describe('persona ID read and command preparation', () => {
     })
   })
 
+  it('updates display name as a selected persona row field without changing the internal username', () => {
+    seedPersonaState(
+      [
+        makePersona({
+          id: 'persona-a',
+          name: 'Internal Name',
+          displayName: '',
+          personaPrompt: 'Prompt',
+          note: 'Note',
+        }),
+      ],
+      0,
+    )
+    DBState.db.username = 'Internal Name'
+
+    updateSelectedPersonaDisplayName('Visible Name')
+
+    expect(DBState.db.username).toBe('Internal Name')
+    expect(DBState.db.personas[0]).toMatchObject({
+      id: 'persona-a',
+      name: 'Internal Name',
+      displayName: 'Visible Name',
+    })
+  })
+
   it('flushes a debounced selected persona save and preserves queued rollback behavior', async () => {
     seedPersonaState(
       [
@@ -180,6 +206,7 @@ describe('persona ID read and command preparation', () => {
     )
     const previous = currentPersonaStateSnapshot()
     updateSelectedPersonaField('personaPrompt', 'Unsaved prompt')
+    updateSelectedPersonaDisplayName('Unsaved display name')
     const attempted = currentPersonaStateSnapshot()
     queueSelectedPersonaUpdate(previous, attempted)
 
@@ -196,9 +223,11 @@ describe('persona ID read and command preparation', () => {
     )
 
     const result = await flushPendingSelectedPersonaUpdate()
+    const updateBody = JSON.parse(String(vi.mocked(fetch).mock.calls[1][1]?.body))
 
     expect(result).toEqual({ status: 'error', error: 'persona save failed' })
     expect(fetch).toHaveBeenCalledTimes(2)
+    expect(updateBody.patch.displayName).toBe('Unsaved display name')
     expect(currentPersonaStateSnapshot()).toEqual(previous)
   })
 

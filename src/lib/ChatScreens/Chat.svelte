@@ -46,7 +46,7 @@
     SizeStore,
     popUpEditorStore,
   } from 'src/ts/stores.svelte'
-  import { capitalize, getUserIcon, getUserName, sleep } from 'src/ts/util'
+  import { capitalize, getUserDisplayName, getUserIcon, sleep } from 'src/ts/util'
   import { v4 as uuidv4, v4 } from 'uuid'
   import { language } from '../../lang'
   import { alertClear, alertConfirm, alertInput, alertNormal, alertRequestData, alertWait } from '../../ts/alert'
@@ -1006,7 +1006,7 @@
     } else {
       bookmarks.push(messageId)
 
-      const msgSender = chat.message[idx]?.role === 'user' ? getUserName() : name
+      const msgSender = chat.message[idx]?.role === 'user' ? name || getUserDisplayName() : name
       const newName = await alertInput(language.bookmarkAskNameOrDefault, [], bookmarkNames[messageId] || '')
 
       if (newName && newName.trim() !== '') {
@@ -1484,7 +1484,7 @@
             }
 
             const isUserMessage = role === 'user'
-            const displayName = isUserMessage ? getUserName() : name
+            const displayName = isUserMessage ? name || getUserDisplayName() : name
             const modelInfo = messageGenerationInfo
               ? capitalize(getModelInfo(messageGenerationInfo.model).shortName)
               : isUserMessage

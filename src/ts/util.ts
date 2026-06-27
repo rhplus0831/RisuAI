@@ -11,6 +11,7 @@ import { isIOS } from 'src/ts/platform'
 import type { Attachment } from 'svelte/attachments'
 import { mount, unmount, type Snippet } from 'svelte'
 import PopupList from 'src/lib/UI/PopupList.svelte'
+import { getPersonaDisplayName } from './personaDisplayName'
 export interface Messagec extends Message {
   index: number
 }
@@ -111,6 +112,22 @@ export function getUserName() {
   }
   const db = getDatabase()
   return db.username ?? 'User'
+}
+
+export function getUserDisplayName() {
+  const bindedPersona = checkPersonaBinded()
+  if (bindedPersona) {
+    return getPersonaDisplayName(bindedPersona)
+  }
+  const db = getDatabase()
+  const selectedPersona = db.personas?.[db.selectedPersona]
+  return getPersonaDisplayName(
+    {
+      name: db.username ?? selectedPersona?.name,
+      displayName: selectedPersona?.displayName,
+    },
+    'User',
+  )
 }
 
 export function getUserIcon() {

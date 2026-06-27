@@ -1173,6 +1173,7 @@ export function setDatabase(data: Database) {
   data.personas ??= [
     {
       name: data.username,
+      displayName: '',
       personaPrompt: '',
       icon: data.userIcon,
       note: data.userNote,
@@ -1957,6 +1958,7 @@ export interface Database {
   personas: {
     personaPrompt: string
     name: string
+    displayName?: string
     icon: string
     largePortrait?: boolean
     id?: string
