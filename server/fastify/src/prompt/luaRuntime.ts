@@ -1385,9 +1385,13 @@ let luaEngineBootGate: Promise<void> | null = null
  * Lua continuation (an in-flight `:await()`) crashes wasmoon with "null
  * function or function signature mismatch". So *every* boot path — the
  * background pool refill and a run's fresh boot alike — starts only while this
- * is zero and holds {@link luaEngineBootGate} for its duration, and
- * {@link acquirePreparedEngine} counts the run active in the same tick it
- * claims an engine, leaving no window between acquire and run start.
+ * is zero and holds {@link luaEngineBootGate} for its duration.
+ *
+ * Wasmoon continuations are also fragile when two engines are both suspended in
+ * host-function `:await()` calls. A pooled engine does not boot, but it can
+ * still resume through the same wasm function table, so acquire serializes whole
+ * Lua runs: a second run waits for the active run to drain before it can claim a
+ * prepared engine.
  */
 let activeLuaRuns = 0
 /** Fresh-boot acquires parked until the active runs drain (see
@@ -1478,8 +1482,10 @@ function refillLuaEnginePoolWhenIdle(): void {
  * limit, exactly the pre-pool behavior. Every path serializes against engine
  * boots: an in-flight boot (refill or another run's fresh boot) is awaited
  * before the pool is touched, and a fresh boot of our own waits for all
- * active runs to drain and then holds the boot gate itself — a boot must
- * never overlap a run's pending Lua continuation (see {@link activeLuaRuns}).
+ * active runs to drain before touching the pool. A pooled acquire is fast, but
+ * it still must not overlap another run that may be suspended in a Lua
+ * continuation. Fresh boots additionally hold the boot gate while creating the
+ * engine.
  */
 async function acquirePreparedEngine(execTimeoutMs: number): Promise<PreparedLuaEngine> {
   for (;;) {
@@ -1487,22 +1493,22 @@ async function acquirePreparedEngine(execTimeoutMs: number): Promise<PreparedLua
       await luaEngineBootGate
       continue
     }
+    // Serialize whole Lua runs, not just engine boots. Two output hooks can both
+    // suspend inside axLLM()/request():await(); letting a pooled engine run next
+    // to that suspended continuation can corrupt wasmoon's shared call table.
+    if (activeLuaRuns > 0) {
+      await waitForLuaRunsDrained()
+      continue
+    }
     if (execTimeoutMs === DEFAULT_EXEC_TIMEOUT_MS) {
       const pooled = luaEnginePool.shift()
       if (pooled) {
         luaEngineStats.pooledAcquires++
-        // Claimed in the same tick as the gate check above: the run is
-        // counted active before any boot path can re-inspect the world.
+        // Counted active before returning, so a following acquire waits until
+        // this run has fully drained.
         activeLuaRuns++
         return pooled
       }
-    }
-    // A fresh boot is needed (empty pool or custom limit). Park until nothing
-    // is mid-run, then re-evaluate from the top — a refill or another acquire
-    // may have moved first while we waited.
-    if (activeLuaRuns > 0) {
-      await waitForLuaRunsDrained()
-      continue
     }
     // Sole booter: hold the gate so no new run starts (and no refill begins)
     // while this engine boots.
@@ -1575,7 +1581,7 @@ export async function runServerLua(opts: RunServerLuaOptions, ctx: ServerLuaRunt
   const meta = opts.meta ?? {}
   const lowLevelAccess = opts.lowLevelAccess ?? false
   const signal = ctx.signal
-  const runStartedAt = Date.now()
+  const runRequestedAt = Date.now()
   const budget = ctx.execBudget
   const budgetUsedMsBefore = budget?.usedMs
 
@@ -1597,7 +1603,7 @@ export async function runServerLua(opts: RunServerLuaOptions, ctx: ServerLuaRunt
         lowLevelAccess,
         execTimeoutMs,
         effectiveTimeoutMs: 0,
-        durationMs: Date.now() - runStartedAt,
+        durationMs: Date.now() - runRequestedAt,
         result,
         budget,
         budgetUsedMsBefore,
@@ -1623,7 +1629,7 @@ export async function runServerLua(opts: RunServerLuaOptions, ctx: ServerLuaRunt
         lowLevelAccess,
         execTimeoutMs,
         effectiveTimeoutMs: 0,
-        durationMs: Date.now() - runStartedAt,
+        durationMs: Date.now() - runRequestedAt,
         result,
         budget,
         budgetUsedMsBefore,
@@ -1651,6 +1657,9 @@ export async function runServerLua(opts: RunServerLuaOptions, ctx: ServerLuaRunt
   // interleave between acquire and run start); the finally below releases it.
   const prepared = await acquirePreparedEngine(effectiveTimeoutMs)
   const engine = prepared.engine
+  // Charge script budget from the point where this run owns an engine. Queue
+  // time behind another request is runtime scheduling, not this script's work.
+  const runStartedAt = Date.now()
 
   const result: ServerLuaResult = {
     stopSending: false,
@@ -1756,15 +1765,24 @@ export async function runServerLua(opts: RunServerLuaOptions, ctx: ServerLuaRunt
         budgetUsedMsBefore,
       }),
     )
-    // One call per engine: closing here (never returning to the pool) is what
-    // preserves per-call isolation.
-    engine.global.close()
-    activeLuaRuns--
-    // Wake any fresh-boot acquire parked on the drain (it re-checks the gate
-    // and the run count before booting), then replace what this run consumed —
-    // off the hot path, and only once no other run is mid-flight.
-    notifyLuaRunsDrained()
-    refillLuaEnginePoolWhenIdle()
+    try {
+      // One call per engine: closing here (never returning to the pool) is what
+      // preserves per-call isolation.
+      engine.global.close()
+    } catch (error) {
+      emitProtocolMetric('generation_lua_runtime_engine_close_failed', {
+        mode: opts.mode,
+        codeSha256: sha256Hex(opts.code),
+        error: error instanceof Error ? error.message : String(error),
+      })
+    } finally {
+      activeLuaRuns--
+      // Wake any acquire parked on the drain (it re-checks the gate and the run
+      // count before claiming an engine), then replace what this run consumed —
+      // off the hot path, and only once no other run is mid-flight.
+      notifyLuaRunsDrained()
+      refillLuaEnginePoolWhenIdle()
+    }
   }
 }
 

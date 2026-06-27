@@ -912,6 +912,95 @@ describe('server Lua runtime — pre-warmed engines (L21)', () => {
     const after = readLuaEngineAcquireStats()
     expect(after.freshAcquires).toBe(duringA.freshAcquires + 1)
   })
+
+  it('L21: a pooled engine never overlaps an active run with a pending Lua continuation', async () => {
+    // Regression for two output Lua hooks that both wait on low-level host fns
+    // such as axLLM(): even when a second prewarmed engine is available, it must
+    // not run beside the suspended continuation.
+    const warmup = makeRuntime()
+    await runServerLua(
+      {
+        code: `
+          listenEdit('editRequest', function(id, data, meta)
+            return data
+          end)
+        `,
+        mode: 'editRequest',
+        data: rows('warm'),
+      },
+      warmup.ctx,
+    )
+    await settleLuaEnginePool()
+
+    let resolveFetch!: (result: { status: number; data: string }) => void
+    let markFetchStarted!: () => void
+    const fetchInFlight = new Promise<void>((resolve) => {
+      markFetchStarted = resolve
+    })
+    const egress: EgressDeps = {
+      lookup: async () => [{ address: '93.184.216.34', family: 4 }],
+      fetchImpl: () =>
+        new Promise((resolve) => {
+          markFetchStarted()
+          resolveFetch = resolve
+        }),
+    }
+
+    const a = makeRuntime({ egress, rateState: { count: 0, resetAt: 0 } })
+    const codeA = `
+      listenEdit('editRequest', function(id, data, meta)
+        request(id, 'https://example.test/slow'):await()
+        setChatVar(id, 'aDone', 'yes')
+        return data
+      end)
+    `
+    const settleOrder: string[] = []
+    const before = readLuaEngineAcquireStats()
+    const runA = runServerLua(
+      {
+        code: codeA,
+        mode: 'editRequest',
+        data: rows('a'),
+        lowLevelAccess: true,
+      },
+      a.ctx,
+    ).then((result) => {
+      settleOrder.push('A')
+      return result
+    })
+    await fetchInFlight
+    const duringA = readLuaEngineAcquireStats()
+    expect(duringA.pooledAcquires).toBe(before.pooledAcquires + 1)
+
+    const b = makeRuntime()
+    const codeB = `
+      listenEdit('editRequest', function(id, data, meta)
+        data[1].content = data[1].content .. ' [B]'
+        return data
+      end)
+    `
+    const runB = runServerLua({ code: codeB, mode: 'editRequest', data: rows('b') }, b.ctx).then((result) => {
+      settleOrder.push('B')
+      return result
+    })
+    await new Promise((resolve) => setTimeout(resolve, 150))
+
+    const whileSuspended = readLuaEngineAcquireStats()
+    expect(whileSuspended.pooledAcquires).toBe(duringA.pooledAcquires)
+    expect(settleOrder).toEqual([])
+
+    resolveFetch({ status: 200, data: 'ok' })
+    const resultA = await runA
+    const resultB = await runB
+
+    expect(settleOrder).toEqual(['A', 'B'])
+    expect(resultA.error).toBeUndefined()
+    expect(a.engine.getVar('aDone')).toBe('yes')
+    expect(resultB.error).toBeUndefined()
+    expect((resultB.res as OpenAIChat[])[0].content).toBe('b [B]')
+    const after = readLuaEngineAcquireStats()
+    expect(after.pooledAcquires).toBe(duringA.pooledAcquires + 1)
+  })
 })
 
 describe('server Lua runtime — runLuaEditTrigger entry', () => {
