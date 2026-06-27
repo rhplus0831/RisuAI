@@ -492,6 +492,15 @@ export const advancedSettingsItems: SettingItem[] = [
     classes: 'mt-4',
   },
   {
+    id: 'adv.strictScriptCheck',
+    type: 'check',
+    labelKey: 'strictScriptCheck',
+    bindKey: 'strictScriptCheck',
+    helpKey: 'strictScriptCheck',
+    keywords: ['lua', 'script', 'alertInput', 'alertSelect', 'alertConfirm'],
+    classes: 'mt-4',
+  },
+  {
     id: 'adv.complexRegexCompatibilityMode',
     type: 'select',
     labelKey: 'complexRegexCompatibilityMode',

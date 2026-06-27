@@ -1003,6 +1003,7 @@ export function setDatabase(data: Database) {
   if (checkNullish(data.pluginCompatibilityMode)) {
     data.pluginCompatibilityMode = false
   }
+  data.strictScriptCheck ??= false
   data.complexRegexCompatibilityMode ??= 'strict'
   if (data.complexRegexCompatibilityMode !== 'worker') {
     data.complexRegexCompatibilityMode = 'strict'
@@ -1890,6 +1891,7 @@ export interface Database {
   showUnrecommended: boolean
   doNotWarnExternalServers: boolean
   pluginCompatibilityMode: boolean
+  strictScriptCheck: boolean
   complexRegexCompatibilityMode: 'strict' | 'worker'
   complexRegexInputTimeoutMs: number
   complexRegexOutputTimeoutMs: number

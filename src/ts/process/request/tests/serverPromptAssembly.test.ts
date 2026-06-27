@@ -394,11 +394,31 @@ describe('resolveServerPromptAssembly', () => {
     })
 
     // Lua and plugin detectors have distinct dispositions and reasons. Lua routes
-    // `server` except when scripts use an interactive dialog API, which stays
-    // `unsupported` (no server browser dialog). The pluginV2 arm is a permanent
-    // hard fail (server-side plugin code execution is on the no-port list and
-    // pluginV2 is superseded by Plugin V3).
-    it('rejects a Lua trigger that uses an interactive dialog API (slice 3b)', () => {
+    // `server` by default even when source references an interactive dialog API;
+    // the server Lua VM fails only if that API is actually invoked. Strict Script
+    // Check restores the old conservative source scan. The pluginV2 arm is a
+    // permanent hard fail (server-side plugin code execution is on the no-port
+    // list and pluginV2 is superseded by Plugin V3).
+    it('routes a Lua trigger that references an interactive dialog API by default (slice 3b)', () => {
+      const input = makeInput({
+        currentChar: makeChar({
+          triggerscript: [
+            {
+              effect: [
+                {
+                  type: 'triggerlua',
+                  code: "listenEdit('editRequest', function(id, data) alertInput(id, 'pick') return data end)",
+                },
+              ],
+            },
+          ],
+        } as never),
+      })
+      expect(resolveServerPromptAssembly(input)).toEqual({ type: 'server' })
+    })
+
+    it('rejects a Lua trigger that references an interactive dialog API when Strict Script Check is enabled (slice 3b)', () => {
+      seedDb({ strictScriptCheck: true } as never)
       const input = makeInput({
         currentChar: makeChar({
           triggerscript: [
@@ -448,7 +468,7 @@ describe('resolveServerPromptAssembly', () => {
       expect(reason).toMatch(/plugin/i)
     })
 
-    it('reports the interactive-Lua arm before pluginV2 when a char has both (slice 3b)', () => {
+    it('reports the pluginV2 arm when Strict Script Check is disabled and a char has both (slice 3b)', () => {
       pluginV2.editprocess.add((() => {}) as never)
       const input = makeInput({
         currentChar: makeChar({
@@ -464,8 +484,31 @@ describe('resolveServerPromptAssembly', () => {
           ],
         } as never),
       })
-      // Interactive Lua is checked before pluginV2, so its reason wins. Only the
-      // interactive-Lua reason mentions "interactive"; the plugin reason does not.
+      const reason = expectUnsupported(resolveServerPromptAssembly(input))
+      expect(reason).toMatch(/plugin/i)
+      expect(reason).not.toMatch(/interactive/i)
+    })
+
+    it('reports the interactive-Lua arm before pluginV2 when Strict Script Check is enabled and a char has both (slice 3b)', () => {
+      seedDb({ strictScriptCheck: true } as never)
+      pluginV2.editprocess.add((() => {}) as never)
+      const input = makeInput({
+        currentChar: makeChar({
+          triggerscript: [
+            {
+              effect: [
+                {
+                  type: 'triggerlua',
+                  code: "listenEdit('editRequest', function(id, data) alertSelect(id, 'x') return data end)",
+                },
+              ],
+            },
+          ],
+        } as never),
+      })
+      // In strict mode, interactive Lua is checked before pluginV2, so its reason
+      // wins. Only the interactive-Lua reason mentions "interactive"; the plugin
+      // reason does not.
       const reason = expectUnsupported(resolveServerPromptAssembly(input))
       expect(reason).toMatch(/interactive/i)
     })

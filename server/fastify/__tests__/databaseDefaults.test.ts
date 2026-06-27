@@ -13,6 +13,7 @@ describe('database defaults', () => {
       Object.fromEntries(MODEL_ROLES.map((role) => [role, { mode: 'legacy' }])),
     )
     expect(database.modelRuntimeDefaults).toEqual({})
+    expect(database.strictScriptCheck).toBe(false)
     expect(database.seperateModels).toMatchObject({
       memory: '',
       emotion: '',

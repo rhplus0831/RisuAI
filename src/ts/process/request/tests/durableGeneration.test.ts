@@ -214,7 +214,26 @@ describe('resolveDurableGeneration', () => {
       expect(expectNonDurable(resolveDurableGeneration(input))).toMatch(/image input/i)
     })
 
-    it('is non-durable for a Lua trigger that uses an interactive dialog API', () => {
+    it('is durable for a Lua trigger that references an interactive dialog API by default', () => {
+      const input = makeInput({
+        currentChar: makeChar({
+          triggerscript: [
+            {
+              effect: [
+                {
+                  type: 'triggerlua',
+                  code: "listenEdit('editRequest', function(id, data) alertInput(id, 'pick') return data end)",
+                },
+              ],
+            },
+          ] as never,
+        }),
+      })
+      expect(resolveDurableGeneration(input)).toEqual({ type: 'durable' })
+    })
+
+    it('is non-durable for a Lua trigger that references an interactive dialog API when Strict Script Check is enabled', () => {
+      seedDb({ strictScriptCheck: true } as never)
       const input = makeInput({
         currentChar: makeChar({
           triggerscript: [

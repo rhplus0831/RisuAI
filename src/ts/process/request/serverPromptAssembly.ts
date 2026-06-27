@@ -70,11 +70,9 @@ function modelAcceptsImageInput(input: ServerPromptAssemblyInput): boolean {
 
 // Interactive Lua dialog APIs. A `triggerlua` script that calls one of these
 // mid-assembly needs a browser dialog the server cannot drive (the server VM
-// throws an InteractiveApiError, `luaRuntime.ts`). Handlers register at runtime
-// via `listenEdit`, so the mode a script hooks is not statically knowable — but a
-// script that never names these tokens cannot invoke them, so a source scan is a
-// sound conservative gate. Matches hard-fail semantics by returning `unsupported`
-// before the send mutates chat state.
+// throws an InteractiveApiError, `luaRuntime.ts`). By default the server lets Lua
+// pass preflight and fails only if one of these APIs is actually invoked. The
+// Strict Script Check advanced setting restores the old conservative source scan.
 const INTERACTIVE_LUA_API_RE = /\b(?:alertInput|alertSelect|alertConfirm)\b/
 
 /** Whether any `triggerlua` effect's source references an interactive dialog API. */
@@ -110,9 +108,10 @@ function hasPluginV2EditSet(): boolean {
 
 /**
  * Lua script content: a `triggerlua` effect on the character or any enabled
- * module. The server Lua VM runs non-interactive hooks, so only scripts that
- * reference browser dialog APIs (`alertInput`/`alertSelect`/`alertConfirm`) stay
- * `unsupported`.
+ * module. The server Lua VM runs non-interactive hooks and blocks interactive
+ * dialog APIs at invocation time. When Strict Script Check is enabled, scripts
+ * that reference browser dialog APIs (`alertInput`/`alertSelect`/`alertConfirm`)
+ * stay `unsupported` during preflight.
  * Kept separate from `hasPluginV2EditSet` so the permanent pluginV2 hard-fail is
  * undisturbed.
  */
@@ -194,9 +193,10 @@ function sendHasUnsupportedContent(input: ServerPromptAssemblyInput): string | n
   }
   // Image-gen / emotion view instructions are server-assembled. The post-gen
   // image generation / inlay-screen rendering stays a browser effect.
-  // Lua scripts route to the server unless they reference an interactive dialog
-  // API the server cannot drive.
-  if (luaUsesInteractiveApi(input.currentChar)) {
+  // Lua scripts route to the server by default. With Strict Script Check enabled,
+  // keep the old conservative behavior and block source that references a
+  // browser-only interactive dialog API.
+  if (getDatabase().strictScriptCheck === true && luaUsesInteractiveApi(input.currentChar)) {
     return 'Lua scripts using interactive dialogs (alertInput / alertSelect / alertConfirm) require the browser and are not supported by server prompt assembly.'
   }
   // pluginV2 edit hooks stay permanently `unsupported` (no-port list; deprecated

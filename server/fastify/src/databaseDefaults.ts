@@ -253,6 +253,7 @@ export function normalizeDatabaseDefaults(
   setDefault(database, 'showUnrecommended', false)
   setDefault(database, 'doNotWarnExternalServers', false)
   setDefault(database, 'pluginCompatibilityMode', false)
+  setDefault(database, 'strictScriptCheck', false)
   setDefault(database, 'complexRegexCompatibilityMode', 'strict')
   if (database.complexRegexCompatibilityMode !== 'worker') {
     database.complexRegexCompatibilityMode = 'strict'

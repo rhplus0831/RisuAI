@@ -682,6 +682,20 @@ describe('server Lua runtime — request-signal abort (L20)', () => {
 })
 
 describe('server Lua runtime — interactive APIs fail explicitly', () => {
+  it('does not flag alertInput when the handler containing it is not executed', async () => {
+    const { ctx } = makeRuntime()
+    const code = `
+      listenEdit('editOutput', function(id, data, meta)
+        alertInput(id, 'pick one')
+        return data
+      end)
+    `
+    const result = await runServerLua({ code, mode: 'editRequest', data: rows('orig') }, ctx)
+
+    expect(result.interactiveInvoked).toBe(false)
+    expect(result.res).toEqual(rows('orig'))
+  })
+
   it('flags alertInput and does not silently apply the handler', async () => {
     const { ctx } = makeRuntime()
     const code = `

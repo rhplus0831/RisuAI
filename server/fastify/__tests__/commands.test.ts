@@ -813,6 +813,7 @@ describe('Phase 9-2a scalar settings groups', () => {
           allowAllExtentionFiles: true,
           auxModelUnderModelSettings: true,
           pluginCompatibilityMode: true,
+          strictScriptCheck: true,
         },
       },
     })
@@ -2307,6 +2308,7 @@ describe('Phase 9-2a scalar settings groups', () => {
           enableCustomFlags: true,
           customFlags: [8, 21],
           pluginCompatibilityMode: true,
+          strictScriptCheck: true,
         },
       },
     })
@@ -2466,6 +2468,7 @@ describe('Phase 9-2a scalar settings groups', () => {
       enableCustomFlags: true,
       customFlags: [8, 21],
       pluginCompatibilityMode: true,
+      strictScriptCheck: true,
     })
   })
 

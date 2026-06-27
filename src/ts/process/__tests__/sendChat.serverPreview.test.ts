@@ -575,13 +575,14 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
     expect(getServerChatCalls()[0]).toMatchObject({ mode: 'send', userMessage: 'ping' })
   })
 
-  it('hard-fails an out-of-subset send (interactive Lua) as unsupported, never reaching local or /chat', async () => {
+  it('hard-fails an interactive Lua source before /chat when Strict Script Check is enabled', async () => {
     await seedEcho()
     localAssemblerState.throwIfEntered = true
-    // Non-interactive Lua routes to `server` because the VM runs the editRequest
-    // hook. A script using an interactive dialog API still has no server
-    // equivalent, so the classifier must return `unsupported` rather than
-    // assembling on the server or falling back to local.
+    DBState.db.strictScriptCheck = true
+    // With Strict Script Check enabled, a script referencing an interactive
+    // dialog API is rejected by the browser classifier before /chat. With the
+    // default setting off, the server Lua runtime fails only if the API is
+    // actually invoked during prompt assembly.
     DBState.db.characters[0].triggerscript = [
       {
         comment: '',

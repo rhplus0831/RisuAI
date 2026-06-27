@@ -243,6 +243,7 @@ export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
   playMessage: 'display',
   playMessageOnTranslateEnd: 'display',
   pluginCompatibilityMode: 'advanced',
+  strictScriptCheck: 'advanced',
   complexRegexCompatibilityMode: 'advanced',
   complexRegexInputTimeoutMs: 'advanced',
   complexRegexOutputTimeoutMs: 'advanced',
