@@ -68,3 +68,7 @@ pnpm exec tsc -p server/fastify/tsconfig.json --noEmit  # check server (strict, 
 # Language File
 
 When adding strings that appear in the frontend UI, create an appropriate key for them under `src/lang`.
+
+# Plain Risu Code
+
+There is the original app code from before it was changed to Fastify in `/home/codex/Risuai`. Use it when needed.
