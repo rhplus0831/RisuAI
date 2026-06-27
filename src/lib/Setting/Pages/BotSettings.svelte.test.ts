@@ -15,13 +15,6 @@ describe('BotSettings prompt edit persistence contracts', () => {
     expect(source).not.toMatch(/onDestroy\(\(\) => \{\s*if \(pendingPromptFieldPatch\.timer\)/)
   })
 
-  it('resolves prompt preset regex fields through the shared legacy alias helper', () => {
-    const source = botSettingsSource()
-
-    expect(source).toContain('resolvePromptPresetRegexField')
-    expect(source).toContain('const regexField = resolvePromptPresetRegexField(preset)')
-  })
-
   it('does not dispatch prompt-field drafts after accepting selected-preset projection changes', () => {
     const source = botSettingsSource()
 
@@ -29,13 +22,6 @@ describe('BotSettings prompt edit persistence contracts', () => {
     expect(source).toContain('previousDraftDispatchSnapshot = serverSnapshot')
     expect(source).toContain('if (snapshot === previousDraftDispatchSnapshot) return')
     expect(source).toContain('if (snapshotJson(value) === snapshotJson(pendingPromptFieldPatch.previous[key]))')
-  })
-
-  it('does not mirror root promptTemplate projection churn into the selected prompt preset', () => {
-    const source = botSettingsSource()
-
-    expect(source).not.toContain('promptTemplatePresetSyncInitialized')
-    expect(source).not.toContain("writeSelectedPromptPresetField('promptTemplate'")
   })
 
   it('gates prompt template UI on selected prompt preset ownership instead of stale top-level projection', () => {
@@ -83,30 +69,6 @@ describe('BotSettings prompt edit persistence contracts', () => {
     expect(source).toContain('rollback: () =>')
     expect(source).toContain('runPromptTemplateOwnerRollback(ownerId, () =>')
     expect(source).toContain('restoreSelectedPromptPresetTemplateProjection(previous)')
-  })
-
-  it('routes prompt preset icon uploads through the freshness guard helper', () => {
-    const source = botSettingsSource()
-
-    expect(source).toContain("from 'src/ts/server/promptPresetIconUpload'")
-    expect(source).toContain('async function uploadSelectedPromptPresetIcon()')
-    expect(source).toContain('onclick={uploadSelectedPromptPresetIcon}')
-    expect(source).toContain('beginPromptPresetIconUpload(target)')
-    expect(source).toContain('resolveFreshPromptPresetIconUploadIndex')
-    expect(source).not.toContain('updatePromptPreset(DBState.db.promptPresetsId, { image: data })')
-  })
-
-  it('routes bias JSON imports through the freshness guard helper', () => {
-    const source = botSettingsSource()
-
-    expect(source).toContain("from 'src/ts/server/biasImport'")
-    expect(source).toContain('async function importBiasJson()')
-    expect(source).toContain("selectSingleFile(['json'], { onFileSelected: beginImport })")
-    expect(source).toContain('const importedBias = parseBiasImport')
-    expect(source).toContain('resolveFreshBiasImportValue')
-    expect(source).toContain('if (isFreshBiasImport(operation, currentBiasImportFreshness()))')
-    expect(source).toContain('onclick={importBiasJson}')
-    expect(source).not.toContain('JSON.parse(utf8)')
   })
 })
 

@@ -297,6 +297,63 @@ describe('Phase 2D backups', () => {
     expect(afterRestore.json().revision).toBe(revisionAfter)
   })
 
+  it('round-trips split model and prompt preset tables with backup/restore', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await importDb(harness.app, assertion, {
+      tag: 'preset-A',
+      modelPresetsId: 0,
+      modelPresets: [{ id: 'model-A', name: 'Model A', aiModel: 'model-before-backup' }],
+      promptPresetsId: 0,
+      promptPresets: [{ id: 'prompt-A', name: 'Prompt A', promptTemplate: [{ role: 'system', content: 'A' }] }],
+    })
+    const backup = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/backups',
+      headers: { 'risu-auth': assertion },
+      payload: { label: 'preset snapshot A' },
+    })
+    expect(backup.statusCode).toBe(201)
+    const backupId = backup.json().id
+
+    await importDb(harness.app, assertion, {
+      tag: 'preset-B',
+      modelPresetsId: 0,
+      modelPresets: [{ id: 'model-B', name: 'Model B', aiModel: 'model-after-backup' }],
+      promptPresetsId: 0,
+      promptPresets: [{ id: 'prompt-B', name: 'Prompt B', promptTemplate: [{ role: 'system', content: 'B' }] }],
+    })
+    const beforeRestore = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(beforeRestore.json().database).toMatchObject({
+      tag: 'preset-B',
+      modelPresets: [{ id: 'model-B', name: 'Model B', aiModel: 'model-after-backup' }],
+      promptPresets: [{ id: 'prompt-B', name: 'Prompt B' }],
+    })
+
+    const restored = await harness.app.inject({
+      method: 'POST',
+      url: `/api/v1/backups/${backupId}/restore`,
+      headers: { 'risu-auth': assertion },
+    })
+    expect(restored.statusCode).toBe(200)
+
+    const afterRestore = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(afterRestore.json().database).toMatchObject({
+      tag: 'preset-A',
+      modelPresetsId: 0,
+      modelPresets: [{ id: 'model-A', name: 'Model A', aiModel: 'model-before-backup' }],
+      promptPresetsId: 0,
+      promptPresets: [{ id: 'prompt-A', name: 'Prompt A' }],
+    })
+  })
+
   it('keeps pre-restore state when restore event persistence fails', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await importDb(harness.app, assertion, { tag: 'A' })

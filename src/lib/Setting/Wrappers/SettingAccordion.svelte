@@ -14,6 +14,10 @@
 
 <Accordion name={getLabel(item)} styled={item.options?.styled ?? false}>
   {#if item.options?.children}
-    <SettingRenderer items={item.options.children} modelInfo={ctx.modelInfo} subModelInfo={ctx.subModelInfo} />
+    <SettingRenderer
+      items={item.options.children}
+      modelInfo={ctx.modelInfo}
+      subModelInfo={ctx.subModelInfo}
+      presetMirrorTarget={ctx.presetMirrorTarget} />
   {/if}
 </Accordion>

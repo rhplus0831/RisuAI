@@ -2633,6 +2633,8 @@ const SQLITE_BACKUP_TABLES = [
   'collection_body_revisions',
   'modules',
   'plugins',
+  'model_presets',
+  'prompt_presets',
   'bot_presets',
   'prompt_templates',
   'personas',
