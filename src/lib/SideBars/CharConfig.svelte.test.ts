@@ -512,7 +512,8 @@ describe('CharConfig character draft target guards', () => {
 
     expect(source).not.toContain('characterDraft.value.type')
     expect(source).toContain('function currentRealCharacterDraftTarget()')
-    expect(source).toContain("selectedCharacter?.type !== 'character'")
+    expect(source).toContain('isServerCharacterShell(selectedCharacter)')
+    expect(source).toContain("selectedCharacter.type && selectedCharacter.type !== 'character'")
     expect(source).toContain('characterDraft.characterId !== selectedCharacter.chaId')
   })
 
@@ -586,5 +587,37 @@ describe('CharConfig draft-type-less character actions', () => {
       out: '',
       type: 'editinput',
     })
+  })
+
+  it('shows background, regex, and trigger scripts for a typeless real character row', async () => {
+    await mountCharConfig(4, {
+      type: undefined,
+      backgroundHTML: '<style>.chattext .name { color: red; }</style>',
+      lowLevelAccess: true,
+      customscript: [{ id: 'script-1', comment: 'Regex', in: 'hello', out: 'hi', type: 'editinput' }],
+      triggerscript: [
+        {
+          id: 'trigger-1',
+          comment: 'Lua/V2 trigger',
+          type: 'start',
+          conditions: [],
+          effect: [],
+        } as never,
+      ],
+    })
+
+    expect(target.querySelector('[data-testid="regex-count"]')?.textContent).toBe('1')
+    const triggerCount = target.querySelector('[data-testid="trigger-count"]')
+    expect(triggerCount?.textContent).toBe('1')
+    expect(triggerCount?.getAttribute('data-low-level')).toBe('true')
+    expect(Array.from(target.querySelectorAll('textarea')).some((input) => input.value.includes('.chattext'))).toBe(
+      true,
+    )
+
+    buttons()[0].click()
+    await settleComponent()
+
+    expect(target.querySelector('[data-testid="regex-count"]')?.textContent).toBe('2')
+    expect(DBState.db.characters[0].customscript).toHaveLength(2)
   })
 })

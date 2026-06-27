@@ -3,6 +3,7 @@
   import { tokenizeAccurate } from '../../ts/tokenizer'
   import {
     saveImage as saveAsset,
+    isServerCharacterShell,
     type character,
     type customscript,
     type triggerscript,
@@ -332,11 +333,7 @@
   let assetFileExtensions: Record<string, string | undefined> = $state({})
   let assetFilePath: Record<string, string | undefined> = $state({})
   let assetPreviewRun = 0
-  let licensed = $state(
-    DBState.db.characters[$selectedCharID].type === 'character'
-      ? (DBState.db.characters[$selectedCharID] as character).license
-      : '',
-  )
+  let licensed = $state(currentEditableCharacterTarget()?.character.license ?? '')
 
   $effect.pre(() => {
     const chara = DBState.db.characters[$selectedCharID]
@@ -349,7 +346,7 @@
   })
 
   const selectedCharacterAssetSourceKey = $derived(
-    DBState.db.characters[$selectedCharID]?.type === 'character' && DBState.db.useAdditionalAssetsPreview
+    currentRealCharacterDraftTarget() && DBState.db.useAdditionalAssetsPreview
       ? ((characterDraft.value as unknown as character).additionalAssets ?? [])
           .map((asset) => `${asset[1]}:${asset[2] ?? ''}`)
           .join('\n')
@@ -361,7 +358,7 @@
     const run = ++assetPreviewRun
     const nextExtensions: Record<string, string | undefined> = {}
     assetFilePath = {}
-    if (DBState.db.characters[$selectedCharID].type === 'character' && DBState.db.useAdditionalAssetsPreview) {
+    if (currentRealCharacterDraftTarget() && DBState.db.useAdditionalAssetsPreview) {
       for (const asset of (characterDraft.value as unknown as character).additionalAssets ?? []) {
         const assetPath = asset[1]
         nextExtensions[assetPath] = asset.length > 2 && asset[2] ? asset[2] : assetPath.split('.').pop()
@@ -375,10 +372,7 @@
   })
 
   $effect.pre(() => {
-    licensed =
-      DBState.db.characters[$selectedCharID].type === 'character'
-        ? (DBState.db.characters[$selectedCharID] as character).license
-        : ''
+    licensed = currentEditableCharacterTarget()?.character.license ?? ''
   })
   $effect.pre(() => {
     if (characterDraft.value.ttsMode === 'novelai' && characterDraft.value.naittsConfig === undefined) {
@@ -482,6 +476,7 @@
     const selectedIndex = $selectedCharID
     const selectedCharacter = DBState.db.characters?.[selectedIndex]
     if (!selectedCharacter?.chaId) return null
+    if (isServerCharacterShell(selectedCharacter)) return null
     if (selectedCharacter.type && selectedCharacter.type !== 'character') return null
 
     return { selectedIndex, character: selectedCharacter as character }
@@ -585,14 +580,12 @@
   }
 
   function currentEditorAdditionalAssetUploadTarget() {
-    const selectedIndex = $selectedCharID
-    const selectedCharacter = DBState.db.characters?.[selectedIndex]
-    if (selectedCharacter?.type !== 'character' || !selectedCharacter.chaId) return null
-    if (characterDraft.characterId !== selectedCharacter.chaId) return null
+    const target = currentRealCharacterDraftTarget()
+    if (!target) return null
 
     return captureCharacterAdditionalAssetUploadTarget({
-      characterId: selectedCharacter.chaId,
-      characterIndex: selectedIndex,
+      characterId: target.character.chaId,
+      characterIndex: target.selectedIndex,
       additionalAssets: (characterDraft.value as unknown as character).additionalAssets,
     })
   }
@@ -695,15 +688,13 @@
   }
 
   function currentEditorTtsAssetUploadTarget(kind: CharacterTtsAssetUploadKind) {
-    const selectedIndex = $selectedCharID
-    const selectedCharacter = DBState.db.characters?.[selectedIndex]
-    if (selectedCharacter?.type !== 'character' || !selectedCharacter.chaId) return null
-    if (characterDraft.characterId !== selectedCharacter.chaId) return null
+    const target = currentRealCharacterDraftTarget()
+    if (!target) return null
 
     const draft = characterDraft.value as unknown as character
     return captureCharacterTtsAssetUploadTarget({
-      characterId: selectedCharacter.chaId,
-      characterIndex: selectedIndex,
+      characterId: target.character.chaId,
+      characterIndex: target.selectedIndex,
       draftCharacterId: characterDraft.characterId,
       kind,
       ttsMode: draft.ttsMode,
@@ -875,7 +866,7 @@
       }}>
       <BookIcon size={iconButtonSize} />
     </button>
-    {#if DBState.db.characters[$selectedCharID].type === 'character'}
+    {#if currentEditableCharacterTarget()}
       <button
         class={$CharConfigSubMenu === 5 ? 'text-textcolor' : 'text-textcolor2'}
         onclick={() => {
@@ -898,7 +889,7 @@
       }}>
       <ActivityIcon size={iconButtonSize} />
     </button>
-    {#if DBState.db.characters[$selectedCharID].type === 'character'}
+    {#if currentEditableCharacterTarget()}
       <button
         class={$CharConfigSubMenu === 6 ? 'text-textcolor' : 'text-textcolor2'}
         onclick={() => {
@@ -975,7 +966,7 @@
         <button
           onclick={() => {
             if (
-              DBState.db.characters[$selectedCharID].type === 'character' &&
+              currentRealCharacterDraftTarget() &&
               characterDraft.value.image !== '' &&
               characterDraft.value.image &&
               iconRemoveMode
@@ -1004,7 +995,7 @@
             onclick={async () => {
               if (!iconRemoveMode) {
                 changeCharImage($selectedCharID, i)
-              } else if (DBState.db.characters[$selectedCharID].type === 'character') {
+              } else if (currentRealCharacterDraftTarget()) {
                 removeCharacterCcAsset(i)
                 iconRemoveMode = false
               }
@@ -1170,7 +1161,7 @@
         bind:check={characterDraft.value.inlayViewScreen}
         name={language.inlayViewScreen}
         onChange={() => {
-          if (DBState.db.characters[$selectedCharID].type === 'character') {
+          if (currentRealCharacterDraftTarget()) {
             if (characterDraft.value.inlayViewScreen && characterDraft.value.additionalAssets === undefined) {
               characterDraft.value.additionalAssets = []
             } else if (!characterDraft.value.inlayViewScreen && characterDraft.value.additionalAssets.length === 0) {
@@ -1196,7 +1187,7 @@
         bind:check={characterDraft.value.inlayViewScreen}
         name={language.inlayViewScreen}
         onChange={() => {
-          if ((DBState.db.characters[$selectedCharID] as character).type === 'character') {
+          if (currentRealCharacterDraftTarget()) {
             updateCharacterInlayScreen()
           }
         }} />
@@ -1259,7 +1250,7 @@
                   <button
                     class="hover:text-blue-500"
                     onclick={() => {
-                      if (DBState.db.characters[$selectedCharID].type === 'character') {
+                      if (currentRealCharacterDraftTarget()) {
                         setCurrentChatGreetingIndex(-1, {
                           selectedChar: $selectedCharID,
                           dispatch: false,
@@ -1300,7 +1291,7 @@
   {/if}
   <LoreBook />
 {:else if $CharConfigSubMenu === 4}
-  {#if DBState.db.characters[$selectedCharID].type === 'character'}
+  {#if currentRealCharacterDraftTarget()}
     {#if !$MobileGUI}
       <h2 class="mb-2 text-2xl font-bold mt-2">{language.scripts}</h2>
     {/if}
@@ -1367,7 +1358,7 @@
     className="mt-2"
     size="sm">{language.removeCharacter}</Button>
 {:else if $CharConfigSubMenu === 5}
-  {#if DBState.db.characters[$selectedCharID].type === 'character'}
+  {#if currentRealCharacterDraftTarget()}
     {#if !$MobileGUI}
       <h2 class="mb-2 text-2xl font-bold mt-2">TTS</h2>
     {/if}
