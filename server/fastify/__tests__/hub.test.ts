@@ -100,6 +100,32 @@ function appBaseUrl(app: FastifyInstance): string {
   return `http://127.0.0.1:${addr.port}`
 }
 
+async function requestHubOverSocket(
+  app: FastifyInstance,
+  path: string,
+  headers: http.OutgoingHttpHeaders = {},
+): Promise<{ statusCode: number; headers: http.IncomingHttpHeaders; body: Buffer }> {
+  await app.listen({ host: '127.0.0.1', port: 0 })
+  return await withTimeout(
+    new Promise((resolve, reject) => {
+      const req = http.get(`${appBaseUrl(app)}${path}`, { headers }, (res) => {
+        const chunks: Buffer[] = []
+        res.on('data', (chunk: Buffer) => chunks.push(chunk))
+        res.on('end', () => {
+          resolve({
+            statusCode: res.statusCode ?? 0,
+            headers: res.headers,
+            body: Buffer.concat(chunks),
+          })
+        })
+      })
+      req.on('error', reject)
+    }),
+    1_000,
+    'hub socket response did not finish',
+  )
+}
+
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
@@ -188,6 +214,55 @@ describe('Phase 3C hub passthrough', () => {
     expect(res.body).toBe('hello /realm/search%3D%3D%20__shared%26%26page%3D%3D0')
     expect(echo.requests).toHaveLength(1)
     expect(echo.requests[0].headers['x-risuai-info']).toBe('2026.4.181;fastify')
+  })
+
+  it('translates local realm query parameters to the upstream legacy realm path', async () => {
+    echo.setResponder((req, res) => {
+      res.writeHead(200, { 'content-type': 'text/plain' })
+      res.end(`hello ${req.url}`)
+    })
+    await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/setup',
+      payload: { password: 'hunter2' },
+    })
+    const res = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/hub/realm?search=foo+bar+__shared&page=2&nsfw=true&sort=downloads&web=other',
+      headers: { 'x-risuai-info': '2026.4.181;fastify' },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.body).toBe(
+      'hello /realm/search%3D%3Dfoo%20bar%20__shared%26%26page%3D%3D2%26%26nsfw%3D%3Dtrue%26%26sort%3D%3Ddownloads%26%26web%3D%3Dother',
+    )
+    expect(echo.requests).toHaveLength(1)
+    expect(echo.requests[0].headers['x-risuai-info']).toBe('2026.4.181;fastify')
+  })
+
+  it('does not compress streamed hub responses when browsers advertise zstd', async () => {
+    const body = JSON.stringify([{ name: 'realm-card', desc: 'x'.repeat(4096) }])
+    echo.setResponder((_req, res) => {
+      res.writeHead(200, {
+        'content-type': 'application/json',
+        'x-total-count': '1',
+      })
+      res.end(body)
+    })
+    await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/setup',
+      payload: { password: 'hunter2' },
+    })
+
+    const res = await requestHubOverSocket(harness.app, '/api/v1/hub/realm?search=+__shared&page=0', {
+      'accept-encoding': 'gzip, deflate, br, zstd',
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.headers['content-encoding']).toBeUndefined()
+    expect(res.headers['content-length']).toBeUndefined()
+    expect(res.headers['x-total-count']).toBe('1')
+    expect(res.body.toString('utf8')).toBe(body)
   })
 
   it('rejects mutating hub requests without auth once a password is set', async () => {

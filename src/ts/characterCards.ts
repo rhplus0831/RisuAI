@@ -1731,10 +1731,15 @@ export async function getRisuHub(arg: {
   sort: string
 }): Promise<hubType[]> {
   try {
-    arg.search += ' __shared'
-    const stringArg = `search==${arg.search}&&page==${arg.page}&&nsfw==${arg.nsfw}&&sort==${arg.sort}&&web==other`
+    const params = new URLSearchParams({
+      search: `${arg.search} __shared`,
+      page: String(arg.page),
+      nsfw: String(arg.nsfw),
+      sort: arg.sort,
+      web: 'other',
+    })
 
-    const da = await fetch(hubURL + '/realm/' + encodeURIComponent(stringArg), {
+    const da = await fetch(`${hubURL}/realm?${params.toString()}`, {
       headers: {
         'x-risuai-info': appVer + ';' + 'fastify',
       },

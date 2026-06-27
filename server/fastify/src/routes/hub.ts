@@ -15,6 +15,15 @@ const STRIP_REQUEST_HEADERS = new Set(['x-risu-node-path'])
 const HUB_TRANSPORT_RESPONSE_HEADERS = new Set(['content-length', 'transfer-encoding'])
 
 const PREFIX = '/api/v1/hub'
+const REALM_QUERY_PATHS = new Set([`${PREFIX}/realm`, `${PREFIX}/realm/`])
+const REALM_QUERY_KEYS = ['search', 'page', 'nsfw', 'sort', 'web'] as const
+const REALM_QUERY_DEFAULTS = {
+  search: '',
+  page: '0',
+  nsfw: 'false',
+  sort: '',
+  web: 'other',
+} satisfies Record<(typeof REALM_QUERY_KEYS)[number], string>
 
 export const HUB_FORWARD_DEFAULT_TIMEOUT_MS = PROXY_STREAM_DEFAULT_TIMEOUT_MS
 
@@ -46,6 +55,19 @@ function buildForwardHeaders(source: Record<string, unknown>, hubOrigin: string)
   return out
 }
 
+function resolveRealmQuerySuffix(url: string): string | null {
+  const parsed = new URL(url, 'http://risu.local')
+  if (!REALM_QUERY_PATHS.has(parsed.pathname) || parsed.search.length === 0) {
+    return null
+  }
+
+  const legacyArg = REALM_QUERY_KEYS.map((key) => {
+    return `${key}==${parsed.searchParams.get(key) ?? REALM_QUERY_DEFAULTS[key]}`
+  }).join('&&')
+
+  return `/realm/${encodeURIComponent(legacyArg)}`
+}
+
 function resolveUpstreamUrl(req: FastifyRequest, hubUrl: string): string {
   const overrideValue = headerString(req.headers['x-risu-node-path'])
   if (typeof overrideValue === 'string' && overrideValue.length > 0) {
@@ -54,6 +76,10 @@ function resolveUpstreamUrl(req: FastifyRequest, hubUrl: string): string {
     } catch {
       return overrideValue
     }
+  }
+  const realmQuerySuffix = resolveRealmQuerySuffix(req.url)
+  if (realmQuerySuffix) {
+    return hubUrl + realmQuerySuffix
   }
   const suffix = req.url.startsWith(PREFIX) ? req.url.slice(PREFIX.length) : req.url
   return hubUrl + (suffix.length > 0 ? suffix : '/')
@@ -184,6 +210,7 @@ export function registerHubRoutes(app: FastifyInstance, authState: AuthState, hu
     instance.route({
       method: [...HUB_METHODS],
       url: '/api/v1/hub/*',
+      compress: false,
       onRequest: async (req, reply) => {
         if (requiresLocalAuth(req)) {
           await requireAuth(authState, req, reply)
