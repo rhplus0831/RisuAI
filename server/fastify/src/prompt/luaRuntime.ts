@@ -18,7 +18,7 @@ import { tokenize, encodingForModel } from './tokens.js'
 import { dispatchChatProvider } from './chatDispatch.js'
 import { getActiveModules, getModuleLorebooks } from './modules.js'
 import type { CompletionStreamFrame } from '../generation/frames.js'
-import { emitProtocolMetric } from '../protocolMetrics.js'
+import { emitProtocolMetric, protocolMetricsEnabled } from '../protocolMetrics.js'
 import {
   attachTriggerSource,
   getTriggerSource,
@@ -705,6 +705,8 @@ export interface ServerLuaResult {
   timedOut: boolean
   /** An interactive host fn was invoked (no server equivalent → `unsupported`). */
   interactiveInvoked: boolean
+  /** Whether the requested mode had a callable Lua entrypoint after loading user code. */
+  handlerRegistered?: boolean
   /** The originating request's abort signal fired during the run. */
   aborted?: boolean
   /** Captured load/dispatch error message, if any (the browser swallows these). */
@@ -725,6 +727,8 @@ export interface LuaRuntimeMetricFields {
   effectiveTimeoutMs: number
   timedOut: boolean
   interactiveInvoked: boolean
+  handlerRegistered: boolean
+  resultShape: string
   aborted: boolean
   errorKind?: string
   budgetTotalMs?: number
@@ -823,6 +827,14 @@ function classifyLuaRuntimeError(result: ServerLuaResult): string | undefined {
   return undefined
 }
 
+function classifyLuaRuntimeResultShape(result: ServerLuaResult): string {
+  if (result.error || result.timedOut || result.interactiveInvoked || result.aborted === true) return 'error'
+  if (result.res === undefined) return 'undefined'
+  if (result.res === null) return 'null'
+  if (Array.isArray(result.res)) return 'array'
+  return typeof result.res
+}
+
 function buildLuaRuntimeMetricFields(input: {
   opts: RunServerLuaOptions
   lowLevelAccess: boolean
@@ -851,6 +863,8 @@ function buildLuaRuntimeMetricFields(input: {
     effectiveTimeoutMs: input.effectiveTimeoutMs,
     timedOut: input.result.timedOut,
     interactiveInvoked: input.result.interactiveInvoked,
+    handlerRegistered: input.result.handlerRegistered === true,
+    resultShape: classifyLuaRuntimeResultShape(input.result),
     aborted: input.result.aborted === true,
     ...(errorKind ? { errorKind } : {}),
     ...(input.budget
@@ -866,7 +880,13 @@ function buildLuaRuntimeMetricFields(input: {
 }
 
 function shouldEmitLuaRuntimeMetric(result: ServerLuaResult): boolean {
-  return !!result.error || result.timedOut || result.interactiveInvoked || result.aborted === true
+  return (
+    protocolMetricsEnabled() ||
+    !!result.error ||
+    result.timedOut ||
+    result.interactiveInvoked ||
+    result.aborted === true
+  )
 }
 
 function finalizeLuaRuntimeResult(
@@ -1592,6 +1612,7 @@ export async function runServerLua(opts: RunServerLuaOptions, ctx: ServerLuaRunt
       res: undefined,
       timedOut: false,
       interactiveInvoked: false,
+      handlerRegistered: false,
       aborted: true,
       error: 'request aborted',
     }
@@ -1619,6 +1640,7 @@ export async function runServerLua(opts: RunServerLuaOptions, ctx: ServerLuaRunt
       res: undefined,
       timedOut: true,
       interactiveInvoked: false,
+      handlerRegistered: false,
       error: 'aggregate Lua execution budget exhausted',
     }
     return finalizeLuaRuntimeResult(
@@ -1666,6 +1688,7 @@ export async function runServerLua(opts: RunServerLuaOptions, ctx: ServerLuaRunt
     res: undefined,
     timedOut: false,
     interactiveInvoked: false,
+    handlerRegistered: false,
   }
 
   try {
@@ -1700,21 +1723,25 @@ export async function runServerLua(opts: RunServerLuaOptions, ctx: ServerLuaRunt
       switch (opts.mode) {
         case 'input': {
           const fn = get('onInput')
+          result.handlerRegistered = typeof fn === 'function'
           if (fn) res = await fn(accessKey)
           break
         }
         case 'output': {
           const fn = get('onOutput')
+          result.handlerRegistered = typeof fn === 'function'
           if (fn) res = await fn(accessKey)
           break
         }
         case 'start': {
           const fn = get('onStart')
+          result.handlerRegistered = typeof fn === 'function'
           if (fn) res = await fn(accessKey)
           break
         }
         case 'onButtonClick': {
           const fn = get('onButtonClick')
+          result.handlerRegistered = typeof fn === 'function'
           if (fn) res = await fn(accessKey, data)
           break
         }
@@ -1723,6 +1750,7 @@ export async function runServerLua(opts: RunServerLuaOptions, ctx: ServerLuaRunt
         case 'editInput':
         case 'editOutput': {
           const fn = get('callListenMain')
+          result.handlerRegistered = typeof fn === 'function'
           if (fn) {
             const raw = await fn(opts.mode, accessKey, JSON.stringify(data), JSON.stringify(meta))
             res = JSON.parse(raw as string)
@@ -1731,6 +1759,7 @@ export async function runServerLua(opts: RunServerLuaOptions, ctx: ServerLuaRunt
         }
         default: {
           const fn = get(opts.mode)
+          result.handlerRegistered = typeof fn === 'function'
           if (fn) res = await fn(accessKey)
           break
         }
@@ -1796,6 +1825,30 @@ export interface ServerLuaEditTriggerContext extends Omit<ServerLuaRuntimeContex
   moduleTriggers?: triggerscript[]
 }
 
+interface LuaEditContentSummary {
+  kind: string
+  sha256: string
+  bytes: number
+  rowCount?: number
+}
+
+function summarizeLuaEditContent(value: unknown): LuaEditContentSummary {
+  const kind = Array.isArray(value) ? 'array' : value === null ? 'null' : typeof value
+  let json: string
+  try {
+    json = JSON.stringify(value)
+  } catch {
+    json = '[unserializable]'
+  }
+  const summary: LuaEditContentSummary = {
+    kind,
+    sha256: sha256Hex(json),
+    bytes: Buffer.byteLength(json, 'utf8'),
+  }
+  if (Array.isArray(value)) summary.rowCount = value.length
+  return summary
+}
+
 /**
  * Server port of `runLuaEditTrigger` (`scriptings.ts:1415`). Remaps the edit-mode
  * casing, early-returns for `editprocess` (a browser no-op), then runs each
@@ -1853,6 +1906,8 @@ export async function runLuaEditTrigger<T extends string | OpenAIChat[]>(
     for (const trigger of triggers) {
       if (trigger?.effect?.[0]?.type === 'triggerlua') {
         const effect = trigger.effect[0] as { code: string; type: string }
+        const source = withTriggerEffectSource(getTriggerSource(trigger), 0, effect.type)
+        const before = summarizeLuaEditContent(data)
         const runResult = await runServerLua(
           {
             code: effect.code,
@@ -1860,12 +1915,29 @@ export async function runLuaEditTrigger<T extends string | OpenAIChat[]>(
             data,
             meta,
             lowLevelAccess: false,
-            source: withTriggerEffectSource(getTriggerSource(trigger), 0, effect.type),
+            source,
           },
           { ...ctx, char },
         )
         throwServerLuaFailure(runResult, `Lua ${mode} edit trigger failed`)
-        data = (runResult.res as T) ?? data
+        const nextData = (runResult.res as T) ?? data
+        const after = summarizeLuaEditContent(nextData)
+        emitProtocolMetric('generation_lua_edit_trigger_effect', () => ({
+          status: 'ok',
+          mode,
+          codeSha256: sha256Hex(effect.code),
+          codeBytes: Buffer.byteLength(effect.code, 'utf8'),
+          contentKind: before.kind,
+          contentBytesBefore: before.bytes,
+          contentBytesAfter: after.bytes,
+          contentSha256Before: before.sha256,
+          contentSha256After: after.sha256,
+          contentChanged: before.sha256 !== after.sha256,
+          ...(before.rowCount !== undefined ? { rowCountBefore: before.rowCount } : {}),
+          ...(after.rowCount !== undefined ? { rowCountAfter: after.rowCount } : {}),
+          ...triggerSourceMetricFields(source),
+        }))
+        data = nextData
       }
     }
 

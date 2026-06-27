@@ -1,7 +1,9 @@
+import { createHash } from 'node:crypto'
 import type { Chat, Database, character } from '../../../../src/ts/storage/database.svelte'
 import type { RisuModule } from '../../../../src/ts/process/modules'
 import type { additonalSysPrompt, triggerCondition, triggerscript } from '../../../../src/ts/process/triggers'
 import { parseKeyValue } from '../../../../src/ts/util/parseKeyValue'
+import { emitProtocolMetric } from '../protocolMetrics.js'
 import { getActiveModules, getModuleTriggers } from './modules.js'
 import {
   compileBoundedRegex,
@@ -18,6 +20,7 @@ import { runServerLua, throwServerLuaFailure } from './luaRuntime.js'
 import {
   attachTriggerSource,
   getTriggerSource,
+  triggerSourceMetricFields,
   withTriggerEffectSource,
   type TriggerSourceAttribution,
 } from './triggerSource.js'
@@ -558,6 +561,98 @@ export function collectTriggers(char: character, modules: RisuModule[]): trigger
   return own.concat(getModuleTriggers(modules))
 }
 
+function luaCodeSha256(code: string): string {
+  return createHash('sha256').update(code, 'utf8').digest('hex')
+}
+
+interface TriggerChatSummary {
+  messageCount: number
+  transcriptSha256: string
+  transcriptBytes: number
+  lastMessageRole?: string
+  lastMessageSha256?: string
+  lastMessageBytes?: number
+}
+
+function hashJson(value: unknown): { sha256: string; bytes: number } {
+  let json: string
+  try {
+    json = JSON.stringify(value)
+  } catch {
+    json = '[unserializable]'
+  }
+  return {
+    sha256: createHash('sha256').update(json, 'utf8').digest('hex'),
+    bytes: Buffer.byteLength(json, 'utf8'),
+  }
+}
+
+function summarizeTriggerChat(chat: Chat): TriggerChatSummary {
+  const messages = chat.message ?? []
+  const transcript = hashJson(
+    messages.map((message) => ({ role: message.role, data: message.data, name: message.name })),
+  )
+  const tail = messages.at(-1)
+  const summary: TriggerChatSummary = {
+    messageCount: messages.length,
+    transcriptSha256: transcript.sha256,
+    transcriptBytes: transcript.bytes,
+  }
+  if (tail) {
+    const last = hashJson({ role: tail.role, data: tail.data, name: tail.name })
+    summary.lastMessageRole = tail.role
+    summary.lastMessageSha256 = last.sha256
+    summary.lastMessageBytes = last.bytes
+  }
+  return summary
+}
+
+function triggerLuaEffectCount(trigger: triggerscript): number {
+  return (trigger.effect ?? []).filter((effect) => effect.type === 'triggerlua').length
+}
+
+function triggerLuaEffectTotal(triggers: triggerscript[]): number {
+  return triggers.reduce((count, trigger) => count + triggerLuaEffectCount(trigger), 0)
+}
+
+function triggerOwnerCount(triggers: triggerscript[], ownerType: TriggerSourceAttribution['ownerType']): number {
+  return triggers.filter((trigger) => getTriggerSource(trigger)?.ownerType === ownerType).length
+}
+
+function emitTriggerSelectionMetric(
+  mode: TriggerMode,
+  arg: TriggerRunArg,
+  triggers: triggerscript[],
+  selected: triggerscript[],
+): void {
+  emitProtocolMetric('generation_trigger_selection', () => ({
+    mode,
+    ...(arg.manualName ? { manualName: arg.manualName } : {}),
+    displayMode: arg.displayMode === true,
+    triggerCount: triggers.length,
+    selectedTriggerCount: selected.length,
+    triggerLuaEffectCount: triggerLuaEffectTotal(triggers),
+    selectedTriggerLuaEffectCount: triggerLuaEffectTotal(selected),
+    characterTriggerCount: triggerOwnerCount(triggers, 'character'),
+    selectedCharacterTriggerCount: triggerOwnerCount(selected, 'character'),
+    moduleTriggerCount: triggerOwnerCount(triggers, 'module'),
+    selectedModuleTriggerCount: triggerOwnerCount(selected, 'module'),
+  }))
+}
+
+function emitTriggerSkippedMetric(mode: TriggerMode, arg: TriggerRunArg, trigger: triggerscript, reason: string): void {
+  emitProtocolMetric('generation_trigger_skipped', () => ({
+    mode,
+    reason,
+    ...(arg.manualName ? { manualName: arg.manualName } : {}),
+    displayMode: arg.displayMode === true,
+    conditionCount: trigger.conditions?.length ?? 0,
+    effectCount: trigger.effect?.length ?? 0,
+    triggerLuaEffectCount: triggerLuaEffectCount(trigger),
+    ...triggerSourceMetricFields(getTriggerSource(trigger)),
+  }))
+}
+
 /**
  * Trigger selection filter, ported from `triggers.ts:1343-1351`:
  *   - `triggercode` / `triggerlua` first effects bypass the filter (so they
@@ -811,11 +906,12 @@ export async function runTrigger(
   const budget = arg.triggerBudget ?? ctx.triggerBudget ?? createTriggerExecutionBudget()
   let recursiveCount = arg.recursiveCount ?? 0
   const triggers = collectTriggers(char, ctx.modules)
+  const selected = triggers.filter((trigger) => matchesTrigger(trigger, mode, arg.manualName))
+  emitTriggerSelectionMetric(mode, arg, triggers, selected)
   if (triggers.length === 0) {
     return null
   }
   const triggerCache = arg.triggerCache ?? createTriggerRunCache()
-  const selected = triggers.filter((trigger) => matchesTrigger(trigger, mode, arg.manualName))
   const needsPrivateTranscript = !arg.displayMode && selectedTriggersMayMutateMessages(selected, mode)
   const workingChar = arg.displayMode ? char : cloneTriggerCharacterEnvelope(char)
   const sourceChat = arg.chat ?? workingChar.chats[workingChar.chatPage]
@@ -882,6 +978,7 @@ export async function runTrigger(
     if (
       !(await evaluateConditionsAsync(trigger.conditions ?? [], engine, chat, expand, triggerCache, mode, ctx.database))
     ) {
+      emitTriggerSkippedMetric(mode, arg, trigger, 'conditions_failed')
       continue
     }
 
@@ -1295,15 +1392,19 @@ export async function runTrigger(
           // run's state; it returns the (in-place mutated) chat + stopSending.
           // Callers/tests that omit a runner get a no-op, preserving the
           // fall-through behavior.
+          const luaMode = mode === 'manual' ? (arg.manualName ?? 'manual') : mode
+          const code = (effect as { code: string }).code
+          const source = withTriggerEffectSource(getTriggerSource(trigger), index, effect.type)
           if (ctx.runLua) {
-            const luaMode = mode === 'manual' ? (arg.manualName ?? 'manual') : mode
+            const chatBefore = summarizeTriggerChat(chat)
+            const varChangedBefore = engine.varChanged
             const r = await ctx.runLua({
-              code: (effect as { code: string }).code,
+              code,
               mode: luaMode,
               lowLevelAccess: trigger.lowLevelAccess ?? false,
               chat,
               varEngine: engine,
-              source: withTriggerEffectSource(getTriggerSource(trigger), index, effect.type),
+              source,
             })
             chat = r.chat
             engine.setChat(chat)
@@ -1311,9 +1412,51 @@ export async function runTrigger(
             if (r.stopSending) {
               stopSending = true
             }
+            const chatAfter = summarizeTriggerChat(chat)
+            emitProtocolMetric('generation_trigger_lua_effect', () => ({
+              status: 'ok',
+              mode,
+              luaMode,
+              codeSha256: luaCodeSha256(code),
+              codeBytes: Buffer.byteLength(code, 'utf8'),
+              messageCountBefore: chatBefore.messageCount,
+              messageCountAfter: chatAfter.messageCount,
+              messageCountDelta: chatAfter.messageCount - chatBefore.messageCount,
+              transcriptSha256Before: chatBefore.transcriptSha256,
+              transcriptSha256After: chatAfter.transcriptSha256,
+              transcriptBytesBefore: chatBefore.transcriptBytes,
+              transcriptBytesAfter: chatAfter.transcriptBytes,
+              transcriptChanged: chatBefore.transcriptSha256 !== chatAfter.transcriptSha256,
+              ...(chatBefore.lastMessageRole ? { lastMessageRoleBefore: chatBefore.lastMessageRole } : {}),
+              ...(chatAfter.lastMessageRole ? { lastMessageRoleAfter: chatAfter.lastMessageRole } : {}),
+              ...(chatBefore.lastMessageSha256 ? { lastMessageSha256Before: chatBefore.lastMessageSha256 } : {}),
+              ...(chatAfter.lastMessageSha256 ? { lastMessageSha256After: chatAfter.lastMessageSha256 } : {}),
+              ...(chatBefore.lastMessageBytes !== undefined
+                ? { lastMessageBytesBefore: chatBefore.lastMessageBytes }
+                : {}),
+              ...(chatAfter.lastMessageBytes !== undefined
+                ? { lastMessageBytesAfter: chatAfter.lastMessageBytes }
+                : {}),
+              lastMessageChanged: chatBefore.lastMessageSha256 !== chatAfter.lastMessageSha256,
+              stopSending: r.stopSending === true,
+              aggregateStopSending: stopSending,
+              varChangedBefore,
+              varChangedAfter: engine.varChanged,
+              ...triggerSourceMetricFields(source),
+            }))
             if (shouldStopTriggerExecution(ctx, budget, 'after triggerlua')) {
               return buildResult()
             }
+          } else {
+            emitProtocolMetric('generation_trigger_lua_effect', () => ({
+              status: 'skipped',
+              reason: 'no_runner',
+              mode,
+              luaMode,
+              codeSha256: luaCodeSha256(code),
+              codeBytes: Buffer.byteLength(code, 'utf8'),
+              ...triggerSourceMetricFields(source),
+            }))
           }
           break
         }

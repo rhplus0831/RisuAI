@@ -3380,6 +3380,119 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(persisted.at(-1)).toMatchObject({ role: 'char', data: 'server echo reply [GT]' })
   })
 
+  it('reports character-owned output Lua execution diagnostics', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const luaCode = `
+      function onOutput(id)
+        local index = getChatLength(id) - 1
+        local last = getChat(id, index)
+        setChat(id, index, last.data .. ' [CHAR]')
+      end
+    `
+    await seedDatabase(
+      harness.app,
+      assertion,
+      dbWithServerDispatch({
+        triggerscript: [
+          {
+            id: 'character-output',
+            comment: 'character output hook',
+            type: 'output',
+            conditions: [],
+            effect: [{ type: 'triggerlua', code: luaCode }],
+          },
+        ],
+      }),
+    )
+
+    await withProtocolMetrics(async (metrics, rawMetricLines) => {
+      const res = await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/generate/chat',
+        headers: { 'risu-auth': assertion },
+        payload: basePayload,
+      })
+      expect(res.statusCode).toBe(200)
+      const done = doneFrame(parseEvents(res.body))
+
+      expect(done.result).toBe('server echo reply')
+      expect(done.postGeneration?.finalText).toBe('server echo reply [CHAR]')
+
+      const outputSelection = metrics.find(
+        (entry) => entry.metric === 'generation_trigger_selection' && entry.mode === 'output',
+      )
+      expect(outputSelection).toMatchObject({
+        triggerCount: 1,
+        selectedTriggerCount: 1,
+        triggerLuaEffectCount: 1,
+        selectedTriggerLuaEffectCount: 1,
+        characterTriggerCount: 1,
+        selectedCharacterTriggerCount: 1,
+        moduleTriggerCount: 0,
+      })
+
+      const ownerMetric = (metric: string, mode: string): ProtocolMetric | undefined =>
+        metrics.find(
+          (entry) =>
+            entry.metric === metric &&
+            entry.mode === mode &&
+            (entry as unknown as Record<string, unknown>).ownerType === 'character',
+        )
+      const runtime = ownerMetric('generation_lua_runtime', 'output') as Record<string, unknown> | undefined
+      expect(runtime).toMatchObject({
+        mode: 'output',
+        ownerType: 'character',
+        ownerId: 'char-1',
+        ownerName: 'Tess',
+        triggerId: 'character-output',
+        triggerIndex: 0,
+        triggerComment: 'character output hook',
+        triggerType: 'output',
+        effectIndex: 0,
+        effectType: 'triggerlua',
+        handlerRegistered: true,
+        resultShape: 'null',
+      })
+      expect(typeof runtime?.codeSha256).toBe('string')
+      expect(runtime?.codeBytes).toBeGreaterThan(0)
+
+      const effect = ownerMetric('generation_trigger_lua_effect', 'output') as Record<string, unknown> | undefined
+      expect(effect).toMatchObject({
+        status: 'ok',
+        mode: 'output',
+        luaMode: 'output',
+        ownerType: 'character',
+        ownerId: 'char-1',
+        ownerName: 'Tess',
+        triggerId: 'character-output',
+        triggerIndex: 0,
+        triggerComment: 'character output hook',
+        triggerType: 'output',
+        effectIndex: 0,
+        effectType: 'triggerlua',
+        messageCountBefore: 2,
+        messageCountAfter: 2,
+        messageCountDelta: 0,
+        transcriptChanged: true,
+        lastMessageChanged: true,
+        lastMessageRoleBefore: 'char',
+        lastMessageRoleAfter: 'char',
+      })
+      expect(typeof effect?.codeSha256).toBe('string')
+      expect(effect?.codeBytes).toBeGreaterThan(0)
+      expect(typeof effect?.transcriptSha256Before).toBe('string')
+      expect(typeof effect?.transcriptSha256After).toBe('string')
+      expect(effect?.transcriptSha256Before).not.toBe(effect?.transcriptSha256After)
+      expect(typeof effect?.lastMessageSha256Before).toBe('string')
+      expect(typeof effect?.lastMessageSha256After).toBe('string')
+      expect(effect?.lastMessageSha256Before).not.toBe(effect?.lastMessageSha256After)
+
+      const rawMetrics = rawMetricLines.join('\n')
+      expect(rawMetrics).not.toContain('function onOutput')
+      expect(rawMetrics).not.toContain('server echo reply [CHAR]')
+    })
+  })
+
   it('lets chat-attached module output Lua read module lorebooks before axLLM translation', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const legacyCharacter = {
@@ -3864,7 +3977,12 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       expect(rawMetrics).not.toContain('function onOutput')
       expect(rawMetrics).not.toContain('lastMessage.data')
 
-      const runtime = metrics.find((entry) => entry.metric === 'generation_lua_runtime')
+      const runtime = metrics.find(
+        (entry) =>
+          entry.metric === 'generation_lua_runtime' &&
+          entry.mode === 'output' &&
+          (entry as unknown as Record<string, unknown>).ownerId === 'mod-output-lua',
+      )
       expect(runtime).toMatchObject({
         mode: 'output',
         ownerType: 'module',

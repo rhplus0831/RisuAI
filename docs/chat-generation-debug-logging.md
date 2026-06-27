@@ -233,16 +233,22 @@ failures easy to miss.
 2. Lua runtime result summary
    - File: `server/fastify/src/prompt/luaRuntime.ts`
    - Function: `runServerLua()`
-   - Log only on error/timeout/interactive invocation by default.
+   - When `RISU_PROTOCOL_METRICS=1`, every Lua run emits
+     `generation_lua_runtime`; metrics remain off otherwise.
    - Log:
      - mode;
      - timed out;
      - interactive invoked;
+     - whether the requested handler was registered (`onOutput`, `onInput`,
+       `callListenMain`, etc.);
+     - result shape (`undefined`, `array`, `string`, etc.);
      - aborted;
-     - error message;
      - code hash;
+     - code byte length;
      - elapsed milliseconds;
      - aggregate budget used/remaining.
+   - Do not log the Lua source or runtime error text here; failures can contain
+     prompt/completion content if the script throws user data.
 
 3. Trigger/module attribution
    - Files:
@@ -258,7 +264,27 @@ failures easy to miss.
      - lowLevelAccess.
    - This is needed to answer "which module caused the `onOutput` failure?".
 
-4. Legacy browser-side edit-output catch
+4. Trigger selection and edit-effect diagnostics
+   - Files:
+     - `server/fastify/src/prompt/triggers.ts`
+     - `server/fastify/src/prompt/luaRuntime.ts`
+   - Metrics:
+     - `generation_trigger_selection`: trigger counts, selected counts,
+       character/module split, and trigger-Lua effect counts for each run mode.
+     - `generation_trigger_skipped`: selected triggers skipped by condition
+       failure, with owner/trigger attribution.
+     - `generation_trigger_lua_effect`: each `triggerlua` effect that reaches
+       `runTrigger()`, including message-count delta, transcript/last-message
+       before/after hashes, stop flag, var-change flag, owner/trigger/effect
+       attribution, and code hash/size.
+     - `generation_lua_edit_trigger_effect`: each `listenEdit` trigger-Lua edit
+       hook, including before/after content hashes, content byte counts, row
+       counts for request rows, and owner/trigger/effect attribution.
+   - These are the primary signals for "GigaTrans module Lua ran, but the
+     character's own Lua did not": compare the character/module owner rows for
+     `output` and `editOutput`.
+
+5. Legacy browser-side edit-output catch
    - File: `src/ts/process/scriptings.ts`
    - Function: `runLuaEditTrigger()`
    - The legacy browser path can return original content after a Lua edit-output
@@ -330,6 +356,20 @@ Scope: 1 to 2 days.
   the module/trigger.
 
 Risk: medium. Touches trigger/module plumbing, but behavior can stay unchanged.
+
+### Slice 6: Lua Positive-Path Diagnostics
+
+Status: implemented.
+
+- `generation_lua_runtime` now emits for successful Lua runs when
+  `RISU_PROTOCOL_METRICS=1`, with `handlerRegistered` and `resultShape`.
+- `generation_trigger_selection`, `generation_trigger_skipped`, and
+  `generation_trigger_lua_effect` show whether character/module triggers were
+  collected, selected, skipped, and executed.
+- `generation_lua_edit_trigger_effect` shows whether trigger-Lua edit hooks
+  changed post-generation content.
+
+Risk: low. Metrics are opt-in and metadata-only.
 
 ## Verification Plan
 
