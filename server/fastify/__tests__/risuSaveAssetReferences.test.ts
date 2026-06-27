@@ -3,6 +3,7 @@ import { buildRisuSaveAssetReport, summarizeRisuSaveAssetReport } from '../src/r
 import type { PersistedAsset } from '../src/repository.js'
 
 const CHAR_IMAGE = 'a'.repeat(64)
+const NOTIFICATION_IMAGE = 'ab'.repeat(32)
 const EMOTION = 'b'.repeat(64)
 const ADDITIONAL = 'c'.repeat(64)
 const VITS = 'd'.repeat(64)
@@ -47,6 +48,7 @@ describe('Phase 9-8c RISUSAVE asset reference walker', () => {
           {
             chaId: 'char-a',
             image: CHAR_IMAGE,
+            notificationImage: NOTIFICATION_IMAGE,
             emotionImages: [['happy', EMOTION]],
             additionalAssets: [['manual', ADDITIONAL, 'png']],
             chats: [
@@ -74,6 +76,7 @@ describe('Phase 9-8c RISUSAVE asset reference walker', () => {
       },
       [
         asset(CHAR_IMAGE),
+        asset(NOTIFICATION_IMAGE),
         asset(EMOTION),
         asset(ADDITIONAL),
         asset(VITS),
@@ -93,9 +96,13 @@ describe('Phase 9-8c RISUSAVE asset reference walker', () => {
     )
 
     expect(summarizeRisuSaveAssetReport(report)).toEqual({
-      referencedCount: 16,
+      referencedCount: 17,
       missingCount: 1,
       orphanedCount: 1,
+    })
+    expect(report.referenced).toContainEqual({
+      id: NOTIFICATION_IMAGE,
+      paths: ['database.characters[0].notificationImage'],
     })
     expect(report.missing).toEqual([
       {
@@ -111,7 +118,7 @@ describe('Phase 9-8c RISUSAVE asset reference walker', () => {
       {
         userIcon: USER_ICON,
         personas: [{ id: 'persona-a', icon: USER_ICON }],
-        characters: [{ chaId: 'char-a', image: USER_ICON }],
+        characters: [{ chaId: 'char-a', image: USER_ICON, notificationImage: USER_ICON }],
       },
       [asset(USER_ICON)],
     )
@@ -119,7 +126,12 @@ describe('Phase 9-8c RISUSAVE asset reference walker', () => {
     expect(report.referenced).toEqual([
       {
         id: USER_ICON,
-        paths: ['database.characters[0].image', 'database.personas[0].icon', 'database.userIcon'],
+        paths: [
+          'database.characters[0].image',
+          'database.characters[0].notificationImage',
+          'database.personas[0].icon',
+          'database.userIcon',
+        ],
       },
     ])
     expect(summarizeRisuSaveAssetReport(report)).toEqual({

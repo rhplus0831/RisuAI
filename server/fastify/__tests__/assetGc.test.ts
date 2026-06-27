@@ -28,6 +28,7 @@ const COLLECTION_REF = '2'.repeat(64)
 const CHARACTER_REF = '3'.repeat(64)
 const CHAT_ROW_REF = '4'.repeat(64)
 const MESSAGE_REF = '5'.repeat(64)
+const NOTIFICATION_IMAGE_REF = '6'.repeat(64)
 
 const GRACE_MS = 60 * 60_000
 const NOW = 10_000_000_000
@@ -225,6 +226,7 @@ describe('runAssetGc', () => {
         {
           chaId: 'char-a',
           image: CHARACTER_REF,
+          notificationImage: NOTIFICATION_IMAGE_REF,
           emotionImages: [['happy', `assets/${CHARACTER_REF}.png`]],
           additionalAssets: [['sheet', CHARACTER_REF]],
           ccAssets: [{ uri: CHARACTER_REF }],
@@ -250,6 +252,7 @@ describe('runAssetGc', () => {
       asset(SETTINGS_REF),
       asset(COLLECTION_REF),
       asset(CHARACTER_REF),
+      asset(NOTIFICATION_IMAGE_REF),
       asset(CHAT_ROW_REF),
       asset(MESSAGE_REF),
       asset(ORPHAN_OLD),
@@ -259,6 +262,7 @@ describe('runAssetGc', () => {
       writeAssetFile(SETTINGS_REF, OLD_MTIME),
       writeAssetFile(COLLECTION_REF, OLD_MTIME),
       writeAssetFile(CHARACTER_REF, OLD_MTIME),
+      writeAssetFile(NOTIFICATION_IMAGE_REF, OLD_MTIME),
       writeAssetFile(CHAT_ROW_REF, OLD_MTIME),
       writeAssetFile(MESSAGE_REF, OLD_MTIME),
     ]
@@ -269,7 +273,7 @@ describe('runAssetGc', () => {
 
     expect(scoped).toEqual(broad)
     expect(scoped.referenced.map((reference) => reference.id).sort()).toEqual(
-      [SETTINGS_REF, COLLECTION_REF, CHARACTER_REF, CHAT_ROW_REF, MESSAGE_REF].sort(),
+      [SETTINGS_REF, COLLECTION_REF, CHARACTER_REF, CHAT_ROW_REF, MESSAGE_REF, NOTIFICATION_IMAGE_REF].sort(),
     )
 
     const result = runAssetGc(dataDir, { db, graceMs: GRACE_MS, now: () => NOW })

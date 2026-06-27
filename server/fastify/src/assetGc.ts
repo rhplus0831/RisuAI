@@ -54,6 +54,7 @@ interface CollectionReferenceRow {
 interface CharacterReferenceRow {
   id: string
   image: unknown
+  notificationImage: unknown
   emotionImagesJson: unknown
   additionalAssetsJson: unknown
   ccAssetsJson: unknown
@@ -131,6 +132,7 @@ function loadCharacterReferenceRows(db: DatabaseSync): CharacterReferenceRow[] {
       SELECT
         id,
         json_extract(data_json, '$.image') AS image,
+        json_extract(data_json, '$.notificationImage') AS notificationImage,
         json_extract(data_json, '$.emotionImages') AS emotionImagesJson,
         json_extract(data_json, '$.additionalAssets') AS additionalAssetsJson,
         json_extract(data_json, '$.ccAssets') AS ccAssetsJson,
@@ -163,6 +165,7 @@ function loadChatReferenceRows(db: DatabaseSync): ChatReferenceRow[] {
 function buildMinimalCharacter(row: CharacterReferenceRow, chats: unknown[]): JsonRecord {
   const character: JsonRecord = { chats }
   setIfPresent(character, 'image', row.image)
+  setIfPresent(character, 'notificationImage', row.notificationImage)
   setIfPresent(character, 'emotionImages', readJsonFragment(row.emotionImagesJson))
   setIfPresent(character, 'additionalAssets', readJsonFragment(row.additionalAssetsJson))
   setIfPresent(character, 'ccAssets', readJsonFragment(row.ccAssetsJson))

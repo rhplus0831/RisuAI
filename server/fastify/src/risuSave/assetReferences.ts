@@ -166,6 +166,7 @@ function collectRisuSaveAssetReferences(
     if (!record) return
     const prefix = `database.characters[${index}]`
     addReference(found, record.image, `${prefix}.image`)
+    addReference(found, record.notificationImage, `${prefix}.notificationImage`)
     addTupleReferences(found, record.emotionImages, `${prefix}.emotionImages`)
     addTupleReferences(found, record.additionalAssets, `${prefix}.additionalAssets`)
     addChatInlayReferences(found, record.chats, `${prefix}.chats`)
