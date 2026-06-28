@@ -69,6 +69,12 @@ beforeEach(() => {
         name: 'Profile 1',
         providerId: 'debug-echo',
         modelId: 'debug-echo',
+        providerOptions: {
+          apiKey: 'secret-key',
+          vertex: {
+            privateKey: 'vertex-secret',
+          },
+        },
       },
     ],
     modelRoleProfiles: {},
@@ -112,5 +118,22 @@ describe('ModelProfileList', () => {
     expect(commandSpies.runServerCommand).not.toHaveBeenCalled()
     expect(target.textContent).toContain(language.modelProfiles.editTargetMissing)
     expect(target.querySelector('[role="dialog"]')).not.toBeNull()
+  })
+
+  it('duplicates profiles with secrets for internal settings copies', async () => {
+    commandSpies.duplicateModelProfileCommand.mockResolvedValue({ status: 'ok' })
+
+    component = mount(ModelProfileList, { target })
+    await tick()
+
+    buttonByText(language.modelProfiles.duplicate).click()
+    await flushAsync()
+
+    expect(commandSpies.duplicateModelProfileCommand).toHaveBeenCalledWith({
+      baseRevision: 123,
+      profileId: 'profile-1',
+      name: language.modelProfiles.copyName('Profile 1'),
+      includeSecrets: true,
+    })
   })
 })

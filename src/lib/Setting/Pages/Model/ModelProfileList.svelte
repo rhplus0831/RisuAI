@@ -164,7 +164,7 @@
           baseRevision,
           profileId: profile.id,
           name: language.modelProfiles.copyName(profile.name),
-          includeSecrets: false,
+          includeSecrets: true,
         }),
     })
     busy = false
