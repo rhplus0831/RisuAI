@@ -74,6 +74,7 @@ import {
   type GenerationTraceOptions,
 } from '../generation/generationTraceSidecar.js'
 import { PostGenerationLuaTraceCollector } from '../prompt/luaPostGenerationTrace.js'
+import { PostGenerationLuaProgressTracker } from '../prompt/luaPostGenerationProgress.js'
 import {
   deleteGenerationFinalizationRetry,
   enqueueGenerationFinalizationRetry,
@@ -1307,6 +1308,7 @@ async function resolvePostGenerationResult(args: {
   promptInfo?: Record<string, unknown>
   dataDir: string
   durable: boolean
+  emit?: (event: PromptChatEvent) => void
   generationTrace?: GenerationTraceOptions
   metricContext?: PromptAssemblyMetricContext
 }): Promise<{
@@ -1322,6 +1324,7 @@ async function resolvePostGenerationResult(args: {
   // Capture the continue target BEFORE post-gen mutates the row in place.
   const continueRow = args.input.mode === 'continue' ? findContinueRow(args.state) : undefined
   const luaTrace = protocolMetricsEnabled() ? new PostGenerationLuaTraceCollector() : undefined
+  const luaProgress = args.emit ? new PostGenerationLuaProgressTracker(args.emit) : undefined
   try {
     const postGen = await runServerPostGeneration(args.state, {
       completionText: args.completionText,
@@ -1329,6 +1332,7 @@ async function resolvePostGenerationResult(args: {
       generationInfo: args.generationInfo,
       promptInfo: args.promptInfo,
       luaTrace,
+      luaProgress,
     })
     await emitPostGenerationLuaTraceMetric({
       collector: luaTrace,
@@ -1466,6 +1470,7 @@ async function buildPostGenerationFrame(args: {
       promptInfo: args.promptInfo,
       dataDir: args.dataDir,
       durable: false,
+      emit: args.emit,
       generationTrace: args.generationTrace,
       metricContext: args.metricContext,
     })
@@ -2305,6 +2310,7 @@ async function buildDurablePostGeneration(args: {
       promptInfo: args.promptInfo,
       dataDir: args.dataDir,
       durable: true,
+      emit: args.emit,
       generationTrace: args.generationTrace,
       metricContext: args.metricContext,
     })

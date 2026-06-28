@@ -1,6 +1,7 @@
 import type { FastifyReply } from 'fastify'
 import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
 import type { AssembleMutationPayload } from './assemble.js'
+import type { PostGenerationLuaProgressEvent } from './luaPostGenerationProgress.js'
 
 /**
  * SSE event taxonomy for `POST /api/v1/generate/chat`.
@@ -146,6 +147,7 @@ export type PromptChatEvent =
   | TokenEvent
   | MessagePatchEvent
   | SideEffectEvent
+  | PostGenerationLuaProgressEvent
   | WarningEvent
   | ErrorEvent
   | DoneEvent
@@ -160,6 +162,7 @@ export const PROMPT_CHAT_EVENT_TYPES = [
   'token',
   'message_patch',
   'side_effect',
+  'post_generation_progress',
   'warning',
   'error',
   'done',

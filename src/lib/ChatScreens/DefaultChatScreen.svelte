@@ -99,6 +99,7 @@
   import { guardActiveChatGenerationSettingsForSend } from 'src/ts/activeChatGenerationSettings'
   import { characterRoutePath, currentRoute, navigate } from 'src/ts/router'
   import { createLatestOperationGuard } from 'src/ts/server/staleStateGuards'
+  import PostGenerationScriptProgress from './PostGenerationScriptProgress.svelte'
 
   const loadPlaygroundMenu = () => import('../Playground/PlaygroundMenu.svelte').then((m) => m.default)
   const composerFileOperationGuard = createLatestOperationGuard<string>()
@@ -1292,6 +1293,8 @@
             </Button>
           </button>
         {/if}
+
+        <PostGenerationScriptProgress />
 
         <Chats
           bind:this={chatsInstance}

@@ -9,7 +9,7 @@
  *
  * Prompt assembly consumes `stage` / `prompt` / `message_patch` / `info` /
  * `error` / `done`; generation streams also use `token` / `side_effect` /
- * `warning`.
+ * `post_generation_progress` / `warning`.
  */
 
 import type { Message } from '../../storage/database.svelte'
@@ -144,6 +144,31 @@ export interface SideEffectEvent {
 
 export type ServerChatSideEffect = Omit<SideEffectEvent, 'type'>
 
+export type PostGenerationProgressPhase = 'editOutput' | 'onOutput'
+export type PostGenerationProgressStatus = 'started' | 'running' | 'finished' | 'error'
+export type PostGenerationProgressOwnerType = 'character' | 'module'
+export type PostGenerationProgressLlmFunction = 'LLM' | 'axLLM'
+
+export interface PostGenerationProgressEvent {
+  type: 'post_generation_progress'
+  phase: PostGenerationProgressPhase
+  status: PostGenerationProgressStatus
+  runSeq: number
+  ownerType?: PostGenerationProgressOwnerType
+  ownerId?: string
+  ownerName?: string
+  triggerId?: string
+  triggerIndex?: number
+  triggerComment?: string
+  triggerType?: string
+  effectIndex?: number
+  effectType?: string
+  llmCallCount: number
+  pendingLlmCount: number
+  llmCallCounts: Record<PostGenerationProgressLlmFunction, number>
+  pendingLlmCounts: Record<PostGenerationProgressLlmFunction, number>
+}
+
 export interface WarningEvent {
   type: 'warning'
   message: string
@@ -192,6 +217,7 @@ export type PromptChatEvent =
   | TokenEvent
   | MessagePatchEvent
   | SideEffectEvent
+  | PostGenerationProgressEvent
   | WarningEvent
   | ErrorEvent
   | DoneEvent
@@ -206,6 +232,7 @@ export const CLIENT_PROMPT_CHAT_EVENT_TYPES = [
   'token',
   'message_patch',
   'side_effect',
+  'post_generation_progress',
   'warning',
   'error',
   'done',

@@ -34,3 +34,10 @@ export function getChatGenerationLoadingLanguageKey(stage: unknown): ChatGenerat
 export function getChatGenerationLoadingProgress(stage: unknown): number {
   return STAGE_PROGRESS[normalizeChatGenerationLoadingStage(stage)]
 }
+
+export function getPostGenerationScriptProgress(startedAt: number, now: number, llmCallCount = 0): number {
+  const elapsedMs = Math.max(0, now - startedAt)
+  const timeProgress = Math.min(62, elapsedMs / 180)
+  const callProgress = Math.min(14, Math.max(0, llmCallCount) * 4)
+  return Math.min(94, Math.round(18 + timeProgress + callProgress))
+}

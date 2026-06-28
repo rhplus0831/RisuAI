@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   getChatGenerationLoadingLanguageKey,
   getChatGenerationLoadingProgress,
+  getPostGenerationScriptProgress,
   normalizeChatGenerationLoadingStage,
 } from './chatGenerationLoading'
 
@@ -22,5 +23,11 @@ describe('chat generation loading stage mapping', () => {
     expect(normalizeChatGenerationLoadingStage(99)).toBe(0)
     expect(normalizeChatGenerationLoadingStage(null)).toBe(0)
     expect(getChatGenerationLoadingLanguageKey(undefined)).toBe('chatGenerationStageStarting')
+  })
+
+  it('simulates bounded progress for post-generation scripts', () => {
+    expect(getPostGenerationScriptProgress(1_000, 1_000, 0)).toBe(18)
+    expect(getPostGenerationScriptProgress(1_000, 20_000, 3)).toBe(92)
+    expect(getPostGenerationScriptProgress(1_000, 60_000, 100)).toBe(94)
   })
 })

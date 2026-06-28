@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { get } from 'svelte/store'
 
 vi.mock('../../../storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'test-auth-token',
@@ -28,6 +29,11 @@ import {
   setServerChatMessagePatch,
   setServerChatPrompt,
 } from '../../__fixtures__/mocks/serverChatFetch'
+import {
+  clearPostGenerationProgress,
+  postGenerationProgress,
+  type ActivePostGenerationProgress,
+} from '../../postGenerationProgress'
 
 const baseInput: ServerChatInput = {
   chatId: 'chat-1',
@@ -61,6 +67,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  clearPostGenerationProgress()
   vi.unstubAllGlobals()
 })
 
@@ -491,6 +498,68 @@ describe('requestServerChat', () => {
       status: 'done',
       sideEffects: [{ kind: 'tts', payload: { text: 'server reply', characterId: 'char-1' } }],
     })
+  })
+
+  it('updates and clears post-generation Lua progress from generation streams', async () => {
+    const snapshots: Array<ActivePostGenerationProgress | null> = []
+    const unsubscribe = postGenerationProgress.subscribe((value) => {
+      snapshots.push(value)
+    })
+    try {
+      vi.stubGlobal('fetch', async () => {
+        const enc = new TextEncoder()
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(enc.encode('event: prompt\ndata: {"messages":[{"role":"user","content":"hi"}]}\n\n'))
+            controller.enqueue(
+              enc.encode(
+                'event: info\ndata: {"generationId":"gen-progress","generationInfo":{"generationId":"gen-progress","model":"m"}}\n\n',
+              ),
+            )
+            controller.enqueue(enc.encode('event: token\ndata: {"content":"ok"}\n\n'))
+            controller.enqueue(
+              enc.encode(
+                'event: post_generation_progress\ndata: {"phase":"onOutput","status":"started","runSeq":1,"ownerType":"module","ownerName":"Translator","llmCallCount":0,"pendingLlmCount":0,"llmCallCounts":{"LLM":0,"axLLM":0},"pendingLlmCounts":{"LLM":0,"axLLM":0}}\n\n',
+              ),
+            )
+            controller.enqueue(
+              enc.encode(
+                'event: post_generation_progress\ndata: {"phase":"onOutput","status":"running","runSeq":1,"ownerType":"module","ownerName":"Translator","llmCallCount":1,"pendingLlmCount":1,"llmCallCounts":{"LLM":0,"axLLM":1},"pendingLlmCounts":{"LLM":0,"axLLM":1}}\n\n',
+              ),
+            )
+            controller.enqueue(
+              enc.encode(
+                'event: done\ndata: {"result":"ok","generationId":"gen-progress","generationInfo":{"generationId":"gen-progress"}}\n\n',
+              ),
+            )
+            controller.close()
+          },
+        })
+        return new Response(stream, {
+          status: 200,
+          headers: { 'content-type': 'text/event-stream' },
+        })
+      })
+
+      const res = await requestServerChatGeneration(baseInput, null)
+      expect(res.status).toBe('ok')
+      if (res.status !== 'ok') return
+      await expect(res.terminal).resolves.toMatchObject({ status: 'done' })
+      expect(snapshots).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            phase: 'onOutput',
+            ownerType: 'module',
+            ownerName: 'Translator',
+            llmCallCount: 1,
+            pendingLlmCount: 1,
+          }),
+        ]),
+      )
+      expect(get(postGenerationProgress)).toBeNull()
+    } finally {
+      unsubscribe()
+    }
   })
 
   it('ignores unknown events and captures warning events during generation streams', async () => {

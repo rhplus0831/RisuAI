@@ -72,6 +72,7 @@ import {
   type ServerLuaEditTriggerContext,
 } from './luaRuntime.js'
 import type { PostGenerationLuaTraceCollector } from './luaPostGenerationTrace.js'
+import type { PostGenerationLuaProgressTracker } from './luaPostGenerationProgress.js'
 import { processScriptAsync } from './scripts.js'
 import { getActiveModules, getModuleTriggers } from './modules.js'
 import { parseKeyValue } from '../../../../src/ts/util/parseKeyValue'
@@ -1840,6 +1841,8 @@ export interface ServerPostGenerationInput {
   promptInfo?: Record<string, unknown>
   /** Optional collector for post-generation Lua diagnostics. */
   luaTrace?: PostGenerationLuaTraceCollector
+  /** Optional live progress tracker for post-generation Lua scripts. */
+  luaProgress?: PostGenerationLuaProgressTracker
 }
 
 /** Result of {@link runServerPostGeneration}. */
@@ -1873,9 +1876,11 @@ async function applyEditOutput(
   text: string,
   msgIndex: number,
   luaTrace?: PostGenerationLuaTraceCollector,
+  luaProgress?: PostGenerationLuaProgressTracker,
 ): Promise<string> {
   const { editCtx, varEngine } = buildLuaEditTriggerContext(state)
   editCtx.postGenerationTrace = luaTrace
+  editCtx.postGenerationProgress = luaProgress
   let out = await runLuaEditTrigger(state.currentChar, 'editoutput', text, { index: msgIndex }, editCtx)
   out = expandVariables(out, { ...state.ctx, chara: state.currentChar }).text
   out = await processScriptAsync(state.ctx, state.currentChar, out, 'editoutput', {}, msgIndex, state.currentChat)
@@ -1927,7 +1932,11 @@ function appendAssistantRow(
  * captured as an `output_trigger` message mutation (surfaced for the projection,
  * not persisted here). Returns the trigger's resend request (`sendAIprompt`).
  */
-async function runOutputTrigger(state: AssemblyState, luaTrace?: PostGenerationLuaTraceCollector): Promise<boolean> {
+async function runOutputTrigger(
+  state: AssemblyState,
+  luaTrace?: PostGenerationLuaTraceCollector,
+  luaProgress?: PostGenerationLuaProgressTracker,
+): Promise<boolean> {
   const { currentChar } = state
   const db = state.database
   const triggerCtx: TriggerRunContext = {
@@ -1945,10 +1954,14 @@ async function runOutputTrigger(state: AssemblyState, luaTrace?: PostGenerationL
         source,
         chat,
       })
+      const progressRun = luaProgress?.beginRun({
+        phase: 'onOutput',
+        source,
+      })
       let result: Awaited<ReturnType<typeof runServerLua>>
       try {
         result = await runServerLua(
-          { code, mode, lowLevelAccess, source, traceSink: traceRun?.sink },
+          { code, mode, lowLevelAccess, source, traceSink: traceRun?.sink, progressSink: progressRun?.sink },
           {
             chat,
             database: db,
@@ -1962,6 +1975,7 @@ async function runOutputTrigger(state: AssemblyState, luaTrace?: PostGenerationL
           },
         )
       } catch (error) {
+        progressRun?.finish('error')
         traceRun?.finish({
           status: 'error',
           chat,
@@ -1973,10 +1987,11 @@ async function runOutputTrigger(state: AssemblyState, luaTrace?: PostGenerationL
         result.error || result.timedOut || result.interactiveInvoked || result.aborted
           ? (result.error ?? (result.timedOut ? 'Lua execution timed out' : 'Lua runtime failed'))
           : undefined
+      progressRun?.finish(failure ? 'error' : 'finished')
       traceRun?.finish({
         status: failure ? 'error' : 'ok',
         chat,
-        runtimeMetricFields: result.runtimeMetricFields as Record<string, unknown> | undefined,
+        runtimeMetricFields: result.runtimeMetricFields as unknown as Record<string, unknown> | undefined,
         ...(failure ? { error: failure } : {}),
       })
       throwServerLuaFailure(result, `Lua ${mode} trigger failed`)
@@ -2036,7 +2051,7 @@ export async function runServerPostGeneration(
   state.additionalSystemPromptMutations = []
 
   const reformatted = reformatCompletion(continueBase + input.completionText)
-  const editedText = await applyEditOutput(state, reformatted, editIndex, input.luaTrace)
+  const editedText = await applyEditOutput(state, reformatted, editIndex, input.luaTrace, input.luaProgress)
 
   appendAssistantRow(state, editedText, input, isContinue, continueIndex)
 
@@ -2047,7 +2062,7 @@ export async function runServerPostGeneration(
   state.messageMutations = []
   state.messageMutationCheckpoint = cloneMessages(state.currentChat.message ?? [], 'postGenerationCheckpoint')
 
-  const resendChat = await runOutputTrigger(state, input.luaTrace)
+  const resendChat = await runOutputTrigger(state, input.luaTrace, input.luaProgress)
 
   const finalText = assistantTextAfterPass(state, input, isContinue, continueIndex, editedText)
   const mutations = buildMutationPayload(state)

@@ -82,6 +82,7 @@ const DURABLE_REPLAY_PROTECTED_EVENTS = new Set([
   'info',
   'message_patch',
   'side_effect',
+  'post_generation_progress',
   'warning',
   'error',
   'done',

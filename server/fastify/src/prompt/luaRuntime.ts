@@ -32,6 +32,7 @@ import {
   type PostGenerationLuaTraceCollector,
   type ServerLuaRuntimeTraceSink,
 } from './luaPostGenerationTrace.js'
+import type { PostGenerationLuaProgressTracker, ServerLuaRuntimeProgressSink } from './luaPostGenerationProgress.js'
 
 /**
  * Server-side Lua runtime under the single-user self-host security model.
@@ -682,6 +683,7 @@ interface RuntimeState {
   lowLevelIds: Set<string>
   editDisplayIds: Set<string>
   traceSink?: ServerLuaRuntimeTraceSink
+  progressSink?: ServerLuaRuntimeProgressSink
   stopSending: boolean
   /** Set true the moment an interactive host fn (`alert*Input/Select/Confirm`) is
    * invoked — surfaced so the caller can route the send `unsupported`. */
@@ -703,6 +705,8 @@ export interface RunServerLuaOptions {
   source?: TriggerSourceAttribution
   /** Optional post-generation trace sink for host API calls made during this run. */
   traceSink?: ServerLuaRuntimeTraceSink
+  /** Optional live progress sink for post-generation Lua host API calls. */
+  progressSink?: ServerLuaRuntimeProgressSink
 }
 
 export interface ServerLuaResult {
@@ -1553,7 +1557,9 @@ function declareHostFunctions(engine: LuaEngine): (next: RuntimeState) => void {
 
   // Supported low-level LLM host fns.
   declare('LLMMain', async (id: string, promptStr: string, useMultimodal = false, optionsStr = '') => {
+    const progressCall = state.progressSink?.beginLlmCall('LLM')
     if (!canLowLevel(id)) {
+      progressCall?.finish()
       state.traceSink?.recordHostEvent({
         type: 'llm',
         fn: 'LLM',
@@ -1562,10 +1568,16 @@ function declareHostFunctions(engine: LuaEngine): (next: RuntimeState) => void {
       })
       return
     }
-    return runLuaLlmMain(state, 'scriptMain', promptStr, useMultimodal, optionsStr, 'LLM')
+    try {
+      return await runLuaLlmMain(state, 'scriptMain', promptStr, useMultimodal, optionsStr, 'LLM')
+    } finally {
+      progressCall?.finish()
+    }
   })
   declare('axLLMMain', async (id: string, promptStr: string, useMultimodal = false, optionsStr = '') => {
+    const progressCall = state.progressSink?.beginLlmCall('axLLM')
     if (!canLowLevel(id)) {
+      progressCall?.finish()
       state.traceSink?.recordHostEvent({
         type: 'llm',
         fn: 'axLLM',
@@ -1574,7 +1586,11 @@ function declareHostFunctions(engine: LuaEngine): (next: RuntimeState) => void {
       })
       return
     }
-    return runLuaLlmMain(state, 'scriptAux', promptStr, useMultimodal, optionsStr, 'axLLM')
+    try {
+      return await runLuaLlmMain(state, 'scriptAux', promptStr, useMultimodal, optionsStr, 'axLLM')
+    } finally {
+      progressCall?.finish()
+    }
   })
   declare('simpleLLM', async (id: string, prompt: string) => {
     if (!canLowLevel(id)) return
@@ -1876,6 +1892,7 @@ export async function runServerLua(opts: RunServerLuaOptions, ctx: ServerLuaRunt
     lowLevelIds: new Set<string>(),
     editDisplayIds: new Set<string>(),
     traceSink: opts.traceSink,
+    progressSink: opts.progressSink,
     stopSending: false,
     interactiveInvoked: false,
     sleptMs: 0,
@@ -2031,6 +2048,8 @@ export interface ServerLuaEditTriggerContext extends Omit<ServerLuaRuntimeContex
   moduleTriggers?: triggerscript[]
   /** Optional collector for post-generation editOutput diagnostics. */
   postGenerationTrace?: PostGenerationLuaTraceCollector
+  /** Optional live progress tracker for post-generation editOutput diagnostics. */
+  postGenerationProgress?: PostGenerationLuaProgressTracker
 }
 
 interface LuaEditContentSummary {
@@ -2127,6 +2146,13 @@ export async function runLuaEditTrigger<T extends string | OpenAIChat[]>(
                 editOutputTextBefore: typeof data === 'string' ? data : undefined,
               })
             : undefined
+        const progressRun =
+          mode === 'editOutput'
+            ? ctx.postGenerationProgress?.beginRun({
+                phase: 'editOutput',
+                source,
+              })
+            : undefined
         let runResult: ServerLuaResult
         try {
           runResult = await runServerLua(
@@ -2138,10 +2164,12 @@ export async function runLuaEditTrigger<T extends string | OpenAIChat[]>(
               lowLevelAccess: false,
               source,
               traceSink: traceRun?.sink,
+              progressSink: progressRun?.sink,
             },
             { ...ctx, char },
           )
         } catch (error) {
+          progressRun?.finish('error')
           traceRun?.finish({
             status: 'error',
             chat: ctx.chat,
@@ -2152,11 +2180,12 @@ export async function runLuaEditTrigger<T extends string | OpenAIChat[]>(
         }
         const failure = serverLuaFailureMessage(runResult, `Lua ${mode} edit trigger failed`)
         const nextData = (runResult.res as T) ?? data
+        progressRun?.finish(failure ? 'error' : 'finished')
         traceRun?.finish({
           status: failure ? 'error' : 'ok',
           chat: ctx.chat,
           editOutputTextAfter: typeof nextData === 'string' ? nextData : undefined,
-          runtimeMetricFields: runResult.runtimeMetricFields as Record<string, unknown> | undefined,
+          runtimeMetricFields: runResult.runtimeMetricFields as unknown as Record<string, unknown> | undefined,
           ...(failure ? { error: failure } : {}),
         })
         throwServerLuaFailure(runResult, `Lua ${mode} edit trigger failed`)
