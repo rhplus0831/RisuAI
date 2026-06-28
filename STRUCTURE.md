@@ -77,19 +77,11 @@ past decisions; they are not the source of current behavior.
 
 ## Standing Conventions
 
-- Use `pnpm`. Node.js 24+ is required.
 - The live runtime is Fastify-only. `src/ts/platform.ts` sets
   `isFastifyServer = true`; native/mobile wrappers, browser-local persistence,
   service workers, peer sync, Drive sync, and non-Fastify modes are not live.
-- Vite dev (`pnpm dev`) serves the SPA on port 5174 and proxies `/api` to the
-  API server. Run `pnpm api:dev` or `pnpm api:dev:flag` separately. For
-  agent-facing full-stack dev, `pnpm dev:agent` serves the SPA on port 6418 and
-  starts the API on port 6419 behind the same `/api` proxy.
 - `pnpm dev:human` runs the same full-stack trace runner on frontend port 6002
   and API port 6001 with trace mode `human`.
-- If a normal or flag-gated API server is expected on port `6002` and the port
-  is already open, try `touch .risu-api-restart` for the flag-gated runner before
-  starting another server. `pnpm dev:agent` uses API port `6419` instead.
 - Add new routes from `buildApp()` in `server/fastify/src/app.ts`. Handlers
   should call `requireAuth()` unless intentionally public, and every route needs
   a `routeManifest.ts` decision.
