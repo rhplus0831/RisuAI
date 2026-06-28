@@ -100,6 +100,17 @@ enabled and `RISU_GENERATION_TRACE_FULL_PROMPT=1`. They write redacted prompt
 payloads under `data/trace/generation/`, capped by
 `RISU_GENERATION_TRACE_FULL_PROMPT_MAX_GZIP_BYTES`.
 
+Post-generation Lua flow tracing also uses `RISU_PROTOCOL_METRICS=1`. When
+`editOutput` or `onOutput` Lua runs after provider completion, the server emits
+`generation_lua_post_generation_trace`. The metric line stays metadata-only:
+run counts, `editOutput` text changed, transcript changed, Lua `log()` count,
+`LLM`/`axLLM` attempted/blocked/completed/failed counts, and `setChat` changed
+counts. Its `bodySidecar` points at a compressed JSON file under
+`data/trace/generation/` with the detailed chat body before/after each phase,
+`editOutput` text before/after, and captured Lua `log()` values. Use this when
+debugging whether post-generation Lua ran, whether `setChat` changed the
+assistant row, or whether low-level LLM calls were blocked.
+
 To serve a built SPA through Fastify:
 
 ```sh

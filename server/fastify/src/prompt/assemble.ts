@@ -71,6 +71,7 @@ import {
   type LuaExecBudget,
   type ServerLuaEditTriggerContext,
 } from './luaRuntime.js'
+import type { PostGenerationLuaTraceCollector } from './luaPostGenerationTrace.js'
 import { processScriptAsync } from './scripts.js'
 import { getActiveModules, getModuleTriggers } from './modules.js'
 import { parseKeyValue } from '../../../../src/ts/util/parseKeyValue'
@@ -1837,6 +1838,8 @@ export interface ServerPostGenerationInput {
   generationInfo?: Record<string, unknown>
   /** Assembled prompt-info, stamped onto the appended assistant row. */
   promptInfo?: Record<string, unknown>
+  /** Optional collector for post-generation Lua diagnostics. */
+  luaTrace?: PostGenerationLuaTraceCollector
 }
 
 /** Result of {@link runServerPostGeneration}. */
@@ -1865,8 +1868,14 @@ function reformatCompletion(text: string): string {
  * shape to `applyEditInput`. pluginV2 stays permanent-unsupported, so its arm is
  * intentionally absent. Lua var writes fold into the chat-var delta.
  */
-async function applyEditOutput(state: AssemblyState, text: string, msgIndex: number): Promise<string> {
+async function applyEditOutput(
+  state: AssemblyState,
+  text: string,
+  msgIndex: number,
+  luaTrace?: PostGenerationLuaTraceCollector,
+): Promise<string> {
   const { editCtx, varEngine } = buildLuaEditTriggerContext(state)
+  editCtx.postGenerationTrace = luaTrace
   let out = await runLuaEditTrigger(state.currentChar, 'editoutput', text, { index: msgIndex }, editCtx)
   out = expandVariables(out, { ...state.ctx, chara: state.currentChar }).text
   out = await processScriptAsync(state.ctx, state.currentChar, out, 'editoutput', {}, msgIndex, state.currentChat)
@@ -1918,7 +1927,7 @@ function appendAssistantRow(
  * captured as an `output_trigger` message mutation (surfaced for the projection,
  * not persisted here). Returns the trigger's resend request (`sendAIprompt`).
  */
-async function runOutputTrigger(state: AssemblyState): Promise<boolean> {
+async function runOutputTrigger(state: AssemblyState, luaTrace?: PostGenerationLuaTraceCollector): Promise<boolean> {
   const { currentChar } = state
   const db = state.database
   const triggerCtx: TriggerRunContext = {
@@ -1929,20 +1938,47 @@ async function runOutputTrigger(state: AssemblyState): Promise<boolean> {
     chatPage: state.chatPage,
     signal: state.signal,
     runLua: async ({ code, mode, lowLevelAccess, chat, varEngine, source }) => {
-      const result = await runServerLua(
-        { code, mode, lowLevelAccess, source },
-        {
+      const traceRun = luaTrace?.beginRun({
+        phase: 'onOutput',
+        mode,
+        code,
+        source,
+        chat,
+      })
+      let result: Awaited<ReturnType<typeof runServerLua>>
+      try {
+        result = await runServerLua(
+          { code, mode, lowLevelAccess, source, traceSink: traceRun?.sink },
+          {
+            chat,
+            database: db,
+            selectedCharID: state.selectedCharID,
+            chatPage: state.chatPage,
+            varEngine,
+            char: currentChar,
+            model: db.aiModel,
+            signal: state.signal,
+            execBudget: state.luaExecBudget,
+          },
+        )
+      } catch (error) {
+        traceRun?.finish({
+          status: 'error',
           chat,
-          database: db,
-          selectedCharID: state.selectedCharID,
-          chatPage: state.chatPage,
-          varEngine,
-          char: currentChar,
-          model: db.aiModel,
-          signal: state.signal,
-          execBudget: state.luaExecBudget,
-        },
-      )
+          error: error instanceof Error ? error.message : String(error),
+        })
+        throw error
+      }
+      const failure =
+        result.error || result.timedOut || result.interactiveInvoked || result.aborted
+          ? (result.error ?? (result.timedOut ? 'Lua execution timed out' : 'Lua runtime failed'))
+          : undefined
+      traceRun?.finish({
+        status: failure ? 'error' : 'ok',
+        chat,
+        runtimeMetricFields: result.runtimeMetricFields as Record<string, unknown> | undefined,
+        ...(failure ? { error: failure } : {}),
+      })
       throwServerLuaFailure(result, `Lua ${mode} trigger failed`)
       return { chat, stopSending: result.stopSending }
     },
@@ -2000,7 +2036,7 @@ export async function runServerPostGeneration(
   state.additionalSystemPromptMutations = []
 
   const reformatted = reformatCompletion(continueBase + input.completionText)
-  const editedText = await applyEditOutput(state, reformatted, editIndex)
+  const editedText = await applyEditOutput(state, reformatted, editIndex, input.luaTrace)
 
   appendAssistantRow(state, editedText, input, isContinue, continueIndex)
 
@@ -2011,7 +2047,7 @@ export async function runServerPostGeneration(
   state.messageMutations = []
   state.messageMutationCheckpoint = cloneMessages(state.currentChat.message ?? [], 'postGenerationCheckpoint')
 
-  const resendChat = await runOutputTrigger(state)
+  const resendChat = await runOutputTrigger(state, input.luaTrace)
 
   const finalText = assistantTextAfterPass(state, input, isContinue, continueIndex, editedText)
   const mutations = buildMutationPayload(state)

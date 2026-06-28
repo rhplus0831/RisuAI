@@ -354,6 +354,19 @@ interface ProtocolMetric {
   promptEventHasLorebookActivation?: boolean
   promptEventHasPromptInfo?: boolean
   fullPromptSidecar?: GenerationTraceSidecarEntry
+  bodySidecar?: GenerationTraceSidecarEntry
+  runCount?: number
+  hostEventCount?: number
+  logCount?: number
+  llmAttemptCount?: number
+  llmBlockedCount?: number
+  axLlmAttemptCount?: number
+  axLlmCompletedCount?: number
+  setChatCount?: number
+  setChatChangedCount?: number
+  transcriptChanged?: boolean
+  editOutputTextChanged?: boolean
+  runs?: Array<Record<string, unknown>>
 }
 
 const EXPECTED_PROMPT_ASSEMBLY_STAGES = [
@@ -3490,6 +3503,145 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       const rawMetrics = rawMetricLines.join('\n')
       expect(rawMetrics).not.toContain('function onOutput')
       expect(rawMetrics).not.toContain('server echo reply [CHAR]')
+    })
+  })
+
+  it('writes post-generation Lua flow metrics and body sidecar for editOutput/onOutput', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const luaCode = `
+      listenEdit('editOutput', function(id, data, meta)
+        log('editOutput sees: ' .. data)
+        local ok, blocked = pcall(function()
+          return LLM(id, {{ role = 'user', content = 'blocked prompt' }}, false)
+        end)
+        if ok and blocked ~= nil then
+          return data .. ' [UNEXPECTED-LLM]'
+        end
+        return data .. ' [EDIT]'
+      end)
+
+      onOutput = async(function(id)
+        log('onOutput start')
+        local index = getChatLength(id) - 1
+        local last = getChat(id, index)
+        local result = axLLM(id, {{ role = 'user', content = 'aux prompt' }}, false)
+        local aux = 'missing'
+        if result and result.success then
+          aux = result.result
+        end
+        setChat(id, index, last.data .. ' [OUT:' .. aux .. ']')
+      end)
+    `
+    await seedDatabase(harness.app, assertion, {
+      ...(dbWithServerDispatch({
+        lowLevelAccess: true,
+        triggerscript: [
+          {
+            id: 'character-postgen-trace',
+            comment: 'post-generation trace hook',
+            type: 'output',
+            conditions: [],
+            effect: [{ type: 'triggerlua', code: luaCode }],
+          },
+        ],
+      }) as Record<string, unknown>),
+      modelRoles: { scriptAux: 'echo_model' },
+    })
+
+    await withProtocolMetrics(async (metrics, rawMetricLines) => {
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+      let res: Awaited<ReturnType<typeof harness.app.inject>>
+      try {
+        res = await harness.app.inject({
+          method: 'POST',
+          url: '/api/v1/generate/chat',
+          headers: { 'risu-auth': assertion },
+          payload: basePayload,
+        })
+      } finally {
+        logSpy.mockRestore()
+      }
+      expect(res.statusCode).toBe(200)
+      const done = doneFrame(parseEvents(res.body))
+      expect(done.postGeneration?.finalText).toBe('server echo reply [EDIT] [OUT:server echo reply]')
+
+      const metric = metrics.find((entry) => entry.metric === 'generation_lua_post_generation_trace')
+      expect(metric).toMatchObject({
+        status: 'ok',
+        chatId: 'chat-1',
+        characterId: 'char-1',
+        mode: 'send',
+        durable: false,
+        runCount: 2,
+        hostEventCount: 5,
+        logCount: 2,
+        llmAttemptCount: 1,
+        llmBlockedCount: 1,
+        axLlmAttemptCount: 1,
+        axLlmCompletedCount: 1,
+        setChatCount: 1,
+        setChatChangedCount: 1,
+        transcriptChanged: true,
+        editOutputTextChanged: true,
+      })
+      expect(metric?.runs?.map((run) => run.phase)).toEqual(['editOutput', 'onOutput'])
+      expect(metric?.runs?.[0]).toMatchObject({
+        phase: 'editOutput',
+        llmAttemptCount: 1,
+        llmBlockedCount: 1,
+        editOutputTextChanged: true,
+        transcriptChanged: false,
+      })
+      expect(metric?.runs?.[1]).toMatchObject({
+        phase: 'onOutput',
+        axLlmAttemptCount: 1,
+        axLlmCompletedCount: 1,
+        setChatCount: 1,
+        setChatChangedCount: 1,
+        transcriptChanged: true,
+      })
+
+      const sidecar = readGenerationSidecar(harness.dataDir, metric?.bodySidecar) as {
+        runs: Array<{
+          phase: string
+          editOutputTextBefore?: string
+          editOutputTextAfter?: string
+          chatBefore: Array<{ role: string; body: string }>
+          chatAfter: Array<{ role: string; body: string }>
+          hostEvents: Array<Record<string, unknown>>
+        }>
+      }
+      expect(sidecar.runs[0]).toMatchObject({
+        phase: 'editOutput',
+        editOutputTextBefore: 'server echo reply',
+        editOutputTextAfter: 'server echo reply [EDIT]',
+      })
+      expect(sidecar.runs[0].hostEvents).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ type: 'log', fn: 'log', value: 'editOutput sees: server echo reply' }),
+          expect.objectContaining({ type: 'llm', fn: 'LLM', status: 'blocked' }),
+        ]),
+      )
+      expect(sidecar.runs[1].chatBefore.at(-1)).toMatchObject({
+        role: 'char',
+        body: 'server echo reply [EDIT]',
+      })
+      expect(sidecar.runs[1].chatAfter.at(-1)).toMatchObject({
+        role: 'char',
+        body: 'server echo reply [EDIT] [OUT:server echo reply]',
+      })
+      expect(sidecar.runs[1].hostEvents).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ type: 'log', fn: 'log', value: 'onOutput start' }),
+          expect.objectContaining({ type: 'llm', fn: 'axLLM', status: 'completed', success: true }),
+          expect.objectContaining({ type: 'chat', fn: 'setChat', status: 'changed' }),
+        ]),
+      )
+
+      const rawMetrics = rawMetricLines.join('\n')
+      expect(rawMetrics).not.toContain('server echo reply [EDIT] [OUT:server echo reply]')
+      expect(rawMetrics).not.toContain('blocked prompt')
+      expect(rawMetrics).not.toContain('function(id, data, meta)')
     })
   })
 

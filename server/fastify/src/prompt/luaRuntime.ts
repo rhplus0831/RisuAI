@@ -26,6 +26,12 @@ import {
   withTriggerEffectSource,
   type TriggerSourceAttribution,
 } from './triggerSource.js'
+import {
+  summarizeLuaTraceMessage,
+  summarizeLuaTraceValue,
+  type PostGenerationLuaTraceCollector,
+  type ServerLuaRuntimeTraceSink,
+} from './luaPostGenerationTrace.js'
 
 /**
  * Server-side Lua runtime under the single-user self-host security model.
@@ -675,6 +681,7 @@ interface RuntimeState {
   safeIds: Set<string>
   lowLevelIds: Set<string>
   editDisplayIds: Set<string>
+  traceSink?: ServerLuaRuntimeTraceSink
   stopSending: boolean
   /** Set true the moment an interactive host fn (`alert*Input/Select/Confirm`) is
    * invoked — surfaced so the caller can route the send `unsupported`. */
@@ -694,6 +701,8 @@ export interface RunServerLuaOptions {
   execTimeoutMs?: number
   /** Hidden trigger/effect owner metadata for diagnostics. */
   source?: TriggerSourceAttribution
+  /** Optional post-generation trace sink for host API calls made during this run. */
+  traceSink?: ServerLuaRuntimeTraceSink
 }
 
 export interface ServerLuaResult {
@@ -1015,10 +1024,43 @@ async function runLuaLlmMain(
   promptStr: string,
   useMultimodal = false,
   optionsStr = '',
+  traceFn?: 'LLM' | 'axLLM',
 ): Promise<string | undefined> {
+  const fn = traceFn ?? (role === 'scriptAux' ? 'axLLM' : 'LLM')
+  const promptSummary = summarizeLuaTraceValue(promptStr)
   const prompt = parseLuaLlmPrompt(promptStr, useMultimodal)
-  if (!Array.isArray(prompt)) return JSON.stringify(prompt)
-  return JSON.stringify(await runLuaLlm(state, role, prompt, parseLuaLlmOptions(optionsStr)))
+  if (!Array.isArray(prompt)) {
+    state.traceSink?.recordHostEvent({
+      type: 'llm',
+      fn,
+      status: 'completed',
+      promptSummary,
+      success: false,
+      error: prompt.result,
+    })
+    return JSON.stringify(prompt)
+  }
+  try {
+    const result = await runLuaLlm(state, role, prompt, parseLuaLlmOptions(optionsStr))
+    state.traceSink?.recordHostEvent({
+      type: 'llm',
+      fn,
+      status: 'completed',
+      promptSummary,
+      success: result.success,
+      ...(result.success ? {} : { error: result.result }),
+    })
+    return JSON.stringify(result)
+  } catch (error) {
+    state.traceSink?.recordHostEvent({
+      type: 'llm',
+      fn,
+      status: 'failed',
+      promptSummary,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    throw error
+  }
 }
 
 // ── Host functions ─
@@ -1084,6 +1126,7 @@ function declareHostFunctions(engine: LuaEngine): (next: RuntimeState) => void {
   const canWrite = (id: string) => state.safeIds.has(id)
   const canWriteVar = (id: string) => state.safeIds.has(id) || state.editDisplayIds.has(id)
   const canLowLevel = (id: string) => state.lowLevelIds.has(id)
+  const messageCount = () => state.ctx.chat.message?.length ?? 0
 
   // ── Pure: chat vars (bound to the assembler's var engine) ──
   declare('getChatVar', (_id: string, key: string) => state.ctx.varEngine.getVar(key))
@@ -1102,11 +1145,19 @@ function declareHostFunctions(engine: LuaEngine): (next: RuntimeState) => void {
     state.stopSending = true
   })
   declare('logMain', (value: string) => {
+    let logged: unknown = value
     try {
-      console.log(JSON.parse(value))
+      logged = JSON.parse(value)
+      console.log(logged)
     } catch {
       console.log(value)
     }
+    state.traceSink?.recordHostEvent({
+      type: 'log',
+      fn: 'log',
+      value: logged,
+      valueSummary: summarizeLuaTraceValue(logged),
+    })
   })
 
   // ── Browser-only UI: no-op (gated, like the browser) ──
@@ -1142,26 +1193,164 @@ function declareHostFunctions(engine: LuaEngine): (next: RuntimeState) => void {
     return JSON.stringify({ role: message.role, data: message.data, time: message.time ?? 0 })
   })
   declare('setChat', (id: string, index: number, value: string) => {
-    if (!canWrite(id)) return
+    if (!canWrite(id)) {
+      state.traceSink?.recordHostEvent({
+        type: 'chat',
+        fn: 'setChat',
+        status: 'blocked',
+        index,
+        messageCountBefore: messageCount(),
+        messageCountAfter: messageCount(),
+        valueSummary: summarizeLuaTraceValue(value ?? ''),
+      })
+      return
+    }
     const message = state.ctx.chat.message?.at(index)
-    if (message) message.data = value ?? ''
+    if (!message) {
+      state.traceSink?.recordHostEvent({
+        type: 'chat',
+        fn: 'setChat',
+        status: 'missing',
+        index,
+        messageCountBefore: messageCount(),
+        messageCountAfter: messageCount(),
+        valueSummary: summarizeLuaTraceValue(value ?? ''),
+      })
+      return
+    }
+    const before = summarizeLuaTraceMessage(message)
+    message.data = value ?? ''
+    const after = summarizeLuaTraceMessage(message)
+    state.traceSink?.recordHostEvent({
+      type: 'chat',
+      fn: 'setChat',
+      status: before?.dataSha256 === after?.dataSha256 ? 'unchanged' : 'changed',
+      index,
+      before,
+      after,
+      messageCountBefore: messageCount(),
+      messageCountAfter: messageCount(),
+      valueSummary: summarizeLuaTraceValue(value ?? ''),
+    })
   })
   declare('setChatRole', (id: string, index: number, value: string) => {
-    if (!canWrite(id)) return
+    if (!canWrite(id)) {
+      state.traceSink?.recordHostEvent({
+        type: 'chat',
+        fn: 'setChatRole',
+        status: 'blocked',
+        index,
+        role: value,
+        messageCountBefore: messageCount(),
+        messageCountAfter: messageCount(),
+      })
+      return
+    }
     const message = state.ctx.chat.message?.at(index)
-    if (message) message.role = value === 'user' ? 'user' : 'char'
+    if (!message) {
+      state.traceSink?.recordHostEvent({
+        type: 'chat',
+        fn: 'setChatRole',
+        status: 'missing',
+        index,
+        role: value,
+        messageCountBefore: messageCount(),
+        messageCountAfter: messageCount(),
+      })
+      return
+    }
+    const before = summarizeLuaTraceMessage(message)
+    message.role = value === 'user' ? 'user' : 'char'
+    const after = summarizeLuaTraceMessage(message)
+    state.traceSink?.recordHostEvent({
+      type: 'chat',
+      fn: 'setChatRole',
+      status: before?.role === after?.role ? 'unchanged' : 'changed',
+      index,
+      role: value,
+      before,
+      after,
+      messageCountBefore: messageCount(),
+      messageCountAfter: messageCount(),
+    })
   })
   declare('cutChat', (id: string, start: number, end: number) => {
-    if (!canWrite(id)) return
+    if (!canWrite(id)) {
+      state.traceSink?.recordHostEvent({
+        type: 'chat',
+        fn: 'cutChat',
+        status: 'blocked',
+        start,
+        end,
+        messageCountBefore: messageCount(),
+        messageCountAfter: messageCount(),
+      })
+      return
+    }
+    const beforeCount = messageCount()
     state.ctx.chat.message = state.ctx.chat.message.slice(start, end)
+    const afterCount = messageCount()
+    state.traceSink?.recordHostEvent({
+      type: 'chat',
+      fn: 'cutChat',
+      status: beforeCount === afterCount ? 'unchanged' : 'changed',
+      start,
+      end,
+      messageCountBefore: beforeCount,
+      messageCountAfter: afterCount,
+    })
   })
   declare('removeChat', (id: string, index: number) => {
-    if (!canWrite(id)) return
+    if (!canWrite(id)) {
+      state.traceSink?.recordHostEvent({
+        type: 'chat',
+        fn: 'removeChat',
+        status: 'blocked',
+        index,
+        messageCountBefore: messageCount(),
+        messageCountAfter: messageCount(),
+      })
+      return
+    }
+    const beforeCount = messageCount()
+    const before = summarizeLuaTraceMessage(state.ctx.chat.message?.at(index))
     state.ctx.chat.message.splice(index, 1)
+    const afterCount = messageCount()
+    state.traceSink?.recordHostEvent({
+      type: 'chat',
+      fn: 'removeChat',
+      status: beforeCount === afterCount ? 'missing' : 'changed',
+      index,
+      before,
+      messageCountBefore: beforeCount,
+      messageCountAfter: afterCount,
+    })
   })
   declare('addChat', (id: string, role: string, value: string) => {
-    if (!canWrite(id)) return
+    if (!canWrite(id)) {
+      state.traceSink?.recordHostEvent({
+        type: 'chat',
+        fn: 'addChat',
+        status: 'blocked',
+        role,
+        messageCountBefore: messageCount(),
+        messageCountAfter: messageCount(),
+        valueSummary: summarizeLuaTraceValue(value ?? ''),
+      })
+      return
+    }
+    const beforeCount = messageCount()
     state.ctx.chat.message.push({ role: role === 'user' ? 'user' : 'char', data: value ?? '' })
+    state.traceSink?.recordHostEvent({
+      type: 'chat',
+      fn: 'addChat',
+      status: 'changed',
+      role,
+      after: summarizeLuaTraceMessage(state.ctx.chat.message.at(-1)),
+      messageCountBefore: beforeCount,
+      messageCountAfter: messageCount(),
+      valueSummary: summarizeLuaTraceValue(value ?? ''),
+    })
   })
   declare('insertChat', (id: string, index: number, role: string, value: string) => {
     if (!canWrite(id)) return
@@ -1364,12 +1553,28 @@ function declareHostFunctions(engine: LuaEngine): (next: RuntimeState) => void {
 
   // Supported low-level LLM host fns.
   declare('LLMMain', async (id: string, promptStr: string, useMultimodal = false, optionsStr = '') => {
-    if (!canLowLevel(id)) return
-    return runLuaLlmMain(state, 'scriptMain', promptStr, useMultimodal, optionsStr)
+    if (!canLowLevel(id)) {
+      state.traceSink?.recordHostEvent({
+        type: 'llm',
+        fn: 'LLM',
+        status: 'blocked',
+        promptSummary: summarizeLuaTraceValue(promptStr),
+      })
+      return
+    }
+    return runLuaLlmMain(state, 'scriptMain', promptStr, useMultimodal, optionsStr, 'LLM')
   })
   declare('axLLMMain', async (id: string, promptStr: string, useMultimodal = false, optionsStr = '') => {
-    if (!canLowLevel(id)) return
-    return runLuaLlmMain(state, 'scriptAux', promptStr, useMultimodal, optionsStr)
+    if (!canLowLevel(id)) {
+      state.traceSink?.recordHostEvent({
+        type: 'llm',
+        fn: 'axLLM',
+        status: 'blocked',
+        promptSummary: summarizeLuaTraceValue(promptStr),
+      })
+      return
+    }
+    return runLuaLlmMain(state, 'scriptAux', promptStr, useMultimodal, optionsStr, 'axLLM')
   })
   declare('simpleLLM', async (id: string, prompt: string) => {
     if (!canLowLevel(id)) return
@@ -1670,6 +1875,7 @@ export async function runServerLua(opts: RunServerLuaOptions, ctx: ServerLuaRunt
     safeIds: new Set<string>(),
     lowLevelIds: new Set<string>(),
     editDisplayIds: new Set<string>(),
+    traceSink: opts.traceSink,
     stopSending: false,
     interactiveInvoked: false,
     sleptMs: 0,
@@ -1823,6 +2029,8 @@ export interface ServerLuaEditTriggerContext extends Omit<ServerLuaRuntimeContex
   /** Active modules' trigger scripts (`getModuleTriggers(getActiveModules(...))`),
    * concatenated after the character's own, mirroring the browser. */
   moduleTriggers?: triggerscript[]
+  /** Optional collector for post-generation editOutput diagnostics. */
+  postGenerationTrace?: PostGenerationLuaTraceCollector
 }
 
 interface LuaEditContentSummary {
@@ -1908,19 +2116,50 @@ export async function runLuaEditTrigger<T extends string | OpenAIChat[]>(
         const effect = trigger.effect[0] as { code: string; type: string }
         const source = withTriggerEffectSource(getTriggerSource(trigger), 0, effect.type)
         const before = summarizeLuaEditContent(data)
-        const runResult = await runServerLua(
-          {
-            code: effect.code,
-            mode,
-            data,
-            meta,
-            lowLevelAccess: false,
-            source,
-          },
-          { ...ctx, char },
-        )
-        throwServerLuaFailure(runResult, `Lua ${mode} edit trigger failed`)
+        const traceRun =
+          mode === 'editOutput'
+            ? ctx.postGenerationTrace?.beginRun({
+                phase: 'editOutput',
+                mode,
+                code: effect.code,
+                source,
+                chat: ctx.chat,
+                editOutputTextBefore: typeof data === 'string' ? data : undefined,
+              })
+            : undefined
+        let runResult: ServerLuaResult
+        try {
+          runResult = await runServerLua(
+            {
+              code: effect.code,
+              mode,
+              data,
+              meta,
+              lowLevelAccess: false,
+              source,
+              traceSink: traceRun?.sink,
+            },
+            { ...ctx, char },
+          )
+        } catch (error) {
+          traceRun?.finish({
+            status: 'error',
+            chat: ctx.chat,
+            editOutputTextAfter: typeof data === 'string' ? data : undefined,
+            error: error instanceof Error ? error.message : String(error),
+          })
+          throw error
+        }
+        const failure = serverLuaFailureMessage(runResult, `Lua ${mode} edit trigger failed`)
         const nextData = (runResult.res as T) ?? data
+        traceRun?.finish({
+          status: failure ? 'error' : 'ok',
+          chat: ctx.chat,
+          editOutputTextAfter: typeof nextData === 'string' ? nextData : undefined,
+          runtimeMetricFields: runResult.runtimeMetricFields as Record<string, unknown> | undefined,
+          ...(failure ? { error: failure } : {}),
+        })
+        throwServerLuaFailure(runResult, `Lua ${mode} edit trigger failed`)
         const after = summarizeLuaEditContent(nextData)
         emitProtocolMetric('generation_lua_edit_trigger_effect', () => ({
           status: 'ok',

@@ -67,11 +67,13 @@ import { isStreamDeadlineActivityFrame, type JobClient, type StreamJob } from '.
 import { getWritableBufferedBytes, writeBoundedRaw } from '../streamBackpressure.js'
 import { emitProtocolMetric, protocolDurationMs, protocolMetricsEnabled, protocolNowMs } from '../protocolMetrics.js'
 import {
+  DEFAULT_GENERATION_TRACE_MAX_GZIP_BYTES,
   generationTraceSidecarMetricField,
   writeGenerationTraceSidecar,
   type GenerationTraceContext,
   type GenerationTraceOptions,
 } from '../generation/generationTraceSidecar.js'
+import { PostGenerationLuaTraceCollector } from '../prompt/luaPostGenerationTrace.js'
 import {
   deleteGenerationFinalizationRetry,
   enqueueGenerationFinalizationRetry,
@@ -846,6 +848,67 @@ function createPromptAssemblyMetricContext(args: {
   }
 }
 
+function metricString(value: MetricPrimitive): string | undefined {
+  return typeof value === 'string' && value.length > 0 ? value : undefined
+}
+
+async function emitPostGenerationLuaTraceMetric(args: {
+  collector?: PostGenerationLuaTraceCollector
+  status: 'ok' | 'error'
+  error?: string
+  input: AssembleInput
+  generationId: string
+  durable: boolean
+  dataDir: string
+  generationTrace?: GenerationTraceOptions
+  metricContext?: PromptAssemblyMetricContext
+}): Promise<void> {
+  if (!args.collector?.hasRuns()) return
+
+  const requestUid = metricString(args.metricContext?.requestUid)
+  const requestId = metricString(args.metricContext?.requestId)
+  const payload = args.collector.payload({
+    status: args.status,
+    ...(args.error ? { error: args.error } : {}),
+    chatId: args.input.chatId,
+    characterId: args.input.characterId,
+    mode: args.input.mode,
+    generationId: args.generationId,
+    durable: args.durable,
+    ...(requestUid ? { requestUid } : {}),
+    ...(requestId ? { requestId } : {}),
+  })
+  const bodySidecar = await writeGenerationTraceSidecar({
+    context: {
+      dataDir: args.dataDir,
+      options: {
+        fullPrompt: true,
+        maxGzipBytes: args.generationTrace?.maxGzipBytes ?? DEFAULT_GENERATION_TRACE_MAX_GZIP_BYTES,
+      },
+      requestUid,
+      requestId,
+      generationId: args.generationId,
+      durableJobId: args.durable ? args.generationId : undefined,
+    },
+    kind: 'lua-post-generation',
+    value: payload,
+  })
+  const summary = args.collector.metricSummary()
+  emitProtocolMetric('generation_lua_post_generation_trace', {
+    status: args.status,
+    ...(args.error ? { error: args.error } : {}),
+    requestUid,
+    requestId,
+    chatId: args.input.chatId,
+    characterId: args.input.characterId,
+    mode: args.input.mode,
+    generationId: args.generationId,
+    durable: args.durable,
+    ...summary,
+    ...generationTraceSidecarMetricField('bodySidecar', bodySidecar),
+  })
+}
+
 /** Modes that persist their assembly delta; preview / preview_prompt stay read-only. */
 function isPersistingMode(mode: AssembleInput['mode']): boolean {
   return mode === 'send' || mode === 'continue' || mode === 'regenerate'
@@ -1242,6 +1305,10 @@ async function resolvePostGenerationResult(args: {
   generationId: string
   generationInfo: Record<string, unknown>
   promptInfo?: Record<string, unknown>
+  dataDir: string
+  durable: boolean
+  generationTrace?: GenerationTraceOptions
+  metricContext?: PromptAssemblyMetricContext
 }): Promise<{
   postGen?: Awaited<ReturnType<typeof runServerPostGeneration>>
   postGenError?: string
@@ -1254,12 +1321,24 @@ async function resolvePostGenerationResult(args: {
   const targetSnapshot = captureGenerationFinalizationTargetSnapshot(args.input, args.state)
   // Capture the continue target BEFORE post-gen mutates the row in place.
   const continueRow = args.input.mode === 'continue' ? findContinueRow(args.state) : undefined
+  const luaTrace = protocolMetricsEnabled() ? new PostGenerationLuaTraceCollector() : undefined
   try {
     const postGen = await runServerPostGeneration(args.state, {
       completionText: args.completionText,
       generationId: args.generationId,
       generationInfo: args.generationInfo,
       promptInfo: args.promptInfo,
+      luaTrace,
+    })
+    await emitPostGenerationLuaTraceMetric({
+      collector: luaTrace,
+      status: 'ok',
+      input: args.input,
+      generationId: args.generationId,
+      durable: args.durable,
+      dataDir: args.dataDir,
+      generationTrace: args.generationTrace,
+      metricContext: args.metricContext,
     })
     const resolved = resolveInlineGenerationMessage({
       state: args.state,
@@ -1289,6 +1368,17 @@ async function resolvePostGenerationResult(args: {
     })
     const error = errorMessage(err, 'server post-generation derivation failed')
     const metricError = safePostGenerationFallbackMetricError(err, 'server post-generation derivation failed')
+    await emitPostGenerationLuaTraceMetric({
+      collector: luaTrace,
+      status: 'error',
+      error: metricError,
+      input: args.input,
+      generationId: args.generationId,
+      durable: args.durable,
+      dataDir: args.dataDir,
+      generationTrace: args.generationTrace,
+      metricContext: args.metricContext,
+    })
     emitProtocolMetric('generation_post_generation_fallback', {
       fallbackType: 'raw_provider_text',
       generationId: args.generationId,
@@ -1363,6 +1453,8 @@ async function buildPostGenerationFrame(args: {
   promptInfo?: Record<string, unknown>
   emit?: (event: PromptChatEvent) => void
   pushNotifications?: false | PushNotificationService
+  generationTrace?: GenerationTraceOptions
+  metricContext?: PromptAssemblyMetricContext
 }): Promise<PostGenerationFrame | undefined> {
   const { postGen, postGenError, postGenMetricError, message, targetMessageId, chatVarMutations, targetSnapshot } =
     await resolvePostGenerationResult({
@@ -1372,6 +1464,10 @@ async function buildPostGenerationFrame(args: {
       generationId: args.generationId,
       generationInfo: args.generationInfo,
       promptInfo: args.promptInfo,
+      dataDir: args.dataDir,
+      durable: false,
+      generationTrace: args.generationTrace,
+      metricContext: args.metricContext,
     })
 
   let revision: number
@@ -1599,6 +1695,8 @@ async function streamAssembly(
                       promptInfo: successfulResult.prompt.promptInfo,
                       emit,
                       pushNotifications: options.pushNotifications,
+                      generationTrace,
+                      metricContext,
                     })
                   : Promise.resolve(undefined),
             })
@@ -2194,6 +2292,8 @@ async function buildDurablePostGeneration(args: {
   generationInfo: Record<string, unknown>
   promptInfo?: Record<string, unknown>
   pushNotifications?: false | PushNotificationService
+  generationTrace?: GenerationTraceOptions
+  metricContext?: PromptAssemblyMetricContext
 }): Promise<PostGenerationFrame | undefined> {
   const { postGen, postGenError, postGenMetricError, message, targetMessageId, chatVarMutations, targetSnapshot } =
     await resolvePostGenerationResult({
@@ -2203,6 +2303,10 @@ async function buildDurablePostGeneration(args: {
       generationId: args.generationId,
       generationInfo: args.generationInfo,
       promptInfo: args.promptInfo,
+      dataDir: args.dataDir,
+      durable: true,
+      generationTrace: args.generationTrace,
+      metricContext: args.metricContext,
     })
 
   let revision: number
@@ -2500,6 +2604,8 @@ async function runGenerationJob(args: {
                   generationInfo,
                   promptInfo: successfulResult.prompt.promptInfo,
                   pushNotifications: options.pushNotifications,
+                  generationTrace,
+                  metricContext,
                 })
               },
             })

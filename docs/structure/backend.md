@@ -54,7 +54,11 @@ tracing adds `X-Request-UID` and writes API traces under
 `data/trace/<mode>.jsonl` while keeping the newest 5,000 entries per mode.
 Optional generation trace sidecars write redacted prompt payloads under
 `data/trace/generation/` only when protocol metrics and
-`RISU_GENERATION_TRACE_FULL_PROMPT=1` are enabled. `onClose` stops
+`RISU_GENERATION_TRACE_FULL_PROMPT=1` are enabled. Post-generation Lua flow
+diagnostics also use protocol metrics: `generation_lua_post_generation_trace`
+records metadata for `editOutput`/`onOutput` runs and links a compressed
+`bodySidecar` with chat/completion before-after bodies under
+`data/trace/generation/`. `onClose` stops
 workers/timers/jobs and settles generation runners before closing SQLite.
 
 The active-writer guard is registered after health/auth/bootstrap and before
@@ -119,11 +123,14 @@ and emits `generation.persisted`. The detailed persistence contract lives in
 
 The live chat path is server-owned. Browser `sendChat` preflights with
 `resolveServerPromptAssembly()` and resolved model-profile provider capability,
-then posts raw inputs to `/api/v1/generate/chat`. Server prompt assembly runs supported
-non-interactive Lua hooks, plans and selects memory, dispatches through
+then posts raw inputs to `/api/v1/generate/chat`. Server prompt assembly runs
+supported non-interactive Lua hooks, plans and selects memory, dispatches through
 `generation/`, maps provider frames to chat SSE frames, and persists
-post-generation results. Chat-scoped generation settings are preflighted and
-applied through `prompt/effectiveGenerationConfig.ts`, covering model/prompt/
+post-generation results. Post-generation `editOutput`/`onOutput` Lua diagnostics
+are collected by `prompt/luaPostGenerationTrace.ts`, `prompt/luaRuntime.ts`, and
+`routes/generationChat.ts` when `RISU_PROTOCOL_METRICS=1`. Chat-scoped
+generation settings are preflighted and applied through
+`prompt/effectiveGenerationConfig.ts`, covering model/prompt/
 persona/sidebar-toggle overlays.
 
 `/api/v1/generate/completion` is lower-level: normal browser traffic sends a

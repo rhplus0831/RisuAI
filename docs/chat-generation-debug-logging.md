@@ -1,6 +1,6 @@
 # Chat Generation Debug Logging Scope
 
-Last explored: 2026-06-25
+Last explored: 2026-06-28
 
 This note captures the current findings for adding diagnostics around the
 chat creation / generation flow. It is intentionally a planning artifact:
@@ -38,6 +38,11 @@ Prefer the current observability stack over a new parallel system.
 - Generation already emits `generation_prompt_assembly`,
   `generation_assembly_persistence`, `generation_persistence`, and
   `generation_persistence_retry` from `server/fastify/src/routes/generationChat.ts`.
+- Post-generation Lua flow tracing emits
+  `generation_lua_post_generation_trace` when `RISU_PROTOCOL_METRICS=1` and
+  `editOutput` or `onOutput` Lua runs. The metric line stays metadata-only and
+  links a `bodySidecar` under `data/trace/generation/` with detailed
+  before/after bodies and Lua `log()` values.
 
 Recommendation: use `X-Request-UID` plus `x-risu-caller` for HTTP correlation,
 and use `emitProtocolMetric()` for structured generation diagnostics. Avoid a
@@ -284,7 +289,40 @@ failures easy to miss.
      character's own Lua did not": compare the character/module owner rows for
      `output` and `editOutput`.
 
-5. Legacy browser-side edit-output catch
+5. Post-generation Lua flow trace
+   - Files:
+     - `server/fastify/src/prompt/luaPostGenerationTrace.ts`
+     - `server/fastify/src/prompt/luaRuntime.ts`
+     - `server/fastify/src/prompt/assemble.ts`
+     - `server/fastify/src/routes/generationChat.ts`
+   - Metric:
+     - `generation_lua_post_generation_trace`
+   - Emitted only when `RISU_PROTOCOL_METRICS=1` and post-generation
+     `editOutput` or `onOutput` Lua actually runs.
+   - Normal metric fields are metadata-only:
+     - run count and per-run phase order;
+     - `editOutputTextChanged`;
+     - `transcriptChanged`;
+     - Lua `log()` count;
+     - `LLM` and `axLLM` attempted/blocked/completed/failed counts;
+     - `setChat` count and changed count;
+     - owner/trigger/effect attribution inherited from trigger source metadata.
+   - The metric's `bodySidecar` points at compressed JSON under
+     `data/trace/generation/`. That sidecar carries:
+     - `editOutputTextBefore` / `editOutputTextAfter`;
+     - chat body before/after each `editOutput` and `onOutput` run;
+     - structured Lua `log()` values;
+     - host-event rows for `LLM`, `axLLM`, and chat mutation APIs such as
+       `setChat`.
+   - Use this trace to distinguish:
+     - Lua did not run;
+     - Lua ran but no handler registered;
+     - `editOutput` changed only the completion text before the assistant row was
+       appended;
+     - `onOutput` changed the assistant row through `setChat`;
+     - low-level `LLM`/`axLLM` calls were blocked, completed, or failed.
+
+6. Legacy browser-side edit-output catch
    - File: `src/ts/process/scriptings.ts`
    - Function: `runLuaEditTrigger()`
    - The legacy browser path can return original content after a Lua edit-output
@@ -370,6 +408,29 @@ Status: implemented.
   changed post-generation content.
 
 Risk: low. Metrics are opt-in and metadata-only.
+
+### Slice 7: Post-Generation Lua Flow Trace
+
+Status: implemented.
+
+- `generation_lua_post_generation_trace` records post-generation Lua flow when
+  `RISU_PROTOCOL_METRICS=1`.
+- `editOutput` runs are traced before the assistant row is appended, so the
+  sidecar records completion text before/after as well as the chat body
+  snapshot.
+- `onOutput` runs are traced after the assistant row exists, so the sidecar
+  records chat body before/after and host calls such as `setChat`.
+- Lua `log()` values are captured into the sidecar while preserving existing
+  server `console.log` behavior.
+- `LLM`/`axLLM` host calls are counted as blocked/completed/failed; this matters
+  because `editOutput` runs without low-level access while `onOutput` may have
+  low-level access through the trigger.
+- Normal protocol metric output remains metadata-only; body text, prompt text,
+  and Lua log payloads live only in the compressed `bodySidecar`.
+
+Risk: low to medium. The execution path remains unchanged, but the sidecar can
+contain private chat text by design and should be used only in opt-in diagnostic
+sessions.
 
 ## Verification Plan
 
