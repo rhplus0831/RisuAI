@@ -82,6 +82,12 @@ initialization reads MCP URLs from currently active modules via
 current chat modules, current character modules, and prompt-preset/global
 `moduleIntergration` entries.
 
+MCP/tool orchestration is browser-side and separate from model-hosted
+function/tool dispatch. Fastify stores plugin/MCP-adjacent records and supports
+command-backed Risu access writes, but normal Fastify chat/completion provider
+dispatch does not execute MCP tools; see `providers-and-models.md` for the
+server provider boundary.
+
 | Path                                                                                                       | Purpose                                                                                               |
 | ---------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
 | `src/ts/process/mcp/mcp.ts`                                                                                | Runtime registry, URL parsing, tool discovery/calls, OAuth refresh persistence, module import helper. |

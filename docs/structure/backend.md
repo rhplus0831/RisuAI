@@ -11,7 +11,7 @@ imports/exports/backups, and the `/api/v1/*` route surface.
 | `server/fastify/src/index.ts`                                                 | Process entrypoint: load config, call `buildApp()`, listen, handle shutdown signals.                     |
 | `server/fastify/src/app.ts`                                                   | Composition root for plugins, SQLite, auth, active writer, routes, workers, timers, optional static SPA. |
 | `server/fastify/src/config.ts`                                                | Parses `RISU_API_*`, `TRUST_PROXY`, hub/Realm URLs, static root, trace mode, and agent auth bypass.      |
-| `server/fastify/src/db.ts`                                                    | SQLite schema v18, migrations, `schema_version`, global revision.                                        |
+| `server/fastify/src/db.ts`                                                    | SQLite schema v19, migrations, `schema_version`, global revision.                                        |
 | `server/fastify/src/repository.ts`                                            | Domain load/write, projections/body cache, legacy `db.json` import, `applyImport`, assets, backups.      |
 | `server/fastify/src/messageStore.ts`                                          | Chat `messages`, reroll alternates, and per-chat `chat_hypa_v3` rows.                                    |
 | `server/fastify/src/chatGenerationSettingsStorage.ts`                         | Normalizes persisted chat-scoped generation settings on import/load.                                      |
@@ -86,6 +86,7 @@ and generation submit `60/min`.
 | Projection/events     | `projection.ts`, `events.ts`                              | Targeted projection, chat/lorebook hydration, bulk hydration, command/memory SSE.                                                                                                    |
 | Commands              | `commands.ts` plus `commands/`                            | Revision-checked domain mutations for settings, model profiles/runtime defaults, split model/prompt presets, legacy bot preset extraction, bot/translator presets, prompt settings/items, personas, loadouts, characters/chats/messages, chat folders, chat generation settings, chat script state, lorebooks, modules, plugin records/storage/provider choice, script/trigger definitions, generation results, compact lorebook entries, message tails, and raw message translation. |
 | Assets/saves/backups  | `assets.ts`, `save.ts`, `realmImport.ts`, `backups.ts`    | Content-addressed assets, `.risu`/bundle/local-backup import/export, Realm import, snapshots.                                                                                        |
+| Push notifications    | `pushNotifications.ts`                                    | Web Push VAPID public-key lookup plus authenticated subscription create/delete routes; durable subscriptions live in SQLite while generated VAPID keys live in `data/__web_push_vapid_keys.json`. |
 | Proxy/hub/storage     | `proxy.ts`, `streamJobs.ts`, `hub.ts`, `legacyStorage.ts` | Authenticated proxy/fetch and stream jobs, retained hub passthrough, `/api/v1/storage/*` compatibility byte store, public `/api/v1/auth/crypto` helper.                              |
 | Generation            | `generation.ts`, `generationChat.ts`                      | Completion route, server-assembled chat generation, preview prompt, chat generation settings/profile preflight, durable reattach/cancel.                                             |
 | Memory                | `memoryJobs.ts`, `memoryReads.ts`                         | Queue/cancel/list jobs plus read chunk/summary routes.                                                                                                                               |
@@ -95,6 +96,10 @@ it is not a literal endpoint inventory because command and hub routes are
 classified by prefixes. Some registrars use plugin-local `instance.*` methods,
 so use `app.printRoutes()` for route inventory audits. Manifest streaming types
 include `sse`, `sse-optional`, `binary`, `websocket`, and `proxy`.
+There is no generated OpenAPI/Swagger artifact or generated browser API client;
+request/response contracts live in route handlers, TypeScript types, and the
+hand-written browser adapters under `src/ts/server/` and
+`src/ts/process/request/`.
 
 Handlers call `requireAuth()` unless intentionally public. Public exceptions are
 health, auth status/setup/login, `/api/v1/auth/crypto`, immutable asset reads,
@@ -125,12 +130,15 @@ The live chat path is server-owned. Browser `sendChat` preflights with
 `resolveServerPromptAssembly()` and resolved model-profile provider capability,
 then posts raw inputs to `/api/v1/generate/chat`. Server prompt assembly runs
 supported non-interactive Lua hooks, plans and selects memory, dispatches through
-`generation/`, maps provider frames to chat SSE frames, and persists
-post-generation results. Post-generation `editOutput`/`onOutput` Lua diagnostics
-are collected by `prompt/luaPostGenerationTrace.ts`, `prompt/luaRuntime.ts`, and
-`routes/generationChat.ts` when `RISU_PROTOCOL_METRICS=1`. Chat-scoped
-generation settings are preflighted and applied through
-`prompt/effectiveGenerationConfig.ts`, covering model/prompt/
+`generation/`, and maps provider frames to chat SSE frames through
+`prompt/providerTransport.ts`. Successful streams run server post-generation
+before terminal `done`; `done.postGeneration` carries the final text,
+`messagePatch`, `resendChat`, and revision that the browser applies in
+`applyServerBackedTerminal()`. Post-generation `editOutput`/`onOutput` Lua
+diagnostics are collected by `prompt/luaPostGenerationTrace.ts`,
+`prompt/luaRuntime.ts`, and `routes/generationChat.ts` when
+`RISU_PROTOCOL_METRICS=1`. Chat-scoped generation settings are preflighted and
+applied through `prompt/effectiveGenerationConfig.ts`, covering model/prompt/
 persona/sidebar-toggle overlays.
 
 `/api/v1/generate/completion` is lower-level: normal browser traffic sends a

@@ -16,6 +16,8 @@ shape across table families.
 | Reroll alternate    | Preserved reroll candidate stored as alternate message rows and hydrated with active chat messages.              | `messageStore.ts`, `routes/projection.ts`, `rerollNavigation.svelte.ts` |
 | Chat folder         | Character-level chat grouping metadata; command paths normalize/validate ids.                                    | `commands/chats.ts`, `chatCommands.ts`                                  |
 | Settings group      | Command-backed group of scalar runtime/settings fields, including provider settings and `authRefreshes`.         | `routes/commands.ts`, `src/ts/server/commands.ts`, `src/ts/setting/`    |
+| Language pack       | UI string collection. `src/lang/en.ts` is the complete shape; other packs are partial overlays merged over English, and setting rows should use `labelKey`/`helpKey` plus fallback labels instead of hard-coded visible strings. | `src/lang/`, `src/ts/setting/`, `src/lib/Setting/Wrappers/`             |
+| Theme / custom CSS  | Runtime style state. Theme fields drive `--risu-theme-*` variables, GUI size/animation use CSS variables, and `DBState.db.customCSS` is applied through `CustomCSSStore` unless safe mode suppresses it. | `src/styles.css`, `src/ts/gui/`, `src/ts/stores.svelte.ts`              |
 | Preset / bot preset | Provider and generation settings selected for a conversation.                                                    | `commands/presets.ts`, `src/ts/server/commands.ts`                      |
 | Prompt template     | Ordered prompt items such as description, persona, author note, lorebook, memory, history, and custom sections.  | `commands/prompts.ts`, `server/fastify/src/prompt/`                     |
 | Persona             | User profile/persona state mirrored into legacy fields where needed.                                             | `commands/personas.ts`, `src/ts/persona.ts`                             |
@@ -33,8 +35,25 @@ shape across table families.
 | Model runtime defaults | Shared runtime-option defaults applied before profile runtime overrides.                                      | `modelProfileRecords.ts`, `ModelRuntimeDefaultsEditor.svelte`           |
 | Hypa V3 preset      | Saved memory preset collection persisted in SQLite and exposed in projections/settings.                          | `repository.ts`, `routes/projection.ts`, `src/lib/Others/HypaV3Modal/`  |
 | Asset               | Content-addressed binary with SQLite metadata and bytes under `data/assets/`.                                    | `repository.ts`, `routes/assets.ts`, `risuSave/assetReferences.ts`      |
+| Push subscription   | Operational Web Push subscription row stored outside the projected `Database`; VAPID keys come from env or `data/__web_push_vapid_keys.json`. | `pushNotifications.ts`, `routes/pushNotifications.ts`                   |
 | `.risu` save        | Portable import/export envelope: current `risusave-blocks`, legacy envelopes, JSON import compatibility, bundle `.risu.zip`, and original local-backup `.bin` flows. | `routes/save.ts`, `server/fastify/src/risuSave/`                        |
 | RisuRealm character | Realm-hosted card imported server-side from dynamic JSON or `charx`, with progress SSE, low-level-access confirmation, content-addressed assets, and `character.created` commit. | `routes/realmImport.ts`, `realmImport/`, `src/ts/server/realmImport.ts` |
+
+## Feature Domain Map
+
+Use this table when a change crosses UI, client runtime, server commands, and
+storage. The focused docs linked from `STRUCTURE.md` still own the deeper
+behavior contracts.
+
+| Feature                      | UI surface                                        | Client command/runtime                                   | Fastify command/routes                                  | Persistence owner                                  | Notes                                                                 |
+| ---------------------------- | ------------------------------------------------- | -------------------------------------------------------- | ------------------------------------------------------- | -------------------------------------------------- | --------------------------------------------------------------------- |
+| Characters / bots            | `SideBars/`, `GridCatalog`, `MobileCharacters`    | `characterCommands.ts`, `characters.ts`, `characterCards.ts` | `commands/characters.ts`, `routes/commands.ts`          | `characters`; chats/messages split separately      | Character rows can be shell-hydrated in projections.                  |
+| Chats / messages             | `ChatScreens/`, `SideChatList.svelte`             | `chatCommands.ts`, chat hydration/bridge helpers         | `commands/chats.ts`, `commands/messages.ts`             | `chats`, `messages`, `chat_hypa_v3`               | Messages are not stored inside character JSON.                        |
+| Lorebooks / world info       | `SideBars/LoreBook/`, global lorebook settings    | `lorebookBridge.svelte.ts`, prompt lorebook helpers      | `commands/lorebooks.ts`, `prompt/lorebook.ts`           | Global lore tables plus owner-nested lorebooks     | Global, character, chat, and module lorebooks use owner-scoped routes. |
+| Presets / prompts / profiles | Bot, prompt, and model settings pages             | `presetSplit.ts`, `src/ts/model/`, prompt hydration      | `commands/presets.ts`, `splitPresets.ts`, `prompts.ts`, `modelProfiles.ts` | `model_presets`, `prompt_presets`, `bot_presets`, settings JSON | Modern prompt presets own their prompt templates.                     |
+| Assets / media               | `AssetInput`, upload/editor flows                 | `src/ts/server/assets.ts`, media helpers                 | `routes/assets.ts`, `commands/assets.ts`, `assetGc.ts`  | `assets`, `data/assets/<sha>.<ext>`               | Runtime assets are content-addressed; static app assets are separate. |
+| Plugins / modules / MCP      | Plugin settings, module settings, Playground MCP  | `src/ts/plugins/`, `process/modules.ts`, `process/mcp/`  | `commands/plugins.ts`, `commands/modules.ts`, plugin storage commands | `plugins`, `modules`, `plugin_custom_storage`     | Browser executes plugin/MCP code; Fastify stores records.             |
+| Settings / personas / backups | Settings pages and user settings flows           | `src/ts/setting/`, `persona.ts`, backup adapters         | settings/persona commands, `routes/backups.ts`, `routes/save.ts` | `settings`, `personas`, `loadouts`, backup dirs   | Data-driven settings should use language keys plus fallback labels.   |
 
 ## Runtime Contracts
 

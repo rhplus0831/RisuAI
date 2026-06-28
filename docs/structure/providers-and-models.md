@@ -159,6 +159,10 @@ durable profile context when present, then from flat compatibility settings when
 needed. Browser projections mask secrets through
 `server/fastify/src/providerSecrets.ts`; settings writes resolve masked
 sentinels back to current stored secrets.
+Provider adapters may be incremental or buffered. `/api/v1/generate/chat` maps
+both shapes to chat SSE frames and wraps buffered outputs as token/done frames,
+while direct `/api/v1/generate/completion` rejects streaming for buffered
+providers.
 
 Routing notes that matter when debugging provider drift:
 
@@ -188,22 +192,37 @@ model-profile selection and the profile's `providerCapability`. Active durable
 profiles with incomplete or unsupported status are blocked before browser
 request dispatch, server-intent completion, `/generate/chat` SSE/job
 acceptance, and final server chat dispatch.
-Server-intent completion sends shaped messages to Fastify; provider/model
-routing is resolved server-side. `effectiveGenerationConfig.ts` applies the
-full profile runtime overlay to the effective database before prompt assembly,
-but `chatDispatch.ts` forwards only the supported subset to provider adapters.
+Server-intent completion sends shaped messages to Fastify; browser
+`requestChatDataMain()` resolves profiles only far enough to set mode/static
+model/fallback-profile intent, and `requestServerCompletion()` sends that
+intent without provider/model/options/secrets. Fastify rejects those fields in
+the envelope and re-resolves provider/model/secrets server-side before shared
+provider dispatch.
+
+Chat generation has a two-stage effective-config path. Browser preflight uses
+`effectiveModelDatabaseForChat()` with model-runtime preset scope for routing
+and image gates. Server generation then uses
+`buildEffectiveGenerationConfig()` with full chat generation settings,
+persona/sidebar toggles, prompt-preset ownership, and profile-bound runtime
+fields before prompt assembly. `chatDispatch.ts` forwards only the supported
+runtime subset to provider adapters.
+
 `modelTools` are copied into the effective DB; Fastify OpenAI Responses
 dispatch currently sends no hosted tool list, so hosted search/model tool
-behavior is not server-dispatched. Memory summaries use memory-role profile
-resolution and profile-owned provider options. Memory embeddings intentionally
-remain outside chat profiles on the separate Hypa/Voyage/custom embedding
-contract in `memoryEmbeddingModel.ts`; deadlines are bounded through
+behavior is not server-dispatched. Browser legacy `requestOpenAI()` and
+`requestOpenAIResponseAPI()` can still run MCP tools or add Responses
+`web_search_preview`, but normal Fastify chat/completion bypasses browser tool
+execution. Memory summaries use memory-role profile resolution and
+profile-owned provider options. Memory embeddings intentionally remain outside
+chat profiles on the separate Hypa/Voyage/custom embedding contract in
+`memoryEmbeddingModel.ts`; deadlines are bounded through
 `memoryProviderDeadline.ts`.
 
 ## Generation Client Map
 
 | Path                                             | Role                                                           |
 | ------------------------------------------------ | -------------------------------------------------------------- |
+| `src/ts/process/index.svelte.ts`                 | `sendChat()` coordinator and visible generation state.         |
 | `src/ts/process/request/serverPromptAssembly.ts` | Browser preflight for server prompt assembly support and mode. |
 | `src/ts/process/request/serverCompletion.ts`     | Server-intent completion route adapter.                        |
 | `src/ts/process/serverBackedSendChat.ts`         | Chat send/preview bridge from UI inputs to Fastify routes.     |
@@ -213,18 +232,31 @@ contract in `memoryEmbeddingModel.ts`; deadlines are bounded through
 | `src/ts/process/reattach.ts`                     | Bootstrap-driven reattach for active durable generation jobs.  |
 | `server/fastify/src/routes/generation.ts`        | Completion route boundary.                                     |
 | `server/fastify/src/routes/generationChat.ts`    | Server-assembled chat generation, preview prompt, durable job lifecycle, and chat-settings/profile guards. |
+| `server/fastify/src/prompt/chatDispatch.ts`      | Shared server provider dispatch after profile/setting resolution. |
 | `server/fastify/src/prompt/effectiveGenerationConfig.ts` | Chat-scoped model/prompt preset and runtime overlay application. |
 | `server/fastify/src/prompt/sseEvents.ts`         | Server-side chat SSE frame contract helpers.                   |
+
+The live chat flow is `sendChat()` -> `resolveServerPromptAssembly()` ->
+`serverBackedSendChat.ts` -> `serverChat.ts` ->
+`routes/generationChat.ts` -> `prompt/chatDispatch.ts` -> `generation/*`.
+There is no generated API client; browser fetch adapters are handwritten.
+`src/ts/process/request/serverChatEvents.ts` manually mirrors
+`server/fastify/src/prompt/sseEvents.ts`, so frame additions should stay
+additive and be updated on both sides.
 
 ## Generation Surfaces
 
 `/api/v1/generate/chat` is server-assembled. The browser sends raw chat inputs;
 the server assembles the prompt, dispatches the provider, streams chat SSE
 frames, runs post-generation derivation, and persists the result. Durable
-send/continue/regenerate jobs are process-local in `generationJobs.ts`, exposed
-through bootstrap `activeGenerationJobs`, reattached with
-`GET /api/v1/generate/chat/:id/stream`, and cancelled with
-`DELETE /api/v1/generate/chat/:id`.
+send/continue/regenerate is the normal app path: jobs are process-local in
+`generationJobs.ts`, emit `job_accepted`, buffer replayable frames, appear in
+bootstrap `activeGenerationJobs`, reattach with
+`GET /api/v1/generate/chat/:id/stream`, and cancel with
+`DELETE /api/v1/generate/chat/:id`. Inline non-durable SSE remains for
+tools/tests and preview-style callers. Browser `serverChat.ts` sends
+`clientCapabilities.compactPromptEvent`; the server may strip heavy prompt
+fields and delta-trim `replace_all` message patches with `firstChangedIndex`.
 
 Generation finalization retries are SQLite-backed operational rows with
 target snapshots. Persistence is idempotent when the target already has the
@@ -248,13 +280,15 @@ borrowing stale top-level data.
 
 `/api/v1/generate/preview-prompt` is a one-shot JSON assembly route. It applies
 the same server prompt assembly and generation-settings/profile guards but does
-not dispatch a provider.
+not dispatch a provider. Unlike `/api/v1/generate/chat` SSE preview-style
+callers, it can return ordinary HTTP errors because it has not already written
+SSE headers; chat SSE assembly failures become terminal `error` frames.
 
 `/api/v1/generate/completion` is lower-level. Normal browser traffic sends
 already-shaped messages and sampling intent as `kind: "server-intent"`; the
 server rejects provider/model/options/secrets in that envelope and resolves them
-from persisted settings. A legacy direct-provider envelope remains for
-compatibility tests/tools.
+from persisted settings before calling the same dispatch core. A legacy
+direct-provider envelope remains for compatibility tests/tools.
 
 ## Server Assembly Gates
 

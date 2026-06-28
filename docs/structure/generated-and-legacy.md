@@ -13,7 +13,7 @@ generated, local-only, historical, vendored, or intentionally no-port.
 | `test-results/`                                 | Playwright/test output.                                                                                                                                |
 | `blobs-for-test/`                               | Ignored local binary/test scratch payloads.                                                                                                             |
 | `*.tsbuildinfo`                                 | TypeScript incremental build artifacts, including `tsconfig.client-lib.tsbuildinfo`.                                                                   |
-| `data/`                                         | Local runtime state: `risu.db`/WAL/SHM, assets, backups, auth files, `data/save/`, traces under `data/trace/` including bodies/screenshots, optional `data/dev`, legacy import artifacts. Useful for debugging, not source; see `data-and-events.md`. |
+| `data/`                                         | Local runtime state: `risu.db`/WAL/SHM, assets, backups, auth files, optional Web Push VAPID keys, `data/save/`, traces under `data/trace/` including bodies/screenshots, optional `data/dev`, legacy import artifacts. Useful for debugging, not source; see `data-and-events.md`. |
 | `scripts/` when present                         | Ignored local scratch/tooling directory.                                                                                                               |
 | `public/token/`                                 | Vendor/tokenizer data. Only touch when intentionally updating those assets.                                                                            |
 | `public/assets/`                                | Bundled Bergamot/browser translator workers. Only touch when intentionally updating vendor assets.                                                     |
@@ -57,6 +57,10 @@ copy. Edit `public/` when changing a static source asset, then rebuild.
 
 `resources/` contains app icon/splash source images such as `icon-*.png` and
 `splash*.png`. It is not copied by Vite unless a packaging step consumes it.
+
+`src/etc/` contains bundled imported media/docs/tokenizer seed data. Keep these
+static app assets separate from Fastify runtime assets, which are addressed by
+server asset ids and stored under `data/assets/`.
 
 No tracked files live under `public/functions/`; in some workspaces the empty
 directory may exist. Do not reintroduce old public worker/OAuth surfaces without

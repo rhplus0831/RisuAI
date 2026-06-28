@@ -7,12 +7,13 @@ revision-checked commands or explicit server-owned mutation requests.
 
 | Store            | Path                                                                                               | Contents                                                                                                                                                                                                             |
 | ---------------- | -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| SQLite           | `data/risu.db`                                                                                     | `schema_version.version` plus domain `revision`; settings; characters/chats; split tables such as `model_presets`, `prompt_presets`, `plugins`, `plugin_custom_storage`, `messages`, `chat_hypa_v3`, `assets`, `projection_body_cache_state`, `collection_body_revisions`, `command_events`, memory tables/jobs, and `generation_finalization_retries`. Prompt templates are normally owned by `prompt_presets` rows; `prompt_templates` is retained as a compatibility mirror/projection. |
+| SQLite           | `data/risu.db`                                                                                     | `schema_version.version` plus domain `revision`; settings; characters/chats; split tables such as `model_presets`, `prompt_presets`, `plugins`, `plugin_custom_storage`, `messages`, `chat_hypa_v3`, `assets`, `projection_body_cache_state`, `collection_body_revisions`, `command_events`, `push_subscriptions`, memory tables/jobs, and `generation_finalization_retries`. Prompt templates are normally owned by `prompt_presets` rows; `prompt_templates` is retained as a compatibility mirror/projection. |
 | Asset bytes      | `data/assets/<sha256>.<ext>`                                                                       | Content-addressed images, audio, video, fonts, CSS, ONNX, inlay signatures, and other supported asset types. Metadata is in SQLite `assets`.                                                                         |
 | Backups          | `data/backups/<id>/`                                                                               | Snapshot `risu.db`, `manifest.json`, assets when present, and legacy `save/` when present. Creation copies `risu.db` after a WAL checkpoint; restore uses `ATTACH` and swaps only the `SQLITE_BACKUP_TABLES` allowlist. |
 | Legacy `db.json` | `data/db.json`                                                                                     | Import-only compatibility input. Boot imports it into SQLite and renames it to `db.json.migrated`.                                                                                                                   |
 | Legacy storage   | `data/save/<hex-key>`                                                                              | Compatibility byte store for `/api/v1/storage/*`; active-writer guarded writes do not bump the domain revision.                                                                                                      |
 | Auth files       | `data/__password`, `data/__known_public_key_hashes.json`, `data/__known_session_token_hashes.json` | Single-user password data, registered browser public-key hashes, and optional session-token hashes.                                                                                                                  |
+| Web Push keys    | `data/__web_push_vapid_keys.json`                                                                  | Generated VAPID keypair when explicit `RISU_WEB_PUSH_VAPID_*` env keys are not supplied. Push subscription rows live in SQLite `push_subscriptions`.                                                                 |
 
 Primary boundaries: `db.ts` owns schema/migrations/revision, `repository.ts`
 owns domain load/write/projection/import/applyImport/assets/backups,
@@ -98,14 +99,18 @@ not ordinary browser `/commands/*` resource endpoints:
   targeted message command event if the source row is still unchanged.
 - Memory job create/cancel writes durable memory-job state and emits memory
   events without a domain revision.
+- Push notification subscription routes mutate operational Web Push
+  subscription rows and may create the local VAPID key file without a domain
+  revision. They are authenticated runtime state, not projected `Database`
+  state.
 - Backup create/delete mutate backup files without a domain revision; restore
   replaces repository state and emits `state.restored`. Restore swaps only the
   SQLite table allowlist in `repository.ts`; keep `SQLITE_BACKUP_TABLES` in sync
-  with durable tables. Operational rows such as
-  `generation_finalization_retries` are not restored unless added to that list.
-  As of this audit, split `model_presets` and `prompt_presets` rows are durable
-  tables but are not in the restore allowlist, so check that list before relying
-  on backup restore for newly split table families.
+  with durable tables. Split `model_presets` and `prompt_presets` are included
+  in the restore allowlist. Operational rows such as
+  `generation_finalization_retries` are intentionally excluded unless added to
+  that list; `push_subscriptions` and `data/__web_push_vapid_keys.json` are also
+  outside the current backup restore contract.
 
 ## Auth And Active Writer
 

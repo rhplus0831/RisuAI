@@ -1,7 +1,9 @@
 # Testing And Operations
 
 Use `pnpm` for package scripts. Node.js is declared as `>=24.0.0`. The package
-is root-only; there is no `server/fastify/package.json`.
+is root-only; there is no `server/fastify/package.json`. `package.json` does not
+pin a `packageManager`; the lockfile is pnpm lockfile v9 and Docker installs
+pnpm through Corepack.
 
 ## Scripts
 
@@ -252,6 +254,9 @@ Server:
 | `RISU_API_TRACE_MODE`        | unset                      | Enables API request tracing when `agent` or `human`; `0`/`false`/`off`/`none` disable it.                  |
 | `RISU_GENERATION_TRACE_FULL_PROMPT` | unset              | Set to `1` with protocol metrics enabled to write redacted generation prompt sidecars under `data/trace/generation/`. |
 | `RISU_GENERATION_TRACE_FULL_PROMPT_MAX_GZIP_BYTES` | `10485760` | Maximum compressed sidecar size for full-prompt generation traces.                                         |
+| `RISU_WEB_PUSH_VAPID_PUBLIC_KEY` | unset                  | Optional Web Push VAPID public key. If public/private keys are omitted, the server can generate and persist keys under `data/__web_push_vapid_keys.json`. |
+| `RISU_WEB_PUSH_VAPID_PRIVATE_KEY` | unset                 | Optional Web Push VAPID private key. Must be supplied with the public key when using env-provided keys.     |
+| `RISU_WEB_PUSH_CONTACT`      | unset                      | Optional Web Push contact subject used for VAPID details, such as a `mailto:` URL.                         |
 | `TRUST_PROXY`                | `false`                    | Fastify trust proxy setting; accepts boolean, integer, or string.                                          |
 | `RISU_API_STATIC_ROOT`       | `<repo>/dist`              | Static SPA root; empty, `none`, or `off` disables.                                                         |
 | `RISU_HUB_URL`               | `https://sv.risuai.xyz`    | Hub passthrough target.                                                                                    |
@@ -292,8 +297,10 @@ Test/audit summary variables include `CLIENT_THINNING_AUDIT_CHECK_IDS`,
 
 ## CI And Docker
 
-`.github/workflows/` contains CodeQL scanning, Docker image build/publish, and
-issue/comment moderation. It does not run the local check/test matrix.
+`.github/workflows/` contains CodeQL scanning (`codeql.yml`), Docker image
+build/publish (`docker-build.yml`), and issue/comment moderation (`mod.yml`).
+No workflow for the local `pnpm check` / Vitest / Playwright matrix was found
+in this audit.
 
 `Dockerfile` uses Node 24 slim, installs pnpm through Corepack, builds the web
 client with plain `pnpm build` rather than `build:site`, copies `server/` and

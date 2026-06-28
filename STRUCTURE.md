@@ -1,6 +1,6 @@
 # Structure Notes
 
-Last audited: 2026-06-25.
+Last audited: 2026-06-28.
 
 This is the first-stop map for the Fastify-only RisuAI codebase. Use it for
 orientation, then open the focused note under `docs/structure/` or `src/docs/`
@@ -12,22 +12,23 @@ past decisions; they are not the source of current behavior.
 1. `STRUCTURE.md` - repo map, entrypoints, and standing conventions.
 2. `docs/structure/backend.md` - Fastify composition, route families, commands,
    generation, memory.
-3. `src/docs/svelte-ui.md` - Svelte UI/UX app shell, routes/stores, components,
+3. `src/docs/README.md` - local index for current frontend/client notes.
+4. `src/docs/svelte-ui.md` - Svelte UI/UX app shell, routes/stores, components,
    settings, controls, chat/sidebar/mobile/playground, styling, tests.
-4. `src/docs/client-runtime.md` - browser Fastify adapters, bootstrap,
+5. `src/docs/client-runtime.md` - browser Fastify adapters, bootstrap,
    projection/hydration touchpoints, generation client, assets/storage/plugins.
-5. `docs/structure/server-projection-and-bridges.md` - bootstrap, projection,
+6. `docs/structure/server-projection-and-bridges.md` - bootstrap, projection,
    hydration, SSE reconcile, bridge watchers.
-6. `docs/structure/data-and-events.md` - SQLite, auth, active writer, revisions,
+7. `docs/structure/data-and-events.md` - SQLite, auth, active writer, revisions,
    events, streaming.
-7. `docs/structure/assets-and-saves.md` - assets, `.risu`, bundle import/export,
+8. `docs/structure/assets-and-saves.md` - assets, `.risu`, bundle import/export,
    Realm import, backups.
-8. `docs/structure/plugins-and-mcp.md` - browser plugin runtime and MCP clients.
-9. `docs/structure/providers-and-models.md` - model metadata, provider dispatch,
+9. `docs/structure/plugins-and-mcp.md` - browser plugin runtime and MCP clients.
+10. `docs/structure/providers-and-models.md` - model metadata, provider dispatch,
    server routing gates.
-10. `docs/structure/domain-glossary.md` - common terms and no-port concepts.
-11. `docs/structure/testing-and-operations.md` - scripts, checks, env, Docker.
-12. `docs/structure/generated-and-legacy.md` - generated/local/legacy caveats.
+11. `docs/structure/domain-glossary.md` - common terms and no-port concepts.
+12. `docs/structure/testing-and-operations.md` - scripts, checks, env, Docker.
+13. `docs/structure/generated-and-legacy.md` - generated/local/legacy caveats.
 
 ## Top-Level Map
 
@@ -57,11 +58,12 @@ past decisions; they are not the source of current behavior.
 | `server/fastify/src/index.ts`                                                                                                               | API process entrypoint: load config, build app, listen, graceful shutdown/signal handling.                                  |
 | `server/fastify/src/app.ts`                                                                                                                 | Fastify composition root: plugins, SQLite, auth, active writer, routes, workers, timers, optional static SPA.               |
 | `server/fastify/src/config.ts`, `server/fastify/src/routeRateLimits.ts`                                                                     | Runtime env parsing and per-route rate-limit presets.                                                                       |
-| `server/fastify/src/db.ts`                                                                                                                  | SQLite schema v18, migrations, schema version, global revision.                                                             |
+| `server/fastify/src/db.ts`                                                                                                                  | SQLite schema v19, migrations, schema version, global revision.                                                             |
 | `server/fastify/src/repository.ts`, `server/fastify/src/messageStore.ts`                                                                    | SQLite-backed domain load/write, projections/body cache, legacy `db.json` import/applyImport, asset metadata, backups, chat message tables. |
 | `server/fastify/src/routeManifest.ts`                                                                                                       | Auth, active-writer, streaming, and route classification decisions used by tests/audits. Update it for route changes; use `app.printRoutes()` for the endpoint inventory. |
 | `server/fastify/src/routes/`, `server/fastify/src/commands/`                                                                                | `/api/v1/*` route registrars and revision-checked mutation helpers.                                                         |
 | `server/fastify/src/commands/events.ts`, `server/fastify/src/routes/events.ts`                                                              | Command-event persistence, replay, and live command/memory SSE route.                                                       |
+| `server/fastify/src/pushNotifications.ts`, `server/fastify/src/routes/pushNotifications.ts`                                                 | Web Push VAPID key/subscription storage and push subscription routes.                                                       |
 | `server/fastify/src/generation/`, `server/fastify/src/prompt/`, `server/fastify/src/routes/generation*.ts`, `server/fastify/src/generationJobs.ts`, `server/fastify/src/generationFinalizationRetry.ts`, `server/fastify/src/messageTranslationJobs.ts` | Provider adapters, prompt assembly/effective generation config, Lua hooks, SSE transport, durable chat jobs, finalization retries, detached message translation state. |
 | `server/fastify/src/memory*.ts`                                                                                                             | Maintained Hypa V3 memory tables, planning, selection, jobs, worker, events.                                                |
 | `server/fastify/src/risuSave/`, `server/fastify/src/realmImport/`                                                                           | `.risu` codecs, bounded inflate, bundles/local-backup import/export, asset reports, and Realm/charx conversion helpers.     |
@@ -73,15 +75,19 @@ past decisions; they are not the source of current behavior.
 | `src/ts/storage/`                                                                                                                           | Browser projection state, server-backed auth/storage, backup helpers, and retained browser `.risu` compatibility codecs; server-backed device backup flows use server routes. |
 | `src/ts/plugins/`, `src/ts/pluginCommands.ts`, `src/ts/process/mcp/`                                                                        | Browser plugin runtime, Plugin V3 API host, command-backed plugin state helpers, MCP clients/tools.                         |
 | `src/ts/model/`, `src/ts/horde/`                                                                                                            | Browser model registry and provider catalog helpers.                                                                        |
-| `src/ts/media/`, `src/ts/parser/`, `src/ts/gui/`, `src/ts/setting/`, `src/ts/translator/`, `src/ts/network/`, `src/ts/kei/`, `src/ts/util/` | Focused client helper domains and tests.                                                                                    |
+| `src/lang/`, `src/styles.css`, `src/ts/gui/`, `src/ts/setting/`                                                                             | Language packs, global styling/theme variables, GUI size/animation helpers, and data-driven setting definitions.            |
+| `src/ts/media/`, `src/ts/parser/`, `src/ts/translator/`, `src/ts/network/`, `src/ts/kei/`, `src/ts/util/`                                  | Focused client helper domains and tests.                                                                                    |
 
 ## Standing Conventions
 
 - The live runtime is Fastify-only. `src/ts/platform.ts` sets
   `isFastifyServer = true`; native/mobile wrappers, browser-local persistence,
   service workers, peer sync, Drive sync, and non-Fastify modes are not live.
-- `pnpm dev:human` runs the same full-stack trace runner on frontend port 6002
-  and API port 6001 with trace mode `human`.
+- `pnpm dev:agent` runs the full-stack trace runner on frontend port 6418 and
+  API port 6419 with trace mode `agent`, auth bypass, and TOS bypass defaults.
+  Stop it when done so those ports are free for the next agent.
+- `pnpm dev:human` runs the same runner on frontend port 6002 and API port
+  6001 with trace mode `human` and password auth enabled by default.
 - Add new routes from `buildApp()` in `server/fastify/src/app.ts`. Handlers
   should call `requireAuth()` unless intentionally public, and every route needs
   a `routeManifest.ts` decision.

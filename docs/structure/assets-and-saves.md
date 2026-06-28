@@ -4,6 +4,12 @@ Fastify owns binary persistence, save import/export, Realm import, and backup
 snapshots. Browser code should use server asset URLs and server save routes
 instead of writing runtime state directly.
 
+Static app assets are a separate source boundary from persisted runtime assets:
+`public/` is Vite-served static input, `resources/` contains packaging
+icon/splash sources, and `src/etc/` contains bundled media/docs/tokenizer seed
+data. Save/import/export and user-upload flows should use server asset ids and
+`/api/v1/assets/:id` URLs, not static `/public` paths.
+
 ## Assets
 
 | Path                                                    | Role                                                                                                                          |
@@ -100,6 +106,10 @@ low-level-access retry, and older browser fallback handling live in
 `src/ts/characterCards.ts`. Server Realm import is primary but not exclusive:
 unsupported server Realm responses can fall back to the older browser path, and
 local direct `charx` file import still has a browser-native path.
+Non-SSE JSON responses include success, low-level-access confirmation tokens,
+unsupported-download fallbacks, revision conflicts, and upstream/fetch errors.
+The `/api/v1/download/dynamic/` string in the route module is an upstream Realm
+path constant, not a local Fastify route.
 
 ## Legacy Storage Compatibility
 
@@ -123,16 +133,16 @@ Backups live under `data/backups/<id>/`. Current backups contain
 `manifest.json`, `risu.db`, assets when present, and optional legacy `save/`;
 new backups do not write `db.json`. Create, restore, and delete are
 authenticated and active-writer guarded; list is authenticated read-only.
+Concrete routes are `POST /api/v1/backups`, `GET /api/v1/backups`,
+`POST /api/v1/backups/:id/restore`, and `DELETE /api/v1/backups/:id`.
 
 Restore swaps asset/save directories and restores SQLite tables through the
 `SQLITE_BACKUP_TABLES` allowlist in `repository.ts`, then emits
 `state.restored` and triggers browser projection recovery. Keep that allowlist
-in sync when adding durable tables; operational rows are intentionally excluded
-unless explicitly added. As of this audit, split model/prompt preset tables are
-durable but not restored by that allowlist, so verify the list before relying on
-restore coverage for newly split table families. Older backups containing
-`db.json` are restored by copying the file into the data dir and running
-`ensureDbJsonImported()`.
+in sync when adding durable tables; split model/prompt preset rows are included,
+while operational rows and Web Push subscription/key state are currently outside
+the restore contract. Older backups containing `db.json` are restored by copying
+the file into the data dir and running `ensureDbJsonImported()`.
 
 Ordinary module `.risum` import is supported in Fastify-backed browser mode
 through the browser codec in `src/ts/process/modules.ts`: the client decodes the
