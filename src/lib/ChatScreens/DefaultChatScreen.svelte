@@ -331,6 +331,13 @@
     }
   }
 
+  function clearInputTranslationRollbackAfterSuccessfulSend() {
+    clearStaleInputTranslationRollback()
+    if (lastInputTranslationRollback) {
+      lastInputTranslationRollback = null
+    }
+  }
+
   function readFileAsArrayBuffer(file: File): Promise<ArrayBuffer> {
     return new Promise((resolve, reject) => {
       const reader = new FileReader()
@@ -857,6 +864,7 @@
       ) {
         return
       }
+      clearInputTranslationRollbackAfterSuccessfulSend()
     } catch (error) {
       console.error(error)
       alertError(error)

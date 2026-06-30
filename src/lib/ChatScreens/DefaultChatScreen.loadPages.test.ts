@@ -837,6 +837,43 @@ describe('DefaultChatScreen transcript window state', () => {
     expect(loadPageMocks.sendChat).not.toHaveBeenCalled()
   })
 
+  it('clears stored original hook input after the translated message is sent', async () => {
+    seedDatabase([1])
+    DBState.db.characters[0].useInputTranslationHook = true
+    vi.mocked(runInputTranslator).mockResolvedValueOnce('Translated draft')
+    loadPageMocks.appendCurrentChatUserMessageForSend.mockResolvedValueOnce({
+      status: 'ok',
+      messageId: 'translated-message',
+    })
+    mountScreen()
+
+    await waitFor(() => {
+      expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy()
+    })
+    const textarea = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+    textarea.value = '원문'
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    const sendButton = target.querySelector<HTMLButtonElement>('[data-testid="default-chat-send-button"]')
+    expect(sendButton).toBeTruthy()
+    sendButton!.click()
+
+    await waitFor(() => {
+      expect(target.querySelector('[data-testid="default-chat-input-translation-rollback"]')).toBeTruthy()
+    })
+    expect(loadPageMocks.sendChat).not.toHaveBeenCalled()
+
+    const confirmedSendButton = target.querySelector<HTMLButtonElement>('[data-testid="default-chat-send-button"]')
+    expect(confirmedSendButton).toBeTruthy()
+    confirmedSendButton!.click()
+
+    await waitFor(() => {
+      expect(loadPageMocks.sendChat).toHaveBeenCalledTimes(1)
+      expect(target.querySelector('[data-testid="default-chat-input-translation-rollback"]')).toBeNull()
+    })
+  })
+
   it('shrinks the composer back after sending a tall draft', async () => {
     seedDatabase([1])
     mountScreen()
