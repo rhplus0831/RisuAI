@@ -16,7 +16,7 @@
     compareChatGenerationTogglePresetToActiveState,
     getChatGenerationTogglePresets,
   } from 'src/ts/chatGenerationTogglePresets'
-  import { setCharacterSupaMemory } from 'src/ts/characterCommands'
+  import { setCharacterInputTranslationHook, setCharacterSupaMemory } from 'src/ts/characterCommands'
   import {
     resolveActiveChatGenerationSettings,
     saveActiveChatJailbreakToggleGenerationSettings,
@@ -87,6 +87,11 @@
   function setSupaMemoryValue(value: boolean): void {
     if (!chara?.chaId) return
     setCharacterSupaMemory(chara.chaId, value)
+  }
+
+  function setInputTranslationHookValue(value: boolean): void {
+    if (!chara?.chaId) return
+    setCharacterInputTranslationHook(chara.chaId, value)
   }
 
   function isSidebarTogglePresetDifferent(key: string): boolean {
@@ -264,6 +269,15 @@
         <CheckInput check={chara.supaMemory} reverse name={language.ToggleHypaMemory} onChange={setSupaMemoryValue} />
       </div>
     {/if}
+    {#if chara}
+      <div class="flex mt-2 items-center w-full" class:justify-end={$MobileGUI} data-risu-input-translation-hook-toggle>
+        <CheckInput
+          check={chara.useInputTranslationHook}
+          reverse
+          name={language.useInputTranslationHook}
+          onChange={setInputTranslationHookValue} />
+      </div>
+    {/if}
     <ChatGenerationResetDefaultsButton />
     <ChatGenerationTogglePresets bind:selectedPresetId={selectedTogglePresetId} />
   </div>
@@ -291,6 +305,14 @@
   {#if chara && DBState.db.hypaV3}
     <div class="flex mt-2 items-center" data-risu-hypa-memory-toggle>
       <CheckInput check={chara.supaMemory} name={language.ToggleHypaMemory} onChange={setSupaMemoryValue} />
+    </div>
+  {/if}
+  {#if chara}
+    <div class="flex mt-2 items-center" data-risu-input-translation-hook-toggle>
+      <CheckInput
+        check={chara.useInputTranslationHook}
+        name={language.useInputTranslationHook}
+        onChange={setInputTranslationHookValue} />
     </div>
   {/if}
   <ChatGenerationResetDefaultsButton />

@@ -37,6 +37,7 @@
     getCharacterByIndex,
     isServerCharacterShell,
     setCharacterByIndex,
+    type character,
     type Message,
   } from '../../ts/storage/database.svelte'
   import { DBState } from 'src/ts/stores.svelte'
@@ -51,7 +52,7 @@
   } from '../../ts/process/index.svelte'
   import { getUserDisplayName, getUserIcon, getUserIconProtrait, sleep } from '../../ts/util'
   import { language } from '../../lang'
-  import { isExpTranslator, translate } from '../../ts/translator/translator'
+  import { isExpTranslator, runInputTranslator, translate } from '../../ts/translator/translator'
   import { alertError, alertNormal, alertWait } from '../../ts/alert'
   import sendSound from '../../etc/send.mp3'
   import CreatorQuote from './CreatorQuote.svelte'
@@ -141,7 +142,7 @@
   let messageInputTranslate: string = $state('')
   let openMenu = $state(false)
   let loadPages = $state(normalizeChatDisplayTailCount(DBState.db.chatDisplayTailCount))
-  let doingChatInputTranslate = false
+  let doingChatInputTranslate = $state(false)
   let toggleStickers: boolean = $state(false)
   let fileInput: string[] = $state([])
   let showNewMessageButton = $state(false)
@@ -544,6 +545,66 @@
     return sendMain(true)
   }
 
+  function shouldRunInputTranslationHook(
+    continueResponse: boolean,
+    currentCharacter: character | undefined,
+    sourceText: string,
+  ): boolean {
+    return !continueResponse && currentCharacter?.useInputTranslationHook === true && sourceText.trim().length > 0
+  }
+
+  function appendInlayMarkers(files: string[]): string {
+    return files.map((file) => `{{inlayed::${file}}}`).join('')
+  }
+
+  async function runInputTranslationHookForSend(input: {
+    composerOperation: ComposerOperation
+    activeTarget: ActiveChatTarget
+    sourceText: string
+    fileSuffix: string
+  }): Promise<void> {
+    const abortController = createActiveGenerationAbortController()
+    doingChatInputTranslate = true
+    try {
+      const translated = await runInputTranslator(input.sourceText, abortController.signal)
+      if (!isActiveChatTargetFresh(input.activeTarget) || !isCurrentComposerOperation(input.composerOperation)) {
+        return
+      }
+      if (translated.trim().length === 0) {
+        alertError(language.errors.emptyText)
+        return
+      }
+      const userMessage: Message = {
+        role: 'user',
+        data: `${translated}${input.fileSuffix}`,
+        time: Date.now(),
+        name: null,
+      }
+      const appended = await appendCurrentChatUserMessageForSend(userMessage, { expectedTarget: input.activeTarget })
+      if (!isActiveChatTargetFresh(input.activeTarget)) {
+        return
+      }
+      if (appended.status !== 'ok') {
+        restoreComposerForCurrentOperation(input.composerOperation)
+        alertError(appended.error)
+        await sleep(10)
+        return
+      }
+      clearComposerForCurrentOperation(input.composerOperation)
+      await sleep(10)
+      updateInputSizeAll()
+    } catch (error) {
+      if (!abortController.signal.aborted) {
+        restoreComposerForCurrentOperation(input.composerOperation)
+        alertError(error)
+        await sleep(10)
+      }
+    } finally {
+      doingChatInputTranslate = false
+      clearActiveGenerationAbortController(abortController)
+    }
+  }
+
   async function sendMain(continueResponse: boolean) {
     if ($doingChat || preparingSend) {
       return
@@ -592,11 +653,17 @@
         }
       }
 
-      let messageForSend = composerBeforeSend
-      if (filesBeforeSend.length > 0) {
-        for (const file of filesBeforeSend) {
-          messageForSend += `{{inlayed::${file}}}`
-        }
+      const fileSuffix = appendInlayMarkers(filesBeforeSend)
+      let messageForSend = composerBeforeSend + fileSuffix
+
+      if (shouldRunInputTranslationHook(continueResponse, DBState.db.characters[selectedChar], composerBeforeSend)) {
+        await runInputTranslationHookForSend({
+          composerOperation,
+          activeTarget,
+          sourceText: composerBeforeSend,
+          fileSuffix,
+        })
+        return
       }
 
       if (!continueResponse) {

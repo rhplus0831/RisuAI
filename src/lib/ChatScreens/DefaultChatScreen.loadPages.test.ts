@@ -75,6 +75,7 @@ vi.mock('../../ts/util', async (importActual) => {
 
 vi.mock('../../ts/translator/translator', () => ({
   isExpTranslator: () => false,
+  runInputTranslator: vi.fn(async (message: string) => message),
   translate: vi.fn(async (message: string) => message),
 }))
 
@@ -232,7 +233,7 @@ import {
   createActiveChatGenerationSettingsIncompleteMessage,
   resolveActiveChatGenerationSettings,
 } from 'src/ts/activeChatGenerationSettings'
-import { translate } from '../../ts/translator/translator'
+import { runInputTranslator, translate } from '../../ts/translator/translator'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -484,6 +485,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   loadPageMocks.captureActiveChatTarget.mockImplementation(captureActiveChatTargetForTest)
   loadPageMocks.isActiveChatTargetFresh.mockImplementation(isActiveChatTargetFreshForTest)
+  vi.mocked(runInputTranslator).mockImplementation(async (message: string) => message)
   vi.mocked(translate).mockImplementation(async (message: string) => message)
   loadPageMocks.toCanvas.mockReset()
   loadPageMocks.toCanvas.mockImplementation(async () => createCanvas())
@@ -753,6 +755,42 @@ describe('DefaultChatScreen transcript window state', () => {
     )
     expect(textarea.value).toBe('Retry with file')
     expect(target.textContent).toContain('Missing file')
+    expect(loadPageMocks.sendChat).not.toHaveBeenCalled()
+  })
+
+  it('translates hook-enabled input into a user message without starting generation', async () => {
+    seedDatabase([1])
+    DBState.db.characters[0].useInputTranslationHook = true
+    vi.mocked(runInputTranslator).mockResolvedValueOnce('Translated draft')
+    mountScreen()
+
+    await waitFor(() => {
+      expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy()
+    })
+    const textarea = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+    textarea.value = '원문'
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    const sendButton = target.querySelector<HTMLButtonElement>('[data-testid="default-chat-send-button"]')
+    expect(sendButton).toBeTruthy()
+    sendButton!.click()
+
+    await waitFor(() => {
+      expect(loadPageMocks.appendCurrentChatUserMessageForSend).toHaveBeenCalledTimes(1)
+    })
+
+    expect(runInputTranslator).toHaveBeenCalledWith('원문', expect.any(Object))
+    expect(loadPageMocks.appendCurrentChatUserMessageForSend).toHaveBeenCalledWith(
+      expect.objectContaining({
+        role: 'user',
+        data: 'Translated draft',
+      }),
+      expect.objectContaining({
+        expectedTarget: expectedActiveTarget(0),
+      }),
+    )
+    expect(textarea.value).toBe('')
     expect(loadPageMocks.sendChat).not.toHaveBeenCalled()
   })
 

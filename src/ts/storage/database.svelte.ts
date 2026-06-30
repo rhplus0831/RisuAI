@@ -4,7 +4,12 @@ import { changeLanguage, language } from '../../lang'
 import type { RisuPlugin } from '../plugins/plugins.svelte'
 import type { triggerscript as triggerscriptMain } from '../process/triggers'
 import { downloadFile, saveAsset as saveImageGlobal } from '../globalApi.svelte'
-import { defaultAutoSuggestPrompt, defaultJailbreak, defaultMainPrompt } from './defaultPrompts'
+import {
+  defaultAutoSuggestPrompt,
+  defaultInputTranslatorPrompt,
+  defaultJailbreak,
+  defaultMainPrompt,
+} from './defaultPrompts'
 import { alertNormal } from '../alert'
 import type { NAISettings } from '../process/models/nai'
 import { prebuiltNAIpresets, prebuiltPresets } from '../process/templates/templates'
@@ -874,6 +879,9 @@ export function setDatabase(data: Database) {
   }
   if (checkNullish(data.translatorMaxResponse)) {
     data.translatorMaxResponse = 1000
+  }
+  if (checkNullish(data.inputTranslatorPrompt)) {
+    data.inputTranslatorPrompt = defaultInputTranslatorPrompt
   }
   if (checkNullish(data.currentPluginProvider)) {
     data.currentPluginProvider = ''
@@ -2006,6 +2014,7 @@ export interface Database {
   fishSpeechKey: string
   allowAllExtentionFiles?: boolean
   translatorPrompt: string
+  inputTranslatorPrompt: string
   translatorMaxResponse: number
   translatorPresets: TranslatorPreset[]
   translatorPresetId: number
@@ -2448,6 +2457,7 @@ export interface character {
     normalize: boolean
   }
   supaMemory?: boolean
+  useInputTranslationHook?: boolean
   additionalAssets?: [string, string, string][]
   ttsReadOnlyQuoted?: boolean
   replaceGlobalNote: string

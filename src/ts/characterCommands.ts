@@ -248,6 +248,12 @@ export interface CharacterSupaMemorySnapshot {
   supaMemory: boolean | undefined
 }
 
+export interface CharacterInputTranslationHookSnapshot {
+  characterId: string
+  hadUseInputTranslationHook: boolean
+  useInputTranslationHook: boolean | undefined
+}
+
 interface CharacterOrderPlacement {
   characterId: string
   rootIndex?: number
@@ -288,6 +294,18 @@ export function currentCharacterSupaMemorySnapshot(characterId: string): Charact
     characterId,
     hadSupaMemory: Object.prototype.hasOwnProperty.call(character, 'supaMemory'),
     supaMemory: character.supaMemory,
+  }
+}
+
+export function currentCharacterInputTranslationHookSnapshot(
+  characterId: string,
+): CharacterInputTranslationHookSnapshot | null {
+  const character = DBState.db.characters?.find((candidate) => candidate.chaId === characterId)
+  if (!character) return null
+  return {
+    characterId,
+    hadUseInputTranslationHook: Object.prototype.hasOwnProperty.call(character, 'useInputTranslationHook'),
+    useInputTranslationHook: character.useInputTranslationHook,
   }
 }
 
@@ -358,6 +376,18 @@ export function restoreCharacterSupaMemory(snapshot: CharacterSupaMemorySnapshot
       character.supaMemory = snapshot.supaMemory
     } else {
       delete character.supaMemory
+    }
+  })
+}
+
+export function restoreCharacterInputTranslationHook(snapshot: CharacterInputTranslationHookSnapshot): void {
+  withTrustedServerProjectionWrite(() => {
+    const character = DBState.db.characters?.find((candidate) => candidate.chaId === snapshot.characterId)
+    if (!character) return
+    if (snapshot.hadUseInputTranslationHook) {
+      character.useInputTranslationHook = snapshot.useInputTranslationHook
+    } else {
+      delete character.useInputTranslationHook
     }
   })
 }
@@ -727,6 +757,16 @@ export function dispatchUpdateCharacterSupaMemory(
   previous: CharacterSupaMemorySnapshot,
 ): void {
   dispatchUpdateCharacterWith(characterId, { supaMemory: enabled }, () => restoreCharacterSupaMemory(previous))
+}
+
+export function dispatchUpdateCharacterInputTranslationHook(
+  characterId: string,
+  enabled: boolean,
+  previous: CharacterInputTranslationHookSnapshot,
+): void {
+  dispatchUpdateCharacterWith(characterId, { useInputTranslationHook: enabled }, () =>
+    restoreCharacterInputTranslationHook(previous),
+  )
 }
 
 function dispatchCompatibleCharacterUpdateWith(
@@ -1373,6 +1413,20 @@ export function setCharacterSupaMemory(characterId: string, enabled: boolean): v
     character.supaMemory = enabled
     if (previous) {
       dispatchUpdateCharacterSupaMemory(characterId, enabled, previous)
+    }
+  })
+}
+
+export function setCharacterInputTranslationHook(characterId: string, enabled: boolean): void {
+  if (!characterId) return
+  withTrustedServerProjectionWrite(() => {
+    const character = DBState.db.characters?.find((candidate) => candidate.chaId === characterId)
+    if (!character || Boolean(character.useInputTranslationHook) === enabled) return
+
+    const previous = canUseServerCommands() ? currentCharacterInputTranslationHookSnapshot(characterId) : null
+    character.useInputTranslationHook = enabled
+    if (previous) {
+      dispatchUpdateCharacterInputTranslationHook(characterId, enabled, previous)
     }
   })
 }

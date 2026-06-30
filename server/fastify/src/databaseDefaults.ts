@@ -1,4 +1,4 @@
-import { defaultAutoSuggestPrompt } from '../../../src/ts/storage/defaultPrompts.js'
+import { defaultAutoSuggestPrompt, defaultInputTranslatorPrompt } from '../../../src/ts/storage/defaultPrompts.js'
 import { prebuiltNAIpresets, prebuiltPresets } from '../../../src/ts/process/templates/templates.js'
 import { defaultHotkeys } from '../../../src/ts/defaulthotkeys.js'
 import { LLMFormat } from '../../../src/ts/model/types.js'
@@ -207,6 +207,7 @@ export function normalizeDatabaseDefaults(
   setDefault(database, 'swipe', true)
   setDefault(database, 'translator', '')
   setDefault(database, 'translatorMaxResponse', 1000)
+  setDefault(database, 'inputTranslatorPrompt', defaultInputTranslatorPrompt)
   setDefault(database, 'currentPluginProvider', '')
   setDefault(database, 'plugins', [])
   setDefault(database, 'zoomsize', 100)

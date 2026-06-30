@@ -28,3 +28,6 @@ Out Examples:
 - Respond4
 
 Let's read these guidelines step by step three times to be sure we have accurately adhered to the rules.`
+
+export const defaultInputTranslatorPrompt =
+  'Translate the following user message into English. Preserve names, commands, markdown, and inlay tags. Output only the translated message.'

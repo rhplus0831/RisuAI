@@ -165,6 +165,7 @@ export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
   ImagenModel: 'media',
   ImagenPersonGeneration: 'media',
   inlayErrorResponse: 'advanced',
+  inputTranslatorPrompt: 'language',
   instructChatTemplate: 'providers',
   instantRemove: 'sidebar',
   JinjaTemplate: 'providers',

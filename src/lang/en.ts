@@ -254,6 +254,8 @@ export const languageEnglish = {
       'The prompt that is used for summarization. If it is blank, it will use the default prompt. You can also use ChatML formating with {{slot}} for the chat data.',
     translatorPrompt:
       'The prompt that is used for translation. If it is blank, it will use the default prompt. You can also use ChatML formating with {{slot}} for the dest language, {{slot::content}} for the content, and {{slot::tnote}} for the translator note.',
+    inputTranslatorPrompt:
+      'The prompt used by the input translation hook. If it is blank, the default prompt is used. You can use ChatML formatting and {{slot::content}} for the message being translated.',
     translateBeforeHTMLFormatting:
       'If enabled, it will translate the text before Regex scripts and HTML formatting. This could make the token lesser but could break the formatting.',
     autoTranslateCachedOnly:
@@ -1008,6 +1010,7 @@ export const languageEnglish = {
   useAdditionalAssetsPreview: 'Use Additional Assets Preview',
   autoTranslateInput: 'Auto Translate Input',
   enterMessageForTranslateToEnglish: 'Enter Message for Translate to English',
+  useInputTranslationHook: 'Use Input Translation Hook',
   recent: 'Recent',
   downloads: 'Downloads',
   trending: 'Trending',
@@ -1358,6 +1361,7 @@ export const languageEnglish = {
   summarizationPrompt: 'Summarization Prompt',
   reSummarizationPrompt: 'Re-Summarizaion Prompt',
   translatorPrompt: 'Translation Prompt',
+  inputTranslatorPrompt: 'Input Translator Prompt',
   translateBeforeHTMLFormatting: 'Translate Before HTML Formatting',
   retranslate: 'Retranslate',
   editTranslation: 'Edit Translation',
