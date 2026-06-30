@@ -789,8 +789,15 @@
     }
   }
 
-  $effect.pre(() => {
-    updateInputSizeAll()
+  $effect(() => {
+    const hasMessageInput = messageInput.length > 0
+    const hasMessageInputTranslate = messageInputTranslate.length > 0
+    const hasInputEle = Boolean(inputEle)
+    const hasInputTranslateEle = Boolean(inputTranslateEle)
+
+    if (hasMessageInput || hasMessageInputTranslate || hasInputEle || hasInputTranslateEle) {
+      updateInputSizeAll()
+    }
   })
 
   function getComposerTextFieldValue(field: ComposerTextField): string {

@@ -756,6 +756,36 @@ describe('DefaultChatScreen transcript window state', () => {
     expect(loadPageMocks.sendChat).not.toHaveBeenCalled()
   })
 
+  it('shrinks the composer back after sending a tall draft', async () => {
+    seedDatabase([1])
+    mountScreen()
+
+    await waitFor(() => {
+      expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy()
+    })
+    const textarea = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+    Object.defineProperty(textarea, 'scrollHeight', {
+      configurable: true,
+      get: () => (textarea.value === '' ? 44 : 180),
+    })
+
+    textarea.value = 'A long draft that wraps enough to make the composer tall.'
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    await waitFor(() => {
+      expect(textarea.style.height).toBe('180px')
+    })
+
+    const sendButton = target.querySelector<HTMLButtonElement>('[data-testid="default-chat-send-button"]')
+    expect(sendButton).toBeTruthy()
+    sendButton!.click()
+
+    await waitFor(() => {
+      expect(loadPageMocks.sendChat).toHaveBeenCalledTimes(1)
+      expect(textarea.value).toBe('')
+      expect(textarea.style.height).toBe('44px')
+    })
+  })
+
   it('does not clear newer typed composer text when a delayed append succeeds', async () => {
     seedDatabase([1])
     const append = createDeferred<AppendCurrentChatUserMessageResult>()
