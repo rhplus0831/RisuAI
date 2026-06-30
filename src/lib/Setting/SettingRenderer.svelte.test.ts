@@ -52,11 +52,11 @@ let target: HTMLElement
 let component: MountedComponent | undefined
 
 function rendererValue<T>(key: string): T {
-  return (DBState.db as Record<string, T>)[key]
+  return (DBState.db as unknown as Record<string, T>)[key]
 }
 
 function setRendererValue(key: string, value: unknown): void {
-  ;(DBState.db as Record<string, unknown>)[key] = value
+  ;(DBState.db as unknown as Record<string, unknown>)[key] = value
 }
 
 async function changeTextInput(input: HTMLInputElement, value: string): Promise<void> {
@@ -163,17 +163,17 @@ describe('SettingRenderer rendered behavior', () => {
 
     target.querySelector<HTMLInputElement>('input[type="checkbox"]')?.click()
     await tick()
-    expect(DBState.db.rendererEnabled).toBe(true)
+    expect(rendererValue<boolean>('rendererEnabled')).toBe(true)
 
     const textInput = target.querySelector<HTMLInputElement>('input[placeholder="Renderer text input"]')
     expect(textInput).toBeTruthy()
     await changeTextInput(textInput!, 'changed value')
-    expect(DBState.db.rendererText).toBe('changed value')
+    expect(rendererValue<string>('rendererText')).toBe('changed value')
 
     const select = target.querySelector<HTMLSelectElement>('select')
     expect(select).toBeTruthy()
     await changeSelect(select!, 'beta')
-    expect(DBState.db.rendererChoice).toBe('beta')
+    expect(rendererValue<string>('rendererChoice')).toBe('beta')
   })
 
   it('passes renderer context to item conditions and wrappers', async () => {

@@ -198,4 +198,44 @@ describe('Settings supporter tab', () => {
     expect(settingsButton(language.settingsNavPromptPresets)).toBeTruthy()
     expect(settingsButton(language.settingsNavLegacyBotPresets)).toBeTruthy()
   })
+
+  it('returns from a selected mobile settings page to the settings menu', async () => {
+    const backupsButton = settingsButton(language.settingsNavBackups)
+    expect(backupsButton).toBeTruthy()
+
+    backupsButton?.click()
+    await flushClick()
+
+    expect(get(currentRoute)).toMatchObject({
+      kind: 'settings',
+      path: '/settings/backup',
+      section: 'backup',
+      index: 0,
+    })
+
+    await applyNavigatedRoute()
+
+    expect(get(SettingsMenuIndex)).toBe(0)
+    expect(target.textContent).toContain(language.saveServerBackup)
+    expect(settingsButton(language.settingsNavBackups)).toBeUndefined()
+
+    const backButton = target.querySelector<HTMLButtonElement>('[data-risu-settings-mobile-back]')
+    expect(backButton).toBeTruthy()
+
+    backButton?.click()
+    await flushClick()
+
+    expect(get(currentRoute)).toMatchObject({
+      kind: 'settings',
+      path: '/settings',
+      section: '',
+      index: -1,
+    })
+
+    await applyNavigatedRoute()
+
+    expect(get(SettingsMenuIndex)).toBe(-1)
+    expect(settingsButton(language.settingsNavBackups)).toBeTruthy()
+    expect(target.textContent).not.toContain(language.saveServerBackup)
+  })
 })

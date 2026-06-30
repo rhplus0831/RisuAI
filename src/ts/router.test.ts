@@ -85,6 +85,45 @@ describe('router initial application', () => {
     })
     expect(router.hasPendingRouteApplication()).toBe(true)
   })
+
+  it('keeps the bare settings route as the settings menu state', async () => {
+    const router = await importRouterAt('/settings')
+    const stores = await import('./stores.svelte')
+    const { SettingsMenuIndex, settingsOpen } = stores
+
+    expect(get(router.currentRoute)).toMatchObject({
+      kind: 'settings',
+      path: '/settings',
+      section: '',
+      index: -1,
+    })
+
+    await router.applyRouteToStores(get(router.currentRoute))
+    await flushMicrotasks()
+
+    expect(get(settingsOpen)).toBe(true)
+    expect(get(SettingsMenuIndex)).toBe(-1)
+  })
+
+  it('serializes the open settings menu as the bare settings route', async () => {
+    const router = await importRouterAt('/')
+
+    router.syncRouteFromState({
+      currentRouteKind: 'home',
+      settingsOpen: true,
+      settingsMenuIndex: -1,
+      selectedCharID: -1,
+      playgroundStore: 0,
+    })
+
+    expect(window.location.pathname).toBe('/settings')
+    expect(get(router.currentRoute)).toMatchObject({
+      kind: 'settings',
+      path: '/settings',
+      section: '',
+      index: -1,
+    })
+  })
 })
 
 describe('router character route freshness', () => {

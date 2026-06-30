@@ -14,6 +14,7 @@
     CircleXIcon,
     KeyboardIcon,
     SparkleIcon,
+    ArrowLeftIcon,
   } from '@lucide/svelte'
   import { language } from 'src/lang'
   import DisplaySettings from './Pages/DisplaySettings.svelte'
@@ -42,9 +43,14 @@
 
   let openLoreList = $state(false)
   let supporterConfirmOpen = $state(false)
-  if (window.innerWidth >= 900 && $SettingsMenuIndex === -1 && !$MobileGUI) {
-    $SettingsMenuIndex = 17
-  }
+  let splitSettingsLayout = $derived(window.innerWidth >= 700 && !$MobileGUI)
+  let mobileSettingsLayout = $derived(!splitSettingsLayout)
+
+  $effect(() => {
+    if (splitSettingsLayout && $SettingsMenuIndex === -1) {
+      $SettingsMenuIndex = 17
+    }
+  })
 
   async function openSupporterThanks() {
     if ($SettingsMenuIndex === 77 || supporterConfirmOpen) return
@@ -74,6 +80,10 @@
       'text-textcolor2': !active,
     }
   }
+
+  function goBackToSettingsList() {
+    navigate('/settings', { replace: true })
+  }
 </script>
 
 <div
@@ -81,10 +91,10 @@
   class:bg-bgcolor={$MobileGUI}
   class:setting-bg={!$MobileGUI}>
   <div class="h-full max-w-(--breakpoint-lg) w-full flex relative rs-setting-cont-2">
-    {#if (window.innerWidth >= 700 && !$MobileGUI) || $SettingsMenuIndex === -1}
+    {#if splitSettingsLayout || $SettingsMenuIndex === -1}
       <div
         class="flex h-full flex-col gap-4 overflow-y-auto relative rs-setting-cont-3 shrink-0 px-3 py-4 pt-8"
-        class:w-full={window.innerWidth < 700 || $MobileGUI}
+        class:w-full={mobileSettingsLayout}
         class:bg-darkbg={!$MobileGUI}
         class:bg-bgcolor={$MobileGUI}>
         {#if !$isLite}
@@ -252,7 +262,7 @@
             {/if}
           </div>
         {/if}
-        {#if window.innerWidth < 700 && !$MobileGUI}
+        {#if mobileSettingsLayout && !$MobileGUI}
           <button
             class="absolute top-2 right-2 hover:text-green-500 text-textcolor"
             onclick={() => {
@@ -263,10 +273,21 @@
         {/if}
       </div>
     {/if}
-    {#if (window.innerWidth >= 700 && !$MobileGUI) || $SettingsMenuIndex !== -1}
+    {#if splitSettingsLayout || $SettingsMenuIndex !== -1}
       {#key $SettingsMenuIndex}
         <div
-          class="grow py-6 px-4 bg-bgcolor flex flex-col text-textcolor overflow-y-auto relative rs-setting-cont-4 min-w-0">
+          class="grow py-6 px-4 bg-bgcolor flex flex-col text-textcolor overflow-y-auto relative rs-setting-cont-4 min-w-0"
+          class:pt-12={mobileSettingsLayout && $SettingsMenuIndex !== -1}>
+          {#if mobileSettingsLayout && $SettingsMenuIndex !== -1}
+            <button
+              class="absolute top-2 left-2 hover:text-green-500 text-textcolor"
+              title={language.goback}
+              data-risu-settings-mobile-back
+              onclick={goBackToSettingsList}>
+              <ArrowLeftIcon size={DBState.db.settingsCloseButtonSize} />
+              <span class="sr-only">{language.goback}</span>
+            </button>
+          {/if}
           {#if $SettingsMenuIndex === 0}
             <UserSettings />
           {:else if $SettingsMenuIndex === 1}

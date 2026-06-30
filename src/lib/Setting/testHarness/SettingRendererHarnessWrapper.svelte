@@ -14,7 +14,7 @@
 
   function readValue(): unknown {
     if (item.getValue) return item.getValue(ctx.db, ctx)
-    if (item.bindKey) return (ctx.db as Record<string, unknown>)[item.bindKey as string]
+    if (item.bindKey) return (ctx.db as unknown as Record<string, unknown>)[item.bindKey as string]
     return undefined
   }
 
@@ -22,7 +22,7 @@
     if (item.setValue) {
       item.setValue(ctx.db, value, ctx)
     } else if (item.bindKey) {
-      ;(ctx.db as Record<string, unknown>)[item.bindKey as string] = value
+      ;(ctx.db as unknown as Record<string, unknown>)[item.bindKey as string] = value
     }
     item.onChange?.(value, ctx)
   }

@@ -270,11 +270,20 @@ export function parseRoute(pathname: string): AppRoute {
 
   if (parts[0] === 'settings') {
     const section = normalizeSlug(parts[1] ?? '')
+    if (!section) {
+      return {
+        kind: 'settings',
+        path,
+        section: '',
+        index: -1,
+      }
+    }
+
     const index = settingIndexBySlug.get(section) ?? numericSettingIndex(section)
     return {
       kind: 'settings',
       path,
-      section: section || settingSlugByIndex.get(DEFAULT_SETTINGS_INDEX) || 'model',
+      section,
       index: index ?? DEFAULT_SETTINGS_INDEX,
     }
   }
@@ -326,6 +335,7 @@ export function characterRoutePath(characterId: string, chatId?: string): string
 
 function routePathFromState(input: StateRouteInput): string {
   if (input.settingsOpen) {
+    if (input.settingsMenuIndex < 0) return '/settings'
     return `/settings/${settingSlugByIndex.get(input.settingsMenuIndex) ?? 'model'}`
   }
 
