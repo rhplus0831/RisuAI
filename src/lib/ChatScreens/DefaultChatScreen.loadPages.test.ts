@@ -166,6 +166,7 @@ vi.mock('src/ts/chatCommands', () => ({
   cloneJsonValue: <T>(value: T) => JSON.parse(JSON.stringify(value)) as T,
   currentChatScopedSnapshot: vi.fn(() => ({ before: 'chat-scoped' })),
   currentChatStateSnapshot: vi.fn(() => ({ before: 'chat-state' })),
+  dispatchDeleteMessageScoped: vi.fn(),
   dispatchReplaceMessagesScoped: vi.fn(),
   dispatchSaveChatGenerationSettings: vi.fn(() => true),
   dispatchUpdateChat: vi.fn(),
@@ -233,6 +234,7 @@ import {
   createActiveChatGenerationSettingsIncompleteMessage,
   resolveActiveChatGenerationSettings,
 } from 'src/ts/activeChatGenerationSettings'
+import { currentChatScopedSnapshot, dispatchDeleteMessageScoped } from 'src/ts/chatCommands'
 import { runInputTranslator, translate } from '../../ts/translator/translator'
 
 type MountedComponent = Parameters<typeof unmount>[0]
@@ -791,6 +793,47 @@ describe('DefaultChatScreen transcript window state', () => {
       }),
     )
     expect(textarea.value).toBe('')
+    expect(loadPageMocks.sendChat).not.toHaveBeenCalled()
+  })
+
+  it('restores original hook input and removes the translated message from the rollback button', async () => {
+    seedDatabase([1])
+    DBState.db.characters[0].useInputTranslationHook = true
+    vi.mocked(runInputTranslator).mockResolvedValueOnce('Translated draft')
+    loadPageMocks.appendCurrentChatUserMessageForSend.mockResolvedValueOnce({
+      status: 'ok',
+      messageId: 'translated-message',
+    })
+    mountScreen()
+
+    await waitFor(() => {
+      expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy()
+    })
+    const textarea = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+    textarea.value = '원문'
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    const sendButton = target.querySelector<HTMLButtonElement>('[data-testid="default-chat-send-button"]')
+    expect(sendButton).toBeTruthy()
+    sendButton!.click()
+
+    let rollbackButton: HTMLButtonElement | null = null
+    await waitFor(() => {
+      rollbackButton = target.querySelector<HTMLButtonElement>(
+        '[data-testid="default-chat-input-translation-rollback"]',
+      )
+      expect(rollbackButton).toBeTruthy()
+    })
+    expect(textarea.value).toBe('')
+
+    rollbackButton!.click()
+    await tick()
+
+    expect(textarea.value).toBe('원문')
+    expect(currentChatScopedSnapshot).toHaveBeenCalledTimes(1)
+    expect(dispatchDeleteMessageScoped).toHaveBeenCalledWith('translated-message', { before: 'chat-scoped' })
+    expect(target.querySelector('[data-testid="default-chat-input-translation-rollback"]')).toBeNull()
     expect(loadPageMocks.sendChat).not.toHaveBeenCalled()
   })
 

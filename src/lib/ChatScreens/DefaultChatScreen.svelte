@@ -16,6 +16,7 @@
     ReplyIcon,
     Send,
     StepForwardIcon,
+    Undo2Icon,
     XIcon,
     BrainIcon,
     ArrowDown,
@@ -85,6 +86,8 @@
     appendCurrentChatEmptyCharMessage,
     appendCurrentChatUserMessageForSend,
     captureActiveChatTarget,
+    currentChatScopedSnapshot,
+    dispatchDeleteMessageScoped,
     isActiveChatTargetFresh,
     setCurrentChatGreetingIndex,
     type ActiveChatTarget,
@@ -131,6 +134,13 @@
     targetVersion: number
     targetIdentity: string | null
   }
+  type InputTranslationRollback = {
+    target: ActiveChatTarget
+    transcriptIdentity: string
+    messageId: string
+    originalText: string
+    fileInput: string[]
+  }
 
   interface Props {
     openModuleList?: boolean
@@ -155,6 +165,7 @@
   let messageInputTranslateMutationVersion = 0
   let activeTranscriptWindowIdentity: string | null = $state(null)
   let activeBgmObserverIdentity: string | null = $state(null)
+  let lastInputTranslationRollback: InputTranslationRollback | null = $state(null)
   let { openModuleList = $bindable(false), openChatList = $bindable(false), customStyle = '' }: Props = $props()
   let currentCharacter = $derived(DBState.db.characters[$selectedCharID])
   let activeChatOpen = $derived.by(() => {
@@ -310,6 +321,16 @@
     return true
   }
 
+  function clearStaleInputTranslationRollback() {
+    if (!lastInputTranslationRollback) return
+    if (
+      !isActiveChatTargetFresh(lastInputTranslationRollback.target) ||
+      getActiveTranscriptWindowIdentity() !== lastInputTranslationRollback.transcriptIdentity
+    ) {
+      lastInputTranslationRollback = null
+    }
+  }
+
   function readFileAsArrayBuffer(file: File): Promise<ArrayBuffer> {
     return new Promise((resolve, reject) => {
       const reader = new FileReader()
@@ -419,6 +440,9 @@
 
     if (previousIdentity !== null) {
       resetTranscriptWindowForChatSwitch()
+    }
+    if (previousIdentity !== nextIdentity) {
+      lastInputTranslationRollback = null
     }
   })
 
@@ -590,6 +614,13 @@
         await sleep(10)
         return
       }
+      lastInputTranslationRollback = {
+        target: input.activeTarget,
+        transcriptIdentity: input.composerOperation.targetIdentity,
+        messageId: appended.messageId,
+        originalText: input.sourceText,
+        fileInput: [...input.composerOperation.fileInput],
+      }
       clearComposerForCurrentOperation(input.composerOperation)
       await sleep(10)
       updateInputSizeAll()
@@ -603,6 +634,21 @@
       doingChatInputTranslate = false
       clearActiveGenerationAbortController(abortController)
     }
+  }
+
+  function rollbackLastInputTranslation() {
+    clearStaleInputTranslationRollback()
+    const rollback = lastInputTranslationRollback
+    if (!rollback) return
+
+    const previous = currentChatScopedSnapshot()
+    dispatchDeleteMessageScoped(rollback.messageId, previous)
+    messageInput = rollback.originalText
+    messageInputTranslate = ''
+    fileInput = [...rollback.fileInput]
+    markComposerDraftChanged()
+    lastInputTranslationRollback = null
+    updateInputSizeAll()
   }
 
   async function sendMain(continueResponse: boolean) {
@@ -1240,6 +1286,19 @@
           </div>
         {/if}
       </div>
+      {#if lastInputTranslationRollback && DBState.db.characters[$selectedCharID]?.chaId !== '§playground'}
+        <div class="flex justify-end mr-2">
+          <button
+            data-testid="default-chat-input-translation-rollback"
+            class="flex items-center gap-2 rounded-md border border-darkborderc px-3 py-2 text-sm text-textcolor transition-colors hover:border-textcolor hover:bg-selected"
+            title={language.rollbackInputTranslation}
+            aria-label={language.rollbackInputTranslation}
+            onclick={rollbackLastInputTranslation}>
+            <Undo2Icon size={16} />
+            <span>{language.rollbackInputTranslation}</span>
+          </button>
+        </div>
+      {/if}
       {#if DBState.db.useAutoTranslateInput && DBState.db.characters[$selectedCharID]?.chaId !== '§playground'}
         <div class="flex items-center mt-2 mb-2">
           <label for="messageInputTranslate" class="text-textcolor ml-4">

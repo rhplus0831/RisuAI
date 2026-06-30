@@ -1011,6 +1011,7 @@ export const languageEnglish = {
   autoTranslateInput: 'Auto Translate Input',
   enterMessageForTranslateToEnglish: 'Enter Message for Translate to English',
   useInputTranslationHook: 'Use Input Translation Hook',
+  rollbackInputTranslation: 'Restore Original Input',
   recent: 'Recent',
   downloads: 'Downloads',
   trending: 'Trending',
