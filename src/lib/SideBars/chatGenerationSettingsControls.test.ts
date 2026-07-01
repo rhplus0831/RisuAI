@@ -1387,7 +1387,8 @@ describe('sidebar chat generation settings controls', () => {
     })
   })
 
-  it('disables saving and applying a selected toggle preset when the active chat has different toggle types', async () => {
+  it('disables saving but allows applying a selected toggle preset when the active chat has different toggle types', async () => {
+    const calls = stubCommandFetch()
     DBState.db.promptPresets[0].customPromptTemplateToggle =
       'mood=Mood=select=Calm,Spicy\nflag=Flag\nnote=Note=text\ncodex=Codex\nmoduleFlag=Module Flag'
     DBState.db.chatGenerationTogglePresets = [
@@ -1418,13 +1419,44 @@ describe('sidebar chat generation settings controls', () => {
     await chooseTogglePreset('saved-alpha')
 
     expect(togglePresetButton(0).disabled).toBe(true)
-    expect(togglePresetButton(1).disabled).toBe(true)
+    expect(togglePresetButton(1).disabled).toBe(false)
     expect(togglePresetWarning()?.textContent).toContain(
       'The selected saved toggles do not match the toggles available in this chat.',
     )
     expect(toggleControl('codex').dataset.risuTogglePresetDifferent).toBe('true')
     expect(toggleControl('mood').dataset.risuTogglePresetDifferent).toBe('false')
     expect(jailbreakControl().dataset.risuTogglePresetDifferent).toBe('false')
+
+    alertSpies.alertConfirm.mockResolvedValueOnce(true)
+    togglePresetButton(1).click()
+    await tick()
+    await waitForFetchCount(calls, 2)
+
+    expect(alertSpies.alertConfirm).toHaveBeenCalledWith('Apply these saved toggles to the current chat?')
+    expect(activeChat().generationSettings?.sidebarToggles).toMatchObject({
+      mood: '1',
+      flag: '1',
+      note: 'alpha-note',
+      codex: '0',
+      moduleFlag: '1',
+    })
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/chats/chat-a/generation-settings',
+      method: 'PUT',
+      authHeader: 'sidebar-generation-settings-token',
+      body: {
+        baseRevision: 300,
+        generationSettings: expect.objectContaining({
+          sidebarToggles: {
+            mood: '1',
+            flag: '1',
+            note: 'alpha-note',
+            codex: '0',
+            moduleFlag: '1',
+          },
+        }),
+      },
+    })
   })
 
   it('asks whether to overwrite, create, or cancel when saving with a selected toggle preset', async () => {

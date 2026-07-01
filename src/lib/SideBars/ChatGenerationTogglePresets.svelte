@@ -44,7 +44,6 @@
     () =>
       !activeGenerationSettings.identity.chatId ||
       !selectedPreset ||
-      selectedPresetComparison?.hasToggleTypeMismatch === true ||
       selectedPresetComparison?.hasAnyDifference !== true,
   )
   let showToggleTypeWarning = $derived.by(
