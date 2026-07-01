@@ -14,6 +14,20 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const PUBLIC_ROOT = resolve(HERE, '../../../../../public')
 
 const cache = new Map<string, ArrayBuffer>()
+const LOCAL_TOKENIZER_HOSTS = new Set(['localhost', '127.0.0.1', '0.0.0.0'])
+
+function tokenizerPath(url: string): string | null {
+  if (url.startsWith('/token/')) return url
+  try {
+    const parsed = new URL(url)
+    if (LOCAL_TOKENIZER_HOSTS.has(parsed.hostname) && parsed.pathname.startsWith('/token/')) {
+      return parsed.pathname
+    }
+  } catch {
+    // Not an absolute URL.
+  }
+  return null
+}
 
 function loadTokenizerFile(urlPath: string): ArrayBuffer {
   const cached = cache.get(urlPath)
@@ -26,11 +40,15 @@ function loadTokenizerFile(urlPath: string): ArrayBuffer {
 }
 
 export function isTokenizerUrl(url: string): boolean {
-  return url.startsWith('/token/')
+  return tokenizerPath(url) !== null
 }
 
 export function serveTokenizerFetch(url: string): Response {
-  return new Response(loadTokenizerFile(url), {
+  const urlPath = tokenizerPath(url)
+  if (!urlPath) {
+    throw new Error(`Not a tokenizer URL: ${url}`)
+  }
+  return new Response(loadTokenizerFile(urlPath), {
     status: 200,
     headers: { 'content-type': 'application/octet-stream' },
   })

@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // vi.mock calls are hoisted; they take effect before any of the imports below.
 
@@ -156,6 +156,19 @@ import { assertOrRecord, captureSnapshot, recordStages } from '../__fixtures__/s
 import { isTokenizerUrl, serveTokenizerFetch } from '../__fixtures__/mocks/tokenizerFetch'
 import { abortChat, chatProcessStage, doingChat, sendChat } from '../index.svelte'
 
+const BOOTSTRAP_ENDPOINT = '/api/v1/bootstrap'
+const LOCAL_TEST_HOSTS = new Set(['localhost', '127.0.0.1', '0.0.0.0'])
+
+function isLocalTestEndpoint(url: string, path: string): boolean {
+  if (url === path) return true
+  try {
+    const parsed = new URL(url)
+    return LOCAL_TEST_HOSTS.has(parsed.hostname) && parsed.pathname === path
+  } catch {
+    return false
+  }
+}
+
 const FIXTURES = [
   'simple-send',
   'preview',
@@ -200,19 +213,28 @@ const FIXTURES = [
 
 describe('sendChat fixtures', () => {
   let originalFetch: typeof globalThis.fetch
+  const unexpectedFetches: string[] = []
 
   beforeAll(() => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date('2026-01-01T00:00:00Z'))
     originalFetch = globalThis.fetch
     // Intercept the lazy tokenizer JSON/spiece fetches (Claude, NovelAI,
-    // Llama, Cohere, Mistral, ...). Other URLs pass through to the real
-    // fetch — currently nothing else fetches in this sweep, but we keep
-    // the pass-through to avoid masking accidental escapes.
+    // Llama, Cohere, Mistral, ...) and the command-revision bootstrap probe.
+    // This local prompt-assembly sweep does not run a Fastify server, so
+    // unexpected fetches should fail the owning fixture instead of reaching
+    // happy-dom's default http://localhost:3000 origin.
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
       if (isTokenizerUrl(url)) return serveTokenizerFetch(url)
-      return originalFetch(input as Parameters<typeof originalFetch>[0], init)
+      if (isLocalTestEndpoint(url, BOOTSTRAP_ENDPOINT)) {
+        return new Response(JSON.stringify({ error: 'fixture bootstrap unavailable' }), {
+          status: 503,
+          headers: { 'content-type': 'application/json' },
+        })
+      }
+      unexpectedFetches.push(url)
+      throw new Error(`Unmocked fetch in sendChat fixture test: ${url}`)
     }) as typeof globalThis.fetch
   })
 
@@ -234,7 +256,12 @@ describe('sendChat fixtures', () => {
 
   let cleanups: (() => void)[] = []
   afterEach(() => {
-    while (cleanups.length > 0) cleanups.pop()!()
+    try {
+      expect(unexpectedFetches).toEqual([])
+    } finally {
+      unexpectedFetches.length = 0
+      while (cleanups.length > 0) cleanups.pop()!()
+    }
   })
 
   it.each(FIXTURES)('%s', async (name) => {
