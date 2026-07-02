@@ -95,6 +95,12 @@ import { isRisuChatParserFixedPoint } from './parserFixedPoint.js'
 import { bumpAssemblyCbsHistoryGeneration, createAssemblyCbsCallbackMemo } from './cbsCallbackMemo.js'
 import { buildEffectiveGenerationConfig } from './effectiveGenerationConfig.js'
 import { summarizePromptRows, type PromptRowsSummary } from './promptSummary.js'
+import {
+  runPromptContextAgent,
+  shouldRunPromptContextAgent,
+  type PromptContextAgentInput,
+  type PromptContextAgentResult,
+} from './contextAgent.js'
 
 /**
  * Root prompt assembly entry point.
@@ -118,6 +124,7 @@ export interface AssembleDeps {
   loadMemoryDatabase?(): DatabaseSync | null
   loadPromptMemoryQueryVectors?(): MemorySelectionInput['queryVectors']
   enqueuePromptMemoryFollowUpJob?: (job: EnqueueMemoryJobInput) => MemoryJob
+  runContextAgent?: (input: PromptContextAgentInput) => Promise<PromptContextAgentResult>
   recordAssemblyStageTiming?: (stage: PromptAssemblyStage, durationMs: number) => void
   /**
    * Resolve a stored-asset reference (sha256 id or `assets/<id>.<ext>` path) to
@@ -135,6 +142,7 @@ export interface AssembleDeps {
 export type PromptAssemblyStage =
   | 'scope_resolution'
   | 'submit_transforms'
+  | 'context_agent'
   | 'static_plain_slots'
   | 'lorebook_preflight'
   | 'history_bias'
@@ -446,6 +454,8 @@ export interface AssemblyState {
   promptMemoryFollowUpDiagnostics?: PromptMemoryFollowUpDiagnostics
   recordAssemblyStageTiming?: (stage: PromptAssemblyStage, durationMs: number) => void
   promptMemoryRows?: OpenAIChat[]
+  /** Context-agent result injected into `ctx.slot.agent` before prompt expansion. */
+  contextAgent?: PromptContextAgentResult
   // --- Final render + budget (set by `renderAndBudget`) ---
   /** The budgeted flat prompt for dispatch. */
   formated?: OpenAIChat[]
@@ -1093,6 +1103,31 @@ export function fillStaticSlots(state: AssemblyState): void {
   unformated.description.push(...buildDescription(ctx, currentChar))
   unformated.personaPrompt.push(...buildPersona(ctx))
   unformated.postEverything.push(...buildInlayViewInstruction(currentChar))
+}
+
+function contextAgentInput(state: AssemblyState): PromptContextAgentInput {
+  return {
+    database: state.database,
+    currentChar: state.currentChar,
+    currentChat: state.currentChat,
+    selectedCharID: state.selectedCharID,
+    chatPage: state.chatPage,
+    ctx: state.ctx,
+    signal: state.signal,
+  }
+}
+
+export async function runContextAgentStage(state: AssemblyState, deps: AssembleDeps): Promise<void> {
+  const input = contextAgentInput(state)
+  if (!shouldRunPromptContextAgent(input)) {
+    state.ctx.slot = { ...(state.ctx.slot ?? {}), agent: '' }
+    return
+  }
+
+  const runner = deps.runContextAgent ?? runPromptContextAgent
+  const result = await runner(input)
+  state.contextAgent = result
+  state.ctx.slot = { ...(state.ctx.slot ?? {}), agent: result.text }
 }
 
 /**
@@ -1769,6 +1804,7 @@ export async function assemblePrompt(input: AssembleInput, deps: AssembleDeps): 
     captureSubmitTranscript(state)
     applyCurrentChatRunVars(state)
   })
+  await measureAssemblyStageAsync(state, 'context_agent', () => runContextAgentStage(state, deps))
   measureAssemblyStage(state, 'static_plain_slots', () => fillStaticSlots(state))
   await measureAssemblyStageAsync(state, 'lorebook_preflight', () => fillLorebookSlotsAsync(state))
   await measureAssemblyStageAsync(state, 'history_bias', () => fillHistoryAndBias(state))

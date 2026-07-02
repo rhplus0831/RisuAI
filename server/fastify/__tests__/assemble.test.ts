@@ -324,6 +324,81 @@ describe('prompt summary hashes', () => {
     expect(result.stopSending).toBe(false)
     expect(result.promptSummary).toEqual(summarizePromptRows(result.formated ?? []))
   })
+
+  it('runs the context agent before prompt expansion and injects {{agent}}', async () => {
+    const db = makeDatabase({
+      maxContext: 100_000,
+      maxResponse: 50,
+      mainPrompt: 'Agent context:\n{{agent}}',
+      agentContextEnabled: true,
+      agentContextPrompt: 'Find relevant background for {{char}}.',
+    })
+    const runContextAgent = vi.fn(async () => ({
+      text: 'source-backed agent context',
+      skipped: false,
+      toolCalls: 1,
+    }))
+
+    const result = await assemblePrompt(
+      baseInput({ userMessage: 'latest user turn' }),
+      depsFor(db, { runContextAgent }),
+    )
+
+    expect(runContextAgent).toHaveBeenCalledTimes(1)
+    expect(result.stopSending).toBe(false)
+    if (result.stopSending) return
+    expect(result.formated?.map((row) => row.content).join('\n')).toContain('source-backed agent context')
+  })
+
+  it('keeps {{slot::agent}} as a context agent alias', async () => {
+    const db = makeDatabase({
+      maxContext: 100_000,
+      maxResponse: 50,
+      mainPrompt: 'Agent context:\n{{slot::agent}}',
+      agentContextEnabled: true,
+      agentContextPrompt: 'Find relevant background.',
+    })
+    const runContextAgent = vi.fn(async () => ({
+      text: 'slot alias agent context',
+      skipped: false,
+      toolCalls: 1,
+    }))
+
+    const result = await assemblePrompt(
+      baseInput({ userMessage: 'latest user turn' }),
+      depsFor(db, { runContextAgent }),
+    )
+
+    expect(runContextAgent).toHaveBeenCalledTimes(1)
+    expect(result.stopSending).toBe(false)
+    if (result.stopSending) return
+    expect(result.formated?.map((row) => row.content).join('\n')).toContain('slot alias agent context')
+  })
+
+  it('does not run the context agent when agent placeholders are absent', async () => {
+    const db = makeDatabase({
+      maxContext: 100_000,
+      maxResponse: 50,
+      mainPrompt: 'No context slot here.',
+      agentContextEnabled: true,
+      agentContextPrompt: 'Find relevant background.',
+    })
+    const runContextAgent = vi.fn(async () => ({
+      text: 'should not appear',
+      skipped: false,
+      toolCalls: 1,
+    }))
+
+    const result = await assemblePrompt(
+      baseInput({ userMessage: 'latest user turn' }),
+      depsFor(db, { runContextAgent }),
+    )
+
+    expect(runContextAgent).not.toHaveBeenCalled()
+    expect(result.stopSending).toBe(false)
+    if (result.stopSending) return
+    expect(result.formated?.map((row) => row.content).join('\n')).not.toContain('should not appear')
+  })
 })
 
 describe('Phase 7 L1 async asset reads', () => {

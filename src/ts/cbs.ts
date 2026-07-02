@@ -2896,8 +2896,25 @@ Usage:: {{#each A as V}} ... {{slot::V}} ... {{/each}}`,
   })
 
   registerFunction({
+    name: 'agent',
+    callback: (str, matcherArg, args, vars) => {
+      if (vars && Object.prototype.hasOwnProperty.call(vars, 'agent')) return vars.agent
+      if (matcherArg.var && Object.prototype.hasOwnProperty.call(matcherArg.var, 'agent')) return matcherArg.var.agent
+      return null
+    },
+    alias: [],
+    description: 'Injects the pre-prompt context agent result.\n\nUsage:: {{agent}}',
+  })
+
+  registerFunction({
     name: 'slot',
-    callback: 'doc_only',
+    callback: (str, matcherArg, args, vars) => {
+      const key = args[0] ?? ''
+      if (!key) return null
+      if (vars && Object.prototype.hasOwnProperty.call(vars, key)) return vars[key]
+      if (matcherArg.var && Object.prototype.hasOwnProperty.call(matcherArg.var, key)) return matcherArg.var[key]
+      return null
+    },
     alias: [],
     description:
       'Used in various CBS functions to access specific slots or properties.\n\nUsage:: {{slot::propertyName}} or {{slot}}, depending on context.',

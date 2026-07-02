@@ -1828,6 +1828,10 @@ export interface Database {
   jailbreakToggle: boolean
   loreBookDepth: number
   loreBookToken: number
+  agentContextEnabled?: boolean
+  agentContextPrompt?: string
+  agentContextMaxOutput?: number
+  agentContextMaxToolRounds?: number
   cipherChat: boolean
   loreBook: {
     name: string
@@ -2611,6 +2615,10 @@ export interface botPreset {
   customAPIFormat?: LLMFormat
   systemContentReplacement?: string
   systemRoleReplacement?: 'user' | 'assistant'
+  agentContextEnabled?: boolean
+  agentContextPrompt?: string
+  agentContextMaxOutput?: number
+  agentContextMaxToolRounds?: number
   enableCustomFlags?: boolean
   customFlags?: LLMFlags[]
   image?: string

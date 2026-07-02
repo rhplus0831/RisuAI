@@ -535,7 +535,7 @@ function parseLegacyProfileBedrockCredentials(apiKey: string | undefined): Bedro
   return { accessKeyId, secretAccessKey, region }
 }
 
-function resolveProviderModel(
+export function resolveProviderModel(
   db: Database,
   info: ModelInfoLite,
   provider: string,
@@ -651,7 +651,7 @@ function resolveProfileVertexAuth(profile: ResolvedModelProfile): VertexAuthInpu
   return { projectId, region, clientEmail, privateKey }
 }
 
-function resolveOpenAIVariant(
+export function resolveOpenAIVariant(
   db: Database,
   info: ModelInfoLite,
   provider: string,
