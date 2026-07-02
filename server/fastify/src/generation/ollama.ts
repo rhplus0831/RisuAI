@@ -12,13 +12,34 @@ export interface OllamaRequest {
   temperature?: number
   topP?: number
   topK?: number
+  tools?: OllamaTool[]
   extraHeaders?: Record<string, string>
   signal: AbortSignal
 }
 
 export interface OllamaMessage {
-  role: 'user' | 'assistant' | 'system'
+  role: 'user' | 'assistant' | 'system' | 'tool'
   content: string
+  thinking?: string
+  tool_calls?: OllamaToolCall[]
+  tool_name?: string
+}
+
+export interface OllamaTool {
+  type: 'function'
+  function: {
+    name: string
+    description?: string
+    parameters?: unknown
+  }
+}
+
+export interface OllamaToolCall {
+  type?: 'function'
+  function: {
+    name: string
+    arguments: Record<string, unknown>
+  }
 }
 
 interface OllamaResolveInput {
@@ -30,6 +51,7 @@ interface OllamaResolveInput {
   temperature?: unknown
   topP?: unknown
   topK?: unknown
+  tools?: unknown
   extraHeaders?: Record<string, string>
   signal: AbortSignal
 }
@@ -37,22 +59,94 @@ interface OllamaResolveInput {
 interface RawChatMessage {
   role?: unknown
   content?: unknown
+  thinking?: unknown
+  tool_calls?: unknown
+  tool_name?: unknown
+  name?: unknown
 }
 
 /**
- * Filter to the role + content shape Ollama accepts. The local browser
- * `requestOllama` path only forwards user / assistant / system rows; tool /
- * function rows are dropped. Content is coerced to string; this dispatcher omits
- * multimodal `parts` arrays.
+ * Filter to the role + content shape Ollama accepts. Content is coerced to
+ * string; this dispatcher omits multimodal `parts` arrays.
  */
 export function reformatForOllama(messages: RawChatMessage[]): OllamaMessage[] {
   const out: OllamaMessage[] = []
   for (const m of messages) {
-    if (m.role !== 'user' && m.role !== 'assistant' && m.role !== 'system') continue
+    if (m.role !== 'user' && m.role !== 'assistant' && m.role !== 'system' && m.role !== 'tool') continue
     const content = typeof m.content === 'string' ? m.content : ''
-    out.push({ role: m.role, content })
+    const row: OllamaMessage = { role: m.role, content }
+    if (typeof m.thinking === 'string' && m.thinking.length > 0) row.thinking = m.thinking
+    if (m.role === 'assistant') {
+      const toolCalls = normalizeToolCalls(m.tool_calls)
+      if (toolCalls.length > 0) row.tool_calls = toolCalls
+    }
+    if (m.role === 'tool') {
+      const toolName =
+        typeof m.tool_name === 'string' && m.tool_name.length > 0
+          ? m.tool_name
+          : typeof m.name === 'string' && m.name.length > 0
+            ? m.name
+            : undefined
+      if (toolName) row.tool_name = toolName
+    }
+    out.push(row)
   }
   return out
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function parseArguments(value: unknown): Record<string, unknown> {
+  if (isRecord(value)) return value
+  if (typeof value !== 'string' || value.trim().length === 0) return {}
+  try {
+    const parsed = JSON.parse(value) as unknown
+    return isRecord(parsed) ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function normalizeToolCalls(value: unknown): OllamaToolCall[] {
+  if (!Array.isArray(value)) return []
+  const calls: OllamaToolCall[] = []
+  for (const item of value) {
+    if (!isRecord(item) || !isRecord(item.function)) continue
+    const name = typeof item.function.name === 'string' ? item.function.name : ''
+    if (!name) continue
+    calls.push({
+      ...(item.type === 'function' ? { type: 'function' as const } : {}),
+      function: {
+        name,
+        arguments: parseArguments(item.function.arguments),
+      },
+    })
+  }
+  return calls
+}
+
+function normalizeTools(value: unknown): OllamaTool[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const tools: OllamaTool[] = []
+  for (const item of value) {
+    if (!isRecord(item) || item.type !== 'function' || !isRecord(item.function)) continue
+    const name = typeof item.function.name === 'string' ? item.function.name : ''
+    if (!name) continue
+    const tool: OllamaTool = {
+      type: 'function',
+      function: {
+        name,
+      },
+    }
+    if (typeof item.function.description === 'string') tool.function.description = item.function.description
+    if (Object.prototype.hasOwnProperty.call(item.function, 'parameters')) {
+      tool.function.parameters = item.function.parameters
+    }
+    tools.push(tool)
+  }
+  return tools.length > 0 ? tools : undefined
 }
 
 export function resolveOllamaRequest(input: OllamaResolveInput): OllamaRequest | null {
@@ -72,6 +166,7 @@ export function resolveOllamaRequest(input: OllamaResolveInput): OllamaRequest |
     typeof input.temperature === 'number' && Number.isFinite(input.temperature) ? input.temperature : undefined
   const topP = typeof input.topP === 'number' && Number.isFinite(input.topP) ? input.topP : undefined
   const topK = typeof input.topK === 'number' && Number.isFinite(input.topK) ? input.topK : undefined
+  const tools = normalizeTools(input.tools)
 
   return {
     model: input.model,
@@ -82,6 +177,7 @@ export function resolveOllamaRequest(input: OllamaResolveInput): OllamaRequest |
     temperature,
     topP,
     topK,
+    tools,
     extraHeaders: input.extraHeaders,
     signal: input.signal,
   }
@@ -113,12 +209,13 @@ function buildPayload(req: OllamaRequest, stream: boolean): Record<string, unkno
     stream,
   }
   if (Object.keys(options).length > 0) body.options = options
+  if (req.tools !== undefined && req.tools.length > 0) body.tools = req.tools
   return body
 }
 
 interface OllamaChunk {
   model?: unknown
-  message?: { role?: unknown; content?: unknown; thinking?: unknown }
+  message?: { role?: unknown; content?: unknown; thinking?: unknown; tool_calls?: unknown }
   done?: unknown
   done_reason?: unknown
   error?: unknown

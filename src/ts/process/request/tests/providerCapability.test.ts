@@ -238,6 +238,15 @@ describe('resolveProviderCapability — routable providers', () => {
         input({
           format: LLMFormat.Ollama,
           aiModel: 'ollama-cloud',
+          config: { ollamaApiKey: 'k', ollamaRequestFormat: LLMFormat.Ollama },
+        }),
+      ),
+    ).toEqual({ routable: true, provider: 'ollama' })
+    expect(
+      resolveProviderCapability(
+        input({
+          format: LLMFormat.Ollama,
+          aiModel: 'ollama-cloud',
           config: { ollamaApiKey: 'k', ollamaRequestFormat: LLMFormat.OpenAICompatible },
         }),
       ),

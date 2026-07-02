@@ -1022,6 +1022,7 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
       model,
       messages,
       baseUrl: resolveProfileOllamaBaseUrl(profile),
+      apiKey: asString(profile.providerOptions.apiKey),
       maxTokens,
       temperature,
       signal,

@@ -13,9 +13,9 @@ import { risuChatParser, risuEscape, risuUnescape } from '../../parser/parser.sv
 import { pluginProcess, pluginV2 } from '../../plugins/plugins.svelte'
 import { getCurrentCharacter, getCurrentChat, getDatabase, type character } from '../../storage/database.svelte'
 import { tokenizeNum } from '../../tokenizer'
-import { sleep } from '../../util'
+import { simplifySchema, sleep } from '../../util'
 import type { OpenAIChat } from '../index.svelte'
-import { getTools } from '../mcp/mcp'
+import { callTool, decodeToolCall, encodeToolCall, getTools } from '../mcp/mcp'
 import type { MCPTool } from '../mcp/mcplib'
 import { NovelAIBadWordIds, stringlizeNAIChat } from '../models/nai'
 import { OobaParams } from '../prompt'
@@ -112,6 +112,32 @@ export interface StreamResponseChunk {
 
 type OllamaThinkMode = boolean | 'low' | 'medium' | 'high'
 
+const OLLAMA_TOOL_LOOP_LIMIT = 8
+
+type OllamaToolDefinition = {
+  type: 'function'
+  function: {
+    name: string
+    description?: string
+    parameters?: unknown
+  }
+}
+
+type OllamaToolCall = {
+  function: {
+    name: string
+    arguments: Record<string, unknown>
+  }
+}
+
+type OllamaMessage = {
+  role: 'system' | 'user' | 'assistant' | 'tool'
+  content: string
+  thinking?: string
+  tool_calls?: OllamaToolCall[]
+  tool_name?: string
+}
+
 interface RequestFallbackAttempt {
   staticModel: string
   fallbackProfileId?: string
@@ -135,6 +161,217 @@ function getOllamaThinkMode(mode: string): OllamaThinkMode | undefined {
 
 function formatThinkingOutput(thinking: string, content: string): string {
   return thinking ? `<Thoughts>\n${thinking}\n</Thoughts>\n\n${content}` : content
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function isOllamaRequestTarget(arg: RequestDataArgumentExtended): boolean {
+  const modelId = arg.aiModel ?? ''
+  return (
+    modelId === 'ollama-cloud' ||
+    modelId.includes('ollama') ||
+    arg.resolvedProfile?.status.providerId === 'ollama' ||
+    arg.resolvedProfile?.providerOptions.ollama !== undefined
+  )
+}
+
+function createOllamaToolDefinitions(tools: MCPTool[] | undefined): OllamaToolDefinition[] {
+  return (tools ?? []).map((tool) => ({
+    type: 'function',
+    function: {
+      name: tool.name,
+      description: tool.description,
+      parameters: simplifySchema(tool.inputSchema),
+    },
+  }))
+}
+
+function parseOllamaToolArguments(value: unknown): Record<string, unknown> {
+  if (isRecord(value)) return value
+  if (typeof value !== 'string' || value.trim().length === 0) return {}
+  try {
+    const parsed = JSON.parse(value) as unknown
+    return isRecord(parsed) ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function stringifyOllamaToolArguments(value: Record<string, unknown>): string {
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return '{}'
+  }
+}
+
+function normalizeOllamaToolCalls(value: unknown): OllamaToolCall[] {
+  if (!Array.isArray(value)) return []
+  const calls: OllamaToolCall[] = []
+  for (const item of value) {
+    if (!isRecord(item) || !isRecord(item.function)) continue
+    const name = typeof item.function.name === 'string' ? item.function.name : ''
+    if (!name) continue
+    calls.push({
+      function: {
+        name,
+        arguments: parseOllamaToolArguments(item.function.arguments),
+      },
+    })
+  }
+  return calls
+}
+
+function appendVisibleOllamaPart(prefix: string, ...parts: string[]): string {
+  const visible = parts.map((part) => part.trim()).filter((part) => part.length > 0)
+  if (visible.length === 0) return prefix
+  return prefix ? [prefix, ...visible].join('\n\n') : visible.join('\n\n')
+}
+
+async function rememberedOllamaToolMessages(text: string): Promise<OllamaMessage[] | null> {
+  const segments = text.split(/(<tool_call>.*?<\/tool_call>)/gms)
+  if (segments.length === 1) return null
+
+  const messages: OllamaMessage[] = []
+  let currentContent = ''
+  for (const segment of segments) {
+    const match = segment.match(/<tool_call>(.*?)<\/tool_call>/s)
+    if (!match) {
+      currentContent += segment
+      continue
+    }
+
+    const call = await decodeToolCall(match[1])
+    if (!call) continue
+    const args = parseOllamaToolArguments(call.call.arg)
+    messages.push({
+      role: 'assistant',
+      content: currentContent,
+      tool_calls: [
+        {
+          function: {
+            name: call.call.name,
+            arguments: args,
+          },
+        },
+      ],
+    })
+    const textContents = call.response.flatMap((item) => (item.type === 'text' ? [item.text] : []))
+    messages.push({
+      role: 'tool',
+      tool_name: call.call.name,
+      content: textContents.join('\n'),
+    })
+    currentContent = ''
+  }
+
+  if (currentContent.trim().length > 0) {
+    messages.push({ role: 'assistant', content: currentContent })
+  }
+  return messages.length > 0 ? messages : null
+}
+
+async function buildOllamaMessages(formated: Array<OpenAIChat | Record<string, unknown>>): Promise<OllamaMessage[]> {
+  const messages: OllamaMessage[] = []
+  const toolNamesById = new Map<string, string>()
+  for (const raw of formated) {
+    const row = raw as Record<string, unknown>
+    const role = row.role
+    const content = typeof row.content === 'string' ? row.content : ''
+    if (role === 'assistant') {
+      const remembered = await rememberedOllamaToolMessages(content)
+      if (remembered) {
+        messages.push(...remembered)
+        continue
+      }
+
+      const toolCalls = normalizeOllamaToolCalls(row.tool_calls)
+      for (const toolCall of Array.isArray(row.tool_calls) ? row.tool_calls : []) {
+        if (!isRecord(toolCall) || !isRecord(toolCall.function)) continue
+        if (typeof toolCall.id === 'string' && typeof toolCall.function.name === 'string') {
+          toolNamesById.set(toolCall.id, toolCall.function.name)
+        }
+      }
+      const message: OllamaMessage = { role, content }
+      if (typeof row.thinking === 'string' && row.thinking.length > 0) message.thinking = row.thinking
+      if (toolCalls.length > 0) message.tool_calls = toolCalls
+      messages.push(message)
+      continue
+    }
+    if (role === 'user' || role === 'system') {
+      messages.push({ role, content })
+      continue
+    }
+    if (role === 'tool') {
+      const toolCallId = typeof row.tool_call_id === 'string' ? row.tool_call_id : ''
+      const toolName =
+        (typeof row.tool_name === 'string' && row.tool_name.length > 0 ? row.tool_name : undefined) ??
+        (typeof row.name === 'string' && row.name.length > 0 ? row.name : undefined) ??
+        toolNamesById.get(toolCallId)
+      if (!toolName) continue
+      messages.push({ role, tool_name: toolName, content })
+    }
+  }
+  return messages
+}
+
+async function appendOllamaToolResults(
+  messages: OllamaMessage[],
+  calls: OllamaToolCall[],
+  tools: MCPTool[] | undefined,
+  rememberToolUsage: boolean | undefined,
+): Promise<string[]> {
+  const callCodes: string[] = []
+  for (const call of calls) {
+    const name = call.function.name
+    const tool = tools?.find((item) => item.name === name)
+    if (!tool) {
+      messages.push({
+        role: 'tool',
+        tool_name: name,
+        content: 'No tool found with name: ' + name,
+      })
+      continue
+    }
+
+    try {
+      const response = (await callTool(tool.name, call.function.arguments)).filter((item) => item.type === 'text')
+      if (response.length > 0) {
+        messages.push({
+          role: 'tool',
+          tool_name: name,
+          content: response[0].text,
+        })
+        if (rememberToolUsage) {
+          callCodes.push(
+            await encodeToolCall({
+              call: {
+                id: '',
+                name,
+                arg: stringifyOllamaToolArguments(call.function.arguments),
+              },
+              response,
+            }),
+          )
+        }
+      } else {
+        messages.push({
+          role: 'tool',
+          tool_name: name,
+          content: 'Tool call failed with no text response',
+        })
+      }
+    } catch (error) {
+      messages.push({
+        role: 'tool',
+        tool_name: name,
+        content: 'Tool call failed with error: ' + error,
+      })
+    }
+  }
+  return callCodes
 }
 
 function normalizeFetchHeaders(headers?: HeadersInit): { [key: string]: string } {
@@ -601,7 +838,14 @@ export async function requestChatDataMain(
     targ.key = providerOptions.apiKey ?? found?.key
   }
 
-  const serverRoute = resolveServerCompletionRoute(targ)
+  const shouldProbeOllamaTools = isOllamaRequestTarget(targ) && !arg.previewBody
+  let forceLocalOllamaToolDispatch = false
+  if (shouldProbeOllamaTools) {
+    targ.tools = arg.tools ?? (await getTools())
+    forceLocalOllamaToolDispatch = targ.tools.length > 0
+  }
+
+  const serverRoute = forceLocalOllamaToolDispatch ? ({ type: 'local' } as const) : resolveServerCompletionRoute(targ)
   if (serverRoute.type === 'server') {
     return requestServerCompletion(targ, abortSignal)
   }
@@ -618,6 +862,10 @@ export async function requestChatDataMain(
   const format = targ.modelInfo.format
 
   targ.formated = reformater(targ.formated, targ.modelInfo)
+
+  if (forceLocalOllamaToolDispatch) {
+    return requestOllama(targ)
+  }
 
   switch (format) {
     case LLMFormat.OpenAICompatible:
@@ -1333,6 +1581,17 @@ async function requestOllama(arg: RequestDataArgumentExtended): Promise<requestD
     }
   }
 
+  const messages = await buildOllamaMessages(formated)
+  const tools = createOllamaToolDefinitions(arg.tools)
+  const hasTools = tools.length > 0
+  const requestBody = {
+    model: ollamaModel,
+    messages,
+    stream: arg.useStreaming,
+    think: ollamaThinkMode,
+    ...(hasTools ? { tools } : {}),
+  }
+
   if (arg.previewBody) {
     return {
       type: 'success',
@@ -1343,6 +1602,7 @@ async function requestOllama(arg: RequestDataArgumentExtended): Promise<requestD
         stream: arg.useStreaming,
         think: ollamaThinkMode,
         headers: isCloud ? { Authorization: 'Bearer ' + ollamaApiKey } : {},
+        body: requestBody,
       }),
     }
   }
@@ -1353,51 +1613,89 @@ async function requestOllama(arg: RequestDataArgumentExtended): Promise<requestD
     fetch: isCloud ? ollamaCloudFetch : undefined,
   })
 
-  const messages = []
-  for (const v of formated) {
-    if (v.role === 'assistant' || v.role === 'user' || v.role === 'system') {
-      messages.push({
-        role: v.role,
-        content: v.content,
-      })
-    }
-  }
-
   if (!arg.useStreaming) {
-    const response = await ollama.chat({
-      model: ollamaModel,
-      messages: messages,
-      stream: false,
-      think: ollamaThinkMode,
-    })
+    let prefix = ''
+    for (let i = 0; i < OLLAMA_TOOL_LOOP_LIMIT; i++) {
+      const response = await ollama.chat({
+        ...requestBody,
+        messages,
+        stream: false,
+      })
+      const content = response.message?.content ?? ''
+      const thinking = response.message?.thinking ?? ''
+      const toolCalls = hasTools ? normalizeOllamaToolCalls(response.message?.tool_calls) : []
 
-    const result = formatThinkingOutput(response.message.thinking ?? '', response.message.content)
+      if (toolCalls.length === 0) {
+        const result = appendVisibleOllamaPart(prefix, formatThinkingOutput(thinking, content))
+        return {
+          type: 'success',
+          result: unstringlizeChat(result, formated, arg.currentChar?.name ?? ''),
+          model: arg.aiModel,
+        }
+      }
+
+      messages.push({
+        role: 'assistant',
+        thinking,
+        content: db.simplifiedToolUse ? '' : content,
+        tool_calls: toolCalls,
+      })
+      const callCodes = await appendOllamaToolResults(messages, toolCalls, arg.tools, arg.rememberToolUsage)
+      prefix = appendVisibleOllamaPart(
+        prefix,
+        db.simplifiedToolUse ? '' : formatThinkingOutput(thinking, content),
+        ...callCodes,
+      )
+    }
+
     return {
-      type: 'success',
-      result: unstringlizeChat(result, formated, arg.currentChar?.name ?? ''),
-      model: arg.aiModel,
+      type: 'fail',
+      result: 'Ollama tool call limit reached',
+      noRetry: true,
     }
   }
-
-  const response = await ollama.chat({
-    model: ollamaModel,
-    messages: messages,
-    stream: true,
-    think: ollamaThinkMode,
-  })
 
   const readableStream = new ReadableStream<StreamResponseChunk>({
     async start(controller) {
-      let content = ''
-      let thinking = ''
-      for await (const chunk of response) {
-        thinking += chunk.message.thinking ?? ''
-        content += chunk.message.content ?? ''
-        controller.enqueue({
-          '0': formatThinkingOutput(thinking, content),
+      let prefix = ''
+      for (let i = 0; i < OLLAMA_TOOL_LOOP_LIMIT; i++) {
+        const response = await ollama.chat({
+          ...requestBody,
+          messages,
+          stream: true,
         })
+        let content = ''
+        let thinking = ''
+        const toolCalls: OllamaToolCall[] = []
+        for await (const chunk of response) {
+          thinking += chunk.message?.thinking ?? ''
+          content += chunk.message?.content ?? ''
+          if (hasTools) toolCalls.push(...normalizeOllamaToolCalls(chunk.message?.tool_calls))
+          controller.enqueue({
+            '0': appendVisibleOllamaPart(prefix, formatThinkingOutput(thinking, content)),
+          })
+        }
+
+        if (toolCalls.length === 0) {
+          controller.close()
+          return
+        }
+
+        messages.push({
+          role: 'assistant',
+          thinking,
+          content: db.simplifiedToolUse ? '' : content,
+          tool_calls: toolCalls,
+        })
+        const callCodes = await appendOllamaToolResults(messages, toolCalls, arg.tools, arg.rememberToolUsage)
+        prefix = appendVisibleOllamaPart(
+          prefix,
+          db.simplifiedToolUse ? '' : formatThinkingOutput(thinking, content),
+          ...callCodes,
+        )
+        controller.enqueue({ '0': prefix })
       }
-      controller.close()
+      controller.error(new Error('Ollama tool call limit reached'))
     },
   })
 

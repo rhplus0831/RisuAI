@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const globalFetchMock = vi.hoisted(() => vi.fn())
 const fetchMock = vi.hoisted(() => vi.fn())
 const resolveServerCompletionRouteMock = vi.hoisted(() => vi.fn())
+const callToolMock = vi.hoisted(() => vi.fn())
+const encodeToolCallMock = vi.hoisted(() => vi.fn())
 
 vi.mock('src/ts/globalApi.svelte', async (importActual) => {
   const actual = await importActual<typeof import('../../../globalApi.svelte')>()
@@ -17,6 +19,15 @@ vi.mock('../serverCompletion', async (importActual) => {
   return {
     ...actual,
     resolveServerCompletionRoute: resolveServerCompletionRouteMock,
+  }
+})
+
+vi.mock('../../mcp/mcp', async (importActual) => {
+  const actual = await importActual<typeof import('../../mcp/mcp')>()
+  return {
+    ...actual,
+    callTool: callToolMock,
+    encodeToolCall: encodeToolCallMock,
   }
 })
 
@@ -95,6 +106,13 @@ function makeRequest() {
   }
 }
 
+function ollamaOk(body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  })
+}
+
 function switchActiveDbDuringRoute(overrides: Partial<Database>): void {
   resolveServerCompletionRouteMock.mockImplementation(() => {
     setDatabase(db(overrides))
@@ -117,6 +135,11 @@ beforeEach(() => {
   vi.stubGlobal('fetch', fetchMock)
   globalFetchMock.mockReset()
   fetchMock.mockReset()
+  callToolMock.mockReset()
+  encodeToolCallMock.mockReset()
+  encodeToolCallMock.mockImplementation(async ({ call }: { call: { name: string } }) => {
+    return `<tool_call>encoded-${call.name}</tool_call>\n\n`
+  })
   resolveServerCompletionRouteMock.mockReset()
   resolveServerCompletionRouteMock.mockReturnValue({ type: 'local' })
 })
@@ -206,5 +229,110 @@ describe('requestOllama profile provider options through requestChatDataMain', (
     })
     expect(globalFetchMock).not.toHaveBeenCalled()
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('executes native Ollama tool calls and sends tool_name history in the follow-up request', async () => {
+    setDatabase(
+      db({
+        aiModel: 'ollama-hosted',
+        ollamaURL: 'http://localhost:11434',
+        ollamaModel: 'llama3.1',
+        ollamaThinkingMode: 'off',
+      }),
+    )
+    callToolMock.mockResolvedValue([{ type: 'text', text: '22 C' }])
+    fetchMock
+      .mockResolvedValueOnce(
+        ollamaOk({
+          message: {
+            role: 'assistant',
+            content: '',
+            tool_calls: [
+              {
+                function: {
+                  name: 'get_temperature',
+                  arguments: { city: 'Seoul' },
+                },
+              },
+            ],
+          },
+          done: true,
+        }),
+      )
+      .mockResolvedValueOnce(
+        ollamaOk({
+          message: {
+            role: 'assistant',
+            content: 'It is 22 C in Seoul.',
+          },
+          done: true,
+        }),
+      )
+
+    const result = await requestChatDataMain(
+      {
+        ...makeRequest(),
+        previewBody: false,
+        tools: [
+          {
+            name: 'get_temperature',
+            description: 'Get the current temperature for a city',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                city: { type: 'string' },
+              },
+              required: ['city'],
+            },
+          },
+        ],
+      },
+      'model',
+    )
+
+    expect(result).toEqual({
+      type: 'success',
+      result: 'It is 22 C in Seoul.',
+      model: 'ollama-hosted',
+    })
+    expect(callToolMock).toHaveBeenCalledWith('get_temperature', { city: 'Seoul' })
+    expect(resolveServerCompletionRouteMock).not.toHaveBeenCalled()
+
+    const firstBody = JSON.parse(fetchMock.mock.calls[0][1].body as string)
+    expect(firstBody.tools).toEqual([
+      {
+        type: 'function',
+        function: {
+          name: 'get_temperature',
+          description: 'Get the current temperature for a city',
+          parameters: {
+            type: 'object',
+            properties: {
+              city: { type: 'string' },
+            },
+            required: ['city'],
+          },
+        },
+      },
+    ])
+
+    const secondBody = JSON.parse(fetchMock.mock.calls[1][1].body as string)
+    expect(secondBody.messages).toEqual([
+      { role: 'user', content: 'hello ollama' },
+      {
+        role: 'assistant',
+        thinking: '',
+        content: '',
+        tool_calls: [
+          {
+            function: {
+              name: 'get_temperature',
+              arguments: { city: 'Seoul' },
+            },
+          },
+        ],
+      },
+      { role: 'tool', tool_name: 'get_temperature', content: '22 C' },
+    ])
   })
 })

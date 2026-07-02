@@ -7,7 +7,7 @@
   import { AnthropicModels } from 'src/ts/model/providers/anthropic'
   import { GoogleModels } from 'src/ts/model/providers/google'
   import { OpenAIModels } from 'src/ts/model/providers/openai'
-  import { LLMFlags, LLMTokenizer, type LLMFlags as LLMFlagValue } from 'src/ts/model/types'
+  import { LLMFlags, LLMFormat, LLMTokenizer, type LLMFlags as LLMFlagValue } from 'src/ts/model/types'
   import KeyValueRowsEditor from './KeyValueRowsEditor.svelte'
   import SecretField from './SecretField.svelte'
 
@@ -29,6 +29,9 @@
     baseUrl: string
     extraHeadersRows: KeyValueRow[]
     additionalParamRows: KeyValueRow[]
+    ollamaRequestFormat: string
+    ollamaModelSource: string
+    ollamaThinkingMode: string
     vertexProjectId: string
     vertexRegion: string
     vertexClientEmail: string
@@ -45,6 +48,9 @@
     baseUrl = $bindable(),
     extraHeadersRows = $bindable(),
     additionalParamRows = $bindable(),
+    ollamaRequestFormat = $bindable(),
+    ollamaModelSource = $bindable(),
+    ollamaThinkingMode = $bindable(),
     vertexProjectId = $bindable(),
     vertexRegion = $bindable(),
     vertexClientEmail = $bindable(),
@@ -55,6 +61,10 @@
 
   const firstClassProviderIds = new Set<string>(FIRST_CLASS_MODEL_PROFILE_PROVIDER_IDS)
   const fixedModelProviderIds = new Set<string>(['custom-api', 'debug-echo'])
+  const ollamaModelOptions: ModelOption[] = [
+    { id: 'ollama-hosted', label: language.modelProfiles.ollamaLocal },
+    { id: 'ollama-cloud', label: language.modelProfiles.ollamaCloud },
+  ]
   const openAIModelOptions = modelOptions(OpenAIModels)
   const anthropicModelOptions = modelOptions(AnthropicModels)
   const googleModelOptions = modelOptions(GoogleModels)
@@ -80,6 +90,20 @@
   $effect(() => {
     if (fixedModelProviderIds.has(providerId) && modelId !== providerId) {
       modelId = providerId
+    }
+  })
+
+  $effect(() => {
+    if (providerId !== 'ollama') return
+    if (modelId !== 'ollama-cloud' && modelId !== 'ollama-hosted') {
+      modelId = 'ollama-hosted'
+    }
+    const nextSource = modelId === 'ollama-cloud' ? 'cloud' : 'local'
+    if (ollamaModelSource !== nextSource) {
+      ollamaModelSource = nextSource
+    }
+    if (modelId === 'ollama-hosted' && ollamaRequestFormat !== String(LLMFormat.Ollama)) {
+      ollamaRequestFormat = String(LLMFormat.Ollama)
     }
   })
 
@@ -335,6 +359,82 @@
             {/each}
           </div>
         </div>
+      </div>
+    {:else if providerId === 'ollama'}
+      <div class="grid gap-3 md:grid-cols-2">
+        <label class="flex flex-col gap-1">
+          <span class="text-sm text-textcolor2">{language.modelProfiles.knownModel}</span>
+          <select
+            class="rounded-md border border-darkborderc bg-transparent px-2 py-1 text-sm text-textcolor shadow-xs transition-colors duration-200 focus:border-borderc focus:outline-hidden focus:ring-2 focus:ring-borderc"
+            value={knownModelValue(ollamaModelOptions)}
+            onchange={(event) => {
+              if (event.currentTarget.value) modelId = event.currentTarget.value
+            }}>
+            {#each ollamaModelOptions as option (option.id)}
+              <option value={option.id} class="bg-darkbg">{option.label}</option>
+            {/each}
+          </select>
+        </label>
+        <label class="flex flex-col gap-1">
+          <span class="text-sm text-textcolor2">{language.modelProfiles.requestModelColumn}</span>
+          <TextInput
+            size="sm"
+            fullwidth
+            bind:value={requestModel}
+            placeholder={language.modelProfiles.ollamaModelPlaceholder} />
+        </label>
+        {#if modelId === 'ollama-cloud'}
+          <SecretField
+            label={language.modelProfiles.apiKeyLabel}
+            bind:value={apiKeyDraft}
+            placeholder={language.modelProfiles.savedSecretPlaceholder} />
+          <label class="flex flex-col gap-1">
+            <span class="text-sm text-textcolor2">{language.modelProfiles.ollamaRequestFormat}</span>
+            <select
+              class="rounded-md border border-darkborderc bg-transparent px-2 py-1 text-sm text-textcolor shadow-xs transition-colors duration-200 focus:border-borderc focus:outline-hidden focus:ring-2 focus:ring-borderc"
+              bind:value={ollamaRequestFormat}>
+              <option value={String(LLMFormat.Ollama)} class="bg-darkbg">
+                {language.modelProfiles.ollamaNativeFormat}
+              </option>
+              <option value={String(LLMFormat.OpenAICompatible)} class="bg-darkbg">
+                {language.modelProfiles.ollamaOpenAIFormat}
+              </option>
+              <option value={String(LLMFormat.OpenAIResponseAPI)} class="bg-darkbg">
+                {language.modelProfiles.ollamaResponsesFormat}
+              </option>
+              <option value={String(LLMFormat.Anthropic)} class="bg-darkbg">
+                {language.modelProfiles.ollamaAnthropicFormat}
+              </option>
+            </select>
+          </label>
+        {:else}
+          <label class="flex flex-col gap-1">
+            <span class="text-sm text-textcolor2">{language.modelProfiles.baseUrlLabel}</span>
+            <TextInput
+              size="sm"
+              fullwidth
+              bind:value={baseUrl}
+              placeholder={language.modelProfiles.ollamaBaseUrlPlaceholder} />
+          </label>
+          <SecretField
+            label={language.modelProfiles.apiKeyOptionalLabel}
+            bind:value={apiKeyDraft}
+            placeholder={language.modelProfiles.savedSecretPlaceholder} />
+        {/if}
+        {#if modelId !== 'ollama-cloud' || ollamaRequestFormat === String(LLMFormat.Ollama)}
+          <label class="flex flex-col gap-1">
+            <span class="text-sm text-textcolor2">{language.modelProfiles.ollamaThinkingMode}</span>
+            <select
+              class="rounded-md border border-darkborderc bg-transparent px-2 py-1 text-sm text-textcolor shadow-xs transition-colors duration-200 focus:border-borderc focus:outline-hidden focus:ring-2 focus:ring-borderc"
+              bind:value={ollamaThinkingMode}>
+              <option value="off" class="bg-darkbg">{language.modelProfiles.ollamaThinkingOff}</option>
+              <option value="on" class="bg-darkbg">{language.modelProfiles.ollamaThinkingOn}</option>
+              <option value="low" class="bg-darkbg">{language.modelProfiles.ollamaThinkingLow}</option>
+              <option value="medium" class="bg-darkbg">{language.modelProfiles.ollamaThinkingMedium}</option>
+              <option value="high" class="bg-darkbg">{language.modelProfiles.ollamaThinkingHigh}</option>
+            </select>
+          </label>
+        {/if}
       </div>
     {:else if providerId === 'debug-echo'}
       <div class="grid gap-3 md:grid-cols-2">

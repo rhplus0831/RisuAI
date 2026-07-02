@@ -67,6 +67,7 @@ export const FIRST_CLASS_MODEL_PROFILE_PROVIDER_IDS = [
   'anthropic',
   'google',
   'vertex',
+  'ollama',
   'custom-api',
   'debug-echo',
 ] as const
@@ -1179,6 +1180,23 @@ function resolveFirstClassModelInfo(
         tokenizer: LLMTokenizer.GoogleCloud,
       })
     }
+    case 'ollama': {
+      const requestFormat =
+        id === 'ollama-cloud'
+          ? asFormat(providerOptions?.ollama?.requestFormat, LLMFormat.OpenAICompatible)
+          : LLMFormat.Ollama
+      return completeModel({
+        id,
+        name: id === 'ollama-cloud' ? 'Cloud' : id === 'ollama-hosted' ? 'Local' : id,
+        fullName: id === 'ollama-cloud' ? 'Ollama Cloud' : id === 'ollama-hosted' ? 'Ollama Local' : id,
+        internalID: nonBlankString(providerOptions?.requestModel) ?? id,
+        provider: LLMProvider.Ollama,
+        format: requestFormat,
+        flags: id === 'ollama-cloud' ? DEFAULT_OPENAI_FLAGS : ALTERNATING_FLAGS,
+        parameters: OpenAIParameters,
+        tokenizer: LLMTokenizer.Unknown,
+      })
+    }
     case 'custom-api':
       return completeModel({
         id,
@@ -1242,6 +1260,28 @@ function resolveFirstClassProviderOptions(
           privateKey: nonBlankString(durableProviderOptions?.vertex?.privateKey),
         },
       }
+    case 'ollama': {
+      const requestFormat =
+        modelInfo.id === 'ollama-cloud'
+          ? asFormat(durableProviderOptions?.ollama?.requestFormat, LLMFormat.OpenAICompatible)
+          : LLMFormat.Ollama
+      const isCloud = modelInfo.id === 'ollama-cloud'
+      const ollamaUrl = nonBlankString(durableProviderOptions?.ollama?.url) ?? baseUrl
+      return {
+        ...base,
+        apiKey,
+        baseUrl: isCloud ? 'https://ollama.com/v1' : ollamaUrl,
+        ollama: {
+          apiKey,
+          url: isCloud ? 'https://ollama.com' : ollamaUrl,
+          requestFormat,
+          model: requestModel,
+          modelSource: nonBlankString(durableProviderOptions?.ollama?.modelSource) ?? (isCloud ? 'cloud' : 'local'),
+          thinkingMode: nonBlankString(durableProviderOptions?.ollama?.thinkingMode) ?? 'off',
+          cloud: isCloud,
+        },
+      }
+    }
     case 'custom-api':
       return {
         ...base,
@@ -1264,7 +1304,7 @@ function buildFirstClassProviderCapabilityInput(
   providerOptions: ModelProfileProviderOptions,
 ): ProviderCapabilityInput {
   return {
-    format: modelInfo.format,
+    format: providerId === 'ollama' ? LLMFormat.Ollama : modelInfo.format,
     aiModel: modelId,
     endpoint: nonBlankString(modelInfo.endpoint),
     keyIdentifier: nonBlankString(modelInfo.keyIdentifier),
@@ -1278,6 +1318,9 @@ function buildFirstClassProviderCapabilityInput(
       vertexRegion: providerOptions.vertex?.region,
       vertexClientEmail: providerOptions.vertex?.clientEmail,
       vertexPrivateKey: providerOptions.vertex?.privateKey,
+      ollamaApiKey: providerOptions.ollama?.cloud ? providerOptions.apiKey : undefined,
+      ollamaRequestFormat: providerOptions.ollama?.requestFormat,
+      ollamaURL: providerOptions.ollama?.cloud ? undefined : providerOptions.ollama?.url,
       claudeAPIKey: modelInfo.format === LLMFormat.AWSBedrockClaude ? providerOptions.apiKey : undefined,
     },
   }
@@ -1388,6 +1431,14 @@ function firstClassIncompleteReasons(
       if (!nonBlankString(providerOptions.vertex?.region)) reasons.push('vertex-region-missing')
       if (!nonBlankString(providerOptions.vertex?.clientEmail)) reasons.push('vertex-client-email-missing')
       if (!nonBlankString(providerOptions.vertex?.privateKey)) reasons.push('vertex-private-key-missing')
+      break
+    case 'ollama':
+      if (modelId === 'ollama-cloud') {
+        if (!nonBlankString(providerOptions.apiKey)) reasons.push('api-key-missing')
+      } else if (!nonBlankString(providerOptions.ollama?.url) && !nonBlankString(providerOptions.baseUrl)) {
+        reasons.push('base-url-missing')
+      }
+      if (!nonBlankString(providerOptions.requestModel)) reasons.push('request-model-missing')
       break
     case 'custom-api':
       if (!nonBlankString(providerOptions.baseUrl)) reasons.push('base-url-missing')
@@ -1710,6 +1761,7 @@ function resolveProviderOptions(
       baseUrl: 'https://ollama.com/v1',
       ollama: {
         apiKey,
+        url: 'https://ollama.com',
         requestFormat:
           durableProviderOptions?.ollama?.requestFormat ??
           asFormat(database.ollamaRequestFormat, LLMFormat.OpenAICompatible),

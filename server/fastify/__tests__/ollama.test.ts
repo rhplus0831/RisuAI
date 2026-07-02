@@ -42,17 +42,47 @@ describe('reformatForOllama', () => {
     ])
   })
 
-  it('drops function / tool roles entirely', () => {
+  it('drops function roles and preserves Ollama tool-result rows', () => {
     expect(
       reformatForOllama([
         { role: 'user', content: 'u' },
         { role: 'function', content: 'fn out' },
-        { role: 'tool', content: 'tool out' },
+        { role: 'tool', content: 'tool out', tool_name: 'lookup' },
         { role: 'assistant', content: 'a' },
       ]),
     ).toEqual([
       { role: 'user', content: 'u' },
+      { role: 'tool', content: 'tool out', tool_name: 'lookup' },
       { role: 'assistant', content: 'a' },
+    ])
+  })
+
+  it('converts OpenAI-style assistant tool_calls into Ollama argument objects', () => {
+    expect(
+      reformatForOllama([
+        {
+          role: 'assistant',
+          content: '',
+          tool_calls: [
+            {
+              id: 'call-1',
+              type: 'function',
+              function: { name: 'lookup', arguments: '{"query":"weather"}' },
+            },
+          ],
+        },
+      ]),
+    ).toEqual([
+      {
+        role: 'assistant',
+        content: '',
+        tool_calls: [
+          {
+            type: 'function',
+            function: { name: 'lookup', arguments: { query: 'weather' } },
+          },
+        ],
+      },
     ])
   })
 
@@ -85,15 +115,14 @@ describe('resolveOllamaRequest', () => {
     ).toBeNull()
   })
 
-  it('returns null when reformat yields no messages (only tool rows)', () => {
-    expect(
-      resolveOllamaRequest({
-        model: 'llama3',
-        messages: [{ role: 'tool', content: 'x' }],
-        baseUrl: 'http://localhost:11434',
-        signal: new AbortController().signal,
-      }),
-    ).toBeNull()
+  it('accepts tool-result rows as Ollama chat history', () => {
+    const r = resolveOllamaRequest({
+      model: 'llama3',
+      messages: [{ role: 'tool', content: 'x', tool_name: 'lookup' }],
+      baseUrl: 'http://localhost:11434',
+      signal: new AbortController().signal,
+    })
+    expect(r?.messages).toEqual([{ role: 'tool', content: 'x', tool_name: 'lookup' }])
   })
 
   it('carries apiKey + sampler knobs through', () => {
@@ -113,6 +142,35 @@ describe('resolveOllamaRequest', () => {
     expect(r?.temperature).toBe(0.5)
     expect(r?.topP).toBe(0.9)
     expect(r?.topK).toBe(40)
+  })
+
+  it('normalizes native function tools', () => {
+    const r = resolveOllamaRequest({
+      model: 'llama3',
+      messages: [{ role: 'user', content: 'hi' }],
+      baseUrl: 'http://localhost:11434',
+      tools: [
+        {
+          type: 'function',
+          function: {
+            name: 'lookup',
+            description: 'Look something up',
+            parameters: { type: 'object', properties: { query: { type: 'string' } } },
+          },
+        },
+      ],
+      signal: new AbortController().signal,
+    })
+    expect(r?.tools).toEqual([
+      {
+        type: 'function',
+        function: {
+          name: 'lookup',
+          description: 'Look something up',
+          parameters: { type: 'object', properties: { query: { type: 'string' } } },
+        },
+      },
+    ])
   })
 })
 
@@ -152,6 +210,42 @@ describe('runOllama (buffered)', () => {
     expect(sent.options).toEqual({ num_predict: 128, temperature: 0.4 })
     const headers = captured!.init.headers as Record<string, string>
     expect(headers.authorization).toBeUndefined()
+  })
+
+  it('sends native Ollama tools when provided', async () => {
+    const sentBodies: Record<string, unknown>[] = []
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      sentBodies.push(JSON.parse(init.body as string) as Record<string, unknown>)
+      return ok({
+        message: { role: 'assistant', content: 'tool-ready' },
+        done: true,
+      })
+    })
+    const resolved = resolveOllamaRequest({
+      model: 'llama3',
+      messages: [{ role: 'user', content: 'hi' }],
+      baseUrl: 'http://localhost:11434',
+      tools: [
+        {
+          type: 'function',
+          function: {
+            name: 'lookup',
+            parameters: { type: 'object', properties: { query: { type: 'string' } } },
+          },
+        },
+      ],
+      signal: new AbortController().signal,
+    })!
+    await runOllama(resolved)
+    expect(sentBodies[0]?.tools).toEqual([
+      {
+        type: 'function',
+        function: {
+          name: 'lookup',
+          parameters: { type: 'object', properties: { query: { type: 'string' } } },
+        },
+      },
+    ])
   })
 
   it('strips a trailing slash from baseUrl when composing the URL', async () => {

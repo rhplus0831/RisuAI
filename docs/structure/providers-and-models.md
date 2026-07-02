@@ -71,6 +71,7 @@ First-class profile provider panels are intentionally limited to:
 - `anthropic`
 - `google`
 - `vertex`
+- `ollama`
 - `custom-api`
 - `debug-echo`
 
@@ -80,6 +81,8 @@ headers, additional params, and nested shapes for reverse proxy, OpenRouter,
 NanoGPT, Ollama, Vertex, and Custom API metadata. `ModelProviderPanel.svelte`,
 `ModelRuntimeOptionsEditor.svelte`, `ModelFallbackEditor.svelte`, and
 `modelProfileSecrets.ts` own most of the editor/provider-option plumbing.
+Ollama profiles select local or cloud routing, store the native base URL or
+cloud API key, and keep the Ollama request model separate from the source row.
 Custom API profiles represent OpenAI-compatible Chat Completions; the UI stores
 a base URL and warns when the user includes `/chat/completions` because dispatch
 appends that suffix.
@@ -173,7 +176,7 @@ Routing notes that matter when debugging provider drift:
 | OpenRouter               | Routes through OpenAI-compatible dispatch when persisted OpenRouter settings make the model server-routable.                              |
 | NanoGPT                  | Message, legacy, and responses formats route to Anthropic-compatible, legacy instruct, or Responses-style adapters as selected by format. |
 | Ollama local             | Native Ollama routes when an Ollama URL is configured.                                                                                    |
-| Ollama Cloud             | `ollama-cloud` remaps by `ollamaRequestFormat` to OpenAI-compatible, Responses, or Anthropic-compatible dispatch.                         |
+| Ollama Cloud             | `ollama-cloud` remaps by `ollamaRequestFormat` to native Ollama, OpenAI-compatible, Responses, or Anthropic-compatible dispatch.          |
 | Bedrock                  | Uses Bedrock/SigV4 model metadata and wire-model prefix handling.                                                                         |
 | Horde                    | Requires an instruct chat template in the shared capability table; dispatch is buffered, not incremental.                                 |
 | Logit bias               | Server chat dispatch does not currently carry browser-only logit-bias behavior.                                                           |
@@ -211,9 +214,11 @@ runtime subset to provider adapters.
 dispatch currently sends no hosted tool list, so hosted search/model tool
 behavior is not server-dispatched. Browser legacy `requestOpenAI()` and
 `requestOpenAIResponseAPI()` can still run MCP tools or add Responses
-`web_search_preview`, but normal Fastify chat/completion bypasses browser tool
-execution. Memory summaries use memory-role profile resolution and
-profile-owned provider options. Memory embeddings intentionally remain outside
+`web_search_preview`, but normal Fastify chat bypasses browser tool execution.
+Ollama server-intent completion takes a browser-local dispatch path when MCP
+tools are present so native `/api/chat` tool calls can execute client MCP tools.
+Memory summaries use memory-role profile resolution and profile-owned provider
+options. Memory embeddings intentionally remain outside
 chat profiles on the separate Hypa/Voyage/custom embedding contract in
 `memoryEmbeddingModel.ts`; deadlines are bounded through
 `memoryProviderDeadline.ts`.

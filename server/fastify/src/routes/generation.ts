@@ -220,6 +220,7 @@ interface OllamaOptions {
   temperature?: unknown
   topP?: unknown
   topK?: unknown
+  tools?: unknown
   extraHeaders?: Record<string, string>
 }
 
@@ -706,6 +707,7 @@ async function handleOllamaStreaming(
       temperature: options.temperature,
       topP: options.topP,
       topK: options.topK,
+      tools: options.tools,
       extraHeaders: options.extraHeaders,
       signal,
     })
@@ -737,6 +739,7 @@ async function handleOllamaBuffered(
       temperature: options.temperature,
       topP: options.topP,
       topK: options.topK,
+      tools: options.tools,
       extraHeaders: options.extraHeaders,
       signal,
     })

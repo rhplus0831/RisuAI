@@ -23,7 +23,7 @@
     type ModelProfileSecretDraft,
   } from 'src/ts/model/modelProfileSecrets'
   import type { ModelRole } from 'src/ts/model/modelRoles'
-  import type { LLMFlags as LLMFlagValue, LLMTokenizer as LLMTokenizerValue } from 'src/ts/model/types'
+  import { LLMFormat, type LLMFlags as LLMFlagValue, type LLMTokenizer as LLMTokenizerValue } from 'src/ts/model/types'
   import type { ModelProfileSnapshot } from 'src/ts/server/commands'
   import ModelFallbackEditor from './ModelFallbackEditor.svelte'
   import ModelProviderPanel from './ModelProviderPanel.svelte'
@@ -73,6 +73,11 @@
   let baseUrl = $state(initialProfile?.providerOptions?.baseUrl ?? '')
   let extraHeadersRows = $state<KeyValueRow[]>(recordToRows(initialProfile?.providerOptions?.extraHeaders))
   let additionalParamRows = $state<KeyValueRow[]>(paramsToRows(initialProfile?.providerOptions?.additionalParams))
+  let ollamaRequestFormat = $state(
+    String(initialProfile?.providerOptions?.ollama?.requestFormat ?? LLMFormat.OpenAICompatible),
+  )
+  let ollamaModelSource = $state(initialProfile?.providerOptions?.ollama?.modelSource ?? '')
+  let ollamaThinkingMode = $state(initialProfile?.providerOptions?.ollama?.thinkingMode ?? 'off')
   let vertexProjectId = $state(initialProfile?.providerOptions?.vertex?.projectId ?? '')
   let vertexRegion = $state(initialProfile?.providerOptions?.vertex?.region ?? '')
   let vertexClientEmail = $state(initialProfile?.providerOptions?.vertex?.clientEmail ?? '')
@@ -167,6 +172,9 @@
     } else if (fixedModelProviderIds.has(modelId)) {
       modelId = ''
     }
+    if (nextProviderId === 'ollama' && !modelId) {
+      modelId = 'ollama-hosted'
+    }
   }
 
   function secretValue(draft: ModelProfileSecretDraft): string | undefined {
@@ -212,6 +220,33 @@
       const options: ModelProfileRecordProviderOptions = {}
       if (baseUrl.trim()) options.baseUrl = baseUrl.trim()
       if (requestModel.trim()) options.requestModel = requestModel.trim()
+      return removeEmptyProviderOptions(options)
+    }
+
+    if (nextProviderId === 'ollama') {
+      const options: ModelProfileRecordProviderOptions = {}
+      const apiKey = secretValue(apiKeyDraft)
+      const ollama: NonNullable<ModelProfileRecordProviderOptions['ollama']> = {}
+      const requestFormatNumber = Number(ollamaRequestFormat)
+      const isCloud = modelId === 'ollama-cloud'
+      if (apiKey) options.apiKey = apiKey
+      if (requestModel.trim()) options.requestModel = requestModel.trim()
+      if (!isCloud && baseUrl.trim()) {
+        options.baseUrl = baseUrl.trim()
+        ollama.url = baseUrl.trim()
+      }
+      if (isCloud && Number.isFinite(requestFormatNumber)) {
+        ollama.requestFormat = requestFormatNumber as LLMFormat
+      } else {
+        ollama.requestFormat = LLMFormat.Ollama
+      }
+      if (ollamaModelSource.trim()) {
+        ollama.modelSource = ollamaModelSource.trim()
+      } else {
+        ollama.modelSource = isCloud ? 'cloud' : 'local'
+      }
+      if (ollamaThinkingMode.trim()) ollama.thinkingMode = ollamaThinkingMode.trim()
+      if (Object.keys(ollama).length > 0) options.ollama = ollama
       return removeEmptyProviderOptions(options)
     }
 
@@ -376,6 +411,9 @@
           bind:baseUrl
           bind:extraHeadersRows
           bind:additionalParamRows
+          bind:ollamaRequestFormat
+          bind:ollamaModelSource
+          bind:ollamaThinkingMode
           bind:vertexProjectId
           bind:vertexRegion
           bind:vertexClientEmail

@@ -285,6 +285,8 @@ function refineOllama(input: ProviderCapabilityInput): string | null {
         return 'openai-responses'
       case LLMFormat.Anthropic:
         return 'anthropic'
+      case LLMFormat.Ollama:
+        return 'ollama'
       default:
         return null
     }

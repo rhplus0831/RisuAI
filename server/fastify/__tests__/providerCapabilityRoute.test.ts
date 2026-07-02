@@ -62,6 +62,15 @@ describe('resolveChatProviderRoute — routable', () => {
         db({
           aiModel: 'ollama-cloud',
           ollamaApiKey: 'k',
+          ollamaRequestFormat: LLMFormat.Ollama,
+        } as Partial<Database>),
+      ),
+    ).toEqual({ routable: true, provider: 'ollama' })
+    expect(
+      resolveChatProviderRoute(
+        db({
+          aiModel: 'ollama-cloud',
+          ollamaApiKey: 'k',
           ollamaRequestFormat: LLMFormat.OpenAICompatible,
         } as Partial<Database>),
       ),
