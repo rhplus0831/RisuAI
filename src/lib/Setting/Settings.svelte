@@ -3,6 +3,7 @@
     AccessibilityIcon,
     ActivityIcon,
     PackageIcon,
+    BotMessageSquareIcon,
     BotIcon,
     BoxIcon,
     CodeIcon,
@@ -23,6 +24,7 @@
   import OtherBotSettings from './Pages/OtherBotSettings.svelte'
   import PluginSettings from './Pages/PluginSettings.svelte'
   import AdvancedSettings from './Pages/AdvancedSettings.svelte'
+  import ContextAgentSettings from './Pages/ContextAgentSettings.svelte'
   import { additionalSettingsMenu, easyPanelStore, MobileGUI, SettingsMenuIndex } from 'src/ts/stores.svelte'
   import { DBState } from 'src/ts/stores.svelte'
   import Communities from './Pages/Communities.svelte'
@@ -115,6 +117,14 @@
               }}>
               <SparkleIcon size={20} />
               <span>{language.settingsNavPromptPresets}</span>
+            </button>
+            <button
+              class={navButtonClass($SettingsMenuIndex === 19)}
+              onclick={() => {
+                navigate('/settings/context-agent')
+              }}>
+              <BotMessageSquareIcon size={20} />
+              <span>{language.settingsNavContextAgent}</span>
             </button>
             {#if DBState.db.botPresets?.length > 0}
               <button
@@ -337,6 +347,8 @@
               goPromptTemplate={() => {
                 navigate('/settings/prompt')
               }} />
+          {:else if $SettingsMenuIndex === 19}
+            <ContextAgentSettings />
           {:else if $SettingsMenuIndex === 77}
             <ThanksPage />
           {/if}

@@ -25,6 +25,7 @@ import {
   seedSetting,
 } from './botSettingsParamsData'
 import { chatFormatSettingsItems } from './chatFormatSettingsData'
+import { contextAgentSettingsItems } from './contextAgentSettingsData'
 import { displayOtherSettingsItems, displaySettingsItems } from './displaySettingsData.svelte'
 import { languageSettingsItems } from './languageSettingsData.svelte'
 import type { SettingContext, SettingItem } from './types'
@@ -39,6 +40,7 @@ interface CapturedFetch {
 const settingRendererItemSets: SettingItem[][] = [
   accessibilitySettingsItems,
   advancedSettingsItems,
+  contextAgentSettingsItems,
   basicParameterItems,
   [seedSetting],
   samplingParameterItems,

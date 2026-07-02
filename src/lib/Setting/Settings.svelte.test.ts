@@ -175,6 +175,7 @@ describe('Settings supporter tab', () => {
     expect(target.textContent).toContain(language.settingsGroupChatSetup)
     expect(settingsButton(language.settingsNavModelProfiles)).toBeTruthy()
     expect(settingsButton(language.settingsNavPromptPresets)).toBeTruthy()
+    expect(settingsButton(language.settingsNavContextAgent)).toBeTruthy()
     expect(settingsButton(language.settingsNavLegacyBotPresets)).toBeUndefined()
   })
 
@@ -196,6 +197,7 @@ describe('Settings supporter tab', () => {
 
     expect(settingsButton(language.settingsNavModelProfiles)).toBeTruthy()
     expect(settingsButton(language.settingsNavPromptPresets)).toBeTruthy()
+    expect(settingsButton(language.settingsNavContextAgent)).toBeTruthy()
     expect(settingsButton(language.settingsNavLegacyBotPresets)).toBeTruthy()
   })
 

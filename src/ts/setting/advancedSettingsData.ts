@@ -34,49 +34,12 @@ export const advancedSettingsItems: SettingItem[] = [
 
   // Prompts
   {
-    id: 'adv.agentContextEnabled',
-    type: 'check',
-    labelKey: 'agentContextEnabled',
-    bindKey: 'agentContextEnabled',
-    helpKey: 'agentContext',
-    classes: 'mt-4',
-  },
-  {
-    id: 'adv.agentContextPrompt',
-    type: 'textarea',
-    labelKey: 'agentContextPrompt',
-    bindKey: 'agentContextPrompt',
-    helpKey: 'agentContextPrompt',
-    condition: (ctx) => ctx.db.agentContextEnabled === true,
-    options: {
-      placeholder:
-        'Use the available tools to find only information relevant to the next response. Return concise context for {{agent}}.',
-    },
-  },
-  {
-    id: 'adv.agentContextMaxOutput',
-    type: 'number',
-    labelKey: 'agentContextMaxOutput',
-    bindKey: 'agentContextMaxOutput',
-    helpKey: 'agentContextMaxOutput',
-    condition: (ctx) => ctx.db.agentContextEnabled === true,
-    options: { min: 0, max: 12000 },
-  },
-  {
-    id: 'adv.agentContextMaxToolRounds',
-    type: 'number',
-    labelKey: 'agentContextMaxToolRounds',
-    bindKey: 'agentContextMaxToolRounds',
-    helpKey: 'agentContextMaxToolRounds',
-    condition: (ctx) => ctx.db.agentContextEnabled === true,
-    options: { min: 0, max: 12 },
-  },
-  {
     id: 'adv.addPrompt',
     type: 'text',
     labelKey: 'additionalPrompt',
     bindKey: 'additionalPrompt',
     helpKey: 'additionalPrompt',
+    classes: 'mt-4',
   },
   {
     id: 'adv.descPrefix',

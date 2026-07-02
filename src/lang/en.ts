@@ -948,6 +948,7 @@ export const languageEnglish = {
   settingsGroupAboutAdvanced: 'Advanced & About',
   settingsNavModelProfiles: 'AI Models & Keys',
   settingsNavPromptPresets: 'Prompts & Templates',
+  settingsNavContextAgent: 'Context Agent',
   settingsNavLegacyBotPresets: 'Legacy Bot Presets',
   settingsNavUserPersona: 'User Persona',
   settingsNavMediaMemory: 'Media, Voice & Memory',

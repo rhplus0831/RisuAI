@@ -124,6 +124,45 @@ describe('router initial application', () => {
       index: -1,
     })
   })
+
+  it('routes the context agent settings section', async () => {
+    const router = await importRouterAt('/settings/context-agent')
+    const stores = await import('./stores.svelte')
+    const { SettingsMenuIndex, settingsOpen } = stores
+
+    expect(get(router.currentRoute)).toMatchObject({
+      kind: 'settings',
+      path: '/settings/context-agent',
+      section: 'context-agent',
+      index: 19,
+    })
+
+    await router.applyRouteToStores(get(router.currentRoute))
+    await flushMicrotasks()
+
+    expect(get(settingsOpen)).toBe(true)
+    expect(get(SettingsMenuIndex)).toBe(19)
+  })
+
+  it('serializes the context agent settings section', async () => {
+    const router = await importRouterAt('/')
+
+    router.syncRouteFromState({
+      currentRouteKind: 'home',
+      settingsOpen: true,
+      settingsMenuIndex: 19,
+      selectedCharID: -1,
+      playgroundStore: 0,
+    })
+
+    expect(window.location.pathname).toBe('/settings/context-agent')
+    expect(get(router.currentRoute)).toMatchObject({
+      kind: 'settings',
+      path: '/settings/context-agent',
+      section: 'context-agent',
+      index: 19,
+    })
+  })
 })
 
 describe('router character route freshness', () => {
