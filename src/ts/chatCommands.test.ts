@@ -24,6 +24,7 @@ import {
   setServerProjectionWriteGuardEnabled,
   withTrustedServerProjectionWrite,
 } from './server/projectionWriteGuard.svelte'
+import { setChatVar } from './parser/chatVar.svelte'
 import { DBState, selectedCharID } from './stores.svelte'
 // Import the heavy database module AFTER stores.svelte: importing it first
 // triggers a circular-import TDZ when the reactive moduleUpdate $effect runs
@@ -1764,6 +1765,30 @@ describe('chat command projection helpers', () => {
       },
     ])
     expect(DBState.db.characters[0].chats[0].scriptstate).toMatchObject({ $score: '9' })
+  })
+
+  it('sets parser chat variables through the projection guard for Lua edit-display hooks', async () => {
+    const calls = stubCommandFetch()
+    setServerProjectionWriteGuardEnabled(true)
+
+    expect(() => {
+      DBState.db.characters[0].chats[0].scriptstate!.$outfit = 'direct'
+    }).toThrow()
+
+    setChatVar('outfit', 'date_a')
+    expect(DBState.db.characters[0].chats[0].scriptstate).toMatchObject({ $outfit: 'date_a' })
+
+    await waitForCallCount(calls, 2)
+    expect(calls[1]).toEqual({
+      url: '/api/v1/commands/chats/chat-a/scriptstate',
+      method: 'PATCH',
+      authHeader: 'chat-command-token',
+      body: {
+        baseRevision: 10,
+        patch: { $outfit: 'date_a' },
+        deleteKeys: [],
+      },
+    })
   })
 
   it('creates scriptstate when setting a value on a chat without one', async () => {

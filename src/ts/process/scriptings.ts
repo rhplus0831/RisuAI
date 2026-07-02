@@ -1579,17 +1579,13 @@ export async function runLuaEditTrigger<T extends string | OpenAIChat[]>(
   try {
     let data = content
 
-    const triggers: triggerscript[] =
-      char.type === 'simple'
-        ? getModuleTriggers()
-        : char.triggerscript
-            .map(
-              (v): triggerscript => ({
-                ...v,
-                lowLevelAccess: false,
-              }),
-            )
-            .concat(getModuleTriggers())
+    const ownTriggers = ((char as { triggerscript?: triggerscript[] }).triggerscript ?? []).map(
+      (v): triggerscript => ({
+        ...v,
+        lowLevelAccess: false,
+      }),
+    )
+    const triggers: triggerscript[] = ownTriggers.concat(getModuleTriggers())
 
     for (let trigger of triggers) {
       if (trigger?.effect?.[0]?.type === 'triggerlua') {
@@ -1630,15 +1626,15 @@ export async function runLuaButtonTrigger(
   const isFresh = (): boolean => options?.isFresh?.() !== false
 
   try {
-    const triggers =
-      char.type === 'simple'
-        ? getModuleTriggers()
-        : char.triggerscript
-            .map<triggerscript>((v) => ({
-              ...v,
-              lowLevelAccess: char.lowLevelAccess ?? false,
-            }))
-            .concat(getModuleTriggers())
+    const ownTriggers = (
+      (char as { triggerscript?: triggerscript[]; lowLevelAccess?: boolean }).triggerscript ?? []
+    ).map(
+      (v): triggerscript => ({
+        ...v,
+        lowLevelAccess: char.type === 'simple' ? false : (char.lowLevelAccess ?? false),
+      }),
+    )
+    const triggers = ownTriggers.concat(getModuleTriggers())
 
     for (let trigger of triggers) {
       if (!isFresh()) {

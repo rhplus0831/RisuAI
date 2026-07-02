@@ -268,6 +268,27 @@ describe('client scripting Lua budgets and cache (L39-L41)', () => {
     expect('lowLevelAccess' in trigger).toBe(false)
   })
 
+  it('runs simple character trigger rows for first-message edit-display parity', async () => {
+    const trigger = Object.freeze({
+      comment: 'simple lua trigger',
+      type: 'display',
+      conditions: [],
+      effect: [{ type: 'triggerlua', code: '-- simple display hook' }],
+    })
+    const char = {
+      type: 'simple',
+      chaId: 'simple-char',
+      customscript: [],
+      triggerscript: [trigger],
+    } as any
+
+    await expect(runLuaEditTrigger(char, 'editdisplay', 'first message')).resolves.toBe('first message')
+
+    expect(luaMock.createEngine).toHaveBeenCalledTimes(1)
+    expect(luaMock.loadedCodes[0]).toContain('-- simple display hook')
+    expect('lowLevelAccess' in trigger).toBe(false)
+  })
+
   it('falls back to original edit-display content when Lua dispatch fails', async () => {
     const chat = makeChat()
     const char = makeCharacter(chat)

@@ -1034,6 +1034,38 @@ describe('server Lua runtime — runLuaEditTrigger entry', () => {
     expect(out[0].content).toBe('ping !')
   })
 
+  it('runs simple character triggerlua editDisplay hooks for first-message parity', async () => {
+    const chat = makeChat()
+    const backingChar = makeChar({ chats: [chat] })
+    const simpleChar = {
+      type: 'simple',
+      chaId: 'simple-char',
+      customscript: [],
+      triggerscript: [
+        {
+          comment: 'display',
+          type: 'display',
+          conditions: [],
+          effect: [
+            {
+              type: 'triggerlua',
+              code: `
+                listenEdit('editDisplay', function(id, data, meta)
+                  return data .. ' [simple]'
+                end)
+              `,
+            },
+          ],
+        },
+      ],
+    } as never
+    const { ctx } = makeRuntime({ chat, char: backingChar })
+    const { char: _char, ...editCtx } = ctx
+
+    const out = await runLuaEditTrigger(simpleChar, 'editdisplay', 'first message', {}, editCtx)
+    expect(out).toBe('first message [simple]')
+  })
+
   it('returns content unchanged for editprocess (browser no-op)', async () => {
     const chat = makeChat()
     const char = makeChar({ chats: [chat] })

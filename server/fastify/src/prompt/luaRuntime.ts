@@ -2108,26 +2108,23 @@ export async function runLuaEditTrigger<T extends string | OpenAIChat[]>(
   try {
     let data: T = content
 
-    const ownTriggers: triggerscript[] =
-      (char as { type?: string }).type === 'simple'
-        ? []
-        : ((char as character).triggerscript ?? []).map((trigger, index) => {
-            const owner = char as character
-            const lowLevelAccess = owner.lowLevelAccess ?? false
-            return attachTriggerSource(
-              { ...trigger, lowLevelAccess },
-              {
-                ownerType: 'character',
-                ownerId: owner.chaId,
-                ownerName: owner.name,
-                triggerId: (trigger as { id?: string }).id,
-                triggerIndex: index,
-                triggerComment: trigger.comment,
-                triggerType: trigger.type,
-                lowLevelAccess,
-              },
-            )
-          })
+    const owner = char as character & simpleCharacterArgument
+    const ownTriggers: triggerscript[] = (owner.triggerscript ?? []).map((trigger, index) => {
+      const lowLevelAccess = owner.type === 'simple' ? false : (owner.lowLevelAccess ?? false)
+      return attachTriggerSource(
+        { ...trigger, lowLevelAccess },
+        {
+          ownerType: 'character',
+          ownerId: owner.chaId,
+          ownerName: owner.name,
+          triggerId: (trigger as { id?: string }).id,
+          triggerIndex: index,
+          triggerComment: trigger.comment,
+          triggerType: trigger.type,
+          lowLevelAccess,
+        },
+      )
+    })
     const triggers = ownTriggers.concat(ctx.moduleTriggers ?? [])
 
     for (const trigger of triggers) {
