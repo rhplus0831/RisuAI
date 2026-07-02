@@ -213,13 +213,32 @@ function buildPayload(req: OllamaRequest, stream: boolean): Record<string, unkno
   return body
 }
 
-interface OllamaChunk {
+export interface OllamaResponseMessage {
+  role?: unknown
+  content?: unknown
+  thinking?: unknown
+  tool_calls?: unknown
+}
+
+export interface OllamaResponseBody {
   model?: unknown
-  message?: { role?: unknown; content?: unknown; thinking?: unknown; tool_calls?: unknown }
+  message?: OllamaResponseMessage
   done?: unknown
   done_reason?: unknown
   error?: unknown
 }
+
+type OllamaRawFailure = Omit<CompletionResult, 'type'> & { type: 'fail' }
+
+export type OllamaRawResult =
+  | {
+      type: 'success'
+      body: OllamaResponseBody
+      model?: string
+    }
+  | OllamaRawFailure
+
+type OllamaChunk = OllamaResponseBody
 
 async function readOllamaStreamError(response: Response, url: string): Promise<CompletionStreamFrame> {
   let message: string | undefined
@@ -256,7 +275,7 @@ function mapDoneReason(raw: unknown): CompletionStreamFrame['finishReason'] {
   return raw
 }
 
-export async function runOllama(req: OllamaRequest): Promise<CompletionResult> {
+export async function runOllamaRaw(req: OllamaRequest): Promise<OllamaRawResult> {
   if (req.signal.aborted) {
     return { type: 'fail', result: 'aborted', aborted: true }
   }
@@ -305,12 +324,23 @@ export async function runOllama(req: OllamaRequest): Promise<CompletionResult> {
     return { type: 'fail', result: `invalid upstream JSON: ${msg}` }
   }
 
+  const result: OllamaRawResult = { type: 'success', body }
+  if (typeof body.model === 'string') result.model = body.model
+  return result
+}
+
+export async function runOllama(req: OllamaRequest): Promise<CompletionResult> {
+  const raw = await runOllamaRaw(req)
+  if (raw.type === 'fail') return raw
+
+  const body = raw.body
+
   const content = typeof body.message?.content === 'string' ? body.message.content : ''
   if (content.length === 0) {
     return { type: 'fail', result: 'upstream returned no message content' }
   }
   const result: CompletionResult = { type: 'success', result: content }
-  if (typeof body.model === 'string') result.model = body.model
+  if (raw.model) result.model = raw.model
   return result
 }
 

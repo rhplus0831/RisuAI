@@ -3,9 +3,11 @@ import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
 import {
   assertModelProfileGenerationReady,
   resolveModelProfile,
+  type ResolvedModelProfile,
 } from '../../../../src/ts/model/modelProfileResolver.js'
 import { applyAdditionalParameters } from '../generation/additionalParams.js'
 import { readBoundedBodyText } from '../generation/body.js'
+import { resolveOllamaRequest, runOllamaRaw } from '../generation/ollama.js'
 import { formatUpstreamFetchError, formatUpstreamHttpError } from '../generation/upstreamError.js'
 import { emitProtocolMetric } from '../protocolMetrics.js'
 import {
@@ -52,7 +54,8 @@ export interface PromptContextAgentResult {
 type ToolName = 'find_chat' | 'find_lorebook' | 'get_chat_tail'
 
 interface ToolCall {
-  id: string
+  id?: string
+  type?: 'function'
   function: {
     name?: unknown
     arguments?: unknown
@@ -85,6 +88,17 @@ interface OpenAIToolRequest {
   temperature: number
   extraHeaders?: Record<string, string>
   additionalParams?: Array<[string, string]>
+  signal: AbortSignal
+}
+
+interface OllamaToolRequest {
+  model: string
+  messages: unknown[]
+  tools?: readonly unknown[]
+  apiKey?: string
+  baseUrl?: string
+  maxTokens: number
+  temperature: number
   signal: AbortSignal
 }
 
@@ -153,6 +167,10 @@ function asRecord(value: unknown): JsonRecord | null {
 
 function asNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
+function asString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length > 0 ? value : undefined
 }
 
 function clampInt(value: unknown, fallback: number, min: number, max: number): number {
@@ -269,6 +287,8 @@ function safeJson(value: unknown, maxChars = MAX_TOOL_RESULT_CHARS): string {
 }
 
 function readToolArgs(raw: unknown): JsonRecord {
+  const record = asRecord(raw)
+  if (record) return record
   if (typeof raw !== 'string') return {}
   try {
     return asRecord(JSON.parse(raw)) ?? {}
@@ -490,6 +510,63 @@ async function runOpenAIToolRequest(req: OpenAIToolRequest): Promise<OpenAIToolM
   return message
 }
 
+function normalizeOllamaToolCalls(value: unknown): ToolCall[] {
+  if (!Array.isArray(value)) return []
+  const calls: ToolCall[] = []
+  value.forEach((item, index) => {
+    const record = asRecord(item)
+    const fn = asRecord(record?.function)
+    const name = typeof fn?.name === 'string' ? fn.name : ''
+    if (!name) return
+    calls.push({
+      id: asString(record?.id) ?? `ollama-tool-call-${index}`,
+      ...(record?.type === 'function' ? { type: 'function' as const } : {}),
+      function: {
+        name,
+        arguments: fn?.arguments,
+      },
+    })
+  })
+  return calls
+}
+
+function normalizeOllamaToolMessage(value: unknown): OpenAIToolMessage | { error: string } {
+  const message = asRecord(value)
+  if (!message) return { error: 'upstream returned no message' }
+  const toolCalls = normalizeOllamaToolCalls(message.tool_calls)
+  return {
+    role: 'assistant',
+    content: typeof message.content === 'string' ? message.content : '',
+    ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
+  }
+}
+
+function resolveOllamaBaseUrl(profile: ResolvedModelProfile): string | undefined {
+  return asString(profile.providerOptions.ollama?.url) ?? asString(profile.providerOptions.baseUrl)
+}
+
+function resolveOllamaApiKey(profile: ResolvedModelProfile): string | undefined {
+  return asString(profile.providerOptions.apiKey) ?? asString(profile.providerOptions.ollama?.apiKey)
+}
+
+async function runOllamaToolRequest(req: OllamaToolRequest): Promise<OpenAIToolMessage | { error: string }> {
+  const resolved = resolveOllamaRequest({
+    model: req.model,
+    messages: req.messages,
+    tools: req.tools,
+    baseUrl: req.baseUrl,
+    apiKey: req.apiKey,
+    maxTokens: req.maxTokens,
+    temperature: req.temperature,
+    signal: req.signal,
+  })
+  if (!resolved) return { error: 'options.ollama.baseUrl is required' }
+
+  const result = await runOllamaRaw(resolved)
+  if (result.type === 'fail') return { error: result.result }
+  return normalizeOllamaToolMessage(result.body.message)
+}
+
 function buildAgentTask(input: PromptContextAgentInput, settings: PromptContextAgentSettings): string {
   const expandedPrompt = expandVariables(settings.prompt, input.ctx).text
   const recentMessages = (input.currentChat.message ?? []).slice(-6).map((message) => ({
@@ -564,12 +641,14 @@ export async function runPromptContextAgent(input: PromptContextAgentInput): Pro
     const route = resolveChatProviderRoute(input.database, profile)
     if (route.routable === false) return skipped(route.reason)
     const provider = route.provider
-    if (provider !== 'openai' && provider !== 'openrouter' && provider !== 'nanogpt') {
+    if (provider !== 'openai' && provider !== 'openrouter' && provider !== 'nanogpt' && provider !== 'ollama') {
       return skipped(`unsupported_agent_provider:${provider}`)
     }
 
-    const variant = resolveOpenAIVariant(input.database, info, provider, profile)
-    if (!variant) return skipped(`missing_agent_provider_options:${provider}`)
+    const variant = provider === 'ollama' ? undefined : resolveOpenAIVariant(input.database, info, provider, profile)
+    if (provider !== 'ollama' && !variant) return skipped(`missing_agent_provider_options:${provider}`)
+    const ollamaBaseUrl = provider === 'ollama' ? resolveOllamaBaseUrl(profile) : undefined
+    const ollamaApiKey = provider === 'ollama' ? resolveOllamaApiKey(profile) : undefined
 
     const model = resolveProviderModel(input.database, info, provider, profile)
     const system =
@@ -587,18 +666,30 @@ export async function runPromptContextAgent(input: PromptContextAgentInput): Pro
 
     for (let round = 0; round <= settings.maxToolRounds; round++) {
       const allowTools = round < settings.maxToolRounds
-      const message = await runOpenAIToolRequest({
-        model,
-        messages,
-        tools: allowTools ? TOOL_DEFINITIONS : undefined,
-        apiKey: variant.apiKey,
-        baseUrl: variant.baseUrl,
-        maxTokens: maxTokensForOutput(settings.maxOutputChars),
-        temperature: 0.2,
-        extraHeaders: variant.extraHeaders,
-        additionalParams: variant.additionalParams,
-        signal,
-      })
+      const message =
+        provider === 'ollama'
+          ? await runOllamaToolRequest({
+              model,
+              messages,
+              tools: allowTools ? TOOL_DEFINITIONS : undefined,
+              apiKey: ollamaApiKey,
+              baseUrl: ollamaBaseUrl,
+              maxTokens: maxTokensForOutput(settings.maxOutputChars),
+              temperature: 0.2,
+              signal,
+            })
+          : await runOpenAIToolRequest({
+              model,
+              messages,
+              tools: allowTools ? TOOL_DEFINITIONS : undefined,
+              apiKey: variant?.apiKey,
+              baseUrl: variant?.baseUrl,
+              maxTokens: maxTokensForOutput(settings.maxOutputChars),
+              temperature: 0.2,
+              extraHeaders: variant?.extraHeaders,
+              additionalParams: variant?.additionalParams,
+              signal,
+            })
 
       if ('error' in message) {
         const result = skipped(message.error, toolCalls)
@@ -630,12 +721,14 @@ export async function runPromptContextAgent(input: PromptContextAgentInput): Pro
         const toolName = typeof call.function.name === 'string' ? call.function.name : ''
         const toolResult = executeTool(input, toolName, readToolArgs(call.function.arguments))
         toolCalls++
-        messages.push({
+        const toolMessage: Record<string, unknown> = {
           role: 'tool',
-          tool_call_id: call.id,
           name: toolName,
+          tool_name: toolName,
           content: toolResult,
-        })
+        }
+        if (call.id) toolMessage.tool_call_id = call.id
+        messages.push(toolMessage)
       }
     }
 
