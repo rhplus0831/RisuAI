@@ -331,7 +331,7 @@
     }
   }
 
-  function clearInputTranslationRollbackAfterSuccessfulSend() {
+  function clearInputTranslationRollbackForGenerationStart() {
     clearStaleInputTranslationRollback()
     if (lastInputTranslationRollback) {
       lastInputTranslationRollback = null
@@ -842,6 +842,7 @@
     clearMessageInputForCurrentOperation(composerOperation)
     const abortController = createActiveGenerationAbortController()
     try {
+      clearInputTranslationRollbackForGenerationStart()
       const ok = await sendChat(-1, {
         signal: abortController.signal,
         continue: continued,
@@ -864,7 +865,6 @@
       ) {
         return
       }
-      clearInputTranslationRollbackAfterSuccessfulSend()
     } catch (error) {
       console.error(error)
       alertError(error)

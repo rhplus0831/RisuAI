@@ -837,10 +837,12 @@ describe('DefaultChatScreen transcript window state', () => {
     expect(loadPageMocks.sendChat).not.toHaveBeenCalled()
   })
 
-  it('clears stored original hook input after the translated message is sent', async () => {
+  it('clears stored original hook input when generation starts', async () => {
     seedDatabase([1])
     DBState.db.characters[0].useInputTranslationHook = true
     vi.mocked(runInputTranslator).mockResolvedValueOnce('Translated draft')
+    const send = createDeferred<boolean>()
+    loadPageMocks.sendChat.mockReturnValueOnce(send.promise)
     loadPageMocks.appendCurrentChatUserMessageForSend.mockResolvedValueOnce({
       status: 'ok',
       messageId: 'translated-message',
@@ -872,6 +874,8 @@ describe('DefaultChatScreen transcript window state', () => {
       expect(loadPageMocks.sendChat).toHaveBeenCalledTimes(1)
       expect(target.querySelector('[data-testid="default-chat-input-translation-rollback"]')).toBeNull()
     })
+    send.resolve(true)
+    await settle()
   })
 
   it('shrinks the composer back after sending a tall draft', async () => {
