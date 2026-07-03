@@ -2052,6 +2052,14 @@ export interface ServerLuaEditTriggerContext extends Omit<ServerLuaRuntimeContex
   postGenerationProgress?: PostGenerationLuaProgressTracker
 }
 
+interface LuaEditTriggerOwner {
+  type?: 'character' | 'simple'
+  triggerscript?: triggerscript[]
+  lowLevelAccess?: boolean
+  chaId: string
+  name?: string
+}
+
 interface LuaEditContentSummary {
   kind: string
   sha256: string
@@ -2108,7 +2116,7 @@ export async function runLuaEditTrigger<T extends string | OpenAIChat[]>(
   try {
     let data: T = content
 
-    const owner = char as character & simpleCharacterArgument
+    const owner: LuaEditTriggerOwner = char
     const ownTriggers: triggerscript[] = (owner.triggerscript ?? []).map((trigger, index) => {
       const lowLevelAccess = owner.type === 'simple' ? false : (owner.lowLevelAccess ?? false)
       return attachTriggerSource(
