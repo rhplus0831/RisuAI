@@ -1,7 +1,8 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte'
+  import { onMount } from 'svelte'
   import * as monaco from 'monaco-editor'
   import { registerCBSMonaco } from 'src/ts/gui/codearea/cbsMonaco'
+  import { installMonacoWorkerErrorEventFilter } from './monacoWorkerErrors'
   import jsonWorkerUrl from 'monaco-editor/esm/vs/language/json/json.worker?url'
   import cssWorkerUrl from 'monaco-editor/esm/vs/language/css/css.worker?url'
   import htmlWorkerUrl from 'monaco-editor/esm/vs/language/html/html.worker?url'
@@ -34,6 +35,7 @@
   }
 
   registerCBSMonaco()
+  installMonacoWorkerErrorEventFilter()
 
   interface Props {
     value: string
@@ -46,12 +48,24 @@
   let { value = $bindable(''), language = 'markdown', theme = 'vs-dark', readonly = false, onchange }: Props = $props()
 
   let container: HTMLDivElement
-  let editor: monaco.editor.IStandaloneCodeEditor
+  let editor: monaco.editor.IStandaloneCodeEditor | null = null
+  let editorModel: monaco.editor.ITextModel | null = null
+  let editorChangeDisposable: monaco.IDisposable | null = null
+
+  function disposeEditor() {
+    editorChangeDisposable?.dispose()
+    editorChangeDisposable = null
+    editor?.dispose()
+    editor = null
+    editorModel?.dispose()
+    editorModel = null
+  }
 
   onMount(() => {
+    const model = monaco.editor.createModel(value, language)
+    editorModel = model
     editor = monaco.editor.create(container, {
-      value,
-      language,
+      model,
       theme,
       readOnly: readonly,
       automaticLayout: true,
@@ -70,19 +84,13 @@
       },
     })
 
-    editor.onDidChangeModelContent(() => {
-      const newValue = editor.getValue()
+    editorChangeDisposable = editor.onDidChangeModelContent(() => {
+      const newValue = editor?.getValue() ?? ''
       value = newValue
       onchange?.(newValue)
     })
 
-    return () => {
-      editor?.dispose()
-    }
-  })
-
-  onDestroy(() => {
-    editor?.dispose()
+    return disposeEditor
   })
 
   // Sync external value changes into editor without triggering onDidChangeModelContent loop
