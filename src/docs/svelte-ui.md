@@ -1,6 +1,6 @@
 # Svelte UI Guide
 
-Last audited: 2026-06-20.
+Last audited: 2026-07-04.
 
 The frontend is a Svelte 5 SPA. There is no SvelteKit `src/routes/` tree:
 navigation is URL parsing plus Svelte stores, and `src/App.svelte` chooses the
@@ -21,7 +21,7 @@ generation, assets, storage, Realm import, plugins, or MCP.
 | URL, back/forward, settings section, playground tool, or character route is wrong    | `src/ts/router.ts`, `src/App.svelte` route effects                                                              | `src/ts/router.test.ts`, `src/App.routeEffect*.test.ts`                                                                                  |
 | Theme, spacing, clipping, colors, font, UI scale, or custom CSS is wrong             | `src/styles.css`, `src/ts/gui/colorscheme.ts`, `src/ts/gui/guisize.ts`                                          | `src/lib/Setting/Pages/DisplaySettings.svelte`, `src/ts/setting/displaySettingsData.svelte.ts`                                           |
 | A settings page or left-nav item is wrong                                            | `src/lib/Setting/Settings.svelte`, `src/ts/router.ts` setting slug maps                                         | The concrete `src/lib/Setting/Pages/*.svelte` page                                                                                       |
-| A model role/profile summary, inherited role, or provider panel visibility is wrong  | `src/lib/Setting/Pages/Model/ModelRoleList.svelte`, `src/ts/model/modelProfileUiState.ts`                       | `src/ts/model/modelProfileResolver.ts`, `src/lib/Setting/Pages/BotSettings.svelte`, `docs/structure/providers-and-models.md`             |
+| A model role/profile summary, inherited role, or provider panel visibility is wrong  | `src/lib/Setting/Pages/Model/ModelSettingsShell.svelte`, `ModelProfileRoleList.svelte`, `ModelProfileList.svelte`, `ModelProviderPanel.svelte`, `src/ts/model/modelProfileUiState.ts` | `src/ts/model/modelProfileResolver.ts`, legacy `ModelRoleList.svelte` inside Advanced Legacy Settings, `docs/structure/providers-and-models.md` |
 | A data-driven setting row is missing, hidden, stale, or not saving                   | `src/lib/Setting/SettingRenderer.svelte`, `src/ts/setting/*SettingsData*`, `src/ts/setting/utils.ts`            | `src/lib/Setting/Wrappers/*`, `src/ts/server/settingsBridge.svelte.ts`                                                                   |
 | A shared input/control is visually or behaviorally wrong                             | The primitive in `src/lib/UI/GUI/`                                                                              | The wrapper in `src/lib/Setting/Wrappers/` if it only breaks in settings                                                                 |
 | Chat transcript, composer, send buttons, scroll, or hydration state is wrong         | `src/lib/ChatScreens/DefaultChatScreen.svelte`, `src/lib/ChatScreens/Chats.svelte`                              | `src/ts/server/chatMessageHydration.svelte.ts`, `src/ts/chatCommands.ts`                                                                 |
@@ -243,16 +243,21 @@ Model settings are profile-first:
   `Database.modelProfiles`, role usage, status, create/edit/duplicate/delete
   actions, and the runtime defaults panel.
 - `ModelProfileEditorDrawer.svelte` is the command-backed durable profile
-  editor. It covers first-class OpenAI, Anthropic, Google, Vertex, and Custom
-  API panels, profile runtime overrides, fallbacks, and secret
-  preserve/replace/clear behavior.
+  editor. It covers first-class OpenAI, Anthropic, Google, Vertex, Ollama,
+  Custom API, and Debug Echo panels, profile runtime overrides, fallbacks, and
+  secret preserve/replace/clear behavior.
 - `ModelRuntimeDefaultsEditor.svelte` edits `Database.modelRuntimeDefaults`
   with explicit Save/Cancel and a count summary.
+- `ModelPresetList.svelte`, hosted by `src/lib/Setting/botpreset.svelte`, is the
+  embedded model preset picker/list for `modelPresets` and `modelPresetsId`.
+  It can save current role settings, create empty presets, duplicate, reorder,
+  delete, and show the prompt-preset model override notice.
 - Advanced Legacy Settings embeds the old `ModelRoleList.svelte` plus legacy
   main/aux summaries. The legacy flat fields remain compatibility/conversion
   data for imports, presets, loadouts, and provider families without
-  first-class panels. The accordion is hidden once every role resolves through
-  durable profiles or profile inheritance.
+  first-class panels. The accordion is hidden once every role's resolved source
+  is `durable-profile`, including supported inherit bindings that resolve to a
+  durable profile; legacy-inherit keeps it visible.
 
 Model profile runtime state lives under `src/ts/model/`:
 
@@ -385,7 +390,7 @@ Common commands:
 ```sh
 pnpm check
 pnpm test -- src/ts/router.test.ts # light pending-route coverage, not a full route-map matrix
-pnpm test -- src/App.routeEffect.test.ts src/App.routeEffect.dom.test.ts
+pnpm test -- src/App.routeEffect.dom.test.ts
 pnpm test -- src/lib/Setting/Settings.svelte.test.ts src/ts/setting/utils.test.ts
 pnpm test -- src/lib/SideBars/SideChatList.svelte.test.ts
 pnpm test -- src/lib/ChatScreens/ChatBody.svelte.test.ts

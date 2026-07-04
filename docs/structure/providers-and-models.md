@@ -1,5 +1,7 @@
 # Providers And Models
 
+Last audited: 2026-07-04.
+
 Provider/model behavior is split between browser model metadata, Fastify
 provider dispatch, and the shared capability table that decides whether a
 request shape can run on the server.
@@ -12,6 +14,7 @@ request shape can run on the server.
 | `src/ts/model/modellist.ts`                                                                     | Static/dynamic/custom model registry and `getModelInfo()`.                                         |
 | `src/ts/model/modelRoles.ts`                                                                    | Model role helpers for `chatMain`, `chatAux`, `memory`, `emotion`, `translate`, `otherAx`, `scriptMain`, and `scriptAux`; fallback refs are separate. |
 | `src/ts/model/modelProfileRecords.ts`, `modelProfileResolver.ts`, `modelProfileUiState.ts`      | Durable model profile records, role bindings, compatibility resolution, and settings UI summaries. |
+| `src/ts/model/modelPresetSnapshots.ts`, `src/ts/promptPresetModelOverrides.svelte.ts`           | Snapshot/override helpers for model preset saves and prompt-preset model overrides.                 |
 | `src/ts/model/modelGrid.ts`                                                                     | Model-grid normalization and filtering helpers for picker UI.                                      |
 | `src/ts/model/providers/`                                                                       | Provider-specific static model lists.                                                              |
 | `src/ts/model/openrouter.ts`, `nanogpt.ts`, `ollama.ts`, `ooba.ts`, `src/ts/horde/getModels.ts` | Browser provider catalog helpers.                                                                  |
@@ -54,6 +57,7 @@ settings to `ModelSettingsShell.svelte`, which owns the visible workflow:
 | `ModelProfileList.svelte` | Profiles tab. Lists profile name/id, provider, model, request model, fallback count, status, role usage, and create/edit/duplicate/delete actions. |
 | `ModelProfileEditorDrawer.svelte` | Command-backed profile drawer for first-class provider fields, profile runtime overrides, fallbacks, and profile-local secret placeholder preserve/replace/clear behavior. |
 | `ModelRuntimeDefaultsEditor.svelte` | Edits `modelRuntimeDefaults` with explicit Save/Cancel and a compact count summary. |
+| `ModelPresetList.svelte` | Embedded model preset picker/list hosted by `src/lib/Setting/botpreset.svelte`; applies/saves `modelPresets` and `modelPresetsId`. |
 | `ModelRoleList.svelte` | Legacy role editor shown only inside Advanced Legacy Settings for compatibility data. |
 
 The shell prompts clearly legacy-only databases to Convert to Profiles through
@@ -62,8 +66,9 @@ leaving the Convert to Profiles action visible. Advanced Legacy Settings still
 shows the current legacy main/aux fields and the old role/provider controls so
 older data, copied settings, and compatibility provider globals remain
 reachable when at least one role still resolves through legacy settings. The
-legacy accordion is hidden once all roles resolve through durable profiles or
-profile inheritance.
+legacy accordion is hidden once every role resolves from a durable profile,
+including supported inherit bindings whose effective source is durable-profile;
+legacy-inherit keeps it visible.
 
 First-class profile provider panels are intentionally limited to:
 
@@ -97,6 +102,7 @@ Defaults and normalization run in `src/ts/storage/database.svelte.ts` and
 `src/ts/server/commands.ts` and `server/fastify/src/routes/commands.ts` accept
 only supported profile, provider option, runtime option, role-binding, and
 fallback-ref shapes. Preset and loadout paths in `src/ts/presetSplit.ts`,
+`src/ts/model/modelPresetSnapshots.ts`, `src/ts/promptPresetModelOverrides.svelte.ts`,
 `server/fastify/src/commands/splitPresets.ts`, and `src/ts/loadout.ts` preserve
 durable profile fields while still accepting legacy flat data.
 
@@ -207,8 +213,11 @@ Chat generation has a two-stage effective-config path. Browser preflight uses
 and image gates. Server generation then uses
 `buildEffectiveGenerationConfig()` with full chat generation settings,
 persona/sidebar toggles, prompt-preset ownership, and profile-bound runtime
-fields before prompt assembly. `chatDispatch.ts` forwards only the supported
-runtime subset to provider adapters.
+fields before prompt assembly. Effective preset precedence is selected model
+preset first, prompt preset fields for full generation, prompt-preset model
+overrides after that, then server generation reapplies prompt-preset model
+overrides after profile-bound runtime fields. `chatDispatch.ts` forwards only
+the supported runtime subset to provider adapters.
 
 `modelTools` are copied into the effective DB; Fastify OpenAI Responses
 dispatch currently sends no hosted tool list, so hosted search/model tool
@@ -273,7 +282,9 @@ Server chat assembly applies the effective profile-bound model and runtime
 overlay before prompt budgeting and provider dispatch. Chat-scoped generation
 settings can select model/prompt presets; the model-runtime projection resolves
 the active profile, request model, provider options, fallbacks, and runtime
-options before the server builds dispatch config. Route preflight rejects stale
+options before the server builds dispatch config. Prompt-preset model overrides
+are reapplied after profile-bound runtime fields so prompt preset authorship can
+intentionally override the selected model preset. Route preflight rejects stale
 legacy `presetId` usage in favor of chat `generationSettings`.
 
 Prompt-template generation precedence is owner-based. A chat-scoped

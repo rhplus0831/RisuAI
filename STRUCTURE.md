@@ -1,6 +1,6 @@
 # Structure Notes
 
-Last audited: 2026-06-28.
+Last audited: 2026-07-04.
 
 This is the first-stop map for the Fastify-only RisuAI codebase. Use it for
 orientation, then open the focused note under `docs/structure/` or `src/docs/`
@@ -64,13 +64,13 @@ past decisions; they are not the source of current behavior.
 | `server/fastify/src/routes/`, `server/fastify/src/commands/`                                                                                | `/api/v1/*` route registrars and revision-checked mutation helpers.                                                         |
 | `server/fastify/src/commands/events.ts`, `server/fastify/src/routes/events.ts`                                                              | Command-event persistence, replay, and live command/memory SSE route.                                                       |
 | `server/fastify/src/pushNotifications.ts`, `server/fastify/src/routes/pushNotifications.ts`                                                 | Web Push VAPID key/subscription storage and push subscription routes.                                                       |
-| `server/fastify/src/generation/`, `server/fastify/src/prompt/`, `server/fastify/src/routes/generation*.ts`, `server/fastify/src/generationJobs.ts`, `server/fastify/src/generationFinalizationRetry.ts`, `server/fastify/src/messageTranslationJobs.ts` | Provider adapters, prompt assembly/effective generation config, Lua hooks, SSE transport, durable chat jobs, finalization retries, detached message translation state. |
+| `server/fastify/src/generation/`, `server/fastify/src/prompt/`, `server/fastify/src/routes/generation*.ts`, `server/fastify/src/generationJobs.ts`, `server/fastify/src/generationFinalizationRetry.ts`, `server/fastify/src/messageTranslationJobs.ts`, `server/fastify/src/translation/` | Provider adapters, prompt assembly/effective generation config, Lua hooks/progress, SSE transport, durable chat jobs, finalization retries, detached message translation state and provider dispatch. |
 | `server/fastify/src/memory*.ts`                                                                                                             | Maintained Hypa V3 memory tables, planning, selection, jobs, worker, events.                                                |
 | `server/fastify/src/risuSave/`, `server/fastify/src/realmImport/`                                                                           | `.risu` codecs, bounded inflate, bundles/local-backup import/export, asset reports, and Realm/charx conversion helpers.     |
 | `server/fastify/src/streamJobs.ts`, `server/fastify/src/streamBackpressure.ts`                                                              | Process-local proxy stream jobs and shared bounded stream writers.                                                          |
 | `src/main.ts`, `src/App.svelte`, `src/ts/bootstrap.ts`                                                                                      | Browser bootstrap, app shell, Fastify projection startup.                                                                   |
 | `src/lib/`                                                                                                                                  | Svelte UI components by feature area.                                                                                       |
-| `src/ts/server/`                                                                                                                            | Browser Fastify adapters: bootstrap/body cache, commands, projection/hydration/resync, character/prompt hydration, events, memory job events, bridges, assets, backups, Realm import, protocol diagnostics, browser smoke hooks. |
+| `src/ts/server/`                                                                                                                            | Browser Fastify adapters: bootstrap/body cache, commands, projection/hydration/resync, character/prompt hydration, events, memory job events, message translation refresh, bridges, assets, backups, Realm import, push notifications, stale-operation guards, protocol diagnostics, browser smoke hooks. |
 | `src/ts/process/`, `src/ts/process/request/`                                                                                                | `sendChat`, server-backed generation bridge, request routing, SSE parsing, retained parity helpers.                         |
 | `src/ts/storage/`                                                                                                                           | Browser projection state, server-backed auth/storage, backup helpers, and retained browser `.risu` compatibility codecs; server-backed device backup flows use server routes. |
 | `src/ts/plugins/`, `src/ts/pluginCommands.ts`, `src/ts/process/mcp/`                                                                        | Browser plugin runtime, Plugin V3 API host, command-backed plugin state helpers, MCP clients/tools.                         |
@@ -82,7 +82,10 @@ past decisions; they are not the source of current behavior.
 
 - The live runtime is Fastify-only. `src/ts/platform.ts` sets
   `isFastifyServer = true`; native/mobile wrappers, browser-local persistence,
-  service workers, peer sync, Drive sync, and non-Fastify modes are not live.
+  peer sync, Drive sync, and non-Fastify modes are not live. The Web Push
+  notification service worker at `public/service-worker.js` is live only through
+  `src/ts/server/pushNotifications.ts`; legacy share/file-handler/offline
+  service-worker surfaces remain no-port.
 - `pnpm dev:agent` runs the full-stack trace runner on frontend port 6418 and
   API port 6419 with trace mode `agent`, auth bypass, and TOS bypass defaults.
   Stop it when done so those ports are free for the next agent.

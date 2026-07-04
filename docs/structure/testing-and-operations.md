@@ -1,5 +1,7 @@
 # Testing And Operations
 
+Last audited: 2026-07-04.
+
 Use `pnpm` for package scripts. Node.js is declared as `>=24.0.0`. The package
 is root-only; there is no `server/fastify/package.json`. `package.json` does not
 pin a `packageManager`; the lockfile is pnpm lockfile v9 and Docker installs

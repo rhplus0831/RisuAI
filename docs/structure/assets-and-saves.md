@@ -1,5 +1,7 @@
 # Assets And Saves
 
+Last audited: 2026-07-04.
+
 Fastify owns binary persistence, save import/export, Realm import, and backup
 snapshots. Browser code should use server asset URLs and server save routes
 instead of writing runtime state directly.

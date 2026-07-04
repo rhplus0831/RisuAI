@@ -1,5 +1,7 @@
 # Plugins And MCP
 
+Last audited: 2026-07-04.
+
 Plugins and MCP tooling are browser runtime features with server-backed records.
 Fastify stores plugin records, plugin storage, settings, and module state, but it
 does not execute browser plugin code.

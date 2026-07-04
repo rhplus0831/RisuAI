@@ -1,5 +1,7 @@
 # Generated Files And Legacy Caveats
 
+Last audited: 2026-07-04.
+
 These notes help avoid spending time in files that look important but are
 generated, local-only, historical, vendored, or intentionally no-port.
 
@@ -66,16 +68,18 @@ No tracked files live under `public/functions/`; in some workspaces the empty
 directory may exist. Do not reintroduce old public worker/OAuth surfaces without
 a new roadmap.
 
-`tsconfig.json` still includes `public/sw.js`, but the service worker file is
-absent and guarded by `src/ts/browserLocalSurface.test.ts`. Treat that include as
-stale compatibility config, not active service-worker behavior.
+`tsconfig.json` includes `public/service-worker.js`. That worker is active only
+for Web Push chat-completion notifications through
+`src/ts/server/pushNotifications.ts`. Legacy `public/sw.js`
+share/file-handler/offline service-worker surfaces remain absent and guarded by
+`src/ts/browserLocalSurface.test.ts`.
 
 ## Fastify-Only Runtime
 
 The project targets a Fastify-served web runtime. Historical mentions of native
 wrappers, browser-local persistence as primary runtime, peer sync, Drive sync,
-Risu Account Sync, and service-worker behavior are archival unless a new plan
-reopens them.
+Risu Account Sync, and legacy `public/sw.js` share/file-handler/offline
+service-worker behavior are archival unless a new plan reopens them.
 
 Closed records under `.archived-docs/` explain how the current runtime landed:
 Fastify migration, client thinning, durable generation, lazy projection,
@@ -131,7 +135,8 @@ Fastify auth state actually lives under `data/__password`,
 
 Removed or intentionally no-port concepts: group chat, peer sync, Google Drive
 sync, Risu Account Sync, browser-local durable persistence as the primary
-runtime, native/mobile wrapper runtime modes, service-worker behavior, and
-standalone SupaMemory/Hypa V2/Hanurai engines. `HypaProcessorV2` remains an
-active helper inside maintained Hypa V3 logic, and `supaMemory` field/key/memo
-names remain active compatibility names for that maintained path.
+runtime, native/mobile wrapper runtime modes, legacy `public/sw.js`
+share/file-handler/offline service-worker behavior, and standalone
+SupaMemory/Hypa V2/Hanurai engines. `HypaProcessorV2` remains an active helper
+inside maintained Hypa V3 logic, and `supaMemory` field/key/memo names remain
+active compatibility names for that maintained path.

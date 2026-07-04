@@ -1,5 +1,7 @@
 # Backend Map
 
+Last audited: 2026-07-04.
+
 The backend is the Fastify server under `server/fastify`. It owns SQLite state,
 auth, provider secrets, prompt assembly, provider dispatch, Hypa V3 memory,
 imports/exports/backups, and the `/api/v1/*` route surface.
@@ -22,10 +24,15 @@ imports/exports/backups, and the `/api/v1/*` route surface.
 | `server/fastify/src/protocolMetrics.ts`, `requestTrace.ts`                    | Opt-in protocol metrics, command table-write capture, and API request traces.                            |
 | `server/fastify/src/generationJobs.ts`, `generationFinalizationRetry.ts`      | Process-local durable chat jobs, replay/reattach state, and SQLite-backed finalization retry rows.        |
 | `server/fastify/src/messageTranslationJobs.ts`                                | Process-local active raw-message translation registry projected through bootstrap.                        |
+| `server/fastify/src/translation/`                                             | Raw message translation provider dispatch for Google, DeepL, DeepLX, and LLM translation.                 |
+| `server/fastify/src/pushNotifications.ts`                                     | Web Push VAPID key loading/generation, subscription persistence, and best-effort completion pushes.       |
 | `server/fastify/src/assetGc.ts`                                               | Periodic reference-counted asset garbage collection.                                                     |
 | `server/fastify/src/streamJobs.ts`, `streamBackpressure.ts`                   | Process-local proxy stream jobs and bounded stream writes for slow clients.                              |
 | `server/fastify/src/requestAbort.ts`, `server/fastify/src/requestTimeouts.ts` | Generation abort propagation and proxy/stream-job timeout constants.                                      |
 | `server/fastify/src/risuSave/`                                                | `.risu`, bundle, local-backup, bounded-inflate, and asset-report codecs wired by save routes.            |
+| `server/fastify/src/realmImport/`                                             | Realm dynamic-card/`charx` conversion helpers used by Realm import routes.                               |
+| `server/fastify/src/prompt/contextAgent.ts`                                   | Optional read-only pre-prompt context agent for `{{agent}}` / `{{slot::agent}}` prompt slots.             |
+| `server/fastify/src/prompt/luaPostGenerationProgress.ts`                      | Live post-generation Lua progress frames for long `editOutput` / `onOutput` runs.                        |
 
 `buildApp()` is test-friendly. `BuildAppOptions` can inject generation behavior,
 Realm import limits, memory worker behavior, command/memory event sinks,
@@ -51,7 +58,9 @@ interval while also pruning retained terminal retry rows. Startup also calls
 `bootPromptVariables()` so server-side CBS/chat-var parsing is wired before
 prompt assembly. When `RISU_API_TRACE_MODE` is `agent` or `human`, request
 tracing adds `X-Request-UID` and writes API traces under
-`data/trace/<mode>.jsonl` while keeping the newest 5,000 entries per mode.
+`data/trace/<mode>.jsonl` while keeping the newest 5,000 entries per mode. The
+startup push service loads or generates VAPID keys before push routes accept
+subscriptions.
 Optional generation trace sidecars write redacted prompt payloads under
 `data/trace/generation/` only when protocol metrics and
 `RISU_GENERATION_TRACE_FULL_PROMPT=1` are enabled. Post-generation Lua flow
@@ -129,17 +138,20 @@ and emits `generation.persisted`. The detailed persistence contract lives in
 The live chat path is server-owned. Browser `sendChat` preflights with
 `resolveServerPromptAssembly()` and resolved model-profile provider capability,
 then posts raw inputs to `/api/v1/generate/chat`. Server prompt assembly runs
-supported non-interactive Lua hooks, plans and selects memory, dispatches through
-`generation/`, and maps provider frames to chat SSE frames through
-`prompt/providerTransport.ts`. Successful streams run server post-generation
-before terminal `done`; `done.postGeneration` carries the final text,
+supported non-interactive Lua hooks, optionally runs the read-only context agent
+when enabled and a `{{agent}}`/`{{slot::agent}}` prompt slot is present, plans
+and selects memory, dispatches through `generation/`, and maps provider frames
+to chat SSE frames through `prompt/providerTransport.ts`. Successful streams run
+server post-generation before terminal `done`; `done.postGeneration` carries the final text,
 `messagePatch`, `resendChat`, and revision that the browser applies in
 `applyServerBackedTerminal()`. Post-generation `editOutput`/`onOutput` Lua
-diagnostics are collected by `prompt/luaPostGenerationTrace.ts`,
-`prompt/luaRuntime.ts`, and `routes/generationChat.ts` when
-`RISU_PROTOCOL_METRICS=1`. Chat-scoped generation settings are preflighted and
-applied through `prompt/effectiveGenerationConfig.ts`, covering model/prompt/
-persona/sidebar-toggle overlays.
+progress emits `post_generation_progress` SSE frames through
+`prompt/luaPostGenerationProgress.ts`; diagnostics are collected by
+`prompt/luaPostGenerationTrace.ts`, `prompt/luaRuntime.ts`, and
+`routes/generationChat.ts` when `RISU_PROTOCOL_METRICS=1`. Chat-scoped
+generation settings are preflighted and applied through
+`prompt/effectiveGenerationConfig.ts`, covering model/prompt/persona/
+sidebar-toggle overlays.
 
 `/api/v1/generate/completion` is lower-level: normal browser traffic sends a
 server-owned `server-intent` request with shaped messages, and the server

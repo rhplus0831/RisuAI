@@ -1,6 +1,6 @@
 # Client Runtime Guide
 
-Last audited: 2026-06-20.
+Last audited: 2026-07-04.
 
 This file covers browser TypeScript areas that influence visible Svelte UI. For
 component ownership and UI triage, start with `src/docs/svelte-ui.md`.
@@ -14,7 +14,7 @@ on demand.
 
 | Path                                                                                                                                                                           | Runtime ownership                                                                                                                                                                                            |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `src/ts/server/`                                                                                                                                                               | Fastify browser adapters: bootstrap, commands, projection resources, hydration, events, active writer, assets, backups, Realm import, memory job events, bridge watchers, protocol diagnostics, smoke hooks. |
+| `src/ts/server/`                                                                                                                                                               | Fastify browser adapters: bootstrap, commands, projection resources, hydration, events, active writer, assets, backups, Realm import, memory job events, message translation refresh, bridge watchers, push notifications, stale-operation guards, protocol diagnostics, smoke hooks. |
 | `src/ts/storage/`                                                                                                                                                              | Browser projection database, server-backed auth/storage compatibility, `.risu` helpers, backup helpers, and auto-storage selection.                                                                          |
 | `src/ts/process/`                                                                                                                                                              | `sendChat`, server-backed generation bridge, durable reattach, files/MCP/memory/embedding/post-generation helpers, retained parity helpers.                                                                  |
 | `src/ts/process/request/`                                                                                                                                                      | Provider/server-routing classifiers, chat/completion/memory request adapters, SSE parsing, message patch helpers.                                                                                            |
@@ -36,20 +36,24 @@ the preloading element.
 
 `loadData()` in `src/ts/bootstrap.ts` performs the visible startup work:
 
-1. Fetch `/api/v1/bootstrap` through `fetchServerBootstrapProjection()`.
+1. Fetch `/api/v1/bootstrap` through `fetchServerBootstrapProjection()`, which
+   prepares and merges bootstrap body-cache payloads before returning the
+   projection.
 2. If the server has no database, initialize a fresh server database and refetch
    the read-only projection.
 3. Apply the server database into `DBState.db`.
-4. Merge bootstrap body-cache entries for heavy module/plugin bodies.
-5. Seed selected character state from the projection.
-6. Record hydrated lorebook coverage.
-7. Cache the server command revision.
-8. Enable the projection write guard.
-9. Seed active generation jobs and start durable reattach.
-10. Hydrate the selected character shell, start prompt-template hydration, start
+4. Seed selected character state from the projection.
+5. Record hydrated lorebook coverage.
+6. Cache the server command revision.
+7. Enable the projection write guard.
+8. Seed active generation jobs, active message translation refresh, and durable
+   reattach.
+9. Hydrate the selected character shell, start prompt-template hydration, start
     chat message hydration, and hydrate the active chat.
-11. Start bridge patch lifecycle flushing.
-12. Subscribe to server events.
+10. Start bridge patch lifecycle flushing.
+11. Subscribe to server events.
+12. If `DBState.db.notification === true`, enable chat-completion push
+    notifications.
 13. Load plugins.
 14. Update color scheme, text theme, animation speed, height mode, error
     handling, and GUI size CSS variables.
@@ -156,7 +160,8 @@ Important files:
   inlay ids to server asset refs, calls `/api/v1/generate/chat` or the preview
   route, applies server message patches, and returns terminal data.
 - `src/ts/process/request/serverChat.ts` parses chat SSE frames: job, stage,
-  prompt, patch, info, token, side-effect, warning, error, and done.
+  prompt, patch, info, token, side-effect, post-generation progress, warning,
+  error, and done.
 - `src/ts/process/reattach.ts` uses bootstrap `activeGenerationJobs` to reattach
   the current chat to durable server jobs.
 
@@ -220,6 +225,17 @@ Realm import:
 - `src/ts/server/realmImport.ts` handles Realm character import, progress SSE,
   and projection reconciliation after commit.
 - Visible Realm UI is under `src/lib/UI/Realm/`.
+
+Push notifications:
+
+- `src/ts/server/pushNotifications.ts` registers `public/service-worker.js`,
+  fetches `/api/v1/push/vapid-public-key`, and creates/deletes subscriptions
+  through `/api/v1/push/subscriptions`.
+- `src/lib/Setting/Pages/Display/NotificationToggle.svelte` owns the visible
+  setting flow. Startup re-enables push registration when
+  `DBState.db.notification === true`.
+- The worker is scoped to Web Push chat-completion notifications; it is not the
+  old offline/share/file-handler service worker surface.
 
 Plugins:
 

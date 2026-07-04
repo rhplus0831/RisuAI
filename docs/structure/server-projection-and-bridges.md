@@ -1,5 +1,7 @@
 # Server Projection And Bridges
 
+Last audited: 2026-07-04.
+
 The browser is a projected client. Fastify owns durable state; Svelte receives a
 lean projection, hydrates heavy fields on demand, and routes persistent edits
 through command helpers or explicit server-owned mutation routes.
@@ -44,6 +46,7 @@ after the first settles.
 | `src/ts/server/projectionResync.ts`              | Full-bootstrap recovery for event replay misses, projection gaps, backup restore, partial-success repairs. |
 | `src/ts/server/characterShellHydration.svelte.ts` | Hydrates inactive/selected character shell rows through `characterRow`.                                    |
 | `src/ts/server/promptTemplateHydration.ts`       | Hydrates stripped prompt-template bodies for selected/requested prompt-preset owners and the compatibility projection. |
+| `src/ts/server/messageTranslationJobs.ts`        | Tracks active detached raw-message translation rows from bootstrap and refresh polling.                    |
 | `src/ts/process/reattach.ts`                     | Reattaches active durable generation jobs from bootstrap.                                                  |
 
 ## Event Reconcile
@@ -66,10 +69,11 @@ processes command events serially:
   `asset` advances revision without projected fields, `generation.persisted`
   events are keyed by chat id and may return `generation-chat`, and
   `characterLorebook` uses the lorebook hydration branch. Field-map resources
-  also include examples such as `globalLorebook`, `moduleUpdated`,
-  `moduleEnabled`, and `moduleReordered`. Known sprawling resources such as
-  `settings`, `state`, `pluginStorage`, and `prompt` intentionally return
-  full-bootstrap mode.
+  also include examples such as `globalLorebook`, `modelPreset`,
+  `promptPreset`, `modelProfile`, `translatorPreset`, `loadout`, `persona`,
+  `plugin`, `moduleUpdated`, `moduleEnabled`, and `moduleReordered`. Known
+  sprawling resources such as `settings`, `state`, `pluginStorage`, and
+  `prompt` intentionally return full-bootstrap mode.
   Applying `fields.characters` re-stubs chat/lorebook-heavy character rows and
   forces relevant hydration state to reset.
 - Gaps, replay-unavailable responses, projection failures, unknown resources, or

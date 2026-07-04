@@ -1,5 +1,7 @@
 # Data And Events
 
+Last audited: 2026-07-04.
+
 Fastify owns durable state. The browser receives a projected copy and sends
 revision-checked commands or explicit server-owned mutation requests.
 
@@ -99,10 +101,10 @@ not ordinary browser `/commands/*` resource endpoints:
   targeted message command event if the source row is still unchanged.
 - Memory job create/cancel writes durable memory-job state and emits memory
   events without a domain revision.
-- Push notification subscription routes mutate operational Web Push
-  subscription rows and may create the local VAPID key file without a domain
-  revision. They are authenticated runtime state, not projected `Database`
-  state.
+- The startup push service loads or generates VAPID keys; push notification
+  subscription create/delete routes mutate operational Web Push rows without a
+  domain revision. They are authenticated runtime state, not projected
+  `Database` state.
 - Backup create/delete mutate backup files without a domain revision; restore
   replaces repository state and emits `state.restored`. Restore swaps only the
   SQLite table allowlist in `repository.ts`; keep `SQLITE_BACKUP_TABLES` in sync
@@ -186,13 +188,15 @@ cached revision may still reconcile so local state does not wait for another
 event. Memory events update Hypa V3 job/progress UI directly.
 
 Chat generation SSE frame types are `stage`, `job_accepted`, `prompt`, `info`,
-`message_patch`, `token`, `side_effect`, `warning`, `error`, and `done`.
+`message_patch`, `token`, `side_effect`, `post_generation_progress`, `warning`,
+`error`, and `done`.
 `info.revision` or `done.postGeneration.revision` can advance the browser
 revision cache after server-owned persistence. Durable jobs buffer protected
 replay events (`prompt`, de-duplicated `info`, `message_patch`, `side_effect`,
-`warning`, `error`, and `done`) with 512-event and 2 MiB caps; trimming drops
-unprotected frames and stops once only protected frames remain. They emit viewer
-heartbeat comments and can persist streamed-so-far text through raw
+`post_generation_progress`, `warning`, `error`, and `done`) with 512-event and
+2 MiB caps; trimming drops unprotected frames and stops once only protected
+frames remain. They emit viewer heartbeat comments and can persist
+streamed-so-far text through raw
 cancel/finalization retry paths. Bootstrap `activeGenerationJobs` exposes
 running durable jobs, including mode and regenerate message id when relevant,
 while `activeMessageTranslations` exposes in-flight detached raw-message

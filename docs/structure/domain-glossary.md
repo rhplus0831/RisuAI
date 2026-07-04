@@ -1,5 +1,7 @@
 # Domain Glossary
 
+Last audited: 2026-07-04.
+
 `Database` in `src/ts/storage/database.svelte.ts` is the central TypeScript
 shape used by browser code and many server helpers. Persisted backing storage is
 SQLite; `server/fastify/src/repository.ts` reconstructs and stores that domain
@@ -35,7 +37,7 @@ shape across table families.
 | Model runtime defaults | Shared runtime-option defaults applied before profile runtime overrides.                                      | `modelProfileRecords.ts`, `ModelRuntimeDefaultsEditor.svelte`           |
 | Hypa V3 preset      | Saved memory preset collection persisted in SQLite and exposed in projections/settings.                          | `repository.ts`, `routes/projection.ts`, `src/lib/Others/HypaV3Modal/`  |
 | Asset               | Content-addressed binary with SQLite metadata and bytes under `data/assets/`.                                    | `repository.ts`, `routes/assets.ts`, `risuSave/assetReferences.ts`      |
-| Push subscription   | Operational Web Push subscription row stored outside the projected `Database`; VAPID keys come from env or `data/__web_push_vapid_keys.json`. | `pushNotifications.ts`, `routes/pushNotifications.ts`                   |
+| Push subscription   | Operational Web Push subscription row stored outside the projected `Database`; VAPID keys come from env or `data/__web_push_vapid_keys.json`, the browser registers `public/service-worker.js` for chat-completion notifications, and generation completion dispatch is best-effort. | `pushNotifications.ts`, `routes/pushNotifications.ts`, `src/ts/server/pushNotifications.ts`, `routes/generationChat.ts` |
 | `.risu` save        | Portable import/export envelope: current `risusave-blocks`, legacy envelopes, JSON import compatibility, bundle `.risu.zip`, and original local-backup `.bin` flows. | `routes/save.ts`, `server/fastify/src/risuSave/`                        |
 | RisuRealm character | Realm-hosted card imported server-side from dynamic JSON or `charx`, with progress SSE, low-level-access confirmation, content-addressed assets, and `character.created` commit. | `routes/realmImport.ts`, `realmImport/`, `src/ts/server/realmImport.ts` |
 
@@ -69,8 +71,9 @@ behavior contracts.
 | Model / `LLMModel`                  | Browser model-registry entry with provider, format, tokenizer, flags, and model id metadata.                  | `src/ts/model/`, `providers-and-models.md`                                                                                                                         |
 | Provider capability table           | Shared pure routing table that returns a server provider name or unsupported reason category.                 | `src/ts/process/request/providerCapability.ts`                                                                                                                     |
 | Server prompt assembly              | Fastify assembles prompts. Live verdicts are `server` or `unsupported`; no user-selectable local fallback.    | `src/ts/process/request/serverPromptAssembly.ts`, `server/fastify/src/prompt/assemble.ts`                                                                          |
+| Prompt context agent                | Optional read-only pre-prompt agent that fills `{{agent}}` / `{{slot::agent}}` using bounded chat/lorebook/tail tools when enabled in settings. | `server/fastify/src/prompt/contextAgent.ts`, `src/lib/Setting/Pages/ContextAgentSettings.svelte`                                                                   |
 | Server Lua VM                       | wasmoon VM running supported non-interactive Lua hooks during assembly/post-generation.                       | `prompt/luaRuntime.ts`                                                                                                                                             |
-| Post-generation pass                | Server run-var/output trigger/editoutput derivation that persists final text and scriptstate deltas.          | `prompt/assemble.ts`, `routes/generationChat.ts`                                                                                                                   |
+| Post-generation pass                | Server run-var/output trigger/editoutput derivation that persists final text and scriptstate deltas and can emit live Lua progress frames. | `prompt/assemble.ts`, `routes/generationChat.ts`, `prompt/luaPostGenerationProgress.ts`                                                                             |
 | Durable generation                  | Detached server job for send/continue/regenerate that survives browser disconnect and persists the result.    | `src/ts/process/request/durableGeneration.ts`, `src/ts/process/reattach.ts`, `server/fastify/src/generationJobs.ts`, `server/fastify/src/routes/generationChat.ts` |
 | `activeGenerationJobs`              | Transient bootstrap projection of running durable jobs for reload/open-chat reattach.                         | `routes/bootstrap.ts`, `generationJobs.ts`, `process/reattach.ts`                                                                                                  |
 | `activeMessageTranslations`         | Transient bootstrap projection of detached raw-message translation jobs so reloads can keep message rows busy while server-side translation finishes. | `routes/bootstrap.ts`, `messageTranslationJobs.ts`, `src/ts/server/messageTranslationJobs.ts`                                                                       |
