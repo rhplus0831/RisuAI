@@ -205,6 +205,17 @@ async function waitForFetchCount(calls: CapturedFetch[], expected: number): Prom
   expect(calls).toHaveLength(expected)
 }
 
+function generationSettingsSaves(calls: CapturedFetch[]): CapturedFetch[] {
+  return calls.filter((call) => call.url.endsWith('/generation-settings'))
+}
+
+async function waitForGenerationSettingsSaveCount(calls: CapturedFetch[], expected: number): Promise<void> {
+  for (let attempt = 0; attempt < 20 && generationSettingsSaves(calls).length < expected; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  }
+  expect(generationSettingsSaves(calls).length).toBeGreaterThanOrEqual(expected)
+}
+
 function seedDb(): void {
   selectedCharID.set(0)
   DBState.db = {
@@ -932,7 +943,7 @@ describe('sidebar chat generation settings controls', () => {
 
     pickerRow('prompt', 'preset-b').click()
     await tick()
-    await waitForFetchCount(calls, 2)
+    await waitForGenerationSettingsSaveCount(calls, 1)
 
     expect(get(openPresetList)).toBe(false)
     expect(activeChat().generationSettings?.promptPresetId).toBe('preset-b')
@@ -954,7 +965,7 @@ describe('sidebar chat generation settings controls', () => {
 
     pickerRow('persona', 'persona-b').click()
     await tick()
-    await waitForFetchCount(calls, 3)
+    await waitForGenerationSettingsSaveCount(calls, 2)
 
     expect(get(openPersonaList)).toBe(false)
     expect(activeChat().generationSettings).toMatchObject({
@@ -1076,7 +1087,7 @@ describe('sidebar chat generation settings controls', () => {
 
     pickerRow('prompt', 'preset-a').click()
     await tick()
-    await waitForFetchCount(calls, 2)
+    await waitForGenerationSettingsSaveCount(calls, 1)
 
     expect(activeChat().generationSettings).toMatchObject({
       configured: true,
@@ -1096,7 +1107,7 @@ describe('sidebar chat generation settings controls', () => {
     expect(resolveActiveChatGenerationSettings().readiness.missing.map((reason) => reason.code)).not.toContain(
       'sidebar_toggle_missing',
     )
-    expect(calls[1]).toMatchObject({
+    expect(generationSettingsSaves(calls)[0]).toMatchObject({
       url: '/api/v1/commands/chats/chat-a/generation-settings',
       method: 'PUT',
       authHeader: 'sidebar-generation-settings-token',
@@ -1430,7 +1441,7 @@ describe('sidebar chat generation settings controls', () => {
     alertSpies.alertConfirm.mockResolvedValueOnce(true)
     togglePresetButton(1).click()
     await tick()
-    await waitForFetchCount(calls, 2)
+    await waitForGenerationSettingsSaveCount(calls, 2)
 
     expect(alertSpies.alertConfirm).toHaveBeenCalledWith('Apply these saved toggles to the current chat?')
     expect(activeChat().generationSettings?.sidebarToggles).toMatchObject({
@@ -1440,12 +1451,12 @@ describe('sidebar chat generation settings controls', () => {
       codex: '0',
       moduleFlag: '1',
     })
-    expect(calls[1]).toMatchObject({
+    expect(generationSettingsSaves(calls).at(-1)).toMatchObject({
       url: '/api/v1/commands/chats/chat-a/generation-settings',
       method: 'PUT',
       authHeader: 'sidebar-generation-settings-token',
       body: {
-        baseRevision: 300,
+        baseRevision: 301,
         generationSettings: expect.objectContaining({
           sidebarToggles: {
             mood: '1',

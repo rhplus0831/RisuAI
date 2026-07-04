@@ -18,6 +18,7 @@
   } from 'src/ts/chatGenerationTogglePresets'
   import { setCharacterInputTranslationHook, setCharacterSupaMemory } from 'src/ts/characterCommands'
   import {
+    ensureActiveChatSidebarToggleDefaults,
     resolveActiveChatGenerationSettings,
     saveActiveChatJailbreakToggleGenerationSettings,
     saveActiveChatSidebarToggleGenerationSettings,
@@ -67,6 +68,10 @@
       ? compareChatGenerationTogglePresetToActiveState(selectedTogglePreset, activeGenerationSettings)
       : null,
   )
+
+  $effect(() => {
+    ensureActiveChatSidebarToggleDefaults(activeGenerationSettings)
+  })
 
   function getJailbreakToggleValue(): boolean {
     return activeGenerationSettings.settings?.jailbreakToggle === true

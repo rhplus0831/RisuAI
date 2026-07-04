@@ -532,6 +532,61 @@ describe('active chat generation settings helper', () => {
     expect(state.readiness.missing.map((reason) => reason.code)).not.toContain('sidebar_toggle_missing')
   })
 
+  it('automatically saves defaults when active toggle requirements gain new keys', async () => {
+    DBState.db.characters[0].chats[0].generationSettings = {
+      configured: true,
+      personaId: 'persona-a',
+      modelPresetId: 'model-preset-a',
+      promptPresetId: 'preset-b',
+      jailbreakToggle: false,
+      sidebarToggles: {
+        global: '1',
+        chat: 'custom-chat-value',
+        character: '0',
+      },
+    }
+    DBState.db.promptPresets[1].customPromptTemplateToggle = [
+      'newFlag=New flag',
+      'newMode=New mode=select=alpha,beta',
+      'newNote=New note=text',
+      'newMemo=New memo=textarea',
+    ].join('\n')
+    const calls = stubCommandFetch()
+    setServerProjectionWriteGuardEnabled(true)
+
+    const state = resolveActiveChatGenerationSettings()
+    expect(state.readiness.missing.map((reason) => reason.code)).toContain('sidebar_toggle_missing')
+    expect(guardActiveChatGenerationSettingsForSend(state).status).toBe('ok')
+
+    const expectedSettings = {
+      configured: true,
+      personaId: 'persona-a',
+      modelPresetId: 'model-preset-a',
+      promptPresetId: 'preset-b',
+      jailbreakToggle: false,
+      sidebarToggles: {
+        global: '1',
+        chat: 'custom-chat-value',
+        character: '0',
+        newFlag: '0',
+        newMode: '0',
+        newNote: '',
+        newMemo: '',
+      },
+    }
+    expect(DBState.db.characters[0].chats[0].generationSettings).toEqual(expectedSettings)
+
+    await waitForCallCount(calls, 2)
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/chats/chat-a/generation-settings',
+      method: 'PUT',
+      body: {
+        baseRevision: 100,
+        generationSettings: expectedSettings,
+      },
+    })
+  })
+
   it('resets active-chat toggle values to defaults', async () => {
     DBState.db.promptPresets[0].customPromptTemplateToggle =
       'mode=Mode=select=warm,cold\nflag=Flag\nnote=Note=text\nmemo=Memo=textarea'
@@ -608,6 +663,11 @@ describe('active chat generation settings helper', () => {
       modelPresetId: 'model-preset-a',
       promptPresetId: 'preset-b',
       jailbreakToggle: false,
+      sidebarToggles: {
+        global: '0',
+        chat: '0',
+        character: '0',
+      },
     }
     expect(DBState.db.characters[0].chats[0].generationSettings).toEqual(nextSettings)
     expect(calls[1]).toMatchObject({

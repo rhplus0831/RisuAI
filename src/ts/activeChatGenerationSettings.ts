@@ -135,6 +135,10 @@ export function getActiveChatGenerationSettingsMissingLabels(): string[] {
 export function guardActiveChatGenerationSettingsForSend(
   state: ActiveChatGenerationSettingsState = resolveActiveChatGenerationSettings(),
 ): ActiveChatGenerationSettingsGuardResult {
+  if (ensureActiveChatSidebarToggleDefaults(state)) {
+    state = resolveActiveChatGenerationSettings()
+  }
+
   if (state.readiness.ready) {
     return { status: 'ok', state }
   }
@@ -212,10 +216,7 @@ export function createActiveChatGenerationSettingsPatch(
   }
 
   const pruned = pruneStaleSidebarToggleKeys(state, next)
-  if (isPromptPresetSelection) {
-    return fillMissingDefaultSidebarToggles(state, pruned)
-  }
-  return pruned
+  return fillMissingDefaultSidebarToggles(state, pruned)
 }
 
 export function createActiveChatGenerationSettingsSelectionPatch(
@@ -245,6 +246,20 @@ export function fillMissingActiveChatSidebarToggleDefaults(
     state,
     pruneStaleSidebarToggleKeys(state, cloneGenerationSettings(state.settings)),
   )
+}
+
+export function ensureActiveChatSidebarToggleDefaults(
+  state: ActiveChatGenerationSettingsState = resolveActiveChatGenerationSettings(),
+  options: ActiveChatGenerationSettingsSaveOptions = {},
+): boolean {
+  if (hasStaleExpectedTarget(options)) return false
+  if (hasBlockingSidebarToggleDefaultSaveReason(state)) return false
+
+  const chatId = state.identity.chatId
+  const generationSettings = fillMissingActiveChatSidebarToggleDefaults(state)
+  if (!chatId || !generationSettings || isJsonValueEqual(generationSettings, state.settings)) return false
+
+  return dispatchSaveChatGenerationSettings(chatId, generationSettings, transportOptions(options))
 }
 
 export function createActiveChatJailbreakToggleGenerationSettingsPatch(
@@ -335,6 +350,19 @@ function hasStaleExpectedTarget(options: ActiveChatGenerationSettingsSaveOptions
 function transportOptions(options: ActiveChatGenerationSettingsSaveOptions): ServerCommandTransportOptions {
   const { expectedTarget: _expectedTarget, ...transport } = options
   return transport
+}
+
+function hasBlockingSidebarToggleDefaultSaveReason(state: ActiveChatGenerationSettingsState): boolean {
+  return state.readiness.missing.some((reason) => {
+    switch (reason.code) {
+      case 'sidebar_toggles_missing':
+      case 'sidebar_toggle_missing':
+      case 'sidebar_toggle_invalid':
+        return false
+      default:
+        return true
+    }
+  })
 }
 
 function resolveReadiness(
@@ -464,7 +492,7 @@ function normalizeActiveChatGenerationSettingsForSave(
   if (!hasOwn(next, 'jailbreakToggle')) {
     next.jailbreakToggle = false
   }
-  return pruneStaleSidebarToggleKeys(state, next)
+  return fillMissingDefaultSidebarToggles(state, pruneStaleSidebarToggleKeys(state, next))
 }
 
 function cloneGenerationSettings(settings: ChatGenerationSettings | undefined): ChatGenerationSettings {
@@ -532,6 +560,10 @@ function isRecord(value: unknown): value is Record<string, string> {
 
 function hasOwn(value: object, key: PropertyKey): boolean {
   return Object.prototype.hasOwnProperty.call(value, key)
+}
+
+function isJsonValueEqual(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right)
 }
 
 function translatedIncompleteBaseMessage(): string {
