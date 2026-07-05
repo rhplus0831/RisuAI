@@ -97,6 +97,7 @@ function seedDb(): void {
       { id: 'persona-b', name: 'Persona B', personaPrompt: '', icon: '', note: '' },
     ],
     modelPresets: [{ id: 'model-preset-a', name: 'Model Preset A' }],
+    agentPresets: [{ id: 'agent-preset-a', name: 'Agent Preset A' }],
     promptPresets: [
       {
         id: 'preset-a',
@@ -282,6 +283,7 @@ describe('active chat generation settings helper', () => {
       personaId: 'deleted-persona',
       modelPresetId: 'deleted-model',
       promptPresetId: 'deleted-preset',
+      agentPresetId: 'deleted-agent-preset',
       jailbreakToggle: false,
       sidebarToggles: {
         global: '1',
@@ -311,21 +313,27 @@ describe('active chat generation settings helper', () => {
         field: 'generationSettings.promptPresetId',
         promptPresetId: 'deleted-preset',
       },
+      {
+        code: 'agent_preset_missing',
+        field: 'generationSettings.agentPresetId',
+        agentPresetId: 'deleted-agent-preset',
+      },
     ])
-    expect(state.missingLabels).toEqual(['Persona', 'Model preset', 'Prompt preset'])
+    expect(state.missingLabels).toEqual(['Persona', 'Model preset', 'Prompt preset', 'Agent preset'])
 
     const guard = guardActiveChatGenerationSettingsForSend(state)
 
     expect(guard.status).toBe('error')
     if (guard.status === 'error') {
       expect(guard.error).toBe(
-        'Chat generation settings are incomplete. Missing: Persona, Model preset, Prompt preset.',
+        'Chat generation settings are incomplete. Missing: Persona, Model preset, Prompt preset, Agent preset.',
       )
     }
     expect(DBState.db.characters[0].chats[0].generationSettings).toMatchObject({
       personaId: 'deleted-persona',
       modelPresetId: 'deleted-model',
       promptPresetId: 'deleted-preset',
+      agentPresetId: 'deleted-agent-preset',
     })
     expect(DBState.db.selectedPersona).toBe(0)
     expect(DBState.db.promptPresetsId).toBe(0)

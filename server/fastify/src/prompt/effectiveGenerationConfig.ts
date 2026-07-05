@@ -82,6 +82,7 @@ export function buildEffectiveGenerationConfig(input: EffectiveGenerationConfigI
     personas,
     modelPresets,
     promptPresets,
+    agentPresets: input.database.agentPresets ?? [],
     modules: input.database.modules ?? [],
     enabledModuleIds: stringArray(input.database.enabledModules),
     characterModuleIds: stringArray(input.currentChar.modules),

@@ -11,6 +11,7 @@ export interface ChatGenerationSettings {
   personaId?: string
   modelPresetId?: string
   promptPresetId?: string
+  agentPresetId?: string
   jailbreakToggle?: boolean
   sidebarToggles?: Record<string, string>
 }
@@ -38,6 +39,10 @@ export interface ChatGenerationPromptPresetReference {
 }
 
 export type ChatGenerationPresetReference = ChatGenerationPromptPresetReference
+
+export interface ChatGenerationAgentPresetReference {
+  id?: string | null
+}
 
 export interface ChatGenerationModuleReference {
   id: string
@@ -108,6 +113,7 @@ export interface ResolveChatGenerationRequirementsInput {
 export interface ResolveChatGenerationSettingsReadinessInput extends ResolveChatGenerationRequirementsInput {
   settings?: ChatGenerationSettings
   personas: readonly ChatGenerationPersonaReference[]
+  agentPresets?: readonly ChatGenerationAgentPresetReference[]
 }
 
 export const CHAT_GENERATION_SETTINGS_MISSING_REASON_CODES = [
@@ -119,6 +125,7 @@ export const CHAT_GENERATION_SETTINGS_MISSING_REASON_CODES = [
   'model_preset_missing',
   'prompt_preset_id_missing',
   'prompt_preset_missing',
+  'agent_preset_missing',
   'jailbreak_toggle_missing',
   'jailbreak_toggle_invalid',
   'sidebar_toggles_missing',
@@ -134,6 +141,7 @@ export type ChatGenerationSettingsFieldPath =
   | `${typeof CHAT_GENERATION_SETTINGS_FIELD}.personaId`
   | `${typeof CHAT_GENERATION_SETTINGS_FIELD}.modelPresetId`
   | `${typeof CHAT_GENERATION_SETTINGS_FIELD}.promptPresetId`
+  | `${typeof CHAT_GENERATION_SETTINGS_FIELD}.agentPresetId`
   | `${typeof CHAT_GENERATION_SETTINGS_FIELD}.jailbreakToggle`
   | `${typeof CHAT_GENERATION_SETTINGS_FIELD}.sidebarToggles`
   | `${typeof CHAT_GENERATION_SETTINGS_FIELD}.sidebarToggles.${string}`
@@ -173,6 +181,11 @@ export type ChatGenerationSettingsMissingReason =
       code: 'prompt_preset_missing'
       field: `${typeof CHAT_GENERATION_SETTINGS_FIELD}.promptPresetId`
       promptPresetId: string
+    }
+  | {
+      code: 'agent_preset_missing'
+      field: `${typeof CHAT_GENERATION_SETTINGS_FIELD}.agentPresetId`
+      agentPresetId: string
     }
   | {
       code: 'jailbreak_toggle_missing'
@@ -311,6 +324,19 @@ export function resolveChatGenerationSettingsReadiness(
       code: 'prompt_preset_missing',
       field: `${CHAT_GENERATION_SETTINGS_FIELD}.promptPresetId`,
       promptPresetId,
+    })
+  }
+
+  const agentPresetId = settings?.agentPresetId
+  if (
+    isNonEmptyString(agentPresetId) &&
+    input.agentPresets &&
+    !input.agentPresets.some((preset) => preset.id === agentPresetId)
+  ) {
+    missing.push({
+      code: 'agent_preset_missing',
+      field: `${CHAT_GENERATION_SETTINGS_FIELD}.agentPresetId`,
+      agentPresetId,
     })
   }
 

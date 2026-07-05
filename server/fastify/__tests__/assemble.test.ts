@@ -902,6 +902,29 @@ describe('Phase 7-11a resolveScope (via beginAssembly)', () => {
       ],
     } as unknown as Partial<Database>)
     expectIncompleteAssembly(deletedPersonaDb, ['persona_missing'])
+
+    const deletedAgentPresetDb = makeDatabase({
+      agentPresets: [{ id: 'agent-preset-default', name: 'Default Agent', enabled: true, version: 1, steps: [] }],
+      characters: [
+        makeCharacter({
+          chats: [
+            makeChat({
+              id: 'chat-1',
+              generationSettings: {
+                configured: true,
+                personaId: 'persona-default',
+                modelPresetId: 'model-preset-default',
+                promptPresetId: 'preset-default',
+                agentPresetId: 'deleted-agent-preset',
+                jailbreakToggle: false,
+                sidebarToggles: {},
+              },
+            }),
+          ],
+        }),
+      ],
+    } as unknown as Partial<Database>)
+    expectIncompleteAssembly(deletedAgentPresetDb, ['agent_preset_missing'])
   })
 
   it('requires displayed sidebar toggles and preserves explicit off values', () => {

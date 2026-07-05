@@ -33,6 +33,7 @@ import {
   readModelRoleProfiles,
 } from '../../../../src/ts/model/modelProfileRecords.js'
 import { normalizeChatGenerationTogglePresets } from '../../../../src/ts/chatGenerationTogglePresetRecords.js'
+import { normalizeAgentPresets } from '../../../../src/ts/agentPresetRecords.js'
 import {
   createPromptItemRecord,
   ensurePromptTemplateCollection,
@@ -61,6 +62,7 @@ import {
   ensureDatabaseObject,
   ensurePresetCollection,
   findPresetIndex,
+  normalizePresetAgentSettings,
   readJsonObject,
   readOptionalBoolean,
   readOptionalString,
@@ -471,6 +473,7 @@ function buildChatGenerationSettingsValidationContext(
     personas: ensurePersonaCollection(target),
     modelPresets: ensureModelPresetCollection(target),
     promptPresets: ensurePromptPresetCollection(target),
+    agentPresets: normalizeAgentPresets(target.agentPresets),
     modules: ensureModuleRecords(target),
     enabledModuleIds: ensureEnabledModules(target),
     characterModuleIds,
@@ -1726,6 +1729,7 @@ export function registerCommandRoutes(
             ...patch,
             id: presetId,
           }
+          normalizePresetAgentSettings(presets[index])
           writeSingleCollectionRow(innerDb, 'botPresets', index, presets[index])
           return {
             event: { ...COMMAND_EVENT_CATALOG.presetUpdated, id: presetId },

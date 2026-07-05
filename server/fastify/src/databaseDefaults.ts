@@ -17,6 +17,7 @@ import {
   normalizeModelProfiles,
   normalizeModelRoleProfiles,
 } from '../../../src/ts/model/modelProfileRecords.js'
+import { normalizeAgentPresetDefaultId, normalizeAgentPresets } from '../../../src/ts/agentPresetRecords.js'
 import { normalizePromptTemplateValue } from './commands/prompts.js'
 
 type JsonRecord = Record<string, unknown>
@@ -231,6 +232,8 @@ export function normalizeDatabaseDefaults(
   setDefault(database, 'modelRoleProfiles', createDefaultModelRoleProfiles())
   setDefault(database, 'modelRuntimeDefaults', {})
   normalizeModelProfileSettings(database)
+  setDefault(database, 'agentPresets', [])
+  normalizeAgentPresetSettings(database)
   setDefault(database, 'waifuWidth', 100)
   setDefault(database, 'waifuWidth2', 100)
   setDefault(database, 'emotionPrompt', '')
@@ -434,6 +437,7 @@ export function normalizeDatabaseDefaults(
   setDefault(database, 'seperateModels', normalizeLegacySeperateModels(undefined))
   normalizeModelRoleSettings(database)
   normalizeModelProfileSettings(database)
+  normalizeAgentPresetSettings(database)
   setDefault(database, 'modelTools', [])
   setDefault(database, 'agentContextEnabled', false)
   setDefault(database, 'agentContextPrompt', '')
@@ -770,6 +774,17 @@ function normalizeModelProfileSettings(database: JsonRecord): void {
   database.modelProfiles = normalizeModelProfiles(database.modelProfiles)
   database.modelRoleProfiles = normalizeModelRoleProfiles(database.modelRoleProfiles)
   database.modelRuntimeDefaults = normalizeModelRuntimeDefaults(database.modelRuntimeDefaults)
+}
+
+function normalizeAgentPresetSettings(database: JsonRecord): void {
+  const agentPresets = normalizeAgentPresets(database.agentPresets)
+  database.agentPresets = agentPresets
+  const defaultId = normalizeAgentPresetDefaultId(database.agentPresetDefaultId, agentPresets)
+  if (defaultId) {
+    database.agentPresetDefaultId = defaultId
+  } else {
+    delete database.agentPresetDefaultId
+  }
 }
 
 function normalizeSeperateParameters(database: JsonRecord): void {

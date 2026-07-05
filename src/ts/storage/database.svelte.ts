@@ -33,6 +33,7 @@ import {
   type ModelProfileRecordRuntimeOptions,
   type ModelRoleProfileMap,
 } from '../model/modelProfileRecords'
+import { normalizeAgentPresetDefaultId, normalizeAgentPresets, type AgentPresetRecord } from '../agentPresetRecords'
 import { type HypaV3Settings, type HypaV3Preset, createHypaV3Preset } from '../process/memory/hypav3'
 import { normalizeTranslatorPresetState, type TranslatorPreset } from '../translator/presets'
 import { safeStructuredClone } from '../polyfill'
@@ -151,6 +152,17 @@ function normalizeModelProfileSettings(
   data.modelProfiles = normalizeModelProfiles(data.modelProfiles)
   data.modelRoleProfiles = normalizeModelRoleProfiles(data.modelRoleProfiles)
   data.modelRuntimeDefaults = normalizeModelRuntimeDefaults(data.modelRuntimeDefaults)
+}
+
+function normalizeAgentPresetSettings(data: Partial<Pick<Database, 'agentPresets' | 'agentPresetDefaultId'>>): void {
+  const agentPresets = normalizeAgentPresets(data.agentPresets)
+  data.agentPresets = agentPresets
+  const defaultId = normalizeAgentPresetDefaultId(data.agentPresetDefaultId, agentPresets)
+  if (defaultId) {
+    data.agentPresetDefaultId = defaultId
+  } else {
+    delete data.agentPresetDefaultId
+  }
 }
 
 function normalizeSeperateParameters(data: Partial<Pick<Database, 'seperateParameters'>>): void {
@@ -367,6 +379,8 @@ const SET_PRESET_ROLLBACK_KEYS = [
   'modelProfiles',
   'modelRoleProfiles',
   'modelRuntimeDefaults',
+  'agentPresets',
+  'agentPresetDefaultId',
   'currentPluginProvider',
   'textgenWebUIStreamURL',
   'textgenWebUIBlockingURL',
@@ -924,6 +938,7 @@ export function setDatabase(data: Database) {
   }
   normalizeModelRoleSettings(data)
   normalizeModelProfileSettings(data)
+  normalizeAgentPresetSettings(data)
   if (checkNullish(data.waifuWidth)) {
     data.waifuWidth = 100
   }
@@ -1496,6 +1511,7 @@ export function applyServerProjectionDatabase(data: Database) {
   const result = withServerProjectionApply(() => {
     data.customSidebarItems = normalizeCustomSidebarItems(data.customSidebarItems)
     data.chatGenerationTogglePresets = normalizeChatGenerationTogglePresets(data.chatGenerationTogglePresets)
+    normalizeAgentPresetSettings(data)
     changeLanguage(data.language)
     setDatabaseLite(data)
   })
@@ -1825,6 +1841,8 @@ export interface Database {
   modelProfiles: ModelProfileRecord[]
   modelRoleProfiles: ModelRoleProfileMap
   modelRuntimeDefaults: ModelProfileRecordRuntimeOptions
+  agentPresets: AgentPresetRecord[]
+  agentPresetDefaultId?: string
   jailbreakToggle: boolean
   loreBookDepth: number
   loreBookToken: number
@@ -2558,6 +2576,8 @@ export interface botPreset {
   modelProfiles?: ModelProfileRecord[]
   modelRoleProfiles?: ModelRoleProfileMap
   modelRuntimeDefaults?: ModelProfileRecordRuntimeOptions
+  agentPresets?: AgentPresetRecord[]
+  agentPresetDefaultId?: string
   currentPluginProvider?: string
   textgenWebUIStreamURL?: string
   textgenWebUIBlockingURL?: string
@@ -3049,6 +3069,8 @@ function saveCurrentPresetLocal() {
     modelProfiles: safeStructuredClone(db.modelProfiles),
     modelRoleProfiles: safeStructuredClone(db.modelRoleProfiles),
     modelRuntimeDefaults: safeStructuredClone(normalizeModelRuntimeDefaults(db.modelRuntimeDefaults)),
+    agentPresets: safeStructuredClone(db.agentPresets),
+    agentPresetDefaultId: db.agentPresetDefaultId,
     currentPluginProvider: db.currentPluginProvider,
     textgenWebUIStreamURL: db.textgenWebUIStreamURL,
     textgenWebUIBlockingURL: db.textgenWebUIBlockingURL,
@@ -3952,6 +3974,19 @@ export function setPreset(db: Database, newPres: botPreset) {
   db.modelProfiles = normalizeModelProfiles(newPres.modelProfiles ?? db.modelProfiles)
   db.modelRoleProfiles = normalizeModelRoleProfiles(newPres.modelRoleProfiles ?? db.modelRoleProfiles)
   db.modelRuntimeDefaults = normalizeModelRuntimeDefaults(newPres.modelRuntimeDefaults ?? db.modelRuntimeDefaults)
+  if (Object.hasOwn(newPres, 'agentPresets') || Object.hasOwn(newPres, 'agentPresetDefaultId')) {
+    const agentPresets = normalizeAgentPresets(newPres.agentPresets ?? db.agentPresets)
+    db.agentPresets = agentPresets
+    const defaultId = normalizeAgentPresetDefaultId(
+      newPres.agentPresetDefaultId ?? db.agentPresetDefaultId,
+      agentPresets,
+    )
+    if (defaultId) {
+      db.agentPresetDefaultId = defaultId
+    } else {
+      delete db.agentPresetDefaultId
+    }
+  }
   db.currentPluginProvider = newPres.currentPluginProvider ?? db.currentPluginProvider
   db.textgenWebUIStreamURL = newPres.textgenWebUIStreamURL ?? db.textgenWebUIStreamURL
   db.textgenWebUIBlockingURL = newPres.textgenWebUIBlockingURL ?? db.textgenWebUIBlockingURL

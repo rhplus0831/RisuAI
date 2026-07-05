@@ -410,6 +410,21 @@ describe('loadout projection command helpers', () => {
     DBState.db.loadouts = []
     DBState.db.modelPresetsId = 1
     DBState.db.promptPresetsId = 1
+    DBState.db.agentPresets = [{ id: 'agent-preset-a', name: 'Research Agent', enabled: true, version: 1, steps: [] }]
+    DBState.db.characters[0].chats = [
+      {
+        id: 'chat-a',
+        name: 'Chat A',
+        note: '',
+        message: [],
+        localLore: [],
+        generationSettings: {
+          agentPresetId: 'agent-preset-a',
+          jailbreakToggle: false,
+        },
+      } as any,
+    ]
+    DBState.db.characters[0].chatPage = 0
     const calls = stubApplyLoadoutFetch()
     vi.spyOn(Date, 'now').mockReturnValue(123456)
     setServerProjectionWriteGuardEnabled(true)
@@ -425,6 +440,8 @@ describe('loadout projection command helpers', () => {
       modelPresetName: 'Story Model',
       promptPresetId: 'prompt-b',
       promptPresetName: 'Story Prompt',
+      agentPresetId: 'agent-preset-a',
+      agentPresetName: 'Research Agent',
       personaId: 'persona-a',
     })
     expect(DBState.db.loadouts[0]).toMatchObject(loadout)
@@ -442,7 +459,127 @@ describe('loadout projection command helpers', () => {
           modelPresetName: 'Story Model',
           promptPresetId: 'prompt-b',
           promptPresetName: 'Story Prompt',
+          agentPresetId: 'agent-preset-a',
+          agentPresetName: 'Research Agent',
         }),
+      },
+    })
+  })
+
+  it('applies and clears Agent Preset selections on the active chat generation settings', async () => {
+    const loadout = makeLoadout({
+      id: 'agent-loadout',
+      name: 'Agent Loadout',
+      characterIds: [],
+      modules: [],
+      globalVariables: {},
+      presetName: '',
+      agentPresetId: 'agent-preset-target',
+      agentPresetName: 'Target Agent',
+      personaId: '',
+    })
+    selectedCharID.set(0)
+    DBState.db = {
+      loadouts: [cloneJsonValue(loadout)],
+      lastLoadedLoadoutName: 'Before Loadout',
+      characters: [
+        {
+          chaId: 'char-a',
+          chatPage: 0,
+          chats: [
+            {
+              id: 'chat-a',
+              name: 'Chat A',
+              note: '',
+              message: [],
+              localLore: [],
+              generationSettings: {
+                configured: true,
+                personaId: 'persona-a',
+                modelPresetId: 'model-a',
+                promptPresetId: 'prompt-a',
+                agentPresetId: 'agent-preset-old',
+                jailbreakToggle: false,
+                sidebarToggles: {},
+              },
+            },
+          ],
+        },
+      ],
+      agentPresets: [
+        { id: 'agent-preset-old', name: 'Old Agent', enabled: true, version: 1, steps: [] },
+        { id: 'agent-preset-target', name: 'Target Agent', enabled: true, version: 1, steps: [] },
+      ],
+      botPresets: [],
+      botPresetsId: -1,
+      modelPresets: [],
+      modelPresetsId: -1,
+      promptPresets: [],
+      promptPresetsId: -1,
+      enabledModules: [],
+      globalChatVariables: {},
+    } as any
+    const calls = stubApplyLoadoutFetch()
+    vi.spyOn(Date, 'now').mockReturnValue(123456)
+    setServerProjectionWriteGuardEnabled(true)
+
+    applyLoadout(loadout, ['preset'])
+
+    expect(DBState.db.characters[0].chats[0].generationSettings.agentPresetId).toBe('agent-preset-target')
+
+    await waitForCallCount(calls, 3)
+
+    expect(calls.map((call) => ({ url: call.url, method: call.method, body: call.body }))).toEqual([
+      {
+        url: '/api/v1/bootstrap',
+        method: 'GET',
+        body: null,
+      },
+      {
+        url: '/api/v1/commands/chats/chat-a/generation-settings',
+        method: 'PUT',
+        body: {
+          baseRevision: 10,
+          generationSettings: {
+            configured: true,
+            personaId: 'persona-a',
+            modelPresetId: 'model-a',
+            promptPresetId: 'prompt-a',
+            agentPresetId: 'agent-preset-target',
+            jailbreakToggle: false,
+            sidebarToggles: {},
+          },
+        },
+      },
+      {
+        url: '/api/v1/commands/loadouts/agent-loadout/touch',
+        method: 'POST',
+        body: {
+          baseRevision: 11,
+          lastUsed: 123456,
+          characterId: 'char-a',
+        },
+      },
+    ])
+
+    const clearLoadout = {
+      ...loadout,
+      agentPresetId: '',
+      agentPresetName: '',
+    }
+    const clearCalls = stubApplyLoadoutFetch()
+
+    applyLoadout(clearLoadout, ['preset'])
+
+    expect(DBState.db.characters[0].chats[0].generationSettings.agentPresetId).toBe('')
+    await waitForCallCount(clearCalls, 2)
+    expect(clearCalls[0]).toMatchObject({
+      url: '/api/v1/commands/chats/chat-a/generation-settings',
+      method: 'PUT',
+    })
+    expect(clearCalls[0].body).toMatchObject({
+      generationSettings: {
+        agentPresetId: '',
       },
     })
   })

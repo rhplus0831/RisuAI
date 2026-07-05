@@ -150,6 +150,7 @@ describe('chat generation settings contract', () => {
   it('treats explicit off and empty raw values as configured when keys are present', () => {
     const readiness = resolveChatGenerationSettingsReadiness(
       readinessInput({
+        agentPresets: [{ id: 'agent-preset-a' }],
         promptPresets: [
           {
             id: 'preset-a',
@@ -162,6 +163,7 @@ describe('chat generation settings contract', () => {
           personaId: 'persona-a',
           modelPresetId: 'model-a',
           promptPresetId: 'preset-a',
+          agentPresetId: '',
           jailbreakToggle: false,
           sidebarToggles: {
             mode: '0',
@@ -173,6 +175,49 @@ describe('chat generation settings contract', () => {
 
     expect(readiness.ready).toBe(true)
     expect(readiness.missing).toEqual([])
+  })
+
+  it('keeps absent Agent Preset selection ready and reports non-empty stale references', () => {
+    const ready = resolveChatGenerationSettingsReadiness(
+      readinessInput({
+        agentPresets: [],
+        promptPresets: [{ id: 'preset-a' }],
+        settings: {
+          configured: true,
+          personaId: 'persona-a',
+          modelPresetId: 'model-a',
+          promptPresetId: 'preset-a',
+          jailbreakToggle: false,
+          sidebarToggles: {},
+        },
+      }),
+    )
+    const stale = resolveChatGenerationSettingsReadiness(
+      readinessInput({
+        agentPresets: [{ id: 'agent-preset-a' }],
+        promptPresets: [{ id: 'preset-a' }],
+        settings: {
+          configured: true,
+          personaId: 'persona-a',
+          modelPresetId: 'model-a',
+          promptPresetId: 'preset-a',
+          agentPresetId: 'deleted-agent-preset',
+          jailbreakToggle: false,
+          sidebarToggles: {},
+        },
+      }),
+    )
+
+    expect(ready.ready).toBe(true)
+    expect(ready.missing).toEqual([])
+    expect(stale.ready).toBe(false)
+    expect(stale.missing).toEqual([
+      {
+        code: 'agent_preset_missing',
+        field: 'generationSettings.agentPresetId',
+        agentPresetId: 'deleted-agent-preset',
+      },
+    ])
   })
 
   it('returns missing reason codes for absent required values', () => {

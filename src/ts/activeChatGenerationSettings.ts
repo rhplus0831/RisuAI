@@ -3,6 +3,7 @@ import {
   CHAT_GENERATION_SETTINGS_INCOMPLETE_MESSAGE,
   resolveDisplayedSidebarToggles,
   resolveChatGenerationSettingsReadiness,
+  type ChatGenerationAgentPresetReference,
   type ChatGenerationDisplayedSidebarToggle,
   type ChatGenerationModelPresetReference,
   type ChatGenerationModuleReference,
@@ -40,6 +41,7 @@ export interface ActiveChatGenerationSettingsState {
   persona?: ChatGenerationPersonaReference
   modelPreset?: ChatGenerationModelPresetReference
   promptPreset?: ChatGenerationPromptPresetReference
+  agentPreset?: ChatGenerationAgentPresetReference
   readiness: ChatGenerationSettingsReadiness
   requiredSidebarToggles: ChatGenerationRequiredSidebarToggle[]
   displayedSidebarToggles: ChatGenerationDisplayedSidebarToggle[]
@@ -85,6 +87,9 @@ export function resolveActiveChatGenerationSettings(
   const promptPresets = safeArray<ActiveChatGenerationPromptPresetReference>(
     db.promptPresets as unknown as ActiveChatGenerationPromptPresetReference[] | undefined,
   )
+  const agentPresets = safeArray<ChatGenerationAgentPresetReference>(
+    db.agentPresets as unknown as ChatGenerationAgentPresetReference[] | undefined,
+  )
 
   const readiness = resolveReadiness(db, character, chat, settings)
   const identity: ActiveChatGenerationSettingsIdentity = {
@@ -104,6 +109,7 @@ export function resolveActiveChatGenerationSettings(
     persona: findById(personas, settings?.personaId),
     modelPreset: findById(modelPresets, settings?.modelPresetId),
     promptPreset: findById(promptPresets, settings?.promptPresetId),
+    agentPreset: findById(agentPresets, settings?.agentPresetId),
     readiness,
     requiredSidebarToggles: readiness.requirements.sidebarToggles,
     displayedSidebarToggles: resolveDisplayedToggles(db, character, chat, settings),
@@ -220,7 +226,10 @@ export function createActiveChatGenerationSettingsPatch(
 }
 
 export function createActiveChatGenerationSettingsSelectionPatch(
-  selection: Pick<ActiveChatGenerationSettingsPatch, 'personaId' | 'modelPresetId' | 'promptPresetId'>,
+  selection: Pick<
+    ActiveChatGenerationSettingsPatch,
+    'personaId' | 'modelPresetId' | 'promptPresetId' | 'agentPresetId'
+  >,
   state: ActiveChatGenerationSettingsState = resolveActiveChatGenerationSettings(),
 ): ChatGenerationSettings {
   return createActiveChatGenerationSettingsPatch(selection, state)
@@ -308,7 +317,10 @@ export function saveActiveChatGenerationSettings(
 }
 
 export function saveActiveChatGenerationSettingsSelection(
-  selection: Pick<ActiveChatGenerationSettingsPatch, 'personaId' | 'modelPresetId' | 'promptPresetId'>,
+  selection: Pick<
+    ActiveChatGenerationSettingsPatch,
+    'personaId' | 'modelPresetId' | 'promptPresetId' | 'agentPresetId'
+  >,
   options: ActiveChatGenerationSettingsSaveOptions = {},
 ): boolean {
   return saveActiveChatGenerationSettingsPatch(selection, options)
@@ -386,6 +398,9 @@ function resolveReadiness(
     ),
     modelPresets,
     promptPresets,
+    agentPresets: safeArray<ChatGenerationAgentPresetReference>(
+      db.agentPresets as unknown as ChatGenerationAgentPresetReference[] | undefined,
+    ),
     modules: safeArray<ChatGenerationModuleReference>(
       db.modules as unknown as ChatGenerationModuleReference[] | undefined,
     ),
@@ -502,6 +517,7 @@ function cloneGenerationSettings(settings: ChatGenerationSettings | undefined): 
   if (hasOwn(settings, 'personaId')) clone.personaId = settings.personaId
   if (hasOwn(settings, 'modelPresetId')) clone.modelPresetId = settings.modelPresetId
   if (hasOwn(settings, 'promptPresetId')) clone.promptPresetId = settings.promptPresetId
+  if (hasOwn(settings, 'agentPresetId')) clone.agentPresetId = settings.agentPresetId
   if (hasOwn(settings, 'jailbreakToggle')) clone.jailbreakToggle = settings.jailbreakToggle
   if (isRecord(settings.sidebarToggles)) clone.sidebarToggles = { ...settings.sidebarToggles }
   return clone
@@ -526,6 +542,8 @@ function missingReasonLabel(
     case 'prompt_preset_id_missing':
     case 'prompt_preset_missing':
       return 'Prompt preset'
+    case 'agent_preset_missing':
+      return 'Agent preset'
     case 'jailbreak_toggle_missing':
     case 'jailbreak_toggle_invalid':
       return 'Jailbreak toggle'

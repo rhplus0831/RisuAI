@@ -13,6 +13,8 @@ describe('database defaults', () => {
       Object.fromEntries(MODEL_ROLES.map((role) => [role, { mode: 'legacy' }])),
     )
     expect(database.modelRuntimeDefaults).toEqual({})
+    expect(database.agentPresets).toEqual([])
+    expect(database.agentPresetDefaultId).toBeUndefined()
     expect(database.strictScriptCheck).toBe(false)
     expect(database.seperateModels).toMatchObject({
       memory: '',
@@ -88,6 +90,15 @@ describe('database defaults', () => {
           customFlags: [LLMFlags.hasImageInput, 999],
           unsupportedRuntimeField: true,
         },
+        agentPresets: [
+          {
+            id: ' ap_research ',
+            name: ' Research ',
+            enabled: true,
+            steps: [{ id: ' aps_context ', outputKey: ' context ' }],
+          },
+        ],
+        agentPresetDefaultId: 'ap_research',
       },
       { providerDefaults: false },
     )
@@ -129,5 +140,52 @@ describe('database defaults', () => {
       modelTools: ['tool-a'],
       customFlags: [LLMFlags.hasImageInput],
     })
+    expect(database.agentPresets).toEqual([
+      {
+        id: 'ap_research',
+        name: 'Research',
+        enabled: true,
+        version: 1,
+        steps: [
+          {
+            id: 'aps_context',
+            name: 'aps_context',
+            enabled: true,
+            phase: 'beforeMain',
+            dependencies: [],
+            instruction: '',
+            model: { mode: 'inheritMain' },
+            runtime: {},
+            inputScopes: [],
+            outputKey: 'context',
+            outputFormat: 'text',
+            destination: 'promptOutput',
+            failurePolicy: { mode: 'required' },
+          },
+        ],
+      },
+    ])
+    expect(database.agentPresetDefaultId).toBe('ap_research')
+  })
+
+  it('clears missing Agent Preset defaults during normalization', () => {
+    const database = normalizeDatabaseDefaults(
+      {
+        agentPresets: [{ id: 'ap_existing', name: 'Existing' }],
+        agentPresetDefaultId: 'ap_missing',
+      },
+      { providerDefaults: false },
+    )
+
+    expect(database.agentPresets).toEqual([
+      {
+        id: 'ap_existing',
+        name: 'Existing',
+        enabled: true,
+        version: 1,
+        steps: [],
+      },
+    ])
+    expect(database.agentPresetDefaultId).toBeUndefined()
   })
 })

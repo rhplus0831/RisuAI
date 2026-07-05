@@ -16,6 +16,8 @@ export interface LoadoutRecord extends JsonRecord {
   modelPresetName: string
   promptPresetId: string
   promptPresetName: string
+  agentPresetId?: string
+  agentPresetName?: string
   personaId: string
 }
 
@@ -75,6 +77,12 @@ export function createLoadoutRecord(input: unknown): LoadoutRecord {
     promptPresetName: typeof loadout.promptPresetName === 'string' ? loadout.promptPresetName : '',
     personaId: typeof loadout.personaId === 'string' ? loadout.personaId : '',
   }
+  if (hasOwn(loadout, 'agentPresetId')) {
+    record.agentPresetId = loadout.agentPresetId as string
+  }
+  if (hasOwn(loadout, 'agentPresetName')) {
+    record.agentPresetName = loadout.agentPresetName as string
+  }
   validateLoadoutRecord(record, 'loadout')
   return record
 }
@@ -95,6 +103,12 @@ function repairLoadoutRecord(input: unknown): LoadoutRecord {
     promptPresetId: typeof loadout.promptPresetId === 'string' ? loadout.promptPresetId : '',
     promptPresetName: typeof loadout.promptPresetName === 'string' ? loadout.promptPresetName : '',
     personaId: typeof loadout.personaId === 'string' ? loadout.personaId : '',
+  }
+  if (typeof loadout.agentPresetId === 'string') {
+    record.agentPresetId = loadout.agentPresetId
+  }
+  if (typeof loadout.agentPresetName === 'string') {
+    record.agentPresetName = loadout.agentPresetName
   }
   validateLoadoutRecord(record, 'loadout')
   return record
@@ -171,6 +185,8 @@ function validateLoadoutRecord(record: JsonRecord, label: string): void {
     'modelPresetName',
     'promptPresetId',
     'promptPresetName',
+    'agentPresetId',
+    'agentPresetName',
     'personaId',
   ]) {
     if (key in record && typeof record[key] !== 'string') {
@@ -240,4 +256,8 @@ function validateJsonValue(label: string, value: unknown): void {
   if (value === undefined) {
     throw new ValidationError(`${label} must be JSON-serializable`)
   }
+}
+
+function hasOwn(value: object, key: PropertyKey): boolean {
+  return Object.prototype.hasOwnProperty.call(value, key)
 }

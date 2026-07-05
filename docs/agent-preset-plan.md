@@ -2,6 +2,12 @@
 
 Last updated: 2026-07-05.
 
+Expanded implementation plan: [`agent-preset-plan/README.md`](agent-preset-plan/README.md).
+
+This file preserves the original product Q&A. The detailed workstream plan,
+status router, phase files, solve note, and verification notes now live under
+[`docs/agent-preset-plan/`](agent-preset-plan/).
+
 This note captures the proposed replacement for the current Context Agent feature.
 It is meant to help align on product behavior and implementation boundaries
 before schema or UI work starts.

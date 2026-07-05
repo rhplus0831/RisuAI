@@ -3,6 +3,7 @@ import { EntityNotFoundError, ValidationError } from '../repository.js'
 import {
   CHAT_GENERATION_SETTINGS_FIELD,
   resolveChatGenerationSettingsReadiness,
+  type ChatGenerationAgentPresetReference,
   type ChatGenerationModelPresetReference,
   type ChatGenerationModuleReference,
   type ChatGenerationPersonaReference,
@@ -48,6 +49,7 @@ export interface ChatGenerationSettingsValidationContext {
   personas: readonly ChatGenerationPersonaReference[]
   modelPresets: readonly ChatGenerationModelPresetReference[]
   promptPresets: readonly ChatGenerationPromptPresetWithModuleIntegration[]
+  agentPresets?: readonly ChatGenerationAgentPresetReference[]
   modules?: readonly ChatGenerationModuleReference[]
   enabledModuleIds?: readonly string[]
   characterModuleIds?: readonly string[]
@@ -325,6 +327,7 @@ export function readChatGenerationSettingsSave(
       key !== 'personaId' &&
       key !== 'modelPresetId' &&
       key !== 'promptPresetId' &&
+      key !== 'agentPresetId' &&
       key !== 'jailbreakToggle' &&
       key !== 'sidebarToggles'
     ) {
@@ -366,6 +369,20 @@ export function readChatGenerationSettingsSave(
     normalized.promptPresetId = raw.promptPresetId
     if (raw.promptPresetId.trim() !== '' && !context.promptPresets.some((preset) => preset.id === raw.promptPresetId)) {
       throw new ValidationError(`Unknown prompt preset id in ${label}.promptPresetId: ${raw.promptPresetId}`)
+    }
+  }
+
+  if (hasOwn(raw, 'agentPresetId')) {
+    if (typeof raw.agentPresetId !== 'string') {
+      throw new ValidationError(`${label}.agentPresetId must be a string`)
+    }
+    normalized.agentPresetId = raw.agentPresetId
+    if (
+      raw.agentPresetId.trim() !== '' &&
+      context.agentPresets &&
+      !context.agentPresets.some((preset) => preset.id === raw.agentPresetId)
+    ) {
+      throw new ValidationError(`Unknown agent preset id in ${label}.agentPresetId: ${raw.agentPresetId}`)
     }
   }
 

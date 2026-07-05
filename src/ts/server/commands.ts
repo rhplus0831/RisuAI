@@ -439,6 +439,8 @@ export type LoadoutSnapshot = Record<string, unknown> & {
   modelPresetName?: string
   promptPresetId?: string
   promptPresetName?: string
+  agentPresetId?: string
+  agentPresetName?: string
   personaId?: string
 }
 

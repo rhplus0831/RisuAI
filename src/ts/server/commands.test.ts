@@ -2409,6 +2409,7 @@ describe('server command API adapter', () => {
           personaId: 'persona-a',
           modelPresetId: 'model-preset-a',
           promptPresetId: 'preset-a',
+          agentPresetId: 'agent-preset-a',
           jailbreakToggle: false,
           sidebarToggles: {
             mode: '0',
@@ -2429,6 +2430,7 @@ describe('server command API adapter', () => {
             personaId: 'persona-a',
             modelPresetId: 'model-preset-a',
             promptPresetId: 'preset-a',
+            agentPresetId: 'agent-preset-a',
             jailbreakToggle: false,
             sidebarToggles: {
               mode: '0',

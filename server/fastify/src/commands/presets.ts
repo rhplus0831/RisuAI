@@ -12,6 +12,7 @@ import {
   normalizeModelProfiles,
   normalizeModelRoleProfiles,
 } from '../../../../src/ts/model/modelProfileRecords.js'
+import { normalizeAgentPresetDefaultId, normalizeAgentPresets } from '../../../../src/ts/agentPresetRecords.js'
 
 type JsonRecord = Record<string, unknown>
 type AssetValidationOptions = { assetDb?: DatabaseSync }
@@ -42,6 +43,8 @@ const SNAPSHOT_KEYS: Array<[string, string]> = [
   ['modelProfiles', 'modelProfiles'],
   ['modelRoleProfiles', 'modelRoleProfiles'],
   ['modelRuntimeDefaults', 'modelRuntimeDefaults'],
+  ['agentPresets', 'agentPresets'],
+  ['agentPresetDefaultId', 'agentPresetDefaultId'],
   ['currentPluginProvider', 'currentPluginProvider'],
   ['textgenWebUIStreamURL', 'textgenWebUIStreamURL'],
   ['textgenWebUIBlockingURL', 'textgenWebUIBlockingURL'],
@@ -199,6 +202,10 @@ export function readPresetPatch(input: JsonRecord, options: AssetValidationOptio
   return patch
 }
 
+export function normalizePresetAgentSettings(record: JsonRecord): void {
+  normalizePresetAgentFields(record)
+}
+
 export function findPresetIndex(presets: readonly PresetRecord[], presetId: string): number {
   return presets.findIndex((preset) => preset.id === presetId)
 }
@@ -236,10 +243,17 @@ export function saveCurrentPresetSnapshot(database: JsonRecord, presets: PresetR
 }
 
 export function applyPreset(database: JsonRecord, preset: PresetRecord): void {
+  let appliedAgentPresetSettings = false
   for (const [presetKey, databaseKey] of APPLY_KEYS) {
     if (Object.prototype.hasOwnProperty.call(preset, presetKey)) {
       database[databaseKey] = normalizePresetAppliedValue(databaseKey, cloneJson(preset[presetKey]))
+      if (databaseKey === 'agentPresets' || databaseKey === 'agentPresetDefaultId') {
+        appliedAgentPresetSettings = true
+      }
     }
+  }
+  if (appliedAgentPresetSettings) {
+    normalizeDatabaseAgentPresetSettings(database)
   }
 }
 
@@ -248,6 +262,7 @@ function normalizePresetAppliedValue(databaseKey: string, value: unknown): unkno
   if (databaseKey === 'modelProfiles') return normalizeModelProfiles(value)
   if (databaseKey === 'modelRoleProfiles') return normalizeModelRoleProfiles(value)
   if (databaseKey === 'modelRuntimeDefaults') return normalizeModelRuntimeDefaults(value)
+  if (databaseKey === 'agentPresets') return normalizeAgentPresets(value)
   if (databaseKey === 'seperateModels') return normalizeLegacySeperateModels(value)
   if (databaseKey === 'fallbackModels') return normalizeLegacyFallbackModels(value)
   if (databaseKey === 'seperateParameters') return normalizeSeperateParametersValue(value)
@@ -263,6 +278,41 @@ function normalizePresetProfileFields(record: JsonRecord): void {
   }
   if (Object.prototype.hasOwnProperty.call(record, 'modelRuntimeDefaults')) {
     record.modelRuntimeDefaults = normalizeModelRuntimeDefaults(record.modelRuntimeDefaults)
+  }
+  normalizePresetAgentFields(record)
+}
+
+function normalizePresetAgentFields(record: JsonRecord): void {
+  if (Object.prototype.hasOwnProperty.call(record, 'agentPresets')) {
+    const agentPresets = normalizeAgentPresets(record.agentPresets)
+    record.agentPresets = agentPresets
+    if (Object.prototype.hasOwnProperty.call(record, 'agentPresetDefaultId')) {
+      const defaultId = normalizeAgentPresetDefaultId(record.agentPresetDefaultId, agentPresets)
+      if (defaultId) {
+        record.agentPresetDefaultId = defaultId
+      } else {
+        delete record.agentPresetDefaultId
+      }
+    }
+    return
+  }
+
+  if (
+    Object.prototype.hasOwnProperty.call(record, 'agentPresetDefaultId') &&
+    typeof record.agentPresetDefaultId !== 'string'
+  ) {
+    delete record.agentPresetDefaultId
+  }
+}
+
+function normalizeDatabaseAgentPresetSettings(database: JsonRecord): void {
+  const agentPresets = normalizeAgentPresets(database.agentPresets)
+  database.agentPresets = agentPresets
+  const defaultId = normalizeAgentPresetDefaultId(database.agentPresetDefaultId, agentPresets)
+  if (defaultId) {
+    database.agentPresetDefaultId = defaultId
+  } else {
+    delete database.agentPresetDefaultId
   }
 }
 

@@ -2654,7 +2654,11 @@ describe('Phase 9-2b bot preset commands', () => {
       headers: { 'risu-auth': assertion },
       payload: {
         baseRevision: created.json().revision,
-        patch: { name: 'B renamed' },
+        patch: {
+          name: 'B renamed',
+          agentPresets: [{ id: 'agent-preset-b', name: 'Agent B', enabled: true, version: 1, steps: [] }],
+          agentPresetDefaultId: 'agent-preset-b',
+        },
       },
     })
     expect(updated.statusCode).toBe(200)
@@ -2663,6 +2667,19 @@ describe('Phase 9-2b bot preset commands', () => {
       resource: 'preset',
       id: 'preset-b',
     })
+
+    const updatedAgentList = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/presets/preset-b',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: updated.json().revision,
+        patch: {
+          agentPresets: [{ id: 'agent-preset-c', name: 'Agent C', enabled: true, version: 1, steps: [] }],
+        },
+      },
+    })
+    expect(updatedAgentList.statusCode).toBe(200)
 
     const bootstrap = await harness.app.inject({
       method: 'GET',
@@ -2673,6 +2690,19 @@ describe('Phase 9-2b bot preset commands', () => {
       { id: 'preset-a', name: 'A' },
       { id: 'preset-b', name: 'B renamed' },
     ])
+
+    const storedPreset = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/projection/preset?id=preset-b',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(storedPreset.statusCode).toBe(200)
+    expect(storedPreset.json().preset).toMatchObject({
+      id: 'preset-b',
+      name: 'B renamed',
+      agentPresets: [{ id: 'agent-preset-c', name: 'Agent C', enabled: true, version: 1, steps: [] }],
+    })
+    expect(storedPreset.json().preset).not.toHaveProperty('agentPresetDefaultId')
   })
 
   it('validates preset image asset references on create and patch', async () => {
@@ -2839,6 +2869,11 @@ describe('Phase 9-2b bot preset commands', () => {
           modelRoleProfiles: {
             memory: { mode: 'profile', profileId: ' target-profile ' },
           },
+          agentPresets: [
+            { id: ' agent-target ', name: ' Target Agent ', enabled: true, version: 1, steps: [] },
+            { id: 'agent-target', name: 'Duplicate', enabled: true, version: 1, steps: [] },
+          ],
+          agentPresetDefaultId: ' agent-target ',
         },
       ],
       botPresetsId: 0,
@@ -2849,6 +2884,8 @@ describe('Phase 9-2b bot preset commands', () => {
       modelRoleProfiles: {
         memory: { mode: 'profile', profileId: 'current-profile' },
       },
+      agentPresets: [{ id: 'current-agent', name: 'Current Agent', enabled: true, version: 1, steps: [] }],
+      agentPresetDefaultId: 'current-agent',
     })
 
     const selected = await harness.app.inject({
@@ -2890,6 +2927,8 @@ describe('Phase 9-2b bot preset commands', () => {
         ...Object.fromEntries(MODEL_ROLES.map((role) => [role, { mode: 'legacy' }])),
         memory: { mode: 'profile', profileId: 'target-profile' },
       },
+      agentPresets: [{ id: 'agent-target', name: 'Target Agent', enabled: true, version: 1, steps: [] }],
+      agentPresetDefaultId: 'agent-target',
     })
     expect(bootstrap.json().database.botPresets[0]).toMatchObject({ id: 'preset-a', name: 'A', image: '' })
     const savedPreset = await harness.app.inject({
@@ -2908,6 +2947,8 @@ describe('Phase 9-2b bot preset commands', () => {
       modelRoleProfiles: expect.objectContaining({
         memory: { mode: 'profile', profileId: 'current-profile' },
       }),
+      agentPresets: [{ id: 'current-agent', name: 'Current Agent', enabled: true, version: 1, steps: [] }],
+      agentPresetDefaultId: 'current-agent',
     })
   })
 
@@ -3979,6 +4020,8 @@ describe('Phase 9-2f loadout commands', () => {
           modelPresetName: 'Model B',
           promptPresetId: 'prompt-b',
           promptPresetName: 'Prompt B',
+          agentPresetId: 'agent-preset-b',
+          agentPresetName: 'Agent Preset B',
           personaId: 'persona-b',
         },
       },
@@ -4094,6 +4137,8 @@ describe('Phase 9-2f loadout commands', () => {
         modelPresetName: 'Model B',
         promptPresetId: 'prompt-b',
         promptPresetName: 'Prompt B',
+        agentPresetId: 'agent-preset-b',
+        agentPresetName: 'Agent Preset B',
         personaId: 'persona-b',
       },
     ])
@@ -5207,6 +5252,7 @@ describe('Phase 9-3b chat record and folder commands', () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
       enabledModules: ['mod-global'],
+      agentPresets: [{ id: 'agent-preset-a', name: 'Agent Preset A', enabled: true, version: 1, steps: [] }],
       modelPresets: [{ id: 'model-a', name: 'Model A' }],
       promptPresets: [
         {
@@ -5273,6 +5319,7 @@ describe('Phase 9-3b chat record and folder commands', () => {
           personaId: 'persona-a',
           modelPresetId: 'model-a',
           promptPresetId: 'prompt-a',
+          agentPresetId: 'agent-preset-a',
           jailbreakToggle: false,
           sidebarToggles: {
             mode: '0',
@@ -5309,6 +5356,7 @@ describe('Phase 9-3b chat record and folder commands', () => {
       personaId: 'persona-a',
       modelPresetId: 'model-a',
       promptPresetId: 'prompt-a',
+      agentPresetId: 'agent-preset-a',
       jailbreakToggle: false,
       sidebarToggles: {
         mode: '0',
@@ -5326,6 +5374,7 @@ describe('Phase 9-3b chat record and folder commands', () => {
     const revision = await importDatabase(harness.app, assertion, {
       modelPresets: [{ id: 'model-a', name: 'Model A' }],
       promptPresets: [{ id: 'prompt-a', name: 'Prompt A' }],
+      agentPresets: [{ id: 'agent-preset-a', name: 'Agent Preset A', enabled: true, version: 1, steps: [] }],
       personas: [{ id: 'persona-a', name: 'Persona A', icon: '', personaPrompt: '', note: '' }],
       characters: [
         {
@@ -5344,6 +5393,7 @@ describe('Phase 9-3b chat record and folder commands', () => {
       personaId: 'persona-a',
       modelPresetId: 'model-a',
       promptPresetId: 'prompt-a',
+      agentPresetId: 'agent-preset-a',
       jailbreakToggle: true,
       sidebarToggles: {},
     }
@@ -5359,6 +5409,14 @@ describe('Phase 9-3b chat record and folder commands', () => {
       {
         generationSettings: { ...validBase, promptPresetId: 'missing-prompt-preset' },
         error: 'Unknown prompt preset id in generationSettings.promptPresetId: missing-prompt-preset',
+      },
+      {
+        generationSettings: { ...validBase, agentPresetId: 'missing-agent-preset' },
+        error: 'Unknown agent preset id in generationSettings.agentPresetId: missing-agent-preset',
+      },
+      {
+        generationSettings: { ...validBase, agentPresetId: 123 },
+        error: 'generationSettings.agentPresetId must be a string',
       },
       {
         generationSettings: { ...validBase, sidebarToggles: { mode: 1 } },

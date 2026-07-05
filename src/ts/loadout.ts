@@ -9,6 +9,7 @@ import {
   favoriteLoadoutCommand,
   patchSettingsGroup,
   runServerCommand,
+  saveChatGenerationSettingsCommand,
   selectModelPresetCommand,
   selectPromptPresetCommand,
   selectPersonaCommand,
@@ -20,6 +21,7 @@ import {
 } from './server/commands'
 import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
 import { applyAttemptedFieldRollback, applyAttemptedKeyedListRollback } from './server/staleStateGuards'
+import type { ChatGenerationSettings } from './chatGenerationSettings'
 import {
   applyModelPresetFieldsToDatabase,
   applyPromptPresetFieldsToDatabase,
@@ -47,6 +49,8 @@ export type Loadout = {
   modelPresetName?: string
   promptPresetId?: string
   promptPresetName?: string
+  agentPresetId?: string
+  agentPresetName?: string
   personaId: string
 }
 
@@ -56,9 +60,11 @@ export function makeLoadout(options: { name: string }): Loadout {
   const legacyPreset = DBState.db.botPresets?.[DBState.db.botPresetsId]
   const modelPreset = DBState.db.modelPresets?.[DBState.db.modelPresetsId]
   const promptPreset = DBState.db.promptPresets?.[DBState.db.promptPresetsId]
+  const agentPreset = currentChatAgentPreset()
   const legacyPresetName = readablePresetName(legacyPreset)
   const modelPresetName = readablePresetName(modelPreset)
   const promptPresetName = readablePresetName(promptPreset)
+  const agentPresetName = readablePresetName(agentPreset)
   return safeStructuredClone({
     name: options.name,
     id: id,
@@ -72,6 +78,8 @@ export function makeLoadout(options: { name: string }): Loadout {
     modelPresetName,
     promptPresetId: nonBlankId(promptPreset?.id) ?? '',
     promptPresetName,
+    agentPresetId: nonBlankId(agentPreset?.id) ?? '',
+    agentPresetName,
     personaId: DBState.db.personas[DBState.db.selectedPersona]?.id,
   })
 }
@@ -153,6 +161,14 @@ interface SplitPresetSelectionRollback extends PresetSettingsRollback {
   attemptedSelectedId: string | null
 }
 
+interface AgentPresetSelectionRollback {
+  characterId: string | undefined
+  chatId: string
+  hadGenerationSettings: boolean
+  previousGenerationSettings?: ChatGenerationSettings
+  attemptedGenerationSettings: ChatGenerationSettings
+}
+
 interface LoadoutApplyStep {
   succeeded: boolean
   command: ServerCommandFactory
@@ -180,6 +196,8 @@ const SET_PRESET_ROLLBACK_KEYS = [
   'modelProfiles',
   'modelRoleProfiles',
   'modelRuntimeDefaults',
+  'agentPresets',
+  'agentPresetDefaultId',
   'currentPluginProvider',
   'textgenWebUIStreamURL',
   'textgenWebUIBlockingURL',
@@ -266,6 +284,8 @@ const PRESET_SNAPSHOT_KEY_PAIRS: Array<[string, string]> = [
   ['modelProfiles', 'modelProfiles'],
   ['modelRoleProfiles', 'modelRoleProfiles'],
   ['modelRuntimeDefaults', 'modelRuntimeDefaults'],
+  ['agentPresets', 'agentPresets'],
+  ['agentPresetDefaultId', 'agentPresetDefaultId'],
   ['currentPluginProvider', 'currentPluginProvider'],
   ['textgenWebUIStreamURL', 'textgenWebUIStreamURL'],
   ['textgenWebUIBlockingURL', 'textgenWebUIBlockingURL'],
@@ -634,6 +654,21 @@ function rollbackSplitPresetSelection(rollback: SplitPresetSelectionRollback): v
   })
 }
 
+function rollbackAgentPresetSelection(rollback: AgentPresetSelectionRollback): void {
+  withTrustedServerProjectionWrite(() => {
+    const chat = findChatById(rollback.chatId, rollback.characterId)
+    if (!chat) return
+    const target = chat as { generationSettings?: ChatGenerationSettings }
+    const current = target.generationSettings
+    if (snapshotJson(current) !== snapshotJson(rollback.attemptedGenerationSettings)) return
+    if (rollback.hadGenerationSettings) {
+      target.generationSettings = cloneJsonValue(rollback.previousGenerationSettings)
+    } else {
+      delete target.generationSettings
+    }
+  })
+}
+
 function createLoadoutApplyStep(command: ServerCommandFactory, rollback: () => void): LoadoutApplyStep {
   const step: LoadoutApplyStep = {
     succeeded: false,
@@ -745,6 +780,87 @@ export function deleteLoadout(loadoutId: string): boolean {
 
 function nonBlankId(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value : null
+}
+
+function findChatById(
+  chatId: string,
+  preferredCharacterId?: string,
+): { id?: string; generationSettings?: ChatGenerationSettings } | null {
+  const characters = Array.isArray(DBState.db.characters) ? DBState.db.characters : []
+  const orderedCharacters = preferredCharacterId
+    ? [
+        ...characters.filter((character) => character?.chaId === preferredCharacterId),
+        ...characters.filter((character) => character?.chaId !== preferredCharacterId),
+      ]
+    : characters
+  for (const character of orderedCharacters) {
+    const chats = Array.isArray(character?.chats) ? character.chats : []
+    const chat = chats.find((candidate) => candidate?.id === chatId)
+    if (chat) return chat as unknown as { id?: string; generationSettings?: ChatGenerationSettings }
+  }
+  return null
+}
+
+function currentActiveChatRecord(): {
+  characterId: string | undefined
+  chatId: string
+  chat: { id?: string; generationSettings?: ChatGenerationSettings }
+} | null {
+  const character = getCurrentCharacter()
+  const chatIndex = Number.isInteger(character?.chatPage) ? (character.chatPage as number) : -1
+  const chat = chatIndex >= 0 && Array.isArray(character?.chats) ? character.chats[chatIndex] : undefined
+  const chatId = nonBlankId(chat?.id)
+  if (!chat || !chatId) return null
+  return {
+    characterId: typeof character?.chaId === 'string' ? character.chaId : undefined,
+    chatId,
+    chat: chat as unknown as { id?: string; generationSettings?: ChatGenerationSettings },
+  }
+}
+
+function currentChatAgentPreset(): { id?: string; name?: string } | undefined {
+  const agentPresetId = nonBlankId(currentActiveChatRecord()?.chat.generationSettings?.agentPresetId)
+  if (!agentPresetId) return undefined
+  return DBState.db.agentPresets?.find((preset) => preset.id === agentPresetId)
+}
+
+function loadoutHasAgentPresetReference(loadout: Loadout): boolean {
+  return Object.hasOwn(loadout, 'agentPresetId') || Object.hasOwn(loadout, 'agentPresetName')
+}
+
+function resolveLoadoutAgentPresetId(loadout: Loadout): string | undefined {
+  if (!loadoutHasAgentPresetReference(loadout)) return undefined
+
+  const requestedId = nonBlankId(loadout.agentPresetId)
+  if (requestedId && DBState.db.agentPresets?.some((preset) => preset.id === requestedId)) {
+    return requestedId
+  }
+
+  const requestedName =
+    typeof loadout.agentPresetName === 'string' && loadout.agentPresetName.trim().length > 0
+      ? loadout.agentPresetName
+      : null
+  if (requestedName) {
+    const preset = DBState.db.agentPresets?.find((candidate) => candidate.name === requestedName)
+    const presetId = nonBlankId(preset?.id)
+    if (presetId) return presetId
+    return undefined
+  }
+
+  return requestedId ? undefined : ''
+}
+
+function createGenerationSettingsWithAgentPreset(
+  current: ChatGenerationSettings | undefined,
+  agentPresetId: string,
+): ChatGenerationSettings | null {
+  if (!current && agentPresetId === '') return null
+  const next = cloneJsonValue(current ?? {})
+  next.agentPresetId = agentPresetId
+  if (!Object.hasOwn(next, 'jailbreakToggle')) {
+    next.jailbreakToggle = false
+  }
+  return next
 }
 
 function resolvePersonaSelection(personaId: string): { index: number; personaId: string } | null {
@@ -896,6 +1012,8 @@ export function applyLoadout(
   const promptPresetSelection = useSplitPresetSelection
     ? resolveSplitPresetSelection(DBState.db.promptPresets, loadout.promptPresetId, loadout.promptPresetName)
     : null
+  const activeChatAgentPresetTarget = requested.has('preset') ? currentActiveChatRecord() : null
+  const resolvedAgentPresetId = requested.has('preset') ? resolveLoadoutAgentPresetId(loadout) : undefined
   const presetIndex =
     requested.has('preset') && !useSplitPresetSelection
       ? (DBState.db.botPresets?.findIndex((preset) => preset.name === loadout.presetName) ?? -1)
@@ -927,6 +1045,7 @@ export function applyLoadout(
   let legacyPresetRollback: LegacyPresetSelectionRollback | null = null
   let modelPresetRollback: SplitPresetSelectionRollback | null = null
   let promptPresetRollback: SplitPresetSelectionRollback | null = null
+  let agentPresetRollback: AgentPresetSelectionRollback | null = null
 
   if (personaSelection) {
     const previousPersona = currentPersonaStateSnapshot()
@@ -1009,6 +1128,31 @@ export function applyLoadout(
       }
     }
 
+    if (activeChatAgentPresetTarget && resolvedAgentPresetId !== undefined) {
+      const targetChat = findChatById(activeChatAgentPresetTarget.chatId, activeChatAgentPresetTarget.characterId)
+      if (targetChat) {
+        const hadGenerationSettings = Object.hasOwn(targetChat, 'generationSettings')
+        const previousGenerationSettings = cloneJsonValue(targetChat.generationSettings)
+        const nextGenerationSettings = createGenerationSettingsWithAgentPreset(
+          targetChat.generationSettings,
+          resolvedAgentPresetId,
+        )
+        if (
+          nextGenerationSettings &&
+          snapshotJson(previousGenerationSettings) !== snapshotJson(nextGenerationSettings)
+        ) {
+          targetChat.generationSettings = cloneJsonValue(nextGenerationSettings)
+          agentPresetRollback = {
+            characterId: activeChatAgentPresetTarget.characterId,
+            chatId: activeChatAgentPresetTarget.chatId,
+            hadGenerationSettings,
+            previousGenerationSettings,
+            attemptedGenerationSettings: cloneJsonValue(nextGenerationSettings),
+          }
+        }
+      }
+    }
+
     if (requested.has('modules')) {
       DBState.db.enabledModules = cloneJsonValue(nextModules)
     }
@@ -1070,6 +1214,20 @@ export function applyLoadout(
             promptPresetId: selectedPromptPresetId,
           }),
         () => rollbackSplitPresetSelection(promptPresetRollback),
+      ),
+    )
+  }
+  if (agentPresetRollback) {
+    const rollback = agentPresetRollback
+    steps.push(
+      createLoadoutApplyStep(
+        (baseRevision) =>
+          saveChatGenerationSettingsCommand({
+            baseRevision,
+            chatId: rollback.chatId,
+            generationSettings: rollback.attemptedGenerationSettings,
+          }),
+        () => rollbackAgentPresetSelection(rollback),
       ),
     )
   }

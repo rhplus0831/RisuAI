@@ -350,6 +350,8 @@ describe('model profile database normalization', () => {
         memory: { mode: 'profile', profileId: 'profile-a' },
       }) as Database['modelRoleProfiles'],
       modelRuntimeDefaults: { maxContext: 8192, temperature: 55 },
+      agentPresets: [{ id: 'agent-preset-a', name: 'Agent A', enabled: true, version: 1, steps: [] }],
+      agentPresetDefaultId: 'agent-preset-a',
     })
     const calls = stubFailedPresetCommand()
 
@@ -365,6 +367,8 @@ describe('model profile database normalization', () => {
         memory: { mode: 'profile', profileId: 'profile-a' },
       }),
       modelRuntimeDefaults: { maxContext: 8192, temperature: 55 },
+      agentPresets: [{ id: 'agent-preset-a', name: 'Agent A', enabled: true, version: 1, steps: [] }],
+      agentPresetDefaultId: 'agent-preset-a',
     })
   })
 
@@ -397,6 +401,11 @@ describe('model profile database normalization', () => {
           temperature: 66,
           modelTools: [' preset-tool ', ''],
         } as never,
+        agentPresets: [
+          { id: ' agent-target ', name: ' Target Agent ', enabled: true, steps: [] },
+          { id: 'agent-target', name: 'Duplicate Agent', enabled: true, steps: [] },
+        ] as never,
+        agentPresetDefaultId: 'agent-target',
       }),
     )
 
@@ -417,6 +426,10 @@ describe('model profile database normalization', () => {
       temperature: 66,
       modelTools: ['preset-tool'],
     })
+    expect(DBState.db.agentPresets).toEqual([
+      { id: 'agent-target', name: 'Target Agent', enabled: true, version: 1, steps: [] },
+    ])
+    expect(DBState.db.agentPresetDefaultId).toBe('agent-target')
   })
 
   it('does not apply legacy bot preset promptTemplate into top-level promptTemplate', () => {
@@ -432,6 +445,52 @@ describe('model profile database normalization', () => {
 
     expect(DBState.db.mainPrompt).toBe('Gamma prompt')
     expect(DBState.db.promptTemplate).toEqual(beforePromptTemplate)
+  })
+})
+
+describe('agent preset database normalization', () => {
+  it('normalizes Agent Preset records and clears stale defaults through setDatabase', () => {
+    seedPresetDatabase({
+      agentPresets: [
+        {
+          id: ' ap_research ',
+          name: ' Research ',
+          enabled: true,
+          steps: [{ id: ' aps_context ', outputKey: ' context ' }],
+        } as any,
+      ],
+      agentPresetDefaultId: 'missing-agent-preset',
+    })
+    const data = clonePlain(DBState.db)
+
+    setDatabase(data)
+
+    expect(DBState.db.agentPresets).toEqual([
+      {
+        id: 'ap_research',
+        name: 'Research',
+        enabled: true,
+        version: 1,
+        steps: [
+          {
+            id: 'aps_context',
+            name: 'aps_context',
+            enabled: true,
+            phase: 'beforeMain',
+            dependencies: [],
+            instruction: '',
+            model: { mode: 'inheritMain' },
+            runtime: {},
+            inputScopes: [],
+            outputKey: 'context',
+            outputFormat: 'text',
+            destination: 'promptOutput',
+            failurePolicy: { mode: 'required' },
+          },
+        ],
+      },
+    ])
+    expect(DBState.db.agentPresetDefaultId).toBeUndefined()
   })
 })
 
