@@ -3,8 +3,8 @@
 Last updated: 2026-07-05.
 
 This note captures the proposed replacement for the current Context Agent feature.
-It is meant to help align on product behavior, migration expectations, and
-implementation boundaries before schema or UI work starts.
+It is meant to help align on product behavior and implementation boundaries
+before schema or UI work starts.
 
 ## Summary
 
@@ -14,8 +14,8 @@ sake, but to improve the final output of the main agent by letting configured
 pre-agents and post-agents gather context, transform inputs, validate results, or
 produce additional guidance.
 
-The current Context Agent should become a migration source and compatibility
-case, not the long-term user-facing feature.
+The current Context Agent should be removed as a legacy experiment, not migrated
+as a long-term user-facing feature.
 
 ## Q&A
 
@@ -41,9 +41,8 @@ The user-facing Context Agent feature should be removed as its own feature:
   surface.
 - `{{agent}}` should no longer be the only conceptual output destination.
 
-The existing capability does not need to be discarded immediately. Its behavior
-can be migrated into an Agent Preset step, especially for users who already have
-Context Agent enabled.
+Because Context Agent has not been meaningfully used, migration and compatibility
+behavior do not need to be part of the first Agent Preset implementation.
 
 ### What is an Agent Preset?
 
@@ -175,18 +174,14 @@ the preset or prompt template decide where that output is inserted.
 
 ### What happens to `{{agent}}` and `{{slot::agent}}`?
 
-They can be compatibility aliases during migration. A reasonable path:
+They should not be carried forward as compatibility aliases in the first Agent
+Preset implementation. New prompt templates should use named Agent Preset
+outputs, such as `{{agent::context}}`, where the suffix is the agent step's
+configured output key.
 
-1. Existing Context Agent settings migrate into an Agent Preset with one
-   before-main step.
-2. That step writes to a default output key, such as `context`.
-3. Existing `{{agent}}` and `{{slot::agent}}` slots resolve to that output while
-   compatibility is supported.
-4. New UI and docs teach named Agent Preset outputs instead of the old Context
-   Agent slot.
-
-We should decide whether compatibility slots are permanent, deprecated with a
-warning, or removed after migration.
+If real user data later shows meaningful Context Agent usage, a narrow import
+or warning path can be added then. The default implementation should stay clean
+and avoid preserving unused legacy syntax.
 
 ### Where should Agent Presets be selected?
 
@@ -245,14 +240,16 @@ If post-agents can ask the main agent to revise, the preset needs strict limits:
 - Whether revisions replace the final response or remain advisory.
 - Whether the user can inspect the draft, critique, and revised output.
 
-For an initial implementation, it may be better to support advisory post-agents
-and structured diagnostics first, then add automatic revision loops once the
-execution model is proven.
+For an initial implementation, automatic revision loops should remain out of
+scope. After-main output modification can still be supported through a bounded
+single-modifier or CBS merge phase, with advisory diagnostics and full restart
+support left as later refinements.
 
 ### What tools should be available?
 
-The current Context Agent has read-only tools for chat search, lorebook search,
-and chat tail. Those are good candidates for the first Agent Preset tool group.
+Context Agent previously exposed read-only chat and lorebook lookups. For Agent
+Presets, those are better treated as prepared input sources first; provider
+tool-calling can be added later.
 
 Potential tool groups:
 
@@ -272,15 +269,15 @@ explicit user-facing permissions.
 A practical first slice could include:
 
 - A new Agent Preset resource with one selected preset.
-- Before-main steps only, plus a clear design placeholder for after-main steps.
+- Before-main steps and a bounded after-main output-modification phase.
 - Multiple steps with explicit dependencies and parallel execution where safe.
 - Prompt-only and prepared-input execution modes.
-- The existing Context Agent behavior migrated into a one-step preset.
-- Named outputs with compatibility support for `{{agent}}`.
+- Named outputs referenced with `{{agent::name}}`.
 - Basic traces showing each step, duration, provider/model, skipped reason, and
   output length.
 
-After that, add post-main advisory steps, then bounded revision loops.
+After that, add richer post-main advisory diagnostics, restart-from-agent
+support, provider tool-calling, and bounded revision loops.
 
 ### What needs product alignment before implementation?
 
@@ -289,11 +286,9 @@ The main open decisions are:
 - Whether Agent Presets are selected globally, per chat, through Prompt Presets,
   through loadouts, or all of those.
 - Whether post-agents can directly change final output in the first release.
-- Whether `{{agent}}` remains as a permanent alias or becomes a deprecated
-  compatibility slot.
+- What named-output syntax replaces `{{agent}}`.
 - How visible agent outputs should be to users during normal chat.
 - Whether steps should require structured JSON output, free text output, or both.
-- How much existing Context Agent data should be migrated automatically.
 - Which providers are supported for tool-enabled steps.
 - What concurrency and cost limits should apply per generation.
 
@@ -301,15 +296,14 @@ The main open decisions are:
 
 Implementation should include tests for:
 
-- Context Agent settings migration into Agent Presets.
 - Prompt assembly using named pre-agent outputs.
-- Compatibility behavior for `{{agent}}` and `{{slot::agent}}`.
+- Removed legacy behavior for `{{agent}}` and `{{slot::agent}}`.
 - Dependency ordering and parallel execution of independent steps.
 - Prompt-only agents on providers without tool calling.
-- Tool-enabled agents using read-only chat/lorebook tools.
+- Prepared-input agents using server-selected chat/lorebook/memory context.
 - Optional versus required failure behavior.
 - Timeout handling and trace output.
-- Post-agent advisory behavior once that phase is implemented.
+- Bounded after-main output modification before Lua `onOutput`.
 
 ## Proposed Terminology
 
@@ -333,5 +327,58 @@ Before implementation, align on the MVP answers to these questions:
 3. What is the replacement syntax for `{{agent}}`, if any?
 4. Does the first release support tool-enabled steps, or only prepared-input
    steps using server-selected context?
-5. Should migration create an Agent Preset only when Context Agent was enabled,
-   or should every user get a disabled default preset?
+5. Should Context Agent data be migrated, or should the feature be removed
+   without migration?
+
+### Agreed Alignment Answers
+
+1. Agent Preset selection should be saved per chat, like persona, model preset,
+   and prompt preset. A global default may provide the initial selection for new
+   chats, and loadouts should eventually save and restore the selected Agent
+   Preset.
+2. After-main agents do not need to be advisory only. The first output-modifying
+   design should run after the existing `editOutput` pass and before the
+   existing Lua `onOutput` trigger. Multiple after-main agents may run and pass
+   values to one another, but direct modification of the assistant output should
+   only be allowed for the last agent in the after-main chain. Earlier agents
+   and parallel agent work may produce intermediate outputs, and CBS logic may
+   combine those results for the final agent to consume, but they should not
+   directly mutate the chat message. If an output modification chain fails in
+   the middle, generation should stop at that point while preserving the
+   original main output text so a future restart-from-agent feature can resume
+   from the failed step.
+3. Each agent step should be able to choose its own output name. Prompt
+   templates should reference named agent outputs with `{{agent::name}}`, where
+   `name` is the step output key. Existing `{{agent}}` and `{{slot::agent}}`
+   references should not be carried forward as compatibility aliases unless
+   meaningful real-world Context Agent usage is discovered later.
+4. The first release should support prepared-input agent steps, not provider
+   tool-calling. Each step may declare server-selected input scopes such as
+   recent chat, selected lorebook or memory context, character/persona summary,
+   previous agent outputs, or the main draft. Tool-calling support should be
+   reserved as a later extension with explicit provider support, permissions,
+   tracing, and failure behavior.
+5. Context Agent migration should be dropped because the feature has not been
+   used meaningfully. Do not create migrated Agent Presets and do not create a
+   disabled default Agent Preset for every user. Users should start with no
+   selected Agent Preset unless they explicitly create or select one.
+6. Agent outputs should be hidden during normal chat so the main conversation
+   stays uncluttered. Each generation should still store inspectable agent step
+   results and diagnostics somewhere the user can open when output looks broken
+   or they need to debug the agent pipeline.
+7. Agent step output format should be selectable per step. Free text should be
+   the default because context notes, style guidance, critiques, and rewrite
+   instructions are naturally textual. JSON object output should also be
+   supported for classifiers, validators, routing, and later merge logic. If a
+   step declares JSON output, invalid JSON should count as a step failure.
+8. Each agent step should let the user configure its own maximum input and
+   output count. The first release should not impose a default maximum
+   concurrent agent-call limit beyond dependency ordering and the rule that only
+   the last after-main agent may modify output. Users may optionally enable a
+   max-concurrency limit for a preset when they want to control provider load,
+   latency, or cost.
+
+### Pending Alignment Questions
+
+The initial MVP alignment questions now have agreed answers. Remaining product
+details can be handled during schema and UI design.
