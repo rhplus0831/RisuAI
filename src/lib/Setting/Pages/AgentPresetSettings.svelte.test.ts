@@ -263,6 +263,39 @@ describe('AgentPresetSettings', () => {
     expect(target.textContent).toContain(language.agentPresets.inputScopeLabels.mainDraft)
   })
 
+  it('refreshes the open editor step list when projection replaces the preset record', async () => {
+    seedDb([preset({ id: 'ap_a', name: 'Research Agent', steps: [baseStep()] })])
+    mountPage()
+    await tick()
+
+    rowButton('ap_a', '[data-risu-agent-preset-edit]').click()
+    await tick()
+
+    expect(target.textContent).toContain('Gather Context')
+    expect(target.textContent).not.toContain('Review Draft')
+
+    DBState.db.agentPresets = [
+      preset({
+        id: 'ap_a',
+        name: 'Research Agent',
+        steps: [
+          baseStep(),
+          baseStep({
+            id: 'aps_b',
+            name: 'Review Draft',
+            phase: 'afterMain',
+            outputKey: 'review',
+            destination: 'intermediate',
+          }),
+        ],
+      }),
+    ]
+    await tick()
+
+    expect(target.textContent).toContain('Review Draft')
+    expect(target.querySelectorAll('[data-risu-agent-preset-step-row]')).toHaveLength(2)
+  })
+
   it('creates and updates steps through command helpers', async () => {
     seedDb([preset({ id: 'ap_a', name: 'Research Agent', steps: [baseStep()] })])
     mountPage()

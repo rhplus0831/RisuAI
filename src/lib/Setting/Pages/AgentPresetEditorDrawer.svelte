@@ -60,6 +60,7 @@
 
   // svelte-ignore state_referenced_locally
   const initialPreset = preset
+  const initialPresetId = initialPreset?.id ?? ''
   let draftName = $state(initialPreset?.name ?? language.agentPresets.newPresetName)
   let draftDescription = $state(initialPreset?.description ?? '')
   let draftEnabled = $state(initialPreset?.enabled ?? true)
@@ -91,7 +92,12 @@
   let draftStepInputScopes = $state<AgentPresetStepInputScope[]>([])
 
   let drawerTitle = $derived(mode === 'create' ? language.agentPresets.createPreset : language.agentPresets.editPreset)
-  let presetSteps = $derived(initialPreset?.steps ?? [])
+  let livePreset = $derived(
+    initialPresetId && Array.isArray(DBState.db.agentPresets)
+      ? (DBState.db.agentPresets.find((candidate) => candidate.id === initialPresetId) ?? initialPreset)
+      : initialPreset,
+  )
+  let presetSteps = $derived(livePreset?.steps ?? [])
   let beforeMainSteps = $derived(stepsForPhase(presetSteps, 'beforeMain'))
   let afterMainSteps = $derived(stepsForPhase(presetSteps, 'afterMain'))
   let modelProfiles = $derived(Array.isArray(DBState.db.modelProfiles) ? DBState.db.modelProfiles : [])
@@ -103,7 +109,7 @@
   let canSave = $derived(draftName.trim().length > 0 && !busy)
   let canSaveStep = $derived(
     mode === 'edit' &&
-      !!initialPreset?.id &&
+      !!initialPresetId &&
       !!stepEditorMode &&
       !busy &&
       !stepBusy &&
@@ -248,7 +254,7 @@
     }
   }
 
-  function loadStepDraft(step: AgentPresetStepSnapshot): void {
+  function loadStepDraft(step: Partial<AgentPresetStepRecord>): void {
     draftStepName = typeof step.name === 'string' ? step.name : ''
     draftStepEnabled = step.enabled !== false
     draftStepPhase = step.phase === 'afterMain' ? 'afterMain' : 'beforeMain'
@@ -367,24 +373,24 @@
   }
 
   async function saveStep(): Promise<void> {
-    if (!canSaveStep || !initialPreset?.id || !stepEditorMode) return
+    if (!canSaveStep || !initialPresetId || !stepEditorMode) return
     stepBusy = true
     stepCommandError = ''
     const result =
       stepEditorMode === 'new'
-        ? await createAgentPresetStep(initialPreset.id, stepSnapshotForSave())
+        ? await createAgentPresetStep(initialPresetId, stepSnapshotForSave())
         : editingStepId
-          ? await updateAgentPresetStep(initialPreset.id, editingStepId, stepSnapshotForSave())
+          ? await updateAgentPresetStep(initialPresetId, editingStepId, stepSnapshotForSave())
           : ({ status: 'error', error: language.agentPresets.editStepTargetMissing } as ServerCommandResult)
     stepBusy = false
     if (handleStepResult(result)) clearStepEditor()
   }
 
   async function duplicateStep(step: AgentPresetStepRecord): Promise<void> {
-    if (!initialPreset?.id || stepBusy) return
+    if (!initialPresetId || stepBusy) return
     stepBusy = true
     stepCommandError = ''
-    const result = await duplicateAgentPresetStep(initialPreset.id, step.id, {
+    const result = await duplicateAgentPresetStep(initialPresetId, step.id, {
       name: language.agentPresets.copyName(step.name),
     })
     stepBusy = false
@@ -392,17 +398,17 @@
   }
 
   async function deleteStep(step: AgentPresetStepRecord): Promise<void> {
-    if (!initialPreset?.id || stepBusy) return
+    if (!initialPresetId || stepBusy) return
     if (!window.confirm(language.agentPresets.deleteStepConfirm(step.name))) return
     stepBusy = true
     stepCommandError = ''
-    const result = await deleteAgentPresetStep(initialPreset.id, step.id)
+    const result = await deleteAgentPresetStep(initialPresetId, step.id)
     stepBusy = false
     if (handleStepResult(result) && editingStepId === step.id) clearStepEditor()
   }
 
   async function moveStep(step: AgentPresetStepRecord, delta: -1 | 1): Promise<void> {
-    if (!initialPreset?.id || stepBusy) return
+    if (!initialPresetId || stepBusy) return
     const phaseSteps = stepsForPhase(presetSteps, step.phase)
     const phaseIndex = phaseSteps.findIndex((candidate) => candidate.id === step.id)
     const nextPhaseIndex = phaseIndex + delta
@@ -416,7 +422,7 @@
     )
     stepBusy = true
     stepCommandError = ''
-    const result = await reorderAgentPresetSteps(initialPreset.id, nextIds)
+    const result = await reorderAgentPresetSteps(initialPresetId, nextIds)
     stepBusy = false
     handleStepResult(result)
   }
