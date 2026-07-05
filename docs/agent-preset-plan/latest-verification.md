@@ -2,39 +2,42 @@
 
 Date: 2026-07-05
 
-Verification level: Phase 0 focused implementation tests.
+Verification level: Phase 1 focused resolver/planner implementation tests.
 
 ## What Was Checked
 
 - Read `STRUCTURE.md`, the Agent Preset workstream README, status, plan,
-  latest verification, phase index, and Phase 0 file before implementation.
-- Added shared Agent Preset record normalization and validation coverage.
-- Checked database default/normalization paths on both server and client.
-- Checked legacy bot preset create/patch/save-current/apply behavior for Agent
-  Preset fields.
-- Checked chat generation settings readiness and command validation for absent,
-  empty, valid, non-string, and unknown Agent Preset selections.
-- Checked loadout snapshot and active-chat apply behavior for Agent Preset
-  id/name.
-- Confirmed Context Agent runtime/UI paths were not edited in Phase 0.
+  latest verification, phase index, Phase 0, and Phase 1 files before
+  implementation.
+- Added shared pure Agent Preset resolver/planner/status helpers in
+  `src/ts/agentPresetResolver.ts`.
+- Checked absent, missing, disabled, ready, invalid, and model-not-ready
+  selected Agent Preset resolution states.
+- Checked stable dependency levels, same-phase planning, named output registry,
+  max concurrency, estimated call counts, final-output modifier metadata, and
+  cross-phase dependency rejection.
+- Checked model readiness mapping for inherit-main, selected profile ready,
+  selected profile missing, selected profile incomplete, and selected profile
+  unsupported.
+- Checked deterministic prepared-input scope planning and per-step max-input
+  bounds.
+- Confirmed Agent Preset planner does not collect inputs or run provider calls.
 
 ## Result
 
-- Phase 0 implementation is complete.
-- `agentPresets: []` is the default empty durable state.
-- Missing or stale `agentPresetDefaultId` is cleared during normalization.
-- `ChatGenerationSettings.agentPresetId` and loadout Agent Preset id/name
-  fields are carried through typed client/server command surfaces.
-- Fastify generation assembly now checks stale Agent Preset selections when the
-  preset collection is available.
+- Phase 1 implementation is complete.
+- `resolveAgentPresetForChat()` now exposes UI/generation-ready selection
+  states without changing live generation behavior.
+- `planAgentPreset()` now produces before-main/after-main DAG plans, stable
+  dependency levels, prepared-input descriptors, named outputs, final modifier
+  metadata, and per-step model readiness.
 - Context Agent remains live for legacy `{{agent}}` and `{{slot::agent}}`
   behavior until later cleanup phases.
 
 ## Commands Run
 
-- `pnpm exec prettier --write docs/agent-preset-plan/status.md docs/agent-preset-plan/latest-verification.md src/ts/agentPresetRecords.ts src/ts/agentPresetRecords.test.ts src/ts/chatGenerationSettings.ts src/ts/chatGenerationSettings.test.ts src/ts/activeChatGenerationSettings.ts src/ts/activeChatGenerationSettings.test.ts src/ts/loadout.ts src/ts/loadout.test.ts src/ts/server/commands.ts src/ts/server/commands.test.ts src/ts/storage/database.svelte.ts src/ts/storage/database.svelte.test.ts server/fastify/src/databaseDefaults.ts server/fastify/__tests__/databaseDefaults.test.ts server/fastify/src/chatGenerationSettingsStorage.ts server/fastify/src/commands/chats.ts server/fastify/src/commands/loadouts.ts server/fastify/src/commands/presets.ts server/fastify/src/routes/commands.ts server/fastify/src/prompt/effectiveGenerationConfig.ts server/fastify/__tests__/commands.test.ts server/fastify/__tests__/risuSaveCodec.test.ts server/fastify/__tests__/assemble.test.ts`
-- `pnpm exec vitest run src/ts/agentPresetRecords.test.ts src/ts/chatGenerationSettings.test.ts src/ts/activeChatGenerationSettings.test.ts src/ts/loadout.test.ts src/ts/server/commands.test.ts src/ts/storage/database.svelte.test.ts`
-- `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/databaseDefaults.test.ts server/fastify/__tests__/commands.test.ts server/fastify/__tests__/risuSaveCodec.test.ts server/fastify/__tests__/assemble.test.ts`
+- `pnpm exec prettier --write docs/agent-preset-plan/status.md docs/agent-preset-plan/latest-verification.md src/ts/agentPresetResolver.ts src/ts/agentPresetResolver.test.ts`
+- `pnpm exec vitest run src/ts/agentPresetResolver.test.ts src/ts/agentPresetRecords.test.ts src/ts/model/modelProfileResolver.test.ts`
 - `pnpm exec tsc -b tsconfig.client-lib.json server/fastify/tsconfig.json`
 - `git diff --check`
 
