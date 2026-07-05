@@ -9,8 +9,8 @@ the visible Settings/chat-selection shell slice.
 
 ## Snapshot
 
-- Plan state: Phase 3 implemented.
-- Current phase: Phase 4 pending.
+- Plan state: Phase 4 implemented.
+- Current phase: Phase 5 pending.
 - Current implementation state:
   - `Database.agentPresets` and `Database.agentPresetDefaultId` now normalize
     through server and client database default paths.
@@ -28,8 +28,9 @@ the visible Settings/chat-selection shell slice.
   - Enabled steps can be planned into before-main and after-main dependency
     levels with stable merge ordering, named output registry, max concurrency,
     and final-output modifier metadata.
-  - Prepared-input scopes now produce deterministic collection plans only;
-    actual prepared-input collection and provider execution remain pending.
+  - Prepared-input scopes produce deterministic collection plans, and
+    server-side Phase 4 helpers can collect bounded prepared-input sections in
+    deterministic order for isolated step execution.
   - Step model readiness reuses existing model profile resolver semantics for
     inherit-main and explicit model profile selections.
   - Agent Presets can now be created, updated, duplicated, deleted, reordered,
@@ -55,7 +56,17 @@ the visible Settings/chat-selection shell slice.
     after-main summary, max concurrency, disabled/invalid/model-not-ready
     statuses, and a placeholder diagnostics affordance.
   - The editor drawer has explicit Save/Cancel draft handling for metadata and
-    max concurrency; full step editing remains pending for Phase 4.
+    max concurrency, plus command-backed step create, edit, duplicate, delete,
+    and reorder controls.
+  - The step editor exposes name, enabled state, phase, instruction, model
+    selection, dependencies, output key, output format, destination, failure
+    policy, fallback text, timeout, max input/output chars, temperature, and
+    prepared-input scopes.
+  - Server-side Agent Preset execution helpers can build single-step prompts,
+    resolve inherit-main or selected model-profile execution, call the existing
+    provider dispatch boundary with streaming disabled and tools omitted,
+    enforce timeout/max output bounds, parse JSON-object output, and return
+    diagnostics/failure shapes.
   - Chat generation settings show an Agent Preset selector alongside model
     preset, prompt preset, and persona. Empty selection is visible and valid,
     missing non-empty selections display an error, and saves go through chat
@@ -80,7 +91,7 @@ the visible Settings/chat-selection shell slice.
 | Phase 1: Resolver Runtime Status | Complete | Add resolver/planner, DAG validation, prepared-input planning, and status helpers. |
 | Phase 2: Agent Preset Commands And Context Cleanup | Complete | Add command/projection surfaces and explicit Context Agent no-migration cleanup. |
 | Phase 3: Settings Agent Preset Shell | Complete | Build Settings and chat-selection shells for Agent Presets. |
-| Phase 4: Step Editor And Prepared Inputs | Pending | Implement the step editor and prepared-input provider execution support. |
+| Phase 4: Step Editor And Prepared Inputs | Complete | Implement the step editor and prepared-input provider execution support. |
 | Phase 5: Generation Guardrails | Pending | Integrate before-main/after-main execution, prompt syntax, diagnostics, and failure behavior. |
 | Phase 6: Verification And Cleanup | Pending | Remove legacy Context Agent surfaces, update structure docs, and run closeout verification. |
 
@@ -90,10 +101,11 @@ the visible Settings/chat-selection shell slice.
 
 ## Latest Completed Slice
 
-- Implemented Phase 3 Settings and chat-selection shell: Agent Presets
-  navigation/route, command-backed Settings list and metadata drawer,
-  chat-scoped Agent Preset selector, missing-selection UI, language keys, and
-  focused UI/router coverage.
+- Implemented Phase 4 step editor and isolated execution helpers: full
+  command-backed step authoring UI, prepared-input collectors, single-step
+  prompt builder, model-profile resolution, non-streaming provider execution
+  wrapper, output bounding, JSON parsing, diagnostics, and focused UI/server
+  coverage.
 
 ## Compatibility Caveats
 

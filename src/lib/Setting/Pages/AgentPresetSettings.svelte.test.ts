@@ -8,6 +8,11 @@ const agentPresetSpies = vi.hoisted(() => ({
   deleteAgentPreset: vi.fn(async () => ({ status: 'ok', revision: 1, event: { type: 'ok', revision: 1 } })),
   reorderAgentPresets: vi.fn(async () => ({ status: 'ok', revision: 1, event: { type: 'ok', revision: 1 } })),
   setAgentPresetDefault: vi.fn(async () => ({ status: 'ok', revision: 1, event: { type: 'ok', revision: 1 } })),
+  createAgentPresetStep: vi.fn(async () => ({ status: 'ok', revision: 1, event: { type: 'ok', revision: 1 } })),
+  updateAgentPresetStep: vi.fn(async () => ({ status: 'ok', revision: 1, event: { type: 'ok', revision: 1 } })),
+  duplicateAgentPresetStep: vi.fn(async () => ({ status: 'ok', revision: 1, event: { type: 'ok', revision: 1 } })),
+  deleteAgentPresetStep: vi.fn(async () => ({ status: 'ok', revision: 1, event: { type: 'ok', revision: 1 } })),
+  reorderAgentPresetSteps: vi.fn(async () => ({ status: 'ok', revision: 1, event: { type: 'ok', revision: 1 } })),
 }))
 
 vi.mock('src/ts/agentPresets', () => agentPresetSpies)
@@ -99,6 +104,12 @@ function nameInput(): HTMLInputElement {
   const input = target.querySelector<HTMLInputElement>('[data-risu-agent-preset-name-input] input')
   expect(input).toBeTruthy()
   return input!
+}
+
+function stepEditButton(): HTMLButtonElement {
+  const element = target.querySelector<HTMLButtonElement>('[data-risu-agent-preset-step-edit]')
+  expect(element).toBeTruthy()
+  return element!
 }
 
 async function flushAsyncWork(): Promise<void> {
@@ -224,5 +235,119 @@ describe('AgentPresetSettings', () => {
 
     expect(row('ap_disabled').textContent).toContain(language.agentPresets.statusDisabled)
     expect(row('ap_invalid').textContent).toContain(language.agentPresets.statusInvalid)
+  })
+
+  it('renders the full step editor fields', async () => {
+    seedDb([preset({ id: 'ap_a', name: 'Research Agent', steps: [baseStep()] })])
+    mountPage()
+    await tick()
+
+    rowButton('ap_a', '[data-risu-agent-preset-edit]').click()
+    await tick()
+    stepEditButton().click()
+    await tick()
+
+    expect(target.textContent).toContain(language.agentPresets.stepNameLabel)
+    expect(target.textContent).toContain(language.agentPresets.stepPhaseLabel)
+    expect(target.textContent).toContain(language.agentPresets.instructionLabel)
+    expect(target.textContent).toContain(language.agentPresets.modelModeLabel)
+    expect(target.textContent).toContain(language.agentPresets.dependenciesLabel)
+    expect(target.textContent).toContain(language.agentPresets.outputFormatLabel)
+    expect(target.textContent).toContain(language.agentPresets.destinationLabel)
+    expect(target.textContent).toContain(language.agentPresets.failurePolicyLabel)
+    expect(target.textContent).toContain(language.agentPresets.timeoutMsLabel)
+    expect(target.textContent).toContain(language.agentPresets.maxInputCharsLabel)
+    expect(target.textContent).toContain(language.agentPresets.maxOutputCharsLabel)
+    expect(target.textContent).toContain(language.agentPresets.temperatureLabel)
+    expect(target.textContent).toContain(language.agentPresets.preparedInputScopesLabel)
+    expect(target.textContent).toContain(language.agentPresets.inputScopeLabels.currentUserMessage)
+    expect(target.textContent).toContain(language.agentPresets.inputScopeLabels.mainDraft)
+  })
+
+  it('creates and updates steps through command helpers', async () => {
+    seedDb([preset({ id: 'ap_a', name: 'Research Agent', steps: [baseStep()] })])
+    mountPage()
+    await tick()
+
+    rowButton('ap_a', '[data-risu-agent-preset-edit]').click()
+    await tick()
+    target.querySelector<HTMLButtonElement>('[data-risu-agent-preset-step-editor] button')?.click()
+    await tick()
+
+    button('[data-risu-agent-preset-step-save]').click()
+    await flushAsyncWork()
+
+    expect(agentPresetSpies.createAgentPresetStep).toHaveBeenCalledWith(
+      'ap_a',
+      expect.objectContaining({
+        name: 'Step 2',
+        outputKey: 'step_2',
+        model: { mode: 'inheritMain' },
+        inputScopes: ['currentUserMessage'],
+      }),
+    )
+
+    stepEditButton().click()
+    await tick()
+    const outputKeyInput = [...target.querySelectorAll<HTMLInputElement>('input')].find(
+      (input) => input.value === 'context',
+    )
+    expect(outputKeyInput).toBeTruthy()
+    outputKeyInput!.value = 'context_brief'
+    outputKeyInput!.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    button('[data-risu-agent-preset-step-save]').click()
+    await flushAsyncWork()
+
+    expect(agentPresetSpies.updateAgentPresetStep).toHaveBeenCalledWith(
+      'ap_a',
+      'aps_a',
+      expect.objectContaining({
+        outputKey: 'context_brief',
+        runtime: expect.objectContaining({
+          timeoutMs: 30000,
+          maxInputChars: 24000,
+          maxOutputChars: 1200,
+          temperature: 100,
+        }),
+      }),
+    )
+  })
+
+  it('reorders steps within the visible phase group', async () => {
+    seedDb([
+      preset({
+        id: 'ap_a',
+        name: 'Research Agent',
+        steps: [
+          baseStep({ id: 'aps_a', name: 'Before A', phase: 'beforeMain', outputKey: 'before_a' }),
+          baseStep({
+            id: 'aps_after',
+            name: 'After Step',
+            phase: 'afterMain',
+            outputKey: 'after_step',
+            destination: 'intermediate',
+          }),
+          baseStep({ id: 'aps_b', name: 'Before B', phase: 'beforeMain', outputKey: 'before_b' }),
+        ],
+      }),
+    ])
+    mountPage()
+    await tick()
+
+    rowButton('ap_a', '[data-risu-agent-preset-edit]').click()
+    await tick()
+
+    const beforeARow = [...target.querySelectorAll<HTMLElement>('[data-risu-agent-preset-step-row]')].find((element) =>
+      element.textContent?.includes('Before A'),
+    )
+    expect(beforeARow).toBeTruthy()
+    const buttons = beforeARow!.querySelectorAll<HTMLButtonElement>('button')
+    expect(buttons.length).toBeGreaterThan(2)
+    buttons[2].click()
+    await flushAsyncWork()
+
+    expect(agentPresetSpies.reorderAgentPresetSteps).toHaveBeenCalledWith('ap_a', ['aps_b', 'aps_after', 'aps_a'])
   })
 })

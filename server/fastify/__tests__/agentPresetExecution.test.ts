@@ -1,0 +1,365 @@
+import { describe, expect, it, vi } from 'vitest'
+import type { AgentPresetStepRecord } from '../../../src/ts/agentPresetRecords'
+import { resolveModelProfile } from '../../../src/ts/model/modelProfileResolver'
+import type { Chat, Database, Message, character } from '../../../src/ts/storage/database.svelte'
+import {
+  buildAgentPresetStepMessages,
+  collectAgentPresetPreparedInputs,
+  executeAgentPresetStep,
+  resolveAgentPresetStepProfile,
+  type AgentPresetProviderDispatcher,
+} from '../src/prompt/agentPresetExecution.js'
+
+function db(overrides: Partial<Database> = {}): Database {
+  return {
+    aiModel: 'debug-echo',
+    subModel: 'debug-echo',
+    modelRoles: {},
+    modelProfiles: [],
+    modelRoleProfiles: {},
+    modelRuntimeDefaults: {},
+    customModels: [],
+    modelTools: ['legacy-tool'],
+    maxResponse: 512,
+    maxContext: 8192,
+    temperature: 50,
+    frequencyPenalty: -1000,
+    PresensePenalty: -1000,
+    useStreaming: true,
+    genTime: 1,
+    extractJson: '',
+    OaiCompAPIKeys: {},
+    openrouterProvider: { order: [], only: [], ignore: [] },
+    username: 'Mira',
+    personaPrompt: 'Writes careful field notes.',
+    selectedPersona: 0,
+    personas: [{ id: 'persona-a', name: 'Mira', icon: '', personaPrompt: 'Writes careful field notes.' }],
+    characters: [char()],
+    ...overrides,
+  } as unknown as Database
+}
+
+function char(overrides: Partial<character> = {}): character {
+  return {
+    type: 'character',
+    name: 'Tess',
+    nickname: 'Keeper Tess',
+    chaId: 'char-tess',
+    chatPage: 0,
+    chats: [chat()],
+    desc: 'A keeper at the north lighthouse.',
+    personality: 'Patient and observant.',
+    scenario: 'Storm season is beginning.',
+    systemPrompt: 'Stay grounded.',
+    postHistoryInstructions: 'Preserve continuity.',
+    creatorNotes: 'Created for memory tests.',
+    globalLore: [],
+    utilityBot: false,
+    ...overrides,
+  } as unknown as character
+}
+
+function chat(overrides: Partial<Chat> = {}): Chat {
+  return {
+    id: 'chat-a',
+    name: 'Lighthouse',
+    note: '',
+    localLore: [],
+    lastMemory: 'The lantern must stay lit.',
+    message: [
+      { role: 'user', data: 'Remember the lighthouse promise.' },
+      { role: 'char', data: 'I will keep the lantern lit.' },
+      { role: 'user', data: 'What did we promise about the lantern?' },
+    ] as Message[],
+    ...overrides,
+  } as unknown as Chat
+}
+
+function step(overrides: Partial<AgentPresetStepRecord> = {}): AgentPresetStepRecord {
+  return {
+    id: 'aps_context',
+    name: 'Gather Context',
+    enabled: true,
+    phase: 'beforeMain',
+    dependencies: [],
+    instruction: 'Summarize the useful context.',
+    model: { mode: 'inheritMain' },
+    runtime: {
+      temperature: 40,
+      maxInputChars: 20_000,
+      maxOutputChars: 1_200,
+      timeoutMs: 30_000,
+    },
+    inputScopes: ['currentUserMessage', 'recentChatTail'],
+    outputKey: 'context',
+    outputFormat: 'text',
+    destination: 'promptOutput',
+    failurePolicy: { mode: 'required' },
+    ...overrides,
+  }
+}
+
+async function* frames(text: string) {
+  yield { kind: 'token' as const, content: text }
+  yield { kind: 'done' as const, finishReason: 'stop' }
+}
+
+describe('Agent Preset prepared inputs', () => {
+  it('collects sections in deterministic scope order and respects the max input bound', () => {
+    const database = db()
+    const currentChar = database.characters[0]
+    const currentChat = currentChar.chats[0]
+    const collection = collectAgentPresetPreparedInputs(
+      step({
+        runtime: { maxInputChars: 2_000 },
+        inputScopes: ['personaSummary', 'recentChatTail', 'currentUserMessage', 'characterSummary'],
+      }),
+      {
+        database,
+        currentChar,
+        currentChat,
+        currentUserMessage: 'Lantern promise?',
+      },
+    )
+
+    expect(collection.sections.map((section) => section.scope)).toEqual([
+      'recentChatTail',
+      'characterSummary',
+      'personaSummary',
+      'currentUserMessage',
+    ])
+
+    const bounded = collectAgentPresetPreparedInputs(
+      step({
+        runtime: { maxInputChars: 90 },
+        inputScopes: ['personaSummary', 'recentChatTail', 'currentUserMessage', 'characterSummary'],
+      }),
+      {
+        database,
+        currentChar,
+        currentChat,
+        currentUserMessage: 'Lantern promise?',
+      },
+    )
+    expect(bounded.sections.map((section) => section.scope)).toEqual(['recentChatTail'])
+    expect(bounded.totalChars).toBeLessThanOrEqual(90)
+    expect(bounded.diagnostics.map((diagnostic) => diagnostic.reason)).toContain('max_input_exhausted')
+  })
+
+  it('builds text and JSON prompt shapes without tool declarations', () => {
+    const preparedInputs = collectAgentPresetPreparedInputs(step(), {
+      database: db(),
+      currentChar: char(),
+      currentChat: chat(),
+      currentUserMessage: 'Lantern promise?',
+    })
+
+    const textMessages = buildAgentPresetStepMessages({ step: step(), preparedInputs })
+    expect(textMessages).toHaveLength(2)
+    expect(textMessages[0]).toMatchObject({ role: 'system' })
+    expect(textMessages[0].content).toContain('Return free text only')
+    expect(JSON.stringify(textMessages)).not.toContain('"tools"')
+
+    const jsonMessages = buildAgentPresetStepMessages({
+      step: step({ outputFormat: 'jsonObject' }),
+      preparedInputs,
+    })
+    expect(jsonMessages[0].content).toContain('Return exactly one JSON object')
+  })
+})
+
+describe('Agent Preset step execution', () => {
+  it('resolves inherit-main and selected model profiles', () => {
+    const database = db({
+      modelProfiles: [
+        {
+          id: 'ready-echo',
+          name: 'Ready Echo',
+          providerId: 'debug-echo',
+          modelId: 'debug-echo',
+          providerOptions: { requestModel: 'debug-wire', baseUrl: 'debug://echo' },
+        },
+      ],
+    })
+    const mainProfile = resolveModelProfile({ database })
+
+    expect(resolveAgentPresetStepProfile({ database, step: step(), resolvedMainProfile: mainProfile })).toBe(
+      mainProfile,
+    )
+    expect(
+      resolveAgentPresetStepProfile({
+        database,
+        step: step({ model: { mode: 'modelProfile', profileId: 'ready-echo' } }),
+        resolvedMainProfile: mainProfile,
+      }),
+    ).toMatchObject({
+      source: { profileId: 'ready-echo', profileName: 'Ready Echo' },
+      requestModel: 'debug-wire',
+    })
+  })
+
+  it('executes a selected-profile step non-streaming with bounded output and no tools', async () => {
+    const database = db({
+      modelProfiles: [
+        {
+          id: 'ready-echo',
+          name: 'Ready Echo',
+          providerId: 'debug-echo',
+          modelId: 'debug-echo',
+          providerOptions: { requestModel: 'debug-wire', baseUrl: 'debug://echo' },
+        },
+      ],
+    })
+    const dispatch = vi.fn<AgentPresetProviderDispatcher>(async (args) => {
+      expect(args.database.useStreaming).toBe(false)
+      expect(args.database.modelTools).toEqual([])
+      expect(args.outputTokens).toBe(12)
+      expect(args.profile.source.profileId).toBe('ready-echo')
+      expect(JSON.stringify(args.messages)).not.toContain('"tools"')
+      return frames('abcdefghijklmnop')
+    })
+
+    const result = await executeAgentPresetStep({
+      database,
+      currentChar: database.characters[0],
+      currentChat: database.characters[0].chats[0],
+      step: step({
+        model: { mode: 'modelProfile', profileId: 'ready-echo' },
+        runtime: { maxOutputChars: 12, timeoutMs: 1_000 },
+      }),
+      dispatchProvider: dispatch,
+    })
+
+    expect(dispatch).toHaveBeenCalledTimes(1)
+    expect(result).toMatchObject({
+      status: 'success',
+      outputText: 'abcdefghi...',
+      outputTruncated: true,
+      diagnostics: {
+        profileId: 'ready-echo',
+        requestModel: 'debug-wire',
+      },
+    })
+  })
+
+  it('parses JSON object output and fails invalid JSON according to policy', async () => {
+    const database = db()
+    const currentChar = database.characters[0]
+    const currentChat = currentChar.chats[0]
+
+    await expect(
+      executeAgentPresetStep({
+        database,
+        currentChar,
+        currentChat,
+        step: step({ outputFormat: 'jsonObject' }),
+        dispatchProvider: async () => frames('{"ok": true}'),
+      }),
+    ).resolves.toMatchObject({
+      status: 'success',
+      parsedJson: { ok: true },
+      diagnostics: { parseStatus: 'ok' },
+    })
+
+    await expect(
+      executeAgentPresetStep({
+        database,
+        currentChar,
+        currentChat,
+        step: step({ outputFormat: 'jsonObject', failurePolicy: { mode: 'required' } }),
+        dispatchProvider: async () => frames('not json'),
+      }),
+    ).resolves.toMatchObject({
+      status: 'failed',
+      failureKind: 'invalid_json_output',
+      failurePolicyOutcome: 'required_failure',
+      diagnostics: { parseStatus: 'invalid' },
+    })
+
+    await expect(
+      executeAgentPresetStep({
+        database,
+        currentChar,
+        currentChat,
+        step: step({
+          outputFormat: 'jsonObject',
+          failurePolicy: { mode: 'fallbackText', text: 'fallback prose' },
+        }),
+        dispatchProvider: async () => frames('not json'),
+      }),
+    ).resolves.toMatchObject({
+      status: 'failed',
+      failureKind: 'invalid_json_output',
+      failurePolicyOutcome: 'fallback_text',
+      diagnostics: { parseStatus: 'invalid' },
+    })
+
+    await expect(
+      executeAgentPresetStep({
+        database,
+        currentChar,
+        currentChat,
+        step: step({
+          outputFormat: 'jsonObject',
+          failurePolicy: { mode: 'fallbackText', text: '{"fallback":true}' },
+        }),
+        dispatchProvider: async () => {
+          throw new Error('provider exploded')
+        },
+      }),
+    ).resolves.toMatchObject({
+      status: 'success',
+      parsedJson: { fallback: true },
+      diagnostics: { parseStatus: 'ok' },
+    })
+  })
+
+  it('returns optional, required, and timeout failure shapes', async () => {
+    const database = db()
+    const base = {
+      database,
+      currentChar: database.characters[0],
+      currentChat: database.characters[0].chats[0],
+    }
+
+    await expect(
+      executeAgentPresetStep({
+        ...base,
+        step: step({ failurePolicy: { mode: 'optional' } }),
+        dispatchProvider: async () => {
+          throw new Error('provider exploded')
+        },
+      }),
+    ).resolves.toMatchObject({
+      status: 'failed',
+      failureKind: 'provider_error',
+      failurePolicyOutcome: 'optional_failure',
+    })
+
+    await expect(
+      executeAgentPresetStep({
+        ...base,
+        step: step({ failurePolicy: { mode: 'required' } }),
+        dispatchProvider: async () => frames(''),
+      }),
+    ).resolves.toMatchObject({
+      status: 'failed',
+      failureKind: 'empty_output',
+      failurePolicyOutcome: 'required_failure',
+    })
+
+    await expect(
+      executeAgentPresetStep({
+        ...base,
+        step: step({ runtime: { timeoutMs: 250 } }),
+        dispatchProvider: async () =>
+          new Promise((resolve) => {
+            setTimeout(() => resolve(frames('late')), 1_000)
+          }),
+      }),
+    ).resolves.toMatchObject({
+      status: 'failed',
+      failureKind: 'timeout',
+    })
+  })
+})

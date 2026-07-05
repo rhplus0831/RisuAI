@@ -1,18 +1,42 @@
 <script lang="ts">
-  import { SaveIcon, XIcon } from '@lucide/svelte'
+  import { ArrowDownIcon, ArrowUpIcon, CopyIcon, PlusIcon, SaveIcon, TrashIcon, XIcon } from '@lucide/svelte'
   import { language } from 'src/lang'
   import Button from 'src/lib/UI/GUI/Button.svelte'
   import CheckInput from 'src/lib/UI/GUI/CheckInput.svelte'
   import NumberInput from 'src/lib/UI/GUI/NumberInput.svelte'
+  import SelectInput from 'src/lib/UI/GUI/SelectInput.svelte'
   import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
+  import {
+    createAgentPresetStep,
+    deleteAgentPresetStep,
+    duplicateAgentPresetStep,
+    reorderAgentPresetSteps,
+    updateAgentPresetStep,
+  } from 'src/ts/agentPresets'
   import {
     AGENT_PRESET_MAX_CONCURRENCY_MAX,
     AGENT_PRESET_MAX_CONCURRENCY_MIN,
+    AGENT_PRESET_RUNTIME_MAX_INPUT_CHARS_MAX,
+    AGENT_PRESET_RUNTIME_MAX_INPUT_CHARS_MIN,
+    AGENT_PRESET_RUNTIME_MAX_OUTPUT_CHARS_MAX,
+    AGENT_PRESET_RUNTIME_MAX_OUTPUT_CHARS_MIN,
+    AGENT_PRESET_RUNTIME_TEMPERATURE_MAX,
+    AGENT_PRESET_RUNTIME_TEMPERATURE_MIN,
+    AGENT_PRESET_RUNTIME_TIMEOUT_MS_MAX,
+    AGENT_PRESET_RUNTIME_TIMEOUT_MS_MIN,
+    AGENT_PRESET_STEP_INPUT_SCOPES,
+    isValidAgentPresetOutputKey,
     type AgentPresetRecord,
+    type AgentPresetStepDestination,
+    type AgentPresetStepFailurePolicy,
+    type AgentPresetStepInputScope,
+    type AgentPresetStepModelSelection,
+    type AgentPresetStepOutputFormat,
     type AgentPresetStepPhase,
     type AgentPresetStepRecord,
   } from 'src/ts/agentPresetRecords'
-  import type { AgentPresetSnapshot } from 'src/ts/server/commands'
+  import type { AgentPresetSnapshot, AgentPresetStepSnapshot, ServerCommandResult } from 'src/ts/server/commands'
+  import { DBState } from 'src/ts/stores.svelte'
 
   interface Props {
     mode: 'create' | 'edit'
@@ -22,6 +46,15 @@
     onSave: (preset: AgentPresetSnapshot) => void | Promise<void>
     onCancel: () => void
   }
+
+  type StepEditorMode = 'new' | 'edit' | null
+  type StepFailurePolicyMode = AgentPresetStepFailurePolicy['mode']
+  type StepModelMode = AgentPresetStepModelSelection['mode']
+
+  const DEFAULT_STEP_TIMEOUT_MS = 30_000
+  const DEFAULT_STEP_MAX_INPUT_CHARS = 24_000
+  const DEFAULT_STEP_MAX_OUTPUT_CHARS = 1_200
+  const DEFAULT_STEP_TEMPERATURE = 100
 
   let { mode, preset, busy = false, commandError = '', onSave, onCancel }: Props = $props()
 
@@ -34,11 +67,54 @@
   let draftMaxConcurrency = $state(initialPreset?.maxConcurrency ?? 4)
   let initialSnapshot = $state('')
 
+  let stepEditorMode = $state<StepEditorMode>(null)
+  let editingStepId = $state<string | null>(null)
+  let stepInitialSnapshot = $state('')
+  let stepBusy = $state(false)
+  let stepCommandError = $state('')
+  let draftStepName = $state('')
+  let draftStepEnabled = $state(true)
+  let draftStepPhase = $state<AgentPresetStepPhase>('beforeMain')
+  let draftStepInstruction = $state('')
+  let draftStepModelMode = $state<StepModelMode>('inheritMain')
+  let draftStepModelProfileId = $state('')
+  let draftStepDependencies = $state<string[]>([])
+  let draftStepOutputKey = $state('')
+  let draftStepOutputFormat = $state<AgentPresetStepOutputFormat>('text')
+  let draftStepDestination = $state<AgentPresetStepDestination>('promptOutput')
+  let draftStepFailurePolicyMode = $state<StepFailurePolicyMode>('required')
+  let draftStepFallbackText = $state('')
+  let draftStepTimeoutMs = $state(DEFAULT_STEP_TIMEOUT_MS)
+  let draftStepMaxInputChars = $state(DEFAULT_STEP_MAX_INPUT_CHARS)
+  let draftStepMaxOutputChars = $state(DEFAULT_STEP_MAX_OUTPUT_CHARS)
+  let draftStepTemperature = $state(DEFAULT_STEP_TEMPERATURE)
+  let draftStepInputScopes = $state<AgentPresetStepInputScope[]>([])
+
   let drawerTitle = $derived(mode === 'create' ? language.agentPresets.createPreset : language.agentPresets.editPreset)
-  let beforeMainSteps = $derived(stepsForPhase(initialPreset?.steps ?? [], 'beforeMain'))
-  let afterMainSteps = $derived(stepsForPhase(initialPreset?.steps ?? [], 'afterMain'))
-  let isDirty = $derived(initialSnapshot !== '' && initialSnapshot !== snapshot(snapshotForSave()))
+  let presetSteps = $derived(initialPreset?.steps ?? [])
+  let beforeMainSteps = $derived(stepsForPhase(presetSteps, 'beforeMain'))
+  let afterMainSteps = $derived(stepsForPhase(presetSteps, 'afterMain'))
+  let modelProfiles = $derived(Array.isArray(DBState.db.modelProfiles) ? DBState.db.modelProfiles : [])
+  let activeStep = $derived(editingStepId ? presetSteps.find((step) => step.id === editingStepId) : undefined)
+  let metadataDirty = $derived(initialSnapshot !== '' && initialSnapshot !== snapshot(snapshotForSave()))
+  let stepDirty = $derived(stepInitialSnapshot !== '' && stepInitialSnapshot !== snapshot(stepSnapshotForSave()))
+  let isDirty = $derived(metadataDirty || stepDirty)
+  let outputKeyValid = $derived(isValidAgentPresetOutputKey(draftStepOutputKey.trim()))
   let canSave = $derived(draftName.trim().length > 0 && !busy)
+  let canSaveStep = $derived(
+    mode === 'edit' &&
+      !!initialPreset?.id &&
+      !!stepEditorMode &&
+      !busy &&
+      !stepBusy &&
+      draftStepName.trim().length > 0 &&
+      outputKeyValid &&
+      (draftStepModelMode === 'inheritMain' || draftStepModelProfileId.trim().length > 0),
+  )
+  let validDependencyOptions = $derived(dependencyOptions())
+  let stepFormTitle = $derived(
+    stepEditorMode === 'new' ? language.agentPresets.createStep : language.agentPresets.editStep,
+  )
 
   $effect(() => {
     if (!initialSnapshot) initialSnapshot = snapshot(snapshotForSave())
@@ -56,9 +132,39 @@
   }
 
   function clampedMaxConcurrency(): number {
-    const rounded = Math.round(Number(draftMaxConcurrency))
-    if (!Number.isFinite(rounded)) return AGENT_PRESET_MAX_CONCURRENCY_MIN
-    return Math.max(AGENT_PRESET_MAX_CONCURRENCY_MIN, Math.min(AGENT_PRESET_MAX_CONCURRENCY_MAX, rounded))
+    return clampInteger(draftMaxConcurrency, AGENT_PRESET_MAX_CONCURRENCY_MIN, AGENT_PRESET_MAX_CONCURRENCY_MAX)
+  }
+
+  function clampedTimeoutMs(): number {
+    return clampInteger(draftStepTimeoutMs, AGENT_PRESET_RUNTIME_TIMEOUT_MS_MIN, AGENT_PRESET_RUNTIME_TIMEOUT_MS_MAX)
+  }
+
+  function clampedMaxInputChars(): number {
+    return clampInteger(
+      draftStepMaxInputChars,
+      AGENT_PRESET_RUNTIME_MAX_INPUT_CHARS_MIN,
+      AGENT_PRESET_RUNTIME_MAX_INPUT_CHARS_MAX,
+    )
+  }
+
+  function clampedMaxOutputChars(): number {
+    return clampInteger(
+      draftStepMaxOutputChars,
+      AGENT_PRESET_RUNTIME_MAX_OUTPUT_CHARS_MIN,
+      AGENT_PRESET_RUNTIME_MAX_OUTPUT_CHARS_MAX,
+    )
+  }
+
+  function clampedTemperature(): number {
+    const numeric = Number(draftStepTemperature)
+    if (!Number.isFinite(numeric)) return DEFAULT_STEP_TEMPERATURE
+    return Math.max(AGENT_PRESET_RUNTIME_TEMPERATURE_MIN, Math.min(AGENT_PRESET_RUNTIME_TEMPERATURE_MAX, numeric))
+  }
+
+  function clampInteger(value: unknown, min: number, max: number): number {
+    const rounded = Math.round(Number(value))
+    if (!Number.isFinite(rounded)) return min
+    return Math.max(min, Math.min(max, rounded))
   }
 
   function snapshotForSave(): AgentPresetSnapshot {
@@ -82,6 +188,250 @@
     return next
   }
 
+  function stepSnapshotForSave(): AgentPresetStepSnapshot {
+    const runtime: AgentPresetStepRecord['runtime'] = {
+      timeoutMs: clampedTimeoutMs(),
+      maxInputChars: clampedMaxInputChars(),
+      maxOutputChars: clampedMaxOutputChars(),
+      temperature: clampedTemperature(),
+    }
+    const model: AgentPresetStepModelSelection =
+      draftStepModelMode === 'modelProfile'
+        ? { mode: 'modelProfile', profileId: draftStepModelProfileId.trim() }
+        : { mode: 'inheritMain' }
+    const failurePolicy: AgentPresetStepFailurePolicy =
+      draftStepFailurePolicyMode === 'fallbackText'
+        ? { mode: 'fallbackText', text: draftStepFallbackText }
+        : { mode: draftStepFailurePolicyMode }
+
+    return {
+      name: draftStepName.trim(),
+      enabled: draftStepEnabled,
+      phase: draftStepPhase,
+      dependencies: draftStepDependencies.filter((dependencyId) =>
+        validDependencyOptions.some((option) => option.id === dependencyId),
+      ),
+      instruction: draftStepInstruction,
+      model,
+      runtime,
+      inputScopes: [...draftStepInputScopes],
+      outputKey: draftStepOutputKey.trim(),
+      outputFormat: draftStepOutputFormat,
+      destination:
+        draftStepPhase === 'beforeMain' && draftStepDestination === 'finalOutput'
+          ? 'promptOutput'
+          : draftStepDestination,
+      failurePolicy,
+    }
+  }
+
+  function defaultStepDraft(): AgentPresetStepSnapshot {
+    const nextNumber = presetSteps.length + 1
+    return {
+      name: language.agentPresets.defaultStepName(nextNumber),
+      enabled: true,
+      phase: 'beforeMain',
+      dependencies: [],
+      instruction: '',
+      model: { mode: 'inheritMain' },
+      runtime: {
+        timeoutMs: DEFAULT_STEP_TIMEOUT_MS,
+        maxInputChars: DEFAULT_STEP_MAX_INPUT_CHARS,
+        maxOutputChars: DEFAULT_STEP_MAX_OUTPUT_CHARS,
+        temperature: DEFAULT_STEP_TEMPERATURE,
+      },
+      inputScopes: ['currentUserMessage'],
+      outputKey: `step_${nextNumber}`,
+      outputFormat: 'text',
+      destination: 'promptOutput',
+      failurePolicy: { mode: 'required' },
+    }
+  }
+
+  function loadStepDraft(step: AgentPresetStepSnapshot): void {
+    draftStepName = typeof step.name === 'string' ? step.name : ''
+    draftStepEnabled = step.enabled !== false
+    draftStepPhase = step.phase === 'afterMain' ? 'afterMain' : 'beforeMain'
+    draftStepInstruction = typeof step.instruction === 'string' ? step.instruction : ''
+    draftStepModelMode = step.model?.mode === 'modelProfile' ? 'modelProfile' : 'inheritMain'
+    draftStepModelProfileId = step.model?.mode === 'modelProfile' ? step.model.profileId : ''
+    draftStepDependencies = Array.isArray(step.dependencies) ? [...step.dependencies] : []
+    draftStepOutputKey = typeof step.outputKey === 'string' ? step.outputKey : ''
+    draftStepOutputFormat = step.outputFormat === 'jsonObject' ? 'jsonObject' : 'text'
+    draftStepDestination =
+      step.destination === 'finalOutput' || step.destination === 'intermediate' || step.destination === 'promptOutput'
+        ? step.destination
+        : draftStepPhase === 'beforeMain'
+          ? 'promptOutput'
+          : 'intermediate'
+    draftStepFailurePolicyMode =
+      step.failurePolicy?.mode === 'optional' ||
+      step.failurePolicy?.mode === 'fallbackText' ||
+      step.failurePolicy?.mode === 'stopGeneration'
+        ? step.failurePolicy.mode
+        : 'required'
+    draftStepFallbackText = step.failurePolicy?.mode === 'fallbackText' ? step.failurePolicy.text : ''
+    draftStepTimeoutMs = step.runtime?.timeoutMs ?? DEFAULT_STEP_TIMEOUT_MS
+    draftStepMaxInputChars = step.runtime?.maxInputChars ?? DEFAULT_STEP_MAX_INPUT_CHARS
+    draftStepMaxOutputChars = step.runtime?.maxOutputChars ?? DEFAULT_STEP_MAX_OUTPUT_CHARS
+    draftStepTemperature = step.runtime?.temperature ?? DEFAULT_STEP_TEMPERATURE
+    draftStepInputScopes = Array.isArray(step.inputScopes) ? [...step.inputScopes] : []
+    normalizeStepDraftForPhase()
+  }
+
+  function beginCreateStep(): void {
+    if (mode !== 'edit') return
+    stepEditorMode = 'new'
+    editingStepId = null
+    stepCommandError = ''
+    loadStepDraft(defaultStepDraft())
+    stepInitialSnapshot = snapshot(stepSnapshotForSave())
+  }
+
+  function beginEditStep(step: AgentPresetStepRecord): void {
+    stepEditorMode = 'edit'
+    editingStepId = step.id
+    stepCommandError = ''
+    loadStepDraft(step)
+    stepInitialSnapshot = snapshot(stepSnapshotForSave())
+  }
+
+  function cancelStepEdit(): void {
+    if (stepDirty && !window.confirm(language.agentPresets.discardStepChangesConfirm)) return
+    clearStepEditor()
+  }
+
+  function clearStepEditor(): void {
+    stepEditorMode = null
+    editingStepId = null
+    stepInitialSnapshot = ''
+    stepCommandError = ''
+  }
+
+  function setDraftStepPhase(phase: AgentPresetStepPhase): void {
+    draftStepPhase = phase
+    normalizeStepDraftForPhase()
+  }
+
+  function normalizeStepDraftForPhase(): void {
+    if (draftStepPhase === 'beforeMain' && draftStepDestination === 'finalOutput') {
+      draftStepDestination = 'promptOutput'
+    }
+    draftStepDependencies = draftStepDependencies.filter((dependencyId) =>
+      dependencyOptions().some((option) => option.id === dependencyId),
+    )
+  }
+
+  function setDraftDestination(destination: AgentPresetStepDestination): void {
+    if (draftStepPhase === 'beforeMain' && destination === 'finalOutput') {
+      draftStepDestination = 'promptOutput'
+      return
+    }
+    draftStepDestination = destination
+  }
+
+  function setDraftModelMode(mode: StepModelMode): void {
+    draftStepModelMode = mode
+    if (mode === 'modelProfile' && !draftStepModelProfileId && modelProfiles[0]?.id) {
+      draftStepModelProfileId = String(modelProfiles[0].id)
+    }
+  }
+
+  function toggleDependency(stepId: string, enabled: boolean): void {
+    if (enabled) {
+      if (!draftStepDependencies.includes(stepId)) draftStepDependencies = [...draftStepDependencies, stepId]
+    } else {
+      draftStepDependencies = draftStepDependencies.filter((dependencyId) => dependencyId !== stepId)
+    }
+  }
+
+  function toggleInputScope(scope: AgentPresetStepInputScope, enabled: boolean): void {
+    if (enabled) {
+      if (!draftStepInputScopes.includes(scope)) draftStepInputScopes = [...draftStepInputScopes, scope]
+    } else {
+      draftStepInputScopes = draftStepInputScopes.filter((candidate) => candidate !== scope)
+    }
+  }
+
+  function dependencyOptions(): AgentPresetStepRecord[] {
+    const currentIndex = editingStepId ? presetSteps.findIndex((step) => step.id === editingStepId) : presetSteps.length
+    const maxIndex = currentIndex < 0 ? presetSteps.length : currentIndex
+    return presetSteps.filter(
+      (step, index) => step.enabled && step.phase === draftStepPhase && step.id !== editingStepId && index < maxIndex,
+    )
+  }
+
+  async function savePreset(): Promise<void> {
+    if (!canSave) return
+    await onSave(snapshotForSave())
+  }
+
+  async function saveStep(): Promise<void> {
+    if (!canSaveStep || !initialPreset?.id || !stepEditorMode) return
+    stepBusy = true
+    stepCommandError = ''
+    const result =
+      stepEditorMode === 'new'
+        ? await createAgentPresetStep(initialPreset.id, stepSnapshotForSave())
+        : editingStepId
+          ? await updateAgentPresetStep(initialPreset.id, editingStepId, stepSnapshotForSave())
+          : ({ status: 'error', error: language.agentPresets.editStepTargetMissing } as ServerCommandResult)
+    stepBusy = false
+    if (handleStepResult(result)) clearStepEditor()
+  }
+
+  async function duplicateStep(step: AgentPresetStepRecord): Promise<void> {
+    if (!initialPreset?.id || stepBusy) return
+    stepBusy = true
+    stepCommandError = ''
+    const result = await duplicateAgentPresetStep(initialPreset.id, step.id, {
+      name: language.agentPresets.copyName(step.name),
+    })
+    stepBusy = false
+    handleStepResult(result)
+  }
+
+  async function deleteStep(step: AgentPresetStepRecord): Promise<void> {
+    if (!initialPreset?.id || stepBusy) return
+    if (!window.confirm(language.agentPresets.deleteStepConfirm(step.name))) return
+    stepBusy = true
+    stepCommandError = ''
+    const result = await deleteAgentPresetStep(initialPreset.id, step.id)
+    stepBusy = false
+    if (handleStepResult(result) && editingStepId === step.id) clearStepEditor()
+  }
+
+  async function moveStep(step: AgentPresetStepRecord, delta: -1 | 1): Promise<void> {
+    if (!initialPreset?.id || stepBusy) return
+    const phaseSteps = stepsForPhase(presetSteps, step.phase)
+    const phaseIndex = phaseSteps.findIndex((candidate) => candidate.id === step.id)
+    const nextPhaseIndex = phaseIndex + delta
+    if (phaseIndex < 0 || nextPhaseIndex < 0 || nextPhaseIndex >= phaseSteps.length) return
+    const nextPhaseIds = phaseSteps.map((candidate) => candidate.id)
+    const [moved] = nextPhaseIds.splice(phaseIndex, 1)
+    nextPhaseIds.splice(nextPhaseIndex, 0, moved)
+    let phaseCursor = 0
+    const nextIds = presetSteps.map((candidate) =>
+      candidate.phase === step.phase ? (nextPhaseIds[phaseCursor++] ?? candidate.id) : candidate.id,
+    )
+    stepBusy = true
+    stepCommandError = ''
+    const result = await reorderAgentPresetSteps(initialPreset.id, nextIds)
+    stepBusy = false
+    handleStepResult(result)
+  }
+
+  function handleStepResult(result: ServerCommandResult<any>): boolean {
+    if (result.status === 'ok') return true
+    stepCommandError =
+      result.status === 'conflict'
+        ? language.agentPresets.commandConflict
+        : result.status === 'error'
+          ? result.error
+          : language.agentPresets.commandUnavailable
+    return false
+  }
+
   function requestClose(): void {
     if (isDirty && !window.confirm(language.agentPresets.discardChangesConfirm)) return
     onCancel()
@@ -99,9 +449,8 @@
     requestClose()
   }
 
-  async function savePreset(): Promise<void> {
-    if (!canSave) return
-    await onSave(snapshotForSave())
+  function stepPhaseLabel(phase: AgentPresetStepPhase): string {
+    return phase === 'beforeMain' ? language.agentPresets.beforeMain : language.agentPresets.afterMain
   }
 </script>
 
@@ -112,7 +461,7 @@
   onclick={requestClose}
   onkeydown={handleBackdropKeydown}>
   <div
-    class="flex h-full w-full max-w-2xl flex-col border-l border-darkborderc bg-bgcolor text-textcolor shadow-xl"
+    class="flex h-full w-full max-w-4xl flex-col border-l border-darkborderc bg-bgcolor text-textcolor shadow-xl"
     role="dialog"
     aria-modal="true"
     aria-label={drawerTitle}
@@ -125,7 +474,7 @@
     <div class="flex items-start justify-between gap-3 border-b border-darkborderc p-4">
       <div class="min-w-0">
         <h3 class="truncate text-xl font-semibold">{drawerTitle}</h3>
-        <span class="text-sm text-textcolor2">{language.agentPresets.editorShellNotice}</span>
+        <span class="text-sm text-textcolor2">{language.agentPresets.editorNotice}</span>
       </div>
       <button
         type="button"
@@ -184,10 +533,12 @@
         </label>
       </section>
 
-      <section class="rounded-md border border-darkborderc p-3">
+      <section class="rounded-md border border-darkborderc p-3" data-risu-agent-preset-step-editor>
         <div class="flex flex-wrap items-center justify-between gap-2">
           <h4 class="text-base font-semibold">{language.agentPresets.stepsTitle}</h4>
-          <span class="text-sm text-textcolor2">{language.agentPresets.stepEditorPending}</span>
+          <Button size="sm" disabled={mode !== 'edit' || stepBusy || busy} onclick={beginCreateStep}>
+            <span class="inline-flex items-center gap-2"><PlusIcon size={16} />{language.agentPresets.createStep}</span>
+          </Button>
         </div>
 
         <div class="mt-3 grid gap-3 md:grid-cols-2">
@@ -197,10 +548,40 @@
               <p class="mt-2 text-sm text-textcolor2">{language.agentPresets.noStepsInPhase}</p>
             {:else}
               <ul class="mt-2 flex flex-col gap-2 text-sm">
-                {#each beforeMainSteps as step (step.id)}
-                  <li class="rounded-sm border border-darkborderc p-2">
-                    <span class="block font-medium">{step.name}</span>
-                    <span class="text-xs text-textcolor2">{language.agentPresets.outputKey}: {step.outputKey}</span>
+                {#each beforeMainSteps as step, phaseIndex (step.id)}
+                  <li class="rounded-sm border border-darkborderc p-2" data-risu-agent-preset-step-row>
+                    <div class="flex flex-wrap items-start justify-between gap-2">
+                      <button
+                        type="button"
+                        class="min-w-0 text-left"
+                        onclick={() => beginEditStep(step)}
+                        data-risu-agent-preset-step-edit>
+                        <span class="block truncate font-medium">{step.name}</span>
+                        <span class="text-xs text-textcolor2">{language.agentPresets.outputKey}: {step.outputKey}</span>
+                      </button>
+                      <div class="flex flex-wrap gap-1">
+                        <Button
+                          size="sm"
+                          styled="outlined"
+                          disabled={stepBusy || phaseIndex <= 0}
+                          onclick={() => moveStep(step, -1)}>
+                          <ArrowUpIcon size={14} />
+                        </Button>
+                        <Button
+                          size="sm"
+                          styled="outlined"
+                          disabled={stepBusy || phaseIndex >= beforeMainSteps.length - 1}
+                          onclick={() => moveStep(step, 1)}>
+                          <ArrowDownIcon size={14} />
+                        </Button>
+                        <Button size="sm" styled="outlined" disabled={stepBusy} onclick={() => duplicateStep(step)}>
+                          <CopyIcon size={14} />
+                        </Button>
+                        <Button size="sm" styled="danger" disabled={stepBusy} onclick={() => deleteStep(step)}>
+                          <TrashIcon size={14} />
+                        </Button>
+                      </div>
+                    </div>
                   </li>
                 {/each}
               </ul>
@@ -212,16 +593,272 @@
               <p class="mt-2 text-sm text-textcolor2">{language.agentPresets.noStepsInPhase}</p>
             {:else}
               <ul class="mt-2 flex flex-col gap-2 text-sm">
-                {#each afterMainSteps as step (step.id)}
-                  <li class="rounded-sm border border-darkborderc p-2">
-                    <span class="block font-medium">{step.name}</span>
-                    <span class="text-xs text-textcolor2">{language.agentPresets.outputKey}: {step.outputKey}</span>
+                {#each afterMainSteps as step, phaseIndex (step.id)}
+                  <li class="rounded-sm border border-darkborderc p-2" data-risu-agent-preset-step-row>
+                    <div class="flex flex-wrap items-start justify-between gap-2">
+                      <button
+                        type="button"
+                        class="min-w-0 text-left"
+                        onclick={() => beginEditStep(step)}
+                        data-risu-agent-preset-step-edit>
+                        <span class="block truncate font-medium">{step.name}</span>
+                        <span class="text-xs text-textcolor2">{language.agentPresets.outputKey}: {step.outputKey}</span>
+                      </button>
+                      <div class="flex flex-wrap gap-1">
+                        <Button
+                          size="sm"
+                          styled="outlined"
+                          disabled={stepBusy || phaseIndex <= 0}
+                          onclick={() => moveStep(step, -1)}>
+                          <ArrowUpIcon size={14} />
+                        </Button>
+                        <Button
+                          size="sm"
+                          styled="outlined"
+                          disabled={stepBusy || phaseIndex >= afterMainSteps.length - 1}
+                          onclick={() => moveStep(step, 1)}>
+                          <ArrowDownIcon size={14} />
+                        </Button>
+                        <Button size="sm" styled="outlined" disabled={stepBusy} onclick={() => duplicateStep(step)}>
+                          <CopyIcon size={14} />
+                        </Button>
+                        <Button size="sm" styled="danger" disabled={stepBusy} onclick={() => deleteStep(step)}>
+                          <TrashIcon size={14} />
+                        </Button>
+                      </div>
+                    </div>
                   </li>
                 {/each}
               </ul>
             {/if}
           </div>
         </div>
+
+        {#if stepCommandError}
+          <div class="mt-3 rounded-md border border-draculared p-3 text-sm text-draculared">{stepCommandError}</div>
+        {/if}
+
+        {#if stepEditorMode}
+          <div class="mt-3 rounded-md border border-darkborderc p-3" data-risu-agent-preset-step-form>
+            <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h5 class="text-sm font-semibold">{stepFormTitle}</h5>
+                {#if activeStep}
+                  <span class="text-xs text-textcolor2">{activeStep.id}</span>
+                {/if}
+              </div>
+              <Button size="sm" styled="outlined" disabled={stepBusy} onclick={cancelStepEdit}>
+                {language.agentPresets.cancelStep}
+              </Button>
+            </div>
+
+            <div class="grid gap-3 md:grid-cols-2">
+              <label class="flex flex-col gap-1">
+                <span class="text-sm font-medium">{language.agentPresets.stepNameLabel}</span>
+                <TextInput bind:value={draftStepName} size="sm" fullwidth />
+              </label>
+              <label class="flex flex-col gap-1">
+                <span class="text-sm font-medium">{language.agentPresets.stepPhaseLabel}</span>
+                <SelectInput
+                  size="sm"
+                  className="w-full"
+                  value={draftStepPhase}
+                  onchange={(event) => setDraftStepPhase(event.currentTarget.value as AgentPresetStepPhase)}>
+                  <option value="beforeMain">{language.agentPresets.beforeMain}</option>
+                  <option value="afterMain">{language.agentPresets.afterMain}</option>
+                </SelectInput>
+              </label>
+              <div class="flex items-end">
+                <CheckInput
+                  bind:check={draftStepEnabled}
+                  name={language.agentPresets.stepEnabledLabel}
+                  onChange={(value) => {
+                    draftStepEnabled = value
+                  }} />
+              </div>
+              <label class="flex flex-col gap-1">
+                <span class="text-sm font-medium">{language.agentPresets.outputKey}</span>
+                <TextInput bind:value={draftStepOutputKey} size="sm" fullwidth />
+                {#if draftStepOutputKey.trim() && !outputKeyValid}
+                  <span class="text-xs text-draculared">{language.agentPresets.invalidOutputKey}</span>
+                {/if}
+              </label>
+            </div>
+
+            <label class="mt-3 flex flex-col gap-1">
+              <span class="text-sm font-medium">{language.agentPresets.instructionLabel}</span>
+              <textarea
+                class="min-h-28 rounded-md border border-darkborderc bg-transparent px-3 py-2 text-sm text-textcolor shadow-xs focus:border-borderc focus:outline-hidden focus:ring-2 focus:ring-borderc"
+                bind:value={draftStepInstruction}></textarea>
+            </label>
+
+            <div class="mt-3 grid gap-3 md:grid-cols-3">
+              <label class="flex flex-col gap-1">
+                <span class="text-sm font-medium">{language.agentPresets.modelModeLabel}</span>
+                <SelectInput
+                  size="sm"
+                  className="w-full"
+                  value={draftStepModelMode}
+                  onchange={(event) => setDraftModelMode(event.currentTarget.value as StepModelMode)}>
+                  <option value="inheritMain">{language.agentPresets.inheritMainModel}</option>
+                  <option value="modelProfile">{language.agentPresets.selectedModelProfile}</option>
+                </SelectInput>
+              </label>
+              <label class="flex flex-col gap-1 md:col-span-2">
+                <span class="text-sm font-medium">{language.agentPresets.modelProfileLabel}</span>
+                <SelectInput
+                  size="sm"
+                  className="w-full"
+                  value={draftStepModelProfileId}
+                  onchange={(event) => {
+                    draftStepModelProfileId = event.currentTarget.value
+                  }}>
+                  <option value="">{language.agentPresets.noModelProfiles}</option>
+                  {#each modelProfiles as profile (profile.id)}
+                    <option value={profile.id}>{profile.name ?? profile.id}</option>
+                  {/each}
+                </SelectInput>
+              </label>
+            </div>
+
+            <div class="mt-3 grid gap-3 md:grid-cols-3">
+              <label class="flex flex-col gap-1">
+                <span class="text-sm font-medium">{language.agentPresets.outputFormatLabel}</span>
+                <SelectInput
+                  size="sm"
+                  className="w-full"
+                  value={draftStepOutputFormat}
+                  onchange={(event) => {
+                    draftStepOutputFormat = event.currentTarget.value as AgentPresetStepOutputFormat
+                  }}>
+                  <option value="text">{language.agentPresets.outputFormatText}</option>
+                  <option value="jsonObject">{language.agentPresets.outputFormatJsonObject}</option>
+                </SelectInput>
+              </label>
+              <label class="flex flex-col gap-1">
+                <span class="text-sm font-medium">{language.agentPresets.destinationLabel}</span>
+                <SelectInput
+                  size="sm"
+                  className="w-full"
+                  value={draftStepDestination}
+                  onchange={(event) => setDraftDestination(event.currentTarget.value as AgentPresetStepDestination)}>
+                  <option value="promptOutput">{language.agentPresets.destinationPromptOutput}</option>
+                  <option value="intermediate">{language.agentPresets.destinationIntermediate}</option>
+                  {#if draftStepPhase === 'afterMain'}
+                    <option value="finalOutput">{language.agentPresets.destinationFinalOutput}</option>
+                  {/if}
+                </SelectInput>
+              </label>
+              <label class="flex flex-col gap-1">
+                <span class="text-sm font-medium">{language.agentPresets.failurePolicyLabel}</span>
+                <SelectInput
+                  size="sm"
+                  className="w-full"
+                  value={draftStepFailurePolicyMode}
+                  onchange={(event) => {
+                    draftStepFailurePolicyMode = event.currentTarget.value as StepFailurePolicyMode
+                  }}>
+                  <option value="required">{language.agentPresets.failurePolicyRequired}</option>
+                  <option value="optional">{language.agentPresets.failurePolicyOptional}</option>
+                  <option value="fallbackText">{language.agentPresets.failurePolicyFallbackText}</option>
+                  <option value="stopGeneration">{language.agentPresets.failurePolicyStopGeneration}</option>
+                </SelectInput>
+              </label>
+            </div>
+
+            {#if draftStepFailurePolicyMode === 'fallbackText'}
+              <label class="mt-3 flex flex-col gap-1">
+                <span class="text-sm font-medium">{language.agentPresets.fallbackTextLabel}</span>
+                <textarea
+                  class="min-h-20 rounded-md border border-darkborderc bg-transparent px-3 py-2 text-sm text-textcolor shadow-xs focus:border-borderc focus:outline-hidden focus:ring-2 focus:ring-borderc"
+                  bind:value={draftStepFallbackText}></textarea>
+              </label>
+            {/if}
+
+            <div class="mt-3 grid gap-3 md:grid-cols-4">
+              <label class="flex flex-col gap-1">
+                <span class="text-sm font-medium">{language.agentPresets.timeoutMsLabel}</span>
+                <NumberInput
+                  bind:value={draftStepTimeoutMs}
+                  min={AGENT_PRESET_RUNTIME_TIMEOUT_MS_MIN}
+                  max={AGENT_PRESET_RUNTIME_TIMEOUT_MS_MAX}
+                  step={250}
+                  fullwidth />
+              </label>
+              <label class="flex flex-col gap-1">
+                <span class="text-sm font-medium">{language.agentPresets.maxInputCharsLabel}</span>
+                <NumberInput
+                  bind:value={draftStepMaxInputChars}
+                  min={AGENT_PRESET_RUNTIME_MAX_INPUT_CHARS_MIN}
+                  max={AGENT_PRESET_RUNTIME_MAX_INPUT_CHARS_MAX}
+                  step={100}
+                  fullwidth />
+              </label>
+              <label class="flex flex-col gap-1">
+                <span class="text-sm font-medium">{language.agentPresets.maxOutputCharsLabel}</span>
+                <NumberInput
+                  bind:value={draftStepMaxOutputChars}
+                  min={AGENT_PRESET_RUNTIME_MAX_OUTPUT_CHARS_MIN}
+                  max={AGENT_PRESET_RUNTIME_MAX_OUTPUT_CHARS_MAX}
+                  step={100}
+                  fullwidth />
+              </label>
+              <label class="flex flex-col gap-1">
+                <span class="text-sm font-medium">{language.agentPresets.temperatureLabel}</span>
+                <NumberInput
+                  bind:value={draftStepTemperature}
+                  min={AGENT_PRESET_RUNTIME_TEMPERATURE_MIN}
+                  max={AGENT_PRESET_RUNTIME_TEMPERATURE_MAX}
+                  step={1}
+                  fullwidth />
+              </label>
+            </div>
+
+            <div class="mt-3 grid gap-3 md:grid-cols-2">
+              <div class="rounded-md border border-darkborderc p-3">
+                <h6 class="text-sm font-semibold">{language.agentPresets.dependenciesLabel}</h6>
+                {#if validDependencyOptions.length === 0}
+                  <p class="mt-2 text-sm text-textcolor2">{language.agentPresets.noDependencyOptions}</p>
+                {:else}
+                  <div class="mt-2 flex flex-col gap-2">
+                    {#each validDependencyOptions as dependency (dependency.id)}
+                      <CheckInput
+                        check={draftStepDependencies.includes(dependency.id)}
+                        name={`${dependency.name} (${stepPhaseLabel(dependency.phase)})`}
+                        onChange={(value) => toggleDependency(dependency.id, value)} />
+                    {/each}
+                  </div>
+                {/if}
+              </div>
+              <div class="rounded-md border border-darkborderc p-3">
+                <h6 class="text-sm font-semibold">{language.agentPresets.preparedInputScopesLabel}</h6>
+                <div class="mt-2 grid gap-2 sm:grid-cols-2">
+                  {#each AGENT_PRESET_STEP_INPUT_SCOPES as scope (scope)}
+                    <CheckInput
+                      check={draftStepInputScopes.includes(scope)}
+                      name={language.agentPresets.inputScopeLabels[scope]}
+                      onChange={(value) => toggleInputScope(scope, value)} />
+                  {/each}
+                </div>
+              </div>
+            </div>
+
+            <div class="mt-3 flex justify-end">
+              <span data-risu-agent-preset-step-save>
+                <Button size="sm" disabled={!canSaveStep} onclick={saveStep}>
+                  <span class="inline-flex items-center gap-2"
+                    ><SaveIcon size={16} />{stepBusy
+                      ? language.agentPresets.saving
+                      : language.agentPresets.saveStep}</span>
+                </Button>
+              </span>
+            </div>
+          </div>
+        {:else if mode === 'create'}
+          <div class="mt-3 rounded-md border border-darkborderc p-3 text-sm text-textcolor2">
+            {language.agentPresets.savePresetBeforeSteps}
+          </div>
+        {/if}
       </section>
 
       <section class="rounded-md border border-darkborderc p-3">
