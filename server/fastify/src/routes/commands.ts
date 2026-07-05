@@ -982,10 +982,6 @@ const SETTINGS_GROUP_KEYS: Record<SettingsGroup, readonly string[]> = {
   advanced: [
     'loreBookDepth',
     'loreBookToken',
-    'agentContextEnabled',
-    'agentContextPrompt',
-    'agentContextMaxOutput',
-    'agentContextMaxToolRounds',
     'additionalPrompt',
     'descriptionPrefix',
     'emotionPrompt2',
@@ -1066,7 +1062,6 @@ const SETTINGS_GROUP_KEYS: Record<SettingsGroup, readonly string[]> = {
 }
 
 const BOOLEAN_SETTING_KEYS = new Set([
-  'agentContextEnabled',
   'askRemoval',
   'autoContinueChat',
   'autoScrollToNewMessage',
@@ -1197,8 +1192,6 @@ const BOOLEAN_SETTING_KEYS = new Set([
 ])
 
 const NUMBER_SETTING_KEYS = new Set([
-  'agentContextMaxOutput',
-  'agentContextMaxToolRounds',
   'animationSpeed',
   'assetMaxDifference',
   'assetWidth',
@@ -1246,7 +1239,6 @@ const NUMBER_SETTING_KEYS = new Set([
 ])
 
 const STRING_SETTING_KEYS = new Set([
-  'agentContextPrompt',
   'additionalPrompt',
   'adaptiveThinkingEffort',
   'apiType',

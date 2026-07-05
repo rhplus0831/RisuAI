@@ -156,12 +156,6 @@ export const languageEnglish = {
       "If enabled, it will compress images when exporting character. if animated images doesn't works, try disabling this option.",
     useExperimental: 'If enabled, it will show some experimental features.',
     forceProxyAsOpenAI: 'If enabled, it will force to use OpenAI format when using reverse proxy.',
-    agentContext:
-      'Runs a read-only context agent before prompt assembly when {{agent}} or {{slot::agent}} appears in the prompt. The agent can search chats and lorebooks, then its result is injected into that slot.',
-    agentContextPrompt:
-      'Instruction for the context agent. Ask it what to search for and how to organize the final context block.',
-    agentContextMaxOutput: 'Maximum characters from the agent result inserted into {{agent}}.',
-    agentContextMaxToolRounds: 'Maximum number of tool-call rounds the context agent may run before it must answer.',
     forcePlainFetch:
       'If enabled, it will use browser fetch api instead of native http request. this can cause CORS errors.',
     autoFillRequestURL: 'If enabled, it will autofill request url to match the current model.',
@@ -761,10 +755,6 @@ export const languageEnglish = {
   presensePenalty: 'Presense Penalty',
   advancedSettings: 'Advanced Settings',
   advancedSettingsWarn: "Warn: If you don't know what the option does, don't change it!",
-  agentContextEnabled: 'Context Agent',
-  agentContextPrompt: 'Context Agent Prompt',
-  agentContextMaxOutput: 'Context Agent Max Output',
-  agentContextMaxToolRounds: 'Context Agent Tool Rounds',
   formatingOrder: 'Formatting Order',
   authorNote: "Author's Note",
   firstMessage: 'First Message',
@@ -949,7 +939,6 @@ export const languageEnglish = {
   settingsNavModelProfiles: 'AI Models & Keys',
   settingsNavPromptPresets: 'Prompts & Templates',
   settingsNavAgentPresets: 'Agent Presets',
-  settingsNavContextAgent: 'Context Agent',
   settingsNavLegacyBotPresets: 'Legacy Bot Presets',
   settingsNavUserPersona: 'User Persona',
   settingsNavMediaMemory: 'Media, Voice & Memory',

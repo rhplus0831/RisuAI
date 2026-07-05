@@ -2896,17 +2896,6 @@ Usage:: {{#each A as V}} ... {{slot::V}} ... {{/each}}`,
   })
 
   registerFunction({
-    name: 'agent',
-    callback: (str, matcherArg, args, vars) => {
-      if (vars && Object.prototype.hasOwnProperty.call(vars, 'agent')) return vars.agent
-      if (matcherArg.var && Object.prototype.hasOwnProperty.call(matcherArg.var, 'agent')) return matcherArg.var.agent
-      return null
-    },
-    alias: [],
-    description: 'Injects the pre-prompt context agent result.\n\nUsage:: {{agent}}',
-  })
-
-  registerFunction({
     name: 'slot',
     callback: (str, matcherArg, args, vars) => {
       const key = args[0] ?? ''

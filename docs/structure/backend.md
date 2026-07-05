@@ -1,6 +1,6 @@
 # Backend Map
 
-Last audited: 2026-07-04.
+Last audited: 2026-07-06.
 
 The backend is the Fastify server under `server/fastify`. It owns SQLite state,
 auth, provider secrets, prompt assembly, provider dispatch, Hypa V3 memory,
@@ -31,7 +31,8 @@ imports/exports/backups, and the `/api/v1/*` route surface.
 | `server/fastify/src/requestAbort.ts`, `server/fastify/src/requestTimeouts.ts` | Generation abort propagation and proxy/stream-job timeout constants.                                      |
 | `server/fastify/src/risuSave/`                                                | `.risu`, bundle, local-backup, bounded-inflate, and asset-report codecs wired by save routes.            |
 | `server/fastify/src/realmImport/`                                             | Realm dynamic-card/`charx` conversion helpers used by Realm import routes.                               |
-| `server/fastify/src/prompt/contextAgent.ts`                                   | Optional read-only pre-prompt context agent for `{{agent}}` / `{{slot::agent}}` prompt slots.             |
+| `server/fastify/src/prompt/agentPresetExecution.ts`                           | Prepared-input Agent Preset step prompting, provider dispatch, phase execution, failure handling, and diagnostics. |
+| `server/fastify/src/commands/agentPresets.ts`                                 | Revisioned Agent Preset create/update/duplicate/delete/reorder/default/step commands and delete cleanup. |
 | `server/fastify/src/prompt/luaPostGenerationProgress.ts`                      | Live post-generation Lua progress frames for long `editOutput` / `onOutput` runs.                        |
 
 `buildApp()` is test-friendly. `BuildAppOptions` can inject generation behavior,
@@ -93,7 +94,7 @@ and generation submit `60/min`.
 | --------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Health/auth/bootstrap | `health.ts`, `auth.ts`, `bootstrap.ts`                    | Health/status/setup/login plus authenticated bootstrap; writer-intent bootstrap latches active writer and returns body-cache, active generation job metadata, and active message translation metadata. |
 | Projection/events     | `projection.ts`, `events.ts`                              | Targeted projection, chat/lorebook hydration, bulk hydration, command/memory SSE.                                                                                                    |
-| Commands              | `commands.ts` plus `commands/`                            | Revision-checked domain mutations for settings, model profiles/runtime defaults, split model/prompt presets, legacy bot preset extraction, bot/translator presets, prompt settings/items, personas, loadouts, characters/chats/messages, chat folders, chat generation settings, chat script state, lorebooks, modules, plugin records/storage/provider choice, script/trigger definitions, generation results, compact lorebook entries, message tails, and raw message translation. |
+| Commands              | `commands.ts` plus `commands/`                            | Revision-checked domain mutations for settings, model profiles/runtime defaults, Agent Presets, split model/prompt presets, legacy bot preset extraction, bot/translator presets, prompt settings/items, personas, loadouts, characters/chats/messages, chat folders, chat generation settings, chat script state, lorebooks, modules, plugin records/storage/provider choice, script/trigger definitions, generation results, compact lorebook entries, message tails, and raw message translation. |
 | Assets/saves/backups  | `assets.ts`, `save.ts`, `realmImport.ts`, `backups.ts`    | Content-addressed assets, `.risu`/bundle/local-backup import/export, Realm import, snapshots.                                                                                        |
 | Push notifications    | `pushNotifications.ts`                                    | Web Push VAPID public-key lookup plus authenticated subscription create/delete routes; durable subscriptions live in SQLite while generated VAPID keys live in `data/__web_push_vapid_keys.json`. |
 | Proxy/hub/storage     | `proxy.ts`, `streamJobs.ts`, `hub.ts`, `legacyStorage.ts` | Authenticated proxy/fetch and stream jobs, retained hub passthrough, `/api/v1/storage/*` compatibility byte store, public `/api/v1/auth/crypto` helper.                              |
@@ -138,11 +139,16 @@ and emits `generation.persisted`. The detailed persistence contract lives in
 The live chat path is server-owned. Browser `sendChat` preflights with
 `resolveServerPromptAssembly()` and resolved model-profile provider capability,
 then posts raw inputs to `/api/v1/generate/chat`. Server prompt assembly runs
-supported non-interactive Lua hooks, optionally runs the read-only context agent
-when enabled and a `{{agent}}`/`{{slot::agent}}` prompt slot is present, plans
-and selects memory, dispatches through `generation/`, and maps provider frames
-to chat SSE frames through `prompt/providerTransport.ts`. Successful streams run
-server post-generation before terminal `done`; `done.postGeneration` carries the final text,
+supported non-interactive Lua hooks, resolves the chat-scoped Agent Preset when
+one is selected, runs before-main Agent Preset steps after submit transforms,
+expands named outputs with `{{agent::name}}`, plans and selects memory,
+dispatches through `generation/`, and maps provider frames to chat SSE frames
+through `prompt/providerTransport.ts`. Successful streams run server
+post-generation before terminal `done`; after-main Agent Preset steps run after
+`editOutput` and before assistant-row persistence/run-vars/`onOutput`. Hidden
+Agent Preset diagnostics are stored under `generationInfo.agentPreset`, and
+required after-main failures surface as structured
+`done.postGeneration.agentPresetError`. `done.postGeneration` carries the final text,
 `messagePatch`, `resendChat`, and revision that the browser applies in
 `applyServerBackedTerminal()`. Post-generation `editOutput`/`onOutput` Lua
 progress emits `post_generation_progress` SSE frames through

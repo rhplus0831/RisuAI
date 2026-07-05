@@ -370,6 +370,13 @@ describe('server command API adapter', () => {
     expect(settingsGroupForKey('customFlags')).toBe('advanced')
   })
 
+  it('does not map retired Context Agent settings to command groups', () => {
+    expect(settingsGroupForKey('agentContextEnabled')).toBeNull()
+    expect(settingsGroupForKey('agentContextPrompt')).toBeNull()
+    expect(settingsGroupForKey('agentContextMaxOutput')).toBeNull()
+    expect(settingsGroupForKey('agentContextMaxToolRounds')).toBeNull()
+  })
+
   it('reads and caches the command base revision from bootstrap', async () => {
     const commandFetch = makeCommandFetch(() => ({ revision: 12 }))
     vi.stubGlobal('fetch', commandFetch.fetch)

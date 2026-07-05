@@ -176,7 +176,6 @@ describe('Settings supporter tab', () => {
     expect(settingsButton(language.settingsNavModelProfiles)).toBeTruthy()
     expect(settingsButton(language.settingsNavPromptPresets)).toBeTruthy()
     expect(settingsButton(language.settingsNavAgentPresets)).toBeTruthy()
-    expect(settingsButton(language.settingsNavContextAgent)).toBeUndefined()
     expect(settingsButton(language.settingsNavLegacyBotPresets)).toBeUndefined()
   })
 
@@ -202,7 +201,7 @@ describe('Settings supporter tab', () => {
     expect(settingsButton(language.settingsNavLegacyBotPresets)).toBeTruthy()
   })
 
-  it('opens the Agent Presets page instead of Context Agent controls', async () => {
+  it('opens the Agent Presets page from the settings nav', async () => {
     const agentPresetsButton = settingsButton(language.settingsNavAgentPresets)
     expect(agentPresetsButton).toBeTruthy()
 
@@ -221,7 +220,6 @@ describe('Settings supporter tab', () => {
     expect(get(SettingsMenuIndex)).toBe(19)
     expect(target.textContent).toContain(language.agentPresets.settingsTitle)
     expect(target.textContent).toContain(language.agentPresets.emptyState)
-    expect(target.textContent).not.toContain(language.agentContextPrompt)
   })
 
   it('returns from a selected mobile settings page to the settings menu', async () => {

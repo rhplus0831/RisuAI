@@ -89,14 +89,21 @@ Browser smoke:
 
 ## Closeout Status
 
-When complete, update:
+Complete on 2026-07-06.
 
-- `../status.md`
-- `../latest-verification.md`
-- this phase file with final proof notes if useful
-
-Record any compatibility caveats that remain, especially inert `agentContext*`
-data retained for old saves.
+- Legacy Context Agent runtime, Settings page/data, language keys, CBS entry,
+  defaults, command allowlists, and old runtime test file were removed.
+- `/settings/context-agent` and `/settings/contextagent` now resolve to
+  `not-found`.
+- Active structure docs and workstream docs were updated for Agent Preset
+  ownership, chat-scoped selection, before-main/after-main ordering, hidden
+  diagnostics, prepared-input first-release scope, and legacy removal.
+- Focused server/client tests, full server/frontend Vitest suites, strict
+  Fastify TypeScript, client TypeScript, Prettier check, `git diff --check`,
+  and browser smoke passed. See `../latest-verification.md`.
+- Remaining compatibility caveat: old `agentContext*` fields are preserved only
+  as inert optional database/bot-preset TypeScript fields for imported saves.
+  They are not visible, defaulted, command-patchable, or executable.
 
 ## Exit Criteria
 

@@ -1,6 +1,6 @@
 # Server Projection And Bridges
 
-Last audited: 2026-07-04.
+Last audited: 2026-07-06.
 
 The browser is a projected client. Fastify owns durable state; Svelte receives a
 lean projection, hydrates heavy fields on demand, and routes persistent edits
@@ -70,8 +70,9 @@ processes command events serially:
   events are keyed by chat id and may return `generation-chat`, and
   `characterLorebook` uses the lorebook hydration branch. Field-map resources
   also include examples such as `globalLorebook`, `modelPreset`,
-  `promptPreset`, `modelProfile`, `translatorPreset`, `loadout`, `persona`,
-  `plugin`, `moduleUpdated`, `moduleEnabled`, and `moduleReordered`. Known
+  `promptPreset`, `modelProfile`, `agentPreset`, `agentPresetDeleted`,
+  `translatorPreset`, `loadout`, `persona`, `plugin`, `moduleUpdated`,
+  `moduleEnabled`, and `moduleReordered`. Known
   sprawling resources such as `settings`, `state`, `pluginStorage`, and
   `prompt` intentionally return full-bootstrap mode.
   Applying `fields.characters` re-stubs chat/lorebook-heavy character rows and
@@ -104,6 +105,13 @@ top-level `DBState.db.promptTemplate` aligned only as a compatibility
 projection/mirror for legacy callers and bridge reconciliation. A selected
 modern prompt preset with no `promptTemplate` owns that disabled/missing state;
 it should not fall through to stale top-level data.
+
+Agent Preset projection is narrow for normal preset/default edits through
+`agentPreset`, returning `agentPresets` and `agentPresetDefaultId`. Deletes use
+`agentPresetDeleted` because one command can also clear matching chat
+generation settings and loadout references. Browser helpers reconcile those
+fields through the regular projection/event path; the Settings editor and chat
+selection UI do not mutate `DBState.db.agentPresets` directly.
 
 | Flow                                      | Endpoint                                                        | Browser code                                              |
 | ----------------------------------------- | --------------------------------------------------------------- | --------------------------------------------------------- |

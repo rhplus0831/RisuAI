@@ -11,7 +11,6 @@ import {
   seedSetting,
 } from './botSettingsParamsData'
 import { chatFormatSettingsItems } from './chatFormatSettingsData'
-import { contextAgentSettingsItems } from './contextAgentSettingsData'
 import { displaySettingsItems } from './displaySettingsData.svelte'
 import {
   canUseServerCommands,
@@ -246,7 +245,6 @@ export function checkCondition(item: SettingItem, ctx: SettingContext): boolean 
 export function getFullSettingsData(searchTerm = '') {
   const full = accessibilitySettingsItems.concat(
     advancedSettingsItems,
-    contextAgentSettingsItems,
     basicParameterItems,
     seedSetting,
     samplingParameterItems,

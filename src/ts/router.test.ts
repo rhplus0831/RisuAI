@@ -144,14 +144,12 @@ describe('router initial application', () => {
     expect(get(SettingsMenuIndex)).toBe(19)
   })
 
-  it('keeps the old context agent settings slug as an Agent Presets alias', async () => {
+  it('does not route the removed context agent settings slug', async () => {
     const router = await importRouterAt('/settings/context-agent')
 
     expect(get(router.currentRoute)).toMatchObject({
-      kind: 'settings',
+      kind: 'not-found',
       path: '/settings/context-agent',
-      section: 'context-agent',
-      index: 19,
     })
   })
 

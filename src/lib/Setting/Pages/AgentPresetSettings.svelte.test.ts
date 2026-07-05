@@ -141,7 +141,7 @@ afterEach(() => {
 })
 
 describe('AgentPresetSettings', () => {
-  it('renders an empty Agent Presets shell without Context Agent controls', async () => {
+  it('renders an empty Agent Presets shell', async () => {
     seedDb([])
     mountPage()
     await tick()
@@ -149,7 +149,6 @@ describe('AgentPresetSettings', () => {
     expect(target.querySelector('[data-risu-agent-preset-settings]')).toBeTruthy()
     expect(target.textContent).toContain(language.agentPresets.settingsTitle)
     expect(target.textContent).toContain(language.agentPresets.emptyState)
-    expect(target.textContent).not.toContain(language.agentContextPrompt)
   })
 
   it('creates a preset through the command helper', async () => {

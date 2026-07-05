@@ -1,6 +1,6 @@
 # Svelte UI Guide
 
-Last audited: 2026-07-04.
+Last audited: 2026-07-06.
 
 The frontend is a Svelte 5 SPA. There is no SvelteKit `src/routes/` tree:
 navigation is URL parsing plus Svelte stores, and `src/App.svelte` chooses the
@@ -21,6 +21,7 @@ generation, assets, storage, Realm import, plugins, or MCP.
 | URL, back/forward, settings section, playground tool, or character route is wrong    | `src/ts/router.ts`, `src/App.svelte` route effects                                                              | `src/ts/router.test.ts`, `src/App.routeEffect*.test.ts`                                                                                  |
 | Theme, spacing, clipping, colors, font, UI scale, or custom CSS is wrong             | `src/styles.css`, `src/ts/gui/colorscheme.ts`, `src/ts/gui/guisize.ts`                                          | `src/lib/Setting/Pages/DisplaySettings.svelte`, `src/ts/setting/displaySettingsData.svelte.ts`                                           |
 | A settings page or left-nav item is wrong                                            | `src/lib/Setting/Settings.svelte`, `src/ts/router.ts` setting slug maps                                         | The concrete `src/lib/Setting/Pages/*.svelte` page                                                                                       |
+| Agent Preset authoring, status, or chat selection is wrong                           | `src/lib/Setting/Pages/AgentPresetSettings.svelte`, `src/lib/Setting/Pages/AgentPresetEditorDrawer.svelte`, `src/lib/SideBars/ChatGenerationSettingsControls.svelte` | `src/ts/agentPresetRecords.ts`, `src/ts/agentPresetResolver.ts`, `src/ts/agentPresets.ts`, `server/fastify/src/commands/agentPresets.ts` |
 | A model role/profile summary, inherited role, or provider panel visibility is wrong  | `src/lib/Setting/Pages/Model/ModelSettingsShell.svelte`, `ModelProfileRoleList.svelte`, `ModelProfileList.svelte`, `ModelProviderPanel.svelte`, `src/ts/model/modelProfileUiState.ts` | `src/ts/model/modelProfileResolver.ts`, legacy `ModelRoleList.svelte` inside Advanced Legacy Settings, `docs/structure/providers-and-models.md` |
 | A data-driven setting row is missing, hidden, stale, or not saving                   | `src/lib/Setting/SettingRenderer.svelte`, `src/ts/setting/*SettingsData*`, `src/ts/setting/utils.ts`            | `src/lib/Setting/Wrappers/*`, `src/ts/server/settingsBridge.svelte.ts`                                                                   |
 | A shared input/control is visually or behaviorally wrong                             | The primitive in `src/lib/UI/GUI/`                                                                              | The wrapper in `src/lib/Setting/Wrappers/` if it only breaks in settings                                                                 |
@@ -218,6 +219,14 @@ Data-driven setting definitions use `SettingItem` from `src/ts/setting/types.ts`
 Important fields are `id`, `type`, `labelKey`, `helpKey`, `bindKey`,
 `bindPath`, `condition`, `getValue`, `setValue`, `onChange`, `options`,
 `keywords`, `componentId`, and `componentProps`.
+
+Agent Presets are not data-driven settings rows. The live UI is
+`AgentPresetSettings.svelte` plus `AgentPresetEditorDrawer.svelte`, using
+row-oriented command helpers from `src/ts/agentPresets.ts`. The page creates,
+edits, duplicates, deletes, reorders, and selects the global default preset;
+the sidebar chat generation controls save the chat-scoped
+`agentPresetId`. The removed Context Agent page and `/settings/context-agent`
+route are not compatibility aliases.
 
 The settings shell currently separates model and prompt work: settings index
 `17` is model settings, `18` is prompt settings, `13` is prompt templates, and

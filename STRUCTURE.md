@@ -64,7 +64,8 @@ past decisions; they are not the source of current behavior.
 | `server/fastify/src/routes/`, `server/fastify/src/commands/`                                                                                | `/api/v1/*` route registrars and revision-checked mutation helpers.                                                         |
 | `server/fastify/src/commands/events.ts`, `server/fastify/src/routes/events.ts`                                                              | Command-event persistence, replay, and live command/memory SSE route.                                                       |
 | `server/fastify/src/pushNotifications.ts`, `server/fastify/src/routes/pushNotifications.ts`                                                 | Web Push VAPID key/subscription storage and push subscription routes.                                                       |
-| `server/fastify/src/generation/`, `server/fastify/src/prompt/`, `server/fastify/src/routes/generation*.ts`, `server/fastify/src/generationJobs.ts`, `server/fastify/src/generationFinalizationRetry.ts`, `server/fastify/src/messageTranslationJobs.ts`, `server/fastify/src/translation/` | Provider adapters, prompt assembly/effective generation config, Lua hooks/progress, SSE transport, durable chat jobs, finalization retries, detached message translation state and provider dispatch. |
+| `server/fastify/src/generation/`, `server/fastify/src/prompt/`, `server/fastify/src/routes/generation*.ts`, `server/fastify/src/generationJobs.ts`, `server/fastify/src/generationFinalizationRetry.ts`, `server/fastify/src/messageTranslationJobs.ts`, `server/fastify/src/translation/` | Provider adapters, prompt assembly/effective generation config, Agent Preset execution, Lua hooks/progress, SSE transport, durable chat jobs, finalization retries, detached message translation state and provider dispatch. |
+| `server/fastify/src/commands/agentPresets.ts`, `src/ts/agentPresetRecords.ts`, `src/ts/agentPresetResolver.ts`, `src/ts/agentPresets.ts` | Agent Preset storage contract, validation, planner/status helpers, revisioned commands, and browser command helpers. |
 | `server/fastify/src/memory*.ts`                                                                                                             | Maintained Hypa V3 memory tables, planning, selection, jobs, worker, events.                                                |
 | `server/fastify/src/risuSave/`, `server/fastify/src/realmImport/`                                                                           | `.risu` codecs, bounded inflate, bundles/local-backup import/export, asset reports, and Realm/charx conversion helpers.     |
 | `server/fastify/src/streamJobs.ts`, `server/fastify/src/streamBackpressure.ts`                                                              | Process-local proxy stream jobs and shared bounded stream writers.                                                          |
@@ -75,6 +76,7 @@ past decisions; they are not the source of current behavior.
 | `src/ts/storage/`                                                                                                                           | Browser projection state, server-backed auth/storage, backup helpers, and retained browser `.risu` compatibility codecs; server-backed device backup flows use server routes. |
 | `src/ts/plugins/`, `src/ts/pluginCommands.ts`, `src/ts/process/mcp/`                                                                        | Browser plugin runtime, Plugin V3 API host, command-backed plugin state helpers, MCP clients/tools.                         |
 | `src/ts/model/`, `src/ts/horde/`                                                                                                            | Browser model registry and provider catalog helpers.                                                                        |
+| `src/lib/Setting/Pages/AgentPresetSettings.svelte`, `src/lib/Setting/Pages/AgentPresetEditorDrawer.svelte`, `src/lib/SideBars/ChatGenerationSettingsControls.svelte` | Agent Preset authoring UI and chat-scoped Agent Preset selection.                                                           |
 | `src/lang/`, `src/styles.css`, `src/ts/gui/`, `src/ts/setting/`                                                                             | Language packs, global styling/theme variables, GUI size/animation helpers, and data-driven setting definitions.            |
 | `src/ts/media/`, `src/ts/parser/`, `src/ts/translator/`, `src/ts/network/`, `src/ts/kei/`, `src/ts/util/`                                  | Focused client helper domains and tests.                                                                                    |
 
@@ -108,5 +110,14 @@ past decisions; they are not the source of current behavior.
   `modelRoles`, `seperateModels`, `fallbackModels`, separate parameters, and
   provider globals remain compatibility/conversion data behind Advanced Legacy
   Settings or import/preset/loadout paths.
+- Agent Presets are the supported auxiliary-agent orchestration layer. Durable
+  `agentPresets` and optional `agentPresetDefaultId` live on `Database`, chats
+  select presets through `Chat.generationSettings.agentPresetId`, and loadouts
+  can save/restore that selection. Before-main steps run after submit
+  transforms and feed prompt templates through `{{agent::name}}`; after-main
+  steps run after `editOutput` and before `onOutput`, with hidden diagnostics
+  stored under generation metadata. The legacy Context Agent runtime, settings
+  page, `{{agent}}`, and `{{slot::agent}}` are removed; old `agentContext*`
+  fields may remain only as inert imported data.
 - Root TypeScript is intentionally loose for browser code. Server checking is
   strict and uses the project-reference workflow in `AGENTS.md`.

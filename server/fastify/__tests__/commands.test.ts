@@ -2497,6 +2497,39 @@ describe('Phase 9-2a scalar settings groups', () => {
     expect(bootstrap.json().database).toMatchObject({ theme: 'dark' })
   })
 
+  it('rejects retired Context Agent setting keys while preserving imported old-save data', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      agentContextEnabled: true,
+      agentContextPrompt: 'legacy context prompt',
+      agentContextMaxOutput: 999,
+      agentContextMaxToolRounds: 2,
+    })
+
+    const res = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/advanced',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, patch: { agentContextEnabled: false } },
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(res.json().error).toBe('Unsupported advanced setting: agentContextEnabled')
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().revision).toBe(1)
+    expect(bootstrap.json().database).toMatchObject({
+      agentContextEnabled: true,
+      agentContextPrompt: 'legacy context prompt',
+      agentContextMaxOutput: 999,
+      agentContextMaxToolRounds: 2,
+    })
+  })
+
   it('rejects unsupported settings groups', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
 

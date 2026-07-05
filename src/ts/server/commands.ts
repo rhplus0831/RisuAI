@@ -31,10 +31,6 @@ export type SettingsGroup = (typeof SETTINGS_GROUPS)[number]
 export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
   account: 'account',
   adaptiveThinkingEffort: 'runtime',
-  agentContextEnabled: 'advanced',
-  agentContextPrompt: 'advanced',
-  agentContextMaxOutput: 'advanced',
-  agentContextMaxToolRounds: 'advanced',
   additionalPrompt: 'advanced',
   aiModel: 'providers',
   ainconfig: 'providers',

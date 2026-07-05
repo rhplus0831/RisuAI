@@ -72,8 +72,6 @@ const settingIndexBySlug = new Map<string, number>([
   ['prompt-template', 13],
   ['agent-preset', 19],
   ['agent-presets', 19],
-  ['context-agent', 19],
-  ['contextagent', 19],
   ['prompt-settings', 18],
   ['prompt-preset', 18],
   ['prompt-presets', 18],
@@ -282,6 +280,9 @@ export function parseRoute(pathname: string): AppRoute {
         section: '',
         index: -1,
       }
+    }
+    if (section === 'context-agent' || section === 'contextagent') {
+      return { kind: 'not-found', path }
     }
 
     const index = settingIndexBySlug.get(section) ?? numericSettingIndex(section)

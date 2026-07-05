@@ -2,11 +2,12 @@
 
 Date: 2026-07-05
 
-This active workstream expands [`../agent-preset-plan.md`](../agent-preset-plan.md)
-from product Q&A into an implementation plan for replacing the current Context
+This completed workstream expands [`../agent-preset-plan.md`](../agent-preset-plan.md)
+from product Q&A into the implementation plan that replaced the legacy Context
 Agent feature with Agent Presets.
 
-The planned result makes auxiliary agents a chat-generation orchestration layer:
+The delivered result makes auxiliary agents a chat-generation orchestration
+layer:
 
 - Chats may select an Agent Preset in addition to persona, model preset, and
   prompt preset.
@@ -15,8 +16,8 @@ The planned result makes auxiliary agents a chat-generation orchestration layer:
   `{{agent::name}}`.
 - After-main steps run after the existing `editOutput` pass and before the
   existing Lua `onOutput` trigger.
-- Context Agent settings, `{{agent}}`, and `{{slot::agent}}` are removed as the
-  normal user-facing model.
+- Context Agent settings, `{{agent}}`, and `{{slot::agent}}` are removed from
+  the user-facing model.
 - No Context Agent migration is planned for the first release.
 
 Start with [`status.md`](status.md), then read [`plan.md`](plan.md), then the
@@ -50,7 +51,7 @@ Preset-specific.
     - integrate before-main/after-main execution into generation, tracing, and
     guardrails.
 11. [`phases/phase-6-verification-and-cleanup.md`](phases/phase-6-verification-and-cleanup.md)
-    - remove legacy Context Agent surfaces, update docs, and run closeout
+    - removed legacy Context Agent surfaces, updated docs, and ran closeout
     verification.
 
 ## Source Inputs
@@ -68,14 +69,19 @@ Preset-specific.
 
 ## Source Anchors
 
-- Existing Context Agent:
-  - `server/fastify/src/prompt/contextAgent.ts`
+- Removed legacy Context Agent cleanup/regression anchors:
   - `server/fastify/src/prompt/assemble.ts`
-  - `server/fastify/__tests__/contextAgent.test.ts`
   - `server/fastify/__tests__/assemble.test.ts`
+  - `server/fastify/__tests__/commands.test.ts`
+  - `src/ts/router.ts`
+  - `src/ts/router.test.ts`
+  - `src/ts/cbs.ts`
+  - `src/lang/*`
+- Deleted legacy files, retained here only as historical references:
+  - `server/fastify/src/prompt/contextAgent.ts`
+  - `server/fastify/__tests__/contextAgent.test.ts`
   - `src/lib/Setting/Pages/ContextAgentSettings.svelte`
   - `src/ts/setting/contextAgentSettingsData.ts`
-  - `src/lang/*`
 - Prompt assembly and generation:
   - `server/fastify/src/prompt/assemble.ts`
   - `server/fastify/src/prompt/templates.ts`
@@ -92,6 +98,10 @@ Preset-specific.
   - `server/fastify/src/prompt/chatDispatch.ts`
   - `server/fastify/src/generation/`
 - Chat selection, commands, projection, loadouts:
+  - `src/ts/agentPresetRecords.ts`
+  - `src/ts/agentPresetResolver.ts`
+  - `src/ts/agentPresets.ts`
+  - `server/fastify/src/commands/agentPresets.ts`
   - `src/ts/chatGenerationSettings.ts`
   - `src/ts/activeChatGenerationSettings.ts`
   - `src/lib/SideBars/ChatGenerationSettingsControls.svelte`

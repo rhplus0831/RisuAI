@@ -1,6 +1,6 @@
 # Providers And Models
 
-Last audited: 2026-07-04.
+Last audited: 2026-07-06.
 
 Provider/model behavior is split between browser model metadata, Fastify
 provider dispatch, and the shared capability table that decides whether a
@@ -130,6 +130,23 @@ legacy-to-profile conversion, and runtime defaults updates. Whole-array settings
 patches remain compatibility paths for imports, presets, loadouts, and older
 callers.
 
+## Agent Preset Model Flow
+
+Agent Preset steps are auxiliary generation calls around the main chat request.
+Each step stores a model selection in `AgentPresetStepRecord.model`: either
+`inheritMain`, which reuses the already-resolved chat main profile, or
+`modelProfile`, which names a durable profile id. Planner/status helpers in
+`src/ts/agentPresetResolver.ts` use the same model-profile readiness semantics
+as chat preflight, and server execution in
+`server/fastify/src/prompt/agentPresetExecution.ts` dispatches through the
+normal provider boundary with streaming disabled and provider tools omitted.
+
+The first Agent Preset release is prepared-input only. Steps can read bounded
+server-selected sections such as recent chat tail, lorebook context, memory
+context, persona/character summaries, previous agent outputs, current user
+message, and after-main main draft. Provider tool-calling is intentionally not
+part of this path yet.
+
 ## Compatibility Caveats
 
 Canonical compatibility surfaces:
@@ -151,6 +168,9 @@ Canonical compatibility surfaces:
   Hypa/Voyage/custom embedding config.
 - The Custom Models catalog (`customModels` / `xcustom:::`) remains separate
   from first-class Custom API profiles.
+- Imported old `agentContext*` fields are inert compatibility data. They are no
+  longer model-selection inputs, command-patchable settings, or prompt runtime
+  triggers.
 
 ## Server Provider Dispatch
 
